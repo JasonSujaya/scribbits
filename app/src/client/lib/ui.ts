@@ -522,3 +522,89 @@ export function statGrid(
 export function daysLeftFor(scribbit: Scribbit, currentDay: number): number {
   return Math.max(0, scribbit.expiresDay - currentDay);
 }
+
+// A "+1 💛" that floats up and fades from (x, y) — the visible reward for a
+// Believe tap. Purely cosmetic; caller triggers it optimistically. `depth`
+// keeps it above modals. Text is configurable so we can reuse for other floats.
+export function floatReward(
+  scene: Scene,
+  x: number,
+  y: number,
+  text = '+1 💛',
+  color: string = UI.coralText,
+  depth = 3000,
+  pinned = false
+): void {
+  const float = label(scene, x, y, text, 34, color, true).setDepth(depth);
+  if (pinned) float.setScrollFactor(0);
+  float.setStroke('#2b2016', 5);
+  scene.tweens.add({
+    targets: float,
+    y: y - 90,
+    scale: 1.25,
+    duration: 260,
+    ease: 'Back.easeOut',
+    yoyo: false,
+    onComplete: () => {
+      scene.tweens.add({
+        targets: float,
+        y: y - 150,
+        alpha: 0,
+        duration: 520,
+        ease: 'Cubic.easeIn',
+        onComplete: () => float.destroy(),
+      });
+    },
+  });
+}
+
+// A simple labeled progress bar (used for the XP meter in the detail modal).
+// Returns the container plus a setter that animates the fill to a 0..1 ratio.
+export type ProgressBar = {
+  container: Phaser.GameObjects.Container;
+  set: (ratio: number, animate: boolean) => void;
+};
+
+export function progressBar(
+  scene: Scene,
+  x: number,
+  y: number,
+  width: number,
+  fillColor: number,
+  height = 18
+): ProgressBar {
+  const container = scene.add.container(x, y);
+  const track = scene.add
+    .rectangle(0, 0, width, height, UI.inkHex, 0.14)
+    .setStrokeStyle(2, UI.inkHex, 0.5);
+  const fill = scene.add
+    .rectangle(-width / 2 + 2, 0, 2, height - 6, fillColor, 1)
+    .setOrigin(0, 0.5);
+  container.add([track, fill]);
+  const set = (ratio: number, animate: boolean): void => {
+    const target = Math.max(2, (width - 4) * Math.max(0, Math.min(1, ratio)));
+    if (animate) {
+      scene.tweens.add({ targets: fill, width: target, duration: 320, ease: 'Cubic.easeOut' });
+    } else {
+      fill.width = target;
+    }
+  };
+  return { container, set };
+}
+
+// A rosette ribbon badge marking "your pick" on a backed entrant.
+export function rosette(
+  scene: Scene,
+  x: number,
+  y: number,
+  scale = 1
+): Phaser.GameObjects.Container {
+  const container = scene.add.container(x, y).setDepth(6);
+  const disc = scene.add.circle(0, 0, 20 * scale, UI.gold, 1).setStrokeStyle(3, UI.inkHex, 1);
+  const star = label(scene, 0, 0, '🎯', 20 * scale);
+  // Two ribbon tails below the disc.
+  const tailL = scene.add.triangle(-8 * scale, 22 * scale, 0, 0, 14 * scale, 0, 7 * scale, 20 * scale, UI.coral, 1).setStrokeStyle(2, UI.inkHex, 1);
+  const tailR = scene.add.triangle(8 * scale, 22 * scale, 0, 0, 14 * scale, 0, 7 * scale, 20 * scale, UI.coralDeep, 1).setStrokeStyle(2, UI.inkHex, 1);
+  container.add([tailL, tailR, disc, star]);
+  return container;
+}

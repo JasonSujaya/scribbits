@@ -5,10 +5,12 @@
 
 import type {
   ArenaState,
+  BackRequest,
   BattleReport,
   BossChallengeRequest,
   CareAction,
   CareRequest,
+  CloutBoard,
   EnterRumbleRequest,
   LegendsState,
   Scribbit,
@@ -150,4 +152,17 @@ export function careForScribbit(
 // Exhibition spar vs a random founding NPC. Unlimited; xp only on first daily win.
 export function spar(scribbitId: string): Promise<ApiResult<BattleReport>> {
   return postJson<SparRequest, BattleReport>('/api/spar', { scribbitId });
+}
+
+// Back one of tonight's rumble entrants (a bet). One per user per day, final; it
+// locks when the rumble resolves. Returns the id you backed for confirmation.
+export function backScribbit(
+  scribbitId: string
+): Promise<ApiResult<{ backed: string }>> {
+  return postJson<BackRequest, { backed: string }>('/api/back', { scribbitId });
+}
+
+// The talent-scout leaderboard: top 20 by lifetime clout plus the caller's rank.
+export function fetchCloutBoard(): Promise<ApiResult<CloutBoard>> {
+  return getJson<CloutBoard>('/api/clout-board');
 }

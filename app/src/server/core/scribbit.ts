@@ -48,6 +48,8 @@ export type ArenaStorage = {
   ) => Promise<SortedSetEntry[]>;
   zRem: (key: string, members: string[]) => Promise<unknown>;
   zScore: (key: string, member: string) => Promise<number | undefined>;
+  zRank: (key: string, member: string) => Promise<number | undefined>;
+  zIncrBy: (key: string, member: string, value: number) => Promise<number>;
 };
 
 export type CurrentPlayer = {
@@ -147,6 +149,10 @@ export const getExpiringScribbitsKey = (): string => {
 
 export const getLegendsKey = (): string => {
   return 'legends';
+};
+
+export const getFoundingBeliefKey = (): string => {
+  return 'belief:founding';
 };
 
 export const validateScribbitName = (value: unknown): string | undefined => {
@@ -673,6 +679,19 @@ export const hydrateScribbitForUtcDay = async (
   };
 };
 
+const hydrateFoundingScribbit = async (
+  storage: ArenaStorage,
+  scribbit: Scribbit
+): Promise<Scribbit> => {
+  const storedBelief = await storage.hGet(getFoundingBeliefKey(), scribbit.id);
+  const belief = storedBelief === undefined ? scribbit.belief : Number(storedBelief);
+
+  return {
+    ...cloneScribbit(scribbit),
+    belief: Number.isFinite(belief) && belief >= 0 ? Math.floor(belief) : 0,
+  };
+};
+
 export const loadScribbit = async (
   storage: ArenaStorage,
   scribbitId: string,
@@ -681,7 +700,7 @@ export const loadScribbit = async (
   const foundingScribbit = findFoundingScribbit(scribbitId);
 
   if (foundingScribbit) {
-    return foundingScribbit;
+    return await hydrateFoundingScribbit(storage, foundingScribbit);
   }
 
   const scribbit = parseScribbit(await storage.get(getScribbitKey(scribbitId)));
@@ -1106,7 +1125,12 @@ export const increaseBelief = async (
   scribbit: Scribbit
 ): Promise<Scribbit> => {
   if (scribbit.isFounding) {
-    return scribbit;
+    const belief = await storage.hIncrBy(getFoundingBeliefKey(), scribbit.id, 1);
+
+    return {
+      ...cloneScribbit(scribbit),
+      belief,
+    };
   }
 
   const nextScribbit = {

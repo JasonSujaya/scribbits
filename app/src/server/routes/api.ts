@@ -7,6 +7,7 @@ import type {
   ArenaState,
   BattleReport,
   CareAction,
+  CloutBoard,
   LegendsState,
   Scribbit,
 } from '../../shared/arena';
@@ -18,10 +19,20 @@ import {
   ensureForecastForDay,
   getCurrentChampion,
 } from '../core/arenaStore';
+import {
+  claimDailyBack,
+  getBackedScribbitId,
+  getUserClout,
+  loadCloutBoard,
+} from '../core/clout';
 import { hashTextToSeed } from '../core/random';
 import { recordDailyPlay } from '../core/dex';
-import { formatUtcDateKey } from '../core/day';
-import { getProjectedRumbleEntrantCount } from '../core/rumble';
+import {
+  formatUtcDateKey,
+  getArenaDayNumber,
+  getNextUtcDayStartMs,
+} from '../core/day';
+import { prepareRumbleEntrants } from '../core/rumble';
 import { chooseFoundingSparOpponent } from '../core/species';
 import {
   addRumbleEntrant,
@@ -39,11 +50,12 @@ import {
   getDailyFlags,
   getFadedScribbitsForUser,
   getLegends,
-  getRumbleEntrantCount,
+  getRumbleEntrantIds,
   increaseBelief,
   isCareAction,
   isScribbitOwnedByUser,
   loadScribbit,
+  loadScribbits,
   markDailyFlag,
   readDrawingFallback,
   recordBattleOutcomeOnScribbit,
@@ -182,9 +194,20 @@ const loadOwnedAliveScribbit = async (
   return scribbit;
 };
 
+const loadTodayRumbleEntrants = async (
+  day: number,
+  utcDateKey: string
+): Promise<Scribbit[]> => {
+  const entrantIds = await getRumbleEntrantIds(redis, day);
+  const entrants = await loadScribbits(redis, entrantIds, utcDateKey);
+
+  return prepareRumbleEntrants(entrants, day);
+};
+
 api.get('/arena', async (c) => {
   try {
     const now = new Date();
+    const utcDateKey = formatUtcDateKey(now);
     const dayNumber = await ensureCurrentArenaDay(redis, now);
     await expireDueScribbits(redis, dayNumber);
     const forecast = await ensureForecastForDay(redis, dayNumber);
@@ -192,6 +215,8 @@ api.get('/arena', async (c) => {
     let myScribbits: Scribbit[] = [];
     let drawnToday = false;
     let enteredToday = false;
+    let myBackedScribbitId: string | null = null;
+    let myClout = 0;
 
     if (player) {
       await recordDailyPlay(redis, player.userId, now);
@@ -199,9 +224,15 @@ api.get('/arena', async (c) => {
       myScribbits = await getAliveScribbitsForUser(redis, player.userId);
       drawnToday = dailyFlags.drawnToday;
       enteredToday = dailyFlags.enteredToday;
+      myBackedScribbitId = await getBackedScribbitId(
+        redis,
+        dayNumber,
+        player.userId
+      );
+      myClout = await getUserClout(redis, player.userId);
     }
 
-    const storedRumbleEntrants = await getRumbleEntrantCount(redis, dayNumber);
+    const todayEntrants = await loadTodayRumbleEntrants(dayNumber, utcDateKey);
 
     return c.json<ArenaState>({
       dayNumber,
@@ -211,8 +242,12 @@ api.get('/arena', async (c) => {
       myScribbits,
       drawnToday,
       enteredToday,
-      rumbleEntrants: getProjectedRumbleEntrantCount(storedRumbleEntrants),
+      rumbleEntrants: todayEntrants.length,
       communityLegendCount: await getCommunityLegendCount(redis),
+      rumbleResolvesAt: getNextUtcDayStartMs(now),
+      todayEntrants,
+      myBackedScribbitId,
+      myClout,
     });
   } catch (error) {
     console.error('Arena route failed:', error);
@@ -556,22 +591,23 @@ api.post('/believe', async (c) => {
   }
 
   try {
-    const dayNumber = await ensureCurrentArenaDay(redis, new Date());
-    const scribbit = await loadScribbit(redis, scribbitId);
+    const now = new Date();
+    const utcDateKey = formatUtcDateKey(now);
+    await ensureCurrentArenaDay(redis, now);
+    const scribbit = await loadScribbit(redis, scribbitId, utcDateKey);
 
-    if (
-      !scribbit ||
-      scribbit.status !== 'alive' ||
-      scribbit.isFounding ||
-      scribbit.expiresDay <= dayNumber
-    ) {
+    if (!scribbit) {
       return notFound(c, 'That Scribbit cannot collect belief right now.');
+    }
+
+    if (await isScribbitOwnedByUser(redis, player.userId, scribbit.id)) {
+      return badRequest(c, 'believe in someone else\'s doodle');
     }
 
     const beliefKey = `belief:${scribbit.id}`;
     const createdBelief = await redis.hSetNX(
       beliefKey,
-      `${player.userId}:${dayNumber}`,
+      `${player.userId}:${utcDateKey}`,
       Date.now().toString()
     );
     await redis.expire(beliefKey, beliefVotersTtlSeconds);
@@ -581,10 +617,82 @@ api.post('/believe', async (c) => {
     }
 
     const believedScribbit = await increaseBelief(redis, scribbit);
-    return c.json<{ belief: number }>({ belief: believedScribbit.belief });
+    const freshScribbit = await loadScribbit(
+      redis,
+      believedScribbit.id,
+      utcDateKey
+    );
+    return c.json<{ belief: number }>({
+      belief: freshScribbit?.belief ?? believedScribbit.belief,
+    });
   } catch (error) {
     console.error('Believe route failed:', error);
     return serverError(c, 'The belief spark fizzled. Try again soon.');
+  }
+});
+
+api.post('/back', async (c) => {
+  const player = await getCurrentPlayer();
+
+  if (!player) {
+    return unauthorized(c, 'Sign in to Back a Scribbit.');
+  }
+
+  const scribbitId = readScribbitId(await readJsonBody(c));
+
+  if (!scribbitId) {
+    return badRequest(c, 'Choose a valid Scribbit to back.');
+  }
+
+  try {
+    const now = new Date();
+    const utcDateKey = formatUtcDateKey(now);
+    const dayNumber = await ensureCurrentArenaDay(redis, now);
+
+    if (dayNumber < getArenaDayNumber(now)) {
+      return conflict(
+        c,
+        'Tonight\'s Rumble is resolving. Try the new bracket soon.'
+      );
+    }
+
+    await expireDueScribbits(redis, dayNumber);
+    const todayEntrants = await loadTodayRumbleEntrants(dayNumber, utcDateKey);
+    const targetIsInRumble = todayEntrants.some((entrant) => {
+      return entrant.id === scribbitId;
+    });
+
+    if (!targetIsInRumble) {
+      return badRequest(c, 'Back one of tonight\'s Rumble entrants.');
+    }
+
+    const backClaim = await claimDailyBack(
+      redis,
+      dayNumber,
+      player,
+      scribbitId
+    );
+
+    if (!backClaim.claimed) {
+      return conflict(c, 'You already backed a Scribbit today.');
+    }
+
+    await recordDailyPlay(redis, player.userId, now);
+    return c.json<{ backed: string }>({ backed: backClaim.backedScribbitId });
+  } catch (error) {
+    console.error('Back route failed:', error);
+    return serverError(c, 'The Back slip blew away. Try again soon.');
+  }
+});
+
+api.get('/clout-board', async (c) => {
+  try {
+    return c.json<CloutBoard>(
+      await loadCloutBoard(redis, await getCurrentPlayer())
+    );
+  } catch (error) {
+    console.error('Clout board route failed:', error);
+    return serverError(c, 'The Clout board fell off the wall.');
   }
 });
 

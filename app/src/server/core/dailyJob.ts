@@ -7,6 +7,7 @@ import {
   setCurrentArenaDay,
   setCurrentChampion,
 } from './arenaStore';
+import { payCloutForRumble } from './clout';
 import { getArenaDayNumber } from './day';
 import { resolveSwissRumble } from './rumble';
 import type { ArenaStorage } from './scribbit';
@@ -196,6 +197,12 @@ export const runNightlyArenaJob = async (
     resolvedDay
   );
   await setCurrentChampion(storage, champion);
+  await payCloutForRumble(storage, {
+    day: resolvedDay,
+    championScribbitId: champion.id,
+    runnerUpScribbitId: resolution.standings[1]?.scribbit.id ?? null,
+    paidAtMs: now.getTime(),
+  });
 
   const expired = await expireDueScribbits(storage, newDay);
   await setCurrentArenaDay(storage, newDay);

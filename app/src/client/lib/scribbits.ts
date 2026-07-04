@@ -4,6 +4,7 @@
 
 import { Scene } from 'phaser';
 import type { CareAction, Mood, Scribbit } from '../../shared/arena';
+import { LEVEL_XP_THRESHOLDS, MAX_LEVEL } from '../../shared/arena';
 import { MOOD_STYLES } from './theme';
 
 // Texture key for a scribbit's drawing. Stable per id so we load each once.
@@ -111,4 +112,18 @@ export function canCare(
   action: CareAction
 ): boolean {
   return !careDoneToday(scribbit).includes(action);
+}
+
+// XP progress toward the NEXT level as a 0..1 ratio, for the detail modal's
+// level bar. At MAX_LEVEL the bar reads full. Defensive against missing xp.
+export function xpProgress(
+  scribbit: Partial<Pick<Scribbit, 'level' | 'xp'>>
+): number {
+  const level = levelOf(scribbit);
+  if (level >= MAX_LEVEL) return 1;
+  const xp = Math.max(0, scribbit.xp ?? 0);
+  const floor = LEVEL_XP_THRESHOLDS[level - 1] ?? 0;
+  const ceil = LEVEL_XP_THRESHOLDS[level] ?? floor + 1;
+  const span = Math.max(1, ceil - floor);
+  return Math.max(0, Math.min(1, (xp - floor) / span));
 }

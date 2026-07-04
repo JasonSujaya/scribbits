@@ -40,6 +40,7 @@ execFileSync(
     'src/server/core/random.ts',
     'src/server/core/forecast.ts',
     'src/server/core/arenaStore.ts',
+    'src/server/core/clout.ts',
     'src/server/core/battleStore.ts',
     'src/server/core/battle.ts',
     'src/server/core/species.ts',
@@ -56,6 +57,7 @@ const sharedBattle = require(join(outDir, 'shared', 'battle.js'));
 const arena = require(join(outDir, 'shared', 'arena.js'));
 const arenaStore = require(join(outDir, 'server', 'core', 'arenaStore.js'));
 const battle = require(join(outDir, 'server', 'core', 'battle.js'));
+const clout = require(join(outDir, 'server', 'core', 'clout.js'));
 const dailyJob = require(join(outDir, 'server', 'core', 'dailyJob.js'));
 const forecastCore = require(join(outDir, 'server', 'core', 'forecast.js'));
 const rumble = require(join(outDir, 'server', 'core', 'rumble.js'));
@@ -225,6 +227,18 @@ const createMemoryStorage = () => {
     },
     async zScore(key, member) {
       return getSortedSet(key).get(member);
+    },
+    async zRank(key, member) {
+      const rank = entriesByRank(getSortedSet(key), false).findIndex((entry) => {
+        return entry.member === member;
+      });
+      return rank >= 0 ? rank : undefined;
+    },
+    async zIncrBy(key, member, value) {
+      const set = getSortedSet(key);
+      const next = Number(set.get(member) ?? 0) + value;
+      set.set(member, next);
+      return next;
     },
   };
 };
@@ -454,6 +468,49 @@ assert.deepEqual(
 );
 pass('daily draw/entry flag claim and rollback');
 
+const backClaimStorage = createMemoryStorage();
+const firstBackClaim = await clout.claimDailyBack(
+  backClaimStorage,
+  12,
+  { userId: 'scout-one', username: 'Scout One' },
+  'entrant-alpha'
+);
+assert.equal(firstBackClaim.claimed, true, 'first daily Back should claim');
+assert.equal(
+  firstBackClaim.backedScribbitId,
+  'entrant-alpha',
+  'first daily Back should store the target'
+);
+assert.equal(
+  await clout.getBackedScribbitId(backClaimStorage, 12, 'scout-one'),
+  'entrant-alpha',
+  'stored Back should be readable'
+);
+const duplicateBackClaim = await clout.claimDailyBack(
+  backClaimStorage,
+  12,
+  { userId: 'scout-one', username: 'Scout One' },
+  'entrant-beta'
+);
+assert.equal(
+  duplicateBackClaim.claimed,
+  false,
+  'second daily Back should not claim'
+);
+assert.equal(
+  duplicateBackClaim.backedScribbitId,
+  'entrant-alpha',
+  'duplicate Back should report the original target'
+);
+const nextDayBackClaim = await clout.claimDailyBack(
+  backClaimStorage,
+  13,
+  { userId: 'scout-one', username: 'Scout One' },
+  'entrant-beta'
+);
+assert.equal(nextDayBackClaim.claimed, true, 'Back should reset next day');
+pass('daily Back once-per-day claim');
+
 const careStorage = createMemoryStorage();
 const firstCare = await scribbitCore.claimDailyCareAction(
   careStorage,
@@ -570,6 +627,145 @@ assert.equal(forcedJob.skipped, false, 'force should run');
 assert.equal(forcedJob.previousDay, 2, 'force should start from stored day');
 assert.equal(forcedJob.newDay, 3, 'force should increment by exactly one');
 pass('nightly job idempotent canonical day and force math');
+
+const cloutPayoutStorage = createMemoryStorage();
+await arenaStore.setCurrentArenaDay(cloutPayoutStorage, 2);
+const payoutEntrants = [
+  makeScribbit({
+    id: 'payout-a',
+    name: 'Payout A',
+    element: 'ember',
+    stats: { chonk: 22, spike: 38, zip: 26, charm: 14 },
+    bornDay: 1,
+    expiresDay: 6,
+  }),
+  makeScribbit({
+    id: 'payout-b',
+    name: 'Payout B',
+    element: 'moss',
+    stats: { chonk: 42, spike: 18, zip: 18, charm: 22 },
+    bornDay: 1,
+    expiresDay: 6,
+  }),
+  makeScribbit({
+    id: 'payout-c',
+    name: 'Payout C',
+    element: 'storm',
+    stats: { chonk: 20, spike: 22, zip: 44, charm: 14 },
+    bornDay: 1,
+    expiresDay: 6,
+  }),
+  makeScribbit({
+    id: 'payout-d',
+    name: 'Payout D',
+    element: 'tide',
+    stats: { chonk: 26, spike: 26, zip: 24, charm: 24 },
+    bornDay: 1,
+    expiresDay: 6,
+  }),
+  makeScribbit({
+    id: 'payout-e',
+    name: 'Payout E',
+    element: 'ember',
+    stats: { chonk: 18, spike: 36, zip: 30, charm: 16 },
+    bornDay: 1,
+    expiresDay: 6,
+  }),
+  makeScribbit({
+    id: 'payout-f',
+    name: 'Payout F',
+    element: 'moss',
+    stats: { chonk: 48, spike: 14, zip: 12, charm: 26 },
+    bornDay: 1,
+    expiresDay: 6,
+  }),
+];
+for (const entrant of payoutEntrants) {
+  await scribbitCore.storeScribbit(
+    cloutPayoutStorage,
+    `owner-${entrant.id}`,
+    entrant
+  );
+  await scribbitCore.addRumbleEntrant(cloutPayoutStorage, 2, entrant.id);
+}
+const payoutForecast = await arenaStore.ensureForecastForDay(
+  cloutPayoutStorage,
+  2
+);
+const expectedPayoutResolution = rumble.resolveSwissRumble(
+  payoutEntrants,
+  payoutForecast,
+  2
+);
+const championId = expectedPayoutResolution.champion.id;
+const runnerUpId = expectedPayoutResolution.standings[1]?.scribbit.id;
+assert.ok(runnerUpId, 'payout fixture should have a runner-up');
+const loserId = payoutEntrants.find((entrant) => {
+  return entrant.id !== championId && entrant.id !== runnerUpId;
+})?.id;
+assert.ok(loserId, 'payout fixture should have a non-finalist');
+await clout.claimDailyBack(
+  cloutPayoutStorage,
+  2,
+  { userId: 'champion-scout', username: 'Champion Scout' },
+  championId
+);
+await clout.claimDailyBack(
+  cloutPayoutStorage,
+  2,
+  { userId: 'runner-up-scout', username: 'Runner Up Scout' },
+  runnerUpId
+);
+await clout.claimDailyBack(
+  cloutPayoutStorage,
+  2,
+  { userId: 'miss-scout', username: 'Miss Scout' },
+  loserId
+);
+const cloutPayoutJob = await dailyJob.runNightlyArenaJob(cloutPayoutStorage, {
+  now: dayTwoUtc,
+  force: true,
+});
+assert.equal(cloutPayoutJob.skipped, false, 'clout payout job should run');
+assert.equal(
+  (await cloutPayoutStorage.zScore(clout.getCloutKey(), 'champion-scout')) ?? 0,
+  3,
+  'champion backer should receive +3 clout'
+);
+assert.equal(
+  (await cloutPayoutStorage.zScore(clout.getCloutKey(), 'runner-up-scout')) ??
+    0,
+  1,
+  'runner-up backer should receive +1 clout'
+);
+assert.equal(
+  (await cloutPayoutStorage.zScore(clout.getCloutKey(), 'miss-scout')) ?? 0,
+  0,
+  'non-finalist backer should not receive clout'
+);
+const duplicatePayout = await clout.payCloutForRumble(cloutPayoutStorage, {
+  day: 2,
+  championScribbitId: championId,
+  runnerUpScribbitId: runnerUpId,
+  paidAtMs: 200,
+});
+assert.equal(
+  duplicatePayout.paidBackers,
+  0,
+  'clout payout should be idempotent on re-run'
+);
+assert.equal(
+  (await cloutPayoutStorage.zScore(clout.getCloutKey(), 'champion-scout')) ?? 0,
+  3,
+  'champion clout should not double on re-run'
+);
+assert.equal(
+  (await cloutPayoutStorage.zScore(clout.getCloutKey(), 'runner-up-scout')) ??
+    0,
+  1,
+  'runner-up clout should not double on re-run'
+);
+pass('nightly clout payout math and idempotency');
 
 const faded = scribbitCore.resolveExpiredScribbitStatus(
   makeScribbit({ id: 'fade-me', belief: 2 })

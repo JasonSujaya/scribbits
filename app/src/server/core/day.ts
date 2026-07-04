@@ -33,6 +33,10 @@ export const getUtcDayStartMs = (date: Date): number => {
   );
 };
 
+export const getNextUtcDayStartMs = (date: Date): number => {
+  return getUtcDayStartMs(date) + millisecondsPerDay;
+};
+
 export const addUtcDays = (date: Date, days: number): Date => {
   return new Date(getUtcDayStartMs(date) + days * millisecondsPerDay);
 };

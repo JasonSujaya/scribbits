@@ -1,12 +1,12 @@
 import * as Phaser from 'phaser';
 import { Scene } from 'phaser';
-import { showLoginPrompt, showToast } from '@devvit/web/client';
-import { fetchLegends, believe } from '../lib/api';
+import { fetchLegends } from '../lib/api';
 import { getArena, getSketchbookTab, setSketchbookTab } from '../lib/registry';
 import { loadDrawing, recordText, levelOf } from '../lib/scribbits';
 import { TYPE, UI } from '../lib/theme';
 import { paperBackdrop } from '../lib/art';
 import { label, ghostButton, handLettered, paperCard, stickerCard, elementBadge, levelBadge, errorPanel } from '../lib/ui';
+import { openDetailModal } from '../lib/detailmodal';
 import type { ErrorPanel } from '../lib/ui';
 import type { LegendsState, Scribbit } from '../../shared/arena';
 
@@ -103,10 +103,13 @@ export class Sketchbook extends Scene {
     paperCard(this, x, y, cardWidth, cardHeight, true);
     const top = y - cardHeight / 2;
 
-    // Framed art up top with a level coin in the corner.
+    // Framed art up top with a level coin in the corner. Tap → detail modal.
     const artY = top + 84;
     void loadDrawing(this, legend).then((key) => {
-      if (this.scene.isActive()) this.add.image(x, artY, key).setDisplaySize(128, 128).setDepth(2);
+      if (!this.scene.isActive()) return;
+      const img = this.add.image(x, artY, key).setDisplaySize(128, 128).setDepth(2);
+      img.setInteractive({ useHandCursor: true });
+      img.on('pointerup', () => this.openDetail(legend));
     });
     levelBadge(this, x + cardWidth / 2 - 34, top + 34, levelOf(legend), 0.56).setDepth(4);
 
@@ -119,8 +122,20 @@ export class Sketchbook extends Scene {
     }
     label(this, x, artY + 142, `by u/${legend.artist} · 💛 ${legend.belief}`, 16, UI.inkSoft, true).setDepth(3);
 
-    // Believe button anchored to the card's bottom, fully inside it.
-    ghostButton(this, x, y + cardHeight / 2 - 44, '💛 Believe', () => this.believeOn(legend), 200).setDepth(3);
+    // "View + Believe" opens the shared modal (believe lives inside it).
+    ghostButton(this, x, y + cardHeight / 2 - 44, '💛 View', () => this.openDetail(legend), 200).setDepth(3);
+  }
+
+  // Open the reusable detail modal for a scribbit. Legends/faded are never the
+  // caller's live roster, so mine=false → Believe is offered inside the modal.
+  private openDetail(scribbit: Scribbit): void {
+    const arena = getArena(this);
+    const mine = arena?.myScribbits.some((one) => one.id === scribbit.id) ?? false;
+    openDetailModal(this, scribbit, {
+      currentDay: arena?.dayNumber ?? scribbit.expiresDay,
+      mine,
+      actions: mine ? {} : { canBelieve: this.loggedIn },
+    });
   }
 
   // --- Sketchbook (faded) ---------------------------------------------------
@@ -146,9 +161,10 @@ export class Sketchbook extends Scene {
     // Faded drawing on the left, eulogy on the right.
     paperCard(this, 130, y, 160, 160);
     void loadDrawing(this, scribbit).then((key) => {
-      if (this.scene.isActive()) {
-        this.add.image(130, y, key).setDisplaySize(130, 130).setAlpha(0.65).setDepth(2);
-      }
+      if (!this.scene.isActive()) return;
+      const img = this.add.image(130, y, key).setDisplaySize(130, 130).setAlpha(0.65).setDepth(2);
+      img.setInteractive({ useHandCursor: true });
+      img.on('pointerup', () => this.openDetail(scribbit));
     });
     label(this, 240, y - 50, scribbit.name, TYPE.title, UI.ink, true).setOrigin(0, 0.5);
     elementBadge(this, 300, y - 8, scribbit.element, 0.7).setPosition(300, y - 8);
@@ -165,22 +181,6 @@ export class Sketchbook extends Scene {
   }
 
   // --- Actions --------------------------------------------------------------
-  private believeOn(scribbit: Scribbit): void {
-    if (!this.loggedIn) {
-      showToast('Sign in to Reddit to believe!');
-      showLoginPrompt();
-      return;
-    }
-    void believe(scribbit.id).then((result) => {
-      if (!result.ok) {
-        this.showError(result.error);
-        return;
-      }
-      showToast(`💛 You believe in ${scribbit.name}! (${result.data.belief})`);
-      void this.loadGallery();
-    });
-  }
-
   private showError(message: string): void {
     if (this.errorPanelRef) return;
     const { width, height } = this.scale;

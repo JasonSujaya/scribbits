@@ -35,6 +35,18 @@ export function getReplayReturn(scene: Scene): string {
   return (scene.registry.get(REPLAY_RETURN_KEY) as string | undefined) ?? 'ArenaHome';
 }
 
+// Deep-link focus for ArenaHome (e.g. the loss card asks to scroll to the
+// entrants bracket). Read-once so it doesn't persist across visits.
+export function setArenaFocus(scene: Scene, focus: 'entrants'): void {
+  scene.registry.set('arenaFocus', focus);
+}
+
+export function takeArenaFocus(scene: Scene): string | null {
+  const value = (scene.registry.get('arenaFocus') as string | undefined) ?? null;
+  if (value) scene.registry.remove('arenaFocus');
+  return value;
+}
+
 export function setSketchbookTab(scene: Scene, tab: 'legends' | 'sketchbook'): void {
   scene.registry.set(SKETCHBOOK_TAB_KEY, tab);
 }
@@ -49,4 +61,21 @@ export function getSketchbookTab(scene: Scene): 'legends' | 'sketchbook' {
 // Convenience: find one of my scribbits by id in the current arena snapshot.
 export function findMyScribbit(scene: Scene, id: string): Scribbit | undefined {
   return getArena(scene)?.myScribbits.find((one) => one.id === id);
+}
+
+// Find any scribbit visible in the current snapshot — roster, champion, or
+// tonight's entrants — by id. Used so the detail modal can refresh from state.
+export function findAnyScribbit(scene: Scene, id: string): Scribbit | undefined {
+  const arena = getArena(scene);
+  if (!arena) return undefined;
+  if (arena.champion?.id === id) return arena.champion;
+  return (
+    arena.myScribbits.find((one) => one.id === id) ??
+    arena.todayEntrants.find((one) => one.id === id)
+  );
+}
+
+// True when a scribbit belongs to the caller's roster (drives modal actions).
+export function isMyScribbit(scene: Scene, id: string): boolean {
+  return getArena(scene)?.myScribbits.some((one) => one.id === id) ?? false;
 }

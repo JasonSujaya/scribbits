@@ -55,7 +55,19 @@ export type ArenaState = {
   enteredToday: boolean; // rumble entry used
   rumbleEntrants: number;
   communityLegendCount: number;
+  rumbleResolvesAt: number; // epoch ms — client renders live countdown
+  todayEntrants: Scribbit[]; // tonight's bracket (gallery + backing targets)
+  myBackedScribbitId: string | null; // today's Back (bet), null if unused
+  myClout: number; // lifetime talent-scout score
 };
+
+export type BackRequest = { scribbitId: string }; // one per user per day, final
+export type CloutEntry = { username: string; clout: number };
+export type CloutBoard = {
+  top: CloutEntry[]; // top 20
+  me: CloutEntry & { rank: number };
+};
+// Clout payout (nightly job): +3 backed the champion, +1 backed a finalist.
 
 export type BattleEventType =
   | 'intro'
@@ -149,5 +161,7 @@ export const LEVEL_DAMAGE_BONUS_PER_LEVEL = 0.02; // +2%/level above 1, max +8%
 // POST /api/boss-challenge -> BossChallengeRequest -> BattleReport      (instant resolve vs champion; one per user per day)
 // POST /api/care           -> CareRequest -> Scribbit                   (each action once per scribbit per UTC day)
 // POST /api/spar           -> SparRequest -> BattleReport               (exhibition vs random founding NPC; unlimited, xp only on first daily win)
+// POST /api/back           -> BackRequest -> { backed: string }         (one per user per day, locks at rumble resolve)
+// GET  /api/clout-board    -> CloutBoard
 // GET  /api/legends        -> LegendsState
 // GET  /api/drawing/:id    -> image/png bytes (only when redis-stored fallback is used)
