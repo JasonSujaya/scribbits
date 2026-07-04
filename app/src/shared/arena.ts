@@ -83,8 +83,8 @@ export type BattleReport = {
 export type SubmitScribbitRequest = {
   name: string;
   imageDataUrl: string; // png data URL from canvas, 512x512, <=400KB
-  stats: ScribbitStats; // client analyzer output; server clamps + normalizes
-  element: Element;
+  stats: ScribbitStats; // deprecated: client preview only; server recomputes from PNG
+  element: Element; // deprecated: client preview only; server recomputes from PNG
 };
 
 export type EnterRumbleRequest = { scribbitId: string };

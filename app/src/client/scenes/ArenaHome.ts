@@ -263,10 +263,26 @@ export class ArenaHome extends Scene {
 
   // --- Main CTA -------------------------------------------------------------
   private buildCta(x: number, y: number): void {
-    if (this.state.drawnToday) {
+    if (this.state.enteredToday) {
       const width = this.scale.width - 60;
       roundedPanel(this, x, y, width, 96, 0x1f3320, 0x4faa4f);
-      label(this, x, y, '✓ Entered — rumble resolves tonight', 26, '#a8dd8f', true);
+      label(
+        this,
+        x,
+        y,
+        this.state.drawnToday
+          ? "✓ In tonight's Rumble"
+          : "✓ Older Scribbit entered",
+        26,
+        '#a8dd8f',
+        true
+      );
+      return;
+    }
+    if (this.state.drawnToday) {
+      const width = this.scale.width - 60;
+      roundedPanel(this, x, y, width, 96, 0x33261f, 0xaa7f4f);
+      label(this, x, y, '✓ Scribbit drawn today', 26, '#e7d8c2', true);
       return;
     }
     button(this, x, y, "✏️ DRAW TODAY'S SCRIBBIT", () => this.startDraw(), this.scale.width - 80);

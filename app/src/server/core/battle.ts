@@ -11,6 +11,7 @@ import {
   ELEMENT_PREY,
   MOVES_BY_ELEMENT,
 } from '../../shared/arena';
+import { getBattleMaxHp } from '../../shared/battle';
 import { createMulberry32, hashTextToSeed } from './random';
 
 type FighterSlot = 'a' | 'b';
@@ -21,10 +22,6 @@ type AttackChoice = {
 };
 
 const maxAttackCount = 5;
-
-export const getBattleMaxHp = (scribbit: Scribbit): number => {
-  return Math.round(120 + scribbit.stats.chonk * 2.2);
-};
 
 export const getElementDamageMultiplier = (
   attackerElement: Element,
@@ -244,8 +241,8 @@ export const simulate = (
     a: 0,
     b: 0,
   };
-  let hpA = getBattleMaxHp(fighterA);
-  let hpB = getBattleMaxHp(fighterB);
+  let hpA = getBattleMaxHp(fighterA.stats);
+  let hpB = getBattleMaxHp(fighterB.stats);
   const events: BattleEvent[] = [
     {
       type: 'intro',

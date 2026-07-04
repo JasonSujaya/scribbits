@@ -44,6 +44,7 @@ menu.post('/post-create', async (c) => {
 menu.post('/advance-day-debug', async (c) => {
   try {
     const result = await runNightlyArenaJob(redis, {
+      force: true,
       createPost: async ({ day, forecast, champion }) => {
         return await createPost({
           day,
@@ -55,7 +56,9 @@ menu.post('/advance-day-debug', async (c) => {
 
     return c.json<UiResponse>(
       {
-        showToast: `Advanced to day ${result.newDay}; champion: ${result.champion.name}`,
+        showToast: result.skipped
+          ? `Already on day ${result.newDay}`
+          : `Advanced to day ${result.newDay}; champion: ${result.champion.name}`,
       },
       200
     );

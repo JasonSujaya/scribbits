@@ -1,0 +1,21 @@
+**Findings**
+- CRITICAL [src/client/scenes/ArenaHome.ts:266](/Users/jasons/Github/Hackathon/Remonsta/app/src/client/scenes/ArenaHome.ts:266): UI treats `drawnToday` as entered, but submit never enters rumble, so player drawings miss judging. Fix: atomically enter on submit or call `/api/enter-rumble` and render from `enteredToday`.
+
+- CRITICAL [src/server/core/dailyJob.ts:117](/Users/jasons/Github/Hackathon/Remonsta/app/src/server/core/dailyJob.ts:117): nightly reruns always advance another day, causing phantom days, early flag reset, and extra expiry. Fix: scheduler no-op when `dateDay <= previousDay`; keep forced advance debug-only.
+
+- HIGH [src/server/core/dailyJob.ts:122](/Users/jasons/Github/Hackathon/Remonsta/app/src/server/core/dailyJob.ts:122): expiry runs before resolving prior-day rumble, so day-3 entrants fade before their valid final fight. Fix: resolve/save day `N-1` rumble, then expire for day `N`.
+
+- HIGH [src/server/core/scribbit.ts:309](/Users/jasons/Github/Hackathon/Remonsta/app/src/server/core/scribbit.ts:309): server trusts submitted `stats` and `element`, so forged clients can judge with stats unrelated to the drawing. Fix: derive stats/element server-side from the PNG or reject mismatches.
+
+- HIGH [src/server/core/scribbit.ts:338](/Users/jasons/Github/Hackathon/Remonsta/app/src/server/core/scribbit.ts:338): PNG validation only checks signature bytes, so truncated fake PNGs can be stored/served. Fix: strict base64 round-trip plus PNG decode, IHDR 512x512, and IEND validation.
+
+- MEDIUM [src/client/scenes/Replay.ts:101](/Users/jasons/Github/Hackathon/Remonsta/app/src/client/scenes/Replay.ts:101): replay HP bars use `stats.chonk` as max HP instead of simulator max HP, so damage display lies. Fix: move `getBattleMaxHp` to shared code and use it client/server.
+
+- MEDIUM [src/server/core/rumble.ts:143](/Users/jasons/Github/Hackathon/Remonsta/app/src/server/core/rumble.ts:143): global Swiss sort can pair cross-record groups after 5 entrants backfill to 6. Fix: pair within score groups with deterministic floats or backfill to Swiss-safe sizes like 4/8.
+
+- MEDIUM [src/server/routes/api.ts:224](/Users/jasons/Github/Hackathon/Remonsta/app/src/server/routes/api.ts:224): draw flag is burned before upload/storage succeeds, so backend failure can consume the daily draw. Fix: claim after persistence or roll back/pending-idempotency on failure.
+
+**Verified Clean**
+No `Math.random` in server sim path; belief move uses `BELIEF_MOVE_UNLOCK`; valid client-normalized stats survive server normalization unchanged; boss fights do not mutate champion; `/api/drawing/:id` returns `image/png`; null champion + empty roster renders; `devvit.json` job/menu are registered.
+
+Validation: `npm run lint` passed. `npm run test:sim` was blocked by read-only sandbox temp-file unlink `EPERM`.

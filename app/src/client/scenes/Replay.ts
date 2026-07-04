@@ -5,6 +5,7 @@ import { loadDrawing } from '../lib/scribbits';
 import { ELEMENT_STYLES, UI } from '../lib/theme';
 import { label, elementBadge, paperCard, roundedPanel, ghostButton } from '../lib/ui';
 import type { BattleEvent, BattleReport, Scribbit } from '../../shared/arena';
+import { getBattleMaxHp } from '../../shared/battle';
 
 type Fighter = {
   scribbit: Scribbit;
@@ -98,7 +99,14 @@ export class Replay extends Scene {
       .setOrigin(0, 0.5);
     elementBadge(this, barX + (right ? 240 : 40), barY + 40, scribbit.element, 0.6);
 
-    return { scribbit, sprite: null, homeX: x, homeY: y, hpBar, hpMax: scribbit.stats.chonk };
+    return {
+      scribbit,
+      sprite: null,
+      homeX: x,
+      homeY: y,
+      hpBar,
+      hpMax: getBattleMaxHp(scribbit.stats),
+    };
   }
 
   private placeFighter(side: 'a' | 'b', textureKey: string): void {

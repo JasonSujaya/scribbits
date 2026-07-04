@@ -1,5 +1,6 @@
 import type { BattleReport, Forecast, Scribbit } from '../../shared/arena';
-import { simulate, getBattleMaxHp } from './battle';
+import { getBattleMaxHp } from '../../shared/battle';
+import { simulate } from './battle';
 import { hashTextToSeed, shuffleWithSeed } from './random';
 import { foundingScribbits } from './species';
 
@@ -18,6 +19,7 @@ export type RumbleResolution = {
 };
 
 const minimumRumbleEntrants = 4;
+const preferredRumbleEntrants = 8;
 
 const cloneScribbit = (scribbit: Scribbit): Scribbit => {
   return {
@@ -65,11 +67,13 @@ export const prepareRumbleEntrants = (
     }
   }
 
-  let neededBackfill = Math.max(0, minimumRumbleEntrants - uniqueEntrants.length);
-
-  if ((uniqueEntrants.length + neededBackfill) % 2 === 1) {
-    neededBackfill += 1;
-  }
+  const targetCount =
+    uniqueEntrants.length <= minimumRumbleEntrants
+      ? minimumRumbleEntrants
+      : uniqueEntrants.length <= preferredRumbleEntrants
+        ? preferredRumbleEntrants
+        : uniqueEntrants.length + (uniqueEntrants.length % 2);
+  const neededBackfill = Math.max(0, targetCount - uniqueEntrants.length);
 
   uniqueEntrants.push(...getFoundingBackfill(seenIds, neededBackfill, day));
 
@@ -78,17 +82,6 @@ export const prepareRumbleEntrants = (
 
 const getRoundCount = (entrantCount: number): number => {
   return entrantCount <= 4 ? 2 : 3;
-};
-
-const compareStandingsForPairing = (
-  left: RumbleStanding,
-  right: RumbleStanding
-): number => {
-  if (left.wins !== right.wins) {
-    return right.wins - left.wins;
-  }
-
-  return left.originalOrder - right.originalOrder;
 };
 
 const compareStandingsForChampion = (
@@ -114,11 +107,38 @@ const getFinalRemainingHp = (
 
   if (!finalEvent) {
     return slot === 'a'
-      ? getBattleMaxHp(battleReport.a)
-      : getBattleMaxHp(battleReport.b);
+      ? getBattleMaxHp(battleReport.a.stats)
+      : getBattleMaxHp(battleReport.b.stats);
   }
 
   return slot === 'a' ? finalEvent.hpA : finalEvent.hpB;
+};
+
+const createPairingGroups = (
+  standings: RumbleStanding[],
+  day: number,
+  round: number
+): RumbleStanding[][] => {
+  const standingsByWins = new Map<number, RumbleStanding[]>();
+
+  for (const standing of standings) {
+    const group = standingsByWins.get(standing.wins) ?? [];
+    group.push(standing);
+    standingsByWins.set(standing.wins, group);
+  }
+
+  return [...standingsByWins.entries()]
+    .sort((left, right) => right[0] - left[0])
+    .map(([wins, group]) => {
+      const orderedGroup = [...group].sort((left, right) => {
+        return left.originalOrder - right.originalOrder;
+      });
+
+      return shuffleWithSeed(
+        orderedGroup,
+        hashTextToSeed(`rumble-score-group:${day}:${round}:${wins}`)
+      );
+    });
 };
 
 export const resolveSwissRumble = (
@@ -140,35 +160,37 @@ export const resolveSwissRumble = (
   const roundCount = getRoundCount(standings.length);
 
   for (let round = 1; round <= roundCount; round += 1) {
-    const pairedStandings = [...standings].sort(compareStandingsForPairing);
+    const pairingGroups = createPairingGroups(standings, day, round);
 
-    for (let index = 0; index < pairedStandings.length; index += 2) {
-      const left = pairedStandings[index];
-      const right = pairedStandings[index + 1];
+    for (const pairedStandings of pairingGroups) {
+      for (let index = 0; index < pairedStandings.length; index += 2) {
+        const left = pairedStandings[index];
+        const right = pairedStandings[index + 1];
 
-      if (!left || !right) {
-        continue;
+        if (!left || !right) {
+          continue;
+        }
+
+        const battleSeed = hashTextToSeed(
+          `rumble:${day}:${round}:${left.scribbit.id}:${right.scribbit.id}`
+        );
+        const report = simulate(
+          left.scribbit,
+          right.scribbit,
+          battleSeed,
+          forecast,
+          'rumble'
+        );
+        const leftWon = report.winner === 'a';
+        const winner = leftWon ? left : right;
+        const loser = leftWon ? right : left;
+
+        winner.wins += 1;
+        loser.losses += 1;
+        left.totalRemainingHp += getFinalRemainingHp(report, 'a');
+        right.totalRemainingHp += getFinalRemainingHp(report, 'b');
+        reports.push(report);
       }
-
-      const battleSeed = hashTextToSeed(
-        `rumble:${day}:${round}:${left.scribbit.id}:${right.scribbit.id}`
-      );
-      const report = simulate(
-        left.scribbit,
-        right.scribbit,
-        battleSeed,
-        forecast,
-        'rumble'
-      );
-      const leftWon = report.winner === 'a';
-      const winner = leftWon ? left : right;
-      const loser = leftWon ? right : left;
-
-      winner.wins += 1;
-      loser.losses += 1;
-      left.totalRemainingHp += getFinalRemainingHp(report, 'a');
-      right.totalRemainingHp += getFinalRemainingHp(report, 'b');
-      reports.push(report);
     }
   }
 

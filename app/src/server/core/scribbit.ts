@@ -5,6 +5,7 @@ import type {
   ScribbitStats,
   SubmitScribbitRequest,
 } from '../../shared/arena';
+import { PNG } from 'pngjs';
 import {
   BELIEF_LEGEND_THRESHOLD,
   LIFESPAN_DAYS,
@@ -30,6 +31,7 @@ export type ArenaStorage = {
   hGetAll: (key: string) => Promise<Record<string, string>>;
   hSet: (key: string, fieldValues: Record<string, string>) => Promise<unknown>;
   hSetNX: (key: string, field: string, value: string) => Promise<number>;
+  hDel: (key: string, fields: string[]) => Promise<number>;
   hIncrBy: (key: string, field: string, value: number) => Promise<number>;
   zAdd: (key: string, ...members: SortedSetEntry[]) => Promise<unknown>;
   zCard: (key: string) => Promise<number>;
@@ -50,8 +52,11 @@ export type CurrentPlayer = {
 
 export type DecodedPngDataUrl = {
   base64: string;
-  bytes: Uint8Array<ArrayBuffer>;
+  bytes: Uint8Array;
   byteLength: number;
+  width: number;
+  height: number;
+  rgba: Uint8Array;
 };
 
 export type ValidatedScribbitDraft = {
@@ -295,19 +300,17 @@ export const validateSubmitScribbitRequest = (
 
   const name = validateScribbitName(value.name);
 
-  if (
-    !name ||
-    typeof value.imageDataUrl !== 'string' ||
-    !isElement(value.element)
-  ) {
+  if (!name || typeof value.imageDataUrl !== 'string') {
     return undefined;
   }
 
   return {
     name,
     imageDataUrl: value.imageDataUrl,
+    // Deprecated client-provided values are kept for request compatibility.
+    // The submit route overwrites both with server analyzer output.
     stats: normalizeStats(value.stats),
-    element: value.element,
+    element: isElement(value.element) ? value.element : 'ember',
   };
 };
 
@@ -325,29 +328,85 @@ export const decodePngDataUrl = (
   }
 
   const bytes = Buffer.from(base64, 'base64');
-  const hasPngSignature =
-    bytes[0] === 0x89 &&
-    bytes[1] === 0x50 &&
-    bytes[2] === 0x4e &&
-    bytes[3] === 0x47 &&
-    bytes[4] === 0x0d &&
-    bytes[5] === 0x0a &&
-    bytes[6] === 0x1a &&
-    bytes[7] === 0x0a;
 
-  if (
-    bytes.byteLength === 0 ||
-    bytes.byteLength > maximumDrawingBytes ||
-    !hasPngSignature
-  ) {
+  if (bytes.byteLength === 0 || bytes.byteLength > maximumDrawingBytes) {
     return undefined;
   }
 
-  return {
-    base64,
-    bytes,
-    byteLength: bytes.byteLength,
-  };
+  try {
+    const png = PNG.sync.read(bytes);
+
+    if (png.width !== 512 || png.height !== 512) {
+      return undefined;
+    }
+
+    return {
+      base64,
+      bytes,
+      byteLength: bytes.byteLength,
+      width: png.width,
+      height: png.height,
+      rgba: new Uint8Array(png.data),
+    };
+  } catch {
+    return undefined;
+  }
+};
+
+export const deleteStoredScribbit = async (
+  storage: ArenaStorage,
+  ownerUserId: string,
+  scribbitId: string,
+  day: number
+): Promise<void> => {
+  await storage.del(
+    getScribbitKey(scribbitId),
+    getScribbitOwnerKey(scribbitId),
+    getDrawingKey(scribbitId)
+  );
+  await storage.zRem(getUserScribbitsKey(ownerUserId), [scribbitId]);
+  await storage.zRem(getUserAliveScribbitsKey(ownerUserId), [scribbitId]);
+  await storage.zRem(getExpiringScribbitsKey(), [scribbitId]);
+  await storage.zRem(getRumbleKey(day), [scribbitId]);
+};
+
+export const removeRumbleEntrant = async (
+  storage: ArenaStorage,
+  day: number,
+  scribbitId: string
+): Promise<void> => {
+  await storage.zRem(getRumbleKey(day), [scribbitId]);
+};
+
+export const claimDailyFlags = async (
+  storage: ArenaStorage,
+  userId: string,
+  day: number,
+  fields: Array<'drawn' | 'entered' | 'bossChallenge'>
+): Promise<boolean> => {
+  const dailyFlagsKey = getDailyFlagsKey(userId, day);
+  const claimedFields: Array<'drawn' | 'entered' | 'bossChallenge'> = [];
+
+  for (const field of fields) {
+    const createdFlag = await storage.hSetNX(
+      dailyFlagsKey,
+      field,
+      '1'
+    );
+
+    if (createdFlag !== 1) {
+      if (claimedFields.length > 0) {
+        await storage.hDel(dailyFlagsKey, claimedFields);
+      }
+      await storage.expire(dailyFlagsKey, dailyFlagTtlSeconds);
+      return false;
+    }
+
+    claimedFields.push(field);
+  }
+
+  await storage.expire(dailyFlagsKey, dailyFlagTtlSeconds);
+  return true;
 };
 
 const isScribbitStats = (value: unknown): value is ScribbitStats => {
@@ -604,9 +663,9 @@ export const getDailyFlags = async (
   const storedFlags = await storage.hGetAll(getDailyFlagsKey(userId, day));
 
   return {
-    drawnToday: storedFlags.drawn === '1',
-    enteredToday: storedFlags.entered === '1',
-    bossChallengedToday: storedFlags.bossChallenge === '1',
+    drawnToday: storedFlags.drawn !== undefined,
+    enteredToday: storedFlags.entered !== undefined,
+    bossChallengedToday: storedFlags.bossChallenge !== undefined,
   };
 };
 
@@ -620,7 +679,7 @@ export const markDailyFlag = async (
   const createdFlag = await storage.hSetNX(
     dailyFlagsKey,
     field,
-    Date.now().toString()
+    '1'
   );
   await storage.expire(dailyFlagsKey, dailyFlagTtlSeconds);
   return createdFlag === 1;

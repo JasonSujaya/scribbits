@@ -29,9 +29,11 @@ export type CreateArenaPost = (options: {
   champion: Scribbit | null;
 }) => Promise<CreatedArenaPost>;
 
-export type NightlyArenaJobResult = {
+export type NightlyArenaJobRunResult = {
+  skipped: false;
   previousDay: number;
   newDay: number;
+  canonicalDay: number;
   resolvedDay: number;
   forecast: Forecast;
   champion: Scribbit;
@@ -42,6 +44,26 @@ export type NightlyArenaJobResult = {
   };
   postId: string | null;
 };
+
+export type NightlyArenaJobSkippedResult = {
+  skipped: true;
+  previousDay: number;
+  newDay: number;
+  canonicalDay: number;
+  resolvedDay: null;
+  forecast: null;
+  champion: null;
+  reportCount: 0;
+  expired: {
+    faded: 0;
+    legends: 0;
+  };
+  postId: null;
+};
+
+export type NightlyArenaJobResult =
+  | NightlyArenaJobRunResult
+  | NightlyArenaJobSkippedResult;
 
 const getBattleScore = (
   day: number,
@@ -109,17 +131,37 @@ export const runNightlyArenaJob = async (
   options: {
     now?: Date;
     createPost?: CreateArenaPost;
+    force?: boolean;
   } = {}
 ): Promise<NightlyArenaJobResult> => {
   const now = options.now ?? new Date();
   const previousDay = await ensureCurrentArenaDay(storage, now);
-  const dateDay = getArenaDayNumber(now);
-  const newDay = Math.max(previousDay + 1, dateDay);
+  const canonicalDay = getArenaDayNumber(now);
+
+  if (!options.force && previousDay >= canonicalDay) {
+    console.log(
+      `Nightly arena job skipped; stored day ${previousDay} is current for canonical day ${canonicalDay}.`
+    );
+    return {
+      skipped: true,
+      previousDay,
+      newDay: previousDay,
+      canonicalDay,
+      resolvedDay: null,
+      forecast: null,
+      champion: null,
+      reportCount: 0,
+      expired: {
+        faded: 0,
+        legends: 0,
+      },
+      postId: null,
+    };
+  }
+
+  const newDay = options.force ? previousDay + 1 : canonicalDay;
   const resolvedDay = Math.max(1, newDay - 1);
 
-  await setCurrentArenaDay(storage, newDay);
-
-  const expired = await expireDueScribbits(storage, newDay);
   const resolvedForecast = await ensureForecastForDay(storage, resolvedDay);
   const entrantIds = await getRumbleEntrantIds(storage, resolvedDay);
   const entrants = await loadScribbits(storage, entrantIds);
@@ -146,6 +188,9 @@ export const runNightlyArenaJob = async (
   );
   await setCurrentChampion(storage, champion);
 
+  const expired = await expireDueScribbits(storage, newDay);
+  await setCurrentArenaDay(storage, newDay);
+
   const forecast = await ensureForecastForDay(storage, newDay);
   let postId: string | null = null;
 
@@ -167,8 +212,10 @@ export const runNightlyArenaJob = async (
   }
 
   return {
+    skipped: false,
     previousDay,
     newDay,
+    canonicalDay,
     resolvedDay,
     forecast,
     champion,

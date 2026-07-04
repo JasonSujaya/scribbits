@@ -1,0 +1,21 @@
+Done. No commits.
+
+Implemented:
+- `POST /api/scribbit` now server-validates 512x512 PNGs with `pngjs`, computes authoritative stats/element, stores the Scribbit, auto-enters it into today’s rumble, then claims `drawn` + `entered` with rollback on race loss.
+- `/api/enter-rumble` now late-claims `entered` and rolls back the rumble entry on race loss.
+- Nightly job is UTC-day idempotent; debug “Advance day” is the only forced path and increments by exactly 1.
+- Rumble resolves before day-N expiry.
+- Swiss rumble backfills to 4/8 and pairs within same-score groups.
+- Analyzer math moved to [src/shared/analyzer-core.ts](/Users/jasons/Github/Hackathon/Remonsta/app/src/shared/analyzer-core.ts); client analyzer reuses it.
+- Shared max HP added in [src/shared/battle.ts](/Users/jasons/Github/Hackathon/Remonsta/app/src/shared/battle.ts); battle + Replay use it.
+- ArenaHome CTA now renders entered state from `enteredToday`.
+
+Gates passed:
+- `npm run type-check`
+- `npm run lint`
+- `npm run build`
+- `npm run test:sim`
+
+`npm run build` still prints existing Devvit/Vite warnings about `sourcemapFileNames` and deprecated `inlineDynamicImports`, but exits successfully.
+
+Screenshot: attempted but blocked. In-app browser was unavailable, Playwright’s browser was missing and install hung, and system Chrome headless exited `134`. The built `game.html` served `200 OK` from a local static server, then I stopped the server.

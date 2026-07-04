@@ -9,6 +9,7 @@ import type {
   LegendsState,
   Scribbit,
 } from '../../shared/arena';
+import { analyze as analyzeDrawing } from '../../shared/analyzer-core';
 import { simulate } from '../core/battle';
 import { loadBattleReportsForUser, saveBattleReport } from '../core/battleStore';
 import {
@@ -20,8 +21,10 @@ import { hashTextToSeed } from '../core/random';
 import { recordDailyPlay } from '../core/dex';
 import {
   addRumbleEntrant,
+  claimDailyFlags,
   createScribbit,
   decodePngDataUrl,
+  deleteStoredScribbit,
   enforceAliveScribbitLimit,
   expireDueScribbits,
   getAliveScribbitsForUser,
@@ -35,6 +38,7 @@ import {
   loadScribbit,
   markDailyFlag,
   readDrawingFallback,
+  removeRumbleEntrant,
   storeDrawingFallback,
   storeScribbit,
   validateSubmitScribbitRequest,
@@ -202,37 +206,43 @@ api.post('/scribbit', async (c) => {
   if (!draft) {
     return badRequest(
       c,
-      'Send a 2-24 character name, PNG data URL, stats, and valid element.'
+      'Send a 2-24 character name and PNG data URL.'
     );
   }
 
   const decodedPng = decodePngDataUrl(draft.imageDataUrl);
 
   if (!decodedPng) {
-    return badRequest(c, 'Drawings must be PNG data URLs under 400 KB.');
+    return badRequest(c, 'Drawings must be 512x512 PNG data URLs under 400 KB.');
   }
+
+  const drawingAnalysis = analyzeDrawing({
+    data: decodedPng.rgba,
+    width: decodedPng.width,
+    height: decodedPng.height,
+  });
+  let createdScribbit: { id: string; day: number } | null = null;
 
   try {
     const now = new Date();
     const dayNumber = await ensureCurrentArenaDay(redis, now);
     await expireDueScribbits(redis, dayNumber);
+    const dailyFlags = await getDailyFlags(redis, player.userId, dayNumber);
+
+    if (dailyFlags.drawnToday) {
+      return conflict(c, 'You already drew a Scribbit today.');
+    }
+
+    if (dailyFlags.enteredToday) {
+      return conflict(c, 'You already entered today\'s Rumble.');
+    }
 
     if (!(await enforceAliveScribbitLimit(redis, player.userId))) {
       return conflict(c, 'You already have three living Scribbits.');
     }
 
-    const createdDrawFlag = await markDailyFlag(
-      redis,
-      player.userId,
-      dayNumber,
-      'drawn'
-    );
-
-    if (!createdDrawFlag) {
-      return conflict(c, 'You already drew a Scribbit today.');
-    }
-
     const scribbitId = createScribbitId(dayNumber);
+    createdScribbit = { id: scribbitId, day: dayNumber };
     const imageUrl = await uploadOrStoreDrawing(
       scribbitId,
       draft.imageDataUrl,
@@ -241,17 +251,51 @@ api.post('/scribbit', async (c) => {
 
     const scribbit = createScribbit({
       id: scribbitId,
-      draft,
+      draft: {
+        ...draft,
+        stats: drawingAnalysis.stats,
+        element: drawingAnalysis.element,
+      },
       artist: player.username,
       imageUrl,
       day: dayNumber,
     });
 
     await storeScribbit(redis, player.userId, scribbit);
+    await addRumbleEntrant(redis, dayNumber, scribbit.id);
     await recordDailyPlay(redis, player.userId, now);
+
+    const claimedDailyEntry = await claimDailyFlags(
+      redis,
+      player.userId,
+      dayNumber,
+      ['drawn', 'entered']
+    );
+
+    if (!claimedDailyEntry) {
+      await deleteStoredScribbit(
+        redis,
+        player.userId,
+        scribbit.id,
+        dayNumber
+      );
+      return conflict(c, 'You already drew or entered today.');
+    }
 
     return c.json<Scribbit>(scribbit, 201);
   } catch (error) {
+    if (createdScribbit) {
+      try {
+        await deleteStoredScribbit(
+          redis,
+          player.userId,
+          createdScribbit.id,
+          createdScribbit.day
+        );
+      } catch (cleanupError) {
+        console.error('Submit Scribbit cleanup failed:', cleanupError);
+      }
+    }
     console.error('Submit Scribbit route failed:', error);
     return serverError(c, 'The ink would not dry. Try again soon.');
   }
@@ -270,31 +314,48 @@ api.post('/enter-rumble', async (c) => {
     return badRequest(c, 'Choose a valid Scribbit to enter.');
   }
 
+  let addedEntrant: { id: string; day: number } | null = null;
+
   try {
     const now = new Date();
     const dayNumber = await ensureCurrentArenaDay(redis, now);
+    const dailyFlags = await getDailyFlags(redis, player.userId, dayNumber);
+
+    if (dailyFlags.enteredToday) {
+      return conflict(c, 'You already entered today\'s Rumble.');
+    }
+
     const scribbit = await loadOwnedAliveScribbit(player, scribbitId, dayNumber);
 
     if (!scribbit) {
       return notFound(c, 'That living Scribbit is not in your sketchbook.');
     }
 
-    const createdEntryFlag = await markDailyFlag(
+    await addRumbleEntrant(redis, dayNumber, scribbit.id);
+    addedEntrant = { id: scribbit.id, day: dayNumber };
+    await recordDailyPlay(redis, player.userId, now);
+
+    const createdEntryFlag = await claimDailyFlags(
       redis,
       player.userId,
       dayNumber,
-      'entered'
+      ['entered']
     );
 
     if (!createdEntryFlag) {
+      await removeRumbleEntrant(redis, dayNumber, scribbit.id);
       return conflict(c, 'You already entered today\'s Rumble.');
     }
 
-    await addRumbleEntrant(redis, dayNumber, scribbit.id);
-    await recordDailyPlay(redis, player.userId, now);
-
     return c.json<{ entered: true }>({ entered: true });
   } catch (error) {
+    if (addedEntrant) {
+      try {
+        await removeRumbleEntrant(redis, addedEntrant.day, addedEntrant.id);
+      } catch (cleanupError) {
+        console.error('Enter Rumble cleanup failed:', cleanupError);
+      }
+    }
     console.error('Enter Rumble route failed:', error);
     return serverError(c, 'The bracket ate that entry. Try again soon.');
   }
