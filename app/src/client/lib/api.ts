@@ -7,9 +7,12 @@ import type {
   ArenaState,
   BattleReport,
   BossChallengeRequest,
+  CareAction,
+  CareRequest,
   EnterRumbleRequest,
   LegendsState,
   Scribbit,
+  SparRequest,
   SubmitScribbitRequest,
 } from '../../shared/arena';
 
@@ -133,4 +136,18 @@ export function bossChallenge(
 
 export function fetchLegends(): Promise<ApiResult<LegendsState>> {
   return getJson<LegendsState>('/api/legends');
+}
+
+// Tamagotchi care: feed/pat/train a scribbit once each per UTC day. Returns the
+// updated scribbit (new xp/level/mood). 409 when that action is already done.
+export function careForScribbit(
+  scribbitId: string,
+  action: CareAction
+): Promise<ApiResult<Scribbit>> {
+  return postJson<CareRequest, Scribbit>('/api/care', { scribbitId, action });
+}
+
+// Exhibition spar vs a random founding NPC. Unlimited; xp only on first daily win.
+export function spar(scribbitId: string): Promise<ApiResult<BattleReport>> {
+  return postJson<SparRequest, BattleReport>('/api/spar', { scribbitId });
 }

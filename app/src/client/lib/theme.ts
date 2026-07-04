@@ -9,22 +9,74 @@ export const DESIGN_HEIGHT = 1280;
 // Minimum touch target in design-space pixels (>= 44 CSS px once scaled).
 export const MIN_TOUCH = 88;
 
-// UI colors shared across scenes — warm, hand-drawn, cream-paper feel.
+// Consistent spacing rhythm (design-space px). Every gap/pad snaps to these so
+// the whole app breathes on one grid. 8 is the base unit.
+export const SPACE = {
+  xs: 8,
+  sm: 16,
+  md: 24,
+  lg: 40,
+  xl: 64,
+} as const;
+
+// Screen safe margins so nothing kisses the letterbox edge.
+export const EDGE = 30; // left/right page margin
+export const TOP_SAFE = 40; // top bar lives above this
+
+// Three type sizes + a display treatment. Keep the ladder short on purpose so
+// hierarchy stays legible: DISPLAY (hand-lettered headers), TITLE, BODY, CAPTION.
+export const TYPE = {
+  display: 52,
+  title: 30,
+  body: 22,
+  caption: 18,
+} as const;
+
+// UI colors shared across scenes — warm, hand-drawn, cream-paper feel. The whole
+// app is a sketchbook: cream pages, dark-ink lines, one coral accent, element hues.
 export const UI = {
   panel: 0xfff7e8,
   panelStroke: 0x3a2b1a,
   ink: '#2b2016',
+  inkHex: 0x2b2016,
   inkSoft: '#7a6a56',
+  inkSoftHex: 0x7a6a56,
   cream: '#fff7e8',
   creamHex: 0xfff7e8,
   paper: 0xfdf3df, // sketchbook page
+  paperText: '#fdf3df',
+  // Page background is a warm desk under the sketchbook, not cold dark-mode purple.
+  deskHex: 0x2a2118,
+  desk: '#2a2118',
+  deskSoft: '#3a2f22',
   coral: 0xff6b4a,
   coralText: '#ff6b4a',
+  coralDeep: 0xe0512f,
   gold: 0xffd447,
+  goldHex: 0xffd447,
   goldText: '#f0b000',
+  tape: 0xf7e6b0, // translucent washi-tape yellow
+  tapeAlt: 0xbfd8e0, // blue tape variant
   progressTrack: 0x2b2016,
   progressFill: 0xff6b4a,
   progressCommunity: 0x5b9dff,
+} as const;
+
+// Mood layer (Tamagotchi). Each mood gets an emoji + a one-word vibe + the
+// care action that fixes it, so roster cards can nudge the player.
+export type MoodStyle = { emoji: string; label: string; color: string };
+export const MOOD_STYLES = {
+  happy: { emoji: '😊', label: 'happy', color: '#4faa4f' },
+  hungry: { emoji: '🤤', label: 'hungry', color: '#ff8a3d' },
+  sleepy: { emoji: '😴', label: 'sleepy', color: '#8a5cd8' },
+  pumped: { emoji: '😤', label: 'pumped', color: '#ff5a3d' },
+} as const;
+
+// Care actions — the three buttons on every roster card.
+export const CARE_STYLES = {
+  feed: { emoji: '🍓', label: 'Feed', color: 0xff6b4a },
+  pat: { emoji: '✋', label: 'Pat', color: 0x4faa4f },
+  train: { emoji: '🏋️', label: 'Train', color: 0x5b9dff },
 } as const;
 
 // Each element gets a signature hue family used for badges, FX, and stat bars.

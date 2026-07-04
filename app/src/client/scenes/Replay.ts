@@ -2,8 +2,9 @@ import * as Phaser from 'phaser';
 import { Scene } from 'phaser';
 import { getReplay, getReplayReturn } from '../lib/registry';
 import { loadDrawing } from '../lib/scribbits';
-import { ELEMENT_STYLES, UI } from '../lib/theme';
-import { label, elementBadge, paperCard, roundedPanel, ghostButton } from '../lib/ui';
+import { ELEMENT_STYLES, TYPE, UI } from '../lib/theme';
+import { label, elementBadge, paperCard, stickerCard, ghostButton, levelBadge } from '../lib/ui';
+import { levelOf } from '../lib/scribbits';
 import type { BattleEvent, BattleReport, Scribbit } from '../../shared/arena';
 import { getBattleMaxHp } from '../../shared/battle';
 
@@ -46,7 +47,7 @@ export class Replay extends Scene {
       return;
     }
     this.report = report;
-    this.cameras.main.setBackgroundColor('#1a1320');
+    this.cameras.main.setBackgroundColor(UI.desk);
     this.buildArena();
 
     this.events.once('shutdown', () => this.playTimer?.remove());
@@ -65,35 +66,93 @@ export class Replay extends Scene {
 
   private buildArena(): void {
     const { width, height } = this.scale;
-    // Arena floor gradient.
-    this.add.rectangle(0, 0, width, height, 0x2a1f3a, 1).setOrigin(0);
-    this.add.ellipse(width / 2, height * 0.62, width * 1.2, height * 0.5, 0x3a2b52, 1);
+    this.drawArenaBackdrop();
+
+    // Platforms the fighters stand on (drawn under each home position).
+    this.drawPlatform(width * 0.28, height * 0.42 + 96);
+    this.drawPlatform(width * 0.72, height * 0.42 + 96);
 
     // HP bars up top for both fighters.
     this.fighterA = this.makeFighterSlot('a', width * 0.28, height * 0.42, false);
     this.fighterB = this.makeFighterSlot('b', width * 0.72, height * 0.42, true);
 
-    // Announcer strip along the bottom.
-    roundedPanel(this, width / 2, height - 120, width - 40, 150, 0x2b2016, UI.gold);
-    this.announcer = label(this, width / 2, height - 120, '', 28, UI.cream, true);
-    this.announcer.setWordWrapWidth(width - 90);
+    // Announcer strip along the bottom — a taped sketchbook note.
+    const note = stickerCard(this, width / 2, height - 120, width - 40, 150, { gold: true, tapeColor: UI.tape });
+    this.announcer = label(this, 0, 0, '', TYPE.title, UI.ink, true);
+    this.announcer.setWordWrapWidth(width - 110);
+    note.add(this.announcer);
 
     // Skip control.
-    ghostButton(this, width - 90, 60, 'Skip ⏭', () => this.skipToEnd(), 150).setDepth(50);
+    ghostButton(this, width - 96, 60, 'Skip ⏭', () => this.skipToEnd(), 150).setDepth(50);
     this.input.on('pointerdown', () => this.advance());
+  }
+
+  // A hand-drawn doodle amphitheater on cream paper: tiered wobbly arcs around a
+  // warm empty stage. No generated assets — pure Phaser Graphics.
+  private drawArenaBackdrop(): void {
+    const { width, height } = this.scale;
+    // Cream page.
+    this.add.rectangle(0, 0, width, height, 0xf3e6cc, 1).setOrigin(0);
+
+    const cx = width / 2;
+    const cy = height * 0.44;
+    const g = this.add.graphics();
+    // Warm stage glow.
+    g.fillStyle(0xffe0a8, 0.5);
+    g.fillEllipse(cx, height * 0.52, width * 0.9, height * 0.42);
+    // Tiered amphitheater arcs, hand-wobbled.
+    const tiers = [0.62, 0.74, 0.86, 0.98];
+    tiers.forEach((scale, tierIndex) => {
+      g.lineStyle(4, 0x6b5a42, 0.5 - tierIndex * 0.06);
+      const rx = width * 0.5 * scale;
+      const ry = height * 0.34 * scale;
+      g.beginPath();
+      const steps = 60;
+      for (let step = 0; step <= steps; step += 1) {
+        // Upper half arc only, so it reads as seating behind the stage.
+        const t = Math.PI + (Math.PI * step) / steps;
+        const jitter = (Math.random() - 0.5) * 4;
+        const px = cx + Math.cos(t) * (rx + jitter);
+        const py = cy + Math.sin(t) * (ry + jitter);
+        if (step === 0) g.moveTo(px, py);
+        else g.lineTo(px, py);
+      }
+      g.strokePath();
+    });
+    // A few doodle spectators (tiny circles) along the top tier.
+    for (let index = 0; index < 14; index += 1) {
+      const t = Math.PI + (Math.PI * (index + 0.5)) / 14;
+      const px = cx + Math.cos(t) * width * 0.46;
+      const py = cy + Math.sin(t) * height * 0.31;
+      g.fillStyle(0x6b5a42, 0.35);
+      g.fillCircle(px, py, 7);
+    }
+  }
+
+  // A small wobbly-ink platform disc under a fighter.
+  private drawPlatform(x: number, y: number): void {
+    const g = this.add.graphics().setDepth(1);
+    g.fillStyle(0xd8c19a, 0.9);
+    g.fillEllipse(x, y, 190, 52);
+    g.lineStyle(4, 0x6b5a42, 0.8);
+    g.strokeEllipse(x, y, 190, 52);
   }
 
   private makeFighterSlot(side: 'a' | 'b', x: number, y: number, right: boolean): Fighter {
     const scribbit = side === 'a' ? this.report.a : this.report.b;
-    const barY = 120;
+    const barY = 130;
     const barX = right ? this.scale.width - 320 : 40;
 
-    label(this, barX + (right ? 280 : 0), barY - 40, scribbit.name, 24, UI.cream, true)
-      .setOrigin(right ? 1 : 0, 0.5);
+    // Name + level badge. The badge sits on the inner side of each name so it
+    // never collides with the Skip button (top-right) or the screen edge.
+    const nameX = barX + (right ? 280 : 0);
+    label(this, nameX, barY - 44, scribbit.name, TYPE.body, UI.ink, true).setOrigin(right ? 1 : 0, 0.5);
+    levelBadge(this, barX + (right ? 20 : 260), barY - 44, levelOf(scribbit), 0.52);
+
     this.add
-      .rectangle(barX, barY, 280, 24, UI.progressTrack, 0.4)
+      .rectangle(barX, barY, 280, 24, UI.inkHex, 0.16)
       .setOrigin(0, 0.5)
-      .setStrokeStyle(2, 0xffffff, 0.3);
+      .setStrokeStyle(2, UI.inkHex, 0.6);
     const hpBar = this.add
       .rectangle(barX + 2, barY, 276, 18, ELEMENT_STYLES[scribbit.element].primary, 1)
       .setOrigin(0, 0.5);
@@ -128,7 +187,10 @@ export class Replay extends Scene {
   // Intro banners slide in, then the event loop begins.
   private playIntro(): void {
     const { width, height } = this.scale;
-    const banner = label(this, width / 2, height / 2, 'FIGHT!', 80, UI.goldText, true).setScale(0).setDepth(60);
+    const banner = label(this, width / 2, height / 2, 'FIGHT!', 80, UI.goldText, true)
+      .setScale(0)
+      .setDepth(60);
+    banner.setStroke('#2b2016', 10);
     this.introBanner = banner;
     this.tweens.add({
       targets: banner,
@@ -290,7 +352,7 @@ export class Replay extends Scene {
   }
 
   private missPuff(target: Fighter): void {
-    const puff = label(this, target.homeX, target.homeY - 60, 'miss', 30, '#c9b79a', true).setDepth(20);
+    const puff = label(this, target.homeX, target.homeY - 60, 'miss', 30, UI.inkSoft, true).setDepth(20);
     this.tweens.add({
       targets: puff,
       y: target.homeY - 120,
@@ -372,6 +434,7 @@ export class Replay extends Scene {
     const banner = label(this, width / 2, height / 2, `${winner.scribbit.name} WINS!`, 52, UI.goldText, true)
       .setScale(0)
       .setDepth(60);
+    banner.setStroke('#2b2016', 9);
     this.tweens.add({ targets: banner, scale: 1, duration: 500, ease: 'Back.easeOut' });
     if (winner.sprite) {
       this.tweens.add({ targets: winner.sprite, y: winner.homeY - 30, scale: (winner.sprite.scale || 1) * 1.1, duration: 400, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });

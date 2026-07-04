@@ -1,6 +1,8 @@
 import type {
   ArenaState,
+  CareAction,
   Element,
+  Mood,
   Scribbit,
   ScribbitStats,
   SubmitScribbitRequest,
@@ -8,12 +10,15 @@ import type {
 import { PNG } from 'pngjs';
 import {
   BELIEF_LEGEND_THRESHOLD,
+  LEVEL_XP_THRESHOLDS,
   LIFESPAN_DAYS,
   MAX_ALIVE_PER_USER,
+  MAX_LEVEL,
   STAT_BUDGET,
   STAT_MAX,
   STAT_MIN,
 } from '../../shared/arena';
+import { formatUtcDateKey } from './day';
 import { isElement } from './forecast';
 import { findFoundingScribbit } from './species';
 
@@ -74,6 +79,8 @@ const pngDataUrlPrefix = 'data:image/png;base64,';
 const maximumDrawingBytes = 400 * 1024;
 const drawingTtlSeconds = 30 * 24 * 60 * 60;
 const dailyFlagTtlSeconds = 8 * 24 * 60 * 60;
+const dailyProgressTtlSeconds = 8 * 24 * 60 * 60;
+const careActionOrder: CareAction[] = ['feed', 'pat', 'train'];
 const statNames: Array<keyof ScribbitStats> = [
   'chonk',
   'spike',
@@ -120,6 +127,20 @@ export const getDrawingKey = (scribbitId: string): string => {
   return `drawing:${scribbitId}`;
 };
 
+export const getScribbitCareKey = (
+  scribbitId: string,
+  utcDateKey: string
+): string => {
+  return `scribbit:${scribbitId}:care:${utcDateKey}`;
+};
+
+export const getScribbitSparWinKey = (
+  scribbitId: string,
+  utcDateKey: string
+): string => {
+  return `scribbit:${scribbitId}:spar-win:${utcDateKey}`;
+};
+
 export const getExpiringScribbitsKey = (): string => {
   return 'scribbits:expires';
 };
@@ -157,6 +178,85 @@ export const validateScribbitName = (value: unknown): string | undefined => {
 
 const clampNumber = (value: number, minimum: number, maximum: number): number => {
   return Math.min(maximum, Math.max(minimum, value));
+};
+
+const normalizeNonNegativeInteger = (value: unknown): number => {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
+    return 0;
+  }
+
+  return Math.floor(value);
+};
+
+export const getLevelForXp = (xp: number): number => {
+  const normalizedXp = normalizeNonNegativeInteger(xp);
+  let level = 1;
+
+  for (let index = 0; index < LEVEL_XP_THRESHOLDS.length; index += 1) {
+    const threshold = LEVEL_XP_THRESHOLDS[index];
+
+    if (threshold !== undefined && normalizedXp >= threshold) {
+      level = index + 1;
+    }
+  }
+
+  return clampNumber(level, 1, MAX_LEVEL);
+};
+
+export const isCareAction = (value: unknown): value is CareAction => {
+  return value === 'feed' || value === 'pat' || value === 'train';
+};
+
+const isMood = (value: unknown): value is Mood => {
+  return (
+    value === 'happy' ||
+    value === 'hungry' ||
+    value === 'sleepy' ||
+    value === 'pumped'
+  );
+};
+
+const normalizeCareDoneToday = (value: unknown): CareAction[] => {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return careActionOrder.filter((careAction) => {
+    return value.includes(careAction);
+  });
+};
+
+export const deriveMoodFromCareActions = (
+  careDoneToday: CareAction[]
+): Mood => {
+  if (careDoneToday.length <= 0) {
+    return 'hungry';
+  }
+
+  if (careDoneToday.length === 1) {
+    return 'sleepy';
+  }
+
+  if (careDoneToday.length === 2) {
+    return 'happy';
+  }
+
+  return 'pumped';
+};
+
+export const addXpToScribbit = (
+  scribbit: Scribbit,
+  xpGain: number
+): Scribbit => {
+  const gainedXp = normalizeNonNegativeInteger(xpGain);
+  const nextXp = normalizeNonNegativeInteger(scribbit.xp) + gainedXp;
+
+  return {
+    ...scribbit,
+    xp: nextXp,
+    level: getLevelForXp(nextXp),
+    careDoneToday: [...scribbit.careDoneToday],
+  };
 };
 
 const sanitizeRawStat = (value: unknown): number => {
@@ -424,11 +524,17 @@ const isScribbitStatus = (value: unknown): value is Scribbit['status'] => {
 };
 
 export const isScribbit = (value: unknown): value is Scribbit => {
+  return normalizeScribbitRecord(value) !== undefined;
+};
+
+export const normalizeScribbitRecord = (
+  value: unknown
+): Scribbit | undefined => {
   if (!isRecord(value) || !isScribbitStats(value.stats)) {
-    return false;
+    return undefined;
   }
 
-  return (
+  if (
     typeof value.id === 'string' &&
     typeof value.name === 'string' &&
     typeof value.artist === 'string' &&
@@ -442,7 +548,35 @@ export const isScribbit = (value: unknown): value is Scribbit => {
     isScribbitStatus(value.status) &&
     (typeof value.legendTitle === 'string' || value.legendTitle === null) &&
     typeof value.isFounding === 'boolean'
-  );
+  ) {
+    const xp = normalizeNonNegativeInteger(value.xp);
+    const careDoneToday = normalizeCareDoneToday(value.careDoneToday);
+
+    return {
+      id: value.id,
+      name: value.name,
+      artist: value.artist,
+      element: value.element,
+      stats: { ...value.stats },
+      imageUrl: value.imageUrl,
+      bornDay: value.bornDay,
+      expiresDay: value.expiresDay,
+      belief: value.belief,
+      wins: value.wins,
+      losses: value.losses,
+      status: value.status,
+      legendTitle: value.legendTitle,
+      isFounding: value.isFounding,
+      level: getLevelForXp(xp),
+      xp,
+      mood: isMood(value.mood)
+        ? value.mood
+        : deriveMoodFromCareActions(careDoneToday),
+      careDoneToday,
+    };
+  }
+
+  return undefined;
 };
 
 export const parseScribbit = (
@@ -454,8 +588,10 @@ export const parseScribbit = (
 
   try {
     const parsedScribbit: unknown = JSON.parse(storedScribbit);
-    if (isScribbit(parsedScribbit)) {
-      return parsedScribbit;
+    const scribbit = normalizeScribbitRecord(parsedScribbit);
+
+    if (scribbit) {
+      return scribbit;
     }
   } catch (error) {
     console.error('Failed to parse stored scribbit:', error);
@@ -486,6 +622,10 @@ export const createScribbit = (options: {
     status: 'alive',
     legendTitle: null,
     isFounding: false,
+    level: 1,
+    xp: 0,
+    mood: 'hungry',
+    careDoneToday: [],
   };
 };
 
@@ -493,12 +633,50 @@ export const cloneScribbit = (scribbit: Scribbit): Scribbit => {
   return {
     ...scribbit,
     stats: { ...scribbit.stats },
+    careDoneToday: [...scribbit.careDoneToday],
+  };
+};
+
+export const readCareDoneToday = async (
+  storage: ArenaStorage,
+  scribbitId: string,
+  utcDateKey: string
+): Promise<CareAction[]> => {
+  const storedCare = await storage.hGetAll(
+    getScribbitCareKey(scribbitId, utcDateKey)
+  );
+
+  return careActionOrder.filter((careAction) => {
+    return storedCare[careAction] !== undefined;
+  });
+};
+
+export const hydrateScribbitForUtcDay = async (
+  storage: ArenaStorage,
+  scribbit: Scribbit,
+  utcDateKey: string
+): Promise<Scribbit> => {
+  if (scribbit.isFounding) {
+    return cloneScribbit(scribbit);
+  }
+
+  const careDoneToday = await readCareDoneToday(
+    storage,
+    scribbit.id,
+    utcDateKey
+  );
+
+  return {
+    ...scribbit,
+    mood: deriveMoodFromCareActions(careDoneToday),
+    careDoneToday,
   };
 };
 
 export const loadScribbit = async (
   storage: ArenaStorage,
-  scribbitId: string
+  scribbitId: string,
+  utcDateKey = formatUtcDateKey(new Date())
 ): Promise<Scribbit | undefined> => {
   const foundingScribbit = findFoundingScribbit(scribbitId);
 
@@ -506,17 +684,24 @@ export const loadScribbit = async (
     return foundingScribbit;
   }
 
-  return parseScribbit(await storage.get(getScribbitKey(scribbitId)));
+  const scribbit = parseScribbit(await storage.get(getScribbitKey(scribbitId)));
+
+  if (!scribbit) {
+    return undefined;
+  }
+
+  return await hydrateScribbitForUtcDay(storage, scribbit, utcDateKey);
 };
 
 export const loadScribbits = async (
   storage: ArenaStorage,
-  scribbitIds: string[]
+  scribbitIds: string[],
+  utcDateKey = formatUtcDateKey(new Date())
 ): Promise<Scribbit[]> => {
   const scribbits: Scribbit[] = [];
 
   for (const scribbitId of scribbitIds) {
-    const scribbit = await loadScribbit(storage, scribbitId);
+    const scribbit = await loadScribbit(storage, scribbitId, utcDateKey);
 
     if (scribbit) {
       scribbits.push(scribbit);
@@ -554,21 +739,26 @@ export const storeScribbit = async (
   ownerUserId: string,
   scribbit: Scribbit
 ): Promise<void> => {
-  await storage.set(getScribbitKey(scribbit.id), JSON.stringify(scribbit));
-  await storage.set(getScribbitOwnerKey(scribbit.id), ownerUserId);
+  const storedScribbit = cloneScribbit(scribbit);
+
+  await storage.set(
+    getScribbitKey(storedScribbit.id),
+    JSON.stringify(storedScribbit)
+  );
+  await storage.set(getScribbitOwnerKey(storedScribbit.id), ownerUserId);
   await storage.zAdd(getUserScribbitsKey(ownerUserId), {
-    member: scribbit.id,
-    score: scribbit.bornDay,
+    member: storedScribbit.id,
+    score: storedScribbit.bornDay,
   });
 
-  if (scribbit.status === 'alive') {
+  if (storedScribbit.status === 'alive') {
     await storage.zAdd(getUserAliveScribbitsKey(ownerUserId), {
-      member: scribbit.id,
-      score: scribbit.bornDay,
+      member: storedScribbit.id,
+      score: storedScribbit.bornDay,
     });
     await storage.zAdd(getExpiringScribbitsKey(), {
-      member: scribbit.id,
-      score: scribbit.expiresDay,
+      member: storedScribbit.id,
+      score: storedScribbit.expiresDay,
     });
   }
 };
@@ -581,7 +771,100 @@ export const updateScribbit = async (
     return;
   }
 
-  await storage.set(getScribbitKey(scribbit.id), JSON.stringify(scribbit));
+  await storage.set(getScribbitKey(scribbit.id), JSON.stringify(cloneScribbit(scribbit)));
+};
+
+export type DailyCareClaim = {
+  claimed: boolean;
+  careDoneToday: CareAction[];
+  mood: Mood;
+  xpGain: number;
+};
+
+export const claimDailyCareAction = async (
+  storage: ArenaStorage,
+  scribbitId: string,
+  action: CareAction,
+  utcDateKey: string,
+  claimedAtMs: number
+): Promise<DailyCareClaim> => {
+  const careKey = getScribbitCareKey(scribbitId, utcDateKey);
+  const createdCare = await storage.hSetNX(
+    careKey,
+    action,
+    claimedAtMs.toString()
+  );
+  await storage.expire(careKey, dailyProgressTtlSeconds);
+  const careDoneToday = await readCareDoneToday(
+    storage,
+    scribbitId,
+    utcDateKey
+  );
+  const mood = deriveMoodFromCareActions(careDoneToday);
+
+  return {
+    claimed: createdCare === 1,
+    careDoneToday,
+    mood,
+    xpGain: createdCare === 1 ? (mood === 'pumped' ? 2 : 1) : 0,
+  };
+};
+
+export const claimDailySparWinXp = async (
+  storage: ArenaStorage,
+  scribbitId: string,
+  utcDateKey: string,
+  claimedAtMs: number
+): Promise<boolean> => {
+  const sparWinKey = getScribbitSparWinKey(scribbitId, utcDateKey);
+  const createdSparWin = await storage.hSetNX(
+    sparWinKey,
+    'xp',
+    claimedAtMs.toString()
+  );
+  await storage.expire(sparWinKey, dailyProgressTtlSeconds);
+  return createdSparWin === 1;
+};
+
+export const awardScribbitXp = async (
+  storage: ArenaStorage,
+  scribbitId: string,
+  xpGain: number,
+  utcDateKey = formatUtcDateKey(new Date())
+): Promise<Scribbit | undefined> => {
+  const scribbit = await loadScribbit(storage, scribbitId, utcDateKey);
+
+  if (!scribbit || scribbit.isFounding) {
+    return scribbit;
+  }
+
+  const updatedScribbit = addXpToScribbit(scribbit, xpGain);
+  await updateScribbit(storage, updatedScribbit);
+  return updatedScribbit;
+};
+
+export const recordBattleOutcomeOnScribbit = async (
+  storage: ArenaStorage,
+  scribbitId: string,
+  outcome: 'win' | 'loss',
+  winnerXpGain: number
+): Promise<Scribbit | undefined> => {
+  const scribbit = await loadScribbit(storage, scribbitId);
+
+  if (!scribbit || scribbit.isFounding) {
+    return scribbit;
+  }
+
+  const updatedOutcomeScribbit = addXpToScribbit(
+    {
+      ...scribbit,
+      wins: outcome === 'win' ? scribbit.wins + 1 : scribbit.wins,
+      losses: outcome === 'loss' ? scribbit.losses + 1 : scribbit.losses,
+    },
+    outcome === 'win' ? winnerXpGain : 0
+  );
+  await updateScribbit(storage, updatedOutcomeScribbit);
+  return updatedOutcomeScribbit;
 };
 
 export const getScribbitOwner = async (
@@ -856,19 +1139,14 @@ export const crownScribbit = async (
 export const recordBattleResultOnScribbits = async (
   storage: ArenaStorage,
   winner: Scribbit,
-  loser: Scribbit
+  loser: Scribbit,
+  winnerXpGain = 0
 ): Promise<void> => {
-  if (!winner.isFounding) {
-    await updateScribbit(storage, {
-      ...winner,
-      wins: winner.wins + 1,
-    });
-  }
-
-  if (!loser.isFounding) {
-    await updateScribbit(storage, {
-      ...loser,
-      losses: loser.losses + 1,
-    });
-  }
+  await recordBattleOutcomeOnScribbit(
+    storage,
+    winner.id,
+    'win',
+    winnerXpGain
+  );
+  await recordBattleOutcomeOnScribbit(storage, loser.id, 'loss', 0);
 };

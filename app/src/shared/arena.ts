@@ -13,6 +13,9 @@ export type ScribbitStats = {
 
 export type ScribbitStatus = 'alive' | 'faded' | 'legend';
 
+export type Mood = 'happy' | 'hungry' | 'sleepy' | 'pumped';
+export type CareAction = 'feed' | 'pat' | 'train';
+
 export type Scribbit = {
   id: string;
   name: string; // player-given, 2-24 chars
@@ -28,6 +31,11 @@ export type Scribbit = {
   status: ScribbitStatus;
   legendTitle: string | null; // e.g. "Champion of Day 12"
   isFounding: boolean; // NPC founding roster
+  // Tamagotchi layer — levels die with the scribbit; bonuses are small + capped
+  level: number; // 1..MAX_LEVEL
+  xp: number;
+  mood: Mood; // derived from care state; cosmetic + tiny xp multiplier
+  careDoneToday: CareAction[]; // each action once per scribbit per day
 };
 
 export type Forecast = {
@@ -88,6 +96,8 @@ export type SubmitScribbitRequest = {
 };
 
 export type EnterRumbleRequest = { scribbitId: string };
+export type CareRequest = { scribbitId: string; action: CareAction };
+export type SparRequest = { scribbitId: string }; // exhibition vs a founding NPC
 export type BelieveRequest = { scribbitId: string };
 export type BossChallengeRequest = { scribbitId: string };
 
@@ -123,6 +133,13 @@ export const BELIEF_LEGEND_THRESHOLD = 25;
 export const BELIEF_MOVE_UNLOCK = 10;
 export const MAX_ALIVE_PER_USER = 3;
 
+// Tamagotchi/level balance: bonuses must stay small enough that shape + matchup
+// dominate. Level bonus dies with the scribbit. XP: care action = 1 (x2 when
+// 'pumped'), rumble/boss win = 2, first spar win of the day = 1.
+export const MAX_LEVEL = 5;
+export const LEVEL_XP_THRESHOLDS = [0, 3, 7, 12, 18]; // xp needed for level 1..5
+export const LEVEL_DAMAGE_BONUS_PER_LEVEL = 0.02; // +2%/level above 1, max +8%
+
 // REST endpoints (Hono, JSON; errors = ArenaErrorResponse with 4xx/5xx):
 // GET  /api/arena          -> ArenaState
 // POST /api/scribbit       -> SubmitScribbitRequest -> Scribbit         (401 if logged out, 409 if drawnToday)
@@ -130,5 +147,7 @@ export const MAX_ALIVE_PER_USER = 3;
 // GET  /api/my-battles     -> BattleReport[]  (caller's battles, newest first, top 20)
 // POST /api/believe        -> BelieveRequest -> { belief: number }      (one per user per scribbit per day)
 // POST /api/boss-challenge -> BossChallengeRequest -> BattleReport      (instant resolve vs champion; one per user per day)
+// POST /api/care           -> CareRequest -> Scribbit                   (each action once per scribbit per UTC day)
+// POST /api/spar           -> SparRequest -> BattleReport               (exhibition vs random founding NPC; unlimited, xp only on first daily win)
 // GET  /api/legends        -> LegendsState
 // GET  /api/drawing/:id    -> image/png bytes (only when redis-stored fallback is used)

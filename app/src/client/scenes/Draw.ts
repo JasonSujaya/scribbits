@@ -7,17 +7,19 @@ import { analyze, MIN_INK_PIXELS } from '../lib/analyzer';
 import type { AnalyzerResult } from '../lib/analyzer';
 import { DomOverlay } from '../lib/overlay';
 import { DrawCanvas } from '../lib/drawcanvas';
-import { ELEMENT_STYLES, FONT_STACK, UI } from '../lib/theme';
+import { ELEMENT_STYLES, EDGE, FONT_STACK, TYPE, UI } from '../lib/theme';
+import { paperBackdrop } from '../lib/art';
 import {
   button,
   ghostButton,
   label,
-  statBars,
+  handLettered,
+  statGrid,
   elementBadge,
-  roundedPanel,
+  stickerCard,
   errorPanel,
 } from '../lib/ui';
-import type { StatBars, ErrorPanel } from '../lib/ui';
+import type { StatGrid, ErrorPanel } from '../lib/ui';
 import type { Element, Scribbit } from '../../shared/arena';
 
 // The 8-color element palette + black outline pen. Grouped by element hue so
@@ -48,8 +50,10 @@ export class Draw extends Scene {
   private canvas!: DrawCanvas;
   private nameInput!: HTMLInputElement;
 
-  private bars!: StatBars;
+  private bars!: StatGrid;
   private elementBadgeRef: Phaser.GameObjects.Container | null = null;
+  private statCard: Phaser.GameObjects.Container | null = null;
+  private badgeLocalY = 0;
   private reactionText!: Phaser.GameObjects.Text;
   private currentElement: Element = 'ember';
   private lastResult: AnalyzerResult | null = null;
@@ -78,7 +82,8 @@ export class Draw extends Scene {
     // Defensive: clear any overlay a previous Draw visit might have left behind.
     DomOverlay.destroyAll();
 
-    this.cameras.main.setBackgroundColor('#241b2e');
+    this.cameras.main.setBackgroundColor(UI.desk);
+    paperBackdrop(this);
     this.buildChrome();
     this.buildOverlay();
     this.refreshPreview();
@@ -101,75 +106,97 @@ export class Draw extends Scene {
     this.scene.start(sceneKey);
   }
 
+  // --- Layout budget (720x1280 design space) --------------------------------
+  // Canvas is the hero. Everything below stacks on a strict grid so nothing
+  // overlaps or clips: canvas → tools → stat panel → name → submit.
+  private static readonly CANVAS_CENTER_Y = 408;
+  private static readonly CANVAS_SQUARE = 548; // big hero canvas
+  private static readonly TOOLS_Y = 736; // colors + brush + edit band
+  private static readonly STAT_Y = 926; // stat panel center
+  private static readonly NAME_Y = 1112;
+  private static readonly SUBMIT_Y = 1220;
+
   // --- Phaser chrome (everything except the live canvas + name input) -------
   private buildChrome(): void {
     const { width } = this.scale;
-    label(this, width / 2, 56, "DRAW TODAY'S SCRIBBIT", 36, UI.cream, true);
-    label(this, width / 2, 96, 'Its shape becomes its stats', 22, '#c9b79a');
-    ghostButton(this, 90, 56, '‹ Back', () => this.exitTo('ArenaHome'), 140);
+    // Top bar: Back on the left, title centered in the remaining space so the
+    // two never collide (the mission's header-clip bug).
+    ghostButton(this, 90, 60, '‹', () => this.exitTo('ArenaHome'), 96);
+    handLettered(this, width / 2 + 30, 56, "TODAY'S SCRIBBIT", 34, UI.ink, true);
+    label(this, width / 2 + 30, 96, 'Its shape becomes its stats', TYPE.caption, UI.inkSoft);
 
-    // Canvas frame — the DOM canvas sits on top of this at the same rect.
-    roundedPanel(this, width / 2, 400, width - 60, 540, 0x2b2016, UI.gold);
+    // Hero canvas frame — the DOM canvas sits on top of this at the same rect.
+    const square = Draw.CANVAS_SQUARE;
+    const frame = this.add.graphics();
+    const left = width / 2 - square / 2 - 8;
+    const top = Draw.CANVAS_CENTER_Y - square / 2 - 8;
+    frame.fillStyle(UI.creamHex, 1);
+    frame.fillRoundedRect(left, top, square + 16, square + 16, 16);
+    frame.lineStyle(6, UI.goldHex, 1);
+    frame.strokeRoundedRect(left, top, square + 16, square + 16, 16);
+    frame.lineStyle(3, UI.inkHex, 0.7);
+    frame.strokeRoundedRect(left + 6, top + 6, square + 4, square + 4, 12);
 
-    this.buildPalette(700);
-    this.buildBrushRow(788);
-    this.buildStatPreview(870);
-    this.buildSubmitRow(1210);
+    this.buildToolsBand(Draw.TOOLS_Y);
+    this.buildStatPanel(Draw.STAT_Y);
+    button(this, width / 2, Draw.SUBMIT_Y, "🎉 IT'S ALIVE — Submit", () => this.trySubmit(), width - EDGE * 2);
   }
 
-  private buildPalette(y: number): void {
+  // One clean band: 8 color swatches on the top line, brush sizes + edit tools
+  // on the second line — grouped, evenly spaced, no crowding.
+  private buildToolsBand(centerY: number): void {
     const { width } = this.scale;
+    const colorY = centerY - 32;
+    const toolY = centerY + 38;
+
+    // Color swatches, evenly distributed across the full width.
     const count = PALETTE.length;
-    const gap = (width - 80) / count;
+    const gap = (width - EDGE * 2) / count;
     PALETTE.forEach((entry, index) => {
-      const x = 40 + gap * (index + 0.5);
+      const x = EDGE + gap * (index + 0.5);
       const swatch = this.add
-        .rectangle(x, y, 62, 62, Phaser.Display.Color.HexStringToColor(entry.color).color, 1)
-        .setStrokeStyle(4, 0x2b2016, 1)
+        .rectangle(x, colorY, 56, 56, Phaser.Display.Color.HexStringToColor(entry.color).color, 1)
+        .setStrokeStyle(4, UI.inkHex, 1)
         .setInteractive({ useHandCursor: true });
       swatch.on('pointerup', () => this.selectColor(index, entry.color));
       this.colorSwatches.push(swatch);
     });
-    // Highlight the ink pen by default.
     this.selectColor(0, PALETTE[0]?.color ?? '#2b2016');
-  }
 
-  private selectColor(index: number, color: string): void {
-    this.canvas?.setColor(color);
-    this.colorSwatches.forEach((swatch, swatchIndex) => {
-      swatch.setStrokeStyle(swatchIndex === index ? 6 : 4, swatchIndex === index ? UI.gold : 0x2b2016, 1);
-      swatch.setScale(swatchIndex === index ? 1.1 : 1);
-    });
-  }
-
-  private buildBrushRow(y: number): void {
-    const { width } = this.scale;
-    // Three brush sizes.
+    // Brush sizes (left group).
     BRUSH_SIZES.forEach((size, index) => {
-      const x = 90 + index * 96;
-      const container = this.add.container(x, y);
+      const x = EDGE + 40 + index * 76;
+      const container = this.add.container(x, toolY);
       const bg = this.add
-        .rectangle(0, 0, 84, 84, UI.creamHex, 1)
-        .setStrokeStyle(4, 0x2b2016, 1)
+        .rectangle(0, 0, 64, 64, UI.creamHex, 1)
+        .setStrokeStyle(4, UI.inkHex, 1)
         .setInteractive({ useHandCursor: true });
-      const dot = this.add.circle(0, 0, size / 2 + 3, 0x2b2016, 1);
+      const dot = this.add.circle(0, 0, size / 2 + 2, UI.inkHex, 1);
       container.add([bg, dot]);
       bg.on('pointerup', () => this.selectBrush(index, size));
       this.brushButtons.push(container);
     });
     this.selectBrush(1, BRUSH_SIZES[1] ?? 24);
 
-    // Eraser, undo, clear.
-    ghostButton(this, width - 300, y, '🧽 Erase', () => this.canvas?.setEraser(), 130);
-    ghostButton(this, width - 168, y, '↩ Undo', () => this.canvas?.undo(), 130);
-    ghostButton(this, width - 36, y, '🗑', () => this.confirmClear(), 100);
+    // Edit tools (right group): erase / undo / clear.
+    ghostButton(this, width - 274, toolY, '🧽', () => this.canvas?.setEraser(), 82);
+    ghostButton(this, width - 182, toolY, '↩', () => this.canvas?.undo(), 82);
+    ghostButton(this, width - 74, toolY, '🗑', () => this.confirmClear(), 92);
+  }
+
+  private selectColor(index: number, color: string): void {
+    this.canvas?.setColor(color);
+    this.colorSwatches.forEach((swatch, swatchIndex) => {
+      swatch.setStrokeStyle(swatchIndex === index ? 6 : 4, swatchIndex === index ? UI.goldHex : UI.inkHex, 1);
+      swatch.setScale(swatchIndex === index ? 1.12 : 1);
+    });
   }
 
   private selectBrush(index: number, size: number): void {
     this.canvas?.setBrushSize(size);
     this.brushButtons.forEach((container, buttonIndex) => {
       const bg = container.list[0] as Phaser.GameObjects.Rectangle;
-      bg.setStrokeStyle(buttonIndex === index ? 6 : 4, buttonIndex === index ? UI.gold : 0x2b2016, 1);
+      bg.setStrokeStyle(buttonIndex === index ? 6 : 4, buttonIndex === index ? UI.goldHex : UI.inkHex, 1);
     });
   }
 
@@ -178,17 +205,22 @@ export class Draw extends Scene {
     showToast('Fresh page ✏️');
   }
 
-  private buildStatPreview(y: number): void {
+  // Compact stat card: reaction + element badge on the top row, a 2x2 stat grid
+  // below. Sized so the grid can NEVER clip the panel edge.
+  private buildStatPanel(centerY: number): void {
     const { width } = this.scale;
-    roundedPanel(this, width / 2, y + 70, width - 60, 240, 0x2b2016, UI.panelStroke);
-    this.reactionText = label(this, width / 2, y - 6, 'Start drawing!', 26, UI.cream, true);
-    this.elementBadgeRef = elementBadge(this, width / 2, y + 34, this.currentElement, 0.9);
-    this.bars = statBars(this, 60, y + 90, width - 120);
-  }
+    const panelW = width - EDGE * 2;
+    const panelH = 236;
+    const card = stickerCard(this, width / 2, centerY, panelW, panelH, { tapeColor: UI.tapeAlt, tilt: -0.3 });
 
-  private buildSubmitRow(y: number): void {
-    const { width } = this.scale;
-    button(this, width / 2, y, "🎉 IT'S ALIVE — Submit", () => this.trySubmit(), width - 80);
+    this.statCard = card;
+    this.badgeLocalY = -panelH / 2 + 76;
+    this.reactionText = label(this, 0, -panelH / 2 + 34, 'Start drawing!', TYPE.body, UI.ink, true);
+    card.add(this.reactionText);
+    this.elementBadgeRef = elementBadge(this, 0, this.badgeLocalY, this.currentElement, 0.82);
+    card.add(this.elementBadgeRef);
+
+    this.bars = statGrid(this, width / 2, centerY + 44, panelW - 48, 130);
   }
 
   // --- DOM overlay (live canvas + name input) -------------------------------
@@ -196,13 +228,10 @@ export class Draw extends Scene {
     this.overlay = new DomOverlay(this);
 
     this.canvas = new DrawCanvas({ onStrokeEnd: () => this.refreshPreview() });
-    // Canvas frame is centered at (width/2, 400) with size (width-60)x540; the
-    // drawing surface fills a square inside it.
-    const frameWidth = this.scale.width - 60;
-    const square = Math.min(frameWidth - 40, 500);
+    const square = Draw.CANVAS_SQUARE;
     this.overlay.place(this.canvas.element, {
       x: this.scale.width / 2 - square / 2,
-      y: 400 - square / 2,
+      y: Draw.CANVAS_CENTER_Y - square / 2,
       width: square,
       height: square,
     });
@@ -224,11 +253,14 @@ export class Draw extends Scene {
       borderRadius: '14px',
       outline: 'none',
     });
+    // Distinct row above the submit button — NAME_Y is its center; a 68px-tall
+    // field spans 1076..1144, well clear of the 96px submit button (1170..1266).
+    const nameH = 68;
     this.overlay.place(this.nameInput, {
-      x: 40,
-      y: 1110,
-      width: this.scale.width - 80,
-      height: 72,
+      x: EDGE,
+      y: Draw.NAME_Y - nameH / 2,
+      width: this.scale.width - EDGE * 2,
+      height: nameH,
     });
   }
 
@@ -250,19 +282,19 @@ export class Draw extends Scene {
   private updateElementBadge(element: Element): void {
     if (element === this.currentElement && this.elementBadgeRef) return;
     this.currentElement = element;
-    const y = this.elementBadgeRef?.y ?? 904;
-    const x = this.elementBadgeRef?.x ?? this.scale.width / 2;
     this.elementBadgeRef?.destroy();
-    this.elementBadgeRef = elementBadge(this, x, y, element, 0.9);
+    // Re-add inside the stat card at the same local slot so it stays framed.
+    this.elementBadgeRef = elementBadge(this, 0, this.badgeLocalY, element, 0.82);
+    this.statCard?.add(this.elementBadgeRef);
     // Morph pop.
-    this.elementBadgeRef.setScale(0.6);
-    this.tweens.add({ targets: this.elementBadgeRef, scale: 0.9, duration: 260, ease: 'Back.easeOut' });
+    this.elementBadgeRef.setScale(0.55);
+    this.tweens.add({ targets: this.elementBadgeRef, scale: 0.82, duration: 260, ease: 'Back.easeOut' });
   }
 
   private updateReaction(result: AnalyzerResult): void {
     if (result.inkedPixels < MIN_INK_PIXELS) {
       this.reactionText.setText('Draw something! ✏️');
-      this.reactionText.setColor(UI.cream);
+      this.reactionText.setColor(UI.inkSoft);
       return;
     }
     const dominant = (['chonk', 'spike', 'zip', 'charm'] as const).reduce((best, key) =>
@@ -330,12 +362,13 @@ export class Draw extends Scene {
   private playCeremony(scribbit: Scribbit, dataUrl: string): void {
     const { width, height } = this.scale;
     this.children.removeAll(true);
-    this.cameras.main.setBackgroundColor('#241b2e');
+    this.cameras.main.setBackgroundColor(UI.desk);
+    paperBackdrop(this);
 
     const style = ELEMENT_STYLES[scribbit.element];
-    this.add.rectangle(0, 0, width, height, style.primary, 0.14).setOrigin(0);
+    this.add.rectangle(0, 0, width, height, style.primary, 0.1).setOrigin(0).setDepth(-90);
 
-    const title = label(this, width / 2, 200, "IT'S ALIVE!", 64, UI.goldText, true).setScale(0);
+    const title = handLettered(this, width / 2, 180, "IT'S ALIVE!", 62, UI.goldText, true).setScale(0);
     this.tweens.add({ targets: title, scale: 1, duration: 500, ease: 'Back.easeOut' });
 
     // Load the just-drawn PNG straight from the data URL for an instant reveal.
@@ -366,28 +399,43 @@ export class Draw extends Scene {
 
   private revealCard(scribbit: Scribbit, textureKey: string): void {
     const { width, height } = this.scale;
-    const cardY = height / 2 - 40;
-    const card = roundedPanel(this, width / 2, cardY, 360, 400, 0x2b2016, UI.gold);
+    const cardW = 420;
+    const cardH = 560;
+    const cardY = height / 2 + 20;
+    const card = stickerCard(this, width / 2, cardY, cardW, cardH, { gold: true, tapeColor: UI.tape });
     card.setScale(0);
-    const img = this.add.image(width / 2, cardY - 40, textureKey).setDisplaySize(300, 300).setScale(0);
-    const nameLabel = label(this, width / 2, cardY + 150, scribbit.name.toUpperCase(), 34, UI.cream, true).setAlpha(0);
-    const badge = elementBadge(this, width / 2, cardY + 200, scribbit.element, 0.9).setAlpha(0);
 
-    this.tweens.add({ targets: [card, img], scale: 1, duration: 500, ease: 'Back.easeOut', onComplete: () => {
-      img.setScale(1);
-      img.setDisplaySize(300, 300);
-    }});
+    const artY = cardY - cardH / 2 + 170;
+    const img = this.add.image(width / 2, artY, textureKey).setDisplaySize(280, 280).setScale(0).setDepth(10);
+    const nameLabel = label(this, width / 2, cardY + 60, scribbit.name.toUpperCase(), TYPE.display * 0.66, UI.ink, true)
+      .setAlpha(0)
+      .setDepth(10);
+    const badge = elementBadge(this, width / 2, cardY + 110, scribbit.element, 0.85).setAlpha(0).setDepth(10);
+
+    this.tweens.add({
+      targets: card,
+      scale: 1,
+      duration: 500,
+      ease: 'Back.easeOut',
+    });
+    this.tweens.add({
+      targets: img,
+      scale: 1,
+      duration: 500,
+      ease: 'Back.easeOut',
+      onComplete: () => img.setDisplaySize(280, 280),
+    });
     this.tweens.add({ targets: [nameLabel, badge], alpha: 1, delay: 400, duration: 400 });
 
     // Tiny idle wobble so the newborn feels alive.
     this.tweens.add({ targets: img, angle: 3, duration: 1200, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
 
-    const bars = statBars(this, width / 2 - 160, cardY + 260, 320);
-    bars.container.setAlpha(0);
-    bars.setStats(scribbit.stats, false);
-    this.tweens.add({ targets: bars.container, alpha: 1, delay: 700, duration: 400 });
+    const grid = statGrid(this, width / 2, cardY + cardH / 2 - 120, cardW - 60, 130);
+    grid.container.setAlpha(0).setDepth(10);
+    grid.setStats(scribbit.stats, false);
+    this.tweens.add({ targets: grid.container, alpha: 1, delay: 700, duration: 400 });
 
-    label(this, width / 2, height - 90, 'Tap anywhere to continue', 22, '#c9b79a', true);
+    label(this, width / 2, height - 60, 'Tap anywhere to continue', TYPE.caption, UI.inkSoft, true).setDepth(10);
     this.input.once('pointerdown', () => {
       if (this.scene.isActive()) this.exitTo('ArenaHome');
     });

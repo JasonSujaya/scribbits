@@ -18,14 +18,29 @@ export type RumbleResolution = {
   reports: BattleReport[];
 };
 
-const minimumRumbleEntrants = 4;
+const minimumRumbleEntrants = 6;
 const preferredRumbleEntrants = 8;
 
 const cloneScribbit = (scribbit: Scribbit): Scribbit => {
   return {
     ...scribbit,
     stats: { ...scribbit.stats },
+    careDoneToday: [...scribbit.careDoneToday],
   };
+};
+
+export const getProjectedRumbleEntrantCount = (
+  entrantCount: number
+): number => {
+  if (entrantCount <= minimumRumbleEntrants) {
+    return minimumRumbleEntrants;
+  }
+
+  if (entrantCount <= preferredRumbleEntrants) {
+    return preferredRumbleEntrants;
+  }
+
+  return entrantCount + (entrantCount % 2);
 };
 
 const getFoundingBackfill = (
@@ -67,12 +82,7 @@ export const prepareRumbleEntrants = (
     }
   }
 
-  const targetCount =
-    uniqueEntrants.length <= minimumRumbleEntrants
-      ? minimumRumbleEntrants
-      : uniqueEntrants.length <= preferredRumbleEntrants
-        ? preferredRumbleEntrants
-        : uniqueEntrants.length + (uniqueEntrants.length % 2);
+  const targetCount = getProjectedRumbleEntrantCount(uniqueEntrants.length);
   const neededBackfill = Math.max(0, targetCount - uniqueEntrants.length);
 
   uniqueEntrants.push(...getFoundingBackfill(seenIds, neededBackfill, day));

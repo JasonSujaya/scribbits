@@ -1,9 +1,9 @@
 import * as Phaser from 'phaser';
 import { Scene } from 'phaser';
 import { fetchArena } from '../lib/api';
-import { generateAllElementBadges, generateCoreArt } from '../lib/art';
+import { generateAllElementBadges, generateCoreArt, paperBackdrop } from '../lib/art';
 import { FONT_STACK, UI } from '../lib/theme';
-import { errorPanel } from '../lib/ui';
+import { errorPanel, handLettered } from '../lib/ui';
 import type { ErrorPanel } from '../lib/ui';
 import { setArena } from '../lib/registry';
 import type { ArenaState } from '../../shared/arena';
@@ -26,24 +26,18 @@ export class Preloader extends Scene {
 
   create(): void {
     const { width, height } = this.scale;
-    this.cameras.main.setBackgroundColor('#241b2e');
+    this.cameras.main.setBackgroundColor(UI.desk);
 
     generateCoreArt(this);
     generateAllElementBadges(this);
+    paperBackdrop(this);
 
-    this.add
-      .text(width / 2, height * 0.4, 'SCRIBBITS', {
-        fontFamily: FONT_STACK,
-        fontSize: '76px',
-        color: UI.cream,
-        fontStyle: 'bold',
-      })
-      .setOrigin(0.5);
+    handLettered(this, width / 2, height * 0.4, 'SCRIBBITS', 76, UI.ink, true);
     this.add
       .text(width / 2, height * 0.47, 'Draw it. Believe in it.', {
         fontFamily: FONT_STACK,
         fontSize: '28px',
-        color: '#e7d8c2',
+        color: UI.inkSoft,
       })
       .setOrigin(0.5);
 
@@ -51,7 +45,7 @@ export class Preloader extends Scene {
       .text(width / 2, height * 0.56, 'Reading the forecast…', {
         fontFamily: FONT_STACK,
         fontSize: '26px',
-        color: '#c9b79a',
+        color: UI.inkSoft,
       })
       .setOrigin(0.5);
 

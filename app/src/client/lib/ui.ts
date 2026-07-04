@@ -9,39 +9,17 @@ import {
   FONT_STACK,
   MIN_TOUCH,
   STAT_STYLES,
+  TYPE,
   UI,
 } from './theme';
-
-export type ProgressBar = {
-  container: Phaser.GameObjects.Container;
-  setValue: (percent: number) => void;
-};
 
 export type ErrorPanel = {
   container: Phaser.GameObjects.Container;
   destroy: () => void;
 };
 
-export type StatBars = {
-  container: Phaser.GameObjects.Container;
-  setStats: (stats: ScribbitStats, animate: boolean) => void;
-};
-
 const STAT_KEYS = ['chonk', 'spike', 'zip', 'charm'] as const;
 type StatKey = (typeof STAT_KEYS)[number];
-
-// A rounded panel via nine-slice from the generated `ui-panel` texture.
-export function panel(
-  scene: Scene,
-  x: number,
-  y: number,
-  width: number,
-  height: number
-): Phaser.GameObjects.NineSlice {
-  return scene.add
-    .nineslice(x, y, 'ui-panel', undefined, width, height, 18, 18, 18, 18)
-    .setOrigin(0.5);
-}
 
 export function label(
   scene: Scene,
@@ -63,38 +41,222 @@ export function label(
     .setOrigin(0.5);
 }
 
-// Horizontal progress bar with animated fill. Percent is 0..100.
-export function progressBar(
+// Hand-lettered display header: each glyph is its own Text with a small random
+// rotation + baseline hop, so the word reads as drawn by hand rather than typeset.
+// Returns a container centered on (x, y). Deterministic-ish jitter per index.
+export function handLettered(
+  scene: Scene,
+  x: number,
+  y: number,
+  text: string,
+  size: number = TYPE.display,
+  color: string = UI.cream,
+  shadow = true
+): Phaser.GameObjects.Container {
+  const container = scene.add.container(x, y);
+  const glyphs: Phaser.GameObjects.Text[] = [];
+  const style = {
+    fontFamily: FONT_STACK,
+    fontSize: `${size}px`,
+    color,
+    fontStyle: 'bold',
+  } as const;
+
+  // First lay out at origin (0,0) to measure natural widths.
+  let cursor = 0;
+  const spacing = size * 0.06;
+  text.split('').forEach((char, index) => {
+    if (char === ' ') {
+      cursor += size * 0.34;
+      return;
+    }
+    // Optional ink drop-shadow glyph behind for depth.
+    if (shadow) {
+      const sh = scene.add
+        .text(cursor + 3, 4, char, { ...style, color: '#00000055' })
+        .setOrigin(0, 0.5);
+      container.add(sh);
+      sh.setData('shadowFor', index);
+    }
+    const glyph = scene.add.text(cursor, 0, char, style).setOrigin(0, 0.5);
+    // Alternating tilt with a touch of noise; even letters lean left, odd right.
+    const lean = (index % 2 === 0 ? -1 : 1) * (2 + (index % 3));
+    glyph.setAngle(lean);
+    glyph.y = index % 2 === 0 ? -2 : 2;
+    container.add(glyph);
+    glyphs.push(glyph);
+    // Sync the matching shadow's transform.
+    const sh = container.list.find(
+      (o) => (o as Phaser.GameObjects.Text).getData?.('shadowFor') === index
+    ) as Phaser.GameObjects.Text | undefined;
+    if (sh) {
+      sh.setAngle(lean);
+      sh.y = glyph.y + 4;
+    }
+    cursor += glyph.width + spacing;
+  });
+
+  // Center the whole word.
+  container.list.forEach((o) => {
+    (o as Phaser.GameObjects.Text).x -= cursor / 2;
+  });
+  container.setData('glyphs', glyphs);
+  return container;
+}
+
+// A translucent washi-tape strip, rotated, for sticking cards to the page.
+export function tape(
+  scene: Scene,
+  x: number,
+  y: number,
+  angle: number,
+  width = 90,
+  color: number = UI.tape
+): Phaser.GameObjects.Rectangle {
+  const strip = scene.add
+    .rectangle(x, y, width, 34, color, 0.72)
+    .setStrokeStyle(1, 0x000000, 0.08)
+    .setAngle(angle)
+    .setDepth(4);
+  return strip;
+}
+
+// A sticker card: cream page with a soft drop-shadow + wobbly ink border and two
+// tape corners. The signature container for anything that sits ON the page.
+export function stickerCard(
   scene: Scene,
   x: number,
   y: number,
   width: number,
   height: number,
-  fillColor: number
-): ProgressBar {
+  opts: { gold?: boolean; tapeColor?: number; tilt?: number } = {}
+): Phaser.GameObjects.Container {
   const container = scene.add.container(x, y);
-  const track = scene.add
-    .rectangle(0, 0, width, height, UI.progressTrack, 0.18)
-    .setOrigin(0, 0.5);
-  track.setStrokeStyle(2, UI.progressTrack, 0.4);
-  const fill = scene.add
-    .rectangle(0, 0, 1, height - 6, fillColor, 1)
-    .setOrigin(0, 0.5);
-  fill.x = 3;
-  container.add([track, fill]);
+  const left = -width / 2;
+  const top = -height / 2;
 
-  const setValue = (percent: number): void => {
-    const clamped = Math.max(0, Math.min(100, percent));
-    const target = Math.max(1, ((width - 6) * clamped) / 100);
-    scene.tweens.add({
-      targets: fill,
-      width: target,
-      duration: 400,
-      ease: 'Cubic.easeOut',
-    });
-  };
+  // Soft drop shadow beneath the card.
+  const shadow = scene.add.graphics();
+  shadow.fillStyle(0x000000, 0.22);
+  shadow.fillRoundedRect(left + 6, top + 10, width, height, 20);
+  container.add(shadow);
 
-  return { container, setValue };
+  // The paper + wobbly border via the existing paperCard drawing, drawn locally.
+  const graphics = scene.add.graphics();
+  const stroke = opts.gold ? UI.gold : UI.panelStroke;
+  graphics.fillStyle(UI.paper, 1);
+  graphics.fillRoundedRect(left, top, width, height, 18);
+  graphics.lineStyle(opts.gold ? 6 : 5, stroke, 1);
+  drawWobblyRect(graphics, left + 6, top + 6, width - 12, height - 12);
+  container.add(graphics);
+
+  // Two tape corners for the handmade, stuck-to-the-page look.
+  const tc = opts.tapeColor ?? UI.tape;
+  container.add(tape(scene, left + 26, top + 4, -24, 74, tc));
+  container.add(tape(scene, -left - 26, top + 4, 22, 74, tc));
+
+  if (opts.tilt) container.setAngle(opts.tilt);
+  return container;
+}
+
+// A small mood chip: emoji + word, colored by mood.
+export function moodChip(
+  scene: Scene,
+  x: number,
+  y: number,
+  emoji: string,
+  moodLabel: string,
+  color: string,
+  scale = 1
+): Phaser.GameObjects.Container {
+  const container = scene.add.container(x, y);
+  const w = 130 * scale;
+  const bg = scene.add
+    .rectangle(0, 0, w, 40 * scale, UI.creamHex, 1)
+    .setStrokeStyle(3, UI.inkHex, 1);
+  const txt = label(scene, 0, 0, `${emoji} ${moodLabel}`, 20 * scale, color, true);
+  container.add([bg, txt]);
+  return container;
+}
+
+// A round level badge "Lv 3" — gold coin with ink outline.
+export function levelBadge(
+  scene: Scene,
+  x: number,
+  y: number,
+  level: number,
+  scale = 1
+): Phaser.GameObjects.Container {
+  const container = scene.add.container(x, y);
+  const r = 26 * scale;
+  const outer = scene.add.circle(0, 0, r, UI.inkHex, 1);
+  const inner = scene.add.circle(0, 0, r - 4, UI.goldHex, 1);
+  const txt = label(scene, 0, 0, `Lv${level}`, 20 * scale, UI.ink, true);
+  container.add([outer, inner, txt]);
+  return container;
+}
+
+// Lifespan pips: N dots, filled = days left, hollow = spent. 3 total by default.
+export function lifespanPips(
+  scene: Scene,
+  x: number,
+  y: number,
+  daysLeft: number,
+  total = 3,
+  scale = 1
+): Phaser.GameObjects.Container {
+  const container = scene.add.container(x, y);
+  const gap = 22 * scale;
+  const start = -((total - 1) * gap) / 2;
+  const urgent = daysLeft <= 1;
+  for (let index = 0; index < total; index += 1) {
+    const filled = index < daysLeft;
+    const dot = scene.add.circle(
+      start + index * gap,
+      0,
+      8 * scale,
+      filled ? (urgent ? 0xe8555c : UI.coral) : UI.creamHex,
+      1
+    );
+    dot.setStrokeStyle(3, UI.inkHex, 1);
+    container.add(dot);
+  }
+  return container;
+}
+
+// A compact care button: emoji + label pill, ink border, springy press. Tall
+// buttons (height>=80) stack emoji over label; short ones keep them on one line.
+export function careButton(
+  scene: Scene,
+  x: number,
+  y: number,
+  emoji: string,
+  text: string,
+  fill: number,
+  onClick: () => void,
+  width = 130,
+  height = MIN_TOUCH
+): Phaser.GameObjects.Container {
+  const container = scene.add.container(x, y);
+  const bg = scene.add
+    .rectangle(0, 0, width, height, fill, 1)
+    .setStrokeStyle(4, UI.inkHex, 1);
+  bg.setInteractive({ useHandCursor: true });
+  const stacked = height >= 80;
+  const caption = text ? (stacked ? `${emoji}\n${text}` : `${emoji} ${text}`) : emoji;
+  const txt = label(scene, 0, 0, caption, text ? 20 : 26, '#ffffff', true);
+  txt.setLineSpacing(-2);
+  txt.setAlign('center');
+  txt.setWordWrapWidth(width - 8);
+  container.add([bg, txt]);
+  bg.on('pointerover', () => container.setScale(1.05));
+  bg.on('pointerout', () => container.setScale(1));
+  bg.on('pointerdown', () => container.setScale(0.92));
+  bg.on('pointerup', () => {
+    container.setScale(1);
+    onClick();
+  });
+  return container;
 }
 
 // A tappable pill button. onClick fires on pointerup. Includes a press tween.
@@ -296,47 +458,42 @@ export function elementBadge(
   return container;
 }
 
-// Four labeled stat bars (chonk/spike/zip/charm). setStats animates the fills.
-export function statBars(
+// A compact 2x2 stat grid — four labeled meters that NEVER clip. Sized to fit
+// inside a given width; each cell has an icon+label, a short bar, and a value.
+// Returns a controller whose setStats animates the fills. Centered on (x, y).
+export type StatGrid = {
+  container: Phaser.GameObjects.Container;
+  setStats: (stats: ScribbitStats, animate: boolean) => void;
+};
+
+export function statGrid(
   scene: Scene,
   x: number,
   y: number,
-  width: number
-): StatBars {
+  width: number,
+  height: number
+): StatGrid {
   const container = scene.add.container(x, y);
-  const rowHeight = 46;
+  const colWidth = width / 2;
+  const rowHeight = height / 2;
   const bars = new Map<StatKey, Phaser.GameObjects.Rectangle>();
   const values = new Map<StatKey, Phaser.GameObjects.Text>();
-  const barWidth = width - 210;
+  const barMax = colWidth - 150;
 
   STAT_KEYS.forEach((key, index) => {
     const style = STAT_STYLES[key];
-    const rowY = index * rowHeight;
-    const name = label(
-      scene,
-      0,
-      rowY,
-      `${style.emoji} ${style.label}`,
-      22,
-      style.colorText,
-      true
-    ).setOrigin(0, 0.5);
+    const col = index % 2;
+    const row = Math.floor(index / 2);
+    const cellX = -width / 2 + colWidth * col + 12;
+    const cellY = -height / 2 + rowHeight * (row + 0.5);
+
+    const name = label(scene, cellX, cellY - 16, `${style.emoji} ${style.label}`, 20, style.colorText, true).setOrigin(0, 0.5);
     const track = scene.add
-      .rectangle(160, rowY, barWidth, 22, UI.progressTrack, 0.16)
+      .rectangle(cellX, cellY + 12, barMax, 16, UI.progressTrack, 0.16)
       .setOrigin(0, 0.5)
-      .setStrokeStyle(2, UI.progressTrack, 0.35);
-    const fill = scene.add
-      .rectangle(162, rowY, 1, 16, style.color, 1)
-      .setOrigin(0, 0.5);
-    const valueText = label(
-      scene,
-      width,
-      rowY,
-      '0',
-      22,
-      UI.ink,
-      true
-    ).setOrigin(1, 0.5);
+      .setStrokeStyle(2, UI.progressTrack, 0.3);
+    const fill = scene.add.rectangle(cellX + 2, cellY + 12, 1, 11, style.color, 1).setOrigin(0, 0.5);
+    const valueText = label(scene, cellX + barMax + 30, cellY + 12, '0', 20, UI.ink, true).setOrigin(0.5);
     container.add([name, track, fill, valueText]);
     bars.set(key, fill);
     values.set(key, valueText);
@@ -348,15 +505,9 @@ export function statBars(
       const valueText = values.get(key);
       if (!fill || !valueText) return;
       const value = stats[key];
-      // Bars are relative to STAT_MAX (55) so differences read clearly.
-      const target = Math.max(2, (barWidth - 4) * Math.min(1, value / 55));
+      const target = Math.max(2, (barMax - 4) * Math.min(1, value / 55));
       if (animate) {
-        scene.tweens.add({
-          targets: fill,
-          width: target,
-          duration: 260,
-          ease: 'Cubic.easeOut',
-        });
+        scene.tweens.add({ targets: fill, width: target, duration: 260, ease: 'Cubic.easeOut' });
       } else {
         fill.width = target;
       }
@@ -365,38 +516,6 @@ export function statBars(
   };
 
   return { container, setStats };
-}
-
-// A lifespan pill "⏳ 2 days left" / "⏳ last day!" colored by urgency.
-export function lifespanPill(
-  scene: Scene,
-  x: number,
-  y: number,
-  daysLeft: number
-): Phaser.GameObjects.Container {
-  const container = scene.add.container(x, y);
-  const urgent = daysLeft <= 1;
-  const text =
-    daysLeft <= 0
-      ? '⏳ fades tonight'
-      : daysLeft === 1
-        ? '⏳ last day!'
-        : `⏳ ${daysLeft} days left`;
-  const width = 200;
-  const bg = scene.add
-    .rectangle(0, 0, width, 44, urgent ? 0xe8555c : 0x2b2016, urgent ? 1 : 0.14)
-    .setStrokeStyle(2, 0x2b2016, 0.5);
-  const txt = label(
-    scene,
-    0,
-    0,
-    text,
-    20,
-    urgent ? '#ffffff' : UI.ink,
-    true
-  );
-  container.add([bg, txt]);
-  return container;
 }
 
 // Days-left helper shared by scenes.

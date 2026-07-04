@@ -3,7 +3,8 @@
 // so most scenes just need: "give me a sprite of this scribbit's drawing".
 
 import { Scene } from 'phaser';
-import type { Scribbit } from '../../shared/arena';
+import type { CareAction, Mood, Scribbit } from '../../shared/arena';
+import { MOOD_STYLES } from './theme';
 
 // Texture key for a scribbit's drawing. Stable per id so we load each once.
 export function drawingKey(scribbit: Pick<Scribbit, 'id'>): string {
@@ -75,4 +76,39 @@ export function loadDrawings(
 // "2W · 1L" record chip text.
 export function recordText(scribbit: Pick<Scribbit, 'wins' | 'losses'>): string {
   return `${scribbit.wins}W · ${scribbit.losses}L`;
+}
+
+// --- Tamagotchi field access (defensive) ------------------------------------
+// The server owns level/xp/mood/careDoneToday, but founding NPCs and older
+// cached snapshots may predate them. These readers give safe defaults so the UI
+// never crashes on a partial scribbit.
+
+export function moodOf(scribbit: Partial<Pick<Scribbit, 'mood'>>): Mood {
+  return scribbit.mood ?? 'happy';
+}
+
+export function moodStyleOf(scribbit: Partial<Pick<Scribbit, 'mood'>>): {
+  emoji: string;
+  label: string;
+  color: string;
+} {
+  return MOOD_STYLES[moodOf(scribbit)];
+}
+
+export function levelOf(scribbit: Partial<Pick<Scribbit, 'level'>>): number {
+  return Math.max(1, scribbit.level ?? 1);
+}
+
+export function careDoneToday(
+  scribbit: Partial<Pick<Scribbit, 'careDoneToday'>>
+): CareAction[] {
+  return scribbit.careDoneToday ?? [];
+}
+
+// True when this care action is still available today for this scribbit.
+export function canCare(
+  scribbit: Partial<Pick<Scribbit, 'careDoneToday'>>,
+  action: CareAction
+): boolean {
+  return !careDoneToday(scribbit).includes(action);
 }

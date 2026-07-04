@@ -1,6 +1,11 @@
 import type { BattleReport } from '../../shared/arena';
 import type { ArenaStorage } from './scribbit';
-import { getScribbitOwner, isScribbit } from './scribbit';
+import {
+  cloneScribbit,
+  getScribbitOwner,
+  isScribbit,
+  normalizeScribbitRecord,
+} from './scribbit';
 
 const battleReportTtlSeconds = 30 * 24 * 60 * 60;
 
@@ -44,7 +49,16 @@ const parseBattleReport = (
     const parsedBattleReport: unknown = JSON.parse(storedBattleReport);
 
     if (isBattleReport(parsedBattleReport)) {
-      return parsedBattleReport;
+      const fighterA = normalizeScribbitRecord(parsedBattleReport.a);
+      const fighterB = normalizeScribbitRecord(parsedBattleReport.b);
+
+      if (fighterA && fighterB) {
+        return {
+          ...parsedBattleReport,
+          a: fighterA,
+          b: fighterB,
+        };
+      }
     }
   } catch (error) {
     console.error('Failed to parse stored battle report:', error);
@@ -59,7 +73,13 @@ export const saveBattleReport = async (
   score: number
 ): Promise<void> => {
   const battleReportKey = getBattleReportKey(battleReport.id);
-  await storage.set(battleReportKey, JSON.stringify(battleReport));
+  const storedBattleReport: BattleReport = {
+    ...battleReport,
+    a: cloneScribbit(battleReport.a),
+    b: cloneScribbit(battleReport.b),
+  };
+
+  await storage.set(battleReportKey, JSON.stringify(storedBattleReport));
   await storage.expire(battleReportKey, battleReportTtlSeconds);
 
   const ownerIds = new Set<string>();

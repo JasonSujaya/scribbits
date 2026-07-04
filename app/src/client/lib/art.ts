@@ -55,11 +55,59 @@ export function generatePanelTexture(scene: Scene): void {
   graphics.destroy();
 }
 
+// A seamless-ish cream paper texture tile with faint pencil grain and tiny ink
+// specks. Baked once; every scene's backdrop is this tiled across the screen so
+// the whole app sits on one warm sketchbook page instead of flat dark boxes.
+export function generatePaperTexture(scene: Scene): void {
+  const key = 'paper';
+  if (scene.textures.exists(key)) return;
+  const size = 256;
+  const graphics = scene.make.graphics({ x: 0, y: 0 }, false);
+  // Warm cream base.
+  graphics.fillStyle(0xf7ecd6, 1);
+  graphics.fillRect(0, 0, size, size);
+  // Faint pencil grain: many low-alpha short strokes.
+  for (let index = 0; index < 220; index += 1) {
+    const gx = Math.random() * size;
+    const gy = Math.random() * size;
+    const shade = Math.random() < 0.5 ? 0xe8dcc2 : 0xfff7e8;
+    graphics.lineStyle(1, shade, 0.25);
+    graphics.beginPath();
+    graphics.moveTo(gx, gy);
+    graphics.lineTo(gx + (Math.random() - 0.5) * 10, gy + (Math.random() - 0.5) * 10);
+    graphics.strokePath();
+  }
+  // Tiny ink specks.
+  for (let index = 0; index < 30; index += 1) {
+    graphics.fillStyle(0x7a6a56, 0.12 + Math.random() * 0.1);
+    graphics.fillCircle(Math.random() * size, Math.random() * size, Math.random() * 1.4);
+  }
+  graphics.generateTexture(key, size, size);
+  graphics.destroy();
+}
+
+// Tiles the paper texture to fill the whole design surface. Call at the start of
+// every scene's build for a consistent handmade page under the content.
+export function paperBackdrop(scene: Scene): void {
+  generatePaperTexture(scene);
+  const { width, height } = scene.scale;
+  scene.add
+    .tileSprite(0, 0, width, height, 'paper')
+    .setOrigin(0)
+    .setDepth(-100);
+  // A soft warm vignette so edges recede a touch.
+  const vignette = scene.add.graphics().setDepth(-99);
+  vignette.fillStyle(0x2a2118, 0.08);
+  vignette.fillRect(0, 0, width, 40);
+  vignette.fillRect(0, height - 40, width, 40);
+}
+
 // Baseline textures every scene relies on.
 export function generateCoreArt(scene: Scene): void {
   generateDotTexture(scene);
   generateSparkTexture(scene);
   generatePanelTexture(scene);
+  generatePaperTexture(scene);
 }
 
 // A small element badge chip texture (used where drawing textures aren't handy).

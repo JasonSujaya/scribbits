@@ -88,6 +88,12 @@ const makeScribbit = (overrides = {}) => {
     status: overrides.status ?? 'alive',
     legendTitle: overrides.legendTitle ?? null,
     isFounding: overrides.isFounding ?? false,
+    level: overrides.level ?? 1,
+    xp: overrides.xp ?? 0,
+    mood: overrides.mood ?? 'hungry',
+    careDoneToday: overrides.careDoneToday
+      ? [...overrides.careDoneToday]
+      : [],
   };
 };
 
@@ -301,6 +307,48 @@ for (const value of Object.values(normalizedStats)) {
 }
 pass('server stat normalization bounds');
 
+const oldRecordStorage = createMemoryStorage();
+const oldStoredScribbit = {
+  id: 'old-record',
+  name: 'Old Record',
+  artist: 'tester',
+  element: 'storm',
+  stats: {
+    chonk: 25,
+    spike: 25,
+    zip: 25,
+    charm: 25,
+  },
+  imageUrl: '/api/drawing/old-record',
+  bornDay: 1,
+  expiresDay: 4,
+  belief: 0,
+  wins: 0,
+  losses: 0,
+  status: 'alive',
+  legendTitle: null,
+  isFounding: false,
+};
+await oldRecordStorage.set(
+  scribbitCore.getScribbitKey(oldStoredScribbit.id),
+  JSON.stringify(oldStoredScribbit)
+);
+const migratedOldRecord = await scribbitCore.loadScribbit(
+  oldRecordStorage,
+  oldStoredScribbit.id,
+  '20260705'
+);
+assert.ok(migratedOldRecord, 'old stored Scribbit should parse');
+assert.equal(migratedOldRecord.level, 1, 'old record should default level');
+assert.equal(migratedOldRecord.xp, 0, 'old record should default xp');
+assert.equal(migratedOldRecord.mood, 'hungry', 'old record should hydrate mood');
+assert.deepEqual(
+  migratedOldRecord.careDoneToday,
+  [],
+  'old record should default daily care'
+);
+pass('old-record migration defaults');
+
 assert.equal(
   battle.getElementDamageMultiplier('ember', 'moss'),
   1.25,
@@ -312,6 +360,50 @@ assert.equal(
   'moss should be weak into ember'
 );
 pass('element damage triangle');
+
+assert.equal(
+  battle.getLevelDamageMultiplier(1),
+  1,
+  'level 1 should not add damage'
+);
+assert.equal(
+  battle.getLevelDamageMultiplier(arena.MAX_LEVEL),
+  1 + (arena.MAX_LEVEL - 1) * arena.LEVEL_DAMAGE_BONUS_PER_LEVEL,
+  'max level should add the configured damage bonus'
+);
+assert.equal(
+  battle.getLevelDamageMultiplier(99),
+  1 + (arena.MAX_LEVEL - 1) * arena.LEVEL_DAMAGE_BONUS_PER_LEVEL,
+  'damage bonus should cap at max level'
+);
+assert.equal(
+  battle.getLevelDamageMultiplier(99),
+  1.08,
+  'level bonus should cap at +8%'
+);
+pass('level damage bonus cap');
+
+assert.equal(
+  scribbitCore.deriveMoodFromCareActions([]),
+  'hungry',
+  'no care actions should be hungry'
+);
+assert.equal(
+  scribbitCore.deriveMoodFromCareActions(['feed']),
+  'sleepy',
+  'one care action should be sleepy'
+);
+assert.equal(
+  scribbitCore.deriveMoodFromCareActions(['feed', 'pat']),
+  'happy',
+  'two care actions should be happy'
+);
+assert.equal(
+  scribbitCore.deriveMoodFromCareActions(['feed', 'pat', 'train']),
+  'pumped',
+  'three care actions should be pumped'
+);
+pass('mood derivation table');
 
 const flagStorage = createMemoryStorage();
 assert.equal(
@@ -361,6 +453,101 @@ assert.deepEqual(
   'failed paired claim should roll back its drawn field'
 );
 pass('daily draw/entry flag claim and rollback');
+
+const careStorage = createMemoryStorage();
+const firstCare = await scribbitCore.claimDailyCareAction(
+  careStorage,
+  'care-me',
+  'feed',
+  '20260705',
+  100
+);
+assert.equal(firstCare.claimed, true, 'first feed should claim');
+assert.equal(firstCare.xpGain, 1, 'first care action should award one xp');
+assert.equal(firstCare.mood, 'sleepy', 'first care action should hydrate sleepy');
+assert.deepEqual(
+  firstCare.careDoneToday,
+  ['feed'],
+  'first care action should be readable'
+);
+const duplicateCare = await scribbitCore.claimDailyCareAction(
+  careStorage,
+  'care-me',
+  'feed',
+  '20260705',
+  200
+);
+assert.equal(duplicateCare.claimed, false, 'duplicate feed should not claim');
+assert.equal(duplicateCare.xpGain, 0, 'duplicate care should not award xp');
+const secondCare = await scribbitCore.claimDailyCareAction(
+  careStorage,
+  'care-me',
+  'pat',
+  '20260705',
+  300
+);
+assert.equal(secondCare.mood, 'happy', 'two actions should hydrate happy');
+assert.equal(secondCare.xpGain, 1, 'second unique care should award one xp');
+const thirdCare = await scribbitCore.claimDailyCareAction(
+  careStorage,
+  'care-me',
+  'train',
+  '20260705',
+  400
+);
+assert.equal(thirdCare.mood, 'pumped', 'three actions should hydrate pumped');
+assert.equal(thirdCare.xpGain, 2, 'pumped care action should award two xp');
+const nextDayCare = await scribbitCore.claimDailyCareAction(
+  careStorage,
+  'care-me',
+  'feed',
+  '20260706',
+  500
+);
+assert.equal(nextDayCare.claimed, true, 'care should reset on the next UTC day');
+pass('care once-per-day claim');
+
+const sparXpStorage = createMemoryStorage();
+const sparScribbit = makeScribbit({ id: 'spar-xp', name: 'Spar XP' });
+await scribbitCore.storeScribbit(sparXpStorage, 'spar-owner', sparScribbit);
+const firstSparWin = await scribbitCore.claimDailySparWinXp(
+  sparXpStorage,
+  sparScribbit.id,
+  '20260705',
+  100
+);
+assert.equal(firstSparWin, true, 'first daily spar win should claim XP');
+if (firstSparWin) {
+  await scribbitCore.awardScribbitXp(
+    sparXpStorage,
+    sparScribbit.id,
+    1,
+    '20260705'
+  );
+}
+const secondSparWin = await scribbitCore.claimDailySparWinXp(
+  sparXpStorage,
+  sparScribbit.id,
+  '20260705',
+  200
+);
+assert.equal(secondSparWin, false, 'second daily spar win should not claim XP');
+if (secondSparWin) {
+  await scribbitCore.awardScribbitXp(
+    sparXpStorage,
+    sparScribbit.id,
+    1,
+    '20260705'
+  );
+}
+const sparXpAfterClaims = await scribbitCore.loadScribbit(
+  sparXpStorage,
+  sparScribbit.id,
+  '20260705'
+);
+assert.ok(sparXpAfterClaims, 'spar Scribbit should remain stored');
+assert.equal(sparXpAfterClaims.xp, 1, 'spar XP should only award once per day');
+pass('spar xp only-first-win');
 
 const dayMathStorage = createMemoryStorage();
 await arenaStore.setCurrentArenaDay(dayMathStorage, 2);
@@ -443,8 +630,13 @@ const oddEntrants = [
   makeScribbit({ id: 'odd-c', name: 'Odd C', element: 'storm' }),
 ];
 const oddResolution = rumble.resolveSwissRumble(oddEntrants, forecast, 9);
+assert.equal(
+  rumble.getProjectedRumbleEntrantCount(0),
+  6,
+  'visible rumble count should include the founding floor'
+);
 assert.ok(
-  oddResolution.standings.length >= 4,
+  oddResolution.standings.length >= 6,
   'odd/thin bracket should be backfilled'
 );
 assert.equal(
@@ -455,6 +647,18 @@ assert.equal(
 assert.ok(
   oddResolution.standings.some((standing) => standing.scribbit.isFounding),
   'founding Scribbits should backfill odd brackets'
+);
+const foundingStanding = oddResolution.standings.find((standing) => {
+  return standing.scribbit.isFounding;
+});
+assert.ok(foundingStanding, 'backfill should include a founding Scribbit');
+assert.ok(
+  foundingStanding.scribbit.level >= 1 && foundingStanding.scribbit.level <= 3,
+  'backfill founding Scribbit should carry a small level'
+);
+assert.ok(
+  ['happy', 'hungry', 'sleepy', 'pumped'].includes(foundingStanding.scribbit.mood),
+  'backfill founding Scribbit should carry mood'
 );
 assert.ok(oddResolution.reports.length >= 2, 'Swiss rumble should emit reports');
 assert.ok(oddResolution.champion.id, 'Swiss rumble should choose a champion');
@@ -469,8 +673,8 @@ const fiveEntrants = Array.from({ length: 5 }, (_, index) => {
 const fiveResolution = rumble.resolveSwissRumble(fiveEntrants, forecast, 10);
 assert.equal(
   fiveResolution.standings.length,
-  8,
-  'five entrants should backfill to eight'
+  6,
+  'five entrants should backfill to the living-arena floor'
 );
 const scoreByScribbitId = new Map(
   fiveResolution.standings.map((standing) => [standing.scribbit.id, 0])
@@ -482,7 +686,7 @@ for (const report of fiveResolution.reports) {
   const winnerId = report.winner === 'a' ? report.a.id : report.b.id;
   scoreByScribbitId.set(winnerId, (scoreByScribbitId.get(winnerId) ?? 0) + 1);
 }
-pass('Swiss backfill to eight and same-score pairing');
+pass('Swiss backfill floor and same-score pairing');
 
 console.log(
   `Scribbits Arena simulation tests passed (${passedChecks.length} groups): ${passedChecks.join('; ')}.`

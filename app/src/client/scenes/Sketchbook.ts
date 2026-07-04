@@ -3,9 +3,10 @@ import { Scene } from 'phaser';
 import { showLoginPrompt, showToast } from '@devvit/web/client';
 import { fetchLegends, believe } from '../lib/api';
 import { getArena, getSketchbookTab, setSketchbookTab } from '../lib/registry';
-import { loadDrawing, recordText } from '../lib/scribbits';
-import { UI } from '../lib/theme';
-import { label, ghostButton, paperCard, elementBadge, errorPanel } from '../lib/ui';
+import { loadDrawing, recordText, levelOf } from '../lib/scribbits';
+import { TYPE, UI } from '../lib/theme';
+import { paperBackdrop } from '../lib/art';
+import { label, ghostButton, handLettered, paperCard, stickerCard, elementBadge, levelBadge, errorPanel } from '../lib/ui';
 import type { ErrorPanel } from '../lib/ui';
 import type { LegendsState, Scribbit } from '../../shared/arena';
 
@@ -29,7 +30,7 @@ export class Sketchbook extends Scene {
   }
 
   create(): void {
-    this.cameras.main.setBackgroundColor('#241b2e');
+    this.cameras.main.setBackgroundColor(UI.desk);
     this.tab = getSketchbookTab(this);
     this.loggedIn = getArena(this)?.loggedIn ?? false;
     void this.loadGallery();
@@ -47,9 +48,10 @@ export class Sketchbook extends Scene {
 
   private build(): void {
     this.children.removeAll(true);
+    paperBackdrop(this);
     const { width } = this.scale;
-    label(this, width / 2, 60, 'GALLERY', 40, UI.cream, true);
-    ghostButton(this, 90, 60, '‹ Back', () => this.scene.start('ArenaHome'), 140);
+    handLettered(this, width / 2, 58, 'GALLERY', 40, UI.ink, true);
+    ghostButton(this, 96, 58, '‹ Back', () => this.scene.start('ArenaHome'), 150);
     this.buildTabs(150);
 
     if (this.tab === 'legends') this.buildLegends(230);
@@ -77,8 +79,11 @@ export class Sketchbook extends Scene {
     const { width } = this.scale;
     const legends = this.galleryData?.legends ?? [];
     if (legends.length === 0) {
-      label(this, width / 2, 600, 'No legends yet.\nWin a crown or reach 25 belief to be enshrined!', 26, '#c9b79a', true)
-        .setLineSpacing(8);
+      const card = stickerCard(this, width / 2, 560, width - 80, 220, { gold: true, tilt: -0.6 });
+      card.add(label(this, 0, -40, '🏆', 48, UI.ink));
+      card.add(
+        label(this, 0, 30, 'No legends yet.\nWin a crown or reach 25 belief to be enshrined!', TYPE.body, UI.inkSoft, true).setLineSpacing(8)
+      );
       return;
     }
     const columns = 2;
@@ -87,23 +92,35 @@ export class Sketchbook extends Scene {
       const col = index % columns;
       const row = Math.floor(index / columns);
       const x = 30 + cellWidth * (col + 0.5);
-      const y = top + 150 + row * 380;
+      const y = top + 210 + row * 410;
       this.buildLegendCard(legend, x, y);
     });
   }
 
   private buildLegendCard(legend: Scribbit, x: number, y: number): void {
-    const cardHeight = 340;
-    paperCard(this, x, y, 300, cardHeight, true);
+    const cardHeight = 380;
+    const cardWidth = 300;
+    paperCard(this, x, y, cardWidth, cardHeight, true);
+    const top = y - cardHeight / 2;
+
+    // Framed art up top with a level coin in the corner.
+    const artY = top + 84;
     void loadDrawing(this, legend).then((key) => {
-      if (this.scene.isActive()) this.add.image(x, y - 60, key).setDisplaySize(180, 180).setDepth(2);
+      if (this.scene.isActive()) this.add.image(x, artY, key).setDisplaySize(128, 128).setDepth(2);
     });
-    label(this, x, y + 52, legend.name.toUpperCase(), 26, UI.ink, true).setDepth(3);
+    levelBadge(this, x + cardWidth / 2 - 34, top + 34, levelOf(legend), 0.56).setDepth(4);
+
+    // Text block — tight rows, comfortably above the button.
+    label(this, x, artY + 82, legend.name.toUpperCase(), TYPE.title, UI.ink, true).setDepth(3);
     if (legend.legendTitle) {
-      label(this, x, y + 82, legend.legendTitle, 17, UI.goldText, true).setDepth(3).setWordWrapWidth(270);
+      label(this, x, artY + 114, legend.legendTitle, TYPE.caption, UI.goldText, true)
+        .setDepth(3)
+        .setWordWrapWidth(cardWidth - 40);
     }
-    label(this, x, y + 108, `by u/${legend.artist} · 💛 ${legend.belief}`, 16, UI.inkSoft, true).setDepth(3);
-    ghostButton(this, x, y + 156, '💛 Believe', () => this.believeOn(legend), 180).setDepth(3);
+    label(this, x, artY + 142, `by u/${legend.artist} · 💛 ${legend.belief}`, 16, UI.inkSoft, true).setDepth(3);
+
+    // Believe button anchored to the card's bottom, fully inside it.
+    ghostButton(this, x, y + cardHeight / 2 - 44, '💛 Believe', () => this.believeOn(legend), 200).setDepth(3);
   }
 
   // --- Sketchbook (faded) ---------------------------------------------------
@@ -111,8 +128,11 @@ export class Sketchbook extends Scene {
     const { width } = this.scale;
     const faded = this.galleryData?.myFaded ?? [];
     if (faded.length === 0) {
-      label(this, width / 2, 600, "Your sketchbook is empty.\nEvery scribbit that fades rests here.", 26, '#c9b79a', true)
-        .setLineSpacing(8);
+      const card = stickerCard(this, width / 2, 560, width - 80, 220, { tilt: 0.5 });
+      card.add(label(this, 0, -40, '📖', 48, UI.ink));
+      card.add(
+        label(this, 0, 30, 'Your sketchbook is empty.\nEvery scribbit that fades rests here.', TYPE.body, UI.inkSoft, true).setLineSpacing(8)
+      );
       return;
     }
     faded.slice(0, 30).forEach((scribbit, index) => {
@@ -130,15 +150,15 @@ export class Sketchbook extends Scene {
         this.add.image(130, y, key).setDisplaySize(130, 130).setAlpha(0.65).setDepth(2);
       }
     });
-    label(this, 240, y - 50, scribbit.name, 28, UI.cream, true).setOrigin(0, 0.5);
+    label(this, 240, y - 50, scribbit.name, TYPE.title, UI.ink, true).setOrigin(0, 0.5);
     elementBadge(this, 300, y - 8, scribbit.element, 0.7).setPosition(300, y - 8);
     const eulogy = label(
       this,
       240,
       y + 44,
       `Fought bravely. ${recordText(scribbit)}. Faded Day ${scribbit.expiresDay}.`,
-      20,
-      '#c9b79a',
+      TYPE.body,
+      UI.inkSoft,
       false
     ).setOrigin(0, 0.5);
     eulogy.setWordWrapWidth(width - 280);

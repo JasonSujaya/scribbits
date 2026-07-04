@@ -11,6 +11,7 @@ import { getArenaDayNumber } from './day';
 import { resolveSwissRumble } from './rumble';
 import type { ArenaStorage } from './scribbit';
 import {
+  addXpToScribbit,
   crownScribbit,
   expireDueScribbits,
   getRumbleEntrantIds,
@@ -18,6 +19,8 @@ import {
   loadScribbits,
   updateScribbit,
 } from './scribbit';
+
+const rumbleWinXp = 2;
 
 export type CreatedArenaPost = {
   id: string;
@@ -88,11 +91,17 @@ const applyRumbleStandingsToStoredScribbits = async (
       continue;
     }
 
-    await updateScribbit(storage, {
-      ...storedScribbit,
-      wins: storedScribbit.wins + standing.wins,
-      losses: storedScribbit.losses + standing.losses,
-    });
+    await updateScribbit(
+      storage,
+      addXpToScribbit(
+        {
+          ...storedScribbit,
+          wins: storedScribbit.wins + standing.wins,
+          losses: storedScribbit.losses + standing.losses,
+        },
+        standing.wins * rumbleWinXp
+      )
+    );
   }
 };
 

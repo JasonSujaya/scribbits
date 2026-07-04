@@ -6,6 +6,7 @@ import type {
   ArenaErrorResponse,
   ArenaState,
   BattleReport,
+  CareAction,
   LegendsState,
   Scribbit,
 } from '../../shared/arena';
@@ -19,8 +20,14 @@ import {
 } from '../core/arenaStore';
 import { hashTextToSeed } from '../core/random';
 import { recordDailyPlay } from '../core/dex';
+import { formatUtcDateKey } from '../core/day';
+import { getProjectedRumbleEntrantCount } from '../core/rumble';
+import { chooseFoundingSparOpponent } from '../core/species';
 import {
   addRumbleEntrant,
+  awardScribbitXp,
+  claimDailyCareAction,
+  claimDailySparWinXp,
   claimDailyFlags,
   createScribbit,
   decodePngDataUrl,
@@ -34,10 +41,12 @@ import {
   getLegends,
   getRumbleEntrantCount,
   increaseBelief,
+  isCareAction,
   isScribbitOwnedByUser,
   loadScribbit,
   markDailyFlag,
   readDrawingFallback,
+  recordBattleOutcomeOnScribbit,
   removeRumbleEntrant,
   storeDrawingFallback,
   storeScribbit,
@@ -113,6 +122,21 @@ const readScribbitId = (value: unknown): string | undefined => {
   return scribbitId;
 };
 
+const readCareRequest = (
+  value: unknown
+): { scribbitId: string; action: CareAction } | undefined => {
+  const scribbitId = readScribbitId(value);
+
+  if (!scribbitId || !isRecord(value) || !isCareAction(value.action)) {
+    return undefined;
+  }
+
+  return {
+    scribbitId,
+    action: value.action,
+  };
+};
+
 const createScribbitId = (day: number): string => {
   return `scribbit-${day}-${randomUUID().replaceAll('-', '').slice(0, 16)}`;
 };
@@ -177,6 +201,8 @@ api.get('/arena', async (c) => {
       enteredToday = dailyFlags.enteredToday;
     }
 
+    const storedRumbleEntrants = await getRumbleEntrantCount(redis, dayNumber);
+
     return c.json<ArenaState>({
       dayNumber,
       loggedIn: Boolean(player),
@@ -185,7 +211,7 @@ api.get('/arena', async (c) => {
       myScribbits,
       drawnToday,
       enteredToday,
-      rumbleEntrants: await getRumbleEntrantCount(redis, dayNumber),
+      rumbleEntrants: getProjectedRumbleEntrantCount(storedRumbleEntrants),
       communityLegendCount: await getCommunityLegendCount(redis),
     });
   } catch (error) {
@@ -361,6 +387,144 @@ api.post('/enter-rumble', async (c) => {
   }
 });
 
+api.post('/care', async (c) => {
+  const player = await getCurrentPlayer();
+
+  if (!player) {
+    return unauthorized(c, 'Sign in to care for a Scribbit.');
+  }
+
+  const careRequest = readCareRequest(await readJsonBody(c));
+
+  if (!careRequest) {
+    return badRequest(c, 'Choose a valid Scribbit and care action.');
+  }
+
+  try {
+    const now = new Date();
+    const utcDateKey = formatUtcDateKey(now);
+    const dayNumber = await ensureCurrentArenaDay(redis, now);
+    const scribbit = await loadScribbit(
+      redis,
+      careRequest.scribbitId,
+      utcDateKey
+    );
+
+    if (!scribbit) {
+      return notFound(c, 'That Scribbit is not in the arena.');
+    }
+
+    if (scribbit.isFounding) {
+      return badRequest(
+        c,
+        'Founding Scribbits are already looked after by the arena.'
+      );
+    }
+
+    if (scribbit.status !== 'alive' || scribbit.expiresDay <= dayNumber) {
+      return notFound(c, 'That living Scribbit is not ready for care.');
+    }
+
+    if (
+      !(await isScribbitOwnedByUser(redis, player.userId, scribbit.id))
+    ) {
+      return notFound(c, 'That Scribbit is not in your sketchbook.');
+    }
+
+    const careClaim = await claimDailyCareAction(
+      redis,
+      scribbit.id,
+      careRequest.action,
+      utcDateKey,
+      Date.now()
+    );
+
+    if (!careClaim.claimed) {
+      return conflict(c, 'You already used that care action today.');
+    }
+
+    const caredScribbit = await awardScribbitXp(
+      redis,
+      scribbit.id,
+      careClaim.xpGain,
+      utcDateKey
+    );
+
+    if (!caredScribbit) {
+      return notFound(c, 'That Scribbit slipped out of the arena.');
+    }
+
+    await recordDailyPlay(redis, player.userId, now);
+    return c.json<Scribbit>(caredScribbit);
+  } catch (error) {
+    console.error('Care route failed:', error);
+    return serverError(c, 'The snack bowl tipped over. Try again soon.');
+  }
+});
+
+api.post('/spar', async (c) => {
+  const player = await getCurrentPlayer();
+
+  if (!player) {
+    return unauthorized(c, 'Sign in to spar with a Scribbit.');
+  }
+
+  const scribbitId = readScribbitId(await readJsonBody(c));
+
+  if (!scribbitId) {
+    return badRequest(c, 'Choose a valid Scribbit to spar.');
+  }
+
+  try {
+    const now = new Date();
+    const utcDateKey = formatUtcDateKey(now);
+    const dayNumber = await ensureCurrentArenaDay(redis, now);
+    const challenger = await loadOwnedAliveScribbit(
+      player,
+      scribbitId,
+      dayNumber
+    );
+
+    if (!challenger) {
+      return notFound(c, 'That living Scribbit is not ready to spar.');
+    }
+
+    const sparSeed = hashTextToSeed(
+      `spar:${utcDateKey}:${player.userId}:${challenger.id}:${Date.now()}:${randomUUID()}`
+    );
+    const opponent = chooseFoundingSparOpponent(challenger, sparSeed);
+    const forecast = await ensureForecastForDay(redis, dayNumber);
+    const report = simulate(
+      challenger,
+      opponent,
+      sparSeed,
+      forecast,
+      'exhibition'
+    );
+
+    await saveBattleReport(redis, report, Date.now());
+
+    if (report.winner === 'a') {
+      const shouldAwardSparXp = await claimDailySparWinXp(
+        redis,
+        challenger.id,
+        utcDateKey,
+        Date.now()
+      );
+
+      if (shouldAwardSparXp) {
+        await awardScribbitXp(redis, challenger.id, 1, utcDateKey);
+      }
+    }
+
+    await recordDailyPlay(redis, player.userId, now);
+    return c.json<BattleReport>(report);
+  } catch (error) {
+    console.error('Spar route failed:', error);
+    return serverError(c, 'The practice bell fell off. Try again soon.');
+  }
+});
+
 api.get('/my-battles', async (c) => {
   const player = await getCurrentPlayer();
 
@@ -474,6 +638,12 @@ api.post('/boss-challenge', async (c) => {
     );
 
     await saveBattleReport(redis, report, Date.now());
+    await recordBattleOutcomeOnScribbit(
+      redis,
+      challenger.id,
+      report.winner === 'a' ? 'win' : 'loss',
+      2
+    );
     await recordDailyPlay(redis, player.userId, now);
 
     return c.json<BattleReport>(report);

@@ -9,6 +9,8 @@ import type {
 import {
   BELIEF_MOVE_UNLOCK,
   ELEMENT_PREY,
+  LEVEL_DAMAGE_BONUS_PER_LEVEL,
+  MAX_LEVEL,
   MOVES_BY_ELEMENT,
 } from '../../shared/arena';
 import { getBattleMaxHp } from '../../shared/battle';
@@ -22,6 +24,26 @@ type AttackChoice = {
 };
 
 const maxAttackCount = 5;
+
+const clampLevel = (level: number): number => {
+  if (!Number.isFinite(level)) {
+    return 1;
+  }
+
+  return Math.min(MAX_LEVEL, Math.max(1, Math.floor(level)));
+};
+
+export const getLevelDamageMultiplier = (level: number): number => {
+  return 1 + (clampLevel(level) - 1) * LEVEL_DAMAGE_BONUS_PER_LEVEL;
+};
+
+const cloneScribbitSnapshot = (scribbit: Scribbit): Scribbit => {
+  return {
+    ...scribbit,
+    stats: { ...scribbit.stats },
+    careDoneToday: [...scribbit.careDoneToday],
+  };
+};
 
 export const getElementDamageMultiplier = (
   attackerElement: Element,
@@ -216,7 +238,8 @@ const calculateDamage = (
         getForecastDamageMultiplier(attacker.element, forecast) *
         diceMultiplier *
         critMultiplier *
-        beliefMultiplier
+        beliefMultiplier *
+        getLevelDamageMultiplier(attacker.level)
     )
   );
 
@@ -353,8 +376,8 @@ export const simulate = (
     id: createReportId(fighterA, fighterB, seed, forecast, kind),
     kind,
     day: forecast.day,
-    a: fighterA,
-    b: fighterB,
+    a: cloneScribbitSnapshot(fighterA),
+    b: cloneScribbitSnapshot(fighterB),
     winner,
     events,
   };
