@@ -17,6 +17,13 @@
     "dir": "dist/server",
     "entry": "index.cjs"
   },
+  "permissions": {
+    "redis": true,
+    "reddit": {
+      "enable": true,
+      "scope": "moderator"
+    }
+  },
   "menu": {
     "items": [
       {
@@ -40,6 +47,14 @@
   },
   "triggers": {
     "onAppInstall": "/internal/triggers/on-app-install"
+  },
+  "scheduler": {
+    "tasks": {
+      "nightly-wilds": {
+        "endpoint": "/internal/scheduler/nightly-wilds",
+        "cron": "0 0 * * *"
+      }
+    }
   },
   "scripts": {
     "build": "vite build",

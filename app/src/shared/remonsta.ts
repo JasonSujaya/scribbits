@@ -75,6 +75,14 @@ export type DesignSubmission = {
   votes: number;
 };
 
+export type DesignSubmissionRequest = {
+  name: string;
+  lore: string;
+  imageUrl: string;
+};
+export type DesignVoteRequest = { id: string };
+export type RemonstaErrorResponse = { status: 'error'; message: string };
+
 // REST endpoints (Hono, JSON):
 // GET  /api/wilds  -> WildsState
 // GET  /api/catch-params?spawnId= -> CatchParams  (derived from spawn seed)

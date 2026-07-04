@@ -1,18 +1,13 @@
 import { Scene } from 'phaser';
 
+// Boot does no asset loading — all art is generated procedurally in Preloader
+// from the species registry returned by /api/wilds. We jump straight through.
 export class Boot extends Scene {
   constructor() {
     super('Boot');
   }
 
-  preload() {
-    //  The Boot Scene is typically used to load in any assets you require for your Preloader, such as a game logo or background.
-    //  The smaller the file size of the assets, the better, as the Boot Scene itself has no preloader.
-
-    this.load.image('background', '../assets/bg.png');
-  }
-
-  create() {
+  create(): void {
     this.scene.start('Preloader');
   }
 }

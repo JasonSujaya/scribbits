@@ -1,39 +1,96 @@
+import * as Phaser from 'phaser';
 import { Scene } from 'phaser';
+import { showToast } from '@devvit/web/client';
+import { fetchWilds } from '../lib/api';
+import { generateAllArt, generateDotTexture, generatePanelTexture } from '../lib/art';
+import { DESIGN_HEIGHT, DESIGN_WIDTH, FONT_STACK, UI } from '../lib/theme';
+import type { WildsState } from '../../shared/remonsta';
 
+// Preloader fetches the Wilds snapshot, procedurally bakes every texture we
+// need (creatures, biome backgrounds, UI panels), then hands the state to the
+// Habitat scene through the game registry. All art is generated from code —
+// there are no image assets.
 export class Preloader extends Scene {
+  private statusText: Phaser.GameObjects.Text | null = null;
+
   constructor() {
     super('Preloader');
   }
 
-  init() {
-    //  We loaded this image in our Boot Scene, so we can display it here
-    this.add.image(512, 384, 'background');
+  init(): void {
+    this.statusText = null;
+  }
 
-    //  A simple progress bar. This is the outline of the bar.
-    this.add.rectangle(512, 384, 468, 32).setStrokeStyle(1, 0xffffff);
+  create(): void {
+    const { width, height } = this.scale;
+    this.cameras.main.setBackgroundColor('#2b2016');
 
-    //  This is the progress bar itself. It will increase in size from the left based on the % of progress.
-    const bar = this.add.rectangle(512 - 230, 384, 4, 28, 0xffffff);
+    // Generate the bare-minimum textures needed for the loading screen itself.
+    generateDotTexture(this);
+    generatePanelTexture(this);
 
-    //  Use the 'progress' event emitted by the LoaderPlugin to update the loading bar
-    this.load.on('progress', (progress: number) => {
-      //  Update the progress bar (our bar is 464px wide, so 100% = 464px)
-      bar.width = 4 + 460 * progress;
+    this.add
+      .text(width / 2, height * 0.42, 'REMONSTA', {
+        fontFamily: FONT_STACK,
+        fontSize: '72px',
+        color: UI.cream,
+        fontStyle: 'bold',
+      })
+      .setOrigin(0.5);
+
+    this.statusText = this.add
+      .text(width / 2, height * 0.54, 'Waking the Wilds…', {
+        fontFamily: FONT_STACK,
+        fontSize: '30px',
+        color: '#e7d8c2',
+      })
+      .setOrigin(0.5);
+
+    void this.loadWilds();
+  }
+
+  private async loadWilds(): Promise<void> {
+    const result = await fetchWilds();
+    if (!result.ok) {
+      this.showRetry(result.error);
+      return;
+    }
+    this.buildAndStart(result.data);
+  }
+
+  private buildAndStart(state: WildsState): void {
+    // Bake all art from the returned species registry.
+    generateAllArt(this, state.species, DESIGN_WIDTH, DESIGN_HEIGHT);
+
+    this.registry.set('wilds', state);
+    this.registry.set('species', state.species);
+
+    this.scene.start('Habitat');
+  }
+
+  private showRetry(message: string): void {
+    if (this.statusText) {
+      this.statusText.setText(message);
+    }
+    showToast(message);
+
+    const { width, height } = this.scale;
+    const retry = this.add
+      .text(width / 2, height * 0.64, '↻ Tap to retry', {
+        fontFamily: FONT_STACK,
+        fontSize: '34px',
+        color: UI.cream,
+        fontStyle: 'bold',
+        backgroundColor: '#ff6b4a',
+        padding: { x: 24, y: 14 },
+      })
+      .setOrigin(0.5)
+      .setInteractive({ useHandCursor: true });
+
+    retry.once('pointerup', () => {
+      retry.destroy();
+      if (this.statusText) this.statusText.setText('Waking the Wilds…');
+      void this.loadWilds();
     });
-  }
-
-  preload() {
-    //  Load the assets for the game - Replace with your own assets
-    this.load.setPath('../assets');
-
-    this.load.image('logo', 'logo.png');
-  }
-
-  create() {
-    //  When all the assets have loaded, it's often worth creating global objects here that the rest of the game can use.
-    //  For example, you can define global animations here, so we can use them in other scenes.
-
-    //  Move to the MainMenu. You could also swap this for a Scene Transition, such as a camera fade.
-    this.scene.start('MainMenu');
   }
 }

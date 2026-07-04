@@ -1,13 +1,17 @@
 import { Hono } from 'hono';
 import type { OnAppInstallRequest, TriggerResponse } from '@devvit/web/shared';
-import { context } from '@devvit/web/server';
+import { context, redis } from '@devvit/web/server';
 import { createPost } from '../core/post';
+import { ensureSpawnScheduleForDate } from '../core/spawnEngine';
+import { launchSpecies } from '../core/species';
 
 export const triggers = new Hono();
 
 triggers.post('/on-app-install', async (c) => {
   try {
-    const post = await createPost();
+    const now = new Date();
+    const schedule = await ensureSpawnScheduleForDate(redis, now, launchSpecies);
+    const post = await createPost({ date: now, weather: schedule.weather });
     const input = await c.req.json<OnAppInstallRequest>();
 
     return c.json<TriggerResponse>(

@@ -1,29 +1,30 @@
-import { Boot } from './scenes/Boot';
-import { GameOver } from './scenes/GameOver';
-import { Game as MainGame } from './scenes/Game';
-import { MainMenu } from './scenes/MainMenu';
 import * as Phaser from 'phaser';
 import { AUTO, Game } from 'phaser';
+import { Boot } from './scenes/Boot';
 import { Preloader } from './scenes/Preloader';
+import { Habitat } from './scenes/Habitat';
+import { CatchMinigame } from './scenes/CatchMinigame';
+import { CatchResult } from './scenes/CatchResult';
+import { Dex } from './scenes/Dex';
+import { DESIGN_HEIGHT, DESIGN_WIDTH } from './lib/theme';
 
-//  Find out more information about the Game Config at:
-//  https://docs.phaser.io/api-documentation/typedef/types-core#gameconfig
+// Remonsta — a Devvit Web + Phaser 4 creature-collecting game.
+// Portrait-first: a fixed 720x1280 design resolution scaled with FIT so it
+// fills any mobile viewport while preserving aspect ratio.
 const config: Phaser.Types.Core.GameConfig = {
   type: AUTO,
   parent: 'game-container',
-  backgroundColor: '#028af8',
+  backgroundColor: '#2b2016',
   scale: {
-    // Keep a fixed game resolution but automatically scale it to fit within the available
-    // web-view / device while maintaining aspect ratio.
-    mode: Phaser.Scale.RESIZE,
+    mode: Phaser.Scale.FIT,
     autoCenter: Phaser.Scale.CENTER_BOTH,
-    width: 1024,
-    height: 768,
+    width: DESIGN_WIDTH,
+    height: DESIGN_HEIGHT,
   },
-  scene: [Boot, Preloader, MainMenu, MainGame, GameOver],
+  scene: [Boot, Preloader, Habitat, CatchMinigame, CatchResult, Dex],
 };
 
-const StartGame = (parent: string) => {
+const StartGame = (parent: string): Phaser.Game => {
   return new Game({ ...config, parent });
 };
 
