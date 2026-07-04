@@ -1,16 +1,16 @@
 import * as Phaser from 'phaser';
 import { Scene } from 'phaser';
-import { fetchWilds } from '../lib/api';
-import { generateAllArt, generateDotTexture, generatePanelTexture } from '../lib/art';
-import { DESIGN_HEIGHT, DESIGN_WIDTH, FONT_STACK, UI } from '../lib/theme';
+import { fetchArena } from '../lib/api';
+import { generateAllElementBadges, generateCoreArt } from '../lib/art';
+import { FONT_STACK, UI } from '../lib/theme';
 import { errorPanel } from '../lib/ui';
 import type { ErrorPanel } from '../lib/ui';
-import type { WildsState } from '../../shared/remonsta';
+import { setArena } from '../lib/registry';
+import type { ArenaState } from '../../shared/arena';
 
-// Preloader fetches the Wilds snapshot, procedurally bakes every texture we
-// need (creatures, biome backgrounds, UI panels), then hands the state to the
-// Habitat scene through the game registry. All art is generated from code —
-// there are no image assets.
+// Preloader fetches the arena snapshot, bakes baseline textures (UI panel, dot,
+// spark, element badges), stashes state in the registry, then opens ArenaHome.
+// Player drawings load on demand in the scenes that show them.
 export class Preloader extends Scene {
   private statusText: Phaser.GameObjects.Text | null = null;
   private errorPanelRef: ErrorPanel | null = null;
@@ -26,65 +26,61 @@ export class Preloader extends Scene {
 
   create(): void {
     const { width, height } = this.scale;
-    this.cameras.main.setBackgroundColor('#2b2016');
+    this.cameras.main.setBackgroundColor('#241b2e');
 
-    // Generate the bare-minimum textures needed for the loading screen itself.
-    generateDotTexture(this);
-    generatePanelTexture(this);
+    generateCoreArt(this);
+    generateAllElementBadges(this);
 
     this.add
-      .text(width / 2, height * 0.42, 'SCRIBBITS', {
+      .text(width / 2, height * 0.4, 'SCRIBBITS', {
         fontFamily: FONT_STACK,
-        fontSize: '72px',
+        fontSize: '76px',
         color: UI.cream,
         fontStyle: 'bold',
       })
       .setOrigin(0.5);
-
-    this.statusText = this.add
-      .text(width / 2, height * 0.54, 'Waking the Wilds…', {
+    this.add
+      .text(width / 2, height * 0.47, 'Draw it. Believe in it.', {
         fontFamily: FONT_STACK,
-        fontSize: '30px',
+        fontSize: '28px',
         color: '#e7d8c2',
       })
       .setOrigin(0.5);
 
-    void this.loadWilds();
+    this.statusText = this.add
+      .text(width / 2, height * 0.56, 'Reading the forecast…', {
+        fontFamily: FONT_STACK,
+        fontSize: '26px',
+        color: '#c9b79a',
+      })
+      .setOrigin(0.5);
+
+    void this.loadArena();
   }
 
-  private async loadWilds(): Promise<void> {
-    const result = await fetchWilds();
+  private async loadArena(): Promise<void> {
+    const result = await fetchArena();
     if (!result.ok) {
       this.showRetry(result.error);
       return;
     }
-    this.buildAndStart(result.data);
+    this.startArena(result.data);
   }
 
-  private buildAndStart(state: WildsState): void {
-    // Bake all art from the returned species registry.
-    generateAllArt(this, state.species, DESIGN_WIDTH, DESIGN_HEIGHT);
-
-    this.registry.set('wilds', state);
-    this.registry.set('species', state.species);
-
-    this.scene.start('Habitat');
+  private startArena(state: ArenaState): void {
+    setArena(this, state);
+    this.scene.start('ArenaHome');
   }
 
-  // Load failure is not user-initiated, so instead of a spontaneous toast we
-  // surface an in-game error panel with a tappable Retry button.
   private showRetry(message: string): void {
-    if (this.statusText) {
-      this.statusText.setText('');
-    }
+    this.statusText?.setText('');
     if (this.errorPanelRef) return;
-
     const { width, height } = this.scale;
-    this.errorPanelRef = errorPanel(this, width / 2, height * 0.6, message, () => {
+    this.errorPanelRef = errorPanel(this, width / 2, height * 0.62, message, () => {
       this.errorPanelRef?.destroy();
       this.errorPanelRef = null;
-      if (this.statusText) this.statusText.setText('Waking the Wilds…');
-      void this.loadWilds();
+      this.statusText?.setText('Reading the forecast…');
+      void this.loadArena();
     });
   }
 }

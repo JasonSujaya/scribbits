@@ -1,37 +1,38 @@
 import { reddit } from '@devvit/web/server';
-import type { Weather } from '../../shared/remonsta';
-import {
-  formatUtcDateKey,
-  getWildsDayNumber,
-} from './spawnEngine';
+import type { Forecast, Scribbit } from '../../shared/arena';
+import { formatUtcDateKey, getArenaDayNumber } from './day';
 
-export type CreateWildsPostOptions = {
+export type CreateArenaPostOptions = {
   date?: Date;
-  weather?: Weather;
+  day?: number;
+  forecast: Forecast;
+  champion?: Scribbit | null;
 };
 
-const weatherPostCopy: Record<Weather, string> = {
-  quiet: 'Soft footsteps in the brush',
-  lively: 'The Wilds are awake',
-  stormy: 'Rare shapes in the weather',
+const getChampionCopy = (champion: Scribbit | null | undefined): string => {
+  if (!champion) {
+    return 'No reigning Champion yet. The founding Scribbits are warming up.';
+  }
+
+  return `Current boss: ${champion.name}, ${champion.legendTitle ?? 'arena menace'} (${champion.element}).`;
 };
 
-export const createPost = async (options: CreateWildsPostOptions = {}) => {
+export const createPost = async (options: CreateArenaPostOptions) => {
   const date = options.date ?? new Date();
-  const weather = options.weather ?? 'lively';
   const dateKey = formatUtcDateKey(date);
-  const dayNumber = getWildsDayNumber(date);
+  const dayNumber = options.day ?? getArenaDayNumber(date);
 
   return await reddit.submitCustomPost({
-    title: `Wilds #${dayNumber} - ${weatherPostCopy[weather]}`,
+    title: `Rumble #${dayNumber} — ${options.forecast.blurb}`,
     entry: 'default',
     postData: {
       dateKey,
       dayNumber,
-      weather,
+      forecast: options.forecast,
+      champion: options.champion ?? null,
     },
     textFallback: {
-      text: `Remonsta Wilds #${dayNumber}. Open the post to spot today's creatures, build your Dex, and vote on community designs.`,
+      text: `Scribbits Arena Rumble #${dayNumber}. ${options.forecast.blurb}. ${getChampionCopy(options.champion)}`,
     },
   });
 };

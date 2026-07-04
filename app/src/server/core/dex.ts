@@ -1,4 +1,4 @@
-import { formatUtcDateKey, parseUtcDateKey, addUtcDays } from './spawnEngine';
+import { addUtcDays, formatUtcDateKey, parseUtcDateKey } from './day';
 
 export type StreakRecord = {
   lastPlayedDateKey: string | undefined;
@@ -15,18 +15,6 @@ const maximumEggProgress = 7;
 
 export const getUserStreakKey = (userId: string): string => {
   return `user:${userId}:streak`;
-};
-
-export const getUserCollectionKey = (userId: string): string => {
-  return `user:${userId}:collection`;
-};
-
-export const calculatePercent = (count: number, total: number): number => {
-  if (total <= 0) {
-    return 0;
-  }
-
-  return Math.round((count / total) * 100);
 };
 
 export const parseStoredWholeNumber = (

@@ -12,6 +12,7 @@
     "lint": "eslint 'src/**/*.{ts,tsx}'",
     "login": "devvit login",
     "prettier": "prettier --write .",
+    "test:sim": "node scripts/test-battle.mjs",
     "type-check": "tsc --build"
   },
   "engines": {

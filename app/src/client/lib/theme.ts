@@ -1,7 +1,7 @@
-// Central design tokens for the Scribbits client. Portrait-first mobile layout.
-// Design resolution is 720x1280; the Scale.FIT mode letterboxes to any device.
+// Central design tokens for the Scribbits Arena client. Portrait-first mobile
+// layout. Design resolution is 720x1280; Scale.FIT letterboxes to any device.
 
-import type { Biome, Rarity } from '../../shared/remonsta';
+import type { Element } from '../../shared/arena';
 
 export const DESIGN_WIDTH = 720;
 export const DESIGN_HEIGHT = 1280;
@@ -9,88 +9,76 @@ export const DESIGN_HEIGHT = 1280;
 // Minimum touch target in design-space pixels (>= 44 CSS px once scaled).
 export const MIN_TOUCH = 88;
 
-export type BiomePalette = {
-  skyTop: number;
-  skyBottom: number;
-  midHills: number;
-  ground: number;
-  body: number;
-  bodyShade: number;
-  accent: number;
-};
-
-// Warm, sherbet, hand-drawn feel — one palette per biome.
-export const BIOME_PALETTES: Record<Biome, BiomePalette> = {
-  forest: {
-    skyTop: 0xbfe6b4,
-    skyBottom: 0x8fd18a,
-    midHills: 0x5fa85f,
-    ground: 0x3f7a43,
-    body: 0x8fd694,
-    bodyShade: 0x5aa862,
-    accent: 0xffe08a,
-  },
-  ember: {
-    skyTop: 0x3a2130,
-    skyBottom: 0x6e2a2f,
-    midHills: 0x9c3a2c,
-    ground: 0x4a1c1c,
-    body: 0xff9a52,
-    bodyShade: 0xd8622a,
-    accent: 0xffe66b,
-  },
-  tidepool: {
-    skyTop: 0xaef0f0,
-    skyBottom: 0x7ad3d8,
-    midHills: 0x4fa8c4,
-    ground: 0x2f6f96,
-    body: 0x7fd8e6,
-    bodyShade: 0x4aa6c0,
-    accent: 0xcff6ff,
-  },
-  sky: {
-    skyTop: 0xcfd8ff,
-    skyBottom: 0xa9b6f0,
-    midHills: 0x8a97dd,
-    ground: 0x6b76c2,
-    body: 0xe8ecff,
-    bodyShade: 0xb9c2f2,
-    accent: 0xfff2a8,
-  },
-};
-
-export type RarityStyle = {
-  scale: number;
-  glow: boolean;
-  ringColor: number;
-  label: string;
-};
-
-export const RARITY_STYLES: Record<Rarity, RarityStyle> = {
-  common: { scale: 0.85, glow: false, ringColor: 0xcccccc, label: 'Common' },
-  uncommon: { scale: 0.95, glow: false, ringColor: 0x7ed957, label: 'Uncommon' },
-  rare: { scale: 1.05, glow: true, ringColor: 0x5b9dff, label: 'Rare' },
-  legendary: {
-    scale: 1.2,
-    glow: true,
-    ringColor: 0xffd447,
-    label: 'Legendary',
-  },
-};
-
-// UI colors shared across scenes.
+// UI colors shared across scenes — warm, hand-drawn, cream-paper feel.
 export const UI = {
   panel: 0xfff7e8,
   panelStroke: 0x3a2b1a,
   ink: '#2b2016',
   inkSoft: '#7a6a56',
   cream: '#fff7e8',
+  creamHex: 0xfff7e8,
+  paper: 0xfdf3df, // sketchbook page
   coral: 0xff6b4a,
   coralText: '#ff6b4a',
+  gold: 0xffd447,
+  goldText: '#f0b000',
   progressTrack: 0x2b2016,
   progressFill: 0xff6b4a,
   progressCommunity: 0x5b9dff,
+} as const;
+
+// Each element gets a signature hue family used for badges, FX, and stat bars.
+export type ElementStyle = {
+  label: string;
+  emoji: string;
+  primary: number; // hex color number
+  primaryText: string; // css hex string
+  soft: number; // lighter tint for fills
+  particle: number; // particle tint
 };
+
+export const ELEMENT_STYLES: Record<Element, ElementStyle> = {
+  ember: {
+    label: 'Ember',
+    emoji: '🔥',
+    primary: 0xff6b3d,
+    primaryText: '#ff6b3d',
+    soft: 0xffb08a,
+    particle: 0xffcf6b,
+  },
+  tide: {
+    label: 'Tide',
+    emoji: '🌊',
+    primary: 0x2f9fd8,
+    primaryText: '#2f9fd8',
+    soft: 0x8fd8ef,
+    particle: 0xbfefff,
+  },
+  moss: {
+    label: 'Moss',
+    emoji: '🌿',
+    primary: 0x4faa4f,
+    primaryText: '#4faa4f',
+    soft: 0xa8dd8f,
+    particle: 0xd6f6b0,
+  },
+  storm: {
+    label: 'Storm',
+    emoji: '⚡',
+    primary: 0x8a5cd8,
+    primaryText: '#8a5cd8',
+    soft: 0xc9b0f2,
+    particle: 0xfff2a8,
+  },
+};
+
+// Stat bar colors — one per stat, consistent everywhere stats are shown.
+export const STAT_STYLES = {
+  chonk: { label: 'CHONK', emoji: '🫧', color: 0xff8a5c, colorText: '#ff8a5c' },
+  spike: { label: 'SPIKE', emoji: '🌵', color: 0xe8555c, colorText: '#e8555c' },
+  zip: { label: 'ZIP', emoji: '💨', color: 0x4fb0d8, colorText: '#4fb0d8' },
+  charm: { label: 'CHARM', emoji: '✨', color: 0xc06be0, colorText: '#c06be0' },
+} as const;
 
 export const FONT_STACK =
   '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif';

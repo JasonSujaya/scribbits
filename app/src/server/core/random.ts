@@ -11,7 +11,7 @@ export const hashTextToSeed = (text: string): number => {
   return hash >>> 0;
 };
 
-export const createSeededNumberGenerator = (
+export const createMulberry32 = (
   seed: number
 ): SeededNumberGenerator => {
   let state = seed >>> 0;
@@ -25,10 +25,33 @@ export const createSeededNumberGenerator = (
   };
 };
 
+export const createSeededNumberGenerator = createMulberry32;
+
 export const getRandomInteger = (
   minimum: number,
   maximum: number,
   randomNumber: SeededNumberGenerator
 ): number => {
   return Math.floor(randomNumber() * (maximum - minimum + 1)) + minimum;
+};
+
+export const shuffleWithSeed = <Value>(
+  values: Value[],
+  seed: number
+): Value[] => {
+  const shuffledValues = [...values];
+  const randomNumber = createMulberry32(seed);
+
+  for (let index = shuffledValues.length - 1; index > 0; index -= 1) {
+    const swapIndex = Math.floor(randomNumber() * (index + 1));
+    const currentValue = shuffledValues[index];
+    const swapValue = shuffledValues[swapIndex];
+
+    if (currentValue !== undefined && swapValue !== undefined) {
+      shuffledValues[index] = swapValue;
+      shuffledValues[swapIndex] = currentValue;
+    }
+  }
+
+  return shuffledValues;
 };

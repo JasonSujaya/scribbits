@@ -2,30 +2,37 @@ import * as Phaser from 'phaser';
 import { AUTO, Game } from 'phaser';
 import { Boot } from './scenes/Boot';
 import { Preloader } from './scenes/Preloader';
-import { Habitat } from './scenes/Habitat';
-import { CatchMinigame } from './scenes/CatchMinigame';
-import { CatchResult } from './scenes/CatchResult';
-import { Dex } from './scenes/Dex';
+import { ArenaHome } from './scenes/ArenaHome';
+import { Draw } from './scenes/Draw';
+import { Replay } from './scenes/Replay';
+import { MyBattles } from './scenes/MyBattles';
+import { Sketchbook } from './scenes/Sketchbook';
 import { DESIGN_HEIGHT, DESIGN_WIDTH } from './lib/theme';
 
-// Scribbits — a Devvit Web + Phaser 4 creature-collecting game.
-// Portrait-first: a fixed 720x1280 design resolution scaled with FIT so it
-// fills any mobile viewport while preserving aspect ratio.
+// Scribbits Arena — Devvit Web + Phaser 4. Draw a creature; its shape is its
+// stat sheet; it fights async auto-battles and lives 3 days. Portrait-first:
+// a fixed 720x1280 design resolution scaled with FIT to fill any mobile screen.
 const config: Phaser.Types.Core.GameConfig = {
   type: AUTO,
   parent: 'game-container',
-  backgroundColor: '#2b2016',
+  backgroundColor: '#241b2e',
   scale: {
     mode: Phaser.Scale.FIT,
     autoCenter: Phaser.Scale.CENTER_BOTH,
     width: DESIGN_WIDTH,
     height: DESIGN_HEIGHT,
   },
-  scene: [Boot, Preloader, Habitat, CatchMinigame, CatchResult, Dex],
+  scene: [Boot, Preloader, ArenaHome, Draw, Replay, MyBattles, Sketchbook],
 };
 
 const StartGame = (parent: string): Phaser.Game => {
-  return new Game({ ...config, parent });
+  const game = new Game({ ...config, parent });
+  // Dev-only hook: with ?debug in the URL, expose the game so a preview harness
+  // can jump straight to a scene. No effect in production (Devvit has no query).
+  if (typeof window !== 'undefined' && window.location.search.includes('debug')) {
+    (window as unknown as { game?: Phaser.Game }).game = game;
+  }
+  return game;
 };
 
 document.addEventListener('DOMContentLoaded', () => {

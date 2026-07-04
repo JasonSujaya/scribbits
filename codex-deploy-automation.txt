@@ -1,0 +1,44 @@
+Created and chmodded:
+
+- [deploy.command](/Users/jasons/Github/Hackathon/Remonsta/deploy.command)
+- [playtest.command](/Users/jasons/Github/Hackathon/Remonsta/playtest.command)
+- [DEPLOY.md](/Users/jasons/Github/Hackathon/Remonsta/DEPLOY.md)
+
+Verified Devvit help first: `upload --bump patch` is valid, and `playtest` accepts optional `[SUBREDDIT]`.
+
+No upload and no push were run. Live Devvit auth/list calls are blocked in this sandbox (`fetch failed` plus no write access to `~/Library/Caches/devvit/error.log`), so I verified the registration guard with a controlled `npx devvit whoami/apps list` stub that cannot upload.
+
+Registration guard output:
+
+```text
+==> Type-checking
+> scribbits@0.0.0 type-check
+> tsc --build
+
+==> Linting
+> scribbits@0.0.0 lint
+> eslint 'src/**/*.{ts,tsx}'
+
+==> Building
+> scribbits@0.0.0 build
+> vite build
+
+Warning: Invalid output options (1 issue found)
+- For the "sourcemapFileNames". Invalid key: Expected never but received "sourcemapFileNames".
+
+WARN  inlineDynamicImports option is deprecated, please use codeSplitting: false instead.
+Build complete
+
+==> Checking Devvit authentication
+Logged in as u/mock-user
+
+==> Checking Devvit app registration
+App name            Number of installs
+other-app           0
+
+Devvit app 'scribbits' is not registered yet.
+Run the first upload manually once from app/: npx devvit upload
+Reason: Reddit's first upload can require one-time interactive app registration and Terms of Service confirmation, so this script stops before automating it.
+```
+
+Final checks passed: `bash -n` both scripts, `git diff --check`. `app/devvit.json` was already modified before this work and I left it untouched.

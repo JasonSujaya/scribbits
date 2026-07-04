@@ -28,11 +28,18 @@
   "menu": {
     "items": [
       {
-        "label": "Create a new post",
-        "description": "scribbits",
+        "label": "Create Rumble post",
+        "description": "Create today's Scribbits Arena post",
         "location": "subreddit",
         "forUserType": "moderator",
         "endpoint": "/internal/menu/post-create"
+      },
+      {
+        "label": "Advance day (debug)",
+        "description": "Resolve the current Rumble and advance the arena day",
+        "location": "subreddit",
+        "forUserType": "moderator",
+        "endpoint": "/internal/menu/advance-day-debug"
       }
     ]
   },
@@ -41,8 +48,8 @@
   },
   "scheduler": {
     "tasks": {
-      "nightly-wilds": {
-        "endpoint": "/internal/scheduler/nightly-wilds",
+      "nightly-arena": {
+        "endpoint": "/internal/scheduler/nightly-arena",
         "cron": "0 0 * * *"
       }
     }
@@ -50,5 +57,8 @@
   "scripts": {
     "build": "vite build",
     "dev": "vite build --watch"
+  },
+  "dev": {
+    "subreddit": "scribbits_dev"
   }
 }

@@ -3,65 +3,50 @@ import type { Context as HonoContext } from 'hono';
 import { context, media, redis, reddit } from '@devvit/web/server';
 import { randomUUID } from 'node:crypto';
 import type {
-  CatchAttemptRequest,
-  CatchAttemptResponse,
-  CatchParams,
-  DesignSubmission,
-  DexEntry,
-  DexState,
-  RemonstaErrorResponse,
-  WildsState,
-} from '../../shared/remonsta';
-import { getCatchParams, replayCatchAttempt } from '../core/catch';
+  ArenaErrorResponse,
+  ArenaState,
+  BattleReport,
+  LegendsState,
+  Scribbit,
+} from '../../shared/arena';
+import { simulate } from '../core/battle';
+import { loadBattleReportsForUser, saveBattleReport } from '../core/battleStore';
 import {
-  ensureSpawnScheduleForDate,
-  findActiveSpawnById,
-  formatUtcDateKey,
-  getActiveSpawns,
-} from '../core/spawnEngine';
+  ensureCurrentArenaDay,
+  ensureForecastForDay,
+  getCurrentChampion,
+} from '../core/arenaStore';
+import { hashTextToSeed } from '../core/random';
+import { recordDailyPlay } from '../core/dex';
 import {
-  calculatePercent,
-  getUserCollectionKey,
-  parseStoredWholeNumber,
-  recordDailyPlay,
-} from '../core/dex';
-import {
-  getDesignRedisKey,
-  getDesignVotersRedisKey,
-  getDesignWeekKey,
-  getDesignWeekRedisKey,
-  parseStoredDesignSubmission,
-  toPublicDesignSubmission,
-  validateDesignSubmissionDraft,
-  validateDesignVoteId,
-  type StoredDesignSubmission,
-} from '../core/designs';
-import {
-  findLaunchSpeciesById,
-  launchSpecies,
-  totalLaunchSpecies,
-} from '../core/species';
+  addRumbleEntrant,
+  createScribbit,
+  decodePngDataUrl,
+  enforceAliveScribbitLimit,
+  expireDueScribbits,
+  getAliveScribbitsForUser,
+  getCommunityLegendCount,
+  getDailyFlags,
+  getFadedScribbitsForUser,
+  getLegends,
+  getRumbleEntrantCount,
+  increaseBelief,
+  isScribbitOwnedByUser,
+  loadScribbit,
+  markDailyFlag,
+  readDrawingFallback,
+  storeDrawingFallback,
+  storeScribbit,
+  validateSubmitScribbitRequest,
+  type CurrentPlayer,
+  type DecodedPngDataUrl,
+} from '../core/scribbit';
 
-type ErrorResponse = RemonstaErrorResponse;
-
-type CurrentPlayer = {
-  userId: string;
-  username: string;
-};
-
-const communityDexKey = 'dex:community';
-const globalSpeciesCatchCountKey = 'catch-counts:species';
-const hunterPresenceSeconds = 5 * 60;
-const catchAttemptGraceMs = 8000;
-const redisTtlSecondsByPurpose = {
-  catchAttempt: 24 * 60 * 60,
-  caughtSpawn: 24 * 60 * 60,
-  hunterPresence: 2 * 24 * 60 * 60,
-  designWeek: 8 * 7 * 24 * 60 * 60,
-  designSubmission: 8 * 7 * 24 * 60 * 60,
-};
+type ErrorResponse = ArenaErrorResponse;
 
 export const api = new Hono();
+
+const beliefVotersTtlSeconds = 7 * 24 * 60 * 60;
 
 const isRecord = (value: unknown): value is Record<string, unknown> => {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -88,6 +73,10 @@ const notFound = (c: HonoContext, message: string) => {
   return c.json<ErrorResponse>({ status: 'error', message }, 404);
 };
 
+const conflict = (c: HonoContext, message: string) => {
+  return c.json<ErrorResponse>({ status: 'error', message }, 409);
+};
+
 const serverError = (c: HonoContext, message: string) => {
   return c.json<ErrorResponse>({ status: 'error', message }, 500);
 };
@@ -106,586 +95,367 @@ const getCurrentPlayer = async (): Promise<CurrentPlayer | undefined> => {
   };
 };
 
-const validateCatchAttempt = (
-  value: unknown
-): CatchAttemptRequest | undefined => {
-  if (!isRecord(value) || typeof value.spawnId !== 'string') {
+const readScribbitId = (value: unknown): string | undefined => {
+  if (!isRecord(value) || typeof value.scribbitId !== 'string') {
     return undefined;
   }
 
-  const spawnId = value.spawnId.trim();
+  const scribbitId = value.scribbitId.trim();
+
+  if (!/^[A-Za-z0-9:_-]{4,90}$/.test(scribbitId)) {
+    return undefined;
+  }
+
+  return scribbitId;
+};
+
+const createScribbitId = (day: number): string => {
+  return `scribbit-${day}-${randomUUID().replaceAll('-', '').slice(0, 16)}`;
+};
+
+const uploadOrStoreDrawing = async (
+  scribbitId: string,
+  imageDataUrl: string,
+  decodedPng: DecodedPngDataUrl
+): Promise<string> => {
+  try {
+    const mediaAsset = await media.upload({
+      url: imageDataUrl,
+      type: 'image',
+    });
+    return mediaAsset.mediaUrl;
+  } catch (error) {
+    console.warn('Drawing media upload failed; storing PNG in Redis:', error);
+    await storeDrawingFallback(redis, scribbitId, decodedPng);
+    return `/api/drawing/${scribbitId}`;
+  }
+};
+
+const loadOwnedAliveScribbit = async (
+  player: CurrentPlayer,
+  scribbitId: string,
+  day: number
+): Promise<Scribbit | undefined> => {
+  const scribbit = await loadScribbit(redis, scribbitId);
+
   if (
-    spawnId.length < 10 ||
-    !Array.isArray(value.tapTimesMs) ||
-    value.tapTimesMs.length > 5
+    !scribbit ||
+    scribbit.status !== 'alive' ||
+    scribbit.isFounding ||
+    scribbit.expiresDay <= day
   ) {
     return undefined;
   }
 
-  const tapTimesMs: number[] = [];
-  for (const tapTimeMs of value.tapTimesMs) {
-    if (typeof tapTimeMs !== 'number' || !Number.isFinite(tapTimeMs)) {
-      return undefined;
-    }
-    tapTimesMs.push(tapTimeMs);
-  }
-
-  return {
-    spawnId,
-    tapTimesMs,
-  };
-};
-
-const areTapTimesStrictlyIncreasingWithinDuration = (
-  tapTimesMs: number[],
-  durationMs: number
-): boolean => {
-  let previousTapTimeMs = -1;
-
-  for (const tapTimeMs of tapTimesMs) {
-    if (
-      tapTimeMs < 0 ||
-      tapTimeMs > durationMs ||
-      tapTimeMs <= previousTapTimeMs
-    ) {
-      return false;
-    }
-
-    previousTapTimeMs = tapTimeMs;
-  }
-
-  return true;
-};
-
-const parseStoredTimestampMs = (
-  storedTimestampMs: string | undefined
-): number | undefined => {
-  if (storedTimestampMs === undefined) {
+  if (!(await isScribbitOwnedByUser(redis, player.userId, scribbitId))) {
     return undefined;
   }
 
-  const timestampMs = Number(storedTimestampMs);
-  if (!Number.isFinite(timestampMs)) {
-    return undefined;
-  }
-
-  return timestampMs;
+  return scribbit;
 };
 
-const getCatchAttemptRedisKey = (userId: string, spawnId: string): string => {
-  return `attempt:${userId}:${spawnId}`;
-};
-
-const getCaughtSpawnRedisKey = (userId: string, spawnId: string): string => {
-  return `caught:${userId}:${spawnId}`;
-};
-
-const recordCatchAttemptStart = async (
-  userId: string,
-  spawnId: string,
-  nowMs: number
-): Promise<void> => {
-  const attemptKey = getCatchAttemptRedisKey(userId, spawnId);
-  await redis.set(attemptKey, nowMs.toString());
-  await redis.expire(attemptKey, redisTtlSecondsByPurpose.catchAttempt);
-};
-
-const hasCatchAttemptExpired = (
-  startedAtMs: number,
-  nowMs: number,
-  durationMs: number
-): boolean => {
-  const elapsedMs = nowMs - startedAtMs;
-  return elapsedMs < 0 || elapsedMs > durationMs + catchAttemptGraceMs;
-};
-
-const markSpawnCaughtForPlayer = async (
-  userId: string,
-  spawnId: string,
-  nowMs: number
-): Promise<boolean> => {
-  const caughtSpawnKey = getCaughtSpawnRedisKey(userId, spawnId);
-  const createdCaughtGate = await redis.hSetNX(
-    caughtSpawnKey,
-    'caughtAt',
-    nowMs.toString()
-  );
-  await redis.expire(caughtSpawnKey, redisTtlSecondsByPurpose.caughtSpawn);
-  return createdCaughtGate === 1;
-};
-
-const uploadDesignImage = async (imageUrl: string): Promise<string | undefined> => {
-  try {
-    const mediaAsset = await media.upload({ url: imageUrl, type: 'image' });
-    return mediaAsset.mediaUrl;
-  } catch (error) {
-    console.error('Design image upload failed:', error);
-    return undefined;
-  }
-};
-
-const parseStoredDesignJson = (
-  storedDesignJson: string | null | undefined
-): StoredDesignSubmission | undefined => {
-  return parseStoredDesignSubmission(storedDesignJson ?? undefined);
-};
-
-const removeExpiredHunters = async (
-  hunterKey: string,
-  nowMs: number
-): Promise<void> => {
-  await redis.zRemRangeByScore(hunterKey, Number.MIN_SAFE_INTEGER, nowMs);
-};
-
-const getCurrentHunterId = (): string => {
-  return context.userId ?? context.loid ?? 'anonymous';
-};
-
-const getCommunityDexPercent = async (): Promise<number> => {
-  const communityEntries = await redis.hGetAll(communityDexKey);
-  return calculatePercent(Object.keys(communityEntries).length, totalLaunchSpecies);
-};
-
-const getPersonalDexPercent = async (userId: string): Promise<number> => {
-  const collection = await redis.hGetAll(getUserCollectionKey(userId));
-  let caughtSpeciesCount = 0;
-
-  for (const species of launchSpecies) {
-    if (parseStoredWholeNumber(collection[species.id]) > 0) {
-      caughtSpeciesCount += 1;
-    }
-  }
-
-  return calculatePercent(caughtSpeciesCount, totalLaunchSpecies);
-};
-
-const getSpeciesCatchCount = async (speciesId: string): Promise<number> => {
-  return parseStoredWholeNumber(
-    await redis.hGet(globalSpeciesCatchCountKey, speciesId)
-  );
-};
-
-const getHunterPresenceKey = (dateKey: string): string => {
-  return `hunters:${dateKey}`;
-};
-
-const trackHunterVisit = async (now: Date): Promise<number> => {
-  const dateKey = formatUtcDateKey(now);
-  const hunterKey = getHunterPresenceKey(dateKey);
-  const nowMs = now.getTime();
-  const visitorId = getCurrentHunterId();
-  const expiresAtMs = nowMs + hunterPresenceSeconds * 1000;
-
-  await redis.zAdd(hunterKey, { member: visitorId, score: expiresAtMs });
-  await removeExpiredHunters(hunterKey, nowMs);
-  await redis.expire(hunterKey, redisTtlSecondsByPurpose.hunterPresence);
-  return redis.zCard(hunterKey);
-};
-
-const awardCatch = async (
-  player: CurrentPlayer,
-  speciesId: string,
-  now: Date
-): Promise<boolean> => {
-  const collectionKey = getUserCollectionKey(player.userId);
-  const communityUpdate: Record<string, string> = {};
-  communityUpdate[speciesId] = '1';
-
-  const transaction = await redis.watch(
-    collectionKey,
-    globalSpeciesCatchCountKey,
-    communityDexKey
-  );
-  await transaction.multi();
-  await transaction.hIncrBy(collectionKey, speciesId, 1);
-  await transaction.hIncrBy(globalSpeciesCatchCountKey, speciesId, 1);
-  await transaction.hSet(communityDexKey, communityUpdate);
-  await transaction.exec();
-
-  const firstCatchKey = `firstcatch:${speciesId}`;
-  const createdFirstCatch = await redis.hSetNX(
-    firstCatchKey,
-    'username',
-    player.username
-  );
-
-  if (createdFirstCatch === 1) {
-    await redis.hSet(firstCatchKey, {
-      userId: player.userId,
-      caughtAt: now.getTime().toString(),
-    });
-    return true;
-  }
-
-  return false;
-};
-
-const readStoredDesign = async (
-  designId: string
-): Promise<StoredDesignSubmission | undefined> => {
-  return parseStoredDesignSubmission(await redis.get(getDesignRedisKey(designId)));
-};
-
-api.get('/wilds', async (c) => {
+api.get('/arena', async (c) => {
   try {
     const now = new Date();
+    const dayNumber = await ensureCurrentArenaDay(redis, now);
+    await expireDueScribbits(redis, dayNumber);
+    const forecast = await ensureForecastForDay(redis, dayNumber);
     const player = await getCurrentPlayer();
-    const schedule = await ensureSpawnScheduleForDate(redis, now, launchSpecies);
-    const activeSpawns = getActiveSpawns(
-      schedule,
-      now.getTime(),
-      launchSpecies
-    );
-    const huntersOnline = await trackHunterVisit(now);
+    let myScribbits: Scribbit[] = [];
+    let drawnToday = false;
+    let enteredToday = false;
 
     if (player) {
       await recordDailyPlay(redis, player.userId, now);
+      const dailyFlags = await getDailyFlags(redis, player.userId, dayNumber);
+      myScribbits = await getAliveScribbitsForUser(redis, player.userId);
+      drawnToday = dailyFlags.drawnToday;
+      enteredToday = dailyFlags.enteredToday;
     }
 
-    return c.json<WildsState>({
-      dayNumber: schedule.dayNumber,
-      weather: schedule.weather,
-      spawns: activeSpawns,
-      huntersOnline,
-      communityDexPercent: await getCommunityDexPercent(),
-      species: launchSpecies,
-      loggedIn: Boolean(context.userId),
+    return c.json<ArenaState>({
+      dayNumber,
+      loggedIn: Boolean(player),
+      forecast,
+      champion: await getCurrentChampion(redis),
+      myScribbits,
+      drawnToday,
+      enteredToday,
+      rumbleEntrants: await getRumbleEntrantCount(redis, dayNumber),
+      communityLegendCount: await getCommunityLegendCount(redis),
     });
   } catch (error) {
-    console.error('Wilds route failed:', error);
-    return serverError(c, 'The Wilds are tangled right now. Try again soon.');
+    console.error('Arena route failed:', error);
+    return serverError(c, 'The arena doors are jammed. Try again soon.');
   }
 });
 
-api.get('/catch-params', async (c) => {
-  const userId = context.userId;
-  const spawnId = c.req.query('spawnId')?.trim();
-
-  if (!userId) {
-    return unauthorized(c, 'Sign in to start a catch.');
-  }
-
-  if (!spawnId) {
-    return badRequest(c, 'Choose a wild creature before starting a catch.');
-  }
-
-  try {
-    const now = new Date();
-    const activeSpawn = await findActiveSpawnById(
-      redis,
-      spawnId,
-      now,
-      launchSpecies
-    );
-
-    if (!activeSpawn) {
-      return notFound(c, 'That creature has already wandered off.');
-    }
-
-    const species = findLaunchSpeciesById(activeSpawn.speciesId);
-    if (!species) {
-      return notFound(c, 'That creature is missing from the Scribbits registry.');
-    }
-
-    await recordCatchAttemptStart(userId, spawnId, now.getTime());
-
-    return c.json<CatchParams>(getCatchParams(activeSpawn.seed, species.rarity));
-  } catch (error) {
-    console.error('Catch params route failed:', error);
-    return serverError(c, 'The catch ring slipped. Try again soon.');
-  }
-});
-
-api.post('/catch', async (c) => {
+api.post('/scribbit', async (c) => {
   const player = await getCurrentPlayer();
 
   if (!player) {
-    return unauthorized(c, 'Sign in to add creatures to your Dex.');
+    return unauthorized(c, 'Sign in to draw a Scribbit.');
   }
 
-  const catchAttempt = validateCatchAttempt(await readJsonBody(c));
+  const draft = validateSubmitScribbitRequest(await readJsonBody(c));
 
-  if (!catchAttempt) {
-    return badRequest(c, 'Send a spawnId and up to five tap timestamps.');
-  }
-
-  try {
-    const now = new Date();
-    const activeSpawn = await findActiveSpawnById(
-      redis,
-      catchAttempt.spawnId,
-      now,
-      launchSpecies
-    );
-
-    if (!activeSpawn) {
-      return notFound(c, 'That creature has already wandered off.');
-    }
-
-    const species = findLaunchSpeciesById(activeSpawn.speciesId);
-    if (!species) {
-      return notFound(c, 'That creature is missing from the Scribbits registry.');
-    }
-
-    const catchParams = getCatchParams(activeSpawn.seed, species.rarity);
-    const attemptKey = getCatchAttemptRedisKey(
-      player.userId,
-      catchAttempt.spawnId
-    );
-    const attemptStartedAtMs = parseStoredTimestampMs(await redis.get(attemptKey));
-
-    if (attemptStartedAtMs === undefined) {
-      return badRequest(c, 'Start the catch from the Wilds first.');
-    }
-
-    await redis.del(attemptKey);
-
-    if (
-      hasCatchAttemptExpired(
-        attemptStartedAtMs,
-        now.getTime(),
-        catchParams.durationMs
-      )
-    ) {
-      return badRequest(c, 'That catch took too long. Try again from the Wilds.');
-    }
-
-    if (
-      !areTapTimesStrictlyIncreasingWithinDuration(
-        catchAttempt.tapTimesMs,
-        catchParams.durationMs
-      )
-    ) {
-      return badRequest(c, 'Tap timestamps must be in order and inside the catch timer.');
-    }
-
-    const replayResult = replayCatchAttempt(
-      catchAttempt.tapTimesMs,
-      catchParams
-    );
-    let isFirstCatch = false;
-
-    if (replayResult.caught) {
-      const shouldAwardCatch = await markSpawnCaughtForPlayer(
-        player.userId,
-        catchAttempt.spawnId,
-        now.getTime()
-      );
-
-      if (shouldAwardCatch) {
-        isFirstCatch = await awardCatch(player, species.id, now);
-        await recordDailyPlay(redis, player.userId, now);
-      }
-    }
-
-    return c.json<CatchAttemptResponse>({
-      caught: replayResult.caught,
-      species,
-      isFirstCatch,
-      totalCatchesOfSpecies: await getSpeciesCatchCount(species.id),
-      personalDexPercent: await getPersonalDexPercent(player.userId),
-      communityDexPercent: await getCommunityDexPercent(),
-    });
-  } catch (error) {
-    console.error('Catch route failed:', error);
-    return serverError(c, 'The catch could not be saved. Try again soon.');
-  }
-});
-
-api.get('/dex', async (c) => {
-  const player = await getCurrentPlayer();
-
-  if (!player) {
-    return unauthorized(c, 'Sign in to view your personal Dex.');
-  }
-
-  try {
-    const now = new Date();
-    const streak = await recordDailyPlay(redis, player.userId, now);
-    const collection = await redis.hGetAll(getUserCollectionKey(player.userId));
-    const communityEntries = await redis.hGetAll(communityDexKey);
-    const entries: DexEntry[] = [];
-
-    for (const species of launchSpecies) {
-      entries.push({
-        species,
-        caughtCount: parseStoredWholeNumber(collection[species.id]),
-        discoveredByCommunity: communityEntries[species.id] === '1',
-        firstCaughtBy:
-          (await redis.hGet(`firstcatch:${species.id}`, 'username')) ?? null,
-      });
-    }
-
-    return c.json<DexState>({
-      entries,
-      personalPercent: await getPersonalDexPercent(player.userId),
-      communityPercent: calculatePercent(
-        Object.keys(communityEntries).length,
-        totalLaunchSpecies
-      ),
-      streakDays: streak.streakDays,
-      eggProgress: streak.eggProgress,
-    });
-  } catch (error) {
-    console.error('Dex route failed:', error);
-    return serverError(c, 'The Dex pages are stuck together. Try again soon.');
-  }
-});
-
-api.post('/design', async (c) => {
-  const player = await getCurrentPlayer();
-
-  if (!player) {
-    return unauthorized(c, 'Sign in to submit a design.');
-  }
-
-  const designDraft = validateDesignSubmissionDraft(await readJsonBody(c));
-
-  if (!designDraft) {
+  if (!draft) {
     return badRequest(
       c,
-      'Designs need a short name, one-line lore, and a valid image URL.'
+      'Send a 2-24 character name, PNG data URL, stats, and valid element.'
     );
+  }
+
+  const decodedPng = decodePngDataUrl(draft.imageDataUrl);
+
+  if (!decodedPng) {
+    return badRequest(c, 'Drawings must be PNG data URLs under 400 KB.');
   }
 
   try {
     const now = new Date();
-    const redditImageUrl = await uploadDesignImage(designDraft.imageUrl);
+    const dayNumber = await ensureCurrentArenaDay(redis, now);
+    await expireDueScribbits(redis, dayNumber);
 
-    if (!redditImageUrl) {
-      return badRequest(
-        c,
-        "We couldn't fetch that image — try a direct PNG/JPEG link."
-      );
+    if (!(await enforceAliveScribbitLimit(redis, player.userId))) {
+      return conflict(c, 'You already have three living Scribbits.');
     }
 
-    const weekKey = getDesignWeekKey(now);
-    const designId = `design-${weekKey}-${randomUUID()
-      .replaceAll('-', '')
-      .slice(0, 16)}`;
-    const storedDesign: StoredDesignSubmission = {
-      id: designId,
-      name: designDraft.name,
+    const createdDrawFlag = await markDailyFlag(
+      redis,
+      player.userId,
+      dayNumber,
+      'drawn'
+    );
+
+    if (!createdDrawFlag) {
+      return conflict(c, 'You already drew a Scribbit today.');
+    }
+
+    const scribbitId = createScribbitId(dayNumber);
+    const imageUrl = await uploadOrStoreDrawing(
+      scribbitId,
+      draft.imageDataUrl,
+      decodedPng
+    );
+
+    const scribbit = createScribbit({
+      id: scribbitId,
+      draft,
       artist: player.username,
-      lore: designDraft.lore,
-      imageUrl: redditImageUrl,
-      votes: 0,
-      weekKey,
-      submittedAt: now.getTime(),
-    };
-
-    await redis.set(getDesignRedisKey(designId), JSON.stringify(storedDesign));
-    await redis.expire(
-      getDesignRedisKey(designId),
-      redisTtlSecondsByPurpose.designSubmission
-    );
-    await redis.zAdd(getDesignWeekRedisKey(weekKey), {
-      member: designId,
-      score: 0,
+      imageUrl,
+      day: dayNumber,
     });
-    await redis.expire(
-      getDesignWeekRedisKey(weekKey),
-      redisTtlSecondsByPurpose.designWeek
-    );
 
-    return c.json<DesignSubmission>(
-      toPublicDesignSubmission(storedDesign, 0),
-      201
-    );
+    await storeScribbit(redis, player.userId, scribbit);
+    await recordDailyPlay(redis, player.userId, now);
+
+    return c.json<Scribbit>(scribbit, 201);
   } catch (error) {
-    console.error('Design route failed:', error);
-    return serverError(c, 'The design table is full of ink. Try again soon.');
+    console.error('Submit Scribbit route failed:', error);
+    return serverError(c, 'The ink would not dry. Try again soon.');
   }
 });
 
-api.get('/designs', async (c) => {
-  try {
-    const weekKey = getDesignWeekKey(new Date());
-    const rankedDesigns = await redis.zRange(
-      getDesignWeekRedisKey(weekKey),
-      0,
-      49,
-      { by: 'rank', reverse: true }
-    );
-
-    if (rankedDesigns.length === 0) {
-      return c.json<DesignSubmission[]>([]);
-    }
-
-    const storedDesigns = await redis.mGet(
-      rankedDesigns.map((rankedDesign) => {
-        return getDesignRedisKey(rankedDesign.member);
-      })
-    );
-    const designs: DesignSubmission[] = [];
-
-    rankedDesigns.forEach((rankedDesign, designIndex) => {
-      const storedDesign = parseStoredDesignJson(storedDesigns[designIndex]);
-      if (storedDesign) {
-        designs.push(
-          toPublicDesignSubmission(
-            storedDesign,
-            Math.max(0, Math.floor(rankedDesign.score))
-          )
-        );
-      }
-    });
-
-    return c.json<DesignSubmission[]>(designs);
-  } catch (error) {
-    console.error('Designs route failed:', error);
-    return serverError(c, 'The design wall is not loading. Try again soon.');
-  }
-});
-
-api.post('/design-vote', async (c) => {
+api.post('/enter-rumble', async (c) => {
   const player = await getCurrentPlayer();
 
   if (!player) {
-    return unauthorized(c, 'Sign in to vote on designs.');
+    return unauthorized(c, 'Sign in to enter the Rumble.');
   }
 
-  const designId = validateDesignVoteId(await readJsonBody(c));
+  const scribbitId = readScribbitId(await readJsonBody(c));
 
-  if (!designId) {
-    return badRequest(c, 'Choose a valid design to vote on.');
+  if (!scribbitId) {
+    return badRequest(c, 'Choose a valid Scribbit to enter.');
   }
 
   try {
-    const storedDesign = await readStoredDesign(designId);
+    const now = new Date();
+    const dayNumber = await ensureCurrentArenaDay(redis, now);
+    const scribbit = await loadOwnedAliveScribbit(player, scribbitId, dayNumber);
 
-    if (!storedDesign) {
-      return notFound(c, 'That design is not in this week\'s gallery.');
+    if (!scribbit) {
+      return notFound(c, 'That living Scribbit is not in your sketchbook.');
     }
 
-    const voteCreated = await redis.hSetNX(
-      getDesignVotersRedisKey(designId),
+    const createdEntryFlag = await markDailyFlag(
+      redis,
       player.userId,
+      dayNumber,
+      'entered'
+    );
+
+    if (!createdEntryFlag) {
+      return conflict(c, 'You already entered today\'s Rumble.');
+    }
+
+    await addRumbleEntrant(redis, dayNumber, scribbit.id);
+    await recordDailyPlay(redis, player.userId, now);
+
+    return c.json<{ entered: true }>({ entered: true });
+  } catch (error) {
+    console.error('Enter Rumble route failed:', error);
+    return serverError(c, 'The bracket ate that entry. Try again soon.');
+  }
+});
+
+api.get('/my-battles', async (c) => {
+  const player = await getCurrentPlayer();
+
+  if (!player) {
+    return c.json<BattleReport[]>([]);
+  }
+
+  try {
+    return c.json<BattleReport[]>(
+      await loadBattleReportsForUser(redis, player.userId, 20)
+    );
+  } catch (error) {
+    console.error('My battles route failed:', error);
+    return serverError(c, 'The replay pile fell over. Try again soon.');
+  }
+});
+
+api.post('/believe', async (c) => {
+  const player = await getCurrentPlayer();
+
+  if (!player) {
+    return unauthorized(c, 'Sign in to believe in a Scribbit.');
+  }
+
+  const scribbitId = readScribbitId(await readJsonBody(c));
+
+  if (!scribbitId) {
+    return badRequest(c, 'Choose a valid Scribbit to believe in.');
+  }
+
+  try {
+    const dayNumber = await ensureCurrentArenaDay(redis, new Date());
+    const scribbit = await loadScribbit(redis, scribbitId);
+
+    if (
+      !scribbit ||
+      scribbit.status !== 'alive' ||
+      scribbit.isFounding ||
+      scribbit.expiresDay <= dayNumber
+    ) {
+      return notFound(c, 'That Scribbit cannot collect belief right now.');
+    }
+
+    const beliefKey = `belief:${scribbit.id}`;
+    const createdBelief = await redis.hSetNX(
+      beliefKey,
+      `${player.userId}:${dayNumber}`,
       Date.now().toString()
     );
-    await redis.expire(
-      getDesignVotersRedisKey(designId),
-      redisTtlSecondsByPurpose.designWeek
+    await redis.expire(beliefKey, beliefVotersTtlSeconds);
+
+    if (createdBelief !== 1) {
+      return conflict(c, 'You already believed in that Scribbit today.');
+    }
+
+    const believedScribbit = await increaseBelief(redis, scribbit);
+    return c.json<{ belief: number }>({ belief: believedScribbit.belief });
+  } catch (error) {
+    console.error('Believe route failed:', error);
+    return serverError(c, 'The belief spark fizzled. Try again soon.');
+  }
+});
+
+api.post('/boss-challenge', async (c) => {
+  const player = await getCurrentPlayer();
+
+  if (!player) {
+    return unauthorized(c, 'Sign in to challenge the Champion.');
+  }
+
+  const scribbitId = readScribbitId(await readJsonBody(c));
+
+  if (!scribbitId) {
+    return badRequest(c, 'Choose a valid Scribbit for the boss challenge.');
+  }
+
+  try {
+    const now = new Date();
+    const dayNumber = await ensureCurrentArenaDay(redis, now);
+    const challenger = await loadOwnedAliveScribbit(player, scribbitId, dayNumber);
+    const champion = await getCurrentChampion(redis);
+
+    if (!challenger) {
+      return notFound(c, 'That living Scribbit is not ready to fight.');
+    }
+
+    if (!champion) {
+      return conflict(c, 'No Champion is on the boss throne yet.');
+    }
+
+    const createdBossFlag = await markDailyFlag(
+      redis,
+      player.userId,
+      dayNumber,
+      'bossChallenge'
     );
 
-    const votes =
-      voteCreated === 1
-        ? await redis.zIncrBy(getDesignWeekRedisKey(storedDesign.weekKey), designId, 1)
-        : await redis.zScore(getDesignWeekRedisKey(storedDesign.weekKey), designId);
-    const publicVotes = Math.max(0, Math.floor(votes ?? storedDesign.votes));
-    const updatedStoredDesign: StoredDesignSubmission = {
-      ...storedDesign,
-      votes: publicVotes,
+    if (!createdBossFlag) {
+      return conflict(c, 'You already challenged today\'s Champion.');
+    }
+
+    const forecast = await ensureForecastForDay(redis, dayNumber);
+    const report = simulate(
+      challenger,
+      champion,
+      hashTextToSeed(
+        `boss:${dayNumber}:${player.userId}:${challenger.id}:${champion.id}`
+      ),
+      forecast,
+      'boss'
+    );
+
+    await saveBattleReport(redis, report, Date.now());
+    await recordDailyPlay(redis, player.userId, now);
+
+    return c.json<BattleReport>(report);
+  } catch (error) {
+    console.error('Boss challenge route failed:', error);
+    return serverError(c, 'The Champion ducked behind paperwork. Try again soon.');
+  }
+});
+
+api.get('/legends', async (c) => {
+  try {
+    const player = await getCurrentPlayer();
+    const myFaded = player
+      ? await getFadedScribbitsForUser(redis, player.userId, 30)
+      : [];
+    const legendsState: LegendsState = {
+      legends: await getLegends(redis, 50),
+      myFaded,
     };
 
-    await redis.set(
-      getDesignRedisKey(designId),
-      JSON.stringify(updatedStoredDesign)
-    );
-
-    return c.json<{ votes: number }>({ votes: publicVotes });
+    return c.json<LegendsState>(legendsState);
   } catch (error) {
-    console.error('Design vote route failed:', error);
-    return serverError(c, 'The vote did not stick. Try again soon.');
+    console.error('Legends route failed:', error);
+    return serverError(c, 'The Hall of Legends is dusty right now.');
+  }
+});
+
+api.get('/drawing/:id', async (c) => {
+  const scribbitId = c.req.param('id');
+
+  try {
+    const drawing = await readDrawingFallback(redis, scribbitId);
+
+    if (!drawing) {
+      return notFound(c, 'That drawing is not stored here.');
+    }
+
+    return c.body(drawing, 200, {
+      'Content-Type': 'image/png',
+      'Cache-Control': 'public, max-age=2592000, immutable',
+    });
+  } catch (error) {
+    console.error('Drawing route failed:', error);
+    return serverError(c, 'The drawing smudged in storage.');
   }
 });
