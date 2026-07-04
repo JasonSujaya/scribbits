@@ -1,4 +1,4 @@
-// Central design tokens for the Remonsta client. Portrait-first mobile layout.
+// Central design tokens for the Scribbits client. Portrait-first mobile layout.
 // Design resolution is 720x1280; the Scale.FIT mode letterboxes to any device.
 
 import type { Biome, Rarity } from '../../shared/remonsta';

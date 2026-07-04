@@ -1,4 +1,4 @@
-// Thin, typed fetch wrapper around the Remonsta REST contract.
+// Thin, typed fetch wrapper around the Scribbits REST contract.
 // Every call is wrapped so callers get a typed result and never an unhandled
 // rejection. UI-facing error messaging (toast + retry) is the caller's job.
 

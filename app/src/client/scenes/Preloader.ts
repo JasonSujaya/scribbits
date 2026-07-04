@@ -33,7 +33,7 @@ export class Preloader extends Scene {
     generatePanelTexture(this);
 
     this.add
-      .text(width / 2, height * 0.42, 'REMONSTA', {
+      .text(width / 2, height * 0.42, 'SCRIBBITS', {
         fontFamily: FONT_STACK,
         fontSize: '72px',
         color: UI.cream,

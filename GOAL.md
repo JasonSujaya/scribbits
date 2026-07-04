@@ -26,8 +26,8 @@
 **Work checklist**
 - [x] W1 Scaffold from official template. Evidence: app/ exists, deps pinned
 - [x] W2 Shared contract authored (src/shared/remonsta.ts)
-- [ ] W3 Backend: species registry (20 launch species), spawn-window engine, server-validated catch, dex, streaks, daily post job, design-submission pipeline. Done when: type-check passes + routes respond in playtest
-- [ ] W4 Frontend: Boot/Preloader/Habitat/Catch/Dex scenes vs contract, placeholder art, mobile portrait. Done when: build passes, game playable with local mock
+- [x] W3 Backend done (codex) + reviewed: anti-cheat attempt gates, media-hosted UGC images, bounded redis reads. Evidence: commit 577060f, gates green
+- [x] W4 Frontend done (opus) + reviewed: all scenes, login gate, deterministic tap judging, error panels. Evidence: commit 577060f, gates green
 - [ ] W5 Integration + juice polish (Fable). Done when: full loop works in playtest
 - [ ] W6 Real creature art (image gen per plan prompts) replaces placeholders
 - [ ] W7 User gates: `devvit login`, create r/Remonsta, `devvit upload`, install, demo post

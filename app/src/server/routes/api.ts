@@ -384,7 +384,7 @@ api.get('/catch-params', async (c) => {
 
     const species = findLaunchSpeciesById(activeSpawn.speciesId);
     if (!species) {
-      return notFound(c, 'That creature is missing from the Remonsta registry.');
+      return notFound(c, 'That creature is missing from the Scribbits registry.');
     }
 
     await recordCatchAttemptStart(userId, spawnId, now.getTime());
@@ -424,7 +424,7 @@ api.post('/catch', async (c) => {
 
     const species = findLaunchSpeciesById(activeSpawn.speciesId);
     if (!species) {
-      return notFound(c, 'That creature is missing from the Remonsta registry.');
+      return notFound(c, 'That creature is missing from the Scribbits registry.');
     }
 
     const catchParams = getCatchParams(activeSpawn.seed, species.rarity);

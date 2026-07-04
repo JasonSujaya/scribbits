@@ -8,7 +8,7 @@ import { CatchResult } from './scenes/CatchResult';
 import { Dex } from './scenes/Dex';
 import { DESIGN_HEIGHT, DESIGN_WIDTH } from './lib/theme';
 
-// Remonsta — a Devvit Web + Phaser 4 creature-collecting game.
+// Scribbits — a Devvit Web + Phaser 4 creature-collecting game.
 // Portrait-first: a fixed 720x1280 design resolution scaled with FIT so it
 // fills any mobile viewport while preserving aspect ratio.
 const config: Phaser.Types.Core.GameConfig = {
