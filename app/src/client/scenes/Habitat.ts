@@ -1,10 +1,11 @@
 import * as Phaser from 'phaser';
 import { Scene } from 'phaser';
-import { showToast } from '@devvit/web/client';
+import { showLoginPrompt, showToast } from '@devvit/web/client';
 import { fetchWilds } from '../lib/api';
 import { generateAllArt } from '../lib/art';
 import { DESIGN_HEIGHT, DESIGN_WIDTH, FONT_STACK, UI } from '../lib/theme';
-import { button, progressBar, roundedPanel } from '../lib/ui';
+import { button, errorPanel, progressBar, roundedPanel } from '../lib/ui';
+import type { ErrorPanel } from '../lib/ui';
 import type {
   ActiveSpawn,
   Biome,
@@ -37,6 +38,7 @@ export class Habitat extends Scene {
   private dayText: Phaser.GameObjects.Text | null = null;
   private pollEvent: Phaser.Time.TimerEvent | null = null;
   private stormTimer: Phaser.Time.TimerEvent | null = null;
+  private errorPanelRef: ErrorPanel | null = null;
 
   constructor() {
     super('Habitat');
@@ -52,6 +54,7 @@ export class Habitat extends Scene {
     this.dayText = null;
     this.pollEvent = null;
     this.stormTimer = null;
+    this.errorPanelRef = null;
   }
 
   create(): void {
@@ -303,6 +306,14 @@ export class Habitat extends Scene {
   }
 
   private startCatch(spawn: ActiveSpawn): void {
+    // Catching requires a Reddit account. This runs from a direct tap, so a
+    // toast is appropriate — and we open the platform's login prompt so the
+    // player can sign in without leaving the game.
+    if (!this.state.loggedIn) {
+      showToast('Sign in to Reddit to catch creatures!');
+      showLoginPrompt();
+      return;
+    }
     this.registry.set('activeSpawn', spawn);
     this.scene.start('CatchMinigame');
   }
@@ -310,10 +321,23 @@ export class Habitat extends Scene {
   private async poll(): Promise<void> {
     const result = await fetchWilds();
     if (!result.ok) {
-      showToast(result.error);
+      // Background poll (not user-initiated), so per platform rules we show an
+      // in-game error panel with a Retry button rather than a spontaneous toast.
+      this.showPollError(result.error);
       return;
     }
     this.applyNewState(result.data);
+  }
+
+  private showPollError(message: string): void {
+    if (this.errorPanelRef) return; // one panel at a time
+    const { width, height } = this.scale;
+    this.errorPanelRef = errorPanel(this, width / 2, height / 2, message, () => {
+      this.errorPanelRef?.destroy();
+      this.errorPanelRef = null;
+      void this.poll();
+    });
+    this.errorPanelRef.container.setDepth(30);
   }
 
   // Reconcile spawn list: remove gone spawns (fade), add new ones (sparkle).

@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import type { Context as HonoContext } from 'hono';
-import { context, redis, reddit } from '@devvit/web/server';
+import { context, media, redis, reddit } from '@devvit/web/server';
 import { randomUUID } from 'node:crypto';
 import type {
   CatchAttemptRequest,
@@ -12,7 +12,7 @@ import type {
   RemonstaErrorResponse,
   WildsState,
 } from '../../shared/remonsta';
-import { getCatchParams, isValidTapTimes, replayCatchAttempt } from '../core/catch';
+import { getCatchParams, replayCatchAttempt } from '../core/catch';
 import {
   ensureSpawnScheduleForDate,
   findActiveSpawnById,
@@ -52,7 +52,10 @@ type CurrentPlayer = {
 const communityDexKey = 'dex:community';
 const globalSpeciesCatchCountKey = 'catch-counts:species';
 const hunterPresenceSeconds = 5 * 60;
+const catchAttemptGraceMs = 8000;
 const redisTtlSecondsByPurpose = {
+  catchAttempt: 24 * 60 * 60,
+  caughtSpawn: 24 * 60 * 60,
   hunterPresence: 2 * 24 * 60 * 60,
   designWeek: 8 * 7 * 24 * 60 * 60,
   designSubmission: 8 * 7 * 24 * 60 * 60,
@@ -111,14 +114,131 @@ const validateCatchAttempt = (
   }
 
   const spawnId = value.spawnId.trim();
-  if (spawnId.length < 10 || !isValidTapTimes(value.tapTimesMs)) {
+  if (
+    spawnId.length < 10 ||
+    !Array.isArray(value.tapTimesMs) ||
+    value.tapTimesMs.length > 5
+  ) {
     return undefined;
+  }
+
+  const tapTimesMs: number[] = [];
+  for (const tapTimeMs of value.tapTimesMs) {
+    if (typeof tapTimeMs !== 'number' || !Number.isFinite(tapTimeMs)) {
+      return undefined;
+    }
+    tapTimesMs.push(tapTimeMs);
   }
 
   return {
     spawnId,
-    tapTimesMs: value.tapTimesMs,
+    tapTimesMs,
   };
+};
+
+const areTapTimesStrictlyIncreasingWithinDuration = (
+  tapTimesMs: number[],
+  durationMs: number
+): boolean => {
+  let previousTapTimeMs = -1;
+
+  for (const tapTimeMs of tapTimesMs) {
+    if (
+      tapTimeMs < 0 ||
+      tapTimeMs > durationMs ||
+      tapTimeMs <= previousTapTimeMs
+    ) {
+      return false;
+    }
+
+    previousTapTimeMs = tapTimeMs;
+  }
+
+  return true;
+};
+
+const parseStoredTimestampMs = (
+  storedTimestampMs: string | undefined
+): number | undefined => {
+  if (storedTimestampMs === undefined) {
+    return undefined;
+  }
+
+  const timestampMs = Number(storedTimestampMs);
+  if (!Number.isFinite(timestampMs)) {
+    return undefined;
+  }
+
+  return timestampMs;
+};
+
+const getCatchAttemptRedisKey = (userId: string, spawnId: string): string => {
+  return `attempt:${userId}:${spawnId}`;
+};
+
+const getCaughtSpawnRedisKey = (userId: string, spawnId: string): string => {
+  return `caught:${userId}:${spawnId}`;
+};
+
+const recordCatchAttemptStart = async (
+  userId: string,
+  spawnId: string,
+  nowMs: number
+): Promise<void> => {
+  const attemptKey = getCatchAttemptRedisKey(userId, spawnId);
+  await redis.set(attemptKey, nowMs.toString());
+  await redis.expire(attemptKey, redisTtlSecondsByPurpose.catchAttempt);
+};
+
+const hasCatchAttemptExpired = (
+  startedAtMs: number,
+  nowMs: number,
+  durationMs: number
+): boolean => {
+  const elapsedMs = nowMs - startedAtMs;
+  return elapsedMs < 0 || elapsedMs > durationMs + catchAttemptGraceMs;
+};
+
+const markSpawnCaughtForPlayer = async (
+  userId: string,
+  spawnId: string,
+  nowMs: number
+): Promise<boolean> => {
+  const caughtSpawnKey = getCaughtSpawnRedisKey(userId, spawnId);
+  const createdCaughtGate = await redis.hSetNX(
+    caughtSpawnKey,
+    'caughtAt',
+    nowMs.toString()
+  );
+  await redis.expire(caughtSpawnKey, redisTtlSecondsByPurpose.caughtSpawn);
+  return createdCaughtGate === 1;
+};
+
+const uploadDesignImage = async (imageUrl: string): Promise<string | undefined> => {
+  try {
+    const mediaAsset = await media.upload({ url: imageUrl, type: 'image' });
+    return mediaAsset.mediaUrl;
+  } catch (error) {
+    console.error('Design image upload failed:', error);
+    return undefined;
+  }
+};
+
+const parseStoredDesignJson = (
+  storedDesignJson: string | null | undefined
+): StoredDesignSubmission | undefined => {
+  return parseStoredDesignSubmission(storedDesignJson ?? undefined);
+};
+
+const removeExpiredHunters = async (
+  hunterKey: string,
+  nowMs: number
+): Promise<void> => {
+  await redis.zRemRangeByScore(hunterKey, Number.MIN_SAFE_INTEGER, nowMs);
+};
+
+const getCurrentHunterId = (): string => {
+  return context.userId ?? context.loid ?? 'anonymous';
 };
 
 const getCommunityDexPercent = async (): Promise<number> => {
@@ -152,32 +272,14 @@ const getHunterPresenceKey = (dateKey: string): string => {
 const trackHunterVisit = async (now: Date): Promise<number> => {
   const dateKey = formatUtcDateKey(now);
   const hunterKey = getHunterPresenceKey(dateKey);
-  const visitorId = context.userId ?? context.loid ?? 'anonymous';
-  const expiresAt = now.getTime() + hunterPresenceSeconds * 1000;
-  const hunterUpdate: Record<string, string> = {};
-  hunterUpdate[visitorId] = expiresAt.toString();
+  const nowMs = now.getTime();
+  const visitorId = getCurrentHunterId();
+  const expiresAtMs = nowMs + hunterPresenceSeconds * 1000;
 
-  await redis.hSet(hunterKey, hunterUpdate);
+  await redis.zAdd(hunterKey, { member: visitorId, score: expiresAtMs });
+  await removeExpiredHunters(hunterKey, nowMs);
   await redis.expire(hunterKey, redisTtlSecondsByPurpose.hunterPresence);
-
-  const hunters = await redis.hGetAll(hunterKey);
-  const expiredHunterIds: string[] = [];
-  let huntersOnline = 0;
-
-  for (const [hunterId, storedExpiresAt] of Object.entries(hunters)) {
-    const parsedExpiresAt = Number(storedExpiresAt);
-    if (Number.isFinite(parsedExpiresAt) && parsedExpiresAt > now.getTime()) {
-      huntersOnline += 1;
-    } else {
-      expiredHunterIds.push(hunterId);
-    }
-  }
-
-  if (expiredHunterIds.length > 0) {
-    await redis.hDel(hunterKey, expiredHunterIds);
-  }
-
-  return huntersOnline;
+  return redis.zCard(hunterKey);
 };
 
 const awardCatch = async (
@@ -247,6 +349,7 @@ api.get('/wilds', async (c) => {
       huntersOnline,
       communityDexPercent: await getCommunityDexPercent(),
       species: launchSpecies,
+      loggedIn: Boolean(context.userId),
     });
   } catch (error) {
     console.error('Wilds route failed:', error);
@@ -255,17 +358,23 @@ api.get('/wilds', async (c) => {
 });
 
 api.get('/catch-params', async (c) => {
+  const userId = context.userId;
   const spawnId = c.req.query('spawnId')?.trim();
+
+  if (!userId) {
+    return unauthorized(c, 'Sign in to start a catch.');
+  }
 
   if (!spawnId) {
     return badRequest(c, 'Choose a wild creature before starting a catch.');
   }
 
   try {
+    const now = new Date();
     const activeSpawn = await findActiveSpawnById(
       redis,
       spawnId,
-      new Date(),
+      now,
       launchSpecies
     );
 
@@ -277,6 +386,8 @@ api.get('/catch-params', async (c) => {
     if (!species) {
       return notFound(c, 'That creature is missing from the Remonsta registry.');
     }
+
+    await recordCatchAttemptStart(userId, spawnId, now.getTime());
 
     return c.json<CatchParams>(getCatchParams(activeSpawn.seed, species.rarity));
   } catch (error) {
@@ -317,16 +428,54 @@ api.post('/catch', async (c) => {
     }
 
     const catchParams = getCatchParams(activeSpawn.seed, species.rarity);
+    const attemptKey = getCatchAttemptRedisKey(
+      player.userId,
+      catchAttempt.spawnId
+    );
+    const attemptStartedAtMs = parseStoredTimestampMs(await redis.get(attemptKey));
+
+    if (attemptStartedAtMs === undefined) {
+      return badRequest(c, 'Start the catch from the Wilds first.');
+    }
+
+    await redis.del(attemptKey);
+
+    if (
+      hasCatchAttemptExpired(
+        attemptStartedAtMs,
+        now.getTime(),
+        catchParams.durationMs
+      )
+    ) {
+      return badRequest(c, 'That catch took too long. Try again from the Wilds.');
+    }
+
+    if (
+      !areTapTimesStrictlyIncreasingWithinDuration(
+        catchAttempt.tapTimesMs,
+        catchParams.durationMs
+      )
+    ) {
+      return badRequest(c, 'Tap timestamps must be in order and inside the catch timer.');
+    }
+
     const replayResult = replayCatchAttempt(
       catchAttempt.tapTimesMs,
       catchParams
     );
-    const isFirstCatch = replayResult.caught
-      ? await awardCatch(player, species.id, now)
-      : false;
+    let isFirstCatch = false;
 
     if (replayResult.caught) {
-      await recordDailyPlay(redis, player.userId, now);
+      const shouldAwardCatch = await markSpawnCaughtForPlayer(
+        player.userId,
+        catchAttempt.spawnId,
+        now.getTime()
+      );
+
+      if (shouldAwardCatch) {
+        isFirstCatch = await awardCatch(player, species.id, now);
+        await recordDailyPlay(redis, player.userId, now);
+      }
     }
 
     return c.json<CatchAttemptResponse>({
@@ -401,6 +550,15 @@ api.post('/design', async (c) => {
 
   try {
     const now = new Date();
+    const redditImageUrl = await uploadDesignImage(designDraft.imageUrl);
+
+    if (!redditImageUrl) {
+      return badRequest(
+        c,
+        "We couldn't fetch that image — try a direct PNG/JPEG link."
+      );
+    }
+
     const weekKey = getDesignWeekKey(now);
     const designId = `design-${weekKey}-${randomUUID()
       .replaceAll('-', '')
@@ -410,7 +568,7 @@ api.post('/design', async (c) => {
       name: designDraft.name,
       artist: player.username,
       lore: designDraft.lore,
-      imageUrl: designDraft.imageUrl,
+      imageUrl: redditImageUrl,
       votes: 0,
       weekKey,
       submittedAt: now.getTime(),
@@ -446,13 +604,23 @@ api.get('/designs', async (c) => {
     const rankedDesigns = await redis.zRange(
       getDesignWeekRedisKey(weekKey),
       0,
-      -1,
+      49,
       { by: 'rank', reverse: true }
+    );
+
+    if (rankedDesigns.length === 0) {
+      return c.json<DesignSubmission[]>([]);
+    }
+
+    const storedDesigns = await redis.mGet(
+      rankedDesigns.map((rankedDesign) => {
+        return getDesignRedisKey(rankedDesign.member);
+      })
     );
     const designs: DesignSubmission[] = [];
 
-    for (const rankedDesign of rankedDesigns) {
-      const storedDesign = await readStoredDesign(rankedDesign.member);
+    rankedDesigns.forEach((rankedDesign, designIndex) => {
+      const storedDesign = parseStoredDesignJson(storedDesigns[designIndex]);
       if (storedDesign) {
         designs.push(
           toPublicDesignSubmission(
@@ -461,7 +629,7 @@ api.get('/designs', async (c) => {
           )
         );
       }
-    }
+    });
 
     return c.json<DesignSubmission[]>(designs);
   } catch (error) {

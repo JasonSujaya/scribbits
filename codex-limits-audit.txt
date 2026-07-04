@@ -1,0 +1,39 @@
+1. VERDICT: OK - `devvit.json` is schema-valid.
+Evidence: validated with installed `@devvit/shared-types/schemas/config-file.v1.js`; [devvit.json](/Users/jasons/Github/Hackathon/Remonsta/app/devvit.json:1), [official schema](https://developers.reddit.com/schema/config-file.v1.json). Redis/reddit permissions are declared; media is not.
+Minimal fix: none for current code. Add `"media": true` only when using `media.upload()`.
+
+2. VERDICT: BROKEN - registered menu endpoint is missing.
+Evidence: `/internal/menu/example-form` is in [devvit.json](/Users/jasons/Github/Hackathon/Remonsta/app/devvit.json:37), but [menu.ts](/Users/jasons/Github/Hackathon/Remonsta/app/src/server/routes/menu.ts:10) only implements `/post-create`.
+Minimal fix: add a menu handler returning `showForm`, or remove the menu item.
+
+3. VERDICT: BROKEN - arbitrary UGC `imageUrl` will not be safe/renderable.
+Evidence: accepts raw `http/https` in [designs.ts](/Users/jasons/Github/Hackathon/Remonsta/app/src/server/core/designs.ts:71) and stores it in [api.ts](/Users/jasons/Github/Hackathon/Remonsta/app/src/server/routes/api.ts:408). Docs say apps can only display Reddit-hosted media and media upload needs `"media": true`: [Media uploads](https://developers.reddit.com/docs/capabilities/server/media-uploads).
+Minimal fix: upload server-side with `media.upload({ url, type: "image" })`, store returned `mediaUrl`, set `"permissions": { "media": true }`. Supported image formats: PNG/JPEG/WEBP/GIF, max 20 MB.
+
+4. VERDICT: OK - no forbidden iframe browser APIs found.
+Evidence: client search found same-origin `fetch('/api/*')`, `requestExpandedMode`, and `showToast`; no `localStorage`, `window.open`, external fetch, geolocation, camera, mic, notifications, or audio. Docs prohibit client external requests: [Devvit Web overview](https://developers.reddit.com/docs/capabilities/devvit-web/devvit_web_overview), [HTTP Fetch](https://developers.reddit.com/docs/capabilities/server/http-fetch).
+Minimal fix: none.
+
+5. VERDICT: RISKY - `showToast()` is used outside clear user actions.
+Evidence: [Preloader.ts](/Users/jasons/Github/Hackathon/Remonsta/app/src/client/scenes/Preloader.ts:75), [Habitat.ts](/Users/jasons/Github/Hackathon/Remonsta/app/src/client/scenes/Habitat.ts:313), [Dex.ts](/Users/jasons/Github/Hackathon/Remonsta/app/src/client/scenes/Dex.ts:50). Docs say client effects should only be user-initiated: [Client overview](https://developers.reddit.com/docs/capabilities/client/overview).
+Minimal fix: render errors in Phaser UI; reserve toast for tap/click retry actions.
+
+6. VERDICT: RISKY - `/api/wilds` Redis call count is fine, but hunter presence is unbounded.
+Evidence: platform limits are 30s request, 4 MB payload, 10 MB response; Redis has 40k commands/sec but 5 MB Redis request size: [Devvit Web overview](https://developers.reddit.com/docs/capabilities/devvit-web/devvit_web_overview), [Redis limits](https://developers.reddit.com/docs/capabilities/server/redis). `trackHunterVisit()` does `hGetAll` for all daily hunters in [api.ts](/Users/jasons/Github/Hackathon/Remonsta/app/src/server/routes/api.ts:152).
+Minimal fix: use sorted set presence: `zAdd(member=userId, score=expiresAt)`, `zRemRangeByScore(...now)`, `zCard()`.
+
+7. VERDICT: RISKY - `/api/designs` is unbounded.
+Evidence: `zRange(..., 0, -1)` then one Redis read per design in [api.ts](/Users/jasons/Github/Hackathon/Remonsta/app/src/server/routes/api.ts:443).
+Minimal fix: return top N only, paginate, and batch reads with `mGet`.
+
+8. VERDICT: OK - `node:crypto.randomUUID` is acceptable.
+Evidence: only Node builtin import found is [api.ts](/Users/jasons/Github/Hackathon/Remonsta/app/src/server/routes/api.ts:4); package requires Node 22 in [package.json](/Users/jasons/Github/Hackathon/Remonsta/app/package.json:17). Devvit docs disallow `fs`/native packages, not standard `node:crypto`: [Devvit Web limitations](https://developers.reddit.com/docs/capabilities/devvit-web/devvit_web_overview).
+Minimal fix: none.
+
+9. VERDICT: OK - Redis commands used are available.
+Evidence: `watch/multi/exec`, `zRange`, `zIncrBy`, `hSetNX` exist in [redis.d.ts](/Users/jasons/Github/Hackathon/Remonsta/app/node_modules/@devvit/redis/types/redis.d.ts:3), [redis.d.ts](/Users/jasons/Github/Hackathon/Remonsta/app/node_modules/@devvit/redis/types/redis.d.ts:1071). Docs confirm hashes, sorted sets, transactions are supported: [Redis](https://developers.reddit.com/docs/capabilities/server/redis).
+Minimal fix: none, aside from bounding large reads above.
+
+10. VERDICT: OK - post creation and scheduler shape are current.
+Evidence: `entry: "default"` matches [devvit.json](/Users/jasons/Github/Hackathon/Remonsta/app/devvit.json:6) and [post.ts](/Users/jasons/Github/Hackathon/Remonsta/app/src/server/core/post.ts:25). Scheduler task maps to existing route in [devvit.json](/Users/jasons/Github/Hackathon/Remonsta/app/devvit.json:51) and [scheduler.ts](/Users/jasons/Github/Hackathon/Remonsta/app/src/server/routes/scheduler.ts:18). Docs: [config scheduler](https://developers.reddit.com/docs/capabilities/devvit-web/devvit_web_configuration), [scheduler limits](https://developers.reddit.com/docs/capabilities/server/scheduler).
+Minimal fix: none.

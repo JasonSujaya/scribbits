@@ -1,10 +1,10 @@
 import * as Phaser from 'phaser';
 import { Scene } from 'phaser';
-import { showToast } from '@devvit/web/client';
 import { fetchDex } from '../lib/api';
 import { generateCreatureTexture } from '../lib/art';
 import { FONT_STACK, UI } from '../lib/theme';
-import { label, progressBar, roundedPanel } from '../lib/ui';
+import { errorPanel, label, progressBar, roundedPanel } from '../lib/ui';
+import type { ErrorPanel } from '../lib/ui';
 import type { DexEntry, DexState } from '../../shared/remonsta';
 
 const COLUMNS = 3;
@@ -17,6 +17,7 @@ export class Dex extends Scene {
   private scrollContainer: Phaser.GameObjects.Container | null = null;
   private loadingText: Phaser.GameObjects.Text | null = null;
   private contentHeight = 0;
+  private errorPanelRef: ErrorPanel | null = null;
 
   constructor() {
     super('Dex');
@@ -26,6 +27,7 @@ export class Dex extends Scene {
     this.scrollContainer = null;
     this.loadingText = null;
     this.contentHeight = 0;
+    this.errorPanelRef = null;
   }
 
   create(): void {
@@ -47,14 +49,23 @@ export class Dex extends Scene {
   private async loadDex(): Promise<void> {
     const result = await fetchDex();
     if (!result.ok) {
-      showToast(result.error);
-      this.loadingText?.setText(result.error);
-      const retry = label(this, this.scale.width / 2, this.scale.height / 2 + 60, '↻ Retry', 30, UI.coralText, true);
-      retry.setInteractive({ useHandCursor: true }).once('pointerup', () => {
-        retry.destroy();
-        this.loadingText?.setText('Opening the Dex…');
-        void this.loadDex();
-      });
+      // Auto-runs on scene create (not user-initiated) — show an in-game error
+      // panel with a Retry button instead of a spontaneous toast.
+      this.loadingText?.setText('');
+      if (this.errorPanelRef) return;
+      this.errorPanelRef = errorPanel(
+        this,
+        this.scale.width / 2,
+        this.scale.height / 2,
+        result.error,
+        () => {
+          this.errorPanelRef?.destroy();
+          this.errorPanelRef = null;
+          this.loadingText?.setText('Opening the Dex…');
+          void this.loadDex();
+        }
+      );
+      this.errorPanelRef.container.setDepth(30);
       return;
     }
     this.loadingText?.destroy();

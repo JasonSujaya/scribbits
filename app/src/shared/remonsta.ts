@@ -29,6 +29,7 @@ export type WildsState = {
   huntersOnline: number;
   communityDexPercent: number;
   species: Species[]; // registry snapshot for rendering
+  loggedIn: boolean; // client gates the catch flow on this
 };
 
 // Catch minigame determinism: a focus ring shrinks from radius 100 to 0 over

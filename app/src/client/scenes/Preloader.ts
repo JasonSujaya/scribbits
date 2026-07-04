@@ -1,9 +1,10 @@
 import * as Phaser from 'phaser';
 import { Scene } from 'phaser';
-import { showToast } from '@devvit/web/client';
 import { fetchWilds } from '../lib/api';
 import { generateAllArt, generateDotTexture, generatePanelTexture } from '../lib/art';
 import { DESIGN_HEIGHT, DESIGN_WIDTH, FONT_STACK, UI } from '../lib/theme';
+import { errorPanel } from '../lib/ui';
+import type { ErrorPanel } from '../lib/ui';
 import type { WildsState } from '../../shared/remonsta';
 
 // Preloader fetches the Wilds snapshot, procedurally bakes every texture we
@@ -12,6 +13,7 @@ import type { WildsState } from '../../shared/remonsta';
 // there are no image assets.
 export class Preloader extends Scene {
   private statusText: Phaser.GameObjects.Text | null = null;
+  private errorPanelRef: ErrorPanel | null = null;
 
   constructor() {
     super('Preloader');
@@ -19,6 +21,7 @@ export class Preloader extends Scene {
 
   init(): void {
     this.statusText = null;
+    this.errorPanelRef = null;
   }
 
   create(): void {
@@ -68,27 +71,18 @@ export class Preloader extends Scene {
     this.scene.start('Habitat');
   }
 
+  // Load failure is not user-initiated, so instead of a spontaneous toast we
+  // surface an in-game error panel with a tappable Retry button.
   private showRetry(message: string): void {
     if (this.statusText) {
-      this.statusText.setText(message);
+      this.statusText.setText('');
     }
-    showToast(message);
+    if (this.errorPanelRef) return;
 
     const { width, height } = this.scale;
-    const retry = this.add
-      .text(width / 2, height * 0.64, '↻ Tap to retry', {
-        fontFamily: FONT_STACK,
-        fontSize: '34px',
-        color: UI.cream,
-        fontStyle: 'bold',
-        backgroundColor: '#ff6b4a',
-        padding: { x: 24, y: 14 },
-      })
-      .setOrigin(0.5)
-      .setInteractive({ useHandCursor: true });
-
-    retry.once('pointerup', () => {
-      retry.destroy();
+    this.errorPanelRef = errorPanel(this, width / 2, height * 0.6, message, () => {
+      this.errorPanelRef?.destroy();
+      this.errorPanelRef = null;
       if (this.statusText) this.statusText.setText('Waking the Wilds…');
       void this.loadWilds();
     });

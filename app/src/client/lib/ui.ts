@@ -10,6 +10,11 @@ export type ProgressBar = {
   setValue: (percent: number) => void;
 };
 
+export type ErrorPanel = {
+  container: Phaser.GameObjects.Container;
+  destroy: () => void;
+};
+
 // A rounded panel via nine-slice from the generated `ui-panel` texture.
 export function panel(
   scene: Scene,
@@ -104,6 +109,30 @@ export function button(
   });
 
   return container;
+}
+
+// An in-game error panel: a rounded card with a friendly message and a
+// tappable Retry button. Used for background/load failures where a spontaneous
+// toast would violate the "client effects must be user-initiated" platform rule.
+export function errorPanel(
+  scene: Scene,
+  x: number,
+  y: number,
+  message: string,
+  onRetry: () => void
+): ErrorPanel {
+  const width = 560;
+  const height = 320;
+  const container = scene.add.container(x, y);
+
+  const card = roundedPanel(scene, 0, 0, width, height);
+  const text = label(scene, 0, -60, message, 30, UI.ink, true);
+  text.setWordWrapWidth(width - 80);
+  const retry = button(scene, 0, 70, '↻ Retry', onRetry, width - 120);
+  container.add([card, text, retry]);
+
+  const destroy = (): void => container.destroy(true);
+  return { container, destroy };
 }
 
 // Rounded-rectangle helper for arbitrary panels drawn directly.

@@ -13,6 +13,7 @@ import type {
 
 const START_RADIUS = 100; // contract: focus ring shrinks 100 -> 0
 const VISUAL_SCALE = 2.4; // pixels per radius unit for on-screen ring
+const MAX_TAPS = 5; // server force-fails > 5 taps; the UI must not exceed it
 
 // The catch minigame. A focus ring shrinks from radius 100 to 0 over
 // durationMs. The player taps while the ring radius is within [sweetMin,
@@ -191,19 +192,24 @@ export class CatchMinigame extends Scene {
     }
   }
 
-  private currentRadius(): number {
+  // Ring radius at a given elapsed ms. Callers pass the SAME rounded integer
+  // ms they submit to the server so the local judge and the server replay
+  // agree on boundary taps (float elapsed could disagree by a radius sliver).
+  private radiusAtMs(elapsedMs: number): number {
     if (!this.params) return 0;
-    const elapsed = this.time.now - this.startTime;
-    const t = Phaser.Math.Clamp(elapsed / this.params.durationMs, 0, 1);
+    const t = Phaser.Math.Clamp(elapsedMs / this.params.durationMs, 0, 1);
     return START_RADIUS * (1 - t);
   }
 
   private onTap(): void {
     if (!this.running || !this.params) return;
-    const elapsed = this.time.now - this.startTime;
-    this.tapTimesMs.push(Math.round(elapsed));
 
-    const radius = this.currentRadius();
+    // Round to integer ms FIRST, then judge on that exact value — the same
+    // number we submit — so a tap that passes locally also passes on replay.
+    const elapsedMs = Math.round(this.time.now - this.startTime);
+    this.tapTimesMs.push(elapsedMs);
+
+    const radius = this.radiusAtMs(elapsedMs);
     const isHit = radius >= this.params.sweetMin && radius <= this.params.sweetMax;
 
     if (isHit) {
@@ -211,6 +217,22 @@ export class CatchMinigame extends Scene {
     } else {
       this.registerMiss();
     }
+
+    // Enforce the server's 5-tap ceiling: if the player used all their taps
+    // without landing enough hits, the catch has escaped — stop them tapping.
+    if (this.running && this.tapTimesMs.length >= MAX_TAPS) {
+      this.escape();
+    }
+  }
+
+  // Out of taps without enough hits: the creature got away. We still submit so
+  // the server records the (failed) attempt and returns the escaped result.
+  private escape(): void {
+    if (!this.running) return;
+    this.running = false;
+    this.input.off('pointerdown', this.onTap, this);
+    this.statusText?.setText('It got away…');
+    void this.submit();
   }
 
   private registerHit(): void {
