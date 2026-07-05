@@ -31,6 +31,7 @@ export type Scribbit = {
   status: ScribbitStatus;
   legendTitle: string | null; // e.g. "Champion of Day 12"
   isFounding: boolean; // NPC founding roster
+  accessories: string[]; // accessory catalog ids welded to this scribbit
   // Tamagotchi layer — levels die with the scribbit; bonuses are small + capped
   level: number; // 1..MAX_LEVEL
   xp: number;
@@ -59,9 +60,53 @@ export type ArenaState = {
   todayEntrants: Scribbit[]; // tonight's bracket (gallery + backing targets)
   myBackedScribbitId: string | null; // today's Back (bet), null if unused
   myClout: number; // lifetime talent-scout score
+  myInk: number; // Mystery Ink balance
+  myPens: string[]; // unlocked palette pen ids
 };
 
 export type BackRequest = { scribbitId: string }; // one per user per day, final
+
+// Mystery Ink gacha — earned currency only. Pulls grant ONE-TIME-USE items:
+// accessories are consumed on attach (welded to that scribbit for life, and
+// lost with it). Duplicates simply stack in inventory. Pens are consumable
+// palette boosts too? No — pens remain permanent unlocks (small part of pool);
+// accessories are the stars and are per-copy consumables.
+export type CapsuleRarity = 'common' | 'rare' | 'epic';
+export type CapsuleItemKind = 'accessory' | 'pen' | 'title';
+export type CapsulePull = {
+  rarity: CapsuleRarity;
+  kind: CapsuleItemKind;
+  id: string;
+  name: string; // "Golden Crown"
+  description: string;
+  isNew: boolean; // first copy ever pulled (dupes still stack for accessories)
+  ownedCount: number; // count in inventory after this pull
+};
+export type Inventory = {
+  items: Record<string, number>; // catalog id -> unattached copies owned
+  pens: string[]; // permanent palette unlocks
+  titles: string[];
+};
+// Accessory attached during drawing; consumed from inventory at submit.
+// Coordinates in 512x512 canvas space; client bakes visuals into the PNG.
+export type AttachedAccessory = {
+  id: string;
+  x: number;
+  y: number;
+  scale: number; // 0.5..2
+  rotation: number; // radians
+};
+export const MAX_ACCESSORIES_PER_SCRIBBIT = 2;
+export const INK_REWARDS = {
+  care: 1,
+  sparWin: 2,
+  rumbleWin: 5,
+  backedChampion: 5,
+  dailyDraw: 2,
+} as const;
+export const CAPSULE_COST = 10;
+export const CAPSULE_FIRST_DAILY_COST = 5; // first pull each day is discounted
+export const CAPSULE_PITY = 10; // epic guaranteed within N pulls
 export type CloutEntry = { username: string; clout: number };
 export type CloutBoard = {
   top: CloutEntry[]; // top 20
@@ -102,9 +147,10 @@ export type BattleReport = {
 
 export type SubmitScribbitRequest = {
   name: string;
-  imageDataUrl: string; // png data URL from canvas, 512x512, <=400KB
+  imageDataUrl: string; // png data URL from canvas (accessories baked in), 512x512, <=400KB
   stats: ScribbitStats; // deprecated: client preview only; server recomputes from PNG
   element: Element; // deprecated: client preview only; server recomputes from PNG
+  accessories?: AttachedAccessory[]; // max 2; server validates ownership + consumes copies
 };
 
 export type EnterRumbleRequest = { scribbitId: string };
@@ -163,5 +209,7 @@ export const LEVEL_DAMAGE_BONUS_PER_LEVEL = 0.02; // +2%/level above 1, max +8%
 // POST /api/spar           -> SparRequest -> BattleReport               (exhibition vs random founding NPC; unlimited, xp only on first daily win)
 // POST /api/back           -> BackRequest -> { backed: string }         (one per user per day, locks at rumble resolve)
 // GET  /api/clout-board    -> CloutBoard
+// POST /api/capsule        -> CapsulePull                               (spends CAPSULE_COST ink; seeded random + pity; duplicate refunds)
+// GET  /api/inventory      -> Inventory
 // GET  /api/legends        -> LegendsState
 // GET  /api/drawing/:id    -> image/png bytes (only when redis-stored fallback is used)
