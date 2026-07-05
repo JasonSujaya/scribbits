@@ -13,7 +13,11 @@
 
 import * as Phaser from 'phaser';
 import { Scene } from 'phaser';
-import { MAX_ACCESSORIES_PER_SCRIBBIT } from '../../shared/arena';
+import {
+  MAX_ACCESSORIES_PER_SCRIBBIT,
+  MAX_ACCESSORY_SCALE,
+  MIN_ACCESSORY_SCALE,
+} from '../../shared/arena';
 import type { AttachedAccessory } from '../../shared/arena';
 import { EDGE, TYPE, UI } from './theme';
 import { label, ghostButton } from './ui';
@@ -26,8 +30,6 @@ import {
 
 // The on-screen sticker box edge (design px) at scale 1.
 const BASE_STICKER_SIZE = 120;
-const MIN_SCALE = 0.5;
-const MAX_SCALE = 2;
 
 // The Draw scene's live 512-canvas rect in design space, so we can convert a
 // placed sticker's design-space transform into 512-canvas coordinates for the
@@ -52,7 +54,7 @@ export type StickerAttachOptions = {
 
 export class StickerAttach {
   private readonly scene: Scene;
-  private readonly items: Record<string, number>;
+  private items: Record<string, number>;
   private readonly canvasRect: CanvasRect;
   private readonly onChange: ((placedCount: number) => void) | undefined;
 
@@ -81,6 +83,10 @@ export class StickerAttach {
     );
   }
 
+  updateInventory(items: Record<string, number>): void {
+    this.items = items;
+  }
+
   // The AttachedAccessory[] in 512-canvas coordinates, ready for submit. The
   // sticker's design-space center is mapped into the canvas rect; its scale is
   // expressed relative to the canvas so it bakes at the same visual size.
@@ -95,7 +101,11 @@ export class StickerAttach {
         id: sticker.id,
         x: Math.round(localX),
         y: Math.round(localY),
-        scale: sticker.scale * canvasScale,
+        scale: Phaser.Math.Clamp(
+          sticker.scale * canvasScale,
+          MIN_ACCESSORY_SCALE,
+          MAX_ACCESSORY_SCALE
+        ),
         rotation: sticker.rotation,
       };
     });
@@ -286,9 +296,9 @@ export class StickerAttach {
 
     // Scale slider.
     this.buildSlider(panel, EDGE + 30, y, 170, '⤢', (t) => {
-      sticker.scale = MIN_SCALE + t * (MAX_SCALE - MIN_SCALE);
+      sticker.scale = MIN_ACCESSORY_SCALE + t * (this.maximumStickerScale() - MIN_ACCESSORY_SCALE);
       this.redrawSticker(sticker);
-    }, (sticker.scale - MIN_SCALE) / (MAX_SCALE - MIN_SCALE));
+    }, (sticker.scale - MIN_ACCESSORY_SCALE) / (this.maximumStickerScale() - MIN_ACCESSORY_SCALE));
 
     // Rotation slider.
     this.buildSlider(panel, EDGE + 250, y, 170, '↻', (t) => {
@@ -330,6 +340,11 @@ export class StickerAttach {
       knob.x = clamped;
       onValue((clamped - trackX) / trackWidth);
     });
+  }
+
+  private maximumStickerScale(): number {
+    const canvasScale = 512 / this.canvasRect.width;
+    return MAX_ACCESSORY_SCALE / canvasScale;
   }
 
   private removeSelected(): void {

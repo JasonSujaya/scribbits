@@ -878,8 +878,12 @@ const handleApi = async (request, response, url) => {
     const pullInventoryState = addCapsuleDropToInventory(drop);
 
     sendJson(response, 200, {
-      ...drop,
-      ...pullInventoryState,
+      pull: {
+        ...drop,
+        ...pullInventoryState,
+      },
+      ink: memory.myInk,
+      inventory: inventoryState(),
     });
     return;
   }

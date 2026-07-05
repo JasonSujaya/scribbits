@@ -5,16 +5,12 @@
 //   common → a soft puff
 //   rare   → a gold burst
 //   epic   → a full-screen rainbow moment + hand-lettered banner
-// A duplicate shows the "already got it, +N ink back" refund copy.
+// Duplicate accessories stack; duplicate permanent unlocks report "already got it".
 
 import * as Phaser from 'phaser';
 import { Scene } from 'phaser';
-import { CAPSULE_COST } from '../../shared/arena';
-import type { CapsulePull, CapsuleRarity } from '../../shared/arena';
-
-// Ink handed back when a pull duplicates a pen you already own. Kept local to
-// the client ceremony copy; the server owns the authoritative balance.
-const DUPLICATE_REFUND = 5;
+import { CAPSULE_COST, CAPSULE_FIRST_DAILY_COST } from '../../shared/arena';
+import type { CapsulePull, CapsulePullResponse, CapsuleRarity } from '../../shared/arena';
 import { UI, TYPE } from './theme';
 import { label, handLettered, button, ghostButton } from './ui';
 import { RARITY_STYLE } from './pens';
@@ -23,10 +19,9 @@ const DEPTH = 2500;
 
 export type CapsuleMachineOpts = {
   ink: number; // current ink balance
-  // Perform the pull (server debits/refunds). Return the pull, or an error
-  // string. The machine computes the running ink locally from the pull result
-  // (cost spent, duplicate refunded) so the chip updates instantly.
-  onPull: () => Promise<{ pull: CapsulePull } | { error: string }>;
+  // Perform the pull. The server owns costs, discounts, and final inventory; the
+  // machine only mirrors its returned ink total.
+  onPull: () => Promise<CapsulePullResponse | { error: string }>;
   onClose: (finalInk: number) => void;
 };
 
@@ -66,7 +61,7 @@ export function openCapsuleMachine(scene: Scene, opts: CapsuleMachineOpts): Caps
   // --- Pull button + copy ---------------------------------------------------
   const brokeCopy = [
     'Out of ink! Care for a scribbit to earn more 🫙',
-    'The machine wants 10 ink. Your jar is a little dry 🖊️',
+    `The first daily pull wants ${CAPSULE_FIRST_DAILY_COST} ink. Your jar is a little dry 🖊️`,
     'No ink, no magic — go win a spar first! ✏️',
   ];
 
@@ -80,7 +75,7 @@ export function openCapsuleMachine(scene: Scene, opts: CapsuleMachineOpts): Caps
     scene,
     width / 2,
     height * 0.82,
-    `🎰 PULL · ${CAPSULE_COST} ink`,
+    '🎰 PULL',
     () => void doPull(),
     width - 160,
     UI.coral
@@ -89,13 +84,15 @@ export function openCapsuleMachine(scene: Scene, opts: CapsuleMachineOpts): Caps
 
   function refreshAffordance(): void {
     inkChip.setText(`🫙 Ink: ${ink}`);
-    const canAfford = ink >= CAPSULE_COST;
+    const canAfford = ink >= CAPSULE_FIRST_DAILY_COST;
     pullBtn.setAlpha(canAfford ? 1 : 0.55);
     if (!canAfford && !pulling) {
       helper.setText(brokeCopy[ink % brokeCopy.length] ?? brokeCopy[0] ?? '');
       helper.setColor(UI.coralText);
     } else if (!pulling) {
-      helper.setText(`Crank the machine — ${CAPSULE_COST} ink a pull.`);
+      helper.setText(
+        `First pull today: ${CAPSULE_FIRST_DAILY_COST} ink. Later pulls: ${CAPSULE_COST}.`
+      );
       helper.setColor(UI.inkSoft);
     }
   }
@@ -109,7 +106,7 @@ export function openCapsuleMachine(scene: Scene, opts: CapsuleMachineOpts): Caps
 
   async function doPull(): Promise<void> {
     if (pulling) return;
-    if (ink < CAPSULE_COST) {
+    if (ink < CAPSULE_FIRST_DAILY_COST) {
       // Playful shake + copy already shown; give a tiny nudge.
       scene.tweens.add({ targets: pullBtn, x: pullBtn.x + 6, duration: 60, yoyo: true, repeat: 3 });
       return;
@@ -128,8 +125,7 @@ export function openCapsuleMachine(scene: Scene, opts: CapsuleMachineOpts): Caps
       helper.setColor(UI.coralText);
       return;
     }
-    // Running ink: spent the cost, duplicates refund some back.
-    ink = Math.max(0, ink - CAPSULE_COST + (result.pull.isNew ? 0 : DUPLICATE_REFUND));
+    ink = result.ink;
     await dropAndPop(scene, capsule, result.pull.rarity);
     revealPrize(scene, layer, result.pull);
     pulling = false;
@@ -288,8 +284,8 @@ function revealPrize(
 
   // New vs duplicate copy.
   const footer = pull.isNew
-    ? '✨ New pen unlocked! It’s in your palette.'
-    : `Already got it — +${DUPLICATE_REFUND} ink back 🫙`;
+    ? newPrizeFooter(pull)
+    : duplicatePrizeFooter(pull);
   card.add(label(scene, 0, 96, footer, TYPE.body, pull.isNew ? UI.coralText : UI.goldText, true).setWordWrapWidth(460));
 
   card.setScale(0.6).setAlpha(0);
@@ -298,6 +294,22 @@ function revealPrize(
   scene.time.delayedCall(2600, () => {
     if (card.active) scene.tweens.add({ targets: card, alpha: 0, scale: 0.7, duration: 240, onComplete: () => card.destroy() });
   });
+}
+
+function newPrizeFooter(pull: CapsulePull): string {
+  if (pull.kind === 'accessory') {
+    return `✨ New accessory! ${pull.ownedCount} owned.`;
+  }
+
+  return `✨ New ${pull.kind} unlocked!`;
+}
+
+function duplicatePrizeFooter(pull: CapsulePull): string {
+  if (pull.kind === 'accessory') {
+    return `Stacked copy — ${pull.ownedCount} owned.`;
+  }
+
+  return 'Already unlocked.';
 }
 
 function puff(scene: Scene, layer: Phaser.GameObjects.Container, x: number, y: number): void {

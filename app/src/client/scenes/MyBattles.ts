@@ -14,6 +14,7 @@ const ROW_INNER_HEIGHT = 110;
 // A scrollable-ish list of the caller's recent battles. Tap a row to replay it.
 export class MyBattles extends Scene {
   private errorPanelRef: ErrorPanel | null = null;
+  private renderGeneration = 0;
 
   constructor() {
     super('MyBattles');
@@ -21,6 +22,7 @@ export class MyBattles extends Scene {
 
   init(): void {
     this.errorPanelRef = null;
+    this.renderGeneration = 0;
   }
 
   create(): void {
@@ -53,6 +55,7 @@ export class MyBattles extends Scene {
   }
 
   private render(battles: BattleReport[]): void {
+    this.renderGeneration += 1;
     const { width } = this.scale;
     if (battles.length === 0) {
       const card = stickerCard(this, width / 2, 560, width - 80, 220, { tilt: -0.6 });
@@ -93,8 +96,11 @@ export class MyBattles extends Scene {
       frame.lineStyle(3, UI.inkHex, 1);
       frame.strokeRect(localX - 42, -42, 84, 84);
       card.add(frame);
+      const generation = this.renderGeneration;
       void loadDrawing(this, fighter).then((key) => {
-        if (this.scene.isActive()) fitDrawing(this.add.image(width / 2 + localX, y, key), 74).setDepth(3);
+        if (this.scene.isActive() && generation === this.renderGeneration) {
+          fitDrawing(this.add.image(width / 2 + localX, y, key), 74).setDepth(3);
+        }
       });
     });
 

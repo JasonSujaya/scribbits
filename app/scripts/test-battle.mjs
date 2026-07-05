@@ -49,6 +49,7 @@ execFileSync(
     'src/server/core/rumble.ts',
     'src/server/core/scribbit.ts',
     'src/server/core/dailyJob.ts',
+    'src/client/lib/pens.ts',
   ],
   { cwd: repoRoot, stdio: 'inherit' }
 );
@@ -62,9 +63,11 @@ const battle = require(join(outDir, 'server', 'core', 'battle.js'));
 const clout = require(join(outDir, 'server', 'core', 'clout.js'));
 const dailyJob = require(join(outDir, 'server', 'core', 'dailyJob.js'));
 const forecastCore = require(join(outDir, 'server', 'core', 'forecast.js'));
+const inkCatalog = require(join(outDir, 'server', 'core', 'ink.js'));
 const inkStore = require(join(outDir, 'server', 'core', 'inkStore.js'));
 const rumble = require(join(outDir, 'server', 'core', 'rumble.js'));
 const scribbitCore = require(join(outDir, 'server', 'core', 'scribbit.js'));
+const clientPens = require(join(outDir, 'client', 'lib', 'pens.js'));
 
 const passedChecks = [];
 
@@ -465,6 +468,11 @@ assert.deepEqual(
   deterministicCapsuleDropTwo,
   'same user/day/pull count should select the same capsule drop'
 );
+assert.deepEqual(
+  inkCatalog.INK_PEN_CATALOG.map((entry) => entry.id).sort(),
+  clientPens.PEN_CATALOG.map((entry) => entry.id).sort(),
+  'server-awarded pen ids should all render in the Draw palette'
+);
 pass('capsule weighted deterministic pull selection');
 
 assert.equal(
@@ -681,7 +689,20 @@ assert.deepEqual(
   },
   'failed paired claim should roll back its drawn field'
 );
-pass('daily draw/entry flag claim and rollback');
+await scribbitCore.releaseDailyFlags(flagStorage, 'player-one', 4, [
+  'drawn',
+  'entered',
+]);
+assert.deepEqual(
+  await scribbitCore.getDailyFlags(flagStorage, 'player-one', 4),
+  {
+    drawnToday: false,
+    enteredToday: false,
+    bossChallengedToday: false,
+  },
+  'released draw+entry flags should not lock the player out'
+);
+pass('daily draw/entry flag claim, rollback, and release');
 
 const backClaimStorage = createMemoryStorage();
 const firstBackClaim = await clout.claimDailyBack(
@@ -841,7 +862,39 @@ const forcedJob = await dailyJob.runNightlyArenaJob(dayMathStorage, {
 assert.equal(forcedJob.skipped, false, 'force should run');
 assert.equal(forcedJob.previousDay, 2, 'force should start from stored day');
 assert.equal(forcedJob.newDay, 3, 'force should increment by exactly one');
-pass('nightly job idempotent canonical day and force math');
+
+const catchUpStorage = createMemoryStorage();
+await arenaStore.setCurrentArenaDay(catchUpStorage, 2);
+const dayTwoEntrant = makeScribbit({ id: 'catch-up-day-two', expiresDay: 8 });
+const dayThreeEntrant = makeScribbit({ id: 'catch-up-day-three', expiresDay: 8 });
+await scribbitCore.storeScribbit(catchUpStorage, 'owner-two', dayTwoEntrant);
+await scribbitCore.storeScribbit(catchUpStorage, 'owner-three', dayThreeEntrant);
+await scribbitCore.addRumbleEntrant(catchUpStorage, 2, dayTwoEntrant.id);
+await scribbitCore.addRumbleEntrant(catchUpStorage, 3, dayThreeEntrant.id);
+const caughtUpJob = await dailyJob.runNightlyArenaJob(catchUpStorage, {
+  now: new Date(Date.UTC(2026, 6, 7)),
+});
+assert.equal(caughtUpJob.skipped, false, 'lagged stored day should run');
+assert.equal(caughtUpJob.newDay, 4, 'lagged stored day should catch up to canonical day');
+assert.equal(caughtUpJob.resolvedDay, 3, 'catch-up should finish on the latest due rumble');
+assert.ok(caughtUpJob.reportCount > forcedJob.reportCount, 'catch-up should resolve more than one day');
+const resolvedDayTwoEntrant = await scribbitCore.loadScribbit(
+  catchUpStorage,
+  dayTwoEntrant.id
+);
+const resolvedDayThreeEntrant = await scribbitCore.loadScribbit(
+  catchUpStorage,
+  dayThreeEntrant.id
+);
+assert.ok(
+  resolvedDayTwoEntrant.wins + resolvedDayTwoEntrant.losses > 0,
+  'day-two entrant should not be skipped during catch-up'
+);
+assert.ok(
+  resolvedDayThreeEntrant.wins + resolvedDayThreeEntrant.losses > 0,
+  'day-three entrant should resolve during catch-up'
+);
+pass('nightly job idempotent canonical day, force math, and catch-up');
 
 const cloutPayoutStorage = createMemoryStorage();
 await arenaStore.setCurrentArenaDay(cloutPayoutStorage, 2);

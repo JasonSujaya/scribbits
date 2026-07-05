@@ -7,7 +7,7 @@ import type {
   ArenaState,
   BattleReport,
   CareAction,
-  CapsulePull,
+  CapsulePullResponse,
   CloutBoard,
   Inventory,
   LegendsState,
@@ -70,10 +70,12 @@ import {
   readDrawingFallback,
   recordBattleOutcomeOnScribbit,
   removeRumbleEntrant,
+  releaseDailyFlags,
   storeDrawingFallback,
   storeScribbit,
   validateSubmitScribbitRequest,
   type CurrentPlayer,
+  type DailyFlagField,
   type DecodedPngDataUrl,
 } from '../core/scribbit';
 
@@ -304,6 +306,7 @@ api.post('/scribbit', async (c) => {
     height: decodedPng.height,
   });
   let createdScribbit: { id: string; day: number } | null = null;
+  let claimedSubmitFlags: { day: number; fields: DailyFlagField[] } | null = null;
   let rollbackConsumedAccessories: (() => Promise<void>) | undefined;
 
   try {
@@ -374,11 +377,12 @@ api.post('/scribbit', async (c) => {
     await addRumbleEntrant(redis, dayNumber, scribbit.id);
     await recordDailyPlay(redis, player.userId, now);
 
+    const submitDailyFlags: DailyFlagField[] = ['drawn', 'entered'];
     const claimedDailyEntry = await claimDailyFlags(
       redis,
       player.userId,
       dayNumber,
-      ['drawn', 'entered']
+      submitDailyFlags
     );
 
     if (!claimedDailyEntry) {
@@ -393,7 +397,9 @@ api.post('/scribbit', async (c) => {
       return conflict(c, 'You already drew or entered today.');
     }
 
+    claimedSubmitFlags = { day: dayNumber, fields: submitDailyFlags };
     await awardInk(redis, player.userId, INK_REWARDS.dailyDraw);
+    claimedSubmitFlags = null;
     rollbackConsumedAccessories = undefined;
     return c.json<Scribbit>(scribbit, 201);
   } catch (error) {
@@ -417,6 +423,20 @@ api.post('/scribbit', async (c) => {
         console.error('Submit Scribbit cleanup failed:', cleanupError);
       }
     }
+
+    if (claimedSubmitFlags) {
+      try {
+        await releaseDailyFlags(
+          redis,
+          player.userId,
+          claimedSubmitFlags.day,
+          claimedSubmitFlags.fields
+        );
+      } catch (cleanupError) {
+        console.error('Submit Scribbit daily flag cleanup failed:', cleanupError);
+      }
+    }
+
     console.error('Submit Scribbit route failed:', error);
     return serverError(c, 'The ink would not dry. Try again soon.');
   }
@@ -791,7 +811,11 @@ api.post('/capsule', async (c) => {
       );
     }
 
-    return c.json<CapsulePull>(result.pull);
+    return c.json<CapsulePullResponse>({
+      pull: result.pull,
+      ink: result.ink,
+      inventory: result.inventory,
+    });
   } catch (error) {
     console.error('Capsule route failed:', error);
     return serverError(c, 'The capsule machine jammed. Try again soon.');

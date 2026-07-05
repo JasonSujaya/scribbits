@@ -194,6 +194,22 @@ export const INK_PEN_CATALOG: InkPenCatalogEntry[] = [
     description: 'Arcade-bright ink that looks illegal after midnight.',
     colors: ['#39FF14', '#00F5FF', '#FF2BD6', '#FFF200', '#FF5F1F'],
   },
+  {
+    id: 'rainbow-crayon',
+    kind: 'pen',
+    rarity: 'epic',
+    name: 'Rainbow Crayon',
+    description: 'Draws hue-cycling strokes like a parade got sharpened.',
+    colors: ['#ff5a3d', '#ff9a3d', '#f2cf3d', '#4faa4f', '#3ba0e0', '#8a5cd8'],
+  },
+  {
+    id: 'midnight-ink',
+    kind: 'pen',
+    rarity: 'epic',
+    name: 'Midnight Ink',
+    description: 'Near-black ink with tiny star flecks.',
+    colors: ['#0b0a12'],
+  },
 ];
 
 export const INK_TITLE_CATALOG: InkTitleCatalogEntry[] = [

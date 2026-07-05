@@ -15,10 +15,10 @@ import { DESIGN_HEIGHT, DESIGN_WIDTH } from './lib/theme';
 const config: Phaser.Types.Core.GameConfig = {
   type: AUTO,
   parent: 'game-container',
-  backgroundColor: '#241b2e',
+  backgroundColor: '#2a2118',
   scale: {
     mode: Phaser.Scale.FIT,
-    autoCenter: Phaser.Scale.CENTER_BOTH,
+    autoCenter: Phaser.Scale.NO_CENTER,
     width: DESIGN_WIDTH,
     height: DESIGN_HEIGHT,
   },

@@ -32,11 +32,25 @@ export const PEN_CATALOG: PenCatalogEntry[] = [
     colors: ['#8a7f6d', '#b6a894', '#d8ccb7'],
   },
   {
-    id: 'pastel-pop',
-    name: 'Pastel Pop',
+    id: 'pastel-set',
+    name: 'Pastel Set',
     rarity: 'common',
     effect: 'solid',
-    colors: ['#ff9ecb', '#9ee6ff', '#bdf5b3'],
+    colors: ['#f6a6c9', '#b9e4c9', '#b8d7ff', '#ffe29a', '#cdb7f6'],
+  },
+  {
+    id: 'autumn-set',
+    name: 'Autumn Set',
+    rarity: 'common',
+    effect: 'solid',
+    colors: ['#7a3418', '#b75a25', '#d99a3d', '#8e6f38', '#4d3a24'],
+  },
+  {
+    id: 'ocean-set',
+    name: 'Ocean Set',
+    rarity: 'common',
+    effect: 'solid',
+    colors: ['#063b5b', '#0c6e91', '#1597a5', '#5fc9c4', '#c7f3ed'],
   },
   {
     id: 'gold-pen',
@@ -46,18 +60,11 @@ export const PEN_CATALOG: PenCatalogEntry[] = [
     colors: ['#f0b000', '#ffd447'],
   },
   {
-    id: 'neon-marker',
-    name: 'Neon Marker',
+    id: 'neon-set',
+    name: 'Neon Set',
     rarity: 'rare',
     effect: 'solid',
-    colors: ['#ff2d95', '#39ff14'],
-  },
-  {
-    id: 'midnight-ink',
-    name: 'Midnight Ink',
-    rarity: 'epic',
-    effect: 'midnight',
-    colors: ['#0b0a12'], // near-black; white specks are rendered on top
+    colors: ['#39ff14', '#00f5ff', '#ff2bd6', '#fff200', '#ff5f1f'],
   },
   {
     id: 'rainbow-crayon',
@@ -66,6 +73,13 @@ export const PEN_CATALOG: PenCatalogEntry[] = [
     effect: 'rainbow',
     // Cycle stops (rendered as a moving hue along the stroke).
     colors: ['#ff5a3d', '#ff9a3d', '#f2cf3d', '#4faa4f', '#3ba0e0', '#8a5cd8'],
+  },
+  {
+    id: 'midnight-ink',
+    name: 'Midnight Ink',
+    rarity: 'epic',
+    effect: 'midnight',
+    colors: ['#0b0a12'], // near-black; white specks are rendered on top
   },
 ];
 

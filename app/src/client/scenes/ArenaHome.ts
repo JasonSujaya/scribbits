@@ -68,6 +68,10 @@ export class ArenaHome extends Scene {
   private scrollVelocity = 0; // px/frame, decays as inertia
   private dragDistance = 0; // total |movement| this gesture, for tap-vs-drag
   private focusEntrantsY: number | null = null;
+  private buildGeneration = 0;
+  private readonly refreshOnWake = (): void => {
+    void this.refresh();
+  };
 
   // A gesture that moves more than this many pixels is a scroll, not a tap — so
   // card taps that ride a drag don't fire, and small jitter during a tap doesn't
@@ -92,6 +96,7 @@ export class ArenaHome extends Scene {
     this.scrollVelocity = 0;
     this.dragDistance = 0;
     this.focusEntrantsY = null;
+    this.buildGeneration = 0;
   }
 
   create(): void {
@@ -103,10 +108,11 @@ export class ArenaHome extends Scene {
     this.state = state;
     this.build();
     this.events.once('shutdown', () => this.cleanup());
-    this.events.on('wake', () => void this.refresh());
+    this.events.on('wake', this.refreshOnWake);
   }
 
   private cleanup(): void {
+    this.events.off('wake', this.refreshOnWake);
     this.weatherTimer?.remove();
     this.countdownTimer?.remove();
     this.livingPaper?.destroy();
@@ -117,6 +123,7 @@ export class ArenaHome extends Scene {
   // page can scroll. Each builder returns the y it consumed to; a running
   // cursor drives the next section. -----------------------------------------
   private build(): void {
+    this.buildGeneration += 1;
     this.children.removeAll(true);
     this.weatherTimer?.remove();
     this.countdownTimer?.remove();
@@ -163,6 +170,7 @@ export class ArenaHome extends Scene {
     this.input.off('pointerdown', this.onPointerDown, this);
     this.input.off('pointermove', this.onPointerMove, this);
     this.input.off('pointerup', this.onPointerUp, this);
+    this.input.off('pointerupoutside', this.onPointerUp, this);
     this.input.off('wheel');
 
     if (this.maxScroll <= 0) return;
@@ -248,6 +256,10 @@ export class ArenaHome extends Scene {
     this.scrollVelocity = 0;
   }
 
+  private isCurrentBuild(generation: number): boolean {
+    return this.scene.isActive() && generation === this.buildGeneration;
+  }
+
   // --- Top bar + live countdown ---------------------------------------------
   private drawTopBar(y: number): number {
     const { width } = this.scale;
@@ -316,7 +328,7 @@ export class ArenaHome extends Scene {
       onPull: async () => {
         const result = await pullCapsule();
         if (!result.ok) return { error: result.error };
-        return { pull: result.data };
+        return result.data;
       },
       // On close, re-fetch so the roster/ink/palette reflect the server truth.
       onClose: () => void this.refresh(),
@@ -416,8 +428,9 @@ export class ArenaHome extends Scene {
     frame.lineStyle(4, UI.inkHex, 1);
     frame.strokeRect(artX - artFrame / 2, artY - artFrame / 2, artFrame, artFrame);
     card.add(frame);
+    const generation = this.buildGeneration;
     void loadDrawing(this, champ).then((key) => {
-      if (!this.scene.isActive()) return;
+      if (!this.isCurrentBuild(generation)) return;
       const img = fitDrawing(this.add.image(x + artX, centerY + artY, key), 92).setDepth(3);
       img.setInteractive({ useHandCursor: true });
       img.on('pointerup', () => { if (!this.didDrag()) this.openDetail(champ); });
@@ -481,8 +494,9 @@ export class ArenaHome extends Scene {
     frame.strokeRect(artX - artSize / 2, artY - artSize / 2, artSize, artSize);
     card.add(frame);
     card.add(levelBadge(this, artX + artSize / 2 - 12, artY - artSize / 2 + 12, levelOf(scribbit), 0.56));
+    const generation = this.buildGeneration;
     void loadDrawing(this, scribbit).then((key) => {
-      if (!this.scene.isActive()) return;
+      if (!this.isCurrentBuild(generation)) return;
       const img = fitDrawing(this.add.image(x + artX, y + artY, key), artSize - 12).setDepth(3);
       img.setInteractive({ useHandCursor: true });
       img.on('pointerup', () => { if (!this.didDrag()) this.openDetail(scribbit); });
@@ -578,8 +592,9 @@ export class ArenaHome extends Scene {
     frame.lineStyle(3, UI.inkHex, 1);
     frame.strokeRect(artX - artSize / 2, artY - artSize / 2, artSize, artSize);
     card.add(frame);
+    const generation = this.buildGeneration;
     void loadDrawing(this, entrant).then((key) => {
-      if (!this.scene.isActive()) return;
+      if (!this.isCurrentBuild(generation)) return;
       const img = fitDrawing(this.add.image(x + artX, y + artY, key), artSize - 10).setDepth(3);
       img.setInteractive({ useHandCursor: true });
       img.on('pointerup', () => { if (!this.didDrag()) this.openDetail(entrant); });
@@ -855,8 +870,9 @@ export class ArenaHome extends Scene {
       const card = stickerCard(this, slotX, height * 0.5, 170, 170);
       card.setScrollFactor(0).setDepth(500);
       overlay.add(card);
+      const generation = this.buildGeneration;
       void loadDrawing(this, scribbit).then((key) => {
-        if (!this.scene.isActive()) return;
+        if (!this.isCurrentBuild(generation)) return;
         const img = fitDrawing(this.add.image(slotX, height * 0.5, key), 120).setScrollFactor(0).setDepth(501);
         img.setInteractive({ useHandCursor: true });
         img.on('pointerup', () => {

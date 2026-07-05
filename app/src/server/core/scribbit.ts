@@ -15,7 +15,9 @@ import {
   LIFESPAN_DAYS,
   MAX_ALIVE_PER_USER,
   MAX_ACCESSORIES_PER_SCRIBBIT,
+  MAX_ACCESSORY_SCALE,
   MAX_LEVEL,
+  MIN_ACCESSORY_SCALE,
   STAT_BUDGET,
   STAT_MAX,
   STAT_MIN,
@@ -81,6 +83,8 @@ export type ValidatedScribbitDraft = {
 export type DailyFlags = Pick<ArenaState, 'drawnToday' | 'enteredToday'> & {
   bossChallengedToday: boolean;
 };
+
+export type DailyFlagField = 'drawn' | 'entered' | 'bossChallenge';
 
 const pngDataUrlPrefix = 'data:image/png;base64,';
 const maximumDrawingBytes = 400 * 1024;
@@ -413,7 +417,12 @@ const isCanvasCoordinate = (value: unknown): value is number => {
 };
 
 const isAccessoryScale = (value: unknown): value is number => {
-  return typeof value === 'number' && Number.isFinite(value) && value >= 0.5 && value <= 2;
+  return (
+    typeof value === 'number' &&
+    Number.isFinite(value) &&
+    value >= MIN_ACCESSORY_SCALE &&
+    value <= MAX_ACCESSORY_SCALE
+  );
 };
 
 const isFiniteNumber = (value: unknown): value is number => {
@@ -582,14 +591,29 @@ export const removeRumbleEntrant = async (
   await storage.zRem(getRumbleKey(day), [scribbitId]);
 };
 
+export const releaseDailyFlags = async (
+  storage: ArenaStorage,
+  userId: string,
+  day: number,
+  fields: DailyFlagField[]
+): Promise<void> => {
+  if (fields.length === 0) {
+    return;
+  }
+
+  const dailyFlagsKey = getDailyFlagsKey(userId, day);
+  await storage.hDel(dailyFlagsKey, fields);
+  await storage.expire(dailyFlagsKey, dailyFlagTtlSeconds);
+};
+
 export const claimDailyFlags = async (
   storage: ArenaStorage,
   userId: string,
   day: number,
-  fields: Array<'drawn' | 'entered' | 'bossChallenge'>
+  fields: DailyFlagField[]
 ): Promise<boolean> => {
   const dailyFlagsKey = getDailyFlagsKey(userId, day);
-  const claimedFields: Array<'drawn' | 'entered' | 'bossChallenge'> = [];
+  const claimedFields: DailyFlagField[] = [];
 
   for (const field of fields) {
     const createdFlag = await storage.hSetNX(
@@ -600,9 +624,8 @@ export const claimDailyFlags = async (
 
     if (createdFlag !== 1) {
       if (claimedFields.length > 0) {
-        await storage.hDel(dailyFlagsKey, claimedFields);
+        await releaseDailyFlags(storage, userId, day, claimedFields);
       }
-      await storage.expire(dailyFlagsKey, dailyFlagTtlSeconds);
       return false;
     }
 
@@ -1088,7 +1111,7 @@ export const markDailyFlag = async (
   storage: ArenaStorage,
   userId: string,
   day: number,
-  field: 'drawn' | 'entered' | 'bossChallenge'
+  field: DailyFlagField
 ): Promise<boolean> => {
   const dailyFlagsKey = getDailyFlagsKey(userId, day);
   const createdFlag = await storage.hSetNX(

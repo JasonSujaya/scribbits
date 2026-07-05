@@ -46,12 +46,17 @@ const PALETTE: { color: string; label: string }[] = [
   { color: '#f2cf3d', label: 'storm' }, // storm yellow
 ];
 
-const BRUSH_SIZES = [12, 24, 40];
+const MIN_LINE_WIDTH = 8;
+const MAX_LINE_WIDTH = 56;
+const LINE_WIDTH_STEP = 4;
+const DEFAULT_LINE_WIDTH = 24;
 const PEN_SHORT_LABEL: Record<string, string> = {
   'warm-greys': 'Greys',
-  'pastel-pop': 'Pastel',
+  'pastel-set': 'Pastel',
+  'autumn-set': 'Autumn',
+  'ocean-set': 'Ocean',
   'gold-pen': 'Gold',
-  'neon-marker': 'Neon',
+  'neon-set': 'Neon',
   'midnight-ink': 'Night',
   'rainbow-crayon': 'Rainbow',
 };
@@ -80,7 +85,8 @@ export class Draw extends Scene {
   private penSwatches: { rect: Phaser.GameObjects.Rectangle; penId: string }[] = [];
   private pensRow: Phaser.GameObjects.Container | null = null;
   private pensRowY = 0;
-  private brushButtons: Phaser.GameObjects.Container[] = [];
+  private lineWidth = DEFAULT_LINE_WIDTH;
+  private lineWidthPreviewDot: Phaser.GameObjects.Arc | null = null;
 
   private resizeHandler = (): void => this.overlay?.sync();
   private submitting = false;
@@ -99,7 +105,8 @@ export class Draw extends Scene {
     this.lastResult = null;
     this.colorSwatches = [];
     this.penSwatches = [];
-    this.brushButtons = [];
+    this.lineWidth = DEFAULT_LINE_WIDTH;
+    this.lineWidthPreviewDot = null;
     this.submitting = false;
     this.errorPanelRef = null;
     this.currentElement = 'ember';
@@ -151,18 +158,28 @@ export class Draw extends Scene {
   // Load the owned-accessory inventory, then wire the sticker drawer. Fetched
   // async so the drawing UI never blocks; the ✨ button reflects owned copies.
   private setupStickers(): void {
-    void fetchInventory().then((result) => {
-      if (!this.scene.isActive() || this.submitting) return;
-      const items = result.ok ? result.data.items : {};
-      this.stickers = new StickerAttach(this, {
-        items,
-        canvasRect: this.canvasRect(),
-        onChange: () => this.updateStickerButton(),
-      });
-      this.updateStickerButton();
-    });
+    void this.refreshStickerInventory();
   }
 
+  private async refreshStickerInventory(): Promise<void> {
+    const result = await fetchInventory();
+    if (!this.scene.isActive() || this.submitting) return;
+
+    const items = result.ok ? result.data.items : {};
+
+    if (this.stickers) {
+      this.stickers.updateInventory(items);
+      this.updateStickerButton();
+      return;
+    }
+
+    this.stickers = new StickerAttach(this, {
+      items,
+      canvasRect: this.canvasRect(),
+      onChange: () => this.updateStickerButton(),
+    });
+    this.updateStickerButton();
+  }
   private updateStickerButton(): void {
     const count = this.stickers?.count ?? 0;
     this.stickerButtonLabel?.setText(count > 0 ? `✨ ${count}/2` : '✨');
@@ -224,7 +241,7 @@ export class Draw extends Scene {
   }
 
   // Three clean lines: base color swatches, Mystery Ink pens (unlocked +
-  // ghosted locked slots), then brush sizes + edit tools.
+  // ghosted locked slots), then line width + edit tools.
   private buildToolsBand(centerY: number): void {
     const { width } = this.scale;
     const panelW = width - EDGE * 2;
@@ -259,20 +276,8 @@ export class Draw extends Scene {
 
     this.buildPensRow(penY);
 
-    // Brush sizes (left group).
-    BRUSH_SIZES.forEach((size, index) => {
-      const x = EDGE + 46 + index * 70;
-      const container = this.add.container(x, toolY);
-      const bg = this.add
-        .rectangle(0, 0, 54, 54, UI.creamHex, 1)
-        .setStrokeStyle(4, UI.inkHex, 1)
-        .setInteractive({ useHandCursor: true });
-      const dot = this.add.circle(0, 0, size / 2 + 2, UI.inkHex, 1);
-      container.add([bg, dot]);
-      bg.on('pointerup', () => this.selectBrush(index, size));
-      this.brushButtons.push(container);
-    });
-    this.selectBrush(1, BRUSH_SIZES[1] ?? 24);
+    this.buildLineWidthControls(toolY);
+    this.setLineWidth(DEFAULT_LINE_WIDTH);
 
     // Stickers toggle (center): opens the accessory drawer. Its label shows the
     // placed count (e.g. "✨ 1/2") once accessories are attached.
@@ -308,6 +313,31 @@ export class Draw extends Scene {
     return container;
   }
 
+  private buildLineWidthControls(y: number): void {
+    this.toolIconButton(EDGE + 46, y, '−', () => this.adjustLineWidth(-LINE_WIDTH_STEP));
+
+    const preview = this.add.container(EDGE + 116, y);
+    const bg = this.add.rectangle(0, 0, 54, 54, UI.creamHex, 1).setStrokeStyle(4, UI.inkHex, 1);
+    this.lineWidthPreviewDot = this.add.circle(0, 0, this.lineWidthPreviewRadius(), UI.inkHex, 1);
+    preview.add([bg, this.lineWidthPreviewDot]);
+
+    this.toolIconButton(EDGE + 186, y, '+', () => this.adjustLineWidth(LINE_WIDTH_STEP));
+  }
+
+  private adjustLineWidth(delta: number): void {
+    this.setLineWidth(this.lineWidth + delta);
+  }
+
+  private setLineWidth(width: number): void {
+    this.lineWidth = Phaser.Math.Clamp(width, MIN_LINE_WIDTH, MAX_LINE_WIDTH);
+    this.canvas?.setBrushSize(this.lineWidth);
+    this.lineWidthPreviewDot?.setRadius(this.lineWidthPreviewRadius());
+  }
+
+  private lineWidthPreviewRadius(): number {
+    return Phaser.Math.Clamp(this.lineWidth / 2, 5, 23);
+  }
+
   // Mystery Ink pens: every catalog pen shows as a swatch. Unlocked pens are
   // tappable (rainbow/midnight get special rendering in the canvas); locked pens
   // are ghosted with a 🔒 and deep-link to the capsule machine — visible
@@ -326,7 +356,7 @@ export class Draw extends Scene {
 
     const startX = EDGE + labelW + 8;
     const unlockedPens = PEN_CATALOG.filter((pen) => unlocked.has(pen.id));
-    const machineW = 112;
+    const machineW = 100;
     const cellCount = Math.max(1, unlockedPens.length);
     const avail = width - startX - EDGE - machineW - 12;
     const gap = avail / cellCount;
@@ -348,8 +378,8 @@ export class Draw extends Scene {
       const swatch = this.add
         .rectangle(swatchX, y, 26, 26, Phaser.Display.Color.HexStringToColor(penSwatchColor(pen)).color, 1)
         .setStrokeStyle(2, UI.inkHex, 1);
-      const penName = label(this, swatchX + 22, y, this.shortPenLabel(pen), 16, UI.ink, true).setOrigin(0, 0.5);
-      penName.setWordWrapWidth(chipW - 46);
+      const penName = label(this, swatchX + 22, y, this.shortPenLabel(pen), 15, UI.ink, true).setOrigin(0, 0.5);
+      penName.setWordWrapWidth(chipW - 52);
       container.add([swatch, penName]);
 
       chip.on('pointerup', () => this.selectPen(index, pen));
@@ -363,7 +393,7 @@ export class Draw extends Scene {
       .rectangle(machineX, y, machineW, 48, UI.gold, 1)
       .setStrokeStyle(3, UI.inkHex, 1)
       .setInteractive({ useHandCursor: true });
-    const machineLabel = label(this, machineX, y, 'Capsule', TYPE.caption, UI.ink, true);
+    const machineLabel = label(this, machineX, y, 'Capsule', 22, UI.ink, true);
     container.add([machine, machineLabel]);
     machine.on('pointerup', () => this.openCapsuleFromDraw());
   }
@@ -387,9 +417,12 @@ export class Draw extends Scene {
 
   // After a capsule pull closes, re-fetch arena so a freshly-unlocked pen shows
   // up as a live swatch (no scene restart, canvas drawing preserved).
-  private async refreshPensAfterPull(): Promise<void> {
-    const result = await fetchArena();
-    if (result.ok) setArena(this, result.data);
+  private async refreshDrawingToolsAfterPull(): Promise<void> {
+    const [arenaResult] = await Promise.all([
+      fetchArena(),
+      this.refreshStickerInventory(),
+    ]);
+    if (arenaResult.ok) setArena(this, arenaResult.data);
     if (this.scene.isActive()) this.buildPensRow(this.pensRowY);
   }
 
@@ -410,15 +443,24 @@ export class Draw extends Scene {
   }
 
   private openCapsuleFromDraw(): void {
+    this.drawerOpen = false;
+    this.stickers?.closeDrawer();
+    this.stickers?.hideOverlays();
+    this.overlay.setVisible(false);
     openCapsuleMachine(this, {
       ink: this.getArenaState()?.myInk ?? 0,
       onPull: async () => {
         const result = await pullCapsule();
         if (!result.ok) return { error: result.error };
-        return { pull: result.data };
+        return result.data;
       },
       // Rebuild the pens row so a freshly unlocked pen appears immediately.
-      onClose: () => void this.refreshPensAfterPull(),
+      onClose: () => {
+        if (!this.scene.isActive() || this.submitting) return;
+        this.overlay.setVisible(true);
+        this.stickers?.showOverlays();
+        void this.refreshDrawingToolsAfterPull();
+      },
     });
   }
 
@@ -432,14 +474,6 @@ export class Draw extends Scene {
     this.penSwatches.forEach(({ rect, penId }) => {
       const pen = PEN_BY_ID.get(penId);
       rect.setStrokeStyle(3, pen ? RARITY_STYLE[pen.rarity].color : UI.inkHex, 1).setScale(1);
-    });
-  }
-
-  private selectBrush(index: number, size: number): void {
-    this.canvas?.setBrushSize(size);
-    this.brushButtons.forEach((container, buttonIndex) => {
-      const bg = container.list[0] as Phaser.GameObjects.Rectangle;
-      bg.setStrokeStyle(buttonIndex === index ? 6 : 4, buttonIndex === index ? UI.goldHex : UI.inkHex, 1);
     });
   }
 
@@ -471,6 +505,7 @@ export class Draw extends Scene {
     this.overlay = new DomOverlay(this);
 
     this.canvas = new DrawCanvas({ onStrokeEnd: () => this.refreshPreview() });
+    this.canvas.setBrushSize(this.lineWidth);
     const square = Draw.CANVAS_SQUARE;
     this.overlay.place(this.canvas.element, {
       x: this.scale.width / 2 - square / 2,

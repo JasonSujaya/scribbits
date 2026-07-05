@@ -87,13 +87,20 @@ export type Inventory = {
   pens: string[]; // permanent palette unlocks
   titles: string[];
 };
+export type CapsulePullResponse = {
+  pull: CapsulePull;
+  ink: number;
+  inventory: Inventory;
+};
 // Accessory attached during drawing; consumed from inventory at submit.
 // Coordinates in 512x512 canvas space; client bakes visuals into the PNG.
+export const MIN_ACCESSORY_SCALE = 0.5;
+export const MAX_ACCESSORY_SCALE = 2;
 export type AttachedAccessory = {
   id: string;
   x: number;
   y: number;
-  scale: number; // 0.5..2
+  scale: number; // MIN_ACCESSORY_SCALE..MAX_ACCESSORY_SCALE
   rotation: number; // radians
 };
 export const MAX_ACCESSORIES_PER_SCRIBBIT = 2;
@@ -209,7 +216,7 @@ export const LEVEL_DAMAGE_BONUS_PER_LEVEL = 0.02; // +2%/level above 1, max +8%
 // POST /api/spar           -> SparRequest -> BattleReport               (exhibition vs random founding NPC; unlimited, xp only on first daily win)
 // POST /api/back           -> BackRequest -> { backed: string }         (one per user per day, locks at rumble resolve)
 // GET  /api/clout-board    -> CloutBoard
-// POST /api/capsule        -> CapsulePull                               (spends CAPSULE_COST ink; seeded random + pity; duplicate refunds)
+// POST /api/capsule        -> CapsulePullResponse                       (spends ink; seeded random + pity; duplicate accessories stack)
 // GET  /api/inventory      -> Inventory
 // GET  /api/legends        -> LegendsState
 // GET  /api/drawing/:id    -> image/png bytes (only when redis-stored fallback is used)

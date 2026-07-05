@@ -75,6 +75,16 @@ export type NightlyArenaJobResult =
   | NightlyArenaJobRunResult
   | NightlyArenaJobSkippedResult;
 
+type ResolvedArenaDay = {
+  resolvedDay: number;
+  champion: Scribbit;
+  reportCount: number;
+  expired: {
+    faded: number;
+    legends: number;
+  };
+};
+
 const getBattleScore = (
   day: number,
   reportIndex: number,
@@ -158,6 +168,60 @@ const crownChampionSnapshot = async (
   };
 };
 
+const resolveArenaDay = async (
+  storage: ArenaStorage,
+  resolvedDay: number,
+  paidAtMs: number
+): Promise<ResolvedArenaDay> => {
+  const nextDay = resolvedDay + 1;
+  const resolvedForecast = await ensureForecastForDay(storage, resolvedDay);
+  const entrantIds = await getRumbleEntrantIds(storage, resolvedDay);
+  const entrants = await loadScribbits(storage, entrantIds);
+  const resolution = resolveSwissRumble(entrants, resolvedForecast, resolvedDay);
+
+  await applyRumbleStandingsToStoredScribbits(
+    storage,
+    resolution,
+    resolvedDay,
+    paidAtMs
+  );
+
+  for (let index = 0; index < resolution.reports.length; index += 1) {
+    const report = resolution.reports[index];
+
+    if (report) {
+      await saveBattleReport(
+        storage,
+        report,
+        getBattleScore(nextDay, index, resolution.reports.length)
+      );
+    }
+  }
+
+  const champion = await crownChampionSnapshot(
+    storage,
+    resolution.champion,
+    resolvedDay
+  );
+  await setCurrentChampion(storage, champion);
+  await payCloutForRumble(storage, {
+    day: resolvedDay,
+    championScribbitId: champion.id,
+    runnerUpScribbitId: resolution.standings[1]?.scribbit.id ?? null,
+    paidAtMs,
+  });
+
+  const expired = await expireDueScribbits(storage, nextDay);
+  await setCurrentArenaDay(storage, nextDay);
+
+  return {
+    resolvedDay,
+    champion,
+    reportCount: resolution.reports.length,
+    expired,
+  };
+};
+
 export const runNightlyArenaJob = async (
   storage: ArenaStorage,
   options: {
@@ -192,47 +256,29 @@ export const runNightlyArenaJob = async (
   }
 
   const newDay = options.force ? previousDay + 1 : canonicalDay;
-  const resolvedDay = Math.max(1, newDay - 1);
+  let latestResolution: ResolvedArenaDay | null = null;
+  let reportCount = 0;
+  const expired = { faded: 0, legends: 0 };
 
-  const resolvedForecast = await ensureForecastForDay(storage, resolvedDay);
-  const entrantIds = await getRumbleEntrantIds(storage, resolvedDay);
-  const entrants = await loadScribbits(storage, entrantIds);
-  const resolution = resolveSwissRumble(entrants, resolvedForecast, resolvedDay);
-
-  await applyRumbleStandingsToStoredScribbits(
-    storage,
-    resolution,
-    resolvedDay,
-    now.getTime()
-  );
-
-  for (let index = 0; index < resolution.reports.length; index += 1) {
-    const report = resolution.reports[index];
-
-    if (report) {
-      await saveBattleReport(
-        storage,
-        report,
-        getBattleScore(newDay, index, resolution.reports.length)
-      );
-    }
+  for (
+    let resolvedDay = Math.max(1, previousDay);
+    resolvedDay < newDay;
+    resolvedDay += 1
+  ) {
+    const resolution = await resolveArenaDay(
+      storage,
+      resolvedDay,
+      now.getTime()
+    );
+    latestResolution = resolution;
+    reportCount += resolution.reportCount;
+    expired.faded += resolution.expired.faded;
+    expired.legends += resolution.expired.legends;
   }
 
-  const champion = await crownChampionSnapshot(
-    storage,
-    resolution.champion,
-    resolvedDay
-  );
-  await setCurrentChampion(storage, champion);
-  await payCloutForRumble(storage, {
-    day: resolvedDay,
-    championScribbitId: champion.id,
-    runnerUpScribbitId: resolution.standings[1]?.scribbit.id ?? null,
-    paidAtMs: now.getTime(),
-  });
-
-  const expired = await expireDueScribbits(storage, newDay);
-  await setCurrentArenaDay(storage, newDay);
+  if (!latestResolution) {
+    throw new Error('Nightly arena job had no due day to resolve.');
+  }
 
   const forecast = await ensureForecastForDay(storage, newDay);
   let postId: string | null = null;
@@ -247,7 +293,7 @@ export const runNightlyArenaJob = async (
       const post = await options.createPost({
         day: newDay,
         forecast,
-        champion,
+        champion: latestResolution.champion,
       });
       postId = post.id;
       await storage.set(arenaPostKey, post.id);
@@ -259,10 +305,10 @@ export const runNightlyArenaJob = async (
     previousDay,
     newDay,
     canonicalDay,
-    resolvedDay,
+    resolvedDay: latestResolution.resolvedDay,
     forecast,
-    champion,
-    reportCount: resolution.reports.length,
+    champion: latestResolution.champion,
+    reportCount,
     expired,
     postId,
   };

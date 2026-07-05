@@ -20,6 +20,7 @@ export class Sketchbook extends Scene {
   private errorPanelRef: ErrorPanel | null = null;
   private loggedIn = false;
   private livingPaper: LivingPaper | null = null;
+  private buildGeneration = 0;
 
   constructor() {
     super('Sketchbook');
@@ -29,6 +30,7 @@ export class Sketchbook extends Scene {
     this.galleryData = null;
     this.errorPanelRef = null;
     this.livingPaper = null;
+    this.buildGeneration = 0;
   }
 
   create(): void {
@@ -49,6 +51,7 @@ export class Sketchbook extends Scene {
   }
 
   private build(): void {
+    this.buildGeneration += 1;
     this.children.removeAll(true);
     // Calm living page (no forecast field, no countdown) rebuilt each build.
     this.livingPaper?.destroy();
@@ -113,6 +116,10 @@ export class Sketchbook extends Scene {
     this.build();
   }
 
+  private isCurrentBuild(generation: number): boolean {
+    return this.scene.isActive() && generation === this.buildGeneration;
+  }
+
   // --- Legends hall ---------------------------------------------------------
   private buildLegends(top: number): void {
     const { width } = this.scale;
@@ -146,8 +153,9 @@ export class Sketchbook extends Scene {
 
     // Framed art up top with a level coin in the corner. Tap → detail modal.
     const artY = top + 84;
+    const generation = this.buildGeneration;
     void loadDrawing(this, legend).then((key) => {
-      if (!this.scene.isActive()) return;
+      if (!this.isCurrentBuild(generation)) return;
       const img = fitDrawing(this.add.image(x, artY, key), 128).setDepth(2);
       img.setInteractive({ useHandCursor: true });
       img.on('pointerup', () => this.openDetail(legend));
@@ -155,13 +163,16 @@ export class Sketchbook extends Scene {
     levelBadge(this, x + cardWidth / 2 - 34, top + 34, levelOf(legend), 0.56).setDepth(4);
 
     // Text block — tight rows, comfortably above the button.
-    label(this, x, artY + 82, legend.name.toUpperCase(), TYPE.title, UI.ink, true).setDepth(3);
+    label(this, x, artY + 78, legend.name.toUpperCase(), 32, UI.ink, true)
+      .setDepth(3)
+      .setWordWrapWidth(cardWidth - 42);
     if (legend.legendTitle) {
-      label(this, x, artY + 114, legend.legendTitle, TYPE.caption, UI.goldText, true)
+      label(this, x, artY + 104, legend.legendTitle, 22, UI.goldText, true)
         .setDepth(3)
+        .setOrigin(0.5, 0)
         .setWordWrapWidth(cardWidth - 40);
     }
-    label(this, x, artY + 168, `by u/${legend.artist} · 💛 ${legend.belief}`, 20, UI.inkSoft, true).setDepth(3);
+    label(this, x, artY + 176, `by u/${legend.artist} · 💛 ${legend.belief}`, 20, UI.inkSoft, true).setDepth(3);
 
     // "View + Believe" opens the shared modal (believe lives inside it).
     ghostButton(this, x, y + cardHeight / 2 - 44, '💛 View', () => this.openDetail(legend), 200).setDepth(3);
@@ -202,8 +213,9 @@ export class Sketchbook extends Scene {
     const { width } = this.scale;
     // Faded drawing on the left, eulogy on the right.
     paperCard(this, 130, y, 160, 160);
+    const generation = this.buildGeneration;
     void loadDrawing(this, scribbit).then((key) => {
-      if (!this.scene.isActive()) return;
+      if (!this.isCurrentBuild(generation)) return;
       const img = fitDrawing(this.add.image(130, y, key), 130).setAlpha(0.65).setDepth(2);
       img.setInteractive({ useHandCursor: true });
       img.on('pointerup', () => this.openDetail(scribbit));

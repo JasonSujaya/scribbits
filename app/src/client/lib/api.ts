@@ -8,7 +8,7 @@ import type {
   BackRequest,
   BattleReport,
   BossChallengeRequest,
-  CapsulePull,
+  CapsulePullResponse,
   CareAction,
   CareRequest,
   CloutBoard,
@@ -169,11 +169,10 @@ export function fetchCloutBoard(): Promise<ApiResult<CloutBoard>> {
   return getJson<CloutBoard>('/api/clout-board');
 }
 
-// Mystery Ink gacha: spend CAPSULE_COST ink to pull a pen/title. The server does
-// the seeded random + pity; a duplicate comes back with isNew=false and refunds
-// ink. 402 when the caller can't afford it.
-export function pullCapsule(): Promise<ApiResult<CapsulePull>> {
-  return postJson<Record<string, never>, CapsulePull>('/api/capsule', {});
+// Mystery Ink gacha: spend ink to pull an accessory, pen, or title. The server
+// does the seeded random + pity, then returns the final ink/inventory snapshot.
+export function pullCapsule(): Promise<ApiResult<CapsulePullResponse>> {
+  return postJson<Record<string, never>, CapsulePullResponse>('/api/capsule', {});
 }
 
 // The caller's unlocked pens + titles (drives the palette + locked slots).
