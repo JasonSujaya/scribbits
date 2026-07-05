@@ -1,0 +1,8 @@
+Updated [scripts/test-battle.mjs](/Users/jasons/Github/Hackathon/Remonsta/app/scripts/test-battle.mjs).
+
+Summary:
+- Replaced retired duplicate-refund assertion with a seeded same-accessory double pull.
+- Now asserts second pull: `isNew=false`, `ownedCount=2`, inventory count `2`, normal ink deduction, no refund.
+- Fixed stale sim assumptions so the gate completes.
+
+Gate: `npm run test:sim` passes, 20 groups.
