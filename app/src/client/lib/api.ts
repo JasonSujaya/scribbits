@@ -8,10 +8,12 @@ import type {
   BackRequest,
   BattleReport,
   BossChallengeRequest,
+  CapsulePull,
   CareAction,
   CareRequest,
   CloutBoard,
   EnterRumbleRequest,
+  Inventory,
   LegendsState,
   Scribbit,
   SparRequest,
@@ -165,4 +167,16 @@ export function backScribbit(
 // The talent-scout leaderboard: top 20 by lifetime clout plus the caller's rank.
 export function fetchCloutBoard(): Promise<ApiResult<CloutBoard>> {
   return getJson<CloutBoard>('/api/clout-board');
+}
+
+// Mystery Ink gacha: spend CAPSULE_COST ink to pull a pen/title. The server does
+// the seeded random + pity; a duplicate comes back with isNew=false and refunds
+// ink. 402 when the caller can't afford it.
+export function pullCapsule(): Promise<ApiResult<CapsulePull>> {
+  return postJson<Record<string, never>, CapsulePull>('/api/capsule', {});
+}
+
+// The caller's unlocked pens + titles (drives the palette + locked slots).
+export function fetchInventory(): Promise<ApiResult<Inventory>> {
+  return getJson<Inventory>('/api/inventory');
 }

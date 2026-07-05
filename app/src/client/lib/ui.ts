@@ -129,7 +129,13 @@ export function stickerCard(
   y: number,
   width: number,
   height: number,
-  opts: { gold?: boolean; tapeColor?: number; tilt?: number } = {}
+  opts: {
+    gold?: boolean;
+    tapeColor?: number;
+    tapeWidth?: number;
+    tape?: boolean;
+    tilt?: number;
+  } = {}
 ): Phaser.GameObjects.Container {
   const container = scene.add.container(x, y);
   const left = -width / 2;
@@ -152,8 +158,11 @@ export function stickerCard(
 
   // Two tape corners for the handmade, stuck-to-the-page look.
   const tc = opts.tapeColor ?? UI.tape;
-  container.add(tape(scene, left + 26, top + 4, -24, 74, tc));
-  container.add(tape(scene, -left - 26, top + 4, 22, 74, tc));
+  if (opts.tape !== false) {
+    const tapeWidth = opts.tapeWidth ?? 74;
+    container.add(tape(scene, left + 26, top + 4, -24, tapeWidth, tc));
+    container.add(tape(scene, -left - 26, top + 4, 22, tapeWidth, tc));
+  }
 
   if (opts.tilt) container.setAngle(opts.tilt);
   return container;

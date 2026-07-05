@@ -1,5 +1,6 @@
 import type {
   ArenaState,
+  AttachedAccessory,
   CareAction,
   Element,
   Mood,
@@ -13,6 +14,7 @@ import {
   LEVEL_XP_THRESHOLDS,
   LIFESPAN_DAYS,
   MAX_ALIVE_PER_USER,
+  MAX_ACCESSORIES_PER_SCRIBBIT,
   MAX_LEVEL,
   STAT_BUDGET,
   STAT_MAX,
@@ -20,6 +22,7 @@ import {
 } from '../../shared/arena';
 import { formatUtcDateKey } from './day';
 import { isElement } from './forecast';
+import { findInkCatalogEntry, isAccessoryCatalogEntry } from './ink';
 import { findFoundingScribbit } from './species';
 
 export type SortedSetEntry = {
@@ -31,6 +34,7 @@ export type ArenaStorage = {
   get: (key: string) => Promise<string | undefined>;
   set: (key: string, value: string) => Promise<unknown>;
   del: (...keys: string[]) => Promise<unknown>;
+  incrBy: (key: string, value: number) => Promise<number>;
   expire: (key: string, seconds: number) => Promise<unknown>;
   hGet: (key: string, field: string) => Promise<string | undefined>;
   hGetAll: (key: string) => Promise<Record<string, string>>;
@@ -71,6 +75,7 @@ export type ValidatedScribbitDraft = {
   imageDataUrl: string;
   stats: ScribbitStats;
   element: Element;
+  accessories: AttachedAccessory[];
 };
 
 export type DailyFlags = Pick<ArenaState, 'drawnToday' | 'enteredToday'> & {
@@ -80,6 +85,7 @@ export type DailyFlags = Pick<ArenaState, 'drawnToday' | 'enteredToday'> & {
 const pngDataUrlPrefix = 'data:image/png;base64,';
 const maximumDrawingBytes = 400 * 1024;
 const drawingTtlSeconds = 30 * 24 * 60 * 60;
+const legendDrawingTtlSeconds = 10 * 365 * 24 * 60 * 60;
 const dailyFlagTtlSeconds = 8 * 24 * 60 * 60;
 const dailyProgressTtlSeconds = 8 * 24 * 60 * 60;
 const careActionOrder: CareAction[] = ['feed', 'pat', 'train'];
@@ -397,6 +403,96 @@ const isRecord = (value: unknown): value is Record<string, unknown> => {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 };
 
+const isCanvasCoordinate = (value: unknown): value is number => {
+  return (
+    typeof value === 'number' &&
+    Number.isFinite(value) &&
+    value >= 0 &&
+    value <= 512
+  );
+};
+
+const isAccessoryScale = (value: unknown): value is number => {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0.5 && value <= 2;
+};
+
+const isFiniteNumber = (value: unknown): value is number => {
+  return typeof value === 'number' && Number.isFinite(value);
+};
+
+const validateAttachedAccessory = (
+  value: unknown
+): AttachedAccessory | undefined => {
+  if (!isRecord(value) || typeof value.id !== 'string') {
+    return undefined;
+  }
+
+  const accessoryId = value.id.trim();
+
+  if (!isAccessoryCatalogEntry(findInkCatalogEntry(accessoryId))) {
+    return undefined;
+  }
+
+  if (
+    !isCanvasCoordinate(value.x) ||
+    !isCanvasCoordinate(value.y) ||
+    !isAccessoryScale(value.scale) ||
+    !isFiniteNumber(value.rotation)
+  ) {
+    return undefined;
+  }
+
+  return {
+    id: accessoryId,
+    x: value.x,
+    y: value.y,
+    scale: value.scale,
+    rotation: value.rotation,
+  };
+};
+
+const validateAttachedAccessories = (
+  value: unknown
+): AttachedAccessory[] | undefined => {
+  if (value === undefined) {
+    return [];
+  }
+
+  if (
+    !Array.isArray(value) ||
+    value.length > MAX_ACCESSORIES_PER_SCRIBBIT
+  ) {
+    return undefined;
+  }
+
+  const accessories: AttachedAccessory[] = [];
+
+  for (const accessory of value) {
+    const validatedAccessory = validateAttachedAccessory(accessory);
+
+    if (!validatedAccessory) {
+      return undefined;
+    }
+
+    accessories.push(validatedAccessory);
+  }
+
+  return accessories;
+};
+
+const normalizeScribbitAccessories = (value: unknown): string[] => {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.filter((accessoryId) => {
+    return (
+      typeof accessoryId === 'string' &&
+      isAccessoryCatalogEntry(findInkCatalogEntry(accessoryId))
+    );
+  });
+};
+
 export const validateSubmitScribbitRequest = (
   value: unknown
 ): ValidatedScribbitDraft | undefined => {
@@ -405,8 +501,9 @@ export const validateSubmitScribbitRequest = (
   }
 
   const name = validateScribbitName(value.name);
+  const accessories = validateAttachedAccessories(value.accessories);
 
-  if (!name || typeof value.imageDataUrl !== 'string') {
+  if (!name || typeof value.imageDataUrl !== 'string' || !accessories) {
     return undefined;
   }
 
@@ -417,6 +514,7 @@ export const validateSubmitScribbitRequest = (
     // The submit route overwrites both with server analyzer output.
     stats: normalizeStats(value.stats),
     element: isElement(value.element) ? value.element : 'ember',
+    accessories,
   };
 };
 
@@ -573,6 +671,7 @@ export const normalizeScribbitRecord = (
       status: value.status,
       legendTitle: value.legendTitle,
       isFounding: value.isFounding,
+      accessories: normalizeScribbitAccessories(value.accessories),
       level: getLevelForXp(xp),
       xp,
       mood: isMood(value.mood)
@@ -608,7 +707,10 @@ export const parseScribbit = (
 
 export const createScribbit = (options: {
   id: string;
-  draft: Pick<SubmitScribbitRequest, 'name' | 'stats' | 'element'>;
+  draft: Pick<
+    SubmitScribbitRequest,
+    'name' | 'stats' | 'element' | 'accessories'
+  >;
   artist: string;
   imageUrl: string;
   day: number;
@@ -628,6 +730,9 @@ export const createScribbit = (options: {
     status: 'alive',
     legendTitle: null,
     isFounding: false,
+    accessories: (options.draft.accessories ?? []).map((accessory) => {
+      return accessory.id;
+    }),
     level: 1,
     xp: 0,
     mood: 'hungry',
@@ -639,6 +744,7 @@ export const cloneScribbit = (scribbit: Scribbit): Scribbit => {
   return {
     ...scribbit,
     stats: { ...scribbit.stats },
+    accessories: [...scribbit.accessories],
     careDoneToday: [...scribbit.careDoneToday],
   };
 };
@@ -738,6 +844,13 @@ export const storeDrawingFallback = async (
   const drawingKey = getDrawingKey(scribbitId);
   await storage.set(drawingKey, decodedPng.base64);
   await storage.expire(drawingKey, drawingTtlSeconds);
+};
+
+export const preserveLegendDrawing = async (
+  storage: ArenaStorage,
+  scribbitId: string
+): Promise<void> => {
+  await storage.expire(getDrawingKey(scribbitId), legendDrawingTtlSeconds);
 };
 
 export const readDrawingFallback = async (
@@ -1104,6 +1217,7 @@ export const expireDueScribbits = async (
 
     if (expiredScribbit.status === 'legend') {
       legends += 1;
+      await preserveLegendDrawing(storage, expiredScribbit.id);
       await addLegend(storage, expiredScribbit, day);
     } else if (expiredScribbit.status === 'faded') {
       faded += 1;

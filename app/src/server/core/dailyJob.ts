@@ -1,4 +1,5 @@
 import type { Forecast, Scribbit } from '../../shared/arena';
+import { INK_REWARDS } from '../../shared/arena';
 import { saveBattleReport } from './battleStore';
 import {
   ensureCurrentArenaDay,
@@ -9,6 +10,10 @@ import {
 } from './arenaStore';
 import { payCloutForRumble } from './clout';
 import { getArenaDayNumber } from './day';
+import {
+  claimInkReward,
+  getRumbleWinInkPayoutKey,
+} from './inkStore';
 import { resolveSwissRumble } from './rumble';
 import type { ArenaStorage } from './scribbit';
 import {
@@ -16,6 +21,7 @@ import {
   crownScribbit,
   expireDueScribbits,
   getRumbleEntrantIds,
+  getScribbitOwner,
   loadScribbit,
   loadScribbits,
   updateScribbit,
@@ -79,7 +85,9 @@ const getBattleScore = (
 
 const applyRumbleStandingsToStoredScribbits = async (
   storage: ArenaStorage,
-  resolution: ReturnType<typeof resolveSwissRumble>
+  resolution: ReturnType<typeof resolveSwissRumble>,
+  resolvedDay: number,
+  paidAtMs: number
 ): Promise<void> => {
   for (const standing of resolution.standings) {
     if (standing.scribbit.isFounding) {
@@ -103,6 +111,20 @@ const applyRumbleStandingsToStoredScribbits = async (
         standing.wins * rumbleWinXp
       )
     );
+
+    if (standing.wins > 0) {
+      const ownerUserId = await getScribbitOwner(storage, standing.scribbit.id);
+
+      if (ownerUserId) {
+        await claimInkReward(storage, {
+          payoutKey: getRumbleWinInkPayoutKey(resolvedDay),
+          payoutField: standing.scribbit.id,
+          userId: ownerUserId,
+          amount: standing.wins * INK_REWARDS.rumbleWin,
+          paidAtMs,
+        });
+      }
+    }
   }
 };
 
@@ -177,7 +199,12 @@ export const runNightlyArenaJob = async (
   const entrants = await loadScribbits(storage, entrantIds);
   const resolution = resolveSwissRumble(entrants, resolvedForecast, resolvedDay);
 
-  await applyRumbleStandingsToStoredScribbits(storage, resolution);
+  await applyRumbleStandingsToStoredScribbits(
+    storage,
+    resolution,
+    resolvedDay,
+    now.getTime()
+  );
 
   for (let index = 0; index < resolution.reports.length; index += 1) {
     const report = resolution.reports[index];

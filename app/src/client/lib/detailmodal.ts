@@ -9,7 +9,7 @@ import { Scene } from 'phaser';
 import type { Scribbit } from '../../shared/arena';
 import { believe as believeApi } from './api';
 import { showToast } from '@devvit/web/client';
-import { loadDrawing, recordText, moodStyleOf, levelOf, xpProgress } from './scribbits';
+import { loadDrawing, fitDrawing, recordText, moodStyleOf, levelOf, xpProgress } from './scribbits';
 import { ELEMENT_STYLES, TYPE, UI } from './theme';
 import {
   label,
@@ -112,7 +112,7 @@ export function openDetailModal(
     if (!scene.scene.isActive() || !card.active) return;
     // Child of the card container: local coords, scales + scrolls with the card,
     // so it stays perfectly framed regardless of viewport scroll.
-    const img = scene.add.image(0, artY, key).setDisplaySize(artSize - 12, artSize - 12);
+    const img = fitDrawing(scene.add.image(0, artY, key), artSize - 12);
     card.add(img);
     scene.tweens.add({
       targets: img,

@@ -3,12 +3,13 @@ import { Scene } from 'phaser';
 import { getReplay, getReplayReturn, getArena, setReplay, setArenaFocus } from '../lib/registry';
 import { loadDrawing, levelOf } from '../lib/scribbits';
 import { ELEMENT_STYLES, TYPE, UI } from '../lib/theme';
-import { label, elementBadge, stickerCard, ghostButton, button, levelBadge, daysLeftFor } from '../lib/ui';
+import { label, elementBadge, stickerCard, ghostButton, button, levelBadge, daysLeftFor, floatReward } from '../lib/ui';
 import { openDetailModal } from '../lib/detailmodal';
 import { LiveSprite } from '../lib/livesprite';
 import { spar } from '../lib/api';
 import { showToast } from '@devvit/web/client';
 import type { BattleEvent, BattleReport, Scribbit } from '../../shared/arena';
+import { INK_REWARDS } from '../../shared/arena';
 import { getBattleMaxHp } from '../../shared/battle';
 
 type Fighter = {
@@ -45,6 +46,12 @@ export class Replay extends Scene {
   private hypeMaxed = false;
   private announcerLoud = false;
 
+  // Fast-forward: cycles 1x → 2x → 4x → 1x. Scales the scene clock + tweens so
+  // the WHOLE spectacle speeds up uniformly, and persists across every beat.
+  private static readonly SPEEDS = [1, 2, 4] as const;
+  private speedIndex = 0;
+  private speedButtonLabel: Phaser.GameObjects.Text | null = null;
+
   constructor() {
     super('Replay');
   }
@@ -58,6 +65,27 @@ export class Replay extends Scene {
     this.hypeMaxed = false;
     this.announcerLoud = false;
     this.introBanner = null;
+    this.speedIndex = 0;
+    this.speedButtonLabel = null;
+  }
+
+  // Current fast-forward multiplier.
+  private get speed(): number {
+    return Replay.SPEEDS[this.speedIndex] ?? 1;
+  }
+
+  // Apply the current speed to the scene clock + tweens. The finish() slow-mo
+  // sets its own timeScale, so we only drive speed while the battle is playing.
+  private applySpeed(): void {
+    if (this.finished) return;
+    this.time.timeScale = this.speed;
+    this.tweens.timeScale = this.speed;
+  }
+
+  private cycleSpeed(): void {
+    this.speedIndex = (this.speedIndex + 1) % Replay.SPEEDS.length;
+    this.speedButtonLabel?.setText(`${this.speed}× ⏩`);
+    this.applySpeed();
   }
 
   create(): void {
@@ -105,6 +133,11 @@ export class Replay extends Scene {
 
     // Skip control (kept above everything).
     ghostButton(this, width - 100, 60, 'Skip ⏭', () => this.skipToEnd(), 160).setDepth(80);
+
+    // Fast-forward control, left of Skip. Cycles 1×/2×/4× and persists for the
+    // whole battle so an impatient viewer can speed through without skipping.
+    const ffButton = ghostButton(this, width - 280, 60, `${this.speed}× ⏩`, () => this.cycleSpeed(), 150).setDepth(80);
+    this.speedButtonLabel = ffButton.list[1] as Phaser.GameObjects.Text;
 
     // Tap anywhere: advance the beat AND add cheer. Skip button handles its own.
     this.input.on('pointerdown', () => {
@@ -563,6 +596,12 @@ export class Replay extends Scene {
     banner.setStroke('#2b2016', 9);
     this.tweens.add({ targets: banner, scale: 1, duration: 500, ease: 'Back.easeOut' });
     winner.live?.celebrate();
+
+    // Mystery Ink reward float when the winner is the player's own scribbit.
+    if (this.isMine(winner.scribbit)) {
+      const reward = this.report.kind === 'rumble' ? INK_REWARDS.rumbleWin : INK_REWARDS.sparWin;
+      floatReward(this, width / 2, height * 0.44, `+${reward} 🫙`, UI.goldText, 62);
+    }
 
     const emitter = this.add.particles(width / 2, height * 0.32, 'spark', {
       speed: { min: 100, max: 300 },

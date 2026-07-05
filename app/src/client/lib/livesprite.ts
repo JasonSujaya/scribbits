@@ -48,22 +48,74 @@ export class LiveSprite {
     this.container = scene.add.container(x, y);
     if (opts.depth !== undefined) this.container.setDepth(opts.depth);
 
-    const source = scene.textures.get(textureKey).getSourceImage() as HTMLImageElement;
-    const srcW = source?.width ?? 512;
-    const srcH = source?.height ?? 512;
-    const tileW = this.size / GRID;
-    const tileH = this.size / GRID;
-    const cropW = srcW / GRID;
-    const cropH = srcH / GRID;
+    // Real dimensions of the source texture. Production textures are network
+    // PNGs of ANY aspect ratio (portrait/landscape), so we must never assume
+    // square. Fall back to a square if the source image isn't measurable.
+    const texture = scene.textures.get(textureKey);
+    const source = texture.getSourceImage() as HTMLImageElement;
+    const srcW = source?.width && source.width > 0 ? source.width : 512;
+    const srcH = source?.height && source.height > 0 ? source.height : 512;
+
+    // Aspect-preserving CONTAIN fit inside a square `size` box: the drawing is
+    // scaled uniformly so its longest edge fills `size`, keeping its real shape.
+    // A square texture fills the box; a tall one is narrower; a wide one shorter.
+    const fitScale = this.size / Math.max(srcW, srcH);
+    const drawW = srcW * fitScale;
+    const drawH = srcH * fitScale;
+
+    // Source cell size (in texture pixels) and the on-screen cell size after fit.
+    const cellSrcW = srcW / GRID;
+    const cellSrcH = srcH / GRID;
+    const cellW = drawW / GRID;
+    const cellH = drawH / GRID;
+
+    // Overlap/bleed: each tile samples 1px beyond its cell on every shared edge
+    // and renders slightly larger, so when the jelly deformation nudges tiles
+    // apart the paper-colored seams between them never show through.
+    const BLEED_SRC_X = Math.min(cellSrcW, 2);
+    const BLEED_SRC_Y = Math.min(cellSrcH, 2);
+    const bleedW = BLEED_SRC_X * fitScale;
+    const bleedH = BLEED_SRC_Y * fitScale;
 
     for (let row = 0; row < GRID; row += 1) {
       for (let col = 0; col < GRID; col += 1) {
-        const homeX = (col - (GRID - 1) / 2) * tileW * this.facing;
-        const homeY = (row - (GRID - 1) / 2) * tileH;
-        const image = scene.add.image(homeX, homeY, textureKey);
-        image.setCrop(col * cropW, row * cropH, cropW, cropH);
-        // Origin is the crop's own centre; align display size 1:1 with the crop.
-        image.setDisplaySize(this.size, this.size);
+        // Each tile is its OWN texture frame — a sub-rectangle of the source.
+        // A frame-based image has its own natural size and centre origin, so
+        // setDisplaySize scales just that slice and positioning is exact. This
+        // is the fix for the "shattered checkerboard": the old approach cropped
+        // one full-texture image per tile, whose centre origin stayed on the
+        // whole texture, scattering the visible fragments.
+        const isLeft = col === 0;
+        const isTop = row === 0;
+        const isRight = col === GRID - 1;
+        const isBottom = row === GRID - 1;
+
+        // Grow the sampled rect outward on interior edges (bleed), clamped so it
+        // never runs past the texture bounds.
+        const sx = Math.max(0, col * cellSrcW - (isLeft ? 0 : BLEED_SRC_X));
+        const sy = Math.max(0, row * cellSrcH - (isTop ? 0 : BLEED_SRC_Y));
+        const rightEdge = Math.min(srcW, (col + 1) * cellSrcW + (isRight ? 0 : BLEED_SRC_X));
+        const bottomEdge = Math.min(srcH, (row + 1) * cellSrcH + (isBottom ? 0 : BLEED_SRC_Y));
+        const sw = rightEdge - sx;
+        const sh = bottomEdge - sy;
+
+        const frameName = `ls-${textureKey}-${row}-${col}`;
+        if (!texture.has(frameName)) {
+          texture.add(frameName, 0, sx, sy, sw, sh);
+        }
+
+        // On-screen size of this tile: base cell + whatever bleed we added.
+        const dispW = cellW + (isLeft ? 0 : bleedW) + (isRight ? 0 : bleedW);
+        const dispH = cellH + (isTop ? 0 : bleedH) + (isBottom ? 0 : bleedH);
+
+        // Home position: the cell centre in the fitted, centred drawing. The
+        // bleed grows the tile symmetrically around this centre, so tiles still
+        // line up edge-to-edge with a small shared overlap.
+        const homeX = (col - (GRID - 1) / 2) * cellW * this.facing;
+        const homeY = (row - (GRID - 1) / 2) * cellH;
+
+        const image = scene.add.image(homeX, homeY, textureKey, frameName);
+        image.setDisplaySize(dispW, dispH);
         image.setScale(image.scaleX * this.facing, image.scaleY);
         this.container.add(image);
         this.tiles.push({ image, homeX, homeY, col, row });

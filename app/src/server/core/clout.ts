@@ -1,4 +1,6 @@
 import type { CloutBoard, CloutEntry } from '../../shared/arena';
+import { INK_REWARDS } from '../../shared/arena';
+import { awardInk } from './inkStore';
 import type { ArenaStorage, CurrentPlayer } from './scribbit';
 
 const backTtlSeconds = 8 * 24 * 60 * 60;
@@ -191,6 +193,11 @@ export const payCloutForRumble = async (
     }
 
     await storage.zIncrBy(getCloutKey(), userId, points);
+
+    if (points === 3) {
+      await awardInk(storage, userId, INK_REWARDS.backedChampion);
+    }
+
     paidBackers += 1;
 
     if (points === 3) {

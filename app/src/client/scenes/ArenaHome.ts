@@ -11,7 +11,7 @@ import {
   backScribbit,
 } from '../lib/api';
 import { setArena, getArena, setReplay, takeArenaFocus } from '../lib/registry';
-import { loadDrawing, recordText, moodStyleOf, levelOf, canCare } from '../lib/scribbits';
+import { loadDrawing, fitDrawing, recordText, moodStyleOf, levelOf, canCare } from '../lib/scribbits';
 import { CARE_STYLES, ELEMENT_STYLES, EDGE, SPACE, TYPE, UI } from '../lib/theme';
 import { paperBackdrop } from '../lib/art';
 import {
@@ -34,6 +34,9 @@ import type { ErrorPanel } from '../lib/ui';
 import { openDetailModal } from '../lib/detailmodal';
 import type { DetailModalActions } from '../lib/detailmodal';
 import { openCloutBoard, formatCountdown } from '../lib/cloutboard';
+import { openCapsuleMachine } from '../lib/capsulemachine';
+import { pullCapsule } from '../lib/api';
+import { INK_REWARDS } from '../../shared/arena';
 import type { ArenaState, CareAction, Scribbit } from '../../shared/arena';
 
 // The landing scene. A tall, drag-scrollable sketchbook page: countdown-topped
@@ -46,15 +49,28 @@ export class ArenaHome extends Scene {
   private weatherTimer: Phaser.Time.TimerEvent | null = null;
   private countdownTimer: Phaser.Time.TimerEvent | null = null;
   private countdownLabel: Phaser.GameObjects.Text | null = null;
+  private inkChipLabel: Phaser.GameObjects.Text | null = null;
   private busy = false;
 
-  // Drag-scroll bookkeeping.
+  // Drag-scroll bookkeeping. Scrolling uses velocity + inertia so a flick keeps
+  // gliding and a wheel/keyboard nudge eases in, instead of snapping stiffly.
   private contentHeight = 0;
-  private scrollY = 0;
+  private scrollY = 0; // eased/displayed scroll
+  private targetScrollY = 0; // where we're heading (wheel/lerp target)
+  private maxScroll = 0;
   private dragging = false;
   private dragStartPointerY = 0;
   private dragStartScroll = 0;
+  private lastPointerY = 0;
+  private lastMoveTime = 0;
+  private scrollVelocity = 0; // px/frame, decays as inertia
+  private dragDistance = 0; // total |movement| this gesture, for tap-vs-drag
   private focusEntrantsY: number | null = null;
+
+  // A gesture that moves more than this many pixels is a scroll, not a tap — so
+  // card taps that ride a drag don't fire, and small jitter during a tap doesn't
+  // start a scroll. ~10 design px is comfortably below a deliberate flick.
+  private static readonly TAP_SLOP = 10;
 
   constructor() {
     super('ArenaHome');
@@ -67,8 +83,12 @@ export class ArenaHome extends Scene {
     this.countdownLabel = null;
     this.busy = false;
     this.scrollY = 0;
+    this.targetScrollY = 0;
+    this.maxScroll = 0;
     this.contentHeight = 0;
     this.dragging = false;
+    this.scrollVelocity = 0;
+    this.dragDistance = 0;
     this.focusEntrantsY = null;
   }
 
@@ -106,8 +126,8 @@ export class ArenaHome extends Scene {
     cursor = this.buildForecastCard(width / 2, cursor + 20);
     cursor = this.buildChampionPoster(width / 2, cursor + 20);
     cursor = this.buildRoster(cursor + 30);
-    this.focusEntrantsY = cursor + 20;
-    cursor = this.buildEntrantsBracket(cursor + 20);
+    this.focusEntrantsY = cursor + 44;
+    cursor = this.buildEntrantsBracket(cursor + 44);
     cursor = this.buildActionRow(width / 2, cursor + 20);
     cursor = this.buildNavRow(width / 2, cursor + 30);
 
@@ -122,8 +142,10 @@ export class ArenaHome extends Scene {
 
   // --- Scrolling -------------------------------------------------------------
   private setupScrolling(): void {
-    const maxScroll = Math.max(0, this.contentHeight - this.scale.height);
-    this.scrollY = Phaser.Math.Clamp(this.scrollY, 0, maxScroll);
+    this.maxScroll = Math.max(0, this.contentHeight - this.scale.height);
+    this.scrollY = Phaser.Math.Clamp(this.scrollY, 0, this.maxScroll);
+    this.targetScrollY = this.scrollY;
+    this.scrollVelocity = 0;
     this.cameras.main.setScroll(0, this.scrollY);
 
     this.input.off('pointerdown', this.onPointerDown, this);
@@ -131,40 +153,87 @@ export class ArenaHome extends Scene {
     this.input.off('pointerup', this.onPointerUp, this);
     this.input.off('wheel');
 
-    if (maxScroll <= 0) return;
+    if (this.maxScroll <= 0) return;
 
     this.input.on('pointerdown', this.onPointerDown, this);
     this.input.on('pointermove', this.onPointerMove, this);
     this.input.on('pointerup', this.onPointerUp, this);
+    this.input.on('pointerupoutside', this.onPointerUp, this);
     this.input.on('wheel', (_p: unknown, _o: unknown, _dx: number, dy: number) => {
-      this.scrollTo(this.scrollY + dy * 0.5);
+      // Wheel nudges the TARGET; update() eases the camera toward it.
+      this.scrollVelocity = 0;
+      this.targetScrollY = Phaser.Math.Clamp(this.targetScrollY + dy * 0.5, 0, this.maxScroll);
     });
 
-    // A subtle scroll hint arrow at the bottom edge.
-    const hint = label(this, this.scale.width - 40, this.scale.height - 40, '⌄', 40, UI.inkSoft, true).setScrollFactor(0).setDepth(90);
-    this.tweens.add({ targets: hint, y: hint.y + 10, duration: 800, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
   }
 
   private onPointerDown(pointer: Phaser.Input.Pointer): void {
     this.dragging = true;
     this.dragStartPointerY = pointer.y;
     this.dragStartScroll = this.scrollY;
+    this.lastPointerY = pointer.y;
+    this.lastMoveTime = this.time.now;
+    this.scrollVelocity = 0; // catch a gliding page on touch
+    this.dragDistance = 0;
   }
 
   private onPointerMove(pointer: Phaser.Input.Pointer): void {
     if (!this.dragging || !pointer.isDown) return;
     const delta = this.dragStartPointerY - pointer.y;
-    this.scrollTo(this.dragStartScroll + delta);
+    this.dragDistance = Math.max(this.dragDistance, Math.abs(delta));
+    // Track instantaneous velocity so release can fling with inertia.
+    const now = this.time.now;
+    const dt = Math.max(1, now - this.lastMoveTime);
+    this.scrollVelocity = ((this.lastPointerY - pointer.y) / dt) * 16; // ~px/frame
+    this.lastPointerY = pointer.y;
+    this.lastMoveTime = now;
+    // Direct 1:1 tracking while dragging (target follows finger, no lag).
+    this.scrollY = Phaser.Math.Clamp(this.dragStartScroll + delta, 0, this.maxScroll);
+    this.targetScrollY = this.scrollY;
+    this.cameras.main.setScroll(0, this.scrollY);
   }
 
   private onPointerUp(): void {
     this.dragging = false;
+    // If the finger was still (a tap), don't fling.
+    if (this.dragDistance < ArenaHome.TAP_SLOP) this.scrollVelocity = 0;
   }
 
+  // True when the pointer moved far enough this gesture to count as a scroll, so
+  // card tap handlers can ignore the up that ends a drag.
+  private didDrag(): boolean {
+    return this.dragDistance >= ArenaHome.TAP_SLOP;
+  }
+
+  // Per-frame inertia + lerp toward the target. A flick keeps gliding then eases
+  // to rest; a wheel nudge glides smoothly instead of snapping.
+  override update(): void {
+    if (this.maxScroll <= 0 || this.dragging) return;
+
+    // Inertial fling: apply decaying velocity.
+    if (Math.abs(this.scrollVelocity) > 0.1) {
+      this.scrollY = Phaser.Math.Clamp(this.scrollY + this.scrollVelocity, 0, this.maxScroll);
+      this.targetScrollY = this.scrollY;
+      this.scrollVelocity *= 0.92; // friction
+      if (this.scrollY <= 0 || this.scrollY >= this.maxScroll) this.scrollVelocity = 0;
+      this.cameras.main.setScroll(0, this.scrollY);
+      return;
+    }
+    this.scrollVelocity = 0;
+
+    // Ease the displayed scroll toward the target (wheel / programmatic scrollTo).
+    const diff = this.targetScrollY - this.scrollY;
+    if (Math.abs(diff) > 0.5) {
+      this.scrollY += diff * 0.2; // lerp factor
+      this.cameras.main.setScroll(0, this.scrollY);
+    }
+  }
+
+  // Smoothly scroll to a target (used by the entrants deep-link).
   private scrollTo(y: number): void {
-    const maxScroll = Math.max(0, this.contentHeight - this.scale.height);
-    this.scrollY = Phaser.Math.Clamp(y, 0, maxScroll);
-    this.cameras.main.setScroll(0, this.scrollY);
+    this.maxScroll = Math.max(0, this.contentHeight - this.scale.height);
+    this.targetScrollY = Phaser.Math.Clamp(y, 0, this.maxScroll);
+    this.scrollVelocity = 0;
   }
 
   // --- Top bar + live countdown ---------------------------------------------
@@ -193,7 +262,52 @@ export class ArenaHome extends Scene {
       callback: () => this.countdownLabel?.setText(this.countdownText()),
     });
 
+    // Ink chip — the Mystery Ink balance, tappable to open the capsule machine.
+    // Pinned to the viewport so it stays reachable while the page scrolls.
+    this.buildInkChip(width - EDGE - 6, y + 26);
+
     return chipY + 30;
+  }
+
+  // The "🫙 Ink: N" chip. Scroll-fixed, taps into the capsule machine. Its label
+  // is stored so ink-earn floats and pull results can update it in place.
+  private buildInkChip(x: number, y: number): void {
+    const chip = this.add.container(x, y).setScrollFactor(0).setDepth(120);
+    const t = label(this, 0, 0, `🫙 Ink: ${this.state.myInk ?? 0}`, TYPE.caption, UI.ink, true).setOrigin(1, 0.5);
+    const bg = this.add
+      .rectangle(10, 0, t.width + 30, 44, UI.creamHex, 1)
+      .setOrigin(1, 0.5)
+      .setStrokeStyle(3, UI.inkHex, 1)
+      .setInteractive({ useHandCursor: true });
+    bg.on('pointerup', () => { if (!this.didDrag()) this.openCapsuleMachine(); });
+    chip.add([bg, t]);
+    this.inkChipLabel = t;
+  }
+
+  // Float a "+N 🫙" ink reward from a point, and bump the chip. Optimistic; the
+  // caller supplies the amount. Pinned so it reads over any scroll.
+  private floatInk(amount: number, x: number, y: number): void {
+    if (amount <= 0) return;
+    const next = (this.state.myInk ?? 0) + amount;
+    this.state = { ...this.state, myInk: next };
+    setArena(this, this.state);
+    this.inkChipLabel?.setText(`🫙 Ink: ${next}`);
+    floatReward(this, x, y, `+${amount} 🫙`, UI.goldText, 3000, true);
+    if (this.inkChipLabel) this.tweens.add({ targets: this.inkChipLabel, scale: 1.25, duration: 140, yoyo: true });
+  }
+
+  private openCapsuleMachine(): void {
+    if (!this.requireLogin()) return;
+    openCapsuleMachine(this, {
+      ink: this.state.myInk ?? 0,
+      onPull: async () => {
+        const result = await pullCapsule();
+        if (!result.ok) return { error: result.error };
+        return { pull: result.data };
+      },
+      // On close, re-fetch so the roster/ink/palette reflect the server truth.
+      onClose: () => void this.refresh(),
+    });
   }
 
   private countdownText(): string {
@@ -291,9 +405,9 @@ export class ArenaHome extends Scene {
     card.add(frame);
     void loadDrawing(this, champ).then((key) => {
       if (!this.scene.isActive()) return;
-      const img = this.add.image(x + artX, centerY + artY, key).setDisplaySize(92, 92).setDepth(3);
+      const img = fitDrawing(this.add.image(x + artX, centerY + artY, key), 92).setDepth(3);
       img.setInteractive({ useHandCursor: true });
-      img.on('pointerup', () => this.openDetail(champ));
+      img.on('pointerup', () => { if (!this.didDrag()) this.openDetail(champ); });
       this.tweens.add({ targets: img, angle: 2, duration: 1400, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
     });
 
@@ -334,7 +448,7 @@ export class ArenaHome extends Scene {
     const colGap = SPACE.sm;
     const totalW = width - EDGE * 2;
     const colW = (totalW - colGap * (count - 1)) / count;
-    const colH = 430;
+    const colH = 360;
     const topY = y + 40 + colH / 2;
     roster.slice(0, 3).forEach((scribbit, index) => {
       const colX = EDGE + colW / 2 + index * (colW + colGap);
@@ -359,9 +473,9 @@ export class ArenaHome extends Scene {
     card.add(levelBadge(this, artSize / 2 - 6, artY - artSize / 2 - 2, levelOf(scribbit), 0.56));
     void loadDrawing(this, scribbit).then((key) => {
       if (!this.scene.isActive()) return;
-      const img = this.add.image(x, y + artY, key).setDisplaySize(artSize - 12, artSize - 12).setDepth(3);
+      const img = fitDrawing(this.add.image(x, y + artY, key), artSize - 12).setDepth(3);
       img.setInteractive({ useHandCursor: true });
-      img.on('pointerup', () => this.openDetail(scribbit));
+      img.on('pointerup', () => { if (!this.didDrag()) this.openDetail(scribbit); });
     });
 
     // "Tap for details" affordance on the card body.
@@ -422,13 +536,14 @@ export class ArenaHome extends Scene {
       return cardY + 75;
     }
 
-    const perRow = 3;
-    const cellGap = SPACE.sm;
-    const cellW = (width - EDGE * 2 - cellGap * (perRow - 1)) / perRow;
-    const cellH = 250;
-    const rows = Math.ceil(Math.min(entrants.length, 9) / perRow);
-    const topY = y + 40;
-    entrants.slice(0, 9).forEach((entrant, index) => {
+    const visibleEntrants = entrants.slice(0, 8);
+    const perRow = 2;
+    const cellGap = SPACE.md;
+    const cellW = (width - EDGE * 2 - cellGap) / perRow;
+    const cellH = 176;
+    const rows = Math.ceil(visibleEntrants.length / perRow);
+    const topY = y + 46;
+    visibleEntrants.forEach((entrant, index) => {
       const col = index % perRow;
       const row = Math.floor(index / perRow);
       const cx = EDGE + cellW / 2 + col * (cellW + cellGap);
@@ -440,51 +555,58 @@ export class ArenaHome extends Scene {
 
   private buildEntrantMini(entrant: Scribbit, x: number, y: number, width: number, height: number): void {
     const backed = this.state.myBackedScribbitId === entrant.id;
-    const card = stickerCard(this, x, y, width, height, { gold: backed, tapeColor: backed ? UI.tape : UI.tapeAlt });
+    const card = stickerCard(this, x, y, width, height, {
+      gold: backed,
+      tape: false,
+      tapeColor: backed ? UI.tape : UI.tapeAlt,
+    });
     const top = -height / 2;
 
-    const artSize = Math.min(width - 30, 108);
-    const artY = top + 16 + artSize / 2;
+    const artSize = 86;
+    const artX = -width / 2 + 62;
+    const artY = top + 26 + artSize / 2;
     const frame = this.add.graphics();
     frame.fillStyle(UI.creamHex, 1);
-    frame.fillRect(-artSize / 2, artY - artSize / 2, artSize, artSize);
+    frame.fillRect(artX - artSize / 2, artY - artSize / 2, artSize, artSize);
     frame.lineStyle(3, UI.inkHex, 1);
-    frame.strokeRect(-artSize / 2, artY - artSize / 2, artSize, artSize);
+    frame.strokeRect(artX - artSize / 2, artY - artSize / 2, artSize, artSize);
     card.add(frame);
     void loadDrawing(this, entrant).then((key) => {
       if (!this.scene.isActive()) return;
-      const img = this.add.image(x, y + artY, key).setDisplaySize(artSize - 10, artSize - 10).setDepth(3);
+      const img = fitDrawing(this.add.image(x + artX, y + artY, key), artSize - 10).setDepth(3);
       img.setInteractive({ useHandCursor: true });
-      img.on('pointerup', () => this.openDetail(entrant));
+      img.on('pointerup', () => { if (!this.didDrag()) this.openDetail(entrant); });
     });
 
     // "Your pick" rosette on backed entrants.
-    if (backed) card.add(rosette(this, artSize / 2 - 4, artY - artSize / 2 - 2, 0.8));
+    if (backed) card.add(rosette(this, artX + artSize / 2 - 4, artY - artSize / 2 - 2, 0.72));
 
-    let cursor = artY + artSize / 2 + 20;
-    const nameLabel = label(this, 0, cursor, entrant.name, TYPE.body, UI.ink, true);
-    nameLabel.setWordWrapWidth(width - 16);
+    const infoX = artX + artSize / 2 + 18;
+    let cursor = top + 54;
+    const nameLabel = label(this, infoX, cursor, entrant.name, TYPE.body, UI.ink, true).setOrigin(0, 0.5);
+    nameLabel.setWordWrapWidth(width - 150);
     card.add(nameLabel);
 
-    cursor += 26;
-    card.add(elementBadge(this, 0, cursor, entrant.element, 0.5));
+    cursor += 40;
+    const badge = elementBadge(this, infoX + 54, cursor, entrant.element, 0.48);
+    card.add(badge);
 
     // Back button (or locked/your-pick state).
-    cursor = height / 2 - 34;
+    cursor = height / 2 - 32;
     const { backLabel, backEnabled, backFill } = this.backButtonState(entrant);
     const backBtn = careButton(this, 0, cursor, '', backLabel, backFill, () => {
       if (backEnabled) this.doBack(entrant);
       else this.showBackLockedToast();
-    }, width - 20, 52);
-    if (!backEnabled) backBtn.setAlpha(0.6);
+    }, width - 24, 50);
+    if (!backEnabled && !backed) backBtn.setAlpha(0.78);
     card.add(backBtn);
   }
 
   private backButtonState(entrant: Scribbit): { backLabel: string; backEnabled: boolean; backFill: number } {
     const myPick = this.state.myBackedScribbitId;
-    if (myPick === entrant.id) return { backLabel: '✓ Your pick', backEnabled: false, backFill: UI.gold };
-    if (myPick) return { backLabel: '🔒 Backed', backEnabled: false, backFill: UI.inkSoftHex };
-    return { backLabel: '🎯 Back', backEnabled: true, backFill: UI.coral };
+    if (myPick === entrant.id) return { backLabel: '✓ Picked', backEnabled: false, backFill: UI.gold };
+    if (myPick) return { backLabel: 'Backed', backEnabled: false, backFill: 0xb7aa92 };
+    return { backLabel: 'Back', backEnabled: true, backFill: UI.coral };
   }
 
   private showBackLockedToast(): void {
@@ -595,6 +717,8 @@ export class ArenaHome extends Scene {
         train: `${style.emoji} ${result.data.name} trained hard! (+xp)`,
       };
       showToast(feedback[action]);
+      // Care earns Mystery Ink — float it near the top-right ink chip.
+      this.floatInk(INK_REWARDS.care, this.scale.width - EDGE - 40, 120);
       this.applyScribbitUpdate(result.data);
     });
   }
@@ -725,7 +849,7 @@ export class ArenaHome extends Scene {
       overlay.add(card);
       void loadDrawing(this, scribbit).then((key) => {
         if (!this.scene.isActive()) return;
-        const img = this.add.image(slotX, height * 0.5, key).setScrollFactor(0).setDisplaySize(120, 120).setDepth(501);
+        const img = fitDrawing(this.add.image(slotX, height * 0.5, key), 120).setScrollFactor(0).setDepth(501);
         img.setInteractive({ useHandCursor: true });
         img.on('pointerup', () => {
           overlay.destroy(true);

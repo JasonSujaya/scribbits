@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { createServer } from 'node:http';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { dirname, extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -9,14 +9,111 @@ import { fileURLToPath } from 'node:url';
 const port = Number(process.env.PORT ?? 8902);
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
 const clientRoot = join(repoRoot, 'dist', 'client');
+const mockAssetRoot = join(repoRoot, 'dist', 'mock-assets');
 const transparentPng = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAFgwJ/lw5l6wAAAABJRU5ErkJggg==',
   'base64'
 );
 
+// Real, NON-SQUARE drawing PNGs so the harness reproduces production textures
+// (portrait/landscape network PNGs) instead of the old 1x1 transparent stub.
+// Rotated by a stable hash of the requested id so every scribbit is consistent.
+const mockDrawingFiles = ['drawing-tall.png', 'drawing-wide.png', 'drawing-square.png'];
+const hashId = (id) => {
+  let hash = 0;
+  for (let index = 0; index < id.length; index += 1) {
+    hash = (hash * 31 + id.charCodeAt(index)) & 0x7fffffff;
+  }
+  return hash;
+};
+const drawingBytesFor = (id) => {
+  const name = mockDrawingFiles[hashId(id) % mockDrawingFiles.length];
+  const filePath = join(mockAssetRoot, name);
+  return existsSync(filePath) ? readFileSync(filePath) : transparentPng;
+};
+
 const elements = ['ember', 'tide', 'moss', 'storm'];
 const careActions = ['feed', 'pat', 'train'];
 const levelThresholds = [0, 3, 7, 12, 18];
+const capsuleCost = 10;
+const capsuleFirstDailyCost = 5;
+const maxAccessoriesPerScribbit = 2;
+const accessoryCatalogIds = [
+  'bowtie',
+  'flower-crown',
+  'monocle',
+  'beanie',
+  'round-glasses',
+  'tiny-sword',
+  'snail-shell-backpack',
+  'party-hat',
+  'mustache',
+  'top-hat',
+  'cape',
+  'headphones',
+  'eyepatch-scar',
+  'propeller-cap',
+  'golden-crown',
+  'dragon-wings',
+];
+const accessoryCatalogIdSet = new Set(accessoryCatalogIds);
+const rareAccessoryIds = new Set(['tiny-sword', 'top-hat', 'cape']);
+const epicAccessoryIds = new Set(['golden-crown', 'dragon-wings']);
+
+const displayNameForAccessory = (id) => {
+  return id
+    .split('-')
+    .map((word) => `${word.charAt(0).toUpperCase()}${word.slice(1)}`)
+    .join(' ');
+};
+
+const rarityForAccessory = (id) => {
+  if (epicAccessoryIds.has(id)) return 'epic';
+  if (rareAccessoryIds.has(id)) return 'rare';
+  return 'common';
+};
+
+const accessoryCapsuleDrops = accessoryCatalogIds.map((id) => {
+  return {
+    rarity: rarityForAccessory(id),
+    kind: 'accessory',
+    id,
+    name: displayNameForAccessory(id),
+    description: `A one-use ${displayNameForAccessory(id)} accessory for your next Scribbit.`,
+  };
+});
+
+const mockCapsuleDrops = [
+  ...accessoryCapsuleDrops,
+  {
+    rarity: 'common',
+    kind: 'pen',
+    id: 'warm-greys',
+    name: 'Warm Greys',
+    description: 'Soft sketchbook greys for cozy little smudges.',
+  },
+  {
+    rarity: 'rare',
+    kind: 'pen',
+    id: 'gold-pen',
+    name: 'Gold Pen',
+    description: 'A shiny flex for lines that expect applause.',
+  },
+  {
+    rarity: 'common',
+    kind: 'title',
+    id: 'inkslinger',
+    name: 'Inkslinger',
+    description: 'For artists who draw first and explain the stain later.',
+  },
+  {
+    rarity: 'epic',
+    kind: 'pen',
+    id: 'rainbow-crayon',
+    name: 'RAINBOW CRAYON',
+    description: 'Draws hue-cycling strokes like a parade got sharpened.',
+  },
+];
 
 const nextUtcMidnightMs = () => {
   const now = new Date();
@@ -48,18 +145,25 @@ const cloneScribbit = (scribbit) => {
   return {
     ...scribbit,
     stats: { ...scribbit.stats },
+    accessories: [...(scribbit.accessories ?? [])],
     careDoneToday: [...scribbit.careDoneToday],
   };
 };
 
 const makeScribbit = (options) => {
+  // Founding scribbits point at /creatures/*.png (the asset job that never
+  // shipped) exactly like the real server, so the client's doodle fallback is
+  // exercised. Everyone else uses the working /api/drawing/{id} network route.
+  const defaultImageUrl = options.isFounding
+    ? `/creatures/creature-${String(options.id).replace(/^founding-/, '')}.png`
+    : `/api/drawing/${options.id}`;
   return {
     id: options.id,
     name: options.name,
     artist: options.artist,
     element: options.element,
     stats: options.stats,
-    imageUrl: options.imageUrl ?? `/api/drawing/${options.id}`,
+    imageUrl: options.imageUrl ?? defaultImageUrl,
     bornDay: options.bornDay ?? 8,
     expiresDay: options.expiresDay ?? 11,
     belief: options.belief ?? 0,
@@ -68,6 +172,7 @@ const makeScribbit = (options) => {
     status: options.status ?? 'alive',
     legendTitle: options.legendTitle ?? null,
     isFounding: options.isFounding ?? false,
+    accessories: options.accessories ? [...options.accessories] : [],
     level: options.level ?? levelForXp(options.xp ?? 0),
     xp: options.xp ?? 0,
     mood: options.mood ?? 'hungry',
@@ -181,6 +286,7 @@ const myScribbits = [
     xp: 13,
     mood: 'pumped',
     careDoneToday: ['feed', 'pat', 'train'],
+    accessories: ['bowtie', 'tiny-sword'],
   }),
   makeScribbit({
     id: 'mine-moss-bun',
@@ -197,6 +303,7 @@ const myScribbits = [
     xp: 4,
     mood: 'happy',
     careDoneToday: ['feed', 'pat'],
+    accessories: ['round-glasses'],
   }),
   makeScribbit({
     id: 'mine-nap-cloud',
@@ -229,6 +336,7 @@ const todayEntrants = [
     level: 3,
     xp: 8,
     mood: 'happy',
+    accessories: ['party-hat'],
   }),
   makeScribbit({
     id: 'community-kelploaf',
@@ -255,6 +363,7 @@ const todayEntrants = [
     level: 4,
     xp: 13,
     mood: 'pumped',
+    accessories: ['flower-crown', 'cape'],
   }),
   makeScribbit({
     id: 'community-staticjam',
@@ -343,6 +452,7 @@ const champion = makeScribbit({
   level: 5,
   xp: 20,
   mood: 'happy',
+  accessories: ['golden-crown', 'dragon-wings'],
 });
 
 const legends = [
@@ -360,6 +470,7 @@ const legends = [
     legendTitle: 'Believed by 28 arena weirdos',
     level: 4,
     xp: 14,
+    accessories: ['monocle'],
   }),
   makeScribbit({
     id: 'legend-gale-pin',
@@ -374,6 +485,7 @@ const legends = [
     legendTitle: 'Champion of Day 5',
     level: 5,
     xp: 22,
+    accessories: ['headphones', 'propeller-cap'],
   }),
   makeScribbit({
     id: 'legend-moss-opera',
@@ -388,6 +500,7 @@ const legends = [
     legendTitle: 'Believed by 27 arena weirdos',
     level: 3,
     xp: 9,
+    accessories: ['mustache', 'top-hat'],
   }),
   makeScribbit({
     id: 'legend-bubble-vice',
@@ -464,6 +577,23 @@ const memory = {
   enteredToday: false,
   myBackedScribbitId: null,
   myClout: 14,
+  myInk: 35,
+  inventory: {
+    items: {
+      'golden-crown': 2,
+      'tiny-sword': 1,
+      'party-hat': 3,
+      cape: 1,
+      'round-glasses': 1,
+      'dragon-wings': 1,
+      beanie: 2,
+      'eyepatch-scar': 1,
+    },
+    pens: ['warm-greys', 'gold-pen', 'rainbow-crayon', 'midnight-ink'],
+    titles: ['doodler'],
+  },
+  capsulePullCount: 0,
+  discountedCapsuleUtcDate: null,
   beliefVotes: new Set(),
   cloutBoard: {
     top: [
@@ -546,6 +676,121 @@ const readScribbitId = (body) => {
   return typeof body?.scribbitId === 'string' ? body.scribbitId.trim() : '';
 };
 
+const cloneItemCounts = (items) => {
+  return { ...items };
+};
+
+const currentUtcDateKey = () => {
+  return new Date().toISOString().slice(0, 10);
+};
+
+const capsuleCostForCurrentPull = () => {
+  const utcDateKey = currentUtcDateKey();
+  const isFirstDailyPull = memory.discountedCapsuleUtcDate !== utcDateKey;
+
+  return {
+    cost: isFirstDailyPull ? capsuleFirstDailyCost : capsuleCost,
+    utcDateKey,
+  };
+};
+
+const countAccessoryIds = (accessoryIds) => {
+  const counts = {};
+
+  for (const accessoryId of accessoryIds) {
+    counts[accessoryId] = (counts[accessoryId] ?? 0) + 1;
+  }
+
+  return counts;
+};
+
+const addCapsuleDropToInventory = (drop) => {
+  if (drop.kind === 'accessory') {
+    const previousCount = memory.inventory.items[drop.id] ?? 0;
+    const ownedCount = previousCount + 1;
+    memory.inventory.items[drop.id] = ownedCount;
+
+    return {
+      isNew: previousCount === 0,
+      ownedCount,
+    };
+  }
+
+  const inventoryList =
+    drop.kind === 'pen' ? memory.inventory.pens : memory.inventory.titles;
+  const isNew = !inventoryList.includes(drop.id);
+
+  if (isNew) {
+    inventoryList.push(drop.id);
+  }
+
+  return {
+    isNew,
+    ownedCount: 1,
+  };
+};
+
+const consumeInventoryItems = (requiredCounts) => {
+  for (const [accessoryId, requiredCount] of Object.entries(requiredCounts)) {
+    const nextCount = (memory.inventory.items[accessoryId] ?? 0) - requiredCount;
+
+    if (nextCount > 0) {
+      memory.inventory.items[accessoryId] = nextCount;
+    } else {
+      delete memory.inventory.items[accessoryId];
+    }
+  }
+};
+
+const readSubmittedAccessoryIds = (body) => {
+  if (body?.accessories === undefined) {
+    return { accessoryIds: [] };
+  }
+
+  if (!Array.isArray(body.accessories)) {
+    return {
+      status: 400,
+      message: 'Accessories must be submitted as an array.',
+    };
+  }
+
+  if (body.accessories.length > maxAccessoriesPerScribbit) {
+    return {
+      status: 400,
+      message: `Attach up to ${maxAccessoriesPerScribbit} accessories.`,
+    };
+  }
+
+  const accessoryIds = [];
+
+  for (const accessory of body.accessories) {
+    const accessoryId =
+      typeof accessory?.id === 'string' ? accessory.id.trim() : '';
+
+    if (!accessoryCatalogIdSet.has(accessoryId)) {
+      return {
+        status: 400,
+        message: 'Choose valid Mystery Ink accessories.',
+      };
+    }
+
+    accessoryIds.push(accessoryId);
+  }
+
+  const requiredCounts = countAccessoryIds(accessoryIds);
+
+  for (const [accessoryId, requiredCount] of Object.entries(requiredCounts)) {
+    if ((memory.inventory.items[accessoryId] ?? 0) < requiredCount) {
+      return {
+        status: 409,
+        message: `You need ${requiredCount} ${displayNameForAccessory(accessoryId)} accessory copy.`,
+      };
+    }
+  }
+
+  return { accessoryIds, requiredCounts };
+};
+
 const arenaState = () => {
   return {
     dayNumber: memory.dayNumber,
@@ -561,6 +806,16 @@ const arenaState = () => {
     todayEntrants: memory.todayEntrants.map(cloneScribbit),
     myBackedScribbitId: memory.myBackedScribbitId,
     myClout: memory.myClout,
+    myInk: memory.myInk,
+    myPens: [...memory.inventory.pens],
+  };
+};
+
+const inventoryState = () => {
+  return {
+    items: cloneItemCounts(memory.inventory.items),
+    pens: [...memory.inventory.pens],
+    titles: [...memory.inventory.titles],
   };
 };
 
@@ -570,6 +825,43 @@ const handleApi = async (request, response, url) => {
 
   if (method === 'GET' && path === '/api/arena') {
     sendJson(response, 200, arenaState());
+    return;
+  }
+
+  if (method === 'GET' && path === '/api/inventory') {
+    sendJson(response, 200, inventoryState());
+    return;
+  }
+
+  if (method === 'POST' && path === '/api/capsule') {
+    const { cost, utcDateKey } = capsuleCostForCurrentPull();
+
+    if (memory.myInk < cost) {
+      sendError(
+        response,
+        402,
+        `You need ${cost} Mystery Ink to open a capsule.`
+      );
+      return;
+    }
+
+    const drop =
+      mockCapsuleDrops[memory.capsulePullCount % mockCapsuleDrops.length];
+
+    if (!drop) {
+      sendError(response, 500, 'The capsule machine jammed. Try again soon.');
+      return;
+    }
+
+    memory.capsulePullCount += 1;
+    memory.discountedCapsuleUtcDate = utcDateKey;
+    memory.myInk -= cost;
+    const pullInventoryState = addCapsuleDropToInventory(drop);
+
+    sendJson(response, 200, {
+      ...drop,
+      ...pullInventoryState,
+    });
     return;
   }
 
@@ -592,11 +884,12 @@ const handleApi = async (request, response, url) => {
   }
 
   if (method === 'GET' && path.startsWith('/api/drawing/')) {
+    const id = decodeURIComponent(path.slice('/api/drawing/'.length));
     response.writeHead(200, {
       'Content-Type': 'image/png',
       'Cache-Control': 'public, max-age=60',
     });
-    response.end(transparentPng);
+    response.end(drawingBytesFor(id));
     return;
   }
 
@@ -735,6 +1028,13 @@ const handleApi = async (request, response, url) => {
       typeof body?.name === 'string' && body.name.trim().length >= 2
         ? body.name.trim().slice(0, 24)
         : 'Fresh Scribbit';
+    const submittedAccessories = readSubmittedAccessoryIds(body);
+
+    if (submittedAccessories.message) {
+      sendError(response, submittedAccessories.status, submittedAccessories.message);
+      return;
+    }
+
     const id = `mock-submitted-${Date.now()}`;
     const scribbit = makeScribbit({
       id,
@@ -748,8 +1048,10 @@ const handleApi = async (request, response, url) => {
       level: 1,
       xp: 0,
       mood: 'hungry',
+      accessories: submittedAccessories.accessoryIds,
     });
 
+    consumeInventoryItems(submittedAccessories.requiredCounts ?? {});
     memory.myScribbits.unshift(scribbit);
     memory.todayEntrants.push(scribbit);
     memory.drawnToday = true;
@@ -819,6 +1121,13 @@ const server = createServer(async (request, response) => {
 
     if (url.pathname.startsWith('/api/')) {
       await handleApi(request, response, url);
+      return;
+    }
+
+    // Production reality: the founding-art asset job was cancelled, so every
+    // /creatures/*.png 404s. Reproduce that so the client fallback is exercised.
+    if (url.pathname.startsWith('/creatures/')) {
+      sendError(response, 404, 'creature art not found');
       return;
     }
 

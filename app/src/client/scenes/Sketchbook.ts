@@ -2,7 +2,7 @@ import * as Phaser from 'phaser';
 import { Scene } from 'phaser';
 import { fetchLegends } from '../lib/api';
 import { getArena, getSketchbookTab, setSketchbookTab } from '../lib/registry';
-import { loadDrawing, recordText, levelOf } from '../lib/scribbits';
+import { loadDrawing, fitDrawing, recordText, levelOf } from '../lib/scribbits';
 import { TYPE, UI } from '../lib/theme';
 import { paperBackdrop } from '../lib/art';
 import { label, ghostButton, handLettered, paperCard, stickerCard, elementBadge, levelBadge, errorPanel } from '../lib/ui';
@@ -107,7 +107,7 @@ export class Sketchbook extends Scene {
     const artY = top + 84;
     void loadDrawing(this, legend).then((key) => {
       if (!this.scene.isActive()) return;
-      const img = this.add.image(x, artY, key).setDisplaySize(128, 128).setDepth(2);
+      const img = fitDrawing(this.add.image(x, artY, key), 128).setDepth(2);
       img.setInteractive({ useHandCursor: true });
       img.on('pointerup', () => this.openDetail(legend));
     });
@@ -162,7 +162,7 @@ export class Sketchbook extends Scene {
     paperCard(this, 130, y, 160, 160);
     void loadDrawing(this, scribbit).then((key) => {
       if (!this.scene.isActive()) return;
-      const img = this.add.image(130, y, key).setDisplaySize(130, 130).setAlpha(0.65).setDepth(2);
+      const img = fitDrawing(this.add.image(130, y, key), 130).setAlpha(0.65).setDepth(2);
       img.setInteractive({ useHandCursor: true });
       img.on('pointerup', () => this.openDetail(scribbit));
     });

@@ -38,6 +38,8 @@ execFileSync(
     'src/shared/battle.ts',
     'src/server/core/day.ts',
     'src/server/core/random.ts',
+    'src/server/core/ink.ts',
+    'src/server/core/inkStore.ts',
     'src/server/core/forecast.ts',
     'src/server/core/arenaStore.ts',
     'src/server/core/clout.ts',
@@ -60,6 +62,7 @@ const battle = require(join(outDir, 'server', 'core', 'battle.js'));
 const clout = require(join(outDir, 'server', 'core', 'clout.js'));
 const dailyJob = require(join(outDir, 'server', 'core', 'dailyJob.js'));
 const forecastCore = require(join(outDir, 'server', 'core', 'forecast.js'));
+const inkStore = require(join(outDir, 'server', 'core', 'inkStore.js'));
 const rumble = require(join(outDir, 'server', 'core', 'rumble.js'));
 const scribbitCore = require(join(outDir, 'server', 'core', 'scribbit.js'));
 
@@ -157,6 +160,11 @@ const createMemoryStorage = () => {
         hashes.delete(key);
         sortedSets.delete(key);
       }
+    },
+    async incrBy(key, value) {
+      const next = Number(values.get(key) ?? '0') + value;
+      values.set(key, String(next));
+      return next;
     },
     async expire() {},
     async hGet(key, field) {
@@ -418,6 +426,142 @@ assert.equal(
   'three care actions should be pumped'
 );
 pass('mood derivation table');
+
+assert.equal(
+  inkStore.chooseCapsuleRarity(0.699),
+  'common',
+  'capsule roll below 70% should be common'
+);
+assert.equal(
+  inkStore.chooseCapsuleRarity(0.7),
+  'rare',
+  'capsule roll at 70% should be rare'
+);
+assert.equal(
+  inkStore.chooseCapsuleRarity(0.949),
+  'rare',
+  'capsule roll below 95% should remain rare'
+);
+assert.equal(
+  inkStore.chooseCapsuleRarity(0.95),
+  'epic',
+  'capsule roll at 95% should be epic'
+);
+const deterministicCapsuleDropOne = inkStore.selectCapsuleDrop({
+  userId: 'deterministic-player',
+  day: 7,
+  pullCount: 3,
+  pullsSinceEpic: 0,
+});
+const deterministicCapsuleDropTwo = inkStore.selectCapsuleDrop({
+  userId: 'deterministic-player',
+  day: 7,
+  pullCount: 3,
+  pullsSinceEpic: 0,
+});
+assert.deepEqual(
+  deterministicCapsuleDropOne,
+  deterministicCapsuleDropTwo,
+  'same user/day/pull count should select the same capsule drop'
+);
+pass('capsule weighted deterministic pull selection');
+
+assert.equal(
+  inkStore.isCapsulePityPull(arena.CAPSULE_PITY - 2),
+  false,
+  'pity should not trigger before the guaranteed pull'
+);
+assert.equal(
+  inkStore.isCapsulePityPull(arena.CAPSULE_PITY - 1),
+  true,
+  'pity should trigger on exactly the guaranteed pull'
+);
+const pityStorage = createMemoryStorage();
+await pityStorage.set(inkStore.getInkKey('pity-player'), String(arena.CAPSULE_COST));
+await pityStorage.set(
+  inkStore.getPullsSinceEpicKey('pity-player'),
+  String(arena.CAPSULE_PITY - 1)
+);
+const pityResult = await inkStore.pullCapsuleForUser(
+  pityStorage,
+  'pity-player',
+  7
+);
+assert.equal(pityResult.status, 'pulled', 'pity pull should complete');
+assert.equal(
+  pityResult.pull.rarity,
+  'epic',
+  'exact pity pull should force an epic'
+);
+assert.equal(
+  await pityStorage.get(inkStore.getPullsSinceEpicKey('pity-player')),
+  '0',
+  'epic pull should reset pity'
+);
+pass('capsule pity triggers at exactly configured count');
+
+const duplicateStorage = createMemoryStorage();
+const duplicateUserId = 'duplicate-player';
+const duplicateDrop = inkStore.selectCapsuleDrop({
+  userId: duplicateUserId,
+  day: 7,
+  pullCount: 1,
+  pullsSinceEpic: 0,
+});
+await duplicateStorage.set(
+  inkStore.getInkKey(duplicateUserId),
+  String(arena.CAPSULE_COST * 2)
+);
+await duplicateStorage.hSet(inkStore.getInventoryKey(duplicateUserId), {
+  [duplicateDrop.id]: duplicateDrop.kind,
+});
+const duplicateResult = await inkStore.pullCapsuleForUser(
+  duplicateStorage,
+  duplicateUserId,
+  7
+);
+assert.equal(duplicateResult.status, 'pulled', 'duplicate pull should complete');
+assert.equal(duplicateResult.pull.id, duplicateDrop.id, 'fixture should duplicate');
+assert.equal(duplicateResult.pull.isNew, false, 'duplicate should report isNew false');
+assert.equal(
+  await inkStore.getInkBalance(duplicateStorage, duplicateUserId),
+  arena.CAPSULE_COST * 2 - arena.CAPSULE_COST + arena.DUPLICATE_REFUND,
+  'duplicate should refund configured ink'
+);
+pass('capsule duplicate refund math');
+
+const poorStorage = createMemoryStorage();
+await poorStorage.set(
+  inkStore.getInkKey('poor-player'),
+  String(arena.CAPSULE_COST - 1)
+);
+const poorResult = await inkStore.pullCapsuleForUser(poorStorage, 'poor-player', 7);
+assert.equal(
+  poorResult.status,
+  'insufficientInk',
+  'insufficient ink should reject the capsule pull'
+);
+assert.equal(
+  await inkStore.getInkBalance(poorStorage, 'poor-player'),
+  arena.CAPSULE_COST - 1,
+  'rejected capsule pull should not spend ink'
+);
+const exactCostStorage = createMemoryStorage();
+await exactCostStorage.set(
+  inkStore.getInkKey('exact-cost-player'),
+  String(arena.CAPSULE_COST)
+);
+const exactCostResult = await inkStore.pullCapsuleForUser(
+  exactCostStorage,
+  'exact-cost-player',
+  7
+);
+assert.equal(exactCostResult.status, 'pulled', 'exact-cost pull should complete');
+assert.ok(
+  (await inkStore.getInkBalance(exactCostStorage, 'exact-cost-player')) >= 0,
+  'capsule pull should never make ink negative'
+);
+pass('capsule ink balance never goes negative');
 
 const flagStorage = createMemoryStorage();
 assert.equal(

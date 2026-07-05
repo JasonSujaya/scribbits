@@ -7,10 +7,13 @@ import type {
   ArenaState,
   BattleReport,
   CareAction,
+  CapsulePull,
   CloutBoard,
+  Inventory,
   LegendsState,
   Scribbit,
 } from '../../shared/arena';
+import { INK_REWARDS } from '../../shared/arena';
 import { analyze as analyzeDrawing } from '../../shared/analyzer-core';
 import { simulate } from '../core/battle';
 import { loadBattleReportsForUser, saveBattleReport } from '../core/battleStore';
@@ -27,6 +30,13 @@ import {
 } from '../core/clout';
 import { hashTextToSeed } from '../core/random';
 import { recordDailyPlay } from '../core/dex';
+import {
+  awardInk,
+  consumeAccessoriesForSubmit,
+  getInkBalance,
+  loadInventory,
+  pullCapsuleForUser,
+} from '../core/inkStore';
 import {
   formatUtcDateKey,
   getArenaDayNumber,
@@ -100,6 +110,10 @@ const notFound = (c: HonoContext, message: string) => {
 
 const conflict = (c: HonoContext, message: string) => {
   return c.json<ErrorResponse>({ status: 'error', message }, 409);
+};
+
+const paymentRequired = (c: HonoContext, message: string) => {
+  return c.json<ErrorResponse>({ status: 'error', message }, 402);
 };
 
 const serverError = (c: HonoContext, message: string) => {
@@ -217,10 +231,13 @@ api.get('/arena', async (c) => {
     let enteredToday = false;
     let myBackedScribbitId: string | null = null;
     let myClout = 0;
+    let myInk = 0;
+    let myPens: string[] = [];
 
     if (player) {
       await recordDailyPlay(redis, player.userId, now);
       const dailyFlags = await getDailyFlags(redis, player.userId, dayNumber);
+      const inventory = await loadInventory(redis, player.userId);
       myScribbits = await getAliveScribbitsForUser(redis, player.userId);
       drawnToday = dailyFlags.drawnToday;
       enteredToday = dailyFlags.enteredToday;
@@ -230,6 +247,8 @@ api.get('/arena', async (c) => {
         player.userId
       );
       myClout = await getUserClout(redis, player.userId);
+      myInk = await getInkBalance(redis, player.userId);
+      myPens = inventory.pens;
     }
 
     const todayEntrants = await loadTodayRumbleEntrants(dayNumber, utcDateKey);
@@ -248,6 +267,8 @@ api.get('/arena', async (c) => {
       todayEntrants,
       myBackedScribbitId,
       myClout,
+      myInk,
+      myPens,
     });
   } catch (error) {
     console.error('Arena route failed:', error);
@@ -267,7 +288,7 @@ api.post('/scribbit', async (c) => {
   if (!draft) {
     return badRequest(
       c,
-      'Send a 2-24 character name and PNG data URL.'
+      'Send a 2-24 character name, PNG data URL, and valid accessories.'
     );
   }
 
@@ -283,6 +304,7 @@ api.post('/scribbit', async (c) => {
     height: decodedPng.height,
   });
   let createdScribbit: { id: string; day: number } | null = null;
+  let rollbackConsumedAccessories: (() => Promise<void>) | undefined;
 
   try {
     const now = new Date();
@@ -301,6 +323,32 @@ api.post('/scribbit', async (c) => {
     if (!(await enforceAliveScribbitLimit(redis, player.userId))) {
       return conflict(c, 'You already have three living Scribbits.');
     }
+
+    const accessoryIds = draft.accessories.map((accessory) => {
+      return accessory.id;
+    });
+    const accessoryConsumption = await consumeAccessoriesForSubmit(
+      redis,
+      player.userId,
+      accessoryIds
+    );
+
+    if (accessoryConsumption.status === 'invalid') {
+      return badRequest(c, 'Choose valid accessories from the capsule catalog.');
+    }
+
+    if (accessoryConsumption.status === 'insufficient') {
+      return conflict(c, 'You do not have enough copies of that accessory.');
+    }
+
+    if (accessoryConsumption.status === 'race') {
+      return conflict(
+        c,
+        'One accessory copy was already used. Refresh and try again.'
+      );
+    }
+
+    rollbackConsumedAccessories = accessoryConsumption.rollback;
 
     const scribbitId = createScribbitId(dayNumber);
     createdScribbit = { id: scribbitId, day: dayNumber };
@@ -334,6 +382,8 @@ api.post('/scribbit', async (c) => {
     );
 
     if (!claimedDailyEntry) {
+      await rollbackConsumedAccessories();
+      rollbackConsumedAccessories = undefined;
       await deleteStoredScribbit(
         redis,
         player.userId,
@@ -343,8 +393,18 @@ api.post('/scribbit', async (c) => {
       return conflict(c, 'You already drew or entered today.');
     }
 
+    await awardInk(redis, player.userId, INK_REWARDS.dailyDraw);
+    rollbackConsumedAccessories = undefined;
     return c.json<Scribbit>(scribbit, 201);
   } catch (error) {
+    if (rollbackConsumedAccessories) {
+      try {
+        await rollbackConsumedAccessories();
+      } catch (cleanupError) {
+        console.error('Accessory consume rollback failed:', cleanupError);
+      }
+    }
+
     if (createdScribbit) {
       try {
         await deleteStoredScribbit(
@@ -490,6 +550,7 @@ api.post('/care', async (c) => {
     }
 
     await recordDailyPlay(redis, player.userId, now);
+    await awardInk(redis, player.userId, INK_REWARDS.care);
     return c.json<Scribbit>(caredScribbit);
   } catch (error) {
     console.error('Care route failed:', error);
@@ -549,6 +610,7 @@ api.post('/spar', async (c) => {
 
       if (shouldAwardSparXp) {
         await awardScribbitXp(redis, challenger.id, 1, utcDateKey);
+        await awardInk(redis, player.userId, INK_REWARDS.sparWin);
       }
     }
 
@@ -693,6 +755,46 @@ api.get('/clout-board', async (c) => {
   } catch (error) {
     console.error('Clout board route failed:', error);
     return serverError(c, 'The Clout board fell off the wall.');
+  }
+});
+
+api.get('/inventory', async (c) => {
+  const player = await getCurrentPlayer();
+
+  if (!player) {
+    return c.json<Inventory>({ items: {}, pens: [], titles: [] });
+  }
+
+  try {
+    return c.json<Inventory>(await loadInventory(redis, player.userId));
+  } catch (error) {
+    console.error('Inventory route failed:', error);
+    return serverError(c, 'The ink drawer is stuck. Try again soon.');
+  }
+});
+
+api.post('/capsule', async (c) => {
+  const player = await getCurrentPlayer();
+
+  if (!player) {
+    return unauthorized(c, 'Sign in to open a Mystery Ink capsule.');
+  }
+
+  try {
+    const dayNumber = await ensureCurrentArenaDay(redis, new Date());
+    const result = await pullCapsuleForUser(redis, player.userId, dayNumber);
+
+    if (result.status === 'insufficientInk') {
+      return paymentRequired(
+        c,
+        `You need ${result.cost} Mystery Ink to open a capsule.`
+      );
+    }
+
+    return c.json<CapsulePull>(result.pull);
+  } catch (error) {
+    console.error('Capsule route failed:', error);
+    return serverError(c, 'The capsule machine jammed. Try again soon.');
   }
 });
 

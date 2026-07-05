@@ -1,7 +1,7 @@
 import { Scene } from 'phaser';
 import { fetchMyBattles } from '../lib/api';
 import { setReplay } from '../lib/registry';
-import { loadDrawing } from '../lib/scribbits';
+import { loadDrawing, fitDrawing } from '../lib/scribbits';
 import { TYPE, UI } from '../lib/theme';
 import { paperBackdrop } from '../lib/art';
 import { label, ghostButton, handLettered, stickerCard, errorPanel } from '../lib/ui';
@@ -82,7 +82,7 @@ export class MyBattles extends Scene {
       frame.strokeRect(localX - 42, -42, 84, 84);
       card.add(frame);
       void loadDrawing(this, fighter).then((key) => {
-        if (this.scene.isActive()) this.add.image(width / 2 + localX, y, key).setDisplaySize(74, 74).setDepth(3);
+        if (this.scene.isActive()) fitDrawing(this.add.image(width / 2 + localX, y, key), 74).setDepth(3);
       });
     });
 

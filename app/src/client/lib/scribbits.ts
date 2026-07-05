@@ -2,38 +2,70 @@
 // texture, plus small formatters shared across scenes. The drawings ARE the art,
 // so most scenes just need: "give me a sprite of this scribbit's drawing".
 
+import * as Phaser from 'phaser';
 import { Scene } from 'phaser';
-import type { CareAction, Mood, Scribbit } from '../../shared/arena';
+import type { CareAction, Element, Mood, Scribbit } from '../../shared/arena';
 import { LEVEL_XP_THRESHOLDS, MAX_LEVEL } from '../../shared/arena';
 import { MOOD_STYLES } from './theme';
+import { generateDoodleTexture } from './art';
 
 // Texture key for a scribbit's drawing. Stable per id so we load each once.
 export function drawingKey(scribbit: Pick<Scribbit, 'id'>): string {
   return `drawing-${scribbit.id}`;
 }
 
-// Loads a scribbit's drawing into the texture cache (idempotent) and resolves
-// with the texture key once ready. On failure it bakes a friendly placeholder
-// under the same key so callers can always add an image without crashing.
+// A stable sprite key for the procedural doodle fallback: the scribbit's id (or
+// name when id is missing) drives the deterministic creature shape.
+function spriteKeyFor(scribbit: Pick<Scribbit, 'id' | 'name'>): string {
+  return scribbit.id || scribbit.name || 'scribbit';
+}
+
+function elementOf(scribbit: Partial<Pick<Scribbit, 'element'>>): Element {
+  return scribbit.element ?? 'ember';
+}
+
+// THE single art resolver. Every surface (roster, entrants, champion poster,
+// modal, replay, legends, sketchbook) calls this. It resolves to a texture key
+// that ALWAYS exists and is never empty:
+//   1. Try the scribbit's imageUrl (network PNG or /api/drawing/{id}).
+//   2. On loaderror / timeout / a degenerate (empty) texture, fall back to a
+//      deterministic procedural doodle baked from the spriteKey + element.
+// Callers then render the key with fitDrawing() (aspect-preserving contain) so
+// non-square art is centered in its frame and never cropped or stretched.
 export function loadDrawing(scene: Scene, scribbit: Scribbit): Promise<string> {
   const key = drawingKey(scribbit);
   if (scene.textures.exists(key)) return Promise.resolve(key);
 
+  // Founding scribbits point at /creatures/*.png that never shipped. Skip the
+  // doomed network round-trip and go straight to the doodle so their cards fill
+  // instantly instead of flashing an empty frame for 9 seconds.
+  if (isKnownMissingArt(scribbit.imageUrl)) {
+    return Promise.resolve(fallbackDoodle(scene, scribbit));
+  }
+
   return new Promise((resolve) => {
     let settled = false;
-    const onComplete = (): void => finish();
+    const onComplete = (): void => {
+      // A load can "succeed" with a degenerate 1x1/transparent texture; if the
+      // source is unusably small, treat it as a miss and use the doodle.
+      if (isDegenerateTexture(scene, key)) {
+        scene.textures.remove(key);
+        finish(fallbackDoodle(scene, scribbit));
+        return;
+      }
+      finish(key);
+    };
     // loaderror fires for every failed file; only react to our own key.
     const onError = (file: { key?: string }): void => {
       if (file?.key !== key) return;
-      if (!scene.textures.exists(key)) bakePlaceholder(scene, key);
-      finish();
+      finish(fallbackDoodle(scene, scribbit));
     };
-    const finish = (): void => {
+    const finish = (resolvedKey: string): void => {
       if (settled) return;
       settled = true;
       scene.load.off(`filecomplete-image-${key}`, onComplete);
       scene.load.off('loaderror', onError);
-      resolve(key);
+      resolve(resolvedKey);
     };
 
     scene.load.on(`filecomplete-image-${key}`, onComplete);
@@ -43,25 +75,66 @@ export function loadDrawing(scene: Scene, scribbit: Scribbit): Promise<string> {
 
     // Safety timeout so a stuck load never blocks a ceremony forever.
     scene.time.delayedCall(9000, () => {
-      if (!scene.textures.exists(key)) bakePlaceholder(scene, key);
-      finish();
+      if (settled) return;
+      finish(scene.textures.exists(key) ? key : fallbackDoodle(scene, scribbit));
     });
   });
 }
 
-// A gentle "drawing unavailable" placeholder so the frame never sits empty.
-function bakePlaceholder(scene: Scene, key: string): void {
-  if (scene.textures.exists(key)) return;
-  const size = 256;
-  const graphics = scene.make.graphics({ x: 0, y: 0 }, false);
-  graphics.fillStyle(0xfdf3df, 1);
-  graphics.fillRect(0, 0, size, size);
-  graphics.lineStyle(4, 0xcbb79a, 1);
-  graphics.strokeRect(8, 8, size - 16, size - 16);
-  graphics.fillStyle(0xcbb79a, 1);
-  graphics.fillCircle(size / 2, size / 2 - 10, 26);
-  graphics.generateTexture(key, size, size);
-  graphics.destroy();
+// URLs we know will 404 (founding art job was cancelled). Cheap prefix check so
+// we never even attempt the request.
+function isKnownMissingArt(imageUrl: string): boolean {
+  return typeof imageUrl === 'string' && imageUrl.startsWith('/creatures/');
+}
+
+// A texture is degenerate when its source is missing or effectively 1px — this
+// is what a stubbed/transparent server response produces, and it must not be
+// rendered as if it were real art.
+function isDegenerateTexture(scene: Scene, key: string): boolean {
+  const source = scene.textures.get(key).getSourceImage() as { width?: number; height?: number };
+  const width = source?.width ?? 0;
+  const height = source?.height ?? 0;
+  return width <= 2 || height <= 2;
+}
+
+// Bake (once) the procedural doodle for this scribbit. Used as the fallback.
+function fallbackDoodle(scene: Scene, scribbit: Scribbit): string {
+  return generateDoodleTexture(scene, spriteKeyFor(scribbit), elementOf(scribbit));
+}
+
+// Fit a drawing image inside a square box of `boxSize`, aspect-preserving
+// (CONTAIN): the longest edge fills the box and the shorter edge is centered,
+// so a tall or wide drawing is scaled down uniformly and NEVER cropped or
+// stretched out of shape. This is the fix for "art escaping its frame corner":
+// the old code forced setDisplaySize(box, box), distorting non-square art.
+// Returns the same image for chaining. Center the image on the frame center.
+export function fitDrawing(
+  image: Phaser.GameObjects.Image,
+  boxSize: number
+): Phaser.GameObjects.Image {
+  const source = image.texture.getSourceImage() as { width?: number; height?: number };
+  const srcW = source?.width && source.width > 0 ? source.width : boxSize;
+  const srcH = source?.height && source.height > 0 ? source.height : boxSize;
+  const scale = boxSize / Math.max(srcW, srcH);
+  image.setDisplaySize(srcW * scale, srcH * scale);
+  return image;
+}
+
+// Convenience: load a scribbit's drawing and add it as an image fitted+centered
+// inside a `boxSize` frame at (x, y). The one call every static surface uses so
+// art is always resolved (never empty) AND always fitted (never cropped).
+export function addFittedDrawing(
+  scene: Scene,
+  scribbit: Scribbit,
+  x: number,
+  y: number,
+  boxSize: number
+): Promise<Phaser.GameObjects.Image | null> {
+  return loadDrawing(scene, scribbit).then((key) => {
+    if (!scene.scene.isActive()) return null;
+    const image = scene.add.image(x, y, key);
+    return fitDrawing(image, boxSize);
+  });
 }
 
 // Load several drawings in parallel; resolves when all have settled.

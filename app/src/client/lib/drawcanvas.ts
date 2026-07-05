@@ -11,6 +11,11 @@ const PAPER_COLOR = '#fdf3df';
 
 export type BrushMode = 'draw' | 'erase';
 
+// Special pen effects unlocked via Mystery Ink capsules. 'solid' is the normal
+// single-color pen; 'rainbow' cycles hue along the stroke; 'midnight' is a
+// near-black ink with tiny white specks flecked over the line.
+export type PenEffect = 'solid' | 'rainbow' | 'midnight';
+
 export type DrawCanvasOptions = {
   // Called after every completed stroke (pointer-up) so the scene can re-run the
   // live analyzer and animate the stat preview.
@@ -25,6 +30,12 @@ export class DrawCanvas {
   private color = '#2b2016';
   private brushSize = 22;
   private mode: BrushMode = 'draw';
+
+  // Active pen effect + its palette. Rainbow advances a hue as the stroke moves;
+  // midnight flecks white specks over a near-black base.
+  private penEffect: PenEffect = 'solid';
+  private penColors: string[] = ['#2b2016'];
+  private huePhase = 0; // 0..1, advances along a rainbow stroke
 
   private drawing = false;
   private lastX = 0;
@@ -66,6 +77,19 @@ export class DrawCanvas {
   setColor(color: string): void {
     this.color = color;
     this.mode = 'draw';
+    // A plain color selection resets any special pen effect.
+    this.penEffect = 'solid';
+    this.penColors = [color];
+  }
+
+  // Select an unlocked Mystery Ink pen. `colors` is the pen's palette; for
+  // rainbow it's the cycle stops, for midnight it's the base ink. Switches to
+  // draw mode. The first color is used as the base stroke color.
+  setPen(effect: PenEffect, colors: string[]): void {
+    this.mode = 'draw';
+    this.penEffect = effect;
+    this.penColors = colors.length > 0 ? colors : ['#2b2016'];
+    this.color = this.penColors[0] ?? '#2b2016';
   }
 
   setBrushSize(size: number): void {
@@ -151,6 +175,7 @@ export class DrawCanvas {
     event.preventDefault();
     this.pushHistory();
     this.drawing = true;
+    this.huePhase = 0;
     const { x, y } = this.toCanvasCoords(event);
     this.lastX = x;
     this.lastY = y;
@@ -158,8 +183,9 @@ export class DrawCanvas {
     this.applyBrush();
     this.ctx.beginPath();
     this.ctx.arc(x, y, this.brushSize / 2, 0, Math.PI * 2);
-    this.ctx.fillStyle = this.mode === 'erase' ? 'rgba(0,0,0,1)' : this.color;
+    this.ctx.fillStyle = this.mode === 'erase' ? 'rgba(0,0,0,1)' : this.currentStrokeColor();
     this.ctx.fill();
+    if (this.mode !== 'erase') this.flingSpecks(x, y);
     try {
       this.element.setPointerCapture(event.pointerId);
     } catch {
@@ -172,12 +198,51 @@ export class DrawCanvas {
     event.preventDefault();
     const { x, y } = this.toCanvasCoords(event);
     this.applyBrush();
+    // Rainbow advances its hue as the stroke travels, so the color is set per
+    // segment; solid/midnight keep a stable base color.
+    if (this.mode !== 'erase') {
+      this.huePhase = (this.huePhase + 0.02) % 1;
+      this.ctx.strokeStyle = this.currentStrokeColor();
+    }
     this.ctx.beginPath();
     this.ctx.moveTo(this.lastX, this.lastY);
     this.ctx.lineTo(x, y);
     this.ctx.stroke();
+    if (this.mode !== 'erase') this.flingSpecks(x, y);
     this.lastX = x;
     this.lastY = y;
+  }
+
+  // The color for the current stroke segment. Rainbow interpolates through its
+  // cycle stops by huePhase; everything else uses the base color.
+  private currentStrokeColor(): string {
+    if (this.penEffect === 'rainbow' && this.penColors.length > 1) {
+      const span = this.penColors.length;
+      const scaled = this.huePhase * span;
+      const index = Math.floor(scaled) % span;
+      return this.penColors[index] ?? this.color;
+    }
+    return this.color;
+  }
+
+  // Midnight ink: fleck a few tiny white specks around the brush point so the
+  // near-black stroke reads as a starry night ink. No-op for other pens.
+  private flingSpecks(x: number, y: number): void {
+    if (this.penEffect !== 'midnight') return;
+    const count = 2;
+    this.ctx.save();
+    this.ctx.globalCompositeOperation = 'source-over';
+    this.ctx.fillStyle = 'rgba(255,255,255,0.9)';
+    for (let index = 0; index < count; index += 1) {
+      const radius = this.brushSize * 0.5 * Math.random();
+      const angle = Math.random() * Math.PI * 2;
+      const sx = x + Math.cos(angle) * radius;
+      const sy = y + Math.sin(angle) * radius;
+      this.ctx.beginPath();
+      this.ctx.arc(sx, sy, 0.8 + Math.random() * 1.2, 0, Math.PI * 2);
+      this.ctx.fill();
+    }
+    this.ctx.restore();
   }
 
   private endStroke(): void {
@@ -194,7 +259,7 @@ export class DrawCanvas {
       this.ctx.strokeStyle = 'rgba(0,0,0,1)';
     } else {
       this.ctx.globalCompositeOperation = 'source-over';
-      this.ctx.strokeStyle = this.color;
+      this.ctx.strokeStyle = this.currentStrokeColor();
     }
   }
 }

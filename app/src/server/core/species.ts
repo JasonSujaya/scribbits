@@ -222,6 +222,7 @@ const createFoundingScribbit = (
     status: 'alive',
     legendTitle: null,
     isFounding: true,
+    accessories: [],
     level: species.level,
     xp: LEVEL_XP_THRESHOLDS[species.level - 1] ?? 0,
     mood: species.mood,
@@ -248,6 +249,7 @@ export const findFoundingScribbit = (
   return {
     ...foundingScribbit,
     stats: { ...foundingScribbit.stats },
+    accessories: [...foundingScribbit.accessories],
     careDoneToday: [...foundingScribbit.careDoneToday],
   };
 };
@@ -273,6 +275,7 @@ export const chooseFoundingSparOpponent = (
   return {
     ...opponent,
     stats: { ...opponent.stats },
+    accessories: [...opponent.accessories],
     careDoneToday: [...opponent.careDoneToday],
   };
 };

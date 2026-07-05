@@ -1,7 +1,7 @@
 import * as Phaser from 'phaser';
 import { Scene } from 'phaser';
 import { showToast } from '@devvit/web/client';
-import { submitScribbit } from '../lib/api';
+import { submitScribbit, fetchArena } from '../lib/api';
 import { getArena, setArena } from '../lib/registry';
 import { analyze, MIN_INK_PIXELS } from '../lib/analyzer';
 import type { AnalyzerResult } from '../lib/analyzer';
@@ -18,9 +18,15 @@ import {
   elementBadge,
   stickerCard,
   errorPanel,
+  floatReward,
 } from '../lib/ui';
 import type { StatGrid, ErrorPanel } from '../lib/ui';
-import type { Element, Scribbit } from '../../shared/arena';
+import { openCapsuleMachine } from '../lib/capsulemachine';
+import { pullCapsule } from '../lib/api';
+import { PEN_CATALOG, PEN_BY_ID, penSwatchColor, RARITY_STYLE } from '../lib/pens';
+import type { PenCatalogEntry } from '../lib/pens';
+import { INK_REWARDS } from '../../shared/arena';
+import type { ArenaState, Element, Scribbit } from '../../shared/arena';
 
 // The 8-color element palette + black outline pen. Grouped by element hue so
 // the color a player reaches for nudges the creature's element.
@@ -58,6 +64,9 @@ export class Draw extends Scene {
   private currentElement: Element = 'ember';
   private lastResult: AnalyzerResult | null = null;
   private colorSwatches: Phaser.GameObjects.Rectangle[] = [];
+  private penSwatches: { rect: Phaser.GameObjects.Rectangle; penId: string }[] = [];
+  private pensRow: Phaser.GameObjects.Container | null = null;
+  private pensRowY = 0;
   private brushButtons: Phaser.GameObjects.Container[] = [];
 
   private resizeHandler = (): void => this.overlay?.sync();
@@ -72,6 +81,7 @@ export class Draw extends Scene {
     this.elementBadgeRef = null;
     this.lastResult = null;
     this.colorSwatches = [];
+    this.penSwatches = [];
     this.brushButtons = [];
     this.submitting = false;
     this.errorPanelRef = null;
@@ -109,12 +119,12 @@ export class Draw extends Scene {
   // --- Layout budget (720x1280 design space) --------------------------------
   // Canvas is the hero. Everything below stacks on a strict grid so nothing
   // overlaps or clips: canvas → tools → stat panel → name → submit.
-  private static readonly CANVAS_CENTER_Y = 408;
-  private static readonly CANVAS_SQUARE = 548; // big hero canvas
-  private static readonly TOOLS_Y = 736; // colors + brush + edit band
-  private static readonly STAT_Y = 926; // stat panel center
-  private static readonly NAME_Y = 1112;
-  private static readonly SUBMIT_Y = 1220;
+  private static readonly CANVAS_CENTER_Y = 388;
+  private static readonly CANVAS_SQUARE = 512; // big hero canvas
+  private static readonly TOOLS_Y = 720; // colors + pens + brush/edit band
+  private static readonly STAT_Y = 946; // stat panel center
+  private static readonly NAME_Y = 1116;
+  private static readonly SUBMIT_Y = 1222;
 
   // --- Phaser chrome (everything except the live canvas + name input) -------
   private buildChrome(): void {
@@ -142,12 +152,13 @@ export class Draw extends Scene {
     button(this, width / 2, Draw.SUBMIT_Y, "🎉 IT'S ALIVE — Submit", () => this.trySubmit(), width - EDGE * 2);
   }
 
-  // One clean band: 8 color swatches on the top line, brush sizes + edit tools
-  // on the second line — grouped, evenly spaced, no crowding.
+  // Three clean lines: base color swatches, Mystery Ink pens (unlocked +
+  // ghosted locked slots), then brush sizes + edit tools.
   private buildToolsBand(centerY: number): void {
     const { width } = this.scale;
-    const colorY = centerY - 32;
-    const toolY = centerY + 38;
+    const colorY = centerY - 56;
+    const penY = centerY + 4;
+    const toolY = centerY + 62;
 
     // Color swatches, evenly distributed across the full width.
     const count = PALETTE.length;
@@ -155,7 +166,7 @@ export class Draw extends Scene {
     PALETTE.forEach((entry, index) => {
       const x = EDGE + gap * (index + 0.5);
       const swatch = this.add
-        .rectangle(x, colorY, 56, 56, Phaser.Display.Color.HexStringToColor(entry.color).color, 1)
+        .rectangle(x, colorY, 50, 50, Phaser.Display.Color.HexStringToColor(entry.color).color, 1)
         .setStrokeStyle(4, UI.inkHex, 1)
         .setInteractive({ useHandCursor: true });
       swatch.on('pointerup', () => this.selectColor(index, entry.color));
@@ -163,12 +174,14 @@ export class Draw extends Scene {
     });
     this.selectColor(0, PALETTE[0]?.color ?? '#2b2016');
 
+    this.buildPensRow(penY);
+
     // Brush sizes (left group).
     BRUSH_SIZES.forEach((size, index) => {
       const x = EDGE + 40 + index * 76;
       const container = this.add.container(x, toolY);
       const bg = this.add
-        .rectangle(0, 0, 64, 64, UI.creamHex, 1)
+        .rectangle(0, 0, 60, 60, UI.creamHex, 1)
         .setStrokeStyle(4, UI.inkHex, 1)
         .setInteractive({ useHandCursor: true });
       const dot = this.add.circle(0, 0, size / 2 + 2, UI.inkHex, 1);
@@ -184,11 +197,114 @@ export class Draw extends Scene {
     ghostButton(this, width - 74, toolY, '🗑', () => this.confirmClear(), 92);
   }
 
+  // Mystery Ink pens: every catalog pen shows as a swatch. Unlocked pens are
+  // tappable (rainbow/midnight get special rendering in the canvas); locked pens
+  // are ghosted with a 🔒 and deep-link to the capsule machine — visible
+  // aspiration that drives the gacha loop.
+  private buildPensRow(y: number): void {
+    this.pensRowY = y;
+    this.pensRow?.destroy(true);
+    this.penSwatches = [];
+    const container = this.add.container(0, 0);
+    this.pensRow = container;
+
+    const { width } = this.scale;
+    const unlocked = new Set(this.getArenaState()?.myPens ?? []);
+    const labelW = 78;
+    container.add(label(this, EDGE + labelW / 2, y, '✨Pens', TYPE.caption, UI.inkSoft, true));
+
+    const startX = EDGE + labelW + 8;
+    const cellCount = PEN_CATALOG.length;
+    const avail = width - startX - EDGE;
+    const gap = avail / cellCount;
+    PEN_CATALOG.forEach((pen, index) => {
+      const x = startX + gap * (index + 0.5);
+      const isUnlocked = unlocked.has(pen.id);
+      const rarityColor = RARITY_STYLE[pen.rarity].color;
+
+      // Rainbow gets a multi-hue swatch backing so it reads as special.
+      if (isUnlocked && pen.effect === 'rainbow') {
+        this.rainbowHint(container, x, y);
+      }
+      const swatch = this.add
+        .rectangle(x, y, 50, 50, Phaser.Display.Color.HexStringToColor(penSwatchColor(pen)).color, 1)
+        .setStrokeStyle(4, isUnlocked ? rarityColor : UI.inkHex, 1)
+        .setInteractive({ useHandCursor: true });
+      container.add(swatch);
+
+      if (isUnlocked) {
+        swatch.on('pointerup', () => this.selectPen(index, pen));
+        this.penSwatches.push({ rect: swatch, penId: pen.id });
+      } else {
+        swatch.setFillStyle(UI.inkSoftHex, 0.5);
+        const lock = label(this, x, y, '🔒', 22, UI.ink, true);
+        lock.setInteractive({ useHandCursor: true });
+        container.add(lock);
+        const openMachine = (): void => this.openCapsuleFromDraw();
+        swatch.on('pointerup', openMachine);
+        lock.on('pointerup', openMachine);
+      }
+    });
+  }
+
+  // A small rainbow flourish behind the rainbow pen swatch.
+  private rainbowHint(container: Phaser.GameObjects.Container, x: number, y: number): void {
+    const hues = [0xff5a3d, 0xf2cf3d, 0x4faa4f, 0x3ba0e0, 0x8a5cd8];
+    hues.forEach((hue, index) => {
+      container.add(this.add.rectangle(x - 20 + index * 10, y, 8, 44, hue, 0.9));
+    });
+  }
+
+  // The current arena snapshot (myPens/myInk live here).
+  private getArenaState(): ArenaState | undefined {
+    return getArena(this);
+  }
+
+  // After a capsule pull closes, re-fetch arena so a freshly-unlocked pen shows
+  // up as a live swatch (no scene restart, canvas drawing preserved).
+  private async refreshPensAfterPull(): Promise<void> {
+    const result = await fetchArena();
+    if (result.ok) setArena(this, result.data);
+    if (this.scene.isActive()) this.buildPensRow(this.pensRowY);
+  }
+
+  private selectPen(index: number, pen: PenCatalogEntry): void {
+    this.canvas?.setPen(pen.effect, pen.colors);
+    // Deselect base swatches; highlight the chosen pen.
+    this.colorSwatches.forEach((swatch) => {
+      swatch.setStrokeStyle(4, UI.inkHex, 1).setScale(1);
+    });
+    this.penSwatches.forEach(({ rect, penId }) => {
+      const chosen = penId === pen.id;
+      rect.setStrokeStyle(chosen ? 6 : 4, chosen ? UI.goldHex : RARITY_STYLE[pen.rarity].color, 1);
+      rect.setScale(chosen ? 1.12 : 1);
+    });
+    void index;
+  }
+
+  private openCapsuleFromDraw(): void {
+    openCapsuleMachine(this, {
+      ink: this.getArenaState()?.myInk ?? 0,
+      onPull: async () => {
+        const result = await pullCapsule();
+        if (!result.ok) return { error: result.error };
+        return { pull: result.data };
+      },
+      // Rebuild the pens row so a freshly unlocked pen appears immediately.
+      onClose: () => void this.refreshPensAfterPull(),
+    });
+  }
+
   private selectColor(index: number, color: string): void {
     this.canvas?.setColor(color);
     this.colorSwatches.forEach((swatch, swatchIndex) => {
       swatch.setStrokeStyle(swatchIndex === index ? 6 : 4, swatchIndex === index ? UI.goldHex : UI.inkHex, 1);
       swatch.setScale(swatchIndex === index ? 1.12 : 1);
+    });
+    // Deselect any active pen highlight.
+    this.penSwatches.forEach(({ rect, penId }) => {
+      const pen = PEN_BY_ID.get(penId);
+      rect.setStrokeStyle(4, pen ? RARITY_STYLE[pen.rarity].color : UI.inkHex, 1).setScale(1);
     });
   }
 
@@ -370,6 +486,9 @@ export class Draw extends Scene {
 
     const title = handLettered(this, width / 2, 180, "IT'S ALIVE!", 62, UI.goldText, true).setScale(0);
     this.tweens.add({ targets: title, scale: 1, duration: 500, ease: 'Back.easeOut' });
+
+    // Drawing today's scribbit earns Mystery Ink — float the reward.
+    floatReward(this, width / 2, 260, `+${INK_REWARDS.dailyDraw} 🫙`, UI.goldText, 60);
 
     // Load the just-drawn PNG straight from the data URL for an instant reveal.
     const key = `ceremony-${scribbit.id}`;
