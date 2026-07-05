@@ -93,6 +93,7 @@ const makeScribbit = (overrides = {}) => {
     status: overrides.status ?? 'alive',
     legendTitle: overrides.legendTitle ?? null,
     isFounding: overrides.isFounding ?? false,
+    accessories: overrides.accessories ? [...overrides.accessories] : [],
     level: overrides.level ?? 1,
     xp: overrides.xp ?? 0,
     mood: overrides.mood ?? 'hungry',
@@ -501,39 +502,109 @@ assert.equal(
 pass('capsule pity triggers at exactly configured count');
 
 const duplicateStorage = createMemoryStorage();
-const duplicateUserId = 'duplicate-player';
-const duplicateDrop = inkStore.selectCapsuleDrop({
+const duplicateUserId = 'duplicate-accessory-0';
+const duplicateDay = 5;
+const firstDuplicateDrop = inkStore.selectCapsuleDrop({
   userId: duplicateUserId,
-  day: 7,
+  day: duplicateDay,
   pullCount: 1,
   pullsSinceEpic: 0,
 });
+const secondDuplicateDrop = inkStore.selectCapsuleDrop({
+  userId: duplicateUserId,
+  day: duplicateDay,
+  pullCount: 2,
+  pullsSinceEpic: firstDuplicateDrop.rarity === 'epic' ? 0 : 1,
+});
+assert.equal(
+  firstDuplicateDrop.kind,
+  'accessory',
+  'fixture should start with an accessory'
+);
+assert.equal(
+  secondDuplicateDrop.id,
+  firstDuplicateDrop.id,
+  'fixture should pull the same accessory twice'
+);
 await duplicateStorage.set(
   inkStore.getInkKey(duplicateUserId),
-  String(arena.CAPSULE_COST * 2)
+  String(arena.CAPSULE_FIRST_DAILY_COST + arena.CAPSULE_COST)
 );
-await duplicateStorage.hSet(inkStore.getInventoryKey(duplicateUserId), {
-  [duplicateDrop.id]: duplicateDrop.kind,
-});
-const duplicateResult = await inkStore.pullCapsuleForUser(
+const firstDuplicateResult = await inkStore.pullCapsuleForUser(
   duplicateStorage,
   duplicateUserId,
-  7
+  duplicateDay
 );
-assert.equal(duplicateResult.status, 'pulled', 'duplicate pull should complete');
-assert.equal(duplicateResult.pull.id, duplicateDrop.id, 'fixture should duplicate');
-assert.equal(duplicateResult.pull.isNew, false, 'duplicate should report isNew false');
+assert.equal(
+  firstDuplicateResult.status,
+  'pulled',
+  'first accessory pull should complete'
+);
+assert.equal(
+  firstDuplicateResult.pull.id,
+  firstDuplicateDrop.id,
+  'first pull should match fixture'
+);
+assert.equal(
+  firstDuplicateResult.pull.isNew,
+  true,
+  'first accessory pull should report isNew true'
+);
+assert.equal(
+  firstDuplicateResult.pull.ownedCount,
+  1,
+  'first accessory pull should own one copy'
+);
+const inkAfterFirstDuplicatePull = await inkStore.getInkBalance(
+  duplicateStorage,
+  duplicateUserId
+);
+assert.equal(
+  inkAfterFirstDuplicatePull,
+  arena.CAPSULE_COST,
+  'first daily capsule pull should deduct discounted ink'
+);
+const secondDuplicateResult = await inkStore.pullCapsuleForUser(
+  duplicateStorage,
+  duplicateUserId,
+  duplicateDay
+);
+assert.equal(
+  secondDuplicateResult.status,
+  'pulled',
+  'second accessory pull should complete'
+);
+assert.equal(
+  secondDuplicateResult.pull.id,
+  firstDuplicateDrop.id,
+  'second pull should match duplicate accessory fixture'
+);
+assert.equal(
+  secondDuplicateResult.pull.isNew,
+  false,
+  'duplicate accessory pull should report isNew false'
+);
+assert.equal(
+  secondDuplicateResult.pull.ownedCount,
+  2,
+  'duplicate accessory pull should stack to two copies'
+);
+assert.equal(
+  secondDuplicateResult.inventory.items[firstDuplicateDrop.id],
+  2,
+  'duplicate accessory inventory should store two copies'
+);
 assert.equal(
   await inkStore.getInkBalance(duplicateStorage, duplicateUserId),
-  arena.CAPSULE_COST * 2 - arena.CAPSULE_COST + arena.DUPLICATE_REFUND,
-  'duplicate should refund configured ink'
+  inkAfterFirstDuplicatePull - arena.CAPSULE_COST,
+  'duplicate accessory pull should deduct normal ink without refund'
 );
-pass('capsule duplicate refund math');
+pass('capsule duplicate accessory stacks without refund');
 
 const poorStorage = createMemoryStorage();
 await poorStorage.set(
   inkStore.getInkKey('poor-player'),
-  String(arena.CAPSULE_COST - 1)
+  String(arena.CAPSULE_FIRST_DAILY_COST - 1)
 );
 const poorResult = await inkStore.pullCapsuleForUser(poorStorage, 'poor-player', 7);
 assert.equal(
@@ -543,7 +614,7 @@ assert.equal(
 );
 assert.equal(
   await inkStore.getInkBalance(poorStorage, 'poor-player'),
-  arena.CAPSULE_COST - 1,
+  arena.CAPSULE_FIRST_DAILY_COST - 1,
   'rejected capsule pull should not spend ink'
 );
 const exactCostStorage = createMemoryStorage();

@@ -9,6 +9,11 @@ import { DomOverlay } from '../lib/overlay';
 import { DrawCanvas } from '../lib/drawcanvas';
 import { ELEMENT_STYLES, EDGE, FONT_STACK, TYPE, UI } from '../lib/theme';
 import { paperBackdrop } from '../lib/art';
+import { LivingPaper } from '../lib/livingpaper';
+import { StickerAttach } from '../lib/stickerdrawer';
+import { fetchInventory } from '../lib/api';
+import { drawAccessoryCanvas } from '../lib/accessories';
+import type { AttachedAccessory } from '../../shared/arena';
 import {
   button,
   ghostButton,
@@ -42,6 +47,14 @@ const PALETTE: { color: string; label: string }[] = [
 ];
 
 const BRUSH_SIZES = [12, 24, 40];
+const PEN_SHORT_LABEL: Record<string, string> = {
+  'warm-greys': 'Greys',
+  'pastel-pop': 'Pastel',
+  'gold-pen': 'Gold',
+  'neon-marker': 'Neon',
+  'midnight-ink': 'Night',
+  'rainbow-crayon': 'Rainbow',
+};
 
 // Playful reactive copy keyed by the currently-dominant stat.
 const REACTIONS: Record<string, string[]> = {
@@ -72,6 +85,10 @@ export class Draw extends Scene {
   private resizeHandler = (): void => this.overlay?.sync();
   private submitting = false;
   private errorPanelRef: ErrorPanel | null = null;
+  private livingPaper: LivingPaper | null = null;
+  private stickers: StickerAttach | null = null;
+  private stickerButtonLabel: Phaser.GameObjects.Text | null = null;
+  private drawerOpen = false;
 
   constructor() {
     super('Draw');
@@ -86,6 +103,10 @@ export class Draw extends Scene {
     this.submitting = false;
     this.errorPanelRef = null;
     this.currentElement = 'ember';
+    this.livingPaper = null;
+    this.stickers = null;
+    this.stickerButtonLabel = null;
+    this.drawerOpen = false;
   }
 
   create(): void {
@@ -93,9 +114,12 @@ export class Draw extends Scene {
     DomOverlay.destroyAll();
 
     this.cameras.main.setBackgroundColor(UI.desk);
-    paperBackdrop(this);
+    // Calm living page (no forecast field / edge creatures) so it moves gently
+    // without distracting from the drawing surface.
+    this.livingPaper = new LivingPaper(this, { edgeCreatures: false });
     this.buildChrome();
     this.buildOverlay();
+    this.setupStickers();
     this.refreshPreview();
 
     window.addEventListener('resize', this.resizeHandler);
@@ -106,6 +130,53 @@ export class Draw extends Scene {
   private cleanup(): void {
     window.removeEventListener('resize', this.resizeHandler);
     this.overlay?.destroy();
+    this.livingPaper?.destroy();
+    this.livingPaper = null;
+    this.stickers?.destroy();
+    this.stickers = null;
+  }
+
+  // The live 512-canvas rect in design space (the DOM canvas sits here). Stickers
+  // are placed in this rect and mapped into 512-canvas coords at submit.
+  private canvasRect(): { x: number; y: number; width: number; height: number } {
+    const square = Draw.CANVAS_SQUARE;
+    return {
+      x: this.scale.width / 2 - square / 2,
+      y: Draw.CANVAS_CENTER_Y - square / 2,
+      width: square,
+      height: square,
+    };
+  }
+
+  // Load the owned-accessory inventory, then wire the sticker drawer. Fetched
+  // async so the drawing UI never blocks; the ✨ button reflects owned copies.
+  private setupStickers(): void {
+    void fetchInventory().then((result) => {
+      if (!this.scene.isActive() || this.submitting) return;
+      const items = result.ok ? result.data.items : {};
+      this.stickers = new StickerAttach(this, {
+        items,
+        canvasRect: this.canvasRect(),
+        onChange: () => this.updateStickerButton(),
+      });
+      this.updateStickerButton();
+    });
+  }
+
+  private updateStickerButton(): void {
+    const count = this.stickers?.count ?? 0;
+    this.stickerButtonLabel?.setText(count > 0 ? `✨ ${count}/2` : '✨');
+  }
+
+  private toggleStickerDrawer(): void {
+    if (!this.stickers) return;
+    if (!this.stickers.hasAnyOwned()) {
+      showToast('Win accessories from the capsule machine to sticker your scribbit! 🎰');
+      return;
+    }
+    this.drawerOpen = !this.drawerOpen;
+    if (this.drawerOpen) this.stickers.openDrawer(Draw.CANVAS_CENTER_Y + Draw.CANVAS_SQUARE / 2 + 96);
+    else this.stickers.closeDrawer();
   }
 
   // Every exit from Draw routes through here so the DOM overlay is torn down
@@ -119,12 +190,12 @@ export class Draw extends Scene {
   // --- Layout budget (720x1280 design space) --------------------------------
   // Canvas is the hero. Everything below stacks on a strict grid so nothing
   // overlaps or clips: canvas → tools → stat panel → name → submit.
-  private static readonly CANVAS_CENTER_Y = 388;
-  private static readonly CANVAS_SQUARE = 512; // big hero canvas
+  private static readonly CANVAS_CENTER_Y = 372;
+  private static readonly CANVAS_SQUARE = 480; // big hero canvas
   private static readonly TOOLS_Y = 720; // colors + pens + brush/edit band
-  private static readonly STAT_Y = 946; // stat panel center
-  private static readonly NAME_Y = 1116;
-  private static readonly SUBMIT_Y = 1222;
+  private static readonly STAT_Y = 936; // stat panel center
+  private static readonly NAME_Y = 1104;
+  private static readonly SUBMIT_Y = 1212;
 
   // --- Phaser chrome (everything except the live canvas + name input) -------
   private buildChrome(): void {
@@ -156,17 +227,29 @@ export class Draw extends Scene {
   // ghosted locked slots), then brush sizes + edit tools.
   private buildToolsBand(centerY: number): void {
     const { width } = this.scale;
-    const colorY = centerY - 56;
-    const penY = centerY + 4;
-    const toolY = centerY + 62;
+    const panelW = width - EDGE * 2;
+    const panelH = 196;
+    const panelTop = centerY - panelH / 2;
+    const panel = this.add.graphics();
+    panel.fillStyle(UI.creamHex, 0.94);
+    panel.fillRoundedRect(EDGE, panelTop, panelW, panelH, 16);
+    panel.lineStyle(3, UI.inkHex, 0.72);
+    panel.strokeRoundedRect(EDGE, panelTop, panelW, panelH, 16);
+
+    const colorY = centerY - 64;
+    const penY = centerY - 2;
+    const toolY = centerY + 60;
 
     // Color swatches, evenly distributed across the full width.
     const count = PALETTE.length;
-    const gap = (width - EDGE * 2) / count;
+    const labelW = 74;
+    label(this, EDGE + labelW / 2, colorY, 'Color', TYPE.caption, UI.inkSoft, true);
+    const startX = EDGE + labelW + 8;
+    const gap = (width - startX - EDGE) / count;
     PALETTE.forEach((entry, index) => {
-      const x = EDGE + gap * (index + 0.5);
+      const x = startX + gap * (index + 0.5);
       const swatch = this.add
-        .rectangle(x, colorY, 50, 50, Phaser.Display.Color.HexStringToColor(entry.color).color, 1)
+        .rectangle(x, colorY, 42, 42, Phaser.Display.Color.HexStringToColor(entry.color).color, 1)
         .setStrokeStyle(4, UI.inkHex, 1)
         .setInteractive({ useHandCursor: true });
       swatch.on('pointerup', () => this.selectColor(index, entry.color));
@@ -178,10 +261,10 @@ export class Draw extends Scene {
 
     // Brush sizes (left group).
     BRUSH_SIZES.forEach((size, index) => {
-      const x = EDGE + 40 + index * 76;
+      const x = EDGE + 46 + index * 70;
       const container = this.add.container(x, toolY);
       const bg = this.add
-        .rectangle(0, 0, 60, 60, UI.creamHex, 1)
+        .rectangle(0, 0, 54, 54, UI.creamHex, 1)
         .setStrokeStyle(4, UI.inkHex, 1)
         .setInteractive({ useHandCursor: true });
       const dot = this.add.circle(0, 0, size / 2 + 2, UI.inkHex, 1);
@@ -191,10 +274,38 @@ export class Draw extends Scene {
     });
     this.selectBrush(1, BRUSH_SIZES[1] ?? 24);
 
+    // Stickers toggle (center): opens the accessory drawer. Its label shows the
+    // placed count (e.g. "✨ 1/2") once accessories are attached.
+    const stickerBtn = this.toolIconButton(width / 2 + 6, toolY, '✨', () => this.toggleStickerDrawer(), 70);
+    this.stickerButtonLabel = stickerBtn.list[1] as Phaser.GameObjects.Text;
+
     // Edit tools (right group): erase / undo / clear.
-    ghostButton(this, width - 274, toolY, '🧽', () => this.canvas?.setEraser(), 82);
-    ghostButton(this, width - 182, toolY, '↩', () => this.canvas?.undo(), 82);
-    ghostButton(this, width - 74, toolY, '🗑', () => this.confirmClear(), 92);
+    this.toolIconButton(width - 250, toolY, '🧽', () => this.canvas?.setEraser());
+    this.toolIconButton(width - 170, toolY, '↩', () => this.canvas?.undo());
+    this.toolIconButton(width - 82, toolY, '🗑', () => this.confirmClear(), 62);
+  }
+
+  private toolIconButton(
+    x: number,
+    y: number,
+    icon: string,
+    onClick: () => void,
+    width = 54
+  ): Phaser.GameObjects.Container {
+    const container = this.add.container(x, y);
+    const bg = this.add
+      .rectangle(0, 0, width, 54, UI.creamHex, 1)
+      .setStrokeStyle(4, UI.inkHex, 1)
+      .setInteractive({ useHandCursor: true });
+    const glyph = label(this, 0, 0, icon, 26, UI.ink, true);
+    container.add([bg, glyph]);
+    bg.on('pointerdown', () => container.setScale(0.94));
+    bg.on('pointerout', () => container.setScale(1));
+    bg.on('pointerup', () => {
+      container.setScale(1);
+      onClick();
+    });
+    return container;
   }
 
   // Mystery Ink pens: every catalog pen shows as a swatch. Unlocked pens are
@@ -210,41 +321,55 @@ export class Draw extends Scene {
 
     const { width } = this.scale;
     const unlocked = new Set(this.getArenaState()?.myPens ?? []);
-    const labelW = 78;
-    container.add(label(this, EDGE + labelW / 2, y, '✨Pens', TYPE.caption, UI.inkSoft, true));
+    const labelW = 74;
+    container.add(label(this, EDGE + labelW / 2, y, 'Pens', TYPE.caption, UI.inkSoft, true));
 
     const startX = EDGE + labelW + 8;
-    const cellCount = PEN_CATALOG.length;
-    const avail = width - startX - EDGE;
+    const unlockedPens = PEN_CATALOG.filter((pen) => unlocked.has(pen.id));
+    const machineW = 112;
+    const cellCount = Math.max(1, unlockedPens.length);
+    const avail = width - startX - EDGE - machineW - 12;
     const gap = avail / cellCount;
-    PEN_CATALOG.forEach((pen, index) => {
+    unlockedPens.forEach((pen, index) => {
       const x = startX + gap * (index + 0.5);
-      const isUnlocked = unlocked.has(pen.id);
       const rarityColor = RARITY_STYLE[pen.rarity].color;
+      const chipW = Math.min(104, Math.max(82, gap - 10));
+      const chip = this.add
+        .rectangle(x, y, chipW, 44, UI.creamHex, 1)
+        .setStrokeStyle(3, rarityColor, 1)
+        .setInteractive({ useHandCursor: true });
+      container.add(chip);
 
       // Rainbow gets a multi-hue swatch backing so it reads as special.
-      if (isUnlocked && pen.effect === 'rainbow') {
-        this.rainbowHint(container, x, y);
+      if (pen.effect === 'rainbow') {
+        this.rainbowHint(container, x - chipW / 2 + 26, y);
       }
+      const swatchX = x - chipW / 2 + 24;
       const swatch = this.add
-        .rectangle(x, y, 50, 50, Phaser.Display.Color.HexStringToColor(penSwatchColor(pen)).color, 1)
-        .setStrokeStyle(4, isUnlocked ? rarityColor : UI.inkHex, 1)
-        .setInteractive({ useHandCursor: true });
-      container.add(swatch);
+        .rectangle(swatchX, y, 26, 26, Phaser.Display.Color.HexStringToColor(penSwatchColor(pen)).color, 1)
+        .setStrokeStyle(2, UI.inkHex, 1);
+      const penName = label(this, swatchX + 22, y, this.shortPenLabel(pen), 16, UI.ink, true).setOrigin(0, 0.5);
+      penName.setWordWrapWidth(chipW - 46);
+      container.add([swatch, penName]);
 
-      if (isUnlocked) {
-        swatch.on('pointerup', () => this.selectPen(index, pen));
-        this.penSwatches.push({ rect: swatch, penId: pen.id });
-      } else {
-        swatch.setFillStyle(UI.inkSoftHex, 0.5);
-        const lock = label(this, x, y, '🔒', 22, UI.ink, true);
-        lock.setInteractive({ useHandCursor: true });
-        container.add(lock);
-        const openMachine = (): void => this.openCapsuleFromDraw();
-        swatch.on('pointerup', openMachine);
-        lock.on('pointerup', openMachine);
-      }
+      chip.on('pointerup', () => this.selectPen(index, pen));
+      swatch.setInteractive({ useHandCursor: true }).on('pointerup', () => this.selectPen(index, pen));
+      penName.setInteractive({ useHandCursor: true }).on('pointerup', () => this.selectPen(index, pen));
+      this.penSwatches.push({ rect: chip, penId: pen.id });
     });
+
+    const machineX = width - EDGE - machineW / 2;
+    const machine = this.add
+      .rectangle(machineX, y, machineW, 48, UI.gold, 1)
+      .setStrokeStyle(3, UI.inkHex, 1)
+      .setInteractive({ useHandCursor: true });
+    const machineLabel = label(this, machineX, y, 'Capsule', TYPE.caption, UI.ink, true);
+    container.add([machine, machineLabel]);
+    machine.on('pointerup', () => this.openCapsuleFromDraw());
+  }
+
+  private shortPenLabel(pen: PenCatalogEntry): string {
+    return PEN_SHORT_LABEL[pen.id] ?? pen.name.split(/\s+/)[0] ?? pen.name;
   }
 
   // A small rainbow flourish behind the rainbow pen swatch.
@@ -276,7 +401,9 @@ export class Draw extends Scene {
     });
     this.penSwatches.forEach(({ rect, penId }) => {
       const chosen = penId === pen.id;
-      rect.setStrokeStyle(chosen ? 6 : 4, chosen ? UI.goldHex : RARITY_STYLE[pen.rarity].color, 1);
+      const entry = PEN_BY_ID.get(penId);
+      const rarityColor = entry ? RARITY_STYLE[entry.rarity].color : UI.inkHex;
+      rect.setStrokeStyle(chosen ? 6 : 3, chosen ? UI.goldHex : rarityColor, 1);
       rect.setScale(chosen ? 1.12 : 1);
     });
     void index;
@@ -304,7 +431,7 @@ export class Draw extends Scene {
     // Deselect any active pen highlight.
     this.penSwatches.forEach(({ rect, penId }) => {
       const pen = PEN_BY_ID.get(penId);
-      rect.setStrokeStyle(4, pen ? RARITY_STYLE[pen.rarity].color : UI.inkHex, 1).setScale(1);
+      rect.setStrokeStyle(3, pen ? RARITY_STYLE[pen.rarity].color : UI.inkHex, 1).setScale(1);
     });
   }
 
@@ -326,17 +453,17 @@ export class Draw extends Scene {
   private buildStatPanel(centerY: number): void {
     const { width } = this.scale;
     const panelW = width - EDGE * 2;
-    const panelH = 236;
-    const card = stickerCard(this, width / 2, centerY, panelW, panelH, { tapeColor: UI.tapeAlt, tilt: -0.3 });
+    const panelH = 210;
+    const card = stickerCard(this, width / 2, centerY, panelW, panelH, { tape: false });
 
     this.statCard = card;
-    this.badgeLocalY = -panelH / 2 + 76;
-    this.reactionText = label(this, 0, -panelH / 2 + 34, 'Start drawing!', TYPE.body, UI.ink, true);
+    this.badgeLocalY = -panelH / 2 + 70;
+    this.reactionText = label(this, 0, -panelH / 2 + 30, 'Start drawing!', TYPE.body, UI.ink, true);
     card.add(this.reactionText);
-    this.elementBadgeRef = elementBadge(this, 0, this.badgeLocalY, this.currentElement, 0.82);
+    this.elementBadgeRef = elementBadge(this, 0, this.badgeLocalY, this.currentElement, 0.74);
     card.add(this.elementBadgeRef);
 
-    this.bars = statGrid(this, width / 2, centerY + 44, panelW - 48, 130);
+    this.bars = statGrid(this, width / 2, centerY + 44, panelW - 48, 116);
   }
 
   // --- DOM overlay (live canvas + name input) -------------------------------
@@ -400,11 +527,11 @@ export class Draw extends Scene {
     this.currentElement = element;
     this.elementBadgeRef?.destroy();
     // Re-add inside the stat card at the same local slot so it stays framed.
-    this.elementBadgeRef = elementBadge(this, 0, this.badgeLocalY, element, 0.82);
+    this.elementBadgeRef = elementBadge(this, 0, this.badgeLocalY, element, 0.74);
     this.statCard?.add(this.elementBadgeRef);
     // Morph pop.
     this.elementBadgeRef.setScale(0.55);
-    this.tweens.add({ targets: this.elementBadgeRef, scale: 0.82, duration: 260, ease: 'Back.easeOut' });
+    this.tweens.add({ targets: this.elementBadgeRef, scale: 0.74, duration: 260, ease: 'Back.easeOut' });
   }
 
   private updateReaction(result: AnalyzerResult): void {
@@ -443,21 +570,38 @@ export class Draw extends Scene {
     }
 
     this.submitting = true;
+    // Hide the draggable stickers + drawer so only the baked PNG shows in the
+    // ceremony; the metadata is captured first from their current transforms.
+    const accessories = this.stickers?.toAttachedAccessories() ?? [];
+    this.stickers?.hideOverlays();
     this.overlay.setVisible(false);
-    void this.submit(name, result);
+    void this.submit(name, result, accessories);
   }
 
-  private async submit(name: string, result: AnalyzerResult): Promise<void> {
-    const dataUrl = this.canvas.toDataUrl();
+  private async submit(
+    name: string,
+    result: AnalyzerResult,
+    accessories: AttachedAccessory[]
+  ): Promise<void> {
+    // Bake each attached accessory into the 512 PNG at its canvas-space
+    // transform, then send the metadata so the server consumes the copies.
+    const dataUrl = this.canvas.toDataUrl((ctx) => {
+      accessories.forEach((accessory) => {
+        // The AttachedAccessory scale is canvas-px-per-unit-box relative to the
+        // on-screen 120px box; convert back to a canvas-px box edge for the bake.
+        const bakeSize = 120 * accessory.scale;
+        drawAccessoryCanvas(ctx, accessory.id, accessory.x, accessory.y, bakeSize, accessory.rotation);
+      });
+    });
     const response = await submitScribbit({
       name,
       imageDataUrl: dataUrl,
       stats: result.stats,
       element: result.element,
+      ...(accessories.length > 0 ? { accessories } : {}),
     });
     if (!response.ok) {
       this.submitting = false;
-      this.overlay.setVisible(true);
       this.showError(response.error);
       return;
     }
@@ -477,6 +621,12 @@ export class Draw extends Scene {
   // "IT'S ALIVE" ceremony: the drawing rises with its final card, then home.
   private playCeremony(scribbit: Scribbit, dataUrl: string): void {
     const { width, height } = this.scale;
+    // The living page owned timers/emitters; tear it down before the ceremony
+    // takes over the screen so nothing keeps ticking behind the reveal.
+    this.livingPaper?.destroy();
+    this.livingPaper = null;
+    this.stickers?.destroy();
+    this.stickers = null;
     this.children.removeAll(true);
     this.cameras.main.setBackgroundColor(UI.desk);
     paperBackdrop(this);
@@ -566,6 +716,8 @@ export class Draw extends Scene {
     this.errorPanelRef = errorPanel(this, width / 2, height / 2, message, () => {
       this.errorPanelRef?.destroy();
       this.errorPanelRef = null;
+      this.overlay.setVisible(true);
+      this.stickers?.showOverlays();
     });
   }
 }

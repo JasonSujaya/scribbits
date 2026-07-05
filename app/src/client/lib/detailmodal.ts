@@ -125,12 +125,12 @@ export function openDetailModal(
   });
 
   // Level coin on the art's corner.
-  card.add(levelBadge(scene, artSize / 2 - 8, artY - artSize / 2 + 4, levelOf(scribbit), 0.62));
+  card.add(levelBadge(scene, artSize / 2 - 6, artY - artSize / 2 + 4, levelOf(scribbit), 0.82));
 
   // --- Name + artist --------------------------------------------------------
   let cursor = artY + artSize / 2 + 34;
   card.add(label(scene, 0, cursor, scribbit.name.toUpperCase(), TYPE.title * 1.1, UI.ink, true));
-  cursor += 34;
+  cursor += 42;
   card.add(label(scene, 0, cursor, `by u/${scribbit.artist}`, TYPE.caption, UI.inkSoft, true));
 
   // --- Element badge + mood chip row ---------------------------------------

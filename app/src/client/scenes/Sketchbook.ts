@@ -1,11 +1,11 @@
-import * as Phaser from 'phaser';
 import { Scene } from 'phaser';
 import { fetchLegends } from '../lib/api';
 import { getArena, getSketchbookTab, setSketchbookTab } from '../lib/registry';
 import { loadDrawing, fitDrawing, recordText, levelOf } from '../lib/scribbits';
-import { TYPE, UI } from '../lib/theme';
-import { paperBackdrop } from '../lib/art';
-import { label, ghostButton, handLettered, paperCard, stickerCard, elementBadge, levelBadge, errorPanel } from '../lib/ui';
+import { NAV_SAFE, TYPE, UI } from '../lib/theme';
+import { LivingPaper } from '../lib/livingpaper';
+import { label, ghostButton, handLettered, paperCard, stickerCard, elementBadge, levelBadge, errorPanel, appTabBar } from '../lib/ui';
+import { openCloutBoard } from '../lib/cloutboard';
 import { openDetailModal } from '../lib/detailmodal';
 import type { ErrorPanel } from '../lib/ui';
 import type { LegendsState, Scribbit } from '../../shared/arena';
@@ -19,6 +19,7 @@ export class Sketchbook extends Scene {
   private galleryData: LegendsState | null = null;
   private errorPanelRef: ErrorPanel | null = null;
   private loggedIn = false;
+  private livingPaper: LivingPaper | null = null;
 
   constructor() {
     super('Sketchbook');
@@ -27,6 +28,7 @@ export class Sketchbook extends Scene {
   init(): void {
     this.galleryData = null;
     this.errorPanelRef = null;
+    this.livingPaper = null;
   }
 
   create(): void {
@@ -48,24 +50,61 @@ export class Sketchbook extends Scene {
 
   private build(): void {
     this.children.removeAll(true);
-    paperBackdrop(this);
+    // Calm living page (no forecast field, no countdown) rebuilt each build.
+    this.livingPaper?.destroy();
+    this.livingPaper = new LivingPaper(this);
     const { width } = this.scale;
     handLettered(this, width / 2, 58, 'GALLERY', 40, UI.ink, true);
-    ghostButton(this, 96, 58, '‹ Back', () => this.scene.start('ArenaHome'), 150);
     this.buildTabs(150);
+    this.buildAppTabs();
 
     if (this.tab === 'legends') this.buildLegends(230);
     else this.buildSketchbook(230);
   }
 
+  private buildAppTabs(): void {
+    appTabBar(this, 'gallery', [
+      { key: 'arena', icon: '🏟️', label: 'Arena', onClick: () => this.scene.start('ArenaHome') },
+      { key: 'gallery', icon: '🏆', label: 'Gallery', onClick: () => this.switchTab('legends') },
+      { key: 'draw', icon: '✏️', label: 'Draw', onClick: () => this.scene.start('Draw') },
+      { key: 'battles', icon: '⚔️', label: 'Battles', onClick: () => this.scene.start('MyBattles') },
+      { key: 'scout', icon: '🏅', label: 'Scout', onClick: () => openCloutBoard(this) },
+    ]);
+  }
+
   private buildTabs(y: number): void {
     const { width } = this.scale;
-    const legendsTab = ghostButton(this, width / 2 - 160, y, '🏆 Legends', () => this.switchTab('legends'), 300);
-    const sketchTab = ghostButton(this, width / 2 + 160, y, '📖 Sketchbook', () => this.switchTab('sketchbook'), 300);
-    // Highlight the active tab.
-    const active = this.tab === 'legends' ? legendsTab : sketchTab;
-    const bg = active.list[0] as Phaser.GameObjects.Rectangle;
-    bg.setFillStyle(UI.gold, 1);
+    const controlW = width - 140;
+    const controlH = 62;
+    const tabs = this.add.container(width / 2, y);
+
+    const bg = this.add.graphics();
+    bg.fillStyle(UI.creamHex, 1);
+    bg.fillRoundedRect(-controlW / 2, -controlH / 2, controlW, controlH, 18);
+    bg.lineStyle(4, UI.inkHex, 1);
+    bg.strokeRoundedRect(-controlW / 2, -controlH / 2, controlW, controlH, 18);
+
+    const activeX = this.tab === 'legends' ? -controlW / 4 : controlW / 4;
+    const active = this.add.graphics();
+    active.fillStyle(UI.inkHex, 1);
+    active.fillRoundedRect(activeX - controlW / 4 + 6, -controlH / 2 + 6, controlW / 2 - 12, controlH - 12, 14);
+
+    const divider = this.add.rectangle(0, 0, 3, controlH - 18, UI.inkHex, 0.18);
+    const legendsColor = this.tab === 'legends' ? UI.cream : UI.ink;
+    const sketchColor = this.tab === 'sketchbook' ? UI.cream : UI.ink;
+    const legends = label(this, -controlW / 4, 0, 'Legends', 23, legendsColor, true);
+    const sketchbook = label(this, controlW / 4, 0, 'Sketchbook', 23, sketchColor, true);
+
+    const legendsHit = this.add
+      .rectangle(-controlW / 4, 0, controlW / 2, controlH, 0xffffff, 0.001)
+      .setInteractive({ useHandCursor: true });
+    const sketchHit = this.add
+      .rectangle(controlW / 4, 0, controlW / 2, controlH, 0xffffff, 0.001)
+      .setInteractive({ useHandCursor: true });
+    legendsHit.on('pointerup', () => this.switchTab('legends'));
+    sketchHit.on('pointerup', () => this.switchTab('sketchbook'));
+
+    tabs.add([bg, active, divider, legends, sketchbook, legendsHit, sketchHit]);
   }
 
   private switchTab(tab: Tab): void {
@@ -88,7 +127,9 @@ export class Sketchbook extends Scene {
     }
     const columns = 2;
     const cellWidth = (width - 60) / columns;
-    legends.slice(0, 50).forEach((legend, index) => {
+    const cardHeight = 380;
+    const visibleRows = Math.max(1, Math.floor((this.scale.height - NAV_SAFE - cardHeight / 2 - top - 210) / 410) + 1);
+    legends.slice(0, columns * visibleRows).forEach((legend, index) => {
       const col = index % columns;
       const row = Math.floor(index / columns);
       const x = 30 + cellWidth * (col + 0.5);
@@ -120,7 +161,7 @@ export class Sketchbook extends Scene {
         .setDepth(3)
         .setWordWrapWidth(cardWidth - 40);
     }
-    label(this, x, artY + 142, `by u/${legend.artist} · 💛 ${legend.belief}`, 16, UI.inkSoft, true).setDepth(3);
+    label(this, x, artY + 168, `by u/${legend.artist} · 💛 ${legend.belief}`, 20, UI.inkSoft, true).setDepth(3);
 
     // "View + Believe" opens the shared modal (believe lives inside it).
     ghostButton(this, x, y + cardHeight / 2 - 44, '💛 View', () => this.openDetail(legend), 200).setDepth(3);
@@ -150,7 +191,8 @@ export class Sketchbook extends Scene {
       );
       return;
     }
-    faded.slice(0, 30).forEach((scribbit, index) => {
+    const visibleRows = Math.max(1, Math.floor((this.scale.height - NAV_SAFE - top - 160) / 200) + 1);
+    faded.slice(0, visibleRows).forEach((scribbit, index) => {
       const y = top + 80 + index * 200;
       this.buildFadedRow(scribbit, y);
     });

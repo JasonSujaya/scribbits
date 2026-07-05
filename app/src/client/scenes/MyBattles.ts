@@ -2,9 +2,10 @@ import { Scene } from 'phaser';
 import { fetchMyBattles } from '../lib/api';
 import { setReplay } from '../lib/registry';
 import { loadDrawing, fitDrawing } from '../lib/scribbits';
-import { TYPE, UI } from '../lib/theme';
-import { paperBackdrop } from '../lib/art';
-import { label, ghostButton, handLettered, stickerCard, errorPanel } from '../lib/ui';
+import { NAV_SAFE, TYPE, UI } from '../lib/theme';
+import { mountLivingPaper } from '../lib/livingpaper';
+import { label, handLettered, stickerCard, errorPanel, appTabBar } from '../lib/ui';
+import { openCloutBoard } from '../lib/cloutboard';
 import type { ErrorPanel } from '../lib/ui';
 import type { BattleReport } from '../../shared/arena';
 
@@ -24,12 +25,22 @@ export class MyBattles extends Scene {
 
   create(): void {
     this.cameras.main.setBackgroundColor(UI.desk);
-    paperBackdrop(this);
+    mountLivingPaper(this);
     const { width } = this.scale;
-    ghostButton(this, 96, 66, '‹ Back', () => this.scene.start('ArenaHome'), 150);
     handLettered(this, width / 2, 64, 'MY BATTLES', 40, UI.ink, true);
     label(this, width / 2, 116, 'Tap a battle to watch the replay', TYPE.body, UI.inkSoft);
+    this.buildAppTabs();
     void this.loadBattles();
+  }
+
+  private buildAppTabs(): void {
+    appTabBar(this, 'battles', [
+      { key: 'arena', icon: '🏟️', label: 'Arena', onClick: () => this.scene.start('ArenaHome') },
+      { key: 'gallery', icon: '🏆', label: 'Gallery', onClick: () => this.scene.start('Sketchbook') },
+      { key: 'draw', icon: '✏️', label: 'Draw', onClick: () => this.scene.start('Draw') },
+      { key: 'battles', icon: '⚔️', label: 'Battles', onClick: () => undefined },
+      { key: 'scout', icon: '🏅', label: 'Scout', onClick: () => openCloutBoard(this) },
+    ]);
   }
 
   private async loadBattles(): Promise<void> {
@@ -53,7 +64,8 @@ export class MyBattles extends Scene {
     }
 
     const rowHeight = 132;
-    battles.slice(0, 20).forEach((report, index) => {
+    const visibleRows = Math.max(1, Math.floor((this.scale.height - NAV_SAFE - 160) / rowHeight));
+    battles.slice(0, visibleRows).forEach((report, index) => {
       const y = 210 + index * rowHeight;
       this.buildRow(report, y);
     });

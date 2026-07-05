@@ -183,12 +183,14 @@ export function moodChip(
   const bg = scene.add
     .rectangle(0, 0, w, 40 * scale, UI.creamHex, 1)
     .setStrokeStyle(3, UI.inkHex, 1);
-  const txt = label(scene, 0, 0, `${emoji} ${moodLabel}`, 20 * scale, color, true);
+  const txt = label(scene, 0, 0, `${emoji} ${moodLabel}`, 22 * scale, color, true);
   container.add([bg, txt]);
   return container;
 }
 
-// A round level badge "Lv 3" — gold coin with ink outline.
+// A round level badge "Lv3" — gold coin with ink outline. The coin runs a touch
+// bigger and the numeral heavier so it stays readable at the small scales the
+// roster/champion/modal callers use (~0.55x design → tiny once letterboxed).
 export function levelBadge(
   scene: Scene,
   x: number,
@@ -197,10 +199,10 @@ export function levelBadge(
   scale = 1
 ): Phaser.GameObjects.Container {
   const container = scene.add.container(x, y);
-  const r = 26 * scale;
+  const r = 28 * scale;
   const outer = scene.add.circle(0, 0, r, UI.inkHex, 1);
   const inner = scene.add.circle(0, 0, r - 4, UI.goldHex, 1);
-  const txt = label(scene, 0, 0, `Lv${level}`, 20 * scale, UI.ink, true);
+  const txt = label(scene, 0, 0, `Lv${level}`, 23 * scale, UI.ink, true);
   container.add([outer, inner, txt]);
   return container;
 }
@@ -252,8 +254,8 @@ export function careButton(
     .setStrokeStyle(4, UI.inkHex, 1);
   bg.setInteractive({ useHandCursor: true });
   const stacked = height >= 80;
-  const caption = text ? (stacked ? `${emoji}\n${text}` : `${emoji} ${text}`) : emoji;
-  const txt = label(scene, 0, 0, caption, text ? 20 : 26, '#ffffff', true);
+  const caption = text ? (emoji ? (stacked ? `${emoji}\n${text}` : `${emoji} ${text}`) : text) : emoji;
+  const txt = label(scene, 0, 0, caption, text ? 20 : 26, fill === UI.gold ? UI.ink : '#ffffff', true);
   txt.setLineSpacing(-2);
   txt.setAlign('center');
   txt.setWordWrapWidth(width - 8);
@@ -325,6 +327,143 @@ export function ghostButton(
     container.setScale(1);
     onClick();
   });
+  return container;
+}
+
+export type AppTabKey = 'arena' | 'gallery' | 'draw' | 'battles' | 'scout';
+
+export type AppTabItem = {
+  key: AppTabKey;
+  icon: string;
+  label: string;
+  onClick: () => void;
+};
+
+function tabIcon(scene: Scene, key: AppTabKey, x: number, y: number, color: number, scale = 1): Phaser.GameObjects.Container {
+  const icon = scene.add.container(x, y);
+  const g = scene.add.graphics();
+  const s = scale;
+  const stroke = 3.2 * s;
+  g.lineStyle(stroke, color, 1);
+
+  if (key === 'arena') {
+    g.strokeCircle(0, -3 * s, 13 * s);
+    g.lineBetween(-18 * s, 12 * s, 18 * s, 12 * s);
+    g.lineBetween(-10 * s, 4 * s, -10 * s, 12 * s);
+    g.lineBetween(10 * s, 4 * s, 10 * s, 12 * s);
+    g.lineBetween(-7 * s, -12 * s, 7 * s, -12 * s);
+  } else if (key === 'gallery') {
+    g.strokeRoundedRect(-11 * s, -13 * s, 22 * s, 17 * s, 4 * s);
+    g.lineBetween(-16 * s, -8 * s, -11 * s, -2 * s);
+    g.lineBetween(16 * s, -8 * s, 11 * s, -2 * s);
+    g.lineBetween(0, 4 * s, 0, 14 * s);
+    g.lineBetween(-10 * s, 14 * s, 10 * s, 14 * s);
+  } else if (key === 'draw') {
+    g.lineStyle(5 * s, color, 1);
+    g.lineBetween(-14 * s, 13 * s, 10 * s, -11 * s);
+    g.lineStyle(3 * s, color, 1);
+    g.lineBetween(7 * s, -14 * s, 14 * s, -7 * s);
+    g.lineBetween(-17 * s, 16 * s, -11 * s, 18 * s);
+  } else if (key === 'battles') {
+    g.lineBetween(-15 * s, -14 * s, 15 * s, 16 * s);
+    g.lineBetween(15 * s, -14 * s, -15 * s, 16 * s);
+    g.lineBetween(-3 * s, 2 * s, -10 * s, 9 * s);
+    g.lineBetween(3 * s, 2 * s, 10 * s, 9 * s);
+  } else {
+    g.lineBetween(-7 * s, -18 * s, -12 * s, -6 * s);
+    g.lineBetween(7 * s, -18 * s, 12 * s, -6 * s);
+    g.fillStyle(color, 0.18);
+    g.fillCircle(0, 3 * s, 12 * s);
+    g.strokeCircle(0, 3 * s, 12 * s);
+    g.lineBetween(-5 * s, 3 * s, 5 * s, 3 * s);
+    g.lineBetween(0, -2 * s, 0, 8 * s);
+  }
+
+  icon.add(g);
+  return icon;
+}
+
+function wireTab(
+  hit: Phaser.GameObjects.GameObject,
+  target: Phaser.GameObjects.Container,
+  onClick: () => void
+): void {
+  hit.on('pointerdown', () => target.setScale(0.9));
+  hit.on('pointerout', () => target.setScale(1));
+  hit.on('pointerup', () => {
+    target.setScale(1);
+    onClick();
+  });
+}
+
+export function appTabBar(
+  scene: Scene,
+  active: AppTabKey,
+  tabs: AppTabItem[]
+): Phaser.GameObjects.Container {
+  const { width, height } = scene.scale;
+  const barWidth = width;
+  const barHeight = 88;
+  const y = height - barHeight / 2;
+  const container = scene.add.container(width / 2, y).setScrollFactor(0).setDepth(1800);
+
+  const panel = scene.add.graphics();
+  panel.fillStyle(UI.creamHex, 0.98);
+  panel.fillRoundedRect(-barWidth / 2, -barHeight / 2, barWidth, barHeight + 30, {
+    tl: 30,
+    tr: 30,
+    bl: 0,
+    br: 0,
+  });
+  panel.lineStyle(4, UI.inkHex, 1);
+  panel.beginPath();
+  panel.moveTo(-barWidth / 2, -barHeight / 2 + 2);
+  panel.lineTo(barWidth / 2, -barHeight / 2 + 2);
+  panel.strokePath();
+  container.add(panel);
+
+  const slotWidth = barWidth / tabs.length;
+  tabs.forEach((tab, index) => {
+    const x = -barWidth / 2 + slotWidth * (index + 0.5);
+    const isActive = tab.key === active;
+    const isPrimary = tab.key === 'draw';
+
+    if (isPrimary) {
+      const sealY = -barHeight / 2 + 6;
+      const seal = scene.add.container(x, sealY);
+      const bg = scene.add.graphics();
+      bg.fillStyle(0x000000, 0.14);
+      bg.fillCircle(4, 5, 40);
+      bg.fillStyle(UI.coral, 1);
+      bg.fillCircle(0, 0, 40);
+      bg.lineStyle(5, UI.inkHex, 1);
+      bg.strokeCircle(0, 0, 40);
+      bg.lineStyle(3, UI.creamHex, 0.45);
+      bg.strokeCircle(0, 0, 29);
+      const icon = tabIcon(scene, tab.key, 0, -3, UI.creamHex, 1.14);
+      const text = label(scene, 0, 46, tab.label, 17, UI.ink, true);
+      seal.add([bg, icon, text]);
+      const hit = scene.add.circle(x, sealY, 48, 0xffffff, 0.001).setInteractive({ useHandCursor: true });
+      container.add([seal, hit]);
+      wireTab(hit, seal, tab.onClick);
+      return;
+    }
+
+    const tint = isActive ? UI.coral : UI.inkSoftHex;
+    const textColor = isActive ? UI.ink : UI.inkSoft;
+    const slot = scene.add.container(x, 0);
+    const icon = tabIcon(scene, tab.key, 0, -10, tint, 0.9);
+    const text = label(scene, 0, 25, tab.label, 18, textColor, true);
+    slot.add([icon, text]);
+    if (isActive) slot.add(scene.add.rectangle(0, 42, 34, 5, UI.coral, 1));
+
+    const hit = scene.add
+      .rectangle(x, 0, slotWidth - 8, barHeight, 0xffffff, 0.001)
+      .setInteractive({ useHandCursor: true });
+    container.add([slot, hit]);
+    wireTab(hit, slot, tab.onClick);
+  });
+
   return container;
 }
 
@@ -496,13 +635,13 @@ export function statGrid(
     const cellX = -width / 2 + colWidth * col + 12;
     const cellY = -height / 2 + rowHeight * (row + 0.5);
 
-    const name = label(scene, cellX, cellY - 16, `${style.emoji} ${style.label}`, 20, style.colorText, true).setOrigin(0, 0.5);
+    const name = label(scene, cellX, cellY - 16, `${style.emoji} ${style.label}`, 22, style.colorText, true).setOrigin(0, 0.5);
     const track = scene.add
       .rectangle(cellX, cellY + 12, barMax, 16, UI.progressTrack, 0.16)
       .setOrigin(0, 0.5)
       .setStrokeStyle(2, UI.progressTrack, 0.3);
     const fill = scene.add.rectangle(cellX + 2, cellY + 12, 1, 11, style.color, 1).setOrigin(0, 0.5);
-    const valueText = label(scene, cellX + barMax + 30, cellY + 12, '0', 20, UI.ink, true).setOrigin(0.5);
+    const valueText = label(scene, cellX + barMax + 30, cellY + 12, '0', 22, UI.ink, true).setOrigin(0.5);
     container.add([name, track, fill, valueText]);
     bars.set(key, fill);
     values.set(key, valueText);

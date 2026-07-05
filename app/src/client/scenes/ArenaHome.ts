@@ -12,8 +12,8 @@ import {
 } from '../lib/api';
 import { setArena, getArena, setReplay, takeArenaFocus } from '../lib/registry';
 import { loadDrawing, fitDrawing, recordText, moodStyleOf, levelOf, canCare } from '../lib/scribbits';
-import { CARE_STYLES, ELEMENT_STYLES, EDGE, SPACE, TYPE, UI } from '../lib/theme';
-import { paperBackdrop } from '../lib/art';
+import { CARE_STYLES, ELEMENT_STYLES, EDGE, NAV_SAFE, SPACE, TYPE, UI } from '../lib/theme';
+import { LivingPaper } from '../lib/livingpaper';
 import {
   button,
   ghostButton,
@@ -29,6 +29,7 @@ import {
   daysLeftFor,
   floatReward,
   rosette,
+  appTabBar,
 } from '../lib/ui';
 import type { ErrorPanel } from '../lib/ui';
 import { openDetailModal } from '../lib/detailmodal';
@@ -50,6 +51,7 @@ export class ArenaHome extends Scene {
   private countdownTimer: Phaser.Time.TimerEvent | null = null;
   private countdownLabel: Phaser.GameObjects.Text | null = null;
   private inkChipLabel: Phaser.GameObjects.Text | null = null;
+  private livingPaper: LivingPaper | null = null;
   private busy = false;
 
   // Drag-scroll bookkeeping. Scrolling uses velocity + inertia so a flick keeps
@@ -107,6 +109,8 @@ export class ArenaHome extends Scene {
   private cleanup(): void {
     this.weatherTimer?.remove();
     this.countdownTimer?.remove();
+    this.livingPaper?.destroy();
+    this.livingPaper = null;
   }
 
   // --- Layout: a vertical stack measured top-down so nothing overlaps and the
@@ -118,7 +122,14 @@ export class ArenaHome extends Scene {
     this.countdownTimer?.remove();
     this.countdownLabel = null;
 
-    paperBackdrop(this);
+    // The living, forecast-reactive sketchbook page under all content. Rebuilt
+    // each build() (removeAll cleared its objects); its own destroy() clears the
+    // timers/emitters/tweens the previous instance owned.
+    this.livingPaper?.destroy();
+    this.livingPaper = new LivingPaper(this, {
+      boostedElement: this.state.forecast.boostedElement,
+      rumbleResolvesAt: this.state.rumbleResolvesAt,
+    });
 
     const { width } = this.scale;
     let cursor = 40;
@@ -129,10 +140,11 @@ export class ArenaHome extends Scene {
     this.focusEntrantsY = cursor + 44;
     cursor = this.buildEntrantsBracket(cursor + 44);
     cursor = this.buildActionRow(width / 2, cursor + 20);
-    cursor = this.buildNavRow(width / 2, cursor + 30);
+    cursor += NAV_SAFE;
 
     this.contentHeight = cursor + 40;
     this.setupScrolling();
+    this.buildAppTabs();
 
     // Honour a deep-link request (loss card → "Back a contender tonight").
     if (takeArenaFocus(this) === 'entrants' && this.focusEntrantsY !== null) {
@@ -239,22 +251,23 @@ export class ArenaHome extends Scene {
   // --- Top bar + live countdown ---------------------------------------------
   private drawTopBar(y: number): number {
     const { width } = this.scale;
-    handLettered(this, width / 2, y + 26, 'SCRIBBITS ARENA', 46, UI.ink, true).setDepth(2);
-    label(
+    handLettered(this, width / 2, y + 26, 'SCRIBBITS ARENA', 40, UI.ink, true).setDepth(2);
+    const dayLine = label(
       this,
-      width / 2,
-      y + 76,
+      EDGE + 72,
+      y + 80,
       `Day ${this.state.dayNumber}  ·  ⚔️ ${this.state.rumbleEntrants} in tonight's rumble`,
-      TYPE.body,
+      26,
       UI.inkSoft,
       true
-    );
+    ).setOrigin(0, 0.5);
+    dayLine.setWordWrapWidth(width - EDGE * 2 - 210);
 
     // Live countdown chip.
-    const chipY = y + 122;
+    const chipY = y + 132;
     const chip = this.add.container(width / 2, chipY);
-    const bg = this.add.rectangle(0, 0, width - 120, 52, UI.gold, 1).setStrokeStyle(3, UI.inkHex, 1);
-    this.countdownLabel = label(this, 0, 0, this.countdownText(), TYPE.title, UI.ink, true);
+    const bg = this.add.rectangle(0, 0, width - 120, 52, UI.creamHex, 1).setStrokeStyle(3, UI.inkHex, 1);
+    this.countdownLabel = label(this, 0, 0, this.countdownText(), 27, UI.coralText, true);
     chip.add([bg, this.countdownLabel]);
     this.countdownTimer = this.time.addEvent({
       delay: 1000,
@@ -264,7 +277,7 @@ export class ArenaHome extends Scene {
 
     // Ink chip — the Mystery Ink balance, tappable to open the capsule machine.
     // Pinned to the viewport so it stays reachable while the page scrolls.
-    this.buildInkChip(width - EDGE - 6, y + 26);
+    this.buildInkChip(width - EDGE - 6, y + 80);
 
     return chipY + 30;
   }
@@ -320,26 +333,26 @@ export class ArenaHome extends Scene {
     const style = ELEMENT_STYLES[this.state.forecast.boostedElement];
     const nerf = ELEMENT_STYLES[this.state.forecast.nerfedElement];
     const width = this.scale.width - EDGE * 2;
-    const height = 180;
+    const height = 126;
     const centerY = y + height / 2;
 
     const card = stickerCard(this, x, centerY, width, height, { tapeColor: UI.tapeAlt, tilt: -0.6 });
 
-    const glyphX = -width / 2 + 84;
-    const ring = this.add.circle(glyphX, -18, 52, style.primary, 0.18).setStrokeStyle(4, style.primary, 0.9);
+    const glyphX = -width / 2 + 66;
+    const ring = this.add.circle(glyphX, 0, 38, style.primary, 0.16).setStrokeStyle(4, style.primary, 0.9);
     card.add(ring);
-    const glyph = this.add.text(glyphX, -18, style.emoji, { fontFamily: 'sans-serif', fontSize: '62px' }).setOrigin(0.5);
+    const glyph = this.add.text(glyphX, 0, style.emoji, { fontFamily: 'sans-serif', fontSize: '46px' }).setOrigin(0.5);
     card.add(glyph);
     this.animateWeatherGlyph(glyph, this.state.forecast.boostedElement, ring);
 
-    const textX = glyphX + 92;
-    card.add(label(this, textX, -58, "TONIGHT'S FORECAST", TYPE.caption, style.primaryText, true).setOrigin(0, 0.5));
-    const blurb = label(this, textX, -14, this.state.forecast.blurb, TYPE.body, UI.ink, true).setOrigin(0, 0.5);
-    blurb.setWordWrapWidth(width - (textX + width / 2) - 30);
+    const textX = glyphX + 70;
+    card.add(label(this, textX, -38, "TONIGHT'S FORECAST", 20, style.primaryText, true).setOrigin(0, 0.5));
+    const blurb = label(this, textX, -6, this.state.forecast.blurb, TYPE.caption, UI.ink, true).setOrigin(0, 0.5);
+    blurb.setWordWrapWidth(width - (textX + width / 2) - 24);
     card.add(blurb);
 
-    card.add(this.miniChip(textX + 8, 52, `${style.emoji} ${style.label} +15%`, style.primary));
-    card.add(this.miniChip(textX + 200, 52, `${nerf.emoji} ${nerf.label} −10%`, UI.inkSoftHex));
+    card.add(this.miniChip(textX + 8, 42, `${style.emoji} ${style.label} +15%`, style.primary));
+    card.add(this.miniChip(textX + 200, 42, `${nerf.emoji} ${nerf.label} −10%`, UI.inkSoftHex));
 
     return centerY + height / 2;
   }
@@ -380,7 +393,7 @@ export class ArenaHome extends Scene {
   private buildChampionPoster(x: number, y: number): number {
     const champ = this.state.champion;
     const width = this.scale.width - EDGE * 2;
-    const height = 250;
+    const height = 274;
     const centerY = y + height / 2;
 
     if (!champ) {
@@ -414,16 +427,16 @@ export class ArenaHome extends Scene {
     const infoX = artX + 80;
     card.add(label(this, infoX, artY - 34, champ.name.toUpperCase(), TYPE.title, UI.ink, true).setOrigin(0, 0.5));
     card.add(elementBadge(this, infoX + 60, artY + 6, champ.element, 0.64).setPosition(infoX + 60, artY + 6));
-    card.add(levelBadge(this, infoX + 152, artY + 6, levelOf(champ), 0.6));
+    card.add(levelBadge(this, infoX + 158, artY + 6, levelOf(champ), 0.66));
     card.add(label(this, infoX, artY + 44, `${recordText(champ)}  ·  💛 ${champ.belief}`, TYPE.body, UI.inkSoft, true).setOrigin(0, 0.5));
 
-    const actionY = height / 2 - 40;
+    const actionY = height / 2 - 48;
     const belW = 96;
-    const chBtn = button(this, -belW / 2 - 6, actionY, '⚔️ CHALLENGE', () => this.startBossChallenge(), width - belW - 36, UI.gold);
+    const chBtn = careButton(this, -belW / 2 - 6, actionY, '⚔️', 'Challenge', UI.gold, () => this.startBossChallenge(), width - belW - 36, 76);
     chBtn.setDepth(3);
     card.add(chBtn);
     // Believe on the champion — optimistic float + count bump handled centrally.
-    const bel = button(this, width / 2 - belW / 2 - 14, actionY, '💛', () => this.believeOn(champ, x, centerY + actionY), belW, UI.coral);
+    const bel = careButton(this, width / 2 - belW / 2 - 14, actionY, '💛', '', UI.coral, () => this.believeOn(champ, x, centerY + actionY), belW, 76);
     bel.setDepth(3);
     card.add(bel);
 
@@ -445,70 +458,65 @@ export class ArenaHome extends Scene {
     }
 
     const count = Math.min(3, roster.length);
-    const colGap = SPACE.sm;
     const totalW = width - EDGE * 2;
-    const colW = (totalW - colGap * (count - 1)) / count;
-    const colH = 360;
-    const topY = y + 40 + colH / 2;
+    const rowH = 178;
+    const topY = y + 46 + rowH / 2;
     roster.slice(0, 3).forEach((scribbit, index) => {
-      const colX = EDGE + colW / 2 + index * (colW + colGap);
-      this.buildRosterColumn(scribbit, colX, topY, colW, colH);
+      const rowY = topY + index * (rowH + SPACE.sm);
+      this.buildRosterColumn(scribbit, width / 2, rowY, totalW, rowH);
     });
-    return topY + colH / 2;
+    return topY + (count - 1) * (rowH + SPACE.sm) + rowH / 2;
   }
 
   private buildRosterColumn(scribbit: Scribbit, x: number, y: number, width: number, height: number): void {
-    const tilt = ((scribbit.id.charCodeAt(0) % 5) - 2) * 0.5;
-    const card = stickerCard(this, x, y, width, height, { tilt });
-    const top = -height / 2;
+    const card = stickerCard(this, x, y, width, height, { tape: false });
 
-    const artSize = Math.min(width - 40, 140);
-    const artY = top + 24 + artSize / 2;
+    const artSize = 106;
+    const artX = -width / 2 + 70;
+    const artY = -12;
     const frame = this.add.graphics();
     frame.fillStyle(UI.creamHex, 1);
-    frame.fillRect(-artSize / 2, artY - artSize / 2, artSize, artSize);
+    frame.fillRect(artX - artSize / 2, artY - artSize / 2, artSize, artSize);
     frame.lineStyle(3, UI.inkHex, 1);
-    frame.strokeRect(-artSize / 2, artY - artSize / 2, artSize, artSize);
+    frame.strokeRect(artX - artSize / 2, artY - artSize / 2, artSize, artSize);
     card.add(frame);
-    card.add(levelBadge(this, artSize / 2 - 6, artY - artSize / 2 - 2, levelOf(scribbit), 0.56));
+    card.add(levelBadge(this, artX + artSize / 2 - 12, artY - artSize / 2 + 12, levelOf(scribbit), 0.56));
     void loadDrawing(this, scribbit).then((key) => {
       if (!this.scene.isActive()) return;
-      const img = fitDrawing(this.add.image(x, y + artY, key), artSize - 12).setDepth(3);
+      const img = fitDrawing(this.add.image(x + artX, y + artY, key), artSize - 12).setDepth(3);
       img.setInteractive({ useHandCursor: true });
       img.on('pointerup', () => { if (!this.didDrag()) this.openDetail(scribbit); });
     });
 
-    // "Tap for details" affordance on the card body.
-    let cursor = artY + artSize / 2 + 22;
-    const nameLabel = label(this, 0, cursor, scribbit.name, TYPE.body, UI.ink, true);
-    nameLabel.setWordWrapWidth(width - 20);
+    const infoX = artX + 72;
+    const nameLabel = label(this, infoX, -58, scribbit.name, TYPE.body, UI.ink, true).setOrigin(0, 0.5);
+    nameLabel.setWordWrapWidth(210);
     card.add(nameLabel);
 
-    cursor += 28;
     const mood = moodStyleOf(scribbit);
-    card.add(moodChip(this, 0, cursor, mood.emoji, mood.label, mood.color, 0.74));
-
-    cursor += 26;
-    card.add(lifespanPips(this, 0, cursor, daysLeftFor(scribbit, this.state.dayNumber), 3, 0.78));
+    card.add(moodChip(this, infoX + 64, -22, mood.emoji, mood.label, mood.color, 0.82));
+    card.add(lifespanPips(this, infoX + 64, 18, daysLeftFor(scribbit, this.state.dayNumber), 3, 0.74));
+    card.add(label(this, infoX, 54, `${recordText(scribbit)} · 💛 ${scribbit.belief}`, TYPE.caption, UI.inkSoft, true).setOrigin(0, 0.5));
 
     // Care buttons.
-    cursor += 40;
-    const careH = 58;
+    const careY = -30;
+    const careH = 54;
     const actions: CareAction[] = ['feed', 'pat', 'train'];
-    const careW = (width - 24) / 3;
+    const careW = 62;
+    const careStartX = width / 2 - 250;
     actions.forEach((action, index) => {
       const style = CARE_STYLES[action];
-      const bx = -width / 2 + 12 + careW * (index + 0.5);
+      const bx = careStartX + index * 68;
       const done = !canCare(scribbit, action);
       const btn = careButton(
         this,
         bx,
-        cursor,
+        careY,
         done ? '✓' : style.emoji,
         '',
         done ? UI.inkSoftHex : style.color,
         () => this.doCare(scribbit, action),
-        careW - 6,
+        careW,
         careH
       );
       if (done) btn.setAlpha(0.55);
@@ -516,8 +524,7 @@ export class ArenaHome extends Scene {
     });
 
     // Spar + Enter Rumble row (Enter only shows if not entered / drawn today).
-    cursor += 58;
-    card.add(careButton(this, 0, cursor, '🥊', 'Spar', UI.coralDeep, () => this.doSpar(scribbit), width - 24, 56));
+    card.add(careButton(this, width / 2 - 138, 42, '🥊', 'Spar', UI.coralDeep, () => this.doSpar(scribbit), 214, 58));
   }
 
   // --- TONIGHT'S BRACKET gallery (entrants, tappable, Back on each) ----------
@@ -645,18 +652,19 @@ export class ArenaHome extends Scene {
     return cardY + 46;
   }
 
-  private buildNavRow(x: number, y: number): number {
-    const width = this.scale.width - 40;
-    const slot = width / 3;
-    ghostButton(this, x - slot, y, '📖 Sketchbook', () => this.scene.start('Sketchbook'), slot - 16);
-    ghostButton(this, x, y, '🏆 Legends', () => this.openLegends(), slot - 16);
-    ghostButton(this, x + slot, y, '⚔️ Battles', () => this.scene.start('MyBattles'), slot - 16);
-    return y + 44;
-  }
-
   private openLegends(): void {
     this.registry.set('sketchbookTab', 'legends');
     this.scene.start('Sketchbook');
+  }
+
+  private buildAppTabs(): void {
+    appTabBar(this, 'arena', [
+      { key: 'arena', icon: '🏟️', label: 'Arena', onClick: () => this.scrollTo(0) },
+      { key: 'gallery', icon: '🏆', label: 'Gallery', onClick: () => this.openLegends() },
+      { key: 'draw', icon: '✏️', label: 'Draw', onClick: () => this.startDraw() },
+      { key: 'battles', icon: '⚔️', label: 'Battles', onClick: () => this.scene.start('MyBattles') },
+      { key: 'scout', icon: '🏅', label: 'Scout', onClick: () => openCloutBoard(this) },
+    ]);
   }
 
   // --- Detail modal (the one component, wired for context) ------------------

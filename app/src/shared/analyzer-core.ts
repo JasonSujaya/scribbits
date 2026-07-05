@@ -267,13 +267,21 @@ export function analyze(field: PixelField): AnalyzerResult {
   const inkRatio = inkedPixels / totalPixels;
   const bboxWidth = scan.maxX - scan.minX + 1;
   const bboxHeight = scan.maxY - scan.minY + 1;
-  const footprint = (bboxWidth * bboxHeight) / totalPixels;
+  const bboxArea = Math.max(1, bboxWidth * bboxHeight);
+  const footprint = bboxArea / totalPixels;
+  const fillDensity = inkedPixels / bboxArea;
   const outlinePx = countOutlinePixels(inked, field.width, field.height);
   const jaggedness = jaggednessFrom(outlinePx, inkedPixels);
   const hues = distinctHues(hueBuckets);
+  const spikeShape = (jaggedness - 1) / 2;
+  const strokeWeight = clamp(fillDensity / 0.25, 0.22, 1);
   const raw = {
-    chonk: inkRatio,
-    spike: (jaggedness - 1) / 2,
+    // Big filled blobs and thick strokes should read as CHONK. Raw ink ratio
+    // alone made normal line art too tiny to compete.
+    chonk: clamp(inkRatio * 2.4 + fillDensity * 0.55, 0, 1),
+    // The old outline/area ratio treated every thin line drawing as max SPIKE.
+    // Keep jagged pointy silhouettes valuable, but dampen plain outline strokes.
+    spike: clamp(spikeShape * strokeWeight, 0, 0.72),
     zip: 1 - clamp(footprint, 0, 1),
     charm: hues / maxDistinctHues,
   };

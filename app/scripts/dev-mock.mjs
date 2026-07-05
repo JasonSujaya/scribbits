@@ -34,6 +34,8 @@ const drawingBytesFor = (id) => {
 
 const elements = ['ember', 'tide', 'moss', 'storm'];
 const careActions = ['feed', 'pat', 'train'];
+const statKeys = ['chonk', 'spike', 'zip', 'charm'];
+const fallbackStats = { chonk: 25, spike: 25, zip: 25, charm: 25 };
 const levelThresholds = [0, 3, 7, 12, 18];
 const capsuleCost = 10;
 const capsuleFirstDailyCost = 5;
@@ -139,6 +141,23 @@ const moodFromCare = (careDoneToday) => {
   if (careDoneToday.length === 1) return 'sleepy';
   if (careDoneToday.length === 2) return 'happy';
   return 'pumped';
+};
+
+const readSubmittedStats = (body) => {
+  const stats = body?.stats;
+  if (!stats || typeof stats !== 'object') return { ...fallbackStats };
+
+  const next = {};
+  for (const key of statKeys) {
+    const value = Number(stats[key]);
+    if (!Number.isFinite(value)) return { ...fallbackStats };
+    next[key] = Math.max(10, Math.min(55, Math.round(value)));
+  }
+  return next;
+};
+
+const readSubmittedElement = (body) => {
+  return elements.includes(body?.element) ? body.element : 'ember';
 };
 
 const cloneScribbit = (scribbit) => {
@@ -1040,8 +1059,8 @@ const handleApi = async (request, response, url) => {
       id,
       name,
       artist: 'mock_player',
-      element: elements[battleCounter % elements.length],
-      stats: { chonk: 25, spike: 25, zip: 25, charm: 25 },
+      element: readSubmittedElement(body),
+      stats: readSubmittedStats(body),
       bornDay: memory.dayNumber,
       expiresDay: memory.dayNumber + 3,
       belief: 0,

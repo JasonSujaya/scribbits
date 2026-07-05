@@ -22,14 +22,18 @@ export const SPACE = {
 // Screen safe margins so nothing kisses the letterbox edge.
 export const EDGE = 30; // left/right page margin
 export const TOP_SAFE = 40; // top bar lives above this
+export const NAV_SAFE = 128; // bottom space reserved for the docked app nav
 
 // Three type sizes + a display treatment. Keep the ladder short on purpose so
 // hierarchy stays legible: DISPLAY (hand-lettered headers), TITLE, BODY, CAPTION.
+// Sizes are design-space px on the 720-wide canvas, which Scale.FIT shrinks to
+// ~0.55x on a phone-width Reddit webview — so these are tuned up to stay legible
+// once letterboxed (caption ~13px CSS, body ~15px CSS on a 390px viewport).
 export const TYPE = {
-  display: 52,
-  title: 30,
-  body: 22,
-  caption: 18,
+  display: 60,
+  title: 36,
+  body: 28,
+  caption: 24,
 } as const;
 
 // UI colors shared across scenes — warm, hand-drawn, cream-paper feel. The whole
@@ -39,8 +43,8 @@ export const UI = {
   panelStroke: 0x3a2b1a,
   ink: '#2b2016',
   inkHex: 0x2b2016,
-  inkSoft: '#7a6a56',
-  inkSoftHex: 0x7a6a56,
+  inkSoft: '#5f4f3b',
+  inkSoftHex: 0x5f4f3b,
   cream: '#fff7e8',
   creamHex: 0xfff7e8,
   paper: 0xfdf3df, // sketchbook page

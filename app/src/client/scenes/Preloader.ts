@@ -1,7 +1,8 @@
 import * as Phaser from 'phaser';
 import { Scene } from 'phaser';
 import { fetchArena } from '../lib/api';
-import { generateAllElementBadges, generateCoreArt, paperBackdrop } from '../lib/art';
+import { generateAllElementBadges, generateCoreArt } from '../lib/art';
+import { mountLivingPaper } from '../lib/livingpaper';
 import { FONT_STACK, UI } from '../lib/theme';
 import { errorPanel, handLettered } from '../lib/ui';
 import type { ErrorPanel } from '../lib/ui';
@@ -30,7 +31,7 @@ export class Preloader extends Scene {
 
     generateCoreArt(this);
     generateAllElementBadges(this);
-    paperBackdrop(this);
+    mountLivingPaper(this, { edgeCreatures: false });
 
     handLettered(this, width / 2, height * 0.4, 'SCRIBBITS', 76, UI.ink, true);
     this.add
