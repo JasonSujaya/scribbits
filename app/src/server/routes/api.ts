@@ -70,6 +70,7 @@ import {
   readDrawingFallback,
   recordBattleOutcomeOnScribbit,
   removeRumbleEntrant,
+  releaseDailyCareAction,
   releaseDailyFlags,
   storeDrawingFallback,
   storeScribbit,
@@ -218,6 +219,17 @@ const loadTodayRumbleEntrants = async (
   const entrants = await loadScribbits(redis, entrantIds, utcDateKey);
 
   return prepareRumbleEntrants(entrants, day);
+};
+
+const runNonCriticalSideEffect = async (
+  label: string,
+  sideEffect: () => Promise<unknown>
+): Promise<void> => {
+  try {
+    await sideEffect();
+  } catch (error) {
+    console.error(`${label} failed:`, error);
+  }
 };
 
 api.get('/arena', async (c) => {
@@ -515,6 +527,10 @@ api.post('/care', async (c) => {
     return badRequest(c, 'Choose a valid Scribbit and care action.');
   }
 
+  let claimedCareAction:
+    | { scribbitId: string; action: CareAction; utcDateKey: string }
+    | null = null;
+
   try {
     const now = new Date();
     const utcDateKey = formatUtcDateKey(now);
@@ -558,6 +574,11 @@ api.post('/care', async (c) => {
       return conflict(c, 'You already used that care action today.');
     }
 
+    claimedCareAction = {
+      scribbitId: scribbit.id,
+      action: careRequest.action,
+      utcDateKey,
+    };
     const caredScribbit = await awardScribbitXp(
       redis,
       scribbit.id,
@@ -566,13 +587,38 @@ api.post('/care', async (c) => {
     );
 
     if (!caredScribbit) {
+      await releaseDailyCareAction(
+        redis,
+        claimedCareAction.scribbitId,
+        claimedCareAction.action,
+        claimedCareAction.utcDateKey
+      );
+      claimedCareAction = null;
       return notFound(c, 'That Scribbit slipped out of the arena.');
     }
 
-    await recordDailyPlay(redis, player.userId, now);
-    await awardInk(redis, player.userId, INK_REWARDS.care);
+    claimedCareAction = null;
+    await runNonCriticalSideEffect('Daily play record', () =>
+      recordDailyPlay(redis, player.userId, now)
+    );
+    await runNonCriticalSideEffect('Care ink award', () =>
+      awardInk(redis, player.userId, INK_REWARDS.care)
+    );
     return c.json<Scribbit>(caredScribbit);
   } catch (error) {
+    if (claimedCareAction) {
+      try {
+        await releaseDailyCareAction(
+          redis,
+          claimedCareAction.scribbitId,
+          claimedCareAction.action,
+          claimedCareAction.utcDateKey
+        );
+      } catch (cleanupError) {
+        console.error('Care claim rollback failed:', cleanupError);
+      }
+    }
+
     console.error('Care route failed:', error);
     return serverError(c, 'The snack bowl tipped over. Try again soon.');
   }
@@ -835,6 +881,8 @@ api.post('/boss-challenge', async (c) => {
     return badRequest(c, 'Choose a valid Scribbit for the boss challenge.');
   }
 
+  let claimedBossChallenge: { userId: string; day: number } | null = null;
+
   try {
     const now = new Date();
     const dayNumber = await ensureCurrentArenaDay(redis, now);
@@ -860,6 +908,7 @@ api.post('/boss-challenge', async (c) => {
       return conflict(c, 'You already challenged today\'s Champion.');
     }
 
+    claimedBossChallenge = { userId: player.userId, day: dayNumber };
     const forecast = await ensureForecastForDay(redis, dayNumber);
     const report = simulate(
       challenger,
@@ -878,10 +927,26 @@ api.post('/boss-challenge', async (c) => {
       report.winner === 'a' ? 'win' : 'loss',
       2
     );
-    await recordDailyPlay(redis, player.userId, now);
+    claimedBossChallenge = null;
+    await runNonCriticalSideEffect('Daily play record', () =>
+      recordDailyPlay(redis, player.userId, now)
+    );
 
     return c.json<BattleReport>(report);
   } catch (error) {
+    if (claimedBossChallenge) {
+      try {
+        await releaseDailyFlags(
+          redis,
+          claimedBossChallenge.userId,
+          claimedBossChallenge.day,
+          ['bossChallenge']
+        );
+      } catch (cleanupError) {
+        console.error('Boss challenge flag rollback failed:', cleanupError);
+      }
+    }
+
     console.error('Boss challenge route failed:', error);
     return serverError(c, 'The Champion ducked behind paperwork. Try again soon.');
   }

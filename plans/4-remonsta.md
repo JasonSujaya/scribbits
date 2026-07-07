@@ -1,5 +1,8 @@
 # Game 4: REMONSTA (user's idea, fixed)
 
+> Historical ideation. This catch/Dex/Wilds plan was superseded by
+> `plans/v3-scribbits-arena.md`, which is the current implementation plan.
+
 **Pitch:** A creature-collecting game where the community IS the ecosystem. Monsters spawn in the daily Wilds post based on the subreddit's collective activity — and every monster in the game was drawn by a redditor. Catch them in a skill minigame, trade in the comments, complete the community Dex together.
 
 **Tagline:** *"Every monster here was made by one of us."*

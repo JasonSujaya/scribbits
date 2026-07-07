@@ -1,42 +1,40 @@
-# GOAL: Ship Remonsta for Reddit "Games with a Hook" hackathon
+# GOAL: Ship Scribbits Arena for Reddit "Games with a Hook"
 
-**Goal:** Build and submit Remonsta — a Devvit Web + Phaser creature collector where community activity drives spawns and all monsters are community-designed — playable on r/Remonsta before July 16, 2026 8:00am GMT+7.
+**Current identity:** Scribbits Arena. The repo folder is still named
+Remonsta, but `app/devvit.json` and `app/package.json` are the app identity
+source of truth: `scribbits`.
 
-**Mode:** durable execution goal
+**Current plan of record:** `plans/v3-scribbits-arena.md`.
 
-**Scope / Non-goals**
-- Scope: `app/` (cloned from reddit/devvit-template-phaser), per plans/4-remonsta.md + plans/remonsta-implementation.md
-- Non-goals: no Pokémon tropes/IP; no payments; trading is first cut if behind; no publishing without user's devvit login
+## Product
 
-**Persistence:** this file + git commits. Plans in `plans/`.
+Scribbits Arena is a Devvit Web + Phaser game where Redditors draw one creature
+per day, the drawing becomes its stat sheet, and living Scribbits fight in daily
+async rumbles. Community belief can turn a short-lived Scribbit into a Legend.
 
-**Target output**
-- Final: working game (type-check + lint + build pass), uploaded via `devvit upload`, live demo post on r/Remonsta
-- Match: core loop playable (open Wilds → catch minigame → Dex updates → community % moves); UGC design pipeline present; artist credits everywhere; mobile-viewport clean
-- Evidence: build output, playtest screenshots, demo post link
+## Scope
 
-**Agent plan**
-| Role | Owner | Output |
-|---|---|---|
-| Planner/orchestrator | Fable (main, minimal tokens) | this file, shared contract, sequencing |
-| Coder: backend + Devvit wiring | Codex CLI (must verify real Devvit APIs from node_modules/@devvit + developers.reddit.com — never hallucinate APIs) | src/server, devvit.json, src/shared extensions |
-| Coder: frontend/Phaser | Opus agent | src/client scenes/UI |
-| Reviewer/verifier | Fable + codex review (separate pass) | type-check/lint/build + gameplay verdict fixed/not-fixed |
+- App code lives in `app/`.
+- Client/server contract lives in `app/src/shared/arena.ts`.
+- Server routes live in `app/src/server/routes/api.ts`.
+- Domain logic lives in `app/src/server/core/`.
+- Phaser scenes live in `app/src/client/scenes/`.
 
-**Work checklist**
-- [x] W1 Scaffold from official template. Evidence: app/ exists, deps pinned
-- [x] W2 Shared contract authored (src/shared/remonsta.ts)
-- [x] W3 Backend done (codex) + reviewed: anti-cheat attempt gates, media-hosted UGC images, bounded redis reads. Evidence: commit 577060f, gates green
-- [x] W4 Frontend done (opus) + reviewed: all scenes, login gate, deterministic tap judging, error panels. Evidence: commit 577060f, gates green
-- [ ] W5 Integration + juice polish (Fable). Done when: full loop works in playtest
-- [ ] W6 Real creature art (image gen per plan prompts) replaces placeholders
-- [ ] W7 User gates: `devvit login`, create r/Remonsta, `devvit upload`, install, demo post
-- [ ] W8 Seed subreddit + Devpost submission
+## Current Ship Gates
 
-**Success criteria**
-- [ ] S1 `npm run type-check && npm run lint && npm run build` all pass
-- [ ] S2 Core loop verified in playtest with screenshots (catch → dex updates)
-- [ ] S3 UGC pipeline: submit design → vote → appears in spawn pool (verified with test data)
-- [ ] S4 Demo post live on r/Remonsta (requires user login — escalate)
+- [ ] `npm run verify`
+- [ ] Playtest verifies draw -> submit -> arena refresh -> replay/boss/care/back flows.
+- [ ] Devvit upload/install/demo post requires user Reddit login and subreddit access.
 
-**Stop/escalate:** stop when S1–S4 pass. Escalate to user for: devvit login/OAuth, subreddit creation, Devpost submission. Max 3 fix attempts per failing check, then escalate.
+## Known Cleanup Priorities
+
+- Keep README/AGENTS/current plan aligned with the actual Hono + Phaser code.
+- Reduce route transaction complexity in `src/server/routes/api.ts`.
+- Split broad domain files when changes naturally touch them.
+- Add route-level tests for rollback and API contract behavior.
+- Keep generated logs out of git; store only concise evidence summaries when needed.
+
+## Historical Plans
+
+Older Remonsta catch/Dex/Wilds plans are retained as ideation only. They are not
+implementation truth unless explicitly revived.

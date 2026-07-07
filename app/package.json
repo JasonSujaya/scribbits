@@ -13,8 +13,10 @@
     "login": "devvit login",
     "mock": "node scripts/dev-mock.mjs",
     "prettier": "prettier --write .",
+    "test": "npm run test:sim",
     "test:sim": "node scripts/test-battle.mjs",
-    "type-check": "tsc --build"
+    "type-check": "tsc --build",
+    "verify": "npm run type-check && npm run lint && npm run test:sim && npm run build"
   },
   "engines": {
     "node": ">=22.2.0"

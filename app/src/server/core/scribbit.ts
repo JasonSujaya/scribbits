@@ -965,6 +965,17 @@ export const claimDailyCareAction = async (
   };
 };
 
+export const releaseDailyCareAction = async (
+  storage: ArenaStorage,
+  scribbitId: string,
+  action: CareAction,
+  utcDateKey: string
+): Promise<void> => {
+  const careKey = getScribbitCareKey(scribbitId, utcDateKey);
+  await storage.hDel(careKey, [action]);
+  await storage.expire(careKey, dailyProgressTtlSeconds);
+};
+
 export const claimDailySparWinXp = async (
   storage: ArenaStorage,
   scribbitId: string,

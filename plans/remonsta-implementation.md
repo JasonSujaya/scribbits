@@ -1,5 +1,8 @@
 # Remonsta — Implementation Plan
 
+> Historical implementation plan. This catch/Dex/Wilds build was superseded by
+> `plans/v3-scribbits-arena.md`, which is the current implementation plan.
+
 Deadline: **July 16, 2026, 8:00am GMT+7** (~12 days). Submission needs: app listing on developer.reddit.com + a public demo post running the game on **its own subreddit**.
 
 ---

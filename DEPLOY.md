@@ -1,5 +1,9 @@
 # Deploying Scribbits
 
+The repository folder and older planning docs may still say Remonsta. The
+current Devvit app identity is Scribbits: `app/devvit.json` uses
+`"name": "scribbits"` and `app/package.json` uses `"name": "scribbits"`.
+
 ## One-Time Setup
 
 Run these from `app/` before using the automated deploy script:

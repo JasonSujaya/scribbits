@@ -3,20 +3,23 @@ You are writing a Devvit web application that will be executed on Reddit.com.
 ## Tech Stack
 
 - **Frontend**: Phaser, Vite
-- **Backend**: Node.js v22 serverless environment (Devvit), Hono, TRPC
-- **Communication**: tRPC v11 for end-to-end type safety
+- **Backend**: Node.js v22 serverless environment (Devvit), Hono
+- **Communication**: typed REST contracts in `src/shared/arena.ts` and the
+  client wrapper in `src/client/lib/api.ts`
 
 ## Layout & Architecture
 
 - `/src/server`: **Backend Code**. This runs in a secure, serverless environment.
-  - `trpc.ts`: Defines the API router and procedures.
-  - `index.ts`: Main server entry point (Hono app).
+  - `index.ts`: Main server entry point.
+  - `routes/api.ts`: Hono REST routes mounted at `/api`.
+  - `core/`: Redis-backed domain logic for arena days, Scribbits, ink, clout,
+    battles, forecasts, and daily jobs.
   - Access `redis`, `reddit`, and `context` here via `@devvit/web/server`.
 - `/src/client`: **Frontend Code**. This is executed inside of an iFrame on reddit.com
   - To add an entrypoint, create a HTML file and add to the mapping inside of `devvit.json`
   - Entrypoints:
-    - `game.html`: The main React entry point (Expanded View).
-    - `splash.html`: The initial React entry point (Inline View). This will be shown in the reddit.com feed. Please keep it fast and keep heavy dependencies inside of `game.html`
+    - `game.html`: The Phaser game entry point (Expanded View).
+    - `splash.html`: The lightweight feed entry point (Inline View). Keep it fast and keep heavy dependencies inside of `game.html`.
 - `/src/shared`: **Shared Code**. Code to share between the client and server
 
 ## Frontend
@@ -36,13 +39,14 @@ You are writing a Devvit web application that will be executed on Reddit.com.
 
 - `npm run type-check`: Check typescript types
 - `npm run lint`: Check the linter
-- `npm run test -- my-file-name`: Run tests isolated to a file
+- `npm run test:sim`: Run deterministic simulation/core regression checks
+- `npm run build`: Build client and server bundles
 
 ## Code Style
 
 - Prefer type aliases over interfaces when writing typescript
 - Prefer named exports over default exports
-- Never cast typescript types
+- Avoid casts. If a browser or Phaser API requires one, keep it local and typed.
 
 ## Global Rules
 

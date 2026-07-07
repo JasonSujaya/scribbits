@@ -429,21 +429,22 @@ export function appTabBar(
     const isPrimary = tab.key === 'draw';
 
     if (isPrimary) {
-      const sealY = -barHeight / 2 + 6;
+      const sealY = 2;
+      const sealRadius = 26;
       const seal = scene.add.container(x, sealY);
       const bg = scene.add.graphics();
       bg.fillStyle(0x000000, 0.14);
-      bg.fillCircle(4, 5, 40);
+      bg.fillCircle(3, 4, sealRadius);
       bg.fillStyle(UI.coral, 1);
-      bg.fillCircle(0, 0, 40);
-      bg.lineStyle(5, UI.inkHex, 1);
-      bg.strokeCircle(0, 0, 40);
+      bg.fillCircle(0, 0, sealRadius);
+      bg.lineStyle(4, UI.inkHex, 1);
+      bg.strokeCircle(0, 0, sealRadius);
       bg.lineStyle(3, UI.creamHex, 0.45);
-      bg.strokeCircle(0, 0, 29);
-      const icon = tabIcon(scene, tab.key, 0, -3, UI.creamHex, 1.14);
-      const text = label(scene, 0, 46, tab.label, 17, UI.ink, true);
+      bg.strokeCircle(0, 0, 18);
+      const icon = tabIcon(scene, tab.key, 0, -2, UI.creamHex, 0.72);
+      const text = label(scene, 0, 29, tab.label, 17, UI.ink, true);
       seal.add([bg, icon, text]);
-      const hit = scene.add.circle(x, sealY, 48, 0xffffff, 0.001).setInteractive({ useHandCursor: true });
+      const hit = scene.add.circle(x, sealY, 34, 0xffffff, 0.001).setInteractive({ useHandCursor: true });
       container.add([seal, hit]);
       wireTab(hit, seal, tab.onClick);
       return;

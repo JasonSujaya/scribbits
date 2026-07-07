@@ -1,30 +1,65 @@
-## Devvit Phaser Starter
+## Scribbits Arena
 
-A starter to build web applications on Reddit's developer platform
+Scribbits Arena is a Devvit Web + Phaser game for Reddit. Players draw a
+512x512 creature, the server derives stats from the PNG, and living Scribbits
+enter daily community rumbles. The repository folder is still named Remonsta,
+but the current app identity is `scribbits` in `package.json` and `devvit.json`.
 
-- [Devvit](https://developers.reddit.com/): A way to build and deploy immersive games on Reddit
-- [Vite](https://vite.dev/): For compiling the webView
-- [Phaser](https://phaser.io/): 2D game engine
-- [Hono](https://hono.dev/): For backend logic
-- [TypeScript](https://www.typescriptlang.org/): For type safety
+## Architecture
 
-## Getting Started
+- `src/shared/arena.ts`: client/server contract and gameplay constants.
+- `src/shared/analyzer-core.ts`: deterministic PNG analyzer used by both sides.
+- `src/server/index.ts`: Hono server entry point.
+- `src/server/routes/api.ts`: REST API mounted at `/api`.
+- `src/server/core`: Redis-backed domain logic for arena days, Scribbits, ink,
+  clout, battles, forecasts, and daily jobs.
+- `src/client/game.ts`: Phaser bootstrapping.
+- `src/client/scenes`: game screens.
+- `src/client/lib`: Phaser UI, API wrapper, drawing canvas, modals, and effects.
+- `scripts/dev-mock.mjs`: local mock server for browser UI iteration.
+- `scripts/test-battle.mjs`: deterministic simulation/core regression checks.
 
-> Make sure you have Node 22 downloaded on your machine before running!
+## Setup
 
-1. Run `npm create devvit@latest --template=phaser`
-2. Go through the installation wizard. You will need to create a Reddit account and connect it to Reddit developers
-3. Copy the command on the success page into your terminal
+Use Node 22 or newer.
 
-## Commands
+```bash
+npm install
+```
 
-- `npm run dev`: Starts a development server where you can develop your application live on Reddit.
-- `npm run build`: Builds your client and server projects
-- `npm run deploy`: Uploads a new version of your app
-- `npm run launch`: Publishes your app for review
-- `npm run login`: Logs your CLI into Reddit
-- `npm run type-check`: Type checks, lints, and prettifies your app
+## Development
 
-## Credits
+```bash
+npm run dev
+```
 
-Thanks to the Phaser team for [providing a great template](https://github.com/phaserjs/template-vite-ts)!
+`npm run dev` runs Devvit playtest against the subreddit configured in
+`devvit.json`. It requires `devvit login`.
+
+For local browser iteration without Reddit:
+
+```bash
+npm run build
+npm run mock
+```
+
+Then open the mock server URL printed by the command.
+
+## Verification
+
+Run these before handing off changes:
+
+```bash
+npm run verify
+```
+
+`npm run verify` runs type-check, lint, simulation tests, and build.
+
+`npm run test:sim` covers deterministic analyzer, battle, storage, daily job,
+ink, clout, expiry, and Swiss rumble behavior. It does not replace route or
+browser testing.
+
+## Deployment
+
+See `../DEPLOY.md`. First upload/login is interactive; subsequent patch uploads
+can use `../deploy.command`.

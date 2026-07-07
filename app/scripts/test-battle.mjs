@@ -798,7 +798,25 @@ const nextDayCare = await scribbitCore.claimDailyCareAction(
   500
 );
 assert.equal(nextDayCare.claimed, true, 'care should reset on the next UTC day');
-pass('care once-per-day claim');
+await scribbitCore.releaseDailyCareAction(
+  careStorage,
+  'care-me',
+  'feed',
+  '20260705'
+);
+const reclaimedCare = await scribbitCore.claimDailyCareAction(
+  careStorage,
+  'care-me',
+  'feed',
+  '20260705',
+  600
+);
+assert.equal(
+  reclaimedCare.claimed,
+  true,
+  'released care action should not lock the player out'
+);
+pass('care once-per-day claim and release');
 
 const sparXpStorage = createMemoryStorage();
 const sparScribbit = makeScribbit({ id: 'spar-xp', name: 'Spar XP' });

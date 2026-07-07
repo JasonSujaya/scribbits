@@ -1,0 +1,5 @@
+.DS_Store
+.gstack/
+*.log
+codex-*.txt
+playtest.log
