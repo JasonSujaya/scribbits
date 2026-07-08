@@ -1,12 +1,13 @@
 #!/usr/bin/env node
 
 import { createServer } from 'node:http';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, watch } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { dirname, extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const port = Number(process.env.PORT ?? 8902);
+const autoReload = process.env.MOCK_AUTO_RELOAD !== '0';
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
 const clientRoot = join(repoRoot, 'dist', 'client');
 const mockAssetRoot = join(repoRoot, 'dist', 'mock-assets');
@@ -1108,6 +1109,31 @@ const contentTypeFor = (filePath) => {
   }
 };
 
+const reloadScript = `
+<script>
+(() => {
+  const events = new EventSource('/__mock-reload');
+  events.onmessage = (event) => {
+    if (event.data === 'reload') window.location.reload();
+  };
+})();
+</script>`;
+
+const sendHtmlFile = async (response, filePath) => {
+  let html = await readFile(filePath, 'utf8');
+  if (autoReload) {
+    html = html.includes('</body>')
+      ? html.replace('</body>', `${reloadScript}</body>`)
+      : `${html}${reloadScript}`;
+  }
+
+  response.writeHead(200, {
+    'Content-Type': 'text/html; charset=utf-8',
+    'Cache-Control': 'no-store',
+  });
+  response.end(html);
+};
+
 const serveStatic = async (request, response, url) => {
   const requestedPath = url.pathname === '/' ? '/game.html' : url.pathname;
   const relativePath = normalize(decodeURIComponent(requestedPath)).replace(
@@ -1119,8 +1145,7 @@ const serveStatic = async (request, response, url) => {
   if (!filePath.startsWith(clientRoot) || !existsSync(filePath)) {
     const fallbackPath = join(clientRoot, 'game.html');
     if (existsSync(fallbackPath)) {
-      response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-      response.end(await readFile(fallbackPath));
+      await sendHtmlFile(response, fallbackPath);
       return;
     }
     sendError(
@@ -1131,6 +1156,11 @@ const serveStatic = async (request, response, url) => {
     return;
   }
 
+  if (extname(filePath) === '.html') {
+    await sendHtmlFile(response, filePath);
+    return;
+  }
+
   response.writeHead(200, {
     'Content-Type': contentTypeFor(filePath),
     'Cache-Control': 'no-store',
@@ -1138,12 +1168,45 @@ const serveStatic = async (request, response, url) => {
   response.end(await readFile(filePath));
 };
 
+const reloadClients = new Set();
+let reloadTimer = null;
+
+const sendReload = () => {
+  reloadTimer = null;
+  for (const response of reloadClients) {
+    response.write('data: reload\n\n');
+  }
+};
+
+if (autoReload && existsSync(clientRoot)) {
+  try {
+    watch(clientRoot, { recursive: true }, () => {
+      if (reloadTimer) clearTimeout(reloadTimer);
+      reloadTimer = setTimeout(sendReload, 250);
+    });
+  } catch (error) {
+    console.warn(`Mock auto reload disabled: ${error.message}`);
+  }
+}
+
 const server = createServer(async (request, response) => {
   try {
     const url = new URL(request.url ?? '/', `http://localhost:${port}`);
 
     if (url.pathname.startsWith('/api/')) {
       await handleApi(request, response, url);
+      return;
+    }
+
+    if (url.pathname === '/__mock-reload') {
+      response.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-store',
+        Connection: 'keep-alive',
+      });
+      response.write('retry: 1000\n\n');
+      reloadClients.add(response);
+      request.on('close', () => reloadClients.delete(response));
       return;
     }
 
@@ -1163,4 +1226,7 @@ const server = createServer(async (request, response) => {
 
 server.listen(port, '127.0.0.1', () => {
   console.log(`Scribbits mock server running at http://localhost:${port}`);
+  if (autoReload) {
+    console.log('Auto reload watching dist/client.');
+  }
 });

@@ -58,6 +58,9 @@ Agent-safe shortcut:
 ../mock.command
 ```
 
+That shortcut runs a watch build beside the mock server and auto-refreshes the
+browser after rebuilds.
+
 ## Verification
 
 Run these before handing off changes:

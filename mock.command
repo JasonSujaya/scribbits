@@ -12,6 +12,15 @@ cd "$app_dir"
 "$(local_bin vite)" build
 
 printf "\nScribbits browser mock will run at http://localhost:%s\n" "${PORT:-8902}"
+printf "Auto rebuild and browser reload are enabled.\n"
 printf "This is the no-Reddit-login path for OpenCode/browser iteration.\n\n"
 
-node scripts/dev-mock.mjs
+"$(local_bin vite)" build --watch --clearScreen false &
+watch_pid="$!"
+
+cleanup() {
+  kill "$watch_pid" >/dev/null 2>&1 || true
+}
+trap cleanup EXIT INT TERM
+
+MOCK_AUTO_RELOAD=1 node scripts/dev-mock.mjs
