@@ -1,0 +1,74 @@
+name: Devvit Auto Deploy
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - "app/**"
+      - "scripts/**"
+      - "deploy.command"
+      - ".github/workflows/devvit-auto-deploy.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: devvit-auto-deploy
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      - name: Install dependencies
+        working-directory: app
+        run: npm ci
+
+      - name: Type-check
+        working-directory: app
+        run: npm run type-check
+
+      - name: Lint
+        working-directory: app
+        run: npm run lint
+
+      - name: Test simulations
+        working-directory: app
+        run: npm run test:sim
+
+      - name: Build
+        working-directory: app
+        run: npm run build
+
+      - name: Restore Devvit token
+        env:
+          DEVVIT_TOKEN_B64: ${{ secrets.DEVVIT_TOKEN_B64 }}
+        run: |
+          if [ -z "$DEVVIT_TOKEN_B64" ]; then
+            echo "Missing repository secret DEVVIT_TOKEN_B64." >&2
+            echo "Create it from your local ~/.devvit/token after running devvit login." >&2
+            exit 1
+          fi
+          mkdir -p ~/.devvit
+          printf "%s" "$DEVVIT_TOKEN_B64" | base64 --decode > ~/.devvit/token
+          chmod 600 ~/.devvit/token
+
+      - name: Confirm Devvit login
+        working-directory: app
+        run: npx devvit whoami
+
+      - name: Upload patch to Devvit
+        working-directory: app
+        run: npx devvit upload --bump patch

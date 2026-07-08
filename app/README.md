@@ -36,6 +36,13 @@ npm run dev
 `npm run dev` runs Devvit playtest against the subreddit configured in
 `devvit.json`. It requires `devvit login`.
 
+If your agent shell cannot see `node`, `npm`, or `npx`, use the repo-level
+command instead:
+
+```bash
+../playtest.command
+```
+
 For local browser iteration without Reddit:
 
 ```bash
@@ -44,6 +51,12 @@ npm run mock
 ```
 
 Then open the mock server URL printed by the command.
+
+Agent-safe shortcut:
+
+```bash
+../mock.command
+```
 
 ## Verification
 
