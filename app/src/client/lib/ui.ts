@@ -13,6 +13,15 @@ import {
   UI,
 } from './theme';
 
+const TRANSITION_MS = 180;
+
+export function fadeToScene(scene: Scene, key: string, data?: Record<string, unknown>): void {
+  scene.cameras.main.fadeOut(TRANSITION_MS, 255, 247, 232);
+  scene.cameras.main.once('camerafadeoutcomplete', () => {
+    scene.scene.start(key, data);
+  });
+}
+
 export type ErrorPanel = {
   container: Phaser.GameObjects.Container;
   destroy: () => void;
@@ -260,11 +269,17 @@ export function careButton(
   txt.setAlign('center');
   txt.setWordWrapWidth(width - 8);
   container.add([bg, txt]);
-  bg.on('pointerover', () => container.setScale(1.05));
-  bg.on('pointerout', () => container.setScale(1));
-  bg.on('pointerdown', () => container.setScale(0.92));
+  const press = (): void => {
+    scene.tweens.add({ targets: container, scaleX: 0.92, scaleY: 0.9, duration: 60, ease: 'Quad.easeOut' });
+  };
+  const release = (): void => {
+    scene.tweens.add({ targets: container, scaleX: 1, scaleY: 1, duration: 110, ease: 'Back.easeOut' });
+  };
+  bg.on('pointerover', press);
+  bg.on('pointerout', release);
+  bg.on('pointerdown', press);
   bg.on('pointerup', () => {
-    container.setScale(1);
+    release();
     onClick();
   });
   return container;
@@ -290,11 +305,17 @@ export function button(
   txt.setWordWrapWidth(width - 24);
   container.add([bg, txt]);
 
-  bg.on('pointerover', () => container.setScale(1.03));
-  bg.on('pointerout', () => container.setScale(1));
-  bg.on('pointerdown', () => container.setScale(0.95));
+  const press = (): void => {
+    scene.tweens.add({ targets: container, scaleX: 0.94, scaleY: 0.92, duration: 70, ease: 'Quad.easeOut' });
+  };
+  const release = (): void => {
+    scene.tweens.add({ targets: container, scaleX: 1, scaleY: 1, duration: 120, ease: 'Back.easeOut' });
+  };
+  bg.on('pointerover', press);
+  bg.on('pointerout', release);
+  bg.on('pointerdown', press);
   bg.on('pointerup', () => {
-    container.setScale(1);
+    release();
     onClick();
   });
 
@@ -320,11 +341,17 @@ export function ghostButton(
   txt.setWordWrapWidth(width - 20);
   container.add([bg, txt]);
 
-  bg.on('pointerover', () => container.setScale(1.03));
-  bg.on('pointerout', () => container.setScale(1));
-  bg.on('pointerdown', () => container.setScale(0.95));
+  const press = (): void => {
+    scene.tweens.add({ targets: container, scaleX: 0.94, scaleY: 0.92, duration: 70, ease: 'Quad.easeOut' });
+  };
+  const release = (): void => {
+    scene.tweens.add({ targets: container, scaleX: 1, scaleY: 1, duration: 120, ease: 'Back.easeOut' });
+  };
+  bg.on('pointerover', press);
+  bg.on('pointerout', release);
+  bg.on('pointerdown', press);
   bg.on('pointerup', () => {
-    container.setScale(1);
+    release();
     onClick();
   });
   return container;
@@ -386,12 +413,17 @@ function tabIcon(scene: Scene, key: AppTabKey, x: number, y: number, color: numb
 function wireTab(
   hit: Phaser.GameObjects.GameObject,
   target: Phaser.GameObjects.Container,
-  onClick: () => void
+  onClick: () => void,
+  scene: Scene
 ): void {
-  hit.on('pointerdown', () => target.setScale(0.9));
-  hit.on('pointerout', () => target.setScale(1));
+  hit.on('pointerdown', () => {
+    scene.tweens.add({ targets: target, scaleX: 0.88, scaleY: 0.86, duration: 60, ease: 'Quad.easeOut' });
+  });
+  hit.on('pointerout', () => {
+    scene.tweens.add({ targets: target, scaleX: 1, scaleY: 1, duration: 110, ease: 'Back.easeOut' });
+  });
   hit.on('pointerup', () => {
-    target.setScale(1);
+    scene.tweens.add({ targets: target, scaleX: 1, scaleY: 1, duration: 110, ease: 'Back.easeOut' });
     onClick();
   });
 }
@@ -446,7 +478,7 @@ export function appTabBar(
       seal.add([bg, icon, text]);
       const hit = scene.add.circle(x, sealY, 34, 0xffffff, 0.001).setInteractive({ useHandCursor: true });
       container.add([seal, hit]);
-      wireTab(hit, seal, tab.onClick);
+      wireTab(hit, seal, tab.onClick, scene);
       return;
     }
 
@@ -462,7 +494,7 @@ export function appTabBar(
       .rectangle(x, 0, slotWidth - 8, barHeight, 0xffffff, 0.001)
       .setInteractive({ useHandCursor: true });
     container.add([slot, hit]);
-    wireTab(hit, slot, tab.onClick);
+    wireTab(hit, slot, tab.onClick, scene);
   });
 
   return container;
@@ -545,6 +577,8 @@ export function paperCard(
 }
 
 // Trace a rounded rectangle path with per-segment jitter for a hand-drawn feel.
+// Uses a seeded random based on position+size so the same card always has the
+// same wobble (consistent look, no re-randomization on every redraw).
 function drawWobblyRect(
   graphics: Phaser.GameObjects.Graphics,
   x: number,
@@ -554,7 +588,13 @@ function drawWobblyRect(
 ): void {
   const wobble = 2.2;
   const steps = 14; // per edge
-  const jitter = (): number => (Math.random() - 0.5) * wobble * 2;
+  let seed = (x * 73 + y * 137 + width * 251 + height * 397) | 0;
+  const jitter = (): number => {
+    seed = (seed + 0x6d2b79f5) | 0;
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return (((t ^ (t >>> 14)) >>> 0) / 4294967296 - 0.5) * wobble * 2;
+  };
   graphics.beginPath();
   graphics.moveTo(x, y);
   const edge = (
@@ -755,5 +795,115 @@ export function rosette(
   const tailL = scene.add.triangle(-8 * scale, 22 * scale, 0, 0, 14 * scale, 0, 7 * scale, 20 * scale, UI.coral, 1).setStrokeStyle(2, UI.inkHex, 1);
   const tailR = scene.add.triangle(8 * scale, 22 * scale, 0, 0, 14 * scale, 0, 7 * scale, 20 * scale, UI.coralDeep, 1).setStrokeStyle(2, UI.inkHex, 1);
   container.add([tailL, tailR, disc, star]);
+  return container;
+}
+
+// A small spinning loader indicator. Returns a controller with show/hide.
+// The spinner is a rotating arc that fades in/out smoothly.
+export type Spinner = {
+  show: (x?: number, y?: number) => void;
+  hide: () => void;
+  destroy: () => void;
+};
+
+export function spinner(scene: Scene, depth = 900): Spinner {
+  const container = scene.add.container(0, 0).setDepth(depth).setScrollFactor(0).setVisible(false);
+  const arc = scene.add.graphics();
+  arc.lineStyle(6, UI.coral, 1);
+  arc.beginPath();
+  arc.arc(0, 0, 24, 0, Math.PI * 1.4, false);
+  arc.strokePath();
+  container.add(arc);
+
+  const tween = scene.tweens.add({
+    targets: arc,
+    angle: 360,
+    duration: 800,
+    repeat: -1,
+    ease: 'Linear',
+  });
+  tween.pause();
+
+  const show = (x?: number, y?: number): void => {
+    if (x !== undefined) container.x = x;
+    if (y !== undefined) container.y = y;
+    container.setVisible(true);
+    tween.resume();
+  };
+
+  const hide = (): void => {
+    container.setVisible(false);
+    tween.pause();
+  };
+
+  const destroy = (): void => {
+    tween.remove();
+    container.destroy(true);
+  };
+
+  return { show, hide, destroy };
+}
+
+// A dominant, pulsing CTA button for primary actions (like DRAW TODAY'S SCRIBBIT).
+// Much larger than regular buttons with a breathing animation to draw attention.
+export function dominantButton(
+  scene: Scene,
+  x: number,
+  y: number,
+  text: string,
+  onClick: () => void,
+  width: number,
+  pulsing = true
+): Phaser.GameObjects.Container {
+  const height = 140;
+  const container = scene.add.container(x, y);
+
+  // Outer glow ring
+  const glow = scene.add.graphics();
+  glow.fillStyle(UI.coral, 0.3);
+  glow.fillRoundedRect(-width / 2 - 8, -height / 2 - 8, width + 16, height + 16, 24);
+  container.add(glow);
+
+  // Main button background
+  const bg = scene.add
+    .rectangle(0, 0, width, height, UI.coral, 1)
+    .setStrokeStyle(6, 0x2b2016, 1);
+  bg.setInteractive({ useHandCursor: true });
+
+  // Text with larger size
+  const txt = label(scene, 0, 0, text, 38, '#ffffff', true);
+  txt.setWordWrapWidth(width - 40);
+
+  container.add([bg, txt]);
+
+  // Pulsing animation for the glow
+  if (pulsing) {
+    scene.tweens.add({
+      targets: glow,
+      alpha: { from: 0.5, to: 0.2 },
+      scale: { from: 1, to: 1.05 },
+      duration: 1200,
+      yoyo: true,
+      repeat: -1,
+      ease: 'Sine.easeInOut',
+    });
+  }
+
+  // Button press feedback
+  const press = (): void => {
+    scene.tweens.add({ targets: container, scaleX: 0.96, scaleY: 0.94, duration: 80, ease: 'Quad.easeOut' });
+  };
+  const release = (): void => {
+    scene.tweens.add({ targets: container, scaleX: 1, scaleY: 1, duration: 120, ease: 'Back.easeOut' });
+  };
+
+  bg.on('pointerover', press);
+  bg.on('pointerout', release);
+  bg.on('pointerdown', press);
+  bg.on('pointerup', () => {
+    release();
+    onClick();
+  });
+
   return container;
 }

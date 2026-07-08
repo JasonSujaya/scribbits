@@ -3,7 +3,7 @@ import { Scene } from 'phaser';
 import { getReplay, getReplayReturn, getArena, setReplay, setArenaFocus } from '../lib/registry';
 import { loadDrawing, levelOf } from '../lib/scribbits';
 import { ELEMENT_STYLES, TYPE, UI } from '../lib/theme';
-import { label, elementBadge, stickerCard, ghostButton, button, levelBadge, daysLeftFor, floatReward } from '../lib/ui';
+import { label, elementBadge, stickerCard, ghostButton, button, levelBadge, daysLeftFor, floatReward, fadeToScene } from '../lib/ui';
 import { openDetailModal } from '../lib/detailmodal';
 import { LiveSprite } from '../lib/livesprite';
 import { spar } from '../lib/api';
@@ -96,6 +96,7 @@ export class Replay extends Scene {
     }
     this.report = report;
     this.cameras.main.setBackgroundColor(UI.desk);
+    this.cameras.main.fadeIn(180, 255, 247, 232);
     this.buildArena();
 
     this.events.once('shutdown', () => {
@@ -666,10 +667,10 @@ export class Replay extends Scene {
 
   private goBackEntrants(): void {
     setArenaFocus(this, 'entrants');
-    this.scene.start('ArenaHome');
+    fadeToScene(this, 'ArenaHome');
   }
 
   private exit(): void {
-    this.scene.start(getReplayReturn(this));
+    fadeToScene(this, getReplayReturn(this));
   }
 }

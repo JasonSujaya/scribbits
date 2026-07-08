@@ -24,6 +24,7 @@ import {
   stickerCard,
   errorPanel,
   floatReward,
+  fadeToScene,
 } from '../lib/ui';
 import type { StatGrid, ErrorPanel } from '../lib/ui';
 import { openCapsuleMachine } from '../lib/capsulemachine';
@@ -95,6 +96,7 @@ export class Draw extends Scene {
   private stickers: StickerAttach | null = null;
   private stickerButtonLabel: Phaser.GameObjects.Text | null = null;
   private drawerOpen = false;
+  private previewTimer: Phaser.Time.TimerEvent | null = null;
 
   constructor() {
     super('Draw');
@@ -114,6 +116,7 @@ export class Draw extends Scene {
     this.stickers = null;
     this.stickerButtonLabel = null;
     this.drawerOpen = false;
+    this.previewTimer = null;
   }
 
   create(): void {
@@ -121,6 +124,7 @@ export class Draw extends Scene {
     DomOverlay.destroyAll();
 
     this.cameras.main.setBackgroundColor(UI.desk);
+    this.cameras.main.fadeIn(180, 255, 247, 232);
     // Calm living page (no forecast field / edge creatures) so it moves gently
     // without distracting from the drawing surface.
     this.livingPaper = new LivingPaper(this, { edgeCreatures: false });
@@ -136,6 +140,8 @@ export class Draw extends Scene {
 
   private cleanup(): void {
     window.removeEventListener('resize', this.resizeHandler);
+    this.previewTimer?.remove();
+    this.previewTimer = null;
     this.overlay?.destroy();
     this.livingPaper?.destroy();
     this.livingPaper = null;
@@ -201,7 +207,7 @@ export class Draw extends Scene {
   private exitTo(sceneKey: string): void {
     this.cleanup();
     DomOverlay.destroyAll();
-    this.scene.start(sceneKey);
+    fadeToScene(this, sceneKey);
   }
 
   // --- Layout budget (720x1280 design space) --------------------------------
@@ -304,10 +310,16 @@ export class Draw extends Scene {
       .setInteractive({ useHandCursor: true });
     const glyph = label(this, 0, 0, icon, 26, UI.ink, true);
     container.add([bg, glyph]);
-    bg.on('pointerdown', () => container.setScale(0.94));
-    bg.on('pointerout', () => container.setScale(1));
+    const press = (): void => {
+      this.tweens.add({ targets: container, scaleX: 0.9, scaleY: 0.88, duration: 60, ease: 'Quad.easeOut' });
+    };
+    const release = (): void => {
+      this.tweens.add({ targets: container, scaleX: 1, scaleY: 1, duration: 100, ease: 'Back.easeOut' });
+    };
+    bg.on('pointerdown', press);
+    bg.on('pointerout', release);
     bg.on('pointerup', () => {
-      container.setScale(1);
+      release();
       onClick();
     });
     return container;
@@ -504,7 +516,7 @@ export class Draw extends Scene {
   private buildOverlay(): void {
     this.overlay = new DomOverlay(this);
 
-    this.canvas = new DrawCanvas({ onStrokeEnd: () => this.refreshPreview() });
+    this.canvas = new DrawCanvas({ onStrokeEnd: () => this.schedulePreview() });
     this.canvas.setBrushSize(this.lineWidth);
     const square = Draw.CANVAS_SQUARE;
     this.overlay.place(this.canvas.element, {
@@ -543,6 +555,18 @@ export class Draw extends Scene {
   }
 
   // --- Live analyzer preview ------------------------------------------------
+  // Debounced: waits 80ms after the last stroke before running the analyzer,
+  // so rapid drawing doesn't thrash the pixel scanner on every stroke end.
+  private schedulePreview(): void {
+    if (this.previewTimer) {
+      this.previewTimer.remove();
+    }
+    this.previewTimer = this.time.delayedCall(80, () => {
+      this.previewTimer = null;
+      this.refreshPreview();
+    });
+  }
+
   private refreshPreview(): void {
     if (!this.canvas) return;
     const imageData = this.canvas.getImageData();

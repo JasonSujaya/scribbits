@@ -4,7 +4,7 @@ import { getArena, getSketchbookTab, setSketchbookTab } from '../lib/registry';
 import { loadDrawing, fitDrawing, recordText, levelOf } from '../lib/scribbits';
 import { NAV_SAFE, TYPE, UI } from '../lib/theme';
 import { LivingPaper } from '../lib/livingpaper';
-import { label, ghostButton, handLettered, paperCard, stickerCard, elementBadge, levelBadge, errorPanel, appTabBar } from '../lib/ui';
+import { label, ghostButton, handLettered, paperCard, stickerCard, elementBadge, levelBadge, errorPanel, appTabBar, fadeToScene } from '../lib/ui';
 import { openCloutBoard } from '../lib/cloutboard';
 import { openDetailModal } from '../lib/detailmodal';
 import type { ErrorPanel } from '../lib/ui';
@@ -35,6 +35,7 @@ export class Sketchbook extends Scene {
 
   create(): void {
     this.cameras.main.setBackgroundColor(UI.desk);
+    this.cameras.main.fadeIn(180, 255, 247, 232);
     this.tab = getSketchbookTab(this);
     this.loggedIn = getArena(this)?.loggedIn ?? false;
     void this.loadGallery();
@@ -67,10 +68,10 @@ export class Sketchbook extends Scene {
 
   private buildAppTabs(): void {
     appTabBar(this, 'gallery', [
-      { key: 'arena', icon: '🏟️', label: 'Arena', onClick: () => this.scene.start('ArenaHome') },
+      { key: 'arena', icon: '🏟️', label: 'Arena', onClick: () => fadeToScene(this, 'ArenaHome') },
       { key: 'gallery', icon: '🏆', label: 'Gallery', onClick: () => this.switchTab('legends') },
-      { key: 'draw', icon: '✏️', label: 'Draw', onClick: () => this.scene.start('Draw') },
-      { key: 'battles', icon: '⚔️', label: 'Battles', onClick: () => this.scene.start('MyBattles') },
+      { key: 'draw', icon: '✏️', label: 'Draw', onClick: () => fadeToScene(this, 'Draw') },
+      { key: 'battles', icon: '⚔️', label: 'Battles', onClick: () => fadeToScene(this, 'MyBattles') },
       { key: 'scout', icon: '🏅', label: 'Scout', onClick: () => openCloutBoard(this) },
     ]);
   }

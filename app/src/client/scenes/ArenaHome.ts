@@ -30,8 +30,11 @@ import {
   floatReward,
   rosette,
   appTabBar,
+  fadeToScene,
+  spinner,
+  dominantButton,
 } from '../lib/ui';
-import type { ErrorPanel } from '../lib/ui';
+import type { ErrorPanel, Spinner } from '../lib/ui';
 import { openDetailModal } from '../lib/detailmodal';
 import type { DetailModalActions } from '../lib/detailmodal';
 import { openCloutBoard, formatCountdown } from '../lib/cloutboard';
@@ -53,6 +56,7 @@ export class ArenaHome extends Scene {
   private inkChipLabel: Phaser.GameObjects.Text | null = null;
   private livingPaper: LivingPaper | null = null;
   private busy = false;
+  private spinner: Spinner | null = null;
 
   // Drag-scroll bookkeeping. Scrolling uses velocity + inertia so a flick keeps
   // gliding and a wheel/keyboard nudge eases in, instead of snapping stiffly.
@@ -106,6 +110,8 @@ export class ArenaHome extends Scene {
       return;
     }
     this.state = state;
+    this.cameras.main.fadeIn(180, 255, 247, 232);
+    this.spinner = spinner(this, 1500);
     this.build();
     this.events.once('shutdown', () => this.cleanup());
     this.events.on('wake', this.refreshOnWake);
@@ -117,6 +123,8 @@ export class ArenaHome extends Scene {
     this.countdownTimer?.remove();
     this.livingPaper?.destroy();
     this.livingPaper = null;
+    this.spinner?.destroy();
+    this.spinner = null;
   }
 
   // --- Layout: a vertical stack measured top-down so nothing overlaps and the
@@ -207,8 +215,18 @@ export class ArenaHome extends Scene {
     this.scrollVelocity = ((this.lastPointerY - pointer.y) / dt) * 16; // ~px/frame
     this.lastPointerY = pointer.y;
     this.lastMoveTime = now;
-    // Direct 1:1 tracking while dragging (target follows finger, no lag).
-    this.scrollY = Phaser.Math.Clamp(this.dragStartScroll + delta, 0, this.maxScroll);
+    // Direct 1:1 tracking while dragging, with elastic resistance at edges.
+    const rawScroll = this.dragStartScroll + delta;
+    if (rawScroll < 0) {
+      // Elastic overscroll at top: rubber-band resistance.
+      this.scrollY = rawScroll * 0.35;
+    } else if (rawScroll > this.maxScroll) {
+      // Elastic overscroll at bottom.
+      const overscroll = rawScroll - this.maxScroll;
+      this.scrollY = this.maxScroll + overscroll * 0.35;
+    } else {
+      this.scrollY = rawScroll;
+    }
     this.targetScrollY = this.scrollY;
     this.cameras.main.setScroll(0, this.scrollY);
   }
@@ -217,6 +235,14 @@ export class ArenaHome extends Scene {
     this.dragging = false;
     // If the finger was still (a tap), don't fling.
     if (this.dragDistance < ArenaHome.TAP_SLOP) this.scrollVelocity = 0;
+    // If we're in overscroll, spring back to the edge.
+    if (this.scrollY < 0) {
+      this.targetScrollY = 0;
+      this.scrollVelocity = 0;
+    } else if (this.scrollY > this.maxScroll) {
+      this.targetScrollY = this.maxScroll;
+      this.scrollVelocity = 0;
+    }
   }
 
   // True when the pointer moved far enough this gesture to count as a scroll, so
@@ -241,10 +267,13 @@ export class ArenaHome extends Scene {
     }
     this.scrollVelocity = 0;
 
-    // Ease the displayed scroll toward the target (wheel / programmatic scrollTo).
+    // Ease the displayed scroll toward the target (wheel / programmatic scrollTo / spring-back).
     const diff = this.targetScrollY - this.scrollY;
     if (Math.abs(diff) > 0.5) {
-      this.scrollY += diff * 0.2; // lerp factor
+      // Faster spring-back when overscrolled for a snappy rubber-band feel.
+      const isOverscrolled = this.scrollY < 0 || this.scrollY > this.maxScroll;
+      const lerpFactor = isOverscrolled ? 0.28 : 0.2;
+      this.scrollY += diff * lerpFactor;
       this.cameras.main.setScroll(0, this.scrollY);
     }
   }
@@ -653,9 +682,9 @@ export class ArenaHome extends Scene {
   private buildActionRow(x: number, y: number): number {
     const width = this.scale.width - EDGE * 2;
     if (!this.state.drawnToday) {
-      const btnY = y + 48;
-      button(this, x, btnY, "✏️ DRAW TODAY'S SCRIBBIT", () => this.startDraw(), width);
-      return btnY + 48;
+      const btnY = y + 70;
+      dominantButton(this, x, btnY, "✏️ DRAW TODAY'S SCRIBBIT", () => this.startDraw(), width, true);
+      return btnY + 70;
     }
     const cardY = y + 46;
     const card = stickerCard(this, x, cardY, width, 92, {
@@ -669,7 +698,7 @@ export class ArenaHome extends Scene {
 
   private openLegends(): void {
     this.registry.set('sketchbookTab', 'legends');
-    this.scene.start('Sketchbook');
+    fadeToScene(this, 'Sketchbook');
   }
 
   private buildAppTabs(): void {
@@ -677,7 +706,7 @@ export class ArenaHome extends Scene {
       { key: 'arena', icon: '🏟️', label: 'Arena', onClick: () => this.scrollTo(0) },
       { key: 'gallery', icon: '🏆', label: 'Gallery', onClick: () => this.openLegends() },
       { key: 'draw', icon: '✏️', label: 'Draw', onClick: () => this.startDraw() },
-      { key: 'battles', icon: '⚔️', label: 'Battles', onClick: () => this.scene.start('MyBattles') },
+      { key: 'battles', icon: '⚔️', label: 'Battles', onClick: () => fadeToScene(this, 'MyBattles') },
       { key: 'scout', icon: '🏅', label: 'Scout', onClick: () => openCloutBoard(this) },
     ]);
   }
@@ -716,7 +745,7 @@ export class ArenaHome extends Scene {
   // --- Actions ---------------------------------------------------------------
   private startDraw(): void {
     if (!this.requireLogin()) return;
-    this.scene.start('Draw');
+    fadeToScene(this, 'Draw');
   }
 
   private doCare(scribbit: Scribbit, action: CareAction): void {
@@ -727,8 +756,10 @@ export class ArenaHome extends Scene {
       return;
     }
     this.busy = true;
+    this.spinner?.show(this.scale.width / 2, this.scale.height / 2);
     void careForScribbit(scribbit.id, action).then((result) => {
       this.busy = false;
+      this.spinner?.hide();
       if (!result.ok) {
         this.showError(result.error);
         return;
@@ -750,15 +781,17 @@ export class ArenaHome extends Scene {
     if (!this.requireLogin()) return;
     if (this.busy) return;
     this.busy = true;
+    this.spinner?.show(this.scale.width / 2, this.scale.height / 2);
     showToast(`${scribbit.name} steps up for a friendly spar…`);
     void spar(scribbit.id).then((result) => {
       this.busy = false;
+      this.spinner?.hide();
       if (!result.ok) {
         this.showError(result.error);
         return;
       }
       setReplay(this, result.data);
-      this.scene.start('Replay');
+      fadeToScene(this, 'Replay');
     });
   }
 
@@ -908,7 +941,9 @@ export class ArenaHome extends Scene {
   }
 
   private async refresh(): Promise<void> {
+    this.spinner?.show(this.scale.width / 2, this.scale.height / 2);
     const result = await fetchArena();
+    this.spinner?.hide();
     if (!result.ok) {
       this.showError(result.error);
       return;

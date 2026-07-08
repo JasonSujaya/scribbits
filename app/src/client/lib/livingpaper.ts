@@ -149,18 +149,20 @@ export class LivingPaper {
       })
     );
 
-    // Continuous slow drift, driven off the scene clock so fast-forward and
-    // pause both compose for free.
+    // Continuous slow drift, driven by delta time for frame-rate independence.
+    // 48ms interval (~21fps) is smooth enough for subtle background motion while
+    // using less CPU than the previous 32ms timer.
     this.timers.push(
       this.scene.time.addEvent({
-        delay: 32,
+        delay: 48,
         loop: true,
         callback: () => {
           if (this.paused) return;
-          layerA.tilePositionX += this.driftA * 0.032;
-          layerA.tilePositionY -= this.driftA * 0.02;
-          layerB.tilePositionX -= this.driftB * 0.032;
-          layerB.tilePositionY += this.driftB * 0.018;
+          const dt = 0.048;
+          layerA.tilePositionX += this.driftA * dt;
+          layerA.tilePositionY -= this.driftA * dt * 0.625;
+          layerB.tilePositionX -= this.driftB * dt;
+          layerB.tilePositionY += this.driftB * dt * 0.5625;
         },
       })
     );

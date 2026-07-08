@@ -4,7 +4,7 @@ import { setReplay } from '../lib/registry';
 import { loadDrawing, fitDrawing } from '../lib/scribbits';
 import { NAV_SAFE, TYPE, UI } from '../lib/theme';
 import { mountLivingPaper } from '../lib/livingpaper';
-import { label, handLettered, stickerCard, errorPanel, appTabBar } from '../lib/ui';
+import { label, handLettered, stickerCard, errorPanel, appTabBar, fadeToScene } from '../lib/ui';
 import { openCloutBoard } from '../lib/cloutboard';
 import type { ErrorPanel } from '../lib/ui';
 import type { BattleReport } from '../../shared/arena';
@@ -27,6 +27,7 @@ export class MyBattles extends Scene {
 
   create(): void {
     this.cameras.main.setBackgroundColor(UI.desk);
+    this.cameras.main.fadeIn(180, 255, 247, 232);
     mountLivingPaper(this);
     const { width } = this.scale;
     handLettered(this, width / 2, 64, 'MY BATTLES', 40, UI.ink, true);
@@ -37,9 +38,9 @@ export class MyBattles extends Scene {
 
   private buildAppTabs(): void {
     appTabBar(this, 'battles', [
-      { key: 'arena', icon: '🏟️', label: 'Arena', onClick: () => this.scene.start('ArenaHome') },
-      { key: 'gallery', icon: '🏆', label: 'Gallery', onClick: () => this.scene.start('Sketchbook') },
-      { key: 'draw', icon: '✏️', label: 'Draw', onClick: () => this.scene.start('Draw') },
+      { key: 'arena', icon: '🏟️', label: 'Arena', onClick: () => fadeToScene(this, 'ArenaHome') },
+      { key: 'gallery', icon: '🏆', label: 'Gallery', onClick: () => fadeToScene(this, 'Sketchbook') },
+      { key: 'draw', icon: '✏️', label: 'Draw', onClick: () => fadeToScene(this, 'Draw') },
       { key: 'battles', icon: '⚔️', label: 'Battles', onClick: () => undefined },
       { key: 'scout', icon: '🏅', label: 'Scout', onClick: () => openCloutBoard(this) },
     ]);
