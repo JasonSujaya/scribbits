@@ -5,7 +5,6 @@ import { loadDrawing, fitDrawing, recordText, levelOf } from '../lib/scribbits';
 import { NAV_SAFE, TYPE, UI } from '../lib/theme';
 import { LivingPaper } from '../lib/livingpaper';
 import { label, ghostButton, handLettered, paperCard, stickerCard, elementBadge, levelBadge, errorPanel, appTabBar, fadeToScene } from '../lib/ui';
-import { openCloutBoard } from '../lib/cloutboard';
 import { openDetailModal } from '../lib/detailmodal';
 import type { ErrorPanel } from '../lib/ui';
 import type { LegendsState, Scribbit } from '../../shared/arena';
@@ -72,7 +71,7 @@ export class Sketchbook extends Scene {
       { key: 'gallery', icon: '🏆', label: 'Gallery', onClick: () => this.switchTab('legends') },
       { key: 'draw', icon: '✏️', label: 'Draw', onClick: () => fadeToScene(this, 'Draw') },
       { key: 'battles', icon: '⚔️', label: 'Battles', onClick: () => fadeToScene(this, 'MyBattles') },
-      { key: 'scout', icon: '🏅', label: 'Scout', onClick: () => openCloutBoard(this) },
+      { key: 'scout', icon: '📖', label: 'Guide', onClick: () => fadeToScene(this, 'Bestiary') },
     ]);
   }
 

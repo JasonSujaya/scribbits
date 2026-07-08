@@ -678,6 +678,7 @@ export class Draw extends Scene {
   }
 
   // "IT'S ALIVE" ceremony: the drawing rises with its final card, then home.
+  // Enhanced with egg-hatching effect for dramatic birth moment.
   private playCeremony(scribbit: Scribbit, dataUrl: string): void {
     const { width, height } = this.scale;
     // The living page owned timers/emitters; tear it down before the ceremony
@@ -693,8 +694,79 @@ export class Draw extends Scene {
     const style = ELEMENT_STYLES[scribbit.element];
     this.add.rectangle(0, 0, width, height, style.primary, 0.1).setOrigin(0).setDepth(-90);
 
+    // Egg hatching effect - an ink blob that cracks and bursts
+    const egg = this.add.graphics().setDepth(50);
+    const eggX = width / 2;
+    const eggY = height / 2;
+    const eggSize = 180;
+
+    // Draw the egg (ink blob)
+    egg.fillStyle(0x2b2016, 1);
+    egg.fillEllipse(eggX, eggY, eggSize, eggSize * 1.2);
+    egg.lineStyle(8, UI.inkHex, 1);
+    egg.strokeEllipse(eggX, eggY, eggSize, eggSize * 1.2);
+
+    // Egg wobble animation
+    this.tweens.add({
+      targets: egg,
+      angle: { from: -5, to: 5 },
+      duration: 200,
+      yoyo: true,
+      repeat: 3,
+      ease: 'Sine.easeInOut',
+      onComplete: () => {
+        // Egg cracks and bursts
+        this.cameras.main.shake(300, 0.015);
+
+        // Crack lines
+        const cracks = this.add.graphics().setDepth(51);
+        cracks.lineStyle(6, UI.creamHex, 1);
+        cracks.beginPath();
+        cracks.moveTo(eggX - 30, eggY - 40);
+        cracks.lineTo(eggX, eggY);
+        cracks.lineTo(eggX + 20, eggY + 30);
+        cracks.strokePath();
+        cracks.beginPath();
+        cracks.moveTo(eggX + 40, eggY - 20);
+        cracks.lineTo(eggX + 10, eggY + 10);
+        cracks.lineTo(eggX - 10, eggY + 50);
+        cracks.strokePath();
+
+        // Burst particles
+        const burstEmitter = this.add.particles(eggX, eggY, 'dot', {
+          speed: { min: 200, max: 500 },
+          scale: { start: 0.8, end: 0 },
+          lifespan: 800,
+          quantity: 1,
+          tint: 0x2b2016,
+          emitting: false,
+        });
+        burstEmitter.explode(30);
+
+        // Fade out egg
+        this.tweens.add({
+          targets: egg,
+          alpha: 0,
+          scale: 1.5,
+          duration: 300,
+          onComplete: () => {
+            egg.destroy();
+            cracks.destroy();
+            // Now show the actual ceremony
+            this.showBirthReveal(scribbit, dataUrl);
+          },
+        });
+      },
+    });
+  }
+
+  private showBirthReveal(scribbit: Scribbit, dataUrl: string): void {
+    const { width, height } = this.scale;
+    const style = ELEMENT_STYLES[scribbit.element];
+
     const title = handLettered(this, width / 2, 180, "IT'S ALIVE!", 62, UI.goldText, true).setScale(0);
     this.tweens.add({ targets: title, scale: 1, duration: 500, ease: 'Back.easeOut' });
+    this.cameras.main.shake(200, 0.008);
 
     // Drawing today's scribbit earns Mystery Ink — float the reward.
     floatReward(this, width / 2, 260, `+${INK_REWARDS.dailyDraw} 🫙`, UI.goldText, 60);
@@ -720,7 +792,7 @@ export class Draw extends Scene {
     });
     emitter.explode(40);
 
-    this.time.delayedCall(3400, () => {
+    this.time.delayedCall(4000, () => {
       if (this.scene.isActive()) this.exitTo('ArenaHome');
     });
   }

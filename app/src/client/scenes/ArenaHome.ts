@@ -15,7 +15,6 @@ import { loadDrawing, fitDrawing, recordText, moodStyleOf, levelOf, canCare } fr
 import { CARE_STYLES, ELEMENT_STYLES, EDGE, NAV_SAFE, SPACE, TYPE, UI } from '../lib/theme';
 import { LivingPaper } from '../lib/livingpaper';
 import {
-  button,
   ghostButton,
   label,
   handLettered,
@@ -42,6 +41,7 @@ import { openCapsuleMachine } from '../lib/capsulemachine';
 import { pullCapsule } from '../lib/api';
 import { INK_REWARDS } from '../../shared/arena';
 import type { ArenaState, CareAction, Scribbit } from '../../shared/arena';
+import { showVsCeremony } from '../lib/battleceremony';
 
 // The landing scene. A tall, drag-scrollable sketchbook page: countdown-topped
 // header, weather card, wanted-poster champion, your roster, TONIGHT'S BRACKET
@@ -707,7 +707,7 @@ export class ArenaHome extends Scene {
       { key: 'gallery', icon: '🏆', label: 'Gallery', onClick: () => this.openLegends() },
       { key: 'draw', icon: '✏️', label: 'Draw', onClick: () => this.startDraw() },
       { key: 'battles', icon: '⚔️', label: 'Battles', onClick: () => fadeToScene(this, 'MyBattles') },
-      { key: 'scout', icon: '🏅', label: 'Scout', onClick: () => openCloutBoard(this) },
+      { key: 'scout', icon: '📖', label: 'Guide', onClick: () => fadeToScene(this, 'Bestiary') },
     ]);
   }
 
@@ -791,7 +791,10 @@ export class ArenaHome extends Scene {
         return;
       }
       setReplay(this, result.data);
-      fadeToScene(this, 'Replay');
+      // Show dramatic VS ceremony before the battle replay
+      showVsCeremony(this, result.data.a, result.data.b, () => {
+        this.scene.start('Replay');
+      });
     });
   }
 
@@ -930,7 +933,10 @@ export class ArenaHome extends Scene {
       return;
     }
     setReplay(this, result.data);
-    this.scene.start('Replay');
+    // Show dramatic VS ceremony before the boss battle replay
+    showVsCeremony(this, result.data.a, result.data.b, () => {
+      this.scene.start('Replay');
+    });
   }
 
   private requireLogin(): boolean {

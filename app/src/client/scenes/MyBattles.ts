@@ -5,7 +5,6 @@ import { loadDrawing, fitDrawing } from '../lib/scribbits';
 import { NAV_SAFE, TYPE, UI } from '../lib/theme';
 import { mountLivingPaper } from '../lib/livingpaper';
 import { label, handLettered, stickerCard, errorPanel, appTabBar, fadeToScene } from '../lib/ui';
-import { openCloutBoard } from '../lib/cloutboard';
 import type { ErrorPanel } from '../lib/ui';
 import type { BattleReport } from '../../shared/arena';
 
@@ -42,7 +41,7 @@ export class MyBattles extends Scene {
       { key: 'gallery', icon: '🏆', label: 'Gallery', onClick: () => fadeToScene(this, 'Sketchbook') },
       { key: 'draw', icon: '✏️', label: 'Draw', onClick: () => fadeToScene(this, 'Draw') },
       { key: 'battles', icon: '⚔️', label: 'Battles', onClick: () => undefined },
-      { key: 'scout', icon: '🏅', label: 'Scout', onClick: () => openCloutBoard(this) },
+      { key: 'scout', icon: '📖', label: 'Guide', onClick: () => fadeToScene(this, 'Bestiary') },
     ]);
   }
 
