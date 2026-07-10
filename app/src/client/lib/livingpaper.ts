@@ -1,7 +1,7 @@
 // LivingPaper — the one "BG that moves" system every scene mounts. It layers a
 // living, hand-drawn sketchbook page under all content, built with PURE Phaser
 // (Graphics-baked textures + TileSprite parallax + particle emitters + a light
-// PostFX vignette pulse) — no third-party animation libraries.
+// Graphics vignette pulse) — no third-party animation libraries.
 //
 // Layers, back to front:
 //   -100 cream paper grain (the existing baked 'paper' tile)
@@ -22,7 +22,7 @@ import * as Phaser from 'phaser';
 import { Scene } from 'phaser';
 import type { Element } from '../../shared/arena';
 import { generatePaperTexture } from './art';
-import { ELEMENT_STYLES, UI } from './theme';
+import { ELEMENT_STYLES, prefersReducedMotion, UI } from './theme';
 
 // Mobile particle budget: the ambient speck field plus any forecast field must
 // never exceed this many live particles at once. Kept small on purpose.
@@ -74,6 +74,7 @@ export class LivingPaper {
   private vignetteTween: Phaser.Tweens.Tween | null = null;
   private paused = false;
   private destroyed = false;
+  private readonly handleSceneShutdown = (): void => this.destroy();
 
   // Parallax drift speeds (px/sec) for the two motif layers.
   private readonly driftA = 6;
@@ -84,19 +85,22 @@ export class LivingPaper {
     this.opts = opts;
 
     this.buildPaper();
-    this.buildParallaxLayers();
-    this.buildAmbientSpecks();
-    if (opts.boostedElement) this.buildForecastAmbience(opts.boostedElement);
-    if (opts.edgeCreatures !== false) {
-      this.scheduleEdgeCreatures();
-      this.scheduleWanderingScribbits();
+    const reduceMotion = prefersReducedMotion();
+    this.buildParallaxLayers(!reduceMotion);
+    if (!reduceMotion) {
+      this.buildAmbientSpecks();
+      if (opts.boostedElement) this.buildForecastAmbience(opts.boostedElement);
+      if (opts.edgeCreatures !== false) {
+        this.scheduleEdgeCreatures();
+        this.scheduleWanderingScribbits();
+      }
+      this.buildVignette();
     }
-    this.buildVignette();
 
     // Belt-and-braces: if the scene shuts down without the caller destroying us,
     // clean up anyway so no emitter or timer leaks into the next scene.
-    scene.events.once('shutdown', () => this.destroy());
-    scene.events.once('destroy', () => this.destroy());
+    scene.events.once('shutdown', this.handleSceneShutdown);
+    scene.events.once('destroy', this.handleSceneShutdown);
   }
 
   // --- Base paper -----------------------------------------------------------
@@ -115,7 +119,7 @@ export class LivingPaper {
   // Two transparent tiles of sparse hand-drawn motifs (stars, squiggles, tiny
   // clouds, paw prints) that drift slowly at different speeds. Each also does a
   // gentle rotation wobble so the whole page feels alive, not scrolling flatly.
-  private buildParallaxLayers(): void {
+  private buildParallaxLayers(animated: boolean): void {
     const { width, height } = this.scene.scale;
     const keyA = this.bakeMotifTile('lp-motifs-a', 0x9c8a6e, 0x9c8a6e, 111);
     const keyB = this.bakeMotifTile('lp-motifs-b', 0xb7a488, 0xb7a488, 777);
@@ -131,6 +135,8 @@ export class LivingPaper {
       .setAlpha(0.38)
       .setDepth(-98);
     this.tileSprites.push(layerA, layerB);
+
+    if (!animated) return;
 
     // Slow rotation wobble on each layer, out of phase.
     this.tweens.push(
@@ -704,6 +710,8 @@ export class LivingPaper {
   destroy(): void {
     if (this.destroyed) return;
     this.destroyed = true;
+    this.scene.events.off('shutdown', this.handleSceneShutdown);
+    this.scene.events.off('destroy', this.handleSceneShutdown);
     this.timers.forEach((t) => t.remove(false));
     this.tweens.forEach((t) => t.remove());
     this.emitters.forEach((e) => e.destroy());

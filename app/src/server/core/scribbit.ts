@@ -159,6 +159,10 @@ export const getFoundingBeliefKey = (): string => {
   return 'belief:founding';
 };
 
+export const getCommunityBeliefKey = (): string => {
+  return 'belief:community';
+};
+
 export const validateScribbitName = (value: unknown): string | undefined => {
   if (typeof value !== 'string') {
     return undefined;
@@ -575,6 +579,7 @@ export const deleteStoredScribbit = async (
   await storage.zRem(getExpiringScribbitsKey(), [scribbitId]);
   await storage.zRem(getRumbleKey(day), [scribbitId]);
   await storage.zRem(getLegendsKey(), [scribbitId]);
+  await storage.hDel(getCommunityBeliefKey(), [scribbitId]);
 };
 
 export const removeRumbleEntrant = async (
@@ -794,9 +799,19 @@ export const hydrateScribbitForUtcDay = async (
     scribbit.id,
     utcDateKey
   );
+  const storedBelief = await storage.hGet(
+    getCommunityBeliefKey(),
+    scribbit.id
+  );
+  const belief = storedBelief === undefined
+    ? scribbit.belief
+    : Number(storedBelief);
 
   return {
     ...scribbit,
+    belief: Number.isFinite(belief) && belief >= 0
+      ? Math.floor(belief)
+      : scribbit.belief,
     mood: deriveMoodFromCareActions(careDoneToday),
     careDoneToday,
   };
@@ -842,11 +857,17 @@ export const loadScribbits = async (
 ): Promise<Scribbit[]> => {
   const scribbits: Scribbit[] = [];
 
-  for (const scribbitId of scribbitIds) {
-    const scribbit = await loadScribbit(storage, scribbitId, utcDateKey);
-
-    if (scribbit) {
-      scribbits.push(scribbit);
+  // Redis round trips dominate this path. Load a bounded batch concurrently so
+  // a busy arena is fast without creating an unbounded Promise fan-out.
+  const batchSize = 24;
+  for (let start = 0; start < scribbitIds.length; start += batchSize) {
+    const batch = await Promise.all(
+      scribbitIds
+        .slice(start, start + batchSize)
+        .map((scribbitId) => loadScribbit(storage, scribbitId, utcDateKey))
+    );
+    for (const scribbit of batch) {
+      if (scribbit) scribbits.push(scribbit);
     }
   }
 
@@ -1111,10 +1132,15 @@ export const addRumbleEntrant = async (
 
 export const getRumbleEntrantIds = async (
   storage: ArenaStorage,
-  day: number
+  day: number,
+  options: { limit?: number; reverse?: boolean } = {}
 ): Promise<string[]> => {
-  const entries = await storage.zRange(getRumbleKey(day), 0, -1, {
+  const stop = options.limit === undefined
+    ? -1
+    : Math.max(0, options.limit - 1);
+  const entries = await storage.zRange(getRumbleKey(day), 0, stop, {
     by: 'rank',
+    reverse: options.reverse,
   });
   return entries.map((entry) => entry.member);
 };
@@ -1137,17 +1163,36 @@ export const addLegend = async (
   });
 };
 
+export const getLegendIds = async (
+  storage: ArenaStorage,
+  limit: number,
+  offset = 0
+): Promise<string[]> => {
+  const safeLimit = Math.max(0, Math.floor(limit));
+  const safeOffset = Math.max(0, Math.floor(offset));
+  if (safeLimit === 0) return [];
+
+  const rankedLegends = await storage.zRange(
+    getLegendsKey(),
+    safeOffset,
+    safeOffset + safeLimit - 1,
+    {
+      by: 'rank',
+      reverse: true,
+    }
+  );
+  return rankedLegends.map((entry) => entry.member);
+};
+
 export const getLegends = async (
   storage: ArenaStorage,
-  limit: number
+  limit: number,
+  offset = 0
 ): Promise<Scribbit[]> => {
-  const rankedLegends = await storage.zRange(getLegendsKey(), 0, limit - 1, {
-    by: 'rank',
-    reverse: true,
-  });
+  const legendIds = await getLegendIds(storage, limit, offset);
   const scribbits = await loadScribbits(
     storage,
-    rankedLegends.map((entry) => entry.member)
+    legendIds
   );
 
   return scribbits.filter((scribbit) => scribbit.status === 'legend');
@@ -1244,12 +1289,20 @@ export const increaseBelief = async (
     };
   }
 
-  const nextScribbit = {
+  await storage.hSetNX(
+    getCommunityBeliefKey(),
+    scribbit.id,
+    scribbit.belief.toString()
+  );
+  const belief = await storage.hIncrBy(
+    getCommunityBeliefKey(),
+    scribbit.id,
+    1
+  );
+  return {
     ...scribbit,
-    belief: scribbit.belief + 1,
+    belief,
   };
-  await updateScribbit(storage, nextScribbit);
-  return nextScribbit;
 };
 
 export const crownScribbit = async (

@@ -17,11 +17,17 @@ import { RARITY_STYLE } from './pens';
 
 const DEPTH = 2500;
 
+const createCapsuleOperationId = (): string => {
+  return globalThis.crypto?.randomUUID?.() ??
+    `capsule-${Date.now()}-${Math.random().toString(36).slice(2, 14)}`;
+};
+
 export type CapsuleMachineOpts = {
   ink: number; // current ink balance
+  nextCost: number; // server-authoritative current price
   // Perform the pull. The server owns costs, discounts, and final inventory; the
   // machine only mirrors its returned ink total.
-  onPull: () => Promise<CapsulePullResponse | { error: string }>;
+  onPull: (operationId: string) => Promise<CapsulePullResponse | { error: string }>;
   onClose: (finalInk: number) => void;
 };
 
@@ -30,7 +36,10 @@ export type CapsuleMachine = { destroy: () => void };
 export function openCapsuleMachine(scene: Scene, opts: CapsuleMachineOpts): CapsuleMachine {
   const { width, height } = scene.scale;
   let ink = opts.ink;
+  let nextCost = opts.nextCost;
   let pulling = false;
+  let pendingOperationId: string | null = null;
+  let closeRequested = false;
 
   const layer = scene.add.container(0, 0).setDepth(DEPTH).setScrollFactor(0);
   const scrim = scene.add
@@ -61,14 +70,21 @@ export function openCapsuleMachine(scene: Scene, opts: CapsuleMachineOpts): Caps
   // --- Pull button + copy ---------------------------------------------------
   const brokeCopy = [
     'Out of ink! Care for a scribbit to earn more 🫙',
-    `The first daily pull wants ${CAPSULE_FIRST_DAILY_COST} ink. Your jar is a little dry 🖊️`,
+    'Your jar is a little dry. Care or spar for more Ink 🖊️',
     'No ink, no magic — go win a spar first! ✏️',
   ];
 
-  const helper = label(scene, width / 2, height * 0.72, '', TYPE.body, UI.inkSoft, true)
+  const priceCard = scene.add
+    .rectangle(width / 2, height * 0.7, width - 150, 78, UI.creamHex, 0.96)
+    .setStrokeStyle(3, UI.inkHex, 0.85)
     .setScrollFactor(0)
     .setDepth(DEPTH + 2);
-  helper.setWordWrapWidth(width - 120);
+  layer.add(priceCard);
+
+  const helper = label(scene, width / 2, height * 0.7, '', TYPE.caption, UI.inkSoft, true)
+    .setScrollFactor(0)
+    .setDepth(DEPTH + 2);
+  helper.setWordWrapWidth(width - 190);
   layer.add(helper);
 
   const pullBtn = button(
@@ -84,14 +100,16 @@ export function openCapsuleMachine(scene: Scene, opts: CapsuleMachineOpts): Caps
 
   function refreshAffordance(): void {
     inkChip.setText(`🫙 Ink: ${ink}`);
-    const canAfford = ink >= CAPSULE_FIRST_DAILY_COST;
+    const canAfford = ink >= nextCost;
     pullBtn.setAlpha(canAfford ? 1 : 0.55);
     if (!canAfford && !pulling) {
       helper.setText(brokeCopy[ink % brokeCopy.length] ?? brokeCopy[0] ?? '');
       helper.setColor(UI.coralText);
     } else if (!pulling) {
       helper.setText(
-        `First pull today: ${CAPSULE_FIRST_DAILY_COST} ink. Later pulls: ${CAPSULE_COST}.`
+        nextCost === CAPSULE_FIRST_DAILY_COST
+          ? `Next: ${nextCost} Ink — daily discount (then ${CAPSULE_COST})`
+          : `Next capsule: ${nextCost} Ink.`
       );
       helper.setColor(UI.inkSoft);
     }
@@ -106,7 +124,7 @@ export function openCapsuleMachine(scene: Scene, opts: CapsuleMachineOpts): Caps
 
   async function doPull(): Promise<void> {
     if (pulling) return;
-    if (ink < CAPSULE_FIRST_DAILY_COST) {
+    if (ink < nextCost) {
       // Playful shake + copy already shown; give a tiny nudge.
       scene.tweens.add({ targets: pullBtn, x: pullBtn.x + 6, duration: 60, yoyo: true, repeat: 3 });
       return;
@@ -118,24 +136,38 @@ export function openCapsuleMachine(scene: Scene, opts: CapsuleMachineOpts): Caps
     // Crank + shake the machine.
     await shakeMachine(scene, machine);
 
-    const result = await opts.onPull();
+    pendingOperationId ??= createCapsuleOperationId();
+    const result = await opts.onPull(pendingOperationId);
     if ('error' in result) {
       pulling = false;
-      helper.setText(result.error);
+      helper.setText(`${result.error} Tap PULL to safely retry.`);
       helper.setColor(UI.coralText);
       return;
     }
     ink = result.ink;
+    nextCost = result.nextCost;
+    pendingOperationId = null;
     await dropAndPop(scene, capsule, result.pull.rarity);
     revealPrize(scene, layer, result.pull);
     pulling = false;
     refreshAffordance();
+    if (closeRequested) close();
   }
 
   scrim.on('pointerup', () => close());
 
   function close(): void {
     if (!layer.active) return;
+    if (pulling || pendingOperationId) {
+      closeRequested = true;
+      helper.setText(
+        pulling
+          ? 'Finishing this paid pull before closing…'
+          : 'Tap PULL once to safely reconcile this pull.'
+      );
+      helper.setColor(UI.coralText);
+      return;
+    }
     opts.onClose(ink);
     layer.destroy(true);
   }
@@ -381,8 +413,8 @@ function rainbowMoment(scene: Scene, layer: Phaser.GameObjects.Container): void 
     speedY: { min: 200, max: 460 },
     scale: { start: 0.6, end: 0 },
     lifespan: 1600,
-    quantity: 6,
-    frequency: 40,
+    quantity: 3,
+    frequency: 80,
     tint: hues,
   });
   emitter.setScrollFactor(0).setDepth(DEPTH + 5);

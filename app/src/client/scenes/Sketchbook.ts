@@ -1,7 +1,13 @@
 import { Scene } from 'phaser';
 import { fetchLegends } from '../lib/api';
 import { getArena, getSketchbookTab, setSketchbookTab } from '../lib/registry';
-import { loadDrawing, fitDrawing, recordText, levelOf } from '../lib/scribbits';
+import {
+  loadDrawing,
+  fitDrawing,
+  recordText,
+  levelOf,
+  releaseRenderedDrawingTextures,
+} from '../lib/scribbits';
 import { NAV_SAFE, TYPE, UI } from '../lib/theme';
 import { LivingPaper } from '../lib/livingpaper';
 import { label, ghostButton, handLettered, paperCard, stickerCard, elementBadge, levelBadge, errorPanel, appTabBar, fadeToScene } from '../lib/ui';
@@ -21,6 +27,10 @@ export class Sketchbook extends Scene {
   private loggedIn = false;
   private livingPaper: LivingPaper | null = null;
   private buildGeneration = 0;
+  private legendPage = 0;
+  private fadedPage = 0;
+  private loadingOlderLegends = false;
+  private galleryRequestEpoch = 0;
 
   constructor() {
     super('Sketchbook');
@@ -31,6 +41,10 @@ export class Sketchbook extends Scene {
     this.errorPanelRef = null;
     this.livingPaper = null;
     this.buildGeneration = 0;
+    this.legendPage = 0;
+    this.fadedPage = 0;
+    this.loadingOlderLegends = false;
+    this.galleryRequestEpoch = 0;
   }
 
   create(): void {
@@ -38,22 +52,92 @@ export class Sketchbook extends Scene {
     this.cameras.main.fadeIn(180, 255, 247, 232);
     this.tab = getSketchbookTab(this);
     this.loggedIn = getArena(this)?.loggedIn ?? false;
+    this.build();
     void this.loadGallery();
   }
 
   private async loadGallery(): Promise<void> {
-    const result = await fetchLegends();
+    const requestEpoch = this.galleryRequestEpoch + 1;
+    this.galleryRequestEpoch = requestEpoch;
+    this.loadingOlderLegends = false;
+    const result = await fetchLegends(null, this.getLegendPageSize());
+    if (
+      !this.scene.isActive() ||
+      requestEpoch !== this.galleryRequestEpoch
+    ) {
+      return;
+    }
     if (!result.ok) {
       this.showError(result.error);
       return;
     }
     this.galleryData = result.data;
+    this.legendPage = 0;
+    this.build();
+  }
+
+  private async loadOlderLegends(pageSize: number): Promise<void> {
+    const startingCursor = this.galleryData?.nextCursor;
+    if (!startingCursor || this.loadingOlderLegends) return;
+
+    const requestEpoch = this.galleryRequestEpoch;
+    this.loadingOlderLegends = true;
+    this.build();
+    const existingLegends = this.galleryData?.legends ?? [];
+    const existingIds = new Set(existingLegends.map((legend) => legend.id));
+    const newLegends: Scribbit[] = [];
+    let nextCursor: string | null = startingCursor;
+    let fadedSnapshot = this.galleryData?.myFaded ?? [];
+
+    // Offset cursors can overlap after a new Legend is inserted while this
+    // player is browsing. Follow a few duplicate-only pages automatically so
+    // Older still makes visible progress without an unbounded request loop.
+    for (let attempt = 0; attempt < 4 && nextCursor; attempt += 1) {
+      const result = await fetchLegends(nextCursor, pageSize);
+      if (
+        !this.scene.isActive() ||
+        requestEpoch !== this.galleryRequestEpoch
+      ) {
+        return;
+      }
+      if (!result.ok) {
+        this.loadingOlderLegends = false;
+        this.build();
+        if (this.tab === 'legends') {
+          this.showError(
+            result.error,
+            () => void this.loadOlderLegends(pageSize)
+          );
+        }
+        return;
+      }
+
+      fadedSnapshot = result.data.myFaded;
+      nextCursor = result.data.nextCursor;
+      for (const legend of result.data.legends) {
+        if (existingIds.has(legend.id)) continue;
+        existingIds.add(legend.id);
+        newLegends.push(legend);
+      }
+      if (newLegends.length > 0) break;
+    }
+
+    this.loadingOlderLegends = false;
+    this.galleryData = {
+      legends: [...existingLegends, ...newLegends],
+      nextCursor,
+      myFaded: this.galleryData?.myFaded ?? fadedSnapshot,
+    };
+    if (newLegends.length > 0) {
+      this.legendPage = Math.floor(existingLegends.length / pageSize);
+    }
     this.build();
   }
 
   private build(): void {
     this.buildGeneration += 1;
     this.children.removeAll(true);
+    releaseRenderedDrawingTextures(this);
     // Calm living page (no forecast field, no countdown) rebuilt each build.
     this.livingPaper?.destroy();
     this.livingPaper = new LivingPaper(this);
@@ -62,8 +146,18 @@ export class Sketchbook extends Scene {
     this.buildTabs(150);
     this.buildAppTabs();
 
-    if (this.tab === 'legends') this.buildLegends(230);
-    else this.buildSketchbook(230);
+    if (!this.galleryData) {
+      const loading = stickerCard(this, width / 2, 440, width - 100, 180, {
+        tapeColor: UI.tapeAlt,
+      });
+      loading.add(
+        label(this, 0, 0, 'Opening the community gallery…', TYPE.body, UI.inkSoft, true)
+      );
+      return;
+    }
+
+    if (this.tab === 'legends') this.buildLegends(320);
+    else this.buildSketchbook(320);
   }
 
   private buildAppTabs(): void {
@@ -113,8 +207,68 @@ export class Sketchbook extends Scene {
 
   private switchTab(tab: Tab): void {
     this.tab = tab;
+    if (tab === 'legends') this.legendPage = 0;
+    else this.fadedPage = 0;
     setSketchbookTab(this, tab);
     this.build();
+  }
+
+  private buildPageControls(
+    totalPages: number,
+    y: number,
+    page: number,
+    changePage: (page: number) => void,
+    hasMore = false,
+    loadMore?: () => void
+  ): void {
+    if (totalPages <= 1 && !hasMore) return;
+    const { width } = this.scale;
+    label(
+      this,
+      width / 2,
+      y,
+      `${page + 1} / ${totalPages}${hasMore ? '+' : ''}`,
+      TYPE.caption,
+      UI.inkSoft,
+      true
+    );
+    if (page > 0) {
+      ghostButton(this, width / 2 - 210, y, '← Newer', () => {
+        changePage(page - 1);
+        this.build();
+      }, 150);
+    }
+    if (page < totalPages - 1 || hasMore) {
+      ghostButton(
+        this,
+        width / 2 + 210,
+        y,
+        this.loadingOlderLegends && page === totalPages - 1
+          ? 'Opening…'
+          : 'Older →',
+        () => {
+          if (page < totalPages - 1) {
+            changePage(page + 1);
+            this.build();
+            return;
+          }
+          loadMore?.();
+        },
+        150
+      );
+    }
+  }
+
+  private getLegendPageSize(top = 320): number {
+    const columns = 2;
+    const cardHeight = 380;
+    const visibleRows = Math.max(
+      1,
+      Math.floor(
+        (this.scale.height - NAV_SAFE - cardHeight / 2 - top - 210) / 410
+      ) + 1
+    );
+    return columns * visibleRows;
   }
 
   private isCurrentBuild(generation: number): boolean {
@@ -137,9 +291,22 @@ export class Sketchbook extends Scene {
     }
     const columns = 2;
     const cellWidth = (width - 60) / columns;
-    const cardHeight = 380;
-    const visibleRows = Math.max(1, Math.floor((this.scale.height - NAV_SAFE - cardHeight / 2 - top - 210) / 410) + 1);
-    legends.slice(0, columns * visibleRows).forEach((legend, index) => {
+    const pageSize = this.getLegendPageSize(top);
+    const totalPages = Math.ceil(legends.length / pageSize);
+    this.legendPage = Math.min(this.legendPage, totalPages - 1);
+    const hasMore = this.galleryData?.nextCursor !== null;
+    this.buildPageControls(
+      totalPages,
+      top - 80,
+      this.legendPage,
+      (page) => {
+        this.legendPage = page;
+      },
+      hasMore && this.legendPage === totalPages - 1,
+      () => void this.loadOlderLegends(pageSize)
+    );
+    const start = this.legendPage * pageSize;
+    legends.slice(start, start + pageSize).forEach((legend, index) => {
       const col = index % columns;
       const row = Math.floor(index / columns);
       const x = 30 + cellWidth * (col + 0.5);
@@ -210,7 +377,18 @@ export class Sketchbook extends Scene {
       return;
     }
     const visibleRows = Math.max(1, Math.floor((this.scale.height - NAV_SAFE - top - 160) / 200) + 1);
-    faded.slice(0, visibleRows).forEach((scribbit, index) => {
+    const totalPages = Math.ceil(faded.length / visibleRows);
+    this.fadedPage = Math.min(this.fadedPage, totalPages - 1);
+    this.buildPageControls(
+      totalPages,
+      top - 80,
+      this.fadedPage,
+      (page) => {
+        this.fadedPage = page;
+      }
+    );
+    const start = this.fadedPage * visibleRows;
+    faded.slice(start, start + visibleRows).forEach((scribbit, index) => {
       const y = top + 80 + index * 200;
       this.buildFadedRow(scribbit, y);
     });
@@ -242,13 +420,15 @@ export class Sketchbook extends Scene {
   }
 
   // --- Actions --------------------------------------------------------------
-  private showError(message: string): void {
+  private showError(message: string, retry = (): void => {
+    void this.loadGallery();
+  }): void {
     if (this.errorPanelRef) return;
     const { width, height } = this.scale;
     this.errorPanelRef = errorPanel(this, width / 2, height / 2, message, () => {
       this.errorPanelRef?.destroy();
       this.errorPanelRef = null;
-      void this.loadGallery();
+      retry();
     });
   }
 }

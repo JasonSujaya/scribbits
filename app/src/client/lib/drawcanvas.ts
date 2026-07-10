@@ -43,7 +43,12 @@ export class DrawCanvas {
 
   // Undo stack of ImageData snapshots taken BEFORE each stroke starts.
   private history: ImageData[] = [];
-  private readonly maxHistory = 24;
+  // Ten 512x512 RGBA snapshots use about 10 MiB. The old 24-step stack alone
+  // consumed roughly 24 MiB inside Reddit's mobile WebView.
+  private readonly maxHistory = 10;
+  private readonly handlePointerDown = (event: PointerEvent): void => this.startStroke(event);
+  private readonly handlePointerMove = (event: PointerEvent): void => this.moveStroke(event);
+  private readonly handlePointerUp = (): void => this.endStroke();
 
   constructor(options: DrawCanvasOptions) {
     this.onStrokeEnd = options.onStrokeEnd;
@@ -121,6 +126,17 @@ export class DrawCanvas {
     return this.history.length > 0;
   }
 
+  destroy(): void {
+    this.element.removeEventListener('pointerdown', this.handlePointerDown);
+    this.element.removeEventListener('pointermove', this.handlePointerMove);
+    this.element.removeEventListener('pointerup', this.handlePointerUp);
+    this.element.removeEventListener('pointerleave', this.handlePointerUp);
+    this.element.removeEventListener('pointercancel', this.handlePointerUp);
+    this.history = [];
+    this.drawing = false;
+    this.element.remove();
+  }
+
   getImageData(): ImageData {
     return this.ctx.getImageData(0, 0, CANVAS_SIZE, CANVAS_SIZE);
   }
@@ -155,11 +171,11 @@ export class DrawCanvas {
 
   private attachPointerHandlers(): void {
     const canvas = this.element;
-    canvas.addEventListener('pointerdown', (event) => this.startStroke(event));
-    canvas.addEventListener('pointermove', (event) => this.moveStroke(event));
-    canvas.addEventListener('pointerup', () => this.endStroke());
-    canvas.addEventListener('pointerleave', () => this.endStroke());
-    canvas.addEventListener('pointercancel', () => this.endStroke());
+    canvas.addEventListener('pointerdown', this.handlePointerDown);
+    canvas.addEventListener('pointermove', this.handlePointerMove);
+    canvas.addEventListener('pointerup', this.handlePointerUp);
+    canvas.addEventListener('pointerleave', this.handlePointerUp);
+    canvas.addEventListener('pointercancel', this.handlePointerUp);
   }
 
   // Translate a client pointer position into 512x512 backing-store coordinates.

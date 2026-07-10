@@ -37,6 +37,7 @@ export class DomOverlay {
   private readonly scene: Scene;
   private readonly root: HTMLDivElement;
   private readonly placements: Placement[] = [];
+  private readonly canvasObserver: ResizeObserver | null;
 
   constructor(scene: Scene) {
     this.scene = scene;
@@ -48,6 +49,10 @@ export class DomOverlay {
     this.root.style.pointerEvents = 'none';
     this.root.style.zIndex = '20';
     document.body.appendChild(this.root);
+    this.canvasObserver = typeof ResizeObserver === 'undefined'
+      ? null
+      : new ResizeObserver(() => this.sync());
+    this.canvasObserver?.observe(scene.game.canvas);
   }
 
   // Register a DOM element to be positioned at a design-space rectangle.
@@ -83,6 +88,7 @@ export class DomOverlay {
   }
 
   destroy(): void {
+    this.canvasObserver?.disconnect();
     this.root.remove();
     this.placements.length = 0;
   }

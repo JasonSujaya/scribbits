@@ -11,7 +11,15 @@ import {
   backScribbit,
 } from '../lib/api';
 import { setArena, getArena, setReplay, takeArenaFocus } from '../lib/registry';
-import { loadDrawing, fitDrawing, recordText, moodStyleOf, levelOf, canCare } from '../lib/scribbits';
+import {
+  loadDrawing,
+  fitDrawing,
+  recordText,
+  moodStyleOf,
+  levelOf,
+  canCare,
+  releaseRenderedDrawingTextures,
+} from '../lib/scribbits';
 import { CARE_STYLES, ELEMENT_STYLES, EDGE, NAV_SAFE, SPACE, TYPE, UI } from '../lib/theme';
 import { LivingPaper } from '../lib/livingpaper';
 import {
@@ -29,6 +37,7 @@ import {
   floatReward,
   rosette,
   appTabBar,
+  button,
   fadeToScene,
   spinner,
   dominantButton,
@@ -42,7 +51,11 @@ import { pullCapsule } from '../lib/api';
 import { INK_REWARDS } from '../../shared/arena';
 import type { ArenaState, CareAction, Scribbit } from '../../shared/arena';
 import { showVsCeremony } from '../lib/battleceremony';
-import { dailyDrawTabLabel, navigateToDailyDraw } from '../lib/draweligibility';
+import {
+  dailyDrawTabLabel,
+  getDrawEligibility,
+  navigateToDailyDraw,
+} from '../lib/draweligibility';
 
 // The landing scene. A tall, drag-scrollable sketchbook page: countdown-topped
 // header, weather card, wanted-poster champion, your roster, TONIGHT'S BRACKET
@@ -113,6 +126,7 @@ export class ArenaHome extends Scene {
     this.state = state;
     this.cameras.main.fadeIn(180, 255, 247, 232);
     this.build();
+    this.showRumbleReceiptIfNeeded();
     this.events.once('shutdown', () => this.cleanup());
     this.events.on('wake', this.refreshOnWake);
   }
@@ -133,6 +147,7 @@ export class ArenaHome extends Scene {
   private build(): void {
     this.buildGeneration += 1;
     this.children.removeAll(true);
+    releaseRenderedDrawingTextures(this);
     this.weatherTimer?.remove();
     this.countdownTimer?.remove();
     this.countdownLabel = null;
@@ -356,8 +371,9 @@ export class ArenaHome extends Scene {
     if (!this.requireLogin()) return;
     openCapsuleMachine(this, {
       ink: this.state.myInk ?? 0,
-      onPull: async () => {
-        const result = await pullCapsule();
+      nextCost: this.state.nextCapsuleCost,
+      onPull: async (operationId) => {
+        const result = await pullCapsule(operationId);
         if (!result.ok) return { error: result.error };
         return result.data;
       },
@@ -756,7 +772,30 @@ export class ArenaHome extends Scene {
   private buildActionRow(x: number, y: number): number {
     const width = this.scale.width - EDGE * 2;
     if (!this.state.drawnToday) {
+      const drawEligibility = getDrawEligibility(this.state);
       const btnY = y + 70;
+      if (!this.state.loggedIn) {
+        dominantButton(this, x, btnY, '🔒 SIGN IN TO DRAW', () => this.startDraw(), width, true);
+        return btnY + 70;
+      }
+      if (!drawEligibility.canDraw) {
+        const card = stickerCard(this, x, btnY, width, 112, {
+          tapeColor: UI.tape,
+          tilt: -0.4,
+        });
+        card.add(
+          label(
+            this,
+            0,
+            0,
+            'ROSTER FULL\nRemove one Scribbit or wait for one to fade.',
+            TYPE.title,
+            UI.ink,
+            true
+          ).setWordWrapWidth(width - 60)
+        );
+        return btnY + 70;
+      }
       dominantButton(this, x, btnY, "✏️ DRAW TODAY'S SCRIBBIT", () => this.startDraw(), width, true);
       return btnY + 70;
     }
@@ -785,6 +824,89 @@ export class ArenaHome extends Scene {
       : '✓ Scribbit drawn — enter it from your roster';
     card.add(label(this, 0, 0, text, TYPE.title, UI.ink, true).setWordWrapWidth(width - 60));
     return cardY + 46;
+  }
+
+  private showRumbleReceiptIfNeeded(): void {
+    const receipt = this.state.lastRumbleReceipt;
+    if (!receipt) return;
+    const shownKey = 'lastRumbleReceiptShownDay';
+    if (this.registry.get(shownKey) === receipt.resolvedDay) return;
+    this.registry.set(shownKey, receipt.resolvedDay);
+
+    const { width, height } = this.scale;
+    const layer = this.add.container(0, 0).setScrollFactor(0).setDepth(2200);
+    const shade = this.add
+      .rectangle(width / 2, height / 2, width, height, UI.inkHex, 0.58)
+      .setInteractive();
+    layer.add(shade);
+
+    const card = stickerCard(this, width / 2, height / 2, width - 100, 610, {
+      gold: receipt.cloutEarned === 3,
+      tapeColor: UI.tapeAlt,
+    });
+    layer.add(card);
+
+    const resultTitle = receipt.cloutEarned === 3
+      ? 'YOU CALLED IT!'
+      : receipt.cloutEarned === 1
+        ? 'FINALIST PICK'
+        : 'SCOUTING REPORT';
+    card.add(label(this, 0, -240, `RUMBLE #${receipt.resolvedDay}`, TYPE.caption, UI.inkSoft, true));
+    card.add(handLettered(this, 0, -175, resultTitle, 44, UI.ink, true));
+    const pickCopy = label(
+      this,
+      0,
+      -70,
+      `You backed ${receipt.backedName}.\n${receipt.championName} took the crown.`,
+      TYPE.body,
+      UI.ink,
+      true
+    );
+    pickCopy.setWordWrapWidth(width - 190).setLineSpacing(8);
+    card.add(pickCopy);
+
+    const rewardCopy = receipt.cloutEarned > 0
+      ? `+${receipt.cloutEarned} Scout Clout${receipt.inkAwarded > 0 ? ` · +${receipt.inkAwarded} Ink` : ''}`
+      : 'No Clout this time — today is a fresh pick.';
+    card.add(
+      label(
+        this,
+        0,
+        55,
+        rewardCopy,
+        TYPE.title,
+        receipt.cloutEarned > 0 ? UI.goldText : UI.inkSoft,
+        true
+      ).setWordWrapWidth(width - 190)
+    );
+
+    const drawEligibility = getDrawEligibility(this.state);
+    const nextLabel = this.state.drawnToday
+      ? 'See tonight’s contenders →'
+      : drawEligibility.canDraw
+        ? `Draw Day ${this.state.dayNumber} →`
+        : 'Continue to the Arena →';
+    card.add(
+      button(
+        this,
+        0,
+        205,
+        nextLabel,
+        () => {
+          layer.destroy(true);
+          if (this.state.drawnToday) {
+            this.scrollTo((this.focusEntrantsY ?? 0) - 120);
+          } else if (drawEligibility.canDraw) {
+            this.startDraw();
+          } else {
+            showToast(drawEligibility.message);
+          }
+        },
+        width - 220,
+        UI.coral,
+        UI.ink
+      )
+    );
   }
 
   private openLegends(): void {
@@ -1049,6 +1171,7 @@ export class ArenaHome extends Scene {
     this.state = result.data;
     setArena(this, result.data);
     this.build();
+    this.showRumbleReceiptIfNeeded();
   }
 
   private showError(message: string): void {

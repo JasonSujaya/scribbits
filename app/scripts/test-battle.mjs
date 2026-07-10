@@ -53,6 +53,7 @@ execFileSync(
     'src/server/core/streak.ts',
     'src/server/core/moderation.ts',
     'src/server/core/privacy.ts',
+    'src/client/lib/inkmesh.ts',
     'src/client/lib/pens.ts',
   ],
   { cwd: repoRoot, stdio: 'inherit' }
@@ -75,6 +76,7 @@ const scribbitCore = require(join(outDir, 'server', 'core', 'scribbit.js'));
 const streakCore = require(join(outDir, 'server', 'core', 'streak.js'));
 const moderationCore = require(join(outDir, 'server', 'core', 'moderation.js'));
 const privacyCore = require(join(outDir, 'server', 'core', 'privacy.js'));
+const inkMeshCore = require(join(outDir, 'client', 'lib', 'inkmesh.js'));
 const clientPens = require(join(outDir, 'client', 'lib', 'pens.js'));
 
 const passedChecks = [];
@@ -144,10 +146,71 @@ const sumStats = (stats) => {
   return stats.chonk + stats.spike + stats.zip + stats.charm;
 };
 
-const createMemoryStorage = () => {
+const inkMeshGeometry = inkMeshCore.buildInkMeshGeometry(200, 160);
+assert.equal(inkMeshGeometry.vertices.length, 25 * 4, '4x4 mesh needs 25 xyuv vertices');
+assert.equal(inkMeshGeometry.indices.length, 32 * 4, '4x4 mesh needs 32 textured triangles');
+assert.equal(
+  inkMeshCore.getSignatureTrait({ chonk: 10, spike: 50, zip: 20, charm: 20 }),
+  'spike',
+  'dominant jagged-outline stat should select QUILL RUSH'
+);
+assert.equal(
+  inkMeshCore.getSignatureTrait({ chonk: 25, spike: 25, zip: 25, charm: 25 }),
+  'chonk',
+  'ties should resolve deterministically in documented stat order'
+);
+inkMeshCore.updateInkMeshVertices(
+  inkMeshGeometry,
+  { chonk: 25, spike: 25, zip: 25, charm: 25 },
+  {
+    elapsedSeconds: 3,
+    awakenProgress: 0,
+    impactProgress: 0,
+    impactDirection: 1,
+    crumpleProgress: 0,
+    celebrateAmount: 1,
+    signatureAmount: 0.5,
+    signatureTrait: 'charm',
+    reduceMotion: true,
+  }
+);
+assert.deepEqual(
+  inkMeshGeometry.vertices,
+  inkMeshGeometry.restVertices,
+  'reduced motion should render the stable submitted drawing without deformation'
+);
+const movingInkMesh = inkMeshCore.buildInkMeshGeometry(200, 160);
+inkMeshCore.updateInkMeshVertices(
+  movingInkMesh,
+  { chonk: 10, spike: 50, zip: 20, charm: 20 },
+  {
+    elapsedSeconds: 1,
+    awakenProgress: 1,
+    impactProgress: 1,
+    impactDirection: 1,
+    crumpleProgress: 0,
+    celebrateAmount: 0,
+    signatureAmount: 0.5,
+    signatureTrait: 'spike',
+    reduceMotion: false,
+  }
+);
+assert.notDeepEqual(
+  movingInkMesh.vertices,
+  movingInkMesh.restVertices,
+  'shape power should visibly deform the mesh while preserving topology'
+);
+assert.ok(
+  movingInkMesh.vertices.every(Number.isFinite),
+  'every animated Inkbody vertex must remain finite'
+);
+pass('Phaser Inkbody mesh geometry and deterministic shape power');
+
+const createMemoryStorage = (options = {}) => {
   const values = new Map();
   const hashes = new Map();
   const sortedSets = new Map();
+  let throwAfterCommitOnce = options.throwAfterCommitOnce === true;
 
   const getHash = (key) => {
     const existing = hashes.get(key);
@@ -185,7 +248,7 @@ const createMemoryStorage = () => {
     return entries.slice(normalizedStart, end);
   };
 
-  return {
+  const storage = {
     async get(key) {
       return values.get(key);
     },
@@ -287,6 +350,91 @@ const createMemoryStorage = () => {
       return next;
     },
   };
+
+  if (options.transactions === true) {
+    storage.watch = async () => {
+      const queuedCommands = [];
+      let transactionStarted = false;
+      let transactionFinished = false;
+
+      const queueCommand = (command) => {
+        if (!transactionStarted || transactionFinished) {
+          throw new Error('Memory transaction is not accepting commands.');
+        }
+        queuedCommands.push(command);
+      };
+
+      return {
+        async multi() {
+          transactionStarted = true;
+        },
+        async incrBy(key, value) {
+          queueCommand(() => {
+            const next = Number(values.get(key) ?? '0') + value;
+            values.set(key, String(next));
+            return next;
+          });
+        },
+        async set(key, value) {
+          queueCommand(() => values.set(key, value));
+        },
+        async del(...keys) {
+          queueCommand(() => {
+            let deleted = 0;
+            for (const key of keys) {
+              if (values.delete(key)) deleted += 1;
+              hashes.delete(key);
+              sortedSets.delete(key);
+            }
+            return deleted;
+          });
+        },
+        async expire() {
+          queueCommand(() => undefined);
+        },
+        async hSet(key, fieldValues) {
+          queueCommand(() => {
+            const hash = getHash(key);
+            for (const [field, value] of Object.entries(fieldValues)) {
+              hash.set(field, value);
+            }
+          });
+        },
+        async hIncrBy(key, field, value) {
+          queueCommand(() => {
+            const hash = getHash(key);
+            const next = Number(hash.get(field) ?? '0') + value;
+            hash.set(field, String(next));
+            return next;
+          });
+        },
+        async exec() {
+          if (!transactionStarted || transactionFinished) {
+            throw new Error('Memory transaction cannot execute.');
+          }
+          transactionFinished = true;
+          const results = queuedCommands.map((command) => command());
+          if (throwAfterCommitOnce) {
+            throwAfterCommitOnce = false;
+            throw new Error('Simulated capsule reply loss after commit.');
+          }
+          return results;
+        },
+        async discard() {
+          if (!transactionFinished) {
+            queuedCommands.length = 0;
+            transactionFinished = true;
+          }
+        },
+        async unwatch() {
+          queuedCommands.length = 0;
+          transactionFinished = true;
+        },
+      };
+    };
+  }
+
+  return storage;
 };
 
 const moderationStorage = createMemoryStorage();
@@ -467,6 +615,12 @@ assert.ok(
   reportOne.events.length >= 6 && reportOne.events.length <= 14,
   'battle reports should stay inside the event budget'
 );
+reportOne.events.forEach((event, index) => {
+  if (event.type !== 'hit' && event.type !== 'crit') return;
+  const telegraph = reportOne.events[index - 1];
+  assert.equal(telegraph?.type, 'move', 'every impact should follow one move telegraph');
+  assert.equal(telegraph?.actor, event.actor, 'move and impact should share the same actor');
+});
 pass('battle determinism and shared max HP');
 
 const normalizedStats = scribbitCore.normalizeStats({
@@ -791,6 +945,326 @@ assert.ok(
 );
 pass('capsule ink balance never goes negative');
 
+const operationPendingTimeoutMs = 15_000;
+const operationClaimedAtMs = 100_000;
+const operationClaimStorage = createMemoryStorage({ transactions: true });
+const recentOperationKey = 'capsule:operation:claim-player:recent-operation';
+const recentPendingValue = 'pending:90001';
+await operationClaimStorage.set(recentOperationKey, recentPendingValue);
+assert.deepEqual(
+  await inkStore.claimCapsuleOperation(
+    operationClaimStorage,
+    recentOperationKey,
+    operationClaimedAtMs,
+    operationPendingTimeoutMs
+  ),
+  { status: 'pending' },
+  'a recent operation claim should remain pending'
+);
+assert.equal(
+  await operationClaimStorage.get(recentOperationKey),
+  recentPendingValue,
+  'checking a recent claim must not replace its owner value'
+);
+
+const staleOperationKey = 'capsule:operation:claim-player:stale-operation';
+await operationClaimStorage.set(staleOperationKey, 'pending:84999');
+const staleReplacement = await inkStore.claimCapsuleOperation(
+  operationClaimStorage,
+  staleOperationKey,
+  operationClaimedAtMs,
+  operationPendingTimeoutMs
+);
+assert.deepEqual(
+  staleReplacement,
+  { status: 'claimed', pendingValue: `pending:${operationClaimedAtMs}` },
+  'a stale operation claim should be replaced through the watched transaction'
+);
+assert.equal(
+  await operationClaimStorage.get(staleOperationKey),
+  staleReplacement.pendingValue,
+  'stale replacement should store only the new fenced owner value'
+);
+
+const corruptOperationKey = 'capsule:operation:claim-player:corrupt-operation';
+await operationClaimStorage.set(corruptOperationKey, '{"pull":{"id":"broken"}}');
+const corruptReplacement = await inkStore.claimCapsuleOperation(
+  operationClaimStorage,
+  corruptOperationKey,
+  operationClaimedAtMs,
+  operationPendingTimeoutMs
+);
+assert.deepEqual(
+  corruptReplacement,
+  { status: 'claimed', pendingValue: `pending:${operationClaimedAtMs}` },
+  'a structurally invalid receipt should be replaced through the same fence'
+);
+
+const completedOperationKey = 'capsule:operation:claim-player:completed-operation';
+const completedOperationResponse = {
+  pull: exactCostResult.pull,
+  ink: exactCostResult.ink,
+  inventory: exactCostResult.inventory,
+  nextCost: exactCostResult.nextCost,
+};
+await operationClaimStorage.set(
+  completedOperationKey,
+  JSON.stringify(completedOperationResponse)
+);
+assert.deepEqual(
+  await inkStore.claimCapsuleOperation(
+    operationClaimStorage,
+    completedOperationKey,
+    operationClaimedAtMs,
+    operationPendingTimeoutMs
+  ),
+  { status: 'completed', response: completedOperationResponse },
+  'a completed typed receipt should be recovered without claiming again'
+);
+pass('capsule operation pending, replacement, and completed recovery');
+
+const operationReleaseStorage = createMemoryStorage({ transactions: true });
+const releaseOperationKey = 'capsule:operation:release-player:operation-0001';
+const newerPendingValue = 'pending:3100';
+await operationReleaseStorage.set(releaseOperationKey, newerPendingValue);
+assert.equal(
+  await inkStore.releaseCapsuleOperation(
+    operationReleaseStorage,
+    releaseOperationKey,
+    'pending:3000'
+  ),
+  false,
+  'a stale worker must not release a newer pending owner'
+);
+assert.equal(
+  await operationReleaseStorage.get(releaseOperationKey),
+  newerPendingValue,
+  'failed release must preserve the newer pending owner'
+);
+assert.equal(
+  await inkStore.releaseCapsuleOperation(
+    operationReleaseStorage,
+    releaseOperationKey,
+    newerPendingValue
+  ),
+  true,
+  'the exact pending owner should be releasable'
+);
+assert.equal(
+  await operationReleaseStorage.get(releaseOperationKey),
+  undefined,
+  'exact release should delete its operation key'
+);
+await operationReleaseStorage.set(
+  releaseOperationKey,
+  JSON.stringify(completedOperationResponse)
+);
+assert.equal(
+  await inkStore.releaseCapsuleOperation(
+    operationReleaseStorage,
+    releaseOperationKey,
+    newerPendingValue
+  ),
+  false,
+  'a stale release must never delete a completed receipt'
+);
+assert.equal(
+  await operationReleaseStorage.get(releaseOperationKey),
+  JSON.stringify(completedOperationResponse),
+  'completed receipt should survive a stale release attempt'
+);
+pass('capsule operation release deletes only its exact pending value');
+
+const atomicCapsuleStorage = createMemoryStorage({ transactions: true });
+const atomicCapsuleUserId = 'atomic-capsule-player';
+const atomicCapsuleDay = 8;
+const atomicOperationId = 'capsule-atomic-operation-0001';
+const atomicOperationKey =
+  `capsule:operation:${atomicCapsuleUserId}:${atomicOperationId}`;
+const atomicStartingInk = arena.CAPSULE_FIRST_DAILY_COST + arena.CAPSULE_COST;
+await atomicCapsuleStorage.set(
+  inkStore.getInkKey(atomicCapsuleUserId),
+  String(atomicStartingInk)
+);
+const atomicOperationClaim = await inkStore.claimCapsuleOperation(
+  atomicCapsuleStorage,
+  atomicOperationKey,
+  200_000,
+  operationPendingTimeoutMs
+);
+assert.equal(
+  atomicOperationClaim.status,
+  'claimed',
+  'new atomic capsule operation should be claimed'
+);
+assert.ok(
+  'pendingValue' in atomicOperationClaim,
+  'claimed operation should carry its fenced pending value'
+);
+const atomicCapsuleResult = await inkStore.pullCapsuleForUser(
+  atomicCapsuleStorage,
+  atomicCapsuleUserId,
+  atomicCapsuleDay,
+  {
+    operationKey: atomicOperationKey,
+    expectedPendingValue: atomicOperationClaim.pendingValue,
+  }
+);
+assert.equal(
+  atomicCapsuleResult.status,
+  'pulled',
+  'transactional capsule pull should complete'
+);
+const atomicReceiptJson = await atomicCapsuleStorage.get(atomicOperationKey);
+assert.ok(atomicReceiptJson, 'capsule commit should replace pending claim with a receipt');
+const atomicReceipt = JSON.parse(atomicReceiptJson);
+assert.deepEqual(
+  atomicReceipt,
+  {
+    pull: atomicCapsuleResult.pull,
+    ink: atomicCapsuleResult.ink,
+    inventory: atomicCapsuleResult.inventory,
+    nextCost: atomicCapsuleResult.nextCost,
+  },
+  'atomic receipt should contain the exact paid response'
+);
+assert.deepEqual(
+  await inkStore.claimCapsuleOperation(
+    atomicCapsuleStorage,
+    atomicOperationKey,
+    200_100,
+    operationPendingTimeoutMs
+  ),
+  { status: 'completed', response: atomicReceipt },
+  'retry should recover the completed typed receipt'
+);
+assert.equal(
+  await atomicCapsuleStorage.get(inkStore.getInkKey(atomicCapsuleUserId)),
+  String(atomicStartingInk - arena.CAPSULE_FIRST_DAILY_COST),
+  'same commit should deduct the discounted capsule cost'
+);
+assert.equal(
+  await atomicCapsuleStorage.get(
+    inkStore.getCapsulePullCountKey(atomicCapsuleUserId)
+  ),
+  '1',
+  'same commit should advance the capsule pull count'
+);
+assert.equal(
+  await atomicCapsuleStorage.get(
+    inkStore.getCapsuleDailyPullKey(atomicCapsuleUserId, atomicCapsuleDay)
+  ),
+  '1',
+  'same commit should consume the daily discount'
+);
+assert.deepEqual(
+  await inkStore.loadInventory(atomicCapsuleStorage, atomicCapsuleUserId),
+  atomicCapsuleResult.inventory,
+  'same commit should grant exactly the inventory recorded in the receipt'
+);
+pass('capsule paid mutation and per-operation receipt commit together');
+
+const ambiguousCapsuleStorage = createMemoryStorage({
+  transactions: true,
+  throwAfterCommitOnce: true,
+});
+const ambiguousCapsuleUserId = 'ambiguous-capsule-player';
+const ambiguousCapsuleDay = 9;
+const ambiguousOperationId = 'capsule-ambiguous-operation-0001';
+const ambiguousOperationKey =
+  `capsule:operation:${ambiguousCapsuleUserId}:${ambiguousOperationId}`;
+const ambiguousPendingValue = 'pending:300000';
+const ambiguousStartingInk = arena.CAPSULE_FIRST_DAILY_COST + arena.CAPSULE_COST;
+await ambiguousCapsuleStorage.set(
+  inkStore.getInkKey(ambiguousCapsuleUserId),
+  String(ambiguousStartingInk)
+);
+await ambiguousCapsuleStorage.set(
+  ambiguousOperationKey,
+  ambiguousPendingValue
+);
+await assert.rejects(
+  inkStore.pullCapsuleForUser(
+    ambiguousCapsuleStorage,
+    ambiguousCapsuleUserId,
+    ambiguousCapsuleDay,
+    {
+      operationKey: ambiguousOperationKey,
+      expectedPendingValue: ambiguousPendingValue,
+    }
+  ),
+  /Simulated capsule reply loss after commit/,
+  'test fixture should lose the reply only after applying the transaction'
+);
+const recoveredOperation = await inkStore.claimCapsuleOperation(
+  ambiguousCapsuleStorage,
+  ambiguousOperationKey,
+  300_100,
+  operationPendingTimeoutMs
+);
+assert.equal(
+  recoveredOperation.status,
+  'completed',
+  'ambiguous commit should leave a typed receipt for route-level recovery'
+);
+assert.ok(
+  'response' in recoveredOperation,
+  'completed ambiguous operation should expose its recovered response'
+);
+const expectedAmbiguousDrop = inkStore.selectCapsuleDrop({
+  userId: ambiguousCapsuleUserId,
+  day: ambiguousCapsuleDay,
+  pullCount: 1,
+  pullsSinceEpic: 0,
+});
+assert.equal(
+  recoveredOperation.response.pull.id,
+  expectedAmbiguousDrop.id,
+  'recovered receipt should identify the drop that actually committed'
+);
+assert.equal(
+  await inkStore.getInkBalance(
+    ambiguousCapsuleStorage,
+    ambiguousCapsuleUserId
+  ),
+  ambiguousStartingInk - arena.CAPSULE_FIRST_DAILY_COST,
+  'ambiguous response should still charge exactly once'
+);
+assert.deepEqual(
+  await inkStore.loadInventory(
+    ambiguousCapsuleStorage,
+    ambiguousCapsuleUserId
+  ),
+  recoveredOperation.response.inventory,
+  'ambiguous response should expose the inventory that committed with its receipt'
+);
+assert.equal(
+  await ambiguousCapsuleStorage.get(
+    inkStore.getCapsulePullCountKey(ambiguousCapsuleUserId)
+  ),
+  '1',
+  'ambiguous recovery must preserve a single paid pull'
+);
+assert.deepEqual(
+  await inkStore.claimCapsuleOperation(
+    ambiguousCapsuleStorage,
+    ambiguousOperationKey,
+    300_200,
+    operationPendingTimeoutMs
+  ),
+  recoveredOperation,
+  'repeated recovery should return the same receipt without another charge'
+);
+assert.equal(
+  await inkStore.getInkBalance(
+    ambiguousCapsuleStorage,
+    ambiguousCapsuleUserId
+  ),
+  ambiguousStartingInk - arena.CAPSULE_FIRST_DAILY_COST,
+  'repeated recovery must not charge a second time'
+);
+pass('capsule ambiguous throw-after-commit recovers exactly once');
+
 const flagStorage = createMemoryStorage();
 assert.equal(
   await scribbitCore.claimDailyFlags(flagStorage, 'player-one', 4, [
@@ -967,6 +1441,39 @@ assert.equal(
 );
 pass('care once-per-day claim and release');
 
+const beliefStorage = createMemoryStorage();
+const beliefScribbit = makeScribbit({
+  id: 'belief-concurrency',
+  belief: 5,
+});
+await scribbitCore.storeScribbit(
+  beliefStorage,
+  'belief-owner',
+  beliefScribbit
+);
+const beliefSnapshotA = await scribbitCore.loadScribbit(
+  beliefStorage,
+  beliefScribbit.id
+);
+const beliefSnapshotB = await scribbitCore.loadScribbit(
+  beliefStorage,
+  beliefScribbit.id
+);
+await Promise.all([
+  scribbitCore.increaseBelief(beliefStorage, beliefSnapshotA),
+  scribbitCore.increaseBelief(beliefStorage, beliefSnapshotB),
+]);
+const beliefAfterConcurrentVotes = await scribbitCore.loadScribbit(
+  beliefStorage,
+  beliefScribbit.id
+);
+assert.equal(
+  beliefAfterConcurrentVotes.belief,
+  7,
+  'two simultaneous voters should both increase community Belief'
+);
+pass('community belief increments are concurrency-safe');
+
 const sparXpStorage = createMemoryStorage();
 const sparScribbit = makeScribbit({ id: 'spar-xp', name: 'Spar XP' });
 await scribbitCore.storeScribbit(sparXpStorage, 'spar-owner', sparScribbit);
@@ -1029,6 +1536,52 @@ const forcedJob = await dailyJob.runNightlyArenaJob(dayMathStorage, {
 assert.equal(forcedJob.skipped, false, 'force should run');
 assert.equal(forcedJob.previousDay, 2, 'force should start from stored day');
 assert.equal(forcedJob.newDay, 3, 'force should increment by exactly one');
+
+const prepareNightlyLockStorage = async () => {
+  const storage = createMemoryStorage();
+  await arenaStore.setCurrentArenaDay(storage, 2);
+  const entrant = makeScribbit({
+    id: 'concurrent-lock-entry',
+    expiresDay: 8,
+  });
+  await scribbitCore.storeScribbit(storage, 'lock-owner', entrant);
+  await scribbitCore.addRumbleEntrant(storage, 2, entrant.id);
+  return storage;
+};
+const nightlyLockNow = new Date(Date.UTC(2026, 6, 6));
+const singleNightlyStorage = await prepareNightlyLockStorage();
+await dailyJob.runNightlyArenaJob(singleNightlyStorage, { now: nightlyLockNow });
+const expectedNightlyRecord = await scribbitCore.loadScribbit(
+  singleNightlyStorage,
+  'concurrent-lock-entry'
+);
+const concurrentNightlyStorage = await prepareNightlyLockStorage();
+const concurrentNightlyRuns = await Promise.allSettled([
+  dailyJob.runNightlyArenaJob(concurrentNightlyStorage, { now: nightlyLockNow }),
+  dailyJob.runNightlyArenaJob(concurrentNightlyStorage, { now: nightlyLockNow }),
+]);
+assert.ok(
+  concurrentNightlyRuns.some((result) => result.status === 'fulfilled'),
+  'one overlapping nightly worker should complete'
+);
+const concurrentNightlyRecord = await scribbitCore.loadScribbit(
+  concurrentNightlyStorage,
+  'concurrent-lock-entry'
+);
+assert.deepEqual(
+  {
+    wins: concurrentNightlyRecord.wins,
+    losses: concurrentNightlyRecord.losses,
+    xp: concurrentNightlyRecord.xp,
+  },
+  {
+    wins: expectedNightlyRecord.wins,
+    losses: expectedNightlyRecord.losses,
+    xp: expectedNightlyRecord.xp,
+  },
+  'overlapping nightly workers must not apply standings twice'
+);
+pass('nightly distributed claim blocks overlapping resolution');
 
 const catchUpStorage = createMemoryStorage();
 await arenaStore.setCurrentArenaDay(catchUpStorage, 2);
@@ -1239,6 +1792,16 @@ assert.equal(
   0,
   'non-finalist backer should not receive clout'
 );
+assert.equal(
+  await clout.getUserCloutPayout(cloutPayoutStorage, 2, 'champion-scout'),
+  3,
+  'daily receipt should recover the champion scout payout'
+);
+assert.equal(
+  await clout.getUserCloutPayout(cloutPayoutStorage, 2, 'miss-scout'),
+  0,
+  'daily receipt should report zero for a missed pick'
+);
 const duplicatePayout = await clout.payCloutForRumble(cloutPayoutStorage, {
   day: 2,
   championScribbitId: championId,
@@ -1305,6 +1868,79 @@ const legendByCrown = scribbitCore.resolveExpiredScribbitStatus(
 );
 assert.equal(legendByCrown.status, 'legend', 'crowned Scribbits become Legends');
 pass('expiry legend/fade evaluation');
+
+const legendPaginationStorage = createMemoryStorage();
+const paginationLegends = Array.from({ length: 5 }, (_, index) => {
+  const rank = index + 1;
+  return makeScribbit({
+    id: `pagination-legend-${rank}`,
+    name: `Pagination Legend ${rank}`,
+    status: 'legend',
+    legendTitle: `Legend rank ${rank}`,
+  });
+});
+for (const [index, legend] of paginationLegends.entries()) {
+  await scribbitCore.storeScribbit(
+    legendPaginationStorage,
+    `pagination-owner-${index + 1}`,
+    legend
+  );
+  await scribbitCore.addLegend(legendPaginationStorage, legend, index + 1);
+}
+
+assert.deepEqual(
+  await scribbitCore.getLegendIds(legendPaginationStorage, 2, 0),
+  ['pagination-legend-5', 'pagination-legend-4'],
+  'first Legend id page should be newest first'
+);
+assert.deepEqual(
+  await scribbitCore.getLegendIds(legendPaginationStorage, 2, 2),
+  ['pagination-legend-3', 'pagination-legend-2'],
+  'second Legend id page should continue without overlap'
+);
+assert.deepEqual(
+  (await scribbitCore.getLegends(legendPaginationStorage, 2, 0)).map(
+    (legend) => legend.id
+  ),
+  ['pagination-legend-5', 'pagination-legend-4'],
+  'hydrated first Legend page should preserve ranked order'
+);
+assert.deepEqual(
+  (await scribbitCore.getLegends(legendPaginationStorage, 2, 2)).map(
+    (legend) => legend.id
+  ),
+  ['pagination-legend-3', 'pagination-legend-2'],
+  'hydrated second Legend page should preserve its raw offset'
+);
+
+await legendPaginationStorage.zAdd(scribbitCore.getLegendsKey(), {
+  member: 'pagination-legend-stale',
+  score: 4.5,
+});
+assert.deepEqual(
+  await scribbitCore.getLegendIds(legendPaginationStorage, 3, 0),
+  [
+    'pagination-legend-5',
+    'pagination-legend-stale',
+    'pagination-legend-4',
+  ],
+  'raw Legend cursors should retain stale zset positions'
+);
+assert.deepEqual(
+  (await scribbitCore.getLegends(legendPaginationStorage, 3, 0)).map(
+    (legend) => legend.id
+  ),
+  ['pagination-legend-5', 'pagination-legend-4'],
+  'hydration should omit a stale Legend id without shifting the raw page'
+);
+assert.deepEqual(
+  (await scribbitCore.getLegends(legendPaginationStorage, 3, 3)).map(
+    (legend) => legend.id
+  ),
+  ['pagination-legend-3', 'pagination-legend-2', 'pagination-legend-1'],
+  'the next raw offset should remain non-overlapping after a stale id'
+);
+pass('Legend raw-offset pagination and stale-id safety');
 
 const expiryOrderStorage = createMemoryStorage();
 await arenaStore.setCurrentArenaDay(expiryOrderStorage, 2);

@@ -36,7 +36,13 @@ export const createPost = async (options: CreateArenaPostOptions) => {
       dateKey,
       dayNumber,
       forecast: options.forecast,
-      champion: options.champion ?? null,
+      champion: options.champion
+        ? {
+            name: options.champion.name,
+            element: options.champion.element,
+            legendTitle: options.champion.legendTitle,
+          }
+        : null,
     },
     textFallback: {
       text: `Scribbits Arena Rumble #${dayNumber}. ${options.forecast.blurb}. ${getChampionCopy(options.champion)}`,
@@ -50,13 +56,46 @@ export const getOrCreateArenaPost = async (
 ): Promise<{ id: string }> => {
   const day = options.day ?? getArenaDayNumber(options.date ?? new Date());
   const postKey = getArenaPostKey(day);
-  const existingPostId = await storage.get(postKey);
+  const postClaimKey = 'arena:post-publishing-claims';
+  const claimField = day.toString();
+  const claimTimeoutMs = 5 * 60 * 1000;
 
-  if (existingPostId) return { id: existingPostId };
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const existingPostId = await storage.get(postKey);
+    if (existingPostId) return { id: existingPostId };
 
-  const post = await createPost({ ...options, day });
-  await storage.set(postKey, post.id);
-  return post;
+    const nowMs = Date.now();
+    const existingClaim = Number(
+      await storage.hGet(postClaimKey, claimField)
+    );
+    if (Number.isFinite(existingClaim)) {
+      if (nowMs - existingClaim < claimTimeoutMs) {
+        throw new Error(`Arena post for day ${day} is already being published.`);
+      }
+      await storage.hDel(postClaimKey, [claimField]);
+    }
+
+    const claimed = await storage.hSetNX(
+      postClaimKey,
+      claimField,
+      nowMs.toString()
+    );
+    if (claimed !== 1) continue;
+
+    try {
+      const post = await createPost({ ...options, day });
+      await storage.set(postKey, post.id);
+      await storage.hDel(postClaimKey, [claimField]);
+      return post;
+    } catch (error) {
+      await storage.hDel(postClaimKey, [claimField]);
+      throw error;
+    }
+  }
+
+  const publishedPostId = await storage.get(postKey);
+  if (publishedPostId) return { id: publishedPostId };
+  throw new Error(`Arena post for day ${day} could not claim publication.`);
 };
 
 const resultCommentHashKey = 'arena:result-comments';
@@ -104,6 +143,15 @@ export const publishRumbleResultComment = async (
     await storage.hSet(resultCommentHashKey, {
       [resultDay]: comment.id,
     });
+    // The result receipt also carries tonight's forecast, so keep it at the
+    // top of the daily thread when the installation has moderator permission.
+    // Publishing is already durably recorded above: a missing moderation
+    // permission must never turn this into a duplicate-comment retry.
+    try {
+      await comment.distinguish(true);
+    } catch (error) {
+      console.warn('Rumble result comment could not be pinned:', error);
+    }
     return comment.id;
   } catch (error) {
     await storage.hDel(resultCommentHashKey, [resultDay]);

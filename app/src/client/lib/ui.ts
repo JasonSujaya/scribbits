@@ -14,10 +14,14 @@ import {
 } from './theme';
 
 const TRANSITION_MS = 180;
+const transitioningScenes = new WeakSet<Scene>();
 
 export function fadeToScene(scene: Scene, key: string, data?: Record<string, unknown>): void {
+  if (transitioningScenes.has(scene)) return;
+  transitioningScenes.add(scene);
   scene.cameras.main.fadeOut(TRANSITION_MS, 255, 247, 232);
   scene.cameras.main.once('camerafadeoutcomplete', () => {
+    transitioningScenes.delete(scene);
     scene.scene.start(key, data);
   });
 }
@@ -264,7 +268,7 @@ export function careButton(
   bg.setInteractive({ useHandCursor: true });
   const stacked = height >= 80;
   const caption = text ? (emoji ? (stacked ? `${emoji}\n${text}` : `${emoji} ${text}`) : text) : emoji;
-  const txt = label(scene, 0, 0, caption, text ? 20 : 26, fill === UI.gold ? UI.ink : '#ffffff', true);
+  const txt = label(scene, 0, 0, caption, text ? 20 : 26, UI.ink, true);
   txt.setLineSpacing(-2);
   txt.setAlign('center');
   txt.setWordWrapWidth(width - 8);
@@ -294,7 +298,7 @@ export function button(
   onClick: () => void,
   width = 240,
   fill: number = UI.coral,
-  textColor = '#ffffff'
+  textColor = UI.ink
 ): Phaser.GameObjects.Container {
   const height = Math.max(MIN_TOUCH, 96);
   const container = scene.add.container(x, y);
@@ -477,7 +481,9 @@ export function appTabBar(
       const icon = tabIcon(scene, tab.key, 0, -2, UI.creamHex, 0.72);
       const text = label(scene, 0, 29, tab.label, 17, UI.ink, true);
       seal.add([bg, icon, text]);
-      const hit = scene.add.circle(x, sealY, 34, 0xffffff, 0.001).setInteractive({ useHandCursor: true });
+      const hit = scene.add
+        .circle(x, sealY, 44, 0xffffff, 0.001)
+        .setInteractive({ useHandCursor: true });
       container.add([seal, hit]);
       wireTab(hit, seal, tab.onClick, scene);
       return;
@@ -641,7 +647,7 @@ export function elementBadge(
     0,
     `${style.emoji} ${style.label}`,
     24 * scale,
-    '#ffffff',
+    UI.ink,
     true
   );
   container.add([bg, text]);
@@ -872,7 +878,7 @@ export function dominantButton(
   bg.setInteractive({ useHandCursor: true });
 
   // Text with larger size
-  const txt = label(scene, 0, 0, text, 38, '#ffffff', true);
+  const txt = label(scene, 0, 0, text, 38, UI.ink, true);
   txt.setWordWrapWidth(width - 40);
 
   container.add([bg, txt]);

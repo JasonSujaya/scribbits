@@ -12,7 +12,9 @@ enter daily community rumbles. The app identity is `scribbits` in
    chance. Dominant color chooses the element.
 2. **Fight:** submission automatically enters tonight's Rumble. A new player's
    first Scribbit also receives an immediate exhibition so the core promise is
-   visible in the first session.
+   visible in the first session. On WebGL, Phaser 4.2 maps the submitted PNG to
+   a 25-vertex **Inkbody** mesh. Its dominant drawing stat selects a visible
+   Shape Power: INKQUAKE, QUILL RUSH, SMEARSTEP, or COLORBURST.
 3. **Back:** choose another player’s contender before the nightly resolution.
    Champion backers earn 3 Clout; runner-up backers earn 1.
 4. **Return:** keep the visible UTC-day streak alive. The scheduler resolves the bracket, crowns the Champion, creates
@@ -43,6 +45,10 @@ delete all stored game data.
   clout, battles, forecasts, daily jobs, and Reddit result comments.
 - `src/client/game.ts`: Phaser bootstrapping.
 - `src/client/scenes`: game screens.
+- `src/client/lib/inkmesh.ts`: deterministic Mesh2D geometry and stat-driven
+  motion rules, kept pure for regression testing.
+- `src/client/lib/livesprite.ts`: Phaser Mesh2D Inkbody renderer with a 3x3
+  Canvas fallback.
 - `src/client/lib`: Phaser UI, API wrapper, drawing canvas, modals, and effects.
 - `scripts/dev-mock.mjs`: local mock server for browser UI iteration.
 - `scripts/test-battle.mjs`: deterministic simulation/core regression checks.
@@ -100,9 +106,9 @@ npm run verify
 
 `npm run verify` runs type-check, lint, simulation tests, and build.
 
-`npm run test:sim` covers deterministic analyzer, battle, storage, daily job,
-ink, clout, expiry, and Swiss rumble behavior. It does not replace route or
-browser testing.
+`npm run test:sim` covers deterministic analyzer, Inkbody mesh geometry, battle,
+storage, daily job, ink, clout, expiry, and Swiss rumble behavior. It does not
+replace route or browser testing.
 
 ## Deployment
 

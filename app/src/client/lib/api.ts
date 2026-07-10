@@ -11,6 +11,7 @@ import type {
   CapsulePullResponse,
   CareAction,
   CareRequest,
+  CapsulePullRequest,
   CloutBoard,
   EnterRumbleRequest,
   Inventory,
@@ -144,8 +145,17 @@ export function bossChallenge(
   });
 }
 
-export function fetchLegends(): Promise<ApiResult<LegendsState>> {
-  return getJson<LegendsState>('/api/legends');
+export function fetchLegends(
+  cursor?: string | null,
+  limit?: number
+): Promise<ApiResult<LegendsState>> {
+  const query = new URLSearchParams();
+  if (cursor) query.set('cursor', cursor);
+  if (limit !== undefined) query.set('limit', String(limit));
+  const queryString = query.toString();
+  return getJson<LegendsState>(
+    `/api/legends${queryString ? `?${queryString}` : ''}`
+  );
 }
 
 // Tamagotchi care: feed/pat/train a scribbit once each per UTC day. Returns the
@@ -204,8 +214,12 @@ export function fetchCloutBoard(): Promise<ApiResult<CloutBoard>> {
 
 // Mystery Ink gacha: spend ink to pull an accessory, pen, or title. The server
 // does the seeded random + pity, then returns the final ink/inventory snapshot.
-export function pullCapsule(): Promise<ApiResult<CapsulePullResponse>> {
-  return postJson<Record<string, never>, CapsulePullResponse>('/api/capsule', {});
+export function pullCapsule(
+  operationId: string
+): Promise<ApiResult<CapsulePullResponse>> {
+  return postJson<CapsulePullRequest, CapsulePullResponse>('/api/capsule', {
+    operationId,
+  });
 }
 
 // The caller's unlocked pens + titles (drives the palette + locked slots).

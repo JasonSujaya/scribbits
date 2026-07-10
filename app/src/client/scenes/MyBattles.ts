@@ -4,25 +4,37 @@ import { setReplay } from '../lib/registry';
 import { loadDrawing, fitDrawing } from '../lib/scribbits';
 import { NAV_SAFE, TYPE, UI } from '../lib/theme';
 import { mountLivingPaper } from '../lib/livingpaper';
-import { label, handLettered, stickerCard, errorPanel, appTabBar, fadeToScene } from '../lib/ui';
+import {
+  label,
+  ghostButton,
+  handLettered,
+  stickerCard,
+  errorPanel,
+  appTabBar,
+  fadeToScene,
+} from '../lib/ui';
 import type { ErrorPanel } from '../lib/ui';
 import type { BattleReport } from '../../shared/arena';
 import { dailyDrawTabLabel, navigateToDailyDraw } from '../lib/draweligibility';
 
 const ROW_INNER_HEIGHT = 110;
 
-// A scrollable-ish list of the caller's recent battles. Tap a row to replay it.
+// A paginated list of the caller's battles. Tap a row to replay it.
 export class MyBattles extends Scene {
   private errorPanelRef: ErrorPanel | null = null;
+  private loadingCard: ReturnType<typeof stickerCard> | null = null;
   private renderGeneration = 0;
+  private page = 0;
 
   constructor() {
     super('MyBattles');
   }
 
-  init(): void {
+  init(data?: { page?: number }): void {
     this.errorPanelRef = null;
+    this.loadingCard = null;
     this.renderGeneration = 0;
+    this.page = Math.max(0, data?.page ?? 0);
   }
 
   create(): void {
@@ -33,6 +45,12 @@ export class MyBattles extends Scene {
     handLettered(this, width / 2, 64, 'MY BATTLES', 40, UI.ink, true);
     label(this, width / 2, 116, 'Tap a battle to watch the replay', TYPE.body, UI.inkSoft);
     this.buildAppTabs();
+    this.loadingCard = stickerCard(this, width / 2, 420, width - 100, 180, {
+      tapeColor: UI.tapeAlt,
+    });
+    this.loadingCard.add(
+      label(this, 0, 0, 'Shuffling your replay pile…', TYPE.body, UI.inkSoft, true)
+    );
     void this.loadBattles();
   }
 
@@ -49,9 +67,13 @@ export class MyBattles extends Scene {
   private async loadBattles(): Promise<void> {
     const result = await fetchMyBattles();
     if (!result.ok) {
+      this.loadingCard?.destroy(true);
+      this.loadingCard = null;
       this.showError(result.error);
       return;
     }
+    this.loadingCard?.destroy(true);
+    this.loadingCard = null;
     this.render(result.data);
   }
 
@@ -70,9 +92,27 @@ export class MyBattles extends Scene {
     }
 
     const rowHeight = 132;
-    const visibleRows = Math.max(1, Math.floor((this.scale.height - NAV_SAFE - 160) / rowHeight));
-    battles.slice(0, visibleRows).forEach((report, index) => {
-      const y = 210 + index * rowHeight;
+    const visibleRows = Math.max(1, Math.floor((this.scale.height - NAV_SAFE - 290) / rowHeight));
+    const totalPages = Math.ceil(battles.length / visibleRows);
+    this.page = Math.min(this.page, totalPages - 1);
+    const start = this.page * visibleRows;
+
+    if (totalPages > 1) {
+      label(this, width / 2, 185, `${this.page + 1} / ${totalPages}`, TYPE.caption, UI.inkSoft, true);
+      if (this.page > 0) {
+        ghostButton(this, width / 2 - 210, 185, '← Newer', () => {
+          this.scene.restart({ page: this.page - 1 });
+        }, 150);
+      }
+      if (this.page < totalPages - 1) {
+        ghostButton(this, width / 2 + 210, 185, 'Older →', () => {
+          this.scene.restart({ page: this.page + 1 });
+        }, 150);
+      }
+    }
+
+    battles.slice(start, start + visibleRows).forEach((report, index) => {
+      const y = 305 + index * rowHeight;
       this.buildRow(report, y);
     });
   }

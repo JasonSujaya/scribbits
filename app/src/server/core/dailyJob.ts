@@ -93,6 +93,35 @@ export type ResolvedArenaDay = {
 };
 
 const resolutionOutboxKey = 'arena:resolution-outbox';
+const nightlyClaimKey = 'arena:nightly-resolution-claims';
+const nightlyClaimTimeoutMs = 10 * 60 * 1000;
+
+const claimArenaDayResolution = async (
+  storage: ArenaStorage,
+  day: number,
+  claimedAtMs: number
+): Promise<boolean> => {
+  const field = day.toString();
+  const existingClaim = Number(await storage.hGet(nightlyClaimKey, field));
+  if (Number.isFinite(existingClaim)) {
+    if (claimedAtMs - existingClaim < nightlyClaimTimeoutMs) return false;
+    // A worker died without releasing its claim. Removal is followed by
+    // hSetNX, so only one of several rescuers can take over.
+    await storage.hDel(nightlyClaimKey, [field]);
+  }
+  return (await storage.hSetNX(
+    nightlyClaimKey,
+    field,
+    claimedAtMs.toString()
+  )) === 1;
+};
+
+const releaseArenaDayResolution = async (
+  storage: ArenaStorage,
+  day: number
+): Promise<void> => {
+  await storage.hDel(nightlyClaimKey, [day.toString()]);
+};
 
 const parseResolvedArenaDay = (
   storedResolution: string | undefined
@@ -337,9 +366,28 @@ export const runNightlyArenaJob = async (
     resolvedDay += 1
   ) {
     const pendingResolution = await loadOutboxResolution(storage, resolvedDay);
-    const resolution =
-      pendingResolution ??
-      (await resolveArenaDay(storage, resolvedDay, now.getTime()));
+    let resolution = pendingResolution;
+    if (!resolution) {
+      const claimed = await claimArenaDayResolution(
+        storage,
+        resolvedDay,
+        now.getTime()
+      );
+      if (!claimed) {
+        throw new Error(`Arena day ${resolvedDay} is already being resolved.`);
+      }
+      try {
+        resolution = await resolveArenaDay(
+          storage,
+          resolvedDay,
+          now.getTime()
+        );
+      } catch (error) {
+        await releaseArenaDayResolution(storage, resolvedDay);
+        throw error;
+      }
+      await releaseArenaDayResolution(storage, resolvedDay);
+    }
     if (pendingResolution) {
       await setCurrentArenaDay(storage, resolvedDay + 1);
     }

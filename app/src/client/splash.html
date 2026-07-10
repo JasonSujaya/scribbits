@@ -5,7 +5,7 @@
     <meta charset="UTF-8" />
     <meta
       name="viewport"
-      content="initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, width=device-width, height=device-height, user-scalable=0"
+      content="width=device-width, initial-scale=1.0"
     />
     <title>Scribbits</title>
   </head>
@@ -32,7 +32,9 @@
         <span class="fc-text">Tonight's forecast is brewing…</span>
       </div>
 
-      <p class="today-status" id="today-status">One drawing. One pick. Results tonight.</p>
+      <p class="today-status" id="today-status" role="status" aria-live="polite">
+        One drawing. One pick. Results tonight.
+      </p>
 
       <button class="start-button" id="start-button" type="button">
         ✏️ DRAW TODAY'S SCRIBBIT

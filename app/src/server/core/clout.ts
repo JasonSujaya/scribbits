@@ -85,6 +85,17 @@ export const getUserClout = async (
   return Math.floor((await storage.zScore(getCloutKey(), userId)) ?? 0);
 };
 
+export const getUserCloutPayout = async (
+  storage: ArenaStorage,
+  day: number,
+  userId: string
+): Promise<number> => {
+  const storedPayout = await storage.hGet(getCloutPayoutKey(day), userId);
+  if (!storedPayout) return 0;
+  const points = Number(storedPayout.split(':')[0]);
+  return Number.isInteger(points) && points > 0 ? points : 0;
+};
+
 const readDisplayUsername = async (
   storage: ArenaStorage,
   userId: string

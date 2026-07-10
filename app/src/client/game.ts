@@ -1,5 +1,5 @@
 import * as Phaser from 'phaser';
-import { AUTO, Game } from 'phaser';
+import { AUTO, CANVAS, Game } from 'phaser';
 import { Boot } from './scenes/Boot';
 import { Preloader } from './scenes/Preloader';
 import { ArenaHome } from './scenes/ArenaHome';
@@ -13,8 +13,13 @@ import { DESIGN_HEIGHT, DESIGN_WIDTH } from './lib/theme';
 // Scribbits Arena — Devvit Web + Phaser 4. Draw a creature; its shape is its
 // stat sheet; it fights async auto-battles and lives 3 days. Portrait-first:
 // a fixed 720x1280 design resolution scaled with FIT to fill any mobile screen.
+const debugBrowserMode =
+  typeof window !== 'undefined' && window.location.search.includes('debug');
+const debugForcesCanvas =
+  debugBrowserMode && window.location.search.includes('canvas');
+
 const config: Phaser.Types.Core.GameConfig = {
-  type: AUTO,
+  type: debugForcesCanvas ? CANVAS : AUTO,
   parent: 'game-container',
   backgroundColor: '#2a2118',
   scale: {
@@ -28,9 +33,26 @@ const config: Phaser.Types.Core.GameConfig = {
 
 const StartGame = (parent: string): Phaser.Game => {
   const game = new Game({ ...config, parent });
+  game.canvas.dataset.renderer =
+    game.renderer.type === Phaser.WEBGL ? 'webgl' : 'canvas';
+  // Reddit's compact landscape WebView only shows the rotate prompt. Suspend
+  // Phaser while hidden so particles and mesh updates do not burn battery in
+  // the background, then resume without resetting scene state in portrait.
+  const syncOrientationPower = (): void => {
+    const compactLandscape = window.matchMedia(
+      '(orientation: landscape) and (max-height: 500px)'
+    ).matches;
+    if (compactLandscape && game.loop.running) game.loop.sleep();
+    if (!compactLandscape && !game.loop.running) game.loop.wake(true);
+  };
+  window.addEventListener('resize', syncOrientationPower);
+  game.events.once(Phaser.Core.Events.DESTROY, () => {
+    window.removeEventListener('resize', syncOrientationPower);
+  });
+  window.setTimeout(syncOrientationPower, 0);
   // Dev-only hook: with ?debug in the URL, expose the game so a preview harness
   // can jump straight to a scene. No effect in production (Devvit has no query).
-  if (typeof window !== 'undefined' && window.location.search.includes('debug')) {
+  if (debugBrowserMode) {
     const win = window as unknown as {
       game?: Phaser.Game;
       debugSpar?: () => Promise<string>;

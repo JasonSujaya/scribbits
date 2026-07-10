@@ -54,11 +54,11 @@ export const UI = {
   desk: '#2a2118',
   deskSoft: '#3a2f22',
   coral: 0xff6b4a,
-  coralText: '#ff6b4a',
+  coralText: '#b7351d',
   coralDeep: 0xe0512f,
   gold: 0xffd447,
   goldHex: 0xffd447,
-  goldText: '#f0b000',
+  goldText: '#8a5700',
   tape: 0xf7e6b0, // translucent washi-tape yellow
   tapeAlt: 0xbfd8e0, // blue tape variant
   progressTrack: 0x2b2016,
@@ -98,7 +98,7 @@ export const ELEMENT_STYLES: Record<Element, ElementStyle> = {
     label: 'Ember',
     emoji: '🔥',
     primary: 0xff6b3d,
-    primaryText: '#ff6b3d',
+    primaryText: '#b7351d',
     soft: 0xffb08a,
     particle: 0xffcf6b,
   },
@@ -106,7 +106,7 @@ export const ELEMENT_STYLES: Record<Element, ElementStyle> = {
     label: 'Tide',
     emoji: '🌊',
     primary: 0x2f9fd8,
-    primaryText: '#2f9fd8',
+    primaryText: '#17678f',
     soft: 0x8fd8ef,
     particle: 0xbfefff,
   },
@@ -114,7 +114,7 @@ export const ELEMENT_STYLES: Record<Element, ElementStyle> = {
     label: 'Moss',
     emoji: '🌿',
     primary: 0x4faa4f,
-    primaryText: '#4faa4f',
+    primaryText: '#286f28',
     soft: 0xa8dd8f,
     particle: 0xd6f6b0,
   },
@@ -122,7 +122,7 @@ export const ELEMENT_STYLES: Record<Element, ElementStyle> = {
     label: 'Storm',
     emoji: '⚡',
     primary: 0x8a5cd8,
-    primaryText: '#8a5cd8',
+    primaryText: '#6436a8',
     soft: 0xc9b0f2,
     particle: 0xfff2a8,
   },
@@ -130,11 +130,16 @@ export const ELEMENT_STYLES: Record<Element, ElementStyle> = {
 
 // Stat bar colors — one per stat, consistent everywhere stats are shown.
 export const STAT_STYLES = {
-  chonk: { label: 'CHONK / HP', emoji: '🫧', color: 0xff8a5c, colorText: '#ff8a5c' },
-  spike: { label: 'SPIKE / ATK', emoji: '🌵', color: 0xe8555c, colorText: '#e8555c' },
-  zip: { label: 'ZIP / SPD', emoji: '💨', color: 0x4fb0d8, colorText: '#4fb0d8' },
-  charm: { label: 'CHARM / CRIT', emoji: '✨', color: 0xc06be0, colorText: '#c06be0' },
+  chonk: { label: 'CHONK / HP', emoji: '🫧', color: 0xff8a5c, colorText: '#a73d1f' },
+  spike: { label: 'SPIKE / ATK', emoji: '🌵', color: 0xe8555c, colorText: '#a92e37' },
+  zip: { label: 'ZIP / SPD', emoji: '💨', color: 0x4fb0d8, colorText: '#176789' },
+  charm: { label: 'CHARM / CRIT', emoji: '✨', color: 0xc06be0, colorText: '#7d3a99' },
 } as const;
 
 export const FONT_STACK =
   '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
+
+export const prefersReducedMotion = (): boolean => {
+  return typeof window !== 'undefined' &&
+    window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+};

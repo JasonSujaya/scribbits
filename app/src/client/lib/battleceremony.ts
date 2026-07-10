@@ -4,8 +4,8 @@
 import { Scene } from 'phaser';
 import type { Scribbit, Element } from '../../shared/arena';
 import { ELEMENT_PREY } from '../../shared/arena';
-import { ELEMENT_STYLES, TYPE, UI } from './theme';
-import { label, elementBadge, levelBadge } from './ui';
+import { ELEMENT_STYLES, prefersReducedMotion, TYPE, UI } from './theme';
+import { handLettered, label, elementBadge, levelBadge } from './ui';
 import { loadDrawing, fitDrawing, levelOf } from './scribbits';
 
 // Check if attacker has element advantage over defender.
@@ -22,20 +22,67 @@ export function showVsCeremony(
   onComplete: () => void
 ): void {
   const { width, height } = scene.scale;
+  const reduceMotion = prefersReducedMotion();
   const layer = scene.add.container(0, 0).setDepth(2000).setScrollFactor(0);
 
-  // Dramatic background wash
-  const bg = scene.add.rectangle(width / 2, height / 2, width, height, 0x1a1320, 0.92).setScrollFactor(0);
+  // Keep the showdown inside the same physical sketchbook world as every
+  // other screen. A dark game-overlay looked like a different product.
+  const bg = scene.add
+    .rectangle(width / 2, height / 2, width, height, UI.paper, 1)
+    .setScrollFactor(0)
+    .setInteractive();
   layer.add(bg);
 
-  // Diagonal split line
-  const splitLine = scene.add.graphics();
-  splitLine.lineStyle(8, UI.gold, 0.8);
-  splitLine.beginPath();
-  splitLine.moveTo(width * 0.3, 0);
-  splitLine.lineTo(width * 0.7, height);
-  splitLine.strokePath();
-  layer.add(splitLine);
+  // Two translucent element washes meet along a hand-inked paper fold.
+  const splitPaper = scene.add.graphics();
+  splitPaper.fillStyle(ELEMENT_STYLES[fighterA.element].soft, 0.28);
+  splitPaper.fillTriangle(0, 0, width * 0.58, 0, 0, height);
+  splitPaper.fillStyle(ELEMENT_STYLES[fighterB.element].soft, 0.28);
+  splitPaper.fillTriangle(width, 0, width, height, width * 0.42, height);
+  splitPaper.lineStyle(10, UI.inkHex, 0.88);
+  splitPaper.beginPath();
+  splitPaper.moveTo(width * 0.3, 0);
+  splitPaper.lineTo(width * 0.7, height);
+  splitPaper.strokePath();
+  splitPaper.lineStyle(4, UI.gold, 0.95);
+  splitPaper.beginPath();
+  splitPaper.moveTo(width * 0.3 + 12, 0);
+  splitPaper.lineTo(width * 0.7 + 12, height);
+  splitPaper.strokePath();
+  layer.add(splitPaper);
+
+  const topTape = scene.add
+    .rectangle(width / 2, 34, 190, 46, UI.tape, 0.86)
+    .setAngle(-2);
+  layer.add(topTape);
+  const matchupTitle = handLettered(
+    scene,
+    width / 2,
+    92,
+    "TONIGHT'S MATCHUP",
+    40,
+    UI.ink,
+    true
+  );
+  layer.add(matchupTitle);
+
+  const bottomRule = scene.add.graphics();
+  bottomRule.lineStyle(3, UI.inkHex, 0.16);
+  bottomRule.beginPath();
+  bottomRule.moveTo(60, height - 92);
+  bottomRule.lineTo(width - 60, height - 92);
+  bottomRule.strokePath();
+  layer.add(bottomRule);
+  const matchupRule = label(
+    scene,
+    width / 2,
+    height - 58,
+    'SHAPE · ELEMENT · A LITTLE LUCK',
+    TYPE.caption,
+    UI.inkSoft,
+    true
+  );
+  layer.add(matchupRule);
 
   // Fighter A (left side)
   const sideA = scene.add.container(0, height / 2);
@@ -55,7 +102,7 @@ export function showVsCeremony(
     sideA.add(img);
   });
 
-  const nameA = label(scene, 0, artSizeA / 2 + 40, fighterA.name.toUpperCase(), TYPE.title, UI.cream, true);
+  const nameA = label(scene, 0, artSizeA / 2 + 40, fighterA.name.toUpperCase(), TYPE.title, UI.ink, true);
   sideA.add(nameA);
   sideA.add(elementBadge(scene, 0, artSizeA / 2 + 80, fighterA.element, 0.8));
   sideA.add(levelBadge(scene, artSizeA / 2 - 20, -artSizeA / 2 + 20, levelOf(fighterA), 0.7));
@@ -89,7 +136,7 @@ export function showVsCeremony(
     sideB.add(img);
   });
 
-  const nameB = label(scene, 0, artSizeB / 2 + 40, fighterB.name.toUpperCase(), TYPE.title, UI.cream, true);
+  const nameB = label(scene, 0, artSizeB / 2 + 40, fighterB.name.toUpperCase(), TYPE.title, UI.ink, true);
   sideB.add(nameB);
   sideB.add(elementBadge(scene, 0, artSizeB / 2 + 80, fighterB.element, 0.8));
   sideB.add(levelBadge(scene, -artSizeB / 2 + 20, -artSizeB / 2 + 20, levelOf(fighterB), 0.7));
@@ -106,7 +153,7 @@ export function showVsCeremony(
   // VS badge in the center
   const vsBadge = scene.add.container(width / 2, height / 2);
   const vsBg = scene.add.circle(0, 0, 80, UI.coral, 1).setStrokeStyle(8, UI.inkHex, 1);
-  const vsText = label(scene, 0, 0, 'VS', 64, '#ffffff', true);
+  const vsText = label(scene, 0, 0, 'VS', 64, UI.ink, true);
   vsBadge.add([vsBg, vsText]);
   vsBadge.setScale(0);
   layer.add(vsBadge);
@@ -115,30 +162,30 @@ export function showVsCeremony(
   scene.tweens.add({
     targets: sideA,
     x: width * 0.28,
-    duration: 600,
+    duration: reduceMotion ? 1 : 600,
     ease: 'Back.easeOut',
   });
 
   scene.tweens.add({
     targets: sideB,
     x: width * 0.72,
-    duration: 600,
+    duration: reduceMotion ? 1 : 600,
     ease: 'Back.easeOut',
   });
 
   // VS badge pops in after fighters arrive
-  scene.time.delayedCall(400, () => {
+  scene.time.delayedCall(reduceMotion ? 1 : 400, () => {
     scene.tweens.add({
       targets: vsBadge,
       scale: 1,
-      duration: 300,
+      duration: reduceMotion ? 1 : 300,
       ease: 'Back.easeOut',
     });
-    scene.cameras.main.shake(200, 0.008);
+    if (!reduceMotion) scene.cameras.main.shake(200, 0.008);
   });
 
   // Element clash effect
-  scene.time.delayedCall(600, () => {
+  if (!reduceMotion) scene.time.delayedCall(600, () => {
     const clash = scene.add.particles(width / 2, height / 2, 'spark', {
       speed: { min: 150, max: 350 },
       scale: { start: 0.8, end: 0 },
@@ -153,7 +200,7 @@ export function showVsCeremony(
   });
 
   // Fade out and transition
-  scene.time.delayedCall(1800, () => {
+  scene.time.delayedCall(reduceMotion ? 180 : 1800, () => {
     scene.cameras.main.fadeOut(200, 255, 247, 232);
     scene.cameras.main.once('camerafadeoutcomplete', () => {
       layer.destroy(true);

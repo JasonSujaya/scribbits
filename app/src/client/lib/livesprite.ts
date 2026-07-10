@@ -1,18 +1,28 @@
-// LiveSprite — a player drawing brought to life. The PNG is sliced into a 3x3
-// grid of cropped tiles inside one container; each tile can be nudged/scaled
-// independently, so the whole drawing squashes, stretches, wobbles like jelly
-// and crumples on KO. This is a pure-transform technique (no Mesh/Rope), so it
-// renders identically under WebGL and Canvas — it "works everywhere".
+// LiveSprite — a player drawing brought to life as an INKBODY.
 //
-// Phaser 4 does ship Rope + Mesh2D factories (verified in node_modules), but
-// Rope is a 1D strip and Mesh2D needs hand-authored vertices; the slice grid
-// gives true 2D squash/stretch with far less fragility, which is exactly the
-// deformation vocabulary the battle spectacle needs.
+// WebGL uses Phaser 4.2 Mesh2D: 25 textured vertices deform the player's exact
+// PNG in real time. The drawing's analyzed stats drive its breathing cadence,
+// hit ripples, and signature silhouette. Canvas keeps the proven 3x3 sliced
+// renderer as a full gameplay fallback, so innovation never becomes a device
+// compatibility gamble.
 
 import * as Phaser from 'phaser';
 import { Scene } from 'phaser';
+import type { ScribbitStats } from '../../shared/arena';
+import {
+  buildInkMeshGeometry,
+  getSignatureTrait,
+  SIGNATURE_POWER,
+  updateInkMeshVertices,
+} from './inkmesh';
+import type {
+  InkMeshGeometry,
+  InkMeshMotion,
+  SignatureTrait,
+} from './inkmesh';
 
-const GRID = 3; // 3x3 slices
+const FALLBACK_GRID = 3;
+const DEFAULT_STATS: ScribbitStats = { chonk: 25, spike: 25, zip: 25, charm: 25 };
 
 type Tile = {
   image: Phaser.GameObjects.Image;
@@ -26,6 +36,8 @@ export type LiveSpriteOptions = {
   displaySize: number; // rendered square size in design px
   facing?: 1 | -1; // -1 flips horizontally to face left
   depth?: number;
+  stats?: ScribbitStats;
+  reduceMotion?: boolean;
 };
 
 // A living drawing. Add it to the scene, then drive it with the semantic verbs
@@ -37,14 +49,24 @@ export class LiveSprite {
   private readonly tiles: Tile[] = [];
   private readonly size: number;
   private readonly facing: 1 | -1;
+  private readonly stats: ScribbitStats;
+  private readonly reduceMotion: boolean;
+  private readonly signatureTrait: SignatureTrait;
+  private meshGeometry: InkMeshGeometry | null = null;
+  private meshMotion: InkMeshMotion | null = null;
   private breatheTween: Phaser.Tweens.Tween | null = null;
   private idleTweens: Phaser.Tweens.Tween[] = [];
   private destroyed = false;
+  private crumpled = false;
+  private readonly handleSceneShutdown = (): void => this.destroy();
 
   constructor(scene: Scene, x: number, y: number, textureKey: string, opts: LiveSpriteOptions) {
     this.scene = scene;
     this.size = opts.displaySize;
     this.facing = opts.facing ?? 1;
+    this.stats = opts.stats ?? DEFAULT_STATS;
+    this.reduceMotion = opts.reduceMotion ?? false;
+    this.signatureTrait = getSignatureTrait(this.stats);
     this.container = scene.add.container(x, y);
     if (opts.depth !== undefined) this.container.setDepth(opts.depth);
 
@@ -64,10 +86,62 @@ export class LiveSprite {
     const drawH = srcH * fitScale;
 
     // Source cell size (in texture pixels) and the on-screen cell size after fit.
-    const cellSrcW = srcW / GRID;
-    const cellSrcH = srcH / GRID;
-    const cellW = drawW / GRID;
-    const cellH = drawH / GRID;
+    const canUseInkMesh =
+      scene.game.renderer.type === Phaser.WEBGL &&
+      typeof scene.add.mesh2d === 'function';
+
+    if (canUseInkMesh) {
+      this.createInkMesh(textureKey, drawW, drawH);
+    } else {
+      this.createFallbackSlices(textureKey, texture, srcW, srcH, fitScale, drawW, drawH);
+    }
+
+    scene.events.on(Phaser.Scenes.Events.UPDATE, this.updateInkMesh, this);
+    scene.events.once(Phaser.Scenes.Events.SHUTDOWN, this.handleSceneShutdown);
+    scene.events.once(Phaser.Scenes.Events.DESTROY, this.handleSceneShutdown);
+  }
+
+  private createInkMesh(textureKey: string, drawW: number, drawH: number): void {
+    const geometry = buildInkMeshGeometry(drawW, drawH);
+    const mesh = this.scene.add.mesh2d(
+      0,
+      0,
+      textureKey,
+      geometry.vertices,
+      geometry.indices
+    );
+    mesh.setSize(drawW, drawH);
+    mesh.setScale(this.facing, 1);
+    mesh.buildOrderedIndices(1, true);
+    this.container.add(mesh);
+    this.meshGeometry = geometry;
+    this.meshMotion = {
+      elapsedSeconds: 0,
+      awakenProgress: 1,
+      impactProgress: 1,
+      impactDirection: 1,
+      crumpleProgress: 0,
+      celebrateAmount: 0,
+      signatureAmount: 0,
+      signatureTrait: this.signatureTrait,
+      reduceMotion: this.reduceMotion,
+    };
+    updateInkMeshVertices(geometry, this.stats, this.meshMotion);
+  }
+
+  private createFallbackSlices(
+    textureKey: string,
+    texture: Phaser.Textures.Texture,
+    srcW: number,
+    srcH: number,
+    fitScale: number,
+    drawW: number,
+    drawH: number
+  ): void {
+    const cellSrcW = srcW / FALLBACK_GRID;
+    const cellSrcH = srcH / FALLBACK_GRID;
+    const cellW = drawW / FALLBACK_GRID;
+    const cellH = drawH / FALLBACK_GRID;
 
     // Overlap/bleed: each tile samples 1px beyond its cell on every shared edge
     // and renders slightly larger, so when the jelly deformation nudges tiles
@@ -77,8 +151,8 @@ export class LiveSprite {
     const bleedW = BLEED_SRC_X * fitScale;
     const bleedH = BLEED_SRC_Y * fitScale;
 
-    for (let row = 0; row < GRID; row += 1) {
-      for (let col = 0; col < GRID; col += 1) {
+    for (let row = 0; row < FALLBACK_GRID; row += 1) {
+      for (let col = 0; col < FALLBACK_GRID; col += 1) {
         // Each tile is its OWN texture frame — a sub-rectangle of the source.
         // A frame-based image has its own natural size and centre origin, so
         // setDisplaySize scales just that slice and positioning is exact. This
@@ -87,8 +161,8 @@ export class LiveSprite {
         // whole texture, scattering the visible fragments.
         const isLeft = col === 0;
         const isTop = row === 0;
-        const isRight = col === GRID - 1;
-        const isBottom = row === GRID - 1;
+        const isRight = col === FALLBACK_GRID - 1;
+        const isBottom = row === FALLBACK_GRID - 1;
 
         // Grow the sampled rect outward on interior edges (bleed), clamped so it
         // never runs past the texture bounds.
@@ -111,16 +185,31 @@ export class LiveSprite {
         // Home position: the cell centre in the fitted, centred drawing. The
         // bleed grows the tile symmetrically around this centre, so tiles still
         // line up edge-to-edge with a small shared overlap.
-        const homeX = (col - (GRID - 1) / 2) * cellW * this.facing;
-        const homeY = (row - (GRID - 1) / 2) * cellH;
+        const homeX = (col - (FALLBACK_GRID - 1) / 2) * cellW * this.facing;
+        const homeY = (row - (FALLBACK_GRID - 1) / 2) * cellH;
 
-        const image = scene.add.image(homeX, homeY, textureKey, frameName);
+        const image = this.scene.add.image(homeX, homeY, textureKey, frameName);
         image.setDisplaySize(dispW, dispH);
         image.setScale(image.scaleX * this.facing, image.scaleY);
         this.container.add(image);
         this.tiles.push({ image, homeX, homeY, col, row });
       }
     }
+  }
+
+  private updateInkMesh(_time: number, deltaMilliseconds: number): void {
+    if (this.destroyed || !this.meshGeometry || !this.meshMotion) return;
+    this.meshMotion.elapsedSeconds +=
+      (deltaMilliseconds / 1000) * Math.max(0, this.scene.time.timeScale);
+    updateInkMeshVertices(this.meshGeometry, this.stats, this.meshMotion);
+  }
+
+  get shapePower(): string {
+    return SIGNATURE_POWER[this.signatureTrait].name;
+  }
+
+  get shapePowerHint(): string {
+    return SIGNATURE_POWER[this.signatureTrait].playerHint;
   }
 
   setDepth(depth: number): this {
@@ -144,12 +233,14 @@ export class LiveSprite {
   // lags behind the bottom, so it reads as a living thing at rest.
   breathe(): void {
     this.stopIdle();
+    if (this.reduceMotion) return;
+    const zipRatio = Math.max(0, Math.min(1, this.stats.zip / 60));
     this.breatheTween = this.scene.tweens.add({
       targets: this.container,
       scaleY: 1.035,
       scaleX: 0.985,
       y: this.container.y - 4,
-      duration: 1300,
+      duration: 1450 - zipRatio * 450,
       yoyo: true,
       repeat: -1,
       ease: 'Sine.easeInOut',
@@ -168,6 +259,94 @@ export class LiveSprite {
         });
         this.idleTweens.push(t);
       });
+  }
+
+  // Birth ceremony: the submitted PNG unfolds from one ink blot. The exact
+  // same Mesh2D rig then follows the creature into its first battle.
+  awaken(onDone?: () => void): void {
+    if (this.reduceMotion) {
+      this.container.setAlpha(0);
+      this.scene.tweens.add({
+        targets: this.container,
+        alpha: 1,
+        duration: 180,
+        onComplete: () => onDone?.(),
+      });
+      return;
+    }
+
+    if (this.meshMotion) {
+      this.meshMotion.awakenProgress = 0;
+      this.scene.tweens.add({
+        targets: this.meshMotion,
+        awakenProgress: 1,
+        duration: 820,
+        ease: 'Cubic.easeOut',
+        onComplete: () => {
+          this.breathe();
+          onDone?.();
+        },
+      });
+      return;
+    }
+
+    this.tiles.forEach((tile) => {
+      const homeScaleX = tile.image.scaleX;
+      const homeScaleY = tile.image.scaleY;
+      tile.image.setPosition(0, 0).setScale(0);
+      this.scene.tweens.add({
+        targets: tile.image,
+        x: tile.homeX,
+        y: tile.homeY,
+        scaleX: homeScaleX,
+        scaleY: homeScaleY,
+        delay: (tile.row + tile.col) * 45,
+        duration: 520,
+        ease: 'Back.easeOut',
+      });
+    });
+    this.scene.time.delayedCall(760, () => {
+      this.breathe();
+      onDone?.();
+    });
+  }
+
+  // Every server `move` event gets a shape-stat telegraph. Damage remains
+  // deterministic; this is a visual expression of the build the player drew.
+  telegraph(onDone?: () => void): void {
+    if (this.reduceMotion) {
+      onDone?.();
+      return;
+    }
+    if (this.meshMotion) {
+      this.meshMotion.signatureAmount = 0;
+      this.scene.tweens.add({
+        targets: this.meshMotion,
+        signatureAmount: 1,
+        duration: 620,
+        ease: 'Sine.easeInOut',
+        onComplete: () => {
+          if (this.meshMotion) this.meshMotion.signatureAmount = 0;
+          onDone?.();
+        },
+      });
+    }
+
+    const profile = this.signatureTrait;
+    const baseX = this.container.x;
+    const baseY = this.container.y;
+    const tweenConfig: Phaser.Types.Tweens.TweenBuilderConfig = {
+      targets: this.container,
+      duration: 310,
+      yoyo: true,
+      ease: 'Sine.easeInOut',
+      onComplete: () => this.container.setPosition(baseX, baseY).setScale(1).setAngle(0),
+    };
+    if (profile === 'chonk') Object.assign(tweenConfig, { scaleX: 1.14, scaleY: 0.8, y: baseY + 10 });
+    if (profile === 'spike') Object.assign(tweenConfig, { scaleX: 1.22, scaleY: 0.9 });
+    if (profile === 'zip') Object.assign(tweenConfig, { x: baseX + this.facing * 20, angle: this.facing * 3 });
+    if (profile === 'charm') Object.assign(tweenConfig, { scaleX: 1.1, scaleY: 1.1, angle: this.facing * 5 });
+    this.scene.tweens.add(tweenConfig);
   }
 
   private stopIdle(): void {
@@ -206,6 +385,7 @@ export class LiveSprite {
   // Anticipation squash: crouch before a lunge. Resolves when the squash peaks.
   anticipate(): Promise<void> {
     this.stopIdle();
+    if (this.reduceMotion) return Promise.resolve();
     return new Promise((resolve) => {
       this.scene.tweens.add({
         targets: this.container,
@@ -222,14 +402,16 @@ export class LiveSprite {
   // Lunge toward a target x with a stretch, land the hit, snap back, re-breathe.
   lunge(homeX: number, targetX: number, onImpact?: () => void): void {
     const dir = Math.sign(targetX - homeX) || this.facing;
+    const spikeRatio = Math.max(0, Math.min(1, this.stats.spike / 60));
+    const zipRatio = Math.max(0, Math.min(1, this.stats.zip / 60));
     this.scene.tweens.chain({
       targets: this.container,
       tweens: [
         {
           x: homeX + dir * this.size * 0.55,
-          scaleX: 1.22,
+          scaleX: 1.16 + spikeRatio * 0.16,
           scaleY: 0.9,
-          duration: 120,
+          duration: this.reduceMotion ? 1 : 150 - zipRatio * 55,
           ease: 'Quad.easeIn',
           onComplete: () => onImpact?.(),
         },
@@ -237,7 +419,7 @@ export class LiveSprite {
           x: homeX,
           scaleX: 1,
           scaleY: 1,
-          duration: 260,
+          duration: this.reduceMotion ? 1 : 290 - zipRatio * 70,
           ease: 'Back.easeOut',
         },
       ],
@@ -250,6 +432,17 @@ export class LiveSprite {
   // Jelly hit reaction: knock-back shiver plus a per-tile ripple so the drawing
   // visibly quivers where it was struck.
   hitReact(knockDir: number): void {
+    if (this.meshMotion) {
+      this.meshMotion.impactDirection = knockDir >= 0 ? 1 : -1;
+      this.meshMotion.impactProgress = 0;
+      this.scene.tweens.add({
+        targets: this.meshMotion,
+        impactProgress: 1,
+        duration: this.reduceMotion ? 1 : 520,
+        ease: 'Cubic.easeOut',
+      });
+    }
+    if (this.reduceMotion) return;
     this.scene.tweens.add({
       targets: this.container,
       x: this.container.x + knockDir * 24,
@@ -278,14 +471,31 @@ export class LiveSprite {
   // Dramatic KO crumple: the tiles collapse inward and downward, the whole body
   // topples and fades. Resolves when the crumple settles.
   crumple(onDone?: () => void): void {
+    if (this.crumpled) {
+      onDone?.();
+      return;
+    }
+    this.crumpled = true;
     this.stopIdle();
+    const usesInkMesh = this.meshMotion !== null;
+    if (this.meshMotion) {
+      this.scene.tweens.add({
+        targets: this.meshMotion,
+        crumpleProgress: 1,
+        duration: this.reduceMotion ? 180 : 620,
+        ease: 'Quad.easeIn',
+      });
+    }
     this.scene.tweens.add({
       targets: this.container,
-      angle: this.facing * 82,
+      // Mesh vertices already fold toward the floor. Rotating that folded mesh
+      // 82 degrees made it look like a vertical line; a small paper-tip reads
+      // as a crumpled doodle while the slice fallback still needs the topple.
+      angle: this.facing * (usesInkMesh ? 14 : 82),
       y: this.container.y + this.size * 0.32,
       scaleY: 0.72,
       alpha: 0.7,
-      duration: 620,
+      duration: this.reduceMotion ? 180 : 620,
       ease: 'Bounce.easeOut',
       onComplete: () => onDone?.(),
     });
@@ -304,6 +514,8 @@ export class LiveSprite {
   // Victory bounce loop for the winner ceremony.
   celebrate(): void {
     this.stopIdle();
+    if (this.meshMotion) this.meshMotion.celebrateAmount = 1;
+    if (this.reduceMotion) return;
     this.scene.tweens.add({
       targets: this.container,
       y: this.container.y - 26,
@@ -316,8 +528,12 @@ export class LiveSprite {
   }
 
   destroy(): void {
+    if (this.destroyed) return;
     this.destroyed = true;
     this.stopIdle();
+    this.scene.events.off(Phaser.Scenes.Events.UPDATE, this.updateInkMesh, this);
+    this.scene.events.off(Phaser.Scenes.Events.SHUTDOWN, this.handleSceneShutdown);
+    this.scene.events.off(Phaser.Scenes.Events.DESTROY, this.handleSceneShutdown);
     this.container.destroy(true);
   }
 }

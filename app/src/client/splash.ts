@@ -24,6 +24,12 @@ async function loadForecast(): Promise<void> {
     const response = await fetch('/api/splash', { headers: { Accept: 'application/json' } });
     if (!response.ok) return;
     const state = (await response.json()) as SplashState;
+    if (state.resolving) {
+      if (forecastText) forecastText.textContent = 'The Rumble bell is ringing…';
+      if (todayStatus) todayStatus.textContent = '⚔️ Results are being tallied right now';
+      if (startButton) startButton.textContent = '⚔️ CHECK THE RESULTS';
+      return;
+    }
     if (forecastText && state.forecast?.blurb) {
       forecastText.textContent = state.forecast.blurb;
     }

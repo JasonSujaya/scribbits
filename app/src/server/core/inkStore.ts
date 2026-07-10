@@ -1,5 +1,6 @@
 import type {
   CapsulePull,
+  CapsulePullResponse,
   CapsuleRarity,
   Inventory,
 } from '../../shared/arena';
@@ -27,6 +28,7 @@ type InkTransaction = {
   unwatch: () => Promise<unknown>;
   incrBy: (key: string, value: number) => Promise<unknown>;
   set: (key: string, value: string) => Promise<unknown>;
+  del: (...keys: string[]) => Promise<unknown>;
   expire: (key: string, seconds: number) => Promise<unknown>;
   hSet: (key: string, fieldValues: Record<string, string>) => Promise<unknown>;
   hIncrBy: (key: string, field: string, value: number) => Promise<unknown>;
@@ -41,6 +43,7 @@ export type CapsulePullSuccess = {
   pull: CapsulePull;
   ink: number;
   inventory: Inventory;
+  nextCost: number;
 };
 
 export type CapsulePullInsufficientInk = {
@@ -52,6 +55,16 @@ export type CapsulePullInsufficientInk = {
 export type CapsulePullResult =
   | CapsulePullSuccess
   | CapsulePullInsufficientInk;
+
+export type CapsuleOperationCommit = {
+  operationKey: string;
+  expectedPendingValue: string;
+};
+
+export type CapsuleOperationClaim =
+  | { status: 'claimed'; pendingValue: string }
+  | { status: 'pending' }
+  | { status: 'completed'; response: CapsulePullResponse };
 
 type CapsuleSelectionOptions = {
   userId: string;
@@ -70,6 +83,8 @@ type InkRewardClaimOptions = {
 
 const maximumTransactionAttempts = 5;
 const capsuleDailyFlagTtlSeconds = 3 * 24 * 60 * 60;
+const capsuleOperationTtlSeconds = 3 * 24 * 60 * 60;
+const capsuleOperationPendingPrefix = 'pending:';
 
 export const getInkKey = (userId: string): string => {
   return `ink:${userId}`;
@@ -92,6 +107,24 @@ export const getCapsuleDailyPullKey = (
   day: number
 ): string => {
   return `capsuleDaily:${userId}:${day}`;
+};
+
+export const getCapsuleOperationKey = (
+  userId: string,
+  operationId: string
+): string => {
+  return `capsule:operation:${userId}:${operationId}`;
+};
+
+export const getNextCapsuleCost = async (
+  storage: ArenaStorage,
+  userId: string,
+  day: number
+): Promise<number> => {
+  const pulledToday = (await storage.get(
+    getCapsuleDailyPullKey(userId, day)
+  )) !== undefined;
+  return pulledToday ? CAPSULE_COST : CAPSULE_FIRST_DAILY_COST;
 };
 
 export const getRumbleWinInkPayoutKey = (day: number): string => {
@@ -159,6 +192,12 @@ export const loadInventory = async (
   userId: string
 ): Promise<Inventory> => {
   const storedInventory = await storage.hGetAll(getInventoryKey(userId));
+  return inventoryFromStoredEntries(storedInventory);
+};
+
+const inventoryFromStoredEntries = (
+  storedInventory: Record<string, string>
+): Inventory => {
   const items: Record<string, number> = {};
 
   for (const entry of INK_ACCESSORY_CATALOG) {
@@ -313,7 +352,11 @@ const applyCapsulePullWithTransaction = async (
   capsuleCost: number,
   dailyPullKey: string,
   nextPullCount: number,
-  nextPullsSinceEpic: number
+  nextPullsSinceEpic: number,
+  operationCommit?: {
+    operationKey: string;
+    responseJson: string;
+  }
 ): Promise<boolean> => {
   await transaction.multi();
   await transaction.incrBy(getInkKey(userId), -capsuleCost);
@@ -334,6 +377,17 @@ const applyCapsulePullWithTransaction = async (
     });
   }
 
+  if (operationCommit) {
+    await transaction.set(
+      operationCommit.operationKey,
+      operationCommit.responseJson
+    );
+    await transaction.expire(
+      operationCommit.operationKey,
+      capsuleOperationTtlSeconds
+    );
+  }
+
   const execResult: unknown = await transaction.exec();
   return Array.isArray(execResult) && execResult.length > 0;
 };
@@ -350,6 +404,153 @@ const discardTransaction = async (
   } catch (error) {
     console.warn('Mystery Ink transaction cleanup failed:', error);
   }
+};
+
+const isNonNegativeInteger = (value: unknown): value is number => {
+  return Number.isInteger(value) && Number(value) >= 0;
+};
+
+const parseCapsuleOperationResponse = (
+  storedValue: string
+): CapsulePullResponse | undefined => {
+  try {
+    const response: unknown = JSON.parse(storedValue);
+    if (typeof response !== 'object' || response === null) return undefined;
+    const record = response as Record<string, unknown>;
+    const pull = record.pull;
+    const inventory = record.inventory;
+    if (typeof pull !== 'object' || pull === null || Array.isArray(pull)) {
+      return undefined;
+    }
+    if (
+      typeof inventory !== 'object' ||
+      inventory === null ||
+      Array.isArray(inventory)
+    ) {
+      return undefined;
+    }
+
+    const pullRecord = pull as Record<string, unknown>;
+    const inventoryRecord = inventory as Record<string, unknown>;
+    const itemCounts = inventoryRecord.items;
+    if (
+      typeof itemCounts !== 'object' ||
+      itemCounts === null ||
+      Array.isArray(itemCounts)
+    ) {
+      return undefined;
+    }
+    if (
+      !['common', 'rare', 'epic'].includes(String(pullRecord.rarity)) ||
+      !['accessory', 'pen', 'title'].includes(String(pullRecord.kind)) ||
+      typeof pullRecord.id !== 'string' ||
+      typeof pullRecord.name !== 'string' ||
+      typeof pullRecord.description !== 'string' ||
+      typeof pullRecord.isNew !== 'boolean' ||
+      !isNonNegativeInteger(pullRecord.ownedCount) ||
+      !isNonNegativeInteger(record.ink) ||
+      !isNonNegativeInteger(record.nextCost) ||
+      !Array.isArray(inventoryRecord.pens) ||
+      !inventoryRecord.pens.every((value) => typeof value === 'string') ||
+      !Array.isArray(inventoryRecord.titles) ||
+      !inventoryRecord.titles.every((value) => typeof value === 'string') ||
+      !Object.values(itemCounts).every(isNonNegativeInteger)
+    ) {
+      return undefined;
+    }
+
+    return response as CapsulePullResponse;
+  } catch {
+    return undefined;
+  }
+};
+
+// Claim one unique operation key with WATCH/MULTI instead of deleting a stale
+// shared-hash field. If a delayed request commits between our read and write,
+// EXEC aborts and the next attempt returns its receipt rather than charging a
+// second time. Corrupt receipts are replaced through the same fenced path.
+export const claimCapsuleOperation = async (
+  storage: InkStorage,
+  operationKey: string,
+  claimedAtMs: number,
+  pendingTimeoutMs: number
+): Promise<CapsuleOperationClaim> => {
+  if (!storage.watch) {
+    throw new Error('Atomic capsule operations require transaction support.');
+  }
+  const pendingValue = `${capsuleOperationPendingPrefix}${claimedAtMs}`;
+
+  for (let attempt = 0; attempt < maximumTransactionAttempts; attempt += 1) {
+    let transaction: InkTransaction | undefined;
+    try {
+      transaction = await storage.watch(operationKey);
+      const storedValue = await storage.get(operationKey);
+      if (storedValue?.startsWith(capsuleOperationPendingPrefix)) {
+        const pendingAtMs = Number(
+          storedValue.slice(capsuleOperationPendingPrefix.length)
+        );
+        if (
+          Number.isFinite(pendingAtMs) &&
+          claimedAtMs - pendingAtMs < pendingTimeoutMs
+        ) {
+          await transaction.unwatch();
+          return { status: 'pending' };
+        }
+      } else if (storedValue !== undefined) {
+        const response = parseCapsuleOperationResponse(storedValue);
+        if (response) {
+          await transaction.unwatch();
+          return { status: 'completed', response };
+        }
+      }
+
+      await transaction.multi();
+      await transaction.set(operationKey, pendingValue);
+      await transaction.expire(operationKey, capsuleOperationTtlSeconds);
+      const execResult: unknown = await transaction.exec();
+      if (Array.isArray(execResult) && execResult.length > 0) {
+        return { status: 'claimed', pendingValue };
+      }
+    } catch (error) {
+      await discardTransaction(transaction);
+      throw error;
+    }
+  }
+
+  throw new Error('Mystery Ink operation claim did not settle.');
+};
+
+// Release only the exact pending value owned by this request. A stale worker
+// can never delete a newer pending claim or a committed response receipt.
+export const releaseCapsuleOperation = async (
+  storage: InkStorage,
+  operationKey: string,
+  expectedPendingValue: string
+): Promise<boolean> => {
+  if (!storage.watch) {
+    throw new Error('Atomic capsule operations require transaction support.');
+  }
+
+  for (let attempt = 0; attempt < maximumTransactionAttempts; attempt += 1) {
+    let transaction: InkTransaction | undefined;
+    try {
+      transaction = await storage.watch(operationKey);
+      if ((await storage.get(operationKey)) !== expectedPendingValue) {
+        await transaction.unwatch();
+        return false;
+      }
+
+      await transaction.multi();
+      await transaction.del(operationKey);
+      const execResult: unknown = await transaction.exec();
+      if (Array.isArray(execResult) && execResult.length > 0) return true;
+    } catch (error) {
+      await discardTransaction(transaction);
+      throw error;
+    }
+  }
+
+  throw new Error('Mystery Ink operation release did not settle.');
 };
 
 const readPullCount = async (
@@ -373,8 +574,12 @@ const readPullsSinceEpic = async (
 export const pullCapsuleForUser = async (
   storage: InkStorage,
   userId: string,
-  day: number
+  day: number,
+  operation?: CapsuleOperationCommit
 ): Promise<CapsulePullResult> => {
+  if (operation && !storage.watch) {
+    throw new Error('Atomic capsule operations require transaction support.');
+  }
   const dailyPullKey = getCapsuleDailyPullKey(userId, day);
   const watchedKeys = [
     getInkKey(userId),
@@ -382,6 +587,7 @@ export const pullCapsuleForUser = async (
     getCapsulePullCountKey(userId),
     getPullsSinceEpicKey(userId),
     dailyPullKey,
+    ...(operation ? [operation.operationKey] : []),
   ];
 
   for (let attempt = 0; attempt < maximumTransactionAttempts; attempt += 1) {
@@ -392,8 +598,29 @@ export const pullCapsuleForUser = async (
         transaction = await storage.watch(...watchedKeys);
       }
 
-      const inkBalance = await getInkBalance(storage, userId);
-      const pulledToday = (await storage.get(dailyPullKey)) !== undefined;
+      if (
+        operation &&
+        (await storage.get(operation.operationKey)) !==
+          operation.expectedPendingValue
+      ) {
+        if (transaction) await transaction.unwatch();
+        throw new Error('Capsule operation claim changed before commit.');
+      }
+
+      const [
+        inkBalance,
+        storedDailyPull,
+        pullCount,
+        pullsSinceEpic,
+        inventoryEntries,
+      ] = await Promise.all([
+        getInkBalance(storage, userId),
+        storage.get(dailyPullKey),
+        readPullCount(storage, userId),
+        readPullsSinceEpic(storage, userId),
+        storage.hGetAll(getInventoryKey(userId)),
+      ]);
+      const pulledToday = storedDailyPull !== undefined;
       const capsuleCost = pulledToday ? CAPSULE_COST : CAPSULE_FIRST_DAILY_COST;
 
       if (inkBalance < capsuleCost) {
@@ -408,9 +635,6 @@ export const pullCapsuleForUser = async (
         };
       }
 
-      const pullCount = await readPullCount(storage, userId);
-      const pullsSinceEpic = await readPullsSinceEpic(storage, userId);
-      const inventoryEntries = await storage.hGetAll(getInventoryKey(userId));
       const nextPullCount = pullCount + 1;
       const selectedEntry = selectCapsuleDrop({
         userId,
@@ -422,6 +646,26 @@ export const pullCapsuleForUser = async (
       const ownedCount = getNextOwnedCount(selectedEntry, inventoryEntries);
       const nextPullsSinceEpic =
         selectedEntry.rarity === 'epic' ? 0 : pullsSinceEpic + 1;
+      const nextInventoryEntries = { ...inventoryEntries };
+      if (selectedEntry.kind === 'accessory') {
+        nextInventoryEntries[selectedEntry.id] = ownedCount.toString();
+      } else if (isNew) {
+        nextInventoryEntries[selectedEntry.id] = selectedEntry.kind;
+      }
+      const pull = createCapsulePull(selectedEntry, isNew, ownedCount);
+      const success: CapsulePullSuccess = {
+        status: 'pulled',
+        pull,
+        ink: inkBalance - capsuleCost,
+        inventory: inventoryFromStoredEntries(nextInventoryEntries),
+        nextCost: CAPSULE_COST,
+      };
+      const operationResponse: CapsulePullResponse = {
+        pull: success.pull,
+        ink: success.ink,
+        inventory: success.inventory,
+        nextCost: success.nextCost,
+      };
 
       if (transaction) {
         const committed = await applyCapsulePullWithTransaction(
@@ -432,7 +676,13 @@ export const pullCapsuleForUser = async (
           capsuleCost,
           dailyPullKey,
           nextPullCount,
-          nextPullsSinceEpic
+          nextPullsSinceEpic,
+          operation
+            ? {
+                operationKey: operation.operationKey,
+                responseJson: JSON.stringify(operationResponse),
+              }
+            : undefined
         );
 
         if (!committed) {
@@ -451,12 +701,7 @@ export const pullCapsuleForUser = async (
         );
       }
 
-      return {
-        status: 'pulled',
-        pull: createCapsulePull(selectedEntry, isNew, ownedCount),
-        ink: inkBalance - capsuleCost,
-        inventory: await loadInventory(storage, userId),
-      };
+      return success;
     } catch (error) {
       await discardTransaction(transaction);
       throw error;

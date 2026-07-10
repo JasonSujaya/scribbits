@@ -7,7 +7,14 @@ import { analyze, MIN_INK_PIXELS } from '../lib/analyzer';
 import type { AnalyzerResult } from '../lib/analyzer';
 import { DomOverlay } from '../lib/overlay';
 import { DrawCanvas } from '../lib/drawcanvas';
-import { ELEMENT_STYLES, EDGE, FONT_STACK, TYPE, UI } from '../lib/theme';
+import {
+  ELEMENT_STYLES,
+  EDGE,
+  FONT_STACK,
+  prefersReducedMotion,
+  TYPE,
+  UI,
+} from '../lib/theme';
 import { paperBackdrop } from '../lib/art';
 import { LivingPaper } from '../lib/livingpaper';
 import { StickerAttach } from '../lib/stickerdrawer';
@@ -31,21 +38,23 @@ import { openCapsuleMachine } from '../lib/capsulemachine';
 import { pullCapsule } from '../lib/api';
 import { PEN_CATALOG, PEN_BY_ID, penSwatchColor, RARITY_STYLE } from '../lib/pens';
 import type { PenCatalogEntry } from '../lib/pens';
-import { INK_REWARDS } from '../../shared/arena';
+import {
+  CAPSULE_FIRST_DAILY_COST,
+  INK_REWARDS,
+} from '../../shared/arena';
 import type { ArenaState, Element, Scribbit } from '../../shared/arena';
 import { getDrawEligibility } from '../lib/draweligibility';
+import { showVsCeremony } from '../lib/battleceremony';
+import { LiveSprite } from '../lib/livesprite';
 
-// The 8-color element palette + black outline pen. Grouped by element hue so
-// the color a player reaches for nudges the creature's element.
-const PALETTE: { color: string; label: string }[] = [
-  { color: '#2b2016', label: 'ink' }, // black outline pen
-  { color: '#ff5a3d', label: 'ember' }, // ember red
-  { color: '#ff9a3d', label: 'ember' }, // ember orange
-  { color: '#3ba0e0', label: 'tide' }, // tide blue
-  { color: '#7fd8e6', label: 'tide' }, // tide cyan
-  { color: '#4faa4f', label: 'moss' }, // moss green
-  { color: '#8a5cd8', label: 'storm' }, // storm purple
-  { color: '#f2cf3d', label: 'storm' }, // storm yellow
+// Five large, thumb-friendly color groups. Re-tapping a two-tone group cycles
+// its shade, preserving the full eight-color palette without eight tiny hits.
+const PALETTE_GROUPS: { label: string; colors: string[] }[] = [
+  { label: 'ink', colors: ['#2b2016'] },
+  { label: 'ember', colors: ['#ff5a3d', '#ff9a3d'] },
+  { label: 'tide', colors: ['#3ba0e0', '#7fd8e6'] },
+  { label: 'moss', colors: ['#4faa4f'] },
+  { label: 'storm', colors: ['#8a5cd8', '#f2cf3d'] },
 ];
 
 const MIN_LINE_WIDTH = 8;
@@ -91,6 +100,7 @@ export class Draw extends Scene {
   private lineWidthPreviewDot: Phaser.GameObjects.Arc | null = null;
 
   private resizeHandler = (): void => this.overlay?.sync();
+  private visualViewportResizeHandler = (): void => this.overlay?.sync();
   private submitting = false;
   private errorPanelRef: ErrorPanel | null = null;
   private livingPaper: LivingPaper | null = null;
@@ -151,14 +161,23 @@ export class Draw extends Scene {
     this.refreshPreview();
 
     window.addEventListener('resize', this.resizeHandler);
+    window.visualViewport?.addEventListener(
+      'resize',
+      this.visualViewportResizeHandler
+    );
     this.events.once('shutdown', () => this.cleanup());
     this.events.once('destroy', () => this.cleanup());
   }
 
   private cleanup(): void {
     window.removeEventListener('resize', this.resizeHandler);
+    window.visualViewport?.removeEventListener(
+      'resize',
+      this.visualViewportResizeHandler
+    );
     this.previewTimer?.remove();
     this.previewTimer = null;
+    this.canvas?.destroy();
     this.overlay?.destroy();
     this.livingPaper?.destroy();
     this.livingPaper = null;
@@ -248,8 +267,8 @@ export class Draw extends Scene {
       this,
       width / 2 + 30,
       92,
-      'BIG→HP · POINTY→ATK\nSMALL→SPD · COLOR→CRIT',
-      18,
+      'FILLED→HP · JAGGED→ATK\nCOMPACT→SPD · MORE COLORS→CRIT',
+      20,
       UI.inkSoft,
       true
     ).setLineSpacing(2);
@@ -288,22 +307,45 @@ export class Draw extends Scene {
     const penY = centerY - 2;
     const toolY = centerY + 60;
 
-    // Color swatches, evenly distributed across the full width.
-    const count = PALETTE.length;
+    // Large grouped swatches, evenly distributed across the full width.
+    const count = PALETTE_GROUPS.length;
     const labelW = 74;
     label(this, EDGE + labelW / 2, colorY, 'Color', TYPE.caption, UI.inkSoft, true);
     const startX = EDGE + labelW + 8;
     const gap = (width - startX - EDGE) / count;
-    PALETTE.forEach((entry, index) => {
+    PALETTE_GROUPS.forEach((entry, index) => {
       const x = startX + gap * (index + 0.5);
       const swatch = this.add
-        .rectangle(x, colorY, 42, 42, Phaser.Display.Color.HexStringToColor(entry.color).color, 1)
-        .setStrokeStyle(4, UI.inkHex, 1)
+        .rectangle(x, colorY, Math.min(100, gap - 10), 72, UI.creamHex, 1)
+        .setStrokeStyle(4, UI.inkHex, 1);
+      const visualWidth = entry.colors.length === 1 ? 54 : 38;
+      entry.colors.forEach((color, colorIndex) => {
+        const colorX = entry.colors.length === 1
+          ? x
+          : x + (colorIndex === 0 ? -20 : 20);
+        this.add
+          .rectangle(
+            colorX,
+            colorY,
+            visualWidth,
+            42,
+            Phaser.Display.Color.HexStringToColor(color).color,
+            1
+          )
+          .setStrokeStyle(2, UI.inkHex, 0.8);
+      });
+      const hit = this.add
+        .rectangle(x, colorY, Math.min(104, gap - 6), 88, 0xffffff, 0.001)
         .setInteractive({ useHandCursor: true });
-      swatch.on('pointerup', () => this.selectColor(index, entry.color));
+      let nextShadeIndex = 0;
+      hit.on('pointerup', () => {
+        const color = entry.colors[nextShadeIndex % entry.colors.length];
+        nextShadeIndex += 1;
+        this.selectColor(index, color ?? '#2b2016');
+      });
       this.colorSwatches.push(swatch);
     });
-    this.selectColor(0, PALETTE[0]?.color ?? '#2b2016');
+    this.selectColor(0, PALETTE_GROUPS[0]?.colors[0] ?? '#2b2016');
 
     this.buildPensRow(penY);
 
@@ -325,9 +367,9 @@ export class Draw extends Scene {
     }
 
     // Edit tools (right group): erase / undo / clear.
-    this.toolIconButton(width - 250, toolY, '🧽', () => this.canvas?.setEraser());
-    this.toolIconButton(width - 170, toolY, '↩', () => this.canvas?.undo());
-    this.toolIconButton(width - 82, toolY, '🗑', () => this.confirmClear(), 62);
+    this.toolIconButton(width - 255, toolY, '🧽', () => this.canvas?.setEraser());
+    this.toolIconButton(width - 160, toolY, '↩', () => this.canvas?.undo());
+    this.toolIconButton(width - 65, toolY, '🗑', () => this.confirmClear());
   }
 
   private toolIconButton(
@@ -335,24 +377,26 @@ export class Draw extends Scene {
     y: number,
     icon: string,
     onClick: () => void,
-    width = 54
+    width = 70
   ): Phaser.GameObjects.Container {
     const container = this.add.container(x, y);
     const bg = this.add
-      .rectangle(0, 0, width, 54, UI.creamHex, 1)
-      .setStrokeStyle(4, UI.inkHex, 1)
-      .setInteractive({ useHandCursor: true });
+      .rectangle(0, 0, width, 70, UI.creamHex, 1)
+      .setStrokeStyle(4, UI.inkHex, 1);
     const glyph = label(this, 0, 0, icon, 26, UI.ink, true);
-    container.add([bg, glyph]);
+    const hit = this.add
+      .rectangle(0, 0, Math.max(width, 88), 88, 0xffffff, 0.001)
+      .setInteractive({ useHandCursor: true });
+    container.add([bg, glyph, hit]);
     const press = (): void => {
       this.tweens.add({ targets: container, scaleX: 0.9, scaleY: 0.88, duration: 60, ease: 'Quad.easeOut' });
     };
     const release = (): void => {
       this.tweens.add({ targets: container, scaleX: 1, scaleY: 1, duration: 100, ease: 'Back.easeOut' });
     };
-    bg.on('pointerdown', press);
-    bg.on('pointerout', release);
-    bg.on('pointerup', () => {
+    hit.on('pointerdown', press);
+    hit.on('pointerout', release);
+    hit.on('pointerup', () => {
       release();
       onClick();
     });
@@ -360,14 +404,14 @@ export class Draw extends Scene {
   }
 
   private buildLineWidthControls(y: number): void {
-    this.toolIconButton(EDGE + 46, y, '−', () => this.adjustLineWidth(-LINE_WIDTH_STEP));
+    this.toolIconButton(EDGE + 35, y, '−', () => this.adjustLineWidth(-LINE_WIDTH_STEP));
 
-    const preview = this.add.container(EDGE + 116, y);
-    const bg = this.add.rectangle(0, 0, 54, 54, UI.creamHex, 1).setStrokeStyle(4, UI.inkHex, 1);
+    const preview = this.add.container(EDGE + 125, y);
+    const bg = this.add.rectangle(0, 0, 70, 70, UI.creamHex, 1).setStrokeStyle(4, UI.inkHex, 1);
     this.lineWidthPreviewDot = this.add.circle(0, 0, this.lineWidthPreviewRadius(), UI.inkHex, 1);
     preview.add([bg, this.lineWidthPreviewDot]);
 
-    this.toolIconButton(EDGE + 186, y, '+', () => this.adjustLineWidth(LINE_WIDTH_STEP));
+    this.toolIconButton(EDGE + 215, y, '+', () => this.adjustLineWidth(LINE_WIDTH_STEP));
   }
 
   private adjustLineWidth(delta: number): void {
@@ -408,7 +452,7 @@ export class Draw extends Scene {
           width / 2 + 38,
           y,
           'Bonus pens unlock after your first fight',
-          18,
+          22,
           UI.inkSoft,
           true
         )
@@ -519,8 +563,10 @@ export class Draw extends Scene {
     this.overlay.setVisible(false);
     openCapsuleMachine(this, {
       ink: this.getArenaState()?.myInk ?? 0,
-      onPull: async () => {
-        const result = await pullCapsule();
+      nextCost:
+        this.getArenaState()?.nextCapsuleCost ?? CAPSULE_FIRST_DAILY_COST,
+      onPull: async (operationId) => {
+        const result = await pullCapsule(operationId);
         if (!result.ok) return { error: result.error };
         return result.data;
       },
@@ -599,6 +645,15 @@ export class Draw extends Scene {
     this.nameInput.maxLength = 24;
     this.nameInput.placeholder = 'Name your scribbit…';
     this.nameInput.autocomplete = 'off';
+    this.nameInput.autocapitalize = 'words';
+    this.nameInput.enterKeyHint = 'done';
+    this.nameInput.setAttribute('aria-label', 'Name your Scribbit');
+    this.nameInput.addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter' || event.isComposing) return;
+      event.preventDefault();
+      this.nameInput.blur();
+      this.trySubmit();
+    });
     Object.assign(this.nameInput.style, {
       fontFamily: FONT_STACK,
       fontSize: '26px',
@@ -728,6 +783,16 @@ export class Draw extends Scene {
     });
     if (!response.ok) {
       this.submitting = false;
+      // A client timeout does not prove the server failed. Reconcile before
+      // inviting a second submit, which could otherwise look like a lost
+      // drawing after the first request actually committed.
+      const reconciledArena = await fetchArena();
+      if (reconciledArena.ok && reconciledArena.data.drawnToday) {
+        setArena(this, reconciledArena.data);
+        showToast('Your Scribbit made it into the Rumble — the reply arrived late.');
+        this.exitTo('ArenaHome');
+        return;
+      }
       this.showError(response.error);
       return;
     }
@@ -819,6 +884,7 @@ export class Draw extends Scene {
           emitting: false,
         });
         burstEmitter.explode(30);
+        this.time.delayedCall(900, () => burstEmitter.destroy());
 
         // Fade out egg
         this.tweens.add({
@@ -868,10 +934,8 @@ export class Draw extends Scene {
       emitting: false,
     });
     emitter.explode(40);
+    this.time.delayedCall(1300, () => emitter.destroy());
 
-    this.time.delayedCall(4000, () => {
-      if (this.scene.isActive()) this.continueAfterBirth(scribbit);
-    });
   }
 
   private revealCard(scribbit: Scribbit, textureKey: string): void {
@@ -882,12 +946,27 @@ export class Draw extends Scene {
     const card = stickerCard(this, width / 2, cardY, cardW, cardH, { gold: true, tapeColor: UI.tape });
     card.setScale(0);
 
-    const artY = cardY - cardH / 2 + 170;
-    const img = this.add.image(width / 2, artY, textureKey).setDisplaySize(280, 280).setScale(0).setDepth(10);
-    const nameLabel = label(this, width / 2, cardY + 60, scribbit.name.toUpperCase(), TYPE.display * 0.66, UI.ink, true)
+    const artY = cardY - cardH / 2 + 165;
+    const newborn = new LiveSprite(this, width / 2, artY, textureKey, {
+      displaySize: 270,
+      stats: scribbit.stats,
+      depth: 10,
+      reduceMotion: prefersReducedMotion(),
+    });
+    const powerLabel = label(
+      this,
+      width / 2,
+      cardY + 32,
+      `SHAPE POWER: ${newborn.shapePower}`,
+      TYPE.caption,
+      UI.coralText,
+      true
+    ).setAlpha(0).setDepth(10);
+    const nameLabel = label(this, width / 2, cardY + 78, scribbit.name.toUpperCase(), TYPE.display * 0.66, UI.ink, true)
       .setAlpha(0)
       .setDepth(10);
-    const badge = elementBadge(this, width / 2, cardY + 110, scribbit.element, 0.85).setAlpha(0).setDepth(10);
+    if (nameLabel.width > cardW - 70) nameLabel.setScale((cardW - 70) / nameLabel.width);
+    const badge = elementBadge(this, width / 2, cardY + 126, scribbit.element, 0.85).setAlpha(0).setDepth(10);
 
     this.tweens.add({
       targets: card,
@@ -895,35 +974,24 @@ export class Draw extends Scene {
       duration: 500,
       ease: 'Back.easeOut',
     });
-    this.tweens.add({
-      targets: img,
-      scale: 1,
-      duration: 500,
-      ease: 'Back.easeOut',
-      onComplete: () => img.setDisplaySize(280, 280),
-    });
-    this.tweens.add({ targets: [nameLabel, badge], alpha: 1, delay: 400, duration: 400 });
+    newborn.awaken();
+    this.tweens.add({ targets: [powerLabel, nameLabel, badge], alpha: 1, delay: 400, duration: 400 });
 
-    // Tiny idle wobble so the newborn feels alive.
-    this.tweens.add({ targets: img, angle: 3, duration: 1200, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
-
-    const grid = statGrid(this, width / 2, cardY + cardH / 2 - 80, cardW - 60, 130);
+    const grid = statGrid(this, width / 2, cardY + cardH / 2 - 62, cardW - 60, 118);
     grid.container.setAlpha(0).setDepth(10);
     grid.setStats(scribbit.stats, false);
     this.tweens.add({ targets: grid.container, alpha: 1, delay: 700, duration: 400 });
 
-    label(
+    ghostButton(
       this,
       width / 2,
-      height - 60,
-      this.startFightAfterBirth ? 'Tap to watch your first fight!' : 'Tap anywhere to continue',
-      TYPE.caption,
-      UI.inkSoft,
-      true
+      height - 80,
+      this.startFightAfterBirth
+        ? 'Watch safe exhibition spar →'
+        : 'Continue →',
+      () => this.continueAfterBirth(scribbit),
+      420
     ).setDepth(10);
-    this.input.once('pointerdown', () => {
-      if (this.scene.isActive()) this.continueAfterBirth(scribbit);
-    });
   }
 
   private continueAfterBirth(scribbit: Scribbit): void {
@@ -944,7 +1012,7 @@ export class Draw extends Scene {
       tapeColor: UI.tapeAlt,
     }).setDepth(200);
     statusCard.add(
-      label(this, 0, -24, '⚔️ Finding a first opponent…', TYPE.title, UI.ink, true)
+      label(this, 0, -24, '⚔️ Finding an exhibition opponent…', TYPE.title, UI.ink, true)
     );
     statusCard.add(
       label(this, 0, 30, 'Your Scribbit is safe in tonight’s Rumble.', TYPE.caption, UI.inkSoft, true)
@@ -958,7 +1026,9 @@ export class Draw extends Scene {
         return;
       }
       setReplay(this, result.data, 'ArenaHome');
-      this.scene.start('Replay');
+      showVsCeremony(this, result.data.a, result.data.b, () => {
+        this.scene.start('Replay');
+      });
     });
   }
 

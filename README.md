@@ -21,7 +21,8 @@ small footprints gain speed, and colorful drawings gain critical chance.
 
 The first Scribbit immediately receives an exhibition fight, so a new player
 sees their drawing come alive before meeting the deeper care, collection, and
-scouting systems.
+scouting systems. Phaser 4.2 turns the submitted PNG into a deforming Inkbody:
+its dominant drawing stat controls its breathing and named Shape Power.
 
 ## Repository
 
@@ -48,6 +49,8 @@ For browser-only iteration without Reddit login:
 ```
 
 Open `http://localhost:8902/`. Add `?fresh` to test the brand-new-player path.
+The verification gate currently covers TypeScript, ESLint, 27 deterministic
+simulation groups, and the production build.
 
 ## Data and safety
 

@@ -1,10 +1,8 @@
 // Generates REAL drawing PNGs for the mock server so the harness reproduces
-// production conditions: network PNGs that are NOT square and carry a cream page
-// + colorful ink strokes (like a real player doodle). Real submitted drawings
-// are composited over an OPAQUE cream page (DrawCanvas.toDataUrl fills paper),
-// so these are opaque too — a transparent silhouette reads as an ugly black blob
-// and never happens in production. Each variant uses a different element hue so
-// the roster shows charming COLOR, not black skulls.
+// production conditions: network PNGs that are NOT square and carry transparent
+// untouched pixels around colorful ink strokes. DrawCanvas keeps paper as a CSS
+// preview only, so production submissions use this same transparent backing.
+// Each variant uses a different element hue so the roster shows charming color.
 import { PNG } from 'pngjs';
 import { writeFileSync, mkdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
@@ -13,7 +11,6 @@ import { fileURLToPath } from 'node:url';
 const outDir = join(dirname(fileURLToPath(import.meta.url)), '..', 'dist', 'mock-assets');
 mkdirSync(outDir, { recursive: true });
 
-const PAPER = [253, 243, 223];
 const INK = [43, 32, 22];
 const CREAM = [255, 247, 232];
 
@@ -36,13 +33,10 @@ function ring(png, cx, cy, rad, t, color) {
     }
 }
 
-// A charming, COLORFUL creature on an opaque cream page: tinted body with an ink
-// outline, cream googly eyes, ink pupils, little ink legs.
+// A charming colorful creature on transparent paper: tinted body with an ink
+// outline, cream googly eyes, ink pupils, and little ink legs.
 function makeDrawing(w, h, body) {
   const png = new PNG({ width: w, height: h });
-  // Opaque cream page (exactly like a real submitted drawing).
-  for (let y = 0; y < h; y++)
-    for (let x = 0; x < w; x++) set(png, x, y, ...PAPER, 255);
 
   const cx = w / 2, cy = h / 2;
   const bodyR = Math.min(w, h) * 0.34;
@@ -65,7 +59,7 @@ function makeDrawing(w, h, body) {
   return PNG.sync.write(png);
 }
 
-// Three variants with distinct element hues, all opaque + colorful.
+// Three transparent variants with distinct element hues.
 writeFileSync(join(outDir, 'drawing-tall.png'), makeDrawing(384, 512, [79, 170, 79]));   // moss green, portrait
 writeFileSync(join(outDir, 'drawing-wide.png'), makeDrawing(512, 320, [47, 159, 216]));   // tide blue, landscape
 writeFileSync(join(outDir, 'drawing-square.png'), makeDrawing(512, 512, [255, 107, 74])); // ember coral, square

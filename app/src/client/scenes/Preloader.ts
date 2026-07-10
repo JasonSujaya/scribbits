@@ -35,7 +35,7 @@ export class Preloader extends Scene {
 
     handLettered(this, width / 2, height * 0.4, 'SCRIBBITS', 76, UI.ink, true);
     this.add
-      .text(width / 2, height * 0.47, 'Draw it. Believe in it.', {
+      .text(width / 2, height * 0.47, 'Draw it. Its shape becomes its stats.', {
         fontFamily: FONT_STACK,
         fontSize: '28px',
         color: UI.inkSoft,

@@ -25,7 +25,9 @@ Supersedes the catch/collect loop (v1) and hatch/vote (v2 draft). Retire catch m
 - Everything portrait 720×1280, in-viewport, juicy
 
 ## Reddit-native surfaces
-Daily numbered post (Rumble results + today's arena) · forecast comment pinned nightly · champion + legend announcements as comments · flair: `⚔️ 3-day streak · 1 Legend` · comments = meta discourse
+Daily numbered Arena post with the current forecast and Champion · nightly idempotent result comment on the resolved thread, pinned best-effort and carrying the next forecast · Champion announcement in the result comment · Belief Legends preserved in the in-app Gallery · comments prompted around Back predictions
+
+**Post-submission opportunities:** announce every newly preserved Legend in comments and add Reddit user flair such as `⚔️ 3-day streak · 1 Legend`.
 
 ## Architecture deltas
 - Contract: `src/shared/arena.ts` (NEW — source of truth, already written by orchestrator)

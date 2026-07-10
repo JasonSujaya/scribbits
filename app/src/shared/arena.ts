@@ -46,6 +46,14 @@ export type Forecast = {
   blurb: string; // "Storm winds howl across the arena..."
 };
 
+export type DailyRumbleReceipt = {
+  resolvedDay: number;
+  backedName: string;
+  championName: string;
+  cloutEarned: number;
+  inkAwarded: number;
+};
+
 export type ArenaState = {
   dayNumber: number;
   loggedIn: boolean;
@@ -64,12 +72,15 @@ export type ArenaState = {
   myClout: number; // lifetime talent-scout score
   myInk: number; // Mystery Ink balance
   myPens: string[]; // unlocked palette pen ids
+  nextCapsuleCost: number; // authoritative current price (daily discount already applied)
+  lastRumbleReceipt: DailyRumbleReceipt | null; // yesterday's Back payoff, if the player made a pick
 };
 
 // Lightweight, read-only inline feed contract. It deliberately excludes
 // rosters, inventories, drawings, and the full entrant gallery.
 export type SplashState = {
   loggedIn: boolean;
+  resolving: boolean;
   forecast: Forecast;
   rumbleEntrants: number;
   rumbleResolvesAt: number;
@@ -111,7 +122,9 @@ export type CapsulePullResponse = {
   pull: CapsulePull;
   ink: number;
   inventory: Inventory;
+  nextCost: number;
 };
+export type CapsulePullRequest = { operationId: string };
 // Accessory attached during drawing; consumed from inventory at submit.
 // Coordinates in 512x512 canvas space; client bakes visuals into the PNG.
 export const MIN_ACCESSORY_SCALE = 0.5;
@@ -169,6 +182,7 @@ export type BattleReport = {
   a: Scribbit;
   b: Scribbit;
   winner: 'a' | 'b';
+  inkAwarded?: number; // actual reward attached by the resolving action, never inferred by the client
   events: BattleEvent[]; // 6-14 events, replayable
 };
 
@@ -187,7 +201,8 @@ export type BelieveRequest = { scribbitId: string };
 export type BossChallengeRequest = { scribbitId: string };
 
 export type LegendsState = {
-  legends: Scribbit[]; // newest first, top 50
+  legends: Scribbit[]; // newest first, one server-bounded page
+  nextCursor: string | null; // server-issued continuation token; null on the final page
   myFaded: Scribbit[]; // caller's sketchbook (faded), newest first, top 30
 };
 
@@ -240,4 +255,4 @@ export const LEVEL_DAMAGE_BONUS_PER_LEVEL = 0.02; // +2%/level above 1, max +8%
 // GET  /api/clout-board    -> CloutBoard
 // POST /api/capsule        -> CapsulePullResponse                       (spends ink; seeded random + pity; duplicate accessories stack)
 // GET  /api/inventory      -> Inventory
-// GET  /api/legends        -> LegendsState
+// GET  /api/legends?cursor&limit -> LegendsState (limit defaults to and is capped at 50)

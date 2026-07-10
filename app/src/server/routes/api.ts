@@ -14,7 +14,7 @@ import type {
   Scribbit,
   SplashState,
 } from '../../shared/arena';
-import { INK_REWARDS } from '../../shared/arena';
+import { CAPSULE_FIRST_DAILY_COST, INK_REWARDS } from '../../shared/arena';
 import { analyze as analyzeDrawing } from '../../shared/analyzer-core';
 import { simulate } from '../core/battle';
 import {
@@ -32,6 +32,7 @@ import {
   claimDailyBack,
   getBackedScribbitId,
   getUserClout,
+  getUserCloutPayout,
   loadCloutBoard,
 } from '../core/clout';
 import { hashTextToSeed } from '../core/random';
@@ -39,16 +40,23 @@ import { loadPlayStreak, recordDailyPlay } from '../core/streak';
 import {
   awardInk,
   consumeAccessoriesForSubmit,
+  claimCapsuleOperation,
+  getCapsuleOperationKey,
+  getNextCapsuleCost,
   getInkBalance,
   loadInventory,
   pullCapsuleForUser,
+  releaseCapsuleOperation,
 } from '../core/inkStore';
 import {
   formatUtcDateKey,
   getArenaDayNumber,
   getNextUtcDayStartMs,
 } from '../core/day';
-import { prepareRumbleEntrants } from '../core/rumble';
+import {
+  getProjectedRumbleEntrantCount,
+  prepareRumbleEntrants,
+} from '../core/rumble';
 import { chooseFoundingSparOpponent } from '../core/species';
 import {
   clearScribbitReports,
@@ -67,12 +75,11 @@ import {
   decodePngDataUrl,
   deleteStoredScribbit,
   enforceAliveScribbitLimit,
-  expireDueScribbits,
   getAliveScribbitsForUser,
   getCommunityLegendCount,
   getDailyFlags,
   getFadedScribbitsForUser,
-  getLegends,
+  getLegendIds,
   getRumbleEntrantIds,
   getRumbleEntrantCount,
   getScribbitOwner,
@@ -97,6 +104,7 @@ type ErrorResponse = ArenaErrorResponse;
 export const api = new Hono();
 
 const beliefVotersTtlSeconds = 7 * 24 * 60 * 60;
+const capsuleOperationPendingTimeoutMs = 15_000;
 
 const isRecord = (value: unknown): value is Record<string, unknown> => {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -150,7 +158,7 @@ const getCurrentPlayer = async (): Promise<CurrentPlayer | undefined> => {
   }
 
   const username =
-    context.username ?? (await reddit.getCurrentUsername()) ?? context.userId;
+    context.username ?? (await reddit.getCurrentUsername()) ?? 'reddit-player';
 
   return {
     userId: context.userId,
@@ -227,9 +235,14 @@ const loadOwnedAliveScribbit = async (
 
 const loadTodayRumbleEntrants = async (
   day: number,
-  utcDateKey: string
+  utcDateKey: string,
+  pinnedScribbitIds: string[]
 ): Promise<Scribbit[]> => {
-  const entrantIds = await getRumbleEntrantIds(redis, day);
+  const recentEntrantIds = await getRumbleEntrantIds(redis, day, {
+    limit: 24,
+    reverse: true,
+  });
+  const entrantIds = [...new Set([...pinnedScribbitIds, ...recentEntrantIds])];
   const entrants = await loadScribbits(redis, entrantIds, utcDateKey);
 
   return prepareRumbleEntrants(entrants, day);
@@ -252,7 +265,6 @@ api.get('/arena', async (c) => {
     const utcDateKey = formatUtcDateKey(now);
     const dayNumber = await getWritableArenaDay(now);
     if (!dayNumber) return arenaRolloverConflict(c);
-    await expireDueScribbits(redis, dayNumber);
     const forecast = await ensureForecastForDay(redis, dayNumber);
     const player = await getCurrentPlayer();
     let myScribbits: Scribbit[] = [];
@@ -263,6 +275,7 @@ api.get('/arena', async (c) => {
     let myClout = 0;
     let myInk = 0;
     let myPens: string[] = [];
+    let nextCapsuleCost = CAPSULE_FIRST_DAILY_COST;
 
     if (player) {
       playStreakDays = (await recordDailyPlay(redis, player.userId, now)).days;
@@ -279,16 +292,54 @@ api.get('/arena', async (c) => {
       myClout = await getUserClout(redis, player.userId);
       myInk = await getInkBalance(redis, player.userId);
       myPens = inventory.pens;
+      nextCapsuleCost = await getNextCapsuleCost(
+        redis,
+        player.userId,
+        dayNumber
+      );
     }
 
-    const allTodayEntrants = await loadTodayRumbleEntrants(dayNumber, utcDateKey);
+    const allTodayEntrants = await loadTodayRumbleEntrants(
+      dayNumber,
+      utcDateKey,
+      [
+        myBackedScribbitId,
+        ...myScribbits.map((scribbit) => scribbit.id),
+      ].filter((scribbitId): scribbitId is string => scribbitId !== null)
+    );
     const hiddenScribbitIds = player
       ? await getHiddenScribbitIds(redis, player.userId)
       : new Set<string>();
     const todayEntrants = allTodayEntrants.filter(
       (entrant) => !hiddenScribbitIds.has(entrant.id)
     );
+    const rumbleEntrantCount = getProjectedRumbleEntrantCount(
+      await getRumbleEntrantCount(redis, dayNumber)
+    );
     const currentChampion = await getCurrentChampion(redis);
+    let lastRumbleReceipt: ArenaState['lastRumbleReceipt'] = null;
+    if (player && dayNumber > 1) {
+      const resolvedDay = dayNumber - 1;
+      const backedScribbitId = await getBackedScribbitId(
+        redis,
+        resolvedDay,
+        player.userId
+      );
+      if (backedScribbitId) {
+        const [backedScribbit, cloutEarned] = await Promise.all([
+          loadScribbit(redis, backedScribbitId, utcDateKey),
+          getUserCloutPayout(redis, resolvedDay, player.userId),
+        ]);
+        lastRumbleReceipt = {
+          resolvedDay,
+          backedName: backedScribbit?.name ?? 'Your pick',
+          championName: currentChampion?.name ?? 'No Champion',
+          cloutEarned,
+          inkAwarded:
+            cloutEarned === 3 ? INK_REWARDS.backedChampion : 0,
+        };
+      }
+    }
 
     return c.json<ArenaState>({
       dayNumber,
@@ -302,7 +353,7 @@ api.get('/arena', async (c) => {
       myScribbits,
       drawnToday,
       enteredToday,
-      rumbleEntrants: allTodayEntrants.length,
+      rumbleEntrants: rumbleEntrantCount,
       communityLegendCount: await getCommunityLegendCount(redis),
       rumbleResolvesAt: getNextUtcDayStartMs(now),
       todayEntrants,
@@ -311,6 +362,8 @@ api.get('/arena', async (c) => {
       myClout,
       myInk,
       myPens,
+      nextCapsuleCost,
+      lastRumbleReceipt,
     });
   } catch (error) {
     console.error('Arena route failed:', error);
@@ -322,6 +375,7 @@ api.get('/splash', async (c) => {
   try {
     const now = new Date();
     const dayNumber = await ensureCurrentArenaDay(redis, now);
+    const resolving = dayNumber < getArenaDayNumber(now);
     const player = await getCurrentPlayer();
     const dailyFlags = player
       ? await getDailyFlags(redis, player.userId, dayNumber)
@@ -335,8 +389,11 @@ api.get('/splash', async (c) => {
 
     return c.json<SplashState>({
       loggedIn: Boolean(player),
+      resolving,
       forecast: await ensureForecastForDay(redis, dayNumber),
-      rumbleEntrants: await getRumbleEntrantCount(redis, dayNumber),
+      rumbleEntrants: getProjectedRumbleEntrantCount(
+        await getRumbleEntrantCount(redis, dayNumber)
+      ),
       rumbleResolvesAt: getNextUtcDayStartMs(now),
       drawnToday: dailyFlags?.drawnToday ?? false,
       backedToday: backedScribbitId !== null,
@@ -381,8 +438,8 @@ api.post('/scribbit', async (c) => {
 
   try {
     const now = new Date();
-    const dayNumber = await ensureCurrentArenaDay(redis, now);
-    await expireDueScribbits(redis, dayNumber);
+    const dayNumber = await getWritableArenaDay(now);
+    if (!dayNumber) return arenaRolloverConflict(c);
     const dailyFlags = await getDailyFlags(redis, player.userId, dayNumber);
 
     if (dailyFlags.drawnToday) {
@@ -721,8 +778,7 @@ api.post('/spar', async (c) => {
       'exhibition'
     );
 
-    await saveBattleReport(redis, report, Date.now());
-
+    let inkAwarded = 0;
     if (report.winner === 'a') {
       const shouldAwardSparXp = await claimDailySparWinXp(
         redis,
@@ -734,11 +790,17 @@ api.post('/spar', async (c) => {
       if (shouldAwardSparXp) {
         await awardScribbitXp(redis, challenger.id, 1, utcDateKey);
         await awardInk(redis, player.userId, INK_REWARDS.sparWin);
+        inkAwarded = INK_REWARDS.sparWin;
       }
     }
 
+    const rewardedReport: BattleReport = {
+      ...report,
+      ...(inkAwarded > 0 ? { inkAwarded } : {}),
+    };
+    await saveBattleReport(redis, rewardedReport, Date.now());
     await recordDailyPlay(redis, player.userId, now);
-    return c.json<BattleReport>(report);
+    return c.json<BattleReport>(rewardedReport);
   } catch (error) {
     console.error('Spar route failed:', error);
     return serverError(c, 'The practice bell fell off. Try again soon.');
@@ -848,8 +910,11 @@ api.post('/back', async (c) => {
     const dayNumber = await getWritableArenaDay(now);
     if (!dayNumber) return arenaRolloverConflict(c);
 
-    await expireDueScribbits(redis, dayNumber);
-    const todayEntrants = await loadTodayRumbleEntrants(dayNumber, utcDateKey);
+    const todayEntrants = await loadTodayRumbleEntrants(
+      dayNumber,
+      utcDateKey,
+      []
+    );
     const targetIsInRumble = todayEntrants.some((entrant) => {
       return entrant.id === scribbitId;
     });
@@ -1007,25 +1072,62 @@ api.post('/capsule', async (c) => {
     return unauthorized(c, 'Sign in to open a Mystery Ink capsule.');
   }
 
+  const request = await readJsonBody(c);
+  const operationId = isRecord(request) && typeof request.operationId === 'string'
+    ? request.operationId.trim()
+    : '';
+  if (!/^[A-Za-z0-9-]{16,80}$/.test(operationId)) {
+    return badRequest(c, 'Open the capsule with a valid operation id.');
+  }
+  const operationKey = getCapsuleOperationKey(player.userId, operationId);
+
   try {
     const now = new Date();
     const dayNumber = await getWritableArenaDay(now);
     if (!dayNumber) return arenaRolloverConflict(c);
-    const result = await pullCapsuleForUser(redis, player.userId, dayNumber);
+    const operationClaim = await claimCapsuleOperation(
+      redis,
+      operationKey,
+      now.getTime(),
+      capsuleOperationPendingTimeoutMs
+    );
+    if (operationClaim.status === 'pending') {
+      return conflict(c, 'That capsule is already opening. Try again in a moment.');
+    }
+    if (operationClaim.status === 'completed') {
+      return c.json<CapsulePullResponse>(operationClaim.response);
+    }
+
+    const result = await pullCapsuleForUser(redis, player.userId, dayNumber, {
+      operationKey,
+      expectedPendingValue: operationClaim.pendingValue,
+    });
 
     if (result.status === 'insufficientInk') {
+      await releaseCapsuleOperation(
+        redis,
+        operationKey,
+        operationClaim.pendingValue
+      );
       return paymentRequired(
         c,
         `You need ${result.cost} Mystery Ink to open a capsule.`
       );
     }
 
-    return c.json<CapsulePullResponse>({
+    const response: CapsulePullResponse = {
       pull: result.pull,
       ink: result.ink,
       inventory: result.inventory,
-    });
+      nextCost: result.nextCost,
+    };
+    return c.json<CapsulePullResponse>(response);
   } catch (error) {
+    // Do not clear an indeterminate claim here. The pull transaction stores its
+    // final response in the same atomic commit as Ink/inventory. If Redis fails
+    // before commit, the pending claim safely blocks retries until timeout; if
+    // the commit succeeded but the response was interrupted, the stored receipt
+    // makes the next request idempotent.
     console.error('Capsule route failed:', error);
     return serverError(c, 'The capsule machine jammed. Try again soon.');
   }
@@ -1116,7 +1218,94 @@ api.post('/boss-challenge', async (c) => {
   }
 });
 
+const maximumLegendsPageSize = 50;
+
+const readLegendsPageNumber = (
+  value: string | undefined,
+  fallback: number,
+  maximum?: number
+): number | undefined => {
+  if (value === undefined) return fallback;
+  if (!/^(0|[1-9][0-9]*)$/.test(value)) return undefined;
+
+  const parsedValue = Number(value);
+  if (!Number.isSafeInteger(parsedValue)) return undefined;
+  return maximum === undefined
+    ? parsedValue
+    : Math.min(parsedValue, maximum);
+};
+
+const loadVisibleLegendPage = async (
+  hiddenScribbitIds: Set<string>,
+  offset: number,
+  limit: number
+): Promise<Pick<LegendsState, 'legends' | 'nextCursor'>> => {
+  const legends: Scribbit[] = [];
+  const scanBatchSize = Math.min(
+    maximumLegendsPageSize,
+    Math.max(8, limit + 1)
+  );
+  let scanOffset = offset;
+
+  while (true) {
+    const batchStartOffset = scanOffset;
+    const legendIds = await getLegendIds(
+      redis,
+      scanBatchSize,
+      batchStartOffset
+    );
+    if (legendIds.length === 0) break;
+    const loadedLegends = new Map(
+      (await loadScribbits(redis, legendIds))
+        .filter((scribbit) => scribbit.status === 'legend')
+        .map((scribbit) => [scribbit.id, scribbit])
+    );
+
+    for (let index = 0; index < legendIds.length; index += 1) {
+      const scribbitOffset = batchStartOffset + index;
+      scanOffset = scribbitOffset + 1;
+      const scribbitId = legendIds[index];
+      if (!scribbitId) continue;
+      const scribbit = loadedLegends.get(scribbitId);
+      // Missing/non-Legend rows are stale zset members. Consume their raw rank
+      // without returning them so the next cursor never duplicates or skips a
+      // valid Scribbit around the stale entry.
+      if (!scribbit) continue;
+      if (hiddenScribbitIds.has(scribbit.id)) continue;
+
+      // The cursor points at (rather than past) the first visible item on the
+      // next page. Hidden rows between pages are consumed once and never leave
+      // a mysteriously short page for this player.
+      if (legends.length === limit) {
+        return {
+          legends,
+          nextCursor: String(scribbitOffset),
+        };
+      }
+      legends.push(scribbit);
+    }
+
+    if (legendIds.length < scanBatchSize) break;
+  }
+
+  return { legends, nextCursor: null };
+};
+
 api.get('/legends', async (c) => {
+  const cursorOffset = readLegendsPageNumber(c.req.query('cursor'), 0);
+  const requestedLimit = readLegendsPageNumber(
+    c.req.query('limit'),
+    maximumLegendsPageSize,
+    maximumLegendsPageSize
+  );
+  if (
+    cursorOffset === undefined ||
+    requestedLimit === undefined ||
+    requestedLimit < 1
+  ) {
+    return badRequest(c, 'Use a valid Legends cursor and a positive page size.');
+  }
+
   try {
     const player = await getCurrentPlayer();
     const hiddenScribbitIds = player
@@ -1125,10 +1314,13 @@ api.get('/legends', async (c) => {
     const myFaded = player
       ? await getFadedScribbitsForUser(redis, player.userId, 30)
       : [];
+    const legendPage = await loadVisibleLegendPage(
+      hiddenScribbitIds,
+      cursorOffset,
+      requestedLimit
+    );
     const legendsState: LegendsState = {
-      legends: (await getLegends(redis, 50)).filter(
-        (scribbit) => !hiddenScribbitIds.has(scribbit.id)
-      ),
+      ...legendPage,
       myFaded,
     };
 

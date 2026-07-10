@@ -44,6 +44,7 @@ const fallbackStats = { chonk: 25, spike: 25, zip: 25, charm: 25 };
 const levelThresholds = [0, 3, 7, 12, 18];
 const capsuleCost = 10;
 const capsuleFirstDailyCost = 5;
+const maximumLegendsPageSize = 50;
 const maxAccessoriesPerScribbit = 2;
 const accessoryCatalogIds = [
   'bowtie',
@@ -245,6 +246,19 @@ const createBattleReport = (kind, fighterA, fighterB) => {
   for (let index = 0; index < 9; index += 1) {
     const actor = index % 2 === 0 ? 'a' : 'b';
     const damage = 10 + ((battleCounter + index) % 9);
+    const move = actor === 'a' ? 'Marker Mash' : 'Sticker Slam';
+    events.push({
+      type: 'move',
+      actor,
+      move,
+      damage: null,
+      hpA,
+      hpB,
+      text:
+        actor === 'a'
+          ? `${fighterA.name} winds up ${move}.`
+          : `${fighterB.name} winds up ${move}.`,
+    });
     if (actor === 'a') {
       hpB = Math.max(winner === 'a' && index === 8 ? 0 : 1, hpB - damage);
     } else {
@@ -253,7 +267,7 @@ const createBattleReport = (kind, fighterA, fighterB) => {
     events.push({
       type: index % 4 === 0 ? 'crit' : 'hit',
       actor,
-      move: actor === 'a' ? 'Marker Mash' : 'Sticker Slam',
+      move,
       damage,
       hpA,
       hpB,
@@ -619,6 +633,7 @@ const memory = {
   },
   capsulePullCount: 0,
   discountedCapsuleUtcDate: null,
+  capsuleOperations: new Map(),
   beliefVotes: new Set(),
   hiddenScribbitIds: new Set(),
   reportCounts: new Map(),
@@ -841,6 +856,14 @@ const arenaState = () => {
     myClout: memory.myClout,
     myInk: memory.myInk,
     myPens: [...memory.inventory.pens],
+    nextCapsuleCost: capsuleCostForCurrentPull().cost,
+    lastRumbleReceipt: {
+      resolvedDay: memory.dayNumber - 1,
+      backedName: 'Inky Moon',
+      championName: memory.champion.name,
+      cloutEarned: 0,
+      inkAwarded: 0,
+    },
   };
 };
 
@@ -876,6 +899,7 @@ const freshPlayerArenaState = () => {
     myClout: 0,
     myInk: submittedScribbits.length * 2,
     myPens: [],
+    lastRumbleReceipt: null,
   };
 };
 
@@ -904,6 +928,7 @@ const handleApi = async (request, response, url) => {
     const state = isFreshPlayerPreview(request) ? freshPlayerArenaState() : arenaState();
     sendJson(response, 200, {
       loggedIn: state.loggedIn,
+      resolving: false,
       forecast: state.forecast,
       rumbleEntrants: state.rumbleEntrants,
       rumbleResolvesAt: state.rumbleResolvesAt,
@@ -920,6 +945,19 @@ const handleApi = async (request, response, url) => {
   }
 
   if (method === 'POST' && path === '/api/capsule') {
+    const body = await readJsonBody(request);
+    const operationId = typeof body?.operationId === 'string'
+      ? body.operationId.trim()
+      : '';
+    if (!operationId) {
+      sendError(response, 400, 'Open the capsule with a valid operation id.');
+      return;
+    }
+    const cachedOperation = memory.capsuleOperations.get(operationId);
+    if (cachedOperation) {
+      sendJson(response, 200, cachedOperation);
+      return;
+    }
     const { cost, utcDateKey } = capsuleCostForCurrentPull();
 
     if (memory.myInk < cost) {
@@ -944,14 +982,17 @@ const handleApi = async (request, response, url) => {
     memory.myInk -= cost;
     const pullInventoryState = addCapsuleDropToInventory(drop);
 
-    sendJson(response, 200, {
+    const capsuleResponse = {
       pull: {
         ...drop,
         ...pullInventoryState,
       },
       ink: memory.myInk,
       inventory: inventoryState(),
-    });
+      nextCost: capsuleCost,
+    };
+    memory.capsuleOperations.set(operationId, capsuleResponse);
+    sendJson(response, 200, capsuleResponse);
     return;
   }
 
@@ -971,10 +1012,45 @@ const handleApi = async (request, response, url) => {
   }
 
   if (method === 'GET' && path === '/api/legends') {
+    const readPageNumber = (value, fallback, maximum) => {
+      if (value === null) return fallback;
+      if (!/^(0|[1-9][0-9]*)$/.test(value)) return undefined;
+      const parsedValue = Number(value);
+      if (!Number.isSafeInteger(parsedValue)) return undefined;
+      return maximum === undefined
+        ? parsedValue
+        : Math.min(parsedValue, maximum);
+    };
+    const cursorOffset = readPageNumber(url.searchParams.get('cursor'), 0);
+    const requestedLimit = readPageNumber(
+      url.searchParams.get('limit'),
+      maximumLegendsPageSize,
+      maximumLegendsPageSize
+    );
+    if (
+      cursorOffset === undefined ||
+      requestedLimit === undefined ||
+      requestedLimit < 1
+    ) {
+      sendError(response, 400, 'Use a valid Legends cursor and a positive page size.');
+      return;
+    }
+
+    const pageLegends = [];
+    let nextCursor = null;
+    for (let index = cursorOffset; index < memory.legends.length; index += 1) {
+      const scribbit = memory.legends[index];
+      if (!scribbit || memory.hiddenScribbitIds.has(scribbit.id)) continue;
+      if (pageLegends.length === requestedLimit) {
+        nextCursor = String(index);
+        break;
+      }
+      pageLegends.push(cloneScribbit(scribbit));
+    }
+
     sendJson(response, 200, {
-      legends: memory.legends
-        .filter((scribbit) => !memory.hiddenScribbitIds.has(scribbit.id))
-        .map(cloneScribbit),
+      legends: pageLegends,
+      nextCursor,
       myFaded: memory.myFaded.map(cloneScribbit),
     });
     return;
@@ -1360,6 +1436,7 @@ const resetFreshPreview = () => {
   memory.myBackedScribbitId = null;
   memory.hiddenScribbitIds.clear();
   memory.reportCounts.clear();
+  memory.capsuleOperations.clear();
 };
 
 if (autoReload && existsSync(clientRoot)) {

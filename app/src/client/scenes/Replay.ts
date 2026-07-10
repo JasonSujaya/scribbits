@@ -1,15 +1,27 @@
 import * as Phaser from 'phaser';
 import { Scene } from 'phaser';
-import { getReplay, getReplayReturn, getArena, setReplay, setArenaFocus } from '../lib/registry';
+import {
+  getReplay,
+  getReplayReturn,
+  getArena,
+  setArena,
+  setReplay,
+  setArenaFocus,
+} from '../lib/registry';
 import { loadDrawing, levelOf } from '../lib/scribbits';
-import { ELEMENT_STYLES, TYPE, UI } from '../lib/theme';
+import {
+  ELEMENT_STYLES,
+  prefersReducedMotion,
+  TYPE,
+  UI,
+} from '../lib/theme';
 import { label, elementBadge, stickerCard, ghostButton, button, levelBadge, daysLeftFor, floatReward, fadeToScene } from '../lib/ui';
 import { openDetailModal } from '../lib/detailmodal';
 import { LiveSprite } from '../lib/livesprite';
-import { spar } from '../lib/api';
+import { getSignatureTrait, SIGNATURE_POWER } from '../lib/inkmesh';
+import { fetchArena, spar } from '../lib/api';
 import { showToast } from '@devvit/web/client';
 import type { BattleEvent, BattleReport, Scribbit } from '../../shared/arena';
-import { INK_REWARDS } from '../../shared/arena';
 import { getBattleMaxHp } from '../../shared/battle';
 
 type Fighter = {
@@ -24,12 +36,12 @@ type Fighter = {
   facing: 1 | -1;
 };
 
-// Battle theater — the demo moment. Player drawings come alive as slice-grid
-// LiveSprites: they breathe, walk in, anticipate, lunge, jelly-wobble on hit,
-// and crumple on KO. Camera punch-ins on hits, slow-mo + zoom on the final
-// blow, per-element particle FX, edge flash on crits, chunk-then-drain HP, and
-// a TAP-TO-CHEER hype meter that pops confetti when full. ~15-25s; tap anywhere
-// to skip. Ends in a winner ceremony or a no-dead-end loss card.
+// Battle theater — the demo moment. On WebGL, each submitted PNG is a Phaser
+// 4.2 Mesh2D Inkbody: 25 vertices breathe, telegraph its shape-powered move,
+// ripple on impact, and fold on KO. Canvas retains the 3x3 slice fallback.
+// Deterministic battle events own the result; Phaser makes the player's pixels
+// perform it. Replay controls, cheering, mobile-safe particles, and clear
+// outcomes keep the spectacle watchable rather than decorative.
 export class Replay extends Scene {
   private report!: BattleReport;
   private fighterA!: Fighter;
@@ -39,6 +51,7 @@ export class Replay extends Scene {
   private playTimer: Phaser.Time.TimerEvent | null = null;
   private finished = false;
   private introBanner: Phaser.GameObjects.Text | null = null;
+  private reduceMotion = false;
 
   // Hype meter (tap-to-cheer).
   private hype = 0; // 0..1
@@ -51,6 +64,9 @@ export class Replay extends Scene {
   private static readonly SPEEDS = [1, 2, 4] as const;
   private speedIndex = 0;
   private speedButtonLabel: Phaser.GameObjects.Text | null = null;
+  private fightersReady = false;
+  private skipRequested = false;
+  private signatureShown = new Set<'a' | 'b'>();
 
   constructor() {
     super('Replay');
@@ -65,8 +81,12 @@ export class Replay extends Scene {
     this.hypeMaxed = false;
     this.announcerLoud = false;
     this.introBanner = null;
+    this.reduceMotion = prefersReducedMotion();
     this.speedIndex = 0;
     this.speedButtonLabel = null;
+    this.fightersReady = false;
+    this.skipRequested = false;
+    this.signatureShown.clear();
   }
 
   // Current fast-forward multiplier.
@@ -106,9 +126,14 @@ export class Replay extends Scene {
     });
 
     void Promise.all([loadDrawing(this, report.a), loadDrawing(this, report.b)]).then(([keyA, keyB]) => {
-      if (!this.scene.isActive()) return;
+      if (!this.scene.isActive() || this.finished) return;
       this.placeFighter('a', keyA);
       this.placeFighter('b', keyB);
+      this.fightersReady = true;
+      if (this.skipRequested) {
+        this.skipToEnd();
+        return;
+      }
       this.playIntro();
     });
   }
@@ -140,11 +165,18 @@ export class Replay extends Scene {
     const ffButton = ghostButton(this, width - 280, 60, `${this.speed}× ⏩`, () => this.cycleSpeed(), 150).setDepth(80);
     this.speedButtonLabel = ffButton.list[1] as Phaser.GameObjects.Text;
 
-    // Tap anywhere: advance the beat AND add cheer. Skip button handles its own.
+    // Taps are applause, not a hidden skip control. The timer owns battle pace;
+    // speed and Skip remain explicit, so rapid cheering cannot overlap attacks.
     this.input.on('pointerdown', () => {
       this.addCheer();
-      this.advance();
     });
+
+    const kindLabel = this.report.kind === 'exhibition'
+      ? 'EXHIBITION SPAR'
+      : this.report.kind === 'boss'
+        ? 'CHAMPION CHALLENGE'
+        : 'DAILY RUMBLE';
+    label(this, 118, 60, kindLabel, TYPE.caption, UI.inkSoft, true).setDepth(80);
   }
 
   private buildHypeMeter(x: number, y: number): void {
@@ -200,8 +232,8 @@ export class Replay extends Scene {
       speedX: { min: -80, max: 80 },
       scale: { start: 0.6, end: 0 },
       lifespan: 1600,
-      quantity: 6,
-      frequency: 30,
+      quantity: 2,
+      frequency: 60,
       tint: [UI.gold, UI.coral, ELEMENT_STYLES.tide.particle, ELEMENT_STYLES.moss.particle],
     });
     emitter.setDepth(74);
@@ -259,6 +291,7 @@ export class Replay extends Scene {
 
     const nameX = barX + (right ? 280 : 0);
     const nameLabel = label(this, nameX, barY - 44, scribbit.name, TYPE.body, UI.ink, true).setOrigin(right ? 1 : 0, 0.5);
+    if (nameLabel.width > 250) nameLabel.setScale(250 / nameLabel.width);
     nameLabel.setInteractive({ useHandCursor: true });
     nameLabel.on('pointerup', (_p: unknown, _lx: unknown, _ly: unknown, e: Phaser.Types.Input.EventData) => {
       e.stopPropagation?.();
@@ -271,6 +304,16 @@ export class Replay extends Scene {
       .rectangle(barX + 2, barY, 276, 18, ELEMENT_STYLES[scribbit.element].primary, 1)
       .setOrigin(0, 0.5);
     elementBadge(this, barX + (right ? 240 : 40), barY + 40, scribbit.element, 0.6);
+    const shapePower = SIGNATURE_POWER[getSignatureTrait(scribbit.stats)].name;
+    label(
+      this,
+      barX + 140,
+      barY + 75,
+      `SHAPE: ${shapePower}`,
+      TYPE.caption,
+      ELEMENT_STYLES[scribbit.element].primaryText,
+      true
+    );
 
     const hpMax = getBattleMaxHp(scribbit.stats);
     return {
@@ -293,6 +336,8 @@ export class Replay extends Scene {
       displaySize: 170,
       facing: fighter.facing,
       depth: 5,
+      stats: fighter.scribbit.stats,
+      reduceMotion: this.reduceMotion,
     });
     fighter.live = live;
     // Walk in from off-stage, then breathe.
@@ -357,7 +402,9 @@ export class Replay extends Scene {
     }
     const event = this.report.events[this.eventIndex];
     this.eventIndex += 1;
-    if (event) this.playEvent(event);
+    if (!event) return;
+    this.playEvent(event);
+    if (event.type === 'faint') this.finish();
   }
 
   private playEvent(event: BattleEvent): void {
@@ -368,6 +415,8 @@ export class Replay extends Scene {
 
     switch (event.type) {
       case 'move':
+        this.telegraphShapePower(event.actor, actor);
+        break;
       case 'hit':
         void this.attack(actor, target, event, false);
         break;
@@ -393,6 +442,54 @@ export class Replay extends Scene {
     }
   }
 
+  private telegraphShapePower(side: 'a' | 'b', actor: Fighter): void {
+    actor.live?.telegraph();
+    if (!actor.live) return;
+
+    const firstReveal = !this.signatureShown.has(side);
+    this.signatureShown.add(side);
+    const style = ELEMENT_STYLES[actor.scribbit.element];
+    const powerText = firstReveal
+      ? `SHAPE POWER\n${actor.live.shapePower}`
+      : actor.live.shapePower;
+    const callout = label(
+      this,
+      actor.homeX,
+      actor.homeY - 165,
+      powerText,
+      firstReveal ? 34 : TYPE.caption,
+      style.primaryText,
+      true
+    ).setDepth(30).setScale(0);
+    callout.setStroke('#fff7e8', firstReveal ? 9 : 6);
+    this.tweens.add({
+      targets: callout,
+      scale: 1,
+      y: callout.y - 18,
+      duration: this.reduceMotion ? 80 : 220,
+      ease: 'Back.easeOut',
+      yoyo: true,
+      hold: firstReveal ? 520 : 220,
+      onComplete: () => callout.destroy(),
+    });
+    this.shapePowerBurst(actor, style.particle);
+  }
+
+  private shapePowerBurst(actor: Fighter, tint: number): void {
+    if (this.reduceMotion) return;
+    const burst = this.add.particles(actor.homeX, actor.homeY, 'dot', {
+      speed: { min: 40, max: 150 },
+      scale: { start: 0.42, end: 0 },
+      lifespan: 480,
+      quantity: 12,
+      tint,
+      emitting: false,
+    });
+    burst.setDepth(8);
+    burst.explode(12);
+    this.time.delayedCall(560, () => burst.destroy());
+  }
+
   private setAnnouncer(text: string): void {
     this.announcer.setText(this.announcerLoud ? text.toUpperCase() : text);
     this.tweens.add({ targets: this.announcer, scale: this.announcerLoud ? 1.12 : 1.06, duration: 120, yoyo: true });
@@ -401,9 +498,11 @@ export class Replay extends Scene {
   private async attack(actor: Fighter, target: Fighter, event: BattleEvent, crit: boolean): Promise<void> {
     if (!actor.live) return;
     await actor.live.anticipate();
+    if (this.finished || !this.scene.isActive()) return;
     actor.live.lunge(actor.homeX, target.homeX, () => {
+      if (this.finished) return;
       // Impact moment.
-      this.cameraPunch(target, crit ? 0.02 : 0.012);
+      this.cameraPunch(crit ? 0.02 : 0.012);
       target.live?.hitReact(Math.sign(target.homeX - actor.homeX) || target.facing);
       this.impactBurst(target.homeX, target.homeY, ELEMENT_STYLES[target.scribbit.element].particle, crit);
       if (crit) this.critFlash();
@@ -415,26 +514,17 @@ export class Replay extends Scene {
   private async attackMiss(actor: Fighter, target: Fighter, event: BattleEvent): Promise<void> {
     if (!actor.live) return;
     await actor.live.anticipate();
+    if (this.finished || !this.scene.isActive()) return;
     actor.live.lunge(actor.homeX, target.homeX, () => {
+      if (this.finished) return;
       this.missPuff(target);
       this.syncHp(event);
     });
   }
 
   // Camera punch-in: a quick zoom toward the struck fighter, then ease back.
-  private cameraPunch(target: Fighter, shakeIntensity: number): void {
-    const cam = this.cameras.main;
-    cam.shake(200, shakeIntensity);
-    this.tweens.add({
-      targets: cam,
-      zoom: 1.12,
-      duration: 110,
-      ease: 'Quad.easeOut',
-      yoyo: true,
-      hold: 60,
-      onStart: () => cam.pan(target.homeX, target.homeY, 110, 'Quad.easeOut'),
-      onComplete: () => cam.pan(this.scale.width / 2, this.scale.height / 2, 220, 'Quad.easeInOut'),
-    });
+  private cameraPunch(shakeIntensity: number): void {
+    if (!this.reduceMotion) this.cameras.main.shake(200, shakeIntensity);
   }
 
   private syncHp(event: BattleEvent): void {
@@ -504,6 +594,7 @@ export class Replay extends Scene {
   }
 
   private critFlash(): void {
+    if (this.reduceMotion) return;
     const { width, height } = this.scale;
     // Screen-edge flash (a hollow border glow) rather than a full white wash.
     const g = this.add.graphics().setDepth(30);
@@ -529,8 +620,8 @@ export class Replay extends Scene {
       speedY: { min: 200, max: 420 },
       scale: { start: 0.5, end: 0 },
       lifespan: 1200,
-      quantity: 4,
-      frequency: 40,
+      quantity: 2,
+      frequency: 80,
       tint: style.particle,
     });
     emitter.setDepth(24);
@@ -539,6 +630,11 @@ export class Replay extends Scene {
 
   private skipToEnd(): void {
     if (this.finished) return;
+    if (!this.fightersReady) {
+      this.skipRequested = true;
+      this.announcer?.setText('Loading both drawings before the result…');
+      return;
+    }
     this.playTimer?.remove();
     this.clearIntroBanner();
     const last = this.report.events[this.report.events.length - 1];
@@ -556,26 +652,22 @@ export class Replay extends Scene {
     this.playTimer?.remove();
     this.clearIntroBanner();
 
-    const cam = this.cameras.main;
     const winner = this.report.winner === 'a' ? this.fighterA : this.fighterB;
     const loser = this.report.winner === 'a' ? this.fighterB : this.fighterA;
 
-    // Slow-mo + zoom on the final blow, then the ceremony.
-    this.time.timeScale = 0.35;
-    this.tweens.timeScale = 0.35;
-    cam.pan(loser.homeX, loser.homeY, 300, 'Quad.easeOut');
-    cam.zoomTo(1.3, 300, 'Quad.easeOut');
+    // Slow the scene clock for the final fold, then show the outcome.
+    this.time.timeScale = this.reduceMotion ? 1 : 0.35;
+    this.tweens.timeScale = this.reduceMotion ? 1 : 0.35;
 
     loser.live?.crumple(() => {
       this.impactBurst(loser.homeX, loser.homeY + 30, 0xcbb79a, true);
     });
 
     // Resume normal speed and frame the ceremony after the dramatic beat.
-    this.time.delayedCall(900, () => {
+    this.time.delayedCall(this.reduceMotion ? 300 : 900, () => {
       this.time.timeScale = 1;
       this.tweens.timeScale = 1;
-      cam.zoomTo(1, 320, 'Quad.easeInOut');
-      cam.pan(this.scale.width / 2, this.scale.height / 2, 320, 'Quad.easeInOut', false, () => this.showOutcome(winner, loser));
+      this.showOutcome(winner, loser);
     });
   }
 
@@ -602,23 +694,51 @@ export class Replay extends Scene {
     this.tweens.add({ targets: banner, scale: 1, duration: 500, ease: 'Back.easeOut' });
     winner.live?.celebrate();
 
-    // Mystery Ink reward float when the winner is the player's own scribbit.
-    if (this.isMine(winner.scribbit)) {
-      const reward = this.report.kind === 'rumble' ? INK_REWARDS.rumbleWin : INK_REWARDS.sparWin;
-      floatReward(this, width / 2, height * 0.44, `+${reward} 🫙`, UI.goldText, 62);
+    // Only show a reward the server says this exact battle granted. Historical
+    // replays and later practice wins must never imply a second payout.
+    if (this.isMine(winner.scribbit) && (this.report.inkAwarded ?? 0) > 0) {
+      floatReward(
+        this,
+        width / 2,
+        height * 0.44,
+        `Earned +${this.report.inkAwarded} 🫙`,
+        UI.goldText,
+        62
+      );
     }
 
     const emitter = this.add.particles(width / 2, height * 0.32, 'spark', {
       speed: { min: 100, max: 300 },
       scale: { start: 0.5, end: 0 },
       lifespan: 1400,
-      quantity: 3,
-      frequency: 120,
+      quantity: 2,
+      frequency: 140,
       tint: [UI.gold, ELEMENT_STYLES[winner.scribbit.element].particle],
     });
     emitter.setDepth(55);
+    this.time.delayedCall(1700, () => emitter.destroy());
 
-    const back = ghostButton(this, width / 2, height - 96, 'Back to Arena ›', () => this.exit(), 320);
+    if (!getArena(this)?.myBackedScribbitId) {
+      const next = button(
+        this,
+        width / 2,
+        height - 210,
+        '🎯 Back a contender tonight →',
+        () => this.goBackEntrants(),
+        width - 200,
+        UI.gold,
+        UI.ink
+      );
+      next.setDepth(61);
+    }
+    const back = ghostButton(
+      this,
+      width / 2,
+      height - 96,
+      'Back to Arena ›',
+      () => this.exit(),
+      320
+    );
     back.setDepth(61);
   }
 
@@ -679,11 +799,17 @@ export class Replay extends Scene {
   }
 
   private goBackEntrants(): void {
-    setArenaFocus(this, 'entrants');
-    fadeToScene(this, 'ArenaHome');
+    void this.refreshArenaAndLeave(true);
   }
 
   private exit(): void {
-    fadeToScene(this, getReplayReturn(this));
+    void this.refreshArenaAndLeave(false);
+  }
+
+  private async refreshArenaAndLeave(focusEntrants: boolean): Promise<void> {
+    const result = await fetchArena();
+    if (result.ok) setArena(this, result.data);
+    if (focusEntrants) setArenaFocus(this, 'entrants');
+    fadeToScene(this, focusEntrants ? 'ArenaHome' : getReplayReturn(this));
   }
 }

@@ -2,7 +2,7 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <link rel="stylesheet" href="game.css" />
     <title>Scribbits</title>
   </head>
@@ -10,6 +10,11 @@
   <body>
     <div id="app">
       <div id="game-container"></div>
+      <div class="rotate-prompt" role="status">
+        <span aria-hidden="true">↻</span>
+        <strong>Turn your phone upright</strong>
+        <small>Scribbits draws and fights best in portrait.</small>
+      </div>
     </div>
     <script type="module" src="game.ts"></script>
   </body>

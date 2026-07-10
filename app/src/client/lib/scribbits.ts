@@ -13,7 +13,28 @@ import { generateDoodleTexture } from './art';
 // a battle list containing the same fighter more than once). Phaser's loader
 // does not safely queue the same texture key multiple times, so share one
 // request per scene/key until it settles.
-const pendingDrawingLoads = new WeakMap<Scene, Map<string, Promise<string>>>();
+type PendingDrawingLoad = {
+  promise: Promise<string>;
+  settleForSceneRelease: () => void;
+};
+
+const pendingDrawingLoads = new WeakMap<
+  Scene,
+  Map<string, PendingDrawingLoad>
+>();
+
+// A 512x512 RGBA drawing is roughly 1 MiB before GPU overhead. Keep inactive
+// drawings bounded, while never evicting a texture still displayed by an
+// active scene. Large Arena/Gallery pages may temporarily exceed this ceiling;
+// their released textures are trimmed as soon as the scene shuts down.
+const MAX_CACHED_DRAWING_TEXTURES = 30;
+const drawingTextureLastUse = new Map<string, number>();
+const drawingTextureActiveScenes = new Map<string, number>();
+const sceneDrawingTextures = new WeakMap<
+  Scene,
+  { keys: Set<string>; release: () => void }
+>();
+let drawingTextureUseSequence = 0;
 
 // Texture key for a scribbit's drawing. Stable per id so we load each once.
 export function drawingKey(scribbit: Pick<Scribbit, 'id'>): string {
@@ -40,26 +61,35 @@ function elementOf(scribbit: Partial<Pick<Scribbit, 'element'>>): Element {
 // non-square art is centered in its frame and never cropped or stretched.
 export function loadDrawing(scene: Scene, scribbit: Scribbit): Promise<string> {
   const key = drawingKey(scribbit);
-  if (scene.textures.exists(key)) return Promise.resolve(key);
+  if (scene.textures.exists(key)) {
+    markDrawingTextureUsed(scene, key);
+    return Promise.resolve(key);
+  }
 
   // Founding scribbits point at /creatures/*.png that never shipped. Skip the
   // doomed network round-trip and go straight to the doodle so their cards fill
   // instantly instead of flashing an empty frame for 9 seconds.
   if (isKnownMissingArt(scribbit.imageUrl)) {
-    return Promise.resolve(fallbackDoodle(scene, scribbit));
+    const fallbackKey = fallbackDoodle(scene, scribbit);
+    markDrawingTextureUsed(scene, fallbackKey);
+    return Promise.resolve(fallbackKey);
   }
 
   let sceneLoads = pendingDrawingLoads.get(scene);
   if (!sceneLoads) {
-    sceneLoads = new Map<string, Promise<string>>();
+    sceneLoads = new Map<string, PendingDrawingLoad>();
     pendingDrawingLoads.set(scene, sceneLoads);
   }
 
   const pendingLoad = sceneLoads.get(key);
-  if (pendingLoad) return pendingLoad;
+  if (pendingLoad) return pendingLoad.promise;
 
+  ensureSceneDrawingTextureLifecycle(scene);
+
+  let settleForSceneRelease = (): void => undefined;
   const drawingLoad = new Promise<string>((resolve) => {
     let settled = false;
+    let timeout: Phaser.Time.TimerEvent | null = null;
     const onComplete = (): void => {
       // A load can "succeed" with a degenerate 1x1/transparent texture; if the
       // source is unusably small, treat it as a miss and use the doodle.
@@ -75,32 +105,141 @@ export function loadDrawing(scene: Scene, scribbit: Scribbit): Promise<string> {
       if (file?.key !== key) return;
       finish(fallbackDoodle(scene, scribbit));
     };
-    const finish = (resolvedKey: string): void => {
+    const finish = (resolvedKey: string, trackTexture = true): void => {
       if (settled) return;
       settled = true;
       scene.load.off(`filecomplete-image-${key}`, onComplete);
       scene.load.off('loaderror', onError);
+      timeout?.remove(false);
+      timeout = null;
+      if (trackTexture) markDrawingTextureUsed(scene, resolvedKey);
       resolve(resolvedKey);
     };
 
+    // A shutdown makes the result unusable to this scene, but callers such as
+    // Promise.all still need a deterministic settlement. Do not manufacture a
+    // fallback texture while Phaser is tearing the scene down.
+    settleForSceneRelease = (): void => finish(key, false);
+
     scene.load.on(`filecomplete-image-${key}`, onComplete);
     scene.load.on('loaderror', onError);
-    scene.load.image(key, scribbit.imageUrl);
-    scene.load.start();
-
-    // Safety timeout so a stuck load never blocks a ceremony forever.
-    scene.time.delayedCall(9000, () => {
+    // Safety timeout so a stuck load never blocks a ceremony forever. Keep the
+    // event handle so normal completion and scene release both remove it.
+    timeout = scene.time.delayedCall(9000, () => {
       if (settled) return;
       finish(scene.textures.exists(key) ? key : fallbackDoodle(scene, scribbit));
     });
+    scene.load.image(key, scribbit.imageUrl);
+    scene.load.start();
   });
 
-  sceneLoads.set(key, drawingLoad);
+  const loadRecord: PendingDrawingLoad = {
+    promise: drawingLoad,
+    settleForSceneRelease,
+  };
+  sceneLoads.set(key, loadRecord);
   void drawingLoad.then(() => {
-    if (sceneLoads?.get(key) === drawingLoad) sceneLoads.delete(key);
+    if (sceneLoads?.get(key) === loadRecord) sceneLoads.delete(key);
   });
 
   return drawingLoad;
+}
+
+function ensureSceneDrawingTextureLifecycle(
+  scene: Scene
+): { keys: Set<string>; release: () => void } {
+  const existingLifecycle = sceneDrawingTextures.get(scene);
+  if (existingLifecycle) return existingLifecycle;
+
+  const lifecycle = {
+    keys: new Set<string>(),
+    release: (): void => releaseSceneDrawingTextures(scene),
+  };
+  sceneDrawingTextures.set(scene, lifecycle);
+  scene.events.once(Phaser.Scenes.Events.SHUTDOWN, lifecycle.release);
+  scene.events.once(Phaser.Scenes.Events.DESTROY, lifecycle.release);
+  return lifecycle;
+}
+
+const releaseTrackedDrawingTextures = (
+  scene: Scene,
+  lifecycle: { keys: Set<string> }
+): void => {
+  lifecycle.keys.forEach((textureKey) => {
+    const nextCount = Math.max(
+      0,
+      (drawingTextureActiveScenes.get(textureKey) ?? 1) - 1
+    );
+    if (nextCount === 0) drawingTextureActiveScenes.delete(textureKey);
+    else drawingTextureActiveScenes.set(textureKey, nextCount);
+  });
+  lifecycle.keys.clear();
+  trimInactiveDrawingTextures(scene);
+};
+
+// In-place scene rebuilds remove their old Images but stay active. Release only
+// completed texture leases here and preserve any in-flight request so the new
+// build can reuse the same Promise. Full scene teardown uses the helper below.
+export function releaseRenderedDrawingTextures(scene: Scene): void {
+  const lifecycle = sceneDrawingTextures.get(scene);
+  if (!lifecycle) {
+    trimInactiveDrawingTextures(scene);
+    return;
+  }
+  releaseTrackedDrawingTextures(scene, lifecycle);
+}
+
+// Settle any in-flight drawing requests and release this scene's claims on
+// cached textures. Exported for explicit lifecycle ownership, while the helper
+// also registers itself automatically for Phaser shutdown/destroy events.
+export function releaseSceneDrawingTextures(scene: Scene): void {
+  const pendingLoads = pendingDrawingLoads.get(scene);
+  pendingDrawingLoads.delete(scene);
+  pendingLoads?.forEach((pendingLoad) => {
+    pendingLoad.settleForSceneRelease();
+  });
+  pendingLoads?.clear();
+
+  const lifecycle = sceneDrawingTextures.get(scene);
+  if (!lifecycle) {
+    trimInactiveDrawingTextures(scene);
+    return;
+  }
+
+  releaseTrackedDrawingTextures(scene, lifecycle);
+  scene.events.off(Phaser.Scenes.Events.SHUTDOWN, lifecycle.release);
+  scene.events.off(Phaser.Scenes.Events.DESTROY, lifecycle.release);
+  sceneDrawingTextures.delete(scene);
+}
+
+function markDrawingTextureUsed(scene: Scene, textureKey: string): void {
+  drawingTextureUseSequence += 1;
+  drawingTextureLastUse.delete(textureKey);
+  drawingTextureLastUse.set(textureKey, drawingTextureUseSequence);
+
+  if (scene.scene.isActive()) {
+    const lifecycle = ensureSceneDrawingTextureLifecycle(scene);
+
+    if (!lifecycle.keys.has(textureKey)) {
+      lifecycle.keys.add(textureKey);
+      drawingTextureActiveScenes.set(
+        textureKey,
+        (drawingTextureActiveScenes.get(textureKey) ?? 0) + 1
+      );
+    }
+  }
+
+  trimInactiveDrawingTextures(scene);
+}
+
+function trimInactiveDrawingTextures(scene: Scene): void {
+  if (drawingTextureLastUse.size <= MAX_CACHED_DRAWING_TEXTURES) return;
+  for (const textureKey of drawingTextureLastUse.keys()) {
+    if (drawingTextureLastUse.size <= MAX_CACHED_DRAWING_TEXTURES) break;
+    if ((drawingTextureActiveScenes.get(textureKey) ?? 0) > 0) continue;
+    if (scene.textures.exists(textureKey)) scene.textures.remove(textureKey);
+    drawingTextureLastUse.delete(textureKey);
+  }
 }
 
 // URLs we know will 404 (founding art job was cancelled). Cheap prefix check so
