@@ -2,7 +2,9 @@ import type { ArenaStorage } from './scribbit';
 import {
   deleteStoredScribbit,
   getDailyFlagsKey,
+  getUserDailySparWinRewardsKey,
   getUserAliveScribbitsKey,
+  getUserLegacyCardsKey,
   getUserScribbitsKey,
   loadScribbits,
 } from './scribbit';
@@ -32,6 +34,7 @@ import {
   getUserReportedScribbitsKey,
 } from './moderation';
 import { getUserPlayStreakKey } from './streak';
+import { getLegacyIndexVersionStorageKey, getLegacySeenDayKey } from './legacy';
 
 const userBeliefTargetsTtlSeconds = 30 * 24 * 60 * 60;
 
@@ -97,12 +100,9 @@ export const deletePlayerData = async (
     }
   }
 
-  const battleEntries = await storage.zRange(
-    getUserBattlesKey(userId),
-    0,
-    -1,
-    { by: 'rank' }
-  );
+  const battleEntries = await storage.zRange(getUserBattlesKey(userId), 0, -1, {
+    by: 'rank',
+  });
   if (battleEntries.length > 0) {
     await storage.del(
       ...battleEntries.map((entry) => getBattleReportKey(entry.member))
@@ -112,11 +112,15 @@ export const deletePlayerData = async (
   await storage.del(
     getUserScribbitsKey(userId),
     getUserAliveScribbitsKey(userId),
+    getUserLegacyCardsKey(userId),
+    getLegacyIndexVersionStorageKey(userId),
+    getLegacySeenDayKey(userId),
     getUserBattlesKey(userId),
     getInkKey(userId),
     getInventoryKey(userId),
     getPullsSinceEpicKey(userId),
     getCapsulePullCountKey(userId),
+    getUserDailySparWinRewardsKey(userId),
     getUserPlayStreakKey(userId),
     getUserHiddenScribbitsKey(userId),
     getUserReportedScribbitsKey(userId),

@@ -9,9 +9,10 @@ import {
   CAPSULE_COST,
   CAPSULE_FIRST_DAILY_COST,
   CAPSULE_PITY,
+  CAPSULE_RARITY_PERCENTAGES,
 } from '../../shared/arena';
 import { createSeededNumberGenerator, hashTextToSeed } from './random';
-import type { ArenaStorage } from './scribbit';
+import type { ArenaStorage, ArenaTransaction } from './scribbit';
 import {
   INK_ACCESSORY_CATALOG,
   INK_CATALOG,
@@ -22,22 +23,9 @@ import {
   type InkCatalogEntry,
 } from './ink';
 
-type InkTransaction = {
-  multi: () => Promise<void>;
-  exec: () => Promise<unknown[]>;
-  discard: () => Promise<void>;
-  unwatch: () => Promise<unknown>;
-  incrBy: (key: string, value: number) => Promise<unknown>;
-  set: (key: string, value: string) => Promise<unknown>;
-  del: (...keys: string[]) => Promise<unknown>;
-  expire: (key: string, seconds: number) => Promise<unknown>;
-  hSet: (key: string, fieldValues: Record<string, string>) => Promise<unknown>;
-  hIncrBy: (key: string, field: string, value: number) => Promise<unknown>;
-};
+type InkTransaction = ArenaTransaction;
 
-export type InkStorage = ArenaStorage & {
-  watch?: (...keys: string[]) => Promise<InkTransaction>;
-};
+export type InkStorage = ArenaStorage;
 
 export type CapsulePullSuccess = {
   status: 'pulled';
@@ -54,13 +42,12 @@ export type CapsulePullInsufficientInk = {
   cost: number;
 };
 
-export type CapsulePullResult =
-  | CapsulePullSuccess
-  | CapsulePullInsufficientInk;
+export type CapsulePullResult = CapsulePullSuccess | CapsulePullInsufficientInk;
 
 export type CapsuleOperationCommit = {
   operationKey: string;
   expectedPendingValue: string;
+  selectionEntropy: string;
 };
 
 export type CapsuleOperationClaim =
@@ -73,6 +60,7 @@ type CapsuleSelectionOptions = {
   day: number;
   pullCount: number;
   pullsSinceEpic: number;
+  entropy?: string;
 };
 
 type InkRewardClaimOptions = {
@@ -89,6 +77,21 @@ const capsuleOperationTtlSeconds = 3 * 24 * 60 * 60;
 const capsuleOperationPendingPrefix = 'pending:';
 const capsuleOperationKeyPrefix = 'capsule:operation:';
 const inventoryDiscoveryFieldPrefix = 'discovered:';
+const inventoryEquippedTitleField = 'equipped-title';
+
+const discardTransaction = async (
+  transaction: InkTransaction | undefined
+): Promise<void> => {
+  if (!transaction) {
+    return;
+  }
+
+  try {
+    await transaction.discard();
+  } catch (error) {
+    console.warn('Mystery Ink transaction cleanup failed:', error);
+  }
+};
 
 export const getInkKey = (userId: string): string => {
   return `ink:${userId}`;
@@ -110,10 +113,7 @@ export const getCapsulePullCountKey = (userId: string): string => {
   return `capsulePulls:${userId}`;
 };
 
-export const getCapsuleDailyPullKey = (
-  userId: string,
-  day: number
-): string => {
+export const getCapsuleDailyPullKey = (userId: string, day: number): string => {
   return `capsuleDaily:${userId}:${day}`;
 };
 
@@ -129,9 +129,8 @@ export const getNextCapsuleCost = async (
   userId: string,
   day: number
 ): Promise<number> => {
-  const pulledToday = (await storage.get(
-    getCapsuleDailyPullKey(userId, day)
-  )) !== undefined;
+  const pulledToday =
+    (await storage.get(getCapsuleDailyPullKey(userId, day))) !== undefined;
   return pulledToday ? CAPSULE_COST : CAPSULE_FIRST_DAILY_COST;
 };
 
@@ -199,18 +198,50 @@ export const claimInkReward = async (
     return false;
   }
 
-  const createdClaim = await storage.hSetNX(
-    options.payoutKey,
-    options.payoutField,
-    `${options.userId}:${options.amount}:${options.paidAtMs}`
-  );
-
-  if (createdClaim !== 1) {
-    return false;
+  if (!storage.watch) {
+    throw new Error('Atomic Ink rewards require transaction support.');
   }
 
-  await awardInk(storage, options.userId, options.amount);
-  return true;
+  const receiptValue = `${options.userId}:${options.amount}:${options.paidAtMs}`;
+  for (let attempt = 0; attempt < maximumTransactionAttempts; attempt += 1) {
+    let transaction: InkTransaction | undefined;
+    try {
+      transaction = await storage.watch(options.payoutKey);
+      if (
+        (await storage.hGet(options.payoutKey, options.payoutField)) !==
+        undefined
+      ) {
+        await transaction.unwatch();
+        return false;
+      }
+
+      await transaction.multi();
+      await transaction.hSet(options.payoutKey, {
+        [options.payoutField]: receiptValue,
+      });
+      await transaction.incrBy(getInkKey(options.userId), options.amount);
+      const transactionResults = await transaction.exec();
+      if (Array.isArray(transactionResults) && transactionResults.length > 0) {
+        return true;
+      }
+    } catch (error) {
+      await discardTransaction(transaction);
+      try {
+        const storedReceipt = await storage.hGet(
+          options.payoutKey,
+          options.payoutField
+        );
+        if (storedReceipt !== undefined) {
+          return storedReceipt === receiptValue;
+        }
+      } catch {
+        // Preserve the original transaction error when recovery cannot read.
+      }
+      throw error;
+    }
+  }
+
+  throw new Error('Ink reward claim did not settle.');
 };
 
 const hasPermanentDiscovery = (
@@ -249,6 +280,13 @@ const inventoryFromStoredEntries = (
     }
   }
 
+  const titles = INK_TITLE_CATALOG.filter((entry) => {
+    return storedInventory[entry.id] !== undefined;
+  }).map((entry) => {
+    return entry.id;
+  });
+  const storedEquippedTitle = storedInventory[inventoryEquippedTitleField];
+
   return {
     items,
     pens: INK_PEN_CATALOG.filter((entry) => {
@@ -256,11 +294,11 @@ const inventoryFromStoredEntries = (
     }).map((entry) => {
       return entry.id;
     }),
-    titles: INK_TITLE_CATALOG.filter((entry) => {
-      return storedInventory[entry.id] !== undefined;
-    }).map((entry) => {
-      return entry.id;
-    }),
+    titles,
+    equippedTitle:
+      storedEquippedTitle && titles.includes(storedEquippedTitle)
+        ? storedEquippedTitle
+        : null,
     discovered: getDiscoveredCatalogIds(storedInventory),
   };
 };
@@ -301,6 +339,31 @@ export const loadInventory = async (
   return inventory;
 };
 
+export const setEquippedTitle = async (
+  storage: ArenaStorage,
+  userId: string,
+  titleId: string | null
+): Promise<Inventory | undefined> => {
+  const inventory = await loadInventory(storage, userId);
+  if (titleId !== null && !inventory.titles.includes(titleId)) {
+    return undefined;
+  }
+
+  const inventoryKey = getInventoryKey(userId);
+  if (titleId === null) {
+    await storage.hDel(inventoryKey, [inventoryEquippedTitleField]);
+  } else {
+    await storage.hSet(inventoryKey, {
+      [inventoryEquippedTitleField]: titleId,
+    });
+  }
+
+  return {
+    ...inventory,
+    equippedTitle: titleId,
+  };
+};
+
 export const createCapsuleProgress = (
   pullCount: number,
   pullsSinceEpic: number,
@@ -333,11 +396,15 @@ export const loadCapsuleProgress = async (
 };
 
 export const chooseCapsuleRarity = (roll: number): CapsuleRarity => {
-  if (roll < 0.7) {
+  const commonThreshold = CAPSULE_RARITY_PERCENTAGES.common / 100;
+  const rareThreshold =
+    (CAPSULE_RARITY_PERCENTAGES.common + CAPSULE_RARITY_PERCENTAGES.rare) / 100;
+
+  if (roll < commonThreshold) {
     return 'common';
   }
 
-  if (roll < 0.95) {
+  if (roll < rareThreshold) {
     return 'rare';
   }
 
@@ -350,32 +417,54 @@ export const isCapsulePityPull = (pullsSinceEpic: number): boolean => {
 
 const chooseEntryForRarity = (
   rarity: CapsuleRarity,
-  roll: number
+  roll: number,
+  discoveredCatalogIds: ReadonlySet<string>
 ): InkCatalogEntry => {
   const matchingEntries = INK_CATALOG.filter((entry) => {
     return entry.rarity === rarity;
   });
-  const selectedEntry = matchingEntries[Math.floor(roll * matchingEntries.length)];
+  const selectedEntry =
+    matchingEntries[Math.floor(roll * matchingEntries.length)];
 
   if (!selectedEntry) {
     throw new Error(`No Mystery Ink catalog entries for ${rarity}.`);
+  }
+
+  // Accessory duplicates are useful consumable copies. A duplicate pen or
+  // title would be a paid no-op, so deterministically redirect it within the
+  // same rarity toward an undiscovered permanent or a usable accessory copy.
+  // This keeps rarity odds and pity unchanged while removing dead pulls.
+  if (
+    selectedEntry.kind !== 'accessory' &&
+    discoveredCatalogIds.has(selectedEntry.id)
+  ) {
+    const protectedEntries = matchingEntries.filter((entry) => {
+      return entry.kind === 'accessory' || !discoveredCatalogIds.has(entry.id);
+    });
+    const protectedEntry =
+      protectedEntries[Math.floor(roll * protectedEntries.length)];
+    if (protectedEntry) return protectedEntry;
   }
 
   return selectedEntry;
 };
 
 export const selectCapsuleDrop = (
-  options: CapsuleSelectionOptions
+  options: CapsuleSelectionOptions,
+  discoveredCatalogIds: ReadonlySet<string> = new Set()
 ): InkCatalogEntry => {
-  const seed = hashTextToSeed(
-    `capsule:${options.userId}:${options.day}:${options.pullCount}`
-  );
+  const deterministicSeedInput = `capsule:${options.userId}:${options.day}:${options.pullCount}`;
+  const seedInput =
+    options.entropy === undefined
+      ? deterministicSeedInput
+      : `${deterministicSeedInput}:entropy:${options.entropy}`;
+  const seed = hashTextToSeed(seedInput);
   const randomNumber = createSeededNumberGenerator(seed);
   const rarity = isCapsulePityPull(options.pullsSinceEpic)
     ? 'epic'
     : chooseCapsuleRarity(randomNumber());
 
-  return chooseEntryForRarity(rarity, randomNumber());
+  return chooseEntryForRarity(rarity, randomNumber(), discoveredCatalogIds);
 };
 
 const createCapsulePull = (
@@ -465,7 +554,10 @@ const applyCapsulePullWithTransaction = async (
   await transaction.multi();
   await transaction.incrBy(getInkKey(userId), -capsuleCost);
 
-  await transaction.set(getCapsulePullCountKey(userId), nextPullCount.toString());
+  await transaction.set(
+    getCapsulePullCountKey(userId),
+    nextPullCount.toString()
+  );
   await transaction.set(dailyPullKey, '1');
   await transaction.expire(dailyPullKey, capsuleDailyFlagTtlSeconds);
   await transaction.set(
@@ -495,20 +587,6 @@ const applyCapsulePullWithTransaction = async (
 
   const execResult: unknown = await transaction.exec();
   return Array.isArray(execResult) && execResult.length > 0;
-};
-
-const discardTransaction = async (
-  transaction: InkTransaction | undefined
-): Promise<void> => {
-  if (!transaction) {
-    return;
-  }
-
-  try {
-    await transaction.discard();
-  } catch (error) {
-    console.warn('Mystery Ink transaction cleanup failed:', error);
-  }
 };
 
 const isNonNegativeInteger = (value: unknown): value is number => {
@@ -649,6 +727,12 @@ const parseCapsuleOperationResponse = (
       ? createCapsuleProgress(0, 0, discovered.length)
       : parseStoredCapsuleProgress(record.progress, discovered.length);
     if (!progress) return undefined;
+    const receiptTitles = inventoryRecord.titles as string[];
+    const equippedTitle =
+      typeof inventoryRecord.equippedTitle === 'string' &&
+      receiptTitles.includes(inventoryRecord.equippedTitle)
+        ? inventoryRecord.equippedTitle
+        : null;
 
     return {
       response: {
@@ -657,7 +741,8 @@ const parseCapsuleOperationResponse = (
         inventory: {
           items: itemCounts as Record<string, number>,
           pens: inventoryRecord.pens,
-          titles: inventoryRecord.titles,
+          titles: receiptTitles,
+          equippedTitle,
           discovered,
         },
         nextCost: record.nextCost,
@@ -712,6 +797,7 @@ const normalizeLegacyCapsuleOperationResponse = async (
     ...parsedReceipt.response,
     inventory: {
       ...parsedReceipt.response.inventory,
+      equippedTitle: currentInventory.equippedTitle,
       discovered,
     },
     progress: {
@@ -767,10 +853,7 @@ export const claimCapsuleOperation = async (
           ) {
             await transaction.multi();
             await transaction.set(operationKey, JSON.stringify(response));
-            await transaction.expire(
-              operationKey,
-              capsuleOperationTtlSeconds
-            );
+            await transaction.expire(operationKey, capsuleOperationTtlSeconds);
             const execResult: unknown = await transaction.exec();
             if (Array.isArray(execResult) && execResult.length > 0) {
               return { status: 'completed', response };
@@ -897,12 +980,19 @@ export const pullCapsuleForUser = async (
       }
 
       const nextPullCount = pullCount + 1;
-      const selectedEntry = selectCapsuleDrop({
-        userId,
-        day,
-        pullCount: nextPullCount,
-        pullsSinceEpic,
-      });
+      const discoveredCatalogIds = new Set(
+        getDiscoveredCatalogIds(inventoryEntries)
+      );
+      const selectedEntry = selectCapsuleDrop(
+        {
+          userId,
+          day,
+          pullCount: nextPullCount,
+          pullsSinceEpic,
+          entropy: operation?.selectionEntropy,
+        },
+        discoveredCatalogIds
+      );
       const isNew = !hasPermanentDiscovery(selectedEntry, inventoryEntries);
       const ownedCount = getNextOwnedCount(selectedEntry, inventoryEntries);
       const nextPullsSinceEpic =
@@ -1011,10 +1101,7 @@ const createRequiredAccessoryCounts = (
       return undefined;
     }
 
-    requiredCounts.set(
-      accessoryId,
-      (requiredCounts.get(accessoryId) ?? 0) + 1
-    );
+    requiredCounts.set(accessoryId, (requiredCounts.get(accessoryId) ?? 0) + 1);
   }
 
   return requiredCounts;

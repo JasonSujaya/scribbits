@@ -8,9 +8,11 @@ import {
 } from '../../shared/combat/config';
 import type {
   AbilityPhase,
+  BattleEndReason,
   BattleCheckpoint,
   BattleTimelineEvent,
   BattleTranscript,
+  DamageSource,
   FighterCheckpoint,
   FighterSlot,
   FixedVector,
@@ -19,28 +21,6 @@ import type {
 
 const MAXIMUM_REPLAY_VALUE = 1_000_000;
 const MAXIMUM_CHECKPOINT_GAP = COMBAT_TICK_RATE / 2;
-const TIMELINE_EVENT_KINDS: ReadonlySet<unknown> = new Set([
-  'battle_started',
-  'arena_shrink_started',
-  'late_fight_started',
-  'ability_telegraphed',
-  'ability_activated',
-  'ability_finished',
-  'damage',
-  'burn_applied',
-  'barrier_created',
-  'barrier_hit',
-  'barrier_broken',
-  'wall_bounce',
-  'nib_wall_ejection',
-  'fighter_collision',
-  'echo_created',
-  'echo_shattered',
-  'echo_fired',
-  'ink_pressure',
-  'fighter_defeated',
-  'battle_ended',
-]);
 
 export type ReplayVector = Readonly<{ x: number; y: number }>;
 
@@ -83,7 +63,10 @@ function isBoundedInteger(
   );
 }
 
-function isNonEmptyText(value: unknown, maximumLength: number): value is string {
+function isNonEmptyText(
+  value: unknown,
+  maximumLength: number
+): value is string {
   return (
     typeof value === 'string' &&
     value.trim().length > 0 &&
@@ -108,11 +91,140 @@ function isAbilityPhase(value: unknown): value is AbilityPhase {
   return value === 'cooldown' || value === 'telegraph' || value === 'active';
 }
 
+function isDamageSource(value: unknown): value is DamageSource {
+  return (
+    isPrimaryPower(value) ||
+    value === 'colorburst_echo' ||
+    value === 'contact' ||
+    value === 'ember_burn' ||
+    value === 'nib_wall_recoil'
+  );
+}
+
+function isBattleEndReason(value: unknown): value is BattleEndReason {
+  return (
+    value === 'knockout' ||
+    value === 'double_knockout' ||
+    value === 'timeout_hp_percentage' ||
+    value === 'timeout_damage_dealt' ||
+    value === 'timeout_stable_tiebreak'
+  );
+}
+
 function isVector(value: unknown): value is FixedVector {
   return (
     isRecord(value) &&
     isBoundedInteger(value.x, -MAXIMUM_REPLAY_VALUE, MAXIMUM_REPLAY_VALUE) &&
     isBoundedInteger(value.y, -MAXIMUM_REPLAY_VALUE, MAXIMUM_REPLAY_VALUE)
+  );
+}
+
+function isScheduledTick(value: unknown, eventTick: unknown): value is number {
+  return (
+    isBoundedInteger(eventTick, 0, COMBAT_MAXIMUM_TICKS) &&
+    isBoundedInteger(value, eventTick, COMBAT_MAXIMUM_TICKS)
+  );
+}
+
+type TimelineEventFieldValidator = (value: Record<string, unknown>) => boolean;
+
+const TIMELINE_EVENT_FIELD_VALIDATORS = {
+  battle_started: (value) => isNonEmptyText(value.battleId, 240),
+  arena_shrink_started: (value) =>
+    isBoundedInteger(value.targetHalfWidth, 1, MAXIMUM_REPLAY_VALUE) &&
+    isBoundedInteger(value.targetHalfHeight, 1, MAXIMUM_REPLAY_VALUE),
+  late_fight_started: (value) =>
+    isBoundedInteger(value.cooldownMultiplierPermille, 1, 1_000) &&
+    isBoundedInteger(value.defenseTicks, 0, COMBAT_MAXIMUM_TICKS),
+  ability_telegraphed: (value) =>
+    isFighterSlot(value.actor) &&
+    isPrimaryPower(value.power) &&
+    isBoundedInteger(value.activationNumber, 1, MAXIMUM_REPLAY_VALUE) &&
+    isVector(value.origin) &&
+    isVector(value.aimDirection) &&
+    isScheduledTick(value.activatesAtTick, value.tick),
+  ability_activated: (value) =>
+    isFighterSlot(value.actor) &&
+    isPrimaryPower(value.power) &&
+    isBoundedInteger(value.activationNumber, 1, MAXIMUM_REPLAY_VALUE) &&
+    isScheduledTick(value.activeUntilTick, value.tick),
+  ability_finished: (value) =>
+    isFighterSlot(value.actor) &&
+    isPrimaryPower(value.power) &&
+    isBoundedInteger(value.activationNumber, 1, MAXIMUM_REPLAY_VALUE),
+  damage: (value) =>
+    isFighterSlot(value.sourceFighter) &&
+    isFighterSlot(value.targetFighter) &&
+    isDamageSource(value.source) &&
+    (value.sourceFighter !== value.targetFighter ||
+      value.source === 'nib_wall_recoil') &&
+    isBoundedInteger(value.amount, 1, MAXIMUM_REPLAY_VALUE) &&
+    isBoundedInteger(value.targetHitPoints, 0, MAXIMUM_REPLAY_VALUE) &&
+    typeof value.critical === 'boolean' &&
+    isVector(value.position),
+  burn_applied: (value) =>
+    isFighterSlot(value.sourceFighter) &&
+    isFighterSlot(value.targetFighter) &&
+    value.sourceFighter !== value.targetFighter &&
+    isBoundedInteger(value.remainingCappedDamage, 1, MAXIMUM_REPLAY_VALUE) &&
+    isScheduledTick(value.nextPulseTick, value.tick),
+  barrier_created: (value) =>
+    isFighterSlot(value.actor) &&
+    isBoundedInteger(value.hitPoints, 1, MAXIMUM_REPLAY_VALUE),
+  barrier_hit: (value) =>
+    isFighterSlot(value.actor) &&
+    isBoundedInteger(value.absorbedDamage, 1, MAXIMUM_REPLAY_VALUE) &&
+    isBoundedInteger(value.remainingHitPoints, 0, MAXIMUM_REPLAY_VALUE),
+  barrier_broken: (value) => isFighterSlot(value.actor),
+  wall_bounce: (value) =>
+    isFighterSlot(value.actor) &&
+    (value.axis === 'x' || value.axis === 'y' || value.axis === 'both') &&
+    isVector(value.position),
+  nib_wall_ejection: (value) =>
+    isFighterSlot(value.actor) &&
+    isBoundedInteger(value.selfDamage, 1, MAXIMUM_REPLAY_VALUE) &&
+    isVector(value.position),
+  fighter_collision: (value) => isVector(value.position),
+  echo_created: (value) =>
+    isFighterSlot(value.actor) &&
+    isVector(value.position) &&
+    isVector(value.aimDirection) &&
+    isScheduledTick(value.firesAtTick, value.tick),
+  echo_shattered: (value) =>
+    isFighterSlot(value.owner) &&
+    isFighterSlot(value.shatteredBy) &&
+    value.owner !== value.shatteredBy &&
+    isVector(value.position),
+  echo_fired: (value) =>
+    isFighterSlot(value.actor) &&
+    isVector(value.position) &&
+    isVector(value.aimDirection),
+  ink_pressure: (value) =>
+    isFighterSlot(value.actor) &&
+    typeof value.refreshedImmediately === 'boolean',
+  fighter_defeated: (value) => isFighterSlot(value.actor),
+  battle_ended: (value) =>
+    isFighterSlot(value.winner) && isBattleEndReason(value.reason),
+} satisfies Record<BattleTimelineEvent['kind'], TimelineEventFieldValidator>;
+
+function isTimelineEventKind(
+  value: unknown
+): value is BattleTimelineEvent['kind'] {
+  return (
+    typeof value === 'string' &&
+    Object.prototype.hasOwnProperty.call(TIMELINE_EVENT_FIELD_VALIDATORS, value)
+  );
+}
+
+function isTimelineEvent(
+  value: unknown,
+  completedTick: number
+): value is BattleTimelineEvent {
+  return (
+    isRecord(value) &&
+    isBoundedInteger(value.tick, 0, completedTick) &&
+    isTimelineEventKind(value.kind) &&
+    TIMELINE_EVENT_FIELD_VALIDATORS[value.kind](value)
   );
 }
 
@@ -198,7 +310,7 @@ function transcriptResultIsUsable(
     isFighterSlot(value.winner) &&
     isFighterSlot(value.loser) &&
     value.winner !== value.loser &&
-    typeof value.reason === 'string' &&
+    isBattleEndReason(value.reason) &&
     isBoundedInteger(value.completedTick, 1, COMBAT_MAXIMUM_TICKS) &&
     value.completedMilliseconds ===
       Math.floor((value.completedTick * 1_000) / COMBAT_TICK_RATE) &&
@@ -242,7 +354,7 @@ function checkpointsAreUsable(
 function timelineIsUsable(
   values: readonly unknown[],
   battleId: string,
-  completedTick: number
+  result: BattleTranscript['result']
 ): values is readonly BattleTimelineEvent[] {
   if (values.length < 2 || values.length > MAXIMUM_TIMELINE_EVENTS) {
     return false;
@@ -250,10 +362,29 @@ function timelineIsUsable(
   let previousTick = -1;
   for (const value of values) {
     if (
-      !isRecord(value) ||
-      !isBoundedInteger(value.tick, 0, completedTick) ||
-      !TIMELINE_EVENT_KINDS.has(value.kind) ||
+      !isTimelineEvent(value, result.completedTick) ||
       value.tick < previousTick
+    ) {
+      return false;
+    }
+    if (
+      value.kind === 'battle_started' &&
+      (value.tick !== 0 || value.battleId !== battleId)
+    ) {
+      return false;
+    }
+    if (
+      value.kind === 'damage' &&
+      value.targetHitPoints >
+        result.fighters[value.targetFighter === 'a' ? 0 : 1].maxHitPoints
+    ) {
+      return false;
+    }
+    if (
+      value.kind === 'battle_ended' &&
+      (value.tick !== result.completedTick ||
+        value.winner !== result.winner ||
+        value.reason !== result.reason)
     ) {
       return false;
     }
@@ -268,12 +399,14 @@ function timelineIsUsable(
     first.battleId === battleId &&
     isRecord(last) &&
     last.kind === 'battle_ended' &&
-    last.tick === completedTick
+    last.tick === result.completedTick
   );
 }
 
 /** Checks only the authoritative fields required by continuous replay. */
-export function isUsableBattleTranscript(value: unknown): value is BattleTranscript {
+export function isUsableBattleTranscript(
+  value: unknown
+): value is BattleTranscript {
   if (
     !isRecord(value) ||
     value.version !== 1 ||
@@ -308,7 +441,7 @@ export function isUsableBattleTranscript(value: unknown): value is BattleTranscr
 
   return (
     checkpointsAreUsable(value.checkpoints, value.result.completedTick) &&
-    timelineIsUsable(value.timeline, value.battleId, value.result.completedTick)
+    timelineIsUsable(value.timeline, value.battleId, value.result)
   );
 }
 
@@ -335,16 +468,90 @@ function interpolateVector(
   };
 }
 
-function interpolateEcho(
-  start: FixedVector | null,
-  end: FixedVector | null,
-  progress: number
-): ReplayVector | null {
-  if (start !== null && end !== null) {
-    return interpolateVector(start, end, progress);
+type MutableFighterReplayState = {
+  hitPoints: number;
+  barrierHitPoints: number;
+  echoPosition: FixedVector | null;
+};
+
+type MutableReplayStatePair = [
+  MutableFighterReplayState,
+  MutableFighterReplayState,
+];
+
+function createFighterReplayState(
+  checkpoint: FighterCheckpoint
+): MutableFighterReplayState {
+  return {
+    hitPoints: checkpoint.hitPoints,
+    barrierHitPoints: checkpoint.barrierHitPoints,
+    echoPosition:
+      checkpoint.echoPosition === null ? null : { ...checkpoint.echoPosition },
+  };
+}
+
+function getFighterReplayState(
+  states: MutableReplayStatePair,
+  slot: FighterSlot
+): MutableFighterReplayState {
+  return states[slot === 'a' ? 0 : 1];
+}
+
+function calculateEventDrivenFighterStates(
+  transcript: BattleTranscript,
+  tick: number
+): MutableReplayStatePair {
+  const initialCheckpoint = transcript.checkpoints[0];
+  if (initialCheckpoint === undefined) {
+    throw new Error('Continuous replay requires an initial checkpoint.');
   }
-  const current = progress >= 1 ? end : start;
-  return current === null ? null : { ...current };
+  const states: MutableReplayStatePair = [
+    createFighterReplayState(initialCheckpoint.fighters[0]),
+    createFighterReplayState(initialCheckpoint.fighters[1]),
+  ];
+
+  for (const event of transcript.timeline) {
+    if (event.tick > tick) {
+      break;
+    }
+    if (event.kind === 'damage') {
+      getFighterReplayState(states, event.targetFighter).hitPoints =
+        event.targetHitPoints;
+    } else if (event.kind === 'barrier_created') {
+      getFighterReplayState(states, event.actor).barrierHitPoints =
+        event.hitPoints;
+    } else if (event.kind === 'barrier_hit') {
+      getFighterReplayState(states, event.actor).barrierHitPoints =
+        event.remainingHitPoints;
+    } else if (event.kind === 'barrier_broken') {
+      getFighterReplayState(states, event.actor).barrierHitPoints = 0;
+    } else if (event.kind === 'echo_created') {
+      getFighterReplayState(states, event.actor).echoPosition = {
+        ...event.position,
+      };
+    } else if (event.kind === 'echo_shattered') {
+      getFighterReplayState(states, event.owner).echoPosition = null;
+    } else if (event.kind === 'echo_fired') {
+      getFighterReplayState(states, event.actor).echoPosition = null;
+    }
+  }
+
+  return states;
+}
+
+function calculateEchoPosition(
+  earlier: FixedVector | null,
+  later: FixedVector | null,
+  progress: number,
+  authoritativePosition: FixedVector | null
+): ReplayVector | null {
+  if (authoritativePosition === null) {
+    return null;
+  }
+  if (earlier !== null && later !== null) {
+    return interpolateVector(earlier, later, progress);
+  }
+  return { ...authoritativePosition };
 }
 
 function findCheckpointPair(
@@ -383,31 +590,29 @@ function findCheckpointPair(
 function calculateFighterFrame(
   earlier: FighterCheckpoint,
   later: FighterCheckpoint,
-  progress: number
+  progress: number,
+  eventDrivenState: MutableFighterReplayState
 ): ReplayFighterFrame {
   const discrete = progress >= 1 ? later : earlier;
   return {
     slot: earlier.slot,
-    hitPoints: interpolate(earlier.hitPoints, later.hitPoints, progress),
+    hitPoints: eventDrivenState.hitPoints,
     maxHitPoints: earlier.maxHitPoints,
     position: interpolateVector(earlier.position, later.position, progress),
     velocity: interpolateVector(earlier.velocity, later.velocity, progress),
     primaryPower: discrete.primaryPower,
     abilityPhase: discrete.abilityPhase,
-    barrierHitPoints: interpolate(
-      earlier.barrierHitPoints,
-      later.barrierHitPoints,
-      progress
-    ),
-    echoPosition: interpolateEcho(
+    barrierHitPoints: eventDrivenState.barrierHitPoints,
+    echoPosition: calculateEchoPosition(
       earlier.echoPosition,
       later.echoPosition,
-      progress
+      progress,
+      eventDrivenState.echoPosition
     ),
   };
 }
 
-/** Interpolates continuous values; power and phase change only at checkpoints. */
+/** Interpolates movement while combat state changes on authoritative events. */
 export function calculateReplayFrame(
   transcript: BattleTranscript,
   elapsedTick: number
@@ -418,7 +623,9 @@ export function calculateReplayFrame(
     : Math.min(completedTick, Math.max(0, elapsedTick));
   const [earlier, later] = findCheckpointPair(transcript.checkpoints, tick);
   const tickDistance = later.tick - earlier.tick;
-  const progress = tickDistance === 0 ? 0 : (tick - earlier.tick) / tickDistance;
+  const progress =
+    tickDistance === 0 ? 0 : (tick - earlier.tick) / tickDistance;
+  const fighterStates = calculateEventDrivenFighterStates(transcript, tick);
 
   return {
     tick,
@@ -435,8 +642,18 @@ export function calculateReplayFrame(
       progress
     ),
     fighters: [
-      calculateFighterFrame(earlier.fighters[0], later.fighters[0], progress),
-      calculateFighterFrame(earlier.fighters[1], later.fighters[1], progress),
+      calculateFighterFrame(
+        earlier.fighters[0],
+        later.fighters[0],
+        progress,
+        fighterStates[0]
+      ),
+      calculateFighterFrame(
+        earlier.fighters[1],
+        later.fighters[1],
+        progress,
+        fighterStates[1]
+      ),
     ],
   };
 }
@@ -447,7 +664,11 @@ export function getTimelineEventsInRange(
   startTick: number,
   endTick: number
 ): readonly BattleTimelineEvent[] {
-  if (Number.isNaN(startTick) || Number.isNaN(endTick) || endTick <= startTick) {
+  if (
+    Number.isNaN(startTick) ||
+    Number.isNaN(endTick) ||
+    endTick <= startTick
+  ) {
     return [];
   }
   return transcript.timeline.filter(

@@ -9,20 +9,22 @@
 import * as Phaser from 'phaser';
 import { Scene } from 'phaser';
 import type { ScribbitStats } from '../../shared/arena';
+import type { PrimaryPower } from '../../shared/combat';
 import {
   buildInkMeshGeometry,
   getSignatureTrait,
   SIGNATURE_POWER,
   updateInkMeshVertices,
 } from './inkmesh';
-import type {
-  InkMeshGeometry,
-  InkMeshMotion,
-  SignatureTrait,
-} from './inkmesh';
+import type { InkMeshGeometry, InkMeshMotion, SignatureTrait } from './inkmesh';
 
 const FALLBACK_GRID = 3;
-const DEFAULT_STATS: ScribbitStats = { chonk: 25, spike: 25, zip: 25, charm: 25 };
+const DEFAULT_STATS: ScribbitStats = {
+  chonk: 25,
+  spike: 25,
+  zip: 25,
+  charm: 25,
+};
 
 type Tile = {
   image: Phaser.GameObjects.Image;
@@ -60,7 +62,13 @@ export class LiveSprite {
   private crumpled = false;
   private readonly handleSceneShutdown = (): void => this.destroy();
 
-  constructor(scene: Scene, x: number, y: number, textureKey: string, opts: LiveSpriteOptions) {
+  constructor(
+    scene: Scene,
+    x: number,
+    y: number,
+    textureKey: string,
+    opts: LiveSpriteOptions
+  ) {
     this.scene = scene;
     this.size = opts.displaySize;
     this.facing = opts.facing ?? 1;
@@ -93,7 +101,15 @@ export class LiveSprite {
     if (canUseInkMesh) {
       this.createInkMesh(textureKey, drawW, drawH);
     } else {
-      this.createFallbackSlices(textureKey, texture, srcW, srcH, fitScale, drawW, drawH);
+      this.createFallbackSlices(
+        textureKey,
+        texture,
+        srcW,
+        srcH,
+        fitScale,
+        drawW,
+        drawH
+      );
     }
 
     scene.events.on(Phaser.Scenes.Events.UPDATE, this.updateInkMesh, this);
@@ -101,7 +117,11 @@ export class LiveSprite {
     scene.events.once(Phaser.Scenes.Events.DESTROY, this.handleSceneShutdown);
   }
 
-  private createInkMesh(textureKey: string, drawW: number, drawH: number): void {
+  private createInkMesh(
+    textureKey: string,
+    drawW: number,
+    drawH: number
+  ): void {
     const geometry = buildInkMeshGeometry(drawW, drawH);
     const mesh = this.scene.add.mesh2d(
       0,
@@ -168,8 +188,14 @@ export class LiveSprite {
         // never runs past the texture bounds.
         const sx = Math.max(0, col * cellSrcW - (isLeft ? 0 : BLEED_SRC_X));
         const sy = Math.max(0, row * cellSrcH - (isTop ? 0 : BLEED_SRC_Y));
-        const rightEdge = Math.min(srcW, (col + 1) * cellSrcW + (isRight ? 0 : BLEED_SRC_X));
-        const bottomEdge = Math.min(srcH, (row + 1) * cellSrcH + (isBottom ? 0 : BLEED_SRC_Y));
+        const rightEdge = Math.min(
+          srcW,
+          (col + 1) * cellSrcW + (isRight ? 0 : BLEED_SRC_X)
+        );
+        const bottomEdge = Math.min(
+          srcH,
+          (row + 1) * cellSrcH + (isBottom ? 0 : BLEED_SRC_Y)
+        );
         const sw = rightEdge - sx;
         const sh = bottomEdge - sy;
 
@@ -206,10 +232,6 @@ export class LiveSprite {
 
   get shapePower(): string {
     return SIGNATURE_POWER[this.signatureTrait].name;
-  }
-
-  get shapePowerHint(): string {
-    return SIGNATURE_POWER[this.signatureTrait].playerHint;
   }
 
   setDepth(depth: number): this {
@@ -340,12 +362,69 @@ export class LiveSprite {
       duration: 310,
       yoyo: true,
       ease: 'Sine.easeInOut',
-      onComplete: () => this.container.setPosition(baseX, baseY).setScale(1).setAngle(0),
+      onComplete: () =>
+        this.container.setPosition(baseX, baseY).setScale(1).setAngle(0),
     };
-    if (profile === 'chonk') Object.assign(tweenConfig, { scaleX: 1.14, scaleY: 0.8, y: baseY + 10 });
-    if (profile === 'spike') Object.assign(tweenConfig, { scaleX: 1.22, scaleY: 0.9 });
-    if (profile === 'zip') Object.assign(tweenConfig, { x: baseX + this.facing * 20, angle: this.facing * 3 });
-    if (profile === 'charm') Object.assign(tweenConfig, { scaleX: 1.1, scaleY: 1.1, angle: this.facing * 5 });
+    if (profile === 'chonk')
+      Object.assign(tweenConfig, { scaleX: 1.14, scaleY: 0.8, y: baseY + 10 });
+    if (profile === 'spike')
+      Object.assign(tweenConfig, { scaleX: 1.22, scaleY: 0.9 });
+    if (profile === 'zip')
+      Object.assign(tweenConfig, {
+        x: baseX + this.facing * 20,
+        angle: this.facing * 3,
+      });
+    if (profile === 'charm')
+      Object.assign(tweenConfig, {
+        scaleX: 1.1,
+        scaleY: 1.1,
+        angle: this.facing * 5,
+      });
+    this.scene.tweens.add(tweenConfig);
+  }
+
+  // The server event decides when a power activates; this method only gives
+  // that event a power-specific body pose. Position and damage stay owned by
+  // the authoritative replay transcript.
+  activateShapePower(power: PrimaryPower): void {
+    if (this.reduceMotion || this.destroyed) return;
+    this.stopIdle();
+    this.container.setScale(1).setAngle(0);
+
+    const tweenConfig: Phaser.Types.Tweens.TweenBuilderConfig = {
+      targets: this.container,
+      duration: power === 'smearstep' ? 130 : 210,
+      yoyo: true,
+      repeat: power === 'smearstep' ? 1 : 0,
+      ease: power === 'inkquake' ? 'Quad.easeIn' : 'Back.easeOut',
+      onComplete: () => {
+        this.container.setScale(1).setAngle(0);
+        this.breathe();
+      },
+    };
+
+    if (power === 'inkquake') {
+      Object.assign(tweenConfig, { scaleX: 1.3, scaleY: 0.68 });
+    } else if (power === 'nib_halo') {
+      Object.assign(tweenConfig, {
+        scaleX: 1.16,
+        scaleY: 1.16,
+        angle: this.facing * 12,
+      });
+    } else if (power === 'smearstep') {
+      Object.assign(tweenConfig, {
+        scaleX: 1.34,
+        scaleY: 0.76,
+        angle: this.facing * 7,
+      });
+    } else {
+      Object.assign(tweenConfig, {
+        scaleX: 1.24,
+        scaleY: 1.24,
+        angle: this.facing * 5,
+      });
+    }
+
     this.scene.tweens.add(tweenConfig);
   }
 
@@ -357,7 +436,12 @@ export class LiveSprite {
   }
 
   // Walk-in from an off-stage x with a bouncy wobble, then settle to breathing.
-  walkIn(fromX: number, toX: number, duration: number, onDone?: () => void): void {
+  walkIn(
+    fromX: number,
+    toX: number,
+    duration: number,
+    onDone?: () => void
+  ): void {
     this.container.setX(fromX);
     this.scene.tweens.add({
       targets: this.container,
@@ -531,9 +615,19 @@ export class LiveSprite {
     if (this.destroyed) return;
     this.destroyed = true;
     this.stopIdle();
-    this.scene.events.off(Phaser.Scenes.Events.UPDATE, this.updateInkMesh, this);
-    this.scene.events.off(Phaser.Scenes.Events.SHUTDOWN, this.handleSceneShutdown);
-    this.scene.events.off(Phaser.Scenes.Events.DESTROY, this.handleSceneShutdown);
+    this.scene.events.off(
+      Phaser.Scenes.Events.UPDATE,
+      this.updateInkMesh,
+      this
+    );
+    this.scene.events.off(
+      Phaser.Scenes.Events.SHUTDOWN,
+      this.handleSceneShutdown
+    );
+    this.scene.events.off(
+      Phaser.Scenes.Events.DESTROY,
+      this.handleSceneShutdown
+    );
     this.container.destroy(true);
   }
 }

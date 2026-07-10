@@ -16,7 +16,11 @@ import {
 const TRANSITION_MS = 180;
 const transitioningScenes = new WeakSet<Scene>();
 
-export function fadeToScene(scene: Scene, key: string, data?: Record<string, unknown>): void {
+export function fadeToScene(
+  scene: Scene,
+  key: string,
+  data?: Record<string, unknown>
+): void {
   if (transitioningScenes.has(scene)) return;
   transitioningScenes.add(scene);
   scene.cameras.main.fadeOut(TRANSITION_MS, 255, 247, 232);
@@ -196,7 +200,15 @@ export function moodChip(
   const bg = scene.add
     .rectangle(0, 0, w, 40 * scale, UI.creamHex, 1)
     .setStrokeStyle(3, UI.inkHex, 1);
-  const txt = label(scene, 0, 0, `${emoji} ${moodLabel}`, 22 * scale, color, true);
+  const txt = label(
+    scene,
+    0,
+    0,
+    `${emoji} ${moodLabel}`,
+    22 * scale,
+    color,
+    true
+  );
   container.add([bg, txt]);
   return container;
 }
@@ -267,17 +279,35 @@ export function careButton(
     .setStrokeStyle(4, UI.inkHex, 1);
   bg.setInteractive({ useHandCursor: true });
   const stacked = height >= 80;
-  const caption = text ? (emoji ? (stacked ? `${emoji}\n${text}` : `${emoji} ${text}`) : text) : emoji;
+  const caption = text
+    ? emoji
+      ? stacked
+        ? `${emoji}\n${text}`
+        : `${emoji} ${text}`
+      : text
+    : emoji;
   const txt = label(scene, 0, 0, caption, text ? 20 : 26, UI.ink, true);
   txt.setLineSpacing(-2);
   txt.setAlign('center');
   txt.setWordWrapWidth(width - 8);
   container.add([bg, txt]);
   const press = (): void => {
-    scene.tweens.add({ targets: container, scaleX: 0.92, scaleY: 0.9, duration: 60, ease: 'Quad.easeOut' });
+    scene.tweens.add({
+      targets: container,
+      scaleX: 0.92,
+      scaleY: 0.9,
+      duration: 60,
+      ease: 'Quad.easeOut',
+    });
   };
   const release = (): void => {
-    scene.tweens.add({ targets: container, scaleX: 1, scaleY: 1, duration: 110, ease: 'Back.easeOut' });
+    scene.tweens.add({
+      targets: container,
+      scaleX: 1,
+      scaleY: 1,
+      duration: 110,
+      ease: 'Back.easeOut',
+    });
   };
   bg.on('pointerover', press);
   bg.on('pointerout', release);
@@ -311,10 +341,22 @@ export function button(
   container.add([bg, txt]);
 
   const press = (): void => {
-    scene.tweens.add({ targets: container, scaleX: 0.94, scaleY: 0.92, duration: 70, ease: 'Quad.easeOut' });
+    scene.tweens.add({
+      targets: container,
+      scaleX: 0.94,
+      scaleY: 0.92,
+      duration: 70,
+      ease: 'Quad.easeOut',
+    });
   };
   const release = (): void => {
-    scene.tweens.add({ targets: container, scaleX: 1, scaleY: 1, duration: 120, ease: 'Back.easeOut' });
+    scene.tweens.add({
+      targets: container,
+      scaleX: 1,
+      scaleY: 1,
+      duration: 120,
+      ease: 'Back.easeOut',
+    });
   };
   bg.on('pointerover', press);
   bg.on('pointerout', release);
@@ -347,10 +389,22 @@ export function ghostButton(
   container.add([bg, txt]);
 
   const press = (): void => {
-    scene.tweens.add({ targets: container, scaleX: 0.94, scaleY: 0.92, duration: 70, ease: 'Quad.easeOut' });
+    scene.tweens.add({
+      targets: container,
+      scaleX: 0.94,
+      scaleY: 0.92,
+      duration: 70,
+      ease: 'Quad.easeOut',
+    });
   };
   const release = (): void => {
-    scene.tweens.add({ targets: container, scaleX: 1, scaleY: 1, duration: 120, ease: 'Back.easeOut' });
+    scene.tweens.add({
+      targets: container,
+      scaleX: 1,
+      scaleY: 1,
+      duration: 120,
+      ease: 'Back.easeOut',
+    });
   };
   bg.on('pointerover', press);
   bg.on('pointerout', release);
@@ -371,7 +425,14 @@ export type AppTabItem = {
   onClick: () => void;
 };
 
-function tabIcon(scene: Scene, key: AppTabKey, x: number, y: number, color: number, scale = 1): Phaser.GameObjects.Container {
+function tabIcon(
+  scene: Scene,
+  key: AppTabKey,
+  x: number,
+  y: number,
+  color: number,
+  scale = 1
+): Phaser.GameObjects.Container {
   const icon = scene.add.container(x, y);
   const g = scene.add.graphics();
   const s = scale;
@@ -422,13 +483,31 @@ function wireTab(
   scene: Scene
 ): void {
   hit.on('pointerdown', () => {
-    scene.tweens.add({ targets: target, scaleX: 0.88, scaleY: 0.86, duration: 60, ease: 'Quad.easeOut' });
+    scene.tweens.add({
+      targets: target,
+      scaleX: 0.88,
+      scaleY: 0.86,
+      duration: 60,
+      ease: 'Quad.easeOut',
+    });
   });
   hit.on('pointerout', () => {
-    scene.tweens.add({ targets: target, scaleX: 1, scaleY: 1, duration: 110, ease: 'Back.easeOut' });
+    scene.tweens.add({
+      targets: target,
+      scaleX: 1,
+      scaleY: 1,
+      duration: 110,
+      ease: 'Back.easeOut',
+    });
   });
   hit.on('pointerup', () => {
-    scene.tweens.add({ targets: target, scaleX: 1, scaleY: 1, duration: 110, ease: 'Back.easeOut' });
+    scene.tweens.add({
+      targets: target,
+      scaleX: 1,
+      scaleY: 1,
+      duration: 110,
+      ease: 'Back.easeOut',
+    });
     onClick();
   });
 }
@@ -442,16 +521,46 @@ export function appTabBar(
   const barWidth = width;
   const barHeight = 88;
   const y = height - barHeight / 2;
-  const container = scene.add.container(width / 2, y).setScrollFactor(0).setDepth(1800);
+  const viewportX = width / 2;
+  const viewportY = y;
+  const container = scene.add.container(viewportX, viewportY).setDepth(1800);
+  const camera = scene.cameras.main;
+  const followCamera = (): void => {
+    if (!container.active) return;
+    // Keep the dock at a stable viewport position using ordinary world
+    // coordinates. Phaser then uses the same transform for rendering and input
+    // hit testing, unlike nested scroll-factor-zero children.
+    container.setPosition(
+      viewportX + camera.scrollX,
+      viewportY + camera.scrollY
+    );
+  };
+  let listenerRemoved = false;
+  const removeCameraFollower = (): void => {
+    if (listenerRemoved) return;
+    listenerRemoved = true;
+    scene.events.off('postupdate', followCamera);
+    scene.events.off('shutdown', removeCameraFollower);
+  };
+  scene.events.on('postupdate', followCamera);
+  scene.events.once('shutdown', removeCameraFollower);
+  container.once('destroy', removeCameraFollower);
+  followCamera();
 
   const panel = scene.add.graphics();
   panel.fillStyle(UI.creamHex, 0.98);
-  panel.fillRoundedRect(-barWidth / 2, -barHeight / 2, barWidth, barHeight + 30, {
-    tl: 30,
-    tr: 30,
-    bl: 0,
-    br: 0,
-  });
+  panel.fillRoundedRect(
+    -barWidth / 2,
+    -barHeight / 2,
+    barWidth,
+    barHeight + 30,
+    {
+      tl: 30,
+      tr: 30,
+      bl: 0,
+      br: 0,
+    }
+  );
   panel.lineStyle(4, UI.inkHex, 1);
   panel.beginPath();
   panel.moveTo(-barWidth / 2, -barHeight / 2 + 2);
@@ -683,13 +792,31 @@ export function statGrid(
     const cellX = -width / 2 + colWidth * col + 12;
     const cellY = -height / 2 + rowHeight * (row + 0.5);
 
-    const name = label(scene, cellX, cellY - 16, `${style.emoji} ${style.label}`, 22, style.colorText, true).setOrigin(0, 0.5);
+    const name = label(
+      scene,
+      cellX,
+      cellY - 16,
+      `${style.emoji} ${style.label}`,
+      22,
+      style.colorText,
+      true
+    ).setOrigin(0, 0.5);
     const track = scene.add
       .rectangle(cellX, cellY + 12, barMax, 16, UI.progressTrack, 0.16)
       .setOrigin(0, 0.5)
       .setStrokeStyle(2, UI.progressTrack, 0.3);
-    const fill = scene.add.rectangle(cellX + 2, cellY + 12, 1, 11, style.color, 1).setOrigin(0, 0.5);
-    const valueText = label(scene, cellX + barMax + 30, cellY + 12, '0', 22, UI.ink, true).setOrigin(0.5);
+    const fill = scene.add
+      .rectangle(cellX + 2, cellY + 12, 1, 11, style.color, 1)
+      .setOrigin(0, 0.5);
+    const valueText = label(
+      scene,
+      cellX + barMax + 30,
+      cellY + 12,
+      '0',
+      22,
+      UI.ink,
+      true
+    ).setOrigin(0.5);
     container.add([name, track, fill, valueText]);
     bars.set(key, fill);
     values.set(key, valueText);
@@ -703,7 +830,12 @@ export function statGrid(
       const value = stats[key];
       const target = Math.max(2, (barMax - 4) * Math.min(1, value / 55));
       if (animate) {
-        scene.tweens.add({ targets: fill, width: target, duration: 260, ease: 'Cubic.easeOut' });
+        scene.tweens.add({
+          targets: fill,
+          width: target,
+          duration: 260,
+          ease: 'Cubic.easeOut',
+        });
       } else {
         fill.width = target;
       }
@@ -780,7 +912,12 @@ export function progressBar(
   const set = (ratio: number, animate: boolean): void => {
     const target = Math.max(2, (width - 4) * Math.max(0, Math.min(1, ratio)));
     if (animate) {
-      scene.tweens.add({ targets: fill, width: target, duration: 320, ease: 'Cubic.easeOut' });
+      scene.tweens.add({
+        targets: fill,
+        width: target,
+        duration: 320,
+        ease: 'Cubic.easeOut',
+      });
     } else {
       fill.width = target;
     }
@@ -796,11 +933,39 @@ export function rosette(
   scale = 1
 ): Phaser.GameObjects.Container {
   const container = scene.add.container(x, y).setDepth(6);
-  const disc = scene.add.circle(0, 0, 20 * scale, UI.gold, 1).setStrokeStyle(3, UI.inkHex, 1);
+  const disc = scene.add
+    .circle(0, 0, 20 * scale, UI.gold, 1)
+    .setStrokeStyle(3, UI.inkHex, 1);
   const star = label(scene, 0, 0, '🎯', 20 * scale);
   // Two ribbon tails below the disc.
-  const tailL = scene.add.triangle(-8 * scale, 22 * scale, 0, 0, 14 * scale, 0, 7 * scale, 20 * scale, UI.coral, 1).setStrokeStyle(2, UI.inkHex, 1);
-  const tailR = scene.add.triangle(8 * scale, 22 * scale, 0, 0, 14 * scale, 0, 7 * scale, 20 * scale, UI.coralDeep, 1).setStrokeStyle(2, UI.inkHex, 1);
+  const tailL = scene.add
+    .triangle(
+      -8 * scale,
+      22 * scale,
+      0,
+      0,
+      14 * scale,
+      0,
+      7 * scale,
+      20 * scale,
+      UI.coral,
+      1
+    )
+    .setStrokeStyle(2, UI.inkHex, 1);
+  const tailR = scene.add
+    .triangle(
+      8 * scale,
+      22 * scale,
+      0,
+      0,
+      14 * scale,
+      0,
+      7 * scale,
+      20 * scale,
+      UI.coralDeep,
+      1
+    )
+    .setStrokeStyle(2, UI.inkHex, 1);
   container.add([tailL, tailR, disc, star]);
   return container;
 }
@@ -814,7 +979,11 @@ export type Spinner = {
 };
 
 export function spinner(scene: Scene, depth = 900): Spinner {
-  const container = scene.add.container(0, 0).setDepth(depth).setScrollFactor(0).setVisible(false);
+  const container = scene.add
+    .container(0, 0)
+    .setDepth(depth)
+    .setScrollFactor(0)
+    .setVisible(false);
   const arc = scene.add.graphics();
   arc.lineStyle(6, UI.coral, 1);
   arc.beginPath();
@@ -868,7 +1037,13 @@ export function dominantButton(
   // Outer glow ring
   const glow = scene.add.graphics();
   glow.fillStyle(UI.coral, 0.3);
-  glow.fillRoundedRect(-width / 2 - 8, -height / 2 - 8, width + 16, height + 16, 24);
+  glow.fillRoundedRect(
+    -width / 2 - 8,
+    -height / 2 - 8,
+    width + 16,
+    height + 16,
+    24
+  );
   container.add(glow);
 
   // Main button background
@@ -898,10 +1073,22 @@ export function dominantButton(
 
   // Button press feedback
   const press = (): void => {
-    scene.tweens.add({ targets: container, scaleX: 0.96, scaleY: 0.94, duration: 80, ease: 'Quad.easeOut' });
+    scene.tweens.add({
+      targets: container,
+      scaleX: 0.96,
+      scaleY: 0.94,
+      duration: 80,
+      ease: 'Quad.easeOut',
+    });
   };
   const release = (): void => {
-    scene.tweens.add({ targets: container, scaleX: 1, scaleY: 1, duration: 120, ease: 'Back.easeOut' });
+    scene.tweens.add({
+      targets: container,
+      scaleX: 1,
+      scaleY: 1,
+      duration: 120,
+      ease: 'Back.easeOut',
+    });
   };
 
   bg.on('pointerover', press);

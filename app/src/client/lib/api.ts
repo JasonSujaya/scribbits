@@ -15,7 +15,10 @@ import type {
   CloutBoard,
   EnterRumbleRequest,
   Inventory,
+  EquipTitleRequest,
+  LegacyCardsState,
   LegendsState,
+  MarkLegacySeenRequest,
   ReportScribbitResponse,
   Scribbit,
   SplashState,
@@ -23,9 +26,7 @@ import type {
   SubmitScribbitRequest,
 } from '../../shared/arena';
 
-export type ApiResult<T> =
-  | { ok: true; data: T }
-  | { ok: false; error: string };
+export type ApiResult<T> = { ok: true; data: T } | { ok: false; error: string };
 
 const DEFAULT_TIMEOUT_MS = 12000;
 // Submissions carry base and rendered PNG data URLs, so they get a longer leash.
@@ -129,6 +130,13 @@ export function fetchMyBattles(): Promise<ApiResult<BattleReport[]>> {
   return getJson<BattleReport[]>('/api/my-battles');
 }
 
+export function fetchRumbleReplay(
+  resolvedDay: number
+): Promise<ApiResult<BattleReport>> {
+  const query = new URLSearchParams({ day: String(resolvedDay) });
+  return getJson<BattleReport>(`/api/rumble-replay?${query.toString()}`);
+}
+
 export function believe(
   scribbitId: string
 ): Promise<ApiResult<{ belief: number }>> {
@@ -201,10 +209,10 @@ export function reportScribbit(
 export function deleteMyData(): Promise<
   ApiResult<{ deleted: true; removedScribbits: number }>
 > {
-  return postJson<Record<string, never>, { deleted: true; removedScribbits: number }>(
-    '/api/delete-my-data',
-    {}
-  );
+  return postJson<
+    Record<string, never>,
+    { deleted: true; removedScribbits: number }
+  >('/api/delete-my-data', {});
 }
 
 // The talent-scout leaderboard: top 20 by lifetime clout plus the caller's rank.
@@ -225,4 +233,36 @@ export function pullCapsule(
 // The caller's unlocked pens + titles (drives the palette + locked slots).
 export function fetchInventory(): Promise<ApiResult<Inventory>> {
   return getJson<Inventory>('/api/inventory');
+}
+
+// The caller's immutable personal archive. Cursor paging stays separate from
+// the public Legends feed so a large Legacy Book never inflates gallery reads.
+export function fetchLegacyCards(
+  cursor?: string | null,
+  limit?: number
+): Promise<ApiResult<LegacyCardsState>> {
+  const query = new URLSearchParams();
+  if (cursor) query.set('cursor', cursor);
+  if (limit !== undefined) query.set('limit', String(limit));
+  const queryString = query.toString();
+  return getJson<LegacyCardsState>(
+    `/api/legacy-cards${queryString ? `?${queryString}` : ''}`
+  );
+}
+
+export function equipTitle(
+  titleId: string | null
+): Promise<ApiResult<Inventory>> {
+  return postJson<EquipTitleRequest, Inventory>('/api/equip-title', {
+    titleId,
+  });
+}
+
+export function markLegacyCardsSeen(
+  throughArchivedDay: number
+): Promise<ApiResult<{ seenThroughDay: number }>> {
+  return postJson<MarkLegacySeenRequest, { seenThroughDay: number }>(
+    '/api/legacy-cards/seen',
+    { throughArchivedDay }
+  );
 }

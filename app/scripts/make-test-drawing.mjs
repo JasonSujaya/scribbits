@@ -1,66 +1,532 @@
-// Generates REAL drawing PNGs for the mock server so the harness reproduces
-// production conditions: network PNGs that are NOT square and carry transparent
-// untouched pixels around colorful ink strokes. DrawCanvas keeps paper as a CSS
-// preview only, so production submissions use this same transparent backing.
-// Each variant uses a different element hue so the roster shows charming color.
-import { PNG } from 'pngjs';
-import { writeFileSync, mkdirSync } from 'node:fs';
-import { join, dirname } from 'node:path';
+// Generate transparent, production-like mock drawings whose silhouettes make
+// each dominant-stat combat power obvious before a battle starts.
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { PNG } from 'pngjs';
 
-const outDir = join(dirname(fileURLToPath(import.meta.url)), '..', 'dist', 'mock-assets');
-mkdirSync(outDir, { recursive: true });
+const outputDirectory = join(
+  dirname(fileURLToPath(import.meta.url)),
+  '..',
+  'dist',
+  'mock-assets'
+);
+mkdirSync(outputDirectory, { recursive: true });
 
-const INK = [43, 32, 22];
-const CREAM = [255, 247, 232];
+const ink = [43, 32, 22];
+const paper = [255, 247, 232];
+const coral = [244, 98, 82];
+const gold = [238, 177, 59];
+const moss = [88, 171, 96];
+const tide = [64, 164, 214];
+const violet = [143, 102, 194];
+const pink = [239, 118, 166];
+const turquoise = [60, 190, 177];
 
-function set(png, x, y, r, g, b, a = 255) {
-  if (x < 0 || y < 0 || x >= png.width || y >= png.height) return;
-  const i = (png.width * (y | 0) + (x | 0)) << 2;
-  png.data[i] = r; png.data[i + 1] = g; png.data[i + 2] = b; png.data[i + 3] = a;
-}
-function disc(png, cx, cy, rad, [r, g, b]) {
-  for (let y = -rad; y <= rad; y++)
-    for (let x = -rad; x <= rad; x++)
-      if (x * x + y * y <= rad * rad) set(png, cx + x, cy + y, r, g, b);
-}
-// A ring (outline) of thickness `t`.
-function ring(png, cx, cy, rad, t, color) {
-  for (let y = -rad; y <= rad; y++)
-    for (let x = -rad; x <= rad; x++) {
-      const d2 = x * x + y * y;
-      if (d2 <= rad * rad && d2 >= (rad - t) * (rad - t)) set(png, cx + x, cy + y, ...color);
+const createTransparentImage = (width, height) => {
+  const image = new PNG({ width, height });
+  image.data.fill(0);
+  return image;
+};
+
+const setPixel = (image, x, y, color) => {
+  const pixelX = Math.round(x);
+  const pixelY = Math.round(y);
+  if (
+    pixelX < 0 ||
+    pixelY < 0 ||
+    pixelX >= image.width ||
+    pixelY >= image.height
+  ) {
+    return;
+  }
+
+  const pixelIndex = (image.width * pixelY + pixelX) * 4;
+  image.data[pixelIndex] = color[0];
+  image.data[pixelIndex + 1] = color[1];
+  image.data[pixelIndex + 2] = color[2];
+  image.data[pixelIndex + 3] = color[3] ?? 255;
+};
+
+const fillEllipse = (image, centerX, centerY, radiusX, radiusY, color) => {
+  const minimumX = Math.floor(centerX - radiusX);
+  const maximumX = Math.ceil(centerX + radiusX);
+  const minimumY = Math.floor(centerY - radiusY);
+  const maximumY = Math.ceil(centerY + radiusY);
+
+  for (let y = minimumY; y <= maximumY; y += 1) {
+    for (let x = minimumX; x <= maximumX; x += 1) {
+      const normalizedX = (x - centerX) / radiusX;
+      const normalizedY = (y - centerY) / radiusY;
+      if (normalizedX * normalizedX + normalizedY * normalizedY <= 1) {
+        setPixel(image, x, y, color);
+      }
     }
+  }
+};
+
+const fillCircle = (image, centerX, centerY, radius, color) => {
+  fillEllipse(image, centerX, centerY, radius, radius, color);
+};
+
+const drawHandDrawnLine = (
+  image,
+  startPoint,
+  endPoint,
+  width,
+  color,
+  wobble = 1.2
+) => {
+  const deltaX = endPoint.x - startPoint.x;
+  const deltaY = endPoint.y - startPoint.y;
+  const distance = Math.max(1, Math.hypot(deltaX, deltaY));
+  const normalX = -deltaY / distance;
+  const normalY = deltaX / distance;
+  const steps = Math.ceil(distance);
+
+  for (let step = 0; step <= steps; step += 1) {
+    const progress = step / steps;
+    const handOffset =
+      Math.sin(step * 0.31 + startPoint.x * 0.07 + startPoint.y * 0.05) *
+      wobble;
+    const x = startPoint.x + deltaX * progress + normalX * handOffset;
+    const y = startPoint.y + deltaY * progress + normalY * handOffset;
+    fillCircle(image, x, y, width / 2, color);
+  }
+};
+
+const drawPolyline = (image, points, width, color, closed = false) => {
+  const segmentCount = closed ? points.length : points.length - 1;
+  for (let index = 0; index < segmentCount; index += 1) {
+    drawHandDrawnLine(
+      image,
+      points[index],
+      points[(index + 1) % points.length],
+      width,
+      color
+    );
+  }
+};
+
+const fillPolygon = (image, points, color) => {
+  const minimumY = Math.floor(Math.min(...points.map((point) => point.y)));
+  const maximumY = Math.ceil(Math.max(...points.map((point) => point.y)));
+
+  for (let y = minimumY; y <= maximumY; y += 1) {
+    const intersections = [];
+    for (let index = 0; index < points.length; index += 1) {
+      const startPoint = points[index];
+      const endPoint = points[(index + 1) % points.length];
+      const crossesScanline =
+        (startPoint.y <= y && endPoint.y > y) ||
+        (endPoint.y <= y && startPoint.y > y);
+      if (!crossesScanline) continue;
+
+      intersections.push(
+        startPoint.x +
+          ((y - startPoint.y) * (endPoint.x - startPoint.x)) /
+            (endPoint.y - startPoint.y)
+      );
+    }
+
+    intersections.sort((left, right) => left - right);
+    for (let index = 0; index < intersections.length; index += 2) {
+      const startX = Math.ceil(intersections[index]);
+      const endX = Math.floor(intersections[index + 1] ?? intersections[index]);
+      for (let x = startX; x <= endX; x += 1) {
+        setPixel(image, x, y, color);
+      }
+    }
+  }
+};
+
+const drawOutlinedPolygon = (image, points, fillColor, outlineWidth = 12) => {
+  fillPolygon(image, points, fillColor);
+  drawPolyline(image, points, outlineWidth, ink, true);
+};
+
+const drawOutlinedEllipse = (
+  image,
+  centerX,
+  centerY,
+  radiusX,
+  radiusY,
+  fillColor,
+  outlineWidth = 8
+) => {
+  fillEllipse(image, centerX, centerY, radiusX, radiusY, ink);
+  fillEllipse(
+    image,
+    centerX,
+    centerY,
+    Math.max(1, radiusX - outlineWidth),
+    Math.max(1, radiusY - outlineWidth),
+    fillColor
+  );
+};
+
+const drawEye = (image, centerX, centerY, lookX = 0, lookY = 0) => {
+  drawOutlinedEllipse(image, centerX, centerY, 23, 28, paper, 5);
+  fillCircle(image, centerX + lookX, centerY + lookY, 9, ink);
+  fillCircle(image, centerX + lookX - 3, centerY + lookY - 3, 2, paper);
+};
+
+const createInkquakeDrawing = () => {
+  const image = createTransparentImage(540, 360);
+  const bodyPoints = [
+    { x: 74, y: 205 },
+    { x: 91, y: 145 },
+    { x: 137, y: 101 },
+    { x: 205, y: 74 },
+    { x: 292, y: 70 },
+    { x: 379, y: 91 },
+    { x: 443, y: 130 },
+    { x: 472, y: 185 },
+    { x: 459, y: 245 },
+    { x: 407, y: 292 },
+    { x: 327, y: 315 },
+    { x: 231, y: 311 },
+    { x: 145, y: 291 },
+    { x: 91, y: 255 },
+  ];
+
+  drawPolyline(
+    image,
+    [
+      { x: 160, y: 278 },
+      { x: 145, y: 334 },
+    ],
+    15,
+    ink
+  );
+  drawPolyline(
+    image,
+    [
+      { x: 370, y: 286 },
+      { x: 390, y: 334 },
+    ],
+    15,
+    ink
+  );
+  drawOutlinedPolygon(image, bodyPoints, gold, 14);
+  fillEllipse(image, 167, 248, 56, 25, [224, 140, 48]);
+  fillEllipse(image, 389, 222, 45, 31, [246, 197, 78]);
+  drawEye(image, 222, 158, -2, 3);
+  drawEye(image, 315, 155, 3, 3);
+  drawPolyline(
+    image,
+    [
+      { x: 246, y: 218 },
+      { x: 268, y: 228 },
+      { x: 291, y: 216 },
+    ],
+    7,
+    ink
+  );
+  drawPolyline(
+    image,
+    [
+      { x: 112, y: 192 },
+      { x: 144, y: 184 },
+    ],
+    5,
+    ink
+  );
+  drawPolyline(
+    image,
+    [
+      { x: 413, y: 169 },
+      { x: 447, y: 178 },
+    ],
+    5,
+    ink
+  );
+  return image;
+};
+
+const createNibHaloDrawing = () => {
+  const image = createTransparentImage(420, 540);
+  const centerX = 210;
+  const centerY = 272;
+  const quillPoints = [];
+  const pointCount = 32;
+
+  for (let index = 0; index < pointCount; index += 1) {
+    const angle = -Math.PI / 2 + (index * Math.PI * 2) / pointCount;
+    const isQuillTip = index % 2 === 0;
+    const radiusX = isQuillTip ? 181 + (index % 6) * 2 : 105;
+    const radiusY = isQuillTip ? 238 - (index % 5) * 3 : 132;
+    quillPoints.push({
+      x: centerX + Math.cos(angle) * radiusX,
+      y: centerY + Math.sin(angle) * radiusY,
+    });
+  }
+
+  drawOutlinedPolygon(image, quillPoints, violet, 11);
+  for (let index = 0; index < quillPoints.length; index += 2) {
+    const quillTip = quillPoints[index];
+    const angle = Math.atan2(quillTip.y - centerY, quillTip.x - centerX);
+    drawHandDrawnLine(
+      image,
+      {
+        x: centerX + Math.cos(angle) * 92,
+        y: centerY + Math.sin(angle) * 116,
+      },
+      {
+        x: centerX + Math.cos(angle) * 158,
+        y: centerY + Math.sin(angle) * 205,
+      },
+      5,
+      ink,
+      0.8
+    );
+  }
+
+  drawOutlinedEllipse(image, centerX, centerY + 8, 116, 137, tide, 11);
+  fillEllipse(image, 170, 340, 38, 24, [48, 139, 195]);
+  fillEllipse(image, 258, 207, 31, 40, [98, 184, 221]);
+  drawEye(image, 171, 253, -2, 1);
+  drawEye(image, 251, 251, 2, 1);
+  drawPolyline(
+    image,
+    [
+      { x: 181, y: 315 },
+      { x: 210, y: 327 },
+      { x: 241, y: 312 },
+    ],
+    7,
+    ink
+  );
+  return image;
+};
+
+const createSmearstepDrawing = () => {
+  const image = createTransparentImage(620, 280);
+  const speedMarks = [
+    {
+      start: { x: 38, y: 78 },
+      end: { x: 305, y: 92 },
+      width: 11,
+      color: coral,
+    },
+    { start: { x: 91, y: 120 }, end: { x: 326, y: 126 }, width: 8, color: ink },
+    {
+      start: { x: 34, y: 161 },
+      end: { x: 301, y: 157 },
+      width: 13,
+      color: turquoise,
+    },
+    {
+      start: { x: 115, y: 204 },
+      end: { x: 326, y: 186 },
+      width: 8,
+      color: gold,
+    },
+  ];
+
+  for (const speedMark of speedMarks) {
+    drawHandDrawnLine(
+      image,
+      speedMark.start,
+      speedMark.end,
+      speedMark.width,
+      speedMark.color,
+      2.2
+    );
+  }
+
+  drawPolyline(
+    image,
+    [
+      { x: 407, y: 195 },
+      { x: 376, y: 237 },
+      { x: 423, y: 226 },
+    ],
+    11,
+    ink
+  );
+  drawPolyline(
+    image,
+    [
+      { x: 487, y: 196 },
+      { x: 514, y: 231 },
+      { x: 552, y: 221 },
+    ],
+    11,
+    ink
+  );
+
+  const bodyPoints = [
+    { x: 326, y: 142 },
+    { x: 353, y: 96 },
+    { x: 410, y: 70 },
+    { x: 476, y: 78 },
+    { x: 532, y: 111 },
+    { x: 558, y: 151 },
+    { x: 527, y: 190 },
+    { x: 474, y: 209 },
+    { x: 407, y: 203 },
+    { x: 350, y: 180 },
+  ];
+  drawOutlinedPolygon(image, bodyPoints, turquoise, 12);
+  fillEllipse(image, 376, 160, 35, 18, [42, 161, 157]);
+  drawEye(image, 462, 122, 6, 1);
+  drawEye(image, 512, 133, 7, 1);
+  drawPolyline(
+    image,
+    [
+      { x: 498, y: 171 },
+      { x: 526, y: 166 },
+      { x: 543, y: 153 },
+    ],
+    6,
+    ink
+  );
+  fillCircle(image, 576, 101, 6, coral);
+  fillCircle(image, 590, 79, 4, gold);
+  return image;
+};
+
+const createColorburstDrawing = () => {
+  const image = createTransparentImage(470, 530);
+  const bodyPoints = [
+    { x: 147, y: 59 },
+    { x: 229, y: 72 },
+    { x: 311, y: 55 },
+    { x: 382, y: 112 },
+    { x: 404, y: 198 },
+    { x: 383, y: 280 },
+    { x: 414, y: 374 },
+    { x: 352, y: 459 },
+    { x: 267, y: 443 },
+    { x: 180, y: 477 },
+    { x: 91, y: 418 },
+    { x: 106, y: 329 },
+    { x: 63, y: 246 },
+    { x: 91, y: 151 },
+  ];
+
+  drawPolyline(
+    image,
+    [
+      { x: 93, y: 237 },
+      { x: 39, y: 213 },
+      { x: 20, y: 248 },
+    ],
+    12,
+    ink
+  );
+  drawPolyline(
+    image,
+    [
+      { x: 390, y: 231 },
+      { x: 441, y: 203 },
+      { x: 454, y: 241 },
+    ],
+    12,
+    ink
+  );
+
+  fillPolygon(image, bodyPoints, pink);
+  const patchworkPieces = [
+    {
+      color: coral,
+      points: [
+        { x: 101, y: 143 },
+        { x: 153, y: 72 },
+        { x: 228, y: 78 },
+        { x: 242, y: 183 },
+        { x: 159, y: 216 },
+        { x: 85, y: 191 },
+      ],
+    },
+    {
+      color: tide,
+      points: [
+        { x: 230, y: 78 },
+        { x: 309, y: 65 },
+        { x: 375, y: 121 },
+        { x: 391, y: 205 },
+        { x: 306, y: 218 },
+        { x: 242, y: 183 },
+      ],
+    },
+    {
+      color: gold,
+      points: [
+        { x: 85, y: 194 },
+        { x: 159, y: 216 },
+        { x: 220, y: 275 },
+        { x: 175, y: 344 },
+        { x: 105, y: 321 },
+        { x: 70, y: 248 },
+      ],
+    },
+    {
+      color: moss,
+      points: [
+        { x: 220, y: 275 },
+        { x: 306, y: 218 },
+        { x: 390, y: 209 },
+        { x: 376, y: 282 },
+        { x: 403, y: 368 },
+        { x: 318, y: 363 },
+      ],
+    },
+    {
+      color: violet,
+      points: [
+        { x: 175, y: 344 },
+        { x: 220, y: 275 },
+        { x: 318, y: 363 },
+        { x: 350, y: 447 },
+        { x: 267, y: 433 },
+        { x: 184, y: 465 },
+        { x: 102, y: 411 },
+      ],
+    },
+  ];
+
+  for (const patch of patchworkPieces) {
+    fillPolygon(image, patch.points, patch.color);
+    drawPolyline(image, patch.points, 4, ink, true);
+  }
+  drawPolyline(image, bodyPoints, 13, ink, true);
+  drawEye(image, 180, 245, -2, 2);
+  drawEye(image, 279, 244, 2, 2);
+  drawPolyline(
+    image,
+    [
+      { x: 194, y: 304 },
+      { x: 229, y: 322 },
+      { x: 267, y: 301 },
+    ],
+    8,
+    ink
+  );
+  fillCircle(image, 146, 299, 13, coral);
+  fillCircle(image, 312, 298, 13, coral);
+  return image;
+};
+
+const obsoleteDrawingFiles = [
+  'drawing-tall.png',
+  'drawing-wide.png',
+  'drawing-square.png',
+];
+for (const filename of obsoleteDrawingFiles) {
+  rmSync(join(outputDirectory, filename), { force: true });
 }
 
-// A charming colorful creature on transparent paper: tinted body with an ink
-// outline, cream googly eyes, ink pupils, and little ink legs.
-function makeDrawing(w, h, body) {
-  const png = new PNG({ width: w, height: h });
+const drawings = [
+  ['drawing-chonk-inkquake.png', createInkquakeDrawing()],
+  ['drawing-spike-nib-halo.png', createNibHaloDrawing()],
+  ['drawing-zip-smearstep.png', createSmearstepDrawing()],
+  ['drawing-charm-colorburst.png', createColorburstDrawing()],
+];
 
-  const cx = w / 2, cy = h / 2;
-  const bodyR = Math.min(w, h) * 0.34;
-  // Ink outline then colored fill so the body reads as a bright doodle.
-  disc(png, cx, cy, bodyR + 6, INK);
-  disc(png, cx, cy, bodyR, body);
-  // Eyes: cream whites, ink pupils.
-  const eyeR = Math.min(w, h) * 0.09;
-  disc(png, cx - w * 0.12, cy - h * 0.06, eyeR, CREAM);
-  disc(png, cx + w * 0.12, cy - h * 0.06, eyeR, CREAM);
-  ring(png, cx - w * 0.12, cy - h * 0.06, eyeR, 3, INK);
-  ring(png, cx + w * 0.12, cy - h * 0.06, eyeR, 3, INK);
-  disc(png, cx - w * 0.12, cy - h * 0.06, eyeR * 0.45, INK);
-  disc(png, cx + w * 0.12, cy - h * 0.06, eyeR * 0.45, INK);
-  // Rosy cheeks for extra charm.
-  disc(png, cx - w * 0.2, cy + h * 0.03, eyeR * 0.4, [255, 150, 140]);
-  disc(png, cx + w * 0.2, cy + h * 0.03, eyeR * 0.4, [255, 150, 140]);
-  // Little ink legs.
-  for (let i = -2; i <= 2; i++) disc(png, cx + i * w * 0.08, cy + h * 0.28, Math.min(w, h) * 0.05, INK);
-  return PNG.sync.write(png);
+for (const [filename, image] of drawings) {
+  writeFileSync(join(outputDirectory, filename), PNG.sync.write(image));
 }
 
-// Three transparent variants with distinct element hues.
-writeFileSync(join(outDir, 'drawing-tall.png'), makeDrawing(384, 512, [79, 170, 79]));   // moss green, portrait
-writeFileSync(join(outDir, 'drawing-wide.png'), makeDrawing(512, 320, [47, 159, 216]));   // tide blue, landscape
-writeFileSync(join(outDir, 'drawing-square.png'), makeDrawing(512, 512, [255, 107, 74])); // ember coral, square
-console.log('wrote colorful mock drawings to', outDir);
+console.log('wrote four dominant-stat mock drawings to', outputDirectory);

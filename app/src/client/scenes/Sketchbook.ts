@@ -1,37 +1,72 @@
 import { Scene } from 'phaser';
-import { fetchLegends } from '../lib/api';
-import { getArena, getSketchbookTab, setSketchbookTab } from '../lib/registry';
+import {
+  equipTitle as saveEquippedTitle,
+  fetchInventory,
+  fetchLegacyCards,
+  fetchLegends,
+} from '../lib/api';
+import {
+  getArena,
+  getSketchbookTab,
+  setSketchbookTab,
+  type SketchbookTab,
+} from '../lib/registry';
 import {
   loadDrawing,
   fitDrawing,
-  recordText,
   levelOf,
   releaseRenderedDrawingTextures,
 } from '../lib/scribbits';
 import { NAV_SAFE, TYPE, UI } from '../lib/theme';
 import { LivingPaper } from '../lib/livingpaper';
-import { label, ghostButton, handLettered, paperCard, stickerCard, elementBadge, levelBadge, errorPanel, appTabBar, fadeToScene } from '../lib/ui';
+import {
+  label,
+  ghostButton,
+  handLettered,
+  paperCard,
+  stickerCard,
+  levelBadge,
+  errorPanel,
+  appTabBar,
+  fadeToScene,
+} from '../lib/ui';
 import { openDetailModal } from '../lib/detailmodal';
 import type { ErrorPanel } from '../lib/ui';
-import type { LegendsState, Scribbit } from '../../shared/arena';
+import type {
+  Inventory,
+  LegacyCard,
+  LegacyCardsState,
+  LegendsState,
+  Scribbit,
+} from '../../shared/arena';
 import { dailyDrawTabLabel, navigateToDailyDraw } from '../lib/draweligibility';
+import { renderCollectionBook } from '../lib/collectionbook';
+import { LEGACY_BOOK_PAGE_SIZE, renderLegacyBook } from '../lib/legacycards';
 
-type Tab = 'legends' | 'sketchbook';
-
-// Two-tab gallery. Legends = the community Hall of gold-framed immortals with a
-// Believe button. Sketchbook = the caller's faded scribbits with a eulogy line.
+// Three-tab gallery: community Legends, the caller's immutable Legacy Book,
+// and a permanent cosmetic Collection. This scene orchestrates data only;
+// archival/card presentation lives in legacycards.ts.
 export class Sketchbook extends Scene {
-  private tab: Tab = 'legends';
+  private tab: SketchbookTab = 'legends';
   private galleryData: LegendsState | null = null;
+  private inventory: Inventory | null = null;
   private errorPanelRef: ErrorPanel | null = null;
   private loggedIn = false;
   private livingPaper: LivingPaper | null = null;
   private buildGeneration = 0;
   private legendPage = 0;
-  private fadedPage = 0;
+  private legacyPage = 0;
+  private legacyPages: LegacyCardsState[] = [];
+  private collectionPage = 0;
   private loadingOlderLegends = false;
   private loadingGallery = false;
+  private loadingCollection = false;
+  private loadingLegacy = false;
+  private collectionError: string | null = null;
+  private legacyError: string | null = null;
   private galleryRequestEpoch = 0;
+  private collectionRequestEpoch = 0;
+  private legacyRequestEpoch = 0;
 
   constructor() {
     super('Sketchbook');
@@ -43,9 +78,16 @@ export class Sketchbook extends Scene {
     this.livingPaper = null;
     this.buildGeneration = 0;
     this.legendPage = 0;
-    this.fadedPage = 0;
+    this.legacyPage = 0;
+    this.legacyPages = [];
+    this.collectionPage = 0;
     this.loadingOlderLegends = false;
     this.loadingGallery = false;
+    this.loadingCollection = false;
+    this.loadingLegacy = false;
+    this.collectionError = null;
+    this.legacyError = null;
+    this.inventory = null;
   }
 
   create(): void {
@@ -54,7 +96,13 @@ export class Sketchbook extends Scene {
     this.tab = getSketchbookTab(this);
     this.loggedIn = getArena(this)?.loggedIn ?? false;
     this.build();
-    void this.loadGallery();
+    if (this.tab === 'collection') {
+      if (this.loggedIn) void this.loadCollection();
+    } else if (this.tab === 'sketchbook') {
+      if (this.loggedIn) void this.loadLegacyBook();
+    } else {
+      void this.loadGallery();
+    }
   }
 
   private async loadGallery(): Promise<void> {
@@ -63,29 +111,128 @@ export class Sketchbook extends Scene {
     this.loadingGallery = true;
     this.loadingOlderLegends = false;
     const result = await fetchLegends(null, this.getLegendPageSize());
-    if (
-      !this.scene.isActive() ||
-      requestEpoch !== this.galleryRequestEpoch
-    ) {
+    if (!this.scene.isActive() || requestEpoch !== this.galleryRequestEpoch) {
       return;
     }
     this.loadingGallery = false;
     if (!result.ok) {
-      this.showError(result.error);
+      if (this.tab === 'legends') this.showError(result.error);
       return;
     }
     this.galleryData = result.data;
     this.legendPage = 0;
+    if (this.tab === 'legends') this.build();
+  }
+
+  private async loadLegacyBook(): Promise<void> {
+    if (!this.loggedIn || this.loadingLegacy) return;
+    const requestEpoch = this.legacyRequestEpoch + 1;
+    this.legacyRequestEpoch = requestEpoch;
+    this.loadingLegacy = true;
+    this.legacyError = null;
+    if (this.tab === 'sketchbook') this.build();
+
+    const result = await fetchLegacyCards(null, LEGACY_BOOK_PAGE_SIZE);
+    if (!this.scene.isActive() || requestEpoch !== this.legacyRequestEpoch) {
+      return;
+    }
+
+    this.loadingLegacy = false;
+    if (!result.ok) {
+      this.legacyError = result.error;
+      if (this.tab === 'sketchbook') this.build();
+      return;
+    }
+    this.legacyPages = [result.data];
+    this.legacyPage = 0;
+    if (this.tab === 'sketchbook') this.build();
+  }
+
+  private async loadOlderLegacyCards(): Promise<void> {
+    if (this.loadingLegacy) return;
+    const currentPage = this.legacyPages[this.legacyPage];
+    let nextCursor = currentPage?.nextCursor ?? null;
+    if (!nextCursor) return;
+
+    const requestEpoch = this.legacyRequestEpoch;
+    this.loadingLegacy = true;
+    this.legacyError = null;
     this.build();
+    const knownIds = new Set(
+      this.legacyPages.flatMap((page) => page.cards.map((card) => card.id))
+    );
+    let nextPage: LegacyCardsState | null = null;
+
+    // Offset cursors can overlap when a new card is archived mid-browse. Follow
+    // a few duplicate-only pages so Older still advances without an open loop.
+    for (let attempt = 0; attempt < 4 && nextCursor; attempt += 1) {
+      const result = await fetchLegacyCards(nextCursor, LEGACY_BOOK_PAGE_SIZE);
+      if (!this.scene.isActive() || requestEpoch !== this.legacyRequestEpoch) {
+        return;
+      }
+      if (!result.ok) {
+        this.loadingLegacy = false;
+        this.legacyError = result.error;
+        if (this.tab === 'sketchbook') this.build();
+        return;
+      }
+
+      const uniqueCards = result.data.cards.filter((card) => {
+        if (knownIds.has(card.id)) return false;
+        knownIds.add(card.id);
+        return true;
+      });
+      nextCursor = result.data.nextCursor;
+      if (uniqueCards.length > 0 || !nextCursor) {
+        nextPage = { cards: uniqueCards, nextCursor };
+        break;
+      }
+    }
+
+    this.loadingLegacy = false;
+    if (nextPage?.cards.length) {
+      this.legacyPages.push(nextPage);
+      this.legacyPage = this.legacyPages.length - 1;
+    } else if (currentPage) {
+      this.legacyPages[this.legacyPage] = {
+        ...currentPage,
+        // If the bounded scan saw only duplicate rows, keep its advanced
+        // cursor so another Older tap can continue instead of stranding data.
+        nextCursor: nextPage?.nextCursor ?? nextCursor,
+      };
+    }
+    if (this.tab === 'sketchbook') this.build();
+  }
+
+  private async loadCollection(): Promise<void> {
+    if (!this.loggedIn || this.loadingCollection) return;
+    const requestEpoch = this.collectionRequestEpoch + 1;
+    this.collectionRequestEpoch = requestEpoch;
+    this.loadingCollection = true;
+    this.collectionError = null;
+    if (this.tab === 'collection') this.build();
+
+    const result = await fetchInventory();
+    if (
+      !this.scene.isActive() ||
+      requestEpoch !== this.collectionRequestEpoch
+    ) {
+      return;
+    }
+
+    this.loadingCollection = false;
+    if (!result.ok) {
+      this.collectionError = result.error;
+      if (this.tab === 'collection') this.build();
+      return;
+    }
+    this.inventory = result.data;
+    if (this.tab === 'collection') this.build();
   }
 
   private async loadOlderLegends(pageSize: number): Promise<void> {
     const startingCursor = this.galleryData?.nextCursor;
-    if (
-      !startingCursor ||
-      this.loadingGallery ||
-      this.loadingOlderLegends
-    ) {
+    if (!startingCursor || this.loadingGallery || this.loadingOlderLegends) {
       return;
     }
 
@@ -103,10 +250,7 @@ export class Sketchbook extends Scene {
     // Older still makes visible progress without an unbounded request loop.
     for (let attempt = 0; attempt < 4 && nextCursor; attempt += 1) {
       const result = await fetchLegends(nextCursor, pageSize);
-      if (
-        !this.scene.isActive() ||
-        requestEpoch !== this.galleryRequestEpoch
-      ) {
+      if (!this.scene.isActive() || requestEpoch !== this.galleryRequestEpoch) {
         return;
       }
       if (!result.ok) {
@@ -155,27 +299,113 @@ export class Sketchbook extends Scene {
     this.buildTabs(150);
     this.buildAppTabs();
 
+    if (this.tab === 'collection') {
+      renderCollectionBook({
+        scene: this,
+        top: 320,
+        page: this.collectionPage,
+        inventory: this.inventory,
+        loggedIn: this.loggedIn,
+        loading: this.loadingCollection,
+        errorMessage: this.collectionError,
+        onPageChange: (page) => {
+          this.collectionPage = page;
+          this.build();
+        },
+        onRetry: () => void this.loadCollection(),
+        onEquipTitle: (titleId) => this.updateEquippedTitle(titleId),
+        onInventoryChanged: () => this.build(),
+      });
+      return;
+    }
+
+    if (this.tab === 'sketchbook') {
+      const currentPage = this.legacyPages[this.legacyPage];
+      renderLegacyBook({
+        scene: this,
+        top: 320,
+        cards: currentPage?.cards ?? [],
+        page: this.legacyPage,
+        loadedPageCount: this.legacyPages.length,
+        hasOlder: currentPage?.nextCursor !== null && currentPage !== undefined,
+        loggedIn: this.loggedIn,
+        loading: this.loadingLegacy,
+        errorMessage: this.legacyError,
+        onNewer: () => {
+          this.legacyPage = Math.max(0, this.legacyPage - 1);
+          this.build();
+        },
+        onOlder: () => {
+          if (this.loadingLegacy) return;
+          if (this.legacyPage < this.legacyPages.length - 1) {
+            this.legacyPage += 1;
+            this.build();
+            return;
+          }
+          void this.loadOlderLegacyCards();
+        },
+        onRetry: () => {
+          if (this.legacyPages.length === 0) void this.loadLegacyBook();
+          else void this.loadOlderLegacyCards();
+        },
+        onPrimaryAction: (card) => this.handleLegacyPrimaryAction(card),
+      });
+      return;
+    }
+
     if (!this.galleryData) {
       const loading = stickerCard(this, width / 2, 440, width - 100, 180, {
         tapeColor: UI.tapeAlt,
       });
       loading.add(
-        label(this, 0, 0, 'Opening the community gallery…', TYPE.body, UI.inkSoft, true)
+        label(
+          this,
+          0,
+          0,
+          'Opening the community gallery…',
+          TYPE.body,
+          UI.inkSoft,
+          true
+        )
       );
       return;
     }
 
-    if (this.tab === 'legends') this.buildLegends(320);
-    else this.buildSketchbook(320);
+    this.buildLegends(320);
   }
 
   private buildAppTabs(): void {
     appTabBar(this, 'gallery', [
-      { key: 'arena', icon: '🏟️', label: 'Arena', onClick: () => fadeToScene(this, 'ArenaHome') },
-      { key: 'gallery', icon: '🏆', label: 'Gallery', onClick: () => this.switchTab('legends') },
-      { key: 'draw', icon: '✏️', label: dailyDrawTabLabel(this), onClick: () => navigateToDailyDraw(this) },
-      { key: 'battles', icon: '⚔️', label: 'Battles', onClick: () => fadeToScene(this, 'MyBattles') },
-      { key: 'scout', icon: '📖', label: 'Guide', onClick: () => fadeToScene(this, 'Bestiary') },
+      {
+        key: 'arena',
+        icon: '🏟️',
+        label: 'Arena',
+        onClick: () => fadeToScene(this, 'ArenaHome'),
+      },
+      {
+        key: 'gallery',
+        icon: '🏆',
+        label: 'Gallery',
+        onClick: () => this.switchTab('legends'),
+      },
+      {
+        key: 'draw',
+        icon: '✏️',
+        label: dailyDrawTabLabel(this),
+        onClick: () => navigateToDailyDraw(this),
+      },
+      {
+        key: 'battles',
+        icon: '⚔️',
+        label: 'Battles',
+        onClick: () => fadeToScene(this, 'MyBattles'),
+      },
+      {
+        key: 'scout',
+        icon: '📖',
+        label: 'Guide',
+        onClick: () => fadeToScene(this, 'Bestiary'),
+      },
     ]);
   }
 
@@ -191,35 +421,84 @@ export class Sketchbook extends Scene {
     bg.lineStyle(4, UI.inkHex, 1);
     bg.strokeRoundedRect(-controlW / 2, -controlH / 2, controlW, controlH, 18);
 
-    const activeX = this.tab === 'legends' ? -controlW / 4 : controlW / 4;
+    const tabDefinitions: Array<{ tab: SketchbookTab; text: string }> = [
+      { tab: 'legends', text: 'Legends' },
+      { tab: 'sketchbook', text: 'Legacy Book' },
+      { tab: 'collection', text: 'Collection' },
+    ];
+    const segmentWidth = controlW / tabDefinitions.length;
+    const controlLeft = -controlW / 2;
+    const activeIndex = tabDefinitions.findIndex(({ tab }) => tab === this.tab);
+    const activeX = controlLeft + segmentWidth * (activeIndex + 0.5);
     const active = this.add.graphics();
     active.fillStyle(UI.inkHex, 1);
-    active.fillRoundedRect(activeX - controlW / 4 + 6, -controlH / 2 + 6, controlW / 2 - 12, controlH - 12, 14);
+    active.fillRoundedRect(
+      activeX - segmentWidth / 2 + 6,
+      -controlH / 2 + 6,
+      segmentWidth - 12,
+      controlH - 12,
+      14
+    );
 
-    const divider = this.add.rectangle(0, 0, 3, controlH - 18, UI.inkHex, 0.18);
-    const legendsColor = this.tab === 'legends' ? UI.cream : UI.ink;
-    const sketchColor = this.tab === 'sketchbook' ? UI.cream : UI.ink;
-    const legends = label(this, -controlW / 4, 0, 'Legends', 23, legendsColor, true);
-    const sketchbook = label(this, controlW / 4, 0, 'Sketchbook', 23, sketchColor, true);
+    const dividers = [1, 2].map((dividerIndex) =>
+      this.add.rectangle(
+        controlLeft + segmentWidth * dividerIndex,
+        0,
+        3,
+        controlH - 18,
+        UI.inkHex,
+        0.18
+      )
+    );
+    const tabLabels = tabDefinitions.map(({ tab, text }, index) =>
+      label(
+        this,
+        controlLeft + segmentWidth * (index + 0.5),
+        0,
+        text,
+        20,
+        this.tab === tab ? UI.cream : UI.ink,
+        true
+      )
+    );
+    const tabHits = tabDefinitions.map(({ tab }, index) => {
+      const hit = this.add
+        .rectangle(
+          controlLeft + segmentWidth * (index + 0.5),
+          0,
+          segmentWidth,
+          controlH,
+          0xffffff,
+          0.001
+        )
+        .setInteractive({ useHandCursor: true });
+      hit.on('pointerup', () => this.switchTab(tab));
+      return hit;
+    });
 
-    const legendsHit = this.add
-      .rectangle(-controlW / 4, 0, controlW / 2, controlH, 0xffffff, 0.001)
-      .setInteractive({ useHandCursor: true });
-    const sketchHit = this.add
-      .rectangle(controlW / 4, 0, controlW / 2, controlH, 0xffffff, 0.001)
-      .setInteractive({ useHandCursor: true });
-    legendsHit.on('pointerup', () => this.switchTab('legends'));
-    sketchHit.on('pointerup', () => this.switchTab('sketchbook'));
-
-    tabs.add([bg, active, divider, legends, sketchbook, legendsHit, sketchHit]);
+    tabs.add([bg, active, ...dividers, ...tabLabels, ...tabHits]);
   }
 
-  private switchTab(tab: Tab): void {
+  private switchTab(tab: SketchbookTab): void {
     this.tab = tab;
     if (tab === 'legends') this.legendPage = 0;
-    else this.fadedPage = 0;
+    else if (tab === 'sketchbook') this.legacyPage = 0;
+    else this.collectionPage = 0;
     setSketchbookTab(this, tab);
     this.build();
+    if (tab === 'collection') {
+      if (this.loggedIn && !this.inventory) void this.loadCollection();
+    } else if (tab === 'sketchbook') {
+      if (
+        this.loggedIn &&
+        this.legacyPages.length === 0 &&
+        !this.loadingLegacy
+      ) {
+        void this.loadLegacyBook();
+      }
+    } else if (!this.galleryData && !this.loadingGallery) {
+      void this.loadGallery();
+    }
   }
 
   private buildPageControls(
@@ -242,10 +521,17 @@ export class Sketchbook extends Scene {
       true
     );
     if (page > 0) {
-      ghostButton(this, width / 2 - 210, y, '← Newer', () => {
-        changePage(page - 1);
-        this.build();
-      }, 150);
+      ghostButton(
+        this,
+        width / 2 - 210,
+        y,
+        '← Newer',
+        () => {
+          changePage(page - 1);
+          this.build();
+        },
+        150
+      );
     }
     if (page < totalPages - 1 || hasMore) {
       ghostButton(
@@ -289,12 +575,30 @@ export class Sketchbook extends Scene {
     const { width } = this.scale;
     const legends = this.galleryData?.legends ?? [];
     if (legends.length === 0) {
-      const card = stickerCard(this, width / 2, 560, width - 80, 220, { gold: true, tilt: -0.6 });
+      const card = stickerCard(this, width / 2, 560, width - 80, 220, {
+        gold: true,
+        tilt: -0.6,
+      });
       const trophy = label(this, 0, -40, '🏆', 48, UI.ink);
       card.add(trophy);
-      this.tweens.add({ targets: trophy, y: trophy.y - 6, duration: 900, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+      this.tweens.add({
+        targets: trophy,
+        y: trophy.y - 6,
+        duration: 900,
+        yoyo: true,
+        repeat: -1,
+        ease: 'Sine.easeInOut',
+      });
       card.add(
-        label(this, 0, 30, 'No legends yet!\nWin the rumble or reach 25 belief to be immortalized!', TYPE.body, UI.inkSoft, true).setLineSpacing(8)
+        label(
+          this,
+          0,
+          30,
+          'No legends yet!\nWin the rumble or reach 25 belief to be immortalized!',
+          TYPE.body,
+          UI.inkSoft,
+          true
+        ).setLineSpacing(8)
       );
       return;
     }
@@ -339,7 +643,13 @@ export class Sketchbook extends Scene {
       img.setInteractive({ useHandCursor: true });
       img.on('pointerup', () => this.openDetail(legend));
     });
-    levelBadge(this, x + cardWidth / 2 - 34, top + 34, levelOf(legend), 0.56).setDepth(4);
+    levelBadge(
+      this,
+      x + cardWidth / 2 - 34,
+      top + 34,
+      levelOf(legend),
+      0.56
+    ).setDepth(4);
 
     // Text block — tight rows, comfortably above the button.
     label(this, x, artY + 78, legend.name.toUpperCase(), 32, UI.ink, true)
@@ -351,93 +661,88 @@ export class Sketchbook extends Scene {
         .setOrigin(0.5, 0)
         .setWordWrapWidth(cardWidth - 40);
     }
-    label(this, x, artY + 176, `by u/${legend.artist} · 💛 ${legend.belief}`, 20, UI.inkSoft, true).setDepth(3);
+    label(
+      this,
+      x,
+      artY + 176,
+      `by u/${legend.artist} · 💛 ${legend.belief}`,
+      20,
+      UI.inkSoft,
+      true
+    ).setDepth(3);
 
     // "View + Believe" opens the shared modal (believe lives inside it).
-    ghostButton(this, x, y + cardHeight / 2 - 44, '💛 View', () => this.openDetail(legend), 200).setDepth(3);
+    ghostButton(
+      this,
+      x,
+      y + cardHeight / 2 - 44,
+      '💛 View',
+      () => this.openDetail(legend),
+      200
+    ).setDepth(3);
   }
 
-  // Open the reusable detail modal for a scribbit. Legends/faded are never the
-  // caller's live roster, so mine=false → Believe is offered inside the modal.
+  // Community terminal records are inspectable, but Belief freezes when a
+  // Scribbit leaves the active roster. Only a future alive gallery surface may
+  // opt into Believe here.
   private openDetail(scribbit: Scribbit): void {
     const arena = getArena(this);
     const mine = arena?.myUsername === scribbit.artist;
     openDetailModal(this, scribbit, {
       currentDay: arena?.dayNumber ?? scribbit.expiresDay,
       mine,
-      actions: mine ? {} : { canBelieve: this.loggedIn },
+      actions:
+        mine || scribbit.status !== 'alive'
+          ? {}
+          : { canBelieve: this.loggedIn },
       onRemoved: () => void this.loadGallery(),
       onReported: () => void this.loadGallery(),
     });
   }
 
-  // --- Sketchbook (faded) ---------------------------------------------------
-  private buildSketchbook(top: number): void {
-    const { width } = this.scale;
-    const faded = this.galleryData?.myFaded ?? [];
-    if (faded.length === 0) {
-      const card = stickerCard(this, width / 2, 560, width - 80, 220, { tilt: 0.5 });
-      const book = label(this, 0, -40, '📖', 48, UI.ink);
-      card.add(book);
-      this.tweens.add({ targets: book, angle: { from: -3, to: 3 }, duration: 1500, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
-      card.add(
-        label(this, 0, 30, 'Your sketchbook awaits...\nScribbits that fade will rest here as memories.', TYPE.body, UI.inkSoft, true).setLineSpacing(8)
-      );
+  // --- Actions --------------------------------------------------------------
+  private async updateEquippedTitle(
+    titleId: string | null
+  ): Promise<string | null> {
+    if (!this.inventory) return 'Your title collection is still syncing.';
+    const previousInventory = this.inventory;
+    this.inventory = { ...previousInventory, equippedTitle: titleId };
+
+    const result = await saveEquippedTitle(titleId);
+    if (!result.ok) {
+      this.inventory = previousInventory;
+      return result.error;
+    }
+    this.inventory = result.data;
+    return null;
+  }
+
+  private handleLegacyPrimaryAction(card: LegacyCard): void {
+    if (card.legacy.finish === 'faded') {
+      navigateToDailyDraw(this);
       return;
     }
-    const visibleRows = Math.max(1, Math.floor((this.scale.height - NAV_SAFE - top - 160) / 200) + 1);
-    const totalPages = Math.ceil(faded.length / visibleRows);
-    this.fadedPage = Math.min(this.fadedPage, totalPages - 1);
-    this.buildPageControls(
-      totalPages,
-      top - 80,
-      this.fadedPage,
-      (page) => {
-        this.fadedPage = page;
-      }
-    );
-    const start = this.fadedPage * visibleRows;
-    faded.slice(start, start + visibleRows).forEach((scribbit, index) => {
-      const y = top + 80 + index * 200;
-      this.buildFadedRow(scribbit, y);
-    });
+    this.switchTab('legends');
   }
 
-  private buildFadedRow(scribbit: Scribbit, y: number): void {
-    const { width } = this.scale;
-    // Faded drawing on the left, eulogy on the right.
-    paperCard(this, 130, y, 160, 160);
-    const generation = this.buildGeneration;
-    void loadDrawing(this, scribbit).then((key) => {
-      if (!this.isCurrentBuild(generation)) return;
-      const img = fitDrawing(this.add.image(130, y, key), 130).setAlpha(0.65).setDepth(2);
-      img.setInteractive({ useHandCursor: true });
-      img.on('pointerup', () => this.openDetail(scribbit));
-    });
-    label(this, 240, y - 50, scribbit.name, TYPE.title, UI.ink, true).setOrigin(0, 0.5);
-    elementBadge(this, 300, y - 8, scribbit.element, 0.7).setPosition(300, y - 8);
-    const eulogy = label(
-      this,
-      240,
-      y + 44,
-      `Fought bravely. ${recordText(scribbit)}. Faded Day ${scribbit.expiresDay}.`,
-      TYPE.body,
-      UI.inkSoft,
-      false
-    ).setOrigin(0, 0.5);
-    eulogy.setWordWrapWidth(width - 280);
-  }
-
-  // --- Actions --------------------------------------------------------------
-  private showError(message: string, retry = (): void => {
-    void this.loadGallery();
-  }): void {
+  private showError(
+    message: string,
+    retry = (): void => {
+      void this.loadGallery();
+    }
+  ): void {
     if (this.errorPanelRef) return;
     const { width, height } = this.scale;
-    this.errorPanelRef = errorPanel(this, width / 2, height / 2, message, () => {
-      this.errorPanelRef?.destroy();
-      this.errorPanelRef = null;
-      retry();
-    });
+    this.errorPanelRef = errorPanel(
+      this,
+      width / 2,
+      height / 2,
+      message,
+      () => {
+        this.errorPanelRef?.destroy();
+        this.errorPanelRef = null;
+        retry();
+      }
+    );
   }
 }

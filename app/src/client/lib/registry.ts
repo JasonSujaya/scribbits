@@ -9,6 +9,9 @@ const REPLAY_KEY = 'replayReport';
 const REPLAY_RETURN_KEY = 'replayReturn';
 const SKETCHBOOK_TAB_KEY = 'sketchbookTab';
 
+export type SketchbookTab = 'legends' | 'sketchbook' | 'collection';
+export type ReplayReturnScene = 'ArenaHome' | 'Sketchbook';
+
 export function setArena(scene: Scene, state: ArenaState): void {
   scene.registry.set(ARENA_KEY, state);
 }
@@ -21,7 +24,7 @@ export function getArena(scene: Scene): ArenaState | undefined {
 export function setReplay(
   scene: Scene,
   report: BattleReport,
-  returnScene: 'ArenaHome' = 'ArenaHome'
+  returnScene: ReplayReturnScene = 'ArenaHome'
 ): void {
   scene.registry.set(REPLAY_KEY, report);
   scene.registry.set(REPLAY_RETURN_KEY, returnScene);
@@ -31,8 +34,11 @@ export function getReplay(scene: Scene): BattleReport | undefined {
   return scene.registry.get(REPLAY_KEY) as BattleReport | undefined;
 }
 
-export function getReplayReturn(scene: Scene): string {
-  return (scene.registry.get(REPLAY_RETURN_KEY) as string | undefined) ?? 'ArenaHome';
+export function getReplayReturn(scene: Scene): ReplayReturnScene {
+  return (
+    (scene.registry.get(REPLAY_RETURN_KEY) as ReplayReturnScene | undefined) ??
+    'ArenaHome'
+  );
 }
 
 // Deep-link focus for ArenaHome (e.g. the loss card asks to scroll to the
@@ -42,18 +48,19 @@ export function setArenaFocus(scene: Scene, focus: 'entrants'): void {
 }
 
 export function takeArenaFocus(scene: Scene): string | null {
-  const value = (scene.registry.get('arenaFocus') as string | undefined) ?? null;
+  const value =
+    (scene.registry.get('arenaFocus') as string | undefined) ?? null;
   if (value) scene.registry.remove('arenaFocus');
   return value;
 }
 
-export function setSketchbookTab(scene: Scene, tab: 'legends' | 'sketchbook'): void {
+export function setSketchbookTab(scene: Scene, tab: SketchbookTab): void {
   scene.registry.set(SKETCHBOOK_TAB_KEY, tab);
 }
 
-export function getSketchbookTab(scene: Scene): 'legends' | 'sketchbook' {
+export function getSketchbookTab(scene: Scene): SketchbookTab {
   return (
-    (scene.registry.get(SKETCHBOOK_TAB_KEY) as 'legends' | 'sketchbook' | undefined) ??
+    (scene.registry.get(SKETCHBOOK_TAB_KEY) as SketchbookTab | undefined) ??
     'legends'
   );
 }
@@ -65,7 +72,10 @@ export function findMyScribbit(scene: Scene, id: string): Scribbit | undefined {
 
 // Find any scribbit visible in the current snapshot — roster, champion, or
 // tonight's entrants — by id. Used so the detail modal can refresh from state.
-export function findAnyScribbit(scene: Scene, id: string): Scribbit | undefined {
+export function findAnyScribbit(
+  scene: Scene,
+  id: string
+): Scribbit | undefined {
   const arena = getArena(scene);
   if (!arena) return undefined;
   if (arena.champion?.id === id) return arena.champion;

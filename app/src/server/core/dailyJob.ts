@@ -1,6 +1,10 @@
-import type { Forecast, Scribbit } from '../../shared/arena';
+import type {
+  Forecast,
+  LegacyCosmeticSnapshot,
+  Scribbit,
+} from '../../shared/arena';
 import { INK_REWARDS } from '../../shared/arena';
-import { saveBattleReport } from './battleStore';
+import { saveBattleReport, setFeaturedRumbleReport } from './battleStore';
 import {
   ensureCurrentArenaDay,
   ensureForecastForDay,
@@ -13,19 +17,20 @@ import type { CloutPayoutResult } from './clout';
 import { getArenaDayNumber } from './day';
 import {
   claimInkReward,
+  getInventoryKey,
   getRumbleWinInkPayoutKey,
+  loadInventory,
 } from './inkStore';
+import { findInkCatalogEntry } from './ink';
 import { resolveSwissRumble } from './rumble';
 import type { ArenaStorage } from './scribbit';
 import {
-  addXpToScribbit,
   crownScribbit,
   expireDueScribbits,
   getRumbleEntrantIds,
   getScribbitOwner,
-  loadScribbit,
   loadScribbits,
-  updateScribbit,
+  recordRumbleStandingOnScribbit,
 } from './scribbit';
 
 const rumbleWinXp = 2;
@@ -109,11 +114,9 @@ const claimArenaDayResolution = async (
     // hSetNX, so only one of several rescuers can take over.
     await storage.hDel(nightlyClaimKey, [field]);
   }
-  return (await storage.hSetNX(
-    nightlyClaimKey,
-    field,
-    claimedAtMs.toString()
-  )) === 1;
+  return (
+    (await storage.hSetNX(nightlyClaimKey, field, claimedAtMs.toString())) === 1
+  );
 };
 
 const releaseArenaDayResolution = async (
@@ -161,7 +164,9 @@ export const loadPendingArenaResolutions = async (
   const pending = await storage.hGetAll(resolutionOutboxKey);
   return Object.values(pending)
     .map(parseResolvedArenaDay)
-    .filter((resolution): resolution is ResolvedArenaDay => resolution !== undefined)
+    .filter(
+      (resolution): resolution is ResolvedArenaDay => resolution !== undefined
+    )
     .sort((left, right) => left.resolvedDay - right.resolvedDay);
 };
 
@@ -191,23 +196,16 @@ const applyRumbleStandingsToStoredScribbits = async (
       continue;
     }
 
-    const storedScribbit = await loadScribbit(storage, standing.scribbit.id);
-
-    if (!storedScribbit) {
-      continue;
-    }
-
-    await updateScribbit(
+    const storedScribbit = await recordRumbleStandingOnScribbit(
       storage,
-      addXpToScribbit(
-        {
-          ...storedScribbit,
-          wins: storedScribbit.wins + standing.wins,
-          losses: storedScribbit.losses + standing.losses,
-        },
-        standing.wins * rumbleWinXp
-      )
+      standing.scribbit.id,
+      resolvedDay,
+      standing.wins,
+      standing.losses,
+      standing.wins * rumbleWinXp
     );
+
+    if (!storedScribbit) continue;
 
     if (standing.wins > 0) {
       const ownerUserId = await getScribbitOwner(storage, standing.scribbit.id);
@@ -264,7 +262,11 @@ const resolveArenaDay = async (
   const resolvedForecast = await ensureForecastForDay(storage, resolvedDay);
   const entrantIds = await getRumbleEntrantIds(storage, resolvedDay);
   const entrants = await loadScribbits(storage, entrantIds);
-  const resolution = resolveSwissRumble(entrants, resolvedForecast, resolvedDay);
+  const resolution = resolveSwissRumble(
+    entrants,
+    resolvedForecast,
+    resolvedDay
+  );
 
   await applyRumbleStandingsToStoredScribbits(
     storage,
@@ -282,6 +284,7 @@ const resolveArenaDay = async (
         report,
         getBattleScore(nextDay, index, resolution.reports.length)
       );
+      await setFeaturedRumbleReport(storage, report, index);
     }
   }
 
@@ -299,7 +302,22 @@ const resolveArenaDay = async (
     paidAtMs,
   });
 
-  const expired = await expireDueScribbits(storage, nextDay);
+  const expired = await expireDueScribbits(storage, nextDay, {
+    getCreatorTitleWatchKey: getInventoryKey,
+    getCreatorTitle: async (ownerUserId) => {
+      // This is intentionally re-read on every WATCH retry so a concurrent
+      // equip change cannot be hidden behind a cached promise.
+      const inventory = await loadInventory(storage, ownerUserId);
+      if (!inventory.equippedTitle) return null;
+      const entry = findInkCatalogEntry(inventory.equippedTitle);
+      if (!entry || entry.kind !== 'title') return null;
+      return {
+        id: entry.id,
+        name: entry.name,
+        rarity: entry.rarity,
+      } satisfies LegacyCosmeticSnapshot;
+    },
+  });
   const nextForecast = await ensureForecastForDay(storage, nextDay);
   const resolvedArenaDay: ResolvedArenaDay = {
     resolvedDay,
@@ -377,11 +395,7 @@ export const runNightlyArenaJob = async (
         throw new Error(`Arena day ${resolvedDay} is already being resolved.`);
       }
       try {
-        resolution = await resolveArenaDay(
-          storage,
-          resolvedDay,
-          now.getTime()
-        );
+        resolution = await resolveArenaDay(storage, resolvedDay, now.getTime());
       } catch (error) {
         await releaseArenaDayResolution(storage, resolvedDay);
         throw error;

@@ -10,7 +10,11 @@
 // authored in a local 100x100 unit box centered on (50,50); both renderers scale
 // that box to the requested size, so placement math stays identical everywhere.
 
-import * as Phaser from 'phaser';
+import type * as Phaser from 'phaser';
+import {
+  ACCESSORY_CATALOG_ENTRIES,
+  findAccessoryCosmetic,
+} from '../../shared/cosmetics';
 
 const INK = '#2b2016';
 const INK_HEX = 0x2b2016;
@@ -24,28 +28,46 @@ export type DoodlePen = {
   stroke: (width: number, color: string) => void;
   fill: (color: string) => void;
   line: (x1: number, y1: number, x2: number, y2: number) => void;
-  poly: (points: Array<[number, number]>, close: boolean, filled: boolean) => void;
+  poly: (
+    points: Array<[number, number]>,
+    close: boolean,
+    filled: boolean
+  ) => void;
   circle: (x: number, y: number, r: number, filled: boolean) => void;
   arc: (x: number, y: number, r: number, from: number, to: number) => void;
 };
 
-// The catalog: id -> { display label, doodle painter }. Ids mirror the mock's
-// accessoryCatalogIds so ownership/consumption line up with the server.
-type AccessoryDef = { label: string; paint: (pen: DoodlePen) => void };
+type AccessoryPaintDefinition = { paint: (pen: DoodlePen) => void };
+type AccessoryDef = AccessoryPaintDefinition & { label: string };
 
 // Convenience: a wobbly-ink outline color + weight used by most pieces.
 function outline(pen: DoodlePen, weight = 5): void {
   pen.stroke(weight, INK);
 }
 
-export const ACCESSORY_CATALOG: Record<string, AccessoryDef> = {
+const ACCESSORY_PAINT_BY_ID: Record<string, AccessoryPaintDefinition> = {
   bowtie: {
-    label: 'Bowtie',
     paint: (pen) => {
       pen.fill('#ff6b4a');
       outline(pen);
-      pen.poly([[50, 50], [18, 32], [18, 68]], true, true);
-      pen.poly([[50, 50], [82, 32], [82, 68]], true, true);
+      pen.poly(
+        [
+          [50, 50],
+          [18, 32],
+          [18, 68],
+        ],
+        true,
+        true
+      );
+      pen.poly(
+        [
+          [50, 50],
+          [82, 32],
+          [82, 68],
+        ],
+        true,
+        true
+      );
       pen.fill('#e0512f');
       pen.circle(50, 50, 9, true);
       outline(pen);
@@ -53,7 +75,6 @@ export const ACCESSORY_CATALOG: Record<string, AccessoryDef> = {
     },
   },
   'flower-crown': {
-    label: 'Flower Crown',
     paint: (pen) => {
       const petals: Array<[number, number, string]> = [
         [22, 40, '#ff8fae'],
@@ -74,7 +95,6 @@ export const ACCESSORY_CATALOG: Record<string, AccessoryDef> = {
     },
   },
   monocle: {
-    label: 'Monocle',
     paint: (pen) => {
       pen.stroke(5, INK);
       pen.circle(45, 45, 22, false);
@@ -86,14 +106,22 @@ export const ACCESSORY_CATALOG: Record<string, AccessoryDef> = {
     },
   },
   beanie: {
-    label: 'Beanie',
     paint: (pen) => {
       pen.fill('#4faa4f');
       pen.arc(50, 56, 34, Math.PI, Math.PI * 2);
       outline(pen);
       pen.arc(50, 56, 34, Math.PI, Math.PI * 2);
       pen.fill('#3a7f3a');
-      pen.poly([[16, 56], [84, 56], [84, 66], [16, 66]], true, true);
+      pen.poly(
+        [
+          [16, 56],
+          [84, 56],
+          [84, 66],
+          [16, 66],
+        ],
+        true,
+        true
+      );
       pen.fill('#ffd447');
       pen.circle(50, 22, 8, true);
       outline(pen, 4);
@@ -101,7 +129,6 @@ export const ACCESSORY_CATALOG: Record<string, AccessoryDef> = {
     },
   },
   'round-glasses': {
-    label: 'Round Glasses',
     paint: (pen) => {
       pen.stroke(5, INK);
       pen.fill('#bfe3f2');
@@ -115,22 +142,58 @@ export const ACCESSORY_CATALOG: Record<string, AccessoryDef> = {
     },
   },
   'tiny-sword': {
-    label: 'Tiny Sword',
     paint: (pen) => {
       pen.fill('#d8dde6');
-      pen.poly([[50, 8], [56, 20], [56, 64], [44, 64], [44, 20]], true, true);
+      pen.poly(
+        [
+          [50, 8],
+          [56, 20],
+          [56, 64],
+          [44, 64],
+          [44, 20],
+        ],
+        true,
+        true
+      );
       outline(pen, 4);
-      pen.poly([[50, 8], [56, 20], [56, 64], [44, 64], [44, 20]], true, false);
+      pen.poly(
+        [
+          [50, 8],
+          [56, 20],
+          [56, 64],
+          [44, 64],
+          [44, 20],
+        ],
+        true,
+        false
+      );
       pen.fill('#ffd447');
-      pen.poly([[32, 64], [68, 64], [68, 72], [32, 72]], true, true);
+      pen.poly(
+        [
+          [32, 64],
+          [68, 64],
+          [68, 72],
+          [32, 72],
+        ],
+        true,
+        true
+      );
       outline(pen, 4);
       pen.fill('#8a5a2b');
-      pen.poly([[45, 72], [55, 72], [55, 92], [45, 92]], true, true);
+      pen.poly(
+        [
+          [45, 72],
+          [55, 72],
+          [55, 92],
+          [45, 92],
+        ],
+        true,
+        true
+      );
       outline(pen, 4);
     },
   },
   'snail-shell-backpack': {
-    label: 'Snail Shell Backpack',
     paint: (pen) => {
       pen.fill('#ff9a5a');
       pen.circle(50, 50, 34, true);
@@ -154,12 +217,27 @@ export const ACCESSORY_CATALOG: Record<string, AccessoryDef> = {
     },
   },
   'party-hat': {
-    label: 'Party Hat',
     paint: (pen) => {
       pen.fill('#8a5cd8');
-      pen.poly([[50, 10], [26, 78], [74, 78]], true, true);
+      pen.poly(
+        [
+          [50, 10],
+          [26, 78],
+          [74, 78],
+        ],
+        true,
+        true
+      );
       outline(pen);
-      pen.poly([[50, 10], [26, 78], [74, 78]], true, false);
+      pen.poly(
+        [
+          [50, 10],
+          [26, 78],
+          [74, 78],
+        ],
+        true,
+        false
+      );
       pen.fill('#ffd447');
       pen.circle(50, 12, 7, true);
       outline(pen, 4);
@@ -173,7 +251,6 @@ export const ACCESSORY_CATALOG: Record<string, AccessoryDef> = {
     },
   },
   mustache: {
-    label: 'Mustache',
     paint: (pen) => {
       pen.fill(INK);
       pen.poly(
@@ -195,22 +272,58 @@ export const ACCESSORY_CATALOG: Record<string, AccessoryDef> = {
     },
   },
   'top-hat': {
-    label: 'Top Hat',
     paint: (pen) => {
       pen.fill(INK);
-      pen.poly([[30, 16], [70, 16], [70, 60], [30, 60]], true, true);
-      pen.poly([[14, 60], [86, 60], [86, 70], [14, 70]], true, true);
+      pen.poly(
+        [
+          [30, 16],
+          [70, 16],
+          [70, 60],
+          [30, 60],
+        ],
+        true,
+        true
+      );
+      pen.poly(
+        [
+          [14, 60],
+          [86, 60],
+          [86, 70],
+          [14, 70],
+        ],
+        true,
+        true
+      );
       pen.stroke(5, '#e0512f');
       pen.line(30, 52, 70, 52);
     },
   },
   cape: {
-    label: 'Cape',
     paint: (pen) => {
       pen.fill('#8a1f3d');
-      pen.poly([[28, 18], [72, 18], [86, 88], [50, 78], [14, 88]], true, true);
+      pen.poly(
+        [
+          [28, 18],
+          [72, 18],
+          [86, 88],
+          [50, 78],
+          [14, 88],
+        ],
+        true,
+        true
+      );
       outline(pen);
-      pen.poly([[28, 18], [72, 18], [86, 88], [50, 78], [14, 88]], true, false);
+      pen.poly(
+        [
+          [28, 18],
+          [72, 18],
+          [86, 88],
+          [50, 78],
+          [14, 88],
+        ],
+        true,
+        false
+      );
       pen.fill('#ffd447');
       pen.circle(36, 22, 6, true);
       pen.circle(64, 22, 6, true);
@@ -219,23 +332,66 @@ export const ACCESSORY_CATALOG: Record<string, AccessoryDef> = {
     },
   },
   headphones: {
-    label: 'Headphones',
     paint: (pen) => {
       pen.stroke(7, INK);
       pen.arc(50, 50, 34, Math.PI, Math.PI * 2);
       pen.fill('#ff6b4a');
-      pen.poly([[10, 46], [26, 46], [26, 74], [10, 74]], true, true);
-      pen.poly([[74, 46], [90, 46], [90, 74], [74, 74]], true, true);
+      pen.poly(
+        [
+          [10, 46],
+          [26, 46],
+          [26, 74],
+          [10, 74],
+        ],
+        true,
+        true
+      );
+      pen.poly(
+        [
+          [74, 46],
+          [90, 46],
+          [90, 74],
+          [74, 74],
+        ],
+        true,
+        true
+      );
       outline(pen, 4);
-      pen.poly([[10, 46], [26, 46], [26, 74], [10, 74]], true, false);
-      pen.poly([[74, 46], [90, 46], [90, 74], [74, 74]], true, false);
+      pen.poly(
+        [
+          [10, 46],
+          [26, 46],
+          [26, 74],
+          [10, 74],
+        ],
+        true,
+        false
+      );
+      pen.poly(
+        [
+          [74, 46],
+          [90, 46],
+          [90, 74],
+          [74, 74],
+        ],
+        true,
+        false
+      );
     },
   },
   'eyepatch-scar': {
-    label: 'Eyepatch',
     paint: (pen) => {
       pen.fill(INK);
-      pen.poly([[30, 34], [70, 34], [66, 64], [34, 64]], true, true);
+      pen.poly(
+        [
+          [30, 34],
+          [70, 34],
+          [66, 64],
+          [34, 64],
+        ],
+        true,
+        true
+      );
       pen.stroke(4, INK);
       pen.line(20, 30, 80, 40);
       // A little scar mark.
@@ -245,26 +401,49 @@ export const ACCESSORY_CATALOG: Record<string, AccessoryDef> = {
     },
   },
   'propeller-cap': {
-    label: 'Propeller Cap',
     paint: (pen) => {
       pen.fill('#3ba0e0');
       pen.arc(50, 60, 30, Math.PI, Math.PI * 2);
       outline(pen);
       pen.arc(50, 60, 30, Math.PI, Math.PI * 2);
       pen.fill('#ffd447');
-      pen.poly([[20, 60], [80, 60], [80, 68], [20, 68]], true, true);
+      pen.poly(
+        [
+          [20, 60],
+          [80, 60],
+          [80, 68],
+          [20, 68],
+        ],
+        true,
+        true
+      );
       pen.stroke(5, INK);
       pen.line(50, 30, 50, 16);
       pen.fill('#ff6b4a');
-      pen.poly([[50, 16], [24, 10], [50, 20]], true, true);
+      pen.poly(
+        [
+          [50, 16],
+          [24, 10],
+          [50, 20],
+        ],
+        true,
+        true
+      );
       pen.fill('#4faa4f');
-      pen.poly([[50, 16], [76, 10], [50, 20]], true, true);
+      pen.poly(
+        [
+          [50, 16],
+          [76, 10],
+          [50, 20],
+        ],
+        true,
+        true
+      );
       pen.fill(INK);
       pen.circle(50, 16, 4, true);
     },
   },
   'golden-crown': {
-    label: 'Golden Crown',
     paint: (pen) => {
       pen.fill('#ffd447');
       pen.poly(
@@ -306,16 +485,59 @@ export const ACCESSORY_CATALOG: Record<string, AccessoryDef> = {
     },
   },
   'dragon-wings': {
-    label: 'Dragon Wings',
     paint: (pen) => {
       pen.fill('#8a5cd8');
       // Left wing.
-      pen.poly([[50, 50], [8, 24], [16, 48], [4, 56], [22, 62], [50, 70]], true, true);
+      pen.poly(
+        [
+          [50, 50],
+          [8, 24],
+          [16, 48],
+          [4, 56],
+          [22, 62],
+          [50, 70],
+        ],
+        true,
+        true
+      );
       // Right wing.
-      pen.poly([[50, 50], [92, 24], [84, 48], [96, 56], [78, 62], [50, 70]], true, true);
+      pen.poly(
+        [
+          [50, 50],
+          [92, 24],
+          [84, 48],
+          [96, 56],
+          [78, 62],
+          [50, 70],
+        ],
+        true,
+        true
+      );
       pen.stroke(4, INK);
-      pen.poly([[50, 50], [8, 24], [16, 48], [4, 56], [22, 62], [50, 70]], true, false);
-      pen.poly([[50, 50], [92, 24], [84, 48], [96, 56], [78, 62], [50, 70]], true, false);
+      pen.poly(
+        [
+          [50, 50],
+          [8, 24],
+          [16, 48],
+          [4, 56],
+          [22, 62],
+          [50, 70],
+        ],
+        true,
+        false
+      );
+      pen.poly(
+        [
+          [50, 50],
+          [92, 24],
+          [84, 48],
+          [96, 56],
+          [78, 62],
+          [50, 70],
+        ],
+        true,
+        false
+      );
       pen.line(50, 52, 20, 34);
       pen.line(50, 58, 18, 52);
       pen.line(50, 52, 80, 34);
@@ -324,12 +546,32 @@ export const ACCESSORY_CATALOG: Record<string, AccessoryDef> = {
   },
 };
 
+const buildAccessoryCatalog = (): Record<string, AccessoryDef> => {
+  const catalog: Record<string, AccessoryDef> = {};
+
+  for (const metadata of ACCESSORY_CATALOG_ENTRIES) {
+    const paintDefinition = ACCESSORY_PAINT_BY_ID[metadata.id];
+    if (paintDefinition) {
+      catalog[metadata.id] = {
+        label: metadata.label,
+        paint: paintDefinition.paint,
+      };
+    }
+  }
+
+  return catalog;
+};
+
+// Backward-compatible client catalog: shared labels joined to client-only paint.
+export const ACCESSORY_CATALOG: Record<string, AccessoryDef> =
+  buildAccessoryCatalog();
+
 export function accessoryLabel(id: string): string {
-  return ACCESSORY_CATALOG[id]?.label ?? id;
+  return findAccessoryCosmetic(id)?.label ?? id;
 }
 
 export function isKnownAccessory(id: string): boolean {
-  return id in ACCESSORY_CATALOG;
+  return findAccessoryCosmetic(id) !== undefined;
 }
 
 // --- Phaser Graphics renderer ----------------------------------------------
@@ -364,7 +606,10 @@ export function drawAccessoryGraphics(
       graphics.strokePath();
     },
     poly: (points, close, filled) => {
-      const vecs = points.map(([x, y]) => new Phaser.Math.Vector2(tx(x), ty(y)));
+      const vecs = points.map(([x, y]) => ({
+        x: tx(x),
+        y: ty(y),
+      })) as Phaser.Math.Vector2[];
       if (filled) graphics.fillPoints(vecs, close);
       else graphics.strokePoints(vecs, close);
     },

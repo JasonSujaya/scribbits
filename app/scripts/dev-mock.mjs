@@ -5,6 +5,7 @@ import { existsSync, readFileSync, watch } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { dirname, extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import ts from 'typescript';
 
 const port = Number(process.env.PORT ?? 8902);
 const autoReload = process.env.MOCK_AUTO_RELOAD !== '0';
@@ -16,26 +17,15 @@ const transparentPng = Buffer.from(
   'base64'
 );
 
-// Real, NON-SQUARE drawing PNGs so the harness reproduces production textures
-// (portrait/landscape network PNGs) instead of the old 1x1 transparent stub.
-// Rotated by a stable hash of the requested id so every scribbit is consistent.
-const mockDrawingFiles = ['drawing-tall.png', 'drawing-wide.png', 'drawing-square.png'];
+// Transparent, non-square drawings whose silhouette matches each Scribbit's
+// dominant stat and therefore its primary combat power.
+const mockDrawingFileByDominantStat = Object.freeze({
+  chonk: 'drawing-chonk-inkquake.png',
+  spike: 'drawing-spike-nib-halo.png',
+  zip: 'drawing-zip-smearstep.png',
+  charm: 'drawing-charm-colorburst.png',
+});
 const submittedDrawingBytes = new Map();
-const hashId = (id) => {
-  let hash = 0;
-  for (let index = 0; index < id.length; index += 1) {
-    hash = (hash * 31 + id.charCodeAt(index)) & 0x7fffffff;
-  }
-  return hash;
-};
-const drawingBytesFor = (id) => {
-  const submittedDrawing = submittedDrawingBytes.get(id);
-  if (submittedDrawing) return submittedDrawing;
-
-  const name = mockDrawingFiles[hashId(id) % mockDrawingFiles.length];
-  const filePath = join(mockAssetRoot, name);
-  return existsSync(filePath) ? readFileSync(filePath) : transparentPng;
-};
 
 const elements = ['ember', 'tide', 'moss', 'storm'];
 const careActions = ['feed', 'pat', 'train'];
@@ -45,84 +35,112 @@ const levelThresholds = [0, 3, 7, 12, 18];
 const capsuleCost = 10;
 const capsuleFirstDailyCost = 5;
 const capsulePity = 10;
+const careInkReward = 1;
+const sparWinInkReward = 2;
+const dailyDrawInkReward = 2;
 const maximumLegendsPageSize = 50;
+const maximumLegacyCardsPageSize = 24;
+const legacyReturnPreviewLimit = 3;
 const maxAccessoriesPerScribbit = 2;
-const accessoryCatalogIds = [
-  'bowtie',
-  'flower-crown',
-  'monocle',
-  'beanie',
-  'round-glasses',
-  'tiny-sword',
-  'snail-shell-backpack',
-  'party-hat',
-  'mustache',
-  'top-hat',
-  'cape',
-  'headphones',
-  'eyepatch-scar',
-  'propeller-cap',
-  'golden-crown',
-  'dragon-wings',
-];
-const accessoryCatalogIdSet = new Set(accessoryCatalogIds);
-const rareAccessoryIds = new Set(['tiny-sword', 'top-hat', 'cape']);
-const epicAccessoryIds = new Set(['golden-crown', 'dragon-wings']);
-
-const displayNameForAccessory = (id) => {
-  return id
-    .split('-')
-    .map((word) => `${word.charAt(0).toUpperCase()}${word.slice(1)}`)
-    .join(' ');
-};
-
-const rarityForAccessory = (id) => {
-  if (epicAccessoryIds.has(id)) return 'epic';
-  if (rareAccessoryIds.has(id)) return 'rare';
-  return 'common';
-};
-
-const accessoryCapsuleDrops = accessoryCatalogIds.map((id) => {
-  return {
-    rarity: rarityForAccessory(id),
-    kind: 'accessory',
+const cosmeticsSourcePath = join(repoRoot, 'src', 'shared', 'cosmetics.ts');
+const cosmeticsSource = readFileSync(cosmeticsSourcePath, 'utf8');
+const cosmeticsJavascript = ts.transpileModule(cosmeticsSource, {
+  compilerOptions: {
+    module: ts.ModuleKind.ES2022,
+    target: ts.ScriptTarget.ES2022,
+  },
+  fileName: cosmeticsSourcePath,
+}).outputText;
+const cosmeticsModuleUrl = `data:text/javascript;base64,${Buffer.from(
+  cosmeticsJavascript,
+  'utf8'
+).toString('base64')}`;
+const { COSMETIC_CATALOG: productionCosmeticCatalog } = await import(
+  cosmeticsModuleUrl
+);
+const mockCapsuleDrops = productionCosmeticCatalog.map(
+  ({ rarity, kind, id, name, description }) => ({
+    rarity,
+    kind,
     id,
-    name: displayNameForAccessory(id),
-    description: `A one-use ${displayNameForAccessory(id)} accessory for your next Scribbit.`,
-  };
-});
+    name,
+    description,
+  })
+);
+const accessoryCatalogIds = mockCapsuleDrops
+  .filter((drop) => drop.kind === 'accessory')
+  .map((drop) => drop.id);
+const accessoryCatalogIdSet = new Set(accessoryCatalogIds);
 
-const mockCapsuleDrops = [
-  ...accessoryCapsuleDrops,
-  {
-    rarity: 'common',
-    kind: 'pen',
-    id: 'warm-greys',
-    name: 'Warm Greys',
-    description: 'Soft sketchbook greys for cozy little smudges.',
-  },
-  {
-    rarity: 'rare',
-    kind: 'pen',
-    id: 'gold-pen',
-    name: 'Gold Pen',
-    description: 'A shiny flex for lines that expect applause.',
-  },
-  {
-    rarity: 'common',
-    kind: 'title',
-    id: 'inkslinger',
-    name: 'Inkslinger',
-    description: 'For artists who draw first and explain the stain later.',
-  },
-  {
-    rarity: 'epic',
-    kind: 'pen',
-    id: 'rainbow-crayon',
-    name: 'RAINBOW CRAYON',
-    description: 'Draws hue-cycling strokes like a parade got sharpened.',
-  },
-];
+const mockCapsuleCatalogIds = new Set(mockCapsuleDrops.map((drop) => drop.id));
+const productionCosmeticById = new Map(
+  mockCapsuleDrops.map((drop) => [drop.id, drop])
+);
+if (
+  mockCapsuleDrops.length !== 28 ||
+  mockCapsuleCatalogIds.size !== mockCapsuleDrops.length
+) {
+  throw new Error(
+    'Mock capsule catalog must contain 28 unique production drops.'
+  );
+}
+
+const getProductionCosmetic = (cosmeticId, expectedKind) => {
+  const cosmetic = productionCosmeticById.get(cosmeticId);
+  if (!cosmetic || (expectedKind && cosmetic.kind !== expectedKind)) {
+    throw new Error(
+      `Unknown production ${expectedKind ?? 'cosmetic'}: ${cosmeticId}`
+    );
+  }
+  return cosmetic;
+};
+
+const snapshotCosmetic = (cosmeticId, expectedKind) => {
+  const cosmetic = getProductionCosmetic(cosmeticId, expectedKind);
+  return Object.freeze({
+    id: cosmetic.id,
+    name: cosmetic.name,
+    rarity: cosmetic.rarity,
+  });
+};
+
+const cloneLegacySnapshot = (legacy) => {
+  if (!legacy) return null;
+  return {
+    ...legacy,
+    creatorTitle: legacy.creatorTitle ? { ...legacy.creatorTitle } : null,
+    accessories: legacy.accessories.map((accessory) => ({ ...accessory })),
+  };
+};
+
+const legacyFinishFor = (status, legendTitle) => {
+  if (status === 'faded') return 'faded';
+  return legendTitle?.startsWith('Champion of Day ') ? 'champion' : 'believed';
+};
+
+const makeImmutableLegacySnapshot = (scribbit, creatorTitleId = null) => {
+  const accessories = Object.freeze(
+    scribbit.accessories.map((accessoryId) =>
+      snapshotCosmetic(accessoryId, 'accessory')
+    )
+  );
+  const creatorTitle = creatorTitleId
+    ? snapshotCosmetic(creatorTitleId, 'title')
+    : null;
+
+  return Object.freeze({
+    schemaVersion: 1,
+    archivedDay: scribbit.expiresDay,
+    finish: legacyFinishFor(scribbit.status, scribbit.legendTitle),
+    creatorTitle,
+    level: levelForXp(scribbit.xp),
+    xp: scribbit.xp,
+    wins: scribbit.wins,
+    losses: scribbit.losses,
+    belief: scribbit.belief,
+    accessories,
+  });
+};
 
 const nextUtcMidnightMs = () => {
   const now = new Date();
@@ -173,6 +191,7 @@ const cloneScribbit = (scribbit) => {
     stats: { ...scribbit.stats },
     accessories: [...(scribbit.accessories ?? [])],
     careDoneToday: [...scribbit.careDoneToday],
+    legacy: cloneLegacySnapshot(scribbit.legacy),
   };
 };
 
@@ -183,27 +202,41 @@ const makeScribbit = (options) => {
   const defaultImageUrl = options.isFounding
     ? `/creatures/creature-${String(options.id).replace(/^founding-/, '')}.png`
     : `/api/drawing/${options.id}`;
-  return {
+  const xp = Number.isFinite(options.xp)
+    ? Math.max(0, Math.floor(options.xp))
+    : 0;
+  const status = options.status ?? 'alive';
+  const scribbit = {
     id: options.id,
     name: options.name,
     artist: options.artist,
     element: options.element,
-    stats: options.stats,
+    stats: { ...options.stats },
     imageUrl: options.imageUrl ?? defaultImageUrl,
     bornDay: options.bornDay ?? 8,
     expiresDay: options.expiresDay ?? 11,
     belief: options.belief ?? 0,
     wins: options.wins ?? 0,
     losses: options.losses ?? 0,
-    status: options.status ?? 'alive',
+    status,
     legendTitle: options.legendTitle ?? null,
     isFounding: options.isFounding ?? false,
     accessories: options.accessories ? [...options.accessories] : [],
-    level: options.level ?? levelForXp(options.xp ?? 0),
-    xp: options.xp ?? 0,
+    level: levelForXp(xp),
+    xp,
     mood: options.mood ?? 'hungry',
     careDoneToday: options.careDoneToday ? [...options.careDoneToday] : [],
+    legacy: null,
   };
+
+  if (status !== 'alive') {
+    scribbit.legacy = makeImmutableLegacySnapshot(
+      scribbit,
+      options.creatorTitleId ?? null
+    );
+  }
+
+  return scribbit;
 };
 
 const makeForecast = (day) => {
@@ -297,6 +330,21 @@ const createMockSimulation = (kind, fighterA, fighterB, winner) => {
       defenseTicks: 2,
     },
   ];
+  fighters.forEach((fighter, index) => {
+    if (fighter.element !== 'moss') return;
+    const actor = index === 0 ? 'a' : 'b';
+    timeline.push(
+      { tick: 0, kind: 'barrier_created', actor, hitPoints: 18 },
+      {
+        tick: 130,
+        kind: 'barrier_hit',
+        actor,
+        absorbedDamage: 18,
+        remainingHitPoints: 0,
+      },
+      { tick: 130, kind: 'barrier_broken', actor }
+    );
+  });
   const resolvedHits = [];
 
   for (const [index, plannedHit] of plannedHits.entries()) {
@@ -345,13 +393,25 @@ const createMockSimulation = (kind, fighterA, fighterB, winner) => {
       }
     );
     if (powers[sourceIndex] === 'colorburst') {
+      const echoFireTick = Math.min(completedTick, plannedHit.tick + 3);
+      const echoPosition = {
+        x: sourcePosition.x - 900,
+        y: sourcePosition.y + 300,
+      };
       timeline.push({
         tick: plannedHit.tick - 3,
         kind: 'echo_created',
         actor: sourceSlot,
-        position: sourcePosition,
+        position: echoPosition,
         aimDirection,
-        firesAtTick: plannedHit.tick + 3,
+        firesAtTick: echoFireTick,
+      });
+      timeline.push({
+        tick: echoFireTick,
+        kind: 'echo_fired',
+        actor: sourceSlot,
+        position: echoPosition,
+        aimDirection,
       });
     }
     timeline.push({
@@ -382,7 +442,12 @@ const createMockSimulation = (kind, fighterA, fighterB, winner) => {
 
   const loser = winner === 'a' ? 'b' : 'a';
   timeline.push(
-    { tick: 300, kind: 'ink_pressure', actor: loser, refreshedImmediately: true },
+    {
+      tick: 300,
+      kind: 'ink_pressure',
+      actor: loser,
+      refreshedImmediately: true,
+    },
     { tick: completedTick, kind: 'fighter_defeated', actor: loser },
     { tick: completedTick, kind: 'battle_ended', winner, reason: 'knockout' }
   );
@@ -418,9 +483,13 @@ const createMockSimulation = (kind, fighterA, fighterB, winner) => {
       arenaHalfHeight: arena.halfHeight,
       fighters: ['a', 'b'].map((slot, index) => {
         const position = mockPositionAtTick(slot, tick);
-        const nextPosition = mockPositionAtTick(slot, Math.min(completedTick, tick + 1));
+        const nextPosition = mockPositionAtTick(
+          slot,
+          Math.min(completedTick, tick + 1)
+        );
         const isCharmEchoVisible =
-          powers[index] === 'colorburst' && abilityPhaseAtTick(slot, tick) === 'active';
+          powers[index] === 'colorburst' &&
+          abilityPhaseAtTick(slot, tick) === 'active';
         return {
           slot,
           hitPoints: hitPoints[index],
@@ -432,7 +501,8 @@ const createMockSimulation = (kind, fighterA, fighterB, winner) => {
           },
           primaryPower: powers[index],
           abilityPhase: abilityPhaseAtTick(slot, tick),
-          barrierHitPoints: fighters[index].element === 'moss' && tick < 130 ? 18 : 0,
+          barrierHitPoints:
+            fighters[index].element === 'moss' && tick < 130 ? 18 : 0,
           echoPosition: isCharmEchoVisible
             ? { x: position.x - 900, y: position.y + 300 }
             : null,
@@ -660,7 +730,7 @@ const todayEntrants = [
     name: 'Rootwink',
     artist: 'paper_ren',
     element: 'moss',
-    stats: { chonk: 32, spike: 20, zip: 18, charm: 30 },
+    stats: { chonk: 24, spike: 20, zip: 18, charm: 38 },
     belief: 17,
     wins: 5,
     losses: 1,
@@ -759,8 +829,46 @@ const champion = makeScribbit({
   accessories: ['golden-crown', 'dragon-wings'],
 });
 
+const myChampionLegacy = makeScribbit({
+  id: 'legacy-marker-comet',
+  name: 'Marker Comet',
+  artist: 'mock_player',
+  element: 'storm',
+  stats: { chonk: 20, spike: 24, zip: 42, charm: 14 },
+  bornDay: 5,
+  expiresDay: 8,
+  belief: 24,
+  wins: 8,
+  losses: 2,
+  status: 'legend',
+  legendTitle: 'Champion of Day 8',
+  xp: 19,
+  accessories: ['golden-crown', 'tiny-sword'],
+  creatorTitleId: 'the-pen-ultimate',
+});
+
+const myBelievedLegacy = makeScribbit({
+  id: 'legacy-velvet-sprout',
+  name: 'Velvet Sprout',
+  artist: 'mock_player',
+  element: 'moss',
+  stats: { chonk: 34, spike: 16, zip: 20, charm: 30 },
+  bornDay: 4,
+  expiresDay: 7,
+  belief: 25,
+  wins: 5,
+  losses: 3,
+  status: 'legend',
+  legendTitle: 'Believed by 25 arena weirdos',
+  xp: 14,
+  accessories: ['flower-crown', 'cape'],
+  creatorTitleId: 'brushlord',
+});
+
 const legends = [
   champion,
+  myChampionLegacy,
+  myBelievedLegacy,
   makeScribbit({
     id: 'legend-inky-moon',
     name: 'Inky Moon',
@@ -849,8 +957,9 @@ const myFaded = [
     wins: 1,
     losses: 5,
     status: 'faded',
-    level: 2,
     xp: 4,
+    accessories: ['beanie', 'tiny-sword'],
+    creatorTitleId: 'doodler',
   }),
   makeScribbit({
     id: 'faded-eraser-bite',
@@ -864,10 +973,65 @@ const myFaded = [
     wins: 2,
     losses: 4,
     status: 'faded',
-    level: 2,
     xp: 5,
+    accessories: ['round-glasses'],
+    creatorTitleId: 'inkslinger',
+  }),
+  makeScribbit({
+    id: 'faded-impossibly-long',
+    name: 'Impossibly Long Scribbit',
+    artist: 'mock_player',
+    element: 'ember',
+    stats: { chonk: 22, spike: 41, zip: 18, charm: 19 },
+    bornDay: 1,
+    expiresDay: 4,
+    belief: 12,
+    wins: 10,
+    losses: 11,
+    status: 'faded',
+    xp: 18,
+    accessories: ['party-hat', 'dragon-wings'],
+    creatorTitleId: 'the-pen-ultimate',
+  }),
+  makeScribbit({
+    id: 'faded-tape-ghost',
+    name: 'Tape Ghost',
+    artist: 'mock_player',
+    element: 'storm',
+    stats: { chonk: 19, spike: 27, zip: 39, charm: 15 },
+    bornDay: 0,
+    expiresDay: 3,
+    belief: 1,
+    wins: 0,
+    losses: 7,
+    status: 'faded',
+    xp: 2,
+    accessories: ['propeller-cap'],
+    creatorTitleId: 'doodler',
   }),
 ];
+
+const emptyInventoryState = () => {
+  return {
+    items: {},
+    pens: [],
+    titles: [],
+    equippedTitle: null,
+    discovered: [],
+  };
+};
+
+const createPreviewEconomy = (options = {}) => {
+  return {
+    ink: options.ink ?? 0,
+    inventory: options.inventory ?? emptyInventoryState(),
+    capsulePullCount: options.capsulePullCount ?? 0,
+    pullsSinceEpic: options.pullsSinceEpic ?? 0,
+    discountedCapsuleUtcDate: null,
+    capsuleOperations: new Map(),
+    sparWinRewardUtcDates: new Set(),
+  };
+};
 
 const memory = {
   dayNumber: 9,
@@ -882,40 +1046,49 @@ const memory = {
   myBackedScribbitId: null,
   playStreakDays: 4,
   myClout: 14,
-  myInk: 35,
-  inventory: {
-    items: {
-      'golden-crown': 2,
-      'tiny-sword': 1,
-      'party-hat': 3,
-      cape: 1,
-      'round-glasses': 1,
-      'dragon-wings': 1,
-      beanie: 2,
-      'eyepatch-scar': 1,
-    },
-    pens: ['warm-greys', 'gold-pen', 'rainbow-crayon', 'midnight-ink'],
-    titles: ['doodler'],
-    discovered: [
-      'golden-crown',
-      'tiny-sword',
-      'party-hat',
-      'cape',
-      'round-glasses',
-      'dragon-wings',
-      'beanie',
-      'eyepatch-scar',
-      'warm-greys',
-      'gold-pen',
-      'rainbow-crayon',
-      'midnight-ink',
-      'doodler',
-    ],
+  economyByPreviewMode: {
+    returning: createPreviewEconomy({
+      ink: 35,
+      inventory: {
+        items: {
+          'golden-crown': 2,
+          'tiny-sword': 1,
+          'party-hat': 3,
+          cape: 1,
+          'round-glasses': 1,
+          'dragon-wings': 1,
+          beanie: 2,
+          'eyepatch-scar': 1,
+        },
+        pens: ['warm-greys', 'gold-pen', 'rainbow-crayon', 'midnight-ink'],
+        titles: ['doodler', 'inkslinger', 'brushlord', 'the-pen-ultimate'],
+        equippedTitle: null,
+        discovered: [
+          'golden-crown',
+          'tiny-sword',
+          'party-hat',
+          'cape',
+          'round-glasses',
+          'dragon-wings',
+          'beanie',
+          'eyepatch-scar',
+          'warm-greys',
+          'gold-pen',
+          'rainbow-crayon',
+          'midnight-ink',
+          'doodler',
+          'inkslinger',
+          'brushlord',
+          'the-pen-ultimate',
+        ],
+      },
+      capsulePullCount: 13,
+      pullsSinceEpic: 6,
+    }),
+    fresh: createPreviewEconomy(),
   },
-  capsulePullCount: 13,
-  pullsSinceEpic: 6,
-  discountedCapsuleUtcDate: null,
-  capsuleOperations: new Map(),
+  legacySeenThroughDay: 5,
+  freshLegacySeenThroughDay: 0,
   beliefVotes: new Set(),
   hiddenScribbitIds: new Set(),
   reportCounts: new Map(),
@@ -933,6 +1106,7 @@ const memory = {
     me: { username: 'mock_player', clout: 14, rank: 3 },
   },
   myBattles: [],
+  previousRumbleReplay: null,
 };
 
 for (let index = 0; index < 10; index += 1) {
@@ -940,6 +1114,153 @@ for (let index = 0; index < 10; index += 1) {
   const fighterB = todayEntrants[index % todayEntrants.length];
   memory.myBattles.push(createBattleReport('exhibition', fighterA, fighterB));
 }
+const inkyMoon = legends.find((scribbit) => scribbit.name === 'Inky Moon');
+if (!inkyMoon) throw new Error('Mock Rumble replay needs Inky Moon.');
+memory.previousRumbleReplay = {
+  ...createBattleReport('rumble', inkyMoon, champion),
+  day: memory.dayNumber - 1,
+};
+
+const getPreviewEconomy = (previewMode) => {
+  return memory.economyByPreviewMode[previewMode];
+};
+
+const resetPreviewEconomy = (economy) => {
+  economy.ink = 0;
+  economy.inventory = emptyInventoryState();
+  economy.capsulePullCount = 0;
+  economy.pullsSinceEpic = 0;
+  economy.discountedCapsuleUtcDate = null;
+  economy.capsuleOperations.clear();
+  economy.sparWinRewardUtcDates.clear();
+};
+
+const getLivingScribbitsForPreview = (previewMode) => {
+  if (previewMode === 'logged-out') return [];
+  if (previewMode === 'fresh') {
+    return memory.myScribbits.filter((scribbit) =>
+      scribbit.id.startsWith('mock-submitted-')
+    );
+  }
+  return memory.myScribbits;
+};
+
+const getOwnedScribbits = () => {
+  const ownedById = new Map();
+  for (const list of [memory.myScribbits, memory.myFaded, memory.legends]) {
+    for (const scribbit of list) {
+      if (scribbit.artist === 'mock_player') {
+        ownedById.set(scribbit.id, scribbit);
+      }
+    }
+  }
+  return [...ownedById.values()];
+};
+
+const getOwnedScribbitsForPreview = (previewMode) => {
+  if (previewMode === 'logged-out') return [];
+  if (previewMode === 'fresh') return getLivingScribbitsForPreview(previewMode);
+  return getOwnedScribbits();
+};
+
+const toLegacyCard = (scribbit) => {
+  if (scribbit.status === 'alive' || !scribbit.legacy) return undefined;
+  return {
+    id: scribbit.id,
+    name: scribbit.name,
+    artist: scribbit.artist,
+    element: scribbit.element,
+    imageUrl: scribbit.imageUrl,
+    bornDay: scribbit.bornDay,
+    expiresDay: scribbit.expiresDay,
+    status: scribbit.status,
+    legendTitle: scribbit.legendTitle,
+    legacy: cloneLegacySnapshot(scribbit.legacy),
+  };
+};
+
+const getPersonalLegacyCards = () => {
+  return getOwnedScribbits()
+    .map(toLegacyCard)
+    .filter(Boolean)
+    .sort((left, right) => {
+      const archivedDayDifference =
+        right.legacy.archivedDay - left.legacy.archivedDay;
+      return archivedDayDifference || right.id.localeCompare(left.id);
+    });
+};
+
+const encodeLegacyCursor = (card, cards) => {
+  const descendingIndex = cards.findIndex(
+    (candidate) => candidate.id === card.id
+  );
+  const ascendingRank = Math.max(0, cards.length - 1 - descendingIndex);
+  return `v2|${card.legacy.archivedDay}|${ascendingRank}|${encodeURIComponent(card.id)}`;
+};
+
+const getLegacyCursorOffset = (rawCursor, cards) => {
+  if (rawCursor === null) return 0;
+  if (/^\d+$/.test(rawCursor)) {
+    const offset = Number(rawCursor);
+    return Number.isSafeInteger(offset) ? offset : undefined;
+  }
+  const match = /^v2\|(\d+)\|(\d+)\|(.+)$/.exec(rawCursor);
+  const previousMatch = /^v1\|(\d+)\|(.+)$/.exec(rawCursor);
+  const cursorMatch = match ?? previousMatch;
+  if (!cursorMatch) return undefined;
+  const score = Number(cursorMatch[1]);
+  let member;
+  try {
+    member = decodeURIComponent(match ? match[3] : cursorMatch[2]);
+  } catch {
+    return undefined;
+  }
+  if (!Number.isSafeInteger(score) || !member) return undefined;
+  const exactIndex = cards.findIndex(
+    (card) => card.id === member && card.legacy.archivedDay === score
+  );
+  if (exactIndex >= 0) return exactIndex + 1;
+  const nextIndex = cards.findIndex(
+    (card) =>
+      card.legacy.archivedDay < score ||
+      (card.legacy.archivedDay === score && card.id < member)
+  );
+  return nextIndex < 0 ? cards.length : nextIndex;
+};
+
+const legacyReturnReceiptState = () => {
+  const unseenCards = getPersonalLegacyCards().filter(
+    (card) => card.legacy.archivedDay > memory.legacySeenThroughDay
+  );
+  if (unseenCards.length === 0) return null;
+
+  return {
+    cards: unseenCards.slice(0, legacyReturnPreviewLimit),
+    total: unseenCards.length,
+    newestArchivedDay: unseenCards[0].legacy.archivedDay,
+  };
+};
+
+const removeScribbitFromList = (list, scribbitId) => {
+  for (let index = list.length - 1; index >= 0; index -= 1) {
+    if (list[index]?.id === scribbitId) list.splice(index, 1);
+  }
+};
+
+const removeScribbitEverywhere = (scribbitId) => {
+  for (const list of [
+    memory.myScribbits,
+    memory.todayEntrants,
+    memory.legends,
+    memory.myFaded,
+  ]) {
+    removeScribbitFromList(list, scribbitId);
+  }
+  memory.myBattles = memory.myBattles.filter(
+    (report) => report.a.id !== scribbitId && report.b.id !== scribbitId
+  );
+  submittedDrawingBytes.delete(scribbitId);
+};
 
 const visibleLists = () => [
   memory.myScribbits,
@@ -955,6 +1276,29 @@ const findVisibleScribbit = (scribbitId) => {
     if (scribbit) return scribbit;
   }
   return undefined;
+};
+
+const dominantStatFor = (stats) => {
+  let dominantStat = statKeys[0];
+  for (const stat of statKeys.slice(1)) {
+    if ((stats?.[stat] ?? 0) > (stats?.[dominantStat] ?? 0)) {
+      dominantStat = stat;
+    }
+  }
+  return dominantStat;
+};
+
+const drawingBytesFor = (scribbitId) => {
+  const submittedDrawing = submittedDrawingBytes.get(scribbitId);
+  if (submittedDrawing) return submittedDrawing;
+
+  const scribbit = findVisibleScribbit(scribbitId);
+  if (!scribbit) return transparentPng;
+
+  const dominantStat = dominantStatFor(scribbit.stats);
+  const filename = mockDrawingFileByDominantStat[dominantStat];
+  const filePath = join(mockAssetRoot, filename);
+  return existsSync(filePath) ? readFileSync(filePath) : transparentPng;
 };
 
 const mutateVisibleScribbit = (scribbitId, mutate) => {
@@ -1004,13 +1348,45 @@ const cloneItemCounts = (items) => {
   return { ...items };
 };
 
+const readPageNumber = (value, fallback, maximum) => {
+  if (value === null || value === undefined) return fallback;
+  if (!/^(0|[1-9][0-9]*)$/.test(value)) return undefined;
+  const parsedValue = Number(value);
+  if (!Number.isSafeInteger(parsedValue)) return undefined;
+  return maximum === undefined ? parsedValue : Math.min(parsedValue, maximum);
+};
+
+const previewModeFromUrl = (url) => {
+  if (
+    url.searchParams.has('logged-out') ||
+    url.searchParams.has('loggedOut') ||
+    url.searchParams.has('loggedout')
+  ) {
+    return 'logged-out';
+  }
+  return url.searchParams.has('fresh') ? 'fresh' : 'returning';
+};
+
+const requestPreviewMode = (request, url) => {
+  const directMode = previewModeFromUrl(url);
+  if (directMode !== 'returning') return directMode;
+
+  const referrer = request.headers.referer;
+  if (typeof referrer !== 'string') return 'returning';
+  try {
+    return previewModeFromUrl(new URL(referrer));
+  } catch {
+    return 'returning';
+  }
+};
+
 const currentUtcDateKey = () => {
   return new Date().toISOString().slice(0, 10);
 };
 
-const capsuleCostForCurrentPull = () => {
+const capsuleCostForCurrentPull = (economy) => {
   const utcDateKey = currentUtcDateKey();
-  const isFirstDailyPull = memory.discountedCapsuleUtcDate !== utcDateKey;
+  const isFirstDailyPull = economy.discountedCapsuleUtcDate !== utcDateKey;
 
   return {
     cost: isFirstDailyPull ? capsuleFirstDailyCost : capsuleCost,
@@ -1018,17 +1394,15 @@ const capsuleCostForCurrentPull = () => {
   };
 };
 
-const capsuleProgressState = (options = {}) => {
-  const inventory = options.inventory ?? memory.inventory;
-  const pullCount = options.pullCount ?? memory.capsulePullCount;
-  const pullsSinceEpic = options.pullsSinceEpic ?? memory.pullsSinceEpic;
+const capsuleProgressState = (economy) => {
+  const inventory = economy.inventory;
   const collectionIds = new Set([
-    ...mockCapsuleDrops.map((drop) => drop.id),
+    ...mockCapsuleCatalogIds,
     ...inventory.discovered,
   ]);
   return {
-    pullCount,
-    pityRemaining: Math.max(1, capsulePity - pullsSinceEpic),
+    pullCount: economy.capsulePullCount,
+    pityRemaining: Math.max(1, capsulePity - economy.pullsSinceEpic),
     discoveredCount: inventory.discovered.length,
     collectionTotal: collectionIds.size,
   };
@@ -1044,14 +1418,15 @@ const countAccessoryIds = (accessoryIds) => {
   return counts;
 };
 
-const addCapsuleDropToInventory = (drop) => {
-  const isNew = !memory.inventory.discovered.includes(drop.id);
-  if (isNew) memory.inventory.discovered.push(drop.id);
+const addCapsuleDropToInventory = (economy, drop) => {
+  const inventory = economy.inventory;
+  const isNew = !inventory.discovered.includes(drop.id);
+  if (isNew) inventory.discovered.push(drop.id);
 
   if (drop.kind === 'accessory') {
-    const previousCount = memory.inventory.items[drop.id] ?? 0;
+    const previousCount = inventory.items[drop.id] ?? 0;
     const ownedCount = previousCount + 1;
-    memory.inventory.items[drop.id] = ownedCount;
+    inventory.items[drop.id] = ownedCount;
 
     return {
       isNew,
@@ -1059,8 +1434,7 @@ const addCapsuleDropToInventory = (drop) => {
     };
   }
 
-  const inventoryList =
-    drop.kind === 'pen' ? memory.inventory.pens : memory.inventory.titles;
+  const inventoryList = drop.kind === 'pen' ? inventory.pens : inventory.titles;
   if (!inventoryList.includes(drop.id)) {
     inventoryList.push(drop.id);
   }
@@ -1071,19 +1445,39 @@ const addCapsuleDropToInventory = (drop) => {
   };
 };
 
-const consumeInventoryItems = (requiredCounts) => {
+const selectMockCapsuleDrop = (economy) => {
+  const naturalDrop =
+    mockCapsuleDrops[economy.capsulePullCount % mockCapsuleDrops.length];
+  if (!naturalDrop) return undefined;
+
+  const rarity =
+    economy.pullsSinceEpic + 1 >= capsulePity ? 'epic' : naturalDrop.rarity;
+  const matchingDrops = mockCapsuleDrops.filter((drop) => {
+    return drop.rarity === rarity;
+  });
+  const usefulDrops = matchingDrops.filter((drop) => {
+    return (
+      drop.kind === 'accessory' ||
+      !economy.inventory.discovered.includes(drop.id)
+    );
+  });
+  const dropPool = usefulDrops.length > 0 ? usefulDrops : matchingDrops;
+  return dropPool[economy.capsulePullCount % dropPool.length];
+};
+
+const consumeInventoryItems = (inventory, requiredCounts) => {
   for (const [accessoryId, requiredCount] of Object.entries(requiredCounts)) {
-    const nextCount = (memory.inventory.items[accessoryId] ?? 0) - requiredCount;
+    const nextCount = (inventory.items[accessoryId] ?? 0) - requiredCount;
 
     if (nextCount > 0) {
-      memory.inventory.items[accessoryId] = nextCount;
+      inventory.items[accessoryId] = nextCount;
     } else {
-      delete memory.inventory.items[accessoryId];
+      delete inventory.items[accessoryId];
     }
   }
 };
 
-const readSubmittedAccessoryIds = (body) => {
+const readSubmittedAccessoryIds = (body, inventory) => {
   if (body?.accessories === undefined) {
     return { accessoryIds: [] };
   }
@@ -1121,10 +1515,10 @@ const readSubmittedAccessoryIds = (body) => {
   const requiredCounts = countAccessoryIds(accessoryIds);
 
   for (const [accessoryId, requiredCount] of Object.entries(requiredCounts)) {
-    if ((memory.inventory.items[accessoryId] ?? 0) < requiredCount) {
+    if ((inventory.items[accessoryId] ?? 0) < requiredCount) {
       return {
         status: 409,
-        message: `You need ${requiredCount} ${displayNameForAccessory(accessoryId)} accessory copy.`,
+        message: `You need ${requiredCount} ${getProductionCosmetic(accessoryId, 'accessory').name} accessory copy.`,
       };
     }
   }
@@ -1132,7 +1526,7 @@ const readSubmittedAccessoryIds = (body) => {
   return { accessoryIds, requiredCounts };
 };
 
-const arenaState = () => {
+const arenaState = (economy) => {
   return {
     dayNumber: memory.dayNumber,
     loggedIn: true,
@@ -1153,32 +1547,23 @@ const arenaState = () => {
     myBackedScribbitId: memory.myBackedScribbitId,
     playStreakDays: memory.playStreakDays,
     myClout: memory.myClout,
-    myInk: memory.myInk,
-    myPens: [...memory.inventory.pens],
-    nextCapsuleCost: capsuleCostForCurrentPull().cost,
-    capsuleProgress: capsuleProgressState(),
+    myInk: economy.ink,
+    myPens: [...economy.inventory.pens],
+    nextCapsuleCost: capsuleCostForCurrentPull(economy).cost,
+    capsuleProgress: capsuleProgressState(economy),
     lastRumbleReceipt: {
       resolvedDay: memory.dayNumber - 1,
       backedName: 'Inky Moon',
       championName: memory.champion.name,
       cloutEarned: 0,
       inkAwarded: 0,
+      replayAvailable: memory.previousRumbleReplay !== null,
     },
+    legacyReturnReceipt: legacyReturnReceiptState(),
   };
 };
 
-const isFreshPlayerPreview = (request) => {
-  const referrer = request.headers.referer;
-  if (typeof referrer !== 'string') return false;
-
-  try {
-    return new URL(referrer).searchParams.has('fresh');
-  } catch {
-    return false;
-  }
-};
-
-const freshPlayerArenaState = () => {
+const freshPlayerArenaState = (economy) => {
   const submittedScribbits = memory.myScribbits.filter((scribbit) =>
     scribbit.id.startsWith('mock-submitted-')
   );
@@ -1190,48 +1575,75 @@ const freshPlayerArenaState = () => {
   );
 
   return {
-    ...arenaState(),
+    ...arenaState(economy),
     myScribbits: submittedScribbits.map(cloneScribbit),
     drawnToday: submittedScribbits.length > 0,
     enteredToday,
-    myBackedScribbitId: memory.myBackedScribbitId,
+    myBackedScribbitId: null,
     playStreakDays: 1,
     myClout: 0,
-    myInk: submittedScribbits.length * 2,
-    myPens: [],
-    capsuleProgress: capsuleProgressState({
-      inventory: { items: {}, pens: [], titles: [], discovered: [] },
-      pullCount: 0,
-      pullsSinceEpic: 0,
-    }),
     lastRumbleReceipt: null,
+    legacyReturnReceipt: null,
   };
 };
 
-const inventoryState = () => {
+const loggedOutArenaState = () => {
   return {
-    items: cloneItemCounts(memory.inventory.items),
-    pens: [...memory.inventory.pens],
-    titles: [...memory.inventory.titles],
-    discovered: [...memory.inventory.discovered],
+    ...arenaState(createPreviewEconomy()),
+    loggedIn: false,
+    myUsername: null,
+    myScribbits: [],
+    drawnToday: false,
+    enteredToday: false,
+    myBackedScribbitId: null,
+    playStreakDays: 0,
+    myClout: 0,
+    lastRumbleReceipt: null,
+    legacyReturnReceipt: null,
   };
+};
+
+const arenaStateForPreview = (previewMode) => {
+  if (previewMode === 'fresh') {
+    return freshPlayerArenaState(getPreviewEconomy(previewMode));
+  }
+  if (previewMode === 'logged-out') return loggedOutArenaState();
+  return arenaState(getPreviewEconomy(previewMode));
+};
+
+const inventoryState = (inventory) => {
+  return {
+    items: cloneItemCounts(inventory.items),
+    pens: [...inventory.pens],
+    titles: [...inventory.titles],
+    equippedTitle: inventory.equippedTitle,
+    discovered: [...inventory.discovered],
+  };
+};
+
+const inventoryStateForPreview = (previewMode) => {
+  const economy = getPreviewEconomy(previewMode);
+  return economy ? inventoryState(economy.inventory) : emptyInventoryState();
 };
 
 const handleApi = async (request, response, url) => {
   const method = request.method ?? 'GET';
   const path = url.pathname;
+  const previewMode = requestPreviewMode(request, url);
+  const economy = getPreviewEconomy(previewMode);
+
+  if (previewMode === 'logged-out' && method === 'POST') {
+    sendError(response, 401, 'Sign in to change your Scribbits data.');
+    return;
+  }
 
   if (method === 'GET' && path === '/api/arena') {
-    sendJson(
-      response,
-      200,
-      isFreshPlayerPreview(request) ? freshPlayerArenaState() : arenaState()
-    );
+    sendJson(response, 200, arenaStateForPreview(previewMode));
     return;
   }
 
   if (method === 'GET' && path === '/api/splash') {
-    const state = isFreshPlayerPreview(request) ? freshPlayerArenaState() : arenaState();
+    const state = arenaStateForPreview(previewMode);
     sendJson(response, 200, {
       loggedIn: state.loggedIn,
       resolving: false,
@@ -1246,27 +1658,60 @@ const handleApi = async (request, response, url) => {
   }
 
   if (method === 'GET' && path === '/api/inventory') {
-    sendJson(response, 200, inventoryState());
+    sendJson(response, 200, inventoryStateForPreview(previewMode));
+    return;
+  }
+
+  if (method === 'POST' && path === '/api/equip-title') {
+    const body = await readJsonBody(request);
+    if (
+      !body ||
+      typeof body !== 'object' ||
+      Array.isArray(body) ||
+      (body.titleId !== null && typeof body.titleId !== 'string')
+    ) {
+      sendError(
+        response,
+        400,
+        'Choose an owned title or remove your current title.'
+      );
+      return;
+    }
+
+    const titleId =
+      typeof body.titleId === 'string' ? body.titleId.trim() : body.titleId;
+    if (titleId !== null && !/^[a-z0-9-]{2,64}$/.test(titleId)) {
+      sendError(response, 400, 'Choose a valid creator title.');
+      return;
+    }
+
+    const inventory = inventoryState(economy.inventory);
+    if (titleId !== null && !inventory.titles.includes(titleId)) {
+      sendError(response, 400, 'Discover that title before wearing it.');
+      return;
+    }
+
+    economy.inventory.equippedTitle = titleId;
+    sendJson(response, 200, inventoryState(economy.inventory));
     return;
   }
 
   if (method === 'POST' && path === '/api/capsule') {
     const body = await readJsonBody(request);
-    const operationId = typeof body?.operationId === 'string'
-      ? body.operationId.trim()
-      : '';
+    const operationId =
+      typeof body?.operationId === 'string' ? body.operationId.trim() : '';
     if (!operationId) {
       sendError(response, 400, 'Open the capsule with a valid operation id.');
       return;
     }
-    const cachedOperation = memory.capsuleOperations.get(operationId);
+    const cachedOperation = economy.capsuleOperations.get(operationId);
     if (cachedOperation) {
       sendJson(response, 200, cachedOperation);
       return;
     }
-    const { cost, utcDateKey } = capsuleCostForCurrentPull();
+    const { cost, utcDateKey } = capsuleCostForCurrentPull(economy);
 
-    if (memory.myInk < cost) {
+    if (economy.ink < cost) {
       sendError(
         response,
         402,
@@ -1275,33 +1720,33 @@ const handleApi = async (request, response, url) => {
       return;
     }
 
-    const drop =
-      mockCapsuleDrops[memory.capsulePullCount % mockCapsuleDrops.length];
+    const drop = selectMockCapsuleDrop(economy);
 
     if (!drop) {
       sendError(response, 500, 'The capsule machine jammed. Try again soon.');
       return;
     }
 
-    memory.capsulePullCount += 1;
-    memory.pullsSinceEpic = drop.rarity === 'epic'
-      ? 0
-      : Math.min(capsulePity - 1, memory.pullsSinceEpic + 1);
-    memory.discountedCapsuleUtcDate = utcDateKey;
-    memory.myInk -= cost;
-    const pullInventoryState = addCapsuleDropToInventory(drop);
+    economy.capsulePullCount += 1;
+    economy.pullsSinceEpic =
+      drop.rarity === 'epic'
+        ? 0
+        : Math.min(capsulePity - 1, economy.pullsSinceEpic + 1);
+    economy.discountedCapsuleUtcDate = utcDateKey;
+    economy.ink -= cost;
+    const pullInventoryState = addCapsuleDropToInventory(economy, drop);
 
     const capsuleResponse = {
       pull: {
         ...drop,
         ...pullInventoryState,
       },
-      ink: memory.myInk,
-      inventory: inventoryState(),
+      ink: economy.ink,
+      inventory: inventoryState(economy.inventory),
       nextCost: capsuleCost,
-      progress: capsuleProgressState(),
+      progress: capsuleProgressState(economy),
     };
-    memory.capsuleOperations.set(operationId, capsuleResponse);
+    economy.capsuleOperations.set(operationId, capsuleResponse);
     sendJson(response, 200, capsuleResponse);
     return;
   }
@@ -1321,16 +1766,101 @@ const handleApi = async (request, response, url) => {
     return;
   }
 
+  if (method === 'GET' && path === '/api/rumble-replay') {
+    if (previewMode === 'logged-out') {
+      sendError(response, 401, 'Sign in to replay your Rumble pick.');
+      return;
+    }
+    const resolvedDay = Number(url.searchParams.get('day'));
+    const report = memory.previousRumbleReplay;
+    if (
+      previewMode !== 'returning' ||
+      !report ||
+      resolvedDay !== report.day ||
+      memory.hiddenScribbitIds.has(report.a.id) ||
+      memory.hiddenScribbitIds.has(report.b.id)
+    ) {
+      sendError(response, 404, 'That featured bout is no longer available.');
+      return;
+    }
+    sendJson(response, 200, report);
+    return;
+  }
+
+  if (method === 'GET' && path === '/api/legacy-cards') {
+    const allCards = getPersonalLegacyCards();
+    const cursorOffset = getLegacyCursorOffset(
+      url.searchParams.get('cursor'),
+      allCards
+    );
+    const requestedLimit = readPageNumber(
+      url.searchParams.get('limit'),
+      maximumLegacyCardsPageSize,
+      maximumLegacyCardsPageSize
+    );
+    if (
+      cursorOffset === undefined ||
+      requestedLimit === undefined ||
+      requestedLimit < 1
+    ) {
+      sendError(response, 400, 'Use a valid Legacy Deck cursor and page size.');
+      return;
+    }
+
+    if (previewMode !== 'returning') {
+      sendJson(response, 200, { cards: [], nextCursor: null });
+      return;
+    }
+
+    const cards = allCards.slice(cursorOffset, cursorOffset + requestedLimit);
+    const nextOffset = cursorOffset + cards.length;
+    sendJson(response, 200, {
+      cards,
+      nextCursor:
+        nextOffset < allCards.length && cards.length > 0
+          ? encodeLegacyCursor(cards[cards.length - 1], allCards)
+          : null,
+    });
+    return;
+  }
+
+  if (method === 'POST' && path === '/api/legacy-cards/seen') {
+    if (previewMode === 'logged-out') {
+      sendError(response, 401, 'Sign in to file away Legacy Cards.');
+      return;
+    }
+
+    const body = await readJsonBody(request);
+    if (
+      !body ||
+      typeof body !== 'object' ||
+      Array.isArray(body) ||
+      !Number.isSafeInteger(body.throughArchivedDay) ||
+      body.throughArchivedDay < 0
+    ) {
+      sendError(response, 400, 'Choose a valid archived day to file away.');
+      return;
+    }
+    if (body.throughArchivedDay > memory.dayNumber) {
+      sendError(response, 400, 'That Legacy Card has not been archived yet.');
+      return;
+    }
+
+    const seenThroughDayKey =
+      previewMode === 'fresh'
+        ? 'freshLegacySeenThroughDay'
+        : 'legacySeenThroughDay';
+    memory[seenThroughDayKey] = Math.max(
+      memory[seenThroughDayKey],
+      body.throughArchivedDay
+    );
+    sendJson(response, 200, {
+      seenThroughDay: memory[seenThroughDayKey],
+    });
+    return;
+  }
+
   if (method === 'GET' && path === '/api/legends') {
-    const readPageNumber = (value, fallback, maximum) => {
-      if (value === null) return fallback;
-      if (!/^(0|[1-9][0-9]*)$/.test(value)) return undefined;
-      const parsedValue = Number(value);
-      if (!Number.isSafeInteger(parsedValue)) return undefined;
-      return maximum === undefined
-        ? parsedValue
-        : Math.min(parsedValue, maximum);
-    };
     const cursorOffset = readPageNumber(url.searchParams.get('cursor'), 0);
     const requestedLimit = readPageNumber(
       url.searchParams.get('limit'),
@@ -1342,15 +1872,21 @@ const handleApi = async (request, response, url) => {
       requestedLimit === undefined ||
       requestedLimit < 1
     ) {
-      sendError(response, 400, 'Use a valid Legends cursor and a positive page size.');
+      sendError(
+        response,
+        400,
+        'Use a valid Legends cursor and a positive page size.'
+      );
       return;
     }
 
     const pageLegends = [];
     let nextCursor = null;
+    const hiddenScribbitIds =
+      previewMode === 'returning' ? memory.hiddenScribbitIds : new Set();
     for (let index = cursorOffset; index < memory.legends.length; index += 1) {
       const scribbit = memory.legends[index];
-      if (!scribbit || memory.hiddenScribbitIds.has(scribbit.id)) continue;
+      if (!scribbit || hiddenScribbitIds.has(scribbit.id)) continue;
       if (pageLegends.length === requestedLimit) {
         nextCursor = String(index);
         break;
@@ -1361,7 +1897,8 @@ const handleApi = async (request, response, url) => {
     sendJson(response, 200, {
       legends: pageLegends,
       nextCursor,
-      myFaded: memory.myFaded.map(cloneScribbit),
+      myFaded:
+        previewMode === 'returning' ? memory.myFaded.map(cloneScribbit) : [],
     });
     return;
   }
@@ -1385,7 +1922,9 @@ const handleApi = async (request, response, url) => {
     const body = await readJsonBody(request);
     const scribbitId = readScribbitId(body);
     const action = typeof body?.action === 'string' ? body.action : '';
-    const scribbit = memory.myScribbits.find((entry) => entry.id === scribbitId);
+    const scribbit = getLivingScribbitsForPreview(previewMode).find(
+      (entry) => entry.id === scribbitId
+    );
 
     if (!scribbit || !careActions.includes(action)) {
       sendError(response, 400, 'Choose a valid Scribbit and care action.');
@@ -1401,6 +1940,7 @@ const handleApi = async (request, response, url) => {
     scribbit.mood = moodFromCare(scribbit.careDoneToday);
     scribbit.xp += scribbit.mood === 'pumped' ? 2 : 1;
     scribbit.level = levelForXp(scribbit.xp);
+    economy.ink += careInkReward;
     sendJson(response, 200, cloneScribbit(scribbit));
     return;
   }
@@ -1410,12 +1950,16 @@ const handleApi = async (request, response, url) => {
     const scribbitId = readScribbitId(body);
 
     if (!memory.todayEntrants.some((entry) => entry.id === scribbitId)) {
-      sendError(response, 400, 'Back one of tonight\'s Rumble entrants.');
+      sendError(response, 400, "Back one of tonight's Rumble entrants.");
       return;
     }
 
     if (memory.myScribbits.some((entry) => entry.id === scribbitId)) {
-      sendError(response, 400, 'Back another Redditor\'s Scribbit, not your own.');
+      sendError(
+        response,
+        400,
+        "Back another Redditor's Scribbit, not your own."
+      );
       return;
     }
 
@@ -1430,23 +1974,22 @@ const handleApi = async (request, response, url) => {
   }
 
   if (method === 'POST' && path === '/api/remove-scribbit') {
+    if (previewMode === 'logged-out') {
+      sendError(response, 401, 'Sign in to remove your Scribbit.');
+      return;
+    }
     const body = await readJsonBody(request);
     const scribbitId = readScribbitId(body);
-    const scribbit = memory.myScribbits.find((entry) => entry.id === scribbitId);
+    const scribbit = getOwnedScribbitsForPreview(previewMode).find(
+      (entry) => entry.id === scribbitId
+    );
 
     if (!scribbit || scribbit.isFounding) {
       sendError(response, 404, 'That Scribbit is not yours to remove.');
       return;
     }
 
-    for (const list of [memory.myScribbits, memory.todayEntrants, memory.legends, memory.myFaded]) {
-      const index = list.findIndex((entry) => entry.id === scribbitId);
-      if (index >= 0) list.splice(index, 1);
-    }
-    memory.myBattles = memory.myBattles.filter(
-      (report) => report.a.id !== scribbitId && report.b.id !== scribbitId
-    );
-    submittedDrawingBytes.delete(scribbitId);
+    removeScribbitEverywhere(scribbitId);
     sendJson(response, 200, { removed: scribbitId });
     return;
   }
@@ -1457,11 +2000,19 @@ const handleApi = async (request, response, url) => {
     const scribbit = findVisibleScribbit(scribbitId);
 
     if (!scribbit || scribbit.isFounding) {
-      sendError(response, 404, 'That community Scribbit is no longer available.');
+      sendError(
+        response,
+        404,
+        'That community Scribbit is no longer available.'
+      );
       return;
     }
     if (memory.myScribbits.some((entry) => entry.id === scribbitId)) {
-      sendError(response, 400, 'Remove your own Scribbit instead of reporting it.');
+      sendError(
+        response,
+        400,
+        'Remove your own Scribbit instead of reporting it.'
+      );
       return;
     }
 
@@ -1476,24 +2027,33 @@ const handleApi = async (request, response, url) => {
   }
 
   if (method === 'POST' && path === '/api/delete-my-data') {
-    const removedScribbits = memory.myScribbits.filter(
-      (scribbit) => !scribbit.isFounding
-    ).length;
-    const ownedIds = new Set(memory.myScribbits.map((scribbit) => scribbit.id));
-    memory.myScribbits.splice(0, memory.myScribbits.length);
-    for (let index = memory.todayEntrants.length - 1; index >= 0; index -= 1) {
-      if (ownedIds.has(memory.todayEntrants[index]?.id)) {
-        memory.todayEntrants.splice(index, 1);
-      }
+    if (previewMode === 'logged-out') {
+      sendError(response, 401, 'Sign in to delete your Scribbits data.');
+      return;
     }
-    memory.myBattles = memory.myBattles.filter(
-      (report) => !ownedIds.has(report.a.id) && !ownedIds.has(report.b.id)
+    const ownedScribbits = getOwnedScribbitsForPreview(previewMode).filter(
+      (scribbit) => !scribbit.isFounding
     );
-    memory.myBackedScribbitId = null;
-    memory.myClout = 0;
-    memory.myInk = 0;
-    memory.playStreakDays = 0;
-    memory.hiddenScribbitIds.clear();
+    const removedScribbits = ownedScribbits.length;
+    for (const scribbit of ownedScribbits) {
+      removeScribbitEverywhere(scribbit.id);
+    }
+
+    resetPreviewEconomy(economy);
+    if (previewMode === 'fresh') {
+      memory.freshLegacySeenThroughDay = 0;
+    }
+    if (previewMode === 'returning') {
+      memory.drawnToday = false;
+      memory.enteredToday = false;
+      memory.myBackedScribbitId = null;
+      memory.myClout = 0;
+      memory.playStreakDays = 0;
+      memory.legacySeenThroughDay = 0;
+      memory.beliefVotes.clear();
+      memory.hiddenScribbitIds.clear();
+      memory.reportCounts.clear();
+    }
     sendJson(response, 200, { deleted: true, removedScribbits });
     return;
   }
@@ -1503,13 +2063,21 @@ const handleApi = async (request, response, url) => {
     const scribbitId = readScribbitId(body);
     const scribbit = findVisibleScribbit(scribbitId);
 
-    if (!scribbit) {
-      sendError(response, 404, 'That Scribbit cannot collect belief right now.');
+    if (
+      !scribbit ||
+      scribbit.status !== 'alive' ||
+      scribbit.expiresDay <= memory.dayNumber
+    ) {
+      sendError(
+        response,
+        404,
+        'That Scribbit cannot collect belief right now.'
+      );
       return;
     }
 
     if (scribbit.artist === 'mock_player') {
-      sendError(response, 400, 'believe in someone else\'s doodle');
+      sendError(response, 400, "believe in someone else's doodle");
       return;
     }
 
@@ -1529,7 +2097,9 @@ const handleApi = async (request, response, url) => {
   if (method === 'POST' && path === '/api/spar') {
     const body = await readJsonBody(request);
     const scribbitId = readScribbitId(body);
-    const challenger = memory.myScribbits.find((entry) => entry.id === scribbitId);
+    const challenger = getLivingScribbitsForPreview(previewMode).find(
+      (entry) => entry.id === scribbitId
+    );
 
     if (!challenger) {
       sendError(response, 404, 'That living Scribbit is not ready to spar.');
@@ -1540,15 +2110,30 @@ const handleApi = async (request, response, url) => {
       memory.todayEntrants.find((entry) => entry.artist !== 'mock_player') ??
       memory.todayEntrants[0];
     const report = createBattleReport('exhibition', challenger, opponent);
-    memory.myBattles.unshift(report);
-    sendJson(response, 200, report);
+    let rewardedReport = report;
+
+    if (report.winner === 'a') {
+      const utcDateKey = currentUtcDateKey();
+      if (!economy.sparWinRewardUtcDates.has(utcDateKey)) {
+        economy.sparWinRewardUtcDates.add(utcDateKey);
+        economy.ink += sparWinInkReward;
+        challenger.xp += 1;
+        challenger.level = levelForXp(challenger.xp);
+        rewardedReport = { ...report, inkAwarded: sparWinInkReward };
+      }
+    }
+
+    memory.myBattles.unshift(rewardedReport);
+    sendJson(response, 200, rewardedReport);
     return;
   }
 
   if (method === 'POST' && path === '/api/boss-challenge') {
     const body = await readJsonBody(request);
     const scribbitId = readScribbitId(body);
-    const challenger = memory.myScribbits.find((entry) => entry.id === scribbitId);
+    const challenger = memory.myScribbits.find(
+      (entry) => entry.id === scribbitId
+    );
 
     if (!challenger) {
       sendError(response, 404, 'That living Scribbit is not ready to fight.');
@@ -1564,15 +2149,21 @@ const handleApi = async (request, response, url) => {
   if (method === 'POST' && path === '/api/enter-rumble') {
     const body = await readJsonBody(request);
     const scribbitId = readScribbitId(body);
-    const scribbit = memory.myScribbits.find((entry) => entry.id === scribbitId);
+    const scribbit = memory.myScribbits.find(
+      (entry) => entry.id === scribbitId
+    );
 
     if (!scribbit) {
-      sendError(response, 404, 'That living Scribbit is not in your sketchbook.');
+      sendError(
+        response,
+        404,
+        'That living Scribbit is not in your sketchbook.'
+      );
       return;
     }
 
     if (memory.enteredToday) {
-      sendError(response, 409, 'You already entered today\'s Rumble.');
+      sendError(response, 409, "You already entered today's Rumble.");
       return;
     }
 
@@ -1590,10 +2181,17 @@ const handleApi = async (request, response, url) => {
       typeof body?.name === 'string' && body.name.trim().length >= 2
         ? body.name.trim().slice(0, 24)
         : 'Fresh Scribbit';
-    const submittedAccessories = readSubmittedAccessoryIds(body);
+    const submittedAccessories = readSubmittedAccessoryIds(
+      body,
+      economy.inventory
+    );
 
     if (submittedAccessories.message) {
-      sendError(response, submittedAccessories.status, submittedAccessories.message);
+      sendError(
+        response,
+        submittedAccessories.status,
+        submittedAccessories.message
+      );
       return;
     }
 
@@ -1614,7 +2212,10 @@ const handleApi = async (request, response, url) => {
     // matching production's cosmetic-only accessory boundary.
     submittedDrawingBytes.set(
       id,
-      Buffer.from(renderedImageDataUrl.slice('data:image/png;base64,'.length), 'base64')
+      Buffer.from(
+        renderedImageDataUrl.slice('data:image/png;base64,'.length),
+        'base64'
+      )
     );
     const scribbit = makeScribbit({
       id,
@@ -1631,11 +2232,15 @@ const handleApi = async (request, response, url) => {
       accessories: submittedAccessories.accessoryIds,
     });
 
-    consumeInventoryItems(submittedAccessories.requiredCounts ?? {});
+    consumeInventoryItems(
+      economy.inventory,
+      submittedAccessories.requiredCounts ?? {}
+    );
     memory.myScribbits.unshift(scribbit);
     memory.todayEntrants.push(scribbit);
     memory.drawnToday = true;
     memory.enteredToday = true;
+    economy.ink += dailyDrawInkReward;
     sendJson(response, 201, cloneScribbit(scribbit));
     return;
   }
@@ -1746,16 +2351,17 @@ const resetFreshPreview = () => {
     }
   }
   memory.myBattles = memory.myBattles.filter(
-    (report) =>
-      !submittedIds.has(report.a.id) && !submittedIds.has(report.b.id)
+    (report) => !submittedIds.has(report.a.id) && !submittedIds.has(report.b.id)
   );
-  for (const scribbitId of submittedIds) submittedDrawingBytes.delete(scribbitId);
+  for (const scribbitId of submittedIds)
+    submittedDrawingBytes.delete(scribbitId);
   memory.drawnToday = false;
   memory.enteredToday = false;
   memory.myBackedScribbitId = null;
+  memory.freshLegacySeenThroughDay = 0;
   memory.hiddenScribbitIds.clear();
   memory.reportCounts.clear();
-  memory.capsuleOperations.clear();
+  resetPreviewEconomy(memory.economyByPreviewMode.fresh);
 };
 
 if (autoReload && existsSync(clientRoot)) {
@@ -1776,7 +2382,7 @@ const server = createServer(async (request, response) => {
     if (
       request.method === 'GET' &&
       url.pathname === '/' &&
-      url.searchParams.has('fresh')
+      previewModeFromUrl(url) === 'fresh'
     ) {
       resetFreshPreview();
     }

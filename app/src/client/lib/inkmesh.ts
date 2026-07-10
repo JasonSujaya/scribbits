@@ -5,6 +5,7 @@
 // understand. LiveSprite owns the renderer; this file owns the mesh data.
 
 import type { ScribbitStats } from '../../shared/arena';
+import { ABILITY_CONFIG_BY_POWER } from '../../shared/combat';
 
 export const INK_MESH_SEGMENTS = 4;
 
@@ -14,10 +15,22 @@ export const SIGNATURE_POWER: Record<
   SignatureTrait,
   { name: string; playerHint: string }
 > = {
-  chonk: { name: 'INKQUAKE', playerHint: 'Filled bodies launch an expanding shockwave.' },
-  spike: { name: 'NIB HALO', playerHint: 'Jagged edges summon three rotating quills.' },
-  zip: { name: 'SMEARSTEP', playerHint: 'Compact shapes predict and dash twice.' },
-  charm: { name: 'COLORBURST', playerHint: 'More colors fire a cone and delayed echo.' },
+  chonk: {
+    name: ABILITY_CONFIG_BY_POWER.inkquake.displayName.toUpperCase(),
+    playerHint: 'Filled bodies launch an expanding shockwave.',
+  },
+  spike: {
+    name: ABILITY_CONFIG_BY_POWER.nib_halo.displayName.toUpperCase(),
+    playerHint: 'Jagged edges summon three rotating quills.',
+  },
+  zip: {
+    name: ABILITY_CONFIG_BY_POWER.smearstep.displayName.toUpperCase(),
+    playerHint: 'Compact shapes predict and dash twice.',
+  },
+  charm: {
+    name: ABILITY_CONFIG_BY_POWER.colorburst.displayName.toUpperCase(),
+    playerHint: 'More colors fire a cone and delayed echo.',
+  },
 };
 
 export type InkMeshGeometry = {
@@ -97,7 +110,9 @@ export function updateInkMeshVertices(
   stats: ScribbitStats,
   motion: InkMeshMotion
 ): void {
-  const wake = motion.reduceMotion ? 1 : easeOutCubic(clamp01(motion.awakenProgress));
+  const wake = motion.reduceMotion
+    ? 1
+    : easeOutCubic(clamp01(motion.awakenProgress));
   const ambientMotion = motion.reduceMotion ? 0 : 1;
   const impact = motion.reduceMotion ? 0 : 1 - clamp01(motion.impactProgress);
   const crumple = clamp01(motion.crumpleProgress);
@@ -112,7 +127,11 @@ export function updateInkMeshVertices(
   const breathPixels = 1.8 + chonk * 4.2;
   const time = motion.elapsedSeconds;
 
-  for (let vertexIndex = 0; vertexIndex < geometry.restVertices.length; vertexIndex += 4) {
+  for (
+    let vertexIndex = 0;
+    vertexIndex < geometry.restVertices.length;
+    vertexIndex += 4
+  ) {
     const restX = geometry.restVertices[vertexIndex] ?? 0;
     const restY = geometry.restVertices[vertexIndex + 1] ?? 0;
     const u = geometry.restVertices[vertexIndex + 2] ?? 0;
@@ -124,14 +143,28 @@ export function updateInkMeshVertices(
     // Birth: unfold the actual drawing from one ink blot with a radial ripple.
     const distanceFromCenter = Math.hypot(normalizedX, normalizedY);
     const birthRipple =
-      Math.sin(distanceFromCenter * 9 - wake * 12) * (1 - wake) * 18 * centerWeight;
+      Math.sin(distanceFromCenter * 9 - wake * 12) *
+      (1 - wake) *
+      18 *
+      centerWeight;
     let x = restX * wake + normalizedX * birthRipple;
     let y = restY * wake + normalizedY * birthRipple;
 
     // Idle motion is stat-driven: Chonk breathes deeper and Zip breathes faster.
     const breath = Math.sin(time * breathRate + normalizedX * 0.9);
-    y += breath * breathPixels * (0.3 + centerWeight * 0.7) * wake * (1 - crumple) * ambientMotion;
-    x += Math.cos(time * breathRate * 0.72 + normalizedY) * breathPixels * 0.25 * centerWeight * ambientMotion;
+    y +=
+      breath *
+      breathPixels *
+      (0.3 + centerWeight * 0.7) *
+      wake *
+      (1 - crumple) *
+      ambientMotion;
+    x +=
+      Math.cos(time * breathRate * 0.72 + normalizedY) *
+      breathPixels *
+      0.25 *
+      centerWeight *
+      ambientMotion;
 
     // A hit becomes a vertex ripple travelling away from the struck edge.
     if (impact > 0) {
@@ -164,13 +197,18 @@ export function updateInkMeshVertices(
     }
 
     if (celebration > 0) {
-      y -= Math.abs(Math.sin(time * 6 + normalizedX * 2.5)) * celebration * 7 * centerWeight;
+      y -=
+        Math.abs(Math.sin(time * 6 + normalizedX * 2.5)) *
+        celebration *
+        7 *
+        centerWeight;
     }
 
     // KO folds the upper paper toward the floor and pulls the silhouette inward.
     if (crumple > 0) {
       const topWeight = 1 - v;
-      const floorY = geometry.height * 0.48 - topWeight * geometry.height * 0.08;
+      const floorY =
+        geometry.height * 0.48 - topWeight * geometry.height * 0.08;
       x *= 1 - crumple * topWeight * 0.42;
       y += (floorY - y) * crumple * (0.35 + topWeight * 0.65);
     }

@@ -4,6 +4,7 @@ import { createRequire } from 'node:module';
 import { mkdirSync, rmSync, symlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { PNG } from 'pngjs';
 
 const repoRoot = process.cwd();
 const outDir = join(tmpdir(), 'scribbits-arena-sim-tests');
@@ -11,7 +12,11 @@ const tscPath = join(repoRoot, 'node_modules', '.bin', 'tsc');
 
 rmSync(outDir, { recursive: true, force: true });
 mkdirSync(outDir, { recursive: true });
-symlinkSync(join(repoRoot, 'node_modules'), join(outDir, 'node_modules'), 'dir');
+symlinkSync(
+  join(repoRoot, 'node_modules'),
+  join(outDir, 'node_modules'),
+  'dir'
+);
 
 execFileSync(
   tscPath,
@@ -36,6 +41,7 @@ execFileSync(
     'src/shared/arena.ts',
     'src/shared/analyzer-core.ts',
     'src/shared/battle.ts',
+    'src/shared/cosmetics.ts',
     'src/shared/combat/types.ts',
     'src/shared/combat/config.ts',
     'src/shared/combat/fixed-math.ts',
@@ -47,6 +53,7 @@ execFileSync(
     'src/server/core/random.ts',
     'src/server/core/ink.ts',
     'src/server/core/inkStore.ts',
+    'src/server/core/legacy.ts',
     'src/server/core/forecast.ts',
     'src/server/core/arenaStore.ts',
     'src/server/core/clout.ts',
@@ -62,6 +69,9 @@ execFileSync(
     'src/server/core/privacy.ts',
     'src/client/lib/inkmesh.ts',
     'src/client/lib/continuousreplay.ts',
+    'src/client/lib/shapepowerpresentation.ts',
+    'src/client/lib/nextgoal.ts',
+    'src/client/lib/accessories.ts',
     'src/client/lib/pens.ts',
   ],
   { cwd: repoRoot, stdio: 'inherit' }
@@ -70,19 +80,24 @@ execFileSync(
 const require = createRequire(import.meta.url);
 const analyzerCore = require(join(outDir, 'shared', 'analyzer-core.js'));
 const sharedBattle = require(join(outDir, 'shared', 'battle.js'));
+const sharedCosmetics = require(join(outDir, 'shared', 'cosmetics.js'));
 const combatEngineTests = require(
   join(outDir, 'shared', 'combat', 'engine.test.js')
 );
 const arena = require(join(outDir, 'shared', 'arena.js'));
 const arenaStore = require(join(outDir, 'server', 'core', 'arenaStore.js'));
 const battle = require(join(outDir, 'server', 'core', 'battle.js'));
+const battleStore = require(join(outDir, 'server', 'core', 'battleStore.js'));
 const clout = require(join(outDir, 'server', 'core', 'clout.js'));
 const dailyJob = require(join(outDir, 'server', 'core', 'dailyJob.js'));
 const forecastCore = require(join(outDir, 'server', 'core', 'forecast.js'));
 const inkCatalog = require(join(outDir, 'server', 'core', 'ink.js'));
 const inkStore = require(join(outDir, 'server', 'core', 'inkStore.js'));
+const legacyCore = require(join(outDir, 'server', 'core', 'legacy.js'));
 const rumble = require(join(outDir, 'server', 'core', 'rumble.js'));
-const resultComment = require(join(outDir, 'server', 'core', 'resultComment.js'));
+const resultComment = require(
+  join(outDir, 'server', 'core', 'resultComment.js')
+);
 const scribbitCore = require(join(outDir, 'server', 'core', 'scribbit.js'));
 const streakCore = require(join(outDir, 'server', 'core', 'streak.js'));
 const moderationCore = require(join(outDir, 'server', 'core', 'moderation.js'));
@@ -90,6 +105,13 @@ const privacyCore = require(join(outDir, 'server', 'core', 'privacy.js'));
 const inkMeshCore = require(join(outDir, 'client', 'lib', 'inkmesh.js'));
 const continuousReplay = require(
   join(outDir, 'client', 'lib', 'continuousreplay.js')
+);
+const shapePowerPresentation = require(
+  join(outDir, 'client', 'lib', 'shapepowerpresentation.js')
+);
+const nextGoal = require(join(outDir, 'client', 'lib', 'nextgoal.js'));
+const clientAccessories = require(
+  join(outDir, 'client', 'lib', 'accessories.js')
 );
 const clientPens = require(join(outDir, 'client', 'lib', 'pens.js'));
 
@@ -121,7 +143,11 @@ const continuedPlayStreak = streakCore.advancePlayStreak(
   firstPlayStreak,
   '20260709'
 );
-assert.equal(continuedPlayStreak.days, 2, 'next UTC day should continue the streak');
+assert.equal(
+  continuedPlayStreak.days,
+  2,
+  'next UTC day should continue the streak'
+);
 assert.equal(
   streakCore.advancePlayStreak(continuedPlayStreak, '20260711').days,
   1,
@@ -130,7 +156,7 @@ assert.equal(
 pass('daily play streak continuation and reset');
 
 const makeScribbit = (overrides = {}) => {
-  return {
+  const scribbit = {
     id: overrides.id ?? 'scribbit-test',
     name: overrides.name ?? 'Gerald',
     artist: overrides.artist ?? 'tester',
@@ -154,10 +180,10 @@ const makeScribbit = (overrides = {}) => {
     level: overrides.level ?? 1,
     xp: overrides.xp ?? 0,
     mood: overrides.mood ?? 'hungry',
-    careDoneToday: overrides.careDoneToday
-      ? [...overrides.careDoneToday]
-      : [],
+    careDoneToday: overrides.careDoneToday ? [...overrides.careDoneToday] : [],
+    legacy: overrides.legacy ?? null,
   };
+  return scribbitCore.normalizeScribbitRecord(scribbit) ?? scribbit;
 };
 
 const sumStats = (stats) => {
@@ -165,8 +191,16 @@ const sumStats = (stats) => {
 };
 
 const inkMeshGeometry = inkMeshCore.buildInkMeshGeometry(200, 160);
-assert.equal(inkMeshGeometry.vertices.length, 25 * 4, '4x4 mesh needs 25 xyuv vertices');
-assert.equal(inkMeshGeometry.indices.length, 32 * 4, '4x4 mesh needs 32 textured triangles');
+assert.equal(
+  inkMeshGeometry.vertices.length,
+  25 * 4,
+  '4x4 mesh needs 25 xyuv vertices'
+);
+assert.equal(
+  inkMeshGeometry.indices.length,
+  32 * 4,
+  '4x4 mesh needs 32 textured triangles'
+);
 assert.equal(
   inkMeshCore.getSignatureTrait({ chonk: 10, spike: 50, zip: 20, charm: 20 }),
   'spike',
@@ -262,7 +296,9 @@ const createMemoryStorage = (options = {}) => {
     const normalizedStart = Number(start);
     const normalizedStop = Number(stop);
     const end =
-      normalizedStop < 0 ? entries.length : Math.min(entries.length, normalizedStop + 1);
+      normalizedStop < 0
+        ? entries.length
+        : Math.min(entries.length, normalizedStop + 1);
     return entries.slice(normalizedStart, end);
   };
 
@@ -356,9 +392,11 @@ const createMemoryStorage = (options = {}) => {
       return getSortedSet(key).get(member);
     },
     async zRank(key, member) {
-      const rank = entriesByRank(getSortedSet(key), false).findIndex((entry) => {
-        return entry.member === member;
-      });
+      const rank = entriesByRank(getSortedSet(key), false).findIndex(
+        (entry) => {
+          return entry.member === member;
+        }
+      );
       return rank >= 0 ? rank : undefined;
     },
     async zIncrBy(key, member, value) {
@@ -369,7 +407,7 @@ const createMemoryStorage = (options = {}) => {
     },
   };
 
-  if (options.transactions === true) {
+  if (options.transactions !== false) {
     storage.watch = async () => {
       const queuedCommands = [];
       let transactionStarted = false;
@@ -418,11 +456,27 @@ const createMemoryStorage = (options = {}) => {
             }
           });
         },
+        async hSetNX(key, field, value) {
+          queueCommand(() => {
+            const hash = getHash(key);
+            if (hash.has(field)) return 0;
+            hash.set(field, value);
+            return 1;
+          });
+        },
         async hIncrBy(key, field, value) {
           queueCommand(() => {
             const hash = getHash(key);
             const next = Number(hash.get(field) ?? '0') + value;
             hash.set(field, String(next));
+            return next;
+          });
+        },
+        async zIncrBy(key, member, value) {
+          queueCommand(() => {
+            const set = getSortedSet(key);
+            const next = Number(set.get(member) ?? 0) + value;
+            set.set(member, next);
             return next;
           });
         },
@@ -434,7 +488,7 @@ const createMemoryStorage = (options = {}) => {
           const results = queuedCommands.map((command) => command());
           if (throwAfterCommitOnce) {
             throwAfterCommitOnce = false;
-            throw new Error('Simulated capsule reply loss after commit.');
+            throw new Error('Simulated transaction reply loss after commit.');
           }
           return results;
         },
@@ -462,20 +516,36 @@ const firstSafetyReport = await moderationCore.reportAndHideScribbit(
   'unsafe-scribbit',
   1000
 );
-assert.equal(firstSafetyReport.created, true, 'first reporter should create a report');
-assert.equal(firstSafetyReport.reportCount, 1, 'first report should count once');
+assert.equal(
+  firstSafetyReport.created,
+  true,
+  'first reporter should create a report'
+);
+assert.equal(
+  firstSafetyReport.reportCount,
+  1,
+  'first report should count once'
+);
 const duplicateSafetyReport = await moderationCore.reportAndHideScribbit(
   moderationStorage,
   'reporter-one',
   'unsafe-scribbit',
   2000
 );
-assert.equal(duplicateSafetyReport.created, false, 'duplicate reporter must be idempotent');
-assert.equal(duplicateSafetyReport.reportCount, 1, 'duplicate report must not inflate count');
 assert.equal(
-  (await moderationCore.getHiddenScribbitIds(moderationStorage, 'reporter-one')).has(
-    'unsafe-scribbit'
-  ),
+  duplicateSafetyReport.created,
+  false,
+  'duplicate reporter must be idempotent'
+);
+assert.equal(
+  duplicateSafetyReport.reportCount,
+  1,
+  'duplicate report must not inflate count'
+);
+assert.equal(
+  (
+    await moderationCore.getHiddenScribbitIds(moderationStorage, 'reporter-one')
+  ).has('unsafe-scribbit'),
   true,
   'reported content should be hidden from its reporter'
 );
@@ -493,7 +563,19 @@ await scribbitCore.storeScribbit(
   'privacy-user-id',
   privacyScribbit
 );
+const privacyLegacy = scribbitCore.resolveExpiredScribbitStatus(
+  makeScribbit({ id: 'privacy-legacy', artist: 'privacy-player' })
+);
+await scribbitCore.storeScribbit(
+  privacyStorage,
+  'privacy-user-id',
+  privacyLegacy
+);
 await scribbitCore.addRumbleEntrant(privacyStorage, 2, privacyScribbit.id);
+await privacyStorage.hSet(
+  scribbitCore.getRumbleStandingReceiptKey(privacyScribbit.id),
+  { 2: '1:0:2' }
+);
 await privacyStorage.zAdd(clout.getCloutKey(), {
   member: 'privacy-user-id',
   score: 12,
@@ -515,16 +597,47 @@ await privacyCore.recordUserBeliefTarget(
   'community-target',
   '20260708'
 );
+await scribbitCore.claimUserDailySparWinReward(
+  privacyStorage,
+  'privacy-user-id',
+  '20260708',
+  1000
+);
 const privacyDeletion = await privacyCore.deletePlayerData(
   privacyStorage,
   'privacy-user-id',
   2
 );
-assert.equal(privacyDeletion.removedScribbits, 1, 'privacy deletion should count owned Scribbits');
+assert.equal(
+  privacyDeletion.removedScribbits,
+  2,
+  'privacy deletion should count owned Scribbits'
+);
 assert.equal(
   await scribbitCore.loadScribbit(privacyStorage, privacyScribbit.id),
   undefined,
   'privacy deletion should remove owned Scribbit records'
+);
+assert.equal(
+  await scribbitCore.loadScribbit(privacyStorage, privacyLegacy.id),
+  undefined,
+  'privacy deletion should remove permanent Legacy Card records'
+);
+assert.equal(
+  await privacyStorage.hGet(
+    scribbitCore.getRumbleStandingReceiptKey(privacyScribbit.id),
+    '2'
+  ),
+  undefined,
+  'privacy deletion should remove per-Scribbit Rumble receipts'
+);
+assert.equal(
+  await privacyStorage.zScore(
+    scribbitCore.getUserLegacyCardsKey('privacy-user-id'),
+    privacyLegacy.id
+  ),
+  undefined,
+  'privacy deletion should remove the personal Legacy index'
 );
 assert.equal(
   await privacyStorage.zScore(clout.getCloutKey(), 'privacy-user-id'),
@@ -536,8 +649,16 @@ assert.equal(
   0,
   'privacy deletion should remove streak data'
 );
+assert.deepEqual(
+  await privacyStorage.hGetAll(
+    scribbitCore.getUserDailySparWinRewardsKey('privacy-user-id')
+  ),
+  {},
+  'privacy deletion should remove player-level daily spar receipts'
+);
 assert.equal(
-  (await moderationCore.getHiddenScribbitIds(privacyStorage, 'privacy-user-id')).size,
+  (await moderationCore.getHiddenScribbitIds(privacyStorage, 'privacy-user-id'))
+    .size,
   0,
   'privacy deletion should remove report-hide data'
 );
@@ -556,6 +677,231 @@ const beta = makeScribbit({
   element: 'moss',
   stats: { chonk: 40, spike: 18, zip: 18, charm: 24 },
 });
+
+const pngFixture = new PNG({ width: 512, height: 512 });
+pngFixture.data.fill(0);
+const validPngBytes = PNG.sync.write(pngFixture);
+const validPngDataUrl = `data:image/png;base64,${validPngBytes.toString('base64')}`;
+const validDecodedPng = scribbitCore.decodePngDataUrl(validPngDataUrl);
+assert.ok(validDecodedPng, 'a valid 512x512 PNG should pass preflight');
+assert.equal(
+  validDecodedPng.width,
+  512,
+  'decoded PNG width should be preserved'
+);
+assert.equal(
+  validDecodedPng.height,
+  512,
+  'decoded PNG height should be preserved'
+);
+
+const wrongSignaturePngBytes = Buffer.from(validPngBytes);
+wrongSignaturePngBytes[0] = 0;
+assert.equal(
+  scribbitCore.decodePngDataUrl(
+    `data:image/png;base64,${wrongSignaturePngBytes.toString('base64')}`
+  ),
+  undefined,
+  'a wrong PNG signature should fail before image decode'
+);
+
+const wrongDimensionsPngBytes = Buffer.from(validPngBytes);
+wrongDimensionsPngBytes.writeUInt32BE(511, 16);
+assert.equal(
+  scribbitCore.decodePngDataUrl(
+    `data:image/png;base64,${wrongDimensionsPngBytes.toString('base64')}`
+  ),
+  undefined,
+  'a non-512 IHDR should fail before image decode'
+);
+assert.equal(
+  scribbitCore.decodePngDataUrl(`data:image/png;base64,${'A'.repeat(546_140)}`),
+  undefined,
+  'oversized base64 should fail before allocating decoded PNG bytes'
+);
+pass('PNG data URL size, signature, and IHDR preflight');
+
+const makeDecodedPngFixture = (rgba) => {
+  return {
+    base64: 'fixture',
+    bytes: new Uint8Array(),
+    byteLength: 0,
+    width: 512,
+    height: 512,
+    rgba,
+  };
+};
+
+const setRgbaPixel = (rgba, x, y, red, green, blue, alpha) => {
+  const byteOffset = (y * 512 + x) * 4;
+  rgba[byteOffset] = red;
+  rgba[byteOffset + 1] = green;
+  rgba[byteOffset + 2] = blue;
+  rgba[byteOffset + 3] = alpha;
+};
+
+const bindingBaseRgba = new Uint8Array(512 * 512 * 4);
+setRgbaPixel(bindingBaseRgba, 24, 24, 120, 80, 40, 200);
+const bindingBasePng = makeDecodedPngFixture(bindingBaseRgba);
+assert.equal(
+  scribbitCore.validateRenderedPngBinding(
+    bindingBasePng,
+    makeDecodedPngFixture(bindingBaseRgba.slice()),
+    []
+  ),
+  true,
+  'identical decoded images should pass without accessories'
+);
+
+const hiddenColorDifferenceRgba = bindingBaseRgba.slice();
+setRgbaPixel(hiddenColorDifferenceRgba, 25, 25, 255, 120, 60, 0);
+assert.equal(
+  scribbitCore.validateRenderedPngBinding(
+    bindingBasePng,
+    makeDecodedPngFixture(hiddenColorDifferenceRgba),
+    []
+  ),
+  true,
+  'RGB differences under zero alpha should be ignored as invisible'
+);
+
+const oneLevelToleranceBaseRgba = bindingBaseRgba.slice();
+setRgbaPixel(oneLevelToleranceBaseRgba, 26, 26, 100, 100, 100, 128);
+const oneLevelToleranceRenderedRgba = oneLevelToleranceBaseRgba.slice();
+setRgbaPixel(oneLevelToleranceRenderedRgba, 26, 26, 100, 100, 100, 129);
+assert.equal(
+  scribbitCore.validateRenderedPngBinding(
+    makeDecodedPngFixture(oneLevelToleranceBaseRgba),
+    makeDecodedPngFixture(oneLevelToleranceRenderedRgba),
+    []
+  ),
+  true,
+  'one alpha and premultiplied channel level should tolerate canvas rounding'
+);
+
+const outsideMismatchRgba = bindingBaseRgba.slice();
+setRgbaPixel(outsideMismatchRgba, 12, 12, 255, 0, 0, 255);
+const centeredAccessory = {
+  id: 'beanie',
+  x: 256,
+  y: 256,
+  scale: 1,
+  rotation: 0,
+};
+assert.equal(
+  scribbitCore.validateRenderedPngBinding(
+    bindingBasePng,
+    makeDecodedPngFixture(outsideMismatchRgba),
+    [centeredAccessory]
+  ),
+  false,
+  'one unauthorized visible pixel outside declared regions should fail'
+);
+pass('rendered PNG identity and exact outside-region binding');
+
+const rotatedAccessory = {
+  ...centeredAccessory,
+  rotation: Math.PI / 4,
+};
+const rotatedRegionRgba = bindingBaseRgba.slice();
+setRgbaPixel(rotatedRegionRgba, 256, 339, 40, 180, 220, 255);
+assert.equal(
+  scribbitCore.validateRenderedPngBinding(
+    bindingBasePng,
+    makeDecodedPngFixture(rotatedRegionRgba),
+    [rotatedAccessory]
+  ),
+  true,
+  'a pixel inside the declared rotated box should be allowed'
+);
+assert.equal(
+  scribbitCore.validateRenderedPngBinding(
+    bindingBasePng,
+    makeDecodedPngFixture(rotatedRegionRgba),
+    [centeredAccessory]
+  ),
+  false,
+  'the same pixel should be outside the unrotated box'
+);
+
+const alphaErasureBaseRgba = bindingBaseRgba.slice();
+setRgbaPixel(alphaErasureBaseRgba, 256, 256, 20, 30, 40, 255);
+const alphaErasureRenderedRgba = alphaErasureBaseRgba.slice();
+setRgbaPixel(alphaErasureRenderedRgba, 256, 256, 20, 30, 40, 254);
+assert.equal(
+  scribbitCore.validateRenderedPngBinding(
+    makeDecodedPngFixture(alphaErasureBaseRgba),
+    makeDecodedPngFixture(alphaErasureRenderedRgba),
+    [rotatedAccessory]
+  ),
+  false,
+  'rendered alpha must never decrease, even inside an accessory region'
+);
+pass('rotated accessory region allowance and global alpha monotonicity');
+
+const makeAccessoryDraft = (accessories) => {
+  return {
+    name: 'Bounds Tester',
+    baseImageDataUrl: validPngDataUrl,
+    imageDataUrl: validPngDataUrl,
+    stats: { chonk: 25, spike: 25, zip: 25, charm: 25 },
+    element: 'ember',
+    accessories,
+  };
+};
+const minimumTransformAccessory = {
+  id: 'bowtie',
+  x: 0,
+  y: 512,
+  scale: arena.MIN_ACCESSORY_SCALE,
+  rotation: arena.MIN_ACCESSORY_ROTATION,
+};
+const maximumTransformAccessory = {
+  id: 'beanie',
+  x: 512,
+  y: 0,
+  scale: arena.MAX_ACCESSORY_SCALE,
+  rotation: arena.MAX_ACCESSORY_ROTATION,
+};
+assert.ok(
+  scribbitCore.validateSubmitScribbitRequest(
+    makeAccessoryDraft([minimumTransformAccessory, maximumTransformAccessory])
+  ),
+  'integer canvas edges and exact transform limits should be accepted'
+);
+
+const invalidTransformAccessories = [
+  { ...centeredAccessory, x: 1.5 },
+  { ...centeredAccessory, y: 1.5 },
+  { ...centeredAccessory, x: -1 },
+  { ...centeredAccessory, y: 513 },
+  { ...centeredAccessory, scale: arena.MIN_ACCESSORY_SCALE - 0.001 },
+  { ...centeredAccessory, scale: arena.MAX_ACCESSORY_SCALE + 0.001 },
+  { ...centeredAccessory, rotation: arena.MIN_ACCESSORY_ROTATION - 0.001 },
+  { ...centeredAccessory, rotation: arena.MAX_ACCESSORY_ROTATION + 0.001 },
+  { ...centeredAccessory, id: 'not-a-real-accessory' },
+];
+for (const invalidAccessory of invalidTransformAccessories) {
+  assert.equal(
+    scribbitCore.validateSubmitScribbitRequest(
+      makeAccessoryDraft([invalidAccessory])
+    ),
+    undefined,
+    `invalid accessory transform should fail: ${JSON.stringify(invalidAccessory)}`
+  );
+}
+assert.equal(
+  scribbitCore.validateSubmitScribbitRequest(
+    makeAccessoryDraft([
+      centeredAccessory,
+      { ...centeredAccessory, id: 'bowtie' },
+      { ...centeredAccessory, id: 'monocle' },
+    ])
+  ),
+  undefined,
+  'accessory count above the shared maximum should fail'
+);
+pass('accessory catalog, count, coordinate, scale, and rotation bounds');
 
 const syntheticRgba = new Uint8Array(32 * 32 * 4);
 for (let y = 4; y < 24; y += 1) {
@@ -577,9 +923,21 @@ const analyzerTwo = analyzerCore.analyze({
   width: 32,
   height: 32,
 });
-assert.deepEqual(analyzerOne, analyzerTwo, 'analyzer-core should be deterministic');
-assert.equal(analyzerOne.inkedPixels, 400, 'synthetic fixture should count ink');
-assert.equal(sumStats(analyzerOne.stats), arena.STAT_BUDGET, 'analyzer stats sum');
+assert.deepEqual(
+  analyzerOne,
+  analyzerTwo,
+  'analyzer-core should be deterministic'
+);
+assert.equal(
+  analyzerOne.inkedPixels,
+  400,
+  'synthetic fixture should count ink'
+);
+assert.equal(
+  sumStats(analyzerOne.stats),
+  arena.STAT_BUDGET,
+  'analyzer stats sum'
+);
 assert.equal(analyzerOne.element, 'ember', 'red fixture should map to ember');
 
 const opaquePaperRgba = new Uint8Array(32 * 32 * 4);
@@ -612,7 +970,11 @@ pass('analyzer-core transparent and opaque-paper parity');
 
 const reportOne = battle.simulate(alpha, beta, 12345, forecast, 'exhibition');
 const reportTwo = battle.simulate(alpha, beta, 12345, forecast, 'exhibition');
-assert.deepEqual(reportOne, reportTwo, 'same seed should produce identical report');
+assert.deepEqual(
+  reportOne,
+  reportTwo,
+  'same seed should produce identical report'
+);
 assert.equal(reportOne.events[0].type, 'intro', 'intro should be first');
 assert.equal(
   reportOne.events[0].hpA,
@@ -633,14 +995,19 @@ assert.ok(
   reportOne.events.length >= 6 && reportOne.events.length <= 14,
   'legacy projections should stay inside the event budget'
 );
-assert.ok(reportOne.simulation, 'new battle reports should carry an authoritative transcript');
+assert.ok(
+  reportOne.simulation,
+  'new battle reports should carry an authoritative transcript'
+);
 assert.equal(
   reportOne.simulation.result.winner,
   reportOne.winner,
   'report winner must come from the authoritative transcript'
 );
 assert.ok(
-  reportOne.simulation.timeline.some((event) => event.kind === 'ability_activated'),
+  reportOne.simulation.timeline.some(
+    (event) => event.kind === 'ability_activated'
+  ),
   'continuous replay should include real ability activations'
 );
 assert.equal(
@@ -653,10 +1020,396 @@ const replayMidpoint = continuousReplay.calculateReplayFrame(
   reportOne.simulation.result.completedTick / 2
 );
 assert.ok(
-  replayMidpoint.fighters.every((fighter) => Number.isFinite(fighter.position.x)),
+  replayMidpoint.fighters.every((fighter) =>
+    Number.isFinite(fighter.position.x)
+  ),
   'continuous replay interpolation should keep both fighter positions finite'
 );
-pass('battle determinism, authoritative transcript, replay interpolation, and shared max HP');
+pass(
+  'battle determinism, authoritative transcript, replay interpolation, and shared max HP'
+);
+
+const firstDamageEvent = reportOne.simulation.timeline.find(
+  (event) => event.kind === 'damage'
+);
+assert.ok(firstDamageEvent, 'fixture transcript should contain damage');
+const damagedFighterIndex = firstDamageEvent.targetFighter === 'a' ? 0 : 1;
+const initialDamagedHitPoints =
+  reportOne.simulation.checkpoints[0].fighters[damagedFighterIndex].hitPoints;
+const earlierDamageEvents = reportOne.simulation.timeline.filter(
+  (event) =>
+    event.kind === 'damage' &&
+    event.targetFighter === firstDamageEvent.targetFighter &&
+    event.tick < firstDamageEvent.tick
+);
+const expectedHitPointsBeforeDamage =
+  earlierDamageEvents.at(-1)?.targetHitPoints ?? initialDamagedHitPoints;
+const damageEventsThroughImpact = reportOne.simulation.timeline.filter(
+  (event) =>
+    event.kind === 'damage' &&
+    event.targetFighter === firstDamageEvent.targetFighter &&
+    event.tick <= firstDamageEvent.tick
+);
+const expectedHitPointsAtDamage =
+  damageEventsThroughImpact.at(-1)?.targetHitPoints;
+assert.equal(
+  continuousReplay.calculateReplayFrame(
+    reportOne.simulation,
+    firstDamageEvent.tick - 0.01
+  ).fighters[damagedFighterIndex].hitPoints,
+  expectedHitPointsBeforeDamage,
+  'HP must not drain before its authoritative damage event'
+);
+assert.equal(
+  continuousReplay.calculateReplayFrame(
+    reportOne.simulation,
+    firstDamageEvent.tick
+  ).fighters[damagedFighterIndex].hitPoints,
+  expectedHitPointsAtDamage,
+  'HP must change exactly on its authoritative damage event'
+);
+assert.equal(
+  continuousReplay.calculateReplayFrame(
+    reportOne.simulation,
+    firstDamageEvent.tick + 0.25
+  ).fighters[damagedFighterIndex].hitPoints,
+  expectedHitPointsAtDamage,
+  'event-driven HP must persist between checkpoints'
+);
+
+const malformedDamageTranscript = structuredClone(reportOne.simulation);
+const malformedDamage = malformedDamageTranscript.timeline.find(
+  (event) => event.kind === 'damage'
+);
+assert.ok(malformedDamage);
+malformedDamage.amount = 'a suspicious amount';
+assert.equal(
+  continuousReplay.getUsableBattleTranscript(malformedDamageTranscript),
+  undefined,
+  'malformed damage payloads must fall back instead of entering replay'
+);
+const selfTargetingTranscript = structuredClone(reportOne.simulation);
+const selfTargetingDamage = selfTargetingTranscript.timeline.find(
+  (event) => event.kind === 'damage'
+);
+assert.ok(selfTargetingDamage);
+selfTargetingDamage.targetFighter = selfTargetingDamage.sourceFighter;
+assert.equal(
+  continuousReplay.getUsableBattleTranscript(selfTargetingTranscript),
+  undefined,
+  'self-targeting damage payloads must be rejected'
+);
+
+const colorburstFighter = makeScribbit({
+  id: 'colorburst-replay-fixture',
+  name: 'Prism Fixture',
+  stats: { chonk: 15, spike: 15, zip: 15, charm: 55 },
+});
+const colorburstReport = battle.simulate(
+  colorburstFighter,
+  alpha,
+  4401,
+  forecast,
+  'exhibition'
+);
+const echoCreatedEvent = colorburstReport.simulation.timeline.find(
+  (event) => event.kind === 'echo_created' && event.actor === 'a'
+);
+assert.ok(echoCreatedEvent, 'Colorburst fixture should create an echo');
+assert.equal(
+  continuousReplay.calculateReplayFrame(
+    colorburstReport.simulation,
+    echoCreatedEvent.tick - 0.01
+  ).fighters[0].echoPosition,
+  null,
+  'Colorburst echo must not appear before echo_created'
+);
+assert.deepEqual(
+  continuousReplay.calculateReplayFrame(
+    colorburstReport.simulation,
+    echoCreatedEvent.tick
+  ).fighters[0].echoPosition,
+  echoCreatedEvent.position,
+  'Colorburst echo must appear at its authoritative position'
+);
+const echoResolvedEvent = colorburstReport.simulation.timeline.find(
+  (event) =>
+    event.tick >= echoCreatedEvent.tick &&
+    ((event.kind === 'echo_fired' && event.actor === 'a') ||
+      (event.kind === 'echo_shattered' && event.owner === 'a'))
+);
+assert.ok(echoResolvedEvent, 'Colorburst fixture should resolve its echo');
+assert.equal(
+  continuousReplay.calculateReplayFrame(
+    colorburstReport.simulation,
+    echoResolvedEvent.tick
+  ).fighters[0].echoPosition,
+  null,
+  'Colorburst echo must disappear exactly when fired or shattered'
+);
+pass('continuous replay validates and applies event state at exact ticks');
+
+const shapeVisualBase = {
+  frameTick: 15,
+  fighterCenter: { x: 120, y: 220 },
+  activationCenter: { x: 310, y: 260 },
+  primaryColor: 0x55aaff,
+  colorburstPalette: [0xff6b4a, 0xffd447, 0x5b9dff],
+};
+const buildPowerCommands = (power) =>
+  shapePowerPresentation.buildShapePowerDrawCommands({
+    ...shapeVisualBase,
+    effect: {
+      power,
+      phase: 'active',
+      startTick: 10,
+      endTick: 20,
+      aimDirection: { x: 1024, y: 0 },
+    },
+  });
+const inkquakeCommands = buildPowerCommands('inkquake');
+assert.equal(
+  inkquakeCommands.filter((command) => command.kind === 'stroke-circle').length,
+  3,
+  'Inkquake should read as three expanding rings'
+);
+assert.ok(
+  inkquakeCommands.every(
+    (command) =>
+      command.kind !== 'stroke-circle' ||
+      command.center.x === shapeVisualBase.activationCenter.x
+  ),
+  'Inkquake rings should stay anchored to the activation origin'
+);
+assert.equal(
+  buildPowerCommands('nib_halo').filter(
+    (command) => command.kind === 'fill-triangle'
+  ).length,
+  3,
+  'Nib Halo should expose three visible quills'
+);
+assert.equal(
+  buildPowerCommands('smearstep').filter((command) => command.kind === 'line')
+    .length,
+  4,
+  'Smearstep should expose a readable speed lane'
+);
+const colorburstCommands = buildPowerCommands('colorburst');
+assert.equal(
+  colorburstCommands.filter((command) => command.kind === 'fill-triangle')
+    .length,
+  3,
+  'Colorburst should expose three color layers'
+);
+assert.equal(
+  shapePowerPresentation.getShapePowerRevealCopy('smearstep'),
+  'SMEARSTEP!\nDASHES TWICE',
+  'first reveal copy should explain the unique two-beat move'
+);
+assert.deepEqual(
+  shapePowerPresentation.planShapePowerCallout({
+    side: 'a',
+    actorCenter: { x: 300, y: 600 },
+    opponentCenter: { x: 600, y: 700 },
+    firstReveal: true,
+    viewportWidth: 720,
+    viewportHeight: 1280,
+  }).position,
+  { x: 180, y: 435 },
+  'first power reveal should use a stable left presentation lane'
+);
+pass('Shape Power vignette plans remain distinct and deterministic');
+
+const featuredRumbleStorage = createMemoryStorage();
+const featuredOpponent = makeScribbit({
+  id: 'featured-opponent',
+  name: 'Featured Opponent',
+  element: 'moss',
+});
+const firstFeaturedBout = battle.simulate(
+  alpha,
+  beta,
+  2201,
+  forecast,
+  'rumble'
+);
+const lastFeaturedBout = battle.simulate(
+  alpha,
+  featuredOpponent,
+  2202,
+  forecast,
+  'rumble'
+);
+await battleStore.saveBattleReport(featuredRumbleStorage, firstFeaturedBout, 1);
+await battleStore.setFeaturedRumbleReport(
+  featuredRumbleStorage,
+  firstFeaturedBout,
+  0
+);
+await battleStore.saveBattleReport(featuredRumbleStorage, lastFeaturedBout, 2);
+await battleStore.setFeaturedRumbleReport(
+  featuredRumbleStorage,
+  lastFeaturedBout,
+  1
+);
+await battleStore.setFeaturedRumbleReport(
+  featuredRumbleStorage,
+  firstFeaturedBout,
+  0
+);
+assert.equal(
+  await battleStore.getFeaturedRumbleReportId(
+    featuredRumbleStorage,
+    alpha.id,
+    forecast.day
+  ),
+  lastFeaturedBout.id,
+  "an older retry must not replace an entrant's later Swiss report"
+);
+assert.equal(
+  (
+    await battleStore.loadFeaturedRumbleReport(
+      featuredRumbleStorage,
+      beta.id,
+      forecast.day
+    )
+  )?.id,
+  firstFeaturedBout.id,
+  'an entrant with no later pairing should keep its last actual bout'
+);
+await battleStore.purgeBattleReportsForScribbit(
+  featuredRumbleStorage,
+  alpha.id
+);
+assert.equal(
+  await battleStore.getFeaturedRumbleReportId(
+    featuredRumbleStorage,
+    beta.id,
+    forecast.day
+  ),
+  null,
+  'purging a report should clear an opponent pointer only when it matches'
+);
+pass('Rumble featured-bout pointers select last play and purge safely');
+
+const nextGoalScribbit = makeScribbit({
+  id: 'next-goal-scribbit',
+  name: 'Goal Doodle',
+  bornDay: 2,
+  expiresDay: 5,
+  level: 2,
+  xp: 4,
+  belief: 9,
+  careDoneToday: [],
+});
+const nextGoalBaseState = {
+  dayNumber: 3,
+  loggedIn: true,
+  myUsername: 'goal-player',
+  forecast,
+  champion: null,
+  myScribbits: [nextGoalScribbit],
+  drawnToday: true,
+  enteredToday: false,
+  rumbleEntrants: 8,
+  communityLegendCount: 0,
+  rumbleResolvesAt: Date.now() + 60_000,
+  todayEntrants: [],
+  myBackedScribbitId: null,
+  playStreakDays: 1,
+  myClout: 0,
+  myInk: 20,
+  myPens: [],
+  nextCapsuleCost: 5,
+  capsuleProgress: {
+    pullCount: 2,
+    pityRemaining: 8,
+    discoveredCount: 3,
+    collectionTotal: 28,
+  },
+  lastRumbleReceipt: null,
+  legacyReturnReceipt: null,
+};
+const enterGoal = nextGoal.selectNextGoal(nextGoalBaseState);
+assert.equal(
+  enterGoal.actionKind,
+  'enter',
+  'entry must outrank an affordable capsule after drawing'
+);
+const backGoal = nextGoal.selectNextGoal({
+  ...nextGoalBaseState,
+  enteredToday: true,
+});
+assert.equal(backGoal.actionKind, 'back', 'Back must follow Rumble entry');
+const capsuleGoal = nextGoal.selectNextGoal({
+  ...nextGoalBaseState,
+  enteredToday: true,
+  myBackedScribbitId: 'picked-one',
+});
+assert.equal(
+  capsuleGoal.actionKind,
+  'capsule',
+  'an affordable capsule should outrank optional care'
+);
+const careGoal = nextGoal.selectNextGoal({
+  ...nextGoalBaseState,
+  enteredToday: true,
+  myBackedScribbitId: 'picked-one',
+  myInk: 0,
+  myScribbits: [{ ...nextGoalScribbit, careDoneToday: ['feed'] }],
+});
+assert.equal(
+  careGoal.actionKind,
+  'care',
+  'unfinished care should be actionable'
+);
+assert.equal(
+  careGoal.careAction,
+  'pat',
+  'care priority should advance deterministically from feed to pat'
+);
+assert.deepEqual(
+  careGoal.evidence.featuredScribbit,
+  {
+    name: 'Goal Doodle',
+    level: 2,
+    currentExperiencePoints: 4,
+    nextLevelExperienceThreshold: 7,
+    currentBelief: 9,
+    legendBeliefThreshold: 25,
+    daysLeft: 2,
+  },
+  'Next Goal evidence should expose truthful XP, Belief, and lifespan'
+);
+const waitGoal = nextGoal.selectNextGoal({
+  ...nextGoalBaseState,
+  enteredToday: true,
+  myBackedScribbitId: 'picked-one',
+  myInk: 0,
+  myScribbits: [
+    {
+      ...nextGoalScribbit,
+      careDoneToday: ['feed', 'pat', 'train'],
+    },
+  ],
+});
+assert.equal(
+  waitGoal.actionKind,
+  'wait',
+  'completed actions should settle to wait'
+);
+assert.equal(
+  nextGoal.selectNextGoal({
+    ...nextGoalBaseState,
+    enteredToday: true,
+    myBackedScribbitId: 'picked-one',
+    myInk: 0,
+    myScribbits: [],
+  }).actionKind,
+  'wait',
+  'an inconsistent empty roster should fail safely to wait'
+);
+pass('Next Goal priority and evidence stay deterministic');
 
 const normalizedStats = scribbitCore.normalizeStats({
   chonk: 999,
@@ -705,7 +1458,11 @@ const migratedOldRecord = await scribbitCore.loadScribbit(
 assert.ok(migratedOldRecord, 'old stored Scribbit should parse');
 assert.equal(migratedOldRecord.level, 1, 'old record should default level');
 assert.equal(migratedOldRecord.xp, 0, 'old record should default xp');
-assert.equal(migratedOldRecord.mood, 'hungry', 'old record should hydrate mood');
+assert.equal(
+  migratedOldRecord.mood,
+  'hungry',
+  'old record should hydrate mood'
+);
 assert.deepEqual(
   migratedOldRecord.careDoneToday,
   [],
@@ -775,6 +1532,26 @@ assert.equal(
   'capsule roll below 70% should be common'
 );
 assert.equal(
+  Object.values(arena.CAPSULE_RARITY_PERCENTAGES).reduce(
+    (total, percentage) => total + percentage,
+    0
+  ),
+  100,
+  'published capsule rarity percentages should cover the full roll'
+);
+const newPlayerDailyInk =
+  arena.INK_REWARDS.dailyDraw + arena.INK_REWARDS.care * 3;
+assert.equal(
+  newPlayerDailyInk,
+  arena.CAPSULE_FIRST_DAILY_COST,
+  'drawing and caring for one new Scribbit should fund the daily discounted pull'
+);
+assert.ok(
+  newPlayerDailyInk + arena.INK_REWARDS.sparWin < arena.CAPSULE_COST,
+  'guaranteed first-day actions should not immediately fund a second full-price pull'
+);
+pass('daily Ink pacing funds one fair first-session capsule');
+assert.equal(
   inkStore.chooseCapsuleRarity(0.7),
   'rare',
   'capsule roll at 70% should be rare'
@@ -806,12 +1583,232 @@ assert.deepEqual(
   deterministicCapsuleDropTwo,
   'same user/day/pull count should select the same capsule drop'
 );
+const entropySelectionOptions = {
+  userId: 'entropy-player',
+  day: 7,
+  pullCount: 3,
+  pullsSinceEpic: 0,
+};
+const fixedEntropyDropOne = inkStore.selectCapsuleDrop({
+  ...entropySelectionOptions,
+  entropy: 'server-operation-entropy-7',
+});
+const fixedEntropyDropTwo = inkStore.selectCapsuleDrop({
+  ...entropySelectionOptions,
+  entropy: 'server-operation-entropy-7',
+});
+assert.deepEqual(
+  fixedEntropyDropOne,
+  fixedEntropyDropTwo,
+  'the same server entropy should remain deterministic for replayable tests'
+);
+const entropiedDropIds = new Set(
+  Array.from({ length: 32 }, (_, entropyIndex) => {
+    return inkStore.selectCapsuleDrop({
+      ...entropySelectionOptions,
+      entropy: `server-operation-entropy-${entropyIndex}`,
+    }).id;
+  })
+);
+assert.ok(
+  entropiedDropIds.size > 1,
+  'different server operation entropy should vary otherwise identical drops'
+);
+
+assert.equal(
+  sharedCosmetics.ACCESSORY_CATALOG_ENTRIES.length,
+  16,
+  'shared cosmetic metadata should contain all 16 accessories'
+);
+assert.equal(
+  sharedCosmetics.PEN_CATALOG_ENTRIES.length,
+  8,
+  'shared cosmetic metadata should contain all 8 pens'
+);
+assert.equal(
+  sharedCosmetics.TITLE_CATALOG_ENTRIES.length,
+  4,
+  'shared cosmetic metadata should contain all 4 titles'
+);
+assert.equal(
+  sharedCosmetics.COSMETIC_CATALOG.length,
+  28,
+  'shared cosmetic metadata should contain exactly 28 entries'
+);
+assert.equal(
+  sharedCosmetics.COSMETIC_BY_ID.size,
+  sharedCosmetics.COSMETIC_CATALOG.length,
+  'every shared cosmetic id should be unique and indexed'
+);
+
+for (const entry of sharedCosmetics.COSMETIC_CATALOG) {
+  assert.equal(
+    sharedCosmetics.COSMETIC_BY_ID.get(entry.id),
+    entry,
+    `shared cosmetic index should resolve ${entry.id}`
+  );
+  assert.ok(entry.name.length > 0, `${entry.id} should have a name`);
+  assert.ok(
+    entry.description.length > 0,
+    `${entry.id} should have a description`
+  );
+}
+
+const sharedAccessoryIds = sharedCosmetics.ACCESSORY_CATALOG_ENTRIES.map(
+  (entry) => entry.id
+).sort();
+assert.deepEqual(
+  Object.keys(clientAccessories.ACCESSORY_CATALOG).sort(),
+  sharedAccessoryIds,
+  'client accessory paint catalog should match every shared accessory id'
+);
+for (const accessory of sharedCosmetics.ACCESSORY_CATALOG_ENTRIES) {
+  assert.equal(
+    typeof clientAccessories.ACCESSORY_CATALOG[accessory.id]?.paint,
+    'function',
+    `${accessory.id} should have a client-only vector painter`
+  );
+  assert.equal(
+    clientAccessories.accessoryLabel(accessory.id),
+    accessory.label,
+    `${accessory.id} label should come from shared metadata`
+  );
+  assert.equal(
+    clientAccessories.isKnownAccessory(accessory.id),
+    true,
+    `${accessory.id} should be recognized from shared metadata`
+  );
+}
+assert.equal(
+  clientAccessories.isKnownAccessory('not-a-real-accessory'),
+  false,
+  'unknown accessory ids should remain invalid'
+);
+pass('shared accessory metadata, labels, validation, and paint parity');
+
+const sharedPenIds = sharedCosmetics.PEN_CATALOG_ENTRIES.map(
+  (entry) => entry.id
+).sort();
 assert.deepEqual(
   inkCatalog.INK_PEN_CATALOG.map((entry) => entry.id).sort(),
-  clientPens.PEN_CATALOG.map((entry) => entry.id).sort(),
-  'server-awarded pen ids should all render in the Draw palette'
+  sharedPenIds,
+  'server-awarded pen ids should match shared cosmetic metadata'
 );
+assert.deepEqual(
+  clientPens.PEN_CATALOG.map((entry) => entry.id).sort(),
+  sharedPenIds,
+  'client pen ids should match shared cosmetic metadata'
+);
+for (const sharedPen of sharedCosmetics.PEN_CATALOG_ENTRIES) {
+  assert.deepEqual(
+    clientPens.PEN_BY_ID.get(sharedPen.id),
+    {
+      id: sharedPen.id,
+      name: sharedPen.name,
+      rarity: sharedPen.rarity,
+      effect: sharedPen.effect,
+      colors: [...sharedPen.colors],
+    },
+    `${sharedPen.id} client palette should derive from shared metadata`
+  );
+}
+pass('shared, server, and client pen catalog parity');
 pass('capsule weighted deterministic pull selection');
+
+let protectedPermanentFixture = null;
+for (let fixtureIndex = 0; fixtureIndex < 500; fixtureIndex += 1) {
+  const selection = {
+    userId: `permanent-protection-${fixtureIndex}`,
+    day: 6,
+    pullCount: 1,
+    pullsSinceEpic: 0,
+  };
+  const selectedEntry = inkStore.selectCapsuleDrop(selection);
+  if (selectedEntry.kind !== 'accessory') {
+    protectedPermanentFixture = { selection, selectedEntry };
+    break;
+  }
+}
+assert.ok(
+  protectedPermanentFixture,
+  'fixture search should find a deterministic permanent unlock'
+);
+const permanentProtectionStorage = createMemoryStorage();
+const permanentProtectionUser = protectedPermanentFixture.selection.userId;
+await permanentProtectionStorage.set(
+  inkStore.getInkKey(permanentProtectionUser),
+  String(arena.CAPSULE_FIRST_DAILY_COST)
+);
+await permanentProtectionStorage.hSet(
+  inkStore.getInventoryKey(permanentProtectionUser),
+  {
+    [protectedPermanentFixture.selectedEntry.id]:
+      protectedPermanentFixture.selectedEntry.kind,
+  }
+);
+const protectedPermanentResult = await inkStore.pullCapsuleForUser(
+  permanentProtectionStorage,
+  permanentProtectionUser,
+  protectedPermanentFixture.selection.day
+);
+assert.equal(
+  protectedPermanentResult.status,
+  'pulled',
+  'duplicate-protected pull should complete normally'
+);
+assert.equal(
+  protectedPermanentResult.pull.rarity,
+  protectedPermanentFixture.selectedEntry.rarity,
+  'duplicate protection must preserve the originally rolled rarity'
+);
+assert.notEqual(
+  protectedPermanentResult.pull.id,
+  protectedPermanentFixture.selectedEntry.id,
+  'an owned pen or title must not consume Ink as a dead duplicate'
+);
+assert.ok(
+  protectedPermanentResult.pull.kind === 'accessory' ||
+    protectedPermanentResult.pull.isNew,
+  'protected replacement must be either a usable accessory copy or a new permanent unlock'
+);
+pass('capsule permanent-unlock duplicate protection preserves rarity');
+
+const titleEquipStorage = createMemoryStorage();
+await titleEquipStorage.hSet(inkStore.getInventoryKey('title-player'), {
+  doodler: 'title',
+});
+assert.equal(
+  await inkStore.setEquippedTitle(
+    titleEquipStorage,
+    'title-player',
+    'brushlord'
+  ),
+  undefined,
+  'an undiscovered title cannot be equipped'
+);
+const equippedTitleInventory = await inkStore.setEquippedTitle(
+  titleEquipStorage,
+  'title-player',
+  'doodler'
+);
+assert.equal(
+  equippedTitleInventory?.equippedTitle,
+  'doodler',
+  'an owned title should become the active creator signature'
+);
+assert.equal(
+  (await inkStore.loadInventory(titleEquipStorage, 'title-player'))
+    .equippedTitle,
+  'doodler',
+  'equipped creator title should persist in inventory storage'
+);
+assert.equal(
+  (await inkStore.setEquippedTitle(titleEquipStorage, 'title-player', null))
+    ?.equippedTitle,
+  null,
+  'creator title can be removed without losing the permanent unlock'
+);
+pass('creator title equip requires ownership and persists');
 
 assert.equal(
   inkStore.isCapsulePityPull(arena.CAPSULE_PITY - 2),
@@ -824,7 +1821,10 @@ assert.equal(
   'pity should trigger on exactly the guaranteed pull'
 );
 const pityStorage = createMemoryStorage();
-await pityStorage.set(inkStore.getInkKey('pity-player'), String(arena.CAPSULE_COST));
+await pityStorage.set(
+  inkStore.getInkKey('pity-player'),
+  String(arena.CAPSULE_COST)
+);
 await pityStorage.set(inkStore.getCapsulePullCountKey('pity-player'), '17');
 await pityStorage.set(
   inkStore.getPullsSinceEpicKey('pity-player'),
@@ -1035,7 +2035,11 @@ await poorStorage.set(
   inkStore.getInkKey('poor-player'),
   String(arena.CAPSULE_FIRST_DAILY_COST - 1)
 );
-const poorResult = await inkStore.pullCapsuleForUser(poorStorage, 'poor-player', 7);
+const poorResult = await inkStore.pullCapsuleForUser(
+  poorStorage,
+  'poor-player',
+  7
+);
 assert.equal(
   poorResult.status,
   'insufficientInk',
@@ -1056,7 +2060,11 @@ const exactCostResult = await inkStore.pullCapsuleForUser(
   'exact-cost-player',
   7
 );
-assert.equal(exactCostResult.status, 'pulled', 'exact-cost pull should complete');
+assert.equal(
+  exactCostResult.status,
+  'pulled',
+  'exact-cost pull should complete'
+);
 assert.ok(
   (await inkStore.getInkBalance(exactCostStorage, 'exact-cost-player')) >= 0,
   'capsule pull should never make ink negative'
@@ -1105,7 +2113,10 @@ assert.equal(
 );
 
 const corruptOperationKey = 'capsule:operation:claim-player:corrupt-operation';
-await operationClaimStorage.set(corruptOperationKey, '{"pull":{"id":"broken"}}');
+await operationClaimStorage.set(
+  corruptOperationKey,
+  '{"pull":{"id":"broken"}}'
+);
 const corruptReplacement = await inkStore.claimCapsuleOperation(
   operationClaimStorage,
   corruptOperationKey,
@@ -1118,7 +2129,8 @@ assert.deepEqual(
   'a structurally invalid receipt should be replaced through the same fence'
 );
 
-const completedOperationKey = 'capsule:operation:claim-player:completed-operation';
+const completedOperationKey =
+  'capsule:operation:claim-player:completed-operation';
 const { discovered: legacyDiscoveries, ...legacyInventory } =
   exactCostResult.inventory;
 const completedOperationResponse = {
@@ -1228,8 +2240,8 @@ const atomicCapsuleStorage = createMemoryStorage({ transactions: true });
 const atomicCapsuleUserId = 'atomic-capsule-player';
 const atomicCapsuleDay = 8;
 const atomicOperationId = 'capsule-atomic-operation-0001';
-const atomicOperationKey =
-  `capsule:operation:${atomicCapsuleUserId}:${atomicOperationId}`;
+const atomicOperationKey = `capsule:operation:${atomicCapsuleUserId}:${atomicOperationId}`;
+const atomicSelectionEntropy = 'server-entropy-atomic-operation-0001';
 const atomicStartingInk = arena.CAPSULE_FIRST_DAILY_COST + arena.CAPSULE_COST;
 await atomicCapsuleStorage.set(
   inkStore.getInkKey(atomicCapsuleUserId),
@@ -1257,6 +2269,7 @@ const atomicCapsuleResult = await inkStore.pullCapsuleForUser(
   {
     operationKey: atomicOperationKey,
     expectedPendingValue: atomicOperationClaim.pendingValue,
+    selectionEntropy: atomicSelectionEntropy,
   }
 );
 assert.equal(
@@ -1265,7 +2278,10 @@ assert.equal(
   'transactional capsule pull should complete'
 );
 const atomicReceiptJson = await atomicCapsuleStorage.get(atomicOperationKey);
-assert.ok(atomicReceiptJson, 'capsule commit should replace pending claim with a receipt');
+assert.ok(
+  atomicReceiptJson,
+  'capsule commit should replace pending claim with a receipt'
+);
 const atomicReceipt = JSON.parse(atomicReceiptJson);
 assert.deepEqual(
   atomicReceipt,
@@ -1321,18 +2337,16 @@ const ambiguousCapsuleStorage = createMemoryStorage({
 const ambiguousCapsuleUserId = 'ambiguous-capsule-player';
 const ambiguousCapsuleDay = 9;
 const ambiguousOperationId = 'capsule-ambiguous-operation-0001';
-const ambiguousOperationKey =
-  `capsule:operation:${ambiguousCapsuleUserId}:${ambiguousOperationId}`;
+const ambiguousOperationKey = `capsule:operation:${ambiguousCapsuleUserId}:${ambiguousOperationId}`;
 const ambiguousPendingValue = 'pending:300000';
-const ambiguousStartingInk = arena.CAPSULE_FIRST_DAILY_COST + arena.CAPSULE_COST;
+const ambiguousSelectionEntropy = 'server-entropy-ambiguous-operation-0001';
+const ambiguousStartingInk =
+  arena.CAPSULE_FIRST_DAILY_COST + arena.CAPSULE_COST;
 await ambiguousCapsuleStorage.set(
   inkStore.getInkKey(ambiguousCapsuleUserId),
   String(ambiguousStartingInk)
 );
-await ambiguousCapsuleStorage.set(
-  ambiguousOperationKey,
-  ambiguousPendingValue
-);
+await ambiguousCapsuleStorage.set(ambiguousOperationKey, ambiguousPendingValue);
 await assert.rejects(
   inkStore.pullCapsuleForUser(
     ambiguousCapsuleStorage,
@@ -1341,9 +2355,10 @@ await assert.rejects(
     {
       operationKey: ambiguousOperationKey,
       expectedPendingValue: ambiguousPendingValue,
+      selectionEntropy: ambiguousSelectionEntropy,
     }
   ),
-  /Simulated capsule reply loss after commit/,
+  /Simulated transaction reply loss after commit/,
   'test fixture should lose the reply only after applying the transaction'
 );
 const recoveredOperation = await inkStore.claimCapsuleOperation(
@@ -1366,6 +2381,7 @@ const expectedAmbiguousDrop = inkStore.selectCapsuleDrop({
   day: ambiguousCapsuleDay,
   pullCount: 1,
   pullsSinceEpic: 0,
+  entropy: ambiguousSelectionEntropy,
 });
 assert.equal(
   recoveredOperation.response.pull.id,
@@ -1373,18 +2389,12 @@ assert.equal(
   'recovered receipt should identify the drop that actually committed'
 );
 assert.equal(
-  await inkStore.getInkBalance(
-    ambiguousCapsuleStorage,
-    ambiguousCapsuleUserId
-  ),
+  await inkStore.getInkBalance(ambiguousCapsuleStorage, ambiguousCapsuleUserId),
   ambiguousStartingInk - arena.CAPSULE_FIRST_DAILY_COST,
   'ambiguous response should still charge exactly once'
 );
 assert.deepEqual(
-  await inkStore.loadInventory(
-    ambiguousCapsuleStorage,
-    ambiguousCapsuleUserId
-  ),
+  await inkStore.loadInventory(ambiguousCapsuleStorage, ambiguousCapsuleUserId),
   recoveredOperation.response.inventory,
   'ambiguous response should expose the inventory that committed with its receipt'
 );
@@ -1415,10 +2425,7 @@ assert.deepEqual(
   'repeated recovery should return the same receipt without another charge'
 );
 assert.equal(
-  await inkStore.getInkBalance(
-    ambiguousCapsuleStorage,
-    ambiguousCapsuleUserId
-  ),
+  await inkStore.getInkBalance(ambiguousCapsuleStorage, ambiguousCapsuleUserId),
   ambiguousStartingInk - arena.CAPSULE_FIRST_DAILY_COST,
   'repeated recovery must not charge a second time'
 );
@@ -1450,7 +2457,12 @@ assert.equal(
 
 const rollbackFlagStorage = createMemoryStorage();
 assert.equal(
-  await scribbitCore.markDailyFlag(rollbackFlagStorage, 'player-two', 4, 'entered'),
+  await scribbitCore.markDailyFlag(
+    rollbackFlagStorage,
+    'player-two',
+    4,
+    'entered'
+  ),
   true,
   'existing entry claim setup should succeed'
 );
@@ -1539,7 +2551,11 @@ const firstCare = await scribbitCore.claimDailyCareAction(
 );
 assert.equal(firstCare.claimed, true, 'first feed should claim');
 assert.equal(firstCare.xpGain, 1, 'first care action should award one xp');
-assert.equal(firstCare.mood, 'sleepy', 'first care action should hydrate sleepy');
+assert.equal(
+  firstCare.mood,
+  'sleepy',
+  'first care action should hydrate sleepy'
+);
 assert.deepEqual(
   firstCare.careDoneToday,
   ['feed'],
@@ -1579,7 +2595,11 @@ const nextDayCare = await scribbitCore.claimDailyCareAction(
   '20260706',
   500
 );
-assert.equal(nextDayCare.claimed, true, 'care should reset on the next UTC day');
+assert.equal(
+  nextDayCare.claimed,
+  true,
+  'care should reset on the next UTC day'
+);
 await scribbitCore.releaseDailyCareAction(
   careStorage,
   'care-me',
@@ -1605,11 +2625,13 @@ const beliefScribbit = makeScribbit({
   id: 'belief-concurrency',
   belief: 5,
 });
-await scribbitCore.storeScribbit(
-  beliefStorage,
-  'belief-owner',
-  beliefScribbit
-);
+await scribbitCore.storeScribbit(beliefStorage, 'belief-owner', beliefScribbit);
+const beliefWatchKeySets = [];
+const originalBeliefWatch = beliefStorage.watch.bind(beliefStorage);
+beliefStorage.watch = async (...keys) => {
+  beliefWatchKeySets.push(keys);
+  return originalBeliefWatch(...keys);
+};
 const beliefSnapshotA = await scribbitCore.loadScribbit(
   beliefStorage,
   beliefScribbit.id
@@ -1631,49 +2653,147 @@ assert.equal(
   7,
   'two simultaneous voters should both increase community Belief'
 );
+assert.equal(
+  beliefWatchKeySets.some((keys) =>
+    keys.includes(scribbitCore.getCommunityBeliefKey())
+  ),
+  false,
+  'votes should not WATCH the global community hash and conflict across Scribbits'
+);
+assert.equal(
+  beliefWatchKeySets.every((keys) =>
+    keys.includes(scribbitCore.getScribbitBeliefVersionKey(beliefScribbit.id))
+  ),
+  true,
+  'votes should fence only the target Scribbit belief version'
+);
 pass('community belief increments are concurrency-safe');
 
-const sparXpStorage = createMemoryStorage();
-const sparScribbit = makeScribbit({ id: 'spar-xp', name: 'Spar XP' });
-await scribbitCore.storeScribbit(sparXpStorage, 'spar-owner', sparScribbit);
-const firstSparWin = await scribbitCore.claimDailySparWinXp(
-  sparXpStorage,
-  sparScribbit.id,
+const sparRewardStorage = createMemoryStorage();
+const firstSparScribbit = makeScribbit({
+  id: 'spar-reward-one',
+  name: 'Spar Reward One',
+});
+const secondSparScribbit = makeScribbit({
+  id: 'spar-reward-two',
+  name: 'Spar Reward Two',
+});
+await scribbitCore.storeScribbit(
+  sparRewardStorage,
+  'spar-owner',
+  firstSparScribbit
+);
+await scribbitCore.storeScribbit(
+  sparRewardStorage,
+  'spar-owner',
+  secondSparScribbit
+);
+const firstSparWin = await scribbitCore.claimUserDailySparWinReward(
+  sparRewardStorage,
+  'spar-owner',
   '20260705',
   100
 );
-assert.equal(firstSparWin, true, 'first daily spar win should claim XP');
+assert.equal(
+  firstSparWin,
+  true,
+  'first player win should claim the daily reward'
+);
 if (firstSparWin) {
   await scribbitCore.awardScribbitXp(
-    sparXpStorage,
-    sparScribbit.id,
+    sparRewardStorage,
+    firstSparScribbit.id,
     1,
     '20260705'
   );
+  await inkStore.awardInk(
+    sparRewardStorage,
+    'spar-owner',
+    arena.INK_REWARDS.sparWin
+  );
 }
-const secondSparWin = await scribbitCore.claimDailySparWinXp(
-  sparXpStorage,
-  sparScribbit.id,
+const secondSparWin = await scribbitCore.claimUserDailySparWinReward(
+  sparRewardStorage,
+  'spar-owner',
   '20260705',
   200
 );
-assert.equal(secondSparWin, false, 'second daily spar win should not claim XP');
+assert.equal(
+  secondSparWin,
+  false,
+  'the same player cannot claim again with a different Scribbit that UTC day'
+);
 if (secondSparWin) {
   await scribbitCore.awardScribbitXp(
-    sparXpStorage,
-    sparScribbit.id,
+    sparRewardStorage,
+    secondSparScribbit.id,
     1,
     '20260705'
   );
+  await inkStore.awardInk(
+    sparRewardStorage,
+    'spar-owner',
+    arena.INK_REWARDS.sparWin
+  );
 }
-const sparXpAfterClaims = await scribbitCore.loadScribbit(
-  sparXpStorage,
-  sparScribbit.id,
-  '20260705'
+assert.equal(
+  await scribbitCore.claimUserDailySparWinReward(
+    sparRewardStorage,
+    'another-spar-owner',
+    '20260705',
+    300
+  ),
+  true,
+  'another player can claim on the same UTC date'
 );
-assert.ok(sparXpAfterClaims, 'spar Scribbit should remain stored');
-assert.equal(sparXpAfterClaims.xp, 1, 'spar XP should only award once per day');
-pass('spar xp only-first-win');
+const nextDaySparWin = await scribbitCore.claimUserDailySparWinReward(
+  sparRewardStorage,
+  'spar-owner',
+  '20260706',
+  400
+);
+assert.equal(nextDaySparWin, true, 'the player can claim again next UTC day');
+if (nextDaySparWin) {
+  await scribbitCore.awardScribbitXp(
+    sparRewardStorage,
+    secondSparScribbit.id,
+    1,
+    '20260706'
+  );
+  await inkStore.awardInk(
+    sparRewardStorage,
+    'spar-owner',
+    arena.INK_REWARDS.sparWin
+  );
+}
+assert.equal(
+  (
+    await scribbitCore.loadScribbit(
+      sparRewardStorage,
+      firstSparScribbit.id,
+      '20260706'
+    )
+  )?.xp,
+  1,
+  'the first winning Scribbit should keep its one rewarded XP'
+);
+assert.equal(
+  (
+    await scribbitCore.loadScribbit(
+      sparRewardStorage,
+      secondSparScribbit.id,
+      '20260706'
+    )
+  )?.xp,
+  1,
+  'a different Scribbit can earn the next UTC day reward'
+);
+assert.equal(
+  await inkStore.getInkBalance(sparRewardStorage, 'spar-owner'),
+  arena.INK_REWARDS.sparWin * 2,
+  'the player should receive exactly one spar Ink reward per claimed UTC day'
+);
+pass('daily spar reward is limited per player UTC day');
 
 const dayMathStorage = createMemoryStorage();
 await arenaStore.setCurrentArenaDay(dayMathStorage, 2);
@@ -1709,15 +2829,21 @@ const prepareNightlyLockStorage = async () => {
 };
 const nightlyLockNow = new Date(Date.UTC(2026, 6, 6));
 const singleNightlyStorage = await prepareNightlyLockStorage();
-await dailyJob.runNightlyArenaJob(singleNightlyStorage, { now: nightlyLockNow });
+await dailyJob.runNightlyArenaJob(singleNightlyStorage, {
+  now: nightlyLockNow,
+});
 const expectedNightlyRecord = await scribbitCore.loadScribbit(
   singleNightlyStorage,
   'concurrent-lock-entry'
 );
 const concurrentNightlyStorage = await prepareNightlyLockStorage();
 const concurrentNightlyRuns = await Promise.allSettled([
-  dailyJob.runNightlyArenaJob(concurrentNightlyStorage, { now: nightlyLockNow }),
-  dailyJob.runNightlyArenaJob(concurrentNightlyStorage, { now: nightlyLockNow }),
+  dailyJob.runNightlyArenaJob(concurrentNightlyStorage, {
+    now: nightlyLockNow,
+  }),
+  dailyJob.runNightlyArenaJob(concurrentNightlyStorage, {
+    now: nightlyLockNow,
+  }),
 ]);
 assert.ok(
   concurrentNightlyRuns.some((result) => result.status === 'fulfilled'),
@@ -1745,18 +2871,36 @@ pass('nightly distributed claim blocks overlapping resolution');
 const catchUpStorage = createMemoryStorage();
 await arenaStore.setCurrentArenaDay(catchUpStorage, 2);
 const dayTwoEntrant = makeScribbit({ id: 'catch-up-day-two', expiresDay: 8 });
-const dayThreeEntrant = makeScribbit({ id: 'catch-up-day-three', expiresDay: 8 });
+const dayThreeEntrant = makeScribbit({
+  id: 'catch-up-day-three',
+  expiresDay: 8,
+});
 await scribbitCore.storeScribbit(catchUpStorage, 'owner-two', dayTwoEntrant);
-await scribbitCore.storeScribbit(catchUpStorage, 'owner-three', dayThreeEntrant);
+await scribbitCore.storeScribbit(
+  catchUpStorage,
+  'owner-three',
+  dayThreeEntrant
+);
 await scribbitCore.addRumbleEntrant(catchUpStorage, 2, dayTwoEntrant.id);
 await scribbitCore.addRumbleEntrant(catchUpStorage, 3, dayThreeEntrant.id);
 const caughtUpJob = await dailyJob.runNightlyArenaJob(catchUpStorage, {
   now: new Date(Date.UTC(2026, 6, 7)),
 });
 assert.equal(caughtUpJob.skipped, false, 'lagged stored day should run');
-assert.equal(caughtUpJob.newDay, 4, 'lagged stored day should catch up to canonical day');
-assert.equal(caughtUpJob.resolvedDay, 3, 'catch-up should finish on the latest due rumble');
-assert.ok(caughtUpJob.reportCount > forcedJob.reportCount, 'catch-up should resolve more than one day');
+assert.equal(
+  caughtUpJob.newDay,
+  4,
+  'lagged stored day should catch up to canonical day'
+);
+assert.equal(
+  caughtUpJob.resolvedDay,
+  3,
+  'catch-up should finish on the latest due rumble'
+);
+assert.ok(
+  caughtUpJob.reportCount > forcedJob.reportCount,
+  'catch-up should resolve more than one day'
+);
 assert.deepEqual(
   caughtUpJob.resolutions.map((resolution) => resolution.resolvedDay),
   [2, 3],
@@ -1796,13 +2940,15 @@ const dayTwoRecordAfterRecovery = await scribbitCore.loadScribbit(
   dayTwoEntrant.id
 );
 assert.deepEqual(
-  { wins: dayTwoRecordAfterRecovery.wins, losses: dayTwoRecordAfterRecovery.losses },
+  {
+    wins: dayTwoRecordAfterRecovery.wins,
+    losses: dayTwoRecordAfterRecovery.losses,
+  },
   dayTwoRecordBeforeRecovery,
   'outbox recovery must not resolve stored fights twice'
 );
-const pendingCatchUpResolutions = await dailyJob.loadPendingArenaResolutions(
-  catchUpStorage
-);
+const pendingCatchUpResolutions =
+  await dailyJob.loadPendingArenaResolutions(catchUpStorage);
 assert.deepEqual(
   pendingCatchUpResolutions.map((resolution) => resolution.resolvedDay),
   [2, 3],
@@ -1985,13 +3131,126 @@ assert.equal(
 );
 pass('nightly clout payout math and idempotency');
 
+const replyLossRumbleInkStorage = createMemoryStorage({
+  throwAfterCommitOnce: true,
+});
+const replyLossRumbleInkPayoutKey = inkStore.getRumbleWinInkPayoutKey(12);
+assert.equal(
+  await inkStore.claimInkReward(replyLossRumbleInkStorage, {
+    payoutKey: replyLossRumbleInkPayoutKey,
+    payoutField: 'reply-loss-scribbit',
+    userId: 'reply-loss-owner',
+    amount: arena.INK_REWARDS.rumbleWin * 2,
+    paidAtMs: 500,
+  }),
+  true,
+  'a lost EXEC reply should recover the committed Rumble Ink receipt'
+);
+assert.equal(
+  await inkStore.getInkBalance(replyLossRumbleInkStorage, 'reply-loss-owner'),
+  arena.INK_REWARDS.rumbleWin * 2,
+  'Rumble Ink should commit with its receipt'
+);
+assert.equal(
+  await inkStore.claimInkReward(replyLossRumbleInkStorage, {
+    payoutKey: replyLossRumbleInkPayoutKey,
+    payoutField: 'reply-loss-scribbit',
+    userId: 'reply-loss-owner',
+    amount: arena.INK_REWARDS.rumbleWin * 2,
+    paidAtMs: 600,
+  }),
+  false,
+  'retrying a recovered Rumble receipt should not pay again'
+);
+assert.equal(
+  await inkStore.getInkBalance(replyLossRumbleInkStorage, 'reply-loss-owner'),
+  arena.INK_REWARDS.rumbleWin * 2,
+  'Rumble Ink recovery must remain exactly once'
+);
+
+const replyLossBackStorage = createMemoryStorage({
+  throwAfterCommitOnce: true,
+});
+await clout.claimDailyBack(
+  replyLossBackStorage,
+  12,
+  { userId: 'reply-loss-backer', username: 'Reply Loss Backer' },
+  'reply-loss-champion'
+);
+const replyLossBackPayout = await clout.payCloutForRumble(
+  replyLossBackStorage,
+  {
+    day: 12,
+    championScribbitId: 'reply-loss-champion',
+    runnerUpScribbitId: null,
+    paidAtMs: 700,
+  }
+);
+assert.equal(
+  replyLossBackPayout.championBackers,
+  1,
+  'a lost EXEC reply should recover the committed Back receipt'
+);
+assert.equal(
+  await clout.getUserClout(replyLossBackStorage, 'reply-loss-backer'),
+  3,
+  'Back Clout should commit with its receipt'
+);
+assert.equal(
+  await inkStore.getInkBalance(replyLossBackStorage, 'reply-loss-backer'),
+  arena.INK_REWARDS.backedChampion,
+  'champion Back Ink should commit in the same transaction'
+);
+const retriedReplyLossBackPayout = await clout.payCloutForRumble(
+  replyLossBackStorage,
+  {
+    day: 12,
+    championScribbitId: 'reply-loss-champion',
+    runnerUpScribbitId: null,
+    paidAtMs: 800,
+  }
+);
+assert.equal(
+  retriedReplyLossBackPayout.paidBackers,
+  0,
+  'retrying a recovered Back receipt should not pay again'
+);
+assert.equal(
+  await clout.getUserClout(replyLossBackStorage, 'reply-loss-backer'),
+  3,
+  'Back Clout recovery must remain exactly once'
+);
+assert.equal(
+  await inkStore.getInkBalance(replyLossBackStorage, 'reply-loss-backer'),
+  arena.INK_REWARDS.backedChampion,
+  'Back Ink recovery must remain exactly once'
+);
+pass('Rumble Ink and Back payouts recover atomically after reply loss');
+
 const resultSummary = cloutPayoutJob.resolutions[0];
 assert.ok(resultSummary, 'result-comment fixture should resolve one arena day');
-const resultCommentText = resultComment.formatRumbleResultComment(resultSummary);
-assert.match(resultCommentText, /Rumble #2 results/, 'result comment should name the resolved day');
-assert.match(resultCommentText, new RegExp(resultSummary.champion.name), 'result comment should name the champion');
-assert.match(resultCommentText, /1 champion backers earned \+3 Clout/, 'result comment should report real Clout payouts');
-assert.match(resultCommentText, /Who are you backing/, 'result comment should invite community discussion');
+const resultCommentText =
+  resultComment.formatRumbleResultComment(resultSummary);
+assert.match(
+  resultCommentText,
+  /Rumble #2 results/,
+  'result comment should name the resolved day'
+);
+assert.match(
+  resultCommentText,
+  new RegExp(resultSummary.champion.name),
+  'result comment should name the champion'
+);
+assert.match(
+  resultCommentText,
+  /1 champion backers earned \+3 Clout/,
+  'result comment should report real Clout payouts'
+);
+assert.match(
+  resultCommentText,
+  /Who are you backing/,
+  'result comment should invite community discussion'
+);
 const foundingResultComment = resultComment.formatRumbleResultComment({
   ...resultSummary,
   champion: makeScribbit({
@@ -2009,9 +3268,46 @@ assert.doesNotMatch(
 pass('Reddit Rumble result comment uses real resolution data');
 
 const faded = scribbitCore.resolveExpiredScribbitStatus(
-  makeScribbit({ id: 'fade-me', belief: 2 })
+  makeScribbit({
+    id: 'fade-me',
+    belief: 2,
+    wins: 3,
+    losses: 4,
+    xp: 7,
+    accessories: ['beanie', 'retired-pin'],
+  }),
+  {
+    creatorTitle: {
+      id: 'doodler',
+      name: 'Doodler',
+      rarity: 'common',
+    },
+  }
 );
 assert.equal(faded.status, 'faded', 'low-belief Scribbits fade at expiry');
+assert.deepEqual(
+  faded.legacy,
+  {
+    schemaVersion: 1,
+    archivedDay: 4,
+    finish: 'faded',
+    creatorTitle: {
+      id: 'doodler',
+      name: 'Doodler',
+      rarity: 'common',
+    },
+    level: 3,
+    xp: 7,
+    wins: 3,
+    losses: 4,
+    belief: 2,
+    accessories: [
+      { id: 'beanie', name: 'Beanie', rarity: 'common' },
+      { id: 'retired-pin', name: 'Retired Pin', rarity: 'common' },
+    ],
+  },
+  'expiry should freeze a versioned creator-title and cosmetic snapshot'
+);
 
 const legendByBelief = scribbitCore.resolveExpiredScribbitStatus(
   makeScribbit({ id: 'believe-me', belief: arena.BELIEF_LEGEND_THRESHOLD })
@@ -2021,12 +3317,483 @@ assert.equal(
   'legend',
   'belief threshold creates a Legend'
 );
+assert.equal(
+  legendByBelief.legacy.finish,
+  'believed',
+  'belief-created Legends should use the heart-gold finish'
+);
 
 const legendByCrown = scribbitCore.resolveExpiredScribbitStatus(
   makeScribbit({ id: 'crown-me', legendTitle: 'Champion of Day 3' })
 );
-assert.equal(legendByCrown.status, 'legend', 'crowned Scribbits become Legends');
-pass('expiry legend/fade evaluation');
+assert.equal(
+  legendByCrown.status,
+  'legend',
+  'crowned Scribbits become Legends'
+);
+assert.equal(
+  legendByCrown.legacy.finish,
+  'champion',
+  'canonical Rumble champions should use the crown finish'
+);
+const customTitleLegend = scribbitCore.resolveExpiredScribbitStatus(
+  makeScribbit({ id: 'old-custom-title', legendTitle: 'Ancient Favorite' })
+);
+assert.equal(
+  customTitleLegend.legacy.finish,
+  'believed',
+  'unknown historical titles must not be upgraded to Champion'
+);
+pass('versioned Legacy Card expiry snapshots and finish classification');
+
+const legacylessStoredRecord = {
+  ...makeScribbit({ id: 'legacyless-record', status: 'alive' }),
+  status: 'faded',
+  accessories: ['retired-pin'],
+};
+delete legacylessStoredRecord.legacy;
+const migratedLegacyRecord = scribbitCore.normalizeScribbitRecord(
+  legacylessStoredRecord
+);
+assert.ok(
+  migratedLegacyRecord?.legacy,
+  'old terminal rows should gain a V1 stamp'
+);
+assert.equal(
+  migratedLegacyRecord.legacy.archivedDay,
+  migratedLegacyRecord.expiresDay,
+  'migrated archive day should use semantic expiry day'
+);
+assert.deepEqual(
+  migratedLegacyRecord.legacy.accessories,
+  [{ id: 'retired-pin', name: 'Retired Pin', rarity: 'common' }],
+  'unknown historical accessories should survive catalog removal'
+);
+const frozenLegacyRecord = scribbitCore.normalizeScribbitRecord({
+  ...migratedLegacyRecord,
+  wins: 99,
+  belief: 99,
+});
+assert.equal(
+  frozenLegacyRecord?.legacy?.wins,
+  migratedLegacyRecord.legacy.wins,
+  'existing Legacy snapshots must not regenerate from later live fields'
+);
+assert.equal(
+  frozenLegacyRecord?.legacy?.belief,
+  migratedLegacyRecord.legacy.belief,
+  'terminal Belief should remain frozen in the card'
+);
+pass('Legacy Card migration preserves frozen and retired metadata');
+
+const legacyDeckStorage = createMemoryStorage();
+for (let index = 0; index < 5; index += 1) {
+  const archived = scribbitCore.resolveExpiredScribbitStatus(
+    makeScribbit({
+      id: `legacy-deck-${index + 1}`,
+      bornDay: index + 1,
+      expiresDay: index + 4,
+      belief: index === 4 ? arena.BELIEF_LEGEND_THRESHOLD : index,
+    })
+  );
+  await scribbitCore.storeScribbit(
+    legacyDeckStorage,
+    'legacy-deck-owner',
+    archived
+  );
+}
+await scribbitCore.storeScribbit(
+  legacyDeckStorage,
+  'legacy-deck-owner',
+  makeScribbit({ id: 'legacy-deck-alive', bornDay: 9, expiresDay: 12 })
+);
+// Simulate a pre-index account so the first read must rebuild from ownership.
+await legacyDeckStorage.del(
+  scribbitCore.getUserLegacyCardsKey('legacy-deck-owner'),
+  legacyCore.getLegacyIndexVersionStorageKey('legacy-deck-owner')
+);
+const firstLegacyPage = await legacyCore.loadLegacyCardPage(
+  legacyDeckStorage,
+  'legacy-deck-owner',
+  null,
+  2
+);
+assert.equal(firstLegacyPage.cards.length, 2, 'Legacy page should be bounded');
+assert.ok(
+  firstLegacyPage.nextCursor,
+  'Legacy page should issue an Older cursor'
+);
+assert.match(
+  firstLegacyPage.nextCursor,
+  /^v2\|/,
+  'new Legacy cursors should anchor to a stable archived card'
+);
+assert.equal(
+  Object.hasOwn(firstLegacyPage.cards[0], 'stats'),
+  false,
+  'Legacy Card DTOs must not be structurally usable as combat fighters'
+);
+const newlyArchivedCard = scribbitCore.resolveExpiredScribbitStatus(
+  makeScribbit({
+    id: 'legacy-deck-newest',
+    bornDay: 10,
+    expiresDay: 13,
+  })
+);
+await scribbitCore.storeScribbit(
+  legacyDeckStorage,
+  'legacy-deck-owner',
+  newlyArchivedCard
+);
+const secondLegacyPage = await legacyCore.loadLegacyCardPage(
+  legacyDeckStorage,
+  'legacy-deck-owner',
+  firstLegacyPage.nextCursor,
+  2
+);
+assert.equal(
+  secondLegacyPage.cards.length,
+  2,
+  'second Legacy page should continue'
+);
+assert.equal(
+  new Set([
+    ...firstLegacyPage.cards.map((card) => card.id),
+    ...secondLegacyPage.cards.map((card) => card.id),
+  ]).size,
+  4,
+  'new archives before page two must not duplicate or skip anchored cards'
+);
+const legacyReturnReceipt = await legacyCore.loadLegacyReturnReceipt(
+  legacyDeckStorage,
+  'legacy-deck-owner'
+);
+assert.equal(
+  legacyReturnReceipt?.total,
+  6,
+  'return receipt should count unseen cards'
+);
+assert.equal(
+  legacyReturnReceipt?.cards.length,
+  3,
+  'return ceremony payload should stay bounded to a three-card stack'
+);
+const seenThroughDay = await legacyCore.markLegacyCardsSeen(
+  legacyDeckStorage,
+  'legacy-deck-owner',
+  legacyReturnReceipt?.newestArchivedDay ?? 0
+);
+assert.equal(
+  await legacyCore.loadLegacyReturnReceipt(
+    legacyDeckStorage,
+    'legacy-deck-owner'
+  ),
+  null,
+  'filing the newest archived day should dismiss the return ceremony once'
+);
+assert.equal(
+  await legacyCore.markLegacyCardsSeen(
+    legacyDeckStorage,
+    'legacy-deck-owner',
+    seenThroughDay - 1
+  ),
+  seenThroughDay,
+  'seen cursor must be monotonic'
+);
+pass('personal Legacy Deck migration, paging, DTO isolation, and seen receipt');
+
+const expiryRepairStorage = createMemoryStorage();
+const repairSource = makeScribbit({
+  id: 'repair-expiry',
+  expiresDay: 4,
+  legendTitle: 'Champion of Day 3',
+});
+await scribbitCore.storeScribbit(
+  expiryRepairStorage,
+  'repair-owner',
+  repairSource
+);
+// Reproduce a crash after terminal storage but before owner/Legend indexing.
+await scribbitCore.updateScribbit(
+  expiryRepairStorage,
+  scribbitCore.resolveExpiredScribbitStatus(repairSource)
+);
+const repairedExpiry = await scribbitCore.expireDueScribbits(
+  expiryRepairStorage,
+  4
+);
+assert.deepEqual(
+  repairedExpiry,
+  { faded: 0, legends: 0 },
+  'repairing partial expiry must not double-count the transition'
+);
+assert.notEqual(
+  await expiryRepairStorage.zScore(
+    scribbitCore.getUserLegacyCardsKey('repair-owner'),
+    repairSource.id
+  ),
+  undefined,
+  'expiry retry should repair the owner Legacy index'
+);
+assert.notEqual(
+  await expiryRepairStorage.zScore(
+    scribbitCore.getLegendsKey(),
+    repairSource.id
+  ),
+  undefined,
+  'expiry retry should repair the public Legend index'
+);
+assert.equal(
+  await expiryRepairStorage.zScore(
+    scribbitCore.getExpiringScribbitsKey(),
+    repairSource.id
+  ),
+  undefined,
+  'due entry should be removed only after indexes are repaired'
+);
+pass('partial expiry retries repair indexes idempotently');
+
+const terminalMutationStorage = createMemoryStorage();
+await scribbitCore.storeScribbit(
+  terminalMutationStorage,
+  'terminal-owner',
+  faded
+);
+await scribbitCore.awardScribbitXp(terminalMutationStorage, faded.id, 10);
+await scribbitCore.recordBattleOutcomeOnScribbit(
+  terminalMutationStorage,
+  faded.id,
+  'win',
+  2
+);
+await scribbitCore.increaseBelief(terminalMutationStorage, faded);
+const unchangedTerminal = await scribbitCore.loadScribbit(
+  terminalMutationStorage,
+  faded.id
+);
+assert.equal(unchangedTerminal?.xp, faded.xp, 'terminal XP must stay frozen');
+assert.equal(
+  unchangedTerminal?.wins,
+  faded.wins,
+  'terminal record must stay frozen'
+);
+assert.equal(
+  unchangedTerminal?.belief,
+  faded.belief,
+  'terminal Belief must stay frozen'
+);
+assert.deepEqual(
+  unchangedTerminal?.legacy,
+  faded.legacy,
+  'terminal mutation attempts must not rewrite the Legacy snapshot'
+);
+pass('terminal Scribbits reject XP, battle, and Belief mutation');
+
+const expiryRaceStorage = createMemoryStorage();
+const expiryRaceSource = makeScribbit({
+  id: 'expiry-race-source',
+  expiresDay: 4,
+});
+await scribbitCore.storeScribbit(
+  expiryRaceStorage,
+  'expiry-race-owner',
+  expiryRaceSource
+);
+const expiryRaceScribbitKey = scribbitCore.getScribbitKey(expiryRaceSource.id);
+const originalExpiryRaceWatch = expiryRaceStorage.watch.bind(expiryRaceStorage);
+let injectedExpiryBetweenReadAndWrite = false;
+expiryRaceStorage.watch = async (...keys) => {
+  const transaction = await originalExpiryRaceWatch(...keys);
+  const originalExec = transaction.exec.bind(transaction);
+  transaction.exec = async () => {
+    if (
+      !injectedExpiryBetweenReadAndWrite &&
+      keys.includes(expiryRaceScribbitKey)
+    ) {
+      injectedExpiryBetweenReadAndWrite = true;
+      await expiryRaceStorage.set(
+        expiryRaceScribbitKey,
+        JSON.stringify(
+          scribbitCore.resolveExpiredScribbitStatus(expiryRaceSource)
+        )
+      );
+      return [];
+    }
+    return originalExec();
+  };
+  return transaction;
+};
+await scribbitCore.awardScribbitXp(expiryRaceStorage, expiryRaceSource.id, 20);
+const expiryRaceResult = await scribbitCore.loadScribbit(
+  expiryRaceStorage,
+  expiryRaceSource.id
+);
+assert.equal(
+  expiryRaceResult?.status,
+  'faded',
+  'WATCH retry must observe expiry instead of resurrecting an alive record'
+);
+assert.equal(
+  expiryRaceResult?.xp,
+  expiryRaceSource.xp,
+  'XP queued before expiry must not overwrite terminal state'
+);
+pass('atomic Scribbit mutation fence prevents expiry resurrection');
+
+const standingRetryStorage = createMemoryStorage();
+const standingRetrySource = makeScribbit({
+  id: 'standing-retry-source',
+  expiresDay: 4,
+});
+await scribbitCore.storeScribbit(
+  standingRetryStorage,
+  'standing-retry-owner',
+  standingRetrySource
+);
+await scribbitCore.recordRumbleStandingOnScribbit(
+  standingRetryStorage,
+  standingRetrySource.id,
+  3,
+  2,
+  1,
+  4
+);
+await scribbitCore.recordRumbleStandingOnScribbit(
+  standingRetryStorage,
+  standingRetrySource.id,
+  3,
+  2,
+  1,
+  4
+);
+await scribbitCore.expireDueScribbits(standingRetryStorage, 4);
+await scribbitCore.recordRumbleStandingOnScribbit(
+  standingRetryStorage,
+  standingRetrySource.id,
+  3,
+  2,
+  1,
+  4
+);
+const standingRetryResult = await scribbitCore.loadScribbit(
+  standingRetryStorage,
+  standingRetrySource.id
+);
+assert.equal(standingRetryResult?.wins, 2, 'Rumble wins should apply once');
+assert.equal(standingRetryResult?.losses, 1, 'Rumble losses should apply once');
+assert.equal(standingRetryResult?.xp, 4, 'Rumble XP should apply once');
+assert.equal(
+  standingRetryResult?.legacy?.wins,
+  2,
+  'post-expiry retry must not rewrite the frozen record'
+);
+pass('Rumble standing receipt commits atomically and retries once');
+
+const titleRetryStorage = createMemoryStorage();
+const titleRetrySource = makeScribbit({
+  id: 'title-retry-source',
+  expiresDay: 4,
+});
+await scribbitCore.storeScribbit(
+  titleRetryStorage,
+  'title-retry-owner',
+  titleRetrySource
+);
+await assert.rejects(
+  scribbitCore.expireDueScribbits(titleRetryStorage, 4, {
+    getCreatorTitleWatchKey: inkStore.getInventoryKey,
+    getCreatorTitle: async () => {
+      throw new Error('temporary inventory read failure');
+    },
+  }),
+  /temporary inventory read failure/,
+  'title lookup failure should leave expiry retryable'
+);
+assert.equal(
+  (await scribbitCore.loadScribbit(titleRetryStorage, titleRetrySource.id))
+    ?.status,
+  'alive',
+  'failed title lookup must not archive an incomplete card'
+);
+assert.notEqual(
+  await titleRetryStorage.zScore(
+    scribbitCore.getExpiringScribbitsKey(),
+    titleRetrySource.id
+  ),
+  undefined,
+  'failed title lookup must retain the due repair entry'
+);
+await scribbitCore.expireDueScribbits(titleRetryStorage, 4, {
+  getCreatorTitleWatchKey: inkStore.getInventoryKey,
+  getCreatorTitle: async () => ({
+    id: 'brushlord',
+    name: 'Brushlord',
+    rarity: 'rare',
+  }),
+});
+assert.equal(
+  (await scribbitCore.loadScribbit(titleRetryStorage, titleRetrySource.id))
+    ?.legacy?.creatorTitle?.id,
+  'brushlord',
+  'successful retry should preserve the equipped creator title'
+);
+pass('Legacy title snapshot failures retry without data loss');
+
+const titleChangeRaceStorage = createMemoryStorage();
+const titleChangeRaceSource = makeScribbit({
+  id: 'title-change-race-source',
+  expiresDay: 4,
+});
+await scribbitCore.storeScribbit(
+  titleChangeRaceStorage,
+  'title-change-race-owner',
+  titleChangeRaceSource
+);
+const titleChangeInventoryKey = inkStore.getInventoryKey(
+  'title-change-race-owner'
+);
+const originalTitleChangeWatch = titleChangeRaceStorage.watch.bind(
+  titleChangeRaceStorage
+);
+let injectedTitleChange = false;
+titleChangeRaceStorage.watch = async (...keys) => {
+  const transaction = await originalTitleChangeWatch(...keys);
+  const originalExec = transaction.exec.bind(transaction);
+  transaction.exec = async () => {
+    if (!injectedTitleChange && keys.includes(titleChangeInventoryKey)) {
+      injectedTitleChange = true;
+      return [];
+    }
+    return originalExec();
+  };
+  return transaction;
+};
+let titleSnapshotReadCount = 0;
+await scribbitCore.expireDueScribbits(titleChangeRaceStorage, 4, {
+  getCreatorTitleWatchKey: inkStore.getInventoryKey,
+  getCreatorTitle: async () => {
+    titleSnapshotReadCount += 1;
+    return titleSnapshotReadCount === 1
+      ? { id: 'doodler', name: 'Doodler', rarity: 'common' }
+      : { id: 'brushlord', name: 'Brushlord', rarity: 'rare' };
+  },
+});
+assert.equal(
+  (
+    await scribbitCore.loadScribbit(
+      titleChangeRaceStorage,
+      titleChangeRaceSource.id
+    )
+  )?.legacy?.creatorTitle?.id,
+  'brushlord',
+  'inventory WATCH retry should freeze the title from the successful attempt'
+);
+assert.equal(
+  titleSnapshotReadCount,
+  2,
+  'concurrent title change should re-read inventory before archiving'
+);
+pass('Legacy title snapshots retry concurrent inventory changes');
 
 const legendPaginationStorage = createMemoryStorage();
 const paginationLegends = Array.from({ length: 5 }, (_, index) => {
@@ -2078,11 +3845,7 @@ await legendPaginationStorage.zAdd(scribbitCore.getLegendsKey(), {
 });
 assert.deepEqual(
   await scribbitCore.getLegendIds(legendPaginationStorage, 3, 0),
-  [
-    'pagination-legend-5',
-    'pagination-legend-stale',
-    'pagination-legend-4',
-  ],
+  ['pagination-legend-5', 'pagination-legend-stale', 'pagination-legend-4'],
   'raw Legend cursors should retain stale zset positions'
 );
 assert.deepEqual(
@@ -2111,7 +3874,15 @@ const expiringEntrant = makeScribbit({
   bornDay: 0,
   expiresDay: 3,
 });
-await scribbitCore.storeScribbit(expiryOrderStorage, 'owner-one', expiringEntrant);
+await scribbitCore.storeScribbit(
+  expiryOrderStorage,
+  'owner-one',
+  expiringEntrant
+);
+await expiryOrderStorage.hSet(inkStore.getInventoryKey('owner-one'), {
+  doodler: 'title',
+});
+await inkStore.setEquippedTitle(expiryOrderStorage, 'owner-one', 'doodler');
 await scribbitCore.addRumbleEntrant(expiryOrderStorage, 2, expiringEntrant.id);
 const expiryOrderJob = await dailyJob.runNightlyArenaJob(expiryOrderStorage, {
   now: dayTwoUtc,
@@ -2122,6 +3893,21 @@ const expiredAfterFight = await scribbitCore.loadScribbit(
   expiryOrderStorage,
   expiringEntrant.id
 );
+const featuredFinalBout = await battleStore.loadFeaturedRumbleReport(
+  expiryOrderStorage,
+  expiringEntrant.id,
+  2
+);
+assert.equal(
+  featuredFinalBout?.kind,
+  'rumble',
+  'nightly resolution should retain each entrant last played bout for receipts'
+);
+assert.equal(
+  featuredFinalBout?.day,
+  2,
+  'featured Rumble bout should be bound to the resolved day'
+);
 assert.ok(expiredAfterFight, 'expiring entrant should remain stored');
 assert.notEqual(
   expiredAfterFight.status,
@@ -2131,6 +3917,28 @@ assert.notEqual(
 assert.ok(
   expiredAfterFight.wins + expiredAfterFight.losses > 0,
   'day-3 entrant should get final fight before expiry'
+);
+assert.equal(
+  expiredAfterFight.legacy?.wins,
+  expiredAfterFight.wins,
+  'Legacy Card should freeze the final Rumble win count'
+);
+assert.equal(
+  expiredAfterFight.legacy?.losses,
+  expiredAfterFight.losses,
+  'Legacy Card should freeze the final Rumble loss count'
+);
+assert.deepEqual(
+  expiredAfterFight.legacy?.creatorTitle,
+  { id: 'doodler', name: 'Doodler', rarity: 'common' },
+  'nightly expiry should snapshot the currently equipped owned title'
+);
+await inkStore.setEquippedTitle(expiryOrderStorage, 'owner-one', null);
+assert.deepEqual(
+  (await scribbitCore.loadScribbit(expiryOrderStorage, expiringEntrant.id))
+    ?.legacy?.creatorTitle,
+  { id: 'doodler', name: 'Doodler', rarity: 'common' },
+  'changing the profile title later must not rewrite the archived signature'
 );
 pass('nightly job resolves rumble before expiry');
 
@@ -2167,10 +3975,15 @@ assert.ok(
   'backfill founding Scribbit should carry a small level'
 );
 assert.ok(
-  ['happy', 'hungry', 'sleepy', 'pumped'].includes(foundingStanding.scribbit.mood),
+  ['happy', 'hungry', 'sleepy', 'pumped'].includes(
+    foundingStanding.scribbit.mood
+  ),
   'backfill founding Scribbit should carry mood'
 );
-assert.ok(oddResolution.reports.length >= 2, 'Swiss rumble should emit reports');
+assert.ok(
+  oddResolution.reports.length >= 2,
+  'Swiss rumble should emit reports'
+);
 assert.ok(oddResolution.champion.id, 'Swiss rumble should choose a champion');
 
 const fiveEntrants = Array.from({ length: 5 }, (_, index) => {

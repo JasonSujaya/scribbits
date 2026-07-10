@@ -14,6 +14,28 @@ export type ScribbitStats = {
 };
 
 export type ScribbitStatus = 'alive' | 'faded' | 'legend';
+export type LegacyFinish = 'faded' | 'believed' | 'champion';
+export type LegacyCosmeticSnapshot = {
+  id: string;
+  name: string;
+  rarity: CapsuleRarity;
+};
+
+// Immutable final values captured when a living Scribbit leaves the active
+// roster. The Scribbit record keeps its original drawing and identity; this
+// stamp freezes the progression values used by the owner's Legacy Card.
+export type ScribbitLegacy = {
+  schemaVersion: 1;
+  archivedDay: number;
+  finish: LegacyFinish;
+  creatorTitle: LegacyCosmeticSnapshot | null;
+  level: number;
+  xp: number;
+  wins: number;
+  losses: number;
+  belief: number;
+  accessories: LegacyCosmeticSnapshot[];
+};
 
 export type Mood = 'happy' | 'hungry' | 'sleepy' | 'pumped';
 export type CareAction = 'feed' | 'pat' | 'train';
@@ -39,6 +61,20 @@ export type Scribbit = {
   xp: number;
   mood: Mood; // derived from care state; cosmetic + tiny xp multiplier
   careDoneToday: CareAction[]; // each action once per scribbit per day
+  legacy: ScribbitLegacy | null; // null while alive, immutable snapshot afterward
+};
+
+export type LegacyCard = {
+  id: string;
+  name: string;
+  artist: string;
+  element: Element;
+  imageUrl: string;
+  bornDay: number;
+  expiresDay: number;
+  status: 'faded' | 'legend';
+  legendTitle: string | null;
+  legacy: ScribbitLegacy;
 };
 
 export type Forecast = {
@@ -54,6 +90,13 @@ export type DailyRumbleReceipt = {
   championName: string;
   cloutEarned: number;
   inkAwarded: number;
+  replayAvailable: boolean; // server-selected last bout for the backed Scribbit
+};
+
+export type LegacyReturnReceipt = {
+  cards: LegacyCard[]; // newest cards first, bounded for the return ceremony
+  total: number; // all unseen cards, including cards beyond the preview stack
+  newestArchivedDay: number;
 };
 
 export type CapsuleProgress = {
@@ -84,6 +127,7 @@ export type ArenaState = {
   nextCapsuleCost: number; // authoritative current price (daily discount already applied)
   capsuleProgress: CapsuleProgress;
   lastRumbleReceipt: DailyRumbleReceipt | null; // yesterday's Back payoff, if the player made a pick
+  legacyReturnReceipt: LegacyReturnReceipt | null; // unseen expiry payoff, cleared explicitly
 };
 
 // Lightweight, read-only inline feed contract. It deliberately excludes
@@ -127,6 +171,7 @@ export type Inventory = {
   items: Record<string, number>; // catalog id -> unattached copies owned
   pens: string[]; // permanent palette unlocks
   titles: string[];
+  equippedTitle: string | null; // one owned title displayed on future Legacy Cards
   discovered: string[]; // permanent catalog discoveries, including consumed accessories
 };
 export type CapsulePullResponse = {
@@ -137,16 +182,21 @@ export type CapsulePullResponse = {
   progress: CapsuleProgress;
 };
 export type CapsulePullRequest = { operationId: string };
+export type EquipTitleRequest = { titleId: string | null };
+export type MarkLegacySeenRequest = { throughArchivedDay: number };
 // Cosmetic accessory attached during drawing; consumed from inventory at submit.
 // Coordinates in 512x512 canvas space; client bakes visuals into the rendered PNG.
+export const ACCESSORY_BASE_SIZE = 120;
 export const MIN_ACCESSORY_SCALE = 0.5;
 export const MAX_ACCESSORY_SCALE = 2;
+export const MIN_ACCESSORY_ROTATION = -Math.PI;
+export const MAX_ACCESSORY_ROTATION = Math.PI;
 export type AttachedAccessory = {
   id: string;
   x: number;
   y: number;
   scale: number; // MIN_ACCESSORY_SCALE..MAX_ACCESSORY_SCALE
-  rotation: number; // radians
+  rotation: number; // MIN_ACCESSORY_ROTATION..MAX_ACCESSORY_ROTATION radians
 };
 export const MAX_ACCESSORIES_PER_SCRIBBIT = 2;
 export const INK_REWARDS = {
@@ -159,6 +209,11 @@ export const INK_REWARDS = {
 export const CAPSULE_COST = 10;
 export const CAPSULE_FIRST_DAILY_COST = 5; // first pull each day is discounted
 export const CAPSULE_PITY = 10; // epic guaranteed within N pulls
+export const CAPSULE_RARITY_PERCENTAGES = {
+  common: 70,
+  rare: 25,
+  epic: 5,
+} as const;
 export type CloutEntry = { username: string; clout: number };
 export type CloutBoard = {
   top: CloutEntry[]; // top 20
@@ -219,7 +274,13 @@ export type BossChallengeRequest = { scribbitId: string };
 export type LegendsState = {
   legends: Scribbit[]; // newest first, one server-bounded page
   nextCursor: string | null; // server-issued continuation token; null on the final page
-  myFaded: Scribbit[]; // caller's sketchbook (faded), newest first, top 30
+  /** @deprecated Use GET /api/legacy-cards for the complete personal deck. */
+  myFaded: Scribbit[];
+};
+
+export type LegacyCardsState = {
+  cards: LegacyCard[]; // caller-owned, immutable expiry snapshots, newest first
+  nextCursor: string | null;
 };
 
 export type ArenaErrorResponse = { status: 'error'; message: string };
@@ -261,6 +322,7 @@ export const LEVEL_DAMAGE_BONUS_PER_LEVEL = 0.02; // +2%/level above 1, max +8%
 // POST /api/scribbit       -> SubmitScribbitRequest -> Scribbit         (401 if logged out, 409 if drawnToday)
 // POST /api/enter-rumble   -> EnterRumbleRequest -> { entered: true }   (409 if enteredToday)
 // GET  /api/my-battles     -> BattleReport[]  (caller's battles, newest first, top 20)
+// GET  /api/rumble-replay?day -> BattleReport (server-selected bout for caller's Back)
 // POST /api/believe        -> BelieveRequest -> { belief: number }      (one per user per scribbit per day)
 // POST /api/boss-challenge -> BossChallengeRequest -> BattleReport      (instant resolve vs champion; one per user per day)
 // POST /api/care           -> CareRequest -> Scribbit                   (each action once per scribbit per UTC day)
@@ -271,4 +333,7 @@ export const LEVEL_DAMAGE_BONUS_PER_LEVEL = 0.02; // +2%/level above 1, max +8%
 // GET  /api/clout-board    -> CloutBoard
 // POST /api/capsule        -> CapsulePullResponse                       (spends ink; seeded random + pity; duplicate accessories stack)
 // GET  /api/inventory      -> Inventory
+// POST /api/equip-title    -> EquipTitleRequest -> Inventory
 // GET  /api/legends?cursor&limit -> LegendsState (limit defaults to and is capped at 50)
+// GET  /api/legacy-cards?cursor&limit -> LegacyCardsState (owner-only deck)
+// POST /api/legacy-cards/seen -> MarkLegacySeenRequest -> { seenThroughDay: number }

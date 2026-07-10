@@ -9,7 +9,11 @@
 
 import * as Phaser from 'phaser';
 import { Scene } from 'phaser';
-import { CAPSULE_COST, CAPSULE_FIRST_DAILY_COST } from '../../shared/arena';
+import {
+  CAPSULE_COST,
+  CAPSULE_FIRST_DAILY_COST,
+  CAPSULE_RARITY_PERCENTAGES,
+} from '../../shared/arena';
 import type {
   CapsuleProgress,
   CapsulePull,
@@ -19,10 +23,16 @@ import type {
 import { UI, TYPE } from './theme';
 import { label, handLettered, button, ghostButton } from './ui';
 import { RARITY_STYLE } from './pens';
+import { COSMETIC_BY_ID } from '../../shared/cosmetics';
+import { renderCosmeticPreview } from './cosmeticpreview';
 
 const DEPTH = 2500;
 const COLLECTION_BAR_WIDTH = 480;
 const COLLECTION_BAR_HEIGHT = 22;
+const CAPSULE_ODDS_COPY =
+  `ODDS · ${CAPSULE_RARITY_PERCENTAGES.common}% common · ` +
+  `${CAPSULE_RARITY_PERCENTAGES.rare}% rare · ` +
+  `${CAPSULE_RARITY_PERCENTAGES.epic}% epic`;
 
 // Collector ranks are presentation-only milestones. Pull rewards, rarity, and
 // pity remain entirely server-authoritative.
@@ -35,17 +45,37 @@ const COLLECTOR_RANKS = [
 ] as const;
 
 const createCapsuleOperationId = (): string => {
-  return globalThis.crypto?.randomUUID?.() ??
-    `capsule-${Date.now()}-${Math.random().toString(36).slice(2, 14)}`;
+  return (
+    globalThis.crypto?.randomUUID?.() ??
+    `capsule-${Date.now()}-${Math.random().toString(36).slice(2, 14)}`
+  );
 };
 
-const collectorRankForPullCount = (pullCount: number): string => {
+const collectorProgressForPullCount = (
+  pullCount: number
+): {
+  currentRankName: string;
+  nextRankName: string | null;
+  pullsUntilNextRank: number;
+} => {
+  let currentRankIndex = 0;
   for (let index = COLLECTOR_RANKS.length - 1; index >= 0; index -= 1) {
     const rank = COLLECTOR_RANKS[index];
-    if (rank && pullCount >= rank.minimumPullCount) return rank.name;
+    if (rank && pullCount >= rank.minimumPullCount) {
+      currentRankIndex = index;
+      break;
+    }
   }
 
-  return COLLECTOR_RANKS[0].name;
+  const currentRank = COLLECTOR_RANKS[currentRankIndex] ?? COLLECTOR_RANKS[0];
+  const nextRank = COLLECTOR_RANKS[currentRankIndex + 1];
+  return {
+    currentRankName: currentRank.name,
+    nextRankName: nextRank?.name ?? null,
+    pullsUntilNextRank: nextRank
+      ? Math.max(0, nextRank.minimumPullCount - pullCount)
+      : 0,
+  };
 };
 
 export type CapsuleMachineOpts = {
@@ -54,18 +84,33 @@ export type CapsuleMachineOpts = {
   progress: CapsuleProgress; // server-authoritative collection and pity snapshot
   // Perform the pull. The server owns costs, discounts, and final inventory; the
   // machine only mirrors the returned presentation snapshot.
-  onPull: (operationId: string) => Promise<CapsulePullResponse | { error: string }>;
+  onPull: (
+    operationId: string
+  ) => Promise<CapsulePullResponse | { error: string }>;
   onClose: (finalInk: number) => void;
+  // Optional terminal action used by ArenaHome. Draw omits it so closing the
+  // machine always restores the live drawing canvas exactly as before.
+  onViewCollection?: (finalInk: number) => void;
 };
 
 export type CapsuleMachine = { destroy: () => void };
 
-export function openCapsuleMachine(scene: Scene, opts: CapsuleMachineOpts): CapsuleMachine {
+type PrizeRevealOptions = {
+  acknowledgementLabel: 'GOT IT' | 'KEEP DRAWING';
+  onDismiss: () => void;
+  onViewCollection?: () => void;
+};
+
+export function openCapsuleMachine(
+  scene: Scene,
+  opts: CapsuleMachineOpts
+): CapsuleMachine {
   const { width, height } = scene.scale;
   let ink = opts.ink;
   let nextCost = opts.nextCost;
   let progress = opts.progress;
   let pulling = false;
+  let prizeOpen = false;
   let pendingOperationId: string | null = null;
   let closeRequested = false;
 
@@ -76,28 +121,48 @@ export function openCapsuleMachine(scene: Scene, opts: CapsuleMachineOpts): Caps
     .setInteractive();
   layer.add(scrim);
 
-  const title = handLettered(scene, width / 2, 150, 'MYSTERY INK', 56, UI.goldText, true).setScrollFactor(0).setDepth(DEPTH + 1);
+  const title = handLettered(
+    scene,
+    width / 2,
+    150,
+    'MYSTERY INK',
+    56,
+    UI.goldText,
+    true
+  )
+    .setScrollFactor(0)
+    .setDepth(DEPTH + 1);
   layer.add(title);
 
   // Ink balance chip.
-  const inkChip = label(scene, width / 2, 210, `🫙 Ink: ${ink}`, TYPE.title, UI.ink, true).setScrollFactor(0).setDepth(DEPTH + 2);
+  const inkChip = label(
+    scene,
+    width / 2,
+    210,
+    `🫙 Ink: ${ink}`,
+    TYPE.title,
+    UI.ink,
+    true
+  )
+    .setScrollFactor(0)
+    .setDepth(DEPTH + 2);
   layer.add(inkChip);
 
   // Permanent collection progress lives above the machine so it remains
   // readable while prize cards animate over the lower half of the portrait UI.
   const progressCard = scene.add
-    .container(width / 2, 293)
+    .container(width / 2, 310)
     .setScrollFactor(0)
     .setDepth(DEPTH + 2);
   const progressPaper = scene.add
-    .rectangle(0, 0, width - 150, 116, UI.creamHex, 0.96)
+    .rectangle(0, 0, width - 150, 140, UI.creamHex, 0.96)
     .setStrokeStyle(3, UI.inkHex, 0.85);
-  const collectorRankText = label(scene, 0, -42, '', 22, UI.goldText, true);
-  const collectionText = label(scene, 0, -14, '', TYPE.caption, UI.ink, true);
+  const collectorRankText = label(scene, 0, -54, '', 20, UI.goldText, true);
+  const collectionText = label(scene, 0, -28, '', TYPE.caption, UI.ink, true);
   const collectionTrack = scene.add
     .rectangle(
       -COLLECTION_BAR_WIDTH / 2,
-      14,
+      0,
       COLLECTION_BAR_WIDTH,
       COLLECTION_BAR_HEIGHT,
       UI.progressTrack,
@@ -108,14 +173,15 @@ export function openCapsuleMachine(scene: Scene, opts: CapsuleMachineOpts): Caps
   const collectionFill = scene.add
     .rectangle(
       -COLLECTION_BAR_WIDTH / 2 + 3,
-      14,
+      0,
       6,
       COLLECTION_BAR_HEIGHT - 8,
       UI.gold,
       1
     )
     .setOrigin(0, 0.5);
-  const pityText = label(scene, 0, 42, '', TYPE.caption, UI.coralText, true);
+  const pityText = label(scene, 0, 28, '', TYPE.caption, UI.coralText, true);
+  const oddsText = label(scene, 0, 55, CAPSULE_ODDS_COPY, 17, UI.inkSoft, true);
   progressCard.add([
     progressPaper,
     collectorRankText,
@@ -123,6 +189,7 @@ export function openCapsuleMachine(scene: Scene, opts: CapsuleMachineOpts): Caps
     collectionTrack,
     collectionFill,
     pityText,
+    oddsText,
   ]);
   layer.add(progressCard);
 
@@ -140,10 +207,14 @@ export function openCapsuleMachine(scene: Scene, opts: CapsuleMachineOpts): Caps
     const pullCountWord = pullCount === 1 ? 'pull' : 'pulls';
     const pullWord = pityRemaining === 1 ? 'pull' : 'pulls';
     const fillWidth = Math.max(6, (COLLECTION_BAR_WIDTH - 6) * collectionRatio);
+    const collectorProgress = collectorProgressForPullCount(pullCount);
+    const collectorProgressCopy = collectorProgress.nextRankName
+      ? `${collectorProgress.currentRankName} · ${collectorProgress.pullsUntilNextRank} ` +
+        `${collectorProgress.pullsUntilNextRank === 1 ? 'pull' : 'pulls'} to ` +
+        collectorProgress.nextRankName
+      : `${collectorProgress.currentRankName} · ${pullCount} lifetime ${pullCountWord}`;
 
-    collectorRankText.setText(
-      `COLLECTOR · ${collectorRankForPullCount(pullCount)} · ${pullCount} ${pullCountWord}`
-    );
+    collectorRankText.setText(`COLLECTOR · ${collectorProgressCopy}`);
     collectionText.setText(
       `PERMANENT COLLECTION · ${discoveredCount} / ${collectionTotal}`
     );
@@ -176,7 +247,10 @@ export function openCapsuleMachine(scene: Scene, opts: CapsuleMachineOpts): Caps
   // --- The machine (hand-drawn) --------------------------------------------
   const machineX = width / 2;
   const machineY = height * 0.46;
-  const machine = scene.add.container(machineX, machineY).setScrollFactor(0).setDepth(DEPTH + 1);
+  const machine = scene.add
+    .container(machineX, machineY)
+    .setScrollFactor(0)
+    .setDepth(DEPTH + 1);
   layer.add(machine);
   drawMachine(scene, machine);
 
@@ -199,7 +273,15 @@ export function openCapsuleMachine(scene: Scene, opts: CapsuleMachineOpts): Caps
     .setDepth(DEPTH + 2);
   layer.add(priceCard);
 
-  const helper = label(scene, width / 2, height * 0.7, '', TYPE.caption, UI.inkSoft, true)
+  const helper = label(
+    scene,
+    width / 2,
+    height * 0.7,
+    '',
+    TYPE.caption,
+    UI.inkSoft,
+    true
+  )
     .setScrollFactor(0)
     .setDepth(DEPTH + 2);
   helper.setWordWrapWidth(width - 190);
@@ -213,7 +295,9 @@ export function openCapsuleMachine(scene: Scene, opts: CapsuleMachineOpts): Caps
     () => void doPull(),
     width - 160,
     UI.coral
-  ).setScrollFactor(0).setDepth(DEPTH + 2);
+  )
+    .setScrollFactor(0)
+    .setDepth(DEPTH + 2);
   layer.add(pullBtn);
 
   function refreshAffordance(): void {
@@ -233,7 +317,14 @@ export function openCapsuleMachine(scene: Scene, opts: CapsuleMachineOpts): Caps
     }
   }
 
-  const closeBtn = ghostButton(scene, width / 2, height - 80, 'Done', () => close(), 220)
+  const closeBtn = ghostButton(
+    scene,
+    width / 2,
+    height - 80,
+    'Done',
+    () => close(),
+    220
+  )
     .setScrollFactor(0)
     .setDepth(DEPTH + 2);
   layer.add(closeBtn);
@@ -241,10 +332,16 @@ export function openCapsuleMachine(scene: Scene, opts: CapsuleMachineOpts): Caps
   refreshAffordance();
 
   async function doPull(): Promise<void> {
-    if (pulling) return;
+    if (pulling || prizeOpen) return;
     if (ink < nextCost) {
       // Playful shake + copy already shown; give a tiny nudge.
-      scene.tweens.add({ targets: pullBtn, x: pullBtn.x + 6, duration: 60, yoyo: true, repeat: 3 });
+      scene.tweens.add({
+        targets: pullBtn,
+        x: pullBtn.x + 6,
+        duration: 60,
+        yoyo: true,
+        repeat: 3,
+      });
       return;
     }
     pulling = true;
@@ -268,16 +365,37 @@ export function openCapsuleMachine(scene: Scene, opts: CapsuleMachineOpts): Caps
     refreshProgress(true);
     pendingOperationId = null;
     await dropAndPop(scene, capsule, result.pull.rarity);
-    revealPrize(scene, layer, result.pull);
     pulling = false;
     refreshAffordance();
-    if (closeRequested) close();
+    if (closeRequested) {
+      close();
+      return;
+    }
+    prizeOpen = true;
+    const onPrizeDismissed = (): void => {
+      prizeOpen = false;
+      if (!opts.onViewCollection) close();
+    };
+    const prizeActions: PrizeRevealOptions = opts.onViewCollection
+      ? {
+          acknowledgementLabel: 'GOT IT',
+          onDismiss: onPrizeDismissed,
+          onViewCollection: () => close('collection'),
+        }
+      : {
+          acknowledgementLabel: 'KEEP DRAWING',
+          onDismiss: onPrizeDismissed,
+        };
+    revealPrize(scene, layer, result.pull, result.progress, prizeActions);
   }
 
-  scrim.on('pointerup', () => close());
+  scrim.on('pointerup', () => {
+    if (!prizeOpen) close();
+  });
 
-  function close(): void {
+  function close(destination: 'machine' | 'collection' = 'machine'): void {
     if (!layer.active) return;
+    if (prizeOpen && destination === 'machine') return;
     if (pulling || pendingOperationId) {
       closeRequested = true;
       helper.setText(
@@ -288,8 +406,12 @@ export function openCapsuleMachine(scene: Scene, opts: CapsuleMachineOpts): Caps
       helper.setColor(UI.coralText);
       return;
     }
-    opts.onClose(ink);
+    const onClosed =
+      destination === 'collection' && opts.onViewCollection
+        ? opts.onViewCollection
+        : opts.onClose;
     layer.destroy(true);
+    onClosed(ink);
   }
 
   return { destroy: () => close() };
@@ -339,7 +461,11 @@ function drawMachine(scene: Scene, parent: Phaser.GameObjects.Container): void {
   parent.add(knob);
 }
 
-function drawCapsule(scene: Scene, parent: Phaser.GameObjects.Container, topColor: number): void {
+function drawCapsule(
+  scene: Scene,
+  parent: Phaser.GameObjects.Container,
+  topColor: number
+): void {
   const g = scene.add.graphics();
   // Bottom half (cream), top half (colored), split line.
   g.fillStyle(0xfff2d8, 1);
@@ -358,13 +484,22 @@ function drawCapsule(scene: Scene, parent: Phaser.GameObjects.Container, topColo
   parent.add(g);
 }
 
-function shakeMachine(scene: Scene, machine: Phaser.GameObjects.Container): Promise<void> {
+function shakeMachine(
+  scene: Scene,
+  machine: Phaser.GameObjects.Container
+): Promise<void> {
   return new Promise((resolve) => {
     // Spin the crank knob.
-    const knob = machine.list.find((o) => (o as Phaser.GameObjects.Container).getData?.('isKnob')) as
-      | Phaser.GameObjects.Container
-      | undefined;
-    if (knob) scene.tweens.add({ targets: knob, angle: 360, duration: 520, ease: 'Cubic.easeInOut' });
+    const knob = machine.list.find((o) =>
+      (o as Phaser.GameObjects.Container).getData?.('isKnob')
+    ) as Phaser.GameObjects.Container | undefined;
+    if (knob)
+      scene.tweens.add({
+        targets: knob,
+        angle: 360,
+        duration: 520,
+        ease: 'Cubic.easeInOut',
+      });
     scene.tweens.add({
       targets: machine,
       angle: 3,
@@ -391,7 +526,12 @@ function dropAndPop(
     capsule.removeAll(true);
     drawCapsule(scene, capsule, tint);
     capsule.setScale(0).setPosition(0, -70);
-    scene.tweens.add({ targets: capsule, scale: 1, duration: 200, ease: 'Back.easeOut' });
+    scene.tweens.add({
+      targets: capsule,
+      scale: 1,
+      duration: 200,
+      ease: 'Back.easeOut',
+    });
     // Drop into the dispenser then bob.
     scene.tweens.chain({
       targets: capsule,
@@ -404,48 +544,225 @@ function dropAndPop(
   });
 }
 
-// The prize reveal + rarity ceremony.
+// The prize reveal + rarity ceremony. It owns a full-screen interactive blocker
+// until the player chooses an action, so taps cannot reach the machine beneath.
 function revealPrize(
   scene: Scene,
   layer: Phaser.GameObjects.Container,
-  pull: CapsulePull
+  pull: CapsulePull,
+  postPullProgress: CapsuleProgress,
+  options: PrizeRevealOptions
 ): void {
   const { width, height } = scene.scale;
-  const rarity = pull.rarity;
+  const rarityStyle = RARITY_STYLE[pull.rarity];
 
-  // Rarity ceremony FX behind the card.
-  if (rarity === 'common') puff(scene, layer, width / 2, height * 0.46);
-  else if (rarity === 'rare') goldBurst(scene, layer, width / 2, height * 0.46);
-  else rainbowMoment(scene, layer);
+  if (pull.rarity === 'common') puff(scene, layer, width / 2, height * 0.46);
+  else if (pull.rarity === 'rare') {
+    goldBurst(scene, layer, width / 2, height * 0.46);
+  } else {
+    rainbowMoment(scene, layer);
+  }
 
-  // Prize card slides up.
-  const card = scene.add.container(width / 2, height * 0.5).setScrollFactor(0).setDepth(DEPTH + 6);
-  layer.add(card);
-  const cg = scene.add.graphics();
-  cg.fillStyle(UI.paper, 1);
-  cg.fillRoundedRect(-260, -150, 520, 300, 20);
-  cg.lineStyle(6, RARITY_STYLE[rarity].color, 1);
-  cg.strokeRoundedRect(-260, -150, 520, 300, 20);
-  card.add(cg);
+  const revealLayer = scene.add
+    .container(0, 0)
+    .setScrollFactor(0)
+    .setDepth(DEPTH + 5);
+  const inputBlocker = scene.add
+    .rectangle(width / 2, height / 2, width, height, 0xffffff, 0.001)
+    .setScrollFactor(0)
+    .setInteractive();
+  inputBlocker.on('pointerdown', stopPointerPropagation);
+  inputBlocker.on('pointerup', stopPointerPropagation);
+  revealLayer.add(inputBlocker);
+  layer.add(revealLayer);
 
-  card.add(label(scene, 0, -108, RARITY_STYLE[rarity].label, TYPE.caption, `#${RARITY_STYLE[rarity].color.toString(16).padStart(6, '0')}`, true));
-  card.add(label(scene, 0, -56, pull.name, rarity === 'epic' ? 40 : 34, UI.ink, true));
-  const desc = label(scene, 0, 6, pull.description, TYPE.body, UI.inkSoft, true);
-  desc.setWordWrapWidth(460);
-  card.add(desc);
+  const cardWidth = Math.min(600, width - 64);
+  const cardHeight = 600;
+  const cardCenterY = Phaser.Math.Clamp(
+    height * 0.52,
+    cardHeight / 2 + 24,
+    height - cardHeight / 2 - 24
+  );
+  const card = scene.add.container(width / 2, cardCenterY).setScrollFactor(0);
+  const cardPaper = scene.add.graphics();
+  cardPaper.fillStyle(UI.paper, 1);
+  cardPaper.fillRoundedRect(
+    -cardWidth / 2,
+    -cardHeight / 2,
+    cardWidth,
+    cardHeight,
+    24
+  );
+  cardPaper.lineStyle(6, rarityStyle.color, 1);
+  cardPaper.strokeRoundedRect(
+    -cardWidth / 2,
+    -cardHeight / 2,
+    cardWidth,
+    cardHeight,
+    24
+  );
+  const cardInputBlocker = scene.add
+    .rectangle(0, 0, cardWidth, cardHeight, 0xffffff, 0.001)
+    .setInteractive();
+  cardInputBlocker.on('pointerdown', stopPointerPropagation);
+  cardInputBlocker.on('pointerup', stopPointerPropagation);
+  card.add([cardPaper, cardInputBlocker]);
+  revealLayer.add(card);
 
-  // New vs duplicate copy.
-  const footer = pull.isNew
-    ? newPrizeFooter(pull)
-    : duplicatePrizeFooter(pull);
-  card.add(label(scene, 0, 96, footer, TYPE.body, pull.isNew ? UI.coralText : UI.goldText, true).setWordWrapWidth(460));
+  const rarityColor = `#${rarityStyle.color.toString(16).padStart(6, '0')}`;
+  card.add(
+    label(scene, 0, -264, rarityStyle.label, TYPE.caption, rarityColor, true)
+  );
+  card.add(
+    label(scene, 0, -232, pull.kind.toUpperCase(), 18, UI.inkSoft, true)
+  );
 
-  card.setScale(0.6).setAlpha(0);
-  scene.tweens.add({ targets: card, scale: 1, alpha: 1, duration: 360, ease: 'Back.easeOut' });
-  // Auto-dismiss the card after a beat so the machine is ready for another pull.
-  scene.time.delayedCall(2600, () => {
-    if (card.active) scene.tweens.add({ targets: card, alpha: 0, scale: 0.7, duration: 240, onComplete: () => card.destroy() });
+  const catalogEntry = COSMETIC_BY_ID.get(pull.id);
+  if (catalogEntry?.kind === pull.kind) {
+    const preview = renderCosmeticPreview({
+      scene,
+      parent: card,
+      entry: catalogEntry,
+      y: -145,
+      size: 138,
+      width: cardWidth - 120,
+    }).setScale(0.15);
+    scene.tweens.add({
+      targets: preview,
+      scaleX: 1,
+      scaleY: 1,
+      duration: 420,
+      delay: 100,
+      ease: 'Back.easeOut',
+    });
+  } else {
+    card.add(
+      label(scene, 0, -145, `YOUR ${pull.kind.toUpperCase()}`, 28, UI.ink, true)
+    );
+  }
+
+  card.add(
+    label(
+      scene,
+      0,
+      -50,
+      pull.name,
+      pull.rarity === 'epic' ? 40 : 34,
+      UI.ink,
+      true
+    ).setWordWrapWidth(cardWidth - 72)
+  );
+  const description = label(
+    scene,
+    0,
+    18,
+    pull.description,
+    TYPE.body,
+    UI.inkSoft,
+    true
+  )
+    .setWordWrapWidth(cardWidth - 80)
+    .setLineSpacing(3);
+  card.add(description);
+
+  const footer = pull.isNew ? newPrizeFooter(pull) : duplicatePrizeFooter(pull);
+  card.add(
+    label(
+      scene,
+      0,
+      112,
+      footer,
+      21,
+      pull.isNew ? UI.coralText : UI.goldText,
+      true
+    ).setWordWrapWidth(cardWidth - 72)
+  );
+  card.add(
+    label(
+      scene,
+      0,
+      158,
+      `COLLECTION NOW · ${postPullProgress.discoveredCount} / ` +
+        `${postPullProgress.collectionTotal} DISCOVERED`,
+      20,
+      UI.goldText,
+      true
+    )
+  );
+
+  let closingPrize = false;
+  const dismissPrize = (): void => {
+    if (closingPrize || !revealLayer.active) return;
+    closingPrize = true;
+    scene.tweens.add({
+      targets: card,
+      alpha: 0,
+      scaleX: 0.82,
+      scaleY: 0.82,
+      duration: 220,
+      ease: 'Cubic.easeIn',
+      onComplete: () => {
+        revealLayer.destroy(true);
+        options.onDismiss();
+      },
+    });
+  };
+
+  if (options.onViewCollection) {
+    const viewCollection = button(
+      scene,
+      -98,
+      238,
+      'VIEW COLLECTION',
+      () => {
+        if (closingPrize) return;
+        closingPrize = true;
+        options.onViewCollection?.();
+      },
+      336,
+      UI.gold
+    );
+    const pullAgain = ghostButton(
+      scene,
+      178,
+      238,
+      options.acknowledgementLabel,
+      dismissPrize,
+      184
+    );
+    card.add([viewCollection, pullAgain]);
+  } else {
+    card.add(
+      button(
+        scene,
+        0,
+        238,
+        options.acknowledgementLabel,
+        dismissPrize,
+        320,
+        UI.coral
+      )
+    );
+  }
+
+  card.setScale(0.68).setAlpha(0);
+  scene.tweens.add({
+    targets: card,
+    scaleX: 1,
+    scaleY: 1,
+    alpha: 1,
+    duration: 360,
+    ease: 'Back.easeOut',
   });
+}
+
+function stopPointerPropagation(
+  _pointer: unknown,
+  _localX: unknown,
+  _localY: unknown,
+  event: Phaser.Types.Input.EventData
+): void {
+  event.stopPropagation?.();
 }
 
 function newPrizeFooter(pull: CapsulePull): string {
@@ -464,7 +781,12 @@ function duplicatePrizeFooter(pull: CapsulePull): string {
   return 'Already unlocked.';
 }
 
-function puff(scene: Scene, layer: Phaser.GameObjects.Container, x: number, y: number): void {
+function puff(
+  scene: Scene,
+  layer: Phaser.GameObjects.Container,
+  x: number,
+  y: number
+): void {
   const emitter = scene.add.particles(x, y, 'dot', {
     speed: { min: 40, max: 140 },
     scale: { start: 0.7, end: 0 },
@@ -479,7 +801,12 @@ function puff(scene: Scene, layer: Phaser.GameObjects.Container, x: number, y: n
   scene.time.delayedCall(800, () => emitter.destroy());
 }
 
-function goldBurst(scene: Scene, layer: Phaser.GameObjects.Container, x: number, y: number): void {
+function goldBurst(
+  scene: Scene,
+  layer: Phaser.GameObjects.Container,
+  x: number,
+  y: number
+): void {
   const emitter = scene.add.particles(x, y, 'spark', {
     speed: { min: 120, max: 340 },
     scale: { start: 0.7, end: 0 },
@@ -494,7 +821,10 @@ function goldBurst(scene: Scene, layer: Phaser.GameObjects.Container, x: number,
   scene.time.delayedCall(1300, () => emitter.destroy());
 }
 
-function rainbowMoment(scene: Scene, layer: Phaser.GameObjects.Container): void {
+function rainbowMoment(
+  scene: Scene,
+  layer: Phaser.GameObjects.Container
+): void {
   const { width, height } = scene.scale;
   // Full-screen rainbow wash sweeping through hues.
   const hues = [0xff5a3d, 0xff9a3d, 0xf2cf3d, 0x4faa4f, 0x3ba0e0, 0x8a5cd8];
@@ -514,7 +844,15 @@ function rainbowMoment(scene: Scene, layer: Phaser.GameObjects.Container): void 
     });
   });
   // Hand-lettered EPIC banner.
-  const banner = handLettered(scene, width / 2, height * 0.28, 'EPIC PULL!', 64, UI.goldText, true)
+  const banner = handLettered(
+    scene,
+    width / 2,
+    height * 0.28,
+    'EPIC PULL!',
+    64,
+    UI.goldText,
+    true
+  )
     .setScrollFactor(0)
     .setDepth(DEPTH + 7)
     .setScale(0);

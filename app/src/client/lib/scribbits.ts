@@ -9,6 +9,14 @@ import { LEVEL_XP_THRESHOLDS, MAX_LEVEL } from '../../shared/arena';
 import { MOOD_STYLES } from './theme';
 import { generateDoodleTexture } from './art';
 
+// Rendering only needs identity + art. Keeping this narrower than Scribbit lets
+// immutable LegacyCard DTOs reuse the drawing pipeline without making them
+// structurally valid combatants.
+export type DrawingSource = Pick<
+  Scribbit,
+  'id' | 'name' | 'element' | 'imageUrl'
+>;
+
 // Several surfaces can request the same drawing during one render (for example,
 // a battle list containing the same fighter more than once). Phaser's loader
 // does not safely queue the same texture key multiple times, so share one
@@ -39,17 +47,17 @@ const sceneDrawingTextures = new WeakMap<
 let drawingTextureUseSequence = 0;
 
 // Texture key for a scribbit's drawing. Stable per id so we load each once.
-export function drawingKey(scribbit: Pick<Scribbit, 'id'>): string {
+export function drawingKey(scribbit: Pick<DrawingSource, 'id'>): string {
   return `drawing-${scribbit.id}`;
 }
 
 // A stable sprite key for the procedural doodle fallback: the scribbit's id (or
 // name when id is missing) drives the deterministic creature shape.
-function spriteKeyFor(scribbit: Pick<Scribbit, 'id' | 'name'>): string {
+function spriteKeyFor(scribbit: Pick<DrawingSource, 'id' | 'name'>): string {
   return scribbit.id || scribbit.name || 'scribbit';
 }
 
-function elementOf(scribbit: Partial<Pick<Scribbit, 'element'>>): Element {
+function elementOf(scribbit: Partial<Pick<DrawingSource, 'element'>>): Element {
   return scribbit.element ?? 'ember';
 }
 
@@ -61,7 +69,10 @@ function elementOf(scribbit: Partial<Pick<Scribbit, 'element'>>): Element {
 //      deterministic procedural doodle baked from the spriteKey + element.
 // Callers then render the key with fitDrawing() (aspect-preserving contain) so
 // non-square art is centered in its frame and never cropped or stretched.
-export function loadDrawing(scene: Scene, scribbit: Scribbit): Promise<string> {
+export function loadDrawing(
+  scene: Scene,
+  scribbit: DrawingSource
+): Promise<string> {
   const key = drawingKey(scribbit);
   if (scene.textures.exists(key)) {
     markDrawingTextureUsed(scene, key);
@@ -136,7 +147,9 @@ export function loadDrawing(scene: Scene, scribbit: Scribbit): Promise<string> {
     // event handle so normal completion and scene release both remove it.
     timeout = scene.time.delayedCall(9000, () => {
       if (settled) return;
-      finish(scene.textures.exists(key) ? key : fallbackDoodle(scene, scribbit));
+      finish(
+        scene.textures.exists(key) ? key : fallbackDoodle(scene, scribbit)
+      );
     });
     scene.load.image(key, scribbit.imageUrl);
     scene.load.start();
@@ -160,9 +173,10 @@ export function loadDrawing(scene: Scene, scribbit: Scribbit): Promise<string> {
   return drawingLoad;
 }
 
-function ensureSceneDrawingTextureLifecycle(
-  scene: Scene
-): { keys: Set<string>; release: () => void } {
+function ensureSceneDrawingTextureLifecycle(scene: Scene): {
+  keys: Set<string>;
+  release: () => void;
+} {
   const existingLifecycle = sceneDrawingTextures.get(scene);
   if (existingLifecycle) return existingLifecycle;
 
@@ -279,15 +293,22 @@ function isKnownMissingArt(imageUrl: string): boolean {
 // is what a stubbed/transparent server response produces, and it must not be
 // rendered as if it were real art.
 function isDegenerateTexture(scene: Scene, key: string): boolean {
-  const source = scene.textures.get(key).getSourceImage() as { width?: number; height?: number };
+  const source = scene.textures.get(key).getSourceImage() as {
+    width?: number;
+    height?: number;
+  };
   const width = source?.width ?? 0;
   const height = source?.height ?? 0;
   return width <= 2 || height <= 2;
 }
 
 // Bake (once) the procedural doodle for this scribbit. Used as the fallback.
-function fallbackDoodle(scene: Scene, scribbit: Scribbit): string {
-  return generateDoodleTexture(scene, spriteKeyFor(scribbit), elementOf(scribbit));
+function fallbackDoodle(scene: Scene, scribbit: DrawingSource): string {
+  return generateDoodleTexture(
+    scene,
+    spriteKeyFor(scribbit),
+    elementOf(scribbit)
+  );
 }
 
 // Fit a drawing image inside a square box of `boxSize`, aspect-preserving
@@ -300,7 +321,10 @@ export function fitDrawing(
   image: Phaser.GameObjects.Image,
   boxSize: number
 ): Phaser.GameObjects.Image {
-  const source = image.texture.getSourceImage() as { width?: number; height?: number };
+  const source = image.texture.getSourceImage() as {
+    width?: number;
+    height?: number;
+  };
   const srcW = source?.width && source.width > 0 ? source.width : boxSize;
   const srcH = source?.height && source.height > 0 ? source.height : boxSize;
   const scale = boxSize / Math.max(srcW, srcH);
@@ -313,7 +337,7 @@ export function fitDrawing(
 // art is always resolved (never empty) AND always fitted (never cropped).
 export function addFittedDrawing(
   scene: Scene,
-  scribbit: Scribbit,
+  scribbit: DrawingSource,
   x: number,
   y: number,
   boxSize: number
@@ -328,7 +352,7 @@ export function addFittedDrawing(
 // Load several drawings in parallel; resolves when all have settled.
 export function loadDrawings(
   scene: Scene,
-  scribbits: Scribbit[]
+  scribbits: DrawingSource[]
 ): Promise<void> {
   return Promise.all(scribbits.map((one) => loadDrawing(scene, one))).then(
     () => undefined
@@ -336,7 +360,9 @@ export function loadDrawings(
 }
 
 // "2W · 1L" record chip text.
-export function recordText(scribbit: Pick<Scribbit, 'wins' | 'losses'>): string {
+export function recordText(
+  scribbit: Pick<Scribbit, 'wins' | 'losses'>
+): string {
   return `${scribbit.wins}W · ${scribbit.losses}L`;
 }
 

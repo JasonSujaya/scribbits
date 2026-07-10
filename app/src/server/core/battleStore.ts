@@ -15,6 +15,9 @@ import {
 } from './scribbit';
 
 const battleReportTtlSeconds = 30 * 24 * 60 * 60;
+// One score bucket per arena day. A million report positions is far above the
+// bounded Swiss bracket while keeping day + order exactly representable.
+const rumbleReportOrderScale = 1_000_000;
 
 export const getBattleReportKey = (battleReportId: string): string => {
   return `battle:${battleReportId}`;
@@ -26,6 +29,10 @@ export const getUserBattlesKey = (userId: string): string => {
 
 export const getScribbitBattlesKey = (scribbitId: string): string => {
   return `battles:scribbit:${scribbitId}`;
+};
+
+export const getFeaturedRumbleReportsKey = (scribbitId: string): string => {
+  return `battles:scribbit:${scribbitId}:featured-rumbles`;
 };
 
 const isRecord = (value: unknown): value is Record<string, unknown> => {
@@ -112,6 +119,82 @@ const parseBattleReport = (
   return undefined;
 };
 
+export const loadBattleReport = async (
+  storage: ArenaStorage,
+  battleReportId: string
+): Promise<BattleReport | undefined> => {
+  return parseBattleReport(
+    await storage.get(getBattleReportKey(battleReportId))
+  );
+};
+
+// Each entrant indexes every actually played Swiss bout with its monotonic
+// resolution order. Reading the highest score makes retries order-independent:
+// an older retry can never replace a later completed bout.
+export const setFeaturedRumbleReport = async (
+  storage: ArenaStorage,
+  battleReport: BattleReport,
+  resolutionOrder: number
+): Promise<void> => {
+  if (battleReport.kind !== 'rumble') return;
+  if (
+    !Number.isSafeInteger(resolutionOrder) ||
+    resolutionOrder < 0 ||
+    resolutionOrder >= rumbleReportOrderScale
+  ) {
+    throw new Error('Rumble report order is outside the supported range.');
+  }
+  const reportScore =
+    battleReport.day * rumbleReportOrderScale + resolutionOrder;
+  if (!Number.isSafeInteger(reportScore)) {
+    throw new Error('Rumble report score is outside the safe integer range.');
+  }
+
+  for (const scribbitId of new Set([battleReport.a.id, battleReport.b.id])) {
+    const key = getFeaturedRumbleReportsKey(scribbitId);
+    await storage.zAdd(key, {
+      member: battleReport.id,
+      score: reportScore,
+    });
+    await storage.expire(key, battleReportTtlSeconds);
+  }
+};
+
+export const getFeaturedRumbleReportId = async (
+  storage: ArenaStorage,
+  scribbitId: string,
+  day: number
+): Promise<string | null> => {
+  const dayScoreStart = day * rumbleReportOrderScale;
+  const dayScoreEnd = dayScoreStart + rumbleReportOrderScale - 1;
+  const reports = await storage.zRange(
+    getFeaturedRumbleReportsKey(scribbitId),
+    dayScoreStart,
+    dayScoreEnd,
+    { by: 'score', reverse: true }
+  );
+  return reports[0]?.member ?? null;
+};
+
+export const loadFeaturedRumbleReport = async (
+  storage: ArenaStorage,
+  scribbitId: string,
+  day: number
+): Promise<BattleReport | undefined> => {
+  const reportId = await getFeaturedRumbleReportId(storage, scribbitId, day);
+  if (!reportId) return undefined;
+  const report = await loadBattleReport(storage, reportId);
+  if (
+    !report ||
+    report.kind !== 'rumble' ||
+    report.day !== day ||
+    (report.a.id !== scribbitId && report.b.id !== scribbitId)
+  ) {
+    return undefined;
+  }
+  return report;
+};
+
 export const saveBattleReport = async (
   storage: ArenaStorage,
   battleReport: BattleReport,
@@ -170,9 +253,7 @@ export const purgeBattleReportsForScribbit = async (
   );
 
   for (const entry of relatedEntries) {
-    const report = parseBattleReport(
-      await storage.get(getBattleReportKey(entry.member))
-    );
+    const report = await loadBattleReport(storage, entry.member);
 
     if (report) {
       const ownerIds = new Set<string>();
@@ -186,12 +267,18 @@ export const purgeBattleReportsForScribbit = async (
       }
       await storage.zRem(getScribbitBattlesKey(report.a.id), [report.id]);
       await storage.zRem(getScribbitBattlesKey(report.b.id), [report.id]);
+      for (const fighterId of new Set([report.a.id, report.b.id])) {
+        await storage.zRem(getFeaturedRumbleReportsKey(fighterId), [report.id]);
+      }
     }
 
     await storage.del(getBattleReportKey(entry.member));
   }
 
-  await storage.del(getScribbitBattlesKey(scribbitId));
+  await storage.del(
+    getScribbitBattlesKey(scribbitId),
+    getFeaturedRumbleReportsKey(scribbitId)
+  );
 };
 
 export const loadBattleReportsForUser = async (
@@ -199,16 +286,19 @@ export const loadBattleReportsForUser = async (
   userId: string,
   limit: number
 ): Promise<BattleReport[]> => {
-  const battleEntries = await storage.zRange(getUserBattlesKey(userId), 0, limit - 1, {
-    by: 'rank',
-    reverse: true,
-  });
+  const battleEntries = await storage.zRange(
+    getUserBattlesKey(userId),
+    0,
+    limit - 1,
+    {
+      by: 'rank',
+      reverse: true,
+    }
+  );
   const battleReports: BattleReport[] = [];
 
   for (const battleEntry of battleEntries) {
-    const battleReport = parseBattleReport(
-      await storage.get(getBattleReportKey(battleEntry.member))
-    );
+    const battleReport = await loadBattleReport(storage, battleEntry.member);
 
     if (battleReport) {
       battleReports.push(battleReport);

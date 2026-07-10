@@ -1,4 +1,9 @@
-import type { Element, Mood, Scribbit, ScribbitStats } from '../../shared/arena';
+import type {
+  Element,
+  Mood,
+  Scribbit,
+  ScribbitStats,
+} from '../../shared/arena';
 import { LEVEL_XP_THRESHOLDS } from '../../shared/arena';
 import { shuffleWithSeed } from './random';
 
@@ -204,9 +209,7 @@ const foundingSpeciesSources: FoundingSpeciesSource[] = [
   },
 ];
 
-const createFoundingScribbit = (
-  species: FoundingSpeciesSource
-): Scribbit => {
+const createFoundingScribbit = (species: FoundingSpeciesSource): Scribbit => {
   return {
     id: `founding-${species.id}`,
     name: species.name,
@@ -227,11 +230,13 @@ const createFoundingScribbit = (
     xp: LEVEL_XP_THRESHOLDS[species.level - 1] ?? 0,
     mood: species.mood,
     careDoneToday: [],
+    legacy: null,
   };
 };
 
-export const foundingScribbits: Scribbit[] =
-  foundingSpeciesSources.map(createFoundingScribbit);
+export const foundingScribbits: Scribbit[] = foundingSpeciesSources.map(
+  createFoundingScribbit
+);
 
 export const foundingScribbitsById = new Map<string, Scribbit>(
   foundingScribbits.map((scribbit) => [scribbit.id, scribbit])

@@ -1,9 +1,10 @@
 import type { CloutBoard, CloutEntry } from '../../shared/arena';
 import { INK_REWARDS } from '../../shared/arena';
-import { awardInk } from './inkStore';
-import type { ArenaStorage, CurrentPlayer } from './scribbit';
+import { getInkKey } from './inkStore';
+import type { ArenaStorage, ArenaTransaction, CurrentPlayer } from './scribbit';
 
 const backTtlSeconds = 8 * 24 * 60 * 60;
+const maximumPayoutTransactionAttempts = 5;
 
 export const getBackKey = (day: number): string => {
   return `back:${day}`;
@@ -49,11 +50,7 @@ export const claimDailyBack = async (
 ): Promise<DailyBackClaim> => {
   const backKey = getBackKey(day);
   await recordCloutUsername(storage, player);
-  const createdBack = await storage.hSetNX(
-    backKey,
-    player.userId,
-    scribbitId
-  );
+  const createdBack = await storage.hSetNX(backKey, player.userId, scribbitId);
   await storage.expire(backKey, backTtlSeconds);
 
   if (createdBack === 1) {
@@ -166,6 +163,69 @@ export const loadCloutBoard = async (
   };
 };
 
+const discardPayoutTransaction = async (
+  transaction: ArenaTransaction | undefined
+): Promise<void> => {
+  if (!transaction) return;
+  try {
+    await transaction.discard();
+  } catch {
+    // EXEC and connection failures can leave nothing to discard.
+  }
+};
+
+const commitBackPayout = async (
+  storage: ArenaStorage,
+  payoutKey: string,
+  userId: string,
+  points: number,
+  paidAtMs: number
+): Promise<boolean> => {
+  if (!storage.watch) {
+    throw new Error('Atomic Back payouts require transaction support.');
+  }
+
+  const receiptValue = `${points}:${paidAtMs}`;
+  for (
+    let attempt = 0;
+    attempt < maximumPayoutTransactionAttempts;
+    attempt += 1
+  ) {
+    let transaction: ArenaTransaction | undefined;
+    try {
+      transaction = await storage.watch(payoutKey);
+      if ((await storage.hGet(payoutKey, userId)) !== undefined) {
+        await transaction.unwatch();
+        return false;
+      }
+
+      await transaction.multi();
+      await transaction.hSet(payoutKey, { [userId]: receiptValue });
+      await transaction.zIncrBy(getCloutKey(), userId, points);
+      if (points === 3) {
+        await transaction.incrBy(getInkKey(userId), INK_REWARDS.backedChampion);
+      }
+      const transactionResults = await transaction.exec();
+      if (Array.isArray(transactionResults) && transactionResults.length > 0) {
+        return true;
+      }
+    } catch (error) {
+      await discardPayoutTransaction(transaction);
+      try {
+        const storedReceipt = await storage.hGet(payoutKey, userId);
+        if (storedReceipt !== undefined) {
+          return storedReceipt === receiptValue;
+        }
+      } catch {
+        // Preserve the original transaction error when recovery cannot read.
+      }
+      throw error;
+    }
+  }
+
+  throw new Error(`Back payout for ${userId} did not settle.`);
+};
+
 export const payCloutForRumble = async (
   storage: ArenaStorage,
   options: {
@@ -193,20 +253,16 @@ export const payCloutForRumble = async (
       continue;
     }
 
-    const createdPayout = await storage.hSetNX(
+    const createdPayout = await commitBackPayout(
+      storage,
       payoutKey,
       userId,
-      `${points}:${options.paidAtMs}`
+      points,
+      options.paidAtMs
     );
 
-    if (createdPayout !== 1) {
+    if (!createdPayout) {
       continue;
-    }
-
-    await storage.zIncrBy(getCloutKey(), userId, points);
-
-    if (points === 3) {
-      await awardInk(storage, userId, INK_REWARDS.backedChampion);
     }
 
     paidBackers += 1;

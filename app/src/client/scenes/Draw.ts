@@ -36,9 +36,15 @@ import {
 import type { StatGrid, ErrorPanel } from '../lib/ui';
 import { openCapsuleMachine } from '../lib/capsulemachine';
 import { pullCapsule } from '../lib/api';
-import { PEN_CATALOG, PEN_BY_ID, penSwatchColor, RARITY_STYLE } from '../lib/pens';
+import {
+  PEN_CATALOG,
+  PEN_BY_ID,
+  penSwatchColor,
+  RARITY_STYLE,
+} from '../lib/pens';
 import type { PenCatalogEntry } from '../lib/pens';
 import {
+  ACCESSORY_BASE_SIZE,
   CAPSULE_FIRST_DAILY_COST,
   CAPSULE_PITY,
   INK_REWARDS,
@@ -94,7 +100,8 @@ export class Draw extends Scene {
   private currentElement: Element = 'ember';
   private lastResult: AnalyzerResult | null = null;
   private colorSwatches: Phaser.GameObjects.Rectangle[] = [];
-  private penSwatches: { rect: Phaser.GameObjects.Rectangle; penId: string }[] = [];
+  private penSwatches: { rect: Phaser.GameObjects.Rectangle; penId: string }[] =
+    [];
   private pensRow: Phaser.GameObjects.Container | null = null;
   private pensRowY = 0;
   private lineWidth = DEFAULT_LINE_WIDTH;
@@ -188,7 +195,12 @@ export class Draw extends Scene {
 
   // The live 512-canvas rect in design space (the DOM canvas sits here). Stickers
   // are placed in this rect and mapped into 512-canvas coords at submit.
-  private canvasRect(): { x: number; y: number; width: number; height: number } {
+  private canvasRect(): {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  } {
     const square = Draw.CANVAS_SQUARE;
     return {
       x: this.scale.width / 2 - square / 2,
@@ -231,11 +243,16 @@ export class Draw extends Scene {
   private toggleStickerDrawer(): void {
     if (!this.stickers) return;
     if (!this.stickers.hasAnyOwned()) {
-      showToast('Win accessories from the capsule machine to sticker your scribbit! 🎰');
+      showToast(
+        'Win accessories from the capsule machine to sticker your scribbit! 🎰'
+      );
       return;
     }
     this.drawerOpen = !this.drawerOpen;
-    if (this.drawerOpen) this.stickers.openDrawer(Draw.CANVAS_CENTER_Y + Draw.CANVAS_SQUARE / 2 + 96);
+    if (this.drawerOpen)
+      this.stickers.openDrawer(
+        Draw.CANVAS_CENTER_Y + Draw.CANVAS_SQUARE / 2 + 96
+      );
     else this.stickers.closeDrawer();
   }
 
@@ -263,7 +280,15 @@ export class Draw extends Scene {
     // Top bar: Back on the left, title centered in the remaining space so the
     // two never collide (the mission's header-clip bug).
     ghostButton(this, 90, 60, '‹', () => this.exitTo('ArenaHome'), 96);
-    handLettered(this, width / 2 + 30, 56, "TODAY'S SCRIBBIT", 34, UI.ink, true);
+    handLettered(
+      this,
+      width / 2 + 30,
+      56,
+      "TODAY'S SCRIBBIT",
+      34,
+      UI.ink,
+      true
+    );
     label(
       this,
       width / 2 + 30,
@@ -288,7 +313,14 @@ export class Draw extends Scene {
 
     this.buildToolsBand(Draw.TOOLS_Y);
     this.buildStatPanel(Draw.STAT_Y);
-    button(this, width / 2, Draw.SUBMIT_Y, "🎉 IT'S ALIVE — Submit", () => this.trySubmit(), width - EDGE * 2);
+    button(
+      this,
+      width / 2,
+      Draw.SUBMIT_Y,
+      "🎉 IT'S ALIVE — Submit",
+      () => this.trySubmit(),
+      width - EDGE * 2
+    );
   }
 
   // Three clean lines: base color swatches, Mystery Ink pens (unlocked +
@@ -311,7 +343,15 @@ export class Draw extends Scene {
     // Large grouped swatches, evenly distributed across the full width.
     const count = PALETTE_GROUPS.length;
     const labelW = 74;
-    label(this, EDGE + labelW / 2, colorY, 'Color', TYPE.caption, UI.inkSoft, true);
+    label(
+      this,
+      EDGE + labelW / 2,
+      colorY,
+      'Color',
+      TYPE.caption,
+      UI.inkSoft,
+      true
+    );
     const startX = EDGE + labelW + 8;
     const gap = (width - startX - EDGE) / count;
     PALETTE_GROUPS.forEach((entry, index) => {
@@ -321,9 +361,8 @@ export class Draw extends Scene {
         .setStrokeStyle(4, UI.inkHex, 1);
       const visualWidth = entry.colors.length === 1 ? 54 : 38;
       entry.colors.forEach((color, colorIndex) => {
-        const colorX = entry.colors.length === 1
-          ? x
-          : x + (colorIndex === 0 ? -20 : 20);
+        const colorX =
+          entry.colors.length === 1 ? x : x + (colorIndex === 0 ? -20 : 20);
         this.add
           .rectangle(
             colorX,
@@ -355,7 +394,8 @@ export class Draw extends Scene {
 
     // Stickers toggle (center): opens the accessory drawer. Its label shows the
     // placed count (e.g. "✨ 1/2") once accessories are attached.
-    const hasExistingScribbit = (this.getArenaState()?.myScribbits.length ?? 0) > 0;
+    const hasExistingScribbit =
+      (this.getArenaState()?.myScribbits.length ?? 0) > 0;
     if (hasExistingScribbit) {
       const stickerBtn = this.toolIconButton(
         width / 2 + 6,
@@ -368,7 +408,9 @@ export class Draw extends Scene {
     }
 
     // Edit tools (right group): erase / undo / clear.
-    this.toolIconButton(width - 255, toolY, '🧽', () => this.canvas?.setEraser());
+    this.toolIconButton(width - 255, toolY, '🧽', () =>
+      this.canvas?.setEraser()
+    );
     this.toolIconButton(width - 160, toolY, '↩', () => this.canvas?.undo());
     this.toolIconButton(width - 65, toolY, '🗑', () => this.confirmClear());
   }
@@ -390,10 +432,22 @@ export class Draw extends Scene {
       .setInteractive({ useHandCursor: true });
     container.add([bg, glyph, hit]);
     const press = (): void => {
-      this.tweens.add({ targets: container, scaleX: 0.9, scaleY: 0.88, duration: 60, ease: 'Quad.easeOut' });
+      this.tweens.add({
+        targets: container,
+        scaleX: 0.9,
+        scaleY: 0.88,
+        duration: 60,
+        ease: 'Quad.easeOut',
+      });
     };
     const release = (): void => {
-      this.tweens.add({ targets: container, scaleX: 1, scaleY: 1, duration: 100, ease: 'Back.easeOut' });
+      this.tweens.add({
+        targets: container,
+        scaleX: 1,
+        scaleY: 1,
+        duration: 100,
+        ease: 'Back.easeOut',
+      });
     };
     hit.on('pointerdown', press);
     hit.on('pointerout', release);
@@ -405,14 +459,26 @@ export class Draw extends Scene {
   }
 
   private buildLineWidthControls(y: number): void {
-    this.toolIconButton(EDGE + 35, y, '−', () => this.adjustLineWidth(-LINE_WIDTH_STEP));
+    this.toolIconButton(EDGE + 35, y, '−', () =>
+      this.adjustLineWidth(-LINE_WIDTH_STEP)
+    );
 
     const preview = this.add.container(EDGE + 125, y);
-    const bg = this.add.rectangle(0, 0, 70, 70, UI.creamHex, 1).setStrokeStyle(4, UI.inkHex, 1);
-    this.lineWidthPreviewDot = this.add.circle(0, 0, this.lineWidthPreviewRadius(), UI.inkHex, 1);
+    const bg = this.add
+      .rectangle(0, 0, 70, 70, UI.creamHex, 1)
+      .setStrokeStyle(4, UI.inkHex, 1);
+    this.lineWidthPreviewDot = this.add.circle(
+      0,
+      0,
+      this.lineWidthPreviewRadius(),
+      UI.inkHex,
+      1
+    );
     preview.add([bg, this.lineWidthPreviewDot]);
 
-    this.toolIconButton(EDGE + 215, y, '+', () => this.adjustLineWidth(LINE_WIDTH_STEP));
+    this.toolIconButton(EDGE + 215, y, '+', () =>
+      this.adjustLineWidth(LINE_WIDTH_STEP)
+    );
   }
 
   private adjustLineWidth(delta: number): void {
@@ -444,7 +510,9 @@ export class Draw extends Scene {
     const arena = this.getArenaState();
     const unlocked = new Set(arena?.myPens ?? []);
     const labelW = 74;
-    container.add(label(this, EDGE + labelW / 2, y, 'Pens', TYPE.caption, UI.inkSoft, true));
+    container.add(
+      label(this, EDGE + labelW / 2, y, 'Pens', TYPE.caption, UI.inkSoft, true)
+    );
 
     if ((arena?.myScribbits.length ?? 0) === 0) {
       container.add(
@@ -483,15 +551,34 @@ export class Draw extends Scene {
       }
       const swatchX = x - chipW / 2 + 24;
       const swatch = this.add
-        .rectangle(swatchX, y, 26, 26, Phaser.Display.Color.HexStringToColor(penSwatchColor(pen)).color, 1)
+        .rectangle(
+          swatchX,
+          y,
+          26,
+          26,
+          Phaser.Display.Color.HexStringToColor(penSwatchColor(pen)).color,
+          1
+        )
         .setStrokeStyle(2, UI.inkHex, 1);
-      const penName = label(this, swatchX + 22, y, this.shortPenLabel(pen), 15, UI.ink, true).setOrigin(0, 0.5);
+      const penName = label(
+        this,
+        swatchX + 22,
+        y,
+        this.shortPenLabel(pen),
+        15,
+        UI.ink,
+        true
+      ).setOrigin(0, 0.5);
       penName.setWordWrapWidth(chipW - 52);
       container.add([swatch, penName]);
 
       chip.on('pointerup', () => this.selectPen(index, pen));
-      swatch.setInteractive({ useHandCursor: true }).on('pointerup', () => this.selectPen(index, pen));
-      penName.setInteractive({ useHandCursor: true }).on('pointerup', () => this.selectPen(index, pen));
+      swatch
+        .setInteractive({ useHandCursor: true })
+        .on('pointerup', () => this.selectPen(index, pen));
+      penName
+        .setInteractive({ useHandCursor: true })
+        .on('pointerup', () => this.selectPen(index, pen));
       this.penSwatches.push({ rect: chip, penId: pen.id });
     });
 
@@ -510,10 +597,16 @@ export class Draw extends Scene {
   }
 
   // A small rainbow flourish behind the rainbow pen swatch.
-  private rainbowHint(container: Phaser.GameObjects.Container, x: number, y: number): void {
+  private rainbowHint(
+    container: Phaser.GameObjects.Container,
+    x: number,
+    y: number
+  ): void {
     const hues = [0xff5a3d, 0xf2cf3d, 0x4faa4f, 0x3ba0e0, 0x8a5cd8];
     hues.forEach((hue, index) => {
-      container.add(this.add.rectangle(x - 20 + index * 10, y, 8, 44, hue, 0.9));
+      container.add(
+        this.add.rectangle(x - 20 + index * 10, y, 8, 44, hue, 0.9)
+      );
     });
   }
 
@@ -538,7 +631,13 @@ export class Draw extends Scene {
     // Deselect base swatches with smooth tween.
     this.colorSwatches.forEach((swatch) => {
       swatch.setStrokeStyle(4, UI.inkHex, 1);
-      this.tweens.add({ targets: swatch, scaleX: 1, scaleY: 1, duration: 120, ease: 'Quad.easeOut' });
+      this.tweens.add({
+        targets: swatch,
+        scaleX: 1,
+        scaleY: 1,
+        duration: 120,
+        ease: 'Quad.easeOut',
+      });
     });
     // Highlight the chosen pen with smooth tween.
     this.penSwatches.forEach(({ rect, penId }) => {
@@ -601,7 +700,11 @@ export class Draw extends Scene {
     this.canvas?.setColor(color);
     this.colorSwatches.forEach((swatch, swatchIndex) => {
       const selected = swatchIndex === index;
-      swatch.setStrokeStyle(selected ? 6 : 4, selected ? UI.goldHex : UI.inkHex, 1);
+      swatch.setStrokeStyle(
+        selected ? 6 : 4,
+        selected ? UI.goldHex : UI.inkHex,
+        1
+      );
       // Smooth tween to the selected/unselected scale for a polished feel.
       this.tweens.add({
         targets: swatch,
@@ -614,8 +717,18 @@ export class Draw extends Scene {
     // Deselect any active pen highlight.
     this.penSwatches.forEach(({ rect, penId }) => {
       const pen = PEN_BY_ID.get(penId);
-      rect.setStrokeStyle(3, pen ? RARITY_STYLE[pen.rarity].color : UI.inkHex, 1);
-      this.tweens.add({ targets: rect, scaleX: 1, scaleY: 1, duration: 120, ease: 'Quad.easeOut' });
+      rect.setStrokeStyle(
+        3,
+        pen ? RARITY_STYLE[pen.rarity].color : UI.inkHex,
+        1
+      );
+      this.tweens.add({
+        targets: rect,
+        scaleX: 1,
+        scaleY: 1,
+        duration: 120,
+        ease: 'Quad.easeOut',
+      });
     });
   }
 
@@ -630,13 +743,29 @@ export class Draw extends Scene {
     const { width } = this.scale;
     const panelW = width - EDGE * 2;
     const panelH = 210;
-    const card = stickerCard(this, width / 2, centerY, panelW, panelH, { tape: false });
+    const card = stickerCard(this, width / 2, centerY, panelW, panelH, {
+      tape: false,
+    });
 
     this.statCard = card;
     this.badgeLocalY = -panelH / 2 + 70;
-    this.reactionText = label(this, 0, -panelH / 2 + 30, 'Start drawing!', TYPE.body, UI.ink, true);
+    this.reactionText = label(
+      this,
+      0,
+      -panelH / 2 + 30,
+      'Start drawing!',
+      TYPE.body,
+      UI.ink,
+      true
+    );
     card.add(this.reactionText);
-    this.elementBadgeRef = elementBadge(this, 0, this.badgeLocalY, this.currentElement, 0.74);
+    this.elementBadgeRef = elementBadge(
+      this,
+      0,
+      this.badgeLocalY,
+      this.currentElement,
+      0.74
+    );
     card.add(this.elementBadgeRef);
 
     this.bars = statGrid(this, width / 2, centerY + 44, panelW - 48, 116);
@@ -725,11 +854,22 @@ export class Draw extends Scene {
     this.currentElement = element;
     this.elementBadgeRef?.destroy();
     // Re-add inside the stat card at the same local slot so it stays framed.
-    this.elementBadgeRef = elementBadge(this, 0, this.badgeLocalY, element, 0.74);
+    this.elementBadgeRef = elementBadge(
+      this,
+      0,
+      this.badgeLocalY,
+      element,
+      0.74
+    );
     this.statCard?.add(this.elementBadgeRef);
     // Morph pop.
     this.elementBadgeRef.setScale(0.55);
-    this.tweens.add({ targets: this.elementBadgeRef, scale: 0.74, duration: 260, ease: 'Back.easeOut' });
+    this.tweens.add({
+      targets: this.elementBadgeRef,
+      scale: 0.74,
+      duration: 260,
+      ease: 'Back.easeOut',
+    });
   }
 
   private updateReaction(result: AnalyzerResult): void {
@@ -738,14 +878,19 @@ export class Draw extends Scene {
       this.reactionText.setColor(UI.inkSoft);
       return;
     }
-    const dominant = (['chonk', 'spike', 'zip', 'charm'] as const).reduce((best, key) =>
-      result.stats[key] > result.stats[best] ? key : best
+    const dominant = (['chonk', 'spike', 'zip', 'charm'] as const).reduce(
+      (best, key) => (result.stats[key] > result.stats[best] ? key : best)
     );
     const powerPreview = POWER_PREVIEW[dominant];
     if (this.reactionText.text !== powerPreview) {
       this.reactionText.setText(powerPreview);
       this.reactionText.setColor(ELEMENT_STYLES[result.element].primaryText);
-      this.tweens.add({ targets: this.reactionText, scale: 1.12, duration: 160, yoyo: true });
+      this.tweens.add({
+        targets: this.reactionText,
+        scale: 1.12,
+        duration: 160,
+        yoyo: true,
+      });
     }
   }
 
@@ -791,9 +936,16 @@ export class Draw extends Scene {
       this.canvas.exportSubmissionImages((ctx) => {
         accessories.forEach((accessory) => {
           // The AttachedAccessory scale is canvas-px-per-unit-box relative to the
-          // on-screen 120px box; convert back to a canvas-px box edge for the bake.
-          const bakeSize = 120 * accessory.scale;
-          drawAccessoryCanvas(ctx, accessory.id, accessory.x, accessory.y, bakeSize, accessory.rotation);
+          // shared sticker box; convert back to a canvas-px box edge for the bake.
+          const bakeSize = ACCESSORY_BASE_SIZE * accessory.scale;
+          drawAccessoryCanvas(
+            ctx,
+            accessory.id,
+            accessory.x,
+            accessory.y,
+            bakeSize,
+            accessory.rotation
+          );
         });
       });
     const response = await submitScribbit({
@@ -812,7 +964,9 @@ export class Draw extends Scene {
       const reconciledArena = await fetchArena();
       if (reconciledArena.ok && reconciledArena.data.drawnToday) {
         setArena(this, reconciledArena.data);
-        showToast('Your Scribbit made it into the Rumble — the reply arrived late.');
+        showToast(
+          'Your Scribbit made it into the Rumble — the reply arrived late.'
+        );
         this.exitTo('ArenaHome');
         return;
       }
@@ -857,7 +1011,10 @@ export class Draw extends Scene {
     paperBackdrop(this);
 
     const style = ELEMENT_STYLES[scribbit.element];
-    this.add.rectangle(0, 0, width, height, style.primary, 0.1).setOrigin(0).setDepth(-90);
+    this.add
+      .rectangle(0, 0, width, height, style.primary, 0.1)
+      .setOrigin(0)
+      .setDepth(-90);
 
     // Egg hatching effect - an ink blob that cracks and bursts
     const egg = this.add.graphics().setDepth(50);
@@ -930,12 +1087,32 @@ export class Draw extends Scene {
     const { width, height } = this.scale;
     const style = ELEMENT_STYLES[scribbit.element];
 
-    const title = handLettered(this, width / 2, 180, "IT'S ALIVE!", 62, UI.goldText, true).setScale(0);
-    this.tweens.add({ targets: title, scale: 1, duration: 500, ease: 'Back.easeOut' });
+    const title = handLettered(
+      this,
+      width / 2,
+      180,
+      "IT'S ALIVE!",
+      62,
+      UI.goldText,
+      true
+    ).setScale(0);
+    this.tweens.add({
+      targets: title,
+      scale: 1,
+      duration: 500,
+      ease: 'Back.easeOut',
+    });
     this.cameras.main.shake(200, 0.008);
 
     // Drawing today's scribbit earns Mystery Ink — float the reward.
-    floatReward(this, width - 120, 360, `+${INK_REWARDS.dailyDraw} 🫙`, UI.goldText, 60);
+    floatReward(
+      this,
+      width - 120,
+      360,
+      `+${INK_REWARDS.dailyDraw} 🫙`,
+      UI.goldText,
+      60
+    );
 
     // Load the just-drawn PNG straight from the data URL for an instant reveal.
     const key = `ceremony-${scribbit.id}`;
@@ -958,7 +1135,6 @@ export class Draw extends Scene {
     });
     emitter.explode(40);
     this.time.delayedCall(1300, () => emitter.destroy());
-
   }
 
   private revealCard(scribbit: Scribbit, textureKey: string): void {
@@ -966,7 +1142,10 @@ export class Draw extends Scene {
     const cardW = 420;
     const cardH = 560;
     const cardY = height / 2 + 20;
-    const card = stickerCard(this, width / 2, cardY, cardW, cardH, { gold: true, tapeColor: UI.tape });
+    const card = stickerCard(this, width / 2, cardY, cardW, cardH, {
+      gold: true,
+      tapeColor: UI.tape,
+    });
     card.setScale(0);
 
     const artY = cardY - cardH / 2 + 165;
@@ -984,12 +1163,31 @@ export class Draw extends Scene {
       TYPE.caption,
       UI.coralText,
       true
-    ).setAlpha(0).setDepth(10);
-    const nameLabel = label(this, width / 2, cardY + 78, scribbit.name.toUpperCase(), TYPE.display * 0.66, UI.ink, true)
+    )
       .setAlpha(0)
       .setDepth(10);
-    if (nameLabel.width > cardW - 70) nameLabel.setScale((cardW - 70) / nameLabel.width);
-    const badge = elementBadge(this, width / 2, cardY + 126, scribbit.element, 0.85).setAlpha(0).setDepth(10);
+    const nameLabel = label(
+      this,
+      width / 2,
+      cardY + 78,
+      scribbit.name.toUpperCase(),
+      TYPE.display * 0.66,
+      UI.ink,
+      true
+    )
+      .setAlpha(0)
+      .setDepth(10);
+    if (nameLabel.width > cardW - 70)
+      nameLabel.setScale((cardW - 70) / nameLabel.width);
+    const badge = elementBadge(
+      this,
+      width / 2,
+      cardY + 126,
+      scribbit.element,
+      0.85
+    )
+      .setAlpha(0)
+      .setDepth(10);
 
     this.tweens.add({
       targets: card,
@@ -998,20 +1196,63 @@ export class Draw extends Scene {
       ease: 'Back.easeOut',
     });
     newborn.awaken();
-    this.tweens.add({ targets: [powerLabel, nameLabel, badge], alpha: 1, delay: 400, duration: 400 });
+    this.tweens.add({
+      targets: [powerLabel, nameLabel, badge],
+      alpha: 1,
+      delay: 400,
+      duration: 400,
+    });
 
-    const grid = statGrid(this, width / 2, cardY + cardH / 2 - 62, cardW - 60, 118);
+    const grid = statGrid(
+      this,
+      width / 2,
+      cardY + cardH / 2 - 62,
+      cardW - 60,
+      118
+    );
     grid.container.setAlpha(0).setDepth(10);
     grid.setStats(scribbit.stats, false);
-    this.tweens.add({ targets: grid.container, alpha: 1, delay: 700, duration: 400 });
+    this.tweens.add({
+      targets: grid.container,
+      alpha: 1,
+      delay: 700,
+      duration: 400,
+    });
+
+    if (this.startFightAfterBirth) {
+      const returnPromise = stickerCard(
+        this,
+        width / 2,
+        height - 245,
+        width - 100,
+        96,
+        { tape: false, tilt: -1 }
+      )
+        .setAlpha(0)
+        .setDepth(10);
+      const returnPromiseCopy = label(
+        this,
+        0,
+        0,
+        'Exhibition now → tonight’s Rumble\nReturn for its result • Later: permanent Legacy page',
+        TYPE.caption,
+        UI.coralText,
+        true
+      ).setLineSpacing(6);
+      returnPromise.add(returnPromiseCopy);
+      this.tweens.add({
+        targets: returnPromise,
+        alpha: 1,
+        delay: 850,
+        duration: 350,
+      });
+    }
 
     ghostButton(
       this,
       width / 2,
       height - 80,
-      this.startFightAfterBirth
-        ? 'Watch safe exhibition spar →'
-        : 'Continue →',
+      this.startFightAfterBirth ? 'Watch safe exhibition spar →' : 'Continue →',
       () => this.continueAfterBirth(scribbit),
       420
     ).setDepth(10);
@@ -1031,14 +1272,37 @@ export class Draw extends Scene {
 
   private requestFirstFight(scribbit: Scribbit): void {
     const { width, height } = this.scale;
-    const statusCard = stickerCard(this, width / 2, height / 2, width - 160, 170, {
-      tapeColor: UI.tapeAlt,
-    }).setDepth(200);
+    const statusCard = stickerCard(
+      this,
+      width / 2,
+      height / 2,
+      width - 160,
+      170,
+      {
+        tapeColor: UI.tapeAlt,
+      }
+    ).setDepth(200);
     statusCard.add(
-      label(this, 0, -24, '⚔️ Finding an exhibition opponent…', TYPE.title, UI.ink, true)
+      label(
+        this,
+        0,
+        -24,
+        '⚔️ Finding an exhibition opponent…',
+        TYPE.title,
+        UI.ink,
+        true
+      )
     );
     statusCard.add(
-      label(this, 0, 30, 'Your Scribbit is safe in tonight’s Rumble.', TYPE.caption, UI.inkSoft, true)
+      label(
+        this,
+        0,
+        30,
+        'Your Scribbit is safe in tonight’s Rumble.',
+        TYPE.caption,
+        UI.inkSoft,
+        true
+      )
     );
 
     void spar(scribbit.id).then((result) => {
@@ -1060,7 +1324,9 @@ export class Draw extends Scene {
     const panel = stickerCard(this, width / 2, height / 2, width - 120, 300, {
       tapeColor: UI.tapeAlt,
     }).setDepth(210);
-    panel.add(label(this, 0, -92, 'The opponent ran away', TYPE.title, UI.ink, true));
+    panel.add(
+      label(this, 0, -92, 'The opponent ran away', TYPE.title, UI.ink, true)
+    );
     const copy = label(this, 0, -35, message, TYPE.body, UI.inkSoft, true);
     copy.setWordWrapWidth(width - 220);
     panel.add(copy);
@@ -1091,11 +1357,17 @@ export class Draw extends Scene {
   private showError(message: string): void {
     if (this.errorPanelRef) return;
     const { width, height } = this.scale;
-    this.errorPanelRef = errorPanel(this, width / 2, height / 2, message, () => {
-      this.errorPanelRef?.destroy();
-      this.errorPanelRef = null;
-      this.overlay.setVisible(true);
-      this.stickers?.showOverlays();
-    });
+    this.errorPanelRef = errorPanel(
+      this,
+      width / 2,
+      height / 2,
+      message,
+      () => {
+        this.errorPanelRef?.destroy();
+        this.errorPanelRef = null;
+        this.overlay.setVisible(true);
+        this.stickers?.showOverlays();
+      }
+    );
   }
 }

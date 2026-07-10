@@ -14,27 +14,31 @@
 import * as Phaser from 'phaser';
 import { Scene } from 'phaser';
 import {
+  ACCESSORY_BASE_SIZE,
   MAX_ACCESSORIES_PER_SCRIBBIT,
+  MAX_ACCESSORY_ROTATION,
   MAX_ACCESSORY_SCALE,
+  MIN_ACCESSORY_ROTATION,
   MIN_ACCESSORY_SCALE,
 } from '../../shared/arena';
 import type { AttachedAccessory } from '../../shared/arena';
 import { EDGE, TYPE, UI } from './theme';
 import { label, ghostButton } from './ui';
 import {
-  ACCESSORY_CATALOG,
   accessoryLabel,
   drawAccessoryGraphics,
   isKnownAccessory,
 } from './accessories';
 
-// The on-screen sticker box edge (design px) at scale 1.
-const BASE_STICKER_SIZE = 120;
-
 // The Draw scene's live 512-canvas rect in design space, so we can convert a
 // placed sticker's design-space transform into 512-canvas coordinates for the
 // bake + the submit metadata.
-export type CanvasRect = { x: number; y: number; width: number; height: number };
+export type CanvasRect = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
 
 type PlacedSticker = {
   id: string;
@@ -130,10 +134,25 @@ export class StickerAttach {
       .setStrokeStyle(4, UI.inkHex, 1);
     drawer.add(bg);
     drawer.add(
-      label(this.scene, EDGE + 16, panelY - panelH / 2 + 22, '✨ STICKERS', TYPE.caption, UI.inkSoft, true).setOrigin(0, 0.5)
+      label(
+        this.scene,
+        EDGE + 16,
+        panelY - panelH / 2 + 22,
+        '✨ STICKERS',
+        TYPE.caption,
+        UI.inkSoft,
+        true
+      ).setOrigin(0, 0.5)
     );
     drawer.add(
-      ghostButton(this.scene, width - EDGE - 40, panelY - panelH / 2 + 20, '✕', () => this.closeDrawer(), 60)
+      ghostButton(
+        this.scene,
+        width - EDGE - 40,
+        panelY - panelH / 2 + 20,
+        '✕',
+        () => this.closeDrawer(),
+        60
+      )
     );
 
     if (owned.length === 0) {
@@ -181,12 +200,26 @@ export class StickerAttach {
 
     // Owned-count badge.
     const badge = this.scene.add.container(34, -34);
-    badge.add(this.scene.add.circle(0, 0, 15, UI.coral, 1).setStrokeStyle(3, UI.inkHex, 1));
-    badge.add(label(this.scene, 0, 0, `${count}`, TYPE.caption, '#ffffff', true));
+    badge.add(
+      this.scene.add
+        .circle(0, 0, 15, UI.coral, 1)
+        .setStrokeStyle(3, UI.inkHex, 1)
+    );
+    badge.add(
+      label(this.scene, 0, 0, `${count}`, TYPE.caption, '#ffffff', true)
+    );
     cell.add(badge);
 
     cell.add(
-      label(this.scene, 0, 40, accessoryLabel(id), 15, UI.ink, true).setWordWrapWidth(94)
+      label(
+        this.scene,
+        0,
+        40,
+        accessoryLabel(id),
+        15,
+        UI.ink,
+        true
+      ).setWordWrapWidth(94)
     );
 
     bg.on('pointerup', () => this.addSticker(id));
@@ -206,7 +239,7 @@ export class StickerAttach {
       return;
     }
     if (this.remainingCount(id) <= 0) return;
-    if (!ACCESSORY_CATALOG[id]) return;
+    if (!isKnownAccessory(id)) return;
 
     const rect = this.canvasRect;
     const container = this.scene.add
@@ -219,14 +252,29 @@ export class StickerAttach {
     // Drag to move; the sticker follows the pointer and stays inside the canvas
     // rect. Tapping it selects it (shows the scale/rotate/remove controls).
     const hit = this.scene.add
-      .rectangle(0, 0, BASE_STICKER_SIZE, BASE_STICKER_SIZE, 0xffffff, 0.001)
+      .rectangle(
+        0,
+        0,
+        ACCESSORY_BASE_SIZE,
+        ACCESSORY_BASE_SIZE,
+        0xffffff,
+        0.001
+      )
       .setInteractive({ useHandCursor: true, draggable: true });
     container.add(hit);
     this.scene.input.setDraggable(hit);
     hit.on('pointerdown', () => this.select(sticker));
     hit.on('drag', (pointer: Phaser.Input.Pointer) => {
-      container.x = Phaser.Math.Clamp(pointer.worldX, rect.x, rect.x + rect.width);
-      container.y = Phaser.Math.Clamp(pointer.worldY, rect.y, rect.y + rect.height);
+      container.x = Phaser.Math.Clamp(
+        pointer.worldX,
+        rect.x,
+        rect.x + rect.width
+      );
+      container.y = Phaser.Math.Clamp(
+        pointer.worldY,
+        rect.y,
+        rect.y + rect.height
+      );
     });
 
     this.placed.push(sticker);
@@ -234,7 +282,12 @@ export class StickerAttach {
     this.onChange?.(this.placed.length);
     // A little pop as it lands.
     container.setScale(0.6);
-    this.scene.tweens.add({ targets: container, scale: 1, duration: 220, ease: 'Back.easeOut' });
+    this.scene.tweens.add({
+      targets: container,
+      scale: 1,
+      duration: 220,
+      ease: 'Back.easeOut',
+    });
   }
 
   private flashCap(): void {
@@ -265,7 +318,7 @@ export class StickerAttach {
       .filter((child) => child instanceof Phaser.GameObjects.Graphics)
       .forEach((child) => child.destroy());
     const doodle = this.scene.add.graphics();
-    drawAccessoryGraphics(doodle, sticker.id, BASE_STICKER_SIZE);
+    drawAccessoryGraphics(doodle, sticker.id, ACCESSORY_BASE_SIZE);
     sticker.container.addAt(doodle, 0);
     sticker.container.setScale(sticker.scale);
     sticker.container.setRotation(sticker.rotation);
@@ -274,7 +327,9 @@ export class StickerAttach {
   // Select a sticker and show its scale/rotate/remove controls.
   private select(sticker: PlacedSticker): void {
     this.selected = sticker;
-    this.placed.forEach((one) => one.container.setAlpha(one === sticker ? 1 : 0.85));
+    this.placed.forEach((one) =>
+      one.container.setAlpha(one === sticker ? 1 : 0.85)
+    );
     this.buildControls();
   }
 
@@ -295,20 +350,49 @@ export class StickerAttach {
     );
 
     // Scale slider.
-    this.buildSlider(panel, EDGE + 30, y, 170, '⤢', (t) => {
-      sticker.scale = MIN_ACCESSORY_SCALE + t * (this.maximumStickerScale() - MIN_ACCESSORY_SCALE);
-      this.redrawSticker(sticker);
-    }, (sticker.scale - MIN_ACCESSORY_SCALE) / (this.maximumStickerScale() - MIN_ACCESSORY_SCALE));
+    this.buildSlider(
+      panel,
+      EDGE + 30,
+      y,
+      170,
+      '⤢',
+      (t) => {
+        sticker.scale =
+          MIN_ACCESSORY_SCALE +
+          t * (this.maximumStickerScale() - MIN_ACCESSORY_SCALE);
+        this.redrawSticker(sticker);
+      },
+      (sticker.scale - MIN_ACCESSORY_SCALE) /
+        (this.maximumStickerScale() - MIN_ACCESSORY_SCALE)
+    );
 
     // Rotation slider.
-    this.buildSlider(panel, EDGE + 250, y, 170, '↻', (t) => {
-      sticker.rotation = (t * 2 - 1) * Math.PI;
-      this.redrawSticker(sticker);
-    }, (sticker.rotation / Math.PI + 1) / 2);
+    this.buildSlider(
+      panel,
+      EDGE + 250,
+      y,
+      170,
+      '↻',
+      (t) => {
+        sticker.rotation =
+          MIN_ACCESSORY_ROTATION +
+          t * (MAX_ACCESSORY_ROTATION - MIN_ACCESSORY_ROTATION);
+        this.redrawSticker(sticker);
+      },
+      (sticker.rotation - MIN_ACCESSORY_ROTATION) /
+        (MAX_ACCESSORY_ROTATION - MIN_ACCESSORY_ROTATION)
+    );
 
     // Remove button.
     panel.add(
-      ghostButton(this.scene, width - EDGE - 60, y, '🗑', () => this.removeSelected(), 90)
+      ghostButton(
+        this.scene,
+        width - EDGE - 60,
+        y,
+        '🗑',
+        () => this.removeSelected(),
+        90
+      )
     );
   }
 
@@ -336,7 +420,11 @@ export class StickerAttach {
     panel.add(knob);
     this.scene.input.setDraggable(knob);
     knob.on('drag', (pointer: Phaser.Input.Pointer) => {
-      const clamped = Phaser.Math.Clamp(pointer.worldX, trackX, trackX + trackWidth);
+      const clamped = Phaser.Math.Clamp(
+        pointer.worldX,
+        trackX,
+        trackX + trackWidth
+      );
       knob.x = clamped;
       onValue((clamped - trackX) / trackWidth);
     });

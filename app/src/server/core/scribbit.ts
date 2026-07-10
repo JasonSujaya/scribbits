@@ -3,20 +3,25 @@ import type {
   AttachedAccessory,
   CareAction,
   Element,
+  LegacyCosmeticSnapshot,
   Mood,
   Scribbit,
+  ScribbitLegacy,
   ScribbitStats,
   SubmitScribbitRequest,
 } from '../../shared/arena';
 import { PNG } from 'pngjs';
 import {
+  ACCESSORY_BASE_SIZE,
   BELIEF_LEGEND_THRESHOLD,
   LEVEL_XP_THRESHOLDS,
   LIFESPAN_DAYS,
   MAX_ALIVE_PER_USER,
   MAX_ACCESSORIES_PER_SCRIBBIT,
+  MAX_ACCESSORY_ROTATION,
   MAX_ACCESSORY_SCALE,
   MAX_LEVEL,
+  MIN_ACCESSORY_ROTATION,
   MIN_ACCESSORY_SCALE,
   STAT_BUDGET,
   STAT_MAX,
@@ -32,7 +37,23 @@ export type SortedSetEntry = {
   score: number;
 };
 
+export type ArenaTransaction = {
+  multi: () => Promise<void>;
+  exec: () => Promise<unknown[]>;
+  discard: () => Promise<void>;
+  unwatch: () => Promise<unknown>;
+  incrBy: (key: string, value: number) => Promise<unknown>;
+  set: (key: string, value: string) => Promise<unknown>;
+  del: (...keys: string[]) => Promise<unknown>;
+  expire: (key: string, seconds: number) => Promise<unknown>;
+  hSet: (key: string, fieldValues: Record<string, string>) => Promise<unknown>;
+  hSetNX: (key: string, field: string, value: string) => Promise<unknown>;
+  hIncrBy: (key: string, field: string, value: number) => Promise<unknown>;
+  zIncrBy: (key: string, member: string, value: number) => Promise<unknown>;
+};
+
 export type ArenaStorage = {
+  watch?: (...keys: string[]) => Promise<ArenaTransaction>;
   get: (key: string) => Promise<string | undefined>;
   set: (key: string, value: string) => Promise<unknown>;
   del: (...keys: string[]) => Promise<unknown>;
@@ -89,8 +110,15 @@ export type DailyFlagField = 'drawn' | 'entered' | 'bossChallenge';
 
 const pngDataUrlPrefix = 'data:image/png;base64,';
 const maximumDrawingBytes = 400 * 1024;
+const maximumDrawingBase64Characters = Math.ceil(maximumDrawingBytes / 3) * 4;
+const drawingCanvasSize = 512;
+const minimumPngHeaderBytes = 33;
+const pngSignature = [137, 80, 78, 71, 13, 10, 26, 10] as const;
+const visiblePixelTolerance = 1;
+const accessoryAntialiasPaddingPixels = 1;
 const dailyFlagTtlSeconds = 8 * 24 * 60 * 60;
 const dailyProgressTtlSeconds = 8 * 24 * 60 * 60;
+const maximumScribbitTransactionAttempts = 5;
 const careActionOrder: CareAction[] = ['feed', 'pat', 'train'];
 const statNames: Array<keyof ScribbitStats> = [
   'chonk',
@@ -126,12 +154,20 @@ export const getUserAliveScribbitsKey = (userId: string): string => {
   return `user:${userId}:scribbits:alive`;
 };
 
+export const getUserLegacyCardsKey = (userId: string): string => {
+  return `user:${userId}:scribbits:legacy`;
+};
+
 export const getDailyFlagsKey = (userId: string, day: number): string => {
   return `user:${userId}:daily:${day}`;
 };
 
 export const getRumbleKey = (day: number): string => {
   return `rumble:${day}`;
+};
+
+export const getRumbleStandingReceiptKey = (scribbitId: string): string => {
+  return `scribbit:${scribbitId}:rumble-standings`;
 };
 
 export const getScribbitCareKey = (
@@ -141,11 +177,8 @@ export const getScribbitCareKey = (
   return `scribbit:${scribbitId}:care:${utcDateKey}`;
 };
 
-export const getScribbitSparWinKey = (
-  scribbitId: string,
-  utcDateKey: string
-): string => {
-  return `scribbit:${scribbitId}:spar-win:${utcDateKey}`;
+export const getUserDailySparWinRewardsKey = (userId: string): string => {
+  return `user:${userId}:daily-spar-win-rewards`;
 };
 
 export const getExpiringScribbitsKey = (): string => {
@@ -162,6 +195,10 @@ export const getFoundingBeliefKey = (): string => {
 
 export const getCommunityBeliefKey = (): string => {
   return 'belief:community';
+};
+
+export const getScribbitBeliefVersionKey = (scribbitId: string): string => {
+  return `scribbit:${scribbitId}:belief-version`;
 };
 
 export const validateScribbitName = (value: unknown): string | undefined => {
@@ -191,7 +228,11 @@ export const validateScribbitName = (value: unknown): string | undefined => {
   return name;
 };
 
-const clampNumber = (value: number, minimum: number, maximum: number): number => {
+const clampNumber = (
+  value: number,
+  minimum: number,
+  maximum: number
+): number => {
   return Math.min(maximum, Math.max(minimum, value));
 };
 
@@ -263,6 +304,7 @@ export const addXpToScribbit = (
   scribbit: Scribbit,
   xpGain: number
 ): Scribbit => {
+  if (scribbit.status !== 'alive') return cloneScribbit(scribbit);
   const gainedXp = normalizeNonNegativeInteger(xpGain);
   const nextXp = normalizeNonNegativeInteger(scribbit.xp) + gainedXp;
 
@@ -300,9 +342,7 @@ const distributeBudgetInsideBounds = (values: number[]): number[] => {
         return { value, index };
       })
       .filter((entry) => {
-        return difference > 0
-          ? entry.value < STAT_MAX
-          : entry.value > STAT_MIN;
+        return difference > 0 ? entry.value < STAT_MAX : entry.value > STAT_MIN;
       });
 
     if (adjustableIndexes.length === 0) {
@@ -311,8 +351,7 @@ const distributeBudgetInsideBounds = (values: number[]): number[] => {
 
     const totalRoom = adjustableIndexes.reduce((sum, entry) => {
       return (
-        sum +
-        (difference > 0 ? STAT_MAX - entry.value : entry.value - STAT_MIN)
+        sum + (difference > 0 ? STAT_MAX - entry.value : entry.value - STAT_MIN)
       );
     }, 0);
 
@@ -410,8 +449,9 @@ const isCanvasCoordinate = (value: unknown): value is number => {
   return (
     typeof value === 'number' &&
     Number.isFinite(value) &&
+    Number.isInteger(value) &&
     value >= 0 &&
-    value <= 512
+    value <= drawingCanvasSize
   );
 };
 
@@ -426,6 +466,14 @@ const isAccessoryScale = (value: unknown): value is number => {
 
 const isFiniteNumber = (value: unknown): value is number => {
   return typeof value === 'number' && Number.isFinite(value);
+};
+
+const isAccessoryRotation = (value: unknown): value is number => {
+  return (
+    isFiniteNumber(value) &&
+    value >= MIN_ACCESSORY_ROTATION &&
+    value <= MAX_ACCESSORY_ROTATION
+  );
 };
 
 const validateAttachedAccessory = (
@@ -445,7 +493,7 @@ const validateAttachedAccessory = (
     !isCanvasCoordinate(value.x) ||
     !isCanvasCoordinate(value.y) ||
     !isAccessoryScale(value.scale) ||
-    !isFiniteNumber(value.rotation)
+    !isAccessoryRotation(value.rotation)
   ) {
     return undefined;
   }
@@ -466,10 +514,7 @@ const validateAttachedAccessories = (
     return [];
   }
 
-  if (
-    !Array.isArray(value) ||
-    value.length > MAX_ACCESSORIES_PER_SCRIBBIT
-  ) {
+  if (!Array.isArray(value) || value.length > MAX_ACCESSORIES_PER_SCRIBBIT) {
     return undefined;
   }
 
@@ -493,12 +538,13 @@ const normalizeScribbitAccessories = (value: unknown): string[] => {
     return [];
   }
 
-  return value.filter((accessoryId) => {
-    return (
-      typeof accessoryId === 'string' &&
-      isAccessoryCatalogEntry(findInkCatalogEntry(accessoryId))
-    );
-  });
+  return value
+    .filter((accessoryId): accessoryId is string => {
+      return (
+        typeof accessoryId === 'string' && /^[a-z0-9-]{2,64}$/.test(accessoryId)
+      );
+    })
+    .slice(0, MAX_ACCESSORIES_PER_SCRIBBIT);
 };
 
 export const validateSubmitScribbitRequest = (
@@ -532,10 +578,200 @@ export const validateSubmitScribbitRequest = (
   };
 };
 
+type AccessoryPixelRegion = {
+  centerX: number;
+  centerY: number;
+  cosine: number;
+  sine: number;
+  halfSizeWithPadding: number;
+};
+
+const createAccessoryPixelRegion = (
+  accessory: AttachedAccessory
+): AccessoryPixelRegion => {
+  const cosine = Math.cos(accessory.rotation);
+  const sine = Math.sin(accessory.rotation);
+  // Include every raster pixel square touched by the rotated nominal box, plus
+  // one antialiasing pixel. This stays conservative without opening its AABB
+  // corners to arbitrary rendered changes.
+  const pixelSquareProjection = (Math.abs(cosine) + Math.abs(sine)) / 2;
+
+  return {
+    centerX: accessory.x,
+    centerY: accessory.y,
+    cosine,
+    sine,
+    halfSizeWithPadding:
+      (ACCESSORY_BASE_SIZE * accessory.scale) / 2 +
+      pixelSquareProjection +
+      accessoryAntialiasPaddingPixels,
+  };
+};
+
+const isPixelInsideAccessoryRegion = (
+  pixelX: number,
+  pixelY: number,
+  region: AccessoryPixelRegion
+): boolean => {
+  const distanceX = pixelX + 0.5 - region.centerX;
+  const distanceY = pixelY + 0.5 - region.centerY;
+  const unrotatedX = distanceX * region.cosine + distanceY * region.sine;
+  const unrotatedY = -distanceX * region.sine + distanceY * region.cosine;
+
+  return (
+    Math.abs(unrotatedX) <= region.halfSizeWithPadding &&
+    Math.abs(unrotatedY) <= region.halfSizeWithPadding
+  );
+};
+
+const premultiplyColorChannel = (channel: number, alpha: number): number => {
+  return Math.round((channel * alpha) / 255);
+};
+
+const visiblePixelsMatch = (
+  baseRgba: Uint8Array,
+  renderedRgba: Uint8Array,
+  byteOffset: number,
+  baseAlpha: number,
+  renderedAlpha: number
+): boolean => {
+  if (Math.abs(renderedAlpha - baseAlpha) > visiblePixelTolerance) {
+    return false;
+  }
+
+  for (let channelOffset = 0; channelOffset < 3; channelOffset += 1) {
+    const baseChannelValue = baseRgba[byteOffset + channelOffset];
+    const renderedChannelValue = renderedRgba[byteOffset + channelOffset];
+
+    if (baseChannelValue === undefined || renderedChannelValue === undefined) {
+      return false;
+    }
+
+    const baseChannel = premultiplyColorChannel(baseChannelValue, baseAlpha);
+    const renderedChannel = premultiplyColorChannel(
+      renderedChannelValue,
+      renderedAlpha
+    );
+
+    if (Math.abs(renderedChannel - baseChannel) > visiblePixelTolerance) {
+      return false;
+    }
+  }
+
+  return true;
+};
+
+export const validateRenderedPngBinding = (
+  basePng: DecodedPngDataUrl,
+  renderedPng: DecodedPngDataUrl,
+  accessories: AttachedAccessory[]
+): boolean => {
+  if (
+    basePng.width !== drawingCanvasSize ||
+    basePng.height !== drawingCanvasSize ||
+    renderedPng.width !== basePng.width ||
+    renderedPng.height !== basePng.height
+  ) {
+    return false;
+  }
+
+  const expectedRgbaLength = basePng.width * basePng.height * 4;
+
+  if (
+    basePng.rgba.length !== expectedRgbaLength ||
+    renderedPng.rgba.length !== expectedRgbaLength
+  ) {
+    return false;
+  }
+
+  const validatedAccessories = validateAttachedAccessories(accessories);
+
+  if (!validatedAccessories) {
+    return false;
+  }
+
+  const allowedRegions = validatedAccessories.map(createAccessoryPixelRegion);
+  const pixelCount = basePng.width * basePng.height;
+
+  for (let pixelIndex = 0; pixelIndex < pixelCount; pixelIndex += 1) {
+    const byteOffset = pixelIndex * 4;
+    const baseAlpha = basePng.rgba[byteOffset + 3];
+    const renderedAlpha = renderedPng.rgba[byteOffset + 3];
+
+    if (baseAlpha === undefined || renderedAlpha === undefined) {
+      return false;
+    }
+
+    // Accessories use normal source-over painting, so no submitted decoration
+    // is allowed to erase even one alpha level from the player's base drawing.
+    if (renderedAlpha < baseAlpha) {
+      return false;
+    }
+
+    if (
+      visiblePixelsMatch(
+        basePng.rgba,
+        renderedPng.rgba,
+        byteOffset,
+        baseAlpha,
+        renderedAlpha
+      )
+    ) {
+      continue;
+    }
+
+    const pixelX = pixelIndex % basePng.width;
+    const pixelY = Math.floor(pixelIndex / basePng.width);
+    const isInsideDeclaredAccessory = allowedRegions.some((region) => {
+      return isPixelInsideAccessoryRegion(pixelX, pixelY, region);
+    });
+
+    if (!isInsideDeclaredAccessory) {
+      return false;
+    }
+  }
+
+  return true;
+};
+
+const hasExpectedPngHeader = (bytes: Uint8Array): boolean => {
+  if (bytes.byteLength < minimumPngHeaderBytes) {
+    return false;
+  }
+
+  for (let index = 0; index < pngSignature.length; index += 1) {
+    if (bytes[index] !== pngSignature[index]) {
+      return false;
+    }
+  }
+
+  const header = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+
+  return (
+    header.getUint32(8, false) === 13 &&
+    bytes[12] === 73 &&
+    bytes[13] === 72 &&
+    bytes[14] === 68 &&
+    bytes[15] === 82 &&
+    header.getUint32(16, false) === drawingCanvasSize &&
+    header.getUint32(20, false) === drawingCanvasSize
+  );
+};
+
 export const decodePngDataUrl = (
   imageDataUrl: string
 ): DecodedPngDataUrl | undefined => {
   if (!imageDataUrl.startsWith(pngDataUrlPrefix)) {
+    return undefined;
+  }
+
+  const base64Length = imageDataUrl.length - pngDataUrlPrefix.length;
+
+  if (
+    base64Length <= 0 ||
+    base64Length > maximumDrawingBase64Characters ||
+    base64Length % 4 !== 0
+  ) {
     return undefined;
   }
 
@@ -547,14 +783,18 @@ export const decodePngDataUrl = (
 
   const bytes = Buffer.from(base64, 'base64');
 
-  if (bytes.byteLength === 0 || bytes.byteLength > maximumDrawingBytes) {
+  if (
+    bytes.byteLength === 0 ||
+    bytes.byteLength > maximumDrawingBytes ||
+    !hasExpectedPngHeader(bytes)
+  ) {
     return undefined;
   }
 
   try {
     const png = PNG.sync.read(bytes);
 
-    if (png.width !== 512 || png.height !== 512) {
+    if (png.width !== drawingCanvasSize || png.height !== drawingCanvasSize) {
       return undefined;
     }
 
@@ -579,10 +819,13 @@ export const deleteStoredScribbit = async (
 ): Promise<void> => {
   await storage.del(
     getScribbitKey(scribbitId),
-    getScribbitOwnerKey(scribbitId)
+    getScribbitOwnerKey(scribbitId),
+    getRumbleStandingReceiptKey(scribbitId),
+    getScribbitBeliefVersionKey(scribbitId)
   );
   await storage.zRem(getUserScribbitsKey(ownerUserId), [scribbitId]);
   await storage.zRem(getUserAliveScribbitsKey(ownerUserId), [scribbitId]);
+  await storage.zRem(getUserLegacyCardsKey(ownerUserId), [scribbitId]);
   await storage.zRem(getExpiringScribbitsKey(), [scribbitId]);
   await storage.zRem(getRumbleKey(day), [scribbitId]);
   await storage.zRem(getLegendsKey(), [scribbitId]);
@@ -622,11 +865,7 @@ export const claimDailyFlags = async (
   const claimedFields: DailyFlagField[] = [];
 
   for (const field of fields) {
-    const createdFlag = await storage.hSetNX(
-      dailyFlagsKey,
-      field,
-      '1'
-    );
+    const createdFlag = await storage.hSetNX(dailyFlagsKey, field, '1');
 
     if (createdFlag !== 1) {
       if (claimedFields.length > 0) {
@@ -648,12 +887,144 @@ const isScribbitStats = (value: unknown): value is ScribbitStats => {
   }
 
   return statNames.every((statName) => {
-    return typeof value[statName] === 'number' && Number.isFinite(value[statName]);
+    return (
+      typeof value[statName] === 'number' && Number.isFinite(value[statName])
+    );
   });
 };
 
 const isScribbitStatus = (value: unknown): value is Scribbit['status'] => {
   return value === 'alive' || value === 'faded' || value === 'legend';
+};
+
+const isLegacyFinish = (value: unknown): value is ScribbitLegacy['finish'] => {
+  return value === 'faded' || value === 'believed' || value === 'champion';
+};
+
+const isLegacyFinishValidForStatus = (
+  finish: ScribbitLegacy['finish'],
+  status: Scribbit['status']
+): boolean => {
+  return status === 'faded'
+    ? finish === 'faded'
+    : status === 'legend' && finish !== 'faded';
+};
+
+const fallbackCosmeticName = (cosmeticId: string): string => {
+  return cosmeticId
+    .split('-')
+    .filter(Boolean)
+    .map((word) => `${word.charAt(0).toUpperCase()}${word.slice(1)}`)
+    .join(' ');
+};
+
+const snapshotCosmetic = (cosmeticId: string): LegacyCosmeticSnapshot => {
+  const entry = findInkCatalogEntry(cosmeticId);
+  return {
+    id: cosmeticId,
+    name: entry?.name ?? fallbackCosmeticName(cosmeticId),
+    rarity: entry?.rarity ?? 'common',
+  };
+};
+
+const normalizeLegacyCosmetic = (
+  value: unknown
+): LegacyCosmeticSnapshot | undefined => {
+  if (typeof value === 'string' && /^[a-z0-9-]{2,64}$/.test(value)) {
+    return snapshotCosmetic(value);
+  }
+  if (
+    !isRecord(value) ||
+    typeof value.id !== 'string' ||
+    !/^[a-z0-9-]{2,64}$/.test(value.id) ||
+    typeof value.name !== 'string' ||
+    value.name.trim().length === 0 ||
+    !['common', 'rare', 'epic'].includes(String(value.rarity))
+  ) {
+    return undefined;
+  }
+  return {
+    id: value.id,
+    name: value.name.trim().slice(0, 80),
+    rarity: value.rarity as LegacyCosmeticSnapshot['rarity'],
+  };
+};
+
+const inferLegacyFinish = (
+  scribbit: Pick<Scribbit, 'status' | 'legendTitle'>
+): ScribbitLegacy['finish'] => {
+  if (scribbit.status === 'faded') return 'faded';
+  return scribbit.legendTitle?.startsWith('Champion of Day ')
+    ? 'champion'
+    : 'believed';
+};
+
+export const createScribbitLegacy = (
+  scribbit: Scribbit,
+  options: {
+    creatorTitle?: LegacyCosmeticSnapshot | null;
+  } = {}
+): ScribbitLegacy => {
+  const xp = normalizeNonNegativeInteger(scribbit.xp);
+  return {
+    schemaVersion: 1,
+    archivedDay: scribbit.expiresDay,
+    finish: inferLegacyFinish(scribbit),
+    creatorTitle: options.creatorTitle ? { ...options.creatorTitle } : null,
+    level: getLevelForXp(xp),
+    xp,
+    wins: normalizeNonNegativeInteger(scribbit.wins),
+    losses: normalizeNonNegativeInteger(scribbit.losses),
+    belief: normalizeNonNegativeInteger(scribbit.belief),
+    accessories: scribbit.accessories.map(snapshotCosmetic),
+  };
+};
+
+const normalizeStoredLegacy = (
+  value: unknown,
+  scribbit: Scribbit
+): ScribbitLegacy | undefined => {
+  if (
+    !isRecord(value) ||
+    !isLegacyFinish(value.finish) ||
+    !isLegacyFinishValidForStatus(value.finish, scribbit.status) ||
+    (value.schemaVersion !== undefined && value.schemaVersion !== 1) ||
+    typeof value.archivedDay !== 'number' ||
+    !Number.isFinite(value.archivedDay) ||
+    value.archivedDay !== scribbit.expiresDay ||
+    typeof value.xp !== 'number' ||
+    typeof value.wins !== 'number' ||
+    typeof value.losses !== 'number' ||
+    typeof value.belief !== 'number'
+  ) {
+    return undefined;
+  }
+
+  const xp = normalizeNonNegativeInteger(value.xp);
+  const creatorTitle = normalizeLegacyCosmetic(
+    value.creatorTitle ?? value.creatorTitleId
+  );
+  const legacyAccessories = Array.isArray(value.accessories)
+    ? value.accessories
+        .map(normalizeLegacyCosmetic)
+        .filter(
+          (accessory): accessory is LegacyCosmeticSnapshot =>
+            accessory !== undefined
+        )
+        .slice(0, MAX_ACCESSORIES_PER_SCRIBBIT)
+    : [];
+  return {
+    schemaVersion: 1,
+    archivedDay: scribbit.expiresDay,
+    finish: value.finish,
+    creatorTitle: creatorTitle ?? null,
+    level: getLevelForXp(xp),
+    xp,
+    wins: normalizeNonNegativeInteger(value.wins),
+    losses: normalizeNonNegativeInteger(value.losses),
+    belief: normalizeNonNegativeInteger(value.belief),
+    accessories: legacyAccessories,
+  };
 };
 
 export const isScribbit = (value: unknown): value is Scribbit => {
@@ -685,7 +1056,7 @@ export const normalizeScribbitRecord = (
     const xp = normalizeNonNegativeInteger(value.xp);
     const careDoneToday = normalizeCareDoneToday(value.careDoneToday);
 
-    return {
+    const normalizedScribbit: Scribbit = {
       id: value.id,
       name: value.name,
       artist: value.artist,
@@ -707,7 +1078,16 @@ export const normalizeScribbitRecord = (
         ? value.mood
         : deriveMoodFromCareActions(careDoneToday),
       careDoneToday,
+      legacy: null,
     };
+
+    if (normalizedScribbit.status !== 'alive') {
+      normalizedScribbit.legacy =
+        normalizeStoredLegacy(value.legacy, normalizedScribbit) ??
+        createScribbitLegacy(normalizedScribbit);
+    }
+
+    return normalizedScribbit;
   }
 
   return undefined;
@@ -766,6 +1146,7 @@ export const createScribbit = (options: {
     xp: 0,
     mood: 'hungry',
     careDoneToday: [],
+    legacy: null,
   };
 };
 
@@ -775,6 +1156,17 @@ export const cloneScribbit = (scribbit: Scribbit): Scribbit => {
     stats: { ...scribbit.stats },
     accessories: [...scribbit.accessories],
     careDoneToday: [...scribbit.careDoneToday],
+    legacy: scribbit.legacy
+      ? {
+          ...scribbit.legacy,
+          creatorTitle: scribbit.legacy.creatorTitle
+            ? { ...scribbit.legacy.creatorTitle }
+            : null,
+          accessories: scribbit.legacy.accessories.map((accessory) => ({
+            ...accessory,
+          })),
+        }
+      : null,
   };
 };
 
@@ -806,19 +1198,16 @@ export const hydrateScribbitForUtcDay = async (
     scribbit.id,
     utcDateKey
   );
-  const storedBelief = await storage.hGet(
-    getCommunityBeliefKey(),
-    scribbit.id
-  );
-  const belief = storedBelief === undefined
-    ? scribbit.belief
-    : Number(storedBelief);
+  const storedBelief = await storage.hGet(getCommunityBeliefKey(), scribbit.id);
+  const belief =
+    storedBelief === undefined ? scribbit.belief : Number(storedBelief);
 
   return {
     ...scribbit,
-    belief: Number.isFinite(belief) && belief >= 0
-      ? Math.floor(belief)
-      : scribbit.belief,
+    belief:
+      Number.isFinite(belief) && belief >= 0
+        ? Math.floor(belief)
+        : scribbit.belief,
     mood: deriveMoodFromCareActions(careDoneToday),
     careDoneToday,
   };
@@ -829,7 +1218,8 @@ const hydrateFoundingScribbit = async (
   scribbit: Scribbit
 ): Promise<Scribbit> => {
   const storedBelief = await storage.hGet(getFoundingBeliefKey(), scribbit.id);
-  const belief = storedBelief === undefined ? scribbit.belief : Number(storedBelief);
+  const belief =
+    storedBelief === undefined ? scribbit.belief : Number(storedBelief);
 
   return {
     ...cloneScribbit(scribbit),
@@ -907,6 +1297,11 @@ export const storeScribbit = async (
       member: storedScribbit.id,
       score: storedScribbit.expiresDay,
     });
+  } else if (storedScribbit.legacy) {
+    await storage.zAdd(getUserLegacyCardsKey(ownerUserId), {
+      member: storedScribbit.id,
+      score: storedScribbit.legacy.archivedDay,
+    });
   }
 };
 
@@ -918,7 +1313,82 @@ export const updateScribbit = async (
     return;
   }
 
-  await storage.set(getScribbitKey(scribbit.id), JSON.stringify(cloneScribbit(scribbit)));
+  await storage.set(
+    getScribbitKey(scribbit.id),
+    JSON.stringify(cloneScribbit(scribbit))
+  );
+};
+
+type AliveScribbitMutationResult = {
+  scribbit: Scribbit | undefined;
+  changed: boolean;
+};
+
+type AliveScribbitMutationOptions = {
+  additionalWatchedKeys?: string[];
+  utcDateKey?: string;
+};
+
+const discardArenaTransaction = async (
+  transaction: ArenaTransaction | undefined
+): Promise<void> => {
+  if (!transaction) return;
+  try {
+    await transaction.discard();
+  } catch {
+    // EXEC and connection failures can leave nothing to discard.
+  }
+};
+
+const mutateAliveScribbit = async (
+  storage: ArenaStorage,
+  scribbitId: string,
+  mutate: (scribbit: Scribbit) => Scribbit | Promise<Scribbit>,
+  options: AliveScribbitMutationOptions = {}
+): Promise<AliveScribbitMutationResult> => {
+  if (!storage.watch) {
+    throw new Error('Atomic Scribbit mutations require transaction support.');
+  }
+
+  const scribbitKey = getScribbitKey(scribbitId);
+  for (
+    let attempt = 0;
+    attempt < maximumScribbitTransactionAttempts;
+    attempt += 1
+  ) {
+    let transaction: ArenaTransaction | undefined;
+    try {
+      transaction = await storage.watch(
+        scribbitKey,
+        ...(options.additionalWatchedKeys ?? [])
+      );
+      const scribbit = await loadScribbit(
+        storage,
+        scribbitId,
+        options.utcDateKey
+      );
+      if (!scribbit || scribbit.isFounding || scribbit.status !== 'alive') {
+        await transaction.unwatch();
+        return { scribbit, changed: false };
+      }
+
+      const updatedScribbit = await mutate(scribbit);
+      await transaction.multi();
+      await transaction.set(
+        scribbitKey,
+        JSON.stringify(cloneScribbit(updatedScribbit))
+      );
+      const result = await transaction.exec();
+      if (Array.isArray(result) && result.length > 0) {
+        return { scribbit: updatedScribbit, changed: true };
+      }
+    } catch (error) {
+      await discardArenaTransaction(transaction);
+      throw error;
+    }
+  }
+
+  throw new Error(`Scribbit ${scribbitId} changed too often to update safely.`);
 };
 
 export type DailyCareClaim = {
@@ -968,20 +1438,20 @@ export const releaseDailyCareAction = async (
   await storage.expire(careKey, dailyProgressTtlSeconds);
 };
 
-export const claimDailySparWinXp = async (
+export const claimUserDailySparWinReward = async (
   storage: ArenaStorage,
-  scribbitId: string,
+  userId: string,
   utcDateKey: string,
   claimedAtMs: number
 ): Promise<boolean> => {
-  const sparWinKey = getScribbitSparWinKey(scribbitId, utcDateKey);
-  const createdSparWin = await storage.hSetNX(
-    sparWinKey,
-    'xp',
+  const dailySparWinRewardsKey = getUserDailySparWinRewardsKey(userId);
+  const createdDailyReward = await storage.hSetNX(
+    dailySparWinRewardsKey,
+    utcDateKey,
     claimedAtMs.toString()
   );
-  await storage.expire(sparWinKey, dailyProgressTtlSeconds);
-  return createdSparWin === 1;
+  await storage.expire(dailySparWinRewardsKey, dailyProgressTtlSeconds);
+  return createdDailyReward === 1;
 };
 
 export const awardScribbitXp = async (
@@ -990,15 +1460,13 @@ export const awardScribbitXp = async (
   xpGain: number,
   utcDateKey = formatUtcDateKey(new Date())
 ): Promise<Scribbit | undefined> => {
-  const scribbit = await loadScribbit(storage, scribbitId, utcDateKey);
-
-  if (!scribbit || scribbit.isFounding) {
-    return scribbit;
-  }
-
-  const updatedScribbit = addXpToScribbit(scribbit, xpGain);
-  await updateScribbit(storage, updatedScribbit);
-  return updatedScribbit;
+  const result = await mutateAliveScribbit(
+    storage,
+    scribbitId,
+    (scribbit) => addXpToScribbit(scribbit, xpGain),
+    { utcDateKey }
+  );
+  return result.scribbit;
 };
 
 export const recordBattleOutcomeOnScribbit = async (
@@ -1007,22 +1475,92 @@ export const recordBattleOutcomeOnScribbit = async (
   outcome: 'win' | 'loss',
   winnerXpGain: number
 ): Promise<Scribbit | undefined> => {
-  const scribbit = await loadScribbit(storage, scribbitId);
+  const result = await mutateAliveScribbit(storage, scribbitId, (scribbit) =>
+    addXpToScribbit(
+      {
+        ...scribbit,
+        wins: outcome === 'win' ? scribbit.wins + 1 : scribbit.wins,
+        losses: outcome === 'loss' ? scribbit.losses + 1 : scribbit.losses,
+      },
+      outcome === 'win' ? winnerXpGain : 0
+    )
+  );
+  return result.scribbit;
+};
 
-  if (!scribbit || scribbit.isFounding) {
-    return scribbit;
+export const recordRumbleStandingOnScribbit = async (
+  storage: ArenaStorage,
+  scribbitId: string,
+  resolvedDay: number,
+  wins: number,
+  losses: number,
+  winnerXpGain: number
+): Promise<Scribbit | undefined> => {
+  if (!storage.watch) {
+    throw new Error('Atomic Rumble standings require transaction support.');
   }
 
-  const updatedOutcomeScribbit = addXpToScribbit(
-    {
-      ...scribbit,
-      wins: outcome === 'win' ? scribbit.wins + 1 : scribbit.wins,
-      losses: outcome === 'loss' ? scribbit.losses + 1 : scribbit.losses,
-    },
-    outcome === 'win' ? winnerXpGain : 0
+  const scribbitKey = getScribbitKey(scribbitId);
+  const receiptKey = getRumbleStandingReceiptKey(scribbitId);
+  const receiptField = resolvedDay.toString();
+  const receiptValue = `${wins}:${losses}:${winnerXpGain}`;
+  for (
+    let attempt = 0;
+    attempt < maximumScribbitTransactionAttempts;
+    attempt += 1
+  ) {
+    let transaction: ArenaTransaction | undefined;
+    try {
+      transaction = await storage.watch(scribbitKey, receiptKey);
+      const [existingReceipt, scribbit] = await Promise.all([
+        storage.hGet(receiptKey, receiptField),
+        loadScribbit(storage, scribbitId),
+      ]);
+      if (existingReceipt !== undefined) {
+        await transaction.unwatch();
+        return scribbit;
+      }
+      if (!scribbit) {
+        await transaction.unwatch();
+        return undefined;
+      }
+
+      const updatedScribbit =
+        !scribbit.isFounding && scribbit.status === 'alive'
+          ? addXpToScribbit(
+              {
+                ...scribbit,
+                wins: scribbit.wins + Math.max(0, Math.floor(wins)),
+                losses: scribbit.losses + Math.max(0, Math.floor(losses)),
+              },
+              winnerXpGain
+            )
+          : scribbit;
+
+      await transaction.multi();
+      if (updatedScribbit && !updatedScribbit.isFounding) {
+        await transaction.set(
+          scribbitKey,
+          JSON.stringify(cloneScribbit(updatedScribbit))
+        );
+      }
+      await transaction.hSet(receiptKey, {
+        [receiptField]: receiptValue,
+      });
+      await transaction.expire(receiptKey, dailyProgressTtlSeconds);
+      const result = await transaction.exec();
+      if (Array.isArray(result) && result.length > 0) {
+        return updatedScribbit;
+      }
+    } catch (error) {
+      await discardArenaTransaction(transaction);
+      throw error;
+    }
+  }
+
+  throw new Error(
+    `Rumble standing for ${scribbitId} changed too often to record safely.`
   );
-  await updateScribbit(storage, updatedOutcomeScribbit);
-  return updatedOutcomeScribbit;
 };
 
 export const getScribbitOwner = async (
@@ -1063,7 +1601,9 @@ export const getAliveScribbitsForUser = async (
     rankedScribbits.map((entry) => entry.member)
   );
 
-  return scribbits.filter((scribbit) => scribbit.status === 'alive').sort(sortNewestFirst);
+  return scribbits
+    .filter((scribbit) => scribbit.status === 'alive')
+    .sort(sortNewestFirst);
 };
 
 export const enforceAliveScribbitLimit = async (
@@ -1074,22 +1614,30 @@ export const enforceAliveScribbitLimit = async (
   return aliveScribbits.length < MAX_ALIVE_PER_USER;
 };
 
+export const getUserScribbitIds = async (
+  storage: ArenaStorage,
+  userId: string,
+  limit: number,
+  offset = 0
+): Promise<string[]> => {
+  if (limit <= 0) return [];
+  const rankedScribbits = await storage.zRange(
+    getUserScribbitsKey(userId),
+    offset,
+    offset + Math.max(0, limit) - 1,
+    { by: 'rank', reverse: true }
+  );
+  return rankedScribbits.map((entry) => entry.member);
+};
+
+/** @deprecated Use the paged Legacy Cards API for the complete owner archive. */
 export const getFadedScribbitsForUser = async (
   storage: ArenaStorage,
   userId: string,
   limit: number
 ): Promise<Scribbit[]> => {
-  const rankedScribbits = await storage.zRange(
-    getUserScribbitsKey(userId),
-    0,
-    99,
-    { by: 'rank', reverse: true }
-  );
-  const scribbits = await loadScribbits(
-    storage,
-    rankedScribbits.map((entry) => entry.member)
-  );
-
+  const scribbitIds = await getUserScribbitIds(storage, userId, 100);
+  const scribbits = await loadScribbits(storage, scribbitIds);
   return scribbits
     .filter((scribbit) => scribbit.status === 'faded')
     .sort(sortNewestFirst)
@@ -1117,11 +1665,7 @@ export const markDailyFlag = async (
   field: DailyFlagField
 ): Promise<boolean> => {
   const dailyFlagsKey = getDailyFlagsKey(userId, day);
-  const createdFlag = await storage.hSetNX(
-    dailyFlagsKey,
-    field,
-    '1'
-  );
+  const createdFlag = await storage.hSetNX(dailyFlagsKey, field, '1');
   await storage.expire(dailyFlagsKey, dailyFlagTtlSeconds);
   return createdFlag === 1;
 };
@@ -1142,9 +1686,8 @@ export const getRumbleEntrantIds = async (
   day: number,
   options: { limit?: number; reverse?: boolean } = {}
 ): Promise<string[]> => {
-  const stop = options.limit === undefined
-    ? -1
-    : Math.max(0, options.limit - 1);
+  const stop =
+    options.limit === undefined ? -1 : Math.max(0, options.limit - 1);
   const entries = await storage.zRange(getRumbleKey(day), 0, stop, {
     by: 'rank',
     reverse: options.reverse,
@@ -1197,10 +1740,7 @@ export const getLegends = async (
   offset = 0
 ): Promise<Scribbit[]> => {
   const legendIds = await getLegendIds(storage, limit, offset);
-  const scribbits = await loadScribbits(
-    storage,
-    legendIds
-  );
+  const scribbits = await loadScribbits(storage, legendIds);
 
   return scribbits.filter((scribbit) => scribbit.status === 'legend');
 };
@@ -1212,72 +1752,142 @@ export const getCommunityLegendCount = async (
 };
 
 export const resolveExpiredScribbitStatus = (
-  scribbit: Scribbit
+  scribbit: Scribbit,
+  options: {
+    creatorTitle?: LegacyCosmeticSnapshot | null;
+  } = {}
 ): Scribbit => {
   if (scribbit.status !== 'alive' || scribbit.isFounding) {
     return cloneScribbit(scribbit);
   }
 
+  let expiredScribbit: Scribbit;
   if (
     scribbit.belief >= BELIEF_LEGEND_THRESHOLD ||
     scribbit.legendTitle !== null
   ) {
-    return {
+    expiredScribbit = {
       ...scribbit,
       status: 'legend',
       legendTitle:
-        scribbit.legendTitle ??
-        `Believed by ${scribbit.belief} arena weirdos`,
+        scribbit.legendTitle ?? `Believed by ${scribbit.belief} arena weirdos`,
+    };
+  } else {
+    expiredScribbit = {
+      ...scribbit,
+      status: 'faded',
     };
   }
 
   return {
-    ...scribbit,
-    status: 'faded',
+    ...expiredScribbit,
+    legacy: createScribbitLegacy(expiredScribbit, options),
   };
+};
+
+export type ExpireDueScribbitsOptions = {
+  getCreatorTitle?: (
+    ownerUserId: string
+  ) => Promise<LegacyCosmeticSnapshot | null>;
+  getCreatorTitleWatchKey?: (ownerUserId: string) => string;
 };
 
 export const expireDueScribbits = async (
   storage: ArenaStorage,
-  day: number
+  day: number,
+  options: ExpireDueScribbitsOptions = {}
 ): Promise<{ faded: number; legends: number }> => {
-  const expiringEntries = await storage.zRange(
-    getExpiringScribbitsKey(),
-    0,
-    day,
-    { by: 'score' }
-  );
   let faded = 0;
   let legends = 0;
+  const batchSize = 200;
 
-  for (const entry of expiringEntries) {
-    const scribbit = await loadScribbit(storage, entry.member);
-
-    if (!scribbit || scribbit.status !== 'alive') {
-      continue;
-    }
-
-    const expiredScribbit = resolveExpiredScribbitStatus(scribbit);
-    const ownerUserId = await getScribbitOwner(storage, scribbit.id);
-    await updateScribbit(storage, expiredScribbit);
-
-    if (ownerUserId) {
-      await storage.zRem(getUserAliveScribbitsKey(ownerUserId), [scribbit.id]);
-    }
-
-    if (expiredScribbit.status === 'legend') {
-      legends += 1;
-      await addLegend(storage, expiredScribbit, day);
-    } else if (expiredScribbit.status === 'faded') {
-      faded += 1;
-    }
-  }
-
-  if (expiringEntries.length > 0) {
-    await storage.zRem(
+  while (true) {
+    const firstEntries = await storage.zRange(
       getExpiringScribbitsKey(),
-      expiringEntries.map((entry) => entry.member)
+      0,
+      batchSize - 1,
+      { by: 'rank' }
     );
+    const dueEntries = firstEntries.filter((entry) => entry.score <= day);
+    if (dueEntries.length === 0) break;
+
+    for (const entry of dueEntries) {
+      const scribbit = await loadScribbit(storage, entry.member);
+      if (!scribbit || scribbit.isFounding) {
+        await storage.zRem(getExpiringScribbitsKey(), [entry.member]);
+        continue;
+      }
+
+      const ownerUserId = await getScribbitOwner(storage, scribbit.id);
+      let transitionedAtExpiry = false;
+      let expiredScribbit = scribbit;
+      if (scribbit.status === 'alive') {
+        const titleWatchKey =
+          ownerUserId && options.getCreatorTitle
+            ? options.getCreatorTitleWatchKey?.(ownerUserId)
+            : undefined;
+        if (ownerUserId && options.getCreatorTitle && !titleWatchKey) {
+          throw new Error(
+            'Legacy title snapshots require an inventory watch key.'
+          );
+        }
+        const transition = await mutateAliveScribbit(
+          storage,
+          scribbit.id,
+          async (currentScribbit) => {
+            // This lookup runs after WATCH. A transient failure or concurrent
+            // equip change aborts without filing an incomplete/stale card.
+            const creatorTitle =
+              ownerUserId && options.getCreatorTitle
+                ? await options.getCreatorTitle(ownerUserId)
+                : null;
+            return resolveExpiredScribbitStatus(currentScribbit, {
+              creatorTitle,
+            });
+          },
+          {
+            additionalWatchedKeys: [
+              getScribbitBeliefVersionKey(scribbit.id),
+              ...(titleWatchKey ? [titleWatchKey] : []),
+            ],
+          }
+        );
+        if (!transition.scribbit) {
+          await storage.zRem(getExpiringScribbitsKey(), [entry.member]);
+          continue;
+        }
+        expiredScribbit = transition.scribbit;
+        transitionedAtExpiry = transition.changed;
+      } else if (expiredScribbit.legacy) {
+        // Persist synthesized V1 stamps for records archived before Legacy Cards.
+        await updateScribbit(storage, expiredScribbit);
+      }
+
+      if (ownerUserId && expiredScribbit.legacy) {
+        await storage.zRem(getUserAliveScribbitsKey(ownerUserId), [
+          scribbit.id,
+        ]);
+        await storage.zAdd(getUserLegacyCardsKey(ownerUserId), {
+          member: expiredScribbit.id,
+          score: expiredScribbit.legacy.archivedDay,
+        });
+      }
+
+      if (expiredScribbit.status === 'legend') {
+        await addLegend(
+          storage,
+          expiredScribbit,
+          expiredScribbit.legacy?.archivedDay ?? expiredScribbit.expiresDay
+        );
+        if (transitionedAtExpiry) legends += 1;
+      } else if (expiredScribbit.status === 'faded' && transitionedAtExpiry) {
+        faded += 1;
+      }
+
+      // Remove the due member only after the terminal record and every required
+      // index are durable. A retry repairs partial work without double-counting.
+      await storage.zRem(getExpiringScribbitsKey(), [entry.member]);
+    }
   }
 
   return { faded, legends };
@@ -1287,8 +1897,13 @@ export const increaseBelief = async (
   storage: ArenaStorage,
   scribbit: Scribbit
 ): Promise<Scribbit> => {
+  if (scribbit.status !== 'alive') return cloneScribbit(scribbit);
   if (scribbit.isFounding) {
-    const belief = await storage.hIncrBy(getFoundingBeliefKey(), scribbit.id, 1);
+    const belief = await storage.hIncrBy(
+      getFoundingBeliefKey(),
+      scribbit.id,
+      1
+    );
 
     return {
       ...cloneScribbit(scribbit),
@@ -1296,20 +1911,52 @@ export const increaseBelief = async (
     };
   }
 
-  await storage.hSetNX(
-    getCommunityBeliefKey(),
-    scribbit.id,
-    scribbit.belief.toString()
+  if (!storage.watch) {
+    throw new Error('Atomic Belief updates require transaction support.');
+  }
+  const scribbitKey = getScribbitKey(scribbit.id);
+  const beliefKey = getCommunityBeliefKey();
+  const beliefVersionKey = getScribbitBeliefVersionKey(scribbit.id);
+
+  for (
+    let attempt = 0;
+    attempt < maximumScribbitTransactionAttempts;
+    attempt += 1
+  ) {
+    let transaction: ArenaTransaction | undefined;
+    try {
+      transaction = await storage.watch(scribbitKey, beliefVersionKey);
+      const currentScribbit = await loadScribbit(storage, scribbit.id);
+      if (!currentScribbit || currentScribbit.status !== 'alive') {
+        await transaction.unwatch();
+        return currentScribbit ?? cloneScribbit(scribbit);
+      }
+
+      await transaction.multi();
+      await transaction.hSetNX(
+        beliefKey,
+        scribbit.id,
+        currentScribbit.belief.toString()
+      );
+      await transaction.hIncrBy(beliefKey, scribbit.id, 1);
+      await transaction.incrBy(beliefVersionKey, 1);
+      const result = await transaction.exec();
+      if (Array.isArray(result) && result.length >= 3) {
+        const belief = Number(result[1]);
+        return {
+          ...currentScribbit,
+          belief: Number.isFinite(belief) ? belief : currentScribbit.belief + 1,
+        };
+      }
+    } catch (error) {
+      await discardArenaTransaction(transaction);
+      throw error;
+    }
+  }
+
+  throw new Error(
+    `Belief for ${scribbit.id} changed too often to update safely.`
   );
-  const belief = await storage.hIncrBy(
-    getCommunityBeliefKey(),
-    scribbit.id,
-    1
-  );
-  return {
-    ...scribbit,
-    belief,
-  };
 };
 
 export const crownScribbit = async (
@@ -1317,18 +1964,11 @@ export const crownScribbit = async (
   scribbitId: string,
   legendTitle: string
 ): Promise<Scribbit | undefined> => {
-  const scribbit = await loadScribbit(storage, scribbitId);
-
-  if (!scribbit || scribbit.isFounding) {
-    return scribbit;
-  }
-
-  const crownedScribbit = {
+  const result = await mutateAliveScribbit(storage, scribbitId, (scribbit) => ({
     ...scribbit,
     legendTitle,
-  };
-  await updateScribbit(storage, crownedScribbit);
-  return crownedScribbit;
+  }));
+  return result.scribbit;
 };
 
 export const recordBattleResultOnScribbits = async (
@@ -1337,11 +1977,6 @@ export const recordBattleResultOnScribbits = async (
   loser: Scribbit,
   winnerXpGain = 0
 ): Promise<void> => {
-  await recordBattleOutcomeOnScribbit(
-    storage,
-    winner.id,
-    'win',
-    winnerXpGain
-  );
+  await recordBattleOutcomeOnScribbit(storage, winner.id, 'win', winnerXpGain);
   await recordBattleOutcomeOnScribbit(storage, loser.id, 'loss', 0);
 };

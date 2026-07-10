@@ -9,8 +9,16 @@ import {
   spar,
   enterRumble,
   backScribbit,
+  fetchRumbleReplay,
+  markLegacyCardsSeen,
 } from '../lib/api';
-import { setArena, getArena, setReplay, takeArenaFocus } from '../lib/registry';
+import {
+  setArena,
+  getArena,
+  setReplay,
+  setSketchbookTab,
+  takeArenaFocus,
+} from '../lib/registry';
 import {
   loadDrawing,
   fitDrawing,
@@ -20,7 +28,15 @@ import {
   canCare,
   releaseRenderedDrawingTextures,
 } from '../lib/scribbits';
-import { CARE_STYLES, ELEMENT_STYLES, EDGE, NAV_SAFE, SPACE, TYPE, UI } from '../lib/theme';
+import {
+  CARE_STYLES,
+  ELEMENT_STYLES,
+  EDGE,
+  NAV_SAFE,
+  SPACE,
+  TYPE,
+  UI,
+} from '../lib/theme';
 import { LivingPaper } from '../lib/livingpaper';
 import {
   ghostButton,
@@ -51,6 +67,8 @@ import { pullCapsule } from '../lib/api';
 import { INK_REWARDS } from '../../shared/arena';
 import type { ArenaState, CareAction, Scribbit } from '../../shared/arena';
 import { showVsCeremony } from '../lib/battleceremony';
+import { openLegacyReturnCeremony } from '../lib/legacycards';
+import { selectNextGoal, type NextGoalCard } from '../lib/nextgoal';
 import {
   dailyDrawTabLabel,
   getDrawEligibility,
@@ -126,7 +144,7 @@ export class ArenaHome extends Scene {
     this.state = state;
     this.cameras.main.fadeIn(180, 255, 247, 232);
     this.build();
-    this.showRumbleReceiptIfNeeded();
+    this.showReturnReceiptsIfNeeded();
     this.events.once('shutdown', () => this.cleanup());
     this.events.on('wake', this.refreshOnWake);
   }
@@ -165,8 +183,12 @@ export class ArenaHome extends Scene {
     let cursor = 40;
     cursor = this.drawTopBar(cursor);
     cursor = this.buildForecastCard(width / 2, cursor + 20);
-    cursor = this.buildActionRow(width / 2, cursor + 20);
-    cursor = this.buildInkTrailCard(width / 2, cursor + 20);
+    if (this.state.drawnToday) {
+      cursor = this.buildNextGoalCard(width / 2, cursor + 20);
+    } else {
+      cursor = this.buildActionRow(width / 2, cursor + 20);
+      cursor = this.buildInkTrailCard(width / 2, cursor + 20);
+    }
     cursor = this.buildChampionPoster(width / 2, cursor + 20);
     this.focusEntrantsY = cursor + 44;
     cursor = this.buildEntrantsBracket(cursor + 44);
@@ -205,12 +227,18 @@ export class ArenaHome extends Scene {
     this.input.on('pointermove', this.onPointerMove, this);
     this.input.on('pointerup', this.onPointerUp, this);
     this.input.on('pointerupoutside', this.onPointerUp, this);
-    this.input.on('wheel', (_p: unknown, _o: unknown, _dx: number, dy: number) => {
-      // Wheel nudges the TARGET; update() eases the camera toward it.
-      this.scrollVelocity = 0;
-      this.targetScrollY = Phaser.Math.Clamp(this.targetScrollY + dy * 0.5, 0, this.maxScroll);
-    });
-
+    this.input.on(
+      'wheel',
+      (_p: unknown, _o: unknown, _dx: number, dy: number) => {
+        // Wheel nudges the TARGET; update() eases the camera toward it.
+        this.scrollVelocity = 0;
+        this.targetScrollY = Phaser.Math.Clamp(
+          this.targetScrollY + dy * 0.5,
+          0,
+          this.maxScroll
+        );
+      }
+    );
   }
 
   private onPointerDown(pointer: Phaser.Input.Pointer): void {
@@ -276,10 +304,15 @@ export class ArenaHome extends Scene {
 
     // Inertial fling: apply decaying velocity.
     if (Math.abs(this.scrollVelocity) > 0.1) {
-      this.scrollY = Phaser.Math.Clamp(this.scrollY + this.scrollVelocity, 0, this.maxScroll);
+      this.scrollY = Phaser.Math.Clamp(
+        this.scrollY + this.scrollVelocity,
+        0,
+        this.maxScroll
+      );
       this.targetScrollY = this.scrollY;
       this.scrollVelocity *= 0.92; // friction
-      if (this.scrollY <= 0 || this.scrollY >= this.maxScroll) this.scrollVelocity = 0;
+      if (this.scrollY <= 0 || this.scrollY >= this.maxScroll)
+        this.scrollVelocity = 0;
       this.cameras.main.setScroll(0, this.scrollY);
       return;
     }
@@ -310,7 +343,15 @@ export class ArenaHome extends Scene {
   // --- Top bar + live countdown ---------------------------------------------
   private drawTopBar(y: number): number {
     const { width } = this.scale;
-    handLettered(this, width / 2, y + 26, 'SCRIBBITS ARENA', 40, UI.ink, true).setDepth(2);
+    handLettered(
+      this,
+      width / 2,
+      y + 26,
+      'SCRIBBITS ARENA',
+      40,
+      UI.ink,
+      true
+    ).setDepth(2);
     const dayLine = label(
       this,
       EDGE + 72,
@@ -325,8 +366,18 @@ export class ArenaHome extends Scene {
     // Live countdown chip.
     const chipY = y + 132;
     const chip = this.add.container(width / 2, chipY);
-    const bg = this.add.rectangle(0, 0, width - 120, 52, UI.creamHex, 1).setStrokeStyle(3, UI.inkHex, 1);
-    this.countdownLabel = label(this, 0, 0, this.countdownText(), 27, UI.coralText, true);
+    const bg = this.add
+      .rectangle(0, 0, width - 120, 52, UI.creamHex, 1)
+      .setStrokeStyle(3, UI.inkHex, 1);
+    this.countdownLabel = label(
+      this,
+      0,
+      0,
+      this.countdownText(),
+      27,
+      UI.coralText,
+      true
+    );
     chip.add([bg, this.countdownLabel]);
     this.countdownTimer = this.time.addEvent({
       delay: 1000,
@@ -335,23 +386,33 @@ export class ArenaHome extends Scene {
     });
 
     // Ink chip — the Mystery Ink balance, tappable to open the capsule machine.
-    // Pinned to the viewport so it stays reachable while the page scrolls.
+    // It belongs to the scrolling header; the Daily Ink Trail remains available below.
     this.buildInkChip(width - EDGE - 6, y + 80);
 
     return chipY + 30;
   }
 
-  // The "🫙 Ink: N" chip. Scroll-fixed, taps into the capsule machine. Its label
+  // The "🫙 Ink: N" chip. Part of the scrolling header and taps into the capsule machine. Its label
   // is stored so ink-earn floats and pull results can update it in place.
   private buildInkChip(x: number, y: number): void {
-    const chip = this.add.container(x, y).setScrollFactor(0).setDepth(120);
-    const t = label(this, 0, 0, `🫙 Ink: ${this.state.myInk ?? 0}`, TYPE.caption, UI.ink, true).setOrigin(1, 0.5);
+    const chip = this.add.container(x, y).setDepth(120);
+    const t = label(
+      this,
+      0,
+      0,
+      `🫙 Ink: ${this.state.myInk ?? 0}`,
+      TYPE.caption,
+      UI.ink,
+      true
+    ).setOrigin(1, 0.5);
     const bg = this.add
       .rectangle(10, 0, t.width + 30, 44, UI.creamHex, 1)
       .setOrigin(1, 0.5)
       .setStrokeStyle(3, UI.inkHex, 1)
       .setInteractive({ useHandCursor: true });
-    bg.on('pointerup', () => { if (!this.didDrag()) this.openCapsuleMachine(); });
+    bg.on('pointerup', () => {
+      if (!this.didDrag()) this.openCapsuleMachine();
+    });
     chip.add([bg, t]);
     this.inkChipLabel = t;
   }
@@ -365,7 +426,13 @@ export class ArenaHome extends Scene {
     setArena(this, this.state);
     this.inkChipLabel?.setText(`🫙 Ink: ${next}`);
     floatReward(this, x, y, `+${amount} 🫙`, UI.goldText, 3000, true);
-    if (this.inkChipLabel) this.tweens.add({ targets: this.inkChipLabel, scale: 1.25, duration: 140, yoyo: true });
+    if (this.inkChipLabel)
+      this.tweens.add({
+        targets: this.inkChipLabel,
+        scale: 1.25,
+        duration: 140,
+        yoyo: true,
+      });
   }
 
   private openCapsuleMachine(): void {
@@ -377,10 +444,23 @@ export class ArenaHome extends Scene {
       onPull: async (operationId) => {
         const result = await pullCapsule(operationId);
         if (!result.ok) return { error: result.error };
+        this.state = {
+          ...this.state,
+          myInk: result.data.ink,
+          myPens: [...result.data.inventory.pens],
+          nextCapsuleCost: result.data.nextCost,
+          capsuleProgress: result.data.progress,
+        };
+        setArena(this, this.state);
+        this.inkChipLabel?.setText(`🫙 Ink: ${result.data.ink}`);
         return result.data;
       },
       // On close, re-fetch so the roster/ink/palette reflect the server truth.
       onClose: () => void this.refresh(),
+      onViewCollection: () => {
+        setSketchbookTab(this, 'collection');
+        fadeToScene(this, 'Sketchbook');
+      },
     });
   }
 
@@ -433,12 +513,27 @@ export class ArenaHome extends Scene {
     if (fillRatio > 0) {
       card.add(
         this.add
-          .rectangle(trackX + 3, -10, Math.max(6, (trackWidth - 6) * fillRatio), 20, ready ? UI.gold : UI.coral, 1)
+          .rectangle(
+            trackX + 3,
+            -10,
+            Math.max(6, (trackWidth - 6) * fillRatio),
+            20,
+            ready ? UI.gold : UI.coral,
+            1
+          )
           .setOrigin(0, 0.5)
       );
     }
     card.add(
-      label(this, trackX + trackWidth / 2, -10, `${ink} / ${cost} Ink`, TYPE.caption, UI.ink, true)
+      label(
+        this,
+        trackX + trackWidth / 2,
+        -10,
+        `${ink} / ${cost} Ink`,
+        TYPE.caption,
+        UI.ink,
+        true
+      )
     );
 
     const pullButton = button(
@@ -454,9 +549,10 @@ export class ArenaHome extends Scene {
     if (!ready) pullButton.setAlpha(0.78);
     card.add(pullButton);
 
-    const pityCopy = progress.pityRemaining === 1
-      ? 'EPIC GUARANTEED NEXT'
-      : `EPIC IN ≤ ${progress.pityRemaining} PULLS`;
+    const pityCopy =
+      progress.pityRemaining === 1
+        ? 'EPIC GUARANTEED NEXT'
+        : `EPIC IN ≤ ${progress.pityRemaining} PULLS`;
     card.add(
       label(
         this,
@@ -472,6 +568,119 @@ export class ArenaHome extends Scene {
     return centerY + height / 2;
   }
 
+  private buildNextGoalCard(x: number, y: number): number {
+    const goal = selectNextGoal(this.state);
+    const width = this.scale.width - EDGE * 2;
+    const height = 380;
+    const centerY = y + height / 2;
+    const card = stickerCard(this, x, centerY, width, height, {
+      tapeColor: goal.actionKind === 'wait' ? UI.tapeAlt : UI.tape,
+      tilt: -0.25,
+      gold: goal.actionKind === 'capsule',
+    });
+    const heading = goal.actionKind === 'wait' ? '✓ ALL SET' : '✦ NEXT GOAL';
+    card.add(label(this, 0, -160, heading, TYPE.caption, UI.coralText, true));
+    card.add(
+      label(this, 0, -122, goal.title.toUpperCase(), TYPE.title, UI.ink, true)
+        .setWordWrapWidth(width - 80)
+        .setLineSpacing(-5)
+    );
+    card.add(
+      label(this, 0, -62, goal.detail, TYPE.body, UI.inkSoft, true)
+        .setWordWrapWidth(width - 86)
+        .setLineSpacing(5)
+    );
+
+    const evidenceLines = this.nextGoalEvidenceLines(goal);
+    card.add(
+      label(this, 0, 18, evidenceLines.join('\n'), TYPE.caption, UI.ink, true)
+        .setWordWrapWidth(width - 76)
+        .setLineSpacing(6)
+    );
+
+    if (goal.actionKind === 'wait') {
+      const readyStamp = this.add
+        .rectangle(0, 138, width - 180, 58, UI.creamHex, 1)
+        .setStrokeStyle(3, UI.goldHex, 1);
+      card.add(readyStamp);
+      card.add(
+        label(
+          this,
+          0,
+          138,
+          '⏳ RETURN AFTER THE RUMBLE',
+          TYPE.caption,
+          UI.goldText,
+          true
+        )
+      );
+    } else {
+      card.add(
+        button(
+          this,
+          0,
+          138,
+          `${goal.buttonLabel.toUpperCase()} →`,
+          () => this.runNextGoal(goal, y),
+          width - 180,
+          goal.actionKind === 'capsule' ? UI.gold : UI.coral,
+          UI.ink
+        )
+      );
+    }
+    return centerY + height / 2;
+  }
+
+  private nextGoalEvidenceLines(goal: NextGoalCard): string[] {
+    const lines: string[] = [];
+    const scribbit = goal.evidence.featuredScribbit;
+    if (scribbit) {
+      const levelCopy =
+        scribbit.nextLevelExperienceThreshold === null
+          ? `Lv${scribbit.level} MAX`
+          : `Lv${scribbit.level} · ${Math.max(
+              0,
+              scribbit.nextLevelExperienceThreshold -
+                scribbit.currentExperiencePoints
+            )} XP to Lv${scribbit.level + 1}`;
+      const lifeCopy =
+        scribbit.daysLeft <= 0 ? 'last day' : `${scribbit.daysLeft}d left`;
+      lines.push(
+        `${levelCopy} · ♥ ${scribbit.currentBelief}/${scribbit.legendBeliefThreshold} · ${lifeCopy}`
+      );
+    }
+    const capsule = goal.evidence.capsule;
+    const capsuleCopy =
+      capsule.currentInk >= capsule.nextCapsuleCost
+        ? 'Capsule ready'
+        : `${Math.max(
+            0,
+            capsule.nextCapsuleCost - capsule.currentInk
+          )} Ink to capsule`;
+    lines.push(
+      `${capsuleCopy} · ${capsule.discoveredItems}/${capsule.totalCollectibleItems} collected`
+    );
+    return lines;
+  }
+
+  private runNextGoal(goal: NextGoalCard, y: number): void {
+    if (goal.actionKind === 'enter') {
+      this.doEnter(goal.targetScribbit);
+      return;
+    }
+    if (goal.actionKind === 'back') {
+      this.scrollTo((this.focusEntrantsY ?? y) - 120);
+      return;
+    }
+    if (goal.actionKind === 'capsule') {
+      this.openCapsuleMachine();
+      return;
+    }
+    if (goal.actionKind === 'care') {
+      this.doCare(goal.targetScribbit, goal.careAction);
+    }
+  }
+
   private countdownText(): string {
     const remaining = this.state.rumbleResolvesAt - Date.now();
     return `⚔️ Rumble resolves in ${formatCountdown(remaining)}`;
@@ -485,31 +694,84 @@ export class ArenaHome extends Scene {
     const height = 126;
     const centerY = y + height / 2;
 
-    const card = stickerCard(this, x, centerY, width, height, { tapeColor: UI.tapeAlt, tilt: -0.6 });
+    const card = stickerCard(this, x, centerY, width, height, {
+      tapeColor: UI.tapeAlt,
+      tilt: -0.6,
+    });
 
     const glyphX = -width / 2 + 66;
-    const ring = this.add.circle(glyphX, 0, 38, style.primary, 0.16).setStrokeStyle(4, style.primary, 0.9);
+    const ring = this.add
+      .circle(glyphX, 0, 38, style.primary, 0.16)
+      .setStrokeStyle(4, style.primary, 0.9);
     card.add(ring);
-    const glyph = this.add.text(glyphX, 0, style.emoji, { fontFamily: 'sans-serif', fontSize: '46px' }).setOrigin(0.5);
+    const glyph = this.add
+      .text(glyphX, 0, style.emoji, {
+        fontFamily: 'sans-serif',
+        fontSize: '46px',
+      })
+      .setOrigin(0.5);
     card.add(glyph);
     this.animateWeatherGlyph(glyph, this.state.forecast.boostedElement, ring);
 
     const textX = glyphX + 70;
-    card.add(label(this, textX, -38, "TONIGHT'S FORECAST", 20, style.primaryText, true).setOrigin(0, 0.5));
-    const blurb = label(this, textX, -6, this.state.forecast.blurb, TYPE.caption, UI.ink, true).setOrigin(0, 0.5);
+    card.add(
+      label(
+        this,
+        textX,
+        -38,
+        "TONIGHT'S FORECAST",
+        20,
+        style.primaryText,
+        true
+      ).setOrigin(0, 0.5)
+    );
+    const blurb = label(
+      this,
+      textX,
+      -6,
+      this.state.forecast.blurb,
+      TYPE.caption,
+      UI.ink,
+      true
+    ).setOrigin(0, 0.5);
     blurb.setWordWrapWidth(width - (textX + width / 2) - 24);
     card.add(blurb);
 
-    card.add(this.miniChip(textX + 8, 42, `${style.emoji} ${style.label} +15%`, style.primary));
-    card.add(this.miniChip(textX + 200, 42, `${nerf.emoji} ${nerf.label} −10%`, UI.inkSoftHex));
+    card.add(
+      this.miniChip(
+        textX + 8,
+        42,
+        `${style.emoji} ${style.label} +15%`,
+        style.primary
+      )
+    );
+    card.add(
+      this.miniChip(
+        textX + 200,
+        42,
+        `${nerf.emoji} ${nerf.label} −10%`,
+        UI.inkSoftHex
+      )
+    );
 
     return centerY + height / 2;
   }
 
-  private miniChip(x: number, y: number, text: string, color: number): Phaser.GameObjects.Container {
+  private miniChip(
+    x: number,
+    y: number,
+    text: string,
+    color: number
+  ): Phaser.GameObjects.Container {
     const c = this.add.container(x, y);
-    const t = label(this, 0, 0, text, TYPE.caption, '#ffffff', true).setOrigin(0, 0.5);
-    const bg = this.add.rectangle(-8, 0, t.width + 24, 34, color, 1).setOrigin(0, 0.5).setStrokeStyle(2, UI.inkHex, 1);
+    const t = label(this, 0, 0, text, TYPE.caption, '#ffffff', true).setOrigin(
+      0,
+      0.5
+    );
+    const bg = this.add
+      .rectangle(-8, 0, t.width + 24, 34, color, 1)
+      .setOrigin(0, 0.5)
+      .setStrokeStyle(2, UI.inkHex, 1);
     c.add([bg, t]);
     return c;
   }
@@ -520,21 +782,52 @@ export class ArenaHome extends Scene {
     ring: Phaser.GameObjects.Arc
   ): void {
     if (element === 'ember') {
-      this.tweens.add({ targets: glyph, scale: 1.14, duration: 900, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+      this.tweens.add({
+        targets: glyph,
+        scale: 1.14,
+        duration: 900,
+        yoyo: true,
+        repeat: -1,
+        ease: 'Sine.easeInOut',
+      });
     } else if (element === 'storm') {
       this.weatherTimer = this.time.addEvent({
         delay: 1600,
         loop: true,
         callback: () => {
           if (!this.scene.isActive()) return;
-          this.tweens.add({ targets: ring, alpha: 0.5, duration: 70, yoyo: true });
-          this.tweens.add({ targets: glyph, angle: 10, duration: 60, yoyo: true });
+          this.tweens.add({
+            targets: ring,
+            alpha: 0.5,
+            duration: 70,
+            yoyo: true,
+          });
+          this.tweens.add({
+            targets: glyph,
+            angle: 10,
+            duration: 60,
+            yoyo: true,
+          });
         },
       });
     } else if (element === 'tide') {
-      this.tweens.add({ targets: glyph, y: glyph.y + 8, duration: 1400, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+      this.tweens.add({
+        targets: glyph,
+        y: glyph.y + 8,
+        duration: 1400,
+        yoyo: true,
+        repeat: -1,
+        ease: 'Sine.easeInOut',
+      });
     } else {
-      this.tweens.add({ targets: glyph, angle: 7, duration: 1600, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+      this.tweens.add({
+        targets: glyph,
+        angle: 7,
+        duration: 1600,
+        yoyo: true,
+        repeat: -1,
+        ease: 'Sine.easeInOut',
+      });
     }
   }
 
@@ -546,18 +839,51 @@ export class ArenaHome extends Scene {
     const centerY = y + height / 2;
 
     if (!champ) {
-      const card = stickerCard(this, x, centerY, width, height, { gold: true, tapeColor: UI.tape });
+      const card = stickerCard(this, x, centerY, width, height, {
+        gold: true,
+        tapeColor: UI.tape,
+      });
       const crown = label(this, 0, -56, '👑', 56, UI.ink);
       card.add(crown);
       // Pulsing crown to draw attention.
-      this.tweens.add({ targets: crown, scale: 1.15, duration: 1000, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
-      card.add(label(this, 0, 28, 'The throne is empty.\nDraw a champion tonight!', TYPE.title, UI.ink, true).setLineSpacing(6));
+      this.tweens.add({
+        targets: crown,
+        scale: 1.15,
+        duration: 1000,
+        yoyo: true,
+        repeat: -1,
+        ease: 'Sine.easeInOut',
+      });
+      card.add(
+        label(
+          this,
+          0,
+          28,
+          'The throne is empty.\nDraw a champion tonight!',
+          TYPE.title,
+          UI.ink,
+          true
+        ).setLineSpacing(6)
+      );
       return centerY + height / 2;
     }
 
-    const card = stickerCard(this, x, centerY, width, height, { gold: true, tapeColor: UI.tape });
+    const card = stickerCard(this, x, centerY, width, height, {
+      gold: true,
+      tapeColor: UI.tape,
+    });
     const top = -height / 2;
-    card.add(label(this, 0, top + 30, "☆  WANTED: TODAY'S CHAMPION  ☆", TYPE.caption, UI.goldText, true));
+    card.add(
+      label(
+        this,
+        0,
+        top + 30,
+        "☆  WANTED: TODAY'S CHAMPION  ☆",
+        TYPE.caption,
+        UI.goldText,
+        true
+      )
+    );
 
     // Spotlight glow behind the champion art for dramatic effect.
     const artX = -width / 2 + 86;
@@ -580,32 +906,99 @@ export class ArenaHome extends Scene {
 
     const frame = this.add.graphics();
     frame.fillStyle(UI.creamHex, 1);
-    frame.fillRect(artX - artFrame / 2, artY - artFrame / 2, artFrame, artFrame);
+    frame.fillRect(
+      artX - artFrame / 2,
+      artY - artFrame / 2,
+      artFrame,
+      artFrame
+    );
     frame.lineStyle(4, UI.inkHex, 1);
-    frame.strokeRect(artX - artFrame / 2, artY - artFrame / 2, artFrame, artFrame);
+    frame.strokeRect(
+      artX - artFrame / 2,
+      artY - artFrame / 2,
+      artFrame,
+      artFrame
+    );
     card.add(frame);
     const generation = this.buildGeneration;
     void loadDrawing(this, champ).then((key) => {
       if (!this.isCurrentBuild(generation)) return;
-      const img = fitDrawing(this.add.image(x + artX, centerY + artY, key), 92).setDepth(3);
+      const img = fitDrawing(
+        this.add.image(x + artX, centerY + artY, key),
+        92
+      ).setDepth(3);
       img.setInteractive({ useHandCursor: true });
-      img.on('pointerup', () => { if (!this.didDrag()) this.openDetail(champ); });
-      this.tweens.add({ targets: img, angle: 2, duration: 1400, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+      img.on('pointerup', () => {
+        if (!this.didDrag()) this.openDetail(champ);
+      });
+      this.tweens.add({
+        targets: img,
+        angle: 2,
+        duration: 1400,
+        yoyo: true,
+        repeat: -1,
+        ease: 'Sine.easeInOut',
+      });
     });
 
     const infoX = artX + 80;
-    card.add(label(this, infoX, artY - 34, champ.name.toUpperCase(), TYPE.title, UI.ink, true).setOrigin(0, 0.5));
-    card.add(elementBadge(this, infoX + 60, artY + 6, champ.element, 0.64).setPosition(infoX + 60, artY + 6));
+    card.add(
+      label(
+        this,
+        infoX,
+        artY - 34,
+        champ.name.toUpperCase(),
+        TYPE.title,
+        UI.ink,
+        true
+      ).setOrigin(0, 0.5)
+    );
+    card.add(
+      elementBadge(this, infoX + 60, artY + 6, champ.element, 0.64).setPosition(
+        infoX + 60,
+        artY + 6
+      )
+    );
     card.add(levelBadge(this, infoX + 158, artY + 6, levelOf(champ), 0.66));
-    card.add(label(this, infoX, artY + 44, `${recordText(champ)}  ·  💛 ${champ.belief}`, TYPE.body, UI.inkSoft, true).setOrigin(0, 0.5));
+    card.add(
+      label(
+        this,
+        infoX,
+        artY + 44,
+        `${recordText(champ)}  ·  💛 ${champ.belief}`,
+        TYPE.body,
+        UI.inkSoft,
+        true
+      ).setOrigin(0, 0.5)
+    );
 
     const actionY = height / 2 - 48;
     const belW = 96;
-    const chBtn = careButton(this, -belW / 2 - 6, actionY, '⚔️', 'Challenge', UI.gold, () => this.startBossChallenge(), width - belW - 36, 76);
+    const chBtn = careButton(
+      this,
+      -belW / 2 - 6,
+      actionY,
+      '⚔️',
+      'Challenge',
+      UI.gold,
+      () => this.startBossChallenge(),
+      width - belW - 36,
+      76
+    );
     chBtn.setDepth(3);
     card.add(chBtn);
     // Believe on the champion — optimistic float + count bump handled centrally.
-    const bel = careButton(this, width / 2 - belW / 2 - 14, actionY, '💛', '', UI.coral, () => this.believeOn(champ, x, centerY + actionY), belW, 76);
+    const bel = careButton(
+      this,
+      width / 2 - belW / 2 - 14,
+      actionY,
+      '💛',
+      '',
+      UI.coral,
+      () => this.believeOn(champ, x, centerY + actionY),
+      belW,
+      76
+    );
     bel.setDepth(3);
     card.add(bel);
 
@@ -615,17 +1008,39 @@ export class ArenaHome extends Scene {
   // --- Roster (each card tappable → detail modal) ---------------------------
   private buildRoster(y: number): number {
     const { width } = this.scale;
-    label(this, EDGE + 6, y, 'YOUR ROSTER', TYPE.title, UI.ink, true).setOrigin(0, 0.5);
+    label(this, EDGE + 6, y, 'YOUR ROSTER', TYPE.title, UI.ink, true).setOrigin(
+      0,
+      0.5
+    );
 
     const roster = this.state.myScribbits;
     if (roster.length === 0) {
       const cardY = y + 130;
-      const card = stickerCard(this, width / 2, cardY, width - EDGE * 2, 200, { tilt: 0.5 });
+      const card = stickerCard(this, width / 2, cardY, width - EDGE * 2, 200, {
+        tilt: 0.5,
+      });
       const pencil = label(this, 0, -34, '✏️', 52, UI.ink);
       card.add(pencil);
       // Bouncing pencil to invite action.
-      this.tweens.add({ targets: pencil, y: pencil.y - 8, duration: 700, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
-      card.add(label(this, 0, 40, 'Your arena is empty!\nTap DRAW below to create your first.', TYPE.body, UI.inkSoft, true).setLineSpacing(6));
+      this.tweens.add({
+        targets: pencil,
+        y: pencil.y - 8,
+        duration: 700,
+        yoyo: true,
+        repeat: -1,
+        ease: 'Sine.easeInOut',
+      });
+      card.add(
+        label(
+          this,
+          0,
+          40,
+          'Your arena is empty!\nTap DRAW below to create your first.',
+          TYPE.body,
+          UI.inkSoft,
+          true
+        ).setLineSpacing(6)
+      );
       return cardY + 100;
     }
 
@@ -640,7 +1055,13 @@ export class ArenaHome extends Scene {
     return topY + (count - 1) * (rowH + SPACE.sm) + rowH / 2;
   }
 
-  private buildRosterColumn(scribbit: Scribbit, x: number, y: number, width: number, height: number): void {
+  private buildRosterColumn(
+    scribbit: Scribbit,
+    x: number,
+    y: number,
+    width: number,
+    height: number
+  ): void {
     const card = stickerCard(this, x, y, width, height, { tape: false });
 
     const artSize = 106;
@@ -652,11 +1073,22 @@ export class ArenaHome extends Scene {
     frame.lineStyle(3, UI.inkHex, 1);
     frame.strokeRect(artX - artSize / 2, artY - artSize / 2, artSize, artSize);
     card.add(frame);
-    card.add(levelBadge(this, artX + artSize / 2 - 12, artY - artSize / 2 + 12, levelOf(scribbit), 0.56));
+    card.add(
+      levelBadge(
+        this,
+        artX + artSize / 2 - 12,
+        artY - artSize / 2 + 12,
+        levelOf(scribbit),
+        0.56
+      )
+    );
     const generation = this.buildGeneration;
     void loadDrawing(this, scribbit).then((key) => {
       if (!this.isCurrentBuild(generation)) return;
-      const img = fitDrawing(this.add.image(x + artX, y + artY, key), artSize - 12).setDepth(3);
+      const img = fitDrawing(
+        this.add.image(x + artX, y + artY, key),
+        artSize - 12
+      ).setDepth(3);
       img.setInteractive({ useHandCursor: true });
       // Gentle idle breathing so the creature feels alive on the roster.
       this.tweens.add({
@@ -678,18 +1110,49 @@ export class ArenaHome extends Scene {
           ease: 'Quad.easeOut',
         });
       });
-      img.on('pointerup', () => { if (!this.didDrag()) this.openDetail(scribbit); });
+      img.on('pointerup', () => {
+        if (!this.didDrag()) this.openDetail(scribbit);
+      });
     });
 
     const infoX = artX + 72;
-    const nameLabel = label(this, infoX, -58, scribbit.name, TYPE.body, UI.ink, true).setOrigin(0, 0.5);
+    const nameLabel = label(
+      this,
+      infoX,
+      -58,
+      scribbit.name,
+      TYPE.body,
+      UI.ink,
+      true
+    ).setOrigin(0, 0.5);
     nameLabel.setWordWrapWidth(210);
     card.add(nameLabel);
 
     const mood = moodStyleOf(scribbit);
-    card.add(moodChip(this, infoX + 64, -22, mood.emoji, mood.label, mood.color, 0.82));
-    card.add(lifespanPips(this, infoX + 64, 18, daysLeftFor(scribbit, this.state.dayNumber), 3, 0.74));
-    card.add(label(this, infoX, 54, `${recordText(scribbit)} · 💛 ${scribbit.belief}`, TYPE.caption, UI.inkSoft, true).setOrigin(0, 0.5));
+    card.add(
+      moodChip(this, infoX + 64, -22, mood.emoji, mood.label, mood.color, 0.82)
+    );
+    card.add(
+      lifespanPips(
+        this,
+        infoX + 64,
+        18,
+        daysLeftFor(scribbit, this.state.dayNumber),
+        3,
+        0.74
+      )
+    );
+    card.add(
+      label(
+        this,
+        infoX,
+        54,
+        `${recordText(scribbit)} · 💛 ${scribbit.belief}`,
+        TYPE.caption,
+        UI.inkSoft,
+        true
+      ).setOrigin(0, 0.5)
+    );
 
     // Care buttons.
     const careY = -30;
@@ -716,25 +1179,65 @@ export class ArenaHome extends Scene {
       card.add(btn);
     });
 
-    // Spar + Enter Rumble row (Enter only shows if not entered / drawn today).
-    card.add(careButton(this, width / 2 - 138, 42, '🥊', 'Spar', UI.coralDeep, () => this.doSpar(scribbit), 214, 58));
+    // Entry is promoted into the post-draw Next Goal card; roster keeps Spar.
+    card.add(
+      careButton(
+        this,
+        width / 2 - 138,
+        42,
+        '🥊',
+        'Spar',
+        UI.coralDeep,
+        () => this.doSpar(scribbit),
+        214,
+        58
+      )
+    );
   }
 
   // --- TONIGHT'S BRACKET gallery (entrants, tappable, Back on each) ----------
   private buildEntrantsBracket(y: number): number {
     const { width } = this.scale;
-    label(this, EDGE + 6, y, "🏟️ TONIGHT'S BRACKET", TYPE.title, UI.ink, true).setOrigin(0, 0.5);
+    label(
+      this,
+      EDGE + 6,
+      y,
+      "🏟️ TONIGHT'S BRACKET",
+      TYPE.title,
+      UI.ink,
+      true
+    ).setOrigin(0, 0.5);
     // Scout-score chip on the right of the header.
     this.buildCloutChip(width - EDGE - 6, y);
 
     const entrants = this.state.todayEntrants ?? [];
     if (entrants.length === 0) {
       const cardY = y + 110;
-      const card = stickerCard(this, width / 2, cardY, width - EDGE * 2, 150, { tapeColor: UI.tapeAlt, tilt: 0.4 });
+      const card = stickerCard(this, width / 2, cardY, width - EDGE * 2, 150, {
+        tapeColor: UI.tapeAlt,
+        tilt: 0.4,
+      });
       const stadium = label(this, 0, -22, '🏟️', 44, UI.ink);
       card.add(stadium);
-      this.tweens.add({ targets: stadium, scale: 1.1, duration: 1200, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
-      card.add(label(this, 0, 32, 'The arena awaits...\nEnter the rumble to fill the bracket!', TYPE.body, UI.inkSoft, true).setWordWrapWidth(width - 120));
+      this.tweens.add({
+        targets: stadium,
+        scale: 1.1,
+        duration: 1200,
+        yoyo: true,
+        repeat: -1,
+        ease: 'Sine.easeInOut',
+      });
+      card.add(
+        label(
+          this,
+          0,
+          32,
+          'The arena awaits...\nEnter the rumble to fill the bracket!',
+          TYPE.body,
+          UI.inkSoft,
+          true
+        ).setWordWrapWidth(width - 120)
+      );
       return cardY + 75;
     }
 
@@ -755,7 +1258,13 @@ export class ArenaHome extends Scene {
     return topY + rows * (cellH + SPACE.sm);
   }
 
-  private buildEntrantMini(entrant: Scribbit, x: number, y: number, width: number, height: number): void {
+  private buildEntrantMini(
+    entrant: Scribbit,
+    x: number,
+    y: number,
+    width: number,
+    height: number
+  ): void {
     const backed = this.state.myBackedScribbitId === entrant.id;
     const card = stickerCard(this, x, y, width, height, {
       gold: backed,
@@ -776,17 +1285,33 @@ export class ArenaHome extends Scene {
     const generation = this.buildGeneration;
     void loadDrawing(this, entrant).then((key) => {
       if (!this.isCurrentBuild(generation)) return;
-      const img = fitDrawing(this.add.image(x + artX, y + artY, key), artSize - 10).setDepth(3);
+      const img = fitDrawing(
+        this.add.image(x + artX, y + artY, key),
+        artSize - 10
+      ).setDepth(3);
       img.setInteractive({ useHandCursor: true });
-      img.on('pointerup', () => { if (!this.didDrag()) this.openDetail(entrant); });
+      img.on('pointerup', () => {
+        if (!this.didDrag()) this.openDetail(entrant);
+      });
     });
 
     // "Your pick" rosette on backed entrants.
-    if (backed) card.add(rosette(this, artX + artSize / 2 - 4, artY - artSize / 2 - 2, 0.72));
+    if (backed)
+      card.add(
+        rosette(this, artX + artSize / 2 - 4, artY - artSize / 2 - 2, 0.72)
+      );
 
     const infoX = artX + artSize / 2 + 18;
     let cursor = top + 54;
-    const nameLabel = label(this, infoX, cursor, entrant.name, TYPE.body, UI.ink, true).setOrigin(0, 0.5);
+    const nameLabel = label(
+      this,
+      infoX,
+      cursor,
+      entrant.name,
+      TYPE.body,
+      UI.ink,
+      true
+    ).setOrigin(0, 0.5);
     nameLabel.setWordWrapWidth(width - 150);
     card.add(nameLabel);
 
@@ -797,10 +1322,20 @@ export class ArenaHome extends Scene {
     // Back button (or locked/your-pick state).
     cursor = height / 2 - 32;
     const { backLabel, backEnabled, backFill } = this.backButtonState(entrant);
-    const backBtn = careButton(this, 0, cursor, '', backLabel, backFill, () => {
-      if (backEnabled) this.doBack(entrant);
-      else this.showBackLockedToast();
-    }, width - 24, 50);
+    const backBtn = careButton(
+      this,
+      0,
+      cursor,
+      '',
+      backLabel,
+      backFill,
+      () => {
+        if (backEnabled) this.doBack(entrant);
+        else this.showBackLockedToast();
+      },
+      width - 24,
+      50
+    );
     if (!backEnabled && !backed) backBtn.setAlpha(0.78);
     card.add(backBtn);
   }
@@ -825,30 +1360,59 @@ export class ArenaHome extends Scene {
       .filter((entrant): entrant is Scribbit => entrant !== undefined)
       .filter(
         (entrant, index, prioritized) =>
-          prioritized.findIndex((candidate) => candidate.id === entrant.id) === index
+          prioritized.findIndex((candidate) => candidate.id === entrant.id) ===
+          index
       )
       .slice(0, 8);
   }
 
-  private backButtonState(entrant: Scribbit): { backLabel: string; backEnabled: boolean; backFill: number } {
+  private backButtonState(entrant: Scribbit): {
+    backLabel: string;
+    backEnabled: boolean;
+    backFill: number;
+  } {
     const myPick = this.state.myBackedScribbitId;
-    if (myPick === entrant.id) return { backLabel: '✓ Picked', backEnabled: false, backFill: UI.gold };
+    if (myPick === entrant.id)
+      return { backLabel: '✓ Picked', backEnabled: false, backFill: UI.gold };
     if (this.state.myScribbits.some((scribbit) => scribbit.id === entrant.id)) {
-      return { backLabel: 'Your entry', backEnabled: false, backFill: 0xb7aa92 };
+      return {
+        backLabel: 'Your entry',
+        backEnabled: false,
+        backFill: 0xb7aa92,
+      };
     }
-    if (myPick) return { backLabel: 'Pick locked', backEnabled: false, backFill: 0xb7aa92 };
+    if (myPick)
+      return {
+        backLabel: 'Pick locked',
+        backEnabled: false,
+        backFill: 0xb7aa92,
+      };
     return { backLabel: 'Back', backEnabled: true, backFill: UI.coral };
   }
 
   private showBackLockedToast(): void {
-    const pick = this.state.todayEntrants.find((one) => one.id === this.state.myBackedScribbitId);
-    showToast(pick ? `You already backed ${pick.name} tonight — one pick per day!` : 'You already used your Back tonight.');
+    const pick = this.state.todayEntrants.find(
+      (one) => one.id === this.state.myBackedScribbitId
+    );
+    showToast(
+      pick
+        ? `You already backed ${pick.name} tonight — one pick per day!`
+        : 'You already used your Back tonight.'
+    );
   }
 
   // --- Scout-score clout chip -----------------------------------------------
   private buildCloutChip(x: number, y: number): void {
     const chip = this.add.container(x, y);
-    const t = label(this, 0, 0, `🏅 Scout ${this.state.myClout}`, TYPE.caption, UI.ink, true).setOrigin(1, 0.5);
+    const t = label(
+      this,
+      0,
+      0,
+      `🏅 Scout ${this.state.myClout}`,
+      TYPE.caption,
+      UI.ink,
+      true
+    ).setOrigin(1, 0.5);
     const bg = this.add
       .rectangle(8, 0, t.width + 28, 40, UI.gold, 1)
       .setOrigin(1, 0.5)
@@ -865,7 +1429,15 @@ export class ArenaHome extends Scene {
       const drawEligibility = getDrawEligibility(this.state);
       const btnY = y + 70;
       if (!this.state.loggedIn) {
-        dominantButton(this, x, btnY, '🔒 SIGN IN TO DRAW', () => this.startDraw(), width, true);
+        dominantButton(
+          this,
+          x,
+          btnY,
+          '🔒 SIGN IN TO DRAW',
+          () => this.startDraw(),
+          width,
+          true
+        );
         return btnY + 70;
       }
       if (!drawEligibility.canDraw) {
@@ -886,7 +1458,15 @@ export class ArenaHome extends Scene {
         );
         return btnY + 70;
       }
-      dominantButton(this, x, btnY, "✏️ DRAW TODAY'S SCRIBBIT", () => this.startDraw(), width, true);
+      dominantButton(
+        this,
+        x,
+        btnY,
+        "✏️ DRAW TODAY'S SCRIBBIT",
+        () => this.startDraw(),
+        width,
+        true
+      );
       return btnY + 70;
     }
 
@@ -912,15 +1492,19 @@ export class ArenaHome extends Scene {
     const text = this.state.enteredToday
       ? '✓ Pick locked — return after the Rumble for Clout'
       : '✓ Scribbit drawn — enter it from your roster';
-    card.add(label(this, 0, 0, text, TYPE.title, UI.ink, true).setWordWrapWidth(width - 60));
+    card.add(
+      label(this, 0, 0, text, TYPE.title, UI.ink, true).setWordWrapWidth(
+        width - 60
+      )
+    );
     return cardY + 46;
   }
 
-  private showRumbleReceiptIfNeeded(): void {
+  private showRumbleReceiptIfNeeded(afterContinue?: () => void): boolean {
     const receipt = this.state.lastRumbleReceipt;
-    if (!receipt) return;
+    if (!receipt) return false;
     const shownKey = 'lastRumbleReceiptShownDay';
-    if (this.registry.get(shownKey) === receipt.resolvedDay) return;
+    if (this.registry.get(shownKey) === receipt.resolvedDay) return false;
     this.registry.set(shownKey, receipt.resolvedDay);
 
     const { width, height } = this.scale;
@@ -930,18 +1514,29 @@ export class ArenaHome extends Scene {
       .setInteractive();
     layer.add(shade);
 
-    const card = stickerCard(this, width / 2, height / 2, width - 100, 610, {
+    const card = stickerCard(this, width / 2, height / 2, width - 100, 740, {
       gold: receipt.cloutEarned === 3,
       tapeColor: UI.tapeAlt,
     });
     layer.add(card);
 
-    const resultTitle = receipt.cloutEarned === 3
-      ? 'YOU CALLED IT!'
-      : receipt.cloutEarned === 1
-        ? 'FINALIST PICK'
-        : 'SCOUTING REPORT';
-    card.add(label(this, 0, -240, `RUMBLE #${receipt.resolvedDay}`, TYPE.caption, UI.inkSoft, true));
+    const resultTitle =
+      receipt.cloutEarned === 3
+        ? 'YOU CALLED IT!'
+        : receipt.cloutEarned === 1
+          ? 'FINALIST PICK'
+          : 'SCOUTING REPORT';
+    card.add(
+      label(
+        this,
+        0,
+        -240,
+        `RUMBLE #${receipt.resolvedDay}`,
+        TYPE.caption,
+        UI.inkSoft,
+        true
+      )
+    );
     card.add(handLettered(this, 0, -175, resultTitle, 44, UI.ink, true));
     const pickCopy = label(
       this,
@@ -955,9 +1550,10 @@ export class ArenaHome extends Scene {
     pickCopy.setWordWrapWidth(width - 190).setLineSpacing(8);
     card.add(pickCopy);
 
-    const rewardCopy = receipt.cloutEarned > 0
-      ? `+${receipt.cloutEarned} Scout Clout${receipt.inkAwarded > 0 ? ` · +${receipt.inkAwarded} Ink` : ''}`
-      : 'No Clout this time — today is a fresh pick.';
+    const rewardCopy =
+      receipt.cloutEarned > 0
+        ? `+${receipt.cloutEarned} Scout Clout${receipt.inkAwarded > 0 ? ` · +${receipt.inkAwarded} Ink` : ''}`
+        : 'No Clout this time — today is a fresh pick.';
     card.add(
       label(
         this,
@@ -971,32 +1567,150 @@ export class ArenaHome extends Scene {
     );
 
     const drawEligibility = getDrawEligibility(this.state);
-    const nextLabel = this.state.drawnToday
-      ? 'See tonight’s contenders →'
-      : drawEligibility.canDraw
-        ? `Draw Day ${this.state.dayNumber} →`
-        : 'Continue to the Arena →';
+    const nextLabel = afterContinue
+      ? 'Open Legacy Book →'
+      : this.state.drawnToday
+        ? 'See tonight’s contenders →'
+        : drawEligibility.canDraw
+          ? `Draw Day ${this.state.dayNumber} →`
+          : 'Continue to the Arena →';
+    const continueFromReceipt = (): void => {
+      layer.destroy(true);
+      if (afterContinue) {
+        afterContinue();
+        return;
+      }
+      if (this.state.drawnToday) {
+        this.scrollTo((this.focusEntrantsY ?? 0) - 120);
+      } else if (drawEligibility.canDraw) {
+        this.startDraw();
+      } else {
+        showToast(drawEligibility.message);
+      }
+    };
+
+    if (receipt.replayAvailable) {
+      const replayStatus = label(
+        this,
+        0,
+        120,
+        `${receipt.backedName}'s last bout is ready.`,
+        TYPE.caption,
+        UI.inkSoft,
+        true
+      ).setWordWrapWidth(width - 190);
+      card.add(replayStatus);
+      let loadingReplay = false;
+      card.add(
+        button(
+          this,
+          0,
+          190,
+          'WATCH LAST BOUT ▶',
+          () => {
+            if (loadingReplay) return;
+            loadingReplay = true;
+            replayStatus.setText('Threading the Rumble film…');
+            void fetchRumbleReplay(receipt.resolvedDay)
+              .then((result) => {
+                if (!this.scene.isActive() || !layer.active) return;
+                if (!result.ok) {
+                  loadingReplay = false;
+                  replayStatus.setText(result.error).setColor(UI.coralText);
+                  return;
+                }
+                if (afterContinue) {
+                  setSketchbookTab(this, 'sketchbook');
+                }
+                layer.destroy(true);
+                setReplay(
+                  this,
+                  result.data,
+                  afterContinue ? 'Sketchbook' : 'ArenaHome'
+                );
+                this.scene.start('Replay');
+              })
+              .catch(() => {
+                if (!this.scene.isActive() || !layer.active) return;
+                loadingReplay = false;
+                replayStatus
+                  .setText('The Rumble film reel slipped. Try again.')
+                  .setColor(UI.coralText);
+              });
+          },
+          width - 220,
+          UI.gold,
+          UI.ink
+        )
+      );
+      card.add(
+        ghostButton(
+          this,
+          0,
+          310,
+          afterContinue ? 'Skip to Legacy Book →' : nextLabel,
+          continueFromReceipt,
+          width - 260
+        )
+      );
+      return true;
+    }
+
     card.add(
       button(
         this,
         0,
         205,
         nextLabel,
-        () => {
-          layer.destroy(true);
-          if (this.state.drawnToday) {
-            this.scrollTo((this.focusEntrantsY ?? 0) - 120);
-          } else if (drawEligibility.canDraw) {
-            this.startDraw();
-          } else {
-            showToast(drawEligibility.message);
-          }
-        },
+        continueFromReceipt,
         width - 220,
         UI.coral,
         UI.ink
       )
     );
+    return true;
+  }
+
+  private showReturnReceiptsIfNeeded(): void {
+    if (this.showLegacyReturnIfNeeded()) return;
+    this.showRumbleReceiptIfNeeded();
+  }
+
+  private showLegacyReturnIfNeeded(): boolean {
+    const receipt = this.state.legacyReturnReceipt;
+    if (!receipt || receipt.cards.length === 0) return false;
+    const rumbleReceipt = this.state.lastRumbleReceipt;
+    const hasPendingRumbleReceipt =
+      rumbleReceipt !== null &&
+      this.registry.get('lastRumbleReceiptShownDay') !==
+        rumbleReceipt.resolvedDay;
+    const openLegacyBook = (): void => {
+      setSketchbookTab(this, 'sketchbook');
+      fadeToScene(this, 'Sketchbook');
+    };
+
+    let ceremony: Phaser.GameObjects.Container | null = null;
+    ceremony = openLegacyReturnCeremony({
+      scene: this,
+      receipt,
+      continueLabel: hasPendingRumbleReceipt
+        ? 'See Rumble result →'
+        : 'Open Legacy Book →',
+      onContinue: async () => {
+        const result = await markLegacyCardsSeen(receipt.newestArchivedDay);
+        if (!result.ok) return result.error;
+
+        const nextState = { ...this.state, legacyReturnReceipt: null };
+        this.state = nextState;
+        setArena(this, nextState);
+        ceremony?.destroy(true);
+        if (!this.showRumbleReceiptIfNeeded(openLegacyBook)) {
+          openLegacyBook();
+        }
+        return null;
+      },
+    });
+    return ceremony !== null;
   }
 
   private openLegends(): void {
@@ -1006,22 +1720,50 @@ export class ArenaHome extends Scene {
 
   private buildAppTabs(): void {
     appTabBar(this, 'arena', [
-      { key: 'arena', icon: '🏟️', label: 'Arena', onClick: () => this.scrollTo(0) },
-      { key: 'gallery', icon: '🏆', label: 'Gallery', onClick: () => this.openLegends() },
-      { key: 'draw', icon: '✏️', label: dailyDrawTabLabel(this), onClick: () => this.startDraw() },
-      { key: 'battles', icon: '⚔️', label: 'Battles', onClick: () => fadeToScene(this, 'MyBattles') },
-      { key: 'scout', icon: '📖', label: 'Guide', onClick: () => fadeToScene(this, 'Bestiary') },
+      {
+        key: 'arena',
+        icon: '🏟️',
+        label: 'Arena',
+        onClick: () => this.scrollTo(0),
+      },
+      {
+        key: 'gallery',
+        icon: '🏆',
+        label: 'Gallery',
+        onClick: () => this.openLegends(),
+      },
+      {
+        key: 'draw',
+        icon: '✏️',
+        label: dailyDrawTabLabel(this),
+        onClick: () => this.startDraw(),
+      },
+      {
+        key: 'battles',
+        icon: '⚔️',
+        label: 'Battles',
+        onClick: () => fadeToScene(this, 'MyBattles'),
+      },
+      {
+        key: 'scout',
+        icon: '📖',
+        label: 'Guide',
+        onClick: () => fadeToScene(this, 'Bestiary'),
+      },
     ]);
   }
 
   // --- Detail modal (the one component, wired for context) ------------------
   private openDetail(scribbit: Scribbit): void {
     const mine = this.state.myScribbits.some((one) => one.id === scribbit.id);
-    const isEntrant = this.state.todayEntrants.some((one) => one.id === scribbit.id);
+    const isEntrant = this.state.todayEntrants.some(
+      (one) => one.id === scribbit.id
+    );
     const actions: DetailModalActions = {};
     if (mine) {
       actions.onSpar = (s) => this.doSpar(s);
-      actions.onCare = () => showToast('Feed, pat, or train from the roster card 🍓');
+      actions.onCare = () =>
+        showToast('Feed, pat, or train from the roster card 🍓');
       // Enter is only meaningful for a drawn-but-not-yet-entered scribbit.
       if (this.state.drawnToday && !this.state.enteredToday) {
         actions.onEnter = (s) => this.doEnter(s);
@@ -1029,7 +1771,7 @@ export class ArenaHome extends Scene {
         actions.enterEnabled = true;
       }
     } else {
-      actions.canBelieve = true;
+      actions.canBelieve = scribbit.status === 'alive';
       if (isEntrant) {
         const { backLabel, backEnabled } = this.backButtonState(scribbit);
         actions.onBack = (s) => this.doBack(s);
@@ -1147,7 +1889,9 @@ export class ArenaHome extends Scene {
   }
 
   private applyScribbitUpdate(updated: Scribbit): void {
-    const nextRoster = this.state.myScribbits.map((one) => (one.id === updated.id ? updated : one));
+    const nextRoster = this.state.myScribbits.map((one) =>
+      one.id === updated.id ? updated : one
+    );
     const nextState = { ...this.state, myScribbits: nextRoster };
     this.state = nextState;
     setArena(this, nextState);
@@ -1171,7 +1915,8 @@ export class ArenaHome extends Scene {
 
   // Reconcile a belief count into the snapshot wherever the scribbit appears.
   private applyBelief(id: string, belief: number): void {
-    const patch = (s: Scribbit): Scribbit => (s.id === id ? { ...s, belief } : s);
+    const patch = (s: Scribbit): Scribbit =>
+      s.id === id ? { ...s, belief } : s;
     const next: ArenaState = {
       ...this.state,
       champion: this.state.champion ? patch(this.state.champion) : null,
@@ -1201,9 +1946,22 @@ export class ArenaHome extends Scene {
   private showChallengerPicker(alive: Scribbit[]): void {
     const { width, height } = this.scale;
     const overlay = this.add.container(0, 0).setScrollFactor(0).setDepth(500);
-    const shade = this.add.rectangle(width / 2, height / 2, width, height, 0x1a1320, 0.72).setScrollFactor(0).setInteractive();
+    const shade = this.add
+      .rectangle(width / 2, height / 2, width, height, 0x1a1320, 0.72)
+      .setScrollFactor(0)
+      .setInteractive();
     overlay.add(shade);
-    overlay.add(label(this, width / 2, height * 0.3, 'Pick your challenger', TYPE.display * 0.62, UI.cream, true).setScrollFactor(0));
+    overlay.add(
+      label(
+        this,
+        width / 2,
+        height * 0.3,
+        'Pick your challenger',
+        TYPE.display * 0.62,
+        UI.cream,
+        true
+      ).setScrollFactor(0)
+    );
 
     alive.slice(0, 3).forEach((scribbit, index) => {
       const slotX = width / 2 + (index - (alive.length - 1) / 2) * 200;
@@ -1213,7 +1971,9 @@ export class ArenaHome extends Scene {
       const generation = this.buildGeneration;
       void loadDrawing(this, scribbit).then((key) => {
         if (!this.isCurrentBuild(generation)) return;
-        const img = fitDrawing(this.add.image(slotX, height * 0.5, key), 120).setScrollFactor(0).setDepth(501);
+        const img = fitDrawing(this.add.image(slotX, height * 0.5, key), 120)
+          .setScrollFactor(0)
+          .setDepth(501);
         img.setInteractive({ useHandCursor: true });
         img.on('pointerup', () => {
           overlay.destroy(true);
@@ -1221,9 +1981,28 @@ export class ArenaHome extends Scene {
         });
         overlay.add(img);
       });
-      overlay.add(label(this, slotX, height * 0.5 + 110, scribbit.name, TYPE.body, UI.cream, true).setScrollFactor(0));
+      overlay.add(
+        label(
+          this,
+          slotX,
+          height * 0.5 + 110,
+          scribbit.name,
+          TYPE.body,
+          UI.cream,
+          true
+        ).setScrollFactor(0)
+      );
     });
-    overlay.add(ghostButton(this, width / 2, height * 0.68, 'Cancel', () => overlay.destroy(true), 200).setScrollFactor(0));
+    overlay.add(
+      ghostButton(
+        this,
+        width / 2,
+        height * 0.68,
+        'Cancel',
+        () => overlay.destroy(true),
+        200
+      ).setScrollFactor(0)
+    );
   }
 
   private async resolveBoss(scribbit: Scribbit): Promise<void> {
@@ -1261,17 +2040,23 @@ export class ArenaHome extends Scene {
     this.state = result.data;
     setArena(this, result.data);
     this.build();
-    this.showRumbleReceiptIfNeeded();
+    this.showReturnReceiptsIfNeeded();
   }
 
   private showError(message: string): void {
     if (this.errorPanelRef) return;
     const { width, height } = this.scale;
-    this.errorPanelRef = errorPanel(this, width / 2, height / 2, message, () => {
-      this.errorPanelRef?.destroy();
-      this.errorPanelRef = null;
-      void this.refresh();
-    });
+    this.errorPanelRef = errorPanel(
+      this,
+      width / 2,
+      height / 2,
+      message,
+      () => {
+        this.errorPanelRef?.destroy();
+        this.errorPanelRef = null;
+        void this.refresh();
+      }
+    );
     this.errorPanelRef.container.setScrollFactor(0);
   }
 }

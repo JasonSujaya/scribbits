@@ -21,14 +21,20 @@ enter daily community rumbles. The app identity is `scribbits` in
    into a continuous arena fight without WebSockets or client-side authority.
 3. **Collect:** drawing, care, and the first spar win fill the Daily Ink Trail.
    Earned-only Ink opens Mystery Capsules with a discounted daily pull, permanent
-   discovery album, collector rank, and visible Epic pity countdown. Rewards are
-   cosmetic and never change drawing analysis or combat stats.
+   discovery album, collector rank, and visible Epic pity countdown. Accessories
+   and status rewards are cosmetic; pens are expressive sidegrades that can
+   change the normalized build split without adding stat points.
 4. **Back:** choose another player’s contender before the nightly resolution.
    Champion backers earn 3 Clout; runner-up backers earn 1.
-5. **Return:** keep the visible UTC-day streak alive. The scheduler resolves the bracket, crowns the Champion, creates
-   the next Rumble post, and comments the real result on the resolved post.
+5. **Return:** keep the visible UTC-day streak alive. The scheduler resolves
+   the bracket, crowns the Champion, stores the backed Scribbit's last played
+   bout, creates the next Rumble post, and comments the real result on the
+   resolved post. New archived pages lead into the scouting receipt, its
+   server-selected replay, and then the Legacy Book.
 6. **Become a Legend:** Scribbits live for three days. Winning a crown or
-   reaching the Belief threshold preserves one in the Gallery.
+   reaching the Belief threshold preserves one in the public Gallery. Every
+   completed Scribbit also becomes an immutable card in its creator's private,
+   paginated Legacy Book.
 
 The game is designed for a short Reddit-feed visit: a lightweight inline card
 shows today's forecast and the player's next action, while Phaser loads only in
@@ -39,7 +45,9 @@ expanded mode.
 Scribbits stores Reddit identity for attribution and the drawings, battle
 history, inventory, streak, and scores required by the game. Drawings are
 uploaded through Reddit media hosting; submissions fail closed if that upload
-fails. Every community Scribbit card has a **Report** action. Owners have a
+fails. The server analyzes an authoritative base PNG and rejects decorated PNGs
+that change pixels outside declared accessory regions or erase base pixels.
+Every community Scribbit card has a **Report** action. Owners have a
 two-step **Delete** action, and the Field Guide includes a two-step option to
 delete all stored game data.
 
@@ -47,18 +55,34 @@ delete all stored game data.
 
 - `src/shared/arena.ts`: client/server contract and gameplay constants.
 - `src/shared/analyzer-core.ts`: deterministic PNG analyzer used by both sides.
+- `src/shared/cosmetics.ts`: authoritative 28-item reward catalog shared by the
+  server, client inventory tools, and Gallery Collection.
 - `src/shared/combat`: deterministic fixed-tick combat domain, balance tuning,
   transcript contract, and regression tests.
 - `src/server/index.ts`: Hono server entry point.
 - `src/server/routes/api.ts`: REST API mounted at `/api`.
 - `src/server/core`: Redis-backed domain logic for arena days, Scribbits, ink,
   clout, battles, forecasts, daily jobs, and Reddit result comments.
+- `src/server/core/legacy.ts`: personal Legacy indexing, migration, cursor
+  pagination, and one-time return receipts over immutable retired snapshots.
+- `src/server/core/battleStore.ts`: battle reports, per-Scribbit history, and
+  the ordered featured Rumble report index used by overnight receipts.
 - `src/client/game.ts`: Phaser bootstrapping.
 - `src/client/scenes`: game screens.
 - `src/client/lib/inkmesh.ts`: deterministic Mesh2D geometry and stat-driven
   motion rules, kept pure for regression testing.
 - `src/client/lib/continuousreplay.ts`: transcript validation and checkpoint
   interpolation used by the live-looking replay.
+- `src/client/lib/shapepowerpresentation.ts`: transcript-driven Inkquake, Nib
+  Halo, Smearstep, and Colorburst presentation plans.
+- `src/client/lib/cosmeticpreview.ts`: shared reward-art preview used by the
+  capsule ceremony and Collection.
+- `src/client/lib/collectionbook.ts`: paper-native discovery album, paging, and
+  reward detail presentation.
+- `src/client/lib/legacycards.ts`: paper-native Legacy deck, archival detail,
+  finish treatments, pagination controls, and return ceremony.
+- `src/client/lib/nextgoal.ts`: pure deterministic post-draw action priority and
+  compact XP, Belief, lifespan, Ink, and collection evidence.
 - `src/client/lib/livesprite.ts`: Phaser Mesh2D Inkbody renderer with a 3x3
   Canvas fallback.
 - `src/client/lib`: Phaser UI, API wrapper, drawing canvas, modals, and effects.
@@ -116,12 +140,14 @@ Run these before handing off changes:
 npm run verify
 ```
 
-`npm run verify` runs type-check, lint, simulation tests, and build.
+`npm run verify` runs type-check, lint, 63 simulation groups, and build.
 
 `npm run test:sim` covers deterministic analyzer, Inkbody mesh geometry, combat
 determinism, payload caps, archetype balance, slot neutrality, battle,
-storage, daily job, ink, clout, expiry, and Swiss rumble behavior. It does not
-replace route or browser testing.
+storage, daily job, ink, title equip, immutable Legacy snapshots, personal
+Legacy paging/receipts, privacy deletion, expiry repair, and Swiss rumble
+behavior. It also covers featured Rumble report selection/purge and Next Goal
+priority/evidence. It does not replace route or browser testing.
 
 ## Deployment
 
