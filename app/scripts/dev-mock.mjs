@@ -20,6 +20,7 @@ const transparentPng = Buffer.from(
 // (portrait/landscape network PNGs) instead of the old 1x1 transparent stub.
 // Rotated by a stable hash of the requested id so every scribbit is consistent.
 const mockDrawingFiles = ['drawing-tall.png', 'drawing-wide.png', 'drawing-square.png'];
+const submittedDrawingBytes = new Map();
 const hashId = (id) => {
   let hash = 0;
   for (let index = 0; index < id.length; index += 1) {
@@ -28,6 +29,9 @@ const hashId = (id) => {
   return hash;
 };
 const drawingBytesFor = (id) => {
+  const submittedDrawing = submittedDrawingBytes.get(id);
+  if (submittedDrawing) return submittedDrawing;
+
   const name = mockDrawingFiles[hashId(id) % mockDrawingFiles.length];
   const filePath = join(mockAssetRoot, name);
   return existsSync(filePath) ? readFileSync(filePath) : transparentPng;
@@ -596,6 +600,7 @@ const memory = {
   drawnToday: false,
   enteredToday: false,
   myBackedScribbitId: null,
+  playStreakDays: 4,
   myClout: 14,
   myInk: 35,
   inventory: {
@@ -615,6 +620,8 @@ const memory = {
   capsulePullCount: 0,
   discountedCapsuleUtcDate: null,
   beliefVotes: new Set(),
+  hiddenScribbitIds: new Set(),
+  reportCounts: new Map(),
   cloutBoard: {
     top: [
       { username: 'inkwell_kay', clout: 42 },
@@ -815,19 +822,60 @@ const arenaState = () => {
   return {
     dayNumber: memory.dayNumber,
     loggedIn: true,
+    myUsername: 'mock_player',
     forecast: memory.forecast,
-    champion: cloneScribbit(memory.champion),
+    champion: memory.hiddenScribbitIds.has(memory.champion.id)
+      ? null
+      : cloneScribbit(memory.champion),
     myScribbits: memory.myScribbits.map(cloneScribbit),
     drawnToday: memory.drawnToday,
     enteredToday: memory.enteredToday,
     rumbleEntrants: memory.todayEntrants.length,
     communityLegendCount: memory.legends.length,
     rumbleResolvesAt: nextUtcMidnightMs(),
-    todayEntrants: memory.todayEntrants.map(cloneScribbit),
+    todayEntrants: memory.todayEntrants
+      .filter((scribbit) => !memory.hiddenScribbitIds.has(scribbit.id))
+      .map(cloneScribbit),
     myBackedScribbitId: memory.myBackedScribbitId,
+    playStreakDays: memory.playStreakDays,
     myClout: memory.myClout,
     myInk: memory.myInk,
     myPens: [...memory.inventory.pens],
+  };
+};
+
+const isFreshPlayerPreview = (request) => {
+  const referrer = request.headers.referer;
+  if (typeof referrer !== 'string') return false;
+
+  try {
+    return new URL(referrer).searchParams.has('fresh');
+  } catch {
+    return false;
+  }
+};
+
+const freshPlayerArenaState = () => {
+  const submittedScribbits = memory.myScribbits.filter((scribbit) =>
+    scribbit.id.startsWith('mock-submitted-')
+  );
+  const submittedScribbitIds = new Set(
+    submittedScribbits.map((scribbit) => scribbit.id)
+  );
+  const enteredToday = memory.todayEntrants.some((scribbit) =>
+    submittedScribbitIds.has(scribbit.id)
+  );
+
+  return {
+    ...arenaState(),
+    myScribbits: submittedScribbits.map(cloneScribbit),
+    drawnToday: submittedScribbits.length > 0,
+    enteredToday,
+    myBackedScribbitId: memory.myBackedScribbitId,
+    playStreakDays: 1,
+    myClout: 0,
+    myInk: submittedScribbits.length * 2,
+    myPens: [],
   };
 };
 
@@ -844,7 +892,25 @@ const handleApi = async (request, response, url) => {
   const path = url.pathname;
 
   if (method === 'GET' && path === '/api/arena') {
-    sendJson(response, 200, arenaState());
+    sendJson(
+      response,
+      200,
+      isFreshPlayerPreview(request) ? freshPlayerArenaState() : arenaState()
+    );
+    return;
+  }
+
+  if (method === 'GET' && path === '/api/splash') {
+    const state = isFreshPlayerPreview(request) ? freshPlayerArenaState() : arenaState();
+    sendJson(response, 200, {
+      loggedIn: state.loggedIn,
+      forecast: state.forecast,
+      rumbleEntrants: state.rumbleEntrants,
+      rumbleResolvesAt: state.rumbleResolvesAt,
+      drawnToday: state.drawnToday,
+      backedToday: state.myBackedScribbitId !== null,
+      playStreakDays: state.playStreakDays,
+    });
     return;
   }
 
@@ -890,13 +956,25 @@ const handleApi = async (request, response, url) => {
   }
 
   if (method === 'GET' && path === '/api/my-battles') {
-    sendJson(response, 200, memory.myBattles.map((report) => ({ ...report })));
+    sendJson(
+      response,
+      200,
+      memory.myBattles
+        .filter(
+          (report) =>
+            !memory.hiddenScribbitIds.has(report.a.id) &&
+            !memory.hiddenScribbitIds.has(report.b.id)
+        )
+        .map((report) => ({ ...report }))
+    );
     return;
   }
 
   if (method === 'GET' && path === '/api/legends') {
     sendJson(response, 200, {
-      legends: memory.legends.map(cloneScribbit),
+      legends: memory.legends
+        .filter((scribbit) => !memory.hiddenScribbitIds.has(scribbit.id))
+        .map(cloneScribbit),
       myFaded: memory.myFaded.map(cloneScribbit),
     });
     return;
@@ -950,6 +1028,11 @@ const handleApi = async (request, response, url) => {
       return;
     }
 
+    if (memory.myScribbits.some((entry) => entry.id === scribbitId)) {
+      sendError(response, 400, 'Back another Redditor\'s Scribbit, not your own.');
+      return;
+    }
+
     if (memory.myBackedScribbitId) {
       sendError(response, 409, 'You already backed a Scribbit today.');
       return;
@@ -957,6 +1040,75 @@ const handleApi = async (request, response, url) => {
 
     memory.myBackedScribbitId = scribbitId;
     sendJson(response, 200, { backed: scribbitId });
+    return;
+  }
+
+  if (method === 'POST' && path === '/api/remove-scribbit') {
+    const body = await readJsonBody(request);
+    const scribbitId = readScribbitId(body);
+    const scribbit = memory.myScribbits.find((entry) => entry.id === scribbitId);
+
+    if (!scribbit || scribbit.isFounding) {
+      sendError(response, 404, 'That Scribbit is not yours to remove.');
+      return;
+    }
+
+    for (const list of [memory.myScribbits, memory.todayEntrants, memory.legends, memory.myFaded]) {
+      const index = list.findIndex((entry) => entry.id === scribbitId);
+      if (index >= 0) list.splice(index, 1);
+    }
+    memory.myBattles = memory.myBattles.filter(
+      (report) => report.a.id !== scribbitId && report.b.id !== scribbitId
+    );
+    submittedDrawingBytes.delete(scribbitId);
+    sendJson(response, 200, { removed: scribbitId });
+    return;
+  }
+
+  if (method === 'POST' && path === '/api/report-scribbit') {
+    const body = await readJsonBody(request);
+    const scribbitId = readScribbitId(body);
+    const scribbit = findVisibleScribbit(scribbitId);
+
+    if (!scribbit || scribbit.isFounding) {
+      sendError(response, 404, 'That community Scribbit is no longer available.');
+      return;
+    }
+    if (memory.myScribbits.some((entry) => entry.id === scribbitId)) {
+      sendError(response, 400, 'Remove your own Scribbit instead of reporting it.');
+      return;
+    }
+
+    memory.hiddenScribbitIds.add(scribbitId);
+    const reportCount = (memory.reportCounts.get(scribbitId) ?? 0) + 1;
+    memory.reportCounts.set(scribbitId, reportCount);
+    sendJson(response, 200, {
+      hidden: scribbitId,
+      removedForEveryone: reportCount >= 3,
+    });
+    return;
+  }
+
+  if (method === 'POST' && path === '/api/delete-my-data') {
+    const removedScribbits = memory.myScribbits.filter(
+      (scribbit) => !scribbit.isFounding
+    ).length;
+    const ownedIds = new Set(memory.myScribbits.map((scribbit) => scribbit.id));
+    memory.myScribbits.splice(0, memory.myScribbits.length);
+    for (let index = memory.todayEntrants.length - 1; index >= 0; index -= 1) {
+      if (ownedIds.has(memory.todayEntrants[index]?.id)) {
+        memory.todayEntrants.splice(index, 1);
+      }
+    }
+    memory.myBattles = memory.myBattles.filter(
+      (report) => !ownedIds.has(report.a.id) && !ownedIds.has(report.b.id)
+    );
+    memory.myBackedScribbitId = null;
+    memory.myClout = 0;
+    memory.myInk = 0;
+    memory.playStreakDays = 0;
+    memory.hiddenScribbitIds.clear();
+    sendJson(response, 200, { deleted: true, removedScribbits });
     return;
   }
 
@@ -1060,6 +1212,15 @@ const handleApi = async (request, response, url) => {
     }
 
     const id = `mock-submitted-${Date.now()}`;
+    if (
+      typeof body?.imageDataUrl === 'string' &&
+      body.imageDataUrl.startsWith('data:image/png;base64,')
+    ) {
+      submittedDrawingBytes.set(
+        id,
+        Buffer.from(body.imageDataUrl.slice('data:image/png;base64,'.length), 'base64')
+      );
+    }
     const scribbit = makeScribbit({
       id,
       name,
@@ -1178,6 +1339,29 @@ const sendReload = () => {
   }
 };
 
+const resetFreshPreview = () => {
+  const submittedIds = new Set(
+    memory.myScribbits
+      .filter((scribbit) => scribbit.id.startsWith('mock-submitted-'))
+      .map((scribbit) => scribbit.id)
+  );
+  for (const list of [memory.myScribbits, memory.todayEntrants]) {
+    for (let index = list.length - 1; index >= 0; index -= 1) {
+      if (submittedIds.has(list[index]?.id)) list.splice(index, 1);
+    }
+  }
+  memory.myBattles = memory.myBattles.filter(
+    (report) =>
+      !submittedIds.has(report.a.id) && !submittedIds.has(report.b.id)
+  );
+  for (const scribbitId of submittedIds) submittedDrawingBytes.delete(scribbitId);
+  memory.drawnToday = false;
+  memory.enteredToday = false;
+  memory.myBackedScribbitId = null;
+  memory.hiddenScribbitIds.clear();
+  memory.reportCounts.clear();
+};
+
 if (autoReload && existsSync(clientRoot)) {
   try {
     watch(clientRoot, { recursive: true }, () => {
@@ -1192,6 +1376,14 @@ if (autoReload && existsSync(clientRoot)) {
 const server = createServer(async (request, response) => {
   try {
     const url = new URL(request.url ?? '/', `http://localhost:${port}`);
+
+    if (
+      request.method === 'GET' &&
+      url.pathname === '/' &&
+      url.searchParams.has('fresh')
+    ) {
+      resetFreshPreview();
+    }
 
     if (url.pathname.startsWith('/api/')) {
       await handleApi(request, response, url);

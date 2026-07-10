@@ -2,8 +2,36 @@
 
 Scribbits Arena is a Devvit Web + Phaser game for Reddit. Players draw a
 512x512 creature, the server derives stats from the PNG, and living Scribbits
-enter daily community rumbles. The repository folder is still named Remonsta,
-but the current app identity is `scribbits` in `package.json` and `devvit.json`.
+enter daily community rumbles. The app identity is `scribbits` in
+`package.json` and `devvit.json`.
+
+## How to play
+
+1. **Draw:** one Scribbit per UTC day. The live preview explains the mapping:
+   big = HP, pointy = attack, small footprint = speed, colorful = critical
+   chance. Dominant color chooses the element.
+2. **Fight:** submission automatically enters tonight's Rumble. A new player's
+   first Scribbit also receives an immediate exhibition so the core promise is
+   visible in the first session.
+3. **Back:** choose another player’s contender before the nightly resolution.
+   Champion backers earn 3 Clout; runner-up backers earn 1.
+4. **Return:** keep the visible UTC-day streak alive. The scheduler resolves the bracket, crowns the Champion, creates
+   the next Rumble post, and comments the real result on the resolved post.
+5. **Become a Legend:** Scribbits live for three days. Winning a crown or
+   reaching the Belief threshold preserves one in the Gallery.
+
+The game is designed for a short Reddit-feed visit: a lightweight inline card
+shows today's forecast and the player's next action, while Phaser loads only in
+expanded mode.
+
+## Data and safety
+
+Scribbits stores Reddit identity for attribution and the drawings, battle
+history, inventory, streak, and scores required by the game. Drawings are
+uploaded through Reddit media hosting; submissions fail closed if that upload
+fails. Every community Scribbit card has a **Report** action. Owners have a
+two-step **Delete** action, and the Field Guide includes a two-step option to
+delete all stored game data.
 
 ## Architecture
 
@@ -12,7 +40,7 @@ but the current app identity is `scribbits` in `package.json` and `devvit.json`.
 - `src/server/index.ts`: Hono server entry point.
 - `src/server/routes/api.ts`: REST API mounted at `/api`.
 - `src/server/core`: Redis-backed domain logic for arena days, Scribbits, ink,
-  clout, battles, forecasts, and daily jobs.
+  clout, battles, forecasts, daily jobs, and Reddit result comments.
 - `src/client/game.ts`: Phaser bootstrapping.
 - `src/client/scenes`: game screens.
 - `src/client/lib`: Phaser UI, API wrapper, drawing canvas, modals, and effects.
@@ -59,7 +87,8 @@ Agent-safe shortcut:
 ```
 
 That shortcut runs a watch build beside the mock server and auto-refreshes the
-browser after rebuilds.
+browser after rebuilds. Open `http://localhost:8902/?fresh` to exercise the
+brand-new-player route with an empty roster and no unlocked metagame items.
 
 ## Verification
 

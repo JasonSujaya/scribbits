@@ -7,6 +7,7 @@ import { mountLivingPaper } from '../lib/livingpaper';
 import { label, handLettered, stickerCard, errorPanel, appTabBar, fadeToScene } from '../lib/ui';
 import type { ErrorPanel } from '../lib/ui';
 import type { BattleReport } from '../../shared/arena';
+import { dailyDrawTabLabel, navigateToDailyDraw } from '../lib/draweligibility';
 
 const ROW_INNER_HEIGHT = 110;
 
@@ -39,7 +40,7 @@ export class MyBattles extends Scene {
     appTabBar(this, 'battles', [
       { key: 'arena', icon: '🏟️', label: 'Arena', onClick: () => fadeToScene(this, 'ArenaHome') },
       { key: 'gallery', icon: '🏆', label: 'Gallery', onClick: () => fadeToScene(this, 'Sketchbook') },
-      { key: 'draw', icon: '✏️', label: 'Draw', onClick: () => fadeToScene(this, 'Draw') },
+      { key: 'draw', icon: '✏️', label: dailyDrawTabLabel(this), onClick: () => navigateToDailyDraw(this) },
       { key: 'battles', icon: '⚔️', label: 'Battles', onClick: () => undefined },
       { key: 'scout', icon: '📖', label: 'Guide', onClick: () => fadeToScene(this, 'Bestiary') },
     ]);
@@ -59,9 +60,11 @@ export class MyBattles extends Scene {
     const { width } = this.scale;
     if (battles.length === 0) {
       const card = stickerCard(this, width / 2, 560, width - 80, 220, { tilt: -0.6 });
-      card.add(label(this, 0, -40, '⚔️', 48, UI.ink));
+      const swords = label(this, 0, -40, '⚔️', 48, UI.ink);
+      card.add(swords);
+      this.tweens.add({ targets: swords, angle: { from: -10, to: 10 }, duration: 800, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
       card.add(
-        label(this, 0, 30, 'No battles yet.\nDraw a scribbit and enter the rumble!', TYPE.body, UI.inkSoft, true).setLineSpacing(8)
+        label(this, 0, 30, 'No battles yet!\nDraw a scribbit and spar to start fighting!', TYPE.body, UI.inkSoft, true).setLineSpacing(8)
       );
       return;
     }

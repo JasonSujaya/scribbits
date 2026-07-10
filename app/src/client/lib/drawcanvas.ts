@@ -5,8 +5,8 @@
 
 export const CANVAS_SIZE = 512;
 
-// The cream page color. Shown behind a transparent backing store while drawing,
-// and composited under the strokes at export time so the PNG is self-framed.
+// The cream page color is visual-only. The exported backing store stays
+// transparent so the server sees the same pixels as the live analyzer.
 const PAPER_COLOR = '#fdf3df';
 
 export type BrushMode = 'draw' | 'erase';
@@ -125,8 +125,8 @@ export class DrawCanvas {
     return this.ctx.getImageData(0, 0, CANVAS_SIZE, CANVAS_SIZE);
   }
 
-  // PNG data URL for submission: composite the strokes over cream paper on a
-  // throwaway canvas so the exported image is self-framed (opaque cream page).
+  // PNG data URL for submission. Keep untouched pixels transparent so the
+  // server analyzer and live preview share one source of truth.
   // An optional `bake` callback runs after the strokes are drawn but before the
   // export, receiving the 512x512 context so attached accessories can be welded
   // permanently into the PNG (the server never sees a separate sticker layer).
@@ -136,8 +136,6 @@ export class DrawCanvas {
     out.height = CANVAS_SIZE;
     const context = out.getContext('2d');
     if (!context) return this.element.toDataURL('image/png');
-    context.fillStyle = PAPER_COLOR;
-    context.fillRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
     context.drawImage(this.element, 0, 0);
     if (bake) bake(context);
     return out.toDataURL('image/png');

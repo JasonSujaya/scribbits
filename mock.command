@@ -9,6 +9,7 @@ ensure_node_modules
 
 cd "$app_dir"
 
+node scripts/make-test-drawing.mjs
 "$(local_bin vite)" build
 
 printf "\nScribbits browser mock will run at http://localhost:%s\n" "${PORT:-8902}"

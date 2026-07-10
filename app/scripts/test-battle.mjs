@@ -49,6 +49,10 @@ execFileSync(
     'src/server/core/rumble.ts',
     'src/server/core/scribbit.ts',
     'src/server/core/dailyJob.ts',
+    'src/server/core/resultComment.ts',
+    'src/server/core/streak.ts',
+    'src/server/core/moderation.ts',
+    'src/server/core/privacy.ts',
     'src/client/lib/pens.ts',
   ],
   { cwd: repoRoot, stdio: 'inherit' }
@@ -66,7 +70,11 @@ const forecastCore = require(join(outDir, 'server', 'core', 'forecast.js'));
 const inkCatalog = require(join(outDir, 'server', 'core', 'ink.js'));
 const inkStore = require(join(outDir, 'server', 'core', 'inkStore.js'));
 const rumble = require(join(outDir, 'server', 'core', 'rumble.js'));
+const resultComment = require(join(outDir, 'server', 'core', 'resultComment.js'));
 const scribbitCore = require(join(outDir, 'server', 'core', 'scribbit.js'));
+const streakCore = require(join(outDir, 'server', 'core', 'streak.js'));
+const moderationCore = require(join(outDir, 'server', 'core', 'moderation.js'));
+const privacyCore = require(join(outDir, 'server', 'core', 'privacy.js'));
 const clientPens = require(join(outDir, 'client', 'lib', 'pens.js'));
 
 const passedChecks = [];
@@ -74,6 +82,32 @@ const passedChecks = [];
 const pass = (name) => {
   passedChecks.push(name);
 };
+
+const firstPlayStreak = streakCore.advancePlayStreak(
+  { lastPlayedDateKey: undefined, days: 0 },
+  '20260708'
+);
+assert.deepEqual(
+  firstPlayStreak,
+  { lastPlayedDateKey: '20260708', days: 1 },
+  'first expanded session should begin a one-day streak'
+);
+assert.deepEqual(
+  streakCore.advancePlayStreak(firstPlayStreak, '20260708'),
+  firstPlayStreak,
+  'same-day actions must not inflate the streak'
+);
+const continuedPlayStreak = streakCore.advancePlayStreak(
+  firstPlayStreak,
+  '20260709'
+);
+assert.equal(continuedPlayStreak.days, 2, 'next UTC day should continue the streak');
+assert.equal(
+  streakCore.advancePlayStreak(continuedPlayStreak, '20260711').days,
+  1,
+  'missing a UTC day should restart the streak'
+);
+pass('daily play streak continuation and reset');
 
 const makeScribbit = (overrides = {}) => {
   return {
@@ -255,6 +289,94 @@ const createMemoryStorage = () => {
   };
 };
 
+const moderationStorage = createMemoryStorage();
+const firstSafetyReport = await moderationCore.reportAndHideScribbit(
+  moderationStorage,
+  'reporter-one',
+  'unsafe-scribbit',
+  1000
+);
+assert.equal(firstSafetyReport.created, true, 'first reporter should create a report');
+assert.equal(firstSafetyReport.reportCount, 1, 'first report should count once');
+const duplicateSafetyReport = await moderationCore.reportAndHideScribbit(
+  moderationStorage,
+  'reporter-one',
+  'unsafe-scribbit',
+  2000
+);
+assert.equal(duplicateSafetyReport.created, false, 'duplicate reporter must be idempotent');
+assert.equal(duplicateSafetyReport.reportCount, 1, 'duplicate report must not inflate count');
+assert.equal(
+  (await moderationCore.getHiddenScribbitIds(moderationStorage, 'reporter-one')).has(
+    'unsafe-scribbit'
+  ),
+  true,
+  'reported content should be hidden from its reporter'
+);
+pass('Scribbit report idempotency and reporter hide');
+
+const privacyStorage = createMemoryStorage();
+const privacyScribbit = makeScribbit({
+  id: 'privacy-scribbit',
+  artist: 'privacy-player',
+  bornDay: 2,
+  expiresDay: 5,
+});
+await scribbitCore.storeScribbit(
+  privacyStorage,
+  'privacy-user-id',
+  privacyScribbit
+);
+await scribbitCore.addRumbleEntrant(privacyStorage, 2, privacyScribbit.id);
+await privacyStorage.zAdd(clout.getCloutKey(), {
+  member: 'privacy-user-id',
+  score: 12,
+});
+await streakCore.recordDailyPlay(
+  privacyStorage,
+  'privacy-user-id',
+  new Date(Date.UTC(2026, 6, 8))
+);
+await moderationCore.reportAndHideScribbit(
+  privacyStorage,
+  'privacy-user-id',
+  'community-target',
+  1000
+);
+await privacyCore.recordUserBeliefTarget(
+  privacyStorage,
+  'privacy-user-id',
+  'community-target',
+  '20260708'
+);
+const privacyDeletion = await privacyCore.deletePlayerData(
+  privacyStorage,
+  'privacy-user-id',
+  2
+);
+assert.equal(privacyDeletion.removedScribbits, 1, 'privacy deletion should count owned Scribbits');
+assert.equal(
+  await scribbitCore.loadScribbit(privacyStorage, privacyScribbit.id),
+  undefined,
+  'privacy deletion should remove owned Scribbit records'
+);
+assert.equal(
+  await privacyStorage.zScore(clout.getCloutKey(), 'privacy-user-id'),
+  undefined,
+  'privacy deletion should remove Clout identity'
+);
+assert.equal(
+  (await streakCore.loadPlayStreak(privacyStorage, 'privacy-user-id')).days,
+  0,
+  'privacy deletion should remove streak data'
+);
+assert.equal(
+  (await moderationCore.getHiddenScribbitIds(privacyStorage, 'privacy-user-id')).size,
+  0,
+  'privacy deletion should remove report-hide data'
+);
+pass('player data deletion removes identity and owned content');
+
 const forecast = forecastCore.generateForecastForDay(7);
 const alpha = makeScribbit({
   id: 'alpha',
@@ -293,7 +415,34 @@ assert.deepEqual(analyzerOne, analyzerTwo, 'analyzer-core should be deterministi
 assert.equal(analyzerOne.inkedPixels, 400, 'synthetic fixture should count ink');
 assert.equal(sumStats(analyzerOne.stats), arena.STAT_BUDGET, 'analyzer stats sum');
 assert.equal(analyzerOne.element, 'ember', 'red fixture should map to ember');
-pass('analyzer-core deterministic RGBA fixture');
+
+const opaquePaperRgba = new Uint8Array(32 * 32 * 4);
+for (let pixel = 0; pixel < 32 * 32; pixel += 1) {
+  const offset = pixel * 4;
+  opaquePaperRgba[offset] = 253;
+  opaquePaperRgba[offset + 1] = 243;
+  opaquePaperRgba[offset + 2] = 223;
+  opaquePaperRgba[offset + 3] = 255;
+}
+for (let y = 4; y < 24; y += 1) {
+  for (let x = 5; x < 25; x += 1) {
+    const offset = (y * 32 + x) * 4;
+    opaquePaperRgba[offset] = 255;
+    opaquePaperRgba[offset + 1] = 32;
+    opaquePaperRgba[offset + 2] = 16;
+  }
+}
+const opaquePaperAnalysis = analyzerCore.analyze({
+  data: opaquePaperRgba,
+  width: 32,
+  height: 32,
+});
+assert.deepEqual(
+  opaquePaperAnalysis,
+  analyzerOne,
+  'opaque legacy paper must analyze exactly like transparent live strokes'
+);
+pass('analyzer-core transparent and opaque-paper parity');
 
 const reportOne = battle.simulate(alpha, beta, 12345, forecast, 'exhibition');
 const reportTwo = battle.simulate(alpha, beta, 12345, forecast, 'exhibition');
@@ -896,6 +1045,11 @@ assert.equal(caughtUpJob.skipped, false, 'lagged stored day should run');
 assert.equal(caughtUpJob.newDay, 4, 'lagged stored day should catch up to canonical day');
 assert.equal(caughtUpJob.resolvedDay, 3, 'catch-up should finish on the latest due rumble');
 assert.ok(caughtUpJob.reportCount > forcedJob.reportCount, 'catch-up should resolve more than one day');
+assert.deepEqual(
+  caughtUpJob.resolutions.map((resolution) => resolution.resolvedDay),
+  [2, 3],
+  'catch-up should expose every resolved day for Reddit result comments'
+);
 const resolvedDayTwoEntrant = await scribbitCore.loadScribbit(
   catchUpStorage,
   dayTwoEntrant.id
@@ -912,7 +1066,48 @@ assert.ok(
   resolvedDayThreeEntrant.wins + resolvedDayThreeEntrant.losses > 0,
   'day-three entrant should resolve during catch-up'
 );
-pass('nightly job idempotent canonical day, force math, and catch-up');
+const dayTwoRecordBeforeRecovery = {
+  wins: resolvedDayTwoEntrant.wins,
+  losses: resolvedDayTwoEntrant.losses,
+};
+await arenaStore.setCurrentArenaDay(catchUpStorage, 2);
+const recoveredOutboxJob = await dailyJob.runNightlyArenaJob(catchUpStorage, {
+  now: new Date(Date.UTC(2026, 6, 7)),
+});
+assert.deepEqual(
+  recoveredOutboxJob.resolutions.map((resolution) => resolution.resolvedDay),
+  [2, 3],
+  'retry should recover both persisted resolution payloads'
+);
+const dayTwoRecordAfterRecovery = await scribbitCore.loadScribbit(
+  catchUpStorage,
+  dayTwoEntrant.id
+);
+assert.deepEqual(
+  { wins: dayTwoRecordAfterRecovery.wins, losses: dayTwoRecordAfterRecovery.losses },
+  dayTwoRecordBeforeRecovery,
+  'outbox recovery must not resolve stored fights twice'
+);
+const pendingCatchUpResolutions = await dailyJob.loadPendingArenaResolutions(
+  catchUpStorage
+);
+assert.deepEqual(
+  pendingCatchUpResolutions.map((resolution) => resolution.resolvedDay),
+  [2, 3],
+  'unpublished resolutions should remain in the outbox'
+);
+for (const resolution of pendingCatchUpResolutions) {
+  await dailyJob.acknowledgeArenaResolution(
+    catchUpStorage,
+    resolution.resolvedDay
+  );
+}
+assert.equal(
+  (await dailyJob.loadPendingArenaResolutions(catchUpStorage)).length,
+  0,
+  'acknowledged resolution payloads should leave the outbox'
+);
+pass('nightly job idempotent canonical day, catch-up, and outbox recovery');
 
 const cloutPayoutStorage = createMemoryStorage();
 await arenaStore.setCurrentArenaDay(cloutPayoutStorage, 2);
@@ -1014,6 +1209,21 @@ const cloutPayoutJob = await dailyJob.runNightlyArenaJob(cloutPayoutStorage, {
 });
 assert.equal(cloutPayoutJob.skipped, false, 'clout payout job should run');
 assert.equal(
+  cloutPayoutJob.resolutions[0]?.runnerUp?.id,
+  runnerUpId,
+  'nightly result should expose the runner-up'
+);
+assert.equal(
+  cloutPayoutJob.resolutions[0]?.cloutPayout.championBackers,
+  1,
+  'nightly result should expose champion backer payouts'
+);
+assert.equal(
+  cloutPayoutJob.resolutions[0]?.cloutPayout.runnerUpBackers,
+  1,
+  'nightly result should expose runner-up backer payouts'
+);
+assert.equal(
   (await cloutPayoutStorage.zScore(clout.getCloutKey(), 'champion-scout')) ?? 0,
   3,
   'champion backer should receive +3 clout'
@@ -1052,6 +1262,29 @@ assert.equal(
   'runner-up clout should not double on re-run'
 );
 pass('nightly clout payout math and idempotency');
+
+const resultSummary = cloutPayoutJob.resolutions[0];
+assert.ok(resultSummary, 'result-comment fixture should resolve one arena day');
+const resultCommentText = resultComment.formatRumbleResultComment(resultSummary);
+assert.match(resultCommentText, /Rumble #2 results/, 'result comment should name the resolved day');
+assert.match(resultCommentText, new RegExp(resultSummary.champion.name), 'result comment should name the champion');
+assert.match(resultCommentText, /1 champion backers earned \+3 Clout/, 'result comment should report real Clout payouts');
+assert.match(resultCommentText, /Who are you backing/, 'result comment should invite community discussion');
+const foundingResultComment = resultComment.formatRumbleResultComment({
+  ...resultSummary,
+  champion: makeScribbit({
+    id: 'founding-comment-champion',
+    name: 'Arena Smudge',
+    artist: 'not-a-player',
+    isFounding: true,
+  }),
+});
+assert.doesNotMatch(
+  foundingResultComment,
+  /u\/not-a-player/,
+  'founding champions must not be presented as real Reddit users'
+);
+pass('Reddit Rumble result comment uses real resolution data');
 
 const faded = scribbitCore.resolveExpiredScribbitStatus(
   makeScribbit({ id: 'fade-me', belief: 2 })

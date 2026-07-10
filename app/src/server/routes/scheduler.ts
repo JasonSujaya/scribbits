@@ -1,8 +1,13 @@
 import { Hono } from 'hono';
 import type { TaskRequest, TaskResponse } from '@devvit/web/server';
 import { redis } from '@devvit/web/server';
-import { runNightlyArenaJob } from '../core/dailyJob';
-import { createPost } from '../core/post';
+import {
+  acknowledgeArenaResolution,
+  loadPendingArenaResolutions,
+  runNightlyArenaJob,
+} from '../core/dailyJob';
+import { ensureForecastForDay, getCurrentChampion } from '../core/arenaStore';
+import { getOrCreateArenaPost, publishRumbleResultComment } from '../core/post';
 
 export const scheduledTasks = new Hono();
 
@@ -12,15 +17,29 @@ scheduledTasks.post('/nightly-arena', async (c) => {
     .catch(() => undefined);
 
   try {
-    const result = await runNightlyArenaJob(redis, {
-      createPost: async ({ day, forecast, champion }) => {
-        return await createPost({
-          day,
-          forecast,
-          champion,
-        });
-      },
+    const result = await runNightlyArenaJob(redis);
+
+    const currentForecast = await ensureForecastForDay(redis, result.newDay);
+    const currentChampion = await getCurrentChampion(redis);
+    const currentPost = await getOrCreateArenaPost(redis, {
+      day: result.newDay,
+      forecast: currentForecast,
+      champion: currentChampion,
     });
+
+    const pendingResolutions = await loadPendingArenaResolutions(redis);
+    for (const resolution of pendingResolutions) {
+      await getOrCreateArenaPost(redis, {
+        day: resolution.resolvedDay,
+        forecast: resolution.resolvedForecast,
+        champion: resolution.champion,
+      });
+      const commentId = await publishRumbleResultComment(redis, resolution);
+      if (!commentId) {
+        throw new Error(`Rumble #${resolution.resolvedDay} result is still pending publication.`);
+      }
+      await acknowledgeArenaResolution(redis, resolution.resolvedDay);
+    }
 
     if (result.skipped) {
       console.log(
@@ -28,7 +47,7 @@ scheduledTasks.post('/nightly-arena', async (c) => {
       );
     } else {
       console.log(
-        `Advanced arena from day ${result.previousDay} to ${result.newDay}; task ${taskRequest?.name ?? 'nightly-arena'} created post ${result.postId ?? 'none'}`
+        `Advanced arena from day ${result.previousDay} to ${result.newDay}; task ${taskRequest?.name ?? 'nightly-arena'} ensured post ${currentPost.id}`
       );
     }
 

@@ -9,6 +9,12 @@ import { LEVEL_XP_THRESHOLDS, MAX_LEVEL } from '../../shared/arena';
 import { MOOD_STYLES } from './theme';
 import { generateDoodleTexture } from './art';
 
+// Several surfaces can request the same drawing during one render (for example,
+// a battle list containing the same fighter more than once). Phaser's loader
+// does not safely queue the same texture key multiple times, so share one
+// request per scene/key until it settles.
+const pendingDrawingLoads = new WeakMap<Scene, Map<string, Promise<string>>>();
+
 // Texture key for a scribbit's drawing. Stable per id so we load each once.
 export function drawingKey(scribbit: Pick<Scribbit, 'id'>): string {
   return `drawing-${scribbit.id}`;
@@ -43,7 +49,16 @@ export function loadDrawing(scene: Scene, scribbit: Scribbit): Promise<string> {
     return Promise.resolve(fallbackDoodle(scene, scribbit));
   }
 
-  return new Promise((resolve) => {
+  let sceneLoads = pendingDrawingLoads.get(scene);
+  if (!sceneLoads) {
+    sceneLoads = new Map<string, Promise<string>>();
+    pendingDrawingLoads.set(scene, sceneLoads);
+  }
+
+  const pendingLoad = sceneLoads.get(key);
+  if (pendingLoad) return pendingLoad;
+
+  const drawingLoad = new Promise<string>((resolve) => {
     let settled = false;
     const onComplete = (): void => {
       // A load can "succeed" with a degenerate 1x1/transparent texture; if the
@@ -79,6 +94,13 @@ export function loadDrawing(scene: Scene, scribbit: Scribbit): Promise<string> {
       finish(scene.textures.exists(key) ? key : fallbackDoodle(scene, scribbit));
     });
   });
+
+  sceneLoads.set(key, drawingLoad);
+  void drawingLoad.then(() => {
+    if (sceneLoads?.get(key) === drawingLoad) sceneLoads.delete(key);
+  });
+
+  return drawingLoad;
 }
 
 // URLs we know will 404 (founding art job was cancelled). Cheap prefix check so

@@ -293,7 +293,8 @@ export function button(
   text: string,
   onClick: () => void,
   width = 240,
-  fill: number = UI.coral
+  fill: number = UI.coral,
+  textColor = '#ffffff'
 ): Phaser.GameObjects.Container {
   const height = Math.max(MIN_TOUCH, 96);
   const container = scene.add.container(x, y);
@@ -301,7 +302,7 @@ export function button(
     .rectangle(0, 0, width, height, fill, 1)
     .setStrokeStyle(4, 0x2b2016, 1);
   bg.setInteractive({ useHandCursor: true });
-  const txt = label(scene, 0, 0, text, 32, '#ffffff', true);
+  const txt = label(scene, 0, 0, text, 32, textColor, true);
   txt.setWordWrapWidth(width - 24);
   container.add([bg, txt]);
 

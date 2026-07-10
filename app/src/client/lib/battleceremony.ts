@@ -2,10 +2,16 @@
 // result ceremonies. These turn async battles into EVENTS with anticipation.
 
 import { Scene } from 'phaser';
-import type { Scribbit } from '../../shared/arena';
+import type { Scribbit, Element } from '../../shared/arena';
+import { ELEMENT_PREY } from '../../shared/arena';
 import { ELEMENT_STYLES, TYPE, UI } from './theme';
 import { label, elementBadge, levelBadge } from './ui';
 import { loadDrawing, fitDrawing, levelOf } from './scribbits';
+
+// Check if attacker has element advantage over defender.
+function hasAdvantage(attacker: Element, defender: Element): boolean {
+  return ELEMENT_PREY[attacker] === defender;
+}
 
 // Show a dramatic VS screen before battle. Both fighters slide in from opposite
 // sides, element badges clash in the center, then transition to the replay.
@@ -54,6 +60,17 @@ export function showVsCeremony(
   sideA.add(elementBadge(scene, 0, artSizeA / 2 + 80, fighterA.element, 0.8));
   sideA.add(levelBadge(scene, artSizeA / 2 - 20, -artSizeA / 2 + 20, levelOf(fighterA), 0.7));
 
+  // Element advantage indicator for fighter A
+  const aAdvantage = hasAdvantage(fighterA.element, fighterB.element);
+  const aDisadvantage = hasAdvantage(fighterB.element, fighterA.element);
+  if (aAdvantage) {
+    const advLabel = label(scene, 0, artSizeA / 2 + 120, '⬆ ADVANTAGE', 24, '#4faa4f', true);
+    sideA.add(advLabel);
+  } else if (aDisadvantage) {
+    const advLabel = label(scene, 0, artSizeA / 2 + 120, '⬇ WEAK', 24, '#e8555c', true);
+    sideA.add(advLabel);
+  }
+
   // Fighter B (right side)
   const sideB = scene.add.container(width, height / 2);
   layer.add(sideB);
@@ -76,6 +93,15 @@ export function showVsCeremony(
   sideB.add(nameB);
   sideB.add(elementBadge(scene, 0, artSizeB / 2 + 80, fighterB.element, 0.8));
   sideB.add(levelBadge(scene, -artSizeB / 2 + 20, -artSizeB / 2 + 20, levelOf(fighterB), 0.7));
+
+  // Element advantage indicator for fighter B
+  if (aDisadvantage) {
+    const advLabel = label(scene, 0, artSizeB / 2 + 120, '⬆ ADVANTAGE', 24, '#4faa4f', true);
+    sideB.add(advLabel);
+  } else if (aAdvantage) {
+    const advLabel = label(scene, 0, artSizeB / 2 + 120, '⬇ WEAK', 24, '#e8555c', true);
+    sideB.add(advLabel);
+  }
 
   // VS badge in the center
   const vsBadge = scene.add.container(width / 2, height / 2);

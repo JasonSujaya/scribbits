@@ -12,15 +12,21 @@ import type {
   Inventory,
   LegendsState,
   Scribbit,
+  SplashState,
 } from '../../shared/arena';
 import { INK_REWARDS } from '../../shared/arena';
 import { analyze as analyzeDrawing } from '../../shared/analyzer-core';
 import { simulate } from '../core/battle';
-import { loadBattleReportsForUser, saveBattleReport } from '../core/battleStore';
+import {
+  loadBattleReportsForUser,
+  purgeBattleReportsForScribbit,
+  saveBattleReport,
+} from '../core/battleStore';
 import {
   ensureCurrentArenaDay,
   ensureForecastForDay,
   getCurrentChampion,
+  removeCurrentChampionIfMatches,
 } from '../core/arenaStore';
 import {
   claimDailyBack,
@@ -29,7 +35,7 @@ import {
   loadCloutBoard,
 } from '../core/clout';
 import { hashTextToSeed } from '../core/random';
-import { recordDailyPlay } from '../core/dex';
+import { loadPlayStreak, recordDailyPlay } from '../core/streak';
 import {
   awardInk,
   consumeAccessoriesForSubmit,
@@ -44,6 +50,13 @@ import {
 } from '../core/day';
 import { prepareRumbleEntrants } from '../core/rumble';
 import { chooseFoundingSparOpponent } from '../core/species';
+import {
+  clearScribbitReports,
+  getHiddenScribbitIds,
+  reportAndHideScribbit,
+  SCRIBBIT_REPORT_REMOVAL_THRESHOLD,
+} from '../core/moderation';
+import { deletePlayerData, recordUserBeliefTarget } from '../core/privacy';
 import {
   addRumbleEntrant,
   awardScribbitXp,
@@ -61,23 +74,22 @@ import {
   getFadedScribbitsForUser,
   getLegends,
   getRumbleEntrantIds,
+  getRumbleEntrantCount,
+  getScribbitOwner,
   increaseBelief,
   isCareAction,
   isScribbitOwnedByUser,
   loadScribbit,
   loadScribbits,
   markDailyFlag,
-  readDrawingFallback,
   recordBattleOutcomeOnScribbit,
   removeRumbleEntrant,
   releaseDailyCareAction,
   releaseDailyFlags,
-  storeDrawingFallback,
   storeScribbit,
   validateSubmitScribbitRequest,
   type CurrentPlayer,
   type DailyFlagField,
-  type DecodedPngDataUrl,
 } from '../core/scribbit';
 
 type ErrorResponse = ArenaErrorResponse;
@@ -121,6 +133,15 @@ const paymentRequired = (c: HonoContext, message: string) => {
 
 const serverError = (c: HonoContext, message: string) => {
   return c.json<ErrorResponse>({ status: 'error', message }, 500);
+};
+
+const getWritableArenaDay = async (now: Date): Promise<number | undefined> => {
+  const storedDay = await ensureCurrentArenaDay(redis, now);
+  return storedDay < getArenaDayNumber(now) ? undefined : storedDay;
+};
+
+const arenaRolloverConflict = (c: HonoContext) => {
+  return conflict(c, 'The Rumble is resolving. Try again in a moment.');
 };
 
 const getCurrentPlayer = async (): Promise<CurrentPlayer | undefined> => {
@@ -170,22 +191,15 @@ const createScribbitId = (day: number): string => {
   return `scribbit-${day}-${randomUUID().replaceAll('-', '').slice(0, 16)}`;
 };
 
-const uploadOrStoreDrawing = async (
-  scribbitId: string,
-  imageDataUrl: string,
-  decodedPng: DecodedPngDataUrl
-): Promise<string> => {
-  try {
-    const mediaAsset = await media.upload({
-      url: imageDataUrl,
-      type: 'image',
-    });
-    return mediaAsset.mediaUrl;
-  } catch (error) {
-    console.warn('Drawing media upload failed; storing PNG in Redis:', error);
-    await storeDrawingFallback(redis, scribbitId, decodedPng);
-    return `/api/drawing/${scribbitId}`;
-  }
+const uploadDrawing = async (imageDataUrl: string): Promise<string> => {
+  // User drawings must pass through Reddit media hosting. Failing closed keeps
+  // moderation and deletion controls on-platform instead of exposing raw PNGs
+  // from an unreviewed Redis fallback endpoint.
+  const mediaAsset = await media.upload({
+    url: imageDataUrl,
+    type: 'image',
+  });
+  return mediaAsset.mediaUrl;
 };
 
 const loadOwnedAliveScribbit = async (
@@ -236,7 +250,8 @@ api.get('/arena', async (c) => {
   try {
     const now = new Date();
     const utcDateKey = formatUtcDateKey(now);
-    const dayNumber = await ensureCurrentArenaDay(redis, now);
+    const dayNumber = await getWritableArenaDay(now);
+    if (!dayNumber) return arenaRolloverConflict(c);
     await expireDueScribbits(redis, dayNumber);
     const forecast = await ensureForecastForDay(redis, dayNumber);
     const player = await getCurrentPlayer();
@@ -244,12 +259,13 @@ api.get('/arena', async (c) => {
     let drawnToday = false;
     let enteredToday = false;
     let myBackedScribbitId: string | null = null;
+    let playStreakDays = 0;
     let myClout = 0;
     let myInk = 0;
     let myPens: string[] = [];
 
     if (player) {
-      await recordDailyPlay(redis, player.userId, now);
+      playStreakDays = (await recordDailyPlay(redis, player.userId, now)).days;
       const dailyFlags = await getDailyFlags(redis, player.userId, dayNumber);
       const inventory = await loadInventory(redis, player.userId);
       myScribbits = await getAliveScribbitsForUser(redis, player.userId);
@@ -265,21 +281,33 @@ api.get('/arena', async (c) => {
       myPens = inventory.pens;
     }
 
-    const todayEntrants = await loadTodayRumbleEntrants(dayNumber, utcDateKey);
+    const allTodayEntrants = await loadTodayRumbleEntrants(dayNumber, utcDateKey);
+    const hiddenScribbitIds = player
+      ? await getHiddenScribbitIds(redis, player.userId)
+      : new Set<string>();
+    const todayEntrants = allTodayEntrants.filter(
+      (entrant) => !hiddenScribbitIds.has(entrant.id)
+    );
+    const currentChampion = await getCurrentChampion(redis);
 
     return c.json<ArenaState>({
       dayNumber,
       loggedIn: Boolean(player),
+      myUsername: player?.username ?? null,
       forecast,
-      champion: await getCurrentChampion(redis),
+      champion:
+        currentChampion && !hiddenScribbitIds.has(currentChampion.id)
+          ? currentChampion
+          : null,
       myScribbits,
       drawnToday,
       enteredToday,
-      rumbleEntrants: todayEntrants.length,
+      rumbleEntrants: allTodayEntrants.length,
       communityLegendCount: await getCommunityLegendCount(redis),
       rumbleResolvesAt: getNextUtcDayStartMs(now),
       todayEntrants,
       myBackedScribbitId,
+      playStreakDays,
       myClout,
       myInk,
       myPens,
@@ -287,6 +315,36 @@ api.get('/arena', async (c) => {
   } catch (error) {
     console.error('Arena route failed:', error);
     return serverError(c, 'The arena doors are jammed. Try again soon.');
+  }
+});
+
+api.get('/splash', async (c) => {
+  try {
+    const now = new Date();
+    const dayNumber = await ensureCurrentArenaDay(redis, now);
+    const player = await getCurrentPlayer();
+    const dailyFlags = player
+      ? await getDailyFlags(redis, player.userId, dayNumber)
+      : null;
+    const backedScribbitId = player
+      ? await getBackedScribbitId(redis, dayNumber, player.userId)
+      : null;
+    const playStreak = player
+      ? await loadPlayStreak(redis, player.userId)
+      : { days: 0 };
+
+    return c.json<SplashState>({
+      loggedIn: Boolean(player),
+      forecast: await ensureForecastForDay(redis, dayNumber),
+      rumbleEntrants: await getRumbleEntrantCount(redis, dayNumber),
+      rumbleResolvesAt: getNextUtcDayStartMs(now),
+      drawnToday: dailyFlags?.drawnToday ?? false,
+      backedToday: backedScribbitId !== null,
+      playStreakDays: playStreak.days,
+    });
+  } catch (error) {
+    console.error('Splash route failed:', error);
+    return serverError(c, 'The arena preview is still being sketched.');
   }
 });
 
@@ -367,11 +425,7 @@ api.post('/scribbit', async (c) => {
 
     const scribbitId = createScribbitId(dayNumber);
     createdScribbit = { id: scribbitId, day: dayNumber };
-    const imageUrl = await uploadOrStoreDrawing(
-      scribbitId,
-      draft.imageDataUrl,
-      decodedPng
-    );
+    const imageUrl = await uploadDrawing(draft.imageDataUrl);
 
     const scribbit = createScribbit({
       id: scribbitId,
@@ -471,7 +525,8 @@ api.post('/enter-rumble', async (c) => {
 
   try {
     const now = new Date();
-    const dayNumber = await ensureCurrentArenaDay(redis, now);
+    const dayNumber = await getWritableArenaDay(now);
+    if (!dayNumber) return arenaRolloverConflict(c);
     const dailyFlags = await getDailyFlags(redis, player.userId, dayNumber);
 
     if (dailyFlags.enteredToday) {
@@ -534,7 +589,8 @@ api.post('/care', async (c) => {
   try {
     const now = new Date();
     const utcDateKey = formatUtcDateKey(now);
-    const dayNumber = await ensureCurrentArenaDay(redis, now);
+    const dayNumber = await getWritableArenaDay(now);
+    if (!dayNumber) return arenaRolloverConflict(c);
     const scribbit = await loadScribbit(
       redis,
       careRequest.scribbitId,
@@ -640,7 +696,8 @@ api.post('/spar', async (c) => {
   try {
     const now = new Date();
     const utcDateKey = formatUtcDateKey(now);
-    const dayNumber = await ensureCurrentArenaDay(redis, now);
+    const dayNumber = await getWritableArenaDay(now);
+    if (!dayNumber) return arenaRolloverConflict(c);
     const challenger = await loadOwnedAliveScribbit(
       player,
       scribbitId,
@@ -696,8 +753,14 @@ api.get('/my-battles', async (c) => {
   }
 
   try {
+    const hiddenScribbitIds = await getHiddenScribbitIds(redis, player.userId);
+    const reports = await loadBattleReportsForUser(redis, player.userId, 20);
     return c.json<BattleReport[]>(
-      await loadBattleReportsForUser(redis, player.userId, 20)
+      reports.filter(
+        (report) =>
+          !hiddenScribbitIds.has(report.a.id) &&
+          !hiddenScribbitIds.has(report.b.id)
+      )
     );
   } catch (error) {
     console.error('My battles route failed:', error);
@@ -721,7 +784,7 @@ api.post('/believe', async (c) => {
   try {
     const now = new Date();
     const utcDateKey = formatUtcDateKey(now);
-    await ensureCurrentArenaDay(redis, now);
+    if (!(await getWritableArenaDay(now))) return arenaRolloverConflict(c);
     const scribbit = await loadScribbit(redis, scribbitId, utcDateKey);
 
     if (!scribbit) {
@@ -743,6 +806,13 @@ api.post('/believe', async (c) => {
     if (createdBelief !== 1) {
       return conflict(c, 'You already believed in that Scribbit today.');
     }
+
+    await recordUserBeliefTarget(
+      redis,
+      player.userId,
+      scribbit.id,
+      utcDateKey
+    );
 
     const believedScribbit = await increaseBelief(redis, scribbit);
     const freshScribbit = await loadScribbit(
@@ -775,14 +845,8 @@ api.post('/back', async (c) => {
   try {
     const now = new Date();
     const utcDateKey = formatUtcDateKey(now);
-    const dayNumber = await ensureCurrentArenaDay(redis, now);
-
-    if (dayNumber < getArenaDayNumber(now)) {
-      return conflict(
-        c,
-        'Tonight\'s Rumble is resolving. Try the new bracket soon.'
-      );
-    }
+    const dayNumber = await getWritableArenaDay(now);
+    if (!dayNumber) return arenaRolloverConflict(c);
 
     await expireDueScribbits(redis, dayNumber);
     const todayEntrants = await loadTodayRumbleEntrants(dayNumber, utcDateKey);
@@ -792,6 +856,10 @@ api.post('/back', async (c) => {
 
     if (!targetIsInRumble) {
       return badRequest(c, 'Back one of tonight\'s Rumble entrants.');
+    }
+
+    if (await isScribbitOwnedByUser(redis, player.userId, scribbitId)) {
+      return badRequest(c, 'Back another Redditor\'s Scribbit, not your own.');
     }
 
     const backClaim = await claimDailyBack(
@@ -810,6 +878,99 @@ api.post('/back', async (c) => {
   } catch (error) {
     console.error('Back route failed:', error);
     return serverError(c, 'The Back slip blew away. Try again soon.');
+  }
+});
+
+api.post('/remove-scribbit', async (c) => {
+  const player = await getCurrentPlayer();
+  if (!player) return unauthorized(c, 'Sign in to remove your Scribbit.');
+
+  const scribbitId = readScribbitId(await readJsonBody(c));
+  if (!scribbitId) return badRequest(c, 'Choose a valid Scribbit to remove.');
+
+  try {
+    const now = new Date();
+    const dayNumber = await ensureCurrentArenaDay(redis, now);
+    const scribbit = await loadScribbit(redis, scribbitId);
+
+    if (
+      !scribbit ||
+      scribbit.isFounding ||
+      !(await isScribbitOwnedByUser(redis, player.userId, scribbitId))
+    ) {
+      return notFound(c, 'That Scribbit is not yours to remove.');
+    }
+
+    await purgeBattleReportsForScribbit(redis, scribbitId);
+    await deleteStoredScribbit(redis, player.userId, scribbitId, dayNumber);
+    await removeCurrentChampionIfMatches(redis, scribbitId);
+    await clearScribbitReports(redis, scribbitId);
+    return c.json<{ removed: string }>({ removed: scribbitId });
+  } catch (error) {
+    console.error('Remove Scribbit route failed:', error);
+    return serverError(c, 'That Scribbit could not be removed. Try again.');
+  }
+});
+
+api.post('/report-scribbit', async (c) => {
+  const player = await getCurrentPlayer();
+  if (!player) return unauthorized(c, 'Sign in to report a Scribbit.');
+
+  const scribbitId = readScribbitId(await readJsonBody(c));
+  if (!scribbitId) return badRequest(c, 'Choose a valid Scribbit to report.');
+
+  try {
+    const now = new Date();
+    const dayNumber = await ensureCurrentArenaDay(redis, now);
+    const scribbit = await loadScribbit(redis, scribbitId);
+
+    if (!scribbit || scribbit.isFounding) {
+      return notFound(c, 'That community Scribbit is no longer available.');
+    }
+    if (await isScribbitOwnedByUser(redis, player.userId, scribbitId)) {
+      return badRequest(c, 'Remove your own Scribbit instead of reporting it.');
+    }
+
+    const report = await reportAndHideScribbit(
+      redis,
+      player.userId,
+      scribbitId,
+      now.getTime()
+    );
+    let removedForEveryone = false;
+
+    if (report.reportCount >= SCRIBBIT_REPORT_REMOVAL_THRESHOLD) {
+      const ownerUserId = await getScribbitOwner(redis, scribbitId);
+      if (ownerUserId) {
+        await purgeBattleReportsForScribbit(redis, scribbitId);
+        await deleteStoredScribbit(redis, ownerUserId, scribbitId, dayNumber);
+        await removeCurrentChampionIfMatches(redis, scribbitId);
+        await clearScribbitReports(redis, scribbitId);
+        removedForEveryone = true;
+      }
+    }
+
+    return c.json({
+      hidden: scribbitId,
+      removedForEveryone,
+    });
+  } catch (error) {
+    console.error('Report Scribbit route failed:', error);
+    return serverError(c, 'The report slip was lost. Try again.');
+  }
+});
+
+api.post('/delete-my-data', async (c) => {
+  const player = await getCurrentPlayer();
+  if (!player) return unauthorized(c, 'Sign in to delete your game data.');
+
+  try {
+    const dayNumber = await ensureCurrentArenaDay(redis, new Date());
+    const result = await deletePlayerData(redis, player.userId, dayNumber);
+    return c.json({ deleted: true, removedScribbits: result.removedScribbits });
+  } catch (error) {
+    console.error('Delete player data route failed:', error);
+    return serverError(c, 'Your game data could not be deleted. Try again.');
   }
 });
 
@@ -847,7 +1008,9 @@ api.post('/capsule', async (c) => {
   }
 
   try {
-    const dayNumber = await ensureCurrentArenaDay(redis, new Date());
+    const now = new Date();
+    const dayNumber = await getWritableArenaDay(now);
+    if (!dayNumber) return arenaRolloverConflict(c);
     const result = await pullCapsuleForUser(redis, player.userId, dayNumber);
 
     if (result.status === 'insufficientInk') {
@@ -885,7 +1048,8 @@ api.post('/boss-challenge', async (c) => {
 
   try {
     const now = new Date();
-    const dayNumber = await ensureCurrentArenaDay(redis, now);
+    const dayNumber = await getWritableArenaDay(now);
+    if (!dayNumber) return arenaRolloverConflict(c);
     const challenger = await loadOwnedAliveScribbit(player, scribbitId, dayNumber);
     const champion = await getCurrentChampion(redis);
 
@@ -955,11 +1119,16 @@ api.post('/boss-challenge', async (c) => {
 api.get('/legends', async (c) => {
   try {
     const player = await getCurrentPlayer();
+    const hiddenScribbitIds = player
+      ? await getHiddenScribbitIds(redis, player.userId)
+      : new Set<string>();
     const myFaded = player
       ? await getFadedScribbitsForUser(redis, player.userId, 30)
       : [];
     const legendsState: LegendsState = {
-      legends: await getLegends(redis, 50),
+      legends: (await getLegends(redis, 50)).filter(
+        (scribbit) => !hiddenScribbitIds.has(scribbit.id)
+      ),
       myFaded,
     };
 
@@ -967,25 +1136,5 @@ api.get('/legends', async (c) => {
   } catch (error) {
     console.error('Legends route failed:', error);
     return serverError(c, 'The Hall of Legends is dusty right now.');
-  }
-});
-
-api.get('/drawing/:id', async (c) => {
-  const scribbitId = c.req.param('id');
-
-  try {
-    const drawing = await readDrawingFallback(redis, scribbitId);
-
-    if (!drawing) {
-      return notFound(c, 'That drawing is not stored here.');
-    }
-
-    return c.body(drawing, 200, {
-      'Content-Type': 'image/png',
-      'Cache-Control': 'public, max-age=2592000, immutable',
-    });
-  } catch (error) {
-    console.error('Drawing route failed:', error);
-    return serverError(c, 'The drawing smudged in storage.');
   }
 });

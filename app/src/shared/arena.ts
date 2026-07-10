@@ -49,6 +49,7 @@ export type Forecast = {
 export type ArenaState = {
   dayNumber: number;
   loggedIn: boolean;
+  myUsername: string | null;
   forecast: Forecast;
   champion: Scribbit | null; // frozen snapshot, today's boss
   myScribbits: Scribbit[]; // alive, newest first, max 3
@@ -59,12 +60,31 @@ export type ArenaState = {
   rumbleResolvesAt: number; // epoch ms — client renders live countdown
   todayEntrants: Scribbit[]; // tonight's bracket (gallery + backing targets)
   myBackedScribbitId: string | null; // today's Back (bet), null if unused
+  playStreakDays: number; // consecutive UTC days with an expanded game session
   myClout: number; // lifetime talent-scout score
   myInk: number; // Mystery Ink balance
   myPens: string[]; // unlocked palette pen ids
 };
 
+// Lightweight, read-only inline feed contract. It deliberately excludes
+// rosters, inventories, drawings, and the full entrant gallery.
+export type SplashState = {
+  loggedIn: boolean;
+  forecast: Forecast;
+  rumbleEntrants: number;
+  rumbleResolvesAt: number;
+  drawnToday: boolean;
+  backedToday: boolean;
+  playStreakDays: number;
+};
+
 export type BackRequest = { scribbitId: string }; // one per user per day, final
+export type RemoveScribbitRequest = { scribbitId: string };
+export type ReportScribbitRequest = { scribbitId: string };
+export type ReportScribbitResponse = {
+  hidden: string;
+  removedForEveryone: boolean;
+};
 
 // Mystery Ink gacha — earned currency only. Pulls grant ONE-TIME-USE items:
 // accessories are consumed on attach (welded to that scribbit for life, and
@@ -215,8 +235,9 @@ export const LEVEL_DAMAGE_BONUS_PER_LEVEL = 0.02; // +2%/level above 1, max +8%
 // POST /api/care           -> CareRequest -> Scribbit                   (each action once per scribbit per UTC day)
 // POST /api/spar           -> SparRequest -> BattleReport               (exhibition vs random founding NPC; unlimited, xp only on first daily win)
 // POST /api/back           -> BackRequest -> { backed: string }         (one per user per day, locks at rumble resolve)
+// POST /api/remove-scribbit -> RemoveScribbitRequest -> { removed: string } (owner removal)
+// POST /api/report-scribbit -> ReportScribbitRequest -> ReportScribbitResponse (hide + safety report)
 // GET  /api/clout-board    -> CloutBoard
 // POST /api/capsule        -> CapsulePullResponse                       (spends ink; seeded random + pity; duplicate accessories stack)
 // GET  /api/inventory      -> Inventory
 // GET  /api/legends        -> LegendsState
-// GET  /api/drawing/:id    -> image/png bytes (only when redis-stored fallback is used)

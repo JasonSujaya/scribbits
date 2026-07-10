@@ -66,3 +66,13 @@ export const setCurrentChampion = async (
 ): Promise<void> => {
   await storage.set(championKey, JSON.stringify(cloneScribbit(champion)));
 };
+
+export const removeCurrentChampionIfMatches = async (
+  storage: ArenaStorage,
+  scribbitId: string
+): Promise<void> => {
+  const champion = await getCurrentChampion(storage);
+  if (champion?.id === scribbitId) {
+    await storage.del(championKey);
+  }
+};

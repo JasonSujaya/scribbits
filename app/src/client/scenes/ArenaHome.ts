@@ -42,6 +42,7 @@ import { pullCapsule } from '../lib/api';
 import { INK_REWARDS } from '../../shared/arena';
 import type { ArenaState, CareAction, Scribbit } from '../../shared/arena';
 import { showVsCeremony } from '../lib/battleceremony';
+import { dailyDrawTabLabel, navigateToDailyDraw } from '../lib/draweligibility';
 
 // The landing scene. A tall, drag-scrollable sketchbook page: countdown-topped
 // header, weather card, wanted-poster champion, your roster, TONIGHT'S BRACKET
@@ -111,7 +112,6 @@ export class ArenaHome extends Scene {
     }
     this.state = state;
     this.cameras.main.fadeIn(180, 255, 247, 232);
-    this.spinner = spinner(this, 1500);
     this.build();
     this.events.once('shutdown', () => this.cleanup());
     this.events.on('wake', this.refreshOnWake);
@@ -150,16 +150,18 @@ export class ArenaHome extends Scene {
     let cursor = 40;
     cursor = this.drawTopBar(cursor);
     cursor = this.buildForecastCard(width / 2, cursor + 20);
+    cursor = this.buildActionRow(width / 2, cursor + 20);
     cursor = this.buildChampionPoster(width / 2, cursor + 20);
-    cursor = this.buildRoster(cursor + 30);
     this.focusEntrantsY = cursor + 44;
     cursor = this.buildEntrantsBracket(cursor + 44);
-    cursor = this.buildActionRow(width / 2, cursor + 20);
+    cursor = this.buildRoster(cursor + 30);
     cursor += NAV_SAFE;
 
     this.contentHeight = cursor + 40;
     this.setupScrolling();
     this.buildAppTabs();
+    this.spinner?.destroy();
+    this.spinner = spinner(this, 1500);
 
     // Honour a deep-link request (loss card → "Back a contender tonight").
     if (takeArenaFocus(this) === 'entrants' && this.focusEntrantsY !== null) {
@@ -297,7 +299,7 @@ export class ArenaHome extends Scene {
       this,
       EDGE + 72,
       y + 80,
-      `Day ${this.state.dayNumber}  ·  ⚔️ ${this.state.rumbleEntrants} in tonight's rumble`,
+      `Day ${this.state.dayNumber}  ·  🔥 ${this.state.playStreakDays}d  ·  ⚔️ ${this.state.rumbleEntrants} tonight`,
       26,
       UI.inkSoft,
       true
@@ -439,8 +441,11 @@ export class ArenaHome extends Scene {
 
     if (!champ) {
       const card = stickerCard(this, x, centerY, width, height, { gold: true, tapeColor: UI.tape });
-      card.add(label(this, 0, -46, '👑', 52, UI.ink));
-      card.add(label(this, 0, 26, 'No champion yet —\nwin tonight to be crowned!', TYPE.title, UI.ink, true).setLineSpacing(6));
+      const crown = label(this, 0, -56, '👑', 56, UI.ink);
+      card.add(crown);
+      // Pulsing crown to draw attention.
+      this.tweens.add({ targets: crown, scale: 1.15, duration: 1000, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+      card.add(label(this, 0, 28, 'The throne is empty.\nDraw a champion tonight!', TYPE.title, UI.ink, true).setLineSpacing(6));
       return centerY + height / 2;
     }
 
@@ -448,9 +453,25 @@ export class ArenaHome extends Scene {
     const top = -height / 2;
     card.add(label(this, 0, top + 30, "☆  WANTED: TODAY'S CHAMPION  ☆", TYPE.caption, UI.goldText, true));
 
+    // Spotlight glow behind the champion art for dramatic effect.
     const artX = -width / 2 + 86;
     const artY = top + 106;
     const artFrame = 104;
+    const spotlight = this.add.graphics();
+    spotlight.fillStyle(UI.gold, 0.15);
+    spotlight.fillCircle(artX, artY, artFrame * 0.85);
+    card.add(spotlight);
+    // Pulsing spotlight for a living "wanted poster" feel.
+    this.tweens.add({
+      targets: spotlight,
+      alpha: { from: 0.5, to: 0.8 },
+      scale: { from: 0.95, to: 1.05 },
+      duration: 2000,
+      yoyo: true,
+      repeat: -1,
+      ease: 'Sine.easeInOut',
+    });
+
     const frame = this.add.graphics();
     frame.fillStyle(UI.creamHex, 1);
     frame.fillRect(artX - artFrame / 2, artY - artFrame / 2, artFrame, artFrame);
@@ -494,8 +515,11 @@ export class ArenaHome extends Scene {
     if (roster.length === 0) {
       const cardY = y + 130;
       const card = stickerCard(this, width / 2, cardY, width - EDGE * 2, 200, { tilt: 0.5 });
-      card.add(label(this, 0, -34, '✏️', 52, UI.ink));
-      card.add(label(this, 0, 40, 'No scribbits yet —\ndraw one to enter the arena!', TYPE.body, UI.inkSoft, true).setLineSpacing(6));
+      const pencil = label(this, 0, -34, '✏️', 52, UI.ink);
+      card.add(pencil);
+      // Bouncing pencil to invite action.
+      this.tweens.add({ targets: pencil, y: pencil.y - 8, duration: 700, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+      card.add(label(this, 0, 40, 'Your arena is empty!\nTap DRAW below to create your first.', TYPE.body, UI.inkSoft, true).setLineSpacing(6));
       return cardY + 100;
     }
 
@@ -528,6 +552,26 @@ export class ArenaHome extends Scene {
       if (!this.isCurrentBuild(generation)) return;
       const img = fitDrawing(this.add.image(x + artX, y + artY, key), artSize - 12).setDepth(3);
       img.setInteractive({ useHandCursor: true });
+      // Gentle idle breathing so the creature feels alive on the roster.
+      this.tweens.add({
+        targets: img,
+        scaleY: img.scaleY * 1.03,
+        duration: 1300 + Math.random() * 400,
+        yoyo: true,
+        repeat: -1,
+        ease: 'Sine.easeInOut',
+      });
+      // Pet wiggle on pointerdown for immediate tactile feedback.
+      img.on('pointerdown', () => {
+        this.tweens.add({
+          targets: img,
+          scaleX: img.scaleX * 1.15,
+          scaleY: img.scaleY * 0.88,
+          duration: 80,
+          yoyo: true,
+          ease: 'Quad.easeOut',
+        });
+      });
       img.on('pointerup', () => { if (!this.didDrag()) this.openDetail(scribbit); });
     });
 
@@ -581,12 +625,14 @@ export class ArenaHome extends Scene {
     if (entrants.length === 0) {
       const cardY = y + 110;
       const card = stickerCard(this, width / 2, cardY, width - EDGE * 2, 150, { tapeColor: UI.tapeAlt, tilt: 0.4 });
-      card.add(label(this, 0, -20, '🏟️', 44, UI.ink));
-      card.add(label(this, 0, 34, 'Bracket fills as scribbits enter tonight.', TYPE.body, UI.inkSoft, true).setWordWrapWidth(width - 120));
+      const stadium = label(this, 0, -22, '🏟️', 44, UI.ink);
+      card.add(stadium);
+      this.tweens.add({ targets: stadium, scale: 1.1, duration: 1200, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+      card.add(label(this, 0, 32, 'The arena awaits...\nEnter the rumble to fill the bracket!', TYPE.body, UI.inkSoft, true).setWordWrapWidth(width - 120));
       return cardY + 75;
     }
 
-    const visibleEntrants = entrants.slice(0, 8);
+    const visibleEntrants = this.prioritizeVisibleEntrants(entrants);
     const perRow = 2;
     const cellGap = SPACE.md;
     const cellW = (width - EDGE * 2 - cellGap) / perRow;
@@ -653,10 +699,38 @@ export class ArenaHome extends Scene {
     card.add(backBtn);
   }
 
+  private prioritizeVisibleEntrants(entrants: Scribbit[]): Scribbit[] {
+    const pickedEntrant = entrants.find(
+      (entrant) => entrant.id === this.state.myBackedScribbitId
+    );
+    const newestOwnedEntrant = this.state.myScribbits
+      .map((scribbit) => entrants.find((entrant) => entrant.id === scribbit.id))
+      .find((entrant): entrant is Scribbit => entrant !== undefined);
+    const pinnedIds = new Set(
+      [pickedEntrant?.id, newestOwnedEntrant?.id].filter(
+        (id): id is string => id !== undefined
+      )
+    );
+    const recentCommunityEntrants = [...entrants]
+      .reverse()
+      .filter((entrant) => !pinnedIds.has(entrant.id));
+
+    return [pickedEntrant, newestOwnedEntrant, ...recentCommunityEntrants]
+      .filter((entrant): entrant is Scribbit => entrant !== undefined)
+      .filter(
+        (entrant, index, prioritized) =>
+          prioritized.findIndex((candidate) => candidate.id === entrant.id) === index
+      )
+      .slice(0, 8);
+  }
+
   private backButtonState(entrant: Scribbit): { backLabel: string; backEnabled: boolean; backFill: number } {
     const myPick = this.state.myBackedScribbitId;
     if (myPick === entrant.id) return { backLabel: '✓ Picked', backEnabled: false, backFill: UI.gold };
-    if (myPick) return { backLabel: 'Backed', backEnabled: false, backFill: 0xb7aa92 };
+    if (this.state.myScribbits.some((scribbit) => scribbit.id === entrant.id)) {
+      return { backLabel: 'Your entry', backEnabled: false, backFill: 0xb7aa92 };
+    }
+    if (myPick) return { backLabel: 'Pick locked', backEnabled: false, backFill: 0xb7aa92 };
     return { backLabel: 'Back', backEnabled: true, backFill: UI.coral };
   }
 
@@ -686,12 +760,29 @@ export class ArenaHome extends Scene {
       dominantButton(this, x, btnY, "✏️ DRAW TODAY'S SCRIBBIT", () => this.startDraw(), width, true);
       return btnY + 70;
     }
+
+    if (this.state.enteredToday && !this.state.myBackedScribbitId) {
+      const btnY = y + 70;
+      dominantButton(
+        this,
+        x,
+        btnY,
+        "🎟️ PICK TONIGHT'S WINNER",
+        () => this.scrollTo((this.focusEntrantsY ?? y) - 120),
+        width,
+        true
+      );
+      return btnY + 70;
+    }
+
     const cardY = y + 46;
     const card = stickerCard(this, x, cardY, width, 92, {
       tapeColor: this.state.enteredToday ? UI.tapeAlt : UI.tape,
       tilt: -0.4,
     });
-    const text = this.state.enteredToday ? "✓ You're in tonight's Rumble" : '✓ Scribbit drawn — enter it from your roster';
+    const text = this.state.enteredToday
+      ? '✓ Pick locked — return after the Rumble for Clout'
+      : '✓ Scribbit drawn — enter it from your roster';
     card.add(label(this, 0, 0, text, TYPE.title, UI.ink, true).setWordWrapWidth(width - 60));
     return cardY + 46;
   }
@@ -705,7 +796,7 @@ export class ArenaHome extends Scene {
     appTabBar(this, 'arena', [
       { key: 'arena', icon: '🏟️', label: 'Arena', onClick: () => this.scrollTo(0) },
       { key: 'gallery', icon: '🏆', label: 'Gallery', onClick: () => this.openLegends() },
-      { key: 'draw', icon: '✏️', label: 'Draw', onClick: () => this.startDraw() },
+      { key: 'draw', icon: '✏️', label: dailyDrawTabLabel(this), onClick: () => this.startDraw() },
       { key: 'battles', icon: '⚔️', label: 'Battles', onClick: () => fadeToScene(this, 'MyBattles') },
       { key: 'scout', icon: '📖', label: 'Guide', onClick: () => fadeToScene(this, 'Bestiary') },
     ]);
@@ -738,14 +829,15 @@ export class ArenaHome extends Scene {
       currentDay: this.state.dayNumber,
       mine,
       onBelieved: (id, belief) => this.applyBelief(id, belief),
+      onRemoved: () => void this.refresh(),
+      onReported: () => void this.refresh(),
       actions,
     });
   }
 
   // --- Actions ---------------------------------------------------------------
   private startDraw(): void {
-    if (!this.requireLogin()) return;
-    fadeToScene(this, 'Draw');
+    navigateToDailyDraw(this);
   }
 
   private doCare(scribbit: Scribbit, action: CareAction): void {

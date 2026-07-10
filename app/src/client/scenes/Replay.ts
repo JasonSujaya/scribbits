@@ -252,7 +252,9 @@ export class Replay extends Scene {
 
   private makeFighterSlot(side: 'a' | 'b', x: number, y: number, right: boolean): Fighter {
     const scribbit = side === 'a' ? this.report.a : this.report.b;
-    const barY = 130;
+    // Keep fighter identity below the speed/skip controls so both names remain
+    // readable in Reddit's narrow expanded view.
+    const barY = 180;
     const barX = right ? this.scale.width - 320 : 40;
 
     const nameX = barX + (right ? 280 : 0);
@@ -299,11 +301,13 @@ export class Replay extends Scene {
 
   private openIntroDetail(scribbit: Scribbit): void {
     const arena = getArena(this);
-    const mine = arena?.myScribbits.some((one) => one.id === scribbit.id) ?? false;
+    const mine = arena?.myUsername === scribbit.artist;
     openDetailModal(this, scribbit, {
       currentDay: arena?.dayNumber ?? scribbit.expiresDay,
       mine,
       actions: mine ? {} : { canBelieve: true },
+      onRemoved: () => this.scene.start('MyBattles'),
+      onReported: () => this.scene.start('MyBattles'),
     });
   }
 
@@ -648,7 +652,16 @@ export class Replay extends Scene {
       button(this, 0, top + 280, '🥊 REMATCH (spar)', () => this.rematch(mine), width - 200, UI.coralDeep)
     );
     card.add(
-      button(this, 0, top + 400, '🎯 Back a contender tonight →', () => this.goBackEntrants(), width - 200, UI.gold)
+      button(
+        this,
+        0,
+        top + 400,
+        '🎯 Back a contender tonight →',
+        () => this.goBackEntrants(),
+        width - 200,
+        UI.gold,
+        UI.ink
+      )
     );
     card.add(ghostButton(this, 0, top + 510, 'Back to Arena', () => this.exit(), width - 260));
   }

@@ -8,10 +8,10 @@
     "build": "vite build",
     "deploy": "npm run type-check && npm run lint && devvit upload",
     "dev": "devvit playtest",
-    "launch": "npm run deploy && devvit publish",
+    "launch": "npm run verify && devvit publish --bump patch",
     "lint": "eslint 'src/**/*.{ts,tsx}'",
     "login": "devvit login",
-    "mock": "node scripts/dev-mock.mjs",
+    "mock": "node scripts/make-test-drawing.mjs && node scripts/dev-mock.mjs",
     "prettier": "prettier --write .",
     "test": "npm run test:sim",
     "test:sim": "node scripts/test-battle.mjs",
@@ -22,10 +22,10 @@
     "node": ">=22.2.0"
   },
   "dependencies": {
-    "@devvit/start": "0.13.6",
-    "@devvit/web": "0.13.6",
+    "@devvit/start": "0.13.7",
+    "@devvit/web": "0.13.7",
     "@hono/node-server": "2.0.6",
-    "devvit": "0.13.6",
+    "devvit": "0.13.7",
     "hono": "4.12.27",
     "phaser": "4.2.0",
     "pngjs": "^7.0.0"

@@ -8,6 +8,7 @@ import { label, ghostButton, handLettered, paperCard, stickerCard, elementBadge,
 import { openDetailModal } from '../lib/detailmodal';
 import type { ErrorPanel } from '../lib/ui';
 import type { LegendsState, Scribbit } from '../../shared/arena';
+import { dailyDrawTabLabel, navigateToDailyDraw } from '../lib/draweligibility';
 
 type Tab = 'legends' | 'sketchbook';
 
@@ -69,7 +70,7 @@ export class Sketchbook extends Scene {
     appTabBar(this, 'gallery', [
       { key: 'arena', icon: '🏟️', label: 'Arena', onClick: () => fadeToScene(this, 'ArenaHome') },
       { key: 'gallery', icon: '🏆', label: 'Gallery', onClick: () => this.switchTab('legends') },
-      { key: 'draw', icon: '✏️', label: 'Draw', onClick: () => fadeToScene(this, 'Draw') },
+      { key: 'draw', icon: '✏️', label: dailyDrawTabLabel(this), onClick: () => navigateToDailyDraw(this) },
       { key: 'battles', icon: '⚔️', label: 'Battles', onClick: () => fadeToScene(this, 'MyBattles') },
       { key: 'scout', icon: '📖', label: 'Guide', onClick: () => fadeToScene(this, 'Bestiary') },
     ]);
@@ -126,9 +127,11 @@ export class Sketchbook extends Scene {
     const legends = this.galleryData?.legends ?? [];
     if (legends.length === 0) {
       const card = stickerCard(this, width / 2, 560, width - 80, 220, { gold: true, tilt: -0.6 });
-      card.add(label(this, 0, -40, '🏆', 48, UI.ink));
+      const trophy = label(this, 0, -40, '🏆', 48, UI.ink);
+      card.add(trophy);
+      this.tweens.add({ targets: trophy, y: trophy.y - 6, duration: 900, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
       card.add(
-        label(this, 0, 30, 'No legends yet.\nWin a crown or reach 25 belief to be enshrined!', TYPE.body, UI.inkSoft, true).setLineSpacing(8)
+        label(this, 0, 30, 'No legends yet!\nWin the rumble or reach 25 belief to be immortalized!', TYPE.body, UI.inkSoft, true).setLineSpacing(8)
       );
       return;
     }
@@ -182,11 +185,13 @@ export class Sketchbook extends Scene {
   // caller's live roster, so mine=false → Believe is offered inside the modal.
   private openDetail(scribbit: Scribbit): void {
     const arena = getArena(this);
-    const mine = arena?.myScribbits.some((one) => one.id === scribbit.id) ?? false;
+    const mine = arena?.myUsername === scribbit.artist;
     openDetailModal(this, scribbit, {
       currentDay: arena?.dayNumber ?? scribbit.expiresDay,
       mine,
       actions: mine ? {} : { canBelieve: this.loggedIn },
+      onRemoved: () => void this.loadGallery(),
+      onReported: () => void this.loadGallery(),
     });
   }
 
@@ -196,9 +201,11 @@ export class Sketchbook extends Scene {
     const faded = this.galleryData?.myFaded ?? [];
     if (faded.length === 0) {
       const card = stickerCard(this, width / 2, 560, width - 80, 220, { tilt: 0.5 });
-      card.add(label(this, 0, -40, '📖', 48, UI.ink));
+      const book = label(this, 0, -40, '📖', 48, UI.ink);
+      card.add(book);
+      this.tweens.add({ targets: book, angle: { from: -3, to: 3 }, duration: 1500, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
       card.add(
-        label(this, 0, 30, 'Your sketchbook is empty.\nEvery scribbit that fades rests here.', TYPE.body, UI.inkSoft, true).setLineSpacing(8)
+        label(this, 0, 30, 'Your sketchbook awaits...\nScribbits that fade will rest here as memories.', TYPE.body, UI.inkSoft, true).setLineSpacing(8)
       );
       return;
     }

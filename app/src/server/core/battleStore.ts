@@ -17,6 +17,10 @@ export const getUserBattlesKey = (userId: string): string => {
   return `battles:user:${userId}`;
 };
 
+export const getScribbitBattlesKey = (scribbitId: string): string => {
+  return `battles:scribbit:${scribbitId}`;
+};
+
 const isRecord = (value: unknown): value is Record<string, unknown> => {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 };
@@ -102,6 +106,51 @@ export const saveBattleReport = async (
     });
     await storage.expire(userBattlesKey, battleReportTtlSeconds);
   }
+
+  for (const scribbitId of new Set([battleReport.a.id, battleReport.b.id])) {
+    const scribbitBattlesKey = getScribbitBattlesKey(scribbitId);
+    await storage.zAdd(scribbitBattlesKey, {
+      member: battleReport.id,
+      score,
+    });
+    await storage.expire(scribbitBattlesKey, battleReportTtlSeconds);
+  }
+};
+
+export const purgeBattleReportsForScribbit = async (
+  storage: ArenaStorage,
+  scribbitId: string
+): Promise<void> => {
+  const relatedEntries = await storage.zRange(
+    getScribbitBattlesKey(scribbitId),
+    0,
+    -1,
+    { by: 'rank' }
+  );
+
+  for (const entry of relatedEntries) {
+    const report = parseBattleReport(
+      await storage.get(getBattleReportKey(entry.member))
+    );
+
+    if (report) {
+      const ownerIds = new Set<string>();
+      const ownerA = await getScribbitOwner(storage, report.a.id);
+      const ownerB = await getScribbitOwner(storage, report.b.id);
+      if (ownerA) ownerIds.add(ownerA);
+      if (ownerB) ownerIds.add(ownerB);
+
+      for (const ownerId of ownerIds) {
+        await storage.zRem(getUserBattlesKey(ownerId), [report.id]);
+      }
+      await storage.zRem(getScribbitBattlesKey(report.a.id), [report.id]);
+      await storage.zRem(getScribbitBattlesKey(report.b.id), [report.id]);
+    }
+
+    await storage.del(getBattleReportKey(entry.member));
+  }
+
+  await storage.del(getScribbitBattlesKey(scribbitId));
 };
 
 export const loadBattleReportsForUser = async (

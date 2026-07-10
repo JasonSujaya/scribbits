@@ -1,8 +1,7 @@
 # GOAL: Ship Scribbits Arena for Reddit "Games with a Hook"
 
-**Current identity:** Scribbits Arena. The repo folder is still named
-Remonsta, but `app/devvit.json` and `app/package.json` are the app identity
-source of truth: `scribbits`.
+**Current identity:** Scribbits Arena. `app/devvit.json` and `app/package.json`
+use the Devvit app identity `scribbits`.
 
 **Current plan of record:** `plans/v3-scribbits-arena.md`.
 
@@ -22,7 +21,8 @@ async rumbles. Community belief can turn a short-lived Scribbit into a Legend.
 
 ## Current Ship Gates
 
-- [ ] `npm run verify`
+- [x] Local equivalent of `npm run verify` passes: TypeScript, ESLint, 24
+  simulation groups, and production build (July 10).
 - [ ] Playtest verifies draw -> submit -> arena refresh -> replay/boss/care/back flows.
 - [ ] Devvit upload/install/demo post requires user Reddit login and subreddit access.
 

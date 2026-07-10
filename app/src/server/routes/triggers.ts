@@ -6,7 +6,7 @@ import {
   ensureForecastForDay,
   getCurrentChampion,
 } from '../core/arenaStore';
-import { createPost } from '../core/post';
+import { getOrCreateArenaPost } from '../core/post';
 
 export const triggers = new Hono();
 
@@ -16,7 +16,7 @@ triggers.post('/on-app-install', async (c) => {
     const day = await ensureCurrentArenaDay(redis, now);
     const forecast = await ensureForecastForDay(redis, day);
     const champion = await getCurrentChampion(redis);
-    const post = await createPost({
+    const post = await getOrCreateArenaPost(redis, {
       date: now,
       day,
       forecast,

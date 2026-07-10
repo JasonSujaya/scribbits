@@ -15,7 +15,9 @@ import type {
   EnterRumbleRequest,
   Inventory,
   LegendsState,
+  ReportScribbitResponse,
   Scribbit,
+  SplashState,
   SparRequest,
   SubmitScribbitRequest,
 } from '../../shared/arena';
@@ -100,6 +102,10 @@ export function fetchArena(): Promise<ApiResult<ArenaState>> {
   return getJson<ArenaState>('/api/arena');
 }
 
+export function fetchSplash(): Promise<ApiResult<SplashState>> {
+  return getJson<SplashState>('/api/splash');
+}
+
 export function submitScribbit(
   request: SubmitScribbitRequest
 ): Promise<ApiResult<Scribbit>> {
@@ -162,6 +168,33 @@ export function backScribbit(
   scribbitId: string
 ): Promise<ApiResult<{ backed: string }>> {
   return postJson<BackRequest, { backed: string }>('/api/back', { scribbitId });
+}
+
+export function removeScribbit(
+  scribbitId: string
+): Promise<ApiResult<{ removed: string }>> {
+  return postJson<{ scribbitId: string }, { removed: string }>(
+    '/api/remove-scribbit',
+    { scribbitId }
+  );
+}
+
+export function reportScribbit(
+  scribbitId: string
+): Promise<ApiResult<ReportScribbitResponse>> {
+  return postJson<{ scribbitId: string }, ReportScribbitResponse>(
+    '/api/report-scribbit',
+    { scribbitId }
+  );
+}
+
+export function deleteMyData(): Promise<
+  ApiResult<{ deleted: true; removedScribbits: number }>
+> {
+  return postJson<Record<string, never>, { deleted: true; removedScribbits: number }>(
+    '/api/delete-my-data',
+    {}
+  );
 }
 
 // The talent-scout leaderboard: top 20 by lifetime clout plus the caller's rank.

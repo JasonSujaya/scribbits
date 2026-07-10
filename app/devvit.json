@@ -33,13 +33,6 @@
         "location": "subreddit",
         "forUserType": "moderator",
         "endpoint": "/internal/menu/post-create"
-      },
-      {
-        "label": "Advance day (debug)",
-        "description": "Resolve the current Rumble and advance the arena day",
-        "location": "subreddit",
-        "forUserType": "moderator",
-        "endpoint": "/internal/menu/advance-day-debug"
       }
     ]
   },

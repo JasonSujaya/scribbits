@@ -88,8 +88,6 @@ export type DailyFlagField = 'drawn' | 'entered' | 'bossChallenge';
 
 const pngDataUrlPrefix = 'data:image/png;base64,';
 const maximumDrawingBytes = 400 * 1024;
-const drawingTtlSeconds = 30 * 24 * 60 * 60;
-const legendDrawingTtlSeconds = 10 * 365 * 24 * 60 * 60;
 const dailyFlagTtlSeconds = 8 * 24 * 60 * 60;
 const dailyProgressTtlSeconds = 8 * 24 * 60 * 60;
 const careActionOrder: CareAction[] = ['feed', 'pat', 'train'];
@@ -133,10 +131,6 @@ export const getDailyFlagsKey = (userId: string, day: number): string => {
 
 export const getRumbleKey = (day: number): string => {
   return `rumble:${day}`;
-};
-
-export const getDrawingKey = (scribbitId: string): string => {
-  return `drawing:${scribbitId}`;
 };
 
 export const getScribbitCareKey = (
@@ -574,13 +568,13 @@ export const deleteStoredScribbit = async (
 ): Promise<void> => {
   await storage.del(
     getScribbitKey(scribbitId),
-    getScribbitOwnerKey(scribbitId),
-    getDrawingKey(scribbitId)
+    getScribbitOwnerKey(scribbitId)
   );
   await storage.zRem(getUserScribbitsKey(ownerUserId), [scribbitId]);
   await storage.zRem(getUserAliveScribbitsKey(ownerUserId), [scribbitId]);
   await storage.zRem(getExpiringScribbitsKey(), [scribbitId]);
   await storage.zRem(getRumbleKey(day), [scribbitId]);
+  await storage.zRem(getLegendsKey(), [scribbitId]);
 };
 
 export const removeRumbleEntrant = async (
@@ -857,36 +851,6 @@ export const loadScribbits = async (
   }
 
   return scribbits;
-};
-
-export const storeDrawingFallback = async (
-  storage: ArenaStorage,
-  scribbitId: string,
-  decodedPng: DecodedPngDataUrl
-): Promise<void> => {
-  const drawingKey = getDrawingKey(scribbitId);
-  await storage.set(drawingKey, decodedPng.base64);
-  await storage.expire(drawingKey, drawingTtlSeconds);
-};
-
-export const preserveLegendDrawing = async (
-  storage: ArenaStorage,
-  scribbitId: string
-): Promise<void> => {
-  await storage.expire(getDrawingKey(scribbitId), legendDrawingTtlSeconds);
-};
-
-export const readDrawingFallback = async (
-  storage: ArenaStorage,
-  scribbitId: string
-): Promise<Uint8Array<ArrayBuffer> | undefined> => {
-  const base64 = await storage.get(getDrawingKey(scribbitId));
-
-  if (!base64) {
-    return undefined;
-  }
-
-  return Buffer.from(base64, 'base64');
 };
 
 export const storeScribbit = async (
@@ -1251,7 +1215,6 @@ export const expireDueScribbits = async (
 
     if (expiredScribbit.status === 'legend') {
       legends += 1;
-      await preserveLegendDrawing(storage, expiredScribbit.id);
       await addLegend(storage, expiredScribbit, day);
     } else if (expiredScribbit.status === 'faded') {
       faded += 1;

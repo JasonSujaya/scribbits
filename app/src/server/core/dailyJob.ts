@@ -9,6 +9,7 @@ import {
   setCurrentChampion,
 } from './arenaStore';
 import { payCloutForRumble } from './clout';
+import type { CloutPayoutResult } from './clout';
 import { getArenaDayNumber } from './day';
 import {
   claimInkReward,
@@ -53,6 +54,7 @@ export type NightlyArenaJobRunResult = {
     legends: number;
   };
   postId: string | null;
+  resolutions: ResolvedArenaDay[];
 };
 
 export type NightlyArenaJobSkippedResult = {
@@ -69,20 +71,76 @@ export type NightlyArenaJobSkippedResult = {
     legends: 0;
   };
   postId: null;
+  resolutions: [];
 };
 
 export type NightlyArenaJobResult =
   | NightlyArenaJobRunResult
   | NightlyArenaJobSkippedResult;
 
-type ResolvedArenaDay = {
+export type ResolvedArenaDay = {
   resolvedDay: number;
   champion: Scribbit;
+  runnerUp: Scribbit | null;
   reportCount: number;
+  resolvedForecast: Forecast;
+  nextForecast: Forecast;
+  cloutPayout: CloutPayoutResult;
   expired: {
     faded: number;
     legends: number;
   };
+};
+
+const resolutionOutboxKey = 'arena:resolution-outbox';
+
+const parseResolvedArenaDay = (
+  storedResolution: string | undefined
+): ResolvedArenaDay | undefined => {
+  if (!storedResolution) return undefined;
+  try {
+    const parsed: unknown = JSON.parse(storedResolution);
+    if (
+      typeof parsed === 'object' &&
+      parsed !== null &&
+      'resolvedDay' in parsed &&
+      typeof parsed.resolvedDay === 'number' &&
+      'champion' in parsed &&
+      typeof parsed.champion === 'object' &&
+      parsed.champion !== null
+    ) {
+      return parsed as ResolvedArenaDay;
+    }
+  } catch {
+    return undefined;
+  }
+  return undefined;
+};
+
+const loadOutboxResolution = async (
+  storage: ArenaStorage,
+  day: number
+): Promise<ResolvedArenaDay | undefined> => {
+  return parseResolvedArenaDay(
+    await storage.hGet(resolutionOutboxKey, day.toString())
+  );
+};
+
+export const loadPendingArenaResolutions = async (
+  storage: ArenaStorage
+): Promise<ResolvedArenaDay[]> => {
+  const pending = await storage.hGetAll(resolutionOutboxKey);
+  return Object.values(pending)
+    .map(parseResolvedArenaDay)
+    .filter((resolution): resolution is ResolvedArenaDay => resolution !== undefined)
+    .sort((left, right) => left.resolvedDay - right.resolvedDay);
+};
+
+export const acknowledgeArenaResolution = async (
+  storage: ArenaStorage,
+  day: number
+): Promise<void> => {
+  await storage.hDel(resolutionOutboxKey, [day.toString()]);
 };
 
 const getBattleScore = (
@@ -204,22 +262,33 @@ const resolveArenaDay = async (
     resolvedDay
   );
   await setCurrentChampion(storage, champion);
-  await payCloutForRumble(storage, {
+  const runnerUp = resolution.standings[1]?.scribbit ?? null;
+  const cloutPayout = await payCloutForRumble(storage, {
     day: resolvedDay,
     championScribbitId: champion.id,
-    runnerUpScribbitId: resolution.standings[1]?.scribbit.id ?? null,
+    runnerUpScribbitId: runnerUp?.id ?? null,
     paidAtMs,
   });
 
   const expired = await expireDueScribbits(storage, nextDay);
-  await setCurrentArenaDay(storage, nextDay);
-
-  return {
+  const nextForecast = await ensureForecastForDay(storage, nextDay);
+  const resolvedArenaDay: ResolvedArenaDay = {
     resolvedDay,
     champion,
+    runnerUp,
     reportCount: resolution.reports.length,
+    resolvedForecast,
+    nextForecast,
+    cloutPayout,
     expired,
   };
+  // Persist the full publishing payload before advancing the authoritative day.
+  // A retry can now recover without resolving the same fights twice.
+  await storage.hSet(resolutionOutboxKey, {
+    [resolvedDay.toString()]: JSON.stringify(resolvedArenaDay),
+  });
+  await setCurrentArenaDay(storage, nextDay);
+  return resolvedArenaDay;
 };
 
 export const runNightlyArenaJob = async (
@@ -252,11 +321,13 @@ export const runNightlyArenaJob = async (
         legends: 0,
       },
       postId: null,
+      resolutions: [],
     };
   }
 
   const newDay = options.force ? previousDay + 1 : canonicalDay;
   let latestResolution: ResolvedArenaDay | null = null;
+  const resolutions: ResolvedArenaDay[] = [];
   let reportCount = 0;
   const expired = { faded: 0, legends: 0 };
 
@@ -265,12 +336,15 @@ export const runNightlyArenaJob = async (
     resolvedDay < newDay;
     resolvedDay += 1
   ) {
-    const resolution = await resolveArenaDay(
-      storage,
-      resolvedDay,
-      now.getTime()
-    );
+    const pendingResolution = await loadOutboxResolution(storage, resolvedDay);
+    const resolution =
+      pendingResolution ??
+      (await resolveArenaDay(storage, resolvedDay, now.getTime()));
+    if (pendingResolution) {
+      await setCurrentArenaDay(storage, resolvedDay + 1);
+    }
     latestResolution = resolution;
+    resolutions.push(resolution);
     reportCount += resolution.reportCount;
     expired.faded += resolution.expired.faded;
     expired.legends += resolution.expired.legends;
@@ -311,5 +385,6 @@ export const runNightlyArenaJob = async (
     reportCount,
     expired,
     postId,
+    resolutions,
   };
 };

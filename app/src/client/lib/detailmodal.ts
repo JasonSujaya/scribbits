@@ -7,7 +7,11 @@
 import * as Phaser from 'phaser';
 import { Scene } from 'phaser';
 import type { Scribbit } from '../../shared/arena';
-import { believe as believeApi } from './api';
+import {
+  believe as believeApi,
+  removeScribbit as removeScribbitApi,
+  reportScribbit as reportScribbitApi,
+} from './api';
 import { showToast } from '@devvit/web/client';
 import { loadDrawing, fitDrawing, recordText, moodStyleOf, levelOf, xpProgress } from './scribbits';
 import { ELEMENT_STYLES, TYPE, UI } from './theme';
@@ -51,6 +55,8 @@ export type DetailModalOpts = {
   actions: DetailModalActions;
   // Called after a successful in-modal believe so the caller can refresh state.
   onBelieved?: (scribbitId: string, belief: number) => void;
+  onRemoved?: (scribbitId: string) => void;
+  onReported?: (scribbitId: string, removedForEveryone: boolean) => void;
   onClose?: () => void;
 };
 
@@ -94,6 +100,8 @@ export function openDetailModal(
   const top = -cardH / 2;
   let believeCountLabel: Phaser.GameObjects.Text | null = null;
   let currentBelief = scribbit.belief;
+  let safetyActionBusy = false;
+  let deleteArmed = false;
 
   // Close button (top-right of the card).
   const closeBtn = ghostButton(scene, cardW / 2 - 44, top + 40, '✕', () => close(), 72);
@@ -206,6 +214,14 @@ export function openDetailModal(
         // A single "Care" shortcut that returns to home roster for the 3 actions.
         slots.push({ label: '🍓 Care', fill: 0x4faa4f, enabled: true, run: () => runAndClose(() => a.onCare?.(scribbit)) });
       }
+      if (!scribbit.isFounding) {
+        slots.push({
+          label: '🗑 Delete',
+          fill: UI.coralDeep,
+          enabled: true,
+          run: () => doDelete(),
+        });
+      }
       layoutSlots(slots, y);
     } else {
       // Others': Believe (in-modal, optimistic) + Back.
@@ -219,6 +235,14 @@ export function openDetailModal(
           fill: UI.gold,
           enabled: a.backEnabled ?? true,
           run: () => runAndClose(() => a.onBack?.(scribbit)),
+        });
+      }
+      if (!scribbit.isFounding) {
+        slots.push({
+          label: '⚑ Report',
+          fill: UI.inkSoftHex,
+          enabled: true,
+          run: () => doReport(),
         });
       }
       layoutSlots(slots, y);
@@ -264,6 +288,43 @@ export function openDetailModal(
       currentBelief = result.data.belief;
       believeCountLabel?.setText(`💛 ${currentBelief}`);
       opts.onBelieved?.(scribbit.id, result.data.belief);
+    });
+  }
+
+  function doDelete(): void {
+    if (safetyActionBusy) return;
+    if (!deleteArmed) {
+      deleteArmed = true;
+      showToast('Tap Delete again to permanently remove this Scribbit.');
+      return;
+    }
+
+    safetyActionBusy = true;
+    void removeScribbitApi(scribbit.id).then((result) => {
+      safetyActionBusy = false;
+      if (!result.ok) {
+        deleteArmed = false;
+        showToast(result.error);
+        return;
+      }
+      showToast(`${scribbit.name} was permanently removed.`);
+      close();
+      opts.onRemoved?.(scribbit.id);
+    });
+  }
+
+  function doReport(): void {
+    if (safetyActionBusy) return;
+    safetyActionBusy = true;
+    void reportScribbitApi(scribbit.id).then((result) => {
+      safetyActionBusy = false;
+      if (!result.ok) {
+        showToast(result.error);
+        return;
+      }
+      showToast('Reported and hidden. Thanks for helping keep the arena safe.');
+      close();
+      opts.onReported?.(scribbit.id, result.data.removedForEveryone);
     });
   }
 

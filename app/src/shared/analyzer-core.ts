@@ -17,6 +17,10 @@ export type AnalyzerResult = {
 };
 
 const alphaInkThreshold = 32;
+const paperRed = 253;
+const paperGreen = 243;
+const paperBlue = 223;
+const paperColorTolerance = 8;
 const hueBucketDegrees = 30;
 const hueCoverageMin = 0.02;
 const maxDistinctHues = 6;
@@ -83,6 +87,14 @@ export function rgbToHsv(
   return { hue, sat, val: max };
 }
 
+export function isPaperBackground(r: number, g: number, b: number): boolean {
+  return (
+    Math.abs(r - paperRed) <= paperColorTolerance &&
+    Math.abs(g - paperGreen) <= paperColorTolerance &&
+    Math.abs(b - paperBlue) <= paperColorTolerance
+  );
+}
+
 export function scanPixels(field: PixelField): ScanResult {
   const { data, width, height } = field;
   const totalPixels = width * height;
@@ -104,6 +116,16 @@ export function scanPixels(field: PixelField): ScanResult {
         continue;
       }
 
+      const r = data[offset] ?? 0;
+      const g = data[offset + 1] ?? 0;
+      const b = data[offset + 2] ?? 0;
+      // Older clients exported an opaque cream page. Treat that exact visual
+      // background as transparent so their server-authoritative stats still
+      // match the live canvas instead of becoming a full-page CHONK build.
+      if (isPaperBackground(r, g, b)) {
+        continue;
+      }
+
       inked[pixelIndex] = 1;
       inkedPixels += 1;
       if (x < minX) {
@@ -119,9 +141,6 @@ export function scanPixels(field: PixelField): ScanResult {
         maxY = y;
       }
 
-      const r = data[offset] ?? 0;
-      const g = data[offset + 1] ?? 0;
-      const b = data[offset + 2] ?? 0;
       const { hue, sat, val } = rgbToHsv(r, g, b);
 
       if (sat >= 0.25 && val >= 0.2) {

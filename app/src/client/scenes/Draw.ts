@@ -1,8 +1,8 @@
 import * as Phaser from 'phaser';
 import { Scene } from 'phaser';
 import { showToast } from '@devvit/web/client';
-import { submitScribbit, fetchArena } from '../lib/api';
-import { getArena, setArena } from '../lib/registry';
+import { submitScribbit, fetchArena, spar } from '../lib/api';
+import { getArena, setArena, setReplay } from '../lib/registry';
 import { analyze, MIN_INK_PIXELS } from '../lib/analyzer';
 import type { AnalyzerResult } from '../lib/analyzer';
 import { DomOverlay } from '../lib/overlay';
@@ -33,6 +33,7 @@ import { PEN_CATALOG, PEN_BY_ID, penSwatchColor, RARITY_STYLE } from '../lib/pen
 import type { PenCatalogEntry } from '../lib/pens';
 import { INK_REWARDS } from '../../shared/arena';
 import type { ArenaState, Element, Scribbit } from '../../shared/arena';
+import { getDrawEligibility } from '../lib/draweligibility';
 
 // The 8-color element palette + black outline pen. Grouped by element hue so
 // the color a player reaches for nudges the creature's element.
@@ -97,6 +98,8 @@ export class Draw extends Scene {
   private stickerButtonLabel: Phaser.GameObjects.Text | null = null;
   private drawerOpen = false;
   private previewTimer: Phaser.Time.TimerEvent | null = null;
+  private startFightAfterBirth = false;
+  private birthContinuationStarted = false;
 
   constructor() {
     super('Draw');
@@ -117,11 +120,25 @@ export class Draw extends Scene {
     this.stickerButtonLabel = null;
     this.drawerOpen = false;
     this.previewTimer = null;
+    this.startFightAfterBirth = false;
+    this.birthContinuationStarted = false;
   }
 
   create(): void {
     // Defensive: clear any overlay a previous Draw visit might have left behind.
     DomOverlay.destroyAll();
+
+    const arena = getArena(this);
+    const eligibility = getDrawEligibility(arena);
+    if (!arena) {
+      this.scene.start('Preloader');
+      return;
+    }
+    if (!eligibility.canDraw) {
+      showToast(eligibility.message);
+      this.scene.start('ArenaHome');
+      return;
+    }
 
     this.cameras.main.setBackgroundColor(UI.desk);
     this.cameras.main.fadeIn(180, 255, 247, 232);
@@ -227,7 +244,15 @@ export class Draw extends Scene {
     // two never collide (the mission's header-clip bug).
     ghostButton(this, 90, 60, '‹', () => this.exitTo('ArenaHome'), 96);
     handLettered(this, width / 2 + 30, 56, "TODAY'S SCRIBBIT", 34, UI.ink, true);
-    label(this, width / 2 + 30, 96, 'Its shape becomes its stats', TYPE.caption, UI.inkSoft);
+    label(
+      this,
+      width / 2 + 30,
+      92,
+      'BIG→HP · POINTY→ATK\nSMALL→SPD · COLOR→CRIT',
+      18,
+      UI.inkSoft,
+      true
+    ).setLineSpacing(2);
 
     // Hero canvas frame — the DOM canvas sits on top of this at the same rect.
     const square = Draw.CANVAS_SQUARE;
@@ -287,8 +312,17 @@ export class Draw extends Scene {
 
     // Stickers toggle (center): opens the accessory drawer. Its label shows the
     // placed count (e.g. "✨ 1/2") once accessories are attached.
-    const stickerBtn = this.toolIconButton(width / 2 + 6, toolY, '✨', () => this.toggleStickerDrawer(), 70);
-    this.stickerButtonLabel = stickerBtn.list[1] as Phaser.GameObjects.Text;
+    const hasExistingScribbit = (this.getArenaState()?.myScribbits.length ?? 0) > 0;
+    if (hasExistingScribbit) {
+      const stickerBtn = this.toolIconButton(
+        width / 2 + 6,
+        toolY,
+        '✨',
+        () => this.toggleStickerDrawer(),
+        70
+      );
+      this.stickerButtonLabel = stickerBtn.list[1] as Phaser.GameObjects.Text;
+    }
 
     // Edit tools (right group): erase / undo / clear.
     this.toolIconButton(width - 250, toolY, '🧽', () => this.canvas?.setEraser());
@@ -362,9 +396,25 @@ export class Draw extends Scene {
     this.pensRow = container;
 
     const { width } = this.scale;
-    const unlocked = new Set(this.getArenaState()?.myPens ?? []);
+    const arena = this.getArenaState();
+    const unlocked = new Set(arena?.myPens ?? []);
     const labelW = 74;
     container.add(label(this, EDGE + labelW / 2, y, 'Pens', TYPE.caption, UI.inkSoft, true));
+
+    if ((arena?.myScribbits.length ?? 0) === 0) {
+      container.add(
+        label(
+          this,
+          width / 2 + 38,
+          y,
+          'Bonus pens unlock after your first fight',
+          18,
+          UI.inkSoft,
+          true
+        )
+      );
+      return;
+    }
 
     const startX = EDGE + labelW + 8;
     const unlockedPens = PEN_CATALOG.filter((pen) => unlocked.has(pen.id));
@@ -440,16 +490,24 @@ export class Draw extends Scene {
 
   private selectPen(index: number, pen: PenCatalogEntry): void {
     this.canvas?.setPen(pen.effect, pen.colors);
-    // Deselect base swatches; highlight the chosen pen.
+    // Deselect base swatches with smooth tween.
     this.colorSwatches.forEach((swatch) => {
-      swatch.setStrokeStyle(4, UI.inkHex, 1).setScale(1);
+      swatch.setStrokeStyle(4, UI.inkHex, 1);
+      this.tweens.add({ targets: swatch, scaleX: 1, scaleY: 1, duration: 120, ease: 'Quad.easeOut' });
     });
+    // Highlight the chosen pen with smooth tween.
     this.penSwatches.forEach(({ rect, penId }) => {
       const chosen = penId === pen.id;
       const entry = PEN_BY_ID.get(penId);
       const rarityColor = entry ? RARITY_STYLE[entry.rarity].color : UI.inkHex;
       rect.setStrokeStyle(chosen ? 6 : 3, chosen ? UI.goldHex : rarityColor, 1);
-      rect.setScale(chosen ? 1.12 : 1);
+      this.tweens.add({
+        targets: rect,
+        scaleX: chosen ? 1.18 : 1,
+        scaleY: chosen ? 1.18 : 1,
+        duration: 150,
+        ease: 'Back.easeOut',
+      });
     });
     void index;
   }
@@ -479,13 +537,22 @@ export class Draw extends Scene {
   private selectColor(index: number, color: string): void {
     this.canvas?.setColor(color);
     this.colorSwatches.forEach((swatch, swatchIndex) => {
-      swatch.setStrokeStyle(swatchIndex === index ? 6 : 4, swatchIndex === index ? UI.goldHex : UI.inkHex, 1);
-      swatch.setScale(swatchIndex === index ? 1.12 : 1);
+      const selected = swatchIndex === index;
+      swatch.setStrokeStyle(selected ? 6 : 4, selected ? UI.goldHex : UI.inkHex, 1);
+      // Smooth tween to the selected/unselected scale for a polished feel.
+      this.tweens.add({
+        targets: swatch,
+        scaleX: selected ? 1.18 : 1,
+        scaleY: selected ? 1.18 : 1,
+        duration: 150,
+        ease: 'Back.easeOut',
+      });
     });
     // Deselect any active pen highlight.
     this.penSwatches.forEach(({ rect, penId }) => {
       const pen = PEN_BY_ID.get(penId);
-      rect.setStrokeStyle(3, pen ? RARITY_STYLE[pen.rarity].color : UI.inkHex, 1).setScale(1);
+      rect.setStrokeStyle(3, pen ? RARITY_STYLE[pen.rarity].color : UI.inkHex, 1);
+      this.tweens.add({ targets: rect, scaleX: 1, scaleY: 1, duration: 120, ease: 'Quad.easeOut' });
     });
   }
 
@@ -668,9 +735,19 @@ export class Draw extends Scene {
     // for now update local snapshot so ArenaHome reflects the new roster.
     const arena = getArena(this);
     if (arena) {
+      this.startFightAfterBirth = arena.myScribbits.length === 0;
+      const todayEntrants = arena.todayEntrants.some(
+        (entrant) => entrant.id === response.data.id
+      )
+        ? arena.todayEntrants
+        : [response.data, ...arena.todayEntrants];
       setArena(this, {
         ...arena,
         drawnToday: true,
+        enteredToday: true,
+        rumbleEntrants: todayEntrants.length,
+        todayEntrants,
+        myInk: (arena.myInk ?? 0) + INK_REWARDS.dailyDraw,
         myScribbits: [response.data, ...arena.myScribbits].slice(0, 3),
       });
     }
@@ -769,7 +846,7 @@ export class Draw extends Scene {
     this.cameras.main.shake(200, 0.008);
 
     // Drawing today's scribbit earns Mystery Ink — float the reward.
-    floatReward(this, width / 2, 260, `+${INK_REWARDS.dailyDraw} 🫙`, UI.goldText, 60);
+    floatReward(this, width - 120, 360, `+${INK_REWARDS.dailyDraw} 🫙`, UI.goldText, 60);
 
     // Load the just-drawn PNG straight from the data URL for an instant reveal.
     const key = `ceremony-${scribbit.id}`;
@@ -793,7 +870,7 @@ export class Draw extends Scene {
     emitter.explode(40);
 
     this.time.delayedCall(4000, () => {
-      if (this.scene.isActive()) this.exitTo('ArenaHome');
+      if (this.scene.isActive()) this.continueAfterBirth(scribbit);
     });
   }
 
@@ -830,15 +907,92 @@ export class Draw extends Scene {
     // Tiny idle wobble so the newborn feels alive.
     this.tweens.add({ targets: img, angle: 3, duration: 1200, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
 
-    const grid = statGrid(this, width / 2, cardY + cardH / 2 - 120, cardW - 60, 130);
+    const grid = statGrid(this, width / 2, cardY + cardH / 2 - 80, cardW - 60, 130);
     grid.container.setAlpha(0).setDepth(10);
     grid.setStats(scribbit.stats, false);
     this.tweens.add({ targets: grid.container, alpha: 1, delay: 700, duration: 400 });
 
-    label(this, width / 2, height - 60, 'Tap anywhere to continue', TYPE.caption, UI.inkSoft, true).setDepth(10);
+    label(
+      this,
+      width / 2,
+      height - 60,
+      this.startFightAfterBirth ? 'Tap to watch your first fight!' : 'Tap anywhere to continue',
+      TYPE.caption,
+      UI.inkSoft,
+      true
+    ).setDepth(10);
     this.input.once('pointerdown', () => {
-      if (this.scene.isActive()) this.exitTo('ArenaHome');
+      if (this.scene.isActive()) this.continueAfterBirth(scribbit);
     });
+  }
+
+  private continueAfterBirth(scribbit: Scribbit): void {
+    if (this.birthContinuationStarted) return;
+    this.birthContinuationStarted = true;
+
+    if (!this.startFightAfterBirth) {
+      this.exitTo('ArenaHome');
+      return;
+    }
+
+    this.requestFirstFight(scribbit);
+  }
+
+  private requestFirstFight(scribbit: Scribbit): void {
+    const { width, height } = this.scale;
+    const statusCard = stickerCard(this, width / 2, height / 2, width - 160, 170, {
+      tapeColor: UI.tapeAlt,
+    }).setDepth(200);
+    statusCard.add(
+      label(this, 0, -24, '⚔️ Finding a first opponent…', TYPE.title, UI.ink, true)
+    );
+    statusCard.add(
+      label(this, 0, 30, 'Your Scribbit is safe in tonight’s Rumble.', TYPE.caption, UI.inkSoft, true)
+    );
+
+    void spar(scribbit.id).then((result) => {
+      if (!this.scene.isActive()) return;
+      statusCard.destroy(true);
+      if (!result.ok) {
+        this.showFirstFightRetry(scribbit, result.error);
+        return;
+      }
+      setReplay(this, result.data, 'ArenaHome');
+      this.scene.start('Replay');
+    });
+  }
+
+  private showFirstFightRetry(scribbit: Scribbit, message: string): void {
+    const { width, height } = this.scale;
+    const panel = stickerCard(this, width / 2, height / 2, width - 120, 300, {
+      tapeColor: UI.tapeAlt,
+    }).setDepth(210);
+    panel.add(label(this, 0, -92, 'The opponent ran away', TYPE.title, UI.ink, true));
+    const copy = label(this, 0, -35, message, TYPE.body, UI.inkSoft, true);
+    copy.setWordWrapWidth(width - 220);
+    panel.add(copy);
+
+    const retry = button(
+      this,
+      width / 2,
+      height / 2 + 54,
+      '⚔️ Retry first fight',
+      () => {
+        panel.destroy(true);
+        retry.destroy(true);
+        continueButton.destroy(true);
+        this.requestFirstFight(scribbit);
+      },
+      width - 220
+    ).setDepth(220);
+    const continueButton = ghostButton(
+      this,
+      width / 2,
+      height / 2 + 135,
+      'Continue to Arena',
+      () => this.exitTo('ArenaHome'),
+      width - 220
+    ).setDepth(220);
   }
 
   private showError(message: string): void {

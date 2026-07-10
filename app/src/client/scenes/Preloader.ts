@@ -64,7 +64,9 @@ export class Preloader extends Scene {
 
   private startArena(state: ArenaState): void {
     setArena(this, state);
-    this.scene.start('ArenaHome');
+    const needsFirstScribbit =
+      state.loggedIn && !state.drawnToday && state.myScribbits.length === 0;
+    this.scene.start(needsFirstScribbit ? 'Draw' : 'ArenaHome');
   }
 
   private showRetry(message: string): void {

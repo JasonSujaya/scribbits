@@ -130,10 +130,10 @@ export const ELEMENT_STYLES: Record<Element, ElementStyle> = {
 
 // Stat bar colors — one per stat, consistent everywhere stats are shown.
 export const STAT_STYLES = {
-  chonk: { label: 'CHONK', emoji: '🫧', color: 0xff8a5c, colorText: '#ff8a5c' },
-  spike: { label: 'SPIKE', emoji: '🌵', color: 0xe8555c, colorText: '#e8555c' },
-  zip: { label: 'ZIP', emoji: '💨', color: 0x4fb0d8, colorText: '#4fb0d8' },
-  charm: { label: 'CHARM', emoji: '✨', color: 0xc06be0, colorText: '#c06be0' },
+  chonk: { label: 'CHONK / HP', emoji: '🫧', color: 0xff8a5c, colorText: '#ff8a5c' },
+  spike: { label: 'SPIKE / ATK', emoji: '🌵', color: 0xe8555c, colorText: '#e8555c' },
+  zip: { label: 'ZIP / SPD', emoji: '💨', color: 0x4fb0d8, colorText: '#4fb0d8' },
+  charm: { label: 'CHARM / CRIT', emoji: '✨', color: 0xc06be0, colorText: '#c06be0' },
 } as const;
 
 export const FONT_STACK =
