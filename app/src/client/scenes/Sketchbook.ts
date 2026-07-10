@@ -30,6 +30,7 @@ export class Sketchbook extends Scene {
   private legendPage = 0;
   private fadedPage = 0;
   private loadingOlderLegends = false;
+  private loadingGallery = false;
   private galleryRequestEpoch = 0;
 
   constructor() {
@@ -44,7 +45,7 @@ export class Sketchbook extends Scene {
     this.legendPage = 0;
     this.fadedPage = 0;
     this.loadingOlderLegends = false;
-    this.galleryRequestEpoch = 0;
+    this.loadingGallery = false;
   }
 
   create(): void {
@@ -59,6 +60,7 @@ export class Sketchbook extends Scene {
   private async loadGallery(): Promise<void> {
     const requestEpoch = this.galleryRequestEpoch + 1;
     this.galleryRequestEpoch = requestEpoch;
+    this.loadingGallery = true;
     this.loadingOlderLegends = false;
     const result = await fetchLegends(null, this.getLegendPageSize());
     if (
@@ -67,6 +69,7 @@ export class Sketchbook extends Scene {
     ) {
       return;
     }
+    this.loadingGallery = false;
     if (!result.ok) {
       this.showError(result.error);
       return;
@@ -78,7 +81,13 @@ export class Sketchbook extends Scene {
 
   private async loadOlderLegends(pageSize: number): Promise<void> {
     const startingCursor = this.galleryData?.nextCursor;
-    if (!startingCursor || this.loadingOlderLegends) return;
+    if (
+      !startingCursor ||
+      this.loadingGallery ||
+      this.loadingOlderLegends
+    ) {
+      return;
+    }
 
     const requestEpoch = this.galleryRequestEpoch;
     this.loadingOlderLegends = true;

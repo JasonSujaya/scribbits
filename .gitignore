@@ -1,5 +1,6 @@
 .DS_Store
 .gstack/
+.pnpm-store/
 *.log
 codex-*.txt
 playtest.log

@@ -21,17 +21,23 @@ async rumbles. Community belief can turn a short-lived Scribbit into a Legend.
 
 ## Current Ship Gates
 
-- [x] Local equivalent of `npm run verify` passes: TypeScript, ESLint, 27
+- [x] Local equivalent of `npm run verify` passes: TypeScript, ESLint, 32
   simulation groups, and production build (July 10).
 - [x] Fresh-browser mock verifies draw -> submit -> server-authoritative stat
   parity -> first fight -> arena/guide/report flow, plus recent battle history
-  and the complete paginated Legend Gallery (July 10).
+  (July 10).
+- [ ] Recheck the current cursor-based Legend Older/Newer controls in a browser;
+  raw paging, stale rows, and beyond-first-page behavior pass mock-endpoint and
+  core simulation proof, but the refreshed local tab was blocked by the browser
+  security policy.
 - [x] Mobile WebGL proof verifies the 25-vertex Phaser 4.2 Inkbody birth reveal,
   stat-driven Shape Power labels, and battle deformation; code retains the
   established 3x3 Canvas fallback.
 - [ ] Installed Reddit playtest verifies the same loop plus boss/care/Back and
   the scheduled result comment on mobile and desktop.
 - [ ] Devvit upload/install/demo post requires user Reddit login and subreddit access.
+- [ ] Add the public subreddit/post URLs and sub-one-minute video to the final
+  Devpost entry.
 
 ## Known Cleanup Priorities
 

@@ -16,6 +16,8 @@ import { generateDoodleTexture } from './art';
 type PendingDrawingLoad = {
   promise: Promise<string>;
   settleForSceneRelease: () => void;
+  claimForActiveBuild: () => void;
+  releaseFromActiveBuild: () => void;
 };
 
 const pendingDrawingLoads = new WeakMap<
@@ -82,11 +84,15 @@ export function loadDrawing(scene: Scene, scribbit: Scribbit): Promise<string> {
   }
 
   const pendingLoad = sceneLoads.get(key);
-  if (pendingLoad) return pendingLoad.promise;
+  if (pendingLoad) {
+    pendingLoad.claimForActiveBuild();
+    return pendingLoad.promise;
+  }
 
   ensureSceneDrawingTextureLifecycle(scene);
 
   let settleForSceneRelease = (): void => undefined;
+  let claimedByActiveBuild = true;
   const drawingLoad = new Promise<string>((resolve) => {
     let settled = false;
     let timeout: Phaser.Time.TimerEvent | null = null;
@@ -112,7 +118,10 @@ export function loadDrawing(scene: Scene, scribbit: Scribbit): Promise<string> {
       scene.load.off('loaderror', onError);
       timeout?.remove(false);
       timeout = null;
-      if (trackTexture) markDrawingTextureUsed(scene, resolvedKey);
+      if (trackTexture) {
+        if (claimedByActiveBuild) markDrawingTextureUsed(scene, resolvedKey);
+        else markDrawingTextureInactive(scene, resolvedKey);
+      }
       resolve(resolvedKey);
     };
 
@@ -136,6 +145,12 @@ export function loadDrawing(scene: Scene, scribbit: Scribbit): Promise<string> {
   const loadRecord: PendingDrawingLoad = {
     promise: drawingLoad,
     settleForSceneRelease,
+    claimForActiveBuild: () => {
+      claimedByActiveBuild = true;
+    },
+    releaseFromActiveBuild: () => {
+      claimedByActiveBuild = false;
+    },
   };
   sceneLoads.set(key, loadRecord);
   void drawingLoad.then(() => {
@@ -181,6 +196,9 @@ const releaseTrackedDrawingTextures = (
 // completed texture leases here and preserve any in-flight request so the new
 // build can reuse the same Promise. Full scene teardown uses the helper below.
 export function releaseRenderedDrawingTextures(scene: Scene): void {
+  pendingDrawingLoads.get(scene)?.forEach((pendingLoad) => {
+    pendingLoad.releaseFromActiveBuild();
+  });
   const lifecycle = sceneDrawingTextures.get(scene);
   if (!lifecycle) {
     trimInactiveDrawingTextures(scene);
@@ -213,9 +231,7 @@ export function releaseSceneDrawingTextures(scene: Scene): void {
 }
 
 function markDrawingTextureUsed(scene: Scene, textureKey: string): void {
-  drawingTextureUseSequence += 1;
-  drawingTextureLastUse.delete(textureKey);
-  drawingTextureLastUse.set(textureKey, drawingTextureUseSequence);
+  touchDrawingTexture(textureKey);
 
   if (scene.scene.isActive()) {
     const lifecycle = ensureSceneDrawingTextureLifecycle(scene);
@@ -230,6 +246,17 @@ function markDrawingTextureUsed(scene: Scene, textureKey: string): void {
   }
 
   trimInactiveDrawingTextures(scene);
+}
+
+function markDrawingTextureInactive(scene: Scene, textureKey: string): void {
+  touchDrawingTexture(textureKey);
+  trimInactiveDrawingTextures(scene);
+}
+
+function touchDrawingTexture(textureKey: string): void {
+  drawingTextureUseSequence += 1;
+  drawingTextureLastUse.delete(textureKey);
+  drawingTextureLastUse.set(textureKey, drawingTextureUseSequence);
 }
 
 function trimInactiveDrawingTextures(scene: Scene): void {

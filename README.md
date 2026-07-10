@@ -49,7 +49,7 @@ For browser-only iteration without Reddit login:
 ```
 
 Open `http://localhost:8902/`. Add `?fresh` to test the brand-new-player path.
-The verification gate currently covers TypeScript, ESLint, 27 deterministic
+The verification gate currently covers TypeScript, ESLint, 32 deterministic
 simulation groups, and the production build.
 
 ## Data and safety

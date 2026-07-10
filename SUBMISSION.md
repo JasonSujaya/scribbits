@@ -88,10 +88,12 @@ named Shape Power it performs, so the drawing determines both numbers and motion
   retries cannot resolve the same Rumble twice.
 - Added a clear return receipt for overnight scouting results, truthful
   server-priced capsules, and a paper-native matchup ceremony.
-- Added paginated recent battle rendering and complete Legend Gallery
-  pagination instead of silently truncating the permanent community archive.
-- Made Belief updates concurrency-safe and nightly/capsule operations
-  idempotent so retries do not duplicate community progress or rewards.
+- Added paginated recent battle rendering and server-cursor Legend Gallery
+  pagination so players can browse beyond the first 50 entries without silent
+  truncation.
+- Made Belief updates concurrency-safe, kept nightly resolution outbox-idempotent,
+  and added atomic capsule operation receipts so ambiguous retries reuse the
+  same result instead of charging or rewarding twice.
 - Hardened mobile play with larger draw targets, keyboard submission, safe-area
   handling, landscape suspension, input realignment, reduced-motion support,
   bounded drawing textures, and a 10-step memory-safe undo stack.
