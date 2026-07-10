@@ -1,2 +1,8 @@
+packages:
+  - .
+
+# protobufjs@7.6.3 only runs a local version-scheme compatibility check in its
+# postinstall script. It is an indirect Devvit dependency and is intentionally
+# the sole allowed dependency build.
 allowBuilds:
-  protobufjs: set this to true or false
+  protobufjs: true
