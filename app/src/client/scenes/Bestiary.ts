@@ -89,10 +89,10 @@ export class Bestiary extends Scene {
       tapeColor: UI.tapeAlt,
     });
     const rows = [
-      ['🫓', 'CHONK / HP', 'Bigger, denser drawings take more hits.'],
-      ['🌵', 'SPIKE / ATK', 'Pointy, jagged outlines strike harder.'],
-      ['💨', 'ZIP / SPD', 'Smaller footprints move first.'],
-      ['✨', 'CHARM / CRIT', 'More distinct colors raise critical chance.'],
+      ['🫓', 'CHONK / HP', 'Filled bodies take a few more hits and unlock Inkquake.'],
+      ['🌵', 'SPIKE / EDGE', 'Jagged outlines unlock three-quill Nib Halo.'],
+      ['💨', 'ZIP / MOVE', 'Compact footprints move faster and unlock Smearstep.'],
+      ['✨', 'CHARM / COLOR', 'Color variety unlocks Colorburst and nudges crits.'],
     ] as const;
     rows.forEach(([emoji, title, description], index) => {
       const y = -104 + index * 68;

@@ -1,14 +1,16 @@
 // Scribbits Arena v3 shared contract — SOURCE OF TRUTH between client and server.
 // Extend, never fork. Analyzer + balance invariants: plans/v3-scribbits-arena.md.
 
+import type { BattleTranscript } from './combat';
+
 export type Element = 'ember' | 'tide' | 'moss' | 'storm';
 
 // Always sums to exactly 100 after server normalization.
 export type ScribbitStats = {
-  chonk: number; // HP pool
-  spike: number; // attack
-  zip: number; // speed (turn order)
-  charm: number; // crit chance scaling
+  chonk: number; // HP/body size + Inkquake identity
+  spike: number; // contact damage + Nib Halo identity
+  zip: number; // continuous movement + Smearstep identity
+  charm: number; // crit chance + Colorburst identity
 };
 
 export type ScribbitStatus = 'alive' | 'faded' | 'legend';
@@ -54,6 +56,13 @@ export type DailyRumbleReceipt = {
   inkAwarded: number;
 };
 
+export type CapsuleProgress = {
+  pullCount: number;
+  pityRemaining: number;
+  discoveredCount: number;
+  collectionTotal: number;
+};
+
 export type ArenaState = {
   dayNumber: number;
   loggedIn: boolean;
@@ -73,6 +82,7 @@ export type ArenaState = {
   myInk: number; // Mystery Ink balance
   myPens: string[]; // unlocked palette pen ids
   nextCapsuleCost: number; // authoritative current price (daily discount already applied)
+  capsuleProgress: CapsuleProgress;
   lastRumbleReceipt: DailyRumbleReceipt | null; // yesterday's Back payoff, if the player made a pick
 };
 
@@ -117,16 +127,18 @@ export type Inventory = {
   items: Record<string, number>; // catalog id -> unattached copies owned
   pens: string[]; // permanent palette unlocks
   titles: string[];
+  discovered: string[]; // permanent catalog discoveries, including consumed accessories
 };
 export type CapsulePullResponse = {
   pull: CapsulePull;
   ink: number;
   inventory: Inventory;
   nextCost: number;
+  progress: CapsuleProgress;
 };
 export type CapsulePullRequest = { operationId: string };
-// Accessory attached during drawing; consumed from inventory at submit.
-// Coordinates in 512x512 canvas space; client bakes visuals into the PNG.
+// Cosmetic accessory attached during drawing; consumed from inventory at submit.
+// Coordinates in 512x512 canvas space; client bakes visuals into the rendered PNG.
 export const MIN_ACCESSORY_SCALE = 0.5;
 export const MAX_ACCESSORY_SCALE = 2;
 export type AttachedAccessory = {
@@ -183,12 +195,16 @@ export type BattleReport = {
   b: Scribbit;
   winner: 'a' | 'b';
   inkAwarded?: number; // actual reward attached by the resolving action, never inferred by the client
-  events: BattleEvent[]; // 6-14 events, replayable
+  // Sparse compatibility projection for old stored battles, Rumble standings,
+  // and clients that predate the continuous authoritative replay.
+  events: BattleEvent[];
+  simulation?: BattleTranscript;
 };
 
 export type SubmitScribbitRequest = {
   name: string;
-  imageDataUrl: string; // png data URL from canvas (accessories baked in), 512x512, <=400KB
+  baseImageDataUrl: string; // undecorated PNG analyzed for stats, 512x512, <=400KB
+  imageDataUrl: string; // rendered PNG uploaded/displayed, 512x512, <=400KB
   stats: ScribbitStats; // deprecated: client preview only; server recomputes from PNG
   element: Element; // deprecated: client preview only; server recomputes from PNG
   accessories?: AttachedAccessory[]; // max 2; server validates ownership + consumes copies

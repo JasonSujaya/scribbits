@@ -11,9 +11,12 @@ Supersedes the catch/collect loop (v1) and hatch/vote (v2 draft). Retire catch m
 
 ## Balance invariants (non-negotiable)
 - Fixed stat budget: every scribbit's stats sum to exactly 100 — shape decides the split, never the amount (server normalizes)
-- Shape→stats (client analyzer, deterministic): ink coverage→chonk(HP) · outline jaggedness→spike(ATK) · smaller footprint→zip(SPD) · distinct hues→charm(crit) · dominant hue→element
-- Element triangle: ember>moss>storm>tide>ember (+25% / −25%); forecast adds ±15% to one element
-- Battle variance: ±10% dice per hit; charm scales crit chance (max 25%)
+- Shape→identity (client preview, server analysis): filled/chonk→Inkquake · jagged/spike→three-quill Nib Halo · compact/zip→Smearstep · colorful/charm→Colorburst · dominant hue→element
+- Drawing traits tune health, movement, criticals, and the power kit, but no extreme archetype matchup may exceed 65% over slot-swapped seeded regression fights
+- Element payloads change tactics rather than applying an opaque matchup multiplier: ember burns · tide knocks back · moss creates a barrier · storm shortens telegraphs
+- Equipped accessories are rendered only after analysis and never affect stats or power selection
+- Battles simulate server-side at a fixed 20 Hz; clients receive an immutable bounded transcript with 0.5-second motion checkpoints, not authority
+- Continuous arena movement, walls, collisions, one Ink Pressure refresh, arena shrink, and late-fight pressure keep visible fights within roughly 15–25 seconds
 - Belief unlocks a 3rd move at 10 belief; never raw stats. Belief dies with the scribbit
 - 1 drawing/day + 1 rumble entry/day, server-enforced. Same-record Swiss pairing. NPC founding scribbits backfill odd/thin brackets
 - Champion snapshot gains nothing from boss fights; dethroning pays fame only

@@ -74,6 +74,7 @@ export type DecodedPngDataUrl = {
 
 export type ValidatedScribbitDraft = {
   name: string;
+  baseImageDataUrl: string;
   imageDataUrl: string;
   stats: ScribbitStats;
   element: Element;
@@ -510,12 +511,18 @@ export const validateSubmitScribbitRequest = (
   const name = validateScribbitName(value.name);
   const accessories = validateAttachedAccessories(value.accessories);
 
-  if (!name || typeof value.imageDataUrl !== 'string' || !accessories) {
+  if (
+    !name ||
+    typeof value.baseImageDataUrl !== 'string' ||
+    typeof value.imageDataUrl !== 'string' ||
+    !accessories
+  ) {
     return undefined;
   }
 
   return {
     name,
+    baseImageDataUrl: value.baseImageDataUrl,
     imageDataUrl: value.imageDataUrl,
     // Deprecated client-provided values are kept for request compatibility.
     // The submit route overwrites both with server analyzer output.

@@ -1,4 +1,5 @@
 import type {
+  CapsuleProgress,
   CapsulePull,
   CapsulePullResponse,
   CapsuleRarity,
@@ -44,6 +45,7 @@ export type CapsulePullSuccess = {
   ink: number;
   inventory: Inventory;
   nextCost: number;
+  progress: CapsuleProgress;
 };
 
 export type CapsulePullInsufficientInk = {
@@ -85,6 +87,8 @@ const maximumTransactionAttempts = 5;
 const capsuleDailyFlagTtlSeconds = 3 * 24 * 60 * 60;
 const capsuleOperationTtlSeconds = 3 * 24 * 60 * 60;
 const capsuleOperationPendingPrefix = 'pending:';
+const capsuleOperationKeyPrefix = 'capsule:operation:';
+const inventoryDiscoveryFieldPrefix = 'discovered:';
 
 export const getInkKey = (userId: string): string => {
   return `ink:${userId}`;
@@ -92,6 +96,10 @@ export const getInkKey = (userId: string): string => {
 
 export const getInventoryKey = (userId: string): string => {
   return `inventory:${userId}`;
+};
+
+const getInventoryDiscoveryField = (catalogId: string): string => {
+  return `${inventoryDiscoveryFieldPrefix}${catalogId}`;
 };
 
 export const getPullsSinceEpicKey = (userId: string): string => {
@@ -113,7 +121,7 @@ export const getCapsuleOperationKey = (
   userId: string,
   operationId: string
 ): string => {
-  return `capsule:operation:${userId}:${operationId}`;
+  return `${capsuleOperationKeyPrefix}${userId}:${operationId}`;
 };
 
 export const getNextCapsuleCost = async (
@@ -153,6 +161,24 @@ export const getInkBalance = async (
   return parseStoredNonNegativeInteger(await storage.get(getInkKey(userId)));
 };
 
+const readPullCount = async (
+  storage: ArenaStorage,
+  userId: string
+): Promise<number> => {
+  return parseStoredNonNegativeInteger(
+    await storage.get(getCapsulePullCountKey(userId))
+  );
+};
+
+const readPullsSinceEpic = async (
+  storage: ArenaStorage,
+  userId: string
+): Promise<number> => {
+  return parseStoredNonNegativeInteger(
+    await storage.get(getPullsSinceEpicKey(userId))
+  );
+};
+
 export const awardInk = async (
   storage: ArenaStorage,
   userId: string,
@@ -187,12 +213,27 @@ export const claimInkReward = async (
   return true;
 };
 
-export const loadInventory = async (
-  storage: ArenaStorage,
-  userId: string
-): Promise<Inventory> => {
-  const storedInventory = await storage.hGetAll(getInventoryKey(userId));
-  return inventoryFromStoredEntries(storedInventory);
+const hasPermanentDiscovery = (
+  entry: InkCatalogEntry,
+  storedInventory: Record<string, string>
+): boolean => {
+  if (storedInventory[getInventoryDiscoveryField(entry.id)] !== undefined) {
+    return true;
+  }
+
+  if (entry.kind === 'accessory') {
+    return parseStoredNonNegativeInteger(storedInventory[entry.id]) > 0;
+  }
+
+  return storedInventory[entry.id] !== undefined;
+};
+
+const getDiscoveredCatalogIds = (
+  storedInventory: Record<string, string>
+): string[] => {
+  return INK_CATALOG.filter((entry) => {
+    return hasPermanentDiscovery(entry, storedInventory);
+  }).map((entry) => entry.id);
 };
 
 const inventoryFromStoredEntries = (
@@ -220,7 +261,75 @@ const inventoryFromStoredEntries = (
     }).map((entry) => {
       return entry.id;
     }),
+    discovered: getDiscoveredCatalogIds(storedInventory),
   };
+};
+
+const persistLegacyDiscoveryMarkers = async (
+  storage: ArenaStorage,
+  inventoryKey: string,
+  storedInventory: Record<string, string>,
+  discoveredCatalogIds: string[]
+): Promise<void> => {
+  const missingMarkers: Record<string, string> = {};
+
+  for (const catalogId of discoveredCatalogIds) {
+    const discoveryField = getInventoryDiscoveryField(catalogId);
+    if (storedInventory[discoveryField] === undefined) {
+      missingMarkers[discoveryField] = '1';
+    }
+  }
+
+  if (Object.keys(missingMarkers).length > 0) {
+    await storage.hSet(inventoryKey, missingMarkers);
+  }
+};
+
+export const loadInventory = async (
+  storage: ArenaStorage,
+  userId: string
+): Promise<Inventory> => {
+  const inventoryKey = getInventoryKey(userId);
+  const storedInventory = await storage.hGetAll(inventoryKey);
+  const inventory = inventoryFromStoredEntries(storedInventory);
+  await persistLegacyDiscoveryMarkers(
+    storage,
+    inventoryKey,
+    storedInventory,
+    inventory.discovered
+  );
+  return inventory;
+};
+
+export const createCapsuleProgress = (
+  pullCount: number,
+  pullsSinceEpic: number,
+  discoveredCount: number
+): CapsuleProgress => {
+  return {
+    pullCount,
+    pityRemaining: Math.max(1, CAPSULE_PITY - pullsSinceEpic),
+    discoveredCount,
+    collectionTotal: INK_CATALOG.length,
+  };
+};
+
+export const loadCapsuleProgress = async (
+  storage: ArenaStorage,
+  userId: string,
+  loadedInventory?: Inventory
+): Promise<CapsuleProgress> => {
+  const [pullCount, pullsSinceEpic, inventory] = await Promise.all([
+    readPullCount(storage, userId),
+    readPullsSinceEpic(storage, userId),
+    loadedInventory ?? loadInventory(storage, userId),
+  ]);
+
+  return createCapsuleProgress(
+    pullCount,
+    pullsSinceEpic,
+    inventory.discovered.length
+  );
 };
 
 export const chooseCapsuleRarity = (roll: number): CapsuleRarity => {
@@ -285,16 +394,6 @@ const createCapsulePull = (
   };
 };
 
-const unlockInventoryEntry = async (
-  storage: ArenaStorage,
-  userId: string,
-  entry: InkCatalogEntry
-): Promise<void> => {
-  await storage.hSet(getInventoryKey(userId), {
-    [entry.id]: entry.kind,
-  });
-};
-
 const getStoredOwnedCount = (
   entry: InkCatalogEntry,
   inventoryEntries: Record<string, string>
@@ -327,6 +426,7 @@ const applyCapsulePullWithoutTransaction = async (
   nextPullCount: number,
   nextPullsSinceEpic: number
 ): Promise<void> => {
+  const inventoryKey = getInventoryKey(userId);
   await storage.incrBy(getInkKey(userId), -capsuleCost);
 
   await storage.set(getCapsulePullCountKey(userId), nextPullCount.toString());
@@ -337,10 +437,13 @@ const applyCapsulePullWithoutTransaction = async (
     nextPullsSinceEpic.toString()
   );
 
+  await storage.hSet(inventoryKey, {
+    [getInventoryDiscoveryField(entry.id)]: '1',
+    ...(entry.kind !== 'accessory' && isNew ? { [entry.id]: entry.kind } : {}),
+  });
+
   if (entry.kind === 'accessory') {
-    await storage.hIncrBy(getInventoryKey(userId), entry.id, 1);
-  } else if (isNew) {
-    await unlockInventoryEntry(storage, userId, entry);
+    await storage.hIncrBy(inventoryKey, entry.id, 1);
   }
 };
 
@@ -358,6 +461,7 @@ const applyCapsulePullWithTransaction = async (
     responseJson: string;
   }
 ): Promise<boolean> => {
+  const inventoryKey = getInventoryKey(userId);
   await transaction.multi();
   await transaction.incrBy(getInkKey(userId), -capsuleCost);
 
@@ -369,12 +473,13 @@ const applyCapsulePullWithTransaction = async (
     nextPullsSinceEpic.toString()
   );
 
+  await transaction.hSet(inventoryKey, {
+    [getInventoryDiscoveryField(entry.id)]: '1',
+    ...(entry.kind !== 'accessory' && isNew ? { [entry.id]: entry.kind } : {}),
+  });
+
   if (entry.kind === 'accessory') {
-    await transaction.hIncrBy(getInventoryKey(userId), entry.id, 1);
-  } else if (isNew) {
-    await transaction.hSet(getInventoryKey(userId), {
-      [entry.id]: entry.kind,
-    });
+    await transaction.hIncrBy(inventoryKey, entry.id, 1);
   }
 
   if (operationCommit) {
@@ -410,9 +515,80 @@ const isNonNegativeInteger = (value: unknown): value is number => {
   return Number.isInteger(value) && Number(value) >= 0;
 };
 
+type ParsedCapsuleOperationResponse = {
+  response: CapsulePullResponse;
+  needsCurrentProgress: boolean;
+  needsCurrentDiscoveries: boolean;
+};
+
+const normalizeReceiptDiscoveries = (
+  inventoryRecord: Record<string, unknown>,
+  itemCounts: Record<string, unknown>,
+  pulledCatalogId: string
+): string[] => {
+  const discoveredIds = new Set<string>();
+  const storedDiscoveries = inventoryRecord.discovered;
+
+  if (Array.isArray(storedDiscoveries)) {
+    for (const catalogId of storedDiscoveries) {
+      if (typeof catalogId === 'string') discoveredIds.add(catalogId);
+    }
+  }
+
+  for (const [catalogId, ownedCount] of Object.entries(itemCounts)) {
+    if (isNonNegativeInteger(ownedCount) && ownedCount > 0) {
+      discoveredIds.add(catalogId);
+    }
+  }
+
+  for (const catalogId of inventoryRecord.pens as string[]) {
+    discoveredIds.add(catalogId);
+  }
+  for (const catalogId of inventoryRecord.titles as string[]) {
+    discoveredIds.add(catalogId);
+  }
+  discoveredIds.add(pulledCatalogId);
+
+  return INK_CATALOG.filter((entry) => discoveredIds.has(entry.id)).map(
+    (entry) => entry.id
+  );
+};
+
+const parseStoredCapsuleProgress = (
+  storedProgress: unknown,
+  discoveredCount: number
+): CapsuleProgress | undefined => {
+  if (
+    typeof storedProgress !== 'object' ||
+    storedProgress === null ||
+    Array.isArray(storedProgress)
+  ) {
+    return undefined;
+  }
+
+  const progressRecord = storedProgress as Record<string, unknown>;
+  if (
+    !isNonNegativeInteger(progressRecord.pullCount) ||
+    !isNonNegativeInteger(progressRecord.discoveredCount) ||
+    !isNonNegativeInteger(progressRecord.collectionTotal) ||
+    !Number.isInteger(progressRecord.pityRemaining) ||
+    Number(progressRecord.pityRemaining) < 1 ||
+    Number(progressRecord.pityRemaining) > CAPSULE_PITY
+  ) {
+    return undefined;
+  }
+
+  return {
+    pullCount: progressRecord.pullCount,
+    pityRemaining: Number(progressRecord.pityRemaining),
+    discoveredCount,
+    collectionTotal: INK_CATALOG.length,
+  };
+};
+
 const parseCapsuleOperationResponse = (
   storedValue: string
-): CapsulePullResponse | undefined => {
+): ParsedCapsuleOperationResponse | undefined => {
   try {
     const response: unknown = JSON.parse(storedValue);
     if (typeof response !== 'object' || response === null) return undefined;
@@ -433,6 +609,7 @@ const parseCapsuleOperationResponse = (
     const pullRecord = pull as Record<string, unknown>;
     const inventoryRecord = inventory as Record<string, unknown>;
     const itemCounts = inventoryRecord.items;
+    const storedDiscoveries = inventoryRecord.discovered;
     if (
       typeof itemCounts !== 'object' ||
       itemCounts === null ||
@@ -454,15 +631,95 @@ const parseCapsuleOperationResponse = (
       !inventoryRecord.pens.every((value) => typeof value === 'string') ||
       !Array.isArray(inventoryRecord.titles) ||
       !inventoryRecord.titles.every((value) => typeof value === 'string') ||
-      !Object.values(itemCounts).every(isNonNegativeInteger)
+      !Object.values(itemCounts).every(isNonNegativeInteger) ||
+      (storedDiscoveries !== undefined &&
+        (!Array.isArray(storedDiscoveries) ||
+          !storedDiscoveries.every((value) => typeof value === 'string')))
     ) {
       return undefined;
     }
 
-    return response as CapsulePullResponse;
+    const discovered = normalizeReceiptDiscoveries(
+      inventoryRecord,
+      itemCounts as Record<string, unknown>,
+      pullRecord.id
+    );
+    const needsCurrentProgress = record.progress === undefined;
+    const progress = needsCurrentProgress
+      ? createCapsuleProgress(0, 0, discovered.length)
+      : parseStoredCapsuleProgress(record.progress, discovered.length);
+    if (!progress) return undefined;
+
+    return {
+      response: {
+        pull: pullRecord as CapsulePull,
+        ink: record.ink,
+        inventory: {
+          items: itemCounts as Record<string, number>,
+          pens: inventoryRecord.pens,
+          titles: inventoryRecord.titles,
+          discovered,
+        },
+        nextCost: record.nextCost,
+        progress,
+      },
+      needsCurrentProgress,
+      needsCurrentDiscoveries: storedDiscoveries === undefined,
+    };
   } catch {
     return undefined;
   }
+};
+
+const getUserIdFromCapsuleOperationKey = (
+  operationKey: string
+): string | undefined => {
+  if (!operationKey.startsWith(capsuleOperationKeyPrefix)) return undefined;
+  const keySuffix = operationKey.slice(capsuleOperationKeyPrefix.length);
+  const operationSeparatorIndex = keySuffix.lastIndexOf(':');
+  if (operationSeparatorIndex <= 0) return undefined;
+  return keySuffix.slice(0, operationSeparatorIndex);
+};
+
+const normalizeLegacyCapsuleOperationResponse = async (
+  storage: ArenaStorage,
+  operationKey: string,
+  parsedReceipt: ParsedCapsuleOperationResponse
+): Promise<CapsulePullResponse> => {
+  if (
+    !parsedReceipt.needsCurrentProgress &&
+    !parsedReceipt.needsCurrentDiscoveries
+  ) {
+    return parsedReceipt.response;
+  }
+
+  const userId = getUserIdFromCapsuleOperationKey(operationKey);
+  if (!userId) return parsedReceipt.response;
+
+  const currentInventory = await loadInventory(storage, userId);
+  const discoveredIds = new Set([
+    ...parsedReceipt.response.inventory.discovered,
+    ...currentInventory.discovered,
+  ]);
+  const discovered = INK_CATALOG.filter((entry) => {
+    return discoveredIds.has(entry.id);
+  }).map((entry) => entry.id);
+  const progress = parsedReceipt.needsCurrentProgress
+    ? await loadCapsuleProgress(storage, userId, currentInventory)
+    : parsedReceipt.response.progress;
+
+  return {
+    ...parsedReceipt.response,
+    inventory: {
+      ...parsedReceipt.response.inventory,
+      discovered,
+    },
+    progress: {
+      ...progress,
+      discoveredCount: discovered.length,
+      collectionTotal: INK_CATALOG.length,
+    },
+  };
 };
 
 // Claim one unique operation key with WATCH/MULTI instead of deleting a stale
@@ -497,8 +754,30 @@ export const claimCapsuleOperation = async (
           return { status: 'pending' };
         }
       } else if (storedValue !== undefined) {
-        const response = parseCapsuleOperationResponse(storedValue);
-        if (response) {
+        const parsedReceipt = parseCapsuleOperationResponse(storedValue);
+        if (parsedReceipt) {
+          const response = await normalizeLegacyCapsuleOperationResponse(
+            storage,
+            operationKey,
+            parsedReceipt
+          );
+          if (
+            parsedReceipt.needsCurrentProgress ||
+            parsedReceipt.needsCurrentDiscoveries
+          ) {
+            await transaction.multi();
+            await transaction.set(operationKey, JSON.stringify(response));
+            await transaction.expire(
+              operationKey,
+              capsuleOperationTtlSeconds
+            );
+            const execResult: unknown = await transaction.exec();
+            if (Array.isArray(execResult) && execResult.length > 0) {
+              return { status: 'completed', response };
+            }
+            continue;
+          }
+
           await transaction.unwatch();
           return { status: 'completed', response };
         }
@@ -551,24 +830,6 @@ export const releaseCapsuleOperation = async (
   }
 
   throw new Error('Mystery Ink operation release did not settle.');
-};
-
-const readPullCount = async (
-  storage: ArenaStorage,
-  userId: string
-): Promise<number> => {
-  return parseStoredNonNegativeInteger(
-    await storage.get(getCapsulePullCountKey(userId))
-  );
-};
-
-const readPullsSinceEpic = async (
-  storage: ArenaStorage,
-  userId: string
-): Promise<number> => {
-  return parseStoredNonNegativeInteger(
-    await storage.get(getPullsSinceEpicKey(userId))
-  );
 };
 
 export const pullCapsuleForUser = async (
@@ -642,29 +903,38 @@ export const pullCapsuleForUser = async (
         pullCount: nextPullCount,
         pullsSinceEpic,
       });
-      const isNew = inventoryEntries[selectedEntry.id] === undefined;
+      const isNew = !hasPermanentDiscovery(selectedEntry, inventoryEntries);
       const ownedCount = getNextOwnedCount(selectedEntry, inventoryEntries);
       const nextPullsSinceEpic =
         selectedEntry.rarity === 'epic' ? 0 : pullsSinceEpic + 1;
       const nextInventoryEntries = { ...inventoryEntries };
+      nextInventoryEntries[getInventoryDiscoveryField(selectedEntry.id)] = '1';
       if (selectedEntry.kind === 'accessory') {
         nextInventoryEntries[selectedEntry.id] = ownedCount.toString();
       } else if (isNew) {
         nextInventoryEntries[selectedEntry.id] = selectedEntry.kind;
       }
       const pull = createCapsulePull(selectedEntry, isNew, ownedCount);
+      const inventory = inventoryFromStoredEntries(nextInventoryEntries);
+      const progress = createCapsuleProgress(
+        nextPullCount,
+        nextPullsSinceEpic,
+        inventory.discovered.length
+      );
       const success: CapsulePullSuccess = {
         status: 'pulled',
         pull,
         ink: inkBalance - capsuleCost,
-        inventory: inventoryFromStoredEntries(nextInventoryEntries),
+        inventory,
         nextCost: CAPSULE_COST,
+        progress,
       };
       const operationResponse: CapsulePullResponse = {
         pull: success.pull,
         ink: success.ink,
         inventory: success.inventory,
         nextCost: success.nextCost,
+        progress: success.progress,
       };
 
       if (transaction) {
@@ -836,6 +1106,9 @@ const consumeAccessoriesWithTransaction = async (
       await transaction.multi();
 
       for (const [accessoryId, requiredCount] of requiredCounts.entries()) {
+        await transaction.hSet(inventoryKey, {
+          [getInventoryDiscoveryField(accessoryId)]: '1',
+        });
         await transaction.hIncrBy(inventoryKey, accessoryId, -requiredCount);
       }
 
@@ -885,6 +1158,9 @@ const consumeAccessoriesWithoutTransaction = async (
   const decrementedCounts: RequiredAccessoryCounts = new Map();
 
   for (const [accessoryId, requiredCount] of requiredCounts.entries()) {
+    await storage.hSet(inventoryKey, {
+      [getInventoryDiscoveryField(accessoryId)]: '1',
+    });
     const nextCount = await storage.hIncrBy(
       inventoryKey,
       accessoryId,

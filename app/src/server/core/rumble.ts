@@ -113,6 +113,13 @@ const getFinalRemainingHp = (
   battleReport: BattleReport,
   slot: 'a' | 'b'
 ): number => {
+  const simulatedFighter = battleReport.simulation?.result.fighters[
+    slot === 'a' ? 0 : 1
+  ];
+  if (simulatedFighter) {
+    return simulatedFighter.finalHitPoints;
+  }
+
   const finalEvent = battleReport.events[battleReport.events.length - 1];
 
   if (!finalEvent) {

@@ -44,6 +44,7 @@ const fallbackStats = { chonk: 25, spike: 25, zip: 25, charm: 25 };
 const levelThresholds = [0, 3, 7, 12, 18];
 const capsuleCost = 10;
 const capsuleFirstDailyCost = 5;
+const capsulePity = 10;
 const maximumLegendsPageSize = 50;
 const maxAccessoriesPerScribbit = 2;
 const accessoryCatalogIds = [
@@ -216,12 +217,276 @@ const makeForecast = (day) => {
 
 let battleCounter = 0;
 
+const combatPowerByStat = {
+  chonk: 'inkquake',
+  spike: 'nib_halo',
+  zip: 'smearstep',
+  charm: 'colorburst',
+};
+
+const combatPowerFor = (scribbit) => {
+  let dominantStat = statKeys[0];
+  for (const stat of statKeys) {
+    if (scribbit.stats[stat] > scribbit.stats[dominantStat]) {
+      dominantStat = stat;
+    }
+  }
+  return combatPowerByStat[dominantStat];
+};
+
+const mockBattleMaximumHitPoints = (scribbit) => 170 + scribbit.stats.chonk;
+
+const triangleWave = (tick, period, phase) => {
+  const progress = ((tick + phase) % period) / period;
+  return progress < 0.5 ? progress * 2 : 2 - progress * 2;
+};
+
+const mockArenaAtTick = (tick) => {
+  const shrinkProgress = Math.max(0, Math.min(1, (tick - 280) / 100));
+  return {
+    halfWidth: Math.round(8000 + (6200 - 8000) * shrinkProgress),
+    halfHeight: Math.round(5000 + (3800 - 5000) * shrinkProgress),
+  };
+};
+
+const mockPositionAtTick = (slot, tick) => {
+  const arena = mockArenaAtTick(tick);
+  const phase = slot === 'a' ? 0 : 61;
+  const xUnit = triangleWave(tick, 122, phase) * 2 - 1;
+  const yUnit = triangleWave(tick, 174, phase + 37) * 2 - 1;
+  return {
+    x: Math.round(xUnit * (arena.halfWidth - 800)),
+    y: Math.round(yUnit * (arena.halfHeight - 700)),
+  };
+};
+
+const createMockSimulation = (kind, fighterA, fighterB, winner) => {
+  const completedTick = 380;
+  const fighters = [fighterA, fighterB];
+  const powers = [combatPowerFor(fighterA), combatPowerFor(fighterB)];
+  const maximumHitPoints = fighters.map(mockBattleMaximumHitPoints);
+  const currentHitPoints = [...maximumHitPoints];
+  const damageDealt = [0, 0];
+  const plannedHits = [
+    { tick: 58, source: 0, ratio: 0.13 },
+    { tick: 96, source: 1, ratio: 0.14 },
+    { tick: 136, source: 0, ratio: 0.16 },
+    { tick: 176, source: 1, ratio: 0.17 },
+    { tick: 216, source: 0, ratio: 0.18 },
+    { tick: 256, source: 1, ratio: 0.16 },
+    { tick: 296, source: winner === 'a' ? 0 : 1, ratio: 0.2 },
+    { tick: 334, source: winner === 'a' ? 1 : 0, ratio: 0.1 },
+    { tick: completedTick, source: winner === 'a' ? 0 : 1, ratio: 1 },
+  ];
+  const timeline = [
+    {
+      tick: 0,
+      kind: 'battle_started',
+      battleId: `mock-simulation-${kind}-${battleCounter}`,
+    },
+    {
+      tick: 280,
+      kind: 'arena_shrink_started',
+      targetHalfWidth: 6200,
+      targetHalfHeight: 3800,
+    },
+    {
+      tick: 360,
+      kind: 'late_fight_started',
+      cooldownMultiplierPermille: 750,
+      defenseTicks: 2,
+    },
+  ];
+  const resolvedHits = [];
+
+  for (const [index, plannedHit] of plannedHits.entries()) {
+    const sourceIndex = plannedHit.source;
+    const targetIndex = sourceIndex === 0 ? 1 : 0;
+    const sourceSlot = sourceIndex === 0 ? 'a' : 'b';
+    const targetSlot = targetIndex === 0 ? 'a' : 'b';
+    const abilityFinishedTick = Math.min(completedTick, plannedHit.tick + 20);
+    const sourcePosition = mockPositionAtTick(sourceSlot, plannedHit.tick - 8);
+    const targetPosition = mockPositionAtTick(targetSlot, plannedHit.tick - 8);
+    const requestedDamage = Math.max(
+      8,
+      Math.round(maximumHitPoints[targetIndex] * plannedHit.ratio)
+    );
+    const damage =
+      index === plannedHits.length - 1
+        ? currentHitPoints[targetIndex]
+        : Math.min(currentHitPoints[targetIndex] - 1, requestedDamage);
+    currentHitPoints[targetIndex] = Math.max(
+      index === plannedHits.length - 1 ? 0 : 1,
+      currentHitPoints[targetIndex] - damage
+    );
+    damageDealt[sourceIndex] += damage;
+    const aimDirection = {
+      x: targetPosition.x - sourcePosition.x,
+      y: targetPosition.y - sourcePosition.y,
+    };
+    timeline.push(
+      {
+        tick: plannedHit.tick - 10,
+        kind: 'ability_telegraphed',
+        actor: sourceSlot,
+        power: powers[sourceIndex],
+        activationNumber: index + 1,
+        origin: sourcePosition,
+        aimDirection,
+        activatesAtTick: plannedHit.tick - 4,
+      },
+      {
+        tick: plannedHit.tick - 4,
+        kind: 'ability_activated',
+        actor: sourceSlot,
+        power: powers[sourceIndex],
+        activationNumber: index + 1,
+        activeUntilTick: abilityFinishedTick,
+      }
+    );
+    if (powers[sourceIndex] === 'colorburst') {
+      timeline.push({
+        tick: plannedHit.tick - 3,
+        kind: 'echo_created',
+        actor: sourceSlot,
+        position: sourcePosition,
+        aimDirection,
+        firesAtTick: plannedHit.tick + 3,
+      });
+    }
+    timeline.push({
+      tick: plannedHit.tick,
+      kind: 'damage',
+      sourceFighter: sourceSlot,
+      targetFighter: targetSlot,
+      source: powers[sourceIndex],
+      amount: damage,
+      targetHitPoints: currentHitPoints[targetIndex],
+      critical: index % 4 === 2,
+      position: mockPositionAtTick(targetSlot, plannedHit.tick),
+    });
+    if (abilityFinishedTick < completedTick) {
+      timeline.push({
+        tick: abilityFinishedTick,
+        kind: 'ability_finished',
+        actor: sourceSlot,
+        power: powers[sourceIndex],
+        activationNumber: index + 1,
+      });
+    }
+    resolvedHits.push({
+      tick: plannedHit.tick,
+      hitPoints: [...currentHitPoints],
+    });
+  }
+
+  const loser = winner === 'a' ? 'b' : 'a';
+  timeline.push(
+    { tick: 300, kind: 'ink_pressure', actor: loser, refreshedImmediately: true },
+    { tick: completedTick, kind: 'fighter_defeated', actor: loser },
+    { tick: completedTick, kind: 'battle_ended', winner, reason: 'knockout' }
+  );
+  timeline.sort((left, right) => left.tick - right.tick);
+
+  const hitPointsAtTick = (tick) => {
+    let values = [...maximumHitPoints];
+    for (const resolvedHit of resolvedHits) {
+      if (resolvedHit.tick > tick) break;
+      values = [...resolvedHit.hitPoints];
+    }
+    return values;
+  };
+  const abilityPhaseAtTick = (slot, tick) => {
+    const relevantHit = plannedHits.find((plannedHit) => {
+      const sourceSlot = plannedHit.source === 0 ? 'a' : 'b';
+      return (
+        sourceSlot === slot &&
+        tick >= plannedHit.tick - 10 &&
+        tick <= Math.min(completedTick, plannedHit.tick + 20)
+      );
+    });
+    if (!relevantHit) return 'cooldown';
+    return tick < relevantHit.tick - 4 ? 'telegraph' : 'active';
+  };
+  const checkpoints = [];
+  for (let tick = 0; tick <= completedTick; tick += 10) {
+    const arena = mockArenaAtTick(tick);
+    const hitPoints = hitPointsAtTick(tick);
+    checkpoints.push({
+      tick,
+      arenaHalfWidth: arena.halfWidth,
+      arenaHalfHeight: arena.halfHeight,
+      fighters: ['a', 'b'].map((slot, index) => {
+        const position = mockPositionAtTick(slot, tick);
+        const nextPosition = mockPositionAtTick(slot, Math.min(completedTick, tick + 1));
+        const isCharmEchoVisible =
+          powers[index] === 'colorburst' && abilityPhaseAtTick(slot, tick) === 'active';
+        return {
+          slot,
+          hitPoints: hitPoints[index],
+          maxHitPoints: maximumHitPoints[index],
+          position,
+          velocity: {
+            x: nextPosition.x - position.x,
+            y: nextPosition.y - position.y,
+          },
+          primaryPower: powers[index],
+          abilityPhase: abilityPhaseAtTick(slot, tick),
+          barrierHitPoints: fighters[index].element === 'moss' && tick < 130 ? 18 : 0,
+          echoPosition: isCharmEchoVisible
+            ? { x: position.x - 900, y: position.y + 300 }
+            : null,
+        };
+      }),
+    });
+  }
+
+  const resultFighters = fighters.map((fighter, index) => ({
+    slot: index === 0 ? 'a' : 'b',
+    id: fighter.id,
+    finalHitPoints: currentHitPoints[index],
+    maxHitPoints: maximumHitPoints[index],
+    hitPointPermille: Math.round(
+      (currentHitPoints[index] * 1000) / maximumHitPoints[index]
+    ),
+    damageDealt: damageDealt[index],
+    primaryPower: powers[index],
+    inkPressureUsed: (index === 0 ? 'a' : 'b') === loser,
+  }));
+
+  return {
+    version: 1,
+    battleId: `mock-simulation-${kind}-${battleCounter}`,
+    seed: `mock:${battleCounter}`,
+    tickRate: 20,
+    fixedPointScale: 100,
+    maxTicks: 500,
+    fighters: fighters.map((fighter) => ({
+      id: fighter.id,
+      name: fighter.name,
+      element: fighter.element,
+      stats: { ...fighter.stats },
+    })),
+    timeline,
+    checkpoints,
+    result: {
+      winner,
+      loser,
+      reason: 'knockout',
+      completedTick,
+      completedMilliseconds: completedTick * 50,
+      fighters: resultFighters,
+    },
+    eventsTruncated: false,
+  };
+};
+
 const createBattleReport = (kind, fighterA, fighterB) => {
   battleCounter += 1;
   const day = memory.dayNumber;
   const winner = battleCounter % 2 === 0 ? 'a' : 'b';
-  let hpA = 120 + fighterA.stats.chonk * 2;
-  let hpB = 120 + fighterB.stats.chonk * 2;
+  let hpA = mockBattleMaximumHitPoints(fighterA);
+  let hpB = mockBattleMaximumHitPoints(fighterB);
   const events = [
     {
       type: 'intro',
@@ -305,6 +570,7 @@ const createBattleReport = (kind, fighterA, fighterB) => {
     b: cloneScribbit(fighterB),
     winner,
     events,
+    simulation: createMockSimulation(kind, fighterA, fighterB, winner),
   };
 };
 
@@ -630,8 +896,24 @@ const memory = {
     },
     pens: ['warm-greys', 'gold-pen', 'rainbow-crayon', 'midnight-ink'],
     titles: ['doodler'],
+    discovered: [
+      'golden-crown',
+      'tiny-sword',
+      'party-hat',
+      'cape',
+      'round-glasses',
+      'dragon-wings',
+      'beanie',
+      'eyepatch-scar',
+      'warm-greys',
+      'gold-pen',
+      'rainbow-crayon',
+      'midnight-ink',
+      'doodler',
+    ],
   },
-  capsulePullCount: 0,
+  capsulePullCount: 13,
+  pullsSinceEpic: 6,
   discountedCapsuleUtcDate: null,
   capsuleOperations: new Map(),
   beliefVotes: new Set(),
@@ -736,6 +1018,22 @@ const capsuleCostForCurrentPull = () => {
   };
 };
 
+const capsuleProgressState = (options = {}) => {
+  const inventory = options.inventory ?? memory.inventory;
+  const pullCount = options.pullCount ?? memory.capsulePullCount;
+  const pullsSinceEpic = options.pullsSinceEpic ?? memory.pullsSinceEpic;
+  const collectionIds = new Set([
+    ...mockCapsuleDrops.map((drop) => drop.id),
+    ...inventory.discovered,
+  ]);
+  return {
+    pullCount,
+    pityRemaining: Math.max(1, capsulePity - pullsSinceEpic),
+    discoveredCount: inventory.discovered.length,
+    collectionTotal: collectionIds.size,
+  };
+};
+
 const countAccessoryIds = (accessoryIds) => {
   const counts = {};
 
@@ -747,22 +1045,23 @@ const countAccessoryIds = (accessoryIds) => {
 };
 
 const addCapsuleDropToInventory = (drop) => {
+  const isNew = !memory.inventory.discovered.includes(drop.id);
+  if (isNew) memory.inventory.discovered.push(drop.id);
+
   if (drop.kind === 'accessory') {
     const previousCount = memory.inventory.items[drop.id] ?? 0;
     const ownedCount = previousCount + 1;
     memory.inventory.items[drop.id] = ownedCount;
 
     return {
-      isNew: previousCount === 0,
+      isNew,
       ownedCount,
     };
   }
 
   const inventoryList =
     drop.kind === 'pen' ? memory.inventory.pens : memory.inventory.titles;
-  const isNew = !inventoryList.includes(drop.id);
-
-  if (isNew) {
+  if (!inventoryList.includes(drop.id)) {
     inventoryList.push(drop.id);
   }
 
@@ -857,6 +1156,7 @@ const arenaState = () => {
     myInk: memory.myInk,
     myPens: [...memory.inventory.pens],
     nextCapsuleCost: capsuleCostForCurrentPull().cost,
+    capsuleProgress: capsuleProgressState(),
     lastRumbleReceipt: {
       resolvedDay: memory.dayNumber - 1,
       backedName: 'Inky Moon',
@@ -899,6 +1199,11 @@ const freshPlayerArenaState = () => {
     myClout: 0,
     myInk: submittedScribbits.length * 2,
     myPens: [],
+    capsuleProgress: capsuleProgressState({
+      inventory: { items: {}, pens: [], titles: [], discovered: [] },
+      pullCount: 0,
+      pullsSinceEpic: 0,
+    }),
     lastRumbleReceipt: null,
   };
 };
@@ -908,6 +1213,7 @@ const inventoryState = () => {
     items: cloneItemCounts(memory.inventory.items),
     pens: [...memory.inventory.pens],
     titles: [...memory.inventory.titles],
+    discovered: [...memory.inventory.discovered],
   };
 };
 
@@ -978,6 +1284,9 @@ const handleApi = async (request, response, url) => {
     }
 
     memory.capsulePullCount += 1;
+    memory.pullsSinceEpic = drop.rarity === 'epic'
+      ? 0
+      : Math.min(capsulePity - 1, memory.pullsSinceEpic + 1);
     memory.discountedCapsuleUtcDate = utcDateKey;
     memory.myInk -= cost;
     const pullInventoryState = addCapsuleDropToInventory(drop);
@@ -990,6 +1299,7 @@ const handleApi = async (request, response, url) => {
       ink: memory.myInk,
       inventory: inventoryState(),
       nextCost: capsuleCost,
+      progress: capsuleProgressState(),
     };
     memory.capsuleOperations.set(operationId, capsuleResponse);
     sendJson(response, 200, capsuleResponse);
@@ -1287,16 +1597,25 @@ const handleApi = async (request, response, url) => {
       return;
     }
 
-    const id = `mock-submitted-${Date.now()}`;
+    const baseImageDataUrl = body?.baseImageDataUrl;
+    const renderedImageDataUrl = body?.imageDataUrl;
     if (
-      typeof body?.imageDataUrl === 'string' &&
-      body.imageDataUrl.startsWith('data:image/png;base64,')
+      typeof baseImageDataUrl !== 'string' ||
+      !baseImageDataUrl.startsWith('data:image/png;base64,') ||
+      typeof renderedImageDataUrl !== 'string' ||
+      !renderedImageDataUrl.startsWith('data:image/png;base64,')
     ) {
-      submittedDrawingBytes.set(
-        id,
-        Buffer.from(body.imageDataUrl.slice('data:image/png;base64,'.length), 'base64')
-      );
+      sendError(response, 400, 'Send both the base drawing and rendered PNG.');
+      return;
     }
+
+    const id = `mock-submitted-${Date.now()}`;
+    // Display the decorated copy while keeping the undecorated copy separate,
+    // matching production's cosmetic-only accessory boundary.
+    submittedDrawingBytes.set(
+      id,
+      Buffer.from(renderedImageDataUrl.slice('data:image/png;base64,'.length), 'base64')
+    );
     const scribbit = makeScribbit({
       id,
       name,

@@ -166,6 +166,7 @@ export class ArenaHome extends Scene {
     cursor = this.drawTopBar(cursor);
     cursor = this.buildForecastCard(width / 2, cursor + 20);
     cursor = this.buildActionRow(width / 2, cursor + 20);
+    cursor = this.buildInkTrailCard(width / 2, cursor + 20);
     cursor = this.buildChampionPoster(width / 2, cursor + 20);
     this.focusEntrantsY = cursor + 44;
     cursor = this.buildEntrantsBracket(cursor + 44);
@@ -372,6 +373,7 @@ export class ArenaHome extends Scene {
     openCapsuleMachine(this, {
       ink: this.state.myInk ?? 0,
       nextCost: this.state.nextCapsuleCost,
+      progress: this.state.capsuleProgress,
       onPull: async (operationId) => {
         const result = await pullCapsule(operationId);
         if (!result.ok) return { error: result.error };
@@ -380,6 +382,94 @@ export class ArenaHome extends Scene {
       // On close, re-fetch so the roster/ink/palette reflect the server truth.
       onClose: () => void this.refresh(),
     });
+  }
+
+  private buildInkTrailCard(x: number, y: number): number {
+    const width = this.scale.width - EDGE * 2;
+    const height = 216;
+    const centerY = y + height / 2;
+    const card = stickerCard(this, x, centerY, width, height, {
+      tapeColor: UI.tapeAlt,
+      tilt: 0.35,
+    });
+    const halfWidth = width / 2;
+    const ink = Math.max(0, this.state.myInk ?? 0);
+    const cost = Math.max(1, this.state.nextCapsuleCost);
+    const fillRatio = Phaser.Math.Clamp(ink / cost, 0, 1);
+    const ready = ink >= cost;
+    const progress = this.state.capsuleProgress;
+
+    card.add(
+      label(
+        this,
+        -halfWidth + 26,
+        -76,
+        ready ? '🎰 CAPSULE READY!' : '🎰 DAILY INK TRAIL',
+        TYPE.title,
+        ready ? UI.coralText : UI.ink,
+        true
+      ).setOrigin(0, 0.5)
+    );
+    card.add(
+      label(
+        this,
+        halfWidth - 24,
+        -76,
+        `${progress.discoveredCount}/${progress.collectionTotal} found`,
+        TYPE.caption,
+        UI.goldText,
+        true
+      ).setOrigin(1, 0.5)
+    );
+
+    const trackX = -halfWidth + 28;
+    const trackWidth = width - 250;
+    card.add(
+      this.add
+        .rectangle(trackX, -10, trackWidth, 28, UI.progressTrack, 0.18)
+        .setOrigin(0, 0.5)
+        .setStrokeStyle(3, UI.inkHex, 0.75)
+    );
+    if (fillRatio > 0) {
+      card.add(
+        this.add
+          .rectangle(trackX + 3, -10, Math.max(6, (trackWidth - 6) * fillRatio), 20, ready ? UI.gold : UI.coral, 1)
+          .setOrigin(0, 0.5)
+      );
+    }
+    card.add(
+      label(this, trackX + trackWidth / 2, -10, `${ink} / ${cost} Ink`, TYPE.caption, UI.ink, true)
+    );
+
+    const pullButton = button(
+      this,
+      halfWidth - 106,
+      -10,
+      ready ? 'OPEN!' : `${Math.max(0, cost - ink)} TO GO`,
+      () => this.openCapsuleMachine(),
+      180,
+      ready ? UI.gold : UI.creamHex,
+      UI.ink
+    );
+    if (!ready) pullButton.setAlpha(0.78);
+    card.add(pullButton);
+
+    const pityCopy = progress.pityRemaining === 1
+      ? 'EPIC GUARANTEED NEXT'
+      : `EPIC IN ≤ ${progress.pityRemaining} PULLS`;
+    card.add(
+      label(
+        this,
+        0,
+        72,
+        `Draw +2 · Care +1 · First spar win +2   •   ${pityCopy}`,
+        TYPE.caption,
+        UI.inkSoft,
+        true
+      ).setWordWrapWidth(width - 48)
+    );
+
+    return centerY + height / 2;
   }
 
   private countdownText(): string {

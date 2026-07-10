@@ -7,23 +7,42 @@ import type {
   Scribbit,
 } from '../../shared/arena';
 import {
-  BELIEF_MOVE_UNLOCK,
   ELEMENT_PREY,
   LEVEL_DAMAGE_BONUS_PER_LEVEL,
   MAX_LEVEL,
-  MOVES_BY_ELEMENT,
 } from '../../shared/arena';
-import { getBattleMaxHp } from '../../shared/battle';
-import { createMulberry32, hashTextToSeed } from './random';
+import {
+  ABILITY_CONFIG_BY_POWER,
+  simulateCombat,
+} from '../../shared/combat';
+import type {
+  BattleTimelineEvent,
+  BattleTranscript,
+  DamageSource,
+  FighterSlot,
+  PrimaryPower,
+} from '../../shared/combat';
+import { hashTextToSeed } from './random';
 
-type FighterSlot = 'a' | 'b';
+const compatibilityEventLimit = 14;
 
-type AttackChoice = {
-  moveName: string;
-  isBeliefMove: boolean;
+const powerDisplayName: Readonly<Record<PrimaryPower, string>> = {
+  inkquake: ABILITY_CONFIG_BY_POWER.inkquake.displayName,
+  nib_halo: ABILITY_CONFIG_BY_POWER.nib_halo.displayName,
+  smearstep: ABILITY_CONFIG_BY_POWER.smearstep.displayName,
+  colorburst: ABILITY_CONFIG_BY_POWER.colorburst.displayName,
 };
 
-const maxAttackCount = 5;
+const damageSourceDisplayName: Readonly<Record<DamageSource, string>> = {
+  inkquake: powerDisplayName.inkquake,
+  nib_halo: powerDisplayName.nib_halo,
+  smearstep: powerDisplayName.smearstep,
+  colorburst: powerDisplayName.colorburst,
+  colorburst_echo: 'Colorburst Echo',
+  contact: 'body check',
+  ember_burn: 'Ember afterburn',
+  nib_wall_recoil: 'recoiling nib',
+};
 
 const clampLevel = (level: number): number => {
   if (!Number.isFinite(level)) {
@@ -37,14 +56,9 @@ export const getLevelDamageMultiplier = (level: number): number => {
   return 1 + (clampLevel(level) - 1) * LEVEL_DAMAGE_BONUS_PER_LEVEL;
 };
 
-const cloneScribbitSnapshot = (scribbit: Scribbit): Scribbit => {
-  return {
-    ...scribbit,
-    stats: { ...scribbit.stats },
-    careDoneToday: [...scribbit.careDoneToday],
-  };
-};
-
+// Retained for stored-report compatibility and forecast copy. The fixed-tick
+// engine replaces this old blanket matchup multiplier with readable elemental
+// payloads: Ember burn, Tide knockback, Moss barrier, and Storm timing.
 export const getElementDamageMultiplier = (
   attackerElement: Element,
   defenderElement: Element
@@ -75,8 +89,13 @@ export const getForecastDamageMultiplier = (
   return 1;
 };
 
-const getPossessiveName = (name: string): string => {
-  return name.endsWith('s') ? `${name}'` : `${name}'s`;
+const cloneScribbitSnapshot = (scribbit: Scribbit): Scribbit => {
+  return {
+    ...scribbit,
+    stats: { ...scribbit.stats },
+    accessories: [...scribbit.accessories],
+    careDoneToday: [...scribbit.careDoneToday],
+  };
 };
 
 const getFighter = (
@@ -87,57 +106,14 @@ const getFighter = (
   return slot === 'a' ? fighterA : fighterB;
 };
 
-const getOtherSlot = (slot: FighterSlot): FighterSlot => {
-  return slot === 'a' ? 'b' : 'a';
-};
-
-const chooseFirstSlot = (fighterA: Scribbit, fighterB: Scribbit): FighterSlot => {
-  if (fighterA.stats.zip !== fighterB.stats.zip) {
-    return fighterA.stats.zip > fighterB.stats.zip ? 'a' : 'b';
-  }
-
-  if (fighterA.stats.charm !== fighterB.stats.charm) {
-    return fighterA.stats.charm > fighterB.stats.charm ? 'a' : 'b';
-  }
-
-  return fighterA.id <= fighterB.id ? 'a' : 'b';
-};
-
-const chooseMove = (
-  scribbit: Scribbit,
-  attackNumber: number
-): AttackChoice => {
-  const moves = MOVES_BY_ELEMENT[scribbit.element];
-
-  if (
-    scribbit.belief >= BELIEF_MOVE_UNLOCK &&
-    attackNumber > 0 &&
-    attackNumber % 3 === 0
-  ) {
-    return {
-      moveName: moves[2],
-      isBeliefMove: true,
-    };
-  }
-
-  return {
-    moveName: attackNumber % 2 === 1 ? moves[0] : moves[1],
-    isBeliefMove: false,
-  };
-};
-
-const createMoveText = (scribbit: Scribbit, moveName: string): string => {
-  return `${scribbit.name} winds up ${moveName} with deeply questionable confidence.`;
-};
-
-const createHitText = (
-  attacker: Scribbit,
-  moveName: string,
-  damage: number,
-  isCrit: boolean
-): string => {
-  const critLead = isCrit ? 'CRIT! ' : '';
-  return `${critLead}${getPossessiveName(attacker.name)} ${moveName} connects - ${damage} damage!`;
+const forecastAffectsBattle = (
+  fighterA: Scribbit,
+  fighterB: Scribbit,
+  forecast: Forecast
+): boolean => {
+  return [fighterA.element, fighterB.element].some((element) => {
+    return element === forecast.boostedElement || element === forecast.nerfedElement;
+  });
 };
 
 const createWeatherText = (
@@ -153,55 +129,20 @@ const createWeatherText = (
     .map((fighter) => fighter.name);
 
   if (boostedNames.length > 0) {
-    return `${forecast.blurb}; ${boostedNames.join(' and ')} get a ${forecast.boostedElement} boost.`;
+    return `${forecast.blurb}; ${boostedNames.join(' and ')} catch the ${forecast.boostedElement} current.`;
   }
 
-  return `${forecast.blurb}; ${nerfedNames.join(' and ')} feel the ${forecast.nerfedElement} wobble.`;
+  return `${forecast.blurb}; ${nerfedNames.join(' and ')} fight through the ${forecast.nerfedElement} drag.`;
 };
 
 const getWeatherActor = (
   fighterA: Scribbit,
   forecast: Forecast
 ): FighterSlot => {
-  if (
-    fighterA.element === forecast.boostedElement ||
+  return fighterA.element === forecast.boostedElement ||
     fighterA.element === forecast.nerfedElement
-  ) {
-    return 'a';
-  }
-
-  return 'b';
-};
-
-const forecastAffectsBattle = (
-  fighterA: Scribbit,
-  fighterB: Scribbit,
-  forecast: Forecast
-): boolean => {
-  return [fighterA.element, fighterB.element].some((element) => {
-    return element === forecast.boostedElement || element === forecast.nerfedElement;
-  });
-};
-
-const chooseWinnerByRemainingHp = (
-  fighterA: Scribbit,
-  fighterB: Scribbit,
-  hpA: number,
-  hpB: number
-): FighterSlot => {
-  if (hpA !== hpB) {
-    return hpA > hpB ? 'a' : 'b';
-  }
-
-  if (fighterA.stats.zip !== fighterB.stats.zip) {
-    return fighterA.stats.zip > fighterB.stats.zip ? 'a' : 'b';
-  }
-
-  if (fighterA.stats.charm !== fighterB.stats.charm) {
-    return fighterA.stats.charm > fighterB.stats.charm ? 'a' : 'b';
-  }
-
-  return fighterA.id <= fighterB.id ? 'a' : 'b';
+    ? 'a'
+    : 'b';
 };
 
 const createReportId = (
@@ -217,64 +158,57 @@ const createReportId = (
   return `battle-${kind}-${forecast.day}-${reportSeed.toString(36)}`;
 };
 
-const calculateDamage = (
-  attacker: Scribbit,
-  defender: Scribbit,
-  forecast: Forecast,
-  randomNumber: () => number,
-  isBeliefMove: boolean
-): { damage: number; isCrit: boolean } => {
-  const baseDamage = 8 + attacker.stats.spike * 0.9;
-  const diceMultiplier = 0.9 + randomNumber() * 0.2;
-  const critChance = Math.min(0.25, attacker.stats.charm / 220);
-  const isCrit = randomNumber() < critChance;
-  const critMultiplier = isCrit ? 1.6 : 1;
-  const beliefMultiplier = isBeliefMove ? 1.1 : 1;
-  const damage = Math.max(
-    1,
-    Math.round(
-      baseDamage *
-        getElementDamageMultiplier(attacker.element, defender.element) *
-        getForecastDamageMultiplier(attacker.element, forecast) *
-        diceMultiplier *
-        critMultiplier *
-        beliefMultiplier *
-        getLevelDamageMultiplier(attacker.level)
-    )
-  );
-
-  return {
-    damage,
-    isCrit,
-  };
-};
-
-export const simulate = (
+const createCombatSeed = (
   fighterA: Scribbit,
   fighterB: Scribbit,
   seed: number,
   forecast: Forecast,
   kind: BattleKind
-): BattleReport => {
-  const randomNumber = createMulberry32(seed);
-  const firstSlot = chooseFirstSlot(fighterA, fighterB);
-  const secondSlot = getOtherSlot(firstSlot);
-  const turnOrder: [FighterSlot, FighterSlot] = [firstSlot, secondSlot];
-  const attackCounts: Record<FighterSlot, number> = {
-    a: 0,
-    b: 0,
-  };
-  let hpA = getBattleMaxHp(fighterA.stats);
-  let hpB = getBattleMaxHp(fighterB.stats);
+): string => {
+  return `${kind}:${forecast.day}:${seed}:${fighterA.id}:${fighterB.id}`;
+};
+
+const getCombatDamageModifierPermille = (
+  fighter: Scribbit,
+  forecast: Forecast
+): number => {
+  return Math.round(
+    getLevelDamageMultiplier(fighter.level) *
+      getForecastDamageMultiplier(fighter.element, forecast) *
+      1_000
+  );
+};
+
+const createDamageText = (
+  event: Extract<BattleTimelineEvent, { kind: 'damage' }>,
+  fighterA: Scribbit,
+  fighterB: Scribbit
+): string => {
+  const attacker = getFighter(event.sourceFighter, fighterA, fighterB);
+  const moveName = damageSourceDisplayName[event.source];
+  const criticalLead = event.critical ? 'CRIT! ' : '';
+  return `${criticalLead}${attacker.name}'s ${moveName} lands for ${event.amount}.`;
+};
+
+const projectCompatibilityEvents = (
+  transcript: BattleTranscript,
+  fighterA: Scribbit,
+  fighterB: Scribbit,
+  forecast: Forecast
+): BattleEvent[] => {
+  const fighterAResult = transcript.result.fighters[0];
+  const fighterBResult = transcript.result.fighters[1];
+  let hpA = fighterAResult.maxHitPoints;
+  let hpB = fighterBResult.maxHitPoints;
   const events: BattleEvent[] = [
     {
       type: 'intro',
-      actor: firstSlot,
+      actor: 'a',
       move: null,
       damage: null,
       hpA,
       hpB,
-      text: `${fighterA.name} and ${fighterB.name} stomp into the bracket like they own the crayons.`,
+      text: `${fighterA.name} and ${fighterB.name} ricochet into the paper arena.`,
     },
   ];
 
@@ -290,86 +224,100 @@ export const simulate = (
     });
   }
 
-  let attacksResolved = 0;
-  while (attacksResolved < maxAttackCount && hpA > 0 && hpB > 0) {
-    const actor = attacksResolved % 2 === 0 ? turnOrder[0] : turnOrder[1];
-    const defender = getOtherSlot(actor);
-    const attackerScribbit = getFighter(actor, fighterA, fighterB);
-    const defenderScribbit = getFighter(defender, fighterA, fighterB);
-    attackCounts[actor] += 1;
-    const attackChoice = chooseMove(attackerScribbit, attackCounts[actor]);
-
-    events.push({
-      type: 'move',
-      actor,
-      move: attackChoice.moveName,
-      damage: null,
-      hpA,
-      hpB,
-      text: createMoveText(attackerScribbit, attackChoice.moveName),
-    });
-
-    const damageResult = calculateDamage(
-      attackerScribbit,
-      defenderScribbit,
-      forecast,
-      randomNumber,
-      attackChoice.isBeliefMove
-    );
-
-    if (defender === 'a') {
-      hpA = Math.max(0, hpA - damageResult.damage);
-      if (hpA === 0 && attacksResolved === 0) {
-        hpA = 1;
+  const revealedPowers = new Set<FighterSlot>();
+  for (const timelineEvent of transcript.timeline) {
+    if (timelineEvent.kind === 'damage') {
+      if (timelineEvent.targetFighter === 'a') {
+        hpA = timelineEvent.targetHitPoints;
+      } else {
+        hpB = timelineEvent.targetHitPoints;
       }
-    } else {
-      hpB = Math.max(0, hpB - damageResult.damage);
-      if (hpB === 0 && attacksResolved === 0) {
-        hpB = 1;
+
+      if (events.length < compatibilityEventLimit - 1) {
+        events.push({
+          type: timelineEvent.critical ? 'crit' : 'hit',
+          actor: timelineEvent.sourceFighter,
+          move: damageSourceDisplayName[timelineEvent.source],
+          damage: timelineEvent.amount,
+          hpA,
+          hpB,
+          text: createDamageText(timelineEvent, fighterA, fighterB),
+        });
       }
+      continue;
     }
 
-    events.push({
-      type: damageResult.isCrit ? 'crit' : 'hit',
-      actor,
-      move: attackChoice.moveName,
-      damage: damageResult.damage,
-      hpA,
-      hpB,
-      text: createHitText(
-        attackerScribbit,
-        attackChoice.moveName,
-        damageResult.damage,
-        damageResult.isCrit
-      ),
-    });
-
-    attacksResolved += 1;
+    if (
+      timelineEvent.kind === 'ability_telegraphed' &&
+      !revealedPowers.has(timelineEvent.actor) &&
+      events.length < compatibilityEventLimit - 1
+    ) {
+      revealedPowers.add(timelineEvent.actor);
+      const actor = getFighter(timelineEvent.actor, fighterA, fighterB);
+      const moveName = powerDisplayName[timelineEvent.power];
+      events.push({
+        type: 'move',
+        actor: timelineEvent.actor,
+        move: moveName,
+        damage: null,
+        hpA,
+        hpB,
+        text: `${actor.name} sketches ${moveName} into motion.`,
+      });
+    }
   }
 
-  const winner =
-    hpA <= 0
-      ? 'b'
-      : hpB <= 0
-        ? 'a'
-        : chooseWinnerByRemainingHp(fighterA, fighterB, hpA, hpB);
-  const loser = getOtherSlot(winner);
+  const loser = transcript.result.loser;
   const loserScribbit = getFighter(loser, fighterA, fighterB);
-
-  if (loser === 'a') {
-    hpA = 0;
-  } else {
-    hpB = 0;
-  }
-
+  const winnerScribbit = getFighter(transcript.result.winner, fighterA, fighterB);
   events.push({
     type: 'faint',
     actor: loser,
     move: null,
     damage: null,
-    hpA,
-    hpB,
-    text: `${loserScribbit.name} folds into a heroic little floor scribble.`,
+    hpA: fighterAResult.finalHitPoints,
+    hpB: fighterBResult.finalHitPoints,
+    text:
+      transcript.result.reason === 'knockout' ||
+      transcript.result.reason === 'double_knockout'
+        ? `${loserScribbit.name} folds into a dramatic doodle pile.`
+        : `Time! ${winnerScribbit.name} takes the paper-thin decision.`,
+  });
+
+  return events;
+};
+
+export const simulate = (
+  fighterA: Scribbit,
+  fighterB: Scribbit,
+  seed: number,
+  forecast: Forecast,
+  kind: BattleKind
+): BattleReport => {
+  const simulation = simulateCombat({
+    seed: createCombatSeed(fighterA, fighterB, seed, forecast, kind),
+    fighters: [
+      {
+        id: fighterA.id,
+        name: fighterA.name,
+        element: fighterA.element,
+        stats: fighterA.stats,
+        damageModifierPermille: getCombatDamageModifierPermille(
+          fighterA,
+          forecast
+        ),
+      },
+      {
+        id: fighterB.id,
+        name: fighterB.name,
+        element: fighterB.element,
+        stats: fighterB.stats,
+        damageModifierPermille: getCombatDamageModifierPermille(
+          fighterB,
+          forecast
+        ),
+      },
+    ],
   });
 
   return {
@@ -378,7 +326,8 @@ export const simulate = (
     day: forecast.day,
     a: cloneScribbitSnapshot(fighterA),
     b: cloneScribbitSnapshot(fighterB),
-    winner,
-    events,
+    winner: simulation.result.winner,
+    events: projectCompatibilityEvents(simulation, fighterA, fighterB, forecast),
+    simulation,
   };
 };

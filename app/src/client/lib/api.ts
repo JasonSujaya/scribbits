@@ -28,7 +28,7 @@ export type ApiResult<T> =
   | { ok: false; error: string };
 
 const DEFAULT_TIMEOUT_MS = 12000;
-// Submissions carry a PNG data URL, so they get a longer leash.
+// Submissions carry base and rendered PNG data URLs, so they get a longer leash.
 const SUBMIT_TIMEOUT_MS = 20000;
 
 async function getJson<T>(url: string): Promise<ApiResult<T>> {

@@ -14,10 +14,10 @@ export const SIGNATURE_POWER: Record<
   SignatureTrait,
   { name: string; playerHint: string }
 > = {
-  chonk: { name: 'INKQUAKE', playerHint: 'Filled shape powers a heavy squash.' },
-  spike: { name: 'QUILL RUSH', playerHint: 'Jagged edges power a sharp stretch.' },
-  zip: { name: 'SMEARSTEP', playerHint: 'Compact ink powers a quick sidestep.' },
-  charm: { name: 'COLORBURST', playerHint: 'More colors power a bright flourish.' },
+  chonk: { name: 'INKQUAKE', playerHint: 'Filled bodies launch an expanding shockwave.' },
+  spike: { name: 'NIB HALO', playerHint: 'Jagged edges summon three rotating quills.' },
+  zip: { name: 'SMEARSTEP', playerHint: 'Compact shapes predict and dash twice.' },
+  charm: { name: 'COLORBURST', playerHint: 'More colors fire a cone and delayed echo.' },
 };
 
 export type InkMeshGeometry = {

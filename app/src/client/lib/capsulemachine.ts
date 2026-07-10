@@ -10,23 +10,50 @@
 import * as Phaser from 'phaser';
 import { Scene } from 'phaser';
 import { CAPSULE_COST, CAPSULE_FIRST_DAILY_COST } from '../../shared/arena';
-import type { CapsulePull, CapsulePullResponse, CapsuleRarity } from '../../shared/arena';
+import type {
+  CapsuleProgress,
+  CapsulePull,
+  CapsulePullResponse,
+  CapsuleRarity,
+} from '../../shared/arena';
 import { UI, TYPE } from './theme';
 import { label, handLettered, button, ghostButton } from './ui';
 import { RARITY_STYLE } from './pens';
 
 const DEPTH = 2500;
+const COLLECTION_BAR_WIDTH = 480;
+const COLLECTION_BAR_HEIGHT = 22;
+
+// Collector ranks are presentation-only milestones. Pull rewards, rarity, and
+// pity remain entirely server-authoritative.
+const COLLECTOR_RANKS = [
+  { minimumPullCount: 0, name: 'Ink Rookie' },
+  { minimumPullCount: 5, name: 'Capsule Scout' },
+  { minimumPullCount: 15, name: 'Curio Keeper' },
+  { minimumPullCount: 30, name: 'Ink Curator' },
+  { minimumPullCount: 60, name: 'Master Archivist' },
+] as const;
 
 const createCapsuleOperationId = (): string => {
   return globalThis.crypto?.randomUUID?.() ??
     `capsule-${Date.now()}-${Math.random().toString(36).slice(2, 14)}`;
 };
 
+const collectorRankForPullCount = (pullCount: number): string => {
+  for (let index = COLLECTOR_RANKS.length - 1; index >= 0; index -= 1) {
+    const rank = COLLECTOR_RANKS[index];
+    if (rank && pullCount >= rank.minimumPullCount) return rank.name;
+  }
+
+  return COLLECTOR_RANKS[0].name;
+};
+
 export type CapsuleMachineOpts = {
   ink: number; // current ink balance
   nextCost: number; // server-authoritative current price
+  progress: CapsuleProgress; // server-authoritative collection and pity snapshot
   // Perform the pull. The server owns costs, discounts, and final inventory; the
-  // machine only mirrors its returned ink total.
+  // machine only mirrors the returned presentation snapshot.
   onPull: (operationId: string) => Promise<CapsulePullResponse | { error: string }>;
   onClose: (finalInk: number) => void;
 };
@@ -37,6 +64,7 @@ export function openCapsuleMachine(scene: Scene, opts: CapsuleMachineOpts): Caps
   const { width, height } = scene.scale;
   let ink = opts.ink;
   let nextCost = opts.nextCost;
+  let progress = opts.progress;
   let pulling = false;
   let pendingOperationId: string | null = null;
   let closeRequested = false;
@@ -54,6 +82,96 @@ export function openCapsuleMachine(scene: Scene, opts: CapsuleMachineOpts): Caps
   // Ink balance chip.
   const inkChip = label(scene, width / 2, 210, `🫙 Ink: ${ink}`, TYPE.title, UI.ink, true).setScrollFactor(0).setDepth(DEPTH + 2);
   layer.add(inkChip);
+
+  // Permanent collection progress lives above the machine so it remains
+  // readable while prize cards animate over the lower half of the portrait UI.
+  const progressCard = scene.add
+    .container(width / 2, 293)
+    .setScrollFactor(0)
+    .setDepth(DEPTH + 2);
+  const progressPaper = scene.add
+    .rectangle(0, 0, width - 150, 116, UI.creamHex, 0.96)
+    .setStrokeStyle(3, UI.inkHex, 0.85);
+  const collectorRankText = label(scene, 0, -42, '', 22, UI.goldText, true);
+  const collectionText = label(scene, 0, -14, '', TYPE.caption, UI.ink, true);
+  const collectionTrack = scene.add
+    .rectangle(
+      -COLLECTION_BAR_WIDTH / 2,
+      14,
+      COLLECTION_BAR_WIDTH,
+      COLLECTION_BAR_HEIGHT,
+      UI.progressTrack,
+      0.16
+    )
+    .setOrigin(0, 0.5)
+    .setStrokeStyle(3, UI.inkHex, 0.7);
+  const collectionFill = scene.add
+    .rectangle(
+      -COLLECTION_BAR_WIDTH / 2 + 3,
+      14,
+      6,
+      COLLECTION_BAR_HEIGHT - 8,
+      UI.gold,
+      1
+    )
+    .setOrigin(0, 0.5);
+  const pityText = label(scene, 0, 42, '', TYPE.caption, UI.coralText, true);
+  progressCard.add([
+    progressPaper,
+    collectorRankText,
+    collectionText,
+    collectionTrack,
+    collectionFill,
+    pityText,
+  ]);
+  layer.add(progressCard);
+
+  function refreshProgress(animate: boolean): void {
+    const pullCount = Math.max(0, Math.floor(progress.pullCount));
+    const collectionTotal = Math.max(0, Math.floor(progress.collectionTotal));
+    const discoveredCount = Phaser.Math.Clamp(
+      Math.floor(progress.discoveredCount),
+      0,
+      collectionTotal
+    );
+    const collectionRatio =
+      collectionTotal === 0 ? 0 : discoveredCount / collectionTotal;
+    const pityRemaining = Math.max(1, Math.floor(progress.pityRemaining));
+    const pullCountWord = pullCount === 1 ? 'pull' : 'pulls';
+    const pullWord = pityRemaining === 1 ? 'pull' : 'pulls';
+    const fillWidth = Math.max(6, (COLLECTION_BAR_WIDTH - 6) * collectionRatio);
+
+    collectorRankText.setText(
+      `COLLECTOR · ${collectorRankForPullCount(pullCount)} · ${pullCount} ${pullCountWord}`
+    );
+    collectionText.setText(
+      `PERMANENT COLLECTION · ${discoveredCount} / ${collectionTotal}`
+    );
+    pityText.setText(`✨ EPIC guaranteed in ${pityRemaining} ${pullWord}`);
+    collectionFill.setVisible(collectionRatio > 0);
+    scene.tweens.killTweensOf(collectionFill);
+
+    if (animate && collectionRatio > 0) {
+      scene.tweens.add({
+        targets: collectionFill,
+        width: fillWidth,
+        duration: 360,
+        ease: 'Cubic.easeOut',
+      });
+      scene.tweens.add({
+        targets: progressCard,
+        scaleX: 1.02,
+        scaleY: 1.02,
+        duration: 130,
+        yoyo: true,
+        ease: 'Sine.easeOut',
+      });
+    } else {
+      collectionFill.width = fillWidth;
+    }
+  }
+
+  refreshProgress(false);
 
   // --- The machine (hand-drawn) --------------------------------------------
   const machineX = width / 2;
@@ -146,6 +264,8 @@ export function openCapsuleMachine(scene: Scene, opts: CapsuleMachineOpts): Caps
     }
     ink = result.ink;
     nextCost = result.nextCost;
+    progress = result.progress;
+    refreshProgress(true);
     pendingOperationId = null;
     await dropAndPop(scene, capsule, result.pull.rarity);
     revealPrize(scene, layer, result.pull);

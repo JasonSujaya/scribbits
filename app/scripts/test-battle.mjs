@@ -36,6 +36,13 @@ execFileSync(
     'src/shared/arena.ts',
     'src/shared/analyzer-core.ts',
     'src/shared/battle.ts',
+    'src/shared/combat/types.ts',
+    'src/shared/combat/config.ts',
+    'src/shared/combat/fixed-math.ts',
+    'src/shared/combat/random.ts',
+    'src/shared/combat/engine.ts',
+    'src/shared/combat/index.ts',
+    'src/shared/combat/engine.test.ts',
     'src/server/core/day.ts',
     'src/server/core/random.ts',
     'src/server/core/ink.ts',
@@ -54,6 +61,7 @@ execFileSync(
     'src/server/core/moderation.ts',
     'src/server/core/privacy.ts',
     'src/client/lib/inkmesh.ts',
+    'src/client/lib/continuousreplay.ts',
     'src/client/lib/pens.ts',
   ],
   { cwd: repoRoot, stdio: 'inherit' }
@@ -62,6 +70,9 @@ execFileSync(
 const require = createRequire(import.meta.url);
 const analyzerCore = require(join(outDir, 'shared', 'analyzer-core.js'));
 const sharedBattle = require(join(outDir, 'shared', 'battle.js'));
+const combatEngineTests = require(
+  join(outDir, 'shared', 'combat', 'engine.test.js')
+);
 const arena = require(join(outDir, 'shared', 'arena.js'));
 const arenaStore = require(join(outDir, 'server', 'core', 'arenaStore.js'));
 const battle = require(join(outDir, 'server', 'core', 'battle.js'));
@@ -77,6 +88,9 @@ const streakCore = require(join(outDir, 'server', 'core', 'streak.js'));
 const moderationCore = require(join(outDir, 'server', 'core', 'moderation.js'));
 const privacyCore = require(join(outDir, 'server', 'core', 'privacy.js'));
 const inkMeshCore = require(join(outDir, 'client', 'lib', 'inkmesh.js'));
+const continuousReplay = require(
+  join(outDir, 'client', 'lib', 'continuousreplay.js')
+);
 const clientPens = require(join(outDir, 'client', 'lib', 'pens.js'));
 
 const passedChecks = [];
@@ -84,6 +98,10 @@ const passedChecks = [];
 const pass = (name) => {
   passedChecks.push(name);
 };
+
+for (const combatCheck of combatEngineTests.runCombatEngineTests()) {
+  pass(`fixed-tick combat: ${combatCheck}`);
+}
 
 const firstPlayStreak = streakCore.advancePlayStreak(
   { lastPlayedDateKey: undefined, days: 0 },
@@ -152,7 +170,7 @@ assert.equal(inkMeshGeometry.indices.length, 32 * 4, '4x4 mesh needs 32 textured
 assert.equal(
   inkMeshCore.getSignatureTrait({ chonk: 10, spike: 50, zip: 20, charm: 20 }),
   'spike',
-  'dominant jagged-outline stat should select QUILL RUSH'
+  'dominant jagged-outline stat should select NIB HALO'
 );
 assert.equal(
   inkMeshCore.getSignatureTrait({ chonk: 25, spike: 25, zip: 25, charm: 25 }),
@@ -613,15 +631,32 @@ assert.equal(
 );
 assert.ok(
   reportOne.events.length >= 6 && reportOne.events.length <= 14,
-  'battle reports should stay inside the event budget'
+  'legacy projections should stay inside the event budget'
 );
-reportOne.events.forEach((event, index) => {
-  if (event.type !== 'hit' && event.type !== 'crit') return;
-  const telegraph = reportOne.events[index - 1];
-  assert.equal(telegraph?.type, 'move', 'every impact should follow one move telegraph');
-  assert.equal(telegraph?.actor, event.actor, 'move and impact should share the same actor');
-});
-pass('battle determinism and shared max HP');
+assert.ok(reportOne.simulation, 'new battle reports should carry an authoritative transcript');
+assert.equal(
+  reportOne.simulation.result.winner,
+  reportOne.winner,
+  'report winner must come from the authoritative transcript'
+);
+assert.ok(
+  reportOne.simulation.timeline.some((event) => event.kind === 'ability_activated'),
+  'continuous replay should include real ability activations'
+);
+assert.equal(
+  continuousReplay.getUsableBattleTranscript(reportOne),
+  reportOne.simulation,
+  'client should accept the exact authoritative transcript returned by the server'
+);
+const replayMidpoint = continuousReplay.calculateReplayFrame(
+  reportOne.simulation,
+  reportOne.simulation.result.completedTick / 2
+);
+assert.ok(
+  replayMidpoint.fighters.every((fighter) => Number.isFinite(fighter.position.x)),
+  'continuous replay interpolation should keep both fighter positions finite'
+);
+pass('battle determinism, authoritative transcript, replay interpolation, and shared max HP');
 
 const normalizedStats = scribbitCore.normalizeStats({
   chonk: 999,
@@ -790,9 +825,20 @@ assert.equal(
 );
 const pityStorage = createMemoryStorage();
 await pityStorage.set(inkStore.getInkKey('pity-player'), String(arena.CAPSULE_COST));
+await pityStorage.set(inkStore.getCapsulePullCountKey('pity-player'), '17');
 await pityStorage.set(
   inkStore.getPullsSinceEpicKey('pity-player'),
   String(arena.CAPSULE_PITY - 1)
+);
+assert.deepEqual(
+  await inkStore.loadCapsuleProgress(pityStorage, 'pity-player'),
+  {
+    pullCount: 17,
+    pityRemaining: 1,
+    discoveredCount: 0,
+    collectionTotal: inkCatalog.INK_CATALOG.length,
+  },
+  'progress should report one pull remaining immediately before hard pity'
 );
 const pityResult = await inkStore.pullCapsuleForUser(
   pityStorage,
@@ -810,7 +856,22 @@ assert.equal(
   '0',
   'epic pull should reset pity'
 );
-pass('capsule pity triggers at exactly configured count');
+assert.deepEqual(
+  pityResult.progress,
+  {
+    pullCount: 18,
+    pityRemaining: arena.CAPSULE_PITY,
+    discoveredCount: 1,
+    collectionTotal: inkCatalog.INK_CATALOG.length,
+  },
+  'forced epic should atomically advance progress and reset the pity distance'
+);
+assert.deepEqual(
+  await inkStore.loadCapsuleProgress(pityStorage, 'pity-player'),
+  pityResult.progress,
+  'loaded capsule progress should match the completed pull response'
+);
+pass('capsule pity and progress stay truthful at the guarantee boundary');
 
 const duplicateStorage = createMemoryStorage();
 const duplicateUserId = 'duplicate-accessory-0';
@@ -875,6 +936,29 @@ assert.equal(
   arena.CAPSULE_COST,
   'first daily capsule pull should deduct discounted ink'
 );
+const consumedFirstAccessory = await inkStore.consumeAccessoriesForSubmit(
+  duplicateStorage,
+  duplicateUserId,
+  [firstDuplicateDrop.id]
+);
+assert.equal(
+  consumedFirstAccessory.status,
+  'consumed',
+  'the first accessory copy should be consumable'
+);
+const inventoryAfterConsumption = await inkStore.loadInventory(
+  duplicateStorage,
+  duplicateUserId
+);
+assert.equal(
+  inventoryAfterConsumption.items[firstDuplicateDrop.id],
+  undefined,
+  'consuming the final accessory copy should leave no usable inventory count'
+);
+assert.ok(
+  inventoryAfterConsumption.discovered.includes(firstDuplicateDrop.id),
+  'consuming the final copy must preserve permanent collection discovery'
+);
 const secondDuplicateResult = await inkStore.pullCapsuleForUser(
   duplicateStorage,
   duplicateUserId,
@@ -897,20 +981,54 @@ assert.equal(
 );
 assert.equal(
   secondDuplicateResult.pull.ownedCount,
-  2,
-  'duplicate accessory pull should stack to two copies'
+  1,
+  'repulling a consumed accessory should grant one usable copy'
 );
 assert.equal(
   secondDuplicateResult.inventory.items[firstDuplicateDrop.id],
-  2,
-  'duplicate accessory inventory should store two copies'
+  1,
+  'repulled accessory inventory should expose the new usable copy'
 );
 assert.equal(
   await inkStore.getInkBalance(duplicateStorage, duplicateUserId),
   inkAfterFirstDuplicatePull - arena.CAPSULE_COST,
   'duplicate accessory pull should deduct normal ink without refund'
 );
-pass('capsule duplicate accessory stacks without refund');
+pass('capsule discovery survives consumption and controls isNew permanently');
+
+const legacyDuplicateStorage = createMemoryStorage();
+await legacyDuplicateStorage.set(
+  inkStore.getInkKey(duplicateUserId),
+  String(arena.CAPSULE_FIRST_DAILY_COST)
+);
+await legacyDuplicateStorage.hSet(inkStore.getInventoryKey(duplicateUserId), {
+  [firstDuplicateDrop.id]: '1',
+});
+const migratedDuplicateResult = await inkStore.pullCapsuleForUser(
+  legacyDuplicateStorage,
+  duplicateUserId,
+  duplicateDay
+);
+assert.equal(
+  migratedDuplicateResult.status,
+  'pulled',
+  'an old inventory entry should remain pullable without a migration job'
+);
+assert.equal(
+  migratedDuplicateResult.pull.isNew,
+  false,
+  'an accessory currently owned in an old hash should count as discovered'
+);
+assert.equal(
+  migratedDuplicateResult.pull.ownedCount,
+  2,
+  'an old accessory copy should stack with the newly pulled copy'
+);
+assert.ok(
+  migratedDuplicateResult.inventory.discovered.includes(firstDuplicateDrop.id),
+  'the implicit old-inventory migration should emit permanent discovery'
+);
+pass('capsule old inventory migrates implicitly and duplicate copies stack');
 
 const poorStorage = createMemoryStorage();
 await poorStorage.set(
@@ -1001,12 +1119,35 @@ assert.deepEqual(
 );
 
 const completedOperationKey = 'capsule:operation:claim-player:completed-operation';
+const { discovered: legacyDiscoveries, ...legacyInventory } =
+  exactCostResult.inventory;
 const completedOperationResponse = {
   pull: exactCostResult.pull,
   ink: exactCostResult.ink,
-  inventory: exactCostResult.inventory,
+  inventory: legacyInventory,
   nextCost: exactCostResult.nextCost,
 };
+const normalizedCompletedOperationResponse = {
+  ...completedOperationResponse,
+  inventory: {
+    ...completedOperationResponse.inventory,
+    discovered: legacyDiscoveries,
+  },
+  progress: {
+    pullCount: 4,
+    pityRemaining: arena.CAPSULE_PITY - 3,
+    discoveredCount: legacyDiscoveries.length,
+    collectionTotal: inkCatalog.INK_CATALOG.length,
+  },
+};
+await operationClaimStorage.set(
+  inkStore.getCapsulePullCountKey('claim-player'),
+  '4'
+);
+await operationClaimStorage.set(
+  inkStore.getPullsSinceEpicKey('claim-player'),
+  '3'
+);
 await operationClaimStorage.set(
   completedOperationKey,
   JSON.stringify(completedOperationResponse)
@@ -1018,10 +1159,18 @@ assert.deepEqual(
     operationClaimedAtMs,
     operationPendingTimeoutMs
   ),
-  { status: 'completed', response: completedOperationResponse },
-  'a completed typed receipt should be recovered without claiming again'
+  {
+    status: 'completed',
+    response: normalizedCompletedOperationResponse,
+  },
+  'an old completed receipt should recover with normalized discovery and progress'
 );
-pass('capsule operation pending, replacement, and completed recovery');
+assert.equal(
+  await operationClaimStorage.get(completedOperationKey),
+  JSON.stringify(normalizedCompletedOperationResponse),
+  'old receipt normalization should atomically upgrade the receipt without a new charge'
+);
+pass('capsule operation pending, replacement, and legacy receipt recovery');
 
 const operationReleaseStorage = createMemoryStorage({ transactions: true });
 const releaseOperationKey = 'capsule:operation:release-player:operation-0001';
@@ -1125,6 +1274,7 @@ assert.deepEqual(
     ink: atomicCapsuleResult.ink,
     inventory: atomicCapsuleResult.inventory,
     nextCost: atomicCapsuleResult.nextCost,
+    progress: atomicCapsuleResult.progress,
   },
   'atomic receipt should contain the exact paid response'
 );
@@ -1237,6 +1387,15 @@ assert.deepEqual(
   ),
   recoveredOperation.response.inventory,
   'ambiguous response should expose the inventory that committed with its receipt'
+);
+assert.deepEqual(
+  recoveredOperation.response.progress,
+  await inkStore.loadCapsuleProgress(
+    ambiguousCapsuleStorage,
+    ambiguousCapsuleUserId,
+    recoveredOperation.response.inventory
+  ),
+  'ambiguous recovery should expose the exact progress committed with the pull'
 );
 assert.equal(
   await ambiguousCapsuleStorage.get(

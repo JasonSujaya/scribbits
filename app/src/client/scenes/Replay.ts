@@ -20,8 +20,20 @@ import { openDetailModal } from '../lib/detailmodal';
 import { LiveSprite } from '../lib/livesprite';
 import { getSignatureTrait, SIGNATURE_POWER } from '../lib/inkmesh';
 import { fetchArena, spar } from '../lib/api';
+import {
+  calculateReplayFrame,
+  getTimelineEventsInRange,
+  getUsableBattleTranscript,
+} from '../lib/continuousreplay';
+import type { ReplayFrame, ReplayVector } from '../lib/continuousreplay';
 import { showToast } from '@devvit/web/client';
 import type { BattleEvent, BattleReport, Scribbit } from '../../shared/arena';
+import type {
+  BattleTimelineEvent,
+  BattleTranscript,
+  FixedVector,
+  PrimaryPower,
+} from '../../shared/combat';
 import { getBattleMaxHp } from '../../shared/battle';
 
 type Fighter = {
@@ -34,6 +46,14 @@ type Fighter = {
   hpMax: number;
   hpDisplayed: number;
   facing: 1 | -1;
+};
+
+type ShapeEffect = {
+  power: PrimaryPower;
+  phase: 'telegraph' | 'active';
+  startTick: number;
+  endTick: number;
+  aimDirection: FixedVector;
 };
 
 // Battle theater — the demo moment. On WebGL, each submitted PNG is a Phaser
@@ -67,6 +87,12 @@ export class Replay extends Scene {
   private fightersReady = false;
   private skipRequested = false;
   private signatureShown = new Set<'a' | 'b'>();
+  private transcript: BattleTranscript | null = null;
+  private continuousPlaybackActive = false;
+  private playbackTick = 0;
+  private previousPlaybackTick = -1;
+  private combatEffects: Phaser.GameObjects.Graphics | null = null;
+  private readonly shapeEffects = new Map<'a' | 'b', ShapeEffect>();
 
   constructor() {
     super('Replay');
@@ -87,6 +113,12 @@ export class Replay extends Scene {
     this.fightersReady = false;
     this.skipRequested = false;
     this.signatureShown.clear();
+    this.transcript = null;
+    this.continuousPlaybackActive = false;
+    this.playbackTick = 0;
+    this.previousPlaybackTick = -1;
+    this.combatEffects = null;
+    this.shapeEffects.clear();
   }
 
   // Current fast-forward multiplier.
@@ -98,7 +130,9 @@ export class Replay extends Scene {
   // sets its own timeScale, so we only drive speed while the battle is playing.
   private applySpeed(): void {
     if (this.finished) return;
-    this.time.timeScale = this.speed;
+    // Continuous playback advances its own authoritative tick cursor. Scene
+    // timers stay unscaled so speed is applied exactly once to that cursor.
+    this.time.timeScale = this.continuousPlaybackActive ? 1 : this.speed;
     this.tweens.timeScale = this.speed;
   }
 
@@ -115,12 +149,15 @@ export class Replay extends Scene {
       return;
     }
     this.report = report;
+    this.transcript = getUsableBattleTranscript(report) ?? null;
     this.cameras.main.setBackgroundColor(UI.desk);
     this.cameras.main.fadeIn(180, 255, 247, 232);
     this.buildArena();
 
     this.events.once('shutdown', () => {
       this.playTimer?.remove();
+      this.continuousPlaybackActive = false;
+      this.shapeEffects.clear();
       this.time.timeScale = 1;
       this.tweens.timeScale = 1;
     });
@@ -141,6 +178,7 @@ export class Replay extends Scene {
   private buildArena(): void {
     const { width, height } = this.scale;
     this.drawArenaBackdrop();
+    this.combatEffects = this.add.graphics().setDepth(7);
 
     this.drawPlatform(width * 0.26, height * 0.42 + 110);
     this.drawPlatform(width * 0.74, height * 0.42 + 110);
@@ -373,7 +411,10 @@ export class Replay extends Scene {
         hold: 420,
         onComplete: () => {
           this.clearIntroBanner();
-          if (!this.finished) this.startEventLoop();
+          if (!this.finished) {
+            if (this.transcript) this.startContinuousReplay();
+            else this.startEventLoop();
+          }
         },
       });
       this.cameras.main.shake(180, 0.006);
@@ -392,6 +433,358 @@ export class Replay extends Scene {
     const perBeat = Phaser.Math.Clamp(Math.round(19000 / count), 1200, 2100);
     this.playTimer = this.time.addEvent({ delay: perBeat, loop: true, callback: () => this.advance() });
     this.advance();
+  }
+
+  private startContinuousReplay(): void {
+    if (!this.transcript) return;
+    this.continuousPlaybackActive = true;
+    this.playbackTick = 0;
+    this.previousPlaybackTick = -1;
+    this.applySpeed();
+    const frame = calculateReplayFrame(this.transcript, 0);
+    this.applyContinuousFrame(frame);
+    for (const event of getTimelineEventsInRange(this.transcript, -1, 0)) {
+      this.playContinuousEvent(event);
+    }
+    this.previousPlaybackTick = 0;
+    this.drawContinuousEffects(frame);
+  }
+
+  override update(_time: number, deltaMilliseconds: number): void {
+    if (
+      !this.continuousPlaybackActive ||
+      this.finished ||
+      !this.transcript ||
+      !this.fightersReady
+    ) {
+      return;
+    }
+
+    const elapsedTicks =
+      (Math.max(0, deltaMilliseconds) / 1000) *
+      this.transcript.tickRate *
+      this.speed;
+    const nextTick = Math.min(
+      this.transcript.result.completedTick,
+      this.playbackTick + elapsedTicks
+    );
+    const frame = calculateReplayFrame(this.transcript, nextTick);
+    this.applyContinuousFrame(frame);
+    for (const event of getTimelineEventsInRange(
+      this.transcript,
+      this.previousPlaybackTick,
+      nextTick
+    )) {
+      this.playContinuousEvent(event);
+    }
+    this.playbackTick = nextTick;
+    this.previousPlaybackTick = nextTick;
+    this.drawContinuousEffects(frame);
+
+    if (nextTick >= this.transcript.result.completedTick) {
+      this.finish();
+    }
+  }
+
+  private projectReplayVector(
+    position: ReplayVector,
+    frame: ReplayFrame
+  ): { x: number; y: number } {
+    const { width, height } = this.scale;
+    const arenaTop = 280;
+    const arenaBottom = Math.max(arenaTop + 260, height - 320);
+    const centerY = (arenaTop + arenaBottom) / 2;
+    const horizontalRadius = Math.max(150, width / 2 - 105);
+    const verticalRadius = Math.max(120, (arenaBottom - arenaTop) / 2 - 70);
+    return {
+      x:
+        width / 2 +
+        (position.x / Math.max(1, frame.arenaHalfWidth)) * horizontalRadius,
+      y:
+        centerY +
+        (position.y / Math.max(1, frame.arenaHalfHeight)) * verticalRadius,
+    };
+  }
+
+  private applyContinuousFrame(frame: ReplayFrame): void {
+    const fighterFrames = frame.fighters;
+    const fighters = [this.fighterA, this.fighterB] as const;
+
+    fighterFrames.forEach((fighterFrame, index) => {
+      const fighter = fighters[index];
+      if (!fighter) return;
+      const screenPosition = this.projectReplayVector(fighterFrame.position, frame);
+      fighter.homeX = screenPosition.x;
+      fighter.homeY = screenPosition.y;
+      fighter.live?.setPosition(screenPosition.x, screenPosition.y);
+      this.setContinuousHitPoints(fighter, fighterFrame.hitPoints);
+    });
+  }
+
+  private setContinuousHitPoints(fighter: Fighter, hitPoints: number): void {
+    fighter.hpDisplayed = hitPoints;
+    const ratio = fighter.hpMax > 0
+      ? Phaser.Math.Clamp(hitPoints / fighter.hpMax, 0, 1)
+      : 0;
+    fighter.hpBar.width = 276 * ratio;
+    fighter.hpBar.setFillStyle(
+      ratio <= 0.28
+        ? 0xe8555c
+        : ELEMENT_STYLES[fighter.scribbit.element].primary,
+      1
+    );
+  }
+
+  private fighterForSlot(slot: 'a' | 'b'): Fighter {
+    return slot === 'a' ? this.fighterA : this.fighterB;
+  }
+
+  private formatPowerName(power: PrimaryPower): string {
+    if (power === 'inkquake') return 'Inkquake';
+    if (power === 'nib_halo') return 'Nib Halo';
+    if (power === 'smearstep') return 'Smearstep';
+    return 'Colorburst';
+  }
+
+  private formatDamageSource(
+    source: Extract<BattleTimelineEvent, { kind: 'damage' }>['source']
+  ): string {
+    if (source === 'colorburst_echo') return 'Colorburst Echo';
+    if (source === 'ember_burn') return 'Ember afterburn';
+    if (source === 'nib_wall_recoil') return 'recoiling nib';
+    if (source === 'contact') return 'body check';
+    return this.formatPowerName(source);
+  }
+
+  private playContinuousEvent(event: BattleTimelineEvent): void {
+    if (event.kind === 'battle_started') {
+      this.setAnnouncer('The server already knows the result. Now watch the ink fly!');
+      return;
+    }
+
+    if (event.kind === 'ability_telegraphed') {
+      const actor = this.fighterForSlot(event.actor);
+      this.shapeEffects.set(event.actor, {
+        power: event.power,
+        phase: 'telegraph',
+        startTick: event.tick,
+        endTick: event.activatesAtTick,
+        aimDirection: event.aimDirection,
+      });
+      this.telegraphShapePower(event.actor, actor);
+      this.setAnnouncer(
+        `${actor.scribbit.name} winds up ${this.formatPowerName(event.power)}!`
+      );
+      return;
+    }
+
+    if (event.kind === 'ability_activated') {
+      const actor = this.fighterForSlot(event.actor);
+      const existing = this.shapeEffects.get(event.actor);
+      this.shapeEffects.set(event.actor, {
+        power: event.power,
+        phase: 'active',
+        startTick: event.tick,
+        endTick: event.activeUntilTick,
+        aimDirection: existing?.aimDirection ?? {
+          x: actor.facing * 1024,
+          y: 0,
+        },
+      });
+      this.shapePowerBurst(
+        actor,
+        ELEMENT_STYLES[actor.scribbit.element].particle
+      );
+      return;
+    }
+
+    if (event.kind === 'ability_finished') {
+      const effect = this.shapeEffects.get(event.actor);
+      if (effect?.power === event.power) this.shapeEffects.delete(event.actor);
+      return;
+    }
+
+    if (event.kind === 'damage') {
+      const attacker = this.fighterForSlot(event.sourceFighter);
+      const target = this.fighterForSlot(event.targetFighter);
+      this.cameraPunch(event.critical ? 0.017 : 0.009);
+      target.live?.hitReact(
+        Math.sign(target.homeX - attacker.homeX) || target.facing
+      );
+      this.impactBurst(
+        target.homeX,
+        target.homeY,
+        ELEMENT_STYLES[target.scribbit.element].particle,
+        event.critical
+      );
+      this.damagePop(target, event.amount, event.critical);
+      this.setContinuousHitPoints(target, event.targetHitPoints);
+      if (event.critical) this.critFlash();
+      this.setAnnouncer(
+        `${attacker.scribbit.name}'s ${this.formatDamageSource(event.source)} hits for ${event.amount}${event.critical ? ' — CRIT!' : '!'}`
+      );
+      return;
+    }
+
+    if (event.kind === 'barrier_created') {
+      const actor = this.fighterForSlot(event.actor);
+      this.setAnnouncer(`${actor.scribbit.name} grows a Moss paper shield.`);
+      return;
+    }
+
+    if (event.kind === 'barrier_broken') {
+      const actor = this.fighterForSlot(event.actor);
+      this.setAnnouncer(`${actor.scribbit.name}'s paper shield tears open!`);
+      return;
+    }
+
+    if (event.kind === 'nib_wall_ejection') {
+      const actor = this.fighterForSlot(event.actor);
+      this.setAnnouncer(`${actor.scribbit.name}'s wall nib snaps back!`);
+      return;
+    }
+
+    if (event.kind === 'fighter_collision') {
+      this.cameraPunch(0.006);
+      return;
+    }
+
+    if (event.kind === 'arena_shrink_started') {
+      this.setAnnouncer('The paper folds inward — nowhere left to hide!');
+      return;
+    }
+
+    if (event.kind === 'late_fight_started') {
+      this.setAnnouncer('SUDDEN SCRIBBLE! Powers recharge faster!');
+      return;
+    }
+
+    if (event.kind === 'ink_pressure') {
+      const actor = this.fighterForSlot(event.actor);
+      this.setAnnouncer(`${actor.scribbit.name} surges with INK PRESSURE!`);
+      actor.live?.telegraph();
+    }
+  }
+
+  private drawContinuousEffects(frame: ReplayFrame): void {
+    const graphics = this.combatEffects;
+    if (!graphics) return;
+    graphics.clear();
+
+    const { width, height } = this.scale;
+    const arenaTop = 280;
+    const arenaBottom = Math.max(arenaTop + 260, height - 320);
+    graphics.lineStyle(4, UI.inkHex, 0.32);
+    graphics.strokeRoundedRect(
+      78,
+      arenaTop - 24,
+      width - 156,
+      arenaBottom - arenaTop + 48,
+      46
+    );
+
+    const fighterFrames = frame.fighters;
+    for (const [index, fighterFrame] of fighterFrames.entries()) {
+      const slot = index === 0 ? 'a' : 'b';
+      const fighter = this.fighterForSlot(slot);
+      const style = ELEMENT_STYLES[fighter.scribbit.element];
+      const center = this.projectReplayVector(fighterFrame.position, frame);
+
+      if (fighterFrame.barrierHitPoints > 0) {
+        graphics.lineStyle(7, ELEMENT_STYLES.moss.particle, 0.62);
+        graphics.strokeCircle(center.x, center.y, 67);
+      }
+
+      if (fighterFrame.echoPosition) {
+        const echo = this.projectReplayVector(fighterFrame.echoPosition, frame);
+        graphics.fillStyle(style.particle, 0.22);
+        graphics.fillCircle(echo.x, echo.y, 34);
+        graphics.lineStyle(4, style.particle, 0.75);
+        graphics.strokeCircle(echo.x, echo.y, 34);
+      }
+
+      const effect = this.shapeEffects.get(slot);
+      if (!effect) continue;
+      const duration = Math.max(1, effect.endTick - effect.startTick);
+      const progress = Phaser.Math.Clamp(
+        (frame.tick - effect.startTick) / duration,
+        0,
+        1
+      );
+      const alpha = effect.phase === 'telegraph' ? 0.35 + progress * 0.35 : 0.72;
+
+      if (effect.power === 'inkquake') {
+        const radius = effect.phase === 'telegraph' ? 42 : 35 + progress * 145;
+        graphics.lineStyle(effect.phase === 'telegraph' ? 5 : 10, style.particle, alpha);
+        graphics.strokeCircle(center.x, center.y, radius);
+        continue;
+      }
+
+      if (effect.power === 'nib_halo') {
+        const orbitRadius = effect.phase === 'telegraph' ? 48 : 76;
+        for (let nibIndex = 0; nibIndex < 3; nibIndex += 1) {
+          const angle = frame.tick * 0.22 + (Math.PI * 2 * nibIndex) / 3;
+          const nibX = center.x + Math.cos(angle) * orbitRadius;
+          const nibY = center.y + Math.sin(angle) * orbitRadius;
+          graphics.lineStyle(8, style.particle, alpha);
+          graphics.lineBetween(
+            nibX - Math.cos(angle) * 16,
+            nibY - Math.sin(angle) * 16,
+            nibX + Math.cos(angle) * 20,
+            nibY + Math.sin(angle) * 20
+          );
+          graphics.fillStyle(UI.inkHex, alpha);
+          graphics.fillCircle(nibX, nibY, 6);
+        }
+        continue;
+      }
+
+      if (effect.power === 'smearstep') {
+        const velocityLength = Math.max(
+          1,
+          Math.hypot(fighterFrame.velocity.x, fighterFrame.velocity.y)
+        );
+        const trailX = fighterFrame.velocity.x / velocityLength;
+        const trailY = fighterFrame.velocity.y / velocityLength;
+        for (let trailIndex = 1; trailIndex <= 3; trailIndex += 1) {
+          graphics.fillStyle(style.particle, alpha / (trailIndex + 1));
+          graphics.fillEllipse(
+            center.x - trailX * trailIndex * 30,
+            center.y - trailY * trailIndex * 30,
+            70 - trailIndex * 10,
+            42 - trailIndex * 5
+          );
+        }
+        continue;
+      }
+
+      const aimLength = Math.max(
+        1,
+        Math.hypot(effect.aimDirection.x, effect.aimDirection.y)
+      );
+      const aimX = effect.aimDirection.x / aimLength;
+      const aimY = effect.aimDirection.y / aimLength;
+      const perpendicularX = -aimY;
+      const perpendicularY = aimX;
+      const range = effect.phase === 'telegraph' ? 100 : 155;
+      const halfWidth = effect.phase === 'telegraph' ? 42 : 78;
+      graphics.fillStyle(style.particle, effect.phase === 'telegraph' ? 0.18 : 0.3);
+      graphics.fillTriangle(
+        center.x,
+        center.y,
+        center.x + aimX * range + perpendicularX * halfWidth,
+        center.y + aimY * range + perpendicularY * halfWidth,
+        center.x + aimX * range - perpendicularX * halfWidth,
+        center.y + aimY * range - perpendicularY * halfWidth
+      );
+      graphics.lineStyle(5, style.particle, alpha);
+      graphics.lineBetween(
+        center.x,
+        center.y,
+        center.x + aimX * range,
+        center.y + aimY * range
+      );
+    }
   }
 
   private advance(): void {
@@ -636,11 +1029,20 @@ export class Replay extends Scene {
       return;
     }
     this.playTimer?.remove();
+    this.continuousPlaybackActive = false;
+    this.shapeEffects.clear();
+    this.combatEffects?.clear();
     this.clearIntroBanner();
-    const last = this.report.events[this.report.events.length - 1];
-    if (last) {
-      this.fighterA.hpBar.width = Math.max(0, 276 * Math.max(0, Math.min(1, last.hpA / this.fighterA.hpMax)));
-      this.fighterB.hpBar.width = Math.max(0, 276 * Math.max(0, Math.min(1, last.hpB / this.fighterB.hpMax)));
+    if (this.transcript) {
+      this.applyContinuousFrame(
+        calculateReplayFrame(this.transcript, this.transcript.result.completedTick)
+      );
+    } else {
+      const last = this.report.events[this.report.events.length - 1];
+      if (last) {
+        this.fighterA.hpBar.width = Math.max(0, 276 * Math.max(0, Math.min(1, last.hpA / this.fighterA.hpMax)));
+        this.fighterB.hpBar.width = Math.max(0, 276 * Math.max(0, Math.min(1, last.hpB / this.fighterB.hpMax)));
+      }
     }
     this.eventIndex = this.report.events.length;
     this.finish();
@@ -649,6 +1051,9 @@ export class Replay extends Scene {
   private finish(): void {
     if (this.finished) return;
     this.finished = true;
+    this.continuousPlaybackActive = false;
+    this.shapeEffects.clear();
+    this.combatEffects?.clear();
     this.playTimer?.remove();
     this.clearIntroBanner();
 

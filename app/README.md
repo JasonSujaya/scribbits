@@ -8,18 +8,26 @@ enter daily community rumbles. The app identity is `scribbits` in
 ## How to play
 
 1. **Draw:** one Scribbit per UTC day. The live preview explains the mapping:
-   big = HP, pointy = attack, small footprint = speed, colorful = critical
-   chance. Dominant color chooses the element.
+   filled = Inkquake, jagged = Nib Halo, compact = Smearstep, and colorful =
+   Colorburst. The four analyzed traits always normalize to the same 100-point
+   budget. Dominant color chooses the element.
 2. **Fight:** submission automatically enters tonight's Rumble. A new player's
    first Scribbit also receives an immediate exhibition so the core promise is
    visible in the first session. On WebGL, Phaser 4.2 maps the submitted PNG to
    a 25-vertex **Inkbody** mesh. Its dominant drawing stat selects a visible
-   Shape Power: INKQUAKE, QUILL RUSH, SMEARSTEP, or COLORBURST.
-3. **Back:** choose another player’s contender before the nightly resolution.
+   Shape Power: INKQUAKE, NIB HALO, SMEARSTEP, or COLORBURST. The server runs a
+   deterministic 20 Hz simulation and stores its winner, sparse events, and
+   half-second motion checkpoints. Phaser interpolates that immutable transcript
+   into a continuous arena fight without WebSockets or client-side authority.
+3. **Collect:** drawing, care, and the first spar win fill the Daily Ink Trail.
+   Earned-only Ink opens Mystery Capsules with a discounted daily pull, permanent
+   discovery album, collector rank, and visible Epic pity countdown. Rewards are
+   cosmetic and never change drawing analysis or combat stats.
+4. **Back:** choose another player’s contender before the nightly resolution.
    Champion backers earn 3 Clout; runner-up backers earn 1.
-4. **Return:** keep the visible UTC-day streak alive. The scheduler resolves the bracket, crowns the Champion, creates
+5. **Return:** keep the visible UTC-day streak alive. The scheduler resolves the bracket, crowns the Champion, creates
    the next Rumble post, and comments the real result on the resolved post.
-5. **Become a Legend:** Scribbits live for three days. Winning a crown or
+6. **Become a Legend:** Scribbits live for three days. Winning a crown or
    reaching the Belief threshold preserves one in the Gallery.
 
 The game is designed for a short Reddit-feed visit: a lightweight inline card
@@ -39,6 +47,8 @@ delete all stored game data.
 
 - `src/shared/arena.ts`: client/server contract and gameplay constants.
 - `src/shared/analyzer-core.ts`: deterministic PNG analyzer used by both sides.
+- `src/shared/combat`: deterministic fixed-tick combat domain, balance tuning,
+  transcript contract, and regression tests.
 - `src/server/index.ts`: Hono server entry point.
 - `src/server/routes/api.ts`: REST API mounted at `/api`.
 - `src/server/core`: Redis-backed domain logic for arena days, Scribbits, ink,
@@ -47,6 +57,8 @@ delete all stored game data.
 - `src/client/scenes`: game screens.
 - `src/client/lib/inkmesh.ts`: deterministic Mesh2D geometry and stat-driven
   motion rules, kept pure for regression testing.
+- `src/client/lib/continuousreplay.ts`: transcript validation and checkpoint
+  interpolation used by the live-looking replay.
 - `src/client/lib/livesprite.ts`: Phaser Mesh2D Inkbody renderer with a 3x3
   Canvas fallback.
 - `src/client/lib`: Phaser UI, API wrapper, drawing canvas, modals, and effects.
@@ -106,7 +118,8 @@ npm run verify
 
 `npm run verify` runs type-check, lint, simulation tests, and build.
 
-`npm run test:sim` covers deterministic analyzer, Inkbody mesh geometry, battle,
+`npm run test:sim` covers deterministic analyzer, Inkbody mesh geometry, combat
+determinism, payload caps, archetype balance, slot neutrality, battle,
 storage, daily job, ink, clout, expiry, and Swiss rumble behavior. It does not
 replace route or browser testing.
 

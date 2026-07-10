@@ -41,9 +41,11 @@ import {
   awardInk,
   consumeAccessoriesForSubmit,
   claimCapsuleOperation,
+  createCapsuleProgress,
   getCapsuleOperationKey,
   getNextCapsuleCost,
   getInkBalance,
+  loadCapsuleProgress,
   loadInventory,
   pullCapsuleForUser,
   releaseCapsuleOperation,
@@ -276,6 +278,7 @@ api.get('/arena', async (c) => {
     let myInk = 0;
     let myPens: string[] = [];
     let nextCapsuleCost = CAPSULE_FIRST_DAILY_COST;
+    let capsuleProgress = createCapsuleProgress(0, 0, 0);
 
     if (player) {
       playStreakDays = (await recordDailyPlay(redis, player.userId, now)).days;
@@ -292,6 +295,11 @@ api.get('/arena', async (c) => {
       myClout = await getUserClout(redis, player.userId);
       myInk = await getInkBalance(redis, player.userId);
       myPens = inventory.pens;
+      capsuleProgress = await loadCapsuleProgress(
+        redis,
+        player.userId,
+        inventory
+      );
       nextCapsuleCost = await getNextCapsuleCost(
         redis,
         player.userId,
@@ -363,6 +371,7 @@ api.get('/arena', async (c) => {
       myInk,
       myPens,
       nextCapsuleCost,
+      capsuleProgress,
       lastRumbleReceipt,
     });
   } catch (error) {
@@ -417,20 +426,26 @@ api.post('/scribbit', async (c) => {
   if (!draft) {
     return badRequest(
       c,
-      'Send a 2-24 character name, PNG data URL, and valid accessories.'
+      'Send a 2-24 character name, base and rendered PNG data URLs, and valid accessories.'
     );
   }
 
-  const decodedPng = decodePngDataUrl(draft.imageDataUrl);
+  const decodedBasePng = decodePngDataUrl(draft.baseImageDataUrl);
+  const decodedRenderedPng = decodePngDataUrl(draft.imageDataUrl);
 
-  if (!decodedPng) {
-    return badRequest(c, 'Drawings must be 512x512 PNG data URLs under 400 KB.');
+  if (!decodedBasePng || !decodedRenderedPng) {
+    return badRequest(
+      c,
+      'Base and rendered drawings must be 512x512 PNG data URLs under 400 KB each.'
+    );
   }
 
+  // Analyze only the undecorated drawing used by the live preview. Accessories
+  // remain cosmetic while the rendered PNG below is uploaded for display.
   const drawingAnalysis = analyzeDrawing({
-    data: decodedPng.rgba,
-    width: decodedPng.width,
-    height: decodedPng.height,
+    data: decodedBasePng.rgba,
+    width: decodedBasePng.width,
+    height: decodedBasePng.height,
   });
   let createdScribbit: { id: string; day: number } | null = null;
   let claimedSubmitFlags: { day: number; fields: DailyFlagField[] } | null = null;
@@ -1054,7 +1069,12 @@ api.get('/inventory', async (c) => {
   const player = await getCurrentPlayer();
 
   if (!player) {
-    return c.json<Inventory>({ items: {}, pens: [], titles: [] });
+    return c.json<Inventory>({
+      items: {},
+      pens: [],
+      titles: [],
+      discovered: [],
+    });
   }
 
   try {
@@ -1120,6 +1140,7 @@ api.post('/capsule', async (c) => {
       ink: result.ink,
       inventory: result.inventory,
       nextCost: result.nextCost,
+      progress: result.progress,
     };
     return c.json<CapsulePullResponse>(response);
   } catch (error) {

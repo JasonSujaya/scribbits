@@ -1,7 +1,7 @@
 // The 512x512 drawing surface behind the Draw scene. Wraps a native HTML canvas
 // so freehand strokes feel smooth on mobile (pointer events + round line caps).
 // Exposes an undo stack (one snapshot per completed stroke), brush controls, and
-// readouts for the analyzer (getImageData) and submission (toDataURL).
+// readouts for the analyzer (getImageData) and submission PNGs.
 
 export const CANVAS_SIZE = 512;
 
@@ -20,6 +20,13 @@ export type DrawCanvasOptions = {
   // Called after every completed stroke (pointer-up) so the scene can re-run the
   // live analyzer and animate the stat preview.
   onStrokeEnd: () => void;
+};
+
+export type DrawingSubmissionImages = {
+  // The exact undecorated pixels used by the live analyzer.
+  baseImageDataUrl: string;
+  // The player-facing image, including any cosmetic accessories.
+  imageDataUrl: string;
 };
 
 export class DrawCanvas {
@@ -141,20 +148,26 @@ export class DrawCanvas {
     return this.ctx.getImageData(0, 0, CANVAS_SIZE, CANVAS_SIZE);
   }
 
-  // PNG data URL for submission. Keep untouched pixels transparent so the
-  // server analyzer and live preview share one source of truth.
-  // An optional `bake` callback runs after the strokes are drawn but before the
-  // export, receiving the 512x512 context so attached accessories can be welded
-  // permanently into the PNG (the server never sees a separate sticker layer).
-  toDataUrl(bake?: (ctx: CanvasRenderingContext2D) => void): string {
+  // Export the undecorated analyzer source and the player-facing rendered PNG
+  // together. The optional callback only changes the rendered copy, keeping
+  // accessories cosmetic and the server analyzer aligned with the live preview.
+  exportSubmissionImages(
+    decorateRenderedImage?: (ctx: CanvasRenderingContext2D) => void
+  ): DrawingSubmissionImages {
+    const baseImageDataUrl = this.element.toDataURL('image/png');
     const out = document.createElement('canvas');
     out.width = CANVAS_SIZE;
     out.height = CANVAS_SIZE;
     const context = out.getContext('2d');
-    if (!context) return this.element.toDataURL('image/png');
+    if (!context) {
+      return { baseImageDataUrl, imageDataUrl: baseImageDataUrl };
+    }
     context.drawImage(this.element, 0, 0);
-    if (bake) bake(context);
-    return out.toDataURL('image/png');
+    decorateRenderedImage?.(context);
+    return {
+      baseImageDataUrl,
+      imageDataUrl: out.toDataURL('image/png'),
+    };
   }
 
   // --- Internals ------------------------------------------------------------

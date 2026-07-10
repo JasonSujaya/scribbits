@@ -1,4 +1,11 @@
 import type { BattleReport } from '../../shared/arena';
+import type { BattleTranscript } from '../../shared/combat';
+import {
+  COMBAT_MAXIMUM_TICKS,
+  COMBAT_TICK_RATE,
+  MAXIMUM_CHECKPOINTS,
+  MAXIMUM_TIMELINE_EVENTS,
+} from '../../shared/combat';
 import type { ArenaStorage } from './scribbit';
 import {
   cloneScribbit,
@@ -25,8 +32,42 @@ const isRecord = (value: unknown): value is Record<string, unknown> => {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 };
 
+const isBattleTranscript = (value: unknown): value is BattleTranscript => {
+  if (!isRecord(value) || !isRecord(value.result)) {
+    return false;
+  }
+
+  const result = value.result;
+  return (
+    Number.isSafeInteger(value.version) &&
+    value.tickRate === COMBAT_TICK_RATE &&
+    value.maxTicks === COMBAT_MAXIMUM_TICKS &&
+    typeof value.battleId === 'string' &&
+    typeof value.seed === 'string' &&
+    Array.isArray(value.fighters) &&
+    value.fighters.length === 2 &&
+    Array.isArray(value.timeline) &&
+    value.timeline.length >= 2 &&
+    value.timeline.length <= MAXIMUM_TIMELINE_EVENTS &&
+    Array.isArray(value.checkpoints) &&
+    value.checkpoints.length >= 2 &&
+    value.checkpoints.length <= MAXIMUM_CHECKPOINTS &&
+    (result.winner === 'a' || result.winner === 'b') &&
+    (result.loser === 'a' || result.loser === 'b') &&
+    Number.isSafeInteger(result.completedTick) &&
+    Number(result.completedTick) >= 0 &&
+    Number(result.completedTick) <= COMBAT_MAXIMUM_TICKS &&
+    Array.isArray(result.fighters) &&
+    result.fighters.length === 2
+  );
+};
+
 const isBattleReport = (value: unknown): value is BattleReport => {
   if (!isRecord(value) || !Array.isArray(value.events)) {
+    return false;
+  }
+
+  if (value.simulation !== undefined && !isBattleTranscript(value.simulation)) {
     return false;
   }
 

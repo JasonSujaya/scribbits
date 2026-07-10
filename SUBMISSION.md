@@ -12,8 +12,9 @@ midnight the doodle comes alive and fights, with three days to become a Legend.
 Scribbits Arena turns Reddit drawings into living asynchronous fighters. Every
 day, each player draws one creature directly inside the post. The server reads
 the submitted PNG and normalizes it into a fair 100-point build: large shapes
-gain HP, jagged outlines gain attack, small footprints gain speed, and colorful
-drawings gain critical chance.
+become Inkquake bruisers, jagged outlines summon a three-quill Nib Halo, compact
+footprints Smearstep, and colorful drawings fire Colorburst. Shape changes the
+fighter's identity and tactics, never its total stat budget.
 
 Every drawing enters the nightly community Rumble. Players also get one daily
 Back: predict the Champion to earn permanent Scout Clout. Results are published
@@ -37,21 +38,27 @@ named Shape Power it performs, so the drawing determines both numbers and motion
   Belief, Back/Clout competition, and app-authored result comments using actual
   Rumble data.
 - **Hook-y:** one daily drawing, a locked prediction, overnight anticipation,
-  a visible daily streak, permanent Scout Clout, and a three-day life-or-Legend arc.
+  a visible daily streak, permanent Scout Clout, a three-day life-or-Legend arc,
+  and an earned-only capsule collection with daily discount, collector rank,
+  permanent discovery, and transparent Epic pity.
 - **Phaser:** WebGL uses Phaser 4.2's new Mesh2D system to deform 25 textured
   vertices from the player's exact PNG. Chonk, Spike, Zip, or Charm selects a
   distinct silhouette move; impacts travel through the mesh, KO folds it, and
   Canvas keeps a 3x3 slice fallback. Replay timing, particles, camera shake,
   slow motion, cheering, and controls remain Phaser-native.
+- **Server-authored spectacle:** a deterministic 20 Hz simulation fixes the
+  result and stores a bounded transcript. Phaser interpolates it as continuous
+  15–25 second action without WebSockets or client combat authority.
 
 ## 60-second demo
 
 1. **0–6s:** Show the Scribbits Reddit feed card: “Its shape becomes its stats.”
-2. **6–20s:** Draw a pointed, colorful creature; show HP/ATK/SPD/CRIT moving.
+2. **6–20s:** Draw a pointed, colorful creature; show Chonk/Spike/Zip/Charm
+   moving and NIB HALO becoming its live Shape Power.
 3. **20–29s:** Name and submit it; capture the PNG unfolding from an ink blot
    and the “SHAPE POWER” label in the “IT'S ALIVE” reveal.
-4. **29–42s:** Show that exact Mesh2D drawing breathing, performing its named
-   power, lunging once, rippling on impact, and folding on KO.
+4. **29–42s:** Show that exact Mesh2D drawing bouncing continuously around the
+   arena, performing its named power, taking visible damage, and folding on KO.
 5. **42–51s:** Back another player’s contender and show the Rumble countdown.
 6. **51–60s:** Show the next-day Champion, Clout payout, Legend Gallery, and the
    result comment in the Reddit thread.
@@ -72,6 +79,16 @@ named Shape Power it performs, so the drawing determines both numbers and motion
 - Replaced the earlier catch/collection direction with the current daily
   draw-to-stats Rumble loop.
 - Added deterministic server-side PNG analysis and fair stat normalization.
+- Replaced turn-like battle playback with a server-precomputed 20 Hz transcript:
+  continuous wall movement, collisions, HP checkpoints, four persistent Shape
+  Powers, element payloads, arena pressure, and bounded 15–25 second pacing.
+- Added slot-swapped archetype balance, slot-neutrality, determinism, payload,
+  entity-cap, checkpoint-cap, and transcript-cap regression gates.
+- Separated authoritative base drawings from decorated display PNGs so equipped
+  accessories stay cosmetic and cannot alter combat analysis.
+- Promoted Mystery Ink into a visible return loop: daily action progress toward
+  a discounted capsule, permanent collection discovery, collector ranks, and a
+  truthful guaranteed-Epic countdown—all cosmetic, with no paid power.
 - Added daily Back predictions, Clout payouts, three-day lifecycle, Belief, and
   Legends.
 - Added Phaser 4.2 Mesh2D Inkbody fighters: 25-vertex submitted-PNG deformation,

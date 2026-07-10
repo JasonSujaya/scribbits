@@ -40,6 +40,7 @@ import { PEN_CATALOG, PEN_BY_ID, penSwatchColor, RARITY_STYLE } from '../lib/pen
 import type { PenCatalogEntry } from '../lib/pens';
 import {
   CAPSULE_FIRST_DAILY_COST,
+  CAPSULE_PITY,
   INK_REWARDS,
 } from '../../shared/arena';
 import type { ArenaState, Element, Scribbit } from '../../shared/arena';
@@ -72,12 +73,12 @@ const PEN_SHORT_LABEL: Record<string, string> = {
   'rainbow-crayon': 'Rainbow',
 };
 
-// Playful reactive copy keyed by the currently-dominant stat.
-const REACTIONS: Record<string, string[]> = {
-  chonk: ['An absolute UNIT 🫓', 'Big beefy boy 🍞', 'Chonky and proud 🫧'],
-  spike: ['Getting SPIKY 🌵', 'Absolutely stabby 🗡️', 'Ouch, pointy! 📌'],
-  zip: ['Zoomy little guy 💨', 'Gotta go fast 🏃', 'Blink and miss it ⚡'],
-  charm: ['So charming ✨', 'Dazzling colors 🌈', 'Crit machine 💥'],
+// The live dominant-stat preview makes drawing a build legible before submit.
+const POWER_PREVIEW = {
+  chonk: 'INKQUAKE • expanding wave',
+  spike: 'NIB HALO • 3 rotating quills',
+  zip: 'SMEARSTEP • predictive double dash',
+  charm: 'COLORBURST • cone + delayed echo',
 };
 
 export class Draw extends Scene {
@@ -267,7 +268,7 @@ export class Draw extends Scene {
       this,
       width / 2 + 30,
       92,
-      'FILLED→HP · JAGGED→ATK\nCOMPACT→SPD · MORE COLORS→CRIT',
+      'FILLED→INKQUAKE · JAGGED→NIB HALO\nCOMPACT→SMEARSTEP · COLORS→COLORBURST',
       20,
       UI.inkSoft,
       true
@@ -557,17 +558,33 @@ export class Draw extends Scene {
   }
 
   private openCapsuleFromDraw(): void {
+    const arenaState = this.getArenaState();
     this.drawerOpen = false;
     this.stickers?.closeDrawer();
     this.stickers?.hideOverlays();
     this.overlay.setVisible(false);
     openCapsuleMachine(this, {
-      ink: this.getArenaState()?.myInk ?? 0,
-      nextCost:
-        this.getArenaState()?.nextCapsuleCost ?? CAPSULE_FIRST_DAILY_COST,
+      ink: arenaState?.myInk ?? 0,
+      nextCost: arenaState?.nextCapsuleCost ?? CAPSULE_FIRST_DAILY_COST,
+      progress: arenaState?.capsuleProgress ?? {
+        pullCount: 0,
+        pityRemaining: CAPSULE_PITY,
+        discoveredCount: 0,
+        collectionTotal: 1,
+      },
       onPull: async (operationId) => {
         const result = await pullCapsule(operationId);
         if (!result.ok) return { error: result.error };
+        const currentArena = this.getArenaState();
+        if (currentArena) {
+          setArena(this, {
+            ...currentArena,
+            myInk: result.data.ink,
+            myPens: [...result.data.inventory.pens],
+            nextCapsuleCost: result.data.nextCost,
+            capsuleProgress: result.data.progress,
+          });
+        }
         return result.data;
       },
       // Rebuild the pens row so a freshly unlocked pen appears immediately.
@@ -724,11 +741,9 @@ export class Draw extends Scene {
     const dominant = (['chonk', 'spike', 'zip', 'charm'] as const).reduce((best, key) =>
       result.stats[key] > result.stats[best] ? key : best
     );
-    const options = REACTIONS[dominant] ?? ['Looking good!'];
-    // Deterministic pick by inked pixel count so it doesn't flicker every stroke.
-    const pick = options[result.inkedPixels % options.length] ?? options[0] ?? '';
-    if (this.reactionText.text !== pick) {
-      this.reactionText.setText(pick);
+    const powerPreview = POWER_PREVIEW[dominant];
+    if (this.reactionText.text !== powerPreview) {
+      this.reactionText.setText(powerPreview);
       this.reactionText.setColor(ELEMENT_STYLES[result.element].primaryText);
       this.tweens.add({ targets: this.reactionText, scale: 1.12, duration: 160, yoyo: true });
     }
@@ -737,6 +752,11 @@ export class Draw extends Scene {
   // --- Submit + ceremony ----------------------------------------------------
   private trySubmit(): void {
     if (this.submitting) return;
+    // Flush the debounced analyzer so the visible preview and exported base PNG
+    // represent the same final stroke set at the moment of submission.
+    this.previewTimer?.remove();
+    this.previewTimer = null;
+    this.refreshPreview();
     const result = this.lastResult;
     if (!result || result.inkedPixels < MIN_INK_PIXELS) {
       showToast('Your scribbit needs a body! Draw a bit more ✏️');
@@ -764,19 +784,22 @@ export class Draw extends Scene {
     result: AnalyzerResult,
     accessories: AttachedAccessory[]
   ): Promise<void> {
-    // Bake each attached accessory into the 512 PNG at its canvas-space
-    // transform, then send the metadata so the server consumes the copies.
-    const dataUrl = this.canvas.toDataUrl((ctx) => {
-      accessories.forEach((accessory) => {
-        // The AttachedAccessory scale is canvas-px-per-unit-box relative to the
-        // on-screen 120px box; convert back to a canvas-px box edge for the bake.
-        const bakeSize = 120 * accessory.scale;
-        drawAccessoryCanvas(ctx, accessory.id, accessory.x, accessory.y, bakeSize, accessory.rotation);
+    // Export the untouched analyzer source plus a rendered copy with accessories
+    // baked at their canvas-space transforms. Metadata lets the server consume
+    // the owned copies without allowing cosmetics to affect combat stats.
+    const { baseImageDataUrl, imageDataUrl } =
+      this.canvas.exportSubmissionImages((ctx) => {
+        accessories.forEach((accessory) => {
+          // The AttachedAccessory scale is canvas-px-per-unit-box relative to the
+          // on-screen 120px box; convert back to a canvas-px box edge for the bake.
+          const bakeSize = 120 * accessory.scale;
+          drawAccessoryCanvas(ctx, accessory.id, accessory.x, accessory.y, bakeSize, accessory.rotation);
+        });
       });
-    });
     const response = await submitScribbit({
       name,
-      imageDataUrl: dataUrl,
+      baseImageDataUrl,
+      imageDataUrl,
       stats: result.stats,
       element: result.element,
       ...(accessories.length > 0 ? { accessories } : {}),
@@ -816,7 +839,7 @@ export class Draw extends Scene {
         myScribbits: [response.data, ...arena.myScribbits].slice(0, 3),
       });
     }
-    this.playCeremony(response.data, dataUrl);
+    this.playCeremony(response.data, imageDataUrl);
   }
 
   // "IT'S ALIVE" ceremony: the drawing rises with its final card, then home.
