@@ -2,7 +2,6 @@ import {
   COMBAT_PHASE_ORDER,
   DEFAULT_COMBAT_RULES,
   DOMINANT_STAT_TIE_ORDER,
-  PRIMARY_POWER_BY_DOMINANT_STAT,
 } from './config';
 import {
   DIRECTION_SCALE,
@@ -24,6 +23,7 @@ import {
   deterministicRoll,
   normalizeCombatSeed,
 } from './random';
+import { selectPrimaryPower as selectPrimaryPowerForStats } from './selection';
 import type {
   AbilityPhase,
   AuthoritativeBattleResult,
@@ -36,7 +36,6 @@ import type {
   CombatRules,
   CombatSimulationInput,
   DamageSource,
-  DominantStat,
   FighterCheckpoint,
   FighterResult,
   FighterSlot,
@@ -45,6 +44,10 @@ import type {
   PrimaryPower,
   RawCombatStats,
 } from './types';
+
+// Preserve the direct engine-module API while keeping the selectors in a tiny
+// dependency that client previews can import without pulling in the simulator.
+export { selectDominantStat, selectPrimaryPower } from './selection';
 
 type MutableVector = {
   x: number;
@@ -170,6 +173,14 @@ function otherSlot(slot: FighterSlot): FighterSlot {
   return slot === 'a' ? 'b' : 'a';
 }
 
+function assertUnhandledShapePower(power: never): never {
+  throw new Error(`Unhandled Shape Power: ${String(power)}`);
+}
+
+function assertUnhandledCombatPhase(phase: never): never {
+  throw new Error(`Unhandled combat phase: ${String(phase)}`);
+}
+
 function getFighter(
   context: SimulationContext,
   slot: FighterSlot
@@ -184,7 +195,11 @@ function getOpponent(
   return getFighter(context, otherSlot(fighter.slot));
 }
 
-function validateText(value: string, label: string, maximumLength: number): void {
+function validateText(
+  value: string,
+  label: string,
+  maximumLength: number
+): void {
   if (value.trim().length === 0 || value.length > maximumLength) {
     throw new Error(`${label} must contain 1 to ${maximumLength} characters.`);
   }
@@ -226,27 +241,17 @@ function freezeFighterInput(fighter: CombatFighterInput): CombatFighterInput {
   });
 }
 
-export function selectDominantStat(stats: RawCombatStats): DominantStat {
-  let dominant = DOMINANT_STAT_TIE_ORDER[0] ?? 'chonk';
-  for (const stat of DOMINANT_STAT_TIE_ORDER) {
-    if (stats[stat] > stats[dominant]) {
-      dominant = stat;
-    }
-  }
-  return dominant;
-}
-
-export function selectPrimaryPower(stats: RawCombatStats): PrimaryPower {
-  return PRIMARY_POWER_BY_DOMINANT_STAT[selectDominantStat(stats)];
-}
-
 export function getOrbitingNibPosition(
   ownerPosition: FixedVector,
   activeAgeTicks: number,
   nibIndex: number,
   config: NibHaloAbilityConfig = DEFAULT_COMBAT_RULES.abilities.nib_halo
 ): FixedVector {
-  if (!Number.isInteger(nibIndex) || nibIndex < 0 || nibIndex >= config.nibCount) {
+  if (
+    !Number.isInteger(nibIndex) ||
+    nibIndex < 0 ||
+    nibIndex >= config.nibCount
+  ) {
     throw new Error('Nib index is outside the configured halo.');
   }
   const indexOffset = orbitDirections.length / config.nibCount;
@@ -318,10 +323,9 @@ function createFighterState(
   return {
     slot,
     input,
-    primaryPower: selectPrimaryPower(input.stats),
+    primaryPower: selectPrimaryPowerForStats(input.stats),
     position: {
-      x:
-        (slot === 'a' ? -1 : 1) * rules.fighter.startingHorizontalOffset,
+      x: (slot === 'a' ? -1 : 1) * rules.fighter.startingHorizontalOffset,
       y: slot === 'a' ? -300 : 300,
     },
     velocity: copyVector(velocity),
@@ -367,8 +371,7 @@ function calculateArenaHalfExtent(
   if (tick <= rules.arena.shrinkStartsAtTick) {
     return startingExtent;
   }
-  const shrinkDuration =
-    rules.maximumTicks - rules.arena.shrinkStartsAtTick;
+  const shrinkDuration = rules.maximumTicks - rules.arena.shrinkStartsAtTick;
   const shrinkAge = Math.min(
     shrinkDuration,
     tick - rules.arena.shrinkStartsAtTick
@@ -990,7 +993,8 @@ function applyEmberBurn(
   target: MutableFighterState
 ): void {
   const config = context.rules.elements.ember;
-  const fightBudget = config.maximumDamagePerFight - source.emberBurnDamageSpent;
+  const fightBudget =
+    config.maximumDamagePerFight - source.emberBurnDamageSpent;
   if (fightBudget <= 0) {
     return;
   }
@@ -1056,6 +1060,9 @@ function applyResolvedDamage(
       tick: context.tick,
       kind: 'barrier_hit',
       actor: target.slot,
+      sourceFighter: source.slot,
+      source: damageSource,
+      sourceActivationNumber: source.activationNumber,
       absorbedDamage,
       remainingHitPoints: target.barrierHitPoints,
     });
@@ -1159,7 +1166,10 @@ function rollAndApplyDamage(
   let damage = Math.max(1, divideRounded(baseDamage * variance, 1_000));
   damage = Math.max(
     1,
-    divideRounded(damage * (source.input.damageModifierPermille ?? 1_000), 1_000)
+    divideRounded(
+      damage * (source.input.damageModifierPermille ?? 1_000),
+      1_000
+    )
   );
   if (critical) {
     damage = Math.max(
@@ -1482,14 +1492,22 @@ function resolvePrimaryAbility(
   if (fighter.abilityPhase !== 'active') {
     return;
   }
-  if (fighter.primaryPower === 'inkquake') {
-    resolveInkquake(context, fighter);
-  } else if (fighter.primaryPower === 'nib_halo') {
-    resolveNibHalo(context, fighter);
-  } else if (fighter.primaryPower === 'smearstep') {
-    resolveSmearstep(context, fighter);
-  } else {
-    resolveColorburst(context, fighter);
+  const primaryPower = fighter.primaryPower;
+  switch (primaryPower) {
+    case 'inkquake':
+      resolveInkquake(context, fighter);
+      return;
+    case 'nib_halo':
+      resolveNibHalo(context, fighter);
+      return;
+    case 'smearstep':
+      resolveSmearstep(context, fighter);
+      return;
+    case 'colorburst':
+      resolveColorburst(context, fighter);
+      return;
+    default:
+      assertUnhandledShapePower(primaryPower);
   }
 }
 
@@ -1533,7 +1551,10 @@ function resolveEchoes(context: SimulationContext): void {
         fighter,
         opponent,
         'colorburst_echo',
-        Math.max(1, divideRounded(fullDamage * config.echoDamagePermille, 1_000)),
+        Math.max(
+          1,
+          divideRounded(fullDamage * config.echoDamagePermille, 1_000)
+        ),
         'echo',
         true
       );
@@ -1567,8 +1588,7 @@ function resolveContactDamage(context: SimulationContext): void {
       'contact',
       context.rules.fighter.contactBaseDamage +
         Math.floor(
-          fighter.input.stats.spike /
-            context.rules.fighter.contactSpikeDivisor
+          fighter.input.stats.spike / context.rules.fighter.contactSpikeDivisor
         ),
       context.tick,
       false
@@ -1596,7 +1616,8 @@ function executeStatusEffects(context: SimulationContext): void {
     }
     const source = getFighter(context, burn.sourceFighter);
     const config = context.rules.elements.ember;
-    const fightBudget = config.maximumDamagePerFight - source.emberBurnDamageSpent;
+    const fightBudget =
+      config.maximumDamagePerFight - source.emberBurnDamageSpent;
     const pulseDamage = Math.min(
       config.pulseDamage,
       burn.remainingDamage,
@@ -1608,20 +1629,16 @@ function executeStatusEffects(context: SimulationContext): void {
     }
     source.emberBurnDamageSpent += pulseDamage;
     burn.remainingDamage -= pulseDamage;
-    applyResolvedDamage(
-      context,
-      source,
-      target,
-      'ember_burn',
-      pulseDamage,
-      {
-        applyElementPayload: false,
-        bypassDefense: true,
-        bypassBarrier: false,
-        critical: false,
-      }
-    );
-    if (burn.remainingDamage <= 0 || source.emberBurnDamageSpent >= config.maximumDamagePerFight) {
+    applyResolvedDamage(context, source, target, 'ember_burn', pulseDamage, {
+      applyElementPayload: false,
+      bypassDefense: true,
+      bypassBarrier: false,
+      critical: false,
+    });
+    if (
+      burn.remainingDamage <= 0 ||
+      source.emberBurnDamageSpent >= config.maximumDamagePerFight
+    ) {
       target.burn = null;
     } else {
       burn.nextPulseTick = context.tick + config.pulseIntervalTicks;
@@ -1812,8 +1829,7 @@ function captureCheckpoint(context: SimulationContext, forced: boolean): void {
   if (lastCheckpoint?.tick === context.tick) {
     return;
   }
-  const periodic =
-    context.tick % context.rules.checkpointIntervalTicks === 0;
+  const periodic = context.tick % context.rules.checkpointIntervalTicks === 0;
   if (!forced && !periodic) {
     return;
   }
@@ -1852,26 +1868,39 @@ function assertEntityCap(context: SimulationContext): void {
 }
 
 function executePhase(context: SimulationContext, phase: CombatPhase): void {
-  if (phase === 'arena_rules') {
-    executeArenaRules(context);
-  } else if (phase === 'ability_transitions') {
-    executeAbilityTransitions(context);
-  } else if (phase === 'movement') {
-    executeMovement(context);
-  } else if (phase === 'wall_constraints') {
-    executeWallConstraints(context);
-  } else if (phase === 'fighter_collision') {
-    executeFighterCollision(context);
-  } else if (phase === 'ability_collisions') {
-    executeAbilityCollisions(context);
-  } else if (phase === 'status_effects') {
-    executeStatusEffects(context);
-  } else if (phase === 'ink_pressure') {
-    executeInkPressure(context);
-  } else if (phase === 'defeat_resolution') {
-    executeDefeatResolution(context);
-  } else {
-    executeCheckpoint(context);
+  switch (phase) {
+    case 'arena_rules':
+      executeArenaRules(context);
+      return;
+    case 'ability_transitions':
+      executeAbilityTransitions(context);
+      return;
+    case 'movement':
+      executeMovement(context);
+      return;
+    case 'wall_constraints':
+      executeWallConstraints(context);
+      return;
+    case 'fighter_collision':
+      executeFighterCollision(context);
+      return;
+    case 'ability_collisions':
+      executeAbilityCollisions(context);
+      return;
+    case 'status_effects':
+      executeStatusEffects(context);
+      return;
+    case 'ink_pressure':
+      executeInkPressure(context);
+      return;
+    case 'defeat_resolution':
+      executeDefeatResolution(context);
+      return;
+    case 'checkpoint':
+      executeCheckpoint(context);
+      return;
+    default:
+      assertUnhandledCombatPhase(phase);
   }
 }
 

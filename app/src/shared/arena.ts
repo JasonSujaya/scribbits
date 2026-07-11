@@ -240,7 +240,7 @@ export type BattleEvent = {
   text: string; // announcer line, ready to render
 };
 
-export type BattleKind = 'rumble' | 'boss' | 'exhibition';
+export type BattleKind = 'rumble' | 'boss' | 'exhibition' | 'practice';
 
 export type BattleReport = {
   id: string;
@@ -250,10 +250,25 @@ export type BattleReport = {
   b: Scribbit;
   winner: 'a' | 'b';
   inkAwarded?: number; // actual reward attached by the resolving action, never inferred by the client
-  // Sparse compatibility projection for old stored battles, Rumble standings,
-  // and clients that predate the continuous authoritative replay.
-  events: BattleEvent[];
+  // Read-only compatibility for old Redis records. New reports omit this
+  // turn-style projection and store only the authoritative simulation.
+  events?: BattleEvent[];
   simulation?: BattleTranscript;
+};
+
+export type PracticeBattleRequest = {
+  name: string;
+  baseImageDataUrl: string;
+};
+
+export type PracticeBattleReport = Omit<
+  BattleReport,
+  'kind' | 'simulation' | 'inkAwarded' | 'events'
+> & {
+  kind: 'practice';
+  simulation: BattleTranscript;
+  inkAwarded?: never;
+  events?: never;
 };
 
 export type SubmitScribbitRequest = {
@@ -267,7 +282,14 @@ export type SubmitScribbitRequest = {
 
 export type EnterRumbleRequest = { scribbitId: string };
 export type CareRequest = { scribbitId: string; action: CareAction };
-export type SparRequest = { scribbitId: string }; // exhibition vs a founding NPC
+export type SparRivalSlate = {
+  challenger: Scribbit; // current server snapshot after any just-earned XP
+  rivals: Scribbit[];
+};
+export type SparRequest = {
+  scribbitId: string;
+  opponentId?: string; // when present, must be in this challenger's current server-authored slate
+};
 export type BelieveRequest = { scribbitId: string };
 export type BossChallengeRequest = { scribbitId: string };
 
@@ -285,14 +307,6 @@ export type LegacyCardsState = {
 
 export type ArenaErrorResponse = { status: 'error'; message: string };
 
-// Move pools per element: [base move, power move, belief-unlocked move (belief>=10)]
-export const MOVES_BY_ELEMENT: Record<Element, [string, string, string]> = {
-  ember: ['Cinder Snap', 'Blaze Tackle', 'Supernova Sneeze'],
-  tide: ['Bubble Jab', 'Riptide Slam', 'Abyssal Cannonball'],
-  moss: ['Leaf Flick', 'Root Wallop', 'Ancient Chomp'],
-  storm: ['Static Zap', 'Thunder Pounce', 'Hurricane Yeet'],
-};
-
 // Element triangle: attacker deals +25% to prey, -25% to predator.
 // ember > moss > storm > tide > ember
 export const ELEMENT_PREY: Record<Element, Element> = {
@@ -307,15 +321,16 @@ export const STAT_MIN = 10;
 export const STAT_MAX = 55;
 export const LIFESPAN_DAYS = 3;
 export const BELIEF_LEGEND_THRESHOLD = 25;
-export const BELIEF_MOVE_UNLOCK = 10;
 export const MAX_ALIVE_PER_USER = 3;
 
-// Tamagotchi/level balance: bonuses must stay small enough that shape + matchup
-// dominate. Level bonus dies with the scribbit. XP: care action = 1 (x2 when
-// 'pumped'), rumble/boss win = 2, first spar win of the day = 1.
+// Tamagotchi/level balance: growth should be visible without letting an older
+// Scribbit invalidate a better drawing. The full level 1 -> 5 journey adds only
+// 1.5% damage; shape, power matchup, and authored forecast remain dominant.
+// Level bonus dies with the Scribbit. XP: care action = 1 (x2 when 'pumped'),
+// rumble/boss win = 2, first spar win of the day = 1.
 export const MAX_LEVEL = 5;
 export const LEVEL_XP_THRESHOLDS = [0, 3, 7, 12, 18]; // xp needed for level 1..5
-export const LEVEL_DAMAGE_BONUS_PER_LEVEL = 0.02; // +2%/level above 1, max +8%
+export const LEVEL_DAMAGE_BONUS_PER_LEVEL = 0.00375; // +0.375%/level above 1, max +1.5%
 
 // REST endpoints (Hono, JSON; errors = ArenaErrorResponse with 4xx/5xx):
 // GET  /api/arena          -> ArenaState
@@ -326,7 +341,9 @@ export const LEVEL_DAMAGE_BONUS_PER_LEVEL = 0.02; // +2%/level above 1, max +8%
 // POST /api/believe        -> BelieveRequest -> { belief: number }      (one per user per scribbit per day)
 // POST /api/boss-challenge -> BossChallengeRequest -> BattleReport      (instant resolve vs champion; one per user per day)
 // POST /api/care           -> CareRequest -> Scribbit                   (each action once per scribbit per UTC day)
-// POST /api/spar           -> SparRequest -> BattleReport               (exhibition vs random founding NPC; unlimited, xp only on first daily win)
+// POST /api/practice-battle -> PracticeBattleRequest -> BattleReport    (ephemeral, server-analyzed, no rewards or persistence)
+// GET  /api/spar-rivals?scribbitId -> SparRivalSlate                    (owned living challenger; stable server slate per UTC day)
+// POST /api/spar           -> SparRequest -> BattleReport               (chosen opponentId must be in that exact slate; omitted stays server-random)
 // POST /api/back           -> BackRequest -> { backed: string }         (one per user per day, locks at rumble resolve)
 // POST /api/remove-scribbit -> RemoveScribbitRequest -> { removed: string } (owner removal)
 // POST /api/report-scribbit -> ReportScribbitRequest -> ReportScribbitResponse (hide + safety report)

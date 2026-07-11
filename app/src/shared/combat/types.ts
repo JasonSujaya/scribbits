@@ -16,11 +16,7 @@ export type RawCombatStats = Readonly<{
 
 export type DominantStat = keyof RawCombatStats;
 
-export type PrimaryPower =
-  | 'inkquake'
-  | 'nib_halo'
-  | 'smearstep'
-  | 'colorburst';
+export type PrimaryPower = 'inkquake' | 'nib_halo' | 'smearstep' | 'colorburst';
 
 export type FixedVector = Readonly<{
   x: number;
@@ -142,6 +138,9 @@ export type BattleTimelineEvent =
       tick: number;
       kind: 'barrier_hit';
       actor: FighterSlot;
+      sourceFighter?: FighterSlot;
+      source?: DamageSource;
+      sourceActivationNumber?: number;
       absorbedDamage: number;
       remainingHitPoints: number;
     }>

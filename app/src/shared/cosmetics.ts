@@ -107,6 +107,40 @@ export const ACCESSORY_CATALOG_ENTRIES: readonly CosmeticAccessoryCatalogEntry[]
       description: 'Adds suspicious authority to any wobbly face.',
     },
     {
+      id: 'inkquake-rumble-belt',
+      kind: 'accessory',
+      rarity: 'common',
+      name: 'Inkquake Rumble Belt',
+      label: 'Rumble Belt',
+      description: 'A fault-line buckle that looks ready to split the page.',
+    },
+    {
+      id: 'nib-halo-headband',
+      kind: 'accessory',
+      rarity: 'common',
+      name: 'Nib Halo Headband',
+      label: 'Nib Headband',
+      description: 'Three tiny paper nibs in a very pointy parade formation.',
+    },
+    {
+      id: 'smearstep-speed-scarf',
+      kind: 'accessory',
+      rarity: 'common',
+      name: 'Smearstep Speed Scarf',
+      label: 'Speed Scarf',
+      description:
+        'A streaky scrap that looks fast while standing perfectly still.',
+    },
+    {
+      id: 'colorburst-rosette',
+      kind: 'accessory',
+      rarity: 'common',
+      name: 'Colorburst Rosette',
+      label: 'Colorburst Rosette',
+      description:
+        'A crayon-bright prize ribbon for winning the color argument.',
+    },
+    {
       id: 'top-hat',
       kind: 'accessory',
       rarity: 'rare',
@@ -147,6 +181,24 @@ export const ACCESSORY_CATALOG_ENTRIES: readonly CosmeticAccessoryCatalogEntry[]
       description: 'For Scribbits who believe gravity is negotiable.',
     },
     {
+      id: 'inkquake-crater-crown',
+      kind: 'accessory',
+      rarity: 'rare',
+      name: 'Inkquake Crater Crown',
+      label: 'Crater Crown',
+      description:
+        'A fault-lined crown chipped from the fanciest crater on paper.',
+    },
+    {
+      id: 'smearstep-ink-skates',
+      kind: 'accessory',
+      rarity: 'rare',
+      name: 'Smearstep Ink Skates',
+      label: 'Ink Skates',
+      description:
+        'Wobbly wheel-shoes with the speed lines already scribbled in.',
+    },
+    {
       id: 'golden-crown',
       kind: 'accessory',
       rarity: 'epic',
@@ -161,6 +213,23 @@ export const ACCESSORY_CATALOG_ENTRIES: readonly CosmeticAccessoryCatalogEntry[]
       name: 'DRAGON WINGS',
       label: 'Dragon Wings',
       description: 'Big flap energy for tiny paper legends.',
+    },
+    {
+      id: 'nib-halo-circlet',
+      kind: 'accessory',
+      rarity: 'epic',
+      name: 'NIB HALO CIRCLET',
+      label: 'Nib Halo Circlet',
+      description: 'Three gilded nibs hold formation around one glorious halo.',
+    },
+    {
+      id: 'colorburst-prism-crown',
+      kind: 'accessory',
+      rarity: 'epic',
+      name: 'COLORBURST PRISM CROWN',
+      label: 'Prism Crown',
+      description:
+        'A hand-cut rainbow crown that turns every pose into an event.',
     },
   ];
 

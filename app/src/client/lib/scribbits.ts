@@ -7,7 +7,7 @@ import { Scene } from 'phaser';
 import type { CareAction, Element, Mood, Scribbit } from '../../shared/arena';
 import { LEVEL_XP_THRESHOLDS, MAX_LEVEL } from '../../shared/arena';
 import { MOOD_STYLES } from './theme';
-import { generateDoodleTexture } from './art';
+import { generateDoodleTexture } from './proceduraldoodleart';
 
 // Rendering only needs identity + art. Keeping this narrower than Scribbit lets
 // immutable LegacyCard DTOs reuse the drawing pipeline without making them
@@ -15,7 +15,8 @@ import { generateDoodleTexture } from './art';
 export type DrawingSource = Pick<
   Scribbit,
   'id' | 'name' | 'element' | 'imageUrl'
->;
+> &
+  Partial<Pick<Scribbit, 'isFounding' | 'stats'>>;
 
 // Several surfaces can request the same drawing during one render (for example,
 // a battle list containing the same fighter more than once). Phaser's loader
@@ -79,9 +80,9 @@ export function loadDrawing(
     return Promise.resolve(key);
   }
 
-  // Founding scribbits point at /creatures/*.png that never shipped. Skip the
-  // doomed network round-trip and go straight to the doodle so their cards fill
-  // instantly instead of flashing an empty frame for 9 seconds.
+  // Founding /creatures routes intentionally resolve to a deterministic mascot
+  // generated from the server-owned stats. Skip a doomed network round-trip so
+  // their cards fill immediately instead of flashing empty for nine seconds.
   if (isKnownMissingArt(scribbit.imageUrl)) {
     const fallbackKey = fallbackDoodle(scene, scribbit);
     markDrawingTextureUsed(scene, fallbackKey);
@@ -283,8 +284,8 @@ function trimInactiveDrawingTextures(scene: Scene): void {
   }
 }
 
-// URLs we know will 404 (founding art job was cancelled). Cheap prefix check so
-// we never even attempt the request.
+// Founding image routes are semantic placeholders for generated mascot art.
+// Cheap prefix check means they never make a pointless network request.
 function isKnownMissingArt(imageUrl: string): boolean {
   return typeof imageUrl === 'string' && imageUrl.startsWith('/creatures/');
 }
@@ -304,10 +305,15 @@ function isDegenerateTexture(scene: Scene, key: string): boolean {
 
 // Bake (once) the procedural doodle for this scribbit. Used as the fallback.
 function fallbackDoodle(scene: Scene, scribbit: DrawingSource): string {
+  const founderStats =
+    scribbit.isFounding || isKnownMissingArt(scribbit.imageUrl)
+      ? scribbit.stats
+      : undefined;
   return generateDoodleTexture(
     scene,
     spriteKeyFor(scribbit),
-    elementOf(scribbit)
+    elementOf(scribbit),
+    founderStats
   );
 }
 

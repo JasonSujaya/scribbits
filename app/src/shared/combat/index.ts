@@ -13,12 +13,24 @@ export {
   MAXIMUM_TIMELINE_EVENTS,
   PRIMARY_POWER_BY_DOMINANT_STAT,
 } from './config';
+export { getOrbitingNibPosition, simulateCombat } from './engine';
+export { selectDominantStat, selectPrimaryPower } from './selection';
+export { battleResultFinishIsConsistent } from './resultvalidation';
 export {
-  getOrbitingNibPosition,
-  selectDominantStat,
-  selectPrimaryPower,
-  simulateCombat,
-} from './engine';
+  ELEMENT_BATTLE_CUE_BY_ELEMENT,
+  SHAPE_POWER_CONTENT_BY_POWER,
+  SHAPE_POWER_IDS,
+  SIGNATURE_MOVE_NAME_BY_ELEMENT,
+  getDamageSourceDisplayName,
+  getElementBattleCue,
+  getShapePowerContent,
+  getShapePowerDisplayName,
+  getShapePowerMissCallout,
+  getShapePowerRevealCopy,
+  getShapePowerSignatureName,
+  isShapePowerId,
+} from './shapepowercontent';
+export type { ElementBattleCue, ShapePowerContent } from './shapepowercontent';
 export {
   DIRECTION_SCALE,
   circleCenterIsInsideCone,

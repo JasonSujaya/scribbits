@@ -1,15 +1,24 @@
 // Pure presentation plans for drawing-selected Shape Powers.
 //
-// Replay owns Phaser objects and timing. This module owns names, readable
-// first-reveal copy, and deterministic geometry so every power can be tested
+// Replay owns Phaser objects and timing. Shared combat content owns names and
+// copy; this module owns deterministic screen geometry that can be tested
 // without booting a scene.
 
-import { ABILITY_CONFIG_BY_POWER } from '../../shared/combat';
 import type {
-  DamageSource,
+  BattleTimelineEvent,
+  FighterSlot,
   FixedVector,
   PrimaryPower,
 } from '../../shared/combat';
+import { isShapePowerId } from '../../shared/combat/shapepowercontent';
+export {
+  getDamageSourceDisplayName,
+  getElementBattleCue,
+  getShapePowerDisplayName,
+  getShapePowerMissCallout,
+  getShapePowerRevealCopy,
+  getShapePowerSignatureName,
+} from '../../shared/combat/shapepowercontent';
 
 export type ScreenPoint = Readonly<{ x: number; y: number }>;
 
@@ -19,6 +28,20 @@ export type ShapePowerVisualEffect = Readonly<{
   startTick: number;
   endTick: number;
   aimDirection: FixedVector;
+}>;
+
+export type BarrierHitSourceMetadata = Readonly<
+  Pick<
+    Extract<BattleTimelineEvent, { kind: 'barrier_hit' }>,
+    'sourceFighter' | 'source' | 'sourceActivationNumber'
+  >
+>;
+
+export type ShapePowerActivationState = Readonly<{
+  fighter: FighterSlot;
+  power: PrimaryPower;
+  activationNumber: number;
+  phase: ShapePowerVisualEffect['phase'];
 }>;
 
 export type ShapePowerDrawCommand =
@@ -52,6 +75,15 @@ export type ShapePowerDrawCommand =
       third: ScreenPoint;
       color: number;
       alpha: number;
+    }>
+  | Readonly<{
+      kind: 'stroke-triangle';
+      first: ScreenPoint;
+      second: ScreenPoint;
+      third: ScreenPoint;
+      lineWidth: number;
+      color: number;
+      alpha: number;
     }>;
 
 export type ShapePowerVisualInput = Readonly<{
@@ -77,15 +109,12 @@ export type ShapePowerCalloutPlan = Readonly<{
   fontSize: number;
 }>;
 
-const revealLineByPower: Readonly<Record<PrimaryPower, string>> = {
-  inkquake: 'Impact shockwave',
-  nib_halo: '3 orbiting quills',
-  smearstep: 'Dashes twice',
-  colorburst: 'Cone · then echo',
-};
-
 const clamp = (value: number, minimum: number, maximum: number): number => {
   return Math.min(maximum, Math.max(minimum, value));
+};
+
+const assertUnhandledShapePower = (power: never): never => {
+  throw new Error(`Unhandled Shape Power: ${String(power)}`);
 };
 
 const normalizedDirection = (direction: FixedVector): ScreenPoint => {
@@ -104,20 +133,19 @@ const pointAlong = (
   };
 };
 
-export function getShapePowerDisplayName(power: PrimaryPower): string {
-  return ABILITY_CONFIG_BY_POWER[power].displayName;
-}
-
-export function getShapePowerRevealCopy(power: PrimaryPower): string {
-  return `${getShapePowerDisplayName(power).toUpperCase()}!\n${revealLineByPower[power].toUpperCase()}`;
-}
-
-export function getDamageSourceDisplayName(source: DamageSource): string {
-  if (source === 'colorburst_echo') return 'Colorburst Echo';
-  if (source === 'ember_burn') return 'Ember afterburn';
-  if (source === 'nib_wall_recoil') return 'recoiling nib';
-  if (source === 'contact') return 'body check';
-  return getShapePowerDisplayName(source);
+export function barrierHitConnectsShapePowerActivation(
+  barrierHit: BarrierHitSourceMetadata,
+  activation: ShapePowerActivationState
+): boolean {
+  const sourcePower =
+    barrierHit.source === 'colorburst_echo' ? 'colorburst' : barrierHit.source;
+  return (
+    activation.phase === 'active' &&
+    barrierHit.sourceFighter === activation.fighter &&
+    barrierHit.sourceActivationNumber === activation.activationNumber &&
+    isShapePowerId(sourcePower) &&
+    sourcePower === activation.power
+  );
 }
 
 export function buildShapePowerDrawCommands(
@@ -144,7 +172,9 @@ export function buildShapePowerDrawCommands(
     return [0, 1, 2].map((ringIndex) => ({
       kind: 'stroke-circle' as const,
       center,
-      radius: 34 + progress * 142 - ringIndex * 24,
+      // Keep every ripple visibly ring-shaped from the first active frame.
+      // A negative inner radius used to clamp into a misleading 2px dot.
+      radius: 42 + progress * 142 - ringIndex * 16,
       lineWidth: 10 - ringIndex * 2,
       color: input.primaryColor,
       alpha: Math.max(0.18, phaseAlpha - ringIndex * 0.18),
@@ -161,13 +191,25 @@ export function buildShapePowerDrawCommands(
       const nibCenter = pointAlong(input.fighterCenter, outward, orbitRadius);
       const tip = pointAlong(nibCenter, outward, 28);
       const baseCenter = pointAlong(nibCenter, outward, -20);
+      const first = tip;
+      const second = pointAlong(baseCenter, perpendicular, 11);
+      const third = pointAlong(baseCenter, perpendicular, -11);
       commands.push({
         kind: 'fill-triangle',
-        first: tip,
-        second: pointAlong(baseCenter, perpendicular, 11),
-        third: pointAlong(baseCenter, perpendicular, -11),
+        first,
+        second,
+        third,
         color: input.primaryColor,
         alpha: phaseAlpha,
+      });
+      commands.push({
+        kind: 'stroke-triangle',
+        first,
+        second,
+        third,
+        lineWidth: 3,
+        color: 0x2b2016,
+        alpha: Math.min(1, phaseAlpha + 0.16),
       });
       commands.push({
         kind: 'fill-circle',
@@ -208,6 +250,10 @@ export function buildShapePowerDrawCommands(
     return commands;
   }
 
+  if (effect.power !== 'colorburst') {
+    return assertUnhandledShapePower(effect.power);
+  }
+
   const perpendicular = { x: -aim.y, y: aim.x };
   const range = effect.phase === 'telegraph' ? 108 : 168;
   const halfWidth = effect.phase === 'telegraph' ? 46 : 84;
@@ -238,9 +284,21 @@ export function buildShapePowerDrawCommands(
           perpendicular.y * halfWidth * layerScale,
       },
       color,
-      alpha: (effect.phase === 'telegraph' ? 0.13 : 0.2) + colorIndex * 0.035,
+      alpha: (effect.phase === 'telegraph' ? 0.16 : 0.32) + colorIndex * 0.04,
     });
   });
+  const outerTriangle = commands[0];
+  if (outerTriangle?.kind === 'fill-triangle') {
+    commands.push({
+      kind: 'stroke-triangle',
+      first: outerTriangle.first,
+      second: outerTriangle.second,
+      third: outerTriangle.third,
+      lineWidth: effect.phase === 'telegraph' ? 3 : 5,
+      color: 0x2b2016,
+      alpha: effect.phase === 'telegraph' ? 0.48 : 0.72,
+    });
+  }
   commands.push({
     kind: 'line',
     start: input.fighterCenter,

@@ -1,4 +1,6 @@
 import type { BattleReport } from '../../shared/arena';
+import { battleResultFinishIsConsistent } from '../../shared/combat/resultvalidation';
+import { isShapePowerId } from '../../shared/combat/shapepowercontent';
 import {
   COMBAT_MAXIMUM_TICKS,
   COMBAT_TICK_RATE,
@@ -14,6 +16,7 @@ import type {
   BattleTranscript,
   DamageSource,
   FighterCheckpoint,
+  FighterResult,
   FighterSlot,
   FixedVector,
   PrimaryPower,
@@ -21,6 +24,10 @@ import type {
 
 const MAXIMUM_REPLAY_VALUE = 1_000_000;
 const MAXIMUM_CHECKPOINT_GAP = COMBAT_TICK_RATE / 2;
+// A battle may end while an already-authored telegraph, active phase, burn, or
+// echo still points a short distance beyond the final simulation tick. Accept
+// that bounded future schedule without accepting arbitrary client timers.
+const MAXIMUM_SCHEDULE_AHEAD_TICKS = COMBAT_TICK_RATE * 2;
 
 export type ReplayVector = Readonly<{ x: number; y: number }>;
 
@@ -78,26 +85,39 @@ function isFighterSlot(value: unknown): value is FighterSlot {
   return value === 'a' || value === 'b';
 }
 
-function isPrimaryPower(value: unknown): value is PrimaryPower {
-  return (
-    value === 'inkquake' ||
-    value === 'nib_halo' ||
-    value === 'smearstep' ||
-    value === 'colorburst'
-  );
-}
-
 function isAbilityPhase(value: unknown): value is AbilityPhase {
   return value === 'cooldown' || value === 'telegraph' || value === 'active';
 }
 
 function isDamageSource(value: unknown): value is DamageSource {
   return (
-    isPrimaryPower(value) ||
+    isShapePowerId(value) ||
     value === 'colorburst_echo' ||
     value === 'contact' ||
     value === 'ember_burn' ||
     value === 'nib_wall_recoil'
+  );
+}
+
+function barrierHitSourceMetadataIsUsable(
+  value: Record<string, unknown>
+): boolean {
+  const metadataFields = [
+    'sourceFighter',
+    'source',
+    'sourceActivationNumber',
+  ] as const;
+  const presentFieldCount = metadataFields.filter((field) =>
+    Object.prototype.hasOwnProperty.call(value, field)
+  ).length;
+
+  return (
+    presentFieldCount === 0 ||
+    (presentFieldCount === metadataFields.length &&
+      isFighterSlot(value.sourceFighter) &&
+      value.sourceFighter !== value.actor &&
+      isDamageSource(value.source) &&
+      isBoundedInteger(value.sourceActivationNumber, 0, MAXIMUM_REPLAY_VALUE))
   );
 }
 
@@ -122,7 +142,11 @@ function isVector(value: unknown): value is FixedVector {
 function isScheduledTick(value: unknown, eventTick: unknown): value is number {
   return (
     isBoundedInteger(eventTick, 0, COMBAT_MAXIMUM_TICKS) &&
-    isBoundedInteger(value, eventTick, COMBAT_MAXIMUM_TICKS)
+    isBoundedInteger(
+      value,
+      eventTick,
+      Math.min(MAXIMUM_REPLAY_VALUE, eventTick + MAXIMUM_SCHEDULE_AHEAD_TICKS)
+    )
   );
 }
 
@@ -138,19 +162,19 @@ const TIMELINE_EVENT_FIELD_VALIDATORS = {
     isBoundedInteger(value.defenseTicks, 0, COMBAT_MAXIMUM_TICKS),
   ability_telegraphed: (value) =>
     isFighterSlot(value.actor) &&
-    isPrimaryPower(value.power) &&
+    isShapePowerId(value.power) &&
     isBoundedInteger(value.activationNumber, 1, MAXIMUM_REPLAY_VALUE) &&
     isVector(value.origin) &&
     isVector(value.aimDirection) &&
     isScheduledTick(value.activatesAtTick, value.tick),
   ability_activated: (value) =>
     isFighterSlot(value.actor) &&
-    isPrimaryPower(value.power) &&
+    isShapePowerId(value.power) &&
     isBoundedInteger(value.activationNumber, 1, MAXIMUM_REPLAY_VALUE) &&
     isScheduledTick(value.activeUntilTick, value.tick),
   ability_finished: (value) =>
     isFighterSlot(value.actor) &&
-    isPrimaryPower(value.power) &&
+    isShapePowerId(value.power) &&
     isBoundedInteger(value.activationNumber, 1, MAXIMUM_REPLAY_VALUE),
   damage: (value) =>
     isFighterSlot(value.sourceFighter) &&
@@ -174,7 +198,8 @@ const TIMELINE_EVENT_FIELD_VALIDATORS = {
   barrier_hit: (value) =>
     isFighterSlot(value.actor) &&
     isBoundedInteger(value.absorbedDamage, 1, MAXIMUM_REPLAY_VALUE) &&
-    isBoundedInteger(value.remainingHitPoints, 0, MAXIMUM_REPLAY_VALUE),
+    isBoundedInteger(value.remainingHitPoints, 0, MAXIMUM_REPLAY_VALUE) &&
+    barrierHitSourceMetadataIsUsable(value),
   barrier_broken: (value) => isFighterSlot(value.actor),
   wall_bounce: (value) =>
     isFighterSlot(value.actor) &&
@@ -182,7 +207,9 @@ const TIMELINE_EVENT_FIELD_VALIDATORS = {
     isVector(value.position),
   nib_wall_ejection: (value) =>
     isFighterSlot(value.actor) &&
-    isBoundedInteger(value.selfDamage, 1, MAXIMUM_REPLAY_VALUE) &&
+    // Before knockout protection lifts, a Nib Halo can still be pushed back
+    // from the wall while its recoil is clamped to zero at 1 HP.
+    isBoundedInteger(value.selfDamage, 0, MAXIMUM_REPLAY_VALUE) &&
     isVector(value.position),
   fighter_collision: (value) => isVector(value.position),
   echo_created: (value) =>
@@ -259,7 +286,7 @@ function isFighterCheckpoint(
     isBoundedInteger(value.hitPoints, 0, value.maxHitPoints) &&
     isVector(value.position) &&
     isVector(value.velocity) &&
-    isPrimaryPower(value.primaryPower) &&
+    isShapePowerId(value.primaryPower) &&
     isAbilityPhase(value.abilityPhase) &&
     isBoundedInteger(value.barrierHitPoints, 0, MAXIMUM_REPLAY_VALUE) &&
     (value.echoPosition === null || isVector(value.echoPosition))
@@ -293,7 +320,7 @@ function isResultFighter(
     isBoundedInteger(value.finalHitPoints, 0, value.maxHitPoints) &&
     isBoundedInteger(value.hitPointPermille, 0, 1_000) &&
     isBoundedInteger(value.damageDealt, 0, MAXIMUM_REPLAY_VALUE) &&
-    isPrimaryPower(value.primaryPower) &&
+    isShapePowerId(value.primaryPower) &&
     typeof value.inkPressureUsed === 'boolean'
   );
 }
@@ -306,23 +333,49 @@ function transcriptResultIsUsable(
   if (!isRecord(value) || !Array.isArray(value.fighters)) {
     return false;
   }
+  if (
+    !(
+      isFighterSlot(value.winner) &&
+      isFighterSlot(value.loser) &&
+      value.winner !== value.loser &&
+      isBattleEndReason(value.reason) &&
+      isBoundedInteger(value.completedTick, 1, COMBAT_MAXIMUM_TICKS) &&
+      value.completedMilliseconds ===
+        Math.floor((value.completedTick * 1_000) / COMBAT_TICK_RATE) &&
+      value.fighters.length === 2 &&
+      isResultFighter(value.fighters[0], 'a', fighterAId) &&
+      isResultFighter(value.fighters[1], 'b', fighterBId)
+    )
+  ) {
+    return false;
+  }
+
+  return battleResultFinishIsConsistent(
+    value as BattleTranscript['result'],
+    COMBAT_MAXIMUM_TICKS
+  );
+}
+
+function finalCheckpointFighterMatchesResult(
+  checkpointFighter: FighterCheckpoint,
+  resultFighter: FighterResult,
+  expectedSlot: FighterSlot,
+  expectedFighterId: string
+): boolean {
   return (
-    isFighterSlot(value.winner) &&
-    isFighterSlot(value.loser) &&
-    value.winner !== value.loser &&
-    isBattleEndReason(value.reason) &&
-    isBoundedInteger(value.completedTick, 1, COMBAT_MAXIMUM_TICKS) &&
-    value.completedMilliseconds ===
-      Math.floor((value.completedTick * 1_000) / COMBAT_TICK_RATE) &&
-    value.fighters.length === 2 &&
-    isResultFighter(value.fighters[0], 'a', fighterAId) &&
-    isResultFighter(value.fighters[1], 'b', fighterBId)
+    checkpointFighter.slot === expectedSlot &&
+    resultFighter.slot === expectedSlot &&
+    resultFighter.id === expectedFighterId &&
+    checkpointFighter.hitPoints === resultFighter.finalHitPoints &&
+    checkpointFighter.maxHitPoints === resultFighter.maxHitPoints
   );
 }
 
 function checkpointsAreUsable(
   values: readonly unknown[],
-  completedTick: number
+  result: BattleTranscript['result'],
+  fighterAId: string,
+  fighterBId: string
 ): values is readonly BattleCheckpoint[] {
   const first = values[0];
   const last = values.at(-1);
@@ -332,7 +385,7 @@ function checkpointsAreUsable(
     !isCheckpoint(first) ||
     first.tick !== 0 ||
     !isCheckpoint(last) ||
-    last.tick !== completedTick
+    last.tick !== result.completedTick
   ) {
     return false;
   }
@@ -348,7 +401,20 @@ function checkpointsAreUsable(
       return false;
     }
   }
-  return true;
+  return (
+    finalCheckpointFighterMatchesResult(
+      last.fighters[0],
+      result.fighters[0],
+      'a',
+      fighterAId
+    ) &&
+    finalCheckpointFighterMatchesResult(
+      last.fighters[1],
+      result.fighters[1],
+      'b',
+      fighterBId
+    )
+  );
 }
 
 function timelineIsUsable(
@@ -440,8 +506,12 @@ export function isUsableBattleTranscript(
   }
 
   return (
-    checkpointsAreUsable(value.checkpoints, value.result.completedTick) &&
-    timelineIsUsable(value.timeline, value.battleId, value.result)
+    checkpointsAreUsable(
+      value.checkpoints,
+      value.result,
+      fighterA.id,
+      fighterB.id
+    ) && timelineIsUsable(value.timeline, value.battleId, value.result)
   );
 }
 
@@ -450,7 +520,16 @@ export function getUsableBattleTranscript(
 ): BattleTranscript | undefined {
   const candidate =
     isRecord(source) && 'simulation' in source ? source.simulation : source;
-  return isUsableBattleTranscript(candidate) ? candidate : undefined;
+  if (!isUsableBattleTranscript(candidate)) return undefined;
+  if (!isRecord(source) || !('simulation' in source)) return candidate;
+
+  return isRecord(source.a) &&
+    isRecord(source.b) &&
+    source.a.id === candidate.fighters[0].id &&
+    source.b.id === candidate.fighters[1].id &&
+    source.winner === candidate.result.winner
+    ? candidate
+    : undefined;
 }
 
 function interpolate(start: number, end: number, progress: number): number {
@@ -499,20 +578,23 @@ function getFighterReplayState(
 
 function calculateEventDrivenFighterStates(
   transcript: BattleTranscript,
-  tick: number
+  tick: number,
+  baselineCheckpoint: BattleCheckpoint
 ): MutableReplayStatePair {
-  const initialCheckpoint = transcript.checkpoints[0];
-  if (initialCheckpoint === undefined) {
-    throw new Error('Continuous replay requires an initial checkpoint.');
-  }
   const states: MutableReplayStatePair = [
-    createFighterReplayState(initialCheckpoint.fighters[0]),
-    createFighterReplayState(initialCheckpoint.fighters[1]),
+    createFighterReplayState(baselineCheckpoint.fighters[0]),
+    createFighterReplayState(baselineCheckpoint.fighters[1]),
   ];
 
   for (const event of transcript.timeline) {
     if (event.tick > tick) {
       break;
+    }
+    // Every checkpoint is captured after that tick's combat phases. Starting
+    // from the nearest prior checkpoint keeps replay state authoritative even
+    // when an event-dense fight reaches the bounded timeline cap.
+    if (event.tick <= baselineCheckpoint.tick) {
+      continue;
     }
     if (event.kind === 'damage') {
       getFighterReplayState(states, event.targetFighter).hitPoints =
@@ -625,7 +707,11 @@ export function calculateReplayFrame(
   const tickDistance = later.tick - earlier.tick;
   const progress =
     tickDistance === 0 ? 0 : (tick - earlier.tick) / tickDistance;
-  const fighterStates = calculateEventDrivenFighterStates(transcript, tick);
+  const fighterStates = calculateEventDrivenFighterStates(
+    transcript,
+    tick,
+    earlier
+  );
 
   return {
     tick,

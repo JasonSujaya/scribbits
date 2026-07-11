@@ -14,11 +14,17 @@ import type {
   LegacyCardsState,
   LegendsState,
   MarkLegacySeenRequest,
+  PracticeBattleReport,
   Scribbit,
+  SparRequest,
+  SparRivalSlate,
   SplashState,
 } from '../../shared/arena';
 import { CAPSULE_FIRST_DAILY_COST, INK_REWARDS } from '../../shared/arena';
-import { analyze as analyzeDrawing } from '../../shared/analyzer-core';
+import {
+  analyze as analyzeDrawing,
+  hasMinimumDrawingInk,
+} from '../../shared/analyzer-core';
 import { simulate } from '../core/battle';
 import {
   getFeaturedRumbleReportId,
@@ -71,7 +77,11 @@ import {
   getProjectedRumbleEntrantCount,
   prepareRumbleEntrants,
 } from '../core/rumble';
-import { chooseFoundingSparOpponent } from '../core/species';
+import { createPracticeBattle } from '../core/practice';
+import {
+  chooseFoundingSparOpponent,
+  selectFoundingSparRivalSlate,
+} from '../core/species';
 import {
   clearScribbitReports,
   getHiddenScribbitIds,
@@ -120,6 +130,12 @@ export const api = new Hono();
 
 const beliefVotersTtlSeconds = 7 * 24 * 60 * 60;
 const capsuleOperationPendingTimeoutMs = 15_000;
+const foundingSparRivalSlateLimit = 3;
+const scribbitIdPattern = /^[A-Za-z0-9:_-]{4,90}$/;
+const practiceRequestMaximumBodyBytes = 560 * 1024;
+const practiceRequestLimitPerMinute = 6;
+const practiceRequestGuardTtlSeconds = 30;
+const practiceRequestGuardKey = 'guard:practice:active:v1';
 
 const isRecord = (value: unknown): value is Record<string, unknown> => {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -132,6 +148,82 @@ const readJsonBody = async (c: HonoContext): Promise<unknown> => {
   } catch {
     return undefined;
   }
+};
+
+type BoundedJsonBody =
+  | { status: 'parsed'; value: unknown }
+  | { status: 'invalid' }
+  | { status: 'too-large' };
+
+const readBoundedJsonBody = async (
+  c: HonoContext,
+  maximumBytes: number
+): Promise<BoundedJsonBody> => {
+  const contentLength = c.req.header('content-length');
+  if (contentLength && Number(contentLength) > maximumBytes) {
+    return { status: 'too-large' };
+  }
+
+  const body = c.req.raw.body;
+  if (!body) return { status: 'invalid' };
+  const reader = body.getReader();
+  const chunks: Uint8Array[] = [];
+  let totalBytes = 0;
+  try {
+    while (true) {
+      const chunk = await reader.read();
+      if (chunk.done) break;
+      totalBytes += chunk.value.byteLength;
+      if (totalBytes > maximumBytes) {
+        await reader.cancel();
+        return { status: 'too-large' };
+      }
+      chunks.push(chunk.value);
+    }
+  } catch {
+    return { status: 'invalid' };
+  }
+
+  const bytes = new Uint8Array(totalBytes);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  try {
+    return {
+      status: 'parsed',
+      value: JSON.parse(new TextDecoder().decode(bytes)) as unknown,
+    };
+  } catch {
+    return { status: 'invalid' };
+  }
+};
+
+type PracticeRequestClaim = 'claimed' | 'busy' | 'rate-limited';
+
+const claimPracticeRequest = async (
+  playerId: string,
+  token: string,
+  now: Date
+): Promise<PracticeRequestClaim> => {
+  const minute = Math.floor(now.getTime() / 60_000);
+  const rateKey = `guard:practice:rate:v1:${playerId}:${minute}`;
+  const requestCount = await redis.incrBy(rateKey, 1);
+  await redis.expire(rateKey, 120);
+  if (requestCount > practiceRequestLimitPerMinute) return 'rate-limited';
+
+  const claimed = await redis.hSetNX(practiceRequestGuardKey, playerId, token);
+  await redis.expire(practiceRequestGuardKey, practiceRequestGuardTtlSeconds);
+  return claimed === 1 ? 'claimed' : 'busy';
+};
+
+const releasePracticeRequest = async (
+  playerId: string,
+  token: string
+): Promise<void> => {
+  if ((await redis.hGet(practiceRequestGuardKey, playerId)) !== token) return;
+  await redis.hDel(practiceRequestGuardKey, [playerId]);
 };
 
 const badRequest = (c: HonoContext, message: string) => {
@@ -148,6 +240,14 @@ const notFound = (c: HonoContext, message: string) => {
 
 const conflict = (c: HonoContext, message: string) => {
   return c.json<ErrorResponse>({ status: 'error', message }, 409);
+};
+
+const tooManyRequests = (c: HonoContext, message: string) => {
+  return c.json<ErrorResponse>({ status: 'error', message }, 429);
+};
+
+const payloadTooLarge = (c: HonoContext, message: string) => {
+  return c.json<ErrorResponse>({ status: 'error', message }, 413);
 };
 
 const paymentRequired = (c: HonoContext, message: string) => {
@@ -181,18 +281,35 @@ const getCurrentPlayer = async (): Promise<CurrentPlayer | undefined> => {
   };
 };
 
+const readScribbitIdentifier = (value: unknown): string | undefined => {
+  if (typeof value !== 'string') return undefined;
+  const scribbitId = value.trim();
+  return scribbitIdPattern.test(scribbitId) ? scribbitId : undefined;
+};
+
 const readScribbitId = (value: unknown): string | undefined => {
-  if (!isRecord(value) || typeof value.scribbitId !== 'string') {
+  return isRecord(value) ? readScribbitIdentifier(value.scribbitId) : undefined;
+};
+
+const readSparRequest = (value: unknown): SparRequest | undefined => {
+  if (!isRecord(value)) return undefined;
+
+  const requestFields = Object.keys(value);
+  if (
+    !requestFields.includes('scribbitId') ||
+    requestFields.some((field) => {
+      return field !== 'scribbitId' && field !== 'opponentId';
+    })
+  ) {
     return undefined;
   }
 
-  const scribbitId = value.scribbitId.trim();
+  const scribbitId = readScribbitIdentifier(value.scribbitId);
+  if (!scribbitId) return undefined;
+  if (!requestFields.includes('opponentId')) return { scribbitId };
 
-  if (!/^[A-Za-z0-9:_-]{4,90}$/.test(scribbitId)) {
-    return undefined;
-  }
-
-  return scribbitId;
+  const opponentId = readScribbitIdentifier(value.opponentId);
+  return opponentId ? { scribbitId, opponentId } : undefined;
 };
 
 const readCareRequest = (
@@ -246,6 +363,25 @@ const loadOwnedAliveScribbit = async (
   }
 
   return scribbit;
+};
+
+const createSparRivalSlate = (
+  player: CurrentPlayer,
+  challenger: Scribbit,
+  utcDateKey: string
+): SparRivalSlate => {
+  const slateSeed = hashTextToSeed(
+    `spar-rivals:${utcDateKey}:${player.userId}:${challenger.id}`
+  );
+
+  return {
+    challenger,
+    rivals: selectFoundingSparRivalSlate(
+      challenger,
+      slateSeed,
+      foundingSparRivalSlateLimit
+    ),
+  };
 };
 
 const loadTodayRumbleEntrants = async (
@@ -478,6 +614,12 @@ api.post('/scribbit', async (c) => {
     width: decodedBasePng.width,
     height: decodedBasePng.height,
   });
+  if (!hasMinimumDrawingInk(drawingAnalysis)) {
+    return badRequest(
+      c,
+      'Your Scribbit needs a body. Add a few more lines before submitting.'
+    );
+  }
   let createdScribbit: { id: string; day: number } | null = null;
   let claimedSubmitFlags: { day: number; fields: DailyFlagField[] } | null =
     null;
@@ -789,17 +931,17 @@ api.post('/care', async (c) => {
   }
 });
 
-api.post('/spar', async (c) => {
+api.get('/spar-rivals', async (c) => {
   const player = await getCurrentPlayer();
 
   if (!player) {
-    return unauthorized(c, 'Sign in to spar with a Scribbit.');
+    return unauthorized(c, 'Sign in to choose a spar rival.');
   }
 
-  const scribbitId = readScribbitId(await readJsonBody(c));
+  const scribbitId = readScribbitIdentifier(c.req.query('scribbitId'));
 
   if (!scribbitId) {
-    return badRequest(c, 'Choose a valid Scribbit to spar.');
+    return badRequest(c, 'Choose a valid Scribbit to see spar rivals.');
   }
 
   try {
@@ -817,10 +959,141 @@ api.post('/spar', async (c) => {
       return notFound(c, 'That living Scribbit is not ready to spar.');
     }
 
+    return c.json<SparRivalSlate>(
+      createSparRivalSlate(player, challenger, utcDateKey)
+    );
+  } catch (error) {
+    console.error('Spar rivals route failed:', error);
+    return serverError(c, 'The rival cards blew away. Try again soon.');
+  }
+});
+
+api.post('/practice-battle', async (c) => {
+  const player = await getCurrentPlayer();
+
+  if (!player) {
+    return unauthorized(c, 'Sign in to test a Scribbit in the Practice Lab.');
+  }
+
+  const now = new Date();
+  const requestToken = randomUUID();
+  try {
+    const requestClaim = await claimPracticeRequest(
+      player.userId,
+      requestToken,
+      now
+    );
+    if (requestClaim === 'rate-limited') {
+      return tooManyRequests(
+        c,
+        'The Practice Lab needs a breather. Try again in a minute.'
+      );
+    }
+    if (requestClaim === 'busy') {
+      return tooManyRequests(
+        c,
+        'Your previous practice replay is still being drawn.'
+      );
+    }
+
+    const body = await readBoundedJsonBody(c, practiceRequestMaximumBodyBytes);
+    if (body.status === 'too-large') {
+      return payloadTooLarge(c, 'That practice drawing is too large.');
+    }
+    if (body.status === 'invalid') {
+      return badRequest(c, 'Send a valid Practice Lab request.');
+    }
+
+    const result = createPracticeBattle({
+      request: body.value,
+      artist: player.username,
+      playerId: player.userId,
+      canonicalDay: getArenaDayNumber(now),
+      nonce: requestToken,
+    });
+
+    if (result.status === 'invalid-request') {
+      return badRequest(
+        c,
+        'Send only a 2-24 character name and a base PNG drawing.'
+      );
+    }
+
+    if (result.status === 'invalid-png') {
+      return badRequest(
+        c,
+        'Practice drawings must be 512x512 PNG data URLs under 400 KB.'
+      );
+    }
+
+    if (result.status === 'too-small') {
+      return badRequest(
+        c,
+        'Your Scribbit needs a body. Add a few more lines before practicing.'
+      );
+    }
+
+    // Practice reports cross the response boundary once and are never stored,
+    // rewarded, indexed, uploaded, or attached to arena lifecycle state.
+    return c.json<PracticeBattleReport>(result.report);
+  } catch (error) {
+    console.error('Practice battle route failed:', error);
+    return serverError(c, 'The Practice Lab bell fell off. Try again soon.');
+  } finally {
+    try {
+      await releasePracticeRequest(player.userId, requestToken);
+    } catch (error) {
+      console.warn('Practice request guard release failed:', error);
+    }
+  }
+});
+
+api.post('/spar', async (c) => {
+  const player = await getCurrentPlayer();
+
+  if (!player) {
+    return unauthorized(c, 'Sign in to spar with a Scribbit.');
+  }
+
+  const sparRequest = readSparRequest(await readJsonBody(c));
+
+  if (!sparRequest) {
+    return badRequest(c, 'Choose a valid Scribbit to spar.');
+  }
+
+  try {
+    const now = new Date();
+    const utcDateKey = formatUtcDateKey(now);
+    const dayNumber = await getWritableArenaDay(now);
+    if (!dayNumber) return arenaRolloverConflict(c);
+    const challenger = await loadOwnedAliveScribbit(
+      player,
+      sparRequest.scribbitId,
+      dayNumber
+    );
+
+    if (!challenger) {
+      return notFound(c, 'That living Scribbit is not ready to spar.');
+    }
+
     const sparSeed = hashTextToSeed(
       `spar:${utcDateKey}:${player.userId}:${challenger.id}:${Date.now()}:${randomUUID()}`
     );
-    const opponent = chooseFoundingSparOpponent(challenger, sparSeed);
+    let opponent: Scribbit;
+    if (sparRequest.opponentId) {
+      const currentSlate = createSparRivalSlate(player, challenger, utcDateKey);
+      const chosenOpponent = currentSlate.rivals.find((rival) => {
+        return rival.id === sparRequest.opponentId;
+      });
+
+      if (!chosenOpponent) {
+        return badRequest(c, 'Choose a rival from the current spar slate.');
+      }
+      opponent = chosenOpponent;
+    } else {
+      opponent = chooseFoundingSparOpponent(challenger, sparSeed);
+    }
+
     const forecast = await ensureForecastForDay(redis, dayNumber);
     const report = simulate(
       challenger,

@@ -5,11 +5,11 @@ import type {
   DominantStat,
   PrimaryPower,
 } from './types';
+import { SHAPE_POWER_CONTENT_BY_POWER } from './shapepowercontent';
 
 export const COMBAT_TICK_RATE = 20;
 export const COMBAT_MAXIMUM_SECONDS = 25;
-export const COMBAT_MAXIMUM_TICKS =
-  COMBAT_TICK_RATE * COMBAT_MAXIMUM_SECONDS;
+export const COMBAT_MAXIMUM_TICKS = COMBAT_TICK_RATE * COMBAT_MAXIMUM_SECONDS;
 export const FIXED_POINT_SCALE = 100;
 export const MAXIMUM_COMBAT_ENTITIES = 4;
 export const MAXIMUM_TIMELINE_EVENTS = 384;
@@ -52,7 +52,7 @@ export const PRIMARY_POWER_BY_DOMINANT_STAT: Readonly<
 const abilityConfigByPower: AbilityConfigByPower = Object.freeze({
   inkquake: Object.freeze({
     power: 'inkquake',
-    displayName: 'Inkquake',
+    displayName: SHAPE_POWER_CONTENT_BY_POWER.inkquake.displayName,
     dominantStat: 'chonk',
     telegraphTicks: 10,
     activeTicks: 14,
@@ -70,7 +70,7 @@ const abilityConfigByPower: AbilityConfigByPower = Object.freeze({
   }),
   nib_halo: Object.freeze({
     power: 'nib_halo',
-    displayName: 'Nib Halo',
+    displayName: SHAPE_POWER_CONTENT_BY_POWER.nib_halo.displayName,
     dominantStat: 'spike',
     telegraphTicks: 8,
     activeTicks: 36,
@@ -97,7 +97,7 @@ const abilityConfigByPower: AbilityConfigByPower = Object.freeze({
   }),
   smearstep: Object.freeze({
     power: 'smearstep',
-    displayName: 'Smearstep',
+    displayName: SHAPE_POWER_CONTENT_BY_POWER.smearstep.displayName,
     dominantStat: 'zip',
     telegraphTicks: 7,
     activeTicks: 14,
@@ -118,7 +118,7 @@ const abilityConfigByPower: AbilityConfigByPower = Object.freeze({
   }),
   colorburst: Object.freeze({
     power: 'colorburst',
-    displayName: 'Colorburst',
+    displayName: SHAPE_POWER_CONTENT_BY_POWER.colorburst.displayName,
     dominantStat: 'charm',
     telegraphTicks: 11,
     activeTicks: 2,

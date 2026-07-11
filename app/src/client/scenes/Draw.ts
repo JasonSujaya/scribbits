@@ -1,9 +1,16 @@
 import * as Phaser from 'phaser';
 import { Scene } from 'phaser';
 import { showToast } from '@devvit/web/client';
-import { submitScribbit, fetchArena, spar } from '../lib/api';
-import { getArena, setArena, setReplay } from '../lib/registry';
-import { analyze, MIN_INK_PIXELS } from '../lib/analyzer';
+import { practiceBattle, submitScribbit, fetchArena, spar } from '../lib/api';
+import {
+  getArena,
+  endPracticeSession,
+  getPracticePowers,
+  recordPracticePower,
+  setArena,
+  setReplay,
+} from '../lib/registry';
+import { analyze, hasMinimumDrawingInk, MIN_INK_PIXELS } from '../lib/analyzer';
 import type { AnalyzerResult } from '../lib/analyzer';
 import { DomOverlay } from '../lib/overlay';
 import { DrawCanvas } from '../lib/drawcanvas';
@@ -21,6 +28,28 @@ import { StickerAttach } from '../lib/stickerdrawer';
 import { fetchInventory } from '../lib/api';
 import { drawAccessoryCanvas } from '../lib/accessories';
 import type { AttachedAccessory } from '../../shared/arena';
+import { selectPrimaryPower } from '../../shared/combat/selection';
+import {
+  getShapePowerDisplayName,
+  getShapePowerSignatureName,
+} from '../../shared/combat/shapepowercontent';
+import {
+  DOODLE_DARE_HINT_BY_POWER,
+  DRAW_HEADER_TITLE,
+  DRAW_RULES_COPY,
+  FIRST_RUN_PROMISE,
+  planDrawFeedback,
+  selectDailyDoodleDare,
+} from '../lib/drawonboarding';
+import type { DoodleDare } from '../lib/drawonboarding';
+import {
+  PRACTICE_HEADER_TITLE,
+  PRACTICE_PROMISE,
+  PRACTICE_SUBMIT_LABEL,
+  practiceChecklistCopy,
+  practiceProgressCopy,
+  selectPracticeDoodleDare,
+} from '../lib/practicelab';
 import {
   button,
   ghostButton,
@@ -49,7 +78,13 @@ import {
   CAPSULE_PITY,
   INK_REWARDS,
 } from '../../shared/arena';
-import type { ArenaState, Element, Scribbit } from '../../shared/arena';
+import type {
+  ArenaState,
+  BattleReport,
+  Element,
+  Scribbit,
+} from '../../shared/arena';
+import type { PrimaryPower } from '../../shared/combat/types';
 import { getDrawEligibility } from '../lib/draweligibility';
 import { showVsCeremony } from '../lib/battleceremony';
 import { LiveSprite } from '../lib/livesprite';
@@ -79,18 +114,10 @@ const PEN_SHORT_LABEL: Record<string, string> = {
   'rainbow-crayon': 'Rainbow',
 };
 
-// The live dominant-stat preview makes drawing a build legible before submit.
-const POWER_PREVIEW = {
-  chonk: 'INKQUAKE • expanding wave',
-  spike: 'NIB HALO • 3 rotating quills',
-  zip: 'SMEARSTEP • predictive double dash',
-  charm: 'COLORBURST • cone + delayed echo',
-};
-
 export class Draw extends Scene {
   private overlay!: DomOverlay;
   private canvas!: DrawCanvas;
-  private nameInput!: HTMLInputElement;
+  private nameInput: HTMLInputElement | null = null;
 
   private bars!: StatGrid;
   private elementBadgeRef: Phaser.GameObjects.Container | null = null;
@@ -118,12 +145,24 @@ export class Draw extends Scene {
   private previewTimer: Phaser.Time.TimerEvent | null = null;
   private startFightAfterBirth = false;
   private birthContinuationStarted = false;
+  private canvasDareOverlay: HTMLDivElement | null = null;
+  private dailyDare: DoodleDare | null = null;
+  private isFirstScribbit = false;
+  private practiceMode = false;
+  private practicePowers: PrimaryPower[] = [];
+  private practiceTargetPower: PrimaryPower = 'inkquake';
+  private pendingPracticeReport: BattleReport | null = null;
 
   constructor() {
     super('Draw');
   }
 
-  init(): void {
+  init(data?: unknown): void {
+    this.practiceMode =
+      typeof data === 'object' &&
+      data !== null &&
+      'mode' in data &&
+      data.mode === 'practice';
     this.elementBadgeRef = null;
     this.lastResult = null;
     this.colorSwatches = [];
@@ -140,6 +179,13 @@ export class Draw extends Scene {
     this.previewTimer = null;
     this.startFightAfterBirth = false;
     this.birthContinuationStarted = false;
+    this.canvasDareOverlay = null;
+    this.dailyDare = null;
+    this.isFirstScribbit = false;
+    this.practicePowers = [];
+    this.practiceTargetPower = 'inkquake';
+    this.pendingPracticeReport = null;
+    this.nameInput = null;
   }
 
   create(): void {
@@ -147,16 +193,34 @@ export class Draw extends Scene {
     DomOverlay.destroyAll();
 
     const arena = getArena(this);
-    const eligibility = getDrawEligibility(arena);
     if (!arena) {
       this.scene.start('Preloader');
       return;
     }
-    if (!eligibility.canDraw) {
-      showToast(eligibility.message);
-      this.scene.start('ArenaHome');
-      return;
+    if (this.practiceMode) {
+      if (!arena.loggedIn) {
+        showToast('Log in to open the server-checked Practice Lab.');
+        this.scene.start('ArenaHome');
+        return;
+      }
+    } else {
+      const eligibility = getDrawEligibility(arena);
+      if (!eligibility.canDraw) {
+        showToast(eligibility.message);
+        this.scene.start('ArenaHome');
+        return;
+      }
     }
+    this.isFirstScribbit = !this.practiceMode && arena.myScribbits.length === 0;
+    this.practicePowers = this.practiceMode ? getPracticePowers(this) : [];
+    this.dailyDare = this.practiceMode
+      ? selectPracticeDoodleDare(
+          this.practicePowers,
+          arena.dayNumber,
+          arena.myUsername
+        )
+      : selectDailyDoodleDare(arena.dayNumber, arena.myUsername);
+    this.practiceTargetPower = this.dailyDare.suggestedPower;
 
     this.cameras.main.setBackgroundColor(UI.desk);
     this.cameras.main.fadeIn(180, 255, 247, 232);
@@ -165,7 +229,7 @@ export class Draw extends Scene {
     this.livingPaper = new LivingPaper(this, { edgeCreatures: false });
     this.buildChrome();
     this.buildOverlay();
-    this.setupStickers();
+    if (!this.practiceMode) this.setupStickers();
     this.refreshPreview();
 
     window.addEventListener('resize', this.resizeHandler);
@@ -264,6 +328,11 @@ export class Draw extends Scene {
     fadeToScene(this, sceneKey);
   }
 
+  private exitDraw(): void {
+    if (this.practiceMode) endPracticeSession(this);
+    this.exitTo('ArenaHome');
+  }
+
   // --- Layout budget (720x1280 design space) --------------------------------
   // Canvas is the hero. Everything below stacks on a strict grid so nothing
   // overlaps or clips: canvas → tools → stat panel → name → submit.
@@ -279,13 +348,15 @@ export class Draw extends Scene {
     const { width } = this.scale;
     // Top bar: Back on the left, title centered in the remaining space so the
     // two never collide (the mission's header-clip bug).
-    ghostButton(this, 90, 60, '‹', () => this.exitTo('ArenaHome'), 96);
+    ghostButton(this, 90, 60, '‹', () => this.exitDraw(), 96);
     handLettered(
       this,
       width / 2 + 30,
       56,
-      "TODAY'S SCRIBBIT",
-      34,
+      this.practiceMode
+        ? `${PRACTICE_HEADER_TITLE} · ${this.practicePowers.length}/4`
+        : DRAW_HEADER_TITLE,
+      30,
       UI.ink,
       true
     );
@@ -293,9 +364,11 @@ export class Draw extends Scene {
       this,
       width / 2 + 30,
       92,
-      'FILLED→INKQUAKE · JAGGED→NIB HALO\nCOMPACT→SMEARSTEP · COLORS→COLORBURST',
-      20,
-      UI.inkSoft,
+      this.practiceMode
+        ? `TRY: ${getShapePowerDisplayName(this.practiceTargetPower).toUpperCase()} • SERVER DECIDES`
+        : DRAW_RULES_COPY,
+      22,
+      this.practiceMode ? UI.coralText : UI.inkSoft,
       true
     ).setLineSpacing(2);
 
@@ -317,9 +390,11 @@ export class Draw extends Scene {
       this,
       width / 2,
       Draw.SUBMIT_Y,
-      "🎉 IT'S ALIVE — Submit",
+      this.practiceMode ? PRACTICE_SUBMIT_LABEL : "🎉 IT'S ALIVE — Submit",
       () => this.trySubmit(),
-      width - EDGE * 2
+      width - EDGE * 2,
+      this.practiceMode ? UI.tapeAlt : UI.coral,
+      UI.ink
     );
   }
 
@@ -342,7 +417,7 @@ export class Draw extends Scene {
 
     // Large grouped swatches, evenly distributed across the full width.
     const count = PALETTE_GROUPS.length;
-    const labelW = 74;
+    const labelW = 92;
     label(
       this,
       EDGE + labelW / 2,
@@ -396,7 +471,7 @@ export class Draw extends Scene {
     // placed count (e.g. "✨ 1/2") once accessories are attached.
     const hasExistingScribbit =
       (this.getArenaState()?.myScribbits.length ?? 0) > 0;
-    if (hasExistingScribbit) {
+    if (!this.practiceMode && hasExistingScribbit) {
       const stickerBtn = this.toolIconButton(
         width / 2 + 6,
         toolY,
@@ -509,25 +584,21 @@ export class Draw extends Scene {
     const { width } = this.scale;
     const arena = this.getArenaState();
     const unlocked = new Set(arena?.myPens ?? []);
-    const labelW = 74;
+    const labelW = 92;
+
+    if (this.practiceMode) {
+      this.buildPromiseStrip(container, y, PRACTICE_PROMISE, UI.coralDeep);
+      return;
+    }
+
+    if (this.isFirstScribbit) {
+      this.buildPromiseStrip(container, y, FIRST_RUN_PROMISE, UI.goldHex);
+      return;
+    }
+
     container.add(
       label(this, EDGE + labelW / 2, y, 'Pens', TYPE.caption, UI.inkSoft, true)
     );
-
-    if ((arena?.myScribbits.length ?? 0) === 0) {
-      container.add(
-        label(
-          this,
-          width / 2 + 38,
-          y,
-          'Bonus pens unlock after your first fight',
-          22,
-          UI.inkSoft,
-          true
-        )
-      );
-      return;
-    }
 
     const startX = EDGE + labelW + 8;
     const unlockedPens = PEN_CATALOG.filter((pen) => unlocked.has(pen.id));
@@ -590,6 +661,29 @@ export class Draw extends Scene {
     const machineLabel = label(this, machineX, y, 'Capsule', 22, UI.ink, true);
     container.add([machine, machineLabel]);
     machine.on('pointerup', () => this.openCapsuleFromDraw());
+  }
+
+  private buildPromiseStrip(
+    container: Phaser.GameObjects.Container,
+    y: number,
+    copy: string,
+    strokeColor: number
+  ): void {
+    const { width } = this.scale;
+    const promiseWidth = width - EDGE * 2 - 24;
+    const promise = this.add
+      .rectangle(width / 2, y, promiseWidth, 48, UI.tape, 0.96)
+      .setStrokeStyle(3, strokeColor, 1);
+    const promiseText = label(
+      this,
+      width / 2,
+      y,
+      copy,
+      copy.length > 40 ? 17 : 21,
+      UI.ink,
+      true
+    );
+    container.add([promise, promiseText]);
   }
 
   private shortPenLabel(pen: PenCatalogEntry): string {
@@ -765,10 +859,11 @@ export class Draw extends Scene {
       this.badgeLocalY,
       this.currentElement,
       0.74
-    );
+    ).setVisible(false);
     card.add(this.elementBadgeRef);
 
     this.bars = statGrid(this, width / 2, centerY + 44, panelW - 48, 116);
+    this.bars.container.setAlpha(0.28);
   }
 
   // --- DOM overlay (live canvas + name input) -------------------------------
@@ -777,6 +872,12 @@ export class Draw extends Scene {
 
     this.canvas = new DrawCanvas({ onStrokeEnd: () => this.schedulePreview() });
     this.canvas.setBrushSize(this.lineWidth);
+    this.canvas.element.setAttribute(
+      'aria-label',
+      this.practiceMode
+        ? 'Draw a temporary practice fighter. The server reads its shape and returns a reward-free battle replay.'
+        : 'Draw your Scribbit. Its shape and colors choose how it fights.'
+    );
     const square = Draw.CANVAS_SQUARE;
     this.overlay.place(this.canvas.element, {
       x: this.scale.width / 2 - square / 2,
@@ -784,8 +885,15 @@ export class Draw extends Scene {
       width: square,
       height: square,
     });
+    this.buildCanvasDareOverlay(square);
 
-    // Name input overlaid near the submit row.
+    if (this.practiceMode) {
+      this.buildPracticeChecklistOverlay();
+      return;
+    }
+
+    // Official births get a name. Practice deliberately does not: it is a
+    // throwaway shape test, not another roster object in disguise.
     this.nameInput = document.createElement('input');
     this.nameInput.type = 'text';
     this.nameInput.maxLength = 24;
@@ -797,7 +905,7 @@ export class Draw extends Scene {
     this.nameInput.addEventListener('keydown', (event) => {
       if (event.key !== 'Enter' || event.isComposing) return;
       event.preventDefault();
-      this.nameInput.blur();
+      this.nameInput?.blur();
       this.trySubmit();
     });
     Object.assign(this.nameInput.style, {
@@ -820,6 +928,119 @@ export class Draw extends Scene {
       width: this.scale.width - EDGE * 2,
       height: nameH,
     });
+  }
+
+  private buildPracticeChecklistOverlay(): void {
+    const checklist = document.createElement('div');
+    checklist.setAttribute(
+      'aria-label',
+      practiceProgressCopy(this.practicePowers)
+    );
+    checklist.textContent = practiceChecklistCopy(this.practicePowers);
+    Object.assign(checklist.style, {
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      padding: '8px 14px',
+      boxSizing: 'border-box',
+      fontFamily: FONT_STACK,
+      fontSize: '17px',
+      fontWeight: '900',
+      lineHeight: '1.18',
+      whiteSpace: 'pre-line',
+      textAlign: 'center',
+      color: UI.ink,
+      background: UI.cream,
+      border: `4px solid ${UI.ink}`,
+      borderRadius: '14px',
+    });
+    this.overlay.place(checklist, {
+      x: EDGE,
+      y: Draw.NAME_Y - 42,
+      width: this.scale.width - EDGE * 2,
+      height: 84,
+    });
+  }
+
+  private buildCanvasDareOverlay(square: number): void {
+    const dare =
+      this.dailyDare ??
+      selectDailyDoodleDare(0, this.getArenaState()?.myUsername ?? null);
+    const overlay = document.createElement('div');
+    overlay.setAttribute('aria-hidden', 'true');
+    Object.assign(overlay.style, {
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      textAlign: 'center',
+      color: UI.ink,
+      transition: prefersReducedMotion() ? 'none' : 'opacity 180ms ease-out',
+    });
+
+    const card = document.createElement('div');
+    Object.assign(card.style, {
+      width: '78%',
+      padding: '12px 16px',
+      background: 'rgba(255, 247, 232, 0.9)',
+      border: `2px dashed ${UI.coralText}`,
+      borderRadius: '14px',
+      boxShadow: '0 5px 0 rgba(43, 32, 22, 0.12)',
+      fontFamily: FONT_STACK,
+    });
+
+    const eyebrow = document.createElement('div');
+    eyebrow.textContent = this.practiceMode
+      ? 'PRACTICE TARGET • OPTIONAL'
+      : 'OPTIONAL DOODLE DARE';
+    Object.assign(eyebrow.style, {
+      fontSize: '12px',
+      fontWeight: '900',
+      letterSpacing: '1.4px',
+      color: UI.coralText,
+      marginBottom: '6px',
+    });
+    const prompt = document.createElement('div');
+    prompt.textContent = dare.prompt.toUpperCase();
+    Object.assign(prompt.style, {
+      fontSize: '21px',
+      fontWeight: '900',
+      lineHeight: '1.08',
+      marginBottom: '8px',
+    });
+    const hint = document.createElement('div');
+    hint.textContent = DOODLE_DARE_HINT_BY_POWER[dare.suggestedPower];
+    Object.assign(hint.style, {
+      fontSize: '14px',
+      fontWeight: '750',
+      color: UI.inkSoft,
+      lineHeight: '1.2',
+    });
+    const freedom = document.createElement('div');
+    freedom.textContent = this.practiceMode
+      ? 'Try the target—or test any shape you want.'
+      : 'Or ignore the dare and draw anything.';
+    Object.assign(freedom.style, {
+      fontSize: '12px',
+      fontWeight: '650',
+      color: UI.inkSoft,
+      marginTop: '7px',
+    });
+
+    card.append(eyebrow, prompt, hint, freedom);
+    overlay.append(card);
+    this.overlay.place(overlay, {
+      x: this.scale.width / 2 - square / 2,
+      y: Draw.CANVAS_CENTER_Y - square / 2,
+      width: square,
+      height: square,
+    });
+    overlay.style.pointerEvents = 'none';
+    this.canvasDareOverlay = overlay;
+  }
+
+  private setCanvasDareVisible(visible: boolean): void {
+    if (!this.canvasDareOverlay) return;
+    this.canvasDareOverlay.style.opacity = visible ? '1' : '0';
   }
 
   // --- Live analyzer preview ------------------------------------------------
@@ -873,18 +1094,24 @@ export class Draw extends Scene {
   }
 
   private updateReaction(result: AnalyzerResult): void {
-    if (result.inkedPixels < MIN_INK_PIXELS) {
-      this.reactionText.setText('Draw something! ✏️');
-      this.reactionText.setColor(UI.inkSoft);
-      return;
-    }
-    const dominant = (['chonk', 'spike', 'zip', 'charm'] as const).reduce(
-      (best, key) => (result.stats[key] > result.stats[best] ? key : best)
+    const feedback = planDrawFeedback({
+      inkedPixels: result.inkedPixels,
+      minimumInkedPixels: MIN_INK_PIXELS,
+      stats: result.stats,
+      element: result.element,
+    });
+    const ready = feedback.phase === 'ready';
+    this.setCanvasDareVisible(feedback.phase === 'blank');
+    this.elementBadgeRef?.setVisible(ready);
+    this.bars.container.setAlpha(
+      feedback.phase === 'blank' ? 0.28 : ready ? 1 : 0.55
     );
-    const powerPreview = POWER_PREVIEW[dominant];
-    if (this.reactionText.text !== powerPreview) {
-      this.reactionText.setText(powerPreview);
-      this.reactionText.setColor(ELEMENT_STYLES[result.element].primaryText);
+
+    if (this.reactionText.text !== feedback.message) {
+      this.reactionText.setText(feedback.message);
+      this.reactionText.setColor(
+        ready ? ELEMENT_STYLES[result.element].primaryText : UI.inkSoft
+      );
       this.tweens.add({
         targets: this.reactionText,
         scale: 1.12,
@@ -903,25 +1130,55 @@ export class Draw extends Scene {
     this.previewTimer = null;
     this.refreshPreview();
     const result = this.lastResult;
-    if (!result || result.inkedPixels < MIN_INK_PIXELS) {
+    if (!result || !hasMinimumDrawingInk(result)) {
       showToast('Your scribbit needs a body! Draw a bit more ✏️');
       this.cameras.main.shake(220, 0.006);
       return;
     }
-    const name = this.nameInput.value.trim();
-    if (name.length < 2) {
+    const name = this.practiceMode
+      ? 'Practice Shape'
+      : (this.nameInput?.value.trim() ?? '');
+    if (!this.practiceMode && name.length < 2) {
       showToast('Give your scribbit a name (2+ letters) 🏷️');
-      this.nameInput.focus();
+      this.nameInput?.focus();
       return;
     }
 
     this.submitting = true;
     // Hide the draggable stickers + drawer so only the baked PNG shows in the
     // ceremony; the metadata is captured first from their current transforms.
-    const accessories = this.stickers?.toAttachedAccessories() ?? [];
+    const accessories = this.practiceMode
+      ? []
+      : (this.stickers?.toAttachedAccessories() ?? []);
     this.stickers?.hideOverlays();
     this.overlay.setVisible(false);
-    void this.submit(name, result, accessories);
+    if (this.practiceMode) {
+      void this.submitPractice(name);
+    } else {
+      void this.submit(name, result, accessories);
+    }
+  }
+
+  private async submitPractice(name: string): Promise<void> {
+    const { baseImageDataUrl } = this.canvas.exportSubmissionImages();
+    const response = await practiceBattle({ name, baseImageDataUrl });
+    if (!response.ok) {
+      this.submitting = false;
+      this.showError(response.error);
+      return;
+    }
+    if (response.data.kind !== 'practice' || !response.data.simulation) {
+      this.submitting = false;
+      this.showError('The Practice Lab returned an invalid replay. Try again.');
+      return;
+    }
+
+    this.pendingPracticeReport = response.data;
+    this.practicePowers = [
+      ...recordPracticePower(this, selectPrimaryPower(response.data.a.stats))
+        .triedPowers,
+    ];
+    this.playCeremony(response.data.a, baseImageDataUrl);
   }
 
   private async submit(
@@ -996,8 +1253,8 @@ export class Draw extends Scene {
     this.playCeremony(response.data, imageDataUrl);
   }
 
-  // "IT'S ALIVE" ceremony: the drawing rises with its final card, then home.
-  // Enhanced with egg-hatching effect for dramatic birth moment.
+  // Daily birth and ephemeral practice share one high-juice reveal. Practice
+  // changes the promise and reward layer so it never looks like a saved birth.
   private playCeremony(scribbit: Scribbit, dataUrl: string): void {
     const { width, height } = this.scale;
     // The living page owned timers/emitters; tear it down before the ceremony
@@ -1015,6 +1272,15 @@ export class Draw extends Scene {
       .rectangle(0, 0, width, height, style.primary, 0.1)
       .setOrigin(0)
       .setDepth(-90);
+
+    if (this.practiceMode) {
+      // Practice is a server diagnosis, not a second birth. Skip the egg hatch
+      // so the transient fighter can never be mistaken for a saved Scribbit.
+      this.time.delayedCall(prefersReducedMotion() ? 0 : 120, () => {
+        if (this.scene.isActive()) this.showBirthReveal(scribbit, dataUrl);
+      });
+      return;
+    }
 
     // Egg hatching effect - an ink blob that cracks and bursts
     const egg = this.add.graphics().setDepth(50);
@@ -1091,7 +1357,7 @@ export class Draw extends Scene {
       this,
       width / 2,
       180,
-      "IT'S ALIVE!",
+      this.practiceMode ? 'POWER FOUND!' : "IT'S ALIVE!",
       62,
       UI.goldText,
       true
@@ -1104,15 +1370,18 @@ export class Draw extends Scene {
     });
     this.cameras.main.shake(200, 0.008);
 
-    // Drawing today's scribbit earns Mystery Ink — float the reward.
-    floatReward(
-      this,
-      width - 120,
-      360,
-      `+${INK_REWARDS.dailyDraw} 🫙`,
-      UI.goldText,
-      60
-    );
+    // Only a committed daily birth earns Mystery Ink. Practice is explicitly
+    // reward-free and therefore never renders a payout animation.
+    if (!this.practiceMode) {
+      floatReward(
+        this,
+        width - 120,
+        360,
+        `+${INK_REWARDS.dailyDraw} 🫙`,
+        UI.goldText,
+        60
+      );
+    }
 
     // Load the just-drawn PNG straight from the data URL for an instant reveal.
     const key = `ceremony-${scribbit.id}`;
@@ -1159,7 +1428,10 @@ export class Draw extends Scene {
       this,
       width / 2,
       cardY + 32,
-      `SHAPE POWER: ${newborn.shapePower}`,
+      `SHAPE POWER: ${getShapePowerSignatureName(
+        scribbit.element,
+        selectPrimaryPower(scribbit.stats)
+      ).toUpperCase()}`,
       TYPE.caption,
       UI.coralText,
       true
@@ -1170,7 +1442,9 @@ export class Draw extends Scene {
       this,
       width / 2,
       cardY + 78,
-      scribbit.name.toUpperCase(),
+      this.practiceMode
+        ? 'SERVER-CHECKED PRACTICE BUILD'
+        : scribbit.name.toUpperCase(),
       TYPE.display * 0.66,
       UI.ink,
       true
@@ -1219,7 +1493,7 @@ export class Draw extends Scene {
       duration: 400,
     });
 
-    if (this.startFightAfterBirth) {
+    if (this.practiceMode || this.startFightAfterBirth) {
       const returnPromise = stickerCard(
         this,
         width / 2,
@@ -1234,7 +1508,9 @@ export class Draw extends Scene {
         this,
         0,
         0,
-        'Exhibition now → tonight’s Rumble\nReturn for its result • Later: permanent Legacy page',
+        this.practiceMode
+          ? `${practiceProgressCopy(this.practicePowers)}\nNo Ink • no roster slot • nothing saved`
+          : 'Exhibition now → tonight’s Rumble\nReturn for its result • Later: permanent Legacy page',
         TYPE.caption,
         UI.coralText,
         true
@@ -1252,7 +1528,11 @@ export class Draw extends Scene {
       this,
       width / 2,
       height - 80,
-      this.startFightAfterBirth ? 'Watch safe exhibition spar →' : 'Continue →',
+      this.practiceMode
+        ? 'Watch server replay →'
+        : this.startFightAfterBirth
+          ? 'Watch safe exhibition spar →'
+          : 'Continue →',
       () => this.continueAfterBirth(scribbit),
       420
     ).setDepth(10);
@@ -1261,6 +1541,21 @@ export class Draw extends Scene {
   private continueAfterBirth(scribbit: Scribbit): void {
     if (this.birthContinuationStarted) return;
     this.birthContinuationStarted = true;
+
+    if (this.practiceMode) {
+      const report = this.pendingPracticeReport;
+      if (!report || report.kind !== 'practice') {
+        this.birthContinuationStarted = false;
+        showToast('The practice replay went missing. Try the drawing again.');
+        this.exitTo('ArenaHome');
+        return;
+      }
+      setReplay(this, report, 'ArenaHome');
+      showVsCeremony(this, report.a, report.b, () => {
+        this.scene.start('Replay');
+      });
+      return;
+    }
 
     if (!this.startFightAfterBirth) {
       this.exitTo('ArenaHome');

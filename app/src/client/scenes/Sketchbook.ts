@@ -80,7 +80,18 @@ export class Sketchbook extends Scene {
     this.legendPage = 0;
     this.legacyPage = 0;
     this.legacyPages = [];
-    this.collectionPage = 0;
+    const debugCollectionPage = new URLSearchParams(window.location.search).get(
+      'collectionPage'
+    );
+    const requestedCollectionPage = Number.parseInt(
+      debugCollectionPage ?? '',
+      10
+    );
+    this.collectionPage =
+      window.location.search.includes('debug') &&
+      Number.isFinite(requestedCollectionPage)
+        ? Math.max(0, requestedCollectionPage - 1)
+        : 0;
     this.loadingOlderLegends = false;
     this.loadingGallery = false;
     this.loadingCollection = false;

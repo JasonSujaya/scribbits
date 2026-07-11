@@ -43,24 +43,64 @@ export class MyBattles extends Scene {
     mountLivingPaper(this);
     const { width } = this.scale;
     handLettered(this, width / 2, 64, 'MY BATTLES', 40, UI.ink, true);
-    label(this, width / 2, 116, 'Tap a battle to watch the replay', TYPE.body, UI.inkSoft);
+    label(
+      this,
+      width / 2,
+      116,
+      'Tap a battle to open its result or replay',
+      TYPE.body,
+      UI.inkSoft
+    );
     this.buildAppTabs();
     this.loadingCard = stickerCard(this, width / 2, 420, width - 100, 180, {
       tapeColor: UI.tapeAlt,
     });
     this.loadingCard.add(
-      label(this, 0, 0, 'Shuffling your replay pile…', TYPE.body, UI.inkSoft, true)
+      label(
+        this,
+        0,
+        0,
+        'Shuffling your replay pile…',
+        TYPE.body,
+        UI.inkSoft,
+        true
+      )
     );
     void this.loadBattles();
   }
 
   private buildAppTabs(): void {
     appTabBar(this, 'battles', [
-      { key: 'arena', icon: '🏟️', label: 'Arena', onClick: () => fadeToScene(this, 'ArenaHome') },
-      { key: 'gallery', icon: '🏆', label: 'Gallery', onClick: () => fadeToScene(this, 'Sketchbook') },
-      { key: 'draw', icon: '✏️', label: dailyDrawTabLabel(this), onClick: () => navigateToDailyDraw(this) },
-      { key: 'battles', icon: '⚔️', label: 'Battles', onClick: () => undefined },
-      { key: 'scout', icon: '📖', label: 'Guide', onClick: () => fadeToScene(this, 'Bestiary') },
+      {
+        key: 'arena',
+        icon: '🏟️',
+        label: 'Arena',
+        onClick: () => fadeToScene(this, 'ArenaHome'),
+      },
+      {
+        key: 'gallery',
+        icon: '🏆',
+        label: 'Gallery',
+        onClick: () => fadeToScene(this, 'Sketchbook'),
+      },
+      {
+        key: 'draw',
+        icon: '✏️',
+        label: dailyDrawTabLabel(this),
+        onClick: () => navigateToDailyDraw(this),
+      },
+      {
+        key: 'battles',
+        icon: '⚔️',
+        label: 'Battles',
+        onClick: () => undefined,
+      },
+      {
+        key: 'scout',
+        icon: '📖',
+        label: 'Guide',
+        onClick: () => fadeToScene(this, 'Bestiary'),
+      },
     ]);
   }
 
@@ -81,33 +121,75 @@ export class MyBattles extends Scene {
     this.renderGeneration += 1;
     const { width } = this.scale;
     if (battles.length === 0) {
-      const card = stickerCard(this, width / 2, 560, width - 80, 220, { tilt: -0.6 });
+      const card = stickerCard(this, width / 2, 560, width - 80, 220, {
+        tilt: -0.6,
+      });
       const swords = label(this, 0, -40, '⚔️', 48, UI.ink);
       card.add(swords);
-      this.tweens.add({ targets: swords, angle: { from: -10, to: 10 }, duration: 800, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+      this.tweens.add({
+        targets: swords,
+        angle: { from: -10, to: 10 },
+        duration: 800,
+        yoyo: true,
+        repeat: -1,
+        ease: 'Sine.easeInOut',
+      });
       card.add(
-        label(this, 0, 30, 'No battles yet!\nDraw a scribbit and spar to start fighting!', TYPE.body, UI.inkSoft, true).setLineSpacing(8)
+        label(
+          this,
+          0,
+          30,
+          'No battles yet!\nDraw a scribbit and spar to start fighting!',
+          TYPE.body,
+          UI.inkSoft,
+          true
+        ).setLineSpacing(8)
       );
       return;
     }
 
     const rowHeight = 132;
-    const visibleRows = Math.max(1, Math.floor((this.scale.height - NAV_SAFE - 290) / rowHeight));
+    const visibleRows = Math.max(
+      1,
+      Math.floor((this.scale.height - NAV_SAFE - 290) / rowHeight)
+    );
     const totalPages = Math.ceil(battles.length / visibleRows);
     this.page = Math.min(this.page, totalPages - 1);
     const start = this.page * visibleRows;
 
     if (totalPages > 1) {
-      label(this, width / 2, 185, `${this.page + 1} / ${totalPages}`, TYPE.caption, UI.inkSoft, true);
+      label(
+        this,
+        width / 2,
+        185,
+        `${this.page + 1} / ${totalPages}`,
+        TYPE.caption,
+        UI.inkSoft,
+        true
+      );
       if (this.page > 0) {
-        ghostButton(this, width / 2 - 210, 185, '← Newer', () => {
-          this.scene.restart({ page: this.page - 1 });
-        }, 150);
+        ghostButton(
+          this,
+          width / 2 - 210,
+          185,
+          '← Newer',
+          () => {
+            this.scene.restart({ page: this.page - 1 });
+          },
+          150
+        );
       }
       if (this.page < totalPages - 1) {
-        ghostButton(this, width / 2 + 210, 185, 'Older →', () => {
-          this.scene.restart({ page: this.page + 1 });
-        }, 150);
+        ghostButton(
+          this,
+          width / 2 + 210,
+          185,
+          'Older →',
+          () => {
+            this.scene.restart({ page: this.page + 1 });
+          },
+          150
+        );
       }
     }
 
@@ -120,8 +202,10 @@ export class MyBattles extends Scene {
   private buildRow(report: BattleReport, y: number): void {
     const { width } = this.scale;
     const cardW = width - 50;
-    const tilt = (report.id.charCodeAt(0) % 5 - 2) * 0.4;
-    const card = stickerCard(this, width / 2, y, cardW, ROW_INNER_HEIGHT, { tilt });
+    const tilt = ((report.id.charCodeAt(0) % 5) - 2) * 0.4;
+    const card = stickerCard(this, width / 2, y, cardW, ROW_INNER_HEIGHT, {
+      tilt,
+    });
 
     // Make the whole card tappable.
     const hit = this.add
@@ -142,12 +226,24 @@ export class MyBattles extends Scene {
       const generation = this.renderGeneration;
       void loadDrawing(this, fighter).then((key) => {
         if (this.scene.isActive() && generation === this.renderGeneration) {
-          fitDrawing(this.add.image(width / 2 + localX, y, key), 74).setDepth(3);
+          fitDrawing(this.add.image(width / 2 + localX, y, key), 74).setDepth(
+            3
+          );
         }
       });
     });
 
-    card.add(label(this, 0, -18, `${report.a.name}  vs  ${report.b.name}`, TYPE.body, UI.ink, true));
+    card.add(
+      label(
+        this,
+        0,
+        -18,
+        `${report.a.name}  vs  ${report.b.name}`,
+        TYPE.body,
+        UI.ink,
+        true
+      )
+    );
     const won = report.winner === 'a';
     card.add(
       label(
@@ -170,10 +266,16 @@ export class MyBattles extends Scene {
   private showError(message: string): void {
     if (this.errorPanelRef) return;
     const { width, height } = this.scale;
-    this.errorPanelRef = errorPanel(this, width / 2, height / 2, message, () => {
-      this.errorPanelRef?.destroy();
-      this.errorPanelRef = null;
-      void this.loadBattles();
-    });
+    this.errorPanelRef = errorPanel(
+      this,
+      width / 2,
+      height / 2,
+      message,
+      () => {
+        this.errorPanelRef?.destroy();
+        this.errorPanelRef = null;
+        void this.loadBattles();
+      }
+    );
   }
 }

@@ -1,17 +1,34 @@
 #!/usr/bin/env node
 
 import { createServer } from 'node:http';
+import { randomUUID } from 'node:crypto';
 import { existsSync, readFileSync, watch } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { dirname, extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import ts from 'typescript';
+import { createMockBattleReportFactory } from './mock-battle-factory.mjs';
 
 const port = Number(process.env.PORT ?? 8902);
 const autoReload = process.env.MOCK_AUTO_RELOAD !== '0';
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
 const clientRoot = join(repoRoot, 'dist', 'client');
 const mockAssetRoot = join(repoRoot, 'dist', 'mock-assets');
+const mockCombatBundleUrl = new URL(
+  '../dist/mock-runtime/battle.mjs',
+  import.meta.url
+);
+if (!existsSync(fileURLToPath(mockCombatBundleUrl))) {
+  throw new Error(
+    'Production combat mock bundle is missing. Run node scripts/build-mock-combat.mjs.'
+  );
+}
+const {
+  chooseFoundingSparOpponent,
+  createPracticeBattle,
+  selectFoundingSparRivalSlate,
+  simulate: simulateProductionBattle,
+} = await import(mockCombatBundleUrl.href);
 const transparentPng = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAFgwJ/lw5l6wAAAABJRU5ErkJggg==',
   'base64'
@@ -77,12 +94,10 @@ const productionCosmeticById = new Map(
   mockCapsuleDrops.map((drop) => [drop.id, drop])
 );
 if (
-  mockCapsuleDrops.length !== 28 ||
+  mockCapsuleDrops.length === 0 ||
   mockCapsuleCatalogIds.size !== mockCapsuleDrops.length
 ) {
-  throw new Error(
-    'Mock capsule catalog must contain 28 unique production drops.'
-  );
+  throw new Error('Mock capsule catalog must mirror unique production drops.');
 }
 
 const getProductionCosmetic = (cosmeticId, expectedKind) => {
@@ -196,9 +211,9 @@ const cloneScribbit = (scribbit) => {
 };
 
 const makeScribbit = (options) => {
-  // Founding scribbits point at /creatures/*.png (the asset job that never
-  // shipped) exactly like the real server, so the client's doodle fallback is
-  // exercised. Everyone else uses the working /api/drawing/{id} network route.
+  // Founding Scribbits use semantic /creatures routes exactly like the real
+  // server, exercising the client's deterministic stat-shaped mascots. Everyone
+  // else uses the working /api/drawing/{id} network route.
   const defaultImageUrl = options.isFounding
     ? `/creatures/creature-${String(options.id).replace(/^founding-/, '')}.png`
     : `/api/drawing/${options.id}`;
@@ -248,401 +263,27 @@ const makeForecast = (day) => {
   };
 };
 
-let battleCounter = 0;
+const createBattleReport = createMockBattleReportFactory({
+  simulate: simulateProductionBattle,
+  getForecast: () => memory.forecast,
+});
 
-const combatPowerByStat = {
-  chonk: 'inkquake',
-  spike: 'nib_halo',
-  zip: 'smearstep',
-  charm: 'colorburst',
-};
-
-const combatPowerFor = (scribbit) => {
-  let dominantStat = statKeys[0];
-  for (const stat of statKeys) {
-    if (scribbit.stats[stat] > scribbit.stats[dominantStat]) {
-      dominantStat = stat;
-    }
-  }
-  return combatPowerByStat[dominantStat];
-};
-
-const mockBattleMaximumHitPoints = (scribbit) => 170 + scribbit.stats.chonk;
-
-const triangleWave = (tick, period, phase) => {
-  const progress = ((tick + phase) % period) / period;
-  return progress < 0.5 ? progress * 2 : 2 - progress * 2;
-};
-
-const mockArenaAtTick = (tick) => {
-  const shrinkProgress = Math.max(0, Math.min(1, (tick - 280) / 100));
-  return {
-    halfWidth: Math.round(8000 + (6200 - 8000) * shrinkProgress),
-    halfHeight: Math.round(5000 + (3800 - 5000) * shrinkProgress),
-  };
-};
-
-const mockPositionAtTick = (slot, tick) => {
-  const arena = mockArenaAtTick(tick);
-  const phase = slot === 'a' ? 0 : 61;
-  const xUnit = triangleWave(tick, 122, phase) * 2 - 1;
-  const yUnit = triangleWave(tick, 174, phase + 37) * 2 - 1;
-  return {
-    x: Math.round(xUnit * (arena.halfWidth - 800)),
-    y: Math.round(yUnit * (arena.halfHeight - 700)),
-  };
-};
-
-const createMockSimulation = (kind, fighterA, fighterB, winner) => {
-  const completedTick = 380;
-  const fighters = [fighterA, fighterB];
-  const powers = [combatPowerFor(fighterA), combatPowerFor(fighterB)];
-  const maximumHitPoints = fighters.map(mockBattleMaximumHitPoints);
-  const currentHitPoints = [...maximumHitPoints];
-  const damageDealt = [0, 0];
-  const plannedHits = [
-    { tick: 58, source: 0, ratio: 0.13 },
-    { tick: 96, source: 1, ratio: 0.14 },
-    { tick: 136, source: 0, ratio: 0.16 },
-    { tick: 176, source: 1, ratio: 0.17 },
-    { tick: 216, source: 0, ratio: 0.18 },
-    { tick: 256, source: 1, ratio: 0.16 },
-    { tick: 296, source: winner === 'a' ? 0 : 1, ratio: 0.2 },
-    { tick: 334, source: winner === 'a' ? 1 : 0, ratio: 0.1 },
-    { tick: completedTick, source: winner === 'a' ? 0 : 1, ratio: 1 },
-  ];
-  const timeline = [
-    {
-      tick: 0,
-      kind: 'battle_started',
-      battleId: `mock-simulation-${kind}-${battleCounter}`,
-    },
-    {
-      tick: 280,
-      kind: 'arena_shrink_started',
-      targetHalfWidth: 6200,
-      targetHalfHeight: 3800,
-    },
-    {
-      tick: 360,
-      kind: 'late_fight_started',
-      cooldownMultiplierPermille: 750,
-      defenseTicks: 2,
-    },
-  ];
-  fighters.forEach((fighter, index) => {
-    if (fighter.element !== 'moss') return;
-    const actor = index === 0 ? 'a' : 'b';
-    timeline.push(
-      { tick: 0, kind: 'barrier_created', actor, hitPoints: 18 },
-      {
-        tick: 130,
-        kind: 'barrier_hit',
-        actor,
-        absorbedDamage: 18,
-        remainingHitPoints: 0,
-      },
-      { tick: 130, kind: 'barrier_broken', actor }
-    );
-  });
-  const resolvedHits = [];
-
-  for (const [index, plannedHit] of plannedHits.entries()) {
-    const sourceIndex = plannedHit.source;
-    const targetIndex = sourceIndex === 0 ? 1 : 0;
-    const sourceSlot = sourceIndex === 0 ? 'a' : 'b';
-    const targetSlot = targetIndex === 0 ? 'a' : 'b';
-    const abilityFinishedTick = Math.min(completedTick, plannedHit.tick + 20);
-    const sourcePosition = mockPositionAtTick(sourceSlot, plannedHit.tick - 8);
-    const targetPosition = mockPositionAtTick(targetSlot, plannedHit.tick - 8);
-    const requestedDamage = Math.max(
-      8,
-      Math.round(maximumHitPoints[targetIndex] * plannedHit.ratio)
-    );
-    const damage =
-      index === plannedHits.length - 1
-        ? currentHitPoints[targetIndex]
-        : Math.min(currentHitPoints[targetIndex] - 1, requestedDamage);
-    currentHitPoints[targetIndex] = Math.max(
-      index === plannedHits.length - 1 ? 0 : 1,
-      currentHitPoints[targetIndex] - damage
-    );
-    damageDealt[sourceIndex] += damage;
-    const aimDirection = {
-      x: targetPosition.x - sourcePosition.x,
-      y: targetPosition.y - sourcePosition.y,
-    };
-    timeline.push(
-      {
-        tick: plannedHit.tick - 10,
-        kind: 'ability_telegraphed',
-        actor: sourceSlot,
-        power: powers[sourceIndex],
-        activationNumber: index + 1,
-        origin: sourcePosition,
-        aimDirection,
-        activatesAtTick: plannedHit.tick - 4,
-      },
-      {
-        tick: plannedHit.tick - 4,
-        kind: 'ability_activated',
-        actor: sourceSlot,
-        power: powers[sourceIndex],
-        activationNumber: index + 1,
-        activeUntilTick: abilityFinishedTick,
-      }
-    );
-    if (powers[sourceIndex] === 'colorburst') {
-      const echoFireTick = Math.min(completedTick, plannedHit.tick + 3);
-      const echoPosition = {
-        x: sourcePosition.x - 900,
-        y: sourcePosition.y + 300,
-      };
-      timeline.push({
-        tick: plannedHit.tick - 3,
-        kind: 'echo_created',
-        actor: sourceSlot,
-        position: echoPosition,
-        aimDirection,
-        firesAtTick: echoFireTick,
-      });
-      timeline.push({
-        tick: echoFireTick,
-        kind: 'echo_fired',
-        actor: sourceSlot,
-        position: echoPosition,
-        aimDirection,
-      });
-    }
-    timeline.push({
-      tick: plannedHit.tick,
-      kind: 'damage',
-      sourceFighter: sourceSlot,
-      targetFighter: targetSlot,
-      source: powers[sourceIndex],
-      amount: damage,
-      targetHitPoints: currentHitPoints[targetIndex],
-      critical: index % 4 === 2,
-      position: mockPositionAtTick(targetSlot, plannedHit.tick),
-    });
-    if (abilityFinishedTick < completedTick) {
-      timeline.push({
-        tick: abilityFinishedTick,
-        kind: 'ability_finished',
-        actor: sourceSlot,
-        power: powers[sourceIndex],
-        activationNumber: index + 1,
-      });
-    }
-    resolvedHits.push({
-      tick: plannedHit.tick,
-      hitPoints: [...currentHitPoints],
-    });
-  }
-
-  const loser = winner === 'a' ? 'b' : 'a';
-  timeline.push(
-    {
-      tick: 300,
-      kind: 'ink_pressure',
-      actor: loser,
-      refreshedImmediately: true,
-    },
-    { tick: completedTick, kind: 'fighter_defeated', actor: loser },
-    { tick: completedTick, kind: 'battle_ended', winner, reason: 'knockout' }
-  );
-  timeline.sort((left, right) => left.tick - right.tick);
-
-  const hitPointsAtTick = (tick) => {
-    let values = [...maximumHitPoints];
-    for (const resolvedHit of resolvedHits) {
-      if (resolvedHit.tick > tick) break;
-      values = [...resolvedHit.hitPoints];
-    }
-    return values;
-  };
-  const abilityPhaseAtTick = (slot, tick) => {
-    const relevantHit = plannedHits.find((plannedHit) => {
-      const sourceSlot = plannedHit.source === 0 ? 'a' : 'b';
-      return (
-        sourceSlot === slot &&
-        tick >= plannedHit.tick - 10 &&
-        tick <= Math.min(completedTick, plannedHit.tick + 20)
-      );
-    });
-    if (!relevantHit) return 'cooldown';
-    return tick < relevantHit.tick - 4 ? 'telegraph' : 'active';
-  };
-  const checkpoints = [];
-  for (let tick = 0; tick <= completedTick; tick += 10) {
-    const arena = mockArenaAtTick(tick);
-    const hitPoints = hitPointsAtTick(tick);
-    checkpoints.push({
-      tick,
-      arenaHalfWidth: arena.halfWidth,
-      arenaHalfHeight: arena.halfHeight,
-      fighters: ['a', 'b'].map((slot, index) => {
-        const position = mockPositionAtTick(slot, tick);
-        const nextPosition = mockPositionAtTick(
-          slot,
-          Math.min(completedTick, tick + 1)
-        );
-        const isCharmEchoVisible =
-          powers[index] === 'colorburst' &&
-          abilityPhaseAtTick(slot, tick) === 'active';
-        return {
-          slot,
-          hitPoints: hitPoints[index],
-          maxHitPoints: maximumHitPoints[index],
-          position,
-          velocity: {
-            x: nextPosition.x - position.x,
-            y: nextPosition.y - position.y,
-          },
-          primaryPower: powers[index],
-          abilityPhase: abilityPhaseAtTick(slot, tick),
-          barrierHitPoints:
-            fighters[index].element === 'moss' && tick < 130 ? 18 : 0,
-          echoPosition: isCharmEchoVisible
-            ? { x: position.x - 900, y: position.y + 300 }
-            : null,
-        };
-      }),
-    });
-  }
-
-  const resultFighters = fighters.map((fighter, index) => ({
-    slot: index === 0 ? 'a' : 'b',
-    id: fighter.id,
-    finalHitPoints: currentHitPoints[index],
-    maxHitPoints: maximumHitPoints[index],
-    hitPointPermille: Math.round(
-      (currentHitPoints[index] * 1000) / maximumHitPoints[index]
-    ),
-    damageDealt: damageDealt[index],
-    primaryPower: powers[index],
-    inkPressureUsed: (index === 0 ? 'a' : 'b') === loser,
-  }));
-
-  return {
-    version: 1,
-    battleId: `mock-simulation-${kind}-${battleCounter}`,
-    seed: `mock:${battleCounter}`,
-    tickRate: 20,
-    fixedPointScale: 100,
-    maxTicks: 500,
-    fighters: fighters.map((fighter) => ({
-      id: fighter.id,
-      name: fighter.name,
-      element: fighter.element,
-      stats: { ...fighter.stats },
-    })),
-    timeline,
-    checkpoints,
-    result: {
-      winner,
-      loser,
-      reason: 'knockout',
-      completedTick,
-      completedMilliseconds: completedTick * 50,
-      fighters: resultFighters,
-    },
-    eventsTruncated: false,
-  };
-};
-
-const createBattleReport = (kind, fighterA, fighterB) => {
-  battleCounter += 1;
-  const day = memory.dayNumber;
-  const winner = battleCounter % 2 === 0 ? 'a' : 'b';
-  let hpA = mockBattleMaximumHitPoints(fighterA);
-  let hpB = mockBattleMaximumHitPoints(fighterB);
-  const events = [
-    {
-      type: 'intro',
-      actor: 'a',
-      move: null,
-      damage: null,
-      hpA,
-      hpB,
-      text: `${fighterA.name} and ${fighterB.name} tumble into the arena.`,
-    },
-    {
-      type: 'weather',
-      actor: 'a',
-      move: null,
-      damage: null,
-      hpA,
-      hpB,
-      text: memory.forecast.blurb,
-    },
-  ];
-
-  for (let index = 0; index < 9; index += 1) {
-    const actor = index % 2 === 0 ? 'a' : 'b';
-    const damage = 10 + ((battleCounter + index) % 9);
-    const move = actor === 'a' ? 'Marker Mash' : 'Sticker Slam';
-    events.push({
-      type: 'move',
-      actor,
-      move,
-      damage: null,
-      hpA,
-      hpB,
-      text:
-        actor === 'a'
-          ? `${fighterA.name} winds up ${move}.`
-          : `${fighterB.name} winds up ${move}.`,
-    });
-    if (actor === 'a') {
-      hpB = Math.max(winner === 'a' && index === 8 ? 0 : 1, hpB - damage);
-    } else {
-      hpA = Math.max(winner === 'b' && index === 7 ? 0 : 1, hpA - damage);
-    }
-    events.push({
-      type: index % 4 === 0 ? 'crit' : 'hit',
-      actor,
-      move,
-      damage,
-      hpA,
-      hpB,
-      text:
-        actor === 'a'
-          ? `${fighterA.name} lands Marker Mash for ${damage}.`
-          : `${fighterB.name} lands Sticker Slam for ${damage}.`,
-    });
-  }
-
-  if (winner === 'a') {
-    hpB = 0;
-  } else {
-    hpA = 0;
-  }
-
-  events.push({
-    type: 'faint',
-    actor: winner === 'a' ? 'b' : 'a',
-    move: null,
-    damage: null,
-    hpA,
-    hpB,
-    text:
-      winner === 'a'
-        ? `${fighterB.name} flops into a dramatic doodle pile.`
-        : `${fighterA.name} flops into a dramatic doodle pile.`,
-  });
-
-  return {
-    id: `mock-battle-${kind}-${Date.now()}-${battleCounter}`,
-    kind,
-    day,
-    a: cloneScribbit(fighterA),
-    b: cloneScribbit(fighterB),
-    winner,
-    events,
-    simulation: createMockSimulation(kind, fighterA, fighterB, winner),
-  };
-};
+const archivedNapCloud = makeScribbit({
+  id: 'mine-nap-cloud',
+  name: 'Nap Cloud',
+  artist: 'mock_player',
+  element: 'storm',
+  stats: { chonk: 24, spike: 20, zip: 42, charm: 14 },
+  bornDay: 6,
+  expiresDay: 9,
+  belief: 9,
+  wins: 2,
+  losses: 3,
+  status: 'faded',
+  xp: 1,
+  mood: 'sleepy',
+  careDoneToday: ['pat'],
+});
 
 const myScribbits = [
   makeScribbit({
@@ -678,22 +319,6 @@ const myScribbits = [
     mood: 'happy',
     careDoneToday: ['feed', 'pat'],
     accessories: ['round-glasses'],
-  }),
-  makeScribbit({
-    id: 'mine-nap-cloud',
-    name: 'Nap Cloud',
-    artist: 'mock_player',
-    element: 'storm',
-    stats: { chonk: 24, spike: 20, zip: 42, charm: 14 },
-    bornDay: 6,
-    expiresDay: 9,
-    belief: 9,
-    wins: 2,
-    losses: 3,
-    level: 1,
-    xp: 1,
-    mood: 'sleepy',
-    careDoneToday: ['pat'],
   }),
 ];
 
@@ -808,7 +433,100 @@ const todayEntrants = [
     xp: 0,
     mood: 'happy',
   }),
+  makeScribbit({
+    id: 'founding-pearlmote',
+    name: 'Pearlmote',
+    artist: 'linework_luz',
+    element: 'tide',
+    stats: { chonk: 20, spike: 12, zip: 24, charm: 44 },
+    belief: 6,
+    wins: 0,
+    losses: 0,
+    isFounding: true,
+    level: 3,
+    xp: 7,
+    mood: 'happy',
+  }),
 ];
+
+const stableStringSeed = (value) => {
+  let hash = 2166136261;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
+};
+
+const mockSparRivalSlate = (challenger, previewMode) => {
+  const seed = stableStringSeed(
+    `spar-rivals:${memory.dayNumber}:${previewMode}:${challenger.id}`
+  );
+  return selectFoundingSparRivalSlate(challenger, seed);
+};
+
+const debugPowerStats = Object.freeze({
+  inkquake: { chonk: 55, spike: 15, zip: 15, charm: 15 },
+  nib_halo: { chonk: 15, spike: 55, zip: 15, charm: 15 },
+  smearstep: { chonk: 15, spike: 15, zip: 55, charm: 15 },
+  colorburst: { chonk: 15, spike: 15, zip: 15, charm: 55 },
+});
+
+const debugPowerFighters = Object.freeze({
+  inkquake: makeScribbit({
+    id: 'debug-inkquake-heavy-page',
+    name: 'Heavy Page',
+    artist: 'debug_fixture',
+    element: 'tide',
+    stats: debugPowerStats.inkquake,
+    xp: 7,
+    mood: 'pumped',
+  }),
+  nib_halo: makeScribbit({
+    id: 'debug-nib-halo-needle-star',
+    name: 'Needle Star',
+    artist: 'debug_fixture',
+    element: 'tide',
+    stats: debugPowerStats.nib_halo,
+    xp: 7,
+    mood: 'pumped',
+  }),
+  smearstep: makeScribbit({
+    id: 'debug-smearstep-quick-swipe',
+    name: 'Quick Swipe',
+    artist: 'debug_fixture',
+    element: 'tide',
+    stats: debugPowerStats.smearstep,
+    xp: 7,
+    mood: 'pumped',
+  }),
+  colorburst: makeScribbit({
+    id: 'debug-colorburst-prism-pop',
+    name: 'Prism Pop',
+    artist: 'debug_fixture',
+    element: 'tide',
+    stats: debugPowerStats.colorburst,
+    xp: 7,
+    mood: 'pumped',
+  }),
+});
+
+const debugOpponentPower = Object.freeze({
+  inkquake: 'nib_halo',
+  nib_halo: 'smearstep',
+  smearstep: 'colorburst',
+  colorburst: 'inkquake',
+});
+
+const debugBattleSeed = Object.freeze({
+  // Curated production seeds make each signature move land early enough to
+  // read at normal speed. Winners and damage still come entirely from the
+  // authoritative simulator.
+  inkquake: 584,
+  nib_halo: 2,
+  smearstep: 282,
+  colorburst: 74,
+});
 
 const champion = makeScribbit({
   id: 'legend-solar-kiln',
@@ -945,6 +663,7 @@ const legends = [
 ];
 
 const myFaded = [
+  archivedNapCloud,
   makeScribbit({
     id: 'faded-pencil-puddle',
     name: 'Pencil Puddle',
@@ -1059,6 +778,14 @@ const memory = {
           'dragon-wings': 1,
           beanie: 2,
           'eyepatch-scar': 1,
+          'inkquake-rumble-belt': 1,
+          'inkquake-crater-crown': 1,
+          'nib-halo-headband': 1,
+          'nib-halo-circlet': 1,
+          'smearstep-speed-scarf': 1,
+          'smearstep-ink-skates': 1,
+          'colorburst-rosette': 1,
+          'colorburst-prism-crown': 1,
         },
         pens: ['warm-greys', 'gold-pen', 'rainbow-crayon', 'midnight-ink'],
         titles: ['doodler', 'inkslinger', 'brushlord', 'the-pen-ultimate'],
@@ -1080,6 +807,14 @@ const memory = {
           'inkslinger',
           'brushlord',
           'the-pen-ultimate',
+          'inkquake-rumble-belt',
+          'inkquake-crater-crown',
+          'nib-halo-headband',
+          'nib-halo-circlet',
+          'smearstep-speed-scarf',
+          'smearstep-ink-skates',
+          'colorburst-rosette',
+          'colorburst-prism-crown',
         ],
       },
       capsulePullCount: 13,
@@ -1116,10 +851,9 @@ for (let index = 0; index < 10; index += 1) {
 }
 const inkyMoon = legends.find((scribbit) => scribbit.name === 'Inky Moon');
 if (!inkyMoon) throw new Error('Mock Rumble replay needs Inky Moon.');
-memory.previousRumbleReplay = {
-  ...createBattleReport('rumble', inkyMoon, champion),
-  day: memory.dayNumber - 1,
-};
+memory.previousRumbleReplay = createBattleReport('rumble', inkyMoon, champion, {
+  forecast: makeForecast(memory.dayNumber - 1),
+});
 
 const getPreviewEconomy = (previewMode) => {
   return memory.economyByPreviewMode[previewMode];
@@ -1135,14 +869,19 @@ const resetPreviewEconomy = (economy) => {
   economy.sparWinRewardUtcDates.clear();
 };
 
+const isLivingScribbit = (scribbit) => {
+  return scribbit.status === 'alive' && scribbit.expiresDay > memory.dayNumber;
+};
+
 const getLivingScribbitsForPreview = (previewMode) => {
   if (previewMode === 'logged-out') return [];
+  const livingScribbits = memory.myScribbits.filter(isLivingScribbit);
   if (previewMode === 'fresh') {
-    return memory.myScribbits.filter((scribbit) =>
+    return livingScribbits.filter((scribbit) =>
       scribbit.id.startsWith('mock-submitted-')
     );
   }
-  return memory.myScribbits;
+  return livingScribbits;
 };
 
 const getOwnedScribbits = () => {
@@ -1268,6 +1007,7 @@ const visibleLists = () => [
   memory.legends,
   memory.myFaded,
   [memory.champion],
+  Object.values(debugPowerFighters),
 ];
 
 const findVisibleScribbit = (scribbitId) => {
@@ -1526,7 +1266,7 @@ const readSubmittedAccessoryIds = (body, inventory) => {
   return { accessoryIds, requiredCounts };
 };
 
-const arenaState = (economy) => {
+const arenaState = (economy, previewMode = 'returning') => {
   return {
     dayNumber: memory.dayNumber,
     loggedIn: true,
@@ -1535,7 +1275,7 @@ const arenaState = (economy) => {
     champion: memory.hiddenScribbitIds.has(memory.champion.id)
       ? null
       : cloneScribbit(memory.champion),
-    myScribbits: memory.myScribbits.map(cloneScribbit),
+    myScribbits: getLivingScribbitsForPreview(previewMode).map(cloneScribbit),
     drawnToday: memory.drawnToday,
     enteredToday: memory.enteredToday,
     rumbleEntrants: memory.todayEntrants.length,
@@ -1564,9 +1304,7 @@ const arenaState = (economy) => {
 };
 
 const freshPlayerArenaState = (economy) => {
-  const submittedScribbits = memory.myScribbits.filter((scribbit) =>
-    scribbit.id.startsWith('mock-submitted-')
-  );
+  const submittedScribbits = getLivingScribbitsForPreview('fresh');
   const submittedScribbitIds = new Set(
     submittedScribbits.map((scribbit) => scribbit.id)
   );
@@ -1575,7 +1313,7 @@ const freshPlayerArenaState = (economy) => {
   );
 
   return {
-    ...arenaState(economy),
+    ...arenaState(economy, 'fresh'),
     myScribbits: submittedScribbits.map(cloneScribbit),
     drawnToday: submittedScribbits.length > 0,
     enteredToday,
@@ -1589,7 +1327,7 @@ const freshPlayerArenaState = (economy) => {
 
 const loggedOutArenaState = () => {
   return {
-    ...arenaState(createPreviewEconomy()),
+    ...arenaState(createPreviewEconomy(), 'logged-out'),
     loggedIn: false,
     myUsername: null,
     myScribbits: [],
@@ -1632,6 +1370,52 @@ const handleApi = async (request, response, url) => {
   const previewMode = requestPreviewMode(request, url);
   const economy = getPreviewEconomy(previewMode);
 
+  if (method === 'GET' && path === '/api/debug/battle') {
+    const power = url.searchParams.get('power');
+    if (!power || !Object.hasOwn(debugPowerFighters, power)) {
+      sendError(
+        response,
+        400,
+        'Choose inkquake, nib_halo, smearstep, or colorburst.'
+      );
+      return;
+    }
+    const requestedElement = url.searchParams.get('element');
+    if (requestedElement !== null && !elements.includes(requestedElement)) {
+      sendError(response, 400, 'Choose ember, tide, moss, or storm.');
+      return;
+    }
+    const requestedSeedText = url.searchParams.get('seed');
+    const requestedSeed = Number(requestedSeedText);
+    if (
+      requestedSeedText !== null &&
+      (!Number.isSafeInteger(requestedSeed) || requestedSeed < 0)
+    ) {
+      sendError(response, 400, 'Choose a non-negative safe integer seed.');
+      return;
+    }
+    const opponentPower = debugOpponentPower[power];
+    const baseFighterA = debugPowerFighters[power];
+    const fighterB = debugPowerFighters[opponentPower];
+    if (!baseFighterA || !fighterB) {
+      sendError(response, 500, 'Debug battle fixture is incomplete.');
+      return;
+    }
+    const fighterA = {
+      ...cloneScribbit(baseFighterA),
+      element: requestedElement ?? baseFighterA.element,
+    };
+    sendJson(
+      response,
+      200,
+      createBattleReport('exhibition', fighterA, fighterB, {
+        seed:
+          requestedSeedText === null ? debugBattleSeed[power] : requestedSeed,
+      })
+    );
+    return;
+  }
+
   if (previewMode === 'logged-out' && method === 'POST') {
     sendError(response, 401, 'Sign in to change your Scribbits data.');
     return;
@@ -1653,6 +1437,26 @@ const handleApi = async (request, response, url) => {
       drawnToday: state.drawnToday,
       backedToday: state.myBackedScribbitId !== null,
       playStreakDays: state.playStreakDays,
+    });
+    return;
+  }
+
+  if (method === 'GET' && path === '/api/spar-rivals') {
+    if (previewMode === 'logged-out') {
+      sendError(response, 401, 'Sign in to choose spar rivals.');
+      return;
+    }
+    const scribbitId = url.searchParams.get('scribbitId')?.trim() ?? '';
+    const challenger = getLivingScribbitsForPreview(previewMode).find(
+      (entry) => entry.id === scribbitId
+    );
+    if (!challenger) {
+      sendError(response, 404, 'That living Scribbit is not ready to spar.');
+      return;
+    }
+    sendJson(response, 200, {
+      challenger: cloneScribbit(challenger),
+      rivals: mockSparRivalSlate(challenger, previewMode).map(cloneScribbit),
     });
     return;
   }
@@ -2094,6 +1898,45 @@ const handleApi = async (request, response, url) => {
     return;
   }
 
+  if (method === 'POST' && path === '/api/practice-battle') {
+    const result = createPracticeBattle({
+      request: await readJsonBody(request),
+      artist: 'mock_player',
+      playerId: `mock:${previewMode}`,
+      canonicalDay: memory.dayNumber,
+      nonce: randomUUID(),
+    });
+
+    if (result.status === 'invalid-request') {
+      sendError(
+        response,
+        400,
+        'Send only a 2-24 character name and a base PNG drawing.'
+      );
+      return;
+    }
+    if (result.status === 'invalid-png') {
+      sendError(
+        response,
+        400,
+        'Practice drawings must be 512x512 PNG data URLs under 400 KB.'
+      );
+      return;
+    }
+    if (result.status === 'too-small') {
+      sendError(
+        response,
+        400,
+        'Your Scribbit needs a body. Add a few more lines before practicing.'
+      );
+      return;
+    }
+
+    // Deliberately no mock memory writes: production practice is ephemeral.
+    sendJson(response, 200, result.report);
+    return;
+  }
+
   if (method === 'POST' && path === '/api/spar') {
     const body = await readJsonBody(request);
     const scribbitId = readScribbitId(body);
@@ -2106,9 +1949,25 @@ const handleApi = async (request, response, url) => {
       return;
     }
 
-    const opponent =
-      memory.todayEntrants.find((entry) => entry.artist !== 'mock_player') ??
-      memory.todayEntrants[0];
+    const requestedOpponentId =
+      typeof body?.opponentId === 'string' ? body.opponentId.trim() : '';
+    const rivalSlate = mockSparRivalSlate(challenger, previewMode);
+    const opponent = requestedOpponentId
+      ? rivalSlate.find((rival) => rival.id === requestedOpponentId)
+      : chooseFoundingSparOpponent(
+          challenger,
+          stableStringSeed(`quick-spar:${challenger.id}:${Date.now()}`)
+        );
+    if (!opponent) {
+      sendError(
+        response,
+        requestedOpponentId ? 400 : 503,
+        requestedOpponentId
+          ? 'Choose a rival from the current spar card.'
+          : 'No founding spar opponent is available.'
+      );
+      return;
+    }
     const report = createBattleReport('exhibition', challenger, opponent);
     let rewardedReport = report;
 
@@ -2131,7 +1990,7 @@ const handleApi = async (request, response, url) => {
   if (method === 'POST' && path === '/api/boss-challenge') {
     const body = await readJsonBody(request);
     const scribbitId = readScribbitId(body);
-    const challenger = memory.myScribbits.find(
+    const challenger = getLivingScribbitsForPreview(previewMode).find(
       (entry) => entry.id === scribbitId
     );
 
@@ -2149,7 +2008,7 @@ const handleApi = async (request, response, url) => {
   if (method === 'POST' && path === '/api/enter-rumble') {
     const body = await readJsonBody(request);
     const scribbitId = readScribbitId(body);
-    const scribbit = memory.myScribbits.find(
+    const scribbit = getLivingScribbitsForPreview(previewMode).find(
       (entry) => entry.id === scribbitId
     );
 
@@ -2404,8 +2263,8 @@ const server = createServer(async (request, response) => {
       return;
     }
 
-    // Production reality: the founding-art asset job was cancelled, so every
-    // /creatures/*.png 404s. Reproduce that so the client fallback is exercised.
+    // Founding routes deliberately fall through to generated stat-shaped mascot
+    // art, matching the production content contract without bundled bitmaps.
     if (url.pathname.startsWith('/creatures/')) {
       sendError(response, 404, 'creature art not found');
       return;

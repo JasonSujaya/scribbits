@@ -1,16 +1,20 @@
 // Generate transparent, production-like mock drawings whose silhouettes make
 // each dominant-stat combat power obvious before a battle starts.
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PNG } from 'pngjs';
 
-const outputDirectory = join(
-  dirname(fileURLToPath(import.meta.url)),
-  '..',
-  'dist',
-  'mock-assets'
-);
+const appDirectory = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const argumentsAfterScript = process.argv.slice(2);
+const outputDirectoryArgument = argumentsAfterScript.indexOf('--out-dir');
+const requestedOutputDirectory =
+  outputDirectoryArgument >= 0
+    ? (argumentsAfterScript[outputDirectoryArgument + 1] ?? 'dist/mock-assets')
+    : 'dist/mock-assets';
+const outputDirectory = isAbsolute(requestedOutputDirectory)
+  ? requestedOutputDirectory
+  : resolve(appDirectory, requestedOutputDirectory);
 mkdirSync(outputDirectory, { recursive: true });
 
 const ink = [43, 32, 22];
@@ -27,6 +31,47 @@ const createTransparentImage = (width, height) => {
   const image = new PNG({ width, height });
   image.data.fill(0);
   return image;
+};
+
+const trimTransparentImage = (image, padding = 12) => {
+  let minimumX = image.width;
+  let minimumY = image.height;
+  let maximumX = -1;
+  let maximumY = -1;
+  for (let y = 0; y < image.height; y += 1) {
+    for (let x = 0; x < image.width; x += 1) {
+      const alpha = image.data[(y * image.width + x) * 4 + 3];
+      if (alpha === 0) continue;
+      minimumX = Math.min(minimumX, x);
+      minimumY = Math.min(minimumY, y);
+      maximumX = Math.max(maximumX, x);
+      maximumY = Math.max(maximumY, y);
+    }
+  }
+  if (maximumX < minimumX || maximumY < minimumY) return image;
+
+  minimumX = Math.max(0, minimumX - padding);
+  minimumY = Math.max(0, minimumY - padding);
+  maximumX = Math.min(image.width - 1, maximumX + padding);
+  maximumY = Math.min(image.height - 1, maximumY + padding);
+  const trimmed = createTransparentImage(
+    maximumX - minimumX + 1,
+    maximumY - minimumY + 1
+  );
+  for (let y = minimumY; y <= maximumY; y += 1) {
+    for (let x = minimumX; x <= maximumX; x += 1) {
+      const sourceOffset = (y * image.width + x) * 4;
+      const targetOffset =
+        ((y - minimumY) * trimmed.width + (x - minimumX)) * 4;
+      image.data.copy(
+        trimmed.data,
+        targetOffset,
+        sourceOffset,
+        sourceOffset + 4
+      );
+    }
+  }
+  return trimmed;
 };
 
 const setPixel = (image, x, y, color) => {
@@ -249,7 +294,8 @@ const createNibHaloDrawing = () => {
   const centerX = 210;
   const centerY = 272;
   const quillPoints = [];
-  const pointCount = 32;
+  // Eight baked silhouette points leave the three runtime pen nibs readable.
+  const pointCount = 16;
 
   for (let index = 0; index < pointCount; index += 1) {
     const angle = -Math.PI / 2 + (index * Math.PI * 2) / pointCount;
@@ -304,20 +350,25 @@ const createSmearstepDrawing = () => {
   const image = createTransparentImage(620, 280);
   const speedMarks = [
     {
-      start: { x: 38, y: 78 },
+      start: { x: 248, y: 78 },
       end: { x: 305, y: 92 },
       width: 11,
       color: coral,
     },
-    { start: { x: 91, y: 120 }, end: { x: 326, y: 126 }, width: 8, color: ink },
     {
-      start: { x: 34, y: 161 },
+      start: { x: 250, y: 120 },
+      end: { x: 326, y: 126 },
+      width: 8,
+      color: ink,
+    },
+    {
+      start: { x: 235, y: 161 },
       end: { x: 301, y: 157 },
       width: 13,
       color: turquoise,
     },
     {
-      start: { x: 115, y: 204 },
+      start: { x: 260, y: 204 },
       end: { x: 326, y: 186 },
       width: 8,
       color: gold,
@@ -339,8 +390,8 @@ const createSmearstepDrawing = () => {
     image,
     [
       { x: 407, y: 195 },
-      { x: 376, y: 237 },
-      { x: 423, y: 226 },
+      { x: 376, y: 270 },
+      { x: 423, y: 250 },
     ],
     11,
     ink
@@ -349,8 +400,8 @@ const createSmearstepDrawing = () => {
     image,
     [
       { x: 487, y: 196 },
-      { x: 514, y: 231 },
-      { x: 552, y: 221 },
+      { x: 514, y: 270 },
+      { x: 552, y: 250 },
     ],
     11,
     ink
@@ -382,8 +433,8 @@ const createSmearstepDrawing = () => {
     6,
     ink
   );
-  fillCircle(image, 576, 101, 6, coral);
-  fillCircle(image, 590, 79, 4, gold);
+  fillCircle(image, 544, 101, 6, coral);
+  fillCircle(image, 552, 79, 4, gold);
   return image;
 };
 
@@ -519,10 +570,13 @@ for (const filename of obsoleteDrawingFiles) {
 }
 
 const drawings = [
-  ['drawing-chonk-inkquake.png', createInkquakeDrawing()],
-  ['drawing-spike-nib-halo.png', createNibHaloDrawing()],
-  ['drawing-zip-smearstep.png', createSmearstepDrawing()],
-  ['drawing-charm-colorburst.png', createColorburstDrawing()],
+  ['drawing-chonk-inkquake.png', trimTransparentImage(createInkquakeDrawing())],
+  ['drawing-spike-nib-halo.png', trimTransparentImage(createNibHaloDrawing())],
+  ['drawing-zip-smearstep.png', trimTransparentImage(createSmearstepDrawing())],
+  [
+    'drawing-charm-colorburst.png',
+    trimTransparentImage(createColorburstDrawing()),
+  ],
 ];
 
 for (const [filename, image] of drawings) {

@@ -15,6 +15,7 @@ import {
   ACCESSORY_CATALOG_ENTRIES,
   findAccessoryCosmetic,
 } from '../../shared/cosmetics';
+import { SHAPE_POWER_RELIC_PAINT_BY_ID } from './shapepowerrelicart';
 
 const INK = '#2b2016';
 const INK_HEX = 0x2b2016;
@@ -544,6 +545,7 @@ const ACCESSORY_PAINT_BY_ID: Record<string, AccessoryPaintDefinition> = {
       pen.line(50, 58, 82, 52);
     },
   },
+  ...SHAPE_POWER_RELIC_PAINT_BY_ID,
 };
 
 const buildAccessoryCatalog = (): Record<string, AccessoryDef> => {

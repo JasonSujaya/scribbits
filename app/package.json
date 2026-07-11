@@ -11,7 +11,7 @@
     "launch": "npm run verify && devvit publish --bump patch",
     "lint": "eslint 'src/**/*.{ts,tsx}'",
     "login": "devvit login",
-    "mock": "node scripts/make-test-drawing.mjs && node scripts/dev-mock.mjs",
+    "mock": "node scripts/make-test-drawing.mjs && vite build && node scripts/build-mock-combat.mjs && node scripts/dev-mock.mjs",
     "prettier": "prettier --write .",
     "test": "npm run test:sim",
     "test:sim": "node scripts/test-battle.mjs",

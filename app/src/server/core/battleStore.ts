@@ -1,10 +1,18 @@
 import type { BattleReport } from '../../shared/arena';
-import type { BattleTranscript } from '../../shared/combat';
+import type {
+  AuthoritativeBattleResult,
+  BattleEndReason,
+  BattleTranscript,
+  FighterSlot,
+} from '../../shared/combat';
 import {
   COMBAT_MAXIMUM_TICKS,
   COMBAT_TICK_RATE,
+  FIXED_POINT_SCALE,
   MAXIMUM_CHECKPOINTS,
   MAXIMUM_TIMELINE_EVENTS,
+  battleResultFinishIsConsistent,
+  isShapePowerId,
 } from '../../shared/combat';
 import type { ArenaStorage } from './scribbit';
 import {
@@ -39,55 +47,133 @@ const isRecord = (value: unknown): value is Record<string, unknown> => {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 };
 
+const isFighterSlot = (value: unknown): value is FighterSlot => {
+  return value === 'a' || value === 'b';
+};
+
+const isBattleEndReason = (value: unknown): value is BattleEndReason => {
+  return (
+    value === 'knockout' ||
+    value === 'double_knockout' ||
+    value === 'timeout_hp_percentage' ||
+    value === 'timeout_damage_dealt' ||
+    value === 'timeout_stable_tiebreak'
+  );
+};
+
+const isStoredResultFighter = (
+  value: unknown,
+  expectedSlot: FighterSlot,
+  expectedId: string
+): boolean => {
+  return (
+    isRecord(value) &&
+    value.slot === expectedSlot &&
+    value.id === expectedId &&
+    Number.isSafeInteger(value.finalHitPoints) &&
+    Number.isSafeInteger(value.maxHitPoints) &&
+    Number.isSafeInteger(value.hitPointPermille) &&
+    Number.isSafeInteger(value.damageDealt) &&
+    isShapePowerId(value.primaryPower) &&
+    typeof value.inkPressureUsed === 'boolean'
+  );
+};
+
 const isBattleTranscript = (value: unknown): value is BattleTranscript => {
-  if (!isRecord(value) || !isRecord(value.result)) {
+  if (
+    !isRecord(value) ||
+    !isRecord(value.result) ||
+    !Array.isArray(value.fighters) ||
+    value.fighters.length !== 2 ||
+    !isRecord(value.fighters[0]) ||
+    !isRecord(value.fighters[1]) ||
+    typeof value.fighters[0].id !== 'string' ||
+    typeof value.fighters[1].id !== 'string'
+  ) {
     return false;
   }
 
   const result = value.result;
-  return (
-    Number.isSafeInteger(value.version) &&
-    value.tickRate === COMBAT_TICK_RATE &&
-    value.maxTicks === COMBAT_MAXIMUM_TICKS &&
-    typeof value.battleId === 'string' &&
-    typeof value.seed === 'string' &&
-    Array.isArray(value.fighters) &&
-    value.fighters.length === 2 &&
-    Array.isArray(value.timeline) &&
-    value.timeline.length >= 2 &&
-    value.timeline.length <= MAXIMUM_TIMELINE_EVENTS &&
-    Array.isArray(value.checkpoints) &&
-    value.checkpoints.length >= 2 &&
-    value.checkpoints.length <= MAXIMUM_CHECKPOINTS &&
-    (result.winner === 'a' || result.winner === 'b') &&
-    (result.loser === 'a' || result.loser === 'b') &&
-    Number.isSafeInteger(result.completedTick) &&
-    Number(result.completedTick) >= 0 &&
-    Number(result.completedTick) <= COMBAT_MAXIMUM_TICKS &&
-    Array.isArray(result.fighters) &&
-    result.fighters.length === 2
+  const fighterAId = value.fighters[0].id;
+  const fighterBId = value.fighters[1].id;
+  if (
+    !(
+      value.version === 1 &&
+      value.tickRate === COMBAT_TICK_RATE &&
+      value.fixedPointScale === FIXED_POINT_SCALE &&
+      value.maxTicks === COMBAT_MAXIMUM_TICKS &&
+      typeof value.battleId === 'string' &&
+      typeof value.seed === 'string' &&
+      typeof value.eventsTruncated === 'boolean' &&
+      Array.isArray(value.timeline) &&
+      value.timeline.length >= 2 &&
+      value.timeline.length <= MAXIMUM_TIMELINE_EVENTS &&
+      Array.isArray(value.checkpoints) &&
+      value.checkpoints.length >= 2 &&
+      value.checkpoints.length <= MAXIMUM_CHECKPOINTS &&
+      isFighterSlot(result.winner) &&
+      isFighterSlot(result.loser) &&
+      result.winner !== result.loser &&
+      isBattleEndReason(result.reason) &&
+      Number.isSafeInteger(result.completedTick) &&
+      Number(result.completedTick) >= 0 &&
+      Number(result.completedTick) <= COMBAT_MAXIMUM_TICKS &&
+      result.completedMilliseconds ===
+        Math.floor((Number(result.completedTick) * 1_000) / COMBAT_TICK_RATE) &&
+      Array.isArray(result.fighters) &&
+      result.fighters.length === 2 &&
+      isStoredResultFighter(result.fighters[0], 'a', fighterAId) &&
+      isStoredResultFighter(result.fighters[1], 'b', fighterBId)
+    )
+  ) {
+    return false;
+  }
+
+  return battleResultFinishIsConsistent(
+    result as unknown as AuthoritativeBattleResult,
+    COMBAT_MAXIMUM_TICKS
   );
 };
 
 const isBattleReport = (value: unknown): value is BattleReport => {
-  if (!isRecord(value) || !Array.isArray(value.events)) {
+  if (
+    !isRecord(value) ||
+    (value.events !== undefined && !Array.isArray(value.events))
+  ) {
     return false;
   }
 
-  if (value.simulation !== undefined && !isBattleTranscript(value.simulation)) {
+  if (value.simulation === undefined && !Array.isArray(value.events)) {
     return false;
   }
 
-  return (
-    typeof value.id === 'string' &&
-    (value.kind === 'rumble' ||
-      value.kind === 'boss' ||
-      value.kind === 'exhibition') &&
-    typeof value.day === 'number' &&
-    isScribbit(value.a) &&
-    isScribbit(value.b) &&
-    (value.winner === 'a' || value.winner === 'b')
-  );
+  // Historical reads share the same zero-persistence boundary: even hostile or
+  // stale JSON cannot make an ephemeral practice report appear in history.
+  if (
+    typeof value.id !== 'string' ||
+    (value.kind !== 'rumble' &&
+      value.kind !== 'boss' &&
+      value.kind !== 'exhibition') ||
+    typeof value.day !== 'number' ||
+    !isScribbit(value.a) ||
+    !isScribbit(value.b) ||
+    !isFighterSlot(value.winner)
+  ) {
+    return false;
+  }
+
+  if (value.simulation !== undefined) {
+    if (
+      !isBattleTranscript(value.simulation) ||
+      value.a.id !== value.simulation.fighters[0].id ||
+      value.b.id !== value.simulation.fighters[1].id ||
+      value.winner !== value.simulation.result.winner
+    ) {
+      return false;
+    }
+  }
+
+  return true;
 };
 
 const parseBattleReport = (
@@ -200,6 +286,12 @@ export const saveBattleReport = async (
   battleReport: BattleReport,
   score: number
 ): Promise<void> => {
+  // Practice is a zero-persistence domain. Fail before the first storage call
+  // even if a future route accidentally sends an ephemeral report here.
+  if (battleReport.kind === 'practice') {
+    throw new Error('Practice battle reports cannot be stored.');
+  }
+
   const battleReportKey = getBattleReportKey(battleReport.id);
   const storedBattleReport: BattleReport = {
     ...battleReport,

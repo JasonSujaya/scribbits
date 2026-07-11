@@ -13,6 +13,7 @@ import {
   markLegacyCardsSeen,
 } from '../lib/api';
 import {
+  beginPracticeSession,
   setArena,
   getArena,
   setReplay,
@@ -185,6 +186,7 @@ export class ArenaHome extends Scene {
     cursor = this.buildForecastCard(width / 2, cursor + 20);
     if (this.state.drawnToday) {
       cursor = this.buildNextGoalCard(width / 2, cursor + 20);
+      cursor = this.buildPracticeLabCard(width / 2, cursor + 20);
     } else {
       cursor = this.buildActionRow(width / 2, cursor + 20);
       cursor = this.buildInkTrailCard(width / 2, cursor + 20);
@@ -628,6 +630,65 @@ export class ArenaHome extends Scene {
         )
       );
     }
+    return centerY + height / 2;
+  }
+
+  private buildPracticeLabCard(x: number, y: number): number {
+    const width = this.scale.width - EDGE * 2;
+    const height = 300;
+    const centerY = y + height / 2;
+    const card = stickerCard(this, x, centerY, width, height, {
+      tapeColor: UI.tapeAlt,
+      tilt: 0.25,
+    });
+    card.add(
+      label(
+        this,
+        0,
+        -122,
+        "TODAY'S SCRIBBIT IS LOCKED ✓",
+        TYPE.caption,
+        UI.coralText,
+        true
+      )
+    );
+    card.add(
+      label(this, 0, -82, 'FOUR-POWER PRACTICE LAB', TYPE.title, UI.ink, true)
+    );
+    card.add(
+      label(
+        this,
+        0,
+        -31,
+        "Test throwaway shapes without changing today's Scribbit.",
+        TYPE.body,
+        UI.inkSoft,
+        true
+      ).setWordWrapWidth(width - 72)
+    );
+    card.add(
+      label(
+        this,
+        0,
+        20,
+        'No Rumble entry • no Ink, XP, or Legacy card',
+        TYPE.caption,
+        UI.coralText,
+        true
+      ).setWordWrapWidth(width - 72)
+    );
+    card.add(
+      button(
+        this,
+        0,
+        96,
+        '✏️ PRACTICE SHAPES →',
+        () => this.startPractice(),
+        width - 100,
+        UI.tapeAlt,
+        UI.ink
+      )
+    );
     return centerY + height / 2;
   }
 
@@ -1792,6 +1853,12 @@ export class ArenaHome extends Scene {
   // --- Actions ---------------------------------------------------------------
   private startDraw(): void {
     navigateToDailyDraw(this);
+  }
+
+  private startPractice(): void {
+    if (!this.requireLogin()) return;
+    beginPracticeSession(this);
+    fadeToScene(this, 'Draw', { mode: 'practice' });
   }
 
   private doCare(scribbit: Scribbit, action: CareAction): void {

@@ -3,11 +3,19 @@
 
 import { Scene } from 'phaser';
 import type { ArenaState, BattleReport, Scribbit } from '../../shared/arena';
+import type { PrimaryPower } from '../../shared/combat/types';
+import {
+  createPracticeSession,
+  normalizePracticeSession,
+  recordPracticeSessionPower,
+} from './practicelab';
+import type { PracticeSession } from './practicelab';
 
 const ARENA_KEY = 'arena';
 const REPLAY_KEY = 'replayReport';
 const REPLAY_RETURN_KEY = 'replayReturn';
 const SKETCHBOOK_TAB_KEY = 'sketchbookTab';
+const PRACTICE_SESSION_KEY = 'practiceSession';
 
 export type SketchbookTab = 'legends' | 'sketchbook' | 'collection';
 export type ReplayReturnScene = 'ArenaHome' | 'Sketchbook';
@@ -39,6 +47,35 @@ export function getReplayReturn(scene: Scene): ReplayReturnScene {
     (scene.registry.get(REPLAY_RETURN_KEY) as ReplayReturnScene | undefined) ??
     'ArenaHome'
   );
+}
+
+export function beginPracticeSession(scene: Scene): PracticeSession {
+  const session = createPracticeSession();
+  scene.registry.set(PRACTICE_SESSION_KEY, session);
+  return session;
+}
+
+export function getPracticeSession(scene: Scene): PracticeSession {
+  return normalizePracticeSession(
+    scene.registry.get(PRACTICE_SESSION_KEY) as unknown
+  );
+}
+
+export function getPracticePowers(scene: Scene): PrimaryPower[] {
+  return [...getPracticeSession(scene).triedPowers];
+}
+
+export function recordPracticePower(
+  scene: Scene,
+  power: PrimaryPower
+): PracticeSession {
+  const next = recordPracticeSessionPower(getPracticeSession(scene), power);
+  scene.registry.set(PRACTICE_SESSION_KEY, next);
+  return next;
+}
+
+export function endPracticeSession(scene: Scene): void {
+  scene.registry.remove(PRACTICE_SESSION_KEY);
 }
 
 // Deep-link focus for ArenaHome (e.g. the loss card asks to scroll to the

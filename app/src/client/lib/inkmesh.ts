@@ -5,31 +5,33 @@
 // understand. LiveSprite owns the renderer; this file owns the mesh data.
 
 import type { ScribbitStats } from '../../shared/arena';
-import { ABILITY_CONFIG_BY_POWER } from '../../shared/combat';
+import { selectDominantStat } from '../../shared/combat/selection';
+import { getShapePowerContent } from '../../shared/combat/shapepowercontent';
+import type { DominantStat } from '../../shared/combat/types';
 
 export const INK_MESH_SEGMENTS = 4;
 
-export type SignatureTrait = 'chonk' | 'spike' | 'zip' | 'charm';
+export type SignatureTrait = DominantStat;
 
 export const SIGNATURE_POWER: Record<
   SignatureTrait,
   { name: string; playerHint: string }
 > = {
   chonk: {
-    name: ABILITY_CONFIG_BY_POWER.inkquake.displayName.toUpperCase(),
-    playerHint: 'Filled bodies launch an expanding shockwave.',
+    name: getShapePowerContent('inkquake').displayName.toUpperCase(),
+    playerHint: getShapePowerContent('inkquake').playerHint,
   },
   spike: {
-    name: ABILITY_CONFIG_BY_POWER.nib_halo.displayName.toUpperCase(),
-    playerHint: 'Jagged edges summon three rotating quills.',
+    name: getShapePowerContent('nib_halo').displayName.toUpperCase(),
+    playerHint: getShapePowerContent('nib_halo').playerHint,
   },
   zip: {
-    name: ABILITY_CONFIG_BY_POWER.smearstep.displayName.toUpperCase(),
-    playerHint: 'Compact shapes predict and dash twice.',
+    name: getShapePowerContent('smearstep').displayName.toUpperCase(),
+    playerHint: getShapePowerContent('smearstep').playerHint,
   },
   charm: {
-    name: ABILITY_CONFIG_BY_POWER.colorburst.displayName.toUpperCase(),
-    playerHint: 'More colors fire a cone and delayed echo.',
+    name: getShapePowerContent('colorburst').displayName.toUpperCase(),
+    playerHint: getShapePowerContent('colorburst').playerHint,
   },
 };
 
@@ -60,10 +62,7 @@ export type InkMeshMotion = {
 const clamp01 = (value: number): number => Math.max(0, Math.min(1, value));
 
 export function getSignatureTrait(stats: ScribbitStats): SignatureTrait {
-  const orderedTraits: SignatureTrait[] = ['chonk', 'spike', 'zip', 'charm'];
-  return orderedTraits.reduce((winner, trait) => {
-    return stats[trait] > stats[winner] ? trait : winner;
-  }, orderedTraits[0] ?? 'chonk');
+  return selectDominantStat(stats);
 }
 
 export function buildInkMeshGeometry(

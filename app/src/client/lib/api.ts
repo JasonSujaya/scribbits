@@ -19,8 +19,11 @@ import type {
   LegacyCardsState,
   LegendsState,
   MarkLegacySeenRequest,
+  PracticeBattleRequest,
+  PracticeBattleReport,
   ReportScribbitResponse,
   Scribbit,
+  SparRivalSlate,
   SplashState,
   SparRequest,
   SubmitScribbitRequest,
@@ -118,6 +121,18 @@ export function submitScribbit(
   );
 }
 
+// Reward-free shape practice. The server decodes and re-analyzes the PNG,
+// authors the opponent, and returns an ephemeral replay without saving it.
+export function practiceBattle(
+  request: PracticeBattleRequest
+): Promise<ApiResult<PracticeBattleReport>> {
+  return postJson<PracticeBattleRequest, PracticeBattleReport>(
+    '/api/practice-battle',
+    request,
+    SUBMIT_TIMEOUT_MS
+  );
+}
+
 export function enterRumble(
   scribbitId: string
 ): Promise<ApiResult<{ entered: true }>> {
@@ -175,9 +190,25 @@ export function careForScribbit(
   return postJson<CareRequest, Scribbit>('/api/care', { scribbitId, action });
 }
 
-// Exhibition spar vs a random founding NPC. Unlimited; xp only on first daily win.
-export function spar(scribbitId: string): Promise<ApiResult<BattleReport>> {
-  return postJson<SparRequest, BattleReport>('/api/spar', { scribbitId });
+// The server authors a stable daily rival slate for this living Scribbit. The
+// client may choose only from that slate; it never chooses a result or seed.
+export function fetchSparRivals(
+  scribbitId: string
+): Promise<ApiResult<SparRivalSlate>> {
+  const query = new URLSearchParams({ scribbitId });
+  return getJson<SparRivalSlate>(`/api/spar-rivals?${query.toString()}`);
+}
+
+// Exhibition spar vs a server-approved founding NPC. Unlimited; xp only on the
+// first daily win. Omitting opponentId preserves the server-random quick path.
+export function spar(
+  scribbitId: string,
+  opponentId?: string
+): Promise<ApiResult<BattleReport>> {
+  return postJson<SparRequest, BattleReport>('/api/spar', {
+    scribbitId,
+    ...(opponentId ? { opponentId } : {}),
+  });
 }
 
 // Back one of tonight's rumble entrants (a bet). One per user per day, final; it

@@ -26,7 +26,15 @@ const hueCoverageMin = 0.02;
 const maxDistinctHues = 6;
 const bucketCount = 360 / hueBucketDegrees;
 
-export const MIN_INK_PIXELS = 250;
+// 1,500 pixels is ~0.57% of a 512x512 canvas: still permissive for thin doodles,
+// but large enough that one default brush tap cannot masquerade as a creature.
+export const MIN_INK_PIXELS = 1_500;
+
+export function hasMinimumDrawingInk(
+  analysis: Pick<AnalyzerResult, 'inkedPixels'>
+): boolean {
+  return analysis.inkedPixels >= MIN_INK_PIXELS;
+}
 
 export type ScanResult = {
   inkedPixels: number;
