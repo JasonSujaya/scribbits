@@ -3,7 +3,7 @@
 
 import * as Phaser from 'phaser';
 import { Scene } from 'phaser';
-import type { Forecast, Scribbit } from '../../shared/arena';
+import type { Forecast, FounderChronicle, Scribbit } from '../../shared/arena';
 import { generateDoodleTexture } from './proceduraldoodleart';
 import { formatSparRivalDraftSummary, planSparRivalCards } from './sparrivals';
 import type { SparRivalCardPlan } from './sparrivals';
@@ -15,6 +15,8 @@ export type SparRivalDraftOptions = Readonly<{
   challenger: Scribbit;
   rivals: readonly Scribbit[];
   forecast: Forecast;
+  founderChronicle: FounderChronicle;
+  currentDay: number;
   lastBoutHighlight: BattleRecapHighlight | null;
   onChoose: (rival: Scribbit, plan: SparRivalCardPlan) => void;
   onClose: () => void;
@@ -87,7 +89,9 @@ export function createSparRivalDraft(
   const plans = planSparRivalCards(
     options.challenger,
     options.rivals,
-    options.forecast
+    options.forecast,
+    options.founderChronicle,
+    options.currentDay
   );
   const rowCenters = [-260, -25, 210] as const;
 
@@ -96,9 +100,21 @@ export function createSparRivalDraft(
     const rowY = rowCenters[index];
     if (!rival || rowY === undefined) return;
     const style = ELEMENT_STYLES[plan.element];
+    const activeThread = plan.rivalryState.startsWith('active-');
     const background = scene.add
-      .rectangle(0, rowY, cardWidth - 70, 205, style.soft, 0.3)
-      .setStrokeStyle(4, style.primary, 0.95);
+      .rectangle(
+        0,
+        rowY,
+        cardWidth - 70,
+        205,
+        activeThread ? UI.tapeAlt : style.soft,
+        activeThread ? 0.5 : 0.3
+      )
+      .setStrokeStyle(
+        activeThread ? 6 : 4,
+        activeThread ? UI.inkHex : style.primary,
+        0.95
+      );
     card.add(background);
 
     const texture = generateDoodleTexture(
@@ -123,7 +139,7 @@ export function createSparRivalDraft(
           -138,
           rowY - 4,
           plan.epithet.toUpperCase(),
-          16,
+          18,
           UI.coralText,
           285,
           true
@@ -134,9 +150,9 @@ export function createSparRivalDraft(
       leftLabel(
         scene,
         -138,
-        rowY + 26,
+        rowY + 21,
         `Lv${plan.level} • ${plan.signatureName.toUpperCase()}`,
-        19,
+        20,
         style.primaryText,
         285,
         true
@@ -146,11 +162,11 @@ export function createSparRivalDraft(
       leftLabel(
         scene,
         -138,
-        rowY + 66,
+        rowY + 70,
         plan.challengeLine ? `“${plan.challengeLine}”` : plan.powerLine,
-        15,
+        18,
         UI.inkSoft,
-        240,
+        250,
         false
       )
     );
@@ -159,11 +175,11 @@ export function createSparRivalDraft(
       scene,
       218,
       rowY - 46,
-      `${plan.levelLine}\n${plan.forecastLine}`,
-      18,
-      plan.forecastLine === 'FORECAST BOOST'
-        ? UI.goldText
-        : plan.forecastLine === 'FORECAST DRAG'
+      plan.rivalryLine,
+      activeThread ? 20 : 18,
+      activeThread
+        ? UI.ink
+        : plan.rivalryState === 'available'
           ? UI.coralText
           : UI.inkSoft,
       true
@@ -175,12 +191,15 @@ export function createSparRivalDraft(
       scene,
       218,
       rowY + 55,
-      'FIGHT →',
-      () => options.onChoose(rival, plan),
+      plan.buttonLabel,
+      () => {
+        if (plan.buttonEnabled) options.onChoose(rival, plan);
+      },
       210,
-      style.primary,
+      plan.buttonEnabled ? style.primary : UI.tapeAlt,
       UI.ink
     );
+    if (!plan.buttonEnabled) fight.setAlpha(0.62);
     card.add(fight);
   });
 

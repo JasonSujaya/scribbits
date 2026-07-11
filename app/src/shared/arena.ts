@@ -100,22 +100,34 @@ export type LegacyReturnReceipt = {
 };
 
 // Permanent, player-level relationship progress with the fixed founding cast.
-// It grants no combat power or currency: the reward is remembering real direct
-// encounters after an individual player Scribbit has faded.
-export type FounderChronicleMilestone = 'met' | 'respected' | 'rematched';
-export type FounderChronicleEntry = {
+// Exactly one best-of-three thread may be active, and at most one story beat
+// advances per Arena day. It grants no combat power or currency.
+export type FounderRivalryOutcome = 'player_prevailed' | 'founder_prevailed';
+export type FounderRivalryThread = {
   founderId: `founding-${string}`;
-  metDay: number;
-  respectedDay: number | null; // first direct victory over this founder
-  rematchedDay: number | null; // first direct fight on a later Arena day
+  startedDay: number;
+  playerWins: number;
+  founderWins: number;
+};
+export type FounderRivalryResolution = FounderRivalryThread & {
+  resolvedDay: number;
+  outcome: FounderRivalryOutcome;
 };
 export type FounderChronicle = {
-  entries: FounderChronicleEntry[]; // at most the 20 canonical founders
+  activeRivalry: FounderRivalryThread | null;
+  resolvedRivalries: FounderRivalryResolution[]; // one note per canonical founder
+  lastAdvancedDay: number | null;
+  // Encounters from the retired checklist Chronicle are preserved as an
+  // archive only. They never grant score, combat power, or a resolved thread.
+  legacyFounderIds?: `founding-${string}`[];
 };
-export type FounderChronicleUnlock = {
+export type FounderChronicleBeat = {
   founderId: `founding-${string}`;
-  milestone: FounderChronicleMilestone;
+  kind: 'rivalry_started' | 'rivalry_advanced' | 'rivalry_resolved';
   day: number;
+  playerWins: number;
+  founderWins: number;
+  outcome: FounderRivalryOutcome | null;
 };
 
 export type CapsuleProgress = {
@@ -277,6 +289,12 @@ export type BattleReport = {
   simulation?: BattleTranscript;
 };
 
+export type DirectBattleResponse = {
+  report: BattleReport;
+  founderChronicle: FounderChronicle;
+  founderChronicleBeat: FounderChronicleBeat | null;
+};
+
 export type PracticeBattleRequest = {
   name: string;
   baseImageDataUrl: string;
@@ -303,9 +321,14 @@ export type SubmitScribbitRequest = {
 
 export type EnterRumbleRequest = { scribbitId: string };
 export type CareRequest = { scribbitId: string; action: CareAction };
+export type CareResponse = {
+  scribbit: Scribbit;
+  inkAwarded: number; // exact committed side effect; zero when non-critical award fails
+};
 export type SparRivalSlate = {
   challenger: Scribbit; // current server snapshot after any just-earned XP
   rivals: Scribbit[];
+  founderChronicle: FounderChronicle;
 };
 export type SparRequest = {
   scribbitId: string;
@@ -361,11 +384,11 @@ export const LEVEL_DAMAGE_BONUS_PER_LEVEL = 0.00375; // +0.375%/level above 1, m
 // GET  /api/my-battles     -> BattleReport[]  (caller's battles, newest first, top 20)
 // GET  /api/rumble-replay?day -> BattleReport (server-selected bout for caller's Back)
 // POST /api/believe        -> BelieveRequest -> { belief: number }      (one per user per scribbit per day)
-// POST /api/boss-challenge -> BossChallengeRequest -> BattleReport      (instant resolve vs champion; one per user per day)
-// POST /api/care           -> CareRequest -> Scribbit                   (each action once per scribbit per UTC day)
+// POST /api/boss-challenge -> BossChallengeRequest -> DirectBattleResponse (instant resolve vs champion; one per user per day)
+// POST /api/care           -> CareRequest -> CareResponse               (each action once per scribbit per UTC day)
 // POST /api/practice-battle -> PracticeBattleRequest -> BattleReport    (ephemeral, server-analyzed, no rewards or persistence)
 // GET  /api/spar-rivals?scribbitId -> SparRivalSlate                    (owned living challenger; stable server slate per UTC day)
-// POST /api/spar           -> SparRequest -> BattleReport               (chosen opponentId must be in that exact slate; omitted stays server-random)
+// POST /api/spar           -> SparRequest -> DirectBattleResponse       (chosen opponentId must be in that exact slate; omitted stays server-random)
 // POST /api/back           -> BackRequest -> { backed: string }         (one per user per day, locks at rumble resolve)
 // POST /api/remove-scribbit -> RemoveScribbitRequest -> { removed: string } (owner removal)
 // POST /api/report-scribbit -> ReportScribbitRequest -> ReportScribbitResponse (hide + safety report)

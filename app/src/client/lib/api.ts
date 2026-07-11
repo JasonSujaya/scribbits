@@ -11,8 +11,10 @@ import type {
   CapsulePullResponse,
   CareAction,
   CareRequest,
+  CareResponse,
   CapsulePullRequest,
   CloutBoard,
+  DirectBattleResponse,
   EnterRumbleRequest,
   Inventory,
   EquipTitleRequest,
@@ -162,10 +164,11 @@ export function believe(
 
 export function bossChallenge(
   scribbitId: string
-): Promise<ApiResult<BattleReport>> {
-  return postJson<BossChallengeRequest, BattleReport>('/api/boss-challenge', {
-    scribbitId,
-  });
+): Promise<ApiResult<DirectBattleResponse>> {
+  return postJson<BossChallengeRequest, DirectBattleResponse>(
+    '/api/boss-challenge',
+    { scribbitId }
+  );
 }
 
 export function fetchLegends(
@@ -182,12 +185,15 @@ export function fetchLegends(
 }
 
 // Tamagotchi care: feed/pat/train a scribbit once each per UTC day. Returns the
-// updated scribbit (new xp/level/mood). 409 when that action is already done.
+// updated Scribbit plus the exact committed Ink award. 409 when already done.
 export function careForScribbit(
   scribbitId: string,
   action: CareAction
-): Promise<ApiResult<Scribbit>> {
-  return postJson<CareRequest, Scribbit>('/api/care', { scribbitId, action });
+): Promise<ApiResult<CareResponse>> {
+  return postJson<CareRequest, CareResponse>('/api/care', {
+    scribbitId,
+    action,
+  });
 }
 
 // The server authors a stable daily rival slate for this living Scribbit. The
@@ -204,8 +210,8 @@ export function fetchSparRivals(
 export function spar(
   scribbitId: string,
   opponentId?: string
-): Promise<ApiResult<BattleReport>> {
-  return postJson<SparRequest, BattleReport>('/api/spar', {
+): Promise<ApiResult<DirectBattleResponse>> {
+  return postJson<SparRequest, DirectBattleResponse>('/api/spar', {
     scribbitId,
     ...(opponentId ? { opponentId } : {}),
   });

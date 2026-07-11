@@ -5,10 +5,13 @@ import {
   endPracticeSession,
   getPracticeSession,
   getReplay,
+  getReplayFounderChronicleBeat,
+  getReplayFounderRivalryStakes,
   getReplayReturn,
   getArena,
+  stageDirectBattle,
   setArena,
-  setReplay,
+  setFounderChronicleBeats,
   setArenaFocus,
 } from '../lib/registry';
 import { loadDrawing, levelOf } from '../lib/scribbits';
@@ -51,6 +54,7 @@ import {
   planArenaPresentation,
   planBattleImpact,
   planReplayBattleLayout,
+  planReplayLossActionStack,
   planReplayOutcomeStack,
   projectCombatPosition,
 } from '../lib/battlepresentation';
@@ -61,6 +65,7 @@ import type {
 } from '../lib/battlepresentation';
 import { planBattleRecap } from '../lib/battlerecap';
 import type { BattleRecapPlan } from '../lib/battlerecap';
+import { isScribbitOwnedByViewer } from '../lib/battlejournal';
 import { drawReplayBattleBackground } from '../lib/replaybattlebackground';
 import type { ReplayBattleBackdrop } from '../lib/replaybattlebackground';
 import { createReplayBattleHud } from '../lib/replaybattlehud';
@@ -77,9 +82,11 @@ import { planPracticeOutcome } from '../lib/practicelab';
 import {
   authorFounderBattleOpening,
   authorFounderBattleOutcome,
-  authorReplayCommentary,
+  createReplayCommentaryAuthor,
+  isReplayCommentaryMissPower,
 } from '../lib/replaycommentary';
 import type {
+  ReplayCommentaryAuthor,
   ReplayCommentaryContext,
   ReplayCommentaryFact,
 } from '../lib/replaycommentary';
@@ -92,8 +99,22 @@ import {
 import type { InkcastEditorialCandidate } from '../lib/inkcastqueue';
 import { BattleSoundboard } from '../lib/battlesound';
 import { showVsCeremony } from '../lib/battleceremony';
+import {
+  findFounderChronicleBeats,
+  getFounderChronicleBeatCopy,
+  planFounderRivalEpisodeReceipt,
+} from '../lib/founderchronicle';
+import type {
+  FounderRivalEpisodeReceiptPlan,
+  FounderRivalryStakesPlan,
+} from '../lib/founderchronicle';
 import { showToast } from '@devvit/web/client';
-import type { BattleReport, Element, Scribbit } from '../../shared/arena';
+import type {
+  BattleReport,
+  Element,
+  FounderChronicleBeat,
+  Scribbit,
+} from '../../shared/arena';
 import type {
   BattleTimelineEvent,
   BattleTranscript,
@@ -216,6 +237,9 @@ export class Replay extends Scene {
     Object.freeze([]);
   private inkcastDwellRemainingMilliseconds = 0;
   private inkcastSequence = 0;
+  private replayCommentaryAuthor: ReplayCommentaryAuthor | null = null;
+  private founderChronicleBeat: FounderChronicleBeat | null = null;
+  private founderRivalryStakes: FounderRivalryStakesPlan | null = null;
 
   constructor() {
     super('Replay');
@@ -244,6 +268,8 @@ export class Replay extends Scene {
     this.shapeEffects.clear();
     this.impactHoldMilliseconds = 0;
     this.clearInkcastEditorialState();
+    this.founderChronicleBeat = null;
+    this.founderRivalryStakes = null;
   }
 
   // Current fast-forward multiplier.
@@ -286,6 +312,8 @@ export class Replay extends Scene {
       return;
     }
     this.report = report;
+    this.founderChronicleBeat = getReplayFounderChronicleBeat(this);
+    this.founderRivalryStakes = getReplayFounderRivalryStakes(this);
     this.transcript = getUsableBattleTranscript(report) ?? null;
     this.cameras.main.setBackgroundColor(UI.desk);
     this.cameras.main.fadeIn(180, 255, 247, 232);
@@ -351,6 +379,7 @@ export class Replay extends Scene {
       fighterAPrimaryPower: this.fighterA.primaryPower,
       fighterBPrimaryPower: this.fighterB.primaryPower,
       battleKind: this.report.kind,
+      battleLabel: this.founderRivalryStakes?.battleLabel ?? null,
       showPlaybackControls: this.transcript !== null,
       reduceMotion: this.reduceMotion,
       initialPlaybackSpeed: this.speed,
@@ -439,7 +468,7 @@ export class Replay extends Scene {
 
   private openIntroDetail(scribbit: Scribbit): void {
     const arena = getArena(this);
-    const mine = arena?.myUsername === scribbit.artist;
+    const mine = this.isMine(scribbit);
     openDetailModal(this, scribbit, {
       currentDay: arena?.dayNumber ?? scribbit.expiresDay,
       mine,
@@ -706,6 +735,8 @@ export class Replay extends Scene {
           activationOrigin: event.origin,
           connected: false,
         });
+        this.battleBackdrop?.signalShapePower(event.actor, 'telegraph');
+        this.battleHud?.setFighterShapePowerState(event.actor, 'telegraph');
         this.telegraphShapePower(event.actor, actor, event.power);
         this.soundboard.play('telegraph');
         this.announceReplayCommentary({
@@ -740,6 +771,8 @@ export class Replay extends Scene {
             : null,
           connected: continuesTelegraph ? existing.connected : false,
         });
+        this.battleBackdrop?.signalShapePower(event.actor, 'active');
+        this.battleHud?.setFighterShapePowerState(event.actor, 'active');
         this.shapePowerBurst(
           actor,
           ELEMENT_STYLES[actor.scribbit.element].particle
@@ -757,7 +790,8 @@ export class Replay extends Scene {
             shouldAnnounceNoCleanHitAtAbilityFinish(
               event.power,
               effect.connected
-            )
+            ) &&
+            isReplayCommentaryMissPower(event.power)
           ) {
             const opponent = this.fighterForSlot(
               event.actor === 'a' ? 'b' : 'a'
@@ -777,6 +811,7 @@ export class Replay extends Scene {
             });
           }
           this.shapeEffects.delete(event.actor);
+          this.battleHud?.setFighterShapePowerState(event.actor, 'ready');
         }
         return;
       }
@@ -1116,27 +1151,15 @@ export class Replay extends Scene {
     this.hidePowerGhosts();
 
     const arena = this.getArenaPresentation(frame);
-    const arenaCornerRadius = Math.min(
-      46,
-      arena.currentHalfWidth / 3,
-      arena.currentHalfHeight / 3
+    this.strokePaperArenaBoundary(
+      floorGraphics,
+      arena,
+      UI.creamHex,
+      10,
+      0.82,
+      1
     );
-    floorGraphics.lineStyle(8, UI.creamHex, 0.76);
-    floorGraphics.strokeRoundedRect(
-      arena.centerX - arena.currentHalfWidth,
-      arena.centerY - arena.currentHalfHeight,
-      arena.currentHalfWidth * 2,
-      arena.currentHalfHeight * 2,
-      arenaCornerRadius
-    );
-    floorGraphics.lineStyle(4, UI.inkHex, 0.52);
-    floorGraphics.strokeRoundedRect(
-      arena.centerX - arena.currentHalfWidth,
-      arena.centerY - arena.currentHalfHeight,
-      arena.currentHalfWidth * 2,
-      arena.currentHalfHeight * 2,
-      arenaCornerRadius
-    );
+    this.strokePaperArenaBoundary(floorGraphics, arena, UI.inkHex, 4, 0.56, 0);
     const shrinkRatio = arena.currentHalfWidth / arena.maximumHalfWidth;
     if (shrinkRatio < 0.995) {
       const maximumLeft = arena.centerX - arena.maximumHalfWidth;
@@ -1147,7 +1170,10 @@ export class Replay extends Scene {
       const currentTop = arena.centerY - arena.currentHalfHeight;
       const currentRight = arena.centerX + arena.currentHalfWidth;
       const currentBottom = arena.centerY + arena.currentHalfHeight;
-      floorGraphics.fillStyle(UI.coralDeep, 0.075);
+      // The authoritative walls close as paper folds, rather than as gamey
+      // danger columns. Darkened flaps and doubled crease lines keep the
+      // shrinking bounds truthful even without relying on color.
+      floorGraphics.fillStyle(UI.inkHex, 0.045);
       floorGraphics.fillRect(
         maximumLeft,
         maximumTop,
@@ -1172,18 +1198,44 @@ export class Replay extends Scene {
         Math.max(0, currentRight - currentLeft),
         Math.max(0, maximumTop + maximumHeight - currentBottom)
       );
-      floorGraphics.lineStyle(9, UI.coralDeep, 0.4);
+      floorGraphics.lineStyle(16, UI.inkHex, 0.12);
       floorGraphics.lineBetween(
-        arena.centerX - arena.currentHalfWidth,
+        arena.centerX - arena.currentHalfWidth - 5,
         arena.centerY - arena.currentHalfHeight,
-        arena.centerX - arena.currentHalfWidth,
+        arena.centerX - arena.currentHalfWidth - 5,
         arena.centerY + arena.currentHalfHeight
       );
       floorGraphics.lineBetween(
-        arena.centerX + arena.currentHalfWidth,
+        arena.centerX + arena.currentHalfWidth + 5,
         arena.centerY - arena.currentHalfHeight,
-        arena.centerX + arena.currentHalfWidth,
+        arena.centerX + arena.currentHalfWidth + 5,
         arena.centerY + arena.currentHalfHeight
+      );
+      floorGraphics.lineStyle(5, UI.coralDeep, 0.4);
+      floorGraphics.lineBetween(
+        currentLeft,
+        currentTop,
+        currentLeft,
+        currentBottom
+      );
+      floorGraphics.lineBetween(
+        currentRight,
+        currentTop,
+        currentRight,
+        currentBottom
+      );
+      floorGraphics.lineStyle(3, UI.inkHex, 0.2);
+      floorGraphics.lineBetween(
+        currentLeft,
+        currentTop + 34,
+        currentLeft + 28,
+        currentTop
+      );
+      floorGraphics.lineBetween(
+        currentRight,
+        currentBottom - 34,
+        currentRight - 28,
+        currentBottom
       );
     }
 
@@ -1244,6 +1296,61 @@ export class Replay extends Scene {
         this.drawShapePowerCommand(graphics, command)
       );
     }
+  }
+
+  private strokePaperArenaBoundary(
+    graphics: Phaser.GameObjects.Graphics,
+    arena: ArenaPresentationPlan,
+    color: number,
+    lineWidth: number,
+    alpha: number,
+    jitterOffset: number
+  ): void {
+    const left = arena.centerX - arena.currentHalfWidth;
+    const right = arena.centerX + arena.currentHalfWidth;
+    const top = arena.centerY - arena.currentHalfHeight;
+    const bottom = arena.centerY + arena.currentHalfHeight;
+    const horizontalSegments = 7;
+    const verticalSegments = 9;
+    const jitter = [0, -2, 3, -1, 2, -3, 1, 0, -1, 2] as const;
+    const points: Array<{ x: number; y: number }> = [];
+
+    for (let index = 0; index <= horizontalSegments; index += 1) {
+      points.push({
+        x: left + ((right - left) * index) / horizontalSegments,
+        y: top + (jitter[(index + jitterOffset) % jitter.length] ?? 0),
+      });
+    }
+    for (let index = 1; index <= verticalSegments; index += 1) {
+      points.push({
+        x: right + (jitter[(index + jitterOffset + 2) % jitter.length] ?? 0),
+        y: top + ((bottom - top) * index) / verticalSegments,
+      });
+    }
+    for (let index = 1; index <= horizontalSegments; index += 1) {
+      points.push({
+        x: right - ((right - left) * index) / horizontalSegments,
+        y: bottom + (jitter[(index + jitterOffset + 4) % jitter.length] ?? 0),
+      });
+    }
+    for (let index = 1; index < verticalSegments; index += 1) {
+      points.push({
+        x: left + (jitter[(index + jitterOffset + 6) % jitter.length] ?? 0),
+        y: bottom - ((bottom - top) * index) / verticalSegments,
+      });
+    }
+
+    const firstPoint = points[0];
+    if (!firstPoint) return;
+    graphics.lineStyle(lineWidth, color, alpha);
+    graphics.beginPath();
+    graphics.moveTo(firstPoint.x, firstPoint.y);
+    for (let index = 1; index < points.length; index += 1) {
+      const point = points[index];
+      if (point) graphics.lineTo(point.x, point.y);
+    }
+    graphics.closePath();
+    graphics.strokePath();
   }
 
   private hidePowerGhosts(): void {
@@ -1587,9 +1694,13 @@ export class Replay extends Scene {
   }
 
   private announceReplayCommentary(fact: ReplayCommentaryFact): void {
+    const commentaryAuthor =
+      this.replayCommentaryAuthor ??
+      createReplayCommentaryAuthor(this.replayCommentaryContext());
+    this.replayCommentaryAuthor = commentaryAuthor;
     const candidate = createInkcastEditorialCandidate(
       fact,
-      authorReplayCommentary(this.replayCommentaryContext(), fact),
+      commentaryAuthor.author(fact),
       this.inkcastSequence
     );
     this.inkcastSequence += 1;
@@ -1645,6 +1756,7 @@ export class Replay extends Scene {
     this.pendingInkcastCandidates = Object.freeze([]);
     this.inkcastDwellRemainingMilliseconds = 0;
     this.inkcastSequence = 0;
+    this.replayCommentaryAuthor = null;
   }
 
   private showArenaMoment(text: string, color: string): void {
@@ -1806,6 +1918,8 @@ export class Replay extends Scene {
     this.recordDebugPlaybackState('result');
     this.clearInkcastEditorialState();
     this.shapeEffects.clear();
+    this.battleHud?.setFighterShapePowerState('a', 'ready');
+    this.battleHud?.setFighterShapePowerState('b', 'ready');
     this.hidePowerGhosts();
     this.arenaFloorEffects?.clear();
     this.combatEffects?.clear();
@@ -1914,6 +2028,18 @@ export class Replay extends Scene {
     );
     const winner = this.fighterForSlot(recap.winnerSlot);
     const loser = this.fighterForSlot(recap.loserSlot);
+    const playerSlot = this.isMine(this.report.a)
+      ? 'a'
+      : this.isMine(this.report.b)
+        ? 'b'
+        : null;
+    const founderEpisodeReceipt = planFounderRivalEpisodeReceipt(
+      this.founderRivalryStakes,
+      this.founderChronicleBeat,
+      this.report,
+      playerSlot,
+      recap.winnerSlot
+    );
     const crumple = (fighter: ReplayFighterRuntime): void => {
       fighter.sprite?.crumple(() => {
         this.impactBurst(fighter.screenX, fighter.screenY + 30, 0xcbb79a, true);
@@ -1930,14 +2056,21 @@ export class Replay extends Scene {
 
     // The recap and choices are immediate. Finish poses can animate behind
     // them without making reduced-motion or impatient viewers wait.
-    this.showOutcome(winner, loser, recap, founderOutcome);
+    this.showOutcome(
+      winner,
+      loser,
+      recap,
+      founderOutcome,
+      founderEpisodeReceipt
+    );
   }
 
   private showOutcome(
     winner: ReplayFighterRuntime,
     loser: ReplayFighterRuntime,
     recap: BattleRecapPlan,
-    founderOutcome: string | null
+    founderOutcome: string | null,
+    founderEpisodeReceipt: FounderRivalEpisodeReceiptPlan | null
   ): void {
     // Outcome controls occupy the ticker area; hide live-combat chrome before
     // showing the post-battle choices.
@@ -1951,15 +2084,29 @@ export class Replay extends Scene {
     const arena = getArena(this);
     const myLoss = this.isMine(loser.scribbit) && !this.isMine(winner.scribbit);
     if (myLoss && arena) {
-      this.showLossCard(loser.scribbit, arena.dayNumber, recap, founderOutcome);
+      this.showLossCard(
+        loser.scribbit,
+        arena.dayNumber,
+        recap,
+        founderOutcome,
+        founderEpisodeReceipt
+      );
     } else {
-      this.showWinCeremony(winner, recap, founderOutcome);
+      this.showWinCeremony(
+        winner,
+        recap,
+        founderOutcome,
+        founderEpisodeReceipt
+      );
     }
   }
 
   private isMine(scribbit: Scribbit): boolean {
-    return (
-      getArena(this)?.myScribbits.some((one) => one.id === scribbit.id) ?? false
+    const arena = getArena(this);
+    return isScribbitOwnedByViewer(
+      scribbit,
+      arena?.myUsername,
+      arena?.myScribbits.map((ownedScribbit) => ownedScribbit.id)
     );
   }
 
@@ -1989,10 +2136,98 @@ export class Replay extends Scene {
     });
   }
 
+  private createFounderMarginStrip(
+    x: number,
+    y: number,
+    width: number,
+    fallbackQuote: string | null,
+    episodeReceipt: FounderRivalEpisodeReceiptPlan | null
+  ): Phaser.GameObjects.Container | null {
+    const beatCopy = this.founderChronicleBeat
+      ? getFounderChronicleBeatCopy(this.founderChronicleBeat)
+      : null;
+    if (!beatCopy && !fallbackQuote && !episodeReceipt) return null;
+    const strip = this.add.container(x, y);
+    const stripHeight = beatCopy || episodeReceipt ? 150 : 112;
+    strip.add(
+      this.add
+        .rectangle(0, 0, width, stripHeight, UI.tapeAlt, 0.96)
+        .setStrokeStyle(4, UI.inkHex, 1)
+    );
+    if (episodeReceipt) {
+      strip.add(
+        label(
+          this,
+          0,
+          -48,
+          episodeReceipt.headline,
+          22,
+          UI.ink,
+          true
+        ).setWordWrapWidth(width - 34, true)
+      );
+      strip.add(
+        label(
+          this,
+          0,
+          -10,
+          episodeReceipt.detail,
+          21,
+          UI.coralText,
+          true
+        ).setWordWrapWidth(width - 34, true)
+      );
+      strip.add(
+        label(this, 0, 38, episodeReceipt.resultLine, 19, UI.inkSoft, false)
+          .setWordWrapWidth(width - 44, true)
+          .setLineSpacing(-2)
+      );
+      return strip;
+    }
+    if (beatCopy && this.founderChronicleBeat) {
+      strip.add(
+        label(
+          this,
+          0,
+          -48,
+          `DAY ${this.founderChronicleBeat.day} MARGIN · ${beatCopy.headline.toUpperCase()}`,
+          22,
+          UI.ink,
+          true
+        ).setWordWrapWidth(width - 34, true)
+      );
+      strip.add(
+        label(
+          this,
+          0,
+          -10,
+          beatCopy.detail.toUpperCase(),
+          21,
+          UI.coralText,
+          true
+        )
+      );
+      strip.add(
+        label(this, 0, 38, `“${beatCopy.quote}”`, 19, UI.inkSoft, false)
+          .setWordWrapWidth(width - 44, true)
+          .setLineSpacing(-2)
+      );
+      return strip;
+    }
+    strip.add(label(this, 0, -32, 'FOUNDER MARGIN', 20, UI.coralText, true));
+    strip.add(
+      label(this, 0, 18, fallbackQuote ?? '', 19, UI.ink, true)
+        .setWordWrapWidth(width - 44, true)
+        .setLineSpacing(-2)
+    );
+    return strip;
+  }
+
   private showWinCeremony(
     winner: ReplayFighterRuntime,
     recap: BattleRecapPlan,
-    founderOutcome: string | null
+    founderOutcome: string | null,
+    founderEpisodeReceipt: FounderRivalEpisodeReceiptPlan | null
   ): void {
     const { width, height } = this.scale;
     const usesVerdictCeremony = recap.finishPresentation === 'double-knockout';
@@ -2006,7 +2241,8 @@ export class Replay extends Scene {
       viewportHeight: height,
       canChooseRival,
       canBackContender,
-      hasFounderOutcome: founderOutcome !== null,
+      hasFounderOutcome:
+        founderOutcome !== null || this.founderChronicleBeat !== null,
     });
     this.time.delayedCall(260, () => {
       if (this.scene.isActive()) this.soundboard.play('win');
@@ -2028,19 +2264,14 @@ export class Replay extends Scene {
       width: width - 70,
       depth: 60,
     });
-    if (founderOutcome && outcomeStack.founderOutcomeY !== null) {
-      label(
-        this,
+    if (outcomeStack.founderOutcomeY !== null) {
+      this.createFounderMarginStrip(
         width / 2,
         outcomeStack.founderOutcomeY,
+        width - 110,
         founderOutcome,
-        20,
-        UI.coralText,
-        true
-      )
-        .setWordWrapWidth(width - 150, true)
-        .setLineSpacing(-2)
-        .setDepth(61);
+        founderEpisodeReceipt
+      )?.setDepth(61);
     }
     // Only show a reward the server says this exact battle granted. Historical
     // replays and later practice wins must never imply a second payout.
@@ -2109,16 +2340,20 @@ export class Replay extends Scene {
   }
 
   // Loss flow — no dead ends. Lifespan remaining + a server-authored rival
-  // draft + Back a contender tonight (deep-links to ArenaHome entrants).
+  // draft + Back only while tonight's pick is still open.
   private showLossCard(
     mine: Scribbit,
     currentDay: number,
     recap: BattleRecapPlan,
-    founderOutcome: string | null
+    founderOutcome: string | null,
+    founderEpisodeReceipt: FounderRivalEpisodeReceiptPlan | null
   ): void {
     const { width, height } = this.scale;
     const daysLeft = daysLeftFor(mine, currentDay);
-    const card = stickerCard(this, width / 2, height / 2, width - 70, 760, {
+    const actionStack = planReplayLossActionStack({
+      canBackContender: !getArena(this)?.myBackedScribbitId,
+    });
+    const card = stickerCard(this, width / 2, height / 2, width - 70, 820, {
       tapeColor: UI.tapeAlt,
     });
     card.setDepth(60).setScale(0.7);
@@ -2129,32 +2364,29 @@ export class Replay extends Scene {
       ease: 'Back.easeOut',
     });
 
-    const top = -380;
+    const top = -410;
     const recapTop = top + 18;
     const recapHeight = addBattleRecapLines(this, card, recap, {
       top: recapTop,
       width: width - 110,
     });
-    if (founderOutcome) {
-      card.add(
-        label(
-          this,
-          0,
-          recapTop + recapHeight + 22,
-          founderOutcome,
-          18,
-          UI.coralText,
-          true
-        )
-          .setWordWrapWidth(width - 150, true)
-          .setLineSpacing(-2)
+    const hasFounderMargin =
+      founderOutcome !== null || this.founderChronicleBeat !== null;
+    if (hasFounderMargin) {
+      const margin = this.createFounderMarginStrip(
+        0,
+        recapTop + recapHeight + 76,
+        width - 130,
+        founderOutcome,
+        founderEpisodeReceipt
       );
+      if (margin) card.add(margin);
     }
     card.add(
       label(
         this,
         0,
-        recapTop + recapHeight + (founderOutcome ? 72 : 34),
+        recapTop + recapHeight + (hasFounderMargin ? 166 : 34),
         daysLeft > 0
           ? `Still has ${daysLeft} day${daysLeft === 1 ? '' : 's'} of life — plenty of time to bounce back.`
           : `This is ${mine.name}'s last day. Make it count.`,
@@ -2167,29 +2399,31 @@ export class Replay extends Scene {
     card.add(
       createPostFightSparringChoices(this, {
         x: 0,
-        y: top + 400,
+        y: top + 500,
         width: width - 200,
         onRivals: () => this.openRivalDraft(mine, recap.highlight),
         onPractice: () => this.startPractice(),
       })
     );
-    card.add(
-      button(
-        this,
-        0,
-        top + 520,
-        '🎯 Back a contender tonight →',
-        () => this.goBackEntrants(),
-        width - 200,
-        UI.gold,
-        UI.ink
-      )
-    );
+    if (actionStack.backContenderButtonOffset !== null) {
+      card.add(
+        button(
+          this,
+          0,
+          top + actionStack.backContenderButtonOffset,
+          '🎯 Back a contender tonight →',
+          () => this.goBackEntrants(),
+          width - 200,
+          UI.gold,
+          UI.ink
+        )
+      );
+    }
     card.add(
       ghostButton(
         this,
         0,
-        top + 630,
+        top + actionStack.returnButtonOffset,
         this.returnButtonLabel(),
         () => this.exit(),
         width - 260
@@ -2198,9 +2432,15 @@ export class Replay extends Scene {
   }
 
   private returnButtonLabel(): string {
-    return getReplayReturn(this) === 'Sketchbook'
-      ? 'Open Legacy Book ›'
-      : 'Back to Arena ›';
+    const returnScene = getReplayReturn(this);
+    switch (returnScene) {
+      case 'Sketchbook':
+        return 'Open Legacy Book ›';
+      case 'MyBattles':
+        return 'Back to Battle Scrapbook ›';
+      case 'ArenaHome':
+        return 'Back to Arena ›';
+    }
   }
 
   private startPractice(): void {
@@ -2235,10 +2475,24 @@ export class Replay extends Scene {
           showToast('The arena state is missing. Return and try again.');
           return;
         }
+        const refreshedArena = {
+          ...arena,
+          founderChronicle: result.data.founderChronicle,
+        };
+        const rivalryBeats = findFounderChronicleBeats(
+          arena.founderChronicle,
+          refreshedArena.founderChronicle
+        );
+        if (rivalryBeats.length > 0) {
+          setFounderChronicleBeats(this, rivalryBeats);
+        }
+        setArena(this, refreshedArena);
         this.rivalDraft = createSparRivalDraft(this, {
           challenger: result.data.challenger,
           rivals: result.data.rivals,
           forecast: arena.forecast,
+          founderChronicle: result.data.founderChronicle,
+          currentDay: arena.dayNumber,
           lastBoutHighlight,
           onChoose: (rival, plan) =>
             this.fightRival(mine, rival, plan.challengeLine),
@@ -2277,11 +2531,17 @@ export class Replay extends Scene {
         }
         this.rivalDraft?.destroy();
         this.rivalDraft = null;
-        setReplay(this, result.data, 'ArenaHome');
+        const stagedBattle = stageDirectBattle(
+          this,
+          getArena(this),
+          result.data,
+          mine.id
+        );
         showVsCeremony(this, {
-          fighterA: result.data.a,
-          fighterB: result.data.b,
-          battleKind: result.data.kind,
+          fighterA: result.data.report.a,
+          fighterB: result.data.report.b,
+          battleKind: result.data.report.kind,
+          rivalryStakes: stagedBattle.rivalryStakes,
           onComplete: () => this.scene.restart(),
         });
       })
@@ -2306,8 +2566,20 @@ export class Replay extends Scene {
   }
 
   private async refreshArenaAndLeave(focusEntrants: boolean): Promise<void> {
+    const previousArena = getArena(this);
     const result = await fetchArena();
-    if (result.ok) setArena(this, result.data);
+    if (result.ok) {
+      if (previousArena) {
+        const rivalryBeats = findFounderChronicleBeats(
+          previousArena.founderChronicle,
+          result.data.founderChronicle
+        );
+        if (rivalryBeats.length > 0) {
+          setFounderChronicleBeats(this, rivalryBeats);
+        }
+      }
+      setArena(this, result.data);
+    }
     if (focusEntrants) setArenaFocus(this, 'entrants');
     fadeToScene(this, focusEntrants ? 'ArenaHome' : getReplayReturn(this));
   }

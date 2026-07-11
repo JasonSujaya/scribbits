@@ -42,12 +42,19 @@ execFileSync(
     'node',
     'src/shared/arena.ts',
     'src/shared/founders.ts',
+    'src/shared/content/deterministic.ts',
+    'src/shared/content/replaycommentary.ts',
+    'src/shared/content/carereactions.ts',
+    'src/shared/content/doodledares.ts',
+    'src/shared/content/forecastblurbs.ts',
+    'src/shared/content/founderrivalepisodes.ts',
     'src/shared/analyzer-core.ts',
     'src/shared/battle.ts',
     'src/shared/cosmetics.ts',
     'src/shared/combat/types.ts',
     'src/shared/combat/shapepowercontent.ts',
     'src/shared/combat/config.ts',
+    'src/shared/combat/elementcontent.ts',
     'src/shared/combat/selection.ts',
     'src/shared/combat/resultvalidation.ts',
     'src/shared/combat/fixed-math.ts',
@@ -78,6 +85,7 @@ execFileSync(
     'src/client/lib/inkmesh.ts',
     'src/client/lib/proceduraldoodleplan.ts',
     'src/client/lib/drawonboarding.ts',
+    'src/client/lib/caremoment.ts',
     'src/client/lib/practicelab.ts',
     'src/client/lib/matchupbrief.ts',
     'src/client/lib/replaycommentary.ts',
@@ -86,8 +94,10 @@ execFileSync(
     'src/client/lib/continuousreplay.ts',
     'src/client/lib/battlepresentation.ts',
     'src/client/lib/battlerecap.ts',
+    'src/client/lib/battlejournal.ts',
     'src/client/lib/shapepowerpresentation.ts',
     'src/client/lib/championchallenge.ts',
+    'src/client/lib/founderchronicle.ts',
     'src/client/lib/nextgoal.ts',
     'src/client/lib/accessories.ts',
     'src/client/lib/pens.ts',
@@ -130,8 +140,26 @@ const combatSelection = require(
 const shapePowerContent = require(
   join(outDir, 'shared', 'combat', 'shapepowercontent.js')
 );
+const elementContent = require(
+  join(outDir, 'shared', 'combat', 'elementcontent.js')
+);
 const arena = require(join(outDir, 'shared', 'arena.js'));
 const founders = require(join(outDir, 'shared', 'founders.js'));
+const careReactionContent = require(
+  join(outDir, 'shared', 'content', 'carereactions.js')
+);
+const replayCommentaryContent = require(
+  join(outDir, 'shared', 'content', 'replaycommentary.js')
+);
+const doodleDareContent = require(
+  join(outDir, 'shared', 'content', 'doodledares.js')
+);
+const forecastFlavor = require(
+  join(outDir, 'shared', 'content', 'forecastblurbs.js')
+);
+const founderRivalEpisodes = require(
+  join(outDir, 'shared', 'content', 'founderrivalepisodes.js')
+);
 const arenaStore = require(join(outDir, 'server', 'core', 'arenaStore.js'));
 const battle = require(join(outDir, 'server', 'core', 'battle.js'));
 const battleStore = require(join(outDir, 'server', 'core', 'battleStore.js'));
@@ -161,6 +189,7 @@ const proceduralDoodlePlan = require(
 const drawOnboarding = require(
   join(outDir, 'client', 'lib', 'drawonboarding.js')
 );
+const careMoment = require(join(outDir, 'client', 'lib', 'caremoment.js'));
 const practiceLab = require(join(outDir, 'client', 'lib', 'practicelab.js'));
 const matchupBrief = require(join(outDir, 'client', 'lib', 'matchupbrief.js'));
 const replayCommentary = require(
@@ -175,11 +204,17 @@ const battlePresentation = require(
   join(outDir, 'client', 'lib', 'battlepresentation.js')
 );
 const battleRecap = require(join(outDir, 'client', 'lib', 'battlerecap.js'));
+const battleJournal = require(
+  join(outDir, 'client', 'lib', 'battlejournal.js')
+);
 const shapePowerPresentation = require(
   join(outDir, 'client', 'lib', 'shapepowerpresentation.js')
 );
 const championChallenge = require(
   join(outDir, 'client', 'lib', 'championchallenge.js')
+);
+const founderChroniclePlan = require(
+  join(outDir, 'client', 'lib', 'founderchronicle.js')
 );
 const nextGoal = require(join(outDir, 'client', 'lib', 'nextgoal.js'));
 const clientAccessories = require(
@@ -372,39 +407,146 @@ assert.equal(
 );
 pass('shared dominant-stat selection parity across server and client');
 
-assert.equal(
-  drawOnboarding.DOODLE_DARES.length,
-  16,
-  'daily drawing content should provide four prompts per Shape Power'
+assert.deepEqual(elementContent.validateElementPayloadGuide(), []);
+assert.ok(Object.isFrozen(elementContent.ELEMENT_PAYLOAD_GUIDE));
+assert.deepEqual(
+  elementContent.ELEMENT_PAYLOAD_GUIDE.map((entry) => entry.element).sort(),
+  ['ember', 'moss', 'storm', 'tide']
 );
 assert.equal(
-  new Set(drawOnboarding.DOODLE_DARES.map((dare) => dare.id)).size,
-  drawOnboarding.DOODLE_DARES.length,
+  new Set(elementContent.ELEMENT_PAYLOAD_GUIDE.map((entry) => entry.detail))
+    .size,
+  4
+);
+const dishonestElementGuide = elementContent.ELEMENT_PAYLOAD_GUIDE.map(
+  (entry, index) =>
+    index === 0
+      ? { ...entry, detail: 'Ember always beats Moss and guarantees a win.' }
+      : entry
+);
+assert.match(
+  elementContent.validateElementPayloadGuide(dishonestElementGuide).join('\n'),
+  /hidden matchup rule/,
+  'the Field Guide must never revive the retired element triangle'
+);
+pass('element guide stays complete and matches fixed-tick payload semantics');
+
+assert.equal(
+  doodleDareContent.DOODLE_DARES.length,
+  32,
+  'daily drawing content should provide eight prompts per Shape Power'
+);
+const doodleDareCatalogValidation =
+  doodleDareContent.validateDoodleDareCatalog();
+assert.equal(doodleDareCatalogValidation.valid, true);
+assert.deepEqual(doodleDareCatalogValidation.errors, []);
+assert.equal(doodleDareCatalogValidation.promptCount, 32);
+assert.equal(doodleDareCatalogValidation.twistCount, 8);
+assert.ok(Object.isFrozen(doodleDareContent.DOODLE_DARES));
+assert.ok(
+  doodleDareContent.DOODLE_DARES.every((dare) => Object.isFrozen(dare))
+);
+assert.ok(Object.isFrozen(doodleDareContent.DOODLE_DARE_TWISTS));
+assert.equal(new Set(doodleDareContent.DOODLE_DARE_TWISTS).size, 8);
+assert.equal(
+  new Set(doodleDareContent.DOODLE_DARES.map((dare) => dare.id)).size,
+  doodleDareContent.DOODLE_DARES.length,
   'daily doodle dare ids must remain unique'
 );
 assert.equal(
-  new Set(drawOnboarding.DOODLE_DARES.map((dare) => dare.prompt)).size,
-  drawOnboarding.DOODLE_DARES.length,
+  new Set(doodleDareContent.DOODLE_DARES.map((dare) => dare.prompt)).size,
+  doodleDareContent.DOODLE_DARES.length,
   'daily doodle dare copy must not repeat'
 );
 for (const power of ['inkquake', 'nib_halo', 'smearstep', 'colorburst']) {
   assert.equal(
-    drawOnboarding.DOODLE_DARES.filter((dare) => dare.suggestedPower === power)
-      .length,
-    4,
+    doodleDareContent.DOODLE_DARES.filter(
+      (dare) => dare.suggestedPower === power
+    ).length,
+    8,
     `${power} should own exactly one quarter of the optional prompts`
+  );
+  assert.equal(doodleDareCatalogValidation.promptsPerPower[power], 8);
+}
+assert.equal(
+  doodleDareContent.selectDailyDoodleDare(9, 'mock_player').id,
+  doodleDareContent.selectDailyDoodleDare(9, 'mock_player').id,
+  'the same player and arena day must never reroll the creative brief'
+);
+const firstDoodleCalendar = Array.from({ length: 32 }, (_, dayIndex) =>
+  doodleDareContent.selectDailyDoodleDare(dayIndex + 1, 'calendar-player')
+);
+assert.equal(
+  new Set(firstDoodleCalendar.map((dare) => dare.id)).size,
+  32,
+  'one player should see every optional prompt before the calendar repeats'
+);
+for (let blockStart = 0; blockStart < 32; blockStart += 4) {
+  assert.deepEqual(
+    [
+      ...new Set(
+        firstDoodleCalendar
+          .slice(blockStart, blockStart + 4)
+          .map((dare) => dare.suggestedPower)
+      ),
+    ].sort(),
+    ['colorburst', 'inkquake', 'nib_halo', 'smearstep'],
+    `days ${blockStart + 1}-${blockStart + 4} should offer all four drawing identities`
   );
 }
 assert.equal(
-  drawOnboarding.selectDailyDoodleDare(9, 'mock_player').id,
-  drawOnboarding.selectDailyDoodleDare(9, 'mock_player').id,
-  'the same player and arena day must never reroll the creative brief'
+  doodleDareContent.selectDailyDoodleDare(33, 'calendar-player').id,
+  firstDoodleCalendar[0].id,
+  'the stateless authored calendar should repeat only after all 32 prompts'
+);
+const doodleDareCards = Array.from({ length: 256 }, (_, dayIndex) => {
+  const dayNumber = dayIndex + 1;
+  return `${doodleDareContent.selectDailyDoodleDare(dayNumber, 'calendar-player').id}|${doodleDareContent.selectDailyDoodleDareTwist(dayNumber, 'calendar-player')}`;
+});
+assert.equal(
+  new Set(doodleDareCards).size,
+  256,
+  'prompt-plus-twist cards should not repeat during the full 256-day schedule'
+);
+assert.equal(
+  `${doodleDareContent.selectDailyDoodleDare(257, 'calendar-player').id}|${doodleDareContent.selectDailyDoodleDareTwist(257, 'calendar-player')}`,
+  doodleDareCards[0],
+  'the exact optional card should repeat only after all 256 combinations'
+);
+assert.equal(
+  doodleDareContent.selectDoodleDareForPower('smearstep', 'practice-proof')
+    .suggestedPower,
+  'smearstep'
+);
+const unsafeDoodleDareCatalog = doodleDareContent.DOODLE_DARES.map(
+  (dare, index) =>
+    index === 0 ? { ...dare, prompt: 'a guaranteed XP prize monster' } : dare
+);
+const unsafeDoodleDareValidation = doodleDareContent.validateDoodleDareCatalog(
+  unsafeDoodleDareCatalog
+);
+assert.equal(unsafeDoodleDareValidation.valid, false);
+assert.match(
+  unsafeDoodleDareValidation.errors.join('\n'),
+  /predicts an outcome or promises a reward/,
+  'optional prompts must never imply progression rewards or battle odds'
+);
+const unsafeDoodleDareTwistValidation =
+  doodleDareContent.validateDoodleDareCatalog(doodleDareContent.DOODLE_DARES, [
+    ...doodleDareContent.DOODLE_DARE_TWISTS.slice(0, 7),
+    'win a guaranteed prize',
+  ]);
+assert.equal(unsafeDoodleDareTwistValidation.valid, false);
+assert.match(
+  unsafeDoodleDareTwistValidation.errors.join('\n'),
+  /predicts an outcome or promises a reward/,
+  'optional twists must remain expressive rather than outcome-changing'
 );
 const selectedDarePowers = new Set(
   Array.from(
     { length: 128 },
     (_, dayNumber) =>
-      drawOnboarding.selectDailyDoodleDare(dayNumber, 'prompt-coverage')
+      doodleDareContent.selectDailyDoodleDare(dayNumber, 'prompt-coverage')
         .suggestedPower
   )
 );
@@ -413,6 +555,121 @@ assert.deepEqual(
   ['colorburst', 'inkquake', 'nib_halo', 'smearstep'],
   'deterministic prompt selection should reach every drawing identity'
 );
+pass('daily Doodle Dare calendar stays complete, balanced, and nonrepeating');
+
+const careReactionValidation =
+  careReactionContent.validateCareReactionCatalog();
+assert.equal(careReactionValidation.valid, true);
+assert.deepEqual(careReactionValidation.errors, []);
+assert.equal(careReactionValidation.entryCount, 72);
+assert.equal(careReactionValidation.coveredMatrixSlotCount, 72);
+assert.ok(Object.isFrozen(careReactionContent.CARE_REACTION_DECK));
+assert.ok(
+  careReactionContent.CARE_REACTION_DECK.every((reaction) =>
+    Object.isFrozen(reaction)
+  )
+);
+assert.equal(
+  new Set(
+    careReactionContent.CARE_REACTION_DECK.map((reaction) => reaction.line)
+  ).size,
+  72,
+  'every authored care reaction should remain globally unique'
+);
+const lifetimeCareReactions = [];
+for (const lifeDay of [1, 2, 3]) {
+  for (const action of ['feed', 'pat', 'train']) {
+    lifetimeCareReactions.push(
+      careReactionContent.selectCareReaction(
+        'inkquake',
+        action,
+        lifeDay,
+        'care-lifetime-proof'
+      ).line
+    );
+  }
+}
+assert.equal(
+  new Set(lifetimeCareReactions).size,
+  9,
+  'one Scribbit should receive nine distinct care moments across its life'
+);
+assert.equal(
+  careReactionContent.selectCareReaction('nib_halo', 'pat', -20, 'clamp-proof')
+    .lifeDay,
+  1
+);
+assert.equal(
+  careReactionContent.selectCareReaction('nib_halo', 'pat', 20, 'clamp-proof')
+    .lifeDay,
+  3
+);
+const unsafeCareReactions = careReactionContent.CARE_REACTION_DECK.map(
+  (reaction, index) =>
+    index === 0
+      ? {
+          ...reaction,
+          line: 'A guaranteed XP reward jumps straight into the wallet.',
+        }
+      : reaction
+);
+const unsafeCareReactionValidation =
+  careReactionContent.validateCareReactionCatalog(unsafeCareReactions);
+assert.equal(unsafeCareReactionValidation.valid, false);
+assert.match(
+  unsafeCareReactionValidation.errors.join('\n'),
+  /progression or outcome claim/,
+  'care flavor must never invent progression or battle truth'
+);
+const beforeCareMoment = makeScribbit({
+  id: 'care-moment-proof',
+  name: '  Crater   Pal  ',
+  bornDay: 9,
+  expiresDay: 12,
+  xp: 2,
+  stats: { chonk: 55, spike: 15, zip: 15, charm: 15 },
+});
+const afterCareMoment = makeScribbit({
+  ...beforeCareMoment,
+  name: 'Crater Pal',
+  xp: 3,
+  mood: 'sleepy',
+  careDoneToday: ['feed'],
+});
+const firstCareMomentPlan = careMoment.planCareMoment(
+  beforeCareMoment,
+  afterCareMoment,
+  'feed',
+  9,
+  1
+);
+assert.equal(firstCareMomentPlan.lifeDay, 1);
+assert.equal(firstCareMomentPlan.power, 'inkquake');
+assert.equal(firstCareMomentPlan.experienceGained, 1);
+assert.equal(firstCareMomentPlan.inkAwarded, 1);
+assert.equal(firstCareMomentPlan.careMarkCount, 1);
+assert.match(firstCareMomentPlan.headline, /SNACK BREAK: CRATER PAL/);
+assert.match(firstCareMomentPlan.rewardLine, /\+1 XP.*\+1 INK/);
+assert.match(firstCareMomentPlan.progressLine, /SLEEPY.*1\/3 CARE MARKS/);
+const finalCareMomentPlan = careMoment.planCareMoment(
+  makeScribbit({ ...beforeCareMoment, xp: 4, careDoneToday: ['feed', 'pat'] }),
+  makeScribbit({
+    ...beforeCareMoment,
+    xp: 6,
+    mood: 'pumped',
+    careDoneToday: ['feed', 'pat', 'train'],
+  }),
+  'train',
+  11,
+  0
+);
+assert.equal(finalCareMomentPlan.lifeDay, 3);
+assert.equal(finalCareMomentPlan.experienceGained, 2);
+assert.equal(finalCareMomentPlan.inkAwarded, 0);
+assert.match(finalCareMomentPlan.rewardLine, /\+2 XP.*CARE SAVED/);
+assert.doesNotMatch(finalCareMomentPlan.rewardLine, /\+\d+ INK/);
+pass('Care Reaction Deck stays complete, varied, safe, and server-truthful');
+
 assert.deepEqual(
   drawOnboarding.planDrawFeedback({
     inkedPixels: 0,
@@ -458,7 +715,7 @@ for (const [power, stats] of Object.entries({
     `${power} feedback should use its shared elemental signature`
   );
 }
-pass('daily doodle dare and live draw feedback remain deterministic');
+pass('live draw feedback remains deterministic and server-truthful');
 
 const practicedPowers = [];
 for (let practiceIndex = 0; practiceIndex < 4; practiceIndex += 1) {
@@ -511,11 +768,13 @@ const firstPracticeSession = practiceLab.recordPracticeSessionPower(
 );
 assert.equal(firstPracticeSession.lastPowerWasNew, true);
 assert.deepEqual(firstPracticeSession.triedPowers, ['inkquake']);
+assert.equal(firstPracticeSession.attemptCount, 1);
 const repeatedPracticeSession = practiceLab.recordPracticeSessionPower(
   firstPracticeSession,
   'inkquake'
 );
 assert.equal(repeatedPracticeSession.lastPowerWasNew, false);
+assert.equal(repeatedPracticeSession.attemptCount, 2);
 assert.deepEqual(
   repeatedPracticeSession.triedPowers,
   ['inkquake'],
@@ -533,10 +792,40 @@ assert.equal(completedPracticePlan.celebrateCompletion, true);
 assert.equal(completedPracticePlan.headline, '✦ 4/4 POWERS FOUND! ✦');
 assert.match(completedPracticePlan.result, /DRAW DIFFERENTLY/);
 assert.match(completedPracticePlan.primaryButton, /DRAW ONE MORE/);
+assert.equal(completedPracticeSession.attemptCount, 4);
+const practiceEncoreTargets = Array.from({ length: 4 }, (_, encoreIndex) =>
+  practiceLab.selectPracticeTargetPower(
+    completedPracticeSession.triedPowers,
+    9,
+    'mock_player',
+    completedPracticeSession.attemptCount + encoreIndex
+  )
+);
+assert.equal(
+  new Set(practiceEncoreTargets).size,
+  4,
+  'post-completion Practice should rotate through all powers instead of repeating one target'
+);
+const practiceEncorePrompts = Array.from(
+  { length: 4 },
+  (_, encoreIndex) =>
+    practiceLab.selectPracticeDoodleDare(
+      completedPracticeSession.triedPowers,
+      9,
+      'mock_player',
+      completedPracticeSession.attemptCount + encoreIndex
+    ).id
+);
+assert.equal(
+  new Set(practiceEncorePrompts).size,
+  4,
+  'post-completion Practice should keep its prompt cards visibly varied'
+);
 const repeatedCompletedSession = practiceLab.recordPracticeSessionPower(
   completedPracticeSession,
   completedPracticeSession.lastPower
 );
+assert.equal(repeatedCompletedSession.attemptCount, 5);
 assert.equal(
   practiceLab.planPracticeOutcome(repeatedCompletedSession).celebrateCompletion,
   false,
@@ -549,15 +838,226 @@ assert.equal(
 );
 pass('Practice Lab targets every Shape Power without persistent progression');
 
-assert.deepEqual(
-  replayCommentary.validateReplayCommentaryContent(),
-  [],
-  'every Inkcast bank must be populated, unique, bounded, and token-safe'
+const inkcastPackValidation =
+  replayCommentaryContent.validateInkcastCommentaryPack();
+assert.equal(inkcastPackValidation.valid, true);
+assert.deepEqual(inkcastPackValidation.errors, []);
+assert.equal(inkcastPackValidation.bankCount, 25);
+assert.equal(
+  inkcastPackValidation.lineCount,
+  replayCommentaryContent.INKCAST_COMMENTARY_EXPECTED_LINE_COUNT
+);
+assert.equal(inkcastPackValidation.lineCount, 104);
+assert.equal(replayCommentaryContent.INKCAST_COMMENTARY_PACK_VERSION, 1);
+assert.ok(Object.isFrozen(replayCommentaryContent.INKCAST_COMMENTARY_BANKS));
+assert.ok(
+  replayCommentaryContent.INKCAST_COMMENTARY_BANKS.every(
+    (bank) =>
+      Object.isFrozen(bank) &&
+      Object.isFrozen(bank.allowedTokens) &&
+      Object.isFrozen(bank.requiredTokens) &&
+      Object.isFrozen(bank.variants) &&
+      bank.variants.every((variant) => Object.isFrozen(variant))
+  )
+);
+
+for (const bank of replayCommentaryContent.INKCAST_COMMENTARY_BANKS) {
+  const selectedVariantIds = Array.from(
+    { length: bank.variants.length + 1 },
+    (_, occurrenceIndex) =>
+      replayCommentaryContent.selectInkcastCommentaryVariant(
+        bank.id,
+        'inkcast-exhaustion-proof',
+        occurrenceIndex
+      ).id
+  );
+  assert.equal(
+    new Set(selectedVariantIds.slice(0, bank.variants.length)).size,
+    bank.variants.length,
+    `${bank.id} should exhaust every authored variant before reuse`
+  );
+  assert.equal(
+    selectedVariantIds[bank.variants.length],
+    selectedVariantIds[0],
+    `${bank.id} should restart its deterministic cycle after exhaustion`
+  );
+  assert.notEqual(
+    selectedVariantIds[bank.variants.length - 1],
+    selectedVariantIds[bank.variants.length],
+    `${bank.id} must not repeat across a cycle boundary`
+  );
+}
+
+const inkquakeTelegraphOrders = new Set(
+  Array.from({ length: 64 }, (_, battleIndex) =>
+    Array.from(
+      { length: 5 },
+      (_, occurrenceIndex) =>
+        replayCommentaryContent.selectInkcastCommentaryVariant(
+          'power.inkquake.telegraph',
+          `inkcast-order-${battleIndex}`,
+          occurrenceIndex
+        ).id
+    ).join('|')
+  )
 );
 assert.ok(
-  replayCommentary.REPLAY_COMMENTARY_LINE_COUNT >= 80,
-  'Inkcast should have enough authored lines to keep repeated battles fresh'
+  inkquakeTelegraphOrders.size >= 8,
+  'battle identity should expose several stable per-bank permutations'
 );
+
+function replaceInkcastTemplate(bankId, replacementTemplate) {
+  return Object.freeze(
+    replayCommentaryContent.INKCAST_COMMENTARY_BANKS.map((bank) => {
+      if (bank.id !== bankId) return bank;
+      return Object.freeze({
+        ...bank,
+        variants: Object.freeze(
+          bank.variants.map((variant, index) =>
+            index === 0
+              ? Object.freeze({ ...variant, template: replacementTemplate })
+              : variant
+          )
+        ),
+      });
+    })
+  );
+}
+
+const unsafeTokenAndClaimErrors = replayCommentaryContent
+  .validateInkcastCommentaryPack(
+    replaceInkcastTemplate('general.burn', '{actor} wins XP!')
+  )
+  .errors.join('\n');
+assert.match(unsafeTokenAndClaimErrors, /forbidden token actor/);
+assert.match(unsafeTokenAndClaimErrors, /missing token target/);
+assert.match(unsafeTokenAndClaimErrors, /outcome or reward claim/);
+
+const malformedTokenErrors = replayCommentaryContent
+  .validateInkcastCommentaryPack(
+    replaceInkcastTemplate(
+      'general.burn',
+      '{target catches a capped Ember afterburn!'
+    )
+  )
+  .errors.join('\n');
+assert.match(malformedTokenErrors, /malformed token braces/);
+
+const inventedMissErrors = replayCommentaryContent
+  .validateInkcastCommentaryPack(
+    replaceInkcastTemplate(
+      'power.smearstep.miss',
+      '{actor} dodges the dead zone with {move}!'
+    )
+  )
+  .errors.join('\n');
+assert.match(inventedMissErrors, /unproven miss mechanic/);
+assert.match(inventedMissErrors, /truthful no-hit result/);
+
+const actorWideMissErrors = replayCommentaryContent
+  .validateInkcastCommentaryPack(
+    replaceInkcastTemplate(
+      'power.smearstep.miss',
+      'Two {move} dashes, no damage from {actor}!'
+    )
+  )
+  .errors.join('\n');
+assert.match(actorWideMissErrors, /actor-wide miss claim/);
+
+const futureArenaClaimErrors = replayCommentaryContent
+  .validateInkcastCommentaryPack(
+    replaceInkcastTemplate(
+      'general.arena-shrink',
+      'Arena folds close — collisions are coming!'
+    )
+  )
+  .errors.join('\n');
+assert.match(futureArenaClaimErrors, /future arena event/);
+
+const inventedPressureTimingErrors = replayCommentaryContent
+  .validateInkcastCommentaryPack(
+    replaceInkcastTemplate(
+      'general.ink-pressure',
+      'INK PRESSURE refreshes one more power for {actor}!'
+    )
+  )
+  .errors.join('\n');
+assert.match(inventedPressureTimingErrors, /invents Ink Pressure timing/);
+
+const broadLateFightErrors = replayCommentaryContent
+  .validateInkcastCommentaryPack(
+    replaceInkcastTemplate(
+      'general.late-fight',
+      'SUDDEN SCRIBBLE! The page speeds up!'
+    )
+  )
+  .errors.join('\n');
+assert.match(broadLateFightErrors, /overstates the late-fight phase/);
+assert.match(broadLateFightErrors, /faster power cooldowns/);
+
+const timingNeutralPressureTemplates =
+  replayCommentaryContent.getInkcastCommentaryBank(
+    'general.ink-pressure'
+  ).variants;
+assert.ok(
+  timingNeutralPressureTemplates.every(
+    (variant) =>
+      !/refresh|one more power|immediate|pending|queued|banks?/i.test(
+        variant.template
+      )
+  ),
+  'Ink Pressure copy must remain truthful for immediate and queued events'
+);
+const shrinkStartTemplates = replayCommentaryContent.getInkcastCommentaryBank(
+  'general.arena-shrink'
+).variants;
+assert.ok(
+  shrinkStartTemplates.every(
+    (variant) =>
+      !/collisions? (?:are|is) coming|nowhere left to hide/i.test(
+        variant.template
+      )
+  ),
+  'arena-shrink-start copy must not predict a later collision or hiding state'
+);
+
+const duplicateTemplate =
+  replayCommentaryContent.getInkcastCommentaryBank('power.inkquake.hit')
+    .variants[0].template;
+const duplicateTemplateErrors = replayCommentaryContent
+  .validateInkcastCommentaryPack(
+    replaceInkcastTemplate('general.normal-hit', duplicateTemplate)
+  )
+  .errors.join('\n');
+assert.match(duplicateTemplateErrors, /duplicates the template/);
+
+const renderedOverlengthErrors = replayCommentaryContent
+  .validateInkcastCommentaryPack(
+    replaceInkcastTemplate(
+      'general.normal-hit',
+      `{source} ${'stretches '.repeat(6)}{amount} to {target}!`
+    )
+  )
+  .errors.join('\n');
+assert.match(renderedOverlengthErrors, /rendered characters/);
+assert.throws(
+  () =>
+    replayCommentaryContent.renderInkcastCommentaryTemplate(
+      '{target} catches {amount}!',
+      { target: 'Moss Wizard' }
+    ),
+  /token is missing: amount/
+);
+assert.throws(
+  () =>
+    replayCommentaryContent.renderInkcastCommentaryTemplate(
+      '{target catches ink!',
+      { target: 'Moss Wizard' }
+    ),
+  /malformed token braces/
+);
+pass('versioned Inkcast pack is exhaustive, immutable, and contract-safe');
+
 const commentaryContext = {
   battleId: 'battle-commentary-proof',
   fighters: {
@@ -583,17 +1083,15 @@ const powerTelegraphFact = {
   power: 'inkquake',
   activationNumber: 2,
 };
-const firstTelegraph = replayCommentary.authorReplayCommentary(
-  commentaryContext,
-  powerTelegraphFact
-);
+const firstTelegraph = replayCommentary
+  .createReplayCommentaryAuthor(commentaryContext)
+  .author(powerTelegraphFact);
 assert.equal(
-  replayCommentary.authorReplayCommentary(
-    commentaryContext,
-    powerTelegraphFact
-  ),
+  replayCommentary
+    .createReplayCommentaryAuthor(commentaryContext)
+    .author(powerTelegraphFact),
   firstTelegraph,
-  'the same authoritative fact must always author the same replay line'
+  'fresh sessions with the same authoritative facts must replay identically'
 );
 assert.deepEqual(
   commentaryContext,
@@ -602,19 +1100,21 @@ assert.deepEqual(
 );
 const telegraphVariants = new Set(
   Array.from({ length: 64 }, (_, index) =>
-    replayCommentary.authorReplayCommentary(
-      { ...commentaryContext, battleId: `battle-variant-${index}` },
-      powerTelegraphFact
-    )
+    replayCommentary
+      .createReplayCommentaryAuthor({
+        ...commentaryContext,
+        battleId: `battle-variant-${index}`,
+      })
+      .author(powerTelegraphFact)
   )
 );
 assert.ok(
   telegraphVariants.size >= 3,
   'battle identity should expose several deterministic telegraph variants'
 );
-const truthfulDamageLine = replayCommentary.authorReplayCommentary(
-  commentaryContext,
-  {
+const truthfulDamageLine = replayCommentary
+  .createReplayCommentaryAuthor(commentaryContext)
+  .author({
     kind: 'damage',
     tick: 72,
     sourceFighter: 'a',
@@ -623,14 +1123,13 @@ const truthfulDamageLine = replayCommentary.authorReplayCommentary(
     sourcePower: 'inkquake',
     amount: 37,
     critical: false,
-  }
-);
+  });
 assert.match(truthfulDamageLine, /Cinderquake/);
 assert.match(truthfulDamageLine, /Moss Wizard/);
 assert.match(truthfulDamageLine, /37/);
-const criticalDamageLine = replayCommentary.authorReplayCommentary(
-  commentaryContext,
-  {
+const criticalDamageLine = replayCommentary
+  .createReplayCommentaryAuthor(commentaryContext)
+  .author({
     kind: 'damage',
     tick: 73,
     sourceFighter: 'b',
@@ -639,22 +1138,20 @@ const criticalDamageLine = replayCommentary.authorReplayCommentary(
     sourcePower: 'nib_halo',
     amount: 51,
     critical: true,
-  }
-);
+  });
 assert.match(criticalDamageLine, /Mossguard Halo/);
 assert.match(criticalDamageLine, /Paper Comet/);
 assert.match(criticalDamageLine, /51/);
 assert.match(criticalDamageLine, /CRIT|BIG SPLAT/);
-const truthfulMissLine = replayCommentary.authorReplayCommentary(
-  commentaryContext,
-  {
+const truthfulMissLine = replayCommentary
+  .createReplayCommentaryAuthor(commentaryContext)
+  .author({
     kind: 'power-missed',
     tick: 74,
     actor: 'b',
     power: 'nib_halo',
     activationNumber: 2,
-  }
-);
+  });
 assert.doesNotMatch(
   truthfulMissLine,
   /Paper Comet/i,
@@ -700,16 +1197,16 @@ assert.ok(
   ),
   "a founder battle should use one of that founder's authored openings"
 );
-const founderSignatureReaction = replayCommentary.authorReplayCommentary(
-  founderCommentaryContext,
-  {
-    kind: 'power-telegraph',
-    tick: 24,
-    actor: 'a',
-    power: founderCommentaryContext.fighters.a.primaryPower,
-    activationNumber: 1,
-  }
+const founderCommentaryAuthor = replayCommentary.createReplayCommentaryAuthor(
+  founderCommentaryContext
 );
+const founderSignatureReaction = founderCommentaryAuthor.author({
+  kind: 'power-telegraph',
+  tick: 24,
+  actor: 'a',
+  power: founderCommentaryContext.fighters.a.primaryPower,
+  activationNumber: 1,
+});
 assert.match(
   founderSignatureReaction,
   new RegExp(mosswhiskDefinition.personality.signatureReaction)
@@ -749,15 +1246,176 @@ const representativeCommentaryFacts = [
   { kind: 'echo-shattered', tick: 121, actor: 'a' },
   { kind: 'late-fight', tick: 140 },
 ];
+const representativeCommentaryAuthor =
+  replayCommentary.createReplayCommentaryAuthor(commentaryContext);
 for (const fact of representativeCommentaryFacts) {
-  const authoredLine = replayCommentary.authorReplayCommentary(
-    commentaryContext,
-    fact
-  );
+  const authoredLine = representativeCommentaryAuthor.author(fact);
   assert.ok(authoredLine.length > 0 && authoredLine.length <= 110);
   assert.doesNotMatch(authoredLine, /\{|\}|undefined|null/);
 }
-pass('deterministic Inkcast commentary is varied, truthful, and bounded');
+
+function factForInkcastBank(bankId, occurrenceIndex) {
+  const tick = 200 + occurrenceIndex;
+  if (bankId.startsWith('power.')) {
+    const [, power, moment] = bankId.split('.');
+    if (moment === 'telegraph') {
+      return {
+        kind: 'power-telegraph',
+        tick,
+        actor: 'a',
+        power,
+        activationNumber: occurrenceIndex + 2,
+      };
+    }
+    if (moment === 'miss') {
+      return {
+        kind: 'power-missed',
+        tick,
+        actor: 'a',
+        power,
+        activationNumber: occurrenceIndex + 2,
+      };
+    }
+    return {
+      kind: 'damage',
+      tick,
+      sourceFighter: 'a',
+      targetFighter: 'b',
+      sourceName: 'Thirty Two Character Source Name!',
+      sourcePower: power,
+      amount: 9999,
+      critical: false,
+    };
+  }
+
+  switch (bankId) {
+    case 'general.battle-start':
+      return { kind: 'battle-start', tick };
+    case 'general.normal-hit':
+      return {
+        kind: 'damage',
+        tick,
+        sourceFighter: 'a',
+        targetFighter: 'b',
+        sourceName: 'Thirty Two Character Source Name!',
+        sourcePower: null,
+        amount: 9999,
+        critical: false,
+      };
+    case 'general.critical-hit':
+      return {
+        kind: 'damage',
+        tick,
+        sourceFighter: 'a',
+        targetFighter: 'b',
+        sourceName: 'Thirty Two Character Source Name!',
+        sourcePower: 'inkquake',
+        amount: 9999,
+        critical: true,
+      };
+    case 'general.burn':
+      return { kind: 'burn', tick, targetFighter: 'b' };
+    case 'general.barrier-created':
+      return { kind: 'barrier-created', tick, actor: 'b' };
+    case 'general.barrier-hit':
+      return { kind: 'barrier-hit', tick, actor: 'b', absorbedDamage: 9999 };
+    case 'general.barrier-broken':
+      return { kind: 'barrier-broken', tick, actor: 'b' };
+    case 'general.ink-pressure':
+      return { kind: 'ink-pressure', tick, actor: 'a' };
+    case 'general.nib-recoil':
+      return { kind: 'nib-recoil', tick, actor: 'b' };
+    case 'general.arena-shrink':
+      return { kind: 'arena-shrink', tick };
+    case 'general.echo-created':
+      return { kind: 'echo-created', tick, actor: 'a' };
+    case 'general.echo-fired':
+      return { kind: 'echo-fired', tick, actor: 'a' };
+    case 'general.echo-shattered':
+      return { kind: 'echo-shattered', tick, actor: 'a' };
+    case 'general.late-fight':
+      return { kind: 'late-fight', tick };
+    default:
+      throw new Error(`Missing test fact for ${bankId}`);
+  }
+}
+
+const maximumCommentaryContext = {
+  ...commentaryContext,
+  battleId: 'maximum-rendered-commentary-proof',
+  fighters: {
+    a: { ...commentaryContext.fighters.a, name: 'A'.repeat(24) },
+    b: { ...commentaryContext.fighters.b, name: 'M'.repeat(24) },
+  },
+};
+for (const bank of replayCommentaryContent.INKCAST_COMMENTARY_BANKS) {
+  const bankAuthor = replayCommentary.createReplayCommentaryAuthor(
+    maximumCommentaryContext
+  );
+  const renderedBank = bank.variants.map((_, occurrenceIndex) => {
+    const fact = factForInkcastBank(bank.id, occurrenceIndex);
+    assert.equal(replayCommentary.getReplayCommentaryBankId(fact), bank.id);
+    return bankAuthor.author(fact);
+  });
+  assert.equal(
+    new Set(renderedBank).size,
+    bank.variants.length,
+    `${bank.id} should render every template before repeating`
+  );
+  for (const renderedLine of renderedBank) {
+    assert.ok(
+      renderedLine.length > 0 && renderedLine.length <= 110,
+      `${bank.id} rendered outside the mobile copy bound: ${renderedLine}`
+    );
+    assert.doesNotMatch(renderedLine, /\{|\}|undefined|null|NaN/);
+  }
+  assert.equal(
+    bankAuthor.author(factForInkcastBank(bank.id, bank.variants.length)),
+    renderedBank[0],
+    `${bank.id} should replay its first line only after exhausting the bank`
+  );
+}
+
+const founderGenericContext = {
+  ...founderCommentaryContext,
+  fighters: {
+    ...founderCommentaryContext.fighters,
+    a: {
+      ...founderCommentaryContext.fighters.a,
+      id: 'community-founder-rotation-proof',
+    },
+  },
+};
+const firstGenericFounderPowerLine = replayCommentary
+  .createReplayCommentaryAuthor(founderGenericContext)
+  .author({
+    kind: 'power-telegraph',
+    tick: 48,
+    actor: 'a',
+    power: founderCommentaryContext.fighters.a.primaryPower,
+    activationNumber: 2,
+  });
+const firstLineAfterFounderSignature = founderCommentaryAuthor.author({
+  kind: 'power-telegraph',
+  tick: 48,
+  actor: 'a',
+  power: founderCommentaryContext.fighters.a.primaryPower,
+  activationNumber: 2,
+});
+assert.equal(
+  firstLineAfterFounderSignature,
+  firstGenericFounderPowerLine,
+  'a founder signature must not consume the ordinary telegraph rotation'
+);
+assert.ok(
+  replayCommentaryContent.INKCAST_COMMENTARY_BANK_IDS.every(
+    (bankId) => bankId !== 'power.colorburst.miss'
+  ),
+  'Colorburst must not claim a miss before its delayed echo resolves'
+);
+pass(
+  'replay-scoped Inkcast authoring is deterministic, no-repeat, truthful, and bounded'
+);
 
 assert.equal(inkcastQueue.INKCAST_WALL_CLOCK_DWELL_MILLISECONDS, 900);
 assert.equal(inkcastQueue.INKCAST_PENDING_ITEM_LIMIT, 2);
@@ -1266,6 +1924,142 @@ for (const definition of founders.FOUNDING_SCRIBBIT_DEFINITIONS) {
 assert.equal(founders.getFoundingScribbitDefinition('community-unknown'), null);
 pass('founder story packs stay canonical, bounded, and fact-safe');
 
+const founderRivalEpisodeValidation =
+  founderRivalEpisodes.validateFounderRivalEpisodeArcs();
+assert.equal(founderRivalEpisodeValidation.valid, true);
+assert.deepEqual(founderRivalEpisodeValidation.errors, []);
+assert.equal(founderRivalEpisodeValidation.arcCount, 20);
+assert.equal(founderRivalEpisodeValidation.pageCount, 60);
+assert.equal(founderRivalEpisodeValidation.resultLineCount, 120);
+assert.ok(Object.isFrozen(founderRivalEpisodes.FOUNDER_RIVAL_EPISODE_ARCS));
+const founderRivalEpisodePages =
+  founderRivalEpisodes.FOUNDER_RIVAL_EPISODE_ARCS.flatMap((arc) => {
+    assert.ok(Object.isFrozen(arc));
+    assert.ok(Object.isFrozen(arc.pages));
+    assert.deepEqual(
+      arc.pages.map((page) => page.pageNumber),
+      [1, 2, 3],
+      `${arc.founderId} should keep its three-page story order`
+    );
+    for (const page of arc.pages) {
+      assert.ok(Object.isFrozen(page));
+      assert.ok(Object.isFrozen(page.resultLines));
+      assert.equal(
+        founderRivalEpisodes.getFounderRivalEpisodePage(
+          arc.founderId,
+          page.pageNumber
+        ),
+        page,
+        `${arc.founderId} page ${page.pageNumber} should resolve canonically`
+      );
+    }
+    return arc.pages;
+  });
+assert.equal(
+  new Set(founderRivalEpisodePages.map((page) => page.title)).size,
+  60,
+  'every rivalry page should have a unique title'
+);
+assert.equal(
+  new Set(founderRivalEpisodePages.map((page) => page.cue)).size,
+  60,
+  'every rivalry page should have a unique founder cue'
+);
+const founderRivalEpisodeResultLines = founderRivalEpisodePages.flatMap(
+  (page) => [page.resultLines.playerWon, page.resultLines.founderWon]
+);
+assert.equal(
+  founderRivalEpisodeResultLines.length,
+  120,
+  'every page should resolve through both truthful battle outcomes'
+);
+assert.equal(
+  new Set(founderRivalEpisodeResultLines).size,
+  120,
+  'every rivalry outcome should have a unique authored payoff'
+);
+assert.equal(
+  founderRivalEpisodes.getFounderRivalEpisodeResultLine(
+    'founding-fernibble',
+    3,
+    'player'
+  ),
+  'Fernibble salutes as your final lap reaches the waiting margin.'
+);
+assert.equal(
+  founderRivalEpisodes.getFounderRivalEpisodeResultLine(
+    'founding-fernibble',
+    3,
+    'founder'
+  ),
+  'Fernibble completes the last leaf lap and signs the margin.'
+);
+for (const invalidPageNumber of [0, 4, Number.NaN]) {
+  assert.equal(
+    founderRivalEpisodes.getFounderRivalEpisodePage(
+      'founding-mosswhisk',
+      invalidPageNumber
+    ),
+    null
+  );
+}
+assert.equal(
+  founderRivalEpisodes.getFounderRivalEpisodePage('community-unknown', 1),
+  null
+);
+const unsafeFounderRivalEpisodeArcs =
+  founderRivalEpisodes.FOUNDER_RIVAL_EPISODE_ARCS.map((arc, arcIndex) =>
+    arcIndex === 0
+      ? {
+          ...arc,
+          pages: arc.pages.map((page, pageIndex) =>
+            pageIndex === 0 ? { ...page, title: 'MARGIN SIGNED' } : { ...page }
+          ),
+        }
+      : arc
+  );
+const unsafeFounderRivalEpisodeValidation =
+  founderRivalEpisodes.validateFounderRivalEpisodeArcs(
+    unsafeFounderRivalEpisodeArcs
+  );
+assert.equal(unsafeFounderRivalEpisodeValidation.valid, false);
+assert.match(
+  unsafeFounderRivalEpisodeValidation.errors.join('\n'),
+  /predicts an outcome or promises a reward/,
+  'pre-fight episode copy must reject claims that the margin is already signed'
+);
+const rewardClaimFounderRivalEpisodeArcs =
+  founderRivalEpisodes.FOUNDER_RIVAL_EPISODE_ARCS.map((arc, arcIndex) =>
+    arcIndex === 0
+      ? {
+          ...arc,
+          pages: arc.pages.map((page, pageIndex) =>
+            pageIndex === 0
+              ? {
+                  ...page,
+                  resultLines: {
+                    ...page.resultLines,
+                    playerWon:
+                      'Mosswhisk gives your mark a guaranteed XP prize.',
+                  },
+                }
+              : page
+          ),
+        }
+      : arc
+  );
+const rewardClaimFounderRivalEpisodeValidation =
+  founderRivalEpisodes.validateFounderRivalEpisodeArcs(
+    rewardClaimFounderRivalEpisodeArcs
+  );
+assert.equal(rewardClaimFounderRivalEpisodeValidation.valid, false);
+assert.match(
+  rewardClaimFounderRivalEpisodeValidation.errors.join('\n'),
+  /must not promise an economy reward/,
+  'narrative result copy must never invent progression rewards'
+);
+pass('founder rivalry episodes stay complete, unique, bounded, and fact-safe');
+
 assert.deepEqual(
   championChallenge.validateChampionChallengeContent(),
   [],
@@ -1616,77 +2410,194 @@ const chronicleScribbit = makeScribbit({
   id: 'chronicle-owned-scribbit',
   artist: 'chronicle-player',
 });
-const chronicleFounder = speciesCore.findFoundingScribbit(
-  'founding-mosswhisk'
-);
+const chronicleFounder = speciesCore.findFoundingScribbit('founding-mosswhisk');
+const secondChronicleFounder =
+  speciesCore.findFoundingScribbit('founding-fernibble');
 assert.ok(chronicleFounder, 'Chronicle test founder should exist');
-const chronicleReport = (day, winner, kind = 'exhibition') => ({
-  id: `chronicle-${kind}-${day}-${winner}`,
+assert.ok(secondChronicleFounder, 'Second Chronicle test founder should exist');
+const chronicleReport = (
+  id,
+  day,
+  winner,
+  founder = chronicleFounder,
+  kind = 'exhibition'
+) => ({
+  id,
   kind,
   day,
   a: chronicleScribbit,
-  b: chronicleFounder,
+  b: founder,
   winner,
+  events: [],
 });
+const firstChronicleReport = chronicleReport(
+  'chronicle-mosswhisk-day-3-loss',
+  3,
+  'b'
+);
+await scribbitCore.storeScribbit(
+  chronicleStorage,
+  chroniclePlayerId,
+  chronicleScribbit
+);
+await founderChronicleCore.queueFounderChronicleBattle(
+  chronicleStorage,
+  chroniclePlayerId,
+  firstChronicleReport,
+  chronicleScribbit.id,
+  1_000
+);
+await battleStore.saveBattleReport(
+  chronicleStorage,
+  firstChronicleReport,
+  1_000
+);
 assert.deepEqual(
-  await founderChronicleCore.recordFounderChronicleBattle(
+  await founderChronicleCore.completeFounderChronicleBattle(
     chronicleStorage,
     chroniclePlayerId,
-    chronicleReport(3, 'b'),
+    firstChronicleReport,
     chronicleScribbit.id
   ),
-  [{ founderId: chronicleFounder.id, milestone: 'met', day: 3 }],
-  'a first direct loss should record only the real meeting'
+  [
+    {
+      founderId: chronicleFounder.id,
+      kind: 'rivalry_started',
+      day: 3,
+      playerWins: 0,
+      founderWins: 1,
+      outcome: null,
+    },
+  ],
+  'a persisted first direct fight should start one active rivalry'
 );
 assert.deepEqual(
   await founderChronicleCore.recordFounderChronicleBattle(
     chronicleStorage,
     chroniclePlayerId,
-    chronicleReport(3, 'b'),
+    firstChronicleReport,
     chronicleScribbit.id
   ),
   [],
-  'the same encounter must not inflate permanent progress'
+  'the same report must not inflate the series score'
 );
 assert.deepEqual(
   await founderChronicleCore.recordFounderChronicleBattle(
     chronicleStorage,
     chroniclePlayerId,
-    chronicleReport(3, 'a'),
-    chronicleScribbit.id
-  ),
-  [{ founderId: chronicleFounder.id, milestone: 'respected', day: 3 }],
-  'the first direct victory should earn respect once'
-);
-assert.deepEqual(
-  await founderChronicleCore.recordFounderChronicleBattle(
-    chronicleStorage,
-    chroniclePlayerId,
-    chronicleReport(4, 'b'),
-    chronicleScribbit.id
-  ),
-  [{ founderId: chronicleFounder.id, milestone: 'rematched', day: 4 }],
-  'a real fight on a later Arena day should record the return'
-);
-assert.deepEqual(
-  await founderChronicleCore.recordFounderChronicleBattle(
-    chronicleStorage,
-    chroniclePlayerId,
-    chronicleReport(5, 'a'),
+    chronicleReport('chronicle-mosswhisk-day-3-win', 3, 'a'),
     chronicleScribbit.id
   ),
   [],
-  'later wins and rematches should remain bounded first-only stamps'
+  'unlimited same-day spars must not farm narrative progress'
 );
 assert.deepEqual(
   await founderChronicleCore.recordFounderChronicleBattle(
     chronicleStorage,
     chroniclePlayerId,
-    chronicleReport(6, 'a', 'rumble'),
+    chronicleReport(
+      'chronicle-fernibble-day-4-win',
+      4,
+      'a',
+      secondChronicleFounder
+    ),
     chronicleScribbit.id
   ),
   [],
-  'passive Rumble pairings must not pretend the player met a founder'
+  'another founder must not replace the active rivalry'
+);
+assert.deepEqual(
+  await founderChronicleCore.recordFounderChronicleBattle(
+    chronicleStorage,
+    chroniclePlayerId,
+    chronicleReport('chronicle-mosswhisk-day-4-win', 4, 'a'),
+    chronicleScribbit.id
+  ),
+  [
+    {
+      founderId: chronicleFounder.id,
+      kind: 'rivalry_advanced',
+      day: 4,
+      playerWins: 1,
+      founderWins: 1,
+      outcome: null,
+    },
+  ],
+  'the active founder should advance once on the next Arena day'
+);
+assert.deepEqual(
+  await founderChronicleCore.recordFounderChronicleBattle(
+    chronicleStorage,
+    chroniclePlayerId,
+    chronicleReport('chronicle-mosswhisk-day-5-win', 5, 'a'),
+    chronicleScribbit.id
+  ),
+  [
+    {
+      founderId: chronicleFounder.id,
+      kind: 'rivalry_resolved',
+      day: 5,
+      playerWins: 2,
+      founderWins: 1,
+      outcome: 'player_prevailed',
+    },
+  ],
+  'first-to-two should resolve into one permanent margin note'
+);
+assert.deepEqual(
+  await founderChronicleCore.recordFounderChronicleBattle(
+    chronicleStorage,
+    chroniclePlayerId,
+    chronicleReport(
+      'chronicle-fernibble-day-5-loss',
+      5,
+      'b',
+      secondChronicleFounder
+    ),
+    chronicleScribbit.id
+  ),
+  [],
+  'resolving a thread must not allow a second story beat that day'
+);
+assert.deepEqual(
+  await founderChronicleCore.recordFounderChronicleBattle(
+    chronicleStorage,
+    chroniclePlayerId,
+    chronicleReport(
+      'chronicle-fernibble-day-6-loss',
+      6,
+      'b',
+      secondChronicleFounder
+    ),
+    chronicleScribbit.id
+  ),
+  [
+    {
+      founderId: secondChronicleFounder.id,
+      kind: 'rivalry_started',
+      day: 6,
+      playerWins: 0,
+      founderWins: 1,
+      outcome: null,
+    },
+  ],
+  'the next Arena day may begin one new unresolved founder thread'
+);
+assert.deepEqual(
+  await founderChronicleCore.recordFounderChronicleBattle(
+    chronicleStorage,
+    chroniclePlayerId,
+    chronicleReport(
+      'chronicle-rumble-day-7',
+      7,
+      'a',
+      secondChronicleFounder,
+      'rumble'
+    ),
+    chronicleScribbit.id
+  ),
+  [],
+  'passive Rumble pairings must not advance the personal thread'
 );
 assert.deepEqual(
   await founderChronicleCore.loadFounderChronicle(
@@ -1694,18 +2605,549 @@ assert.deepEqual(
     chroniclePlayerId
   ),
   {
-    entries: [
+    activeRivalry: {
+      founderId: secondChronicleFounder.id,
+      startedDay: 6,
+      playerWins: 0,
+      founderWins: 1,
+    },
+    resolvedRivalries: [
       {
         founderId: chronicleFounder.id,
-        metDay: 3,
-        respectedDay: 3,
-        rematchedDay: 4,
+        startedDay: 3,
+        resolvedDay: 5,
+        playerWins: 2,
+        founderWins: 1,
+        outcome: 'player_prevailed',
       },
     ],
+    lastAdvancedDay: 6,
   },
-  'Chronicle reads should expose one canonical bounded entry per founder'
+  'Chronicle reads should expose one active thread and bounded resolved notes'
 );
-pass('Founder Chronicle records direct relationship milestones idempotently');
+const pureChronicleFact = {
+  founderId: chronicleFounder.id,
+  reportId: 'pure-parity-report',
+  day: 8,
+  playerWon: true,
+};
+assert.deepEqual(
+  mockCombatBundle.advanceFounderChronicle(
+    founderChronicleCore.createEmptyFounderChronicle(),
+    pureChronicleFact
+  ),
+  founderChronicleCore.advanceFounderChronicle(
+    founderChronicleCore.createEmptyFounderChronicle(),
+    pureChronicleFact
+  ),
+  'the browser mock must use the production rivalry reducer'
+);
+const futureChronicleAdvance = founderChronicleCore.advanceFounderChronicle(
+  founderChronicleCore.createEmptyFounderChronicle(),
+  {
+    founderId: chronicleFounder.id,
+    reportId: 'chronicle-future-day-5',
+    day: 5,
+    playerWon: true,
+  }
+);
+assert.deepEqual(
+  founderChronicleCore.advanceFounderChronicle(
+    futureChronicleAdvance.chronicle,
+    {
+      founderId: chronicleFounder.id,
+      reportId: 'chronicle-delayed-day-4',
+      day: 4,
+      playerWon: true,
+    }
+  ),
+  { chronicle: futureChronicleAdvance.chronicle, beats: [] },
+  'a delayed older receipt must never regress the Chronicle day or resolve before its start'
+);
+
+const orderedRepairStorage = createMemoryStorage();
+const laterQueuedReport = chronicleReport('chronicle-repair-day-5', 5, 'a');
+const earlierQueuedReport = chronicleReport('chronicle-repair-day-4', 4, 'b');
+await founderChronicleCore.queueFounderChronicleBattle(
+  orderedRepairStorage,
+  chroniclePlayerId,
+  laterQueuedReport,
+  chronicleScribbit.id,
+  1_000
+);
+await founderChronicleCore.queueFounderChronicleBattle(
+  orderedRepairStorage,
+  chroniclePlayerId,
+  earlierQueuedReport,
+  chronicleScribbit.id,
+  2_000
+);
+await founderChronicleCore.repairPendingFounderChronicleBattles(
+  orderedRepairStorage,
+  chroniclePlayerId,
+  2_100,
+  async (reportId) =>
+    [laterQueuedReport, earlierQueuedReport].find(
+      (report) => report.id === reportId
+    )
+);
+assert.deepEqual(
+  await founderChronicleCore.loadFounderChronicle(
+    orderedRepairStorage,
+    chroniclePlayerId
+  ),
+  {
+    activeRivalry: {
+      founderId: chronicleFounder.id,
+      startedDay: 4,
+      playerWins: 1,
+      founderWins: 1,
+    },
+    resolvedRivalries: [],
+    lastAdvancedDay: 5,
+  },
+  'pending repair must apply available reports by Arena day rather than hash insertion order'
+);
+
+const migratedChronicleStorage = createMemoryStorage();
+const migratedChroniclePlayerId = 'migrated-chronicle-player';
+await migratedChronicleStorage.set(
+  founderChronicleCore.getFounderChronicleKey(migratedChroniclePlayerId),
+  JSON.stringify(founderChronicleCore.createEmptyFounderChronicle())
+);
+await migratedChronicleStorage.hSet(
+  founderChronicleCore.getLegacyFounderChronicleKey(migratedChroniclePlayerId),
+  {
+    [`${chronicleFounder.id}:met`]: '2',
+    [`${secondChronicleFounder.id}:respected`]: '4',
+    'founding-not-real:met': '3',
+  }
+);
+const migratedChronicle = await founderChronicleCore.loadFounderChronicle(
+  migratedChronicleStorage,
+  migratedChroniclePlayerId
+);
+assert.deepEqual(
+  migratedChronicle.legacyFounderIds,
+  [chronicleFounder.id, secondChronicleFounder.id],
+  'v1 founder encounters should merge into an existing v2 Chronicle without inventing series scores'
+);
+assert.deepEqual(
+  await migratedChronicleStorage.hGetAll(
+    founderChronicleCore.getLegacyFounderChronicleKey(migratedChroniclePlayerId)
+  ),
+  {},
+  'successful Chronicle migration should delete the retired v1 hash'
+);
+assert.equal(
+  founderChroniclePlan.planFounderChronicle(migratedChronicle, 5)
+    .legacyEncounterCount,
+  2,
+  'the client should acknowledge migrated encounters as archive-only history'
+);
+
+const ambiguousChronicleStorage = createMemoryStorage({
+  throwAfterCommitOnce: true,
+});
+const ambiguousChronicleReport = chronicleReport(
+  'chronicle-ambiguous-report',
+  9,
+  'a'
+);
+const ambiguousChronicleProjection =
+  founderChronicleCore.projectFounderChronicleBattle(
+    founderChronicleCore.projectFounderChronicle(
+      founderChronicleCore.createEmptyFounderChronicle()
+    ),
+    ambiguousChronicleReport,
+    chronicleScribbit.id
+  );
+assert.deepEqual(ambiguousChronicleProjection?.beat, {
+  founderId: chronicleFounder.id,
+  kind: 'rivalry_started',
+  day: 9,
+  playerWins: 1,
+  founderWins: 0,
+  outcome: null,
+});
+await founderChronicleCore.queueFounderChronicleBattle(
+  ambiguousChronicleStorage,
+  chroniclePlayerId,
+  ambiguousChronicleReport,
+  chronicleScribbit.id,
+  2_000
+);
+await assert.rejects(
+  founderChronicleCore.recordFounderChronicleBattle(
+    ambiguousChronicleStorage,
+    chroniclePlayerId,
+    ambiguousChronicleReport,
+    chronicleScribbit.id
+  ),
+  /Simulated transaction reply loss/,
+  'an ambiguous Chronicle commit should surface while retaining its queue receipt'
+);
+await founderChronicleCore.repairPendingFounderChronicleBattles(
+  ambiguousChronicleStorage,
+  chroniclePlayerId,
+  2_100,
+  async (reportId) =>
+    reportId === ambiguousChronicleReport.id
+      ? ambiguousChronicleReport
+      : undefined
+);
+const repairedAmbiguousStoredChronicle =
+  await founderChronicleCore.loadStoredFounderChronicle(
+    ambiguousChronicleStorage,
+    chroniclePlayerId
+  );
+assert.deepEqual(
+  founderChronicleCore.recoverProjectedFounderChronicleBeat(
+    ambiguousChronicleProjection,
+    repairedAmbiguousStoredChronicle
+  ),
+  ambiguousChronicleProjection?.beat,
+  'an ambiguous commit repaired during the response should recover its exact authored beat'
+);
+assert.equal(
+  founderChronicleCore.recoverProjectedFounderChronicleBeat(
+    ambiguousChronicleProjection,
+    founderChronicleCore.createEmptyFounderChronicle()
+  ),
+  null,
+  'a projected beat must not surface before the durable Chronicle proves it committed'
+);
+assert.equal(
+  founderChronicleCore.recoverProjectedFounderChronicleBeat(
+    { ...ambiguousChronicleProjection, reportId: 'different-report' },
+    repairedAmbiguousStoredChronicle
+  ),
+  null,
+  'a repaired Chronicle must bind the recovered beat to the exact report id'
+);
+assert.deepEqual(
+  founderChronicleCore.projectFounderChronicle(
+    repairedAmbiguousStoredChronicle
+  ),
+  {
+    activeRivalry: {
+      founderId: chronicleFounder.id,
+      startedDay: 9,
+      playerWins: 1,
+      founderWins: 0,
+    },
+    resolvedRivalries: [],
+    lastAdvancedDay: 9,
+  },
+  'pending repair should recover a committed beat without applying it twice'
+);
+assert.deepEqual(
+  await ambiguousChronicleStorage.hGetAll(
+    founderChronicleCore.getPendingFounderChronicleKey(chroniclePlayerId)
+  ),
+  {},
+  'successful pending repair should clear its exact report receipt'
+);
+assert.deepEqual(
+  founderChronicleCore.parseStoredFounderChronicle('{"schemaVersion":999}'),
+  founderChronicleCore.createEmptyFounderChronicle(),
+  'unknown Chronicle schemas must fail closed before launch migration exists'
+);
+pass('Founder Rival Thread is paced, recoverable, bounded, and mock-identical');
+
+const plannedChronicle = founderChroniclePlan.planFounderChronicle(
+  await founderChronicleCore.loadFounderChronicle(
+    chronicleStorage,
+    chroniclePlayerId
+  ),
+  6
+);
+assert.equal(
+  plannedChronicle.activeRivalry?.name,
+  secondChronicleFounder.name,
+  'the client plan should focus the one active founder rather than a roster grid'
+);
+assert.equal(plannedChronicle.activeRivalry?.scoreLine, 'You 0–1 Fernibble');
+assert.equal(
+  plannedChronicle.activeRivalry?.readyToday,
+  false,
+  'the margin written today should visibly defer the next story beat'
+);
+assert.equal(plannedChronicle.activeRivalry?.returnDay, 7);
+assert.equal(plannedChronicle.activeRivalry?.nextBoutNumber, 2);
+assert.equal(
+  plannedChronicle.activeRivalry?.nextEpisodeTitle,
+  'THE SCENIC EDGE'
+);
+assert.equal(
+  plannedChronicle.resolvedNotes[0]?.name,
+  chronicleFounder.name,
+  'the latest resolved best-of-three should remain as a compact margin note'
+);
+
+const emptyChronicleProjection = {
+  activeRivalry: null,
+  resolvedRivalries: [],
+  lastAdvancedDay: null,
+};
+const firstBoutProjection = {
+  activeRivalry: {
+    founderId: chronicleFounder.id,
+    startedDay: 3,
+    playerWins: 0,
+    founderWins: 1,
+  },
+  resolvedRivalries: [],
+  lastAdvancedDay: 3,
+};
+const secondBoutProjection = {
+  activeRivalry: {
+    founderId: chronicleFounder.id,
+    startedDay: 3,
+    playerWins: 1,
+    founderWins: 1,
+  },
+  resolvedRivalries: [],
+  lastAdvancedDay: 4,
+};
+const resolvedChronicleProjection = {
+  activeRivalry: null,
+  resolvedRivalries: [
+    {
+      founderId: chronicleFounder.id,
+      startedDay: 3,
+      resolvedDay: 5,
+      playerWins: 2,
+      founderWins: 1,
+      outcome: 'player_prevailed',
+    },
+  ],
+  lastAdvancedDay: 5,
+};
+assert.equal(
+  founderChroniclePlan.findFounderChronicleBeats(
+    emptyChronicleProjection,
+    firstBoutProjection
+  )[0]?.kind,
+  'rivalry_started'
+);
+assert.equal(
+  founderChroniclePlan.findFounderChronicleBeats(
+    firstBoutProjection,
+    secondBoutProjection
+  )[0]?.kind,
+  'rivalry_advanced'
+);
+const resolvedBeat = founderChroniclePlan.findFounderChronicleBeats(
+  secondBoutProjection,
+  resolvedChronicleProjection
+)[0];
+assert.ok(
+  resolvedBeat,
+  'resolving a thread should create one presentation beat'
+);
+assert.equal(resolvedBeat?.kind, 'rivalry_resolved');
+assert.equal(
+  founderChroniclePlan.getFounderChronicleBeatCopy(resolvedBeat).headline,
+  'Margin signed · THE LAST ROOTBEAT'
+);
+assert.match(
+  founderChroniclePlan.getFounderChronicleBeatCopy(resolvedBeat).detail,
+  /Final.*You 2–1 Mosswhisk/,
+  'result copy should expose the authoritative final series score'
+);
+const openingStakes = founderChroniclePlan.planFounderRivalryStakes(
+  emptyChronicleProjection,
+  3,
+  chronicleFounder.id
+);
+assert.deepEqual(openingStakes, {
+  founderId: chronicleFounder.id,
+  founderName: chronicleFounder.name,
+  kind: 'opening',
+  boutNumber: 1,
+  playerWins: 0,
+  founderWins: 0,
+  battleLabel: 'RIVAL BOUT 1/3',
+  headline: 'NEW RIVAL THREAD',
+  detail: 'YOU 0–0 MOSSWHISK • FIRST TO 2',
+  pageLabel: 'PAGE 1/3',
+  episodeTitle: 'ROOTBEAT INTRO',
+  episodeCue: 'Mosswhisk taps a first rhythm along the fern-lined margin.',
+});
+const founderMatchPointStakes = founderChroniclePlan.planFounderRivalryStakes(
+  firstBoutProjection,
+  4,
+  chronicleFounder.id
+);
+assert.equal(founderMatchPointStakes?.kind, 'founder_match_point');
+assert.equal(founderMatchPointStakes?.headline, 'MOSSWHISK MATCH POINT');
+assert.match(founderMatchPointStakes?.detail ?? '', /WIN TO FORCE A DECIDER/);
+assert.equal(founderMatchPointStakes?.pageLabel, 'PAGE 2/3');
+assert.equal(founderMatchPointStakes?.episodeTitle, 'ROOTS REMEMBER');
+const playerMatchPointStakes = founderChroniclePlan.planFounderRivalryStakes(
+  {
+    ...firstBoutProjection,
+    activeRivalry: {
+      ...firstBoutProjection.activeRivalry,
+      playerWins: 1,
+      founderWins: 0,
+    },
+  },
+  4,
+  chronicleFounder.id
+);
+assert.equal(playerMatchPointStakes?.kind, 'player_match_point');
+assert.equal(playerMatchPointStakes?.headline, 'YOUR MATCH POINT');
+assert.match(playerMatchPointStakes?.detail ?? '', /WIN TO SIGN THE MARGIN/);
+assert.equal(playerMatchPointStakes?.pageLabel, 'PAGE 2/3');
+assert.equal(playerMatchPointStakes?.episodeTitle, 'ROOTS REMEMBER');
+const decidingStakes = founderChroniclePlan.planFounderRivalryStakes(
+  secondBoutProjection,
+  5,
+  chronicleFounder.id
+);
+assert.equal(decidingStakes?.kind, 'decider');
+assert.equal(decidingStakes?.battleLabel, 'RIVAL DECIDER');
+assert.match(decidingStakes?.detail ?? '', /WINNER SIGNS THE MARGIN/);
+assert.equal(decidingStakes?.pageLabel, 'PAGE 3/3');
+assert.equal(decidingStakes?.episodeTitle, 'THE LAST ROOTBEAT');
+const openingPlayerReceipt =
+  founderChroniclePlan.planFounderRivalEpisodeReceipt(
+    openingStakes,
+    {
+      founderId: chronicleFounder.id,
+      kind: 'rivalry_started',
+      day: 3,
+      playerWins: 1,
+      founderWins: 0,
+      outcome: null,
+    },
+    chronicleReport('opening-player-receipt', 3, 'a'),
+    'a',
+    'a'
+  );
+assert.deepEqual(openingPlayerReceipt, {
+  founderId: chronicleFounder.id,
+  pageNumber: 1,
+  headline: 'PAGE 1/3 · ROOTBEAT INTRO',
+  detail: 'THREAD CONTINUES · YOU 1–0 MOSSWHISK',
+  resultLine: 'Mosswhisk nods as your mark takes the opening beat.',
+  latestWinner: 'player',
+  threadResolved: false,
+});
+const openingFounderReceipt =
+  founderChroniclePlan.planFounderRivalEpisodeReceipt(
+    openingStakes,
+    {
+      founderId: chronicleFounder.id,
+      kind: 'rivalry_started',
+      day: 3,
+      playerWins: 0,
+      founderWins: 1,
+      outcome: null,
+    },
+    chronicleReport('opening-founder-receipt', 3, 'b'),
+    'a',
+    'b'
+  );
+assert.equal(openingFounderReceipt?.latestWinner, 'founder');
+assert.equal(
+  openingFounderReceipt?.resultLine,
+  'Mosswhisk keeps the opening beat humming beneath the roots.'
+);
+const tiedSecondPageReceipt =
+  founderChroniclePlan.planFounderRivalEpisodeReceipt(
+    founderMatchPointStakes,
+    {
+      founderId: chronicleFounder.id,
+      kind: 'rivalry_advanced',
+      day: 4,
+      playerWins: 1,
+      founderWins: 1,
+      outcome: null,
+    },
+    chronicleReport('second-page-receipt', 4, 'a'),
+    'a',
+    'a'
+  );
+assert.equal(tiedSecondPageReceipt?.headline, 'PAGE 2/3 · ROOTS REMEMBER');
+assert.equal(
+  tiedSecondPageReceipt?.resultLine,
+  "Mosswhisk hears your offbeat turn the grove's old rhythm."
+);
+const decidingPlayerReceipt =
+  founderChroniclePlan.planFounderRivalEpisodeReceipt(
+    decidingStakes,
+    resolvedBeat,
+    chronicleReport('deciding-page-receipt', 5, 'a'),
+    'a',
+    'a'
+  );
+assert.equal(decidingPlayerReceipt?.headline, 'PAGE 3/3 · THE LAST ROOTBEAT');
+assert.equal(
+  decidingPlayerReceipt?.detail,
+  'MARGIN SIGNED · YOU 2–1 MOSSWHISK'
+);
+assert.equal(decidingPlayerReceipt?.threadResolved, true);
+assert.equal(
+  founderChroniclePlan.planFounderRivalEpisodeReceipt(
+    decidingStakes,
+    { ...resolvedBeat, playerWins: 1 },
+    chronicleReport('mismatched-receipt', 5, 'a'),
+    'a',
+    'a'
+  ),
+  null,
+  'a result receipt must fail closed when the server score does not match its page'
+);
+assert.equal(
+  founderChroniclePlan.planFounderRivalEpisodeReceipt(
+    decidingStakes,
+    resolvedBeat,
+    {
+      a: chronicleScribbit,
+      b: { ...chronicleScribbit, id: 'community-rival' },
+    },
+    'a',
+    'a'
+  ),
+  null,
+  'a result receipt must fail closed when the named founder is absent'
+);
+pass(
+  'Founder Rival episode receipts bind page copy to the proven latest winner'
+);
+assert.equal(
+  founderChroniclePlan.planFounderRivalryStakes(
+    secondBoutProjection,
+    4,
+    chronicleFounder.id
+  ),
+  null,
+  'a second same-day fight must not advertise false rivalry stakes'
+);
+assert.equal(
+  founderChroniclePlan.planFounderRivalryStakes(
+    firstBoutProjection,
+    4,
+    secondChronicleFounder.id
+  ),
+  null,
+  'an unrelated founder must remain a plain exhibition'
+);
+assert.equal(
+  founderChroniclePlan.planFounderRivalryStakes(
+    resolvedChronicleProjection,
+    6,
+    chronicleFounder.id
+  ),
+  null,
+  'a signed founder margin must not reopen as a new thread'
+);
+pass(
+  'Founder Rival Thread planning keeps three-page episodes, stakes, score, and margin notes'
+);
 
 const moderationStorage = createMemoryStorage();
 const firstSafetyReport = await moderationCore.reportAndHideScribbit(
@@ -1801,18 +3243,30 @@ await scribbitCore.claimUserDailySparWinReward(
   '20260708',
   1000
 );
+const privacyFounderReport = {
+  id: 'privacy-founder-battle',
+  kind: 'exhibition',
+  day: 2,
+  a: privacyScribbit,
+  b: chronicleFounder,
+  winner: 'a',
+};
+await founderChronicleCore.queueFounderChronicleBattle(
+  privacyStorage,
+  'privacy-user-id',
+  privacyFounderReport,
+  privacyScribbit.id,
+  1_000
+);
 await founderChronicleCore.recordFounderChronicleBattle(
   privacyStorage,
   'privacy-user-id',
-  {
-    id: 'privacy-founder-battle',
-    kind: 'exhibition',
-    day: 2,
-    a: privacyScribbit,
-    b: chronicleFounder,
-    winner: 'a',
-  },
+  privacyFounderReport,
   privacyScribbit.id
+);
+await privacyStorage.hSet(
+  founderChronicleCore.getLegacyFounderChronicleKey('privacy-user-id'),
+  { [`${chronicleFounder.id}:met`]: '2' }
 );
 const privacyDeletion = await privacyCore.deletePlayerData(
   privacyStorage,
@@ -1873,16 +3327,73 @@ assert.equal(
   0,
   'privacy deletion should remove report-hide data'
 );
-assert.deepEqual(
-  await privacyStorage.hGetAll(
+assert.equal(
+  await privacyStorage.get(
     founderChronicleCore.getFounderChronicleKey('privacy-user-id')
   ),
-  {},
+  undefined,
   'privacy deletion should remove permanent founder relationship progress'
+);
+assert.deepEqual(
+  await privacyStorage.hGetAll(
+    founderChronicleCore.getPendingFounderChronicleKey('privacy-user-id')
+  ),
+  {},
+  'privacy deletion should remove pending founder projection receipts'
+);
+assert.deepEqual(
+  await privacyStorage.hGetAll(
+    founderChronicleCore.getLegacyFounderChronicleKey('privacy-user-id')
+  ),
+  {},
+  'privacy deletion should remove the retired founder checklist hash'
 );
 pass('player data deletion removes identity and owned content');
 
+const forecastFlavorValidation = forecastFlavor.validateForecastBlurbs();
+assert.equal(forecastFlavorValidation.valid, true);
+assert.deepEqual(forecastFlavorValidation.errors, []);
+assert.equal(forecastFlavorValidation.blurbCount, 32);
+assert.ok(Object.isFrozen(forecastFlavor.FORECAST_BLURBS));
+const firstForecastCalendar = Array.from({ length: 32 }, (_, dayIndex) =>
+  forecastCore.generateForecastForDay(dayIndex + 1)
+);
+assert.equal(
+  new Set(firstForecastCalendar.map((entry) => entry.blurb)).size,
+  32,
+  'the public daily forecast should not repeat before its 32-day cycle ends'
+);
+assert.equal(
+  forecastCore.generateForecastForDay(33).blurb,
+  firstForecastCalendar[0].blurb,
+  'stateless forecast flavor should repeat only after all authored blurbs'
+);
+for (const entry of firstForecastCalendar) {
+  assert.equal(
+    entry.blurb,
+    forecastFlavor.selectDailyForecastBlurb(entry.day),
+    'forecast copy selection must stay independent from combat-element randomness'
+  );
+  assert.notEqual(entry.boostedElement, entry.nerfedElement);
+}
+const unsafeForecastFlavorValidation = forecastFlavor.validateForecastBlurbs([
+  ...forecastFlavor.FORECAST_BLURBS.slice(0, 31),
+  'Guaranteed winner gets an XP prize',
+]);
+assert.equal(unsafeForecastFlavorValidation.valid, false);
+assert.match(
+  unsafeForecastFlavorValidation.errors.join('\n'),
+  /predicts an outcome or promises a reward/,
+  'public forecast flavor must never imply odds or progression rewards'
+);
+pass('daily forecast flavor stays unique, bounded, and combat-independent');
+
 const forecast = forecastCore.generateForecastForDay(7);
+assert.deepEqual(
+  mockCombatBundle.generateForecastForDay(7),
+  forecast,
+  'the browser mock must import production forecast mechanics and authored copy'
+);
 const alpha = makeScribbit({
   id: 'alpha',
   name: 'Alpha',
@@ -2836,7 +4347,7 @@ const goldenCombatCases = [
     }),
     seed: 7001,
     expectedHash:
-      'e8acf17e0aad05e6188aaab1aae4ea23e1086facb3ec92519b6e6e62350abae0',
+      '5f2e2f12f71216bceb386b0d57c0419acdb53a351ba4b36f6977807f8a1b8c3d',
   },
   {
     name: 'boundary archetypes',
@@ -2854,9 +4365,9 @@ const goldenCombatCases = [
     }),
     seed: 7002,
     expectedHash:
-      'fee2a6f3a72f4110f6a4a91397338e3bc1125d6265767b8062cce66788775658',
+      'a4ef46d69c9904a62ad6054fe6a475191852f58e34d493d987e4e7c03b8f4693',
     previousHashWithoutBarrierSourceMetadata:
-      'fdeef28a62ef91521bc3c2cbc8c879b2e550751e8e84c300cc6b695c890e2525',
+      '6f2634d342b2bdb78c183138020f16f58e3b61abe19f8bde947fcd8e47ae4998',
   },
 ];
 const transcriptHash = (transcript) =>
@@ -3578,6 +5089,31 @@ assert.equal(
   'capsule',
   'an affordable capsule should outrank optional care'
 );
+const rivalryGoal = nextGoal.selectNextGoal({
+  ...nextGoalBaseState,
+  champion: beta,
+  enteredToday: true,
+  bossChallengedToday: true,
+  myBackedScribbitId: 'picked-one',
+  founderChronicle: {
+    activeRivalry: {
+      founderId: secondChronicleFounder.id,
+      startedDay: 2,
+      playerWins: 1,
+      founderWins: 1,
+    },
+    resolvedRivalries: [],
+    lastAdvancedDay: 2,
+  },
+});
+assert.equal(
+  rivalryGoal.actionKind,
+  'rivalry',
+  'a ready active Founder Thread should outrank economy and care chores'
+);
+assert.equal(rivalryGoal.rivalFounderId, secondChronicleFounder.id);
+assert.equal(rivalryGoal.title, 'Rival Page 3: LAST LEAF HOME');
+assert.match(rivalryGoal.detail, /Fernibble.*you 1–1/);
 const careGoal = nextGoal.selectNextGoal({
   ...nextGoalBaseState,
   enteredToday: true,
@@ -3867,7 +5403,7 @@ assert.deepEqual(
     pageLeft: 20,
     pageTop: 106,
     pageWidth: 680,
-    pageHeight: 1048,
+    pageHeight: 1156,
     toolbarY: 56,
     kindLabelX: 28,
     battleKindY: 39,
@@ -3895,20 +5431,20 @@ assert.deepEqual(
     battleClockRadius: 31,
     battleClockProgressWidth: 44,
     arenaTop: 158,
-    arenaBottom: 1144,
+    arenaBottom: 1250,
     arenaHorizontalPadding: 118,
-    arenaVerticalPadding: 72,
+    arenaVerticalPadding: 106,
     tickerX: 360,
-    tickerY: 1216,
+    tickerY: 1226,
     tickerWidth: 664,
-    tickerHeight: 96,
-    tickerTagWidth: 132,
-    fighterDisplaySize: 220,
-    fighterGhostDisplaySize: 194,
+    tickerHeight: 72,
+    tickerTagWidth: 0,
+    fighterDisplaySize: 232,
+    fighterGhostDisplaySize: 204,
     fighters: {
       a: {
         homeX: 194,
-        homeY: 651,
+        homeY: 704,
         facing: 1,
         healthBarAnchorX: 24,
         healthBarOriginX: 0,
@@ -3920,7 +5456,7 @@ assert.deepEqual(
       },
       b: {
         homeX: 526,
-        homeY: 651,
+        homeY: 704,
         facing: -1,
         healthBarAnchorX: 696,
         healthBarOriginX: 1,
@@ -3960,7 +5496,7 @@ assert.ok(
   'fighter HUDs must leave a visible gutter around the server clock'
 );
 assert.ok(
-  replayBattleLayout.arenaBottom - replayBattleLayout.arenaTop >= 980,
+  replayBattleLayout.arenaBottom - replayBattleLayout.arenaTop >= 1080,
   'live combat should reclaim vertical room from the old turn-card framing'
 );
 assert.ok(
@@ -4001,6 +5537,22 @@ assert.ok(
   crowdedReplayOutcomeStack.founderOutcomeY + 20 + 12 <=
     crowdedReplayOutcomeStack.recapY - 132,
   'founder result voice should sit above the recap instead of covering it'
+);
+
+assert.deepEqual(
+  battlePresentation.planReplayLossActionStack({ canBackContender: true }),
+  {
+    backContenderButtonOffset: 620,
+    returnButtonOffset: 730,
+  }
+);
+assert.deepEqual(
+  battlePresentation.planReplayLossActionStack({ canBackContender: false }),
+  {
+    backContenderButtonOffset: null,
+    returnButtonOffset: 620,
+  },
+  'a locked Back must remove the dead-end loss CTA and pull return upward'
 );
 
 assert.deepEqual(
@@ -4117,11 +5669,11 @@ assert.deepEqual(
     maximumHalfWidth: replayArenaPresentation.maximumHalfWidth,
     maximumHalfHeight: replayArenaPresentation.maximumHalfHeight,
   },
-  { centerX: 360, centerY: 651, maximumHalfWidth: 242, maximumHalfHeight: 421 },
+  { centerX: 360, centerY: 704, maximumHalfWidth: 242, maximumHalfHeight: 440 },
   'all replay movement and effects should share the clipping-safe arena projection'
 );
 pass(
-  'live Inkcast layout, HP bars, clock, outcome stack, and arena projection'
+  'live paper arena layout, HP bars, clock, outcome stack, and arena projection'
 );
 
 const timeoutRecapReport = mockCombatBundle.simulate(
@@ -4144,8 +5696,8 @@ assert.deepEqual(
     loserName: 'Heavy Page',
     winnerElement: 'ember',
     headline: 'TIME • Prism Pop WINS ON INK LEFT',
-    verdictLine: '25.0s • INK LEFT 85/185 vs 49/225',
-    tapeLine: '176 TOTAL DAMAGE • WILDFIRE BLOOM',
+    verdictLine: '20.0s • INK LEFT 90/185 vs 56/225',
+    tapeLine: '169 TOTAL DAMAGE • WILDFIRE BLOOM',
     highlight: {
       label: 'BIGGEST SPLAT',
       text: 'Wildfire Bloom CRIT • 65 to Heavy Page',
@@ -4160,7 +5712,7 @@ assert.deepEqual(
 const knockoutRecapReport = mockCombatBundle.simulate(
   { ...debugFixtureFighterByPower.inkquake, element: 'storm' },
   debugFixtureFighterByPower.nib_halo,
-  0,
+  1,
   debugFixtureForecast,
   'exhibition'
 );
@@ -4178,11 +5730,11 @@ assert.deepEqual(
   },
   {
     headline: 'KO • Heavy Page WINS',
-    verdictLine: '22.4s • INK LEFT 105/225 vs 0/185',
-    tapeLine: '173 TOTAL DAMAGE • THUNDERFOLD',
+    verdictLine: '17.7s • INK LEFT 12/225 vs 0/185',
+    tapeLine: '170 TOTAL DAMAGE • THUNDERFOLD',
     highlight: {
       label: 'FINAL SPLAT',
-      text: 'Thunderfold • 38 to Needle Star',
+      text: 'Thunderfold • 16 to Needle Star',
     },
     finishPresentation: 'knockout',
     finishSound: 'knockout',
@@ -4331,6 +5883,158 @@ assert.equal(
 );
 pass('authoritative Inkcast recap copy and finish semantics');
 
+const journalDecisionWin = structuredClone(timeoutRecapReport);
+journalDecisionWin.id = 'journal-day-9-exhibition';
+journalDecisionWin.day = 9;
+journalDecisionWin.kind = 'exhibition';
+journalDecisionWin.a.artist = 'mock_player';
+journalDecisionWin.b.artist = 'paper_guest';
+const journalDecisionSnapshot = structuredClone(journalDecisionWin);
+const journalDecisionPlan = battleJournal.planBattleJournalEntry(
+  journalDecisionWin,
+  ' MOCK_PLAYER ',
+  []
+);
+assert.deepEqual(journalDecisionWin, journalDecisionSnapshot);
+assert.ok(Object.isFrozen(journalDecisionPlan));
+assert.equal(journalDecisionPlan.perspective, 'win');
+assert.equal(journalDecisionPlan.finishKind, 'decision');
+assert.equal(journalDecisionPlan.finishLabel, 'DECISION');
+assert.equal(journalDecisionPlan.replayMotionAvailable, true);
+assert.equal(journalDecisionPlan.kindDayLabel, 'EXHIBITION SPAR • DAY 9');
+assert.equal(
+  journalDecisionPlan.highlightLine,
+  'BIGGEST SPLAT • Wildfire Bloom CRIT • 65 to Heavy Page'
+);
+assert.equal(
+  journalDecisionPlan.metadataLine,
+  '20.0s • INK LEFT 90/185 vs 56/225'
+);
+
+const journalKnockoutLoss = structuredClone(knockoutRecapReport);
+journalKnockoutLoss.id = 'journal-day-9-rumble';
+journalKnockoutLoss.day = 9;
+journalKnockoutLoss.kind = 'rumble';
+journalKnockoutLoss.a.artist = 'paper_guest';
+journalKnockoutLoss.b.artist = 'mock_player';
+const journalKnockoutPlan = battleJournal.planBattleJournalEntry(
+  journalKnockoutLoss,
+  'mock_player',
+  []
+);
+assert.equal(
+  journalKnockoutPlan.perspective,
+  'loss',
+  'artist identity should preserve owned loss perspective after a Scribbit leaves the living roster'
+);
+assert.equal(journalKnockoutPlan.finishKind, 'knockout');
+assert.match(journalKnockoutPlan.highlightLine, /^FINAL SPLAT •/);
+
+assert.equal(
+  battleJournal.isScribbitOwnedByViewer(journalKnockoutLoss.a, 'someone_else', [
+    journalKnockoutLoss.a.id,
+  ]),
+  true,
+  'a living owned id should remain the strongest ownership proof'
+);
+assert.equal(
+  battleJournal.isScribbitOwnedByViewer(
+    journalKnockoutLoss.b,
+    ' MOCK_PLAYER ',
+    []
+  ),
+  true,
+  'normalized artist identity should survive historical replay'
+);
+
+const journalBossReport = structuredClone(doubleKnockoutRecapReport);
+journalBossReport.id = 'journal-day-9-boss';
+journalBossReport.day = 9;
+journalBossReport.kind = 'boss';
+journalBossReport.a.artist = 'mock_player';
+journalBossReport.b.artist = 'paper_guest';
+
+const journalArchivedReport = structuredClone(journalDecisionWin);
+journalArchivedReport.id = 'journal-day-8-archived';
+journalArchivedReport.day = 8;
+delete journalArchivedReport.simulation;
+delete journalArchivedReport.events;
+const archivedJournalPlan = battleJournal.planBattleJournalEntry(
+  journalArchivedReport,
+  'mock_player',
+  []
+);
+assert.deepEqual(
+  {
+    finishKind: archivedJournalPlan.finishKind,
+    finishLabel: archivedJournalPlan.finishLabel,
+    highlightLine: archivedJournalPlan.highlightLine,
+    replayMotionAvailable: archivedJournalPlan.replayMotionAvailable,
+  },
+  {
+    finishKind: 'archived',
+    finishLabel: 'ARCHIVED RESULT',
+    highlightLine: null,
+    replayMotionAvailable: false,
+  }
+);
+assert.match(archivedJournalPlan.metadataLine, /RESULT SAVED/);
+
+const unorderedJournalReports = [
+  journalArchivedReport,
+  journalDecisionWin,
+  journalKnockoutLoss,
+  journalBossReport,
+];
+const unorderedJournalIds = unorderedJournalReports.map((report) => report.id);
+const orderedJournalReports = battleJournal.orderBattleJournalReports(
+  unorderedJournalReports
+);
+assert.ok(Object.isFrozen(orderedJournalReports));
+assert.deepEqual(
+  orderedJournalReports.map((report) => report.id),
+  [
+    journalKnockoutLoss.id,
+    journalBossReport.id,
+    journalDecisionWin.id,
+    journalArchivedReport.id,
+  ],
+  'each day should pin Rumble and Champion pages before repeated exhibitions'
+);
+assert.deepEqual(
+  unorderedJournalReports.map((report) => report.id),
+  unorderedJournalIds,
+  'Battle Scrapbook ordering must not mutate API history'
+);
+
+const journalSummary = battleJournal.planBattleJournalSummary(
+  orderedJournalReports,
+  'mock_player',
+  []
+);
+assert.deepEqual(journalSummary, {
+  savedCount: 4,
+  ownedWins: 3,
+  ownedLosses: 1,
+  knockoutCount: 2,
+  decisionCount: 1,
+  archivedCount: 1,
+  savedLine: '4 SAVED BATTLES',
+  recordLine: 'YOUR REEL • 3 W–1 L',
+  finishLine: '2 KO • 1 DECISION • 1 ARCHIVED',
+});
+assert.ok(Object.isFrozen(journalSummary));
+for (const plan of [
+  journalDecisionPlan,
+  journalKnockoutPlan,
+  archivedJournalPlan,
+]) {
+  for (const value of Object.values(plan)) {
+    if (typeof value === 'string') assert.ok(value.length <= 90);
+  }
+}
+pass('Battle Scrapbook preserves authoritative story and historical ownership');
+
 const masteredSparOpponent = speciesCore.chooseFoundingSparOpponent(
   { element: 'ember', level: arena.MAX_LEVEL },
   41
@@ -4435,6 +6139,88 @@ assert.equal(
   'LAST BOUT • FINAL SPLAT: Rootquake • 42 to Paper Spark',
   'the next rival choice should preserve the exact previous-bout highlight'
 );
+const pinnedRivalSlate = speciesCore.selectFoundingSparRivalSlate(
+  { element: 'ember', level: 1 },
+  90210,
+  3,
+  {
+    preferredFounderId: secondChronicleFounder.id,
+    excludedFounderIds: [chronicleFounder.id],
+  }
+);
+assert.equal(
+  pinnedRivalSlate[0]?.id,
+  secondChronicleFounder.id,
+  'the active founder must remain the first future Rival Draft card'
+);
+assert.equal(
+  pinnedRivalSlate.some((rival) => rival.id === chronicleFounder.id),
+  false,
+  'resolved founders should yield draft slots while unresolved founders remain'
+);
+assert.equal(
+  speciesCore.chooseFoundingSparOpponent(
+    { element: 'ember', level: 1 },
+    90210,
+    { preferredFounderId: secondChronicleFounder.id }
+  ).id,
+  secondChronicleFounder.id,
+  'quick spar should continue the active server-owned rivalry'
+);
+const activeRivalCard = sparRivals.planSparRivalCard(
+  { level: 1 },
+  pinnedRivalSlate[0],
+  debugFixtureForecast,
+  {
+    activeRivalry: {
+      founderId: secondChronicleFounder.id,
+      startedDay: 7,
+      playerWins: 1,
+      founderWins: 1,
+    },
+    resolvedRivalries: [],
+    lastAdvancedDay: 8,
+  },
+  9
+);
+assert.equal(activeRivalCard.rivalryState, 'active-ready');
+assert.equal(activeRivalCard.buttonLabel, 'CONTINUE →');
+assert.match(activeRivalCard.rivalryLine, /PAGE 3 · LAST LEAF HOME/);
+const freshRivalEpisode = founderRivalEpisodes.getFounderRivalEpisodePage(
+  freshRivalSlate[0].id,
+  1
+);
+assert.ok(freshRivalEpisode);
+assert.match(
+  plannedRivals[0].rivalryLine,
+  new RegExp(`PAGE 1 · ${freshRivalEpisode.title}`)
+);
+const communityExhibitionCard = sparRivals.planSparRivalCard(
+  { level: 1 },
+  { ...freshRivalSlate[0], id: 'community-rival' },
+  debugFixtureForecast
+);
+assert.equal(communityExhibitionCard.rivalryState, 'exhibition');
+assert.equal(
+  communityExhibitionCard.rivalryLine,
+  'EXHIBITION\nNO RIVAL THREAD',
+  'a non-founder must never advertise a founder episode or startable thread'
+);
+const nextThreadBlockedTodayCard = sparRivals.planSparRivalCard(
+  { level: 1 },
+  freshRivalSlate[0],
+  debugFixtureForecast,
+  {
+    activeRivalry: null,
+    resolvedRivalries: [],
+    lastAdvancedDay: 9,
+  },
+  9
+);
+assert.equal(nextThreadBlockedTodayCard.rivalryState, 'available-waiting');
+assert.equal(nextThreadBlockedTodayCard.buttonLabel, 'DAY 10');
+assert.equal(nextThreadBlockedTodayCard.buttonEnabled, false);
+assert.match(nextThreadBlockedTodayCard.rivalryLine, /MARGIN WRITTEN TODAY/);
 freshRivalSlate[0].stats.chonk = 999;
 assert.notEqual(
   speciesCore.selectFoundingSparRivalSlate(

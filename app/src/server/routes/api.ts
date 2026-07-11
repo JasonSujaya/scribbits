@@ -7,8 +7,10 @@ import type {
   ArenaState,
   BattleReport,
   CareAction,
+  CareResponse,
   CapsulePullResponse,
   CloutBoard,
+  DirectBattleResponse,
   EquipTitleRequest,
   Inventory,
   LegacyCardsState,
@@ -28,6 +30,7 @@ import {
 import { simulate } from '../core/battle';
 import {
   getFeaturedRumbleReportId,
+  loadBattleReport,
   loadBattleReportsForUser,
   loadFeaturedRumbleReport,
   purgeBattleReportsForScribbit,
@@ -79,8 +82,14 @@ import {
 } from '../core/rumble';
 import { createPracticeBattle } from '../core/practice';
 import {
+  completeFounderChronicleBattle,
   loadFounderChronicle,
-  recordFounderChronicleBattle,
+  loadStoredFounderChronicle,
+  projectFounderChronicle,
+  projectFounderChronicleBattle,
+  queueFounderChronicleBattle,
+  recoverProjectedFounderChronicleBeat,
+  repairPendingFounderChronicleBattles,
 } from '../core/founderChronicle';
 import {
   chooseFoundingSparOpponent,
@@ -372,7 +381,8 @@ const loadOwnedAliveScribbit = async (
 const createSparRivalSlate = (
   player: CurrentPlayer,
   challenger: Scribbit,
-  utcDateKey: string
+  utcDateKey: string,
+  founderChronicle: ArenaState['founderChronicle']
 ): SparRivalSlate => {
   const slateSeed = hashTextToSeed(
     `spar-rivals:${utcDateKey}:${player.userId}:${challenger.id}`
@@ -383,8 +393,93 @@ const createSparRivalSlate = (
     rivals: selectFoundingSparRivalSlate(
       challenger,
       slateSeed,
-      foundingSparRivalSlateLimit
+      foundingSparRivalSlateLimit,
+      {
+        preferredFounderId: founderChronicle.activeRivalry?.founderId,
+        excludedFounderIds: founderChronicle.resolvedRivalries.map(
+          (rivalry) => rivalry.founderId
+        ),
+      }
     ),
+    founderChronicle,
+  };
+};
+
+const loadPlayerFounderChronicle = async (
+  userId: string
+): Promise<ArenaState['founderChronicle']> => {
+  await repairPendingFounderChronicleBattles(
+    redis,
+    userId,
+    Date.now(),
+    (battleReportId) => loadBattleReport(redis, battleReportId)
+  );
+  return loadFounderChronicle(redis, userId);
+};
+
+const finishDirectBattleResponse = async (
+  userId: string,
+  report: BattleReport,
+  ownedScribbitId: string,
+  fallbackFounderChronicle: ArenaState['founderChronicle']
+): Promise<DirectBattleResponse> => {
+  const projectedBattle = projectFounderChronicleBattle(
+    fallbackFounderChronicle,
+    report,
+    ownedScribbitId
+  );
+  let completedBeat: DirectBattleResponse['founderChronicleBeat'] = null;
+  let completionFailed = false;
+  try {
+    const beats = await completeFounderChronicleBattle(
+      redis,
+      userId,
+      report,
+      ownedScribbitId
+    );
+    completedBeat = beats.at(-1) ?? null;
+  } catch (error) {
+    completionFailed = true;
+    console.error('Founder Chronicle completion failed; repairing:', error);
+    try {
+      await repairPendingFounderChronicleBattles(
+        redis,
+        userId,
+        Date.now(),
+        (battleReportId) => loadBattleReport(redis, battleReportId)
+      );
+    } catch (repairError) {
+      // The pending receipt remains durable for the next Arena or Rival read.
+      console.error('Founder Chronicle repair deferred:', repairError);
+    }
+  }
+
+  let founderChronicle = fallbackFounderChronicle;
+  let founderChronicleBeat: DirectBattleResponse['founderChronicleBeat'] = null;
+  try {
+    // Do not run pending repair a second time here. The battle and its rewards
+    // are already committed; a cosmetic Chronicle read must never turn that
+    // successful action into a 500 response.
+    const storedFounderChronicle = await loadStoredFounderChronicle(
+      redis,
+      userId
+    );
+    founderChronicle = projectFounderChronicle(storedFounderChronicle);
+    founderChronicleBeat =
+      completedBeat ??
+      (completionFailed
+        ? recoverProjectedFounderChronicleBeat(
+            projectedBattle,
+            storedFounderChronicle
+          )
+        : null);
+  } catch (loadError) {
+    console.error('Founder Chronicle read deferred:', loadError);
+  }
+  return {
+    report,
+    founderChronicle,
+    founderChronicleBeat,
   };
 };
 
@@ -406,11 +501,13 @@ const loadTodayRumbleEntrants = async (
 const runNonCriticalSideEffect = async (
   label: string,
   sideEffect: () => Promise<unknown>
-): Promise<void> => {
+): Promise<boolean> => {
   try {
     await sideEffect();
+    return true;
   } catch (error) {
     console.error(`${label} failed:`, error);
+    return false;
   }
 };
 
@@ -433,7 +530,11 @@ api.get('/arena', async (c) => {
     let myPens: string[] = [];
     let nextCapsuleCost = CAPSULE_FIRST_DAILY_COST;
     let capsuleProgress = createCapsuleProgress(0, 0, 0);
-    let founderChronicle: ArenaState['founderChronicle'] = { entries: [] };
+    let founderChronicle: ArenaState['founderChronicle'] = {
+      activeRivalry: null,
+      resolvedRivalries: [],
+      lastAdvancedDay: null,
+    };
     let legacyReturnReceipt: ArenaState['legacyReturnReceipt'] = null;
 
     if (player) {
@@ -462,7 +563,7 @@ api.get('/arena', async (c) => {
         player.userId,
         dayNumber
       );
-      founderChronicle = await loadFounderChronicle(redis, player.userId);
+      founderChronicle = await loadPlayerFounderChronicle(player.userId);
       legacyReturnReceipt = await loadLegacyReturnReceipt(redis, player.userId);
     }
 
@@ -918,10 +1019,15 @@ api.post('/care', async (c) => {
     await runNonCriticalSideEffect('Daily play record', () =>
       recordDailyPlay(redis, player.userId, now)
     );
-    await runNonCriticalSideEffect('Care ink award', () =>
+    const inkAwarded = (await runNonCriticalSideEffect('Care ink award', () =>
       awardInk(redis, player.userId, INK_REWARDS.care)
-    );
-    return c.json<Scribbit>(caredScribbit);
+    ))
+      ? INK_REWARDS.care
+      : 0;
+    return c.json<CareResponse>({
+      scribbit: caredScribbit,
+      inkAwarded,
+    });
   } catch (error) {
     if (claimedCareAction) {
       try {
@@ -969,8 +1075,9 @@ api.get('/spar-rivals', async (c) => {
       return notFound(c, 'That living Scribbit is not ready to spar.');
     }
 
+    const founderChronicle = await loadPlayerFounderChronicle(player.userId);
     return c.json<SparRivalSlate>(
-      createSparRivalSlate(player, challenger, utcDateKey)
+      createSparRivalSlate(player, challenger, utcDateKey, founderChronicle)
     );
   } catch (error) {
     console.error('Spar rivals route failed:', error);
@@ -1089,9 +1196,15 @@ api.post('/spar', async (c) => {
     const sparSeed = hashTextToSeed(
       `spar:${utcDateKey}:${player.userId}:${challenger.id}:${Date.now()}:${randomUUID()}`
     );
+    const founderChronicle = await loadPlayerFounderChronicle(player.userId);
     let opponent: Scribbit;
     if (sparRequest.opponentId) {
-      const currentSlate = createSparRivalSlate(player, challenger, utcDateKey);
+      const currentSlate = createSparRivalSlate(
+        player,
+        challenger,
+        utcDateKey,
+        founderChronicle
+      );
       const chosenOpponent = currentSlate.rivals.find((rival) => {
         return rival.id === sparRequest.opponentId;
       });
@@ -1101,7 +1214,12 @@ api.post('/spar', async (c) => {
       }
       opponent = chosenOpponent;
     } else {
-      opponent = chooseFoundingSparOpponent(challenger, sparSeed);
+      opponent = chooseFoundingSparOpponent(challenger, sparSeed, {
+        preferredFounderId: founderChronicle.activeRivalry?.founderId,
+        excludedFounderIds: founderChronicle.resolvedRivalries.map(
+          (rivalry) => rivalry.founderId
+        ),
+      });
     }
 
     const forecast = await ensureForecastForDay(redis, dayNumber);
@@ -1111,6 +1229,13 @@ api.post('/spar', async (c) => {
       sparSeed,
       forecast,
       'exhibition'
+    );
+    await queueFounderChronicleBattle(
+      redis,
+      player.userId,
+      report,
+      challenger.id,
+      Date.now()
     );
 
     let inkAwarded = 0;
@@ -1134,16 +1259,15 @@ api.post('/spar', async (c) => {
       ...(inkAwarded > 0 ? { inkAwarded } : {}),
     };
     await saveBattleReport(redis, rewardedReport, Date.now());
-    await runNonCriticalSideEffect('Founder Chronicle record', () =>
-      recordFounderChronicleBattle(
-        redis,
+    await recordDailyPlay(redis, player.userId, now);
+    return c.json<DirectBattleResponse>(
+      await finishDirectBattleResponse(
         player.userId,
         rewardedReport,
-        challenger.id
+        challenger.id,
+        founderChronicle
       )
     );
-    await recordDailyPlay(redis, player.userId, now);
-    return c.json<BattleReport>(rewardedReport);
   } catch (error) {
     console.error('Spar route failed:', error);
     return serverError(c, 'The practice bell fell off. Try again soon.');
@@ -1608,6 +1732,8 @@ api.post('/boss-challenge', async (c) => {
       return conflict(c, 'No Champion is on the boss throne yet.');
     }
 
+    const founderChronicle = await loadPlayerFounderChronicle(player.userId);
+
     const createdBossFlag = await markDailyFlag(
       redis,
       player.userId,
@@ -1630,6 +1756,13 @@ api.post('/boss-challenge', async (c) => {
       forecast,
       'boss'
     );
+    await queueFounderChronicleBattle(
+      redis,
+      player.userId,
+      report,
+      challenger.id,
+      Date.now()
+    );
 
     await saveBattleReport(redis, report, Date.now());
     await recordBattleOutcomeOnScribbit(
@@ -1638,20 +1771,19 @@ api.post('/boss-challenge', async (c) => {
       report.winner === 'a' ? 'win' : 'loss',
       2
     );
-    await runNonCriticalSideEffect('Founder Chronicle record', () =>
-      recordFounderChronicleBattle(
-        redis,
-        player.userId,
-        report,
-        challenger.id
-      )
-    );
     claimedBossChallenge = null;
     await runNonCriticalSideEffect('Daily play record', () =>
       recordDailyPlay(redis, player.userId, now)
     );
 
-    return c.json<BattleReport>(report);
+    return c.json<DirectBattleResponse>(
+      await finishDirectBattleResponse(
+        player.userId,
+        report,
+        challenger.id,
+        founderChronicle
+      )
+    );
   } catch (error) {
     if (claimedBossChallenge) {
       try {

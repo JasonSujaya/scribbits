@@ -24,9 +24,13 @@ if (!existsSync(fileURLToPath(mockCombatBundleUrl))) {
   );
 }
 const {
+  advanceFounderChronicle,
   chooseFoundingSparOpponent,
+  createEmptyFounderChronicle,
   createPracticeBattle,
   findFoundingScribbit,
+  generateForecastForDay,
+  projectFounderChronicle,
   selectFoundingSparRivalSlate,
   simulate: simulateProductionBattle,
 } = await import(mockCombatBundleUrl.href);
@@ -263,14 +267,7 @@ const makeFoundingScribbit = (foundingScribbitId, belief) => {
   return makeScribbit({ ...foundingScribbit, belief });
 };
 
-const makeForecast = (day) => {
-  return {
-    day,
-    boostedElement: 'storm',
-    nerfedElement: 'moss',
-    blurb: 'Storm winds whip loose paper across the arena',
-  };
-};
+const makeForecast = (day) => generateForecastForDay(day);
 
 const createBattleReport = createMockBattleReportFactory({
   simulate: simulateProductionBattle,
@@ -406,7 +403,13 @@ const mockSparRivalSlate = (challenger, previewMode) => {
   const seed = stableStringSeed(
     `spar-rivals:${memory.dayNumber}:${previewMode}:${challenger.id}`
   );
-  return selectFoundingSparRivalSlate(challenger, seed);
+  const founderChronicle = getFounderChronicleForPreview(previewMode);
+  return selectFoundingSparRivalSlate(challenger, seed, 3, {
+    preferredFounderId: founderChronicle.activeRivalry?.founderId,
+    excludedFounderIds: founderChronicle.resolvedRivalries.map(
+      (rivalry) => rivalry.founderId
+    ),
+  });
 };
 
 const debugPowerStats = Object.freeze({
@@ -696,36 +699,40 @@ const createPreviewEconomy = (options = {}) => {
   };
 };
 
-const cloneFounderChronicle = (entries) => ({
-  entries: entries.map((entry) => ({ ...entry })),
-});
+const buildMockFounderChronicle = (facts) => {
+  let chronicle = createEmptyFounderChronicle();
+  for (const fact of facts) {
+    chronicle = advanceFounderChronicle(chronicle, fact).chronicle;
+  }
+  return chronicle;
+};
 
-const returningFounderChronicleEntries = [
+const returningFounderChronicle = buildMockFounderChronicle([
   {
     founderId: 'founding-mosswhisk',
-    metDay: 6,
-    respectedDay: 7,
-    rematchedDay: 9,
+    reportId: 'mock-chronicle-mosswhisk-1',
+    day: 4,
+    playerWon: true,
+  },
+  {
+    founderId: 'founding-mosswhisk',
+    reportId: 'mock-chronicle-mosswhisk-2',
+    day: 5,
+    playerWon: true,
   },
   {
     founderId: 'founding-fernibble',
-    metDay: 7,
-    respectedDay: null,
-    rematchedDay: 9,
+    reportId: 'mock-chronicle-fernibble-1',
+    day: 7,
+    playerWon: false,
   },
   {
-    founderId: 'founding-coalimp',
-    metDay: 8,
-    respectedDay: 8,
-    rematchedDay: null,
+    founderId: 'founding-fernibble',
+    reportId: 'mock-chronicle-fernibble-2',
+    day: 8,
+    playerWon: true,
   },
-  {
-    founderId: 'founding-pearlmote',
-    metDay: 9,
-    respectedDay: null,
-    rematchedDay: null,
-  },
-];
+]);
 
 const memory = {
   dayNumber: 9,
@@ -799,8 +806,8 @@ const memory = {
     fresh: createPreviewEconomy(),
   },
   founderChronicleByPreviewMode: {
-    returning: cloneFounderChronicle(returningFounderChronicleEntries),
-    fresh: cloneFounderChronicle([]),
+    returning: returningFounderChronicle,
+    fresh: createEmptyFounderChronicle(),
   },
   legacySeenThroughDay: 5,
   freshLegacySeenThroughDay: 0,
@@ -840,9 +847,12 @@ const getPreviewEconomy = (previewMode) => {
 };
 
 const getFounderChronicleForPreview = (previewMode) => {
-  if (previewMode === 'logged-out') return cloneFounderChronicle([]);
-  return cloneFounderChronicle(
-    memory.founderChronicleByPreviewMode[previewMode]?.entries ?? []
+  if (previewMode === 'logged-out') {
+    return projectFounderChronicle(createEmptyFounderChronicle());
+  }
+  return projectFounderChronicle(
+    memory.founderChronicleByPreviewMode[previewMode] ??
+      createEmptyFounderChronicle()
   );
 };
 
@@ -851,37 +861,28 @@ const recordMockFounderChronicleBattle = (
   report,
   ownedScribbitId
 ) => {
-  if (previewMode === 'logged-out') return;
-  if (report.kind !== 'exhibition' && report.kind !== 'boss') return;
+  if (previewMode === 'logged-out') return [];
+  if (report.kind !== 'exhibition' && report.kind !== 'boss') return [];
   const ownedSlot =
     report.a.id === ownedScribbitId
       ? 'a'
       : report.b.id === ownedScribbitId
         ? 'b'
         : null;
-  if (!ownedSlot) return;
+  if (!ownedSlot) return [];
   const opponent = ownedSlot === 'a' ? report.b : report.a;
-  if (!findFoundingScribbit(opponent.id)) return;
+  if (!findFoundingScribbit(opponent.id)) return [];
 
   const chronicle = memory.founderChronicleByPreviewMode[previewMode];
-  if (!chronicle) return;
-  let entry = chronicle.entries.find(
-    (candidate) => candidate.founderId === opponent.id
-  );
-  if (!entry) {
-    entry = {
-      founderId: opponent.id,
-      metDay: report.day,
-      respectedDay: null,
-      rematchedDay: null,
-    };
-    chronicle.entries.push(entry);
-  } else if (report.day > entry.metDay && entry.rematchedDay === null) {
-    entry.rematchedDay = report.day;
-  }
-  if (report.winner === ownedSlot && entry.respectedDay === null) {
-    entry.respectedDay = report.day;
-  }
+  if (!chronicle) return [];
+  const advanced = advanceFounderChronicle(chronicle, {
+    founderId: opponent.id,
+    reportId: report.id,
+    day: report.day,
+    playerWon: report.winner === ownedSlot,
+  });
+  memory.founderChronicleByPreviewMode[previewMode] = advanced.chronicle;
+  return advanced.beats;
 };
 
 const resetPreviewEconomy = (economy) => {
@@ -1145,6 +1146,18 @@ const requestPreviewMode = (request, url) => {
   }
 };
 
+const requestHasPreviewFlag = (request, url, flag) => {
+  if (url.searchParams.has(flag)) return true;
+
+  const referrer = request.headers.referer;
+  if (typeof referrer !== 'string') return false;
+  try {
+    return new URL(referrer).searchParams.has(flag);
+  } catch {
+    return false;
+  }
+};
+
 const currentUtcDateKey = () => {
   return new Date().toISOString().slice(0, 10);
 };
@@ -1365,7 +1378,7 @@ const loggedOutArenaState = () => {
     myClout: 0,
     lastRumbleReceipt: null,
     legacyReturnReceipt: null,
-    founderChronicle: cloneFounderChronicle([]),
+    founderChronicle: projectFounderChronicle(createEmptyFounderChronicle()),
   };
 };
 
@@ -1450,7 +1463,23 @@ const handleApi = async (request, response, url) => {
   }
 
   if (method === 'GET' && path === '/api/arena') {
-    sendJson(response, 200, arenaStateForPreview(previewMode));
+    const state = arenaStateForPreview(previewMode);
+    if (
+      previewMode === 'returning' &&
+      requestHasPreviewFlag(request, url, 'rival-thread')
+    ) {
+      sendJson(response, 200, {
+        ...state,
+        drawnToday: true,
+        enteredToday: true,
+        bossChallengedToday: true,
+        myBackedScribbitId: state.todayEntrants[0]?.id ?? null,
+        lastRumbleReceipt: null,
+        legacyReturnReceipt: null,
+      });
+      return;
+    }
+    sendJson(response, 200, state);
     return;
   }
 
@@ -1485,6 +1514,7 @@ const handleApi = async (request, response, url) => {
     sendJson(response, 200, {
       challenger: cloneScribbit(challenger),
       rivals: mockSparRivalSlate(challenger, previewMode).map(cloneScribbit),
+      founderChronicle: getFounderChronicleForPreview(previewMode),
     });
     return;
   }
@@ -1773,7 +1803,10 @@ const handleApi = async (request, response, url) => {
     scribbit.xp += scribbit.mood === 'pumped' ? 2 : 1;
     scribbit.level = levelForXp(scribbit.xp);
     economy.ink += careInkReward;
-    sendJson(response, 200, cloneScribbit(scribbit));
+    sendJson(response, 200, {
+      scribbit: cloneScribbit(scribbit),
+      inkAwarded: careInkReward,
+    });
     return;
   }
 
@@ -1872,6 +1905,8 @@ const handleApi = async (request, response, url) => {
     }
 
     resetPreviewEconomy(economy);
+    memory.founderChronicleByPreviewMode[previewMode] =
+      createEmptyFounderChronicle();
     if (previewMode === 'fresh') {
       memory.freshLegacySeenThroughDay = 0;
     }
@@ -1980,12 +2015,16 @@ const handleApi = async (request, response, url) => {
 
     const requestedOpponentId =
       typeof body?.opponentId === 'string' ? body.opponentId.trim() : '';
+    const founderChronicle = getFounderChronicleForPreview(previewMode);
     const rivalSlate = mockSparRivalSlate(challenger, previewMode);
     const opponent = requestedOpponentId
       ? rivalSlate.find((rival) => rival.id === requestedOpponentId)
       : chooseFoundingSparOpponent(
           challenger,
-          stableStringSeed(`quick-spar:${challenger.id}:${Date.now()}`)
+          stableStringSeed(`quick-spar:${challenger.id}:${Date.now()}`),
+          {
+            preferredFounderId: founderChronicle.activeRivalry?.founderId,
+          }
         );
     if (!opponent) {
       sendError(
@@ -2012,12 +2051,16 @@ const handleApi = async (request, response, url) => {
     }
 
     memory.myBattles.unshift(rewardedReport);
-    recordMockFounderChronicleBattle(
+    const founderChronicleBeats = recordMockFounderChronicleBattle(
       previewMode,
       rewardedReport,
       challenger.id
     );
-    sendJson(response, 200, rewardedReport);
+    sendJson(response, 200, {
+      report: rewardedReport,
+      founderChronicle: getFounderChronicleForPreview(previewMode),
+      founderChronicleBeat: founderChronicleBeats.at(-1) ?? null,
+    });
     return;
   }
 
@@ -2048,8 +2091,16 @@ const handleApi = async (request, response, url) => {
       challenger.losses += 1;
     }
     memory.myBattles.unshift(report);
-    recordMockFounderChronicleBattle(previewMode, report, challenger.id);
-    sendJson(response, 200, report);
+    const founderChronicleBeats = recordMockFounderChronicleBattle(
+      previewMode,
+      report,
+      challenger.id
+    );
+    sendJson(response, 200, {
+      report,
+      founderChronicle: getFounderChronicleForPreview(previewMode),
+      founderChronicleBeat: founderChronicleBeats.at(-1) ?? null,
+    });
     return;
   }
 
@@ -2269,7 +2320,7 @@ const resetFreshPreview = () => {
   memory.freshLegacySeenThroughDay = 0;
   memory.hiddenScribbitIds.clear();
   memory.reportCounts.clear();
-  memory.founderChronicleByPreviewMode.fresh = cloneFounderChronicle([]);
+  memory.founderChronicleByPreviewMode.fresh = createEmptyFounderChronicle();
   resetPreviewEconomy(memory.economyByPreviewMode.fresh);
 };
 

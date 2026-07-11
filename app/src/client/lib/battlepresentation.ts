@@ -149,6 +149,11 @@ export type ReplayOutcomeStackPlan = Readonly<{
   backButtonY: number;
 }>;
 
+export type ReplayLossActionStackPlan = Readonly<{
+  backContenderButtonOffset: number | null;
+  returnButtonOffset: number;
+}>;
+
 const clamp = (value: number, minimum: number, maximum: number): number => {
   return Math.min(maximum, Math.max(minimum, value));
 };
@@ -193,11 +198,10 @@ export function planReplayBattleLayout(input: {
   const fighterMetaY = 151;
   const healthBarY = 177;
   const fighterChipY = 214;
-  const tickerHeight = Math.round(clamp(viewportHeight * 0.075, 80, 96));
-  const tickerY = viewportHeight - 64;
-  const tickerTop = tickerY - tickerHeight / 2;
+  const tickerHeight = 72;
+  const tickerY = viewportHeight - 54;
   const arenaTop = 158;
-  const arenaBottom = Math.max(arenaTop + 420, tickerTop - 24);
+  const arenaBottom = Math.max(arenaTop + 420, viewportHeight - 30);
   const homeY = (arenaTop + arenaBottom) / 2;
   const leftPanelLeft = horizontalMargin;
   const rightPanelLeft = viewportWidth - horizontalMargin - healthBarWidth;
@@ -212,7 +216,7 @@ export function planReplayBattleLayout(input: {
     pageLeft,
     pageTop,
     pageWidth: viewportWidth - pageLeft * 2,
-    pageHeight: tickerTop - pageTop - 14,
+    pageHeight: viewportHeight - pageTop - 18,
     toolbarY,
     kindLabelX,
     battleKindY: toolbarY - 17,
@@ -242,14 +246,14 @@ export function planReplayBattleLayout(input: {
     arenaTop,
     arenaBottom,
     arenaHorizontalPadding: Math.round(clamp(viewportWidth * 0.164, 96, 118)),
-    arenaVerticalPadding: 72,
+    arenaVerticalPadding: 106,
     tickerX: viewportWidth / 2,
     tickerY,
     tickerWidth: Math.min(viewportWidth - 40, 664),
     tickerHeight,
-    tickerTagWidth: Math.round(clamp(viewportWidth * 0.19, 104, 132)),
-    fighterDisplaySize: 220,
-    fighterGhostDisplaySize: 194,
+    tickerTagWidth: 0,
+    fighterDisplaySize: 232,
+    fighterGhostDisplaySize: 204,
     fighters: {
       a: {
         homeX: Math.round(viewportWidth * 0.27),
@@ -305,6 +309,16 @@ export function planReplayOutcomeStack(input: {
     backContenderButtonY,
     backButtonY,
   };
+}
+
+/** Keeps a loss receipt actionable when tonight's Back is already locked. */
+export function planReplayLossActionStack(input: {
+  canBackContender: boolean;
+}): ReplayLossActionStackPlan {
+  return Object.freeze({
+    backContenderButtonOffset: input.canBackContender ? 620 : null,
+    returnButtonOffset: input.canBackContender ? 730 : 620,
+  });
 }
 
 export function planReplayHitPointBar(input: {

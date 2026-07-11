@@ -17,7 +17,9 @@ import {
   setArena,
   getArena,
   setReplay,
+  stageDirectBattle,
   setSketchbookTab,
+  takeFounderChronicleBeats,
   takeArenaFocus,
 } from '../lib/registry';
 import {
@@ -65,8 +67,12 @@ import type { DetailModalActions } from '../lib/detailmodal';
 import { openCloutBoard, formatCountdown } from '../lib/cloutboard';
 import { openCapsuleMachine } from '../lib/capsulemachine';
 import { pullCapsule } from '../lib/api';
-import { INK_REWARDS } from '../../shared/arena';
-import type { ArenaState, CareAction, Scribbit } from '../../shared/arena';
+import type {
+  ArenaState,
+  CareAction,
+  FounderChronicleBeat,
+  Scribbit,
+} from '../../shared/arena';
 import { getFoundingScribbitDefinition } from '../../shared/founders';
 import { selectPrimaryPower } from '../../shared/combat/selection';
 import { getShapePowerSignatureName } from '../../shared/combat/shapepowercontent';
@@ -74,6 +80,12 @@ import { showVsCeremony } from '../lib/battleceremony';
 import { openLegacyReturnCeremony } from '../lib/legacycards';
 import { selectNextGoal, type NextGoalCard } from '../lib/nextgoal';
 import { planChampionChallenge } from '../lib/championchallenge';
+import { planFounderChronicle } from '../lib/founderchronicle';
+import { openFounderChronicleMargin } from '../lib/founderchroniclemargin';
+import type { FounderChronicleMargin } from '../lib/founderchroniclemargin';
+import { planCareMoment } from '../lib/caremoment';
+import { openCareMomentOverlay } from '../lib/caremomentoverlay';
+import type { CareMomentOverlay } from '../lib/caremomentoverlay';
 import {
   dailyDrawTabLabel,
   getDrawEligibility,
@@ -94,6 +106,8 @@ export class ArenaHome extends Scene {
   private livingPaper: LivingPaper | null = null;
   private busy = false;
   private spinner: Spinner | null = null;
+  private founderChronicleMargin: FounderChronicleMargin | null = null;
+  private careMomentOverlay: CareMomentOverlay | null = null;
 
   // Drag-scroll bookkeeping. Scrolling uses velocity + inertia so a flick keeps
   // gliding and a wheel/keyboard nudge eases in, instead of snapping stiffly.
@@ -138,6 +152,8 @@ export class ArenaHome extends Scene {
     this.dragDistance = 0;
     this.focusEntrantsY = null;
     this.buildGeneration = 0;
+    this.founderChronicleMargin = null;
+    this.careMomentOverlay = null;
   }
 
   create(): void {
@@ -162,6 +178,10 @@ export class ArenaHome extends Scene {
     this.livingPaper = null;
     this.spinner?.destroy();
     this.spinner = null;
+    this.founderChronicleMargin?.destroy();
+    this.founderChronicleMargin = null;
+    this.careMomentOverlay?.destroy();
+    this.careMomentOverlay = null;
   }
 
   // --- Layout: a vertical stack measured top-down so nothing overlaps and the
@@ -169,6 +189,8 @@ export class ArenaHome extends Scene {
   // cursor drives the next section. -----------------------------------------
   private build(): void {
     this.buildGeneration += 1;
+    this.careMomentOverlay?.destroy();
+    this.careMomentOverlay = null;
     this.children.removeAll(true);
     releaseRenderedDrawingTextures(this);
     this.weatherTimer?.remove();
@@ -582,9 +604,17 @@ export class ArenaHome extends Scene {
     const card = stickerCard(this, x, centerY, width, height, {
       tapeColor: goal.actionKind === 'wait' ? UI.tapeAlt : UI.tape,
       tilt: -0.25,
-      gold: goal.actionKind === 'capsule' || goal.actionKind === 'challenge',
+      gold:
+        goal.actionKind === 'capsule' ||
+        goal.actionKind === 'challenge' ||
+        goal.actionKind === 'rivalry',
     });
-    const heading = goal.actionKind === 'wait' ? '✓ ALL SET' : '✦ NEXT GOAL';
+    const heading =
+      goal.actionKind === 'wait'
+        ? '✓ ALL SET'
+        : goal.actionKind === 'rivalry'
+          ? '✎ FOUNDER RIVAL THREAD'
+          : '✦ NEXT GOAL';
     card.add(label(this, 0, -160, heading, TYPE.caption, UI.coralText, true));
     card.add(
       label(this, 0, -122, goal.title.toUpperCase(), TYPE.title, UI.ink, true)
@@ -598,11 +628,28 @@ export class ArenaHome extends Scene {
     );
 
     const evidenceLines = this.nextGoalEvidenceLines(goal);
-    card.add(
-      label(this, 0, 18, evidenceLines.join('\n'), TYPE.caption, UI.ink, true)
-        .setWordWrapWidth(width - 76)
-        .setLineSpacing(6)
-    );
+    const evidenceLabel = label(
+      this,
+      0,
+      18,
+      evidenceLines.join('\n'),
+      TYPE.caption,
+      UI.ink,
+      true
+    )
+      .setWordWrapWidth(width - 76)
+      .setLineSpacing(4);
+    card.add(evidenceLabel);
+    if (
+      this.state.founderChronicle.activeRivalry ||
+      this.state.founderChronicle.resolvedRivalries.length > 0
+    ) {
+      evidenceLabel
+        .setInteractive({ useHandCursor: true })
+        .on('pointerup', () => {
+          if (!this.didDrag()) this.openFounderMargin();
+        });
+    }
 
     if (goal.actionKind === 'wait') {
       const readyStamp = this.add
@@ -629,7 +676,9 @@ export class ArenaHome extends Scene {
           `${goal.buttonLabel.toUpperCase()} →`,
           () => this.runNextGoal(goal, y),
           width - 180,
-          goal.actionKind === 'capsule' || goal.actionKind === 'challenge'
+          goal.actionKind === 'capsule' ||
+            goal.actionKind === 'challenge' ||
+            goal.actionKind === 'rivalry'
             ? UI.gold
             : UI.coral,
           UI.ink
@@ -700,6 +749,10 @@ export class ArenaHome extends Scene {
 
   private nextGoalEvidenceLines(goal: NextGoalCard): string[] {
     const lines: string[] = [];
+    const rivalryPlan = planFounderChronicle(
+      this.state.founderChronicle,
+      this.state.dayNumber
+    );
     const scribbit = goal.evidence.featuredScribbit;
     if (scribbit) {
       const levelCopy =
@@ -727,6 +780,23 @@ export class ArenaHome extends Scene {
     lines.push(
       `${capsuleCopy} · ${capsule.discoveredItems}/${capsule.totalCollectibleItems} collected`
     );
+    const goalAlreadyNamesActiveRival =
+      rivalryPlan.activeRivalry?.founderId === goal.rivalFounderId;
+    if (rivalryPlan.activeRivalry) {
+      if (!goalAlreadyNamesActiveRival) {
+        lines.push(
+          `✎ ${rivalryPlan.activeRivalry.name.toUpperCase()} · ${rivalryPlan.activeRivalry.scoreLine.toUpperCase()} · ${rivalryPlan.activeRivalry.availabilityLine.toUpperCase()} · TAP`
+        );
+      }
+    } else if (rivalryPlan.resolvedNotes.length > 0) {
+      lines.push(
+        `✎ ${rivalryPlan.resolvedNotes.length} SIGNED MARGIN${rivalryPlan.resolvedNotes.length === 1 ? '' : 'S'} · TAP`
+      );
+    } else if (rivalryPlan.legacyEncounterCount > 0) {
+      lines.push(
+        `✎ ${rivalryPlan.legacyEncounterCount} ARCHIVED FOUNDER ENCOUNTER${rivalryPlan.legacyEncounterCount === 1 ? '' : 'S'} · TAP`
+      );
+    }
     return lines;
   }
 
@@ -741,6 +811,10 @@ export class ArenaHome extends Scene {
     }
     if (goal.actionKind === 'challenge') {
       this.startBossChallenge();
+      return;
+    }
+    if (goal.actionKind === 'rivalry') {
+      this.doSpar(goal.targetScribbit, goal.rivalFounderId ?? undefined);
       return;
     }
     if (goal.actionKind === 'capsule') {
@@ -1823,8 +1897,51 @@ export class ArenaHome extends Scene {
   }
 
   private showReturnReceiptsIfNeeded(): void {
+    if (
+      this.showFounderChronicleBeatIfNeeded(() => {
+        if (this.showLegacyReturnIfNeeded()) return;
+        this.showRumbleReceiptIfNeeded();
+      })
+    ) {
+      return;
+    }
     if (this.showLegacyReturnIfNeeded()) return;
     this.showRumbleReceiptIfNeeded();
+  }
+
+  private openFounderMargin(
+    newestBeat: FounderChronicleBeat | null = null,
+    afterClose?: () => void
+  ): void {
+    if (this.founderChronicleMargin) return;
+    const plan = planFounderChronicle(
+      this.state.founderChronicle,
+      this.state.dayNumber
+    );
+    const challenger = this.state.myScribbits[0];
+    this.founderChronicleMargin = openFounderChronicleMargin(this, {
+      chronicle: this.state.founderChronicle,
+      currentDay: this.state.dayNumber,
+      newestBeat,
+      ...(plan.activeRivalry?.readyToday && challenger
+        ? {
+            onContinue: () =>
+              this.doSpar(challenger, plan.activeRivalry?.founderId),
+          }
+        : {}),
+      onClose: () => {
+        this.founderChronicleMargin = null;
+        afterClose?.();
+      },
+    });
+  }
+
+  private showFounderChronicleBeatIfNeeded(afterClose: () => void): boolean {
+    const beats = takeFounderChronicleBeats(this);
+    const newestBeat = beats.at(-1);
+    if (!newestBeat) return false;
+    this.openFounderMargin(newestBeat, afterClose);
+    return true;
   }
 
   private showLegacyReturnIfNeeded(): boolean {
@@ -1967,38 +2084,58 @@ export class ArenaHome extends Scene {
         this.showError(result.error);
         return;
       }
-      const style = CARE_STYLES[action];
-      const feedback: Record<CareAction, string> = {
-        feed: `${style.emoji} ${result.data.name} gobbles it up! (+xp)`,
-        pat: `${style.emoji} ${result.data.name} loves the attention!`,
-        train: `${style.emoji} ${result.data.name} trained hard! (+xp)`,
-      };
-      showToast(feedback[action]);
-      // Care earns Mystery Ink — float it near the top-right ink chip.
-      this.floatInk(INK_REWARDS.care, this.scale.width - EDGE - 40, 120);
-      this.applyScribbitUpdate(result.data);
+      const updatedScribbit = result.data.scribbit;
+      const careMoment = planCareMoment(
+        scribbit,
+        updatedScribbit,
+        action,
+        this.state.dayNumber,
+        result.data.inkAwarded
+      );
+      // Render only the exact Ink amount confirmed by the server response.
+      this.floatInk(result.data.inkAwarded, this.scale.width - EDGE - 40, 120);
+      this.applyScribbitUpdate(updatedScribbit);
+      this.careMomentOverlay = openCareMomentOverlay(
+        this,
+        updatedScribbit,
+        careMoment
+      );
     });
   }
 
-  private doSpar(scribbit: Scribbit): void {
+  private doSpar(scribbit: Scribbit, opponentId?: string): void {
     if (!this.requireLogin()) return;
     if (this.busy) return;
     this.busy = true;
     this.spinner?.show(this.scale.width / 2, this.scale.height / 2);
-    showToast(`${scribbit.name} steps up for a friendly spar…`);
-    void spar(scribbit.id).then((result) => {
+    const opponent = opponentId
+      ? getFoundingScribbitDefinition(opponentId)
+      : null;
+    showToast(
+      opponent
+        ? `${scribbit.name} returns to ${opponent.name}'s blue-tape margin…`
+        : `${scribbit.name} steps up for a friendly spar…`
+    );
+    void spar(scribbit.id, opponentId).then((result) => {
       this.busy = false;
       this.spinner?.hide();
       if (!result.ok) {
         this.showError(result.error);
         return;
       }
-      setReplay(this, result.data);
+      const stagedBattle = stageDirectBattle(
+        this,
+        this.state,
+        result.data,
+        scribbit.id
+      );
+      if (stagedBattle.arena) this.state = stagedBattle.arena;
       // Show dramatic VS ceremony before the battle replay
       showVsCeremony(this, {
-        fighterA: result.data.a,
-        fighterB: result.data.b,
-        battleKind: result.data.kind,
+        fighterA: result.data.report.a,
+        fighterB: result.data.report.b,
+        battleKind: result.data.report.kind,
+        rivalryStakes: stagedBattle.rivalryStakes,
         onComplete: () => this.scene.start('Replay'),
       });
     });
@@ -2270,12 +2407,19 @@ export class ArenaHome extends Scene {
       this.showError(result.error);
       return;
     }
-    setReplay(this, result.data);
+    const stagedBattle = stageDirectBattle(
+      this,
+      this.state,
+      result.data,
+      scribbit.id
+    );
+    if (stagedBattle.arena) this.state = stagedBattle.arena;
     // Show dramatic VS ceremony before the boss battle replay
     showVsCeremony(this, {
-      fighterA: result.data.a,
-      fighterB: result.data.b,
-      battleKind: result.data.kind,
+      fighterA: result.data.report.a,
+      fighterB: result.data.report.b,
+      battleKind: result.data.report.kind,
+      rivalryStakes: stagedBattle.rivalryStakes,
       onComplete: () => this.scene.start('Replay'),
     });
   }

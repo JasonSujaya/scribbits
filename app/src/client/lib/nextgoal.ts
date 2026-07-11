@@ -5,11 +5,14 @@ import {
   MAX_LEVEL,
 } from '../../shared/arena';
 import type { ArenaState, CareAction, Scribbit } from '../../shared/arena';
+import { getFoundingScribbitDefinition } from '../../shared/founders';
+import { getFounderRivalEpisodePage } from '../../shared/content/founderrivalepisodes';
 
 export type NextGoalActionKind =
   | 'enter'
   | 'back'
   | 'challenge'
+  | 'rivalry'
   | 'capsule'
   | 'care'
   | 'wait';
@@ -41,6 +44,7 @@ type NextGoalCardContent = {
   detail: string;
   buttonLabel: string;
   evidence: NextGoalEvidence;
+  rivalFounderId: `founding-${string}` | null;
 };
 
 export type NextGoalCard =
@@ -58,6 +62,11 @@ export type NextGoalCard =
       actionKind: 'care';
       targetScribbit: Scribbit;
       careAction: CareAction;
+    })
+  | (NextGoalCardContent & {
+      actionKind: 'rivalry';
+      targetScribbit: Scribbit;
+      careAction: null;
     });
 
 const CARE_ACTION_PRIORITY: readonly CareAction[] = ['feed', 'pat', 'train'];
@@ -74,12 +83,18 @@ const CARE_ACTION_COPY: Record<
 /** Selects one stable post-draw action without reading or changing scene state. */
 export function selectNextGoal(state: ArenaState): NextGoalCard {
   const newestOwnedScribbit = findNewestOwnedScribbit(state.myScribbits);
+  const founderChronicle = state.founderChronicle ?? {
+    activeRivalry: null,
+    resolvedRivalries: [],
+    lastAdvancedDay: null,
+  };
 
   if (state.drawnToday && !state.enteredToday && newestOwnedScribbit) {
     return {
       actionKind: 'enter',
       targetScribbit: newestOwnedScribbit,
       careAction: null,
+      rivalFounderId: null,
       title: `Enter ${newestOwnedScribbit.name} in the Rumble`,
       detail: "Put today's Scribbit into tonight's bracket.",
       buttonLabel: 'Enter Rumble',
@@ -92,6 +107,7 @@ export function selectNextGoal(state: ArenaState): NextGoalCard {
       actionKind: 'back',
       targetScribbit: null,
       careAction: null,
+      rivalFounderId: null,
       title: "Pick tonight's winner",
       detail: 'Choose one contender. Your Back locks until the Rumble.',
       buttonLabel: 'Choose a Back',
@@ -104,13 +120,56 @@ export function selectNextGoal(state: ArenaState): NextGoalCard {
     state.myScribbits.length > 0 &&
     !state.bossChallengedToday
   ) {
+    const activeRivalry = founderChronicle.activeRivalry;
+    const championContinuesRivalry =
+      activeRivalry?.founderId === state.champion.id &&
+      founderChronicle.lastAdvancedDay !== state.dayNumber;
+    const championFounder = championContinuesRivalry
+      ? getFoundingScribbitDefinition(state.champion.id)
+      : null;
+    const championRivalBout = activeRivalry
+      ? Math.min(3, activeRivalry.playerWins + activeRivalry.founderWins + 1)
+      : null;
+    const championEpisode =
+      championFounder && championRivalBout
+        ? getFounderRivalEpisodePage(championFounder.id, championRivalBout)
+        : null;
     return {
       actionKind: 'challenge',
       targetScribbit: null,
       careAction: null,
-      title: `Challenge ${state.champion.name}`,
-      detail: 'Take your one daily shot at the Champion. Win for +2 XP.',
+      rivalFounderId: championFounder?.id ?? null,
+      title: championFounder
+        ? `Rival Page ${championRivalBout}: ${championEpisode?.title ?? championFounder.name}`
+        : `Challenge ${state.champion.name}`,
+      detail: championFounder
+        ? `Champion ${championFounder.name} · you ${activeRivalry?.playerWins ?? 0}–${activeRivalry?.founderWins ?? 0} · one margin today.`
+        : 'Take your one daily shot at the Champion. Win for +2 XP.',
       buttonLabel: 'Choose challenger',
+      evidence: buildEvidence(state, newestOwnedScribbit),
+    };
+  }
+
+  const activeRivalry = founderChronicle.activeRivalry;
+  const activeFounder = activeRivalry
+    ? getFoundingScribbitDefinition(activeRivalry.founderId)
+    : null;
+  if (
+    activeRivalry &&
+    activeFounder &&
+    newestOwnedScribbit &&
+    founderChronicle.lastAdvancedDay !== state.dayNumber
+  ) {
+    const nextBout = activeRivalry.playerWins + activeRivalry.founderWins + 1;
+    const episode = getFounderRivalEpisodePage(activeFounder.id, nextBout);
+    return {
+      actionKind: 'rivalry',
+      targetScribbit: newestOwnedScribbit,
+      careAction: null,
+      rivalFounderId: activeFounder.id,
+      title: `Rival Page ${nextBout}: ${episode?.title ?? activeFounder.name}`,
+      detail: `${activeFounder.name} · you ${activeRivalry.playerWins}–${activeRivalry.founderWins} · only this fight writes today's margin.`,
+      buttonLabel: 'Continue thread',
       evidence: buildEvidence(state, newestOwnedScribbit),
     };
   }
@@ -120,6 +179,7 @@ export function selectNextGoal(state: ArenaState): NextGoalCard {
       actionKind: 'capsule',
       targetScribbit: null,
       careAction: null,
+      rivalFounderId: null,
       title: 'A Mystery Ink capsule is ready',
       detail: `Spend ${state.nextCapsuleCost} Ink to reveal a permanent collection reward.`,
       buttonLabel: 'Open Capsule',
@@ -134,6 +194,7 @@ export function selectNextGoal(state: ArenaState): NextGoalCard {
       actionKind: 'care',
       targetScribbit: availableCare.scribbit,
       careAction: availableCare.action,
+      rivalFounderId: null,
       title: `${copy.titleVerb} ${availableCare.scribbit.name}`,
       detail: `Still available today · +XP · +${INK_REWARDS.care} Ink.`,
       buttonLabel: copy.buttonLabel,
@@ -145,6 +206,7 @@ export function selectNextGoal(state: ArenaState): NextGoalCard {
     actionKind: 'wait',
     targetScribbit: null,
     careAction: null,
+    rivalFounderId: null,
     title: 'All goals complete',
     detail: 'Your daily actions are done. Come back for the result.',
     buttonLabel: 'Check Rumble',

@@ -59,10 +59,14 @@ function makeFighter(
 }
 
 function assertTranscriptInvariants(transcript: BattleTranscript): void {
-  assertEqual(transcript.tickRate, COMBAT_TICK_RATE, 'engine must run at 20 Hz');
+  assertEqual(
+    transcript.tickRate,
+    COMBAT_TICK_RATE,
+    'engine must run at 20 Hz'
+  );
   assert(
     transcript.result.completedTick <= COMBAT_MAXIMUM_TICKS,
-    'battle must finish by tick 500'
+    'battle must finish by tick 400'
   );
   assert(
     transcript.result.completedTick >= 13 * COMBAT_TICK_RATE,
@@ -72,7 +76,10 @@ function assertTranscriptInvariants(transcript: BattleTranscript): void {
     transcript.timeline.length <= MAXIMUM_TIMELINE_EVENTS,
     'timeline must obey its hard cap'
   );
-  assert(!transcript.eventsTruncated, 'normal fights must retain every sparse event');
+  assert(
+    !transcript.eventsTruncated,
+    'normal fights must retain every sparse event'
+  );
   assert(
     transcript.checkpoints.length <= MAXIMUM_CHECKPOINTS,
     'checkpoints must obey their hard cap'
@@ -100,7 +107,9 @@ function assertTranscriptInvariants(transcript: BattleTranscript): void {
     const previous = transcript.timeline[index - 1];
     const current = transcript.timeline[index];
     assert(
-      previous !== undefined && current !== undefined && previous.tick <= current.tick,
+      previous !== undefined &&
+        current !== undefined &&
+        previous.tick <= current.tick,
       'timeline ticks must be monotonic'
     );
   }
@@ -124,8 +133,14 @@ function assertTranscriptInvariants(transcript: BattleTranscript): void {
       'two fighters plus echoes must obey the entity cap'
     );
     for (const fighter of checkpoint.fighters) {
-      assert(isFixedVector(fighter.position), 'positions must stay integer fixed-point');
-      assert(isFixedVector(fighter.velocity), 'velocities must stay integer fixed-point');
+      assert(
+        isFixedVector(fighter.position),
+        'positions must stay integer fixed-point'
+      );
+      assert(
+        isFixedVector(fighter.velocity),
+        'velocities must stay integer fixed-point'
+      );
       assert(
         fighter.hitPoints >= 0 && fighter.hitPoints <= fighter.maxHitPoints,
         'checkpoint hit points must stay bounded'
@@ -177,16 +192,29 @@ function testDomainSeparatedRandomness(): void {
     'an unrelated roll must not shift an existing roll'
   );
   assert(
-    deterministicRoll('domain-test', 'critical-hit', 'a', 10) !== firstDamageRoll,
+    deterministicRoll('domain-test', 'critical-hit', 'a', 10) !==
+      firstDamageRoll,
     'different random domains should produce different rolls'
   );
 }
 
 function testAbilitySelectionAndGeometry(): void {
-  assertEqual(selectPrimaryPower(makeStats('chonk')), 'inkquake', 'chonk power');
-  assertEqual(selectPrimaryPower(makeStats('spike')), 'nib_halo', 'spike power');
+  assertEqual(
+    selectPrimaryPower(makeStats('chonk')),
+    'inkquake',
+    'chonk power'
+  );
+  assertEqual(
+    selectPrimaryPower(makeStats('spike')),
+    'nib_halo',
+    'spike power'
+  );
   assertEqual(selectPrimaryPower(makeStats('zip')), 'smearstep', 'zip power');
-  assertEqual(selectPrimaryPower(makeStats('charm')), 'colorburst', 'charm power');
+  assertEqual(
+    selectPrimaryPower(makeStats('charm')),
+    'colorburst',
+    'charm power'
+  );
   assertEqual(
     selectPrimaryPower({ chonk: 25, spike: 25, zip: 25, charm: 25 }),
     'inkquake',
@@ -220,7 +248,8 @@ function testAbilitySelectionAndGeometry(): void {
     return getOrbitingNibPosition({ x: 100, y: -100 }, 0, nibIndex);
   });
   assert(
-    new Set(nibPositions.map((position) => `${position.x}:${position.y}`)).size === 3,
+    new Set(nibPositions.map((position) => `${position.x}:${position.y}`))
+      .size === 3,
     'Nib Halo must create three distinct procedural nib positions'
   );
   assert(
@@ -245,7 +274,8 @@ function testDeterministicTranscript(): BattleTranscript {
     'same inputs must produce byte-equivalent JSON'
   );
   assert(
-    simulateCombat({ ...input, seed: 'different-seed' }).battleId !== first.battleId,
+    simulateCombat({ ...input, seed: 'different-seed' }).battleId !==
+      first.battleId,
     'seed must affect the stable battle identity'
   );
   assertTranscriptInvariants(first);
@@ -328,7 +358,11 @@ function testElementPayloadsAndStormTiming(): void {
 }
 
 function testImmutablePhaseOrderAndValidation(): void {
-  assertEqual(COMBAT_PHASE_ORDER.length, 10, 'phase order must remain complete');
+  assertEqual(
+    COMBAT_PHASE_ORDER.length,
+    10,
+    'phase order must remain complete'
+  );
   assert(Object.isFrozen(COMBAT_PHASE_ORDER), 'phase order must be immutable');
   let rejectedDuplicateIds = false;
   try {
@@ -402,6 +436,69 @@ function testPrimaryPowerBalance(): void {
   }
 }
 
+function testPrimaryPowerDurationMatrix(): void {
+  const builds: readonly DominantStat[] = ['chonk', 'spike', 'zip', 'charm'];
+  let promptMatchupCount = 0;
+
+  for (let firstIndex = 0; firstIndex < builds.length; firstIndex += 1) {
+    for (
+      let secondIndex = firstIndex;
+      secondIndex < builds.length;
+      secondIndex += 1
+    ) {
+      const firstBuild = builds[firstIndex];
+      const secondBuild = builds[secondIndex];
+      if (firstBuild === undefined || secondBuild === undefined) {
+        throw new Error('Duration test build table is incomplete.');
+      }
+
+      const fightCount = 100;
+      let cappedFightCount = 0;
+      for (let seed = 0; seed < fightCount / 2; seed += 1) {
+        for (const swapSlots of [false, true]) {
+          const transcript = simulateCombat({
+            seed: `duration-${firstBuild}-${secondBuild}-${seed}`,
+            fighters: [
+              makeFighter(
+                swapSlots ? 'duration-y' : 'duration-x',
+                swapSlots ? secondBuild : firstBuild,
+                'tide'
+              ),
+              makeFighter(
+                swapSlots ? 'duration-x' : 'duration-y',
+                swapSlots ? firstBuild : secondBuild,
+                'tide'
+              ),
+            ],
+          });
+          assert(
+            transcript.result.completedTick <= COMBAT_MAXIMUM_TICKS,
+            `${firstBuild}/${secondBuild} must finish inside the 20-second replay`
+          );
+          if (transcript.result.completedTick === COMBAT_MAXIMUM_TICKS) {
+            cappedFightCount += 1;
+          }
+        }
+      }
+
+      if (cappedFightCount <= fightCount * 0.2) {
+        promptMatchupCount += 1;
+      }
+      if (firstBuild !== secondBuild) {
+        assert(
+          cappedFightCount <= fightCount * 0.75,
+          `${firstBuild}/${secondBuild} must not become a mostly stalled cross-power matchup`
+        );
+      }
+    }
+  }
+
+  assert(
+    promptMatchupCount >= 5,
+    'at least half of the ten power matchups must end before the clock in 80% of fights'
+  );
+}
+
 function testSlotOrderNeutrality(): void {
   let firstSlotWins = 0;
   const fightCount = 400;
@@ -430,6 +527,7 @@ export function runCombatEngineTests(): readonly string[] {
   testElementPayloadsAndStormTiming();
   testImmutablePhaseOrderAndValidation();
   testPrimaryPowerBalance();
+  testPrimaryPowerDurationMatrix();
   testSlotOrderNeutrality();
 
   return Object.freeze([
@@ -440,6 +538,7 @@ export function runCombatEngineTests(): readonly string[] {
     'element payloads and Storm timing',
     'immutable phases, caps, and validation',
     'primary-power matchup balance',
+    'ten-matchup replay duration matrix',
     'slot-order neutrality',
   ]);
 }

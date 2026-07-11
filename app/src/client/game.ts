@@ -11,6 +11,13 @@ import { Bestiary } from './scenes/Bestiary';
 import { DESIGN_HEIGHT, DESIGN_WIDTH } from './lib/theme';
 import { isShapePowerId } from '../shared/combat';
 import type { PrimaryPower } from '../shared/combat';
+import type {
+  ArenaState,
+  BattleReport,
+  DirectBattleResponse,
+} from '../shared/arena';
+import { setReplay, stageDirectBattle } from './lib/registry';
+import { showVsCeremony } from './lib/battleceremony';
 
 // Scribbits Arena — Devvit Web + Phaser 4. Draw a creature; its shape is its
 // stat sheet; it fights async auto-battles and lives 3 days. Portrait-first:
@@ -157,10 +164,8 @@ const StartGame = (parent: string): Phaser.Game => {
       seed?: number
     ): Promise<string> => {
       const home = game.scene.getScene('ArenaHome') as Phaser.Scene | null;
-      const arena = home?.registry.get('arena') as
-        | { myScribbits?: Array<{ id: string }> }
-        | undefined;
-      if (!arena) return 'no scribbit';
+      const arena = home?.registry.get('arena') as ArenaState | undefined;
+      if (!home || !arena) return 'no scribbit';
       if (power) {
         const elementQuery = element
           ? `&element=${encodeURIComponent(element)}`
@@ -170,16 +175,9 @@ const StartGame = (parent: string): Phaser.Game => {
           `/api/debug/battle?power=${encodeURIComponent(power)}${elementQuery}${seedQuery}`
         );
         if (!res.ok) return `debug battle failed ${res.status}`;
-        const report = (await res.json()) as {
-          simulation?: {
-            timeline?: unknown[];
-            result?: { completedTick?: number };
-          };
-          winner?: string;
-        };
+        const report = (await res.json()) as BattleReport;
         if (debugUsesArchivedReport) delete report.simulation;
-        game.registry.set('replayReport', report);
-        game.registry.set('replayReturn', 'ArenaHome');
+        setReplay(home, report, 'ArenaHome');
         game.scene.stop('ArenaHome');
         game.scene.start('Replay');
         return `spar power=${power} timeline=${report.simulation?.timeline?.length ?? 0} ticks=${report.simulation?.result?.completedTick ?? '?'} archived=${debugUsesArchivedReport} winner=${report.winner ?? '?'}`;
@@ -191,17 +189,25 @@ const StartGame = (parent: string): Phaser.Game => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ scribbitId: id }),
       });
-      const report = (await res.json()) as {
-        simulation?: {
-          timeline?: unknown[];
-          result?: { completedTick?: number };
-        };
-        winner?: string;
+      if (!res.ok) return `spar failed ${res.status}`;
+      const response = (await res.json()) as DirectBattleResponse;
+      const report = response.report;
+      const stagedBattle = stageDirectBattle(home, arena, response, id);
+      const startReplay = (): void => {
+        game.scene.stop('ArenaHome');
+        game.scene.start('Replay');
       };
-      game.registry.set('replayReport', report);
-      game.registry.set('replayReturn', 'ArenaHome');
-      game.scene.stop('ArenaHome');
-      game.scene.start('Replay');
+      if (window.location.search.includes('ceremony')) {
+        showVsCeremony(home, {
+          fighterA: report.a,
+          fighterB: report.b,
+          battleKind: report.kind,
+          rivalryStakes: stagedBattle.rivalryStakes,
+          onComplete: startReplay,
+        });
+      } else {
+        startReplay();
+      }
       return `spar id=${id} timeline=${report.simulation?.timeline?.length ?? 0} ticks=${report.simulation?.result?.completedTick ?? '?'} winner=${report.winner ?? '?'}`;
     };
 

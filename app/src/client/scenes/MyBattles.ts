@@ -1,8 +1,13 @@
 import { Scene } from 'phaser';
 import { fetchMyBattles } from '../lib/api';
-import { setReplay } from '../lib/registry';
+import {
+  getArena,
+  getBattleHistoryPage,
+  setBattleHistoryPage,
+  setReplay,
+} from '../lib/registry';
 import { loadDrawing, fitDrawing } from '../lib/scribbits';
-import { NAV_SAFE, TYPE, UI } from '../lib/theme';
+import { NAV_SAFE, prefersReducedMotion, TYPE, UI } from '../lib/theme';
 import { mountLivingPaper } from '../lib/livingpaper';
 import {
   label,
@@ -16,15 +21,29 @@ import {
 import type { ErrorPanel } from '../lib/ui';
 import type { BattleReport } from '../../shared/arena';
 import { dailyDrawTabLabel, navigateToDailyDraw } from '../lib/draweligibility';
+import {
+  orderBattleJournalReports,
+  planBattleJournalEntry,
+  planBattleJournalSummary,
+} from '../lib/battlejournal';
+import type {
+  BattleJournalEntryPlan,
+  BattleJournalPerspective,
+} from '../lib/battlejournal';
 
-const ROW_INNER_HEIGHT = 110;
+const ROW_INNER_HEIGHT = 190;
+const ROW_STEP = 200;
+const ROW_START_Y = 390;
 
-// A paginated list of the caller's battles. Tap a row to replay it.
+// Recent server-locked fights become a replayable paper scrapbook. The scene
+// never invents combat facts: its pure planner reuses validated transcripts and
+// clearly labels old result-only reports when motion is unavailable.
 export class MyBattles extends Scene {
   private errorPanelRef: ErrorPanel | null = null;
   private loadingCard: ReturnType<typeof stickerCard> | null = null;
   private renderGeneration = 0;
   private page = 0;
+  private reduceMotion = false;
 
   constructor() {
     super('MyBattles');
@@ -34,7 +53,8 @@ export class MyBattles extends Scene {
     this.errorPanelRef = null;
     this.loadingCard = null;
     this.renderGeneration = 0;
-    this.page = Math.max(0, data?.page ?? 0);
+    this.page = Math.max(0, data?.page ?? getBattleHistoryPage(this));
+    this.reduceMotion = prefersReducedMotion();
   }
 
   create(): void {
@@ -42,17 +62,17 @@ export class MyBattles extends Scene {
     this.cameras.main.fadeIn(180, 255, 247, 232);
     mountLivingPaper(this);
     const { width } = this.scale;
-    handLettered(this, width / 2, 64, 'MY BATTLES', 40, UI.ink, true);
+    handLettered(this, width / 2, 58, 'BATTLE SCRAPBOOK', 36, UI.ink, true);
     label(
       this,
       width / 2,
-      116,
-      'Tap a battle to open its result or replay',
-      TYPE.body,
+      105,
+      'Every server-locked fight leaves a page',
+      TYPE.caption,
       UI.inkSoft
     );
     this.buildAppTabs();
-    this.loadingCard = stickerCard(this, width / 2, 420, width - 100, 180, {
+    this.loadingCard = stickerCard(this, width / 2, 430, width - 100, 180, {
       tapeColor: UI.tapeAlt,
     });
     this.loadingCard.add(
@@ -60,7 +80,7 @@ export class MyBattles extends Scene {
         this,
         0,
         0,
-        'Shuffling your replay pile…',
+        'Threading your recent fight reel…',
         TYPE.body,
         UI.inkSoft,
         true
@@ -117,29 +137,35 @@ export class MyBattles extends Scene {
     this.render(result.data);
   }
 
-  private render(battles: BattleReport[]): void {
+  private render(reports: BattleReport[]): void {
     this.renderGeneration += 1;
     const { width } = this.scale;
-    if (battles.length === 0) {
-      const card = stickerCard(this, width / 2, 560, width - 80, 220, {
+    const arena = getArena(this);
+    const livingOwnedIds = arena?.myScribbits.map((scribbit) => scribbit.id);
+    const orderedReports = orderBattleJournalReports(reports);
+
+    if (orderedReports.length === 0) {
+      const card = stickerCard(this, width / 2, 560, width - 80, 240, {
         tilt: -0.6,
       });
-      const swords = label(this, 0, -40, '⚔️', 48, UI.ink);
+      const swords = label(this, 0, -52, '⚔️', 48, UI.ink);
       card.add(swords);
-      this.tweens.add({
-        targets: swords,
-        angle: { from: -10, to: 10 },
-        duration: 800,
-        yoyo: true,
-        repeat: -1,
-        ease: 'Sine.easeInOut',
-      });
+      if (!this.reduceMotion) {
+        this.tweens.add({
+          targets: swords,
+          angle: { from: -10, to: 10 },
+          duration: 800,
+          yoyo: true,
+          repeat: -1,
+          ease: 'Sine.easeInOut',
+        });
+      }
       card.add(
         label(
           this,
           0,
-          30,
-          'No battles yet!\nDraw a scribbit and spar to start fighting!',
+          36,
+          'No saved pages yet!\nDraw a Scribbit and ring the first bell.',
           TYPE.body,
           UI.inkSoft,
           true
@@ -148,119 +174,261 @@ export class MyBattles extends Scene {
       return;
     }
 
-    const rowHeight = 132;
+    const summary = planBattleJournalSummary(
+      orderedReports,
+      arena?.myUsername,
+      livingOwnedIds
+    );
+    this.buildRecentReelSummary(summary);
+
     const visibleRows = Math.max(
       1,
-      Math.floor((this.scale.height - NAV_SAFE - 290) / rowHeight)
+      Math.floor((this.scale.height - NAV_SAFE - 300) / ROW_STEP)
     );
-    const totalPages = Math.ceil(battles.length / visibleRows);
+    const totalPages = Math.ceil(orderedReports.length / visibleRows);
     this.page = Math.min(this.page, totalPages - 1);
+    setBattleHistoryPage(this, this.page);
     const start = this.page * visibleRows;
+    this.buildPagination(totalPages);
 
-    if (totalPages > 1) {
-      label(
-        this,
-        width / 2,
-        185,
-        `${this.page + 1} / ${totalPages}`,
-        TYPE.caption,
-        UI.inkSoft,
-        true
-      );
-      if (this.page > 0) {
-        ghostButton(
-          this,
-          width / 2 - 210,
-          185,
-          '← Newer',
-          () => {
-            this.scene.restart({ page: this.page - 1 });
-          },
-          150
+    orderedReports
+      .slice(start, start + visibleRows)
+      .forEach((report, index) => {
+        const plan = planBattleJournalEntry(
+          report,
+          arena?.myUsername,
+          livingOwnedIds
         );
-      }
-      if (this.page < totalPages - 1) {
-        ghostButton(
-          this,
-          width / 2 + 210,
-          185,
-          'Older →',
-          () => {
-            this.scene.restart({ page: this.page + 1 });
-          },
-          150
-        );
-      }
-    }
-
-    battles.slice(start, start + visibleRows).forEach((report, index) => {
-      const y = 305 + index * rowHeight;
-      this.buildRow(report, y);
-    });
+        this.buildRow(report, plan, ROW_START_Y + index * ROW_STEP, index);
+      });
   }
 
-  private buildRow(report: BattleReport, y: number): void {
+  private buildRecentReelSummary(
+    summary: ReturnType<typeof planBattleJournalSummary>
+  ): void {
+    const card = stickerCard(
+      this,
+      this.scale.width / 2,
+      190,
+      this.scale.width - 76,
+      118,
+      {
+        tapeColor: UI.tapeAlt,
+        tapeWidth: 92,
+        tilt: -0.25,
+      }
+    );
+    card.add(label(this, 0, -34, 'RECENT SERVER REEL', 17, UI.coralText, true));
+    card.add(label(this, 0, -4, summary.recordLine, 25, UI.ink, true));
+    card.add(
+      label(
+        this,
+        0,
+        30,
+        `${summary.savedLine} • ${summary.finishLine}`,
+        16,
+        UI.inkSoft,
+        true
+      ).setWordWrapWidth(this.scale.width - 130)
+    );
+  }
+
+  private buildPagination(totalPages: number): void {
+    const y = 285;
+    if (totalPages <= 1) {
+      label(this, this.scale.width / 2, y, 'LATEST PAGE', 17, UI.inkSoft, true);
+      return;
+    }
+
+    label(
+      this,
+      this.scale.width / 2,
+      y,
+      `PAGE ${this.page + 1} / ${totalPages}`,
+      17,
+      UI.inkSoft,
+      true
+    );
+    if (this.page > 0) {
+      ghostButton(
+        this,
+        this.scale.width / 2 - 220,
+        y,
+        '← Newer',
+        () => this.changePage(this.page - 1),
+        132
+      ).setScale(0.82);
+    }
+    if (this.page < totalPages - 1) {
+      ghostButton(
+        this,
+        this.scale.width / 2 + 220,
+        y,
+        'Older →',
+        () => this.changePage(this.page + 1),
+        132
+      ).setScale(0.82);
+    }
+  }
+
+  private changePage(page: number): void {
+    const nextPage = Math.max(0, page);
+    setBattleHistoryPage(this, nextPage);
+    this.scene.restart({ page: nextPage });
+  }
+
+  private buildRow(
+    report: BattleReport,
+    plan: BattleJournalEntryPlan,
+    y: number,
+    index: number
+  ): void {
     const { width } = this.scale;
-    const cardW = width - 50;
-    const tilt = ((report.id.charCodeAt(0) % 5) - 2) * 0.4;
-    const card = stickerCard(this, width / 2, y, cardW, ROW_INNER_HEIGHT, {
+    const cardWidth = width - 44;
+    const tilt = ((report.id.charCodeAt(0) % 5) - 2) * 0.28;
+    const card = stickerCard(this, width / 2, y, cardWidth, ROW_INNER_HEIGHT, {
+      gold: plan.perspective === 'win',
+      tapeColor: this.tapeColorForPerspective(plan.perspective),
+      tapeWidth: 64,
       tilt,
     });
 
-    // Make the whole card tappable.
     const hit = this.add
-      .rectangle(0, 0, cardW, ROW_INNER_HEIGHT, 0xffffff, 0.001)
+      .rectangle(0, 0, cardWidth, ROW_INNER_HEIGHT, 0xffffff, 0.001)
       .setInteractive({ useHandCursor: true });
     card.add(hit);
 
-    // Both drawings as thumbnails in little frames.
-    const half = cardW / 2;
-    [report.a, report.b].forEach((fighter, index) => {
-      const localX = index === 0 ? -half + 60 : half - 60;
+    const frameX = cardWidth / 2 - 58;
+    [report.a, report.b].forEach((fighter, fighterIndex) => {
+      const localX = fighterIndex === 0 ? -frameX : frameX;
       const frame = this.add.graphics();
       frame.fillStyle(UI.creamHex, 1);
-      frame.fillRect(localX - 42, -42, 84, 84);
+      frame.fillRect(localX - 40, -42, 80, 80);
       frame.lineStyle(3, UI.inkHex, 1);
-      frame.strokeRect(localX - 42, -42, 84, 84);
+      frame.strokeRect(localX - 40, -42, 80, 80);
       card.add(frame);
       const generation = this.renderGeneration;
       void loadDrawing(this, fighter).then((key) => {
         if (this.scene.isActive() && generation === this.renderGeneration) {
-          fitDrawing(this.add.image(width / 2 + localX, y, key), 74).setDepth(
-            3
-          );
+          fitDrawing(this.add.image(width / 2 + localX, y - 2, key), 68)
+            .setDepth(3)
+            .setAngle(fighterIndex === 0 ? -1.5 : 1.5);
         }
       });
     });
+
+    const matchup = label(this, 0, -66, plan.matchup, 22, UI.ink, true);
+    matchup.setWordWrapWidth(cardWidth - 210);
+    card.add(matchup);
 
     card.add(
       label(
         this,
         0,
-        -18,
-        `${report.a.name}  vs  ${report.b.name}`,
-        TYPE.body,
-        UI.ink,
+        -39,
+        `${this.perspectiveLabel(plan.perspective)} • ${plan.finishLabel}`,
+        17,
+        this.perspectiveTextColor(plan.perspective),
         true
       )
     );
-    const won = report.winner === 'a';
+    card.add(label(this, 0, -16, plan.kindDayLabel, 14, UI.inkSoft, true));
+
+    const highlight = label(
+      this,
+      0,
+      17,
+      plan.highlightLine ?? 'SERVER RESULT • WINNER PRESERVED',
+      16,
+      UI.ink,
+      true
+    );
+    highlight.setWordWrapWidth(cardWidth - 210);
+    highlight.setLineSpacing(-3);
+    card.add(highlight);
+
+    const metadata = label(
+      this,
+      0,
+      51,
+      plan.metadataLine,
+      14,
+      UI.inkSoft,
+      false
+    );
+    metadata.setWordWrapWidth(cardWidth - 210);
+    card.add(metadata);
+
     card.add(
       label(
         this,
         0,
-        20,
-        `${report.kind.toUpperCase()} · 👑 ${won ? report.a.name : report.b.name}`,
-        TYPE.caption,
-        UI.inkSoft,
+        78,
+        plan.replayMotionAvailable
+          ? '▶ WATCH SERVER REPLAY'
+          : 'OPEN SAVED RESULT ›',
+        13,
+        UI.coralText,
         true
       )
     );
 
     hit.on('pointerup', () => {
-      setReplay(this, report, 'ArenaHome');
+      setBattleHistoryPage(this, this.page);
+      setReplay(this, report, 'MyBattles');
       this.scene.start('Replay');
     });
+
+    if (!this.reduceMotion) {
+      card
+        .setAlpha(0)
+        .setScale(0.96)
+        .setX(width / 2 + (index % 2 ? 18 : -18));
+      this.tweens.add({
+        targets: card,
+        x: width / 2,
+        alpha: 1,
+        scale: 1,
+        duration: 190,
+        delay: index * 55,
+        ease: 'Back.easeOut',
+      });
+    }
+  }
+
+  private perspectiveLabel(perspective: BattleJournalPerspective): string {
+    switch (perspective) {
+      case 'win':
+        return 'MY WIN';
+      case 'loss':
+        return 'MY LOSS';
+      case 'watch':
+        return 'WATCH';
+    }
+  }
+
+  private perspectiveTextColor(perspective: BattleJournalPerspective): string {
+    switch (perspective) {
+      case 'win':
+        return '#317a39';
+      case 'loss':
+        return UI.coralText;
+      case 'watch':
+        return '#366b80';
+    }
+  }
+
+  private tapeColorForPerspective(
+    perspective: BattleJournalPerspective
+  ): number {
+    switch (perspective) {
+      case 'win':
+        return UI.gold;
+      case 'loss':
+        return UI.tapeAlt;
+      case 'watch':
+        return UI.tape;
+    }
   }
 
   private showError(message: string): void {

@@ -8,13 +8,13 @@ import type {
 import { SHAPE_POWER_CONTENT_BY_POWER } from './shapepowercontent';
 
 export const COMBAT_TICK_RATE = 20;
-export const COMBAT_MAXIMUM_SECONDS = 25;
+export const COMBAT_MAXIMUM_SECONDS = 20;
 export const COMBAT_MAXIMUM_TICKS = COMBAT_TICK_RATE * COMBAT_MAXIMUM_SECONDS;
 export const FIXED_POINT_SCALE = 100;
 export const MAXIMUM_COMBAT_ENTITIES = 4;
 export const MAXIMUM_TIMELINE_EVENTS = 384;
-// Tick 0 plus every 10 ticks through tick 500 is exactly 51 checkpoints.
-export const MAXIMUM_CHECKPOINTS = 51;
+// Tick 0 plus every 10 ticks through tick 400 is exactly 41 checkpoints.
+export const MAXIMUM_CHECKPOINTS = 41;
 
 /**
  * Every tick executes this exact order. The frozen tuple is both documentation
@@ -134,13 +134,13 @@ export const DEFAULT_COMBAT_RULES: CombatRules = Object.freeze({
   arena: Object.freeze({
     startingHalfWidth: 8_000,
     startingHalfHeight: 5_000,
-    finalHalfWidth: 6_200,
-    finalHalfHeight: 3_800,
+    finalHalfWidth: 5_000,
+    finalHalfHeight: 3_000,
     shrinkStartsAtTick: 14 * COMBAT_TICK_RATE,
   }),
   lateFight: Object.freeze({
-    startsAtTick: 18 * COMBAT_TICK_RATE,
-    cooldownMultiplierPermille: 750,
+    startsAtTick: 15 * COMBAT_TICK_RATE,
+    cooldownMultiplierPermille: 500,
     normalDefenseTicks: 5,
     shortenedDefenseTicks: 2,
   }),
@@ -163,7 +163,7 @@ export const DEFAULT_COMBAT_RULES: CombatRules = Object.freeze({
     contactSpikeDivisor: 8,
     // The replay has roughly two seconds of entrance/FIGHT ceremony. Fresh ink
     // cannot fully fold before tick 260, keeping the visible match in the
-    // intended 15-25 second band without changing who dealt the damage.
+    // intended 15-20 second band without changing who dealt the damage.
     knockoutsEnabledAtTick: 13 * COMBAT_TICK_RATE,
     criticalChancePermillePerCharm: 2,
     maximumCriticalChancePermille: 180,

@@ -14,9 +14,7 @@ import {
   label,
   stickerCard,
 } from '../lib/ui';
-import type { Element } from '../../shared/arena';
-
-const ELEMENT_ORDER: Element[] = ['ember', 'moss', 'storm', 'tide'];
+import { ELEMENT_PAYLOAD_GUIDE } from '../../shared/combat/elementcontent';
 
 // A truthful rules + safety guide. It deliberately avoids a fake collection
 // catalog: every Scribbit is player-drawn, so the useful discovery is how the
@@ -81,7 +79,15 @@ export class Bestiary extends Scene {
 
   private buildStatsGuide(top: number): number {
     const { width } = this.scale;
-    label(this, EDGE + 10, top, '✏️ SHAPE = BUILD', TYPE.title, UI.ink, true).setOrigin(0, 0.5);
+    label(
+      this,
+      EDGE + 10,
+      top,
+      '✏️ SHAPE = BUILD',
+      TYPE.title,
+      UI.ink,
+      true
+    ).setOrigin(0, 0.5);
     const cardHeight = 300;
     const cardWidth = width - EDGE * 2;
     const centerY = top + 176;
@@ -89,42 +95,113 @@ export class Bestiary extends Scene {
       tapeColor: UI.tapeAlt,
     });
     const rows = [
-      ['🫓', 'CHONK / HP', 'Filled bodies take a few more hits and unlock Inkquake.'],
+      [
+        '🫓',
+        'CHONK / HP',
+        'Filled bodies take a few more hits and unlock Inkquake.',
+      ],
       ['🌵', 'SPIKE / EDGE', 'Jagged outlines unlock three-quill Nib Halo.'],
-      ['💨', 'ZIP / MOVE', 'Compact footprints move faster and unlock Smearstep.'],
-      ['✨', 'CHARM / COLOR', 'Color variety unlocks Colorburst and nudges crits.'],
+      [
+        '💨',
+        'ZIP / MOVE',
+        'Compact footprints move faster and unlock Smearstep.',
+      ],
+      [
+        '✨',
+        'CHARM / COLOR',
+        'Color variety unlocks Colorburst and nudges crits.',
+      ],
     ] as const;
     rows.forEach(([emoji, title, description], index) => {
       const y = -104 + index * 68;
-      card.add(label(this, -cardWidth / 2 + 42, y, emoji, 30, UI.ink).setOrigin(0, 0.5));
-      card.add(label(this, -cardWidth / 2 + 88, y - 12, title, TYPE.caption, UI.ink, true).setOrigin(0, 0.5));
-      card.add(label(this, -cardWidth / 2 + 88, y + 16, description, 19, UI.inkSoft).setOrigin(0, 0.5));
+      card.add(
+        label(this, -cardWidth / 2 + 42, y, emoji, 30, UI.ink).setOrigin(0, 0.5)
+      );
+      card.add(
+        label(
+          this,
+          -cardWidth / 2 + 88,
+          y - 12,
+          title,
+          TYPE.caption,
+          UI.ink,
+          true
+        ).setOrigin(0, 0.5)
+      );
+      card.add(
+        label(
+          this,
+          -cardWidth / 2 + 88,
+          y + 16,
+          description,
+          19,
+          UI.inkSoft
+        ).setOrigin(0, 0.5)
+      );
     });
     return centerY + cardHeight / 2;
   }
 
   private buildElementGuide(top: number): number {
     const { width } = this.scale;
-    label(this, EDGE + 10, top, '⚔️ ELEMENT MATCHUPS', TYPE.title, UI.ink, true).setOrigin(0, 0.5);
-    const cardHeight = 190;
-    const centerY = top + 120;
+    label(
+      this,
+      EDGE + 10,
+      top,
+      '⚔️ ELEMENT PAYLOADS',
+      TYPE.title,
+      UI.ink,
+      true
+    ).setOrigin(0, 0.5);
+    const cardHeight = 360;
+    const centerY = top + 205;
     const cardWidth = width - EDGE * 2;
-    const card = stickerCard(this, width / 2, centerY, cardWidth, cardHeight, { tape: false });
-    const spacing = (cardWidth - 70) / ELEMENT_ORDER.length;
-    ELEMENT_ORDER.forEach((element, index) => {
-      const x = -cardWidth / 2 + 35 + spacing * (index + 0.5);
-      card.add(elementBadge(this, x, -24, element, 0.62));
-      if (index < ELEMENT_ORDER.length - 1) {
-        card.add(label(this, x + spacing / 2, -24, '›', 34, UI.inkSoft, true));
-      }
+    const card = stickerCard(this, width / 2, centerY, cardWidth, cardHeight, {
+      tape: false,
     });
-    card.add(label(this, 0, 56, 'Ember › Moss › Storm › Tide › Ember', TYPE.caption, UI.ink, true));
+    ELEMENT_PAYLOAD_GUIDE.forEach((entry, index) => {
+      const rowY = -118 + index * 68;
+      const textX = -cardWidth / 2 + 116;
+      card.add(
+        elementBadge(this, -cardWidth / 2 + 66, rowY, entry.element, 0.5)
+      );
+      card.add(
+        label(this, textX, rowY - 12, entry.title, 19, UI.ink, true).setOrigin(
+          0,
+          0.5
+        )
+      );
+      card.add(
+        label(this, textX, rowY + 15, entry.detail, 18, UI.inkSoft)
+          .setOrigin(0, 0.5)
+          .setWordWrapWidth(cardWidth - 154)
+      );
+    });
+    card.add(
+      label(
+        this,
+        0,
+        150,
+        'NO HIDDEN TRIANGLE  •  TONIGHT’S FORECAST STILL MATTERS',
+        17,
+        UI.coralText,
+        true
+      )
+    );
     return centerY + cardHeight / 2;
   }
 
   private buildDailyLoop(top: number): number {
     const { width } = this.scale;
-    label(this, EDGE + 10, top, '🌙 THE DAILY RITUAL', TYPE.title, UI.ink, true).setOrigin(0, 0.5);
+    label(
+      this,
+      EDGE + 10,
+      top,
+      '🌙 THE DAILY RITUAL',
+      TYPE.title,
+      UI.ink,
+      true
+    ).setOrigin(0, 0.5);
     const cardHeight = 330;
     const cardWidth = width - EDGE * 2;
     const centerY = top + 190;
@@ -138,7 +215,15 @@ export class Bestiary extends Scene {
       '4. Return after UTC midnight for the Champion and Clout.',
     ];
     steps.forEach((step, index) => {
-      const text = label(this, -cardWidth / 2 + 42, -112 + index * 70, step, TYPE.body, UI.ink, index === 0);
+      const text = label(
+        this,
+        -cardWidth / 2 + 42,
+        -112 + index * 70,
+        step,
+        TYPE.body,
+        UI.ink,
+        index === 0
+      );
       text.setOrigin(0, 0.5).setWordWrapWidth(cardWidth - 84);
       card.add(text);
     });
@@ -147,11 +232,21 @@ export class Bestiary extends Scene {
 
   private buildLegendGuide(top: number): number {
     const { width } = this.scale;
-    label(this, EDGE + 10, top, '🏆 THREE DAYS TO MATTER', TYPE.title, UI.ink, true).setOrigin(0, 0.5);
+    label(
+      this,
+      EDGE + 10,
+      top,
+      '🏆 THREE DAYS TO MATTER',
+      TYPE.title,
+      UI.ink,
+      true
+    ).setOrigin(0, 0.5);
     const cardHeight = 230;
     const cardWidth = width - EDGE * 2;
     const centerY = top + 142;
-    const card = stickerCard(this, width / 2, centerY, cardWidth, cardHeight, { gold: true });
+    const card = stickerCard(this, width / 2, centerY, cardWidth, cardHeight, {
+      gold: true,
+    });
     const copy = label(
       this,
       0,
@@ -168,11 +263,21 @@ export class Bestiary extends Scene {
 
   private buildSafetyGuide(top: number): number {
     const { width } = this.scale;
-    label(this, EDGE + 10, top, '🛡️ DATA & SAFETY', TYPE.title, UI.ink, true).setOrigin(0, 0.5);
+    label(
+      this,
+      EDGE + 10,
+      top,
+      '🛡️ DATA & SAFETY',
+      TYPE.title,
+      UI.ink,
+      true
+    ).setOrigin(0, 0.5);
     const cardHeight = 330;
     const centerY = top + 190;
     const cardWidth = width - EDGE * 2;
-    const card = stickerCard(this, width / 2, centerY, cardWidth, cardHeight, { tapeColor: UI.tapeAlt });
+    const card = stickerCard(this, width / 2, centerY, cardWidth, cardHeight, {
+      tapeColor: UI.tapeAlt,
+    });
     const copy = label(
       this,
       0,
@@ -193,7 +298,17 @@ export class Bestiary extends Scene {
       cardWidth - 90
     );
     card.add(deleteButton);
-    card.add(label(this, 0, 136, 'Two taps required · permanent', 17, UI.coralText, true));
+    card.add(
+      label(
+        this,
+        0,
+        136,
+        'Two taps required · permanent',
+        17,
+        UI.coralText,
+        true
+      )
+    );
     return centerY + cardHeight / 2;
   }
 
@@ -223,7 +338,15 @@ export class Bestiary extends Scene {
     this.livingPaper?.destroy();
     this.livingPaper = new LivingPaper(this, { edgeCreatures: false });
     const { width, height } = this.scale;
-    handLettered(this, width / 2, height * 0.34, 'DATA DELETED', 56, UI.ink, true);
+    handLettered(
+      this,
+      width / 2,
+      height * 0.34,
+      'DATA DELETED',
+      56,
+      UI.ink,
+      true
+    );
     label(
       this,
       width / 2,
@@ -232,16 +355,43 @@ export class Bestiary extends Scene {
       TYPE.body,
       UI.ink,
       true
-    ).setWordWrapWidth(width - 120).setLineSpacing(7);
+    )
+      .setWordWrapWidth(width - 120)
+      .setLineSpacing(7);
   }
 
   private buildAppTabs(): void {
     appTabBar(this, 'scout', [
-      { key: 'arena', icon: '🏟️', label: 'Arena', onClick: () => fadeToScene(this, 'ArenaHome') },
-      { key: 'gallery', icon: '🏆', label: 'Gallery', onClick: () => fadeToScene(this, 'Sketchbook') },
-      { key: 'draw', icon: '✏️', label: dailyDrawTabLabel(this), onClick: () => navigateToDailyDraw(this) },
-      { key: 'battles', icon: '⚔️', label: 'Battles', onClick: () => fadeToScene(this, 'MyBattles') },
-      { key: 'scout', icon: '📖', label: 'Guide', onClick: () => this.scrollTo(0) },
+      {
+        key: 'arena',
+        icon: '🏟️',
+        label: 'Arena',
+        onClick: () => fadeToScene(this, 'ArenaHome'),
+      },
+      {
+        key: 'gallery',
+        icon: '🏆',
+        label: 'Gallery',
+        onClick: () => fadeToScene(this, 'Sketchbook'),
+      },
+      {
+        key: 'draw',
+        icon: '✏️',
+        label: dailyDrawTabLabel(this),
+        onClick: () => navigateToDailyDraw(this),
+      },
+      {
+        key: 'battles',
+        icon: '⚔️',
+        label: 'Battles',
+        onClick: () => fadeToScene(this, 'MyBattles'),
+      },
+      {
+        key: 'scout',
+        icon: '📖',
+        label: 'Guide',
+        onClick: () => this.scrollTo(0),
+      },
     ]);
   }
 

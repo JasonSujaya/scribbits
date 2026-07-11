@@ -6,7 +6,6 @@ import { Scene } from 'phaser';
 import type { BattleReport, Scribbit } from '../../shared/arena';
 import type { PrimaryPower } from '../../shared/combat/types';
 import {
-  getMasteryPresentation,
   getReplayBattleKindLabel,
   planReplayBattleClock,
   planReplayHitPointBar,
@@ -18,7 +17,19 @@ import type {
 import { levelOf } from './scribbits';
 import { getShapePowerSignatureName } from './shapepowerpresentation';
 import { ELEMENT_STYLES, UI } from './theme';
-import { ghostButton, label, levelBadge } from './ui';
+import { ghostButton, label } from './ui';
+
+export type ReplayShapePowerState = 'ready' | 'telegraph' | 'active';
+
+type ShapePowerChipView = {
+  container: Phaser.GameObjects.Container;
+  background: Phaser.GameObjects.Rectangle;
+  stateBackground: Phaser.GameObjects.Rectangle;
+  stateLabel: Phaser.GameObjects.Text;
+  powerLabel: Phaser.GameObjects.Text;
+  fighterName: string;
+  powerName: string;
+};
 
 type FighterBarView = {
   container: Phaser.GameObjects.Container;
@@ -26,6 +37,7 @@ type FighterBarView = {
   hitPointTrail: Phaser.GameObjects.Rectangle;
   hitPointBar: Phaser.GameObjects.Rectangle;
   hitPointValue: Phaser.GameObjects.Text;
+  shapePower: ShapePowerChipView;
   revision: number;
 };
 
@@ -34,6 +46,87 @@ type BattleClockView = {
   face: Phaser.GameObjects.Arc;
   seconds: Phaser.GameObjects.Text;
   progressFill: Phaser.GameObjects.Rectangle;
+};
+
+type ShapePowerStatePresentation = Readonly<{
+  visibleLabel: string;
+  accessibleLabel: string;
+  backgroundColor: number;
+  borderColor: number;
+  stateBackgroundColor: number;
+  stateTextColor: string;
+  powerTextColor: string;
+}>;
+
+const SHAPE_POWER_STATE_PRESENTATIONS: Record<
+  ReplayShapePowerState,
+  ShapePowerStatePresentation
+> = {
+  ready: {
+    visibleLabel: 'READY',
+    accessibleLabel: 'ready',
+    backgroundColor: UI.creamHex,
+    borderColor: UI.inkHex,
+    stateBackgroundColor: UI.inkHex,
+    stateTextColor: UI.cream,
+    powerTextColor: UI.ink,
+  },
+  telegraph: {
+    visibleLabel: 'WINDUP',
+    accessibleLabel: 'telegraphing',
+    backgroundColor: UI.tape,
+    borderColor: UI.inkHex,
+    stateBackgroundColor: UI.inkHex,
+    stateTextColor: UI.cream,
+    powerTextColor: UI.ink,
+  },
+  active: {
+    visibleLabel: 'ACTIVE',
+    accessibleLabel: 'active',
+    backgroundColor: UI.inkHex,
+    borderColor: UI.goldHex,
+    stateBackgroundColor: UI.goldHex,
+    stateTextColor: UI.ink,
+    powerTextColor: UI.cream,
+  },
+};
+
+const fitTextToWidth = (
+  text: Phaser.GameObjects.Text,
+  maximumWidth: number
+): void => {
+  text.setScale(1);
+  if (text.width > maximumWidth) {
+    text.setScale(maximumWidth / text.width);
+  }
+};
+
+const createShapePowerLiveRegion = (
+  scene: Scene,
+  initialText: string
+): HTMLParagraphElement | null => {
+  if (typeof document === 'undefined') return null;
+  const canvasParent = scene.game.canvas.parentElement;
+  if (!canvasParent) return null;
+
+  const liveRegion = document.createElement('p');
+  liveRegion.setAttribute('role', 'status');
+  liveRegion.setAttribute('aria-live', 'polite');
+  liveRegion.setAttribute('aria-atomic', 'true');
+  liveRegion.style.position = 'absolute';
+  liveRegion.style.width = '1px';
+  liveRegion.style.height = '1px';
+  liveRegion.style.padding = '0';
+  liveRegion.style.margin = '-1px';
+  liveRegion.style.overflow = 'hidden';
+  liveRegion.style.clip = 'rect(0, 0, 0, 0)';
+  liveRegion.style.whiteSpace = 'nowrap';
+  liveRegion.style.border = '0';
+  liveRegion.style.pointerEvents = 'none';
+  liveRegion.textContent = initialText;
+  canvasParent.append(liveRegion);
+  scene.events.once(Phaser.Scenes.Events.SHUTDOWN, () => liveRegion.remove());
+  return liveRegion;
 };
 
 export type ReplayBattleHud = {
@@ -47,6 +140,10 @@ export type ReplayBattleHud = {
     hitPoints: number,
     maximumHitPoints: number,
     playbackSpeed: number
+  ) => void;
+  setFighterShapePowerState: (
+    side: ReplayBattleSide,
+    state: ReplayShapePowerState
   ) => void;
   setHitPointBarsVisible: (visible: boolean) => void;
   updateClock: (
@@ -65,6 +162,7 @@ export type CreateReplayBattleHudInput = {
   fighterAPrimaryPower: PrimaryPower;
   fighterBPrimaryPower: PrimaryPower;
   battleKind: BattleReport['kind'];
+  battleLabel?: string | null;
   showPlaybackControls: boolean;
   reduceMotion: boolean;
   initialPlaybackSpeed: number;
@@ -86,50 +184,25 @@ const createFighterBarView = (
   const fighterLayout = layout.fighters[side];
   const style = ELEMENT_STYLES[scribbit.element];
   const panelRight = fighterLayout.panelLeft + layout.healthBarWidth;
-  const panelBottom = layout.fighterPanelTop + layout.fighterPanelHeight;
-  const clippedCorner = 18;
+  const namePlateBottom = layout.fighterPanelTop + 48;
+  const clippedCorner = 14;
   const panel = scene.add.graphics();
-  panel.fillStyle(0x000000, 0.2);
-  panel.beginPath();
-  panel.moveTo(fighterLayout.panelLeft + 4, layout.fighterPanelTop + 5);
-  if (side === 'a') {
-    panel.lineTo(panelRight - clippedCorner + 4, layout.fighterPanelTop + 5);
-    panel.lineTo(panelRight + 4, layout.fighterPanelTop + clippedCorner + 5);
-  } else {
-    panel.lineTo(panelRight + 4, layout.fighterPanelTop + 5);
-    panel.lineTo(panelRight + 4, panelBottom + 5);
-    panel.lineTo(fighterLayout.panelLeft + clippedCorner + 4, panelBottom + 5);
-    panel.lineTo(fighterLayout.panelLeft + 4, panelBottom - clippedCorner + 5);
-  }
-  if (side === 'a') {
-    panel.lineTo(panelRight + 4, panelBottom + 5);
-    panel.lineTo(fighterLayout.panelLeft + 4, panelBottom + 5);
-  } else {
-    panel.lineTo(
-      fighterLayout.panelLeft + 4,
-      layout.fighterPanelTop + clippedCorner + 5
-    );
-  }
-  panel.closePath();
-  panel.fillPath();
-
-  panel.fillStyle(UI.creamHex, 0.96);
+  panel.fillStyle(UI.creamHex, 0.94);
   panel.beginPath();
   if (side === 'a') {
     panel.moveTo(fighterLayout.panelLeft, layout.fighterPanelTop);
     panel.lineTo(panelRight - clippedCorner, layout.fighterPanelTop);
     panel.lineTo(panelRight, layout.fighterPanelTop + clippedCorner);
-    panel.lineTo(panelRight, panelBottom);
-    panel.lineTo(fighterLayout.panelLeft, panelBottom);
+    panel.lineTo(panelRight, namePlateBottom);
+    panel.lineTo(fighterLayout.panelLeft, namePlateBottom);
   } else {
     panel.moveTo(
       fighterLayout.panelLeft + clippedCorner,
       layout.fighterPanelTop
     );
     panel.lineTo(panelRight, layout.fighterPanelTop);
-    panel.lineTo(panelRight, panelBottom);
-    panel.lineTo(fighterLayout.panelLeft + clippedCorner, panelBottom);
-    panel.lineTo(fighterLayout.panelLeft, panelBottom - clippedCorner);
+    panel.lineTo(panelRight, namePlateBottom);
+    panel.lineTo(fighterLayout.panelLeft, namePlateBottom);
     panel.lineTo(
       fighterLayout.panelLeft,
       layout.fighterPanelTop + clippedCorner
@@ -137,31 +210,34 @@ const createFighterBarView = (
   }
   panel.closePath();
   panel.fillPath();
-  panel.lineStyle(3, UI.inkHex, 0.84);
-  panel.strokePath();
-  panel.lineStyle(7, style.primary, 0.92);
+  panel.lineStyle(2, UI.inkHex, 0.72);
   panel.lineBetween(
-    fighterLayout.panelLeft + (side === 'a' ? 0 : clippedCorner),
-    layout.fighterPanelTop + 4,
-    panelRight - (side === 'a' ? clippedCorner : 0),
-    layout.fighterPanelTop + 4
+    fighterLayout.panelLeft + 8,
+    namePlateBottom - 2,
+    panelRight - 8,
+    namePlateBottom - 2
+  );
+  panel.lineStyle(6, style.primary, 0.96);
+  panel.lineBetween(
+    fighterLayout.panelLeft + (side === 'a' ? 8 : clippedCorner + 6),
+    layout.fighterPanelTop + 3,
+    panelRight - (side === 'a' ? clippedCorner + 6 : 8),
+    layout.fighterPanelTop + 3
   );
 
   const name = label(
     scene,
     fighterLayout.nameX,
-    layout.fighterNameY,
+    layout.fighterNameY + 4,
     scribbit.name,
-    27,
+    28,
     UI.ink,
     true
   )
     .setOrigin(fighterLayout.nameOriginX, 0.5)
     .setDepth(22);
   const availableNameWidth = layout.healthBarWidth - 72;
-  if (name.width > availableNameWidth) {
-    name.setScale(availableNameWidth / name.width);
-  }
+  fitTextToWidth(name, availableNameWidth);
   name.setInteractive({ useHandCursor: true });
   name.on(
     'pointerup',
@@ -176,28 +252,17 @@ const createFighterBarView = (
     }
   );
 
-  const level = levelBadge(
+  const fighterLevel = levelOf(scribbit);
+  const level = label(
     scene,
     fighterLayout.levelBadgeX,
-    layout.fighterNameY,
-    levelOf(scribbit),
-    0.44
-  );
-
-  const mastery = getMasteryPresentation(levelOf(scribbit));
-  const masteryLabel = label(
-    scene,
-    fighterLayout.nameX,
-    layout.fighterMetaY,
-    mastery.label.toUpperCase(),
-    14,
-    UI.inkSoft,
+    layout.fighterNameY + 4,
+    `LV ${fighterLevel}`,
+    15,
+    UI.ink,
     true
-  ).setOrigin(fighterLayout.nameOriginX, 0.5);
-  const masteryMaximumWidth = layout.healthBarWidth - 24;
-  if (masteryLabel.width > masteryMaximumWidth) {
-    masteryLabel.setScale(masteryMaximumWidth / masteryLabel.width);
-  }
+  ).setDepth(22);
+  fitTextToWidth(level, 52);
 
   const hitPointTrack = scene.add
     .rectangle(
@@ -205,11 +270,11 @@ const createFighterBarView = (
       layout.healthBarY,
       layout.healthBarWidth,
       layout.healthBarHeight,
-      UI.inkHex,
-      0.2
+      UI.creamHex,
+      0.98
     )
     .setOrigin(fighterLayout.healthBarOriginX, 0.5)
-    .setStrokeStyle(3, UI.inkHex, 0.72)
+    .setStrokeStyle(3, UI.inkHex, 0.96)
     .setDepth(22);
   const hitPointTrail = scene.add
     .rectangle(
@@ -239,51 +304,102 @@ const createFighterBarView = (
     fighterLayout.chipCenterX,
     layout.healthBarY,
     '— / —',
-    18,
+    19,
     UI.ink,
     true
   );
-  hitPointValue.setStroke(UI.cream, 4);
+  hitPointValue.setStroke(UI.cream, 5);
 
   const chipWidth = layout.healthBarWidth - 12;
+  const chipHeight = layout.fighterChipHeight;
+  const stateWidth = Math.min(102, Math.round(chipWidth * 0.38));
+  const powerWidth = chipWidth - stateWidth;
+  const innerDirection = side === 'a' ? 1 : -1;
+  const stateCenterX = (innerDirection * powerWidth) / 2;
+  const powerCenterX = (-innerDirection * stateWidth) / 2;
+  const dividerX = innerDirection * (chipWidth / 2 - stateWidth);
+  const elementAccentX = -innerDirection * (chipWidth / 2 - 5);
+  const readyPresentation = SHAPE_POWER_STATE_PRESENTATIONS.ready;
+  const powerName = getShapePowerSignatureName(
+    scribbit.element,
+    primaryPower
+  ).toUpperCase();
+  const shapePowerContainer = scene.add
+    .container(fighterLayout.chipCenterX, layout.fighterChipY)
+    .setSize(chipWidth, chipHeight);
   const powerChip = scene.add
     .rectangle(
-      fighterLayout.chipCenterX,
-      layout.fighterChipY,
+      0,
+      0,
       chipWidth,
-      layout.fighterChipHeight,
-      UI.inkHex,
-      0.92
+      chipHeight,
+      readyPresentation.backgroundColor,
+      1
     )
-    .setStrokeStyle(3, style.primary, 0.95);
-  const powerLabel = label(
+    .setStrokeStyle(3, readyPresentation.borderColor, 1);
+  const stateBackground = scene.add.rectangle(
+    stateCenterX,
+    0,
+    stateWidth - 4,
+    chipHeight - 6,
+    readyPresentation.stateBackgroundColor,
+    1
+  );
+  const divider = scene.add.rectangle(
+    dividerX,
+    0,
+    3,
+    chipHeight - 8,
+    UI.inkHex,
+    0.92
+  );
+  const elementAccent = scene.add.rectangle(
+    elementAccentX,
+    0,
+    5,
+    chipHeight - 9,
+    style.primary,
+    1
+  );
+  const stateLabel = label(
     scene,
-    fighterLayout.chipCenterX,
-    layout.fighterChipY,
-    `${style.emoji} ${getShapePowerSignatureName(
-      scribbit.element,
-      primaryPower
-    ).toUpperCase()}`,
-    18,
-    UI.cream,
+    stateCenterX,
+    0,
+    readyPresentation.visibleLabel,
+    15,
+    readyPresentation.stateTextColor,
     true
   );
-  if (powerLabel.width > chipWidth - 12) {
-    powerLabel.setScale((chipWidth - 12) / powerLabel.width);
-  }
+  const powerLabel = label(
+    scene,
+    powerCenterX,
+    0,
+    powerName,
+    19,
+    readyPresentation.powerTextColor,
+    true
+  );
+  fitTextToWidth(stateLabel, stateWidth - 14);
+  fitTextToWidth(powerLabel, powerWidth - 20);
+  shapePowerContainer.add([
+    powerChip,
+    stateBackground,
+    divider,
+    elementAccent,
+    stateLabel,
+    powerLabel,
+  ]);
 
   const container = scene.add
     .container(0, 0, [
       panel,
       name,
       level,
-      masteryLabel,
       hitPointTrack,
       hitPointTrail,
       hitPointBar,
       hitPointValue,
-      powerChip,
-      powerLabel,
+      shapePowerContainer,
     ])
     .setDepth(20);
 
@@ -293,6 +409,15 @@ const createFighterBarView = (
     hitPointTrail,
     hitPointBar,
     hitPointValue,
+    shapePower: {
+      container: shapePowerContainer,
+      background: powerChip,
+      stateBackground,
+      stateLabel,
+      powerLabel,
+      fighterName: scribbit.name,
+      powerName,
+    },
     revision: 0,
   };
 };
@@ -364,6 +489,90 @@ export function createReplayBattleHud(
     ),
   };
 
+  const shapePowerStates: Record<ReplayBattleSide, ReplayShapePowerState> = {
+    a: 'ready',
+    b: 'ready',
+  };
+  const describeShapePowerState = (side: ReplayBattleSide): string => {
+    const shapePower = fighterBars[side].shapePower;
+    const state = SHAPE_POWER_STATE_PRESENTATIONS[shapePowerStates[side]];
+    return `${shapePower.fighterName}: Shape Power ${shapePower.powerName} is ${state.accessibleLabel}`;
+  };
+  let shapePowerLiveRegion: HTMLParagraphElement | null = null;
+  const applyFighterShapePowerState = (
+    side: ReplayBattleSide,
+    state: ReplayShapePowerState,
+    announceChange: boolean
+  ): void => {
+    if (announceChange && shapePowerStates[side] === state) return;
+
+    shapePowerStates[side] = state;
+    const shapePower = fighterBars[side].shapePower;
+    const presentation = SHAPE_POWER_STATE_PRESENTATIONS[state];
+    scene.tweens.killTweensOf(shapePower.container);
+    shapePower.container.setScale(1).setAlpha(1);
+    shapePower.background
+      .setFillStyle(presentation.backgroundColor, 1)
+      .setStrokeStyle(state === 'active' ? 4 : 3, presentation.borderColor, 1);
+    shapePower.stateBackground.setFillStyle(
+      presentation.stateBackgroundColor,
+      1
+    );
+    shapePower.stateLabel
+      .setText(presentation.visibleLabel)
+      .setColor(presentation.stateTextColor);
+    shapePower.powerLabel.setColor(presentation.powerTextColor);
+    fitTextToWidth(
+      shapePower.stateLabel,
+      shapePower.stateBackground.width - 10
+    );
+    const accessibleDescription = describeShapePowerState(side);
+    shapePower.container
+      .setName(accessibleDescription)
+      .setData('shapePowerState', state)
+      .setData('accessibilityLabel', accessibleDescription);
+
+    if (!input.reduceMotion && state === 'telegraph') {
+      scene.tweens.add({
+        targets: shapePower.container,
+        scaleX: 1.02,
+        scaleY: 1.08,
+        duration: 260,
+        ease: 'Sine.easeInOut',
+        yoyo: true,
+        repeat: -1,
+      });
+    } else if (!input.reduceMotion && state === 'active') {
+      scene.tweens.add({
+        targets: shapePower.container,
+        scaleX: 1.04,
+        scaleY: 1.12,
+        duration: 100,
+        ease: 'Cubic.easeOut',
+        yoyo: true,
+      });
+    }
+
+    // Announce the actionable wind-up once; active/ready transitions can fire
+    // rapidly at 4× and would otherwise flood a polite assistive live region.
+    if (announceChange && state === 'telegraph' && shapePowerLiveRegion) {
+      shapePowerLiveRegion.textContent = `${describeShapePowerState('a')}. ${describeShapePowerState('b')}.`;
+    }
+  };
+  applyFighterShapePowerState('a', 'ready', false);
+  applyFighterShapePowerState('b', 'ready', false);
+  shapePowerLiveRegion = createShapePowerLiveRegion(
+    scene,
+    `${describeShapePowerState('a')}. ${describeShapePowerState('b')}.`
+  );
+
+  const setFighterShapePowerState = (
+    side: ReplayBattleSide,
+    state: ReplayShapePowerState
+  ): void => {
+    applyFighterShapePowerState(side, state, true);
+  };
+
   const broadcastRail = scene.add.graphics().setDepth(78);
   broadcastRail.fillStyle(0x000000, 0.28);
   broadcastRail.fillRoundedRect(
@@ -373,7 +582,7 @@ export function createReplayBattleHud(
     layout.broadcastRailHeight,
     16
   );
-  broadcastRail.fillStyle(UI.deskHex, 0.98);
+  broadcastRail.fillStyle(UI.creamHex, 0.98);
   broadcastRail.fillRoundedRect(
     layout.broadcastRailLeft,
     layout.broadcastRailTop,
@@ -381,7 +590,7 @@ export function createReplayBattleHud(
     layout.broadcastRailHeight,
     16
   );
-  broadcastRail.lineStyle(3, UI.gold, 0.82);
+  broadcastRail.lineStyle(3, UI.inkHex, 0.9);
   broadcastRail.strokeRoundedRect(
     layout.broadcastRailLeft,
     layout.broadcastRailTop,
@@ -406,7 +615,7 @@ export function createReplayBattleHud(
     scene,
     layout.kindLabelX + livePillWidth / 2,
     layout.battleKindY,
-    input.showPlaybackControls ? 'LIVE' : 'FINAL',
+    input.showPlaybackControls ? 'BOUT' : 'FINAL',
     14,
     UI.cream,
     true
@@ -415,9 +624,9 @@ export function createReplayBattleHud(
     scene,
     layout.kindLabelX + livePillWidth + 10,
     layout.battleKindY,
-    getReplayBattleKindLabel(input.battleKind),
+    input.battleLabel ?? getReplayBattleKindLabel(input.battleKind),
     20,
-    UI.paperText,
+    UI.ink,
     true
   )
     .setOrigin(0, 0.5)
@@ -434,10 +643,10 @@ export function createReplayBattleHud(
     layout.kindLabelX,
     layout.serverTruthY,
     input.battleKind === 'practice'
-      ? 'SERVER REPLAY · NO REWARDS'
-      : 'OUTCOME LOCKED · SERVER REPLAY',
+      ? 'SERVER-LOCKED REPLAY · NO REWARDS'
+      : 'SERVER-LOCKED REPLAY',
     14,
-    '#ffd447',
+    UI.coralText,
     true
   )
     .setOrigin(0, 0.5)
@@ -457,7 +666,7 @@ export function createReplayBattleHud(
     layout.toolbarY,
     'FINAL · SERVER LOCKED',
     20,
-    '#ffd447',
+    UI.coralText,
     true
   )
     .setDepth(80)
@@ -507,7 +716,8 @@ export function createReplayBattleHud(
   );
   const ticker = scene.add
     .container(layout.tickerX, layout.tickerY)
-    .setDepth(30);
+    .setDepth(30)
+    .setVisible(false);
   const tickerGraphics = scene.add.graphics();
   tickerGraphics.fillStyle(0x000000, 0.28);
   tickerGraphics.fillRoundedRect(
@@ -517,7 +727,7 @@ export function createReplayBattleHud(
     layout.tickerHeight,
     18
   );
-  tickerGraphics.fillStyle(UI.deskHex, 0.97);
+  tickerGraphics.fillStyle(UI.creamHex, 0.96);
   tickerGraphics.fillRoundedRect(
     -layout.tickerWidth / 2,
     -layout.tickerHeight / 2,
@@ -525,7 +735,7 @@ export function createReplayBattleHud(
     layout.tickerHeight,
     18
   );
-  tickerGraphics.lineStyle(4, UI.gold, 0.92);
+  tickerGraphics.lineStyle(3, UI.inkHex, 0.88);
   tickerGraphics.strokeRoundedRect(
     -layout.tickerWidth / 2,
     -layout.tickerHeight / 2,
@@ -533,59 +743,48 @@ export function createReplayBattleHud(
     layout.tickerHeight,
     18
   );
-  tickerGraphics.fillStyle(UI.coralDeep, 1);
-  tickerGraphics.fillRoundedRect(
-    -layout.tickerWidth / 2,
-    -layout.tickerHeight / 2,
-    layout.tickerTagWidth,
-    layout.tickerHeight,
-    18
-  );
-  tickerGraphics.fillRect(
-    -layout.tickerWidth / 2 + layout.tickerTagWidth - 18,
-    -layout.tickerHeight / 2,
-    18,
-    layout.tickerHeight
-  );
-  tickerGraphics.lineStyle(3, UI.gold, 0.9);
+  tickerGraphics.lineStyle(8, UI.coralDeep, 0.82);
   tickerGraphics.lineBetween(
-    -layout.tickerWidth / 2 + layout.tickerTagWidth,
-    -layout.tickerHeight / 2 + 10,
-    -layout.tickerWidth / 2 + layout.tickerTagWidth,
-    layout.tickerHeight / 2 - 10
+    -layout.tickerWidth / 2 + 13,
+    -layout.tickerHeight / 2 + 13,
+    -layout.tickerWidth / 2 + 13,
+    layout.tickerHeight / 2 - 13
   );
   ticker.add(tickerGraphics);
-  const tickerTagX = -layout.tickerWidth / 2 + layout.tickerTagWidth / 2;
-  const tickerTag = label(
-    scene,
-    tickerTagX,
-    -11,
-    'INKCAST',
-    16,
-    UI.cream,
-    true
-  );
-  const tickerLive = label(
-    scene,
-    tickerTagX,
-    15,
-    '● LIVE',
-    13,
-    '#ffd447',
-    true
-  );
-  const announcerWidth = layout.tickerWidth - layout.tickerTagWidth - 28;
-  const announcer = label(
-    scene,
-    layout.tickerTagWidth / 2,
-    0,
-    'Get ready…',
-    23,
-    UI.cream,
-    true
-  );
+  const announcerWidth = layout.tickerWidth - 56;
+  const announcer = label(scene, 10, 0, 'Get ready…', 22, UI.ink, true);
   announcer.setWordWrapWidth(announcerWidth);
-  ticker.add([tickerTag, tickerLive, announcer]);
+  ticker.add(announcer);
+  let tickerHideEvent: Phaser.Time.TimerEvent | null = null;
+
+  const showTransientAnnouncement = (text: string): void => {
+    tickerHideEvent?.remove(false);
+    tickerHideEvent = null;
+    scene.tweens.killTweensOf(ticker);
+    ticker.setVisible(true).setAlpha(1);
+    announcer.setText(text);
+    if (!input.reduceMotion) {
+      scene.tweens.add({
+        targets: ticker,
+        scale: 1.025,
+        duration: 90,
+        yoyo: true,
+      });
+    }
+    tickerHideEvent = scene.time.delayedCall(980, () => {
+      tickerHideEvent = null;
+      if (input.reduceMotion) {
+        ticker.setVisible(false);
+        return;
+      }
+      scene.tweens.add({
+        targets: ticker,
+        alpha: 0,
+        duration: 150,
+        onComplete: () => ticker.setVisible(false).setAlpha(1),
+      });
+    });
+  };
 
   const setFighterHitPoints = (
     side: ReplayBattleSide,
@@ -644,19 +843,17 @@ export function createReplayBattleHud(
 
   return {
     announce: (text: string): void => {
-      announcer.setText(text);
-      if (input.reduceMotion) return;
-      scene.tweens.add({
-        targets: announcer,
-        scale: 1.06,
-        duration: 100,
-        yoyo: true,
-      });
+      showTransientAnnouncement(text);
     },
     setAnnouncerText: (text: string): void => {
       announcer.setText(text);
+      ticker.setVisible(true).setAlpha(1);
     },
     setAnnouncerVisible: (visible: boolean): void => {
+      if (!visible) {
+        tickerHideEvent?.remove(false);
+        tickerHideEvent = null;
+      }
       ticker.setVisible(visible);
     },
     setPlaybackSpeed: (speed: number): void => {
@@ -666,6 +863,7 @@ export function createReplayBattleHud(
       soundButtonLabel?.setText(enabled ? 'SFX' : 'OFF');
     },
     setFighterHitPoints,
+    setFighterShapePowerState,
     setHitPointBarsVisible: (visible: boolean): void => {
       Object.values(fighterBars).forEach((bars) => {
         bars.hitPointTrack.setVisible(visible);
@@ -700,7 +898,7 @@ export function createReplayBattleHud(
     },
     setControlsVisible: (visible: boolean): void => {
       toolbarControls.forEach((control) => control.setVisible(visible));
-      livePillLabel.setText(visible ? 'LIVE' : 'FINAL');
+      livePillLabel.setText(visible ? 'BOUT' : 'FINAL');
       resultLabel.setVisible(!visible);
     },
   };

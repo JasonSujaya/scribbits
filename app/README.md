@@ -7,13 +7,15 @@ enter daily community rumbles. The app identity is `scribbits` in
 
 ## How to play
 
-1. **Draw:** one Scribbit per UTC day. A deterministic optional Doodle Dare
-   gives each player/day a lightweight prompt and mechanic hint without forcing
-   a build. The first-run strip states the complete promise: draw, watch it
-   fight, earn Ink. Blank, forming, and ready feedback progressively reveals the
-   mapping: filled = Inkquake, jagged = Nib Halo, compact = Smearstep, and
-   colorful = Colorburst. The four analyzed traits always normalize to the same
-   100-point budget. Dominant color chooses the element.
+1. **Draw:** one Scribbit per UTC day. A validated catalog supplies 32 optional
+   Doodle Dares, eight per Shape Power, plus eight optional bonus twists. Each
+   player sees all four powers every four days, every prompt before Day 33, and
+   no exact prompt-plus-twist card before Day 257. The first-run strip states the
+   complete promise: draw, watch it fight, earn Ink. Blank, forming, and ready
+   feedback progressively reveals the mapping: filled = Inkquake, jagged = Nib
+   Halo, compact = Smearstep, and colorful = Colorburst. The four analyzed traits
+   always normalize to the same 100-point budget. Dominant color chooses the
+   element.
 2. **Fight:** submission automatically enters tonight's Rumble. A new player's
    first Scribbit also receives an immediate exhibition so the core promise is
    visible in the first session. On WebGL, Phaser 4.2 maps the submitted PNG to
@@ -21,20 +23,29 @@ enter daily community rumbles. The app identity is `scribbits` in
    Shape Power: INKQUAKE, NIB HALO, SMEARSTEP, or COLORBURST. The server runs a
    deterministic 20 Hz simulation and stores its winner, bounded timeline, and
    half-second motion checkpoints. Phaser interpolates that immutable transcript
-   into a continuous arena fight without WebSockets or client-side authority.
+   into a continuous arena fight without WebSockets or client-side authority. A
+   fight always ends by 20 seconds; at 15 seconds, Sudden Scribble halves power
+   cooldowns while the page completes its inward fold.
    There is no turn-based player path or outcome-changing cheer input;
    transcript-less records render as archived-result summaries.
-   The live Inkcast theater uses one clipping-safe movement field and 220px
-   drawings on a deterministic torn-paper stage. Opposing element brush zones
-   and edge-only ambient motion leave the combat center quiet. A compact rail
-   explicitly pairs LIVE playback with an OUTCOME LOCKED server replay; angled
-   fighter panels show names, numeric HP, exact signature powers, mastery, and a
-   smaller fixed-tick clock. A high-contrast Inkcast lower third turns real
-   transcript moments into varied, power-specific play-by-play. A
+   The real-time paper arena uses one clipping-safe movement field and 232px
+   drawings on a deterministic torn page. Local element stains, an irregular
+   double-ink boundary, edge spectators, and transcript-triggered color surges
+   leave the combat center readable. A compact paper rail labels the view BOUT
+   and SERVER-LOCKED REPLAY; fighter strips show names, numeric HP, exact
+   signature powers, and READY → WINDUP → ACTIVE state around a smaller
+   fixed-tick clock. Real transcript moments appear in a transient paper margin
+   instead of a permanent broadcast lower third. A
    presentation-only editorial queue chooses the
    strongest candidate per simulation tick, holds each displayed line for 900ms
    of wall-clock time, and keeps at most two pending beats. It never delays HP,
    Skip, finish, or any other authoritative state.
+   The copy itself lives in a versioned shared pack: 104 globally unique lines
+   across 25 fact-specific banks. A replay-scoped author deterministically
+   exhausts each authored bank before reuse, while strict token, rendered-length,
+   global uniqueness, and fact-specific truth validators fail fast on unsafe
+   content. The typed authoring layer gives Colorburst no finish-time miss bank
+   because its delayed echo may still connect.
    Presentation-only hitstop, HP trails, impact tiers, arena folds, mastery auras,
    and optional procedural sound make authored events land harder.
    Element × Shape Power combinations receive sixteen concise signature names.
@@ -63,19 +74,44 @@ enter daily community rumbles. The app identity is `scribbits` in
    follows the player into the draft, and each founder's authored challenge is
    visible on its card instead of only appearing in a toast. A
    chosen `opponentId` is accepted only when it still belongs to that exact
-   server-authored slate; omitted IDs retain the server-random quick-spar path.
+   server-authored slate. Omitted IDs use the same production selector and pin
+   an active Founder Rival Thread before considering a fresh opponent.
+   Each player can have exactly one active Founder Rival Thread: first to two,
+   maximum three qualifying battles, and no more than one authoritative story
+   beat per Arena day. The active founder remains pinned across future drafts and
+   quick spar; a Champion Contract advances the same thread only when that founder
+   is the Champion. Unrelated founders are exhibitions. A completed series
+   becomes a permanent signed margin note with no Ink, stat, or checklist reward.
+   Qualifying ceremonies expose only truthful pre-fight stakes—new thread, match
+   point, or deciding bout—and the live rail labels the replay RIVAL BOUT or RIVAL
+   DECIDER without leaking the stored winner. Pending report receipts repair in
+   Arena-day order; retired checklist encounters migrate as archive-only history.
+   All twenty founders also have a repo-authored three-page episode: 60 unique
+   page titles, 60 founder-specific pre-fight cues, and 120 unique post-bout
+   result lines. The current page is derived from the server score and reused by
+   Next Goal, Rival Draft, the blue-tape margin, and the VS ceremony. Replay binds
+   its result line to the validated transcript winner and server-confirmed
+   Chronicle beat.
+   Validation bans pre-fight outcome claims and any invented economy reward. No
+   episode data is written to Redis.
    After today's official Scribbit locks, the Arena also exposes a Four-Power
    Practice Lab. It reuses the analyzer and continuous replay, but not the birth,
    roster, reward, Rumble, history, or Legacy paths. The server alone derives
    the temporary fighter and transcript; the browser keeps only a session
    checklist and clears it when Practice ends. The first fourth-power discovery
-   receives a gold 4/4 completion beat; later repeats do not retrigger it.
+   receives a gold 4/4 completion beat; later repeats do not retrigger it. Once
+   the checklist is complete, target powers and prompt cards rotate through all
+   four drawing identities instead of repeating one encore.
    The current Champion also owns one daily Champion Contract. The Arena projects
    the server's existing daily challenge flag, displays founder or Shape-Power
    identity, and replaces the live CTA with a noninteractive completion stamp
    after use. Its paper-native challenger picker exposes every candidate's level,
    element, and signature; a win grants +2 XP, while a loss grants no XP or Ink.
 3. **Collect:** drawing, care, and the first spar win fill the Daily Ink Trail.
+   Care uses a validated 72-line deck across four Shape Powers, three actions,
+   three life days, and two variants. Every Scribbit receives nine distinct
+   lifetime care moments, rendered as a mobile paper receipt with its drawing,
+   mood, checklist, exact XP delta, and only server-confirmed Ink.
    Earned-only Ink opens Mystery Capsules with a discounted daily pull, permanent
    discovery album, collector rank, and visible Epic pity countdown. Accessories
    and status rewards are cosmetic; pens are expressive sidegrades that can
@@ -135,6 +171,21 @@ boundary during browser iteration—it is not the production game server.
 - `src/shared/founders.ts`: one immutable source for all twenty founding Scribbit
   definitions and 160 validated story strings; clients look up presentation by
   the existing `founding-*` ID without adding report or Redis fields.
+- `src/shared/content/deterministic.ts`: one stable content hash used by authored
+  schedules without consuming or perturbing combat randomness.
+- `src/shared/content/carereactions.ts`: validated 72-line care deck covering
+  Shape Power, action, three-day lifespan, and two stable per-Scribbit variants.
+- `src/shared/content/doodledares.ts`: validated 32-prompt/eight-twist authored
+  calendar shared by official Draw and Practice; deterministic selection stores
+  no player state and is version-locked against accidental schedule drift.
+- `src/shared/content/forecastblurbs.ts`: validated 32-day public-copy rotation
+  used by production forecast generation and the browser mock without consuming
+  combat-element randomness.
+- `src/shared/content/founderrivalepisodes.ts`: immutable three-page arcs for all
+  twenty founders, with fail-fast completeness, order, uniqueness, length,
+  founder-name, pre-fight fact-safety, and post-bout reward-safety validation.
+  Runtime page/result selection is a pure lookup from founder ID, authoritative
+  bout number, and proven latest winner.
 - `src/shared/combat`: deterministic fixed-tick combat domain, balance tuning,
   transcript contract, and regression tests.
 - `src/shared/combat/selection.ts`: the single dominant-stat and Shape Power
@@ -142,6 +193,9 @@ boundary during browser iteration—it is not the production game server.
 - `src/shared/combat/shapepowercontent.ts`: shared names, reveal copy, neutral
   no-clean-hit cues, and the sixteen element-specific signature identities;
   combat numbers remain isolated in `config.ts`.
+- `src/shared/combat/elementcontent.ts`: canonical player-facing descriptions of
+  Ember afterburn, Tide shove, Moss barrier, and Storm windup. The Field Guide
+  consumes this instead of maintaining the retired element triangle.
 - `src/shared/combat/resultvalidation.ts`: one KO/double-KO/timeout
   terminal-state gate shared by stored-report parsing and client replay; both
   callers also bind top-level fighters to their transcript slots.
@@ -153,42 +207,59 @@ boundary during browser iteration—it is not the production game server.
   pagination, and one-time return receipts over immutable retired snapshots.
 - `src/server/core/battleStore.ts`: battle reports, per-Scribbit history, and
   the ordered featured Rumble report index used by overnight receipts.
+- `src/server/core/founderChronicle.ts`: versioned player-level Rival Thread
+  state, the one-beat-per-day reducer, pending projection receipts, transaction
+  recovery, v1 checklist migration, and the bounded public Chronicle projection.
 - `src/server/core/practice.ts`: strict PNG-to-ephemeral-replay domain with no
   storage, media, reward, Rumble, or lifecycle dependency.
 - `src/server/core/species.ts`: projects the shared founder definitions into
   runtime Scribbits and owns fair opponent/slate selection and safe cloning.
 - `src/client/game.ts`: Phaser bootstrapping.
 - `src/client/scenes`: game screens.
-- `src/client/lib/drawonboarding.ts`: deterministic daily prompts, first-run
-  promise copy, and blank/forming/ready draw-feedback plans.
+- `src/client/lib/drawonboarding.ts`: first-run promise copy and
+  blank/forming/ready draw-feedback plans; authored prompt selection lives only
+  in `src/shared/content/doodledares.ts`.
+- `src/client/lib/caremoment.ts`: pure server-snapshot-to-receipt planning;
+  `caremomentoverlay.ts` renders the short paper celebration without owning
+  rewards or persistence.
 - `src/client/lib/inkmesh.ts`: deterministic Mesh2D geometry and stat-driven
   motion rules, kept pure for regression testing.
 - `src/client/lib/continuousreplay.ts`: transcript validation and checkpoint
   interpolation used by the live-looking replay.
-- `src/client/lib/battlepresentation.ts`: pure impact, live-broadcast layout,
-  non-overlapping outcome stack, HP, clock, shrinking-arena, and visible mastery
-  plans derived from authoritative data.
+- `src/client/lib/battlepresentation.ts`: pure impact, real-time paper-arena
+  layout, non-overlapping outcome stack, HP, clock, shrinking-arena, and visible
+  mastery plans derived from authoritative data.
 - `src/client/lib/battlerecap.ts`: pure transcript-to-recap copy and finish
   semantics; `replaybattlerecap.ts` renders that plan without inferring results.
-- `src/client/lib/replaybattlebackground.ts`: deterministic torn-paper Inkcast
-  stage with reduced-motion-safe edge ambience; `replaybattlehud.ts` owns the
-  server-locked rail, angled numeric-HP panels, clock, controls, and lower third.
-- `src/client/lib/matchupbrief.ts`: pure mode-title, exact-signature, and exhaustive
-  ten-pair Shape Power mechanics planning with no winner prediction;
+- `src/client/lib/replaybattlebackground.ts`: deterministic torn-paper arena with
+  reduced-motion-safe edge ambience and transcript-triggered power surges;
+  `replaybattlehud.ts` owns the server-locked paper rail, compact numeric-HP and
+  Shape Power state strips, clock, controls, and transient commentary margin.
+- `src/client/lib/matchupbrief.ts`: pure mode-title, exact-signature, and
+  exhaustive ten-pair Shape Power mechanics planning with no winner prediction;
   `battleceremony.ts` renders the plan before every current battle path.
-- `src/client/lib/replaycommentary.ts`: pure deterministic transcript-fact-to-copy
-  authoring plus founder voice projection into existing replay beats; it cannot
-  schedule events or change combat state.
+- `src/shared/content/replaycommentary.ts`: immutable v1 Inkcast content pack,
+  stable line IDs, 25 per-fact token contracts, strict shared parser/renderer,
+  truth validation, and deterministic bank permutations for all 104 lines.
+  Treat v1 IDs, templates, and ordering as immutable; before a v2 pack ships,
+  bind its version to stored reports or explicitly accept historical copy drift.
+- `src/client/lib/replaycommentary.ts`: replay-scoped transcript-fact-to-copy
+  authoring with bank-local occurrence state plus founder voice projection into
+  existing replay beats; it cannot schedule events or change combat state.
 - `src/client/lib/inkcastqueue.ts`: pure priority, same-tick selection, dwell, and
   two-item pending rules for readable Inkcast cadence at every playback speed.
-- `src/client/lib/championchallenge.ts`: pure founder/community Champion Contract
-  identity and truthful open/completed copy; the server still owns daily use and XP.
+- `src/client/lib/championchallenge.ts`: pure founder/community Champion
+  Contract identity and truthful open/completed copy; the server still owns daily
+  use and XP.
 - `src/client/lib/sparrivals.ts`: pure rival-card truth planning from server
-  Scribbits, forecast, and prior-bout recap; `replaysparrivaldraft.ts` owns the
-  Phaser draft layout.
-- `src/client/lib/practicelab.ts`: pure four-power session reducer, deterministic
-  prompt selection, Practice copy, and one-time 4/4 completion plan; `registry.ts`
-  owns the session lifetime.
+  Scribbits, forecast, prior-bout recap, and Founder Chronicle state;
+  `replaysparrivaldraft.ts` owns the Phaser draft layout.
+- `src/client/lib/founderchronicle.ts`: pure active-thread, daily availability,
+  score, beat, pre-fight stakes, and transcript-winner-bound result receipt
+  planning; `founderchroniclemargin.ts` renders the compact paper overlay.
+- `src/client/lib/practicelab.ts`: pure four-power session reducer,
+  attempt-aware target/prompt rotation, Practice copy, and one-time 4/4
+  completion plan; `registry.ts` owns the session lifetime.
 - `src/client/lib/replaypracticeoutcome.ts`: reward-free Practice outcome actions
   and repeat-safe completion rendering; ephemeral fighter cards never expose
   profile or Belief mutations.
@@ -270,6 +341,8 @@ For deterministic combat proof, use
 fallbacks. Debug builds expose `replayPhase`, `replaySpeed`, and
 `replayTweenScale` on the game canvas so 4× playback and the result reset can be
 verified without touching combat state.
+Use `/?debug&spar&rival-thread&reduce-motion&ceremony` for the deterministic Day
+9 deciding-bout ceremony, RIVAL DECIDER rail, and signed 2–1 result margin.
 
 ## Verification
 
@@ -279,7 +352,7 @@ Run these before handing off changes:
 npm run verify
 ```
 
-`npm run verify` runs type-check, lint, 83 simulation groups, and build.
+`npm run verify` runs type-check, lint, 93 simulation groups, and build.
 
 `npm run test:sim` covers deterministic analyzer, Inkbody mesh geometry, combat
 determinism, payload caps, archetype balance, slot neutrality, battle,
@@ -288,24 +361,39 @@ Legacy paging/receipts, privacy deletion, expiry repair, and Swiss rumble
 behavior. It also covers featured Rumble report selection/purge, Next Goal
 priority/evidence, production-backed browser battle contracts, mock seed
 isolation, four readable fixture silhouettes, shared dominant-stat parity,
-stat-shaped founders, and the live Inkcast HUD/clock/outcome layout. It does not
+stat-shaped founders, Founder Rival Thread pacing/recovery/migration/mock parity,
+the ten-power-matchup duration matrix, and the live paper-arena HUD/clock/outcome
+layout. It does not
 replace route or browser testing. Recap coverage fixes timeout, knockout,
 double-knockout, truncated-timeline, tie-break, decisive-hit copy, and report
 fighter binding to the validated server transcript. First-draw coverage locks
-daily Dare determinism, all four prompt families, live feedback phases, the
-shared minimum-body gate, and the valid zero-recoil wall-ejection edge case.
+the 32-day prompt calendar, 256 unique prompt/twist cards, four-day Shape Power
+balance, catalog safety, live feedback phases, the shared minimum-body gate, and
+the valid zero-recoil wall-ejection edge case. Forecast coverage locks 32
+nonrepeating public blurbs, reward-safe copy, selection independence from
+combat-element randomness, and mock parity.
+Care coverage locks all 72 unique lifespan reactions, exact matrix completeness,
+claim safety, deterministic selection, nine distinct lifetime moments, truthful
+server-confirmed Ink, and the fixed-tick element guide with no hidden triangle.
 Rival Draft coverage locks slate stability, clone safety, level bounds, Shape
 Power variety, truthful level/power/signature/forecast card planning, prior-bout
 highlight continuity, and canonical founder identity. Founder coverage locks the
-exact twenty-entry server projection,
-160 globally unique bounded story strings, deep-frozen content, production/mock
-parity, deterministic opening/signature/outcome selection, and Rumble comment voice.
+exact twenty-entry server projection, 160 globally unique bounded story strings,
+60 unique three-page episode titles, 60 founder-naming episode cues, 120 unique
+outcome-bound result lines, deep-frozen content, production/mock parity,
+deterministic voice, one active best-of-three, daily anti-farming, report
+provenance, pending-receipt repair, pinned matchmaking, derived page continuity
+across client surfaces, and signed resolution margins.
 Practice coverage locks strict request fields, PNG validation, server-derived
 stats, required transcripts, mock/production parity, art-bound transient IDs,
-session de-duplication, truthful one-time 4/4 completion, and rejection before
-the first battle-storage call. Inkcast coverage locks deterministic variation,
-fact-bound damage/critical copy, input immutability, token safety, and
-representative rendered-line bounds without invented miss reasons. Matchup brief
+session de-duplication, truthful one-time 4/4 completion, post-completion
+four-power encore rotation, and rejection before the first battle-storage call.
+Inkcast coverage locks the exact 25-bank/104-line v1 pack, deep immutability,
+globally unique stable IDs and copy, strict per-bank tokens, malformed-brace and
+rendered-length rejection, reward/outcome/miss claim safety, deterministic
+bank-local exhaustion before reuse, founder-signature bypass, every template's
+maximum-input render, fact-bound damage/critical copy, and Colorburst miss
+exclusion. Matchup brief
 coverage locks all sixteen ordered Shape Power combinations to ten symmetric,
 bounded, unique mechanics explanations with exact signatures and no outcome words.
 Inkcast queue coverage locks one strongest candidate per tick, first-signature and

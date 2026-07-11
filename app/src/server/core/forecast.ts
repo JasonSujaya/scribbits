@@ -1,28 +1,8 @@
 import type { Element, Forecast } from '../../shared/arena';
-import {
-  createMulberry32,
-  getRandomInteger,
-  hashTextToSeed,
-} from './random';
+import { selectDailyForecastBlurb } from '../../shared/content/forecastblurbs';
+import { createMulberry32, getRandomInteger, hashTextToSeed } from './random';
 
 const elementOrder: Element[] = ['ember', 'tide', 'moss', 'storm'];
-
-const forecastBlurbs: string[] = [
-  'Cinder gusts make tiny heroes feel enormous',
-  'Bubble fog rolls in with suspicious confidence',
-  'Moss thunder drums under the arena floor',
-  'Storm static turns every doodle extra dramatic',
-  'Warm sparks chase the shadows off the brackets',
-  'Tide spray has everyone yelling like captains',
-  'Rooty winds smell like victory and wet crayons',
-  'Cloudbursts keep trying to referee the fights',
-  'The arena floor is squeaky, bright, and dangerous',
-  'A weird breeze keeps chanting for underdogs',
-  'The forecast says bring snacks and a helmet',
-  'Moonlit drizzle makes every crit look intentional',
-  'Sun-hot ink dries fast and hits faster',
-  'A leafy squall is teaching the crowd to duck',
-];
 
 export const isElement = (value: unknown): value is Element => {
   return (
@@ -35,7 +15,11 @@ export const isElement = (value: unknown): value is Element => {
 
 export const generateForecastForDay = (day: number): Forecast => {
   const randomNumber = createMulberry32(hashTextToSeed(`forecast:${day}`));
-  const boostedIndex = getRandomInteger(0, elementOrder.length - 1, randomNumber);
+  const boostedIndex = getRandomInteger(
+    0,
+    elementOrder.length - 1,
+    randomNumber
+  );
   const boostedElement = elementOrder[boostedIndex] ?? 'ember';
   const possibleNerfedElements = elementOrder.filter((element) => {
     return element !== boostedElement;
@@ -44,9 +28,9 @@ export const generateForecastForDay = (day: number): Forecast => {
     possibleNerfedElements[
       getRandomInteger(0, possibleNerfedElements.length - 1, randomNumber)
     ] ?? 'tide';
-  const blurb =
-    forecastBlurbs[getRandomInteger(0, forecastBlurbs.length - 1, randomNumber)] ??
-    'The arena forecast is weirdly confident';
+  // Copy rotates independently from the combat-element RNG. Adding flavor can
+  // never perturb the authoritative boosted or nerfed element for this day.
+  const blurb = selectDailyForecastBlurb(day);
 
   return {
     day,

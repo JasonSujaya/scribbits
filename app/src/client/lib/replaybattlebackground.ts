@@ -4,7 +4,10 @@
 import * as Phaser from 'phaser';
 import { Scene } from 'phaser';
 import type { Element } from '../../shared/arena';
-import type { ReplayBattleLayout } from './battlepresentation';
+import type {
+  ReplayBattleLayout,
+  ReplayBattleSide,
+} from './battlepresentation';
 import { ELEMENT_STYLES, UI } from './theme';
 
 type PaperPoint = Readonly<{ x: number; y: number }>;
@@ -12,6 +15,11 @@ type PaperPoint = Readonly<{ x: number; y: number }>;
 export type ReplayBattleBackdrop = Readonly<{
   /** Applies presentation motion for the absolute elapsed scene time. */
   update: (elapsedMilliseconds: number) => void;
+  /** Lets an authoritative transcript beat tint the stage without changing it. */
+  signalShapePower: (
+    side: ReplayBattleSide,
+    phase: 'telegraph' | 'active'
+  ) => void;
 }>;
 
 export type ReplayBattleBackgroundInput = Readonly<{
@@ -214,6 +222,60 @@ const drawDirectionalBrushMarks = (
   }
 };
 
+const drawPowerSurge = (
+  graphics: Phaser.GameObjects.Graphics,
+  input: {
+    side: ReplayBattleSide;
+    layout: ReplayBattleLayout;
+    centerX: number;
+    arenaCenterY: number;
+    color: number;
+    seed: number;
+  }
+): void => {
+  const direction = input.side === 'a' ? 1 : -1;
+  const pageEdgeX =
+    input.side === 'a'
+      ? input.layout.pageLeft + 24
+      : input.layout.pageLeft + input.layout.pageWidth - 24;
+  const tipX = input.centerX - direction * 30;
+  const halfHeight = Math.max(
+    170,
+    (input.layout.arenaBottom - input.layout.arenaTop) * 0.3
+  );
+
+  graphics.fillStyle(input.color, 0.24);
+  graphics.fillTriangle(
+    pageEdgeX,
+    input.arenaCenterY - halfHeight,
+    pageEdgeX,
+    input.arenaCenterY + halfHeight,
+    tipX,
+    input.arenaCenterY
+  );
+
+  for (let markIndex = 0; markIndex < 4; markIndex += 1) {
+    const verticalOffset =
+      (markIndex - 1.5) * 72 + stableJitter(input.seed, 410 + markIndex, 12);
+    const startX = pageEdgeX + direction * (28 + markIndex * 9);
+    const endX = tipX - direction * (42 + markIndex * 22);
+    graphics.lineStyle(12 - markIndex, input.color, 0.28 - markIndex * 0.04);
+    graphics.lineBetween(
+      startX,
+      input.arenaCenterY + verticalOffset,
+      endX,
+      input.arenaCenterY + verticalOffset * 0.28
+    );
+  }
+
+  graphics.lineStyle(7, UI.creamHex, 0.7);
+  graphics.strokeCircle(
+    input.centerX - direction * 118,
+    input.arenaCenterY,
+    68
+  );
+};
+
 export function drawReplayBattleBackground(
   scene: Scene,
   input: ReplayBattleBackgroundInput
@@ -265,49 +327,47 @@ export function drawReplayBattleBackground(
 
   const arenaGraphics = scene.add.graphics().setDepth(-19);
 
-  // Broad opposing element washes establish the broadcast matchup while
-  // stopping well short of the active combat center.
-  arenaGraphics.fillStyle(leftStyle.soft, 0.3);
+  // Localized corner stains identify each fighter without turning the arena
+  // into two lanes. The center stays neutral so movement and telegraphs win.
+  arenaGraphics.fillStyle(leftStyle.soft, 0.24);
   traceClosedShape(arenaGraphics, [
     { x: layout.pageLeft + 3, y: layout.arenaTop + 16 },
-    { x: leftZoneEdge - 36, y: layout.arenaTop + 50 },
+    { x: leftZoneEdge - 10, y: layout.arenaTop + 48 },
     {
-      x: leftZoneEdge + 12,
-      y: arenaCenterY - 68 + stableJitter(seed, 120, 20),
+      x: leftZoneEdge + 22,
+      y: arenaCenterY - 112 + stableJitter(seed, 120, 18),
     },
-    { x: leftZoneEdge - 8, y: arenaCenterY + 92 },
-    { x: leftZoneEdge - 52, y: layout.arenaBottom - 24 },
-    { x: layout.pageLeft + 3, y: layout.arenaBottom + 12 },
+    { x: leftZoneEdge - 34, y: arenaCenterY - 20 },
+    { x: layout.pageLeft + 3, y: arenaCenterY + 76 },
   ]);
   arenaGraphics.fillPath();
   arenaGraphics.fillStyle(leftStyle.primary, 0.11);
   traceClosedShape(arenaGraphics, [
-    { x: layout.pageLeft + 4, y: layout.arenaTop + 86 },
-    { x: leftZoneEdge - 22, y: arenaCenterY - 54 },
-    { x: leftZoneEdge - 42, y: arenaCenterY + 6 },
-    { x: layout.pageLeft + 4, y: arenaCenterY + 94 },
+    { x: layout.pageLeft + 4, y: arenaCenterY + 18 },
+    { x: leftZoneEdge - 26, y: arenaCenterY + 86 },
+    { x: leftZoneEdge - 54, y: layout.arenaBottom - 78 },
+    { x: layout.pageLeft + 4, y: layout.arenaBottom - 26 },
   ]);
   arenaGraphics.fillPath();
 
-  arenaGraphics.fillStyle(rightStyle.soft, 0.3);
+  arenaGraphics.fillStyle(rightStyle.soft, 0.24);
   traceClosedShape(arenaGraphics, [
-    { x: pageRight - 3, y: layout.arenaTop + 34 },
-    { x: rightZoneEdge + 54, y: layout.arenaTop + 68 },
-    { x: rightZoneEdge + 8, y: arenaCenterY - 94 },
+    { x: pageRight - 3, y: arenaCenterY - 78 },
+    { x: rightZoneEdge + 32, y: arenaCenterY - 20 },
     {
-      x: rightZoneEdge - 12,
-      y: arenaCenterY + 62 + stableJitter(seed, 122, 20),
+      x: rightZoneEdge - 20,
+      y: arenaCenterY + 108 + stableJitter(seed, 122, 18),
     },
-    { x: rightZoneEdge + 30, y: layout.arenaBottom - 56 },
+    { x: rightZoneEdge + 16, y: layout.arenaBottom - 54 },
     { x: pageRight - 3, y: layout.arenaBottom + 18 },
   ]);
   arenaGraphics.fillPath();
   arenaGraphics.fillStyle(rightStyle.primary, 0.11);
   traceClosedShape(arenaGraphics, [
-    { x: pageRight - 4, y: arenaCenterY - 116 },
-    { x: rightZoneEdge + 36, y: arenaCenterY - 36 },
-    { x: rightZoneEdge + 24, y: arenaCenterY + 32 },
-    { x: pageRight - 4, y: layout.arenaBottom - 72 },
+    { x: pageRight - 4, y: layout.arenaTop + 24 },
+    { x: rightZoneEdge + 52, y: layout.arenaTop + 80 },
+    { x: rightZoneEdge + 24, y: arenaCenterY - 72 },
+    { x: pageRight - 4, y: arenaCenterY - 18 },
   ]);
   arenaGraphics.fillPath();
 
@@ -336,6 +396,56 @@ export function drawReplayBattleBackground(
     seed,
     jitterIndex: 230,
   });
+
+  // A quiet center seal makes this read as a live stage instead of another
+  // card. It remains subdued until a transcript power beat surges through it.
+  const stageSealGraphics = scene.add.graphics().setDepth(-17.8);
+  stageSealGraphics.fillStyle(UI.creamHex, 0.23);
+  stageSealGraphics.fillEllipse(
+    centerX,
+    arenaCenterY,
+    layout.pageWidth * 0.56,
+    arenaHeight * 0.58
+  );
+  drawBrushArc(stageSealGraphics, {
+    centerX,
+    centerY: arenaCenterY,
+    radiusX: layout.pageWidth * 0.28,
+    radiusY: arenaHeight * 0.29,
+    startAngle: Math.PI * 0.08,
+    endAngle: Math.PI * 0.92,
+    color: UI.inkHex,
+    alpha: 0.1,
+    width: 5,
+    seed,
+    jitterIndex: 360,
+  });
+  drawBrushArc(stageSealGraphics, {
+    centerX,
+    centerY: arenaCenterY,
+    radiusX: layout.pageWidth * 0.28,
+    radiusY: arenaHeight * 0.29,
+    startAngle: Math.PI * 1.05,
+    endAngle: Math.PI * 1.9,
+    color: UI.inkHex,
+    alpha: 0.1,
+    width: 5,
+    seed,
+    jitterIndex: 390,
+  });
+  stageSealGraphics.lineStyle(4, UI.inkHex, 0.08);
+  stageSealGraphics.lineBetween(
+    centerX - 32,
+    arenaCenterY,
+    centerX + 32,
+    arenaCenterY
+  );
+  stageSealGraphics.lineBetween(
+    centerX,
+    arenaCenterY - 32,
+    centerX,
+    arenaCenterY + 32
+  );
   drawBrushArc(arcGraphics, {
     centerX: centerX + 36,
     centerY: arenaCenterY - 18,
@@ -406,6 +516,25 @@ export function drawReplayBattleBackground(
     seed: seed ^ 0x9e3779b9,
   });
 
+  const leftPowerSurge = scene.add.graphics().setDepth(-15.5).setAlpha(0);
+  const rightPowerSurge = scene.add.graphics().setDepth(-15.5).setAlpha(0);
+  drawPowerSurge(leftPowerSurge, {
+    side: 'a',
+    layout,
+    centerX,
+    arenaCenterY,
+    color: leftStyle.primary,
+    seed,
+  });
+  drawPowerSurge(rightPowerSurge, {
+    side: 'b',
+    layout,
+    centerX,
+    arenaCenterY,
+    color: rightStyle.primary,
+    seed: seed ^ 0x9e3779b9,
+  });
+
   scene.add
     .rectangle(layout.pageLeft + 64, layout.pageTop + 3, 104, 32, UI.tape, 0.76)
     .setAngle(-6)
@@ -415,25 +544,43 @@ export function drawReplayBattleBackground(
     .setAngle(5)
     .setDepth(-15);
 
+  const powerStrength: Record<ReplayBattleSide, number> = { a: 0, b: 0 };
+  let previousElapsedMilliseconds = 0;
+
+  const applyPowerSurges = (phase: number): void => {
+    const pulse = reduceMotion ? 1 : 0.92 + Math.sin(phase * 3) * 0.08;
+    leftPowerSurge.setAlpha(powerStrength.a * 0.72 * pulse);
+    rightPowerSurge.setAlpha(powerStrength.b * 0.72 * pulse);
+  };
+
   const useStaticBackdrop = (): void => {
     leftMotionGraphics.setPosition(0, 0).setAlpha(0.84);
     rightMotionGraphics.setPosition(0, 0).setAlpha(0.84);
     arcGraphics.setAlpha(0.9);
     crowdGraphics.setAlpha(0.9);
+    applyPowerSurges(0);
   };
 
   const update = (elapsedMilliseconds: number): void => {
-    if (reduceMotion) return;
-
     const safeElapsedMilliseconds = Number.isFinite(elapsedMilliseconds)
       ? Math.max(0, elapsedMilliseconds)
       : 0;
+    const elapsedDelta = Math.min(
+      120,
+      Math.max(0, safeElapsedMilliseconds - previousElapsedMilliseconds)
+    );
+    previousElapsedMilliseconds = safeElapsedMilliseconds;
+    powerStrength.a = Math.max(0, powerStrength.a - elapsedDelta / 1_050);
+    powerStrength.b = Math.max(0, powerStrength.b - elapsedDelta / 1_050);
     const cycleMilliseconds = 3_600;
     const seedPhase = ((seed % 360) / 360) * FULL_CIRCLE_RADIANS;
     const phase =
       ((safeElapsedMilliseconds % cycleMilliseconds) / cycleMilliseconds) *
         FULL_CIRCLE_RADIANS +
       seedPhase;
+    applyPowerSurges(phase);
+    if (reduceMotion) return;
+
     const horizontalDrift = Math.sin(phase) * 4;
     const verticalDrift = Math.cos(phase * 2) * 1.5;
 
@@ -450,5 +597,14 @@ export function drawReplayBattleBackground(
   useStaticBackdrop();
   if (!reduceMotion) update(0);
 
-  return { update };
+  return {
+    update,
+    signalShapePower: (side, phase) => {
+      powerStrength[side] = Math.max(
+        powerStrength[side],
+        phase === 'active' ? 1 : 0.66
+      );
+      applyPowerSurges(0);
+    },
+  };
 }

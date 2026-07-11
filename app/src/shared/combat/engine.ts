@@ -1909,10 +1909,10 @@ function validateRules(rules: CombatRules): void {
     throw new Error('Scribbits combat must run at exactly 20 Hz.');
   }
   if (
-    rules.maximumSeconds !== 25 ||
+    rules.maximumSeconds !== 20 ||
     rules.maximumTicks !== rules.tickRate * rules.maximumSeconds
   ) {
-    throw new Error('Scribbits combat must end by 25 seconds.');
+    throw new Error('Scribbits combat must end by 20 seconds.');
   }
   if (rules.maximumEntityCount < 4) {
     throw new Error('Combat entity cap must fit two fighters and two echoes.');

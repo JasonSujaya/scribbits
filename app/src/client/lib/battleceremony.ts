@@ -7,18 +7,20 @@ import { ELEMENT_STYLES, prefersReducedMotion, TYPE, UI } from './theme';
 import { handLettered, label, elementBadge, levelBadge } from './ui';
 import { loadDrawing, fitDrawing, levelOf } from './scribbits';
 import { planBattleMatchupBrief } from './matchupbrief';
+import type { FounderRivalryStakesPlan } from './founderchronicle';
 
 export type VsCeremonyOptions = Readonly<{
   fighterA: Scribbit;
   fighterB: Scribbit;
   battleKind: BattleKind;
+  rivalryStakes?: FounderRivalryStakesPlan | null;
   onComplete: () => void;
 }>;
 
 // Show a dramatic VS screen before battle. Both fighters slide in from opposite
 // sides, element badges clash in the center, then transition to the replay.
 export function showVsCeremony(scene: Scene, options: VsCeremonyOptions): void {
-  const { fighterA, fighterB, battleKind, onComplete } = options;
+  const { fighterA, fighterB, battleKind, rivalryStakes, onComplete } = options;
   const { width, height } = scene.scale;
   const reduceMotion = prefersReducedMotion();
   const brief = planBattleMatchupBrief({
@@ -55,19 +57,59 @@ export function showVsCeremony(scene: Scene, options: VsCeremonyOptions): void {
   layer.add(splitPaper);
 
   const topTape = scene.add
-    .rectangle(width / 2, 34, 190, 46, UI.tape, 0.86)
+    .rectangle(width / 2, 34, rivalryStakes ? 430 : 190, 46, UI.tape, 0.86)
     .setAngle(-2);
   layer.add(topTape);
+  if (rivalryStakes) {
+    layer.add(
+      label(
+        scene,
+        width / 2,
+        34,
+        `${rivalryStakes.headline} • ${rivalryStakes.pageLabel}`,
+        16,
+        UI.inkSoft,
+        true
+      )
+    );
+  }
   const matchupTitle = handLettered(
     scene,
     width / 2,
     92,
-    brief.title,
-    40,
+    rivalryStakes?.episodeTitle ?? brief.title,
+    rivalryStakes ? 34 : 40,
     UI.ink,
     true
   );
   layer.add(matchupTitle);
+  if (rivalryStakes) {
+    const stakesStrip = scene.add
+      .rectangle(width / 2, 164, width - 150, 98, UI.tapeAlt, 0.94)
+      .setStrokeStyle(3, UI.inkHex, 0.72)
+      .setAngle(0.4);
+    const stakesDetail = label(
+      scene,
+      width / 2,
+      143,
+      rivalryStakes.detail,
+      18,
+      UI.ink,
+      true
+    ).setWordWrapWidth(width - 190, true);
+    const episodeCue = label(
+      scene,
+      width / 2,
+      181,
+      rivalryStakes.episodeCue,
+      18,
+      UI.inkSoft,
+      false
+    )
+      .setWordWrapWidth(width - 190, true)
+      .setLineSpacing(-2);
+    layer.add([stakesStrip, stakesDetail, episodeCue]);
+  }
 
   const mechanicsCard = scene.add
     .rectangle(width / 2, height - 90, width - 96, 158, UI.creamHex, 0.94)
@@ -285,7 +327,7 @@ export function showVsCeremony(scene: Scene, options: VsCeremonyOptions): void {
   // Fade out and transition
   // Reduced motion removes the entrance motion, not the reading time. The old
   // 180ms reduced-motion dwell made the matchup card effectively invisible.
-  scene.time.delayedCall(1800, () => {
+  scene.time.delayedCall(rivalryStakes ? 2600 : 1800, () => {
     scene.cameras.main.fadeOut(200, 255, 247, 232);
     scene.cameras.main.once('camerafadeoutcomplete', () => {
       layer.destroy(true);

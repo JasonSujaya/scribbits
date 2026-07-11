@@ -34,6 +34,21 @@ a stat-shaped body, epithet, challenge, two openings, signature reaction, victor
 defeat, and Rumble line. Their voice appears only in existing presentation beats;
 the server transcript still owns every movement, hit, and result.
 
+One founder can become the player's active Rival Thread: a first-to-two series,
+maximum three battles, with only one authoritative score beat per Arena day. The
+server pins that founder into future choices, ignores same-day farming and
+unrelated exhibitions, and writes a permanent signed margin when the thread ends.
+It adds relationship and a reason to return without currency or combat power.
+Each of the twenty founders has a unique three-page episode. The next title and
+scene cue follow the player from Rival Draft to Next Goal, blue-tape margin, and
+pre-fight ceremony, while the server score alone decides whether the story is on
+Page 1, 2, or 3. That creates 60 named rivalry beats without another database
+schema, client-authoritative state, predicted winner, or reward treadmill.
+Each page also has two authored endings, producing 120 unique post-bout lines.
+Replay selects one only after matching the named page and server Chronicle beat
+to the validated transcript winner, then prints the exact new score and whether
+the thread continues or its margin is signed.
+
 The current Champion also posts one daily paper Contract. Players choose which
 living Scribbit takes the shot, see the Champion's real signature and challenge,
 and earn +2 XP only for a win. The server already owns the one-attempt flag; the
@@ -45,12 +60,15 @@ combat. Practice re-analyzes the PNG on the server but grants no Ink, XP, roster
 slot, Rumble entry, history, or Legacy card; only its browser-session checklist
 remembers which powers were tried. The fourth unique discovery lands on a gold
 4/4 completion card, while repeats stay replayable without farming a reward or
-retriggering the first-completion celebration.
+retriggering the first-completion celebration. Post-completion encores rotate
+through all four target powers and fresh prompt cards rather than getting stuck
+on one exercise.
 
 ## Judging story
 
 - **Delightful UX:** feed card identifies the next action; new players start on
-  the canvas with an optional daily Doodle Dare and the clear promise
+  the canvas with one of 32 optional Doodle Dares, an expressive bonus twist,
+  and the clear promise
   “draw → watch it fight → earn Ink”; forming/ready feedback explains every
   stroke; the first submission immediately fights; returning players first see
   newly archived Legacy pages, then get a clear overnight scouting receipt, can
@@ -58,13 +76,18 @@ retriggering the first-completion celebration.
   After either exhibition outcome, three server-picked rival cards pair truthful
   build data with memorable founder epithets, visible challenges, and the exact
   previous decisive splat, making “one more fight” an informed continuing story
-  instead of a hidden random reroll. A visible
-  post-lock Practice card also lets anyone test all four drawing powers without
-  weakening the once-daily official submission.
+  instead of a hidden random reroll. One active best-of-three stays pinned across
+  days, and its exact score lands on the result before becoming a signed margin.
+  Power-specific care notes give each drawing nine distinct moments across its
+  three-day life, with a paper receipt showing the exact server-confirmed reward.
+  A visible post-lock Practice card also lets anyone test all four drawing powers
+  without weakening the once-daily official submission.
 - **Polish:** portrait layout, paper visual identity, responsive controls,
-  a torn-paper live Inkcast stage with an explicit server-locked rail, numeric HP
-  panels, smaller fixed-tick clock, edge ambience, and moving shadows;
-  prioritized power-specific Inkcast play-by-play retains its 900ms reading
+  a full-height torn-paper arena with rough truthful bounds, localized element
+  stains, transcript-reactive surges, compact HP/Shape Power state strips, a
+  smaller fixed-tick clock, and transient paper commentary;
+  a versioned 104-line Inkcast pack rotates through 25 fact-specific banks
+  without authored repeats before reuse, while prioritized displayed copy retains its 900ms reading
   dwell, twenty coherent founder voices, a transcript-derived Inkcast Recap with
   truthful KO/time poses, deterministic simulation,
   error states, mobile-safe navigation, UGC report/delete controls, and a full
@@ -76,7 +99,8 @@ retriggering the first-completion celebration.
   a visible daily streak, permanent Scout Clout, a three-day life-or-Legend arc,
   and an earned-only capsule collection with daily discount, collector rank,
   permanent discovery, transparent Epic pity, wearable titles, and a permanent
-  Legacy Book. Session-only Practice adds replayability without another currency
+  Legacy Book. The daily-paced Founder Rival Thread adds a relationship without
+  stats or another reward track. Session-only Practice adds replayability without another currency
   or farmable reward. Pens expand expression while the fixed 100-point budget
   prevents purchased or progression-based raw power.
 - **Phaser:** WebGL uses Phaser 4.2's new Mesh2D system to deform 25 textured
@@ -88,7 +112,9 @@ retriggering the first-completion celebration.
   presentation.
 - **Server-authored spectacle:** a deterministic 20 Hz simulation fixes the
   result and stores a bounded transcript. Phaser interpolates it as continuous
-  action capped at 25 seconds without WebSockets or client combat authority.
+  action capped at 20 seconds without WebSockets or client combat authority.
+  At 15 seconds, Sudden Scribble halves power cooldowns and finishes folding the
+  page inward for a short final rush.
   A mode-specific VS card reveals both signatures and one verified interaction
   from an exhaustive ten-pair Shape Power matrix—mechanics, never win odds.
   Neutral no-clean-hit copy avoids inventing a dodge or counter; shield and
@@ -104,10 +130,10 @@ retriggering the first-completion celebration.
 3. **17–24s:** Name and submit it; capture the PNG unfolding from an ink blot
    and the “SHAPE POWER” label in the “IT'S ALIVE” reveal.
 4. **24–37s:** Flash the mechanics-not-win-odds matchup card, then run the exact
-   Mesh2D fight at 2×. Hold on the readable Inkcast signature/critical headlines
-   and land on the transcript-derived recap.
-5. **37–44s:** Open Rivals. Show `LAST BOUT • FINAL SPLAT`, three visible founder
-   challenges, and a chosen rematch entering its own VS card.
+   Mesh2D fight at 2×. Hold on READY → WINDUP → ACTIVE, a reactive paper surge,
+   and the transcript-derived recap.
+5. **37–44s:** Show a Day 9 Founder margin and 2–1 score, then open Rivals to prove
+   the active founder is pinned beside two fresh exhibition choices.
 6. **44–50s:** Flash the daily Champion Contract, paper challenger picker, and
    completed stamp after a 4× server replay.
 7. **50–55s:** Cut through the reward-free Practice Lab's four checked powers and
@@ -131,15 +157,24 @@ retriggering the first-completion celebration.
 - Replaced the earlier catch/collection direction with the current daily
   draw-to-stats Rumble loop.
 - Added deterministic server-side PNG analysis and fair stat normalization.
-- Added sixteen optional daily Doodle Dares, a first-run draw/fight/reward
-  promise, progressive blank/forming/ready feedback, and a shared client/server
-  minimum-body gate that rejects tap-sized submissions.
+- Added 32 optional daily Doodle Dares, balanced eight per Shape Power, plus
+  eight reward-free twists. The versioned schedule covers every prompt before
+  repeating and produces 256 distinct cards. Progressive blank/forming/ready
+  feedback and a shared client/server minimum-body gate reject tap-sized submissions.
+- Added 32 validated public forecast blurbs on an independent no-repeat rotation.
+  App, Reddit post, result comment, and browser mock share that copy without
+  changing boosted/nerfed element randomness.
+- Added 72 validated care reactions across Shape Power, action, life day, and
+  stable variant. The paper receipt shows the exact XP delta and only committed
+  Ink; no care flavor can claim a reward or battle result. Replaced the Field
+  Guide's retired element triangle with the actual Ember/Tide/Moss/Storm payloads.
 - Bound decorated 512x512 PNGs to their authoritative base drawings on the
   server, rejecting changed pixels outside declared accessory regions and any
   attempt to erase base pixels.
 - Replaced turn-like battle playback with a server-precomputed 20 Hz transcript:
   continuous wall movement, collisions, HP checkpoints, four persistent Shape
-  Powers, element payloads, arena pressure, and a bounded 25-second ceiling.
+  Powers, element payloads, arena pressure, a 15-second Sudden Scribble rush,
+  and a bounded 20-second ceiling.
 - Removed the obsolete turn-beat replay fallback and outcome-neutral cheer
   meter. Current battles have one continuous transcript path; transcript-less
   stored reports show an honest archived-result summary instead of reconstructed
@@ -186,19 +221,25 @@ retriggering the first-completion celebration.
 - Added transcript-only impact tiers, micro-hitstop, HP damage trails, visible
   arena shrink, sudden-fight callouts, optional synthesized cues with mute, and
   reduced-motion fallbacks; none can affect the authoritative result.
-- Rebuilt the continuous fight as a distinct live Inkcast arena rather than two
-  turn-like podiums: a deterministic torn page, clipping-safe 220px drawings,
-  edge-only brush motion, angled numeric-HP panels, an authoritative compact
-  clock, explicit OUTCOME LOCKED copy, a high-contrast lower third, positional
-  overlap depth, and separated post-fight actions. Playback can run at 4×, but
+- Rebuilt the continuous fight as a physical paper arena rather than two
+  turn-like podiums or a broadcast dashboard: a full-height deterministic torn
+  page, clipping-safe 232px drawings, localized element stains, irregular
+  authoritative bounds, reactive power surges, compact numeric-HP and
+  READY/WINDUP/ACTIVE strips, a smaller clock, SERVER-LOCKED REPLAY copy, a
+  transient paper commentary margin, positional overlap depth, and separated
+  post-fight actions. Playback can run at 4×, but
   the result ceremony always returns to normal presentation speed.
-- Added deterministic, power-specific Inkcast play-by-play for existing battle
-  moments. The content bank varies by battle and fact but cannot add events,
+- Added a versioned, deterministic Inkcast play-by-play pack for existing battle
+  moments: 104 globally unique lines, stable IDs, and 25 fact-specific banks.
+  Each replay exhausts a bank before authored reuse; strict shared parsing and
+  validation reject wrong tokens, malformed braces, duplicate/overlong copy,
+  invented rewards or outcomes, unsafe miss explanations, timing overclaims,
+  and future arena events. The typed authoring layer structurally excludes a
+  Colorburst miss because its echo may still connect. It cannot add events,
   change their order, or affect the authoritative result.
 - Added a pure Inkcast editorial queue: one strongest line per simulation tick,
   900ms wall-clock dwell, and two pending beats. It remains bounded at 4×, clears
-  on Skip/finish, and suppresses Colorburst's premature miss claim while its echo
-  can still connect.
+  on Skip/finish, and only prioritizes already-authored candidates.
 - Added a deterministic Inkcast Recap derived only from the validated battle
   transcript: exact finish reason, final HP, damage, signature, and actual
   decisive splat. KO, double-KO, and timeout poses now tell different truths,
@@ -216,6 +257,19 @@ retriggering the first-completion celebration.
   epithet, and challenge; the prior authoritative decisive splat remains in the
   header. Off-card choices fail closed and the local mock imports the production
   selector instead of maintaining a second matchmaker.
+- Added one server-authoritative Founder Rival Thread per player: first to two,
+  maximum three qualifying battles, one score beat per Arena day, active-founder
+  pinning across Rival Draft and quick spar, same-founder Champion advancement,
+  unrelated exhibition protection, pre-fight match-point/decider stakes, and
+  permanent signed margins. A versioned transaction plus pending report receipts
+  repairs ambiguous writes in Arena-day order; v1 checklist history migrates
+  without invented scores, and duplicate reports, privacy deletion, and
+  production/mock parity are regression-locked.
+- Added twenty validated three-page founder episodes: 60 unique titles and 60
+  founder-specific cues shared by Rival Draft, Next Goal, Chronicle margin, and
+  the VS ceremony, plus 120 unique result lines bound to the proven latest winner.
+  The authoritative series score selects the page; authored content remains
+  immutable repo data and adds no Redis state or combat effect.
 - Promoted the existing daily boss fight into a truthful Champion Contract with
   server-projected completion state, founder/community voice, exact signature,
   conditional +2 XP, a paper challenger picker, and a noninteractive used stamp.
@@ -224,7 +278,8 @@ retriggering the first-completion celebration.
   locks. It re-analyzes throwaway PNGs, returns a required continuous transcript,
   tracks only unique powers in the browser session, and cannot grant rewards,
   enter progression, expose Belief actions, upload media, or reach battle storage.
-  The first 4/4 completion now receives one gold payoff without becoming a farm.
+  The first 4/4 completion now receives one gold payoff without becoming a farm;
+  later attempts rotate across all four powers and new prompt cards.
 - Added the battle ceremony, first-session exhibition, and living-paper
   interface, then simplified the theater to one server-authored combat model.
 - Added real Reddit post scheduling and idempotent result comments.

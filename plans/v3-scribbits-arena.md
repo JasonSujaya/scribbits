@@ -8,7 +8,8 @@ Supersedes the catch/collect loop (v1) and hatch/vote (v2 draft). Retire catch m
 2. Player **draws one scribbit per day** (in-app canvas). The drawing IS the stat sheet.
 3. **Morning Rumble**: async auto-battle bracket resolves at 00:00 UTC with the new daily post; watchable Phaser replays
 4. Winner is crowned **Champion** = tomorrow's boss (frozen snapshot, anyone can challenge, instant resolve)
-5. Scribbits live **3 days** → fade to Sketchbook, or become **Legends** (win a crown OR belief ≥ 25 at expiry)
+5. Continue one daily-paced **Founder Rival Thread** through its founder-specific three-page episode (first to two) or use the reward-free Four-Power Practice Lab after the official drawing locks
+6. Scribbits live **3 days** → fade to Sketchbook, or become **Legends** (win a crown OR belief ≥ 25 at expiry)
 
 ## Balance invariants (non-negotiable)
 
@@ -18,7 +19,12 @@ Supersedes the catch/collect loop (v1) and hatch/vote (v2 draft). Retire catch m
 - Element payloads change tactics rather than applying an opaque matchup multiplier: ember burns · tide knocks back · moss creates a barrier · storm shortens telegraphs
 - Equipped accessories are rendered only after analysis and never affect stats or power selection
 - Battles simulate server-side at a fixed 20 Hz; clients receive an immutable bounded transcript with 0.5-second motion checkpoints, not authority
-- Continuous arena movement, walls, collisions, one Ink Pressure refresh, arena shrink, and late-fight pressure keep visible fights within roughly 15–25 seconds
+- Continuous arena movement, walls, collisions, one Ink Pressure refresh, a fold from 14 seconds, and the 15-second Sudden Scribble rush keep every visible fight inside a 20-second ceiling
+- Founder Rival Threads are first to two, advance at most once per Arena day, pin the active founder, and grant no combat power or currency; Page 1/2/3 content is derived from that authoritative score rather than stored separately
+- Every Rival page closes with founder-specific result copy selected only after its Chronicle beat and transcript winner agree; narrative text cannot grant rewards or alter the report
+- Inkcast copy is presentation-only and versioned: its shared 25-bank, 104-line pack may describe only supplied transcript facts and exhausts each bank before authored reuse; the readability queue may omit candidates, and the authoring layer cannot claim rewards, outcomes, future events, or a Colorburst miss before echo resolution
+- Practice progression is browser-session-only: the first 4/4 discovery can celebrate once, then target powers and prompt cards rotate without granting or storing rewards
+- Care flavor is repo-authored and reward-safe: every Scribbit gets nine distinct Shape-Power-specific moments across its three life days, while the receipt renders only server-confirmed XP and Ink
 - Belief preserves a Scribbit as a permanent Legend at 25; it never adds combat
   stats or hidden moves, and its live count freezes when that Scribbit retires
 - 1 drawing/day + 1 rumble entry/day, server-enforced. Same-record Swiss pairing. NPC founding scribbits backfill odd/thin brackets
@@ -27,10 +33,13 @@ Supersedes the catch/collect loop (v1) and hatch/vote (v2 draft). Retire catch m
 ## Delight requirements (Opus owns)
 
 - Canvas: chunky brushes, element-palette colors, undo, name your creature;
-  optional deterministic daily Doodle Dare; blank/forming/ready feedback; stat
+  validated 32-day optional Doodle Dare calendar plus reward-free bonus twist;
+  blank/forming/ready feedback; stat
   preview updates LIVE while drawing; the server enforces the same permissive
   minimum-body threshold as the client
-- Replay: drawn textures animated (squash/stretch/idle wobble), damage pops, KO dramatics, forecast weather FX
+- Care: a short paper-native reaction receipt with the actual drawing,
+  power-specific behavior, mood transition, and truthful server-confirmed payout
+- Replay: full-height paper arena, drawn textures animated (squash/stretch/idle wobble), readable READY/WINDUP/ACTIVE power states, damage pops, 15-second Sudden Scribble, truthful time/KO verdicts, forecast FX, and a transient 900ms Inkcast margin backed by no-repeat fact banks
 - Death/legend ceremony: fade eulogy card vs Hall of Legends enshrinement
 - Everything portrait 720×1280, in-viewport, juicy
 
@@ -42,11 +51,11 @@ Daily numbered Arena post with the current forecast and Champion · nightly idem
 
 ## Architecture deltas
 
-- Contract: `src/shared/arena.ts` (NEW — source of truth, already written by orchestrator)
+- Contract: `src/shared/arena.ts` is the source of truth; immutable founder voice, Rival episodes, Doodle Dares, forecast flavor, and versioned Inkcast banks live under `src/shared/` and `src/shared/content/`
 - Server: scribbit lifecycle store, submission (media.upload from dataURL; fallback: PNG bytes in redis + GET /api/drawing/:id), battle engine (pure + seeded), rumble/champion/forecast/expiry jobs, belief, legends. Retire /api/wilds, /api/catch*, /api/design* routes (design pipeline morphs into scribbit submission)
 - Client: Draw scene, Arena home, Replay scene, Sketchbook/Legends scenes. Retire Habitat/CatchMinigame/CatchResult/Dex
 - Founding scribbits: reuse the 20 species as NPC roster (their art = generated sprites when ready)
-- Redis: `scribbit:{id}` · `user:{id}:daily:{day}` flags · `rumble:{day}` entries zset · `battles:{day}:{id}` reports · `champion:current` · `legends` zset · `belief:{scribbitId}` voters hash · `forecast:{day}`
+- Redis: `scribbit:{id}` · `user:{id}:daily:{day}` flags · `user:{id}:founder-chronicle:v2` + pending receipt hash · `rumble:{day}` entries zset · `battles:{day}:{id}` reports · `champion:current` · `legends` zset · `belief:{scribbitId}` voters hash · `forecast:{day}`
 
 ## Task split
 
@@ -60,4 +69,4 @@ Input: 512×512 canvas ImageData. inkRatio = inked px / total. jaggedness = outl
 
 ## Definition of done
 
-Gates green · playtest post shows: draw → stats preview → submit → tomorrow's rumble resolves → replay watchable → champion/boss challenge works → lifespan/legend transitions correct (test with shortened day via debug flag) · pushed to GitHub
+Gates green · playtest post shows: draw → stats preview → submit → 20-second server replay → Rival Thread stakes/result → tomorrow's rumble resolves → champion challenge works → Practice remains reward-free → lifespan/legend transitions correct (test with shortened day via debug flag) · pushed to GitHub

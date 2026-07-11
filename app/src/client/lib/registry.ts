@@ -2,7 +2,13 @@
 // magic-string keys in one place so scenes read/write the same slots.
 
 import { Scene } from 'phaser';
-import type { ArenaState, BattleReport, Scribbit } from '../../shared/arena';
+import type {
+  ArenaState,
+  BattleReport,
+  DirectBattleResponse,
+  FounderChronicleBeat,
+  Scribbit,
+} from '../../shared/arena';
 import type { PrimaryPower } from '../../shared/combat/types';
 import {
   createPracticeSession,
@@ -10,15 +16,23 @@ import {
   recordPracticeSessionPower,
 } from './practicelab';
 import type { PracticeSession } from './practicelab';
+import {
+  planFounderRivalryStakes,
+  type FounderRivalryStakesPlan,
+} from './founderchronicle';
 
 const ARENA_KEY = 'arena';
 const REPLAY_KEY = 'replayReport';
 const REPLAY_RETURN_KEY = 'replayReturn';
+const REPLAY_CHRONICLE_BEAT_KEY = 'replayChronicleBeat';
+const REPLAY_RIVALRY_STAKES_KEY = 'replayRivalryStakes';
 const SKETCHBOOK_TAB_KEY = 'sketchbookTab';
 const PRACTICE_SESSION_KEY = 'practiceSession';
+const FOUNDER_CHRONICLE_BEATS_KEY = 'founderChronicleBeats';
+const BATTLE_HISTORY_PAGE_KEY = 'battleHistoryPage';
 
 export type SketchbookTab = 'legends' | 'sketchbook' | 'collection';
-export type ReplayReturnScene = 'ArenaHome' | 'Sketchbook';
+export type ReplayReturnScene = 'ArenaHome' | 'Sketchbook' | 'MyBattles';
 
 export function setArena(scene: Scene, state: ArenaState): void {
   scene.registry.set(ARENA_KEY, state);
@@ -32,10 +46,26 @@ export function getArena(scene: Scene): ArenaState | undefined {
 export function setReplay(
   scene: Scene,
   report: BattleReport,
-  returnScene: ReplayReturnScene = 'ArenaHome'
+  returnScene: ReplayReturnScene = 'ArenaHome',
+  founderChronicleBeat: FounderChronicleBeat | null = null,
+  founderRivalryStakes: FounderRivalryStakesPlan | null = null
 ): void {
   scene.registry.set(REPLAY_KEY, report);
   scene.registry.set(REPLAY_RETURN_KEY, returnScene);
+  if (founderChronicleBeat) {
+    scene.registry.set(REPLAY_CHRONICLE_BEAT_KEY, {
+      ...founderChronicleBeat,
+    });
+  } else {
+    scene.registry.remove(REPLAY_CHRONICLE_BEAT_KEY);
+  }
+  if (founderRivalryStakes) {
+    scene.registry.set(REPLAY_RIVALRY_STAKES_KEY, {
+      ...founderRivalryStakes,
+    });
+  } else {
+    scene.registry.remove(REPLAY_RIVALRY_STAKES_KEY);
+  }
 }
 
 export function getReplay(scene: Scene): BattleReport | undefined {
@@ -47,6 +77,93 @@ export function getReplayReturn(scene: Scene): ReplayReturnScene {
     (scene.registry.get(REPLAY_RETURN_KEY) as ReplayReturnScene | undefined) ??
     'ArenaHome'
   );
+}
+
+export function setBattleHistoryPage(scene: Scene, page: number): void {
+  scene.registry.set(
+    BATTLE_HISTORY_PAGE_KEY,
+    Number.isSafeInteger(page) ? Math.max(0, page) : 0
+  );
+}
+
+export function getBattleHistoryPage(scene: Scene): number {
+  const storedPage = scene.registry.get(BATTLE_HISTORY_PAGE_KEY) as unknown;
+  return typeof storedPage === 'number' && Number.isSafeInteger(storedPage)
+    ? Math.max(0, storedPage)
+    : 0;
+}
+
+export function getReplayFounderChronicleBeat(
+  scene: Scene
+): FounderChronicleBeat | null {
+  const beat = scene.registry.get(REPLAY_CHRONICLE_BEAT_KEY) as
+    | FounderChronicleBeat
+    | undefined;
+  return beat ? { ...beat } : null;
+}
+
+export function getReplayFounderRivalryStakes(
+  scene: Scene
+): FounderRivalryStakesPlan | null {
+  const stakes = scene.registry.get(REPLAY_RIVALRY_STAKES_KEY) as
+    | FounderRivalryStakesPlan
+    | undefined;
+  return stakes ? { ...stakes } : null;
+}
+
+export type StagedDirectBattle = Readonly<{
+  arena: ArenaState | undefined;
+  rivalryStakes: FounderRivalryStakesPlan | null;
+}>;
+
+// One home for cross-scene direct-battle staging. The response confirms that a
+// Chronicle beat exists; the pre-fight Arena snapshot supplies only the score
+// and bout number, so the ceremony never reads or spoils the server's winner.
+export function stageDirectBattle(
+  scene: Scene,
+  currentArena: ArenaState | undefined,
+  response: DirectBattleResponse,
+  ownedScribbitId: string,
+  returnScene: ReplayReturnScene = 'ArenaHome'
+): StagedDirectBattle {
+  const opponent =
+    response.report.a.id === ownedScribbitId
+      ? response.report.b
+      : response.report.b.id === ownedScribbitId
+        ? response.report.a
+        : null;
+  const plannedStakes =
+    currentArena && opponent
+      ? planFounderRivalryStakes(
+          currentArena.founderChronicle,
+          currentArena.dayNumber,
+          opponent.id
+        )
+      : null;
+  const rivalryStakes =
+    plannedStakes &&
+    response.founderChronicleBeat?.founderId === plannedStakes.founderId
+      ? plannedStakes
+      : null;
+  const nextArena = currentArena
+    ? {
+        ...currentArena,
+        founderChronicle: response.founderChronicle,
+      }
+    : undefined;
+
+  if (nextArena) setArena(scene, nextArena);
+  if (response.founderChronicleBeat) {
+    setFounderChronicleBeats(scene, [response.founderChronicleBeat]);
+  }
+  setReplay(
+    scene,
+    response.report,
+    returnScene,
+    response.founderChronicleBeat,
+    rivalryStakes
+  );
+  return Object.freeze({ arena: nextArena, rivalryStakes });
 }
 
 export function beginPracticeSession(scene: Scene): PracticeSession {
@@ -76,6 +193,34 @@ export function recordPracticePower(
 
 export function endPracticeSession(scene: Scene): void {
   scene.registry.remove(PRACTICE_SESSION_KEY);
+}
+
+// Battle replay compares its pre-fight Arena snapshot with the fresh server
+// state, then hands only newly proven Chronicle stamps to ArenaHome. This is a
+// transient celebration receipt; the durable truth remains in ArenaState.
+export function setFounderChronicleBeats(
+  scene: Scene,
+  beats: readonly FounderChronicleBeat[]
+): void {
+  if (beats.length === 0) {
+    scene.registry.remove(FOUNDER_CHRONICLE_BEATS_KEY);
+    return;
+  }
+  scene.registry.set(
+    FOUNDER_CHRONICLE_BEATS_KEY,
+    beats.map((beat) => ({ ...beat }))
+  );
+}
+
+export function takeFounderChronicleBeats(
+  scene: Scene
+): FounderChronicleBeat[] {
+  const beats =
+    (scene.registry.get(FOUNDER_CHRONICLE_BEATS_KEY) as
+      | FounderChronicleBeat[]
+      | undefined) ?? [];
+  scene.registry.remove(FOUNDER_CHRONICLE_BEATS_KEY);
+  return beats.map((beat) => ({ ...beat }));
 }
 
 // Deep-link focus for ArenaHome (e.g. the loss card asks to scroll to the

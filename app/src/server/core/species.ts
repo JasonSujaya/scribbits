@@ -60,17 +60,31 @@ export const findFoundingScribbit = (
 
 export const chooseFoundingSparOpponent = (
   challenger: Pick<Scribbit, 'element' | 'level'>,
-  seed: number
+  seed: number,
+  options: {
+    preferredFounderId?: string | null;
+    excludedFounderIds?: readonly string[];
+  } = {}
 ): Scribbit => {
+  const preferredFounder = options.preferredFounderId
+    ? findFoundingScribbit(options.preferredFounderId)
+    : undefined;
+  if (preferredFounder) return preferredFounder;
+  const excludedFounderIds = new Set(options.excludedFounderIds ?? []);
+  const unresolvedFounders = foundingScribbits.filter(
+    (scribbit) => !excludedFounderIds.has(scribbit.id)
+  );
+  const opponentPool =
+    unresolvedFounders.length > 0 ? unresolvedFounders : foundingScribbits;
   const challengerLevel = Number.isFinite(challenger.level)
     ? Math.max(1, Math.floor(challenger.level))
     : 1;
   const closestLevelDistance = Math.min(
-    ...foundingScribbits.map((scribbit) => {
+    ...opponentPool.map((scribbit) => {
       return Math.abs(scribbit.level - challengerLevel);
     })
   );
-  const closestLevelScribbits = foundingScribbits.filter((scribbit) => {
+  const closestLevelScribbits = opponentPool.filter((scribbit) => {
     return Math.abs(scribbit.level - challengerLevel) === closestLevelDistance;
   });
   const differentElementScribbits = closestLevelScribbits.filter((scribbit) => {
@@ -105,16 +119,42 @@ const getSafeRivalLimit = (limit: number): number => {
 export const selectFoundingSparRivalSlate = (
   challenger: Pick<Scribbit, 'element' | 'level'>,
   seed: number,
-  limit = 3
+  limit = 3,
+  options: {
+    preferredFounderId?: string | null;
+    excludedFounderIds?: readonly string[];
+  } = {}
 ): Scribbit[] => {
   const safeLimit = getSafeRivalLimit(limit);
   if (safeLimit === 0 || foundingScribbits.length === 0) return [];
+
+  const preferredFounder = options.preferredFounderId
+    ? findFoundingScribbit(options.preferredFounderId)
+    : undefined;
+  const excludedFounderIds = new Set(options.excludedFounderIds ?? []);
+  const candidatesWithoutPreferred = foundingScribbits.filter(
+    (scribbit) => scribbit.id !== preferredFounder?.id
+  );
+  const unresolvedCandidates = candidatesWithoutPreferred.filter(
+    (scribbit) => !excludedFounderIds.has(scribbit.id)
+  );
+  const requiredCandidateCount = Math.max(
+    0,
+    safeLimit - (preferredFounder ? 1 : 0)
+  );
+  const candidatePool =
+    unresolvedCandidates.length >= requiredCandidateCount
+      ? unresolvedCandidates
+      : candidatesWithoutPreferred;
+  if (candidatePool.length === 0) {
+    return preferredFounder ? [preferredFounder].slice(0, safeLimit) : [];
+  }
 
   const challengerLevel = Number.isFinite(challenger.level)
     ? Math.max(1, Math.floor(challenger.level))
     : 1;
   const shuffledCandidates: FoundingSparRivalCandidate[] = shuffleWithSeed(
-    foundingScribbits,
+    candidatePool,
     seed
   ).map((scribbit) => ({
     scribbit,
@@ -138,9 +178,21 @@ export const selectFoundingSparRivalSlate = (
       return levelDistance === extraLevelDistance;
     }
   );
-  const selectedCandidates: FoundingSparRivalCandidate[] = [];
-  const selectedIds = new Set<string>();
-  const selectedPowers = new Set<ReturnType<typeof selectPrimaryPower>>();
+  const selectedCandidates: FoundingSparRivalCandidate[] = preferredFounder
+    ? [
+        {
+          scribbit: preferredFounder,
+          levelDistance: Math.abs(preferredFounder.level - challengerLevel),
+          primaryPower: selectPrimaryPower(preferredFounder.stats),
+        },
+      ]
+    : [];
+  const selectedIds = new Set<string>(
+    selectedCandidates.map((candidate) => candidate.scribbit.id)
+  );
+  const selectedPowers = new Set<ReturnType<typeof selectPrimaryPower>>(
+    selectedCandidates.map((candidate) => candidate.primaryPower)
+  );
 
   const selectCandidates = (
     candidates: FoundingSparRivalCandidate[],

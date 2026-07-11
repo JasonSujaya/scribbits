@@ -14,7 +14,7 @@ Legend.
 
 Battles are server-authored but presented as continuous action: a deterministic
 20 Hz simulation fixes the winner and emits a bounded transcript, then Phaser
-interpolates it into an arena replay capped at 25 seconds. Drawing choices
+interpolates it into an arena replay capped at 20 seconds. Drawing choices
 select the fighter's identity and power. Accessories and titles never affect
 analysis or stats; Mystery Pens can change the normalized split but never add
 stat points.
@@ -24,6 +24,9 @@ Back, the daily Champion Contract, capsule, or care; daily actions fill an Ink
 Trail toward the discounted Mystery Capsule; and discovery, collector rank, Epic
 pity, wearable titles, and immutable personal Legacy Cards persist after
 individual Scribbits fade.
+One player-level Founder Rival Thread adds a paced return story without power:
+first to two, maximum three battles, one authoritative score beat per Arena day,
+and a permanent signed margin when resolved.
 After the official daily drawing locks, an ephemeral Four-Power Practice Lab
 makes the core drawing-to-fight hook repeatable without rewards or persistence.
 
@@ -37,12 +40,24 @@ makes the core drawing-to-fight hook repeatable without rewards or persistence.
 
 ## Current Ship Gates
 
-- [x] Local equivalent of `npm run verify` passes: TypeScript, ESLint, 83
+- [x] Local equivalent of `npm run verify` passes: TypeScript, ESLint, 93
       simulation groups, and production build (July 11).
 - [x] Fresh mobile browser proof covers the optional deterministic Doodle Dare,
       first-run draw -> fight -> Ink promise, blank/forming/ready feedback,
       full drawing, birth reveal, live paper-broadcast exhibition, Skip, and
       transcript-derived recap with zero captured runtime errors (July 11).
+- [x] Daily creative content now uses 32 validated Doodle Dares, balanced eight
+      per Shape Power, and eight optional twists. Every four-day window covers
+      all powers, prompts repeat only after 32 days, and exact cards only after 256. The accessible 320x568 card fits above the tools and disappears on the
+      first stroke with zero errors. Public forecast flavor independently
+      rotates through 32 validated lines and the mock imports production
+      selection instead of maintaining duplicate copy (July 11).
+- [x] Care now has 72 validated Shape-Power-specific reactions across all three
+      actions and all three life days. One Scribbit gets nine distinct lifetime
+      notes; a 320x568 WebGL receipt shows its drawing, mood, care marks, exact XP
+      delta, and only server-confirmed Ink with zero runtime or console errors.
+      The Field Guide now teaches the real four element payloads and explicitly
+      removes the retired hidden triangle (July 11).
 - [x] Client and server share a 1,500-pixel minimum-body gate, so one brush tap
       cannot submit. Replay validation accepts a truthful zero-damage Nib Halo
       wall ejection during early knockout protection instead of mislabeling the
@@ -61,7 +76,8 @@ makes the core drawing-to-fight hook repeatable without rewards or persistence.
       runtime errors on `localhost:8902` (July 10).
 - [x] Balance regression proves all extreme drawing-archetype matchups stay at
       or below 65% over slot-swapped seeded fights; identical builds remain
-      slot-neutral and every fight resolves within the bounded pacing window.
+      slot-neutral. A ten-matchup duration matrix locks the 20-second ceiling and
+      prevents cross-power fights from becoming mostly stalled decisions.
 - [x] Growth regression caps the complete level 1 -> 5 combat edge at 1.5% and
       keeps max-level equal-build win rates at or below 60% across representative
       drawings; the level remains visible through mastery copy and aura marks.
@@ -71,11 +87,13 @@ makes the core drawing-to-fight hook repeatable without rewards or persistence.
 - [x] WebGL and Canvas browser proof verify mastery labels, tiered impacts,
       lagging HP loss, visible arena folding, mute control, exact drawing art,
       and zero captured runtime errors on `localhost:8902` (July 11).
-- [x] The real-time replay now has a distinct live Inkcast stage instead of fixed
-      turn-like podiums or a static practice grid: deterministic torn paper,
-      clipping-safe 220px fighters, edge brush ambience, moving shadows, angled
-      numeric-HP panels, a smaller server clock, explicit OUTCOME LOCKED copy,
-      and a high-contrast lower third. Default, chosen-rival, 320x568 WebGL,
+- [x] The real-time replay now has a distinct paper arena instead of fixed
+      turn-like podiums or a broadcast dashboard: full-height torn paper,
+      clipping-safe 232px fighters, localized element stains, a rough truthful
+      boundary, transcript-reactive surges, compact numeric-HP/Shape Power state
+      strips, a smaller server clock, explicit SERVER-LOCKED REPLAY copy, a
+      15-second Sudden Scribble rush, and a transient commentary margin. Every
+      replay ends by 20 seconds. Default, chosen-rival, 320x568 WebGL,
       Canvas, reduced-motion, Skip, and instrumented 1x -> 2x -> 4x -> normal-speed
       result paths have zero captured runtime or browser errors (July 11).
 - [x] Every current fight path—including a chosen Rival Draft rematch—now runs a
@@ -84,13 +102,19 @@ makes the core drawing-to-fight hook repeatable without rewards or persistence.
       Shape Power combinations as ten symmetric pairings, bans win-odds language,
       and WebGL/Canvas proof keeps sampled cards readable with zero runtime errors
       (July 11).
-- [x] The existing Inkcast ticker now selects varied power, hit, miss, shield,
+- [x] The transient paper commentary margin selects varied power, hit, miss, shield,
       echo, arena, and late-fight copy deterministically from authoritative facts.
+      Its versioned shared pack has 104 globally unique lines in 25 strict banks;
+      a replay-scoped author exhausts each bank before reuse, founder signatures
+      do not consume generic variants, and the shared parser rejects wrong tokens,
+      malformed braces, overlong rendered lines, duplicate copy, invented outcomes,
+      and unsafe miss causes.
       A pure editorial queue chooses one strongest candidate per simulation tick,
       holds it for 900ms wall-clock, and bounds pending copy at two items, including
       at 4x. It adds no events or combat authority; Colorburst no longer makes a
-      false miss claim before its delayed echo, and compact WebGL proof has zero
-      captured runtime errors (July 11).
+      false miss claim before its delayed echo. Fresh 320x568 WebGL proof shows a
+      v1 bank line in the live margin, verifies 1x -> 2x -> 4x plus normal-speed
+      result tweens, and captures zero runtime or console errors (July 11).
 - [x] The post-fight Inkcast Recap now derives its winner, finish reason, final
       HP, damage, signature, and decisive splat only from the validated server
       transcript. Browser proof covers knockout, double knockout, timeout,
@@ -108,6 +132,28 @@ makes the core drawing-to-fight hook repeatable without rewards or persistence.
       WebGL proof at default portrait and 320x568 covers ceremony, opening, result,
       Rival Draft, chosen rematch, CTA reachability, and empty browser error logs;
       reduced-motion ceremonies retain the full reading dwell (July 11).
+- [x] Founder encounters now form one server-authoritative Rival Thread instead
+      of a checklist: first to two, maximum three qualifying battles, one score
+      beat per Arena day, active-founder pinning in draft and quick spar, unrelated
+      exhibition protection, pre-fight match-point/decider stakes, permanent signed
+      margins, Arena-day-ordered pending repair, v1 archive-only migration, and
+      privacy deletion. Deterministic production/mock coverage plus 320x568 WebGL
+      proof verifies the deciding-bout ceremony, RIVAL DECIDER rail, 2–1 margin,
+      exact result CTA, and zero runtime errors (July 11).
+- [x] Every founder Rival Thread now unfolds through one validated three-page
+      episode. The 20 immutable arcs provide 60 unique titles and 60
+      founder-specific cues; Page 1/2/3 is derived from the server-owned series
+      score and appears in Next Goal, Rival Draft, the Chronicle margin, and the
+      pre-fight ceremony without new Redis state or outcome/reward claims.
+      A 320x568 WebGL Fernibble decider proves `LAST LEAF HOME`, the RIVAL
+      DECIDER rail, and zero captured runtime or console errors (July 11).
+- [x] Every named Rival page now pays off after the battle through one of 120
+      unique founder-authored result lines. A pure receipt planner requires the
+      pre-fight page, matching server Chronicle beat, named founder slot, owned
+      fighter slot, and validated transcript winner before showing copy. The
+      result card exposes the new score and signed/continuing state without new
+      persistence or invented rewards. A 320x568 WebGL decider result keeps the
+      receipt and all actions visible with zero runtime or console errors (July 11).
 - [x] The existing once-daily Champion Challenge now has one truthful player-facing
       contract. Arena state projects the server-owned daily flag; founder/community
       identity, exact signature, conditional +2 XP, paper challenger picker, and a
@@ -167,13 +213,16 @@ makes the core drawing-to-fight hook repeatable without rewards or persistence.
 - [x] Four-Power Practice Lab is server-analyzed, reward-free, session-scoped,
       and rejected before battle storage. It has a post-lock Arena entry,
       server-decided power feedback, continuous replay, no profile/Belief path,
-      bounded requests, and production/mock parity (July 11).
+      bounded requests, production/mock parity, and attempt-aware encores that
+      rotate through all four powers after 4/4 instead of pinning one prompt
+      (July 11).
 - [x] Mobile WebGL proof covers locked-day entry and four genuinely different
-      drawings through 0/4 -> 4/4: every server power reveal, live Inkcast battle,
+      drawings through 0/4 -> 4/4: every server power reveal, live paper-arena battle,
       truthful recap, next-untried prompt, and the first-completion gold card.
       Canvas replay proof and both runtime checks stay clean; endpoint proof keeps
       Arena, inventory, and battle-history hashes unchanged with no reward field
-      (July 11).
+      (July 11). Deterministic regressions also lock four distinct post-4/4 target
+      powers and prompt cards.
 - [ ] Installed Reddit playtest verifies the same loop plus boss/care/Back and
       the scheduled result comment on mobile and desktop.
 - [ ] Devvit upload/install/demo post requires user Reddit login and subreddit access.

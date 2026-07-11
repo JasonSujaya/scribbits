@@ -5,10 +5,11 @@ import { practiceBattle, submitScribbit, fetchArena, spar } from '../lib/api';
 import {
   getArena,
   endPracticeSession,
-  getPracticePowers,
+  getPracticeSession,
   recordPracticePower,
   setArena,
   setReplay,
+  stageDirectBattle,
 } from '../lib/registry';
 import { analyze, hasMinimumDrawingInk, MIN_INK_PIXELS } from '../lib/analyzer';
 import type { AnalyzerResult } from '../lib/analyzer';
@@ -39,9 +40,12 @@ import {
   DRAW_RULES_COPY,
   FIRST_RUN_PROMISE,
   planDrawFeedback,
-  selectDailyDoodleDare,
 } from '../lib/drawonboarding';
-import type { DoodleDare } from '../lib/drawonboarding';
+import {
+  selectDailyDoodleDare,
+  selectDailyDoodleDareTwist,
+} from '../../shared/content/doodledares';
+import type { DoodleDare } from '../../shared/content/doodledares';
 import {
   PRACTICE_HEADER_TITLE,
   PRACTICE_PROMISE,
@@ -147,9 +151,11 @@ export class Draw extends Scene {
   private birthContinuationStarted = false;
   private canvasDareOverlay: HTMLDivElement | null = null;
   private dailyDare: DoodleDare | null = null;
+  private dailyDareTwist: string | null = null;
   private isFirstScribbit = false;
   private practiceMode = false;
   private practicePowers: PrimaryPower[] = [];
+  private practiceAttemptCount = 0;
   private practiceTargetPower: PrimaryPower = 'inkquake';
   private pendingPracticeReport: BattleReport | null = null;
 
@@ -181,8 +187,10 @@ export class Draw extends Scene {
     this.birthContinuationStarted = false;
     this.canvasDareOverlay = null;
     this.dailyDare = null;
+    this.dailyDareTwist = null;
     this.isFirstScribbit = false;
     this.practicePowers = [];
+    this.practiceAttemptCount = 0;
     this.practiceTargetPower = 'inkquake';
     this.pendingPracticeReport = null;
     this.nameInput = null;
@@ -212,14 +220,23 @@ export class Draw extends Scene {
       }
     }
     this.isFirstScribbit = !this.practiceMode && arena.myScribbits.length === 0;
-    this.practicePowers = this.practiceMode ? getPracticePowers(this) : [];
+    const practiceSession = this.practiceMode ? getPracticeSession(this) : null;
+    this.practicePowers = practiceSession
+      ? [...practiceSession.triedPowers]
+      : [];
+    this.practiceAttemptCount = practiceSession?.attemptCount ?? 0;
     this.dailyDare = this.practiceMode
       ? selectPracticeDoodleDare(
           this.practicePowers,
           arena.dayNumber,
-          arena.myUsername
+          arena.myUsername,
+          this.practiceAttemptCount
         )
       : selectDailyDoodleDare(arena.dayNumber, arena.myUsername);
+    this.dailyDareTwist = selectDailyDoodleDareTwist(
+      arena.dayNumber + (this.practiceMode ? this.practiceAttemptCount : 0),
+      arena.myUsername
+    );
     this.practiceTargetPower = this.dailyDare.suggestedPower;
 
     this.cameras.main.setBackgroundColor(UI.desk);
@@ -966,8 +983,18 @@ export class Draw extends Scene {
     const dare =
       this.dailyDare ??
       selectDailyDoodleDare(0, this.getArenaState()?.myUsername ?? null);
+    const twist =
+      this.dailyDareTwist ??
+      selectDailyDoodleDareTwist(
+        this.getArenaState()?.dayNumber ?? 1,
+        this.getArenaState()?.myUsername ?? null
+      );
     const overlay = document.createElement('div');
-    overlay.setAttribute('aria-hidden', 'true');
+    overlay.setAttribute('role', 'note');
+    overlay.setAttribute(
+      'aria-label',
+      `${this.practiceMode ? 'Optional Practice target' : 'Optional Doodle Dare'}: ${dare.prompt}. ${DOODLE_DARE_HINT_BY_POWER[dare.suggestedPower]} Bonus twist: ${twist}. You may draw anything.`
+    );
     Object.assign(overlay.style, {
       display: 'flex',
       alignItems: 'center',
@@ -980,7 +1007,7 @@ export class Draw extends Scene {
     const card = document.createElement('div');
     Object.assign(card.style, {
       width: '78%',
-      padding: '12px 16px',
+      padding: '8px 14px',
       background: 'rgba(255, 247, 232, 0.9)',
       border: `2px dashed ${UI.coralText}`,
       borderRadius: '14px',
@@ -997,15 +1024,15 @@ export class Draw extends Scene {
       fontWeight: '900',
       letterSpacing: '1.4px',
       color: UI.coralText,
-      marginBottom: '6px',
+      marginBottom: '4px',
     });
     const prompt = document.createElement('div');
     prompt.textContent = dare.prompt.toUpperCase();
     Object.assign(prompt.style, {
-      fontSize: '21px',
+      fontSize: '20px',
       fontWeight: '900',
       lineHeight: '1.08',
-      marginBottom: '8px',
+      marginBottom: '6px',
     });
     const hint = document.createElement('div');
     hint.textContent = DOODLE_DARE_HINT_BY_POWER[dare.suggestedPower];
@@ -1015,18 +1042,16 @@ export class Draw extends Scene {
       color: UI.inkSoft,
       lineHeight: '1.2',
     });
-    const freedom = document.createElement('div');
-    freedom.textContent = this.practiceMode
-      ? 'Try the target—or test any shape you want.'
-      : 'Or ignore the dare and draw anything.';
-    Object.assign(freedom.style, {
-      fontSize: '12px',
-      fontWeight: '650',
-      color: UI.inkSoft,
-      marginTop: '7px',
+    const twistLabel = document.createElement('div');
+    twistLabel.textContent = `BONUS TWIST • ${twist}`;
+    Object.assign(twistLabel.style, {
+      fontSize: '13px',
+      fontWeight: '800',
+      color: UI.coralText,
+      lineHeight: '1.15',
+      marginTop: '5px',
     });
-
-    card.append(eyebrow, prompt, hint, freedom);
+    card.append(eyebrow, prompt, hint, twistLabel);
     overlay.append(card);
     this.overlay.place(overlay, {
       x: this.scale.width / 2 - square / 2,
@@ -1610,11 +1635,18 @@ export class Draw extends Scene {
         this.showFirstFightRetry(scribbit, result.error);
         return;
       }
-      setReplay(this, result.data, 'ArenaHome');
+      const currentArena = getArena(this);
+      const stagedBattle = stageDirectBattle(
+        this,
+        currentArena,
+        result.data,
+        scribbit.id
+      );
       showVsCeremony(this, {
-        fighterA: result.data.a,
-        fighterB: result.data.b,
-        battleKind: result.data.kind,
+        fighterA: result.data.report.a,
+        fighterB: result.data.report.b,
+        battleKind: result.data.report.kind,
+        rivalryStakes: stagedBattle.rivalryStakes,
         onComplete: () => this.scene.start('Replay'),
       });
     });
