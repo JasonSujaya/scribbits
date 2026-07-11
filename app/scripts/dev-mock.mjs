@@ -14,23 +14,29 @@ const autoReload = process.env.MOCK_AUTO_RELOAD !== '0';
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
 const clientRoot = join(repoRoot, 'dist', 'client');
 const mockAssetRoot = join(repoRoot, 'dist', 'mock-assets');
-const mockCombatBundleUrl = new URL(
-  '../dist/mock-runtime/battle.mjs',
-  import.meta.url
-);
+const configuredMockCombatBundleUrl =
+  process.env.MOCK_COMBAT_BUNDLE_URL?.trim();
+const mockCombatBundleUrl = configuredMockCombatBundleUrl
+  ? new URL(configuredMockCombatBundleUrl)
+  : new URL('../dist/mock-runtime/battle.mjs', import.meta.url);
 if (!existsSync(fileURLToPath(mockCombatBundleUrl))) {
   throw new Error(
     'Production combat mock bundle is missing. Run node scripts/build-mock-combat.mjs.'
   );
 }
 const {
+  INK_REWARDS,
+  SCOUT_NOTEBOOK_MAXIMUM_ENTRIES,
   advanceFounderChronicle,
   chooseFoundingSparOpponent,
   createEmptyFounderChronicle,
   createPracticeBattle,
+  createScoutNotebookState,
   findFoundingScribbit,
   generateForecastForDay,
+  isScoutNotebookReplayDay,
   projectFounderChronicle,
+  projectScoutNotebookPick,
   selectFoundingSparRivalSlate,
   simulate: simulateProductionBattle,
 } = await import(mockCombatBundleUrl.href);
@@ -745,7 +751,10 @@ const memory = {
   drawnToday: false,
   enteredToday: false,
   bossChallengedToday: false,
-  myBackedScribbitId: null,
+  backedScribbitIdByPreviewMode: {
+    returning: null,
+    fresh: null,
+  },
   playStreakDays: 4,
   myClout: 14,
   economyByPreviewMode: {
@@ -841,6 +850,143 @@ if (!inkyMoon) throw new Error('Mock Rumble replay needs Inky Moon.');
 memory.previousRumbleReplay = createBattleReport('rumble', inkyMoon, champion, {
   forecast: makeForecast(memory.dayNumber - 1),
 });
+
+const scoutNotebookPick = (scribbit) => projectScoutNotebookPick(scribbit);
+
+const getBackedScribbitIdForPreview = (previewMode) => {
+  if (previewMode === 'logged-out') return null;
+  return memory.backedScribbitIdByPreviewMode[previewMode] ?? null;
+};
+
+const setBackedScribbitIdForPreview = (previewMode, scribbitId) => {
+  if (previewMode === 'logged-out') return;
+  memory.backedScribbitIdByPreviewMode[previewMode] = scribbitId;
+};
+
+const visibleScoutNotebookPick = (scribbit) => {
+  return scribbit && !memory.hiddenScribbitIds.has(scribbit.id)
+    ? scoutNotebookPick(scribbit)
+    : null;
+};
+
+const scoutNotebookStateForPreview = (previewMode, previewHasPinnedPick) => {
+  const currentDay = memory.dayNumber;
+  const entryCount = Math.min(SCOUT_NOTEBOOK_MAXIMUM_ENTRIES, currentDay);
+  const currentPickId =
+    getBackedScribbitIdForPreview(previewMode) ??
+    (previewMode === 'returning' && previewHasPinnedPick
+      ? todayEntrants[0]?.id
+      : null);
+  const currentPickScribbit = currentPickId
+    ? todayEntrants.find((scribbit) => scribbit.id === currentPickId)
+    : null;
+  const currentPick = visibleScoutNotebookPick(currentPickScribbit);
+  const currentEntry = {
+    day: currentDay,
+    forecast: makeForecast(currentDay),
+    picked: currentPickId !== null,
+    pick: currentPick,
+    status: currentPickId !== null ? 'pending' : 'open',
+    cloutEarned: 0,
+    inkAwarded: 0,
+    replayAvailable: false,
+  };
+
+  if (previewMode === 'fresh') {
+    return createScoutNotebookState({
+      currentDay,
+      lifetimeClout: 0,
+      entries: Array.from({ length: entryCount }, (_, index) => {
+        const day = currentDay - index;
+        if (index === 0) return currentEntry;
+        return {
+          day,
+          forecast: makeForecast(day),
+          picked: false,
+          pick: null,
+          status: 'missed',
+          cloutEarned: 0,
+          inkAwarded: 0,
+          replayAvailable: false,
+        };
+      }),
+    });
+  }
+
+  const bubbleVice = legends.find(
+    (scribbit) => scribbit.name === 'Bubble Vice'
+  );
+  if (!bubbleVice) throw new Error('Mock Scout Notebook needs Bubble Vice.');
+  const previousReport = memory.previousRumbleReplay;
+  const previousReplayVisible =
+    previousReport !== null &&
+    !memory.hiddenScribbitIds.has(previousReport.a.id) &&
+    !memory.hiddenScribbitIds.has(previousReport.b.id);
+  const historicalFixtures = [
+    {
+      picked: true,
+      pick: visibleScoutNotebookPick(inkyMoon),
+      status: 'no_clout',
+      cloutEarned: 0,
+      inkAwarded: 0,
+      replayAvailable:
+        visibleScoutNotebookPick(inkyMoon) !== null && previousReplayVisible,
+    },
+    {
+      picked: true,
+      pick: visibleScoutNotebookPick(todayEntrants[0]),
+      status: 'champion',
+      cloutEarned: 3,
+      inkAwarded: INK_REWARDS.backedChampion,
+      replayAvailable: false,
+    },
+    {
+      picked: true,
+      pick: visibleScoutNotebookPick(todayEntrants[1]),
+      status: 'finalist',
+      cloutEarned: 1,
+      inkAwarded: 0,
+      replayAvailable: false,
+    },
+    {
+      picked: false,
+      pick: null,
+      status: 'missed',
+      cloutEarned: 0,
+      inkAwarded: 0,
+      replayAvailable: false,
+    },
+    {
+      picked: true,
+      pick: visibleScoutNotebookPick(todayEntrants[2]),
+      status: 'no_clout',
+      cloutEarned: 0,
+      inkAwarded: 0,
+      replayAvailable: false,
+    },
+    {
+      picked: true,
+      pick: visibleScoutNotebookPick(bubbleVice),
+      status: 'champion',
+      cloutEarned: 3,
+      inkAwarded: INK_REWARDS.backedChampion,
+      replayAvailable: false,
+    },
+  ];
+
+  return createScoutNotebookState({
+    currentDay,
+    lifetimeClout: memory.myClout,
+    entries: Array.from({ length: entryCount }, (_, index) => {
+      const day = currentDay - index;
+      if (index === 0) return currentEntry;
+      const fixture = historicalFixtures[index - 1];
+      if (!fixture)
+        throw new Error('Mock Scout Notebook history is incomplete.');
+      return { day, forecast: makeForecast(day), ...fixture };
+    }),
+  });
+};
 
 const getPreviewEconomy = (previewMode) => {
   return memory.economyByPreviewMode[previewMode];
@@ -1323,7 +1469,7 @@ const arenaState = (economy, previewMode = 'returning') => {
     todayEntrants: memory.todayEntrants
       .filter((scribbit) => !memory.hiddenScribbitIds.has(scribbit.id))
       .map(cloneScribbit),
-    myBackedScribbitId: memory.myBackedScribbitId,
+    myBackedScribbitId: getBackedScribbitIdForPreview(previewMode),
     playStreakDays: memory.playStreakDays,
     myClout: memory.myClout,
     myInk: economy.ink,
@@ -1357,7 +1503,7 @@ const freshPlayerArenaState = (economy) => {
     myScribbits: submittedScribbits.map(cloneScribbit),
     drawnToday: submittedScribbits.length > 0,
     enteredToday,
-    myBackedScribbitId: null,
+    myBackedScribbitId: getBackedScribbitIdForPreview('fresh'),
     playStreakDays: 1,
     myClout: 0,
     lastRumbleReceipt: null,
@@ -1521,6 +1667,22 @@ const handleApi = async (request, response, url) => {
 
   if (method === 'GET' && path === '/api/inventory') {
     sendJson(response, 200, inventoryStateForPreview(previewMode));
+    return;
+  }
+
+  if (method === 'GET' && path === '/api/scout-notebook') {
+    if (previewMode === 'logged-out') {
+      sendError(response, 401, 'Sign in to open your Scout Notebook.');
+      return;
+    }
+    sendJson(
+      response,
+      200,
+      scoutNotebookStateForPreview(
+        previewMode,
+        requestHasPreviewFlag(request, url, 'rival-thread')
+      )
+    );
     return;
   }
 
@@ -1828,12 +1990,12 @@ const handleApi = async (request, response, url) => {
       return;
     }
 
-    if (memory.myBackedScribbitId) {
+    if (getBackedScribbitIdForPreview(previewMode)) {
       sendError(response, 409, 'You already backed a Scribbit today.');
       return;
     }
 
-    memory.myBackedScribbitId = scribbitId;
+    setBackedScribbitIdForPreview(previewMode, scribbitId);
     sendJson(response, 200, { backed: scribbitId });
     return;
   }
@@ -1914,7 +2076,7 @@ const handleApi = async (request, response, url) => {
       memory.drawnToday = false;
       memory.enteredToday = false;
       memory.bossChallengedToday = false;
-      memory.myBackedScribbitId = null;
+      setBackedScribbitIdForPreview(previewMode, null);
       memory.myClout = 0;
       memory.playStreakDays = 0;
       memory.legacySeenThroughDay = 0;
@@ -2316,7 +2478,7 @@ const resetFreshPreview = () => {
   memory.drawnToday = false;
   memory.enteredToday = false;
   memory.bossChallengedToday = false;
-  memory.myBackedScribbitId = null;
+  setBackedScribbitIdForPreview('fresh', null);
   memory.freshLegacySeenThroughDay = 0;
   memory.hiddenScribbitIds.clear();
   memory.reportCounts.clear();

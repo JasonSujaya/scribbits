@@ -8,6 +8,7 @@ import { Replay } from './scenes/Replay';
 import { MyBattles } from './scenes/MyBattles';
 import { Sketchbook } from './scenes/Sketchbook';
 import { Bestiary } from './scenes/Bestiary';
+import { ScoutNotebook } from './scenes/ScoutNotebook';
 import { DESIGN_HEIGHT, DESIGN_WIDTH } from './lib/theme';
 import { isShapePowerId } from '../shared/combat';
 import type { PrimaryPower } from '../shared/combat';
@@ -62,6 +63,7 @@ const config: Phaser.Types.Core.GameConfig = {
     Replay,
     MyBattles,
     Sketchbook,
+    ScoutNotebook,
     Bestiary,
   ],
 };

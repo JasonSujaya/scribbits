@@ -414,8 +414,8 @@ export class Sketchbook extends Scene {
       {
         key: 'scout',
         icon: '📖',
-        label: 'Guide',
-        onClick: () => fadeToScene(this, 'Bestiary'),
+        label: 'Scout',
+        onClick: () => fadeToScene(this, 'ScoutNotebook'),
       },
     ]);
   }

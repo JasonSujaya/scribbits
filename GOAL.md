@@ -29,6 +29,11 @@ first to two, maximum three battles, one authoritative score beat per Arena day,
 and a permanent signed margin when resolved.
 After the official daily drawing locks, an ephemeral Four-Power Practice Lab
 makes the core drawing-to-fight hook repeatable without rewards or persistence.
+The Battle Scrapbook makes the newest 20 server-stored fights worth revisiting
+without pretending to be permanent history or adding another progression track.
+The seven-page Scout Notebook turns existing Back, forecast, payout, Clout, and
+featured-report truth into a visible rolling scouting habit without new storage,
+currency, or combat power.
 
 ## Scope
 
@@ -40,7 +45,7 @@ makes the core drawing-to-fight hook repeatable without rewards or persistence.
 
 ## Current Ship Gates
 
-- [x] Local equivalent of `npm run verify` passes: TypeScript, ESLint, 93
+- [x] Local equivalent of `npm run verify` passes: TypeScript, ESLint, 96
       simulation groups, and production build (July 11).
 - [x] Fresh mobile browser proof covers the optional deterministic Doodle Dare,
       first-run draw -> fight -> Ink promise, blank/forming/ready feedback,
@@ -139,7 +144,9 @@ makes the core drawing-to-fight hook repeatable without rewards or persistence.
       margins, Arena-day-ordered pending repair, v1 archive-only migration, and
       privacy deletion. Deterministic production/mock coverage plus 320x568 WebGL
       proof verifies the deciding-bout ceremony, RIVAL DECIDER rail, 2–1 margin,
-      exact result CTA, and zero runtime errors (July 11).
+      exact result CTA, and zero runtime errors. Ambiguous post-commit replies now
+      recover that exact result beat only after durable state and latest-report
+      provenance agree (July 11).
 - [x] Every founder Rival Thread now unfolds through one validated three-page
       episode. The 20 immutable arcs provide 60 unique titles and 60
       founder-specific cues; Page 1/2/3 is derived from the server-owned series
@@ -187,6 +194,22 @@ makes the core drawing-to-fight hook repeatable without rewards or persistence.
       partial source metadata, mismatched report/transcript fighter IDs, and
       finish reasons that contradict terminal HP; shielded hits count only for
       the exact authored Shape Power activation that caused them (July 11).
+- [x] The Battles tab is now a mobile Battle Scrapbook for the newest 20 stored
+      reports. It preserves MY WIN/MY LOSS after roster expiry, pins Rumble and
+      Champion pages within a day, shows exact finish/highlight/HP/duration facts,
+      labels transcript-less records honestly, and returns from Replay to the same
+      page. A 320x568 WebGL pass covers paging, an expired-fighter loss replay,
+      Skip/result/return, and empty runtime and console errors (July 11).
+- [x] Scout is now the canonical fifth tab. Its paper Notebook renders tonight
+      plus six prior Arena days as explicit open/pending/champion/finalist/
+      no-Clout/missed pages using only existing Back, payout, forecast, lifetime
+      Clout, visible Scribbit, and featured-report state. Forty-eight validated
+      notes rotate without same-status repetition inside seven days; hidden or
+      deleted art stays unavailable, historical identity never comes from the
+      current Champion, and Replay returns to the selected day. Deterministic
+      coverage and a 320x568 WebGL pass prove Day 8 Replay/Skip/return, loaded
+      drawings, and empty runtime and console errors without a new Redis key or
+      reward track (July 11).
 - [x] WebGL and Canvas browser proof verifies the expanded 36-item Collection and
       all eight cosmetic Shape Power Relics, including the Rare/Epic art page,
       with zero captured runtime errors (July 11).

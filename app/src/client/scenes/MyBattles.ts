@@ -50,9 +50,9 @@ export class MyBattles extends Scene {
   }
 
   init(data?: { page?: number }): void {
+    this.renderGeneration += 1;
     this.errorPanelRef = null;
     this.loadingCard = null;
-    this.renderGeneration = 0;
     this.page = Math.max(0, data?.page ?? getBattleHistoryPage(this));
     this.reduceMotion = prefersReducedMotion();
   }
@@ -67,7 +67,7 @@ export class MyBattles extends Scene {
       this,
       width / 2,
       105,
-      'Every server-locked fight leaves a page',
+      'Recent server-locked fights, page by page',
       TYPE.caption,
       UI.inkSoft
     );
@@ -86,7 +86,7 @@ export class MyBattles extends Scene {
         true
       )
     );
-    void this.loadBattles();
+    void this.loadBattles(this.renderGeneration);
   }
 
   private buildAppTabs(): void {
@@ -118,14 +118,17 @@ export class MyBattles extends Scene {
       {
         key: 'scout',
         icon: '📖',
-        label: 'Guide',
-        onClick: () => fadeToScene(this, 'Bestiary'),
+        label: 'Scout',
+        onClick: () => fadeToScene(this, 'ScoutNotebook'),
       },
     ]);
   }
 
-  private async loadBattles(): Promise<void> {
+  private async loadBattles(renderGeneration: number): Promise<void> {
     const result = await fetchMyBattles();
+    if (!this.scene.isActive() || renderGeneration !== this.renderGeneration) {
+      return;
+    }
     if (!result.ok) {
       this.loadingCard?.destroy(true);
       this.loadingCard = null;
@@ -138,7 +141,6 @@ export class MyBattles extends Scene {
   }
 
   private render(reports: BattleReport[]): void {
-    this.renderGeneration += 1;
     const { width } = this.scale;
     const arena = getArena(this);
     const livingOwnedIds = arena?.myScribbits.map((scribbit) => scribbit.id);
@@ -310,9 +312,11 @@ export class MyBattles extends Scene {
       const generation = this.renderGeneration;
       void loadDrawing(this, fighter).then((key) => {
         if (this.scene.isActive() && generation === this.renderGeneration) {
-          fitDrawing(this.add.image(width / 2 + localX, y - 2, key), 68)
-            .setDepth(3)
-            .setAngle(fighterIndex === 0 ? -1.5 : 1.5);
+          card.add(
+            fitDrawing(this.add.image(localX, -2, key), 68).setAngle(
+              fighterIndex === 0 ? -1.5 : 1.5
+            )
+          );
         }
       });
     });
@@ -442,7 +446,7 @@ export class MyBattles extends Scene {
       () => {
         this.errorPanelRef?.destroy();
         this.errorPanelRef = null;
-        void this.loadBattles();
+        void this.loadBattles(this.renderGeneration);
       }
     );
   }

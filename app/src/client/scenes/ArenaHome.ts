@@ -64,7 +64,7 @@ import {
 import type { ErrorPanel, Spinner } from '../lib/ui';
 import { openDetailModal } from '../lib/detailmodal';
 import type { DetailModalActions } from '../lib/detailmodal';
-import { openCloutBoard, formatCountdown } from '../lib/cloutboard';
+import { formatCountdown } from '../lib/cloutboard';
 import { openCapsuleMachine } from '../lib/capsulemachine';
 import { pullCapsule } from '../lib/api';
 import type {
@@ -1622,7 +1622,7 @@ export class ArenaHome extends Scene {
       .setOrigin(1, 0.5)
       .setStrokeStyle(3, UI.inkHex, 1)
       .setInteractive({ useHandCursor: true });
-    bg.on('pointerup', () => openCloutBoard(this));
+    bg.on('pointerup', () => fadeToScene(this, 'ScoutNotebook'));
     chip.add([bg, t]);
   }
 
@@ -2015,8 +2015,8 @@ export class ArenaHome extends Scene {
       {
         key: 'scout',
         icon: '📖',
-        label: 'Guide',
-        onClick: () => fadeToScene(this, 'Bestiary'),
+        label: 'Scout',
+        onClick: () => fadeToScene(this, 'ScoutNotebook'),
       },
     ]);
   }
@@ -2178,7 +2178,7 @@ export class ArenaHome extends Scene {
         this.showError(result.error);
         return;
       }
-      showToast(`🎯 You backed ${scribbit.name}! Win tonight = +clout.`);
+      showToast(`🎯 ${scribbit.name} was pinned in your Scout Notebook.`);
       void this.refresh();
     });
     // Re-render immediately for the optimistic rosette.

@@ -2438,6 +2438,8 @@ export class Replay extends Scene {
         return 'Open Legacy Book ›';
       case 'MyBattles':
         return 'Back to Battle Scrapbook ›';
+      case 'ScoutNotebook':
+        return 'Back to Scout Notebook ›';
       case 'ArenaHome':
         return 'Back to Arena ›';
     }

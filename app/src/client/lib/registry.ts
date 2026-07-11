@@ -30,9 +30,14 @@ const SKETCHBOOK_TAB_KEY = 'sketchbookTab';
 const PRACTICE_SESSION_KEY = 'practiceSession';
 const FOUNDER_CHRONICLE_BEATS_KEY = 'founderChronicleBeats';
 const BATTLE_HISTORY_PAGE_KEY = 'battleHistoryPage';
+const SCOUT_NOTEBOOK_DAY_KEY = 'scoutNotebookDay';
 
 export type SketchbookTab = 'legends' | 'sketchbook' | 'collection';
-export type ReplayReturnScene = 'ArenaHome' | 'Sketchbook' | 'MyBattles';
+export type ReplayReturnScene =
+  | 'ArenaHome'
+  | 'Sketchbook'
+  | 'MyBattles'
+  | 'ScoutNotebook';
 
 export function setArena(scene: Scene, state: ArenaState): void {
   scene.registry.set(ARENA_KEY, state);
@@ -91,6 +96,21 @@ export function getBattleHistoryPage(scene: Scene): number {
   return typeof storedPage === 'number' && Number.isSafeInteger(storedPage)
     ? Math.max(0, storedPage)
     : 0;
+}
+
+export function setScoutNotebookDay(scene: Scene, day: number): void {
+  if (Number.isSafeInteger(day) && day >= 1) {
+    scene.registry.set(SCOUT_NOTEBOOK_DAY_KEY, day);
+  }
+}
+
+export function getScoutNotebookDay(scene: Scene): number | null {
+  const storedDay = scene.registry.get(SCOUT_NOTEBOOK_DAY_KEY) as unknown;
+  return typeof storedDay === 'number' &&
+    Number.isSafeInteger(storedDay) &&
+    storedDay >= 1
+    ? storedDay
+    : null;
 }
 
 export function getReplayFounderChronicleBeat(

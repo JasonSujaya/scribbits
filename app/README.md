@@ -94,6 +94,14 @@ enter daily community rumbles. The app identity is `scribbits` in
    Chronicle beat.
    Validation bans pre-fight outcome claims and any invented economy reward. No
    episode data is written to Redis.
+   The Battles tab is a recent Battle Scrapbook over the newest 20 stored reports,
+   not lifetime history. It keeps expired Scribbits in the correct MY WIN/MY LOSS
+   perspective through their normalized Reddit artist identity, pins Rumble and
+   Champion pages within each day, and derives finish, final HP, duration, and
+   FINAL/BIGGEST SPLAT copy from the same validated transcript as Replay. Old
+   result-only records say that motion is unavailable instead of rebuilding it.
+   Replay returns to the same Scrapbook page; this view adds no storage, reward,
+   or combat authority.
    After today's official Scribbit locks, the Arena also exposes a Four-Power
    Practice Lab. It reuses the analyzer and continuous replay, but not the birth,
    roster, reward, Rumble, history, or Legacy paths. The server alone derives
@@ -122,12 +130,23 @@ enter daily community rumbles. The app identity is `scribbits` in
    damage and is statistically capped at a 60% equal-build win rate.
 4. **Back:** choose another player’s contender before the nightly resolution.
    Champion backers earn 3 Clout; runner-up backers earn 1.
-5. **Return:** keep the visible UTC-day streak alive. The scheduler resolves
+5. **Scout:** the fifth app tab is a seven-page Scout Notebook covering tonight
+   and up to six prior Arena days. It projects only server-owned Back records,
+   payout receipts, forecasts, lifetime Clout, and visible report/Scribbit
+   snapshots into open, pending, champion, finalist, no-Clout, or missed pages.
+   The selected drawing, artist, build, exact payout, and replay availability are
+   shown only when their source still exists. Historical identity is never
+   inferred from `champion:current`; hidden or deleted art is withheld. Its 48
+   validated field notes provide eight variants per status with no same-status
+   repeat inside a seven-day window. Replay returns to the selected day. The view
+   adds no Redis key, reward, title, or combat authority; the Field Guide remains
+   a secondary Notebook action.
+6. **Return:** keep the visible UTC-day streak alive. The scheduler resolves
    the bracket, crowns the Champion, stores the backed Scribbit's last played
    bout, creates the next Rumble post, and comments the real result on the
    resolved post. New archived pages lead into the scouting receipt, its
    server-selected replay, and then the Legacy Book.
-6. **Become a Legend:** Scribbits live for three days. Winning a crown or
+7. **Become a Legend:** Scribbits live for three days. Winning a crown or
    reaching the Belief threshold preserves one in the public Gallery. Every
    completed Scribbit also becomes an immutable card in its creator's private,
    paginated Legacy Book.
@@ -186,6 +205,11 @@ boundary during browser iteration—it is not the production game server.
   founder-name, pre-fight fact-safety, and post-bout reward-safety validation.
   Runtime page/result selection is a pure lookup from founder ID, authoritative
   bout number, and proven latest winner.
+- `src/shared/content/scoutnotes.ts`: 48 immutable, validated status-specific
+  Scout Notebook notes with deterministic seven-day no-repeat selection.
+- `src/shared/scoutnotebook.ts`: strict immutable projection for the bounded
+  seven-page DTO, including contiguous days, exact payout/status invariants,
+  valid forecasts/builds, and replay privacy requirements.
 - `src/shared/combat`: deterministic fixed-tick combat domain, balance tuning,
   transcript contract, and regression tests.
 - `src/shared/combat/selection.ts`: the single dominant-stat and Shape Power
@@ -210,8 +234,16 @@ boundary during browser iteration—it is not the production game server.
 - `src/server/core/founderChronicle.ts`: versioned player-level Rival Thread
   state, the one-beat-per-day reducer, pending projection receipts, transaction
   recovery, v1 checklist migration, and the bounded public Chronicle projection.
+  After an ambiguous commit, an immediate episode beat is recovered only when
+  the reloaded public state exactly matches its projection and the current report
+  is the latest durable report in that thread.
 - `src/server/core/practice.ts`: strict PNG-to-ephemeral-replay domain with no
   storage, media, reward, Rumble, or lifecycle dependency.
+- `src/server/core/scoutNotebook.ts`: bounded best-effort assembly over existing
+  eight-day Back records, payout receipts, forecasts, lifetime Clout, and
+  30-day featured reports. It never reads `champion:current` for historical
+  identity; it may ensure the existing deterministic forecast records but adds
+  no Scout-specific persistence.
 - `src/server/core/species.ts`: projects the shared founder definitions into
   runtime Scribbits and owns fair opponent/slate selection and safe cloning.
 - `src/client/game.ts`: Phaser bootstrapping.
@@ -231,6 +263,13 @@ boundary during browser iteration—it is not the production game server.
   mastery plans derived from authoritative data.
 - `src/client/lib/battlerecap.ts`: pure transcript-to-recap copy and finish
   semantics; `replaybattlerecap.ts` renders that plan without inferring results.
+- `src/client/lib/battlejournal.ts`: pure recent-report ordering, historical
+  ownership, win/loss/watch perspective, finish, highlight, and summary planning
+  for the Battle Scrapbook. It reuses transcript validation and never reconstructs
+  archived motion or owns persistence.
+- `src/client/lib/scoutnotebook.ts`: pure page/summary planning from server
+  statuses and payouts; `scenes/ScoutNotebook.ts` renders the paper notebook,
+  day tabs, drawing snapshots, and same-day Replay return without deriving wins.
 - `src/client/lib/replaybattlebackground.ts`: deterministic torn-paper arena with
   reduced-motion-safe edge ambience and transcript-triggered power surges;
   `replaybattlehud.ts` owns the server-locked paper rail, compact numeric-HP and
@@ -352,7 +391,7 @@ Run these before handing off changes:
 npm run verify
 ```
 
-`npm run verify` runs type-check, lint, 93 simulation groups, and build.
+`npm run verify` runs type-check, lint, 96 simulation groups, and build.
 
 `npm run test:sim` covers deterministic analyzer, Inkbody mesh geometry, combat
 determinism, payload caps, archetype balance, slot neutrality, battle,
@@ -384,6 +423,17 @@ outcome-bound result lines, deep-frozen content, production/mock parity,
 deterministic voice, one active best-of-three, daily anti-farming, report
 provenance, pending-receipt repair, pinned matchmaking, derived page continuity
 across client surfaces, and signed resolution margins.
+Battle Scrapbook coverage locks recent-day ordering, Rumble/Champion priority,
+historical ownership after roster expiry, exact transcript facts, honest archived
+fallbacks, immutable plans, and bounded copy. Chronicle coverage also rejects a
+projected post-bout beat until durable state and the exact latest report prove the
+ambiguous commit completed.
+Scout Notebook coverage locks all 48 authored lines, six complete frozen banks,
+seven-day no-repeat selection, promise/reward-claim rejection, contiguous
+immutable pages, exact champion/finalist payouts, historical report identity,
+hidden-fighter privacy, existing mock/production boundaries, and pure client
+plans. The running 320x568 flow additionally proves drawing load, Day 8 replay,
+Skip, and return to the same selected page with no runtime or console errors.
 Practice coverage locks strict request fields, PNG validation, server-derived
 stats, required transcripts, mock/production parity, art-bound transient IDs,
 session de-duplication, truthful one-time 4/4 completion, post-completion

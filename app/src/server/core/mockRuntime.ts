@@ -4,6 +4,13 @@
 export { simulate } from './battle';
 export { generateForecastForDay } from './forecast';
 export { createPracticeBattle } from './practice';
+export { INK_REWARDS } from '../../shared/arena';
+export {
+  SCOUT_NOTEBOOK_MAXIMUM_ENTRIES,
+  createScoutNotebookState,
+  isScoutNotebookReplayDay,
+  projectScoutNotebookPick,
+} from '../../shared/scoutnotebook';
 export {
   chooseFoundingSparOpponent,
   findFoundingScribbit,

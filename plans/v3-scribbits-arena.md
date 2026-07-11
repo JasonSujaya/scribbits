@@ -9,7 +9,9 @@ Supersedes the catch/collect loop (v1) and hatch/vote (v2 draft). Retire catch m
 3. **Morning Rumble**: async auto-battle bracket resolves at 00:00 UTC with the new daily post; watchable Phaser replays
 4. Winner is crowned **Champion** = tomorrow's boss (frozen snapshot, anyone can challenge, instant resolve)
 5. Continue one daily-paced **Founder Rival Thread** through its founder-specific three-page episode (first to two) or use the reward-free Four-Power Practice Lab after the official drawing locks
-6. Scribbits live **3 days** → fade to Sketchbook, or become **Legends** (win a crown OR belief ≥ 25 at expiry)
+6. Revisit the newest 20 server-stored fights in the **Battle Scrapbook**; it is a recent reel, not permanent career history
+7. Read tonight plus six prior Back pages in the **Scout Notebook**; it is a rolling server-truth view, not another reward track or permanent archive
+8. Scribbits live **3 days** → fade to Sketchbook, or become **Legends** (win a crown OR belief ≥ 25 at expiry)
 
 ## Balance invariants (non-negotiable)
 
@@ -22,6 +24,8 @@ Supersedes the catch/collect loop (v1) and hatch/vote (v2 draft). Retire catch m
 - Continuous arena movement, walls, collisions, one Ink Pressure refresh, a fold from 14 seconds, and the 15-second Sudden Scribble rush keep every visible fight inside a 20-second ceiling
 - Founder Rival Threads are first to two, advance at most once per Arena day, pin the active founder, and grant no combat power or currency; Page 1/2/3 content is derived from that authoritative score rather than stored separately
 - Every Rival page closes with founder-specific result copy selected only after its Chronicle beat and transcript winner agree; narrative text cannot grant rewards or alter the report
+- Battle Scrapbook pages may display only saved report facts or validated transcript facts; roster expiry cannot erase player perspective, and result-only archives cannot invent replay motion
+- Scout Notebook pages may display only the exact Back, payout, forecast, lifetime Clout, visible pick snapshot, and replay availability projected by the server. Historical identity cannot come from `champion:current`; the rolling view adds no Redis key, prediction odds, reward, title, or combat authority
 - Inkcast copy is presentation-only and versioned: its shared 25-bank, 104-line pack may describe only supplied transcript facts and exhausts each bank before authored reuse; the readability queue may omit candidates, and the authoring layer cannot claim rewards, outcomes, future events, or a Colorburst miss before echo resolution
 - Practice progression is browser-session-only: the first 4/4 discovery can celebrate once, then target powers and prompt cards rotate without granting or storing rewards
 - Care flavor is repo-authored and reward-safe: every Scribbit gets nine distinct Shape-Power-specific moments across its three life days, while the receipt renders only server-confirmed XP and Ink
@@ -39,7 +43,9 @@ Supersedes the catch/collect loop (v1) and hatch/vote (v2 draft). Retire catch m
   minimum-body threshold as the client
 - Care: a short paper-native reaction receipt with the actual drawing,
   power-specific behavior, mood transition, and truthful server-confirmed payout
-- Replay: full-height paper arena, drawn textures animated (squash/stretch/idle wobble), readable READY/WINDUP/ACTIVE power states, damage pops, 15-second Sudden Scribble, truthful time/KO verdicts, forecast FX, and a transient 900ms Inkcast margin backed by no-repeat fact banks
+- Replay: full-height paper arena, drawn textures animated (squash/stretch/idle wobble), readable READY/WINDUP/ACTIVE power states, damage pops, 15-second Sudden Scribble, truthful time/KO verdicts, forecast FX, a transient 900ms Inkcast margin backed by no-repeat fact banks, and return to the originating Battle Scrapbook page
+- Battle Scrapbook: newest-20 server reel with fighter art, owned win/loss perspective, exact finish/highlight/HP/duration evidence, honest archived results, and Rumble/Champion priority within a day
+- Scout Notebook: canonical fifth tab with seven dated pages, actual pick art/build, exact forecast and filed payout, 48 validated no-repeat notes, privacy-safe unavailable states, and Replay return to the selected day; Field Guide remains secondary
 - Death/legend ceremony: fade eulogy card vs Hall of Legends enshrinement
 - Everything portrait 720×1280, in-viewport, juicy
 
@@ -51,9 +57,9 @@ Daily numbered Arena post with the current forecast and Champion · nightly idem
 
 ## Architecture deltas
 
-- Contract: `src/shared/arena.ts` is the source of truth; immutable founder voice, Rival episodes, Doodle Dares, forecast flavor, and versioned Inkcast banks live under `src/shared/` and `src/shared/content/`
-- Server: scribbit lifecycle store, submission (media.upload from dataURL; fallback: PNG bytes in redis + GET /api/drawing/:id), battle engine (pure + seeded), rumble/champion/forecast/expiry jobs, belief, legends. Retire /api/wilds, /api/catch*, /api/design* routes (design pipeline morphs into scribbit submission)
-- Client: Draw scene, Arena home, Replay scene, Sketchbook/Legends scenes. Retire Habitat/CatchMinigame/CatchResult/Dex
+- Contract: `src/shared/arena.ts` is the source of truth; immutable founder voice, Rival episodes, Doodle Dares, forecast flavor, Scout notes, and versioned Inkcast banks live under `src/shared/` and `src/shared/content/`
+- Server: scribbit lifecycle store, submission (media.upload from dataURL; fallback: PNG bytes in redis + GET /api/drawing/:id), battle engine (pure + seeded), rumble/champion/forecast/expiry jobs, belief, legends, plus a bounded Scout Notebook projection over existing Back/payout/report/forecast keys with no Scout-specific storage. Retire /api/wilds, /api/catch*, /api/design* routes (design pipeline morphs into scribbit submission)
+- Client: Draw scene, Arena home, Replay scene, Battle Scrapbook, Scout Notebook, Sketchbook/Legends scenes. Retire Habitat/CatchMinigame/CatchResult/Dex
 - Founding scribbits: reuse the 20 species as NPC roster (their art = generated sprites when ready)
 - Redis: `scribbit:{id}` · `user:{id}:daily:{day}` flags · `user:{id}:founder-chronicle:v2` + pending receipt hash · `rumble:{day}` entries zset · `battles:{day}:{id}` reports · `champion:current` · `legends` zset · `belief:{scribbitId}` voters hash · `forecast:{day}`
 
@@ -69,4 +75,4 @@ Input: 512×512 canvas ImageData. inkRatio = inked px / total. jaggedness = outl
 
 ## Definition of done
 
-Gates green · playtest post shows: draw → stats preview → submit → 20-second server replay → Rival Thread stakes/result → tomorrow's rumble resolves → champion challenge works → Practice remains reward-free → lifespan/legend transitions correct (test with shortened day via debug flag) · pushed to GitHub
+Gates green · playtest post shows: draw → stats preview → submit → 20-second server replay → Rival Thread stakes/result → Battle Scrapbook return → Scout Notebook day/replay return → tomorrow's rumble resolves → champion challenge works → Practice remains reward-free → lifespan/legend transitions correct (test with shortened day via debug flag) · pushed to GitHub

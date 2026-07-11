@@ -17,12 +17,14 @@ import type {
   LegendsState,
   MarkLegacySeenRequest,
   PracticeBattleReport,
+  ScoutNotebookState,
   Scribbit,
   SparRequest,
   SparRivalSlate,
   SplashState,
 } from '../../shared/arena';
 import { CAPSULE_FIRST_DAILY_COST, INK_REWARDS } from '../../shared/arena';
+import { isScoutNotebookReplayDay } from '../../shared/scoutnotebook';
 import {
   analyze as analyzeDrawing,
   hasMinimumDrawingInk,
@@ -81,6 +83,7 @@ import {
   prepareRumbleEntrants,
 } from '../core/rumble';
 import { createPracticeBattle } from '../core/practice';
+import { loadScoutNotebook } from '../core/scoutNotebook';
 import {
   completeFounderChronicleBattle,
   loadFounderChronicle,
@@ -98,6 +101,7 @@ import {
 import {
   clearScribbitReports,
   getHiddenScribbitIds,
+  isScribbitHidden,
   reportAndHideScribbit,
   SCRIBBIT_REPORT_REMOVAL_THRESHOLD,
 } from '../core/moderation';
@@ -676,6 +680,30 @@ api.get('/splash', async (c) => {
   } catch (error) {
     console.error('Splash route failed:', error);
     return serverError(c, 'The arena preview is still being sketched.');
+  }
+});
+
+api.get('/scout-notebook', async (c) => {
+  try {
+    const player = await getCurrentPlayer();
+    if (!player) {
+      return unauthorized(c, 'Sign in to open your Scout Notebook.');
+    }
+    const now = new Date();
+    const currentDay = await getWritableArenaDay(now);
+    if (!currentDay) return arenaRolloverConflict(c);
+    const notebook = await loadScoutNotebook(redis, {
+      currentDay,
+      userId: player.userId,
+      utcDateKey: formatUtcDateKey(now),
+    });
+    return c.json<ScoutNotebookState>(notebook);
+  } catch (error) {
+    console.error('Scout Notebook route failed:', error);
+    return serverError(
+      c,
+      'The Scout Notebook pages are stuck together. Try again soon.'
+    );
   }
 });
 
@@ -1309,8 +1337,8 @@ api.get('/rumble-replay', async (c) => {
   try {
     const currentDay = await getWritableArenaDay(new Date());
     if (!currentDay) return arenaRolloverConflict(c);
-    if (requestedDay !== currentDay - 1) {
-      return notFound(c, 'That Rumble replay is no longer on this receipt.');
+    if (!isScoutNotebookReplayDay(currentDay, requestedDay)) {
+      return notFound(c, 'That Rumble replay is outside your Scout Notebook.');
     }
 
     const backedScribbitId = await getBackedScribbitId(
@@ -1334,11 +1362,11 @@ api.get('/rumble-replay', async (c) => {
       return notFound(c, 'That featured bout is no longer available.');
     }
 
-    const hiddenScribbitIds = await getHiddenScribbitIds(redis, player.userId);
-    if (
-      hiddenScribbitIds.has(report.a.id) ||
-      hiddenScribbitIds.has(report.b.id)
-    ) {
+    const [fighterAHidden, fighterBHidden] = await Promise.all([
+      isScribbitHidden(redis, player.userId, report.a.id),
+      isScribbitHidden(redis, player.userId, report.b.id),
+    ]);
+    if (fighterAHidden || fighterBHidden) {
       return notFound(c, 'That featured bout is hidden from your replay pile.');
     }
     return c.json<BattleReport>(report);

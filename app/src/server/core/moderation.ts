@@ -25,11 +25,7 @@ export const reportAndHideScribbit = async (
   const hiddenKey = getUserHiddenScribbitsKey(userId);
   const reportedKey = getUserReportedScribbitsKey(userId);
   const created =
-    (await storage.hSetNX(
-      reportsKey,
-      userId,
-      reportedAtMs.toString()
-    )) === 1;
+    (await storage.hSetNX(reportsKey, userId, reportedAtMs.toString())) === 1;
 
   await storage.hSet(hiddenKey, {
     [scribbitId]: reportedAtMs.toString(),
@@ -51,7 +47,20 @@ export const getHiddenScribbitIds = async (
   storage: ArenaStorage,
   userId: string
 ): Promise<Set<string>> => {
-  return new Set(Object.keys(await storage.hGetAll(getUserHiddenScribbitsKey(userId))));
+  return new Set(
+    Object.keys(await storage.hGetAll(getUserHiddenScribbitsKey(userId)))
+  );
+};
+
+export const isScribbitHidden = async (
+  storage: ArenaStorage,
+  userId: string,
+  scribbitId: string
+): Promise<boolean> => {
+  return (
+    (await storage.hGet(getUserHiddenScribbitsKey(userId), scribbitId)) !==
+    undefined
+  );
 };
 
 export const clearScribbitReports = async (

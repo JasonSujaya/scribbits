@@ -389,8 +389,8 @@ export class Bestiary extends Scene {
       {
         key: 'scout',
         icon: '📖',
-        label: 'Guide',
-        onClick: () => this.scrollTo(0),
+        label: 'Scout',
+        onClick: () => fadeToScene(this, 'ScoutNotebook'),
       },
     ]);
   }

@@ -31,8 +31,10 @@ colorful drawings fire Colorburst. Every drawing still receives the same
    backers earn 1.
 8. Return after the UTC rollover to see the Champion, watch your backed
    Scribbit's last Rumble bout, and see the result comment on the real post.
-9. Keep a visible daily play streak and permanent Scout Clout.
-10. Keep a Scribbit alive for three days. Every finished run becomes an immutable
+9. Open the seven-page Scout Notebook to compare tonight's pick with the prior
+   six Arena days, including exact forecasts, filed results, and available replays.
+10. Keep a visible daily play streak and permanent Scout Clout.
+11. Keep a Scribbit alive for three days. Every finished run becomes an immutable
     personal Legacy Card; a crown or enough community Belief gives it a gold
     finish and preserves it in the public Hall of Legends.
 
@@ -115,8 +117,32 @@ or the margin is signed; it never invents Ink, XP, Clout, or another reward.
 Every finished series becomes a permanent signed margin note, not currency,
 combat power, or a twenty-character checklist. A pending projection receipt lets
 Arena reads repair an ambiguous write after the battle report is safely stored;
-delayed receipts replay in Arena-day order and older checklist encounters migrate
-as archive-only history.
+an immediate response restores the exact episode beat only after the reloaded
+Chronicle matches the projection and the current report is its latest durable
+source. Delayed receipts replay in Arena-day order and older checklist encounters
+migrate as archive-only history.
+
+The Battles tab is a Battle Scrapbook for the newest 20 server-stored reports,
+not a permanent career archive. Its recent reel preserves the player's win/loss
+perspective even after a Scribbit fades, pins Rumble and Champion pages before
+same-day exhibitions, and shows only transcript-proven finish, HP, duration, and
+FINAL/BIGGEST SPLAT facts. Reports without a usable transcript are clearly marked
+as saved results with no motion replay. Opening a page returns to the same
+Scrapbook page and never grants a reward or writes progression.
+
+The fifth app tab is now a Scout Notebook rather than another rules shortcut.
+It assembles tonight plus the prior six Arena days from existing server-owned
+Back records, payout receipts, forecasts, lifetime Clout, and visible featured
+Rumble reports. Each page has one explicit state—open, pending, champion,
+finalist, no Clout, or missed—and shows the exact picked drawing, artist, build,
+forecast, and filed payout when those facts still exist. Historical identity
+comes from the matching report or visible Scribbit record, never from today's
+Champion. Hidden or deleted art becomes unavailable, and Replay is offered only
+while that exact visible report remains loadable. Forty-eight validated margin
+notes rotate without repeating for the same status inside the seven-page window.
+Replay returns to the selected day. This rolling view adds no Redis key, reward,
+title, or combat authority; the Field Guide remains available as a secondary
+button from the Notebook.
 
 The Practice Lab makes the drawing-to-combat hook replayable after the daily
 submission locks. Its endpoint accepts only a name and base PNG, re-analyzes the
@@ -177,7 +203,7 @@ Public forecast flavor follows its own validated 32-day no-repeat rotation. It
 appears consistently in the app, Reddit post title, and result comment without
 sharing randomness with boosted/nerfed combat elements.
 
-The verification gate currently covers TypeScript, ESLint, 93 deterministic
+The verification gate currently covers TypeScript, ESLint, 96 deterministic
 simulation groups, and the production build.
 
 ## Data and safety

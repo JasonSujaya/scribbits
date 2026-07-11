@@ -48,6 +48,8 @@ execFileSync(
     'src/shared/content/doodledares.ts',
     'src/shared/content/forecastblurbs.ts',
     'src/shared/content/founderrivalepisodes.ts',
+    'src/shared/content/scoutnotes.ts',
+    'src/shared/scoutnotebook.ts',
     'src/shared/analyzer-core.ts',
     'src/shared/battle.ts',
     'src/shared/cosmetics.ts',
@@ -82,6 +84,7 @@ execFileSync(
     'src/server/core/moderation.ts',
     'src/server/core/privacy.ts',
     'src/server/core/practice.ts',
+    'src/server/core/scoutNotebook.ts',
     'src/client/lib/inkmesh.ts',
     'src/client/lib/proceduraldoodleplan.ts',
     'src/client/lib/drawonboarding.ts',
@@ -95,6 +98,7 @@ execFileSync(
     'src/client/lib/battlepresentation.ts',
     'src/client/lib/battlerecap.ts',
     'src/client/lib/battlejournal.ts',
+    'src/client/lib/scoutnotebook.ts',
     'src/client/lib/shapepowerpresentation.ts',
     'src/client/lib/championchallenge.ts',
     'src/client/lib/founderchronicle.ts',
@@ -160,6 +164,10 @@ const forecastFlavor = require(
 const founderRivalEpisodes = require(
   join(outDir, 'shared', 'content', 'founderrivalepisodes.js')
 );
+const scoutNoteContent = require(
+  join(outDir, 'shared', 'content', 'scoutnotes.js')
+);
+const sharedScoutNotebook = require(join(outDir, 'shared', 'scoutnotebook.js'));
 const arenaStore = require(join(outDir, 'server', 'core', 'arenaStore.js'));
 const battle = require(join(outDir, 'server', 'core', 'battle.js'));
 const battleStore = require(join(outDir, 'server', 'core', 'battleStore.js'));
@@ -182,6 +190,9 @@ const streakCore = require(join(outDir, 'server', 'core', 'streak.js'));
 const moderationCore = require(join(outDir, 'server', 'core', 'moderation.js'));
 const privacyCore = require(join(outDir, 'server', 'core', 'privacy.js'));
 const practiceCore = require(join(outDir, 'server', 'core', 'practice.js'));
+const scoutNotebookCore = require(
+  join(outDir, 'server', 'core', 'scoutNotebook.js')
+);
 const inkMeshCore = require(join(outDir, 'client', 'lib', 'inkmesh.js'));
 const proceduralDoodlePlan = require(
   join(outDir, 'client', 'lib', 'proceduraldoodleplan.js')
@@ -207,6 +218,9 @@ const battleRecap = require(join(outDir, 'client', 'lib', 'battlerecap.js'));
 const battleJournal = require(
   join(outDir, 'client', 'lib', 'battlejournal.js')
 );
+const scoutNotebookPlan = require(
+  join(outDir, 'client', 'lib', 'scoutnotebook.js')
+);
 const shapePowerPresentation = require(
   join(outDir, 'client', 'lib', 'shapepowerpresentation.js')
 );
@@ -231,6 +245,56 @@ const pass = (name) => {
 for (const combatCheck of combatEngineTests.runCombatEngineTests()) {
   pass(`fixed-tick combat: ${combatCheck}`);
 }
+
+const scoutStatuses = [
+  'open',
+  'pending',
+  'champion',
+  'finalist',
+  'no_clout',
+  'missed',
+];
+const scoutContentValidation = scoutNoteContent.validateScoutNoteContent();
+assert.deepEqual(scoutContentValidation, {
+  valid: true,
+  errors: [],
+  bankCount: 6,
+  lineCount: 48,
+});
+assert.ok(Object.isFrozen(scoutNoteContent.SCOUT_NOTEBOOK_LINES));
+const allScoutLines = [];
+for (const status of scoutStatuses) {
+  const lines = scoutNoteContent.SCOUT_NOTEBOOK_LINES[status];
+  assert.equal(lines.length, 8, `${status} should have eight authored notes`);
+  assert.ok(Object.isFrozen(lines));
+  allScoutLines.push(...lines);
+  for (let firstDay = 1; firstDay <= 32; firstDay += 1) {
+    const sevenDayWindow = Array.from({ length: 7 }, (_, dayOffset) =>
+      scoutNoteContent.selectScoutNoteLine(status, firstDay + dayOffset)
+    );
+    assert.equal(
+      new Set(sevenDayWindow).size,
+      7,
+      `${status} notes should not repeat inside a seven-day window`
+    );
+  }
+}
+assert.equal(new Set(allScoutLines).size, 48);
+const unsafeScoutBanks = Object.freeze({
+  ...scoutNoteContent.SCOUT_NOTEBOOK_LINES,
+  open: Object.freeze([
+    'Guaranteed Clout reward for tonight.',
+    ...scoutNoteContent.SCOUT_NOTEBOOK_LINES.open.slice(1),
+  ]),
+});
+const unsafeScoutValidation =
+  scoutNoteContent.validateScoutNoteContent(unsafeScoutBanks);
+assert.equal(unsafeScoutValidation.valid, false);
+assert.match(
+  unsafeScoutValidation.errors.join('\n'),
+  /promise or prediction|economy or reward language/
+);
+pass('Scout Notebook content stays complete, safe, and nonrepeating');
 
 const firstPlayStreak = streakCore.advancePlayStreak(
   { lastPlayedDateKey: undefined, days: 0 },
@@ -2403,6 +2467,228 @@ const createMemoryStorage = (options = {}) => {
 
   return storage;
 };
+
+const scoutNotebookStorage = createMemoryStorage();
+const scoutNotebookPlayer = {
+  userId: 'scout-notebook-player',
+  username: 'margin_reader',
+};
+const currentScoutPick = makeScribbit({
+  id: 'scout-current-pick',
+  name: 'Tonight Tab',
+  artist: 'current_artist',
+  bornDay: 8,
+  expiresDay: 999_999,
+  element: 'storm',
+  stats: { chonk: 20, spike: 24, zip: 42, charm: 14 },
+});
+const championScoutPick = makeScribbit({
+  id: 'scout-champion-pick',
+  name: 'Filed Crown',
+  artist: 'archived_artist',
+  bornDay: 7,
+  expiresDay: 999_999,
+  element: 'ember',
+  stats: { chonk: 24, spike: 40, zip: 20, charm: 16 },
+});
+const finalistScoutPick = makeScribbit({
+  id: 'scout-finalist-pick',
+  name: 'Silver Margin',
+  artist: 'finalist_artist',
+  bornDay: 6,
+  expiresDay: 999_999,
+  element: 'moss',
+  stats: { chonk: 38, spike: 18, zip: 20, charm: 24 },
+});
+const scoutNotebookOpponent = makeScribbit({
+  id: 'scout-featured-opponent',
+  name: 'Bracket Other',
+  artist: 'other_artist',
+  bornDay: 7,
+  expiresDay: 999_999,
+  element: 'tide',
+});
+for (const scribbit of [
+  currentScoutPick,
+  championScoutPick,
+  finalistScoutPick,
+  scoutNotebookOpponent,
+]) {
+  await scribbitCore.storeScribbit(
+    scoutNotebookStorage,
+    `${scribbit.id}-owner`,
+    scribbit
+  );
+}
+await clout.claimDailyBack(
+  scoutNotebookStorage,
+  9,
+  scoutNotebookPlayer,
+  currentScoutPick.id
+);
+await clout.claimDailyBack(
+  scoutNotebookStorage,
+  8,
+  scoutNotebookPlayer,
+  championScoutPick.id
+);
+await clout.claimDailyBack(
+  scoutNotebookStorage,
+  7,
+  scoutNotebookPlayer,
+  finalistScoutPick.id
+);
+await scoutNotebookStorage.hSet(clout.getCloutPayoutKey(8), {
+  [scoutNotebookPlayer.userId]: '3:scout-day-8',
+});
+await scoutNotebookStorage.hSet(clout.getCloutPayoutKey(7), {
+  [scoutNotebookPlayer.userId]: '1:scout-day-7',
+});
+await scoutNotebookStorage.zAdd(clout.getCloutKey(), {
+  member: scoutNotebookPlayer.userId,
+  score: 4,
+});
+const scoutNotebookReport = {
+  id: 'scout-notebook-day-8-report',
+  kind: 'rumble',
+  day: 8,
+  a: championScoutPick,
+  b: scoutNotebookOpponent,
+  winner: 'a',
+  events: [],
+};
+await battleStore.saveBattleReport(
+  scoutNotebookStorage,
+  scoutNotebookReport,
+  8_001
+);
+await battleStore.setFeaturedRumbleReport(
+  scoutNotebookStorage,
+  scoutNotebookReport,
+  1
+);
+await scoutNotebookStorage.set(
+  'champion:current',
+  JSON.stringify(scoutNotebookOpponent)
+);
+
+const scoutNotebookOptions = {
+  currentDay: 9,
+  userId: scoutNotebookPlayer.userId,
+  utcDateKey: '20260711',
+  hiddenScribbitIds: new Set(),
+};
+const loadedScoutNotebook = await scoutNotebookCore.loadScoutNotebook(
+  scoutNotebookStorage,
+  scoutNotebookOptions
+);
+assert.equal(loadedScoutNotebook.lifetimeClout, 4);
+assert.deepEqual(
+  loadedScoutNotebook.entries.map((entry) => entry.status),
+  ['pending', 'champion', 'finalist', 'missed', 'missed', 'missed', 'missed']
+);
+assert.equal(loadedScoutNotebook.entries[0].pick.id, currentScoutPick.id);
+assert.equal(
+  loadedScoutNotebook.entries[1].pick.id,
+  championScoutPick.id,
+  'historical identity must come from the featured report, never champion:current'
+);
+assert.equal(loadedScoutNotebook.entries[1].replayAvailable, true);
+assert.equal(loadedScoutNotebook.entries[2].pick.id, finalistScoutPick.id);
+assert.equal(loadedScoutNotebook.entries[2].replayAvailable, false);
+assert.ok(Object.isFrozen(loadedScoutNotebook));
+assert.ok(Object.isFrozen(loadedScoutNotebook.entries));
+assert.ok(Object.isFrozen(loadedScoutNotebook.entries[1]));
+assert.ok(Object.isFrozen(loadedScoutNotebook.entries[1].forecast));
+assert.ok(Object.isFrozen(loadedScoutNotebook.entries[1].pick.stats));
+
+const scoutNotebookSummary =
+  scoutNotebookPlan.planScoutNotebookSummary(loadedScoutNotebook);
+assert.equal(scoutNotebookSummary.pageCount, 7);
+assert.equal(scoutNotebookSummary.pickedCount, 3);
+assert.equal(scoutNotebookSummary.resolvedPickCount, 2);
+assert.equal(scoutNotebookSummary.championPickCount, 1);
+assert.equal(scoutNotebookSummary.finalistPickCount, 1);
+assert.equal(scoutNotebookSummary.missedDayCount, 4);
+assert.equal(scoutNotebookSummary.pages[1].actionKind, 'replay');
+assert.match(scoutNotebookSummary.pages[1].payoutLine, /\+3 CLOUT.*\+5 INK/);
+assert.equal(scoutNotebookSummary.pages[2].actionKind, 'none');
+assert.equal(scoutNotebookSummary.pages[3].pickAvailable, false);
+assert.match(scoutNotebookSummary.pages[0].payoutLine, /^PAYOUT NOT FILED/);
+assert.match(scoutNotebookSummary.pages[3].payoutLine, /^NO PAYOUT/);
+assert.match(
+  scoutNotebookPlan.planScoutNotebookPage(
+    {
+      ...loadedScoutNotebook.entries[1],
+      status: 'no_clout',
+      cloutEarned: 0,
+      inkAwarded: 0,
+    },
+    loadedScoutNotebook.currentDay
+  ).payoutLine,
+  /^RESULT FILED/
+);
+
+assert.throws(
+  () =>
+    sharedScoutNotebook.createScoutNotebookState({
+      ...loadedScoutNotebook,
+      entries: loadedScoutNotebook.entries.map((entry, index) =>
+        index === 1 ? { ...entry, inkAwarded: 0 } : entry
+      ),
+    }),
+  /champion payout must be 3 Clout and 5 Ink/
+);
+assert.throws(
+  () =>
+    sharedScoutNotebook.createScoutNotebookState({
+      ...loadedScoutNotebook,
+      entries: loadedScoutNotebook.entries.map((entry, index) =>
+        index === 2 ? { ...entry, day: 6 } : entry
+      ),
+    }),
+  /descend contiguously/
+);
+
+const notebookWithHiddenPick = await scoutNotebookCore.loadScoutNotebook(
+  scoutNotebookStorage,
+  {
+    ...scoutNotebookOptions,
+    hiddenScribbitIds: new Set([championScoutPick.id]),
+  }
+);
+assert.equal(notebookWithHiddenPick.entries[1].status, 'champion');
+assert.equal(notebookWithHiddenPick.entries[1].pick, null);
+assert.equal(notebookWithHiddenPick.entries[1].replayAvailable, false);
+const notebookWithHiddenOpponent = await scoutNotebookCore.loadScoutNotebook(
+  scoutNotebookStorage,
+  {
+    ...scoutNotebookOptions,
+    hiddenScribbitIds: new Set([scoutNotebookOpponent.id]),
+  }
+);
+assert.equal(
+  notebookWithHiddenOpponent.entries[1].pick.id,
+  championScoutPick.id
+);
+assert.equal(notebookWithHiddenOpponent.entries[1].replayAvailable, false);
+const notebookWithHiddenCurrentPick = await scoutNotebookCore.loadScoutNotebook(
+  scoutNotebookStorage,
+  {
+    ...scoutNotebookOptions,
+    hiddenScribbitIds: new Set([currentScoutPick.id]),
+  }
+);
+assert.equal(notebookWithHiddenCurrentPick.entries[0].status, 'pending');
+assert.equal(notebookWithHiddenCurrentPick.entries[0].pick, null);
+
+assert.equal(typeof mockCombatBundle.createScoutNotebookState, 'function');
+assert.equal(typeof mockCombatBundle.projectScoutNotebookPick, 'function');
+assert.equal(
+  mockCombatBundle.INK_REWARDS.backedChampion,
+  arena.INK_REWARDS.backedChampion
+);
+pass('Scout Notebook keeps seven days of authoritative scouting truth');
 
 const chronicleStorage = createMemoryStorage();
 const chroniclePlayerId = 'chronicle-player';

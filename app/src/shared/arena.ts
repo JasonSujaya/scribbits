@@ -84,6 +84,41 @@ export type Forecast = {
   blurb: string; // "Storm winds howl across the arena..."
 };
 
+export type ScoutNotebookStatus =
+  | 'open'
+  | 'pending'
+  | 'champion'
+  | 'finalist'
+  | 'no_clout'
+  | 'missed';
+
+export type ScoutNotebookPick = Readonly<{
+  id: string;
+  name: string;
+  artist: string;
+  element: Element;
+  imageUrl: string;
+  isFounding: boolean;
+  stats: Readonly<ScribbitStats>;
+}>;
+
+export type ScoutNotebookEntry = Readonly<{
+  day: number;
+  forecast: Forecast;
+  picked: boolean;
+  pick: ScoutNotebookPick | null;
+  status: ScoutNotebookStatus;
+  cloutEarned: number;
+  inkAwarded: number;
+  replayAvailable: boolean;
+}>;
+
+export type ScoutNotebookState = Readonly<{
+  currentDay: number;
+  lifetimeClout: number;
+  entries: readonly ScoutNotebookEntry[]; // today first, followed by up to six prior days
+}>;
+
 export type DailyRumbleReceipt = {
   resolvedDay: number;
   backedName: string;
@@ -379,6 +414,7 @@ export const LEVEL_DAMAGE_BONUS_PER_LEVEL = 0.00375; // +0.375%/level above 1, m
 
 // REST endpoints (Hono, JSON; errors = ArenaErrorResponse with 4xx/5xx):
 // GET  /api/arena          -> ArenaState
+// GET  /api/scout-notebook -> ScoutNotebookState (signed-in caller, today + six prior days)
 // POST /api/scribbit       -> SubmitScribbitRequest -> Scribbit         (401 if logged out, 409 if drawnToday)
 // POST /api/enter-rumble   -> EnterRumbleRequest -> { entered: true }   (409 if enteredToday)
 // GET  /api/my-battles     -> BattleReport[]  (caller's battles, newest first, top 20)

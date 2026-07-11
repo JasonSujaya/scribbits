@@ -25,6 +25,7 @@ import type {
   PracticeBattleReport,
   ReportScribbitResponse,
   Scribbit,
+  ScoutNotebookState,
   SparRivalSlate,
   SplashState,
   SparRequest,
@@ -145,6 +146,10 @@ export function enterRumble(
 
 export function fetchMyBattles(): Promise<ApiResult<BattleReport[]>> {
   return getJson<BattleReport[]>('/api/my-battles');
+}
+
+export function fetchScoutNotebook(): Promise<ApiResult<ScoutNotebookState>> {
+  return getJson<ScoutNotebookState>('/api/scout-notebook');
 }
 
 export function fetchRumbleReplay(

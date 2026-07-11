@@ -54,6 +54,15 @@ living Scribbit takes the shot, see the Champion's real signature and challenge,
 and earn +2 XP only for a win. The server already owns the one-attempt flag; the
 client cannot reopen a completed Contract or change its result.
 
+The Scout Notebook makes the overnight prediction loop visible after the receipt
+disappears. Its seven paper pages cover tonight and six prior Arena days with the
+actual pick drawing, artist, forecast, filed status, Clout/Ink payout, and saved
+replay when available. Forty-eight validated field notes rotate without repeating
+for the same status inside the week. The server assembles it from existing Back,
+payout, forecast, lifetime Clout, and featured-report state; it never substitutes
+today's Champion for a missing historical pick and adds no database schema or
+reward track.
+
 Once the official daily Scribbit locks, a Four-Power Practice Lab lets judges
 draw throwaway shapes and immediately watch more of the same server-authored
 combat. Practice re-analyzes the PNG on the server but grants no Ink, XP, roster
@@ -80,6 +89,8 @@ on one exercise.
   days, and its exact score lands on the result before becoming a signed margin.
   Power-specific care notes give each drawing nine distinct moments across its
   three-day life, with a paper receipt showing the exact server-confirmed reward.
+  The canonical Scout tab keeps tonight and the prior six days readable after the
+  receipt, then returns from a saved Replay to the same dated page.
   A visible post-lock Practice card also lets anyone test all four drawing powers
   without weakening the once-daily official submission.
 - **Polish:** portrait layout, paper visual identity, responsive controls,
@@ -89,7 +100,8 @@ on one exercise.
   a versioned 104-line Inkcast pack rotates through 25 fact-specific banks
   without authored repeats before reuse, while prioritized displayed copy retains its 900ms reading
   dwell, twenty coherent founder voices, a transcript-derived Inkcast Recap with
-  truthful KO/time poses, deterministic simulation,
+  truthful KO/time poses, a recent Battle Scrapbook with exact server evidence,
+  deterministic simulation,
   error states, mobile-safe navigation, UGC report/delete controls, and a full
   verification gate.
 - **Reddit-y:** real Reddit identity, player drawings, daily custom posts,
@@ -100,7 +112,10 @@ on one exercise.
   and an earned-only capsule collection with daily discount, collector rank,
   permanent discovery, transparent Epic pity, wearable titles, and a permanent
   Legacy Book. The daily-paced Founder Rival Thread adds a relationship without
-  stats or another reward track. Session-only Practice adds replayability without another currency
+  stats or another reward track. A bounded seven-day Scout Notebook turns Back
+  results into visible form without another reward track; the newest 20 stored
+  fights remain watchable in a truthful Battle Scrapbook. Session-only Practice
+  adds replayability without another currency
   or farmable reward. Pens expand expression while the fixed 100-point budget
   prevents purchased or progression-based raw power.
 - **Phaser:** WebGL uses Phaser 4.2's new Mesh2D system to deform 25 textured
@@ -132,13 +147,14 @@ on one exercise.
 4. **24–37s:** Flash the mechanics-not-win-odds matchup card, then run the exact
    Mesh2D fight at 2×. Hold on READY → WINDUP → ACTIVE, a reactive paper surge,
    and the transcript-derived recap.
-5. **37–44s:** Show a Day 9 Founder margin and 2–1 score, then open Rivals to prove
+5. **37–43s:** Show a Day 9 Founder margin and 2–1 score, then open Rivals to prove
    the active founder is pinned beside two fresh exhibition choices.
-6. **44–50s:** Flash the daily Champion Contract, paper challenger picker, and
-   completed stamp after a 4× server replay.
-7. **50–55s:** Cut through the reward-free Practice Lab's four checked powers and
+6. **43–49s:** Open Scout, flip from tonight to a filed Day 8 drawing, start its
+   saved replay, then return to that same page.
+7. **49–55s:** Flash the daily Champion Contract, then cut through the reward-free
+   Practice Lab's four checked powers and
    land on its gold 4/4 completion card.
-8. **55–60s:** Montage the scouting receipt, earned capsule reveal, Collection,
+8. **55–60s:** Montage the earned capsule reveal, Collection,
    gold Legacy Card, and real Reddit result comment.
 
 ## Required links and proof
@@ -245,6 +261,17 @@ on one exercise.
   decisive splat. KO, double-KO, and timeout poses now tell different truths,
   and inconsistent top-level winner/fighter data or impossible terminal finish
   reasons are rejected before storage or replay.
+- Rebuilt recent battle history as a Battle Scrapbook for the newest 20 stored
+  reports. Pages retain owned win/loss perspective after roster expiry, prioritize
+  Rumble and Champion fights within each day, show exact transcript-derived
+  finish/highlight/HP/duration facts, label result-only archives honestly, and
+  return from Replay to the same page without adding rewards or persistence.
+- Added a seven-page Scout Notebook over existing authoritative data: tonight
+  plus six prior Arena days, six explicit pick/result states, actual drawing and
+  artist snapshots, exact forecast/payout facts, lifetime Clout, privacy-safe
+  unavailable states, and replay return to the same day. Its 48 frozen lines are
+  validated for completeness, length, uniqueness, finish claims, prediction
+  language, and reward promises. It adds no Redis key or reward track.
 - Added deterministic stat-shaped art for all 20 founding opponents and one
   shared dominant-stat selector across server combat, drawing preview, replay,
   Inkbody motion, and fallback silhouettes.
@@ -264,7 +291,9 @@ on one exercise.
   permanent signed margins. A versioned transaction plus pending report receipts
   repairs ambiguous writes in Arena-day order; v1 checklist history migrates
   without invented scores, and duplicate reports, privacy deletion, and
-  production/mock parity are regression-locked.
+  production/mock parity are regression-locked. A lost post-commit reply can
+  recover its exact authored beat only after durable state and latest-report
+  provenance match the precomputed projection.
 - Added twenty validated three-page founder episodes: 60 unique titles and 60
   founder-specific cues shared by Rival Draft, Next Goal, Chronicle margin, and
   the VS ceremony, plus 120 unique result lines bound to the proven latest winner.
@@ -291,9 +320,9 @@ on one exercise.
   retries cannot resolve the same Rumble twice.
 - Added a clear return receipt for overnight scouting results, truthful
   server-priced capsules, and a paper-native matchup ceremony.
-- Added paginated recent battle rendering and server-cursor Legend Gallery
-  pagination so players can browse beyond the first 50 entries without silent
-  truncation.
+- Added paginated Battle Scrapbook rendering for the server's bounded newest-20
+  report window and server-cursor Legend Gallery pagination beyond the first 50
+  entries, with each surface stating its real retention boundary.
 - Made Belief updates concurrency-safe, kept nightly resolution outbox-idempotent,
   and added atomic capsule operation receipts so ambiguous retries reuse the
   same result instead of charging or rewarding twice.

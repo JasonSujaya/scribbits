@@ -83,7 +83,7 @@ sidegrades: their colors can change the 100-point build split, but never its sum
    mutation path.
 6. Browser proof covered all finish styles, title persistence, two Legacy pages,
    Older/Newer navigation, long-name detail, receipt sequencing, and a clean
-   runtime console. The deterministic gate now covers 93 simulation groups,
+   runtime console. The deterministic gate now covers 96 simulation groups,
    including expiry/XP race fencing, idempotent Rumble standings, retryable
    and inventory-watched title snapshots, and insertion-stable Legacy cursors.
 
@@ -250,6 +250,9 @@ sidegrades: their colors can change the 100-point build split, but never its sum
     checklist migrates as archive-only history, privacy deletion removes both
     schemas and pending receipts, and the local mock reuses the production reducer. Deterministic coverage and a
     320x568 WebGL run prove the pinned Fernibble decider and visible 2–1 Day 9 margin.
+    If a commit succeeds but its reply is lost, the direct response now recovers
+    the exact authored beat only after the reloaded Chronicle equals its projection
+    and the current report is the latest durable report in that rivalry.
 29. Rival Threads now carry founder-specific episode content instead of only a
     generic best-of-three wrapper. Twenty immutable arcs provide exactly three
     ordered pages each, with 60 unique titles, 60 founder-naming scene cues, and
@@ -282,6 +285,25 @@ sidegrades: their colors can change the 100-point build split, but never its sum
     removed a stale element triangle from the Field Guide and replaced it with
     validated fixed-tick payload semantics. A locked nightly Back also removes
     the formerly dead-end loss CTA.
+32. Recent battle history is now a Battle Scrapbook instead of a reduced matchup
+    list. The newest 20 server reports become paginated pages with fighter art,
+    MY WIN/MY LOSS/WATCH perspective, truthful KO/decision/archived finish, exact
+    FINAL/BIGGEST SPLAT and HP/duration evidence, and Rumble/Champion priority
+    within a day. Artist identity preserves ownership after roster expiry; old
+    result-only records never invent motion. Replay returns to the same page. A
+    320x568 WebGL run proves paging, an expired-fighter loss, Skip/result/return,
+    and zero runtime or console errors without adding persistence or rewards.
+33. Scouting now has a visible seven-page home instead of one transient return
+    receipt plus a leaderboard. Scout replaces the Field Guide as the fifth tab;
+    the Guide remains one tap away. Tonight and six prior days are projected from
+    existing Back, payout, forecast, lifetime Clout, visible Scribbit, and featured
+    report state into six explicit statuses. Forty-eight frozen authored notes
+    provide eight safe variants per status with no same-status repeat in a
+    seven-day window. Historical identity never comes from `champion:current`,
+    hidden/deleted art stays unavailable, and replay requires the exact visible
+    report. A 320x568 WebGL pass proves drawing load, Day 8 Replay, Skip, and return
+    to the same tab with zero runtime or console errors. No Redis key, currency,
+    title, reward, or combat decision was added.
 
 ## Current polish gap
 
@@ -304,7 +326,9 @@ its checklist is session-only, its first 4/4 payoff is now browser-proven, and
 its encores rotate after completion while its reports cannot reach battle
 storage.
 Care now has a complete three-day personality arc and a truthful server receipt,
-and the in-game rules teach the combat model that actually runs.
+the in-game rules teach the combat model that actually runs, and the Battle
+Scrapbook gives recent authoritative fights a replayable home. The Scout
+Notebook now turns existing server truth into a bounded seven-day return habit.
 
 The strongest remaining proof gap is an installed Reddit playtest and a concise demo
 capture using organic player drawings rather than curated fixtures. Progression
@@ -312,6 +336,10 @@ should stay expressive and collectible rather than add combat power or another
 currency. Do not add another progression subsystem before the installed playtest;
 the next content decision should come from whether players can name their active
 rival, current score, and reason to return after one organic session.
+The organic playtest should now test whether players can explain both the active
+Rival score and their seven-day scouting form. Do not expand the Notebook into a
+permanent career database, prediction market, or reward currency before that
+evidence exists.
 
 ## Completion standard
 
