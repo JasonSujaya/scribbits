@@ -25,7 +25,7 @@ export {
   getElementBattleCue,
   getShapePowerContent,
   getShapePowerDisplayName,
-  getShapePowerMissCallout,
+  getShapePowerNoCleanHitCallout,
   getShapePowerRevealCopy,
   getShapePowerSignatureName,
   isShapePowerId,

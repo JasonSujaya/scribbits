@@ -1551,8 +1551,11 @@ export class Draw extends Scene {
         return;
       }
       setReplay(this, report, 'ArenaHome');
-      showVsCeremony(this, report.a, report.b, () => {
-        this.scene.start('Replay');
+      showVsCeremony(this, {
+        fighterA: report.a,
+        fighterB: report.b,
+        battleKind: report.kind,
+        onComplete: () => this.scene.start('Replay'),
       });
       return;
     }
@@ -1608,8 +1611,11 @@ export class Draw extends Scene {
         return;
       }
       setReplay(this, result.data, 'ArenaHome');
-      showVsCeremony(this, result.data.a, result.data.b, () => {
-        this.scene.start('Replay');
+      showVsCeremony(this, {
+        fighterA: result.data.a,
+        fighterB: result.data.b,
+        battleKind: result.data.kind,
+        onComplete: () => this.scene.start('Replay'),
       });
     });
   }

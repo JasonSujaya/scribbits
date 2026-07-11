@@ -8,6 +8,8 @@ import {
   getShapePowerSignatureName,
 } from '../../shared/combat/shapepowercontent';
 import type { PrimaryPower } from '../../shared/combat/types';
+import { getFoundingScribbitDefinition } from '../../shared/founders';
+import type { BattleRecapHighlight } from './battlerecap';
 
 export type SparRivalCardPlan = Readonly<{
   id: string;
@@ -16,10 +18,19 @@ export type SparRivalCardPlan = Readonly<{
   element: Element;
   power: PrimaryPower;
   signatureName: string;
+  epithet: string | null;
+  challengeLine: string | null;
   powerLine: string;
   levelLine: string;
   forecastLine: string;
 }>;
+
+export function formatSparRivalDraftSummary(
+  highlight: BattleRecapHighlight | null
+): string {
+  if (!highlight) return 'Arena founders • server-picked fair slate';
+  return `LAST BOUT • ${highlight.label}: ${highlight.text}`;
+}
 
 function levelLine(challengerLevel: number, rivalLevel: number): string {
   const difference = rivalLevel - challengerLevel;
@@ -42,6 +53,7 @@ export function planSparRivalCard(
 ): SparRivalCardPlan {
   const power = selectPrimaryPower(rival.stats);
   const content = getShapePowerContent(power);
+  const founder = getFoundingScribbitDefinition(rival.id);
   return {
     id: rival.id,
     name: rival.name,
@@ -49,7 +61,11 @@ export function planSparRivalCard(
     element: rival.element,
     power,
     signatureName: getShapePowerSignatureName(rival.element, power),
-    powerLine: `${content.displayName.toUpperCase()} • ${content.revealLine.toUpperCase()}`,
+    epithet: founder?.personality.epithet ?? null,
+    challengeLine: founder?.personality.challengeLine ?? null,
+    powerLine: founder
+      ? `${content.displayName.toUpperCase()} • ${founder.personality.epithet.toUpperCase()}`
+      : `${content.displayName.toUpperCase()} • ${content.revealLine.toUpperCase()}`,
     levelLine: levelLine(challenger.level, rival.level),
     forecastLine: forecastLine(rival.element, forecast),
   };

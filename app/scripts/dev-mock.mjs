@@ -26,6 +26,7 @@ if (!existsSync(fileURLToPath(mockCombatBundleUrl))) {
 const {
   chooseFoundingSparOpponent,
   createPracticeBattle,
+  findFoundingScribbit,
   selectFoundingSparRivalSlate,
   simulate: simulateProductionBattle,
 } = await import(mockCombatBundleUrl.href);
@@ -254,6 +255,14 @@ const makeScribbit = (options) => {
   return scribbit;
 };
 
+const makeFoundingScribbit = (foundingScribbitId, belief) => {
+  const foundingScribbit = findFoundingScribbit(foundingScribbitId);
+  if (!foundingScribbit) {
+    throw new Error(`Unknown production founder: ${foundingScribbitId}`);
+  }
+  return makeScribbit({ ...foundingScribbit, belief });
+};
+
 const makeForecast = (day) => {
   return {
     day,
@@ -377,76 +386,11 @@ const todayEntrants = [
     xp: 5,
     mood: 'sleepy',
   }),
-  makeScribbit({
-    id: 'founding-coalimp',
-    name: 'Coalimp',
-    artist: 'pastel_vin',
-    element: 'ember',
-    stats: { chonk: 18, spike: 38, zip: 28, charm: 16 },
-    belief: 3,
-    wins: 0,
-    losses: 0,
-    isFounding: true,
-    level: 1,
-    xp: 0,
-    mood: 'sleepy',
-  }),
-  makeScribbit({
-    id: 'founding-kelpkit',
-    name: 'Kelpkit',
-    artist: 'pixel_mara',
-    element: 'tide',
-    stats: { chonk: 24, spike: 18, zip: 32, charm: 26 },
-    belief: 5,
-    wins: 0,
-    losses: 0,
-    isFounding: true,
-    level: 2,
-    xp: 3,
-    mood: 'pumped',
-  }),
-  makeScribbit({
-    id: 'founding-barkbloom',
-    name: 'Barkbloom',
-    artist: 'marker_jules',
-    element: 'moss',
-    stats: { chonk: 48, spike: 16, zip: 12, charm: 24 },
-    belief: 2,
-    wins: 0,
-    losses: 0,
-    isFounding: true,
-    level: 3,
-    xp: 7,
-    mood: 'hungry',
-  }),
-  makeScribbit({
-    id: 'founding-cloudpip',
-    name: 'Cloudpip',
-    artist: 'paperclip_noa',
-    element: 'storm',
-    stats: { chonk: 18, spike: 18, zip: 46, charm: 18 },
-    belief: 8,
-    wins: 0,
-    losses: 0,
-    isFounding: true,
-    level: 1,
-    xp: 0,
-    mood: 'happy',
-  }),
-  makeScribbit({
-    id: 'founding-pearlmote',
-    name: 'Pearlmote',
-    artist: 'linework_luz',
-    element: 'tide',
-    stats: { chonk: 20, spike: 12, zip: 24, charm: 44 },
-    belief: 6,
-    wins: 0,
-    losses: 0,
-    isFounding: true,
-    level: 3,
-    xp: 7,
-    mood: 'happy',
-  }),
+  makeFoundingScribbit('founding-coalimp', 3),
+  makeFoundingScribbit('founding-kelpkit', 5),
+  makeFoundingScribbit('founding-barkbloom', 2),
+  makeFoundingScribbit('founding-cloudpip', 8),
+  makeFoundingScribbit('founding-pearlmote', 6),
 ];
 
 const stableStringSeed = (value) => {
@@ -752,6 +696,37 @@ const createPreviewEconomy = (options = {}) => {
   };
 };
 
+const cloneFounderChronicle = (entries) => ({
+  entries: entries.map((entry) => ({ ...entry })),
+});
+
+const returningFounderChronicleEntries = [
+  {
+    founderId: 'founding-mosswhisk',
+    metDay: 6,
+    respectedDay: 7,
+    rematchedDay: 9,
+  },
+  {
+    founderId: 'founding-fernibble',
+    metDay: 7,
+    respectedDay: null,
+    rematchedDay: 9,
+  },
+  {
+    founderId: 'founding-coalimp',
+    metDay: 8,
+    respectedDay: 8,
+    rematchedDay: null,
+  },
+  {
+    founderId: 'founding-pearlmote',
+    metDay: 9,
+    respectedDay: null,
+    rematchedDay: null,
+  },
+];
+
 const memory = {
   dayNumber: 9,
   forecast: makeForecast(9),
@@ -762,6 +737,7 @@ const memory = {
   myFaded,
   drawnToday: false,
   enteredToday: false,
+  bossChallengedToday: false,
   myBackedScribbitId: null,
   playStreakDays: 4,
   myClout: 14,
@@ -822,6 +798,10 @@ const memory = {
     }),
     fresh: createPreviewEconomy(),
   },
+  founderChronicleByPreviewMode: {
+    returning: cloneFounderChronicle(returningFounderChronicleEntries),
+    fresh: cloneFounderChronicle([]),
+  },
   legacySeenThroughDay: 5,
   freshLegacySeenThroughDay: 0,
   beliefVotes: new Set(),
@@ -857,6 +837,51 @@ memory.previousRumbleReplay = createBattleReport('rumble', inkyMoon, champion, {
 
 const getPreviewEconomy = (previewMode) => {
   return memory.economyByPreviewMode[previewMode];
+};
+
+const getFounderChronicleForPreview = (previewMode) => {
+  if (previewMode === 'logged-out') return cloneFounderChronicle([]);
+  return cloneFounderChronicle(
+    memory.founderChronicleByPreviewMode[previewMode]?.entries ?? []
+  );
+};
+
+const recordMockFounderChronicleBattle = (
+  previewMode,
+  report,
+  ownedScribbitId
+) => {
+  if (previewMode === 'logged-out') return;
+  if (report.kind !== 'exhibition' && report.kind !== 'boss') return;
+  const ownedSlot =
+    report.a.id === ownedScribbitId
+      ? 'a'
+      : report.b.id === ownedScribbitId
+        ? 'b'
+        : null;
+  if (!ownedSlot) return;
+  const opponent = ownedSlot === 'a' ? report.b : report.a;
+  if (!findFoundingScribbit(opponent.id)) return;
+
+  const chronicle = memory.founderChronicleByPreviewMode[previewMode];
+  if (!chronicle) return;
+  let entry = chronicle.entries.find(
+    (candidate) => candidate.founderId === opponent.id
+  );
+  if (!entry) {
+    entry = {
+      founderId: opponent.id,
+      metDay: report.day,
+      respectedDay: null,
+      rematchedDay: null,
+    };
+    chronicle.entries.push(entry);
+  } else if (report.day > entry.metDay && entry.rematchedDay === null) {
+    entry.rematchedDay = report.day;
+  }
+  if (report.winner === ownedSlot && entry.respectedDay === null) {
+    entry.respectedDay = report.day;
+  }
 };
 
 const resetPreviewEconomy = (economy) => {
@@ -1278,6 +1303,7 @@ const arenaState = (economy, previewMode = 'returning') => {
     myScribbits: getLivingScribbitsForPreview(previewMode).map(cloneScribbit),
     drawnToday: memory.drawnToday,
     enteredToday: memory.enteredToday,
+    bossChallengedToday: memory.bossChallengedToday,
     rumbleEntrants: memory.todayEntrants.length,
     communityLegendCount: memory.legends.length,
     rumbleResolvesAt: nextUtcMidnightMs(),
@@ -1291,6 +1317,7 @@ const arenaState = (economy, previewMode = 'returning') => {
     myPens: [...economy.inventory.pens],
     nextCapsuleCost: capsuleCostForCurrentPull(economy).cost,
     capsuleProgress: capsuleProgressState(economy),
+    founderChronicle: getFounderChronicleForPreview(previewMode),
     lastRumbleReceipt: {
       resolvedDay: memory.dayNumber - 1,
       backedName: 'Inky Moon',
@@ -1338,6 +1365,7 @@ const loggedOutArenaState = () => {
     myClout: 0,
     lastRumbleReceipt: null,
     legacyReturnReceipt: null,
+    founderChronicle: cloneFounderChronicle([]),
   };
 };
 
@@ -1850,6 +1878,7 @@ const handleApi = async (request, response, url) => {
     if (previewMode === 'returning') {
       memory.drawnToday = false;
       memory.enteredToday = false;
+      memory.bossChallengedToday = false;
       memory.myBackedScribbitId = null;
       memory.myClout = 0;
       memory.playStreakDays = 0;
@@ -1983,6 +2012,11 @@ const handleApi = async (request, response, url) => {
     }
 
     memory.myBattles.unshift(rewardedReport);
+    recordMockFounderChronicleBattle(
+      previewMode,
+      rewardedReport,
+      challenger.id
+    );
     sendJson(response, 200, rewardedReport);
     return;
   }
@@ -1999,8 +2033,22 @@ const handleApi = async (request, response, url) => {
       return;
     }
 
+    if (memory.bossChallengedToday) {
+      sendError(response, 409, "You already challenged today's Champion.");
+      return;
+    }
+
     const report = createBattleReport('boss', challenger, memory.champion);
+    memory.bossChallengedToday = true;
+    if (report.winner === 'a') {
+      challenger.wins += 1;
+      challenger.xp += 2;
+      challenger.level = levelForXp(challenger.xp);
+    } else {
+      challenger.losses += 1;
+    }
     memory.myBattles.unshift(report);
+    recordMockFounderChronicleBattle(previewMode, report, challenger.id);
     sendJson(response, 200, report);
     return;
   }
@@ -2216,10 +2264,12 @@ const resetFreshPreview = () => {
     submittedDrawingBytes.delete(scribbitId);
   memory.drawnToday = false;
   memory.enteredToday = false;
+  memory.bossChallengedToday = false;
   memory.myBackedScribbitId = null;
   memory.freshLegacySeenThroughDay = 0;
   memory.hiddenScribbitIds.clear();
   memory.reportCounts.clear();
+  memory.founderChronicleByPreviewMode.fresh = cloneFounderChronicle([]);
   resetPreviewEconomy(memory.economyByPreviewMode.fresh);
 };
 

@@ -6,7 +6,13 @@ import {
 } from '../../shared/arena';
 import type { ArenaState, CareAction, Scribbit } from '../../shared/arena';
 
-export type NextGoalActionKind = 'enter' | 'back' | 'capsule' | 'care' | 'wait';
+export type NextGoalActionKind =
+  | 'enter'
+  | 'back'
+  | 'challenge'
+  | 'capsule'
+  | 'care'
+  | 'wait';
 
 export type NextGoalScribbitEvidence = {
   name: string;
@@ -44,7 +50,7 @@ export type NextGoalCard =
       careAction: null;
     })
   | (NextGoalCardContent & {
-      actionKind: 'back' | 'capsule' | 'wait';
+      actionKind: 'back' | 'challenge' | 'capsule' | 'wait';
       targetScribbit: null;
       careAction: null;
     })
@@ -89,6 +95,22 @@ export function selectNextGoal(state: ArenaState): NextGoalCard {
       title: "Pick tonight's winner",
       detail: 'Choose one contender. Your Back locks until the Rumble.',
       buttonLabel: 'Choose a Back',
+      evidence: buildEvidence(state, newestOwnedScribbit),
+    };
+  }
+
+  if (
+    state.champion &&
+    state.myScribbits.length > 0 &&
+    !state.bossChallengedToday
+  ) {
+    return {
+      actionKind: 'challenge',
+      targetScribbit: null,
+      careAction: null,
+      title: `Challenge ${state.champion.name}`,
+      detail: 'Take your one daily shot at the Champion. Win for +2 XP.',
+      buttonLabel: 'Choose challenger',
       evidence: buildEvidence(state, newestOwnedScribbit),
     };
   }

@@ -41,6 +41,7 @@ execFileSync(
     '--types',
     'node',
     'src/shared/arena.ts',
+    'src/shared/founders.ts',
     'src/shared/analyzer-core.ts',
     'src/shared/battle.ts',
     'src/shared/cosmetics.ts',
@@ -69,6 +70,7 @@ execFileSync(
     'src/server/core/scribbit.ts',
     'src/server/core/dailyJob.ts',
     'src/server/core/resultComment.ts',
+    'src/server/core/founderChronicle.ts',
     'src/server/core/streak.ts',
     'src/server/core/moderation.ts',
     'src/server/core/privacy.ts',
@@ -77,11 +79,15 @@ execFileSync(
     'src/client/lib/proceduraldoodleplan.ts',
     'src/client/lib/drawonboarding.ts',
     'src/client/lib/practicelab.ts',
+    'src/client/lib/matchupbrief.ts',
+    'src/client/lib/replaycommentary.ts',
+    'src/client/lib/inkcastqueue.ts',
     'src/client/lib/sparrivals.ts',
     'src/client/lib/continuousreplay.ts',
     'src/client/lib/battlepresentation.ts',
     'src/client/lib/battlerecap.ts',
     'src/client/lib/shapepowerpresentation.ts',
+    'src/client/lib/championchallenge.ts',
     'src/client/lib/nextgoal.ts',
     'src/client/lib/accessories.ts',
     'src/client/lib/pens.ts',
@@ -125,6 +131,7 @@ const shapePowerContent = require(
   join(outDir, 'shared', 'combat', 'shapepowercontent.js')
 );
 const arena = require(join(outDir, 'shared', 'arena.js'));
+const founders = require(join(outDir, 'shared', 'founders.js'));
 const arenaStore = require(join(outDir, 'server', 'core', 'arenaStore.js'));
 const battle = require(join(outDir, 'server', 'core', 'battle.js'));
 const battleStore = require(join(outDir, 'server', 'core', 'battleStore.js'));
@@ -139,6 +146,9 @@ const speciesCore = require(join(outDir, 'server', 'core', 'species.js'));
 const resultComment = require(
   join(outDir, 'server', 'core', 'resultComment.js')
 );
+const founderChronicleCore = require(
+  join(outDir, 'server', 'core', 'founderChronicle.js')
+);
 const scribbitCore = require(join(outDir, 'server', 'core', 'scribbit.js'));
 const streakCore = require(join(outDir, 'server', 'core', 'streak.js'));
 const moderationCore = require(join(outDir, 'server', 'core', 'moderation.js'));
@@ -152,6 +162,11 @@ const drawOnboarding = require(
   join(outDir, 'client', 'lib', 'drawonboarding.js')
 );
 const practiceLab = require(join(outDir, 'client', 'lib', 'practicelab.js'));
+const matchupBrief = require(join(outDir, 'client', 'lib', 'matchupbrief.js'));
+const replayCommentary = require(
+  join(outDir, 'client', 'lib', 'replaycommentary.js')
+);
+const inkcastQueue = require(join(outDir, 'client', 'lib', 'inkcastqueue.js'));
 const sparRivals = require(join(outDir, 'client', 'lib', 'sparrivals.js'));
 const continuousReplay = require(
   join(outDir, 'client', 'lib', 'continuousreplay.js')
@@ -162,6 +177,9 @@ const battlePresentation = require(
 const battleRecap = require(join(outDir, 'client', 'lib', 'battlerecap.js'));
 const shapePowerPresentation = require(
   join(outDir, 'client', 'lib', 'shapepowerpresentation.js')
+);
+const championChallenge = require(
+  join(outDir, 'client', 'lib', 'championchallenge.js')
 );
 const nextGoal = require(join(outDir, 'client', 'lib', 'nextgoal.js'));
 const clientAccessories = require(
@@ -511,18 +529,565 @@ const completedPracticePlan = practiceLab.planPracticeOutcome(
   completedPracticeSession
 );
 assert.equal(completedPracticePlan.completed, true);
-assert.equal(
-  completedPracticePlan.headline,
-  '✦ ALL FOUR POWERS FOUND! ✦'
+assert.equal(completedPracticePlan.celebrateCompletion, true);
+assert.equal(completedPracticePlan.headline, '✦ 4/4 POWERS FOUND! ✦');
+assert.match(completedPracticePlan.result, /DRAW DIFFERENTLY/);
+assert.match(completedPracticePlan.primaryButton, /DRAW ONE MORE/);
+const repeatedCompletedSession = practiceLab.recordPracticeSessionPower(
+  completedPracticeSession,
+  completedPracticeSession.lastPower
 );
-assert.match(completedPracticePlan.result, /LAB COMPLETE/);
-assert.match(completedPracticePlan.primaryButton, /REMIX A FAVORITE/);
+assert.equal(
+  practiceLab.planPracticeOutcome(repeatedCompletedSession).celebrateCompletion,
+  false,
+  'repeating a power after 4/4 must not replay the completion celebration'
+);
 assert.equal(
   practiceLab.planPracticeOutcome(repeatedPracticeSession).completed,
   false,
   'repeating one power must never trigger the four-power completion ceremony'
 );
 pass('Practice Lab targets every Shape Power without persistent progression');
+
+assert.deepEqual(
+  replayCommentary.validateReplayCommentaryContent(),
+  [],
+  'every Inkcast bank must be populated, unique, bounded, and token-safe'
+);
+assert.ok(
+  replayCommentary.REPLAY_COMMENTARY_LINE_COUNT >= 80,
+  'Inkcast should have enough authored lines to keep repeated battles fresh'
+);
+const commentaryContext = {
+  battleId: 'battle-commentary-proof',
+  fighters: {
+    a: {
+      id: 'community-paper-comet',
+      name: 'Paper Comet',
+      element: 'ember',
+      primaryPower: 'inkquake',
+    },
+    b: {
+      id: 'community-moss-wizard',
+      name: 'Moss Wizard',
+      element: 'moss',
+      primaryPower: 'nib_halo',
+    },
+  },
+};
+const commentaryContextSnapshot = structuredClone(commentaryContext);
+const powerTelegraphFact = {
+  kind: 'power-telegraph',
+  tick: 48,
+  actor: 'a',
+  power: 'inkquake',
+  activationNumber: 2,
+};
+const firstTelegraph = replayCommentary.authorReplayCommentary(
+  commentaryContext,
+  powerTelegraphFact
+);
+assert.equal(
+  replayCommentary.authorReplayCommentary(
+    commentaryContext,
+    powerTelegraphFact
+  ),
+  firstTelegraph,
+  'the same authoritative fact must always author the same replay line'
+);
+assert.deepEqual(
+  commentaryContext,
+  commentaryContextSnapshot,
+  'commentary authoring must not mutate replay context'
+);
+const telegraphVariants = new Set(
+  Array.from({ length: 64 }, (_, index) =>
+    replayCommentary.authorReplayCommentary(
+      { ...commentaryContext, battleId: `battle-variant-${index}` },
+      powerTelegraphFact
+    )
+  )
+);
+assert.ok(
+  telegraphVariants.size >= 3,
+  'battle identity should expose several deterministic telegraph variants'
+);
+const truthfulDamageLine = replayCommentary.authorReplayCommentary(
+  commentaryContext,
+  {
+    kind: 'damage',
+    tick: 72,
+    sourceFighter: 'a',
+    targetFighter: 'b',
+    sourceName: 'Cinderquake',
+    sourcePower: 'inkquake',
+    amount: 37,
+    critical: false,
+  }
+);
+assert.match(truthfulDamageLine, /Cinderquake/);
+assert.match(truthfulDamageLine, /Moss Wizard/);
+assert.match(truthfulDamageLine, /37/);
+const criticalDamageLine = replayCommentary.authorReplayCommentary(
+  commentaryContext,
+  {
+    kind: 'damage',
+    tick: 73,
+    sourceFighter: 'b',
+    targetFighter: 'a',
+    sourceName: 'Mossguard Halo',
+    sourcePower: 'nib_halo',
+    amount: 51,
+    critical: true,
+  }
+);
+assert.match(criticalDamageLine, /Mossguard Halo/);
+assert.match(criticalDamageLine, /Paper Comet/);
+assert.match(criticalDamageLine, /51/);
+assert.match(criticalDamageLine, /CRIT|BIG SPLAT/);
+const truthfulMissLine = replayCommentary.authorReplayCommentary(
+  commentaryContext,
+  {
+    kind: 'power-missed',
+    tick: 74,
+    actor: 'b',
+    power: 'nib_halo',
+    activationNumber: 2,
+  }
+);
+assert.doesNotMatch(
+  truthfulMissLine,
+  /Paper Comet/i,
+  'a miss line must not invent an opponent action'
+);
+assert.doesNotMatch(
+  truthfulMissLine,
+  /dodge|evade|sidestep|counter|dead zone/i,
+  'a miss line must not invent movement or matchup mechanics'
+);
+assert.match(
+  truthfulMissLine,
+  /no clean (?:hit|nib contact)|without damage/i,
+  'a miss line should claim only no clean hit or no damage'
+);
+const mosswhiskDefinition =
+  founders.getFoundingScribbitDefinition('founding-mosswhisk');
+assert.ok(mosswhiskDefinition);
+const founderCommentaryContext = {
+  ...commentaryContext,
+  battleId: 'battle-founder-story-proof',
+  fighters: {
+    ...commentaryContext.fighters,
+    a: {
+      ...commentaryContext.fighters.a,
+      id: mosswhiskDefinition.id,
+      name: mosswhiskDefinition.name,
+      element: mosswhiskDefinition.element,
+      primaryPower: combatSelection.selectPrimaryPower(
+        mosswhiskDefinition.stats
+      ),
+    },
+  },
+};
+const founderOpening = replayCommentary.authorFounderBattleOpening(
+  founderCommentaryContext
+);
+assert.ok(founderOpening);
+assert.match(founderOpening, new RegExp(mosswhiskDefinition.name));
+assert.ok(
+  mosswhiskDefinition.personality.openingLines.some((line) =>
+    founderOpening.includes(line)
+  ),
+  "a founder battle should use one of that founder's authored openings"
+);
+const founderSignatureReaction = replayCommentary.authorReplayCommentary(
+  founderCommentaryContext,
+  {
+    kind: 'power-telegraph',
+    tick: 24,
+    actor: 'a',
+    power: founderCommentaryContext.fighters.a.primaryPower,
+    activationNumber: 1,
+  }
+);
+assert.match(
+  founderSignatureReaction,
+  new RegExp(mosswhiskDefinition.personality.signatureReaction)
+);
+assert.match(
+  replayCommentary.authorFounderBattleOutcome(founderCommentaryContext, 'a'),
+  new RegExp(mosswhiskDefinition.personality.victoryLine)
+);
+assert.match(
+  replayCommentary.authorFounderBattleOutcome(founderCommentaryContext, 'b'),
+  new RegExp(mosswhiskDefinition.personality.defeatLine)
+);
+assert.equal(
+  replayCommentary.authorFounderBattleOutcome(commentaryContext, 'a'),
+  null,
+  'community-only battles should keep the generic outcome presentation'
+);
+const representativeCommentaryFacts = [
+  { kind: 'battle-start', tick: 0 },
+  powerTelegraphFact,
+  {
+    kind: 'power-missed',
+    tick: 64,
+    actor: 'a',
+    power: 'inkquake',
+    activationNumber: 2,
+  },
+  { kind: 'burn', tick: 75, targetFighter: 'b' },
+  { kind: 'barrier-created', tick: 80, actor: 'b' },
+  { kind: 'barrier-hit', tick: 81, actor: 'b', absorbedDamage: 19 },
+  { kind: 'barrier-broken', tick: 82, actor: 'b' },
+  { kind: 'ink-pressure', tick: 90, actor: 'a' },
+  { kind: 'nib-recoil', tick: 91, actor: 'b' },
+  { kind: 'arena-shrink', tick: 100 },
+  { kind: 'echo-created', tick: 110, actor: 'a' },
+  { kind: 'echo-fired', tick: 120, actor: 'a' },
+  { kind: 'echo-shattered', tick: 121, actor: 'a' },
+  { kind: 'late-fight', tick: 140 },
+];
+for (const fact of representativeCommentaryFacts) {
+  const authoredLine = replayCommentary.authorReplayCommentary(
+    commentaryContext,
+    fact
+  );
+  assert.ok(authoredLine.length > 0 && authoredLine.length <= 110);
+  assert.doesNotMatch(authoredLine, /\{|\}|undefined|null/);
+}
+pass('deterministic Inkcast commentary is varied, truthful, and bounded');
+
+assert.equal(inkcastQueue.INKCAST_WALL_CLOCK_DWELL_MILLISECONDS, 900);
+assert.equal(inkcastQueue.INKCAST_PENDING_ITEM_LIMIT, 2);
+const sameTickEditorialCandidates = [
+  {
+    fact: {
+      kind: 'barrier-hit',
+      tick: 80,
+      actor: 'b',
+      absorbedDamage: 18,
+    },
+    text: 'shield hit',
+  },
+  {
+    fact: { kind: 'barrier-broken', tick: 80, actor: 'b' },
+    text: 'shield broken',
+  },
+  {
+    fact: {
+      kind: 'damage',
+      tick: 80,
+      sourceFighter: 'a',
+      targetFighter: 'b',
+      sourceName: 'Cinderquake',
+      sourcePower: 'inkquake',
+      amount: 44,
+      critical: true,
+    },
+    text: 'critical splat',
+  },
+  {
+    fact: { kind: 'burn', tick: 80, targetFighter: 'b' },
+    text: 'afterburn',
+  },
+].map(({ fact, text }, sequence) =>
+  inkcastQueue.createInkcastEditorialCandidate(fact, text, sequence)
+);
+const sameTickHeadline = inkcastQueue.chooseInkcastCandidateForSimulationTick(
+  sameTickEditorialCandidates
+);
+assert.equal(
+  sameTickHeadline?.authoredText,
+  'shield broken',
+  'a same-tick chain should preserve the first of its strongest readable headlines'
+);
+assert.ok(Object.isFrozen(sameTickHeadline));
+assert.ok(Object.isFrozen(sameTickHeadline.fact));
+
+const firstSignatureCandidate = inkcastQueue.createInkcastEditorialCandidate(
+  {
+    kind: 'power-telegraph',
+    tick: 90,
+    actor: 'a',
+    power: 'smearstep',
+    activationNumber: 1,
+  },
+  'first signature',
+  10
+);
+const laterSignatureCandidate = inkcastQueue.createInkcastEditorialCandidate(
+  {
+    kind: 'power-telegraph',
+    tick: 91,
+    actor: 'a',
+    power: 'smearstep',
+    activationNumber: 2,
+  },
+  'later signature',
+  11
+);
+assert.ok(firstSignatureCandidate.priority > laterSignatureCandidate.priority);
+
+let pendingEditorialCandidates = inkcastQueue.enqueueInkcastEditorialCandidate(
+  [],
+  sameTickEditorialCandidates[0]
+);
+pendingEditorialCandidates = inkcastQueue.enqueueInkcastEditorialCandidate(
+  pendingEditorialCandidates,
+  laterSignatureCandidate
+);
+pendingEditorialCandidates = inkcastQueue.enqueueInkcastEditorialCandidate(
+  pendingEditorialCandidates,
+  firstSignatureCandidate
+);
+assert.equal(pendingEditorialCandidates.length, 2);
+assert.deepEqual(
+  pendingEditorialCandidates.map((candidate) => candidate.authoredText),
+  ['first signature', 'later signature'],
+  'a stronger later headline should replace routine backlog without changing chronology'
+);
+assert.ok(Object.isFrozen(pendingEditorialCandidates));
+const unchangedEditorialQueue = inkcastQueue.enqueueInkcastEditorialCandidate(
+  pendingEditorialCandidates,
+  inkcastQueue.createInkcastEditorialCandidate(
+    { kind: 'burn', tick: 92, targetFighter: 'b' },
+    'routine late burn',
+    12
+  )
+);
+assert.deepEqual(unchangedEditorialQueue, pendingEditorialCandidates);
+pass(
+  'Inkcast editorial queue keeps one strong beat per tick and stays bounded'
+);
+
+const matchupFighterByPower = {
+  inkquake: {
+    id: 'fixture-inkquake',
+    element: 'ember',
+    stats: { chonk: 70, spike: 10, zip: 10, charm: 10 },
+  },
+  nib_halo: {
+    id: 'fixture-nib-halo',
+    element: 'tide',
+    stats: { chonk: 10, spike: 70, zip: 10, charm: 10 },
+  },
+  smearstep: {
+    id: 'fixture-smearstep',
+    element: 'moss',
+    stats: { chonk: 10, spike: 10, zip: 70, charm: 10 },
+  },
+  colorburst: {
+    id: 'fixture-colorburst',
+    element: 'storm',
+    stats: { chonk: 10, spike: 10, zip: 10, charm: 70 },
+  },
+};
+const expectedMatchupMechanics = [
+  [
+    'inkquake',
+    'inkquake',
+    {
+      label: 'RING vs RING',
+      detail: 'RINGS HIT ONCE PER CAST AND KNOCK BACK',
+    },
+  ],
+  [
+    'inkquake',
+    'nib_halo',
+    {
+      label: 'RING vs HALO',
+      detail: 'ACTIVE HALO CUTS RING DAMAGE 35%',
+    },
+  ],
+  [
+    'inkquake',
+    'smearstep',
+    {
+      label: 'RING vs DASH',
+      detail: 'DASHES CAN CROSS THE EXPANDING RING',
+    },
+  ],
+  [
+    'inkquake',
+    'colorburst',
+    {
+      label: 'RING vs ECHO',
+      detail: 'THE RING CAN SHATTER A WAITING ECHO',
+    },
+  ],
+  [
+    'nib_halo',
+    'nib_halo',
+    {
+      label: 'HALO vs HALO',
+      detail: 'HALOS HAVE A DEAD ZONE • WALL NIBS RECOIL',
+    },
+  ],
+  [
+    'nib_halo',
+    'smearstep',
+    {
+      label: 'HALO vs DASH',
+      detail: 'DASH DAMAGE IS NOT HALO-REDUCED • NIBS HAVE A DEAD ZONE',
+    },
+  ],
+  [
+    'nib_halo',
+    'colorburst',
+    {
+      label: 'HALO vs CONE',
+      detail: 'ACTIVE HALO CUTS CONE AND ECHO DAMAGE 35%',
+    },
+  ],
+  [
+    'smearstep',
+    'smearstep',
+    {
+      label: 'DASH vs DASH',
+      detail: 'EACH CAST PREDICTS AND DASHES TWICE',
+    },
+  ],
+  [
+    'smearstep',
+    'colorburst',
+    {
+      label: 'DASH vs ECHO',
+      detail: 'DASH CONTACT CAN SHATTER THE ECHO • CONE AIM LOCKS',
+    },
+  ],
+  [
+    'colorburst',
+    'colorburst',
+    {
+      label: 'CONE vs CONE',
+      detail: 'LOCKED CONES CAN SHATTER WAITING ECHOES',
+    },
+  ],
+];
+
+assert.deepEqual(
+  matchupBrief.validateBattleMatchupContent(),
+  [],
+  'the matchup mechanics matrix should be complete, unique, bounded, and prediction-free'
+);
+
+const expectedMatchupTitleByKind = {
+  exhibition: 'EXHIBITION MATCHUP',
+  practice: 'POWER PRACTICE',
+  boss: 'CHAMPION CHALLENGE',
+  rumble: 'RUMBLE BOUT',
+};
+for (const [kind, expectedTitle] of Object.entries(
+  expectedMatchupTitleByKind
+)) {
+  const titlePlan = matchupBrief.planBattleMatchupBrief({
+    battleKind: kind,
+    fighterA: matchupFighterByPower.inkquake,
+    fighterB: matchupFighterByPower.colorburst,
+  });
+  assert.equal(titlePlan.title, expectedTitle);
+  assert.equal(
+    titlePlan.caption,
+    'WATCH FOR • MECHANICS, NOT WIN ODDS',
+    `${kind} should retain the mechanics-only caption`
+  );
+}
+
+for (const [
+  firstPower,
+  secondPower,
+  expectedMechanics,
+] of expectedMatchupMechanics) {
+  const directMechanics = matchupBrief.planBattleMatchupBrief({
+    battleKind: 'exhibition',
+    fighterA: matchupFighterByPower[firstPower],
+    fighterB: matchupFighterByPower[secondPower],
+  }).matchup;
+  const reverseMechanics = matchupBrief.planBattleMatchupBrief({
+    battleKind: 'exhibition',
+    fighterA: matchupFighterByPower[secondPower],
+    fighterB: matchupFighterByPower[firstPower],
+  }).matchup;
+  assert.deepEqual(
+    directMechanics,
+    expectedMechanics,
+    `${firstPower}/${secondPower} should use its truth-reviewed mechanics`
+  );
+  assert.deepEqual(
+    reverseMechanics,
+    expectedMechanics,
+    `${secondPower}/${firstPower} should preserve symmetric mechanics`
+  );
+}
+assert.equal(
+  expectedMatchupMechanics.filter(
+    ([firstPower, secondPower]) => firstPower === secondPower
+  ).length,
+  4,
+  'the matrix proof should include all four same-power matchups'
+);
+
+let orderedMatchupPairCount = 0;
+for (const firstPower of shapePowerContent.SHAPE_POWER_IDS) {
+  for (const secondPower of shapePowerContent.SHAPE_POWER_IDS) {
+    const fighterA = matchupFighterByPower[firstPower];
+    const fighterB = matchupFighterByPower[secondPower];
+    const orderedInput = { battleKind: 'rumble', fighterA, fighterB };
+    const orderedInputSnapshot = structuredClone(orderedInput);
+    const orderedPlan = matchupBrief.planBattleMatchupBrief(orderedInput);
+    const reversePlan = matchupBrief.planBattleMatchupBrief({
+      battleKind: 'rumble',
+      fighterA: fighterB,
+      fighterB: fighterA,
+    });
+
+    assert.equal(orderedPlan.fighters.a.power, firstPower);
+    assert.equal(orderedPlan.fighters.b.power, secondPower);
+    assert.equal(
+      orderedPlan.fighters.a.signatureName,
+      shapePowerContent.getShapePowerSignatureName(fighterA.element, firstPower)
+    );
+    assert.equal(
+      orderedPlan.fighters.b.signatureName,
+      shapePowerContent.getShapePowerSignatureName(
+        fighterB.element,
+        secondPower
+      )
+    );
+    assert.deepEqual(reversePlan.fighters.a, orderedPlan.fighters.b);
+    assert.deepEqual(reversePlan.fighters.b, orderedPlan.fighters.a);
+    assert.deepEqual(reversePlan.matchup, orderedPlan.matchup);
+    assert.deepEqual(
+      orderedInput,
+      orderedInputSnapshot,
+      `${firstPower}/${secondPower} planning must not mutate fighter picks`
+    );
+    orderedMatchupPairCount += 1;
+  }
+}
+assert.equal(
+  orderedMatchupPairCount,
+  16,
+  'all sixteen ordered power pairs should be planned'
+);
+const founderMatchupPlan = matchupBrief.planBattleMatchupBrief({
+  battleKind: 'exhibition',
+  fighterA: mosswhiskDefinition ?? {
+    id: 'founding-mosswhisk',
+    element: 'moss',
+    stats: { chonk: 34, spike: 18, zip: 28, charm: 20 },
+  },
+  fighterB: matchupFighterByPower.nib_halo,
+});
+assert.equal(
+  founderMatchupPlan.fighters.a.founderEpithet,
+  mosswhiskDefinition?.personality.epithet,
+  'the VS plan should project canonical founder identity without transport fields'
+);
+assert.equal(founderMatchupPlan.fighters.b.founderEpithet, null);
+pass('pre-fight matchup briefs are exhaustive, symmetric, and mechanics-only');
 
 const dominantDoodleFixtures = [
   {
@@ -628,6 +1193,132 @@ assert.equal(
   20,
   'the founding content roster should remain complete'
 );
+const founderCatalogValidation = founders.validateFoundingScribbitDefinitions();
+assert.equal(founderCatalogValidation.valid, true);
+assert.deepEqual(
+  founderCatalogValidation.errors,
+  [],
+  'the shared founder story catalog must stay complete, unique, bounded, and fair'
+);
+assert.equal(founders.FOUNDING_SCRIBBIT_DEFINITIONS.length, 20);
+const founderStoryStrings = founders.FOUNDING_SCRIBBIT_DEFINITIONS.flatMap(
+  ({ personality }) => [
+    personality.epithet,
+    personality.challengeLine,
+    ...personality.openingLines,
+    personality.signatureReaction,
+    personality.victoryLine,
+    personality.defeatLine,
+    personality.rumbleLine,
+  ]
+);
+assert.equal(
+  founderStoryStrings.length,
+  160,
+  'twenty founders should each own eight purposeful story lines'
+);
+assert.equal(
+  new Set(founderStoryStrings).size,
+  founderStoryStrings.length,
+  'founder story packs should not reuse generic filler lines'
+);
+for (const definition of founders.FOUNDING_SCRIBBIT_DEFINITIONS) {
+  assert.equal(
+    founders.getFoundingScribbitDefinition(definition.id),
+    definition,
+    `${definition.name} should resolve through the one canonical lookup`
+  );
+  assert.ok(Object.isFrozen(definition));
+  assert.ok(Object.isFrozen(definition.stats));
+  assert.ok(Object.isFrozen(definition.personality));
+  assert.ok(Object.isFrozen(definition.personality.openingLines));
+  const projectedFounder = speciesCore.findFoundingScribbit(definition.id);
+  assert.ok(projectedFounder);
+  assert.deepEqual(
+    {
+      id: projectedFounder.id,
+      name: projectedFounder.name,
+      artist: projectedFounder.artist,
+      element: projectedFounder.element,
+      stats: projectedFounder.stats,
+      imageUrl: projectedFounder.imageUrl,
+      level: projectedFounder.level,
+      mood: projectedFounder.mood,
+    },
+    {
+      id: definition.id,
+      name: definition.name,
+      artist: definition.artist,
+      element: definition.element,
+      stats: definition.stats,
+      imageUrl: definition.imageUrl,
+      level: definition.level,
+      mood: definition.mood,
+    },
+    `${definition.name} server projection should preserve the shared catalog`
+  );
+  assert.deepEqual(
+    mockCombatBundle.findFoundingScribbit(definition.id),
+    projectedFounder,
+    `${definition.name} browser mock should import the production founder projection`
+  );
+}
+assert.equal(founders.getFoundingScribbitDefinition('community-unknown'), null);
+pass('founder story packs stay canonical, bounded, and fact-safe');
+
+assert.deepEqual(
+  championChallenge.validateChampionChallengeContent(),
+  [],
+  'Champion Contract content should stay complete, unique, bounded, and reward-safe'
+);
+const firstFounderDefinition = founders.FOUNDING_SCRIBBIT_DEFINITIONS[0];
+const firstFounderRuntime = speciesCore.findFoundingScribbit(
+  firstFounderDefinition.id
+);
+assert.ok(firstFounderRuntime);
+const founderChampionPlan = championChallenge.planChampionChallenge(
+  firstFounderRuntime,
+  false
+);
+assert.ok(Object.isFrozen(founderChampionPlan));
+assert.equal(
+  founderChampionPlan.epithet,
+  firstFounderDefinition.personality.epithet
+);
+assert.equal(
+  founderChampionPlan.challengeLine,
+  firstFounderDefinition.personality.challengeLine
+);
+assert.equal(founderChampionPlan.status, 'open');
+assert.match(founderChampionPlan.statusCopy, /WIN.*\+2 XP/);
+assert.doesNotMatch(founderChampionPlan.statusCopy, /INK/i);
+
+const communityChampionPlans = [
+  { power: 'inkquake', stats: { chonk: 55, spike: 15, zip: 15, charm: 15 } },
+  { power: 'nib_halo', stats: { chonk: 15, spike: 55, zip: 15, charm: 15 } },
+  { power: 'smearstep', stats: { chonk: 15, spike: 15, zip: 55, charm: 15 } },
+  { power: 'colorburst', stats: { chonk: 15, spike: 15, zip: 15, charm: 55 } },
+].map(({ power, stats }) => {
+  const champion = makeScribbit({
+    id: `community-champion-${power}`,
+    name: `${power} champion`,
+    element: 'storm',
+    stats,
+  });
+  const plan = championChallenge.planChampionChallenge(champion, true);
+  assert.equal(combatSelection.selectPrimaryPower(stats), power);
+  assert.equal(plan.status, 'complete');
+  assert.match(plan.epithet, new RegExp(plan.signatureName));
+  assert.ok(plan.challengeLine.length <= 52);
+  return plan;
+});
+assert.equal(
+  new Set(communityChampionPlans.map((plan) => plan.challengeLine)).size,
+  4,
+  'community Champions should have one distinct challenge voice per Shape Power'
+);
+pass('daily Champion Contract content stays canonical and truthful');
+
 const foundingDoodleFingerprints = new Set();
 for (const founder of speciesCore.foundingScribbits) {
   const plan = proceduralDoodlePlan.createProceduralDoodlePlan(
@@ -919,6 +1610,103 @@ const createMemoryStorage = (options = {}) => {
   return storage;
 };
 
+const chronicleStorage = createMemoryStorage();
+const chroniclePlayerId = 'chronicle-player';
+const chronicleScribbit = makeScribbit({
+  id: 'chronicle-owned-scribbit',
+  artist: 'chronicle-player',
+});
+const chronicleFounder = speciesCore.findFoundingScribbit(
+  'founding-mosswhisk'
+);
+assert.ok(chronicleFounder, 'Chronicle test founder should exist');
+const chronicleReport = (day, winner, kind = 'exhibition') => ({
+  id: `chronicle-${kind}-${day}-${winner}`,
+  kind,
+  day,
+  a: chronicleScribbit,
+  b: chronicleFounder,
+  winner,
+});
+assert.deepEqual(
+  await founderChronicleCore.recordFounderChronicleBattle(
+    chronicleStorage,
+    chroniclePlayerId,
+    chronicleReport(3, 'b'),
+    chronicleScribbit.id
+  ),
+  [{ founderId: chronicleFounder.id, milestone: 'met', day: 3 }],
+  'a first direct loss should record only the real meeting'
+);
+assert.deepEqual(
+  await founderChronicleCore.recordFounderChronicleBattle(
+    chronicleStorage,
+    chroniclePlayerId,
+    chronicleReport(3, 'b'),
+    chronicleScribbit.id
+  ),
+  [],
+  'the same encounter must not inflate permanent progress'
+);
+assert.deepEqual(
+  await founderChronicleCore.recordFounderChronicleBattle(
+    chronicleStorage,
+    chroniclePlayerId,
+    chronicleReport(3, 'a'),
+    chronicleScribbit.id
+  ),
+  [{ founderId: chronicleFounder.id, milestone: 'respected', day: 3 }],
+  'the first direct victory should earn respect once'
+);
+assert.deepEqual(
+  await founderChronicleCore.recordFounderChronicleBattle(
+    chronicleStorage,
+    chroniclePlayerId,
+    chronicleReport(4, 'b'),
+    chronicleScribbit.id
+  ),
+  [{ founderId: chronicleFounder.id, milestone: 'rematched', day: 4 }],
+  'a real fight on a later Arena day should record the return'
+);
+assert.deepEqual(
+  await founderChronicleCore.recordFounderChronicleBattle(
+    chronicleStorage,
+    chroniclePlayerId,
+    chronicleReport(5, 'a'),
+    chronicleScribbit.id
+  ),
+  [],
+  'later wins and rematches should remain bounded first-only stamps'
+);
+assert.deepEqual(
+  await founderChronicleCore.recordFounderChronicleBattle(
+    chronicleStorage,
+    chroniclePlayerId,
+    chronicleReport(6, 'a', 'rumble'),
+    chronicleScribbit.id
+  ),
+  [],
+  'passive Rumble pairings must not pretend the player met a founder'
+);
+assert.deepEqual(
+  await founderChronicleCore.loadFounderChronicle(
+    chronicleStorage,
+    chroniclePlayerId
+  ),
+  {
+    entries: [
+      {
+        founderId: chronicleFounder.id,
+        metDay: 3,
+        respectedDay: 3,
+        rematchedDay: 4,
+      },
+    ],
+  },
+  'Chronicle reads should expose one canonical bounded entry per founder'
+);
+pass('Founder Chronicle records direct relationship milestones idempotently');
+
 const moderationStorage = createMemoryStorage();
 const firstSafetyReport = await moderationCore.reportAndHideScribbit(
   moderationStorage,
@@ -1013,6 +1801,19 @@ await scribbitCore.claimUserDailySparWinReward(
   '20260708',
   1000
 );
+await founderChronicleCore.recordFounderChronicleBattle(
+  privacyStorage,
+  'privacy-user-id',
+  {
+    id: 'privacy-founder-battle',
+    kind: 'exhibition',
+    day: 2,
+    a: privacyScribbit,
+    b: chronicleFounder,
+    winner: 'a',
+  },
+  privacyScribbit.id
+);
 const privacyDeletion = await privacyCore.deletePlayerData(
   privacyStorage,
   'privacy-user-id',
@@ -1071,6 +1872,13 @@ assert.equal(
     .size,
   0,
   'privacy deletion should remove report-hide data'
+);
+assert.deepEqual(
+  await privacyStorage.hGetAll(
+    founderChronicleCore.getFounderChronicleKey('privacy-user-id')
+  ),
+  {},
+  'privacy deletion should remove permanent founder relationship progress'
 );
 pass('player data deletion removes identity and owned content');
 
@@ -2404,6 +3212,16 @@ assert.equal(
   false,
   'unknown Shape Power ids should fail closed instead of falling through'
 );
+for (const power of shapePowerContent.SHAPE_POWER_IDS) {
+  const noCleanHitCallout =
+    shapePowerContent.getShapePowerNoCleanHitCallout(power);
+  assert.ok(noCleanHitCallout.length <= 16);
+  assert.doesNotMatch(
+    noCleanHitCallout,
+    /miss|dodge|evade|sidestep|counter|dead zone/i,
+    `${power} no-clean-hit copy must not invent why the connection failed`
+  );
+}
 assert.throws(
   () =>
     shapePowerPresentation.buildShapePowerDrawCommands({
@@ -2484,6 +3302,30 @@ assert.equal(
   ),
   true,
   'Colorburst echo should count only for its exact Colorburst activation'
+);
+assert.equal(
+  shapePowerPresentation.shouldAnnounceNoCleanHitAtAbilityFinish(
+    'nib_halo',
+    false
+  ),
+  true,
+  'powers with no delayed follow-up may report no clean hit at finish'
+);
+assert.equal(
+  shapePowerPresentation.shouldAnnounceNoCleanHitAtAbilityFinish(
+    'inkquake',
+    true
+  ),
+  false,
+  'a connected power must never receive miss presentation'
+);
+assert.equal(
+  shapePowerPresentation.shouldAnnounceNoCleanHitAtAbilityFinish(
+    'colorburst',
+    false
+  ),
+  false,
+  'Colorburst must wait past ability finish because its echo can still connect'
 );
 pass('Shape Power vignette plans remain distinct and deterministic');
 
@@ -2681,6 +3523,7 @@ const nextGoalBaseState = {
   myScribbits: [nextGoalScribbit],
   drawnToday: true,
   enteredToday: false,
+  bossChallengedToday: false,
   rumbleEntrants: 8,
   communityLegendCount: 0,
   rumbleResolvesAt: Date.now() + 60_000,
@@ -2711,9 +3554,23 @@ const backGoal = nextGoal.selectNextGoal({
   enteredToday: true,
 });
 assert.equal(backGoal.actionKind, 'back', 'Back must follow Rumble entry');
+const championChallengeGoal = nextGoal.selectNextGoal({
+  ...nextGoalBaseState,
+  champion: beta,
+  enteredToday: true,
+  myBackedScribbitId: 'picked-one',
+});
+assert.equal(
+  championChallengeGoal.actionKind,
+  'challenge',
+  'the unused daily Champion Challenge should outrank economy and care chores'
+);
+assert.match(championChallengeGoal.detail, /Win for \+2 XP/);
 const capsuleGoal = nextGoal.selectNextGoal({
   ...nextGoalBaseState,
+  champion: beta,
   enteredToday: true,
+  bossChallengedToday: true,
   myBackedScribbitId: 'picked-one',
 });
 assert.equal(
@@ -2850,7 +3707,9 @@ assert.equal(
   0.75,
   'moss should be weak into ember'
 );
-pass('element damage triangle');
+pass(
+  'legacy element multiplier remains isolated from fixed-tick payload combat'
+);
 
 assert.equal(
   battle.getLevelDamageMultiplier(1),
@@ -3001,65 +3860,79 @@ assert.deepEqual(
   {
     viewportWidth: 720,
     viewportHeight: 1280,
+    broadcastRailLeft: 12,
+    broadcastRailTop: 8,
+    broadcastRailWidth: 696,
+    broadcastRailHeight: 96,
     pageLeft: 20,
-    pageTop: 98,
+    pageTop: 106,
     pageWidth: 680,
-    pageHeight: 1067,
-    toolbarY: 54,
-    kindLabelX: 34,
-    soundButtonX: 460,
-    speedButtonX: 548,
-    skipButtonX: 654,
-    soundButtonWidth: 64,
-    speedButtonWidth: 92,
+    pageHeight: 1048,
+    toolbarY: 56,
+    kindLabelX: 28,
+    battleKindY: 39,
+    serverTruthY: 74,
+    kindLabelMaximumWidth: 342,
+    soundButtonX: 432,
+    speedButtonX: 536,
+    skipButtonX: 648,
+    soundButtonWidth: 96,
+    speedButtonWidth: 96,
     skipButtonWidth: 112,
-    fighterPanelTop: 104,
+    fighterPanelTop: 108,
     fighterPanelHeight: 124,
-    healthBarY: 166,
-    healthBarWidth: 270,
-    healthBarFillWidth: 262,
-    fighterNameY: 126,
-    fighterChipY: 208,
+    healthBarY: 177,
+    healthBarWidth: 292,
+    healthBarFillWidth: 284,
+    healthBarHeight: 34,
+    healthBarFillHeight: 24,
+    fighterNameY: 127,
+    fighterMetaY: 151,
+    fighterChipY: 214,
+    fighterChipHeight: 34,
     battleClockX: 360,
-    battleClockY: 168,
-    arenaTop: 236,
-    arenaBottom: 1130,
-    arenaHorizontalPadding: 64,
-    arenaVerticalPadding: 58,
+    battleClockY: 177,
+    battleClockRadius: 31,
+    battleClockProgressWidth: 44,
+    arenaTop: 158,
+    arenaBottom: 1144,
+    arenaHorizontalPadding: 118,
+    arenaVerticalPadding: 72,
     tickerX: 360,
-    tickerY: 1218,
-    tickerWidth: 640,
-    tickerHeight: 78,
-    fighterDisplaySize: 210,
-    fighterGhostDisplaySize: 185,
+    tickerY: 1216,
+    tickerWidth: 664,
+    tickerHeight: 96,
+    tickerTagWidth: 132,
+    fighterDisplaySize: 220,
+    fighterGhostDisplaySize: 194,
     fighters: {
       a: {
-        homeX: 202,
-        homeY: 683,
+        homeX: 194,
+        homeY: 651,
         facing: 1,
-        healthBarAnchorX: 34,
+        healthBarAnchorX: 24,
         healthBarOriginX: 0,
-        nameX: 34,
+        nameX: 36,
         nameOriginX: 0,
-        levelBadgeX: 282,
-        chipCenterX: 169,
-        panelLeft: 28,
+        levelBadgeX: 292,
+        chipCenterX: 170,
+        panelLeft: 24,
       },
       b: {
-        homeX: 518,
-        homeY: 683,
+        homeX: 526,
+        homeY: 651,
         facing: -1,
-        healthBarAnchorX: 686,
+        healthBarAnchorX: 696,
         healthBarOriginX: 1,
-        nameX: 686,
+        nameX: 684,
         nameOriginX: 1,
-        levelBadgeX: 438,
-        chipCenterX: 551,
-        panelLeft: 410,
+        levelBadgeX: 428,
+        chipCenterX: 550,
+        panelLeft: 404,
       },
     },
   },
-  'portrait replay layout should remain a symmetric paper broadcast stage'
+  'portrait replay layout should remain a symmetric live Inkcast stage'
 );
 assert.ok(
   replayBattleLayout.soundButtonX + replayBattleLayout.soundButtonWidth / 2 <
@@ -3068,25 +3941,81 @@ assert.ok(
       replayBattleLayout.skipButtonX - replayBattleLayout.skipButtonWidth / 2,
   'sound, speed, and skip touch regions must not overlap'
 );
+assert.ok(
+  replayBattleLayout.soundButtonWidth >= 96 &&
+    replayBattleLayout.speedButtonWidth >= 96 &&
+    replayBattleLayout.skipButtonWidth >= 112,
+  'compact replay controls should remain practical at the 320px Reddit viewport'
+);
 assert.equal(
   replayBattleLayout.fighters.a.healthBarAnchorX,
   720 - replayBattleLayout.fighters.b.healthBarAnchorX,
   'fighter HUD anchors should mirror around the battle clock'
+);
+assert.ok(
+  replayBattleLayout.fighters.a.panelLeft + replayBattleLayout.healthBarWidth <
+    replayBattleLayout.battleClockX - replayBattleLayout.battleClockRadius &&
+    replayBattleLayout.fighters.b.panelLeft >
+      replayBattleLayout.battleClockX + replayBattleLayout.battleClockRadius,
+  'fighter HUDs must leave a visible gutter around the server clock'
+);
+assert.ok(
+  replayBattleLayout.arenaBottom - replayBattleLayout.arenaTop >= 980,
+  'live combat should reclaim vertical room from the old turn-card framing'
+);
+assert.ok(
+  replayBattleLayout.arenaHorizontalPadding >=
+    replayBattleLayout.fighterDisplaySize / 2,
+  'full-width player drawings should remain inside the visible battle page'
+);
+
+const crowdedReplayOutcomeStack = battlePresentation.planReplayOutcomeStack({
+  viewportHeight: 1280,
+  canChooseRival: true,
+  canBackContender: true,
+  hasFounderOutcome: true,
+});
+assert.deepEqual(crowdedReplayOutcomeStack, {
+  recapY: 813,
+  founderOutcomeY: 647,
+  rivalChoicesY: 1010,
+  backContenderButtonY: 1118,
+  backButtonY: 1222,
+});
+assert.ok(
+  crowdedReplayOutcomeStack.rivalChoicesY + 48 + 12 <=
+    crowdedReplayOutcomeStack.backContenderButtonY - 48,
+  'rival choices and Back-a-contender must retain a visible mobile gap'
+);
+assert.ok(
+  crowdedReplayOutcomeStack.recapY + 132 + 12 <=
+    crowdedReplayOutcomeStack.rivalChoicesY - 48,
+  'the recap card and first action row must not touch'
+);
+assert.ok(
+  crowdedReplayOutcomeStack.backContenderButtonY + 48 + 12 <=
+    crowdedReplayOutcomeStack.backButtonY - 44,
+  'post-fight primary and return controls must never overlap'
+);
+assert.ok(
+  crowdedReplayOutcomeStack.founderOutcomeY + 20 + 12 <=
+    crowdedReplayOutcomeStack.recapY - 132,
+  'founder result voice should sit above the recap instead of covering it'
 );
 
 assert.deepEqual(
   battlePresentation.planReplayHitPointBar({
     hitPoints: 50,
     maximumHitPoints: 100,
-    fullWidth: 262,
+    fullWidth: replayBattleLayout.healthBarFillWidth,
   }),
-  { ratio: 0.5, width: 131, useDangerColor: false }
+  { ratio: 0.5, width: 142, useDangerColor: false }
 );
 assert.equal(
   battlePresentation.planReplayHitPointBar({
     hitPoints: 28,
     maximumHitPoints: 100,
-    fullWidth: 262,
+    fullWidth: replayBattleLayout.healthBarFillWidth,
   }).useDangerColor,
   true,
   '28% HP should enter the danger color exactly at the existing threshold'
@@ -3095,7 +4024,7 @@ assert.equal(
   battlePresentation.planReplayHitPointBar({
     hitPoints: 29,
     maximumHitPoints: 100,
-    fullWidth: 262,
+    fullWidth: replayBattleLayout.healthBarFillWidth,
   }).useDangerColor,
   false
 );
@@ -3103,16 +4032,16 @@ assert.equal(
   battlePresentation.planReplayHitPointBar({
     hitPoints: 999,
     maximumHitPoints: 100,
-    fullWidth: 262,
+    fullWidth: replayBattleLayout.healthBarFillWidth,
   }).width,
-  262,
+  replayBattleLayout.healthBarFillWidth,
   'overflow HP should clamp to the authored bar width'
 );
 assert.equal(
   battlePresentation.planReplayHitPointBar({
     hitPoints: 50,
     maximumHitPoints: 0,
-    fullWidth: 262,
+    fullWidth: replayBattleLayout.healthBarFillWidth,
   }).width,
   0,
   'invalid maximum HP should fail closed to an empty bar'
@@ -3188,10 +4117,12 @@ assert.deepEqual(
     maximumHalfWidth: replayArenaPresentation.maximumHalfWidth,
     maximumHalfHeight: replayArenaPresentation.maximumHalfHeight,
   },
-  { centerX: 360, centerY: 683, maximumHalfWidth: 296, maximumHalfHeight: 389 },
-  'all replay movement and effects should share the expanded arena projection'
+  { centerX: 360, centerY: 651, maximumHalfWidth: 242, maximumHalfHeight: 421 },
+  'all replay movement and effects should share the clipping-safe arena projection'
 );
-pass('real-time paper broadcast layout, HP bars, clock, and labels');
+pass(
+  'live Inkcast layout, HP bars, clock, outcome stack, and arena projection'
+);
 
 const timeoutRecapReport = mockCombatBundle.simulate(
   { ...debugFixtureFighterByPower.colorburst, element: 'ember' },
@@ -3476,15 +4407,33 @@ const plannedRivals = sparRivals.planSparRivalCards(
 );
 assert.equal(plannedRivals.length, freshRivalSlate.length);
 assert.ok(
-  plannedRivals.every(
-    (plan, index) =>
+  plannedRivals.every((plan, index) => {
+    const definition = founders.getFoundingScribbitDefinition(plan.id);
+    return (
       plan.id === freshRivalSlate[index]?.id &&
       plan.signatureName.length > 0 &&
-      plan.powerLine.includes('•') &&
+      plan.epithet === definition?.personality.epithet &&
+      plan.challengeLine === definition?.personality.challengeLine &&
+      plan.powerLine.includes(
+        definition?.personality.epithet.toUpperCase() ?? ''
+      ) &&
       plan.levelLine.length > 0 &&
       plan.forecastLine.startsWith('FORECAST ')
-  ),
-  'rival cards must expose only truthful level, power, signature, and forecast data'
+    );
+  }),
+  'rival cards must pair truthful build data with canonical founder identity'
+);
+assert.equal(
+  sparRivals.formatSparRivalDraftSummary(null),
+  'Arena founders • server-picked fair slate'
+);
+assert.equal(
+  sparRivals.formatSparRivalDraftSummary({
+    label: 'FINAL SPLAT',
+    text: 'Rootquake • 42 to Paper Spark',
+  }),
+  'LAST BOUT • FINAL SPLAT: Rootquake • 42 to Paper Spark',
+  'the next rival choice should preserve the exact previous-bout highlight'
 );
 freshRivalSlate[0].stats.chonk = 999;
 assert.notEqual(
@@ -5288,6 +6237,17 @@ assert.doesNotMatch(
   foundingResultComment,
   /u\/not-a-player/,
   'founding champions must not be presented as real Reddit users'
+);
+const rumbleFounder = speciesCore.findFoundingScribbit('founding-mosswhisk');
+assert.ok(rumbleFounder);
+const founderStoryResultComment = resultComment.formatRumbleResultComment({
+  ...resultSummary,
+  champion: rumbleFounder,
+});
+assert.match(
+  founderStoryResultComment,
+  new RegExp(mosswhiskDefinition.personality.rumbleLine),
+  'a founding champion should carry its canonical voice into the Reddit result'
 );
 pass('Reddit Rumble result comment uses real resolution data');
 

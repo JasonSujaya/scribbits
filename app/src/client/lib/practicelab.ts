@@ -20,6 +20,7 @@ export type PracticeSession = Readonly<{
 
 export type PracticeOutcomePlan = Readonly<{
   completed: boolean;
+  celebrateCompletion: boolean;
   headline: string;
   result: string;
   progress: string;
@@ -136,7 +137,7 @@ export function practiceProgressCopy(
   triedPowers: readonly PrimaryPower[]
 ): string {
   const count = normalizePracticePowers(triedPowers).length;
-  return `SERVER CHECKED  •  ${count}/4 POWERS`;
+  return `SERVER CHECKED  •  ${count}/${SHAPE_POWER_IDS.length} POWERS`;
 }
 
 export function practiceChecklistCopy(
@@ -164,8 +165,10 @@ export function practiceFoundPowerCopy(session: PracticeSession): string {
 }
 
 export function isPracticeSessionComplete(session: PracticeSession): boolean {
-  return normalizePracticePowers(session.triedPowers).length ===
-    SHAPE_POWER_IDS.length;
+  return (
+    normalizePracticePowers(session.triedPowers).length ===
+    SHAPE_POWER_IDS.length
+  );
 }
 
 export function planPracticeOutcome(
@@ -175,19 +178,18 @@ export function planPracticeOutcome(
   const completed = isPracticeSessionComplete(session);
   return {
     completed,
+    celebrateCompletion: completed && session.lastPowerWasNew,
     headline: completed
-      ? '✦ ALL FOUR POWERS FOUND! ✦'
+      ? `✦ ${SHAPE_POWER_IDS.length}/${SHAPE_POWER_IDS.length} POWERS FOUND! ✦`
       : practiceFoundPowerCopy(session),
     result: completed
-      ? 'LAB COMPLETE • SESSION MASTERED'
+      ? 'DRAW DIFFERENTLY • FIGHT DIFFERENTLY'
       : practiceResultCopy(session),
-    progress: practiceProgressCopy(session.triedPowers),
+    progress: completed
+      ? 'SESSION COMPLETE • NO REWARDS • NOT SAVED'
+      : practiceProgressCopy(session.triedPowers),
     checklist: practiceChecklistCopy(session.triedPowers),
-    primaryButton: completed
-      ? '✏️ REMIX A FAVORITE →'
-      : '✏️ DRAW ANOTHER SHAPE →',
-    exitButton: completed
-      ? 'END ON A HIGH NOTE · ARENA'
-      : 'END PRACTICE · ARENA',
+    primaryButton: completed ? '✏️ DRAW ONE MORE →' : '✏️ DRAW ANOTHER SHAPE →',
+    exitButton: 'END PRACTICE · ARENA',
   };
 }

@@ -80,12 +80,19 @@ export type ReplayFighterLayout = Readonly<{
 export type ReplayBattleLayout = Readonly<{
   viewportWidth: number;
   viewportHeight: number;
+  broadcastRailLeft: number;
+  broadcastRailTop: number;
+  broadcastRailWidth: number;
+  broadcastRailHeight: number;
   pageLeft: number;
   pageTop: number;
   pageWidth: number;
   pageHeight: number;
   toolbarY: number;
   kindLabelX: number;
+  battleKindY: number;
+  serverTruthY: number;
+  kindLabelMaximumWidth: number;
   soundButtonX: number;
   speedButtonX: number;
   skipButtonX: number;
@@ -97,10 +104,16 @@ export type ReplayBattleLayout = Readonly<{
   healthBarY: number;
   healthBarWidth: number;
   healthBarFillWidth: number;
+  healthBarHeight: number;
+  healthBarFillHeight: number;
   fighterNameY: number;
+  fighterMetaY: number;
   fighterChipY: number;
+  fighterChipHeight: number;
   battleClockX: number;
   battleClockY: number;
+  battleClockRadius: number;
+  battleClockProgressWidth: number;
   arenaTop: number;
   arenaBottom: number;
   arenaHorizontalPadding: number;
@@ -109,6 +122,7 @@ export type ReplayBattleLayout = Readonly<{
   tickerY: number;
   tickerWidth: number;
   tickerHeight: number;
+  tickerTagWidth: number;
   fighterDisplaySize: number;
   fighterGhostDisplaySize: number;
   fighters: Readonly<Record<ReplayBattleSide, ReplayFighterLayout>>;
@@ -127,6 +141,14 @@ export type ReplayBattleClockPlan = Readonly<{
   urgent: boolean;
 }>;
 
+export type ReplayOutcomeStackPlan = Readonly<{
+  recapY: number;
+  founderOutcomeY: number | null;
+  rivalChoicesY: number | null;
+  backContenderButtonY: number | null;
+  backButtonY: number;
+}>;
+
 const clamp = (value: number, minimum: number, maximum: number): number => {
   return Math.min(maximum, Math.max(minimum, value));
 };
@@ -137,85 +159,151 @@ export function planReplayBattleLayout(input: {
 }): ReplayBattleLayout {
   const viewportWidth = Math.max(480, input.viewportWidth);
   const viewportHeight = Math.max(800, input.viewportHeight);
-  const pageLeft = Math.round(clamp(viewportWidth * 0.028, 16, 24));
-  const pageTop = 98;
-  const toolbarY = 54;
-  const healthBarWidth = Math.round(clamp((viewportWidth - 180) / 2, 190, 270));
+  const pageLeft = Math.round(clamp(viewportWidth * 0.028, 16, 20));
+  const pageTop = 106;
+  const broadcastRailLeft = Math.round(clamp(viewportWidth * 0.017, 8, 12));
+  const broadcastRailTop = 8;
+  const broadcastRailHeight = 96;
+  const broadcastRailWidth = viewportWidth - broadcastRailLeft * 2;
+  const toolbarY = broadcastRailTop + broadcastRailHeight / 2;
+  const controlGap = 8;
+  const soundButtonWidth = 96;
+  const speedButtonWidth = 96;
+  const skipButtonWidth = 112;
+  const controlsRight = viewportWidth - broadcastRailLeft - 4;
+  const skipButtonX = controlsRight - skipButtonWidth / 2;
+  const speedButtonX =
+    skipButtonX - skipButtonWidth / 2 - controlGap - speedButtonWidth / 2;
+  const soundButtonX =
+    speedButtonX - speedButtonWidth / 2 - controlGap - soundButtonWidth / 2;
+  const kindLabelX = broadcastRailLeft + 16;
+  const kindLabelMaximumWidth = Math.max(
+    84,
+    soundButtonX - soundButtonWidth / 2 - kindLabelX - 14
+  );
+  const horizontalMargin = Math.round(clamp(viewportWidth * 0.034, 18, 24));
+  const fighterCenterGap = Math.round(clamp(viewportWidth * 0.125, 84, 88));
+  const healthBarWidth = Math.round(
+    (viewportWidth - horizontalMargin * 2 - fighterCenterGap) / 2
+  );
   const healthBarFillWidth = healthBarWidth - 8;
-  const horizontalMargin = Math.round(clamp(viewportWidth * 0.047, 24, 34));
-  const healthBarY = 166;
-  const fighterNameY = 126;
-  const fighterChipY = 208;
-  const fighterPanelTop = 104;
+  const fighterPanelTop = 108;
   const fighterPanelHeight = 124;
-  const tickerHeight = 78;
-  const tickerY = viewportHeight - 62;
-  const arenaTop = 236;
-  const arenaBottom = Math.max(arenaTop + 420, viewportHeight - 150);
+  const fighterNameY = 127;
+  const fighterMetaY = 151;
+  const healthBarY = 177;
+  const fighterChipY = 214;
+  const tickerHeight = Math.round(clamp(viewportHeight * 0.075, 80, 96));
+  const tickerY = viewportHeight - 64;
+  const tickerTop = tickerY - tickerHeight / 2;
+  const arenaTop = 158;
+  const arenaBottom = Math.max(arenaTop + 420, tickerTop - 24);
   const homeY = (arenaTop + arenaBottom) / 2;
-  const leftPanelLeft = horizontalMargin - 6;
-  const rightPanelLeft = viewportWidth - horizontalMargin - healthBarWidth - 6;
+  const leftPanelLeft = horizontalMargin;
+  const rightPanelLeft = viewportWidth - horizontalMargin - healthBarWidth;
 
   return {
     viewportWidth,
     viewportHeight,
+    broadcastRailLeft,
+    broadcastRailTop,
+    broadcastRailWidth,
+    broadcastRailHeight,
     pageLeft,
     pageTop,
     pageWidth: viewportWidth - pageLeft * 2,
-    pageHeight: tickerY - tickerHeight / 2 - pageTop - 14,
+    pageHeight: tickerTop - pageTop - 14,
     toolbarY,
-    kindLabelX: horizontalMargin,
-    soundButtonX: viewportWidth - 260,
-    speedButtonX: viewportWidth - 172,
-    skipButtonX: viewportWidth - 66,
-    soundButtonWidth: 64,
-    speedButtonWidth: 92,
-    skipButtonWidth: 112,
+    kindLabelX,
+    battleKindY: toolbarY - 17,
+    serverTruthY: toolbarY + 18,
+    kindLabelMaximumWidth,
+    soundButtonX,
+    speedButtonX,
+    skipButtonX,
+    soundButtonWidth,
+    speedButtonWidth,
+    skipButtonWidth,
     fighterPanelTop,
     fighterPanelHeight,
     healthBarY,
     healthBarWidth,
     healthBarFillWidth,
+    healthBarHeight: 34,
+    healthBarFillHeight: 24,
     fighterNameY,
+    fighterMetaY,
     fighterChipY,
+    fighterChipHeight: 34,
     battleClockX: viewportWidth / 2,
-    battleClockY: 168,
+    battleClockY: healthBarY,
+    battleClockRadius: 31,
+    battleClockProgressWidth: 44,
     arenaTop,
     arenaBottom,
-    arenaHorizontalPadding: 64,
-    arenaVerticalPadding: 58,
+    arenaHorizontalPadding: Math.round(clamp(viewportWidth * 0.164, 96, 118)),
+    arenaVerticalPadding: 72,
     tickerX: viewportWidth / 2,
     tickerY,
-    tickerWidth: Math.min(viewportWidth - 52, 640),
+    tickerWidth: Math.min(viewportWidth - 40, 664),
     tickerHeight,
-    fighterDisplaySize: 210,
-    fighterGhostDisplaySize: 185,
+    tickerTagWidth: Math.round(clamp(viewportWidth * 0.19, 104, 132)),
+    fighterDisplaySize: 220,
+    fighterGhostDisplaySize: 194,
     fighters: {
       a: {
-        homeX: Math.round(viewportWidth * 0.28),
+        homeX: Math.round(viewportWidth * 0.27),
         homeY,
         facing: 1,
         healthBarAnchorX: horizontalMargin,
         healthBarOriginX: 0,
-        nameX: horizontalMargin,
+        nameX: horizontalMargin + 12,
         nameOriginX: 0,
-        levelBadgeX: horizontalMargin + healthBarWidth - 22,
+        levelBadgeX: horizontalMargin + healthBarWidth - 24,
         chipCenterX: horizontalMargin + healthBarWidth / 2,
         panelLeft: leftPanelLeft,
       },
       b: {
-        homeX: Math.round(viewportWidth * 0.72),
+        homeX: Math.round(viewportWidth * 0.73),
         homeY,
         facing: -1,
         healthBarAnchorX: viewportWidth - horizontalMargin,
         healthBarOriginX: 1,
-        nameX: viewportWidth - horizontalMargin,
+        nameX: viewportWidth - horizontalMargin - 12,
         nameOriginX: 1,
-        levelBadgeX: viewportWidth - horizontalMargin - healthBarWidth + 22,
+        levelBadgeX: viewportWidth - horizontalMargin - healthBarWidth + 24,
         chipCenterX: viewportWidth - horizontalMargin - healthBarWidth / 2,
         panelLeft: rightPanelLeft,
       },
     },
+  };
+}
+
+export function planReplayOutcomeStack(input: {
+  viewportHeight: number;
+  canChooseRival: boolean;
+  canBackContender: boolean;
+  hasFounderOutcome: boolean;
+}): ReplayOutcomeStackPlan {
+  const viewportHeight = Math.max(800, input.viewportHeight);
+  const backButtonY = viewportHeight - 58;
+  const backContenderButtonY = input.canBackContender
+    ? viewportHeight - 162
+    : null;
+  const rivalChoicesY = input.canChooseRival
+    ? viewportHeight - (input.canBackContender ? 270 : 166)
+    : null;
+  const recapY =
+    viewportHeight -
+    (input.canChooseRival && input.canBackContender ? 467 : 405);
+  const founderOutcomeY = input.hasFounderOutcome ? recapY - 166 : null;
+
+  return {
+    recapY,
+    founderOutcomeY,
+    rivalChoicesY,
+    backContenderButtonY,
+    backButtonY,
   };
 }
 

@@ -63,10 +63,6 @@ const abilityConfigByPower: AbilityConfigByPower = Object.freeze({
     baseDamage: 17,
     chonkDamageDivisor: 2,
     knockbackSpeed: 310,
-    softCounterNotes: Object.freeze([
-      'The expanding ring can be crossed before it reaches full radius.',
-      'The wave clears fragile echoes but its fixed origin can be outrun.',
-    ]),
   }),
   nib_halo: Object.freeze({
     power: 'nib_halo',
@@ -88,12 +84,6 @@ const abilityConfigByPower: AbilityConfigByPower = Object.freeze({
     wallRiskLockTicks: 12,
     wallEjectionSpeed: 360,
     wallSelfDamage: 3,
-    softCounterNotes: Object.freeze([
-      'The center is a real dead zone that a close-range fighter can occupy.',
-      'Nib impacts include a small max-HP cut, making slow tanks easier to shred.',
-      'Active nibs intercept part of broad shockwave and cone damage.',
-      'Orbiting near a wall ejects and damages the halo owner.',
-    ]),
   }),
   smearstep: Object.freeze({
     power: 'smearstep',
@@ -111,10 +101,6 @@ const abilityConfigByPower: AbilityConfigByPower = Object.freeze({
     collisionRadiusBonus: 220,
     baseDamage: 21,
     zipDamageDivisor: 4,
-    softCounterNotes: Object.freeze([
-      'Each dash predicts current motion, so a wall bounce can spoil its line.',
-      'Overshoot dives through a halo but can finish inside a cone or wall.',
-    ]),
   }),
   colorburst: Object.freeze({
     power: 'colorburst',
@@ -132,10 +118,6 @@ const abilityConfigByPower: AbilityConfigByPower = Object.freeze({
     echoDamagePermille: 550,
     echoRadius: 360,
     echoOffsetDistance: 900,
-    softCounterNotes: Object.freeze([
-      'The cone direction locks during its telegraph and can be sidestepped.',
-      'The single delayed echo has one hit point and shatters on contact.',
-    ]),
   }),
 });
 

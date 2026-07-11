@@ -130,16 +130,42 @@ export const ELEMENT_STYLES: Record<Element, ElementStyle> = {
 
 // Stat bar colors — one per stat, consistent everywhere stats are shown.
 export const STAT_STYLES = {
-  chonk: { label: 'CHONK / HP', emoji: '🫧', color: 0xff8a5c, colorText: '#a73d1f' },
-  spike: { label: 'SPIKE / EDGE', emoji: '🌵', color: 0xe8555c, colorText: '#a92e37' },
-  zip: { label: 'ZIP / MOVE', emoji: '💨', color: 0x4fb0d8, colorText: '#176789' },
-  charm: { label: 'CHARM / COLOR', emoji: '✨', color: 0xc06be0, colorText: '#7d3a99' },
+  chonk: {
+    label: 'CHONK / HP',
+    emoji: '🫧',
+    color: 0xff8a5c,
+    colorText: '#a73d1f',
+  },
+  spike: {
+    label: 'SPIKE / EDGE',
+    emoji: '🌵',
+    color: 0xe8555c,
+    colorText: '#a92e37',
+  },
+  zip: {
+    label: 'ZIP / MOVE',
+    emoji: '💨',
+    color: 0x4fb0d8,
+    colorText: '#176789',
+  },
+  charm: {
+    label: 'CHARM / COLOR',
+    emoji: '✨',
+    color: 0xc06be0,
+    colorText: '#7d3a99',
+  },
 } as const;
 
 export const FONT_STACK =
   '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
 
 export const prefersReducedMotion = (): boolean => {
-  return typeof window !== 'undefined' &&
-    window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (typeof window === 'undefined') return false;
+  const debugReducedMotion =
+    window.location.search.includes('debug') &&
+    window.location.search.includes('reduce-motion');
+  return (
+    debugReducedMotion ||
+    window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  );
 };

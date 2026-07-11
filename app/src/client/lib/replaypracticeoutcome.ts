@@ -3,9 +3,7 @@
 
 import * as Phaser from 'phaser';
 import { Scene } from 'phaser';
-import {
-  planPracticeOutcome,
-} from './practicelab';
+import { planPracticeOutcome } from './practicelab';
 import type { PracticeSession } from './practicelab';
 import { prefersReducedMotion, TYPE, UI } from './theme';
 import { button, ghostButton, label, stickerCard } from './ui';
@@ -30,7 +28,7 @@ export function createPracticeOutcomeControls(
     180,
     { tape: false, tilt: -0.5, gold: plan.completed }
   );
-  if (plan.completed && !reduceMotion) {
+  if (plan.celebrateCompletion && !reduceMotion) {
     progress.setScale(0.82);
     scene.tweens.add({
       targets: progress,
@@ -48,7 +46,7 @@ export function createPracticeOutcomeControls(
         emitting: false,
       })
       .setDepth(63);
-    celebration.explode(34);
+    celebration.explode(12);
     scene.time.delayedCall(1_050, () => celebration.destroy());
   }
   progress.add(
@@ -75,27 +73,12 @@ export function createPracticeOutcomeControls(
       true
     )
   );
+  progress.add(label(scene, 0, 10, plan.progress, 16, UI.inkSoft, true));
   progress.add(
-    label(
-      scene,
-      0,
-      10,
-      plan.progress,
-      16,
-      UI.inkSoft,
+    label(scene, 0, 53, plan.checklist, 18, UI.ink, true).setWordWrapWidth(
+      width - 150,
       true
     )
-  );
-  progress.add(
-    label(
-      scene,
-      0,
-      53,
-      plan.checklist,
-      18,
-      UI.ink,
-      true
-    ).setWordWrapWidth(width - 150, true)
   );
 
   const again = button(

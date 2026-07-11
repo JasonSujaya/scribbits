@@ -29,10 +29,11 @@ import {
   buildShapePowerDrawCommands,
   getDamageSourceDisplayName,
   getElementBattleCue,
-  getShapePowerMissCallout,
+  getShapePowerNoCleanHitCallout,
   getShapePowerRevealCopy,
   getShapePowerSignatureName,
   planShapePowerCallout,
+  shouldAnnounceNoCleanHitAtAbilityFinish,
 } from '../lib/shapepowerpresentation';
 import type {
   ShapePowerDrawCommand,
@@ -50,6 +51,7 @@ import {
   planArenaPresentation,
   planBattleImpact,
   planReplayBattleLayout,
+  planReplayOutcomeStack,
   projectCombatPosition,
 } from '../lib/battlepresentation';
 import type {
@@ -60,6 +62,7 @@ import type {
 import { planBattleRecap } from '../lib/battlerecap';
 import type { BattleRecapPlan } from '../lib/battlerecap';
 import { drawReplayBattleBackground } from '../lib/replaybattlebackground';
+import type { ReplayBattleBackdrop } from '../lib/replaybattlebackground';
 import { createReplayBattleHud } from '../lib/replaybattlehud';
 import type { ReplayBattleHud } from '../lib/replaybattlehud';
 import {
@@ -70,8 +73,25 @@ import { createSparRivalDraft } from '../lib/replaysparrivaldraft';
 import type { SparRivalDraft } from '../lib/replaysparrivaldraft';
 import { createPostFightSparringChoices } from '../lib/replaypostfightactions';
 import { createPracticeOutcomeControls } from '../lib/replaypracticeoutcome';
-import { isPracticeSessionComplete } from '../lib/practicelab';
+import { planPracticeOutcome } from '../lib/practicelab';
+import {
+  authorFounderBattleOpening,
+  authorFounderBattleOutcome,
+  authorReplayCommentary,
+} from '../lib/replaycommentary';
+import type {
+  ReplayCommentaryContext,
+  ReplayCommentaryFact,
+} from '../lib/replaycommentary';
+import {
+  chooseInkcastCandidateForSimulationTick,
+  createInkcastEditorialCandidate,
+  enqueueInkcastEditorialCandidate,
+  INKCAST_WALL_CLOCK_DWELL_MILLISECONDS,
+} from '../lib/inkcastqueue';
+import type { InkcastEditorialCandidate } from '../lib/inkcastqueue';
 import { BattleSoundboard } from '../lib/battlesound';
+import { showVsCeremony } from '../lib/battleceremony';
 import { showToast } from '@devvit/web/client';
 import type { BattleReport, Element, Scribbit } from '../../shared/arena';
 import type {
@@ -161,6 +181,8 @@ export class Replay extends Scene {
   private report!: BattleReport;
   private battleLayout!: ReplayBattleLayout;
   private battleHud: ReplayBattleHud | null = null;
+  private battleBackdrop: ReplayBattleBackdrop | null = null;
+  private battleBackdropElapsedMilliseconds = 0;
   private fighterA!: ReplayFighterRuntime;
   private fighterB!: ReplayFighterRuntime;
   private finished = false;
@@ -186,6 +208,14 @@ export class Replay extends Scene {
   private combatEffects: Phaser.GameObjects.Graphics | null = null;
   private readonly shapeEffects = new Map<'a' | 'b', ShapeEffect>();
   private impactHoldMilliseconds = 0;
+  private readonly inkcastCandidatesByTick = new Map<
+    number,
+    InkcastEditorialCandidate[]
+  >();
+  private pendingInkcastCandidates: readonly InkcastEditorialCandidate[] =
+    Object.freeze([]);
+  private inkcastDwellRemainingMilliseconds = 0;
+  private inkcastSequence = 0;
 
   constructor() {
     super('Replay');
@@ -194,6 +224,8 @@ export class Replay extends Scene {
   init(): void {
     this.finished = false;
     this.battleHud = null;
+    this.battleBackdrop = null;
+    this.battleBackdropElapsedMilliseconds = 0;
     this.introBanner = null;
     this.reduceMotion = prefersReducedMotion();
     this.speedIndex = 0;
@@ -211,6 +243,7 @@ export class Replay extends Scene {
     this.combatEffects = null;
     this.shapeEffects.clear();
     this.impactHoldMilliseconds = 0;
+    this.clearInkcastEditorialState();
   }
 
   // Current fast-forward multiplier.
@@ -225,6 +258,19 @@ export class Replay extends Scene {
     if (this.finished) return;
     this.time.timeScale = 1;
     this.tweens.timeScale = this.speed;
+    this.recordDebugPlaybackState('live');
+  }
+
+  private recordDebugPlaybackState(phase: 'live' | 'result'): void {
+    if (
+      typeof window === 'undefined' ||
+      !window.location.search.includes('debug')
+    ) {
+      return;
+    }
+    this.game.canvas.dataset.replayPhase = phase;
+    this.game.canvas.dataset.replaySpeed = String(this.speed);
+    this.game.canvas.dataset.replayTweenScale = String(this.tweens.timeScale);
   }
 
   private cycleSpeed(): void {
@@ -244,6 +290,7 @@ export class Replay extends Scene {
     this.cameras.main.setBackgroundColor(UI.desk);
     this.cameras.main.fadeIn(180, 255, 247, 232);
     this.buildArena();
+    this.recordDebugPlaybackState('live');
 
     this.events.once('shutdown', () => {
       this.playbackRunning = false;
@@ -252,6 +299,7 @@ export class Replay extends Scene {
       this.time.timeScale = 1;
       this.tweens.timeScale = 1;
       this.impactHoldMilliseconds = 0;
+      this.battleBackdrop = null;
     });
 
     void Promise.all([
@@ -280,12 +328,12 @@ export class Replay extends Scene {
       viewportWidth: width,
       viewportHeight: height,
     });
-    drawReplayBattleBackground(this, {
+    this.battleBackdrop = drawReplayBattleBackground(this, {
       layout: this.battleLayout,
       fighterAElement: this.report.a.element,
       fighterBElement: this.report.b.element,
       battleSeed: this.report.id,
-      battleKind: this.report.kind,
+      reduceMotion: this.reduceMotion,
     });
     this.arenaFloorEffects = this.add.graphics().setDepth(2);
     this.combatEffects = this.add.graphics().setDepth(7);
@@ -403,6 +451,10 @@ export class Replay extends Scene {
 
   private playIntro(): void {
     const { width, height } = this.scale;
+    const founderOpening = authorFounderBattleOpening(
+      this.replayCommentaryContext()
+    );
+    if (founderOpening) this.displayInkcastText(founderOpening);
     const banner = label(
       this,
       width / 2,
@@ -420,6 +472,15 @@ export class Replay extends Scene {
     this.time.delayedCall(360, () => {
       if (this.finished || !this.scene.isActive()) return;
       this.soundboard.play('fight');
+      if (this.reduceMotion) {
+        banner.setScale(1);
+        this.time.delayedCall(400, () => {
+          if (this.finished || !this.scene.isActive()) return;
+          this.clearIntroBanner();
+          this.startContinuousReplay();
+        });
+        return;
+      }
       this.tweens.add({
         targets: banner,
         scale: 1,
@@ -452,11 +513,24 @@ export class Replay extends Scene {
     for (const event of getTimelineEventsInRange(this.transcript, -1, 0)) {
       this.presentTimelineEvent(event);
     }
+    this.flushInkcastCandidatesByTick();
     this.previousPlaybackTick = 0;
     this.drawReplayFrameEffects(frame);
   }
 
   override update(_time: number, deltaMilliseconds: number): void {
+    const safeDeltaMilliseconds = Math.max(0, deltaMilliseconds);
+    const backdropPlaybackSpeed = this.playbackRunning
+      ? this.impactHoldMilliseconds > 0
+        ? 0
+        : this.speed
+      : 1;
+    if (!this.finished && backdropPlaybackSpeed > 0) {
+      this.battleBackdropElapsedMilliseconds +=
+        safeDeltaMilliseconds * backdropPlaybackSpeed;
+      this.battleBackdrop?.update(this.battleBackdropElapsedMilliseconds);
+    }
+    this.advanceInkcastEditorialQueue(deltaMilliseconds);
     if (
       !this.playbackRunning ||
       this.finished ||
@@ -491,6 +565,7 @@ export class Replay extends Scene {
     )) {
       this.presentTimelineEvent(event);
     }
+    this.flushInkcastCandidatesByTick();
     this.playbackTick = nextTick;
     this.previousPlaybackTick = nextTick;
     this.drawReplayFrameEffects(frame);
@@ -543,6 +618,12 @@ export class Replay extends Scene {
       fighter.sprite?.setPosition(screenPosition.x, screenPosition.y);
       this.setContinuousHitPoints(fighter, fighterFrame.hitPoints);
     });
+
+    // When the drawings overlap, the lower one reads as closer to the viewer.
+    // The tie is stable, while ordinary movement lets either side come forward.
+    const fighterAIsInFront = this.fighterA.screenY >= this.fighterB.screenY;
+    this.fighterA.sprite?.setDepth(fighterAIsInFront ? 6 : 5);
+    this.fighterB.sprite?.setDepth(fighterAIsInFront ? 5 : 6);
   }
 
   private setContinuousHitPoints(
@@ -627,12 +708,13 @@ export class Replay extends Scene {
         });
         this.telegraphShapePower(event.actor, actor, event.power);
         this.soundboard.play('telegraph');
-        this.setAnnouncer(
-          `${actor.scribbit.name} winds up ${getShapePowerSignatureName(
-            actor.scribbit.element,
-            event.power
-          )}!`
-        );
+        this.announceReplayCommentary({
+          kind: 'power-telegraph',
+          tick: event.tick,
+          actor: event.actor,
+          power: event.power,
+          activationNumber: event.activationNumber,
+        });
         if (actor.scribbit.element === 'storm') {
           this.revealElementCue(actor, 1_200 / this.speed);
         }
@@ -671,23 +753,28 @@ export class Replay extends Scene {
           effect?.power === event.power &&
           effect.activationNumber === event.activationNumber
         ) {
-          if (!effect.connected) {
-            const actor = this.fighterForSlot(event.actor);
+          if (
+            shouldAnnounceNoCleanHitAtAbilityFinish(
+              event.power,
+              effect.connected
+            )
+          ) {
             const opponent = this.fighterForSlot(
               event.actor === 'a' ? 'b' : 'a'
             );
             this.showFighterCombatRead(
               opponent,
-              getShapePowerMissCallout(event.power),
-              'COUNTER READ',
+              getShapePowerNoCleanHitCallout(event.power),
+              'NO CLEAN HIT',
               ELEMENT_STYLES[opponent.scribbit.element].primaryText
             );
-            this.setAnnouncer(
-              `${opponent.scribbit.name} reads ${getShapePowerSignatureName(
-                actor.scribbit.element,
-                event.power
-              )} and slips clear!`
-            );
+            this.announceReplayCommentary({
+              kind: 'power-missed',
+              tick: event.tick,
+              actor: event.actor,
+              power: event.power,
+              activationNumber: event.activationNumber,
+            });
           }
           this.shapeEffects.delete(event.actor);
         }
@@ -757,12 +844,23 @@ export class Replay extends Scene {
         if (attacker.scribbit.element === 'tide' && event.targetHitPoints > 0) {
           this.revealElementCue(attacker, 1_200 / this.speed);
         }
-        this.setAnnouncer(
-          `${attacker.scribbit.name}'s ${getDamageSourceDisplayName(
+        this.announceReplayCommentary({
+          kind: 'damage',
+          tick: event.tick,
+          sourceFighter: event.sourceFighter,
+          targetFighter: event.targetFighter,
+          sourceName: getDamageSourceDisplayName(
             event.source,
             attacker.scribbit.element
-          )} hits for ${event.amount}${event.critical ? ' — CRIT!' : '!'}`
-        );
+          ),
+          sourcePower: isShapePowerId(event.source)
+            ? event.source
+            : event.source === 'colorburst_echo'
+              ? 'colorburst'
+              : null,
+          amount: event.amount,
+          critical: event.critical,
+        });
         return;
       }
       case 'burn_applied': {
@@ -775,16 +873,22 @@ export class Replay extends Scene {
           false
         );
         this.revealElementCue(source, 1_200 / this.speed);
-        this.setAnnouncer(
-          `${target.scribbit.name} catches an Ember afterburn!`
-        );
+        this.announceReplayCommentary({
+          kind: 'burn',
+          tick: event.tick,
+          targetFighter: event.targetFighter,
+        });
         return;
       }
       case 'barrier_created': {
         const actor = this.fighterForSlot(event.actor);
         this.soundboard.play('shield');
         this.revealElementCue(actor);
-        this.setAnnouncer(`${actor.scribbit.name} grows a Moss paper shield.`);
+        this.announceReplayCommentary({
+          kind: 'barrier-created',
+          tick: event.tick,
+          actor: event.actor,
+        });
         return;
       }
       case 'barrier_hit': {
@@ -812,20 +916,30 @@ export class Replay extends Scene {
           ELEMENT_STYLES.moss.particle,
           false
         );
-        this.setAnnouncer(
-          `${actor.scribbit.name}'s paper shield absorbs ${event.absorbedDamage}!`
-        );
+        this.announceReplayCommentary({
+          kind: 'barrier-hit',
+          tick: event.tick,
+          actor: event.actor,
+          absorbedDamage: event.absorbedDamage,
+        });
         return;
       }
       case 'barrier_broken': {
-        const actor = this.fighterForSlot(event.actor);
         this.soundboard.play('shield');
-        this.setAnnouncer(`${actor.scribbit.name}'s paper shield tears open!`);
+        this.announceReplayCommentary({
+          kind: 'barrier-broken',
+          tick: event.tick,
+          actor: event.actor,
+        });
         return;
       }
       case 'ink_pressure': {
         const actor = this.fighterForSlot(event.actor);
-        this.setAnnouncer(`${actor.scribbit.name} surges with INK PRESSURE!`);
+        this.announceReplayCommentary({
+          kind: 'ink-pressure',
+          tick: event.tick,
+          actor: event.actor,
+        });
         actor.sprite?.telegraph();
         return;
       }
@@ -850,7 +964,11 @@ export class Replay extends Scene {
           ELEMENT_STYLES[actor.scribbit.element].particle,
           false
         );
-        this.setAnnouncer(`${actor.scribbit.name}'s wall nib snaps back!`);
+        this.announceReplayCommentary({
+          kind: 'nib-recoil',
+          tick: event.tick,
+          actor: event.actor,
+        });
         return;
       }
       case 'wall_bounce': {
@@ -882,7 +1000,10 @@ export class Replay extends Scene {
         return;
       }
       case 'arena_shrink_started':
-        this.setAnnouncer('The paper folds inward — nowhere left to hide!');
+        this.announceReplayCommentary({
+          kind: 'arena-shrink',
+          tick: event.tick,
+        });
         this.soundboard.play('shrink');
         this.showArenaMoment('THE PAGE FOLDS IN!', UI.coralText);
         return;
@@ -896,15 +1017,10 @@ export class Replay extends Scene {
   ): void {
     switch (event.kind) {
       case 'battle_started': {
-        const powerA = getShapePowerSignatureName(
-          this.fighterA.scribbit.element,
-          this.fighterA.primaryPower
-        );
-        const powerB = getShapePowerSignatureName(
-          this.fighterB.scribbit.element,
-          this.fighterB.primaryPower
-        );
-        this.setAnnouncer(`${powerA} meets ${powerB} — the drawings decide!`);
+        this.announceReplayCommentary({
+          kind: 'battle-start',
+          tick: event.tick,
+        });
         return;
       }
       case 'echo_created': {
@@ -919,12 +1035,11 @@ export class Replay extends Scene {
           ELEMENT_STYLES[actor.scribbit.element].particle,
           false
         );
-        this.setAnnouncer(
-          `${actor.scribbit.name} leaves a living ${getShapePowerSignatureName(
-            actor.scribbit.element,
-            'colorburst'
-          )} echo!`
-        );
+        this.announceReplayCommentary({
+          kind: 'echo-created',
+          tick: event.tick,
+          actor: event.actor,
+        });
         return;
       }
       case 'echo_fired': {
@@ -941,12 +1056,11 @@ export class Replay extends Scene {
           ELEMENT_STYLES[actor.scribbit.element].particle,
           true
         );
-        this.setAnnouncer(
-          `${actor.scribbit.name}'s ${getShapePowerSignatureName(
-            actor.scribbit.element,
-            'colorburst'
-          )} echo fires!`
-        );
+        this.announceReplayCommentary({
+          kind: 'echo-fired',
+          tick: event.tick,
+          actor: event.actor,
+        });
         return;
       }
       case 'echo_shattered': {
@@ -961,16 +1075,18 @@ export class Replay extends Scene {
           ELEMENT_STYLES[owner.scribbit.element].particle,
           true
         );
-        this.setAnnouncer(
-          `${owner.scribbit.name}'s ${getShapePowerSignatureName(
-            owner.scribbit.element,
-            'colorburst'
-          )} echo shatters!`
-        );
+        this.announceReplayCommentary({
+          kind: 'echo-shattered',
+          tick: event.tick,
+          actor: event.owner,
+        });
         return;
       }
       case 'late_fight_started':
-        this.setAnnouncer('SUDDEN SCRIBBLE! Powers recharge faster!');
+        this.announceReplayCommentary({
+          kind: 'late-fight',
+          tick: event.tick,
+        });
         this.soundboard.play('sudden');
         this.showArenaMoment('SUDDEN SCRIBBLE!', UI.goldText);
         return;
@@ -1251,8 +1367,15 @@ export class Replay extends Scene {
       true
     ).setDepth(14);
     echoLabel.setStroke('#2b2016', 6);
-    const wallClockDuration = this.reduceMotion ? 220 : 420;
-    const sceneDuration = wallClockDuration * this.speed;
+    if (this.reduceMotion) {
+      this.time.delayedCall(420, () => {
+        ghost.destroy();
+        ring.destroy();
+        echoLabel.destroy();
+      });
+      return;
+    }
+    const sceneDuration = 420 * this.speed;
     this.tweens.add({
       targets: ghost,
       alpha: 0,
@@ -1315,8 +1438,15 @@ export class Replay extends Scene {
       .setDepth(30)
       .setWordWrapWidth(firstReveal ? 260 : 240)
       .setLineSpacing(-4)
-      .setScale(0);
+      .setScale(this.reduceMotion ? 1 : 0);
     calloutLabel.setStroke('#fff7e8', firstReveal ? 9 : 6);
+    if (this.reduceMotion) {
+      this.time.delayedCall(firstReveal ? 900 : 520, () => {
+        calloutLabel.destroy();
+      });
+      this.shapePowerBurst(actor, style.particle);
+      return;
+    }
     this.tweens.add({
       targets: calloutLabel,
       scale: 1,
@@ -1384,7 +1514,12 @@ export class Replay extends Scene {
       this.battleLayout.viewportWidth * (fighter.side === 'a' ? 0.22 : 0.78);
     const boundedY = Math.min(
       this.battleLayout.arenaBottom - 120,
-      Math.max(this.battleLayout.arenaTop + 100, fighter.screenY - 112)
+      Math.max(
+        this.battleLayout.fighterPanelTop +
+          this.battleLayout.fighterPanelHeight +
+          100,
+        fighter.screenY - 112
+      )
     );
     this.showCombatRead(laneX, boundedY, title, detail, color);
   }
@@ -1425,8 +1560,91 @@ export class Replay extends Scene {
     });
   }
 
-  private setAnnouncer(text: string): void {
+  private displayInkcastText(text: string): void {
     this.battleHud?.announce(text);
+    this.inkcastDwellRemainingMilliseconds =
+      INKCAST_WALL_CLOCK_DWELL_MILLISECONDS;
+  }
+
+  private replayCommentaryContext(): ReplayCommentaryContext {
+    return {
+      battleId: this.transcript?.battleId ?? this.report.id,
+      fighters: {
+        a: {
+          id: this.fighterA.scribbit.id,
+          name: this.fighterA.scribbit.name,
+          element: this.fighterA.scribbit.element,
+          primaryPower: this.fighterA.primaryPower,
+        },
+        b: {
+          id: this.fighterB.scribbit.id,
+          name: this.fighterB.scribbit.name,
+          element: this.fighterB.scribbit.element,
+          primaryPower: this.fighterB.primaryPower,
+        },
+      },
+    };
+  }
+
+  private announceReplayCommentary(fact: ReplayCommentaryFact): void {
+    const candidate = createInkcastEditorialCandidate(
+      fact,
+      authorReplayCommentary(this.replayCommentaryContext(), fact),
+      this.inkcastSequence
+    );
+    this.inkcastSequence += 1;
+    const candidatesAtTick = this.inkcastCandidatesByTick.get(fact.tick) ?? [];
+    candidatesAtTick.push(candidate);
+    this.inkcastCandidatesByTick.set(fact.tick, candidatesAtTick);
+  }
+
+  private flushInkcastCandidatesByTick(): void {
+    const orderedTicks = [...this.inkcastCandidatesByTick.keys()].sort(
+      (left, right) => left - right
+    );
+    for (const tick of orderedTicks) {
+      const chosenCandidate = chooseInkcastCandidateForSimulationTick(
+        this.inkcastCandidatesByTick.get(tick) ?? []
+      );
+      this.inkcastCandidatesByTick.delete(tick);
+      if (!chosenCandidate) continue;
+      if (
+        this.inkcastDwellRemainingMilliseconds <= 0 &&
+        this.pendingInkcastCandidates.length === 0
+      ) {
+        this.displayInkcastText(chosenCandidate.authoredText);
+        continue;
+      }
+      this.pendingInkcastCandidates = enqueueInkcastEditorialCandidate(
+        this.pendingInkcastCandidates,
+        chosenCandidate
+      );
+    }
+  }
+
+  private advanceInkcastEditorialQueue(deltaMilliseconds: number): void {
+    this.inkcastDwellRemainingMilliseconds = Math.max(
+      0,
+      this.inkcastDwellRemainingMilliseconds - Math.max(0, deltaMilliseconds)
+    );
+    if (
+      this.inkcastDwellRemainingMilliseconds > 0 ||
+      this.pendingInkcastCandidates.length === 0
+    ) {
+      return;
+    }
+    const nextCandidate = this.pendingInkcastCandidates[0];
+    this.pendingInkcastCandidates = Object.freeze(
+      this.pendingInkcastCandidates.slice(1)
+    );
+    if (nextCandidate) this.displayInkcastText(nextCandidate.authoredText);
+  }
+
+  private clearInkcastEditorialState(): void {
+    this.inkcastCandidatesByTick.clear();
+    this.pendingInkcastCandidates = Object.freeze([]);
+    this.inkcastDwellRemainingMilliseconds = 0;
+    this.inkcastSequence = 0;
   }
 
   private showArenaMoment(text: string, color: string): void {
@@ -1548,8 +1766,12 @@ export class Replay extends Scene {
       Math.round((crit ? 60 : 42) * emphasisScale),
       crit ? '#ffd447' : '#ff5a3d',
       true
-    ).setDepth(20);
+    ).setDepth(29);
     text.setStroke('#2b2016', crit ? 7 : 5);
+    if (this.reduceMotion) {
+      this.time.delayedCall(640, () => text.destroy());
+      return;
+    }
     this.tweens.add({
       targets: text,
       y: y - 160,
@@ -1578,6 +1800,11 @@ export class Replay extends Scene {
 
   private stopPlaybackPresentation(): void {
     this.playbackRunning = false;
+    this.time.timeScale = 1;
+    this.tweens.timeScale = 1;
+    this.impactHoldMilliseconds = 0;
+    this.recordDebugPlaybackState('result');
+    this.clearInkcastEditorialState();
     this.shapeEffects.clear();
     this.hidePowerGhosts();
     this.arenaFloorEffects?.clear();
@@ -1681,6 +1908,10 @@ export class Replay extends Scene {
     this.stopPlaybackPresentation();
 
     const recap = planBattleRecap(transcript);
+    const founderOutcome = authorFounderBattleOutcome(
+      this.replayCommentaryContext(),
+      recap.winnerSlot
+    );
     const winner = this.fighterForSlot(recap.winnerSlot);
     const loser = this.fighterForSlot(recap.loserSlot);
     const crumple = (fighter: ReplayFighterRuntime): void => {
@@ -1699,13 +1930,14 @@ export class Replay extends Scene {
 
     // The recap and choices are immediate. Finish poses can animate behind
     // them without making reduced-motion or impatient viewers wait.
-    this.showOutcome(winner, loser, recap);
+    this.showOutcome(winner, loser, recap, founderOutcome);
   }
 
   private showOutcome(
     winner: ReplayFighterRuntime,
     loser: ReplayFighterRuntime,
-    recap: BattleRecapPlan
+    recap: BattleRecapPlan,
+    founderOutcome: string | null
   ): void {
     // Outcome controls occupy the ticker area; hide live-combat chrome before
     // showing the post-battle choices.
@@ -1719,9 +1951,9 @@ export class Replay extends Scene {
     const arena = getArena(this);
     const myLoss = this.isMine(loser.scribbit) && !this.isMine(winner.scribbit);
     if (myLoss && arena) {
-      this.showLossCard(loser.scribbit, arena.dayNumber, recap);
+      this.showLossCard(loser.scribbit, arena.dayNumber, recap, founderOutcome);
     } else {
-      this.showWinCeremony(winner, recap);
+      this.showWinCeremony(winner, recap, founderOutcome);
     }
   }
 
@@ -1739,7 +1971,7 @@ export class Replay extends Scene {
     const session = getPracticeSession(this);
     this.battleHud?.setHitPointBarsVisible(false);
     winner.sprite?.celebrate();
-    if (isPracticeSessionComplete(session)) {
+    if (planPracticeOutcome(session).celebrateCompletion) {
       this.time.delayedCall(220, () => {
         if (this.scene.isActive()) this.soundboard.play('win');
       });
@@ -1759,21 +1991,32 @@ export class Replay extends Scene {
 
   private showWinCeremony(
     winner: ReplayFighterRuntime,
-    recap: BattleRecapPlan
+    recap: BattleRecapPlan,
+    founderOutcome: string | null
   ): void {
     const { width, height } = this.scale;
     const usesVerdictCeremony = recap.finishPresentation === 'double-knockout';
     const canChooseRival =
       this.report.kind === 'exhibition' && this.isMine(winner.scribbit);
     const canBackContender = !getArena(this)?.myBackedScribbitId;
+    const victoryY = height * 0.36;
+    const losingFighter =
+      winner === this.fighterA ? this.fighterB : this.fighterA;
+    const outcomeStack = planReplayOutcomeStack({
+      viewportHeight: height,
+      canChooseRival,
+      canBackContender,
+      hasFounderOutcome: founderOutcome !== null,
+    });
     this.time.delayedCall(260, () => {
       if (this.scene.isActive()) this.soundboard.play('win');
     });
     if (winner.sprite && !usesVerdictCeremony) {
+      losingFighter.sprite?.container.setAlpha(0.34);
       this.tweens.add({
         targets: winner.sprite.container,
         x: width / 2,
-        y: height * 0.44,
+        y: victoryY,
         duration: this.reduceMotion ? 0 : 420,
         ease: 'Cubic.easeOut',
         onComplete: () => winner.sprite?.celebrate(),
@@ -1781,21 +2024,42 @@ export class Replay extends Scene {
     }
     createBattleRecapCard(this, recap, {
       x: width / 2,
-      y: height - (canChooseRival && canBackContender ? 455 : 405),
+      y: outcomeStack.recapY,
       width: width - 70,
       depth: 60,
     });
+    if (founderOutcome && outcomeStack.founderOutcomeY !== null) {
+      label(
+        this,
+        width / 2,
+        outcomeStack.founderOutcomeY,
+        founderOutcome,
+        20,
+        UI.coralText,
+        true
+      )
+        .setWordWrapWidth(width - 150, true)
+        .setLineSpacing(-2)
+        .setDepth(61);
+    }
     // Only show a reward the server says this exact battle granted. Historical
     // replays and later practice wins must never imply a second payout.
     if (this.isMine(winner.scribbit) && (this.report.inkAwarded ?? 0) > 0) {
-      floatReward(
-        this,
-        width / 2,
-        height * 0.44,
-        `Earned +${this.report.inkAwarded} 🫙`,
-        UI.goldText,
-        62
-      );
+      const rewardText = `Earned +${this.report.inkAwarded} 🫙`;
+      if (this.reduceMotion) {
+        const reward = label(
+          this,
+          width / 2,
+          victoryY - 110,
+          rewardText,
+          28,
+          UI.goldText,
+          true
+        ).setDepth(62);
+        reward.setStroke(UI.cream, 7);
+      } else {
+        floatReward(this, width / 2, victoryY, rewardText, UI.goldText, 62);
+      }
     }
 
     if (!this.reduceMotion && !usesVerdictCeremony) {
@@ -1811,20 +2075,20 @@ export class Replay extends Scene {
       this.time.delayedCall(1700, () => emitter.destroy());
     }
 
-    if (canChooseRival) {
+    if (canChooseRival && outcomeStack.rivalChoicesY !== null) {
       createPostFightSparringChoices(this, {
         x: width / 2,
-        y: canBackContender ? height - 255 : height - 205,
+        y: outcomeStack.rivalChoicesY,
         width: width - 200,
-        onRivals: () => this.openRivalDraft(winner.scribbit),
+        onRivals: () => this.openRivalDraft(winner.scribbit, recap.highlight),
         onPractice: () => this.startPractice(),
       }).setDepth(61);
     }
-    if (canBackContender) {
+    if (canBackContender && outcomeStack.backContenderButtonY !== null) {
       const next = button(
         this,
         width / 2,
-        canChooseRival ? height - 145 : height - 210,
+        outcomeStack.backContenderButtonY,
         '🎯 Back a contender tonight →',
         () => this.goBackEntrants(),
         width - 200,
@@ -1836,7 +2100,7 @@ export class Replay extends Scene {
     const back = ghostButton(
       this,
       width / 2,
-      canChooseRival && canBackContender ? height - 55 : height - 96,
+      outcomeStack.backButtonY,
       this.returnButtonLabel(),
       () => this.exit(),
       320
@@ -1849,7 +2113,8 @@ export class Replay extends Scene {
   private showLossCard(
     mine: Scribbit,
     currentDay: number,
-    recap: BattleRecapPlan
+    recap: BattleRecapPlan,
+    founderOutcome: string | null
   ): void {
     const { width, height } = this.scale;
     const daysLeft = daysLeftFor(mine, currentDay);
@@ -1870,11 +2135,26 @@ export class Replay extends Scene {
       top: recapTop,
       width: width - 110,
     });
+    if (founderOutcome) {
+      card.add(
+        label(
+          this,
+          0,
+          recapTop + recapHeight + 22,
+          founderOutcome,
+          18,
+          UI.coralText,
+          true
+        )
+          .setWordWrapWidth(width - 150, true)
+          .setLineSpacing(-2)
+      );
+    }
     card.add(
       label(
         this,
         0,
-        recapTop + recapHeight + 34,
+        recapTop + recapHeight + (founderOutcome ? 72 : 34),
         daysLeft > 0
           ? `Still has ${daysLeft} day${daysLeft === 1 ? '' : 's'} of life — plenty of time to bounce back.`
           : `This is ${mine.name}'s last day. Make it count.`,
@@ -1889,7 +2169,7 @@ export class Replay extends Scene {
         x: 0,
         y: top + 400,
         width: width - 200,
-        onRivals: () => this.openRivalDraft(mine),
+        onRivals: () => this.openRivalDraft(mine, recap.highlight),
         onPractice: () => this.startPractice(),
       })
     );
@@ -1928,7 +2208,10 @@ export class Replay extends Scene {
     fadeToScene(this, 'Draw', { mode: 'practice' });
   }
 
-  private openRivalDraft(mine: Scribbit): void {
+  private openRivalDraft(
+    mine: Scribbit,
+    lastBoutHighlight: BattleRecapPlan['highlight']
+  ): void {
     if (this.rematchLoading || this.rivalDraft) return;
     this.rematchLoading = true;
     showToast('Pinning up three fair rivals…');
@@ -1956,7 +2239,9 @@ export class Replay extends Scene {
           challenger: result.data.challenger,
           rivals: result.data.rivals,
           forecast: arena.forecast,
-          onChoose: (rival) => this.fightRival(mine, rival),
+          lastBoutHighlight,
+          onChoose: (rival, plan) =>
+            this.fightRival(mine, rival, plan.challengeLine),
           onClose: () => {
             this.rivalDraft?.destroy();
             this.rivalDraft = null;
@@ -1970,10 +2255,18 @@ export class Replay extends Scene {
       });
   }
 
-  private fightRival(mine: Scribbit, rival: Scribbit): void {
+  private fightRival(
+    mine: Scribbit,
+    rival: Scribbit,
+    challengeLine: string | null
+  ): void {
     if (this.rematchLoading) return;
     this.rematchLoading = true;
-    showToast(`${mine.name} challenges ${rival.name}…`);
+    showToast(
+      challengeLine
+        ? `${rival.name}: “${challengeLine}”`
+        : `${mine.name} challenges ${rival.name}…`
+    );
     void spar(mine.id, rival.id)
       .then((result) => {
         if (!this.scene.isActive()) return;
@@ -1982,8 +2275,15 @@ export class Replay extends Scene {
           showToast(result.error);
           return;
         }
+        this.rivalDraft?.destroy();
+        this.rivalDraft = null;
         setReplay(this, result.data, 'ArenaHome');
-        this.scene.restart();
+        showVsCeremony(this, {
+          fighterA: result.data.a,
+          fighterB: result.data.b,
+          battleKind: result.data.kind,
+          onComplete: () => this.scene.restart(),
+        });
       })
       .catch(() => {
         if (!this.scene.isActive()) return;

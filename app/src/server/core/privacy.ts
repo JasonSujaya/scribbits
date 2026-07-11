@@ -35,6 +35,7 @@ import {
 } from './moderation';
 import { getUserPlayStreakKey } from './streak';
 import { getLegacyIndexVersionStorageKey, getLegacySeenDayKey } from './legacy';
+import { getFounderChronicleKey } from './founderChronicle';
 
 const userBeliefTargetsTtlSeconds = 30 * 24 * 60 * 60;
 
@@ -124,7 +125,8 @@ export const deletePlayerData = async (
     getUserPlayStreakKey(userId),
     getUserHiddenScribbitsKey(userId),
     getUserReportedScribbitsKey(userId),
-    getUserBeliefTargetsKey(userId)
+    getUserBeliefTargetsKey(userId),
+    getFounderChronicleKey(userId)
   );
   await storage.zRem(getCloutKey(), [userId]);
   await storage.hDel(getCloutUsernameKey(), [userId]);

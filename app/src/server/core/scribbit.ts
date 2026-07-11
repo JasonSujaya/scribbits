@@ -102,9 +102,10 @@ export type ValidatedScribbitDraft = {
   accessories: AttachedAccessory[];
 };
 
-export type DailyFlags = Pick<ArenaState, 'drawnToday' | 'enteredToday'> & {
-  bossChallengedToday: boolean;
-};
+export type DailyFlags = Pick<
+  ArenaState,
+  'drawnToday' | 'enteredToday' | 'bossChallengedToday'
+>;
 
 export type DailyFlagField = 'drawn' | 'entered' | 'bossChallenge';
 

@@ -79,6 +79,10 @@ import {
 } from '../core/rumble';
 import { createPracticeBattle } from '../core/practice';
 import {
+  loadFounderChronicle,
+  recordFounderChronicleBattle,
+} from '../core/founderChronicle';
+import {
   chooseFoundingSparOpponent,
   selectFoundingSparRivalSlate,
 } from '../core/species';
@@ -421,6 +425,7 @@ api.get('/arena', async (c) => {
     let myScribbits: Scribbit[] = [];
     let drawnToday = false;
     let enteredToday = false;
+    let bossChallengedToday = false;
     let myBackedScribbitId: string | null = null;
     let playStreakDays = 0;
     let myClout = 0;
@@ -428,6 +433,7 @@ api.get('/arena', async (c) => {
     let myPens: string[] = [];
     let nextCapsuleCost = CAPSULE_FIRST_DAILY_COST;
     let capsuleProgress = createCapsuleProgress(0, 0, 0);
+    let founderChronicle: ArenaState['founderChronicle'] = { entries: [] };
     let legacyReturnReceipt: ArenaState['legacyReturnReceipt'] = null;
 
     if (player) {
@@ -437,6 +443,7 @@ api.get('/arena', async (c) => {
       myScribbits = await getAliveScribbitsForUser(redis, player.userId);
       drawnToday = dailyFlags.drawnToday;
       enteredToday = dailyFlags.enteredToday;
+      bossChallengedToday = dailyFlags.bossChallengedToday;
       myBackedScribbitId = await getBackedScribbitId(
         redis,
         dayNumber,
@@ -455,6 +462,7 @@ api.get('/arena', async (c) => {
         player.userId,
         dayNumber
       );
+      founderChronicle = await loadFounderChronicle(redis, player.userId);
       legacyReturnReceipt = await loadLegacyReturnReceipt(redis, player.userId);
     }
 
@@ -514,6 +522,7 @@ api.get('/arena', async (c) => {
       myScribbits,
       drawnToday,
       enteredToday,
+      bossChallengedToday,
       rumbleEntrants: rumbleEntrantCount,
       communityLegendCount: await getCommunityLegendCount(redis),
       rumbleResolvesAt: getNextUtcDayStartMs(now),
@@ -525,6 +534,7 @@ api.get('/arena', async (c) => {
       myPens,
       nextCapsuleCost,
       capsuleProgress,
+      founderChronicle,
       lastRumbleReceipt,
       legacyReturnReceipt,
     });
@@ -1124,6 +1134,14 @@ api.post('/spar', async (c) => {
       ...(inkAwarded > 0 ? { inkAwarded } : {}),
     };
     await saveBattleReport(redis, rewardedReport, Date.now());
+    await runNonCriticalSideEffect('Founder Chronicle record', () =>
+      recordFounderChronicleBattle(
+        redis,
+        player.userId,
+        rewardedReport,
+        challenger.id
+      )
+    );
     await recordDailyPlay(redis, player.userId, now);
     return c.json<BattleReport>(rewardedReport);
   } catch (error) {
@@ -1619,6 +1637,14 @@ api.post('/boss-challenge', async (c) => {
       challenger.id,
       report.winner === 'a' ? 'win' : 'loss',
       2
+    );
+    await runNonCriticalSideEffect('Founder Chronicle record', () =>
+      recordFounderChronicleBattle(
+        redis,
+        player.userId,
+        report,
+        challenger.id
+      )
     );
     claimedBossChallenge = null;
     await runNonCriticalSideEffect('Daily play record', () =>

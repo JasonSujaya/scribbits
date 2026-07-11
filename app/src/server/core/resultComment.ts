@@ -1,4 +1,5 @@
 import type { Forecast, Scribbit } from '../../shared/arena';
+import { getFoundingScribbitDefinition } from '../../shared/founders';
 import type { CloutPayoutResult } from './clout';
 
 export type RumbleResultSummary = {
@@ -12,7 +13,8 @@ export type RumbleResultSummary = {
 };
 
 const creditedScribbitName = (scribbit: Scribbit): string => {
-  if (scribbit.isFounding) return `**${scribbit.name}** (Arena founding Scribbit)`;
+  if (scribbit.isFounding)
+    return `**${scribbit.name}** (Arena founding Scribbit)`;
   // The in-app card carries reportable Reddit attribution. Result comments use
   // the Scribbit identity only so a later player-data deletion never leaves a
   // username behind in an app-authored Reddit comment.
@@ -35,6 +37,12 @@ export const formatRumbleResultComment = (
     '',
     `👑 Champion: ${creditedScribbitName(summary.champion)}`,
   ];
+  const championFounder = getFoundingScribbitDefinition(summary.champion.id);
+  if (championFounder) {
+    lines.push(
+      `> ${championFounder.name}: “${championFounder.personality.rumbleLine}”`
+    );
+  }
 
   if (summary.runnerUp) {
     lines.push(`🥈 Runner-up: ${creditedScribbitName(summary.runnerUp)}`);

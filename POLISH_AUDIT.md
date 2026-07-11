@@ -82,7 +82,7 @@ sidegrades: their colors can change the 100-point build split, but never its sum
    mutation path.
 6. Browser proof covered all finish styles, title persistence, two Legacy pages,
    Older/Newer navigation, long-name detail, receipt sequencing, and a clean
-   runtime console. The deterministic gate now covers 78 simulation groups,
+   runtime console. The deterministic gate now covers 83 simulation groups,
    including expiry/XP race fencing, idempotent Rumble standings, retryable
    and inventory-watched title snapshots, and insertion-stable Legacy cursors.
 
@@ -99,8 +99,9 @@ sidegrades: their colors can change the 100-point build split, but never its sum
    chain. Each secondary action names its real destination, and standalone
    replays still return to the Arena.
 4. After today's drawing, the Arena replaces the broad progress panel with one
-   deterministic Next Goal: enter, Back, open a ready capsule, perform the first
-   available care action, or return after the Rumble.
+   deterministic Next Goal: enter, Back, take the unused Champion Contract, open
+   a ready capsule, perform the first available care action, or return after the
+   Rumble.
 5. The card exposes only useful evidence: XP to next level, Belief/25, days
    left, Ink to capsule, and permanent collection progress. Browser proof
    confirmed capsule-to-care progression and exact +XP/+1 Ink care rewards.
@@ -132,16 +133,19 @@ sidegrades: their colors can change the 100-point build split, but never its sum
    outcome-neutral cheer meter are gone. New reports no longer generate the
    deprecated turn-style projection; old event-only records remain readable as
    clearly labeled archived-result summaries during migration.
-8. The live fight now reads as a paper sports broadcast rather than a static
-   report: one expanded movement field replaces fixed podiums, drawings render
-   larger over moving shadows, mirrored HP bars flank an authoritative countdown,
-   and a compact Inkcast ticker replaces the oversized announcer card.
+8. The live fight now reads as its own Inkcast broadcast rather than a static
+   report or Practice grid: a deterministic torn page and edge brush ambience
+   frame one clipping-safe movement field; 220px drawings render over moving
+   shadows; angled numeric-HP panels flank a smaller authoritative clock; and an
+   explicit server-locked rail plus high-contrast lower third replace turn cards.
+   Fighter overlap depth follows screen position, combat reads clear the HUD,
+   result actions stay separated, and 4× playback resets before the ceremony.
 9. Founding opponents no longer collapse into generic round fallback blobs.
    Their deterministic procedural anatomy varies continuously with all four
    stats, while the dominant stat supplies the strongest readable silhouette cue.
-10. Every element x Shape Power pairing now has one authored signature identity,
-    while transcript-derived dodge, dead-zone, Halo Guard, and element stamps
-    expose the simulator's existing counterplay without altering combat math.
+10. Every element x Shape Power pairing now has one authored signature identity.
+    Replay uses neutral no-clean-hit copy unless explicit shield or element events
+    prove more, so presentation does not invent a dodge, counter, or miss reason.
 11. Replay event presentation is split into exhaustive lifecycle, damage/status,
     arena/collision, and battle-flow presenters. Unknown powers fail closed,
     truncated transcripts reconcile from authoritative checkpoints, and fixed
@@ -150,7 +154,7 @@ sidegrades: their colors can change the 100-point build split, but never its sum
     saved replay, while unbounded future schedules still fail validation.
 12. Final checkpoints must match authoritative result HP and fighter order.
     Barrier hits carry exact source and activation metadata, so body contact can
-    no longer suppress a truthful Shape Power miss/counter callout. Legacy
+    no longer suppress a truthful Shape Power no-clean-hit callout. Legacy
     metadata-less barrier events remain visual but make no connection claim.
 13. Swiss pairing now repairs rematches across completed score groups without
     worsening record quality, then closest-level quality. A deterministic
@@ -185,9 +189,45 @@ sidegrades: their colors can change the 100-point build split, but never its sum
     Rumble, history, rewards, or Legacy. Request size/rate/concurrency guards and
     a pre-storage rejection backstop protect the zero-progression boundary.
     Production/mock parity, art-bound transient IDs, session de-duplication, and
-    persistence rejection bring the pure verification gate to 78 groups. Mobile
-    WebGL proof covers the complete 0/4 -> fight -> recap -> 1/4 loop with zero
-    runtime errors, while exact Arena, inventory, and history hashes stay fixed.
+    persistence rejection, commentary truth checks, and matchup coverage bring the
+    pure verification gate to 83 groups. Mobile
+    WebGL proof covers four genuinely different drawings through the complete
+    0/4 -> 4/4 loop, while exact Arena, inventory, and history hashes stay fixed.
+21. The existing compact ticker now authors deterministic power, miss, hit,
+    shield, echo, arena, and late-fight variants from authoritative facts. The
+    content layer cannot schedule events or alter combat state. A pure queue now
+    selects one strongest candidate per simulation tick, holds it for 900ms of
+    wall-clock time, and retains at most two pending beats. Same-tick chains and
+    4x playback cannot overwrite every headline; Colorburst no longer claims a
+    miss before its delayed echo resolves.
+22. The fourth unique Practice power now lands on one gold completion card with
+    all four checks and a restrained first-completion burst. Repeated powers after
+    4/4 remain replayable but cannot replay the completion celebration.
+23. Every current battle path now enters through one mode-specific paper VS
+    ceremony. It reveals both exact signatures and one mechanics-not-win-odds card
+    from an exhaustive ten-pair Shape Power matrix; deterministic tests cover all
+    sixteen ordered combinations. WebGL and Canvas Arena spars keep the larger card
+    readable, and an actual Rival Draft choice now receives the ceremony instead of
+    bypassing it, all with zero captured runtime errors.
+24. The twenty founders are now characters rather than anonymous stat blocks.
+    One immutable shared catalog preserves every prior roster value while adding
+    160 unique, bounded strings: epithet, challenge, two openings, signature
+    reaction, victory, defeat, and Rumble voice per founder. Existing Rival Draft,
+    VS, pre-FIGHT ticker, post-recap whitespace, scouting receipt, and Reddit
+    result moments carry the content without new persistence, combat events, or
+    authority. Default portrait and 320x568 WebGL proof cover the full founder
+    spar/rematch loop with reachable actions, no overlap, and empty browser errors;
+    reduced motion now keeps the full ceremony reading dwell and skips the draft pop.
+25. The existing once-daily boss fight now reads as a complete Champion Contract.
+    The server's daily flag reaches `ArenaState`; founder or Shape-Power identity,
+    exact signature, honest conditional +2 XP, and a paper challenger picker replace
+    the generic always-live CTA. The local mock enforces the same one-shot rule and
+    outcome progression. Default and 320x568 WebGL proof cover selection, VS,
+    replay/Skip, recap, return, a noninteractive completed stamp, and empty errors.
+26. Rival Draft now preserves emotional continuity instead of discarding the prior
+    bout. Its header carries the authoritative FINAL/BIGGEST SPLAT, every founder's
+    challenge is visible on the card, and full-size FIGHT buttons remain reachable at
+    320x568. Narrow quote lanes prevent content from drawing beneath those targets.
 
 ## Current polish gap
 
@@ -195,16 +235,22 @@ The return, collection, title, completed-run, reward-reveal, battle-juice,
 founding-content, bounded-growth, chosen-rival, and repeatable-Practice loops now
 have truthful homes. All four Shape Powers have distinct transcript-driven
 vignettes, sixteen elemental signature identities, production-seeded contracts,
-and readable counter stamps.
-The paper-broadcast HUD, 4x/Skip flow, transcript-derived Inkcast Recap, truthful
-finish poses, archived Canvas summary, first-session stat-shaped founder fight,
+verified pre-fight matchup briefs, transcript-bounded combat callouts, and twenty
+canonical founder story packs. Champion Contracts now have truthful open/completed
+states, and the Inkcast editorial queue makes authored moments readable at 1x–4x.
+The live Inkcast HUD, 4x/Skip/result-speed handoff, transcript-derived Inkcast
+Recap, truthful finish poses, reduced-motion and Canvas fallbacks, chosen-rival
+loop, first-session stat-shaped founder fight,
 and six-page relic collection are browser-proven with zero captured runtime
 errors. The Practice Lab adds repeatability without a second progression track:
-its checklist is session-only and its reports cannot reach battle storage. The
+its checklist is session-only, its first 4/4 payoff is now browser-proven, and
+its reports cannot reach battle storage. The
 strongest remaining proof gap is an installed Reddit playtest and a concise demo
 capture using organic player drawings rather than curated fixtures. Progression
 should stay expressive and collectible rather than add combat power or another
-currency.
+currency. The strongest remaining content opportunity is a bounded player-level
+Founder Chronicle—remembering met, respected, and later-day rematch milestones—so
+the existing twenty characters become relationships rather than disposable fights.
 
 ## Completion standard
 
@@ -224,16 +270,23 @@ Devvit upload is intentionally outside this polish goal.
 
 ## Maintainability queue after the collection book
 
-1. Split the 1,900+ line combat engine behind the unchanged `simulateCombat`
+1. Before expanding battle copy again, version an immutable Battle Story Pack and
+   add authoritative ability outcome metadata. Historical replay wording must not
+   silently change when templates are reordered, and clients must not infer delayed
+   follow-up outcomes.
+2. Move matchup facts beside combat configuration or derive them from it. The current
+   client matrix repeats values such as reduction, dash count, echo, and recoil that
+   can drift while prose-only tests remain green.
+3. Split the 1,900+ line combat engine behind the unchanged `simulateCombat`
    facade when a real balance/content boundary justifies it. Fixed-seed golden
    hashes already protect both production and mock transcripts.
-2. Extract pure capsule rules and the legacy receipt codec from `inkStore.ts`
+4. Extract pure capsule rules and the legacy receipt codec from `inkStore.ts`
    without changing Redis keys, receipt JSON, or transaction ordering.
-3. Add route-level contract coverage for replay authorization, receipt-day
+5. Add route-level contract coverage for replay authorization, receipt-day
    bounds, hidden fighters, and unavailable/stale featured reports.
-4. Split the broad Arena route/scene only at the now-proven receipt, Next Goal,
+6. Split the broad Arena route/scene only at the now-proven receipt, Next Goal,
    bracket, and roster boundaries, preserving the current player flow.
-5. If Draw gains another mode, extract its official/practice copy and completion
+7. If Draw gains another mode, extract its official/practice copy and completion
    choices behind a pure presentation plan before adding more scene branches.
 
 These are sequenced after the current content loop because the shared cosmetic

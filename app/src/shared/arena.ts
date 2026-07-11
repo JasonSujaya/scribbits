@@ -99,6 +99,25 @@ export type LegacyReturnReceipt = {
   newestArchivedDay: number;
 };
 
+// Permanent, player-level relationship progress with the fixed founding cast.
+// It grants no combat power or currency: the reward is remembering real direct
+// encounters after an individual player Scribbit has faded.
+export type FounderChronicleMilestone = 'met' | 'respected' | 'rematched';
+export type FounderChronicleEntry = {
+  founderId: `founding-${string}`;
+  metDay: number;
+  respectedDay: number | null; // first direct victory over this founder
+  rematchedDay: number | null; // first direct fight on a later Arena day
+};
+export type FounderChronicle = {
+  entries: FounderChronicleEntry[]; // at most the 20 canonical founders
+};
+export type FounderChronicleUnlock = {
+  founderId: `founding-${string}`;
+  milestone: FounderChronicleMilestone;
+  day: number;
+};
+
 export type CapsuleProgress = {
   pullCount: number;
   pityRemaining: number;
@@ -115,6 +134,7 @@ export type ArenaState = {
   myScribbits: Scribbit[]; // alive, newest first, max 3
   drawnToday: boolean;
   enteredToday: boolean; // rumble entry used
+  bossChallengedToday: boolean; // one authoritative Champion Challenge used
   rumbleEntrants: number;
   communityLegendCount: number;
   rumbleResolvesAt: number; // epoch ms — client renders live countdown
@@ -126,6 +146,7 @@ export type ArenaState = {
   myPens: string[]; // unlocked palette pen ids
   nextCapsuleCost: number; // authoritative current price (daily discount already applied)
   capsuleProgress: CapsuleProgress;
+  founderChronicle: FounderChronicle;
   lastRumbleReceipt: DailyRumbleReceipt | null; // yesterday's Back payoff, if the player made a pick
   legacyReturnReceipt: LegacyReturnReceipt | null; // unseen expiry payoff, cleared explicitly
 };
@@ -307,8 +328,9 @@ export type LegacyCardsState = {
 
 export type ArenaErrorResponse = { status: 'error'; message: string };
 
-// Element triangle: attacker deals +25% to prey, -25% to predator.
-// ember > moss > storm > tide > ember
+// Legacy relation retained for archived-report compatibility helpers only.
+// Fixed-tick combat does not apply this +/-25% triangle; elements now provide
+// Ember burn, Tide knockback, Moss barrier, and Storm timing payloads.
 export const ELEMENT_PREY: Record<Element, Element> = {
   ember: 'moss',
   moss: 'storm',

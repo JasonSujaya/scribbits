@@ -8,7 +8,7 @@ export type ShapePowerContent = Readonly<{
   displayName: string;
   revealLine: string;
   playerHint: string;
-  missCallout: string;
+  noCleanHitCallout: string;
 }>;
 
 export type ElementBattleCue = Readonly<{
@@ -30,25 +30,25 @@ export const SHAPE_POWER_CONTENT_BY_POWER: Readonly<
     displayName: 'Inkquake',
     revealLine: 'Shockwave + knockback',
     playerHint: 'Filled bodies launch an expanding shockwave.',
-    missCallout: 'RING DODGED!',
+    noCleanHitCallout: 'RING ENDS',
   }),
   nib_halo: Object.freeze({
     displayName: 'Nib Halo',
     revealLine: '3 quills + dead zone',
     playerHint: 'Jagged edges summon three rotating quills.',
-    missCallout: 'DEAD ZONE!',
+    noCleanHitCallout: 'NIBS SETTLE',
   }),
   smearstep: Object.freeze({
     displayName: 'Smearstep',
     revealLine: 'Predictive double dash',
     playerHint: 'Compact shapes predict and dash twice.',
-    missCallout: 'DASH EVADED!',
+    noCleanHitCallout: 'DASH ENDS',
   }),
   colorburst: Object.freeze({
     displayName: 'Colorburst',
     revealLine: 'Cone + delayed echo',
     playerHint: 'More colors fire a cone and delayed echo.',
-    missCallout: 'CONE SIDESTEP!',
+    noCleanHitCallout: 'CONE FADES',
   }),
 });
 
@@ -126,8 +126,8 @@ export function getShapePowerRevealCopy(
   return `${moveName.toUpperCase()}!\n${content.revealLine.toUpperCase()}`;
 }
 
-export function getShapePowerMissCallout(power: PrimaryPower): string {
-  return getShapePowerContent(power).missCallout;
+export function getShapePowerNoCleanHitCallout(power: PrimaryPower): string {
+  return getShapePowerContent(power).noCleanHitCallout;
 }
 
 export function getElementBattleCue(element: CombatElement): ElementBattleCue {

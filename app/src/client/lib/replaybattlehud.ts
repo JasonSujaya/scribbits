@@ -21,9 +21,11 @@ import { ELEMENT_STYLES, UI } from './theme';
 import { ghostButton, label, levelBadge } from './ui';
 
 type FighterBarView = {
+  container: Phaser.GameObjects.Container;
   hitPointTrack: Phaser.GameObjects.Rectangle;
   hitPointTrail: Phaser.GameObjects.Rectangle;
   hitPointBar: Phaser.GameObjects.Rectangle;
+  hitPointValue: Phaser.GameObjects.Text;
   revision: number;
 };
 
@@ -83,22 +85,66 @@ const createFighterBarView = (
 ): FighterBarView => {
   const fighterLayout = layout.fighters[side];
   const style = ELEMENT_STYLES[scribbit.element];
-  const panel = scene.add.graphics().setDepth(20);
-  panel.fillStyle(style.soft, 0.22);
-  panel.fillRoundedRect(
-    fighterLayout.panelLeft,
-    layout.fighterPanelTop,
-    layout.healthBarWidth + 12,
-    layout.fighterPanelHeight,
-    18
-  );
-  panel.lineStyle(4, style.primary, 0.8);
-  panel.strokeRoundedRect(
-    fighterLayout.panelLeft,
-    layout.fighterPanelTop,
-    layout.healthBarWidth + 12,
-    layout.fighterPanelHeight,
-    18
+  const panelRight = fighterLayout.panelLeft + layout.healthBarWidth;
+  const panelBottom = layout.fighterPanelTop + layout.fighterPanelHeight;
+  const clippedCorner = 18;
+  const panel = scene.add.graphics();
+  panel.fillStyle(0x000000, 0.2);
+  panel.beginPath();
+  panel.moveTo(fighterLayout.panelLeft + 4, layout.fighterPanelTop + 5);
+  if (side === 'a') {
+    panel.lineTo(panelRight - clippedCorner + 4, layout.fighterPanelTop + 5);
+    panel.lineTo(panelRight + 4, layout.fighterPanelTop + clippedCorner + 5);
+  } else {
+    panel.lineTo(panelRight + 4, layout.fighterPanelTop + 5);
+    panel.lineTo(panelRight + 4, panelBottom + 5);
+    panel.lineTo(fighterLayout.panelLeft + clippedCorner + 4, panelBottom + 5);
+    panel.lineTo(fighterLayout.panelLeft + 4, panelBottom - clippedCorner + 5);
+  }
+  if (side === 'a') {
+    panel.lineTo(panelRight + 4, panelBottom + 5);
+    panel.lineTo(fighterLayout.panelLeft + 4, panelBottom + 5);
+  } else {
+    panel.lineTo(
+      fighterLayout.panelLeft + 4,
+      layout.fighterPanelTop + clippedCorner + 5
+    );
+  }
+  panel.closePath();
+  panel.fillPath();
+
+  panel.fillStyle(UI.creamHex, 0.96);
+  panel.beginPath();
+  if (side === 'a') {
+    panel.moveTo(fighterLayout.panelLeft, layout.fighterPanelTop);
+    panel.lineTo(panelRight - clippedCorner, layout.fighterPanelTop);
+    panel.lineTo(panelRight, layout.fighterPanelTop + clippedCorner);
+    panel.lineTo(panelRight, panelBottom);
+    panel.lineTo(fighterLayout.panelLeft, panelBottom);
+  } else {
+    panel.moveTo(
+      fighterLayout.panelLeft + clippedCorner,
+      layout.fighterPanelTop
+    );
+    panel.lineTo(panelRight, layout.fighterPanelTop);
+    panel.lineTo(panelRight, panelBottom);
+    panel.lineTo(fighterLayout.panelLeft + clippedCorner, panelBottom);
+    panel.lineTo(fighterLayout.panelLeft, panelBottom - clippedCorner);
+    panel.lineTo(
+      fighterLayout.panelLeft,
+      layout.fighterPanelTop + clippedCorner
+    );
+  }
+  panel.closePath();
+  panel.fillPath();
+  panel.lineStyle(3, UI.inkHex, 0.84);
+  panel.strokePath();
+  panel.lineStyle(7, style.primary, 0.92);
+  panel.lineBetween(
+    fighterLayout.panelLeft + (side === 'a' ? 0 : clippedCorner),
+    layout.fighterPanelTop + 4,
+    panelRight - (side === 'a' ? clippedCorner : 0),
+    layout.fighterPanelTop + 4
   );
 
   const name = label(
@@ -106,13 +152,13 @@ const createFighterBarView = (
     fighterLayout.nameX,
     layout.fighterNameY,
     scribbit.name,
-    26,
+    27,
     UI.ink,
     true
   )
     .setOrigin(fighterLayout.nameOriginX, 0.5)
     .setDepth(22);
-  const availableNameWidth = layout.healthBarWidth - 58;
+  const availableNameWidth = layout.healthBarWidth - 72;
   if (name.width > availableNameWidth) {
     name.setScale(availableNameWidth / name.width);
   }
@@ -130,20 +176,35 @@ const createFighterBarView = (
     }
   );
 
-  levelBadge(
+  const level = levelBadge(
     scene,
     fighterLayout.levelBadgeX,
     layout.fighterNameY,
     levelOf(scribbit),
-    0.48
-  ).setDepth(22);
+    0.44
+  );
+
+  const mastery = getMasteryPresentation(levelOf(scribbit));
+  const masteryLabel = label(
+    scene,
+    fighterLayout.nameX,
+    layout.fighterMetaY,
+    mastery.label.toUpperCase(),
+    14,
+    UI.inkSoft,
+    true
+  ).setOrigin(fighterLayout.nameOriginX, 0.5);
+  const masteryMaximumWidth = layout.healthBarWidth - 24;
+  if (masteryLabel.width > masteryMaximumWidth) {
+    masteryLabel.setScale(masteryMaximumWidth / masteryLabel.width);
+  }
 
   const hitPointTrack = scene.add
     .rectangle(
       fighterLayout.healthBarAnchorX,
       layout.healthBarY,
       layout.healthBarWidth,
-      28,
+      layout.healthBarHeight,
       UI.inkHex,
       0.2
     )
@@ -155,7 +216,7 @@ const createFighterBarView = (
       fighterLayout.healthBarAnchorX,
       layout.healthBarY,
       layout.healthBarFillWidth,
-      20,
+      layout.healthBarFillHeight,
       UI.gold,
       0.78
     )
@@ -166,25 +227,35 @@ const createFighterBarView = (
       fighterLayout.healthBarAnchorX,
       layout.healthBarY,
       layout.healthBarFillWidth,
-      20,
+      layout.healthBarFillHeight,
       style.primary,
       1
     )
     .setOrigin(fighterLayout.healthBarOriginX, 0.5)
     .setDepth(24);
 
-  const chipWidth = layout.healthBarWidth - 10;
-  scene.add
+  const hitPointValue = label(
+    scene,
+    fighterLayout.chipCenterX,
+    layout.healthBarY,
+    '— / —',
+    18,
+    UI.ink,
+    true
+  );
+  hitPointValue.setStroke(UI.cream, 4);
+
+  const chipWidth = layout.healthBarWidth - 12;
+  const powerChip = scene.add
     .rectangle(
       fighterLayout.chipCenterX,
       layout.fighterChipY,
       chipWidth,
-      30,
-      style.primary,
-      0.16
+      layout.fighterChipHeight,
+      UI.inkHex,
+      0.92
     )
-    .setStrokeStyle(2, style.primary, 0.72)
-    .setDepth(21);
+    .setStrokeStyle(3, style.primary, 0.95);
   const powerLabel = label(
     scene,
     fighterLayout.chipCenterX,
@@ -194,27 +265,34 @@ const createFighterBarView = (
       primaryPower
     ).toUpperCase()}`,
     18,
-    style.primaryText,
+    UI.cream,
     true
-  ).setDepth(22);
+  );
   if (powerLabel.width > chipWidth - 12) {
     powerLabel.setScale((chipWidth - 12) / powerLabel.width);
   }
-  const mastery = getMasteryPresentation(levelOf(scribbit));
-  label(
-    scene,
-    fighterLayout.chipCenterX,
-    layout.fighterChipY + 23,
-    mastery.label.toUpperCase(),
-    14,
-    UI.inkSoft,
-    true
-  ).setDepth(22);
+
+  const container = scene.add
+    .container(0, 0, [
+      panel,
+      name,
+      level,
+      masteryLabel,
+      hitPointTrack,
+      hitPointTrail,
+      hitPointBar,
+      hitPointValue,
+      powerChip,
+      powerLabel,
+    ])
+    .setDepth(20);
 
   return {
+    container,
     hitPointTrack,
     hitPointTrail,
     hitPointBar,
+    hitPointValue,
     revision: 0,
   };
 };
@@ -228,15 +306,35 @@ const createBattleClockView = (
     .container(layout.battleClockX, layout.battleClockY)
     .setDepth(28)
     .setVisible(visible);
-  const shadow = scene.add.circle(4, 6, 44, 0x000000, 0.22);
+  const shadow = scene.add.circle(
+    3,
+    5,
+    layout.battleClockRadius + 1,
+    0x000000,
+    0.22
+  );
   const face = scene.add
-    .circle(0, 0, 43, UI.creamHex, 1)
-    .setStrokeStyle(6, UI.inkHex, 1);
-  const inkLabel = label(scene, 0, -19, 'INK', 13, UI.inkSoft, true);
-  const seconds = label(scene, 0, 4, '25', 34, UI.ink, true);
-  const progressTrack = scene.add.rectangle(0, 36, 70, 7, UI.inkHex, 0.18);
+    .circle(0, 0, layout.battleClockRadius, UI.creamHex, 1)
+    .setStrokeStyle(4, UI.inkHex, 1);
+  const inkLabel = label(scene, 0, -13, 'SEC', 10, UI.inkSoft, true);
+  const seconds = label(scene, 0, 2, '25', 25, UI.ink, true);
+  const progressTrack = scene.add.rectangle(
+    0,
+    23,
+    layout.battleClockProgressWidth,
+    5,
+    UI.inkHex,
+    0.18
+  );
   const progressFill = scene.add
-    .rectangle(-35, 36, 70, 7, UI.gold, 1)
+    .rectangle(
+      -layout.battleClockProgressWidth / 2,
+      23,
+      layout.battleClockProgressWidth,
+      5,
+      UI.gold,
+      1
+    )
     .setOrigin(0, 0.5);
   container.add([shadow, face, inkLabel, seconds, progressTrack, progressFill]);
   return { container, face, seconds, progressFill };
@@ -266,20 +364,104 @@ export function createReplayBattleHud(
     ),
   };
 
+  const broadcastRail = scene.add.graphics().setDepth(78);
+  broadcastRail.fillStyle(0x000000, 0.28);
+  broadcastRail.fillRoundedRect(
+    layout.broadcastRailLeft + 4,
+    layout.broadcastRailTop + 6,
+    layout.broadcastRailWidth,
+    layout.broadcastRailHeight,
+    16
+  );
+  broadcastRail.fillStyle(UI.deskHex, 0.98);
+  broadcastRail.fillRoundedRect(
+    layout.broadcastRailLeft,
+    layout.broadcastRailTop,
+    layout.broadcastRailWidth,
+    layout.broadcastRailHeight,
+    16
+  );
+  broadcastRail.lineStyle(3, UI.gold, 0.82);
+  broadcastRail.strokeRoundedRect(
+    layout.broadcastRailLeft,
+    layout.broadcastRailTop,
+    layout.broadcastRailWidth,
+    layout.broadcastRailHeight,
+    16
+  );
+
+  const livePillWidth = 56;
+  scene.add
+    .rectangle(
+      layout.kindLabelX + livePillWidth / 2,
+      layout.battleKindY,
+      livePillWidth,
+      28,
+      UI.coral,
+      1
+    )
+    .setStrokeStyle(2, UI.creamHex, 0.86)
+    .setDepth(79);
+  const livePillLabel = label(
+    scene,
+    layout.kindLabelX + livePillWidth / 2,
+    layout.battleKindY,
+    input.showPlaybackControls ? 'LIVE' : 'FINAL',
+    14,
+    UI.cream,
+    true
+  ).setDepth(80);
   const kind = label(
     scene,
-    layout.kindLabelX,
-    layout.toolbarY,
-    `${getReplayBattleKindLabel(input.battleKind)} · SERVER REPLAY`,
-    18,
+    layout.kindLabelX + livePillWidth + 10,
+    layout.battleKindY,
+    getReplayBattleKindLabel(input.battleKind),
+    20,
     UI.paperText,
     true
   )
     .setOrigin(0, 0.5)
     .setDepth(80);
-  if (kind.width > layout.soundButtonX - layout.kindLabelX - 48) {
-    kind.setScale((layout.soundButtonX - layout.kindLabelX - 48) / kind.width);
+  const kindMaximumWidth = Math.max(
+    40,
+    layout.kindLabelMaximumWidth - livePillWidth - 10
+  );
+  if (kind.width > kindMaximumWidth) {
+    kind.setScale(kindMaximumWidth / kind.width);
   }
+  const serverTruth = label(
+    scene,
+    layout.kindLabelX,
+    layout.serverTruthY,
+    input.battleKind === 'practice'
+      ? 'SERVER REPLAY · NO REWARDS'
+      : 'OUTCOME LOCKED · SERVER REPLAY',
+    14,
+    '#ffd447',
+    true
+  )
+    .setOrigin(0, 0.5)
+    .setDepth(80);
+  if (serverTruth.width > layout.kindLabelMaximumWidth) {
+    serverTruth.setScale(layout.kindLabelMaximumWidth / serverTruth.width);
+  }
+  const resultLabelX =
+    (layout.soundButtonX -
+      layout.soundButtonWidth / 2 +
+      layout.skipButtonX +
+      layout.skipButtonWidth / 2) /
+    2;
+  const resultLabel = label(
+    scene,
+    resultLabelX,
+    layout.toolbarY,
+    'FINAL · SERVER LOCKED',
+    20,
+    '#ffd447',
+    true
+  )
+    .setDepth(80)
+    .setVisible(!input.showPlaybackControls);
 
   let speedButtonLabel: Phaser.GameObjects.Text | null = null;
   let soundButtonLabel: Phaser.GameObjects.Text | null = null;
@@ -343,7 +525,7 @@ export function createReplayBattleHud(
     layout.tickerHeight,
     18
   );
-  tickerGraphics.lineStyle(5, UI.gold, 0.92);
+  tickerGraphics.lineStyle(4, UI.gold, 0.92);
   tickerGraphics.strokeRoundedRect(
     -layout.tickerWidth / 2,
     -layout.tickerHeight / 2,
@@ -351,11 +533,59 @@ export function createReplayBattleHud(
     layout.tickerHeight,
     18
   );
+  tickerGraphics.fillStyle(UI.coralDeep, 1);
+  tickerGraphics.fillRoundedRect(
+    -layout.tickerWidth / 2,
+    -layout.tickerHeight / 2,
+    layout.tickerTagWidth,
+    layout.tickerHeight,
+    18
+  );
+  tickerGraphics.fillRect(
+    -layout.tickerWidth / 2 + layout.tickerTagWidth - 18,
+    -layout.tickerHeight / 2,
+    18,
+    layout.tickerHeight
+  );
+  tickerGraphics.lineStyle(3, UI.gold, 0.9);
+  tickerGraphics.lineBetween(
+    -layout.tickerWidth / 2 + layout.tickerTagWidth,
+    -layout.tickerHeight / 2 + 10,
+    -layout.tickerWidth / 2 + layout.tickerTagWidth,
+    layout.tickerHeight / 2 - 10
+  );
   ticker.add(tickerGraphics);
-  const tickerTag = label(scene, 0, -22, 'INKCAST', 14, '#ffd447', true);
-  const announcer = label(scene, 0, 9, 'Get ready…', 24, UI.cream, true);
-  announcer.setWordWrapWidth(layout.tickerWidth - 44);
-  ticker.add([tickerTag, announcer]);
+  const tickerTagX = -layout.tickerWidth / 2 + layout.tickerTagWidth / 2;
+  const tickerTag = label(
+    scene,
+    tickerTagX,
+    -11,
+    'INKCAST',
+    16,
+    UI.cream,
+    true
+  );
+  const tickerLive = label(
+    scene,
+    tickerTagX,
+    15,
+    '● LIVE',
+    13,
+    '#ffd447',
+    true
+  );
+  const announcerWidth = layout.tickerWidth - layout.tickerTagWidth - 28;
+  const announcer = label(
+    scene,
+    layout.tickerTagWidth / 2,
+    0,
+    'Get ready…',
+    23,
+    UI.cream,
+    true
+  );
+  announcer.setWordWrapWidth(announcerWidth);
+  ticker.add([tickerTag, tickerLive, announcer]);
 
   const setFighterHitPoints = (
     side: ReplayBattleSide,
@@ -404,15 +634,22 @@ export function createReplayBattleHud(
           ].primary,
       1
     );
+    const safeMaximumHitPoints = Math.max(0, Math.round(maximumHitPoints));
+    const safeHitPoints = Math.min(
+      safeMaximumHitPoints,
+      Math.max(0, Math.round(hitPoints))
+    );
+    bars.hitPointValue.setText(`${safeHitPoints} / ${safeMaximumHitPoints}`);
   };
 
   return {
     announce: (text: string): void => {
       announcer.setText(text);
+      if (input.reduceMotion) return;
       scene.tweens.add({
         targets: announcer,
         scale: 1.06,
-        duration: input.reduceMotion ? 0 : 100,
+        duration: 100,
         yoyo: true,
       });
     },
@@ -434,6 +671,7 @@ export function createReplayBattleHud(
         bars.hitPointTrack.setVisible(visible);
         bars.hitPointTrail.setVisible(visible);
         bars.hitPointBar.setVisible(visible);
+        bars.hitPointValue.setVisible(visible);
       });
     },
     updateClock: (
@@ -448,10 +686,11 @@ export function createReplayBattleHud(
       });
       clock.seconds.setText(clockPlan.label);
       clock.seconds.setColor(clockPlan.urgent ? UI.coralText : UI.ink);
-      clock.progressFill.width = 70 * clockPlan.remainingRatio;
+      clock.progressFill.width =
+        layout.battleClockProgressWidth * clockPlan.remainingRatio;
       clock.progressFill.setFillStyle(clockPlan.urgent ? UI.coral : UI.gold, 1);
       clock.face.setStrokeStyle(
-        6,
+        4,
         clockPlan.urgent ? UI.coralDeep : UI.inkHex,
         1
       );
@@ -461,6 +700,8 @@ export function createReplayBattleHud(
     },
     setControlsVisible: (visible: boolean): void => {
       toolbarControls.forEach((control) => control.setVisible(visible));
+      livePillLabel.setText(visible ? 'LIVE' : 'FINAL');
+      resultLabel.setVisible(!visible);
     },
   };
 }

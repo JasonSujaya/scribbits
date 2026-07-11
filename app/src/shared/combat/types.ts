@@ -268,7 +268,6 @@ type AbilityConfigBase = Readonly<{
   telegraphTicks: number;
   activeTicks: number;
   cooldownTicks: number;
-  softCounterNotes: readonly string[];
 }>;
 
 export type InkquakeAbilityConfig = AbilityConfigBase &

@@ -5,15 +5,18 @@ import * as Phaser from 'phaser';
 import { Scene } from 'phaser';
 import type { Forecast, Scribbit } from '../../shared/arena';
 import { generateDoodleTexture } from './proceduraldoodleart';
-import { planSparRivalCards } from './sparrivals';
-import { ELEMENT_STYLES, TYPE, UI } from './theme';
+import { formatSparRivalDraftSummary, planSparRivalCards } from './sparrivals';
+import type { SparRivalCardPlan } from './sparrivals';
+import type { BattleRecapHighlight } from './battlerecap';
+import { ELEMENT_STYLES, prefersReducedMotion, TYPE, UI } from './theme';
 import { button, elementBadge, ghostButton, label, stickerCard } from './ui';
 
 export type SparRivalDraftOptions = Readonly<{
   challenger: Scribbit;
   rivals: readonly Scribbit[];
   forecast: Forecast;
-  onChoose: (rival: Scribbit) => void;
+  lastBoutHighlight: BattleRecapHighlight | null;
+  onChoose: (rival: Scribbit, plan: SparRivalCardPlan) => void;
   onClose: () => void;
 }>;
 
@@ -43,6 +46,7 @@ export function createSparRivalDraft(
   options: SparRivalDraftOptions
 ): SparRivalDraft {
   const { width, height } = scene.scale;
+  const reduceMotion = prefersReducedMotion();
   const backdrop = scene.add
     .rectangle(width / 2, height / 2, width, height, UI.deskHex, 0.88)
     .setDepth(99)
@@ -57,13 +61,15 @@ export function createSparRivalDraft(
     cardHeight,
     { tapeColor: UI.tapeAlt, tapeWidth: 92 }
   );
-  card.setDepth(100).setScale(0.78);
-  scene.tweens.add({
-    targets: card,
-    scale: 1,
-    duration: 260,
-    ease: 'Back.easeOut',
-  });
+  card.setDepth(100).setScale(reduceMotion ? 1 : 0.78);
+  if (!reduceMotion) {
+    scene.tweens.add({
+      targets: card,
+      scale: 1,
+      duration: 260,
+      ease: 'Back.easeOut',
+    });
+  }
 
   card.add(label(scene, 0, -468, 'PICK YOUR NEXT RIVAL', 40, UI.ink, true));
   card.add(
@@ -71,11 +77,11 @@ export function createSparRivalDraft(
       scene,
       0,
       -420,
-      'Server-picked fair slate • you choose the style',
+      formatSparRivalDraftSummary(options.lastBoutHighlight),
       TYPE.caption,
       UI.inkSoft,
       true
-    )
+    ).setWordWrapWidth(cardWidth - 100)
   );
 
   const plans = planSparRivalCards(
@@ -108,15 +114,29 @@ export function createSparRivalDraft(
     const badge = elementBadge(scene, -95, rowY - 64, plan.element, 0.62);
     card.add(badge);
     card.add(
-      leftLabel(scene, -138, rowY - 17, plan.name, 30, UI.ink, 260, true)
+      leftLabel(scene, -138, rowY - 35, plan.name, 28, UI.ink, 260, true)
     );
+    if (plan.epithet) {
+      card.add(
+        leftLabel(
+          scene,
+          -138,
+          rowY - 4,
+          plan.epithet.toUpperCase(),
+          16,
+          UI.coralText,
+          285,
+          true
+        )
+      );
+    }
     card.add(
       leftLabel(
         scene,
         -138,
-        rowY + 22,
+        rowY + 26,
         `Lv${plan.level} • ${plan.signatureName.toUpperCase()}`,
-        21,
+        19,
         style.primaryText,
         285,
         true
@@ -126,12 +146,12 @@ export function createSparRivalDraft(
       leftLabel(
         scene,
         -138,
-        rowY + 58,
-        plan.powerLine,
-        18,
+        rowY + 66,
+        plan.challengeLine ? `“${plan.challengeLine}”` : plan.powerLine,
+        15,
         UI.inkSoft,
-        300,
-        true
+        240,
+        false
       )
     );
 
@@ -156,12 +176,11 @@ export function createSparRivalDraft(
       218,
       rowY + 55,
       'FIGHT →',
-      () => options.onChoose(rival),
+      () => options.onChoose(rival, plan),
       210,
       style.primary,
       UI.ink
     );
-    fight.setScale(0.78);
     card.add(fight);
   });
 

@@ -2,27 +2,30 @@
 // result ceremonies. These turn async battles into EVENTS with anticipation.
 
 import { Scene } from 'phaser';
-import type { Scribbit, Element } from '../../shared/arena';
-import { ELEMENT_PREY } from '../../shared/arena';
+import type { BattleKind, Scribbit } from '../../shared/arena';
 import { ELEMENT_STYLES, prefersReducedMotion, TYPE, UI } from './theme';
 import { handLettered, label, elementBadge, levelBadge } from './ui';
 import { loadDrawing, fitDrawing, levelOf } from './scribbits';
+import { planBattleMatchupBrief } from './matchupbrief';
 
-// Check if attacker has element advantage over defender.
-function hasAdvantage(attacker: Element, defender: Element): boolean {
-  return ELEMENT_PREY[attacker] === defender;
-}
+export type VsCeremonyOptions = Readonly<{
+  fighterA: Scribbit;
+  fighterB: Scribbit;
+  battleKind: BattleKind;
+  onComplete: () => void;
+}>;
 
 // Show a dramatic VS screen before battle. Both fighters slide in from opposite
 // sides, element badges clash in the center, then transition to the replay.
-export function showVsCeremony(
-  scene: Scene,
-  fighterA: Scribbit,
-  fighterB: Scribbit,
-  onComplete: () => void
-): void {
+export function showVsCeremony(scene: Scene, options: VsCeremonyOptions): void {
+  const { fighterA, fighterB, battleKind, onComplete } = options;
   const { width, height } = scene.scale;
   const reduceMotion = prefersReducedMotion();
+  const brief = planBattleMatchupBrief({
+    battleKind,
+    fighterA,
+    fighterB,
+  });
   const layer = scene.add.container(0, 0).setDepth(2000).setScrollFactor(0);
 
   // Keep the showdown inside the same physical sketchbook world as every
@@ -59,30 +62,46 @@ export function showVsCeremony(
     scene,
     width / 2,
     92,
-    "TONIGHT'S MATCHUP",
+    brief.title,
     40,
     UI.ink,
     true
   );
   layer.add(matchupTitle);
 
-  const bottomRule = scene.add.graphics();
-  bottomRule.lineStyle(3, UI.inkHex, 0.16);
-  bottomRule.beginPath();
-  bottomRule.moveTo(60, height - 92);
-  bottomRule.lineTo(width - 60, height - 92);
-  bottomRule.strokePath();
-  layer.add(bottomRule);
-  const matchupRule = label(
+  const mechanicsCard = scene.add
+    .rectangle(width / 2, height - 90, width - 96, 158, UI.creamHex, 0.94)
+    .setStrokeStyle(3, UI.inkHex, 0.22);
+  const mechanicsCaption = label(
     scene,
     width / 2,
-    height - 58,
-    'SHAPE · ELEMENT · A LITTLE LUCK',
-    TYPE.caption,
-    UI.inkSoft,
+    height - 145,
+    brief.caption,
+    18,
+    UI.coralText,
     true
   );
-  layer.add(matchupRule);
+  const matchupLabel = label(
+    scene,
+    width / 2,
+    height - 108,
+    brief.matchup.label,
+    27,
+    UI.goldText,
+    true
+  );
+  const matchupDetail = label(
+    scene,
+    width / 2,
+    height - 62,
+    brief.matchup.detail,
+    21,
+    UI.inkSoft,
+    true
+  )
+    .setWordWrapWidth(width - 140, true)
+    .setLineSpacing(-2);
+  layer.add([mechanicsCard, mechanicsCaption, matchupLabel, matchupDetail]);
 
   // Fighter A (left side)
   const sideA = scene.add.container(0, height / 2);
@@ -102,20 +121,48 @@ export function showVsCeremony(
     sideA.add(img);
   });
 
-  const nameA = label(scene, 0, artSizeA / 2 + 40, fighterA.name.toUpperCase(), TYPE.title, UI.ink, true);
+  const nameA = label(
+    scene,
+    0,
+    artSizeA / 2 + 40,
+    fighterA.name.toUpperCase(),
+    TYPE.title,
+    UI.ink,
+    true
+  );
   sideA.add(nameA);
   sideA.add(elementBadge(scene, 0, artSizeA / 2 + 80, fighterA.element, 0.8));
-  sideA.add(levelBadge(scene, artSizeA / 2 - 20, -artSizeA / 2 + 20, levelOf(fighterA), 0.7));
-
-  // Element advantage indicator for fighter A
-  const aAdvantage = hasAdvantage(fighterA.element, fighterB.element);
-  const aDisadvantage = hasAdvantage(fighterB.element, fighterA.element);
-  if (aAdvantage) {
-    const advLabel = label(scene, 0, artSizeA / 2 + 120, '⬆ ADVANTAGE', 24, '#4faa4f', true);
-    sideA.add(advLabel);
-  } else if (aDisadvantage) {
-    const advLabel = label(scene, 0, artSizeA / 2 + 120, '⬇ WEAK', 24, '#e8555c', true);
-    sideA.add(advLabel);
+  sideA.add(
+    levelBadge(
+      scene,
+      artSizeA / 2 - 20,
+      -artSizeA / 2 + 20,
+      levelOf(fighterA),
+      0.7
+    )
+  );
+  const signatureA = label(
+    scene,
+    0,
+    artSizeA / 2 + 125,
+    brief.fighters.a.signatureName.toUpperCase(),
+    22,
+    ELEMENT_STYLES[fighterA.element].primaryText,
+    true
+  ).setWordWrapWidth(270, true);
+  sideA.add(signatureA);
+  if (brief.fighters.a.founderEpithet) {
+    sideA.add(
+      label(
+        scene,
+        0,
+        artSizeA / 2 + 164,
+        brief.fighters.a.founderEpithet.toUpperCase(),
+        18,
+        UI.inkSoft,
+        true
+      ).setWordWrapWidth(280, true)
+    );
   }
 
   // Fighter B (right side)
@@ -136,23 +183,55 @@ export function showVsCeremony(
     sideB.add(img);
   });
 
-  const nameB = label(scene, 0, artSizeB / 2 + 40, fighterB.name.toUpperCase(), TYPE.title, UI.ink, true);
+  const nameB = label(
+    scene,
+    0,
+    artSizeB / 2 + 40,
+    fighterB.name.toUpperCase(),
+    TYPE.title,
+    UI.ink,
+    true
+  );
   sideB.add(nameB);
   sideB.add(elementBadge(scene, 0, artSizeB / 2 + 80, fighterB.element, 0.8));
-  sideB.add(levelBadge(scene, -artSizeB / 2 + 20, -artSizeB / 2 + 20, levelOf(fighterB), 0.7));
-
-  // Element advantage indicator for fighter B
-  if (aDisadvantage) {
-    const advLabel = label(scene, 0, artSizeB / 2 + 120, '⬆ ADVANTAGE', 24, '#4faa4f', true);
-    sideB.add(advLabel);
-  } else if (aAdvantage) {
-    const advLabel = label(scene, 0, artSizeB / 2 + 120, '⬇ WEAK', 24, '#e8555c', true);
-    sideB.add(advLabel);
+  sideB.add(
+    levelBadge(
+      scene,
+      -artSizeB / 2 + 20,
+      -artSizeB / 2 + 20,
+      levelOf(fighterB),
+      0.7
+    )
+  );
+  const signatureB = label(
+    scene,
+    0,
+    artSizeB / 2 + 125,
+    brief.fighters.b.signatureName.toUpperCase(),
+    22,
+    ELEMENT_STYLES[fighterB.element].primaryText,
+    true
+  ).setWordWrapWidth(270, true);
+  sideB.add(signatureB);
+  if (brief.fighters.b.founderEpithet) {
+    sideB.add(
+      label(
+        scene,
+        0,
+        artSizeB / 2 + 164,
+        brief.fighters.b.founderEpithet.toUpperCase(),
+        18,
+        UI.inkSoft,
+        true
+      ).setWordWrapWidth(280, true)
+    );
   }
 
   // VS badge in the center
   const vsBadge = scene.add.container(width / 2, height / 2);
-  const vsBg = scene.add.circle(0, 0, 80, UI.coral, 1).setStrokeStyle(8, UI.inkHex, 1);
+  const vsBg = scene.add
+    .circle(0, 0, 80, UI.coral, 1)
+    .setStrokeStyle(8, UI.inkHex, 1);
   const vsText = label(scene, 0, 0, 'VS', 64, UI.ink, true);
   vsBadge.add([vsBg, vsText]);
   vsBadge.setScale(0);
@@ -185,22 +264,28 @@ export function showVsCeremony(
   });
 
   // Element clash effect
-  if (!reduceMotion) scene.time.delayedCall(600, () => {
-    const clash = scene.add.particles(width / 2, height / 2, 'spark', {
-      speed: { min: 150, max: 350 },
-      scale: { start: 0.8, end: 0 },
-      lifespan: 800,
-      quantity: 20,
-      tint: [ELEMENT_STYLES[fighterA.element].particle, ELEMENT_STYLES[fighterB.element].particle],
-      emitting: false,
+  if (!reduceMotion)
+    scene.time.delayedCall(600, () => {
+      const clash = scene.add.particles(width / 2, height / 2, 'spark', {
+        speed: { min: 150, max: 350 },
+        scale: { start: 0.8, end: 0 },
+        lifespan: 800,
+        quantity: 20,
+        tint: [
+          ELEMENT_STYLES[fighterA.element].particle,
+          ELEMENT_STYLES[fighterB.element].particle,
+        ],
+        emitting: false,
+      });
+      clash.setDepth(2001);
+      clash.explode(25);
+      scene.time.delayedCall(1000, () => clash.destroy());
     });
-    clash.setDepth(2001);
-    clash.explode(25);
-    scene.time.delayedCall(1000, () => clash.destroy());
-  });
 
   // Fade out and transition
-  scene.time.delayedCall(reduceMotion ? 180 : 1800, () => {
+  // Reduced motion removes the entrance motion, not the reading time. The old
+  // 180ms reduced-motion dwell made the matchup card effectively invisible.
+  scene.time.delayedCall(1800, () => {
     scene.cameras.main.fadeOut(200, 255, 247, 232);
     scene.cameras.main.once('camerafadeoutcomplete', () => {
       layer.destroy(true);

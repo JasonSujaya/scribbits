@@ -15,7 +15,7 @@ export {
   getDamageSourceDisplayName,
   getElementBattleCue,
   getShapePowerDisplayName,
-  getShapePowerMissCallout,
+  getShapePowerNoCleanHitCallout,
   getShapePowerRevealCopy,
   getShapePowerSignatureName,
 } from '../../shared/combat/shapepowercontent';
@@ -108,6 +108,18 @@ export type ShapePowerCalloutPlan = Readonly<{
   position: ScreenPoint;
   fontSize: number;
 }>;
+
+/**
+ * Colorburst can deal delayed echo damage after `ability_finished`, so that
+ * event is not an authoritative miss boundary for this power. Every other
+ * current power settles direct and barrier contact before its finish event.
+ */
+export function shouldAnnounceNoCleanHitAtAbilityFinish(
+  power: PrimaryPower,
+  connectedBeforeFinish: boolean
+): boolean {
+  return !connectedBeforeFinish && power !== 'colorburst';
+}
 
 const clamp = (value: number, minimum: number, maximum: number): number => {
   return Math.min(maximum, Math.max(minimum, value));

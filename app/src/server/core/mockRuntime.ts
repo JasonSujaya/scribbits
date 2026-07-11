@@ -5,5 +5,6 @@ export { simulate } from './battle';
 export { createPracticeBattle } from './practice';
 export {
   chooseFoundingSparOpponent,
+  findFoundingScribbit,
   selectFoundingSparRivalSlate,
 } from './species';
