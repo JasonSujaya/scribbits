@@ -3,20 +3,12 @@ import {
   INK_REWARDS,
   LEVEL_XP_THRESHOLDS,
   MAX_LEVEL,
+  XP_REWARDS,
 } from '../../shared/arena';
 import type { ArenaState, CareAction, Scribbit } from '../../shared/arena';
 import { getFoundingScribbitDefinition } from '../../shared/founders';
 import { getFounderRivalEpisodePage } from '../../shared/content/founderrivalepisodes';
 import { planFounderRivalryStakes } from './founderchronicle';
-
-export type NextGoalActionKind =
-  | 'enter'
-  | 'back'
-  | 'challenge'
-  | 'rivalry'
-  | 'capsule'
-  | 'care'
-  | 'wait';
 
 export type NextGoalScribbitEvidence = {
   name: string;
@@ -97,7 +89,7 @@ export function selectNextGoal(state: ArenaState): NextGoalCard {
       careAction: null,
       rivalFounderId: null,
       title: `Enter ${newestOwnedScribbit.name} in the Rumble`,
-      detail: "Put today's Scribbit into tonight's bracket.",
+      detail: "Put today's Scribbit into tonight's Rumble.",
       buttonLabel: 'Enter Rumble',
       evidence: buildEvidence(state, newestOwnedScribbit),
     };
@@ -150,7 +142,7 @@ export function selectNextGoal(state: ArenaState): NextGoalCard {
         : `Challenge ${state.champion.name}`,
       detail: championFounder
         ? `Champion ${championFounder.name} · you ${activeRivalry?.playerWins ?? 0}–${activeRivalry?.founderWins ?? 0} · one margin today.`
-        : 'Take your one daily shot at the Champion. Win for +2 XP.',
+        : `Take your one daily shot at the Champion. Win for +${XP_REWARDS.championWin} XP.`,
       buttonLabel: 'Choose challenger',
       evidence: buildEvidence(state, newestOwnedScribbit),
     };

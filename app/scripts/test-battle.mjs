@@ -3,17 +3,29 @@ import { execFileSync, spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { once } from 'node:events';
 import { createRequire } from 'node:module';
-import { mkdirSync, readFileSync, rmSync, symlinkSync } from 'node:fs';
+import {
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  symlinkSync,
+} from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { tmpdir } from 'node:os';
 import { PNG } from 'pngjs';
 
 const repoRoot = process.cwd();
-const outDir = join(tmpdir(), 'scribbits-arena-sim-tests');
+const testTemporaryRoot = join(tmpdir(), 'scribbits-arena-sim-tests');
+const cleanupTestTemporaryRoot = () => {
+  rmSync(testTemporaryRoot, { recursive: true, force: true });
+};
+cleanupTestTemporaryRoot();
+mkdirSync(testTemporaryRoot, { recursive: true });
+process.once('exit', cleanupTestTemporaryRoot);
+const outDir = join(testTemporaryRoot, 'compiled');
 const tscPath = join(repoRoot, 'node_modules', '.bin', 'tsc');
 
-rmSync(outDir, { recursive: true, force: true });
 mkdirSync(outDir, { recursive: true });
 symlinkSync(
   join(repoRoot, 'node_modules'),
@@ -42,7 +54,10 @@ execFileSync(
     '--types',
     'node',
     'src/shared/arena.ts',
+    'src/shared/elements.ts',
+    'src/shared/rivalrunchallenges.ts',
     'src/shared/founders.ts',
+    'src/shared/stablehash.ts',
     'src/shared/content/deterministic.ts',
     'src/shared/content/replaycommentary.ts',
     'src/shared/content/carereactions.ts',
@@ -86,6 +101,7 @@ execFileSync(
     'src/server/core/streak.ts',
     'src/server/core/moderation.ts',
     'src/server/core/privacy.ts',
+    'src/server/core/nightlyStorageFence.ts',
     'src/server/core/practice.ts',
     'src/server/core/scoutNotebook.ts',
     'src/client/lib/inkmesh.ts',
@@ -112,14 +128,13 @@ execFileSync(
     'src/client/lib/arenabracket.ts',
     'src/client/lib/accessories.ts',
     'src/client/lib/pens.ts',
+    'src/client/lib/pressinteraction.ts',
+    'src/client/lib/semantictabs.ts',
   ],
   { cwd: repoRoot, stdio: 'inherit' }
 );
 
-const mockCombatTestOutputDirectory = join(
-  tmpdir(),
-  'scribbits-mock-combat-tests'
-);
+const mockCombatTestOutputDirectory = join(testTemporaryRoot, 'mock-combat');
 rmSync(mockCombatTestOutputDirectory, { recursive: true, force: true });
 execFileSync(
   process.execPath,
@@ -134,10 +149,53 @@ symlinkSync(
 const mockCombatBundle = await import(
   `${pathToFileURL(join(mockCombatTestOutputDirectory, 'battle.mjs')).href}?test=1`
 );
+const apiContractOutputDirectory = join(testTemporaryRoot, 'api-contract');
+rmSync(apiContractOutputDirectory, { recursive: true, force: true });
+const { build: buildViteBundle } = await import('vite');
+await buildViteBundle({
+  root: repoRoot,
+  configFile: false,
+  logLevel: 'silent',
+  resolve: {
+    alias: {
+      '@devvit/web/server': join(
+        repoRoot,
+        'scripts',
+        'api-contract-runtime.mjs'
+      ),
+      '@hono/node-server': join(
+        repoRoot,
+        'scripts',
+        'api-contract-node-server.mjs'
+      ),
+    },
+  },
+  build: {
+    ssr: join(repoRoot, 'scripts', 'api-contract-entry.ts'),
+    outDir: apiContractOutputDirectory,
+    emptyOutDir: true,
+    rollupOptions: {
+      output: { entryFileNames: 'api-contract.mjs' },
+    },
+  },
+});
+symlinkSync(
+  join(repoRoot, 'node_modules'),
+  join(apiContractOutputDirectory, 'node_modules'),
+  'dir'
+);
+const productionApiContract = await import(
+  `${pathToFileURL(join(apiContractOutputDirectory, 'api-contract.mjs')).href}?test=1`
+);
+const cleanupApiContractOutput = () => {
+  rmSync(apiContractOutputDirectory, { recursive: true, force: true });
+};
+process.once('exit', cleanupApiContractOutput);
 const { createMockBattleReportFactory } =
   await import('./mock-battle-factory.mjs');
 
 const require = createRequire(import.meta.url);
+const typescript = require('typescript');
 const analyzerCore = require(join(outDir, 'shared', 'analyzer-core.js'));
 const sharedBattle = require(join(outDir, 'shared', 'battle.js'));
 const sharedCosmetics = require(join(outDir, 'shared', 'cosmetics.js'));
@@ -156,7 +214,16 @@ const elementContent = require(
   join(outDir, 'shared', 'combat', 'elementcontent.js')
 );
 const arena = require(join(outDir, 'shared', 'arena.js'));
+const sharedElements = require(join(outDir, 'shared', 'elements.js'));
+const rivalRunChallenges = require(
+  join(outDir, 'shared', 'rivalrunchallenges.js')
+);
 const founders = require(join(outDir, 'shared', 'founders.js'));
+const sharedStableHash = require(join(outDir, 'shared', 'stablehash.js'));
+const deterministicContent = require(
+  join(outDir, 'shared', 'content', 'deterministic.js')
+);
+const serverRandom = require(join(outDir, 'server', 'core', 'random.js'));
 const careReactionContent = require(
   join(outDir, 'shared', 'content', 'carereactions.js')
 );
@@ -202,6 +269,14 @@ const streakCore = require(join(outDir, 'server', 'core', 'streak.js'));
 const moderationCore = require(join(outDir, 'server', 'core', 'moderation.js'));
 const privacyCore = require(join(outDir, 'server', 'core', 'privacy.js'));
 const practiceCore = require(join(outDir, 'server', 'core', 'practice.js'));
+const migrationCore = require(join(outDir, 'server', 'core', 'migrations.js'));
+const dataDeletionCore = require(
+  join(outDir, 'server', 'core', 'dataDeletion.js')
+);
+const nightlyStorageFence = require(
+  join(outDir, 'server', 'core', 'nightlyStorageFence.js')
+);
+const storageCore = require(join(outDir, 'server', 'core', 'storage.js'));
 const scoutNotebookCore = require(
   join(outDir, 'server', 'core', 'scoutNotebook.js')
 );
@@ -257,12 +332,2067 @@ const clientAccessories = require(
   join(outDir, 'client', 'lib', 'accessories.js')
 );
 const clientPens = require(join(outDir, 'client', 'lib', 'pens.js'));
+const pressInteraction = require(
+  join(outDir, 'client', 'lib', 'pressinteraction.js')
+);
+const semanticTabs = require(
+  join(outDir, 'client', 'lib', 'semantictabs.js')
+);
 
 const passedChecks = [];
 
 const pass = (name) => {
   passedChecks.push(name);
 };
+
+const readSourceFiles = (directory) =>
+  readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+    const entryPath = join(directory, entry.name);
+    if (entry.isDirectory()) return readSourceFiles(entryPath);
+    if (!entry.isFile() || !/\.(?:mjs|ts)$/.test(entry.name)) return [];
+    if (entry.name === 'test-battle.mjs') return [];
+    return [readFileSync(entryPath, 'utf8')];
+  });
+
+const stableHashVectors = [
+  ['', 2166136261],
+  ['scribbits', 1798155316],
+  ['forecast:2026-07-13', 3847699173],
+  ['ink-\u{1f58d}', 9755236],
+];
+for (const [value, expectedHash] of stableHashVectors) {
+  assert.equal(sharedStableHash.hashStringToUint32(value), expectedHash);
+  assert.equal(deterministicContent.hashContentKey(value), expectedHash);
+  assert.equal(serverRandom.hashTextToSeed(value), expectedHash);
+}
+const stableHashSource = readFileSync(
+  join(repoRoot, 'src', 'shared', 'stablehash.ts'),
+  'utf8'
+);
+const executableSourceFamily = [
+  ...readSourceFiles(join(repoRoot, 'src')),
+  ...readSourceFiles(join(repoRoot, 'scripts')),
+].join('\n');
+const combatRandomSource = readFileSync(
+  join(repoRoot, 'src', 'shared', 'combat', 'random.ts'),
+  'utf8'
+);
+const stableStringHashOwnerFamily = executableSourceFamily
+  .replace(combatRandomSource, '')
+  .replace(/(?<=[0-9a-f])_(?=[0-9a-f])/gi, '');
+assert.match(stableHashSource, /Math\.imul\(hash, 0x01000193\)/);
+assert.equal(
+  stableStringHashOwnerFamily.match(/(?:2166136261|0x811c9dc5)/g)?.length,
+  1,
+  'only the shared stable-hash primitive may own the FNV-1a offset basis'
+);
+assert.equal(
+  stableStringHashOwnerFamily.match(/(?:16777619|0x01000193)/g)?.length,
+  1,
+  'only the shared stable-hash primitive may own the FNV-1a multiplier'
+);
+assert.match(
+  readFileSync(join(repoRoot, 'src', 'shared', 'rivalrunchallenges.ts'), 'utf8'),
+  /import \{ hashStringToUint32 \} from '\.\/stablehash';/
+);
+pass('stable string hashing has one shared primitive and two domain names');
+
+const workspaceRoot = join(repoRoot, '..');
+const nodeBootstrapSource = readFileSync(
+  join(workspaceRoot, 'scripts', 'node-env.sh'),
+  'utf8'
+);
+const verifyCommandSource = readFileSync(
+  join(workspaceRoot, 'verify.command'),
+  'utf8'
+);
+const contributorCommandsSource = readFileSync(
+  join(repoRoot, 'AGENTS.md'),
+  'utf8'
+);
+const appReadmeSource = readFileSync(join(repoRoot, 'README.md'), 'utf8');
+assert.match(
+  nodeBootstrapSource,
+  /codex_fallback_bin_dir="\$codex_bin_dir\/fallback"/
+);
+assert.match(
+  nodeBootstrapSource,
+  /run_pnpm install --frozen-lockfile/,
+  'the bootstrap must install from the canonical pnpm lock'
+);
+assert.doesNotMatch(nodeBootstrapSource, /\bnpm ci\b/);
+assert.match(verifyCommandSource, /scripts\/node-env\.sh/);
+assert.match(verifyCommandSource, /ensure_node_modules/);
+assert.match(verifyCommandSource, /run_pnpm verify/);
+assert.doesNotMatch(contributorCommandsSource, /\bnpm (?:ci|run)\b/);
+assert.doesNotMatch(appReadmeSource, /\bnpm (?:ci|install|run)\b/);
+assert.match(nodeBootstrapSource, /Node 22\.2\.0\+ is required/);
+assert.match(nodeBootstrapSource, /required_pnpm_version="11\.7\.0"/);
+pass('workspace verification has one clean-shell pnpm bootstrap');
+
+const packageManifest = JSON.parse(
+  readFileSync(join(repoRoot, 'package.json'), 'utf8')
+);
+const deployCommandSource = readFileSync(
+  join(workspaceRoot, 'deploy.command'),
+  'utf8'
+);
+const deployWorkflowSource = readFileSync(
+  join(workspaceRoot, '.github', 'workflows', 'devvit-auto-deploy.yml'),
+  'utf8'
+);
+const deployGuideSource = readFileSync(
+  join(workspaceRoot, 'DEPLOY.md'),
+  'utf8'
+);
+assert.equal(
+  packageManifest.scripts.deploy,
+  'pnpm run release:check && devvit upload --bump patch'
+);
+assert.equal(
+  packageManifest.scripts.launch,
+  'pnpm run release:check && devvit publish --bump patch'
+);
+assert.equal(
+  packageManifest.scripts['release:check'],
+  'pnpm run verify && devvit whoami'
+);
+assert.match(deployCommandSource, /run_pnpm deploy/);
+assert.doesNotMatch(
+  deployCommandSource,
+  /devvit upload|sync-devvit-version|package-lock\.json|git (?:commit|push)/
+);
+assert.equal(
+  deployWorkflowSource.match(/pnpm run deploy/g)?.length,
+  1,
+  'CI must call the canonical deploy command once'
+);
+assert.doesNotMatch(
+  deployWorkflowSource,
+  /pnpm run (?:type-check|lint|test:sim|build)|devvit upload/
+);
+assert.doesNotMatch(
+  deployGuideSource,
+  /\bnpm\b|\bnpx\b|package-lock\.json|sync-devvit-version/
+);
+assert.equal(
+  readdirSync(join(workspaceRoot, 'scripts')).includes(
+    'sync-devvit-version.mjs'
+  ),
+  false
+);
+pass('desktop, CI, and package releases share one verified pnpm owner');
+
+const nightlyJobSource = readFileSync(
+  join(repoRoot, 'src', 'server', 'core', 'dailyJob.ts'),
+  'utf8'
+);
+assert.doesNotMatch(
+  nightlyJobSource,
+  /\bcreatePost\b|\bCreateArenaPost\b|\bCreatedArenaPost\b|\bpostId\b|getArenaPostKey/
+);
+pass('nightly resolution has no parallel post-publication path');
+
+const dataLeaseSource = readFileSync(
+  join(repoRoot, 'src', 'server', 'core', 'dataDeletion.ts'),
+  'utf8'
+);
+for (const [operationName, expectedCount] of [
+  ['Player data deletion', 3],
+  ['Player mutation', 3],
+  ['Nightly player mutation', 3],
+]) {
+  const escapedName = operationName.replaceAll(' ', '\\s');
+  assert.equal(
+    dataLeaseSource.match(
+      new RegExp(
+        `discardWatchedTransaction\\(transaction, '${escapedName}'\\)`,
+        'g'
+      )
+    )?.length,
+    expectedCount,
+    `${operationName} must own its three acquire/renew/release cleanup labels`
+  );
+}
+pass('transaction cleanup diagnostics name their actual lease lifecycle');
+
+assert.deepEqual(
+  [...sharedElements.ELEMENTS],
+  ['ember', 'tide', 'moss', 'storm']
+);
+assert.equal(Object.isFrozen(sharedElements.ELEMENTS), true);
+for (const element of sharedElements.ELEMENTS) {
+  assert.equal(sharedElements.isElement(element), true);
+}
+for (const value of [undefined, null, '', 'fire', 'EMBER', 0, {}]) {
+  assert.equal(sharedElements.isElement(value), false);
+}
+const countElementValidators = (source) =>
+  source.match(/\b(?:export\s+)?(?:const|function)\s+is(?:[A-Z]\w*)?Element\b/g)
+    ?.length ?? 0;
+const findCopiedElementUnions = (source) =>
+  [...source.matchAll(/\btype\s+\w*Element\w*\s*=\s*([^;]+);/g)].filter(
+    (elementUnionAlias) => {
+      const copiedElementValues = new Set(
+        [
+          ...(elementUnionAlias[1] ?? '').matchAll(
+            /["'](ember|tide|moss|storm)["']/g
+          ),
+        ].map((match) => match[1])
+      );
+      return copiedElementValues.size === sharedElements.ELEMENTS.length;
+    }
+  );
+const countCompleteElementArrays = (source) =>
+  (
+    source.match(
+      /\[\s*["'](?:ember|tide|moss|storm)["']\s*,\s*["'](?:ember|tide|moss|storm)["']\s*,\s*["'](?:ember|tide|moss|storm)["']\s*,\s*["'](?:ember|tide|moss|storm)["']\s*,?\s*\]/g
+    ) ?? []
+  ).filter((candidate) => {
+    const values = new Set(
+      [...candidate.matchAll(/["'](ember|tide|moss|storm)["']/g)].map(
+        (match) => match[1]
+      )
+    );
+    return values.size === sharedElements.ELEMENTS.length;
+  }).length;
+assert.equal(
+  countElementValidators(executableSourceFamily),
+  1,
+  'the shared Element catalog must own the only runtime validator'
+);
+assert.equal(findCopiedElementUnions(executableSourceFamily).length, 0);
+assert.equal(
+  countCompleteElementArrays(executableSourceFamily),
+  1,
+  'only the shared Element catalog may declare the complete runtime value list'
+);
+assert.equal(
+  countElementValidators(
+    'function isElement() {}\nconst isCombatElement = () => true;'
+  ),
+  2
+);
+assert.equal(
+  findCopiedElementUnions(
+    'type DebugCombatElement = "storm" | "moss" | "tide" | "ember";'
+  ).length,
+  1
+);
+assert.equal(
+  countCompleteElementArrays('["storm", "ember", "moss", "tide"]'),
+  1
+);
+pass('Element values and runtime validation have one shared catalog');
+
+assert.deepEqual([...arena.SCRIBBIT_STAT_KEYS], [
+  'chonk',
+  'spike',
+  'zip',
+  'charm',
+]);
+assert.equal(Object.isFrozen(arena.SCRIBBIT_STAT_KEYS), true);
+assert.equal(combatConfig.DOMINANT_STAT_TIE_ORDER, arena.SCRIBBIT_STAT_KEYS);
+for (const relativePath of [
+  'src/shared/analyzer-core.ts',
+  'src/shared/scoutnotebook.ts',
+  'src/shared/combat/config.ts',
+  'src/client/lib/ui.ts',
+]) {
+  const consumerSource = readFileSync(join(repoRoot, relativePath), 'utf8');
+  assert.match(consumerSource, /\bSCRIBBIT_STAT_KEYS\b/);
+  assert.doesNotMatch(
+    consumerSource,
+    /\[\s*['"]chonk['"]\s*,\s*['"]spike['"]\s*,\s*['"]zip['"]\s*,\s*['"]charm['"]\s*\]/
+  );
+}
+pass('Scribbit stat order has one immutable shared catalog');
+
+const serverBattleSource = readFileSync(
+  join(repoRoot, 'src', 'server', 'core', 'battle.ts'),
+  'utf8'
+);
+const legacySource = readFileSync(
+  join(repoRoot, 'src', 'server', 'core', 'legacy.ts'),
+  'utf8'
+);
+const privacySource = readFileSync(
+  join(repoRoot, 'src', 'server', 'core', 'privacy.ts'),
+  'utf8'
+);
+assert.doesNotMatch(
+  serverBattleSource,
+  /export\s*\{[^}]*getLevelDamageMultiplier[^}]*\}/,
+  'server Battle must not re-export the shared level multiplier'
+);
+assert.doesNotMatch(legacySource, /getLegacyIndexVersionStorageKey/);
+assert.match(
+  privacySource,
+  /getLegacyIndexVersionKey\(userId\)/,
+  'privacy deletion must import the canonical Legacy storage key name'
+);
+assert.deepEqual(Object.keys(battle).sort(), [
+  'getElementDamageMultiplier',
+  'getForecastDamageMultiplier',
+  'simulate',
+]);
+assert.deepEqual(Object.keys(legacyCore).sort(), [
+  'ensureLegacyCardIndex',
+  'getLegacyIndexVersionKey',
+  'getLegacySeenDayKey',
+  'isLegacyCardCursor',
+  'loadLegacyCardPage',
+  'loadLegacyReturnReceipt',
+  'markLegacyCardsSeen',
+  'toLegacyCard',
+]);
+assert.equal(
+  legacyCore.getLegacyIndexVersionKey('legacy-deck-owner'),
+  'user:legacy-deck-owner:scribbits:legacy-index-version'
+);
+pass('Legacy and battle helpers expose one canonical import path');
+
+const arenaContractSource = readFileSync(
+  join(repoRoot, 'src', 'shared', 'arena.ts'),
+  'utf8'
+);
+const productionApiSource = readFileSync(
+  join(repoRoot, 'src', 'server', 'routes', 'api.ts'),
+  'utf8'
+);
+const productionServerSource = readSourceFiles(
+  join(repoRoot, 'src', 'server')
+).join('\n');
+const scribbitResolverSource = readFileSync(
+  join(repoRoot, 'src', 'client', 'lib', 'scribbits.ts'),
+  'utf8'
+);
+const mockServerSource = readFileSync(
+  join(repoRoot, 'scripts', 'dev-mock.mjs'),
+  'utf8'
+);
+const architecturePlanSource = readFileSync(
+  join(repoRoot, '..', 'plans', 'v3-scribbits-arena.md'),
+  'utf8'
+);
+assert.match(productionApiSource, /media\.upload\(/);
+const uploadDrawingImplementation = productionApiSource.match(
+  /const uploadDrawing\s*=\s*async[\s\S]*?\n};/
+)?.[0];
+assert.ok(uploadDrawingImplementation);
+assert.doesNotMatch(
+  uploadDrawingImplementation,
+  /\b(?:catch|redis|storage|set|hSet|hSetMany)\b/,
+  'production media upload must fail closed without a persistence fallback'
+);
+const rawImagePersistencePattern =
+  /(?:[A-Za-z_$][\w$]*\.)+(?:set|incrBy|hSet|hSetNX|hSetMany|hIncrBy|zAdd|zIncrBy)\([\s\S]{0,300}\b(?:baseImageDataUrl|imageDataUrl)\b|\b(?:baseImageDataUrl|imageDataUrl)\b[\s\S]{0,300}(?:[A-Za-z_$][\w$]*\.)+(?:set|incrBy|hSet|hSetNX|hSetMany|hIncrBy|zAdd|zIncrBy)\(/;
+assert.doesNotMatch(
+  productionServerSource,
+  rawImagePersistencePattern,
+  'production must never persist submitted PNG data URLs'
+);
+assert.match(
+  "await storage.set('drawing:raw', draft.baseImageDataUrl);",
+  rawImagePersistencePattern
+);
+assert.match(
+  "await redis.hSet('drawing:raw', { png: draft.imageDataUrl });",
+  rawImagePersistencePattern
+);
+assert.match(
+  "await transaction.set('drawing:raw', draft.baseImageDataUrl);",
+  rawImagePersistencePattern
+);
+assert.match(
+  "await transaction.hSet('drawing:raw', { png: draft.imageDataUrl });",
+  rawImagePersistencePattern
+);
+assert.match(
+  "await storage.hSetNX('drawing:raw', 'png', draft.baseImageDataUrl);",
+  rawImagePersistencePattern
+);
+assert.match(
+  "await transaction.hSetNX('drawing:raw', 'png', draft.imageDataUrl);",
+  rawImagePersistencePattern
+);
+assert.match(
+  "await storage.zIncrBy('drawing:raw', draft.baseImageDataUrl, 1);",
+  rawImagePersistencePattern
+);
+assert.match(
+  "await transaction.zIncrBy('drawing:raw', draft.imageDataUrl, 1);",
+  rawImagePersistencePattern
+);
+assert.match(
+  "await storage.hIncrBy('drawing:raw', draft.baseImageDataUrl, 1);",
+  rawImagePersistencePattern
+);
+assert.match(
+  "await transaction.hIncrBy('drawing:raw', draft.imageDataUrl, 1);",
+  rawImagePersistencePattern
+);
+assert.match(
+  'await storage.incrBy(draft.baseImageDataUrl, 1);',
+  rawImagePersistencePattern
+);
+assert.match(
+  "await fencedStorage.set('drawing:raw', draft.baseImageDataUrl);",
+  rawImagePersistencePattern
+);
+assert.match(
+  "await tx.hSet('drawing:raw', { png: draft.imageDataUrl });",
+  rawImagePersistencePattern
+);
+assert.match(mockServerSource, /mock-only \/api\/drawing\/\{id\}/);
+assert.match(arenaContractSource, /Reddit-hosted in production/);
+assert.match(
+  scribbitResolverSource,
+  /Reddit-hosted in production; \/api\/drawing\/\{id\} only in the local mock/
+);
+assert.match(architecturePlanSource, /Production never stores raw PNG bytes/);
+assert.doesNotMatch(architecturePlanSource, /fallback: PNG bytes in redis/i);
+pass('drawing media docs match the production and mock authority boundary');
+
+const founderArtPlanSource = readFileSync(
+  join(repoRoot, '..', 'plans', 'creature-art-spec.md'),
+  'utf8'
+);
+assert.match(founderArtPlanSource, /old Higgsfield-to-static-sprite plan is superseded/);
+assert.match(founderArtPlanSource, /deterministic Inkbody\/procedural-doodle renderer/);
+assert.match(founderArtPlanSource, /Do not add a parallel `public\/creatures`/);
+assert.doesNotMatch(founderArtPlanSource, /Save as app\/public\/creatures/);
+pass('founder art plan matches the procedural runtime source of truth');
+
+for (const relativePath of [
+  'src/client/lib/api.ts',
+  'src/client/lib/nextgoal.ts',
+  'src/client/lib/legacycards.ts',
+  'src/shared/arena.ts',
+  'src/shared/founders.ts',
+  'src/shared/content/forecastblurbs.ts',
+  'src/shared/content/scoutnotes.ts',
+  'src/server/routes/api.ts',
+]) {
+  assert.doesNotMatch(
+    readFileSync(join(repoRoot, relativePath), 'utf8'),
+    /\b(?:bet|bets|bracket|brackets)\b/i,
+    `${relativePath} must use canonical Back and Rumble vocabulary`
+  );
+}
+pass('player-facing domain copy uses canonical Back and Rumble vocabulary');
+
+const listFilePaths = (directory) =>
+  readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+    const entryPath = join(directory, entry.name);
+    return entry.isDirectory() ? listFilePaths(entryPath) : [entryPath];
+  });
+const typeOutputCleanerSource = readFileSync(
+  join(repoRoot, 'scripts', 'clean-type-output.mjs'),
+  'utf8'
+);
+assert.match(typeOutputCleanerSource, /dist\/types/);
+assert.match(typeOutputCleanerSource, /recursive:\s*true/);
+assert.match(
+  packageManifest.scripts['type-check'],
+  /^node scripts\/clean-type-output\.mjs && tsc --build$/
+);
+for (const sourceRoot of ['client', 'server', 'shared']) {
+  const generatedJavaScriptFiles = listFilePaths(
+    join(repoRoot, 'dist', 'types', sourceRoot)
+  ).filter((filePath) => filePath.endsWith('.js'));
+  for (const generatedFilePath of generatedJavaScriptFiles) {
+    const relativeGeneratedPath = generatedFilePath.slice(
+      join(repoRoot, 'dist', 'types', sourceRoot).length + 1
+    );
+    const expectedSourcePath = join(
+      repoRoot,
+      'src',
+      sourceRoot,
+      relativeGeneratedPath.replace(/\.js$/, '.ts')
+    );
+    assert.equal(
+      listFilePaths(join(repoRoot, 'src', sourceRoot)).includes(
+        expectedSourcePath
+      ),
+      true,
+      `${relativeGeneratedPath} must have a live TypeScript source`
+    );
+  }
+}
+pass('type-check cleans output before emitting source-matched artifacts');
+const isRetiredNavigationBitmap = (filePath) =>
+  /\/[^/]*(?:nav|dock|navigation)[^/]*(?:\/.*)?\.(?:png|jpe?g|webp|gif|avif)$/i.test(
+    filePath
+  );
+assert.deepEqual(
+  listFilePaths(join(repoRoot, 'src', 'client', 'assets')).filter(
+    isRetiredNavigationBitmap
+  ),
+  [],
+  'retired bitmap dock icons must not re-enter the production asset graph'
+);
+for (const bypassPath of [
+  '/assets/bottom-dock/icons/arena.png',
+  '/assets/primary-navigation/icons/arena.webp',
+  '/assets/icons/app-nav/arena.jpg',
+]) {
+  assert.equal(isRetiredNavigationBitmap(bypassPath), true);
+}
+assert.doesNotMatch(
+  executableSourceFamily,
+  /(?:split-nav-icons|nav-(?:arena|gallery|draw|battles|scout)\.(?:png|jpe?g|webp|gif|avif))/i,
+  'no source or generator may restore retired bitmap dock icons'
+);
+pass('procedural paper icons are the only dock asset family');
+
+const gallerySceneSource = readFileSync(
+  join(repoRoot, 'src', 'client', 'scenes', 'Gallery.ts'),
+  'utf8'
+);
+const galleryRegistrySource = readFileSync(
+  join(repoRoot, 'src', 'client', 'lib', 'registry.ts'),
+  'utf8'
+);
+const clientSourceFamily = readSourceFiles(
+  join(repoRoot, 'src', 'client')
+).join('\n');
+const hasRetiredGalleryVocabulary = (source) => {
+  const scanner = typescript.createScanner(
+    typescript.ScriptTarget.Latest,
+    true,
+    typescript.LanguageVariant.Standard,
+    source
+  );
+  for (
+    let token = scanner.scan();
+    token !== typescript.SyntaxKind.EndOfFileToken;
+    token = scanner.scan()
+  ) {
+    if (
+      token === typescript.SyntaxKind.Identifier &&
+      /sketchbook/i.test(scanner.getTokenText())
+    ) {
+      return true;
+    }
+    if (
+      (token === typescript.SyntaxKind.StringLiteral ||
+        token === typescript.SyntaxKind.NoSubstitutionTemplateLiteral) &&
+      scanner.getTokenValue().toLowerCase() === 'sketchbook'
+    ) {
+      return true;
+    }
+  }
+  return false;
+};
+assert.equal(
+  listFilePaths(join(repoRoot, 'src', 'client', 'scenes')).some((filePath) =>
+    /\/Sketchbook\.ts$/.test(filePath)
+  ),
+  false
+);
+assert.equal(
+  hasRetiredGalleryVocabulary(clientSourceFamily),
+  false,
+  'Gallery navigation must not retain the retired scene or tab synonyms'
+);
+for (const bypassSource of [
+  'export const setSketchbookTab = setGalleryTab;',
+  'export const getSketchbookTab = getGalleryTab;',
+  "fadeToScene(scene, 'Sketchbook');",
+  'fadeToScene(scene, `Sketchbook`);',
+  "const tab = 'sketchbook';",
+  'const sketchbookScene = Gallery;',
+  'const SKETCHBOOK_ROUTE = Gallery;',
+  'const SketchBook = Gallery;',
+]) {
+  assert.equal(hasRetiredGalleryVocabulary(bypassSource), true);
+}
+assert.match(gallerySceneSource, /export class Gallery extends Scene/);
+assert.match(gallerySceneSource, /super\(["']Gallery["']\)/);
+assert.doesNotMatch(
+  gallerySceneSource,
+  /\b(?:galleryData|loadingGallery|galleryRequestEpoch|loadGallery)\b/,
+  'Legends-only state must use Legends names inside the broader Gallery scene'
+);
+assert.match(gallerySceneSource, /private legendsState: LegendsState/);
+assert.match(gallerySceneSource, /private async loadLegends\(\)/);
+assert.match(
+  galleryRegistrySource,
+  /export type GalleryTab = ["']legends["'] \| ["']legacy["'] \| ["']collection["']/
+);
+assert.match(
+  galleryRegistrySource,
+  /export type ReplayReturnScene =[\s\S]*["']Gallery["']/
+);
+assert.doesNotMatch(
+  productionApiSource,
+  /not in your sketchbook/i,
+  'server responses must use active roster or Gallery vocabulary'
+);
+assert.doesNotMatch(mockServerSource, /not in your sketchbook/i);
+pass('Gallery scene and Legacy tab use one canonical vocabulary');
+
+assert.equal(
+  storageCore.MAX_WATCH_TRANSACTION_ATTEMPTS,
+  5,
+  'all optimistic Redis workflows must share one bounded retry budget'
+);
+const cleanupWarnings = [];
+const originalConsoleWarn = console.warn;
+console.warn = (...values) => cleanupWarnings.push(values);
+try {
+  await storageCore.discardWatchedTransaction(
+    {
+      async discard() {
+        throw new Error('simulated closed transaction');
+      },
+    },
+    'Storage contract proof'
+  );
+} finally {
+  console.warn = originalConsoleWarn;
+}
+assert.equal(cleanupWarnings.length, 1);
+assert.match(String(cleanupWarnings[0]?.[0]), /Storage contract proof/);
+const serverCoreSource = readdirSync(join(repoRoot, 'src', 'server', 'core'))
+  .filter((filename) => filename.endsWith('.ts') && filename !== 'storage.ts')
+  .map((filename) =>
+    readFileSync(join(repoRoot, 'src', 'server', 'core', filename), 'utf8')
+  )
+  .join('\n');
+assert.doesNotMatch(
+  serverCoreSource,
+  /const\s+(?:discard\w*Transaction|maximum\w*TransactionAttempts)\b/,
+  'domain modules must not recreate generic transaction cleanup or retry policy'
+);
+pass('optimistic Redis cleanup and retry policy has one shared owner');
+
+const playerMutationLockKey = 'user:api-contract-user:mutation:lock';
+const publicRouteInventory = [
+  ...new Set(
+    productionApiContract.app.routes
+      .filter(
+        (route) => route.path.startsWith('/api/') && route.method !== 'ALL'
+      )
+      .map((route) => `${route.method} ${route.path}`)
+  ),
+].sort();
+assert.equal(
+  productionApiContract.app.routes.some((route) =>
+    /^\/api\/drawing(?:\/|$)/.test(route.path)
+  ),
+  false,
+  'production must not mount a raw drawing route for any HTTP method'
+);
+assert.deepEqual(publicRouteInventory, [
+  'GET /api/arena',
+  'GET /api/clout-board',
+  'GET /api/inventory',
+  'GET /api/legacy-cards',
+  'GET /api/legends',
+  'GET /api/my-battles',
+  'GET /api/rumble-replay',
+  'GET /api/scout-notebook',
+  'GET /api/spar-rivals',
+  'GET /api/splash',
+  'POST /api/back',
+  'POST /api/believe',
+  'POST /api/boss-challenge',
+  'POST /api/capsule',
+  'POST /api/care',
+  'POST /api/delete-my-data',
+  'POST /api/enter-rumble',
+  'POST /api/equip-title',
+  'POST /api/legacy-cards/seen',
+  'POST /api/practice-battle',
+  'POST /api/remove-scribbit',
+  'POST /api/report-scribbit',
+  'POST /api/scribbit',
+  'POST /api/spar',
+]);
+assert.deepEqual(
+  productionApiContract.app.routes
+    .filter((route) => route.path.startsWith('/internal/'))
+    .map((route) => `${route.method} ${route.path}`)
+    .sort(),
+  [
+    'POST /internal/menu/post-create',
+    'POST /internal/scheduler/nightly-arena',
+    'POST /internal/triggers/on-app-install',
+  ],
+  'the production entrypoint must mount every internal host route'
+);
+const menuRouteSource = readFileSync(
+  join(repoRoot, 'src', 'server', 'routes', 'menu.ts'),
+  'utf8'
+);
+const installTriggerSource = readFileSync(
+  join(repoRoot, 'src', 'server', 'routes', 'triggers.ts'),
+  'utf8'
+);
+const arenaPostSource = readFileSync(
+  join(repoRoot, 'src', 'server', 'core', 'post.ts'),
+  'utf8'
+);
+const schedulerRouteSource = readFileSync(
+  join(repoRoot, 'src', 'server', 'routes', 'scheduler.ts'),
+  'utf8'
+);
+const inspectTypeScriptModule = (source) => {
+  const sourceFile = typescript.createSourceFile(
+    'inspection.ts',
+    source,
+    typescript.ScriptTarget.Latest,
+    true,
+    typescript.ScriptKind.TS
+  );
+  const imports = new Map();
+  const calledIdentifiers = [];
+  const visit = (node) => {
+    if (
+      typescript.isImportDeclaration(node) &&
+      typescript.isStringLiteral(node.moduleSpecifier)
+    ) {
+      const importedNames =
+        node.importClause?.namedBindings &&
+        typescript.isNamedImports(node.importClause.namedBindings)
+          ? node.importClause.namedBindings.elements.map((element) => ({
+              imported: (element.propertyName ?? element.name).text,
+              local: element.name.text,
+            }))
+          : [];
+      imports.set(
+        node.moduleSpecifier.text,
+        [
+          ...(imports.get(node.moduleSpecifier.text) ?? []),
+          ...importedNames,
+        ].sort((left, right) => left.imported.localeCompare(right.imported))
+      );
+    }
+    if (
+      typescript.isCallExpression(node) &&
+      typescript.isIdentifier(node.expression)
+    ) {
+      calledIdentifiers.push(node.expression.text);
+    }
+    typescript.forEachChild(node, visit);
+  };
+  visit(sourceFile);
+  return { imports, calledIdentifiers };
+};
+for (const routeSource of [menuRouteSource, installTriggerSource]) {
+  const inspection = inspectTypeScriptModule(routeSource);
+  assert.deepEqual(inspection.imports.get('../core/post'), [
+    {
+      imported: 'ensureCurrentArenaPost',
+      local: 'ensureCurrentArenaPost',
+    },
+  ]);
+  assert.equal(inspection.imports.has('../core/arenaStore'), false);
+  assert.equal(
+    inspection.calledIdentifiers.filter(
+      (name) => name === 'ensureCurrentArenaPost'
+    ).length,
+    1
+  );
+  for (const forbiddenCall of [
+    'ensureCurrentArenaDay',
+    'ensureForecastForDay',
+    'getCurrentChampion',
+    'getOrCreateArenaPost',
+  ]) {
+    assert.equal(inspection.calledIdentifiers.includes(forbiddenCall), false);
+  }
+}
+const schedulerInspection = inspectTypeScriptModule(schedulerRouteSource);
+assert.deepEqual(schedulerInspection.imports.get('../core/post'), [
+  {
+    imported: 'getOrCreateArenaPost',
+    local: 'getOrCreateArenaPost',
+  },
+  {
+    imported: 'publishRumbleResultComment',
+    local: 'publishRumbleResultComment',
+  },
+]);
+assert.equal(
+  schedulerInspection.calledIdentifiers.filter(
+    (name) => name === 'getOrCreateArenaPost'
+  ).length,
+  2,
+  'nightly publication must retain its two explicit-day post calls'
+);
+assert.equal(
+  schedulerInspection.calledIdentifiers.includes('ensureCurrentArenaPost'),
+  false
+);
+const aliasedSchedulerImport = inspectTypeScriptModule(
+  "import { ensureCurrentArenaPost as getOrCreateArenaPost } from '../core/post';"
+);
+assert.deepEqual(aliasedSchedulerImport.imports.get('../core/post'), [
+  {
+    imported: 'ensureCurrentArenaPost',
+    local: 'getOrCreateArenaPost',
+  },
+]);
+assert.match(arenaPostSource, /export const ensureCurrentArenaPost/);
+productionApiContract.resetApiContractRuntime();
+const menuPostResponse = await productionApiContract.app.request(
+  '/internal/menu/post-create',
+  { method: 'POST' }
+);
+assert.equal(menuPostResponse.status, 200);
+assert.deepEqual(await menuPostResponse.json(), {
+  navigateTo:
+    'https://reddit.com/r/scribbits_test/comments/api-contract-post-1',
+});
+const installPostResponse = await productionApiContract.app.request(
+  '/internal/triggers/on-app-install',
+  {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ type: 'install' }),
+  }
+);
+assert.equal(installPostResponse.status, 200);
+assert.deepEqual(await installPostResponse.json(), {
+  status: 'success',
+  message:
+    'Arena post created in subreddit scribbits_test with id api-contract-post-1 (trigger: install)',
+});
+assert.equal(
+  productionApiContract.apiContractRuntimeState.submittedPosts,
+  1,
+  'menu and install paths must converge on one idempotent current Arena post'
+);
+
+productionApiContract.resetApiContractRuntime();
+const reversedInstallResponse = await productionApiContract.app.request(
+  '/internal/triggers/on-app-install',
+  {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ type: 'install-first' }),
+  }
+);
+assert.equal(reversedInstallResponse.status, 200);
+const reversedMenuResponse = await productionApiContract.app.request(
+  '/internal/menu/post-create',
+  { method: 'POST' }
+);
+assert.equal(reversedMenuResponse.status, 200);
+assert.equal(productionApiContract.apiContractRuntimeState.submittedPosts, 1);
+
+const captureRouteErrors = async (action) => {
+  const errors = [];
+  const originalError = console.error;
+  console.error = (...values) => errors.push(values);
+  try {
+    return { result: await action(), errors };
+  } finally {
+    console.error = originalError;
+  }
+};
+
+productionApiContract.resetApiContractRuntime();
+const malformedInstallAttempt = await captureRouteErrors(() =>
+  productionApiContract.app.request('/internal/triggers/on-app-install', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: '{',
+  })
+);
+const malformedInstallResponse = malformedInstallAttempt.result;
+assert.equal(malformedInstallResponse.status, 400);
+assert.equal(malformedInstallAttempt.errors.length, 1);
+assert.equal(productionApiContract.apiContractRuntimeState.submittedPosts, 0);
+
+productionApiContract.resetApiContractRuntime();
+productionApiContract.failNextApiContractArenaPostReceipt();
+const failedReceiptAttempt = await captureRouteErrors(() =>
+  productionApiContract.app.request('/internal/menu/post-create', {
+    method: 'POST',
+  })
+);
+const failedReceiptResponse = failedReceiptAttempt.result;
+assert.equal(failedReceiptResponse.status, 400);
+assert.equal(failedReceiptAttempt.errors.length, 1);
+assert.equal(productionApiContract.apiContractRuntimeState.submittedPosts, 1);
+const failedReceiptDay =
+  productionApiContract.getApiContractString('arena:currentDay');
+assert.ok(failedReceiptDay);
+assert.equal(
+  productionApiContract.getApiContractHashField(
+    'arena:post-publishing-claims',
+    failedReceiptDay
+  ),
+  'published:api-contract-post-1'
+);
+const recoveredReceiptResponse = await productionApiContract.app.request(
+  '/internal/menu/post-create',
+  { method: 'POST' }
+);
+assert.equal(recoveredReceiptResponse.status, 200);
+assert.equal(productionApiContract.apiContractRuntimeState.submittedPosts, 1);
+assert.equal(
+  productionApiContract.getApiContractString(`arena:post:${failedReceiptDay}`),
+  'api-contract-post-1'
+);
+
+productionApiContract.resetApiContractRuntime();
+productionApiContract.failNextApiContractArenaPostMarker();
+const failedMarkerAttempt = await captureRouteErrors(() =>
+  productionApiContract.app.request('/internal/menu/post-create', {
+    method: 'POST',
+  })
+);
+assert.equal(failedMarkerAttempt.result.status, 400);
+assert.equal(failedMarkerAttempt.errors.length, 1);
+assert.equal(productionApiContract.apiContractRuntimeState.submittedPosts, 1);
+const failedMarkerDay =
+  productionApiContract.getApiContractString('arena:currentDay');
+assert.match(
+  productionApiContract.getApiContractHashField(
+    'arena:post-publishing-claims',
+    failedMarkerDay
+  ) ?? '',
+  /^\d+$/
+);
+const recoveredMarkerResponse = await productionApiContract.app.request(
+  '/internal/menu/post-create',
+  { method: 'POST' }
+);
+assert.equal(recoveredMarkerResponse.status, 200);
+assert.equal(productionApiContract.apiContractRuntimeState.submittedPosts, 1);
+
+productionApiContract.resetApiContractRuntime();
+productionApiContract.failNextApiContractPostLookup();
+const failedLookupAttempt = await captureRouteErrors(() =>
+  productionApiContract.app.request('/internal/menu/post-create', {
+    method: 'POST',
+  })
+);
+assert.equal(failedLookupAttempt.result.status, 400);
+assert.equal(failedLookupAttempt.errors.length, 1);
+assert.equal(productionApiContract.apiContractRuntimeState.submittedPosts, 0);
+const failedLookupDay =
+  productionApiContract.getApiContractString('arena:currentDay');
+assert.equal(
+  productionApiContract.getApiContractHashField(
+    'arena:post-publishing-claims',
+    failedLookupDay
+  ),
+  undefined,
+  'lookup failure must stop before claiming or publishing'
+);
+
+productionApiContract.resetApiContractRuntime();
+productionApiContract.failNextApiContractPostSubmission();
+const failedSubmissionAttempt = await captureRouteErrors(() =>
+  productionApiContract.app.request('/internal/menu/post-create', {
+    method: 'POST',
+  })
+);
+const failedSubmissionResponse = failedSubmissionAttempt.result;
+assert.equal(failedSubmissionResponse.status, 400);
+assert.equal(failedSubmissionAttempt.errors.length, 1);
+assert.equal(productionApiContract.apiContractRuntimeState.submittedPosts, 0);
+const failedSubmissionDay =
+  productionApiContract.getApiContractString('arena:currentDay');
+assert.match(
+  productionApiContract.getApiContractHashField(
+    'arena:post-publishing-claims',
+    failedSubmissionDay
+  ) ?? '',
+  /^\d+$/,
+  'ambiguous submission failure must retain its claim and fail closed'
+);
+
+productionApiContract.resetApiContractRuntime();
+const concurrentAttempt = await captureRouteErrors(() =>
+  Promise.all([
+    productionApiContract.app.request('/internal/menu/post-create', {
+      method: 'POST',
+    }),
+    productionApiContract.app.request('/internal/triggers/on-app-install', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ type: 'concurrent-install' }),
+    }),
+  ])
+);
+const [concurrentMenuResponse, concurrentInstallResponse] =
+  concurrentAttempt.result;
+assert.ok(
+  [concurrentMenuResponse.status, concurrentInstallResponse.status].includes(
+    200
+  )
+);
+assert.equal(productionApiContract.apiContractRuntimeState.submittedPosts, 1);
+pass('menu and install routes share current Arena post orchestration');
+
+const resultCommentSummary = {
+  resolvedDay: 41,
+  champion: {
+    id: 'result-comment-champion',
+    name: 'Result Comet',
+    isFounding: false,
+  },
+  runnerUp: null,
+  reportCount: 3,
+  resolvedForecast: { blurb: 'Ink falls sideways.' },
+  nextForecast: { blurb: 'Paper sparks at dusk.' },
+  cloutPayout: {
+    paidBackers: 0,
+    championBackers: 0,
+    runnerUpBackers: 0,
+  },
+};
+const resultCommentClaimKey = 'arena:result-comments';
+const resultCommentDayField = String(resultCommentSummary.resolvedDay);
+const seedResultCommentPost = () => {
+  productionApiContract.setApiContractString(
+    `arena:post:${resultCommentSummary.resolvedDay}`,
+    't3_api_contract_result_post'
+  );
+};
+
+productionApiContract.resetApiContractRuntime();
+seedResultCommentPost();
+productionApiContract.failNextApiContractCommentSubmissionAfterCommit();
+await assert.rejects(
+  () =>
+    productionApiContract.publishRumbleResultComment(
+      productionApiContract.apiContractRedis,
+      resultCommentSummary
+    ),
+  /committed Reddit comment reply loss/
+);
+assert.equal(
+  productionApiContract.apiContractRuntimeState.submittedComments,
+  1
+);
+assert.match(
+  productionApiContract.getApiContractHashField(
+    resultCommentClaimKey,
+    resultCommentDayField
+  ) ?? '',
+  /^submitting:/,
+  'ambiguous comment submission must retain its publication claim'
+);
+productionApiContract.failNextApiContractCommentLookup();
+await assert.rejects(
+  () =>
+    productionApiContract.publishRumbleResultComment(
+      productionApiContract.apiContractRedis,
+      resultCommentSummary
+    ),
+  /comment lookup failure/
+);
+assert.equal(
+  productionApiContract.apiContractRuntimeState.submittedComments,
+  1,
+  'lookup failure must not publish another result comment'
+);
+const recoveredAmbiguousComment =
+  await productionApiContract.publishRumbleResultComment(
+    productionApiContract.apiContractRedis,
+    resultCommentSummary
+  );
+assert.equal(recoveredAmbiguousComment, 'api-contract-comment-1');
+assert.equal(
+  productionApiContract.apiContractRuntimeState.submittedComments,
+  1
+);
+
+productionApiContract.resetApiContractRuntime();
+seedResultCommentPost();
+productionApiContract.failNextApiContractCommentSubmissionAfterCommit();
+await assert.rejects(() =>
+  productionApiContract.publishRumbleResultComment(
+    productionApiContract.apiContractRedis,
+    resultCommentSummary
+  )
+);
+for (let fillerIndex = 0; fillerIndex < 1000; fillerIndex += 1) {
+  productionApiContract.seedApiContractComment(
+    't3_api_contract_result_post',
+    `t1_filler_${fillerIndex}`,
+    `unrelated community comment ${fillerIndex}`
+  );
+}
+assert.equal(
+  await productionApiContract.publishRumbleResultComment(
+    productionApiContract.apiContractRedis,
+    resultCommentSummary
+  ),
+  null,
+  'an unreconciled submitting marker must fail closed outside the listing window'
+);
+assert.equal(
+  productionApiContract.apiContractRuntimeState.submittedComments,
+  1,
+  'listing limits must never turn ambiguous publication into a duplicate'
+);
+
+productionApiContract.resetApiContractRuntime();
+seedResultCommentPost();
+productionApiContract.failNextApiContractResultCommentReceipt();
+await assert.rejects(
+  () =>
+    productionApiContract.publishRumbleResultComment(
+      productionApiContract.apiContractRedis,
+      resultCommentSummary
+    ),
+  /result comment receipt failure/
+);
+assert.equal(
+  productionApiContract.apiContractRuntimeState.submittedComments,
+  1
+);
+const recoveredReceiptComment =
+  await productionApiContract.publishRumbleResultComment(
+    productionApiContract.apiContractRedis,
+    resultCommentSummary
+  );
+assert.equal(recoveredReceiptComment, 'api-contract-comment-1');
+assert.equal(
+  productionApiContract.apiContractRuntimeState.submittedComments,
+  1,
+  'receipt recovery must reconcile the existing exact result body'
+);
+pass('Rumble result comments recover ambiguous publication exactly once');
+
+const paginationOwnerSource = readFileSync(
+  join(repoRoot, 'src', 'client', 'lib', 'ui.ts'),
+  'utf8'
+);
+const paginationConsumers = [
+  {
+    name: 'Collection',
+    modulePath: './ui',
+    functionName: 'buildPageControls',
+    source: readFileSync(
+      join(repoRoot, 'src', 'client', 'lib', 'collectionbook.ts'),
+      'utf8'
+    ),
+  },
+  {
+    name: 'Legacy',
+    modulePath: './ui',
+    functionName: 'buildPageControls',
+    source: readFileSync(
+      join(repoRoot, 'src', 'client', 'lib', 'legacycards.ts'),
+      'utf8'
+    ),
+  },
+  {
+    name: 'Battles',
+    modulePath: '../lib/ui',
+    functionName: 'buildPagination',
+    source: readFileSync(
+      join(repoRoot, 'src', 'client', 'scenes', 'MyBattles.ts'),
+      'utf8'
+    ),
+  },
+  {
+    name: 'Gallery',
+    modulePath: '../lib/ui',
+    functionName: 'buildPageControls',
+    source: gallerySceneSource,
+  },
+];
+const inspectNamedFunction = (source, functionName) => {
+  const sourceFile = typescript.createSourceFile(
+    'pagination-consumer.ts',
+    source,
+    typescript.ScriptTarget.Latest,
+    true,
+    typescript.ScriptKind.TS
+  );
+  const calls = [];
+  const stringLiterals = [];
+  const collectStructure = (node) => {
+    if (typescript.isCallExpression(node)) {
+      calls.push({
+        expression: node.expression.getText(sourceFile),
+        arguments: node.arguments.map((argument) =>
+          argument.getText(sourceFile)
+        ),
+      });
+    }
+    if (
+      typescript.isStringLiteral(node) ||
+      typescript.isNoSubstitutionTemplateLiteral(node)
+    ) {
+      stringLiterals.push(node.text);
+    }
+    typescript.forEachChild(node, collectStructure);
+  };
+  const visit = (node) => {
+    const isTargetFunction =
+      ((typescript.isFunctionDeclaration(node) ||
+        typescript.isMethodDeclaration(node)) &&
+        node.name?.getText(sourceFile) === functionName) ||
+      (typescript.isVariableDeclaration(node) &&
+        node.name.getText(sourceFile) === functionName &&
+        node.initializer &&
+        (typescript.isArrowFunction(node.initializer) ||
+          typescript.isFunctionExpression(node.initializer)));
+    if (isTargetFunction) collectStructure(node);
+    typescript.forEachChild(node, visit);
+  };
+  visit(sourceFile);
+  return { calls, stringLiterals };
+};
+const inspectNamedFunctionCalls = (source, functionName) =>
+  inspectNamedFunction(source, functionName).calls.map(
+    ({ expression }) => expression
+  );
+const isPaginationOverlayAdd = (call) => /actionOverlay.*\.add$/i.test(call);
+assert.match(
+  paginationOwnerSource,
+  /export function paperPagination\(options: PaperPaginationOptions\)/
+);
+for (const consumer of paginationConsumers) {
+  const inspection = inspectTypeScriptModule(consumer.source);
+  assert.ok(
+    inspection.imports
+      .get(consumer.modulePath)
+      ?.some(
+        ({ imported, local }) =>
+          imported === 'paperPagination' && local === 'paperPagination'
+      ),
+    `${consumer.name} must import the canonical pagination owner without an alias`
+  );
+  assert.equal(
+    inspection.calledIdentifiers.filter((name) => name === 'paperPagination')
+      .length,
+    1,
+    `${consumer.name} must delegate exactly once to the canonical pagination owner`
+  );
+  assert.equal(
+    inspection.calledIdentifiers.includes('pageArrowButton'),
+    false,
+    `${consumer.name} must not rebuild pagination arrows`
+  );
+  const paginationCalls = inspectNamedFunctionCalls(
+    consumer.source,
+    consumer.functionName
+  );
+  assert.equal(
+    paginationCalls.some(isPaginationOverlayAdd),
+    false,
+    `${consumer.name} pagination must not rebuild semantic overlay controls`
+  );
+}
+assert.equal(
+  inspectNamedFunctionCalls(
+    'class Example { buildPageControls() { this.ensureContentActionOverlay().add({}); } }',
+    'buildPageControls'
+  ).some(isPaginationOverlayAdd),
+  true,
+  'the pagination ownership guard must catch accessor-based overlay duplication'
+);
+const aliasedPaginationImport = inspectTypeScriptModule(
+  "import { paperPagination as pageArrowButton } from './ui'; pageArrowButton({});"
+);
+assert.deepEqual(aliasedPaginationImport.imports.get('./ui'), [
+  { imported: 'paperPagination', local: 'pageArrowButton' },
+]);
+pass('paper pagination has one canvas and accessibility owner');
+
+const cardPressConsumers = [
+  {
+    name: 'Collection',
+    modulePath: './ui',
+    functionName: 'buildCosmeticCard',
+    source: paginationConsumers[0].source,
+    scaleX: '0.97',
+    scaleY: '0.96',
+    retiredRestoreHelper: /\brestoreCardScale\b/,
+  },
+  {
+    name: 'Legacy',
+    modulePath: './ui',
+    functionName: 'buildLegacyCard',
+    source: paginationConsumers[1].source,
+    scaleX: '0.97',
+    scaleY: '0.97',
+    retiredRestoreHelper: /\brestoreScale\b/,
+  },
+];
+for (const consumer of cardPressConsumers) {
+  const moduleInspection = inspectTypeScriptModule(consumer.source);
+  assert.ok(
+    moduleInspection.imports
+      .get(consumer.modulePath)
+      ?.some(
+        ({ imported, local }) =>
+          imported === 'addCardPressInteraction' &&
+          local === 'addCardPressInteraction'
+      ),
+    `${consumer.name} cards must import the canonical press owner without an alias`
+  );
+  assert.equal(
+    moduleInspection.calledIdentifiers.filter(
+      (name) => name === 'addCardPressInteraction'
+    ).length,
+    1,
+    `${consumer.name} must delegate exactly once to the canonical card press owner`
+  );
+  const functionInspection = inspectNamedFunction(
+    consumer.source,
+    consumer.functionName
+  );
+  const interactionCalls = functionInspection.calls.filter(
+    ({ expression }) => expression === 'addCardPressInteraction'
+  );
+  assert.equal(interactionCalls.length, 1);
+  assert.match(
+    interactionCalls[0].arguments[0] ?? '',
+    new RegExp(`pressedScaleX:\\s*${consumer.scaleX.replace('.', '\\.')}`)
+  );
+  assert.match(
+    interactionCalls[0].arguments[0] ?? '',
+    new RegExp(`pressedScaleY:\\s*${consumer.scaleY.replace('.', '\\.')}`)
+  );
+  for (const pointerEvent of ['pointerdown', 'pointerout', 'pointerup']) {
+    assert.equal(
+      functionInspection.stringLiterals.includes(pointerEvent),
+      false,
+      `${consumer.name} cards must not rebuild ${pointerEvent} behavior`
+    );
+  }
+  assert.doesNotMatch(consumer.source, consumer.retiredRestoreHelper);
+}
+assert.deepEqual(
+  inspectNamedFunction(
+    "function buildCosmeticCard() { hit.on('pointerdown', press); }",
+    'buildCosmeticCard'
+  ).stringLiterals,
+  ['pointerdown'],
+  'the card ownership guard must catch direct pointer-event recreation'
+);
+const cardPressOwnerInspection = inspectNamedFunction(
+  paginationOwnerSource,
+  'addCardPressInteraction'
+);
+const cardPressOwnerCall = cardPressOwnerInspection.calls.find(
+  ({ expression }) => expression === 'wireButtonPress'
+);
+assert.ok(cardPressOwnerCall);
+assert.match(cardPressOwnerCall.arguments[4] ?? '', /pressOnHover:\s*false/);
+
+const cardPressListeners = new Map();
+const cardPressEvents = [];
+pressInteraction.bindPressInteractionEvents(
+  {
+    on(event, listener) {
+      const listeners = cardPressListeners.get(event) ?? [];
+      listeners.push(listener);
+      cardPressListeners.set(event, listeners);
+    },
+  },
+  {
+    press: () => cardPressEvents.push('press'),
+    release: () => cardPressEvents.push('release'),
+    activate: () => cardPressEvents.push('activate'),
+    pressOnHover: false,
+  }
+);
+assert.deepEqual([...cardPressListeners.keys()].sort(), [
+  'pointerdown',
+  'pointerout',
+  'pointerup',
+  'pointerupoutside',
+]);
+for (const listeners of cardPressListeners.values()) {
+  assert.equal(listeners.length, 1, 'each card pointer event must bind once');
+}
+cardPressListeners.get('pointerdown')[0]();
+assert.deepEqual(cardPressEvents, ['press']);
+cardPressListeners.get('pointerout')[0]();
+assert.deepEqual(cardPressEvents, ['press', 'release']);
+cardPressListeners.get('pointerup')[0]();
+assert.deepEqual(cardPressEvents, ['press', 'release']);
+cardPressListeners.get('pointerdown')[0]();
+cardPressListeners.get('pointerup')[0]();
+assert.deepEqual(cardPressEvents, ['press', 'release', 'press', 'release', 'activate']);
+pass('Gallery cards share one press interaction owner');
+
+const pressEventConsumers = [
+  {
+    name: 'app dock tabs',
+    modulePath: './pressinteraction',
+    functionName: 'wireTab',
+    source: paginationOwnerSource,
+  },
+  {
+    name: 'battle journal rows',
+    modulePath: '../lib/pressinteraction',
+    functionName: 'buildRow',
+    source: paginationConsumers[2].source,
+  },
+  {
+    name: 'draw tool buttons',
+    modulePath: '../lib/pressinteraction',
+    functionName: 'toolIconButton',
+    source: readFileSync(
+      join(repoRoot, 'src', 'client', 'scenes', 'Draw.ts'),
+      'utf8'
+    ),
+  },
+];
+for (const consumer of pressEventConsumers) {
+  const moduleInspection = inspectTypeScriptModule(consumer.source);
+  assert.ok(
+    moduleInspection.imports
+      .get(consumer.modulePath)
+      ?.some(
+        ({ imported, local }) =>
+          imported === 'bindPressInteractionEvents' &&
+          local === 'bindPressInteractionEvents'
+      ),
+    `${consumer.name} must import the canonical press event binder`
+  );
+  const functionInspection = inspectNamedFunction(
+    consumer.source,
+    consumer.functionName
+  );
+  assert.equal(
+    functionInspection.calls.filter(
+      ({ expression }) => expression === 'bindPressInteractionEvents'
+    ).length,
+    1,
+    `${consumer.name} must delegate once to the canonical press event binder`
+  );
+  for (const pointerEvent of ['pointerdown', 'pointerout', 'pointerup']) {
+    assert.equal(
+      functionInspection.stringLiterals.includes(pointerEvent),
+      false,
+      `${consumer.name} must not rebuild ${pointerEvent} ordering`
+    );
+  }
+}
+pass('paper press ordering has one event binder');
+
+const semanticTabConsumers = [
+  { name: 'Gallery', source: gallerySceneSource },
+  {
+    name: 'Scout Notebook',
+    source: readFileSync(
+      join(repoRoot, 'src', 'client', 'scenes', 'ScoutNotebook.ts'),
+      'utf8'
+    ),
+  },
+];
+for (const consumer of semanticTabConsumers) {
+  const moduleInspection = inspectTypeScriptModule(consumer.source);
+  assert.ok(
+    moduleInspection.imports
+      .get('../lib/semantictabs')
+      ?.some(
+        ({ imported, local }) =>
+          imported === 'SemanticTabController' &&
+          local === 'SemanticTabController'
+      ),
+    `${consumer.name} must import the canonical semantic tab controller`
+  );
+  for (const duplicatedTabToken of [
+    'tablist',
+    'tabpanel',
+    'aria-selected',
+    'ArrowLeft',
+    'ArrowRight',
+  ]) {
+    assert.doesNotMatch(
+      consumer.source,
+      new RegExp(`["']${duplicatedTabToken}["']`),
+      `${consumer.name} must not re-own ${duplicatedTabToken}`
+    );
+  }
+}
+const originalDocument = globalThis.document;
+const fakeDocument = { activeElement: null };
+globalThis.document = fakeDocument;
+try {
+  const controls = new Map();
+  const selectedKeys = [];
+  const makeControl = (key) => ({
+    tabIndex: -1,
+    focus() {
+      fakeDocument.activeElement = this;
+    },
+    key,
+  });
+  for (const key of ['a', 'b', 'c']) controls.set(key, makeControl(key));
+  const controller = new semanticTabs.SemanticTabController({
+    keys: ['a', 'b', 'c'],
+    selectedKey: 'b',
+    listLabel: 'Sections',
+    panelId: 'section-panel',
+    tabId: (key) => `section-${key}`,
+    onSelect: (key) => selectedKeys.push(key),
+    resolveControl: (key) => controls.get(key),
+  });
+  assert.deepEqual(controller.listAttributes, {
+    role: 'tablist',
+    'aria-label': 'Sections',
+  });
+  assert.deepEqual(controller.attributesFor('b'), {
+    id: 'section-b',
+    role: 'tab',
+    'aria-selected': 'true',
+    'aria-controls': 'section-panel',
+  });
+  for (const key of ['a', 'b', 'c']) {
+    controller.register(key, controls.get(key));
+  }
+  assert.deepEqual(
+    ['a', 'b', 'c'].map((key) => controls.get(key).tabIndex),
+    [-1, 0, -1]
+  );
+  let prevented = false;
+  controller.handleKey(
+    { key: 'ArrowRight', preventDefault: () => (prevented = true) },
+    'b'
+  );
+  assert.equal(prevented, true);
+  assert.deepEqual(selectedKeys, ['c']);
+  assert.equal(fakeDocument.activeElement, controls.get('c'));
+  const panelAttributes = new Map();
+  const panel = {
+    id: '',
+    textContent: '',
+    setAttribute(name, value) {
+      panelAttributes.set(name, value);
+    },
+  };
+  controller.configurePanel(panel, 'b', 'Selected section', {
+    live: 'polite',
+    atomic: true,
+  });
+  assert.equal(panel.id, 'section-panel');
+  assert.equal(panel.textContent, 'Selected section');
+  assert.deepEqual(Object.fromEntries(panelAttributes), {
+    role: 'tabpanel',
+    'aria-labelledby': 'section-b',
+    'aria-live': 'polite',
+    'aria-atomic': 'true',
+  });
+} finally {
+  if (originalDocument === undefined) delete globalThis.document;
+  else globalThis.document = originalDocument;
+}
+pass('Gallery and Scout share one semantic tab controller');
+
+const inspectTopLevelDeclarations = (source) => {
+  const sourceFile = typescript.createSourceFile(
+    'dead-client-symbols.ts',
+    source,
+    typescript.ScriptTarget.Latest,
+    true,
+    typescript.ScriptKind.TS
+  );
+  const declarations = new Map();
+  for (const statement of sourceFile.statements) {
+    const exported =
+      statement.modifiers?.some(
+        (modifier) => modifier.kind === typescript.SyntaxKind.ExportKeyword
+      ) ?? false;
+    if (typescript.isVariableStatement(statement)) {
+      for (const declaration of statement.declarationList.declarations) {
+        if (typescript.isIdentifier(declaration.name)) {
+          declarations.set(declaration.name.text, exported);
+        }
+      }
+      continue;
+    }
+    if (
+      (typescript.isFunctionDeclaration(statement) ||
+        typescript.isTypeAliasDeclaration(statement) ||
+        typescript.isInterfaceDeclaration(statement) ||
+        typescript.isClassDeclaration(statement) ||
+        typescript.isEnumDeclaration(statement)) &&
+      statement.name
+    ) {
+      declarations.set(statement.name.text, exported);
+    }
+  }
+  return declarations;
+};
+const inspectModuleExports = (source) => {
+  const exports = [...inspectTopLevelDeclarations(source)]
+    .filter(([, exported]) => exported)
+    .map(([name]) => ({ local: name, exported: name }));
+  const sourceFile = typescript.createSourceFile(
+    'client-exports.ts',
+    source,
+    typescript.ScriptTarget.Latest,
+    true,
+    typescript.ScriptKind.TS
+  );
+  for (const statement of sourceFile.statements) {
+    if (
+      typescript.isExportDeclaration(statement) &&
+      statement.exportClause &&
+      typescript.isNamedExports(statement.exportClause)
+    ) {
+      for (const element of statement.exportClause.elements) {
+        exports.push({
+          local: (element.propertyName ?? element.name).text,
+          exported: element.name.text,
+        });
+      }
+    }
+  }
+  return exports;
+};
+const inspectModuleExportNames = (source) =>
+  new Set(inspectModuleExports(source).map(({ exported }) => exported));
+const scribbitsClientSource = readFileSync(
+  join(repoRoot, 'src', 'client', 'lib', 'scribbits.ts'),
+  'utf8'
+);
+const practiceLabClientSource = readFileSync(
+  join(repoRoot, 'src', 'client', 'lib', 'practicelab.ts'),
+  'utf8'
+);
+const legacyCardsClientSource = readFileSync(
+  join(repoRoot, 'src', 'client', 'lib', 'legacycards.ts'),
+  'utf8'
+);
+const retiredClientSymbols = [
+  {
+    source: readFileSync(
+      join(repoRoot, 'src', 'client', 'lib', 'api.ts'),
+      'utf8'
+    ),
+    names: ['fetchSplash'],
+  },
+  {
+    source: galleryRegistrySource,
+    names: [
+      'getPracticePowers',
+      'findMyScribbit',
+      'findAnyScribbit',
+      'isMyScribbit',
+    ],
+  },
+  {
+    source: scribbitsClientSource,
+    names: ['addFittedDrawing', 'loadDrawings'],
+  },
+  { source: paginationOwnerSource, names: ['dominantButton', 'rosette'] },
+  {
+    source: readFileSync(
+      join(repoRoot, 'src', 'client', 'lib', 'theme.ts'),
+      'utf8'
+    ),
+    names: ['SPACE', 'TOP_SAFE'],
+  },
+  {
+    source: practiceLabClientSource,
+    names: ['PRACTICE_PROMISE'],
+  },
+  {
+    source: readFileSync(
+      join(repoRoot, 'src', 'client', 'lib', 'nextgoal.ts'),
+      'utf8'
+    ),
+    names: ['NextGoalActionKind'],
+  },
+  {
+    source: readFileSync(
+      join(repoRoot, 'src', 'server', 'core', 'scribbit.ts'),
+      'utf8'
+    ),
+    names: ['recordBattleResultOnScribbits'],
+  },
+  {
+    source: readFileSync(
+      join(repoRoot, 'src', 'server', 'core', 'migrations.ts'),
+      'utf8'
+    ),
+    names: ['getArenaMigrationStateKey'],
+  },
+  {
+    source: readFileSync(
+      join(repoRoot, 'src', 'shared', 'combat', 'types.ts'),
+      'utf8'
+    ),
+    names: ['PrimaryAbilityConfig'],
+  },
+  {
+    source: readFileSync(
+      join(repoRoot, 'src', 'shared', 'content', 'replaycommentary.ts'),
+      'utf8'
+    ),
+    names: ['INKCAST_COMMENTARY_LINE_COUNT'],
+  },
+];
+for (const { source, names } of retiredClientSymbols) {
+  const declarations = inspectTopLevelDeclarations(source);
+  for (const name of names) {
+    assert.equal(
+      declarations.has(name),
+      false,
+      `${name} must not return as an unused client declaration`
+    );
+  }
+}
+const privateClientSymbols = [
+  {
+    source: galleryRegistrySource,
+    names: ['ReplayEntryMode', 'StagedDirectBattle'],
+  },
+  {
+    source: scribbitsClientSource,
+    names: ['DrawingSource', 'drawingKey', 'moodOf', 'careDoneToday'],
+  },
+  {
+    source: paginationOwnerSource,
+    names: [
+      'CardPressInteractionOptions',
+      'pageArrowButton',
+      'PaperPaginationOptions',
+      'roundedPanel',
+      'StatGrid',
+      'ProgressBar',
+    ],
+  },
+  {
+    source: practiceLabClientSource,
+    names: [
+      'PracticeOutcomePlan',
+      'normalizePracticePowers',
+      'practiceChecklistCopy',
+      'practiceResultCopy',
+      'practiceFoundPowerCopy',
+      'isPracticeSessionComplete',
+    ],
+  },
+  { source: legacyCardsClientSource, names: ['legacyEulogy'] },
+];
+for (const { source, names } of privateClientSymbols) {
+  const declarations = inspectTopLevelDeclarations(source);
+  const moduleExports = inspectModuleExports(source);
+  for (const name of names) {
+    assert.equal(
+      declarations.get(name),
+      false,
+      `${name} must stay module-private`
+    );
+    assert.equal(
+      moduleExports.some(({ local }) => local === name),
+      false,
+      `${name} must not be exposed through an export declaration`
+    );
+  }
+}
+const retiredClientSymbolNames = new Set(
+  retiredClientSymbols.flatMap(({ names }) => names)
+);
+const projectModuleExportNames = new Set(
+  listFilePaths(join(repoRoot, 'src'))
+    .filter((filePath) => filePath.endsWith('.ts'))
+    .flatMap((filePath) => {
+      const source = readFileSync(filePath, 'utf8');
+      const directExports = [...inspectTopLevelDeclarations(source)]
+        .filter(([, exported]) => exported)
+        .map(([name]) => name);
+      return [...directExports, ...inspectModuleExportNames(source)];
+    })
+);
+for (const retiredName of retiredClientSymbolNames) {
+  assert.equal(
+    projectModuleExportNames.has(retiredName),
+    false,
+    `${retiredName} must not return through a direct or aliased project export`
+  );
+}
+assert.deepEqual(
+  [
+    ...inspectTopLevelDeclarations(
+      'export const SPACE = {}; export function fetchSplash() {} type Local = string;'
+    ),
+  ],
+  [
+    ['SPACE', true],
+    ['fetchSplash', true],
+    ['Local', false],
+  ],
+  'the dead-symbol guard must distinguish exported and module-private declarations'
+);
+assert.equal(
+  inspectModuleExportNames(
+    'const fetchArena = () => {}; export { fetchArena as fetchSplash };'
+  ).has('fetchSplash'),
+  true,
+  'the client export guard must catch renamed re-export aliases'
+);
+assert.equal(
+  inspectModuleExports(
+    'function drawingKey() {} export { drawingKey as stableDrawingKey };'
+  ).some(
+    ({ local, exported }) =>
+      local === 'drawingKey' && exported === 'stableDrawingKey'
+  ),
+  true,
+  'the private-symbol guard must catch renamed exports of local helpers'
+);
+pass('retired client, server, and shared symbols stay out of the module graph');
+
+const rivalDraftSource = readFileSync(
+  join(repoRoot, 'src', 'client', 'lib', 'replaysparrivaldraft.ts'),
+  'utf8'
+);
+const rivalDraftInspection = inspectTypeScriptModule(rivalDraftSource);
+assert.deepEqual(rivalDraftInspection.imports.get('./overlay'), [
+  { imported: 'CanvasModalOverlay', local: 'CanvasModalOverlay' },
+]);
+assert.doesNotMatch(rivalDraftSource, /CanvasActionOverlay|setRootAttributes/);
+const rivalDraftSourceFile = typescript.createSourceFile(
+  'replaysparrivaldraft.ts',
+  rivalDraftSource,
+  typescript.ScriptTarget.Latest,
+  true,
+  typescript.ScriptKind.TS
+);
+let rivalDraftModalConstructions = 0;
+const countRivalDraftModals = (node) => {
+  if (
+    typescript.isNewExpression(node) &&
+    typescript.isIdentifier(node.expression) &&
+    node.expression.text === 'CanvasModalOverlay'
+  ) {
+    rivalDraftModalConstructions += 1;
+  }
+  typescript.forEachChild(node, countRivalDraftModals);
+};
+countRivalDraftModals(rivalDraftSourceFile);
+assert.equal(
+  rivalDraftModalConstructions,
+  2,
+  'rival draft and nested rival details must each compose the canonical modal lifecycle'
+);
+assert.match(rivalDraftSource, /detailModalActions\?\.destroy\(\)/);
+assert.match(rivalDraftSource, /draftModalActions\.destroy\(\)/);
+assert.match(rivalDraftSource, /addStatus\(/);
+assert.equal(
+  inspectNamedFunctionCalls(rivalDraftSource, 'setInteractionReady').some(
+    (call) => call.endsWith('.setVisible')
+  ),
+  false,
+  'rival loading must retain a reachable dialog instead of hiding its keyboard layer'
+);
+const modalOverlaySource = readFileSync(
+  join(repoRoot, 'src', 'client', 'lib', 'overlay.ts'),
+  'utf8'
+);
+assert.match(modalOverlaySource, /activeStack\.at\(-1\) !== this/);
+assert.match(modalOverlaySource, /stopImmediatePropagation\(\)/);
+assert.match(modalOverlaySource, /this\.trigger\?\.isConnected/);
+const replaySceneSource = readFileSync(
+  join(repoRoot, 'src', 'client', 'scenes', 'Replay.ts'),
+  'utf8'
+);
+assert.match(replaySceneSource, /const restorePostFightFocus/);
+assert.match(replaySceneSource, /rivalDraftTrigger\?\.isConnected/);
+assert.match(replaySceneSource, /rivalDraftTrigger\.focus\(\)/);
+pass('Rival draft composes the canonical nested modal lifecycle');
+
+productionApiContract.resetApiContractRuntime({
+  userId: null,
+  username: null,
+});
+const unauthenticatedCareResponse = await productionApiContract.app.request(
+  '/api/care',
+  {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: '{}',
+  }
+);
+assert.equal(unauthenticatedCareResponse.status, 401);
+assert.deepEqual(await unauthenticatedCareResponse.json(), {
+  status: 'error',
+  message: 'Sign in to care for a Scribbit.',
+});
+assert.equal(
+  productionApiContract.apiContractRuntimeState.watchCalls,
+  0,
+  'unauthenticated requests must not acquire a player mutation lease'
+);
+
+productionApiContract.resetApiContractRuntime();
+const malformedCareResponse = await productionApiContract.app.request(
+  '/api/care',
+  {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: '{',
+  }
+);
+assert.equal(malformedCareResponse.status, 400);
+assert.deepEqual(await malformedCareResponse.json(), {
+  status: 'error',
+  message: 'Choose a valid Scribbit and care action.',
+});
+assert.ok(
+  productionApiContract.apiContractRuntimeState.watchCalls >= 3,
+  'authenticated mutation middleware must acquire, renew, and release its lease'
+);
+assert.equal(
+  productionApiContract.getApiContractString(playerMutationLockKey),
+  undefined,
+  'validation failures must still release the player mutation lease'
+);
+
+productionApiContract.resetApiContractRuntime();
+const inventoryResponse =
+  await productionApiContract.app.request('/api/inventory');
+assert.equal(inventoryResponse.status, 200);
+assert.deepEqual(await inventoryResponse.json(), {
+  items: {},
+  pens: [],
+  titles: [],
+  equippedTitle: null,
+  discovered: [],
+});
+assert.ok(
+  productionApiContract.apiContractRuntimeState.watchCalls >= 3,
+  'a compatibility GET that may migrate inventory must use the lease middleware'
+);
+assert.equal(
+  productionApiContract.getApiContractString(playerMutationLockKey),
+  undefined
+);
+
+productionApiContract.resetApiContractRuntime();
+const battleHistoryResponse =
+  await productionApiContract.app.request('/api/my-battles');
+assert.equal(battleHistoryResponse.status, 200);
+assert.deepEqual(await battleHistoryResponse.json(), []);
+assert.equal(
+  productionApiContract.apiContractRuntimeState.watchCalls,
+  0,
+  'read-only GET routes must not acquire a mutation lease'
+);
+
+productionApiContract.resetApiContractRuntime();
+const invalidReplayResponse = await productionApiContract.app.request(
+  '/api/rumble-replay?day=not-a-day'
+);
+assert.equal(invalidReplayResponse.status, 400);
+assert.deepEqual(await invalidReplayResponse.json(), {
+  status: 'error',
+  message: 'Choose a valid resolved Rumble day.',
+});
+assert.equal(productionApiContract.apiContractRuntimeState.watchCalls, 0);
+
+productionApiContract.resetApiContractRuntime();
+productionApiContract.setApiContractString(
+  playerMutationLockKey,
+  'another-operation'
+);
+const busyMutationResponse = await productionApiContract.app.request(
+  '/api/care',
+  {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: '{}',
+  }
+);
+assert.equal(busyMutationResponse.status, 409);
+assert.deepEqual(await busyMutationResponse.json(), {
+  status: 'error',
+  message: 'Another game action is finishing. Try again.',
+});
+assert.equal(productionApiContract.apiContractRuntimeState.watchCalls, 1);
+assert.equal(
+  productionApiContract.apiContractRuntimeState.transactionCommits,
+  0
+);
+assert.equal(
+  productionApiContract.getApiContractString(playerMutationLockKey),
+  'another-operation',
+  'a busy request must not disturb the current lease owner'
+);
+
+productionApiContract.resetApiContractRuntime();
+const equipTitleResponse = await productionApiContract.app.request(
+  '/api/equip-title',
+  {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ titleId: null }),
+  }
+);
+assert.equal(equipTitleResponse.status, 200);
+assert.deepEqual(await equipTitleResponse.json(), {
+  items: {},
+  pens: [],
+  titles: [],
+  equippedTitle: null,
+  discovered: [],
+});
+assert.equal(
+  productionApiContract.getApiContractString(playerMutationLockKey),
+  undefined,
+  'a successful non-GET mutation must release its lease'
+);
+
+productionApiContract.resetApiContractRuntime();
+productionApiContract.failNextApiContractHashRead();
+const capturedRouteErrors = [];
+const originalConsoleError = console.error;
+console.error = (...values) => capturedRouteErrors.push(values);
+let failedInventoryResponse;
+try {
+  failedInventoryResponse =
+    await productionApiContract.app.request('/api/inventory');
+} finally {
+  console.error = originalConsoleError;
+}
+assert.equal(failedInventoryResponse.status, 500);
+assert.deepEqual(await failedInventoryResponse.json(), {
+  status: 'error',
+  message: 'The ink drawer is stuck. Try again soon.',
+});
+assert.equal(capturedRouteErrors.length, 1);
+assert.equal(
+  productionApiContract.getApiContractString(playerMutationLockKey),
+  undefined,
+  'a handler failure response must still release its mutation lease'
+);
+
+productionApiContract.resetApiContractRuntime();
+const deletionResponse = await productionApiContract.app.request(
+  '/api/delete-my-data',
+  { method: 'POST' }
+);
+assert.equal(deletionResponse.status, 200);
+assert.deepEqual(await deletionResponse.json(), {
+  deleted: true,
+  removedScribbits: 0,
+});
+assert.ok(
+  productionApiContract.apiContractRuntimeState.transactionCommits > 3,
+  'player deletion must execute its own inverse lease and cleanup boundary'
+);
+assert.equal(
+  productionApiContract.getApiContractString(playerMutationLockKey),
+  undefined,
+  'deletion must not acquire the normal player-mutation lease around itself'
+);
+cleanupApiContractOutput();
+process.removeListener('exit', cleanupApiContractOutput);
+pass(
+  'production Hono routes enforce auth, parsing, status, and mutation leases'
+);
 
 const startDevMockForContractTest = async () => {
   const child = spawn(process.execPath, ['scripts/dev-mock.mjs'], {
@@ -326,6 +2456,21 @@ const stopDevMockContractTest = async (child) => {
     child.kill('SIGKILL');
     await forcedExit;
   }
+};
+
+const createAuthoritativeSubmissionDataUrl = () => {
+  const png = new PNG({ width: 512, height: 512 });
+  png.data.fill(0);
+  for (let y = 80; y < 432; y += 1) {
+    for (let x = 80; x < 432; x += 1) {
+      const offset = (y * 512 + x) * 4;
+      png.data[offset] = 235;
+      png.data[offset + 1] = 55;
+      png.data[offset + 2] = 35;
+      png.data[offset + 3] = 255;
+    }
+  }
+  return `data:image/png;base64,${PNG.sync.write(png).toString('base64')}`;
 };
 
 const mockContract = await startDevMockForContractTest();
@@ -451,6 +2596,11 @@ try {
   );
   assert.equal(initialRunSlate.response.status, 200);
   assert.equal(initialRunSlate.body.rivalRun.boutsCompleted, 0);
+  assert.ok(
+    initialRunSlate.body.rivalRun.challenge?.id,
+    'the server-authored challenge must be visible before bout one'
+  );
+  const initialRunChallenge = initialRunSlate.body.rivalRun.challenge;
   assert.deepEqual(
     initialRunSlate.body.choices.map(({ tier, winPoints }) => ({
       tier,
@@ -498,6 +2648,15 @@ try {
     });
     assert.equal(runFight.response.status, 200);
     assert.equal(runFight.body.report.rivalRun.boutNumber, boutIndex + 1);
+    assert.deepEqual(
+      {
+        ...runFight.body.report.rivalRun.challenge,
+        progress: 0,
+        completionAchieved: false,
+      },
+      initialRunChallenge,
+      'all three receipts must preserve the immutable challenge snapshot'
+    );
     assert.equal(
       runFight.body.report.rivalRun.pointsAwarded,
       runFight.body.report.rivalRun.outcome === 'win' ? 2 : 0
@@ -528,6 +2687,7 @@ try {
         await requestMock('/api/spar-rivals?scribbitId=mine-paper-spark')
       ).body;
       assert.equal(runSlate.rivalRun.boutsCompleted, boutIndex + 1);
+      assert.equal(runSlate.rivalRun.challenge.id, initialRunChallenge.id);
     }
   }
   assert.equal(previousRunReport.rivalRun.status, 'complete');
@@ -540,10 +2700,132 @@ try {
     initialRunSlate.body.rivalRun.id,
     'explicitly reopening the board after completion should start a fresh run'
   );
+  assert.notEqual(
+    nextRunSlate.body.rivalRun.challenge.id,
+    initialRunChallenge.id,
+    'the next run must visibly rotate to a different challenge card'
+  );
+
+  const freshDrawingDataUrl = createAuthoritativeSubmissionDataUrl();
+  const freshSubmissionBody = {
+    name: 'Progression Proof',
+    baseImageDataUrl: freshDrawingDataUrl,
+    imageDataUrl: freshDrawingDataUrl,
+    stats: { chonk: 10, spike: 10, zip: 10, charm: 55 },
+    element: 'storm',
+    accessories: [],
+  };
+  const freshSubmission = await requestMock('/api/scribbit?fresh', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(freshSubmissionBody),
+  });
+  assert.equal(freshSubmission.response.status, 201);
+  assert.equal(freshSubmission.body.element, 'ember');
+  assert.equal(freshSubmission.body.xp, 0);
+  assert.equal(freshSubmission.body.level, 1);
+  assert.equal(freshSubmission.body.mood, 'hungry');
+  const repeatedFreshSubmission = await requestMock('/api/scribbit?fresh', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...freshSubmissionBody, name: 'Repeat Reward' }),
+  });
+  assert.equal(repeatedFreshSubmission.response.status, 409);
+  const arenaAfterRepeatedSubmission = await requestMock('/api/arena?fresh');
+  assert.equal(arenaAfterRepeatedSubmission.body.myScribbits.length, 1);
+  assert.equal(
+    arenaAfterRepeatedSubmission.body.myInk,
+    arena.INK_REWARDS.dailyDraw
+  );
+
+  for (const action of ['feed', 'pat', 'train']) {
+    const careResult = await requestMock('/api/care?fresh', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        scribbitId: freshSubmission.body.id,
+        action,
+      }),
+    });
+    assert.equal(careResult.response.status, 200);
+    assert.equal(careResult.body.inkAwarded, arena.INK_REWARDS.care);
+  }
+  const repeatedCare = await requestMock('/api/care?fresh', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      scribbitId: freshSubmission.body.id,
+      action: 'train',
+    }),
+  });
+  assert.equal(repeatedCare.response.status, 409);
+
+  const caredFreshArena = await requestMock('/api/arena?fresh');
+  const caredFreshScribbit = caredFreshArena.body.myScribbits.find(
+    ({ id }) => id === freshSubmission.body.id
+  );
+  assert.ok(caredFreshScribbit);
+  assert.deepEqual(
+    {
+      ink: caredFreshArena.body.myInk,
+      nextCapsuleCost: caredFreshArena.body.nextCapsuleCost,
+      xp: caredFreshScribbit.xp,
+      level: caredFreshScribbit.level,
+      mood: caredFreshScribbit.mood,
+      careDoneToday: caredFreshScribbit.careDoneToday,
+    },
+    {
+      ink: arena.INK_REWARDS.dailyDraw + arena.INK_REWARDS.care * 3,
+      nextCapsuleCost: arena.CAPSULE_FIRST_DAILY_COST,
+      xp: arena.XP_REWARDS.care * 2 + arena.XP_REWARDS.carePumped,
+      level: 2,
+      mood: 'pumped',
+      careDoneToday: ['feed', 'pat', 'train'],
+    },
+    'the fresh mock must project production draw and care progression'
+  );
+
+  const firstCapsulePull = await requestMock('/api/capsule?fresh', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ operationId: 'fresh-progression-proof' }),
+  });
+  assert.equal(firstCapsulePull.response.status, 200);
+  assert.equal(firstCapsulePull.body.ink, 0);
+  assert.equal(firstCapsulePull.body.nextCost, arena.CAPSULE_COST);
+  const repeatedCapsulePull = await requestMock('/api/capsule?fresh', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ operationId: 'fresh-progression-proof' }),
+  });
+  assert.equal(repeatedCapsulePull.response.status, 200);
+  assert.deepEqual(
+    repeatedCapsulePull.body,
+    firstCapsulePull.body,
+    'repeating one operation id must not spend Ink or advance pity twice'
+  );
+  const unaffordableCapsulePull = await requestMock('/api/capsule?fresh', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ operationId: 'fresh-insufficient-proof' }),
+  });
+  assert.equal(unaffordableCapsulePull.response.status, 402);
+  const spentFreshArena = await requestMock('/api/arena?fresh');
+  assert.deepEqual(
+    {
+      ink: spentFreshArena.body.myInk,
+      nextCapsuleCost: spentFreshArena.body.nextCapsuleCost,
+      pullCount: spentFreshArena.body.capsuleProgress.pullCount,
+    },
+    { ink: 0, nextCapsuleCost: arena.CAPSULE_COST, pullCount: 1 },
+    'retries and rejected pulls must leave the committed capsule state unchanged'
+  );
 } finally {
   await stopDevMockContractTest(mockContract.child);
 }
-pass('mock API preserves Scout safety and production Rival Run contracts');
+pass(
+  'mock API preserves Scout, Rival Run, and progression authority contracts'
+);
 
 for (const combatCheck of combatEngineTests.runCombatEngineTests()) {
   pass(`fixed-tick combat: ${combatCheck}`);
@@ -1037,6 +3319,56 @@ assert.match(finalCareMomentPlan.rewardLine, /\+2 XP.*CARE SAVED/);
 assert.doesNotMatch(finalCareMomentPlan.rewardLine, /\+\d+ INK/);
 pass('Care Reaction Deck stays complete, varied, safe, and server-truthful');
 
+const shapePowerGuideContent = shapePowerContent.SHAPE_POWER_IDS.map((power) =>
+  shapePowerContent.getShapePowerContent(power)
+);
+assert.deepEqual(
+  combatConfig.DOMINANT_STAT_TIE_ORDER.map(
+    (stat) => combatConfig.PRIMARY_POWER_BY_DOMINANT_STAT[stat]
+  ),
+  shapePowerContent.SHAPE_POWER_IDS,
+  'guide order must derive from the canonical dominant-stat tie order'
+);
+assert.equal(
+  new Set(shapePowerGuideContent.map(({ drawingCue }) => drawingCue)).size,
+  shapePowerContent.SHAPE_POWER_IDS.length,
+  'every Shape Power needs a distinct drawing cue'
+);
+assert.deepEqual(
+  shapePowerContent.SHAPE_POWER_IDS.map((power) =>
+    shapePowerContent.getShapePowerDrawingCue(power)
+  ),
+  [
+    'Big, filled bodies wake Inkquake.',
+    'Sharp edges wake Nib Halo.',
+    'Small, compact shapes wake Smearstep.',
+    'More colors wake Colorburst.',
+  ]
+);
+assert.deepEqual(
+  shapePowerContent.SHAPE_POWER_IDS.map((power) =>
+    shapePowerContent.getShapePowerFieldGuideCue(power)
+  ),
+  [
+    'More HP · Inkquake',
+    'Sharp edge · Nib Halo',
+    'Faster move · Smearstep',
+    'More crit · Colorburst',
+  ]
+);
+for (const content of shapePowerGuideContent) {
+  assert.ok(
+    content.fieldGuideCue.length > 0 && content.fieldGuideCue.length <= 24
+  );
+  assert.ok(content.drawingCue.length > 0 && content.drawingCue.length <= 32);
+  assert.doesNotMatch(content.drawingCue, new RegExp(content.displayName, 'i'));
+  assert.doesNotMatch(
+    content.fieldGuideCue,
+    new RegExp(content.displayName, 'i')
+  );
+}
+pass('Shape Power guide content has one complete canonical catalog');
+
 assert.deepEqual(
   drawOnboarding.planDrawFeedback({
     inkedPixels: 0,
@@ -1114,8 +3446,8 @@ assert.deepEqual(
 );
 assert.equal(
   practiceLab
-    .normalizePracticePowers(['smearstep', 'invalid', 'smearstep', 'inkquake'])
-    .join(','),
+    .normalizePracticeSession(['smearstep', 'invalid', 'smearstep', 'inkquake'])
+    .triedPowers.join(','),
   'inkquake,smearstep',
   'session progress should reject unknown powers and normalize duplicates'
 );
@@ -1125,7 +3457,13 @@ assert.match(
   'completed session progress should be unmistakable'
 );
 assert.equal(
-  (practiceLab.practiceChecklistCopy(practicedPowers).match(/✓/g) ?? []).length,
+  (
+    practiceLab
+      .planPracticeOutcome(
+        practiceLab.normalizePracticeSession(practicedPowers)
+      )
+      .checklist.match(/✓/g) ?? []
+  ).length,
   4,
   'completed practice checklist should mark all four powers'
 );
@@ -1156,7 +3494,7 @@ const completedPracticePlan = practiceLab.planPracticeOutcome(
 );
 assert.equal(completedPracticePlan.completed, true);
 assert.equal(completedPracticePlan.celebrateCompletion, true);
-assert.equal(completedPracticePlan.headline, '✦ 4/4 POWERS FOUND! ✦');
+assert.equal(completedPracticePlan.headline, '4/4 POWERS FOUND');
 assert.match(completedPracticePlan.result, /DRAW DIFFERENTLY/);
 assert.match(completedPracticePlan.primaryButton, /DRAW ONE MORE/);
 assert.equal(completedPracticeSession.attemptCount, 4);
@@ -2564,7 +4902,21 @@ const createMemoryStorage = (options = {}) => {
   const values = new Map();
   const hashes = new Map();
   const sortedSets = new Map();
-  let throwAfterCommitOnce = options.throwAfterCommitOnce === true;
+  const expirations = new Map();
+  const keyVersions = new Map();
+  let commitsUntilReplyLoss = Number.isSafeInteger(
+    options.throwAfterCommitNumber
+  )
+    ? Math.max(0, options.throwAfterCommitNumber)
+    : options.throwAfterCommitOnce === true
+      ? 1
+      : 0;
+  let watchConflictCount = 0;
+
+  const getKeyVersion = (key) => keyVersions.get(key) ?? 0;
+  const bumpKeyVersion = (key) => {
+    keyVersions.set(key, getKeyVersion(key) + 1);
+  };
 
   const getHash = (key) => {
     const existing = hashes.get(key);
@@ -2610,31 +4962,48 @@ const createMemoryStorage = (options = {}) => {
     },
     async set(key, value) {
       values.set(key, value);
+      bumpKeyVersion(key);
     },
     async del(...keys) {
       for (const key of keys) {
         values.delete(key);
         hashes.delete(key);
         sortedSets.delete(key);
+        expirations.delete(key);
+        bumpKeyVersion(key);
       }
     },
     async incrBy(key, value) {
       const next = Number(values.get(key) ?? '0') + value;
       values.set(key, String(next));
+      bumpKeyVersion(key);
       return next;
     },
-    async expire() {},
+    async expire(key, seconds) {
+      expirations.set(key, seconds);
+      bumpKeyVersion(key);
+    },
+    getExpirationSeconds(key) {
+      return expirations.get(key);
+    },
+    getWatchConflictCount() {
+      return watchConflictCount;
+    },
     async hGet(key, field) {
-      return getHash(key).get(field);
+      return hashes.get(key)?.get(field);
     },
     async hGetAll(key) {
-      return Object.fromEntries(getHash(key).entries());
+      return Object.fromEntries(hashes.get(key)?.entries() ?? []);
+    },
+    async hKeys(key) {
+      return [...(hashes.get(key)?.keys() ?? [])];
     },
     async hSet(key, fieldValues) {
       const hash = getHash(key);
       for (const [field, value] of Object.entries(fieldValues)) {
         hash.set(field, value);
       }
+      bumpKeyVersion(key);
     },
     async hSetNX(key, field, value) {
       const hash = getHash(key);
@@ -2642,6 +5011,7 @@ const createMemoryStorage = (options = {}) => {
         return 0;
       }
       hash.set(field, value);
+      bumpKeyVersion(key);
       return 1;
     },
     async hDel(key, fields) {
@@ -2652,12 +5022,14 @@ const createMemoryStorage = (options = {}) => {
           deleted += 1;
         }
       }
+      if (deleted > 0) bumpKeyVersion(key);
       return deleted;
     },
     async hIncrBy(key, field, value) {
       const hash = getHash(key);
       const next = Number(hash.get(field) ?? '0') + value;
       hash.set(field, String(next));
+      bumpKeyVersion(key);
       return next;
     },
     async zAdd(key, ...members) {
@@ -2665,6 +5037,7 @@ const createMemoryStorage = (options = {}) => {
       for (const entry of members) {
         set.set(entry.member, entry.score);
       }
+      bumpKeyVersion(key);
     },
     async zCard(key) {
       return getSortedSet(key).size;
@@ -2689,6 +5062,7 @@ const createMemoryStorage = (options = {}) => {
       for (const member of members) {
         set.delete(member);
       }
+      bumpKeyVersion(key);
     },
     async zScore(key, member) {
       return getSortedSet(key).get(member);
@@ -2705,12 +5079,16 @@ const createMemoryStorage = (options = {}) => {
       const set = getSortedSet(key);
       const next = Number(set.get(member) ?? 0) + value;
       set.set(member, next);
+      bumpKeyVersion(key);
       return next;
     },
   };
 
   if (options.transactions !== false) {
-    storage.watch = async () => {
+    storage.watch = async (...watchedKeys) => {
+      const watchedVersions = new Map(
+        watchedKeys.map((key) => [key, getKeyVersion(key)])
+      );
       const queuedCommands = [];
       let transactionStarted = false;
       let transactionFinished = false;
@@ -2730,11 +5108,15 @@ const createMemoryStorage = (options = {}) => {
           queueCommand(() => {
             const next = Number(values.get(key) ?? '0') + value;
             values.set(key, String(next));
+            bumpKeyVersion(key);
             return next;
           });
         },
         async set(key, value) {
-          queueCommand(() => values.set(key, value));
+          queueCommand(() => {
+            values.set(key, value);
+            bumpKeyVersion(key);
+          });
         },
         async del(...keys) {
           queueCommand(() => {
@@ -2743,12 +5125,17 @@ const createMemoryStorage = (options = {}) => {
               if (values.delete(key)) deleted += 1;
               hashes.delete(key);
               sortedSets.delete(key);
+              expirations.delete(key);
+              bumpKeyVersion(key);
             }
             return deleted;
           });
         },
-        async expire() {
-          queueCommand(() => undefined);
+        async expire(key, seconds) {
+          queueCommand(() => {
+            expirations.set(key, seconds);
+            bumpKeyVersion(key);
+          });
         },
         async hSet(key, fieldValues) {
           queueCommand(() => {
@@ -2756,6 +5143,7 @@ const createMemoryStorage = (options = {}) => {
             for (const [field, value] of Object.entries(fieldValues)) {
               hash.set(field, value);
             }
+            bumpKeyVersion(key);
           });
         },
         async hSetNX(key, field, value) {
@@ -2763,7 +5151,20 @@ const createMemoryStorage = (options = {}) => {
             const hash = getHash(key);
             if (hash.has(field)) return 0;
             hash.set(field, value);
+            bumpKeyVersion(key);
             return 1;
+          });
+        },
+        async hDel(key, fields) {
+          queueCommand(() => {
+            const hash = hashes.get(key);
+            if (!hash) return 0;
+            let deleted = 0;
+            for (const field of fields) {
+              if (hash.delete(field)) deleted += 1;
+            }
+            if (deleted > 0) bumpKeyVersion(key);
+            return deleted;
           });
         },
         async hIncrBy(key, field, value) {
@@ -2771,7 +5172,28 @@ const createMemoryStorage = (options = {}) => {
             const hash = getHash(key);
             const next = Number(hash.get(field) ?? '0') + value;
             hash.set(field, String(next));
+            bumpKeyVersion(key);
             return next;
+          });
+        },
+        async zAdd(key, ...members) {
+          queueCommand(() => {
+            const set = getSortedSet(key);
+            for (const entry of members) {
+              set.set(entry.member, entry.score);
+            }
+            bumpKeyVersion(key);
+          });
+        },
+        async zRem(key, members) {
+          queueCommand(() => {
+            const set = getSortedSet(key);
+            let deleted = 0;
+            for (const member of members) {
+              if (set.delete(member)) deleted += 1;
+            }
+            if (deleted > 0) bumpKeyVersion(key);
+            return deleted;
           });
         },
         async zIncrBy(key, member, value) {
@@ -2779,6 +5201,7 @@ const createMemoryStorage = (options = {}) => {
             const set = getSortedSet(key);
             const next = Number(set.get(member) ?? 0) + value;
             set.set(member, next);
+            bumpKeyVersion(key);
             return next;
           });
         },
@@ -2787,10 +5210,20 @@ const createMemoryStorage = (options = {}) => {
             throw new Error('Memory transaction cannot execute.');
           }
           transactionFinished = true;
+          if (
+            [...watchedVersions].some(
+              ([key, version]) => getKeyVersion(key) !== version
+            )
+          ) {
+            watchConflictCount += 1;
+            return [];
+          }
           const results = queuedCommands.map((command) => command());
-          if (throwAfterCommitOnce) {
-            throwAfterCommitOnce = false;
-            throw new Error('Simulated transaction reply loss after commit.');
+          if (commitsUntilReplyLoss > 0) {
+            commitsUntilReplyLoss -= 1;
+            if (commitsUntilReplyLoss === 0) {
+              throw new Error('Simulated transaction reply loss after commit.');
+            }
           }
           return results;
         },
@@ -2810,6 +5243,39 @@ const createMemoryStorage = (options = {}) => {
 
   return storage;
 };
+
+const hashCompareStorage = createMemoryStorage();
+await hashCompareStorage.hSet('result-comment-claim-test', {
+  day: 'claiming:stale',
+});
+const competingClaimReplacements = await Promise.all([
+  storageCore.replaceHashFieldIfEqual(
+    hashCompareStorage,
+    'result-comment-claim-test',
+    'day',
+    'claiming:stale',
+    'claiming:rescuer-a',
+    'Result comment claim test A'
+  ),
+  storageCore.replaceHashFieldIfEqual(
+    hashCompareStorage,
+    'result-comment-claim-test',
+    'day',
+    'claiming:stale',
+    'claiming:rescuer-b',
+    'Result comment claim test B'
+  ),
+]);
+assert.equal(
+  competingClaimReplacements.filter(Boolean).length,
+  1,
+  'exactly one stale-claim rescuer may replace an unchanged hash field'
+);
+assert.match(
+  (await hashCompareStorage.hGet('result-comment-claim-test', 'day')) ?? '',
+  /^claiming:rescuer-[ab]$/
+);
+pass('hash compare-and-replace fences concurrent stale-claim rescue');
 
 const ownedRumbleReturnStorage = createMemoryStorage();
 const ownedRumbleReturnEntrant = makeScribbit({
@@ -2985,7 +5451,9 @@ assert.equal(
   null,
   'multiple owned standing receipts must fail closed instead of choosing one'
 );
-pass('owned Rumble return uses exact standing, payout, replay, and compact copy');
+pass(
+  'owned Rumble return uses exact standing, payout, replay, and compact copy'
+);
 
 const scoutNotebookStorage = createMemoryStorage();
 const scoutNotebookPlayer = {
@@ -3247,6 +5715,110 @@ assert.equal(
   arena.INK_REWARDS.backedChampion
 );
 pass('Scout Notebook keeps seven days of authoritative scouting truth');
+
+assert.deepEqual(mockCombatBundle.INK_REWARDS, arena.INK_REWARDS);
+assert.deepEqual(mockCombatBundle.XP_REWARDS, arena.XP_REWARDS);
+assert.equal(
+  mockCombatBundle.getCapsuleCostForDailyState(false),
+  arena.CAPSULE_FIRST_DAILY_COST
+);
+assert.equal(
+  mockCombatBundle.getCapsuleCostForDailyState(true),
+  arena.CAPSULE_COST
+);
+assert.deepEqual(
+  [0, 2, 3, 6, 7, 11, 12, 18].map((xp) => mockCombatBundle.getLevelForXp(xp)),
+  [1, 1, 2, 2, 3, 3, 4, 5]
+);
+assert.deepEqual(
+  [[], ['feed'], ['feed', 'pat'], ['feed', 'pat', 'train']].map(
+    (careDoneToday) => mockCombatBundle.planCareProgression(careDoneToday)
+  ),
+  [
+    { mood: 'hungry', xpGain: arena.XP_REWARDS.care },
+    { mood: 'sleepy', xpGain: arena.XP_REWARDS.care },
+    { mood: 'happy', xpGain: arena.XP_REWARDS.care },
+    { mood: 'pumped', xpGain: arena.XP_REWARDS.carePumped },
+  ]
+);
+assert.deepEqual(mockCombatBundle.getRumbleProgressionRewards(2), {
+  xpAwarded: arena.XP_REWARDS.rumbleWin * 2,
+  inkAwarded: arena.INK_REWARDS.rumbleWin * 2,
+});
+assert.equal(mockCombatBundle.advanceCapsulePity(8, 'common'), 9);
+assert.equal(mockCombatBundle.advanceCapsulePity(9, 'epic'), 0);
+const pityDrop = mockCombatBundle.selectCapsuleDrop({
+  userId: 'mock-pity-proof',
+  day: 9,
+  pullCount: 10,
+  pullsSinceEpic: 9,
+});
+assert.equal(pityDrop.rarity, 'epic');
+const emptyMockInventory = {
+  items: {},
+  pens: [],
+  titles: [],
+  equippedTitle: null,
+  discovered: [],
+};
+const firstMockInventoryGrant = mockCombatBundle.projectCapsuleInventoryGrant(
+  emptyMockInventory,
+  pityDrop
+);
+const repeatedMockInventoryGrant =
+  mockCombatBundle.projectCapsuleInventoryGrant(
+    firstMockInventoryGrant.inventory,
+    pityDrop
+  );
+assert.equal(firstMockInventoryGrant.isNew, true);
+assert.equal(repeatedMockInventoryGrant.isNew, false);
+assert.equal(
+  repeatedMockInventoryGrant.inventory.discovered.filter(
+    (catalogId) => catalogId === pityDrop.id
+  ).length,
+  1
+);
+const mockAccessory = mockCombatBundle.COSMETIC_CATALOG.find(
+  ({ kind }) => kind === 'accessory'
+);
+assert.ok(mockAccessory);
+const accessoryInventory = {
+  ...emptyMockInventory,
+  items: { [mockAccessory.id]: 2 },
+  discovered: [mockAccessory.id],
+};
+const consumedMockAccessories =
+  mockCombatBundle.projectAccessoryInventoryConsumption(accessoryInventory, [
+    mockAccessory.id,
+    mockAccessory.id,
+  ]);
+assert.equal(consumedMockAccessories.status, 'consumed');
+assert.deepEqual(consumedMockAccessories.inventory.items, {});
+assert.deepEqual(consumedMockAccessories.inventory.discovered, [
+  mockAccessory.id,
+]);
+assert.equal(
+  mockCombatBundle.projectAccessoryInventoryConsumption(
+    consumedMockAccessories.inventory,
+    [mockAccessory.id]
+  ).status,
+  'insufficient'
+);
+const titleInventory = {
+  ...emptyMockInventory,
+  titles: ['brushlord'],
+  discovered: ['brushlord'],
+};
+assert.equal(
+  mockCombatBundle.projectEquippedTitle(titleInventory, 'brushlord')
+    ?.equippedTitle,
+  'brushlord'
+);
+assert.equal(
+  mockCombatBundle.projectEquippedTitle(titleInventory, 'unknown-title'),
+  undefined
+);
+pass('browser mock imports production economy and progression rules');
 
 const chronicleStorage = createMemoryStorage();
 const chroniclePlayerId = 'chronicle-player';
@@ -4016,6 +6588,141 @@ pass(
   'Founder Rival Thread planning keeps three-page episodes, stakes, score, and margin notes'
 );
 
+const moderationRouteTarget = makeScribbit({
+  id: 'moderation-route-target',
+  artist: 'moderation_owner',
+});
+const moderationOwnerUserId = 'moderation-owner-id';
+const moderationOwnerMutationKey = `user:${moderationOwnerUserId}:mutation:lock`;
+const moderationOwnerDeletionKey = `user:${moderationOwnerUserId}:data-deletion:lock`;
+const seedModerationRouteTarget = () => {
+  productionApiContract.setApiContractString(
+    `scribbit:${moderationRouteTarget.id}`,
+    JSON.stringify(moderationRouteTarget)
+  );
+  productionApiContract.setApiContractString(
+    `scribbit:${moderationRouteTarget.id}:owner`,
+    moderationOwnerUserId
+  );
+  productionApiContract.setApiContractHashField(
+    `moderation:scribbit:${moderationRouteTarget.id}:reports`,
+    'prior-reporter-one',
+    '1000'
+  );
+  productionApiContract.setApiContractHashField(
+    `moderation:scribbit:${moderationRouteTarget.id}:reports`,
+    'prior-reporter-two',
+    '1001'
+  );
+};
+
+productionApiContract.resetApiContractRuntime();
+seedModerationRouteTarget();
+productionApiContract.setApiContractString(
+  moderationOwnerDeletionKey,
+  'owner-deletion'
+);
+const busyModerationRemoval = await productionApiContract.app.request(
+  '/api/report-scribbit',
+  {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ scribbitId: moderationRouteTarget.id }),
+  }
+);
+assert.equal(busyModerationRemoval.status, 409);
+assert.deepEqual(await busyModerationRemoval.json(), {
+  status: 'error',
+  message: 'That Scribbit is changing. Your report was saved; try again.',
+});
+assert.ok(
+  productionApiContract.getApiContractString(
+    `scribbit:${moderationRouteTarget.id}`
+  ),
+  'moderation must not remove content while its owner lease is busy'
+);
+assert.equal(
+  productionApiContract.getApiContractString(moderationOwnerDeletionKey),
+  'owner-deletion',
+  'moderation must not disturb an active owner deletion lease'
+);
+assert.ok(
+  productionApiContract.getApiContractHashField(
+    `moderation:scribbit:${moderationRouteTarget.id}:reports`,
+    'api-contract-user'
+  ),
+  'the reporter receipt must survive a deferred threshold removal'
+);
+assert.equal(
+  productionApiContract.getApiContractString(playerMutationLockKey),
+  undefined,
+  'reporter lease must release when owner removal is deferred'
+);
+
+productionApiContract.deleteApiContractKeys(moderationOwnerDeletionKey);
+const completedModerationRemoval = await productionApiContract.app.request(
+  '/api/report-scribbit',
+  {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ scribbitId: moderationRouteTarget.id }),
+  }
+);
+assert.equal(completedModerationRemoval.status, 200);
+assert.deepEqual(await completedModerationRemoval.json(), {
+  hidden: moderationRouteTarget.id,
+  removedForEveryone: true,
+});
+assert.equal(
+  productionApiContract.getApiContractString(
+    `scribbit:${moderationRouteTarget.id}`
+  ),
+  undefined
+);
+assert.equal(
+  productionApiContract.getApiContractString(moderationOwnerMutationKey),
+  undefined,
+  'a busy report retry must complete removal and release the owner lease'
+);
+assert.equal(
+  productionApiContract.getApiContractString(playerMutationLockKey),
+  undefined,
+  'successful moderation removal must release the reporter lease'
+);
+
+productionApiContract.resetApiContractRuntime();
+seedModerationRouteTarget();
+productionApiContract.swapApiContractStringAfterReads(
+  `scribbit:${moderationRouteTarget.id}:owner`,
+  'replacement-owner-id',
+  2
+);
+const changedOwnerRemoval = await productionApiContract.app.request(
+  '/api/report-scribbit',
+  {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ scribbitId: moderationRouteTarget.id }),
+  }
+);
+assert.equal(changedOwnerRemoval.status, 200);
+assert.deepEqual(await changedOwnerRemoval.json(), {
+  hidden: moderationRouteTarget.id,
+  removedForEveryone: false,
+});
+assert.ok(
+  productionApiContract.getApiContractString(
+    `scribbit:${moderationRouteTarget.id}`
+  ),
+  'moderation must stop if ownership changes before fenced removal'
+);
+assert.equal(
+  productionApiContract.getApiContractString(moderationOwnerMutationKey),
+  undefined,
+  'owner-change revalidation must still release the former owner lease'
+);
+pass('cross-owner moderation composes the owner mutation lease');
+
 const moderationStorage = createMemoryStorage();
 const firstSafetyReport = await moderationCore.reportAndHideScribbit(
   moderationStorage,
@@ -4098,11 +6805,34 @@ await moderationCore.reportAndHideScribbit(
   'community-target',
   1000
 );
-await privacyCore.recordUserBeliefTarget(
+await privacyStorage.hSet(
+  scribbitCore.getUserBeliefTargetsKey('privacy-user-id'),
+  { 'community-target': '20260708' }
+);
+await privacyStorage.hSet(
+  scribbitCore.getScribbitBeliefVotersKey('community-target'),
+  {
+    'privacy-user-id:20260707': 'older-legacy-receipt',
+    'privacy-user-id:20260708': 'legacy-receipt',
+  }
+);
+const privacyV2BeliefTarget = makeScribbit({ id: 'privacy-v2-target' });
+await scribbitCore.storeScribbit(
   privacyStorage,
-  'privacy-user-id',
-  'community-target',
-  '20260708'
+  'other-privacy-owner',
+  privacyV2BeliefTarget
+);
+assert.equal(
+  (
+    await scribbitCore.applyDailyBelief(privacyStorage, {
+      scribbitId: privacyV2BeliefTarget.id,
+      userId: 'privacy-user-id',
+      utcDateKey: '20260708',
+      currentArenaDay: 2,
+      operationId: 'privacy-v2-operation',
+    })
+  ).status,
+  'applied'
 );
 await scribbitCore.claimUserDailySparWinReward(
   privacyStorage,
@@ -4138,8 +6868,12 @@ await privacyStorage.hSet(
 const privacyDeletion = await privacyCore.deletePlayerData(
   privacyStorage,
   'privacy-user-id',
-  2
+  2,
+  '20260712',
+  Date.UTC(2026, 6, 12),
+  'privacy-delete-operation'
 );
+assert.equal(privacyDeletion.status, 'deleted');
 assert.equal(
   privacyDeletion.removedScribbits,
   2,
@@ -4193,6 +6927,33 @@ assert.equal(
     .size,
   0,
   'privacy deletion should remove report-hide data'
+);
+assert.equal(
+  await privacyStorage.hGet(
+    scribbitCore.getScribbitBeliefVotersKey('community-target'),
+    'privacy-user-id:20260708'
+  ),
+  undefined,
+  'privacy deletion should remove legacy Belief receipts during migration'
+);
+assert.equal(
+  await privacyStorage.hGet(
+    scribbitCore.getScribbitBeliefVotersKey('community-target'),
+    'privacy-user-id:20260707'
+  ),
+  undefined,
+  'legacy privacy cleanup should remove earlier receipts hidden by the old index'
+);
+assert.equal(
+  await privacyStorage.get(
+    scribbitCore.getDailyBeliefReceiptKey(
+      privacyV2BeliefTarget.id,
+      'privacy-user-id',
+      '20260708'
+    )
+  ),
+  undefined,
+  'privacy deletion should remove V2 Belief receipts'
 );
 assert.equal(
   await privacyStorage.get(
@@ -4626,10 +7387,7 @@ assert.equal(
 );
 pass('production-backed debug battles prove all four signature contracts');
 
-const mockDrawingTestOutputDirectory = join(
-  tmpdir(),
-  'scribbits-mock-drawing-tests'
-);
+const mockDrawingTestOutputDirectory = join(testTemporaryRoot, 'mock-drawings');
 rmSync(mockDrawingTestOutputDirectory, { recursive: true, force: true });
 execFileSync(
   process.execPath,
@@ -4712,8 +7470,55 @@ for (const [powerIndex, [power, stats]] of Object.entries(
     `${power} should activate in the production-backed browser fixture`
   );
 }
+
+const authoritativeSubmitDataUrl = createAuthoritativeSubmissionDataUrl();
+const forgedClientStats = { chonk: 10, spike: 10, zip: 10, charm: 55 };
+const validatedMockSubmission =
+  mockCombatBundle.validateAndAnalyzeScribbitSubmission({
+    name: 'Authority Square',
+    baseImageDataUrl: authoritativeSubmitDataUrl,
+    imageDataUrl: authoritativeSubmitDataUrl,
+    stats: forgedClientStats,
+    element: 'storm',
+    accessories: [],
+  });
+assert.equal(validatedMockSubmission.status, 'valid');
+assert.equal(
+  validatedMockSubmission.draft.element,
+  'ember',
+  'the browser mock must derive element from base pixels, not the client field'
+);
+assert.equal(
+  combatSelection.selectPrimaryPower(validatedMockSubmission.draft.stats),
+  'inkquake',
+  'the browser mock must derive Shape Power from base pixels'
+);
+assert.notDeepEqual(
+  validatedMockSubmission.draft.stats,
+  forgedClientStats,
+  'forged client stats must never become the mock Scribbit build'
+);
+const emptySubmitPng = new PNG({ width: 512, height: 512 });
+emptySubmitPng.data.fill(0);
+const emptySubmitDataUrl = `data:image/png;base64,${PNG.sync
+  .write(emptySubmitPng)
+  .toString('base64')}`;
+assert.deepEqual(
+  mockCombatBundle.validateAndAnalyzeScribbitSubmission({
+    name: 'Empty Page',
+    baseImageDataUrl: emptySubmitDataUrl,
+    imageDataUrl: emptySubmitDataUrl,
+    stats: forgedClientStats,
+    element: 'storm',
+    accessories: [],
+  }),
+  { status: 'invalid', reason: 'insufficient-ink' },
+  'the browser mock must enforce production minimum-ink validation'
+);
 rmSync(mockCombatTestOutputDirectory, { recursive: true, force: true });
-pass('browser mock bundles production combat with isolated fixture seeds');
+pass(
+  'browser mock bundles production combat and server-derived submission identity'
+);
 
 const pngFixture = new PNG({ width: 512, height: 512 });
 pngFixture.data.fill(0);
@@ -5148,6 +7953,270 @@ assert.equal(
   'practice persistence guard must fail before the first storage method read'
 );
 pass('server-authoritative Practice Lab is strict, replayable, and ephemeral');
+
+const practiceGuardStorage = createMemoryStorage();
+const practiceGuardNow = new Date('2026-07-12T12:34:00.000Z');
+await practiceGuardStorage.hSet(
+  practiceCore.getLegacyPracticeRequestGuardKey(),
+  { 'legacy-practice-player': 'legacy-token' }
+);
+assert.equal(
+  (
+    await practiceCore.acquirePracticeRequest(practiceGuardStorage, {
+      playerId: 'legacy-practice-player',
+      token: 'new-token',
+      requestedAtMs: practiceGuardNow.getTime(),
+    })
+  ).status,
+  'busy',
+  'V2 Practice leases must respect a still-active V1 guard during rollout'
+);
+const firstPracticeClaim = await practiceCore.acquirePracticeRequest(
+  practiceGuardStorage,
+  {
+    playerId: 'practice-player',
+    token: 'first-token',
+    requestedAtMs: practiceGuardNow.getTime(),
+  }
+);
+assert.equal(firstPracticeClaim.status, 'acquired');
+assert.equal(
+  practiceGuardStorage.getExpirationSeconds(
+    practiceCore.getPracticeRequestRateKey(
+      'practice-player',
+      Math.floor(practiceGuardNow.getTime() / 60_000)
+    )
+  ),
+  120
+);
+assert.equal(
+  practiceGuardStorage.getExpirationSeconds(
+    practiceCore.getPracticeRequestGuardKey('practice-player')
+  ),
+  30
+);
+assert.equal(
+  await practiceGuardStorage.hGet(
+    practiceCore.getLegacyPracticeRequestGuardKey(),
+    'practice-player'
+  ),
+  'first-token',
+  'V2 Practice acquisition must block older workers through the V1 guard'
+);
+assert.equal(
+  (
+    await practiceCore.acquirePracticeRequest(practiceGuardStorage, {
+      playerId: 'practice-player',
+      token: 'second-token',
+      requestedAtMs: practiceGuardNow.getTime(),
+    })
+  ).status,
+  'busy',
+  'a second active Practice request should not replace the owner token'
+);
+assert.equal(
+  await practiceCore.releasePracticeRequest(practiceGuardStorage, {
+    playerId: 'practice-player',
+    token: 'second-token',
+    legacyGuardWritten: true,
+  }),
+  'not-owner'
+);
+assert.equal(
+  await practiceGuardStorage.get(
+    practiceCore.getPracticeRequestGuardKey('practice-player')
+  ),
+  'first-token',
+  'a mismatched release token must not clear the active Practice request'
+);
+assert.equal(firstPracticeClaim.status, 'acquired');
+assert.equal(
+  await practiceCore.releasePracticeRequest(
+    practiceGuardStorage,
+    firstPracticeClaim.lease
+  ),
+  'released'
+);
+for (let attempt = 0; attempt < 6; attempt += 1) {
+  const token = `rate-token-${attempt}`;
+  const claim = await practiceCore.acquirePracticeRequest(
+    practiceGuardStorage,
+    {
+      playerId: 'rate-player',
+      token,
+      requestedAtMs: practiceGuardNow.getTime(),
+    }
+  );
+  assert.equal(claim.status, 'acquired');
+  assert.equal(
+    await practiceCore.releasePracticeRequest(
+      practiceGuardStorage,
+      claim.lease
+    ),
+    'released'
+  );
+}
+assert.equal(
+  (
+    await practiceCore.acquirePracticeRequest(practiceGuardStorage, {
+      playerId: 'rate-player',
+      token: 'rate-token-7',
+      requestedAtMs: practiceGuardNow.getTime(),
+    })
+  ).status,
+  'rate-limited',
+  'the seventh Practice request in one minute should be rate-limited'
+);
+const replyLossPracticeStorage = createMemoryStorage({
+  throwAfterCommitOnce: true,
+});
+const recoveredPracticeClaim = await practiceCore.acquirePracticeRequest(
+  replyLossPracticeStorage,
+  {
+    playerId: 'reply-loss-player',
+    token: 'reply-loss-token',
+    requestedAtMs: practiceGuardNow.getTime(),
+  }
+);
+assert.equal(
+  recoveredPracticeClaim.status,
+  'acquired',
+  'Practice acquisition should recover a committed lease after reply loss'
+);
+const replyLossReleaseStorage = createMemoryStorage({
+  throwAfterCommitOnce: true,
+});
+await replyLossReleaseStorage.set(
+  practiceCore.getPracticeRequestGuardKey('release-reply-player'),
+  'release-reply-token'
+);
+await replyLossReleaseStorage.hSet(
+  practiceCore.getLegacyPracticeRequestGuardKey(),
+  { 'release-reply-player': 'release-reply-token' }
+);
+assert.equal(
+  await practiceCore.releasePracticeRequest(replyLossReleaseStorage, {
+    playerId: 'release-reply-player',
+    token: 'release-reply-token',
+    legacyGuardWritten: true,
+  }),
+  'released',
+  'Practice release should recover after its delete commits but the reply is lost'
+);
+const staleReleaseStorage = createMemoryStorage();
+const staleGuardKey = practiceCore.getPracticeRequestGuardKey('stale-player');
+await staleReleaseStorage.set(staleGuardKey, 'stale-token');
+await staleReleaseStorage.hSet(
+  practiceCore.getLegacyPracticeRequestGuardKey(),
+  { 'stale-player': 'stale-token' }
+);
+const originalStaleReleaseWatch =
+  staleReleaseStorage.watch.bind(staleReleaseStorage);
+let replacedPracticeLease = false;
+staleReleaseStorage.watch = async (...keys) => {
+  const transaction = await originalStaleReleaseWatch(...keys);
+  if (!replacedPracticeLease) {
+    replacedPracticeLease = true;
+    transaction.exec = async () => {
+      await staleReleaseStorage.set(staleGuardKey, 'replacement-token');
+      return [];
+    };
+  }
+  return transaction;
+};
+assert.equal(
+  await practiceCore.releasePracticeRequest(staleReleaseStorage, {
+    playerId: 'stale-player',
+    token: 'stale-token',
+    legacyGuardWritten: true,
+  }),
+  'not-owner',
+  'a stale release must not delete a replacement Practice lease'
+);
+assert.equal(await staleReleaseStorage.get(staleGuardKey), 'replacement-token');
+const concurrentPracticeStorage = createMemoryStorage();
+const concurrentPracticeClaims = await Promise.all([
+  practiceCore.acquirePracticeRequest(concurrentPracticeStorage, {
+    playerId: 'concurrent-practice-player',
+    token: 'concurrent-practice-a',
+    requestedAtMs: practiceGuardNow.getTime(),
+  }),
+  practiceCore.acquirePracticeRequest(concurrentPracticeStorage, {
+    playerId: 'concurrent-practice-player',
+    token: 'concurrent-practice-b',
+    requestedAtMs: practiceGuardNow.getTime(),
+  }),
+]);
+assert.deepEqual(
+  concurrentPracticeClaims.map(({ status }) => status).sort(),
+  ['acquired', 'busy'],
+  'exactly one concurrent Practice request should acquire the player lease'
+);
+assert.ok(
+  concurrentPracticeStorage.getWatchConflictCount() > 0,
+  'the Practice concurrency proof must exercise an actual WATCH conflict'
+);
+pass('Practice leases are transactional, rate-limited, and token-safe');
+
+const practiceMigrationStorage = createMemoryStorage();
+const practiceMigrationStartedAtMs = Date.UTC(2026, 6, 12, 12);
+const overlapPracticeClaim = await practiceCore.acquirePracticeRequest(
+  practiceMigrationStorage,
+  {
+    playerId: 'migration-overlap-player',
+    token: 'migration-overlap-token',
+    requestedAtMs: practiceMigrationStartedAtMs,
+  }
+);
+assert.equal(overlapPracticeClaim.status, 'acquired');
+assert.equal(overlapPracticeClaim.lease.legacyGuardWritten, true);
+await practiceCore.releasePracticeRequest(
+  practiceMigrationStorage,
+  overlapPracticeClaim.lease
+);
+await practiceMigrationStorage.hSet(
+  practiceCore.getLegacyPracticeRequestGuardKey(),
+  { 'migration-drain-player': 'legacy-drain-token' }
+);
+assert.equal(
+  (
+    await practiceCore.acquirePracticeRequest(practiceMigrationStorage, {
+      playerId: 'migration-drain-player',
+      token: 'migration-drain-v2-token',
+      requestedAtMs:
+        practiceMigrationStartedAtMs +
+        migrationCore.ROLLOUT_OVERLAP_MILLISECONDS +
+        1,
+    })
+  ).status,
+  'busy',
+  'Practice must continue reading V1 through its source TTL drain window'
+);
+const postDrainPracticeClaim = await practiceCore.acquirePracticeRequest(
+  practiceMigrationStorage,
+  {
+    playerId: 'migration-post-drain-player',
+    token: 'migration-post-drain-token',
+    requestedAtMs:
+      practiceMigrationStartedAtMs +
+      migrationCore.ROLLOUT_OVERLAP_MILLISECONDS +
+      30_001,
+  }
+);
+assert.equal(postDrainPracticeClaim.status, 'acquired');
+assert.equal(
+  postDrainPracticeClaim.lease.legacyGuardWritten,
+  false,
+  'Practice must stop V1 writes after the finite overlap'
+);
+assert.equal(
+  await practiceMigrationStorage.hGet(
+    practiceCore.getLegacyPracticeRequestGuardKey(),
+    'migration-post-drain-player'
+  ),
+  undefined
+);
+pass('Practice V1 compatibility has a finite write and read window');
 
 const reportOne = battle.simulate(alpha, beta, 12345, forecast, 'exhibition');
 const reportTwo = battle.simulate(alpha, beta, 12345, forecast, 'exhibition');
@@ -5878,14 +8947,13 @@ await invalidBattleReportStorage.set(
   JSON.stringify(runReport)
 );
 assert.deepEqual(
-  (
-    await battleStore.loadBattleReport(
-      invalidBattleReportStorage,
-      runReport.id
-    )
-  )?.rivalRun,
-  runReport.rivalRun,
-  'stored exhibition replays should preserve their immutable Rival Run receipt'
+  (await battleStore.loadBattleReport(invalidBattleReportStorage, runReport.id))
+    ?.rivalRun,
+  {
+    ...runReport.rivalRun,
+    challenge: rivalRunChallenges.createLegacyRivalRunChallenge(1, 'active'),
+  },
+  'legacy exhibition replays should gain one truthful compatibility challenge without losing their receipt'
 );
 const impossibleRunReport = structuredClone(runReport);
 impossibleRunReport.rivalRun.pointsAwarded = 3;
@@ -6210,7 +9278,7 @@ assert.deepEqual(
     ownedScribbitIds: ['picked-entry'],
     backedScribbitId: 'picked-entry',
   }),
-  { kind: 'picked', label: '✓ Picked', enabled: false }
+  { kind: 'picked', label: 'Picked', enabled: false }
 );
 assert.deepEqual(
   arenaBracket.planArenaBackAction({
@@ -6241,18 +9309,122 @@ assert.deepEqual(availableBackAction, {
 assert.ok(Object.isFrozen(availableBackAction));
 pass('Arena bracket ordering and Back actions stay deterministic');
 
-const normalizedStats = scribbitCore.normalizeStats({
+const adversarialRawStats = {
   chonk: 999,
   spike: 1,
   zip: -20,
   charm: Number.POSITIVE_INFINITY,
-});
+};
+const normalizedStats = analyzerCore.normalizeStats(adversarialRawStats);
 assert.equal(sumStats(normalizedStats), arena.STAT_BUDGET, 'stats sum to 100');
 for (const value of Object.values(normalizedStats)) {
   assert.ok(value >= arena.STAT_MIN, 'stat should respect minimum');
   assert.ok(value <= arena.STAT_MAX, 'stat should respect maximum');
 }
-pass('server stat normalization bounds');
+assert.deepEqual(
+  scribbitCore.validateSubmitScribbitRequest({
+    name: 'Parity Proof',
+    baseImageDataUrl: 'data:image/png;base64,placeholder',
+    imageDataUrl: 'data:image/png;base64,placeholder',
+    stats: adversarialRawStats,
+    element: 'ember',
+    accessories: [],
+  })?.stats,
+  normalizedStats,
+  'request compatibility parsing must use the shared analyzer normalizer'
+);
+assert.deepEqual(
+  scribbitCore.createScribbit({
+    id: 'normalization-parity',
+    draft: {
+      name: 'Parity Proof',
+      stats: adversarialRawStats,
+      element: 'ember',
+      accessories: [],
+    },
+    artist: 'tester',
+    imageUrl: 'https://example.invalid/parity.png',
+    day: 1,
+  }).stats,
+  normalizedStats,
+  'stored creation must use the shared analyzer normalizer'
+);
+assert.deepEqual(
+  analyzerCore.normalizeStats(null),
+  { chonk: 25, spike: 25, zip: 25, charm: 25 },
+  'missing stat records should repair to an even legal budget'
+);
+const storedNormalizationCandidate = scribbitCore.createScribbit({
+  id: 'stored-normalization-parity',
+  draft: {
+    name: 'Stored Parity',
+    stats: { chonk: 25, spike: 25, zip: 25, charm: 25 },
+    element: 'ember',
+    accessories: [],
+  },
+  artist: 'tester',
+  imageUrl: 'https://example.invalid/stored-parity.png',
+  day: 1,
+});
+const historicalStoredStats = { chonk: 25, spike: 25, zip: 25, charm: 24 };
+assert.deepEqual(
+  scribbitCore.parseScribbit(
+    JSON.stringify({
+      ...storedNormalizationCandidate,
+      stats: historicalStoredStats,
+    })
+  )?.stats,
+  historicalStoredStats,
+  'stored stats must remain immutable even when they predate current balance rules'
+);
+assert.deepEqual(
+  analyzerCore.normalizeStats({ chonk: 1, spike: 1, zip: 1 }),
+  { chonk: 30, spike: 30, zip: 30, charm: 10 },
+  'missing values must contribute zero before bounded redistribution'
+);
+assert.deepEqual(
+  analyzerCore.normalizeStats({
+    chonk: 2,
+    spike: 1,
+    zip: 1,
+    charm: Number.NaN,
+  }),
+  { chonk: 44, spike: 23, zip: 23, charm: 10 },
+  'non-finite values must contribute zero before bounded redistribution'
+);
+assert.deepEqual(
+  analyzerCore.normalizeStats({ chonk: 1, spike: 1, zip: 1, charm: 3 }),
+  { chonk: 17, spike: 17, zip: 16, charm: 50 },
+  'equal fractional remainders must keep canonical stat order'
+);
+for (let caseIndex = 0; caseIndex < 512; caseIndex += 1) {
+  const candidate = {
+    chonk: (caseIndex * 97) % 1_003,
+    spike: caseIndex % 11 === 0 ? Number.NaN : (caseIndex * 53) % 401,
+    zip: caseIndex % 13 === 0 ? -caseIndex : (caseIndex * 29) % 257,
+    charm:
+      caseIndex % 17 === 0 ? Number.POSITIVE_INFINITY : (caseIndex * 11) % 149,
+  };
+  const result = analyzerCore.normalizeStats(candidate);
+  assert.equal(
+    sumStats(result),
+    arena.STAT_BUDGET,
+    `case ${caseIndex} must preserve the stat budget`
+  );
+  for (const value of Object.values(result)) {
+    assert.ok(Number.isInteger(value), `case ${caseIndex} must stay integral`);
+    assert.ok(
+      value >= arena.STAT_MIN && value <= arena.STAT_MAX,
+      `case ${caseIndex} must stay inside stat bounds`
+    );
+  }
+  assert.deepEqual(
+    analyzerCore.normalizeStats(result),
+    result,
+    `case ${caseIndex} must be stable after canonical storage`
+  );
+}
+pass('shared stat normalization is the one server authority');
 
 const oldRecordStorage = createMemoryStorage();
 const oldStoredScribbit = {
@@ -6315,22 +9487,22 @@ pass(
 );
 
 assert.equal(
-  battle.getLevelDamageMultiplier(1),
+  sharedBattle.getLevelDamageMultiplier(1),
   1,
   'level 1 should not add damage'
 );
 assert.equal(
-  battle.getLevelDamageMultiplier(arena.MAX_LEVEL),
+  sharedBattle.getLevelDamageMultiplier(arena.MAX_LEVEL),
   1 + (arena.MAX_LEVEL - 1) * arena.LEVEL_DAMAGE_BONUS_PER_LEVEL,
   'max level should add the configured damage bonus'
 );
 assert.equal(
-  battle.getLevelDamageMultiplier(99),
+  sharedBattle.getLevelDamageMultiplier(99),
   1 + (arena.MAX_LEVEL - 1) * arena.LEVEL_DAMAGE_BONUS_PER_LEVEL,
   'damage bonus should cap at max level'
 );
 assert.equal(
-  battle.getLevelDamageMultiplier(99),
+  sharedBattle.getLevelDamageMultiplier(99),
   1.015,
   'level bonus should cap at +1.5%'
 );
@@ -6584,24 +9756,22 @@ const ownedOpenPickActions = battlePresentation.planReplayPostFightActions({
   canReplay: false,
   returnLabel: 'ARENA ›',
 });
-assert.deepEqual(ownedOpenPickActions,
-  {
-    primary: {
-      kind: 'rivals',
-      label: 'CHOOSE A RIVAL',
-      accessibleLabel: 'Choose a rival',
-      tone: 'coral',
-    },
-    replayAction: null,
-    returnAction: {
-      kind: 'return',
-      label: 'ARENA ›',
-      accessibleLabel: 'ARENA',
-      tone: 'ghost',
-    },
-    buttonHeight: 100,
-  }
-);
+assert.deepEqual(ownedOpenPickActions, {
+  primary: {
+    kind: 'rivals',
+    label: 'CHOOSE A RIVAL',
+    accessibleLabel: 'Choose a rival',
+    tone: 'coral',
+  },
+  replayAction: null,
+  returnAction: {
+    kind: 'return',
+    label: 'ARENA ›',
+    accessibleLabel: 'ARENA',
+    tone: 'ghost',
+  },
+  buttonHeight: 100,
+});
 assert.deepEqual(
   battlePresentation.planReplayPostFightActions({
     canChooseRival: true,
@@ -7299,17 +10469,118 @@ const newRivalRun = rivalRunCore.createRivalRunState(
   9,
   'scribbit-runner'
 );
-assert.deepEqual(newRivalRun, {
-  id: 'run-test-1',
-  dayNumber: 9,
-  challengerId: 'scribbit-runner',
-  boutsCompleted: 0,
-  wins: 0,
-  losses: 0,
-  score: 0,
-  opponentIds: [],
-  status: 'active',
-});
+assert.deepEqual(
+  {
+    id: newRivalRun.id,
+    dayNumber: newRivalRun.dayNumber,
+    challengerId: newRivalRun.challengerId,
+    boutsCompleted: newRivalRun.boutsCompleted,
+    wins: newRivalRun.wins,
+    losses: newRivalRun.losses,
+    score: newRivalRun.score,
+    opponentIds: newRivalRun.opponentIds,
+    status: newRivalRun.status,
+  },
+  {
+    id: 'run-test-1',
+    dayNumber: 9,
+    challengerId: 'scribbit-runner',
+    boutsCompleted: 0,
+    wins: 0,
+    losses: 0,
+    score: 0,
+    opponentIds: [],
+    status: 'active',
+  }
+);
+assert.equal(rivalRunChallenges.RIVAL_RUN_CHALLENGES.length, 12);
+assert.equal(
+  new Set(rivalRunChallenges.RIVAL_RUN_CHALLENGES.map(({ id }) => id)).size,
+  12,
+  'the authored Rival Run challenge catalog must keep twelve stable ids'
+);
+assert.ok(rivalRunChallenges.isRivalRunChallenge(newRivalRun.challenge));
+assert.equal(newRivalRun.challenge.progress, 0);
+assert.equal(newRivalRun.challenge.completionAchieved, false);
+const selectedChallengeIds = new Set(
+  Array.from(
+    { length: 512 },
+    (_, index) =>
+      rivalRunCore.createRivalRunState(
+        `run-rotation-${index}`,
+        9,
+        'scribbit-runner'
+      ).challenge.id
+  )
+);
+assert.equal(
+  selectedChallengeIds.size,
+  12,
+  'deterministic run identities must reach the full twelve-card catalog'
+);
+assert.notEqual(
+  rivalRunCore.createRivalRunState(
+    'run-test-next',
+    9,
+    'scribbit-runner',
+    newRivalRun.challenge.id
+  ).challenge.id,
+  newRivalRun.challenge.id,
+  'a fresh run must not immediately repeat the completed challenge card'
+);
+
+for (const definition of rivalRunChallenges.RIVAL_RUN_CHALLENGES) {
+  let challengeState = {
+    ...definition,
+    condition: { ...definition.condition },
+    progress: 0,
+    completionAchieved: false,
+  };
+  let wins = 0;
+  let score = 0;
+  const tiers =
+    definition.condition.kind === 'tier_set'
+      ? ['safe', 'even', 'risky']
+      : [
+          definition.condition.tier ??
+            (definition.condition.kind === 'minimum_score' ? 'risky' : 'even'),
+          definition.condition.tier ??
+            (definition.condition.kind === 'minimum_score' ? 'risky' : 'even'),
+          definition.condition.tier ??
+            (definition.condition.kind === 'minimum_score' ? 'risky' : 'even'),
+        ];
+  const outcomes =
+    definition.condition.kind === 'outcome_sequence'
+      ? ['loss', 'win', 'win']
+      : definition.condition.kind === 'final_win'
+        ? ['loss', 'loss', 'win']
+        : ['win', 'win', 'win'];
+  for (let boutIndex = 0; boutIndex < 3; boutIndex += 1) {
+    const tier = tiers[boutIndex];
+    const outcome = outcomes[boutIndex];
+    assert.ok(tier && outcome);
+    if (outcome === 'win') {
+      wins += 1;
+      score += tier === 'safe' ? 1 : tier === 'even' ? 2 : 3;
+    }
+    challengeState = rivalRunChallenges.advanceRivalRunChallenge(
+      challengeState,
+      {
+        boutNumber: boutIndex + 1,
+        outcome,
+        tier,
+        wins,
+        score,
+        status: boutIndex === 2 ? 'complete' : 'active',
+      }
+    );
+  }
+  assert.equal(
+    challengeState.completionAchieved,
+    true,
+    `${definition.id} must have one truthful achievable three-bout path`
+  );
+}
 const rivalRunBoutOne = rivalRunCore.advanceRivalRunState(newRivalRun, {
   expectedBoutsCompleted: 0,
   playerWon: true,
@@ -7365,21 +10636,27 @@ assert.equal(
   'a completed run must reject a fourth bout'
 );
 assert.deepEqual(rivalRunPresentation.planRivalRunDraftHeading(newRivalRun), {
-  title: 'RIVAL RUN',
-  subtitle: 'BOUT 1/3 • 0 PTS',
+  title: newRivalRun.challenge.name,
+  subtitle: 'RIVAL RUN • BOUT 1/3 • 0 PTS',
 });
-assert.equal(
+const runChallengeCopy =
+  rivalRunPresentation.planRivalRunChallengeCopy(rivalRunBoutThree);
+assert.equal(runChallengeCopy.name, newRivalRun.challenge.name);
+assert.equal(runChallengeCopy.goal, newRivalRun.challenge.goal);
+assert.match(runChallengeCopy.accessibleSummary, /Goal:/);
+assert.match(
   rivalRunPresentation.formatRivalRunResultLine(rivalRunBoutThree),
-  'RUN CHAMPION • 2–1 • 3 PTS'
+  new RegExp(`^${newRivalRun.challenge.name} • `)
 );
-assert.deepEqual(
-  rivalRunPresentation.planRivalRunFinishStamp(rivalRunBoutThree),
-  { title: 'RUN CHAMPION', score: '3 PTS', record: '2–1' }
-);
+const rivalRunFinishStamp =
+  rivalRunPresentation.planRivalRunFinishStamp(rivalRunBoutThree);
+assert.ok(rivalRunFinishStamp);
+assert.ok(rivalRunFinishStamp.title.startsWith(newRivalRun.challenge.name));
+assert.equal(rivalRunFinishStamp.record, '3 PTS • 2–1');
 assert.equal(
   rivalRunPresentation.formatRivalRunBattleLabel(rivalRunBoutOne),
-  'RUN 1/3 • SCORE 0',
-  'the live HUD must show pre-bout score without spoiling the result'
+  `${newRivalRun.challenge.name} • 1/3 • 0 PTS`,
+  'the live HUD must name the challenge and pre-bout score without spoiling the result'
 );
 assert.equal(
   rivalRunPresentation.planRivalRunActionCopy(rivalRunBoutOne).label,
@@ -7421,15 +10698,12 @@ const staleStoredBoutReport = {
     isFounding: true,
   }),
 };
-const storedRivalRun = await rivalRunCore.getOrCreateRivalRun(
-  rivalRunStorage,
-  {
-    userId: 'runner-user',
-    runId: 'run-storage-1',
-    dayNumber: 9,
-    challengerId: 'scribbit-runner',
-  }
-);
+const storedRivalRun = await rivalRunCore.getOrCreateRivalRun(rivalRunStorage, {
+  userId: 'runner-user',
+  runId: 'run-storage-1',
+  dayNumber: 9,
+  challengerId: 'scribbit-runner',
+});
 assert.equal(
   (
     await rivalRunCore.getOrCreateRivalRun(rivalRunStorage, {
@@ -7441,6 +10715,18 @@ assert.equal(
   ).id,
   storedRivalRun.id,
   'reopening the same active run must not reset its score'
+);
+assert.deepEqual(
+  (
+    await rivalRunCore.getOrCreateRivalRun(rivalRunStorage, {
+      userId: 'runner-user',
+      runId: 'another-ignored-id',
+      dayNumber: 9,
+      challengerId: 'scribbit-runner',
+    })
+  ).challenge,
+  storedRivalRun.challenge,
+  'reopening an active run must preserve its exact authored challenge snapshot'
 );
 const storedBoutOne = await rivalRunCore.advanceRivalRun(rivalRunStorage, {
   userId: 'runner-user',
@@ -7456,6 +10742,7 @@ const storedBoutOne = await rivalRunCore.advanceRivalRun(rivalRunStorage, {
   opponentId: 'founding-storage-even',
 });
 assert.equal(storedBoutOne?.score, 2);
+assert.equal(storedBoutOne?.challenge.id, storedRivalRun.challenge.id);
 assert.deepEqual(
   await rivalRunCore.advanceRivalRun(rivalRunStorage, {
     userId: 'runner-user',
@@ -7496,6 +10783,41 @@ assert.equal(
   2,
   'the run state and its recoverable battle report must commit together'
 );
+assert.equal(
+  (await battleStore.loadBattleReport(rivalRunStorage, 'run-report-1'))
+    ?.rivalRun?.challenge.id,
+  storedRivalRun.challenge.id,
+  'stored replay receipts must retain the immutable challenge identity'
+);
+
+const legacyRivalRunStorage = createMemoryStorage();
+await legacyRivalRunStorage.set(
+  rivalRunCore.getRivalRunKey('legacy-runner'),
+  JSON.stringify({
+    schemaVersion: 1,
+    id: 'legacy-run-v1',
+    dayNumber: 9,
+    challengerId: 'scribbit-runner',
+    boutsCompleted: 1,
+    wins: 1,
+    losses: 0,
+    score: 2,
+    opponentIds: ['legacy-even'],
+    status: 'active',
+    lastReportId: 'legacy-report-1',
+    lastOutcome: 'win',
+    lastTier: 'even',
+    lastWinPoints: 2,
+    lastPointsAwarded: 2,
+  })
+);
+const migratedLegacyRun = await rivalRunCore.loadRivalRun(
+  legacyRivalRunStorage,
+  'legacy-runner'
+);
+assert.equal(migratedLegacyRun?.challenge.id, 'v1-finish-the-card');
+assert.equal(migratedLegacyRun?.challenge.progress, 1);
+assert.equal(migratedLegacyRun?.challenge.completionAchieved, false);
 
 const collisionSafeReportStorage = createMemoryStorage();
 const collisionSafeReport = {
@@ -8802,6 +12124,233 @@ assert.equal(
 );
 pass('care once-per-day claim and release');
 
+const dailyBeliefStorage = createMemoryStorage();
+const dailyBeliefTarget = makeScribbit({ id: 'belief-target', belief: 0 });
+await scribbitCore.storeScribbit(
+  dailyBeliefStorage,
+  'belief-owner',
+  dailyBeliefTarget
+);
+assert.equal(
+  (
+    await scribbitCore.applyDailyBelief(dailyBeliefStorage, {
+      scribbitId: dailyBeliefTarget.id,
+      userId: 'belief-backer',
+      utcDateKey: '20260712',
+      currentArenaDay: 2,
+      operationId: 'belief-operation-one',
+    })
+  ).status,
+  'applied'
+);
+assert.equal(
+  (
+    await scribbitCore.applyDailyBelief(dailyBeliefStorage, {
+      scribbitId: dailyBeliefTarget.id,
+      userId: 'belief-backer',
+      utcDateKey: '20260712',
+      currentArenaDay: 2,
+      operationId: 'belief-operation-one',
+    })
+  ).status,
+  'applied',
+  'the same Belief operation should recover its committed result'
+);
+assert.equal(
+  (
+    await scribbitCore.applyDailyBelief(dailyBeliefStorage, {
+      scribbitId: dailyBeliefTarget.id,
+      userId: 'belief-backer',
+      utcDateKey: '20260712',
+      currentArenaDay: 2,
+      operationId: 'belief-operation-duplicate',
+    })
+  ).status,
+  'already-believed'
+);
+assert.equal(
+  (
+    await scribbitCore.applyDailyBelief(dailyBeliefStorage, {
+      scribbitId: dailyBeliefTarget.id,
+      userId: 'belief-backer',
+      utcDateKey: '20260713',
+      currentArenaDay: 2,
+      operationId: 'belief-operation-two',
+    })
+  ).status,
+  'applied',
+  'Belief should reset on the next UTC day'
+);
+assert.deepEqual(
+  await Promise.all(
+    ['20260712', '20260713'].map((utcDateKey) =>
+      dailyBeliefStorage.hGetAll(
+        scribbitCore.getUserDailyBeliefTargetsKey('belief-backer', utcDateKey)
+      )
+    )
+  ),
+  [
+    { 'belief-target': 'belief-operation-one' },
+    { 'belief-target': 'belief-operation-two' },
+  ]
+);
+assert.equal(
+  dailyBeliefStorage.getExpirationSeconds(
+    scribbitCore.getDailyBeliefReceiptKey(
+      dailyBeliefTarget.id,
+      'belief-backer',
+      '20260712'
+    )
+  ),
+  7 * 24 * 60 * 60
+);
+assert.equal(
+  dailyBeliefStorage.getExpirationSeconds(
+    scribbitCore.getUserDailyBeliefTargetsKey('belief-backer', '20260712')
+  ),
+  30 * 24 * 60 * 60
+);
+assert.equal(
+  await dailyBeliefStorage.hGet(
+    scribbitCore.getScribbitBeliefVotersKey(dailyBeliefTarget.id),
+    'belief-backer:20260712'
+  ),
+  'belief-operation-one',
+  'V2 Belief must block older workers through the V1 receipt'
+);
+await scribbitCore.removeUserBeliefReceipts(
+  dailyBeliefStorage,
+  'belief-backer',
+  '20260713'
+);
+for (const utcDateKey of ['20260712', '20260713']) {
+  assert.equal(
+    await dailyBeliefStorage.get(
+      scribbitCore.getDailyBeliefReceiptKey(
+        dailyBeliefTarget.id,
+        'belief-backer',
+        utcDateKey
+      )
+    ),
+    undefined,
+    'privacy cleanup should remove every V2 Belief receipt date'
+  );
+}
+pass('daily Belief commits and multi-day privacy receipts are atomic');
+
+const beliefMigrationStorage = createMemoryStorage();
+const beliefMigrationTarget = makeScribbit({ id: 'belief-migration-target' });
+await scribbitCore.storeScribbit(
+  beliefMigrationStorage,
+  'belief-migration-owner',
+  beliefMigrationTarget
+);
+const beliefMigrationStartedAtMs = Date.UTC(2026, 6, 12, 12);
+assert.equal(
+  (
+    await scribbitCore.applyDailyBelief(beliefMigrationStorage, {
+      scribbitId: beliefMigrationTarget.id,
+      userId: 'belief-migration-overlap-user',
+      utcDateKey: '20260712',
+      currentArenaDay: 2,
+      operationId: 'belief-migration-overlap-operation',
+      operationStartedAtMs: beliefMigrationStartedAtMs,
+    })
+  ).status,
+  'applied'
+);
+assert.equal(
+  (
+    await scribbitCore.applyDailyBelief(beliefMigrationStorage, {
+      scribbitId: beliefMigrationTarget.id,
+      userId: 'belief-migration-v2-user',
+      utcDateKey: '20260713',
+      currentArenaDay: 2,
+      operationId: 'belief-migration-v2-operation',
+      operationStartedAtMs:
+        beliefMigrationStartedAtMs +
+        migrationCore.ROLLOUT_OVERLAP_MILLISECONDS +
+        1,
+    })
+  ).status,
+  'applied'
+);
+assert.equal(
+  await beliefMigrationStorage.hGet(
+    scribbitCore.getScribbitBeliefVotersKey(beliefMigrationTarget.id),
+    'belief-migration-v2-user:20260713'
+  ),
+  undefined,
+  'Belief must stop V1 receipt writes after the finite overlap'
+);
+assert.equal(
+  await beliefMigrationStorage.hGet(
+    scribbitCore.getUserBeliefTargetsKey('belief-migration-v2-user'),
+    beliefMigrationTarget.id
+  ),
+  undefined,
+  'Belief must stop V1 privacy-index writes after the finite overlap'
+);
+await scribbitCore.removeUserBeliefReceipts(
+  beliefMigrationStorage,
+  'belief-migration-overlap-user',
+  '20260712',
+  beliefMigrationStartedAtMs +
+    migrationCore.ROLLOUT_OVERLAP_MILLISECONDS +
+    migrationCore.LEGACY_BELIEF_PRIVACY_MILLISECONDS +
+    1
+);
+assert.deepEqual(
+  await beliefMigrationStorage.hGetAll(
+    scribbitCore.getUserBeliefTargetsKey('belief-migration-overlap-user')
+  ),
+  {},
+  'privacy cleanup must retire the V1 index after its bounded read window'
+);
+pass('Belief V1 compatibility has finite write and privacy read windows');
+
+assert.equal(
+  (
+    await scribbitCore.applyDailyBelief(dailyBeliefStorage, {
+      scribbitId: dailyBeliefTarget.id,
+      userId: 'belief-owner',
+      utcDateKey: '20260714',
+      currentArenaDay: 2,
+      operationId: 'self-belief-operation',
+    })
+  ).status,
+  'self-belief',
+  'a Scribbit owner must not create a Belief receipt for their own drawing'
+);
+const foundingBeliefStorage = createMemoryStorage();
+const foundingBeliefResults = await Promise.all([
+  scribbitCore.applyDailyBelief(foundingBeliefStorage, {
+    scribbitId: chronicleFounder.id,
+    userId: 'founding-belief-backer-a',
+    utcDateKey: '20260712',
+    currentArenaDay: 2,
+    operationId: 'founding-belief-operation-a',
+  }),
+  scribbitCore.applyDailyBelief(foundingBeliefStorage, {
+    scribbitId: chronicleFounder.id,
+    userId: 'founding-belief-backer-b',
+    utcDateKey: '20260712',
+    currentArenaDay: 2,
+    operationId: 'founding-belief-operation-b',
+  }),
+]);
+assert.deepEqual(
+  foundingBeliefResults.map(({ status }) => status),
+  ['applied', 'applied']
+);
+assert.equal(
+  (await scribbitCore.loadScribbit(foundingBeliefStorage, chronicleFounder.id))
+    .belief,
+  2
+);
+assert.ok(foundingBeliefStorage.getWatchConflictCount() > 0);
+pass('Belief rejects self-support and commits founding support atomically');
+
 const beliefStorage = createMemoryStorage();
 const beliefScribbit = makeScribbit({
   id: 'belief-concurrency',
@@ -8814,42 +12363,872 @@ beliefStorage.watch = async (...keys) => {
   beliefWatchKeySets.push(keys);
   return originalBeliefWatch(...keys);
 };
-const beliefSnapshotA = await scribbitCore.loadScribbit(
-  beliefStorage,
-  beliefScribbit.id
-);
-const beliefSnapshotB = await scribbitCore.loadScribbit(
-  beliefStorage,
-  beliefScribbit.id
-);
 await Promise.all([
-  scribbitCore.increaseBelief(beliefStorage, beliefSnapshotA),
-  scribbitCore.increaseBelief(beliefStorage, beliefSnapshotB),
+  scribbitCore.applyDailyBelief(beliefStorage, {
+    scribbitId: beliefScribbit.id,
+    userId: 'belief-backer-a',
+    utcDateKey: '20260712',
+    currentArenaDay: 2,
+    operationId: 'belief-concurrent-a',
+  }),
+  scribbitCore.applyDailyBelief(beliefStorage, {
+    scribbitId: beliefScribbit.id,
+    userId: 'belief-backer-b',
+    utcDateKey: '20260712',
+    currentArenaDay: 2,
+    operationId: 'belief-concurrent-b',
+  }),
 ]);
-const beliefAfterConcurrentVotes = await scribbitCore.loadScribbit(
+const beliefAfterConcurrentSupport = await scribbitCore.loadScribbit(
   beliefStorage,
   beliefScribbit.id
 );
 assert.equal(
-  beliefAfterConcurrentVotes.belief,
+  beliefAfterConcurrentSupport.belief,
   7,
-  'two simultaneous voters should both increase community Belief'
+  'two simultaneous supporters should both increase community Belief'
 );
 assert.equal(
   beliefWatchKeySets.some((keys) =>
     keys.includes(scribbitCore.getCommunityBeliefKey())
   ),
   false,
-  'votes should not WATCH the global community hash and conflict across Scribbits'
+  'Belief should not WATCH the global community hash'
 );
 assert.equal(
   beliefWatchKeySets.every((keys) =>
     keys.includes(scribbitCore.getScribbitBeliefVersionKey(beliefScribbit.id))
   ),
   true,
-  'votes should fence only the target Scribbit belief version'
+  'Belief should fence only the target Scribbit version'
 );
-pass('community belief increments are concurrency-safe');
+assert.ok(
+  beliefStorage.getWatchConflictCount() > 0,
+  'community Belief concurrency must exercise an actual WATCH conflict'
+);
+
+const duplicateBeliefStorage = createMemoryStorage();
+const duplicateBeliefTarget = makeScribbit({ id: 'belief-same-user-race' });
+await scribbitCore.storeScribbit(
+  duplicateBeliefStorage,
+  'belief-same-user-owner',
+  duplicateBeliefTarget
+);
+const duplicateBeliefResults = await Promise.all([
+  scribbitCore.applyDailyBelief(duplicateBeliefStorage, {
+    scribbitId: duplicateBeliefTarget.id,
+    userId: 'belief-same-user',
+    utcDateKey: '20260712',
+    currentArenaDay: 2,
+    operationId: 'belief-same-user-a',
+  }),
+  scribbitCore.applyDailyBelief(duplicateBeliefStorage, {
+    scribbitId: duplicateBeliefTarget.id,
+    userId: 'belief-same-user',
+    utcDateKey: '20260712',
+    currentArenaDay: 2,
+    operationId: 'belief-same-user-b',
+  }),
+]);
+assert.deepEqual(duplicateBeliefResults.map(({ status }) => status).sort(), [
+  'already-believed',
+  'applied',
+]);
+assert.equal(
+  (
+    await scribbitCore.loadScribbit(
+      duplicateBeliefStorage,
+      duplicateBeliefTarget.id
+    )
+  ).belief,
+  1
+);
+assert.ok(duplicateBeliefStorage.getWatchConflictCount() > 0);
+pass('community Belief increments are concurrency-safe');
+
+const replyLossBeliefStorage = createMemoryStorage({
+  throwAfterCommitOnce: true,
+});
+const replyLossBeliefTarget = makeScribbit({ id: 'belief-reply-loss' });
+await scribbitCore.storeScribbit(
+  replyLossBeliefStorage,
+  'belief-reply-owner',
+  replyLossBeliefTarget
+);
+assert.equal(
+  (
+    await scribbitCore.applyDailyBelief(replyLossBeliefStorage, {
+      scribbitId: replyLossBeliefTarget.id,
+      userId: 'belief-reply-backer',
+      utcDateKey: '20260712',
+      currentArenaDay: 2,
+      operationId: 'belief-reply-operation',
+    })
+  ).status,
+  'applied',
+  'Belief should recover an exact committed operation after reply loss'
+);
+assert.equal(
+  (
+    await scribbitCore.loadScribbit(
+      replyLossBeliefStorage,
+      replyLossBeliefTarget.id
+    )
+  ).belief,
+  1,
+  'reply-loss recovery must not increment Belief twice'
+);
+
+const failedBeliefStorage = createMemoryStorage();
+const failedBeliefTarget = makeScribbit({ id: 'belief-atomic-failure' });
+await scribbitCore.storeScribbit(
+  failedBeliefStorage,
+  'belief-failure-owner',
+  failedBeliefTarget
+);
+const originalFailedBeliefWatch =
+  failedBeliefStorage.watch.bind(failedBeliefStorage);
+failedBeliefStorage.watch = async (...keys) => {
+  const transaction = await originalFailedBeliefWatch(...keys);
+  transaction.hSet = async () => {
+    throw new Error('Simulated Belief transaction failure.');
+  };
+  return transaction;
+};
+await assert.rejects(
+  () =>
+    scribbitCore.applyDailyBelief(failedBeliefStorage, {
+      scribbitId: failedBeliefTarget.id,
+      userId: 'belief-failure-backer',
+      utcDateKey: '20260712',
+      currentArenaDay: 2,
+      operationId: 'belief-failure-operation',
+    }),
+  /Simulated Belief transaction failure/
+);
+assert.equal(
+  await failedBeliefStorage.get(
+    scribbitCore.getDailyBeliefReceiptKey(
+      failedBeliefTarget.id,
+      'belief-failure-backer',
+      '20260712'
+    )
+  ),
+  undefined,
+  'a failed Belief transaction must not leave a receipt'
+);
+assert.deepEqual(
+  await failedBeliefStorage.hGetAll(
+    scribbitCore.getUserDailyBeliefTargetsKey(
+      'belief-failure-backer',
+      '20260712'
+    )
+  ),
+  {},
+  'a failed Belief transaction must not leave a privacy index'
+);
+assert.equal(
+  (await scribbitCore.loadScribbit(failedBeliefStorage, failedBeliefTarget.id))
+    .belief,
+  0,
+  'a failed Belief transaction must not increment the aggregate'
+);
+pass('Belief failure and reply-loss paths stay exactly-once');
+
+const deletionRaceStorage = createMemoryStorage();
+const deletionRaceTarget = makeScribbit({ id: 'belief-deletion-race' });
+await scribbitCore.storeScribbit(
+  deletionRaceStorage,
+  'belief-deletion-race-owner',
+  deletionRaceTarget
+);
+const deletionRaceReceiptKey = scribbitCore.getDailyBeliefReceiptKey(
+  deletionRaceTarget.id,
+  'belief-deletion-race-voter',
+  '20260712'
+);
+const originalDeletionRaceWatch =
+  deletionRaceStorage.watch.bind(deletionRaceStorage);
+let deletionRaceLease;
+let injectedDeletionStart = false;
+deletionRaceStorage.watch = async (...keys) => {
+  const transaction = await originalDeletionRaceWatch(...keys);
+  if (keys.includes(deletionRaceReceiptKey) && !injectedDeletionStart) {
+    const originalExec = transaction.exec.bind(transaction);
+    transaction.exec = async () => {
+      if (!injectedDeletionStart) {
+        injectedDeletionStart = true;
+        const deletion = await dataDeletionCore.acquirePlayerDataDeletion(
+          deletionRaceStorage,
+          'belief-deletion-race-voter',
+          'belief-deletion-race-operation'
+        );
+        assert.equal(deletion.status, 'acquired');
+        deletionRaceLease = deletion.lease;
+      }
+      return originalExec();
+    };
+  }
+  return transaction;
+};
+assert.equal(
+  (
+    await scribbitCore.applyDailyBelief(deletionRaceStorage, {
+      scribbitId: deletionRaceTarget.id,
+      userId: 'belief-deletion-race-voter',
+      utcDateKey: '20260712',
+      currentArenaDay: 2,
+      operationId: 'belief-racing-operation',
+      operationStartedAtMs: Date.UTC(2026, 6, 12, 12),
+    })
+  ).status,
+  'user-data-changing',
+  'Belief must abort when player-data deletion starts after its initial read'
+);
+assert.equal(await deletionRaceStorage.get(deletionRaceReceiptKey), undefined);
+assert.equal(
+  (await scribbitCore.loadScribbit(deletionRaceStorage, deletionRaceTarget.id))
+    .belief,
+  0,
+  'the fenced Belief must not mutate its aggregate'
+);
+assert.ok(deletionRaceStorage.getWatchConflictCount() > 0);
+assert.equal(
+  await dataDeletionCore.renewPlayerDataDeletion(
+    deletionRaceStorage,
+    deletionRaceLease
+  ),
+  'renewed',
+  'the deletion owner must be able to renew its bounded lease'
+);
+assert.equal(
+  await dataDeletionCore.renewPlayerDataDeletion(deletionRaceStorage, {
+    ...deletionRaceLease,
+    token: 'stale-deletion-owner',
+  }),
+  'not-owner',
+  'a stale deletion token must not extend the active lease'
+);
+assert.equal(
+  await dataDeletionCore.releasePlayerDataDeletion(
+    deletionRaceStorage,
+    deletionRaceLease
+  ),
+  'released'
+);
+pass('Belief is fenced against concurrent player-data deletion');
+
+const playerMutationBoundaryStorage = createMemoryStorage();
+const activePlayerMutation = await dataDeletionCore.acquirePlayerMutation(
+  playerMutationBoundaryStorage,
+  'mutation-boundary-player',
+  'mutation-boundary-token'
+);
+assert.equal(activePlayerMutation.status, 'acquired');
+assert.equal(
+  (
+    await dataDeletionCore.acquirePlayerDataDeletion(
+      playerMutationBoundaryStorage,
+      'mutation-boundary-player',
+      'blocked-deletion-token'
+    )
+  ).status,
+  'busy',
+  'deletion must not start while a player mutation is active'
+);
+assert.equal(
+  await dataDeletionCore.renewPlayerMutation(
+    playerMutationBoundaryStorage,
+    activePlayerMutation.lease
+  ),
+  'renewed'
+);
+assert.equal(
+  await dataDeletionCore.releasePlayerMutation(
+    playerMutationBoundaryStorage,
+    activePlayerMutation.lease
+  ),
+  'released'
+);
+const activePlayerDeletion = await dataDeletionCore.acquirePlayerDataDeletion(
+  playerMutationBoundaryStorage,
+  'mutation-boundary-player',
+  'active-deletion-token'
+);
+assert.equal(activePlayerDeletion.status, 'acquired');
+assert.equal(
+  (
+    await dataDeletionCore.acquirePlayerMutation(
+      playerMutationBoundaryStorage,
+      'mutation-boundary-player',
+      'blocked-mutation-token'
+    )
+  ).status,
+  'busy',
+  'a player mutation must not start while deletion is active'
+);
+assert.equal(
+  await dataDeletionCore.releasePlayerDataDeletion(
+    playerMutationBoundaryStorage,
+    activePlayerDeletion.lease
+  ),
+  'released'
+);
+
+const concurrentBoundaryStorage = createMemoryStorage();
+const [concurrentMutation, concurrentDeletion] = await Promise.all([
+  dataDeletionCore.acquirePlayerMutation(
+    concurrentBoundaryStorage,
+    'concurrent-boundary-player',
+    'concurrent-mutation-token'
+  ),
+  dataDeletionCore.acquirePlayerDataDeletion(
+    concurrentBoundaryStorage,
+    'concurrent-boundary-player',
+    'concurrent-deletion-token'
+  ),
+]);
+assert.deepEqual(
+  [concurrentMutation.status, concurrentDeletion.status].sort(),
+  ['acquired', 'busy'],
+  'exactly one side of a mutation-versus-deletion race may acquire'
+);
+assert.ok(concurrentBoundaryStorage.getWatchConflictCount() > 0);
+if (concurrentMutation.status === 'acquired') {
+  await dataDeletionCore.releasePlayerMutation(
+    concurrentBoundaryStorage,
+    concurrentMutation.lease
+  );
+}
+if (concurrentDeletion.status === 'acquired') {
+  await dataDeletionCore.releasePlayerDataDeletion(
+    concurrentBoundaryStorage,
+    concurrentDeletion.lease
+  );
+}
+
+const replyLossMutationStorage = createMemoryStorage({
+  throwAfterCommitOnce: true,
+});
+const replyLossMutation = await dataDeletionCore.acquirePlayerMutation(
+  replyLossMutationStorage,
+  'reply-loss-mutation-player',
+  'reply-loss-mutation-token'
+);
+assert.equal(replyLossMutation.status, 'acquired');
+assert.equal(
+  await dataDeletionCore.releasePlayerMutation(
+    replyLossMutationStorage,
+    replyLossMutation.lease
+  ),
+  'released'
+);
+const lostMutationStorage = createMemoryStorage();
+const originalMutationFailure = new Error('original player mutation failure');
+const lostMutationResult = await dataDeletionCore.runWithPlayerMutationLease(
+  lostMutationStorage,
+  'lost-mutation-player',
+  'lost-mutation-token',
+  async () => {
+    await lostMutationStorage.set(
+      dataDeletionCore.getPlayerMutationLockKey('lost-mutation-player'),
+      'replacement-owner'
+    );
+    throw originalMutationFailure;
+  }
+);
+assert.equal(lostMutationResult.status, 'lost');
+assert.equal(
+  lostMutationResult.status === 'lost' ? lostMutationResult.cause : null,
+  originalMutationFailure,
+  'lease loss must preserve an earlier operation error as its diagnostic cause'
+);
+const releaseThrowStorage = createMemoryStorage();
+const originalReleaseThrowWatch =
+  releaseThrowStorage.watch.bind(releaseThrowStorage);
+let rejectReleaseWatch = false;
+releaseThrowStorage.watch = async (...keys) => {
+  if (rejectReleaseWatch) {
+    throw new Error('simulated release watch failure');
+  }
+  return originalReleaseThrowWatch(...keys);
+};
+const operationBeforeReleaseFailure = new Error(
+  'operation failed before release failure'
+);
+const releaseThrowResult = await dataDeletionCore.runWithPlayerMutationLease(
+  releaseThrowStorage,
+  'release-throw-player',
+  'release-throw-token',
+  async () => {
+    rejectReleaseWatch = true;
+    throw operationBeforeReleaseFailure;
+  }
+);
+assert.equal(releaseThrowResult.status, 'lost');
+const combinedMutationFailure =
+  releaseThrowResult.status === 'lost' ? releaseThrowResult.cause : null;
+assert.ok(combinedMutationFailure instanceof AggregateError);
+assert.equal(combinedMutationFailure.errors[0], operationBeforeReleaseFailure);
+assert.match(
+  String(combinedMutationFailure.errors[1]),
+  /changed too often to release safely/,
+  'lease-release failure must remain alongside the original operation error'
+);
+const apiRouteSource = readFileSync(
+  join(repoRoot, 'src', 'server', 'routes', 'api.ts'),
+  'utf8'
+);
+assert.doesNotMatch(
+  apiRouteSource,
+  /mutatingGetRouteSuffixes|requestMutatesPlayerData/,
+  'player mutation safety must not depend on a detached GET-route allowlist'
+);
+for (const route of [
+  '/arena',
+  '/spar-rivals',
+  '/inventory',
+  '/clout-board',
+  '/legacy-cards',
+]) {
+  assert.ok(
+    apiRouteSource.includes(`registerPlayerMutatingGet('${route}'`),
+    `${route} must register its mutation lease beside its handler`
+  );
+  assert.ok(
+    !apiRouteSource.includes(`api.get('${route}'`),
+    `${route} must not bypass the mutation-protected GET registrar`
+  );
+}
+pass('player mutations and data deletion share one exclusive lease boundary');
+
+const nightlyDeletionBoundaryStorage = createMemoryStorage();
+const activeNightlyMutation =
+  await dataDeletionCore.acquireNightlyPlayerMutation(
+    nightlyDeletionBoundaryStorage,
+    'nightly-boundary-token'
+  );
+assert.equal(activeNightlyMutation.status, 'acquired');
+assert.equal(
+  nightlyDeletionBoundaryStorage.getExpirationSeconds(
+    dataDeletionCore.getNightlyPlayerMutationLockKey()
+  ),
+  15 * 60,
+  'an abandoned nightly barrier must recover after its bounded lease'
+);
+assert.equal(
+  (
+    await dataDeletionCore.acquirePlayerDataDeletion(
+      nightlyDeletionBoundaryStorage,
+      'nightly-boundary-player',
+      'nightly-blocked-deletion'
+    )
+  ).status,
+  'busy',
+  'player deletion must not start during nightly player writes'
+);
+assert.equal(
+  await dataDeletionCore.renewNightlyPlayerMutation(
+    nightlyDeletionBoundaryStorage,
+    activeNightlyMutation.lease
+  ),
+  'renewed'
+);
+assert.equal(
+  await dataDeletionCore.releaseNightlyPlayerMutation(
+    nightlyDeletionBoundaryStorage,
+    activeNightlyMutation.lease
+  ),
+  'released'
+);
+
+const deletionBeforeNightly = await dataDeletionCore.acquirePlayerDataDeletion(
+  nightlyDeletionBoundaryStorage,
+  'nightly-boundary-player',
+  'deletion-before-nightly-token'
+);
+assert.equal(deletionBeforeNightly.status, 'acquired');
+assert.equal(
+  nightlyDeletionBoundaryStorage.getExpirationSeconds(
+    dataDeletionCore.getGlobalDataDeletionLockKey()
+  ),
+  5 * 60
+);
+assert.equal(
+  nightlyDeletionBoundaryStorage.getExpirationSeconds(
+    dataDeletionCore.getPlayerDataDeletionLockKey('nightly-boundary-player')
+  ),
+  5 * 60,
+  'global and per-player deletion barriers must share one recovery window'
+);
+assert.equal(
+  (
+    await dataDeletionCore.acquireNightlyPlayerMutation(
+      nightlyDeletionBoundaryStorage,
+      'blocked-nightly-token'
+    )
+  ).status,
+  'busy',
+  'nightly player writes must not start during player deletion'
+);
+assert.equal(
+  await dataDeletionCore.releasePlayerDataDeletion(
+    nightlyDeletionBoundaryStorage,
+    deletionBeforeNightly.lease
+  ),
+  'released'
+);
+
+const concurrentNightlyDeletionStorage = createMemoryStorage();
+const [concurrentNightly, concurrentNightlyDeletion] = await Promise.all([
+  dataDeletionCore.acquireNightlyPlayerMutation(
+    concurrentNightlyDeletionStorage,
+    'concurrent-nightly-token'
+  ),
+  dataDeletionCore.acquirePlayerDataDeletion(
+    concurrentNightlyDeletionStorage,
+    'concurrent-nightly-player',
+    'concurrent-nightly-deletion-token'
+  ),
+]);
+assert.deepEqual(
+  [concurrentNightly.status, concurrentNightlyDeletion.status].sort(),
+  ['acquired', 'busy'],
+  'exactly one side of a nightly-versus-deletion race may acquire'
+);
+assert.ok(concurrentNightlyDeletionStorage.getWatchConflictCount() > 0);
+if (concurrentNightly.status === 'acquired') {
+  await dataDeletionCore.releaseNightlyPlayerMutation(
+    concurrentNightlyDeletionStorage,
+    concurrentNightly.lease
+  );
+}
+if (concurrentNightlyDeletion.status === 'acquired') {
+  await dataDeletionCore.releasePlayerDataDeletion(
+    concurrentNightlyDeletionStorage,
+    concurrentNightlyDeletion.lease
+  );
+}
+
+const replyLossNightlyStorage = createMemoryStorage({
+  throwAfterCommitOnce: true,
+});
+const replyLossNightly = await dataDeletionCore.acquireNightlyPlayerMutation(
+  replyLossNightlyStorage,
+  'reply-loss-nightly-token'
+);
+assert.equal(replyLossNightly.status, 'acquired');
+assert.equal(
+  await dataDeletionCore.releaseNightlyPlayerMutation(
+    replyLossNightlyStorage,
+    replyLossNightly.lease
+  ),
+  'released'
+);
+
+const replyLossNightlyReleaseStorage = createMemoryStorage({
+  throwAfterCommitNumber: 2,
+});
+const replyLossNightlyRelease =
+  await dataDeletionCore.acquireNightlyPlayerMutation(
+    replyLossNightlyReleaseStorage,
+    'reply-loss-nightly-release-token'
+  );
+assert.equal(replyLossNightlyRelease.status, 'acquired');
+assert.equal(
+  await dataDeletionCore.releaseNightlyPlayerMutation(
+    replyLossNightlyReleaseStorage,
+    replyLossNightlyRelease.lease
+  ),
+  'released',
+  'nightly release must recover when delete commits but its reply is lost'
+);
+
+const lostNightlyLeaseStorage = createMemoryStorage();
+const lostNightlyLease = await dataDeletionCore.acquireNightlyPlayerMutation(
+  lostNightlyLeaseStorage,
+  'lost-nightly-lease-token'
+);
+assert.equal(lostNightlyLease.status, 'acquired');
+await lostNightlyLeaseStorage.set(
+  dataDeletionCore.getNightlyPlayerMutationLockKey(),
+  'replacement-nightly-token'
+);
+await assert.rejects(
+  () =>
+    dataDeletionCore.withNightlyPlayerMutationHeartbeat(
+      lostNightlyLeaseStorage,
+      lostNightlyLease.lease,
+      async () => 'finished'
+    ),
+  /lost ownership/,
+  'nightly completion must fail closed after ownership changes'
+);
+await lostNightlyLeaseStorage.del(
+  dataDeletionCore.getNightlyPlayerMutationLockKey()
+);
+pass('nightly player writes and deletion share one global safety barrier');
+
+const expiredNightlyFenceStorage = createMemoryStorage();
+const expiredNightlyFenceLease =
+  await dataDeletionCore.acquireNightlyPlayerMutation(
+    expiredNightlyFenceStorage,
+    'expired-nightly-fence-token'
+  );
+assert.equal(expiredNightlyFenceLease.status, 'acquired');
+const expiredNightlyFence = nightlyStorageFence.createNightlyFencedStorage(
+  expiredNightlyFenceStorage,
+  expiredNightlyFenceLease.lease
+);
+const expiredNightlyTransaction = await expiredNightlyFence.watch(
+  'expired-nightly-transaction'
+);
+await expiredNightlyTransaction.multi();
+await expiredNightlyTransaction.set('expired-nightly-transaction', 'forbidden');
+await expiredNightlyFenceStorage.del(
+  dataDeletionCore.getNightlyPlayerMutationLockKey()
+);
+await assert.rejects(
+  () => expiredNightlyTransaction.exec(),
+  nightlyStorageFence.StaleNightlyWorkerError,
+  'lease expiry alone must fence an already-open transaction'
+);
+
+const expiredNightlyMutations = [
+  () => expiredNightlyFence.set('expired:set', 'value'),
+  () => expiredNightlyFence.del('expired:del'),
+  () => expiredNightlyFence.incrBy('expired:increment', 1),
+  () => expiredNightlyFence.expire('expired:ttl', 30),
+  () => expiredNightlyFence.hSet('expired:hash:set', { field: 'value' }),
+  () => expiredNightlyFence.hSetNX('expired:hash:nx', 'field', 'value'),
+  () => expiredNightlyFence.hDel('expired:hash:del', ['field']),
+  () => expiredNightlyFence.hIncrBy('expired:hash:increment', 'field', 1),
+  () =>
+    expiredNightlyFence.zAdd('expired:sorted:add', {
+      member: 'member',
+      score: 1,
+    }),
+  () => expiredNightlyFence.zRem('expired:sorted:remove', ['member']),
+  () => expiredNightlyFence.zIncrBy('expired:sorted:increment', 'member', 1),
+];
+for (const mutate of expiredNightlyMutations) {
+  await assert.rejects(
+    mutate,
+    nightlyStorageFence.StaleNightlyWorkerError,
+    'every ArenaStorage mutator must reject an expired nightly lease'
+  );
+}
+
+const replacedNightlyTokenStorage = createMemoryStorage();
+const replacedNightlyTokenLease =
+  await dataDeletionCore.acquireNightlyPlayerMutation(
+    replacedNightlyTokenStorage,
+    'original-nightly-token'
+  );
+assert.equal(replacedNightlyTokenLease.status, 'acquired');
+const replacedNightlyTokenFence =
+  nightlyStorageFence.createNightlyFencedStorage(
+    replacedNightlyTokenStorage,
+    replacedNightlyTokenLease.lease
+  );
+await replacedNightlyTokenStorage.set(
+  dataDeletionCore.getNightlyPlayerMutationLockKey(),
+  'replacement-nightly-token'
+);
+await assert.rejects(
+  () => replacedNightlyTokenFence.set('replaced-token-write', 'forbidden'),
+  nightlyStorageFence.StaleNightlyWorkerError,
+  'a token replacement must fence writes even before the epoch changes'
+);
+await replacedNightlyTokenStorage.del(
+  dataDeletionCore.getNightlyPlayerMutationLockKey()
+);
+
+const renewedNightlyFenceStorage = createMemoryStorage();
+const renewedNightlyFenceLease =
+  await dataDeletionCore.acquireNightlyPlayerMutation(
+    renewedNightlyFenceStorage,
+    'renewed-nightly-fence-token'
+  );
+assert.equal(renewedNightlyFenceLease.status, 'acquired');
+const renewedNightlyFence = nightlyStorageFence.createNightlyFencedStorage(
+  renewedNightlyFenceStorage,
+  renewedNightlyFenceLease.lease
+);
+const interruptedByHeartbeat = await renewedNightlyFence.watch(
+  'nightly-heartbeat-retry'
+);
+await interruptedByHeartbeat.multi();
+await interruptedByHeartbeat.set('nightly-heartbeat-retry', 'first-attempt');
+await renewedNightlyFenceStorage.expire(
+  dataDeletionCore.getNightlyPlayerMutationLockKey(),
+  15 * 60
+);
+assert.deepEqual(
+  await interruptedByHeartbeat.exec(),
+  [],
+  'heartbeat renewal should produce a normal retryable WATCH conflict'
+);
+const heartbeatRetry = await renewedNightlyFence.watch(
+  'nightly-heartbeat-retry'
+);
+await heartbeatRetry.multi();
+await heartbeatRetry.set('nightly-heartbeat-retry', 'committed-once');
+assert.ok((await heartbeatRetry.exec()).length > 0);
+assert.equal(
+  await renewedNightlyFenceStorage.get('nightly-heartbeat-retry'),
+  'committed-once'
+);
+assert.equal(
+  await dataDeletionCore.releaseNightlyPlayerMutation(
+    renewedNightlyFenceStorage,
+    renewedNightlyFenceLease.lease
+  ),
+  'released'
+);
+
+const ambiguousNightlyMutationStorage = createMemoryStorage({
+  throwAfterCommitNumber: 2,
+});
+const ambiguousNightlyMutationLease =
+  await dataDeletionCore.acquireNightlyPlayerMutation(
+    ambiguousNightlyMutationStorage,
+    'ambiguous-nightly-mutation-token'
+  );
+assert.equal(ambiguousNightlyMutationLease.status, 'acquired');
+const ambiguousNightlyFence = nightlyStorageFence.createNightlyFencedStorage(
+  ambiguousNightlyMutationStorage,
+  ambiguousNightlyMutationLease.lease
+);
+await assert.rejects(
+  () => ambiguousNightlyFence.incrBy('ambiguous-nightly-counter', 1),
+  /reply loss/,
+  'an ambiguous EXEC reply must surface instead of replaying a mutation'
+);
+assert.equal(
+  await ambiguousNightlyMutationStorage.get('ambiguous-nightly-counter'),
+  '1',
+  'ambiguous non-idempotent mutation must commit at most once'
+);
+assert.equal(
+  await dataDeletionCore.releaseNightlyPlayerMutation(
+    ambiguousNightlyMutationStorage,
+    ambiguousNightlyMutationLease.lease
+  ),
+  'released'
+);
+const nightlyFenceLifecycleStorage = createMemoryStorage();
+const completedNightlyFenceLifecycle =
+  await nightlyStorageFence.runWithNightlyFence(
+    nightlyFenceLifecycleStorage,
+    'nightly-fence-lifecycle-token',
+    async (storage) => {
+      await storage.set('nightly:fence:lifecycle', 'completed');
+      return 42;
+    }
+  );
+assert.deepEqual(completedNightlyFenceLifecycle, {
+  status: 'completed',
+  result: 42,
+});
+assert.equal(
+  await nightlyFenceLifecycleStorage.get(
+    dataDeletionCore.getNightlyPlayerMutationLockKey()
+  ),
+  undefined,
+  'nightly fence lifecycle must release its lease after success'
+);
+await assert.rejects(
+  () =>
+    nightlyStorageFence.runWithNightlyFence(
+      nightlyFenceLifecycleStorage,
+      'nightly-fence-error-token',
+      async () => {
+        throw new Error('simulated fenced operation failure');
+      }
+    ),
+  /simulated fenced operation failure/
+);
+assert.equal(
+  await nightlyFenceLifecycleStorage.get(
+    dataDeletionCore.getNightlyPlayerMutationLockKey()
+  ),
+  undefined,
+  'nightly fence lifecycle must release its lease after operation failure'
+);
+pass('nightly fence rejects expiry and covers every storage mutator');
+
+const staleNightlyWorkerStorage = createMemoryStorage();
+const staleNightlyLease = await dataDeletionCore.acquireNightlyPlayerMutation(
+  staleNightlyWorkerStorage,
+  'stale-nightly-worker-token'
+);
+assert.equal(staleNightlyLease.status, 'acquired');
+const fencedNightlyStorage = nightlyStorageFence.createNightlyFencedStorage(
+  staleNightlyWorkerStorage,
+  staleNightlyLease.lease
+);
+await fencedNightlyStorage.set('nightly:fence:before', 'committed');
+assert.equal(
+  await staleNightlyWorkerStorage.get('nightly:fence:before'),
+  'committed'
+);
+const staleNightlyTransaction = await fencedNightlyStorage.watch(
+  'nightly:fence:transaction'
+);
+await staleNightlyTransaction.multi();
+await staleNightlyTransaction.set('nightly:fence:transaction', 'forbidden');
+
+// Simulate lease expiry, then let deletion take over and advance the epoch.
+await staleNightlyWorkerStorage.del(
+  dataDeletionCore.getNightlyPlayerMutationLockKey()
+);
+const deletionAfterNightlyExpiry =
+  await dataDeletionCore.acquirePlayerDataDeletion(
+    staleNightlyWorkerStorage,
+    'stale-nightly-deletion-player',
+    'stale-nightly-deletion-token'
+  );
+assert.equal(deletionAfterNightlyExpiry.status, 'acquired');
+assert.ok(
+  deletionAfterNightlyExpiry.lease.generation > 0,
+  'deletion takeover should own a new player generation'
+);
+await assert.rejects(
+  () => staleNightlyTransaction.exec(),
+  nightlyStorageFence.StaleNightlyWorkerError,
+  'a transaction opened by the stale worker must abort after epoch takeover'
+);
+assert.equal(
+  await staleNightlyWorkerStorage.get('nightly:fence:transaction'),
+  undefined
+);
+await assert.rejects(
+  () => fencedNightlyStorage.set('nightly:fence:after', 'forbidden'),
+  nightlyStorageFence.StaleNightlyWorkerError,
+  'direct stale-worker writes must fail after deletion advances the epoch'
+);
+await assert.rejects(
+  () =>
+    dailyJob.runNightlyArenaJob(fencedNightlyStorage, {
+      force: true,
+      now: new Date(Date.UTC(2026, 6, 13)),
+    }),
+  nightlyStorageFence.StaleNightlyWorkerError,
+  'a resumed stale nightly job must fail before its next Redis mutation'
+);
+assert.equal(
+  await staleNightlyWorkerStorage.get('nightly:fence:after'),
+  undefined
+);
+assert.equal(
+  await dataDeletionCore.releasePlayerDataDeletion(
+    staleNightlyWorkerStorage,
+    deletionAfterNightlyExpiry.lease
+  ),
+  'released'
+);
+pass('monotonic epoch fences stale nightly workers after lease takeover');
 
 const sparRewardStorage = createMemoryStorage();
 const firstSparScribbit = makeScribbit({
@@ -9021,18 +13400,17 @@ assert.equal(
   'already-claimed'
 );
 assert.equal(
-  (await scribbitCore.loadScribbit(
-    atomicSparRewardStorage,
-    atomicSparWinner.id,
-    '20260707'
-  ))?.xp,
+  (
+    await scribbitCore.loadScribbit(
+      atomicSparRewardStorage,
+      atomicSparWinner.id,
+      '20260707'
+    )
+  )?.xp,
   1
 );
 assert.equal(
-  await inkStore.getInkBalance(
-    atomicSparRewardStorage,
-    'atomic-spar-owner'
-  ),
+  await inkStore.getInkBalance(atomicSparRewardStorage, 'atomic-spar-owner'),
   arena.INK_REWARDS.sparWin
 );
 pass('daily spar XP and Ink commit atomically with one recoverable receipt');
@@ -9040,7 +13418,7 @@ pass('daily spar XP and Ink commit atomically with one recoverable receipt');
 const dayMathStorage = createMemoryStorage();
 await arenaStore.setCurrentArenaDay(dayMathStorage, 2);
 const dayTwoUtc = new Date(Date.UTC(2026, 6, 5));
-const skippedJob = await dailyJob.runNightlyArenaJob(dayMathStorage, {
+const skippedJob = await dailyJob.runNightlyArenaJobForTesting(dayMathStorage, {
   now: dayTwoUtc,
 });
 assert.equal(skippedJob.skipped, true, 'stored canonical day should no-op');
@@ -9050,7 +13428,7 @@ assert.equal(
   2,
   'no-op should keep stored day'
 );
-const forcedJob = await dailyJob.runNightlyArenaJob(dayMathStorage, {
+const forcedJob = await dailyJob.runNightlyArenaJobForTesting(dayMathStorage, {
   now: dayTwoUtc,
   force: true,
 });
@@ -9071,7 +13449,7 @@ const prepareNightlyLockStorage = async () => {
 };
 const nightlyLockNow = new Date(Date.UTC(2026, 6, 6));
 const singleNightlyStorage = await prepareNightlyLockStorage();
-await dailyJob.runNightlyArenaJob(singleNightlyStorage, {
+await dailyJob.runNightlyArenaJobForTesting(singleNightlyStorage, {
   now: nightlyLockNow,
 });
 const expectedNightlyRecord = await scribbitCore.loadScribbit(
@@ -9080,10 +13458,10 @@ const expectedNightlyRecord = await scribbitCore.loadScribbit(
 );
 const concurrentNightlyStorage = await prepareNightlyLockStorage();
 const concurrentNightlyRuns = await Promise.allSettled([
-  dailyJob.runNightlyArenaJob(concurrentNightlyStorage, {
+  dailyJob.runNightlyArenaJobForTesting(concurrentNightlyStorage, {
     now: nightlyLockNow,
   }),
-  dailyJob.runNightlyArenaJob(concurrentNightlyStorage, {
+  dailyJob.runNightlyArenaJobForTesting(concurrentNightlyStorage, {
     now: nightlyLockNow,
   }),
 ]);
@@ -9125,9 +13503,12 @@ await scribbitCore.storeScribbit(
 );
 await scribbitCore.addRumbleEntrant(catchUpStorage, 2, dayTwoEntrant.id);
 await scribbitCore.addRumbleEntrant(catchUpStorage, 3, dayThreeEntrant.id);
-const caughtUpJob = await dailyJob.runNightlyArenaJob(catchUpStorage, {
-  now: new Date(Date.UTC(2026, 6, 7)),
-});
+const caughtUpJob = await dailyJob.runNightlyArenaJobForTesting(
+  catchUpStorage,
+  {
+    now: new Date(Date.UTC(2026, 6, 7)),
+  }
+);
 assert.equal(caughtUpJob.skipped, false, 'lagged stored day should run');
 assert.equal(
   caughtUpJob.newDay,
@@ -9169,9 +13550,12 @@ const dayTwoRecordBeforeRecovery = {
   losses: resolvedDayTwoEntrant.losses,
 };
 await arenaStore.setCurrentArenaDay(catchUpStorage, 2);
-const recoveredOutboxJob = await dailyJob.runNightlyArenaJob(catchUpStorage, {
-  now: new Date(Date.UTC(2026, 6, 7)),
-});
+const recoveredOutboxJob = await dailyJob.runNightlyArenaJobForTesting(
+  catchUpStorage,
+  {
+    now: new Date(Date.UTC(2026, 6, 7)),
+  }
+);
 assert.deepEqual(
   recoveredOutboxJob.resolutions.map((resolution) => resolution.resolvedDay),
   [2, 3],
@@ -9303,10 +13687,13 @@ await clout.claimDailyBack(
   { userId: 'miss-scout', username: 'Miss Scout' },
   loserId
 );
-const cloutPayoutJob = await dailyJob.runNightlyArenaJob(cloutPayoutStorage, {
-  now: dayTwoUtc,
-  force: true,
-});
+const cloutPayoutJob = await dailyJob.runNightlyArenaJobForTesting(
+  cloutPayoutStorage,
+  {
+    now: dayTwoUtc,
+    force: true,
+  }
+);
 assert.equal(cloutPayoutJob.skipped, false, 'clout payout job should run');
 assert.equal(
   cloutPayoutJob.resolutions[0]?.runnerUp?.id,
@@ -9732,7 +14119,7 @@ await scribbitCore.storeScribbit(
 // Simulate a pre-index account so the first read must rebuild from ownership.
 await legacyDeckStorage.del(
   scribbitCore.getUserLegacyCardsKey('legacy-deck-owner'),
-  legacyCore.getLegacyIndexVersionStorageKey('legacy-deck-owner')
+  legacyCore.getLegacyIndexVersionKey('legacy-deck-owner')
 );
 const firstLegacyPage = await legacyCore.loadLegacyCardPage(
   legacyDeckStorage,
@@ -9888,7 +14275,18 @@ await scribbitCore.recordBattleOutcomeOnScribbit(
   'win',
   2
 );
-await scribbitCore.increaseBelief(terminalMutationStorage, faded);
+assert.equal(
+  (
+    await scribbitCore.applyDailyBelief(terminalMutationStorage, {
+      scribbitId: faded.id,
+      userId: 'terminal-backer',
+      utcDateKey: '20260712',
+      currentArenaDay: faded.expiresDay,
+      operationId: 'terminal-belief-operation',
+    })
+  ).status,
+  'target-unavailable'
+);
 const unchangedTerminal = await scribbitCore.loadScribbit(
   terminalMutationStorage,
   faded.id
@@ -10206,10 +14604,13 @@ await expiryOrderStorage.hSet(inkStore.getInventoryKey('owner-one'), {
 });
 await inkStore.setEquippedTitle(expiryOrderStorage, 'owner-one', 'doodler');
 await scribbitCore.addRumbleEntrant(expiryOrderStorage, 2, expiringEntrant.id);
-const expiryOrderJob = await dailyJob.runNightlyArenaJob(expiryOrderStorage, {
-  now: dayTwoUtc,
-  force: true,
-});
+const expiryOrderJob = await dailyJob.runNightlyArenaJobForTesting(
+  expiryOrderStorage,
+  {
+    now: dayTwoUtc,
+    force: true,
+  }
+);
 assert.equal(expiryOrderJob.skipped, false, 'expiry order job should run');
 const expiredAfterFight = await scribbitCore.loadScribbit(
   expiryOrderStorage,
@@ -10431,6 +14832,8 @@ pass(
   'Swiss backfill, fair floaters, closest-level pairs, and rematch avoidance'
 );
 
+cleanupTestTemporaryRoot();
+process.removeListener('exit', cleanupTestTemporaryRoot);
 console.log(
   `Scribbits Arena simulation tests passed (${passedChecks.length} groups): ${passedChecks.join('; ')}.`
 );

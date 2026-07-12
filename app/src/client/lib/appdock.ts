@@ -5,7 +5,7 @@ import type { AppTabItem, AppTabKey } from './ui';
 
 type AppDockRoute =
   | 'ArenaHome'
-  | 'Sketchbook'
+  | 'Gallery'
   | 'dailyDraw'
   | 'MyBattles'
   | 'ScoutNotebook';
@@ -18,7 +18,7 @@ type AppDockDefinition = {
 
 const APP_DOCK_TABS: readonly AppDockDefinition[] = [
   { key: 'arena', label: 'Arena', route: 'ArenaHome' },
-  { key: 'gallery', label: 'Gallery', route: 'Sketchbook' },
+  { key: 'gallery', label: 'Gallery', route: 'Gallery' },
   { key: 'draw', label: 'Draw', route: 'dailyDraw' },
   { key: 'battles', label: 'Battles', route: 'MyBattles' },
   { key: 'scout', label: 'Scout', route: 'ScoutNotebook' },

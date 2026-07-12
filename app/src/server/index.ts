@@ -6,7 +6,7 @@ import { menu } from './routes/menu';
 import { scheduledTasks } from './routes/scheduler';
 import { triggers } from './routes/triggers';
 
-const app = new Hono();
+export const app = new Hono();
 const internal = new Hono();
 
 internal.route('/menu', menu);

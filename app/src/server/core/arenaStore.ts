@@ -1,7 +1,7 @@
 import type { Forecast, Scribbit } from '../../shared/arena';
 import { getArenaDayNumber, parseStoredPositiveInteger } from './day';
 import { generateForecastForDay, parseForecast } from './forecast';
-import type { ArenaStorage } from './scribbit';
+import type { ArenaStorage } from './storage';
 import { cloneScribbit, parseScribbit } from './scribbit';
 
 const currentArenaDayKey = 'arena:currentDay';
@@ -19,7 +19,9 @@ export const ensureCurrentArenaDay = async (
   storage: ArenaStorage,
   now: Date
 ): Promise<number> => {
-  const storedDay = parseStoredPositiveInteger(await storage.get(currentArenaDayKey));
+  const storedDay = parseStoredPositiveInteger(
+    await storage.get(currentArenaDayKey)
+  );
 
   if (storedDay) {
     return storedDay;

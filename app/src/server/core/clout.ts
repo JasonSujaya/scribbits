@@ -1,10 +1,14 @@
 import type { CloutBoard, CloutEntry } from '../../shared/arena';
 import { INK_REWARDS } from '../../shared/arena';
 import { getInkKey } from './inkStore';
-import type { ArenaStorage, ArenaTransaction, CurrentPlayer } from './scribbit';
+import type { CurrentPlayer } from './scribbit';
+import type { ArenaStorage, ArenaTransaction } from './storage';
+import {
+  discardWatchedTransaction,
+  MAX_WATCH_TRANSACTION_ATTEMPTS,
+} from './storage';
 
 const backTtlSeconds = 8 * 24 * 60 * 60;
-const maximumPayoutTransactionAttempts = 5;
 
 export const getBackKey = (day: number): string => {
   return `back:${day}`;
@@ -163,17 +167,6 @@ export const loadCloutBoard = async (
   };
 };
 
-const discardPayoutTransaction = async (
-  transaction: ArenaTransaction | undefined
-): Promise<void> => {
-  if (!transaction) return;
-  try {
-    await transaction.discard();
-  } catch {
-    // EXEC and connection failures can leave nothing to discard.
-  }
-};
-
 const commitBackPayout = async (
   storage: ArenaStorage,
   payoutKey: string,
@@ -188,7 +181,7 @@ const commitBackPayout = async (
   const receiptValue = `${points}:${paidAtMs}`;
   for (
     let attempt = 0;
-    attempt < maximumPayoutTransactionAttempts;
+    attempt < MAX_WATCH_TRANSACTION_ATTEMPTS;
     attempt += 1
   ) {
     let transaction: ArenaTransaction | undefined;
@@ -210,7 +203,7 @@ const commitBackPayout = async (
         return true;
       }
     } catch (error) {
-      await discardPayoutTransaction(transaction);
+      await discardWatchedTransaction(transaction, 'Clout payout');
       try {
         const storedReceipt = await storage.hGet(payoutKey, userId);
         if (storedReceipt !== undefined) {

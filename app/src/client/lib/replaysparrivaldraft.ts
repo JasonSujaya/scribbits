@@ -14,8 +14,11 @@ import { generateDoodleTexture } from './proceduraldoodleart';
 import { elementPaperIcon, paperIcon } from './papericons';
 import { planSparRivalCards } from './sparrivals';
 import type { SparRivalCardPlan } from './sparrivals';
-import { CanvasActionOverlay } from './overlay';
-import { planRivalRunDraftHeading } from './rivalrunpresentation';
+import { CanvasModalOverlay } from './overlay';
+import {
+  planRivalRunChallengeCopy,
+  planRivalRunDraftHeading,
+} from './rivalrunpresentation';
 import { ELEMENT_STYLES, prefersReducedMotion, TYPE, UI } from './theme';
 import { ghostButton, iconButton, label, stickerCard } from './ui';
 
@@ -26,6 +29,7 @@ export type SparRivalDraftOptions = Readonly<{
   forecast: Forecast;
   founderChronicle: FounderChronicle;
   currentDay: number;
+  trigger?: HTMLElement | null;
   onChoose: (rival: Scribbit, plan: SparRivalCardPlan) => void;
   onClose: () => void;
 }>;
@@ -64,10 +68,35 @@ export function createSparRivalDraft(
 ): SparRivalDraft {
   const { width, height } = scene.scale;
   const reduceMotion = prefersReducedMotion();
-  const accessibleOverlay = new CanvasActionOverlay(scene);
-  const detailAccessibleOverlay = new CanvasActionOverlay(scene);
-  detailAccessibleOverlay.setVisible(false);
   let inputReady = reduceMotion;
+  let modalActions: CanvasModalOverlay | null = null;
+  let detailModalActions: CanvasModalOverlay | null = null;
+  let initialControl: HTMLButtonElement | undefined;
+  const closeDraft = (): void => {
+    if (!inputReady) return;
+    modalActions?.setVisible(false);
+    options.onClose();
+  };
+  const heading = planRivalRunDraftHeading(options.rivalRun);
+  const challengeCopy = planRivalRunChallengeCopy(options.rivalRun);
+  modalActions = new CanvasModalOverlay(
+    scene,
+    'Choose your next rival',
+    closeDraft,
+    `${challengeCopy.accessibleSummary} ${heading.subtitle}`,
+    options.trigger
+  );
+  const draftModalActions = modalActions;
+  const draftStatus = draftModalActions.addStatus(
+    reduceMotion ? '' : 'Opening the rival board.'
+  );
+  const setInteractionReady = (ready: boolean): void => {
+    inputReady = ready;
+    draftStatus.textContent = ready
+      ? ''
+      : 'Starting the selected rival fight. Please wait.';
+    if (ready) draftModalActions.focusInitial(initialControl);
+  };
   const backdrop = scene.add
     .rectangle(width / 2, height / 2, width, height, UI.deskHex, 0.88)
     .setDepth(99)
@@ -84,29 +113,37 @@ export function createSparRivalDraft(
   );
   card.setDepth(100).setScale(reduceMotion ? 1 : 0.78);
   if (!reduceMotion) {
-    accessibleOverlay.setVisible(false);
     scene.tweens.add({
       targets: card,
       scale: 1,
       duration: 260,
       ease: 'Back.easeOut',
       onComplete: () => {
-        inputReady = true;
-        accessibleOverlay.setVisible(true);
+        setInteractionReady(true);
       },
     });
   }
 
-  const heading = planRivalRunDraftHeading(options.rivalRun);
-  card.add(label(scene, 0, -472, heading.title, 42, UI.ink, true));
+  card.add(label(scene, 0, -480, heading.title, 38, UI.ink, true));
+  card.add(label(scene, 0, -438, heading.subtitle, 20, UI.inkSoft, true));
+  card.add(
+    label(scene, 0, -400, challengeCopy.premise, 20, UI.inkSoft, true)
+      .setWordWrapWidth(cardWidth - 100)
+      .setLineSpacing(-2)
+  );
+  card.add(
+    scene.add
+      .rectangle(0, -354, cardWidth - 120, 48, UI.tape, 0.82)
+      .setStrokeStyle(2, UI.inkHex, 0.3)
+  );
   card.add(
     label(
       scene,
       0,
-      -420,
-      heading.subtitle,
-      TYPE.caption,
-      UI.inkSoft,
+      -354,
+      `${challengeCopy.goal} • ${challengeCopy.progress}`,
+      20,
+      UI.goldText,
       true
     )
   );
@@ -120,25 +157,22 @@ export function createSparRivalDraft(
 
   const closeRivalInfo = (): void => {
     detailLayer.setVisible(false);
-    detailAccessibleOverlay.setVisible(false);
-    accessibleOverlay.setVisible(true);
+    detailModalActions?.destroy();
+    detailModalActions = null;
   };
-  detailAccessibleOverlay.add({
-    label: 'Close rival details',
-    rect: {
-      x: width / 2 + 176,
-      y: height / 2 - 264,
-      width: 100,
-      height: 100,
-    },
-    onActivate: closeRivalInfo,
-  });
 
   const showRivalInfo = (
     plan: SparRivalCardPlan,
     choice: RivalRunChoice
   ): void => {
     if (!inputReady) return;
+    detailModalActions?.destroy();
+    detailModalActions = new CanvasModalOverlay(
+      scene,
+      `${plan.name} rival details`,
+      closeRivalInfo,
+      `${plan.signatureName}. ${plan.element}, level ${plan.level}. ${riskLabel(choice.tier)} risk for ${choice.winPoints} ${choice.winPoints === 1 ? 'point' : 'points'}. ${plan.levelLine}. ${plan.forecastLine}.`
+    );
     detailContent?.destroy(true);
     detailContent = scene.add.container(0, 0);
     const detailWidth = cardWidth - 112;
@@ -156,6 +190,16 @@ export function createSparRivalDraft(
       90
     );
     detailContent.add(closeInfo);
+    const nativeDetailClose = detailModalActions.add({
+      label: 'Close rival details',
+      rect: {
+        x: width / 2 + 176,
+        y: height / 2 - 264,
+        width: 100,
+        height: 100,
+      },
+      onActivate: closeRivalInfo,
+    });
 
     const name = label(scene, 0, -186, plan.name, 38, UI.ink, true);
     if (name.width > detailWidth - 150) {
@@ -227,8 +271,7 @@ export function createSparRivalDraft(
     );
     detailLayer.add(detailContent);
     detailLayer.setVisible(true);
-    accessibleOverlay.setVisible(false);
-    detailAccessibleOverlay.setVisible(true);
+    detailModalActions.focusInitial(nativeDetailClose);
   };
 
   const plans = planSparRivalCards(
@@ -238,7 +281,7 @@ export function createSparRivalDraft(
     options.founderChronicle,
     options.currentDay
   );
-  const rowCenters = [-270, -30, 210] as const;
+  const rowCenters = [-225, 20, 265] as const;
 
   plans.slice(0, rowCenters.length).forEach((plan, index) => {
     const choice = options.choices[index];
@@ -247,14 +290,7 @@ export function createSparRivalDraft(
     if (!rival || !choice || rowY === undefined) return;
     const style = ELEMENT_STYLES[plan.element];
     const background = scene.add
-      .rectangle(
-        0,
-        rowY,
-        cardWidth - 88,
-        216,
-        style.soft,
-        0.3
-      )
+      .rectangle(0, rowY, cardWidth - 88, 200, style.soft, 0.3)
       .setStrokeStyle(4, style.primary, 0.95);
     card.add(background);
 
@@ -322,7 +358,7 @@ export function createSparRivalDraft(
     infoHit.on('pointerup', openInfo);
     infoControl.add([infoMark, infoHit]);
     card.add(infoControl);
-    accessibleOverlay.add({
+    draftModalActions.add({
       label: `More about ${plan.name}`,
       rect: {
         x: width / 2 + 232 - 50,
@@ -335,7 +371,7 @@ export function createSparRivalDraft(
 
     const chooseRival = (): void => {
       if (!inputReady) return;
-      accessibleOverlay.setVisible(false);
+      setInteractionReady(false);
       options.onChoose(rival, plan);
     };
     const fightLabel = options.rivalRun.boutsCompleted === 2 ? 'FINAL' : 'SPAR';
@@ -352,8 +388,8 @@ export function createSparRivalDraft(
       100
     );
     card.add(fight);
-    accessibleOverlay.add({
-      label: `Fight ${plan.name}: ${riskLabel(choice.tier).toLowerCase()}, win ${choice.winPoints} ${choice.winPoints === 1 ? 'point' : 'points'}`,
+    const nativeFight = draftModalActions.add({
+      label: `Fight ${plan.name}: ${riskLabel(choice.tier).toLowerCase()}, win ${choice.winPoints} ${choice.winPoints === 1 ? 'point' : 'points'}. Challenge: ${challengeCopy.name}, ${challengeCopy.goal}, ${challengeCopy.progress}.`,
       rect: {
         x: width / 2 + 180 - 85,
         y: height / 2 + rowY + 58 - 50,
@@ -362,6 +398,7 @@ export function createSparRivalDraft(
       },
       onActivate: chooseRival,
     });
+    initialControl ??= nativeFight;
   });
 
   if (plans.length === 0) {
@@ -378,22 +415,9 @@ export function createSparRivalDraft(
     );
   }
 
-  const closeDraft = (): void => {
-    if (!inputReady) return;
-    accessibleOverlay.setVisible(false);
-    options.onClose();
-  };
-  const close = ghostButton(
-    scene,
-    0,
-    445,
-    '‹',
-    closeDraft,
-    100,
-    100
-  );
+  const close = ghostButton(scene, 0, 445, '‹', closeDraft, 100, 100);
   card.add(close);
-  accessibleOverlay.add({
+  draftModalActions.add({
     label: 'Back to result',
     rect: {
       x: width / 2 - 50,
@@ -405,16 +429,21 @@ export function createSparRivalDraft(
   });
 
   card.add(detailLayer);
+  if (reduceMotion) draftModalActions.focusInitial(initialControl);
 
   let destroyed = false;
   return {
     container: card,
-    setAccessibleVisible: (visible) => accessibleOverlay.setVisible(visible),
+    setAccessibleVisible: (visible) => {
+      setInteractionReady(visible);
+    },
     destroy: () => {
       if (destroyed) return;
       destroyed = true;
-      accessibleOverlay.destroy();
-      detailAccessibleOverlay.destroy();
+      detailModalActions?.destroy();
+      detailModalActions = null;
+      draftModalActions.destroy();
+      modalActions = null;
       if (backdrop.scene) backdrop.destroy();
       if (card.scene) card.destroy(true);
     },

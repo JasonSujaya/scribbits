@@ -2,8 +2,10 @@
 // Extend, never fork. Analyzer + balance invariants: plans/v3-scribbits-arena.md.
 
 import type { BattleTranscript } from './combat';
+import type { Element } from './elements';
 
-export type Element = 'ember' | 'tide' | 'moss' | 'storm';
+export { ELEMENTS, isElement } from './elements';
+export type { Element } from './elements';
 
 // Always sums to exactly 100 after server normalization.
 export type ScribbitStats = {
@@ -12,6 +14,14 @@ export type ScribbitStats = {
   zip: number; // continuous movement + Smearstep identity
   charm: number; // crit chance + Colorburst identity
 };
+
+export const SCRIBBIT_STAT_KEYS = Object.freeze([
+  'chonk',
+  'spike',
+  'zip',
+  'charm',
+] as const satisfies readonly (keyof ScribbitStats)[]);
+export type ScribbitStatKey = (typeof SCRIBBIT_STAT_KEYS)[number];
 
 export type ScribbitStatus = 'alive' | 'faded' | 'legend';
 export type LegacyFinish = 'faded' | 'believed' | 'champion';
@@ -46,7 +56,7 @@ export type Scribbit = {
   artist: string; // reddit username
   element: Element;
   stats: ScribbitStats;
-  imageUrl: string; // reddit-hosted media URL or /api/drawing/{id}
+  imageUrl: string; // Reddit-hosted in production; local mock fixtures may use /api/drawing/{id}
   bornDay: number;
   expiresDay: number; // bornDay + 3
   belief: number;
@@ -141,9 +151,7 @@ export type OwnedRumbleReceipt = {
   replayAvailable: boolean; // server-selected last bout for the owned entrant
 };
 
-export type DailyRumbleReceipt =
-  | BackedRumbleReceipt
-  | OwnedRumbleReceipt;
+export type DailyRumbleReceipt = BackedRumbleReceipt | OwnedRumbleReceipt;
 
 export type LegacyReturnReceipt = {
   cards: LegacyCard[]; // newest cards first, bounded for the return ceremony
@@ -202,8 +210,8 @@ export type ArenaState = {
   rumbleEntrants: number;
   communityLegendCount: number;
   rumbleResolvesAt: number; // epoch ms — client renders live countdown
-  todayEntrants: Scribbit[]; // tonight's bracket (gallery + backing targets)
-  myBackedScribbitId: string | null; // today's Back (bet), null if unused
+  todayEntrants: Scribbit[]; // tonight's Rumble field (gallery + Back targets)
+  myBackedScribbitId: string | null; // today's Back, null if unused
   playStreakDays: number; // consecutive UTC days with an expanded game session
   myClout: number; // lifetime talent-scout score
   myInk: number; // Mystery Ink balance
@@ -291,6 +299,13 @@ export const INK_REWARDS = {
   backedChampion: 5,
   dailyDraw: 2,
 } as const;
+export const XP_REWARDS = {
+  care: 1,
+  carePumped: 2,
+  sparWin: 1,
+  rumbleWin: 2,
+  championWin: 2,
+} as const;
 export const CAPSULE_COST = 10;
 export const CAPSULE_FIRST_DAILY_COST = 5; // first pull each day is discounted
 export const CAPSULE_PITY = 10; // epic guaranteed within N pulls
@@ -331,6 +346,25 @@ export const RIVAL_RUN_LENGTH = 3;
 export type RivalRunStatus = 'active' | 'complete';
 export type RivalRunTier = 'safe' | 'even' | 'risky';
 export type RivalRunWinPoints = 1 | 2 | 3;
+export type RivalRunChallengeCondition =
+  | { kind: 'minimum_wins'; target: 2 | 3 }
+  | { kind: 'minimum_score'; target: 5 | 6 | 9 }
+  | { kind: 'tier_picks'; tier: RivalRunTier; target: 3 }
+  | { kind: 'tier_wins'; tier: RivalRunTier; target: 1 | 2 }
+  | { kind: 'tier_set'; targetMask: 7 }
+  | { kind: 'outcome_sequence'; sequence: 'loss-win-win' }
+  | { kind: 'final_win' }
+  | { kind: 'finish_run' };
+export type RivalRunChallenge = {
+  id: string; // versioned immutable content id
+  name: string;
+  premise: string;
+  goal: string;
+  stamp: string;
+  condition: RivalRunChallengeCondition;
+  progress: number;
+  completionAchieved: boolean;
+};
 export type RivalRunState = {
   id: string;
   dayNumber: number;
@@ -341,6 +375,7 @@ export type RivalRunState = {
   score: number;
   opponentIds: string[];
   status: RivalRunStatus;
+  challenge: RivalRunChallenge;
 };
 export type RivalRunReceipt = RivalRunState & {
   boutNumber: number;
@@ -460,8 +495,7 @@ export const MAX_ALIVE_PER_USER = 3;
 // Tamagotchi/level balance: growth should be visible without letting an older
 // Scribbit invalidate a better drawing. The full level 1 -> 5 journey adds only
 // 1.5% damage; shape, power matchup, and authored forecast remain dominant.
-// Level bonus dies with the Scribbit. XP: care action = 1 (x2 when 'pumped'),
-// rumble/boss win = 2, first spar win of the day = 1.
+// Level bonus dies with the Scribbit. XP awards live in XP_REWARDS above.
 export const MAX_LEVEL = 5;
 export const LEVEL_XP_THRESHOLDS = [0, 3, 7, 12, 18]; // xp needed for level 1..5
 export const LEVEL_DAMAGE_BONUS_PER_LEVEL = 0.00375; // +0.375%/level above 1, max +1.5%

@@ -3,12 +3,11 @@ import type {
   LegacyCosmeticSnapshot,
   Scribbit,
 } from '../../shared/arena';
-import { INK_REWARDS } from '../../shared/arena';
+import { INK_REWARDS, XP_REWARDS } from '../../shared/arena';
 import { saveBattleReport, setFeaturedRumbleReport } from './battleStore';
 import {
   ensureCurrentArenaDay,
   ensureForecastForDay,
-  getArenaPostKey,
   setCurrentArenaDay,
   setCurrentChampion,
 } from './arenaStore';
@@ -23,7 +22,8 @@ import {
 } from './inkStore';
 import { findInkCatalogEntry } from './ink';
 import { resolveSwissRumble } from './rumble';
-import type { ArenaStorage } from './scribbit';
+import type { ArenaStorage } from './storage';
+import type { NightlyFencedStorage } from './nightlyStorageFence';
 import {
   crownScribbit,
   expireDueScribbits,
@@ -33,17 +33,16 @@ import {
   recordRumbleStandingOnScribbit,
 } from './scribbit';
 
-const rumbleWinXp = 2;
-
-export type CreatedArenaPost = {
-  id: string;
+export const getRumbleProgressionRewards = (
+  wins: number
+): Readonly<{ xpAwarded: number; inkAwarded: number }> => {
+  const normalizedWins =
+    Number.isSafeInteger(wins) && wins > 0 ? Math.floor(wins) : 0;
+  return {
+    xpAwarded: normalizedWins * XP_REWARDS.rumbleWin,
+    inkAwarded: normalizedWins * INK_REWARDS.rumbleWin,
+  };
 };
-
-export type CreateArenaPost = (options: {
-  day: number;
-  forecast: Forecast;
-  champion: Scribbit | null;
-}) => Promise<CreatedArenaPost>;
 
 export type NightlyArenaJobRunResult = {
   skipped: false;
@@ -58,7 +57,6 @@ export type NightlyArenaJobRunResult = {
     faded: number;
     legends: number;
   };
-  postId: string | null;
   resolutions: ResolvedArenaDay[];
 };
 
@@ -75,7 +73,6 @@ export type NightlyArenaJobSkippedResult = {
     faded: 0;
     legends: 0;
   };
-  postId: null;
   resolutions: [];
 };
 
@@ -196,13 +193,14 @@ const applyRumbleStandingsToStoredScribbits = async (
       continue;
     }
 
+    const rewards = getRumbleProgressionRewards(standing.wins);
     const storedScribbit = await recordRumbleStandingOnScribbit(
       storage,
       standing.scribbit.id,
       resolvedDay,
       standing.wins,
       standing.losses,
-      standing.wins * rumbleWinXp
+      rewards.xpAwarded
     );
 
     if (!storedScribbit) continue;
@@ -215,7 +213,7 @@ const applyRumbleStandingsToStoredScribbits = async (
           payoutKey: getRumbleWinInkPayoutKey(resolvedDay),
           payoutField: standing.scribbit.id,
           userId: ownerUserId,
-          amount: standing.wins * INK_REWARDS.rumbleWin,
+          amount: rewards.inkAwarded,
           paidAtMs,
         });
       }
@@ -338,13 +336,14 @@ const resolveArenaDay = async (
   return resolvedArenaDay;
 };
 
-export const runNightlyArenaJob = async (
+export type NightlyArenaJobOptions = {
+  now?: Date;
+  force?: boolean;
+};
+
+const runNightlyArenaJobCore = async (
   storage: ArenaStorage,
-  options: {
-    now?: Date;
-    createPost?: CreateArenaPost;
-    force?: boolean;
-  } = {}
+  options: NightlyArenaJobOptions = {}
 ): Promise<NightlyArenaJobResult> => {
   const now = options.now ?? new Date();
   const previousDay = await ensureCurrentArenaDay(storage, now);
@@ -367,7 +366,6 @@ export const runNightlyArenaJob = async (
         faded: 0,
         legends: 0,
       },
-      postId: null,
       resolutions: [],
     };
   }
@@ -417,24 +415,6 @@ export const runNightlyArenaJob = async (
   }
 
   const forecast = await ensureForecastForDay(storage, newDay);
-  let postId: string | null = null;
-
-  if (options.createPost) {
-    const arenaPostKey = getArenaPostKey(newDay);
-    const existingPostId = await storage.get(arenaPostKey);
-
-    if (existingPostId) {
-      postId = existingPostId;
-    } else {
-      const post = await options.createPost({
-        day: newDay,
-        forecast,
-        champion: latestResolution.champion,
-      });
-      postId = post.id;
-      await storage.set(arenaPostKey, post.id);
-    }
-  }
 
   return {
     skipped: false,
@@ -446,7 +426,21 @@ export const runNightlyArenaJob = async (
     champion: latestResolution.champion,
     reportCount,
     expired,
-    postId,
     resolutions,
   };
+};
+
+export const runNightlyArenaJob = (
+  storage: NightlyFencedStorage,
+  options: NightlyArenaJobOptions = {}
+): Promise<NightlyArenaJobResult> => {
+  return runNightlyArenaJobCore(storage, options);
+};
+
+/** Deterministic core entrypoint for the in-memory simulation suite only. */
+export const runNightlyArenaJobForTesting = (
+  storage: ArenaStorage,
+  options: NightlyArenaJobOptions = {}
+): Promise<NightlyArenaJobResult> => {
+  return runNightlyArenaJobCore(storage, options);
 };

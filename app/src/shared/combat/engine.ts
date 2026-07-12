@@ -24,6 +24,7 @@ import {
   normalizeCombatSeed,
 } from './random';
 import { selectPrimaryPower as selectPrimaryPowerForStats } from './selection';
+import { isElement } from '../elements';
 import type {
   AbilityPhase,
   AuthoritativeBattleResult,
@@ -219,7 +220,7 @@ function validateFighterInput(fighter: CombatFighterInput): void {
   validateText(fighter.id, 'Fighter id', 120);
   validateText(fighter.name, 'Fighter name', 80);
   validateStats(fighter.stats);
-  if (!['ember', 'tide', 'moss', 'storm'].includes(fighter.element)) {
+  if (!isElement(fighter.element)) {
     throw new Error(`Unsupported combat element: ${fighter.element}.`);
   }
   if (

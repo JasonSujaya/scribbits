@@ -6,6 +6,8 @@ import type { CombatElement, DamageSource, PrimaryPower } from './types';
 
 export type ShapePowerContent = Readonly<{
   displayName: string;
+  drawingCue: string;
+  fieldGuideCue: string;
   revealLine: string;
   playerHint: string;
   noCleanHitCallout: string;
@@ -28,24 +30,32 @@ export const SHAPE_POWER_CONTENT_BY_POWER: Readonly<
 > = Object.freeze({
   inkquake: Object.freeze({
     displayName: 'Inkquake',
+    drawingCue: 'Big, filled bodies',
+    fieldGuideCue: 'More HP',
     revealLine: 'Shockwave + knockback',
     playerHint: 'Filled bodies launch an expanding shockwave.',
     noCleanHitCallout: 'RING ENDS',
   }),
   nib_halo: Object.freeze({
     displayName: 'Nib Halo',
+    drawingCue: 'Sharp edges',
+    fieldGuideCue: 'Sharp edge',
     revealLine: '3 quills + dead zone',
     playerHint: 'Jagged edges summon three rotating quills.',
     noCleanHitCallout: 'NIBS SETTLE',
   }),
   smearstep: Object.freeze({
     displayName: 'Smearstep',
+    drawingCue: 'Small, compact shapes',
+    fieldGuideCue: 'Faster move',
     revealLine: 'Predictive double dash',
     playerHint: 'Compact shapes predict and dash twice.',
     noCleanHitCallout: 'DASH ENDS',
   }),
   colorburst: Object.freeze({
     displayName: 'Colorburst',
+    drawingCue: 'More colors',
+    fieldGuideCue: 'More crit',
     revealLine: 'Cone + delayed echo',
     playerHint: 'More colors fire a cone and delayed echo.',
     noCleanHitCallout: 'CONE FADES',
@@ -108,6 +118,16 @@ export function getShapePowerDisplayName(power: PrimaryPower): string {
   return getShapePowerContent(power).displayName;
 }
 
+export function getShapePowerDrawingCue(power: PrimaryPower): string {
+  const content = getShapePowerContent(power);
+  return `${content.drawingCue} wake ${content.displayName}.`;
+}
+
+export function getShapePowerFieldGuideCue(power: PrimaryPower): string {
+  const content = getShapePowerContent(power);
+  return `${content.fieldGuideCue} · ${content.displayName}`;
+}
+
 export function getShapePowerSignatureName(
   element: CombatElement,
   power: PrimaryPower
@@ -141,7 +161,7 @@ export function getDamageSourceDisplayName(
   if (source === 'colorburst_echo') {
     return element
       ? `${getShapePowerSignatureName(element, 'colorburst')} Echo`
-      : 'Colorburst Echo';
+      : `${getShapePowerDisplayName('colorburst')} Echo`;
   }
   if (source === 'ember_burn') return 'Ember afterburn';
   if (source === 'nib_wall_recoil') return 'recoiling nib';

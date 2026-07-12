@@ -11,6 +11,7 @@ import {
 import { fitDrawing, loadDrawing } from '../lib/scribbits';
 import { CanvasActionOverlay, DomOverlay } from '../lib/overlay';
 import { paperIcon } from '../lib/papericons';
+import { elementPaperIcon } from '../lib/papericons';
 import {
   EDGE,
   ELEMENT_STYLES,
@@ -29,7 +30,7 @@ import {
   paperIconButton,
 } from '../lib/ui';
 import type { ErrorPanel } from '../lib/ui';
-import { openCloutBoard } from '../lib/cloutboard';
+import { openCloutBoard, type CloutBoardModal } from '../lib/cloutboard';
 import { appDock } from '../lib/appdock';
 import {
   planScoutNotebookPage,
@@ -44,12 +45,15 @@ import type {
   ScoutNotebookState,
   ScoutNotebookStatus,
 } from '../../shared/arena';
+import { SemanticTabController } from '../lib/semantictabs';
+import { bindPressInteractionEvents } from '../lib/pressinteraction';
 
 const NOTEBOOK_ENTRY_COUNT = 7;
 const PAGE_CENTER_Y = 678;
 const PAGE_HEIGHT = 744;
 const PAGE_ACTION_Y = 286;
 const SCOUT_PAGE_PANEL_ID = 'scout-history-panel';
+const SCOUT_PAGE_ACTIONS_ID = 'scout-history-actions';
 const scoutDayTabId = (day: number): string => `scout-day-tab-${day}`;
 
 function statusColor(status: ScoutNotebookStatus): number {
@@ -88,7 +92,9 @@ export class ScoutNotebook extends Scene {
   private pageActionOverlay: CanvasActionOverlay | null = null;
   private pageSemanticOverlay: DomOverlay | null = null;
   private readonly dayTabControls = new Map<number, HTMLButtonElement>();
+  private dayTabController: SemanticTabController<number> | null = null;
   private pageActionControl: HTMLButtonElement | null = null;
+  private cloutBoardModal: CloutBoardModal | null = null;
 
   constructor() {
     super('ScoutNotebook');
@@ -111,7 +117,9 @@ export class ScoutNotebook extends Scene {
     this.pageActionOverlay = null;
     this.pageSemanticOverlay = null;
     this.dayTabControls.clear();
+    this.dayTabController = null;
     this.pageActionControl = null;
+    this.cloutBoardModal = null;
   }
 
   create(): void {
@@ -134,11 +142,14 @@ export class ScoutNotebook extends Scene {
       this.tabsOverlay?.destroy();
       this.tabsOverlay = null;
       this.dayTabControls.clear();
+      this.dayTabController = null;
       this.pageActionOverlay?.destroy();
       this.pageActionOverlay = null;
       this.pageSemanticOverlay?.destroy();
       this.pageSemanticOverlay = null;
       this.pageActionControl = null;
+      this.cloutBoardModal?.destroy();
+      this.cloutBoardModal = null;
     });
   }
 
@@ -146,7 +157,12 @@ export class ScoutNotebook extends Scene {
     const { width } = this.scale;
     handLettered(this, width / 2, 52, 'SCOUT', 43, UI.ink, true);
     const openBoard = (): void => {
-      openCloutBoard(this);
+      if (this.cloutBoardModal) return;
+      this.cloutBoardModal = openCloutBoard(this, {
+        onClose: () => {
+          this.cloutBoardModal = null;
+        },
+      });
     };
     const openGuide = (): void => fadeToScene(this, 'Bestiary');
     paperIconButton(
@@ -296,12 +312,23 @@ export class ScoutNotebook extends Scene {
   private renderDayTabs(entries: readonly ScoutNotebookEntry[]): void {
     this.tabsLayer?.destroy(true);
     this.tabsOverlay?.destroy();
-    this.tabsOverlay = new CanvasActionOverlay(this);
-    this.tabsOverlay.setRootAttributes({
-      role: 'tablist',
-      'aria-label': 'Scout history',
-    });
     this.dayTabControls.clear();
+    this.dayTabController = null;
+    this.tabsOverlay = new CanvasActionOverlay(this);
+    const tabDays = entries.map(({ day }) => day);
+    const selectedDay = this.selectedDay ?? tabDays[0];
+    if (selectedDay === undefined) return;
+    const dayTabController = new SemanticTabController({
+      keys: tabDays,
+      selectedKey: selectedDay,
+      listLabel: 'Scout history',
+      panelId: SCOUT_PAGE_PANEL_ID,
+      tabId: scoutDayTabId,
+      onSelect: (day) => this.selectDay(day),
+      resolveControl: (day) => this.dayTabControls.get(day),
+    });
+    this.dayTabController = dayTabController;
+    this.tabsOverlay.setRootAttributes(dayTabController.listAttributes);
     const { width } = this.scale;
     const layer = this.add.container(0, 174);
     const stripMargin = 10;
@@ -310,10 +337,7 @@ export class ScoutNotebook extends Scene {
     for (let index = 0; index < NOTEBOOK_ENTRY_COUNT; index += 1) {
       const entry = entries[index];
       const pagePlan = entry
-        ? planScoutNotebookPage(
-            entry,
-            this.notebook?.currentDay ?? entry.day
-          )
+        ? planScoutNotebookPage(entry, this.notebook?.currentDay ?? entry.day)
         : null;
       const x = stripMargin + slotWidth * (index + 0.5);
       const selected = entry?.day === this.selectedDay;
@@ -362,16 +386,24 @@ export class ScoutNotebook extends Scene {
       layer.add(tab);
 
       if (entry) {
-        let nativeTab: HTMLButtonElement | null = null;
         const activateDay = (): void => {
-          this.selectDay(entry.day, document.activeElement === nativeTab);
+          this.dayTabController?.activate(entry.day);
         };
         const hit = this.add
           .rectangle(x, 0, slotWidth, 100, 0xffffff, 0.001)
           .setInteractive({ useHandCursor: true });
-        hit.on('pointerup', activateDay);
+        bindPressInteractionEvents(
+          hit,
+          {
+            press: () => tab.setScale(0.94),
+            release: () => tab.setScale(1),
+            activate: activateDay,
+            pressOnHover: false,
+          },
+          { gameTarget: this.input, shutdownTarget: this.events }
+        );
         layer.add(hit);
-        nativeTab = this.tabsOverlay.add({
+        const nativeTab = this.tabsOverlay.add({
           label: pagePlan?.tabAccessibleLabel ?? `Day ${entry.day}`,
           rect: {
             x: x - slotWidth / 2,
@@ -379,48 +411,23 @@ export class ScoutNotebook extends Scene {
             width: slotWidth,
             height: 144,
           },
-          attributes: {
-            id: scoutDayTabId(entry.day),
-            role: 'tab',
-            'aria-selected': selected ? 'true' : 'false',
-            'aria-controls': SCOUT_PAGE_PANEL_ID,
-          },
+          attributes: dayTabController.attributesFor(entry.day),
           pointerPassthrough: true,
           onKeyDown: (event) =>
-            this.handleDayTabKey(event, index, entries),
+            this.dayTabController?.handleKey(event, entry.day),
           onActivate: activateDay,
         });
-        nativeTab.tabIndex = selected ? 0 : -1;
         this.dayTabControls.set(entry.day, nativeTab);
+        dayTabController.register(entry.day, nativeTab);
       }
     }
 
     this.tabsLayer = layer;
   }
 
-  private handleDayTabKey(
-    event: KeyboardEvent,
-    index: number,
-    entries: readonly ScoutNotebookEntry[]
-  ): void {
-    let targetIndex: number | null = null;
-    if (event.key === 'ArrowLeft') targetIndex = Math.max(0, index - 1);
-    if (event.key === 'ArrowRight') {
-      targetIndex = Math.min(entries.length - 1, index + 1);
-    }
-    if (event.key === 'Home') targetIndex = 0;
-    if (event.key === 'End') targetIndex = entries.length - 1;
-    if (targetIndex === null) return;
-    const target = entries[targetIndex];
-    if (!target) return;
-    event.preventDefault();
-    this.selectDay(target.day, true);
-  }
-
-  private selectDay(day: number, focusSelectedTab = false): void {
+  private selectDay(day: number): void {
     if (!this.notebook) return;
     if (day === this.selectedDay) {
-      if (focusSelectedTab) this.dayTabControls.get(day)?.focus();
       return;
     }
     const previousIndex = this.notebook.entries.findIndex(
@@ -435,7 +442,6 @@ export class ScoutNotebook extends Scene {
     this.selectedDay = day;
     setScoutNotebookDay(this, day);
     this.renderDayTabs(this.notebook.entries);
-    if (focusSelectedTab) this.dayTabControls.get(day)?.focus();
     this.renderPage(
       entry,
       planScoutNotebookPage(entry, this.notebook.currentDay),
@@ -523,13 +529,20 @@ export class ScoutNotebook extends Scene {
   }
 
   private mountSemanticPage(pagePlan: ScoutNotebookPagePlan): void {
+    if (!this.dayTabController) return;
     const panel = document.createElement('div');
-    panel.id = SCOUT_PAGE_PANEL_ID;
-    panel.setAttribute('role', 'tabpanel');
-    panel.setAttribute('aria-labelledby', scoutDayTabId(pagePlan.day));
-    panel.setAttribute('aria-live', 'polite');
-    panel.setAttribute('aria-atomic', 'true');
-    panel.textContent = pagePlan.pageAccessibleLabel;
+    this.dayTabController.configurePanel(
+      panel,
+      pagePlan.day,
+      pagePlan.pageAccessibleLabel,
+      {
+        live: 'polite',
+        atomic: true,
+        ...(pagePlan.actionKind === 'none'
+          ? {}
+          : { ownedControlRootId: SCOUT_PAGE_ACTIONS_ID }),
+      }
+    );
     Object.assign(panel.style, {
       clipPath: 'inset(50%)',
       opacity: '0',
@@ -538,7 +551,12 @@ export class ScoutNotebook extends Scene {
       whiteSpace: 'nowrap',
     });
     this.pageSemanticOverlay = new DomOverlay(this);
-    this.pageSemanticOverlay.place(panel, { x: 36, y: 306, width: 1, height: 1 });
+    this.pageSemanticOverlay.place(panel, {
+      x: 36,
+      y: 306,
+      width: 1,
+      height: 1,
+    });
   }
 
   private drawEntryHeading(
@@ -647,23 +665,25 @@ export class ScoutNotebook extends Scene {
     layer.add(
       label(this, 22, -252, 'FORECAST', 17, UI.inkSoft, true).setOrigin(0, 0.5)
     );
+    layer.add(elementPaperIcon(this, forecast.boostedElement, 42, -213, 30));
     layer.add(
       label(
         this,
-        22,
+        66,
         -213,
-        `↑ ${boosted.label.toUpperCase()} +15%`,
+        `${boosted.label.toUpperCase()} +15%`,
         22,
         boosted.primaryText,
         true
       ).setOrigin(0, 0.5)
     );
+    layer.add(elementPaperIcon(this, forecast.nerfedElement, 42, -168, 30));
     layer.add(
       label(
         this,
-        22,
+        66,
         -168,
-        `↓ ${nerfed.label.toUpperCase()} −10%`,
+        `${nerfed.label.toUpperCase()} −10%`,
         20,
         nerfed.primaryText,
         true
@@ -759,17 +779,22 @@ export class ScoutNotebook extends Scene {
     );
     layer.add(actionButton);
     this.pageActionOverlay = new CanvasActionOverlay(this);
-    this.pageActionControl = this.pageActionOverlay?.add({
-      label: pagePlan.actionAccessibleLabel,
-      rect: {
-        x: this.scale.width / 2 - 250,
-        y: PAGE_CENTER_Y + PAGE_ACTION_Y - 50,
-        width: 500,
-        height: 100,
-      },
-      pointerPassthrough: true,
-      onActivate: activateAction,
-    }) ?? null;
+    this.pageActionOverlay.setRootAttributes({
+      id: SCOUT_PAGE_ACTIONS_ID,
+      'aria-label': `Day ${entry.day} Scout action`,
+    });
+    this.pageActionControl =
+      this.pageActionOverlay?.add({
+        label: pagePlan.actionAccessibleLabel,
+        rect: {
+          x: this.scale.width / 2 - 250,
+          y: PAGE_CENTER_Y + PAGE_ACTION_Y - 50,
+          width: 500,
+          height: 100,
+        },
+        pointerPassthrough: true,
+        onActivate: activateAction,
+      }) ?? null;
   }
 
   private openArenaEntrants(): void {

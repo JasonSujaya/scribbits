@@ -7,10 +7,16 @@ import type {
   ScoutNotebookStatus,
   ScribbitStats,
 } from './arena';
-import { INK_REWARDS, STAT_BUDGET, STAT_MAX, STAT_MIN } from './arena';
+import {
+  INK_REWARDS,
+  SCRIBBIT_STAT_KEYS,
+  STAT_BUDGET,
+  STAT_MAX,
+  STAT_MIN,
+} from './arena';
+import { isElement } from './elements';
 
 export const SCOUT_NOTEBOOK_MAXIMUM_ENTRIES = 7;
-const statNames = ['chonk', 'spike', 'zip', 'charm'] as const;
 
 export const isScoutNotebookReplayDay = (
   currentDay: number,
@@ -58,15 +64,6 @@ type ScoutNotebookStateSource = Readonly<{
   entries: readonly ScoutNotebookEntrySource[];
 }>;
 
-const isElement = (value: unknown): value is Element => {
-  return (
-    value === 'ember' ||
-    value === 'tide' ||
-    value === 'moss' ||
-    value === 'storm'
-  );
-};
-
 const isScoutNotebookStatus = (
   value: unknown
 ): value is ScoutNotebookStatus => {
@@ -110,7 +107,7 @@ const projectStats = (
 
   const projectedStats = {} as ScribbitStats;
   let total = 0;
-  for (const statName of statNames) {
+  for (const statName of SCRIBBIT_STAT_KEYS) {
     const value: unknown = stats[statName];
     if (
       !Number.isSafeInteger(value) ||

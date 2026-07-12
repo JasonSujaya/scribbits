@@ -16,7 +16,7 @@ import { ensureForecastForDay } from './arenaStore';
 import { loadFeaturedRumbleReport } from './battleStore';
 import { getBackedScribbitId, getUserClout, getUserCloutPayout } from './clout';
 import { isScribbitHidden } from './moderation';
-import type { ArenaStorage } from './scribbit';
+import type { ArenaStorage } from './storage';
 import { loadScribbit } from './scribbit';
 
 export type LoadScoutNotebookOptions = Readonly<{

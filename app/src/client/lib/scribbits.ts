@@ -6,16 +6,13 @@ import * as Phaser from 'phaser';
 import { Scene } from 'phaser';
 import type { CareAction, Element, Mood, Scribbit } from '../../shared/arena';
 import { LEVEL_XP_THRESHOLDS, MAX_LEVEL } from '../../shared/arena';
-import { MOOD_STYLES } from './theme';
+import { MOOD_STYLES, type MoodStyle } from './theme';
 import { generateDoodleTexture } from './proceduraldoodleart';
 
 // Rendering only needs identity + art. Keeping this narrower than Scribbit lets
 // immutable LegacyCard DTOs reuse the drawing pipeline without making them
 // structurally valid combatants.
-export type DrawingSource = Pick<
-  Scribbit,
-  'id' | 'name' | 'element' | 'imageUrl'
-> &
+type DrawingSource = Pick<Scribbit, 'id' | 'name' | 'element' | 'imageUrl'> &
   Partial<Pick<Scribbit, 'isFounding' | 'stats'>>;
 
 // Several surfaces can request the same drawing during one render (for example,
@@ -47,7 +44,7 @@ const sceneDrawingTextures = new WeakMap<
 let drawingTextureUseSequence = 0;
 
 // Texture key for a scribbit's drawing. Stable per id so we load each once.
-export function drawingKey(scribbit: Pick<DrawingSource, 'id'>): string {
+function drawingKey(scribbit: Pick<DrawingSource, 'id'>): string {
   return `drawing-${scribbit.id}`;
 }
 
@@ -62,9 +59,9 @@ function elementOf(scribbit: Partial<Pick<DrawingSource, 'element'>>): Element {
 }
 
 // THE single art resolver. Every surface (roster, entrants, champion poster,
-// modal, replay, legends, sketchbook) calls this. It resolves to a texture key
+// modal, replay, legends, Gallery) calls this. It resolves to a texture key
 // that ALWAYS exists and is never empty:
-//   1. Try the scribbit's imageUrl (network PNG or /api/drawing/{id}).
+//   1. Try imageUrl (Reddit-hosted in production; /api/drawing/{id} only in the local mock).
 //   2. On loaderror / timeout / a degenerate (empty) texture, fall back to a
 //      deterministic procedural doodle baked from the spriteKey + element.
 // Callers then render the key with fitDrawing() (aspect-preserving contain) so
@@ -176,7 +173,9 @@ export function loadDrawing(
 
 function downsampleDrawingTexture(scene: Scene, key: string): void {
   if (!scene.textures.exists(key)) return;
-  const source = scene.textures.get(key).getSourceImage() as CanvasImageSource & {
+  const source = scene.textures
+    .get(key)
+    .getSourceImage() as CanvasImageSource & {
     width?: number;
     height?: number;
   };
@@ -363,33 +362,6 @@ export function fitDrawing(
   return image;
 }
 
-// Convenience: load a scribbit's drawing and add it as an image fitted+centered
-// inside a `boxSize` frame at (x, y). The one call every static surface uses so
-// art is always resolved (never empty) AND always fitted (never cropped).
-export function addFittedDrawing(
-  scene: Scene,
-  scribbit: DrawingSource,
-  x: number,
-  y: number,
-  boxSize: number
-): Promise<Phaser.GameObjects.Image | null> {
-  return loadDrawing(scene, scribbit).then((key) => {
-    if (!scene.scene.isActive()) return null;
-    const image = scene.add.image(x, y, key);
-    return fitDrawing(image, boxSize);
-  });
-}
-
-// Load several drawings in parallel; resolves when all have settled.
-export function loadDrawings(
-  scene: Scene,
-  scribbits: DrawingSource[]
-): Promise<void> {
-  return Promise.all(scribbits.map((one) => loadDrawing(scene, one))).then(
-    () => undefined
-  );
-}
-
 // "2W · 1L" record chip text.
 export function recordText(
   scribbit: Pick<Scribbit, 'wins' | 'losses'>
@@ -402,15 +374,13 @@ export function recordText(
 // cached snapshots may predate them. These readers give safe defaults so the UI
 // never crashes on a partial scribbit.
 
-export function moodOf(scribbit: Partial<Pick<Scribbit, 'mood'>>): Mood {
+function moodOf(scribbit: Partial<Pick<Scribbit, 'mood'>>): Mood {
   return scribbit.mood ?? 'happy';
 }
 
-export function moodStyleOf(scribbit: Partial<Pick<Scribbit, 'mood'>>): {
-  emoji: string;
-  label: string;
-  color: string;
-} {
+export function moodStyleOf(
+  scribbit: Partial<Pick<Scribbit, 'mood'>>
+): MoodStyle {
   return MOOD_STYLES[moodOf(scribbit)];
 }
 
@@ -418,7 +388,7 @@ export function levelOf(scribbit: Partial<Pick<Scribbit, 'level'>>): number {
   return Math.max(1, scribbit.level ?? 1);
 }
 
-export function careDoneToday(
+function careDoneToday(
   scribbit: Partial<Pick<Scribbit, 'careDoneToday'>>
 ): CareAction[] {
   return scribbit.careDoneToday ?? [];

@@ -12,14 +12,6 @@ export type DrawFeedbackPlan = Readonly<{
 export const DRAW_HEADER_TITLE = 'DRAW';
 export const DRAW_RULES_COPY = 'DRAW A BODY';
 
-export const DOODLE_DARE_HINT_BY_POWER: Readonly<Record<PrimaryPower, string>> =
-  Object.freeze({
-    inkquake: 'Big, filled bodies wake Inkquake.',
-    nib_halo: 'Sharp edges wake Nib Halo.',
-    smearstep: 'Small, compact shapes wake Smearstep.',
-    colorburst: 'More colors wake Colorburst.',
-  });
-
 export function planDrawFeedback(
   input: Readonly<{
     inkedPixels: number;

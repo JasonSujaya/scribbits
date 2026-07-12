@@ -21,10 +21,11 @@ import type {
   CapsuleRarity,
 } from '../../shared/arena';
 import { UI, TYPE } from './theme';
-import { label, handLettered, button, ghostButton } from './ui';
+import { label, handLettered, button, ghostButton, iconButton } from './ui';
 import { RARITY_STYLE } from './pens';
 import { COSMETIC_BY_ID } from '../../shared/cosmetics';
 import { renderCosmeticPreview } from './cosmeticpreview';
+import { CanvasModalOverlay } from './overlay';
 
 const DEPTH = 2500;
 const COLLECTION_BAR_WIDTH = 480;
@@ -99,8 +100,23 @@ export function openCapsuleMachine(
   let prizeOpen = false;
   let pendingOperationId: string | null = null;
   let closeRequested = false;
+  let destroyed = false;
+  let dismissPrizeAction: (() => void) | null = null;
 
   const layer = scene.add.container(0, 0).setDepth(DEPTH).setScrollFactor(0);
+  const modalActions = new CanvasModalOverlay(
+    scene,
+    'Mystery Ink capsule machine',
+    () => {
+      if (prizeOpen) dismissPrizeAction?.();
+      else close();
+    },
+    'Spend earned Ink to open one cosmetic capsule. The server owns the price, reward, and pity progress.'
+  );
+  layer.once('destroy', () => {
+    destroyed = true;
+    modalActions.destroy();
+  });
   const scrim = scene.add
     .rectangle(width / 2, height / 2, width, height, 0x1a1320, 0.72)
     .setScrollFactor(0)
@@ -125,7 +141,7 @@ export function openCapsuleMachine(
     scene,
     width / 2,
     188,
-    `🫙 ${ink}`,
+    `${ink} INK`,
     TYPE.title,
     UI.cream,
     true
@@ -193,7 +209,7 @@ export function openCapsuleMachine(
     collectorRankText.setText(
       `${collectorRankName.toUpperCase()} · ${discoveredCount}/${collectionTotal} FOUND`
     );
-    pityText.setText(`✨ EPIC IN ≤${pityRemaining}`);
+    pityText.setText(`EPIC IN ≤${pityRemaining}`);
     collectionFill.setVisible(collectionRatio > 0);
     scene.tweens.killTweensOf(collectionFill);
 
@@ -256,11 +272,12 @@ export function openCapsuleMachine(
   helper.setWordWrapWidth(width - 190);
   layer.add(helper);
 
-  const pullBtn = button(
+  const pullBtn = iconButton(
     scene,
     width / 2,
     height * 0.82,
-    '🎰 PULL',
+    'spark',
+    'PULL',
     () => void doPull(),
     width - 160,
     UI.coral
@@ -269,10 +286,79 @@ export function openCapsuleMachine(
     .setDepth(DEPTH + 2);
   layer.add(pullBtn);
 
+  const pullControl = modalActions.add({
+    label: `Open one Mystery Ink capsule for ${nextCost} Ink`,
+    rect: {
+      x: 80,
+      y: height * 0.82 - 50,
+      width: width - 160,
+      height: 100,
+    },
+    enabled: ink >= nextCost,
+    pointerPassthrough: true,
+    onActivate: () => void doPull(),
+  });
+  const closeControl = modalActions.add({
+    label: 'Close Mystery Ink capsule machine',
+    rect: { x: width / 2 - 110, y: height - 130, width: 220, height: 100 },
+    onActivate: () => close(),
+  });
+  const statusAnnouncement = modalActions.addStatus();
+  const prizeCardCenterY = getPrizeCardCenterY(height);
+  const viewCollectionControl = opts.onViewCollection
+    ? modalActions.add({
+        label: 'View cosmetic collection',
+        rect: {
+          x: width / 2 - 266,
+          y: prizeCardCenterY + 188,
+          width: 336,
+          height: 100,
+        },
+        onActivate: () => close('collection'),
+      })
+    : null;
+  const acknowledgementWidth = opts.onViewCollection ? 184 : 320;
+  const acknowledgementCenterX = opts.onViewCollection
+    ? width / 2 + 178
+    : width / 2;
+  const acknowledgementControl = modalActions.add({
+    label: opts.onViewCollection ? 'Got it' : 'Keep drawing',
+    rect: {
+      x: acknowledgementCenterX - acknowledgementWidth / 2,
+      y: prizeCardCenterY + 188,
+      width: acknowledgementWidth,
+      height: 100,
+    },
+    onActivate: () => dismissPrizeAction?.(),
+  });
+
+  const setPrizeControlsVisible = (visible: boolean): void => {
+    pullControl.hidden = visible;
+    closeControl.hidden = visible;
+    if (visible) {
+      pullControl.disabled = true;
+      closeControl.disabled = true;
+    } else {
+      closeControl.disabled = false;
+    }
+    if (viewCollectionControl) {
+      viewCollectionControl.hidden = !visible;
+      viewCollectionControl.disabled = !visible;
+    }
+    acknowledgementControl.hidden = !visible;
+    acknowledgementControl.disabled = !visible;
+  };
+  setPrizeControlsVisible(false);
+
   function refreshAffordance(): void {
-    inkChip.setText(`🫙 ${ink}`);
+    inkChip.setText(`${ink} INK`);
     const canAfford = ink >= nextCost;
     pullBtn.setAlpha(canAfford ? 1 : 0.55);
+    pullControl.disabled = pulling || prizeOpen || !canAfford;
+    pullControl.setAttribute(
+      'aria-label',
+      `Open one Mystery Ink capsule for ${nextCost} Ink`
+    );
     if (!canAfford && !pulling) {
       helper.setText(`NEED ${Math.max(0, nextCost - ink)} MORE INK`);
       helper.setColor(UI.coralText);
@@ -299,6 +385,7 @@ export function openCapsuleMachine(
   layer.add(closeBtn);
 
   refreshAffordance();
+  modalActions.focusInitial(ink >= nextCost ? pullControl : closeControl);
 
   async function doPull(): Promise<void> {
     if (pulling || prizeOpen) return;
@@ -314,18 +401,29 @@ export function openCapsuleMachine(
       return;
     }
     pulling = true;
+    pullControl.disabled = true;
     helper.setText('Cranking…');
     helper.setColor(UI.inkSoft);
+    statusAnnouncement.textContent = 'Opening one Mystery Ink capsule.';
 
     // Crank + shake the machine.
     await shakeMachine(scene, machine);
+    if (destroyed || !scene.sys.isActive()) return;
 
     pendingOperationId ??= createCapsuleOperationId();
-    const result = await opts.onPull(pendingOperationId);
+    let result: CapsulePullResponse | { error: string };
+    try {
+      result = await opts.onPull(pendingOperationId);
+    } catch {
+      result = { error: 'The capsule reply slipped.' };
+    }
+    if (destroyed || !scene.sys.isActive()) return;
     if ('error' in result) {
       pulling = false;
+      pullControl.disabled = ink < nextCost;
       helper.setText(`${result.error} Tap PULL to safely retry.`);
       helper.setColor(UI.coralText);
+      statusAnnouncement.textContent = `${result.error} Retry the same pull.`;
       return;
     }
     ink = result.ink;
@@ -334,6 +432,7 @@ export function openCapsuleMachine(
     refreshProgress(true);
     pendingOperationId = null;
     await dropAndPop(scene, capsule, result.pull.rarity);
+    if (destroyed || !scene.sys.isActive()) return;
     pulling = false;
     refreshAffordance();
     if (closeRequested) {
@@ -342,8 +441,17 @@ export function openCapsuleMachine(
     }
     prizeOpen = true;
     const onPrizeDismissed = (): void => {
+      dismissPrizeAction = null;
       prizeOpen = false;
-      if (!opts.onViewCollection) close();
+      if (!opts.onViewCollection) {
+        close();
+        return;
+      }
+      setPrizeControlsVisible(false);
+      refreshAffordance();
+      modalActions.focusInitial(
+        pullControl.disabled ? closeControl : pullControl
+      );
     };
     const prizeActions: PrizeRevealOptions = opts.onViewCollection
       ? {
@@ -355,7 +463,20 @@ export function openCapsuleMachine(
           acknowledgementLabel: 'KEEP DRAWING',
           onDismiss: onPrizeDismissed,
         };
-    revealPrize(scene, layer, result.pull, result.progress, prizeActions);
+    statusAnnouncement.textContent = `${result.pull.rarity} ${result.pull.kind}: ${result.pull.name}. ${result.pull.description}`;
+    setPrizeControlsVisible(true);
+    acknowledgementControl.setAttribute(
+      'aria-label',
+      prizeActions.acknowledgementLabel
+    );
+    dismissPrizeAction = revealPrize(
+      scene,
+      layer,
+      result.pull,
+      result.progress,
+      prizeActions
+    );
+    modalActions.focusInitial(viewCollectionControl ?? acknowledgementControl);
   }
 
   scrim.on('pointerup', () => {
@@ -363,7 +484,7 @@ export function openCapsuleMachine(
   });
 
   function close(destination: 'machine' | 'collection' = 'machine'): void {
-    if (!layer.active) return;
+    if (destroyed || !layer.active) return;
     if (prizeOpen && destination === 'machine') return;
     if (pulling || pendingOperationId) {
       closeRequested = true;
@@ -373,17 +494,28 @@ export function openCapsuleMachine(
           : 'Tap PULL once to safely reconcile this pull.'
       );
       helper.setColor(UI.coralText);
+      statusAnnouncement.textContent = pulling
+        ? 'Finishing the paid pull before closing.'
+        : 'Retry the same pull to reconcile it before closing.';
       return;
     }
     const onClosed =
       destination === 'collection' && opts.onViewCollection
         ? opts.onViewCollection
         : opts.onClose;
-    layer.destroy(true);
+    teardown();
     onClosed(ink);
   }
 
-  return { destroy: () => close() };
+  function teardown(): void {
+    if (destroyed) return;
+    destroyed = true;
+    dismissPrizeAction = null;
+    modalActions.destroy();
+    if (layer.active) layer.destroy(true);
+  }
+
+  return { destroy: teardown };
 }
 
 // --- Drawing helpers --------------------------------------------------------
@@ -521,7 +653,7 @@ function revealPrize(
   pull: CapsulePull,
   postPullProgress: CapsuleProgress,
   options: PrizeRevealOptions
-): void {
+): () => void {
   const { width, height } = scene.scale;
   const rarityStyle = RARITY_STYLE[pull.rarity];
 
@@ -547,11 +679,7 @@ function revealPrize(
 
   const cardWidth = Math.min(600, width - 64);
   const cardHeight = 600;
-  const cardCenterY = Phaser.Math.Clamp(
-    height * 0.52,
-    cardHeight / 2 + 24,
-    height - cardHeight / 2 - 24
-  );
+  const cardCenterY = getPrizeCardCenterY(height);
   const card = scene.add.container(width / 2, cardCenterY).setScrollFactor(0);
   const cardPaper = scene.add.graphics();
   cardPaper.fillStyle(UI.paper, 1);
@@ -678,16 +806,17 @@ function revealPrize(
   };
 
   if (options.onViewCollection) {
+    const openCollection = (): void => {
+      if (closingPrize) return;
+      closingPrize = true;
+      options.onViewCollection?.();
+    };
     const viewCollection = button(
       scene,
       -98,
       238,
       'VIEW COLLECTION',
-      () => {
-        if (closingPrize) return;
-        closingPrize = true;
-        options.onViewCollection?.();
-      },
+      openCollection,
       336,
       UI.gold
     );
@@ -723,6 +852,16 @@ function revealPrize(
     duration: 360,
     ease: 'Back.easeOut',
   });
+  return dismissPrize;
+}
+
+function getPrizeCardCenterY(height: number): number {
+  const cardHeight = 600;
+  return Phaser.Math.Clamp(
+    height * 0.52,
+    cardHeight / 2 + 24,
+    height - cardHeight / 2 - 24
+  );
 }
 
 function stopPointerPropagation(
@@ -736,10 +875,10 @@ function stopPointerPropagation(
 
 function newPrizeFooter(pull: CapsulePull): string {
   if (pull.kind === 'accessory') {
-    return `✨ New accessory! ${pull.ownedCount} owned.`;
+    return `New accessory · ${pull.ownedCount} owned.`;
   }
 
-  return `✨ New ${pull.kind} unlocked!`;
+  return `New ${pull.kind} unlocked!`;
 }
 
 function duplicatePrizeFooter(pull: CapsulePull): string {

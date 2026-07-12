@@ -6,7 +6,6 @@ import { existsSync, readFileSync, watch } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { dirname, extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import ts from 'typescript';
 import { createMockBattleReportFactory } from './mock-battle-factory.mjs';
 
 const port = Number(process.env.PORT ?? 8902);
@@ -25,23 +24,47 @@ if (!existsSync(fileURLToPath(mockCombatBundleUrl))) {
   );
 }
 const {
+  CAPSULE_COST,
+  COSMETIC_CATALOG,
   INK_REWARDS,
+  MAX_ALIVE_PER_USER,
+  SCRIBBIT_STAT_KEYS,
   SCOUT_NOTEBOOK_MAXIMUM_ENTRIES,
+  XP_REWARDS,
+  addXpToScribbit,
+  applyBattleOutcomeToScribbit,
+  advanceCapsulePity,
   advanceFounderChronicle,
   advanceRivalRunState,
   chooseFoundingSparOpponent,
+  cloneScribbit,
   createEmptyFounderChronicle,
+  createScribbit,
+  createScribbitLegacy,
   createPracticeBattle,
+  createCapsuleProgress,
   createRivalRunChoices,
   createRivalRunState,
   createScoutNotebookState,
   findFoundingScribbit,
   generateForecastForDay,
+  getCapsuleCostForDailyState,
+  getLevelForXp,
+  getRumbleProgressionRewards,
+  hashStringToUint32,
+  isCareAction,
+  isElement,
   isScoutNotebookReplayDay,
   projectFounderChronicle,
   projectScoutNotebookPick,
+  planCareProgression,
+  projectAccessoryInventoryConsumption,
+  projectCapsuleInventoryGrant,
+  projectEquippedTitle,
   selectFoundingSparRivalSlate,
   simulate: simulateProductionBattle,
+  selectCapsuleDrop,
+  validateAndAnalyzeScribbitSubmission,
 } = await import(mockCombatBundleUrl.href);
 const transparentPng = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAFgwJ/lw5l6wAAAABJRU5ErkJggg==',
@@ -58,58 +81,16 @@ const mockDrawingFileByDominantStat = Object.freeze({
 });
 const submittedDrawingBytes = new Map();
 
-const elements = ['ember', 'tide', 'moss', 'storm'];
-const careActions = ['feed', 'pat', 'train'];
-const statKeys = ['chonk', 'spike', 'zip', 'charm'];
-const fallbackStats = { chonk: 25, spike: 25, zip: 25, charm: 25 };
-const levelThresholds = [0, 3, 7, 12, 18];
-const capsuleCost = 10;
-const capsuleFirstDailyCost = 5;
-const capsulePity = 10;
-const careInkReward = 1;
-const sparWinInkReward = 2;
-const dailyDrawInkReward = 2;
 const maximumLegendsPageSize = 50;
 const maximumLegacyCardsPageSize = 24;
 const legacyReturnPreviewLimit = 3;
-const maxAccessoriesPerScribbit = 2;
-const cosmeticsSourcePath = join(repoRoot, 'src', 'shared', 'cosmetics.ts');
-const cosmeticsSource = readFileSync(cosmeticsSourcePath, 'utf8');
-const cosmeticsJavascript = ts.transpileModule(cosmeticsSource, {
-  compilerOptions: {
-    module: ts.ModuleKind.ES2022,
-    target: ts.ScriptTarget.ES2022,
-  },
-  fileName: cosmeticsSourcePath,
-}).outputText;
-const cosmeticsModuleUrl = `data:text/javascript;base64,${Buffer.from(
-  cosmeticsJavascript,
-  'utf8'
-).toString('base64')}`;
-const { COSMETIC_CATALOG: productionCosmeticCatalog } = await import(
-  cosmeticsModuleUrl
-);
-const mockCapsuleDrops = productionCosmeticCatalog.map(
-  ({ rarity, kind, id, name, description }) => ({
-    rarity,
-    kind,
-    id,
-    name,
-    description,
-  })
-);
-const accessoryCatalogIds = mockCapsuleDrops
-  .filter((drop) => drop.kind === 'accessory')
-  .map((drop) => drop.id);
-const accessoryCatalogIdSet = new Set(accessoryCatalogIds);
-
-const mockCapsuleCatalogIds = new Set(mockCapsuleDrops.map((drop) => drop.id));
+const mockCapsuleCatalogIds = new Set(COSMETIC_CATALOG.map((drop) => drop.id));
 const productionCosmeticById = new Map(
-  mockCapsuleDrops.map((drop) => [drop.id, drop])
+  COSMETIC_CATALOG.map((drop) => [drop.id, drop])
 );
 if (
-  mockCapsuleDrops.length === 0 ||
-  mockCapsuleCatalogIds.size !== mockCapsuleDrops.length
+  COSMETIC_CATALOG.length === 0 ||
+  mockCapsuleCatalogIds.size !== COSMETIC_CATALOG.length
 ) {
   throw new Error('Mock capsule catalog must mirror unique production drops.');
 }
@@ -133,41 +114,19 @@ const snapshotCosmetic = (cosmeticId, expectedKind) => {
   });
 };
 
-const cloneLegacySnapshot = (legacy) => {
-  if (!legacy) return null;
-  return {
-    ...legacy,
-    creatorTitle: legacy.creatorTitle ? { ...legacy.creatorTitle } : null,
-    accessories: legacy.accessories.map((accessory) => ({ ...accessory })),
-  };
-};
-
-const legacyFinishFor = (status, legendTitle) => {
-  if (status === 'faded') return 'faded';
-  return legendTitle?.startsWith('Champion of Day ') ? 'champion' : 'believed';
-};
-
 const makeImmutableLegacySnapshot = (scribbit, creatorTitleId = null) => {
-  const accessories = Object.freeze(
-    scribbit.accessories.map((accessoryId) =>
-      snapshotCosmetic(accessoryId, 'accessory')
-    )
-  );
   const creatorTitle = creatorTitleId
     ? snapshotCosmetic(creatorTitleId, 'title')
     : null;
-
+  const legacy = createScribbitLegacy(scribbit, { creatorTitle });
   return Object.freeze({
-    schemaVersion: 1,
-    archivedDay: scribbit.expiresDay,
-    finish: legacyFinishFor(scribbit.status, scribbit.legendTitle),
-    creatorTitle,
-    level: levelForXp(scribbit.xp),
-    xp: scribbit.xp,
-    wins: scribbit.wins,
-    losses: scribbit.losses,
-    belief: scribbit.belief,
-    accessories,
+    ...legacy,
+    creatorTitle: legacy.creatorTitle
+      ? Object.freeze({ ...legacy.creatorTitle })
+      : null,
+    accessories: Object.freeze(
+      legacy.accessories.map((accessory) => Object.freeze({ ...accessory }))
+    ),
   });
 };
 
@@ -180,54 +139,11 @@ const nextUtcMidnightMs = () => {
   );
 };
 
-const levelForXp = (xp) => {
-  let level = 1;
-  for (let index = 0; index < levelThresholds.length; index += 1) {
-    if (xp >= levelThresholds[index]) {
-      level = index + 1;
-    }
-  }
-  return Math.min(5, level);
-};
-
-const moodFromCare = (careDoneToday) => {
-  if (careDoneToday.length <= 0) return 'hungry';
-  if (careDoneToday.length === 1) return 'sleepy';
-  if (careDoneToday.length === 2) return 'happy';
-  return 'pumped';
-};
-
-const readSubmittedStats = (body) => {
-  const stats = body?.stats;
-  if (!stats || typeof stats !== 'object') return { ...fallbackStats };
-
-  const next = {};
-  for (const key of statKeys) {
-    const value = Number(stats[key]);
-    if (!Number.isFinite(value)) return { ...fallbackStats };
-    next[key] = Math.max(10, Math.min(55, Math.round(value)));
-  }
-  return next;
-};
-
-const readSubmittedElement = (body) => {
-  return elements.includes(body?.element) ? body.element : 'ember';
-};
-
-const cloneScribbit = (scribbit) => {
-  return {
-    ...scribbit,
-    stats: { ...scribbit.stats },
-    accessories: [...(scribbit.accessories ?? [])],
-    careDoneToday: [...scribbit.careDoneToday],
-    legacy: cloneLegacySnapshot(scribbit.legacy),
-  };
-};
-
 const makeScribbit = (options) => {
   // Founding Scribbits use semantic /creatures routes exactly like the real
   // server, exercising the client's deterministic stat-shaped mascots. Everyone
-  // else uses the working /api/drawing/{id} network route.
+  // else uses the mock-only /api/drawing/{id} fixture route. Production always
+  // uses Reddit media hosting and intentionally has no raw drawing endpoint.
   const defaultImageUrl = options.isFounding
     ? `/creatures/creature-${String(options.id).replace(/^founding-/, '')}.png`
     : `/api/drawing/${options.id}`;
@@ -251,7 +167,7 @@ const makeScribbit = (options) => {
     legendTitle: options.legendTitle ?? null,
     isFounding: options.isFounding ?? false,
     accessories: options.accessories ? [...options.accessories] : [],
-    level: levelForXp(xp),
+    level: getLevelForXp(xp),
     xp,
     mood: options.mood ?? 'hungry',
     careDoneToday: options.careDoneToday ? [...options.careDoneToday] : [],
@@ -399,20 +315,11 @@ const todayEntrants = [
   makeFoundingScribbit('founding-pearlmote', 6),
 ];
 
-const stableStringSeed = (value) => {
-  let hash = 2166136261;
-  for (let index = 0; index < value.length; index += 1) {
-    hash ^= value.charCodeAt(index);
-    hash = Math.imul(hash, 16777619);
-  }
-  return hash >>> 0;
-};
-
 const mockSparRivalSlate = (challenger, previewMode, rivalRun) => {
   const runSeed = rivalRun
     ? `:${rivalRun.id}:${rivalRun.boutsCompleted + 1}`
     : '';
-  const seed = stableStringSeed(
+  const seed = hashStringToUint32(
     `spar-rivals:${memory.dayNumber}:${previewMode}:${challenger.id}${runSeed}`
   );
   const founderChronicle = getFounderChronicleForPreview(previewMode);
@@ -437,17 +344,15 @@ let mockRivalRunCounter = 0;
 const getOrCreateMockRivalRun = (challenger, previewMode) => {
   const key = `${previewMode}:${challenger.id}`;
   const current = mockRivalRuns.get(key);
-  if (
-    current?.status === 'active' &&
-    current.dayNumber === memory.dayNumber
-  ) {
+  if (current?.status === 'active' && current.dayNumber === memory.dayNumber) {
     return current;
   }
   mockRivalRunCounter += 1;
   const next = createRivalRunState(
     `mock-run-${memory.dayNumber}-${mockRivalRunCounter}`,
     memory.dayNumber,
-    challenger.id
+    challenger.id,
+    current?.challenge?.id
   );
   mockRivalRuns.set(key, next);
   return next;
@@ -734,7 +639,7 @@ const createPreviewEconomy = (options = {}) => {
     inventory: options.inventory ?? emptyInventoryState(),
     capsulePullCount: options.capsulePullCount ?? 0,
     pullsSinceEpic: options.pullsSinceEpic ?? 0,
-    discountedCapsuleUtcDate: null,
+    discountedCapsuleDay: null,
     capsuleOperations: new Map(),
     sparWinRewardUtcDates: new Set(),
   };
@@ -1103,7 +1008,7 @@ const resetPreviewEconomy = (economy) => {
   economy.inventory = emptyInventoryState();
   economy.capsulePullCount = 0;
   economy.pullsSinceEpic = 0;
-  economy.discountedCapsuleUtcDate = null;
+  economy.discountedCapsuleDay = null;
   economy.capsuleOperations.clear();
   economy.sparWinRewardUtcDates.clear();
 };
@@ -1121,6 +1026,20 @@ const getLivingScribbitsForPreview = (previewMode) => {
     );
   }
   return livingScribbits;
+};
+
+const hasDrawnTodayForPreview = (previewMode) => {
+  return previewMode === 'fresh'
+    ? getLivingScribbitsForPreview(previewMode).length > 0
+    : memory.drawnToday;
+};
+
+const hasEnteredTodayForPreview = (previewMode) => {
+  if (previewMode !== 'fresh') return memory.enteredToday;
+  const freshScribbitIds = new Set(
+    getLivingScribbitsForPreview(previewMode).map(({ id }) => id)
+  );
+  return memory.todayEntrants.some(({ id }) => freshScribbitIds.has(id));
 };
 
 const getOwnedScribbits = () => {
@@ -1143,6 +1062,8 @@ const getOwnedScribbitsForPreview = (previewMode) => {
 
 const toLegacyCard = (scribbit) => {
   if (scribbit.status === 'alive' || !scribbit.legacy) return undefined;
+  const legacy = cloneScribbit(scribbit).legacy;
+  if (!legacy) return undefined;
   return {
     id: scribbit.id,
     name: scribbit.name,
@@ -1153,7 +1074,7 @@ const toLegacyCard = (scribbit) => {
     expiresDay: scribbit.expiresDay,
     status: scribbit.status,
     legendTitle: scribbit.legendTitle,
-    legacy: cloneLegacySnapshot(scribbit.legacy),
+    legacy,
   };
 };
 
@@ -1258,8 +1179,8 @@ const findVisibleScribbit = (scribbitId) => {
 };
 
 const dominantStatFor = (stats) => {
-  let dominantStat = statKeys[0];
-  for (const stat of statKeys.slice(1)) {
+  let dominantStat = SCRIBBIT_STAT_KEYS[0];
+  for (const stat of SCRIBBIT_STAT_KEYS.slice(1)) {
     if ((stats?.[stat] ?? 0) > (stats?.[dominantStat] ?? 0)) {
       dominantStat = stat;
     }
@@ -1376,145 +1297,34 @@ const currentUtcDateKey = () => {
 };
 
 const capsuleCostForCurrentPull = (economy) => {
-  const utcDateKey = currentUtcDateKey();
-  const isFirstDailyPull = economy.discountedCapsuleUtcDate !== utcDateKey;
+  const arenaDay = memory.dayNumber;
+  const isFirstDailyPull = economy.discountedCapsuleDay !== arenaDay;
 
   return {
-    cost: isFirstDailyPull ? capsuleFirstDailyCost : capsuleCost,
-    utcDateKey,
+    cost: getCapsuleCostForDailyState(!isFirstDailyPull),
+    arenaDay,
   };
 };
 
 const capsuleProgressState = (economy) => {
-  const inventory = economy.inventory;
-  const collectionIds = new Set([
-    ...mockCapsuleCatalogIds,
-    ...inventory.discovered,
-  ]);
-  return {
-    pullCount: economy.capsulePullCount,
-    pityRemaining: Math.max(1, capsulePity - economy.pullsSinceEpic),
-    discoveredCount: inventory.discovered.length,
-    collectionTotal: collectionIds.size,
-  };
-};
-
-const countAccessoryIds = (accessoryIds) => {
-  const counts = {};
-
-  for (const accessoryId of accessoryIds) {
-    counts[accessoryId] = (counts[accessoryId] ?? 0) + 1;
-  }
-
-  return counts;
-};
-
-const addCapsuleDropToInventory = (economy, drop) => {
-  const inventory = economy.inventory;
-  const isNew = !inventory.discovered.includes(drop.id);
-  if (isNew) inventory.discovered.push(drop.id);
-
-  if (drop.kind === 'accessory') {
-    const previousCount = inventory.items[drop.id] ?? 0;
-    const ownedCount = previousCount + 1;
-    inventory.items[drop.id] = ownedCount;
-
-    return {
-      isNew,
-      ownedCount,
-    };
-  }
-
-  const inventoryList = drop.kind === 'pen' ? inventory.pens : inventory.titles;
-  if (!inventoryList.includes(drop.id)) {
-    inventoryList.push(drop.id);
-  }
-
-  return {
-    isNew,
-    ownedCount: 1,
-  };
+  return createCapsuleProgress(
+    economy.capsulePullCount,
+    economy.pullsSinceEpic,
+    economy.inventory.discovered.length
+  );
 };
 
 const selectMockCapsuleDrop = (economy) => {
-  const naturalDrop =
-    mockCapsuleDrops[economy.capsulePullCount % mockCapsuleDrops.length];
-  if (!naturalDrop) return undefined;
-
-  const rarity =
-    economy.pullsSinceEpic + 1 >= capsulePity ? 'epic' : naturalDrop.rarity;
-  const matchingDrops = mockCapsuleDrops.filter((drop) => {
-    return drop.rarity === rarity;
-  });
-  const usefulDrops = matchingDrops.filter((drop) => {
-    return (
-      drop.kind === 'accessory' ||
-      !economy.inventory.discovered.includes(drop.id)
-    );
-  });
-  const dropPool = usefulDrops.length > 0 ? usefulDrops : matchingDrops;
-  return dropPool[economy.capsulePullCount % dropPool.length];
-};
-
-const consumeInventoryItems = (inventory, requiredCounts) => {
-  for (const [accessoryId, requiredCount] of Object.entries(requiredCounts)) {
-    const nextCount = (inventory.items[accessoryId] ?? 0) - requiredCount;
-
-    if (nextCount > 0) {
-      inventory.items[accessoryId] = nextCount;
-    } else {
-      delete inventory.items[accessoryId];
-    }
-  }
-};
-
-const readSubmittedAccessoryIds = (body, inventory) => {
-  if (body?.accessories === undefined) {
-    return { accessoryIds: [] };
-  }
-
-  if (!Array.isArray(body.accessories)) {
-    return {
-      status: 400,
-      message: 'Accessories must be submitted as an array.',
-    };
-  }
-
-  if (body.accessories.length > maxAccessoriesPerScribbit) {
-    return {
-      status: 400,
-      message: `Attach up to ${maxAccessoriesPerScribbit} accessories.`,
-    };
-  }
-
-  const accessoryIds = [];
-
-  for (const accessory of body.accessories) {
-    const accessoryId =
-      typeof accessory?.id === 'string' ? accessory.id.trim() : '';
-
-    if (!accessoryCatalogIdSet.has(accessoryId)) {
-      return {
-        status: 400,
-        message: 'Choose valid Mystery Ink accessories.',
-      };
-    }
-
-    accessoryIds.push(accessoryId);
-  }
-
-  const requiredCounts = countAccessoryIds(accessoryIds);
-
-  for (const [accessoryId, requiredCount] of Object.entries(requiredCounts)) {
-    if ((inventory.items[accessoryId] ?? 0) < requiredCount) {
-      return {
-        status: 409,
-        message: `You need ${requiredCount} ${getProductionCosmetic(accessoryId, 'accessory').name} accessory copy.`,
-      };
-    }
-  }
-
-  return { accessoryIds, requiredCounts };
+  return selectCapsuleDrop(
+    {
+      userId: 'mock-player',
+      day: memory.dayNumber,
+      pullCount: economy.capsulePullCount + 1,
+      pullsSinceEpic: economy.pullsSinceEpic,
+      entropy: 'local-browser-fixture',
+    },
+    new Set(economy.inventory.discovered)
+  );
 };
 
 const arenaState = (economy, previewMode = 'returning') => {
@@ -1636,7 +1446,7 @@ const handleApi = async (request, response, url) => {
       return;
     }
     const requestedElement = url.searchParams.get('element');
-    if (requestedElement !== null && !elements.includes(requestedElement)) {
+    if (requestedElement !== null && !isElement(requestedElement)) {
       sendError(response, 400, 'Choose ember, tide, moss, or storm.');
       return;
     }
@@ -1682,6 +1492,7 @@ const handleApi = async (request, response, url) => {
       previewMode === 'returning' &&
       requestHasPreviewFlag(request, url, 'owned-return')
     ) {
+      const ownedReturnRewards = getRumbleProgressionRewards(2);
       sendJson(response, 200, {
         ...state,
         myBackedScribbitId: null,
@@ -1691,8 +1502,8 @@ const handleApi = async (request, response, url) => {
           entrant: cloneScribbit(myScribbits[0]),
           wins: 2,
           losses: 1,
-          xpAwarded: 4,
-          inkAwarded: 10,
+          xpAwarded: ownedReturnRewards.xpAwarded,
+          inkAwarded: ownedReturnRewards.inkAwarded,
           isChampion: false,
           replayAvailable: true,
         },
@@ -1811,13 +1622,14 @@ const handleApi = async (request, response, url) => {
     }
 
     const inventory = inventoryState(economy.inventory);
-    if (titleId !== null && !inventory.titles.includes(titleId)) {
+    const projectedInventory = projectEquippedTitle(inventory, titleId);
+    if (!projectedInventory) {
       sendError(response, 400, 'Discover that title before wearing it.');
       return;
     }
 
-    economy.inventory.equippedTitle = titleId;
-    sendJson(response, 200, inventoryState(economy.inventory));
+    economy.inventory = projectedInventory;
+    sendJson(response, 200, inventoryState(projectedInventory));
     return;
   }
 
@@ -1834,7 +1646,7 @@ const handleApi = async (request, response, url) => {
       sendJson(response, 200, cachedOperation);
       return;
     }
-    const { cost, utcDateKey } = capsuleCostForCurrentPull(economy);
+    const { cost, arenaDay } = capsuleCostForCurrentPull(economy);
 
     if (economy.ink < cost) {
       sendError(
@@ -1853,22 +1665,27 @@ const handleApi = async (request, response, url) => {
     }
 
     economy.capsulePullCount += 1;
-    economy.pullsSinceEpic =
-      drop.rarity === 'epic'
-        ? 0
-        : Math.min(capsulePity - 1, economy.pullsSinceEpic + 1);
-    economy.discountedCapsuleUtcDate = utcDateKey;
+    economy.pullsSinceEpic = advanceCapsulePity(
+      economy.pullsSinceEpic,
+      drop.rarity
+    );
+    economy.discountedCapsuleDay = arenaDay;
     economy.ink -= cost;
-    const pullInventoryState = addCapsuleDropToInventory(economy, drop);
+    const inventoryGrant = projectCapsuleInventoryGrant(
+      inventoryState(economy.inventory),
+      drop
+    );
+    economy.inventory = inventoryGrant.inventory;
 
     const capsuleResponse = {
       pull: {
         ...drop,
-        ...pullInventoryState,
+        isNew: inventoryGrant.isNew,
+        ownedCount: inventoryGrant.ownedCount,
       },
       ink: economy.ink,
       inventory: inventoryState(economy.inventory),
-      nextCost: capsuleCost,
+      nextCost: CAPSULE_COST,
       progress: capsuleProgressState(economy),
     };
     economy.capsuleOperations.set(operationId, capsuleResponse);
@@ -2054,7 +1871,7 @@ const handleApi = async (request, response, url) => {
       (entry) => entry.id === scribbitId
     );
 
-    if (!scribbit || !careActions.includes(action)) {
+    if (!scribbit || !isCareAction(action)) {
       sendError(response, 400, 'Choose a valid Scribbit and care action.');
       return;
     }
@@ -2065,13 +1882,13 @@ const handleApi = async (request, response, url) => {
     }
 
     scribbit.careDoneToday.push(action);
-    scribbit.mood = moodFromCare(scribbit.careDoneToday);
-    scribbit.xp += scribbit.mood === 'pumped' ? 2 : 1;
-    scribbit.level = levelForXp(scribbit.xp);
-    economy.ink += careInkReward;
+    const careProgression = planCareProgression(scribbit.careDoneToday);
+    scribbit.mood = careProgression.mood;
+    Object.assign(scribbit, addXpToScribbit(scribbit, careProgression.xpGain));
+    economy.ink += INK_REWARDS.care;
     sendJson(response, 200, {
       scribbit: cloneScribbit(scribbit),
-      inkAwarded: careInkReward,
+      inkAwarded: INK_REWARDS.care,
     });
     return;
   }
@@ -2303,16 +2120,11 @@ const handleApi = async (request, response, url) => {
       : undefined;
     const precomputedRunReport =
       requestedRivalRun && requestedRunOpponent
-        ? createBattleReport(
-            'exhibition',
-            challenger,
-            requestedRunOpponent,
-            {
-              seed: stableStringSeed(
-                `rival-run:${requestedRivalRun.id}:${requestedRivalRun.expectedBoutsCompleted + 1}:${requestedRunOpponent.id}`
-              ),
-            }
-          )
+        ? createBattleReport('exhibition', challenger, requestedRunOpponent, {
+            seed: hashStringToUint32(
+              `rival-run:${requestedRivalRun.id}:${requestedRivalRun.expectedBoutsCompleted + 1}:${requestedRunOpponent.id}`
+            ),
+          })
         : null;
     if (requestedRivalRun && precomputedRunReport) {
       const storedRunReport = memory.myBattles.find((storedReport) => {
@@ -2347,11 +2159,7 @@ const handleApi = async (request, response, url) => {
     }
     const rivalChoices = createRivalRunChoices(
       challenger,
-      mockSparRivalSlate(
-        challenger,
-        previewMode,
-        activeRivalRun ?? undefined
-      ),
+      mockSparRivalSlate(challenger, previewMode, activeRivalRun ?? undefined),
       memory.forecast
     );
     const chosenChoice = requestedOpponentId
@@ -2361,7 +2169,7 @@ const handleApi = async (request, response, url) => {
       ? chosenChoice?.rival
       : chooseFoundingSparOpponent(
           challenger,
-          stableStringSeed(`quick-spar:${challenger.id}:${Date.now()}`),
+          hashStringToUint32(`quick-spar:${challenger.id}:${Date.now()}`),
           {
             preferredFounderId: founderChronicle.activeRivalry?.founderId,
           }
@@ -2382,8 +2190,7 @@ const handleApi = async (request, response, url) => {
     const rivalRunReceipt = requestedRivalRun
       ? activeRivalRun && chosenChoice
         ? advanceRivalRunState(activeRivalRun, {
-            expectedBoutsCompleted:
-              requestedRivalRun.expectedBoutsCompleted,
+            expectedBoutsCompleted: requestedRivalRun.expectedBoutsCompleted,
             playerWon: report.winner === 'a',
             opponentId: opponent.id,
             tier: chosenChoice.tier,
@@ -2406,6 +2213,10 @@ const handleApi = async (request, response, url) => {
         score: rivalRunReceipt.score,
         opponentIds: [...rivalRunReceipt.opponentIds],
         status: rivalRunReceipt.status,
+        challenge: {
+          ...rivalRunReceipt.challenge,
+          condition: { ...rivalRunReceipt.challenge.condition },
+        },
       });
     }
     let rewardedReport = report;
@@ -2414,10 +2225,12 @@ const handleApi = async (request, response, url) => {
       const utcDateKey = currentUtcDateKey();
       if (!economy.sparWinRewardUtcDates.has(utcDateKey)) {
         economy.sparWinRewardUtcDates.add(utcDateKey);
-        economy.ink += sparWinInkReward;
-        challenger.xp += 1;
-        challenger.level = levelForXp(challenger.xp);
-        rewardedReport = { ...report, inkAwarded: sparWinInkReward };
+        economy.ink += INK_REWARDS.sparWin;
+        Object.assign(
+          challenger,
+          addXpToScribbit(challenger, XP_REWARDS.sparWin)
+        );
+        rewardedReport = { ...report, inkAwarded: INK_REWARDS.sparWin };
       }
     }
 
@@ -2458,13 +2271,14 @@ const handleApi = async (request, response, url) => {
 
     const report = createBattleReport('boss', challenger, memory.champion);
     memory.bossChallengedToday = true;
-    if (report.winner === 'a') {
-      challenger.wins += 1;
-      challenger.xp += 2;
-      challenger.level = levelForXp(challenger.xp);
-    } else {
-      challenger.losses += 1;
-    }
+    Object.assign(
+      challenger,
+      applyBattleOutcomeToScribbit(
+        challenger,
+        report.winner === 'a' ? 'win' : 'loss',
+        XP_REWARDS.championWin
+      )
+    );
     memory.myBattles.unshift(report);
     const founderChronicleBeats = recordMockFounderChronicleBattle(
       previewMode,
@@ -2490,17 +2304,17 @@ const handleApi = async (request, response, url) => {
       sendError(
         response,
         404,
-        'That living Scribbit is not in your sketchbook.'
+        'That living Scribbit is not in your active roster.'
       );
       return;
     }
 
-    if (memory.enteredToday) {
+    if (hasEnteredTodayForPreview(previewMode)) {
       sendError(response, 409, "You already entered today's Rumble.");
       return;
     }
 
-    memory.enteredToday = true;
+    if (previewMode === 'returning') memory.enteredToday = true;
     if (!memory.todayEntrants.some((entry) => entry.id === scribbit.id)) {
       memory.todayEntrants.push(scribbit);
     }
@@ -2510,33 +2324,51 @@ const handleApi = async (request, response, url) => {
 
   if (method === 'POST' && path === '/api/scribbit') {
     const body = await readJsonBody(request);
-    const name =
-      typeof body?.name === 'string' && body.name.trim().length >= 2
-        ? body.name.trim().slice(0, 24)
-        : 'Fresh Scribbit';
-    const submittedAccessories = readSubmittedAccessoryIds(
-      body,
-      economy.inventory
-    );
-
-    if (submittedAccessories.message) {
-      sendError(
-        response,
-        submittedAccessories.status,
-        submittedAccessories.message
-      );
+    const submission = validateAndAnalyzeScribbitSubmission(body);
+    if (submission.status === 'invalid') {
+      const messageByReason = {
+        'invalid-request':
+          'Send a 2-24 character name, base and rendered PNG data URLs, and valid accessories.',
+        'invalid-png':
+          'Base and rendered drawings must be 512x512 PNG data URLs under 400 KB each.',
+        'rendered-mismatch':
+          'Rendered drawing must match the base PNG outside declared accessories and must not erase base pixels.',
+        'insufficient-ink':
+          'Your Scribbit needs a body. Add a few more lines before submitting.',
+      };
+      sendError(response, 400, messageByReason[submission.reason]);
+      return;
+    }
+    const { draft } = submission;
+    if (hasDrawnTodayForPreview(previewMode)) {
+      sendError(response, 409, 'You already drew a Scribbit today.');
+      return;
+    }
+    if (hasEnteredTodayForPreview(previewMode)) {
+      sendError(response, 409, "You already entered today's Rumble.");
+      return;
+    }
+    if (
+      getLivingScribbitsForPreview(previewMode).length >= MAX_ALIVE_PER_USER
+    ) {
+      sendError(response, 409, 'You already have three living Scribbits.');
       return;
     }
 
-    const baseImageDataUrl = body?.baseImageDataUrl;
-    const renderedImageDataUrl = body?.imageDataUrl;
-    if (
-      typeof baseImageDataUrl !== 'string' ||
-      !baseImageDataUrl.startsWith('data:image/png;base64,') ||
-      typeof renderedImageDataUrl !== 'string' ||
-      !renderedImageDataUrl.startsWith('data:image/png;base64,')
-    ) {
-      sendError(response, 400, 'Send both the base drawing and rendered PNG.');
+    const accessoryConsumption = projectAccessoryInventoryConsumption(
+      inventoryState(economy.inventory),
+      draft.accessories.map(({ id: accessoryId }) => accessoryId)
+    );
+    if (accessoryConsumption.status === 'invalid') {
+      sendError(response, 400, 'Choose valid Mystery Ink accessories.');
+      return;
+    }
+    if (accessoryConsumption.status === 'insufficient') {
+      sendError(
+        response,
+        409,
+        `You do not have enough ${getProductionCosmetic(accessoryConsumption.accessoryId, 'accessory').name} accessory copies.`
+      );
       return;
     }
 
@@ -2546,34 +2378,26 @@ const handleApi = async (request, response, url) => {
     submittedDrawingBytes.set(
       id,
       Buffer.from(
-        renderedImageDataUrl.slice('data:image/png;base64,'.length),
+        draft.imageDataUrl.slice('data:image/png;base64,'.length),
         'base64'
       )
     );
-    const scribbit = makeScribbit({
+    const scribbit = createScribbit({
       id,
-      name,
+      draft,
       artist: 'mock_player',
-      element: readSubmittedElement(body),
-      stats: readSubmittedStats(body),
-      bornDay: memory.dayNumber,
-      expiresDay: memory.dayNumber + 3,
-      belief: 0,
-      level: 1,
-      xp: 0,
-      mood: 'hungry',
-      accessories: submittedAccessories.accessoryIds,
+      imageUrl: `/api/drawing/${id}`,
+      day: memory.dayNumber,
     });
 
-    consumeInventoryItems(
-      economy.inventory,
-      submittedAccessories.requiredCounts ?? {}
-    );
+    economy.inventory = accessoryConsumption.inventory;
     memory.myScribbits.unshift(scribbit);
     memory.todayEntrants.push(scribbit);
-    memory.drawnToday = true;
-    memory.enteredToday = true;
-    economy.ink += dailyDrawInkReward;
+    if (previewMode === 'returning') {
+      memory.drawnToday = true;
+      memory.enteredToday = true;
+    }
+    economy.ink += INK_REWARDS.dailyDraw;
     sendJson(response, 201, cloneScribbit(scribbit));
     return;
   }

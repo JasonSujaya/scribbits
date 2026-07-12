@@ -4,7 +4,7 @@ import type {
   LegacyReturnReceipt,
 } from '../../shared/arena';
 import type { Scribbit } from '../../shared/arena';
-import type { ArenaStorage } from './scribbit';
+import type { ArenaStorage } from './storage';
 import {
   getUserLegacyCardsKey,
   getUserScribbitsKey,
@@ -44,7 +44,7 @@ const collectLegacyCards = (scribbits: Scribbit[]): LegacyCard[] => {
     .filter((card): card is LegacyCard => card !== undefined);
 };
 
-const getLegacyIndexVersionKey = (userId: string): string => {
+export const getLegacyIndexVersionKey = (userId: string): string => {
   return `user:${userId}:scribbits:legacy-index-version`;
 };
 
@@ -374,8 +374,4 @@ export const markLegacyCardsSeen = async (
   );
   await storage.set(getLegacySeenDayKey(userId), nextSeenDay.toString());
   return nextSeenDay;
-};
-
-export const getLegacyIndexVersionStorageKey = (userId: string): string => {
-  return getLegacyIndexVersionKey(userId);
 };

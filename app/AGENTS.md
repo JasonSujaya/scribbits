@@ -37,10 +37,13 @@ You are writing a Devvit web application that will be executed on Reddit.com.
 
 ## Commands
 
-- `npm run type-check`: Check typescript types
-- `npm run lint`: Check the linter
-- `npm run test:sim`: Run deterministic simulation/core regression checks
-- `npm run build`: Build client and server bundles
+- From the repository root, `./verify.command` is the supported clean-shell
+  verification entry point. It resolves Node/pnpm, installs from
+  `pnpm-lock.yaml` when needed, and runs the complete gate.
+- `pnpm run type-check`: Check TypeScript types
+- `pnpm run lint`: Check the linter
+- `pnpm run test:sim`: Run deterministic simulation/core regression checks
+- `pnpm run build`: Build client and server bundles
 
 ## Code Style
 

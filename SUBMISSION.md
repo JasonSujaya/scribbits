@@ -95,7 +95,8 @@ on one exercise.
   A visible post-lock Practice card also lets anyone test all four drawing powers
   without weakening the once-daily official submission.
 - **Polish:** portrait layout, a generated Craftbox paper stage, bundled
-  DynaPuff, one die-cut navigation family, GPT-generated paper button plates,
+  DynaPuff, one code-native monochrome navigation family with a flat contained
+  active state, GPT-generated paper button plates,
   shared paper status icons, responsive controls,
   a progressive-disclosure hierarchy with one headline, status, and action on
   each default card,
@@ -195,7 +196,9 @@ on one exercise.
   Ink; no care flavor can claim a reward or battle result. Roster cards now keep
   only icon-led CARE and sword-led SPAR; CARE opens one large-target berry/paw/
   dumbbell picker with honest DONE states, drag-safe actions, and a keyboard-safe
-  receipt. The fixed five-tab dock now mirrors native labels and active state.
+  receipt. The fixed five-tab dock now mirrors native labels and active state;
+  its larger rosette/trophy/pencil/swords/magnifier marks replace the padded
+  generated PNGs and their cropped edge fragments.
   Replaced the Field
   Guide's retired element triangle with the actual Ember/Tide/Moss/Storm payloads.
 - Bound decorated 512x512 PNGs to their authoritative base drawings on the
@@ -240,9 +243,9 @@ on one exercise.
 - Consolidated client and server reward metadata into one shared catalog with
   parity tests, preventing rarity, label, and inventory drift.
 - Added daily Back predictions, Clout payouts, three-day lifecycle, Belief, and
-  Legends. The mobile Arena now says `PICK A WINNER` once and uses paper heart,
-  lock, selected, and one-word `YOURS` states across the eight-card field instead of
-  repeating `Back` on every contender.
+  Legends. The mobile Arena now shows one compact, icon-led Rumble preview;
+  tapping it opens the focused contender picker with paper heart, lock, selected,
+  and one-word `YOURS` states instead of crowding the home screen with eight cards.
 - Added Phaser 4.2 Mesh2D Inkbody fighters: 25-vertex submitted-PNG deformation,
   deterministic stat-driven Shape Powers, Inkquake rings, orbiting Nib Halo
   quills, Smearstep afterimages, a Colorburst cone/echo, impact ripples, exact
@@ -390,7 +393,9 @@ on one exercise.
 - Reworked Gallery navigation into three full-size trophy/book/spark tabs with
   native keyboard semantics. Legend cards keep the sparse 2x3 layout but replace
   emoji and tiny arrows with generated trophy/heart/info states, semantic paging,
-  and one truthful `VIEW` action; Legacy and Collection loading rules are unchanged.
+  and one truthful `VIEW` action. Legend, Legacy, and Collection cards now open
+  described focus-trapped dialogs with trigger restoration; loading rules are
+  unchanged.
 - Made Belief updates concurrency-safe, kept nightly resolution outbox-idempotent,
   and added atomic capsule operation receipts so ambiguous retries reuse the
   same result instead of charging or rewarding twice.

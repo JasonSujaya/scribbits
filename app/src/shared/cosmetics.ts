@@ -348,7 +348,7 @@ export const COSMETIC_CATALOG: readonly CosmeticCatalogEntry[] = [
 export const COSMETIC_BY_ID: ReadonlyMap<string, CosmeticCatalogEntry> =
   new Map(COSMETIC_CATALOG.map((entry) => [entry.id, entry]));
 
-export const findCosmeticCatalogEntry = (
+const findCosmeticCatalogEntry = (
   cosmeticId: string
 ): CosmeticCatalogEntry | undefined => {
   return COSMETIC_BY_ID.get(cosmeticId);

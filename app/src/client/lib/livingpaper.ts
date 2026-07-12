@@ -21,6 +21,7 @@
 import * as Phaser from 'phaser';
 import { Scene } from 'phaser';
 import type { Element } from '../../shared/arena';
+import { ELEMENTS } from '../../shared/elements';
 import { allowsAmbientMotion, ELEMENT_STYLES } from './theme';
 import { paperStage } from './visualassets';
 
@@ -65,7 +66,8 @@ export class LivingPaper {
   private readonly opts: LivingPaperOptions;
 
   private readonly tileSprites: Phaser.GameObjects.TileSprite[] = [];
-  private readonly emitters: Phaser.GameObjects.Particles.ParticleEmitter[] = [];
+  private readonly emitters: Phaser.GameObjects.Particles.ParticleEmitter[] =
+    [];
   private readonly tweens: Phaser.Tweens.Tween[] = [];
   private readonly timers: Phaser.Time.TimerEvent[] = [];
   private readonly extra: Phaser.GameObjects.GameObject[] = [];
@@ -171,7 +173,12 @@ export class LivingPaper {
 
   // Bake a 256x256 transparent tile scattered with a handful of hand-drawn
   // motifs. Sparse on purpose so tiling reads as a doodled page, not a pattern.
-  private bakeMotifTile(key: string, lineColor: number, fillColor: number, seed: number): string {
+  private bakeMotifTile(
+    key: string,
+    lineColor: number,
+    fillColor: number,
+    seed: number
+  ): string {
     if (this.scene.textures.exists(key)) return key;
     const size = 256;
     const rand = seeded(seed);
@@ -194,19 +201,35 @@ export class LivingPaper {
     return key;
   }
 
-  private motifStar(g: Phaser.GameObjects.Graphics, cx: number, cy: number, r: number, fill: number): void {
+  private motifStar(
+    g: Phaser.GameObjects.Graphics,
+    cx: number,
+    cy: number,
+    r: number,
+    fill: number
+  ): void {
     const points: Phaser.Math.Vector2[] = [];
     for (let index = 0; index < 10; index += 1) {
       const angle = (Math.PI / 5) * index - Math.PI / 2;
       const radius = index % 2 === 0 ? r : r * 0.42;
-      points.push(new Phaser.Math.Vector2(cx + Math.cos(angle) * radius, cy + Math.sin(angle) * radius));
+      points.push(
+        new Phaser.Math.Vector2(
+          cx + Math.cos(angle) * radius,
+          cy + Math.sin(angle) * radius
+        )
+      );
     }
     g.fillStyle(fill, 0.5);
     g.fillPoints(points, true);
     g.strokePoints(points, true);
   }
 
-  private motifSquiggle(g: Phaser.GameObjects.Graphics, cx: number, cy: number, rand: () => number): void {
+  private motifSquiggle(
+    g: Phaser.GameObjects.Graphics,
+    cx: number,
+    cy: number,
+    rand: () => number
+  ): void {
     g.beginPath();
     g.moveTo(cx - 14, cy);
     for (let step = 1; step <= 4; step += 1) {
@@ -217,7 +240,12 @@ export class LivingPaper {
     g.strokePath();
   }
 
-  private motifCloud(g: Phaser.GameObjects.Graphics, cx: number, cy: number, fill: number): void {
+  private motifCloud(
+    g: Phaser.GameObjects.Graphics,
+    cx: number,
+    cy: number,
+    fill: number
+  ): void {
     g.fillStyle(fill, 0.4);
     g.fillCircle(cx - 8, cy, 7);
     g.fillCircle(cx, cy - 3, 9);
@@ -227,7 +255,12 @@ export class LivingPaper {
     g.strokeCircle(cx + 9, cy, 7);
   }
 
-  private motifPaw(g: Phaser.GameObjects.Graphics, cx: number, cy: number, fill: number): void {
+  private motifPaw(
+    g: Phaser.GameObjects.Graphics,
+    cx: number,
+    cy: number,
+    fill: number
+  ): void {
     g.fillStyle(fill, 0.55);
     g.fillCircle(cx, cy + 4, 5);
     g.fillCircle(cx - 6, cy - 4, 2.6);
@@ -373,7 +406,10 @@ export class LivingPaper {
           );
 
           // A tiny jagged arc near the top.
-          const arc = this.scene.add.graphics().setScrollFactor(0).setDepth(-94);
+          const arc = this.scene.add
+            .graphics()
+            .setScrollFactor(0)
+            .setDepth(-94);
           this.extra.push(arc);
           const startX = 80 + Math.random() * (width - 160);
           arc.lineStyle(3, 0xfff2a8, 0.9);
@@ -421,11 +457,14 @@ export class LivingPaper {
   private peekCreature(): void {
     const { width, height } = this.scene.scale;
     const edge = Math.floor(Math.random() * 4); // 0 top 1 right 2 bottom 3 left
-    const elements: Element[] = ['ember', 'tide', 'moss', 'storm'];
-    const element = elements[Math.floor(Math.random() * elements.length)] ?? 'ember';
+    const element =
+      ELEMENTS[Math.floor(Math.random() * ELEMENTS.length)] ?? 'ember';
     const style = ELEMENT_STYLES[element];
 
-    const creature = this.scene.add.container(0, 0).setScrollFactor(0).setDepth(-94);
+    const creature = this.scene.add
+      .container(0, 0)
+      .setScrollFactor(0)
+      .setDepth(-94);
     this.extra.push(creature);
     this.drawPeeker(creature, style.soft);
 
@@ -476,7 +515,9 @@ export class LivingPaper {
     hiddenY: number
   ): void {
     if (this.destroyed || !creature.active) return;
-    const eyes = creature.getData('eyes') as Phaser.GameObjects.Arc[] | undefined;
+    const eyes = creature.getData('eyes') as
+      | Phaser.GameObjects.Arc[]
+      | undefined;
     // A quick double blink by squashing the eyes.
     if (eyes) {
       this.tweens.push(
@@ -507,7 +548,10 @@ export class LivingPaper {
     );
   }
 
-  private drawPeeker(creature: Phaser.GameObjects.Container, bodyColor: number): void {
+  private drawPeeker(
+    creature: Phaser.GameObjects.Container,
+    bodyColor: number
+  ): void {
     const g = this.scene.add.graphics();
     g.fillStyle(bodyColor, 1);
     g.fillCircle(0, 0, 34);
@@ -525,7 +569,9 @@ export class LivingPaper {
     // Two blinking eyes (real Arc objects so we can animate scaleY).
     const eyes: Phaser.GameObjects.Arc[] = [];
     [-12, 12].forEach((dx) => {
-      const white = this.scene.add.circle(dx, -2, 9, 0xfff7e8).setStrokeStyle(3, INK, 1);
+      const white = this.scene.add
+        .circle(dx, -2, 9, 0xfff7e8)
+        .setStrokeStyle(3, INK, 1);
       const pupil = this.scene.add.circle(dx, -2, 4, INK);
       creature.add(white);
       creature.add(pupil);
@@ -625,6 +671,9 @@ export class LivingPaper {
 // Convenience mount: build a LivingPaper for a scene and return it. Scenes hold
 // the handle so they can pause/destroy it; if they drop it, the shutdown hook
 // still cleans up.
-export function mountLivingPaper(scene: Scene, opts: LivingPaperOptions = {}): LivingPaper {
+export function mountLivingPaper(
+  scene: Scene,
+  opts: LivingPaperOptions = {}
+): LivingPaper {
   return new LivingPaper(scene, opts);
 }

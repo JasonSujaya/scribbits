@@ -28,4 +28,29 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
+wait_for_artifact() {
+  local artifact_path="$1"
+  local attempts=0
+
+  while [[ ! -s "$artifact_path" && "$attempts" -lt 120 ]]; do
+    if ! kill -0 "$watch_pid" >/dev/null 2>&1 ||
+      ! kill -0 "$combat_watch_pid" >/dev/null 2>&1; then
+      printf "A Scribbits watch build stopped before %s was ready.\n" "$artifact_path" >&2
+      exit 1
+    fi
+    sleep 0.25
+    attempts=$((attempts + 1))
+  done
+
+  if [[ ! -s "$artifact_path" ]]; then
+    printf "Timed out waiting for build artifact: %s\n" "$artifact_path" >&2
+    exit 1
+  fi
+}
+
+# Vite clears dist before each watch build. Wait for both outputs before the
+# mock server starts so the first browser request cannot hit a half-built app.
+wait_for_artifact "$app_dir/dist/client/game.html"
+wait_for_artifact "$app_dir/dist/mock-runtime/battle.mjs"
+
 MOCK_AUTO_RELOAD=1 node --watch-preserve-output --watch scripts/dev-mock.mjs

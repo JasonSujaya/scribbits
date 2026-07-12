@@ -6,8 +6,10 @@ enter daily community rumbles. The app identity is `scribbits` in
 `package.json` and `devvit.json`.
 
 All main scenes share `lib/appdock.ts`, the generated Craftbox paper stage, the
-same five die-cut navigation icons, and one GPT-generated hand-cut button family
-for primary, secondary, Back, close, and pagination actions. DynaPuff 400/700 is
+same five optical-weight code-native navigation icons, and one GPT-generated
+hand-cut button family for primary, secondary, Back, close, and pagination
+actions. The dock uses a flat contained active tile, readable labels, and no
+micro-badges or protruding cutout. DynaPuff 400/700 is
 bundled locally through Fontsource and loaded before Phaser renders text. Shared
 heart, clock, Ink, sparkle, and element marks live in `lib/papericons.ts`; scene
 copy should keep the default view to one headline, one status, and one action.
@@ -188,9 +190,10 @@ copy should keep the default view to one headline, one status, and one action.
    damage and is statistically capped at a 60% equal-build win rate.
 4. **Back:** choose another player’s contender before the nightly resolution.
    Champion backers earn 3 Clout; runner-up backers earn 1.
-   The Arena says `PICK A WINNER` once; each compact contender card uses the
-   shared heart, lock, or one-word `YOURS` state instead of repeating a text button.
-   The selected card turns gold and remains pinned first.
+   The Arena home shows only a three-portrait `TONIGHT'S RUMBLE` preview and one
+   heart action. Tapping it opens the focused eight-contender picker; the grid is
+   never part of the default home stack. Each contender keeps one inspect target
+   and one server-planned heart or lock state, and the selected card turns gold.
    If the player skipped Back but entered an owned Scribbit, the next visit leads
    with that drawing's exact Rumble W/L, committed XP, committed Ink, and a
    server-selected last-bout replay. The client never reconstructs those rewards
@@ -220,7 +223,9 @@ copy should keep the default view to one headline, one status, and one action.
    paginated Legacy Book. Gallery keeps Legends, Legacy, and Collection behind
    three full-size trophy/book/spark tabs with native keyboard navigation. The
    six-card Hall uses drawing-first cards, generated trophy/heart status, and one
-   info-led `VIEW`; opening details never exposes background actions.
+   info-led `VIEW`. Every Gallery card and page control has a native keyboard
+   target; described detail dialogs trap focus, isolate background actions, and
+   return focus to the opening card.
 
 The game is designed for a short Reddit-feed visit: a lightweight inline card
 shows today's forecast and the player's next action, while Phaser loads only in
@@ -309,7 +314,9 @@ boundary during browser iteration—it is not the production game server.
   the reloaded public state exactly matches its projection and the current report
   is the latest durable report in that thread.
 - `src/server/core/practice.ts`: strict PNG-to-ephemeral-replay domain with no
-  storage, media, reward, Rumble, or lifecycle dependency.
+  durable gameplay/replay persistence, media, reward, Rumble, or lifecycle
+  dependency. Redis request leases, migration guards, and rate keys protect the
+  endpoint without turning Practice into progression state.
 - `src/server/core/scoutNotebook.ts`: bounded best-effort assembly over existing
   eight-day Back records, payout receipts, forecasts, lifetime Clout, and
   30-day featured reports. It never reads `champion:current` for historical
@@ -417,22 +424,22 @@ boundary during browser iteration—it is not the production game server.
 
 ## Setup
 
-Use Node 22 or newer.
+Use Node 22.2.0 or newer with pnpm 11.7.0.
 
 ```bash
-npm install
+pnpm install --frozen-lockfile
 ```
 
 ## Development
 
 ```bash
-npm run dev
+pnpm run dev
 ```
 
-`npm run dev` runs Devvit playtest against the subreddit configured in
+`pnpm run dev` runs Devvit playtest against the subreddit configured in
 `devvit.json`. It requires `devvit login`.
 
-If your agent shell cannot see `node`, `npm`, or `npx`, use the repo-level
+If your agent shell cannot see `node` or `pnpm`, use the repo-level
 command instead:
 
 ```bash
@@ -442,8 +449,8 @@ command instead:
 For local browser iteration without Reddit:
 
 ```bash
-npm run build
-npm run mock
+pnpm run build
+pnpm run mock
 ```
 
 Then open the mock server URL printed by the command.
@@ -471,12 +478,13 @@ Use `/?debug&spar&rival-thread&reduce-motion&ceremony` for the deterministic Day
 Run these before handing off changes:
 
 ```bash
-npm run verify
+pnpm verify
 ```
 
-`npm run verify` runs type-check, lint, 103 simulation groups, and build.
+`pnpm verify` runs type-check, lint, 142 deterministic simulation groups, and
+the production build.
 
-`npm run test:sim` covers deterministic analyzer, Inkbody mesh geometry, combat
+`pnpm run test:sim` covers deterministic analyzer, Inkbody mesh geometry, combat
 determinism, payload caps, archetype balance, slot neutrality, battle,
 storage, daily job, ink, title equip, immutable Legacy snapshots, personal
 Legacy paging/receipts, privacy deletion, expiry repair, and Swiss rumble

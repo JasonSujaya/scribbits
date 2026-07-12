@@ -10,8 +10,6 @@ import { getLevelDamageMultiplier } from '../../shared/battle';
 import { simulateCombat } from '../../shared/combat';
 import { hashTextToSeed } from './random';
 
-export { getLevelDamageMultiplier } from '../../shared/battle';
-
 // Retained for stored-report compatibility and forecast copy. The fixed-tick
 // engine replaces this old blanket matchup multiplier with readable elemental
 // payloads: Ember burn, Tide knockback, Moss barrier, and Storm timing.

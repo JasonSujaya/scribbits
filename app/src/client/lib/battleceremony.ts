@@ -220,7 +220,7 @@ export function showVsCeremony(scene: Scene, options: VsCeremonyOptions): void {
 
   if (rivalryStakes || rivalRun) {
     const contextDetail = rivalRun
-      ? `SCORE ${rivalRun.score - rivalRun.pointsAwarded} • ${rivalRun.tier.toUpperCase()} WIN +${rivalRun.winPoints}`
+      ? `${rivalRun.challenge.goal} • SCORE ${rivalRun.score - rivalRun.pointsAwarded} • ${rivalRun.tier.toUpperCase()} +${rivalRun.winPoints}`
       : (rivalryStakes?.detail ?? 'SERVER-LOCKED BATTLE');
     const stakesStrip = scene.add
       .rectangle(width / 2, 170, width - 96, 54, UI.tapeAlt, 0.9)

@@ -2,11 +2,7 @@ import type { Scribbit } from '../../shared/arena';
 
 const ARENA_BRACKET_MAXIMUM_VISIBLE_ENTRANTS = 8;
 
-export type ArenaBackActionKind =
-  | 'picked'
-  | 'owned'
-  | 'locked'
-  | 'available';
+export type ArenaBackActionKind = 'picked' | 'owned' | 'locked' | 'available';
 
 type ArenaBackActionPlan = Readonly<{
   kind: ArenaBackActionKind;
@@ -68,7 +64,7 @@ export function planArenaBackAction(input: {
   if (input.backedScribbitId === input.entrantId) {
     return Object.freeze({
       kind: 'picked',
-      label: '✓ Picked',
+      label: 'Picked',
       enabled: false,
     });
   }

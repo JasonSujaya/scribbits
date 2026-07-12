@@ -3,9 +3,11 @@
  * no renderer or transport types are allowed in this module.
  */
 
+import type { Element } from '../elements';
+
 export type FighterSlot = 'a' | 'b';
 
-export type CombatElement = 'ember' | 'tide' | 'moss' | 'storm';
+export type CombatElement = Element;
 
 export type RawCombatStats = Readonly<{
   chonk: number;
@@ -326,12 +328,6 @@ export type ColorburstAbilityConfig = AbilityConfigBase &
     echoRadius: number;
     echoOffsetDistance: number;
   }>;
-
-export type PrimaryAbilityConfig =
-  | InkquakeAbilityConfig
-  | NibHaloAbilityConfig
-  | SmearstepAbilityConfig
-  | ColorburstAbilityConfig;
 
 export type AbilityConfigByPower = Readonly<{
   inkquake: InkquakeAbilityConfig;

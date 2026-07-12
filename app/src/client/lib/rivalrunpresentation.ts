@@ -3,6 +3,10 @@ import {
   type RivalRunReceipt,
   type RivalRunState,
 } from '../../shared/arena';
+import {
+  rivalRunChallengeMeasuredProgress,
+  rivalRunChallengeTarget,
+} from '../../shared/rivalrunchallenges';
 
 export type RivalRunDraftHeading = Readonly<{
   title: string;
@@ -20,29 +24,56 @@ export type RivalRunFinishStamp = Readonly<{
   record: string;
 }>;
 
+export type RivalRunChallengeCopy = Readonly<{
+  name: string;
+  premise: string;
+  goal: string;
+  progress: string;
+  status: string;
+  accessibleSummary: string;
+}>;
+
+export function planRivalRunChallengeCopy(
+  run: RivalRunState
+): RivalRunChallengeCopy {
+  const measured = rivalRunChallengeMeasuredProgress(run.challenge);
+  const target = rivalRunChallengeTarget(run.challenge.condition);
+  const progress = `${Math.min(measured, target)}/${target}`;
+  const status =
+    run.status === 'active'
+      ? `${progress} • IN PLAY`
+      : run.challenge.completionAchieved
+        ? `STAMPED • ${run.challenge.stamp}`
+        : `MISSED • ${run.challenge.goal}`;
+  return {
+    name: run.challenge.name,
+    premise: run.challenge.premise,
+    goal: run.challenge.goal,
+    progress,
+    status,
+    accessibleSummary: `${run.challenge.name}. ${run.challenge.premise} Goal: ${run.challenge.goal}. ${status}.`,
+  };
+}
+
 export function planRivalRunDraftHeading(
   run: RivalRunState
 ): RivalRunDraftHeading {
   const nextBout = Math.min(RIVAL_RUN_LENGTH, run.boutsCompleted + 1);
   return {
-    title: 'RIVAL RUN',
-    subtitle: `BOUT ${nextBout}/${RIVAL_RUN_LENGTH} • ${run.score} PTS`,
+    title: run.challenge.name,
+    subtitle: `RIVAL RUN • BOUT ${nextBout}/${RIVAL_RUN_LENGTH} • ${run.score} PTS`,
   };
 }
 
-export function formatRivalRunBattleLabel(
-  receipt: RivalRunReceipt
-): string {
+export function formatRivalRunBattleLabel(receipt: RivalRunReceipt): string {
   const scoreBeforeBout = receipt.score - receipt.pointsAwarded;
-  return `RUN ${receipt.boutNumber}/${RIVAL_RUN_LENGTH} • SCORE ${scoreBeforeBout}`;
+  return `${receipt.challenge.name} • ${receipt.boutNumber}/${RIVAL_RUN_LENGTH} • ${scoreBeforeBout} PTS`;
 }
 
-export function formatRivalRunResultLine(
-  receipt: RivalRunReceipt
-): string {
+export function formatRivalRunResultLine(receipt: RivalRunReceipt): string {
   return receipt.status === 'complete'
-    ? `${receipt.wins > receipt.losses ? 'RUN CHAMPION' : 'RUN COMPLETE'} • ${receipt.wins}–${receipt.losses} • ${receipt.score} PTS`
-    : `RUN ${receipt.boutNumber}/${RIVAL_RUN_LENGTH} • ${receipt.wins}–${receipt.losses} • SCORE ${receipt.score}`;
+    ? `${receipt.challenge.name} • ${receipt.challenge.completionAchieved ? receipt.challenge.stamp : 'MISSED'} • ${receipt.score} PTS`
+    : `${receipt.challenge.name} • ${planRivalRunChallengeCopy(receipt).progress} • ${receipt.score} PTS`;
 }
 
 export function planRivalRunFinishStamp(
@@ -50,9 +81,13 @@ export function planRivalRunFinishStamp(
 ): RivalRunFinishStamp | null {
   if (receipt?.status !== 'complete') return null;
   return {
-    title: receipt.wins > receipt.losses ? 'RUN CHAMPION' : 'RUN COMPLETE',
-    score: `${receipt.score} PTS`,
-    record: `${receipt.wins}–${receipt.losses}`,
+    title: receipt.challenge.completionAchieved
+      ? `${receipt.challenge.name} COMPLETE`
+      : receipt.challenge.name,
+    score: receipt.challenge.completionAchieved
+      ? receipt.challenge.stamp
+      : 'CHALLENGE MISSED',
+    record: `${receipt.score} PTS • ${receipt.wins}–${receipt.losses}`,
   };
 }
 

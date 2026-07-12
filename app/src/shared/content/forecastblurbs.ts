@@ -17,7 +17,7 @@ export const FORECAST_BLURBS: readonly string[] = Object.freeze([
   'Bubble fog rolls in with suspicious confidence',
   'Moss thunder drums under the arena floor',
   'Storm static turns every doodle extra dramatic',
-  'Warm sparks chase shadows off the brackets',
+  'Warm sparks chase shadows off the Rumble',
   'Tide spray has everyone yelling like captains',
   'Rooty winds smell like wet crayons and adventure',
   'Cloudbursts keep trying to referee the fights',
@@ -42,7 +42,7 @@ export const FORECAST_BLURBS: readonly string[] = Object.freeze([
   'A pocket tornado is heckling both corners',
   "The moon has drawn a ring around tonight's bell",
   'Sea foam confetti is sticking to every banner',
-  'Golden dust is making the whole bracket sparkle',
+  'Golden dust is making the whole Rumble sparkle',
   'A cool gust keeps flipping to the dramatic page',
   'The arena pencils are vibrating with anticipation',
 ]);

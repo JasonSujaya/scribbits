@@ -1,5 +1,10 @@
 import type { BattleReport, RivalRunReceipt } from '../../shared/arena';
 import { RIVAL_RUN_LENGTH } from '../../shared/arena';
+import {
+  createLegacyRivalRunChallenge,
+  isRivalRunChallenge,
+  rivalRunChallengeGoalMet,
+} from '../../shared/rivalrunchallenges';
 import type {
   AuthoritativeBattleResult,
   BattleEndReason,
@@ -15,7 +20,11 @@ import {
   battleResultFinishIsConsistent,
   isShapePowerId,
 } from '../../shared/combat';
-import type { ArenaStorage, ArenaTransaction } from './scribbit';
+import type { ArenaStorage, ArenaTransaction } from './storage';
+import {
+  discardWatchedTransaction,
+  MAX_WATCH_TRANSACTION_ATTEMPTS,
+} from './storage';
 import {
   cloneScribbit,
   getScribbitOwner,
@@ -24,7 +33,6 @@ import {
 } from './scribbit';
 
 export const battleReportTtlSeconds = 30 * 24 * 60 * 60;
-const maximumReportStorageAttempts = 5;
 // One score bucket per arena day. A million report positions is far above the
 // bounded Swiss bracket while keeping day + order exactly representable.
 const rumbleReportOrderScale = 1_000_000;
@@ -41,7 +49,7 @@ export const getScribbitBattlesKey = (scribbitId: string): string => {
   return `battles:scribbit:${scribbitId}`;
 };
 
-export const getFeaturedRumbleReportsKey = (scribbitId: string): string => {
+const getFeaturedRumbleReportsKey = (scribbitId: string): string => {
   return `battles:scribbit:${scribbitId}:featured-rumbles`;
 };
 
@@ -170,13 +178,16 @@ const isRivalRunReceipt = (
     Number(value.score) <= RIVAL_RUN_LENGTH * 3 &&
     value.status ===
       (boutsCompleted === RIVAL_RUN_LENGTH ? 'complete' : 'active') &&
+    (value.challenge === undefined ||
+      (isRivalRunChallenge(value.challenge) &&
+        value.challenge.completionAchieved ===
+          (value.status === 'complete' &&
+            rivalRunChallengeGoalMet(value.challenge)))) &&
     (value.outcome === 'win' || value.outcome === 'loss') &&
     (value.tier === 'safe' ||
       value.tier === 'even' ||
       value.tier === 'risky') &&
-    (value.winPoints === 1 ||
-      value.winPoints === 2 ||
-      value.winPoints === 3) &&
+    (value.winPoints === 1 || value.winPoints === 2 || value.winPoints === 3) &&
     ((value.tier === 'safe' && value.winPoints === 1) ||
       (value.tier === 'even' && value.winPoints === 2) ||
       (value.tier === 'risky' && value.winPoints === 3)) &&
@@ -184,8 +195,7 @@ const isRivalRunReceipt = (
       value.pointsAwarded === 1 ||
       value.pointsAwarded === 2 ||
       value.pointsAwarded === 3) &&
-    value.pointsAwarded ===
-      (value.outcome === 'win' ? value.winPoints : 0) &&
+    value.pointsAwarded === (value.outcome === 'win' ? value.winPoints : 0) &&
     (value.outcome === 'win') === (report.winner === challengerSlot)
   );
 };
@@ -253,10 +263,24 @@ const parseBattleReport = (
       const fighterB = normalizeScribbitRecord(parsedBattleReport.b);
 
       if (fighterA && fighterB) {
+        const rivalRun = parsedBattleReport.rivalRun;
+        const normalizedRivalRun =
+          rivalRun &&
+          (rivalRun as unknown as Record<string, unknown>).challenge ===
+            undefined
+            ? {
+                ...rivalRun,
+                challenge: createLegacyRivalRunChallenge(
+                  rivalRun.boutsCompleted,
+                  rivalRun.status
+                ),
+              }
+            : rivalRun;
         return {
           ...parsedBattleReport,
           a: fighterA,
           b: fighterB,
+          ...(normalizedRivalRun ? { rivalRun: normalizedRivalRun } : {}),
         };
       }
     }
@@ -305,17 +329,6 @@ const mergeCompatibleReport = (
     : incoming;
 };
 
-const discardReportTransaction = async (
-  transaction: ArenaTransaction | undefined
-): Promise<void> => {
-  if (!transaction) return;
-  try {
-    await transaction.discard();
-  } catch {
-    // EXEC may already have closed the transaction.
-  }
-};
-
 const storeBattleReport = async (
   storage: ArenaStorage,
   battleReport: BattleReport
@@ -324,7 +337,11 @@ const storeBattleReport = async (
     throw new Error('Collision-safe battle storage requires transactions.');
   }
   const key = getBattleReportKey(battleReport.id);
-  for (let attempt = 0; attempt < maximumReportStorageAttempts; attempt += 1) {
+  for (
+    let attempt = 0;
+    attempt < MAX_WATCH_TRANSACTION_ATTEMPTS;
+    attempt += 1
+  ) {
     let transaction: ArenaTransaction | undefined;
     try {
       transaction = await storage.watch(key);
@@ -336,11 +353,13 @@ const storeBattleReport = async (
       const result = await transaction.exec();
       if (Array.isArray(result) && result.length > 0) return reportToStore;
     } catch (error) {
-      await discardReportTransaction(transaction);
+      await discardWatchedTransaction(transaction, 'Battle report storage');
       throw error;
     }
   }
-  throw new Error(`Battle report ${battleReport.id} changed too often to save.`);
+  throw new Error(
+    `Battle report ${battleReport.id} changed too often to save.`
+  );
 };
 
 // Each entrant indexes every actually played Swiss bout with its monotonic

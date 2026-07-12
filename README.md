@@ -14,6 +14,9 @@ The portrait UI uses progressive disclosure: each default card leads with one
 headline, one current status, and one obvious action. Exact rules, telemetry,
 privacy controls, and card history remain available behind the relevant tap
 instead of competing with the drawing or fight.
+Arena home is intentionally not a bracket dashboard: Draw is the hero, Champion
+and Rumble are one-action cards, and the full eight-contender choice opens only
+after the player taps the three-portrait Rumble preview.
 
 The shared Craftbox shell uses a generated torn-paper stage, bundled DynaPuff,
 one die-cut icon family, and GPT-generated hand-cut paper buttons across Arena,
@@ -65,7 +68,7 @@ server resolves each 20 Hz fight ahead of time and stores a compact transcript;
 the client replays that immutable result as a continuous arena battle capped at
 20 seconds. A final Sudden Scribble at 15 seconds halves Shape Power cooldowns
 and folds the arena inward for a short, legible finish. A full-height paper
-arena now separates combat from the quieter sketchbook screens: a torn page,
+arena now separates combat from the quieter Gallery screens: a torn page,
 localized element stains, rough truthful bounds, and transcript-triggered ink
 surges keep the center readable. A compact paper rail keeps the battle kind,
 server lock, icon controls, fighter names, numeric HP, and Shape Power state
@@ -216,12 +219,15 @@ the local development stand-in for this hosted boundary.
 
 ## Verify locally
 
-From `app/` with Node 22+:
+From the repository root:
 
 ```bash
-npm install
-npm run verify
+./verify.command
 ```
+
+This resolves Node 22.2.0+ and pnpm 11.7.0 (including the Codex bundled runtime), installs
+from `app/pnpm-lock.yaml` when needed, and runs the complete gate. With Node and
+pnpm already configured, the equivalent command is `cd app && pnpm verify`.
 
 For browser-only iteration without Reddit login:
 
@@ -234,7 +240,7 @@ Public forecast flavor follows its own validated 32-day no-repeat rotation. It
 appears consistently in the app, Reddit post title, and result comment without
 sharing randomness with boosted/nerfed combat elements.
 
-The verification gate currently covers TypeScript, ESLint, 98 deterministic
+The verification gate currently covers TypeScript, ESLint, 142 deterministic
 simulation groups, and the production build.
 
 ## Data and safety

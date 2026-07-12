@@ -10,15 +10,23 @@ import {
   type Scribbit,
 } from '../../shared/arena';
 import {
-  battleReportTtlSeconds,
-  getBattleReportKey,
-} from './battleStore';
+  advanceRivalRunChallenge,
+  createLegacyRivalRunChallenge,
+  createRivalRunChallenge,
+  isRivalRunChallenge,
+  rivalRunChallengeGoalMet,
+} from '../../shared/rivalrunchallenges';
+import { battleReportTtlSeconds, getBattleReportKey } from './battleStore';
 import { simulate } from './battle';
 import { hashTextToSeed } from './random';
-import type { ArenaStorage, ArenaTransaction } from './scribbit';
+import type { ArenaStorage, ArenaTransaction } from './storage';
+import {
+  discardWatchedTransaction,
+  MAX_WATCH_TRANSACTION_ATTEMPTS,
+} from './storage';
 
 type StoredRivalRun = RivalRunState & {
-  schemaVersion: 1;
+  schemaVersion: 2;
   lastReportId: string | null;
   lastOutcome: RivalRunReceipt['outcome'] | null;
   lastTier: RivalRunTier | null;
@@ -40,7 +48,6 @@ type RivalRunAdvanceInput = Readonly<{
   winPoints: RivalRunWinPoints;
 }>;
 
-const maximumTransactionAttempts = 5;
 const rivalRunTtlSeconds = 2 * 24 * 60 * 60;
 
 const isRecord = (value: unknown): value is Record<string, unknown> => {
@@ -84,6 +91,10 @@ const clonePublicState = (run: StoredRivalRun): RivalRunState => ({
   score: run.score,
   opponentIds: [...run.opponentIds],
   status: run.status,
+  challenge: {
+    ...run.challenge,
+    condition: { ...run.challenge.condition },
+  },
 });
 
 const createReceipt = (run: StoredRivalRun): RivalRunReceipt | null => {
@@ -106,7 +117,9 @@ const createReceipt = (run: StoredRivalRun): RivalRunReceipt | null => {
   };
 };
 
-const parseStoredRivalRun = (stored: string | undefined): StoredRivalRun | null => {
+const parseStoredRivalRun = (
+  stored: string | undefined
+): StoredRivalRun | null => {
   if (stored === undefined) return null;
   try {
     const value: unknown = JSON.parse(stored);
@@ -119,7 +132,7 @@ const parseStoredRivalRun = (stored: string | undefined): StoredRivalRun | null 
     const expectedStatus =
       boutsCompleted === RIVAL_RUN_LENGTH ? 'complete' : 'active';
     if (
-      value.schemaVersion !== 1 ||
+      (value.schemaVersion !== 1 && value.schemaVersion !== 2) ||
       !isIdentifier(value.id) ||
       !isBoundedInteger(value.dayNumber, 1, Number.MAX_SAFE_INTEGER) ||
       !isIdentifier(value.challengerId) ||
@@ -161,20 +174,33 @@ const parseStoredRivalRun = (stored: string | undefined): StoredRivalRun | null 
     ) {
       return null;
     }
-    return value as StoredRivalRun;
+    const status = value.status as RivalRunState['status'];
+    const parsedChallenge =
+      value.schemaVersion === 1
+        ? createLegacyRivalRunChallenge(Number(boutsCompleted), status)
+        : isRivalRunChallenge(value.challenge)
+          ? value.challenge
+          : null;
+    if (
+      !parsedChallenge ||
+      parsedChallenge.completionAchieved !==
+        (status === 'complete' && rivalRunChallengeGoalMet(parsedChallenge))
+    ) {
+      return null;
+    }
+    return {
+      ...(value as unknown as Omit<
+        StoredRivalRun,
+        'schemaVersion' | 'challenge'
+      >),
+      schemaVersion: 2,
+      challenge: {
+        ...parsedChallenge,
+        condition: { ...parsedChallenge.condition },
+      },
+    };
   } catch {
     return null;
-  }
-};
-
-const discardTransaction = async (
-  transaction: ArenaTransaction | undefined
-): Promise<void> => {
-  if (!transaction) return;
-  try {
-    await transaction.discard();
-  } catch {
-    // A failed EXEC may have already closed the transaction.
   }
 };
 
@@ -185,6 +211,21 @@ const storedReportMatches = (
   if (stored === undefined) return false;
   try {
     const parsed = JSON.parse(stored) as BattleReport;
+    const rawReceipt = parsed.rivalRun as unknown;
+    if (
+      isRecord(rawReceipt) &&
+      rawReceipt.challenge === undefined &&
+      isBoundedInteger(rawReceipt.boutsCompleted, 1, RIVAL_RUN_LENGTH) &&
+      (rawReceipt.status === 'active' || rawReceipt.status === 'complete')
+    ) {
+      parsed.rivalRun = {
+        ...(rawReceipt as unknown as RivalRunReceipt),
+        challenge: createLegacyRivalRunChallenge(
+          Number(rawReceipt.boutsCompleted),
+          rawReceipt.status
+        ),
+      };
+    }
     const { inkAwarded: _storedReward, ...storedCore } = parsed;
     const { inkAwarded: _expectedReward, ...expectedCore } = expected;
     return JSON.stringify(storedCore) === JSON.stringify(expectedCore);
@@ -200,7 +241,8 @@ export const getRivalRunKey = (userId: string): string => {
 export const createRivalRunState = (
   runId: string,
   dayNumber: number,
-  challengerId: string
+  challengerId: string,
+  previousChallengeId?: string
 ): RivalRunState => {
   if (
     !isIdentifier(runId) ||
@@ -219,6 +261,12 @@ export const createRivalRunState = (
     score: 0,
     opponentIds: [],
     status: 'active',
+    challenge: createRivalRunChallenge(
+      runId,
+      dayNumber,
+      challengerId,
+      previousChallengeId
+    ),
   };
 };
 
@@ -290,9 +338,9 @@ export const advanceRivalRunState = (
   if (
     run.status !== 'active' ||
     run.boutsCompleted !== input.expectedBoutsCompleted ||
-    !tierPointsMatch(input.tier, input.winPoints)
-    || !isIdentifier(input.opponentId)
-    || run.opponentIds.includes(input.opponentId)
+    !tierPointsMatch(input.tier, input.winPoints) ||
+    !isIdentifier(input.opponentId) ||
+    run.opponentIds.includes(input.opponentId)
   ) {
     return null;
   }
@@ -300,16 +348,29 @@ export const advanceRivalRunState = (
     ? input.winPoints
     : 0;
   const boutsCompleted = run.boutsCompleted + 1;
+  const wins = run.wins + (input.playerWon ? 1 : 0);
+  const losses = run.losses + (input.playerWon ? 0 : 1);
+  const score = run.score + pointsAwarded;
+  const status = boutsCompleted === RIVAL_RUN_LENGTH ? 'complete' : 'active';
+  const outcome = input.playerWon ? 'win' : 'loss';
   return {
     ...run,
     boutsCompleted,
-    wins: run.wins + (input.playerWon ? 1 : 0),
-    losses: run.losses + (input.playerWon ? 0 : 1),
-    score: run.score + pointsAwarded,
+    wins,
+    losses,
+    score,
     opponentIds: [...run.opponentIds, input.opponentId],
-    status: boutsCompleted === RIVAL_RUN_LENGTH ? 'complete' : 'active',
+    status,
+    challenge: advanceRivalRunChallenge(run.challenge, {
+      boutNumber: boutsCompleted,
+      outcome,
+      tier: input.tier,
+      wins,
+      score,
+      status,
+    }),
     boutNumber: boutsCompleted,
-    outcome: input.playerWon ? 'win' : 'loss',
+    outcome,
     tier: input.tier,
     winPoints: input.winPoints,
     pointsAwarded,
@@ -317,7 +378,7 @@ export const advanceRivalRunState = (
 };
 
 const toStoredRivalRun = (state: RivalRunState): StoredRivalRun => ({
-  schemaVersion: 1,
+  schemaVersion: 2,
   ...state,
   lastReportId: null,
   lastOutcome: null,
@@ -339,12 +400,14 @@ export const getOrCreateRivalRun = async (
     throw new Error('Rival Run creation requires transaction support.');
   }
   const key = getRivalRunKey(input.userId);
-  const newRun = toStoredRivalRun(
-    createRivalRunState(input.runId, input.dayNumber, input.challengerId)
-  );
 
-  for (let attempt = 0; attempt < maximumTransactionAttempts; attempt += 1) {
+  for (
+    let attempt = 0;
+    attempt < MAX_WATCH_TRANSACTION_ATTEMPTS;
+    attempt += 1
+  ) {
     let transaction: ArenaTransaction | undefined;
+    let newRun: StoredRivalRun | undefined;
     try {
       transaction = await storage.watch(key);
       const current = parseStoredRivalRun(await storage.get(key));
@@ -356,6 +419,14 @@ export const getOrCreateRivalRun = async (
         await transaction.unwatch();
         return clonePublicState(current);
       }
+      newRun = toStoredRivalRun(
+        createRivalRunState(
+          input.runId,
+          input.dayNumber,
+          input.challengerId,
+          current?.challenge.id
+        )
+      );
       await transaction.multi();
       await transaction.set(key, JSON.stringify(newRun));
       await transaction.expire(key, rivalRunTtlSeconds);
@@ -364,9 +435,11 @@ export const getOrCreateRivalRun = async (
         return clonePublicState(newRun);
       }
     } catch (error) {
-      await discardTransaction(transaction);
+      await discardWatchedTransaction(transaction, 'Rival Run');
       const recovered = parseStoredRivalRun(await storage.get(key));
-      if (recovered?.id === newRun.id) return clonePublicState(recovered);
+      if (newRun && recovered?.id === newRun.id) {
+        return clonePublicState(recovered);
+      }
       throw error;
     }
   }
@@ -377,9 +450,7 @@ export const loadRivalRun = async (
   storage: ArenaStorage,
   userId: string
 ): Promise<RivalRunState | null> => {
-  const stored = parseStoredRivalRun(
-    await storage.get(getRivalRunKey(userId))
-  );
+  const stored = parseStoredRivalRun(await storage.get(getRivalRunKey(userId)));
   return stored ? clonePublicState(stored) : null;
 };
 
@@ -402,7 +473,11 @@ export const advanceRivalRun = async (
   const key = getRivalRunKey(input.userId);
   const reportKey = getBattleReportKey(input.reportId);
 
-  for (let attempt = 0; attempt < maximumTransactionAttempts; attempt += 1) {
+  for (
+    let attempt = 0;
+    attempt < MAX_WATCH_TRANSACTION_ATTEMPTS;
+    attempt += 1
+  ) {
     let transaction: ArenaTransaction | undefined;
     try {
       transaction = await storage.watch(key, reportKey);
@@ -417,7 +492,9 @@ export const advanceRivalRun = async (
         const expectedReport = { ...input.report, rivalRun: receipt };
         if (storedReport !== undefined) {
           if (!storedReportMatches(storedReport, expectedReport)) {
-            throw new Error(`Battle report id collision for ${input.reportId}.`);
+            throw new Error(
+              `Battle report id collision for ${input.reportId}.`
+            );
           }
           await transaction.unwatch();
           return receipt;
@@ -482,7 +559,7 @@ export const advanceRivalRun = async (
         return createReceipt(next);
       }
     } catch (error) {
-      await discardTransaction(transaction);
+      await discardWatchedTransaction(transaction, 'Rival Run');
       const recovered = parseStoredRivalRun(await storage.get(key));
       if (recovered?.lastReportId === input.reportId) {
         const receipt = createReceipt(recovered);

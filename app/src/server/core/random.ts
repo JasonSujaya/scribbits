@@ -1,19 +1,10 @@
+import { hashStringToUint32 } from '../../shared/stablehash';
+
 export type SeededNumberGenerator = () => number;
 
-export const hashTextToSeed = (text: string): number => {
-  let hash = 2166136261;
+export const hashTextToSeed = hashStringToUint32;
 
-  for (let index = 0; index < text.length; index += 1) {
-    hash ^= text.charCodeAt(index);
-    hash = Math.imul(hash, 16777619);
-  }
-
-  return hash >>> 0;
-};
-
-export const createMulberry32 = (
-  seed: number
-): SeededNumberGenerator => {
+export const createMulberry32 = (seed: number): SeededNumberGenerator => {
   let state = seed >>> 0;
 
   return () => {
@@ -24,8 +15,6 @@ export const createMulberry32 = (
     return ((value ^ (value >>> 14)) >>> 0) / 4294967296;
   };
 };
-
-export const createSeededNumberGenerator = createMulberry32;
 
 export const getRandomInteger = (
   minimum: number,

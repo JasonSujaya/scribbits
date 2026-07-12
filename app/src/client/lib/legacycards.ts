@@ -11,15 +11,16 @@ import {
   formatLegacyFinishLabel,
   planLegacyReturnPresentation,
 } from './legacyreturnpresentation';
-import { CanvasActionOverlay } from './overlay';
+import { CanvasActionOverlay, CanvasModalOverlay } from './overlay';
 import { NAV_SAFE, TYPE, UI, prefersReducedMotion } from './theme';
 import {
+  addCardPressInteraction,
   button,
   ghostButton,
   handLettered,
   iconButton,
   label,
-  pageArrowButton,
+  paperPagination,
   stickerCard,
 } from './ui';
 
@@ -34,7 +35,7 @@ const CARD_ROW_STEP = CARD_HEIGHT + CARD_ROW_GAP;
 type FinishStyle = {
   accent: number;
   accentText: string;
-  seal: string;
+  icon: PaperIconKey;
   stamp: string;
   tape: number;
 };
@@ -43,21 +44,21 @@ const FINISH_STYLES: Record<LegacyFinish, FinishStyle> = {
   faded: {
     accent: 0x82776a,
     accentText: '#5f554a',
-    seal: '✎',
+    icon: 'pencil',
     stamp: 'GRAPHITE',
     tape: 0xc9c0b3,
   },
   believed: {
     accent: UI.goldHex,
     accentText: UI.goldText,
-    seal: '♥',
+    icon: 'heart',
     stamp: 'HEART-GOLD',
     tape: 0xf2ce72,
   },
   champion: {
     accent: 0xe6a817,
     accentText: UI.goldText,
-    seal: '♛',
+    icon: 'trophy',
     stamp: 'CROWN-GOLD',
     tape: UI.goldHex,
   },
@@ -65,6 +66,7 @@ const FINISH_STYLES: Record<LegacyFinish, FinishStyle> = {
 
 export type LegacyBookOptions = {
   scene: Scene;
+  actionOverlay: CanvasActionOverlay;
   top: number;
   cards: LegacyCard[];
   page: number;
@@ -89,7 +91,7 @@ export function renderLegacyBook(options: LegacyBookOptions): void {
     buildMessageCard(
       scene,
       top + 260,
-      '📖',
+      'book',
       'Sign in to open your Legacy Book.\nYour finished Scribbits are filed here forever.'
     );
     return;
@@ -99,22 +101,33 @@ export function renderLegacyBook(options: LegacyBookOptions): void {
     buildMessageCard(
       scene,
       top + 260,
-      '⌛',
+      'clock',
       'Pressing your finished pages into the book…'
     );
     return;
   }
 
   if (options.errorMessage && options.cards.length === 0) {
-    buildMessageCard(scene, top + 245, '🩹', options.errorMessage);
-    ghostButton(
+    buildMessageCard(scene, top + 245, 'info', options.errorMessage);
+    iconButton(
       scene,
       width / 2,
       top + 430,
-      '↻ Reopen Legacy Book',
+      'replay',
+      'Reopen book',
       options.onRetry,
       330
     );
+    options.actionOverlay.add({
+      label: 'Retry Legacy Book',
+      rect: {
+        x: width / 2 - 165,
+        y: top + 380,
+        width: 330,
+        height: 100,
+      },
+      onActivate: options.onRetry,
+    });
     return;
   }
 
@@ -122,7 +135,7 @@ export function renderLegacyBook(options: LegacyBookOptions): void {
     buildMessageCard(
       scene,
       top + 260,
-      '📖',
+      'book',
       'The first page is waiting.\nWhen a Scribbit finishes its run, the drawing and story stay here.'
     );
     return;
@@ -145,6 +158,7 @@ export function renderLegacyBook(options: LegacyBookOptions): void {
       tilt: index % 2 === 0 ? -0.35 : 0.35,
       onOpen: () =>
         openLegacyCardDetail(scene, card, () => options.onPrimaryAction(card)),
+      actionOverlay: options.actionOverlay,
     });
   });
 
@@ -164,37 +178,30 @@ function buildPageControls(options: LegacyBookOptions, y: number): void {
     page + 1 + (hasOlder ? 1 : 0)
   );
 
-  label(
+  paperPagination({
     scene,
-    scene.scale.width / 2,
+    actionOverlay: options.actionOverlay,
     y,
-    `${page + 1} / ${visiblePageCount}${hasOlder ? '+' : ''}`,
-    TYPE.caption,
-    UI.inkSoft,
-    true
-  );
-  if (page > 0) {
-    pageArrowButton(scene, 104, y, 'previous', options.onNewer);
-  }
-  if (page < loadedPageCount - 1 || hasOlder) {
-    if (loading) {
-      ghostButton(scene, scene.scale.width - 138, y, 'Opening…', () => {}, 180);
-    } else {
-      pageArrowButton(
-        scene,
-        scene.scale.width - 104,
-        y,
-        'next',
-        options.onOlder
-      );
-    }
-  }
+    page,
+    pageCount: visiblePageCount,
+    pageLabel: loading
+      ? 'OPENING…'
+      : `${page + 1} / ${visiblePageCount}${hasOlder ? '+' : ''}`,
+    hasPrevious: page > 0,
+    hasNext: page < loadedPageCount - 1 || hasOlder,
+    isNextLoading: loading,
+    previousLabel: 'Newer Legacy page',
+    nextLabel: 'Older Legacy page',
+    loadingNextLabel: 'Opening older Legacy page',
+    onPrevious: options.onNewer,
+    onNext: options.onOlder,
+  });
 }
 
 function buildMessageCard(
   scene: Scene,
   y: number,
-  icon: string,
+  icon: PaperIconKey,
   copy: string
 ): void {
   const message = stickerCard(
@@ -205,7 +212,12 @@ function buildMessageCard(
     250,
     { tapeColor: UI.tapeAlt, tilt: -0.4 }
   );
-  message.add(label(scene, 0, -54, icon, 54, UI.ink, true));
+  message.add(
+    paperIcon(scene, icon, 0, -54, {
+      size: 54,
+      fill: UI.coral,
+    })
+  );
   message.add(
     label(scene, 0, 42, copy, TYPE.body, UI.inkSoft, true)
       .setWordWrapWidth(scene.scale.width - 180)
@@ -221,8 +233,18 @@ function buildLegacyCard(options: {
   width: number;
   tilt: number;
   onOpen: () => void;
+  actionOverlay: CanvasActionOverlay;
 }): void {
-  const { scene, card: legacyCard, x, y, width, tilt, onOpen } = options;
+  const {
+    scene,
+    card: legacyCard,
+    x,
+    y,
+    width,
+    tilt,
+    onOpen,
+    actionOverlay,
+  } = options;
   const finish = legacyCard.legacy.finish;
   const style = FINISH_STYLES[finish];
   const card = stickerCard(scene, x, y, width, CARD_HEIGHT, {
@@ -260,21 +282,10 @@ function buildLegacyCard(options: {
   }
   card.add(accent);
 
-  const seal =
-    finish === 'believed'
-      ? paperIcon(scene, 'heart', 0, -CARD_HEIGHT / 2 + 30, {
-          size: 25,
-          fill: style.accent,
-        })
-      : label(
-          scene,
-          0,
-          -CARD_HEIGHT / 2 + 30,
-          style.seal,
-          25,
-          style.accentText,
-          true
-        );
+  const seal = paperIcon(scene, style.icon, 0, -CARD_HEIGHT / 2 + 30, {
+    size: 25,
+    fill: style.accent,
+  });
   card.add(seal);
 
   const artY = -37;
@@ -355,26 +366,24 @@ function buildLegacyCard(options: {
     });
   }
 
-  const hitArea = scene.add
-    .rectangle(0, 0, width, CARD_HEIGHT, 0xffffff, 0.001)
-    .setInteractive({ useHandCursor: true });
-  hitArea.on('pointerdown', () => {
-    scene.tweens.add({ targets: card, scale: 0.97, duration: 70 });
+  addCardPressInteraction({
+    scene,
+    card,
+    width,
+    height: CARD_HEIGHT,
+    pressedScaleX: 0.97,
+    pressedScaleY: 0.97,
+    onActivate: onOpen,
   });
-  hitArea.on('pointerout', () => restoreScale(scene, card));
-  hitArea.on('pointerup', () => {
-    restoreScale(scene, card);
-    onOpen();
-  });
-  card.add(hitArea);
-}
-
-function restoreScale(scene: Scene, card: Phaser.GameObjects.Container): void {
-  scene.tweens.add({
-    targets: card,
-    scale: 1,
-    duration: 110,
-    ease: 'Back.easeOut',
+  actionOverlay.add({
+    label: `Open ${legacyCard.name} Legacy card. ${formatLegacyFinishLabel(legacyCard)} on day ${legacyCard.legacy.archivedDay}.`,
+    rect: {
+      x: x - Math.min(width - 20, 220) / 2,
+      y: y + CARD_HEIGHT / 2 - 108,
+      width: Math.min(width - 20, 220),
+      height: 100,
+    },
+    onActivate: onOpen,
   });
 }
 
@@ -386,7 +395,21 @@ export function openLegacyCardDetail(
   const { width, height } = scene.scale;
   const finish = legacyCard.legacy.finish;
   const style = FINISH_STYLES[finish];
+  const semanticDescription = [
+    `${formatLegacyFinishLabel(legacyCard)} Legacy card for ${legacyCard.name}.`,
+    `${creatorSignature(legacyCard)}.`,
+    `Level ${legacyCard.legacy.level}, ${legacyCard.legacy.wins} wins and ${legacyCard.legacy.losses} losses, ${legacyCard.legacy.belief} belief.`,
+    `Born day ${legacyCard.bornDay}, archived day ${legacyCard.legacy.archivedDay}.`,
+    legacyEulogy(legacyCard),
+  ].join(' ');
   const overlay = scene.add.container(0, 0).setDepth(3200).setScrollFactor(0);
+  const modalActions = new CanvasModalOverlay(
+    scene,
+    `${legacyCard.name} Legacy card`,
+    () => close(),
+    semanticDescription
+  );
+  overlay.once('destroy', () => modalActions.destroy());
   const shade = scene.add
     .rectangle(width / 2, height / 2, width + 80, height + 80, 0x21170f, 0.72)
     .setInteractive();
@@ -401,17 +424,23 @@ export function openLegacyCardDetail(
 
   const close = (): void => overlay.destroy(true);
   detail.add(ghostButton(scene, (width - 100) / 2 - 50, -430, '✕', close, 78));
-  detail.add(
-    label(
-      scene,
-      0,
-      -426,
-      `${style.seal} ${style.stamp}`,
-      22,
-      style.accentText,
-      true
-    )
-  );
+  modalActions.add({
+    label: `Close ${legacyCard.name} Legacy card`,
+    rect: {
+      x: width / 2 + (width - 100) / 2 - 89,
+      y: height / 2 - 469,
+      width: 78,
+      height: 78,
+    },
+    onActivate: close,
+  });
+  detail.add([
+    paperIcon(scene, style.icon, -80, -426, {
+      size: 28,
+      fill: style.accent,
+    }),
+    label(scene, 18, -426, style.stamp, 22, style.accentText, true),
+  ]);
 
   const artY = -258;
   const artSize = 286;
@@ -515,7 +544,7 @@ export function openLegacyCardDetail(
       scene,
       0,
       180,
-      `Born Day ${legacyCard.bornDay}  →  Archived Day ${legacyCard.legacy.archivedDay}`,
+      `Born Day ${legacyCard.bornDay} · Archived Day ${legacyCard.legacy.archivedDay}`,
       20,
       UI.inkSoft,
       true
@@ -539,8 +568,7 @@ export function openLegacyCardDetail(
       .setLineSpacing(7)
   );
 
-  const actionLabel =
-    finish === 'faded' ? 'Draw a successor →' : 'See in Hall →';
+  const actionLabel = finish === 'faded' ? 'Draw successor' : 'See in Hall';
   detail.add(
     button(
       scene,
@@ -556,7 +584,21 @@ export function openLegacyCardDetail(
       UI.ink
     )
   );
+  modalActions.add({
+    label: `${actionLabel} for ${legacyCard.name}`,
+    rect: {
+      x: width / 2 - 215,
+      y: height / 2 + 370,
+      width: 430,
+      height: 84,
+    },
+    onActivate: () => {
+      close();
+      onPrimaryAction();
+    },
+  });
   overlay.add([shade, detail]);
+  modalActions.focusInitial();
   return overlay;
 }
 
@@ -577,7 +619,7 @@ function buildArchiveStamp(
   parent.add([panel, title, number]);
 }
 
-export function legacyEulogy(card: LegacyCard): string {
+function legacyEulogy(card: LegacyCard): string {
   const seed = Array.from(card.id).reduce(
     (value, character) => value + character.charCodeAt(0),
     card.legacy.wins * 7 + card.legacy.belief
@@ -585,7 +627,7 @@ export function legacyEulogy(card: LegacyCard): string {
   const fadedLines = [
     'Its ink dried, but the shape stayed on the page.',
     'A short arena life became a permanent pencil memory.',
-    'It left the bracket and found a quieter page.',
+    'It left the Rumble and found a quieter page.',
   ];
   const believedLines = [
     'Enough hearts held the page open forever.',
@@ -702,15 +744,7 @@ export function openLegacyReturnCeremony(
     ).setWordWrapWidth(width - 190)
   );
   page.add(
-    handLettered(
-      scene,
-      0,
-      -286,
-      presentation.headline,
-      54,
-      UI.ink,
-      true
-    )
+    handLettered(scene, 0, -286, presentation.headline, 54, UI.ink, true)
   );
 
   const artY = -88;

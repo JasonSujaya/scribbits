@@ -1,4 +1,4 @@
-import type { ArenaStorage } from './scribbit';
+import type { ArenaStorage } from './storage';
 
 const moderationRecordTtlSeconds = 30 * 24 * 60 * 60;
 export const SCRIBBIT_REPORT_REMOVAL_THRESHOLD = 3;

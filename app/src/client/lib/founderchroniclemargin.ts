@@ -16,6 +16,7 @@ import {
 import { generateDoodleTexture } from './proceduraldoodleart';
 import { ELEMENT_STYLES, TYPE, UI } from './theme';
 import { button, ghostButton, handLettered, label, stickerCard } from './ui';
+import { CanvasModalOverlay } from './overlay';
 
 export type FounderChronicleMarginOptions = Readonly<{
   chronicle: FounderChronicle;
@@ -56,6 +57,9 @@ export function openFounderChronicleMargin(
   const { width, height } = scene.scale;
   const plan = planFounderChronicle(options.chronicle, options.currentDay);
   const activeRivalry = plan.activeRivalry;
+  const activeFounder = activeRivalry
+    ? getFoundingScribbitDefinition(activeRivalry.founderId)
+    : undefined;
   const hasNewestBeat =
     options.newestBeat !== null && options.newestBeat !== undefined;
   const cardHeight = activeRivalry ? (hasNewestBeat ? 700 : 640) : 720;
@@ -86,6 +90,16 @@ export function openFounderChronicleMargin(
     card.destroy(true);
     options.onClose?.();
   };
+  const modalDescription = activeRivalry
+    ? `${activeFounder?.name ?? 'Founder'} rivalry. ${activeRivalry.scoreLine}. ${activeRivalry.availabilityLine}. Page ${activeRivalry.nextBoutNumber} of 3.`
+    : (plan.emptyLine ?? 'Your next founder fight starts a new thread.');
+  const modalActions = new CanvasModalOverlay(
+    scene,
+    'Founder Rival',
+    close,
+    modalDescription
+  );
+  card.once('destroy', () => modalActions.destroy());
   backdrop.on('pointerup', close);
 
   const titleY = activeRivalry ? -cardHeight / 2 + 54 : -285;
@@ -114,7 +128,7 @@ export function openFounderChronicleMargin(
   }
 
   if (activeRivalry) {
-    const founder = getFoundingScribbitDefinition(activeRivalry.founderId);
+    const founder = activeFounder;
     if (founder) {
       const style = ELEMENT_STYLES[founder.element];
       const profileY = titleY + (hasNewestBeat ? 176 : 112);
@@ -250,7 +264,7 @@ export function openFounderChronicleMargin(
             scene,
             0,
             actionY,
-            'CONTINUE THREAD →',
+            'CONTINUE THREAD',
             () => {
               close();
               options.onContinue?.();
@@ -260,8 +274,33 @@ export function openFounderChronicleMargin(
             UI.ink
           )
         );
+        const nativeContinue = modalActions.add({
+          label: `Continue rivalry with ${founder.name}`,
+          rect: {
+            x: width / 2 - 220,
+            y: height / 2 + actionY - 50,
+            width: 440,
+            height: 100,
+          },
+          onActivate: () => {
+            close();
+            options.onContinue?.();
+          },
+        });
+        modalActions.focusInitial(nativeContinue);
       } else {
         card.add(ghostButton(scene, 0, actionY, 'Close margin', close, 360));
+        const nativeClose = modalActions.add({
+          label: 'Close Founder Rival',
+          rect: {
+            x: width / 2 - 180,
+            y: height / 2 + actionY - 50,
+            width: 360,
+            height: 100,
+          },
+          onActivate: close,
+        });
+        modalActions.focusInitial(nativeClose);
       }
     }
   } else {
@@ -324,6 +363,17 @@ export function openFounderChronicleMargin(
       });
     }
     card.add(ghostButton(scene, 0, 306, 'Close margin', close, 360));
+    const nativeClose = modalActions.add({
+      label: 'Close Founder Rival',
+      rect: {
+        x: width / 2 - 180,
+        y: height / 2 + 256,
+        width: 360,
+        height: 100,
+      },
+      onActivate: close,
+    });
+    modalActions.focusInitial(nativeClose);
   }
 
   return {

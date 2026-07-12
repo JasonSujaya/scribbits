@@ -3,9 +3,19 @@
 
 import * as Phaser from 'phaser';
 import { Scene } from 'phaser';
-import type { Element, Scribbit, ScribbitStats } from '../../shared/arena';
+import {
+  SCRIBBIT_STAT_KEYS,
+  type Element,
+  type Scribbit,
+  type ScribbitStats,
+} from '../../shared/arena';
 import { CanvasActionOverlay } from './overlay';
-import { paperIcon, type PaperIconKey } from './papericons';
+import {
+  elementPaperIcon,
+  paperDockIcon,
+  paperIcon,
+  type PaperIconKey,
+} from './papericons';
 import {
   ELEMENT_STYLES,
   FONT_STACK,
@@ -14,7 +24,8 @@ import {
   TYPE,
   UI,
 } from './theme';
-import { NAV_ICON_TEXTURES, UI_BUTTON_TEXTURES } from './visualassets';
+import { UI_BUTTON_TEXTURES } from './visualassets';
+import { bindPressInteractionEvents } from './pressinteraction';
 
 const TRANSITION_MS = 180;
 const transitioningScenes = new WeakSet<Scene>();
@@ -42,8 +53,7 @@ export type ErrorPanel = {
   destroy: () => void;
 };
 
-const STAT_KEYS = ['chonk', 'spike', 'zip', 'charm'] as const;
-type StatKey = (typeof STAT_KEYS)[number];
+type StatKey = (typeof SCRIBBIT_STAT_KEYS)[number];
 
 export function label(
   scene: Scene,
@@ -86,7 +96,9 @@ export function handLettered(
   } as const;
   if (shadow) {
     container.add(
-      scene.add.text(3, 4, text, { ...style, color: '#0000003d' }).setOrigin(0.5)
+      scene.add
+        .text(3, 4, text, { ...style, color: '#0000003d' })
+        .setOrigin(0.5)
     );
   }
   container.add(scene.add.text(0, 0, text, style).setOrigin(0.5));
@@ -158,12 +170,12 @@ export function stickerCard(
   return container;
 }
 
-// A small mood chip: emoji + word, colored by mood.
+// A small mood chip. Mood is intentionally word-first so it stays readable and
+// avoids introducing a second icon vocabulary for transient expressions.
 export function moodChip(
   scene: Scene,
   x: number,
   y: number,
-  emoji: string,
   moodLabel: string,
   color: string,
   scale = 1
@@ -177,7 +189,7 @@ export function moodChip(
     scene,
     0,
     0,
-    `${emoji} ${moodLabel}`,
+    moodLabel.toUpperCase(),
     22 * scale,
     color,
     true
@@ -233,13 +245,12 @@ export function lifespanPips(
   return container;
 }
 
-// A compact care button: emoji + label pill, ink border, springy press. Tall
-// buttons (height>=80) stack emoji over label; short ones keep them on one line.
+// A compact action button using the shared paper icon family.
 export function careButton(
   scene: Scene,
   x: number,
   y: number,
-  emoji: string,
+  iconKey: PaperIconKey,
   text: string,
   fill: number,
   onClick: () => void,
@@ -251,19 +262,14 @@ export function careButton(
   const hit = scene.add
     .rectangle(0, 0, width, Math.max(MIN_TOUCH, height), 0xffffff, 0.001)
     .setInteractive({ useHandCursor: true });
-  const stacked = height >= 80;
-  const caption = text
-    ? emoji
-      ? stacked
-        ? `${emoji}\n${text}`
-        : `${emoji} ${text}`
-      : text
-    : emoji;
-  const txt = label(scene, 0, 0, caption, text ? 20 : 26, UI.ink, true);
-  txt.setLineSpacing(-2);
+  const actionIcon = paperIcon(scene, iconKey, 0, text ? -16 : 0, {
+    size: text ? 30 : 38,
+    fill: UI.creamHex,
+  });
+  const txt = label(scene, 0, text ? 21 : 0, text, 20, UI.ink, true);
   txt.setAlign('center');
   txt.setWordWrapWidth(width - 8);
-  container.add([bg, txt, hit]);
+  container.add([bg, actionIcon, txt, hit]);
   wireButtonPress(scene, hit, container, onClick, {
     scaleX: 0.92,
     scaleY: 0.9,
@@ -351,14 +357,7 @@ function paperButtonPlate(
       const sourceWidth = (sourceXs[column + 1] ?? sourceX) - sourceX;
       const sourceHeight = (sourceYs[row + 1] ?? sourceY) - sourceY;
       if (!texture.has(frameName)) {
-        texture.add(
-          frameName,
-          0,
-          sourceX,
-          sourceY,
-          sourceWidth,
-          sourceHeight
-        );
+        texture.add(frameName, 0, sourceX, sourceY, sourceWidth, sourceHeight);
       }
       const targetLeft = targetXs[column] ?? 0;
       const targetTop = targetYs[row] ?? 0;
@@ -385,7 +384,13 @@ function wireButtonPress(
   hit: Phaser.GameObjects.GameObject,
   container: Phaser.GameObjects.Container,
   onClick: () => void,
-  pressed: Readonly<{ scaleX: number; scaleY: number; duration: number }>
+  pressed: Readonly<{
+    scaleX: number;
+    scaleY: number;
+    duration: number;
+    ease?: string;
+    pressOnHover?: boolean;
+  }>
 ): void {
   const press = (): void => {
     scene.tweens.add({
@@ -393,7 +398,7 @@ function wireButtonPress(
       scaleX: pressed.scaleX,
       scaleY: pressed.scaleY,
       duration: pressed.duration,
-      ease: 'Quad.easeOut',
+      ease: pressed.ease ?? 'Quad.easeOut',
     });
   };
   const release = (): void => {
@@ -405,13 +410,45 @@ function wireButtonPress(
       ease: 'Back.easeOut',
     });
   };
-  hit.on('pointerover', press);
-  hit.on('pointerout', release);
-  hit.on('pointerdown', press);
-  hit.on('pointerup', () => {
-    release();
-    onClick();
+  bindPressInteractionEvents(hit, {
+    press,
+    release,
+    activate: onClick,
+    ...(pressed.pressOnHover === undefined
+      ? {}
+      : { pressOnHover: pressed.pressOnHover }),
+  }, {
+    gameTarget: scene.input,
+    shutdownTarget: scene.events,
   });
+}
+
+type CardPressInteractionOptions = Readonly<{
+  scene: Scene;
+  card: Phaser.GameObjects.Container;
+  width: number;
+  height: number;
+  onActivate: () => void;
+  pressedScaleX?: number;
+  pressedScaleY?: number;
+}>;
+
+/** Adds the shared, no-hover paper-card press behavior and transparent hit area. */
+export function addCardPressInteraction(
+  options: CardPressInteractionOptions
+): Phaser.GameObjects.Rectangle {
+  const hitArea = options.scene.add
+    .rectangle(0, 0, options.width, options.height, 0xffffff, 0.001)
+    .setInteractive({ useHandCursor: true });
+  options.card.add(hitArea);
+  wireButtonPress(options.scene, hitArea, options.card, options.onActivate, {
+    scaleX: options.pressedScaleX ?? 0.97,
+    scaleY: options.pressedScaleY ?? 0.97,
+    duration: 70,
+    ease: 'Linear',
+    pressOnHover: false,
+  });
+  return hitArea;
 }
 
 // A tappable pill button. onClick fires on pointerup. Includes a press tween.
@@ -477,8 +514,7 @@ export function iconButton(
     height,
     !usesCoralPlate && fill !== UI.creamHex ? fill : undefined
   );
-  const hitTarget = scene.add
-    .rectangle(0, 0, width, height, 0xffffff, 0.001);
+  const hitTarget = scene.add.rectangle(0, 0, width, height, 0xffffff, 0.001);
   if (enabled) hitTarget.setInteractive({ useHandCursor: true });
   const textLabel = label(scene, 0, -3, text, 30, textColor, true);
   const iconSize = 38;
@@ -562,21 +598,23 @@ export function ghostButton(
   const container = scene.add.container(x, y);
   const isBackIcon = text === '‹';
   const isCloseIcon = text === '✕' || text === '×';
-  const bg = isBackIcon || isCloseIcon
-    ? scene.add
-        .image(
-          0,
-          0,
-          isBackIcon ? UI_BUTTON_TEXTURES.back : UI_BUTTON_TEXTURES.close
-        )
-        .setDisplaySize(Math.min(width, height), Math.min(width, height))
-    : paperButtonPlate(scene, 'secondary', width, height);
+  const bg =
+    isBackIcon || isCloseIcon
+      ? scene.add
+          .image(
+            0,
+            0,
+            isBackIcon ? UI_BUTTON_TEXTURES.back : UI_BUTTON_TEXTURES.close
+          )
+          .setDisplaySize(Math.min(width, height), Math.min(width, height))
+      : paperButtonPlate(scene, 'secondary', width, height);
   const hit = scene.add
     .rectangle(0, 0, width, height, 0xffffff, 0.001)
     .setInteractive({ useHandCursor: true });
-  const txt = isBackIcon || isCloseIcon
-    ? null
-    : label(scene, 0, -3, text, 26, UI.ink, true);
+  const txt =
+    isBackIcon || isCloseIcon
+      ? null
+      : label(scene, 0, -3, text, 26, UI.ink, true);
   txt?.setWordWrapWidth(width - 20);
   container.add(txt ? [bg, txt, hit] : [bg, hit]);
 
@@ -589,7 +627,7 @@ export function ghostButton(
 }
 
 /** Generated circular paper arrow for pagination and short directional moves. */
-export function pageArrowButton(
+function pageArrowButton(
   scene: Scene,
   x: number,
   y: number,
@@ -615,54 +653,128 @@ export function pageArrowButton(
   return container;
 }
 
+type PaperPaginationOptions = Readonly<{
+  scene: Scene;
+  actionOverlay: CanvasActionOverlay | null;
+  y: number;
+  page: number;
+  pageCount: number;
+  pageLabel?: string;
+  fontSize?: number;
+  hasPrevious?: boolean;
+  hasNext?: boolean;
+  isNextLoading?: boolean;
+  showUnavailable?: boolean;
+  previousX?: number;
+  nextX?: number;
+  backgroundWidth?: number;
+  pointerPassthrough?: boolean;
+  previousLabel: string;
+  nextLabel: string;
+  loadingNextLabel?: string;
+  onPrevious: () => void;
+  onNext: () => void;
+}>;
+
+/** One paper/DOM pagination owner for Gallery, Legacy, Collection, and Battles. */
+export function paperPagination(options: PaperPaginationOptions): void {
+  const {
+    scene,
+    actionOverlay,
+    y,
+    page,
+    pageCount,
+    isNextLoading = false,
+    showUnavailable = false,
+    pointerPassthrough = false,
+  } = options;
+  const previousX = options.previousX ?? 104;
+  const nextX = options.nextX ?? scene.scale.width - 104;
+  const hasPrevious = options.hasPrevious ?? page > 0;
+  const hasNext = options.hasNext ?? page < pageCount - 1;
+
+  if (options.backgroundWidth) {
+    scene.add
+      .rectangle(
+        scene.scale.width / 2,
+        y,
+        options.backgroundWidth,
+        100,
+        UI.creamHex,
+        0.94
+      )
+      .setStrokeStyle(3, UI.inkHex, 0.32);
+  }
+  label(
+    scene,
+    scene.scale.width / 2,
+    y,
+    options.pageLabel ?? `${page + 1} / ${pageCount}`,
+    options.fontSize ?? TYPE.caption,
+    UI.inkSoft,
+    true
+  );
+
+  const addControl = (
+    direction: 'previous' | 'next',
+    x: number,
+    enabled: boolean,
+    accessibleLabel: string,
+    onActivate: () => void,
+    isLoading = false
+  ): void => {
+    if (!enabled && !showUnavailable && !isLoading) return;
+    const arrow = pageArrowButton(
+      scene,
+      x,
+      y,
+      direction,
+      enabled && !isLoading ? onActivate : () => {}
+    );
+    if (!enabled || isLoading) {
+      arrow.setAlpha(isLoading ? 0.38 : 0.22);
+      arrow.list.forEach((child) => child.disableInteractive?.());
+    }
+    const control = actionOverlay?.add({
+      label: accessibleLabel,
+      rect: { x: x - 50, y: y - 50, width: 100, height: 100 },
+      pointerPassthrough: enabled ? pointerPassthrough : false,
+      enabled: enabled && !isLoading,
+      onActivate: enabled && !isLoading ? onActivate : () => {},
+    });
+    if (isLoading) control?.setAttribute('aria-busy', 'true');
+  };
+
+  addControl(
+    'previous',
+    previousX,
+    hasPrevious,
+    hasPrevious
+      ? options.previousLabel
+      : `${options.previousLabel} unavailable`,
+    options.onPrevious
+  );
+  addControl(
+    'next',
+    nextX,
+    hasNext,
+    isNextLoading
+      ? (options.loadingNextLabel ?? `Opening ${options.nextLabel}`)
+      : hasNext
+        ? options.nextLabel
+        : `${options.nextLabel} unavailable`,
+    options.onNext,
+    isNextLoading
+  );
+}
+
 export type AppTabKey = 'arena' | 'gallery' | 'draw' | 'battles' | 'scout';
 
 export type AppTabItem = {
   key: AppTabKey;
-  icon?: string;
   label: string;
   onClick: () => void;
 };
-
-type DrawTabBadge = {
-  fill: number;
-  text: string;
-  textColor: string;
-  width: number;
-};
-
-function drawTabBadge(labelText: string): DrawTabBadge {
-  const normalizedLabel = labelText.trim().toLowerCase();
-  if (normalizedLabel.startsWith('done')) {
-    return { fill: 0x63a85a, text: '✓', textColor: UI.cream, width: 22 };
-  }
-  if (normalizedLabel.startsWith('full')) {
-    return { fill: UI.inkSoftHex, text: '3/3', textColor: UI.cream, width: 34 };
-  }
-  return { fill: UI.goldHex, text: '+', textColor: UI.ink, width: 22 };
-}
-
-function tabStatusBadge(
-  scene: Scene,
-  labelText: string
-): Phaser.GameObjects.Container {
-  const badgeStyle = drawTabBadge(labelText);
-  const badge = scene.add.container(19, -39);
-  const background = scene.add
-    .rectangle(0, 0, badgeStyle.width, 22, badgeStyle.fill, 1)
-    .setStrokeStyle(2, UI.creamHex, 1);
-  const badgeLabel = label(
-    scene,
-    0,
-    0,
-    badgeStyle.text,
-    badgeStyle.text === '3/3' ? 12 : 16,
-    badgeStyle.textColor,
-    true
-  );
-  badge.add([background, badgeLabel]);
-  return badge;
-}
 
 function wireTab(
   hit: Phaser.GameObjects.GameObject,
@@ -670,7 +782,7 @@ function wireTab(
   onClick: () => void,
   scene: Scene
 ): void {
-  hit.on('pointerdown', () => {
+  const press = (): void => {
     scene.tweens.add({
       targets: target,
       scaleX: 0.88,
@@ -678,8 +790,8 @@ function wireTab(
       duration: 60,
       ease: 'Quad.easeOut',
     });
-  });
-  hit.on('pointerout', () => {
+  };
+  const release = (): void => {
     scene.tweens.add({
       targets: target,
       scaleX: 1,
@@ -687,16 +799,15 @@ function wireTab(
       duration: 110,
       ease: 'Back.easeOut',
     });
-  });
-  hit.on('pointerup', () => {
-    scene.tweens.add({
-      targets: target,
-      scaleX: 1,
-      scaleY: 1,
-      duration: 110,
-      ease: 'Back.easeOut',
-    });
-    onClick();
+  };
+  bindPressInteractionEvents(hit, {
+    press,
+    release,
+    activate: onClick,
+    pressOnHover: false,
+  }, {
+    gameTarget: scene.input,
+    shutdownTarget: scene.events,
   });
 }
 
@@ -707,8 +818,8 @@ export function appTabBar(
 ): Phaser.GameObjects.Container {
   const { width, height } = scene.scale;
   const slotCount = 5;
-  const barWidth = width - 32;
-  const barHeight = 120;
+  const barWidth = width - 24;
+  const barHeight = 136;
   const bottomInset = 8;
   const y = height - bottomInset - barHeight / 2;
   const viewportX = width / 2;
@@ -748,37 +859,29 @@ export function appTabBar(
   const shadow = scene.add.graphics();
   shadow.fillStyle(0x000000, 0.24);
   shadow.fillRoundedRect(
-    -barWidth / 2 + 5,
-    -barHeight / 2 + 8,
+    -barWidth / 2 + 4,
+    -barHeight / 2 + 7,
     barWidth,
     barHeight,
-    18
+    20
   );
 
   const paperStrip = scene.add.graphics();
-  paperStrip.fillStyle(0xd8b77f, 1);
-  paperStrip.fillRoundedRect(
-    -barWidth / 2,
-    -barHeight / 2,
-    barWidth,
-    barHeight,
-    18
-  );
   paperStrip.fillStyle(UI.paper, 1);
   paperStrip.fillRoundedRect(
     -barWidth / 2,
     -barHeight / 2,
     barWidth,
-    barHeight - 7,
-    18
+    barHeight,
+    20
   );
-  paperStrip.lineStyle(3, UI.panelStroke, 0.78);
+  paperStrip.lineStyle(3, UI.panelStroke, 0.9);
   paperStrip.strokeRoundedRect(
     -barWidth / 2,
     -barHeight / 2,
     barWidth,
     barHeight,
-    18
+    20
   );
   container.add([shadow, paperStrip]);
 
@@ -791,30 +894,27 @@ export function appTabBar(
       const activeTicket = scene.add.graphics();
       activeTicket.fillStyle(UI.coral, 1);
       activeTicket.fillRoundedRect(
-        -slotWidth / 2 + 7,
-        -barHeight / 2 - 8,
-        slotWidth - 14,
-        barHeight - 1,
-        14
+        -slotWidth / 2 + 8,
+        -barHeight / 2 + 8,
+        slotWidth - 16,
+        barHeight - 16,
+        16
       );
-      activeTicket.lineStyle(3, UI.inkHex, 0.9);
+      activeTicket.lineStyle(2.5, UI.inkHex, 0.7);
       activeTicket.strokeRoundedRect(
-        -slotWidth / 2 + 7,
-        -barHeight / 2 - 8,
-        slotWidth - 14,
-        barHeight - 1,
-        14
+        -slotWidth / 2 + 8,
+        -barHeight / 2 + 8,
+        slotWidth - 16,
+        barHeight - 16,
+        16
       );
       slot.add(activeTicket);
     }
 
-    const icon = scene.add
-      .image(0, -19, NAV_ICON_TEXTURES[tab.key])
-      .setDisplaySize(52, 52);
+    const icon = paperDockIcon(scene, tab.key, 0, -24, 68, UI.inkHex);
     const visibleLabel = tab.key === 'draw' ? 'Draw' : tab.label;
-    const text = label(scene, 0, 31, visibleLabel, 24, UI.ink, true);
+    const text = label(scene, 0, 40, visibleLabel, 28, UI.ink, true);
     slot.add([icon, text]);
-    if (tab.key === 'draw') slot.add(tabStatusBadge(scene, tab.label));
 
     const hit = scene.add
       .rectangle(x, 0, slotWidth, barHeight, 0xffffff, 0.001)
@@ -822,7 +922,7 @@ export function appTabBar(
     container.add([slot, hit]);
     wireTab(hit, slot, tab.onClick, scene);
     const nativeTab = actionOverlay.add({
-      label: visibleLabel,
+      label: tab.label,
       rect: {
         x: 16 + slotWidth * index,
         y: y - barHeight / 2,
@@ -857,7 +957,15 @@ export function errorPanel(
   const card = roundedPanel(scene, 0, 0, width, height);
   const text = label(scene, 0, -60, message, 30, UI.ink, true);
   text.setWordWrapWidth(width - 80);
-  const retry = button(scene, 0, 70, '↻ Retry', onRetry, width - 120);
+  const retry = iconButton(
+    scene,
+    0,
+    70,
+    'replay',
+    'Retry',
+    onRetry,
+    width - 120
+  );
   container.add([shade, card, text, retry]);
 
   const destroy = (): void => container.destroy(true);
@@ -865,7 +973,7 @@ export function errorPanel(
 }
 
 // Rounded-rectangle helper for arbitrary panels drawn directly.
-export function roundedPanel(
+function roundedPanel(
   scene: Scene,
   x: number,
   y: number,
@@ -957,7 +1065,7 @@ function drawWobblyRect(
   graphics.strokePath();
 }
 
-// A small rounded element badge with emoji + label.
+// A small rounded element badge using the canonical element mark.
 export function elementBadge(
   scene: Scene,
   x: number,
@@ -972,23 +1080,30 @@ export function elementBadge(
   const bg = scene.add
     .rectangle(0, 0, width, height, style.primary, 1)
     .setStrokeStyle(3, 0x2b2016, 1);
+  const icon = elementPaperIcon(
+    scene,
+    element,
+    -width / 2 + 28 * scale,
+    0,
+    34 * scale
+  );
   const text = label(
     scene,
+    18 * scale,
     0,
-    0,
-    `${style.emoji} ${style.label}`,
+    style.label,
     24 * scale,
     UI.ink,
     true
   );
-  container.add([bg, text]);
+  container.add([bg, icon, text]);
   return container;
 }
 
 // A compact 2x2 stat grid — four labeled meters that NEVER clip. Sized to fit
 // inside a given width; each cell has an icon+label, a short bar, and a value.
 // Returns a controller whose setStats animates the fills. Centered on (x, y).
-export type StatGrid = {
+type StatGrid = {
   container: Phaser.GameObjects.Container;
   setStats: (stats: ScribbitStats, animate: boolean) => void;
 };
@@ -1007,7 +1122,7 @@ export function statGrid(
   const values = new Map<StatKey, Phaser.GameObjects.Text>();
   const barMax = colWidth - 150;
 
-  STAT_KEYS.forEach((key, index) => {
+  SCRIBBIT_STAT_KEYS.forEach((key, index) => {
     const style = STAT_STYLES[key];
     const col = index % 2;
     const row = Math.floor(index / 2);
@@ -1018,7 +1133,7 @@ export function statGrid(
       scene,
       cellX,
       cellY - 16,
-      `${style.emoji} ${style.label}`,
+      style.label,
       22,
       style.colorText,
       true
@@ -1045,7 +1160,7 @@ export function statGrid(
   });
 
   const setStats = (stats: ScribbitStats, animate: boolean): void => {
-    STAT_KEYS.forEach((key) => {
+    SCRIBBIT_STAT_KEYS.forEach((key) => {
       const fill = bars.get(key);
       const valueText = values.get(key);
       if (!fill || !valueText) return;
@@ -1073,14 +1188,14 @@ export function daysLeftFor(scribbit: Scribbit, currentDay: number): number {
   return Math.max(0, scribbit.expiresDay - currentDay);
 }
 
-// A "+1 💛" that floats up and fades from (x, y) — the visible reward for a
-// Believe tap. Purely cosmetic; caller triggers it optimistically. `depth`
+// A concise reward label that floats up and fades from (x, y). Purely cosmetic;
+// caller triggers it optimistically. `depth`
 // keeps it above modals. Text is configurable so we can reuse for other floats.
 export function floatReward(
   scene: Scene,
   x: number,
   y: number,
-  text = '+1 💛',
+  text = '+1 BELIEF',
   color: string = UI.coralText,
   depth = 3000,
   pinned = false
@@ -1110,7 +1225,7 @@ export function floatReward(
 
 // A simple labeled progress bar (used for the XP meter in the detail modal).
 // Returns the container plus a setter that animates the fill to a 0..1 ratio.
-export type ProgressBar = {
+type ProgressBar = {
   container: Phaser.GameObjects.Container;
   set: (ratio: number, animate: boolean) => void;
 };
@@ -1145,51 +1260,6 @@ export function progressBar(
     }
   };
   return { container, set };
-}
-
-// A rosette ribbon badge marking "your pick" on a backed entrant.
-export function rosette(
-  scene: Scene,
-  x: number,
-  y: number,
-  scale = 1
-): Phaser.GameObjects.Container {
-  const container = scene.add.container(x, y).setDepth(6);
-  const disc = scene.add
-    .circle(0, 0, 20 * scale, UI.gold, 1)
-    .setStrokeStyle(3, UI.inkHex, 1);
-  const star = label(scene, 0, 0, '🎯', 20 * scale);
-  // Two ribbon tails below the disc.
-  const tailL = scene.add
-    .triangle(
-      -8 * scale,
-      22 * scale,
-      0,
-      0,
-      14 * scale,
-      0,
-      7 * scale,
-      20 * scale,
-      UI.coral,
-      1
-    )
-    .setStrokeStyle(2, UI.inkHex, 1);
-  const tailR = scene.add
-    .triangle(
-      8 * scale,
-      22 * scale,
-      0,
-      0,
-      14 * scale,
-      0,
-      7 * scale,
-      20 * scale,
-      UI.coralDeep,
-      1
-    )
-    .setStrokeStyle(2, UI.inkHex, 1);
-  container.add([tailL, tailR, disc, star]);
-  return container;
 }
 
 // A small spinning loader indicator. Returns a controller with show/hide.
@@ -1240,63 +1310,4 @@ export function spinner(scene: Scene, depth = 900): Spinner {
   };
 
   return { show, hide, destroy };
-}
-
-// A dominant, pulsing CTA button for primary actions (like DRAW TODAY'S SCRIBBIT).
-// Much larger than regular buttons with a breathing animation to draw attention.
-export function dominantButton(
-  scene: Scene,
-  x: number,
-  y: number,
-  text: string,
-  onClick: () => void,
-  width: number,
-  pulsing = true
-): Phaser.GameObjects.Container {
-  const height = 140;
-  const container = scene.add.container(x, y);
-
-  // Outer glow ring
-  const glow = scene.add.graphics();
-  glow.fillStyle(UI.coral, 0.3);
-  glow.fillRoundedRect(
-    -width / 2 - 8,
-    -height / 2 - 8,
-    width + 16,
-    height + 16,
-    24
-  );
-  container.add(glow);
-
-  const bg = paperButtonPlate(scene, 'primary', width, height);
-  const hit = scene.add
-    .rectangle(0, 0, width, height, 0xffffff, 0.001)
-    .setInteractive({ useHandCursor: true });
-
-  // Text with larger size
-  const txt = label(scene, 0, 0, text, 38, UI.ink, true);
-  txt.setWordWrapWidth(width - 40);
-
-  container.add([bg, txt, hit]);
-
-  // Pulsing animation for the glow
-  if (pulsing) {
-    scene.tweens.add({
-      targets: glow,
-      alpha: { from: 0.5, to: 0.2 },
-      scale: { from: 1, to: 1.05 },
-      duration: 1200,
-      yoyo: true,
-      repeat: -1,
-      ease: 'Sine.easeInOut',
-    });
-  }
-
-  wireButtonPress(scene, hit, container, onClick, {
-    scaleX: 0.96,
-    scaleY: 0.94,
-    duration: 80,
-  });
-
-  return container;
 }

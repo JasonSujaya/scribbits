@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # Shared Node resolver for local command files.
-# OpenCode/Codex shells on this Mac may not have node/npm on PATH, so command
+# OpenCode/Codex shells on this Mac may not have Node or pnpm on PATH, so command
 # files source this and then call local binaries from app/node_modules/.bin.
 
 resolve_repo_root() {
@@ -29,8 +29,10 @@ prepend_path_if_exists "$HOME/.asdf/shims"
 
 codex_node_dir="$HOME/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin"
 codex_bin_dir="$HOME/.cache/codex-runtimes/codex-primary-runtime/dependencies/bin"
+codex_fallback_bin_dir="$codex_bin_dir/fallback"
 if [[ -x "$codex_node_dir/node" ]]; then
   prepend_path_if_exists "$codex_node_dir"
+  prepend_path_if_exists "$codex_fallback_bin_dir"
   prepend_path_if_exists "$codex_bin_dir"
 fi
 
@@ -40,37 +42,64 @@ if ! command -v node >/dev/null 2>&1; then
   cat >&2 <<'EOF'
 Node.js is not available on PATH.
 
-Install Node 22+ or run from a shell that can see the Codex bundled runtime.
+Install Node 22.2.0+ or run from a shell that can see the Codex bundled runtime.
 This repo's command files will use local app/node_modules binaries once Node is visible.
 EOF
   exit 127
 fi
 
-node_major="$(node -p "Number(process.versions.node.split('.')[0])")"
-if (( node_major < 22 )); then
-  printf "Node 22+ is required; found %s.\n" "$(node --version)" >&2
+read -r node_major node_minor node_patch < <(
+  node -p "process.versions.node.split('.').join(' ')"
+)
+if (( node_major < 22 || (node_major == 22 && node_minor < 2) )); then
+  printf "Node 22.2.0+ is required; found %s.\n" "$(node --version)" >&2
   exit 1
 fi
+
+run_pnpm() {
+  local required_pnpm_version="11.7.0"
+  local detected_pnpm_version=""
+  if command -v pnpm >/dev/null 2>&1; then
+    detected_pnpm_version="$(command pnpm --version 2>/dev/null || true)"
+  fi
+  if [[ "$detected_pnpm_version" == "$required_pnpm_version" ]]; then
+    command pnpm "$@"
+    return
+  fi
+  if command -v corepack >/dev/null 2>&1; then
+    detected_pnpm_version="$(corepack pnpm --version 2>/dev/null || true)"
+    if [[ "$detected_pnpm_version" == "$required_pnpm_version" ]]; then
+      corepack pnpm "$@"
+      return
+    fi
+  fi
+  cat >&2 <<'EOF'
+pnpm 11.7.0 is not available.
+
+Install pnpm 11.7.0, enable Corepack, or use the Codex bundled runtime.
+EOF
+  return 127
+}
 
 ensure_node_modules() {
   if [[ -x "$app_dir/node_modules/.bin/devvit" && -x "$app_dir/node_modules/.bin/vite" ]]; then
     return
   fi
 
-  if command -v npm >/dev/null 2>&1; then
-    printf "Installing app dependencies with npm ci...\n"
-    (cd "$app_dir" && npm ci)
+  printf "Installing app dependencies with pnpm...\n"
+  (cd "$app_dir" && run_pnpm install --frozen-lockfile)
+  if [[ -x "$app_dir/node_modules/.bin/devvit" && -x "$app_dir/node_modules/.bin/vite" ]]; then
     return
   fi
 
   cat >&2 <<EOF
-app/node_modules is missing or incomplete, and npm is not available.
+app/node_modules is still missing required local binaries.
 
-Install Node 22+ with npm, then run:
+Run:
   cd "$app_dir"
-  npm ci
+  pnpm install --frozen-lockfile
 EOF
-  exit 127
+  return 127
 }
 
 local_bin() {

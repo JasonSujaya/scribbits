@@ -7,7 +7,7 @@
 // letterboxed by Scale.FIT, so we read its on-screen bounding rect and convert
 // design coordinates → screen pixels, re-syncing on resize.
 
-import { Scene } from 'phaser';
+import type { Scene } from 'phaser';
 import { DESIGN_HEIGHT, DESIGN_WIDTH, FONT_STACK, UI } from './theme';
 
 export type OverlayRect = {
@@ -29,10 +29,14 @@ export class DomOverlay {
   // All roots share a marker class so orphans can be swept if a scene ever
   // tears down without running its cleanup (defensive — should not happen).
   private static readonly ROOT_CLASS = 'scribbits-dom-overlay';
+  private static readonly liveOverlays = new Set<DomOverlay>();
 
   // Remove any overlay roots left in the DOM. Safe to call before creating one.
   static destroyAll(): void {
-    document.querySelectorAll(`.${DomOverlay.ROOT_CLASS}`).forEach((el) => el.remove());
+    for (const overlay of [...DomOverlay.liveOverlays]) overlay.destroy();
+    document
+      .querySelectorAll(`.${DomOverlay.ROOT_CLASS}`)
+      .forEach((el) => el.remove());
   }
 
   private readonly scene: Scene;
@@ -40,6 +44,7 @@ export class DomOverlay {
   private readonly placements: OverlayPlacement[] = [];
   private readonly canvasObserver: ResizeObserver | null;
   private cameraSyncing = false;
+  private destroyed = false;
 
   constructor(scene: Scene) {
     this.scene = scene;
@@ -52,9 +57,11 @@ export class DomOverlay {
     this.root.style.zIndex = '20';
     this.root.style.fontFamily = FONT_STACK;
     document.body.appendChild(this.root);
-    this.canvasObserver = typeof ResizeObserver === 'undefined'
-      ? null
-      : new ResizeObserver(() => this.sync());
+    DomOverlay.liveOverlays.add(this);
+    this.canvasObserver =
+      typeof ResizeObserver === 'undefined'
+        ? null
+        : new ResizeObserver(() => this.sync());
     this.canvasObserver?.observe(scene.game.canvas);
   }
 
@@ -85,8 +92,12 @@ export class DomOverlay {
     const scaleX = bounds.width / DESIGN_WIDTH;
     const scaleY = bounds.height / DESIGN_HEIGHT;
     const { element, followCamera, rect } = placement;
-    const rectX = followCamera ? rect.x - this.scene.cameras.main.scrollX : rect.x;
-    const rectY = followCamera ? rect.y - this.scene.cameras.main.scrollY : rect.y;
+    const rectX = followCamera
+      ? rect.x - this.scene.cameras.main.scrollX
+      : rect.x;
+    const rectY = followCamera
+      ? rect.y - this.scene.cameras.main.scrollY
+      : rect.y;
     element.style.left = `${bounds.left + rectX * scaleX}px`;
     element.style.top = `${bounds.top + rectY * scaleY}px`;
     // Keep every overlay element in the same 720x1280 design space as Phaser,
@@ -110,6 +121,9 @@ export class DomOverlay {
   }
 
   destroy(): void {
+    if (this.destroyed) return;
+    this.destroyed = true;
+    DomOverlay.liveOverlays.delete(this);
     if (this.cameraSyncing) {
       this.scene.events.off('postupdate', this.sync, this);
       this.cameraSyncing = false;
@@ -186,10 +200,7 @@ export class CanvasActionOverlay {
     nativeButton.addEventListener('keydown', (event) => {
       input.onKeyDown?.(event);
       if (event.defaultPrevented) return;
-      if (
-        (event.key !== 'Enter' && event.key !== ' ') ||
-        event.repeat
-      ) {
+      if ((event.key !== 'Enter' && event.key !== ' ') || event.repeat) {
         return;
       }
       // Prevent the browser's follow-up synthetic click so keyboard input and
@@ -201,6 +212,38 @@ export class CanvasActionOverlay {
     this.overlay.place(nativeButton, input.rect, input.followCamera);
     this.overlay.place(focusRing, input.rect, input.followCamera);
     return nativeButton;
+  }
+
+  addDescription(id: string, description: string): HTMLElement {
+    const semanticDescription = document.createElement('p');
+    semanticDescription.id = id;
+    semanticDescription.textContent = description;
+    Object.assign(semanticDescription.style, {
+      clipPath: 'inset(50%)',
+      height: '1px',
+      margin: '0',
+      opacity: '0',
+      overflow: 'hidden',
+      pointerEvents: 'none',
+      whiteSpace: 'nowrap',
+      width: '1px',
+    });
+    this.overlay.place(semanticDescription, {
+      x: 0,
+      y: 0,
+      width: 1,
+      height: 1,
+    });
+    return semanticDescription;
+  }
+
+  addStatus(initialMessage = ''): HTMLElement {
+    const status = this.addDescription('', initialMessage);
+    status.removeAttribute('id');
+    status.setAttribute('role', 'status');
+    status.setAttribute('aria-live', 'polite');
+    status.setAttribute('aria-atomic', 'true');
+    return status;
   }
 
   setVisible(visible: boolean): void {
@@ -217,4 +260,153 @@ export class CanvasActionOverlay {
     this.scene.events.off('shutdown', this.handleSceneShutdown);
     this.overlay.destroy();
   }
+}
+
+type BackgroundOverlayState = Readonly<{
+  root: HTMLElement;
+  ariaHidden: string | null;
+  hadInertAttribute: boolean;
+}>;
+
+/**
+ * Native keyboard layer for a canvas modal.
+ *
+ * It temporarily removes every existing canvas overlay (including the app
+ * dock) from the accessibility tree, traps focus inside the modal actions,
+ * handles Escape, and restores focus to the control that opened the modal.
+ */
+export class CanvasModalOverlay {
+  private static nextDescriptionId = 1;
+  private static readonly activeStack: CanvasModalOverlay[] = [];
+  private readonly scene: Scene;
+  private readonly actionOverlay: CanvasActionOverlay;
+  private readonly backgroundOverlays: BackgroundOverlayState[];
+  private readonly controls: HTMLButtonElement[] = [];
+  private readonly trigger: HTMLElement | null;
+  private destroyed = false;
+  private readonly handleSceneShutdown = (): void => this.destroy();
+
+  constructor(
+    scene: Scene,
+    label: string,
+    private readonly onDismiss: () => void,
+    description?: string,
+    trigger?: HTMLElement | null
+  ) {
+    this.scene = scene;
+    this.trigger =
+      trigger === undefined
+        ? document.activeElement instanceof HTMLElement
+          ? document.activeElement
+          : null
+        : trigger;
+    this.backgroundOverlays = Array.from(
+      document.querySelectorAll<HTMLElement>('.scribbits-dom-overlay')
+    ).map((root) => ({
+      root,
+      ariaHidden: root.getAttribute('aria-hidden'),
+      hadInertAttribute: root.hasAttribute('inert'),
+    }));
+    this.backgroundOverlays.forEach(({ root }) => {
+      root.setAttribute('inert', '');
+      root.setAttribute('aria-hidden', 'true');
+    });
+
+    this.actionOverlay = new CanvasActionOverlay(scene);
+    const rootAttributes: Record<string, string> = {
+      role: 'dialog',
+      'aria-label': label,
+      'aria-modal': 'true',
+    };
+    if (description) {
+      const descriptionId = `scribbits-modal-description-${CanvasModalOverlay.nextDescriptionId}`;
+      CanvasModalOverlay.nextDescriptionId += 1;
+      this.actionOverlay.addDescription(descriptionId, description);
+      rootAttributes['aria-describedby'] = descriptionId;
+    }
+    this.actionOverlay.setRootAttributes(rootAttributes);
+    CanvasModalOverlay.activeStack.push(this);
+    document.addEventListener('keydown', this.handleDocumentKeyDown, true);
+    scene.events.once('shutdown', this.handleSceneShutdown);
+  }
+
+  add(input: CanvasActionOverlayInput): HTMLButtonElement {
+    const control = this.actionOverlay.add(input);
+    this.controls.push(control);
+    return control;
+  }
+
+  addStatus(initialMessage = ''): HTMLElement {
+    return this.actionOverlay.addStatus(initialMessage);
+  }
+
+  focusInitial(control = this.controls[0]): void {
+    requestAnimationFrame(() => {
+      if (
+        !this.destroyed &&
+        control?.isConnected &&
+        !control.hidden &&
+        !control.disabled
+      ) {
+        control.focus();
+      }
+    });
+  }
+
+  setVisible(visible: boolean): void {
+    this.actionOverlay.setVisible(visible);
+  }
+
+  destroy(): void {
+    if (this.destroyed) return;
+    this.destroyed = true;
+    const stackIndex = CanvasModalOverlay.activeStack.lastIndexOf(this);
+    if (stackIndex >= 0) CanvasModalOverlay.activeStack.splice(stackIndex, 1);
+    this.scene.events.off('shutdown', this.handleSceneShutdown);
+    document.removeEventListener('keydown', this.handleDocumentKeyDown, true);
+    this.actionOverlay.destroy();
+    this.backgroundOverlays.forEach(
+      ({ root, ariaHidden, hadInertAttribute }) => {
+        if (!root.isConnected) return;
+        if (!hadInertAttribute) root.removeAttribute('inert');
+        if (ariaHidden === null) root.removeAttribute('aria-hidden');
+        else root.setAttribute('aria-hidden', ariaHidden);
+      }
+    );
+    if (this.trigger?.isConnected) this.trigger.focus();
+  }
+
+  private readonly handleDocumentKeyDown = (event: KeyboardEvent): void => {
+    if (this.destroyed) return;
+    if (CanvasModalOverlay.activeStack.at(-1) !== this) return;
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      this.onDismiss();
+      return;
+    }
+    if (event.key !== 'Tab') return;
+
+    const availableControls = this.controls.filter(
+      (control) => control.isConnected && !control.hidden && !control.disabled
+    );
+    if (availableControls.length === 0) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      return;
+    }
+    const activeIndex = availableControls.indexOf(
+      document.activeElement as HTMLButtonElement
+    );
+    const nextIndex = event.shiftKey
+      ? activeIndex <= 0
+        ? availableControls.length - 1
+        : activeIndex - 1
+      : activeIndex < 0 || activeIndex === availableControls.length - 1
+        ? 0
+        : activeIndex + 1;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    availableControls[nextIndex]?.focus();
+  };
 }

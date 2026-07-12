@@ -1,27 +1,13 @@
-import type { Element, Forecast } from '../../shared/arena';
+import type { Forecast } from '../../shared/arena';
 import { selectDailyForecastBlurb } from '../../shared/content/forecastblurbs';
+import { ELEMENTS, isElement } from '../../shared/elements';
 import { createMulberry32, getRandomInteger, hashTextToSeed } from './random';
-
-const elementOrder: Element[] = ['ember', 'tide', 'moss', 'storm'];
-
-export const isElement = (value: unknown): value is Element => {
-  return (
-    value === 'ember' ||
-    value === 'tide' ||
-    value === 'moss' ||
-    value === 'storm'
-  );
-};
 
 export const generateForecastForDay = (day: number): Forecast => {
   const randomNumber = createMulberry32(hashTextToSeed(`forecast:${day}`));
-  const boostedIndex = getRandomInteger(
-    0,
-    elementOrder.length - 1,
-    randomNumber
-  );
-  const boostedElement = elementOrder[boostedIndex] ?? 'ember';
-  const possibleNerfedElements = elementOrder.filter((element) => {
+  const boostedIndex = getRandomInteger(0, ELEMENTS.length - 1, randomNumber);
+  const boostedElement = ELEMENTS[boostedIndex] ?? 'ember';
+  const possibleNerfedElements = ELEMENTS.filter((element) => {
     return element !== boostedElement;
   });
   const nerfedElement =

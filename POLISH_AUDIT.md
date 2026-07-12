@@ -478,8 +478,11 @@ changed.
 
 The former bottom bar mixed line icons, emoji, a permanently highlighted Draw
 seal, and labels with equal weight. The five main scenes now use one detached
-paper dock from `appdock.ts`: generated die-cut icons, full-width tap targets,
-and one raised coral active ticket. Bundled DynaPuff, a generated quiet-center
+paper dock from `appdock.ts`: one optical-weight code-native rosette/trophy/
+pencil/swords/magnifier family, full-width tap targets, and one fully contained
+coral active tile. The 136-pixel tray removes the raised cutout and unreadable
+Draw microbadge while 68-pixel icons and 28-pixel labels remain clear in the
+320x568 fit. Bundled DynaPuff, a generated quiet-center
 torn-paper stage, GPT-generated primary/secondary/back/close/page controls, and
 shared paper heart/clock/Ink/element marks replace the generic system font, ad
 hoc emoji, code-drawn rectangles, and repeated navigation glyphs.
@@ -508,10 +511,14 @@ pixels, adds trophy/book/spark icons and native tablist/tabpanel navigation, and
 preserves keyboard focus through the async Legacy and Collection rebuilds. The
 six-card Legend hall keeps its sparse grid while replacing emoji and tiny arrow
 marks with generated trophy/heart/info icons, readable status strips, and native
-44px actions. Page controls are semantic, modal background actions hide and
-restore correctly, stale destroyed error panels no longer suppress later errors,
-and compositor-safe focus rings prevent black canvas holes. All three sections
-and Canvas/reduced motion remain clean at 320x568.
+44px actions. Legend, Legacy, and Collection cards plus page controls are all
+keyboard reachable. Their described modal dialogs trap focus, isolate the app
+dock and background actions, restore the opening card after close or rebuild,
+and expose live disabled/busy/pressed title state. Stale destroyed error panels
+no longer suppress later errors, and compositor-safe focus rings prevent black
+canvas holes. Gallery disables ambient edge creatures so no decorative face can
+intrude behind the outer card column. All three sections and Canvas/reduced
+motion remain clean at 320x568.
 
 ## Mobile performance pass (July 12)
 
@@ -546,25 +553,25 @@ green. A fresh 320x568 WebGL run proves the compact return card, no viewport
 overflow, zero captured runtime errors, and the exact Legacy-to-Rumble receipt
 handoff.
 
-## Arena pick-grid pass (July 12)
+## Arena home simplification (July 12)
 
-The receipt-free Arena still repeated a full-width `Back` label on every one of
-eight contender cards. The grid now states `PICK A WINNER` once and lets the
-drawings lead. Each card keeps only its name and paper element mark beside one
-shared icon action: gold heart when available, selected heart plus rosette for
-the actual pick, lock after the daily choice, and a plain `YOURS` state.
-The compact visual plate retains a 100-design-pixel hit target, and attempting
-to pick the player's own Scribbit now explains that exact state rather than
-claiming the daily Back was already spent. The irreversible action ignores a
-pointer-up that ends a scroll gesture, and an optimistic server failure rebuilds
-the rolled-back field before showing Retry.
+Arena had become a dashboard: forecast chips, a boxed countdown, a text-only
+Draw button, Champion details, eight contender cards, and three full roster rows
+all competed on one page. The default home now has four readable beats: a quiet
+day/countdown line with one circular Ink control, an icon-led Draw or Next hero,
+one compact Champion fight, and one three-portrait Rumble preview. Owned
+Scribbits collapse into a single portrait strip only when a roster exists.
 
-TypeScript, ESLint, 103 deterministic groups, and production build remain green.
-A 320x568 WebGL interaction proves the heart action writes the real Back, pins
-the selected card first, converts the rest to locks, preserves the eight-entry
-field and roster scroll, ignores a drag started on the heart, restores every
-available heart after a forced HTTP 500, avoids viewport overflow, and captures
-zero runtime errors.
+The old `PICK A WINNER` section is gone. Tapping the Rumble preview opens the
+eight-person choice as a described, focus-trapped modal with independent inspect
+and pick controls, Escape/scrim dismissal, drag suppression, and server-planned
+Back validation immediately before the irreversible request. Forced cleanup no
+longer emits a false close event, and async portraits are generation guarded.
+
+TypeScript, ESLint, 103 deterministic groups, and the production build remain
+green. Live 320x568 proof covers the fresh Arena and focused contender picker;
+the home fits above the dock without scrolling, and all daily Next Goal paths,
+Champion challenge, Care, Spar, Ink, Scout, and return receipts remain wired.
 
 ## Roster care-action pass (July 12)
 

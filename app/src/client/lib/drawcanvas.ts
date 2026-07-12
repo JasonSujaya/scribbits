@@ -3,6 +3,8 @@
 // Exposes an undo stack (one snapshot per completed stroke), brush controls, and
 // readouts for the analyzer (getImageData) and submission PNGs.
 
+import type { CosmeticPenEffect } from '../../shared/cosmetics';
+
 export const CANVAS_SIZE = 512;
 
 // The cream page color is visual-only. The exported backing store stays
@@ -10,11 +12,6 @@ export const CANVAS_SIZE = 512;
 const PAPER_COLOR = '#fdf3df';
 
 export type BrushMode = 'draw' | 'erase';
-
-// Special pen effects unlocked via Mystery Ink capsules. 'solid' is the normal
-// single-color pen; 'rainbow' cycles hue along the stroke; 'midnight' is a
-// near-black ink with tiny white specks flecked over the line.
-export type PenEffect = 'solid' | 'rainbow' | 'midnight';
 
 export type DrawCanvasOptions = {
   // Called after every completed stroke (pointer-up) so the scene can re-run the
@@ -40,7 +37,7 @@ export class DrawCanvas {
 
   // Active pen effect + its palette. Rainbow advances a hue as the stroke moves;
   // midnight flecks white specks over a near-black base.
-  private penEffect: PenEffect = 'solid';
+  private penEffect: CosmeticPenEffect = 'solid';
   private penColors: string[] = ['#2b2016'];
   private huePhase = 0; // 0..1, advances along a rainbow stroke
 
@@ -54,8 +51,10 @@ export class DrawCanvas {
   private snapshotPool: HTMLCanvasElement[] = [];
   private readonly maxHistory = 10;
   private activeBounds: DOMRect | null = null;
-  private readonly handlePointerDown = (event: PointerEvent): void => this.startStroke(event);
-  private readonly handlePointerMove = (event: PointerEvent): void => this.moveStroke(event);
+  private readonly handlePointerDown = (event: PointerEvent): void =>
+    this.startStroke(event);
+  private readonly handlePointerMove = (event: PointerEvent): void =>
+    this.moveStroke(event);
   private readonly handlePointerUp = (): void => this.endStroke();
 
   constructor(options: DrawCanvasOptions) {
@@ -98,7 +97,7 @@ export class DrawCanvas {
   // Select an unlocked Mystery Ink pen. `colors` is the pen's palette; for
   // rainbow it's the cycle stops, for midnight it's the base ink. Switches to
   // draw mode. The first color is used as the base stroke color.
-  setPen(effect: PenEffect, colors: string[]): void {
+  setPen(effect: CosmeticPenEffect, colors: string[]): void {
     this.mode = 'draw';
     this.penEffect = effect;
     this.penColors = colors.length > 0 ? colors : ['#2b2016'];
@@ -189,7 +188,8 @@ export class DrawCanvas {
   }
 
   private pushHistory(): void {
-    const snapshot = this.snapshotPool.pop() ?? document.createElement('canvas');
+    const snapshot =
+      this.snapshotPool.pop() ?? document.createElement('canvas');
     snapshot.width = CANVAS_SIZE;
     snapshot.height = CANVAS_SIZE;
     const context = snapshot.getContext('2d');
@@ -236,7 +236,8 @@ export class DrawCanvas {
     this.applyBrush();
     this.ctx.beginPath();
     this.ctx.arc(x, y, this.brushSize / 2, 0, Math.PI * 2);
-    this.ctx.fillStyle = this.mode === 'erase' ? 'rgba(0,0,0,1)' : this.currentStrokeColor();
+    this.ctx.fillStyle =
+      this.mode === 'erase' ? 'rgba(0,0,0,1)' : this.currentStrokeColor();
     this.ctx.fill();
     if (this.mode !== 'erase') this.flingSpecks(x, y);
     try {

@@ -45,8 +45,22 @@ currency, or combat power.
 
 ## Current Ship Gates
 
-- [x] Local equivalent of `npm run verify` passes: TypeScript, ESLint, 103
-      simulation groups, and production build (July 12).
+- [x] `pnpm verify` passes: TypeScript, ESLint, 142 deterministic simulation
+      groups, and the production build (July 13).
+- [x] Production and localhost now share one submission, progression, reward,
+      capsule, title, and accessory rules boundary. Repeat daily submissions,
+      duplicate care, capsule retries, insufficient Ink, and hard pity have
+      regression proof; the typed Phaser registry is the only home for
+      cross-scene keys. The slop audit has zero open P0 findings (July 12).
+- [x] Draw onboarding and Field Guide now derive Shape Power names, stat order,
+      drawing cues, and guide effects from one shared content catalog instead of
+      maintaining parallel four-power copy tables (July 12).
+- [x] The generic Redis storage and transaction contract now has one
+      dependency-free server home; 13 domain callers no longer depend on the
+      Scribbit module for unrelated infrastructure types (July 12).
+- [x] Public routes no longer own Practice guard/rate keys or daily Belief
+      receipt records; typed core modules now own those persistence boundaries
+      and focused regression tests cover their current behavior (July 12).
 - [x] Fresh mobile browser proof covers the optional deterministic Doodle Dare,
       first-run draw -> fight -> Ink promise, blank/forming/ready feedback,
       full drawing, birth reveal, live paper-broadcast exhibition, Skip, and
@@ -208,9 +222,11 @@ currency, or combat power.
       tablist/tabpanel semantics and async-safe Arrow/Home/End focus. The sparse
       2x3 Hall remains, but Legend cards replace emoji and tiny arrows with larger
       drawing/name/status hierarchy, trophy/heart truth, an info-led `VIEW`, and
-      100-design-pixel native actions. Semantic paging, detail-modal background
-      hiding, rebuild cleanup, and stale-error recovery are WebGL/Canvas-proven
-      across Legends, Legacy, and Collection at 320x568 (July 12).
+      100-design-pixel native actions. Every section's cards and paging are
+      keyboard reachable; described modal dialogs trap focus, hide background
+      actions, restore their trigger, and expose truthful action state. Rebuild
+      cleanup and stale-error recovery are WebGL/Canvas-proven across Legends,
+      Legacy, and Collection at 320x568 (July 12).
 - [x] WebGL replay proof verifies all sixteen element x Shape Power signature
       identities and stable left/right combat-read lanes. No-clean-hit copy is
       neutral unless shield or element events explicitly prove more, so replay no
@@ -261,22 +277,28 @@ currency, or combat power.
       and Mystery Ink. Primary cards lead with one headline, one status, and one
       action; rules, moderation, and secondary facts move behind explicit taps
       without changing server authority or rewards (July 12).
-- [x] The Arena contender grid now says `PICK A WINNER` once instead of repeating
-      `Back` across eight cards. Drawing, name, and element remain visible while
-      shared paper heart, lock, and `YOURS` states expose available, picked,
-      locked, and owned states through 100-design-pixel targets. A real 320x568
-      pick updates the server, pins the gold card, locks the remaining field, and
-      keeps the full scroll error-free; drag-release and forced-failure proof also
-      prevent accidental or false daily picks (July 12).
+- [x] Arena home no longer embeds the eight-card contender grid. One compact
+      `TONIGHT'S RUMBLE` tile previews three drawings and opens a focused,
+      accessible picker with separate inspect and server-planned heart/lock
+      targets. The same pass replaces the forecast/HUD boxes with one quiet status
+      line, makes Draw an icon-led hero, and compacts Champion plus roster actions
+      without losing Enter, Care, Spar, Back, or the daily Next Goal (July 12).
 - [x] The Craftbox visual system now gives all five main scenes one generated
-      torn-paper stage, bundled Balsamiq Sans, one die-cut navigation family,
-      one coral active ticket, and shared paper status/element icons. Arena drops
+      torn-paper stage, bundled DynaPuff, one optical-weight code-native dock
+      icon family, one contained coral active tile, and shared paper status/
+      element icons. Arena drops
       the duplicate Ink Trail and Practice cards, locked Draw opens Practice
       directly, and Gallery/Battles/Scout remove explanatory card copy. A live
       320x568 pass covers Arena, Draw-to-Practice, Scout, realtime spar, Skip,
       and the compact result with larger combat type, one four-control Draw rail,
       no visible stat dashboard, 100-design-pixel targets, code-native tool/
       playback icons, and no error-level runtime messages (July 12).
+- [x] The five-tab dock now uses a flat 136-design-pixel paper tray, 68-pixel
+      monochrome rosette/trophy/pencil/swords/magnifier marks, readable 28-pixel
+      labels, and full-slot native targets. The raised ticket, tiny Draw badge,
+      padded generated PNGs, and stray cropped fragments are removed from the
+      runtime; 320x568 Arena and Gallery proof keeps six Gallery cards, exact
+      active-page semantics, zero overflow, and zero runtime errors (July 12).
 - [x] Compact mobile performance now keeps combat truth and visible juice while
       removing ambient-only work. Exact drawing analysis runs in a worker;
       pointer bounds and undo snapshots are reused; display art is capped at
@@ -347,7 +369,7 @@ currency, or combat power.
 - Keep README/AGENTS/current plan aligned with the actual Hono + Phaser code.
 - Reduce route transaction complexity in `src/server/routes/api.ts`.
 - Split broad domain files when changes naturally touch them.
-- Add route-level tests for rollback and API contract behavior.
+- Maintain the existing route-level rollback and production API contract coverage.
 - Keep generated logs out of git; store only concise evidence summaries when needed.
 - Split the combat engine behind its unchanged public contract when that work
   materially improves balance iteration; fixed-seed golden transcript hashes

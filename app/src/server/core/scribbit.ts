@@ -23,61 +23,35 @@ import {
   MAX_LEVEL,
   MIN_ACCESSORY_ROTATION,
   MIN_ACCESSORY_SCALE,
-  STAT_BUDGET,
-  STAT_MAX,
-  STAT_MIN,
+  XP_REWARDS,
+  SCRIBBIT_STAT_KEYS,
 } from '../../shared/arena';
+import { isElement } from '../../shared/elements';
 import { formatUtcDateKey } from './day';
-import { isElement } from './forecast';
 import { findInkCatalogEntry, isAccessoryCatalogEntry } from './ink';
 import { findFoundingScribbit } from './species';
-
-export type SortedSetEntry = {
-  member: string;
-  score: number;
-};
-
-export type ArenaTransaction = {
-  multi: () => Promise<void>;
-  exec: () => Promise<unknown[]>;
-  discard: () => Promise<void>;
-  unwatch: () => Promise<unknown>;
-  incrBy: (key: string, value: number) => Promise<unknown>;
-  set: (key: string, value: string) => Promise<unknown>;
-  del: (...keys: string[]) => Promise<unknown>;
-  expire: (key: string, seconds: number) => Promise<unknown>;
-  hSet: (key: string, fieldValues: Record<string, string>) => Promise<unknown>;
-  hSetNX: (key: string, field: string, value: string) => Promise<unknown>;
-  hIncrBy: (key: string, field: string, value: number) => Promise<unknown>;
-  zIncrBy: (key: string, member: string, value: number) => Promise<unknown>;
-};
-
-export type ArenaStorage = {
-  watch?: (...keys: string[]) => Promise<ArenaTransaction>;
-  get: (key: string) => Promise<string | undefined>;
-  set: (key: string, value: string) => Promise<unknown>;
-  del: (...keys: string[]) => Promise<unknown>;
-  incrBy: (key: string, value: number) => Promise<number>;
-  expire: (key: string, seconds: number) => Promise<unknown>;
-  hGet: (key: string, field: string) => Promise<string | undefined>;
-  hGetAll: (key: string) => Promise<Record<string, string>>;
-  hSet: (key: string, fieldValues: Record<string, string>) => Promise<unknown>;
-  hSetNX: (key: string, field: string, value: string) => Promise<number>;
-  hDel: (key: string, fields: string[]) => Promise<number>;
-  hIncrBy: (key: string, field: string, value: number) => Promise<number>;
-  zAdd: (key: string, ...members: SortedSetEntry[]) => Promise<unknown>;
-  zCard: (key: string) => Promise<number>;
-  zRange: (
-    key: string,
-    start: number | string,
-    stop: number | string,
-    options?: { by: 'rank' | 'score' | 'lex'; reverse?: boolean }
-  ) => Promise<SortedSetEntry[]>;
-  zRem: (key: string, members: string[]) => Promise<unknown>;
-  zScore: (key: string, member: string) => Promise<number | undefined>;
-  zRank: (key: string, member: string) => Promise<number | undefined>;
-  zIncrBy: (key: string, member: string, value: number) => Promise<number>;
-};
+import type { ArenaStorage, ArenaTransaction } from './storage';
+import {
+  discardWatchedTransaction,
+  MAX_WATCH_TRANSACTION_ATTEMPTS,
+} from './storage';
+import {
+  LEGACY_BELIEF_PRIVACY_MILLISECONDS,
+  LEGACY_BELIEF_RECEIPT_MILLISECONDS,
+  ROLLOUT_OVERLAP_MILLISECONDS,
+  ensureMigrationStartedAt,
+  migrationWindowIsOpen,
+} from './migrations';
+import {
+  getPlayerDataDeletionLockKey,
+  getPlayerDataGenerationKey,
+  readPlayerDataGeneration,
+} from './dataDeletion';
+import {
+  analyze as analyzeDrawing,
+  hasMinimumDrawingInk,
+  normalizeStats,
+} from '../../shared/analyzer-core';
 
 export type CurrentPlayer = {
   userId: string;
@@ -102,10 +76,23 @@ export type ValidatedScribbitDraft = {
   accessories: AttachedAccessory[];
 };
 
+export type ScribbitSubmissionValidation =
+  | Readonly<{ status: 'valid'; draft: ValidatedScribbitDraft }>
+  | Readonly<{
+      status: 'invalid';
+      reason:
+        | 'invalid-request'
+        | 'invalid-png'
+        | 'rendered-mismatch'
+        | 'insufficient-ink';
+    }>;
+
 export type DailyFlags = Pick<
   ArenaState,
   'drawnToday' | 'enteredToday' | 'bossChallengedToday'
 >;
+
+const statNames: readonly (keyof ScribbitStats)[] = SCRIBBIT_STAT_KEYS;
 
 export type DailyFlagField = 'drawn' | 'entered' | 'bossChallenge';
 
@@ -119,14 +106,7 @@ const visiblePixelTolerance = 1;
 const accessoryAntialiasPaddingPixels = 1;
 const dailyFlagTtlSeconds = 8 * 24 * 60 * 60;
 const dailyProgressTtlSeconds = 8 * 24 * 60 * 60;
-const maximumScribbitTransactionAttempts = 5;
 const careActionOrder: CareAction[] = ['feed', 'pat', 'train'];
-const statNames: Array<keyof ScribbitStats> = [
-  'chonk',
-  'spike',
-  'zip',
-  'charm',
-];
 const lightProfanityFragments = [
   'fuck',
   'shit',
@@ -201,6 +181,41 @@ export const getCommunityBeliefKey = (): string => {
 export const getScribbitBeliefVersionKey = (scribbitId: string): string => {
   return `scribbit:${scribbitId}:belief-version`;
 };
+
+const beliefReceiptTtlSeconds = 7 * 24 * 60 * 60;
+const userBeliefTargetsTtlSeconds = 30 * 24 * 60 * 60;
+
+// Legacy V1 hash retained only so duplicate checks and privacy deletion remain
+// correct until every seven-day receipt written before V2 has expired.
+export const getScribbitBeliefVotersKey = (scribbitId: string): string => {
+  return `belief:${scribbitId}`;
+};
+
+export const getDailyBeliefReceiptKey = (
+  scribbitId: string,
+  userId: string,
+  utcDateKey: string
+): string => {
+  return `belief:v2:${scribbitId}:${userId}:${utcDateKey}`;
+};
+
+export const getUserBeliefTargetsKey = (userId: string): string => {
+  return `user:${userId}:belief-targets`;
+};
+
+export const getUserDailyBeliefTargetsKey = (
+  userId: string,
+  utcDateKey: string
+): string => {
+  return `user:${userId}:belief-targets:v2:${utcDateKey}`;
+};
+
+export type ApplyDailyBeliefResult =
+  | Readonly<{ status: 'applied'; belief: number }>
+  | Readonly<{ status: 'already-believed' }>
+  | Readonly<{ status: 'self-belief' }>
+  | Readonly<{ status: 'target-unavailable' }>
+  | Readonly<{ status: 'user-data-changing' }>;
 
 export const validateScribbitName = (value: unknown): string | undefined => {
   if (typeof value !== 'string') {
@@ -301,6 +316,21 @@ export const deriveMoodFromCareActions = (
   return 'pumped';
 };
 
+export type CareProgressionPlan = Readonly<{
+  mood: Mood;
+  xpGain: number;
+}>;
+
+export const planCareProgression = (
+  careDoneToday: CareAction[]
+): CareProgressionPlan => {
+  const mood = deriveMoodFromCareActions(careDoneToday);
+  return {
+    mood,
+    xpGain: mood === 'pumped' ? XP_REWARDS.carePumped : XP_REWARDS.care,
+  };
+};
+
 export const addXpToScribbit = (
   scribbit: Scribbit,
   xpGain: number
@@ -314,131 +344,6 @@ export const addXpToScribbit = (
     xp: nextXp,
     level: getLevelForXp(nextXp),
     careDoneToday: [...scribbit.careDoneToday],
-  };
-};
-
-const sanitizeRawStat = (value: unknown): number => {
-  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
-    return 0;
-  }
-
-  return value;
-};
-
-const distributeBudgetInsideBounds = (values: number[]): number[] => {
-  const nextValues = values.map((value) => {
-    return clampNumber(value, STAT_MIN, STAT_MAX);
-  });
-
-  for (let pass = 0; pass < 12; pass += 1) {
-    const total = nextValues.reduce((sum, value) => sum + value, 0);
-    const difference = STAT_BUDGET - total;
-
-    if (Math.abs(difference) < 0.0001) {
-      break;
-    }
-
-    const adjustableIndexes = nextValues
-      .map((value, index) => {
-        return { value, index };
-      })
-      .filter((entry) => {
-        return difference > 0 ? entry.value < STAT_MAX : entry.value > STAT_MIN;
-      });
-
-    if (adjustableIndexes.length === 0) {
-      break;
-    }
-
-    const totalRoom = adjustableIndexes.reduce((sum, entry) => {
-      return (
-        sum + (difference > 0 ? STAT_MAX - entry.value : entry.value - STAT_MIN)
-      );
-    }, 0);
-
-    if (totalRoom <= 0) {
-      break;
-    }
-
-    for (const entry of adjustableIndexes) {
-      const room =
-        difference > 0 ? STAT_MAX - entry.value : entry.value - STAT_MIN;
-      const adjustment = difference * (room / totalRoom);
-      nextValues[entry.index] = clampNumber(
-        entry.value + adjustment,
-        STAT_MIN,
-        STAT_MAX
-      );
-    }
-  }
-
-  return nextValues;
-};
-
-const roundStatsToBudget = (values: number[]): number[] => {
-  const roundedValues = values.map((value) => {
-    return Math.floor(value);
-  });
-  let remainingBudget =
-    STAT_BUDGET - roundedValues.reduce((sum, value) => sum + value, 0);
-  const fractionalOrder = values
-    .map((value, index) => {
-      return {
-        index,
-        fraction: value - Math.floor(value),
-      };
-    })
-    .sort((left, right) => {
-      return right.fraction - left.fraction;
-    });
-
-  while (remainingBudget > 0) {
-    let changedValue = false;
-
-    for (const entry of fractionalOrder) {
-      const currentValue = roundedValues[entry.index];
-
-      if (currentValue !== undefined && currentValue < STAT_MAX) {
-        roundedValues[entry.index] = currentValue + 1;
-        remainingBudget -= 1;
-        changedValue = true;
-      }
-
-      if (remainingBudget === 0) {
-        break;
-      }
-    }
-
-    if (!changedValue) {
-      break;
-    }
-  }
-
-  return roundedValues.map((value) => {
-    return clampNumber(value, STAT_MIN, STAT_MAX);
-  });
-};
-
-export const normalizeStats = (rawStats: unknown): ScribbitStats => {
-  const rawRecord = isRecord(rawStats) ? rawStats : {};
-  const rawValues = statNames.map((statName) => {
-    return sanitizeRawStat(rawRecord[statName]);
-  });
-  const rawTotal = rawValues.reduce((sum, value) => sum + value, 0);
-  const scaledValues =
-    rawTotal > 0
-      ? rawValues.map((value) => {
-          return (value / rawTotal) * STAT_BUDGET;
-        })
-      : statNames.map(() => STAT_BUDGET / statNames.length);
-  const boundedValues = distributeBudgetInsideBounds(scaledValues);
-  const roundedValues = roundStatsToBudget(boundedValues);
-
-  return {
-    chonk: roundedValues[0] ?? 25,
-    spike: roundedValues[1] ?? 25,
-    zip: roundedValues[2] ?? 25,
-    charm: roundedValues[3] ?? 25,
   };
 };
 
@@ -812,6 +717,50 @@ export const decodePngDataUrl = (
   }
 };
 
+/**
+ * One authoritative boundary for turning an untrusted submit payload into the
+ * server-derived Scribbit draft used by both Devvit and the local mock.
+ */
+export const validateAndAnalyzeScribbitSubmission = (
+  value: unknown
+): ScribbitSubmissionValidation => {
+  const draft = validateSubmitScribbitRequest(value);
+  if (!draft) return { status: 'invalid', reason: 'invalid-request' };
+
+  const decodedBasePng = decodePngDataUrl(draft.baseImageDataUrl);
+  const decodedRenderedPng = decodePngDataUrl(draft.imageDataUrl);
+  if (!decodedBasePng || !decodedRenderedPng) {
+    return { status: 'invalid', reason: 'invalid-png' };
+  }
+  if (
+    !validateRenderedPngBinding(
+      decodedBasePng,
+      decodedRenderedPng,
+      draft.accessories
+    )
+  ) {
+    return { status: 'invalid', reason: 'rendered-mismatch' };
+  }
+
+  const analysis = analyzeDrawing({
+    data: decodedBasePng.rgba,
+    width: decodedBasePng.width,
+    height: decodedBasePng.height,
+  });
+  if (!hasMinimumDrawingInk(analysis)) {
+    return { status: 'invalid', reason: 'insufficient-ink' };
+  }
+
+  return {
+    status: 'valid',
+    draft: {
+      ...draft,
+      stats: analysis.stats,
+      element: analysis.element,
+    },
+  };
+};
+
 export const deleteStoredScribbit = async (
   storage: ArenaStorage,
   ownerUserId: string,
@@ -1062,6 +1011,9 @@ export const normalizeScribbitRecord = (
       name: value.name,
       artist: value.artist,
       element: value.element,
+      // Stored stats are historical authority. Validate their shape above but
+      // never rebalance them while reading; normalization applies only to new
+      // writes so old fights and Legacy Cards remain immutable.
       stats: { ...value.stats },
       imageUrl: value.imageUrl,
       bornDay: value.bornDay,
@@ -1185,7 +1137,7 @@ export const readCareDoneToday = async (
   });
 };
 
-export const hydrateScribbitForUtcDay = async (
+const hydrateScribbitForUtcDay = async (
   storage: ArenaStorage,
   scribbit: Scribbit,
   utcDateKey: string
@@ -1330,17 +1282,6 @@ type AliveScribbitMutationOptions = {
   utcDateKey?: string;
 };
 
-const discardArenaTransaction = async (
-  transaction: ArenaTransaction | undefined
-): Promise<void> => {
-  if (!transaction) return;
-  try {
-    await transaction.discard();
-  } catch {
-    // EXEC and connection failures can leave nothing to discard.
-  }
-};
-
 const mutateAliveScribbit = async (
   storage: ArenaStorage,
   scribbitId: string,
@@ -1354,7 +1295,7 @@ const mutateAliveScribbit = async (
   const scribbitKey = getScribbitKey(scribbitId);
   for (
     let attempt = 0;
-    attempt < maximumScribbitTransactionAttempts;
+    attempt < MAX_WATCH_TRANSACTION_ATTEMPTS;
     attempt += 1
   ) {
     let transaction: ArenaTransaction | undefined;
@@ -1384,7 +1325,7 @@ const mutateAliveScribbit = async (
         return { scribbit: updatedScribbit, changed: true };
       }
     } catch (error) {
-      await discardArenaTransaction(transaction);
+      await discardWatchedTransaction(transaction, 'Scribbit mutation');
       throw error;
     }
   }
@@ -1418,13 +1359,13 @@ export const claimDailyCareAction = async (
     scribbitId,
     utcDateKey
   );
-  const mood = deriveMoodFromCareActions(careDoneToday);
+  const progression = planCareProgression(careDoneToday);
 
   return {
     claimed: createdCare === 1,
     careDoneToday,
-    mood,
-    xpGain: createdCare === 1 ? (mood === 'pumped' ? 2 : 1) : 0,
+    mood: progression.mood,
+    xpGain: createdCare === 1 ? progression.xpGain : 0,
   };
 };
 
@@ -1489,7 +1430,7 @@ export const claimAndAwardDailySparWin = async (
 
   for (
     let attempt = 0;
-    attempt < maximumScribbitTransactionAttempts;
+    attempt < MAX_WATCH_TRANSACTION_ATTEMPTS;
     attempt += 1
   ) {
     let transaction: ArenaTransaction | undefined;
@@ -1511,7 +1452,7 @@ export const claimAndAwardDailySparWin = async (
         await transaction.unwatch();
         return 'already-claimed';
       }
-      const rewardedScribbit = addXpToScribbit(scribbit, 1);
+      const rewardedScribbit = addXpToScribbit(scribbit, XP_REWARDS.sparWin);
       await transaction.multi();
       await transaction.hSet(dailyRewardKey, {
         [input.utcDateKey]: receiptValue,
@@ -1525,7 +1466,7 @@ export const claimAndAwardDailySparWin = async (
       const result = await transaction.exec();
       if (Array.isArray(result) && result.length > 0) return 'awarded';
     } catch (error) {
-      await discardArenaTransaction(transaction);
+      await discardWatchedTransaction(transaction, 'Scribbit mutation');
       if (
         (await storage.hGet(dailyRewardKey, input.utcDateKey)) === receiptValue
       ) {
@@ -1552,6 +1493,22 @@ export const awardScribbitXp = async (
   return result.scribbit;
 };
 
+export const applyBattleOutcomeToScribbit = (
+  scribbit: Scribbit,
+  outcome: 'win' | 'loss',
+  winnerXpGain: number
+): Scribbit => {
+  if (scribbit.status !== 'alive') return cloneScribbit(scribbit);
+  return addXpToScribbit(
+    {
+      ...scribbit,
+      wins: outcome === 'win' ? scribbit.wins + 1 : scribbit.wins,
+      losses: outcome === 'loss' ? scribbit.losses + 1 : scribbit.losses,
+    },
+    outcome === 'win' ? winnerXpGain : 0
+  );
+};
+
 export const recordBattleOutcomeOnScribbit = async (
   storage: ArenaStorage,
   scribbitId: string,
@@ -1559,14 +1516,7 @@ export const recordBattleOutcomeOnScribbit = async (
   winnerXpGain: number
 ): Promise<Scribbit | undefined> => {
   const result = await mutateAliveScribbit(storage, scribbitId, (scribbit) =>
-    addXpToScribbit(
-      {
-        ...scribbit,
-        wins: outcome === 'win' ? scribbit.wins + 1 : scribbit.wins,
-        losses: outcome === 'loss' ? scribbit.losses + 1 : scribbit.losses,
-      },
-      outcome === 'win' ? winnerXpGain : 0
-    )
+    applyBattleOutcomeToScribbit(scribbit, outcome, winnerXpGain)
   );
   return result.scribbit;
 };
@@ -1589,7 +1539,7 @@ export const recordRumbleStandingOnScribbit = async (
   const receiptValue = `${wins}:${losses}:${winnerXpGain}`;
   for (
     let attempt = 0;
-    attempt < maximumScribbitTransactionAttempts;
+    attempt < MAX_WATCH_TRANSACTION_ATTEMPTS;
     attempt += 1
   ) {
     let transaction: ArenaTransaction | undefined;
@@ -1636,7 +1586,7 @@ export const recordRumbleStandingOnScribbit = async (
         return updatedScribbit;
       }
     } catch (error) {
-      await discardArenaTransaction(transaction);
+      await discardWatchedTransaction(transaction, 'Scribbit mutation');
       throw error;
     }
   }
@@ -2011,70 +1961,262 @@ export const expireDueScribbits = async (
   return { faded, legends };
 };
 
-export const increaseBelief = async (
+const readCommittedBelief = async (
   storage: ArenaStorage,
-  scribbit: Scribbit
-): Promise<Scribbit> => {
-  if (scribbit.status !== 'alive') return cloneScribbit(scribbit);
-  if (scribbit.isFounding) {
-    const belief = await storage.hIncrBy(
-      getFoundingBeliefKey(),
-      scribbit.id,
-      1
-    );
+  scribbitId: string,
+  utcDateKey: string
+): Promise<number> => {
+  return (await loadScribbit(storage, scribbitId, utcDateKey))?.belief ?? 0;
+};
 
-    return {
-      ...cloneScribbit(scribbit),
-      belief,
-    };
-  }
-
+export const applyDailyBelief = async (
+  storage: ArenaStorage,
+  input: Readonly<{
+    scribbitId: string;
+    userId: string;
+    utcDateKey: string;
+    currentArenaDay: number;
+    operationId: string;
+    operationStartedAtMs?: number;
+  }>
+): Promise<ApplyDailyBeliefResult> => {
   if (!storage.watch) {
-    throw new Error('Atomic Belief updates require transaction support.');
+    throw new Error('Atomic Belief requires transaction support.');
   }
-  const scribbitKey = getScribbitKey(scribbit.id);
-  const beliefKey = getCommunityBeliefKey();
-  const beliefVersionKey = getScribbitBeliefVersionKey(scribbit.id);
+
+  const operationStartedAtMs = input.operationStartedAtMs ?? Date.now();
+  const receiptKey = getDailyBeliefReceiptKey(
+    input.scribbitId,
+    input.userId,
+    input.utcDateKey
+  );
+  const legacyReceiptKey = getScribbitBeliefVotersKey(input.scribbitId);
+  const legacyReceiptField = `${input.userId}:${input.utcDateKey}`;
+  const userTargetsKey = getUserDailyBeliefTargetsKey(
+    input.userId,
+    input.utcDateKey
+  );
+  const legacyUserTargetsKey = getUserBeliefTargetsKey(input.userId);
+  const scribbitKey = getScribbitKey(input.scribbitId);
+  const ownerKey = getScribbitOwnerKey(input.scribbitId);
+  const beliefVersionKey = getScribbitBeliefVersionKey(input.scribbitId);
+  const isFoundingScribbit =
+    findFoundingScribbit(input.scribbitId) !== undefined;
+  const aggregateBeliefKey = isFoundingScribbit
+    ? getFoundingBeliefKey()
+    : getCommunityBeliefKey();
+  // Capture the voter generation before any migration housekeeping and keep it
+  // immutable across retries so a concurrent erasure cannot become an ABA.
+  const deletionLockKey = getPlayerDataDeletionLockKey(input.userId);
+  const dataGenerationKey = getPlayerDataGenerationKey(input.userId);
+  const initialDataGeneration = await readPlayerDataGeneration(
+    storage,
+    input.userId
+  );
+  const migrationStartedAtMs = await ensureMigrationStartedAt(
+    storage,
+    'belief-receipt-v2',
+    operationStartedAtMs
+  );
+  const shouldWriteLegacyBelief = migrationWindowIsOpen(
+    migrationStartedAtMs,
+    operationStartedAtMs,
+    ROLLOUT_OVERLAP_MILLISECONDS
+  );
+  const shouldReadLegacyReceipt = migrationWindowIsOpen(
+    migrationStartedAtMs,
+    operationStartedAtMs,
+    ROLLOUT_OVERLAP_MILLISECONDS + LEGACY_BELIEF_RECEIPT_MILLISECONDS
+  );
+  // Legacy keys carry their own bounded TTL. Once reads and writes stop, Redis
+  // drains them without request-path deletes racing older workers.
 
   for (
     let attempt = 0;
-    attempt < maximumScribbitTransactionAttempts;
+    attempt < MAX_WATCH_TRANSACTION_ATTEMPTS;
     attempt += 1
   ) {
     let transaction: ArenaTransaction | undefined;
     try {
-      transaction = await storage.watch(scribbitKey, beliefVersionKey);
-      const currentScribbit = await loadScribbit(storage, scribbit.id);
-      if (!currentScribbit || currentScribbit.status !== 'alive') {
+      transaction = await storage.watch(
+        receiptKey,
+        ...(shouldReadLegacyReceipt ? [legacyReceiptKey] : []),
+        scribbitKey,
+        ownerKey,
+        beliefVersionKey,
+        deletionLockKey,
+        dataGenerationKey
+      );
+      const [
+        storedOperationId,
+        legacyReceipt,
+        ownerUserId,
+        currentScribbit,
+        activeDeletionToken,
+        currentDataGeneration,
+      ] = await Promise.all([
+        storage.get(receiptKey),
+        shouldReadLegacyReceipt
+          ? storage.hGet(legacyReceiptKey, legacyReceiptField)
+          : Promise.resolve(undefined),
+        storage.get(ownerKey),
+        loadScribbit(storage, input.scribbitId, input.utcDateKey),
+        storage.get(deletionLockKey),
+        readPlayerDataGeneration(storage, input.userId),
+      ]);
+
+      if (
+        activeDeletionToken !== undefined ||
+        currentDataGeneration !== initialDataGeneration
+      ) {
         await transaction.unwatch();
-        return currentScribbit ?? cloneScribbit(scribbit);
+        return { status: 'user-data-changing' };
+      }
+
+      if (storedOperationId !== undefined || legacyReceipt !== undefined) {
+        await transaction.unwatch();
+        if (storedOperationId === input.operationId) {
+          return {
+            status: 'applied',
+            belief: currentScribbit?.belief ?? 0,
+          };
+        }
+        return { status: 'already-believed' };
+      }
+      if (
+        !currentScribbit ||
+        currentScribbit.status !== 'alive' ||
+        currentScribbit.expiresDay <= input.currentArenaDay
+      ) {
+        await transaction.unwatch();
+        return { status: 'target-unavailable' };
+      }
+      if (ownerUserId === input.userId) {
+        await transaction.unwatch();
+        return { status: 'self-belief' };
       }
 
       await transaction.multi();
-      await transaction.hSetNX(
-        beliefKey,
-        scribbit.id,
-        currentScribbit.belief.toString()
-      );
-      await transaction.hIncrBy(beliefKey, scribbit.id, 1);
+      await transaction.set(receiptKey, input.operationId);
+      await transaction.expire(receiptKey, beliefReceiptTtlSeconds);
+      await transaction.hSet(userTargetsKey, {
+        [input.scribbitId]: input.operationId,
+      });
+      await transaction.expire(userTargetsKey, userBeliefTargetsTtlSeconds);
+      if (shouldWriteLegacyBelief) {
+        // Keep old in-flight workers coherent only during the explicit overlap.
+        await transaction.hSetNX(
+          legacyReceiptKey,
+          legacyReceiptField,
+          input.operationId
+        );
+        await transaction.expire(legacyReceiptKey, beliefReceiptTtlSeconds);
+        await transaction.hSet(legacyUserTargetsKey, {
+          [input.scribbitId]: input.utcDateKey,
+        });
+        await transaction.expire(
+          legacyUserTargetsKey,
+          userBeliefTargetsTtlSeconds
+        );
+      }
+      if (!isFoundingScribbit) {
+        await transaction.hSetNX(
+          aggregateBeliefKey,
+          input.scribbitId,
+          currentScribbit.belief.toString()
+        );
+      }
+      await transaction.hIncrBy(aggregateBeliefKey, input.scribbitId, 1);
       await transaction.incrBy(beliefVersionKey, 1);
       const result = await transaction.exec();
-      if (Array.isArray(result) && result.length >= 3) {
-        const belief = Number(result[1]);
+      const legacyCommandCount = shouldWriteLegacyBelief ? 4 : 0;
+      const beliefResultIndex =
+        4 + legacyCommandCount + (isFoundingScribbit ? 0 : 1);
+      const expectedResultCount =
+        4 + legacyCommandCount + (isFoundingScribbit ? 2 : 3);
+      if (Array.isArray(result) && result.length >= expectedResultCount) {
+        const belief = Number(result[beliefResultIndex]);
         return {
-          ...currentScribbit,
+          status: 'applied',
           belief: Number.isFinite(belief) ? belief : currentScribbit.belief + 1,
         };
       }
     } catch (error) {
-      await discardArenaTransaction(transaction);
+      await discardWatchedTransaction(transaction, 'Scribbit mutation');
+      const storedOperationId = await storage.get(receiptKey);
+      if (storedOperationId === input.operationId) {
+        return {
+          status: 'applied',
+          belief: await readCommittedBelief(
+            storage,
+            input.scribbitId,
+            input.utcDateKey
+          ),
+        };
+      }
+      if (storedOperationId !== undefined) {
+        return { status: 'already-believed' };
+      }
       throw error;
     }
   }
 
   throw new Error(
-    `Belief for ${scribbit.id} changed too often to update safely.`
+    `Belief for ${input.scribbitId} changed too often to update safely.`
   );
+};
+
+export const removeUserBeliefReceipts = async (
+  storage: ArenaStorage,
+  userId: string,
+  currentUtcDateKey = formatUtcDateKey(new Date()),
+  observedAtMs = Date.now()
+): Promise<void> => {
+  const migrationStartedAtMs = await ensureMigrationStartedAt(
+    storage,
+    'belief-receipt-v2',
+    observedAtMs
+  );
+  const shouldReadLegacyPrivacy = migrationWindowIsOpen(
+    migrationStartedAtMs,
+    observedAtMs,
+    ROLLOUT_OVERLAP_MILLISECONDS + LEGACY_BELIEF_PRIVACY_MILLISECONDS
+  );
+  const legacyTargetsKey = getUserBeliefTargetsKey(userId);
+  if (shouldReadLegacyPrivacy) {
+    const legacyTargets = await storage.hGetAll(legacyTargetsKey);
+    for (const scribbitId of Object.keys(legacyTargets)) {
+      const legacyReceiptKey = getScribbitBeliefVotersKey(scribbitId);
+      const ownedReceiptFields = (await storage.hKeys(legacyReceiptKey)).filter(
+        (field) => field.startsWith(`${userId}:`)
+      );
+      if (ownedReceiptFields.length > 0) {
+        await storage.hDel(legacyReceiptKey, ownedReceiptFields);
+      }
+    }
+  }
+  await storage.del(legacyTargetsKey);
+
+  const year = Number(currentUtcDateKey.slice(0, 4));
+  const month = Number(currentUtcDateKey.slice(4, 6));
+  const day = Number(currentUtcDateKey.slice(6, 8));
+  const currentDate = new Date(Date.UTC(year, month - 1, day));
+  if (formatUtcDateKey(currentDate) !== currentUtcDateKey) {
+    throw new Error('Belief privacy cleanup requires a valid UTC date key.');
+  }
+
+  for (let dayOffset = 0; dayOffset < 30; dayOffset += 1) {
+    const receiptDate = new Date(currentDate);
+    receiptDate.setUTCDate(receiptDate.getUTCDate() - dayOffset);
+    const utcDateKey = formatUtcDateKey(receiptDate);
+    const dailyTargetsKey = getUserDailyBeliefTargetsKey(userId, utcDateKey);
+    const dailyTargets = await storage.hGetAll(dailyTargetsKey);
+    const receiptKeys = Object.keys(dailyTargets).map((scribbitId) => {
+      return getDailyBeliefReceiptKey(scribbitId, userId, utcDateKey);
+    });
+    if (receiptKeys.length > 0) await storage.del(...receiptKeys);
+    await storage.del(dailyTargetsKey);
+  }
 };
 
 export const crownScribbit = async (
@@ -2087,14 +2229,4 @@ export const crownScribbit = async (
     legendTitle,
   }));
   return result.scribbit;
-};
-
-export const recordBattleResultOnScribbits = async (
-  storage: ArenaStorage,
-  winner: Scribbit,
-  loser: Scribbit,
-  winnerXpGain = 0
-): Promise<void> => {
-  await recordBattleOutcomeOnScribbit(storage, winner.id, 'win', winnerXpGain);
-  await recordBattleOutcomeOnScribbit(storage, loser.id, 'loss', 0);
 };

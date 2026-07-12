@@ -4,7 +4,7 @@ import {
   getRumbleWinInkPayoutKey,
   loadClaimedInkRewardAmount,
 } from './inkStore';
-import type { ArenaStorage } from './scribbit';
+import type { ArenaStorage } from './storage';
 import {
   getUserScribbitIds,
   loadRumbleStandingReceipt,
@@ -56,11 +56,7 @@ export const loadOwnedRumbleReturnReceipt = async (
       payoutField: entered.scribbitId,
       userId: input.userId,
     }),
-    loadFeaturedRumbleReport(
-      storage,
-      entered.scribbitId,
-      input.resolvedDay
-    ),
+    loadFeaturedRumbleReport(storage, entered.scribbitId, input.resolvedDay),
   ]);
   if (
     !entrant ||

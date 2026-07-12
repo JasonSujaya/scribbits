@@ -14,13 +14,14 @@ import { mountLivingPaper } from '../lib/livingpaper';
 import {
   label,
   handLettered,
-  pageArrowButton,
+  paperPagination,
   stickerCard,
   errorPanel,
 } from '../lib/ui';
 import type { ErrorPanel } from '../lib/ui';
 import type { BattleReport } from '../../shared/arena';
 import { appDock } from '../lib/appdock';
+import { bindPressInteractionEvents } from '../lib/pressinteraction';
 import {
   orderBattleJournalReports,
   planBattleJournalEntry,
@@ -204,53 +205,19 @@ export class MyBattles extends Scene {
   private buildPagination(totalPages: number): void {
     const y = 232;
     if (totalPages <= 1) return;
-
-    label(
-      this,
-      this.scale.width / 2,
+    paperPagination({
+      scene: this,
+      actionOverlay: this.actionOverlay,
       y,
-      `${this.page + 1} / ${totalPages}`,
-      17,
-      UI.inkSoft,
-      true
-    );
-    if (this.page > 0) {
-      const goPrevious = (): void => this.changePage(this.page - 1);
-      pageArrowButton(
-        this,
-        104,
-        y,
-        'previous',
-        goPrevious
-      );
-      this.actionOverlay?.add({
-        label: 'Previous battle page',
-        rect: { x: 54, y: y - 50, width: 100, height: 100 },
-        pointerPassthrough: true,
-        onActivate: goPrevious,
-      });
-    }
-    if (this.page < totalPages - 1) {
-      const goNext = (): void => this.changePage(this.page + 1);
-      pageArrowButton(
-        this,
-        this.scale.width - 104,
-        y,
-        'next',
-        goNext
-      );
-      this.actionOverlay?.add({
-        label: 'Next battle page',
-        rect: {
-          x: this.scale.width - 154,
-          y: y - 50,
-          width: 100,
-          height: 100,
-        },
-        pointerPassthrough: true,
-        onActivate: goNext,
-      });
-    }
+      page: this.page,
+      pageCount: totalPages,
+      fontSize: 17,
+      pointerPassthrough: true,
+      previousLabel: 'Previous battle page',
+      nextLabel: 'Next battle page',
+      onPrevious: () => this.changePage(this.page - 1),
+      onNext: () => this.changePage(this.page + 1),
+    });
   }
 
   private changePage(page: number): void {
@@ -356,7 +323,7 @@ export class MyBattles extends Scene {
         ease: 'Back.easeOut',
       });
     };
-    hit.on('pointerdown', () => {
+    const press = (): void => {
       this.tweens.add({
         targets: card,
         scaleX: 0.985,
@@ -364,11 +331,15 @@ export class MyBattles extends Scene {
         duration: 60,
         ease: 'Quad.easeOut',
       });
-    });
-    hit.on('pointerout', release);
-    hit.on('pointerup', () => {
-      release();
-      openReport();
+    };
+    bindPressInteractionEvents(hit, {
+      press,
+      release,
+      activate: openReport,
+      pressOnHover: false,
+    }, {
+      gameTarget: this.input,
+      shutdownTarget: this.events,
     });
     this.actionOverlay?.add({
       label: plan.accessibleLabel,

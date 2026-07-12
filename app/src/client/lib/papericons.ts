@@ -10,17 +10,24 @@ export type PaperIconKey =
   | 'heart'
   | 'paw'
   | 'replay'
+  | 'resize'
   | 'info'
   | 'ink'
   | 'lock'
+  | 'pencil'
+  | 'shield'
   | 'spark'
   | 'sword'
   | 'train'
+  | 'trash'
   | 'trophy';
-export type PaperToolIconKey =
-  | 'sticker'
-  | 'eraser'
-  | 'undo';
+export type PaperToolIconKey = 'sticker' | 'eraser' | 'undo';
+export type PaperDockIconKey =
+  | 'arena'
+  | 'gallery'
+  | 'draw'
+  | 'battles'
+  | 'scout';
 
 export type PaperIconOptions = Readonly<{
   size?: number;
@@ -48,6 +55,144 @@ export function paperIcon(
   drawIcon(face, key, scale, fill, stroke);
   container.add([shadow, face]);
   return container;
+}
+
+/** One optical-weight, monochrome icon family for the persistent app dock. */
+export function paperDockIcon(
+  scene: Scene,
+  key: PaperDockIconKey,
+  x: number,
+  y: number,
+  size = 68,
+  color = UI.inkHex
+): Phaser.GameObjects.Container {
+  const scale = size / 64;
+  const container = scene.add.container(x, y);
+  const graphics = scene.add.graphics();
+  graphics.lineStyle(4.5 * scale, color, 1);
+  graphics.fillStyle(color, 1);
+
+  if (key === 'arena') {
+    const rosette: Phaser.Math.Vector2[] = [];
+    for (let point = 0; point < 16; point += 1) {
+      const radius = (point % 2 === 0 ? 25 : 21) * scale;
+      const angle = -Math.PI / 2 + (point * Math.PI) / 8;
+      rosette.push(
+        new Phaser.Math.Vector2(
+          Math.cos(angle) * radius,
+          Math.sin(angle) * radius
+        )
+      );
+    }
+    graphics.strokePoints(rosette, true);
+    graphics.strokeCircle(0, 0, 16 * scale);
+    drawFivePointStar(graphics, 0, 0, 9 * scale, 4 * scale, true);
+  } else if (key === 'gallery') {
+    graphics.strokeRoundedRect(
+      -12 * scale,
+      -23 * scale,
+      24 * scale,
+      25 * scale,
+      3 * scale
+    );
+    graphics.beginPath();
+    graphics.arc(
+      -12 * scale,
+      -13 * scale,
+      10 * scale,
+      Math.PI / 2,
+      Math.PI * 1.5
+    );
+    graphics.strokePath();
+    graphics.beginPath();
+    graphics.arc(
+      12 * scale,
+      -13 * scale,
+      10 * scale,
+      -Math.PI / 2,
+      Math.PI / 2
+    );
+    graphics.strokePath();
+    graphics.lineBetween(0, 2 * scale, 0, 17 * scale);
+    graphics.lineBetween(-15 * scale, 17 * scale, 15 * scale, 17 * scale);
+    graphics.lineBetween(-10 * scale, 24 * scale, 10 * scale, 24 * scale);
+  } else if (key === 'draw') {
+    const pencilBody = [
+      new Phaser.Math.Vector2(-21 * scale, 14 * scale),
+      new Phaser.Math.Vector2(12 * scale, -19 * scale),
+      new Phaser.Math.Vector2(22 * scale, -9 * scale),
+      new Phaser.Math.Vector2(-11 * scale, 24 * scale),
+    ];
+    graphics.strokePoints(pencilBody, true);
+    graphics.lineBetween(-21 * scale, 14 * scale, -26 * scale, 29 * scale);
+    graphics.lineBetween(-26 * scale, 29 * scale, -11 * scale, 24 * scale);
+    graphics.lineBetween(12 * scale, -19 * scale, 22 * scale, -9 * scale);
+    graphics.lineBetween(15 * scale, -22 * scale, 25 * scale, -12 * scale);
+    graphics.lineBetween(-23 * scale, 28 * scale, -27 * scale, 32 * scale);
+  } else if (key === 'battles') {
+    drawDockSword(graphics, scale, false);
+    drawDockSword(graphics, scale, true);
+  } else {
+    graphics.strokeCircle(-5 * scale, -6 * scale, 18 * scale);
+    graphics.lineBetween(8 * scale, 7 * scale, 25 * scale, 24 * scale);
+    graphics.strokeCircle(-5 * scale, -6 * scale, 6 * scale);
+    graphics.fillCircle(-5 * scale, -6 * scale, 2.2 * scale);
+  }
+
+  container.add(graphics);
+  return container;
+}
+
+function drawFivePointStar(
+  graphics: Phaser.GameObjects.Graphics,
+  x: number,
+  y: number,
+  outerRadius: number,
+  innerRadius: number,
+  fill: boolean
+): void {
+  const points: Phaser.Math.Vector2[] = [];
+  for (let point = 0; point < 10; point += 1) {
+    const radius = point % 2 === 0 ? outerRadius : innerRadius;
+    const angle = -Math.PI / 2 + (point * Math.PI) / 5;
+    points.push(
+      new Phaser.Math.Vector2(
+        x + Math.cos(angle) * radius,
+        y + Math.sin(angle) * radius
+      )
+    );
+  }
+  if (fill) graphics.fillPoints(points, true);
+  else graphics.strokePoints(points, true);
+}
+
+function drawDockSword(
+  graphics: Phaser.GameObjects.Graphics,
+  scale: number,
+  mirrored: boolean
+): void {
+  const direction = mirrored ? -1 : 1;
+  graphics.lineBetween(
+    -20 * direction * scale,
+    22 * scale,
+    16 * direction * scale,
+    -14 * scale
+  );
+  graphics.fillTriangle(
+    16 * direction * scale,
+    -14 * scale,
+    25 * direction * scale,
+    -25 * scale,
+    21 * direction * scale,
+    -9 * scale
+  );
+  graphics.lineBetween(
+    -25 * direction * scale,
+    10 * scale,
+    -9 * direction * scale,
+    26 * scale
+  );
+  graphics.strokeCircle(-23 * direction * scale, 25 * scale, 3 * scale);
 }
 
 export function elementPaperIcon(
@@ -293,6 +438,69 @@ function drawIcon(
     return;
   }
 
+  if (key === 'pencil') {
+    graphics.fillPoints(
+      [
+        new Phaser.Math.Vector2(-12 * scale, 8 * scale),
+        new Phaser.Math.Vector2(7 * scale, -11 * scale),
+        new Phaser.Math.Vector2(13 * scale, -5 * scale),
+        new Phaser.Math.Vector2(-6 * scale, 14 * scale),
+      ],
+      true
+    );
+    graphics.strokePoints(
+      [
+        new Phaser.Math.Vector2(-12 * scale, 8 * scale),
+        new Phaser.Math.Vector2(7 * scale, -11 * scale),
+        new Phaser.Math.Vector2(13 * scale, -5 * scale),
+        new Phaser.Math.Vector2(-6 * scale, 14 * scale),
+      ],
+      true
+    );
+    graphics.lineBetween(7 * scale, -11 * scale, 13 * scale, -5 * scale);
+    graphics.lineBetween(-12 * scale, 8 * scale, -15 * scale, 15 * scale);
+    graphics.lineBetween(-15 * scale, 15 * scale, -6 * scale, 14 * scale);
+    return;
+  }
+
+  if (key === 'shield') {
+    const shield = [
+      new Phaser.Math.Vector2(0, -14 * scale),
+      new Phaser.Math.Vector2(12 * scale, -9 * scale),
+      new Phaser.Math.Vector2(10 * scale, 5 * scale),
+      new Phaser.Math.Vector2(0, 14 * scale),
+      new Phaser.Math.Vector2(-10 * scale, 5 * scale),
+      new Phaser.Math.Vector2(-12 * scale, -9 * scale),
+    ];
+    graphics.fillPoints(shield, true);
+    graphics.strokePoints(shield, true);
+    graphics.lineBetween(0, -10 * scale, 0, 10 * scale);
+    graphics.lineBetween(-7 * scale, -5 * scale, 7 * scale, -5 * scale);
+    return;
+  }
+
+  if (key === 'trash') {
+    graphics.fillRoundedRect(
+      -9 * scale,
+      -7 * scale,
+      18 * scale,
+      20 * scale,
+      2 * scale
+    );
+    graphics.strokeRoundedRect(
+      -9 * scale,
+      -7 * scale,
+      18 * scale,
+      20 * scale,
+      2 * scale
+    );
+    graphics.lineBetween(-12 * scale, -9 * scale, 12 * scale, -9 * scale);
+    graphics.lineBetween(-5 * scale, -13 * scale, 5 * scale, -13 * scale);
+    graphics.lineBetween(-4 * scale, -3 * scale, -4 * scale, 8 * scale);
+    graphics.lineBetween(4 * scale, -3 * scale, 4 * scale, 8 * scale);
+    return;
+  }
+
   if (key === 'spark') {
     graphics.beginPath();
     for (let point = 0; point < 10; point += 1) {
@@ -360,6 +568,15 @@ function drawIcon(
       8 * scale,
       1 * scale
     );
+    return;
+  }
+
+  if (key === 'resize') {
+    graphics.lineBetween(-11 * scale, 11 * scale, 11 * scale, -11 * scale);
+    graphics.lineBetween(-11 * scale, 11 * scale, -11 * scale, 3 * scale);
+    graphics.lineBetween(-11 * scale, 11 * scale, -3 * scale, 11 * scale);
+    graphics.lineBetween(11 * scale, -11 * scale, 11 * scale, -3 * scale);
+    graphics.lineBetween(11 * scale, -11 * scale, 3 * scale, -11 * scale);
     return;
   }
 
@@ -440,7 +657,13 @@ function drawIcon(
       3 * scale
     );
     graphics.beginPath();
-    graphics.arc(-10 * scale, -6 * scale, 8 * scale, Math.PI / 2, Math.PI * 1.5);
+    graphics.arc(
+      -10 * scale,
+      -6 * scale,
+      8 * scale,
+      Math.PI / 2,
+      Math.PI * 1.5
+    );
     graphics.strokePath();
     graphics.beginPath();
     graphics.arc(10 * scale, -6 * scale, 8 * scale, -Math.PI / 2, Math.PI / 2);

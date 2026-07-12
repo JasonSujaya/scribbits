@@ -23,7 +23,8 @@ import {
 } from '../../shared/arena';
 import type { AttachedAccessory } from '../../shared/arena';
 import { EDGE, TYPE, UI } from './theme';
-import { label, ghostButton } from './ui';
+import { label, ghostButton, paperIconButton } from './ui';
+import { paperIcon, type PaperIconKey } from './papericons';
 import {
   accessoryLabel,
   drawAccessoryGraphics,
@@ -138,7 +139,7 @@ export class StickerAttach {
         this.scene,
         EDGE + 16,
         panelY - panelH / 2 + 22,
-        '✨ STICKERS',
+        'STICKERS',
         TYPE.caption,
         UI.inkSoft,
         true
@@ -161,7 +162,7 @@ export class StickerAttach {
           this.scene,
           width / 2,
           panelY + 8,
-          'No accessories yet — pull the capsule machine to win some! 🎰',
+          'No accessories yet — open Mystery Ink to find some.',
           TYPE.body,
           UI.inkSoft,
           true
@@ -355,7 +356,7 @@ export class StickerAttach {
       EDGE + 30,
       y,
       170,
-      '⤢',
+      'resize',
       (t) => {
         sticker.scale =
           MIN_ACCESSORY_SCALE +
@@ -372,7 +373,7 @@ export class StickerAttach {
       EDGE + 250,
       y,
       170,
-      '↻',
+      'replay',
       (t) => {
         sticker.rotation =
           MIN_ACCESSORY_ROTATION +
@@ -385,11 +386,11 @@ export class StickerAttach {
 
     // Remove button.
     panel.add(
-      ghostButton(
+      paperIconButton(
         this.scene,
         width - EDGE - 60,
         y,
-        '🗑',
+        'trash',
         () => this.removeSelected(),
         90
       )
@@ -401,11 +402,16 @@ export class StickerAttach {
     x: number,
     y: number,
     trackWidth: number,
-    glyph: string,
+    icon: PaperIconKey,
     onValue: (t: number) => void,
     initial: number
   ): void {
-    panel.add(label(this.scene, x, y, glyph, 24, UI.ink, true));
+    panel.add(
+      paperIcon(this.scene, icon, x, y, {
+        size: 26,
+        fill: UI.creamHex,
+      })
+    );
     const trackX = x + 26;
     const track = this.scene.add
       .rectangle(trackX, y, trackWidth, 8, UI.inkHex, 0.25)

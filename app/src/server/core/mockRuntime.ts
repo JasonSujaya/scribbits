@@ -4,7 +4,37 @@
 export { simulate } from './battle';
 export { generateForecastForDay } from './forecast';
 export { createPracticeBattle } from './practice';
-export { INK_REWARDS } from '../../shared/arena';
+export { getRumbleProgressionRewards } from './dailyJob';
+export {
+  addXpToScribbit,
+  applyBattleOutcomeToScribbit,
+  cloneScribbit,
+  createScribbit,
+  createScribbitLegacy,
+  getLevelForXp,
+  isCareAction,
+  planCareProgression,
+  validateAndAnalyzeScribbitSubmission,
+} from './scribbit';
+export {
+  advanceCapsulePity,
+  createCapsuleProgress,
+  getCapsuleCostForDailyState,
+  projectAccessoryInventoryConsumption,
+  projectCapsuleInventoryGrant,
+  projectEquippedTitle,
+  selectCapsuleDrop,
+} from './inkStore';
+export { COSMETIC_CATALOG } from '../../shared/cosmetics';
+export { ELEMENTS, isElement } from '../../shared/elements';
+export { hashStringToUint32 } from '../../shared/stablehash';
+export {
+  CAPSULE_COST,
+  INK_REWARDS,
+  MAX_ALIVE_PER_USER,
+  SCRIBBIT_STAT_KEYS,
+  XP_REWARDS,
+} from '../../shared/arena';
 export {
   SCOUT_NOTEBOOK_MAXIMUM_ENTRIES,
   createScoutNotebookState,

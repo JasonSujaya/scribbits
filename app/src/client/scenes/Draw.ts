@@ -13,7 +13,7 @@ import {
 } from '../lib/registry';
 import { analyze, hasMinimumDrawingInk, MIN_INK_PIXELS } from '../lib/analyzer';
 import type { AnalyzerResult } from '../lib/analyzer';
-import { DomOverlay } from '../lib/overlay';
+import { CanvasActionOverlay, DomOverlay } from '../lib/overlay';
 import { DrawCanvas } from '../lib/drawcanvas';
 import {
   ELEMENT_STYLES,
@@ -25,7 +25,7 @@ import {
   TYPE,
   UI,
 } from '../lib/theme';
-import { paperToolIcon } from '../lib/papericons';
+import { paperIcon, paperToolIcon } from '../lib/papericons';
 import type { PaperToolIconKey } from '../lib/papericons';
 import { paperBackdrop } from '../lib/art';
 import { LivingPaper } from '../lib/livingpaper';
@@ -34,9 +34,11 @@ import { fetchInventory } from '../lib/api';
 import { drawAccessoryCanvas } from '../lib/accessories';
 import type { AttachedAccessory } from '../../shared/arena';
 import { selectPrimaryPower } from '../../shared/combat/selection';
-import { getShapePowerSignatureName } from '../../shared/combat/shapepowercontent';
 import {
-  DOODLE_DARE_HINT_BY_POWER,
+  getShapePowerDrawingCue,
+  getShapePowerSignatureName,
+} from '../../shared/combat/shapepowercontent';
+import {
   DRAW_HEADER_TITLE,
   DRAW_RULES_COPY,
   planDrawFeedback,
@@ -60,19 +62,14 @@ import {
   stickerCard,
   errorPanel,
   fadeToScene,
+  iconButton,
 } from '../lib/ui';
 import type { ErrorPanel } from '../lib/ui';
 import { PEN_CATALOG, penSwatchColor } from '../lib/pens';
 import type { PenCatalogEntry } from '../lib/pens';
-import {
-  ACCESSORY_BASE_SIZE,
-  INK_REWARDS,
-} from '../../shared/arena';
-import type {
-  ArenaState,
-  BattleReport,
-  Scribbit,
-} from '../../shared/arena';
+import { ACCESSORY_BASE_SIZE, INK_REWARDS } from '../../shared/arena';
+import { bindPressInteractionEvents } from '../lib/pressinteraction';
+import type { ArenaState, BattleReport, Scribbit } from '../../shared/arena';
 import type { PrimaryPower } from '../../shared/combat/types';
 import { getDrawEligibility } from '../lib/draweligibility';
 import { showVsCeremony } from '../lib/battleceremony';
@@ -90,6 +87,16 @@ const PALETTE_COLORS = [
   '#8a5cd8',
   '#f2cf3d',
 ] as const;
+const PALETTE_COLOR_NAMES = [
+  'ink',
+  'coral',
+  'orange',
+  'blue',
+  'aqua',
+  'green',
+  'purple',
+  'gold',
+] as const;
 
 const MIN_LINE_WIDTH = 8;
 const MAX_LINE_WIDTH = 56;
@@ -104,6 +111,8 @@ export class Draw extends Scene {
   private overlay!: DomOverlay;
   private canvas!: DrawCanvas;
   private nameInput: HTMLInputElement | null = null;
+  private controlOverlay: CanvasActionOverlay | null = null;
+  private submitControl: HTMLButtonElement | null = null;
 
   private reactionText!: Phaser.GameObjects.Text;
   private lastResult: AnalyzerResult | null = null;
@@ -178,6 +187,8 @@ export class Draw extends Scene {
     this.practiceAttemptCount = 0;
     this.pendingPracticeReport = null;
     this.nameInput = null;
+    this.controlOverlay = null;
+    this.submitControl = null;
   }
 
   create(): void {
@@ -226,6 +237,10 @@ export class Draw extends Scene {
     // Calm living page (no forecast field / edge creatures) so it moves gently
     // without distracting from the drawing surface.
     this.livingPaper = new LivingPaper(this, { edgeCreatures: false });
+    this.controlOverlay = new CanvasActionOverlay(this);
+    this.controlOverlay.setRootAttributes({
+      'aria-label': this.practiceMode ? 'Practice drawing controls' : 'Drawing controls',
+    });
     this.buildChrome();
     this.buildOverlay();
     this.startAnalyzerWorker();
@@ -253,6 +268,9 @@ export class Draw extends Scene {
     this.analysisWorker = null;
     this.canvas?.destroy();
     this.overlay?.destroy();
+    this.controlOverlay?.destroy();
+    this.controlOverlay = null;
+    this.submitControl = null;
     this.livingPaper?.destroy();
     this.livingPaper = null;
     this.stickers?.destroy();
@@ -371,12 +389,35 @@ export class Draw extends Scene {
   private static readonly NAME_Y = 1092;
   private static readonly SUBMIT_Y = 1200;
 
+  private addNativeControl(
+    accessibleLabel: string,
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+    onActivate: () => void,
+    enabled = true
+  ): HTMLButtonElement | null {
+    return (
+      this.controlOverlay?.add({
+        label: accessibleLabel,
+        rect: { x, y, width, height },
+        pointerPassthrough: true,
+        enabled,
+        onActivate,
+      }) ?? null
+    );
+  }
+
   // --- Phaser chrome (everything except the live canvas + name input) -------
   private buildChrome(): void {
     const { width } = this.scale;
     // Top bar: Back on the left, title centered in the remaining space so the
     // two never collide (the mission's header-clip bug).
     ghostButton(this, 90, 60, '‹', () => this.exitDraw(), 96);
+    this.addNativeControl('Back to Arena', 42, 12, 96, 96, () =>
+      this.exitDraw()
+    );
     handLettered(
       this,
       width / 2 + 30,
@@ -412,6 +453,15 @@ export class Draw extends Scene {
       UI.ink
     );
     this.submitButton.setAlpha(0).setVisible(false);
+    this.submitControl = this.addNativeControl(
+      this.practiceMode ? PRACTICE_SUBMIT_LABEL : 'Bring drawing to life',
+      EDGE,
+      Draw.SUBMIT_Y - 48,
+      width - EDGE * 2,
+      96,
+      () => this.trySubmit(),
+      false
+    );
   }
 
   // Two compact rows: every base color remains visible, while editing tools and
@@ -432,8 +482,7 @@ export class Draw extends Scene {
     this.buildPaletteRow(paletteY, panelW);
 
     const canUseStickers =
-      !this.practiceMode &&
-      (this.getArenaState()?.myScribbits.length ?? 0) > 0;
+      !this.practiceMode && (this.getArenaState()?.myScribbits.length ?? 0) > 0;
     const hasPremiumPens = this.unlockedPens().length > 0;
     const toolCount = 3 + Number(canUseStickers) + Number(hasPremiumPens);
     const toolSpacing = panelW / toolCount;
@@ -520,7 +569,30 @@ export class Draw extends Scene {
         .rectangle(0, 0, spacing, 84, 0xffffff, 0.001)
         .setInteractive({ useHandCursor: true });
       container.add([swatch, hit]);
-      hit.on('pointerup', () => this.selectBaseColor(colorIndex));
+      const press = (): void => {
+        container.setScale(0.9);
+      };
+      const release = (): void => {
+        container.setScale(1);
+      };
+      bindPressInteractionEvents(
+        hit,
+        {
+          press,
+          release,
+          activate: () => this.selectBaseColor(colorIndex),
+          pressOnHover: false,
+        },
+        { gameTarget: this.input, shutdownTarget: this.events }
+      );
+      this.addNativeControl(
+        `Use ${PALETTE_COLOR_NAMES[colorIndex] ?? color} ink`,
+        x - spacing / 2,
+        y - 42,
+        spacing,
+        84,
+        () => this.selectBaseColor(colorIndex)
+      );
       this.paletteSwatches.push(swatch);
     });
   }
@@ -584,7 +656,24 @@ export class Draw extends Scene {
       cycleMarks,
       hit,
     ]);
-    hit.on('pointerup', () => this.cyclePremiumPen());
+    bindPressInteractionEvents(
+      hit,
+      {
+        press: () => container.setScale(0.9),
+        release: () => container.setScale(1),
+        activate: () => this.cyclePremiumPen(),
+        pressOnHover: false,
+      },
+      { gameTarget: this.input, shutdownTarget: this.events }
+    );
+    this.addNativeControl(
+      'Cycle unlocked premium pen',
+      x - Math.max(width, MIN_TOUCH) / 2,
+      y - MIN_TOUCH / 2,
+      Math.max(width, MIN_TOUCH),
+      MIN_TOUCH,
+      () => this.cyclePremiumPen()
+    );
   }
 
   private cyclePremiumPen(): void {
@@ -637,12 +726,29 @@ export class Draw extends Scene {
         ease: 'Back.easeOut',
       });
     };
-    hit.on('pointerdown', press);
-    hit.on('pointerout', release);
-    hit.on('pointerup', () => {
-      release();
-      onClick();
+    bindPressInteractionEvents(hit, {
+      press,
+      release,
+      activate: onClick,
+      pressOnHover: false,
+    }, {
+      gameTarget: this.input,
+      shutdownTarget: this.events,
     });
+    const accessibleLabel =
+      icon === 'sticker'
+        ? 'Add an accessory sticker'
+        : icon === 'eraser'
+          ? 'Use eraser'
+          : 'Undo last stroke';
+    this.addNativeControl(
+      accessibleLabel,
+      x - Math.max(width, MIN_TOUCH) / 2,
+      y - MIN_TOUCH / 2,
+      Math.max(width, MIN_TOUCH),
+      MIN_TOUCH,
+      onClick
+    );
     return container;
   }
 
@@ -665,17 +771,28 @@ export class Draw extends Scene {
       .rectangle(0, 0, width, MIN_TOUCH, 0xffffff, 0.001)
       .setInteractive({ useHandCursor: true });
     preview.add([bg, ring, this.lineWidthPreviewDot, hit]);
-    hit.on('pointerup', () => {
+    const cycleLineWidth = (): void => {
       const next = this.lineWidth + LINE_WIDTH_STEP * 2;
       this.setLineWidth(next > MAX_LINE_WIDTH ? MIN_LINE_WIDTH : next);
-      this.tweens.add({
-        targets: preview,
-        scale: 0.92,
-        duration: 70,
-        yoyo: true,
-        ease: 'Quad.easeOut',
-      });
-    });
+    };
+    bindPressInteractionEvents(
+      hit,
+      {
+        press: () => preview.setScale(0.92),
+        release: () => preview.setScale(1),
+        activate: cycleLineWidth,
+        pressOnHover: false,
+      },
+      { gameTarget: this.input, shutdownTarget: this.events }
+    );
+    this.addNativeControl(
+      'Change brush size',
+      x - width / 2,
+      y - MIN_TOUCH / 2,
+      width,
+      MIN_TOUCH,
+      cycleLineWidth
+    );
   }
 
   private setLineWidth(width: number): void {
@@ -820,7 +937,7 @@ export class Draw extends Scene {
     overlay.setAttribute('role', 'note');
     overlay.setAttribute(
       'aria-label',
-      `Optional Dare: ${dare.prompt}. ${DOODLE_DARE_HINT_BY_POWER[dare.suggestedPower]} Twist: ${twist}. You may draw anything.`
+      `Optional Dare: ${dare.prompt}. ${getShapePowerDrawingCue(dare.suggestedPower)} Twist: ${twist}. You may draw anything.`
     );
     Object.assign(overlay.style, {
       display: 'flex',
@@ -955,6 +1072,13 @@ export class Draw extends Scene {
       this.nameInput.tabIndex = ready ? 0 : -1;
       this.nameInput.setAttribute('aria-hidden', ready ? 'false' : 'true');
       if (!ready) this.nameInput.blur();
+    }
+
+    if (this.submitControl) {
+      this.submitControl.disabled = !ready;
+      this.submitControl.tabIndex = ready ? 0 : -1;
+      this.submitControl.setAttribute('aria-hidden', ready ? 'false' : 'true');
+      if (!ready) this.submitControl.blur();
     }
 
     const submitButton = this.submitButton;
@@ -1139,7 +1263,9 @@ export class Draw extends Scene {
       onComplete: ({ textureKey, newborn }) =>
         this.showBirthReveal(scribbit, textureKey, newborn),
       onError: () =>
-        this.showError('Your drawing was saved, but its reveal could not load.'),
+        this.showError(
+          'Your drawing was saved, but its reveal could not load.'
+        ),
     });
   }
 
@@ -1278,10 +1404,10 @@ export class Draw extends Scene {
       width / 2,
       height - 80,
       this.practiceMode
-        ? 'WATCH REPLAY →'
+        ? 'WATCH REPLAY'
         : this.startFightAfterBirth
-          ? 'WATCH FIRST FIGHT →'
-          : 'CONTINUE →',
+          ? 'WATCH FIRST FIGHT'
+          : 'CONTINUE',
       () => this.continueAfterBirth(scribbit),
       420
     ).setDepth(10);
@@ -1330,15 +1456,13 @@ export class Draw extends Scene {
       }
     ).setDepth(200);
     statusCard.add(
-      label(
-        this,
-        0,
-        -24,
-        '⚔️ Finding an exhibition opponent…',
-        TYPE.title,
-        UI.ink,
-        true
-      )
+      paperIcon(this, 'sword', -210, -24, {
+        size: 40,
+        fill: UI.coral,
+      })
+    );
+    statusCard.add(
+      label(this, 18, -24, 'Finding an opponent…', TYPE.title, UI.ink, true)
     );
     statusCard.add(
       label(
@@ -1388,11 +1512,12 @@ export class Draw extends Scene {
     copy.setWordWrapWidth(width - 220);
     panel.add(copy);
 
-    const retry = button(
+    const retry = iconButton(
       this,
       width / 2,
       height / 2 + 54,
-      '⚔️ Retry first fight',
+      'sword',
+      'Retry fight',
       () => {
         panel.destroy(true);
         retry.destroy(true);

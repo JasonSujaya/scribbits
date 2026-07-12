@@ -1,16 +1,6 @@
 import type * as Phaser from 'phaser';
 import type { Scene } from 'phaser';
-import type { AppTabKey } from './ui';
-
 export const PAPER_STAGE_TEXTURE = 'scribbits-paper-stage';
-
-export const NAV_ICON_TEXTURES: Readonly<Record<AppTabKey, string>> = {
-  arena: 'nav-icon-arena',
-  gallery: 'nav-icon-gallery',
-  draw: 'nav-icon-draw',
-  battles: 'nav-icon-battles',
-  scout: 'nav-icon-scout',
-};
 
 export const UI_BUTTON_TEXTURES = {
   back: 'ui-button-back',
@@ -30,9 +20,6 @@ export function preloadVisualAssets(scene: Scene): void {
     PAPER_STAGE_TEXTURE,
     assetUrl('scribbits-paper-stage.jpg')
   );
-  Object.entries(NAV_ICON_TEXTURES).forEach(([tab, texture]) => {
-    scene.load.image(texture, assetUrl(`nav-${tab}.png`));
-  });
   Object.entries(UI_BUTTON_TEXTURES).forEach(([kind, texture]) => {
     scene.load.image(texture, assetUrl(`ui-button-${kind}.png`));
   });

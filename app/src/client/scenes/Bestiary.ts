@@ -6,18 +6,55 @@ import { navigateToDailyDraw } from '../lib/draweligibility';
 import { EDGE, TYPE, UI } from '../lib/theme';
 import { LivingPaper } from '../lib/livingpaper';
 import {
-  button,
   elementBadge,
   fadeToScene,
   ghostButton,
   handLettered,
+  iconButton,
   label,
   stickerCard,
 } from '../lib/ui';
+import { paperIcon, type PaperIconKey } from '../lib/papericons';
 import { ELEMENT_PAYLOAD_GUIDE } from '../../shared/combat/elementcontent';
+import {
+  getShapePowerContent,
+  getShapePowerDrawingCue,
+  getShapePowerFieldGuideCue,
+} from '../../shared/combat/shapepowercontent';
+import {
+  DOMINANT_STAT_TIE_ORDER,
+  PRIMARY_POWER_BY_DOMINANT_STAT,
+} from '../../shared/combat/config';
+import type { DominantStat } from '../../shared/combat/types';
 import { appDock } from '../lib/appdock';
+import { CanvasActionOverlay, CanvasModalOverlay } from '../lib/overlay';
 
 type GuideSection = 'shape' | 'elements' | 'ritual' | 'legends' | 'privacy';
+type GuideModal = Readonly<{
+  container: Phaser.GameObjects.Container;
+  section: GuideSection;
+  closeControl: HTMLButtonElement;
+  deleteControl: HTMLButtonElement | null;
+  status: HTMLElement;
+}>;
+const SHAPE_POWER_GUIDE_ICON_BY_STAT: Readonly<
+  Record<DominantStat, PaperIconKey>
+> = Object.freeze({
+  chonk: 'heart',
+  spike: 'sword',
+  zip: 'clock',
+  charm: 'spark',
+});
+const SHAPE_POWER_GUIDE_ENTRIES = DOMINANT_STAT_TIE_ORDER.map((stat) => {
+  const power = PRIMARY_POWER_BY_DOMINANT_STAT[stat];
+  const content = getShapePowerContent(power);
+  return Object.freeze({
+    icon: SHAPE_POWER_GUIDE_ICON_BY_STAT[stat],
+    statLabel: stat.toUpperCase(),
+    detail: getShapePowerFieldGuideCue(power),
+    description: `${stat.toUpperCase()} gives ${content.fieldGuideCue.toLowerCase()}. ${getShapePowerDrawingCue(power)}`,
+  });
+});
 
 // A truthful rules + safety guide. It deliberately avoids a fake collection
 // catalog: every Scribbit is player-drawn, so the useful discovery is how the
@@ -26,7 +63,8 @@ export class Bestiary extends Scene {
   private deleteDataArmed = false;
   private deletingData = false;
   private livingPaper: LivingPaper | null = null;
-  private guideModal: Phaser.GameObjects.Container | null = null;
+  private guideModal: GuideModal | null = null;
+  private quickGuideActions: CanvasActionOverlay | null = null;
 
   constructor() {
     super('Bestiary');
@@ -37,6 +75,7 @@ export class Bestiary extends Scene {
     this.deletingData = false;
     this.livingPaper = null;
     this.guideModal = null;
+    this.quickGuideActions = null;
   }
 
   create(): void {
@@ -56,32 +95,36 @@ export class Bestiary extends Scene {
       true
     );
 
+    this.quickGuideActions = new CanvasActionOverlay(this);
     this.buildQuickGuide();
-    button(
+    iconButton(
       this,
       width / 2,
       1048,
-      '✏️ DRAW TODAY',
+      'pencil',
+      'DRAW TODAY',
       () => navigateToDailyDraw(this),
       width - EDGE * 4
     );
     this.buildAppTabs();
     this.events.once('shutdown', () => {
       this.guideModal = null;
+      this.quickGuideActions = null;
       this.livingPaper?.destroy();
       this.livingPaper = null;
     });
   }
 
   private buildQuickGuide(): void {
-    const rows: ReadonlyArray<readonly [GuideSection, string, string, string]> =
-      [
-        ['shape', '✏️', 'SHAPE', 'Body becomes build'],
-        ['elements', '⚔️', 'ELEMENTS', 'Four payload styles'],
-        ['ritual', '🌙', 'RITUAL', 'Draw · Watch · Back · Return'],
-        ['legends', '🏆', 'LEGENDS', 'Three days to matter'],
-        ['privacy', '🛡️', 'PRIVACY', 'Report · Delete'],
-      ];
+    const rows: ReadonlyArray<
+      readonly [GuideSection, PaperIconKey, string, string]
+    > = [
+      ['shape', 'pencil', 'SHAPE', 'Body becomes build'],
+      ['elements', 'spark', 'ELEMENTS', 'Four payload styles'],
+      ['ritual', 'clock', 'RITUAL', 'Draw · Watch · Back · Return'],
+      ['legends', 'trophy', 'LEGENDS', 'Three days to matter'],
+      ['privacy', 'shield', 'PRIVACY', 'Report · Delete'],
+    ];
 
     rows.forEach(([section, icon, title, summary], index) => {
       this.buildGuideRow(section, icon, title, summary, 206 + index * 158);
@@ -90,7 +133,7 @@ export class Bestiary extends Scene {
 
   private buildGuideRow(
     section: GuideSection,
-    icon: string,
+    icon: PaperIconKey,
     title: string,
     summary: string,
     y: number
@@ -100,7 +143,12 @@ export class Bestiary extends Scene {
     const card = stickerCard(this, width / 2, y, cardWidth, 128, {
       tape: false,
     });
-    card.add(label(this, -cardWidth / 2 + 60, 0, icon, 34, UI.ink));
+    card.add(
+      paperIcon(this, icon, -cardWidth / 2 + 60, 0, {
+        size: 38,
+        fill: UI.coral,
+      })
+    );
     card.add(
       label(this, -cardWidth / 2 + 112, -18, title, 24, UI.ink, true).setOrigin(
         0,
@@ -113,39 +161,66 @@ export class Bestiary extends Scene {
         0.5
       )
     );
-    card.add(label(this, cardWidth / 2 - 48, 0, '›', 42, UI.coralText, true));
     const hit = this.add
       .rectangle(0, 0, cardWidth, 128, 0xffffff, 0.001)
       .setInteractive({ useHandCursor: true });
     hit.on('pointerup', () => this.openGuideSection(section));
     card.add(hit);
+    this.quickGuideActions?.add({
+      label: `${title}. ${summary}`,
+      rect: { x: EDGE, y: y - 64, width: cardWidth, height: 128 },
+      onActivate: () => this.openGuideSection(section),
+    });
   }
 
   private openGuideSection(section: GuideSection): void {
     this.closeGuideSection();
     const { width, height } = this.scale;
     const modal = this.add.container(0, 0).setDepth(2200);
+    const modalActions = new CanvasModalOverlay(
+      this,
+      this.guideSectionTitle(section),
+      () => this.closeGuideSection(),
+      this.guideSectionDescription(section)
+    );
+    modal.once('destroy', () => modalActions.destroy());
     const backdrop = this.add
       .rectangle(width / 2, height / 2, width, height, UI.deskHex, 0.82)
       .setInteractive({ useHandCursor: true });
     backdrop.on('pointerup', () => this.closeGuideSection());
     modal.add(backdrop);
-    modal.add(
-      stickerCard(this, width / 2, 600, width - 80, 820, {
-        tapeColor: UI.tapeAlt,
-        tapeWidth: 94,
-      })
+    const guideCard = stickerCard(this, width / 2, 600, width - 80, 820, {
+      tapeColor: UI.tapeAlt,
+      tapeWidth: 94,
+    });
+    const cardBlocker = this.add
+      .rectangle(0, 0, width - 80, 820, 0xffffff, 0.001)
+      .setInteractive();
+    cardBlocker.on(
+      'pointerup',
+      (
+        _pointer: unknown,
+        _localX: unknown,
+        _localY: unknown,
+        event: Phaser.Types.Input.EventData
+      ) => event.stopPropagation?.()
     );
-    modal.add(
-      ghostButton(
-        this,
-        width - 92,
-        226,
-        '×',
-        () => this.closeGuideSection(),
-        88
-      )
+    guideCard.addAt(cardBlocker, 0);
+    modal.add(guideCard);
+    const closeButton = ghostButton(
+      this,
+      width - 92,
+      226,
+      '×',
+      () => this.closeGuideSection(),
+      88
     );
+    modal.add(closeButton);
+    const closeControl = modalActions.add({
+      label: `Close ${this.guideSectionTitle(section)}`,
+      rect: { x: width - 136, y: 182, width: 88, height: 88 },
+      onActivate: () => this.closeGuideSection(),
+    });
     modal.add(
       label(
         this,
@@ -157,8 +232,31 @@ export class Bestiary extends Scene {
         true
       )
     );
-    this.renderGuideSection(modal, section);
-    this.guideModal = modal;
+    const deleteControl = this.renderGuideSection(modal, modalActions, section);
+    const status = modalActions.addStatus();
+    this.guideModal = {
+      container: modal,
+      section,
+      closeControl,
+      deleteControl,
+      status,
+    };
+    modalActions.focusInitial(closeControl);
+  }
+
+  private guideSectionDescription(section: GuideSection): string {
+    switch (section) {
+      case 'shape':
+        return `Shape becomes build. ${SHAPE_POWER_GUIDE_ENTRIES.map((entry) => entry.description).join(' ')}`;
+      case 'elements':
+        return `${ELEMENT_PAYLOAD_GUIDE.map((entry) => `${entry.title}: ${entry.detail}`).join(' ')} There is no hidden element triangle.`;
+      case 'ritual':
+        return 'Draw one Scribbit. Watch its power immediately. Back one community contender. Return after midnight for the Champion and Clout result.';
+      case 'legends':
+        return 'A Scribbit lives for three days. Care builds levels and wins build its record. A Champion crown or twenty-five Belief makes it permanent.';
+      case 'privacy':
+        return 'Scribbits stores your Reddit identity, drawings, battles, inventory, streak, and scores only to run the game. You can report player cards, remove your Scribbits, or permanently delete all stored game data.';
+    }
   }
 
   private guideSectionTitle(section: GuideSection): string {
@@ -178,17 +276,20 @@ export class Bestiary extends Scene {
 
   private renderGuideSection(
     modal: Phaser.GameObjects.Container,
+    modalActions: CanvasModalOverlay,
     section: GuideSection
-  ): void {
+  ): HTMLButtonElement | null {
     switch (section) {
       case 'shape':
-        this.renderTextRows(modal, [
-          ['🫓', 'CHONK', 'More HP · Inkquake'],
-          ['🌵', 'SPIKE', 'Sharp edge · Nib Halo'],
-          ['💨', 'ZIP', 'Faster move · Smearstep'],
-          ['✨', 'CHARM', 'More crit · Colorburst'],
-        ]);
-        return;
+        this.renderTextRows(
+          modal,
+          SHAPE_POWER_GUIDE_ENTRIES.map((entry) => [
+            entry.icon,
+            entry.statLabel,
+            entry.detail,
+          ])
+        );
+        return null;
       case 'elements':
         ELEMENT_PAYLOAD_GUIDE.forEach((entry, index) => {
           const y = 368 + index * 130;
@@ -216,17 +317,22 @@ export class Bestiary extends Scene {
             true
           )
         );
-        return;
+        return null;
       case 'ritual':
         this.renderTextRows(modal, [
-          ['1', 'DRAW', 'One Scribbit enters tonight'],
-          ['2', 'WATCH', 'See its power immediately'],
-          ['3', 'BACK', 'Lock one community pick'],
-          ['4', 'RETURN', 'Champion + Clout after midnight'],
+          ['pencil', 'DRAW', 'One Scribbit enters tonight'],
+          ['replay', 'WATCH', 'See its power immediately'],
+          ['heart', 'BACK', 'Lock one community pick'],
+          ['clock', 'RETURN', 'Champion + Clout after midnight'],
         ]);
-        return;
+        return null;
       case 'legends':
-        modal.add(label(this, this.scale.width / 2, 430, '🏆', 92, UI.ink));
+        modal.add(
+          paperIcon(this, 'trophy', this.scale.width / 2, 430, {
+            size: 92,
+            fill: UI.gold,
+          })
+        );
         modal.add(
           label(
             this,
@@ -251,9 +357,14 @@ export class Bestiary extends Scene {
             .setWordWrapWidth(this.scale.width - 170)
             .setLineSpacing(8)
         );
-        return;
-      case 'privacy':
-        modal.add(label(this, this.scale.width / 2, 382, '🛡️', 72, UI.ink));
+        return null;
+      case 'privacy': {
+        modal.add(
+          paperIcon(this, 'shield', this.scale.width / 2, 382, {
+            size: 72,
+            fill: UI.tapeAlt,
+          })
+        );
         modal.add(
           label(
             this,
@@ -268,15 +379,26 @@ export class Bestiary extends Scene {
             .setLineSpacing(6)
         );
         modal.add(
-          ghostButton(
+          iconButton(
             this,
             this.scale.width / 2,
             770,
-            '🗑 Delete all my stored game data',
+            'trash',
+            'DELETE MY DATA',
             () => this.deleteStoredPlayerData(),
             this.scale.width - 180
           )
         );
+        const deleteControl = modalActions.add({
+          label: 'Delete all my stored game data',
+          rect: {
+            x: 90,
+            y: 720,
+            width: this.scale.width - 180,
+            height: 100,
+          },
+          onActivate: () => this.deleteStoredPlayerData(),
+        });
         modal.add(
           label(
             this,
@@ -288,16 +410,23 @@ export class Bestiary extends Scene {
             true
           )
         );
+        return deleteControl;
+      }
     }
   }
 
   private renderTextRows(
     modal: Phaser.GameObjects.Container,
-    rows: ReadonlyArray<readonly [string, string, string]>
+    rows: ReadonlyArray<readonly [PaperIconKey, string, string]>
   ): void {
     rows.forEach(([icon, title, detail], index) => {
       const y = 378 + index * 142;
-      modal.add(label(this, 130, y, icon, 32, UI.ink, true));
+      modal.add(
+        paperIcon(this, icon, 130, y, {
+          size: 34,
+          fill: UI.coral,
+        })
+      );
       modal.add(
         label(this, 185, y - 18, title, 23, UI.ink, true).setOrigin(0, 0.5)
       );
@@ -308,7 +437,9 @@ export class Bestiary extends Scene {
   }
 
   private closeGuideSection(): void {
-    this.guideModal?.destroy(true);
+    if (this.deletingData) return;
+    if (this.guideModal?.section === 'privacy') this.deleteDataArmed = false;
+    this.guideModal?.container.destroy(true);
     this.guideModal = null;
   }
 
@@ -316,25 +447,61 @@ export class Bestiary extends Scene {
     if (this.deletingData) return;
     if (!this.deleteDataArmed) {
       this.deleteDataArmed = true;
+      if (this.guideModal?.section === 'privacy') {
+        this.guideModal.status.textContent =
+          'Deletion is permanent. Activate Delete again to confirm.';
+      }
       showToast('Tap Delete all my stored game data again to confirm.');
       return;
     }
 
     this.deletingData = true;
-    void deleteMyData().then((result) => {
-      this.deletingData = false;
-      if (!result.ok) {
+    const activeModal = this.guideModal;
+    if (activeModal?.section === 'privacy') {
+      activeModal.closeControl.focus();
+      if (activeModal.deleteControl) activeModal.deleteControl.disabled = true;
+      activeModal.closeControl.setAttribute('aria-disabled', 'true');
+      activeModal.status.textContent = 'Deleting all stored game data.';
+    }
+    void deleteMyData()
+      .then((result) => {
+        if (!this.scene.isActive()) return;
+        this.deletingData = false;
+        if (!result.ok) {
+          this.deleteDataArmed = false;
+          if (activeModal && activeModal === this.guideModal) {
+            activeModal.closeControl.removeAttribute('aria-disabled');
+            if (activeModal.deleteControl) {
+              activeModal.deleteControl.disabled = false;
+            }
+            activeModal.status.textContent = result.error;
+          }
+          showToast(result.error);
+          return;
+        }
+        this.renderDeletedState(result.data.removedScribbits);
+      })
+      .catch(() => {
+        if (!this.scene.isActive()) return;
+        this.deletingData = false;
         this.deleteDataArmed = false;
-        showToast(result.error);
-        return;
-      }
-      this.renderDeletedState(result.data.removedScribbits);
-    });
+        if (activeModal && activeModal === this.guideModal) {
+          activeModal.closeControl.removeAttribute('aria-disabled');
+          if (activeModal.deleteControl) {
+            activeModal.deleteControl.disabled = false;
+          }
+          activeModal.status.textContent =
+            'Could not delete stored game data. Try again.';
+        }
+        showToast('Could not delete stored game data. Try again.');
+      });
   }
 
   private renderDeletedState(removedScribbits: number): void {
     this.children.removeAll(true);
     this.guideModal = null;
+    this.quickGuideActions?.destroy();
+    this.quickGuideActions = null;
     this.livingPaper?.destroy();
     this.livingPaper = new LivingPaper(this, { edgeCreatures: false });
     const { width, height } = this.scale;

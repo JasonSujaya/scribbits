@@ -7,7 +7,6 @@ import type {
   BattleReport,
   DirectBattleResponse,
   FounderChronicleBeat,
-  Scribbit,
 } from '../../shared/arena';
 import type { PrimaryPower } from '../../shared/combat/types';
 import {
@@ -28,19 +27,22 @@ const REPLAY_ENTRY_MODE_KEY = 'replayEntryMode';
 const REPLAY_PASS_KEY = 'replayPass';
 const REPLAY_CHRONICLE_BEAT_KEY = 'replayChronicleBeat';
 const REPLAY_RIVALRY_STAKES_KEY = 'replayRivalryStakes';
-const SKETCHBOOK_TAB_KEY = 'sketchbookTab';
+const GALLERY_TAB_KEY = 'galleryTab';
 const PRACTICE_SESSION_KEY = 'practiceSession';
 const FOUNDER_CHRONICLE_BEATS_KEY = 'founderChronicleBeats';
 const BATTLE_HISTORY_PAGE_KEY = 'battleHistoryPage';
 const SCOUT_NOTEBOOK_DAY_KEY = 'scoutNotebookDay';
+const ARENA_FOCUS_KEY = 'arenaFocus';
+const LAST_RUMBLE_RECEIPT_SHOWN_DAY_KEY = 'lastRumbleReceiptShownDay';
+const LAST_LEGACY_RETURN_DISMISSED_DAY_KEY = 'lastLegacyReturnDismissedDay';
 
-export type SketchbookTab = 'legends' | 'sketchbook' | 'collection';
+export type GalleryTab = 'legends' | 'legacy' | 'collection';
 export type ReplayReturnScene =
   | 'ArenaHome'
-  | 'Sketchbook'
+  | 'Gallery'
   | 'MyBattles'
   | 'ScoutNotebook';
-export type ReplayEntryMode = 'fresh' | 'saved';
+type ReplayEntryMode = 'fresh' | 'saved';
 
 export function setArena(scene: Scene, state: ArenaState): void {
   scene.registry.set(ARENA_KEY, state);
@@ -167,7 +169,7 @@ export function getReplayFounderRivalryStakes(
   return stakes ? { ...stakes } : null;
 }
 
-export type StagedDirectBattle = Readonly<{
+type StagedDirectBattle = Readonly<{
   arena: ArenaState | undefined;
   rivalryStakes: FounderRivalryStakesPlan | null;
 }>;
@@ -234,10 +236,6 @@ export function getPracticeSession(scene: Scene): PracticeSession {
   );
 }
 
-export function getPracticePowers(scene: Scene): PrimaryPower[] {
-  return [...getPracticeSession(scene).triedPowers];
-}
-
 export function recordPracticePower(
   scene: Scene,
   power: PrimaryPower
@@ -282,48 +280,57 @@ export function takeFounderChronicleBeats(
 // Deep-link focus for ArenaHome (e.g. the loss card asks to scroll to the
 // entrants bracket). Read-once so it doesn't persist across visits.
 export function setArenaFocus(scene: Scene, focus: 'entrants'): void {
-  scene.registry.set('arenaFocus', focus);
+  scene.registry.set(ARENA_FOCUS_KEY, focus);
 }
 
 export function takeArenaFocus(scene: Scene): string | null {
   const value =
-    (scene.registry.get('arenaFocus') as string | undefined) ?? null;
-  if (value) scene.registry.remove('arenaFocus');
+    (scene.registry.get(ARENA_FOCUS_KEY) as string | undefined) ?? null;
+  if (value) scene.registry.remove(ARENA_FOCUS_KEY);
   return value;
 }
 
-export function setSketchbookTab(scene: Scene, tab: SketchbookTab): void {
-  scene.registry.set(SKETCHBOOK_TAB_KEY, tab);
-}
-
-export function getSketchbookTab(scene: Scene): SketchbookTab {
-  return (
-    (scene.registry.get(SKETCHBOOK_TAB_KEY) as SketchbookTab | undefined) ??
-    'legends'
-  );
-}
-
-// Convenience: find one of my scribbits by id in the current arena snapshot.
-export function findMyScribbit(scene: Scene, id: string): Scribbit | undefined {
-  return getArena(scene)?.myScribbits.find((one) => one.id === id);
-}
-
-// Find any scribbit visible in the current snapshot — roster, champion, or
-// tonight's entrants — by id. Used so the detail modal can refresh from state.
-export function findAnyScribbit(
+export function isRumbleReceiptShown(
   scene: Scene,
-  id: string
-): Scribbit | undefined {
-  const arena = getArena(scene);
-  if (!arena) return undefined;
-  if (arena.champion?.id === id) return arena.champion;
+  resolvedDay: number
+): boolean {
+  return scene.registry.get(LAST_RUMBLE_RECEIPT_SHOWN_DAY_KEY) === resolvedDay;
+}
+
+export function markRumbleReceiptShown(
+  scene: Scene,
+  resolvedDay: number
+): void {
+  if (Number.isSafeInteger(resolvedDay) && resolvedDay >= 1) {
+    scene.registry.set(LAST_RUMBLE_RECEIPT_SHOWN_DAY_KEY, resolvedDay);
+  }
+}
+
+export function isLegacyReturnDismissed(
+  scene: Scene,
+  newestArchivedDay: number
+): boolean {
   return (
-    arena.myScribbits.find((one) => one.id === id) ??
-    arena.todayEntrants.find((one) => one.id === id)
+    scene.registry.get(LAST_LEGACY_RETURN_DISMISSED_DAY_KEY) ===
+    newestArchivedDay
   );
 }
 
-// True when a scribbit belongs to the caller's roster (drives modal actions).
-export function isMyScribbit(scene: Scene, id: string): boolean {
-  return getArena(scene)?.myScribbits.some((one) => one.id === id) ?? false;
+export function markLegacyReturnDismissed(
+  scene: Scene,
+  newestArchivedDay: number
+): void {
+  if (Number.isSafeInteger(newestArchivedDay) && newestArchivedDay >= 1) {
+    scene.registry.set(LAST_LEGACY_RETURN_DISMISSED_DAY_KEY, newestArchivedDay);
+  }
+}
+
+export function setGalleryTab(scene: Scene, tab: GalleryTab): void {
+  scene.registry.set(GALLERY_TAB_KEY, tab);
+}
+
+export function getGalleryTab(scene: Scene): GalleryTab {
+  return (
+    (scene.registry.get(GALLERY_TAB_KEY) as GalleryTab | undefined) ?? 'legends'
+  );
 }

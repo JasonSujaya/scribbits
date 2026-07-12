@@ -1,7 +1,7 @@
 // Pure presentation planning for the daily Champion Challenge. The server owns
 // challenge usage and rewards; this module only turns that state into copy.
 
-import type { Scribbit } from '../../shared/arena';
+import { XP_REWARDS, type Scribbit } from '../../shared/arena';
 import { selectPrimaryPower } from '../../shared/combat/selection';
 import { getShapePowerSignatureName } from '../../shared/combat/shapepowercontent';
 import type { PrimaryPower } from '../../shared/combat/types';
@@ -39,11 +39,11 @@ const CHALLENGE_STATUS_CONTENT: Readonly<
   Record<ChampionChallengeStatus, ChampionChallengeStatusContent>
 > = Object.freeze({
   open: Object.freeze({
-    statusCopy: 'ONE DAILY SHOT • WIN: +2 XP',
+    statusCopy: `ONE DAILY SHOT • WIN: +${XP_REWARDS.championWin} XP`,
     ctaLabel: 'CHALLENGE CHAMPION',
   }),
   complete: Object.freeze({
-    statusCopy: 'SHOT TAKEN TODAY • WIN: +2 XP',
+    statusCopy: `SHOT TAKEN TODAY • WIN: +${XP_REWARDS.championWin} XP`,
     ctaLabel: 'CHALLENGE COMPLETE',
   }),
 });
@@ -122,9 +122,11 @@ export function validateChampionChallengeContent(): readonly string[] {
     }
     if (
       !/\bwin\b/i.test(content.statusCopy) ||
-      !/\+2 XP\b/.test(content.statusCopy)
+      !content.statusCopy.includes(`+${XP_REWARDS.championWin} XP`)
     ) {
-      errors.push(`${status} status copy must say that a win grants +2 XP.`);
+      errors.push(
+        `${status} status copy must say that a win grants +${XP_REWARDS.championWin} XP.`
+      );
     }
     if (/\bink\b/i.test(content.statusCopy)) {
       errors.push(`${status} status copy must not promise Ink.`);

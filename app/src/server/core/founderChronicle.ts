@@ -8,7 +8,11 @@ import {
   FOUNDING_SCRIBBIT_DEFINITIONS,
   getFoundingScribbitDefinition,
 } from '../../shared/founders';
-import type { ArenaStorage, ArenaTransaction } from './scribbit';
+import type { ArenaStorage, ArenaTransaction } from './storage';
+import {
+  discardWatchedTransaction,
+  MAX_WATCH_TRANSACTION_ATTEMPTS,
+} from './storage';
 
 type StoredFounderRivalryThread = {
   founderId: `founding-${string}`;
@@ -59,7 +63,6 @@ type BattleReportLoader = (
 ) => Promise<BattleReport | undefined>;
 
 const maximumResolvedRivalries = FOUNDING_SCRIBBIT_DEFINITIONS.length;
-const maximumChronicleTransactionAttempts = 5;
 const maximumPendingRepairsPerLoad = 12;
 const pendingBattleTtlSeconds = 30 * 24 * 60 * 60;
 const stalePendingBattleMilliseconds = 15 * 60 * 1_000;
@@ -476,7 +479,7 @@ const migrateLegacyFounderChronicle = async (
 
   for (
     let attempt = 0;
-    attempt < maximumChronicleTransactionAttempts;
+    attempt < MAX_WATCH_TRANSACTION_ATTEMPTS;
     attempt += 1
   ) {
     let transaction: ArenaTransaction | undefined;
@@ -500,7 +503,7 @@ const migrateLegacyFounderChronicle = async (
       const result = await transaction.exec();
       if (Array.isArray(result) && result.length > 0) return nextChronicle;
     } catch (error) {
-      await discardTransaction(transaction);
+      await discardWatchedTransaction(transaction, 'Founder Chronicle');
       throw error;
     }
   }
@@ -659,17 +662,6 @@ export const recoverProjectedFounderChronicleBeat = (
   return projection.beat;
 };
 
-const discardTransaction = async (
-  transaction: ArenaTransaction | undefined
-): Promise<void> => {
-  if (!transaction) return;
-  try {
-    await transaction.discard();
-  } catch {
-    // EXEC or connection failures may leave no active transaction to discard.
-  }
-};
-
 export const recordFounderChronicleBattle = async (
   storage: ArenaStorage,
   userId: string,
@@ -685,7 +677,7 @@ export const recordFounderChronicleBattle = async (
   const chronicleKey = getFounderChronicleKey(userId);
   for (
     let attempt = 0;
-    attempt < maximumChronicleTransactionAttempts;
+    attempt < MAX_WATCH_TRANSACTION_ATTEMPTS;
     attempt += 1
   ) {
     let transaction: ArenaTransaction | undefined;
@@ -704,7 +696,7 @@ export const recordFounderChronicleBattle = async (
       const result = await transaction.exec();
       if (Array.isArray(result) && result.length > 0) return advanced.beats;
     } catch (error) {
-      await discardTransaction(transaction);
+      await discardWatchedTransaction(transaction, 'Founder Chronicle');
       throw error;
     }
   }

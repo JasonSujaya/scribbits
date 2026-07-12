@@ -1,7 +1,7 @@
 import * as Phaser from 'phaser';
 import { Scene } from 'phaser';
 import type { CareAction, Scribbit } from '../../shared/arena';
-import { CanvasActionOverlay } from './overlay';
+import { CanvasModalOverlay } from './overlay';
 import type { PaperIconKey } from './papericons';
 import { canCare } from './scribbits';
 import { CARE_STYLES, TYPE, UI } from './theme';
@@ -42,7 +42,12 @@ export function openCarePicker(
   const cardCenterY = height / 2;
   const shouldMoveKeyboardFocus =
     document.activeElement instanceof HTMLButtonElement;
-  const accessibleActions = new CanvasActionOverlay(scene);
+  const accessibleActions = new CanvasModalOverlay(
+    scene,
+    `Care for ${boundedName(options.scribbit.name)}`,
+    () => close(),
+    'Choose one available daily care action or close the picker.'
+  );
   accessibleActions.setVisible(false);
 
   let destroyed = false;
@@ -189,7 +194,7 @@ export function openCarePicker(
       inputReady = true;
       accessibleActions.setVisible(true);
       if (shouldMoveKeyboardFocus) {
-        (firstAvailableAction ?? closeControl).focus();
+        accessibleActions.focusInitial(firstAvailableAction ?? closeControl);
       }
     },
   });

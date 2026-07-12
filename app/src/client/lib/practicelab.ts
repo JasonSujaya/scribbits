@@ -9,8 +9,6 @@ import { selectDoodleDareForPower } from '../../shared/content/doodledares';
 import type { DoodleDare } from '../../shared/content/doodledares';
 
 export const PRACTICE_HEADER_TITLE = 'PRACTICE LAB';
-export const PRACTICE_PROMISE =
-  "NOT TODAY'S SCRIBBIT  •  NOT SAVED  •  NO REWARDS";
 export const PRACTICE_SUBMIT_LABEL = 'TEST SHAPE';
 
 export type PracticeSession = Readonly<{
@@ -20,7 +18,7 @@ export type PracticeSession = Readonly<{
   attemptCount: number;
 }>;
 
-export type PracticeOutcomePlan = Readonly<{
+type PracticeOutcomePlan = Readonly<{
   completed: boolean;
   celebrateCompletion: boolean;
   headline: string;
@@ -40,9 +38,7 @@ export function createPracticeSession(): PracticeSession {
   };
 }
 
-export function normalizePracticePowers(
-  values: readonly unknown[]
-): PrimaryPower[] {
+function normalizePracticePowers(values: readonly unknown[]): PrimaryPower[] {
   const seen = new Set<PrimaryPower>();
   for (const power of SHAPE_POWER_IDS) {
     if (values.includes(power)) seen.add(power);
@@ -148,9 +144,7 @@ export function practiceProgressCopy(
   return `SERVER CHECKED  •  ${count}/${SHAPE_POWER_IDS.length} POWERS`;
 }
 
-export function practiceChecklistCopy(
-  triedPowers: readonly PrimaryPower[]
-): string {
+function practiceChecklistCopy(triedPowers: readonly PrimaryPower[]): string {
   const tried = new Set(normalizePracticePowers(triedPowers));
   const entries = SHAPE_POWER_IDS.map((power) => {
     const marker = tried.has(power) ? '✓' : '○';
@@ -159,7 +153,7 @@ export function practiceChecklistCopy(
   return `${entries.slice(0, 2).join('   ')}\n${entries.slice(2).join('   ')}`;
 }
 
-export function practiceResultCopy(session: PracticeSession): string {
+function practiceResultCopy(session: PracticeSession): string {
   if (!session.lastPower) return 'SERVER CHECK COMPLETE';
   const powerName = getShapePowerDisplayName(session.lastPower).toUpperCase();
   return session.lastPowerWasNew
@@ -167,12 +161,12 @@ export function practiceResultCopy(session: PracticeSession): string {
     : `${powerName} AGAIN • CHECKLIST UNCHANGED`;
 }
 
-export function practiceFoundPowerCopy(session: PracticeSession): string {
+function practiceFoundPowerCopy(session: PracticeSession): string {
   if (!session.lastPower) return 'SERVER CHECK COMPLETE';
   return `SERVER FOUND: ${getShapePowerDisplayName(session.lastPower).toUpperCase()}`;
 }
 
-export function isPracticeSessionComplete(session: PracticeSession): boolean {
+function isPracticeSessionComplete(session: PracticeSession): boolean {
   return (
     normalizePracticePowers(session.triedPowers).length ===
     SHAPE_POWER_IDS.length
@@ -188,7 +182,7 @@ export function planPracticeOutcome(
     completed,
     celebrateCompletion: completed && session.lastPowerWasNew,
     headline: completed
-      ? `✦ ${SHAPE_POWER_IDS.length}/${SHAPE_POWER_IDS.length} POWERS FOUND! ✦`
+      ? `${SHAPE_POWER_IDS.length}/${SHAPE_POWER_IDS.length} POWERS FOUND`
       : practiceFoundPowerCopy(session),
     result: completed
       ? 'DRAW DIFFERENTLY • FIGHT DIFFERENTLY'
@@ -197,7 +191,7 @@ export function planPracticeOutcome(
       ? 'SESSION COMPLETE • NO REWARDS • NOT SAVED'
       : practiceProgressCopy(session.triedPowers),
     checklist: practiceChecklistCopy(session.triedPowers),
-    primaryButton: completed ? '✏️ DRAW ONE MORE →' : '✏️ DRAW ANOTHER SHAPE →',
+    primaryButton: completed ? 'DRAW ONE MORE' : 'DRAW ANOTHER SHAPE',
     exitButton: 'END PRACTICE · ARENA',
   };
 }

@@ -28,7 +28,6 @@ import type {
   Scribbit,
   ScoutNotebookState,
   SparRivalSlate,
-  SplashState,
   SparRequest,
   SubmitScribbitRequest,
 } from '../../shared/arena';
@@ -109,10 +108,6 @@ function friendlyError(error: unknown): string {
 
 export function fetchArena(): Promise<ApiResult<ArenaState>> {
   return getJson<ArenaState>('/api/arena');
-}
-
-export function fetchSplash(): Promise<ApiResult<SplashState>> {
-  return getJson<SplashState>('/api/splash');
 }
 
 export function submitScribbit(
@@ -232,7 +227,7 @@ export function spar(
   });
 }
 
-// Back one of tonight's rumble entrants (a bet). One per user per day, final; it
+// Back one of tonight's Rumble entrants. One per user per day, final; it
 // locks when the rumble resolves. Returns the id you backed for confirmation.
 export function backScribbit(
   scribbitId: string

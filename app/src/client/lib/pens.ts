@@ -5,13 +5,11 @@ import type { CapsuleRarity } from '../../shared/arena';
 import { PEN_CATALOG_ENTRIES } from '../../shared/cosmetics';
 import type { CosmeticPenEffect } from '../../shared/cosmetics';
 
-export type PenEffect = CosmeticPenEffect;
-
 export type PenCatalogEntry = {
   id: string;
   name: string;
   rarity: CapsuleRarity;
-  effect: PenEffect;
+  effect: CosmeticPenEffect;
   // One or more hex colors. A solid pen with N colors adds N swatches; a rainbow
   // pen lists its cycle stops; midnight lists its base ink.
   colors: string[];

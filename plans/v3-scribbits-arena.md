@@ -11,7 +11,7 @@ Supersedes the catch/collect loop (v1) and hatch/vote (v2 draft). Retire catch m
 5. Continue one daily-paced **Founder Rival Thread** through its founder-specific three-page episode (first to two) or use the reward-free Four-Power Practice Lab after the official drawing locks
 6. Revisit the newest 20 server-stored fights in the **Battle Scrapbook**; it is a recent reel, not permanent career history
 7. Read tonight plus six prior Back pages in the **Scout Notebook**; it is a rolling server-truth view, not another reward track or permanent archive
-8. Scribbits live **3 days** → fade to Sketchbook, or become **Legends** (win a crown OR belief ≥ 25 at expiry)
+8. Scribbits live **3 days** → become permanent **Legacy Cards**, with qualifying cards also preserved as public **Legends** (win a crown OR Belief ≥ 25 at expiry)
 
 ## Balance invariants (non-negotiable)
 
@@ -58,9 +58,9 @@ Daily numbered Arena post with the current forecast and Champion · nightly idem
 ## Architecture deltas
 
 - Contract: `src/shared/arena.ts` is the source of truth; immutable founder voice, Rival episodes, Doodle Dares, forecast flavor, Scout notes, and versioned Inkcast banks live under `src/shared/` and `src/shared/content/`
-- Server: scribbit lifecycle store, submission (media.upload from dataURL; fallback: PNG bytes in redis + GET /api/drawing/:id), battle engine (pure + seeded), rumble/champion/forecast/expiry jobs, belief, legends, plus a bounded Scout Notebook projection over existing Back/payout/report/forecast keys with no Scout-specific storage. Retire /api/wilds, /api/catch*, /api/design* routes (design pipeline morphs into scribbit submission)
-- Client: Draw scene, Arena home, Replay scene, Battle Scrapbook, Scout Notebook, Sketchbook/Legends scenes. Retire Habitat/CatchMinigame/CatchResult/Dex
-- Founding scribbits: reuse the 20 species as NPC roster (their art = generated sprites when ready)
+- Server: Scribbit lifecycle store; submission uploads validated drawing data URLs through Reddit `media.upload` and fails closed when hosting fails. Production never stores raw PNG bytes in Redis and exposes no drawing-byte endpoint. `/api/drawing/:id` is a local-mock-only fixture route. The server also owns the pure seeded battle engine, rumble/champion/forecast/expiry jobs, Belief, Legends, and a bounded Scout Notebook projection over existing Back/payout/report/forecast keys with no Scout-specific storage. Retire `/api/wilds`, `/api/catch*`, and `/api/design*` routes (the design pipeline becomes Scribbit submission)
+- Client: Draw scene, Arena home, Replay scene, Battle Scrapbook, Scout Notebook, and one Gallery scene with Legends, Legacy, and Collection tabs. Retire Habitat/CatchMinigame/CatchResult/Dex
+- Founding Scribbits: the 20 authored NPCs use the canonical deterministic procedural-doodle renderer.
 - Redis: `scribbit:{id}` · `user:{id}:daily:{day}` flags · `user:{id}:founder-chronicle:v2` + pending receipt hash · `rumble:{day}` entries zset · `battles:{day}:{id}` reports · `champion:current` · `legends` zset · `belief:{scribbitId}` voters hash · `forecast:{day}`
 
 ## Task split

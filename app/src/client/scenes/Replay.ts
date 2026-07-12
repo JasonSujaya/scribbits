@@ -63,10 +63,7 @@ import type {
   BattleImpactPlan,
   ReplayBattleLayout,
 } from '../lib/battlepresentation';
-import {
-  formatBattleRecapLead,
-  planBattleRecap,
-} from '../lib/battlerecap';
+import { formatBattleRecapLead, planBattleRecap } from '../lib/battlerecap';
 import type {
   BattleRecapPerspective,
   BattleRecapPlan,
@@ -415,7 +412,9 @@ export class Replay extends Scene {
       battleLabel:
         (this.report.rivalRun
           ? formatRivalRunBattleLabel(this.report.rivalRun)
-          : null) ?? this.founderRivalryStakes?.battleLabel ?? null,
+          : null) ??
+        this.founderRivalryStakes?.battleLabel ??
+        null,
       showPlaybackControls: this.transcript !== null,
       reduceMotion: this.reduceMotion,
       initialPlaybackSpeed: this.speed,
@@ -614,8 +613,7 @@ export class Replay extends Scene {
         safeDeltaMilliseconds * backdropPlaybackSpeed;
       this.battleBackdropUpdateAccumulator += safeDeltaMilliseconds;
       if (
-        this.battleBackdropUpdateAccumulator >=
-        Replay.EFFECT_FRAME_MILLISECONDS
+        this.battleBackdropUpdateAccumulator >= Replay.EFFECT_FRAME_MILLISECONDS
       ) {
         this.battleBackdropUpdateAccumulator %=
           Replay.EFFECT_FRAME_MILLISECONDS;
@@ -2271,7 +2269,7 @@ export class Replay extends Scene {
     }
     const contextLine = this.report.rivalRun
       ? formatRivalRunResultLine(this.report.rivalRun)
-      : founderEpisodeReceipt?.headline ?? founderOutcome;
+      : (founderEpisodeReceipt?.headline ?? founderOutcome);
     const rivalActionCopy = planRivalRunActionCopy(this.report.rivalRun);
     const rivalRunFinish = planRivalRunFinishStamp(this.report.rivalRun);
     if (rivalRunFinish) {
@@ -2403,15 +2401,7 @@ export class Replay extends Scene {
     const top = -cardHeight / 2;
     if (rivalRunFinish) {
       card.add(
-        label(
-          this,
-          0,
-          top + 38,
-          rivalRunFinish.title,
-          30,
-          UI.coralText,
-          true
-        )
+        label(this, 0, top + 38, rivalRunFinish.title, 30, UI.coralText, true)
       );
       card.add(
         label(
@@ -2435,7 +2425,7 @@ export class Replay extends Scene {
     let cursor = recapTop + recapHeight + 18;
     const contextLine = this.report.rivalRun
       ? formatRivalRunResultLine(this.report.rivalRun)
-      : founderEpisodeReceipt?.headline ?? founderOutcome;
+      : (founderEpisodeReceipt?.headline ?? founderOutcome);
     const rivalActionCopy = planRivalRunActionCopy(this.report.rivalRun);
     if (contextLine && !rivalRunFinish) {
       card.add(
@@ -2482,14 +2472,14 @@ export class Replay extends Scene {
   private compactReturnButtonLabel(): string {
     const returnScene = getReplayReturn(this);
     switch (returnScene) {
-      case 'Sketchbook':
-        return 'LEGACY ›';
+      case 'Gallery':
+        return 'LEGACY';
       case 'MyBattles':
-        return 'SCRAPBOOK ›';
+        return 'SCRAPBOOK';
       case 'ScoutNotebook':
-        return 'SCOUT ›';
+        return 'SCOUT';
       case 'ArenaHome':
-        return 'ARENA ›';
+        return 'ARENA';
     }
   }
 
@@ -2513,14 +2503,14 @@ export class Replay extends Scene {
   private returnButtonLabel(): string {
     const returnScene = getReplayReturn(this);
     switch (returnScene) {
-      case 'Sketchbook':
-        return 'Open Legacy Book ›';
+      case 'Gallery':
+        return 'Open Legacy Book';
       case 'MyBattles':
-        return 'Back to Battle Scrapbook ›';
+        return 'Back to Battle Scrapbook';
       case 'ScoutNotebook':
-        return 'Back to Scout Notebook ›';
+        return 'Back to Scout Notebook';
       case 'ArenaHome':
-        return 'Back to Arena ›';
+        return 'Back to Arena';
     }
   }
 
@@ -2532,6 +2522,16 @@ export class Replay extends Scene {
   private openRivalDraft(mine: Scribbit): void {
     if (this.rematchLoading || this.rivalDraft) return;
     this.rematchLoading = true;
+    const rivalDraftTrigger =
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
+    const restorePostFightFocus = (): void => {
+      this.postFightActions?.setAccessibleVisible(true);
+      requestAnimationFrame(() => {
+        if (rivalDraftTrigger?.isConnected) rivalDraftTrigger.focus();
+      });
+    };
     this.postFightActions?.setAccessibleVisible(false);
     showToast('Pinning up three fair rivals…');
     void fetchSparRivals(mine.id)
@@ -2540,7 +2540,7 @@ export class Replay extends Scene {
         this.rematchLoading = false;
         if (!result.ok) {
           showToast(result.error);
-          this.postFightActions?.setAccessibleVisible(true);
+          restorePostFightFocus();
           return;
         }
         if (
@@ -2548,13 +2548,13 @@ export class Replay extends Scene {
           result.data.choices.length === 0
         ) {
           showToast('The rival board came back blank. Try again.');
-          this.postFightActions?.setAccessibleVisible(true);
+          restorePostFightFocus();
           return;
         }
         const arena = getArena(this);
         if (!arena) {
           showToast('The arena state is missing. Return and try again.');
-          this.postFightActions?.setAccessibleVisible(true);
+          restorePostFightFocus();
           return;
         }
         if (arena.dayNumber !== result.data.dayNumber) {
@@ -2564,7 +2564,7 @@ export class Replay extends Scene {
           this.rematchLoading = false;
           if (!latestArena.ok) {
             showToast('A new Arena day started. Try the board again.');
-            this.postFightActions?.setAccessibleVisible(true);
+            restorePostFightFocus();
             return;
           }
           setArena(this, latestArena.data);
@@ -2592,6 +2592,7 @@ export class Replay extends Scene {
           forecast: result.data.forecast,
           founderChronicle: result.data.founderChronicle,
           currentDay: result.data.dayNumber,
+          trigger: rivalDraftTrigger,
           onChoose: (rival, plan) =>
             this.fightRival(
               mine,
@@ -2600,16 +2601,16 @@ export class Replay extends Scene {
               result.data.rivalRun
             ),
           onClose: () => {
+            restorePostFightFocus();
             this.rivalDraft?.destroy();
             this.rivalDraft = null;
-            this.postFightActions?.setAccessibleVisible(true);
           },
         });
       })
       .catch(() => {
         if (!this.scene.isActive()) return;
         this.rematchLoading = false;
-        this.postFightActions?.setAccessibleVisible(true);
+        restorePostFightFocus();
         showToast('The rival board fell down. Try again.');
       });
   }

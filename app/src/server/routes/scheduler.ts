@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import { randomUUID } from 'node:crypto';
 import type { TaskRequest, TaskResponse } from '@devvit/web/server';
 import { redis } from '@devvit/web/server';
 import {
@@ -8,6 +9,7 @@ import {
 } from '../core/dailyJob';
 import { ensureForecastForDay, getCurrentChampion } from '../core/arenaStore';
 import { getOrCreateArenaPost, publishRumbleResultComment } from '../core/post';
+import { runWithNightlyFence } from '../core/nightlyStorageFence';
 
 export const scheduledTasks = new Hono();
 
@@ -17,29 +19,54 @@ scheduledTasks.post('/nightly-arena', async (c) => {
     .catch(() => undefined);
 
   try {
-    const result = await runNightlyArenaJob(redis);
+    const nightlyRun = await runWithNightlyFence(
+      redis,
+      randomUUID(),
+      async (fencedStorage) => {
+        const result = await runNightlyArenaJob(fencedStorage);
+        const currentForecast = await ensureForecastForDay(
+          fencedStorage,
+          result.newDay
+        );
+        const currentChampion = await getCurrentChampion(fencedStorage);
+        const currentPost = await getOrCreateArenaPost(fencedStorage, {
+          day: result.newDay,
+          forecast: currentForecast,
+          champion: currentChampion,
+        });
 
-    const currentForecast = await ensureForecastForDay(redis, result.newDay);
-    const currentChampion = await getCurrentChampion(redis);
-    const currentPost = await getOrCreateArenaPost(redis, {
-      day: result.newDay,
-      forecast: currentForecast,
-      champion: currentChampion,
-    });
+        const pendingResolutions =
+          await loadPendingArenaResolutions(fencedStorage);
+        for (const resolution of pendingResolutions) {
+          await getOrCreateArenaPost(fencedStorage, {
+            day: resolution.resolvedDay,
+            forecast: resolution.resolvedForecast,
+            champion: resolution.champion,
+          });
+          const commentId = await publishRumbleResultComment(
+            fencedStorage,
+            resolution
+          );
+          if (!commentId) {
+            throw new Error(
+              `Rumble #${resolution.resolvedDay} result is still pending publication.`
+            );
+          }
+          await acknowledgeArenaResolution(
+            fencedStorage,
+            resolution.resolvedDay
+          );
+        }
 
-    const pendingResolutions = await loadPendingArenaResolutions(redis);
-    for (const resolution of pendingResolutions) {
-      await getOrCreateArenaPost(redis, {
-        day: resolution.resolvedDay,
-        forecast: resolution.resolvedForecast,
-        champion: resolution.champion,
-      });
-      const commentId = await publishRumbleResultComment(redis, resolution);
-      if (!commentId) {
-        throw new Error(`Rumble #${resolution.resolvedDay} result is still pending publication.`);
+        return { result, currentPostId: currentPost.id };
       }
-      await acknowledgeArenaResolution(redis, resolution.resolvedDay);
+    );
+    if (nightlyRun.status === 'busy') {
+      throw new Error(
+        'Player data deletion is active; retry nightly resolution.'
+      );
     }
+    const { result, currentPostId } = nightlyRun.result;
 
     if (result.skipped) {
       console.log(
@@ -47,7 +74,7 @@ scheduledTasks.post('/nightly-arena', async (c) => {
       );
     } else {
       console.log(
-        `Advanced arena from day ${result.previousDay} to ${result.newDay}; task ${taskRequest?.name ?? 'nightly-arena'} ensured post ${currentPost.id}`
+        `Advanced arena from day ${result.previousDay} to ${result.newDay}; task ${taskRequest?.name ?? 'nightly-arena'} ensured post ${currentPostId}`
       );
     }
 

@@ -11,7 +11,15 @@ import {
   renderMysteryCosmeticPreview,
 } from './cosmeticpreview';
 import { NAV_SAFE, TYPE, UI } from './theme';
-import { ghostButton, label, pageArrowButton, stickerCard } from './ui';
+import {
+  addCardPressInteraction,
+  ghostButton,
+  iconButton,
+  label,
+  paperPagination,
+  stickerCard,
+} from './ui';
+import { CanvasActionOverlay, CanvasModalOverlay } from './overlay';
 
 const CARD_COLUMNS = 2;
 const CARD_HEIGHT = 220;
@@ -26,6 +34,7 @@ const RARITY_STYLE: Record<CapsuleRarity, { color: number; label: string }> = {
 
 export type CollectionBookOptions = {
   scene: Scene;
+  actionOverlay: CanvasActionOverlay;
   top: number;
   page: number;
   inventory: Inventory | null;
@@ -90,16 +99,26 @@ export function renderCollectionBook(options: CollectionBookOptions): void {
       true
     );
   } else if (errorMessage) {
-    ghostButton(
-      scene,
-      width / 2,
-      top + 4,
-      '↻ Retry collection sync',
-      onRetry,
-      330
-    );
+    iconButton(scene, width / 2, top + 4, 'replay', 'Retry sync', onRetry, 330);
+    options.actionOverlay.add({
+      label: 'Retry collection sync',
+      rect: {
+        x: width / 2 - 165,
+        y: top - 46,
+        width: 330,
+        height: 100,
+      },
+      onActivate: onRetry,
+    });
   } else {
-    buildPageControls(scene, page, totalPages, top + 4, onPageChange);
+    buildPageControls(
+      scene,
+      options.actionOverlay,
+      page,
+      totalPages,
+      top + 4,
+      onPageChange
+    );
   }
 
   const horizontalMargin = 36;
@@ -123,6 +142,7 @@ export function renderCollectionBook(options: CollectionBookOptions): void {
         inventory,
         loggedIn,
         loading,
+        actionOverlay: options.actionOverlay,
         onEquipTitle: options.onEquipTitle,
         onInventoryChanged: options.onInventoryChanged,
         x,
@@ -205,32 +225,23 @@ function drawCollectionProgress(
 
 function buildPageControls(
   scene: Scene,
+  actionOverlay: CanvasActionOverlay,
   page: number,
   totalPages: number,
   y: number,
   onPageChange: (page: number) => void
 ): void {
-  label(
+  paperPagination({
     scene,
-    scene.scale.width / 2,
+    actionOverlay,
     y,
-    `${page + 1} / ${totalPages}`,
-    TYPE.caption,
-    UI.inkSoft,
-    true
-  );
-  if (page > 0) {
-    pageArrowButton(scene, 104, y, 'previous', () => onPageChange(page - 1));
-  }
-  if (page < totalPages - 1) {
-    pageArrowButton(
-      scene,
-      scene.scale.width - 104,
-      y,
-      'next',
-      () => onPageChange(page + 1)
-    );
-  }
+    page,
+    pageCount: totalPages,
+    previousLabel: 'Previous Collection page',
+    nextLabel: 'Next Collection page',
+    onPrevious: () => onPageChange(page - 1),
+    onNext: () => onPageChange(page + 1),
+  });
 }
 
 function buildCosmeticCard(options: {
@@ -241,6 +252,7 @@ function buildCosmeticCard(options: {
   inventory: Inventory | null;
   loggedIn: boolean;
   loading: boolean;
+  actionOverlay: CanvasActionOverlay;
   onEquipTitle: (titleId: string | null) => Promise<string | null>;
   onInventoryChanged: () => void;
   x: number;
@@ -256,6 +268,7 @@ function buildCosmeticCard(options: {
     inventory,
     loggedIn,
     loading,
+    actionOverlay,
     onEquipTitle,
     onInventoryChanged,
     x,
@@ -335,20 +348,7 @@ function buildCosmeticCard(options: {
   );
   card.add([name, ownershipLabel]);
 
-  const hitArea = scene.add
-    .rectangle(0, 0, width, CARD_HEIGHT, 0xffffff, 0.001)
-    .setInteractive({ useHandCursor: true });
-  hitArea.on('pointerdown', () => {
-    scene.tweens.add({
-      targets: card,
-      scaleX: 0.97,
-      scaleY: 0.96,
-      duration: 70,
-    });
-  });
-  hitArea.on('pointerout', () => restoreCardScale(scene, card));
-  hitArea.on('pointerup', () => {
-    restoreCardScale(scene, card);
+  function openDetail(): void {
     openCosmeticDetail({
       scene,
       entry,
@@ -360,20 +360,28 @@ function buildCosmeticCard(options: {
       onEquipTitle,
       onInventoryChanged,
     });
+  }
+  addCardPressInteraction({
+    scene,
+    card,
+    width,
+    height: CARD_HEIGHT,
+    pressedScaleX: 0.97,
+    pressedScaleY: 0.96,
+    onActivate: openDetail,
   });
-  card.add(hitArea);
-}
-
-function restoreCardScale(
-  scene: Scene,
-  card: Phaser.GameObjects.Container
-): void {
-  scene.tweens.add({
-    targets: card,
-    scaleX: 1,
-    scaleY: 1,
-    duration: 110,
-    ease: 'Back.easeOut',
+  actionOverlay.add({
+    label: ownership.discovered
+      ? `Open ${entry.name}. ${ownership.summary}.`
+      : `Open undiscovered ${entry.rarity} ${entry.kind} clue ${index + 1}.`,
+    rect: {
+      x: x - Math.min(width - 20, 220) / 2,
+      y: y + CARD_HEIGHT / 2 - 108,
+      width: Math.min(width - 20, 220),
+      height: 100,
+    },
+    attributes: { 'data-collection-entry-id': entry.id },
+    onActivate: openDetail,
   });
 }
 
@@ -483,7 +491,7 @@ function openCosmeticDetail(options: {
     scene,
     0,
     150,
-    ownership.discovered ? ownership.summary : '🔒 Mystery Ink discovery',
+    ownership.discovered ? ownership.summary : 'LOCKED · MYSTERY INK',
     TYPE.caption,
     ownership.discovered ? UI.coralText : UI.inkSoft,
     true
@@ -496,8 +504,70 @@ function openCosmeticDetail(options: {
     inventory?.titles.includes(entry.id) === true;
   let wearingTitle = inventory?.equippedTitle === entry.id;
   let savingTitle = false;
+  let inventoryChanged = false;
   let modalOpen = true;
   let titleAction: Phaser.GameObjects.Container | null = null;
+  let titleNativeAction: HTMLButtonElement | null = null;
+
+  const closeDetail = (): void => {
+    if (savingTitle) {
+      status.setText('Finish saving this title first…').setColor(UI.inkSoft);
+      return;
+    }
+    modalOpen = false;
+    overlay.destroy(true);
+    if (inventoryChanged) {
+      onInventoryChanged();
+      requestAnimationFrame(() => {
+        document
+          .querySelector<HTMLButtonElement>(
+            `button[data-collection-entry-id="${entry.id}"]`
+          )
+          ?.focus();
+      });
+    }
+  };
+  const semanticDescription = [
+    `${ownership.discovered ? entry.name : 'Undiscovered cosmetic'}.`,
+    `${entry.rarity} ${entry.kind}.`,
+    detailCopy,
+    ownership.summary,
+  ].join(' ');
+  const modalActions = new CanvasModalOverlay(
+    scene,
+    `${ownership.discovered ? entry.name : 'Undiscovered cosmetic'} details`,
+    closeDetail,
+    semanticDescription
+  );
+  overlay.once('destroy', () => modalActions.destroy());
+
+  const toggleTitle = (): void => {
+    if (savingTitle) return;
+    const previousWearingState = wearingTitle;
+    wearingTitle = !wearingTitle;
+    savingTitle = true;
+    status
+      .setText(
+        wearingTitle ? 'Wearing title · saving…' : 'Title removed · saving…'
+      )
+      .setColor(UI.coralText);
+    renderTitleAction();
+
+    void onEquipTitle(wearingTitle ? entry.id : null).then((errorMessage) => {
+      savingTitle = false;
+      if (!modalOpen || !overlay.active || !scene.scene.isActive()) return;
+      if (errorMessage) {
+        wearingTitle = previousWearingState;
+        status.setText(errorMessage).setColor(UI.coralText);
+      } else {
+        inventoryChanged = true;
+        status
+          .setText(wearingTitle ? 'Wearing title' : 'Permanent title')
+          .setColor(UI.coralText);
+      }
+      renderTitleAction();
+    });
+  };
 
   const renderTitleAction = (): void => {
     titleAction?.destroy(true);
@@ -509,65 +579,57 @@ function openCosmeticDetail(options: {
       : wearingTitle
         ? 'Remove title'
         : 'Wear title';
-    titleAction = ghostButton(
-      scene,
-      0,
-      205,
-      actionText,
-      () => {
-        if (savingTitle) return;
-        const previousWearingState = wearingTitle;
-        wearingTitle = !wearingTitle;
-        savingTitle = true;
-        status
-          .setText(
-            wearingTitle ? 'Wearing title · saving…' : 'Title removed · saving…'
-          )
-          .setColor(UI.coralText);
-        renderTitleAction();
-
-        void onEquipTitle(wearingTitle ? entry.id : null).then(
-          (errorMessage) => {
-            savingTitle = false;
-            if (!modalOpen || !overlay.active || !scene.scene.isActive()) {
-              return;
-            }
-            if (errorMessage) {
-              wearingTitle = previousWearingState;
-              status.setText(errorMessage).setColor(UI.coralText);
-            } else {
-              status
-                .setText(wearingTitle ? 'Wearing title' : 'Permanent title')
-                .setColor(UI.coralText);
-            }
-            renderTitleAction();
-          }
-        );
-      },
-      280
-    );
+    titleAction = ghostButton(scene, 0, 205, actionText, toggleTitle, 280);
     detail.add(titleAction);
+    if (titleNativeAction) {
+      titleNativeAction.disabled = savingTitle;
+      titleNativeAction.setAttribute(
+        'aria-busy',
+        savingTitle ? 'true' : 'false'
+      );
+      titleNativeAction.setAttribute(
+        'aria-pressed',
+        wearingTitle ? 'true' : 'false'
+      );
+      titleNativeAction.setAttribute(
+        'aria-label',
+        `${actionText} ${entry.name}`
+      );
+    }
   };
   renderTitleAction();
+  if (titleOwned && loggedIn) {
+    titleNativeAction = modalActions.add({
+      label: `${wearingTitle ? 'Remove' : 'Wear'} ${entry.name}`,
+      rect: {
+        x: width / 2 - 140,
+        y: height / 2 + 163,
+        width: 280,
+        height: 84,
+      },
+      onActivate: toggleTitle,
+    });
+    titleNativeAction.setAttribute('aria-busy', 'false');
+    titleNativeAction.setAttribute(
+      'aria-pressed',
+      wearingTitle ? 'true' : 'false'
+    );
+  }
 
-  const close = ghostButton(
-    scene,
-    0,
-    310,
-    'Close',
-    () => {
-      if (savingTitle) {
-        status.setText('Finish saving this title first…').setColor(UI.inkSoft);
-        return;
-      }
-      modalOpen = false;
-      overlay.destroy(true);
-      onInventoryChanged();
-    },
-    210
-  );
+  const close = ghostButton(scene, 0, 310, 'Close', closeDetail, 210);
   detail.add(close);
+  const nativeClose = modalActions.add({
+    label: `Close ${ownership.discovered ? entry.name : 'cosmetic'} details`,
+    rect: {
+      x: width / 2 - 105,
+      y: height / 2 + 268,
+      width: 210,
+      height: 84,
+    },
+    onActivate: closeDetail,
+  });
   overlay.add([shade, detail]);
+  modalActions.focusInitial(nativeClose);
 }
 
 function lockedDetailHint(options: {

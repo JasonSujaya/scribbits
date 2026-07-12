@@ -18,20 +18,26 @@ export const getDrawEligibility = (
     return { canDraw: false, tabLabel: 'Draw', message: 'Loading the arena…' };
   }
   if (!state.loggedIn) {
-    return { canDraw: false, tabLabel: 'Draw', message: 'Sign in to draw a Scribbit.' };
+    return {
+      canDraw: false,
+      tabLabel: 'Draw',
+      message: 'Sign in to draw a Scribbit.',
+    };
   }
   if (state.drawnToday) {
     return {
       canDraw: false,
-      tabLabel: 'Done ✓',
-      message: 'Today’s Scribbit is already in the Rumble. Draw again after UTC reset.',
+      tabLabel: 'Done',
+      message:
+        'Today’s Scribbit is already in the Rumble. Draw again after UTC reset.',
     };
   }
   if (state.myScribbits.length >= MAX_ALIVE_PER_USER) {
     return {
       canDraw: false,
       tabLabel: 'Full',
-      message: 'Your three living Scribbit slots are full. Remove one or wait for one to fade.',
+      message:
+        'Your three living Scribbit slots are full. Remove one or wait for one to fade.',
     };
   }
   return { canDraw: true, tabLabel: 'Draw', message: '' };

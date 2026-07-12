@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import type { Context as HonoContext } from 'hono';
+import type { Context as HonoContext, Handler, MiddlewareHandler } from 'hono';
 import { context, media, redis, reddit } from '@devvit/web/server';
 import { randomUUID } from 'node:crypto';
 import type {
@@ -30,12 +30,9 @@ import {
   CAPSULE_FIRST_DAILY_COST,
   INK_REWARDS,
   RIVAL_RUN_LENGTH,
+  XP_REWARDS,
 } from '../../shared/arena';
 import { isScoutNotebookReplayDay } from '../../shared/scoutnotebook';
-import {
-  analyze as analyzeDrawing,
-  hasMinimumDrawingInk,
-} from '../../shared/analyzer-core';
 import { simulate } from '../core/battle';
 import {
   getFeaturedRumbleReportId,
@@ -89,7 +86,12 @@ import {
   getProjectedRumbleEntrantCount,
   prepareRumbleEntrants,
 } from '../core/rumble';
-import { createPracticeBattle } from '../core/practice';
+import {
+  acquirePracticeRequest,
+  createPracticeBattle,
+  releasePracticeRequest,
+  type PracticeRequestLease,
+} from '../core/practice';
 import { loadOwnedRumbleReturnReceipt } from '../core/rumbleReturn';
 import { loadScoutNotebook } from '../core/scoutNotebook';
 import {
@@ -120,15 +122,16 @@ import {
   reportAndHideScribbit,
   SCRIBBIT_REPORT_REMOVAL_THRESHOLD,
 } from '../core/moderation';
-import { deletePlayerData, recordUserBeliefTarget } from '../core/privacy';
+import { deletePlayerData } from '../core/privacy';
+import { runWithPlayerMutationLease } from '../core/dataDeletion';
 import {
   addRumbleEntrant,
   awardScribbitXp,
   claimAndAwardDailySparWin,
   claimDailyCareAction,
+  applyDailyBelief,
   claimDailyFlags,
   createScribbit,
-  decodePngDataUrl,
   deleteStoredScribbit,
   enforceAliveScribbitLimit,
   getAliveScribbitsForUser,
@@ -139,7 +142,6 @@ import {
   getRumbleEntrantIds,
   getRumbleEntrantCount,
   getScribbitOwner,
-  increaseBelief,
   isCareAction,
   isScribbitOwnedByUser,
   loadScribbit,
@@ -150,8 +152,7 @@ import {
   releaseDailyCareAction,
   releaseDailyFlags,
   storeScribbit,
-  validateRenderedPngBinding,
-  validateSubmitScribbitRequest,
+  validateAndAnalyzeScribbitSubmission,
   type CurrentPlayer,
   type DailyFlagField,
 } from '../core/scribbit';
@@ -160,14 +161,10 @@ type ErrorResponse = ArenaErrorResponse;
 
 export const api = new Hono();
 
-const beliefVotersTtlSeconds = 7 * 24 * 60 * 60;
 const capsuleOperationPendingTimeoutMs = 15_000;
 const foundingSparRivalSlateLimit = 3;
 const scribbitIdPattern = /^[A-Za-z0-9:_-]{4,90}$/;
 const practiceRequestMaximumBodyBytes = 560 * 1024;
-const practiceRequestLimitPerMinute = 6;
-const practiceRequestGuardTtlSeconds = 30;
-const practiceRequestGuardKey = 'guard:practice:active:v1';
 
 const isRecord = (value: unknown): value is Record<string, unknown> => {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -232,32 +229,6 @@ const readBoundedJsonBody = async (
   }
 };
 
-type PracticeRequestClaim = 'claimed' | 'busy' | 'rate-limited';
-
-const claimPracticeRequest = async (
-  playerId: string,
-  token: string,
-  now: Date
-): Promise<PracticeRequestClaim> => {
-  const minute = Math.floor(now.getTime() / 60_000);
-  const rateKey = `guard:practice:rate:v1:${playerId}:${minute}`;
-  const requestCount = await redis.incrBy(rateKey, 1);
-  await redis.expire(rateKey, 120);
-  if (requestCount > practiceRequestLimitPerMinute) return 'rate-limited';
-
-  const claimed = await redis.hSetNX(practiceRequestGuardKey, playerId, token);
-  await redis.expire(practiceRequestGuardKey, practiceRequestGuardTtlSeconds);
-  return claimed === 1 ? 'claimed' : 'busy';
-};
-
-const releasePracticeRequest = async (
-  playerId: string,
-  token: string
-): Promise<void> => {
-  if ((await redis.hGet(practiceRequestGuardKey, playerId)) !== token) return;
-  await redis.hDel(practiceRequestGuardKey, [playerId]);
-};
-
 const badRequest = (c: HonoContext, message: string) => {
   return c.json<ErrorResponse>({ status: 'error', message }, 400);
 };
@@ -313,6 +284,40 @@ const getCurrentPlayer = async (): Promise<CurrentPlayer | undefined> => {
   };
 };
 
+const withPlayerMutationLease: MiddlewareHandler = async (c, next) => {
+  const player = await getCurrentPlayer();
+  if (!player) return next();
+  const mutation = await runWithPlayerMutationLease(
+    redis,
+    player.userId,
+    randomUUID(),
+    next
+  );
+  if (mutation.status === 'busy') {
+    return conflict(c, 'Another game action is finishing. Try again.');
+  }
+  if (mutation.status === 'lost') {
+    return serverError(c, 'Your game action lost its safety lock. Try again.');
+  }
+};
+
+// Every non-GET game action mutates or may repair player state. The deletion
+// endpoint owns the inverse side of this lease and therefore must not acquire
+// it here.
+api.use('*', async (c, next) => {
+  if (c.req.method === 'GET' || c.req.path.endsWith('/delete-my-data')) {
+    return next();
+  }
+  return withPlayerMutationLease(c, next);
+});
+
+// A small number of compatibility GETs intentionally repair/migrate player
+// records. Register the lease beside the handler so adding or reviewing one
+// never depends on a separate route-name allowlist elsewhere in this file.
+const registerPlayerMutatingGet = (path: string, handler: Handler): void => {
+  api.get(path, withPlayerMutationLease, handler);
+};
+
 const readScribbitIdentifier = (value: unknown): string | undefined => {
   if (typeof value !== 'string') return undefined;
   const scribbitId = value.trim();
@@ -331,9 +336,7 @@ const readSparRequest = (value: unknown): SparRequest | undefined => {
     !requestFields.includes('scribbitId') ||
     requestFields.some((field) => {
       return (
-        field !== 'scribbitId' &&
-        field !== 'opponentId' &&
-        field !== 'rivalRun'
+        field !== 'scribbitId' && field !== 'opponentId' && field !== 'rivalRun'
       );
     })
   ) {
@@ -369,9 +372,7 @@ const readSparRequest = (value: unknown): SparRequest | undefined => {
     opponentId,
     rivalRun: {
       id: value.rivalRun.id,
-      expectedBoutsCompleted: Number(
-        value.rivalRun.expectedBoutsCompleted
-      ),
+      expectedBoutsCompleted: Number(value.rivalRun.expectedBoutsCompleted),
     },
   };
 };
@@ -568,14 +569,16 @@ const finishDirectBattleResponse = async (
   };
 };
 
-const finalizeSparBattle = async (input: Readonly<{
-  userId: string;
-  challengerId: string;
-  report: BattleReport;
-  utcDateKey: string;
-  completedAt: Date;
-  fallbackFounderChronicle: ArenaState['founderChronicle'];
-}>): Promise<DirectBattleResponse> => {
+const finalizeSparBattle = async (
+  input: Readonly<{
+    userId: string;
+    challengerId: string;
+    report: BattleReport;
+    utcDateKey: string;
+    completedAt: Date;
+    fallbackFounderChronicle: ArenaState['founderChronicle'];
+  }>
+): Promise<DirectBattleResponse> => {
   const completedAtMilliseconds = input.completedAt.getTime();
   await saveBattleReport(redis, input.report, completedAtMilliseconds);
   await queueFounderChronicleBattle(
@@ -645,7 +648,7 @@ const runNonCriticalSideEffect = async (
   }
 };
 
-api.get('/arena', async (c) => {
+registerPlayerMutatingGet('/arena', async (c) => {
   try {
     const now = new Date();
     const utcDateKey = formatUtcDateKey(now);
@@ -853,51 +856,47 @@ api.post('/scribbit', async (c) => {
     return unauthorized(c, 'Sign in to draw a Scribbit.');
   }
 
-  const draft = validateSubmitScribbitRequest(await readJsonBody(c));
+  const submission = validateAndAnalyzeScribbitSubmission(
+    await readJsonBody(c)
+  );
 
-  if (!draft) {
+  if (
+    submission.status === 'invalid' &&
+    submission.reason === 'invalid-request'
+  ) {
     return badRequest(
       c,
       'Send a 2-24 character name, base and rendered PNG data URLs, and valid accessories.'
     );
   }
-
-  const decodedBasePng = decodePngDataUrl(draft.baseImageDataUrl);
-  const decodedRenderedPng = decodePngDataUrl(draft.imageDataUrl);
-
-  if (!decodedBasePng || !decodedRenderedPng) {
+  if (submission.status === 'invalid' && submission.reason === 'invalid-png') {
     return badRequest(
       c,
       'Base and rendered drawings must be 512x512 PNG data URLs under 400 KB each.'
     );
   }
-
   if (
-    !validateRenderedPngBinding(
-      decodedBasePng,
-      decodedRenderedPng,
-      draft.accessories
-    )
+    submission.status === 'invalid' &&
+    submission.reason === 'rendered-mismatch'
   ) {
     return badRequest(
       c,
       'Rendered drawing must match the base PNG outside declared accessories and must not erase base pixels.'
     );
   }
-
-  // Analyze only the undecorated drawing used by the live preview. Accessories
-  // remain cosmetic while the rendered PNG below is uploaded for display.
-  const drawingAnalysis = analyzeDrawing({
-    data: decodedBasePng.rgba,
-    width: decodedBasePng.width,
-    height: decodedBasePng.height,
-  });
-  if (!hasMinimumDrawingInk(drawingAnalysis)) {
+  if (
+    submission.status === 'invalid' &&
+    submission.reason === 'insufficient-ink'
+  ) {
     return badRequest(
       c,
       'Your Scribbit needs a body. Add a few more lines before submitting.'
     );
   }
+  if (submission.status !== 'valid') {
+    return badRequest(c, 'The Scribbit submission could not be validated.');
+  }
+  const draft = submission.draft;
   let createdScribbit: { id: string; day: number } | null = null;
   let claimedSubmitFlags: { day: number; fields: DailyFlagField[] } | null =
     null;
@@ -956,11 +955,7 @@ api.post('/scribbit', async (c) => {
 
     const scribbit = createScribbit({
       id: scribbitId,
-      draft: {
-        ...draft,
-        stats: drawingAnalysis.stats,
-        element: drawingAnalysis.element,
-      },
+      draft,
       artist: player.username,
       imageUrl,
       day: dayNumber,
@@ -1065,7 +1060,7 @@ api.post('/enter-rumble', async (c) => {
     );
 
     if (!scribbit) {
-      return notFound(c, 'That living Scribbit is not in your sketchbook.');
+      return notFound(c, 'That living Scribbit is not in your active roster.');
     }
 
     await addRumbleEntrant(redis, dayNumber, scribbit.id);
@@ -1094,7 +1089,7 @@ api.post('/enter-rumble', async (c) => {
       }
     }
     console.error('Enter Rumble route failed:', error);
-    return serverError(c, 'The bracket ate that entry. Try again soon.');
+    return serverError(c, 'The Rumble lost that entry. Try again soon.');
   }
 });
 
@@ -1144,7 +1139,7 @@ api.post('/care', async (c) => {
     }
 
     if (!(await isScribbitOwnedByUser(redis, player.userId, scribbit.id))) {
-      return notFound(c, 'That Scribbit is not in your sketchbook.');
+      return notFound(c, 'That Scribbit is not in your active roster.');
     }
 
     const careClaim = await claimDailyCareAction(
@@ -1214,7 +1209,7 @@ api.post('/care', async (c) => {
   }
 });
 
-api.get('/spar-rivals', async (c) => {
+registerPlayerMutatingGet('/spar-rivals', async (c) => {
   const player = await getCurrentPlayer();
 
   if (!player) {
@@ -1276,24 +1271,26 @@ api.post('/practice-battle', async (c) => {
 
   const now = new Date();
   const requestToken = randomUUID();
+  let practiceLease: PracticeRequestLease | undefined;
   try {
-    const requestClaim = await claimPracticeRequest(
-      player.userId,
-      requestToken,
-      now
-    );
-    if (requestClaim === 'rate-limited') {
+    const requestClaim = await acquirePracticeRequest(redis, {
+      playerId: player.userId,
+      token: requestToken,
+      requestedAtMs: now.getTime(),
+    });
+    if (requestClaim.status === 'rate-limited') {
       return tooManyRequests(
         c,
         'The Practice Lab needs a breather. Try again in a minute.'
       );
     }
-    if (requestClaim === 'busy') {
+    if (requestClaim.status === 'busy') {
       return tooManyRequests(
         c,
         'Your previous practice replay is still being drawn.'
       );
     }
+    practiceLease = requestClaim.lease;
 
     const body = await readBoundedJsonBody(c, practiceRequestMaximumBodyBytes);
     if (body.status === 'too-large') {
@@ -1339,10 +1336,12 @@ api.post('/practice-battle', async (c) => {
     console.error('Practice battle route failed:', error);
     return serverError(c, 'The Practice Lab bell fell off. Try again soon.');
   } finally {
-    try {
-      await releasePracticeRequest(player.userId, requestToken);
-    } catch (error) {
-      console.warn('Practice request guard release failed:', error);
+    if (practiceLease) {
+      try {
+        await releasePracticeRequest(redis, practiceLease);
+      } catch (error) {
+        console.warn('Practice request guard release failed:', error);
+      }
     }
   }
 });
@@ -1481,8 +1480,7 @@ api.post('/spar', async (c) => {
             runId: sparRequest.rivalRun.id,
             dayNumber,
             challengerId: challenger.id,
-            expectedBoutsCompleted:
-              sparRequest.rivalRun.expectedBoutsCompleted,
+            expectedBoutsCompleted: sparRequest.rivalRun.expectedBoutsCompleted,
             reportId: simulatedReport.id,
             report: simulatedReport,
             playerWon: simulatedReport.winner === 'a',
@@ -1617,43 +1615,28 @@ api.post('/believe', async (c) => {
     const utcDateKey = formatUtcDateKey(now);
     const dayNumber = await getWritableArenaDay(now);
     if (!dayNumber) return arenaRolloverConflict(c);
-    const scribbit = await loadScribbit(redis, scribbitId, utcDateKey);
+    const result = await applyDailyBelief(redis, {
+      scribbitId,
+      userId: player.userId,
+      utcDateKey,
+      currentArenaDay: dayNumber,
+      operationId: randomUUID(),
+      operationStartedAtMs: now.getTime(),
+    });
 
-    if (
-      !scribbit ||
-      scribbit.status !== 'alive' ||
-      scribbit.expiresDay <= dayNumber
-    ) {
+    if (result.status === 'target-unavailable') {
       return notFound(c, 'That Scribbit cannot collect belief right now.');
     }
-
-    if (await isScribbitOwnedByUser(redis, player.userId, scribbit.id)) {
+    if (result.status === 'self-belief') {
       return badRequest(c, "believe in someone else's doodle");
     }
-
-    const beliefKey = `belief:${scribbit.id}`;
-    const createdBelief = await redis.hSetNX(
-      beliefKey,
-      `${player.userId}:${utcDateKey}`,
-      Date.now().toString()
-    );
-    await redis.expire(beliefKey, beliefVotersTtlSeconds);
-
-    if (createdBelief !== 1) {
+    if (result.status === 'already-believed') {
       return conflict(c, 'You already believed in that Scribbit today.');
     }
-
-    await recordUserBeliefTarget(redis, player.userId, scribbit.id, utcDateKey);
-
-    const believedScribbit = await increaseBelief(redis, scribbit);
-    const freshScribbit = await loadScribbit(
-      redis,
-      believedScribbit.id,
-      utcDateKey
-    );
-    return c.json<{ belief: number }>({
-      belief: freshScribbit?.belief ?? believedScribbit.belief,
-    });
+    if (result.status === 'user-data-changing') {
+      return conflict(c, 'Your game data is changing. Try again.');
+    }
+    return c.json<{ belief: number }>({ belief: result.belief });
   } catch (error) {
     console.error('Believe route failed:', error);
     return serverError(c, 'The belief spark fizzled. Try again soon.');
@@ -1776,11 +1759,36 @@ api.post('/report-scribbit', async (c) => {
     if (report.reportCount >= SCRIBBIT_REPORT_REMOVAL_THRESHOLD) {
       const ownerUserId = await getScribbitOwner(redis, scribbitId);
       if (ownerUserId) {
-        await purgeBattleReportsForScribbit(redis, scribbitId);
-        await deleteStoredScribbit(redis, ownerUserId, scribbitId, dayNumber);
-        await removeCurrentChampionIfMatches(redis, scribbitId);
-        await clearScribbitReports(redis, scribbitId);
-        removedForEveryone = true;
+        const removal = await runWithPlayerMutationLease(
+          redis,
+          ownerUserId,
+          randomUUID(),
+          async () => {
+            if ((await getScribbitOwner(redis, scribbitId)) !== ownerUserId) {
+              return false;
+            }
+            await purgeBattleReportsForScribbit(redis, scribbitId);
+            await deleteStoredScribbit(
+              redis,
+              ownerUserId,
+              scribbitId,
+              dayNumber
+            );
+            await removeCurrentChampionIfMatches(redis, scribbitId);
+            await clearScribbitReports(redis, scribbitId);
+            return true;
+          }
+        );
+        if (removal.status === 'busy') {
+          return conflict(
+            c,
+            'That Scribbit is changing. Your report was saved; try again.'
+          );
+        }
+        if (removal.status === 'lost') {
+          return serverError(c, 'The safety removal lost its lock. Try again.');
+        }
+        removedForEveryone = removal.value;
       }
     }
 
@@ -1799,8 +1807,19 @@ api.post('/delete-my-data', async (c) => {
   if (!player) return unauthorized(c, 'Sign in to delete your game data.');
 
   try {
-    const dayNumber = await ensureCurrentArenaDay(redis, new Date());
-    const result = await deletePlayerData(redis, player.userId, dayNumber);
+    const now = new Date();
+    const dayNumber = await ensureCurrentArenaDay(redis, now);
+    const result = await deletePlayerData(
+      redis,
+      player.userId,
+      dayNumber,
+      formatUtcDateKey(now),
+      now.getTime(),
+      randomUUID()
+    );
+    if (result.status === 'busy') {
+      return conflict(c, 'Your game data is already being deleted.');
+    }
     return c.json({ deleted: true, removedScribbits: result.removedScribbits });
   } catch (error) {
     console.error('Delete player data route failed:', error);
@@ -1808,7 +1827,7 @@ api.post('/delete-my-data', async (c) => {
   }
 });
 
-api.get('/clout-board', async (c) => {
+registerPlayerMutatingGet('/clout-board', async (c) => {
   try {
     return c.json<CloutBoard>(
       await loadCloutBoard(redis, await getCurrentPlayer())
@@ -1819,7 +1838,7 @@ api.get('/clout-board', async (c) => {
   }
 });
 
-api.get('/inventory', async (c) => {
+registerPlayerMutatingGet('/inventory', async (c) => {
   const player = await getCurrentPlayer();
 
   if (!player) {
@@ -2020,7 +2039,7 @@ api.post('/boss-challenge', async (c) => {
       redis,
       challenger.id,
       report.winner === 'a' ? 'win' : 'loss',
-      2
+      XP_REWARDS.championWin
     );
     claimedBossChallenge = null;
     await runNonCriticalSideEffect('Daily play record', () =>
@@ -2129,7 +2148,7 @@ const loadVisibleLegendPage = async (
   return { legends, nextCursor: null };
 };
 
-api.get('/legacy-cards', async (c) => {
+registerPlayerMutatingGet('/legacy-cards', async (c) => {
   const cursor = c.req.query('cursor') ?? null;
   const requestedLimit = readPageNumber(
     c.req.query('limit'),

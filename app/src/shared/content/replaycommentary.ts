@@ -746,11 +746,6 @@ export const INKCAST_COMMENTARY_BANKS: readonly InkcastCommentaryBank[] =
     ),
   ]);
 
-export const INKCAST_COMMENTARY_LINE_COUNT = INKCAST_COMMENTARY_BANKS.reduce(
-  (lineCount, bank) => lineCount + bank.variants.length,
-  0
-);
-
 export function getInkcastCommentaryBank(
   bankId: InkcastCommentaryBankId
 ): InkcastCommentaryBank {

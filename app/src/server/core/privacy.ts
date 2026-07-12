@@ -1,12 +1,14 @@
-import type { ArenaStorage } from './scribbit';
+import type { ArenaStorage } from './storage';
 import {
   deleteStoredScribbit,
   getDailyFlagsKey,
   getUserDailySparWinRewardsKey,
   getUserAliveScribbitsKey,
+  getUserBeliefTargetsKey,
   getUserLegacyCardsKey,
   getUserScribbitsKey,
   loadScribbits,
+  removeUserBeliefReceipts,
 } from './scribbit';
 import {
   getBattleReportKey,
@@ -34,34 +36,36 @@ import {
   getUserReportedScribbitsKey,
 } from './moderation';
 import { getUserPlayStreakKey } from './streak';
-import { getLegacyIndexVersionStorageKey, getLegacySeenDayKey } from './legacy';
+import { getLegacyIndexVersionKey, getLegacySeenDayKey } from './legacy';
 import {
   getFounderChronicleKey,
   getLegacyFounderChronicleKey,
   getPendingFounderChronicleKey,
 } from './founderChronicle';
+import {
+  acquirePlayerDataDeletion,
+  releasePlayerDataDeletion,
+  renewPlayerDataDeletion,
+  withPlayerDataDeletionHeartbeat,
+  type PlayerDataDeletionLease,
+} from './dataDeletion';
 
-const userBeliefTargetsTtlSeconds = 30 * 24 * 60 * 60;
-
-export const getUserBeliefTargetsKey = (userId: string): string => {
-  return `user:${userId}:belief-targets`;
-};
-
-export const recordUserBeliefTarget = async (
+const requireDeletionOwnership = async (
   storage: ArenaStorage,
-  userId: string,
-  scribbitId: string,
-  utcDateKey: string
+  lease: PlayerDataDeletionLease
 ): Promise<void> => {
-  const key = getUserBeliefTargetsKey(userId);
-  await storage.hSet(key, { [scribbitId]: utcDateKey });
-  await storage.expire(key, userBeliefTargetsTtlSeconds);
+  if ((await renewPlayerDataDeletion(storage, lease)) !== 'renewed') {
+    throw new Error('Player data deletion lost ownership of its lock.');
+  }
 };
 
-export const deletePlayerData = async (
+const deletePlayerDataRecords = async (
   storage: ArenaStorage,
   userId: string,
-  currentDay: number
+  currentDay: number,
+  currentUtcDateKey: string,
+  operationStartedAtMs: number,
+  deletionLease: PlayerDataDeletionLease
 ): Promise<{ removedScribbits: number }> => {
   const scribbitEntries = await storage.zRange(
     getUserScribbitsKey(userId),
@@ -75,6 +79,7 @@ export const deletePlayerData = async (
   );
 
   for (const scribbit of scribbits) {
+    await requireDeletionOwnership(storage, deletionLease);
     await purgeBattleReportsForScribbit(storage, scribbit.id);
     await deleteStoredScribbit(storage, userId, scribbit.id, currentDay);
     await removeCurrentChampionIfMatches(storage, scribbit.id);
@@ -84,15 +89,20 @@ export const deletePlayerData = async (
     getUserReportedScribbitsKey(userId)
   );
   for (const scribbitId of Object.keys(reportedTargets)) {
+    await requireDeletionOwnership(storage, deletionLease);
     await storage.hDel(getScribbitReportsKey(scribbitId), [userId]);
   }
 
-  const beliefTargets = await storage.hGetAll(getUserBeliefTargetsKey(userId));
-  for (const [scribbitId, utcDateKey] of Object.entries(beliefTargets)) {
-    await storage.hDel(`belief:${scribbitId}`, [`${userId}:${utcDateKey}`]);
-  }
+  await requireDeletionOwnership(storage, deletionLease);
+  await removeUserBeliefReceipts(
+    storage,
+    userId,
+    currentUtcDateKey,
+    operationStartedAtMs
+  );
 
   for (let day = Math.max(1, currentDay - 12); day <= currentDay; day += 1) {
+    await requireDeletionOwnership(storage, deletionLease);
     await storage.hDel(getBackKey(day), [userId]);
     await storage.hDel(getCloutPayoutKey(day), [userId]);
     await storage.del(getDailyFlagsKey(userId, day));
@@ -109,16 +119,18 @@ export const deletePlayerData = async (
     by: 'rank',
   });
   if (battleEntries.length > 0) {
+    await requireDeletionOwnership(storage, deletionLease);
     await storage.del(
       ...battleEntries.map((entry) => getBattleReportKey(entry.member))
     );
   }
 
+  await requireDeletionOwnership(storage, deletionLease);
   await storage.del(
     getUserScribbitsKey(userId),
     getUserAliveScribbitsKey(userId),
     getUserLegacyCardsKey(userId),
-    getLegacyIndexVersionStorageKey(userId),
+    getLegacyIndexVersionKey(userId),
     getLegacySeenDayKey(userId),
     getUserBattlesKey(userId),
     getInkKey(userId),
@@ -138,4 +150,57 @@ export const deletePlayerData = async (
   await storage.hDel(getCloutUsernameKey(), [userId]);
 
   return { removedScribbits: scribbits.length };
+};
+
+export type DeletePlayerDataResult =
+  | Readonly<{ status: 'deleted'; removedScribbits: number }>
+  | Readonly<{ status: 'busy'; removedScribbits: 0 }>;
+
+export const deletePlayerData = async (
+  storage: ArenaStorage,
+  userId: string,
+  currentDay: number,
+  currentUtcDateKey: string,
+  operationStartedAtMs: number,
+  operationId: string
+): Promise<DeletePlayerDataResult> => {
+  const deletion = await acquirePlayerDataDeletion(
+    storage,
+    userId,
+    operationId
+  );
+  if (deletion.status === 'busy') {
+    return { status: 'busy', removedScribbits: 0 };
+  }
+
+  let deletionResult: { removedScribbits: number };
+  try {
+    deletionResult = await withPlayerDataDeletionHeartbeat(
+      storage,
+      deletion.lease,
+      () =>
+        deletePlayerDataRecords(
+          storage,
+          userId,
+          currentDay,
+          currentUtcDateKey,
+          operationStartedAtMs,
+          deletion.lease
+        )
+    );
+  } catch (error) {
+    const release = await releasePlayerDataDeletion(storage, deletion.lease);
+    if (release !== 'released') {
+      throw new Error('Player data deletion lost ownership of its lock.', {
+        cause: error,
+      });
+    }
+    throw error;
+  }
+
+  const release = await releasePlayerDataDeletion(storage, deletion.lease);
+  if (release !== 'released') {
+    throw new Error('Player data deletion lost ownership of its lock.');
+  }
+  return { status: 'deleted', ...deletionResult };
 };

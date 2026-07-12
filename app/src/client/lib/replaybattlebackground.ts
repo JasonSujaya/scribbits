@@ -4,6 +4,7 @@
 import * as Phaser from 'phaser';
 import { Scene } from 'phaser';
 import type { Element } from '../../shared/arena';
+import { hashStringToUint32 } from '../../shared/stablehash';
 import type {
   ReplayBattleLayout,
   ReplayBattleSide,
@@ -32,15 +33,6 @@ export type ReplayBattleBackgroundInput = Readonly<{
 }>;
 
 const FULL_CIRCLE_RADIANS = Math.PI * 2;
-
-const hashSeed = (value: string): number => {
-  let hash = 2166136261;
-  for (let index = 0; index < value.length; index += 1) {
-    hash ^= value.charCodeAt(index);
-    hash = Math.imul(hash, 16777619);
-  }
-  return hash >>> 0;
-};
 
 const stableJitter = (
   seed: number,
@@ -284,7 +276,7 @@ export function drawReplayBattleBackground(
   const { layout } = input;
   const leftStyle = ELEMENT_STYLES[input.fighterAElement];
   const rightStyle = ELEMENT_STYLES[input.fighterBElement];
-  const seed = hashSeed(input.battleSeed);
+  const seed = hashStringToUint32(input.battleSeed);
   const reduceMotion = input.reduceMotion;
   const centerX = layout.viewportWidth / 2;
   const arenaCenterY = (layout.arenaTop + layout.arenaBottom) / 2;

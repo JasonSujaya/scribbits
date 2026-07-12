@@ -1,4 +1,5 @@
 import type { Element, Mood, ScribbitStats } from './arena';
+import { ELEMENTS } from './elements';
 
 export type FoundingScribbitPersonality = Readonly<{
   epithet: string;
@@ -32,13 +33,6 @@ const EXPECTED_FOUNDERS_PER_ELEMENT = 5;
 const EXPECTED_PERSONALITY_STRING_COUNT = 8;
 const EPITHET_MAXIMUM_LENGTH = 26;
 const PERSONALITY_LINE_MAXIMUM_LENGTH = 52;
-
-const FOUNDING_ELEMENTS: readonly Element[] = Object.freeze([
-  'ember',
-  'tide',
-  'moss',
-  'storm',
-]);
 
 const PERSONALITY_KEYS: readonly string[] = Object.freeze([
   'epithet',
@@ -111,7 +105,7 @@ export const FOUNDING_SCRIBBIT_DEFINITIONS: readonly FoundingScribbitDefinition[
         signatureReaction: 'Vine Skip! Two green streaks, no wasted scribble.',
         victoryLine: 'Shortcut found, fern fronds still perfectly folded.',
         defeatLine: 'Lovely lap! I took the scenic edge this time.',
-        rumbleLine: 'Fernibble zips between brackets on leafy feet.',
+        rumbleLine: 'Fernibble zips through the Rumble on leafy feet.',
       },
     }),
     freezeFoundingScribbitDefinition({
@@ -199,7 +193,7 @@ export const FOUNDING_SCRIBBIT_DEFINITIONS: readonly FoundingScribbitDefinition[
         signatureReaction: 'Firetip Halo! The sleepy sparks found their orbit.',
         victoryLine: 'Warm marks, neat ring, now back to my coal pillow.',
         defeatLine: "Bright work; I'll sharpen after a tiny snooze.",
-        rumbleLine: 'Coalimp circles the bracket with ember-tipped nibs.',
+        rumbleLine: 'Coalimp circles the Rumble with ember-tipped nibs.',
       },
     }),
     freezeFoundingScribbitDefinition({
@@ -265,7 +259,7 @@ export const FOUNDING_SCRIBBIT_DEFINITIONS: readonly FoundingScribbitDefinition[
         signatureReaction: 'Firetip Halo crowns the page in three bright arcs!',
         victoryLine: 'A crisp finish, polished neatly on every tine.',
         defeatLine: "Sharp showing; I'll tune the angles in my crown.",
-        rumbleLine: 'Flintstag frames the bracket with sparking antlers.',
+        rumbleLine: 'Flintstag frames the Rumble with sparking antlers.',
       },
     }),
     freezeFoundingScribbitDefinition({
@@ -309,7 +303,7 @@ export const FOUNDING_SCRIBBIT_DEFINITIONS: readonly FoundingScribbitDefinition[
         signatureReaction: 'Slipstream! Two salty skips stitch up the page.',
         victoryLine: 'Neat passage; every button stayed shipshape.',
         defeatLine: "Smooth sailing; I'll resew that wandering dash.",
-        rumbleLine: 'Brinebutton skims the bracket on a silver wake.',
+        rumbleLine: 'Brinebutton skims the Rumble on a silver wake.',
       },
     }),
     freezeFoundingScribbitDefinition({
@@ -354,7 +348,7 @@ export const FOUNDING_SCRIBBIT_DEFINITIONS: readonly FoundingScribbitDefinition[
           'Splashback! A pearl-bright cone returns in ripples.',
         victoryLine: 'Shimmer filed, colors balanced, tiny bow complete.',
         defeatLine: "Lovely colors; I'll polish a softer second echo.",
-        rumbleLine: 'Pearlmote glints across the bracket in tidal color.',
+        rumbleLine: 'Pearlmote glints across the Rumble in tidal color.',
       },
     }),
     freezeFoundingScribbitDefinition({
@@ -464,7 +458,7 @@ export const FOUNDING_SCRIBBIT_DEFINITIONS: readonly FoundingScribbitDefinition[
         signatureReaction: 'Bolt Scribble! Twin ribbons sweep the open file.',
         victoryLine: 'File crossed, ribbons crisp, corner signed.',
         defeatLine: 'Fine route; I folded one turn a square too soon.',
-        rumbleLine: 'Ribbonrook sweeps the bracket in checked streamers.',
+        rumbleLine: 'Ribbonrook sweeps the Rumble in checked streamers.',
       },
     }),
     freezeFoundingScribbitDefinition({
@@ -595,7 +589,7 @@ export const validateFoundingScribbitDefinitions =
     const seenNames = new Map<string, string>();
     const seenPersonalityStrings = new Map<string, string>();
     const founderCountByElement = new Map<Element, number>(
-      FOUNDING_ELEMENTS.map((element) => [element, 0])
+      ELEMENTS.map((element) => [element, 0])
     );
     let personalityStringCount = 0;
 
@@ -699,7 +693,7 @@ export const validateFoundingScribbitDefinitions =
       );
     }
 
-    for (const element of FOUNDING_ELEMENTS) {
+    for (const element of ELEMENTS) {
       const founderCount = founderCountByElement.get(element) ?? 0;
       if (founderCount !== EXPECTED_FOUNDERS_PER_ELEMENT) {
         errors.push(

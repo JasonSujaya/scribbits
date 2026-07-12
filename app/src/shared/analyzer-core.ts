@@ -1,5 +1,10 @@
 import type { Element, ScribbitStats } from './arena';
-import { STAT_BUDGET, STAT_MAX, STAT_MIN } from './arena';
+import {
+  SCRIBBIT_STAT_KEYS,
+  STAT_BUDGET,
+  STAT_MAX,
+  STAT_MIN,
+} from './arena';
 
 export type RgbaPixelData = Uint8Array | Uint8ClampedArray | readonly number[];
 
@@ -249,14 +254,28 @@ export function dominantElement(hueBuckets: number[]): Element {
   return hueToElement(hueDegrees);
 }
 
-export function normalizeStats(raw: {
-  chonk: number;
-  spike: number;
-  zip: number;
-  charm: number;
-}): ScribbitStats {
-  const keys = ['chonk', 'spike', 'zip', 'charm'] as const;
-  const rawValues = keys.map((key) => Math.max(0, raw[key]));
+function readRawStat(rawStats: unknown, statName: keyof ScribbitStats): number {
+  if (typeof rawStats !== 'object' || rawStats === null) {
+    return 0;
+  }
+
+  const value = (rawStats as Record<string, unknown>)[statName];
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0
+    ? value
+    : 0;
+}
+
+/**
+ * The one stat-budget authority for analyzer output, untrusted submissions,
+ * and new Scribbit creation. Invalid or missing values contribute zero; the
+ * final four integers always respect the shared min, max, and total budget.
+ * Stored records are validated and preserved separately so old battles and
+ * Legacy Cards never change when balance code evolves.
+ */
+export function normalizeStats(rawStats: unknown): ScribbitStats {
+  const rawValues = SCRIBBIT_STAT_KEYS.map((statName) => {
+    return readRawStat(rawStats, statName);
+  });
   const rawSum = rawValues.reduce((sum, value) => sum + value, 0);
   const fractions =
     rawSum > 0

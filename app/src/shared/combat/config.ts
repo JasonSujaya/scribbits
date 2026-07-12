@@ -6,6 +6,7 @@ import type {
   PrimaryPower,
 } from './types';
 import { SHAPE_POWER_CONTENT_BY_POWER } from './shapepowercontent';
+import { SCRIBBIT_STAT_KEYS } from '../arena';
 
 export const COMBAT_TICK_RATE = 20;
 export const COMBAT_MAXIMUM_SECONDS = 20;
@@ -33,12 +34,8 @@ export const COMBAT_PHASE_ORDER: readonly CombatPhase[] = Object.freeze([
   'checkpoint',
 ]);
 
-export const DOMINANT_STAT_TIE_ORDER: readonly DominantStat[] = Object.freeze([
-  'chonk',
-  'spike',
-  'zip',
-  'charm',
-]);
+export const DOMINANT_STAT_TIE_ORDER: readonly DominantStat[] =
+  SCRIBBIT_STAT_KEYS;
 
 export const PRIMARY_POWER_BY_DOMINANT_STAT: Readonly<
   Record<DominantStat, PrimaryPower>

@@ -6,23 +6,23 @@ current Devvit app identity is Scribbits: `app/devvit.json` uses
 
 ## One-Time Setup
 
-Install Node 22+ with npm once on the machine, then run these from `app/`
-before using the automated deploy script:
+Run the repository bootstrap once, then authenticate Devvit from `app/`:
 
 ```bash
-npm ci
-npx devvit login
-npx devvit upload
+./verify.command
+cd app
+pnpm exec devvit login
 ```
 
-`npx devvit login` is interactive because it authenticates your Reddit account.
+`devvit login` is interactive because it authenticates your Reddit account.
 
-The first `npx devvit upload` must also be manual because Reddit can require one-time app registration and Terms of Service confirmation. After `scribbits` appears in `npx devvit apps list`, `deploy.command` can automate future patch uploads.
+The first upload can require one-time app registration and Terms of Service
+confirmation. `deploy.command` uses the same canonical release command for the
+first upload and every later patch; complete any interactive prompt it opens.
 
-OpenCode may not inherit a shell with `node`, `npm`, or `npx` on `PATH`. Use the
-repo command files instead of `npm run ...`; they resolve Homebrew/nvm/mise/asdf
-Node installs and this Mac's Codex bundled Node runtime, then call local
-`app/node_modules/.bin` tools directly.
+Codex may not inherit a shell with Node or pnpm on `PATH`. The repository command
+files resolve Homebrew/nvm/mise/asdf and the bundled Codex runtime, then install
+from `app/pnpm-lock.yaml` when needed.
 
 ## Automated Deploy
 
@@ -32,29 +32,22 @@ From the repo root, either double-click `deploy.command` on macOS or run:
 ./deploy.command
 ```
 
-The script runs:
+The script checks for a clean git tree and then runs one package command:
 
 ```bash
 cd app
-tsc --build
-eslint 'src/**/*.{ts,tsx}'
-node scripts/test-battle.mjs
-vite build
-devvit whoami
-devvit apps list
-devvit upload --bump patch
-devvit view scribbits version
-node scripts/sync-devvit-version.mjs X
-git add app/package.json app/package-lock.json
-git commit -m "chore: deploy vX"
-git push
+pnpm run deploy
 ```
 
-The script refuses to run on a dirty git tree unless `ALLOW_DIRTY_DEPLOY=1` is
-set. After upload, it reads the latest uploaded Devvit version, syncs that value
-into `app/package.json` and `app/package-lock.json`, then reads
-`app/package.json` for the commit message. If there are no git changes after
-upload, it skips the commit and push.
+`pnpm run deploy` owns the complete release path: full verification, Devvit
+authentication check, and a patch upload. The desktop command, CI, and direct
+terminal use all call it. The script refuses a dirty git tree unless
+`ALLOW_DIRTY_DEPLOY=1` is set. It never edits package metadata, commits, or
+pushes after an upload.
+
+To request public review instead of a private test upload, run `pnpm run launch`
+from `app/`. It shares the same `release:check` gate and ends with
+`devvit publish --bump patch`.
 
 ## GitHub Auto Deploy
 
@@ -74,7 +67,7 @@ Create the value locally only after `devvit login` succeeds:
 base64 < ~/.devvit/token | pbcopy
 ```
 
-Treat this as a sensitive secret. If the token expires, rerun `npx devvit login`,
+Treat this as a sensitive secret. If the token expires, rerun `pnpm exec devvit login`,
 replace the GitHub secret, and rerun the workflow.
 
 ## Playtest
@@ -106,10 +99,10 @@ files rebuilds `dist/client` and refreshes the browser automatically.
 
 ## Troubleshooting
 
-Token expiry: rerun `npx devvit login` from `app/`, then rerun `./deploy.command`.
+Token expiry: rerun `pnpm exec devvit login` from `app/`, then rerun `./deploy.command`.
 
-Name conflicts: if `npx devvit upload` says the app name is unavailable or conflicts with another app, update the name in `app/devvit.json` and `app/package.json`, then run the first upload manually again.
+Name conflicts: if `pnpm exec devvit upload` says the app name is unavailable or conflicts with another app, update the name in `app/devvit.json` and `app/package.json`, then rerun the deploy command.
 
 Build failures: fix the reported type-check, lint, simulation, or build error before retrying. The script stops before upload when any check fails.
 
-Missing registration: if `deploy.command` says `scribbits` is not registered, run `npx devvit upload` manually once from `app/`, complete Reddit's prompts, then rerun `./deploy.command`.
+Registration prompt: complete Reddit's one-time registration and Terms prompts when the deploy command opens them, then rerun it if the CLI asks you to.

@@ -13,9 +13,17 @@ import {
   reportScribbit as reportScribbitApi,
 } from './api';
 import { showToast } from '@devvit/web/client';
-import { loadDrawing, fitDrawing, recordText, moodStyleOf, levelOf, xpProgress } from './scribbits';
-import { ELEMENT_STYLES, TYPE, UI } from './theme';
-import { paperIcon } from './papericons';
+import {
+  loadDrawing,
+  fitDrawing,
+  recordText,
+  moodStyleOf,
+  levelOf,
+  xpProgress,
+} from './scribbits';
+import { ELEMENT_STYLES, prefersReducedMotion, TYPE, UI } from './theme';
+import { paperIcon, type PaperIconKey } from './papericons';
+import { CanvasModalOverlay } from './overlay';
 import {
   label,
   ghostButton,
@@ -71,9 +79,27 @@ export function openDetailModal(
   opts: DetailModalOpts
 ): DetailModal {
   const { width, height } = scene.scale;
+  const reduceMotion = prefersReducedMotion();
+  const mood = moodStyleOf(scribbit);
+  const daysLeft = daysLeftFor(scribbit, opts.currentDay);
+  const semanticDescription = [
+    `${scribbit.name} by u/${scribbit.artist}.`,
+    `${scribbit.element} Scribbit, level ${levelOf(scribbit)}, ${mood.label.toLowerCase()}.`,
+    `${recordText(scribbit)}, ${scribbit.belief} belief.`,
+    scribbit.status === 'alive'
+      ? `${daysLeft} ${daysLeft === 1 ? 'day' : 'days'} left.`
+      : `${scribbit.status} record.`,
+  ].join(' ');
   // scrollFactor(0) keeps the modal pinned to the viewport even if the caller
   // scene is scrolled (ArenaHome scrolls vertically).
   const layer = scene.add.container(0, 0).setDepth(DEPTH).setScrollFactor(0);
+  const modalActions = new CanvasModalOverlay(
+    scene,
+    `${scribbit.name} details`,
+    () => close(),
+    semanticDescription
+  );
+  layer.once('destroy', () => modalActions.destroy());
 
   // Dim scrim — tap outside the card closes.
   const scrim = scene.add
@@ -95,8 +121,15 @@ export function openDetailModal(
   card.setDepth(DEPTH + 1).setScrollFactor(0);
   layer.add(card);
   // Entrance pop.
-  card.setScale(0.7);
-  scene.tweens.add({ targets: card, scale: 1, duration: 260, ease: 'Back.easeOut' });
+  if (!reduceMotion) {
+    card.setScale(0.7);
+    scene.tweens.add({
+      targets: card,
+      scale: 1,
+      duration: 260,
+      ease: 'Back.easeOut',
+    });
+  }
 
   const top = -cardH / 2;
   let believeCountLabel: Phaser.GameObjects.Text | null = null;
@@ -105,8 +138,25 @@ export function openDetailModal(
   let deleteArmed = false;
 
   // Close button (top-right of the card).
-  const closeBtn = ghostButton(scene, cardW / 2 - 44, top + 40, '✕', () => close(), 72);
+  const closeBtn = ghostButton(
+    scene,
+    cardW / 2 - 44,
+    top + 40,
+    '✕',
+    () => close(),
+    72
+  );
   card.add(closeBtn);
+  modalActions.add({
+    label: `Close ${scribbit.name} details`,
+    rect: {
+      x: cardX + cardW / 2 - 80,
+      y: cardY + top + 4,
+      width: 72,
+      height: 72,
+    },
+    onActivate: () => close(),
+  });
 
   // --- Big framed art -------------------------------------------------------
   const artSize = 240;
@@ -123,34 +173,73 @@ export function openDetailModal(
     // so it stays perfectly framed regardless of viewport scroll.
     const img = fitDrawing(scene.add.image(0, artY, key), artSize - 12);
     card.add(img);
-    scene.tweens.add({
-      targets: img,
-      angle: 2.5,
-      duration: 1400,
-      yoyo: true,
-      repeat: -1,
-      ease: 'Sine.easeInOut',
-    });
+    if (!reduceMotion) {
+      scene.tweens.add({
+        targets: img,
+        angle: 2.5,
+        duration: 1400,
+        yoyo: true,
+        repeat: -1,
+        ease: 'Sine.easeInOut',
+      });
+    }
   });
 
   // Level coin on the art's corner.
-  card.add(levelBadge(scene, artSize / 2 - 6, artY - artSize / 2 + 4, levelOf(scribbit), 0.82));
+  card.add(
+    levelBadge(
+      scene,
+      artSize / 2 - 6,
+      artY - artSize / 2 + 4,
+      levelOf(scribbit),
+      0.82
+    )
+  );
 
   // --- Name + artist --------------------------------------------------------
   let cursor = artY + artSize / 2 + 34;
-  card.add(label(scene, 0, cursor, scribbit.name.toUpperCase(), TYPE.title * 1.1, UI.ink, true));
+  card.add(
+    label(
+      scene,
+      0,
+      cursor,
+      scribbit.name.toUpperCase(),
+      TYPE.title * 1.1,
+      UI.ink,
+      true
+    )
+  );
   cursor += 42;
-  card.add(label(scene, 0, cursor, `by u/${scribbit.artist}`, TYPE.caption, UI.inkSoft, true));
+  card.add(
+    label(
+      scene,
+      0,
+      cursor,
+      `by u/${scribbit.artist}`,
+      TYPE.caption,
+      UI.inkSoft,
+      true
+    )
+  );
 
   // --- Element badge + mood chip row ---------------------------------------
   cursor += 44;
   card.add(elementBadge(scene, -cardW / 4, cursor, scribbit.element, 0.74));
-  const mood = moodStyleOf(scribbit);
-  card.add(moodChip(scene, cardW / 4, cursor, mood.emoji, mood.label, mood.color, 0.86));
+  card.add(moodChip(scene, cardW / 4, cursor, mood.label, mood.color, 0.86));
 
   // --- Level XP bar ---------------------------------------------------------
   cursor += 46;
-  card.add(label(scene, -cardW / 2 + 40, cursor, `Lv ${levelOf(scribbit)}`, TYPE.caption, UI.ink, true).setOrigin(0, 0.5));
+  card.add(
+    label(
+      scene,
+      -cardW / 2 + 40,
+      cursor,
+      `Lv ${levelOf(scribbit)}`,
+      TYPE.caption,
+      UI.ink,
+      true
+    ).setOrigin(0, 0.5)
+  );
   const xpBar = progressBar(scene, 30, cursor, cardW - 200, style.primary, 16);
   card.add(xpBar.container);
   xpBar.set(xpProgress(scribbit), true);
@@ -164,11 +253,26 @@ export function openDetailModal(
 
   // --- W/L · belief · backers · days-left pips ------------------------------
   cursor += 30;
-  const daysLeft = daysLeftFor(scribbit, opts.currentDay);
   card.add(
-    label(scene, -cardW / 2 + 36, cursor, `${recordText(scribbit)}`, TYPE.body, UI.inkSoft, true).setOrigin(0, 0.5)
+    label(
+      scene,
+      -cardW / 2 + 36,
+      cursor,
+      `${recordText(scribbit)}`,
+      TYPE.body,
+      UI.inkSoft,
+      true
+    ).setOrigin(0, 0.5)
   );
-  believeCountLabel = label(scene, 48, cursor, `${currentBelief}`, TYPE.body, UI.coralText, true);
+  believeCountLabel = label(
+    scene,
+    48,
+    cursor,
+    `${currentBelief}`,
+    TYPE.body,
+    UI.coralText,
+    true
+  );
   card.add([
     paperIcon(scene, 'heart', 18, cursor, { size: 24, fill: UI.gold }),
     believeCountLabel,
@@ -194,20 +298,41 @@ export function openDetailModal(
         cardW - 80
       )
     );
+    modalActions.add({
+      label: `Open ${scribbit.name} battle history`,
+      rect: {
+        x: cardX - (cardW - 80) / 2,
+        y: cardY + actionsY - 132,
+        width: cardW - 80,
+        height: 84,
+      },
+      onActivate: () => {
+        close();
+        opts.actions.onReplay?.(scribbit);
+      },
+    });
   }
 
   scrim.on('pointerup', () => close());
+  modalActions.focusInitial();
 
   function buildActions(y: number): void {
     const a = opts.actions;
     if (opts.mine) {
       // feed/pat/train handled inline where sensible; here we offer Spar + Enter.
-      const slots: Array<{ label: string; fill: number; enabled: boolean; run: () => void }> = [];
+      const slots: ActionSlot[] = [];
       if (a.onSpar) {
-        slots.push({ label: '🥊 Spar', fill: UI.coralDeep, enabled: true, run: () => runAndClose(() => a.onSpar?.(scribbit)) });
+        slots.push({
+          icon: 'sword',
+          label: 'Spar',
+          fill: UI.coralDeep,
+          enabled: true,
+          run: () => runAndClose(() => a.onSpar?.(scribbit)),
+        });
       }
       if (a.onEnter) {
         slots.push({
+          icon: 'trophy',
           label: a.enterLabel ?? 'Enter Rumble',
           fill: UI.coral,
           enabled: a.enterEnabled ?? true,
@@ -216,10 +341,17 @@ export function openDetailModal(
       }
       if (a.onCare) {
         // A single "Care" shortcut that returns to home roster for the 3 actions.
-        slots.push({ label: 'Care', fill: 0x4faa4f, enabled: true, run: () => runAndClose(() => a.onCare?.(scribbit)) });
+        slots.push({
+          icon: 'paw',
+          label: 'Care',
+          fill: 0x4faa4f,
+          enabled: true,
+          run: () => runAndClose(() => a.onCare?.(scribbit)),
+        });
       }
       if (!scribbit.isFounding) {
         slots.push({
+          icon: 'trash',
           label: 'Delete',
           fill: UI.coralDeep,
           enabled: true,
@@ -229,12 +361,19 @@ export function openDetailModal(
       layoutSlots(slots, y);
     } else {
       // Others': Believe (in-modal, optimistic) + Back.
-      const slots: Array<{ label: string; fill: number; enabled: boolean; run: () => void }> = [];
+      const slots: ActionSlot[] = [];
       if (a.canBelieve !== false) {
-        slots.push({ label: 'Believe', fill: UI.coral, enabled: true, run: () => doBelieve() });
+        slots.push({
+          icon: 'heart',
+          label: 'Believe',
+          fill: UI.coral,
+          enabled: true,
+          run: () => doBelieve(),
+        });
       }
       if (a.onBack) {
         slots.push({
+          icon: 'trophy',
           label: a.backLabel ?? 'Back',
           fill: UI.gold,
           enabled: a.backEnabled ?? true,
@@ -243,7 +382,8 @@ export function openDetailModal(
       }
       if (!scribbit.isFounding) {
         slots.push({
-          label: '⚑ Report',
+          icon: 'shield',
+          label: 'Report',
           fill: UI.inkSoftHex,
           enabled: true,
           run: () => doReport(),
@@ -253,21 +393,49 @@ export function openDetailModal(
     }
   }
 
-  function layoutSlots(
-    slots: Array<{ label: string; fill: number; enabled: boolean; run: () => void }>,
-    y: number
-  ): void {
+  function layoutSlots(slots: ActionSlot[], y: number): void {
     if (slots.length === 0) {
       card.add(ghostButton(scene, 0, y, 'Close', () => close(), cardW - 80));
+      modalActions.add({
+        label: `Close ${scribbit.name} details`,
+        rect: {
+          x: cardX - (cardW - 80) / 2,
+          y: cardY + y - 42,
+          width: cardW - 80,
+          height: 84,
+        },
+        onActivate: () => close(),
+      });
       return;
     }
     const gap = 16;
     const w = (cardW - 80 - gap * (slots.length - 1)) / slots.length;
     slots.forEach((slot, index) => {
       const x = -cardW / 2 + 40 + w / 2 + index * (w + gap);
-      const btn = careButton(scene, x, y, '', slot.label, slot.fill, slot.enabled ? slot.run : () => {}, w, 84);
+      const btn = careButton(
+        scene,
+        x,
+        y,
+        slot.icon,
+        slot.label,
+        slot.fill,
+        slot.enabled ? slot.run : () => {},
+        w,
+        84
+      );
       if (!slot.enabled) btn.setAlpha(0.5);
       card.add(btn);
+      modalActions.add({
+        label: `${slot.label} ${scribbit.name}`,
+        rect: {
+          x: cardX + x - w / 2,
+          y: cardY + y - 42,
+          width: w,
+          height: 84,
+        },
+        enabled: slot.enabled,
+        onActivate: slot.run,
+      });
     });
   }
 
@@ -275,10 +443,23 @@ export function openDetailModal(
   // any error is surfaced right here (not swallowed).
   function doBelieve(): void {
     // Optimistic: float +1 and bump the count immediately.
-    floatReward(scene, cardX + 30, cardY + believeCountLabel!.y, '+1 BELIEF', UI.coralText, 3000, true);
+    floatReward(
+      scene,
+      cardX + 30,
+      cardY + believeCountLabel!.y,
+      '+1 BELIEF',
+      UI.coralText,
+      3000,
+      true
+    );
     currentBelief += 1;
     believeCountLabel?.setText(`${currentBelief}`);
-    scene.tweens.add({ targets: believeCountLabel, scale: 1.3, duration: 140, yoyo: true });
+    scene.tweens.add({
+      targets: believeCountLabel,
+      scale: 1.3,
+      duration: 140,
+      yoyo: true,
+    });
 
     void believeApi(scribbit.id).then((result) => {
       if (!result.ok) {
@@ -345,3 +526,11 @@ export function openDetailModal(
 
   return { destroy: () => close() };
 }
+
+type ActionSlot = {
+  icon: PaperIconKey;
+  label: string;
+  fill: number;
+  enabled: boolean;
+  run: () => void;
+};

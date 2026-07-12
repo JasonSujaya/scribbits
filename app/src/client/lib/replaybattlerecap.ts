@@ -4,10 +4,7 @@
 import * as Phaser from 'phaser';
 import { Scene } from 'phaser';
 import { formatBattleRecapLead } from './battlerecap';
-import type {
-  BattleRecapPerspective,
-  BattleRecapPlan,
-} from './battlerecap';
+import type { BattleRecapPerspective, BattleRecapPlan } from './battlerecap';
 import { ELEMENT_STYLES, UI } from './theme';
 import { label, stickerCard, tape } from './ui';
 
@@ -133,8 +130,8 @@ function addVerifiedHighlight(
   parent.add(background);
 
   const highlightCopy = input.compact
-    ? `✓ ${plan.highlight.label} · ${plan.highlight.text}`
-    : `✓ ${plan.highlight.label}\n${plan.highlight.text}`;
+    ? `${plan.highlight.label} · ${plan.highlight.text}`
+    : `${plan.highlight.label}\n${plan.highlight.text}`;
   addFittedLabel(scene, parent, {
     y: input.y,
     text: highlightCopy,
@@ -316,18 +313,11 @@ export function createBattleRecapCard(
   const width = Math.max(MINIMUM_CONTENT_WIDTH, options.width);
   const elementStyle = ELEMENT_STYLES[plan.winnerElement];
   const cardHeight = options.contextLine ? 190 : FULL_CARD_HEIGHT;
-  const card = stickerCard(
-    scene,
-    options.x,
-    options.y,
-    width,
-    cardHeight,
-    {
-      gold: true,
-      tapeColor: elementStyle.soft,
-      tapeWidth: Math.min(82, width * 0.18),
-    }
-  );
+  const card = stickerCard(scene, options.x, options.y, width, cardHeight, {
+    gold: true,
+    tapeColor: elementStyle.soft,
+    tapeWidth: Math.min(82, width * 0.18),
+  });
   card.setDepth(options.depth ?? 60);
 
   addBattleRecapLines(scene, card, plan, {

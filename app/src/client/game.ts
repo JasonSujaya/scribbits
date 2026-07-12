@@ -8,18 +8,21 @@ import { ArenaHome } from './scenes/ArenaHome';
 import { Draw } from './scenes/Draw';
 import { Replay } from './scenes/Replay';
 import { MyBattles } from './scenes/MyBattles';
-import { Sketchbook } from './scenes/Sketchbook';
+import { Gallery } from './scenes/Gallery';
 import { Bestiary } from './scenes/Bestiary';
 import { ScoutNotebook } from './scenes/ScoutNotebook';
 import { DESIGN_HEIGHT, DESIGN_WIDTH } from './lib/theme';
 import { isShapePowerId } from '../shared/combat';
 import type { PrimaryPower } from '../shared/combat';
-import type {
-  ArenaState,
-  BattleReport,
-  DirectBattleResponse,
-} from '../shared/arena';
-import { setReplay, stageDirectBattle } from './lib/registry';
+import { isElement } from '../shared/elements';
+import type { Element } from '../shared/elements';
+import type { BattleReport, DirectBattleResponse } from '../shared/arena';
+import {
+  getArena,
+  setReplay,
+  setGalleryTab,
+  stageDirectBattle,
+} from './lib/registry';
 import { showVsCeremony } from './lib/battleceremony';
 
 // Scribbits Arena — Devvit Web + Phaser 4. Draw a creature; its shape is its
@@ -32,19 +35,8 @@ const debugForcesCanvas =
 const debugUsesArchivedReport =
   debugBrowserMode && window.location.search.includes('archived');
 type DebugShapePower = PrimaryPower;
-type DebugCombatElement = 'ember' | 'tide' | 'moss' | 'storm';
 const isDebugShapePower = (value: string | null): value is DebugShapePower => {
   return isShapePowerId(value);
-};
-const isDebugCombatElement = (
-  value: string | null
-): value is DebugCombatElement => {
-  return (
-    value === 'ember' ||
-    value === 'tide' ||
-    value === 'moss' ||
-    value === 'storm'
-  );
 };
 
 const config: Phaser.Types.Core.GameConfig = {
@@ -64,7 +56,7 @@ const config: Phaser.Types.Core.GameConfig = {
     Draw,
     Replay,
     MyBattles,
-    Sketchbook,
+    Gallery,
     ScoutNotebook,
     Bestiary,
   ],
@@ -96,7 +88,7 @@ const StartGame = (parent: string): Phaser.Game => {
       game?: Phaser.Game;
       debugSpar?: (
         power?: DebugShapePower,
-        element?: DebugCombatElement,
+        element?: Element,
         seed?: number
       ) => Promise<string>;
       debugScene?: (key: string) => string;
@@ -149,7 +141,7 @@ const StartGame = (parent: string): Phaser.Game => {
         onDebugUnhandledRejection
       );
     });
-    // Jump straight to any scene (Draw, Sketchbook, MyBattles...) for screenshots.
+    // Jump straight to any scene (Draw, Gallery, MyBattles...) for screenshots.
     win.debugScene = (key: string): string => {
       game.scene
         .getScenes(true)
@@ -189,11 +181,11 @@ const StartGame = (parent: string): Phaser.Game => {
     // don't depend on tapping the right pixel on the canvas.
     win.debugSpar = async (
       power?: DebugShapePower,
-      element?: DebugCombatElement,
+      element?: Element,
       seed?: number
     ): Promise<string> => {
       const home = game.scene.getScene('ArenaHome') as Phaser.Scene | null;
-      const arena = home?.registry.get('arena') as ArenaState | undefined;
+      const arena = home ? getArena(home) : undefined;
       if (!home || !arena) return 'no scribbit';
       if (power) {
         const elementQuery = element
@@ -257,7 +249,7 @@ const StartGame = (parent: string): Phaser.Game => {
       const requestedPower = isDebugShapePower(powerParameter)
         ? powerParameter
         : undefined;
-      const requestedElement = isDebugCombatElement(elementParameter)
+      const requestedElement = isElement(elementParameter)
         ? elementParameter
         : undefined;
       const requestedSeed =
@@ -281,15 +273,16 @@ const StartGame = (parent: string): Phaser.Game => {
       }, 300);
     } else if (window.location.search.includes('collection')) {
       const startDebugCollectionWhenReady = (attempt = 0): void => {
-        if (!game.registry.get('arena') && attempt < 12) {
+        const home = game.scene.getScene('ArenaHome') as Phaser.Scene;
+        if (!getArena(home) && attempt < 12) {
           window.setTimeout(
             () => startDebugCollectionWhenReady(attempt + 1),
             200
           );
           return;
         }
-        game.registry.set('sketchbookTab', 'collection');
-        win.debugScene?.('Sketchbook');
+        setGalleryTab(home, 'collection');
+        win.debugScene?.('Gallery');
       };
       window.setTimeout(() => startDebugCollectionWhenReady(), 300);
     }

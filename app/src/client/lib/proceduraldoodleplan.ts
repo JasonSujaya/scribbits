@@ -3,6 +3,7 @@
 // Scribbit's server stats and its silhouette so that relationship is testable.
 
 import type { ScribbitStats } from '../../shared/arena';
+import { hashStringToUint32 } from '../../shared/stablehash';
 import { selectDominantStat } from '../../shared/combat/selection';
 import type { DominantStat } from '../../shared/combat/types';
 
@@ -101,15 +102,6 @@ const seededRandom = (seed: number): (() => number) => {
     value = (value + Math.imul(value ^ (value >>> 7), 61 | value)) ^ value;
     return ((value ^ (value >>> 14)) >>> 0) / 4294967296;
   };
-};
-
-const hashSeed = (key: string): number => {
-  let hash = 2166136261;
-  for (let index = 0; index < key.length; index += 1) {
-    hash ^= key.charCodeAt(index);
-    hash = Math.imul(hash, 16777619);
-  }
-  return hash >>> 0;
 };
 
 const clampPoint = (point: DoodlePoint): DoodlePoint => {
@@ -365,7 +357,9 @@ export function createProceduralDoodlePlan(
 ): ProceduralDoodlePlan {
   const safeStats = sanitizeDoodleStats(stats);
   const statsSignature = doodleStatsSignature(stats);
-  const random = seededRandom(hashSeed(`${spriteKey}:${statsSignature}`));
+  const random = seededRandom(
+    hashStringToUint32(`${spriteKey}:${statsSignature}`)
+  );
   const trait = stats ? selectDominantStat(safeStats) : 'neutral';
   const facing: -1 | 1 = random() < 0.5 ? -1 : 1;
   const center = {
