@@ -28,9 +28,12 @@ const {
   INK_REWARDS,
   SCOUT_NOTEBOOK_MAXIMUM_ENTRIES,
   advanceFounderChronicle,
+  advanceRivalRunState,
   chooseFoundingSparOpponent,
   createEmptyFounderChronicle,
   createPracticeBattle,
+  createRivalRunChoices,
+  createRivalRunState,
   createScoutNotebookState,
   findFoundingScribbit,
   generateForecastForDay,
@@ -405,17 +408,49 @@ const stableStringSeed = (value) => {
   return hash >>> 0;
 };
 
-const mockSparRivalSlate = (challenger, previewMode) => {
+const mockSparRivalSlate = (challenger, previewMode, rivalRun) => {
+  const runSeed = rivalRun
+    ? `:${rivalRun.id}:${rivalRun.boutsCompleted + 1}`
+    : '';
   const seed = stableStringSeed(
-    `spar-rivals:${memory.dayNumber}:${previewMode}:${challenger.id}`
+    `spar-rivals:${memory.dayNumber}:${previewMode}:${challenger.id}${runSeed}`
   );
   const founderChronicle = getFounderChronicleForPreview(previewMode);
-  return selectFoundingSparRivalSlate(challenger, seed, 3, {
-    preferredFounderId: founderChronicle.activeRivalry?.founderId,
-    excludedFounderIds: founderChronicle.resolvedRivalries.map(
-      (rivalry) => rivalry.founderId
-    ),
-  });
+  return selectFoundingSparRivalSlate(
+    challenger,
+    seed,
+    3,
+    rivalRun
+      ? { excludedFounderIds: rivalRun.opponentIds }
+      : {
+          preferredFounderId: founderChronicle.activeRivalry?.founderId,
+          excludedFounderIds: founderChronicle.resolvedRivalries.map(
+            (rivalry) => rivalry.founderId
+          ),
+        }
+  );
+};
+
+const mockRivalRuns = new Map();
+let mockRivalRunCounter = 0;
+
+const getOrCreateMockRivalRun = (challenger, previewMode) => {
+  const key = `${previewMode}:${challenger.id}`;
+  const current = mockRivalRuns.get(key);
+  if (
+    current?.status === 'active' &&
+    current.dayNumber === memory.dayNumber
+  ) {
+    return current;
+  }
+  mockRivalRunCounter += 1;
+  const next = createRivalRunState(
+    `mock-run-${memory.dayNumber}-${mockRivalRunCounter}`,
+    memory.dayNumber,
+    challenger.id
+  );
+  mockRivalRuns.set(key, next);
+  return next;
 };
 
 const debugPowerStats = Object.freeze({
@@ -851,6 +886,12 @@ if (!inkyMoon) throw new Error('Mock Rumble replay needs Inky Moon.');
 memory.previousRumbleReplay = createBattleReport('rumble', inkyMoon, champion, {
   forecast: makeForecast(memory.dayNumber - 1),
 });
+const ownedRumbleReplay = createBattleReport(
+  'rumble',
+  myScribbits[0],
+  todayEntrants[1],
+  { forecast: makeForecast(memory.dayNumber - 1), seed: 73 }
+);
 memory.rumbleReplaysByDay.set(
   memory.previousRumbleReplay.day,
   memory.previousRumbleReplay
@@ -1504,6 +1545,7 @@ const arenaState = (economy, previewMode = 'returning') => {
     capsuleProgress: capsuleProgressState(economy),
     founderChronicle: getFounderChronicleForPreview(previewMode),
     lastRumbleReceipt: {
+      kind: 'backed',
       resolvedDay: memory.dayNumber - 1,
       backedName: 'Inky Moon',
       championName: memory.champion.name,
@@ -1638,6 +1680,28 @@ const handleApi = async (request, response, url) => {
     const state = arenaStateForPreview(previewMode);
     if (
       previewMode === 'returning' &&
+      requestHasPreviewFlag(request, url, 'owned-return')
+    ) {
+      sendJson(response, 200, {
+        ...state,
+        myBackedScribbitId: null,
+        lastRumbleReceipt: {
+          kind: 'owned',
+          resolvedDay: memory.dayNumber - 1,
+          entrant: cloneScribbit(myScribbits[0]),
+          wins: 2,
+          losses: 1,
+          xpAwarded: 4,
+          inkAwarded: 10,
+          isChampion: false,
+          replayAvailable: true,
+        },
+        legacyReturnReceipt: null,
+      });
+      return;
+    }
+    if (
+      previewMode === 'returning' &&
       requestHasPreviewFlag(request, url, 'rival-thread')
     ) {
       sendJson(response, 200, {
@@ -1683,10 +1747,21 @@ const handleApi = async (request, response, url) => {
       sendError(response, 404, 'That living Scribbit is not ready to spar.');
       return;
     }
+    const rivalRun = getOrCreateMockRivalRun(challenger, previewMode);
     sendJson(response, 200, {
       challenger: cloneScribbit(challenger),
-      rivals: mockSparRivalSlate(challenger, previewMode).map(cloneScribbit),
+      choices: createRivalRunChoices(
+        challenger,
+        mockSparRivalSlate(challenger, previewMode, rivalRun),
+        memory.forecast
+      ).map((choice) => ({
+        ...choice,
+        rival: cloneScribbit(choice.rival),
+      })),
       founderChronicle: getFounderChronicleForPreview(previewMode),
+      dayNumber: memory.dayNumber,
+      forecast: memory.forecast,
+      rivalRun,
     });
     return;
   }
@@ -1822,11 +1897,14 @@ const handleApi = async (request, response, url) => {
       return;
     }
     const resolvedDay = Number(url.searchParams.get('day'));
-    const report = memory.rumbleReplaysByDay.get(resolvedDay);
+    const report = requestHasPreviewFlag(request, url, 'owned-return')
+      ? ownedRumbleReplay
+      : memory.rumbleReplaysByDay.get(resolvedDay);
     if (
       previewMode !== 'returning' ||
       !isScoutNotebookReplayDay(memory.dayNumber, resolvedDay) ||
       !report ||
+      report.day !== resolvedDay ||
       memory.hiddenScribbitIds.has(report.a.id) ||
       memory.hiddenScribbitIds.has(report.b.id)
     ) {
@@ -2204,9 +2282,83 @@ const handleApi = async (request, response, url) => {
     const requestedOpponentId =
       typeof body?.opponentId === 'string' ? body.opponentId.trim() : '';
     const founderChronicle = getFounderChronicleForPreview(previewMode);
-    const rivalSlate = mockSparRivalSlate(challenger, previewMode);
+    const requestedRivalRun =
+      body?.rivalRun &&
+      typeof body.rivalRun.id === 'string' &&
+      Number.isSafeInteger(body.rivalRun.expectedBoutsCompleted)
+        ? body.rivalRun
+        : null;
+    if (
+      (body?.rivalRun !== undefined && !requestedRivalRun) ||
+      (requestedRivalRun && !requestedOpponentId)
+    ) {
+      sendError(response, 400, 'Choose a valid Rival Run bout.');
+      return;
+    }
+    const activeRivalRun = requestedRivalRun
+      ? mockRivalRuns.get(`${previewMode}:${challenger.id}`)
+      : null;
+    const requestedRunOpponent = requestedRivalRun
+      ? findFoundingScribbit(requestedOpponentId)
+      : undefined;
+    const precomputedRunReport =
+      requestedRivalRun && requestedRunOpponent
+        ? createBattleReport(
+            'exhibition',
+            challenger,
+            requestedRunOpponent,
+            {
+              seed: stableStringSeed(
+                `rival-run:${requestedRivalRun.id}:${requestedRivalRun.expectedBoutsCompleted + 1}:${requestedRunOpponent.id}`
+              ),
+            }
+          )
+        : null;
+    if (requestedRivalRun && precomputedRunReport) {
+      const storedRunReport = memory.myBattles.find((storedReport) => {
+        return (
+          storedReport.id === precomputedRunReport.id &&
+          storedReport.rivalRun?.id === requestedRivalRun.id &&
+          storedReport.rivalRun.boutNumber ===
+            requestedRivalRun.expectedBoutsCompleted + 1
+        );
+      });
+      if (storedRunReport) {
+        sendJson(response, 200, {
+          report: storedRunReport,
+          founderChronicle: getFounderChronicleForPreview(previewMode),
+          founderChronicleBeat: null,
+        });
+        return;
+      }
+    }
+    if (
+      requestedRivalRun &&
+      (!activeRivalRun ||
+        activeRivalRun.id !== requestedRivalRun.id ||
+        activeRivalRun.dayNumber !== memory.dayNumber ||
+        activeRivalRun.challengerId !== challenger.id ||
+        activeRivalRun.status !== 'active' ||
+        activeRivalRun.boutsCompleted !==
+          requestedRivalRun.expectedBoutsCompleted)
+    ) {
+      sendError(response, 409, 'That Rival Run moved on. Reopen the board.');
+      return;
+    }
+    const rivalChoices = createRivalRunChoices(
+      challenger,
+      mockSparRivalSlate(
+        challenger,
+        previewMode,
+        activeRivalRun ?? undefined
+      ),
+      memory.forecast
+    );
+    const chosenChoice = requestedOpponentId
+      ? rivalChoices.find((choice) => choice.rival.id === requestedOpponentId)
+      : null;
     const opponent = requestedOpponentId
-      ? rivalSlate.find((rival) => rival.id === requestedOpponentId)
+      ? chosenChoice?.rival
       : chooseFoundingSparOpponent(
           challenger,
           stableStringSeed(`quick-spar:${challenger.id}:${Date.now()}`),
@@ -2224,7 +2376,38 @@ const handleApi = async (request, response, url) => {
       );
       return;
     }
-    const report = createBattleReport('exhibition', challenger, opponent);
+    const report =
+      precomputedRunReport ??
+      createBattleReport('exhibition', challenger, opponent);
+    const rivalRunReceipt = requestedRivalRun
+      ? activeRivalRun && chosenChoice
+        ? advanceRivalRunState(activeRivalRun, {
+            expectedBoutsCompleted:
+              requestedRivalRun.expectedBoutsCompleted,
+            playerWon: report.winner === 'a',
+            opponentId: opponent.id,
+            tier: chosenChoice.tier,
+            winPoints: chosenChoice.winPoints,
+          })
+        : null
+      : null;
+    if (requestedRivalRun && !rivalRunReceipt) {
+      sendError(response, 409, 'That Rival Run moved on. Reopen the board.');
+      return;
+    }
+    if (rivalRunReceipt) {
+      mockRivalRuns.set(`${previewMode}:${challenger.id}`, {
+        id: rivalRunReceipt.id,
+        dayNumber: rivalRunReceipt.dayNumber,
+        challengerId: rivalRunReceipt.challengerId,
+        boutsCompleted: rivalRunReceipt.boutsCompleted,
+        wins: rivalRunReceipt.wins,
+        losses: rivalRunReceipt.losses,
+        score: rivalRunReceipt.score,
+        opponentIds: [...rivalRunReceipt.opponentIds],
+        status: rivalRunReceipt.status,
+      });
+    }
     let rewardedReport = report;
 
     if (report.winner === 'a') {
@@ -2236,6 +2419,10 @@ const handleApi = async (request, response, url) => {
         challenger.level = levelForXp(challenger.xp);
         rewardedReport = { ...report, inkAwarded: sparWinInkReward };
       }
+    }
+
+    if (rivalRunReceipt) {
+      rewardedReport = { ...rewardedReport, rivalRun: rivalRunReceipt };
     }
 
     memory.myBattles.unshift(rewardedReport);

@@ -87,26 +87,42 @@ copy should keep the default view to one headline, one status, and one action.
    The finish is equally transcript-driven: a compact Inkcast Recap says
    `YOU WON`, `YOU LOST`, or names the spectator winner before the exact verdict,
    duration, and final HP. Owned exhibitions promote `CHOOSE A RIVAL` to one
-   primary action and keep Practice, tonight's pick, and the real return
-   destination secondary. Knockouts fold only
+   primary action beside one compact return. When no Rival draft is available,
+   tonight's pick becomes the primary; Practice remains reachable from Arena
+   instead of competing with the result. Knockouts fold only
    the loser, double knockouts fold both fighters, and time decisions leave both
    standing behind the result card.
    Founding NPCs use deterministic stat-shaped mascot art rather than missing
    bitmap assets; ordinary player-image failures still receive a neutral fallback.
    A frozen shared catalog gives all twenty founders eight unique, bounded story
-   strings. Their epithet appears in the compact Rival margin and Rival Draft, their opening owns the
-   existing pre-`FIGHT!` ticker beat, their first power and result receive a
+   strings. Their epithet appears in the compact Rival margin, their opening owns
+   the existing pre-`FIGHT!` ticker beat, and their first power and result receive a
    fact-safe reaction, and a founding Rumble champion carries its voice into the
    Reddit result comment. None of this content enters the transcript or combat math.
    After a win or loss in an owned exhibition, a paper Rival Draft offers three
    server-selected founders. The slate is stable for the UTC day, prioritizes
-   close levels and distinct Shape Powers, and exposes real forecast status plus
-   canonical founder epithets. The prior transcript's exact decisive-splat recap
-   follows the player into the draft, and each founder's authored challenge is
-   visible on its card instead of only appearing in a toast. A
+   close levels and distinct Shape Powers. Each compact card shows drawing,
+   element, level, risk, points, a paper info control, and an icon-led SPAR action;
+   signature, level comparison, and forecast move behind the info tap. The slate
+   response carries its authoritative day
+   and forecast so a Replay left open across UTC rollover cannot advertise stale
+   matchup or Rival-page rules. A
    chosen `opponentId` is accepted only when it still belongs to that exact
    server-authored slate. Omitted IDs use the same production selector and pin
    an active Founder Rival Thread before considering a fresh opponent.
+   Every card remains immediately sparable after today's story beat: the card
+   says when its next Rival page unlocks while starting a reward-capped
+   exhibition now. This keeps combat replayable without bypassing the server's
+   one-story-beat-per-day or one-spar-reward-per-day rules.
+   Chosen-rival fights form a server-authored three-bout Rival Run. Each fresh
+   bout receives one relative `SAFE +1`, `EVEN +2`, and `RISKY +3` option ranked
+   from five deterministic projections through the real combat engine, so level,
+   forecast, stats, elements, and Shape Powers all affect risk. Wins add the displayed run points;
+   losses add zero but still advance the bout, and fought opponents leave later
+   slates so each run changes shape. The committed score and record
+   carry through Draft, VS, live HUD, result, and archived replay receipts. A
+   completed run explicitly offers `NEW RIVAL RUN`; run score grants no Ink, XP,
+   combat power, or extra Founder Chronicle beat.
    Each player can have exactly one active Founder Rival Thread: first to two,
    maximum three qualifying battles, and no more than one authoritative story
    beat per Arena day. The active founder remains pinned across future drafts and
@@ -161,6 +177,13 @@ copy should keep the default view to one headline, one status, and one action.
    damage and is statistically capped at a 60% equal-build win rate.
 4. **Back:** choose another player’s contender before the nightly resolution.
    Champion backers earn 3 Clout; runner-up backers earn 1.
+   The Arena says `PICK A WINNER` once; each compact contender card uses the
+   shared heart, lock, or one-word `YOURS` state instead of repeating a text button.
+   The selected card turns gold and remains pinned first.
+   If the player skipped Back but entered an owned Scribbit, the next visit leads
+   with that drawing's exact Rumble W/L, committed XP, committed Ink, and a
+   server-selected last-bout replay. The client never reconstructs those rewards
+   from cumulative totals.
 5. **Scout:** the fifth app tab is a seven-page Scout Notebook covering tonight
    and up to six prior Arena days. It projects only server-owned Back records,
    payout receipts, forecasts, lifetime Clout, and visible report/Scribbit
@@ -352,6 +375,8 @@ boundary during browser iteration—it is not the production game server.
   reward detail presentation.
 - `src/client/lib/legacycards.ts`: paper-native Legacy deck, archival detail,
   finish treatments, pagination controls, and return ceremony.
+- `src/client/lib/legacyreturnpresentation.ts`: pure hero priority and bounded
+  copy for the compact one-time Legacy return.
 - `src/client/lib/nextgoal.ts`: pure deterministic post-draw action priority and
   compact XP, Belief, lifespan, Ink, and collection evidence.
 - `src/client/lib/livesprite.ts`: Phaser Mesh2D Inkbody renderer with a 3x3
@@ -427,7 +452,7 @@ Run these before handing off changes:
 npm run verify
 ```
 
-`npm run verify` runs type-check, lint, 98 simulation groups, and build.
+`npm run verify` runs type-check, lint, 103 simulation groups, and build.
 
 `npm run test:sim` covers deterministic analyzer, Inkbody mesh geometry, combat
 determinism, payload caps, archetype balance, slot neutrality, battle,

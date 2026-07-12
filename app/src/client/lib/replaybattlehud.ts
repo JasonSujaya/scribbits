@@ -147,6 +147,7 @@ export type ReplayBattleHud = {
     state: ReplayShapePowerState
   ) => void;
   setHitPointBarsVisible: (visible: boolean) => void;
+  setBattleChromeVisible: (visible: boolean) => void;
   updateClock: (
     currentTick: number,
     completedTick: number,
@@ -648,7 +649,7 @@ export function createReplayBattleHud(
   );
 
   const livePillWidth = 18;
-  scene.add
+  const livePill = scene.add
     .rectangle(
       layout.kindLabelX + livePillWidth / 2,
       layout.battleKindY,
@@ -907,6 +908,18 @@ export function createReplayBattleHud(
         bars.hitPointBar.setVisible(visible);
         bars.hitPointValue.setVisible(visible);
       });
+    },
+    setBattleChromeVisible: (visible: boolean): void => {
+      broadcastRail.setVisible(visible);
+      livePill.setVisible(visible);
+      kind.setVisible(visible);
+      serverTruth.setVisible(visible);
+      Object.values(fighterBars).forEach((bars) => {
+        bars.container.setVisible(visible);
+      });
+      if (!visible && shapePowerLiveRegion) {
+        shapePowerLiveRegion.textContent = '';
+      }
     },
     updateClock: (
       currentTick: number,

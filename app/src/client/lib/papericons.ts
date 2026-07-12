@@ -3,7 +3,15 @@ import { Scene } from 'phaser';
 import type { Element } from '../../shared/arena';
 import { ELEMENT_STYLES, UI } from './theme';
 
-export type PaperIconKey = 'clock' | 'heart' | 'ink' | 'spark';
+export type PaperIconKey =
+  | 'book'
+  | 'clock'
+  | 'heart'
+  | 'info'
+  | 'ink'
+  | 'lock'
+  | 'spark'
+  | 'sword';
 export type PaperToolIconKey =
   | 'sticker'
   | 'eraser'
@@ -195,6 +203,27 @@ function drawIcon(
     return;
   }
 
+  if (key === 'book') {
+    graphics.fillRoundedRect(
+      -14 * scale,
+      -11 * scale,
+      28 * scale,
+      23 * scale,
+      3 * scale
+    );
+    graphics.strokeRoundedRect(
+      -14 * scale,
+      -11 * scale,
+      28 * scale,
+      23 * scale,
+      3 * scale
+    );
+    graphics.lineBetween(0, -10 * scale, 0, 11 * scale);
+    graphics.lineBetween(-10 * scale, -5 * scale, -4 * scale, -3 * scale);
+    graphics.lineBetween(4 * scale, -3 * scale, 10 * scale, -5 * scale);
+    return;
+  }
+
   if (key === 'ink') {
     graphics.fillRoundedRect(
       -10 * scale,
@@ -215,6 +244,29 @@ function drawIcon(
     return;
   }
 
+  if (key === 'lock') {
+    graphics.beginPath();
+    graphics.arc(0, -4 * scale, 8 * scale, Math.PI, 0, false);
+    graphics.strokePath();
+    graphics.fillRoundedRect(
+      -12 * scale,
+      -3 * scale,
+      24 * scale,
+      17 * scale,
+      3 * scale
+    );
+    graphics.strokeRoundedRect(
+      -12 * scale,
+      -3 * scale,
+      24 * scale,
+      17 * scale,
+      3 * scale
+    );
+    graphics.fillCircle(0, 5 * scale, 2 * scale);
+    graphics.lineBetween(0, 6 * scale, 0, 10 * scale);
+    return;
+  }
+
   if (key === 'spark') {
     graphics.beginPath();
     for (let point = 0; point < 10; point += 1) {
@@ -228,6 +280,41 @@ function drawIcon(
     graphics.closePath();
     graphics.fillPath();
     graphics.strokePath();
+    return;
+  }
+
+  if (key === 'info') {
+    graphics.fillCircle(0, 0, 13 * scale);
+    graphics.strokeCircle(0, 0, 13 * scale);
+    graphics.lineBetween(0, -1 * scale, 0, 8 * scale);
+    graphics.fillCircle(0, -7 * scale, 1.8 * scale);
+    return;
+  }
+
+  if (key === 'sword') {
+    graphics.fillPoints(
+      [
+        new Phaser.Math.Vector2(-3 * scale, 5 * scale),
+        new Phaser.Math.Vector2(7 * scale, -11 * scale),
+        new Phaser.Math.Vector2(14 * scale, -14 * scale),
+        new Phaser.Math.Vector2(11 * scale, -7 * scale),
+        new Phaser.Math.Vector2(3 * scale, 7 * scale),
+      ],
+      true
+    );
+    graphics.strokePoints(
+      [
+        new Phaser.Math.Vector2(-3 * scale, 5 * scale),
+        new Phaser.Math.Vector2(7 * scale, -11 * scale),
+        new Phaser.Math.Vector2(14 * scale, -14 * scale),
+        new Phaser.Math.Vector2(11 * scale, -7 * scale),
+        new Phaser.Math.Vector2(3 * scale, 7 * scale),
+      ],
+      true
+    );
+    graphics.lineBetween(-7 * scale, 1 * scale, 6 * scale, 10 * scale);
+    graphics.lineBetween(-2 * scale, 8 * scale, -9 * scale, 14 * scale);
+    graphics.strokeCircle(-11 * scale, 16 * scale, 2.5 * scale);
     return;
   }
 

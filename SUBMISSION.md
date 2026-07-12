@@ -80,13 +80,14 @@ on one exercise.
   and the clear promise
   “draw → watch it fight → earn Ink”; forming/ready feedback explains every
   stroke; the first submission immediately fights; returning players first see
-  newly archived Legacy pages, then get a clear overnight scouting receipt, can
-  watch their backed Scribbit's last bout, and receive one focused Next Goal.
-  After either exhibition outcome, three server-picked rival cards pair truthful
-  build data with memorable founder epithets, visible challenges, and the exact
-  previous decisive splat, making “one more fight” an informed continuing story
-  instead of a hidden random reroll. One active best-of-three stays pinned across
-  days, and its exact score lands on the result before becoming a signed margin.
+  one compact newly archived Legacy hero, then get a clear overnight scouting
+  receipt, can watch their backed Scribbit's last bout, and receive one focused
+  Next Goal.
+  After either exhibition outcome, three server-picked rival cards pair each
+  drawing with exact level, risk, points, and an icon-led SPAR action; signature,
+  level comparison, and forecast sit behind an info tap. One active best-of-three
+  stays pinned across days, and its exact score lands on the result before becoming
+  a signed margin.
   Power-specific care notes give each drawing nine distinct moments across its
   three-day life, with a paper receipt showing the exact server-confirmed reward.
   The canonical Scout tab keeps tonight and the prior six days readable after the
@@ -230,11 +231,14 @@ on one exercise.
   without exposing the full metagame.
 - Added wearable titles and an immutable personal Legacy Card for every expired
   Scribbit, with its art, final record, Belief, dates, accessories, creator-title
-  signature, finish treatment, paginated archive, and one-time return ceremony.
+  signature, finish treatment, paginated archive, and a one-time return ceremony
+  reduced to one hero, one exact status, and one action.
 - Consolidated client and server reward metadata into one shared catalog with
   parity tests, preventing rarity, label, and inventory drift.
 - Added daily Back predictions, Clout payouts, three-day lifecycle, Belief, and
-  Legends.
+  Legends. The mobile Arena now says `PICK A WINNER` once and uses paper heart,
+  lock, selected, and one-word `YOURS` states across the eight-card field instead of
+  repeating `Back` on every contender.
 - Added Phaser 4.2 Mesh2D Inkbody fighters: 25-vertex submitted-PNG deformation,
   deterministic stat-driven Shape Powers, Inkquake rings, orbiting Nib Halo
   quills, Smearstep afterimages, a Colorburst cone/echo, impact ripples, exact
@@ -269,9 +273,10 @@ on one exercise.
   on Skip/finish, and only prioritizes already-authored candidates.
 - Added a deterministic Inkcast Recap planner derived only from the validated
   battle transcript. The compact result leads with `YOU WON`, `YOU LOST`, or
-  the spectator winner, then exact finish reason, duration, and final HP. One
-  primary Rival/pick action and a compact utility row replace four equal-looking
-  choices. Critical result, Practice, archived-return, and Rival Draft actions
+  the spectator winner, then exact finish reason, duration, final HP, and one
+  folded-in founder context line when available. One primary Rival/pick action
+  beside a compact return replaces four equal-looking choices; Practice stays
+  available from Arena. Critical result, Practice, archived-return, and Rival Draft actions
   remain at least 44 CSS pixels at 320x568 and mirror the canvas with native
   focusable Enter/Space controls, while the validated damage/signature/splat facts still
   feed server-safe follow-on content. KO, double-KO, and timeout poses tell different truths,
@@ -297,10 +302,25 @@ on one exercise.
   outcome, scouting, and Reddit-result moments now carry character voice without
   adding Redis state, battle events, or client authority.
 - Added a server-authored three-rival draft after owned exhibition wins and
-  losses. Cards disclose real level, element, Shape Power, signature, forecast,
-  epithet, and challenge; the prior authoritative decisive splat remains in the
-  header. Off-card choices fail closed and the local mock imports the production
-  selector instead of maintaining a second matchmaker.
+  losses. Compact cards disclose drawing, level, element, risk, and points;
+  signature, level comparison, and forecast sit behind an info tap. Off-card
+  choices fail closed and the local mock imports the production selector instead
+  of maintaining a second matchmaker. Waiting story cards stay
+  immediately playable as exhibitions while labeling the next story day; the
+  server still caps Rival scoring and spar rewards independently.
+- Added a server-authored three-bout Rival Run for chosen-rival exhibitions.
+  Every bout offers one relative Safe +1, Even +2, and Risky +3 option ranked
+  by five deterministic real-engine projections, including stats, level,
+  forecast, element payloads, and Shape Power behavior. Wins add only the displayed run score;
+  losses still advance, and bout/score/record remain attached to the immutable
+  battle receipt for VS, HUD, result, and archived replay. Run score cannot grant
+  Ink, XP, combat stats, or an extra Founder Chronicle page. The report and run
+  state commit together; a separate atomic daily-reward receipt keeps Ink and XP
+  exact across retries.
+- Added an owned-entrant overnight payoff for players who skipped Back. The
+  return card leads with the exact Scribbit drawing, daily W/L, committed XP,
+  committed Rumble Ink, and the indexed last real bout. Standing and payout
+  receipts are read directly; missing or conflicting truth suppresses the card.
 - Made Draw canvas-first: the larger page keeps all eight base colors visible,
   separates unlocked premium pens from the base palette, and retains a compact
   brush/eraser/undo/optional-sticker rail. Name and `BRING TO LIFE` reveal only
@@ -317,7 +337,7 @@ on one exercise.
   recover its exact authored beat only after durable state and latest-report
   provenance match the precomputed projection.
 - Added twenty validated three-page founder episodes: 60 unique titles and 60
-  founder-specific cues shared by Rival Draft, Next Goal, Chronicle margin, and
+  founder-specific cues shared by Next Goal, Chronicle margin, and
   the VS ceremony, plus 120 unique result lines bound to the proven latest winner.
   The authoritative series score selects the page; authored content remains
   immutable repo data and adds no Redis state or combat effect. The result strip,

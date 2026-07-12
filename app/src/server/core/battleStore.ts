@@ -1,4 +1,5 @@
-import type { BattleReport } from '../../shared/arena';
+import type { BattleReport, RivalRunReceipt } from '../../shared/arena';
+import { RIVAL_RUN_LENGTH } from '../../shared/arena';
 import type {
   AuthoritativeBattleResult,
   BattleEndReason,
@@ -14,7 +15,7 @@ import {
   battleResultFinishIsConsistent,
   isShapePowerId,
 } from '../../shared/combat';
-import type { ArenaStorage } from './scribbit';
+import type { ArenaStorage, ArenaTransaction } from './scribbit';
 import {
   cloneScribbit,
   getScribbitOwner,
@@ -22,7 +23,8 @@ import {
   normalizeScribbitRecord,
 } from './scribbit';
 
-const battleReportTtlSeconds = 30 * 24 * 60 * 60;
+export const battleReportTtlSeconds = 30 * 24 * 60 * 60;
+const maximumReportStorageAttempts = 5;
 // One score bucket per arena day. A million report positions is far above the
 // bounded Swiss bracket while keeping day + order exactly representable.
 const rumbleReportOrderScale = 1_000_000;
@@ -135,6 +137,59 @@ const isBattleTranscript = (value: unknown): value is BattleTranscript => {
   );
 };
 
+const isRivalRunReceipt = (
+  value: unknown,
+  report: Pick<BattleReport, 'kind' | 'day' | 'a' | 'b' | 'winner'>
+): value is RivalRunReceipt => {
+  if (!isRecord(value)) return false;
+  const challengerSlot =
+    value.challengerId === report.a.id
+      ? 'a'
+      : value.challengerId === report.b.id
+        ? 'b'
+        : null;
+  const boutsCompleted = Number(value.boutsCompleted);
+  return (
+    report.kind === 'exhibition' &&
+    typeof value.id === 'string' &&
+    value.id.length >= 1 &&
+    value.id.length <= 128 &&
+    value.dayNumber === report.day &&
+    challengerSlot !== null &&
+    Number.isSafeInteger(boutsCompleted) &&
+    boutsCompleted >= 1 &&
+    boutsCompleted <= RIVAL_RUN_LENGTH &&
+    value.boutNumber === boutsCompleted &&
+    Number.isSafeInteger(value.wins) &&
+    Number.isSafeInteger(value.losses) &&
+    Number(value.wins) >= 0 &&
+    Number(value.losses) >= 0 &&
+    Number(value.wins) + Number(value.losses) === boutsCompleted &&
+    Number.isSafeInteger(value.score) &&
+    Number(value.score) >= 0 &&
+    Number(value.score) <= RIVAL_RUN_LENGTH * 3 &&
+    value.status ===
+      (boutsCompleted === RIVAL_RUN_LENGTH ? 'complete' : 'active') &&
+    (value.outcome === 'win' || value.outcome === 'loss') &&
+    (value.tier === 'safe' ||
+      value.tier === 'even' ||
+      value.tier === 'risky') &&
+    (value.winPoints === 1 ||
+      value.winPoints === 2 ||
+      value.winPoints === 3) &&
+    ((value.tier === 'safe' && value.winPoints === 1) ||
+      (value.tier === 'even' && value.winPoints === 2) ||
+      (value.tier === 'risky' && value.winPoints === 3)) &&
+    (value.pointsAwarded === 0 ||
+      value.pointsAwarded === 1 ||
+      value.pointsAwarded === 2 ||
+      value.pointsAwarded === 3) &&
+    value.pointsAwarded ===
+      (value.outcome === 'win' ? value.winPoints : 0) &&
+    (value.outcome === 'win') === (report.winner === challengerSlot)
+  );
+};
+
 const isBattleReport = (value: unknown): value is BattleReport => {
   if (
     !isRecord(value) ||
@@ -158,6 +213,13 @@ const isBattleReport = (value: unknown): value is BattleReport => {
     !isScribbit(value.a) ||
     !isScribbit(value.b) ||
     !isFighterSlot(value.winner)
+  ) {
+    return false;
+  }
+
+  if (
+    value.rivalRun !== undefined &&
+    !isRivalRunReceipt(value.rivalRun, value as BattleReport)
   ) {
     return false;
   }
@@ -212,6 +274,73 @@ export const loadBattleReport = async (
   return parseBattleReport(
     await storage.get(getBattleReportKey(battleReportId))
   );
+};
+
+const reportsShareImmutableIdentity = (
+  existing: BattleReport,
+  incoming: BattleReport
+): boolean => {
+  const { inkAwarded: _existingReward, ...existingCore } = existing;
+  const { inkAwarded: _incomingReward, ...incomingCore } = incoming;
+  return JSON.stringify(existingCore) === JSON.stringify(incomingCore);
+};
+
+const mergeCompatibleReport = (
+  existing: BattleReport | undefined,
+  incoming: BattleReport
+): BattleReport => {
+  if (!existing) return incoming;
+  if (!reportsShareImmutableIdentity(existing, incoming)) {
+    throw new Error(`Battle report id collision for ${incoming.id}.`);
+  }
+  if (
+    existing.inkAwarded !== undefined &&
+    incoming.inkAwarded !== undefined &&
+    existing.inkAwarded !== incoming.inkAwarded
+  ) {
+    throw new Error(`Battle report reward collision for ${incoming.id}.`);
+  }
+  return existing.inkAwarded !== undefined
+    ? { ...incoming, inkAwarded: existing.inkAwarded }
+    : incoming;
+};
+
+const discardReportTransaction = async (
+  transaction: ArenaTransaction | undefined
+): Promise<void> => {
+  if (!transaction) return;
+  try {
+    await transaction.discard();
+  } catch {
+    // EXEC may already have closed the transaction.
+  }
+};
+
+const storeBattleReport = async (
+  storage: ArenaStorage,
+  battleReport: BattleReport
+): Promise<BattleReport> => {
+  if (!storage.watch) {
+    throw new Error('Collision-safe battle storage requires transactions.');
+  }
+  const key = getBattleReportKey(battleReport.id);
+  for (let attempt = 0; attempt < maximumReportStorageAttempts; attempt += 1) {
+    let transaction: ArenaTransaction | undefined;
+    try {
+      transaction = await storage.watch(key);
+      const storedReport = parseBattleReport(await storage.get(key));
+      const reportToStore = mergeCompatibleReport(storedReport, battleReport);
+      await transaction.multi();
+      await transaction.set(key, JSON.stringify(reportToStore));
+      await transaction.expire(key, battleReportTtlSeconds);
+      const result = await transaction.exec();
+      if (Array.isArray(result) && result.length > 0) return reportToStore;
+    } catch (error) {
+      await discardReportTransaction(transaction);
+      throw error;
+    }
+  }
+  throw new Error(`Battle report ${battleReport.id} changed too often to save.`);
 };
 
 // Each entrant indexes every actually played Swiss bout with its monotonic
@@ -292,15 +421,12 @@ export const saveBattleReport = async (
     throw new Error('Practice battle reports cannot be stored.');
   }
 
-  const battleReportKey = getBattleReportKey(battleReport.id);
   const storedBattleReport: BattleReport = {
     ...battleReport,
     a: cloneScribbit(battleReport.a),
     b: cloneScribbit(battleReport.b),
   };
-
-  await storage.set(battleReportKey, JSON.stringify(storedBattleReport));
-  await storage.expire(battleReportKey, battleReportTtlSeconds);
+  await storeBattleReport(storage, storedBattleReport);
 
   const ownerIds = new Set<string>();
   const ownerA = await getScribbitOwner(storage, battleReport.a.id);

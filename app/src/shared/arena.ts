@@ -119,7 +119,8 @@ export type ScoutNotebookState = Readonly<{
   entries: readonly ScoutNotebookEntry[]; // today first, followed by up to six prior days
 }>;
 
-export type DailyRumbleReceipt = {
+export type BackedRumbleReceipt = {
+  kind: 'backed';
   resolvedDay: number;
   backedName: string;
   championName: string;
@@ -127,6 +128,22 @@ export type DailyRumbleReceipt = {
   inkAwarded: number;
   replayAvailable: boolean; // server-selected last bout for the backed Scribbit
 };
+
+export type OwnedRumbleReceipt = {
+  kind: 'owned';
+  resolvedDay: number;
+  entrant: Scribbit; // exact owned snapshot after the standing and XP commit
+  wins: number;
+  losses: number;
+  xpAwarded: number;
+  inkAwarded: number;
+  isChampion: boolean;
+  replayAvailable: boolean; // server-selected last bout for the owned entrant
+};
+
+export type DailyRumbleReceipt =
+  | BackedRumbleReceipt
+  | OwnedRumbleReceipt;
 
 export type LegacyReturnReceipt = {
   cards: LegacyCard[]; // newest cards first, bounded for the return ceremony
@@ -194,7 +211,7 @@ export type ArenaState = {
   nextCapsuleCost: number; // authoritative current price (daily discount already applied)
   capsuleProgress: CapsuleProgress;
   founderChronicle: FounderChronicle;
-  lastRumbleReceipt: DailyRumbleReceipt | null; // yesterday's Back payoff, if the player made a pick
+  lastRumbleReceipt: DailyRumbleReceipt | null; // yesterday's Back payoff, otherwise the player's owned entrant result
   legacyReturnReceipt: LegacyReturnReceipt | null; // unseen expiry payoff, cleared explicitly
 };
 
@@ -310,6 +327,34 @@ export type BattleEvent = {
 
 export type BattleKind = 'rumble' | 'boss' | 'exhibition' | 'practice';
 
+export const RIVAL_RUN_LENGTH = 3;
+export type RivalRunStatus = 'active' | 'complete';
+export type RivalRunTier = 'safe' | 'even' | 'risky';
+export type RivalRunWinPoints = 1 | 2 | 3;
+export type RivalRunState = {
+  id: string;
+  dayNumber: number;
+  challengerId: string;
+  boutsCompleted: number;
+  wins: number;
+  losses: number;
+  score: number;
+  opponentIds: string[];
+  status: RivalRunStatus;
+};
+export type RivalRunReceipt = RivalRunState & {
+  boutNumber: number;
+  outcome: 'win' | 'loss';
+  tier: RivalRunTier;
+  winPoints: RivalRunWinPoints;
+  pointsAwarded: 0 | RivalRunWinPoints;
+};
+export type RivalRunChoice = {
+  rival: Scribbit;
+  tier: RivalRunTier;
+  winPoints: RivalRunWinPoints;
+};
+
 export type BattleReport = {
   id: string;
   kind: BattleKind;
@@ -318,6 +363,7 @@ export type BattleReport = {
   b: Scribbit;
   winner: 'a' | 'b';
   inkAwarded?: number; // actual reward attached by the resolving action, never inferred by the client
+  rivalRun?: RivalRunReceipt; // immutable server receipt for a chosen three-bout Rival Run fight
   // Read-only compatibility for old Redis records. New reports omit this
   // turn-style projection and store only the authoritative simulation.
   events?: BattleEvent[];
@@ -362,12 +408,20 @@ export type CareResponse = {
 };
 export type SparRivalSlate = {
   challenger: Scribbit; // current server snapshot after any just-earned XP
-  rivals: Scribbit[];
+  choices: RivalRunChoice[]; // one safe/even/risky server-ranked choice
   founderChronicle: FounderChronicle;
+  dayNumber: number; // authoritative current Arena day for rivalry readiness
+  forecast: Forecast; // authoritative forecast used by the next server fight
+  rivalRun: RivalRunState; // current three-bout run; completed runs roll into a fresh slate
+};
+export type SparRivalRunAttempt = {
+  id: string;
+  expectedBoutsCompleted: number;
 };
 export type SparRequest = {
   scribbitId: string;
   opponentId?: string; // when present, must be in this challenger's current server-authored slate
+  rivalRun?: SparRivalRunAttempt; // optional quick spars remain outside Rival Runs
 };
 export type BelieveRequest = { scribbitId: string };
 export type BossChallengeRequest = { scribbitId: string };

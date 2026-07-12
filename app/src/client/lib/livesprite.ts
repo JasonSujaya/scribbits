@@ -223,6 +223,10 @@ export class LiveSprite {
         this.tiles.push({ image, homeX, homeY, col, row });
       }
     }
+    // Phaser points an unframed Image at the first atlas frame after `add`.
+    // These private jelly slices must never replace the full drawing used by
+    // cards and ceremonies later in the same scene.
+    texture.firstFrame = '__BASE';
   }
 
   private updateInkMesh(_time: number, deltaMilliseconds: number): void {

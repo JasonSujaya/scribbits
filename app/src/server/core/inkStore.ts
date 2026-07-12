@@ -244,6 +244,34 @@ export const claimInkReward = async (
   throw new Error('Ink reward claim did not settle.');
 };
 
+export const loadClaimedInkRewardAmount = async (
+  storage: ArenaStorage,
+  input: Readonly<{
+    payoutKey: string;
+    payoutField: string;
+    userId: string;
+  }>
+): Promise<number> => {
+  const stored = await storage.hGet(input.payoutKey, input.payoutField);
+  if (stored === undefined) return 0;
+  const paidAtSeparator = stored.lastIndexOf(':');
+  const amountSeparator = stored.lastIndexOf(':', paidAtSeparator - 1);
+  if (paidAtSeparator <= amountSeparator || amountSeparator < 1) return 0;
+  const storedUserId = stored.slice(0, amountSeparator);
+  const amount = Number(stored.slice(amountSeparator + 1, paidAtSeparator));
+  const paidAtMilliseconds = Number(stored.slice(paidAtSeparator + 1));
+  if (
+    storedUserId !== input.userId ||
+    !Number.isSafeInteger(amount) ||
+    amount < 0 ||
+    !Number.isSafeInteger(paidAtMilliseconds) ||
+    paidAtMilliseconds < 0
+  ) {
+    return 0;
+  }
+  return amount;
+};
+
 const hasPermanentDiscovery = (
   entry: InkCatalogEntry,
   storedInventory: Record<string, string>

@@ -21,6 +21,7 @@ export type BattleRecapCardOptions = Readonly<{
   width: number;
   depth?: number;
   perspective?: BattleRecapPerspective;
+  contextLine?: string;
 }>;
 
 export type BattleRecapLinesOptions = Readonly<{
@@ -156,7 +157,22 @@ function compactOutcomeStatus(plan: BattleRecapPlan): string {
     winnerMarkerIndex > 0
       ? plan.headline.slice(0, winnerMarkerIndex)
       : plan.headline;
-  return `${reason} • ${plan.verdictLine}`;
+  const compactVerdict = plan.verdictLine
+    .replace(' • INK LEFT ', ' · ')
+    .replace(' vs ', ' – ');
+  return `${reason}\n${compactVerdict}`;
+}
+
+function compactOutcomeLead(
+  plan: BattleRecapPlan,
+  perspective: BattleRecapPerspective
+): string {
+  if (plan.finishPresentation !== 'double-knockout') {
+    return formatBattleRecapLead(plan, perspective);
+  }
+  return perspective === 'viewer_win'
+    ? 'YOU TAKE THE VERDICT'
+    : `${plan.winnerName.toUpperCase()} TAKES THE VERDICT`;
 }
 
 /**
@@ -180,10 +196,7 @@ export function addBattleRecapLines(
     const headlineHeight = 42;
     addFittedLabel(scene, parent, {
       y: cursor + headlineHeight / 2,
-      text: formatBattleRecapLead(
-        plan,
-        options.perspective ?? 'spectator'
-      ),
+      text: compactOutcomeLead(plan, options.perspective ?? 'spectator'),
       fontSize: 30,
       color: elementStyle.primaryText,
       width: contentWidth - 8,
@@ -197,12 +210,12 @@ export function addBattleRecapLines(
     addFittedLabel(scene, parent, {
       y: cursor + statusHeight / 2,
       text: compactOutcomeStatus(plan),
-      fontSize: 18,
+      fontSize: 25,
       color: UI.inkSoft,
       width: contentWidth - 8,
       height: statusHeight,
       bold: true,
-      lineSpacing: -3,
+      lineSpacing: -1,
     });
     cursor += statusHeight;
     return cursor - options.top;
@@ -302,12 +315,13 @@ export function createBattleRecapCard(
 ): Phaser.GameObjects.Container {
   const width = Math.max(MINIMUM_CONTENT_WIDTH, options.width);
   const elementStyle = ELEMENT_STYLES[plan.winnerElement];
+  const cardHeight = options.contextLine ? 190 : FULL_CARD_HEIGHT;
   const card = stickerCard(
     scene,
     options.x,
     options.y,
     width,
-    FULL_CARD_HEIGHT,
+    cardHeight,
     {
       gold: true,
       tapeColor: elementStyle.soft,
@@ -317,11 +331,24 @@ export function createBattleRecapCard(
   card.setDepth(options.depth ?? 60);
 
   addBattleRecapLines(scene, card, plan, {
-    top: -FULL_CARD_HEIGHT / 2 + 14,
+    top: -cardHeight / 2 + 14,
     width: width - 24,
     compact: true,
     ...(options.perspective ? { perspective: options.perspective } : {}),
   });
+
+  if (options.contextLine) {
+    addFittedLabel(scene, card, {
+      y: cardHeight / 2 - 26,
+      text: options.contextLine,
+      fontSize: 21,
+      color: UI.coralText,
+      width: width - 42,
+      height: 34,
+      bold: true,
+      lineSpacing: -3,
+    });
+  }
 
   return card;
 }

@@ -6,12 +6,18 @@ import type {
   LegacyReturnReceipt,
 } from '../../shared/arena';
 import { fitDrawing, loadDrawing } from './scribbits';
-import { paperIcon } from './papericons';
+import { paperIcon, type PaperIconKey } from './papericons';
+import {
+  formatLegacyFinishLabel,
+  planLegacyReturnPresentation,
+} from './legacyreturnpresentation';
+import { CanvasActionOverlay } from './overlay';
 import { NAV_SAFE, TYPE, UI, prefersReducedMotion } from './theme';
 import {
   button,
   ghostButton,
   handLettered,
+  iconButton,
   label,
   pageArrowButton,
   stickerCard,
@@ -314,7 +320,7 @@ function buildLegacyCard(options: {
     scene,
     0,
     78,
-    `${finishLabel(legacyCard)} · DAY ${legacyCard.legacy.archivedDay}`,
+    `${formatLegacyFinishLabel(legacyCard)} · DAY ${legacyCard.legacy.archivedDay}`,
     17,
     style.accentText,
     true
@@ -606,6 +612,8 @@ export type LegacyReturnCeremonyOptions = {
   scene: Scene;
   receipt: LegacyReturnReceipt;
   continueLabel?: string;
+  continueIcon?: PaperIconKey;
+  onDismiss?: () => void;
   onContinue: () => Promise<string | null>;
 };
 
@@ -615,17 +623,24 @@ export function openLegacyReturnCeremony(
   const {
     scene,
     receipt,
-    continueLabel = 'Open Legacy Book →',
+    continueLabel = 'LEGACY BOOK',
+    continueIcon = 'book',
+    onDismiss,
     onContinue,
   } = options;
-  const hero = chooseCeremonyHero(receipt.cards);
-  if (!hero) return null;
+  const presentation = planLegacyReturnPresentation(receipt);
+  if (!presentation) return null;
+  const { hero } = presentation;
+  const accessibilitySummary = `${presentation.eyebrow}. ${presentation.headline}. ${hero.name}. ${presentation.summary}`;
 
   const { width, height } = scene.scale;
   const finish = hero.legacy.finish;
   const style = FINISH_STYLES[finish];
   const turnedGold = finish !== 'faded';
   const layer = scene.add.container(0, 0).setScrollFactor(0).setDepth(3400);
+  const actionOverlay = new CanvasActionOverlay(scene);
+  let busy = false;
+  layer.once('destroy', () => actionOverlay.destroy());
   const shade = scene.add
     .rectangle(width / 2, height / 2, width + 80, height + 80, UI.inkHex, 0.68)
     .setInteractive();
@@ -633,30 +648,55 @@ export function openLegacyReturnCeremony(
 
   if (receipt.total > 1) {
     const backPageTwo = scene.add
-      .rectangle(width / 2 + 18, height / 2 + 16, width - 132, 822, UI.paper, 1)
+      .rectangle(width / 2 + 18, height / 2 + 16, width - 132, 742, UI.paper, 1)
       .setStrokeStyle(4, UI.inkSoftHex, 0.7)
       .setAngle(3);
     const backPageOne = scene.add
-      .rectangle(width / 2 - 14, height / 2 + 8, width - 126, 832, UI.paper, 1)
+      .rectangle(width / 2 - 14, height / 2 + 8, width - 126, 752, UI.paper, 1)
       .setStrokeStyle(4, style.accent, 0.72)
       .setAngle(-2.2);
     layer.add([backPageTwo, backPageOne]);
   }
 
-  const page = stickerCard(scene, width / 2, height / 2, width - 100, 900, {
+  const page = stickerCard(scene, width / 2, height / 2, width - 100, 820, {
     gold: turnedGold,
     tapeColor: style.tape,
   });
   layer.add(page);
+  const dismissCeremony = (): void => {
+    if (busy || !layer.active) return;
+    actionOverlay.destroy();
+    layer.destroy(true);
+    onDismiss?.();
+  };
+  page.add(
+    ghostButton(
+      scene,
+      (width - 100) / 2 - 58,
+      -352,
+      '×',
+      dismissCeremony,
+      90,
+      90
+    )
+  );
+  actionOverlay.add({
+    label: `Close Legacy return for now. ${accessibilitySummary}`,
+    rect: {
+      x: width / 2 + (width - 100) / 2 - 108,
+      y: height / 2 - 402,
+      width: 100,
+      height: 100,
+    },
+    onActivate: dismissCeremony,
+  });
   page.add(
     label(
       scene,
       0,
-      -385,
-      receipt.total > 1
-        ? `${receipt.total} PAGES DRIED WHILE YOU WERE AWAY`
-        : `ARCHIVED DAY ${hero.legacy.archivedDay}`,
-      19,
+      -350,
+      presentation.eyebrow,
+      TYPE.caption,
       UI.inkSoft,
       true
     ).setWordWrapWidth(width - 190)
@@ -665,16 +705,16 @@ export function openLegacyReturnCeremony(
     handLettered(
       scene,
       0,
-      -320,
-      turnedGold ? 'THIS PAGE TURNED GOLD' : 'THE INK HAS DRIED',
-      40,
+      -286,
+      presentation.headline,
+      54,
       UI.ink,
       true
     )
   );
 
-  const artY = -142;
-  const artSize = 236;
+  const artY = -88;
+  const artSize = 260;
   const frame = scene.add.graphics();
   frame.fillStyle(UI.creamHex, 1);
   frame.fillRoundedRect(-artSize / 2, artY - artSize / 2, artSize, artSize, 16);
@@ -693,7 +733,7 @@ export function openLegacyReturnCeremony(
   });
 
   page.add(
-    label(scene, 0, 8, hero.name.toUpperCase(), TYPE.title, UI.ink, true)
+    label(scene, 0, 92, hero.name.toUpperCase(), TYPE.title, UI.ink, true)
       .setWordWrapWidth(width - 190)
       .setLineSpacing(-5)
   );
@@ -701,76 +741,70 @@ export function openLegacyReturnCeremony(
     label(
       scene,
       0,
-      62,
-      `${finishLabel(hero)} · Lv${hero.legacy.level} · ${hero.legacy.wins}W–${hero.legacy.losses}L · ♥${hero.legacy.belief}`,
-      21,
+      148,
+      presentation.summary,
+      32,
       style.accentText,
       true
     ).setWordWrapWidth(width - 180)
   );
-  const ceremonyCopy = turnedGold
-    ? `${hero.name}'s signed card now hangs in the Hall of Legends.`
-    : `${hero.name} did not become a Legend. It became part of your story.`;
-  page.add(
-    label(scene, 0, 132, ceremonyCopy, TYPE.body, UI.inkSoft, true)
-      .setWordWrapWidth(width - 180)
-      .setLineSpacing(7)
-  );
-  if (receipt.total > receipt.cards.length) {
-    page.add(
-      label(
-        scene,
-        0,
-        206,
-        `+ ${receipt.total - receipt.cards.length} more pressed behind this page`,
-        19,
-        UI.inkSoft,
-        true
-      )
-    );
-  }
-
   const status = label(
     scene,
     0,
-    276,
+    224,
     '',
     19,
     UI.coralText,
     true
   ).setWordWrapWidth(width - 190);
   page.add(status);
-  let busy = false;
+  let inputReady = prefersReducedMotion();
+  const continueFromCeremony = (): void => {
+    if (!inputReady || busy) return;
+    busy = true;
+    actionOverlay.setVisible(false);
+    status.setText('FILING…').setColor(UI.inkSoft);
+    void onContinue()
+      .then((errorMessage) => {
+        if (!errorMessage) return;
+        busy = false;
+        actionOverlay.setVisible(true);
+        status.setText(errorMessage).setColor(UI.coralText);
+      })
+      .catch(() => {
+        busy = false;
+        actionOverlay.setVisible(true);
+        status
+          .setText('The archive stamp slipped. Try again.')
+          .setColor(UI.coralText);
+      });
+  };
   page.add(
-    button(
+    iconButton(
       scene,
       0,
-      360,
+      310,
+      continueIcon,
       continueLabel,
-      () => {
-        if (busy) return;
-        busy = true;
-        status.setText('Filing this page…').setColor(UI.inkSoft);
-        void onContinue()
-          .then((errorMessage) => {
-            if (!errorMessage) return;
-            busy = false;
-            status.setText(errorMessage).setColor(UI.coralText);
-          })
-          .catch(() => {
-            busy = false;
-            status
-              .setText('The archive stamp slipped. Try again.')
-              .setColor(UI.coralText);
-          });
-      },
+      continueFromCeremony,
       width - 210,
       turnedGold ? UI.gold : UI.coral,
       UI.ink
     )
   );
+  actionOverlay.add({
+    label: `${continueLabel}. ${accessibilitySummary}`,
+    rect: {
+      x: 105,
+      y: height / 2 + 260,
+      width: width - 210,
+      height: 100,
+    },
+    onActivate: continueFromCeremony,
+  });
 
-  if (!prefersReducedMotion()) {
+  if (!inputReady) {
+    actionOverlay.setVisible(false);
     page.setAlpha(0).setScale(0.94);
     scene.tweens.add({
       targets: page,
@@ -778,17 +812,13 @@ export function openLegacyReturnCeremony(
       scale: 1,
       duration: 360,
       ease: 'Back.easeOut',
+      onComplete: () => {
+        inputReady = true;
+        actionOverlay.setVisible(true);
+      },
     });
   }
   return layer;
-}
-
-function chooseCeremonyHero(cards: LegacyCard[]): LegacyCard | undefined {
-  return (
-    cards.find((card) => card.legacy.finish === 'champion') ??
-    cards.find((card) => card.legacy.finish === 'believed') ??
-    cards[0]
-  );
 }
 
 function creatorSignature(card: LegacyCard): string {
@@ -797,12 +827,6 @@ function creatorSignature(card: LegacyCard): string {
   return title
     ? `${creator} · ★ ${fitText(title, 24)} ★`
     : `${creator} · unsigned`;
-}
-
-function finishLabel(card: LegacyCard): string {
-  if (card.legacy.finish === 'champion') return 'CHAMPION';
-  if (card.legacy.finish === 'believed') return 'BELOVED LEGEND';
-  return 'FADED';
 }
 
 function achievementLine(card: LegacyCard): string {

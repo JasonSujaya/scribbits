@@ -45,7 +45,7 @@ currency, or combat power.
 
 ## Current Ship Gates
 
-- [x] Local equivalent of `npm run verify` passes: TypeScript, ESLint, 98
+- [x] Local equivalent of `npm run verify` passes: TypeScript, ESLint, 103
       simulation groups, and production build (July 12).
 - [x] Fresh mobile browser proof covers the optional deterministic Doodle Dare,
       first-run draw -> fight -> Ink promise, blank/forming/ready feedback,
@@ -221,11 +221,23 @@ currency, or combat power.
       coverage and a 320x568 WebGL pass prove Day 8 Replay/Skip/return, loaded
       drawings, and empty runtime and console errors without a new Redis key or
       reward track (July 11).
+- [x] A player who entered their own Scribbit but skipped Back now returns to
+      one owned-Rumble receipt: exact entrant drawing, daily W/L, committed XP,
+      committed Ink, and the server-selected last real bout. Back receipts keep
+      their Clout identity, zero-win owned receipts stay factual, and malformed
+      or partial payouts fail closed instead of inventing rewards (July 12).
 - [x] The 320x568 default hierarchy is now compact across Arena, Draw, Replay,
       Battles, Scout, Gallery, Legacy Book, Collection, Field Guide, Practice,
       and Mystery Ink. Primary cards lead with one headline, one status, and one
       action; rules, moderation, and secondary facts move behind explicit taps
       without changing server authority or rewards (July 12).
+- [x] The Arena contender grid now says `PICK A WINNER` once instead of repeating
+      `Back` across eight cards. Drawing, name, and element remain visible while
+      shared paper heart, lock, and `YOURS` states expose available, picked,
+      locked, and owned states through 100-design-pixel targets. A real 320x568
+      pick updates the server, pins the gold card, locks the remaining field, and
+      keeps the full scroll error-free; drag-release and forced-failure proof also
+      prevent accidental or false daily picks (July 12).
 - [x] The Craftbox visual system now gives all five main scenes one generated
       torn-paper stage, bundled Balsamiq Sans, one die-cut navigation family,
       one coral active ticket, and shared paper status/element icons. Arena drops
@@ -261,9 +273,13 @@ currency, or combat power.
       non-zero camera scroll, the Ink chip no longer covers bracket controls, and
       first Shape Power reveals use separate left/right presentation lanes.
 - [x] Browser and endpoint proof verify wearable title persistence, immutable
-      Legacy snapshots, champion/believed/faded finishes, one-time return ceremony,
-      strict non-combat card DTOs, monotonic seen state, and Legacy-before-Rumble
-      return sequencing.
+      Legacy snapshots, champion/believed/faded finishes, strict non-combat card
+      DTOs, monotonic seen state, and Legacy-before-Rumble return sequencing. The
+      one-time return now leads with one drawing, `LEGEND!` or `MEMORY SAVED`, one
+      exact record line, and one icon-led action; a pure planner locks hero
+      priority and bounded copy. A 320x568 WebGL pass proves the compact card,
+      native action, handoff into the real Rumble receipt, and zero runtime errors
+      (July 12).
 - [x] Mobile browser proof verifies server-selected overnight Rumble replay,
       clean outcome controls, Legacy-aware return routing, and deterministic
       Next Goal progression from Back/capsule state into exact care rewards.

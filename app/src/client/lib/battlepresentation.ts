@@ -141,14 +141,13 @@ export type ReplayBattleClockPlan = Readonly<{
   urgent: boolean;
 }>;
 
-export type ReplayOutcomeStackPlan = Readonly<{
+export type ReplayOutcomeLayout = Readonly<{
   recapY: number;
-  founderOutcomeY: number | null;
+  actionY: number;
 }>;
 
 export type ReplayPostFightActionKind =
   | 'rivals'
-  | 'practice'
   | 'backContender'
   | 'return';
 
@@ -160,10 +159,9 @@ export type ReplayPostFightAction = Readonly<{
 }>;
 
 export type ReplayPostFightActionPlan = Readonly<{
-  primary: ReplayPostFightAction;
-  secondary: readonly ReplayPostFightAction[];
+  primary: ReplayPostFightAction | null;
+  returnAction: ReplayPostFightAction;
   buttonHeight: number;
-  secondaryRowOffset: number | null;
 }>;
 
 const clamp = (value: number, minimum: number, maximum: number): number => {
@@ -295,21 +293,13 @@ export function planReplayBattleLayout(input: {
   };
 }
 
-export function planReplayOutcomeStack(input: {
+export function planReplayOutcomeLayout(input: {
   viewportHeight: number;
-  canChooseRival: boolean;
-  canBackContender: boolean;
-  hasFounderOutcome: boolean;
-}): ReplayOutcomeStackPlan {
+}): ReplayOutcomeLayout {
   const viewportHeight = Math.max(800, input.viewportHeight);
-  const recapY =
-    viewportHeight -
-    (input.canChooseRival && input.canBackContender ? 467 : 405);
-  const founderOutcomeY = input.hasFounderOutcome ? recapY - 166 : null;
-
   return {
-    recapY,
-    founderOutcomeY,
+    recapY: viewportHeight - 330,
+    actionY: viewportHeight - 96,
   };
 }
 
@@ -318,9 +308,12 @@ export function planReplayPostFightActions(input: {
   canChooseRival: boolean;
   canBackContender: boolean;
   returnLabel: string;
+  rivalActionCopy?: Readonly<{
+    label: string;
+    accessibleLabel: string;
+  }>;
 }): ReplayPostFightActionPlan {
   const buttonHeight = 100;
-  const secondaryRowOffset = 114;
   const returnAction: ReplayPostFightAction = Object.freeze({
     kind: 'return',
     label: input.returnLabel,
@@ -329,35 +322,18 @@ export function planReplayPostFightActions(input: {
   });
 
   if (input.canChooseRival) {
-    const secondary: ReplayPostFightAction[] = [
-      Object.freeze({
-        kind: 'practice',
-        label: 'PRACTICE',
-        accessibleLabel: 'Practice',
-        tone: 'ghost',
-      }),
-    ];
-    if (input.canBackContender) {
-      secondary.push(
-        Object.freeze({
-          kind: 'backContender',
-          label: 'PICK',
-          accessibleLabel: "Pick tonight's winner",
-          tone: 'ghost',
-        })
-      );
-    }
-    secondary.push(returnAction);
+    const rivalActionCopy = input.rivalActionCopy ?? {
+      label: 'CHOOSE A RIVAL',
+      accessibleLabel: 'Choose a rival',
+    };
     return Object.freeze({
       primary: Object.freeze({
         kind: 'rivals',
-        label: 'CHOOSE A RIVAL',
-        accessibleLabel: 'Choose a rival',
+        ...rivalActionCopy,
         tone: 'coral',
       }),
-      secondary: Object.freeze(secondary),
+      returnAction,
       buttonHeight,
-      secondaryRowOffset,
     });
   }
 
@@ -369,17 +345,15 @@ export function planReplayPostFightActions(input: {
         accessibleLabel: "Pick tonight's winner",
         tone: 'gold',
       }),
-      secondary: Object.freeze([returnAction]),
+      returnAction,
       buttonHeight,
-      secondaryRowOffset,
     });
   }
 
   return Object.freeze({
-    primary: returnAction,
-    secondary: Object.freeze([]),
+    primary: null,
+    returnAction,
     buttonHeight,
-    secondaryRowOffset: null,
   });
 }
 

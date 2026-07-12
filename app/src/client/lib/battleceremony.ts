@@ -3,18 +3,24 @@
 
 import { Scene } from 'phaser';
 import type * as Phaser from 'phaser';
-import type { BattleKind, Scribbit } from '../../shared/arena';
+import type {
+  BattleKind,
+  RivalRunReceipt,
+  Scribbit,
+} from '../../shared/arena';
 import { ELEMENT_STYLES, prefersReducedMotion, UI } from './theme';
 import { handLettered, label, elementBadge, levelBadge } from './ui';
 import { loadDrawing, fitDrawing, levelOf } from './scribbits';
 import { planBattleMatchupBrief } from './matchupbrief';
 import type { FounderRivalryStakesPlan } from './founderchronicle';
+import { formatRivalRunBattleLabel } from './rivalrunpresentation';
 
 export type VsCeremonyOptions = Readonly<{
   fighterA: Scribbit;
   fighterB: Scribbit;
   battleKind: BattleKind;
   rivalryStakes?: FounderRivalryStakesPlan | null;
+  rivalRun?: RivalRunReceipt;
   onComplete: () => void;
 }>;
 
@@ -129,7 +135,14 @@ function createFighterSide(
 // Show a dramatic VS screen before battle. Both fighters slide in from opposite
 // sides, element badges clash in the center, then transition to the replay.
 export function showVsCeremony(scene: Scene, options: VsCeremonyOptions): void {
-  const { fighterA, fighterB, battleKind, rivalryStakes, onComplete } = options;
+  const {
+    fighterA,
+    fighterB,
+    battleKind,
+    rivalryStakes,
+    rivalRun,
+    onComplete,
+  } = options;
   const { width, height } = scene.scale;
   const reduceMotion = prefersReducedMotion();
   const brief = planBattleMatchupBrief({
@@ -137,7 +150,7 @@ export function showVsCeremony(scene: Scene, options: VsCeremonyOptions): void {
     fighterA,
     fighterB,
   });
-  const fighterCenterY = rivalryStakes ? 490 : 450;
+  const fighterCenterY = rivalryStakes || rivalRun ? 490 : 450;
   const layer = scene.add.container(0, 0).setDepth(2000).setScrollFactor(0);
 
   // Keep the showdown inside the same physical sketchbook world as every
@@ -170,7 +183,9 @@ export function showVsCeremony(scene: Scene, options: VsCeremonyOptions): void {
   layer.add(splitPaper);
 
   const battleLabelText =
-    rivalryStakes?.battleLabel ?? battleKind.toUpperCase();
+    (rivalRun ? formatRivalRunBattleLabel(rivalRun) : null) ??
+    rivalryStakes?.battleLabel ??
+    battleKind.toUpperCase();
   const topBattleLabel = label(
     scene,
     width / 2,
@@ -203,7 +218,10 @@ export function showVsCeremony(scene: Scene, options: VsCeremonyOptions): void {
   );
   layer.add(matchupTitle);
 
-  if (rivalryStakes) {
+  if (rivalryStakes || rivalRun) {
+    const contextDetail = rivalRun
+      ? `SCORE ${rivalRun.score - rivalRun.pointsAwarded} • ${rivalRun.tier.toUpperCase()} WIN +${rivalRun.winPoints}`
+      : (rivalryStakes?.detail ?? 'SERVER-LOCKED BATTLE');
     const stakesStrip = scene.add
       .rectangle(width / 2, 170, width - 96, 54, UI.tapeAlt, 0.9)
       .setStrokeStyle(2, UI.inkHex, 0.52)
@@ -212,7 +230,7 @@ export function showVsCeremony(scene: Scene, options: VsCeremonyOptions): void {
       scene,
       width / 2,
       170,
-      rivalryStakes.detail,
+      contextDetail,
       19,
       UI.ink,
       true

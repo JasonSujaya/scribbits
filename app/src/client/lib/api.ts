@@ -24,6 +24,7 @@ import type {
   PracticeBattleRequest,
   PracticeBattleReport,
   ReportScribbitResponse,
+  RivalRunState,
   Scribbit,
   ScoutNotebookState,
   SparRivalSlate,
@@ -214,11 +215,20 @@ export function fetchSparRivals(
 // first daily win. Omitting opponentId preserves the server-random quick path.
 export function spar(
   scribbitId: string,
-  opponentId?: string
+  opponentId?: string,
+  rivalRun?: RivalRunState
 ): Promise<ApiResult<DirectBattleResponse>> {
   return postJson<SparRequest, DirectBattleResponse>('/api/spar', {
     scribbitId,
     ...(opponentId ? { opponentId } : {}),
+    ...(rivalRun
+      ? {
+          rivalRun: {
+            id: rivalRun.id,
+            expectedBoutsCompleted: rivalRun.boutsCompleted,
+          },
+        }
+      : {}),
   });
 }
 

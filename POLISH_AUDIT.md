@@ -78,12 +78,12 @@ sidegrades: their colors can change the 100-point build split, but never its sum
 4. Titles can now be worn or removed from Collection; the equipped title is
    ownership-validated, persists in inventory, and is frozen into the Legacy
    snapshot rather than looked up later.
-5. A one-time return ceremony introduces up to three newly archived pages before
-   the existing Rumble receipt, with monotonic seen state and no retired combat
-   mutation path.
+5. A one-time return ceremony introduces newly archived pages before the existing
+   Rumble receipt with one hero drawing, one finish headline, one exact record,
+   and one icon-led action. Extra archive detail stays in the Legacy Book.
 6. Browser proof covered all finish styles, title persistence, two Legacy pages,
    Older/Newer navigation, long-name detail, receipt sequencing, and a clean
-   runtime console. The deterministic gate now covers 98 simulation groups,
+   runtime console. The deterministic gate now covers 103 simulation groups,
    including expiry/XP race fencing, idempotent Rumble standings, retryable
    and inventory-watched title snapshots, and insertion-stable Legacy cursors.
 
@@ -180,6 +180,20 @@ sidegrades: their colors can change the 100-point build split, but never its sum
     art, real level/element/Shape Power/signature/forecast data, and no fake win
     odds. The stable daily slate prioritizes close levels, reaches only one extra
     distance tier for style variety, and rejects off-card choices server-side.
+    Story pages still advance once per Arena day, but every waiting card now
+    offers an immediate `SPAR` exhibition instead of presenting a dead board.
+    Redis remains authoritative for the daily Ink/XP and Chronicle caps. The
+    slate now carries the server's current day and forecast, eliminating stale
+    eligibility and matchup copy when an open Replay crosses UTC rollover.
+    Immediate exhibitions now chain into a three-bout server Rival Run instead
+    of three unrelated matches. Every draft exposes one deterministic
+    `SAFE +1`, `EVEN +2`, and `RISKY +3` choice ranked by five real-engine
+    matchup projections; the score and record carry into
+    VS, HUD, result, and stored replay receipts. Expected-bout transactions and
+    128-bit deterministic report ids reject concurrent double advancement.
+    Run state and its report commit together, daily Ink and XP share one atomic
+    receipt, and retries finish the same committed mock/production bout. Run points are display-only
+    and cannot bypass existing Ink, XP, or Founder Chronicle caps.
 18. Browser and endpoint proof cover loss draft, win draft, exact chosen-rival
     binding, live replay, off-card HTTP 400, production/mock selector parity,
     and zero captured runtime errors.
@@ -343,7 +357,7 @@ lifecycle stay in `ArenaHome`.
 The touched scene fell from 2,317 to 2,302 lines. One focused deterministic
 group now locks backed-first, roster-owned-second, reverse-source ordering,
 deduplication, the eight-card cap, and all four exact Back states. No public
-contract changed. TypeScript, ESLint, all 98 simulation groups, production
+contract changed. TypeScript, ESLint, all 102 simulation groups, production
 build, and a real 320x568 Arena interaction pass are green.
 
 ## Matchup truth refactor check (July 12)
@@ -368,7 +382,7 @@ actually applies.
 public API change, no call-site change, and no engine change. Two duplicated
 numeric literals are removed. Existing snapshots keep all ten cards byte-for-byte
 stable, while two focused assertions bind Ring/Halo and Halo/Cone copy to the
-consumed configuration. TypeScript, ESLint, all 98 simulation groups, the
+consumed configuration. TypeScript, ESLint, all 102 simulation groups, the
 production build, and a real 320x568 Ring/Halo ceremony are green. The
 Smearstep follow-up below closes the deliberately deferred `TWICE` authority
 gap.
@@ -402,7 +416,7 @@ including mock/production parity. A focused behavior fixture also locks the
 activation deadline and proves one hit in each configured window. The count
 remains the deliberate literal type `2`; any future widening must account for
 the 32-bit hit mask and receive fresh balance and visual review. TypeScript,
-ESLint, all 98 simulation groups, the production build, and a real 320x568
+ESLint, all 102 simulation groups, the production build, and a real 320x568
 Smearstep replay are green.
 
 ## Battle-loop hierarchy pass (July 12)
@@ -423,10 +437,12 @@ progress, one next-page label, one quote, and one action.
 
 Post-fight cards now say `YOU WON`, `YOU LOST`, or `{WINNER} WON` before the
 exact finish reason, duration, and final HP. Owned exhibitions promote
-`CHOOSE A RIVAL` to one full-width primary action; Practice, tonight's pick, and
-the real return destination share a smaller secondary row. A pure action planner
-and one Phaser renderer replace the duplicated win/loss grids and remove the
-obsolete loss-offset plan.
+`CHOOSE A RIVAL` to the only contextual action beside one compact return.
+Tonight's pick becomes primary only when no Rival draft is available, while
+Practice remains reachable from Arena instead of competing with the result.
+Founder outcome copy is folded into the recap card, and a cream veil removes the
+finished combat HUD. A pure action planner and one Phaser renderer replace the
+duplicated win/loss grids and remove the obsolete multi-row outcome plan.
 
 Every critical result, Practice, archived-result, and Rival Draft action now
 uses a 100-design-pixel target, which stays at least 44 CSS pixels in the
@@ -436,9 +452,9 @@ name, focus outline, and single-fire Enter/Space path. Opening the Rival Draft
 hides the result controls; closing it or recovering from a failed request restores
 them instead of leaving an invisible keyboard dead end.
 
-TypeScript, ESLint, all 98 simulation groups, and the production build are
-green. A real normal-speed 320x568 Fernibble decider proves the compact Rival
-VS, `YOU WON` result, signed-margin strip, action hierarchy, native result and
+TypeScript, ESLint, and all 102 simulation groups are green. A real normal-speed
+320x568 Fernibble decider previously proved the compact Rival VS, `YOU WON`
+result, action hierarchy, native result and
 Rival Draft controls, close-and-restore lifecycle, keyboard Arena return,
 archived-result return, and resolved margin with zero runtime or console errors.
 No combat event, result, reward, route, stored field, or authority boundary
@@ -464,7 +480,7 @@ cards with compact chevrons/play marks, while Scout removes its field-note
 paragraph. Replay retains its server-locked rail and transcript juice, but its
 result resolves to one verdict, one exact status line, and one primary action.
 
-TypeScript, ESLint, all 98 simulation groups, and the production build are
+TypeScript, ESLint, all 102 simulation groups, and the production build are
 green. A real 320x568 browser pass covers Arena, locked Draw to Practice, Scout,
 normal-speed spar, Skip, and result with a live canvas and no error-level runtime
 messages. Draw removes two full tool rows and the visible four-stat dashboard;
@@ -488,6 +504,43 @@ unchanged HP/clock text and limits presentation-only background/effect redraws
 plus Inkbody deformation to 30 Hz while continuous movement and transcript time
 stay authoritative. The same local battle measures about 59 FPS afterward; Draw
 holds 60 FPS during a real stroke and worker result, with zero runtime errors.
+
+## Legacy return hierarchy pass (July 12)
+
+The returning-player audit found that the first overnight card still explained
+the archive twice before exposing its action. The ceremony now chooses one
+truthful hero through a pure planner, leads with `LEGEND!` or `MEMORY SAVED`,
+shows only the total saved-card count and exact finish/record/level line, and
+moves all archival prose and frozen metadata into the existing Legacy Book.
+`RUMBLE RESULT` and `LEGACY BOOK` use the shared paper icon-button family and
+native 100-design-pixel action mirror; input remains gated during the opening
+animation, failed filing restores the action, and an icon-only close lets players
+reach the Rumble receipt without discarding the unseen Legacy marker.
+
+TypeScript, ESLint, 103 deterministic groups, and the production build are
+green. A fresh 320x568 WebGL run proves the compact return card, no viewport
+overflow, zero captured runtime errors, and the exact Legacy-to-Rumble receipt
+handoff.
+
+## Arena pick-grid pass (July 12)
+
+The receipt-free Arena still repeated a full-width `Back` label on every one of
+eight contender cards. The grid now states `PICK A WINNER` once and lets the
+drawings lead. Each card keeps only its name and paper element mark beside one
+shared icon action: gold heart when available, selected heart plus rosette for
+the actual pick, lock after the daily choice, and a plain `YOURS` state.
+The compact visual plate retains a 100-design-pixel hit target, and attempting
+to pick the player's own Scribbit now explains that exact state rather than
+claiming the daily Back was already spent. The irreversible action ignores a
+pointer-up that ends a scroll gesture, and an optimistic server failure rebuilds
+the rolled-back field before showing Retry.
+
+TypeScript, ESLint, 103 deterministic groups, and production build remain green.
+A 320x568 WebGL interaction proves the heart action writes the real Back, pins
+the selected card first, converts the rest to locks, preserves the eight-entry
+field and roster scroll, ignores a drag started on the heart, restores every
+available heart after a forced HTTP 500, avoids viewport overflow, and captures
+zero runtime errors.
 
 ## Current polish gap
 
@@ -516,10 +569,10 @@ the in-game rules teach the combat model that actually runs, and the Battle
 Scrapbook gives recent authoritative fights a replayable home. The Scout
 Notebook now turns existing server truth into a bounded seven-day return habit.
 
-The strongest remaining product gap is the player's own overnight Rumble
-payoff: the existing return receipt explains a backed contender, but does not
-yet lead with the owned entrant's W/L, XP, and exact Rumble Ink when no Back was
-made. The strongest external proof gap remains an installed Reddit playtest and
+The owned overnight Rumble payoff now leads with the entered Scribbit's drawing,
+exact daily W/L, standing-receipt XP, payout-receipt Ink, and server-selected
+last bout when no Back was made. It suppresses partial or ambiguous reward data
+instead of deriving it from current totals. The strongest remaining gap is an installed Reddit playtest and
 a concise demo capture using organic player drawings rather than curated
 fixtures. Progression should stay expressive and collectible rather than add
 combat power or another currency. Do not add another progression subsystem

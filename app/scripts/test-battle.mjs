@@ -81,6 +81,8 @@ execFileSync(
     'src/server/core/dailyJob.ts',
     'src/server/core/resultComment.ts',
     'src/server/core/founderChronicle.ts',
+    'src/server/core/rivalRun.ts',
+    'src/server/core/rumbleReturn.ts',
     'src/server/core/streak.ts',
     'src/server/core/moderation.ts',
     'src/server/core/privacy.ts',
@@ -95,6 +97,9 @@ execFileSync(
     'src/client/lib/replaycommentary.ts',
     'src/client/lib/inkcastqueue.ts',
     'src/client/lib/sparrivals.ts',
+    'src/client/lib/rivalrunpresentation.ts',
+    'src/client/lib/rumblereturnpresentation.ts',
+    'src/client/lib/legacyreturnpresentation.ts',
     'src/client/lib/continuousreplay.ts',
     'src/client/lib/battlepresentation.ts',
     'src/client/lib/battlerecap.ts',
@@ -188,6 +193,10 @@ const resultComment = require(
 const founderChronicleCore = require(
   join(outDir, 'server', 'core', 'founderChronicle.js')
 );
+const rivalRunCore = require(join(outDir, 'server', 'core', 'rivalRun.js'));
+const rumbleReturnCore = require(
+  join(outDir, 'server', 'core', 'rumbleReturn.js')
+);
 const scribbitCore = require(join(outDir, 'server', 'core', 'scribbit.js'));
 const streakCore = require(join(outDir, 'server', 'core', 'streak.js'));
 const moderationCore = require(join(outDir, 'server', 'core', 'moderation.js'));
@@ -211,6 +220,15 @@ const replayCommentary = require(
 );
 const inkcastQueue = require(join(outDir, 'client', 'lib', 'inkcastqueue.js'));
 const sparRivals = require(join(outDir, 'client', 'lib', 'sparrivals.js'));
+const rivalRunPresentation = require(
+  join(outDir, 'client', 'lib', 'rivalrunpresentation.js')
+);
+const rumbleReturnPresentation = require(
+  join(outDir, 'client', 'lib', 'rumblereturnpresentation.js')
+);
+const legacyReturnPresentation = require(
+  join(outDir, 'client', 'lib', 'legacyreturnpresentation.js')
+);
 const continuousReplay = require(
   join(outDir, 'client', 'lib', 'continuousreplay.js')
 );
@@ -395,10 +413,137 @@ try {
     (await requestMock('/api/rumble-replay?day=8')).response.status,
     404
   );
+
+  const ownedReturnArena = await requestMock('/api/arena?owned-return');
+  assert.equal(ownedReturnArena.response.status, 200);
+  assert.deepEqual(
+    {
+      kind: ownedReturnArena.body.lastRumbleReceipt.kind,
+      entrantId: ownedReturnArena.body.lastRumbleReceipt.entrant.id,
+      record: [
+        ownedReturnArena.body.lastRumbleReceipt.wins,
+        ownedReturnArena.body.lastRumbleReceipt.losses,
+      ],
+      xp: ownedReturnArena.body.lastRumbleReceipt.xpAwarded,
+      ink: ownedReturnArena.body.lastRumbleReceipt.inkAwarded,
+    },
+    {
+      kind: 'owned',
+      entrantId: 'mine-paper-spark',
+      record: [2, 1],
+      xp: 4,
+      ink: 10,
+    },
+    'a no-Back return must lead with the owned entrant and exact rewards'
+  );
+  const ownedReturnReplay = await requestMock(
+    `/api/rumble-replay?day=${ownedReturnArena.body.lastRumbleReceipt.resolvedDay}&owned-return`
+  );
+  assert.equal(ownedReturnReplay.response.status, 200);
+  assert.ok(
+    ownedReturnReplay.body.a.id === 'mine-paper-spark' ||
+      ownedReturnReplay.body.b.id === 'mine-paper-spark',
+    'the owned return CTA must open a real bout involving that entrant'
+  );
+
+  const initialRunSlate = await requestMock(
+    '/api/spar-rivals?scribbitId=mine-paper-spark'
+  );
+  assert.equal(initialRunSlate.response.status, 200);
+  assert.equal(initialRunSlate.body.rivalRun.boutsCompleted, 0);
+  assert.deepEqual(
+    initialRunSlate.body.choices.map(({ tier, winPoints }) => ({
+      tier,
+      winPoints,
+    })),
+    [
+      { tier: 'safe', winPoints: 1 },
+      { tier: 'even', winPoints: 2 },
+      { tier: 'risky', winPoints: 3 },
+    ]
+  );
+  let runSlate = initialRunSlate.body;
+  let previousRunReport = null;
+  const forgedRunFight = await requestMock('/api/spar', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      scribbitId: runSlate.challenger.id,
+      opponentId: runSlate.choices[0].rival.id,
+      rivalRun: {
+        id: `${runSlate.rivalRun.id}-forged`,
+        expectedBoutsCompleted: 0,
+      },
+    }),
+  });
+  assert.equal(
+    forgedRunFight.response.status,
+    409,
+    'the mock must reject a forged run id exactly like production'
+  );
+  for (let boutIndex = 0; boutIndex < 3; boutIndex += 1) {
+    const selectedChoice = runSlate.choices[1];
+    assert.ok(selectedChoice);
+    const runFight = await requestMock('/api/spar', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        scribbitId: runSlate.challenger.id,
+        opponentId: selectedChoice.rival.id,
+        rivalRun: {
+          id: runSlate.rivalRun.id,
+          expectedBoutsCompleted: boutIndex,
+        },
+      }),
+    });
+    assert.equal(runFight.response.status, 200);
+    assert.equal(runFight.body.report.rivalRun.boutNumber, boutIndex + 1);
+    assert.equal(
+      runFight.body.report.rivalRun.pointsAwarded,
+      runFight.body.report.rivalRun.outcome === 'win' ? 2 : 0
+    );
+    if (boutIndex === 0) {
+      const retriedFight = await requestMock('/api/spar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          scribbitId: runSlate.challenger.id,
+          opponentId: selectedChoice.rival.id,
+          rivalRun: {
+            id: runSlate.rivalRun.id,
+            expectedBoutsCompleted: 0,
+          },
+        }),
+      });
+      assert.equal(retriedFight.response.status, 200);
+      assert.deepEqual(
+        retriedFight.body.report,
+        runFight.body.report,
+        'a repeated deterministic bout must return the same mock report'
+      );
+    }
+    previousRunReport = runFight.body.report;
+    if (boutIndex < 2) {
+      runSlate = (
+        await requestMock('/api/spar-rivals?scribbitId=mine-paper-spark')
+      ).body;
+      assert.equal(runSlate.rivalRun.boutsCompleted, boutIndex + 1);
+    }
+  }
+  assert.equal(previousRunReport.rivalRun.status, 'complete');
+  const nextRunSlate = await requestMock(
+    '/api/spar-rivals?scribbitId=mine-paper-spark'
+  );
+  assert.equal(nextRunSlate.body.rivalRun.boutsCompleted, 0);
+  assert.notEqual(
+    nextRunSlate.body.rivalRun.id,
+    initialRunSlate.body.rivalRun.id,
+    'explicitly reopening the board after completion should start a fresh run'
+  );
 } finally {
   await stopDevMockContractTest(mockContract.child);
 }
-pass('mock Scout API honors auth, mutations, privacy, and replay bounds');
+pass('mock API preserves Scout safety and production Rival Run contracts');
 
 for (const combatCheck of combatEngineTests.runCombatEngineTests()) {
   pass(`fixed-tick combat: ${combatCheck}`);
@@ -2654,6 +2799,182 @@ const createMemoryStorage = (options = {}) => {
 
   return storage;
 };
+
+const ownedRumbleReturnStorage = createMemoryStorage();
+const ownedRumbleReturnEntrant = makeScribbit({
+  id: 'owned-return-entrant',
+  name: 'Margin Moth',
+  artist: 'owned-return-player',
+  bornDay: 6,
+  expiresDay: 9,
+});
+const ownedRumbleReturnOpponent = makeScribbit({
+  id: 'owned-return-opponent',
+  name: 'Bracket Beetle',
+  artist: 'another-player',
+});
+await scribbitCore.storeScribbit(
+  ownedRumbleReturnStorage,
+  'owned:return:user',
+  ownedRumbleReturnEntrant
+);
+await scribbitCore.recordRumbleStandingOnScribbit(
+  ownedRumbleReturnStorage,
+  ownedRumbleReturnEntrant.id,
+  8,
+  2,
+  1,
+  4
+);
+assert.equal(
+  await rumbleReturnCore.loadOwnedRumbleReturnReceipt(
+    ownedRumbleReturnStorage,
+    {
+      userId: 'owned:return:user',
+      resolvedDay: 8,
+      utcDateKey: '20260711',
+      champion: ownedRumbleReturnOpponent,
+    }
+  ),
+  null,
+  'a winning standing must not guess Ink before its payout receipt exists'
+);
+await inkStore.claimInkReward(ownedRumbleReturnStorage, {
+  payoutKey: inkStore.getRumbleWinInkPayoutKey(8),
+  payoutField: ownedRumbleReturnEntrant.id,
+  userId: 'owned:return:user',
+  amount: 10,
+  paidAtMs: 1_000,
+});
+const ownedRumbleFeaturedReport = {
+  id: 'owned-return-featured-report',
+  kind: 'rumble',
+  day: 8,
+  a: ownedRumbleReturnEntrant,
+  b: ownedRumbleReturnOpponent,
+  winner: 'a',
+  events: [],
+};
+await battleStore.saveBattleReport(
+  ownedRumbleReturnStorage,
+  ownedRumbleFeaturedReport,
+  8_001
+);
+await battleStore.setFeaturedRumbleReport(
+  ownedRumbleReturnStorage,
+  ownedRumbleFeaturedReport,
+  1
+);
+const ownedRumbleReturnReceipt =
+  await rumbleReturnCore.loadOwnedRumbleReturnReceipt(
+    ownedRumbleReturnStorage,
+    {
+      userId: 'owned:return:user',
+      resolvedDay: 8,
+      utcDateKey: '20260711',
+      champion: ownedRumbleReturnOpponent,
+    }
+  );
+assert.deepEqual(
+  ownedRumbleReturnReceipt && {
+    kind: ownedRumbleReturnReceipt.kind,
+    entrantId: ownedRumbleReturnReceipt.entrant.id,
+    wins: ownedRumbleReturnReceipt.wins,
+    losses: ownedRumbleReturnReceipt.losses,
+    xpAwarded: ownedRumbleReturnReceipt.xpAwarded,
+    inkAwarded: ownedRumbleReturnReceipt.inkAwarded,
+    replayAvailable: ownedRumbleReturnReceipt.replayAvailable,
+  },
+  {
+    kind: 'owned',
+    entrantId: ownedRumbleReturnEntrant.id,
+    wins: 2,
+    losses: 1,
+    xpAwarded: 4,
+    inkAwarded: 10,
+    replayAvailable: true,
+  }
+);
+assert.deepEqual(
+  rumbleReturnPresentation.planRumbleReturnPresentation(
+    ownedRumbleReturnReceipt
+  ),
+  {
+    title: 'MARGIN MOTH WENT • 2–1',
+    detail: null,
+    reward: '+4 XP • +10 INK',
+    highlight: false,
+  }
+);
+assert.equal(
+  rumbleReturnPresentation.formatRumbleReturnAccessibleSummary(
+    rumbleReturnPresentation.planRumbleReturnPresentation(
+      ownedRumbleReturnReceipt
+    )
+  ),
+  'MARGIN MOTH WENT • 2–1. +4 XP • +10 INK'
+);
+assert.equal(
+  rumbleReturnPresentation.formatRumbleReturnAccessibleSummary(
+    rumbleReturnPresentation.planRumbleReturnPresentation({
+      kind: 'backed',
+      resolvedDay: 8,
+      backedName: 'Only Moon',
+      championName: 'Solar Kiln',
+      cloutEarned: 0,
+      inkAwarded: 0,
+      replayAvailable: true,
+    })
+  ),
+  'SCOUTING REPORT. Only Moon • OUT. Solar Kiln WON RUMBLE #8. NO REWARD • PICK AGAIN'
+);
+assert.equal(
+  (
+    await rumbleReturnCore.loadOwnedRumbleReturnReceipt(
+      ownedRumbleReturnStorage,
+      {
+        userId: 'owned:return:user',
+        resolvedDay: 8,
+        utcDateKey: '20260711',
+        champion: ownedRumbleReturnOpponent,
+        hiddenScribbitIds: new Set([ownedRumbleReturnOpponent.id]),
+      }
+    )
+  )?.replayAvailable,
+  false,
+  'a hidden fighter must remove the owned return replay action'
+);
+const duplicateOwnedRumbleEntrant = makeScribbit({
+  id: 'owned-return-duplicate',
+  name: 'Duplicate Entry',
+});
+await scribbitCore.storeScribbit(
+  ownedRumbleReturnStorage,
+  'owned:return:user',
+  duplicateOwnedRumbleEntrant
+);
+await scribbitCore.recordRumbleStandingOnScribbit(
+  ownedRumbleReturnStorage,
+  duplicateOwnedRumbleEntrant.id,
+  8,
+  0,
+  1,
+  0
+);
+assert.equal(
+  await rumbleReturnCore.loadOwnedRumbleReturnReceipt(
+    ownedRumbleReturnStorage,
+    {
+      userId: 'owned:return:user',
+      resolvedDay: 8,
+      utcDateKey: '20260711',
+      champion: ownedRumbleReturnOpponent,
+    }
+  ),
+  null,
+  'multiple owned standing receipts must fail closed instead of choosing one'
+);
+pass('owned Rumble return uses exact standing, payout, replay, and compact copy');
 
 const scoutNotebookStorage = createMemoryStorage();
 const scoutNotebookPlayer = {
@@ -5503,6 +5824,54 @@ assert.equal(
   'stored reports must contain either an authoritative simulation or legacy events'
 );
 const invalidBattleReportStorage = createMemoryStorage();
+const runOutcome = reportOne.winner === 'a' ? 'win' : 'loss';
+const runReport = {
+  ...reportOne,
+  rivalRun: {
+    id: 'stored-run-1',
+    dayNumber: reportOne.day,
+    challengerId: reportOne.a.id,
+    boutsCompleted: 1,
+    wins: runOutcome === 'win' ? 1 : 0,
+    losses: runOutcome === 'loss' ? 1 : 0,
+    score: runOutcome === 'win' ? 2 : 0,
+    opponentIds: [reportOne.b.id],
+    status: 'active',
+    boutNumber: 1,
+    outcome: runOutcome,
+    tier: 'even',
+    winPoints: 2,
+    pointsAwarded: runOutcome === 'win' ? 2 : 0,
+  },
+};
+await invalidBattleReportStorage.set(
+  battleStore.getBattleReportKey(runReport.id),
+  JSON.stringify(runReport)
+);
+assert.deepEqual(
+  (
+    await battleStore.loadBattleReport(
+      invalidBattleReportStorage,
+      runReport.id
+    )
+  )?.rivalRun,
+  runReport.rivalRun,
+  'stored exhibition replays should preserve their immutable Rival Run receipt'
+);
+const impossibleRunReport = structuredClone(runReport);
+impossibleRunReport.rivalRun.pointsAwarded = 3;
+await invalidBattleReportStorage.set(
+  battleStore.getBattleReportKey('impossible-run-report'),
+  JSON.stringify({ ...impossibleRunReport, id: 'impossible-run-report' })
+);
+assert.equal(
+  await battleStore.loadBattleReport(
+    invalidBattleReportStorage,
+    'impossible-run-report'
+  ),
+  undefined,
+  'stored Rival Run points must match its server tier and battle winner'
+);
 const contradictoryWinnerReport = {
   ...lastFeaturedBout,
   winner: lastFeaturedBout.winner === 'a' ? 'b' : 'a',
@@ -6174,20 +6543,10 @@ assert.ok(
   'full-width player drawings should remain inside the visible battle page'
 );
 
-const crowdedReplayOutcomeStack = battlePresentation.planReplayOutcomeStack({
-  viewportHeight: 1280,
-  canChooseRival: true,
-  canBackContender: true,
-  hasFounderOutcome: true,
-});
-assert.deepEqual(crowdedReplayOutcomeStack, {
-  recapY: 813,
-  founderOutcomeY: 647,
-});
-assert.ok(
-  crowdedReplayOutcomeStack.founderOutcomeY + 55 + 12 <=
-    crowdedReplayOutcomeStack.recapY - 82,
-  'founder result voice should sit above the recap instead of covering it'
+assert.deepEqual(
+  battlePresentation.planReplayOutcomeLayout({ viewportHeight: 1280 }),
+  { recapY: 950, actionY: 1184 },
+  'post-fight recap and action should keep stable mobile-safe anchors'
 );
 
 const ownedOpenPickActions = battlePresentation.planReplayPostFightActions({
@@ -6203,35 +6562,14 @@ assert.deepEqual(ownedOpenPickActions,
       accessibleLabel: 'Choose a rival',
       tone: 'coral',
     },
-    secondary: [
-      {
-        kind: 'practice',
-        label: 'PRACTICE',
-        accessibleLabel: 'Practice',
-        tone: 'ghost',
-      },
-      {
-        kind: 'backContender',
-        label: 'PICK',
-        accessibleLabel: "Pick tonight's winner",
-        tone: 'ghost',
-      },
-      {
-        kind: 'return',
-        label: 'ARENA ›',
-        accessibleLabel: 'ARENA',
-        tone: 'ghost',
-      },
-    ],
+    returnAction: {
+      kind: 'return',
+      label: 'ARENA ›',
+      accessibleLabel: 'ARENA',
+      tone: 'ghost',
+    },
     buttonHeight: 100,
-    secondaryRowOffset: 114,
   }
-);
-assert.ok(
-  ownedOpenPickActions.secondaryRowOffset -
-    ownedOpenPickActions.buttonHeight >=
-    12,
-  'primary and secondary post-fight rows must retain a visible mobile gap'
 );
 assert.deepEqual(
   battlePresentation.planReplayPostFightActions({
@@ -6246,24 +6584,15 @@ assert.deepEqual(
       accessibleLabel: 'Choose a rival',
       tone: 'coral',
     },
-    secondary: [
-      {
-        kind: 'practice',
-        label: 'PRACTICE',
-        accessibleLabel: 'Practice',
-        tone: 'ghost',
-      },
-      {
-        kind: 'return',
-        label: 'ARENA ›',
-        accessibleLabel: 'ARENA',
-        tone: 'ghost',
-      },
-    ],
+    returnAction: {
+      kind: 'return',
+      label: 'ARENA ›',
+      accessibleLabel: 'ARENA',
+      tone: 'ghost',
+    },
     buttonHeight: 100,
-    secondaryRowOffset: 114,
   },
-  'an already-backed player should keep Rival primary and two clear utilities'
+  'an already-backed player should keep Rival as the only contextual action'
 );
 assert.deepEqual(
   battlePresentation.planReplayPostFightActions({
@@ -6278,16 +6607,13 @@ assert.deepEqual(
       accessibleLabel: "Pick tonight's winner",
       tone: 'gold',
     },
-    secondary: [
-      {
-        kind: 'return',
-        label: 'SCOUT ›',
-        accessibleLabel: 'SCOUT',
-        tone: 'ghost',
-      },
-    ],
+    returnAction: {
+      kind: 'return',
+      label: 'SCOUT ›',
+      accessibleLabel: 'SCOUT',
+      tone: 'ghost',
+    },
     buttonHeight: 100,
-    secondaryRowOffset: 114,
   },
   'spectators should see one clear pick action and a secondary return'
 );
@@ -6298,15 +6624,14 @@ assert.deepEqual(
     returnLabel: 'SCRAPBOOK ›',
   }),
   {
-    primary: {
+    primary: null,
+    returnAction: {
       kind: 'return',
       label: 'SCRAPBOOK ›',
       accessibleLabel: 'SCRAPBOOK',
       tone: 'ghost',
     },
-    secondary: [],
     buttonHeight: 100,
-    secondaryRowOffset: null,
   },
   'a resolved replay should collapse to one truthful return action'
 );
@@ -6876,6 +7201,270 @@ assert.ok(
   ).size >= 2,
   'the draft should expose multiple readable Shape Power styles'
 );
+
+const rankedRivalRunChoices = rivalRunCore.createRivalRunChoices(
+  protectedRecoilFighter,
+  freshRivalSlate,
+  debugFixtureForecast
+);
+assert.deepEqual(
+  rankedRivalRunChoices.map(({ tier, winPoints }) => ({ tier, winPoints })),
+  [
+    { tier: 'safe', winPoints: 1 },
+    { tier: 'even', winPoints: 2 },
+    { tier: 'risky', winPoints: 3 },
+  ],
+  'each run slate must expose one server-ranked +1/+2/+3 decision'
+);
+assert.equal(
+  new Set(rankedRivalRunChoices.map((choice) => choice.rival.id)).size,
+  3,
+  'Rival Run tiers must preserve three unique opponents'
+);
+
+const newRivalRun = rivalRunCore.createRivalRunState(
+  'run-test-1',
+  9,
+  'scribbit-runner'
+);
+assert.deepEqual(newRivalRun, {
+  id: 'run-test-1',
+  dayNumber: 9,
+  challengerId: 'scribbit-runner',
+  boutsCompleted: 0,
+  wins: 0,
+  losses: 0,
+  score: 0,
+  opponentIds: [],
+  status: 'active',
+});
+const rivalRunBoutOne = rivalRunCore.advanceRivalRunState(newRivalRun, {
+  expectedBoutsCompleted: 0,
+  playerWon: true,
+  tier: 'even',
+  winPoints: 2,
+  opponentId: 'founding-even-test',
+});
+assert.ok(rivalRunBoutOne);
+assert.deepEqual(
+  {
+    bout: rivalRunBoutOne.boutNumber,
+    record: [rivalRunBoutOne.wins, rivalRunBoutOne.losses],
+    score: rivalRunBoutOne.score,
+    status: rivalRunBoutOne.status,
+  },
+  { bout: 1, record: [1, 0], score: 2, status: 'active' }
+);
+const rivalRunBoutTwo = rivalRunCore.advanceRivalRunState(rivalRunBoutOne, {
+  expectedBoutsCompleted: 1,
+  playerWon: false,
+  tier: 'risky',
+  winPoints: 3,
+  opponentId: 'founding-risky-test',
+});
+assert.ok(rivalRunBoutTwo);
+assert.equal(rivalRunBoutTwo.score, 2, 'a loss advances without fake points');
+const rivalRunBoutThree = rivalRunCore.advanceRivalRunState(rivalRunBoutTwo, {
+  expectedBoutsCompleted: 2,
+  playerWon: true,
+  tier: 'safe',
+  winPoints: 1,
+  opponentId: 'founding-safe-test',
+});
+assert.ok(rivalRunBoutThree);
+assert.deepEqual(
+  {
+    bouts: rivalRunBoutThree.boutsCompleted,
+    record: [rivalRunBoutThree.wins, rivalRunBoutThree.losses],
+    score: rivalRunBoutThree.score,
+    status: rivalRunBoutThree.status,
+  },
+  { bouts: 3, record: [2, 1], score: 3, status: 'complete' }
+);
+assert.equal(
+  rivalRunCore.advanceRivalRunState(rivalRunBoutThree, {
+    expectedBoutsCompleted: 3,
+    playerWon: true,
+    tier: 'risky',
+    winPoints: 3,
+    opponentId: 'founding-fourth-test',
+  }),
+  null,
+  'a completed run must reject a fourth bout'
+);
+assert.deepEqual(rivalRunPresentation.planRivalRunDraftHeading(newRivalRun), {
+  title: 'RIVAL RUN',
+  subtitle: 'BOUT 1/3 • 0 PTS',
+});
+assert.equal(
+  rivalRunPresentation.formatRivalRunResultLine(rivalRunBoutThree),
+  'RUN CHAMPION • 2–1 • 3 PTS'
+);
+assert.deepEqual(
+  rivalRunPresentation.planRivalRunFinishStamp(rivalRunBoutThree),
+  { title: 'RUN CHAMPION', score: '3 PTS', record: '2–1' }
+);
+assert.equal(
+  rivalRunPresentation.formatRivalRunBattleLabel(rivalRunBoutOne),
+  'RUN 1/3 • SCORE 0',
+  'the live HUD must show pre-bout score without spoiling the result'
+);
+assert.equal(
+  rivalRunPresentation.planRivalRunActionCopy(rivalRunBoutOne).label,
+  'NEXT RIVAL'
+);
+assert.equal(
+  rivalRunPresentation.planRivalRunActionCopy(rivalRunBoutTwo).label,
+  'FINAL RIVAL'
+);
+assert.equal(
+  rivalRunPresentation.planRivalRunActionCopy(rivalRunBoutThree).label,
+  'NEW RIVAL RUN'
+);
+
+const rivalRunStorage = createMemoryStorage();
+const storedRunChallenger = makeScribbit({
+  id: 'scribbit-runner',
+  name: 'Run Challenger',
+});
+const storedBoutOneReport = {
+  id: 'run-report-1',
+  kind: 'exhibition',
+  day: 9,
+  a: storedRunChallenger,
+  b: makeScribbit({
+    id: 'founding-storage-even',
+    name: 'Storage Even',
+    isFounding: true,
+  }),
+  winner: 'a',
+  events: [],
+};
+const staleStoredBoutReport = {
+  ...storedBoutOneReport,
+  id: 'run-report-race',
+  b: makeScribbit({
+    id: 'founding-storage-risky',
+    name: 'Storage Risky',
+    isFounding: true,
+  }),
+};
+const storedRivalRun = await rivalRunCore.getOrCreateRivalRun(
+  rivalRunStorage,
+  {
+    userId: 'runner-user',
+    runId: 'run-storage-1',
+    dayNumber: 9,
+    challengerId: 'scribbit-runner',
+  }
+);
+assert.equal(
+  (
+    await rivalRunCore.getOrCreateRivalRun(rivalRunStorage, {
+      userId: 'runner-user',
+      runId: 'ignored-new-id',
+      dayNumber: 9,
+      challengerId: 'scribbit-runner',
+    })
+  ).id,
+  storedRivalRun.id,
+  'reopening the same active run must not reset its score'
+);
+const storedBoutOne = await rivalRunCore.advanceRivalRun(rivalRunStorage, {
+  userId: 'runner-user',
+  runId: storedRivalRun.id,
+  dayNumber: 9,
+  challengerId: 'scribbit-runner',
+  expectedBoutsCompleted: 0,
+  reportId: 'run-report-1',
+  report: storedBoutOneReport,
+  playerWon: true,
+  tier: 'even',
+  winPoints: 2,
+  opponentId: 'founding-storage-even',
+});
+assert.equal(storedBoutOne?.score, 2);
+assert.deepEqual(
+  await rivalRunCore.advanceRivalRun(rivalRunStorage, {
+    userId: 'runner-user',
+    runId: storedRivalRun.id,
+    dayNumber: 9,
+    challengerId: 'scribbit-runner',
+    expectedBoutsCompleted: 0,
+    reportId: 'run-report-1',
+    report: storedBoutOneReport,
+    playerWon: true,
+    tier: 'even',
+    winPoints: 2,
+    opponentId: 'founding-storage-even',
+  }),
+  storedBoutOne,
+  'replaying the same deterministic report must recover one exact receipt'
+);
+assert.equal(
+  await rivalRunCore.advanceRivalRun(rivalRunStorage, {
+    userId: 'runner-user',
+    runId: storedRivalRun.id,
+    dayNumber: 9,
+    challengerId: 'scribbit-runner',
+    expectedBoutsCompleted: 0,
+    reportId: 'run-report-race',
+    report: staleStoredBoutReport,
+    playerWon: true,
+    tier: 'risky',
+    winPoints: 3,
+    opponentId: 'founding-storage-risky',
+  }),
+  null,
+  'a stale concurrent bout cannot advance the run twice'
+);
+assert.equal(
+  (await battleStore.loadBattleReport(rivalRunStorage, 'run-report-1'))
+    ?.rivalRun?.score,
+  2,
+  'the run state and its recoverable battle report must commit together'
+);
+
+const collisionSafeReportStorage = createMemoryStorage();
+const collisionSafeReport = {
+  ...timeoutRecapReport,
+  id: 'collision-safe-report',
+};
+await battleStore.saveBattleReport(
+  collisionSafeReportStorage,
+  collisionSafeReport,
+  1
+);
+await battleStore.saveBattleReport(
+  collisionSafeReportStorage,
+  { ...collisionSafeReport, inkAwarded: arena.INK_REWARDS.sparWin },
+  1
+);
+assert.equal(
+  (
+    await battleStore.loadBattleReport(
+      collisionSafeReportStorage,
+      collisionSafeReport.id
+    )
+  )?.inkAwarded,
+  arena.INK_REWARDS.sparWin,
+  'the exact report may be enriched with its idempotent reward receipt'
+);
+await assert.rejects(
+  battleStore.saveBattleReport(
+    collisionSafeReportStorage,
+    {
+      ...collisionSafeReport,
+      winner: collisionSafeReport.winner === 'a' ? 'b' : 'a',
+    },
+    2
+  ),
+  /id collision/,
+  'a different immutable report must never overwrite an existing report id'
+);
+pass('battle report ids are collision-guarded and reward-enrichable');
+pass('server-authoritative Rival Run carries three scored bouts exactly once');
+
 const plannedRivals = sparRivals.planSparRivalCards(
   { level: 1 },
   freshRivalSlate,
@@ -6888,28 +7477,12 @@ assert.ok(
     return (
       plan.id === freshRivalSlate[index]?.id &&
       plan.signatureName.length > 0 &&
-      plan.epithet === definition?.personality.epithet &&
       plan.challengeLine === definition?.personality.challengeLine &&
-      plan.powerLine.includes(
-        definition?.personality.epithet.toUpperCase() ?? ''
-      ) &&
       plan.levelLine.length > 0 &&
-      plan.forecastLine.startsWith('FORECAST ')
+      ['BOOSTED', 'DRAGGED', 'NEUTRAL'].includes(plan.forecastLine)
     );
   }),
   'rival cards must pair truthful build data with canonical founder identity'
-);
-assert.equal(
-  sparRivals.formatSparRivalDraftSummary(null),
-  'Arena founders • server-picked fair slate'
-);
-assert.equal(
-  sparRivals.formatSparRivalDraftSummary({
-    label: 'FINAL SPLAT',
-    text: 'Rootquake • 42 to Paper Spark',
-  }),
-  'LAST BOUT • FINAL SPLAT: Rootquake • 42 to Paper Spark',
-  'the next rival choice should preserve the exact previous-bout highlight'
 );
 const pinnedRivalSlate = speciesCore.selectFoundingSparRivalSlate(
   { element: 'ember', level: 1 },
@@ -6956,8 +7529,7 @@ const activeRivalCard = sparRivals.planSparRivalCard(
   9
 );
 assert.equal(activeRivalCard.rivalryState, 'active-ready');
-assert.equal(activeRivalCard.buttonLabel, 'CONTINUE →');
-assert.match(activeRivalCard.rivalryLine, /PAGE 3 · LAST LEAF HOME/);
+assert.equal(activeRivalCard.threadTag, 'THREAD READY');
 const waitingRivalCard = sparRivals.planSparRivalCard(
   { level: 1 },
   pinnedRivalSlate[0],
@@ -6975,17 +7547,7 @@ const waitingRivalCard = sparRivals.planSparRivalCard(
   9
 );
 assert.equal(waitingRivalCard.rivalryState, 'active-waiting');
-assert.equal(waitingRivalCard.buttonLabel, 'DAY 10');
-assert.equal(waitingRivalCard.rivalryLine, 'YOU 1–0 · PAGE 2\nRETURNS DAY 10');
-const freshRivalEpisode = founderRivalEpisodes.getFounderRivalEpisodePage(
-  freshRivalSlate[0].id,
-  1
-);
-assert.ok(freshRivalEpisode);
-assert.match(
-  plannedRivals[0].rivalryLine,
-  new RegExp(`PAGE 1 · ${freshRivalEpisode.title}`)
-);
+assert.equal(waitingRivalCard.threadTag, 'THREAD DAY 10');
 const communityExhibitionCard = sparRivals.planSparRivalCard(
   { level: 1 },
   { ...freshRivalSlate[0], id: 'community-rival' },
@@ -6993,8 +7555,8 @@ const communityExhibitionCard = sparRivals.planSparRivalCard(
 );
 assert.equal(communityExhibitionCard.rivalryState, 'exhibition');
 assert.equal(
-  communityExhibitionCard.rivalryLine,
-  'EXHIBITION\nNO RIVAL THREAD',
+  communityExhibitionCard.threadTag,
+  'EXHIBITION',
   'a non-founder must never advertise a founder episode or startable thread'
 );
 const nextThreadBlockedTodayCard = sparRivals.planSparRivalCard(
@@ -7009,9 +7571,7 @@ const nextThreadBlockedTodayCard = sparRivals.planSparRivalCard(
   9
 );
 assert.equal(nextThreadBlockedTodayCard.rivalryState, 'available-waiting');
-assert.equal(nextThreadBlockedTodayCard.buttonLabel, 'DAY 10');
-assert.equal(nextThreadBlockedTodayCard.buttonEnabled, false);
-assert.match(nextThreadBlockedTodayCard.rivalryLine, /MARGIN WRITTEN TODAY/);
+assert.equal(nextThreadBlockedTodayCard.threadTag, 'THREAD DAY 10');
 freshRivalSlate[0].stats.chonk = 999;
 assert.notEqual(
   speciesCore.selectFoundingSparRivalSlate(
@@ -8345,6 +8905,66 @@ assert.equal(
 );
 pass('daily spar reward is limited per player UTC day');
 
+const atomicSparRewardStorage = createMemoryStorage({
+  throwAfterCommitOnce: true,
+});
+const atomicSparWinner = makeScribbit({
+  id: 'atomic-spar-winner',
+  name: 'Atomic Spar Winner',
+});
+await scribbitCore.storeScribbit(
+  atomicSparRewardStorage,
+  'atomic-spar-owner',
+  atomicSparWinner
+);
+assert.equal(
+  await scribbitCore.claimAndAwardDailySparWin(atomicSparRewardStorage, {
+    userId: 'atomic-spar-owner',
+    scribbitId: atomicSparWinner.id,
+    utcDateKey: '20260707',
+    reportId: 'atomic-spar-report',
+    inkAmount: arena.INK_REWARDS.sparWin,
+  }),
+  'already-awarded-this-report',
+  'an ambiguous transaction reply must recover the exact reward receipt'
+);
+assert.equal(
+  await scribbitCore.claimAndAwardDailySparWin(atomicSparRewardStorage, {
+    userId: 'atomic-spar-owner',
+    scribbitId: atomicSparWinner.id,
+    utcDateKey: '20260707',
+    reportId: 'atomic-spar-report',
+    inkAmount: arena.INK_REWARDS.sparWin,
+  }),
+  'already-awarded-this-report'
+);
+assert.equal(
+  await scribbitCore.claimAndAwardDailySparWin(atomicSparRewardStorage, {
+    userId: 'atomic-spar-owner',
+    scribbitId: atomicSparWinner.id,
+    utcDateKey: '20260707',
+    reportId: 'different-spar-report',
+    inkAmount: arena.INK_REWARDS.sparWin,
+  }),
+  'already-claimed'
+);
+assert.equal(
+  (await scribbitCore.loadScribbit(
+    atomicSparRewardStorage,
+    atomicSparWinner.id,
+    '20260707'
+  ))?.xp,
+  1
+);
+assert.equal(
+  await inkStore.getInkBalance(
+    atomicSparRewardStorage,
+    'atomic-spar-owner'
+  ),
+  arena.INK_REWARDS.sparWin
+);
+pass('daily spar XP and Ink commit atomically with one recoverable receipt');
+
 const dayMathStorage = createMemoryStorage();
 await arenaStore.setCurrentArenaDay(dayMathStorage, 2);
 const dayTwoUtc = new Date(Date.UTC(2026, 6, 5));
@@ -8906,6 +9526,75 @@ assert.equal(
   'unknown historical titles must not be upgraded to Champion'
 );
 pass('versioned Legacy Card expiry snapshots and finish classification');
+
+const fadedLegacyCard = legacyCore.toLegacyCard(faded);
+const believedLegacyCard = legacyCore.toLegacyCard(legendByBelief);
+const championLegacyCard = legacyCore.toLegacyCard(legendByCrown);
+assert.ok(fadedLegacyCard && believedLegacyCard && championLegacyCard);
+assert.equal(
+  legacyReturnPresentation.formatLegacyFinishLabel(championLegacyCard),
+  'CHAMPION'
+);
+assert.equal(
+  legacyReturnPresentation.formatLegacyFinishLabel(believedLegacyCard),
+  'BELOVED LEGEND'
+);
+assert.equal(
+  legacyReturnPresentation.formatLegacyFinishLabel(fadedLegacyCard),
+  'FADED'
+);
+const championReturnPlan =
+  legacyReturnPresentation.planLegacyReturnPresentation({
+    cards: [fadedLegacyCard, believedLegacyCard, championLegacyCard],
+    total: 3,
+    newestArchivedDay: championLegacyCard.legacy.archivedDay,
+  });
+assert.equal(
+  championReturnPlan?.hero.id,
+  championLegacyCard.id,
+  'the ceremony should prioritize a champion over newer cards'
+);
+assert.equal(championReturnPlan?.eyebrow, '3 CARDS SAVED');
+assert.equal(championReturnPlan?.headline, 'LEGEND!');
+assert.equal(
+  championReturnPlan?.summary,
+  `CHAMPION • ${championLegacyCard.legacy.wins}–${championLegacyCard.legacy.losses} • LV ${championLegacyCard.legacy.level}`
+);
+const believedReturnPlan =
+  legacyReturnPresentation.planLegacyReturnPresentation({
+    cards: [fadedLegacyCard, believedLegacyCard],
+    total: 2,
+    newestArchivedDay: believedLegacyCard.legacy.archivedDay,
+  });
+assert.equal(believedReturnPlan?.hero.id, believedLegacyCard.id);
+assert.equal(believedReturnPlan?.headline, 'LEGEND!');
+const fadedReturnPlan = legacyReturnPresentation.planLegacyReturnPresentation({
+  cards: [fadedLegacyCard],
+  total: 1,
+  newestArchivedDay: fadedLegacyCard.legacy.archivedDay,
+});
+assert.equal(
+  fadedReturnPlan?.eyebrow,
+  `DAY ${fadedLegacyCard.legacy.archivedDay}`
+);
+assert.equal(fadedReturnPlan?.headline, 'MEMORY SAVED');
+assert.equal(
+  legacyReturnPresentation.planLegacyReturnPresentation({
+    cards: [],
+    total: 0,
+    newestArchivedDay: 0,
+  }),
+  null
+);
+assert.ok(
+  [
+    championReturnPlan?.eyebrow,
+    championReturnPlan?.headline,
+    championReturnPlan?.summary,
+  ].every((copy) => typeof copy === 'string' && copy.length <= 40),
+  'return ceremony copy should remain bounded and concise'
+);
+pass('Legacy return presentation prioritizes heroes and keeps copy concise');
 
 const legacylessStoredRecord = {
   ...makeScribbit({ id: 'legacyless-record', status: 'alive' }),

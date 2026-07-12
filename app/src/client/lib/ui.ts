@@ -4,6 +4,7 @@
 import * as Phaser from 'phaser';
 import { Scene } from 'phaser';
 import type { Element, Scribbit, ScribbitStats } from '../../shared/arena';
+import { paperIcon, type PaperIconKey } from './papericons';
 import {
   ELEMENT_STYLES,
   FONT_STACK,
@@ -443,6 +444,98 @@ export function button(
     duration: 70,
   });
 
+  return container;
+}
+
+/** A primary paper button with a semantic icon and a short action label. */
+export function iconButton(
+  scene: Scene,
+  x: number,
+  y: number,
+  iconKey: PaperIconKey,
+  text: string,
+  onClick: () => void,
+  width = 240,
+  fill: number = UI.coral,
+  textColor = UI.ink,
+  requestedHeight = 96
+): Phaser.GameObjects.Container {
+  const height = Math.max(MIN_TOUCH, requestedHeight);
+  const container = scene.add.container(x, y);
+  const usesCoralPlate = fill === UI.coral;
+  const background = paperButtonPlate(
+    scene,
+    usesCoralPlate ? 'primary' : 'secondary',
+    width,
+    height,
+    !usesCoralPlate && fill !== UI.creamHex ? fill : undefined
+  );
+  const hitTarget = scene.add
+    .rectangle(0, 0, width, height, 0xffffff, 0.001)
+    .setInteractive({ useHandCursor: true });
+  const textLabel = label(scene, 0, -3, text, 30, textColor, true);
+  const iconSize = 38;
+  const contentWidth = iconSize + 12 + textLabel.width;
+  const iconX = -contentWidth / 2 + iconSize / 2;
+  const actionIcon = paperIcon(scene, iconKey, iconX, -2, {
+    size: iconSize,
+    fill: UI.creamHex,
+    stroke: UI.inkHex,
+  });
+  textLabel.setX(iconX + iconSize / 2 + 12 + textLabel.width / 2);
+  textLabel.setWordWrapWidth(width - 56);
+  container.add([background, actionIcon, textLabel, hitTarget]);
+
+  wireButtonPress(scene, hitTarget, container, onClick, {
+    scaleX: 0.94,
+    scaleY: 0.92,
+    duration: 70,
+  });
+  return container;
+}
+
+/** A compact secondary paper button centered on a semantic icon. */
+export function paperIconButton(
+  scene: Scene,
+  x: number,
+  y: number,
+  iconKey: PaperIconKey,
+  onClick: () => void,
+  width = 100,
+  fill: number = UI.coral,
+  iconFill: number = UI.gold,
+  requestedHeight = 68
+): Phaser.GameObjects.Container {
+  const container = scene.add.container(x, y);
+  const background = paperButtonPlate(
+    scene,
+    'secondary',
+    width,
+    requestedHeight,
+    fill
+  );
+  const actionIcon = paperIcon(scene, iconKey, 0, 0, {
+    size: 40,
+    fill: iconFill,
+    stroke: UI.inkHex,
+  });
+  const hitTarget = scene.add
+    .rectangle(
+      0,
+      0,
+      width,
+      Math.max(MIN_TOUCH, requestedHeight),
+      0xffffff,
+      0.001
+    )
+    .setInteractive({ useHandCursor: true });
+  container.add([background, actionIcon, hitTarget]);
+
+  wireButtonPress(scene, hitTarget, container, onClick, {
+    scaleX: 0.92,
+    scaleY: 0.9,
+    duration: 60,
+  });
   return container;
 }
 

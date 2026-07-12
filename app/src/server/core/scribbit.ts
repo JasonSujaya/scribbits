@@ -1455,6 +1455,88 @@ export const claimUserDailySparWinReward = async (
   return createdDailyReward === 1;
 };
 
+export type DailySparWinRewardResult =
+  | 'awarded'
+  | 'already-awarded-this-report'
+  | 'already-claimed';
+
+export const claimAndAwardDailySparWin = async (
+  storage: ArenaStorage,
+  input: Readonly<{
+    userId: string;
+    scribbitId: string;
+    utcDateKey: string;
+    reportId: string;
+    inkAmount: number;
+  }>
+): Promise<DailySparWinRewardResult> => {
+  if (!storage.watch) {
+    throw new Error('Atomic spar rewards require transaction support.');
+  }
+  if (
+    !input.reportId ||
+    input.reportId.length > 128 ||
+    !Number.isSafeInteger(input.inkAmount) ||
+    input.inkAmount <= 0
+  ) {
+    throw new Error('Spar reward input is invalid.');
+  }
+
+  const dailyRewardKey = getUserDailySparWinRewardsKey(input.userId);
+  const scribbitKey = getScribbitKey(input.scribbitId);
+  const inkKey = `ink:${input.userId}`;
+  const receiptValue = `report:${input.reportId}`;
+
+  for (
+    let attempt = 0;
+    attempt < maximumScribbitTransactionAttempts;
+    attempt += 1
+  ) {
+    let transaction: ArenaTransaction | undefined;
+    try {
+      transaction = await storage.watch(dailyRewardKey, scribbitKey, inkKey);
+      const existingReceipt = await storage.hGet(
+        dailyRewardKey,
+        input.utcDateKey
+      );
+      if (existingReceipt !== undefined) {
+        await transaction.unwatch();
+        return existingReceipt === receiptValue
+          ? 'already-awarded-this-report'
+          : 'already-claimed';
+      }
+
+      const scribbit = parseScribbit(await storage.get(scribbitKey));
+      if (!scribbit || scribbit.isFounding || scribbit.status !== 'alive') {
+        await transaction.unwatch();
+        return 'already-claimed';
+      }
+      const rewardedScribbit = addXpToScribbit(scribbit, 1);
+      await transaction.multi();
+      await transaction.hSet(dailyRewardKey, {
+        [input.utcDateKey]: receiptValue,
+      });
+      await transaction.expire(dailyRewardKey, dailyProgressTtlSeconds);
+      await transaction.set(
+        scribbitKey,
+        JSON.stringify(cloneScribbit(rewardedScribbit))
+      );
+      await transaction.incrBy(inkKey, input.inkAmount);
+      const result = await transaction.exec();
+      if (Array.isArray(result) && result.length > 0) return 'awarded';
+    } catch (error) {
+      await discardArenaTransaction(transaction);
+      if (
+        (await storage.hGet(dailyRewardKey, input.utcDateKey)) === receiptValue
+      ) {
+        return 'already-awarded-this-report';
+      }
+      throw error;
+    }
+  }
+  throw new Error('Daily spar reward changed too often to award safely.');
+};
+
 export const awardScribbitXp = async (
   storage: ArenaStorage,
   scribbitId: string,
@@ -1562,6 +1644,41 @@ export const recordRumbleStandingOnScribbit = async (
   throw new Error(
     `Rumble standing for ${scribbitId} changed too often to record safely.`
   );
+};
+
+export type RumbleStandingReceipt = Readonly<{
+  wins: number;
+  losses: number;
+  xpAwarded: number;
+}>;
+
+export const loadRumbleStandingReceipt = async (
+  storage: ArenaStorage,
+  scribbitId: string,
+  resolvedDay: number
+): Promise<RumbleStandingReceipt | null> => {
+  if (!Number.isSafeInteger(resolvedDay) || resolvedDay < 1) return null;
+  const stored = await storage.hGet(
+    getRumbleStandingReceiptKey(scribbitId),
+    resolvedDay.toString()
+  );
+  if (stored === undefined) return null;
+  const parts = stored.split(':');
+  if (parts.length !== 3) return null;
+  const wins = Number(parts[0]);
+  const losses = Number(parts[1]);
+  const xpAwarded = Number(parts[2]);
+  if (
+    !Number.isSafeInteger(wins) ||
+    wins < 0 ||
+    !Number.isSafeInteger(losses) ||
+    losses < 0 ||
+    !Number.isSafeInteger(xpAwarded) ||
+    xpAwarded < 0
+  ) {
+    return null;
+  }
+  return { wins, losses, xpAwarded };
 };
 
 export const getScribbitOwner = async (

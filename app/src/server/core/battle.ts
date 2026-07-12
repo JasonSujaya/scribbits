@@ -61,10 +61,15 @@ const createReportId = (
   forecast: Forecast,
   kind: BattleKind
 ): string => {
-  const reportSeed = hashTextToSeed(
-    `${kind}:${forecast.day}:${seed}:${fighterA.id}:${fighterB.id}`
-  );
-  return `battle-${kind}-${forecast.day}-${reportSeed.toString(36)}`;
+  const identity = `${kind}:${forecast.day}:${seed}:${fighterA.id}:${fighterB.id}`;
+  const digest = [0, 1, 2, 3]
+    .map((lane) => {
+      return hashTextToSeed(`report-id-v2:${lane}:${identity}`)
+        .toString(36)
+        .padStart(7, '0');
+    })
+    .join('');
+  return `battle-${kind}-${forecast.day}-${digest}`;
 };
 
 const createCombatSeed = (

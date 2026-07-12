@@ -8,14 +8,10 @@ import type {
   Scribbit,
 } from '../../shared/arena';
 import { selectPrimaryPower } from '../../shared/combat/selection';
-import {
-  getShapePowerContent,
-  getShapePowerSignatureName,
-} from '../../shared/combat/shapepowercontent';
+import { getShapePowerSignatureName } from '../../shared/combat/shapepowercontent';
 import type { PrimaryPower } from '../../shared/combat/types';
 import { getFoundingScribbitDefinition } from '../../shared/founders';
-import { getFounderRivalEpisodePage } from '../../shared/content/founderrivalepisodes';
-import type { BattleRecapHighlight } from './battlerecap';
+import { planFounderRivalryStakes } from './founderchronicle';
 
 export type SparRivalCardPlan = Readonly<{
   id: string;
@@ -24,9 +20,7 @@ export type SparRivalCardPlan = Readonly<{
   element: Element;
   power: PrimaryPower;
   signatureName: string;
-  epithet: string | null;
   challengeLine: string | null;
-  powerLine: string;
   levelLine: string;
   forecastLine: string;
   rivalryState:
@@ -36,30 +30,19 @@ export type SparRivalCardPlan = Readonly<{
     | 'resolved'
     | 'available'
     | 'exhibition';
-  rivalryLine: string;
-  buttonLabel: string;
-  buttonEnabled: boolean;
+  threadTag: string;
 }>;
-
-export function formatSparRivalDraftSummary(
-  highlight: BattleRecapHighlight | null
-): string {
-  if (!highlight) return 'Arena founders • server-picked fair slate';
-  return `LAST BOUT • ${highlight.label}: ${highlight.text}`;
-}
 
 function levelLine(challengerLevel: number, rivalLevel: number): string {
   const difference = rivalLevel - challengerLevel;
   if (difference === 0) return 'EVEN LEVEL';
-  if (difference === 1) return 'ONE LEVEL UP';
-  if (difference === -1) return 'ONE LEVEL LOWER';
-  return `${Math.abs(difference)} LEVELS ${difference > 0 ? 'UP' : 'LOWER'}`;
+  return `${difference > 0 ? '+' : ''}${difference} LEVEL${Math.abs(difference) === 1 ? '' : 'S'}`;
 }
 
 function forecastLine(element: Element, forecast: Forecast): string {
-  if (element === forecast.boostedElement) return 'FORECAST BOOST';
-  if (element === forecast.nerfedElement) return 'FORECAST DRAG';
-  return 'FORECAST NEUTRAL';
+  if (element === forecast.boostedElement) return 'BOOSTED';
+  if (element === forecast.nerfedElement) return 'DRAGGED';
+  return 'NEUTRAL';
 }
 
 export function planSparRivalCard(
@@ -70,22 +53,31 @@ export function planSparRivalCard(
   currentDay?: number
 ): SparRivalCardPlan {
   const power = selectPrimaryPower(rival.stats);
-  const content = getShapePowerContent(power);
   const founder = getFoundingScribbitDefinition(rival.id);
   const activeRivalry = founderChronicle?.activeRivalry;
   const isActiveRival = activeRivalry?.founderId === rival.id;
+  const authoritativeDay =
+    typeof currentDay === 'number' && Number.isSafeInteger(currentDay)
+      ? currentDay
+      : null;
+  const hasAuthoritativeRivalryContext =
+    founderChronicle !== undefined && authoritativeDay !== null;
+  const rivalryStakes =
+    founder && founderChronicle && authoritativeDay !== null
+      ? planFounderRivalryStakes(
+          founderChronicle,
+          authoritativeDay,
+          founder.id
+        )
+      : null;
   const activeRivalryReady =
     isActiveRival &&
-    Number.isSafeInteger(currentDay) &&
-    founderChronicle?.lastAdvancedDay !== currentDay;
+    (!hasAuthoritativeRivalryContext || rivalryStakes !== null);
   const isResolvedRival =
     founderChronicle?.resolvedRivalries.some(
       (rivalry) => rivalry.founderId === rival.id
     ) ?? false;
   const hasDifferentActiveRival = Boolean(activeRivalry && !isActiveRival);
-  const dailyStoryBeatAlreadyWritten =
-    Number.isSafeInteger(currentDay) &&
-    founderChronicle?.lastAdvancedDay === currentDay;
   const rivalryState: SparRivalCardPlan['rivalryState'] = !founder
     ? 'exhibition'
     : isActiveRival
@@ -96,41 +88,22 @@ export function planSparRivalCard(
         ? 'resolved'
         : hasDifferentActiveRival
           ? 'exhibition'
-          : dailyStoryBeatAlreadyWritten
+          : hasAuthoritativeRivalryContext && rivalryStakes === null
             ? 'available-waiting'
             : 'available';
-  const boutsPlayed = activeRivalry
-    ? activeRivalry.playerWins + activeRivalry.founderWins
-    : 0;
-  const episodePage = founder
-    ? getFounderRivalEpisodePage(
-        founder.id,
-        isActiveRival ? Math.min(3, boutsPlayed + 1) : 1
-      )
-    : null;
-  const rivalryLine = !founder
-    ? 'EXHIBITION\nNO RIVAL THREAD'
+  const threadTag = !founder
+    ? 'EXHIBITION'
     : isActiveRival
       ? activeRivalryReady
-        ? `PAGE ${boutsPlayed + 1} · ${episodePage?.title ?? 'ACTIVE RIVAL'}\nYOU ${activeRivalry.playerWins}–${activeRivalry.founderWins}`
-        : `YOU ${activeRivalry.playerWins}–${activeRivalry.founderWins} · PAGE ${boutsPlayed + 1}\nRETURNS DAY ${(founderChronicle?.lastAdvancedDay ?? 0) + 1}`
+        ? 'THREAD READY'
+        : `THREAD DAY ${(founderChronicle?.lastAdvancedDay ?? 0) + 1}`
       : isResolvedRival
-        ? 'MARGIN SIGNED\nEXHIBITION'
+        ? 'PAST RIVAL'
         : hasDifferentActiveRival
-          ? `EXHIBITION\nRIVAL: ${getFoundingScribbitDefinition(activeRivalry?.founderId ?? '')?.name.toUpperCase() ?? 'PINNED'}`
-          : dailyStoryBeatAlreadyWritten
-            ? `MARGIN WRITTEN TODAY\nNEW THREAD DAY ${(currentDay ?? 0) + 1}`
-            : `PAGE 1 · ${episodePage?.title ?? 'NEW RIVAL'}\nSTART THREAD`;
-  const buttonLabel =
-    rivalryState === 'active-ready'
-      ? 'CONTINUE →'
-      : rivalryState === 'active-waiting'
-        ? `DAY ${(founderChronicle?.lastAdvancedDay ?? 0) + 1}`
-        : rivalryState === 'available-waiting'
-          ? `DAY ${(currentDay ?? 0) + 1}`
-          : rivalryState === 'available'
-            ? 'START →'
-            : 'SPAR →';
+          ? 'EXHIBITION'
+          : rivalryState === 'available-waiting'
+            ? `THREAD DAY ${(currentDay ?? 0) + 1}`
+            : 'NEW THREAD';
   return {
     id: rival.id,
     name: rival.name,
@@ -138,18 +111,11 @@ export function planSparRivalCard(
     element: rival.element,
     power,
     signatureName: getShapePowerSignatureName(rival.element, power),
-    epithet: founder?.personality.epithet ?? null,
     challengeLine: founder?.personality.challengeLine ?? null,
-    powerLine: founder
-      ? `${content.displayName.toUpperCase()} • ${founder.personality.epithet.toUpperCase()}`
-      : `${content.displayName.toUpperCase()} • ${content.revealLine.toUpperCase()}`,
     levelLine: levelLine(challenger.level, rival.level),
     forecastLine: forecastLine(rival.element, forecast),
     rivalryState,
-    rivalryLine,
-    buttonLabel,
-    buttonEnabled:
-      rivalryState !== 'active-waiting' && rivalryState !== 'available-waiting',
+    threadTag,
   };
 }
 

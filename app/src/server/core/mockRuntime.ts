@@ -21,3 +21,8 @@ export {
   createEmptyFounderChronicle,
   projectFounderChronicle,
 } from './founderChronicle';
+export {
+  advanceRivalRunState,
+  createRivalRunChoices,
+  createRivalRunState,
+} from './rivalRun';

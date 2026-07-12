@@ -2,7 +2,6 @@
 // Scribbits use their stats here; ordinary image failures stay neutral so a
 // temporary network miss never invents a build for a player's drawing.
 
-import * as Phaser from 'phaser';
 import { Scene } from 'phaser';
 import type { Element, ScribbitStats } from '../../shared/arena';
 import { ELEMENT_STYLES } from './theme';
@@ -27,144 +26,189 @@ const PATCHWORK_COLORS = [
   ELEMENT_STYLES.storm.primary,
 ] as const;
 
-const asVector = (point: DoodlePoint): Phaser.Math.Vector2 => {
-  return new Phaser.Math.Vector2(point.x, point.y);
+const colorHex = (color: number): string => {
+  return `#${color.toString(16).padStart(6, '0')}`;
 };
 
 const drawCircle = (
-  graphics: Phaser.GameObjects.Graphics,
+  context: CanvasRenderingContext2D,
   circle: DoodleCircle,
   color: number,
   alpha = 1
 ): void => {
-  graphics.fillStyle(color, alpha);
-  graphics.fillCircle(circle.center.x, circle.center.y, circle.radius);
+  context.save();
+  context.globalAlpha = alpha;
+  context.fillStyle = colorHex(color);
+  context.beginPath();
+  context.arc(circle.center.x, circle.center.y, circle.radius, 0, Math.PI * 2);
+  context.fill();
+  context.restore();
 };
 
 const drawTriangle = (
-  graphics: Phaser.GameObjects.Graphics,
+  context: CanvasRenderingContext2D,
   triangle: DoodleTriangle,
   fillColor: number
 ): void => {
   const [first, second, third] = triangle;
-  graphics.fillStyle(fillColor, 1);
-  graphics.fillTriangle(first.x, first.y, second.x, second.y, third.x, third.y);
-  graphics.lineStyle(7, INK, 1);
-  graphics.strokeTriangle(
-    first.x,
-    first.y,
-    second.x,
-    second.y,
-    third.x,
-    third.y
-  );
+  context.fillStyle = colorHex(fillColor);
+  context.strokeStyle = colorHex(INK);
+  context.lineWidth = 7;
+  context.beginPath();
+  context.moveTo(first.x, first.y);
+  context.lineTo(second.x, second.y);
+  context.lineTo(third.x, third.y);
+  context.closePath();
+  context.fill();
+  context.stroke();
+};
+
+const drawPolygon = (
+  context: CanvasRenderingContext2D,
+  points: readonly DoodlePoint[],
+  fillColor: number,
+  strokeColor: number,
+  strokeWidth: number,
+  alpha = 1
+): void => {
+  const first = points[0];
+  if (!first) return;
+  context.save();
+  context.globalAlpha = alpha;
+  context.fillStyle = colorHex(fillColor);
+  context.strokeStyle = colorHex(strokeColor);
+  context.lineWidth = strokeWidth;
+  context.lineJoin = 'round';
+  context.lineCap = 'round';
+  context.beginPath();
+  context.moveTo(first.x, first.y);
+  points.slice(1).forEach((point) => context.lineTo(point.x, point.y));
+  context.closePath();
+  context.fill();
+  context.stroke();
+  context.restore();
 };
 
 const drawAnatomyBehindBody = (
-  graphics: Phaser.GameObjects.Graphics,
+  context: CanvasRenderingContext2D,
   plan: ProceduralDoodlePlan,
   primaryColor: number
 ): void => {
   for (const leg of plan.legs) {
-    drawCircle(graphics, leg, INK);
+    drawCircle(context, leg, INK);
   }
 
   const anatomy = plan.anatomy;
   if (anatomy.kind === 'quill-crest') {
     anatomy.quills.forEach((quill) =>
-      drawTriangle(graphics, quill, primaryColor)
+      drawTriangle(context, quill, primaryColor)
     );
     return;
   }
 
   if (anatomy.kind === 'streamer-tail') {
-    const tailPoints = anatomy.tailPoints.map(asVector);
-    graphics.fillStyle(primaryColor, 0.9);
-    graphics.fillPoints(tailPoints, true);
-    graphics.lineStyle(9, INK, 1);
-    graphics.strokePoints(tailPoints, true);
+    drawPolygon(context, anatomy.tailPoints, primaryColor, INK, 9, 0.9);
     return;
   }
 
   if (anatomy.kind === 'patchwork-crest') {
     anatomy.crest.forEach((petal, index) => {
       drawCircle(
-        graphics,
+        context,
         petal,
         PATCHWORK_COLORS[index % PATCHWORK_COLORS.length] ?? primaryColor
       );
-      graphics.lineStyle(6, INK, 1);
-      graphics.strokeCircle(petal.center.x, petal.center.y, petal.radius);
+      context.strokeStyle = colorHex(INK);
+      context.lineWidth = 6;
+      context.beginPath();
+      context.arc(petal.center.x, petal.center.y, petal.radius, 0, Math.PI * 2);
+      context.stroke();
     });
   }
 };
 
 const drawBody = (
-  graphics: Phaser.GameObjects.Graphics,
+  context: CanvasRenderingContext2D,
   plan: ProceduralDoodlePlan,
   bodyColor: number
 ): void => {
-  const bodyPoints = plan.bodyPoints.map(asVector);
-  graphics.fillStyle(bodyColor, 1);
-  graphics.fillPoints(bodyPoints, true);
-  graphics.lineStyle(10, INK, 1);
-  graphics.strokePoints(bodyPoints, true);
+  drawPolygon(context, plan.bodyPoints, bodyColor, INK, 10);
 };
 
 const drawAnatomyOnBody = (
-  graphics: Phaser.GameObjects.Graphics,
+  context: CanvasRenderingContext2D,
   plan: ProceduralDoodlePlan,
   primaryColor: number
 ): void => {
   const anatomy = plan.anatomy;
   if (anatomy.kind === 'grounded-belly') {
-    graphics.lineStyle(8, primaryColor, 0.72);
+    context.save();
+    context.globalAlpha = 0.72;
+    context.strokeStyle = colorHex(primaryColor);
+    context.lineWidth = 8;
+    context.lineJoin = 'round';
+    context.lineCap = 'round';
     for (const [start, middle, end] of anatomy.bellyBands) {
-      graphics.beginPath();
-      graphics.moveTo(start.x, start.y);
-      graphics.lineTo(middle.x, middle.y);
-      graphics.lineTo(end.x, end.y);
-      graphics.strokePath();
+      context.beginPath();
+      context.moveTo(start.x, start.y);
+      context.lineTo(middle.x, middle.y);
+      context.lineTo(end.x, end.y);
+      context.stroke();
     }
+    context.restore();
     return;
   }
 
   if (anatomy.kind === 'patchwork-crest') {
     anatomy.patches.forEach((patch, index) => {
       drawCircle(
-        graphics,
+        context,
         patch,
         PATCHWORK_COLORS[(index + 1) % PATCHWORK_COLORS.length] ?? primaryColor,
         0.82
       );
-      graphics.lineStyle(4, INK, 0.65);
-      graphics.strokeCircle(patch.center.x, patch.center.y, patch.radius);
+      context.save();
+      context.globalAlpha = 0.65;
+      context.strokeStyle = colorHex(INK);
+      context.lineWidth = 4;
+      context.beginPath();
+      context.arc(patch.center.x, patch.center.y, patch.radius, 0, Math.PI * 2);
+      context.stroke();
+      context.restore();
     });
   }
 };
 
 const drawFace = (
-  graphics: Phaser.GameObjects.Graphics,
+  context: CanvasRenderingContext2D,
   plan: ProceduralDoodlePlan
 ): void => {
   for (const eye of plan.eyes) {
-    drawCircle(graphics, eye.white, PAPER);
-    graphics.lineStyle(5, INK, 1);
-    graphics.strokeCircle(
+    drawCircle(context, eye.white, PAPER);
+    context.strokeStyle = colorHex(INK);
+    context.lineWidth = 5;
+    context.beginPath();
+    context.arc(
       eye.white.center.x,
       eye.white.center.y,
-      eye.white.radius
+      eye.white.radius,
+      0,
+      Math.PI * 2
     );
-    drawCircle(graphics, eye.pupil, INK);
+    context.stroke();
+    drawCircle(context, eye.pupil, INK);
   }
 
   const [mouthStart, mouthMiddle, mouthEnd] = plan.mouth;
-  graphics.lineStyle(6, INK, 1);
-  graphics.beginPath();
-  graphics.moveTo(mouthStart.x, mouthStart.y);
-  graphics.lineTo(mouthMiddle.x, mouthMiddle.y);
-  graphics.lineTo(mouthEnd.x, mouthEnd.y);
-  graphics.strokePath();
+  context.strokeStyle = colorHex(INK);
+  context.lineWidth = 6;
+  context.lineJoin = 'round';
+  context.lineCap = 'round';
+  context.beginPath();
+  context.moveTo(mouthStart.x, mouthStart.y);
+  context.lineTo(mouthMiddle.x, mouthMiddle.y);
+  context.lineTo(mouthEnd.x, mouthEnd.y);
+  context.stroke();
 };
 
 export function doodleKey(
@@ -188,14 +232,17 @@ export function generateDoodleTexture(
 
   const style = ELEMENT_STYLES[element];
   const plan = createProceduralDoodlePlan(spriteKey, stats);
-  const graphics = scene.make.graphics({ x: 0, y: 0 }, false);
+  const canvas = document.createElement('canvas');
+  canvas.width = PROCEDURAL_DOODLE_SIZE;
+  canvas.height = PROCEDURAL_DOODLE_SIZE;
+  const context = canvas.getContext('2d');
+  if (!context) throw new Error('Procedural doodle canvas is unavailable.');
 
-  drawAnatomyBehindBody(graphics, plan, style.primary);
-  drawBody(graphics, plan, style.soft);
-  drawAnatomyOnBody(graphics, plan, style.primary);
-  drawFace(graphics, plan);
+  drawAnatomyBehindBody(context, plan, style.primary);
+  drawBody(context, plan, style.soft);
+  drawAnatomyOnBody(context, plan, style.primary);
+  drawFace(context, plan);
 
-  graphics.generateTexture(key, PROCEDURAL_DOODLE_SIZE, PROCEDURAL_DOODLE_SIZE);
-  graphics.destroy();
+  scene.textures.addCanvas(key, canvas);
   return key;
 }

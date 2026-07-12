@@ -7,6 +7,7 @@ import {
 import type { ArenaState, CareAction, Scribbit } from '../../shared/arena';
 import { getFoundingScribbitDefinition } from '../../shared/founders';
 import { getFounderRivalEpisodePage } from '../../shared/content/founderrivalepisodes';
+import { planFounderRivalryStakes } from './founderchronicle';
 
 export type NextGoalActionKind =
   | 'enter'
@@ -121,9 +122,14 @@ export function selectNextGoal(state: ArenaState): NextGoalCard {
     !state.bossChallengedToday
   ) {
     const activeRivalry = founderChronicle.activeRivalry;
+    const championRivalryStakes = planFounderRivalryStakes(
+      founderChronicle,
+      state.dayNumber,
+      state.champion.id
+    );
     const championContinuesRivalry =
       activeRivalry?.founderId === state.champion.id &&
-      founderChronicle.lastAdvancedDay !== state.dayNumber;
+      championRivalryStakes !== null;
     const championFounder = championContinuesRivalry
       ? getFoundingScribbitDefinition(state.champion.id)
       : null;
@@ -154,11 +160,18 @@ export function selectNextGoal(state: ArenaState): NextGoalCard {
   const activeFounder = activeRivalry
     ? getFoundingScribbitDefinition(activeRivalry.founderId)
     : null;
+  const activeRivalryStakes = activeFounder
+    ? planFounderRivalryStakes(
+        founderChronicle,
+        state.dayNumber,
+        activeFounder.id
+      )
+    : null;
   if (
     activeRivalry &&
     activeFounder &&
     newestOwnedScribbit &&
-    founderChronicle.lastAdvancedDay !== state.dayNumber
+    activeRivalryStakes !== null
   ) {
     const nextBout = activeRivalry.playerWins + activeRivalry.founderWins + 1;
     const episode = getFounderRivalEpisodePage(activeFounder.id, nextBout);

@@ -44,7 +44,6 @@ import {
   ghostButton,
   label,
   handLettered,
-  elementBadge,
   errorPanel,
   stickerCard,
   moodChip,
@@ -56,6 +55,7 @@ import {
   rosette,
   button,
   fadeToScene,
+  paperIconButton,
   spinner,
   dominantButton,
 } from '../lib/ui';
@@ -81,6 +81,7 @@ import {
   planArenaBackAction,
   selectVisibleArenaEntrants,
 } from '../lib/arenabracket';
+import type { ArenaBackActionKind } from '../lib/arenabracket';
 import { planChampionChallenge } from '../lib/championchallenge';
 import {
   formatFounderChronicleEvidenceLine,
@@ -98,6 +99,11 @@ import {
 } from '../lib/draweligibility';
 import { appDock } from '../lib/appdock';
 import { NAV_ICON_TEXTURES } from '../lib/visualassets';
+import {
+  formatRumbleReturnAccessibleSummary,
+  planRumbleReturnPresentation,
+} from '../lib/rumblereturnpresentation';
+import { CanvasActionOverlay } from '../lib/overlay';
 
 // The landing scene. A tall, drag-scrollable sketchbook page: countdown-topped
 // header, weather card, wanted-poster champion, your roster, TONIGHT'S BRACKET
@@ -1091,14 +1097,14 @@ export class ArenaHome extends Scene {
     );
   }
 
-  // --- TONIGHT'S BRACKET gallery (entrants, tappable, Back on each) ----------
+  // --- Tonight's pick gallery (entrant art + one icon-led action) ------------
   private buildEntrantsBracket(y: number): number {
     const { width } = this.scale;
     label(
       this,
       EDGE + 6,
       y,
-      "TONIGHT'S BRACKET",
+      this.state.myBackedScribbitId ? "TONIGHT'S PICKS" : 'PICK A WINNER',
       TYPE.title,
       UI.ink,
       true
@@ -1149,7 +1155,7 @@ export class ArenaHome extends Scene {
     const perRow = 2;
     const cellGap = SPACE.md;
     const cellW = (width - EDGE * 2 - cellGap) / perRow;
-    const cellH = 176;
+    const cellH = 160;
     const rows = Math.ceil(visibleEntrants.length / perRow);
     const topY = y + 46;
     visibleEntrants.forEach((entrant, index) => {
@@ -1177,9 +1183,9 @@ export class ArenaHome extends Scene {
     });
     const top = -height / 2;
 
-    const artSize = 86;
-    const artX = -width / 2 + 62;
-    const artY = top + 26 + artSize / 2;
+    const artSize = 82;
+    const artX = -width / 2 + 58;
+    const artY = top + 18 + artSize / 2;
     const frame = this.add.graphics();
     frame.fillStyle(UI.creamHex, 1);
     frame.fillRect(artX - artSize / 2, artY - artSize / 2, artSize, artSize);
@@ -1205,8 +1211,8 @@ export class ArenaHome extends Scene {
         rosette(this, artX + artSize / 2 - 4, artY - artSize / 2 - 2, 0.72)
       );
 
-    const infoX = artX + artSize / 2 + 18;
-    let cursor = top + 54;
+    const infoX = artX + artSize / 2 + 16;
+    let cursor = top + 38;
     const nameLabel = label(
       this,
       infoX,
@@ -1216,36 +1222,63 @@ export class ArenaHome extends Scene {
       UI.ink,
       true
     ).setOrigin(0, 0.5);
-    nameLabel.setWordWrapWidth(width - 150);
+    nameLabel.setWordWrapWidth(width - 142);
     card.add(nameLabel);
 
-    cursor += 40;
-    const badge = elementBadge(this, infoX + 54, cursor, entrant.element, 0.48);
-    card.add(badge);
+    cursor += 46;
+    card.add(elementPaperIcon(this, entrant.element, infoX + 18, cursor, 34));
 
-    // Back button (or locked/your-pick state).
-    cursor = height / 2 - 32;
-    const { backLabel, backEnabled, backFill } =
+    // One heart-sized action replaces the repeated full-width Back labels.
+    const actionX = width / 2 - 62;
+    const actionY = height / 2 - 40;
+    const { backKind, backEnabled, backFill } =
       this.backButtonPresentation(entrant);
-    const backBtn = careButton(
-      this,
-      0,
-      cursor,
-      '',
-      backLabel,
-      backFill,
-      () => {
-        if (backEnabled) this.doBack(entrant);
-        else this.showBackLockedToast();
-      },
-      width - 24,
-      50
-    );
+    const actionIcon = backKind === 'locked' ? 'lock' : 'heart';
+    const iconFill =
+      backKind === 'available'
+        ? UI.gold
+        : backKind === 'picked'
+          ? UI.coralDeep
+          : UI.creamHex;
+    const activateBack = (): void => {
+      if (this.didDrag()) return;
+      if (backEnabled) this.doBack(entrant);
+      else if (backKind === 'owned') {
+        showToast('That is your Scribbit — pick another contender.');
+      } else {
+        this.showBackLockedToast();
+      }
+    };
+    const backBtn =
+      backKind === 'owned'
+        ? careButton(
+            this,
+            actionX,
+            actionY,
+            '',
+            'YOURS',
+            backFill,
+            activateBack,
+            104,
+            64
+          )
+        : paperIconButton(
+            this,
+            actionX,
+            actionY,
+            actionIcon,
+            activateBack,
+            104,
+            backFill,
+            iconFill,
+            64
+          );
     if (!backEnabled && !backed) backBtn.setAlpha(0.78);
     card.add(backBtn);
   }
 
   private backButtonPresentation(entrant: Scribbit): {
+    backKind: ArenaBackActionKind;
     backLabel: string;
     backEnabled: boolean;
     backFill: number;
@@ -1262,6 +1295,7 @@ export class ArenaHome extends Scene {
           ? UI.coral
           : 0xb7aa92;
     return {
+      backKind: action.kind,
       backLabel: action.label,
       backEnabled: action.enabled,
       backFill,
@@ -1383,52 +1417,68 @@ export class ArenaHome extends Scene {
     if (!receipt) return false;
     const shownKey = 'lastRumbleReceiptShownDay';
     if (this.registry.get(shownKey) === receipt.resolvedDay) return false;
-    this.registry.set(shownKey, receipt.resolvedDay);
 
     const { width, height } = this.scale;
     const layer = this.add.container(0, 0).setScrollFactor(0).setDepth(2200);
+    const actionOverlay = new CanvasActionOverlay(this);
+    this.events.once('shutdown', () => actionOverlay.destroy());
     const shade = this.add
       .rectangle(width / 2, height / 2, width, height, UI.inkHex, 0.58)
       .setInteractive();
     layer.add(shade);
 
+    const presentation = planRumbleReturnPresentation(receipt);
+    const accessibleSummary =
+      formatRumbleReturnAccessibleSummary(presentation);
+    const acknowledgeReceipt = (): void => {
+      this.registry.set(shownKey, receipt.resolvedDay);
+    };
     const card = stickerCard(this, width / 2, height / 2, width - 100, 610, {
-      gold: receipt.cloutEarned === 3,
+      gold: presentation.highlight,
       tapeColor: UI.tapeAlt,
     });
     layer.add(card);
 
-    const resultTitle =
-      receipt.cloutEarned === 3
-        ? 'YOU CALLED IT!'
-        : receipt.cloutEarned === 1
-          ? 'FINALIST PICK'
-          : 'SCOUTING REPORT';
-    card.add(label(this, 0, -220, resultTitle, 48, UI.ink, true));
-    const pickCopy = label(
-      this,
-      0,
-      -135,
-      `${receipt.backedName} → ${receipt.cloutEarned > 0 ? 'ON THE PODIUM' : 'OUT'}\n${receipt.championName} won Rumble #${receipt.resolvedDay}`,
-      TYPE.body,
-      UI.ink,
-      true
+    const hasOwnedPortrait = receipt.kind === 'owned';
+    card.add(
+      label(this, 0, -220, presentation.title, 44, UI.ink, true)
+        .setWordWrapWidth(width - 180)
+        .setLineSpacing(-4)
     );
-    pickCopy.setWordWrapWidth(width - 190).setLineSpacing(4);
-    card.add(pickCopy);
+    if (hasOwnedPortrait) {
+      void loadDrawing(this, receipt.entrant).then((textureKey) => {
+        if (!this.scene.isActive() || !layer.active || !card.active) return;
+        const portrait = fitDrawing(
+          this.add.image(0, -92, textureKey, '__BASE'),
+          176
+        );
+        card.add(portrait);
+      });
+    }
 
-    const rewardCopy =
-      receipt.cloutEarned > 0
-        ? `+${receipt.cloutEarned} CLOUT${receipt.inkAwarded > 0 ? `  ·  +${receipt.inkAwarded} INK` : ''}`
-        : 'NO REWARD  ·  PICK AGAIN';
+    if (presentation.detail) {
+      card.add(
+        label(
+          this,
+          0,
+          -100,
+          presentation.detail,
+          32,
+          UI.inkSoft,
+          true
+        )
+          .setWordWrapWidth(width - 190)
+          .setLineSpacing(3)
+      );
+    }
     card.add(
       label(
         this,
         0,
-        -45,
-        rewardCopy,
-        TYPE.body,
-        receipt.cloutEarned > 0 ? UI.goldText : UI.inkSoft,
+        hasOwnedPortrait ? 25 : 5,
+        presentation.reward,
+        32,
+        receipt.inkAwarded > 0 ? UI.goldText : UI.inkSoft,
         true
       ).setWordWrapWidth(width - 190)
     );
@@ -1442,6 +1492,8 @@ export class ArenaHome extends Scene {
           ? `DRAW DAY ${this.state.dayNumber}`
           : 'CONTINUE';
     const continueFromReceipt = (): void => {
+      acknowledgeReceipt();
+      actionOverlay.destroy();
       layer.destroy(true);
       if (afterContinue) {
         afterContinue();
@@ -1457,69 +1509,81 @@ export class ArenaHome extends Scene {
     };
 
     if (receipt.replayAvailable) {
-      const replayStatus = label(
-        this,
-        0,
-        35,
-        '',
-        TYPE.caption,
-        UI.inkSoft,
-        true
-      ).setWordWrapWidth(width - 190);
-      card.add(replayStatus);
       let loadingReplay = false;
+      const watchReplay = (): void => {
+        if (loadingReplay) return;
+        loadingReplay = true;
+        void fetchRumbleReplay(receipt.resolvedDay)
+          .then((result) => {
+            if (!this.scene.isActive() || !layer.active) return;
+            if (!result.ok) {
+              loadingReplay = false;
+              showToast(result.error);
+              return;
+            }
+            if (afterContinue) {
+              setSketchbookTab(this, 'sketchbook');
+            }
+            acknowledgeReceipt();
+            actionOverlay.destroy();
+            layer.destroy(true);
+            setReplay(
+              this,
+              result.data,
+              afterContinue ? 'Sketchbook' : 'ArenaHome'
+            );
+            this.scene.start('Replay');
+          })
+          .catch(() => {
+            if (!this.scene.isActive() || !layer.active) return;
+            loadingReplay = false;
+            showToast('The Rumble film reel slipped. Try again.');
+          });
+      };
+      const watchLabel =
+        receipt.kind === 'owned' ? 'WATCH LAST BOUT' : 'WATCH BOUT';
       card.add(
         button(
           this,
           0,
-          105,
-          'WATCH BOUT',
-          () => {
-            if (loadingReplay) return;
-            loadingReplay = true;
-            replayStatus.setText('Threading the Rumble film…');
-            void fetchRumbleReplay(receipt.resolvedDay)
-              .then((result) => {
-                if (!this.scene.isActive() || !layer.active) return;
-                if (!result.ok) {
-                  loadingReplay = false;
-                  replayStatus.setText(result.error).setColor(UI.coralText);
-                  return;
-                }
-                if (afterContinue) {
-                  setSketchbookTab(this, 'sketchbook');
-                }
-                layer.destroy(true);
-                setReplay(
-                  this,
-                  result.data,
-                  afterContinue ? 'Sketchbook' : 'ArenaHome'
-                );
-                this.scene.start('Replay');
-              })
-              .catch(() => {
-                if (!this.scene.isActive() || !layer.active) return;
-                loadingReplay = false;
-                replayStatus
-                  .setText('The Rumble film reel slipped. Try again.')
-                  .setColor(UI.coralText);
-              });
-          },
+          165,
+          watchLabel,
+          watchReplay,
           width - 220,
           UI.gold,
           UI.ink
         )
       );
+      actionOverlay.add({
+        label: `${receipt.kind === 'owned' ? 'Watch last bout' : 'Watch bout'}. ${accessibleSummary}`,
+        rect: {
+          x: 110,
+          y: height / 2 + 115,
+          width: width - 220,
+          height: 100,
+        },
+        onActivate: watchReplay,
+      });
       card.add(
         ghostButton(
           this,
           0,
-          225,
+          265,
           nextLabel,
           continueFromReceipt,
           width - 260
         )
       );
+      actionOverlay.add({
+        label: `${nextLabel}. ${accessibleSummary}`,
+        rect: {
+          x: 130,
+          y: height / 2 + 215,
+          width: width - 260,
+          height: 100,
+        },
+        onActivate: continueFromReceipt,
+      });
       return true;
     }
 
@@ -1535,6 +1599,16 @@ export class ArenaHome extends Scene {
         UI.ink
       )
     );
+    actionOverlay.add({
+      label: `${nextLabel}. ${accessibleSummary}`,
+      rect: {
+        x: 110,
+        y: height / 2 + 95,
+        width: width - 220,
+        height: 100,
+      },
+      onActivate: continueFromReceipt,
+    });
     return true;
   }
 
@@ -1604,8 +1678,15 @@ export class ArenaHome extends Scene {
       scene: this,
       receipt,
       continueLabel: hasPendingRumbleReceipt
-        ? 'See Rumble result →'
-        : 'Open Legacy Book →',
+        ? 'RUMBLE RESULT'
+        : 'LEGACY BOOK',
+      continueIcon: hasPendingRumbleReceipt ? 'sword' : 'book',
+      onDismiss: () => {
+        ceremony = null;
+        if (hasPendingRumbleReceipt) {
+          this.showRumbleReceiptIfNeeded(openLegacyBook);
+        }
+      },
       onContinue: async () => {
         const result = await markLegacyCardsSeen(receipt.newestArchivedDay);
         if (!result.ok) return result.error;
@@ -1784,6 +1865,7 @@ export class ArenaHome extends Scene {
         const rolledBack = { ...this.state, myBackedScribbitId: null };
         this.state = rolledBack;
         setArena(this, rolledBack);
+        this.build();
         this.showError(result.error);
         return;
       }

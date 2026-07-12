@@ -3,22 +3,29 @@
 
 import * as Phaser from 'phaser';
 import { Scene } from 'phaser';
-import type { Forecast, FounderChronicle, Scribbit } from '../../shared/arena';
+import type {
+  Forecast,
+  FounderChronicle,
+  RivalRunChoice,
+  RivalRunState,
+  Scribbit,
+} from '../../shared/arena';
 import { generateDoodleTexture } from './proceduraldoodleart';
-import { formatSparRivalDraftSummary, planSparRivalCards } from './sparrivals';
+import { elementPaperIcon, paperIcon } from './papericons';
+import { planSparRivalCards } from './sparrivals';
 import type { SparRivalCardPlan } from './sparrivals';
-import type { BattleRecapHighlight } from './battlerecap';
 import { CanvasActionOverlay } from './overlay';
+import { planRivalRunDraftHeading } from './rivalrunpresentation';
 import { ELEMENT_STYLES, prefersReducedMotion, TYPE, UI } from './theme';
-import { button, elementBadge, ghostButton, label, stickerCard } from './ui';
+import { ghostButton, iconButton, label, stickerCard } from './ui';
 
 export type SparRivalDraftOptions = Readonly<{
   challenger: Scribbit;
-  rivals: readonly Scribbit[];
+  choices: readonly RivalRunChoice[];
+  rivalRun: RivalRunState;
   forecast: Forecast;
   founderChronicle: FounderChronicle;
   currentDay: number;
-  lastBoutHighlight: BattleRecapHighlight | null;
   onChoose: (rival: Scribbit, plan: SparRivalCardPlan) => void;
   onClose: () => void;
 }>;
@@ -45,6 +52,12 @@ function leftLabel(
     .setAlign('left');
 }
 
+function riskLabel(tier: RivalRunChoice['tier']): string {
+  if (tier === 'safe') return 'SAFE';
+  if (tier === 'even') return 'EVEN';
+  return 'BOLD';
+}
+
 export function createSparRivalDraft(
   scene: Scene,
   options: SparRivalDraftOptions
@@ -52,6 +65,9 @@ export function createSparRivalDraft(
   const { width, height } = scene.scale;
   const reduceMotion = prefersReducedMotion();
   const accessibleOverlay = new CanvasActionOverlay(scene);
+  const detailAccessibleOverlay = new CanvasActionOverlay(scene);
+  detailAccessibleOverlay.setVisible(false);
+  let inputReady = reduceMotion;
   const backdrop = scene.add
     .rectangle(width / 2, height / 2, width, height, UI.deskHex, 0.88)
     .setDepth(99)
@@ -68,56 +84,178 @@ export function createSparRivalDraft(
   );
   card.setDepth(100).setScale(reduceMotion ? 1 : 0.78);
   if (!reduceMotion) {
+    accessibleOverlay.setVisible(false);
     scene.tweens.add({
       targets: card,
       scale: 1,
       duration: 260,
       ease: 'Back.easeOut',
+      onComplete: () => {
+        inputReady = true;
+        accessibleOverlay.setVisible(true);
+      },
     });
   }
 
-  card.add(label(scene, 0, -468, 'PICK YOUR NEXT RIVAL', 40, UI.ink, true));
+  const heading = planRivalRunDraftHeading(options.rivalRun);
+  card.add(label(scene, 0, -472, heading.title, 42, UI.ink, true));
   card.add(
     label(
       scene,
       0,
       -420,
-      formatSparRivalDraftSummary(options.lastBoutHighlight),
+      heading.subtitle,
       TYPE.caption,
       UI.inkSoft,
       true
-    ).setWordWrapWidth(cardWidth - 100)
+    )
   );
+
+  const detailLayer = scene.add.container(0, 0).setVisible(false);
+  const detailBlocker = scene.add
+    .rectangle(0, 0, cardWidth, cardHeight, UI.inkHex, 0.2)
+    .setInteractive();
+  detailLayer.add(detailBlocker);
+  let detailContent: Phaser.GameObjects.Container | null = null;
+
+  const closeRivalInfo = (): void => {
+    detailLayer.setVisible(false);
+    detailAccessibleOverlay.setVisible(false);
+    accessibleOverlay.setVisible(true);
+  };
+  detailAccessibleOverlay.add({
+    label: 'Close rival details',
+    rect: {
+      x: width / 2 + 176,
+      y: height / 2 - 264,
+      width: 100,
+      height: 100,
+    },
+    onActivate: closeRivalInfo,
+  });
+
+  const showRivalInfo = (
+    plan: SparRivalCardPlan,
+    choice: RivalRunChoice
+  ): void => {
+    if (!inputReady) return;
+    detailContent?.destroy(true);
+    detailContent = scene.add.container(0, 0);
+    const detailWidth = cardWidth - 112;
+    const infoCard = stickerCard(scene, 0, 0, detailWidth, 560, {
+      tape: false,
+    });
+    detailContent.add(infoCard);
+    const closeInfo = ghostButton(
+      scene,
+      detailWidth / 2 - 58,
+      -222,
+      '×',
+      closeRivalInfo,
+      90,
+      90
+    );
+    detailContent.add(closeInfo);
+
+    const name = label(scene, 0, -186, plan.name, 38, UI.ink, true);
+    if (name.width > detailWidth - 150) {
+      name.setScale((detailWidth - 150) / name.width);
+    }
+    detailContent.add(name);
+
+    detailContent.add(
+      paperIcon(scene, 'sword', -190, -92, {
+        size: 34,
+        fill: UI.coral,
+      })
+    );
+    detailContent.add(
+      leftLabel(
+        scene,
+        -154,
+        -92,
+        plan.signatureName.toUpperCase(),
+        26,
+        UI.ink,
+        335,
+        true
+      )
+    );
+
+    detailContent.add(elementPaperIcon(scene, plan.element, -190, -12, 36));
+    detailContent.add(
+      leftLabel(
+        scene,
+        -154,
+        -12,
+        `${plan.element.toUpperCase()} • LV ${plan.level}`,
+        26,
+        ELEMENT_STYLES[plan.element].primaryText,
+        335,
+        true
+      )
+    );
+
+    detailContent.add(
+      paperIcon(scene, 'spark', -190, 68, {
+        size: 32,
+        fill: UI.gold,
+      })
+    );
+    detailContent.add(
+      leftLabel(
+        scene,
+        -154,
+        68,
+        `${riskLabel(choice.tier)} • +${choice.winPoints} PT${choice.winPoints === 1 ? '' : 'S'}`,
+        26,
+        UI.coralText,
+        335,
+        true
+      )
+    );
+    detailContent.add(
+      label(
+        scene,
+        0,
+        154,
+        `${plan.levelLine} • ${plan.forecastLine}`,
+        TYPE.caption,
+        UI.inkSoft,
+        true
+      ).setWordWrapWidth(detailWidth - 90)
+    );
+    detailLayer.add(detailContent);
+    detailLayer.setVisible(true);
+    accessibleOverlay.setVisible(false);
+    detailAccessibleOverlay.setVisible(true);
+  };
 
   const plans = planSparRivalCards(
     options.challenger,
-    options.rivals,
+    options.choices.map((choice) => choice.rival),
     options.forecast,
     options.founderChronicle,
     options.currentDay
   );
-  const rowCenters = [-260, -25, 210] as const;
+  const rowCenters = [-270, -30, 210] as const;
 
   plans.slice(0, rowCenters.length).forEach((plan, index) => {
-    const rival = options.rivals[index];
+    const choice = options.choices[index];
+    const rival = choice?.rival;
     const rowY = rowCenters[index];
-    if (!rival || rowY === undefined) return;
+    if (!rival || !choice || rowY === undefined) return;
     const style = ELEMENT_STYLES[plan.element];
-    const activeThread = plan.rivalryState.startsWith('active-');
     const background = scene.add
       .rectangle(
         0,
         rowY,
-        cardWidth - 70,
-        205,
-        activeThread ? UI.tapeAlt : style.soft,
-        activeThread ? 0.5 : 0.3
+        cardWidth - 88,
+        216,
+        style.soft,
+        0.3
       )
-      .setStrokeStyle(
-        activeThread ? 6 : 4,
-        activeThread ? UI.inkHex : style.primary,
-        0.95
-      );
+      .setStrokeStyle(4, style.primary, 0.95);
     card.add(background);
 
     const texture = generateDoodleTexture(
@@ -126,97 +264,102 @@ export function createSparRivalDraft(
       rival.element,
       rival.stats
     );
-    const mascot = scene.add.image(-230, rowY + 4, texture);
-    mascot.setDisplaySize(150, 150);
+    const mascot = scene.add.image(-186, rowY + 4, texture);
+    mascot.setDisplaySize(124, 124);
     card.add(mascot);
 
-    const badge = elementBadge(scene, -95, rowY - 64, plan.element, 0.62);
-    card.add(badge);
     card.add(
-      leftLabel(scene, -138, rowY - 35, plan.name, 28, UI.ink, 260, true)
+      leftLabel(scene, -100, rowY - 52, plan.name, 32, UI.ink, 290, true)
     );
-    if (plan.epithet) {
-      card.add(
-        leftLabel(
-          scene,
-          -138,
-          rowY - 4,
-          plan.epithet.toUpperCase(),
-          18,
-          UI.coralText,
-          285,
-          true
-        )
-      );
-    }
+    card.add(elementPaperIcon(scene, plan.element, -82, rowY + 1, 36));
     card.add(
       leftLabel(
         scene,
-        -138,
-        rowY + 21,
-        `Lv${plan.level} • ${plan.signatureName.toUpperCase()}`,
-        20,
+        -54,
+        rowY + 1,
+        `LV ${plan.level}`,
+        23,
         style.primaryText,
-        285,
+        90,
         true
       )
     );
+
+    const riskChip = scene.add
+      .rectangle(58, rowY + 1, 88, 42, UI.creamHex, 0.96)
+      .setStrokeStyle(3, style.primary, 0.95);
+    card.add(riskChip);
+    card.add(label(scene, 58, rowY, riskLabel(choice.tier), 19, UI.ink, true));
+    card.add(
+      paperIcon(scene, 'spark', 127, rowY + 1, {
+        size: 27,
+        fill: UI.gold,
+      })
+    );
     card.add(
       leftLabel(
         scene,
-        -138,
-        rowY + 70,
-        plan.challengeLine ? `“${plan.challengeLine}”` : plan.powerLine,
-        18,
-        UI.inkSoft,
-        250,
-        false
+        148,
+        rowY + 1,
+        `+${choice.winPoints}`,
+        25,
+        UI.coralText,
+        52,
+        true
       )
     );
 
-    const relationship = label(
-      scene,
-      218,
-      rowY - 46,
-      plan.rivalryLine,
-      activeThread ? 20 : 18,
-      activeThread
-        ? UI.ink
-        : plan.rivalryState === 'available'
-          ? UI.coralText
-          : UI.inkSoft,
-      true
-    ).setLineSpacing(3);
-    relationship.setWordWrapWidth(180, true);
-    card.add(relationship);
+    const openInfo = (): void => showRivalInfo(plan, choice);
+    const infoControl = scene.add.container(232, rowY - 52);
+    const infoMark = paperIcon(scene, 'info', 0, 0, {
+      size: 54,
+      fill: UI.creamHex,
+      stroke: UI.inkHex,
+    });
+    const infoHit = scene.add
+      .rectangle(0, 0, 100, 100, 0xffffff, 0.001)
+      .setInteractive({ useHandCursor: true });
+    infoHit.on('pointerup', openInfo);
+    infoControl.add([infoMark, infoHit]);
+    card.add(infoControl);
+    accessibleOverlay.add({
+      label: `More about ${plan.name}`,
+      rect: {
+        x: width / 2 + 232 - 50,
+        y: height / 2 + rowY - 52 - 50,
+        width: 100,
+        height: 100,
+      },
+      onActivate: openInfo,
+    });
 
     const chooseRival = (): void => {
-      if (!plan.buttonEnabled) return;
+      if (!inputReady) return;
       accessibleOverlay.setVisible(false);
       options.onChoose(rival, plan);
     };
-    const fight = button(
+    const fightLabel = options.rivalRun.boutsCompleted === 2 ? 'FINAL' : 'SPAR';
+    const fight = iconButton(
       scene,
-      218,
-      rowY + 55,
-      plan.buttonLabel,
+      180,
+      rowY + 58,
+      'sword',
+      fightLabel,
       chooseRival,
-      210,
-      plan.buttonEnabled ? style.primary : UI.tapeAlt,
+      170,
+      style.primary,
       UI.ink,
       100
     );
-    if (!plan.buttonEnabled) fight.setAlpha(0.62);
     card.add(fight);
     accessibleOverlay.add({
-      label: `Fight ${plan.name}: ${plan.buttonLabel}`,
+      label: `Fight ${plan.name}: ${riskLabel(choice.tier).toLowerCase()}, win ${choice.winPoints} ${choice.winPoints === 1 ? 'point' : 'points'}`,
       rect: {
-        x: width / 2 + 218 - 105,
-        y: height / 2 + rowY + 55 - 50,
-        width: 210,
+        x: width / 2 + 180 - 85,
+        y: height / 2 + rowY + 58 - 50,
+        width: 170,
         height: 100,
       },
-      enabled: plan.buttonEnabled,
       onActivate: chooseRival,
     });
   });
@@ -236,6 +379,7 @@ export function createSparRivalDraft(
   }
 
   const closeDraft = (): void => {
+    if (!inputReady) return;
     accessibleOverlay.setVisible(false);
     options.onClose();
   };
@@ -243,22 +387,24 @@ export function createSparRivalDraft(
     scene,
     0,
     445,
-    'Not now — back to result',
+    '‹',
     closeDraft,
-    390,
+    100,
     100
   );
   card.add(close);
   accessibleOverlay.add({
-    label: 'Not now, back to result',
+    label: 'Back to result',
     rect: {
-      x: width / 2 - 195,
+      x: width / 2 - 50,
       y: height / 2 + 395,
-      width: 390,
+      width: 100,
       height: 100,
     },
     onActivate: closeDraft,
   });
+
+  card.add(detailLayer);
 
   let destroyed = false;
   return {
@@ -268,6 +414,7 @@ export function createSparRivalDraft(
       if (destroyed) return;
       destroyed = true;
       accessibleOverlay.destroy();
+      detailAccessibleOverlay.destroy();
       if (backdrop.scene) backdrop.destroy();
       if (card.scene) card.destroy(true);
     },

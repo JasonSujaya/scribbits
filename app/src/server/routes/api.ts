@@ -12,18 +12,25 @@ import type {
   CloutBoard,
   DirectBattleResponse,
   EquipTitleRequest,
+  Forecast,
   Inventory,
   LegacyCardsState,
   LegendsState,
   MarkLegacySeenRequest,
   PracticeBattleReport,
+  RivalRunChoice,
+  RivalRunState,
   ScoutNotebookState,
   Scribbit,
   SparRequest,
   SparRivalSlate,
   SplashState,
 } from '../../shared/arena';
-import { CAPSULE_FIRST_DAILY_COST, INK_REWARDS } from '../../shared/arena';
+import {
+  CAPSULE_FIRST_DAILY_COST,
+  INK_REWARDS,
+  RIVAL_RUN_LENGTH,
+} from '../../shared/arena';
 import { isScoutNotebookReplayDay } from '../../shared/scoutnotebook';
 import {
   analyze as analyzeDrawing,
@@ -83,6 +90,7 @@ import {
   prepareRumbleEntrants,
 } from '../core/rumble';
 import { createPracticeBattle } from '../core/practice';
+import { loadOwnedRumbleReturnReceipt } from '../core/rumbleReturn';
 import { loadScoutNotebook } from '../core/scoutNotebook';
 import {
   completeFounderChronicleBattle,
@@ -96,8 +104,15 @@ import {
 } from '../core/founderChronicle';
 import {
   chooseFoundingSparOpponent,
+  findFoundingScribbit,
   selectFoundingSparRivalSlate,
 } from '../core/species';
+import {
+  advanceRivalRun,
+  createRivalRunChoices,
+  getOrCreateRivalRun,
+  loadRivalRun,
+} from '../core/rivalRun';
 import {
   clearScribbitReports,
   getHiddenScribbitIds,
@@ -109,9 +124,9 @@ import { deletePlayerData, recordUserBeliefTarget } from '../core/privacy';
 import {
   addRumbleEntrant,
   awardScribbitXp,
+  claimAndAwardDailySparWin,
   claimDailyCareAction,
   claimDailyFlags,
-  claimUserDailySparWinReward,
   createScribbit,
   decodePngDataUrl,
   deleteStoredScribbit,
@@ -315,7 +330,11 @@ const readSparRequest = (value: unknown): SparRequest | undefined => {
   if (
     !requestFields.includes('scribbitId') ||
     requestFields.some((field) => {
-      return field !== 'scribbitId' && field !== 'opponentId';
+      return (
+        field !== 'scribbitId' &&
+        field !== 'opponentId' &&
+        field !== 'rivalRun'
+      );
     })
   ) {
     return undefined;
@@ -323,10 +342,38 @@ const readSparRequest = (value: unknown): SparRequest | undefined => {
 
   const scribbitId = readScribbitIdentifier(value.scribbitId);
   if (!scribbitId) return undefined;
-  if (!requestFields.includes('opponentId')) return { scribbitId };
+  if (!requestFields.includes('opponentId')) {
+    return requestFields.includes('rivalRun') ? undefined : { scribbitId };
+  }
 
   const opponentId = readScribbitIdentifier(value.opponentId);
-  return opponentId ? { scribbitId, opponentId } : undefined;
+  if (!opponentId) return undefined;
+  if (!requestFields.includes('rivalRun')) return { scribbitId, opponentId };
+  if (!isRecord(value.rivalRun)) return undefined;
+  const rivalRunFields = Object.keys(value.rivalRun);
+  if (
+    rivalRunFields.length !== 2 ||
+    !rivalRunFields.includes('id') ||
+    !rivalRunFields.includes('expectedBoutsCompleted') ||
+    typeof value.rivalRun.id !== 'string' ||
+    value.rivalRun.id.length < 1 ||
+    value.rivalRun.id.length > 128 ||
+    !Number.isSafeInteger(value.rivalRun.expectedBoutsCompleted) ||
+    Number(value.rivalRun.expectedBoutsCompleted) < 0 ||
+    Number(value.rivalRun.expectedBoutsCompleted) >= RIVAL_RUN_LENGTH
+  ) {
+    return undefined;
+  }
+  return {
+    scribbitId,
+    opponentId,
+    rivalRun: {
+      id: value.rivalRun.id,
+      expectedBoutsCompleted: Number(
+        value.rivalRun.expectedBoutsCompleted
+      ),
+    },
+  };
 };
 
 const readCareRequest = (
@@ -382,30 +429,64 @@ const loadOwnedAliveScribbit = async (
   return scribbit;
 };
 
+const selectSparRivalSlateOpponents = (
+  player: CurrentPlayer,
+  challenger: Scribbit,
+  utcDateKey: string,
+  founderChronicle: ArenaState['founderChronicle'],
+  rivalRun?: Readonly<{
+    id: string;
+    boutsCompleted: number;
+    opponentIds: readonly string[];
+  }>
+): Scribbit[] => {
+  const runSeed = rivalRun
+    ? `:${rivalRun.id}:${rivalRun.boutsCompleted + 1}`
+    : '';
+  const slateSeed = hashTextToSeed(
+    `spar-rivals:${utcDateKey}:${player.userId}:${challenger.id}${runSeed}`
+  );
+  return selectFoundingSparRivalSlate(
+    challenger,
+    slateSeed,
+    foundingSparRivalSlateLimit,
+    rivalRun
+      ? { excludedFounderIds: rivalRun.opponentIds }
+      : {
+          preferredFounderId: founderChronicle.activeRivalry?.founderId,
+          excludedFounderIds: founderChronicle.resolvedRivalries.map(
+            (rivalry) => rivalry.founderId
+          ),
+        }
+  );
+};
+
 const createSparRivalSlate = (
   player: CurrentPlayer,
   challenger: Scribbit,
   utcDateKey: string,
-  founderChronicle: ArenaState['founderChronicle']
+  founderChronicle: ArenaState['founderChronicle'],
+  dayNumber: number,
+  forecast: Forecast,
+  rivalRun: RivalRunState
 ): SparRivalSlate => {
-  const slateSeed = hashTextToSeed(
-    `spar-rivals:${utcDateKey}:${player.userId}:${challenger.id}`
-  );
-
   return {
     challenger,
-    rivals: selectFoundingSparRivalSlate(
+    choices: createRivalRunChoices(
       challenger,
-      slateSeed,
-      foundingSparRivalSlateLimit,
-      {
-        preferredFounderId: founderChronicle.activeRivalry?.founderId,
-        excludedFounderIds: founderChronicle.resolvedRivalries.map(
-          (rivalry) => rivalry.founderId
-        ),
-      }
+      selectSparRivalSlateOpponents(
+        player,
+        challenger,
+        utcDateKey,
+        founderChronicle,
+        rivalRun
+      ),
+      forecast
     ),
     founderChronicle,
+    dayNumber,
+    forecast,
+    rivalRun,
   };
 };
 
@@ -485,6 +566,55 @@ const finishDirectBattleResponse = async (
     founderChronicle,
     founderChronicleBeat,
   };
+};
+
+const finalizeSparBattle = async (input: Readonly<{
+  userId: string;
+  challengerId: string;
+  report: BattleReport;
+  utcDateKey: string;
+  completedAt: Date;
+  fallbackFounderChronicle: ArenaState['founderChronicle'];
+}>): Promise<DirectBattleResponse> => {
+  const completedAtMilliseconds = input.completedAt.getTime();
+  await saveBattleReport(redis, input.report, completedAtMilliseconds);
+  await queueFounderChronicleBattle(
+    redis,
+    input.userId,
+    input.report,
+    input.challengerId,
+    completedAtMilliseconds
+  );
+
+  let inkAwarded = input.report.inkAwarded ?? 0;
+  if (input.report.winner === 'a') {
+    const rewardResult = await claimAndAwardDailySparWin(redis, {
+      userId: input.userId,
+      scribbitId: input.challengerId,
+      utcDateKey: input.utcDateKey,
+      reportId: input.report.id,
+      inkAmount: INK_REWARDS.sparWin,
+    });
+    if (
+      rewardResult === 'awarded' ||
+      rewardResult === 'already-awarded-this-report'
+    ) {
+      inkAwarded = INK_REWARDS.sparWin;
+    }
+  }
+
+  const rewardedReport: BattleReport = {
+    ...input.report,
+    ...(inkAwarded > 0 ? { inkAwarded } : {}),
+  };
+  await saveBattleReport(redis, rewardedReport, completedAtMilliseconds);
+  await recordDailyPlay(redis, input.userId, input.completedAt);
+  return finishDirectBattleResponse(
+    input.userId,
+    rewardedReport,
+    input.challengerId,
+    input.fallbackFounderChronicle
+  );
 };
 
 const loadTodayRumbleEntrants = async (
@@ -605,6 +735,7 @@ api.get('/arena', async (c) => {
             getFeaturedRumbleReportId(redis, backedScribbitId, resolvedDay),
           ]);
         lastRumbleReceipt = {
+          kind: 'backed',
           resolvedDay,
           backedName: backedScribbit?.name ?? 'Your pick',
           championName: currentChampion?.name ?? 'No Champion',
@@ -612,6 +743,14 @@ api.get('/arena', async (c) => {
           inkAwarded: cloutEarned === 3 ? INK_REWARDS.backedChampion : 0,
           replayAvailable: featuredReportId !== null,
         };
+      } else {
+        lastRumbleReceipt = await loadOwnedRumbleReturnReceipt(redis, {
+          userId: player.userId,
+          resolvedDay,
+          utcDateKey,
+          champion: currentChampion,
+          hiddenScribbitIds,
+        });
       }
     }
 
@@ -1104,8 +1243,23 @@ api.get('/spar-rivals', async (c) => {
     }
 
     const founderChronicle = await loadPlayerFounderChronicle(player.userId);
+    const forecast = await ensureForecastForDay(redis, dayNumber);
+    const rivalRun = await getOrCreateRivalRun(redis, {
+      userId: player.userId,
+      runId: `run-${dayNumber}-${randomUUID().replaceAll('-', '')}`,
+      dayNumber,
+      challengerId: challenger.id,
+    });
     return c.json<SparRivalSlate>(
-      createSparRivalSlate(player, challenger, utcDateKey, founderChronicle)
+      createSparRivalSlate(
+        player,
+        challenger,
+        utcDateKey,
+        founderChronicle,
+        dayNumber,
+        forecast,
+        rivalRun
+      )
     );
   } catch (error) {
     console.error('Spar rivals route failed:', error);
@@ -1221,28 +1375,89 @@ api.post('/spar', async (c) => {
       return notFound(c, 'That living Scribbit is not ready to spar.');
     }
 
-    const sparSeed = hashTextToSeed(
+    const randomSparSeed = hashTextToSeed(
       `spar:${utcDateKey}:${player.userId}:${challenger.id}:${Date.now()}:${randomUUID()}`
     );
     const founderChronicle = await loadPlayerFounderChronicle(player.userId);
-    let opponent: Scribbit;
-    if (sparRequest.opponentId) {
-      const currentSlate = createSparRivalSlate(
-        player,
-        challenger,
-        utcDateKey,
-        founderChronicle
+    const forecast = await ensureForecastForDay(redis, dayNumber);
+    const requestedRunOpponent =
+      sparRequest.rivalRun && sparRequest.opponentId
+        ? findFoundingScribbit(sparRequest.opponentId)
+        : undefined;
+    const precomputedRunReport =
+      sparRequest.rivalRun && requestedRunOpponent
+        ? simulate(
+            challenger,
+            requestedRunOpponent,
+            hashTextToSeed(
+              `rival-run:${sparRequest.rivalRun.id}:${sparRequest.rivalRun.expectedBoutsCompleted + 1}:${requestedRunOpponent.id}`
+            ),
+            forecast,
+            'exhibition'
+          )
+        : null;
+    if (sparRequest.rivalRun && precomputedRunReport) {
+      const storedReport = await loadBattleReport(
+        redis,
+        precomputedRunReport.id
       );
-      const chosenOpponent = currentSlate.rivals.find((rival) => {
-        return rival.id === sparRequest.opponentId;
+      if (
+        storedReport?.rivalRun?.id === sparRequest.rivalRun.id &&
+        storedReport.rivalRun.boutNumber ===
+          sparRequest.rivalRun.expectedBoutsCompleted + 1
+      ) {
+        return c.json<DirectBattleResponse>(
+          await finalizeSparBattle({
+            userId: player.userId,
+            challengerId: challenger.id,
+            report: storedReport,
+            utcDateKey,
+            completedAt: now,
+            fallbackFounderChronicle: founderChronicle,
+          })
+        );
+      }
+    }
+    const authoritativeRivalRun = sparRequest.rivalRun
+      ? await loadRivalRun(redis, player.userId)
+      : null;
+    if (
+      sparRequest.rivalRun &&
+      (!authoritativeRivalRun ||
+        authoritativeRivalRun.id !== sparRequest.rivalRun.id ||
+        authoritativeRivalRun.dayNumber !== dayNumber ||
+        authoritativeRivalRun.challengerId !== challenger.id ||
+        authoritativeRivalRun.status !== 'active' ||
+        authoritativeRivalRun.boutsCompleted !==
+          sparRequest.rivalRun.expectedBoutsCompleted)
+    ) {
+      return conflict(c, 'That Rival Run moved on. Reopen the rival board.');
+    }
+    let opponent: Scribbit;
+    let rivalRunChoice: RivalRunChoice | null = null;
+    if (sparRequest.opponentId) {
+      const currentSlate = createRivalRunChoices(
+        challenger,
+        selectSparRivalSlateOpponents(
+          player,
+          challenger,
+          utcDateKey,
+          founderChronicle,
+          authoritativeRivalRun ?? undefined
+        ),
+        forecast
+      );
+      const chosenChoice = currentSlate.find((choice) => {
+        return choice.rival.id === sparRequest.opponentId;
       });
 
-      if (!chosenOpponent) {
+      if (!chosenChoice) {
         return badRequest(c, 'Choose a rival from the current spar slate.');
       }
-      opponent = chosenOpponent;
+      opponent = chosenChoice.rival;
+      rivalRunChoice = sparRequest.rivalRun ? chosenChoice : null;
     } else {
-      opponent = chooseFoundingSparOpponent(challenger, sparSeed, {
+      opponent = chooseFoundingSparOpponent(challenger, randomSparSeed, {
         preferredFounderId: founderChronicle.activeRivalry?.founderId,
         excludedFounderIds: founderChronicle.resolvedRivalries.map(
           (rivalry) => rivalry.founderId
@@ -1250,51 +1465,49 @@ api.post('/spar', async (c) => {
       });
     }
 
-    const forecast = await ensureForecastForDay(redis, dayNumber);
-    const report = simulate(
-      challenger,
-      opponent,
-      sparSeed,
-      forecast,
-      'exhibition'
-    );
-    await queueFounderChronicleBattle(
-      redis,
-      player.userId,
-      report,
-      challenger.id,
-      Date.now()
-    );
+    const sparSeed = sparRequest.rivalRun
+      ? hashTextToSeed(
+          `rival-run:${sparRequest.rivalRun.id}:${sparRequest.rivalRun.expectedBoutsCompleted + 1}:${opponent.id}`
+        )
+      : randomSparSeed;
 
-    let inkAwarded = 0;
-    if (report.winner === 'a') {
-      const claimedDailySparWinReward = await claimUserDailySparWinReward(
-        redis,
-        player.userId,
-        utcDateKey,
-        Date.now()
-      );
-
-      if (claimedDailySparWinReward) {
-        await awardScribbitXp(redis, challenger.id, 1, utcDateKey);
-        await awardInk(redis, player.userId, INK_REWARDS.sparWin);
-        inkAwarded = INK_REWARDS.sparWin;
-      }
+    const simulatedReport =
+      precomputedRunReport ??
+      simulate(challenger, opponent, sparSeed, forecast, 'exhibition');
+    const rivalRunReceipt = sparRequest.rivalRun
+      ? rivalRunChoice
+        ? await advanceRivalRun(redis, {
+            userId: player.userId,
+            runId: sparRequest.rivalRun.id,
+            dayNumber,
+            challengerId: challenger.id,
+            expectedBoutsCompleted:
+              sparRequest.rivalRun.expectedBoutsCompleted,
+            reportId: simulatedReport.id,
+            report: simulatedReport,
+            playerWon: simulatedReport.winner === 'a',
+            opponentId: opponent.id,
+            tier: rivalRunChoice.tier,
+            winPoints: rivalRunChoice.winPoints,
+          })
+        : null
+      : null;
+    if (sparRequest.rivalRun && !rivalRunReceipt) {
+      return conflict(c, 'That Rival Run moved on. Reopen the rival board.');
     }
-
-    const rewardedReport: BattleReport = {
-      ...report,
-      ...(inkAwarded > 0 ? { inkAwarded } : {}),
+    const report: BattleReport = {
+      ...simulatedReport,
+      ...(rivalRunReceipt ? { rivalRun: rivalRunReceipt } : {}),
     };
-    await saveBattleReport(redis, rewardedReport, Date.now());
-    await recordDailyPlay(redis, player.userId, now);
     return c.json<DirectBattleResponse>(
-      await finishDirectBattleResponse(
-        player.userId,
-        rewardedReport,
-        challenger.id,
-        founderChronicle
-      )
+      await finalizeSparBattle({
+        userId: player.userId,
+        challengerId: challenger.id,
+        report,
+        utcDateKey,
+        completedAt: now,
+        fallbackFounderChronicle: founderChronicle,
+      })
     );
   } catch (error) {
     console.error('Spar route failed:', error);
@@ -1346,16 +1559,26 @@ api.get('/rumble-replay', async (c) => {
       requestedDay,
       player.userId
     );
-    if (!backedScribbitId) {
+    const replayScribbitId =
+      backedScribbitId ??
+      (
+        await loadOwnedRumbleReturnReceipt(redis, {
+          userId: player.userId,
+          resolvedDay: requestedDay,
+          utcDateKey: formatUtcDateKey(new Date()),
+          champion: await getCurrentChampion(redis),
+        })
+      )?.entrant.id;
+    if (!replayScribbitId) {
       return notFound(
         c,
-        'Back a contender before the Rumble to earn a replay.'
+        'No backed or owned Rumble entrant has a replay for that day.'
       );
     }
 
     const report = await loadFeaturedRumbleReport(
       redis,
-      backedScribbitId,
+      replayScribbitId,
       requestedDay
     );
     if (!report) {

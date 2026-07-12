@@ -29,8 +29,11 @@ export function createPostFightActions(
     canChooseRival: boolean;
     canBackContender: boolean;
     returnLabel: string;
+    rivalActionCopy?: Readonly<{
+      label: string;
+      accessibleLabel: string;
+    }>;
     onRivals: () => void;
-    onPractice: () => void;
     onBackContender: () => void;
     onReturn: () => void;
   }>
@@ -40,7 +43,6 @@ export function createPostFightActions(
   const accessibleOverlay = new CanvasActionOverlay(scene);
   const callbacks: Readonly<Record<ReplayPostFightActionKind, () => void>> = {
     rivals: input.onRivals,
-    practice: input.onPractice,
     backContender: input.onBackContender,
     return: input.onReturn,
   };
@@ -68,14 +70,15 @@ export function createPostFightActions(
     action: ReplayPostFightAction,
     x: number,
     y: number,
-    width: number
+    width: number,
+    compactReturn = false
   ): Phaser.GameObjects.Container => {
     if (action.tone === 'ghost') {
       return ghostButton(
         scene,
         x,
         y,
-        action.label,
+        compactReturn ? '‹' : action.label,
         () => activateAction(action.kind),
         width,
         plan.buttonHeight
@@ -94,31 +97,19 @@ export function createPostFightActions(
     );
   };
 
-  container.add(createAction(plan.primary, 0, 0, input.width));
-  placeAccessibleAction(plan.primary, 0, 0, input.width);
-  if (plan.secondary.length > 0) {
+  if (plan.primary) {
     const gap = 12;
-    const secondaryWidth =
-      (input.width - gap * (plan.secondary.length - 1)) /
-      plan.secondary.length;
-    const secondaryStartX = -input.width / 2 + secondaryWidth / 2;
-    plan.secondary.forEach((action, index) => {
-      const actionX = secondaryStartX + index * (secondaryWidth + gap);
-      container.add(
-        createAction(
-          action,
-          actionX,
-          plan.secondaryRowOffset ?? 0,
-          secondaryWidth
-        )
-      );
-      placeAccessibleAction(
-        action,
-        actionX,
-        plan.secondaryRowOffset ?? 0,
-        secondaryWidth
-      );
-    });
+    const returnWidth = plan.buttonHeight;
+    const primaryWidth = input.width - returnWidth - gap;
+    const returnX = -input.width / 2 + returnWidth / 2;
+    const primaryX = input.width / 2 - primaryWidth / 2;
+    container.add(createAction(plan.returnAction, returnX, 0, returnWidth, true));
+    container.add(createAction(plan.primary, primaryX, 0, primaryWidth));
+    placeAccessibleAction(plan.returnAction, returnX, 0, returnWidth);
+    placeAccessibleAction(plan.primary, primaryX, 0, primaryWidth);
+  } else {
+    container.add(createAction(plan.returnAction, 0, 0, input.width));
+    placeAccessibleAction(plan.returnAction, 0, 0, input.width);
   }
 
   let destroyed = false;

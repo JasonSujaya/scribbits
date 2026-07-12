@@ -19,7 +19,6 @@ import { ELEMENT_STYLES, prefersReducedMotion, UI } from '../lib/theme';
 import {
   label,
   stickerCard,
-  ghostButton,
   daysLeftFor,
   floatReward,
   fadeToScene,
@@ -53,7 +52,7 @@ import {
   planArenaPresentation,
   planBattleImpact,
   planReplayBattleLayout,
-  planReplayOutcomeStack,
+  planReplayOutcomeLayout,
   projectCombatPosition,
 } from '../lib/battlepresentation';
 import type {
@@ -83,7 +82,6 @@ import type { SparRivalDraft } from '../lib/replaysparrivaldraft';
 import { createPostFightActions } from '../lib/replaypostfightactions';
 import type { PostFightActions } from '../lib/replaypostfightactions';
 import { createPracticeOutcomeControls } from '../lib/replaypracticeoutcome';
-import { CanvasActionOverlay } from '../lib/overlay';
 import { planPracticeOutcome } from '../lib/practicelab';
 import {
   authorFounderBattleOpening,
@@ -106,8 +104,13 @@ import type { InkcastEditorialCandidate } from '../lib/inkcastqueue';
 import { BattleSoundboard } from '../lib/battlesound';
 import { showVsCeremony } from '../lib/battleceremony';
 import {
+  formatRivalRunBattleLabel,
+  formatRivalRunResultLine,
+  planRivalRunActionCopy,
+  planRivalRunFinishStamp,
+} from '../lib/rivalrunpresentation';
+import {
   findFounderChronicleBeats,
-  getFounderChronicleBeatCopy,
   planFounderRivalEpisodeReceipt,
 } from '../lib/founderchronicle';
 import type {
@@ -119,6 +122,7 @@ import type {
   BattleReport,
   Element,
   FounderChronicleBeat,
+  RivalRunState,
   Scribbit,
 } from '../../shared/arena';
 import type {
@@ -396,7 +400,10 @@ export class Replay extends Scene {
       fighterAPrimaryPower: this.fighterA.primaryPower,
       fighterBPrimaryPower: this.fighterB.primaryPower,
       battleKind: this.report.kind,
-      battleLabel: this.founderRivalryStakes?.battleLabel ?? null,
+      battleLabel:
+        (this.report.rivalRun
+          ? formatRivalRunBattleLabel(this.report.rivalRun)
+          : null) ?? this.founderRivalryStakes?.battleLabel ?? null,
       showPlaybackControls: this.transcript !== null,
       reduceMotion: this.reduceMotion,
       initialPlaybackSpeed: this.speed,
@@ -1989,6 +1996,7 @@ export class Replay extends Scene {
     this.battleHud?.setClockVisible(false);
     this.battleHud?.setControlsVisible(false);
     this.battleHud?.setHitPointBarsVisible(false);
+    this.battleHud?.setBattleChromeVisible(false);
 
     const winner = this.report.winner === 'a' ? this.fighterA : this.fighterB;
     const loser = this.report.winner === 'a' ? this.fighterB : this.fighterA;
@@ -2027,7 +2035,9 @@ export class Replay extends Scene {
         this,
         0,
         top + 96,
-        'ARCHIVED • SERVER RESULT SAVED',
+        this.report.rivalRun
+          ? `${formatRivalRunResultLine(this.report.rivalRun)} • ARCHIVED`
+          : 'ARCHIVED • SERVER RESULT SAVED',
         18,
         UI.ink,
         true
@@ -2036,28 +2046,21 @@ export class Replay extends Scene {
     const returnLabel = this.returnButtonLabel();
     const returnY = top + 205;
     const returnWidth = width - 150;
-    card.add(
-      ghostButton(
-        this,
-        0,
-        returnY,
-        returnLabel,
-        () => this.exit(),
-        returnWidth,
-        100
-      )
-    );
-    const accessibleActions = new CanvasActionOverlay(this);
-    accessibleActions.add({
-      label: returnLabel,
-      rect: {
-        x: width / 2 - returnWidth / 2,
-        y: height / 2 + returnY - 50,
-        width: returnWidth,
-        height: 100,
-      },
-      onActivate: () => this.exit(),
+    this.postFightActions?.destroy();
+    this.postFightActions = createPostFightActions(this, {
+      x: 0,
+      y: returnY,
+      accessibilityX: width / 2,
+      accessibilityY: height / 2 + returnY,
+      width: returnWidth,
+      canChooseRival: false,
+      canBackContender: false,
+      returnLabel,
+      onRivals: () => {},
+      onBackContender: () => {},
+      onReturn: () => this.exit(),
     });
+    card.add(this.postFightActions.container);
   }
 
   private finish(): void {
@@ -2130,6 +2133,11 @@ export class Replay extends Scene {
       this.showPracticeOutcome(winner, recap);
       return;
     }
+    this.battleHud?.setBattleChromeVisible(false);
+    this.add
+      .rectangle(0, 0, this.scale.width, this.scale.height, UI.paper, 0.9)
+      .setOrigin(0)
+      .setDepth(54);
     const arena = getArena(this);
     const myLoss = this.isMine(loser.scribbit) && !this.isMine(winner.scribbit);
     if (myLoss && arena) {
@@ -2198,81 +2206,6 @@ export class Replay extends Scene {
     });
   }
 
-  private createFounderMarginStrip(
-    x: number,
-    y: number,
-    width: number,
-    fallbackQuote: string | null,
-    episodeReceipt: FounderRivalEpisodeReceiptPlan | null
-  ): Phaser.GameObjects.Container | null {
-    const beatCopy = this.founderChronicleBeat
-      ? getFounderChronicleBeatCopy(this.founderChronicleBeat)
-      : null;
-    if (!beatCopy && !fallbackQuote && !episodeReceipt) return null;
-    const strip = this.add.container(x, y);
-    const stripHeight = beatCopy || episodeReceipt ? 110 : 72;
-    strip.add(
-      this.add
-        .rectangle(0, 0, width, stripHeight, UI.tapeAlt, 0.96)
-        .setStrokeStyle(4, UI.inkHex, 1)
-    );
-    if (episodeReceipt) {
-      strip.add(
-        label(
-          this,
-          0,
-          -34,
-          episodeReceipt.headline,
-          16,
-          UI.ink,
-          true
-        ).setWordWrapWidth(width - 28, true)
-      );
-      strip.add(
-        label(this, 0, 0, episodeReceipt.detail, 15, UI.coralText, true)
-          .setWordWrapWidth(width - 28, true)
-          .setLineSpacing(-2)
-      );
-      strip.add(
-        label(this, 0, 31, episodeReceipt.resultLine, 15, UI.inkSoft, true)
-          .setWordWrapWidth(width - 28, true)
-          .setLineSpacing(-2)
-      );
-      return strip;
-    }
-    if (beatCopy && this.founderChronicleBeat) {
-      strip.add(
-        label(
-          this,
-          0,
-          -34,
-          `DAY ${this.founderChronicleBeat.day} MARGIN · ${beatCopy.headline.toUpperCase()}`,
-          16,
-          UI.ink,
-          true
-        ).setWordWrapWidth(width - 28, true)
-      );
-      strip.add(
-        label(this, 0, 0, beatCopy.detail.toUpperCase(), 15, UI.coralText, true)
-          .setWordWrapWidth(width - 28, true)
-          .setLineSpacing(-2)
-      );
-      strip.add(
-        label(this, 0, 31, `“${beatCopy.quote}”`, 15, UI.inkSoft, true)
-          .setWordWrapWidth(width - 28, true)
-          .setLineSpacing(-2)
-      );
-      return strip;
-    }
-    strip.add(label(this, 0, -20, 'FOUNDER MARGIN', 16, UI.coralText, true));
-    strip.add(
-      label(this, 0, 16, fallbackQuote ?? '', 14, UI.ink, true)
-        .setWordWrapWidth(width - 28, true)
-        .setLineSpacing(-2)
-    );
-    return strip;
-  }
-
   private showWinCeremony(
     winner: ReplayFighterRuntime,
     recap: BattleRecapPlan,
@@ -2287,17 +2220,12 @@ export class Replay extends Scene {
     const victoryY = height * 0.36;
     const losingFighter =
       winner === this.fighterA ? this.fighterB : this.fighterA;
-    const outcomeStack = planReplayOutcomeStack({
-      viewportHeight: height,
-      canChooseRival,
-      canBackContender,
-      hasFounderOutcome:
-        founderOutcome !== null || this.founderChronicleBeat !== null,
-    });
+    const outcomeLayout = planReplayOutcomeLayout({ viewportHeight: height });
     this.time.delayedCall(260, () => {
       if (this.scene.isActive()) this.soundboard.play('win');
     });
     if (winner.sprite && !usesVerdictCeremony) {
+      winner.sprite.setDepth(56);
       losingFighter.sprite?.container.setAlpha(0.34);
       this.tweens.add({
         targets: winner.sprite.container,
@@ -2308,22 +2236,52 @@ export class Replay extends Scene {
         onComplete: () => winner.sprite?.celebrate(),
       });
     }
+    const contextLine = this.report.rivalRun
+      ? formatRivalRunResultLine(this.report.rivalRun)
+      : founderEpisodeReceipt?.headline ?? founderOutcome;
+    const rivalActionCopy = planRivalRunActionCopy(this.report.rivalRun);
+    const rivalRunFinish = planRivalRunFinishStamp(this.report.rivalRun);
+    if (rivalRunFinish) {
+      const finishY = outcomeLayout.recapY - 150;
+      const finishTitle = label(
+        this,
+        width / 2,
+        finishY - 28,
+        rivalRunFinish.title,
+        34,
+        UI.coralText,
+        true
+      ).setDepth(62);
+      finishTitle.setStroke(UI.cream, 8);
+      const finishScore = label(
+        this,
+        width / 2,
+        finishY + 20,
+        rivalRunFinish.score,
+        52,
+        UI.goldText,
+        true
+      ).setDepth(62);
+      finishScore.setStroke(UI.ink, 7);
+      const finishRecord = label(
+        this,
+        width / 2,
+        finishY + 64,
+        rivalRunFinish.record,
+        22,
+        UI.ink,
+        true
+      ).setDepth(62);
+      finishRecord.setStroke(UI.cream, 5);
+    }
     createBattleRecapCard(this, recap, {
       x: width / 2,
-      y: outcomeStack.recapY,
+      y: outcomeLayout.recapY,
       width: width - 70,
       depth: 60,
       perspective: this.battleRecapPerspective(winner, losingFighter),
+      ...(!rivalRunFinish && contextLine ? { contextLine } : {}),
     });
-    if (outcomeStack.founderOutcomeY !== null) {
-      this.createFounderMarginStrip(
-        width / 2,
-        outcomeStack.founderOutcomeY,
-        width - 110,
-        founderOutcome,
-        founderEpisodeReceipt
-      )?.setDepth(61);
-    }
     // Only show a reward the server says this exact battle granted. Historical
     // replays and later practice wins must never imply a second payout.
     if (this.isMine(winner.scribbit) && (this.report.inkAwarded ?? 0) > 0) {
@@ -2344,7 +2302,7 @@ export class Replay extends Scene {
       }
     }
 
-    if (!this.reduceMotion && !usesVerdictCeremony) {
+    if (!this.reduceMotion && (!usesVerdictCeremony || rivalRunFinish)) {
       const emitter = this.add.particles(width / 2, height * 0.32, 'spark', {
         speed: { min: 100, max: 300 },
         scale: { start: 0.5, end: 0 },
@@ -2360,17 +2318,15 @@ export class Replay extends Scene {
     this.postFightActions?.destroy();
     this.postFightActions = createPostFightActions(this, {
       x: width / 2,
-      y: height - (canChooseRival || canBackContender ? 164 : 96),
+      y: outcomeLayout.actionY,
       accessibilityX: width / 2,
-      accessibilityY:
-        height - (canChooseRival || canBackContender ? 164 : 96),
-      width: width - 120,
+      accessibilityY: outcomeLayout.actionY,
+      width: width - 70,
       canChooseRival,
       canBackContender,
       returnLabel: this.compactReturnButtonLabel(),
-      onRivals: () =>
-        this.openRivalDraft(winner.scribbit, recap.highlight),
-      onPractice: () => this.startPractice(),
+      rivalActionCopy,
+      onRivals: () => this.openRivalDraft(winner.scribbit),
       onBackContender: () => this.goBackEntrants(),
       onReturn: () => this.exit(),
     });
@@ -2389,9 +2345,8 @@ export class Replay extends Scene {
     const { width, height } = this.scale;
     const daysLeft = daysLeftFor(mine, currentDay);
     const canBackContender = !getArena(this)?.myBackedScribbitId;
-    const hasFounderMargin =
-      founderOutcome !== null || this.founderChronicleBeat !== null;
-    const cardHeight = hasFounderMargin ? 500 : 400;
+    const rivalRunFinish = planRivalRunFinishStamp(this.report.rivalRun);
+    const cardHeight = rivalRunFinish ? 520 : 400;
     const card = stickerCard(
       this,
       width / 2,
@@ -2409,7 +2364,31 @@ export class Replay extends Scene {
     });
 
     const top = -cardHeight / 2;
-    const recapTop = top + 18;
+    if (rivalRunFinish) {
+      card.add(
+        label(
+          this,
+          0,
+          top + 38,
+          rivalRunFinish.title,
+          30,
+          UI.coralText,
+          true
+        )
+      );
+      card.add(
+        label(
+          this,
+          0,
+          top + 88,
+          `${rivalRunFinish.score} • ${rivalRunFinish.record}`,
+          40,
+          UI.goldText,
+          true
+        ).setStroke(UI.ink, 5)
+      );
+    }
+    const recapTop = top + (rivalRunFinish ? 126 : 18);
     const recapHeight = addBattleRecapLines(this, card, recap, {
       top: recapTop,
       width: width - 110,
@@ -2417,16 +2396,17 @@ export class Replay extends Scene {
       perspective: 'viewer_loss',
     });
     let cursor = recapTop + recapHeight + 18;
-    if (hasFounderMargin) {
-      const margin = this.createFounderMarginStrip(
-        0,
-        cursor + 46,
-        width - 130,
-        founderOutcome,
-        founderEpisodeReceipt
+    const contextLine = this.report.rivalRun
+      ? formatRivalRunResultLine(this.report.rivalRun)
+      : founderEpisodeReceipt?.headline ?? founderOutcome;
+    const rivalActionCopy = planRivalRunActionCopy(this.report.rivalRun);
+    if (contextLine && !rivalRunFinish) {
+      card.add(
+        label(this, 0, cursor + 16, contextLine, 20, UI.coralText, true)
+          .setWordWrapWidth(width - 130)
+          .setAlign('center')
       );
-      if (margin) card.add(margin);
-      cursor += 100;
+      cursor += 44;
     }
     card.add(
       label(
@@ -2452,8 +2432,8 @@ export class Replay extends Scene {
       canChooseRival: true,
       canBackContender,
       returnLabel: this.compactReturnButtonLabel(),
-      onRivals: () => this.openRivalDraft(mine, recap.highlight),
-      onPractice: () => this.startPractice(),
+      rivalActionCopy,
+      onRivals: () => this.openRivalDraft(mine),
       onBackContender: () => this.goBackEntrants(),
       onReturn: () => this.exit(),
     });
@@ -2493,16 +2473,13 @@ export class Replay extends Scene {
     fadeToScene(this, 'Draw', { mode: 'practice' });
   }
 
-  private openRivalDraft(
-    mine: Scribbit,
-    lastBoutHighlight: BattleRecapPlan['highlight']
-  ): void {
+  private openRivalDraft(mine: Scribbit): void {
     if (this.rematchLoading || this.rivalDraft) return;
     this.rematchLoading = true;
     this.postFightActions?.setAccessibleVisible(false);
     showToast('Pinning up three fair rivals…');
     void fetchSparRivals(mine.id)
-      .then((result) => {
+      .then(async (result) => {
         if (!this.scene.isActive()) return;
         this.rematchLoading = false;
         if (!result.ok) {
@@ -2512,7 +2489,7 @@ export class Replay extends Scene {
         }
         if (
           result.data.challenger.id !== mine.id ||
-          result.data.rivals.length === 0
+          result.data.choices.length === 0
         ) {
           showToast('The rival board came back blank. Try again.');
           this.postFightActions?.setAccessibleVisible(true);
@@ -2524,8 +2501,24 @@ export class Replay extends Scene {
           this.postFightActions?.setAccessibleVisible(true);
           return;
         }
+        if (arena.dayNumber !== result.data.dayNumber) {
+          this.rematchLoading = true;
+          const latestArena = await fetchArena();
+          if (!this.scene.isActive()) return;
+          this.rematchLoading = false;
+          if (!latestArena.ok) {
+            showToast('A new Arena day started. Try the board again.');
+            this.postFightActions?.setAccessibleVisible(true);
+            return;
+          }
+          setArena(this, latestArena.data);
+          showToast('A new Arena day started. Opening today’s board…');
+          fadeToScene(this, 'ArenaHome');
+          return;
+        }
         const refreshedArena = {
           ...arena,
+          forecast: result.data.forecast,
           founderChronicle: result.data.founderChronicle,
         };
         const rivalryBeats = findFounderChronicleBeats(
@@ -2538,13 +2531,18 @@ export class Replay extends Scene {
         setArena(this, refreshedArena);
         this.rivalDraft = createSparRivalDraft(this, {
           challenger: result.data.challenger,
-          rivals: result.data.rivals,
-          forecast: arena.forecast,
+          choices: result.data.choices,
+          rivalRun: result.data.rivalRun,
+          forecast: result.data.forecast,
           founderChronicle: result.data.founderChronicle,
-          currentDay: arena.dayNumber,
-          lastBoutHighlight,
+          currentDay: result.data.dayNumber,
           onChoose: (rival, plan) =>
-            this.fightRival(mine, rival, plan.challengeLine),
+            this.fightRival(
+              mine,
+              rival,
+              plan.challengeLine,
+              result.data.rivalRun
+            ),
           onClose: () => {
             this.rivalDraft?.destroy();
             this.rivalDraft = null;
@@ -2563,7 +2561,8 @@ export class Replay extends Scene {
   private fightRival(
     mine: Scribbit,
     rival: Scribbit,
-    challengeLine: string | null
+    challengeLine: string | null,
+    rivalRun: RivalRunState
   ): void {
     if (this.rematchLoading) return;
     this.rematchLoading = true;
@@ -2572,7 +2571,7 @@ export class Replay extends Scene {
         ? `${rival.name}: “${challengeLine}”`
         : `${mine.name} challenges ${rival.name}…`
     );
-    void spar(mine.id, rival.id)
+    void spar(mine.id, rival.id, rivalRun)
       .then((result) => {
         if (!this.scene.isActive()) return;
         if (!result.ok) {
@@ -2596,6 +2595,9 @@ export class Replay extends Scene {
           fighterB: result.data.report.b,
           battleKind: result.data.report.kind,
           rivalryStakes: stagedBattle.rivalryStakes,
+          ...(result.data.report.rivalRun
+            ? { rivalRun: result.data.report.rivalRun }
+            : {}),
           onComplete: () => this.scene.restart(),
         });
       })

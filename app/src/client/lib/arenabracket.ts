@@ -2,7 +2,11 @@ import type { Scribbit } from '../../shared/arena';
 
 const ARENA_BRACKET_MAXIMUM_VISIBLE_ENTRANTS = 8;
 
-type ArenaBackActionKind = 'picked' | 'owned' | 'locked' | 'available';
+export type ArenaBackActionKind =
+  | 'picked'
+  | 'owned'
+  | 'locked'
+  | 'available';
 
 type ArenaBackActionPlan = Readonly<{
   kind: ArenaBackActionKind;
