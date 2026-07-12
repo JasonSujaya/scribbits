@@ -226,6 +226,22 @@ currency, or combat power.
       and Mystery Ink. Primary cards lead with one headline, one status, and one
       action; rules, moderation, and secondary facts move behind explicit taps
       without changing server authority or rewards (July 12).
+- [x] The Craftbox visual system now gives all five main scenes one generated
+      torn-paper stage, bundled Balsamiq Sans, one die-cut navigation family,
+      one coral active ticket, and shared paper status/element icons. Arena drops
+      the duplicate Ink Trail and Practice cards, locked Draw opens Practice
+      directly, and Gallery/Battles/Scout remove explanatory card copy. A live
+      320x568 pass covers Arena, Draw-to-Practice, Scout, realtime spar, Skip,
+      and the compact result with larger combat type, one four-control Draw rail,
+      no visible stat dashboard, 100-design-pixel targets, code-native tool/
+      playback icons, and no error-level runtime messages (July 12).
+- [x] Compact mobile performance now keeps combat truth and visible juice while
+      removing ambient-only work. Exact drawing analysis runs in a worker;
+      pointer bounds and undo snapshots are reused; display art is capped at
+      256px with a 12-texture inactive cache; unchanged HUD text is cached; and
+      replay-only effects/Inkbody deformation are bounded to 30 Hz. A 320x568
+      WebGL battle improves from about 51 to 59 FPS and Draw holds 60 FPS during
+      a real stroke, with zero runtime errors (July 12).
 - [x] The central battle payoff now has one visual hierarchy. The 320x568 VS
       ceremony keeps names, levels, elements, signatures, Rival stakes/page, and
       exact matchup mechanics while removing three duplicate explanations and

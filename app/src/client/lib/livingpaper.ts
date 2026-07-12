@@ -21,7 +21,7 @@
 import * as Phaser from 'phaser';
 import { Scene } from 'phaser';
 import type { Element } from '../../shared/arena';
-import { ELEMENT_STYLES, prefersReducedMotion } from './theme';
+import { allowsAmbientMotion, ELEMENT_STYLES } from './theme';
 import { paperStage } from './visualassets';
 
 // Mobile particle budget: the ambient speck field plus any forecast field must
@@ -85,9 +85,9 @@ export class LivingPaper {
     this.opts = opts;
 
     this.buildPaper();
-    const reduceMotion = prefersReducedMotion();
-    this.buildParallaxLayers(false);
-    if (!reduceMotion) {
+    const ambientMotion = allowsAmbientMotion();
+    if (ambientMotion) {
+      this.buildParallaxLayers(true);
       this.buildAmbientSpecks();
       if (opts.boostedElement) this.buildForecastAmbience(opts.boostedElement);
       if (opts.edgeCreatures !== false) {

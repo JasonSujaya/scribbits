@@ -12,7 +12,7 @@ import {
   TYPE,
   UI,
 } from './theme';
-import { NAV_ICON_TEXTURES } from './visualassets';
+import { NAV_ICON_TEXTURES, UI_BUTTON_TEXTURES } from './visualassets';
 
 const TRANSITION_MS = 180;
 const transitioningScenes = new WeakSet<Scene>();
@@ -241,9 +241,7 @@ export function careButton(
   height = MIN_TOUCH
 ): Phaser.GameObjects.Container {
   const container = scene.add.container(x, y);
-  const bg = scene.add
-    .rectangle(0, 0, width, height, fill, 1)
-    .setStrokeStyle(4, UI.inkHex, 1);
+  const bg = paperButtonPlate(scene, 'secondary', width, height, fill);
   const hit = scene.add
     .rectangle(0, 0, width, Math.max(MIN_TOUCH, height), 0xffffff, 0.001)
     .setInteractive({ useHandCursor: true });
@@ -260,12 +258,135 @@ export function careButton(
   txt.setAlign('center');
   txt.setWordWrapWidth(width - 8);
   container.add([bg, txt, hit]);
+  wireButtonPress(scene, hit, container, onClick, {
+    scaleX: 0.92,
+    scaleY: 0.9,
+    duration: 60,
+  });
+  return container;
+}
+
+type PaperButtonPlateKind = 'primary' | 'secondary';
+
+const PAPER_BUTTON_SLICE_CONFIG = {
+  primary: {
+    texture: UI_BUTTON_TEXTURES.primary,
+    sourceWidth: 420,
+    sourceHeight: 139,
+    left: 40,
+    right: 40,
+    top: 40,
+    bottom: 40,
+  },
+  secondary: {
+    texture: UI_BUTTON_TEXTURES.secondary,
+    sourceWidth: 420,
+    sourceHeight: 118,
+    left: 40,
+    right: 40,
+    top: 34,
+    bottom: 34,
+  },
+} as const;
+
+/** Canvas-safe nine-piece renderer for the generated paper button plates. */
+function paperButtonPlate(
+  scene: Scene,
+  kind: PaperButtonPlateKind,
+  width: number,
+  height: number,
+  tint?: number
+): Phaser.GameObjects.Container {
+  const config = PAPER_BUTTON_SLICE_CONFIG[kind];
+  const texture = scene.textures.get(config.texture);
+  const sourceXs = [
+    0,
+    config.left,
+    config.sourceWidth - config.right,
+    config.sourceWidth,
+  ];
+  const sourceYs = [
+    0,
+    config.top,
+    config.sourceHeight - config.bottom,
+    config.sourceHeight,
+  ];
+  const horizontalMarginScale = Math.min(
+    1,
+    width / (config.left + config.right)
+  );
+  const verticalMarginScale = Math.min(
+    1,
+    height / (config.top + config.bottom)
+  );
+  const targetLeft = config.left * horizontalMarginScale;
+  const targetRight = config.right * horizontalMarginScale;
+  const targetTop = config.top * verticalMarginScale;
+  const targetBottom = config.bottom * verticalMarginScale;
+  const targetXs = [
+    -width / 2,
+    -width / 2 + targetLeft,
+    width / 2 - targetRight,
+    width / 2,
+  ];
+  const targetYs = [
+    -height / 2,
+    -height / 2 + targetTop,
+    height / 2 - targetBottom,
+    height / 2,
+  ];
+  const plate = scene.add.container(0, 0);
+
+  for (let row = 0; row < 3; row += 1) {
+    for (let column = 0; column < 3; column += 1) {
+      const frameName = `${kind}-button-slice-${row}-${column}`;
+      const sourceX = sourceXs[column] ?? 0;
+      const sourceY = sourceYs[row] ?? 0;
+      const sourceWidth = (sourceXs[column + 1] ?? sourceX) - sourceX;
+      const sourceHeight = (sourceYs[row + 1] ?? sourceY) - sourceY;
+      if (!texture.has(frameName)) {
+        texture.add(
+          frameName,
+          0,
+          sourceX,
+          sourceY,
+          sourceWidth,
+          sourceHeight
+        );
+      }
+      const targetLeft = targetXs[column] ?? 0;
+      const targetTop = targetYs[row] ?? 0;
+      const targetWidth = (targetXs[column + 1] ?? targetLeft) - targetLeft;
+      const targetHeight = (targetYs[row + 1] ?? targetTop) - targetTop;
+      if (targetWidth <= 0 || targetHeight <= 0) continue;
+      const slice = scene.add
+        .image(
+          targetLeft + targetWidth / 2,
+          targetTop + targetHeight / 2,
+          config.texture,
+          frameName
+        )
+        .setDisplaySize(targetWidth, targetHeight);
+      if (tint !== undefined) slice.setTint(tint);
+      plate.add(slice);
+    }
+  }
+  return plate;
+}
+
+function wireButtonPress(
+  scene: Scene,
+  hit: Phaser.GameObjects.GameObject,
+  container: Phaser.GameObjects.Container,
+  onClick: () => void,
+  pressed: Readonly<{ scaleX: number; scaleY: number; duration: number }>
+): void {
   const press = (): void => {
     scene.tweens.add({
       targets: container,
-      scaleX: 0.92,
-      scaleY: 0.9,
-      duration: 60,
+      scaleX: pressed.scaleX,
+      scaleY: pressed.scaleY,
+      duration: pressed.duration,
       ease: 'Quad.easeOut',
     });
   };
@@ -285,7 +406,6 @@ export function careButton(
     release();
     onClick();
   });
-  return container;
 }
 
 // A tappable pill button. onClick fires on pointerup. Includes a press tween.
@@ -302,38 +422,25 @@ export function button(
 ): Phaser.GameObjects.Container {
   const height = Math.max(MIN_TOUCH, requestedHeight);
   const container = scene.add.container(x, y);
-  const bg = scene.add
-    .rectangle(0, 0, width, height, fill, 1)
-    .setStrokeStyle(4, 0x2b2016, 1);
-  bg.setInteractive({ useHandCursor: true });
-  const txt = label(scene, 0, 0, text, 32, textColor, true);
+  const usesCoralPlate = fill === UI.coral;
+  const bg = paperButtonPlate(
+    scene,
+    usesCoralPlate ? 'primary' : 'secondary',
+    width,
+    height,
+    !usesCoralPlate && fill !== UI.creamHex ? fill : undefined
+  );
+  const hit = scene.add
+    .rectangle(0, 0, width, height, 0xffffff, 0.001)
+    .setInteractive({ useHandCursor: true });
+  const txt = label(scene, 0, -3, text, 32, textColor, true);
   txt.setWordWrapWidth(width - 24);
-  container.add([bg, txt]);
+  container.add([bg, txt, hit]);
 
-  const press = (): void => {
-    scene.tweens.add({
-      targets: container,
-      scaleX: 0.94,
-      scaleY: 0.92,
-      duration: 70,
-      ease: 'Quad.easeOut',
-    });
-  };
-  const release = (): void => {
-    scene.tweens.add({
-      targets: container,
-      scaleX: 1,
-      scaleY: 1,
-      duration: 120,
-      ease: 'Back.easeOut',
-    });
-  };
-  bg.on('pointerover', press);
-  bg.on('pointerout', release);
-  bg.on('pointerdown', press);
-  bg.on('pointerup', () => {
-    release();
-    onClick();
+  wireButtonPress(scene, hit, container, onClick, {
+    scaleX: 0.94,
+    scaleY: 0.92,
+    duration: 70,
   });
 
   return container;
@@ -351,38 +458,57 @@ export function ghostButton(
 ): Phaser.GameObjects.Container {
   const height = Math.max(MIN_TOUCH, requestedHeight);
   const container = scene.add.container(x, y);
-  const bg = scene.add
-    .rectangle(0, 0, width, height, UI.creamHex, 1)
-    .setStrokeStyle(4, 0x2b2016, 1);
-  bg.setInteractive({ useHandCursor: true });
-  const txt = label(scene, 0, 0, text, 26, UI.ink, true);
-  txt.setWordWrapWidth(width - 20);
-  container.add([bg, txt]);
+  const isBackIcon = text === '‹';
+  const isCloseIcon = text === '✕' || text === '×';
+  const bg = isBackIcon || isCloseIcon
+    ? scene.add
+        .image(
+          0,
+          0,
+          isBackIcon ? UI_BUTTON_TEXTURES.back : UI_BUTTON_TEXTURES.close
+        )
+        .setDisplaySize(Math.min(width, height), Math.min(width, height))
+    : paperButtonPlate(scene, 'secondary', width, height);
+  const hit = scene.add
+    .rectangle(0, 0, width, height, 0xffffff, 0.001)
+    .setInteractive({ useHandCursor: true });
+  const txt = isBackIcon || isCloseIcon
+    ? null
+    : label(scene, 0, -3, text, 26, UI.ink, true);
+  txt?.setWordWrapWidth(width - 20);
+  container.add(txt ? [bg, txt, hit] : [bg, hit]);
 
-  const press = (): void => {
-    scene.tweens.add({
-      targets: container,
-      scaleX: 0.94,
-      scaleY: 0.92,
-      duration: 70,
-      ease: 'Quad.easeOut',
-    });
-  };
-  const release = (): void => {
-    scene.tweens.add({
-      targets: container,
-      scaleX: 1,
-      scaleY: 1,
-      duration: 120,
-      ease: 'Back.easeOut',
-    });
-  };
-  bg.on('pointerover', press);
-  bg.on('pointerout', release);
-  bg.on('pointerdown', press);
-  bg.on('pointerup', () => {
-    release();
-    onClick();
+  wireButtonPress(scene, hit, container, onClick, {
+    scaleX: 0.94,
+    scaleY: 0.92,
+    duration: 70,
+  });
+  return container;
+}
+
+/** Generated circular paper arrow for pagination and short directional moves. */
+export function pageArrowButton(
+  scene: Scene,
+  x: number,
+  y: number,
+  direction: 'previous' | 'next',
+  onClick: () => void,
+  diameter = MIN_TOUCH
+): Phaser.GameObjects.Container {
+  const size = Math.max(MIN_TOUCH, diameter);
+  const container = scene.add.container(x, y);
+  const face = scene.add
+    .image(0, 0, UI_BUTTON_TEXTURES[direction])
+    .setDisplaySize(size, size);
+  const hit = scene.add
+    .circle(0, 0, size / 2, 0xffffff, 0.001)
+    .setInteractive({ useHandCursor: true });
+  container.add([face, hit]);
+
+  wireButtonPress(scene, hit, container, onClick, {
+    scaleX: 0.9,
+    scaleY: 0.9,
+    duration: 60,
   });
   return container;
 }
@@ -1020,17 +1146,16 @@ export function dominantButton(
   );
   container.add(glow);
 
-  // Main button background
-  const bg = scene.add
-    .rectangle(0, 0, width, height, UI.coral, 1)
-    .setStrokeStyle(6, 0x2b2016, 1);
-  bg.setInteractive({ useHandCursor: true });
+  const bg = paperButtonPlate(scene, 'primary', width, height);
+  const hit = scene.add
+    .rectangle(0, 0, width, height, 0xffffff, 0.001)
+    .setInteractive({ useHandCursor: true });
 
   // Text with larger size
   const txt = label(scene, 0, 0, text, 38, UI.ink, true);
   txt.setWordWrapWidth(width - 40);
 
-  container.add([bg, txt]);
+  container.add([bg, txt, hit]);
 
   // Pulsing animation for the glow
   if (pulsing) {
@@ -1045,32 +1170,10 @@ export function dominantButton(
     });
   }
 
-  // Button press feedback
-  const press = (): void => {
-    scene.tweens.add({
-      targets: container,
-      scaleX: 0.96,
-      scaleY: 0.94,
-      duration: 80,
-      ease: 'Quad.easeOut',
-    });
-  };
-  const release = (): void => {
-    scene.tweens.add({
-      targets: container,
-      scaleX: 1,
-      scaleY: 1,
-      duration: 120,
-      ease: 'Back.easeOut',
-    });
-  };
-
-  bg.on('pointerover', press);
-  bg.on('pointerout', release);
-  bg.on('pointerdown', press);
-  bg.on('pointerup', () => {
-    release();
-    onClick();
+  wireButtonPress(scene, hit, container, onClick, {
+    scaleX: 0.96,
+    scaleY: 0.94,
+    duration: 80,
   });
 
   return container;

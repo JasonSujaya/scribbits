@@ -20,8 +20,8 @@ export class Boot extends Scene {
       return;
     }
     void Promise.all([
-      document.fonts.load('400 24px "Balsamiq Sans"'),
-      document.fonts.load('700 24px "Balsamiq Sans"'),
+      document.fonts.load('400 24px "DynaPuff"'),
+      document.fonts.load('700 24px "DynaPuff"'),
     ]).then(startPreloader, startPreloader);
   }
 }

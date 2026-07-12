@@ -5,17 +5,43 @@ Scribbits Arena is a Devvit Web + Phaser game for Reddit. Players draw a
 enter daily community rumbles. The app identity is `scribbits` in
 `package.json` and `devvit.json`.
 
+All main scenes share `lib/appdock.ts`, the generated Craftbox paper stage, the
+same five die-cut navigation icons, and one GPT-generated hand-cut button family
+for primary, secondary, Back, close, and pagination actions. DynaPuff 400/700 is
+bundled locally through Fontsource and loaded before Phaser renders text. Shared
+heart, clock, Ink, sparkle, and element marks live in `lib/papericons.ts`; scene
+copy should keep the default view to one headline, one status, and one action.
+
+## Mobile performance
+
+- `lib/theme.ts` disables ambient-only loops on compact, reduced-motion, or
+  detected low-power devices; combat motion and authoritative replay timing stay
+  enabled.
+- `workers/analyzer.worker.ts` runs exact shared analyzer math off the UI thread.
+  `drawcanvas.ts` caches pointer bounds for each stroke and pools canvas-based
+  undo snapshots instead of allocating 1 MiB pixel arrays per stroke.
+- `lib/scribbits.ts` downsamples display textures to a 256px longest edge and
+  keeps at most 12 inactive drawing textures. Submitted PNGs remain unchanged.
+- Replay caches unchanged HP/clock labels and bounds presentation-only arena
+  redraws plus Inkbody deformation to 30 Hz; fighter movement and transcript
+  progression remain continuous and server-authored.
+
 ## How to play
 
 1. **Draw:** one Scribbit per UTC day. A validated catalog supplies 32 optional
    Doodle Dares, eight per Shape Power, plus eight optional bonus twists. Each
    player sees all four powers every four days, every prompt before Day 33, and
-   no exact prompt-plus-twist card before Day 257. The compact Draw screen keeps
-   one Dare, the canvas, tools, analyzer, name, and submit action visible. Blank, forming, and ready
-   feedback progressively reveals the mapping: filled = Inkquake, jagged = Nib
-   Halo, compact = Smearstep, and colorful = Colorburst. The four analyzed traits
-   always normalize to the same 100-point budget. Dominant color chooses the
-   element.
+   no exact prompt-plus-twist card before Day 257. The Draw screen gives the hero
+   canvas most of the page, keeps all eight base colors visible, and puts brush,
+   eraser, undo, optional stickers, and unlocked premium pens in one compact tool
+   row. Name and submit stay hidden and disabled until the shared analyzer says
+   the drawing is ready. Exact shape rules remain in the canvas accessibility
+   copy instead of a visible four-stat dashboard. The four analyzed traits still
+   normalize to the same 100-point budget, and dominant color still chooses the
+   element. After acceptance, `lib/birthceremony.ts` loads that exact submitted
+   PNG and unfolds it through `LiveSprite.awaken()`—there is no placeholder egg.
+   The final card shows one Ink receipt and leads a fresh player directly to
+   `WATCH FIRST FIGHT`.
 2. **Fight:** submission automatically enters tonight's Rumble. A new player's
    first Scribbit also receives an immediate exhibition so the core promise is
    visible in the first session. On WebGL, Phaser 4.2 maps the submitted PNG to

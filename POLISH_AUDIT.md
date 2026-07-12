@@ -444,6 +444,51 @@ archived-result return, and resolved margin with zero runtime or console errors.
 No combat event, result, reward, route, stored field, or authority boundary
 changed.
 
+## Craftbox visual-system pass (July 12)
+
+The former bottom bar mixed line icons, emoji, a permanently highlighted Draw
+seal, and labels with equal weight. The five main scenes now use one detached
+paper dock from `appdock.ts`: generated die-cut icons, full-width tap targets,
+and one raised coral active ticket. Bundled DynaPuff, a generated quiet-center
+torn-paper stage, GPT-generated primary/secondary/back/close/page controls, and
+shared paper heart/clock/Ink/element marks replace the generic system font, ad
+hoc emoji, code-drawn rectangles, and repeated navigation glyphs.
+
+Arena no longer stacks Ink Trail and Practice explanations above the bracket;
+the locked Draw tab is the direct Practice entrance. Draw keeps one Dare, one
+larger canvas, all eight base colors, one compact tool row, and one readiness
+line; naming and submission appear only after the shared analyzer accepts the
+drawing. Premium pens stay separate from base colors, and owned stickers remain
+optional. Gallery and Battles use image-first
+cards with compact chevrons/play marks, while Scout removes its field-note
+paragraph. Replay retains its server-locked rail and transcript juice, but its
+result resolves to one verdict, one exact status line, and one primary action.
+
+TypeScript, ESLint, all 98 simulation groups, and the production build are
+green. A real 320x568 browser pass covers Arena, locked Draw to Practice, Scout,
+normal-speed spar, Skip, and result with a live canvas and no error-level runtime
+messages. Draw removes two full tool rows and the visible four-stat dashboard;
+its four default controls retain 100-design-pixel touch targets and procedural
+paper marks. Replay enlarges the HP/Shape Power type and uses
+the same code-native treatment for sound, speed, and Skip. Combat authority,
+simulation, rewards, and stored data are unchanged.
+
+## Mobile performance pass (July 12)
+
+The 320x568 WebGL profile found the battle at about 51 FPS and post-stroke
+analysis doing exact 512px scans on the UI thread. Exact analyzer math now runs
+in a worker, pointer bounds are read once per stroke, and undo reuses pooled
+canvas snapshots instead of allocating full RGBA arrays. Display-only player art
+is downsampled to a 256px longest edge and the inactive texture ceiling drops
+from 30 to 12.
+
+Compact/low-power screens retain the generated paper stage but skip ambient
+particles, motif layers, and decorative infinite tweens. Replay avoids rebuilding
+unchanged HP/clock text and limits presentation-only background/effect redraws
+plus Inkbody deformation to 30 Hz while continuous movement and transcript time
+stay authoritative. The same local battle measures about 59 FPS afterward; Draw
+holds 60 FPS during a real stroke and worker result, with zero runtime errors.
+
 ## Current polish gap
 
 The return, collection, title, completed-run, reward-reveal, battle-juice,
@@ -458,9 +503,11 @@ readable at 1x–4x. Its 104-line shared pack now rotates without authored repea
 inside a bank and rejects copy that outruns the transcript.
 The live paper-arena HUD, 4x/Skip/result-speed handoff, transcript-derived Inkcast
 Recap, truthful finish poses, reduced-motion and Canvas fallbacks, chosen-rival
-loop, first-session stat-shaped founder fight,
+loop, submitted-drawing awakening, first-session stat-shaped founder fight,
 and six-page relic collection are browser-proven with zero captured runtime
-errors. The Practice Lab adds repeatability without a second progression track:
+errors. Birth now unfolds the exact PNG through the shared LiveSprite rig,
+removes the placeholder egg and duplicate reward float, and ends on one truthful
+receipt plus `WATCH FIRST FIGHT`. The Practice Lab adds repeatability without a second progression track:
 its checklist is session-only, its first 4/4 payoff is now browser-proven, and
 its encores rotate after completion while its reports cannot reach battle
 storage.

@@ -15,17 +15,27 @@ headline, one current status, and one obvious action. Exact rules, telemetry,
 privacy controls, and card history remain available behind the relevant tap
 instead of competing with the drawing or fight.
 
+The shared Craftbox shell uses a generated torn-paper stage, bundled DynaPuff,
+one die-cut icon family, and GPT-generated hand-cut paper buttons across Arena,
+Gallery, Draw, Battles, and Scout.
+The active tab is the only coral ticket; hearts, clocks, Ink, and Shape Powers
+use shared paper icons instead of emoji or text pretending to be controls.
+Compact or detected low-power devices keep that paper art but skip ambient
+particles and decorative infinite loops. Drawing analysis runs in a worker,
+undo snapshots reuse pooled canvases, and display art is capped at 256px with a
+12-texture inactive cache. Battle positions remain continuous while decorative
+arena effects and Inkbody deformation update at a bounded 30 Hz.
+
 ## Daily loop
 
 1. Take one of 32 optional daily Doodle Dares plus an expressive bonus twist—or
    ignore both and draw anything—while live feedback turns each stroke into a
-   visible Shape Power. Before the first mark, one compact legend makes the hook
-   explicit: big smashes, spikes throw quills, compact shapes dash, and color
-   blasts. The exact card does not repeat for 256 Arena days.
-2. Fill the Daily Ink Trail through drawing, care, and a first spar win. Each
-   care action opens a power-specific paper moment that changes across the
-   Scribbit's three-day life. Spend earned Ink on a discounted daily Mystery
-   Capsule.
+   visible Shape Power. The screen keeps the Dare inside the canvas and collapses
+   ink, premium pens, brush size, erase, and undo into one icon rail; one status
+   replaces the former four-stat panel. The exact card does not repeat for 256
+   Arena days.
+2. Care for the Scribbit across its three-day life and spend earned Ink on a
+   discounted daily Mystery Capsule.
 3. Grow a permanent cosmetic collection with visible collector rank, wearable
    titles, and an honest countdown to the guaranteed Epic pull.
 4. The Scribbit enters the nightly asynchronous Rumble automatically.

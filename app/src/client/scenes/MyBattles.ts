@@ -11,8 +11,8 @@ import { NAV_SAFE, prefersReducedMotion, TYPE, UI } from '../lib/theme';
 import { mountLivingPaper } from '../lib/livingpaper';
 import {
   label,
-  ghostButton,
   handLettered,
+  pageArrowButton,
   stickerCard,
   errorPanel,
 } from '../lib/ui';
@@ -189,10 +189,7 @@ export class MyBattles extends Scene {
 
   private buildPagination(totalPages: number): void {
     const y = 232;
-    if (totalPages <= 1) {
-      label(this, this.scale.width / 2, y, 'LATEST', 17, UI.inkSoft, true);
-      return;
-    }
+    if (totalPages <= 1) return;
 
     label(
       this,
@@ -204,23 +201,21 @@ export class MyBattles extends Scene {
       true
     );
     if (this.page > 0) {
-      ghostButton(
+      pageArrowButton(
         this,
-        this.scale.width / 2 - 220,
+        104,
         y,
-        '← Newer',
-        () => this.changePage(this.page - 1),
-        132
+        'previous',
+        () => this.changePage(this.page - 1)
       );
     }
     if (this.page < totalPages - 1) {
-      ghostButton(
+      pageArrowButton(
         this,
-        this.scale.width / 2 + 220,
+        this.scale.width - 104,
         y,
-        'Older →',
-        () => this.changePage(this.page + 1),
-        132
+        'next',
+        () => this.changePage(this.page + 1)
       );
     }
   }
@@ -288,17 +283,17 @@ export class MyBattles extends Scene {
         true
       )
     );
-    card.add(
-      label(
-        this,
-        0,
-        37,
-        plan.replayMotionAvailable ? '▶ WATCH REPLAY' : 'SAVED RESULT ›',
-        15,
-        UI.coralText,
-        true
-      )
-    );
+    const actionMark = this.add.graphics();
+    actionMark.fillStyle(UI.coral, 1);
+    if (plan.replayMotionAvailable) {
+      actionMark.fillTriangle(-8, 24, -8, 48, 14, 36);
+    } else {
+      actionMark.lineStyle(4, UI.coral, 1);
+      actionMark.lineBetween(-10, 36, 12, 36);
+      actionMark.lineBetween(4, 28, 12, 36);
+      actionMark.lineBetween(4, 44, 12, 36);
+    }
+    card.add(actionMark);
 
     hit.on('pointerup', () => {
       setBattleHistoryPage(this, this.page);

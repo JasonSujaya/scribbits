@@ -210,6 +210,8 @@ export class Replay extends Scene {
   private battleHud: ReplayBattleHud | null = null;
   private battleBackdrop: ReplayBattleBackdrop | null = null;
   private battleBackdropElapsedMilliseconds = 0;
+  private battleBackdropUpdateAccumulator = 0;
+  private effectRenderAccumulator = 0;
   private fighterA!: ReplayFighterRuntime;
   private fighterB!: ReplayFighterRuntime;
   private finished = false;
@@ -219,6 +221,7 @@ export class Replay extends Scene {
   // Fast-forward: cycles 1x → 2x → 4x → 1x. Scales the scene clock + tweens so
   // the WHOLE spectacle speeds up uniformly, and persists across every beat.
   private static readonly SPEEDS = [1, 2, 4] as const;
+  private static readonly EFFECT_FRAME_MILLISECONDS = 1000 / 30;
   private speedIndex = 0;
   private readonly soundboard = new BattleSoundboard();
   private fightersReady = false;
@@ -257,6 +260,8 @@ export class Replay extends Scene {
     this.battleHud = null;
     this.battleBackdrop = null;
     this.battleBackdropElapsedMilliseconds = 0;
+    this.battleBackdropUpdateAccumulator = 0;
+    this.effectRenderAccumulator = 0;
     this.introBanner = null;
     this.reduceMotion = prefersReducedMotion();
     this.speedIndex = 0;
@@ -557,6 +562,7 @@ export class Replay extends Scene {
     this.flushInkcastCandidatesByTick();
     this.previousPlaybackTick = 0;
     this.drawReplayFrameEffects(frame);
+    this.effectRenderAccumulator = 0;
   }
 
   override update(_time: number, deltaMilliseconds: number): void {
@@ -569,7 +575,15 @@ export class Replay extends Scene {
     if (!this.finished && backdropPlaybackSpeed > 0) {
       this.battleBackdropElapsedMilliseconds +=
         safeDeltaMilliseconds * backdropPlaybackSpeed;
-      this.battleBackdrop?.update(this.battleBackdropElapsedMilliseconds);
+      this.battleBackdropUpdateAccumulator += safeDeltaMilliseconds;
+      if (
+        this.battleBackdropUpdateAccumulator >=
+        Replay.EFFECT_FRAME_MILLISECONDS
+      ) {
+        this.battleBackdropUpdateAccumulator %=
+          Replay.EFFECT_FRAME_MILLISECONDS;
+        this.battleBackdrop?.update(this.battleBackdropElapsedMilliseconds);
+      }
     }
     this.advanceInkcastEditorialQueue(deltaMilliseconds);
     if (
@@ -609,7 +623,14 @@ export class Replay extends Scene {
     this.flushInkcastCandidatesByTick();
     this.playbackTick = nextTick;
     this.previousPlaybackTick = nextTick;
-    this.drawReplayFrameEffects(frame);
+    this.effectRenderAccumulator += safeDeltaMilliseconds;
+    if (
+      this.effectRenderAccumulator >= Replay.EFFECT_FRAME_MILLISECONDS ||
+      nextTick >= this.transcript.result.completedTick
+    ) {
+      this.effectRenderAccumulator %= Replay.EFFECT_FRAME_MILLISECONDS;
+      this.drawReplayFrameEffects(frame);
+    }
 
     if (nextTick >= this.transcript.result.completedTick) {
       this.finish();

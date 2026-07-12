@@ -2,7 +2,7 @@ import type { Scene } from 'phaser';
 import { showLoginPrompt, showToast } from '@devvit/web/client';
 import { MAX_ALIVE_PER_USER } from '../../shared/arena';
 import type { ArenaState } from '../../shared/arena';
-import { getArena } from './registry';
+import { beginPracticeSession, getArena } from './registry';
 import { fadeToScene } from './ui';
 
 export type DrawEligibility = {
@@ -51,6 +51,12 @@ export const navigateToDailyDraw = (scene: Scene): void => {
   const eligibility = getDrawEligibility(state);
   if (eligibility.canDraw) {
     fadeToScene(scene, 'Draw');
+    return;
+  }
+
+  if (state.loggedIn && state.drawnToday) {
+    beginPracticeSession(scene);
+    fadeToScene(scene, 'Draw', { mode: 'practice' });
     return;
   }
 

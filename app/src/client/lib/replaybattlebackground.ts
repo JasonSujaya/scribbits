@@ -9,6 +9,7 @@ import type {
   ReplayBattleSide,
 } from './battlepresentation';
 import { ELEMENT_STYLES, UI } from './theme';
+import { paperStage } from './visualassets';
 
 type PaperPoint = Readonly<{ x: number; y: number }>;
 
@@ -294,8 +295,9 @@ export function drawReplayBattleBackground(
   const leftZoneEdge = centerX - clearCenterHalfWidth;
   const rightZoneEdge = centerX + clearCenterHalfWidth;
 
+  paperStage(scene, -21);
   const pageGraphics = scene.add.graphics().setDepth(-20);
-  pageGraphics.fillStyle(UI.deskHex, 1);
+  pageGraphics.fillStyle(UI.deskHex, 0.12);
   pageGraphics.fillRect(0, 0, layout.viewportWidth, layout.viewportHeight);
 
   // Loose desk strokes sit behind the page and read as a physical tabletop,

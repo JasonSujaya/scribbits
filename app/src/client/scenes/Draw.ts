@@ -18,11 +18,15 @@ import { DrawCanvas } from '../lib/drawcanvas';
 import {
   ELEMENT_STYLES,
   EDGE,
+  DOM_TYPE,
   FONT_STACK,
+  MIN_TOUCH,
   prefersReducedMotion,
   TYPE,
   UI,
 } from '../lib/theme';
+import { paperToolIcon } from '../lib/papericons';
+import type { PaperToolIconKey } from '../lib/papericons';
 import { paperBackdrop } from '../lib/art';
 import { LivingPaper } from '../lib/livingpaper';
 import { StickerAttach } from '../lib/stickerdrawer';
@@ -53,84 +57,65 @@ import {
   ghostButton,
   label,
   handLettered,
-  statGrid,
-  elementBadge,
   stickerCard,
   errorPanel,
-  floatReward,
   fadeToScene,
 } from '../lib/ui';
-import type { StatGrid, ErrorPanel } from '../lib/ui';
-import { openCapsuleMachine } from '../lib/capsulemachine';
-import { pullCapsule } from '../lib/api';
-import {
-  PEN_CATALOG,
-  PEN_BY_ID,
-  penSwatchColor,
-  RARITY_STYLE,
-} from '../lib/pens';
+import type { ErrorPanel } from '../lib/ui';
+import { PEN_CATALOG, penSwatchColor } from '../lib/pens';
 import type { PenCatalogEntry } from '../lib/pens';
 import {
   ACCESSORY_BASE_SIZE,
-  CAPSULE_FIRST_DAILY_COST,
-  CAPSULE_PITY,
   INK_REWARDS,
 } from '../../shared/arena';
 import type {
   ArenaState,
   BattleReport,
-  Element,
   Scribbit,
 } from '../../shared/arena';
 import type { PrimaryPower } from '../../shared/combat/types';
 import { getDrawEligibility } from '../lib/draweligibility';
 import { showVsCeremony } from '../lib/battleceremony';
 import { LiveSprite } from '../lib/livesprite';
+import { playBirthCeremony } from '../lib/birthceremony';
 
-// Five large, thumb-friendly color groups. Re-tapping a two-tone group cycles
-// its shade, preserving the full eight-color palette without eight tiny hits.
-const PALETTE_GROUPS: { label: string; colors: string[] }[] = [
-  { label: 'ink', colors: ['#2b2016'] },
-  { label: 'ember', colors: ['#ff5a3d', '#ff9a3d'] },
-  { label: 'tide', colors: ['#3ba0e0', '#7fd8e6'] },
-  { label: 'moss', colors: ['#4faa4f'] },
-  { label: 'storm', colors: ['#8a5cd8', '#f2cf3d'] },
-];
+// Every base color is visible at once; premium pens remain a separate unlock.
+const PALETTE_COLORS = [
+  '#2b2016',
+  '#ff5a3d',
+  '#ff9a3d',
+  '#3ba0e0',
+  '#7fd8e6',
+  '#4faa4f',
+  '#8a5cd8',
+  '#f2cf3d',
+] as const;
 
 const MIN_LINE_WIDTH = 8;
 const MAX_LINE_WIDTH = 56;
 const LINE_WIDTH_STEP = 4;
 const DEFAULT_LINE_WIDTH = 24;
-const PEN_SHORT_LABEL: Record<string, string> = {
-  'warm-greys': 'Greys',
-  'pastel-set': 'Pastel',
-  'autumn-set': 'Autumn',
-  'ocean-set': 'Ocean',
-  'gold-pen': 'Gold',
-  'neon-set': 'Neon',
-  'midnight-ink': 'Night',
-  'rainbow-crayon': 'Rainbow',
-};
+type AnalyzerWorkerResponse = Readonly<{
+  requestId: number;
+  result: AnalyzerResult;
+}>;
 
 export class Draw extends Scene {
   private overlay!: DomOverlay;
   private canvas!: DrawCanvas;
   private nameInput: HTMLInputElement | null = null;
 
-  private bars!: StatGrid;
-  private elementBadgeRef: Phaser.GameObjects.Container | null = null;
-  private statCard: Phaser.GameObjects.Container | null = null;
-  private badgeLocalY = 0;
   private reactionText!: Phaser.GameObjects.Text;
-  private currentElement: Element = 'ember';
   private lastResult: AnalyzerResult | null = null;
-  private colorSwatches: Phaser.GameObjects.Rectangle[] = [];
-  private penSwatches: { rect: Phaser.GameObjects.Rectangle; penId: string }[] =
-    [];
-  private pensRow: Phaser.GameObjects.Container | null = null;
-  private pensRowY = 0;
+  private selectedColorIndex = 0;
+  private paletteSwatches: Phaser.GameObjects.Arc[] = [];
+  private premiumPenIndex = -1;
+  private premiumPenBackground: Phaser.GameObjects.Rectangle | null = null;
+  private premiumPenSwatch: Phaser.GameObjects.Arc | null = null;
   private lineWidth = DEFAULT_LINE_WIDTH;
   private lineWidthPreviewDot: Phaser.GameObjects.Arc | null = null;
+  private submitButton: Phaser.GameObjects.Container | null = null;
+  private creationControlsReady: boolean | null = null;
 
   private resizeHandler = (): void => this.overlay?.sync();
   private visualViewportResizeHandler = (): void => this.overlay?.sync();
@@ -141,6 +126,8 @@ export class Draw extends Scene {
   private stickerButtonLabel: Phaser.GameObjects.Text | null = null;
   private drawerOpen = false;
   private previewTimer: Phaser.Time.TimerEvent | null = null;
+  private analysisWorker: Worker | null = null;
+  private analysisRequestId = 0;
   private startFightAfterBirth = false;
   private birthContinuationStarted = false;
   private canvasDareOverlay: HTMLDivElement | null = null;
@@ -162,20 +149,25 @@ export class Draw extends Scene {
       data !== null &&
       'mode' in data &&
       data.mode === 'practice';
-    this.elementBadgeRef = null;
     this.lastResult = null;
-    this.colorSwatches = [];
-    this.penSwatches = [];
+    this.selectedColorIndex = 0;
+    this.paletteSwatches = [];
+    this.premiumPenIndex = -1;
+    this.premiumPenBackground = null;
+    this.premiumPenSwatch = null;
     this.lineWidth = DEFAULT_LINE_WIDTH;
     this.lineWidthPreviewDot = null;
+    this.submitButton = null;
+    this.creationControlsReady = null;
     this.submitting = false;
     this.errorPanelRef = null;
-    this.currentElement = 'ember';
     this.livingPaper = null;
     this.stickers = null;
     this.stickerButtonLabel = null;
     this.drawerOpen = false;
     this.previewTimer = null;
+    this.analysisWorker = null;
+    this.analysisRequestId = 0;
     this.startFightAfterBirth = false;
     this.birthContinuationStarted = false;
     this.canvasDareOverlay = null;
@@ -236,6 +228,7 @@ export class Draw extends Scene {
     this.livingPaper = new LivingPaper(this, { edgeCreatures: false });
     this.buildChrome();
     this.buildOverlay();
+    this.startAnalyzerWorker();
     if (!this.practiceMode) this.setupStickers();
     this.refreshPreview();
 
@@ -256,12 +249,40 @@ export class Draw extends Scene {
     );
     this.previewTimer?.remove();
     this.previewTimer = null;
+    this.analysisWorker?.terminate();
+    this.analysisWorker = null;
     this.canvas?.destroy();
     this.overlay?.destroy();
     this.livingPaper?.destroy();
     this.livingPaper = null;
     this.stickers?.destroy();
     this.stickers = null;
+  }
+
+  private startAnalyzerWorker(): void {
+    try {
+      const worker = new Worker(
+        new URL('../workers/analyzer.worker.ts', import.meta.url),
+        { type: 'module' }
+      );
+      worker.onmessage = (event: MessageEvent<AnalyzerWorkerResponse>) => {
+        if (
+          !this.scene.isActive() ||
+          event.data.requestId !== this.analysisRequestId
+        ) {
+          return;
+        }
+        this.lastResult = event.data.result;
+        this.updateReaction(event.data.result);
+      };
+      worker.onerror = () => {
+        worker.terminate();
+        if (this.analysisWorker === worker) this.analysisWorker = null;
+      };
+      this.analysisWorker = worker;
+    } catch {
+      this.analysisWorker = null;
+    }
   }
 
   // The live 512-canvas rect in design space (the DOM canvas sits here). Stickers
@@ -282,7 +303,7 @@ export class Draw extends Scene {
   }
 
   // Load the owned-accessory inventory, then wire the sticker drawer. Fetched
-  // async so the drawing UI never blocks; the ✨ button reflects owned copies.
+  // async so the drawing UI never blocks; the sticker badge reflects owned copies.
   private setupStickers(): void {
     void this.refreshStickerInventory();
   }
@@ -308,14 +329,14 @@ export class Draw extends Scene {
   }
   private updateStickerButton(): void {
     const count = this.stickers?.count ?? 0;
-    this.stickerButtonLabel?.setText(count > 0 ? `✨ ${count}/2` : '✨');
+    this.stickerButtonLabel?.setText(count > 0 ? `${count}/2` : '');
   }
 
   private toggleStickerDrawer(): void {
     if (!this.stickers) return;
     if (!this.stickers.hasAnyOwned()) {
       showToast(
-        'Win accessories from the capsule machine to sticker your scribbit! 🎰'
+        'Win accessories from the capsule machine to sticker your scribbit!'
       );
       return;
     }
@@ -343,12 +364,12 @@ export class Draw extends Scene {
   // --- Layout budget (720x1280 design space) --------------------------------
   // Canvas is the hero. Everything below stacks on a strict grid so nothing
   // overlaps or clips: canvas → tools → stat panel → name → submit.
-  private static readonly CANVAS_CENTER_Y = 372;
-  private static readonly CANVAS_SQUARE = 480; // big hero canvas
-  private static readonly TOOLS_Y = 720; // colors + pens + brush/edit band
-  private static readonly STAT_Y = 936; // stat panel center
-  private static readonly NAME_Y = 1104;
-  private static readonly SUBMIT_Y = 1212;
+  private static readonly CANVAS_CENTER_Y = 410;
+  private static readonly CANVAS_SQUARE = 620;
+  private static readonly TOOLS_Y = 842;
+  private static readonly STATUS_Y = 1000;
+  private static readonly NAME_Y = 1092;
+  private static readonly SUBMIT_Y = 1200;
 
   // --- Phaser chrome (everything except the live canvas + name input) -------
   private buildChrome(): void {
@@ -379,8 +400,8 @@ export class Draw extends Scene {
     frame.strokeRoundedRect(left + 6, top + 6, square + 4, square + 4, 12);
 
     this.buildToolsBand(Draw.TOOLS_Y);
-    this.buildStatPanel(Draw.STAT_Y);
-    button(
+    this.buildStatusStrip(Draw.STATUS_Y);
+    this.submitButton = button(
       this,
       width / 2,
       Draw.SUBMIT_Y,
@@ -390,14 +411,15 @@ export class Draw extends Scene {
       this.practiceMode ? UI.tapeAlt : UI.coral,
       UI.ink
     );
+    this.submitButton.setAlpha(0).setVisible(false);
   }
 
-  // Three clean lines: base color swatches, Mystery Ink pens (unlocked +
-  // ghosted locked slots), then line width + edit tools.
+  // Two compact rows: every base color remains visible, while editing tools and
+  // unlocked premium pens stay thumb-sized below it.
   private buildToolsBand(centerY: number): void {
     const { width } = this.scale;
     const panelW = width - EDGE * 2;
-    const panelH = 196;
+    const panelH = 220;
     const panelTop = centerY - panelH / 2;
     const panel = this.add.graphics();
     panel.fillStyle(UI.creamHex, 0.94);
@@ -405,99 +427,196 @@ export class Draw extends Scene {
     panel.lineStyle(3, UI.inkHex, 0.72);
     panel.strokeRoundedRect(EDGE, panelTop, panelW, panelH, 16);
 
-    const colorY = centerY - 64;
-    const penY = centerY - 2;
-    const toolY = centerY + 60;
+    const paletteY = centerY - 52;
+    const toolY = centerY + 52;
+    this.buildPaletteRow(paletteY, panelW);
 
-    // Large grouped swatches, evenly distributed across the full width.
-    const count = PALETTE_GROUPS.length;
-    const labelW = 92;
-    label(
-      this,
-      EDGE + labelW / 2,
-      colorY,
-      'Color',
-      TYPE.caption,
-      UI.inkSoft,
-      true
+    const canUseStickers =
+      !this.practiceMode &&
+      (this.getArenaState()?.myScribbits.length ?? 0) > 0;
+    const hasPremiumPens = this.unlockedPens().length > 0;
+    const toolCount = 3 + Number(canUseStickers) + Number(hasPremiumPens);
+    const toolSpacing = panelW / toolCount;
+    const toolWidth = Math.min(120, toolSpacing - 12);
+    const toolSlots = Array.from(
+      { length: toolCount },
+      (_, index) => EDGE + toolSpacing * (index + 0.5)
     );
-    const startX = EDGE + labelW + 8;
-    const gap = (width - startX - EDGE) / count;
-    PALETTE_GROUPS.forEach((entry, index) => {
-      const x = startX + gap * (index + 0.5);
-      const swatch = this.add
-        .rectangle(x, colorY, Math.min(100, gap - 10), 72, UI.creamHex, 1)
-        .setStrokeStyle(4, UI.inkHex, 1);
-      const visualWidth = entry.colors.length === 1 ? 54 : 38;
-      entry.colors.forEach((color, colorIndex) => {
-        const colorX =
-          entry.colors.length === 1 ? x : x + (colorIndex === 0 ? -20 : 20);
-        this.add
-          .rectangle(
-            colorX,
-            colorY,
-            visualWidth,
-            42,
-            Phaser.Display.Color.HexStringToColor(color).color,
-            1
-          )
-          .setStrokeStyle(2, UI.inkHex, 0.8);
-      });
-      const hit = this.add
-        .rectangle(x, colorY, Math.min(104, gap - 6), 88, 0xffffff, 0.001)
-        .setInteractive({ useHandCursor: true });
-      let nextShadeIndex = 0;
-      hit.on('pointerup', () => {
-        const color = entry.colors[nextShadeIndex % entry.colors.length];
-        nextShadeIndex += 1;
-        this.selectColor(index, color ?? '#2b2016');
-      });
-      this.colorSwatches.push(swatch);
-    });
-    this.selectColor(0, PALETTE_GROUPS[0]?.colors[0] ?? '#2b2016');
-
-    this.buildPensRow(penY);
-
-    this.buildLineWidthControls(toolY);
+    let toolIndex = 0;
+    this.buildLineWidthControl(
+      toolSlots[toolIndex] ?? width / 2,
+      toolY,
+      toolWidth
+    );
+    toolIndex += 1;
     this.setLineWidth(DEFAULT_LINE_WIDTH);
 
-    // Stickers toggle (center): opens the accessory drawer. Its label shows the
-    // placed count (e.g. "✨ 1/2") once accessories are attached.
-    const hasExistingScribbit =
-      (this.getArenaState()?.myScribbits.length ?? 0) > 0;
-    if (!this.practiceMode && hasExistingScribbit) {
-      const stickerBtn = this.toolIconButton(
-        width / 2 + 6,
+    if (hasPremiumPens) {
+      this.buildPremiumPenControl(
+        toolSlots[toolIndex] ?? width / 2,
         toolY,
-        '✨',
-        () => this.toggleStickerDrawer(),
-        70
+        toolWidth
       );
-      this.stickerButtonLabel = stickerBtn.list[1] as Phaser.GameObjects.Text;
+      toolIndex += 1;
     }
 
-    // Edit tools (right group): erase / undo / clear.
-    this.toolIconButton(width - 255, toolY, '🧽', () =>
-      this.canvas?.setEraser()
+    if (canUseStickers) {
+      const stickerBtn = this.toolIconButton(
+        toolSlots[toolIndex] ?? width / 2,
+        toolY,
+        'sticker',
+        () => this.toggleStickerDrawer(),
+        toolWidth
+      );
+      toolIndex += 1;
+      this.stickerButtonLabel = label(
+        this,
+        24,
+        -27,
+        '',
+        15,
+        UI.coralText,
+        true
+      );
+      stickerBtn.add(this.stickerButtonLabel);
+    }
+
+    this.toolIconButton(
+      toolSlots[toolIndex] ?? width - 260,
+      toolY,
+      'eraser',
+      () => this.canvas?.setEraser(),
+      toolWidth
     );
-    this.toolIconButton(width - 160, toolY, '↩', () => this.canvas?.undo());
-    this.toolIconButton(width - 65, toolY, '🗑', () => this.confirmClear());
+    toolIndex += 1;
+    this.toolIconButton(
+      toolSlots[toolIndex] ?? width - 160,
+      toolY,
+      'undo',
+      () => this.canvas?.undo(),
+      toolWidth
+    );
+  }
+
+  private buildPaletteRow(y: number, panelWidth: number): void {
+    const spacing = panelWidth / PALETTE_COLORS.length;
+    PALETTE_COLORS.forEach((color, colorIndex) => {
+      const x = EDGE + spacing * (colorIndex + 0.5);
+      const container = this.add.container(x, y);
+      const swatch = this.add
+        .circle(
+          0,
+          0,
+          colorIndex === this.selectedColorIndex ? 29 : 23,
+          Phaser.Display.Color.HexStringToColor(color).color,
+          1
+        )
+        .setStrokeStyle(
+          colorIndex === this.selectedColorIndex ? 6 : 3,
+          colorIndex === this.selectedColorIndex ? UI.goldHex : UI.inkHex,
+          1
+        );
+      const hit = this.add
+        .rectangle(0, 0, spacing, 84, 0xffffff, 0.001)
+        .setInteractive({ useHandCursor: true });
+      container.add([swatch, hit]);
+      hit.on('pointerup', () => this.selectBaseColor(colorIndex));
+      this.paletteSwatches.push(swatch);
+    });
+  }
+
+  private selectBaseColor(colorIndex: number): void {
+    const color = PALETTE_COLORS[colorIndex];
+    if (!color) return;
+    this.selectedColorIndex = colorIndex;
+    this.canvas?.setColor(color);
+    this.premiumPenBackground?.setStrokeStyle(4, UI.inkHex, 1);
+    this.refreshPaletteSelection();
+  }
+
+  private refreshPaletteSelection(): void {
+    this.paletteSwatches.forEach((swatch, colorIndex) => {
+      const selected = colorIndex === this.selectedColorIndex;
+      swatch.setRadius(selected ? 29 : 23);
+      swatch.setStrokeStyle(
+        selected ? 6 : 3,
+        selected ? UI.goldHex : UI.inkHex,
+        1
+      );
+    });
+  }
+
+  private unlockedPens(): PenCatalogEntry[] {
+    const unlocked = new Set(this.getArenaState()?.myPens ?? []);
+    return PEN_CATALOG.filter((pen) => unlocked.has(pen.id));
+  }
+
+  private buildPremiumPenControl(x: number, y: number, width: number): void {
+    const pens = this.unlockedPens();
+    const firstPen = pens[0];
+    if (!firstPen) return;
+    const container = this.add.container(x, y);
+    this.premiumPenBackground = this.add
+      .rectangle(0, 0, width, 88, UI.creamHex, 1)
+      .setStrokeStyle(4, UI.inkHex, 1);
+    this.premiumPenSwatch = this.add
+      .circle(
+        0,
+        0,
+        28,
+        Phaser.Display.Color.HexStringToColor(penSwatchColor(firstPen)).color,
+        1
+      )
+      .setStrokeStyle(4, UI.inkHex, 1);
+    const premiumMark = this.add
+      .circle(31, -27, 9, UI.gold, 1)
+      .setStrokeStyle(3, UI.inkHex, 1);
+    const cycleMarks = this.add.graphics();
+    cycleMarks.fillStyle(UI.inkHex, 0.55);
+    [-10, 0, 10].forEach((offset) => cycleMarks.fillCircle(offset, 34, 2));
+    const hit = this.add
+      .rectangle(0, 0, Math.max(width, MIN_TOUCH), MIN_TOUCH, 0xffffff, 0.001)
+      .setInteractive({ useHandCursor: true });
+    container.add([
+      this.premiumPenBackground,
+      this.premiumPenSwatch,
+      premiumMark,
+      cycleMarks,
+      hit,
+    ]);
+    hit.on('pointerup', () => this.cyclePremiumPen());
+  }
+
+  private cyclePremiumPen(): void {
+    const pens = this.unlockedPens();
+    if (pens.length === 0) return;
+    this.premiumPenIndex = (this.premiumPenIndex + 1) % pens.length;
+    const pen = pens[this.premiumPenIndex];
+    if (!pen) return;
+    this.canvas?.setPen(pen.effect, pen.colors);
+    this.premiumPenSwatch?.setFillStyle(
+      Phaser.Display.Color.HexStringToColor(penSwatchColor(pen)).color,
+      1
+    );
+    this.selectedColorIndex = -1;
+    this.refreshPaletteSelection();
+    this.premiumPenBackground?.setStrokeStyle(6, UI.goldHex, 1);
   }
 
   private toolIconButton(
     x: number,
     y: number,
-    icon: string,
+    icon: PaperToolIconKey,
     onClick: () => void,
-    width = 70
+    width = 88
   ): Phaser.GameObjects.Container {
     const container = this.add.container(x, y);
     const bg = this.add
-      .rectangle(0, 0, width, 70, UI.creamHex, 1)
+      .rectangle(0, 0, width, 88, UI.creamHex, 1)
       .setStrokeStyle(4, UI.inkHex, 1);
-    const glyph = label(this, 0, 0, icon, 26, UI.ink, true);
+    const glyph = paperToolIcon(this, icon, 0, 0, 36);
     const hit = this.add
-      .rectangle(0, 0, Math.max(width, 88), 88, 0xffffff, 0.001)
+      .rectangle(0, 0, Math.max(width, MIN_TOUCH), MIN_TOUCH, 0xffffff, 0.001)
       .setInteractive({ useHandCursor: true });
     container.add([bg, glyph, hit]);
     const press = (): void => {
@@ -527,14 +646,10 @@ export class Draw extends Scene {
     return container;
   }
 
-  private buildLineWidthControls(y: number): void {
-    this.toolIconButton(EDGE + 35, y, '−', () =>
-      this.adjustLineWidth(-LINE_WIDTH_STEP)
-    );
-
-    const preview = this.add.container(EDGE + 125, y);
+  private buildLineWidthControl(x: number, y: number, width: number): void {
+    const preview = this.add.container(x, y);
     const bg = this.add
-      .rectangle(0, 0, 70, 70, UI.creamHex, 1)
+      .rectangle(0, 0, width, 88, UI.creamHex, 1)
       .setStrokeStyle(4, UI.inkHex, 1);
     this.lineWidthPreviewDot = this.add.circle(
       0,
@@ -543,15 +658,24 @@ export class Draw extends Scene {
       UI.inkHex,
       1
     );
-    preview.add([bg, this.lineWidthPreviewDot]);
-
-    this.toolIconButton(EDGE + 215, y, '+', () =>
-      this.adjustLineWidth(LINE_WIDTH_STEP)
-    );
-  }
-
-  private adjustLineWidth(delta: number): void {
-    this.setLineWidth(this.lineWidth + delta);
+    const ring = this.add
+      .circle(0, 0, 31, UI.creamHex, 0)
+      .setStrokeStyle(3, UI.inkHex, 0.35);
+    const hit = this.add
+      .rectangle(0, 0, width, MIN_TOUCH, 0xffffff, 0.001)
+      .setInteractive({ useHandCursor: true });
+    preview.add([bg, ring, this.lineWidthPreviewDot, hit]);
+    hit.on('pointerup', () => {
+      const next = this.lineWidth + LINE_WIDTH_STEP * 2;
+      this.setLineWidth(next > MAX_LINE_WIDTH ? MIN_LINE_WIDTH : next);
+      this.tweens.add({
+        targets: preview,
+        scale: 0.92,
+        duration: 70,
+        yoyo: true,
+        ease: 'Quad.easeOut',
+      });
+    });
   }
 
   private setLineWidth(width: number): void {
@@ -564,277 +688,28 @@ export class Draw extends Scene {
     return Phaser.Math.Clamp(this.lineWidth / 2, 5, 23);
   }
 
-  // Mystery Ink pens: every catalog pen shows as a swatch. Unlocked pens are
-  // tappable (rainbow/midnight get special rendering in the canvas); locked pens
-  // are ghosted with a 🔒 and deep-link to the capsule machine — visible
-  // aspiration that drives the gacha loop.
-  private buildPensRow(y: number): void {
-    this.pensRowY = y;
-    this.pensRow?.destroy(true);
-    this.penSwatches = [];
-    const container = this.add.container(0, 0);
-    this.pensRow = container;
-
-    const { width } = this.scale;
-    const arena = this.getArenaState();
-    const unlocked = new Set(arena?.myPens ?? []);
-    const labelW = 92;
-
-    container.add(
-      label(this, EDGE + labelW / 2, y, 'Pens', TYPE.caption, UI.inkSoft, true)
-    );
-
-    const startX = EDGE + labelW + 8;
-    const unlockedPens = PEN_CATALOG.filter((pen) => unlocked.has(pen.id));
-    const machineW = 100;
-    const cellCount = Math.max(1, unlockedPens.length);
-    const avail = width - startX - EDGE - machineW - 12;
-    const gap = avail / cellCount;
-    unlockedPens.forEach((pen, index) => {
-      const x = startX + gap * (index + 0.5);
-      const rarityColor = RARITY_STYLE[pen.rarity].color;
-      const chipW = Math.min(104, Math.max(82, gap - 10));
-      const chip = this.add
-        .rectangle(x, y, chipW, 44, UI.creamHex, 1)
-        .setStrokeStyle(3, rarityColor, 1)
-        .setInteractive({ useHandCursor: true });
-      container.add(chip);
-
-      // Rainbow gets a multi-hue swatch backing so it reads as special.
-      if (pen.effect === 'rainbow') {
-        this.rainbowHint(container, x - chipW / 2 + 26, y);
-      }
-      const swatchX = x - chipW / 2 + 24;
-      const swatch = this.add
-        .rectangle(
-          swatchX,
-          y,
-          26,
-          26,
-          Phaser.Display.Color.HexStringToColor(penSwatchColor(pen)).color,
-          1
-        )
-        .setStrokeStyle(2, UI.inkHex, 1);
-      const penName = label(
-        this,
-        swatchX + 22,
-        y,
-        this.shortPenLabel(pen),
-        15,
-        UI.ink,
-        true
-      ).setOrigin(0, 0.5);
-      penName.setWordWrapWidth(chipW - 52);
-      container.add([swatch, penName]);
-
-      chip.on('pointerup', () => this.selectPen(index, pen));
-      swatch
-        .setInteractive({ useHandCursor: true })
-        .on('pointerup', () => this.selectPen(index, pen));
-      penName
-        .setInteractive({ useHandCursor: true })
-        .on('pointerup', () => this.selectPen(index, pen));
-      this.penSwatches.push({ rect: chip, penId: pen.id });
-    });
-
-    if (!this.practiceMode) {
-      const machineX = width - EDGE - machineW / 2;
-      const machine = this.add
-        .rectangle(machineX, y, machineW, 48, UI.gold, 1)
-        .setStrokeStyle(3, UI.inkHex, 1)
-        .setInteractive({ useHandCursor: true });
-      const machineLabel = label(
-        this,
-        machineX,
-        y,
-        'Capsule',
-        22,
-        UI.ink,
-        true
-      );
-      container.add([machine, machineLabel]);
-      machine.on('pointerup', () => this.openCapsuleFromDraw());
-    }
-  }
-
-  private shortPenLabel(pen: PenCatalogEntry): string {
-    return PEN_SHORT_LABEL[pen.id] ?? pen.name.split(/\s+/)[0] ?? pen.name;
-  }
-
-  // A small rainbow flourish behind the rainbow pen swatch.
-  private rainbowHint(
-    container: Phaser.GameObjects.Container,
-    x: number,
-    y: number
-  ): void {
-    const hues = [0xff5a3d, 0xf2cf3d, 0x4faa4f, 0x3ba0e0, 0x8a5cd8];
-    hues.forEach((hue, index) => {
-      container.add(
-        this.add.rectangle(x - 20 + index * 10, y, 8, 44, hue, 0.9)
-      );
-    });
-  }
-
   // The current arena snapshot (myPens/myInk live here).
   private getArenaState(): ArenaState | undefined {
     return getArena(this);
   }
 
-  // After a capsule pull closes, re-fetch arena so a freshly-unlocked pen shows
-  // up as a live swatch (no scene restart, canvas drawing preserved).
-  private async refreshDrawingToolsAfterPull(): Promise<void> {
-    const [arenaResult] = await Promise.all([
-      fetchArena(),
-      this.refreshStickerInventory(),
-    ]);
-    if (arenaResult.ok) setArena(this, arenaResult.data);
-    if (this.scene.isActive()) this.buildPensRow(this.pensRowY);
-  }
-
-  private selectPen(index: number, pen: PenCatalogEntry): void {
-    this.canvas?.setPen(pen.effect, pen.colors);
-    // Deselect base swatches with smooth tween.
-    this.colorSwatches.forEach((swatch) => {
-      swatch.setStrokeStyle(4, UI.inkHex, 1);
-      this.tweens.add({
-        targets: swatch,
-        scaleX: 1,
-        scaleY: 1,
-        duration: 120,
-        ease: 'Quad.easeOut',
-      });
-    });
-    // Highlight the chosen pen with smooth tween.
-    this.penSwatches.forEach(({ rect, penId }) => {
-      const chosen = penId === pen.id;
-      const entry = PEN_BY_ID.get(penId);
-      const rarityColor = entry ? RARITY_STYLE[entry.rarity].color : UI.inkHex;
-      rect.setStrokeStyle(chosen ? 6 : 3, chosen ? UI.goldHex : rarityColor, 1);
-      this.tweens.add({
-        targets: rect,
-        scaleX: chosen ? 1.18 : 1,
-        scaleY: chosen ? 1.18 : 1,
-        duration: 150,
-        ease: 'Back.easeOut',
-      });
-    });
-    void index;
-  }
-
-  private openCapsuleFromDraw(): void {
-    const arenaState = this.getArenaState();
-    this.drawerOpen = false;
-    this.stickers?.closeDrawer();
-    this.stickers?.hideOverlays();
-    this.overlay.setVisible(false);
-    openCapsuleMachine(this, {
-      ink: arenaState?.myInk ?? 0,
-      nextCost: arenaState?.nextCapsuleCost ?? CAPSULE_FIRST_DAILY_COST,
-      progress: arenaState?.capsuleProgress ?? {
-        pullCount: 0,
-        pityRemaining: CAPSULE_PITY,
-        discoveredCount: 0,
-        collectionTotal: 1,
-      },
-      onPull: async (operationId) => {
-        const result = await pullCapsule(operationId);
-        if (!result.ok) return { error: result.error };
-        const currentArena = this.getArenaState();
-        if (currentArena) {
-          setArena(this, {
-            ...currentArena,
-            myInk: result.data.ink,
-            myPens: [...result.data.inventory.pens],
-            nextCapsuleCost: result.data.nextCost,
-            capsuleProgress: result.data.progress,
-          });
-        }
-        return result.data;
-      },
-      // Rebuild the pens row so a freshly unlocked pen appears immediately.
-      onClose: () => {
-        if (!this.scene.isActive() || this.submitting) return;
-        this.overlay.setVisible(true);
-        this.stickers?.showOverlays();
-        void this.refreshDrawingToolsAfterPull();
-      },
-    });
-  }
-
-  private selectColor(index: number, color: string): void {
-    this.canvas?.setColor(color);
-    this.colorSwatches.forEach((swatch, swatchIndex) => {
-      const selected = swatchIndex === index;
-      swatch.setStrokeStyle(
-        selected ? 6 : 4,
-        selected ? UI.goldHex : UI.inkHex,
-        1
-      );
-      // Smooth tween to the selected/unselected scale for a polished feel.
-      this.tweens.add({
-        targets: swatch,
-        scaleX: selected ? 1.18 : 1,
-        scaleY: selected ? 1.18 : 1,
-        duration: 150,
-        ease: 'Back.easeOut',
-      });
-    });
-    // Deselect any active pen highlight.
-    this.penSwatches.forEach(({ rect, penId }) => {
-      const pen = PEN_BY_ID.get(penId);
-      rect.setStrokeStyle(
-        3,
-        pen ? RARITY_STYLE[pen.rarity].color : UI.inkHex,
-        1
-      );
-      this.tweens.add({
-        targets: rect,
-        scaleX: 1,
-        scaleY: 1,
-        duration: 120,
-        ease: 'Quad.easeOut',
-      });
-    });
-  }
-
-  private confirmClear(): void {
-    this.canvas?.clear();
-    showToast('Fresh page ✏️');
-  }
-
-  // Compact stat card: reaction + element badge on the top row, a 2x2 stat grid
-  // below. Sized so the grid can NEVER clip the panel edge.
-  private buildStatPanel(centerY: number): void {
+  private buildStatusStrip(centerY: number): void {
     const { width } = this.scale;
     const panelW = width - EDGE * 2;
-    const panelH = 210;
+    const panelH = 96;
     const card = stickerCard(this, width / 2, centerY, panelW, panelH, {
       tape: false,
     });
-
-    this.statCard = card;
-    this.badgeLocalY = -panelH / 2 + 70;
     this.reactionText = label(
       this,
       0,
-      -panelH / 2 + 30,
-      DRAW_RULES_COPY,
+      0,
+      'DRAW A BODY',
       TYPE.body,
       UI.ink,
       true
-    ).setLineSpacing(-3);
+    );
     card.add(this.reactionText);
-    this.elementBadgeRef = elementBadge(
-      this,
-      0,
-      this.badgeLocalY,
-      this.currentElement,
-      0.74
-    ).setVisible(false);
-    card.add(this.elementBadgeRef);
-
-    this.bars = statGrid(this, width / 2, centerY + 44, panelW - 48, 116);
-    this.bars.container.setAlpha(0.28);
   }
 
   // --- DOM overlay (live canvas + name input) -------------------------------
@@ -860,6 +735,7 @@ export class Draw extends Scene {
 
     if (this.practiceMode) {
       this.buildPracticeProgressOverlay();
+      this.setCreationControlsReady(false);
       return;
     }
 
@@ -867,6 +743,7 @@ export class Draw extends Scene {
     // throwaway shape test, not another roster object in disguise.
     this.nameInput = document.createElement('input');
     this.nameInput.type = 'text';
+    this.nameInput.className = 'scribbits-name-input';
     this.nameInput.maxLength = 24;
     this.nameInput.placeholder = 'Name your scribbit…';
     this.nameInput.autocomplete = 'off';
@@ -880,15 +757,15 @@ export class Draw extends Scene {
       this.trySubmit();
     });
     Object.assign(this.nameInput.style, {
-      fontFamily: FONT_STACK,
-      fontSize: '26px',
-      fontWeight: '700',
+      ...DOM_TYPE.title,
       textAlign: 'center',
       color: '#2b2016',
       background: '#fff7e8',
       border: '4px solid #2b2016',
       borderRadius: '14px',
       outline: 'none',
+      opacity: '0',
+      transition: prefersReducedMotion() ? 'none' : 'opacity 180ms ease-out',
     });
     // Distinct row above the submit button — NAME_Y is its center; a 68px-tall
     // field spans 1076..1144, well clear of the 96px submit button (1170..1266).
@@ -899,6 +776,7 @@ export class Draw extends Scene {
       width: this.scale.width - EDGE * 2,
       height: nameH,
     });
+    this.setCreationControlsReady(false);
   }
 
   private buildPracticeProgressOverlay(): void {
@@ -914,10 +792,7 @@ export class Draw extends Scene {
       justifyContent: 'center',
       padding: '4px 12px',
       boxSizing: 'border-box',
-      fontFamily: FONT_STACK,
-      fontSize: '16px',
-      fontWeight: '900',
-      lineHeight: '1',
+      ...DOM_TYPE.caption,
       whiteSpace: 'nowrap',
       textAlign: 'center',
       color: UI.coralText,
@@ -969,9 +844,7 @@ export class Draw extends Scene {
     const prompt = document.createElement('div');
     prompt.textContent = dare.prompt.toUpperCase();
     Object.assign(prompt.style, {
-      fontSize: '20px',
-      fontWeight: '900',
-      lineHeight: '1.08',
+      ...DOM_TYPE.title,
     });
     card.append(prompt);
     overlay.append(card);
@@ -999,45 +872,51 @@ export class Draw extends Scene {
     }
     this.previewTimer = this.time.delayedCall(80, () => {
       this.previewTimer = null;
-      this.refreshPreview();
+      this.requestPreviewAnalysis();
     });
+  }
+
+  private requestPreviewAnalysis(): void {
+    if (!this.canvas) return;
+    const imageData = this.canvas.getImageData();
+    const worker = this.analysisWorker;
+    if (!worker) {
+      this.applyAnalysisResult(
+        analyze({
+          data: imageData.data,
+          width: imageData.width,
+          height: imageData.height,
+        })
+      );
+      return;
+    }
+    this.analysisRequestId += 1;
+    worker.postMessage(
+      {
+        requestId: this.analysisRequestId,
+        data: imageData.data.buffer,
+        width: imageData.width,
+        height: imageData.height,
+      },
+      [imageData.data.buffer]
+    );
   }
 
   private refreshPreview(): void {
     if (!this.canvas) return;
+    this.analysisRequestId += 1;
     const imageData = this.canvas.getImageData();
     const result = analyze({
       data: imageData.data,
       width: imageData.width,
       height: imageData.height,
     });
-    this.lastResult = result;
-    this.bars.setStats(result.stats, true);
-    this.updateElementBadge(result.element);
-    this.updateReaction(result);
+    this.applyAnalysisResult(result);
   }
 
-  private updateElementBadge(element: Element): void {
-    if (element === this.currentElement && this.elementBadgeRef) return;
-    this.currentElement = element;
-    this.elementBadgeRef?.destroy();
-    // Re-add inside the stat card at the same local slot so it stays framed.
-    this.elementBadgeRef = elementBadge(
-      this,
-      0,
-      this.badgeLocalY,
-      element,
-      0.74
-    );
-    this.statCard?.add(this.elementBadgeRef);
-    // Morph pop.
-    this.elementBadgeRef.setScale(0.55);
-    this.tweens.add({
-      targets: this.elementBadgeRef,
-      scale: 0.74,
-      duration: 260,
-      ease: 'Back.easeOut',
-    });
+  private applyAnalysisResult(result: AnalyzerResult): void {
+    this.lastResult = result;
+    this.updateReaction(result);
   }
 
   private updateReaction(result: AnalyzerResult): void {
@@ -1049,10 +928,7 @@ export class Draw extends Scene {
     });
     const ready = feedback.phase === 'ready';
     this.setCanvasDareVisible(feedback.phase === 'blank');
-    this.elementBadgeRef?.setVisible(ready);
-    this.bars.container.setAlpha(
-      feedback.phase === 'blank' ? 0.28 : ready ? 1 : 0.55
-    );
+    this.setCreationControlsReady(ready);
 
     if (this.reactionText.text !== feedback.message) {
       this.reactionText.setText(feedback.message);
@@ -1068,6 +944,40 @@ export class Draw extends Scene {
     }
   }
 
+  private setCreationControlsReady(ready: boolean): void {
+    if (this.creationControlsReady === ready) return;
+    this.creationControlsReady = ready;
+
+    if (this.nameInput) {
+      this.nameInput.style.opacity = ready ? '1' : '0';
+      this.nameInput.style.pointerEvents = ready ? 'auto' : 'none';
+      this.nameInput.disabled = !ready;
+      this.nameInput.tabIndex = ready ? 0 : -1;
+      this.nameInput.setAttribute('aria-hidden', ready ? 'false' : 'true');
+      if (!ready) this.nameInput.blur();
+    }
+
+    const submitButton = this.submitButton;
+    if (!submitButton) return;
+    this.tweens.killTweensOf(submitButton);
+    if (!ready) {
+      submitButton.setAlpha(0).setVisible(false);
+      return;
+    }
+    submitButton.setVisible(true);
+    if (prefersReducedMotion()) {
+      submitButton.setAlpha(1);
+      return;
+    }
+    submitButton.setAlpha(0);
+    this.tweens.add({
+      targets: submitButton,
+      alpha: 1,
+      duration: 180,
+      ease: 'Quad.easeOut',
+    });
+  }
+
   // --- Submit + ceremony ----------------------------------------------------
   private trySubmit(): void {
     if (this.submitting) return;
@@ -1078,7 +988,7 @@ export class Draw extends Scene {
     this.refreshPreview();
     const result = this.lastResult;
     if (!result || !hasMinimumDrawingInk(result)) {
-      showToast('Your scribbit needs a body! Draw a bit more ✏️');
+      showToast('Your scribbit needs a body. Draw a bit more.');
       this.cameras.main.shake(220, 0.006);
       return;
     }
@@ -1086,7 +996,7 @@ export class Draw extends Scene {
       ? 'Practice Shape'
       : (this.nameInput?.value.trim() ?? '');
     if (!this.practiceMode && name.length < 2) {
-      showToast('Give your scribbit a name (2+ letters) 🏷️');
+      showToast('Give your scribbit a name (2+ letters).');
       this.nameInput?.focus();
       return;
     }
@@ -1220,85 +1130,25 @@ export class Draw extends Scene {
       .setOrigin(0)
       .setDepth(-90);
 
-    if (this.practiceMode) {
-      // Practice is a server diagnosis, not a second birth. Skip the egg hatch
-      // so the transient fighter can never be mistaken for a saved Scribbit.
-      this.time.delayedCall(prefersReducedMotion() ? 0 : 120, () => {
-        if (this.scene.isActive()) this.showBirthReveal(scribbit, dataUrl);
-      });
-      return;
-    }
-
-    // Egg hatching effect - an ink blob that cracks and bursts
-    const egg = this.add.graphics().setDepth(50);
-    const eggX = width / 2;
-    const eggY = height / 2;
-    const eggSize = 180;
-
-    // Draw the egg (ink blob)
-    egg.fillStyle(0x2b2016, 1);
-    egg.fillEllipse(eggX, eggY, eggSize, eggSize * 1.2);
-    egg.lineStyle(8, UI.inkHex, 1);
-    egg.strokeEllipse(eggX, eggY, eggSize, eggSize * 1.2);
-
-    // Egg wobble animation
-    this.tweens.add({
-      targets: egg,
-      angle: { from: -5, to: 5 },
-      duration: 200,
-      yoyo: true,
-      repeat: 3,
-      ease: 'Sine.easeInOut',
-      onComplete: () => {
-        // Egg cracks and bursts
-        this.cameras.main.shake(300, 0.015);
-
-        // Crack lines
-        const cracks = this.add.graphics().setDepth(51);
-        cracks.lineStyle(6, UI.creamHex, 1);
-        cracks.beginPath();
-        cracks.moveTo(eggX - 30, eggY - 40);
-        cracks.lineTo(eggX, eggY);
-        cracks.lineTo(eggX + 20, eggY + 30);
-        cracks.strokePath();
-        cracks.beginPath();
-        cracks.moveTo(eggX + 40, eggY - 20);
-        cracks.lineTo(eggX + 10, eggY + 10);
-        cracks.lineTo(eggX - 10, eggY + 50);
-        cracks.strokePath();
-
-        // Burst particles
-        const burstEmitter = this.add.particles(eggX, eggY, 'dot', {
-          speed: { min: 200, max: 500 },
-          scale: { start: 0.8, end: 0 },
-          lifespan: 800,
-          quantity: 1,
-          tint: 0x2b2016,
-          emitting: false,
-        });
-        burstEmitter.explode(30);
-        this.time.delayedCall(900, () => burstEmitter.destroy());
-
-        // Fade out egg
-        this.tweens.add({
-          targets: egg,
-          alpha: 0,
-          scale: 1.5,
-          duration: 300,
-          onComplete: () => {
-            egg.destroy();
-            cracks.destroy();
-            // Now show the actual ceremony
-            this.showBirthReveal(scribbit, dataUrl);
-          },
-        });
-      },
+    playBirthCeremony(this, {
+      scribbit,
+      dataUrl,
+      // Practice diagnoses a temporary shape; it must never imitate a saved
+      // daily birth. It still uses the same loaded texture in the result card.
+      animate: !this.practiceMode,
+      onComplete: ({ textureKey, newborn }) =>
+        this.showBirthReveal(scribbit, textureKey, newborn),
+      onError: () =>
+        this.showError('Your drawing was saved, but its reveal could not load.'),
     });
   }
 
-  private showBirthReveal(scribbit: Scribbit, dataUrl: string): void {
-    const { width, height } = this.scale;
-    const style = ELEMENT_STYLES[scribbit.element];
+  private showBirthReveal(
+    scribbit: Scribbit,
+    textureKey: string,
+    awakenedNewborn: LiveSprite | null
+  ): void {
+    const { width } = this.scale;
 
     const title = handLettered(
       this,
@@ -1317,43 +1167,14 @@ export class Draw extends Scene {
     });
     this.cameras.main.shake(200, 0.008);
 
-    // Only a committed daily birth earns Mystery Ink. Practice is explicitly
-    // reward-free and therefore never renders a payout animation.
-    if (!this.practiceMode) {
-      floatReward(
-        this,
-        width - 120,
-        360,
-        `+${INK_REWARDS.dailyDraw} 🫙`,
-        UI.goldText,
-        60
-      );
-    }
-
-    // Load the just-drawn PNG straight from the data URL for an instant reveal.
-    const key = `ceremony-${scribbit.id}`;
-    const image = new Image();
-    image.onload = () => {
-      if (!this.scene.isActive()) return;
-      if (!this.textures.exists(key)) this.textures.addImage(key, image);
-      this.revealCard(scribbit, key);
-    };
-    image.src = dataUrl;
-
-    // Confetti-ish sparkle burst.
-    const emitter = this.add.particles(width / 2, height / 2, 'spark', {
-      speed: { min: 120, max: 340 },
-      scale: { start: 0.5, end: 0 },
-      lifespan: 1200,
-      quantity: 30,
-      tint: [style.particle, UI.gold],
-      emitting: false,
-    });
-    emitter.explode(40);
-    this.time.delayedCall(1300, () => emitter.destroy());
+    this.revealCard(scribbit, textureKey, awakenedNewborn);
   }
 
-  private revealCard(scribbit: Scribbit, textureKey: string): void {
+  private revealCard(
+    scribbit: Scribbit,
+    textureKey: string,
+    awakenedNewborn: LiveSprite | null
+  ): void {
     const { width, height } = this.scale;
     const cardW = 500;
     const cardH = 440;
@@ -1365,12 +1186,15 @@ export class Draw extends Scene {
     card.setScale(0);
 
     const artY = cardY - cardH / 2 + 130;
-    const newborn = new LiveSprite(this, width / 2, artY, textureKey, {
-      displaySize: 230,
-      stats: scribbit.stats,
-      depth: 10,
-      reduceMotion: prefersReducedMotion(),
-    });
+    const newborn =
+      awakenedNewborn ??
+      new LiveSprite(this, width / 2, artY, textureKey, {
+        displaySize: 230,
+        stats: scribbit.stats,
+        depth: 10,
+        reduceMotion: prefersReducedMotion(),
+      });
+    newborn.setPosition(width / 2, artY).setDepth(10);
     const shapePowerName = getShapePowerSignatureName(
       scribbit.element,
       selectPrimaryPower(scribbit.stats)
@@ -1396,8 +1220,8 @@ export class Draw extends Scene {
       width / 2,
       cardY + 132,
       this.practiceMode
-        ? `${elementStyle.emoji} ${elementStyle.label.toUpperCase()} · SERVER CHECKED`
-        : `${elementStyle.emoji} ${elementStyle.label.toUpperCase()} · ${shapePowerName}`,
+        ? `${elementStyle.label.toUpperCase()} · SERVER CHECKED`
+        : `${elementStyle.label.toUpperCase()} · ${shapePowerName}`,
       20,
       elementStyle.primaryText,
       true
@@ -1412,7 +1236,7 @@ export class Draw extends Scene {
       duration: 500,
       ease: 'Back.easeOut',
     });
-    newborn.awaken();
+    if (!awakenedNewborn) newborn.awaken();
     this.tweens.add({
       targets: [mainLabel, detailLabel],
       alpha: 1,
@@ -1420,36 +1244,34 @@ export class Draw extends Scene {
       duration: 400,
     });
 
-    if (this.practiceMode || this.startFightAfterBirth) {
-      const returnPromise = stickerCard(
-        this,
-        width / 2,
-        height - 245,
-        width - 120,
-        76,
-        { tape: false, tilt: -1 }
-      )
-        .setAlpha(0)
-        .setDepth(10);
-      const returnPromiseCopy = label(
-        this,
-        0,
-        0,
-        this.practiceMode
-          ? `${this.practicePowers.length}/4 POWERS · NO REWARDS`
-          : `+${INK_REWARDS.dailyDraw} INK · ENTERED TONIGHT`,
-        20,
-        UI.coralText,
-        true
-      );
-      returnPromise.add(returnPromiseCopy);
-      this.tweens.add({
-        targets: returnPromise,
-        alpha: 1,
-        delay: 850,
-        duration: 350,
-      });
-    }
+    const returnPromise = stickerCard(
+      this,
+      width / 2,
+      height - 245,
+      width - 120,
+      76,
+      { tape: false, tilt: -1 }
+    )
+      .setAlpha(0)
+      .setDepth(10);
+    const returnPromiseCopy = label(
+      this,
+      0,
+      0,
+      this.practiceMode
+        ? `${this.practicePowers.length}/4 POWERS · NO REWARDS`
+        : `+${INK_REWARDS.dailyDraw} INK · ENTERED TONIGHT`,
+      20,
+      UI.coralText,
+      true
+    );
+    returnPromise.add(returnPromiseCopy);
+    this.tweens.add({
+      targets: returnPromise,
+      alpha: 1,
+      delay: 850,
+      duration: 350,
+    });
 
     ghostButton(
       this,
@@ -1458,7 +1280,7 @@ export class Draw extends Scene {
       this.practiceMode
         ? 'WATCH REPLAY →'
         : this.startFightAfterBirth
-          ? 'WATCH SPAR →'
+          ? 'WATCH FIRST FIGHT →'
           : 'CONTINUE →',
       () => this.continueAfterBirth(scribbit),
       420

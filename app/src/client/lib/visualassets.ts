@@ -12,6 +12,15 @@ export const NAV_ICON_TEXTURES: Readonly<Record<AppTabKey, string>> = {
   scout: 'nav-icon-scout',
 };
 
+export const UI_BUTTON_TEXTURES = {
+  back: 'ui-button-back',
+  close: 'ui-button-close',
+  next: 'ui-button-next',
+  previous: 'ui-button-previous',
+  primary: 'ui-button-primary',
+  secondary: 'ui-button-secondary',
+} as const;
+
 const assetUrl = (fileName: string): string => {
   return new URL(`../assets/${fileName}`, import.meta.url).href;
 };
@@ -23,6 +32,9 @@ export function preloadVisualAssets(scene: Scene): void {
   );
   Object.entries(NAV_ICON_TEXTURES).forEach(([tab, texture]) => {
     scene.load.image(texture, assetUrl(`nav-${tab}.png`));
+  });
+  Object.entries(UI_BUTTON_TEXTURES).forEach(([kind, texture]) => {
+    scene.load.image(texture, assetUrl(`ui-button-${kind}.png`));
   });
 }
 

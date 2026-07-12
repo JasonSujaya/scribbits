@@ -48,11 +48,12 @@ export class DrawCanvas {
   private lastX = 0;
   private lastY = 0;
 
-  // Undo stack of ImageData snapshots taken BEFORE each stroke starts.
-  private history: ImageData[] = [];
-  // Ten 512x512 RGBA snapshots use about 10 MiB. The old 24-step stack alone
-  // consumed roughly 24 MiB inside Reddit's mobile WebView.
+  // Canvas snapshots avoid allocating a new 1 MiB JavaScript RGBA array at the
+  // start of every stroke. Old snapshots are pooled for the next stroke.
+  private history: HTMLCanvasElement[] = [];
+  private snapshotPool: HTMLCanvasElement[] = [];
   private readonly maxHistory = 10;
+  private activeBounds: DOMRect | null = null;
   private readonly handlePointerDown = (event: PointerEvent): void => this.startStroke(event);
   private readonly handlePointerMove = (event: PointerEvent): void => this.moveStroke(event);
   private readonly handlePointerUp = (): void => this.endStroke();
@@ -125,7 +126,15 @@ export class DrawCanvas {
   undo(): void {
     const previous = this.history.pop();
     if (!previous) return;
-    this.ctx.putImageData(previous, 0, 0);
+    this.ctx.clearRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
+    // Erasing leaves the live context in destination-out mode. Restore the
+    // snapshot with copy semantics so Undo works regardless of the active tool,
+    // then return to the caller's current brush mode.
+    this.ctx.save();
+    this.ctx.globalCompositeOperation = 'copy';
+    this.ctx.drawImage(previous, 0, 0);
+    this.ctx.restore();
+    this.snapshotPool.push(previous);
     this.onStrokeEnd();
   }
 
@@ -140,6 +149,8 @@ export class DrawCanvas {
     this.element.removeEventListener('pointerleave', this.handlePointerUp);
     this.element.removeEventListener('pointercancel', this.handlePointerUp);
     this.history = [];
+    this.snapshotPool = [];
+    this.activeBounds = null;
     this.drawing = false;
     this.element.remove();
   }
@@ -178,8 +189,18 @@ export class DrawCanvas {
   }
 
   private pushHistory(): void {
-    this.history.push(this.getImageData());
-    if (this.history.length > this.maxHistory) this.history.shift();
+    const snapshot = this.snapshotPool.pop() ?? document.createElement('canvas');
+    snapshot.width = CANVAS_SIZE;
+    snapshot.height = CANVAS_SIZE;
+    const context = snapshot.getContext('2d');
+    if (!context) return;
+    context.clearRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
+    context.drawImage(this.element, 0, 0);
+    this.history.push(snapshot);
+    if (this.history.length > this.maxHistory) {
+      const released = this.history.shift();
+      if (released) this.snapshotPool.push(released);
+    }
   }
 
   private attachPointerHandlers(): void {
@@ -193,7 +214,7 @@ export class DrawCanvas {
 
   // Translate a client pointer position into 512x512 backing-store coordinates.
   private toCanvasCoords(event: PointerEvent): { x: number; y: number } {
-    const bounds = this.element.getBoundingClientRect();
+    const bounds = this.activeBounds ?? this.element.getBoundingClientRect();
     const scaleX = CANVAS_SIZE / bounds.width;
     const scaleY = CANVAS_SIZE / bounds.height;
     return {
@@ -206,6 +227,7 @@ export class DrawCanvas {
     event.preventDefault();
     this.pushHistory();
     this.drawing = true;
+    this.activeBounds = this.element.getBoundingClientRect();
     this.huePhase = 0;
     const { x, y } = this.toCanvasCoords(event);
     this.lastX = x;
@@ -279,6 +301,7 @@ export class DrawCanvas {
   private endStroke(): void {
     if (!this.drawing) return;
     this.drawing = false;
+    this.activeBounds = null;
     this.onStrokeEnd();
   }
 

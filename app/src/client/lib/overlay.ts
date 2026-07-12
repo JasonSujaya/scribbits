@@ -8,7 +8,7 @@
 // design coordinates → screen pixels, re-syncing on resize.
 
 import { Scene } from 'phaser';
-import { DESIGN_HEIGHT, DESIGN_WIDTH, UI } from './theme';
+import { DESIGN_HEIGHT, DESIGN_WIDTH, FONT_STACK, UI } from './theme';
 
 export type OverlayRect = {
   x: number; // design-space top-left
@@ -48,6 +48,7 @@ export class DomOverlay {
     this.root.style.top = '0';
     this.root.style.pointerEvents = 'none';
     this.root.style.zIndex = '20';
+    this.root.style.fontFamily = FONT_STACK;
     document.body.appendChild(this.root);
     this.canvasObserver = typeof ResizeObserver === 'undefined'
       ? null
@@ -79,8 +80,14 @@ export class DomOverlay {
     const { element, rect } = placement;
     element.style.left = `${bounds.left + rect.x * scaleX}px`;
     element.style.top = `${bounds.top + rect.y * scaleY}px`;
-    element.style.width = `${rect.width * scaleX}px`;
-    element.style.height = `${rect.height * scaleY}px`;
+    // Keep every overlay element in the same 720x1280 design space as Phaser,
+    // then scale the complete element. Scaling only its box left CSS text,
+    // borders and padding at raw screen pixels, which made the HTML controls
+    // look as if they belonged to a different app on narrow phones.
+    element.style.width = `${rect.width}px`;
+    element.style.height = `${rect.height}px`;
+    element.style.transformOrigin = 'top left';
+    element.style.transform = `scale(${scaleX}, ${scaleY})`;
   }
 
   setVisible(visible: boolean): void {

@@ -8,7 +8,7 @@ export const DESIGN_HEIGHT = 1280;
 
 // Baseline canvas target. Critical 320px actions request 100 design pixels so
 // their fitted target remains at least 44 CSS pixels.
-export const MIN_TOUCH = 88;
+export const MIN_TOUCH = 100;
 
 // Consistent spacing rhythm (design-space px). Every gap/pad snaps to these so
 // the whole app breathes on one grid. 8 is the base unit.
@@ -158,7 +158,31 @@ export const STAT_STYLES = {
 } as const;
 
 export const FONT_STACK =
-  '"Balsamiq Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+  '"DynaPuff", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+
+// Only these two bundled faces exist. Keeping DOM overlays on the same short
+// type ladder as Phaser prevents the browser from synthesizing heavier faces
+// that look like a different font.
+export const DOM_TYPE = {
+  title: {
+    fontFamily: FONT_STACK,
+    fontSize: `${TYPE.title}px`,
+    fontWeight: '700',
+    lineHeight: '1.1',
+  },
+  body: {
+    fontFamily: FONT_STACK,
+    fontSize: `${TYPE.body}px`,
+    fontWeight: '700',
+    lineHeight: '1.15',
+  },
+  caption: {
+    fontFamily: FONT_STACK,
+    fontSize: `${TYPE.caption}px`,
+    fontWeight: '700',
+    lineHeight: '1.15',
+  },
+} as const;
 
 export const prefersReducedMotion = (): boolean => {
   if (typeof window === 'undefined') return false;
@@ -168,5 +192,20 @@ export const prefersReducedMotion = (): boolean => {
   return (
     debugReducedMotion ||
     window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  );
+};
+
+/** Keep cosmetic loops off compact/low-power devices; combat motion stays on. */
+export const allowsAmbientMotion = (): boolean => {
+  if (typeof window === 'undefined' || typeof navigator === 'undefined') {
+    return true;
+  }
+  if (prefersReducedMotion()) return false;
+  const deviceMemory = (navigator as Navigator & { deviceMemory?: number })
+    .deviceMemory;
+  return !(
+    window.innerWidth <= 360 ||
+    navigator.hardwareConcurrency <= 4 ||
+    (deviceMemory !== undefined && deviceMemory <= 4)
   );
 };

@@ -8,7 +8,14 @@ import type {
 import { fitDrawing, loadDrawing } from './scribbits';
 import { paperIcon } from './papericons';
 import { NAV_SAFE, TYPE, UI, prefersReducedMotion } from './theme';
-import { button, ghostButton, handLettered, label, stickerCard } from './ui';
+import {
+  button,
+  ghostButton,
+  handLettered,
+  label,
+  pageArrowButton,
+  stickerCard,
+} from './ui';
 
 export const LEGACY_BOOK_PAGE_SIZE = 4;
 
@@ -161,17 +168,20 @@ function buildPageControls(options: LegacyBookOptions, y: number): void {
     true
   );
   if (page > 0) {
-    ghostButton(scene, 126, y, '← Newer', options.onNewer, 150);
+    pageArrowButton(scene, 104, y, 'previous', options.onNewer);
   }
   if (page < loadedPageCount - 1 || hasOlder) {
-    ghostButton(
-      scene,
-      scene.scale.width - 126,
-      y,
-      loading ? 'Opening…' : 'Older →',
-      options.onOlder,
-      150
-    );
+    if (loading) {
+      ghostButton(scene, scene.scale.width - 138, y, 'Opening…', () => {}, 180);
+    } else {
+      pageArrowButton(
+        scene,
+        scene.scale.width - 104,
+        y,
+        'next',
+        options.onOlder
+      );
+    }
   }
 }
 

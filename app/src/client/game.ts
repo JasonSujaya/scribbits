@@ -1,7 +1,7 @@
 import * as Phaser from 'phaser';
 import { AUTO, CANVAS, Game } from 'phaser';
-import '@fontsource/balsamiq-sans/400.css';
-import '@fontsource/balsamiq-sans/700.css';
+import '@fontsource/dynapuff/latin-400.css';
+import '@fontsource/dynapuff/latin-700.css';
 import { Boot } from './scenes/Boot';
 import { Preloader } from './scenes/Preloader';
 import { ArenaHome } from './scenes/ArenaHome';
@@ -115,9 +115,34 @@ const StartGame = (parent: string): Phaser.Game => {
       recordDebugRuntimeError(String(event.reason ?? 'unhandled rejection'));
     };
     game.canvas.dataset.runtimeErrors = '0';
+    const updateDebugPerformance = (): void => {
+      const activeScenes = game.scene.getScenes(true);
+      game.canvas.dataset.actualFps = game.loop.actualFps.toFixed(1);
+      game.canvas.dataset.drawCalls = String(
+        (game.renderer as unknown as { drawCount?: number }).drawCount ?? 0
+      );
+      game.canvas.dataset.activeObjects = String(
+        activeScenes.reduce(
+          (total, scene) => total + (scene.children.list.length ?? 0),
+          0
+        )
+      );
+      game.canvas.dataset.activeTweens = String(
+        activeScenes.reduce(
+          (total, scene) => total + scene.tweens.getTweens().length,
+          0
+        )
+      );
+    };
+    const debugPerformanceTimer = window.setInterval(
+      updateDebugPerformance,
+      500
+    );
+    updateDebugPerformance();
     window.addEventListener('error', onDebugWindowError);
     window.addEventListener('unhandledrejection', onDebugUnhandledRejection);
     game.events.once(Phaser.Core.Events.DESTROY, () => {
+      window.clearInterval(debugPerformanceTimer);
       window.removeEventListener('error', onDebugWindowError);
       window.removeEventListener(
         'unhandledrejection',

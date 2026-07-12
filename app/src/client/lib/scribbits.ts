@@ -34,11 +34,10 @@ const pendingDrawingLoads = new WeakMap<
   Map<string, PendingDrawingLoad>
 >();
 
-// A 512x512 RGBA drawing is roughly 1 MiB before GPU overhead. Keep inactive
-// drawings bounded, while never evicting a texture still displayed by an
-// active scene. Large Arena/Gallery pages may temporarily exceed this ceiling;
-// their released textures are trimmed as soon as the scene shuts down.
-const MAX_CACHED_DRAWING_TEXTURES = 30;
+// Display never needs the server's full 512px source. A 256px edge keeps the
+// 232px battle art crisp while cutting decoded CPU/GPU texture memory by ~75%.
+const MAX_DRAWING_TEXTURE_EDGE = 256;
+const MAX_CACHED_DRAWING_TEXTURES = 12;
 const drawingTextureLastUse = new Map<string, number>();
 const drawingTextureActiveScenes = new Map<string, number>();
 const sceneDrawingTextures = new WeakMap<
@@ -109,6 +108,7 @@ export function loadDrawing(
     let settled = false;
     let timeout: Phaser.Time.TimerEvent | null = null;
     const onComplete = (): void => {
+      downsampleDrawingTexture(scene, key);
       // A load can "succeed" with a degenerate 1x1/transparent texture; if the
       // source is unusably small, treat it as a miss and use the doodle.
       if (isDegenerateTexture(scene, key)) {
@@ -172,6 +172,31 @@ export function loadDrawing(
   });
 
   return drawingLoad;
+}
+
+function downsampleDrawingTexture(scene: Scene, key: string): void {
+  if (!scene.textures.exists(key)) return;
+  const source = scene.textures.get(key).getSourceImage() as CanvasImageSource & {
+    width?: number;
+    height?: number;
+  };
+  const width = source?.width ?? 0;
+  const height = source?.height ?? 0;
+  const longestEdge = Math.max(width, height);
+  if (longestEdge <= MAX_DRAWING_TEXTURE_EDGE || width <= 0 || height <= 0) {
+    return;
+  }
+  const scale = MAX_DRAWING_TEXTURE_EDGE / longestEdge;
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.max(1, Math.round(width * scale));
+  canvas.height = Math.max(1, Math.round(height * scale));
+  const context = canvas.getContext('2d');
+  if (!context) return;
+  context.imageSmoothingEnabled = true;
+  context.imageSmoothingQuality = 'high';
+  context.drawImage(source, 0, 0, canvas.width, canvas.height);
+  scene.textures.remove(key);
+  scene.textures.addCanvas(key, canvas);
 }
 
 function ensureSceneDrawingTextureLifecycle(scene: Scene): {

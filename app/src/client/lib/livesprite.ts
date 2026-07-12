@@ -19,6 +19,7 @@ import {
 import type { InkMeshGeometry, InkMeshMotion, SignatureTrait } from './inkmesh';
 
 const FALLBACK_GRID = 3;
+const INK_MESH_FRAME_MILLISECONDS = 1000 / 30;
 const DEFAULT_STATS: ScribbitStats = {
   chonk: 25,
   spike: 25,
@@ -56,6 +57,7 @@ export class LiveSprite {
   private readonly signatureTrait: SignatureTrait;
   private meshGeometry: InkMeshGeometry | null = null;
   private meshMotion: InkMeshMotion | null = null;
+  private meshUpdateAccumulatorMilliseconds = 0;
   private breatheTween: Phaser.Tweens.Tween | null = null;
   private idleTweens: Phaser.Tweens.Tween[] = [];
   private destroyed = false;
@@ -225,8 +227,16 @@ export class LiveSprite {
 
   private updateInkMesh(_time: number, deltaMilliseconds: number): void {
     if (this.destroyed || !this.meshGeometry || !this.meshMotion) return;
+    this.meshUpdateAccumulatorMilliseconds += Math.max(0, deltaMilliseconds);
+    if (
+      this.meshUpdateAccumulatorMilliseconds < INK_MESH_FRAME_MILLISECONDS
+    ) {
+      return;
+    }
+    const elapsedMilliseconds = this.meshUpdateAccumulatorMilliseconds;
+    this.meshUpdateAccumulatorMilliseconds %= INK_MESH_FRAME_MILLISECONDS;
     this.meshMotion.elapsedSeconds +=
-      (deltaMilliseconds / 1000) * Math.max(0, this.scene.time.timeScale);
+      (elapsedMilliseconds / 1000) * Math.max(0, this.scene.time.timeScale);
     updateInkMeshVertices(this.meshGeometry, this.stats, this.meshMotion);
   }
 

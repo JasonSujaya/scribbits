@@ -4,6 +4,10 @@ import type { Element } from '../../shared/arena';
 import { ELEMENT_STYLES, UI } from './theme';
 
 export type PaperIconKey = 'clock' | 'heart' | 'ink' | 'spark';
+export type PaperToolIconKey =
+  | 'sticker'
+  | 'eraser'
+  | 'undo';
 
 export type PaperIconOptions = Readonly<{
   size?: number;
@@ -97,6 +101,80 @@ export function elementPaperIcon(
 
   container.add(graphics);
   return container;
+}
+
+/** Compact drawing-tool marks that share the same inked-paper silhouette. */
+export function paperToolIcon(
+  scene: Scene,
+  key: PaperToolIconKey,
+  x: number,
+  y: number,
+  size = 34
+): Phaser.GameObjects.Container {
+  const scale = size / 34;
+  const container = scene.add.container(x, y);
+  const backing = scene.add.graphics().setPosition(2 * scale, 3 * scale);
+  const face = scene.add.graphics();
+  drawTool(backing, key, scale, 0x9b754d, 0x9b754d);
+  drawTool(face, key, scale, UI.creamHex, UI.inkHex);
+  container.add([backing, face]);
+  return container;
+}
+
+function drawTool(
+  graphics: Phaser.GameObjects.Graphics,
+  key: PaperToolIconKey,
+  scale: number,
+  fill: number,
+  stroke: number
+): void {
+  graphics.fillStyle(fill, 1);
+  graphics.lineStyle(3 * scale, stroke, 1);
+
+  if (key === 'sticker') {
+    const points: Phaser.Math.Vector2[] = [];
+    for (let point = 0; point < 10; point += 1) {
+      const radius = (point % 2 === 0 ? 14 : 7) * scale;
+      const angle = -Math.PI / 2 + (point * Math.PI) / 5;
+      points.push(
+        new Phaser.Math.Vector2(
+          Math.cos(angle) * radius,
+          Math.sin(angle) * radius
+        )
+      );
+    }
+    graphics.fillPoints(points, true);
+    graphics.strokePoints(points, true);
+    return;
+  }
+
+  if (key === 'eraser') {
+    const points = [
+      new Phaser.Math.Vector2(-13 * scale, 6 * scale),
+      new Phaser.Math.Vector2(3 * scale, -12 * scale),
+      new Phaser.Math.Vector2(13 * scale, -3 * scale),
+      new Phaser.Math.Vector2(-3 * scale, 14 * scale),
+    ];
+    graphics.fillPoints(points, true);
+    graphics.strokePoints(points, true);
+    graphics.lineBetween(-7 * scale, 0, 4 * scale, 10 * scale);
+    return;
+  }
+
+  if (key === 'undo') {
+    graphics.beginPath();
+    graphics.arc(2 * scale, 2 * scale, 11 * scale, -2.5, 1.5, false);
+    graphics.strokePath();
+    graphics.fillTriangle(
+      -14 * scale,
+      -5 * scale,
+      -3 * scale,
+      -11 * scale,
+      -4 * scale,
+      1 * scale
+    );
+    return;
+  }
 }
 
 function drawIcon(

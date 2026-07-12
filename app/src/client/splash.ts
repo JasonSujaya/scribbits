@@ -1,6 +1,6 @@
 import { requestExpandedMode } from '@devvit/web/client';
-import '@fontsource/balsamiq-sans/400.css';
-import '@fontsource/balsamiq-sans/700.css';
+import '@fontsource/dynapuff/latin-400.css';
+import '@fontsource/dynapuff/latin-700.css';
 import type { SplashState } from '../shared/arena';
 
 // Splash is the inline feed view — deliberately light (no Phaser). The markup is

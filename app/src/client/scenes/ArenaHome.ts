@@ -13,7 +13,6 @@ import {
   markLegacyCardsSeen,
 } from '../lib/api';
 import {
-  beginPracticeSession,
   setArena,
   getArena,
   setReplay,
@@ -33,6 +32,7 @@ import {
 import {
   CARE_STYLES,
   ELEMENT_STYLES,
+  allowsAmbientMotion,
   EDGE,
   NAV_SAFE,
   SPACE,
@@ -97,6 +97,7 @@ import {
   navigateToDailyDraw,
 } from '../lib/draweligibility';
 import { appDock } from '../lib/appdock';
+import { NAV_ICON_TEXTURES } from '../lib/visualassets';
 
 // The landing scene. A tall, drag-scrollable sketchbook page: countdown-topped
 // header, weather card, wanted-poster champion, your roster, TONIGHT'S BRACKET
@@ -113,6 +114,7 @@ export class ArenaHome extends Scene {
   private spinner: Spinner | null = null;
   private founderChronicleMargin: FounderChronicleMargin | null = null;
   private careMomentOverlay: CareMomentOverlay | null = null;
+  private ambientMotionEnabled = false;
 
   // Drag-scroll bookkeeping. Scrolling uses velocity + inertia so a flick keeps
   // gliding and a wheel/keyboard nudge eases in, instead of snapping stiffly.
@@ -158,6 +160,13 @@ export class ArenaHome extends Scene {
     this.buildGeneration = 0;
     this.founderChronicleMargin = null;
     this.careMomentOverlay = null;
+    this.ambientMotionEnabled = allowsAmbientMotion();
+  }
+
+  private addAmbientTween(
+    config: Phaser.Types.Tweens.TweenBuilderConfig
+  ): Phaser.Tweens.Tween | null {
+    return this.ambientMotionEnabled ? this.tweens.add(config) : null;
   }
 
   create(): void {
@@ -214,10 +223,8 @@ export class ArenaHome extends Scene {
     cursor = this.buildForecastCard(width / 2, cursor + 20);
     if (this.state.drawnToday) {
       cursor = this.buildNextGoalCard(width / 2, cursor + 20);
-      cursor = this.buildPracticeLabCard(width / 2, cursor + 20);
     } else {
       cursor = this.buildActionRow(width / 2, cursor + 20);
-      cursor = this.buildInkTrailCard(width / 2, cursor + 20);
     }
     cursor = this.buildChampionPoster(width / 2, cursor + 20);
     this.focusEntrantsY = cursor + 44;
@@ -490,7 +497,7 @@ export class ArenaHome extends Scene {
           capsuleProgress: result.data.progress,
         };
         setArena(this, this.state);
-        this.inkChipLabel?.setText(`INK ${result.data.ink}`);
+        this.inkChipLabel?.setText(`${result.data.ink}`);
         return result.data;
       },
       // On close, re-fetch so the roster/ink/palette reflect the server truth.
@@ -500,110 +507,6 @@ export class ArenaHome extends Scene {
         fadeToScene(this, 'Sketchbook');
       },
     });
-  }
-
-  private buildInkTrailCard(x: number, y: number): number {
-    const width = this.scale.width - EDGE * 2;
-    const height = 216;
-    const centerY = y + height / 2;
-    const card = stickerCard(this, x, centerY, width, height, {
-      tapeColor: UI.tapeAlt,
-      tilt: 0.35,
-    });
-    const halfWidth = width / 2;
-    const ink = Math.max(0, this.state.myInk ?? 0);
-    const cost = Math.max(1, this.state.nextCapsuleCost);
-    const fillRatio = Phaser.Math.Clamp(ink / cost, 0, 1);
-    const ready = ink >= cost;
-    const progress = this.state.capsuleProgress;
-
-    card.add(
-      label(
-        this,
-        -halfWidth + 26,
-        -76,
-        ready ? '🎰 CAPSULE READY!' : '🎰 DAILY INK TRAIL',
-        TYPE.title,
-        ready ? UI.coralText : UI.ink,
-        true
-      ).setOrigin(0, 0.5)
-    );
-    card.add(
-      label(
-        this,
-        halfWidth - 24,
-        -76,
-        `${progress.discoveredCount}/${progress.collectionTotal} found`,
-        TYPE.caption,
-        UI.goldText,
-        true
-      ).setOrigin(1, 0.5)
-    );
-
-    const trackX = -halfWidth + 28;
-    const trackWidth = width - 250;
-    card.add(
-      this.add
-        .rectangle(trackX, -10, trackWidth, 28, UI.progressTrack, 0.18)
-        .setOrigin(0, 0.5)
-        .setStrokeStyle(3, UI.inkHex, 0.75)
-    );
-    if (fillRatio > 0) {
-      card.add(
-        this.add
-          .rectangle(
-            trackX + 3,
-            -10,
-            Math.max(6, (trackWidth - 6) * fillRatio),
-            20,
-            ready ? UI.gold : UI.coral,
-            1
-          )
-          .setOrigin(0, 0.5)
-      );
-    }
-    card.add(
-      label(
-        this,
-        trackX + trackWidth / 2,
-        -10,
-        `${ink} / ${cost} Ink`,
-        TYPE.caption,
-        UI.ink,
-        true
-      )
-    );
-
-    const pullButton = button(
-      this,
-      halfWidth - 106,
-      -10,
-      ready ? 'OPEN!' : `${Math.max(0, cost - ink)} TO GO`,
-      () => this.openCapsuleMachine(),
-      180,
-      ready ? UI.gold : UI.creamHex,
-      UI.ink
-    );
-    if (!ready) pullButton.setAlpha(0.78);
-    card.add(pullButton);
-
-    const pityCopy =
-      progress.pityRemaining === 1
-        ? 'EPIC GUARANTEED NEXT'
-        : `EPIC IN ≤ ${progress.pityRemaining} PULLS`;
-    card.add(
-      label(
-        this,
-        0,
-        72,
-        `Draw +2 · Care +1 · First spar win +2   •   ${pityCopy}`,
-        TYPE.caption,
-        UI.inkSoft,
-        true
-      ).setWordWrapWidth(width - 48)
-    );
-
-    return centerY + height / 2;
   }
 
   private buildNextGoalCard(x: number, y: number): number {
@@ -685,34 +588,6 @@ export class ArenaHome extends Scene {
     return centerY + height / 2;
   }
 
-  private buildPracticeLabCard(x: number, y: number): number {
-    const width = this.scale.width - EDGE * 2;
-    const height = 136;
-    const centerY = y + height / 2;
-    const card = stickerCard(this, x, centerY, width, height, {
-      tapeColor: UI.tapeAlt,
-      tilt: 0.25,
-    });
-    card.add(
-      label(this, -190, -16, 'PRACTICE', TYPE.caption, UI.coralText, true)
-    );
-    card.add(label(this, -190, 19, 'NO REWARDS', 20, UI.ink, true));
-    card.add(
-      careButton(
-        this,
-        155,
-        0,
-        '',
-        'START',
-        UI.tapeAlt,
-        () => this.startPractice(),
-        300,
-        72
-      )
-    );
-    return centerY + height / 2;
-  }
-
   private nextGoalEvidenceLine(goal: NextGoalCard): string {
     const rivalryPlan = planFounderChronicle(
       this.state.founderChronicle,
@@ -790,10 +665,6 @@ export class ArenaHome extends Scene {
     });
 
     const glyphX = -width / 2 + 42;
-    const ring = this.add
-      .circle(glyphX, 0, 28, style.primary, 0.16)
-      .setStrokeStyle(3, style.primary, 0.9);
-    card.add(ring);
     const glyph = elementPaperIcon(
       this,
       this.state.forecast.boostedElement,
@@ -843,10 +714,13 @@ export class ArenaHome extends Scene {
         gold: true,
         tapeColor: UI.tape,
       });
-      const crown = label(this, 0, -56, '👑', 56, UI.ink);
+      const crown = paperIcon(this, 'spark', 0, -56, {
+        size: 54,
+        fill: UI.gold,
+      });
       card.add(crown);
       // Pulsing crown to draw attention.
-      this.tweens.add({
+      this.addAmbientTween({
         targets: crown,
         scale: 1.15,
         duration: 1000,
@@ -898,7 +772,7 @@ export class ArenaHome extends Scene {
     spotlight.fillCircle(artX, artY, artFrame * 0.85);
     card.add(spotlight);
     // Pulsing spotlight for a living "wanted poster" feel.
-    this.tweens.add({
+    this.addAmbientTween({
       targets: spotlight,
       alpha: { from: 0.5, to: 0.8 },
       scale: { from: 0.95, to: 1.05 },
@@ -935,7 +809,7 @@ export class ArenaHome extends Scene {
       img.on('pointerup', () => {
         if (!this.didDrag()) this.openDetail(champ);
       });
-      this.tweens.add({
+      this.addAmbientTween({
         targets: img,
         angle: 2,
         duration: 1400,
@@ -964,7 +838,7 @@ export class ArenaHome extends Scene {
         this,
         infoX,
         artY + 18,
-        `${ELEMENT_STYLES[champ.element].emoji} ${ELEMENT_STYLES[champ.element].label.toUpperCase()}  ·  Lv${levelOf(champ)}`,
+        `${ELEMENT_STYLES[champ.element].label.toUpperCase()}  ·  Lv${levelOf(champ)}`,
         17,
         ELEMENT_STYLES[champ.element].primaryText,
         true
@@ -980,7 +854,7 @@ export class ArenaHome extends Scene {
         this,
         -belW / 2 - 6,
         actionY,
-        '⚔️',
+        '',
         challengePlan.ctaLabel,
         UI.gold,
         () => this.startBossChallenge(),
@@ -1050,10 +924,12 @@ export class ArenaHome extends Scene {
       const card = stickerCard(this, width / 2, cardY, width - EDGE * 2, 200, {
         tilt: 0.5,
       });
-      const pencil = label(this, 0, -34, '✏️', 52, UI.ink);
+      const pencil = this.add
+        .image(0, -34, NAV_ICON_TEXTURES.draw)
+        .setDisplaySize(56, 56);
       card.add(pencil);
       // Bouncing pencil to invite action.
-      this.tweens.add({
+      this.addAmbientTween({
         targets: pencil,
         y: pencil.y - 8,
         duration: 700,
@@ -1122,7 +998,7 @@ export class ArenaHome extends Scene {
       ).setDepth(3);
       img.setInteractive({ useHandCursor: true });
       // Gentle idle breathing so the creature feels alive on the roster.
-      this.tweens.add({
+      this.addAmbientTween({
         targets: img,
         scaleY: img.scaleY * 1.03,
         duration: 1300 + Math.random() * 400,
@@ -1205,8 +1081,8 @@ export class ArenaHome extends Scene {
         this,
         width / 2 - 138,
         36,
-        '🥊',
-        'Spar',
+        '',
+        'SPAR',
         UI.coralDeep,
         () => this.doSpar(scribbit),
         214,
@@ -1222,7 +1098,7 @@ export class ArenaHome extends Scene {
       this,
       EDGE + 6,
       y,
-      "🏟️ TONIGHT'S BRACKET",
+      "TONIGHT'S BRACKET",
       TYPE.title,
       UI.ink,
       true
@@ -1237,9 +1113,11 @@ export class ArenaHome extends Scene {
         tapeColor: UI.tapeAlt,
         tilt: 0.4,
       });
-      const stadium = label(this, 0, -22, '🏟️', 44, UI.ink);
+      const stadium = this.add
+        .image(0, -22, NAV_ICON_TEXTURES.arena)
+        .setDisplaySize(58, 58);
       card.add(stadium);
-      this.tweens.add({
+      this.addAmbientTween({
         targets: stadium,
         scale: 1.1,
         duration: 1200,
@@ -1408,7 +1286,7 @@ export class ArenaHome extends Scene {
       this,
       0,
       0,
-      `🏅 Scout ${this.state.myClout}`,
+      `SCOUT ${this.state.myClout}`,
       TYPE.caption,
       UI.ink,
       true
@@ -1433,7 +1311,7 @@ export class ArenaHome extends Scene {
           this,
           x,
           btnY,
-          '🔒 SIGN IN TO DRAW',
+          'SIGN IN TO DRAW',
           () => this.startDraw(),
           width,
           true
@@ -1462,7 +1340,7 @@ export class ArenaHome extends Scene {
         this,
         x,
         btnY,
-        "✏️ DRAW TODAY'S SCRIBBIT",
+        'DRAW TODAY',
         () => this.startDraw(),
         width,
         true
@@ -1476,7 +1354,7 @@ export class ArenaHome extends Scene {
         this,
         x,
         btnY,
-        "🎟️ PICK TONIGHT'S WINNER",
+        "PICK TONIGHT'S WINNER",
         () => this.scrollTo((this.focusEntrantsY ?? y) - 120),
         width,
         true
@@ -1771,7 +1649,7 @@ export class ArenaHome extends Scene {
       // Enter is only meaningful for a drawn-but-not-yet-entered scribbit.
       if (this.state.drawnToday && !this.state.enteredToday) {
         actions.onEnter = (s) => this.doEnter(s);
-        actions.enterLabel = '⚔️ Enter Rumble';
+        actions.enterLabel = 'Enter Rumble';
         actions.enterEnabled = true;
       }
     } else {
@@ -1797,12 +1675,6 @@ export class ArenaHome extends Scene {
   // --- Actions ---------------------------------------------------------------
   private startDraw(): void {
     navigateToDailyDraw(this);
-  }
-
-  private startPractice(): void {
-    if (!this.requireLogin()) return;
-    beginPracticeSession(this);
-    fadeToScene(this, 'Draw', { mode: 'practice' });
   }
 
   private doCare(scribbit: Scribbit, action: CareAction): void {
@@ -1888,7 +1760,7 @@ export class ArenaHome extends Scene {
         this.showError(result.error);
         return;
       }
-      showToast(`⚔️ ${scribbit.name} is in tonight's Rumble!`);
+      showToast(`${scribbit.name} is in tonight's Rumble!`);
       void this.refresh();
     });
   }
@@ -1936,14 +1808,14 @@ export class ArenaHome extends Scene {
   // server reconciles, errors surfaced.
   private believeOn(scribbit: Scribbit, floatX: number, floatY: number): void {
     if (!this.requireLogin()) return;
-    floatReward(this, floatX, floatY, '+1 💛');
+    floatReward(this, floatX, floatY, '+1 BELIEF');
     void believe(scribbit.id).then((result) => {
       if (!result.ok) {
         this.showError(result.error);
         return;
       }
       this.applyBelief(scribbit.id, result.data.belief);
-      showToast(`💛 You believe in ${scribbit.name}! (${result.data.belief})`);
+      showToast(`You believe in ${scribbit.name}! (${result.data.belief})`);
     });
   }
 
@@ -2008,7 +1880,7 @@ export class ArenaHome extends Scene {
         this,
         width / 2,
         height * 0.25,
-        '⚔️ CHAMPION CONTRACT',
+        'CHAMPION CONTRACT',
         TYPE.title,
         UI.goldText,
         true

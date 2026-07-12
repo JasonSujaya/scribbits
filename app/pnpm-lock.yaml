@@ -14,8 +14,8 @@ importers:
       '@devvit/web':
         specifier: 0.13.7
         version: 0.13.7(twirp-ts@2.5.0)
-      '@fontsource/balsamiq-sans':
-        specifier: ^5.2.8
+      '@fontsource/dynapuff':
+        specifier: 5.2.8
         version: 5.2.8
       '@hono/node-server':
         specifier: 2.0.6
@@ -406,8 +406,8 @@ packages:
     resolution: {integrity: sha512-+CNAzxglkrpNf/kKywqQfk74QjtceuOE7Qm+AF8miRvPF/wmmK5+OJOgVh3AVTT3RP2mH3+FOaxlE5v72owk0A==}
     engines: {node: ^20.19.0 || ^22.13.0 || >=24}
 
-  '@fontsource/balsamiq-sans@5.2.8':
-    resolution: {integrity: sha512-7LGnDhbyKuy1FW+IlWNYtTB8TX9/HrzhvjVoEljITTBq/p1jVLx6ulKu0RU9Fd3ODd0cl2VSB3IFigJAL/M2DQ==}
+  '@fontsource/dynapuff@5.2.8':
+    resolution: {integrity: sha512-/oP/t8t6uo8hJoUiKUWZ9UG+5kP89e9ma6ZE5bYCIO1v98+xaDyVAm/ncY8kb4ckQ1nH5mA/AWc2d4th0Kms4Q==}
 
   '@hono/node-server@2.0.6':
     resolution: {integrity: sha512-7DeRlKG57JDBNZ5Qj2jwVdgwQy4b0tLubRLl3zCf91/rCf9i7p1V5FtW/yWibm1uUHE493ts9ZXH/7g/LQWl+g==}
@@ -2820,7 +2820,7 @@ snapshots:
       '@eslint/core': 1.2.1
       levn: 0.4.1
 
-  '@fontsource/balsamiq-sans@5.2.8': {}
+  '@fontsource/dynapuff@5.2.8': {}
 
   '@hono/node-server@2.0.6(hono@4.12.27)':
     dependencies:

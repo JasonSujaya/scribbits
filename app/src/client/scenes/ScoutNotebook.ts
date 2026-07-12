@@ -355,7 +355,6 @@ export class ScoutNotebook extends Scene {
     this.drawPick(layer, entry, pagePlan, pageGeneration);
     this.drawForecast(layer, entry);
     this.drawOutcome(layer, entry, pagePlan);
-    this.drawFieldNote(layer, pagePlan);
     this.drawPageAction(layer, entry, pagePlan, pageGeneration);
 
     if (this.reduceMotion || direction === 0) {
@@ -472,7 +471,7 @@ export class ScoutNotebook extends Scene {
         this,
         -150,
         -27,
-        `${elementStyle.emoji} ${elementStyle.label} · ${pagePlan.artistLine}`,
+        `${elementStyle.label} · ${pagePlan.artistLine}`,
         17,
         elementStyle.primaryText,
         true
@@ -542,23 +541,6 @@ export class ScoutNotebook extends Scene {
     );
   }
 
-  private drawFieldNote(
-    layer: Phaser.GameObjects.Container,
-    pagePlan: ScoutNotebookPagePlan
-  ): void {
-    const noteCard = this.add.graphics().setAngle(-0.3);
-    noteCard.fillStyle(0xfff0a8, 0.56);
-    noteCard.fillRoundedRect(-250, 58, 520, 116, 14);
-    noteCard.lineStyle(2, UI.inkHex, 0.35);
-    noteCard.strokeRoundedRect(-250, 58, 520, 116, 14);
-    layer.add(noteCard);
-    layer.add(
-      label(this, 10, 116, `“${pagePlan.authoredNote}”`, 21, UI.ink, false)
-        .setWordWrapWidth(468, true)
-        .setLineSpacing(-2)
-    );
-  }
-
   private drawPageAction(
     layer: Phaser.GameObjects.Container,
     entry: ScoutNotebookEntry,
@@ -584,9 +566,7 @@ export class ScoutNotebook extends Scene {
       this,
       0,
       PAGE_ACTION_Y,
-      pagePlan.actionKind === 'pick'
-        ? `🎯 ${pagePlan.actionLabel}`
-        : `▶ ${pagePlan.actionLabel}`,
+      pagePlan.actionLabel,
       () => {
         if (pagePlan.actionKind === 'pick') this.openArenaEntrants();
         else void this.openReplay(entry, layer, pageGeneration);

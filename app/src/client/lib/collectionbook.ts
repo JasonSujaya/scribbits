@@ -11,7 +11,7 @@ import {
   renderMysteryCosmeticPreview,
 } from './cosmeticpreview';
 import { NAV_SAFE, TYPE, UI } from './theme';
-import { ghostButton, label, stickerCard } from './ui';
+import { ghostButton, label, pageArrowButton, stickerCard } from './ui';
 
 const CARD_COLUMNS = 2;
 const CARD_HEIGHT = 220;
@@ -220,16 +220,15 @@ function buildPageControls(
     true
   );
   if (page > 0) {
-    ghostButton(scene, 126, y, '← Prev', () => onPageChange(page - 1), 150);
+    pageArrowButton(scene, 104, y, 'previous', () => onPageChange(page - 1));
   }
   if (page < totalPages - 1) {
-    ghostButton(
+    pageArrowButton(
       scene,
-      scene.scale.width - 126,
+      scene.scale.width - 104,
       y,
-      'Next →',
-      () => onPageChange(page + 1),
-      150
+      'next',
+      () => onPageChange(page + 1)
     );
   }
 }

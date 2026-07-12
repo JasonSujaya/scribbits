@@ -38,6 +38,8 @@ type FighterBarView = {
   hitPointValue: Phaser.GameObjects.Text;
   shapePower: ShapePowerChipView;
   revision: number;
+  displayedHitPoints: number | null;
+  displayedMaximumHitPoints: number | null;
 };
 
 type BattleClockView = {
@@ -229,7 +231,7 @@ const createFighterBarView = (
     fighterLayout.nameX,
     layout.fighterNameY + 4,
     scribbit.name,
-    28,
+    30,
     UI.ink,
     true
   )
@@ -291,7 +293,7 @@ const createFighterBarView = (
     fighterLayout.chipCenterX,
     layout.healthBarY,
     '— / —',
-    19,
+    29,
     UI.ink,
     true
   );
@@ -353,7 +355,7 @@ const createFighterBarView = (
     stateCenterX,
     0,
     readyPresentation.visibleLabel,
-    18,
+    27,
     readyPresentation.stateTextColor,
     true
   );
@@ -362,7 +364,7 @@ const createFighterBarView = (
     powerCenterX,
     0,
     powerName,
-    19,
+    28,
     readyPresentation.powerTextColor,
     true
   );
@@ -405,6 +407,8 @@ const createFighterBarView = (
       powerName,
     },
     revision: 0,
+    displayedHitPoints: null,
+    displayedMaximumHitPoints: null,
   };
 };
 
@@ -427,7 +431,7 @@ const createBattleClockView = (
   const face = scene.add
     .circle(0, 0, layout.battleClockRadius, UI.creamHex, 1)
     .setStrokeStyle(4, UI.inkHex, 1);
-  const seconds = label(scene, 0, 0, '25', 25, UI.ink, true);
+  const seconds = label(scene, 0, 0, '25', 28, UI.ink, true);
   const progressTrack = scene.add.rectangle(
     0,
     23,
@@ -448,6 +452,65 @@ const createBattleClockView = (
     .setOrigin(0, 0.5);
   container.add([shadow, face, seconds, progressTrack, progressFill]);
   return { container, face, seconds, progressFill };
+};
+
+type ToolbarIconKind = 'sound' | 'speed' | 'skip';
+
+const toolbarIconButton = (
+  scene: Scene,
+  x: number,
+  y: number,
+  width: number,
+  kind: ToolbarIconKind,
+  onClick: () => void,
+  initialValue?: number | boolean
+): Readonly<{
+  container: Phaser.GameObjects.Container;
+  render: (value?: number | boolean) => void;
+}> => {
+  const container = ghostButton(scene, x, y, '', onClick, width);
+  const iconLayer = scene.add.container(0, 0);
+  container.add(iconLayer);
+
+  const render = (value: number | boolean = initialValue ?? true): void => {
+    iconLayer.removeAll(true);
+    const ink = scene.add.graphics();
+    ink.fillStyle(UI.inkHex, 1);
+    ink.lineStyle(4, UI.inkHex, 1);
+
+    if (kind === 'sound') {
+      ink.fillRect(-18, -6, 8, 12);
+      ink.fillTriangle(-10, -7, 2, -15, 2, 15);
+      if (value === false) {
+        ink.lineBetween(8, -12, 22, 12);
+      } else {
+        ink.beginPath();
+        ink.arc(2, 0, 13, -0.7, 0.7, false);
+        ink.strokePath();
+        ink.beginPath();
+        ink.arc(2, 0, 21, -0.65, 0.65, false);
+        ink.strokePath();
+      }
+      iconLayer.add(ink);
+      return;
+    }
+
+    if (kind === 'skip') {
+      ink.fillTriangle(-22, -13, -22, 13, -3, 0);
+      ink.fillTriangle(-3, -13, -3, 13, 16, 0);
+      ink.fillRect(19, -14, 4, 28);
+      iconLayer.add(ink);
+      return;
+    }
+
+    ink.fillTriangle(-28, -11, -28, 11, -13, 0);
+    ink.fillTriangle(-12, -11, -12, 11, 3, 0);
+    const speed = label(scene, 23, 0, `${Number(value)}×`, 21, UI.ink, true);
+    iconLayer.add([ink, speed]);
+  };
+
+  render(initialValue);
+  return { container, render };
 };
 
 export function createReplayBattleHud(
@@ -601,7 +664,7 @@ export function createReplayBattleHud(
     layout.kindLabelX + livePillWidth + 8,
     layout.battleKindY,
     input.battleLabel ?? getReplayBattleKindLabel(input.battleKind),
-    20,
+    26,
     UI.ink,
     true
   )
@@ -621,7 +684,7 @@ export function createReplayBattleHud(
     input.battleKind === 'practice'
       ? 'NO REWARDS · SERVER LOCKED'
       : 'SERVER LOCKED',
-    20,
+    26,
     UI.coralText,
     true
   )
@@ -630,41 +693,46 @@ export function createReplayBattleHud(
   if (serverTruth.width > layout.kindLabelMaximumWidth) {
     serverTruth.setScale(layout.kindLabelMaximumWidth / serverTruth.width);
   }
-  let speedButtonLabel: Phaser.GameObjects.Text | null = null;
-  let soundButtonLabel: Phaser.GameObjects.Text | null = null;
+  let renderSpeedButton: ((value?: number | boolean) => void) | null = null;
+  let renderSoundButton: ((value?: number | boolean) => void) | null = null;
   const toolbarControls: Phaser.GameObjects.Container[] = [];
   if (input.showPlaybackControls) {
-    const soundButton = ghostButton(
+    const soundButton = toolbarIconButton(
       scene,
       layout.soundButtonX,
       layout.toolbarY,
-      input.initialSoundEnabled ? '🔊' : '🔇',
+      layout.soundButtonWidth,
+      'sound',
       input.onToggleSound,
-      layout.soundButtonWidth
-    ).setDepth(80);
-    toolbarControls.push(soundButton);
-    soundButtonLabel = soundButton.list[1] as Phaser.GameObjects.Text;
+      input.initialSoundEnabled
+    );
+    soundButton.container.setDepth(80);
+    toolbarControls.push(soundButton.container);
+    renderSoundButton = soundButton.render;
 
-    const speedButton = ghostButton(
+    const speedButton = toolbarIconButton(
       scene,
       layout.speedButtonX,
       layout.toolbarY,
-      `⏩ ${input.initialPlaybackSpeed}×`,
+      layout.speedButtonWidth,
+      'speed',
       input.onCycleSpeed,
-      layout.speedButtonWidth
-    ).setDepth(80);
-    toolbarControls.push(speedButton);
-    speedButtonLabel = speedButton.list[1] as Phaser.GameObjects.Text;
+      input.initialPlaybackSpeed
+    );
+    speedButton.container.setDepth(80);
+    toolbarControls.push(speedButton.container);
+    renderSpeedButton = speedButton.render;
 
-    const skipButton = ghostButton(
+    const skipButton = toolbarIconButton(
       scene,
       layout.skipButtonX,
       layout.toolbarY,
-      '⏭',
-      input.onSkip,
-      layout.skipButtonWidth
-    ).setDepth(80);
-    toolbarControls.push(skipButton);
+      layout.skipButtonWidth,
+      'skip',
+      input.onSkip
+    );
+    skipButton.container.setDepth(80);
+    toolbarControls.push(skipButton.container);
   }
 
   const clock = createBattleClockView(
@@ -710,10 +778,12 @@ export function createReplayBattleHud(
   );
   ticker.add(tickerGraphics);
   const announcerWidth = layout.tickerWidth - 56;
-  const announcer = label(scene, 10, 0, 'Get ready…', 22, UI.ink, true);
+  const announcer = label(scene, 10, 0, 'Get ready…', 26, UI.ink, true);
   announcer.setWordWrapWidth(announcerWidth);
   ticker.add(announcer);
   let tickerHideEvent: Phaser.Time.TimerEvent | null = null;
+  let displayedClockLabel = '';
+  let displayedClockUrgent: boolean | null = null;
 
   const showTransientAnnouncement = (text: string): void => {
     tickerHideEvent?.remove(false);
@@ -751,9 +821,22 @@ export function createReplayBattleHud(
     playbackSpeed: number
   ): void => {
     const bars = fighterBars[side];
+    const safeMaximumHitPoints = Math.max(0, Math.round(maximumHitPoints));
+    const safeHitPoints = Math.min(
+      safeMaximumHitPoints,
+      Math.max(0, Math.round(hitPoints))
+    );
+    if (
+      bars.displayedHitPoints === safeHitPoints &&
+      bars.displayedMaximumHitPoints === safeMaximumHitPoints
+    ) {
+      return;
+    }
+    bars.displayedHitPoints = safeHitPoints;
+    bars.displayedMaximumHitPoints = safeMaximumHitPoints;
     const plan = planReplayHitPointBar({
-      hitPoints,
-      maximumHitPoints,
+      hitPoints: safeHitPoints,
+      maximumHitPoints: safeMaximumHitPoints,
       fullWidth: layout.healthBarFillWidth,
     });
     const previousWidth = bars.hitPointBar.width;
@@ -791,11 +874,6 @@ export function createReplayBattleHud(
           ].primary,
       1
     );
-    const safeMaximumHitPoints = Math.max(0, Math.round(maximumHitPoints));
-    const safeHitPoints = Math.min(
-      safeMaximumHitPoints,
-      Math.max(0, Math.round(hitPoints))
-    );
     bars.hitPointValue.setText(`${safeHitPoints} / ${safeMaximumHitPoints}`);
   };
 
@@ -815,10 +893,10 @@ export function createReplayBattleHud(
       ticker.setVisible(visible);
     },
     setPlaybackSpeed: (speed: number): void => {
-      speedButtonLabel?.setText(`⏩ ${speed}×`);
+      renderSpeedButton?.(speed);
     },
     setSoundEnabled: (enabled: boolean): void => {
-      soundButtonLabel?.setText(enabled ? '🔊' : '🔇');
+      renderSoundButton?.(enabled);
     },
     setFighterHitPoints,
     setFighterShapePowerState,
@@ -840,16 +918,25 @@ export function createReplayBattleHud(
         completedTick,
         tickRate,
       });
-      clock.seconds.setText(clockPlan.label);
-      clock.seconds.setColor(clockPlan.urgent ? UI.coralText : UI.ink);
+      if (displayedClockLabel !== clockPlan.label) {
+        displayedClockLabel = clockPlan.label;
+        clock.seconds.setText(clockPlan.label);
+      }
       clock.progressFill.width =
         layout.battleClockProgressWidth * clockPlan.remainingRatio;
-      clock.progressFill.setFillStyle(clockPlan.urgent ? UI.coral : UI.gold, 1);
-      clock.face.setStrokeStyle(
-        4,
-        clockPlan.urgent ? UI.coralDeep : UI.inkHex,
-        1
-      );
+      if (displayedClockUrgent !== clockPlan.urgent) {
+        displayedClockUrgent = clockPlan.urgent;
+        clock.seconds.setColor(clockPlan.urgent ? UI.coralText : UI.ink);
+        clock.progressFill.setFillStyle(
+          clockPlan.urgent ? UI.coral : UI.gold,
+          1
+        );
+        clock.face.setStrokeStyle(
+          4,
+          clockPlan.urgent ? UI.coralDeep : UI.inkHex,
+          1
+        );
+      }
     },
     setClockVisible: (visible: boolean): void => {
       clock.container.setVisible(visible);

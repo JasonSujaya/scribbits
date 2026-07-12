@@ -23,6 +23,7 @@ import {
   ghostButton,
   handLettered,
   paperCard,
+  pageArrowButton,
   stickerCard,
   errorPanel,
 } from '../lib/ui';
@@ -505,36 +506,31 @@ export class Sketchbook extends Scene {
       true
     );
     if (page > 0) {
-      ghostButton(
+      pageArrowButton(
         this,
-        width / 2 - 210,
+        104,
         y,
-        '← Newer',
+        'previous',
         () => {
           changePage(page - 1);
           this.build();
-        },
-        150
+        }
       );
     }
     if (page < totalPages - 1 || hasMore) {
-      ghostButton(
-        this,
-        width / 2 + 210,
-        y,
-        this.loadingOlderLegends && page === totalPages - 1
-          ? 'Opening…'
-          : 'Older →',
-        () => {
+      const opening = this.loadingOlderLegends && page === totalPages - 1;
+      if (opening) {
+        ghostButton(this, width - 138, y, 'Opening…', () => {}, 180);
+      } else {
+        pageArrowButton(this, width - 104, y, 'next', () => {
           if (page < totalPages - 1) {
             changePage(page + 1);
             this.build();
             return;
           }
           loadMore?.();
-        },
-        150
-      );
+        });
+      }
     }
   }
 
@@ -649,7 +645,11 @@ export class Sketchbook extends Scene {
       UI.goldText,
       true
     ).setDepth(3);
-    label(this, x, top + 218, 'VIEW ›', 16, UI.coralText, true).setDepth(3);
+    const openMark = this.add.graphics().setDepth(3);
+    openMark.lineStyle(4, UI.coral, 1);
+    openMark.lineBetween(x + 108, top + 215, x + 130, top + 215);
+    openMark.lineBetween(x + 122, top + 207, x + 130, top + 215);
+    openMark.lineBetween(x + 122, top + 223, x + 130, top + 215);
 
     // One full-card target keeps the compact presentation easy to tap. Every
     // contextual action remains in the existing server-backed detail modal.

@@ -93,7 +93,9 @@ on one exercise.
   receipt, then returns from a saved Replay to the same dated page.
   A visible post-lock Practice card also lets anyone test all four drawing powers
   without weakening the once-daily official submission.
-- **Polish:** portrait layout, paper visual identity, responsive controls,
+- **Polish:** portrait layout, a generated Craftbox paper stage, bundled
+  DynaPuff, one die-cut navigation family, GPT-generated paper button plates,
+  shared paper status icons, responsive controls,
   a progressive-disclosure hierarchy with one headline, status, and action on
   each default card,
   a full-height torn-paper arena with rough truthful bounds, localized element
@@ -107,6 +109,10 @@ on one exercise.
   deterministic simulation,
   error states, mobile-safe navigation, UGC report/delete controls, and a full
   verification gate.
+- **Mobile performance:** exact drawing analysis runs off the UI thread; pooled
+  undo canvases, 256px display art, a 12-texture inactive cache, compact-screen
+  ambient suppression, cached HUD labels, and 30 Hz presentation effects keep
+  the live 320x568 battle near 59 FPS without changing server authority.
 - **Reddit-y:** real Reddit identity, player drawings, daily custom posts,
   Belief, Back/Clout competition, and app-authored result comments using actual
   Rumble data.
@@ -144,7 +150,7 @@ on one exercise.
 
 1. **0–5s:** Show the Scribbits Reddit feed card: “Its shape becomes its stats.”
 2. **5–17s:** Flash the optional Doodle Dare, then draw a pointed, colorful
-   creature; show forming feedback become NIB HALO and the four stats settle.
+   creature; show the single status flip from forming to NIB HALO.
 3. **17–24s:** Name and submit it; capture the PNG unfolding from an ink blot
    and the “SHAPE POWER” label in the “IT'S ALIVE” reveal.
 4. **24–37s:** Flash the mechanics-not-win-odds matchup card, then run the exact
@@ -231,8 +237,10 @@ on one exercise.
   Legends.
 - Added Phaser 4.2 Mesh2D Inkbody fighters: 25-vertex submitted-PNG deformation,
   deterministic stat-driven Shape Powers, Inkquake rings, orbiting Nib Halo
-  quills, Smearstep afterimages, a Colorburst cone/echo, impact ripples, birth
-  unfolding, KO folding, and a Canvas-safe 3x3 fallback.
+  quills, Smearstep afterimages, a Colorburst cone/echo, impact ripples, exact
+  submitted-drawing birth unfolding, KO folding, and a Canvas-safe 3x3 fallback.
+  The first-session payoff uses the player's drawing immediately, then shows one
+  truthful Ink receipt before `WATCH FIRST FIGHT`.
 - Added sixteen authored element x Shape Power signature identities plus a
   mode-specific pre-fight card backed by an exhaustive ten-pair mechanics matrix.
   It explains interactions without win odds; neutral no-clean-hit copy avoids
@@ -293,9 +301,11 @@ on one exercise.
   epithet, and challenge; the prior authoritative decisive splat remains in the
   header. Off-card choices fail closed and the local mock imports the production
   selector instead of maintaining a second matchmaker.
-- Made the drawing hook visible before the first mark with one compact four-power
-  legend in the existing feedback card; it disappears into the actual analyzed
-  signature as soon as the drawing is ready, so no tutorial screen was added.
+- Made Draw canvas-first: the larger page keeps all eight base colors visible,
+  separates unlocked premium pens from the base palette, and retains a compact
+  brush/eraser/undo/optional-sticker rail. Name and `BRING TO LIFE` reveal only
+  after the shared analyzer accepts the drawing; undoing below that same server
+  threshold hides and disables them again.
 - Added one server-authoritative Founder Rival Thread per player: first to two,
   maximum three qualifying battles, one score beat per Arena day, active-founder
   pinning across Rival Draft and quick spar, same-founder Champion advancement,
