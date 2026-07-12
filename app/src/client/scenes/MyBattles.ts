@@ -4,9 +4,11 @@ import {
   getArena,
   getBattleHistoryPage,
   setBattleHistoryPage,
-  setReplay,
+  setSavedReplay,
 } from '../lib/registry';
 import { loadDrawing, fitDrawing } from '../lib/scribbits';
+import { CanvasActionOverlay } from '../lib/overlay';
+import { paperIcon } from '../lib/papericons';
 import { NAV_SAFE, prefersReducedMotion, TYPE, UI } from '../lib/theme';
 import { mountLivingPaper } from '../lib/livingpaper';
 import {
@@ -42,6 +44,8 @@ export class MyBattles extends Scene {
   private renderGeneration = 0;
   private page = 0;
   private reduceMotion = false;
+  private actionOverlay: CanvasActionOverlay | null = null;
+  private openingReportId: string | null = null;
 
   constructor() {
     super('MyBattles');
@@ -53,12 +57,19 @@ export class MyBattles extends Scene {
     this.loadingCard = null;
     this.page = Math.max(0, data?.page ?? getBattleHistoryPage(this));
     this.reduceMotion = prefersReducedMotion();
+    this.actionOverlay = null;
+    this.openingReportId = null;
   }
 
   create(): void {
     this.cameras.main.setBackgroundColor(UI.desk);
     this.cameras.main.fadeIn(180, 255, 247, 232);
     mountLivingPaper(this);
+    this.actionOverlay = new CanvasActionOverlay(this);
+    this.events.once('shutdown', () => {
+      this.actionOverlay?.destroy();
+      this.actionOverlay = null;
+    });
     const { width } = this.scale;
     handLettered(this, width / 2, 54, 'BATTLES', 43, UI.ink, true);
     this.buildAppTabs();
@@ -101,7 +112,10 @@ export class MyBattles extends Scene {
       const card = stickerCard(this, width / 2, 500, width - 100, 220, {
         tilt: -0.6,
       });
-      const swords = label(this, 0, -52, '⚔️', 48, UI.ink);
+      const swords = paperIcon(this, 'sword', 0, -52, {
+        size: 52,
+        fill: UI.gold,
+      });
       card.add(swords);
       if (!this.reduceMotion) {
         this.tweens.add({
@@ -195,28 +209,47 @@ export class MyBattles extends Scene {
       this,
       this.scale.width / 2,
       y,
-      `PAGE ${this.page + 1} / ${totalPages}`,
+      `${this.page + 1} / ${totalPages}`,
       17,
       UI.inkSoft,
       true
     );
     if (this.page > 0) {
+      const goPrevious = (): void => this.changePage(this.page - 1);
       pageArrowButton(
         this,
         104,
         y,
         'previous',
-        () => this.changePage(this.page - 1)
+        goPrevious
       );
+      this.actionOverlay?.add({
+        label: 'Previous battle page',
+        rect: { x: 54, y: y - 50, width: 100, height: 100 },
+        pointerPassthrough: true,
+        onActivate: goPrevious,
+      });
     }
     if (this.page < totalPages - 1) {
+      const goNext = (): void => this.changePage(this.page + 1);
       pageArrowButton(
         this,
         this.scale.width - 104,
         y,
         'next',
-        () => this.changePage(this.page + 1)
+        goNext
       );
+      this.actionOverlay?.add({
+        label: 'Next battle page',
+        rect: {
+          x: this.scale.width - 154,
+          y: y - 50,
+          width: 100,
+          height: 100,
+        },
+        pointerPassthrough: true,
+        onActivate: goNext,
+      });
     }
   }
 
@@ -276,29 +309,77 @@ export class MyBattles extends Scene {
       label(
         this,
         0,
-        -6,
-        `${this.perspectiveLabel(plan.perspective)} · ${plan.finishLabel} · D${report.day}`,
+        -8,
+        plan.rowStatusLabel,
         18,
         this.perspectiveTextColor(plan.perspective),
         true
       )
     );
-    const actionMark = this.add.graphics();
-    actionMark.fillStyle(UI.coral, 1);
-    if (plan.replayMotionAvailable) {
-      actionMark.fillTriangle(-8, 24, -8, 48, 14, 36);
-    } else {
-      actionMark.lineStyle(4, UI.coral, 1);
-      actionMark.lineBetween(-10, 36, 12, 36);
-      actionMark.lineBetween(4, 28, 12, 36);
-      actionMark.lineBetween(4, 44, 12, 36);
-    }
-    card.add(actionMark);
+    const actionWidth = plan.replayMotionAvailable ? 146 : 190;
+    const actionY = 40;
+    const actionPlate = this.add
+      .rectangle(0, actionY, actionWidth, 46, UI.creamHex, 0.96)
+      .setStrokeStyle(2, UI.inkHex, 0.62);
+    const actionIcon = paperIcon(
+      this,
+      plan.replayMotionAvailable ? 'replay' : 'book',
+      -actionWidth / 2 + 25,
+      actionY,
+      { size: 28, fill: plan.replayMotionAvailable ? UI.gold : UI.tapeAlt }
+    );
+    const actionLabel = label(
+      this,
+      13,
+      actionY,
+      plan.actionLabel,
+      17,
+      UI.ink,
+      true
+    );
+    card.add([actionPlate, actionIcon, actionLabel]);
 
-    hit.on('pointerup', () => {
+    const openReport = (): void => {
+      if (this.openingReportId) return;
+      this.openingReportId = report.id;
       setBattleHistoryPage(this, this.page);
-      setReplay(this, report, 'MyBattles');
+      setSavedReplay(this, report, 'MyBattles');
       this.scene.start('Replay');
+    };
+    const release = (): void => {
+      if (!card.active) return;
+      this.tweens.add({
+        targets: card,
+        scaleX: 1,
+        scaleY: 1,
+        duration: 100,
+        ease: 'Back.easeOut',
+      });
+    };
+    hit.on('pointerdown', () => {
+      this.tweens.add({
+        targets: card,
+        scaleX: 0.985,
+        scaleY: 0.975,
+        duration: 60,
+        ease: 'Quad.easeOut',
+      });
+    });
+    hit.on('pointerout', release);
+    hit.on('pointerup', () => {
+      release();
+      openReport();
+    });
+    this.actionOverlay?.add({
+      label: plan.accessibleLabel,
+      rect: {
+        x: width / 2 - 110,
+        y: y - 50,
+        width: 220,
+        height: 100,
+      },
+      pointerPassthrough: true,
+      onActivate: openReport,
     });
 
     if (!this.reduceMotion) {
@@ -315,17 +396,6 @@ export class MyBattles extends Scene {
         delay: index * 55,
         ease: 'Back.easeOut',
       });
-    }
-  }
-
-  private perspectiveLabel(perspective: BattleJournalPerspective): string {
-    switch (perspective) {
-      case 'win':
-        return 'MY WIN';
-      case 'loss':
-        return 'MY LOSS';
-      case 'watch':
-        return 'WATCH';
     }
   }
 

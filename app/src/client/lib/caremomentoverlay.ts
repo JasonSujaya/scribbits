@@ -1,8 +1,15 @@
 import { Scene } from 'phaser';
 import type { Scribbit } from '../../shared/arena';
+import { CanvasActionOverlay } from './overlay';
 import { fitDrawing, loadDrawing } from './scribbits';
-import { ELEMENT_STYLES, prefersReducedMotion, TYPE, UI } from './theme';
-import { label, stickerCard } from './ui';
+import {
+  ELEMENT_STYLES,
+  NAV_SAFE,
+  prefersReducedMotion,
+  TYPE,
+  UI,
+} from './theme';
+import { ghostButton, label, stickerCard } from './ui';
 import type { CareMomentPlan } from './caremoment';
 
 const CARE_MOMENT_DEPTH = 2450;
@@ -19,15 +26,18 @@ export type CareMomentOverlay = Readonly<{
 export function openCareMomentOverlay(
   scene: Scene,
   scribbit: Scribbit,
-  plan: CareMomentPlan
+  plan: CareMomentPlan,
+  focusOnOpen = false
 ): CareMomentOverlay {
   const { width, height } = scene.scale;
   const style = ELEMENT_STYLES[scribbit.element];
   const reduceMotion = prefersReducedMotion();
+  const shouldMoveKeyboardFocus = focusOnOpen;
   const cardWidth = width - 86;
   const cardHeight = 340;
-  const cardCenterY = height - 278;
+  const cardCenterY = height - NAV_SAFE - cardHeight / 2 - 16;
   let destroyed = false;
+  const actionOverlay = new CanvasActionOverlay(scene);
 
   const layer = scene.add
     .container(0, 0)
@@ -138,15 +148,18 @@ export function openCareMomentOverlay(
     });
   }
 
-  const autoDismiss = scene.time.delayedCall(
-    CARE_MOMENT_VISIBLE_MILLISECONDS,
-    () => dismiss()
-  );
+  // Pointer-triggered receipts stay lightweight and self-dismiss. Keyboard
+  // receipts remain until explicitly dismissed so a focused control is never
+  // removed by a timer while the player is reading or operating it.
+  const autoDismiss = shouldMoveKeyboardFocus
+    ? null
+    : scene.time.delayedCall(CARE_MOMENT_VISIBLE_MILLISECONDS, () => dismiss());
 
   const dismiss = (): void => {
     if (destroyed) return;
     destroyed = true;
-    autoDismiss.remove();
+    autoDismiss?.remove();
+    actionOverlay.destroy();
     if (reduceMotion) {
       layer.destroy(true);
       return;
@@ -163,12 +176,47 @@ export function openCareMomentOverlay(
   };
 
   dismissSurface.on('pointerup', dismiss);
+  const closeSize = 100;
+  const closeX = cardWidth / 2 - 58;
+  const closeY = -cardHeight / 2 + 58;
+  card.add(
+    ghostButton(
+      scene,
+      closeX,
+      closeY,
+      '×',
+      dismiss,
+      closeSize,
+      closeSize
+    )
+  );
+  const accessibilitySummary = [
+    plan.eyebrow,
+    plan.headline,
+    plan.reaction,
+    plan.rewardLine,
+    plan.progressLine,
+  ]
+    .map((part) => part.trim().replace(/[.!?]+$/, ''))
+    .join('. ');
+  const dismissControl = actionOverlay.add({
+    label: `Dismiss care result. ${accessibilitySummary}`,
+    rect: {
+      x: width / 2 + closeX - closeSize / 2,
+      y: cardCenterY + closeY - closeSize / 2,
+      width: closeSize,
+      height: closeSize,
+    },
+    onActivate: dismiss,
+  });
+  if (shouldMoveKeyboardFocus) dismissControl.focus();
 
   return Object.freeze({
     destroy: () => {
       if (destroyed) return;
       destroyed = true;
-      autoDismiss.remove();
+      autoDismiss?.remove();
+      actionOverlay.destroy();
       layer.destroy(true);
     },
   });

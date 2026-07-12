@@ -40,11 +40,44 @@ import { navigateToDailyDraw } from '../lib/draweligibility';
 import { renderCollectionBook } from '../lib/collectionbook';
 import { LEGACY_BOOK_PAGE_SIZE, renderLegacyBook } from '../lib/legacycards';
 import { appDock } from '../lib/appdock';
+import { CanvasActionOverlay, DomOverlay } from '../lib/overlay';
+import { paperIcon, type PaperIconKey } from '../lib/papericons';
 
 const LEGEND_CARD_HEIGHT = 250;
 const LEGEND_CARD_ROW_GAP = 14;
 const LEGEND_CARD_ROW_STEP = LEGEND_CARD_HEIGHT + LEGEND_CARD_ROW_GAP;
 const LEGEND_CARD_TOP_GAP = 16;
+const GALLERY_SECTION_PANEL_ID = 'gallery-section-panel';
+const galleryTabId = (tab: SketchbookTab): string => `gallery-tab-${tab}`;
+const GALLERY_TABS: ReadonlyArray<{
+  tab: SketchbookTab;
+  label: string;
+  visibleLabel: string;
+  icon: PaperIconKey;
+  panelSummary: string;
+}> = Object.freeze([
+  {
+    tab: 'legends',
+    label: 'Legends',
+    visibleLabel: 'LEGENDS',
+    icon: 'trophy',
+    panelSummary: 'Community Legends. Open a saved Legend for details.',
+  },
+  {
+    tab: 'sketchbook',
+    label: 'Legacy Book',
+    visibleLabel: 'LEGACY',
+    icon: 'book',
+    panelSummary: 'Legacy Book. Your completed Scribbits and their saved stories.',
+  },
+  {
+    tab: 'collection',
+    label: 'Collection',
+    visibleLabel: 'COLLECT',
+    icon: 'spark',
+    panelSummary: 'Collection. Permanent cosmetic discoveries and titles.',
+  },
+]);
 
 // Three-tab gallery: community Legends, the caller's immutable Legacy Book,
 // and a permanent cosmetic Collection. This scene orchestrates data only;
@@ -70,6 +103,15 @@ export class Sketchbook extends Scene {
   private galleryRequestEpoch = 0;
   private collectionRequestEpoch = 0;
   private legacyRequestEpoch = 0;
+  private sectionTabsOverlay: CanvasActionOverlay | null = null;
+  private contentActionOverlay: CanvasActionOverlay | null = null;
+  private sectionSemanticOverlay: DomOverlay | null = null;
+  private readonly sectionTabControls = new Map<
+    SketchbookTab,
+    HTMLButtonElement
+  >();
+  private openingLegendId: string | null = null;
+  private preferredSectionFocus: SketchbookTab | null = null;
 
   constructor() {
     super('Sketchbook');
@@ -102,6 +144,12 @@ export class Sketchbook extends Scene {
     this.collectionError = null;
     this.legacyError = null;
     this.inventory = null;
+    this.sectionTabsOverlay = null;
+    this.contentActionOverlay = null;
+    this.sectionSemanticOverlay = null;
+    this.sectionTabControls.clear();
+    this.openingLegendId = null;
+    this.preferredSectionFocus = null;
   }
 
   create(): void {
@@ -109,6 +157,7 @@ export class Sketchbook extends Scene {
     this.cameras.main.fadeIn(180, 255, 247, 232);
     this.tab = getSketchbookTab(this);
     this.loggedIn = getArena(this)?.loggedIn ?? false;
+    this.events.once('shutdown', () => this.destroyBuildOverlays());
     this.build();
     if (this.tab === 'collection') {
       if (this.loggedIn) void this.loadCollection();
@@ -303,7 +352,10 @@ export class Sketchbook extends Scene {
 
   private build(): void {
     this.buildGeneration += 1;
+    this.destroyBuildOverlays();
     this.children.removeAll(true);
+    this.errorPanelRef = null;
+    this.openingLegendId = null;
     releaseRenderedDrawingTextures(this);
     // Calm living page (no forecast field, no countdown) rebuilt each build.
     this.livingPaper?.destroy();
@@ -311,6 +363,10 @@ export class Sketchbook extends Scene {
     const { width } = this.scale;
     handLettered(this, width / 2, 58, 'GALLERY', 40, UI.ink, true);
     this.buildTabs(150);
+    this.mountSectionPanel();
+    if (this.preferredSectionFocus === this.tab) {
+      this.sectionTabControls.get(this.tab)?.focus();
+    }
     this.buildAppTabs();
 
     if (this.tab === 'collection') {
@@ -388,6 +444,21 @@ export class Sketchbook extends Scene {
     this.buildLegends(320);
   }
 
+  private destroyBuildOverlays(): void {
+    this.sectionTabsOverlay?.destroy();
+    this.sectionTabsOverlay = null;
+    this.contentActionOverlay?.destroy();
+    this.contentActionOverlay = null;
+    this.sectionSemanticOverlay?.destroy();
+    this.sectionSemanticOverlay = null;
+    this.sectionTabControls.clear();
+  }
+
+  private ensureContentActionOverlay(): CanvasActionOverlay {
+    this.contentActionOverlay ??= new CanvasActionOverlay(this);
+    return this.contentActionOverlay;
+  }
+
   private buildAppTabs(): void {
     appDock(this, 'gallery', {
       gallery: () => this.switchTab('legends'),
@@ -396,8 +467,8 @@ export class Sketchbook extends Scene {
 
   private buildTabs(y: number): void {
     const { width } = this.scale;
-    const controlW = width - 140;
-    const controlH = 62;
+    const controlW = width - 60;
+    const controlH = 100;
     const tabs = this.add.container(width / 2, y);
 
     const bg = this.add.graphics();
@@ -406,14 +477,9 @@ export class Sketchbook extends Scene {
     bg.lineStyle(4, UI.inkHex, 1);
     bg.strokeRoundedRect(-controlW / 2, -controlH / 2, controlW, controlH, 18);
 
-    const tabDefinitions: Array<{ tab: SketchbookTab; text: string }> = [
-      { tab: 'legends', text: 'Legends' },
-      { tab: 'sketchbook', text: 'Legacy Book' },
-      { tab: 'collection', text: 'Collection' },
-    ];
-    const segmentWidth = controlW / tabDefinitions.length;
+    const segmentWidth = controlW / GALLERY_TABS.length;
     const controlLeft = -controlW / 2;
-    const activeIndex = tabDefinitions.findIndex(({ tab }) => tab === this.tab);
+    const activeIndex = GALLERY_TABS.findIndex(({ tab }) => tab === this.tab);
     const activeX = controlLeft + segmentWidth * (activeIndex + 0.5);
     const active = this.add.graphics();
     active.fillStyle(UI.inkHex, 1);
@@ -435,21 +501,35 @@ export class Sketchbook extends Scene {
         0.18
       )
     );
-    const tabLabels = tabDefinitions.map(({ tab, text }, index) =>
-      label(
+    this.sectionTabsOverlay = new CanvasActionOverlay(this);
+    this.sectionTabsOverlay.setRootAttributes({
+      role: 'tablist',
+      'aria-label': 'Gallery sections',
+    });
+    const tabContent = GALLERY_TABS.flatMap((definition, index) => {
+      const { tab, label: accessibleLabel, visibleLabel, icon } = definition;
+      const centerX = controlLeft + segmentWidth * (index + 0.5);
+      const activeTab = this.tab === tab;
+      const tabIcon = paperIcon(this, icon, centerX, -20, {
+        size: 32,
+        fill: activeTab ? UI.gold : UI.tapeAlt,
+      });
+      const tabLabel = label(
         this,
-        controlLeft + segmentWidth * (index + 0.5),
-        0,
-        text,
-        20,
-        this.tab === tab ? UI.cream : UI.ink,
+        centerX,
+        25,
+        visibleLabel,
+        28,
+        activeTab ? UI.cream : UI.ink,
         true
-      )
-    );
-    const tabHits = tabDefinitions.map(({ tab }, index) => {
+      );
+      let nativeTab: HTMLButtonElement | null = null;
+      const activateTab = (): void => {
+        this.switchTab(tab, document.activeElement === nativeTab);
+      };
       const hit = this.add
         .rectangle(
-          controlLeft + segmentWidth * (index + 0.5),
+          centerX,
           0,
           segmentWidth,
           controlH,
@@ -457,20 +537,88 @@ export class Sketchbook extends Scene {
           0.001
         )
         .setInteractive({ useHandCursor: true });
-      hit.on('pointerup', () => this.switchTab(tab));
-      return hit;
+      hit.on('pointerup', activateTab);
+      nativeTab = this.sectionTabsOverlay?.add({
+        label: accessibleLabel,
+        rect: {
+          x: width / 2 + centerX - segmentWidth / 2,
+          y: y - controlH / 2,
+          width: segmentWidth,
+          height: controlH,
+        },
+        attributes: {
+          id: galleryTabId(tab),
+          role: 'tab',
+          'aria-selected': activeTab ? 'true' : 'false',
+          'aria-controls': GALLERY_SECTION_PANEL_ID,
+        },
+        pointerPassthrough: true,
+        onKeyDown: (event) => this.handleSectionTabKey(event, index),
+        onActivate: activateTab,
+      }) ?? null;
+      if (nativeTab) {
+        nativeTab.tabIndex = activeTab ? 0 : -1;
+        this.sectionTabControls.set(tab, nativeTab);
+      }
+      return [tabIcon, tabLabel, hit];
     });
 
-    tabs.add([bg, active, ...dividers, ...tabLabels, ...tabHits]);
+    tabs.add([bg, active, ...dividers, ...tabContent]);
   }
 
-  private switchTab(tab: SketchbookTab): void {
+  private mountSectionPanel(): void {
+    const definition = GALLERY_TABS.find(({ tab }) => tab === this.tab);
+    if (!definition) return;
+    const panel = document.createElement('div');
+    panel.id = GALLERY_SECTION_PANEL_ID;
+    panel.setAttribute('role', 'tabpanel');
+    panel.setAttribute('aria-labelledby', galleryTabId(this.tab));
+    panel.setAttribute('aria-live', 'polite');
+    panel.textContent = definition.panelSummary;
+    Object.assign(panel.style, {
+      clipPath: 'inset(50%)',
+      opacity: '0',
+      overflow: 'hidden',
+      pointerEvents: 'none',
+      whiteSpace: 'nowrap',
+    });
+    this.sectionSemanticOverlay = new DomOverlay(this);
+    this.sectionSemanticOverlay.place(panel, {
+      x: 30,
+      y: 210,
+      width: 1,
+      height: 1,
+    });
+  }
+
+  private handleSectionTabKey(event: KeyboardEvent, index: number): void {
+    let targetIndex: number | null = null;
+    if (event.key === 'ArrowLeft') targetIndex = Math.max(0, index - 1);
+    if (event.key === 'ArrowRight') {
+      targetIndex = Math.min(GALLERY_TABS.length - 1, index + 1);
+    }
+    if (event.key === 'Home') targetIndex = 0;
+    if (event.key === 'End') targetIndex = GALLERY_TABS.length - 1;
+    if (targetIndex === null) return;
+    const target = GALLERY_TABS[targetIndex];
+    if (!target) return;
+    event.preventDefault();
+    this.switchTab(target.tab, true);
+  }
+
+  private switchTab(tab: SketchbookTab, focusSelectedTab = false): void {
+    this.preferredSectionFocus = focusSelectedTab ? tab : null;
+    if (tab === this.tab) {
+      if (focusSelectedTab) this.sectionTabControls.get(tab)?.focus();
+      return;
+    }
     this.tab = tab;
     if (tab === 'legends') this.legendPage = 0;
     else if (tab === 'sketchbook') this.legacyPage = 0;
     else this.collectionPage = 0;
     setSketchbookTab(this, tab);
     this.build();
+    if (focusSelectedTab) this.sectionTabControls.get(tab)?.focus();
     if (tab === 'collection') {
       if (this.loggedIn && !this.inventory) void this.loadCollection();
     } else if (tab === 'sketchbook') {
@@ -506,29 +654,51 @@ export class Sketchbook extends Scene {
       true
     );
     if (page > 0) {
+      const goPrevious = (): void => {
+        changePage(page - 1);
+        this.build();
+      };
       pageArrowButton(
         this,
         104,
         y,
         'previous',
-        () => {
-          changePage(page - 1);
-          this.build();
-        }
+        goPrevious
       );
+      this.ensureContentActionOverlay().add({
+        label: 'Previous Legends page',
+        rect: { x: 54, y: y - 50, width: 100, height: 100 },
+        pointerPassthrough: true,
+        onActivate: goPrevious,
+      });
     }
     if (page < totalPages - 1 || hasMore) {
       const opening = this.loadingOlderLegends && page === totalPages - 1;
       if (opening) {
         ghostButton(this, width - 138, y, 'Opening…', () => {}, 180);
+        const openingControl = this.ensureContentActionOverlay().add({
+          label: 'Opening next Legends page',
+          rect: { x: width - 228, y: y - 50, width: 180, height: 100 },
+          pointerPassthrough: true,
+          enabled: false,
+          onActivate: () => {},
+        });
+        openingControl.setAttribute('aria-busy', 'true');
       } else {
-        pageArrowButton(this, width - 104, y, 'next', () => {
+        const goNext = (): void => {
           if (page < totalPages - 1) {
             changePage(page + 1);
             this.build();
             return;
           }
           loadMore?.();
+        };
+        pageArrowButton(this, width - 104, y, 'next', goNext);
+        this.ensureContentActionOverlay().add({
+          label: 'Next Legends page',
+          rect: { x: width - 154, y: y - 50, width: 100, height: 100 },
+          pointerPassthrough: true,
+          onActivate: goNext,
         });
       }
     }
@@ -562,7 +732,10 @@ export class Sketchbook extends Scene {
         gold: true,
         tilt: -0.6,
       });
-      const trophy = label(this, 0, -40, '🏆', 48, UI.ink);
+      const trophy = paperIcon(this, 'trophy', 0, -40, {
+        size: 54,
+        fill: UI.gold,
+      });
       card.add(trophy);
       this.tweens.add({
         targets: trophy,
@@ -619,12 +792,13 @@ export class Sketchbook extends Scene {
     const cardWidth = 300;
     paperCard(this, x, y, cardWidth, LEGEND_CARD_HEIGHT, true).setDepth(1);
     const top = y - LEGEND_CARD_HEIGHT / 2;
+    const status = planLegendStatus(legend);
 
     const artY = top + 61;
     const generation = this.buildGeneration;
     void loadDrawing(this, legend).then((key) => {
       if (!this.isCurrentBuild(generation)) return;
-      fitDrawing(this.add.image(x, artY, key), 94).setDepth(2);
+      fitDrawing(this.add.image(x, artY, key), 108).setDepth(2);
     });
 
     label(
@@ -632,24 +806,46 @@ export class Sketchbook extends Scene {
       x,
       top + 132,
       fitCardText(legend.name.toUpperCase(), 18),
-      27,
+      28,
       UI.ink,
       true
     ).setDepth(3);
-    label(
+    this.add
+      .rectangle(x, top + 169, 226, 42, UI.creamHex, 0.92)
+      .setStrokeStyle(2, UI.inkHex, 0.25)
+      .setDepth(2);
+    paperIcon(this, status.icon, x - 84, top + 169, {
+      size: 24,
+      fill: status.icon === 'trophy' ? UI.gold : UI.coral,
+    }).setDepth(3);
+    const statusText = label(
       this,
-      x,
-      top + 173,
-      legendStatusLine(legend),
-      17,
+      x + 12,
+      top + 169,
+      status.label,
+      26,
       UI.goldText,
       true
     ).setDepth(3);
-    const openMark = this.add.graphics().setDepth(3);
-    openMark.lineStyle(4, UI.coral, 1);
-    openMark.lineBetween(x + 108, top + 215, x + 130, top + 215);
-    openMark.lineBetween(x + 122, top + 207, x + 130, top + 215);
-    openMark.lineBetween(x + 122, top + 223, x + 130, top + 215);
+    if (statusText.width > 180) statusText.setScale(180 / statusText.width);
+    const actionY = top + 218;
+    this.add
+      .rectangle(x, actionY, 132, 42, UI.creamHex, 0.96)
+      .setStrokeStyle(2, UI.inkHex, 0.6)
+      .setDepth(2);
+    paperIcon(this, 'info', x - 42, actionY, {
+      size: 25,
+      fill: UI.tapeAlt,
+    }).setDepth(3);
+    label(this, x + 20, actionY, 'VIEW', 22, UI.ink, true).setDepth(3);
+
+    const openLegend = (): void => {
+      if (this.openingLegendId) return;
+      this.openingLegendId = legend.id;
+      this.sectionTabsOverlay?.setVisible(false);
+      this.contentActionOverlay?.setVisible(false);
+      this.openDetail(legend);
+    };
 
     // One full-card target keeps the compact presentation easy to tap. Every
     // contextual action remains in the existing server-backed detail modal.
@@ -657,7 +853,13 @@ export class Sketchbook extends Scene {
       .rectangle(x, y, cardWidth, LEGEND_CARD_HEIGHT, 0xffffff, 0.001)
       .setDepth(4)
       .setInteractive({ useHandCursor: true })
-      .on('pointerup', () => this.openDetail(legend));
+      .on('pointerup', openLegend);
+    this.ensureContentActionOverlay().add({
+      label: `Open ${fitCardText(legend.name, 24)}. ${status.label}.`,
+      rect: { x: x - 110, y: y + 20, width: 220, height: 100 },
+      pointerPassthrough: true,
+      onActivate: openLegend,
+    });
   }
 
   // Community terminal records are inspectable, but Belief freezes when a
@@ -675,6 +877,11 @@ export class Sketchbook extends Scene {
           : { canBelieve: this.loggedIn },
       onRemoved: () => void this.loadGallery(),
       onReported: () => void this.loadGallery(),
+      onClose: () => {
+        this.openingLegendId = null;
+        this.sectionTabsOverlay?.setVisible(true);
+        this.contentActionOverlay?.setVisible(true);
+      },
     });
   }
 
@@ -731,11 +938,20 @@ function fitCardText(value: string, maxCharacters: number): string {
   return `${compactValue.slice(0, maxCharacters - 1).trimEnd()}…`;
 }
 
-function legendStatusLine(legend: Scribbit): string {
+function planLegendStatus(legend: Scribbit): Readonly<{
+  icon: 'trophy' | 'heart';
+  label: string;
+}> {
   const championPrefix = 'Champion of Day ';
   if (legend.legendTitle?.startsWith(championPrefix)) {
     const championDay = legend.legendTitle.slice(championPrefix.length).trim();
-    return championDay ? `CHAMPION · DAY ${championDay}` : 'CHAMPION';
+    return Object.freeze({
+      icon: 'trophy',
+      label: championDay ? `CHAMPION • D${championDay}` : 'CHAMPION',
+    });
   }
-  return `BELOVED LEGEND · 💛 ${legend.belief}`;
+  return Object.freeze({
+    icon: 'heart',
+    label: `BELOVED • ${legend.belief} BELIEF`,
+  });
 }

@@ -1,13 +1,16 @@
 import * as Phaser from 'phaser';
 import { Scene } from 'phaser';
 import {
+  advanceSavedReplayPass,
   beginPracticeSession,
   endPracticeSession,
   getPracticeSession,
   getReplay,
+  getReplayEntryMode,
   getReplayFounderChronicleBeat,
   getReplayFounderRivalryStakes,
   getReplayReturn,
+  getReplayPass,
   getArena,
   stageDirectBattle,
   setArena,
@@ -82,6 +85,10 @@ import type { SparRivalDraft } from '../lib/replaysparrivaldraft';
 import { createPostFightActions } from '../lib/replaypostfightactions';
 import type { PostFightActions } from '../lib/replaypostfightactions';
 import { createPracticeOutcomeControls } from '../lib/replaypracticeoutcome';
+import {
+  showSavedReplayIntro,
+  type SavedReplayIntro,
+} from '../lib/savedreplayintro';
 import { planPracticeOutcome } from '../lib/practicelab';
 import {
   authorFounderBattleOpening,
@@ -237,6 +244,7 @@ export class Replay extends Scene {
   private rematchLoading = false;
   private rivalDraft: SparRivalDraft | null = null;
   private postFightActions: PostFightActions | null = null;
+  private savedReplayIntro: SavedReplayIntro | null = null;
   private playbackTick = 0;
   private previousPlaybackTick = -1;
   private arenaFloorEffects: Phaser.GameObjects.Graphics | null = null;
@@ -274,6 +282,7 @@ export class Replay extends Scene {
     this.rematchLoading = false;
     this.rivalDraft = null;
     this.postFightActions = null;
+    this.savedReplayIntro = null;
     this.signatureShown.clear();
     this.elementCueShown.clear();
     this.transcript = null;
@@ -314,6 +323,7 @@ export class Replay extends Scene {
     this.game.canvas.dataset.replayPhase = phase;
     this.game.canvas.dataset.replaySpeed = String(this.speed);
     this.game.canvas.dataset.replayTweenScale = String(this.tweens.timeScale);
+    this.game.canvas.dataset.replayPass = String(getReplayPass(this));
   }
 
   private cycleSpeed(): void {
@@ -342,6 +352,8 @@ export class Replay extends Scene {
       this.rivalDraft = null;
       this.postFightActions?.destroy();
       this.postFightActions = null;
+      this.savedReplayIntro?.destroy();
+      this.savedReplayIntro = null;
       this.playbackRunning = false;
       this.shapeEffects.clear();
       this.hidePowerGhosts();
@@ -503,6 +515,24 @@ export class Replay extends Scene {
   }
 
   private playIntro(): void {
+    if (this.isSavedReplay()) {
+      this.savedReplayIntro?.destroy();
+      this.savedReplayIntro = showSavedReplayIntro(this, {
+        fighterA: this.report.a,
+        fighterB: this.report.b,
+        battleKind: this.report.kind,
+        replayPass: getReplayPass(this),
+        onComplete: () => {
+          this.savedReplayIntro = null;
+          if (!this.finished && this.scene.isActive()) this.playFightBanner();
+        },
+      });
+      return;
+    }
+    this.playFightBanner();
+  }
+
+  private playFightBanner(): void {
     const { width, height } = this.scale;
     const founderOpening = authorFounderBattleOpening(
       this.replayCommentaryContext()
@@ -1716,6 +1746,7 @@ export class Replay extends Scene {
   private replayCommentaryContext(): ReplayCommentaryContext {
     return {
       battleId: this.transcript?.battleId ?? this.report.id,
+      replayPass: getReplayPass(this),
       fighters: {
         a: {
           id: this.fighterA.scribbit.id,
@@ -2055,9 +2086,11 @@ export class Replay extends Scene {
       width: returnWidth,
       canChooseRival: false,
       canBackContender: false,
+      canReplay: false,
       returnLabel,
       onRivals: () => {},
       onBackContender: () => {},
+      onReplay: () => {},
       onReturn: () => this.exit(),
     });
     card.add(this.postFightActions.container);
@@ -2285,7 +2318,9 @@ export class Replay extends Scene {
     // Only show a reward the server says this exact battle granted. Historical
     // replays and later practice wins must never imply a second payout.
     if (this.isMine(winner.scribbit) && (this.report.inkAwarded ?? 0) > 0) {
-      const rewardText = `Earned +${this.report.inkAwarded} 🫙`;
+      const rewardText = this.isSavedReplay()
+        ? `SAVED PAYOUT • +${this.report.inkAwarded} INK`
+        : `EARNED • +${this.report.inkAwarded} INK`;
       if (this.reduceMotion) {
         const reward = label(
           this,
@@ -2324,10 +2359,12 @@ export class Replay extends Scene {
       width: width - 70,
       canChooseRival,
       canBackContender,
+      canReplay: this.canReplaySavedReport(),
       returnLabel: this.compactReturnButtonLabel(),
       rivalActionCopy,
       onRivals: () => this.openRivalDraft(winner.scribbit),
       onBackContender: () => this.goBackEntrants(),
+      onReplay: () => this.replayAgain(),
       onReturn: () => this.exit(),
     });
     this.postFightActions.container.setDepth(61);
@@ -2431,10 +2468,12 @@ export class Replay extends Scene {
       width: width - 140,
       canChooseRival: true,
       canBackContender,
+      canReplay: this.canReplaySavedReport(),
       returnLabel: this.compactReturnButtonLabel(),
       rivalActionCopy,
       onRivals: () => this.openRivalDraft(mine),
       onBackContender: () => this.goBackEntrants(),
+      onReplay: () => this.replayAgain(),
       onReturn: () => this.exit(),
     });
     card.add(this.postFightActions.container);
@@ -2452,6 +2491,23 @@ export class Replay extends Scene {
       case 'ArenaHome':
         return 'ARENA ›';
     }
+  }
+
+  private isSavedReplay(): boolean {
+    return getReplayEntryMode(this) === 'saved';
+  }
+
+  private canReplaySavedReport(): boolean {
+    return this.isSavedReplay() && this.transcript !== null;
+  }
+
+  /** Restarts the exact local transcript; no fetch, simulation, or reward path. */
+  private replayAgain(): void {
+    if (!this.canReplaySavedReport()) return;
+    advanceSavedReplayPass(this);
+    this.postFightActions?.destroy();
+    this.postFightActions = null;
+    this.scene.restart();
   }
 
   private returnButtonLabel(): string {

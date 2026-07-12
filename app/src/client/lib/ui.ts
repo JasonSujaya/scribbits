@@ -4,6 +4,7 @@
 import * as Phaser from 'phaser';
 import { Scene } from 'phaser';
 import type { Element, Scribbit, ScribbitStats } from '../../shared/arena';
+import { CanvasActionOverlay } from './overlay';
 import { paperIcon, type PaperIconKey } from './papericons';
 import {
   ELEMENT_STYLES,
@@ -17,6 +18,10 @@ import { NAV_ICON_TEXTURES, UI_BUTTON_TEXTURES } from './visualassets';
 
 const TRANSITION_MS = 180;
 const transitioningScenes = new WeakSet<Scene>();
+// Some scenes rebuild their entire canvas tree after async data arrives. Keep
+// one semantic dock mirror per scene so those rebuilds cannot leave duplicate
+// native tab controls above the new canvas dock.
+const appDockOverlays = new WeakMap<Scene, CanvasActionOverlay>();
 
 export function fadeToScene(
   scene: Scene,
@@ -458,7 +463,9 @@ export function iconButton(
   width = 240,
   fill: number = UI.coral,
   textColor = UI.ink,
-  requestedHeight = 96
+  requestedHeight = 96,
+  iconFill: number = UI.creamHex,
+  enabled = true
 ): Phaser.GameObjects.Container {
   const height = Math.max(MIN_TOUCH, requestedHeight);
   const container = scene.add.container(x, y);
@@ -471,26 +478,28 @@ export function iconButton(
     !usesCoralPlate && fill !== UI.creamHex ? fill : undefined
   );
   const hitTarget = scene.add
-    .rectangle(0, 0, width, height, 0xffffff, 0.001)
-    .setInteractive({ useHandCursor: true });
+    .rectangle(0, 0, width, height, 0xffffff, 0.001);
+  if (enabled) hitTarget.setInteractive({ useHandCursor: true });
   const textLabel = label(scene, 0, -3, text, 30, textColor, true);
   const iconSize = 38;
   const contentWidth = iconSize + 12 + textLabel.width;
   const iconX = -contentWidth / 2 + iconSize / 2;
   const actionIcon = paperIcon(scene, iconKey, iconX, -2, {
     size: iconSize,
-    fill: UI.creamHex,
+    fill: iconFill,
     stroke: UI.inkHex,
   });
   textLabel.setX(iconX + iconSize / 2 + 12 + textLabel.width / 2);
   textLabel.setWordWrapWidth(width - 56);
   container.add([background, actionIcon, textLabel, hitTarget]);
 
-  wireButtonPress(scene, hitTarget, container, onClick, {
-    scaleX: 0.94,
-    scaleY: 0.92,
-    duration: 70,
-  });
+  if (enabled) {
+    wireButtonPress(scene, hitTarget, container, onClick, {
+      scaleX: 0.94,
+      scaleY: 0.92,
+      duration: 70,
+    });
+  }
   return container;
 }
 
@@ -705,6 +714,14 @@ export function appTabBar(
   const viewportX = width / 2;
   const viewportY = y;
   const container = scene.add.container(viewportX, viewportY).setDepth(1800);
+  appDockOverlays.get(scene)?.destroy();
+  const actionOverlay = new CanvasActionOverlay(scene);
+  appDockOverlays.set(scene, actionOverlay);
+  container.once('destroy', () => {
+    if (appDockOverlays.get(scene) !== actionOverlay) return;
+    appDockOverlays.delete(scene);
+    actionOverlay.destroy();
+  });
   const camera = scene.cameras.main;
   const followCamera = (): void => {
     if (!container.active) return;
@@ -804,6 +821,18 @@ export function appTabBar(
       .setInteractive({ useHandCursor: true });
     container.add([slot, hit]);
     wireTab(hit, slot, tab.onClick, scene);
+    const nativeTab = actionOverlay.add({
+      label: visibleLabel,
+      rect: {
+        x: 16 + slotWidth * index,
+        y: y - barHeight / 2,
+        width: slotWidth,
+        height: barHeight,
+      },
+      pointerPassthrough: true,
+      onActivate: tab.onClick,
+    });
+    if (isActive) nativeTab.setAttribute('aria-current', 'page');
   });
 
   return container;

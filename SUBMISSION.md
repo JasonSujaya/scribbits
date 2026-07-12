@@ -192,7 +192,11 @@ on one exercise.
   changing boosted/nerfed element randomness.
 - Added 72 validated care reactions across Shape Power, action, life day, and
   stable variant. The paper receipt shows the exact XP delta and only committed
-  Ink; no care flavor can claim a reward or battle result. Replaced the Field
+  Ink; no care flavor can claim a reward or battle result. Roster cards now keep
+  only icon-led CARE and sword-led SPAR; CARE opens one large-target berry/paw/
+  dumbbell picker with honest DONE states, drag-safe actions, and a keyboard-safe
+  receipt. The fixed five-tab dock now mirrors native labels and active state.
+  Replaced the Field
   Guide's retired element triangle with the actual Ember/Tide/Moss/Storm payloads.
 - Bound decorated 512x512 PNGs to their authoritative base drawings on the
   server, rejecting changed pixels outside declared accessory regions and any
@@ -288,12 +292,25 @@ on one exercise.
   compact, expose exact verdict/duration/final HP in Replay, label result-only
   archives honestly, and
   return from Replay to the same page without adding rewards or persistence.
+  Mobile rows now keep only two portraits, matchup, result, and one proper
+  replay/book action. Planner-owned `REPLAY` versus `VIEW RESULT` copy and native
+  page/row controls preserve archived truth and keyboard access without visual
+  text density.
+- Closed the saved-film loop across Scrapbook, Scout, and overnight receipts:
+  one compact portrait matchup ticket leads into the existing authoritative
+  motion, and an icon-led `REPLAY` utility restarts that exact local transcript.
+  A session-only watch pass rotates safe Inkcast variants; it cannot fetch,
+  resimulate, persist, or award, and saved payouts remain labelled as history.
 - Added a seven-page Scout Notebook over existing authoritative data: tonight
   plus six prior Arena days, six explicit pick/result states, actual drawing and
   artist snapshots, exact forecast/payout facts, lifetime Clout, privacy-safe
   unavailable states, and replay return to the same day. Its 48 frozen lines are
   validated for completeness, length, uniqueness, finish claims, prediction
   language, and reward promises. It adds no Redis key or reward track.
+  Seven word-labelled day targets replace symbolic shorthand, seven-day form is
+  separated from total Clout, and the selected page finally renders one of those
+  validated notes. Generated header icons and native tabs/actions add keyboard
+  navigation and truthful replay busy state without changing authority.
 - Added deterministic stat-shaped art for all 20 founding opponents and one
   shared dominant-stat selector across server combat, drawing preview, replay,
   Inkbody motion, and fallback silhouettes.
@@ -370,6 +387,10 @@ on one exercise.
 - Added paginated Battle Scrapbook rendering for the server's bounded newest-20
   report window and server-cursor Legend Gallery pagination beyond the first 50
   entries, with each surface stating its real retention boundary.
+- Reworked Gallery navigation into three full-size trophy/book/spark tabs with
+  native keyboard semantics. Legend cards keep the sparse 2x3 layout but replace
+  emoji and tiny arrows with generated trophy/heart/info states, semantic paging,
+  and one truthful `VIEW` action; Legacy and Collection loading rules are unchanged.
 - Made Belief updates concurrency-safe, kept nightly resolution outbox-idempotent,
   and added atomic capsule operation receipts so ambiguous retries reuse the
   same result instead of charging or rewarding twice.

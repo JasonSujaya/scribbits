@@ -307,6 +307,12 @@ sidegrades: their colors can change the 100-point build split, but never its sum
     result-only records never invent motion. Replay returns to the same page. A
     320x568 WebGL run proves paging, an expired-fighter loss, Skip/result/return,
     and zero runtime or console errors without adding persistence or rewards.
+    The July 12 clarity pass removes improvised triangles and repeated metadata:
+    each row now has two portraits, one matchup, one result line, and one
+    code-native replay/book action. The pure planner owns `REPLAY` versus
+    `VIEW RESULT` plus the bounded native label; 100-design-pixel semantic actions
+    and pagination survive scene restarts without duplicate overlays. WebGL,
+    archived-result, Canvas, and reduced-motion proof remain clean at 320x568.
 33. Scouting now has a visible seven-page home instead of one transient return
     receipt plus a leaderboard. Scout replaces the Field Guide as the fifth tab;
     the Guide remains one tap away. Tonight and six prior days are projected from
@@ -318,6 +324,14 @@ sidegrades: their colors can change the 100-point build split, but never its sum
     report. A 320x568 WebGL pass proves drawing load, Day 8 Replay, Skip, and return
     to the same tab with zero runtime or console errors. No Redis key, currency,
     title, reward, or combat decision was added.
+    The July 12 clarity pass removes the `○ ● ★ ◆ ✓ —` shorthand. Seven fixed
+    100x144 targets now pair D-day labels with OPEN/LOCKED/WIN/FINAL/0 PT/MISSED,
+    plus a small replay badge derived only from `replayAvailable`. The summary
+    separates seven-day form from total Clout, and one already-validated authored
+    note fills the former blank page center. Generated trophy/info header buttons,
+    native tabs with arrow/Home/End selection, a busy replay action, focus-safe
+    overlay compositing, and selected-day return are browser-proven in WebGL and
+    Canvas/reduced motion at 320x568.
 34. The whole portrait UI now uses one default hierarchy instead of stacking
     explanations. Arena, Draw, Practice, Replay, Battles, Scout, Gallery, Legacy
     Book, Collection, Field Guide, and Mystery Ink give every primary card one
@@ -475,12 +489,12 @@ the locked Draw tab is the direct Practice entrance. Draw keeps one Dare, one
 larger canvas, all eight base colors, one compact tool row, and one readiness
 line; naming and submission appear only after the shared analyzer accepts the
 drawing. Premium pens stay separate from base colors, and owned stickers remain
-optional. Gallery and Battles use image-first
-cards with compact chevrons/play marks, while Scout removes its field-note
-paragraph. Replay retains its server-locked rail and transcript juice, but its
+optional. Gallery and Battles use image-first cards with code-native info,
+replay, and archived-result actions. Scout renders one bounded authored margin
+note instead of a paragraph stack. Replay retains its server-locked rail and transcript juice, but its
 result resolves to one verdict, one exact status line, and one primary action.
 
-TypeScript, ESLint, all 102 simulation groups, and the production build are
+TypeScript, ESLint, all 103 simulation groups, and the production build are
 green. A real 320x568 browser pass covers Arena, locked Draw to Practice, Scout,
 normal-speed spar, Skip, and result with a live canvas and no error-level runtime
 messages. Draw removes two full tool rows and the visible four-stat dashboard;
@@ -488,6 +502,16 @@ its four default controls retain 100-design-pixel touch targets and procedural
 paper marks. Replay enlarges the HP/Shape Power type and uses
 the same code-native treatment for sound, speed, and Skip. Combat authority,
 simulation, rewards, and stored data are unchanged.
+
+The July 12 Gallery pass enlarges the three section tabs from 62 to 100 design
+pixels, adds trophy/book/spark icons and native tablist/tabpanel navigation, and
+preserves keyboard focus through the async Legacy and Collection rebuilds. The
+six-card Legend hall keeps its sparse grid while replacing emoji and tiny arrow
+marks with generated trophy/heart/info icons, readable status strips, and native
+44px actions. Page controls are semantic, modal background actions hide and
+restore correctly, stale destroyed error panels no longer suppress later errors,
+and compositor-safe focus rings prevent black canvas holes. All three sections
+and Canvas/reduced motion remain clean at 320x568.
 
 ## Mobile performance pass (July 12)
 
@@ -541,6 +565,44 @@ the selected card first, converts the rest to locks, preserves the eight-entry
 field and roster scroll, ignores a drag started on the heart, restores every
 available heart after a forced HTTP 500, avoids viewport overflow, and captures
 zero runtime errors.
+
+## Roster care-action pass (July 12)
+
+The roster still packed three 62-design-pixel emoji care buttons above a broad
+SPAR action, leaving overlapping hit regions and a noisy default card. Each
+Scribbit now has only two separated 100-design-pixel actions: paper-heart `CARE`
+and sword `SPAR`. CARE opens one focused sheet with generated close control and
+three large code-native choices: berry Feed, paw Pat, and dumbbell Train.
+Completed daily actions remain visible as dimmed DONE states and disabled native
+controls; available actions close the sheet before invoking the existing server
+mutation. The shared detail modal routes to the same picker instead of sending
+players back with an emoji toast.
+
+TypeScript, ESLint, 103 deterministic groups, and production build remain green.
+A 320x568 WebGL run proves the simplified roster, mixed DONE/available picker,
+native action names, real Train request, authoritative personality receipt,
+clean overlay teardown, no viewport overflow, and zero captured runtime errors.
+Drag-release guards prevent CARE or SPAR from firing during roster scrolling.
+Keyboard-triggered receipts remain open and focused until dismissal, and the
+five fixed dock tabs now have synchronized native controls with `aria-current`.
+
+## Saved-replay loop pass (July 12)
+
+Scrapbook, Scout, and overnight films previously dropped directly into motion
+and ended without a watch-again action. Saved motion now opens on a sub-second
+paper matchup ticket with both portraits, names, elements, and one sword-led VS
+mark. The result keeps Rival or tonight's pick as the single primary action and
+adds an icon-led `REPLAY` utility beside Return. Replay-again restarts the exact
+registry-held transcript without fetching, resimulating, persisting, or awarding;
+only a session watch pass advances so safe Inkcast variants rotate while founder
+lines and every authoritative fact remain fixed. Historical payouts are labelled
+as saved facts instead of implying a second award.
+
+The same 320x568 report is browser-proven through Scrapbook, Scout, and the
+overnight receipt. WebGL and Canvas with reduced motion preserve the compact
+ticket, 100-design-pixel actions, pass 0 to 1 handoff, stable Arena JSON, no POST
+requests, no overflow, and zero captured runtime errors. Gallery rebuilds also
+replace their semantic dock mirror instead of accumulating duplicate controls.
 
 ## Current polish gap
 

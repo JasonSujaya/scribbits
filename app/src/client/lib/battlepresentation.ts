@@ -149,6 +149,7 @@ export type ReplayOutcomeLayout = Readonly<{
 export type ReplayPostFightActionKind =
   | 'rivals'
   | 'backContender'
+  | 'replay'
   | 'return';
 
 export type ReplayPostFightAction = Readonly<{
@@ -160,6 +161,7 @@ export type ReplayPostFightAction = Readonly<{
 
 export type ReplayPostFightActionPlan = Readonly<{
   primary: ReplayPostFightAction | null;
+  replayAction: ReplayPostFightAction | null;
   returnAction: ReplayPostFightAction;
   buttonHeight: number;
 }>;
@@ -307,6 +309,7 @@ export function planReplayOutcomeLayout(input: {
 export function planReplayPostFightActions(input: {
   canChooseRival: boolean;
   canBackContender: boolean;
+  canReplay: boolean;
   returnLabel: string;
   rivalActionCopy?: Readonly<{
     label: string;
@@ -320,6 +323,14 @@ export function planReplayPostFightActions(input: {
     accessibleLabel: input.returnLabel.replace(/\s*›\s*$/, ''),
     tone: 'ghost',
   });
+  const replayAction: ReplayPostFightAction | null = input.canReplay
+    ? Object.freeze({
+        kind: 'replay',
+        label: 'REPLAY',
+        accessibleLabel: 'Replay this fight',
+        tone: 'ghost',
+      })
+    : null;
 
   if (input.canChooseRival) {
     const rivalActionCopy = input.rivalActionCopy ?? {
@@ -332,6 +343,7 @@ export function planReplayPostFightActions(input: {
         ...rivalActionCopy,
         tone: 'coral',
       }),
+      replayAction,
       returnAction,
       buttonHeight,
     });
@@ -345,6 +357,7 @@ export function planReplayPostFightActions(input: {
         accessibleLabel: "Pick tonight's winner",
         tone: 'gold',
       }),
+      replayAction,
       returnAction,
       buttonHeight,
     });
@@ -352,6 +365,7 @@ export function planReplayPostFightActions(input: {
 
   return Object.freeze({
     primary: null,
+    replayAction,
     returnAction,
     buttonHeight,
   });

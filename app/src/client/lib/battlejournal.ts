@@ -24,6 +24,9 @@ export type BattleJournalEntryPlan = Readonly<{
   metadataLine: string;
   highlightLine: string | null;
   replayMotionAvailable: boolean;
+  rowStatusLabel: string;
+  actionLabel: 'REPLAY' | 'VIEW RESULT';
+  accessibleLabel: string;
 }>;
 
 export type BattleJournalSummaryPlan = Readonly<{
@@ -102,6 +105,42 @@ function boundedDisplayName(name: string): string {
 
 function dayLabel(day: number): string {
   return Number.isSafeInteger(day) && day >= 1 ? String(day) : '?';
+}
+
+function perspectiveLabel(perspective: BattleJournalPerspective): string {
+  switch (perspective) {
+    case 'win':
+      return 'MY WIN';
+    case 'loss':
+      return 'MY LOSS';
+    case 'watch':
+      return 'WATCH';
+    default:
+      return assertUnreachable(perspective);
+  }
+}
+
+function planRowAction(input: {
+  matchup: string;
+  perspective: BattleJournalPerspective;
+  finishLabel: string;
+  replayMotionAvailable: boolean;
+  day: number;
+}): Pick<
+  BattleJournalEntryPlan,
+  'rowStatusLabel' | 'actionLabel' | 'accessibleLabel'
+> {
+  const perspective = perspectiveLabel(input.perspective);
+  const rowStatusLabel = `${perspective} • ${input.finishLabel} • D${dayLabel(input.day)}`;
+  const actionLabel = input.replayMotionAvailable ? 'REPLAY' : 'VIEW RESULT';
+  const accessibleLabel = input.replayMotionAvailable
+    ? `Replay ${input.matchup}. ${perspective}, ${input.finishLabel}, D${dayLabel(input.day)}.`
+    : `View ${input.matchup}. ${perspective}, archived, D${dayLabel(input.day)}. No motion.`;
+  return Object.freeze({
+    rowStatusLabel,
+    actionLabel,
+    accessibleLabel,
+  });
 }
 
 function normalizedUsername(username: string | null | undefined): string {
@@ -187,44 +226,66 @@ export function planBattleJournalEntry(
     const winnerName = winnerSlot === 'a' ? fighterAName : fighterBName;
     const archivedFinish: BattleJournalFinishKind = 'archived';
 
+    const matchup = `${fighterAName} vs ${fighterBName}`;
+    const kindDayLabel = `${battleKindLabel(report.kind)} • DAY ${dayLabel(report.day)}`;
+    const perspective = planPerspective(
+      report,
+      winnerSlot,
+      viewerUsername,
+      livingOwnedIds
+    );
+    const plannedFinishLabel = finishLabel(archivedFinish);
     return Object.freeze({
       reportId: report.id,
-      matchup: `${fighterAName} vs ${fighterBName}`,
-      kindDayLabel: `${battleKindLabel(report.kind)} • DAY ${dayLabel(report.day)}`,
-      perspective: planPerspective(
-        report,
-        winnerSlot,
-        viewerUsername,
-        livingOwnedIds
-      ),
+      matchup,
+      kindDayLabel,
+      perspective,
       finishKind: archivedFinish,
-      finishLabel: finishLabel(archivedFinish),
+      finishLabel: plannedFinishLabel,
       metadataLine: `WINNER ${winnerName} • RESULT SAVED • NO MOTION REPLAY`,
       highlightLine: null,
       replayMotionAvailable: false,
+      ...planRowAction({
+        matchup,
+        perspective,
+        finishLabel: plannedFinishLabel,
+        replayMotionAvailable: false,
+        day: report.day,
+      }),
     });
   }
 
   const recap = planBattleRecap(transcript);
   const plannedFinish = finishKindFromRecap(recap);
 
+  const matchup = `${fighterAName} vs ${fighterBName}`;
+  const kindDayLabel = `${battleKindLabel(report.kind)} • DAY ${dayLabel(report.day)}`;
+  const perspective = planPerspective(
+    report,
+    recap.winnerSlot,
+    viewerUsername,
+    livingOwnedIds
+  );
+  const plannedFinishLabel = finishLabel(plannedFinish);
   return Object.freeze({
     reportId: report.id,
-    matchup: `${fighterAName} vs ${fighterBName}`,
-    kindDayLabel: `${battleKindLabel(report.kind)} • DAY ${dayLabel(report.day)}`,
-    perspective: planPerspective(
-      report,
-      recap.winnerSlot,
-      viewerUsername,
-      livingOwnedIds
-    ),
+    matchup,
+    kindDayLabel,
+    perspective,
     finishKind: plannedFinish,
-    finishLabel: finishLabel(plannedFinish),
+    finishLabel: plannedFinishLabel,
     metadataLine: recap.verdictLine,
     highlightLine: recap.highlight
       ? `${recap.highlight.label} • ${recap.highlight.text}`
       : recap.tapeLine,
     replayMotionAvailable: true,
+    ...planRowAction({
+      matchup,
+      perspective,
+      finishLabel: plannedFinishLabel,
+      replayMotionAvailable: true,
+      day: report.day,
+    }),
   });
 }
 

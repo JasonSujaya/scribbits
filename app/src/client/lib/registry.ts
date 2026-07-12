@@ -24,6 +24,8 @@ import {
 const ARENA_KEY = 'arena';
 const REPLAY_KEY = 'replayReport';
 const REPLAY_RETURN_KEY = 'replayReturn';
+const REPLAY_ENTRY_MODE_KEY = 'replayEntryMode';
+const REPLAY_PASS_KEY = 'replayPass';
 const REPLAY_CHRONICLE_BEAT_KEY = 'replayChronicleBeat';
 const REPLAY_RIVALRY_STAKES_KEY = 'replayRivalryStakes';
 const SKETCHBOOK_TAB_KEY = 'sketchbookTab';
@@ -38,6 +40,7 @@ export type ReplayReturnScene =
   | 'Sketchbook'
   | 'MyBattles'
   | 'ScoutNotebook';
+export type ReplayEntryMode = 'fresh' | 'saved';
 
 export function setArena(scene: Scene, state: ArenaState): void {
   scene.registry.set(ARENA_KEY, state);
@@ -57,6 +60,8 @@ export function setReplay(
 ): void {
   scene.registry.set(REPLAY_KEY, report);
   scene.registry.set(REPLAY_RETURN_KEY, returnScene);
+  scene.registry.set(REPLAY_ENTRY_MODE_KEY, 'fresh');
+  scene.registry.set(REPLAY_PASS_KEY, 0);
   if (founderChronicleBeat) {
     scene.registry.set(REPLAY_CHRONICLE_BEAT_KEY, {
       ...founderChronicleBeat,
@@ -73,6 +78,16 @@ export function setReplay(
   }
 }
 
+/** Stage an already-resolved report for a read-only saved-replay session. */
+export function setSavedReplay(
+  scene: Scene,
+  report: BattleReport,
+  returnScene: ReplayReturnScene
+): void {
+  setReplay(scene, report, returnScene);
+  scene.registry.set(REPLAY_ENTRY_MODE_KEY, 'saved');
+}
+
 export function getReplay(scene: Scene): BattleReport | undefined {
   return scene.registry.get(REPLAY_KEY) as BattleReport | undefined;
 }
@@ -82,6 +97,27 @@ export function getReplayReturn(scene: Scene): ReplayReturnScene {
     (scene.registry.get(REPLAY_RETURN_KEY) as ReplayReturnScene | undefined) ??
     'ArenaHome'
   );
+}
+
+export function getReplayEntryMode(scene: Scene): ReplayEntryMode {
+  return scene.registry.get(REPLAY_ENTRY_MODE_KEY) === 'saved'
+    ? 'saved'
+    : 'fresh';
+}
+
+export function getReplayPass(scene: Scene): number {
+  const replayPass = scene.registry.get(REPLAY_PASS_KEY) as unknown;
+  return typeof replayPass === 'number' && Number.isSafeInteger(replayPass)
+    ? Math.max(0, replayPass)
+    : 0;
+}
+
+/** Advances only the local watch pass; it never touches report or reward data. */
+export function advanceSavedReplayPass(scene: Scene): number {
+  if (getReplayEntryMode(scene) !== 'saved') return getReplayPass(scene);
+  const replayPass = getReplayPass(scene) + 1;
+  scene.registry.set(REPLAY_PASS_KEY, replayPass);
+  return replayPass;
 }
 
 export function setBattleHistoryPage(scene: Scene, page: number): void {

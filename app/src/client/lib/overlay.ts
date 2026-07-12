@@ -17,9 +17,10 @@ export type OverlayRect = {
   height: number;
 };
 
-type Placement = {
+type OverlayPlacement = {
   element: HTMLElement;
   rect: OverlayRect;
+  followCamera: boolean;
 };
 
 // Manages a set of DOM elements positioned in design-space over the Phaser
@@ -36,8 +37,9 @@ export class DomOverlay {
 
   private readonly scene: Scene;
   private readonly root: HTMLDivElement;
-  private readonly placements: Placement[] = [];
+  private readonly placements: OverlayPlacement[] = [];
   private readonly canvasObserver: ResizeObserver | null;
+  private cameraSyncing = false;
 
   constructor(scene: Scene) {
     this.scene = scene;
@@ -57,13 +59,18 @@ export class DomOverlay {
   }
 
   // Register a DOM element to be positioned at a design-space rectangle.
-  place(element: HTMLElement, rect: OverlayRect): void {
+  place(element: HTMLElement, rect: OverlayRect, followCamera = false): void {
     element.style.position = 'absolute';
-    element.style.pointerEvents = 'auto';
+    if (!element.style.pointerEvents) element.style.pointerEvents = 'auto';
     element.style.boxSizing = 'border-box';
     this.root.appendChild(element);
-    this.placements.push({ element, rect });
-    this.syncOne({ element, rect });
+    const placement: OverlayPlacement = { element, rect, followCamera };
+    this.placements.push(placement);
+    if (followCamera && !this.cameraSyncing) {
+      this.cameraSyncing = true;
+      this.scene.events.on('postupdate', this.sync, this);
+    }
+    this.syncOne(placement);
   }
 
   // Re-align all placements to the current canvas position/scale.
@@ -71,15 +78,17 @@ export class DomOverlay {
     for (const placement of this.placements) this.syncOne(placement);
   }
 
-  private syncOne(placement: Placement): void {
+  private syncOne(placement: OverlayPlacement): void {
     const canvas = this.scene.game.canvas;
     if (!canvas) return;
     const bounds = canvas.getBoundingClientRect();
     const scaleX = bounds.width / DESIGN_WIDTH;
     const scaleY = bounds.height / DESIGN_HEIGHT;
-    const { element, rect } = placement;
-    element.style.left = `${bounds.left + rect.x * scaleX}px`;
-    element.style.top = `${bounds.top + rect.y * scaleY}px`;
+    const { element, followCamera, rect } = placement;
+    const rectX = followCamera ? rect.x - this.scene.cameras.main.scrollX : rect.x;
+    const rectY = followCamera ? rect.y - this.scene.cameras.main.scrollY : rect.y;
+    element.style.left = `${bounds.left + rectX * scaleX}px`;
+    element.style.top = `${bounds.top + rectY * scaleY}px`;
     // Keep every overlay element in the same 720x1280 design space as Phaser,
     // then scale the complete element. Scaling only its box left CSS text,
     // borders and padding at raw screen pixels, which made the HTML controls
@@ -94,7 +103,17 @@ export class DomOverlay {
     this.root.style.display = visible ? 'block' : 'none';
   }
 
+  setRootAttributes(attributes: Readonly<Record<string, string>>): void {
+    Object.entries(attributes).forEach(([name, value]) => {
+      this.root.setAttribute(name, value);
+    });
+  }
+
   destroy(): void {
+    if (this.cameraSyncing) {
+      this.scene.events.off('postupdate', this.sync, this);
+      this.cameraSyncing = false;
+    }
     this.canvasObserver?.disconnect();
     this.root.remove();
     this.placements.length = 0;
@@ -104,18 +123,25 @@ export class DomOverlay {
 export type CanvasActionOverlayInput = Readonly<{
   label: string;
   rect: OverlayRect;
+  attributes?: Readonly<Record<string, string>>;
+  followCamera?: boolean;
+  pointerPassthrough?: boolean;
   enabled?: boolean;
+  onKeyDown?: (event: KeyboardEvent) => void;
   onActivate: () => void;
 }>;
 
 /** Mirrors a canvas action with a native focusable control in the same bounds. */
 export class CanvasActionOverlay {
+  private readonly scene: Scene;
   private readonly overlay: DomOverlay;
   private destroyed = false;
+  private readonly handleSceneShutdown = (): void => this.destroy();
 
   constructor(scene: Scene) {
+    this.scene = scene;
     this.overlay = new DomOverlay(scene);
-    scene.events.once('shutdown', () => this.destroy());
+    scene.events.once('shutdown', this.handleSceneShutdown);
   }
 
   add(input: CanvasActionOverlayInput): HTMLButtonElement {
@@ -123,6 +149,9 @@ export class CanvasActionOverlay {
     nativeButton.type = 'button';
     nativeButton.textContent = input.label;
     nativeButton.setAttribute('aria-label', input.label);
+    Object.entries(input.attributes ?? {}).forEach(([name, value]) => {
+      nativeButton.setAttribute(name, value);
+    });
     nativeButton.disabled = input.enabled === false;
     Object.assign(nativeButton.style, {
       appearance: 'none',
@@ -132,17 +161,31 @@ export class CanvasActionOverlay {
       color: 'transparent',
       cursor: nativeButton.disabled ? 'default' : 'pointer',
       fontSize: '1px',
+      opacity: '0',
       outline: 'none',
       padding: '0',
+      pointerEvents: input.pointerPassthrough ? 'none' : 'auto',
+    });
+    const focusRing = document.createElement('div');
+    focusRing.setAttribute('aria-hidden', 'true');
+    focusRing.setAttribute('role', 'presentation');
+    Object.assign(focusRing.style, {
+      background: 'transparent',
+      border: '0',
+      borderRadius: '8px',
+      boxShadow: `inset 0 0 0 4px ${UI.coralText}`,
+      opacity: '0',
+      pointerEvents: 'none',
     });
     nativeButton.addEventListener('focus', () => {
-      nativeButton.style.outline = `4px solid ${UI.coralText}`;
-      nativeButton.style.outlineOffset = '-4px';
+      focusRing.style.opacity = '1';
     });
     nativeButton.addEventListener('blur', () => {
-      nativeButton.style.outline = 'none';
+      focusRing.style.opacity = '0';
     });
     nativeButton.addEventListener('keydown', (event) => {
+      input.onKeyDown?.(event);
+      if (event.defaultPrevented) return;
       if (
         (event.key !== 'Enter' && event.key !== ' ') ||
         event.repeat
@@ -155,7 +198,8 @@ export class CanvasActionOverlay {
       input.onActivate();
     });
     nativeButton.addEventListener('click', input.onActivate);
-    this.overlay.place(nativeButton, input.rect);
+    this.overlay.place(nativeButton, input.rect, input.followCamera);
+    this.overlay.place(focusRing, input.rect, input.followCamera);
     return nativeButton;
   }
 
@@ -163,9 +207,14 @@ export class CanvasActionOverlay {
     if (!this.destroyed) this.overlay.setVisible(visible);
   }
 
+  setRootAttributes(attributes: Readonly<Record<string, string>>): void {
+    if (!this.destroyed) this.overlay.setRootAttributes(attributes);
+  }
+
   destroy(): void {
     if (this.destroyed) return;
     this.destroyed = true;
+    this.scene.events.off('shutdown', this.handleSceneShutdown);
     this.overlay.destroy();
   }
 }

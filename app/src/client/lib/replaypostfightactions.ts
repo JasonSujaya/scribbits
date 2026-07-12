@@ -10,7 +10,7 @@ import {
 } from './battlepresentation';
 import { CanvasActionOverlay } from './overlay';
 import { UI } from './theme';
-import { button, ghostButton } from './ui';
+import { button, ghostButton, iconButton } from './ui';
 
 export type PostFightActions = Readonly<{
   container: Phaser.GameObjects.Container;
@@ -28,6 +28,7 @@ export function createPostFightActions(
     width: number;
     canChooseRival: boolean;
     canBackContender: boolean;
+    canReplay: boolean;
     returnLabel: string;
     rivalActionCopy?: Readonly<{
       label: string;
@@ -35,6 +36,7 @@ export function createPostFightActions(
     }>;
     onRivals: () => void;
     onBackContender: () => void;
+    onReplay: () => void;
     onReturn: () => void;
   }>
 ): PostFightActions {
@@ -44,6 +46,7 @@ export function createPostFightActions(
   const callbacks: Readonly<Record<ReplayPostFightActionKind, () => void>> = {
     rivals: input.onRivals,
     backContender: input.onBackContender,
+    replay: input.onReplay,
     return: input.onReturn,
   };
   const activateAction = (kind: ReplayPostFightActionKind): void => {
@@ -73,6 +76,21 @@ export function createPostFightActions(
     width: number,
     compactReturn = false
   ): Phaser.GameObjects.Container => {
+    if (action.kind === 'replay') {
+      return iconButton(
+        scene,
+        x,
+        y,
+        'replay',
+        action.label,
+        () => activateAction(action.kind),
+        width,
+        UI.creamHex,
+        UI.ink,
+        plan.buttonHeight,
+        UI.gold
+      );
+    }
     if (action.tone === 'ghost') {
       return ghostButton(
         scene,
@@ -100,13 +118,32 @@ export function createPostFightActions(
   if (plan.primary) {
     const gap = 12;
     const returnWidth = plan.buttonHeight;
-    const primaryWidth = input.width - returnWidth - gap;
+    const replayWidth = plan.replayAction ? 160 : 0;
+    const replayGap = plan.replayAction ? gap : 0;
+    const primaryWidth =
+      input.width - returnWidth - replayWidth - gap - replayGap;
     const returnX = -input.width / 2 + returnWidth / 2;
+    const replayX = returnX + returnWidth / 2 + gap + replayWidth / 2;
     const primaryX = input.width / 2 - primaryWidth / 2;
     container.add(createAction(plan.returnAction, returnX, 0, returnWidth, true));
+    if (plan.replayAction) {
+      container.add(createAction(plan.replayAction, replayX, 0, replayWidth));
+      placeAccessibleAction(plan.replayAction, replayX, 0, replayWidth);
+    }
     container.add(createAction(plan.primary, primaryX, 0, primaryWidth));
     placeAccessibleAction(plan.returnAction, returnX, 0, returnWidth);
     placeAccessibleAction(plan.primary, primaryX, 0, primaryWidth);
+  } else if (plan.replayAction) {
+    const gap = 12;
+    const returnWidth = plan.buttonHeight;
+    const replayWidth = Math.min(220, input.width - returnWidth - gap);
+    const groupWidth = returnWidth + gap + replayWidth;
+    const returnX = -groupWidth / 2 + returnWidth / 2;
+    const replayX = groupWidth / 2 - replayWidth / 2;
+    container.add(createAction(plan.returnAction, returnX, 0, returnWidth, true));
+    container.add(createAction(plan.replayAction, replayX, 0, replayWidth));
+    placeAccessibleAction(plan.returnAction, returnX, 0, returnWidth);
+    placeAccessibleAction(plan.replayAction, replayX, 0, replayWidth);
   } else {
     container.add(createAction(plan.returnAction, 0, 0, input.width));
     placeAccessibleAction(plan.returnAction, 0, 0, input.width);

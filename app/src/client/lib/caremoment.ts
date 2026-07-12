@@ -5,7 +5,7 @@ import {
   selectCareReaction,
   type CareReactionLifeDay,
 } from '../../shared/content/carereactions';
-import { CARE_STYLES, MOOD_STYLES } from './theme';
+import { MOOD_STYLES } from './theme';
 
 const CARE_ACTION_HEADLINES: Readonly<Record<CareAction, string>> =
   Object.freeze({
@@ -66,7 +66,6 @@ export function planCareMoment(
   const safeInkAwarded = Math.max(0, Math.floor(inkAwarded));
   const careMarkCount = Math.min(3, new Set(afterCare.careDoneToday).size);
   const mood = MOOD_STYLES[afterCare.mood];
-  const actionStyle = CARE_STYLES[action];
   const rewardParts = [`+${experienceGained} XP`];
   if (safeInkAwarded > 0) rewardParts.push(`+${safeInkAwarded} INK`);
   else rewardParts.push('CARE SAVED');
@@ -77,9 +76,9 @@ export function planCareMoment(
     lifeDay,
     power,
     eyebrow: `LIFE PAGE ${lifeDay}/3  •  ${getShapePowerDisplayName(power).toUpperCase()}`,
-    headline: `${actionStyle.emoji} ${CARE_ACTION_HEADLINES[action]}: ${safeDisplayName(afterCare.name).toUpperCase()}`,
+    headline: `${CARE_ACTION_HEADLINES[action]}: ${safeDisplayName(afterCare.name).toUpperCase()}`,
     reaction: reaction.line,
-    progressLine: `${mood.emoji} ${mood.label.toUpperCase()}  •  ${careMarkCount}/3 CARE MARKS`,
+    progressLine: `${mood.label.toUpperCase()}  •  ${careMarkCount}/3 CARE MARKS`,
     rewardLine: `SERVER CHECKED  •  ${rewardParts.join('  •  ')}`,
     experienceGained,
     inkAwarded: safeInkAwarded,

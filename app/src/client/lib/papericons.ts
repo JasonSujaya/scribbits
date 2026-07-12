@@ -4,14 +4,19 @@ import type { Element } from '../../shared/arena';
 import { ELEMENT_STYLES, UI } from './theme';
 
 export type PaperIconKey =
+  | 'berry'
   | 'book'
   | 'clock'
   | 'heart'
+  | 'paw'
+  | 'replay'
   | 'info'
   | 'ink'
   | 'lock'
   | 'spark'
-  | 'sword';
+  | 'sword'
+  | 'train'
+  | 'trophy';
 export type PaperToolIconKey =
   | 'sticker'
   | 'eraser'
@@ -224,6 +229,27 @@ function drawIcon(
     return;
   }
 
+  if (key === 'berry') {
+    const berry = [
+      new Phaser.Math.Vector2(-10 * scale, -5 * scale),
+      new Phaser.Math.Vector2(-6 * scale, -10 * scale),
+      new Phaser.Math.Vector2(0, -7 * scale),
+      new Phaser.Math.Vector2(6 * scale, -10 * scale),
+      new Phaser.Math.Vector2(10 * scale, -5 * scale),
+      new Phaser.Math.Vector2(8 * scale, 6 * scale),
+      new Phaser.Math.Vector2(0, 14 * scale),
+      new Phaser.Math.Vector2(-8 * scale, 6 * scale),
+    ];
+    graphics.fillPoints(berry, true);
+    graphics.strokePoints(berry, true);
+    graphics.lineBetween(-8 * scale, -8 * scale, 0, -14 * scale);
+    graphics.lineBetween(0, -14 * scale, 8 * scale, -8 * scale);
+    graphics.strokeCircle(-4 * scale, 0, 1.3 * scale);
+    graphics.strokeCircle(4 * scale, 1 * scale, 1.3 * scale);
+    graphics.strokeCircle(0, 7 * scale, 1.3 * scale);
+    return;
+  }
+
   if (key === 'ink') {
     graphics.fillRoundedRect(
       -10 * scale,
@@ -291,6 +317,52 @@ function drawIcon(
     return;
   }
 
+  if (key === 'paw') {
+    graphics.fillEllipse(0, 6 * scale, 19 * scale, 17 * scale);
+    graphics.strokeEllipse(0, 6 * scale, 19 * scale, 17 * scale);
+    [
+      [-8, -5, 4.4],
+      [-3, -10, 4.7],
+      [3, -10, 4.7],
+      [8, -5, 4.4],
+    ].forEach(([fingerX, fingerY, radius]) => {
+      graphics.fillCircle(
+        (fingerX ?? 0) * scale,
+        (fingerY ?? 0) * scale,
+        (radius ?? 4) * scale
+      );
+      graphics.strokeCircle(
+        (fingerX ?? 0) * scale,
+        (fingerY ?? 0) * scale,
+        (radius ?? 4) * scale
+      );
+    });
+    return;
+  }
+
+  if (key === 'replay') {
+    graphics.beginPath();
+    graphics.arc(1 * scale, 1 * scale, 11 * scale, -2.45, 1.65, false);
+    graphics.strokePath();
+    graphics.fillTriangle(
+      -14 * scale,
+      -5 * scale,
+      -3 * scale,
+      -12 * scale,
+      -4 * scale,
+      1 * scale
+    );
+    graphics.fillTriangle(
+      -3 * scale,
+      -6 * scale,
+      -3 * scale,
+      7 * scale,
+      8 * scale,
+      1 * scale
+    );
+    return;
+  }
+
   if (key === 'sword') {
     graphics.fillPoints(
       [
@@ -315,6 +387,66 @@ function drawIcon(
     graphics.lineBetween(-7 * scale, 1 * scale, 6 * scale, 10 * scale);
     graphics.lineBetween(-2 * scale, 8 * scale, -9 * scale, 14 * scale);
     graphics.strokeCircle(-11 * scale, 16 * scale, 2.5 * scale);
+    return;
+  }
+
+  if (key === 'train') {
+    graphics.fillRoundedRect(
+      -15 * scale,
+      -8 * scale,
+      7 * scale,
+      16 * scale,
+      2 * scale
+    );
+    graphics.strokeRoundedRect(
+      -15 * scale,
+      -8 * scale,
+      7 * scale,
+      16 * scale,
+      2 * scale
+    );
+    graphics.fillRoundedRect(
+      8 * scale,
+      -8 * scale,
+      7 * scale,
+      16 * scale,
+      2 * scale
+    );
+    graphics.strokeRoundedRect(
+      8 * scale,
+      -8 * scale,
+      7 * scale,
+      16 * scale,
+      2 * scale
+    );
+    graphics.fillRect(-8 * scale, -3 * scale, 16 * scale, 6 * scale);
+    graphics.strokeRect(-8 * scale, -3 * scale, 16 * scale, 6 * scale);
+    return;
+  }
+
+  if (key === 'trophy') {
+    graphics.fillRoundedRect(
+      -10 * scale,
+      -13 * scale,
+      20 * scale,
+      18 * scale,
+      3 * scale
+    );
+    graphics.strokeRoundedRect(
+      -10 * scale,
+      -13 * scale,
+      20 * scale,
+      18 * scale,
+      3 * scale
+    );
+    graphics.beginPath();
+    graphics.arc(-10 * scale, -6 * scale, 8 * scale, Math.PI / 2, Math.PI * 1.5);
+    graphics.strokePath();
+    graphics.beginPath();
+    graphics.arc(10 * scale, -6 * scale, 8 * scale, -Math.PI / 2, Math.PI / 2);
+    graphics.strokePath();
+    graphics.lineBetween(0, 5 * scale, 0, 12 * scale);
+    graphics.lineBetween(-8 * scale, 13 * scale, 8 * scale, 13 * scale);
     return;
   }
 

@@ -15,7 +15,7 @@ import {
 import {
   setArena,
   getArena,
-  setReplay,
+  setSavedReplay,
   stageDirectBattle,
   setSketchbookTab,
   takeFounderChronicleBeats,
@@ -30,7 +30,6 @@ import {
   releaseRenderedDrawingTextures,
 } from '../lib/scribbits';
 import {
-  CARE_STYLES,
   ELEMENT_STYLES,
   allowsAmbientMotion,
   EDGE,
@@ -42,6 +41,7 @@ import {
 import { LivingPaper } from '../lib/livingpaper';
 import {
   ghostButton,
+  iconButton,
   label,
   handLettered,
   errorPanel,
@@ -92,6 +92,7 @@ import type { FounderChronicleMargin } from '../lib/founderchroniclemargin';
 import { planCareMoment } from '../lib/caremoment';
 import { openCareMomentOverlay } from '../lib/caremomentoverlay';
 import type { CareMomentOverlay } from '../lib/caremomentoverlay';
+import { openCarePicker, type CarePicker } from '../lib/carepicker';
 import { elementPaperIcon, paperIcon } from '../lib/papericons';
 import {
   getDrawEligibility,
@@ -120,6 +121,9 @@ export class ArenaHome extends Scene {
   private spinner: Spinner | null = null;
   private founderChronicleMargin: FounderChronicleMargin | null = null;
   private careMomentOverlay: CareMomentOverlay | null = null;
+  private carePicker: CarePicker | null = null;
+  private rosterActionOverlay: CanvasActionOverlay | null = null;
+  private readonly rosterCareControls = new Map<string, HTMLButtonElement>();
   private ambientMotionEnabled = false;
 
   // Drag-scroll bookkeeping. Scrolling uses velocity + inertia so a flick keeps
@@ -166,6 +170,9 @@ export class ArenaHome extends Scene {
     this.buildGeneration = 0;
     this.founderChronicleMargin = null;
     this.careMomentOverlay = null;
+    this.carePicker = null;
+    this.rosterActionOverlay = null;
+    this.rosterCareControls.clear();
     this.ambientMotionEnabled = allowsAmbientMotion();
   }
 
@@ -200,6 +207,11 @@ export class ArenaHome extends Scene {
     this.founderChronicleMargin = null;
     this.careMomentOverlay?.destroy();
     this.careMomentOverlay = null;
+    this.carePicker?.destroy();
+    this.carePicker = null;
+    this.rosterActionOverlay?.destroy();
+    this.rosterActionOverlay = null;
+    this.rosterCareControls.clear();
   }
 
   // --- Layout: a vertical stack measured top-down so nothing overlaps and the
@@ -209,6 +221,11 @@ export class ArenaHome extends Scene {
     this.buildGeneration += 1;
     this.careMomentOverlay?.destroy();
     this.careMomentOverlay = null;
+    this.carePicker?.destroy();
+    this.carePicker = null;
+    this.rosterActionOverlay?.destroy();
+    this.rosterActionOverlay = new CanvasActionOverlay(this);
+    this.rosterCareControls.clear();
     this.children.removeAll(true);
     releaseRenderedDrawingTextures(this);
     this.countdownTimer?.remove();
@@ -959,7 +976,7 @@ export class ArenaHome extends Scene {
 
     const count = Math.min(3, roster.length);
     const totalW = width - EDGE * 2;
-    const rowH = 154;
+    const rowH = 170;
     const topY = y + 46 + rowH / 2;
     roster.slice(0, 3).forEach((scribbit, index) => {
       const rowY = topY + index * (rowH + SPACE.sm);
@@ -1056,45 +1073,84 @@ export class ArenaHome extends Scene {
       )
     );
 
-    // Care buttons.
-    const careY = -24;
-    const careH = 54;
-    const actions: CareAction[] = ['feed', 'pat', 'train'];
-    const careW = 62;
-    const careStartX = width / 2 - 250;
-    actions.forEach((action, index) => {
-      const style = CARE_STYLES[action];
-      const bx = careStartX + index * 68;
-      const done = !canCare(scribbit, action);
-      const btn = careButton(
-        this,
-        bx,
-        careY,
-        done ? '✓' : style.emoji,
-        '',
-        done ? UI.inkSoftHex : style.color,
-        () => this.doCare(scribbit, action),
-        careW,
-        careH
-      );
-      if (done) btn.setAlpha(0.55);
-      card.add(btn);
+    const rosterActions: CareAction[] = ['feed', 'pat', 'train'];
+    const hasCareAvailable = rosterActions.some((action) =>
+      canCare(scribbit, action)
+    );
+    const actionY = 42;
+    const actionWidth = 144;
+    const sparX = width / 2 - actionWidth / 2 - 10;
+    const careX = sparX - actionWidth - 16;
+    const openCare = (): void => this.openCarePickerFor(scribbit);
+    const startSpar = (): void => this.doSpar(scribbit);
+    const openCareFromPointer = (): void => {
+      if (!this.didDrag()) openCare();
+    };
+    const startSparFromPointer = (): void => {
+      if (!this.didDrag()) startSpar();
+    };
+    const care = iconButton(
+      this,
+      careX,
+      actionY,
+      'heart',
+      'CARE',
+      openCareFromPointer,
+      actionWidth,
+      hasCareAvailable ? UI.gold : 0xb7aa92,
+      UI.ink,
+      72,
+      UI.creamHex,
+      hasCareAvailable
+    );
+    if (!hasCareAvailable) care.setAlpha(0.72);
+    card.add(care);
+    const nativeCareControl = this.rosterActionOverlay?.add({
+      label: hasCareAvailable
+        ? `Care for ${scribbit.name}`
+        : `Care complete for ${scribbit.name}`,
+      rect: {
+        x: x + careX - actionWidth / 2,
+        y: y + actionY - 50,
+        width: actionWidth,
+        height: 100,
+      },
+      followCamera: true,
+      pointerPassthrough: true,
+      enabled: hasCareAvailable,
+      onActivate: openCare,
     });
+    if (nativeCareControl) {
+      this.rosterCareControls.set(scribbit.id, nativeCareControl);
+    }
 
     // Entry is promoted into the post-draw Next Goal card; roster keeps Spar.
     card.add(
-      careButton(
+      iconButton(
         this,
-        width / 2 - 138,
-        36,
-        '',
+        sparX,
+        actionY,
+        'sword',
         'SPAR',
+        startSparFromPointer,
+        actionWidth,
         UI.coralDeep,
-        () => this.doSpar(scribbit),
-        214,
-        58
+        UI.ink,
+        72
       )
     );
+    this.rosterActionOverlay?.add({
+      label: `Spar with ${scribbit.name}`,
+      rect: {
+        x: x + sparX - actionWidth / 2,
+        y: y + actionY - 50,
+        width: actionWidth,
+        height: 100,
+      },
+      followCamera: true,
+      pointerPassthrough: true,
+      onActivate: startSpar,
+    });
   }
 
   // --- Tonight's pick gallery (entrant art + one icon-led action) ------------
@@ -1527,7 +1583,7 @@ export class ArenaHome extends Scene {
             acknowledgeReceipt();
             actionOverlay.destroy();
             layer.destroy(true);
-            setReplay(
+            setSavedReplay(
               this,
               result.data,
               afterContinue ? 'Sketchbook' : 'ArenaHome'
@@ -1725,8 +1781,7 @@ export class ArenaHome extends Scene {
     const actions: DetailModalActions = {};
     if (mine) {
       actions.onSpar = (s) => this.doSpar(s);
-      actions.onCare = () =>
-        showToast('Feed, pat, or train from the roster card 🍓');
+      actions.onCare = () => this.openCarePickerFor(scribbit);
       // Enter is only meaningful for a drawn-but-not-yet-entered scribbit.
       if (this.state.drawnToday && !this.state.enteredToday) {
         actions.onEnter = (s) => this.doEnter(s);
@@ -1753,12 +1808,43 @@ export class ArenaHome extends Scene {
     });
   }
 
+  private openCarePickerFor(scribbit: Scribbit): void {
+    if (this.busy || this.carePicker) return;
+    const returnFocus =
+      document.activeElement instanceof HTMLButtonElement
+        ? this.rosterCareControls.get(scribbit.id)
+        : null;
+    this.rosterActionOverlay?.setVisible(false);
+    const restoreRosterControls = (): void => {
+      this.rosterActionOverlay?.setVisible(true);
+      returnFocus?.focus();
+    };
+    this.carePicker = openCarePicker(this, {
+      scribbit,
+      onChoose: (action) => {
+        this.carePicker?.destroy();
+        this.carePicker = null;
+        restoreRosterControls();
+        this.doCare(scribbit, action, returnFocus !== null);
+      },
+      onClose: () => {
+        this.carePicker?.destroy();
+        this.carePicker = null;
+        restoreRosterControls();
+      },
+    });
+  }
+
   // --- Actions ---------------------------------------------------------------
   private startDraw(): void {
     navigateToDailyDraw(this);
   }
 
-  private doCare(scribbit: Scribbit, action: CareAction): void {
+  private doCare(
+    scribbit: Scribbit,
+    action: CareAction,
+    focusReceipt = false
+  ): void {
     if (!this.requireLogin()) return;
     if (this.busy) return;
     if (!canCare(scribbit, action)) {
@@ -1788,7 +1874,8 @@ export class ArenaHome extends Scene {
       this.careMomentOverlay = openCareMomentOverlay(
         this,
         updatedScribbit,
-        careMoment
+        careMoment,
+        focusReceipt
       );
     });
   }

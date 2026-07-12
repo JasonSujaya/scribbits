@@ -26,6 +26,7 @@ export type ReplayCommentaryFighter = Readonly<{
 
 export type ReplayCommentaryContext = Readonly<{
   battleId: string;
+  replayPass?: number;
   fighters: Readonly<Record<FighterSlot, ReplayCommentaryFighter>>;
 }>;
 
@@ -108,9 +109,13 @@ export function createReplayCommentaryAuthor(
 
       const bankId = getReplayCommentaryBankId(fact);
       const occurrenceIndex = occurrenceByBank.get(bankId) ?? 0;
+      const commentarySeed =
+        (contextSnapshot.replayPass ?? 0) > 0
+          ? `${contextSnapshot.battleId}:watch:${contextSnapshot.replayPass}`
+          : contextSnapshot.battleId;
       const variant = selectInkcastCommentaryVariant(
         bankId,
-        contextSnapshot.battleId,
+        commentarySeed,
         occurrenceIndex
       );
       occurrenceByBank.set(bankId, occurrenceIndex + 1);
@@ -299,6 +304,7 @@ function snapshotReplayCommentaryContext(
 ): ReplayCommentaryContext {
   return Object.freeze({
     battleId: context.battleId,
+    replayPass: Math.max(0, Math.floor(context.replayPass ?? 0)),
     fighters: Object.freeze({
       a: Object.freeze({ ...context.fighters.a }),
       b: Object.freeze({ ...context.fighters.b }),

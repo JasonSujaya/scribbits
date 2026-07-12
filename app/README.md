@@ -145,10 +145,17 @@ copy should keep the default view to one headline, one status, and one action.
    not lifetime history. It keeps expired Scribbits in the correct MY WIN/MY LOSS
    perspective through their normalized Reddit artist identity, pins Rumble and
    Champion pages within each day, and keeps matchup, finish, and day on each
-   compact row. Replay exposes the exact verdict, duration, and final HP. Old
+   compact row. Each visual row contains only two portraits, one matchup, one
+   result line, and a planner-owned code-native `REPLAY` or `VIEW RESULT` action;
+   native row and pagination controls retain full labels outside the canvas.
+   Replay exposes the exact verdict, duration, and final HP. Old
    result-only records say that motion is unavailable instead of rebuilding it.
    Replay returns to the same Scrapbook page; this view adds no storage, reward,
-   or combat authority.
+   or combat authority. Saved motion from the Scrapbook, Scout, or overnight
+   receipt opens with one compact portrait matchup ticket. Its result exposes an
+   icon-led `REPLAY` utility that restarts the same registry-held transcript with
+   no fetch or reward path; only a session watch pass changes, rotating safe
+   Inkcast variants while authoritative facts and founder lines stay fixed.
    After today's official Scribbit locks, the Arena also exposes a Four-Power
    Practice Lab. It reuses the analyzer and continuous replay, but not the birth,
    roster, reward, Rumble, history, or Legacy paths. The server alone derives
@@ -166,7 +173,11 @@ copy should keep the default view to one headline, one status, and one action.
    Care uses a validated 72-line deck across four Shape Powers, three actions,
    three life days, and two variants. Every Scribbit receives nine distinct
    lifetime care moments, rendered as a mobile paper receipt with its drawing,
-   mood, checklist, exact XP delta, and only server-confirmed Ink.
+   mood, checklist, exact XP delta, and only server-confirmed Ink. Roster cards
+   keep only `CARE` and `SPAR`; CARE opens one icon-led Feed/Pat/Train sheet with
+   honest DONE states, full mobile targets, drag-safe activation, and a receipt
+   that stays focused until keyboard dismissal. The five dock tabs mirror native
+   labels and active-page state without covering their canvas artwork.
    Earned-only Ink opens Mystery Capsules with a discounted daily pull, permanent
    discovery album, collector rank, and visible Epic pity countdown. Accessories
    and status rewards are cosmetic; pens are expressive sidegrades that can
@@ -192,9 +203,12 @@ copy should keep the default view to one headline, one status, and one action.
    shown only when their source still exists. Historical identity is never
    inferred from `champion:current`; hidden or deleted art is withheld. Its 48
    validated field notes provide eight variants per status with no same-status
-   repeat inside a seven-day window. Replay returns to the selected day. The view
-   adds no Redis key, reward, title, or combat authority; the Field Guide remains
-   a secondary Notebook action.
+   repeat inside a seven-day window; the selected page renders exactly one note.
+   Seven word-labelled 100x144 day targets replace symbolic shorthand, seven-day
+   form is separated from total Clout, and native tabs support arrow/Home/End
+   selection. Replay exposes a busy state and returns to the selected day. The
+   view adds no Redis key, reward, title, or combat authority; generated trophy
+   and info controls keep Clout and the Field Guide secondary.
 6. **Return:** keep the visible UTC-day streak alive. The scheduler resolves
    the bracket, crowns the Champion, stores the backed Scribbit's last played
    bout, creates the next Rumble post, and comments the real result on the
@@ -203,7 +217,10 @@ copy should keep the default view to one headline, one status, and one action.
 7. **Become a Legend:** Scribbits live for three days. Winning a crown or
    reaching the Belief threshold preserves one in the public Gallery. Every
    completed Scribbit also becomes an immutable card in its creator's private,
-   paginated Legacy Book.
+   paginated Legacy Book. Gallery keeps Legends, Legacy, and Collection behind
+   three full-size trophy/book/spark tabs with native keyboard navigation. The
+   six-card Hall uses drawing-first cards, generated trophy/heart status, and one
+   info-led `VIEW`; opening details never exposes background actions.
 
 The game is designed for a short Reddit-feed visit: a lightweight inline card
 shows today's forecast and the player's next action, while Phaser loads only in
@@ -308,6 +325,8 @@ boundary during browser iteration—it is not the production game server.
 - `src/client/lib/caremoment.ts`: pure server-snapshot-to-receipt planning;
   `caremomentoverlay.ts` renders the short paper celebration without owning
   rewards or persistence.
+- `src/client/lib/carepicker.ts`: focused paper Feed/Pat/Train choice sheet with
+  shared icon buttons, completion states, native controls, and bounded cleanup.
 - `src/client/lib/inkmesh.ts`: deterministic Mesh2D geometry and stat-driven
   motion rules, kept pure for regression testing.
 - `src/client/lib/continuousreplay.ts`: transcript validation and checkpoint
@@ -326,6 +345,9 @@ boundary during browser iteration—it is not the production game server.
   ownership, win/loss/watch perspective, finish, highlight, and summary planning
   for the Battle Scrapbook. It reuses transcript validation and never reconstructs
   archived motion or owns persistence.
+- `src/client/lib/savedreplayintro.ts`: sub-second, reduced-motion-safe matchup
+  ticket for saved reports; `registry.ts` owns the local saved/fresh mode and
+  watch pass, while `replaypostfightactions.ts` owns the replay-again utility.
 - `src/client/lib/scoutnotebook.ts`: pure page/summary planning from server
   statuses and payouts; `scenes/ScoutNotebook.ts` renders the paper notebook,
   day tabs, drawing snapshots, and same-day Replay return without deriving wins.

@@ -25,6 +25,11 @@ export type ScoutNotebookPagePlan = Readonly<{
   authoredNote: string;
   actionKind: ScoutNotebookActionKind;
   actionLabel: string;
+  actionAccessibleLabel: string;
+  tabLabel: string;
+  tabStatusLabel: string;
+  tabAccessibleLabel: string;
+  pageAccessibleLabel: string;
 }>;
 
 export type ScoutNotebookSummaryPlan = Readonly<{
@@ -36,6 +41,8 @@ export type ScoutNotebookSummaryPlan = Readonly<{
   finalistPickCount: number;
   missedDayCount: number;
   pages: readonly ScoutNotebookPagePlan[];
+  formLine: string;
+  lifetimeLine: string;
 }>;
 
 export const SCOUT_NOTEBOOK_MAXIMUM_RENDERED_LINE_LENGTH = 82;
@@ -50,6 +57,15 @@ const STATUS_STAMP: Readonly<Record<ScoutNotebookStatus, string>> =
     missed: 'MISSED',
   });
 
+const TAB_STATUS: Readonly<Record<ScoutNotebookStatus, string>> = Object.freeze({
+  open: 'OPEN',
+  pending: 'LOCKED',
+  champion: 'WIN',
+  finalist: 'FINAL',
+  no_clout: '0 PT',
+  missed: 'MISSED',
+});
+
 function boundedRenderedLine(value: string): string {
   const normalizedValue = value.trim().replace(/\s+/g, ' ');
   if (normalizedValue.length <= SCOUT_NOTEBOOK_MAXIMUM_RENDERED_LINE_LENGTH) {
@@ -63,6 +79,17 @@ function boundedRenderedLine(value: string): string {
 function boundedIdentity(value: string, fallback: string): string {
   const normalizedValue = value.trim().replace(/\s+/g, ' ');
   return boundedRenderedLine(normalizedValue || fallback);
+}
+
+function boundedAccessibleSummary(value: string): string {
+  const normalizedValue = value.trim().replace(/\s+/g, ' ');
+  return normalizedValue.length <= 240
+    ? normalizedValue
+    : `${normalizedValue.slice(0, 239).trimEnd()}…`;
+}
+
+function elementName(value: string): string {
+  return `${value.slice(0, 1).toUpperCase()}${value.slice(1).toLowerCase()}`;
 }
 
 function pickCopy(entry: ScoutNotebookEntry): Readonly<{
@@ -154,6 +181,24 @@ export function planScoutNotebookPage(
   const statusStamp = STATUS_STAMP[entry.status];
   const displayedPick = pickCopy(entry);
   const action = actionForEntry(entry);
+  const plannedPayoutLine = payoutLine(entry);
+  const authoredNote = boundedRenderedLine(
+    selectScoutNoteLine(entry.status, entry.day)
+  );
+  const spokenNote = authoredNote.replace(/[.!?]+$/, '');
+  const dayName = isTonight ? `Tonight, day ${entry.day}` : `Day ${entry.day}`;
+  const actionAccessibleLabel =
+    action.actionKind === 'pick'
+      ? 'Pick a contender for tonight'
+      : action.actionKind === 'replay'
+        ? `Watch Day ${entry.day} replay`
+        : action.actionLabel;
+  const artistDetail = displayedPick.artistLine
+    ? ` by ${displayedPick.artistLine}`
+    : '';
+  const pageAccessibleLabel = boundedAccessibleSummary(
+    `${dayName}. ${statusStamp}. ${displayedPick.pickLine}${artistDetail}. Forecast: ${elementName(entry.forecast.boostedElement)} up 15 percent; ${elementName(entry.forecast.nerfedElement)} down 10 percent. ${plannedPayoutLine}. ${spokenNote}. ${actionAccessibleLabel}.`
+  );
 
   return Object.freeze({
     day: entry.day,
@@ -166,14 +211,17 @@ export function planScoutNotebookPage(
     pickAvailable: displayedPick.pickAvailable,
     pickLine: displayedPick.pickLine,
     artistLine: displayedPick.artistLine,
-    payoutLine: payoutLine(entry),
+    payoutLine: plannedPayoutLine,
     cloutEarned: entry.cloutEarned,
     inkAwarded: entry.inkAwarded,
-    authoredNote: boundedRenderedLine(
-      selectScoutNoteLine(entry.status, entry.day)
-    ),
+    authoredNote,
     actionKind: action.actionKind,
     actionLabel: boundedRenderedLine(action.actionLabel),
+    actionAccessibleLabel: boundedRenderedLine(actionAccessibleLabel),
+    tabLabel: `D${entry.day}`,
+    tabStatusLabel: TAB_STATUS[entry.status],
+    tabAccessibleLabel: boundedRenderedLine(`${dayName}. ${statusStamp}.`),
+    pageAccessibleLabel,
   });
 }
 
@@ -209,5 +257,9 @@ export function planScoutNotebookSummary(
     finalistPickCount,
     missedDayCount,
     pages,
+    formLine: boundedRenderedLine(
+      `7 DAYS • ${championPickCount} WIN${championPickCount === 1 ? '' : 'S'} • ${finalistPickCount} FINAL${finalistPickCount === 1 ? '' : 'S'}`
+    ),
+    lifetimeLine: `${state.lifetimeClout} TOTAL CLOUT`,
   });
 }

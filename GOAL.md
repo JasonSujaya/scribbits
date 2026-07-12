@@ -69,6 +69,14 @@ currency, or combat power.
       delta, and only server-confirmed Ink with zero runtime or console errors.
       The Field Guide now teaches the real four element payloads and explicitly
       removes the retired hidden triangle (July 11).
+- [x] Roster cards now expose only two non-overlapping actions: icon-led `CARE`
+      and sword-led `SPAR`. CARE opens one compact Feed/Pat/Train picker with
+      code-native berry, paw, and dumbbell marks, honest DONE states, native
+      accessibility mirrors, generated close control, and 100-design-pixel
+      targets. A real 320x568 Train action reaches the existing authoritative
+      care receipt with zero runtime errors. Drag-release guards prevent stray
+      actions, keyboard receipts wait for dismissal, and all five dock tabs now
+      expose native labels plus active-page state (July 12).
 - [x] Client and server share a 1,500-pixel minimum-body gate, so one brush tap
       cannot submit. Replay validation accepts a truthful zero-damage Nib Halo
       wall ejection during early knockout protection instead of mislabeling the
@@ -196,6 +204,13 @@ currency, or combat power.
       after a server-confirmed pull, including locked clues, accessory art/counts,
       pen swatches, title badges, paging, and persistent 13/28 -> 14/28 progress
       during the original catalog pass.
+- [x] Gallery now uses three icon-led 193x100 section tabs with native
+      tablist/tabpanel semantics and async-safe Arrow/Home/End focus. The sparse
+      2x3 Hall remains, but Legend cards replace emoji and tiny arrows with larger
+      drawing/name/status hierarchy, trophy/heart truth, an info-led `VIEW`, and
+      100-design-pixel native actions. Semantic paging, detail-modal background
+      hiding, rebuild cleanup, and stale-error recovery are WebGL/Canvas-proven
+      across Legends, Legacy, and Collection at 320x568 (July 12).
 - [x] WebGL replay proof verifies all sixteen element x Shape Power signature
       identities and stable left/right combat-read lanes. No-clean-hit copy is
       neutral unless shield or element events explicitly prove more, so replay no
@@ -210,7 +225,18 @@ currency, or combat power.
       exposes the exact verdict, duration, and final HP in Replay,
       labels transcript-less records honestly, and returns from Replay to the same
       page. A 320x568 WebGL pass covers paging, an expired-fighter loss replay,
-      Skip/result/return, and empty runtime and console errors (July 11).
+      Skip/result/return, and empty runtime and console errors. Rows now show only
+      both portraits, one matchup, one result line, and a code-native `REPLAY` or
+      `VIEW RESULT` action; planner-owned copy prevents archived/replay drift.
+      Native 100-design-pixel row actions and pagination preserve keyboard access
+      without stacking invisible overlays (July 12).
+- [x] Saved motion from the Scrapbook, Scout, and overnight receipt now opens
+      with one compact portrait matchup ticket and offers an icon-led `REPLAY`
+      utility beside the truthful return action. Replay-again restarts the exact
+      local transcript, increments only a session watch pass, rotates safe
+      Inkcast variants while preserving founder truth, and makes no API mutation
+      or reward claim. WebGL plus Canvas/reduced-motion proof stays clean at
+      320x568 with stable Arena JSON and zero runtime errors (July 12).
 - [x] Scout is now the canonical fifth tab. Its paper Notebook renders tonight
       plus six prior Arena days as explicit open/pending/champion/finalist/
       no-Clout/missed pages using only existing Back, payout, forecast, lifetime
@@ -220,7 +246,11 @@ currency, or combat power.
       current Champion, and Replay returns to the selected day. Deterministic
       coverage and a 320x568 WebGL pass prove Day 8 Replay/Skip/return, loaded
       drawings, and empty runtime and console errors without a new Redis key or
-      reward track (July 11).
+      reward track. The July 12 clarity pass replaces cryptic marks with seven
+      word-labelled 100x144 day targets, separates seven-day form from lifetime
+      Clout, renders one existing authored margin note, and adds native header,
+      tab, and action controls with arrow/Home/End navigation and replay busy
+      state. WebGL and Canvas/reduced-motion return to the selected day cleanly.
 - [x] A player who entered their own Scribbit but skipped Back now returns to
       one owned-Rumble receipt: exact entrant drawing, daily W/L, committed XP,
       committed Ink, and the server-selected last real bout. Back receipts keep

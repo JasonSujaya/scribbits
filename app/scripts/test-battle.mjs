@@ -1460,6 +1460,17 @@ assert.equal(
   firstTelegraph,
   'fresh sessions with the same authoritative facts must replay identically'
 );
+const watchAgainVariants = new Set(
+  Array.from({ length: 8 }, (_, replayPass) =>
+    replayCommentary
+      .createReplayCommentaryAuthor({ ...commentaryContext, replayPass })
+      .author(powerTelegraphFact)
+  )
+);
+assert.ok(
+  watchAgainVariants.size >= 2,
+  'session-only saved-replay passes should rotate safe commentary variants'
+);
 assert.deepEqual(
   commentaryContext,
   commentaryContextSnapshot,
@@ -3128,7 +3139,25 @@ assert.equal(scoutNotebookSummary.resolvedPickCount, 2);
 assert.equal(scoutNotebookSummary.championPickCount, 1);
 assert.equal(scoutNotebookSummary.finalistPickCount, 1);
 assert.equal(scoutNotebookSummary.missedDayCount, 4);
+assert.equal(scoutNotebookSummary.formLine, '7 DAYS • 1 WIN • 1 FINAL');
+assert.equal(scoutNotebookSummary.lifetimeLine, '4 TOTAL CLOUT');
 assert.equal(scoutNotebookSummary.pages[1].actionKind, 'replay');
+assert.equal(scoutNotebookSummary.pages[1].actionLabel, 'WATCH REPLAY');
+assert.equal(
+  scoutNotebookSummary.pages[1].actionAccessibleLabel,
+  'Watch Day 8 replay'
+);
+assert.equal(scoutNotebookSummary.pages[1].tabLabel, 'D8');
+assert.equal(scoutNotebookSummary.pages[1].tabStatusLabel, 'WIN');
+assert.equal(
+  scoutNotebookSummary.pages[1].tabAccessibleLabel,
+  'Day 8. CHAMPION.'
+);
+assert.match(
+  scoutNotebookSummary.pages[1].pageAccessibleLabel,
+  /Forecast: .+ up 15 percent; .+ down 10 percent\./
+);
+assert.ok(scoutNotebookSummary.pages[1].pageAccessibleLabel.length <= 240);
 assert.match(scoutNotebookSummary.pages[1].payoutLine, /\+3 CLOUT.*\+5 INK/);
 assert.equal(scoutNotebookSummary.pages[2].actionKind, 'none');
 assert.equal(scoutNotebookSummary.pages[3].pickAvailable, false);
@@ -6552,6 +6581,7 @@ assert.deepEqual(
 const ownedOpenPickActions = battlePresentation.planReplayPostFightActions({
   canChooseRival: true,
   canBackContender: true,
+  canReplay: false,
   returnLabel: 'ARENA ›',
 });
 assert.deepEqual(ownedOpenPickActions,
@@ -6562,6 +6592,7 @@ assert.deepEqual(ownedOpenPickActions,
       accessibleLabel: 'Choose a rival',
       tone: 'coral',
     },
+    replayAction: null,
     returnAction: {
       kind: 'return',
       label: 'ARENA ›',
@@ -6575,6 +6606,7 @@ assert.deepEqual(
   battlePresentation.planReplayPostFightActions({
     canChooseRival: true,
     canBackContender: false,
+    canReplay: false,
     returnLabel: 'ARENA ›',
   }),
   {
@@ -6584,6 +6616,7 @@ assert.deepEqual(
       accessibleLabel: 'Choose a rival',
       tone: 'coral',
     },
+    replayAction: null,
     returnAction: {
       kind: 'return',
       label: 'ARENA ›',
@@ -6598,6 +6631,7 @@ assert.deepEqual(
   battlePresentation.planReplayPostFightActions({
     canChooseRival: false,
     canBackContender: true,
+    canReplay: false,
     returnLabel: 'SCOUT ›',
   }),
   {
@@ -6607,6 +6641,7 @@ assert.deepEqual(
       accessibleLabel: "Pick tonight's winner",
       tone: 'gold',
     },
+    replayAction: null,
     returnAction: {
       kind: 'return',
       label: 'SCOUT ›',
@@ -6621,10 +6656,12 @@ assert.deepEqual(
   battlePresentation.planReplayPostFightActions({
     canChooseRival: false,
     canBackContender: false,
+    canReplay: false,
     returnLabel: 'SCRAPBOOK ›',
   }),
   {
     primary: null,
+    replayAction: null,
     returnAction: {
       kind: 'return',
       label: 'SCRAPBOOK ›',
@@ -6634,6 +6671,32 @@ assert.deepEqual(
     buttonHeight: 100,
   },
   'a resolved replay should collapse to one truthful return action'
+);
+
+assert.deepEqual(
+  battlePresentation.planReplayPostFightActions({
+    canChooseRival: false,
+    canBackContender: false,
+    canReplay: true,
+    returnLabel: 'SCRAPBOOK ›',
+  }),
+  {
+    primary: null,
+    replayAction: {
+      kind: 'replay',
+      label: 'REPLAY',
+      accessibleLabel: 'Replay this fight',
+      tone: 'ghost',
+    },
+    returnAction: {
+      kind: 'return',
+      label: 'SCRAPBOOK ›',
+      accessibleLabel: 'SCRAPBOOK',
+      tone: 'ghost',
+    },
+    buttonHeight: 100,
+  },
+  'saved motion should expose replay again beside the truthful return action'
 );
 
 assert.deepEqual(
@@ -6998,6 +7061,9 @@ assert.equal(journalDecisionPlan.perspective, 'win');
 assert.equal(journalDecisionPlan.finishKind, 'decision');
 assert.equal(journalDecisionPlan.finishLabel, 'DECISION');
 assert.equal(journalDecisionPlan.replayMotionAvailable, true);
+assert.equal(journalDecisionPlan.actionLabel, 'REPLAY');
+assert.equal(journalDecisionPlan.rowStatusLabel, 'MY WIN • DECISION • D9');
+assert.match(journalDecisionPlan.accessibleLabel, /^Replay .+ D9\.$/);
 assert.equal(journalDecisionPlan.kindDayLabel, 'EXHIBITION SPAR • DAY 9');
 assert.equal(
   journalDecisionPlan.highlightLine,
@@ -7076,6 +7142,12 @@ assert.deepEqual(
   }
 );
 assert.match(archivedJournalPlan.metadataLine, /RESULT SAVED/);
+assert.equal(archivedJournalPlan.actionLabel, 'VIEW RESULT');
+assert.equal(
+  archivedJournalPlan.rowStatusLabel,
+  'MY WIN • ARCHIVED RESULT • D8'
+);
+assert.match(archivedJournalPlan.accessibleLabel, /No motion\.$/);
 
 const unorderedJournalReports = [
   journalArchivedReport,
