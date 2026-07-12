@@ -39,6 +39,21 @@ export type BattleRecapPlan = Readonly<{
   finishSound: 'knockout' | 'bell';
 }>;
 
+export type BattleRecapPerspective =
+  | 'viewer_win'
+  | 'viewer_loss'
+  | 'spectator';
+
+/** Keeps the emotional result immediate without changing transcript truth. */
+export function formatBattleRecapLead(
+  plan: Pick<BattleRecapPlan, 'winnerName'>,
+  perspective: BattleRecapPerspective
+): string {
+  if (perspective === 'viewer_win') return 'YOU WON';
+  if (perspective === 'viewer_loss') return 'YOU LOST';
+  return `${plan.winnerName.toUpperCase()} WON`;
+}
+
 function fighterIndex(slot: FighterSlot): 0 | 1 {
   return slot === 'a' ? 0 : 1;
 }

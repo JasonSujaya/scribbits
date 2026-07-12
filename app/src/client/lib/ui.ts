@@ -12,6 +12,7 @@ import {
   TYPE,
   UI,
 } from './theme';
+import { NAV_ICON_TEXTURES } from './visualassets';
 
 const TRANSITION_MS = 180;
 const transitioningScenes = new WeakSet<Scene>();
@@ -58,9 +59,8 @@ export function label(
     .setOrigin(0.5);
 }
 
-// Hand-lettered display header: each glyph is its own Text with a small random
-// rotation + baseline hop, so the word reads as drawn by hand rather than typeset.
-// Returns a container centered on (x, y). Deterministic-ish jitter per index.
+// Display header. The bundled typeface carries the handmade character; keeping
+// one stable baseline prevents the per-letter wobble from reading as UI noise.
 export function handLettered(
   scene: Scene,
   x: number,
@@ -71,53 +71,20 @@ export function handLettered(
   shadow = true
 ): Phaser.GameObjects.Container {
   const container = scene.add.container(x, y);
-  const glyphs: Phaser.GameObjects.Text[] = [];
   const style = {
     fontFamily: FONT_STACK,
     fontSize: `${size}px`,
     color,
     fontStyle: 'bold',
+    align: 'center',
   } as const;
-
-  // First lay out at origin (0,0) to measure natural widths.
-  let cursor = 0;
-  const spacing = size * 0.06;
-  text.split('').forEach((char, index) => {
-    if (char === ' ') {
-      cursor += size * 0.34;
-      return;
-    }
-    // Optional ink drop-shadow glyph behind for depth.
-    if (shadow) {
-      const sh = scene.add
-        .text(cursor + 3, 4, char, { ...style, color: '#00000055' })
-        .setOrigin(0, 0.5);
-      container.add(sh);
-      sh.setData('shadowFor', index);
-    }
-    const glyph = scene.add.text(cursor, 0, char, style).setOrigin(0, 0.5);
-    // Alternating tilt with a touch of noise; even letters lean left, odd right.
-    const lean = (index % 2 === 0 ? -1 : 1) * (2 + (index % 3));
-    glyph.setAngle(lean);
-    glyph.y = index % 2 === 0 ? -2 : 2;
-    container.add(glyph);
-    glyphs.push(glyph);
-    // Sync the matching shadow's transform.
-    const sh = container.list.find(
-      (o) => (o as Phaser.GameObjects.Text).getData?.('shadowFor') === index
-    ) as Phaser.GameObjects.Text | undefined;
-    if (sh) {
-      sh.setAngle(lean);
-      sh.y = glyph.y + 4;
-    }
-    cursor += glyph.width + spacing;
-  });
-
-  // Center the whole word.
-  container.list.forEach((o) => {
-    (o as Phaser.GameObjects.Text).x -= cursor / 2;
-  });
-  container.setData('glyphs', glyphs);
+  if (shadow) {
+    container.add(
+      scene.add.text(3, 4, text, { ...style, color: '#0000003d' }).setOrigin(0.5)
+    );
+  }
+  container.add(scene.add.text(0, 0, text, style).setOrigin(0.5));
+  container.setAngle(-0.6);
   return container;
 }
 
@@ -277,7 +244,9 @@ export function careButton(
   const bg = scene.add
     .rectangle(0, 0, width, height, fill, 1)
     .setStrokeStyle(4, UI.inkHex, 1);
-  bg.setInteractive({ useHandCursor: true });
+  const hit = scene.add
+    .rectangle(0, 0, width, Math.max(MIN_TOUCH, height), 0xffffff, 0.001)
+    .setInteractive({ useHandCursor: true });
   const stacked = height >= 80;
   const caption = text
     ? emoji
@@ -290,7 +259,7 @@ export function careButton(
   txt.setLineSpacing(-2);
   txt.setAlign('center');
   txt.setWordWrapWidth(width - 8);
-  container.add([bg, txt]);
+  container.add([bg, txt, hit]);
   const press = (): void => {
     scene.tweens.add({
       targets: container,
@@ -309,10 +278,10 @@ export function careButton(
       ease: 'Back.easeOut',
     });
   };
-  bg.on('pointerover', press);
-  bg.on('pointerout', release);
-  bg.on('pointerdown', press);
-  bg.on('pointerup', () => {
+  hit.on('pointerover', press);
+  hit.on('pointerout', release);
+  hit.on('pointerdown', press);
+  hit.on('pointerup', () => {
     release();
     onClick();
   });
@@ -328,9 +297,10 @@ export function button(
   onClick: () => void,
   width = 240,
   fill: number = UI.coral,
-  textColor = UI.ink
+  textColor = UI.ink,
+  requestedHeight = 96
 ): Phaser.GameObjects.Container {
-  const height = Math.max(MIN_TOUCH, 96);
+  const height = Math.max(MIN_TOUCH, requestedHeight);
   const container = scene.add.container(x, y);
   const bg = scene.add
     .rectangle(0, 0, width, height, fill, 1)
@@ -376,9 +346,10 @@ export function ghostButton(
   y: number,
   text: string,
   onClick: () => void,
-  width = 200
+  width = 200,
+  requestedHeight = MIN_TOUCH
 ): Phaser.GameObjects.Container {
-  const height = MIN_TOUCH;
+  const height = Math.max(MIN_TOUCH, requestedHeight);
   const container = scene.add.container(x, y);
   const bg = scene.add
     .rectangle(0, 0, width, height, UI.creamHex, 1)
@@ -420,60 +391,49 @@ export type AppTabKey = 'arena' | 'gallery' | 'draw' | 'battles' | 'scout';
 
 export type AppTabItem = {
   key: AppTabKey;
-  icon: string;
+  icon?: string;
   label: string;
   onClick: () => void;
 };
 
-function tabIcon(
-  scene: Scene,
-  key: AppTabKey,
-  x: number,
-  y: number,
-  color: number,
-  scale = 1
-): Phaser.GameObjects.Container {
-  const icon = scene.add.container(x, y);
-  const g = scene.add.graphics();
-  const s = scale;
-  const stroke = 3.2 * s;
-  g.lineStyle(stroke, color, 1);
+type DrawTabBadge = {
+  fill: number;
+  text: string;
+  textColor: string;
+  width: number;
+};
 
-  if (key === 'arena') {
-    g.strokeCircle(0, -3 * s, 13 * s);
-    g.lineBetween(-18 * s, 12 * s, 18 * s, 12 * s);
-    g.lineBetween(-10 * s, 4 * s, -10 * s, 12 * s);
-    g.lineBetween(10 * s, 4 * s, 10 * s, 12 * s);
-    g.lineBetween(-7 * s, -12 * s, 7 * s, -12 * s);
-  } else if (key === 'gallery') {
-    g.strokeRoundedRect(-11 * s, -13 * s, 22 * s, 17 * s, 4 * s);
-    g.lineBetween(-16 * s, -8 * s, -11 * s, -2 * s);
-    g.lineBetween(16 * s, -8 * s, 11 * s, -2 * s);
-    g.lineBetween(0, 4 * s, 0, 14 * s);
-    g.lineBetween(-10 * s, 14 * s, 10 * s, 14 * s);
-  } else if (key === 'draw') {
-    g.lineStyle(5 * s, color, 1);
-    g.lineBetween(-14 * s, 13 * s, 10 * s, -11 * s);
-    g.lineStyle(3 * s, color, 1);
-    g.lineBetween(7 * s, -14 * s, 14 * s, -7 * s);
-    g.lineBetween(-17 * s, 16 * s, -11 * s, 18 * s);
-  } else if (key === 'battles') {
-    g.lineBetween(-15 * s, -14 * s, 15 * s, 16 * s);
-    g.lineBetween(15 * s, -14 * s, -15 * s, 16 * s);
-    g.lineBetween(-3 * s, 2 * s, -10 * s, 9 * s);
-    g.lineBetween(3 * s, 2 * s, 10 * s, 9 * s);
-  } else {
-    g.lineBetween(-7 * s, -18 * s, -12 * s, -6 * s);
-    g.lineBetween(7 * s, -18 * s, 12 * s, -6 * s);
-    g.fillStyle(color, 0.18);
-    g.fillCircle(0, 3 * s, 12 * s);
-    g.strokeCircle(0, 3 * s, 12 * s);
-    g.lineBetween(-5 * s, 3 * s, 5 * s, 3 * s);
-    g.lineBetween(0, -2 * s, 0, 8 * s);
+function drawTabBadge(labelText: string): DrawTabBadge {
+  const normalizedLabel = labelText.trim().toLowerCase();
+  if (normalizedLabel.startsWith('done')) {
+    return { fill: 0x63a85a, text: '✓', textColor: UI.cream, width: 22 };
   }
+  if (normalizedLabel.startsWith('full')) {
+    return { fill: UI.inkSoftHex, text: '3/3', textColor: UI.cream, width: 34 };
+  }
+  return { fill: UI.goldHex, text: '+', textColor: UI.ink, width: 22 };
+}
 
-  icon.add(g);
-  return icon;
+function tabStatusBadge(
+  scene: Scene,
+  labelText: string
+): Phaser.GameObjects.Container {
+  const badgeStyle = drawTabBadge(labelText);
+  const badge = scene.add.container(19, -39);
+  const background = scene.add
+    .rectangle(0, 0, badgeStyle.width, 22, badgeStyle.fill, 1)
+    .setStrokeStyle(2, UI.creamHex, 1);
+  const badgeLabel = label(
+    scene,
+    0,
+    0,
+    badgeStyle.text,
+    badgeStyle.text === '3/3' ? 12 : 16,
+    badgeStyle.textColor,
+    true
+  );
+  badge.add([background, badgeLabel]);
+  return badge;
 }
 
 function wireTab(
@@ -518,9 +478,11 @@ export function appTabBar(
   tabs: AppTabItem[]
 ): Phaser.GameObjects.Container {
   const { width, height } = scene.scale;
-  const barWidth = width;
-  const barHeight = 88;
-  const y = height - barHeight / 2;
+  const slotCount = 5;
+  const barWidth = width - 32;
+  const barHeight = 120;
+  const bottomInset = 8;
+  const y = height - bottomInset - barHeight / 2;
   const viewportX = width / 2;
   const viewportY = y;
   const container = scene.add.container(viewportX, viewportY).setDepth(1800);
@@ -547,67 +509,79 @@ export function appTabBar(
   container.once('destroy', removeCameraFollower);
   followCamera();
 
-  const panel = scene.add.graphics();
-  panel.fillStyle(UI.creamHex, 0.98);
-  panel.fillRoundedRect(
+  const shadow = scene.add.graphics();
+  shadow.fillStyle(0x000000, 0.24);
+  shadow.fillRoundedRect(
+    -barWidth / 2 + 5,
+    -barHeight / 2 + 8,
+    barWidth,
+    barHeight,
+    18
+  );
+
+  const paperStrip = scene.add.graphics();
+  paperStrip.fillStyle(0xd8b77f, 1);
+  paperStrip.fillRoundedRect(
     -barWidth / 2,
     -barHeight / 2,
     barWidth,
-    barHeight + 30,
-    {
-      tl: 30,
-      tr: 30,
-      bl: 0,
-      br: 0,
-    }
+    barHeight,
+    18
   );
-  panel.lineStyle(4, UI.inkHex, 1);
-  panel.beginPath();
-  panel.moveTo(-barWidth / 2, -barHeight / 2 + 2);
-  panel.lineTo(barWidth / 2, -barHeight / 2 + 2);
-  panel.strokePath();
-  container.add(panel);
+  paperStrip.fillStyle(UI.paper, 1);
+  paperStrip.fillRoundedRect(
+    -barWidth / 2,
+    -barHeight / 2,
+    barWidth,
+    barHeight - 7,
+    18
+  );
+  paperStrip.lineStyle(3, UI.panelStroke, 0.78);
+  paperStrip.strokeRoundedRect(
+    -barWidth / 2,
+    -barHeight / 2,
+    barWidth,
+    barHeight,
+    18
+  );
+  container.add([shadow, paperStrip]);
 
-  const slotWidth = barWidth / tabs.length;
+  const slotWidth = barWidth / slotCount;
   tabs.forEach((tab, index) => {
     const x = -barWidth / 2 + slotWidth * (index + 0.5);
     const isActive = tab.key === active;
-    const isPrimary = tab.key === 'draw';
-
-    if (isPrimary) {
-      const sealY = 2;
-      const sealRadius = 26;
-      const seal = scene.add.container(x, sealY);
-      const bg = scene.add.graphics();
-      bg.fillStyle(0x000000, 0.14);
-      bg.fillCircle(3, 4, sealRadius);
-      bg.fillStyle(UI.coral, 1);
-      bg.fillCircle(0, 0, sealRadius);
-      bg.lineStyle(4, UI.inkHex, 1);
-      bg.strokeCircle(0, 0, sealRadius);
-      bg.lineStyle(3, UI.creamHex, 0.45);
-      bg.strokeCircle(0, 0, 18);
-      const icon = tabIcon(scene, tab.key, 0, -2, UI.creamHex, 0.72);
-      const text = label(scene, 0, 29, tab.label, 17, UI.ink, true);
-      seal.add([bg, icon, text]);
-      const hit = scene.add
-        .circle(x, sealY, 44, 0xffffff, 0.001)
-        .setInteractive({ useHandCursor: true });
-      container.add([seal, hit]);
-      wireTab(hit, seal, tab.onClick, scene);
-      return;
+    const slot = scene.add.container(x, 0);
+    if (isActive) {
+      const activeTicket = scene.add.graphics();
+      activeTicket.fillStyle(UI.coral, 1);
+      activeTicket.fillRoundedRect(
+        -slotWidth / 2 + 7,
+        -barHeight / 2 - 8,
+        slotWidth - 14,
+        barHeight - 1,
+        14
+      );
+      activeTicket.lineStyle(3, UI.inkHex, 0.9);
+      activeTicket.strokeRoundedRect(
+        -slotWidth / 2 + 7,
+        -barHeight / 2 - 8,
+        slotWidth - 14,
+        barHeight - 1,
+        14
+      );
+      slot.add(activeTicket);
     }
 
-    const tint = isActive ? UI.coral : UI.inkSoftHex;
-    const textColor = isActive ? UI.ink : UI.inkSoft;
-    const slot = scene.add.container(x, 0);
-    const icon = tabIcon(scene, tab.key, 0, -10, tint, 0.9);
-    const text = label(scene, 0, 25, tab.label, 18, textColor, true);
+    const icon = scene.add
+      .image(0, -19, NAV_ICON_TEXTURES[tab.key])
+      .setDisplaySize(52, 52);
+    const visibleLabel = tab.key === 'draw' ? 'Draw' : tab.label;
+    const text = label(scene, 0, 31, visibleLabel, 24, UI.ink, true);
     slot.add([icon, text]);
-    if (isActive) slot.add(scene.add.rectangle(0, 42, 34, 5, UI.coral, 1));
+    if (tab.key === 'draw') slot.add(tabStatusBadge(scene, tab.label));
 
     const hit = scene.add
-      .rectangle(x, 0, slotWidth - 8, barHeight, 0xffffff, 0.001)
+      .rectangle(x, 0, slotWidth, barHeight, 0xffffff, 0.001)
       .setInteractive({ useHandCursor: true });
     container.add([slot, hit]);
     wireTab(hit, slot, tab.onClick, scene);

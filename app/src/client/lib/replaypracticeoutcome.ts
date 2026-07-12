@@ -3,9 +3,10 @@
 
 import * as Phaser from 'phaser';
 import { Scene } from 'phaser';
+import { CanvasActionOverlay } from './overlay';
 import { planPracticeOutcome } from './practicelab';
 import type { PracticeSession } from './practicelab';
-import { prefersReducedMotion, TYPE, UI } from './theme';
+import { prefersReducedMotion, UI } from './theme';
 import { button, ghostButton, label, stickerCard } from './ui';
 
 export function createPracticeOutcomeControls(
@@ -20,12 +21,23 @@ export function createPracticeOutcomeControls(
   const plan = planPracticeOutcome(input.session);
   const reduceMotion = prefersReducedMotion();
   const container = scene.add.container(0, 0).setDepth(61);
+  const accessibleOverlay = new CanvasActionOverlay(scene);
+  const buttonHeight = 100;
+  const primaryY = height - 168;
+  const exitY = height - 54;
+  const progressMatch = `${plan.headline} ${plan.progress}`.match(
+    /\d+\/\d+/
+  )?.[0];
+  const progressCopy = progressMatch
+    ? `${progressMatch} • NO REWARDS`
+    : 'NO REWARDS';
+  const powerCopy = plan.completed ? plan.headline : plan.result;
   const progress = stickerCard(
     scene,
     width / 2,
     height - 300,
     width - 90,
-    180,
+    156,
     { tape: false, tilt: -0.5, gold: plan.completed }
   );
   if (plan.celebrateCompletion && !reduceMotion) {
@@ -53,52 +65,60 @@ export function createPracticeOutcomeControls(
     label(
       scene,
       0,
-      -62,
-      plan.headline,
-      TYPE.body,
+      -49,
+      powerCopy,
+      24,
       plan.completed ? UI.goldText : UI.coralText,
       true
     )
   );
+  progress.add(label(scene, 0, -13, progressCopy, 17, UI.inkSoft, true));
   progress.add(
-    label(
-      scene,
-      0,
-      -26,
-      plan.result,
-      TYPE.caption,
-      plan.completed || input.session.lastPowerWasNew
-        ? UI.goldText
-        : UI.inkSoft,
-      true
-    )
-  );
-  progress.add(label(scene, 0, 10, plan.progress, 16, UI.inkSoft, true));
-  progress.add(
-    label(scene, 0, 53, plan.checklist, 18, UI.ink, true).setWordWrapWidth(
-      width - 150,
-      true
-    )
+    label(scene, 0, 29, plan.checklist, 15, UI.ink, true)
+      .setWordWrapWidth(width - 144, true)
+      .setLineSpacing(-4)
   );
 
   const again = button(
     scene,
     width / 2,
-    height - 145,
+    primaryY,
     plan.primaryButton,
     input.onTryAgain,
     width - 150,
     plan.completed ? UI.gold : UI.tapeAlt,
-    UI.ink
+    UI.ink,
+    buttonHeight
   );
   const exit = ghostButton(
     scene,
     width / 2,
-    height - 48,
+    exitY,
     plan.exitButton,
     input.onExit,
-    320
+    320,
+    buttonHeight
   );
+  accessibleOverlay.add({
+    label: plan.completed ? 'Draw one more' : 'Draw another shape',
+    rect: {
+      x: 75,
+      y: primaryY - buttonHeight / 2,
+      width: width - 150,
+      height: buttonHeight,
+    },
+    onActivate: input.onTryAgain,
+  });
+  accessibleOverlay.add({
+    label: 'End practice and return to Arena',
+    rect: {
+      x: width / 2 - 160,
+      y: exitY - buttonHeight / 2,
+      width: 320,
+      height: buttonHeight,
+    },
+    onActivate: input.onExit,
+  });
   container.add([progress, again, exit]);
   return container;
 }

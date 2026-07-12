@@ -6,7 +6,8 @@ import type { Element } from '../../shared/arena';
 export const DESIGN_WIDTH = 720;
 export const DESIGN_HEIGHT = 1280;
 
-// Minimum touch target in design-space pixels (>= 44 CSS px once scaled).
+// Baseline canvas target. Critical 320px actions request 100 design pixels so
+// their fitted target remains at least 44 CSS pixels.
 export const MIN_TOUCH = 88;
 
 // Consistent spacing rhythm (design-space px). Every gap/pad snaps to these so
@@ -22,7 +23,7 @@ export const SPACE = {
 // Screen safe margins so nothing kisses the letterbox edge.
 export const EDGE = 30; // left/right page margin
 export const TOP_SAFE = 40; // top bar lives above this
-export const NAV_SAFE = 128; // bottom space reserved for the docked app nav
+export const NAV_SAFE = 144; // 120px dock + raised active ticket + breathing room
 
 // Three type sizes + a display treatment. Keep the ladder short on purpose so
 // hierarchy stays legible: DISPLAY (hand-lettered headers), TITLE, BODY, CAPTION.
@@ -157,7 +158,7 @@ export const STAT_STYLES = {
 } as const;
 
 export const FONT_STACK =
-  '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
+  '"Balsamiq Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
 
 export const prefersReducedMotion = (): boolean => {
   if (typeof window === 'undefined') return false;

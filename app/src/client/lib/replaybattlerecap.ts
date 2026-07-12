@@ -3,11 +3,15 @@
 
 import * as Phaser from 'phaser';
 import { Scene } from 'phaser';
-import type { BattleRecapPlan } from './battlerecap';
+import { formatBattleRecapLead } from './battlerecap';
+import type {
+  BattleRecapPerspective,
+  BattleRecapPlan,
+} from './battlerecap';
 import { ELEMENT_STYLES, UI } from './theme';
 import { label, stickerCard, tape } from './ui';
 
-const FULL_CARD_HEIGHT = 264;
+const FULL_CARD_HEIGHT = 164;
 const MINIMUM_CONTENT_WIDTH = 1;
 const LONG_WORD_CHUNK_LENGTH = 18;
 
@@ -16,12 +20,14 @@ export type BattleRecapCardOptions = Readonly<{
   y: number;
   width: number;
   depth?: number;
+  perspective?: BattleRecapPerspective;
 }>;
 
 export type BattleRecapLinesOptions = Readonly<{
   top: number;
   width: number;
   compact?: boolean;
+  perspective?: BattleRecapPerspective;
 }>;
 
 function makeLongWordsWrappable(value: string): string {
@@ -140,6 +146,19 @@ function addVerifiedHighlight(
   });
 }
 
+function compactOutcomeStatus(plan: BattleRecapPlan): string {
+  // Keep the server-authored finish reason while moving the winner into the
+  // lead line. The suffix is removed only from the already-authored headline;
+  // duration and both final HP values remain in the status line.
+  const winnerMarker = ` • ${plan.winnerName}`;
+  const winnerMarkerIndex = plan.headline.lastIndexOf(winnerMarker);
+  const reason =
+    winnerMarkerIndex > 0
+      ? plan.headline.slice(0, winnerMarkerIndex)
+      : plan.headline;
+  return `${reason} • ${plan.verdictLine}`;
+}
+
 /**
  * Adds the static recap hierarchy to an existing container. The returned value
  * is the exact vertical space consumed, so outcome cards can place actions
@@ -156,6 +175,38 @@ export function addBattleRecapLines(
   const elementStyle = ELEMENT_STYLES[plan.winnerElement];
   const hasHighlight = plan.highlight !== null;
   let cursor = options.top;
+
+  if (compact) {
+    const headlineHeight = 42;
+    addFittedLabel(scene, parent, {
+      y: cursor + headlineHeight / 2,
+      text: formatBattleRecapLead(
+        plan,
+        options.perspective ?? 'spectator'
+      ),
+      fontSize: 30,
+      color: elementStyle.primaryText,
+      width: contentWidth - 8,
+      height: headlineHeight,
+      bold: true,
+      lineSpacing: -4,
+    });
+    cursor += headlineHeight + 3;
+
+    const statusHeight = 58;
+    addFittedLabel(scene, parent, {
+      y: cursor + statusHeight / 2,
+      text: compactOutcomeStatus(plan),
+      fontSize: 18,
+      color: UI.inkSoft,
+      width: contentWidth - 8,
+      height: statusHeight,
+      bold: true,
+      lineSpacing: -3,
+    });
+    cursor += statusHeight;
+    return cursor - options.top;
+  }
 
   const eyebrowHeight = compact ? 22 : 28;
   addEyebrow(
@@ -268,6 +319,8 @@ export function createBattleRecapCard(
   addBattleRecapLines(scene, card, plan, {
     top: -FULL_CARD_HEIGHT / 2 + 14,
     width: width - 24,
+    compact: true,
+    ...(options.perspective ? { perspective: options.perspective } : {}),
   });
 
   return card;

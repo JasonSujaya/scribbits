@@ -25,7 +25,6 @@ import {
 import {
   loadDrawing,
   fitDrawing,
-  recordText,
   moodStyleOf,
   levelOf,
   canCare,
@@ -55,7 +54,6 @@ import {
   daysLeftFor,
   floatReward,
   rosette,
-  appTabBar,
   button,
   fadeToScene,
   spinner,
@@ -79,18 +77,26 @@ import { getShapePowerSignatureName } from '../../shared/combat/shapepowerconten
 import { showVsCeremony } from '../lib/battleceremony';
 import { openLegacyReturnCeremony } from '../lib/legacycards';
 import { selectNextGoal, type NextGoalCard } from '../lib/nextgoal';
+import {
+  planArenaBackAction,
+  selectVisibleArenaEntrants,
+} from '../lib/arenabracket';
 import { planChampionChallenge } from '../lib/championchallenge';
-import { planFounderChronicle } from '../lib/founderchronicle';
+import {
+  formatFounderChronicleEvidenceLine,
+  planFounderChronicle,
+} from '../lib/founderchronicle';
 import { openFounderChronicleMargin } from '../lib/founderchroniclemargin';
 import type { FounderChronicleMargin } from '../lib/founderchroniclemargin';
 import { planCareMoment } from '../lib/caremoment';
 import { openCareMomentOverlay } from '../lib/caremomentoverlay';
 import type { CareMomentOverlay } from '../lib/caremomentoverlay';
+import { elementPaperIcon, paperIcon } from '../lib/papericons';
 import {
-  dailyDrawTabLabel,
   getDrawEligibility,
   navigateToDailyDraw,
 } from '../lib/draweligibility';
+import { appDock } from '../lib/appdock';
 
 // The landing scene. A tall, drag-scrollable sketchbook page: countdown-topped
 // header, weather card, wanted-poster champion, your roster, TONIGHT'S BRACKET
@@ -99,7 +105,6 @@ import {
 export class ArenaHome extends Scene {
   private state!: ArenaState;
   private errorPanelRef: ErrorPanel | null = null;
-  private weatherTimer: Phaser.Time.TimerEvent | null = null;
   private countdownTimer: Phaser.Time.TimerEvent | null = null;
   private countdownLabel: Phaser.GameObjects.Text | null = null;
   private inkChipLabel: Phaser.GameObjects.Text | null = null;
@@ -139,7 +144,6 @@ export class ArenaHome extends Scene {
 
   init(): void {
     this.errorPanelRef = null;
-    this.weatherTimer = null;
     this.countdownTimer = null;
     this.countdownLabel = null;
     this.busy = false;
@@ -172,7 +176,6 @@ export class ArenaHome extends Scene {
 
   private cleanup(): void {
     this.events.off('wake', this.refreshOnWake);
-    this.weatherTimer?.remove();
     this.countdownTimer?.remove();
     this.livingPaper?.destroy();
     this.livingPaper = null;
@@ -193,7 +196,6 @@ export class ArenaHome extends Scene {
     this.careMomentOverlay = null;
     this.children.removeAll(true);
     releaseRenderedDrawingTextures(this);
-    this.weatherTimer?.remove();
     this.countdownTimer?.remove();
     this.countdownLabel = null;
 
@@ -371,42 +373,43 @@ export class ArenaHome extends Scene {
   // --- Top bar + live countdown ---------------------------------------------
   private drawTopBar(y: number): number {
     const { width } = this.scale;
-    handLettered(
-      this,
-      width / 2,
-      y + 26,
-      'SCRIBBITS ARENA',
-      40,
-      UI.ink,
-      true
-    ).setDepth(2);
+    handLettered(this, width / 2, y + 22, 'ARENA', 34, UI.ink, true).setDepth(
+      2
+    );
     const dayLine = label(
       this,
-      EDGE + 72,
-      y + 80,
-      `Day ${this.state.dayNumber}  ·  🔥 ${this.state.playStreakDays}d  ·  ⚔️ ${this.state.rumbleEntrants} tonight`,
-      26,
+      EDGE + 4,
+      y + 58,
+      `DAY ${this.state.dayNumber}  ·  ${this.state.playStreakDays}D STREAK`,
+      20,
       UI.inkSoft,
       true
     ).setOrigin(0, 0.5);
-    dayLine.setWordWrapWidth(width - EDGE * 2 - 210);
+    dayLine.setWordWrapWidth(width - EDGE * 2 - 96);
 
     // Live countdown chip.
-    const chipY = y + 132;
+    const chipY = y + 94;
     const chip = this.add.container(width / 2, chipY);
     const bg = this.add
-      .rectangle(0, 0, width - 120, 52, UI.creamHex, 1)
+      .rectangle(0, 0, width - EDGE * 2, 38, UI.creamHex, 1)
       .setStrokeStyle(3, UI.inkHex, 1);
     this.countdownLabel = label(
       this,
-      0,
+      14,
       0,
       this.countdownText(),
-      27,
+      21,
       UI.coralText,
       true
     );
-    chip.add([bg, this.countdownLabel]);
+    chip.add([
+      bg,
+      paperIcon(this, 'clock', -68, 0, {
+        size: 25,
+        fill: UI.tapeAlt,
+      }),
+      this.countdownLabel,
+    ]);
     this.countdownTimer = this.time.addEvent({
       delay: 1000,
       loop: true,
@@ -415,12 +418,12 @@ export class ArenaHome extends Scene {
 
     // Ink chip — the Mystery Ink balance, tappable to open the capsule machine.
     // It belongs to the scrolling header; the Daily Ink Trail remains available below.
-    this.buildInkChip(width - EDGE - 6, y + 80);
+    this.buildInkChip(width - EDGE - 6, y + 58);
 
-    return chipY + 30;
+    return y + 120;
   }
 
-  // The "🫙 Ink: N" chip. Part of the scrolling header and taps into the capsule machine. Its label
+  // The compact Ink chip. Part of the scrolling header and taps into the capsule machine. Its label
   // is stored so ink-earn floats and pull results can update it in place.
   private buildInkChip(x: number, y: number): void {
     const chip = this.add.container(x, y).setDepth(120);
@@ -428,20 +431,27 @@ export class ArenaHome extends Scene {
       this,
       0,
       0,
-      `🫙 Ink: ${this.state.myInk ?? 0}`,
+      `${this.state.myInk ?? 0}`,
       TYPE.caption,
       UI.ink,
       true
     ).setOrigin(1, 0.5);
     const bg = this.add
-      .rectangle(10, 0, t.width + 30, 44, UI.creamHex, 1)
+      .rectangle(10, 0, t.width + 62, 44, UI.creamHex, 1)
       .setOrigin(1, 0.5)
       .setStrokeStyle(3, UI.inkHex, 1)
       .setInteractive({ useHandCursor: true });
     bg.on('pointerup', () => {
       if (!this.didDrag()) this.openCapsuleMachine();
     });
-    chip.add([bg, t]);
+    chip.add([
+      bg,
+      paperIcon(this, 'ink', -t.width - 18, 0, {
+        size: 24,
+        fill: UI.gold,
+      }),
+      t,
+    ]);
     this.inkChipLabel = t;
   }
 
@@ -452,8 +462,8 @@ export class ArenaHome extends Scene {
     const next = (this.state.myInk ?? 0) + amount;
     this.state = { ...this.state, myInk: next };
     setArena(this, this.state);
-    this.inkChipLabel?.setText(`🫙 Ink: ${next}`);
-    floatReward(this, x, y, `+${amount} 🫙`, UI.goldText, 3000, true);
+    this.inkChipLabel?.setText(`${next}`);
+    floatReward(this, x, y, `+${amount} INK`, UI.goldText, 3000, true);
     if (this.inkChipLabel)
       this.tweens.add({
         targets: this.inkChipLabel,
@@ -480,7 +490,7 @@ export class ArenaHome extends Scene {
           capsuleProgress: result.data.progress,
         };
         setArena(this, this.state);
-        this.inkChipLabel?.setText(`🫙 Ink: ${result.data.ink}`);
+        this.inkChipLabel?.setText(`INK ${result.data.ink}`);
         return result.data;
       },
       // On close, re-fetch so the roster/ink/palette reflect the server truth.
@@ -599,7 +609,7 @@ export class ArenaHome extends Scene {
   private buildNextGoalCard(x: number, y: number): number {
     const goal = selectNextGoal(this.state);
     const width = this.scale.width - EDGE * 2;
-    const height = 380;
+    const height = 198;
     const centerY = y + height / 2;
     const card = stickerCard(this, x, centerY, width, height, {
       tapeColor: goal.actionKind === 'wait' ? UI.tapeAlt : UI.tape,
@@ -609,36 +619,23 @@ export class ArenaHome extends Scene {
         goal.actionKind === 'challenge' ||
         goal.actionKind === 'rivalry',
     });
-    const heading =
-      goal.actionKind === 'wait'
-        ? '✓ ALL SET'
-        : goal.actionKind === 'rivalry'
-          ? '✎ FOUNDER RIVAL THREAD'
-          : '✦ NEXT GOAL';
-    card.add(label(this, 0, -160, heading, TYPE.caption, UI.coralText, true));
     card.add(
-      label(this, 0, -122, goal.title.toUpperCase(), TYPE.title, UI.ink, true)
-        .setWordWrapWidth(width - 80)
-        .setLineSpacing(-5)
+      label(this, 0, -62, goal.title.toUpperCase(), TYPE.title, UI.ink, true)
+        .setWordWrapWidth(width - 48)
+        .setLineSpacing(-4)
     );
-    card.add(
-      label(this, 0, -62, goal.detail, TYPE.body, UI.inkSoft, true)
-        .setWordWrapWidth(width - 86)
-        .setLineSpacing(5)
-    );
-
-    const evidenceLines = this.nextGoalEvidenceLines(goal);
+    const evidenceLine = this.nextGoalEvidenceLine(goal);
     const evidenceLabel = label(
       this,
       0,
-      18,
-      evidenceLines.join('\n'),
+      -16,
+      evidenceLine,
       TYPE.caption,
       UI.ink,
       true
     )
-      .setWordWrapWidth(width - 76)
-      .setLineSpacing(4);
+      .setWordWrapWidth(width - 54)
+      .setLineSpacing(2);
     card.add(evidenceLabel);
     if (
       this.state.founderChronicle.activeRivalry ||
@@ -653,15 +650,15 @@ export class ArenaHome extends Scene {
 
     if (goal.actionKind === 'wait') {
       const readyStamp = this.add
-        .rectangle(0, 138, width - 180, 58, UI.creamHex, 1)
+        .rectangle(0, 56, width - 120, 54, UI.creamHex, 1)
         .setStrokeStyle(3, UI.goldHex, 1);
       card.add(readyStamp);
       card.add(
         label(
           this,
           0,
-          138,
-          '⏳ RETURN AFTER THE RUMBLE',
+          56,
+          'RETURN AFTER RUMBLE',
           TYPE.caption,
           UI.goldText,
           true
@@ -672,10 +669,10 @@ export class ArenaHome extends Scene {
         button(
           this,
           0,
-          138,
-          `${goal.buttonLabel.toUpperCase()} →`,
+          56,
+          goal.buttonLabel.toUpperCase(),
           () => this.runNextGoal(goal, y),
-          width - 180,
+          width - 64,
           goal.actionKind === 'capsule' ||
             goal.actionKind === 'challenge' ||
             goal.actionKind === 'rivalry'
@@ -690,70 +687,41 @@ export class ArenaHome extends Scene {
 
   private buildPracticeLabCard(x: number, y: number): number {
     const width = this.scale.width - EDGE * 2;
-    const height = 300;
+    const height = 136;
     const centerY = y + height / 2;
     const card = stickerCard(this, x, centerY, width, height, {
       tapeColor: UI.tapeAlt,
       tilt: 0.25,
     });
     card.add(
-      label(
-        this,
-        0,
-        -122,
-        "TODAY'S SCRIBBIT IS LOCKED ✓",
-        TYPE.caption,
-        UI.coralText,
-        true
-      )
+      label(this, -190, -16, 'PRACTICE', TYPE.caption, UI.coralText, true)
     );
+    card.add(label(this, -190, 19, 'NO REWARDS', 20, UI.ink, true));
     card.add(
-      label(this, 0, -82, 'FOUR-POWER PRACTICE LAB', TYPE.title, UI.ink, true)
-    );
-    card.add(
-      label(
+      careButton(
         this,
+        155,
         0,
-        -31,
-        "Test throwaway shapes without changing today's Scribbit.",
-        TYPE.body,
-        UI.inkSoft,
-        true
-      ).setWordWrapWidth(width - 72)
-    );
-    card.add(
-      label(
-        this,
-        0,
-        20,
-        'No Rumble entry • no Ink, XP, or Legacy card',
-        TYPE.caption,
-        UI.coralText,
-        true
-      ).setWordWrapWidth(width - 72)
-    );
-    card.add(
-      button(
-        this,
-        0,
-        96,
-        '✏️ PRACTICE SHAPES →',
-        () => this.startPractice(),
-        width - 100,
+        '',
+        'START',
         UI.tapeAlt,
-        UI.ink
+        () => this.startPractice(),
+        300,
+        72
       )
     );
     return centerY + height / 2;
   }
 
-  private nextGoalEvidenceLines(goal: NextGoalCard): string[] {
-    const lines: string[] = [];
+  private nextGoalEvidenceLine(goal: NextGoalCard): string {
     const rivalryPlan = planFounderChronicle(
       this.state.founderChronicle,
       this.state.dayNumber
     );
+    const marginEvidence = formatFounderChronicleEvidenceLine(rivalryPlan);
+    if (rivalryPlan.activeRivalry && marginEvidence) return marginEvidence;
     const scribbit = goal.evidence.featuredScribbit;
+    let line: string;
     if (scribbit) {
       const levelCopy =
         scribbit.nextLevelExperienceThreshold === null
@@ -765,39 +733,16 @@ export class ArenaHome extends Scene {
             )} XP to Lv${scribbit.level + 1}`;
       const lifeCopy =
         scribbit.daysLeft <= 0 ? 'last day' : `${scribbit.daysLeft}d left`;
-      lines.push(
-        `${levelCopy} · ♥ ${scribbit.currentBelief}/${scribbit.legendBeliefThreshold} · ${lifeCopy}`
-      );
+      line = `${levelCopy} · BELIEF ${scribbit.currentBelief}/${scribbit.legendBeliefThreshold} · ${lifeCopy}`;
+    } else {
+      const capsule = goal.evidence.capsule;
+      const capsuleCopy =
+        capsule.currentInk >= capsule.nextCapsuleCost
+          ? 'Capsule ready'
+          : `${Math.max(0, capsule.nextCapsuleCost - capsule.currentInk)} Ink to capsule`;
+      line = `${capsuleCopy} · ${capsule.discoveredItems}/${capsule.totalCollectibleItems} found`;
     }
-    const capsule = goal.evidence.capsule;
-    const capsuleCopy =
-      capsule.currentInk >= capsule.nextCapsuleCost
-        ? 'Capsule ready'
-        : `${Math.max(
-            0,
-            capsule.nextCapsuleCost - capsule.currentInk
-          )} Ink to capsule`;
-    lines.push(
-      `${capsuleCopy} · ${capsule.discoveredItems}/${capsule.totalCollectibleItems} collected`
-    );
-    const goalAlreadyNamesActiveRival =
-      rivalryPlan.activeRivalry?.founderId === goal.rivalFounderId;
-    if (rivalryPlan.activeRivalry) {
-      if (!goalAlreadyNamesActiveRival) {
-        lines.push(
-          `✎ ${rivalryPlan.activeRivalry.name.toUpperCase()} · ${rivalryPlan.activeRivalry.scoreLine.toUpperCase()} · ${rivalryPlan.activeRivalry.availabilityLine.toUpperCase()} · TAP`
-        );
-      }
-    } else if (rivalryPlan.resolvedNotes.length > 0) {
-      lines.push(
-        `✎ ${rivalryPlan.resolvedNotes.length} SIGNED MARGIN${rivalryPlan.resolvedNotes.length === 1 ? '' : 'S'} · TAP`
-      );
-    } else if (rivalryPlan.legacyEncounterCount > 0) {
-      lines.push(
-        `✎ ${rivalryPlan.legacyEncounterCount} ARCHIVED FOUNDER ENCOUNTER${rivalryPlan.legacyEncounterCount === 1 ? '' : 'S'} · TAP`
-      );
-    }
-    return lines;
+    return marginEvidence ? `${line} · ${marginEvidence}` : line;
   }
 
   private runNextGoal(goal: NextGoalCard, y: number): void {
@@ -828,7 +773,7 @@ export class ArenaHome extends Scene {
 
   private countdownText(): string {
     const remaining = this.state.rumbleResolvesAt - Date.now();
-    return `⚔️ Rumble resolves in ${formatCountdown(remaining)}`;
+    return formatCountdown(remaining);
   }
 
   // --- Forecast card ---------------------------------------------------------
@@ -836,7 +781,7 @@ export class ArenaHome extends Scene {
     const style = ELEMENT_STYLES[this.state.forecast.boostedElement];
     const nerf = ELEMENT_STYLES[this.state.forecast.nerfedElement];
     const width = this.scale.width - EDGE * 2;
-    const height = 126;
+    const height = 90;
     const centerY = y + height / 2;
 
     const card = stickerCard(this, x, centerY, width, height, {
@@ -844,59 +789,24 @@ export class ArenaHome extends Scene {
       tilt: -0.6,
     });
 
-    const glyphX = -width / 2 + 66;
+    const glyphX = -width / 2 + 42;
     const ring = this.add
-      .circle(glyphX, 0, 38, style.primary, 0.16)
-      .setStrokeStyle(4, style.primary, 0.9);
+      .circle(glyphX, 0, 28, style.primary, 0.16)
+      .setStrokeStyle(3, style.primary, 0.9);
     card.add(ring);
-    const glyph = this.add
-      .text(glyphX, 0, style.emoji, {
-        fontFamily: 'sans-serif',
-        fontSize: '46px',
-      })
-      .setOrigin(0.5);
-    card.add(glyph);
-    this.animateWeatherGlyph(glyph, this.state.forecast.boostedElement, ring);
-
-    const textX = glyphX + 70;
-    card.add(
-      label(
-        this,
-        textX,
-        -38,
-        "TONIGHT'S FORECAST",
-        20,
-        style.primaryText,
-        true
-      ).setOrigin(0, 0.5)
-    );
-    const blurb = label(
+    const glyph = elementPaperIcon(
       this,
-      textX,
-      -6,
-      this.state.forecast.blurb,
-      TYPE.caption,
-      UI.ink,
-      true
-    ).setOrigin(0, 0.5);
-    blurb.setWordWrapWidth(width - (textX + width / 2) - 24);
-    card.add(blurb);
-
-    card.add(
-      this.miniChip(
-        textX + 8,
-        42,
-        `${style.emoji} ${style.label} +15%`,
-        style.primary
-      )
+      this.state.forecast.boostedElement,
+      glyphX,
+      0,
+      38
     );
+    card.add(glyph);
+
+    const textX = glyphX + 48;
+    card.add(this.miniChip(textX, 0, `↑ ${style.label} +15%`, style.primary));
     card.add(
-      this.miniChip(
-        textX + 200,
-        42,
-        `${nerf.emoji} ${nerf.label} −10%`,
-        UI.inkSoftHex
-      )
+      this.miniChip(textX + 250, 0, `↓ ${nerf.label} −10%`, UI.inkSoftHex)
     );
 
     return centerY + height / 2;
@@ -914,73 +824,18 @@ export class ArenaHome extends Scene {
       0.5
     );
     const bg = this.add
-      .rectangle(-8, 0, t.width + 24, 34, color, 1)
+      .rectangle(-8, 0, t.width + 24, 42, color, 1)
       .setOrigin(0, 0.5)
       .setStrokeStyle(2, UI.inkHex, 1);
     c.add([bg, t]);
     return c;
   }
 
-  private animateWeatherGlyph(
-    glyph: Phaser.GameObjects.Text,
-    element: ArenaState['forecast']['boostedElement'],
-    ring: Phaser.GameObjects.Arc
-  ): void {
-    if (element === 'ember') {
-      this.tweens.add({
-        targets: glyph,
-        scale: 1.14,
-        duration: 900,
-        yoyo: true,
-        repeat: -1,
-        ease: 'Sine.easeInOut',
-      });
-    } else if (element === 'storm') {
-      this.weatherTimer = this.time.addEvent({
-        delay: 1600,
-        loop: true,
-        callback: () => {
-          if (!this.scene.isActive()) return;
-          this.tweens.add({
-            targets: ring,
-            alpha: 0.5,
-            duration: 70,
-            yoyo: true,
-          });
-          this.tweens.add({
-            targets: glyph,
-            angle: 10,
-            duration: 60,
-            yoyo: true,
-          });
-        },
-      });
-    } else if (element === 'tide') {
-      this.tweens.add({
-        targets: glyph,
-        y: glyph.y + 8,
-        duration: 1400,
-        yoyo: true,
-        repeat: -1,
-        ease: 'Sine.easeInOut',
-      });
-    } else {
-      this.tweens.add({
-        targets: glyph,
-        angle: 7,
-        duration: 1600,
-        yoyo: true,
-        repeat: -1,
-        ease: 'Sine.easeInOut',
-      });
-    }
-  }
-
   // --- Champion poster (tappable; believe fix) ------------------------------
   private buildChampionPoster(x: number, y: number): number {
     const champ = this.state.champion;
     const width = this.scale.width - EDGE * 2;
-    const height = champ ? 440 : 274;
+    const height = champ ? 220 : 274;
     const centerY = y + height / 2;
 
     if (!champ) {
@@ -1026,8 +881,8 @@ export class ArenaHome extends Scene {
       label(
         this,
         0,
-        top + 30,
-        '☆  DAILY CHAMPION CONTRACT  ☆',
+        top + 25,
+        '☆  DAILY CHAMPION  ☆',
         TYPE.caption,
         UI.goldText,
         true
@@ -1035,9 +890,9 @@ export class ArenaHome extends Scene {
     );
 
     // Spotlight glow behind the champion art for dramatic effect.
-    const artX = -width / 2 + 92;
-    const artY = top + 135;
-    const artFrame = 116;
+    const artX = -width / 2 + 56;
+    const artY = top + 75;
+    const artFrame = 78;
     const spotlight = this.add.graphics();
     spotlight.fillStyle(UI.gold, 0.15);
     spotlight.fillCircle(artX, artY, artFrame * 0.85);
@@ -1074,7 +929,7 @@ export class ArenaHome extends Scene {
       if (!this.isCurrentBuild(generation)) return;
       const img = fitDrawing(
         this.add.image(x + artX, centerY + artY, key),
-        104
+        70
       ).setDepth(3);
       img.setInteractive({ useHandCursor: true });
       img.on('pointerup', () => {
@@ -1090,73 +945,35 @@ export class ArenaHome extends Scene {
       });
     });
 
-    const infoX = artX + 92;
+    const infoX = artX + 66;
     card.add(
       label(
         this,
         infoX,
-        artY - 48,
+        artY - 16,
         champ.name.toUpperCase(),
         TYPE.title,
         UI.ink,
         true
-      ).setOrigin(0, 0.5)
-    );
-    card.add(
-      label(
-        this,
-        infoX,
-        artY - 12,
-        challengePlan.epithet.toUpperCase(),
-        18,
-        UI.coralText,
-        true
       )
         .setOrigin(0, 0.5)
-        .setWordWrapWidth(width / 2 - 32)
+        .setWordWrapWidth(width / 2 - 18)
     );
     card.add(
       label(
         this,
         infoX,
-        artY + 25,
-        `${ELEMENT_STYLES[champ.element].emoji} ${challengePlan.signatureName.toUpperCase()}  ·  Lv${levelOf(champ)}`,
-        19,
+        artY + 18,
+        `${ELEMENT_STYLES[champ.element].emoji} ${ELEMENT_STYLES[champ.element].label.toUpperCase()}  ·  Lv${levelOf(champ)}`,
+        17,
         ELEMENT_STYLES[champ.element].primaryText,
         true
       )
         .setOrigin(0, 0.5)
-        .setWordWrapWidth(width / 2 - 30)
-    );
-    card.add(
-      label(
-        this,
-        infoX,
-        artY + 61,
-        `${recordText(champ)}  ·  💛 ${champ.belief}`,
-        TYPE.caption,
-        UI.inkSoft,
-        true
-      ).setOrigin(0, 0.5)
-    );
-    card.add(
-      label(this, 0, 62, `“${challengePlan.challengeLine}”`, 20, UI.ink, true)
-        .setWordWrapWidth(width - 90)
-        .setLineSpacing(-2)
-    );
-    card.add(
-      label(
-        this,
-        0,
-        106,
-        challengePlan.statusCopy,
-        TYPE.caption,
-        challengePlan.status === 'complete' ? UI.inkSoft : UI.coralText,
-        true
-      ).setWordWrapWidth(width - 70)
+        .setWordWrapWidth(width / 2 - 18)
     );
 
-    const actionY = height / 2 - 48;
+    const actionY = height / 2 - 40;
     const belW = 96;
     if (challengePlan.status === 'open') {
       const challengeButton = careButton(
@@ -1168,7 +985,7 @@ export class ArenaHome extends Scene {
         UI.gold,
         () => this.startBossChallenge(),
         width - belW - 36,
-        96
+        72
       );
       challengeButton.setDepth(3);
       card.add(challengeButton);
@@ -1176,7 +993,7 @@ export class ArenaHome extends Scene {
       const completeStamp = this.add.container(-belW / 2 - 6, actionY);
       completeStamp.add([
         this.add
-          .rectangle(0, 0, width - belW - 36, 96, UI.creamHex, 1)
+          .rectangle(0, 0, width - belW - 36, 72, UI.creamHex, 1)
           .setStrokeStyle(4, UI.goldHex, 1),
         label(
           this,
@@ -1192,19 +1009,29 @@ export class ArenaHome extends Scene {
       card.add(completeStamp);
     }
     // Believe on the champion — optimistic float + count bump handled centrally.
+    const believeX = width / 2 - belW / 2 - 14;
     const bel = careButton(
       this,
-      width / 2 - belW / 2 - 14,
+      believeX,
       actionY,
-      '💛',
+      '',
       '',
       UI.coral,
       () => this.believeOn(champ, x, centerY + actionY),
       belW,
-      96
+      72
     );
     bel.setDepth(3);
-    card.add(bel);
+    card.add([
+      bel,
+      paperIcon(this, 'heart', believeX - 36, actionY, {
+        size: 28,
+        fill: UI.gold,
+      }).setDepth(4),
+      label(this, believeX + 22, actionY, 'BELIEVE', 18, UI.ink, true).setDepth(
+        4
+      ),
+    ]);
 
     return centerY + height / 2;
   }
@@ -1250,7 +1077,7 @@ export class ArenaHome extends Scene {
 
     const count = Math.min(3, roster.length);
     const totalW = width - EDGE * 2;
-    const rowH = 178;
+    const rowH = 154;
     const topY = y + 46 + rowH / 2;
     roster.slice(0, 3).forEach((scribbit, index) => {
       const rowY = topY + index * (rowH + SPACE.sm);
@@ -1268,9 +1095,9 @@ export class ArenaHome extends Scene {
   ): void {
     const card = stickerCard(this, x, y, width, height, { tape: false });
 
-    const artSize = 106;
-    const artX = -width / 2 + 70;
-    const artY = -12;
+    const artSize = 88;
+    const artX = -width / 2 + 60;
+    const artY = -14;
     const frame = this.add.graphics();
     frame.fillStyle(UI.creamHex, 1);
     frame.fillRect(artX - artSize / 2, artY - artSize / 2, artSize, artSize);
@@ -1319,11 +1146,11 @@ export class ArenaHome extends Scene {
       });
     });
 
-    const infoX = artX + 72;
+    const infoX = artX + 64;
     const nameLabel = label(
       this,
       infoX,
-      -58,
+      -52,
       scribbit.name,
       TYPE.body,
       UI.ink,
@@ -1334,32 +1161,21 @@ export class ArenaHome extends Scene {
 
     const mood = moodStyleOf(scribbit);
     card.add(
-      moodChip(this, infoX + 64, -22, mood.emoji, mood.label, mood.color, 0.82)
+      moodChip(this, infoX + 54, -20, mood.emoji, mood.label, mood.color, 0.76)
     );
     card.add(
       lifespanPips(
         this,
-        infoX + 64,
-        18,
+        infoX + 54,
+        14,
         daysLeftFor(scribbit, this.state.dayNumber),
         3,
-        0.74
+        0.68
       )
-    );
-    card.add(
-      label(
-        this,
-        infoX,
-        54,
-        `${recordText(scribbit)} · 💛 ${scribbit.belief}`,
-        TYPE.caption,
-        UI.inkSoft,
-        true
-      ).setOrigin(0, 0.5)
     );
 
     // Care buttons.
-    const careY = -30;
+    const careY = -24;
     const careH = 54;
     const actions: CareAction[] = ['feed', 'pat', 'train'];
     const careW = 62;
@@ -1388,7 +1204,7 @@ export class ArenaHome extends Scene {
       careButton(
         this,
         width / 2 - 138,
-        42,
+        36,
         '🥊',
         'Spar',
         UI.coralDeep,
@@ -1445,7 +1261,13 @@ export class ArenaHome extends Scene {
       return cardY + 75;
     }
 
-    const visibleEntrants = this.prioritizeVisibleEntrants(entrants);
+    const visibleEntrants = selectVisibleArenaEntrants({
+      entrantsInSourceOrder: entrants,
+      ownedScribbitIdsInRosterOrder: this.state.myScribbits.map(
+        (scribbit) => scribbit.id
+      ),
+      backedScribbitId: this.state.myBackedScribbitId,
+    });
     const perRow = 2;
     const cellGap = SPACE.md;
     const cellW = (width - EDGE * 2 - cellGap) / perRow;
@@ -1525,7 +1347,8 @@ export class ArenaHome extends Scene {
 
     // Back button (or locked/your-pick state).
     cursor = height / 2 - 32;
-    const { backLabel, backEnabled, backFill } = this.backButtonState(entrant);
+    const { backLabel, backEnabled, backFill } =
+      this.backButtonPresentation(entrant);
     const backBtn = careButton(
       this,
       0,
@@ -1544,54 +1367,27 @@ export class ArenaHome extends Scene {
     card.add(backBtn);
   }
 
-  private prioritizeVisibleEntrants(entrants: Scribbit[]): Scribbit[] {
-    const pickedEntrant = entrants.find(
-      (entrant) => entrant.id === this.state.myBackedScribbitId
-    );
-    const newestOwnedEntrant = this.state.myScribbits
-      .map((scribbit) => entrants.find((entrant) => entrant.id === scribbit.id))
-      .find((entrant): entrant is Scribbit => entrant !== undefined);
-    const pinnedIds = new Set(
-      [pickedEntrant?.id, newestOwnedEntrant?.id].filter(
-        (id): id is string => id !== undefined
-      )
-    );
-    const recentCommunityEntrants = [...entrants]
-      .reverse()
-      .filter((entrant) => !pinnedIds.has(entrant.id));
-
-    return [pickedEntrant, newestOwnedEntrant, ...recentCommunityEntrants]
-      .filter((entrant): entrant is Scribbit => entrant !== undefined)
-      .filter(
-        (entrant, index, prioritized) =>
-          prioritized.findIndex((candidate) => candidate.id === entrant.id) ===
-          index
-      )
-      .slice(0, 8);
-  }
-
-  private backButtonState(entrant: Scribbit): {
+  private backButtonPresentation(entrant: Scribbit): {
     backLabel: string;
     backEnabled: boolean;
     backFill: number;
   } {
-    const myPick = this.state.myBackedScribbitId;
-    if (myPick === entrant.id)
-      return { backLabel: '✓ Picked', backEnabled: false, backFill: UI.gold };
-    if (this.state.myScribbits.some((scribbit) => scribbit.id === entrant.id)) {
-      return {
-        backLabel: 'Your entry',
-        backEnabled: false,
-        backFill: 0xb7aa92,
-      };
-    }
-    if (myPick)
-      return {
-        backLabel: 'Pick locked',
-        backEnabled: false,
-        backFill: 0xb7aa92,
-      };
-    return { backLabel: 'Back', backEnabled: true, backFill: UI.coral };
+    const action = planArenaBackAction({
+      entrantId: entrant.id,
+      ownedScribbitIds: this.state.myScribbits.map((scribbit) => scribbit.id),
+      backedScribbitId: this.state.myBackedScribbitId,
+    });
+    const backFill =
+      action.kind === 'picked'
+        ? UI.gold
+        : action.kind === 'available'
+          ? UI.coral
+          : 0xb7aa92;
+    return {
+      backLabel: action.label,
+      backEnabled: action.enabled,
+      backFill,
+    };
   }
 
   private showBackLockedToast(): void {
@@ -1718,7 +1514,7 @@ export class ArenaHome extends Scene {
       .setInteractive();
     layer.add(shade);
 
-    const card = stickerCard(this, width / 2, height / 2, width - 100, 740, {
+    const card = stickerCard(this, width / 2, height / 2, width - 100, 610, {
       gold: receipt.cloutEarned === 3,
       tapeColor: UI.tapeAlt,
     });
@@ -1730,62 +1526,30 @@ export class ArenaHome extends Scene {
         : receipt.cloutEarned === 1
           ? 'FINALIST PICK'
           : 'SCOUTING REPORT';
-    card.add(
-      label(
-        this,
-        0,
-        -240,
-        `RUMBLE #${receipt.resolvedDay}`,
-        TYPE.caption,
-        UI.inkSoft,
-        true
-      )
-    );
-    card.add(handLettered(this, 0, -175, resultTitle, 44, UI.ink, true));
+    card.add(label(this, 0, -220, resultTitle, 48, UI.ink, true));
     const pickCopy = label(
       this,
       0,
-      -70,
-      `You backed ${receipt.backedName}.\n${receipt.championName} took the crown.`,
+      -135,
+      `${receipt.backedName} → ${receipt.cloutEarned > 0 ? 'ON THE PODIUM' : 'OUT'}\n${receipt.championName} won Rumble #${receipt.resolvedDay}`,
       TYPE.body,
       UI.ink,
       true
     );
-    pickCopy.setWordWrapWidth(width - 190).setLineSpacing(8);
+    pickCopy.setWordWrapWidth(width - 190).setLineSpacing(4);
     card.add(pickCopy);
-
-    const receiptChampion = this.state.champion;
-    const championFounder =
-      receiptChampion?.name === receipt.championName
-        ? getFoundingScribbitDefinition(receiptChampion.id)
-        : null;
-    if (championFounder) {
-      card.add(
-        label(
-          this,
-          0,
-          -4,
-          `“${championFounder.personality.rumbleLine}” — ${championFounder.name}`,
-          TYPE.caption,
-          ELEMENT_STYLES[championFounder.element].primaryText,
-          true
-        )
-          .setWordWrapWidth(width - 190, true)
-          .setLineSpacing(-2)
-      );
-    }
 
     const rewardCopy =
       receipt.cloutEarned > 0
-        ? `+${receipt.cloutEarned} Scout Clout${receipt.inkAwarded > 0 ? ` · +${receipt.inkAwarded} Ink` : ''}`
-        : 'No Clout this time — today is a fresh pick.';
+        ? `+${receipt.cloutEarned} CLOUT${receipt.inkAwarded > 0 ? `  ·  +${receipt.inkAwarded} INK` : ''}`
+        : 'NO REWARD  ·  PICK AGAIN';
     card.add(
       label(
         this,
         0,
-        55,
+        -45,
         rewardCopy,
-        TYPE.title,
+        TYPE.body,
         receipt.cloutEarned > 0 ? UI.goldText : UI.inkSoft,
         true
       ).setWordWrapWidth(width - 190)
@@ -1793,12 +1557,12 @@ export class ArenaHome extends Scene {
 
     const drawEligibility = getDrawEligibility(this.state);
     const nextLabel = afterContinue
-      ? 'Open Legacy Book →'
+      ? 'LEGACY BOOK'
       : this.state.drawnToday
-        ? 'See tonight’s contenders →'
+        ? 'CONTENDERS'
         : drawEligibility.canDraw
-          ? `Draw Day ${this.state.dayNumber} →`
-          : 'Continue to the Arena →';
+          ? `DRAW DAY ${this.state.dayNumber}`
+          : 'CONTINUE';
     const continueFromReceipt = (): void => {
       layer.destroy(true);
       if (afterContinue) {
@@ -1818,8 +1582,8 @@ export class ArenaHome extends Scene {
       const replayStatus = label(
         this,
         0,
-        120,
-        `${receipt.backedName}'s last bout is ready.`,
+        35,
+        '',
         TYPE.caption,
         UI.inkSoft,
         true
@@ -1830,8 +1594,8 @@ export class ArenaHome extends Scene {
         button(
           this,
           0,
-          190,
-          'WATCH LAST BOUT ▶',
+          105,
+          'WATCH BOUT',
           () => {
             if (loadingReplay) return;
             loadingReplay = true;
@@ -1872,8 +1636,8 @@ export class ArenaHome extends Scene {
         ghostButton(
           this,
           0,
-          310,
-          afterContinue ? 'Skip to Legacy Book →' : nextLabel,
+          225,
+          nextLabel,
           continueFromReceipt,
           width - 260
         )
@@ -1885,7 +1649,7 @@ export class ArenaHome extends Scene {
       button(
         this,
         0,
-        205,
+        145,
         nextLabel,
         continueFromReceipt,
         width - 220,
@@ -1987,38 +1751,10 @@ export class ArenaHome extends Scene {
   }
 
   private buildAppTabs(): void {
-    appTabBar(this, 'arena', [
-      {
-        key: 'arena',
-        icon: '🏟️',
-        label: 'Arena',
-        onClick: () => this.scrollTo(0),
-      },
-      {
-        key: 'gallery',
-        icon: '🏆',
-        label: 'Gallery',
-        onClick: () => this.openLegends(),
-      },
-      {
-        key: 'draw',
-        icon: '✏️',
-        label: dailyDrawTabLabel(this),
-        onClick: () => this.startDraw(),
-      },
-      {
-        key: 'battles',
-        icon: '⚔️',
-        label: 'Battles',
-        onClick: () => fadeToScene(this, 'MyBattles'),
-      },
-      {
-        key: 'scout',
-        icon: '📖',
-        label: 'Scout',
-        onClick: () => fadeToScene(this, 'ScoutNotebook'),
-      },
-    ]);
+    appDock(this, 'arena', {
+      arena: () => this.scrollTo(0),
+      gallery: () => this.openLegends(),
+    });
   }
 
   // --- Detail modal (the one component, wired for context) ------------------
@@ -2041,7 +1777,8 @@ export class ArenaHome extends Scene {
     } else {
       actions.canBelieve = scribbit.status === 'alive';
       if (isEntrant) {
-        const { backLabel, backEnabled } = this.backButtonState(scribbit);
+        const { backLabel, backEnabled } =
+          this.backButtonPresentation(scribbit);
         actions.onBack = (s) => this.doBack(s);
         actions.backLabel = backLabel;
         actions.backEnabled = backEnabled;

@@ -83,7 +83,7 @@ sidegrades: their colors can change the 100-point build split, but never its sum
    mutation path.
 6. Browser proof covered all finish styles, title persistence, two Legacy pages,
    Older/Newer navigation, long-name detail, receipt sequencing, and a clean
-   runtime console. The deterministic gate now covers 96 simulation groups,
+   runtime console. The deterministic gate now covers 98 simulation groups,
    including expiry/XP race fencing, idempotent Rumble standings, retryable
    and inventory-watched title snapshots, and insertion-stable Legacy cursors.
 
@@ -139,7 +139,7 @@ sidegrades: their colors can change the 100-point build split, but never its sum
    localized element stains, irregular truthful bounds, and transcript-triggered
    surges frame one clipping-safe movement field; 232px drawings render over
    moving shadows. Compact numeric-HP and READY/WINDUP/ACTIVE strips flank a
-   smaller authoritative clock, while a BOUT/SERVER-LOCKED paper rail and
+   smaller authoritative clock, while a compact battle-kind/server-lock rail and
    transient commentary margin replace turn cards and the permanent lower third.
    Fighter overlap depth follows screen position, combat reads clear the HUD,
    result actions stay separated, and 4× playback resets before the ceremony.
@@ -304,6 +304,145 @@ sidegrades: their colors can change the 100-point build split, but never its sum
     report. A 320x568 WebGL pass proves drawing load, Day 8 Replay, Skip, and return
     to the same tab with zero runtime or console errors. No Redis key, currency,
     title, reward, or combat decision was added.
+34. The whole portrait UI now uses one default hierarchy instead of stacking
+    explanations. Arena, Draw, Practice, Replay, Battles, Scout, Gallery, Legacy
+    Book, Collection, Field Guide, and Mystery Ink give every primary card one
+    headline, one current status, and one action. Exact forecasts, payouts, HP, finish reasons,
+    odds, moderation, deletion, and server-lock facts remain truthful; secondary
+    rules and card metadata move behind deliberate taps. The 320x568 WebGL pass
+    covers the fresh Draw, scrolling Arena, seven-day replay/return, five-row
+    battle page, six-card Gallery, Legacy Book, Collection, Guide details, and
+    reward-free Practice without reintroducing turn cards or cheer input.
+35. The first genuinely uncurated mobile run now proves the drawing hook rather
+    than another fixture. Before the first mark, the existing compact feedback
+    panel visibly maps big, spiky, compact, and colorful drawings to their four
+    Shape Powers. A hand-drawn spiral became `Spiral Splat`, was analyzed as a
+    Firetip Halo, and fought a normal-speed founder bout. The post-fight strip,
+    waiting Rival card, and persistent Next Goal evidence now replace secondary
+    metadata with the authoritative 1–0 score and Day 10 return cue. The complete
+    320x568 path recorded zero runtime or console errors and added no state,
+    currency, reward, endpoint, or rule panel.
+
+## Arena bracket refactor check (July 12)
+
+A broad split of the 2,300-line Phaser scene was rejected during this product
+change because it would mix lifecycle risk with the UI overhaul. The bounded
+change extracts only bracket ordering and Back-button semantics into a 90-line
+pure planner; rendering, async art, input, API calls, receipts, and scene
+lifecycle stay in `ArenaHome`.
+
+| Axis | Before | After |
+| --- | ---: | ---: |
+| Simplicity | 2/5 | 4/5 |
+| Naming | 4/5 | 5/5 |
+| Readability | 2/5 | 4/5 |
+| Coupling | 2/5 | 4/5 |
+| Testability | 2/5 | 5/5 |
+| Confidence | 4/5 | 5/5 |
+
+The touched scene fell from 2,317 to 2,302 lines. One focused deterministic
+group now locks backed-first, roster-owned-second, reverse-source ordering,
+deduplication, the eight-card cap, and all four exact Back states. No public
+contract changed. TypeScript, ESLint, all 98 simulation groups, production
+build, and a real 320x568 Arena interaction pass are green.
+
+## Matchup truth refactor check (July 12)
+
+Two independent challengers rejected a broad shared `MatchupFacts` layer. Their
+review found that Smearstep's configured `dashCount` was not yet consumed by the
+engine, so binding `TWICE` to it at this stage would have created false
+authority. The accepted scope removed only the real duplication: both visible
+Halo `35%` claims now format the `areaDamageReductionPermille` value that combat
+actually applies.
+
+| Axis | Before | After |
+| --- | ---: | ---: |
+| Simplicity | 3/5 | 4/5 |
+| Naming | 4/5 | 5/5 |
+| Readability | 4/5 | 4/5 |
+| Coupling | 2/5 | 4/5 |
+| Testability | 3/5 | 5/5 |
+| Confidence | 3/5 | 5/5 |
+
+`matchupbrief.ts` moves from 263 to 273 lines with one private formatter, no
+public API change, no call-site change, and no engine change. Two duplicated
+numeric literals are removed. Existing snapshots keep all ten cards byte-for-byte
+stable, while two focused assertions bind Ring/Halo and Halo/Cone copy to the
+consumed configuration. TypeScript, ESLint, all 98 simulation groups, the
+production build, and a real 320x568 Ring/Halo ceremony are green. The
+Smearstep follow-up below closes the deliberately deferred `TWICE` authority
+gap.
+
+## Smearstep schedule refactor check (July 12)
+
+Two more independent challengers constrained this to a behavior-preserving
+combat refactor. Smearstep now computes every dash window from `dashCount`,
+`dashTicks`, and `pauseTicks`; rules validation rejects schedules whose
+`activeTicks` do not exactly fit that configuration, and fractional timing
+values fail closed. Its VS-card `TWICE` label formats the same `dashCount` the
+authoritative simulator now schedules.
+
+| Axis | Before | After |
+| --- | ---: | ---: |
+| Simplicity | 3/5 | 4/5 |
+| Naming | 4/5 | 5/5 |
+| Readability | 3/5 | 4/5 |
+| Coupling | 2/5 | 4/5 |
+| Testability | 2/5 | 5/5 |
+| Confidence | 3/5 | 5/5 |
+
+`engine.ts` moves from 1,995 to 2,035 lines with two private schedule helpers
+and no public API, type, or call-site changes. The former first/second-dash
+branches are replaced by one indexed schedule: dash ages remain `[0,5)` and
+`[9,14)`, the pause remains `[5,9)`, the first aim remains activation-time,
+and the second re-aim remains age 9. A dedicated fixed-seed golden case keeps
+the exact transcript hash
+`8d573dbde552349906be1200f116a2becc2651552b4e6aa28838988826401e91`,
+including mock/production parity. A focused behavior fixture also locks the
+activation deadline and proves one hit in each configured window. The count
+remains the deliberate literal type `2`; any future widening must account for
+the 32-bit hit mask and receive fresh balance and visual review. TypeScript,
+ESLint, all 98 simulation groups, the production build, and a real 320x568
+Smearstep replay are green.
+
+## Battle-loop hierarchy pass (July 12)
+
+A fresh 320x568 playthrough exposed one remaining presentation break in the
+core hook: the VS ceremony stacked story, fighter, and mechanics explanations,
+then the compact result named only the winner and gave Rival, Practice, Back,
+and Arena equal visual weight. Two independent audits confirmed that the result
+needed an immediate viewer-relative verdict and one primary next move.
+
+The VS ceremony now leads with one battle label, one episode/match title, one
+authoritative stakes line, larger fighter art, and one two-line mechanics card.
+Names, levels, elements, signatures, Rival score, page title, and exact matchup
+mechanics remain visible; the duplicate episode cue, founder epithet, and
+mechanics caption are gone. The Founder Rival margin similarly uses one title,
+one newest-page chip, a combined score/availability line, visual best-of-three
+progress, one next-page label, one quote, and one action.
+
+Post-fight cards now say `YOU WON`, `YOU LOST`, or `{WINNER} WON` before the
+exact finish reason, duration, and final HP. Owned exhibitions promote
+`CHOOSE A RIVAL` to one full-width primary action; Practice, tonight's pick, and
+the real return destination share a smaller secondary row. A pure action planner
+and one Phaser renderer replace the duplicated win/loss grids and remove the
+obsolete loss-offset plan.
+
+Every critical result, Practice, archived-result, and Rival Draft action now
+uses a 100-design-pixel target, which stays at least 44 CSS pixels in the
+320x568 Reddit fit. Canvas art remains the visual surface while one shared DOM
+adapter mirrors each action as a focusable native button with an exact accessible
+name, focus outline, and single-fire Enter/Space path. Opening the Rival Draft
+hides the result controls; closing it or recovering from a failed request restores
+them instead of leaving an invisible keyboard dead end.
+
+TypeScript, ESLint, all 98 simulation groups, and the production build are
+green. A real normal-speed 320x568 Fernibble decider proves the compact Rival
+VS, `YOU WON` result, signed-margin strip, action hierarchy, native result and
+Rival Draft controls, close-and-restore lifecycle, keyboard Arena return,
+archived-result return, and resolved margin with zero runtime or console errors.
+No combat event, result, reward, route, stored field, or authority boundary
+changed.
 
 ## Current polish gap
 
@@ -330,12 +469,16 @@ the in-game rules teach the combat model that actually runs, and the Battle
 Scrapbook gives recent authoritative fights a replayable home. The Scout
 Notebook now turns existing server truth into a bounded seven-day return habit.
 
-The strongest remaining proof gap is an installed Reddit playtest and a concise demo
-capture using organic player drawings rather than curated fixtures. Progression
-should stay expressive and collectible rather than add combat power or another
-currency. Do not add another progression subsystem before the installed playtest;
-the next content decision should come from whether players can name their active
-rival, current score, and reason to return after one organic session.
+The strongest remaining product gap is the player's own overnight Rumble
+payoff: the existing return receipt explains a backed contender, but does not
+yet lead with the owned entrant's W/L, XP, and exact Rumble Ink when no Back was
+made. The strongest external proof gap remains an installed Reddit playtest and
+a concise demo capture using organic player drawings rather than curated
+fixtures. Progression should stay expressive and collectible rather than add
+combat power or another currency. Do not add another progression subsystem
+before the installed playtest; the next content decision should come from
+whether players can name their active rival, current score, and reason to return
+after one organic session.
 The organic playtest should now test whether players can explain both the active
 Rival score and their seven-day scouting form. Do not expand the Notebook into a
 permanent career database, prediction market, or reward currency before that
@@ -363,9 +506,11 @@ Devvit upload is intentionally outside this polish goal.
    pack version to stored reports or explicitly accept historical copy drift;
    add authoritative outcome metadata before any timing-specific copy instead of
    asking clients to infer delayed follow-up outcomes.
-2. Move matchup facts beside combat configuration or derive them from it. The current
-   client matrix repeats values such as reduction, dash count, echo, and recoil that
-   can drift while prose-only tests remain green.
+2. The Halo reduction and Smearstep dash-count copy now derive from the exact
+   combat configuration the engine consumes. Smearstep's indexed schedule keeps
+   its golden transcript unchanged. Keep echo, dead-zone, and recoil claims
+   backed by focused behavior fixtures rather than a second presentation-only
+   rules table.
 3. Split the 1,900+ line combat engine behind the unchanged `simulateCombat`
    facade when a real balance/content boundary justifies it. Fixed-seed golden
    hashes already protect both production and mock transcripts.

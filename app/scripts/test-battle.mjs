@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
+import { once } from 'node:events';
 import { createRequire } from 'node:module';
 import { mkdirSync, readFileSync, rmSync, symlinkSync } from 'node:fs';
 import { join } from 'node:path';
@@ -103,6 +104,7 @@ execFileSync(
     'src/client/lib/championchallenge.ts',
     'src/client/lib/founderchronicle.ts',
     'src/client/lib/nextgoal.ts',
+    'src/client/lib/arenabracket.ts',
     'src/client/lib/accessories.ts',
     'src/client/lib/pens.ts',
   ],
@@ -138,6 +140,7 @@ const combatEngineTests = require(
   join(outDir, 'shared', 'combat', 'engine.test.js')
 );
 const combatEngine = require(join(outDir, 'shared', 'combat', 'engine.js'));
+const combatConfig = require(join(outDir, 'shared', 'combat', 'config.js'));
 const combatSelection = require(
   join(outDir, 'shared', 'combat', 'selection.js')
 );
@@ -231,6 +234,7 @@ const founderChroniclePlan = require(
   join(outDir, 'client', 'lib', 'founderchronicle.js')
 );
 const nextGoal = require(join(outDir, 'client', 'lib', 'nextgoal.js'));
+const arenaBracket = require(join(outDir, 'client', 'lib', 'arenabracket.js'));
 const clientAccessories = require(
   join(outDir, 'client', 'lib', 'accessories.js')
 );
@@ -241,6 +245,160 @@ const passedChecks = [];
 const pass = (name) => {
   passedChecks.push(name);
 };
+
+const startDevMockForContractTest = async () => {
+  const child = spawn(process.execPath, ['scripts/dev-mock.mjs'], {
+    cwd: repoRoot,
+    env: {
+      ...process.env,
+      PORT: '0',
+      MOCK_AUTO_RELOAD: '0',
+      MOCK_COMBAT_BUNDLE_URL: pathToFileURL(
+        join(mockCombatTestOutputDirectory, 'battle.mjs')
+      ).href,
+    },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  child.stdout.setEncoding('utf8');
+  child.stderr.setEncoding('utf8');
+  let stdout = '';
+  let stderr = '';
+  child.stderr.on('data', (chunk) => {
+    stderr += chunk;
+  });
+
+  const baseUrl = await new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      child.kill('SIGKILL');
+      reject(new Error(`Mock server did not start. ${stderr}`));
+    }, 10_000);
+    child.once('error', (error) => {
+      clearTimeout(timeout);
+      reject(error);
+    });
+    child.once('exit', (code) => {
+      clearTimeout(timeout);
+      reject(
+        new Error(`Mock server exited with ${code ?? 'no code'}. ${stderr}`)
+      );
+    });
+    child.stdout.on('data', (chunk) => {
+      stdout += chunk;
+      const match = stdout.match(
+        /Scribbits mock server running at http:\/\/localhost:(\d+)/
+      );
+      if (!match) return;
+      clearTimeout(timeout);
+      resolve(`http://127.0.0.1:${match[1]}`);
+    });
+  });
+  return { child, baseUrl };
+};
+
+const stopDevMockContractTest = async (child) => {
+  if (child.exitCode !== null) return;
+  const gracefulExit = once(child, 'exit');
+  child.kill('SIGTERM');
+  await Promise.race([
+    gracefulExit,
+    new Promise((resolve) => setTimeout(resolve, 2_000)),
+  ]);
+  if (child.exitCode === null) {
+    const forcedExit = once(child, 'exit');
+    child.kill('SIGKILL');
+    await forcedExit;
+  }
+};
+
+const mockContract = await startDevMockForContractTest();
+const requestMock = async (path, init) => {
+  const response = await fetch(`${mockContract.baseUrl}${path}`, init);
+  return { response, body: await response.json() };
+};
+try {
+  const loggedOutNotebook = await requestMock('/api/scout-notebook?logged-out');
+  assert.equal(loggedOutNotebook.response.status, 401);
+
+  const returningNotebook = await requestMock('/api/scout-notebook');
+  assert.equal(returningNotebook.response.status, 200);
+  assert.equal(returningNotebook.body.entries[0].status, 'open');
+  assert.equal(returningNotebook.body.entries[1].replayAvailable, true);
+  assert.equal(
+    returningNotebook.body.entries[2].replayAvailable,
+    true,
+    'a report two days old should remain replayable inside the Notebook window'
+  );
+  const olderReplay = await requestMock('/api/rumble-replay?day=7');
+  assert.equal(olderReplay.response.status, 200);
+  assert.equal(olderReplay.body.day, 7);
+  assert.equal(
+    (await requestMock('/api/rumble-replay?day=6')).response.status,
+    404,
+    'an in-window day without a featured report should fail closed'
+  );
+  assert.equal(
+    (await requestMock('/api/rumble-replay?day=2')).response.status,
+    404,
+    'a replay outside the seven-page window should fail closed'
+  );
+  assert.equal(
+    (await requestMock('/api/rumble-replay?day=8&logged-out')).response.status,
+    401
+  );
+
+  const freshNotebook = await requestMock('/api/scout-notebook?fresh');
+  assert.equal(freshNotebook.body.entries[0].status, 'open');
+  const freshBack = await requestMock('/api/back?fresh', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ scribbitId: 'community-bristle' }),
+  });
+  assert.equal(freshBack.response.status, 200);
+  const freshBackedNotebook = await requestMock('/api/scout-notebook?fresh');
+  assert.equal(freshBackedNotebook.body.entries[0].status, 'pending');
+  assert.equal(
+    freshBackedNotebook.body.entries[0].pick.id,
+    'community-bristle'
+  );
+  assert.equal(
+    (await requestMock('/api/scout-notebook')).body.entries[0].status,
+    'open',
+    'fresh and returning Back mutations must not leak across preview modes'
+  );
+
+  const hideFreshPick = await requestMock('/api/report-scribbit?fresh', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ scribbitId: 'community-bristle' }),
+  });
+  assert.equal(hideFreshPick.response.status, 200);
+  const hiddenFreshNotebook = await requestMock('/api/scout-notebook?fresh');
+  assert.equal(hiddenFreshNotebook.body.entries[0].status, 'pending');
+  assert.equal(hiddenFreshNotebook.body.entries[0].pick, null);
+  const hiddenOlderNotebook = await requestMock('/api/scout-notebook');
+  assert.equal(hiddenOlderNotebook.body.entries[2].pick, null);
+  assert.equal(hiddenOlderNotebook.body.entries[2].replayAvailable, false);
+
+  const hideReplayOpponent = await requestMock('/api/report-scribbit', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ scribbitId: 'legend-solar-kiln' }),
+  });
+  assert.equal(hideReplayOpponent.response.status, 200);
+  const hiddenOpponentNotebook = await requestMock('/api/scout-notebook');
+  assert.equal(
+    hiddenOpponentNotebook.body.entries[1].pick.id,
+    'legend-inky-moon'
+  );
+  assert.equal(hiddenOpponentNotebook.body.entries[1].replayAvailable, false);
+  assert.equal(
+    (await requestMock('/api/rumble-replay?day=8')).response.status,
+    404
+  );
+} finally {
+  await stopDevMockContractTest(mockContract.child);
+}
+pass('mock Scout API honors auth, mutations, privacy, and replay bounds');
 
 for (const combatCheck of combatEngineTests.runCombatEngineTests()) {
   pass(`fixed-tick combat: ${combatCheck}`);
@@ -743,10 +901,10 @@ assert.deepEqual(
   }),
   {
     phase: 'blank',
-    message: 'DRAW A BOLD BODY TO REVEAL ITS MOVE',
+    message: drawOnboarding.DRAW_RULES_COPY,
     power: null,
   },
-  'an empty page must not claim a default element or Shape Power'
+  'an empty page must teach the drawing-to-power contract without claiming a default power'
 );
 assert.equal(
   drawOnboarding.planDrawFeedback({
@@ -1689,6 +1847,35 @@ const expectedMatchupMechanics = [
   ],
 ];
 
+const configuredHaloDamageReductionPercentage =
+  combatConfig.ABILITY_CONFIG_BY_POWER.nib_halo.areaDamageReductionPermille /
+  10;
+assert.equal(
+  matchupBrief.BATTLE_MATCHUP_CONTENT_BY_POWER_PAIR['inkquake|nib_halo'].detail,
+  `ACTIVE HALO CUTS RING DAMAGE ${configuredHaloDamageReductionPercentage}%`,
+  'Ring/Halo copy must derive its percentage from the reduction combat consumes'
+);
+assert.equal(
+  matchupBrief.BATTLE_MATCHUP_CONTENT_BY_POWER_PAIR['nib_halo|colorburst']
+    .detail,
+  `ACTIVE HALO CUTS CONE AND ECHO DAMAGE ${configuredHaloDamageReductionPercentage}%`,
+  'Halo/Cone copy must derive its percentage from the reduction combat consumes'
+);
+const configuredSmearstepDashCount =
+  combatConfig.ABILITY_CONFIG_BY_POWER.smearstep.dashCount;
+const configuredSmearstepDashCountText =
+  configuredSmearstepDashCount === 1
+    ? 'ONCE'
+    : configuredSmearstepDashCount === 2
+      ? 'TWICE'
+      : `${configuredSmearstepDashCount} TIMES`;
+assert.equal(
+  matchupBrief.BATTLE_MATCHUP_CONTENT_BY_POWER_PAIR['smearstep|smearstep']
+    .detail,
+  `EACH CAST PREDICTS AND DASHES ${configuredSmearstepDashCountText}`,
+  'Dash/Dash copy must derive its count from the schedule combat consumes'
+);
+
 assert.deepEqual(
   matchupBrief.validateBattleMatchupContent(),
   [],
@@ -2576,7 +2763,17 @@ const scoutNotebookOptions = {
   currentDay: 9,
   userId: scoutNotebookPlayer.userId,
   utcDateKey: '20260711',
-  hiddenScribbitIds: new Set(),
+};
+const scoutNotebookHiddenKey = moderationCore.getUserHiddenScribbitsKey(
+  scoutNotebookPlayer.userId
+);
+const originalScoutNotebookHGetAll =
+  scoutNotebookStorage.hGetAll.bind(scoutNotebookStorage);
+scoutNotebookStorage.hGetAll = async (key) => {
+  if (key === scoutNotebookHiddenKey) {
+    throw new Error('Scout Notebook must not read the full hidden-ID hash.');
+  }
+  return await originalScoutNotebookHGetAll(key);
 };
 const loadedScoutNotebook = await scoutNotebookCore.loadScoutNotebook(
   scoutNotebookStorage,
@@ -2614,7 +2811,7 @@ assert.equal(scoutNotebookSummary.pages[1].actionKind, 'replay');
 assert.match(scoutNotebookSummary.pages[1].payoutLine, /\+3 CLOUT.*\+5 INK/);
 assert.equal(scoutNotebookSummary.pages[2].actionKind, 'none');
 assert.equal(scoutNotebookSummary.pages[3].pickAvailable, false);
-assert.match(scoutNotebookSummary.pages[0].payoutLine, /^PAYOUT NOT FILED/);
+assert.equal(scoutNotebookSummary.pages[0].payoutLine, 'PAYOUT PENDING');
 assert.match(scoutNotebookSummary.pages[3].payoutLine, /^NO PAYOUT/);
 assert.match(
   scoutNotebookPlan.planScoutNotebookPage(
@@ -2626,7 +2823,7 @@ assert.match(
     },
     loadedScoutNotebook.currentDay
   ).payoutLine,
-  /^RESULT FILED/
+  /^\+0 CLOUT · \+0 INK$/
 );
 
 assert.throws(
@@ -2649,41 +2846,52 @@ assert.throws(
     }),
   /descend contiguously/
 );
+assert.equal(sharedScoutNotebook.isScoutNotebookReplayDay(9, 8), true);
+assert.equal(sharedScoutNotebook.isScoutNotebookReplayDay(9, 3), true);
+assert.equal(sharedScoutNotebook.isScoutNotebookReplayDay(9, 2), false);
+assert.equal(sharedScoutNotebook.isScoutNotebookReplayDay(9, 9), false);
+assert.equal(sharedScoutNotebook.isScoutNotebookReplayDay(1, 0), false);
 
+await scoutNotebookStorage.hSet(scoutNotebookHiddenKey, {
+  [championScoutPick.id]: '1',
+});
 const notebookWithHiddenPick = await scoutNotebookCore.loadScoutNotebook(
   scoutNotebookStorage,
-  {
-    ...scoutNotebookOptions,
-    hiddenScribbitIds: new Set([championScoutPick.id]),
-  }
+  scoutNotebookOptions
 );
 assert.equal(notebookWithHiddenPick.entries[1].status, 'champion');
 assert.equal(notebookWithHiddenPick.entries[1].pick, null);
 assert.equal(notebookWithHiddenPick.entries[1].replayAvailable, false);
+await scoutNotebookStorage.hDel(scoutNotebookHiddenKey, [championScoutPick.id]);
+await scoutNotebookStorage.hSet(scoutNotebookHiddenKey, {
+  [scoutNotebookOpponent.id]: '2',
+});
 const notebookWithHiddenOpponent = await scoutNotebookCore.loadScoutNotebook(
   scoutNotebookStorage,
-  {
-    ...scoutNotebookOptions,
-    hiddenScribbitIds: new Set([scoutNotebookOpponent.id]),
-  }
+  scoutNotebookOptions
 );
 assert.equal(
   notebookWithHiddenOpponent.entries[1].pick.id,
   championScoutPick.id
 );
 assert.equal(notebookWithHiddenOpponent.entries[1].replayAvailable, false);
+await scoutNotebookStorage.hDel(scoutNotebookHiddenKey, [
+  scoutNotebookOpponent.id,
+]);
+await scoutNotebookStorage.hSet(scoutNotebookHiddenKey, {
+  [currentScoutPick.id]: '3',
+});
 const notebookWithHiddenCurrentPick = await scoutNotebookCore.loadScoutNotebook(
   scoutNotebookStorage,
-  {
-    ...scoutNotebookOptions,
-    hiddenScribbitIds: new Set([currentScoutPick.id]),
-  }
+  scoutNotebookOptions
 );
 assert.equal(notebookWithHiddenCurrentPick.entries[0].status, 'pending');
 assert.equal(notebookWithHiddenCurrentPick.entries[0].pick, null);
+await scoutNotebookStorage.hDel(scoutNotebookHiddenKey, [currentScoutPick.id]);
 
 assert.equal(typeof mockCombatBundle.createScoutNotebookState, 'function');
 assert.equal(typeof mockCombatBundle.projectScoutNotebookPick, 'function');
+assert.equal(typeof mockCombatBundle.isScoutNotebookReplayDay, 'function');
 assert.equal(
   mockCombatBundle.INK_REWARDS.backedChampion,
   arena.INK_REWARDS.backedChampion
@@ -3166,6 +3374,11 @@ assert.equal(
   'THE SCENIC EDGE'
 );
 assert.equal(
+  founderChroniclePlan.formatFounderChronicleEvidenceLine(plannedChronicle),
+  '✎ YOU 0–1 FERNIBBLE · RETURN DAY 7',
+  'the persistent Arena card should keep the active rival score and return day visible'
+);
+assert.equal(
   plannedChronicle.resolvedNotes[0]?.name,
   chronicleFounder.name,
   'the latest resolved best-of-three should remain as a compact margin note'
@@ -3210,6 +3423,20 @@ const resolvedChronicleProjection = {
   ],
   lastAdvancedDay: 5,
 };
+assert.equal(
+  founderChroniclePlan.formatFounderChronicleEvidenceLine(
+    founderChroniclePlan.planFounderChronicle(emptyChronicleProjection, 3)
+  ),
+  null,
+  'an empty Chronicle should not add a fake margin affordance'
+);
+assert.equal(
+  founderChroniclePlan.formatFounderChronicleEvidenceLine(
+    founderChroniclePlan.planFounderChronicle(resolvedChronicleProjection, 6)
+  ),
+  '✎ MARGIN',
+  'resolved notes should retain the compact archive affordance'
+);
 assert.equal(
   founderChroniclePlan.findFounderChronicleBeats(
     emptyChronicleProjection,
@@ -3316,8 +3543,8 @@ const openingPlayerReceipt =
 assert.deepEqual(openingPlayerReceipt, {
   founderId: chronicleFounder.id,
   pageNumber: 1,
-  headline: 'PAGE 1/3 · ROOTBEAT INTRO',
-  detail: 'THREAD CONTINUES · YOU 1–0 MOSSWHISK',
+  headline: 'THREAD CONTINUES · YOU 1–0 MOSSWHISK',
+  detail: 'PAGE 1/3 · ROOTBEAT INTRO',
   resultLine: 'Mosswhisk nods as your mark takes the opening beat.',
   latestWinner: 'player',
   threadResolved: false,
@@ -3357,7 +3584,11 @@ const tiedSecondPageReceipt =
     'a',
     'a'
   );
-assert.equal(tiedSecondPageReceipt?.headline, 'PAGE 2/3 · ROOTS REMEMBER');
+assert.equal(
+  tiedSecondPageReceipt?.headline,
+  'THREAD CONTINUES · YOU 1–1 MOSSWHISK'
+);
+assert.equal(tiedSecondPageReceipt?.detail, 'PAGE 2/3 · ROOTS REMEMBER');
 assert.equal(
   tiedSecondPageReceipt?.resultLine,
   "Mosswhisk hears your offbeat turn the grove's old rhythm."
@@ -3370,11 +3601,11 @@ const decidingPlayerReceipt =
     'a',
     'a'
   );
-assert.equal(decidingPlayerReceipt?.headline, 'PAGE 3/3 · THE LAST ROOTBEAT');
 assert.equal(
-  decidingPlayerReceipt?.detail,
+  decidingPlayerReceipt?.headline,
   'MARGIN SIGNED · YOU 2–1 MOSSWHISK'
 );
+assert.equal(decidingPlayerReceipt?.detail, 'PAGE 3/3 · THE LAST ROOTBEAT');
 assert.equal(decidingPlayerReceipt?.threadResolved, true);
 assert.equal(
   founderChroniclePlan.planFounderRivalEpisodeReceipt(
@@ -3913,16 +4144,49 @@ const firstSmearstepFinish = smearstepTimeline.find(
     event.activationNumber === firstSmearstepActivation?.activationNumber
 );
 assert.ok(firstSmearstepActivation && firstSmearstepFinish);
-assert.ok(
-  smearstepTimeline.filter(
-    (event) =>
-      event.kind === 'damage' &&
-      event.sourceFighter === 'a' &&
-      event.source === 'smearstep' &&
-      event.tick >= firstSmearstepActivation.tick &&
-      event.tick <= firstSmearstepFinish.tick
-  ).length >= 2,
-  'Smearstep showcase should prove both dashes during its first activation'
+const smearstepConfig = combatConfig.ABILITY_CONFIG_BY_POWER.smearstep;
+assert.equal(
+  smearstepConfig.dashCount,
+  2,
+  'Smearstep should keep its reviewed two-dash balance contract'
+);
+assert.equal(
+  firstSmearstepActivation.activeUntilTick,
+  firstSmearstepActivation.tick + smearstepConfig.activeTicks,
+  'Smearstep activation should publish its exact configured finish tick'
+);
+assert.equal(
+  firstSmearstepFinish.tick,
+  firstSmearstepActivation.activeUntilTick,
+  'Smearstep should finish before movement at the configured active deadline'
+);
+const firstSmearstepDamageEvents = smearstepTimeline.filter(
+  (event) =>
+    event.kind === 'damage' &&
+    event.sourceFighter === 'a' &&
+    event.source === 'smearstep' &&
+    event.tick >= firstSmearstepActivation.tick &&
+    event.tick < firstSmearstepFinish.tick
+);
+const smearstepDashStrideTicks =
+  smearstepConfig.dashTicks + smearstepConfig.pauseTicks;
+const hitSmearstepDashIndexes = new Set(
+  firstSmearstepDamageEvents.map((event) => {
+    const activeAge = event.tick - firstSmearstepActivation.tick;
+    const dashIndex = Math.floor(activeAge / smearstepDashStrideTicks);
+    const dashAge = activeAge - dashIndex * smearstepDashStrideTicks;
+    assert.ok(
+      dashIndex < smearstepConfig.dashCount &&
+        dashAge < smearstepConfig.dashTicks,
+      'Smearstep damage must land inside a configured dash window'
+    );
+    return dashIndex;
+  })
+);
+assert.deepEqual(
+  [...hitSmearstepDashIndexes],
+  Array.from({ length: smearstepConfig.dashCount }, (_, index) => index),
+  'Smearstep showcase should prove every configured dash window in order'
 );
 
 const colorburstTimeline =
@@ -4654,6 +4918,24 @@ const goldenCombatCases = [
       'a4ef46d69c9904a62ad6054fe6a475191852f58e34d493d987e4e7c03b8f4693',
     previousHashWithoutBarrierSourceMetadata:
       '6f2634d342b2bdb78c183138020f16f58e3b61abe19f8bde947fcd8e47ae4998',
+  },
+  {
+    name: 'Smearstep dash schedule',
+    fighterA: makeGoldenScribbit('gold-smear', 'tide', {
+      chonk: 10,
+      spike: 10,
+      zip: 55,
+      charm: 25,
+    }),
+    fighterB: makeGoldenScribbit('gold-halo', 'ember', {
+      chonk: 10,
+      spike: 55,
+      zip: 25,
+      charm: 10,
+    }),
+    seed: 7003,
+    expectedHash:
+      '8d573dbde552349906be1200f116a2becc2651552b4e6aa28838988826401e91',
   },
 ];
 const transcriptHash = (transcript) =>
@@ -5460,6 +5742,107 @@ assert.equal(
 );
 pass('Next Goal priority and evidence stay deterministic');
 
+const arenaBracketEntrants = [
+  'community-a',
+  'community-b',
+  'owned-entry',
+  'community-c',
+  'picked-entry',
+  'community-d',
+  'community-e',
+  'community-f',
+  'community-g',
+  'community-h',
+].map((id, index) =>
+  makeScribbit({
+    id,
+    name: `Bracket ${index}`,
+    bornDay: 2,
+    expiresDay: 5,
+  })
+);
+const arenaBracketSourceIds = arenaBracketEntrants.map((entrant) => entrant.id);
+const visibleArenaEntrants = arenaBracket.selectVisibleArenaEntrants({
+  entrantsInSourceOrder: arenaBracketEntrants,
+  ownedScribbitIdsInRosterOrder: ['missing-owned-entry', 'owned-entry'],
+  backedScribbitId: 'picked-entry',
+});
+assert.deepEqual(
+  visibleArenaEntrants.map((entrant) => entrant.id),
+  [
+    'picked-entry',
+    'owned-entry',
+    'community-h',
+    'community-g',
+    'community-f',
+    'community-e',
+    'community-d',
+    'community-c',
+  ],
+  'the bracket must pin the pick and first roster-ordered entrant before reverse-source entries'
+);
+assert.deepEqual(
+  arenaBracketEntrants.map((entrant) => entrant.id),
+  arenaBracketSourceIds,
+  'bracket selection must not mutate the server entrant order'
+);
+assert.deepEqual(
+  arenaBracket
+    .selectVisibleArenaEntrants({
+      entrantsInSourceOrder: [...arenaBracketEntrants, arenaBracketEntrants[0]],
+      ownedScribbitIdsInRosterOrder: [],
+      backedScribbitId: null,
+    })
+    .map((entrant) => entrant.id),
+  [
+    'community-a',
+    'community-h',
+    'community-g',
+    'community-f',
+    'community-e',
+    'community-d',
+    'picked-entry',
+    'community-c',
+  ],
+  'duplicate IDs must collapse while the eight-entry cap remains absolute'
+);
+assert.deepEqual(
+  arenaBracket.planArenaBackAction({
+    entrantId: 'picked-entry',
+    ownedScribbitIds: ['picked-entry'],
+    backedScribbitId: 'picked-entry',
+  }),
+  { kind: 'picked', label: '✓ Picked', enabled: false }
+);
+assert.deepEqual(
+  arenaBracket.planArenaBackAction({
+    entrantId: 'owned-entry',
+    ownedScribbitIds: ['owned-entry'],
+    backedScribbitId: 'picked-entry',
+  }),
+  { kind: 'owned', label: 'Your entry', enabled: false }
+);
+assert.deepEqual(
+  arenaBracket.planArenaBackAction({
+    entrantId: 'community-a',
+    ownedScribbitIds: [],
+    backedScribbitId: 'picked-entry',
+  }),
+  { kind: 'locked', label: 'Pick locked', enabled: false }
+);
+const availableBackAction = arenaBracket.planArenaBackAction({
+  entrantId: 'community-a',
+  ownedScribbitIds: [],
+  backedScribbitId: null,
+});
+assert.deepEqual(availableBackAction, {
+  kind: 'available',
+  label: 'Back',
+  enabled: true,
+});
+assert.ok(Object.isFrozen(availableBackAction));
+pass('Arena bracket ordering and Back actions stay deterministic');
+
 const normalizedStats = scribbitCore.normalizeStats({
   chonk: 999,
   spike: 1,
@@ -5800,45 +6183,132 @@ const crowdedReplayOutcomeStack = battlePresentation.planReplayOutcomeStack({
 assert.deepEqual(crowdedReplayOutcomeStack, {
   recapY: 813,
   founderOutcomeY: 647,
-  rivalChoicesY: 1010,
-  backContenderButtonY: 1118,
-  backButtonY: 1222,
 });
 assert.ok(
-  crowdedReplayOutcomeStack.rivalChoicesY + 48 + 12 <=
-    crowdedReplayOutcomeStack.backContenderButtonY - 48,
-  'rival choices and Back-a-contender must retain a visible mobile gap'
-);
-assert.ok(
-  crowdedReplayOutcomeStack.recapY + 132 + 12 <=
-    crowdedReplayOutcomeStack.rivalChoicesY - 48,
-  'the recap card and first action row must not touch'
-);
-assert.ok(
-  crowdedReplayOutcomeStack.backContenderButtonY + 48 + 12 <=
-    crowdedReplayOutcomeStack.backButtonY - 44,
-  'post-fight primary and return controls must never overlap'
-);
-assert.ok(
-  crowdedReplayOutcomeStack.founderOutcomeY + 20 + 12 <=
-    crowdedReplayOutcomeStack.recapY - 132,
+  crowdedReplayOutcomeStack.founderOutcomeY + 55 + 12 <=
+    crowdedReplayOutcomeStack.recapY - 82,
   'founder result voice should sit above the recap instead of covering it'
 );
 
-assert.deepEqual(
-  battlePresentation.planReplayLossActionStack({ canBackContender: true }),
+const ownedOpenPickActions = battlePresentation.planReplayPostFightActions({
+  canChooseRival: true,
+  canBackContender: true,
+  returnLabel: 'ARENA ›',
+});
+assert.deepEqual(ownedOpenPickActions,
   {
-    backContenderButtonOffset: 620,
-    returnButtonOffset: 730,
+    primary: {
+      kind: 'rivals',
+      label: 'CHOOSE A RIVAL',
+      accessibleLabel: 'Choose a rival',
+      tone: 'coral',
+    },
+    secondary: [
+      {
+        kind: 'practice',
+        label: 'PRACTICE',
+        accessibleLabel: 'Practice',
+        tone: 'ghost',
+      },
+      {
+        kind: 'backContender',
+        label: 'PICK',
+        accessibleLabel: "Pick tonight's winner",
+        tone: 'ghost',
+      },
+      {
+        kind: 'return',
+        label: 'ARENA ›',
+        accessibleLabel: 'ARENA',
+        tone: 'ghost',
+      },
+    ],
+    buttonHeight: 100,
+    secondaryRowOffset: 114,
   }
 );
+assert.ok(
+  ownedOpenPickActions.secondaryRowOffset -
+    ownedOpenPickActions.buttonHeight >=
+    12,
+  'primary and secondary post-fight rows must retain a visible mobile gap'
+);
 assert.deepEqual(
-  battlePresentation.planReplayLossActionStack({ canBackContender: false }),
+  battlePresentation.planReplayPostFightActions({
+    canChooseRival: true,
+    canBackContender: false,
+    returnLabel: 'ARENA ›',
+  }),
   {
-    backContenderButtonOffset: null,
-    returnButtonOffset: 620,
+    primary: {
+      kind: 'rivals',
+      label: 'CHOOSE A RIVAL',
+      accessibleLabel: 'Choose a rival',
+      tone: 'coral',
+    },
+    secondary: [
+      {
+        kind: 'practice',
+        label: 'PRACTICE',
+        accessibleLabel: 'Practice',
+        tone: 'ghost',
+      },
+      {
+        kind: 'return',
+        label: 'ARENA ›',
+        accessibleLabel: 'ARENA',
+        tone: 'ghost',
+      },
+    ],
+    buttonHeight: 100,
+    secondaryRowOffset: 114,
   },
-  'a locked Back must remove the dead-end loss CTA and pull return upward'
+  'an already-backed player should keep Rival primary and two clear utilities'
+);
+assert.deepEqual(
+  battlePresentation.planReplayPostFightActions({
+    canChooseRival: false,
+    canBackContender: true,
+    returnLabel: 'SCOUT ›',
+  }),
+  {
+    primary: {
+      kind: 'backContender',
+      label: "PICK TONIGHT'S WINNER",
+      accessibleLabel: "Pick tonight's winner",
+      tone: 'gold',
+    },
+    secondary: [
+      {
+        kind: 'return',
+        label: 'SCOUT ›',
+        accessibleLabel: 'SCOUT',
+        tone: 'ghost',
+      },
+    ],
+    buttonHeight: 100,
+    secondaryRowOffset: 114,
+  },
+  'spectators should see one clear pick action and a secondary return'
+);
+assert.deepEqual(
+  battlePresentation.planReplayPostFightActions({
+    canChooseRival: false,
+    canBackContender: false,
+    returnLabel: 'SCRAPBOOK ›',
+  }),
+  {
+    primary: {
+      kind: 'return',
+      label: 'SCRAPBOOK ›',
+      accessibleLabel: 'SCRAPBOOK',
+      tone: 'ghost',
+    },
+    secondary: [],
+    buttonHeight: 100,
+    secondaryRowOffset: null,
+  },
+  'a resolved replay should collapse to one truthful return action'
 );
 
 assert.deepEqual(
@@ -5993,6 +6463,22 @@ assert.deepEqual(
     finishSound: 'bell',
   },
   'timeout recap should explain the exact decision without pretending it was a knockout'
+);
+const timeoutRecapPlan = battleRecap.planBattleRecap(
+  timeoutRecapReport.simulation
+);
+assert.equal(
+  battleRecap.formatBattleRecapLead(timeoutRecapPlan, 'viewer_win'),
+  'YOU WON'
+);
+assert.equal(
+  battleRecap.formatBattleRecapLead(timeoutRecapPlan, 'viewer_loss'),
+  'YOU LOST'
+);
+assert.equal(
+  battleRecap.formatBattleRecapLead(timeoutRecapPlan, 'spectator'),
+  'PRISM POP WON',
+  'compact results should lead with an immediate viewer-relative verdict'
 );
 
 const knockoutRecapReport = mockCombatBundle.simulate(
@@ -6472,6 +6958,25 @@ const activeRivalCard = sparRivals.planSparRivalCard(
 assert.equal(activeRivalCard.rivalryState, 'active-ready');
 assert.equal(activeRivalCard.buttonLabel, 'CONTINUE →');
 assert.match(activeRivalCard.rivalryLine, /PAGE 3 · LAST LEAF HOME/);
+const waitingRivalCard = sparRivals.planSparRivalCard(
+  { level: 1 },
+  pinnedRivalSlate[0],
+  debugFixtureForecast,
+  {
+    activeRivalry: {
+      founderId: secondChronicleFounder.id,
+      startedDay: 7,
+      playerWins: 1,
+      founderWins: 0,
+    },
+    resolvedRivalries: [],
+    lastAdvancedDay: 9,
+  },
+  9
+);
+assert.equal(waitingRivalCard.rivalryState, 'active-waiting');
+assert.equal(waitingRivalCard.buttonLabel, 'DAY 10');
+assert.equal(waitingRivalCard.rivalryLine, 'YOU 1–0 · PAGE 2\nRETURNS DAY 10');
 const freshRivalEpisode = founderRivalEpisodes.getFounderRivalEpisodePage(
   freshRivalSlate[0].id,
   1

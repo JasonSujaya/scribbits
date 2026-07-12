@@ -43,6 +43,7 @@ import type {
   NibHaloAbilityConfig,
   PrimaryPower,
   RawCombatStats,
+  SmearstepAbilityConfig,
 } from './types';
 
 // Preserve the direct engine-module API while keeping the selectors in a tiny
@@ -714,6 +715,19 @@ function executeAbilityTransitions(context: SimulationContext): void {
   assertEntityCap(context);
 }
 
+function getSmearstepDashStrideTicks(config: SmearstepAbilityConfig): number {
+  return config.dashTicks + config.pauseTicks;
+}
+
+function getSmearstepDashIndexAtAge(
+  config: SmearstepAbilityConfig,
+  activeAge: number
+): number {
+  if (activeAge < 0) return -1;
+  const dashIndex = Math.floor(activeAge / getSmearstepDashStrideTicks(config));
+  return dashIndex < config.dashCount ? dashIndex : -1;
+}
+
 function fighterIsDashing(
   context: SimulationContext,
   fighter: MutableFighterState
@@ -726,11 +740,10 @@ function fighterIsDashing(
   }
   const config = context.rules.abilities.smearstep;
   const age = context.tick - fighter.abilityActivatedAtTick;
-  const secondDashStarts = config.dashTicks + config.pauseTicks;
-  return (
-    (age >= 0 && age < config.dashTicks) ||
-    (age >= secondDashStarts && age < secondDashStarts + config.dashTicks)
-  );
+  const dashIndex = getSmearstepDashIndexAtAge(config, age);
+  if (dashIndex < 0) return false;
+  const dashAge = age - dashIndex * getSmearstepDashStrideTicks(config);
+  return dashAge < config.dashTicks;
 }
 
 function updateMovementIntent(
@@ -743,8 +756,12 @@ function updateMovementIntent(
   ) {
     const config = context.rules.abilities.smearstep;
     const age = context.tick - fighter.abilityActivatedAtTick;
-    const secondDashStarts = config.dashTicks + config.pauseTicks;
-    if (age === config.dashTicks) {
+    const dashIndex = getSmearstepDashIndexAtAge(config, age);
+    const dashAge =
+      dashIndex < 0
+        ? -1
+        : age - dashIndex * getSmearstepDashStrideTicks(config);
+    if (dashAge === config.dashTicks) {
       fighter.velocity = copyVector(
         normalizeVector(
           fighter.velocity,
@@ -753,8 +770,8 @@ function updateMovementIntent(
         )
       );
       fighter.smearstepCurrentDash = -1;
-    } else if (age === secondDashStarts) {
-      aimSmearstepDash(context, fighter, 1);
+    } else if (dashIndex > 0 && dashAge === 0) {
+      aimSmearstepDash(context, fighter, dashIndex);
     }
   }
 
@@ -1919,6 +1936,29 @@ function validateRules(rules: CombatRules): void {
   }
   if (rules.maximumEventCount < 2 || rules.maximumCheckpointCount < 2) {
     throw new Error('Combat transcript caps are too small for terminal state.');
+  }
+  const smearstep = rules.abilities.smearstep;
+  if (
+    !Number.isSafeInteger(smearstep.dashCount) ||
+    smearstep.dashCount !== 2 ||
+    !Number.isSafeInteger(smearstep.dashTicks) ||
+    smearstep.dashTicks < 1 ||
+    !Number.isSafeInteger(smearstep.pauseTicks) ||
+    smearstep.pauseTicks < 1 ||
+    !Number.isSafeInteger(smearstep.activeTicks) ||
+    smearstep.activeTicks < 1
+  ) {
+    throw new Error(
+      'Smearstep needs exactly two positive, integer, separated dashes.'
+    );
+  }
+  const smearstepScheduledActiveTicks =
+    smearstep.dashCount * smearstep.dashTicks +
+    (smearstep.dashCount - 1) * smearstep.pauseTicks;
+  if (smearstep.activeTicks !== smearstepScheduledActiveTicks) {
+    throw new Error(
+      'Smearstep active ticks must exactly fit its configured dash schedule.'
+    );
   }
 }
 

@@ -2,6 +2,7 @@
 // outcomes; this module only explains the two drawing-selected mechanics.
 
 import type { BattleKind } from '../../shared/arena';
+import { ABILITY_CONFIG_BY_POWER } from '../../shared/combat/config';
 import { selectPrimaryPower } from '../../shared/combat/selection';
 import { getShapePowerSignatureName } from '../../shared/combat/shapepowercontent';
 import { getFoundingScribbitDefinition } from '../../shared/founders';
@@ -68,6 +69,24 @@ export const BATTLE_MATCHUP_TITLE_BY_KIND: Readonly<
   rumble: 'RUMBLE BOUT',
 });
 
+function formatPermilleAsPercentage(permille: number): string {
+  return `${permille / 10}%`;
+}
+
+function formatSmearstepDashCount(dashCount: number): string {
+  if (dashCount === 1) return 'ONCE';
+  if (dashCount === 2) return 'TWICE';
+  return `${dashCount} TIMES`;
+}
+
+const ACTIVE_HALO_AREA_DAMAGE_REDUCTION_PERCENTAGE_TEXT =
+  formatPermilleAsPercentage(
+    ABILITY_CONFIG_BY_POWER.nib_halo.areaDamageReductionPermille
+  );
+const SMEARSTEP_DASH_COUNT_TEXT = formatSmearstepDashCount(
+  ABILITY_CONFIG_BY_POWER.smearstep.dashCount
+);
+
 export const BATTLE_MATCHUP_CONTENT_BY_POWER_PAIR: Readonly<
   Record<BattleMatchupPowerPairKey, BattleMatchup>
 > = Object.freeze({
@@ -77,7 +96,7 @@ export const BATTLE_MATCHUP_CONTENT_BY_POWER_PAIR: Readonly<
   }),
   'inkquake|nib_halo': Object.freeze({
     label: 'RING vs HALO',
-    detail: 'ACTIVE HALO CUTS RING DAMAGE 35%',
+    detail: `ACTIVE HALO CUTS RING DAMAGE ${ACTIVE_HALO_AREA_DAMAGE_REDUCTION_PERCENTAGE_TEXT}`,
   }),
   'inkquake|smearstep': Object.freeze({
     label: 'RING vs DASH',
@@ -97,11 +116,11 @@ export const BATTLE_MATCHUP_CONTENT_BY_POWER_PAIR: Readonly<
   }),
   'nib_halo|colorburst': Object.freeze({
     label: 'HALO vs CONE',
-    detail: 'ACTIVE HALO CUTS CONE AND ECHO DAMAGE 35%',
+    detail: `ACTIVE HALO CUTS CONE AND ECHO DAMAGE ${ACTIVE_HALO_AREA_DAMAGE_REDUCTION_PERCENTAGE_TEXT}`,
   }),
   'smearstep|smearstep': Object.freeze({
     label: 'DASH vs DASH',
-    detail: 'EACH CAST PREDICTS AND DASHES TWICE',
+    detail: `EACH CAST PREDICTS AND DASHES ${SMEARSTEP_DASH_COUNT_TEXT}`,
   }),
   'smearstep|colorburst': Object.freeze({
     label: 'DASH vs ECHO',

@@ -15,12 +15,10 @@ import {
   handLettered,
   stickerCard,
   errorPanel,
-  appTabBar,
-  fadeToScene,
 } from '../lib/ui';
 import type { ErrorPanel } from '../lib/ui';
 import type { BattleReport } from '../../shared/arena';
-import { dailyDrawTabLabel, navigateToDailyDraw } from '../lib/draweligibility';
+import { appDock } from '../lib/appdock';
 import {
   orderBattleJournalReports,
   planBattleJournalEntry,
@@ -31,9 +29,9 @@ import type {
   BattleJournalPerspective,
 } from '../lib/battlejournal';
 
-const ROW_INNER_HEIGHT = 190;
-const ROW_STEP = 200;
-const ROW_START_Y = 390;
+const ROW_INNER_HEIGHT = 146;
+const ROW_STEP = 156;
+const ROW_START_Y = 350;
 
 // Recent server-locked fights become a replayable paper scrapbook. The scene
 // never invents combat facts: its pure planner reuses validated transcripts and
@@ -62,66 +60,19 @@ export class MyBattles extends Scene {
     this.cameras.main.fadeIn(180, 255, 247, 232);
     mountLivingPaper(this);
     const { width } = this.scale;
-    handLettered(this, width / 2, 58, 'BATTLE SCRAPBOOK', 36, UI.ink, true);
-    label(
-      this,
-      width / 2,
-      105,
-      'Recent server-locked fights, page by page',
-      TYPE.caption,
-      UI.inkSoft
-    );
+    handLettered(this, width / 2, 54, 'BATTLES', 43, UI.ink, true);
     this.buildAppTabs();
-    this.loadingCard = stickerCard(this, width / 2, 430, width - 100, 180, {
+    this.loadingCard = stickerCard(this, width / 2, 390, width - 120, 160, {
       tapeColor: UI.tapeAlt,
     });
     this.loadingCard.add(
-      label(
-        this,
-        0,
-        0,
-        'Threading your recent fight reel…',
-        TYPE.body,
-        UI.inkSoft,
-        true
-      )
+      label(this, 0, 0, 'Loading fights…', TYPE.body, UI.inkSoft, true)
     );
     void this.loadBattles(this.renderGeneration);
   }
 
   private buildAppTabs(): void {
-    appTabBar(this, 'battles', [
-      {
-        key: 'arena',
-        icon: '🏟️',
-        label: 'Arena',
-        onClick: () => fadeToScene(this, 'ArenaHome'),
-      },
-      {
-        key: 'gallery',
-        icon: '🏆',
-        label: 'Gallery',
-        onClick: () => fadeToScene(this, 'Sketchbook'),
-      },
-      {
-        key: 'draw',
-        icon: '✏️',
-        label: dailyDrawTabLabel(this),
-        onClick: () => navigateToDailyDraw(this),
-      },
-      {
-        key: 'battles',
-        icon: '⚔️',
-        label: 'Battles',
-        onClick: () => undefined,
-      },
-      {
-        key: 'scout',
-        icon: '📖',
-        label: 'Scout',
-        onClick: () => fadeToScene(this, 'ScoutNotebook'),
-      },
-    ]);
+    appDock(this, 'battles', { battles: () => undefined });
   }
 
   private async loadBattles(renderGeneration: number): Promise<void> {
@@ -147,7 +98,7 @@ export class MyBattles extends Scene {
     const orderedReports = orderBattleJournalReports(reports);
 
     if (orderedReports.length === 0) {
-      const card = stickerCard(this, width / 2, 560, width - 80, 240, {
+      const card = stickerCard(this, width / 2, 500, width - 100, 220, {
         tilt: -0.6,
       });
       const swords = label(this, 0, -52, '⚔️', 48, UI.ink);
@@ -167,7 +118,7 @@ export class MyBattles extends Scene {
           this,
           0,
           36,
-          'No saved pages yet!\nDraw a Scribbit and ring the first bell.',
+          'No fights yet.\nDraw a Scribbit to ring the bell.',
           TYPE.body,
           UI.inkSoft,
           true
@@ -185,7 +136,7 @@ export class MyBattles extends Scene {
 
     const visibleRows = Math.max(
       1,
-      Math.floor((this.scale.height - NAV_SAFE - 300) / ROW_STEP)
+      Math.floor((this.scale.height - NAV_SAFE - 252) / ROW_STEP)
     );
     const totalPages = Math.ceil(orderedReports.length / visibleRows);
     this.page = Math.min(this.page, totalPages - 1);
@@ -208,37 +159,38 @@ export class MyBattles extends Scene {
   private buildRecentReelSummary(
     summary: ReturnType<typeof planBattleJournalSummary>
   ): void {
+    const record = summary.recordLine.startsWith('WATCH MODE')
+      ? 'WATCH MODE'
+      : `${summary.ownedWins}W–${summary.ownedLosses}L`;
     const card = stickerCard(
       this,
       this.scale.width / 2,
-      190,
+      142,
       this.scale.width - 76,
-      118,
+      74,
       {
         tapeColor: UI.tapeAlt,
         tapeWidth: 92,
         tilt: -0.25,
       }
     );
-    card.add(label(this, 0, -34, 'RECENT SERVER REEL', 17, UI.coralText, true));
-    card.add(label(this, 0, -4, summary.recordLine, 25, UI.ink, true));
     card.add(
       label(
         this,
         0,
-        30,
-        `${summary.savedLine} • ${summary.finishLine}`,
-        16,
-        UI.inkSoft,
+        0,
+        `${summary.savedCount} FIGHTS  ·  ${record}`,
+        23,
+        UI.ink,
         true
-      ).setWordWrapWidth(this.scale.width - 130)
+      )
     );
   }
 
   private buildPagination(totalPages: number): void {
-    const y = 285;
+    const y = 232;
     if (totalPages <= 1) {
-      label(this, this.scale.width / 2, y, 'LATEST PAGE', 17, UI.inkSoft, true);
+      label(this, this.scale.width / 2, y, 'LATEST', 17, UI.inkSoft, true);
       return;
     }
 
@@ -259,7 +211,7 @@ export class MyBattles extends Scene {
         '← Newer',
         () => this.changePage(this.page - 1),
         132
-      ).setScale(0.82);
+      );
     }
     if (this.page < totalPages - 1) {
       ghostButton(
@@ -269,7 +221,7 @@ export class MyBattles extends Scene {
         'Older →',
         () => this.changePage(this.page + 1),
         132
-      ).setScale(0.82);
+      );
     }
   }
 
@@ -300,20 +252,20 @@ export class MyBattles extends Scene {
       .setInteractive({ useHandCursor: true });
     card.add(hit);
 
-    const frameX = cardWidth / 2 - 58;
+    const frameX = cardWidth / 2 - 55;
     [report.a, report.b].forEach((fighter, fighterIndex) => {
       const localX = fighterIndex === 0 ? -frameX : frameX;
       const frame = this.add.graphics();
       frame.fillStyle(UI.creamHex, 1);
-      frame.fillRect(localX - 40, -42, 80, 80);
+      frame.fillRect(localX - 36, -36, 72, 72);
       frame.lineStyle(3, UI.inkHex, 1);
-      frame.strokeRect(localX - 40, -42, 80, 80);
+      frame.strokeRect(localX - 36, -36, 72, 72);
       card.add(frame);
       const generation = this.renderGeneration;
       void loadDrawing(this, fighter).then((key) => {
         if (this.scene.isActive() && generation === this.renderGeneration) {
           card.add(
-            fitDrawing(this.add.image(localX, -2, key), 68).setAngle(
+            fitDrawing(this.add.image(localX, 0, key), 62).setAngle(
               fighterIndex === 0 ? -1.5 : 1.5
             )
           );
@@ -321,57 +273,28 @@ export class MyBattles extends Scene {
       });
     });
 
-    const matchup = label(this, 0, -66, plan.matchup, 22, UI.ink, true);
-    matchup.setWordWrapWidth(cardWidth - 210);
+    const matchup = label(this, 0, -42, plan.matchup, 22, UI.ink, true);
+    matchup.setWordWrapWidth(cardWidth - 190);
     card.add(matchup);
 
     card.add(
       label(
         this,
         0,
-        -39,
-        `${this.perspectiveLabel(plan.perspective)} • ${plan.finishLabel}`,
-        17,
+        -6,
+        `${this.perspectiveLabel(plan.perspective)} · ${plan.finishLabel} · D${report.day}`,
+        18,
         this.perspectiveTextColor(plan.perspective),
         true
       )
     );
-    card.add(label(this, 0, -16, plan.kindDayLabel, 14, UI.inkSoft, true));
-
-    const highlight = label(
-      this,
-      0,
-      17,
-      plan.highlightLine ?? 'SERVER RESULT • WINNER PRESERVED',
-      16,
-      UI.ink,
-      true
-    );
-    highlight.setWordWrapWidth(cardWidth - 210);
-    highlight.setLineSpacing(-3);
-    card.add(highlight);
-
-    const metadata = label(
-      this,
-      0,
-      51,
-      plan.metadataLine,
-      14,
-      UI.inkSoft,
-      false
-    );
-    metadata.setWordWrapWidth(cardWidth - 210);
-    card.add(metadata);
-
     card.add(
       label(
         this,
         0,
-        78,
-        plan.replayMotionAvailable
-          ? '▶ WATCH SERVER REPLAY'
-          : 'OPEN SAVED RESULT ›',
-        13,
+        37,
+        plan.replayMotionAvailable ? '▶ WATCH REPLAY' : 'SAVED RESULT ›',
+        15,
         UI.coralText,
         true
       )

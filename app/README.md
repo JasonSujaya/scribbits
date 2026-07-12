@@ -10,8 +10,8 @@ enter daily community rumbles. The app identity is `scribbits` in
 1. **Draw:** one Scribbit per UTC day. A validated catalog supplies 32 optional
    Doodle Dares, eight per Shape Power, plus eight optional bonus twists. Each
    player sees all four powers every four days, every prompt before Day 33, and
-   no exact prompt-plus-twist card before Day 257. The first-run strip states the
-   complete promise: draw, watch it fight, earn Ink. Blank, forming, and ready
+   no exact prompt-plus-twist card before Day 257. The compact Draw screen keeps
+   one Dare, the canvas, tools, analyzer, name, and submit action visible. Blank, forming, and ready
    feedback progressively reveals the mapping: filled = Inkquake, jagged = Nib
    Halo, compact = Smearstep, and colorful = Colorburst. The four analyzed traits
    always normalize to the same 100-point budget. Dominant color chooses the
@@ -31,8 +31,8 @@ enter daily community rumbles. The app identity is `scribbits` in
    The real-time paper arena uses one clipping-safe movement field and 232px
    drawings on a deterministic torn page. Local element stains, an irregular
    double-ink boundary, edge spectators, and transcript-triggered color surges
-   leave the combat center readable. A compact paper rail labels the view BOUT
-   and SERVER-LOCKED REPLAY; fighter strips show names, numeric HP, exact
+   leave the combat center readable. A compact paper rail keeps battle kind,
+   server lock, and icon controls visible; fighter strips show names, numeric HP, exact
    signature powers, and READY → WINDUP → ACTIVE state around a smaller
    fixed-tick clock. Real transcript moments appear in a transient paper margin
    instead of a permanent broadcast lower third. A
@@ -49,21 +49,26 @@ enter daily community rumbles. The app identity is `scribbits` in
    Presentation-only hitstop, HP trails, impact tiers, arena folds, mastery auras,
    and optional procedural sound make authored events land harder.
    Element × Shape Power combinations receive sixteen concise signature names.
-   Before every current fight, a mode-specific paper VS card shows both exact
-   signatures and one verified interaction from the exhaustive ten-pair Shape
-   Power matrix, explicitly framed as mechanics rather than win odds. During
+   Before every current fight, a mode-specific paper VS card keeps one battle
+   label, one match or Rival-page title, one stakes line, large fighter art,
+   both exact signatures, and one verified interaction from the exhaustive
+   ten-pair Shape Power matrix. It is explicitly framed as mechanics rather
+   than win odds. During
    replay, a power with no proven connection gets neutral no-clean-hit copy;
    shield and element cues appear only when the transcript explicitly proves them.
    Colorburst does not claim a miss at `ability_finished`, because its delayed
    echo can still connect after that event.
-   The finish is equally transcript-driven: an Inkcast Recap shows the exact
-   verdict, final HP, damage, signature, and decisive splat. Knockouts fold only
+   The finish is equally transcript-driven: a compact Inkcast Recap says
+   `YOU WON`, `YOU LOST`, or names the spectator winner before the exact verdict,
+   duration, and final HP. Owned exhibitions promote `CHOOSE A RIVAL` to one
+   primary action and keep Practice, tonight's pick, and the real return
+   destination secondary. Knockouts fold only
    the loser, double knockouts fold both fighters, and time decisions leave both
    standing behind the result card.
    Founding NPCs use deterministic stat-shaped mascot art rather than missing
    bitmap assets; ordinary player-image failures still receive a neutral fallback.
    A frozen shared catalog gives all twenty founders eight unique, bounded story
-   strings. Their epithet appears in the VS and Rival Draft, their opening owns the
+   strings. Their epithet appears in the compact Rival margin and Rival Draft, their opening owns the
    existing pre-`FIGHT!` ticker beat, their first power and result receive a
    fact-safe reaction, and a founding Rumble champion carries its voice into the
    Reddit result comment. None of this content enters the transcript or combat math.
@@ -89,7 +94,7 @@ enter daily community rumbles. The app identity is `scribbits` in
    All twenty founders also have a repo-authored three-page episode: 60 unique
    page titles, 60 founder-specific pre-fight cues, and 120 unique post-bout
    result lines. The current page is derived from the server score and reused by
-   Next Goal, Rival Draft, the blue-tape margin, and the VS ceremony. Replay binds
+   Next Goal, Rival Draft, the compact Rival margin, and the VS ceremony. Replay binds
    its result line to the validated transcript winner and server-confirmed
    Chronicle beat.
    Validation bans pre-fight outcome claims and any invented economy reward. No
@@ -97,8 +102,8 @@ enter daily community rumbles. The app identity is `scribbits` in
    The Battles tab is a recent Battle Scrapbook over the newest 20 stored reports,
    not lifetime history. It keeps expired Scribbits in the correct MY WIN/MY LOSS
    perspective through their normalized Reddit artist identity, pins Rumble and
-   Champion pages within each day, and derives finish, final HP, duration, and
-   FINAL/BIGGEST SPLAT copy from the same validated transcript as Replay. Old
+   Champion pages within each day, and keeps matchup, finish, and day on each
+   compact row. Replay exposes the exact verdict, duration, and final HP. Old
    result-only records say that motion is unavailable instead of rebuilding it.
    Replay returns to the same Scrapbook page; this view adds no storage, reward,
    or combat authority.
@@ -134,7 +139,7 @@ enter daily community rumbles. The app identity is `scribbits` in
    and up to six prior Arena days. It projects only server-owned Back records,
    payout receipts, forecasts, lifetime Clout, and visible report/Scribbit
    snapshots into open, pending, champion, finalist, no-Clout, or missed pages.
-   The selected drawing, artist, build, exact payout, and replay availability are
+   The selected drawing, artist, element, exact payout, and replay availability are
    shown only when their source still exists. Historical identity is never
    inferred from `champion:current`; hidden or deleted art is withheld. Its 48
    validated field notes provide eight variants per status with no same-status
@@ -261,6 +266,11 @@ boundary during browser iteration—it is not the production game server.
 - `src/client/lib/battlepresentation.ts`: pure impact, real-time paper-arena
   layout, non-overlapping outcome stack, HP, clock, shrinking-arena, and visible
   mastery plans derived from authoritative data.
+- `src/client/lib/overlay.ts`: design-space DOM alignment plus the shared native
+  action adapter; `replaypostfightactions.ts`, `replaypracticeoutcome.ts`, and
+  `replaysparrivaldraft.ts` keep canvas presentation while exposing matching
+  focusable controls and restoring the correct layer after Rival Draft errors or
+  close.
 - `src/client/lib/battlerecap.ts`: pure transcript-to-recap copy and finish
   semantics; `replaybattlerecap.ts` renders that plan without inferring results.
 - `src/client/lib/battlejournal.ts`: pure recent-report ordering, historical
@@ -391,7 +401,7 @@ Run these before handing off changes:
 npm run verify
 ```
 
-`npm run verify` runs type-check, lint, 96 simulation groups, and build.
+`npm run verify` runs type-check, lint, 98 simulation groups, and build.
 
 `npm run test:sim` covers deterministic analyzer, Inkbody mesh geometry, combat
 determinism, payload caps, archetype balance, slot neutrality, battle,

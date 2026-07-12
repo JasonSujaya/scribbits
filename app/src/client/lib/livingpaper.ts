@@ -21,8 +21,8 @@
 import * as Phaser from 'phaser';
 import { Scene } from 'phaser';
 import type { Element } from '../../shared/arena';
-import { generatePaperTexture } from './art';
-import { ELEMENT_STYLES, prefersReducedMotion, UI } from './theme';
+import { ELEMENT_STYLES, prefersReducedMotion } from './theme';
+import { paperStage } from './visualassets';
 
 // Mobile particle budget: the ambient speck field plus any forecast field must
 // never exceed this many live particles at once. Kept small on purpose.
@@ -86,13 +86,12 @@ export class LivingPaper {
 
     this.buildPaper();
     const reduceMotion = prefersReducedMotion();
-    this.buildParallaxLayers(!reduceMotion);
+    this.buildParallaxLayers(false);
     if (!reduceMotion) {
       this.buildAmbientSpecks();
       if (opts.boostedElement) this.buildForecastAmbience(opts.boostedElement);
       if (opts.edgeCreatures !== false) {
         this.scheduleEdgeCreatures();
-        this.scheduleWanderingScribbits();
       }
       this.buildVignette();
     }
@@ -105,14 +104,7 @@ export class LivingPaper {
 
   // --- Base paper -----------------------------------------------------------
   private buildPaper(): void {
-    generatePaperTexture(this.scene);
-    const { width, height } = this.scene.scale;
-    const paper = this.scene.add
-      .tileSprite(0, 0, width, height, 'paper')
-      .setOrigin(0)
-      .setScrollFactor(0)
-      .setDepth(-100);
-    this.tileSprites.push(paper);
+    paperStage(this.scene);
   }
 
   // --- Parallax doodle-motif layers -----------------------------------------
@@ -127,12 +119,12 @@ export class LivingPaper {
     const layerA = this.scene.add
       .tileSprite(width / 2, height / 2, width + 120, height + 120, keyA)
       .setScrollFactor(0)
-      .setAlpha(0.5)
+      .setAlpha(0.08)
       .setDepth(-98);
     const layerB = this.scene.add
       .tileSprite(width / 2, height / 2, width + 120, height + 120, keyB)
       .setScrollFactor(0)
-      .setAlpha(0.38)
+      .setAlpha(0.05)
       .setDepth(-98);
     this.tileSprites.push(layerA, layerB);
 
@@ -255,11 +247,11 @@ export class LivingPaper {
       speedY: { min: -6, max: -14 },
       speedX: { min: -6, max: 6 },
       scale: { start: 0.14, end: 0 },
-      alpha: { start: 0.28, end: 0 },
+      alpha: { start: 0.1, end: 0 },
       tint: 0x7a6a56,
-      frequency: 620,
+      frequency: 1800,
       quantity: 1,
-      maxParticles: Math.floor(MAX_AMBIENT_PARTICLES / 2),
+      maxParticles: 4,
     });
     emitter.setScrollFactor(0).setDepth(-96);
     this.emitters.push(emitter);
@@ -548,104 +540,6 @@ export class LivingPaper {
     smile.arc(0, 8, 12, 0.15 * Math.PI, 0.85 * Math.PI, false);
     smile.strokePath();
     creature.add(smile);
-  }
-
-  // --- Wandering scribbit silhouettes ----------------------------------------
-  // Small creature silhouettes that wander around the page margins, making the
-  // hub feel alive like Cookie Run's kingdom with cookies walking around.
-  private scheduleWanderingScribbits(): void {
-    // Spawn a wanderer every 8-15 seconds
-    this.timers.push(
-      this.scene.time.addEvent({
-        delay: 8000,
-        loop: true,
-        callback: () => {
-          if (this.paused || this.destroyed) return;
-          if (Math.random() > 0.6) this.spawnWanderer();
-        },
-      })
-    );
-  }
-
-  private spawnWanderer(): void {
-    const { width, height } = this.scene.scale;
-    const elements: Element[] = ['ember', 'tide', 'moss', 'storm'];
-    const element = elements[Math.floor(Math.random() * elements.length)] ?? 'ember';
-    const style = ELEMENT_STYLES[element];
-
-    // Small creature container
-    const creature = this.scene.add.container(0, 0).setScrollFactor(0).setDepth(-92);
-    this.extra.push(creature);
-
-    // Draw a tiny creature silhouette
-    const g = this.scene.add.graphics();
-    const size = 24 + Math.random() * 16;
-    g.fillStyle(style.soft, 0.4);
-    g.fillCircle(0, 0, size);
-    g.lineStyle(3, style.primary, 0.6);
-    g.strokeCircle(0, 0, size);
-    // Little eyes
-    g.fillStyle(UI.creamHex, 0.8);
-    g.fillCircle(-size * 0.3, -size * 0.2, size * 0.2);
-    g.fillCircle(size * 0.3, -size * 0.2, size * 0.2);
-    creature.add(g);
-
-    // Start position: random edge
-    const edge = Math.floor(Math.random() * 4);
-    let startX: number, startY: number, endX: number, endY: number;
-    const margin = 60;
-
-    if (edge === 0) {
-      // Top edge
-      startX = margin + Math.random() * (width - margin * 2);
-      startY = -margin;
-      endX = margin + Math.random() * (width - margin * 2);
-      endY = height + margin;
-    } else if (edge === 1) {
-      // Right edge
-      startX = width + margin;
-      startY = margin + Math.random() * (height - margin * 2);
-      endX = -margin;
-      endY = margin + Math.random() * (height - margin * 2);
-    } else if (edge === 2) {
-      // Bottom edge
-      startX = margin + Math.random() * (width - margin * 2);
-      startY = height + margin;
-      endX = margin + Math.random() * (width - margin * 2);
-      endY = -margin;
-    } else {
-      // Left edge
-      startX = -margin;
-      startY = margin + Math.random() * (height - margin * 2);
-      endX = width + margin;
-      endY = margin + Math.random() * (height - margin * 2);
-    }
-
-    creature.setPosition(startX, startY);
-
-    // Wander across the screen with a gentle bob
-    const duration = 12000 + Math.random() * 8000;
-    this.tweens.push(
-      this.scene.tweens.add({
-        targets: creature,
-        x: endX,
-        y: endY,
-        duration,
-        ease: 'Sine.easeInOut',
-        onComplete: () => creature.destroy(),
-      })
-    );
-    // Gentle bobbing motion
-    this.tweens.push(
-      this.scene.tweens.add({
-        targets: creature,
-        y: creature.y - 10,
-        duration: 800,
-        yoyo: true,
-        repeat: Math.floor(duration / 1600),
-        ease: 'Sine.easeInOut',
-      })
-    );
   }
 
   // --- Countdown vignette ----------------------------------------------------

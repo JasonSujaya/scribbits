@@ -45,12 +45,18 @@ currency, or combat power.
 
 ## Current Ship Gates
 
-- [x] Local equivalent of `npm run verify` passes: TypeScript, ESLint, 96
-      simulation groups, and production build (July 11).
+- [x] Local equivalent of `npm run verify` passes: TypeScript, ESLint, 98
+      simulation groups, and production build (July 12).
 - [x] Fresh mobile browser proof covers the optional deterministic Doodle Dare,
       first-run draw -> fight -> Ink promise, blank/forming/ready feedback,
       full drawing, birth reveal, live paper-broadcast exhibition, Skip, and
       transcript-derived recap with zero captured runtime errors (July 11).
+- [x] An uncurated 320x568 browser run hand-drew `Spiral Splat`, visibly taught
+      the four drawing-to-power mappings before its first mark, produced its
+      server-analyzed Firetip Halo, and completed a normal-speed founder fight.
+      The immediate result, waiting Rival Draft, and persistent Arena card all
+      retain the authoritative 1–0 score and Day 10 return cue with zero runtime
+      or console errors (July 12).
 - [x] Daily creative content now uses 32 validated Doodle Dares, balanced eight
       per Shape Power, and eight optional twists. Every four-day window covers
       all powers, prompts repeat only after 32 days, and exact cards only after 256. The accessible 320x568 card fits above the tools and disappears on the
@@ -96,7 +102,7 @@ currency, or combat power.
       turn-like podiums or a broadcast dashboard: full-height torn paper,
       clipping-safe 232px fighters, localized element stains, a rough truthful
       boundary, transcript-reactive surges, compact numeric-HP/Shape Power state
-      strips, a smaller server clock, explicit SERVER-LOCKED REPLAY copy, a
+      strips, a smaller server clock, a compact server-lock label, a
       15-second Sudden Scribble rush, and a transient commentary margin. Every
       replay ends by 20 seconds. Default, chosen-rival, 320x568 WebGL,
       Canvas, reduced-motion, Skip, and instrumented 1x -> 2x -> 4x -> normal-speed
@@ -105,8 +111,12 @@ currency, or combat power.
       mode-specific paper VS ceremony with both exact signature moves and one
       verified mechanics card. Deterministic coverage exhausts all sixteen ordered
       Shape Power combinations as ten symmetric pairings, bans win-odds language,
-      and WebGL/Canvas proof keeps sampled cards readable with zero runtime errors
-      (July 11).
+      and WebGL/Canvas proof keeps sampled cards readable with zero runtime errors.
+      The two visible `35%` Halo claims now derive from the reduction value the
+      engine actually consumes. Smearstep's `TWICE` now derives from the dash
+      count its indexed authoritative schedule consumes; a dedicated unchanged
+      golden hash, exact ten-card snapshots, direct parity checks, and fresh
+      320x568 Ring/Halo and Smearstep ceremonies remain green (July 12).
 - [x] The transient paper commentary margin selects varied power, hit, miss, shield,
       echo, arena, and late-fight copy deterministically from authoritative facts.
       Its versioned shared pack has 104 globally unique lines in 25 strict banks;
@@ -196,7 +206,8 @@ currency, or combat power.
       the exact authored Shape Power activation that caused them (July 11).
 - [x] The Battles tab is now a mobile Battle Scrapbook for the newest 20 stored
       reports. It preserves MY WIN/MY LOSS after roster expiry, pins Rumble and
-      Champion pages within a day, shows exact finish/highlight/HP/duration facts,
+      Champion pages within a day, keeps matchup/finish/day rows compact and
+      exposes the exact verdict, duration, and final HP in Replay,
       labels transcript-less records honestly, and returns from Replay to the same
       page. A 320x568 WebGL pass covers paging, an expired-fighter loss replay,
       Skip/result/return, and empty runtime and console errors (July 11).
@@ -210,6 +221,23 @@ currency, or combat power.
       coverage and a 320x568 WebGL pass prove Day 8 Replay/Skip/return, loaded
       drawings, and empty runtime and console errors without a new Redis key or
       reward track (July 11).
+- [x] The 320x568 default hierarchy is now compact across Arena, Draw, Replay,
+      Battles, Scout, Gallery, Legacy Book, Collection, Field Guide, Practice,
+      and Mystery Ink. Primary cards lead with one headline, one status, and one
+      action; rules, moderation, and secondary facts move behind explicit taps
+      without changing server authority or rewards (July 12).
+- [x] The central battle payoff now has one visual hierarchy. The 320x568 VS
+      ceremony keeps names, levels, elements, signatures, Rival stakes/page, and
+      exact matchup mechanics while removing three duplicate explanations and
+      enlarging both drawings. Results lead with `YOU WON`, `YOU LOST`, or the
+      spectator winner, preserve exact finish/duration/final HP, promote
+      `CHOOSE A RIVAL` to the single primary action, and demote Practice, pick,
+      and return to one compact row. One pure planner and shared renderer keep
+      win/loss branches aligned. A normal-speed Fernibble decider proves VS,
+      result, compact signed margin, native result/Rival/archived controls,
+      Rival-close restoration, and keyboard Arena return at 320x568. Every
+      critical replay action retains a 100-design-pixel/44-CSS-pixel target with
+      zero runtime or console errors (July 12).
 - [x] WebGL and Canvas browser proof verifies the expanded 36-item Collection and
       all eight cosmetic Shape Power Relics, including the Rare/Epic art page,
       with zero captured runtime errors (July 11).

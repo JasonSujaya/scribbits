@@ -6,6 +6,7 @@ import type {
   LegacyReturnReceipt,
 } from '../../shared/arena';
 import { fitDrawing, loadDrawing } from './scribbits';
+import { paperIcon } from './papericons';
 import { NAV_SAFE, TYPE, UI, prefersReducedMotion } from './theme';
 import { button, ghostButton, handLettered, label, stickerCard } from './ui';
 
@@ -13,8 +14,9 @@ export const LEGACY_BOOK_PAGE_SIZE = 4;
 
 const CARD_COLUMNS = 2;
 const CARD_GAP = 22;
-const CARD_HEIGHT = 356;
-const CARD_ROW_STEP = 378;
+const CARD_HEIGHT = 286;
+const CARD_ROW_GAP = 18;
+const CARD_ROW_STEP = CARD_HEIGHT + CARD_ROW_GAP;
 
 type FinishStyle = {
   accent: number;
@@ -68,16 +70,6 @@ export function renderLegacyBook(options: LegacyBookOptions): void {
   const { scene, top } = options;
   const { width, height } = scene.scale;
 
-  label(
-    scene,
-    width / 2,
-    top - 82,
-    'EVERY FINISHED RUN BECOMES A CARD',
-    20,
-    UI.inkSoft,
-    true
-  );
-
   buildPageControls(options, top - 24);
 
   if (!options.loggedIn) {
@@ -126,7 +118,7 @@ export function renderLegacyBook(options: LegacyBookOptions): void {
   const horizontalMargin = 34;
   const cardWidth = (width - horizontalMargin * 2 - CARD_GAP) / CARD_COLUMNS;
   const firstX = horizontalMargin + cardWidth / 2;
-  const firstY = top + 190;
+  const firstY = top + CARD_HEIGHT / 2 + 18;
 
   options.cards.slice(0, LEGACY_BOOK_PAGE_SIZE).forEach((card, index) => {
     const column = index % CARD_COLUMNS;
@@ -229,51 +221,48 @@ function buildLegacyCard(options: {
     -width / 2 + 12,
     -CARD_HEIGHT / 2 + 12,
     width - 24,
-    42,
-    10
+    36,
+    9
   );
   accent.lineStyle(finish === 'champion' ? 3 : 2, style.accent, 0.9);
   accent.strokeRoundedRect(
     -width / 2 + 12,
     -CARD_HEIGHT / 2 + 12,
     width - 24,
-    42,
-    10
+    36,
+    9
   );
   if (finish === 'champion') {
     accent.lineStyle(2, style.accent, 0.72);
     accent.strokeRoundedRect(
       -width / 2 + 18,
-      -CARD_HEIGHT / 2 + 58,
+      -CARD_HEIGHT / 2 + 54,
       width - 36,
-      CARD_HEIGHT - 72,
+      CARD_HEIGHT - 68,
       12
     );
   }
   card.add(accent);
 
-  const stamp = label(
-    scene,
-    -width / 2 + 26,
-    -CARD_HEIGHT / 2 + 33,
-    style.stamp,
-    16,
-    style.accentText,
-    true
-  ).setOrigin(0, 0.5);
-  const seal = label(
-    scene,
-    width / 2 - 31,
-    -CARD_HEIGHT / 2 + 33,
-    style.seal,
-    28,
-    style.accentText,
-    true
-  );
-  card.add([stamp, seal]);
+  const seal =
+    finish === 'believed'
+      ? paperIcon(scene, 'heart', 0, -CARD_HEIGHT / 2 + 30, {
+          size: 25,
+          fill: style.accent,
+        })
+      : label(
+          scene,
+          0,
+          -CARD_HEIGHT / 2 + 30,
+          style.seal,
+          25,
+          style.accentText,
+          true
+        );
+  card.add(seal);
 
-  const artY = -67;
-  const artSize = 150;
+  const artY = -37;
+  const artSize = 112;
   const artFrame = scene.add.graphics();
   artFrame.fillStyle(UI.creamHex, 1);
   artFrame.fillRoundedRect(
@@ -305,47 +294,33 @@ function buildLegacyCard(options: {
   const name = label(
     scene,
     0,
-    28,
-    fitText(legacyCard.name.toUpperCase(), 20),
-    27,
+    45,
+    fitText(legacyCard.name.toUpperCase(), 18),
+    26,
     UI.ink,
     true
   ).setWordWrapWidth(width - 28);
   const finishLine = label(
     scene,
     0,
-    69,
+    78,
     `${finishLabel(legacyCard)} · DAY ${legacyCard.legacy.archivedDay}`,
-    18,
+    17,
     style.accentText,
     true
   );
-  const record = label(
-    scene,
-    0,
-    105,
-    `Lv${legacyCard.legacy.level} · ${legacyCard.legacy.wins}W–${legacyCard.legacy.losses}L · ♥${legacyCard.legacy.belief}`,
-    20,
-    UI.inkSoft,
-    true
-  );
-  const signatureCopy = creatorSignature(legacyCard);
-  const signature = label(
-    scene,
-    0,
-    143,
-    signatureCopy,
-    16,
-    finish === 'faded' ? UI.inkSoft : UI.goldText,
-    true
-  ).setWordWrapWidth(width - 26);
-  card.add([name, finishLine, record, signature]);
+  const openMark = scene.add.graphics();
+  openMark.lineStyle(4, style.accent, 1);
+  openMark.lineBetween(width / 2 - 42, 108, width / 2 - 22, 108);
+  openMark.lineBetween(width / 2 - 30, 100, width / 2 - 22, 108);
+  openMark.lineBetween(width / 2 - 30, 116, width / 2 - 22, 108);
+  card.add([name, finishLine, openMark]);
 
   if (finish === 'champion' && !prefersReducedMotion()) {
     const glint = label(
       scene,
       width / 2 - 50,
-      63,
+      -112,
       '✦',
       24,
       UI.goldText,
@@ -473,7 +448,7 @@ export function openLegacyCardDetail(
       scene,
       0,
       -30,
-      creatorSignature(legacyCard, false),
+      creatorSignature(legacyCard),
       20,
       UI.inkSoft,
       true
@@ -806,11 +781,11 @@ function chooseCeremonyHero(cards: LegacyCard[]): LegacyCard | undefined {
   );
 }
 
-function creatorSignature(card: LegacyCard, compact = true): string {
-  const creator = `u/${fitText(card.artist, compact ? 16 : 24)}`;
+function creatorSignature(card: LegacyCard): string {
+  const creator = `u/${fitText(card.artist, 24)}`;
   const title = card.legacy.creatorTitle?.name;
   return title
-    ? `${creator} · ★ ${fitText(title, compact ? 15 : 24)} ★`
+    ? `${creator} · ★ ${fitText(title, 24)} ★`
     : `${creator} · unsigned`;
 }
 

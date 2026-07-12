@@ -144,14 +144,26 @@ export type ReplayBattleClockPlan = Readonly<{
 export type ReplayOutcomeStackPlan = Readonly<{
   recapY: number;
   founderOutcomeY: number | null;
-  rivalChoicesY: number | null;
-  backContenderButtonY: number | null;
-  backButtonY: number;
 }>;
 
-export type ReplayLossActionStackPlan = Readonly<{
-  backContenderButtonOffset: number | null;
-  returnButtonOffset: number;
+export type ReplayPostFightActionKind =
+  | 'rivals'
+  | 'practice'
+  | 'backContender'
+  | 'return';
+
+export type ReplayPostFightAction = Readonly<{
+  kind: ReplayPostFightActionKind;
+  label: string;
+  accessibleLabel: string;
+  tone: 'coral' | 'gold' | 'ghost';
+}>;
+
+export type ReplayPostFightActionPlan = Readonly<{
+  primary: ReplayPostFightAction;
+  secondary: readonly ReplayPostFightAction[];
+  buttonHeight: number;
+  secondaryRowOffset: number | null;
 }>;
 
 const clamp = (value: number, minimum: number, maximum: number): number => {
@@ -290,13 +302,6 @@ export function planReplayOutcomeStack(input: {
   hasFounderOutcome: boolean;
 }): ReplayOutcomeStackPlan {
   const viewportHeight = Math.max(800, input.viewportHeight);
-  const backButtonY = viewportHeight - 58;
-  const backContenderButtonY = input.canBackContender
-    ? viewportHeight - 162
-    : null;
-  const rivalChoicesY = input.canChooseRival
-    ? viewportHeight - (input.canBackContender ? 270 : 166)
-    : null;
   const recapY =
     viewportHeight -
     (input.canChooseRival && input.canBackContender ? 467 : 405);
@@ -305,19 +310,76 @@ export function planReplayOutcomeStack(input: {
   return {
     recapY,
     founderOutcomeY,
-    rivalChoicesY,
-    backContenderButtonY,
-    backButtonY,
   };
 }
 
-/** Keeps a loss receipt actionable when tonight's Back is already locked. */
-export function planReplayLossActionStack(input: {
+/** One obvious next move, with optional utilities kept visually secondary. */
+export function planReplayPostFightActions(input: {
+  canChooseRival: boolean;
   canBackContender: boolean;
-}): ReplayLossActionStackPlan {
+  returnLabel: string;
+}): ReplayPostFightActionPlan {
+  const buttonHeight = 100;
+  const secondaryRowOffset = 114;
+  const returnAction: ReplayPostFightAction = Object.freeze({
+    kind: 'return',
+    label: input.returnLabel,
+    accessibleLabel: input.returnLabel.replace(/\s*›\s*$/, ''),
+    tone: 'ghost',
+  });
+
+  if (input.canChooseRival) {
+    const secondary: ReplayPostFightAction[] = [
+      Object.freeze({
+        kind: 'practice',
+        label: 'PRACTICE',
+        accessibleLabel: 'Practice',
+        tone: 'ghost',
+      }),
+    ];
+    if (input.canBackContender) {
+      secondary.push(
+        Object.freeze({
+          kind: 'backContender',
+          label: 'PICK',
+          accessibleLabel: "Pick tonight's winner",
+          tone: 'ghost',
+        })
+      );
+    }
+    secondary.push(returnAction);
+    return Object.freeze({
+      primary: Object.freeze({
+        kind: 'rivals',
+        label: 'CHOOSE A RIVAL',
+        accessibleLabel: 'Choose a rival',
+        tone: 'coral',
+      }),
+      secondary: Object.freeze(secondary),
+      buttonHeight,
+      secondaryRowOffset,
+    });
+  }
+
+  if (input.canBackContender) {
+    return Object.freeze({
+      primary: Object.freeze({
+        kind: 'backContender',
+        label: "PICK TONIGHT'S WINNER",
+        accessibleLabel: "Pick tonight's winner",
+        tone: 'gold',
+      }),
+      secondary: Object.freeze([returnAction]),
+      buttonHeight,
+      secondaryRowOffset,
+    });
+  }
+
   return Object.freeze({
-    backContenderButtonOffset: input.canBackContender ? 620 : null,
-    returnButtonOffset: input.canBackContender ? 730 : 620,
+    primary: returnAction,
+    secondary: Object.freeze([]),
+    buttonHeight,
+    secondaryRowOffset: null,
   });
 }
 

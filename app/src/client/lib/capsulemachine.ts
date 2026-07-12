@@ -30,9 +30,9 @@ const DEPTH = 2500;
 const COLLECTION_BAR_WIDTH = 480;
 const COLLECTION_BAR_HEIGHT = 22;
 const CAPSULE_ODDS_COPY =
-  `ODDS · ${CAPSULE_RARITY_PERCENTAGES.common}% common · ` +
-  `${CAPSULE_RARITY_PERCENTAGES.rare}% rare · ` +
-  `${CAPSULE_RARITY_PERCENTAGES.epic}% epic`;
+  `${CAPSULE_RARITY_PERCENTAGES.common}% COMMON · ` +
+  `${CAPSULE_RARITY_PERCENTAGES.rare}% RARE · ` +
+  `${CAPSULE_RARITY_PERCENTAGES.epic}% EPIC`;
 
 // Collector ranks are presentation-only milestones. Pull rewards, rarity, and
 // pity remain entirely server-authoritative.
@@ -51,13 +51,7 @@ const createCapsuleOperationId = (): string => {
   );
 };
 
-const collectorProgressForPullCount = (
-  pullCount: number
-): {
-  currentRankName: string;
-  nextRankName: string | null;
-  pullsUntilNextRank: number;
-} => {
+const collectorRankNameForPullCount = (pullCount: number): string => {
   let currentRankIndex = 0;
   for (let index = COLLECTOR_RANKS.length - 1; index >= 0; index -= 1) {
     const rank = COLLECTOR_RANKS[index];
@@ -67,15 +61,7 @@ const collectorProgressForPullCount = (
     }
   }
 
-  const currentRank = COLLECTOR_RANKS[currentRankIndex] ?? COLLECTOR_RANKS[0];
-  const nextRank = COLLECTOR_RANKS[currentRankIndex + 1];
-  return {
-    currentRankName: currentRank.name,
-    nextRankName: nextRank?.name ?? null,
-    pullsUntilNextRank: nextRank
-      ? Math.max(0, nextRank.minimumPullCount - pullCount)
-      : 0,
-  };
+  return (COLLECTOR_RANKS[currentRankIndex] ?? COLLECTOR_RANKS[0]).name;
 };
 
 export type CapsuleMachineOpts = {
@@ -124,10 +110,10 @@ export function openCapsuleMachine(
   const title = handLettered(
     scene,
     width / 2,
-    150,
+    130,
     'MYSTERY INK',
-    56,
-    UI.goldText,
+    48,
+    '#ffd447',
     true
   )
     .setScrollFactor(0)
@@ -138,10 +124,10 @@ export function openCapsuleMachine(
   const inkChip = label(
     scene,
     width / 2,
-    210,
-    `🫙 Ink: ${ink}`,
+    188,
+    `🫙 ${ink}`,
     TYPE.title,
-    UI.ink,
+    UI.cream,
     true
   )
     .setScrollFactor(0)
@@ -151,18 +137,17 @@ export function openCapsuleMachine(
   // Permanent collection progress lives above the machine so it remains
   // readable while prize cards animate over the lower half of the portrait UI.
   const progressCard = scene.add
-    .container(width / 2, 310)
+    .container(width / 2, 274)
     .setScrollFactor(0)
     .setDepth(DEPTH + 2);
   const progressPaper = scene.add
-    .rectangle(0, 0, width - 150, 140, UI.creamHex, 0.96)
+    .rectangle(0, 0, width - 150, 116, UI.creamHex, 0.96)
     .setStrokeStyle(3, UI.inkHex, 0.85);
-  const collectorRankText = label(scene, 0, -54, '', 20, UI.goldText, true);
-  const collectionText = label(scene, 0, -28, '', TYPE.caption, UI.ink, true);
+  const collectorRankText = label(scene, 0, -40, '', 19, UI.goldText, true);
   const collectionTrack = scene.add
     .rectangle(
       -COLLECTION_BAR_WIDTH / 2,
-      0,
+      -8,
       COLLECTION_BAR_WIDTH,
       COLLECTION_BAR_HEIGHT,
       UI.progressTrack,
@@ -180,12 +165,11 @@ export function openCapsuleMachine(
       1
     )
     .setOrigin(0, 0.5);
-  const pityText = label(scene, 0, 28, '', TYPE.caption, UI.coralText, true);
-  const oddsText = label(scene, 0, 55, CAPSULE_ODDS_COPY, 17, UI.inkSoft, true);
+  const pityText = label(scene, 0, 22, '', 19, UI.coralText, true);
+  const oddsText = label(scene, 0, 47, CAPSULE_ODDS_COPY, 20, UI.inkSoft, true);
   progressCard.add([
     progressPaper,
     collectorRankText,
-    collectionText,
     collectionTrack,
     collectionFill,
     pityText,
@@ -204,21 +188,12 @@ export function openCapsuleMachine(
     const collectionRatio =
       collectionTotal === 0 ? 0 : discoveredCount / collectionTotal;
     const pityRemaining = Math.max(1, Math.floor(progress.pityRemaining));
-    const pullCountWord = pullCount === 1 ? 'pull' : 'pulls';
-    const pullWord = pityRemaining === 1 ? 'pull' : 'pulls';
     const fillWidth = Math.max(6, (COLLECTION_BAR_WIDTH - 6) * collectionRatio);
-    const collectorProgress = collectorProgressForPullCount(pullCount);
-    const collectorProgressCopy = collectorProgress.nextRankName
-      ? `${collectorProgress.currentRankName} · ${collectorProgress.pullsUntilNextRank} ` +
-        `${collectorProgress.pullsUntilNextRank === 1 ? 'pull' : 'pulls'} to ` +
-        collectorProgress.nextRankName
-      : `${collectorProgress.currentRankName} · ${pullCount} lifetime ${pullCountWord}`;
-
-    collectorRankText.setText(`COLLECTOR · ${collectorProgressCopy}`);
-    collectionText.setText(
-      `PERMANENT COLLECTION · ${discoveredCount} / ${collectionTotal}`
+    const collectorRankName = collectorRankNameForPullCount(pullCount);
+    collectorRankText.setText(
+      `${collectorRankName.toUpperCase()} · ${discoveredCount}/${collectionTotal} FOUND`
     );
-    pityText.setText(`✨ EPIC guaranteed in ${pityRemaining} ${pullWord}`);
+    pityText.setText(`✨ EPIC IN ≤${pityRemaining}`);
     collectionFill.setVisible(collectionRatio > 0);
     scene.tweens.killTweensOf(collectionFill);
 
@@ -246,7 +221,7 @@ export function openCapsuleMachine(
 
   // --- The machine (hand-drawn) --------------------------------------------
   const machineX = width / 2;
-  const machineY = height * 0.46;
+  const machineY = height * 0.47;
   const machine = scene.add
     .container(machineX, machineY)
     .setScrollFactor(0)
@@ -260,14 +235,8 @@ export function openCapsuleMachine(
   machine.add(capsule);
 
   // --- Pull button + copy ---------------------------------------------------
-  const brokeCopy = [
-    'Out of ink! Care for a scribbit to earn more 🫙',
-    'Your jar is a little dry. Care or spar for more Ink 🖊️',
-    'No ink, no magic — go win a spar first! ✏️',
-  ];
-
   const priceCard = scene.add
-    .rectangle(width / 2, height * 0.7, width - 150, 78, UI.creamHex, 0.96)
+    .rectangle(width / 2, height * 0.7, width - 150, 64, UI.creamHex, 0.96)
     .setStrokeStyle(3, UI.inkHex, 0.85)
     .setScrollFactor(0)
     .setDepth(DEPTH + 2);
@@ -301,17 +270,17 @@ export function openCapsuleMachine(
   layer.add(pullBtn);
 
   function refreshAffordance(): void {
-    inkChip.setText(`🫙 Ink: ${ink}`);
+    inkChip.setText(`🫙 ${ink}`);
     const canAfford = ink >= nextCost;
     pullBtn.setAlpha(canAfford ? 1 : 0.55);
     if (!canAfford && !pulling) {
-      helper.setText(brokeCopy[ink % brokeCopy.length] ?? brokeCopy[0] ?? '');
+      helper.setText(`NEED ${Math.max(0, nextCost - ink)} MORE INK`);
       helper.setColor(UI.coralText);
     } else if (!pulling) {
       helper.setText(
         nextCost === CAPSULE_FIRST_DAILY_COST
-          ? `Next: ${nextCost} Ink — daily discount (then ${CAPSULE_COST})`
-          : `Next capsule: ${nextCost} Ink.`
+          ? `${nextCost} INK · DAILY DEAL · THEN ${CAPSULE_COST}`
+          : `${nextCost} INK`
       );
       helper.setColor(UI.inkSoft);
     }

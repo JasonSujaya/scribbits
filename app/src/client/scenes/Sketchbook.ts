@@ -14,7 +14,6 @@ import {
 import {
   loadDrawing,
   fitDrawing,
-  levelOf,
   releaseRenderedDrawingTextures,
 } from '../lib/scribbits';
 import { NAV_SAFE, TYPE, UI } from '../lib/theme';
@@ -25,10 +24,7 @@ import {
   handLettered,
   paperCard,
   stickerCard,
-  levelBadge,
   errorPanel,
-  appTabBar,
-  fadeToScene,
 } from '../lib/ui';
 import { openDetailModal } from '../lib/detailmodal';
 import type { ErrorPanel } from '../lib/ui';
@@ -39,9 +35,15 @@ import type {
   LegendsState,
   Scribbit,
 } from '../../shared/arena';
-import { dailyDrawTabLabel, navigateToDailyDraw } from '../lib/draweligibility';
+import { navigateToDailyDraw } from '../lib/draweligibility';
 import { renderCollectionBook } from '../lib/collectionbook';
 import { LEGACY_BOOK_PAGE_SIZE, renderLegacyBook } from '../lib/legacycards';
+import { appDock } from '../lib/appdock';
+
+const LEGEND_CARD_HEIGHT = 250;
+const LEGEND_CARD_ROW_GAP = 14;
+const LEGEND_CARD_ROW_STEP = LEGEND_CARD_HEIGHT + LEGEND_CARD_ROW_GAP;
+const LEGEND_CARD_TOP_GAP = 16;
 
 // Three-tab gallery: community Legends, the caller's immutable Legacy Book,
 // and a permanent cosmetic Collection. This scene orchestrates data only;
@@ -386,38 +388,9 @@ export class Sketchbook extends Scene {
   }
 
   private buildAppTabs(): void {
-    appTabBar(this, 'gallery', [
-      {
-        key: 'arena',
-        icon: '🏟️',
-        label: 'Arena',
-        onClick: () => fadeToScene(this, 'ArenaHome'),
-      },
-      {
-        key: 'gallery',
-        icon: '🏆',
-        label: 'Gallery',
-        onClick: () => this.switchTab('legends'),
-      },
-      {
-        key: 'draw',
-        icon: '✏️',
-        label: dailyDrawTabLabel(this),
-        onClick: () => navigateToDailyDraw(this),
-      },
-      {
-        key: 'battles',
-        icon: '⚔️',
-        label: 'Battles',
-        onClick: () => fadeToScene(this, 'MyBattles'),
-      },
-      {
-        key: 'scout',
-        icon: '📖',
-        label: 'Scout',
-        onClick: () => fadeToScene(this, 'ScoutNotebook'),
-      },
-    ]);
+    appDock(this, 'gallery', {
+      gallery: () => this.switchTab('legends'),
+    });
   }
 
   private buildTabs(y: number): void {
@@ -567,12 +540,15 @@ export class Sketchbook extends Scene {
 
   private getLegendPageSize(top = 320): number {
     const columns = 2;
-    const cardHeight = 380;
+    const contentTop = top + LEGEND_CARD_TOP_GAP;
+    const contentBottom = this.scale.height - NAV_SAFE - 18;
+    const availableHeight = Math.max(
+      LEGEND_CARD_HEIGHT,
+      contentBottom - contentTop
+    );
     const visibleRows = Math.max(
       1,
-      Math.floor(
-        (this.scale.height - NAV_SAFE - cardHeight / 2 - top - 210) / 410
-      ) + 1
+      Math.floor((availableHeight + LEGEND_CARD_ROW_GAP) / LEGEND_CARD_ROW_STEP)
     );
     return columns * visibleRows;
   }
@@ -634,63 +610,54 @@ export class Sketchbook extends Scene {
       const col = index % columns;
       const row = Math.floor(index / columns);
       const x = 30 + cellWidth * (col + 0.5);
-      const y = top + 210 + row * 410;
+      const y =
+        top +
+        LEGEND_CARD_TOP_GAP +
+        LEGEND_CARD_HEIGHT / 2 +
+        row * LEGEND_CARD_ROW_STEP;
       this.buildLegendCard(legend, x, y);
     });
   }
 
   private buildLegendCard(legend: Scribbit, x: number, y: number): void {
-    const cardHeight = 380;
     const cardWidth = 300;
-    paperCard(this, x, y, cardWidth, cardHeight, true);
-    const top = y - cardHeight / 2;
+    paperCard(this, x, y, cardWidth, LEGEND_CARD_HEIGHT, true).setDepth(1);
+    const top = y - LEGEND_CARD_HEIGHT / 2;
 
-    // Framed art up top with a level coin in the corner. Tap → detail modal.
-    const artY = top + 84;
+    const artY = top + 61;
     const generation = this.buildGeneration;
     void loadDrawing(this, legend).then((key) => {
       if (!this.isCurrentBuild(generation)) return;
-      const img = fitDrawing(this.add.image(x, artY, key), 128).setDepth(2);
-      img.setInteractive({ useHandCursor: true });
-      img.on('pointerup', () => this.openDetail(legend));
+      fitDrawing(this.add.image(x, artY, key), 94).setDepth(2);
     });
-    levelBadge(
-      this,
-      x + cardWidth / 2 - 34,
-      top + 34,
-      levelOf(legend),
-      0.56
-    ).setDepth(4);
 
-    // Text block — tight rows, comfortably above the button.
-    label(this, x, artY + 78, legend.name.toUpperCase(), 32, UI.ink, true)
-      .setDepth(3)
-      .setWordWrapWidth(cardWidth - 42);
-    if (legend.legendTitle) {
-      label(this, x, artY + 104, legend.legendTitle, 22, UI.goldText, true)
-        .setDepth(3)
-        .setOrigin(0.5, 0)
-        .setWordWrapWidth(cardWidth - 40);
-    }
     label(
       this,
       x,
-      artY + 176,
-      `by u/${legend.artist} · 💛 ${legend.belief}`,
-      20,
-      UI.inkSoft,
+      top + 132,
+      fitCardText(legend.name.toUpperCase(), 18),
+      27,
+      UI.ink,
       true
     ).setDepth(3);
-
-    // "View + Believe" opens the shared modal (believe lives inside it).
-    ghostButton(
+    label(
       this,
       x,
-      y + cardHeight / 2 - 44,
-      '💛 View',
-      () => this.openDetail(legend),
-      200
+      top + 173,
+      legendStatusLine(legend),
+      17,
+      UI.goldText,
+      true
     ).setDepth(3);
+    label(this, x, top + 218, 'VIEW ›', 16, UI.coralText, true).setDepth(3);
+
+    // One full-card target keeps the compact presentation easy to tap. Every
+    // contextual action remains in the existing server-backed detail modal.
+    this.add
+      .rectangle(x, y, cardWidth, LEGEND_CARD_HEIGHT, 0xffffff, 0.001)
+      .setDepth(4)
+      .setInteractive({ useHandCursor: true })
+      .on('pointerup', () => this.openDetail(legend));
   }
 
   // Community terminal records are inspectable, but Belief freezes when a
@@ -756,4 +723,19 @@ export class Sketchbook extends Scene {
       }
     );
   }
+}
+
+function fitCardText(value: string, maxCharacters: number): string {
+  const compactValue = value.trim();
+  if (compactValue.length <= maxCharacters) return compactValue;
+  return `${compactValue.slice(0, maxCharacters - 1).trimEnd()}…`;
+}
+
+function legendStatusLine(legend: Scribbit): string {
+  const championPrefix = 'Champion of Day ';
+  if (legend.legendTitle?.startsWith(championPrefix)) {
+    const championDay = legend.legendTitle.slice(championPrefix.length).trim();
+    return championDay ? `CHAMPION · DAY ${championDay}` : 'CHAMPION';
+  }
+  return `BELOVED LEGEND · 💛 ${legend.belief}`;
 }

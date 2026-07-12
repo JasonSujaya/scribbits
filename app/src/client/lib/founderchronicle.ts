@@ -91,6 +91,19 @@ export type FounderChroniclePlan = Readonly<{
   legacyEncounterCount: number;
 }>;
 
+/** Keeps the persistent Arena card focused on the active score and return day. */
+export function formatFounderChronicleEvidenceLine(
+  plan: FounderChroniclePlan
+): string | null {
+  if (plan.activeRivalry) {
+    return `✎ ${plan.activeRivalry.scoreLine.toUpperCase()} · ${plan.activeRivalry.availabilityLine.toUpperCase()}`;
+  }
+  if (plan.resolvedNotes.length > 0 || plan.legacyEncounterCount > 0) {
+    return '✎ MARGIN';
+  }
+  return null;
+}
+
 export type FounderChronicleBeatCopy = Readonly<{
   headline: string;
   detail: string;
@@ -419,8 +432,8 @@ export function planFounderRivalEpisodeReceipt(
   return Object.freeze({
     founderId: founder.id,
     pageNumber: stakes.boutNumber,
-    headline: `PAGE ${stakes.boutNumber}/3 · ${episode.title}`,
-    detail: `${threadResolved ? 'MARGIN SIGNED' : 'THREAD CONTINUES'} · YOU ${beat.playerWins}–${beat.founderWins} ${founder.name.toUpperCase()}`,
+    headline: `${threadResolved ? 'MARGIN SIGNED' : 'THREAD CONTINUES'} · YOU ${beat.playerWins}–${beat.founderWins} ${founder.name.toUpperCase()}`,
+    detail: `PAGE ${stakes.boutNumber}/3 · ${episode.title}`,
     resultLine,
     latestWinner,
     threadResolved,

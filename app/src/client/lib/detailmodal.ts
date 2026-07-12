@@ -15,6 +15,7 @@ import {
 import { showToast } from '@devvit/web/client';
 import { loadDrawing, fitDrawing, recordText, moodStyleOf, levelOf, xpProgress } from './scribbits';
 import { ELEMENT_STYLES, TYPE, UI } from './theme';
+import { paperIcon } from './papericons';
 import {
   label,
   ghostButton,
@@ -42,7 +43,7 @@ export type DetailModalActions = {
   enterEnabled?: boolean;
   // Others':
   onBack?: (scribbit: Scribbit) => void;
-  backLabel?: string; // e.g. "🎯 Back" / "✓ Your pick" / "🔒 Backing locked"
+  backLabel?: string; // e.g. "Back" / "Your pick" / "Backing locked"
   backEnabled?: boolean;
   canBelieve?: boolean; // false to hide/disable Believe (own scribbit, logged out)
   // History:
@@ -167,8 +168,11 @@ export function openDetailModal(
   card.add(
     label(scene, -cardW / 2 + 36, cursor, `${recordText(scribbit)}`, TYPE.body, UI.inkSoft, true).setOrigin(0, 0.5)
   );
-  believeCountLabel = label(scene, 30, cursor, `💛 ${currentBelief}`, TYPE.body, UI.coralText, true);
-  card.add(believeCountLabel);
+  believeCountLabel = label(scene, 48, cursor, `${currentBelief}`, TYPE.body, UI.coralText, true);
+  card.add([
+    paperIcon(scene, 'heart', 18, cursor, { size: 24, fill: UI.gold }),
+    believeCountLabel,
+  ]);
   card.add(lifespanPips(scene, cardW / 2 - 70, cursor, daysLeft, 3, 0.7));
 
   // --- Contextual actions ---------------------------------------------------
@@ -182,7 +186,7 @@ export function openDetailModal(
         scene,
         0,
         actionsY - 90,
-        '⚔️ Battle history',
+        'Battle history',
         () => {
           close();
           opts.actions.onReplay?.(scribbit);
@@ -204,7 +208,7 @@ export function openDetailModal(
       }
       if (a.onEnter) {
         slots.push({
-          label: a.enterLabel ?? '⚔️ Enter Rumble',
+          label: a.enterLabel ?? 'Enter Rumble',
           fill: UI.coral,
           enabled: a.enterEnabled ?? true,
           run: () => runAndClose(() => a.onEnter?.(scribbit)),
@@ -212,11 +216,11 @@ export function openDetailModal(
       }
       if (a.onCare) {
         // A single "Care" shortcut that returns to home roster for the 3 actions.
-        slots.push({ label: '🍓 Care', fill: 0x4faa4f, enabled: true, run: () => runAndClose(() => a.onCare?.(scribbit)) });
+        slots.push({ label: 'Care', fill: 0x4faa4f, enabled: true, run: () => runAndClose(() => a.onCare?.(scribbit)) });
       }
       if (!scribbit.isFounding) {
         slots.push({
-          label: '🗑 Delete',
+          label: 'Delete',
           fill: UI.coralDeep,
           enabled: true,
           run: () => doDelete(),
@@ -227,11 +231,11 @@ export function openDetailModal(
       // Others': Believe (in-modal, optimistic) + Back.
       const slots: Array<{ label: string; fill: number; enabled: boolean; run: () => void }> = [];
       if (a.canBelieve !== false) {
-        slots.push({ label: '💛 Believe', fill: UI.coral, enabled: true, run: () => doBelieve() });
+        slots.push({ label: 'Believe', fill: UI.coral, enabled: true, run: () => doBelieve() });
       }
       if (a.onBack) {
         slots.push({
-          label: a.backLabel ?? '🎯 Back',
+          label: a.backLabel ?? 'Back',
           fill: UI.gold,
           enabled: a.backEnabled ?? true,
           run: () => runAndClose(() => a.onBack?.(scribbit)),
@@ -271,22 +275,22 @@ export function openDetailModal(
   // any error is surfaced right here (not swallowed).
   function doBelieve(): void {
     // Optimistic: float +1 and bump the count immediately.
-    floatReward(scene, cardX + 30, cardY + believeCountLabel!.y, '+1 💛', UI.coralText, 3000, true);
+    floatReward(scene, cardX + 30, cardY + believeCountLabel!.y, '+1 BELIEF', UI.coralText, 3000, true);
     currentBelief += 1;
-    believeCountLabel?.setText(`💛 ${currentBelief}`);
+    believeCountLabel?.setText(`${currentBelief}`);
     scene.tweens.add({ targets: believeCountLabel, scale: 1.3, duration: 140, yoyo: true });
 
     void believeApi(scribbit.id).then((result) => {
       if (!result.ok) {
         // Roll back the optimistic bump and tell the user why.
         currentBelief -= 1;
-        believeCountLabel?.setText(`💛 ${currentBelief}`);
+        believeCountLabel?.setText(`${currentBelief}`);
         showToast(result.error);
         return;
       }
       // Reconcile to the server's authoritative count.
       currentBelief = result.data.belief;
-      believeCountLabel?.setText(`💛 ${currentBelief}`);
+      believeCountLabel?.setText(`${currentBelief}`);
       opts.onBelieved?.(scribbit.id, result.data.belief);
     });
   }

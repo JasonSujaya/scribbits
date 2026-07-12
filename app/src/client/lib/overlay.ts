@@ -8,7 +8,7 @@
 // design coordinates → screen pixels, re-syncing on resize.
 
 import { Scene } from 'phaser';
-import { DESIGN_HEIGHT, DESIGN_WIDTH } from './theme';
+import { DESIGN_HEIGHT, DESIGN_WIDTH, UI } from './theme';
 
 export type OverlayRect = {
   x: number; // design-space top-left
@@ -91,5 +91,74 @@ export class DomOverlay {
     this.canvasObserver?.disconnect();
     this.root.remove();
     this.placements.length = 0;
+  }
+}
+
+export type CanvasActionOverlayInput = Readonly<{
+  label: string;
+  rect: OverlayRect;
+  enabled?: boolean;
+  onActivate: () => void;
+}>;
+
+/** Mirrors a canvas action with a native focusable control in the same bounds. */
+export class CanvasActionOverlay {
+  private readonly overlay: DomOverlay;
+  private destroyed = false;
+
+  constructor(scene: Scene) {
+    this.overlay = new DomOverlay(scene);
+    scene.events.once('shutdown', () => this.destroy());
+  }
+
+  add(input: CanvasActionOverlayInput): HTMLButtonElement {
+    const nativeButton = document.createElement('button');
+    nativeButton.type = 'button';
+    nativeButton.textContent = input.label;
+    nativeButton.setAttribute('aria-label', input.label);
+    nativeButton.disabled = input.enabled === false;
+    Object.assign(nativeButton.style, {
+      appearance: 'none',
+      background: 'transparent',
+      border: '0',
+      borderRadius: '8px',
+      color: 'transparent',
+      cursor: nativeButton.disabled ? 'default' : 'pointer',
+      fontSize: '1px',
+      outline: 'none',
+      padding: '0',
+    });
+    nativeButton.addEventListener('focus', () => {
+      nativeButton.style.outline = `4px solid ${UI.coralText}`;
+      nativeButton.style.outlineOffset = '-4px';
+    });
+    nativeButton.addEventListener('blur', () => {
+      nativeButton.style.outline = 'none';
+    });
+    nativeButton.addEventListener('keydown', (event) => {
+      if (
+        (event.key !== 'Enter' && event.key !== ' ') ||
+        event.repeat
+      ) {
+        return;
+      }
+      // Prevent the browser's follow-up synthetic click so keyboard input and
+      // pointer input each activate the action exactly once.
+      event.preventDefault();
+      input.onActivate();
+    });
+    nativeButton.addEventListener('click', input.onActivate);
+    this.overlay.place(nativeButton, input.rect);
+    return nativeButton;
+  }
+
+  setVisible(visible: boolean): void {
+    if (!this.destroyed) this.overlay.setVisible(visible);
+  }
+
+  destroy(): void {
+    if (this.destroyed) return;
+    this.destroyed = true;
+    this.overlay.destroy();
   }
 }

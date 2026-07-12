@@ -1,5 +1,7 @@
 import * as Phaser from 'phaser';
 import { AUTO, CANVAS, Game } from 'phaser';
+import '@fontsource/balsamiq-sans/400.css';
+import '@fontsource/balsamiq-sans/700.css';
 import { Boot } from './scenes/Boot';
 import { Preloader } from './scenes/Preloader';
 import { ArenaHome } from './scenes/ArenaHome';

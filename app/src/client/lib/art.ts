@@ -7,6 +7,7 @@ import * as Phaser from 'phaser';
 import { Scene } from 'phaser';
 import type { Element } from '../../shared/arena';
 import { ELEMENT_STYLES } from './theme';
+import { paperStage } from './visualassets';
 
 // A one-pixel white dot for particles/tinting.
 export function generateDotTexture(scene: Scene): void {
@@ -99,18 +100,7 @@ export function generatePaperTexture(scene: Scene): void {
 // Tiles the paper texture to fill the whole design surface. Call at the start of
 // every scene's build for a consistent handmade page under the content.
 export function paperBackdrop(scene: Scene): void {
-  generatePaperTexture(scene);
-  const { width, height } = scene.scale;
-  scene.add
-    .tileSprite(0, 0, width, height, 'paper')
-    .setOrigin(0)
-    .setScrollFactor(0)
-    .setDepth(-100);
-  // A soft warm vignette so edges recede a touch.
-  const vignette = scene.add.graphics().setScrollFactor(0).setDepth(-99);
-  vignette.fillStyle(0x2a2118, 0.08);
-  vignette.fillRect(0, 0, width, 40);
-  vignette.fillRect(0, height - 40, width, 40);
+  paperStage(scene);
 }
 
 // Baseline textures every scene relies on.

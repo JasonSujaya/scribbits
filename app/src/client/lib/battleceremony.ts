@@ -2,8 +2,9 @@
 // result ceremonies. These turn async battles into EVENTS with anticipation.
 
 import { Scene } from 'phaser';
+import type * as Phaser from 'phaser';
 import type { BattleKind, Scribbit } from '../../shared/arena';
-import { ELEMENT_STYLES, prefersReducedMotion, TYPE, UI } from './theme';
+import { ELEMENT_STYLES, prefersReducedMotion, UI } from './theme';
 import { handLettered, label, elementBadge, levelBadge } from './ui';
 import { loadDrawing, fitDrawing, levelOf } from './scribbits';
 import { planBattleMatchupBrief } from './matchupbrief';
@@ -17,6 +18,114 @@ export type VsCeremonyOptions = Readonly<{
   onComplete: () => void;
 }>;
 
+const FIGHTER_ART_SIZE = 304;
+const FIGHTER_COLUMN_WIDTH = 292;
+
+type FighterSideOptions = Readonly<{
+  fighter: Scribbit;
+  signatureName: string;
+  startsOnLeft: boolean;
+  centerY: number;
+}>;
+
+function createFighterSide(
+  scene: Scene,
+  options: FighterSideOptions
+): Phaser.GameObjects.Container {
+  const { fighter, signatureName, startsOnLeft, centerY } = options;
+  const elementStyle = ELEMENT_STYLES[fighter.element];
+  const side = scene.add.container(
+    startsOnLeft ? 0 : scene.scale.width,
+    centerY
+  );
+  const artwork = scene.add.container(0, 0).setAngle(startsOnLeft ? -1.4 : 1.4);
+  const matOffset = startsOnLeft ? 9 : -9;
+  const artMat = scene.add
+    .rectangle(
+      matOffset,
+      10,
+      FIGHTER_ART_SIZE + 18,
+      FIGHTER_ART_SIZE + 18,
+      elementStyle.soft,
+      0.78
+    )
+    .setStrokeStyle(3, UI.inkHex, 0.28);
+  const frame = scene.add.graphics();
+  frame.fillStyle(UI.creamHex, 1);
+  frame.fillRect(
+    -FIGHTER_ART_SIZE / 2,
+    -FIGHTER_ART_SIZE / 2,
+    FIGHTER_ART_SIZE,
+    FIGHTER_ART_SIZE
+  );
+  frame.lineStyle(7, elementStyle.primary, 1);
+  frame.strokeRect(
+    -FIGHTER_ART_SIZE / 2,
+    -FIGHTER_ART_SIZE / 2,
+    FIGHTER_ART_SIZE,
+    FIGHTER_ART_SIZE
+  );
+  artwork.add([artMat, frame]);
+
+  void loadDrawing(scene, fighter).then((key) => {
+    if (!scene.scene.isActive() || !side.active || !artwork.active) return;
+    const image = fitDrawing(scene.add.image(0, 0, key), FIGHTER_ART_SIZE - 22);
+    artwork.addAt(image, 2);
+  });
+
+  const levelX = startsOnLeft
+    ? -FIGHTER_ART_SIZE / 2 + 30
+    : FIGHTER_ART_SIZE / 2 - 30;
+  artwork.add(
+    levelBadge(
+      scene,
+      levelX,
+      -FIGHTER_ART_SIZE / 2 + 30,
+      levelOf(fighter),
+      0.82
+    )
+  );
+  side.add(artwork);
+
+  const fighterName = label(
+    scene,
+    0,
+    FIGHTER_ART_SIZE / 2 + 44,
+    fighter.name,
+    30,
+    UI.ink,
+    true
+  );
+  if (fighterName.width > FIGHTER_COLUMN_WIDTH) {
+    fighterName.setScale(FIGHTER_COLUMN_WIDTH / fighterName.width);
+  }
+  side.add(fighterName);
+  side.add(
+    elementBadge(scene, 0, FIGHTER_ART_SIZE / 2 + 98, fighter.element, 0.82)
+  );
+
+  const signatureTag = scene.add
+    .container(0, FIGHTER_ART_SIZE / 2 + 162)
+    .setAngle(startsOnLeft ? 1 : -1);
+  const signaturePlate = scene.add
+    .rectangle(0, 0, 278, 56, UI.creamHex, 0.94)
+    .setStrokeStyle(3, elementStyle.primary, 0.88);
+  const signature = label(
+    scene,
+    0,
+    0,
+    signatureName,
+    21,
+    elementStyle.primaryText,
+    true
+  );
+  if (signature.width > 248) signature.setScale(248 / signature.width);
+  signatureTag.add([signaturePlate, signature]);
+  side.add(signatureTag);
+
+  return side;
+}
+
 // Show a dramatic VS screen before battle. Both fighters slide in from opposite
 // sides, element badges clash in the center, then transition to the replay.
 export function showVsCeremony(scene: Scene, options: VsCeremonyOptions): void {
@@ -28,6 +137,7 @@ export function showVsCeremony(scene: Scene, options: VsCeremonyOptions): void {
     fighterA,
     fighterB,
   });
+  const fighterCenterY = rivalryStakes ? 490 : 450;
   const layer = scene.add.container(0, 0).setDepth(2000).setScrollFactor(0);
 
   // Keep the showdown inside the same physical sketchbook world as every
@@ -44,237 +154,146 @@ export function showVsCeremony(scene: Scene, options: VsCeremonyOptions): void {
   splitPaper.fillTriangle(0, 0, width * 0.58, 0, 0, height);
   splitPaper.fillStyle(ELEMENT_STYLES[fighterB.element].soft, 0.28);
   splitPaper.fillTriangle(width, 0, width, height, width * 0.42, height);
-  splitPaper.lineStyle(10, UI.inkHex, 0.88);
+  const foldTravel = width * 0.42;
+  const foldTopX = width / 2 - foldTravel * (fighterCenterY / height);
+  const foldBottomX = foldTopX + foldTravel;
+  splitPaper.lineStyle(6, UI.inkHex, 0.82);
   splitPaper.beginPath();
-  splitPaper.moveTo(width * 0.3, 0);
-  splitPaper.lineTo(width * 0.7, height);
+  splitPaper.moveTo(foldTopX, 0);
+  splitPaper.lineTo(foldBottomX, height);
   splitPaper.strokePath();
-  splitPaper.lineStyle(4, UI.gold, 0.95);
+  splitPaper.lineStyle(2, UI.gold, 0.95);
   splitPaper.beginPath();
-  splitPaper.moveTo(width * 0.3 + 12, 0);
-  splitPaper.lineTo(width * 0.7 + 12, height);
+  splitPaper.moveTo(foldTopX + 10, 0);
+  splitPaper.lineTo(foldBottomX + 10, height);
   splitPaper.strokePath();
   layer.add(splitPaper);
 
+  const battleLabelText =
+    rivalryStakes?.battleLabel ?? battleKind.toUpperCase();
+  const topBattleLabel = label(
+    scene,
+    width / 2,
+    42,
+    battleLabelText,
+    19,
+    UI.inkSoft,
+    true
+  );
   const topTape = scene.add
-    .rectangle(width / 2, 34, rivalryStakes ? 430 : 190, 46, UI.tape, 0.86)
-    .setAngle(-2);
-  layer.add(topTape);
-  if (rivalryStakes) {
-    layer.add(
-      label(
-        scene,
-        width / 2,
-        34,
-        `${rivalryStakes.headline} • ${rivalryStakes.pageLabel}`,
-        16,
-        UI.inkSoft,
-        true
-      )
-    );
-  }
+    .rectangle(
+      width / 2,
+      42,
+      Math.min(width - 96, topBattleLabel.width + 72),
+      42,
+      UI.tape,
+      0.86
+    )
+    .setAngle(-1.5);
+  layer.add([topTape, topBattleLabel]);
+
   const matchupTitle = handLettered(
     scene,
     width / 2,
-    92,
+    104,
     rivalryStakes?.episodeTitle ?? brief.title,
-    rivalryStakes ? 34 : 40,
+    rivalryStakes ? 34 : 38,
     UI.ink,
     true
   );
   layer.add(matchupTitle);
+
   if (rivalryStakes) {
     const stakesStrip = scene.add
-      .rectangle(width / 2, 164, width - 150, 98, UI.tapeAlt, 0.94)
-      .setStrokeStyle(3, UI.inkHex, 0.72)
-      .setAngle(0.4);
+      .rectangle(width / 2, 170, width - 96, 54, UI.tapeAlt, 0.9)
+      .setStrokeStyle(2, UI.inkHex, 0.52)
+      .setAngle(0.3);
     const stakesDetail = label(
       scene,
       width / 2,
-      143,
+      170,
       rivalryStakes.detail,
-      18,
+      19,
       UI.ink,
       true
-    ).setWordWrapWidth(width - 190, true);
-    const episodeCue = label(
-      scene,
-      width / 2,
-      181,
-      rivalryStakes.episodeCue,
-      18,
-      UI.inkSoft,
-      false
     )
-      .setWordWrapWidth(width - 190, true)
+      .setWordWrapWidth(width - 132, true)
       .setLineSpacing(-2);
-    layer.add([stakesStrip, stakesDetail, episodeCue]);
+    layer.add([stakesStrip, stakesDetail]);
   }
 
+  const mechanicsY = height - 200;
   const mechanicsCard = scene.add
-    .rectangle(width / 2, height - 90, width - 96, 158, UI.creamHex, 0.94)
-    .setStrokeStyle(3, UI.inkHex, 0.22);
-  const mechanicsCaption = label(
-    scene,
-    width / 2,
-    height - 145,
-    brief.caption,
-    18,
-    UI.coralText,
-    true
+    .rectangle(width / 2, mechanicsY, width - 88, 152, UI.creamHex, 0.96)
+    .setStrokeStyle(3, UI.inkHex, 0.3);
+  const leftMechanicsAccent = scene.add.rectangle(
+    52,
+    mechanicsY,
+    12,
+    96,
+    ELEMENT_STYLES[fighterA.element].primary,
+    0.9
+  );
+  const rightMechanicsAccent = scene.add.rectangle(
+    width - 52,
+    mechanicsY,
+    12,
+    96,
+    ELEMENT_STYLES[fighterB.element].primary,
+    0.9
   );
   const matchupLabel = label(
     scene,
     width / 2,
-    height - 108,
+    mechanicsY - 32,
     brief.matchup.label,
-    27,
+    26,
     UI.goldText,
     true
   );
   const matchupDetail = label(
     scene,
     width / 2,
-    height - 62,
+    mechanicsY + 25,
     brief.matchup.detail,
-    21,
+    22,
     UI.inkSoft,
     true
   )
-    .setWordWrapWidth(width - 140, true)
-    .setLineSpacing(-2);
-  layer.add([mechanicsCard, mechanicsCaption, matchupLabel, matchupDetail]);
+    .setWordWrapWidth(width - 144, true)
+    .setLineSpacing(-3);
+  layer.add([
+    mechanicsCard,
+    leftMechanicsAccent,
+    rightMechanicsAccent,
+    matchupLabel,
+    matchupDetail,
+  ]);
 
   // Fighter A (left side)
-  const sideA = scene.add.container(0, height / 2);
+  const sideA = createFighterSide(scene, {
+    fighter: fighterA,
+    signatureName: brief.fighters.a.signatureName,
+    startsOnLeft: true,
+    centerY: fighterCenterY,
+  });
   layer.add(sideA);
 
-  const artSizeA = 240;
-  const frameA = scene.add.graphics();
-  frameA.fillStyle(UI.creamHex, 1);
-  frameA.fillRect(-artSizeA / 2, -artSizeA / 2, artSizeA, artSizeA);
-  frameA.lineStyle(6, ELEMENT_STYLES[fighterA.element].primary, 1);
-  frameA.strokeRect(-artSizeA / 2, -artSizeA / 2, artSizeA, artSizeA);
-  sideA.add(frameA);
-
-  void loadDrawing(scene, fighterA).then((key) => {
-    if (!scene.scene.isActive() || !sideA.active) return;
-    const img = fitDrawing(scene.add.image(0, 0, key), artSizeA - 12);
-    sideA.add(img);
-  });
-
-  const nameA = label(
-    scene,
-    0,
-    artSizeA / 2 + 40,
-    fighterA.name.toUpperCase(),
-    TYPE.title,
-    UI.ink,
-    true
-  );
-  sideA.add(nameA);
-  sideA.add(elementBadge(scene, 0, artSizeA / 2 + 80, fighterA.element, 0.8));
-  sideA.add(
-    levelBadge(
-      scene,
-      artSizeA / 2 - 20,
-      -artSizeA / 2 + 20,
-      levelOf(fighterA),
-      0.7
-    )
-  );
-  const signatureA = label(
-    scene,
-    0,
-    artSizeA / 2 + 125,
-    brief.fighters.a.signatureName.toUpperCase(),
-    22,
-    ELEMENT_STYLES[fighterA.element].primaryText,
-    true
-  ).setWordWrapWidth(270, true);
-  sideA.add(signatureA);
-  if (brief.fighters.a.founderEpithet) {
-    sideA.add(
-      label(
-        scene,
-        0,
-        artSizeA / 2 + 164,
-        brief.fighters.a.founderEpithet.toUpperCase(),
-        18,
-        UI.inkSoft,
-        true
-      ).setWordWrapWidth(280, true)
-    );
-  }
-
   // Fighter B (right side)
-  const sideB = scene.add.container(width, height / 2);
+  const sideB = createFighterSide(scene, {
+    fighter: fighterB,
+    signatureName: brief.fighters.b.signatureName,
+    startsOnLeft: false,
+    centerY: fighterCenterY,
+  });
   layer.add(sideB);
 
-  const artSizeB = 240;
-  const frameB = scene.add.graphics();
-  frameB.fillStyle(UI.creamHex, 1);
-  frameB.fillRect(-artSizeB / 2, -artSizeB / 2, artSizeB, artSizeB);
-  frameB.lineStyle(6, ELEMENT_STYLES[fighterB.element].primary, 1);
-  frameB.strokeRect(-artSizeB / 2, -artSizeB / 2, artSizeB, artSizeB);
-  sideB.add(frameB);
-
-  void loadDrawing(scene, fighterB).then((key) => {
-    if (!scene.scene.isActive() || !sideB.active) return;
-    const img = fitDrawing(scene.add.image(0, 0, key), artSizeB - 12);
-    sideB.add(img);
-  });
-
-  const nameB = label(
-    scene,
-    0,
-    artSizeB / 2 + 40,
-    fighterB.name.toUpperCase(),
-    TYPE.title,
-    UI.ink,
-    true
-  );
-  sideB.add(nameB);
-  sideB.add(elementBadge(scene, 0, artSizeB / 2 + 80, fighterB.element, 0.8));
-  sideB.add(
-    levelBadge(
-      scene,
-      -artSizeB / 2 + 20,
-      -artSizeB / 2 + 20,
-      levelOf(fighterB),
-      0.7
-    )
-  );
-  const signatureB = label(
-    scene,
-    0,
-    artSizeB / 2 + 125,
-    brief.fighters.b.signatureName.toUpperCase(),
-    22,
-    ELEMENT_STYLES[fighterB.element].primaryText,
-    true
-  ).setWordWrapWidth(270, true);
-  sideB.add(signatureB);
-  if (brief.fighters.b.founderEpithet) {
-    sideB.add(
-      label(
-        scene,
-        0,
-        artSizeB / 2 + 164,
-        brief.fighters.b.founderEpithet.toUpperCase(),
-        18,
-        UI.inkSoft,
-        true
-      ).setWordWrapWidth(280, true)
-    );
-  }
-
   // VS badge in the center
-  const vsBadge = scene.add.container(width / 2, height / 2);
+  const vsBadge = scene.add.container(width / 2, fighterCenterY);
   const vsBg = scene.add
-    .circle(0, 0, 80, UI.coral, 1)
-    .setStrokeStyle(8, UI.inkHex, 1);
-  const vsText = label(scene, 0, 0, 'VS', 64, UI.ink, true);
+    .circle(0, 0, 54, UI.coral, 1)
+    .setStrokeStyle(6, UI.inkHex, 1);
+  const vsText = label(scene, 0, 0, 'VS', 42, UI.ink, true);
   vsBadge.add([vsBg, vsText]);
   vsBadge.setScale(0);
   layer.add(vsBadge);
@@ -282,14 +301,14 @@ export function showVsCeremony(scene: Scene, options: VsCeremonyOptions): void {
   // Animate fighters sliding in
   scene.tweens.add({
     targets: sideA,
-    x: width * 0.28,
+    x: width * 0.24,
     duration: reduceMotion ? 1 : 600,
     ease: 'Back.easeOut',
   });
 
   scene.tweens.add({
     targets: sideB,
-    x: width * 0.72,
+    x: width * 0.76,
     duration: reduceMotion ? 1 : 600,
     ease: 'Back.easeOut',
   });
@@ -308,7 +327,7 @@ export function showVsCeremony(scene: Scene, options: VsCeremonyOptions): void {
   // Element clash effect
   if (!reduceMotion)
     scene.time.delayedCall(600, () => {
-      const clash = scene.add.particles(width / 2, height / 2, 'spark', {
+      const clash = scene.add.particles(width / 2, fighterCenterY, 'spark', {
         speed: { min: 150, max: 350 },
         scale: { start: 0.8, end: 0 },
         lifespan: 800,

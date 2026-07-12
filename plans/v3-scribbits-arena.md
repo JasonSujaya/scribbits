@@ -44,8 +44,8 @@ Supersedes the catch/collect loop (v1) and hatch/vote (v2 draft). Retire catch m
 - Care: a short paper-native reaction receipt with the actual drawing,
   power-specific behavior, mood transition, and truthful server-confirmed payout
 - Replay: full-height paper arena, drawn textures animated (squash/stretch/idle wobble), readable READY/WINDUP/ACTIVE power states, damage pops, 15-second Sudden Scribble, truthful time/KO verdicts, forecast FX, a transient 900ms Inkcast margin backed by no-repeat fact banks, and return to the originating Battle Scrapbook page
-- Battle Scrapbook: newest-20 server reel with fighter art, owned win/loss perspective, exact finish/highlight/HP/duration evidence, honest archived results, and Rumble/Champion priority within a day
-- Scout Notebook: canonical fifth tab with seven dated pages, actual pick art/build, exact forecast and filed payout, 48 validated no-repeat notes, privacy-safe unavailable states, and Replay return to the selected day; Field Guide remains secondary
+- Battle Scrapbook: newest-20 server reel with fighter art, compact matchup/finish/day rows, owned win/loss perspective, exact verdict/duration/final HP in Replay, honest archived results, and Rumble/Champion priority within a day
+- Scout Notebook: canonical fifth tab with seven dated pages, actual pick art/artist/element, exact forecast and filed payout, 48 validated no-repeat notes, privacy-safe unavailable states, and Replay return to the selected day; Field Guide remains secondary
 - Death/legend ceremony: fade eulogy card vs Hall of Legends enshrinement
 - Everything portrait 720×1280, in-viewport, juicy
 

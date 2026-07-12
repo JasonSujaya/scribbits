@@ -55,15 +55,26 @@ export function openFounderChronicleMargin(
 ): FounderChronicleMargin {
   const { width, height } = scene.scale;
   const plan = planFounderChronicle(options.chronicle, options.currentDay);
+  const activeRivalry = plan.activeRivalry;
+  const hasNewestBeat =
+    options.newestBeat !== null && options.newestBeat !== undefined;
+  const cardHeight = activeRivalry ? (hasNewestBeat ? 700 : 640) : 720;
   const backdrop = scene.add
     .rectangle(width / 2, height / 2, width, height, UI.deskHex, 0.82)
     .setScrollFactor(0)
     .setDepth(2_300)
     .setInteractive();
-  const card = stickerCard(scene, width / 2, height / 2, width - 80, 720, {
-    tapeColor: UI.tapeAlt,
-    tapeWidth: 100,
-  })
+  const card = stickerCard(
+    scene,
+    width / 2,
+    height / 2,
+    width - 80,
+    cardHeight,
+    {
+      tapeColor: UI.tapeAlt,
+      tapeWidth: 100,
+    }
+  )
     .setScrollFactor(0)
     .setDepth(2_301);
 
@@ -77,157 +88,181 @@ export function openFounderChronicleMargin(
   };
   backdrop.on('pointerup', close);
 
-  card.add(
-    label(scene, 0, -310, 'BLUE-TAPE MARGIN', TYPE.caption, UI.coralText, true)
-  );
-  card.add(handLettered(scene, 0, -265, 'FOUNDER RIVAL', 42, UI.ink, false));
+  const titleY = activeRivalry ? -cardHeight / 2 + 54 : -285;
+  card.add(handLettered(scene, 0, titleY, 'FOUNDER RIVAL', 38, UI.ink, false));
 
   if (options.newestBeat) {
     const beatCopy = getFounderChronicleBeatCopy(options.newestBeat);
+    const newestBeatY = activeRivalry ? titleY + 64 : -224;
     const newMargin = scene.add
-      .rectangle(0, -212, 510, 54, UI.gold, 1)
-      .setStrokeStyle(3, UI.inkHex, 1);
+      .rectangle(0, newestBeatY, 530, 58, UI.gold, 1)
+      .setStrokeStyle(2, UI.inkHex, 1);
     card.add(newMargin);
     card.add(
       label(
         scene,
         0,
-        -212,
-        `NEW · ${beatCopy.headline.toUpperCase()} · ${beatCopy.detail.toUpperCase()}`,
-        19,
+        newestBeatY,
+        `NEW · ${beatCopy.headline.toUpperCase()}`,
+        18,
         UI.ink,
         true
-      ).setWordWrapWidth(490, true)
+      )
+        .setWordWrapWidth(500, true)
+        .setLineSpacing(-2)
     );
   }
 
-  const activeRivalry = plan.activeRivalry;
   if (activeRivalry) {
     const founder = getFoundingScribbitDefinition(activeRivalry.founderId);
     if (founder) {
+      const style = ELEMENT_STYLES[founder.element];
+      const profileY = titleY + (hasNewestBeat ? 176 : 112);
       const texture = generateDoodleTexture(
         scene,
         founder.id,
         founder.element,
         founder.stats
       );
+      const portraitBackdrop = scene.add
+        .circle(-206, profileY, 88, style.soft, 0.3)
+        .setStrokeStyle(3, style.primary, 0.85);
       const portrait = scene.add
-        .image(-205, -78, texture)
-        .setDisplaySize(190, 190);
-      card.add(portrait);
-      const style = ELEMENT_STYLES[founder.element];
+        .image(-206, profileY, texture)
+        .setDisplaySize(164, 164);
+      card.add([portraitBackdrop, portrait]);
       addLeftLabel(
         scene,
         card,
-        -82,
-        -150,
+        -100,
+        profileY - 42,
         founder.name.toUpperCase(),
-        34,
+        32,
         UI.ink,
-        360,
+        375,
         true
       );
       addLeftLabel(
         scene,
         card,
-        -82,
-        -112,
+        -100,
+        profileY - 7,
         founder.personality.epithet.toUpperCase(),
-        20,
+        18,
         style.primaryText,
-        360,
+        375,
         true
       );
-      addLeftLabel(
-        scene,
-        card,
-        -82,
-        -58,
-        activeRivalry.scoreLine.toUpperCase(),
-        30,
-        UI.ink,
-        360,
-        true
-      );
-      addLeftLabel(
-        scene,
-        card,
-        -82,
-        -18,
-        activeRivalry.availabilityLine.toUpperCase(),
-        22,
-        activeRivalry.readyToday ? UI.coralText : UI.goldText,
-        360,
-        true
-      );
-    }
 
-    const boutsPlayed = activeRivalry.playerWins + activeRivalry.founderWins;
-    const boutStartX = -118;
-    for (let index = 0; index < 3; index += 1) {
-      const filled = index < boutsPlayed;
-      const circle = scene.add
-        .circle(
-          boutStartX + index * 118,
-          70,
-          30,
-          filled ? UI.inkHex : UI.creamHex,
-          1
-        )
-        .setStrokeStyle(4, UI.inkHex, 1);
-      card.add(circle);
+      const scoreAvailabilityY = profileY + 48;
+      const statusFill = activeRivalry.readyToday ? UI.coral : UI.gold;
+      const statusStroke = activeRivalry.readyToday ? UI.coralDeep : UI.goldHex;
+      card.add(
+        scene.add
+          .rectangle(91, scoreAvailabilityY, 382, 46, statusFill, 0.22)
+          .setStrokeStyle(2, statusStroke, 0.8)
+      );
+      const scoreAvailability = label(
+        scene,
+        -88,
+        scoreAvailabilityY,
+        `${activeRivalry.scoreLine.toUpperCase()} · ${activeRivalry.availabilityLine.toUpperCase()}`,
+        19,
+        UI.ink,
+        true
+      )
+        .setOrigin(0, 0.5)
+        .setAlign('left');
+      const scoreAvailabilityWidth = 358;
+      if (scoreAvailability.width > scoreAvailabilityWidth) {
+        const fittedScale = scoreAvailabilityWidth / scoreAvailability.width;
+        scoreAvailability.setScale(fittedScale);
+      }
+      card.add(scoreAvailability);
+
+      const boutsPlayed = activeRivalry.playerWins + activeRivalry.founderWins;
+      const progressY = profileY + 118;
+      const progressStartX = -174;
+      const progressSpacing = 174;
+      card.add(scene.add.rectangle(0, progressY, 348, 5, UI.inkHex, 0.18));
+      const completedTrackWidth =
+        Math.max(0, boutsPlayed - 1) * progressSpacing;
+      if (completedTrackWidth > 0) {
+        card.add(
+          scene.add.rectangle(
+            progressStartX + completedTrackWidth / 2,
+            progressY,
+            completedTrackWidth,
+            5,
+            style.primary,
+            1
+          )
+        );
+      }
+      for (let index = 0; index < 3; index += 1) {
+        const filled = index < boutsPlayed;
+        const nodeX = progressStartX + index * progressSpacing;
+        const circle = scene.add
+          .circle(nodeX, progressY, 18, filled ? style.primary : UI.creamHex, 1)
+          .setStrokeStyle(3, UI.inkHex, 1);
+        card.add(circle);
+        card.add(
+          label(
+            scene,
+            nodeX,
+            progressY,
+            filled ? '✓' : String(index + 1),
+            16,
+            filled ? UI.cream : UI.ink,
+            true
+          )
+        );
+      }
+
+      const nextPageY = progressY + 50;
       card.add(
         label(
           scene,
-          boutStartX + index * 118,
-          70,
-          filled ? '✓' : String(index + 1),
-          23,
-          filled ? UI.cream : UI.ink,
-          true
-        )
-      );
-    }
-    card.add(
-      label(
-        scene,
-        0,
-        118,
-        `PAGE ${activeRivalry.nextBoutNumber}/3 · ${activeRivalry.nextEpisodeTitle}`,
-        19,
-        UI.inkSoft,
-        true
-      ).setWordWrapWidth(510, true)
-    );
-
-    const quoteCard = scene.add
-      .rectangle(0, 190, 540, 116, UI.creamHex, 1)
-      .setStrokeStyle(3, UI.inkHex, 0.75);
-    card.add(quoteCard);
-    card.add(
-      label(scene, 0, 190, `“${activeRivalry.quote}”`, 24, UI.ink, false)
-        .setWordWrapWidth(500, true)
-        .setLineSpacing(3)
-    );
-
-    if (activeRivalry.readyToday && options.onContinue) {
-      card.add(
-        button(
-          scene,
           0,
-          306,
-          'CONTINUE THREAD →',
-          () => {
-            close();
-            options.onContinue?.();
-          },
-          440,
-          UI.coral,
-          UI.ink
-        )
+          nextPageY,
+          `PAGE ${activeRivalry.nextBoutNumber}/3 · ${activeRivalry.nextEpisodeTitle}`,
+          20,
+          UI.inkSoft,
+          true
+        ).setWordWrapWidth(530, true)
       );
-    } else {
-      card.add(ghostButton(scene, 0, 306, 'Close margin', close, 360));
+
+      const quoteY = nextPageY + 84;
+      const quoteCard = scene.add
+        .rectangle(0, quoteY, 540, 90, style.soft, 0.2)
+        .setStrokeStyle(2, style.primary, 0.7);
+      card.add(quoteCard);
+      card.add(
+        label(scene, 0, quoteY, `“${activeRivalry.quote}”`, 21, UI.ink, false)
+          .setWordWrapWidth(500, true)
+          .setLineSpacing(2)
+      );
+
+      const actionY = cardHeight / 2 - 58;
+      if (activeRivalry.readyToday && options.onContinue) {
+        card.add(
+          button(
+            scene,
+            0,
+            actionY,
+            'CONTINUE THREAD →',
+            () => {
+              close();
+              options.onContinue?.();
+            },
+            440,
+            UI.coral,
+            UI.ink
+          )
+        );
+      } else {
+        card.add(ghostButton(scene, 0, actionY, 'Close margin', close, 360));
+      }
     }
   } else {
     card.add(

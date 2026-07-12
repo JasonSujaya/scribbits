@@ -24,6 +24,7 @@
   "dependencies": {
     "@devvit/start": "0.13.7",
     "@devvit/web": "0.13.7",
+    "@fontsource/balsamiq-sans": "^5.2.8",
     "@hono/node-server": "2.0.6",
     "devvit": "0.13.7",
     "hono": "4.12.27",

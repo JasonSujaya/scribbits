@@ -8,8 +8,8 @@
   box-sizing: border-box;
   margin: 0;
   padding: 0;
-  font-family: "Comic Sans MS", "Chalkboard SE", "Segoe Print", -apple-system,
-    BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-family: "Balsamiq Sans", -apple-system, BlinkMacSystemFont, "Segoe UI",
+    sans-serif;
 }
 
 .app {
@@ -75,12 +75,6 @@
   margin-top: 4px;
 }
 
-.doodle {
-  font-size: 2rem;
-  transform: rotate(-14deg);
-  display: inline-block;
-}
-
 .logo {
   font-size: clamp(2.4rem, 13vw, 3.4rem);
   font-weight: 800;
@@ -123,9 +117,6 @@
   border: 2.5px solid #2b2016;
   border-radius: 14px;
   transform: rotate(-0.6deg);
-}
-.fc-emoji {
-  font-size: 1.4rem;
 }
 .fc-text {
   font-size: 0.9rem;
@@ -176,11 +167,4 @@
   .start-button {
     transition: none;
   }
-}
-
-.footnote {
-  margin-top: 16px;
-  font-size: 0.78rem;
-  font-weight: 700;
-  color: #8a7a62;
 }

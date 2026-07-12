@@ -113,7 +113,7 @@ export function planSparRivalCard(
     : isActiveRival
       ? activeRivalryReady
         ? `PAGE ${boutsPlayed + 1} · ${episodePage?.title ?? 'ACTIVE RIVAL'}\nYOU ${activeRivalry.playerWins}–${activeRivalry.founderWins}`
-        : `NEXT · ${episodePage?.title ?? 'RIVAL PAGE'}\nRETURNS DAY ${(founderChronicle?.lastAdvancedDay ?? 0) + 1}`
+        : `YOU ${activeRivalry.playerWins}–${activeRivalry.founderWins} · PAGE ${boutsPlayed + 1}\nRETURNS DAY ${(founderChronicle?.lastAdvancedDay ?? 0) + 1}`
       : isResolvedRival
         ? 'MARGIN SIGNED\nEXHIBITION'
         : hasDifferentActiveRival

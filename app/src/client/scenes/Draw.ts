@@ -30,15 +30,11 @@ import { fetchInventory } from '../lib/api';
 import { drawAccessoryCanvas } from '../lib/accessories';
 import type { AttachedAccessory } from '../../shared/arena';
 import { selectPrimaryPower } from '../../shared/combat/selection';
-import {
-  getShapePowerDisplayName,
-  getShapePowerSignatureName,
-} from '../../shared/combat/shapepowercontent';
+import { getShapePowerSignatureName } from '../../shared/combat/shapepowercontent';
 import {
   DOODLE_DARE_HINT_BY_POWER,
   DRAW_HEADER_TITLE,
   DRAW_RULES_COPY,
-  FIRST_RUN_PROMISE,
   planDrawFeedback,
 } from '../lib/drawonboarding';
 import {
@@ -48,9 +44,7 @@ import {
 import type { DoodleDare } from '../../shared/content/doodledares';
 import {
   PRACTICE_HEADER_TITLE,
-  PRACTICE_PROMISE,
   PRACTICE_SUBMIT_LABEL,
-  practiceChecklistCopy,
   practiceProgressCopy,
   selectPracticeDoodleDare,
 } from '../lib/practicelab';
@@ -156,7 +150,6 @@ export class Draw extends Scene {
   private practiceMode = false;
   private practicePowers: PrimaryPower[] = [];
   private practiceAttemptCount = 0;
-  private practiceTargetPower: PrimaryPower = 'inkquake';
   private pendingPracticeReport: BattleReport | null = null;
 
   constructor() {
@@ -191,7 +184,6 @@ export class Draw extends Scene {
     this.isFirstScribbit = false;
     this.practicePowers = [];
     this.practiceAttemptCount = 0;
-    this.practiceTargetPower = 'inkquake';
     this.pendingPracticeReport = null;
     this.nameInput = null;
   }
@@ -237,8 +229,6 @@ export class Draw extends Scene {
       arena.dayNumber + (this.practiceMode ? this.practiceAttemptCount : 0),
       arena.myUsername
     );
-    this.practiceTargetPower = this.dailyDare.suggestedPower;
-
     this.cameras.main.setBackgroundColor(UI.desk);
     this.cameras.main.fadeIn(180, 255, 247, 232);
     // Calm living page (no forecast field / edge creatures) so it moves gently
@@ -370,24 +360,11 @@ export class Draw extends Scene {
       this,
       width / 2 + 30,
       56,
-      this.practiceMode
-        ? `${PRACTICE_HEADER_TITLE} · ${this.practicePowers.length}/4`
-        : DRAW_HEADER_TITLE,
+      this.practiceMode ? PRACTICE_HEADER_TITLE : DRAW_HEADER_TITLE,
       30,
       UI.ink,
       true
     );
-    label(
-      this,
-      width / 2 + 30,
-      92,
-      this.practiceMode
-        ? `TRY: ${getShapePowerDisplayName(this.practiceTargetPower).toUpperCase()} • SERVER DECIDES`
-        : DRAW_RULES_COPY,
-      22,
-      this.practiceMode ? UI.coralText : UI.inkSoft,
-      true
-    ).setLineSpacing(2);
 
     // Hero canvas frame — the DOM canvas sits on top of this at the same rect.
     const square = Draw.CANVAS_SQUARE;
@@ -407,7 +384,7 @@ export class Draw extends Scene {
       this,
       width / 2,
       Draw.SUBMIT_Y,
-      this.practiceMode ? PRACTICE_SUBMIT_LABEL : "🎉 IT'S ALIVE — Submit",
+      this.practiceMode ? PRACTICE_SUBMIT_LABEL : 'BRING TO LIFE',
       () => this.trySubmit(),
       width - EDGE * 2,
       this.practiceMode ? UI.tapeAlt : UI.coral,
@@ -603,16 +580,6 @@ export class Draw extends Scene {
     const unlocked = new Set(arena?.myPens ?? []);
     const labelW = 92;
 
-    if (this.practiceMode) {
-      this.buildPromiseStrip(container, y, PRACTICE_PROMISE, UI.coralDeep);
-      return;
-    }
-
-    if (this.isFirstScribbit) {
-      this.buildPromiseStrip(container, y, FIRST_RUN_PROMISE, UI.goldHex);
-      return;
-    }
-
     container.add(
       label(this, EDGE + labelW / 2, y, 'Pens', TYPE.caption, UI.inkSoft, true)
     );
@@ -670,37 +637,24 @@ export class Draw extends Scene {
       this.penSwatches.push({ rect: chip, penId: pen.id });
     });
 
-    const machineX = width - EDGE - machineW / 2;
-    const machine = this.add
-      .rectangle(machineX, y, machineW, 48, UI.gold, 1)
-      .setStrokeStyle(3, UI.inkHex, 1)
-      .setInteractive({ useHandCursor: true });
-    const machineLabel = label(this, machineX, y, 'Capsule', 22, UI.ink, true);
-    container.add([machine, machineLabel]);
-    machine.on('pointerup', () => this.openCapsuleFromDraw());
-  }
-
-  private buildPromiseStrip(
-    container: Phaser.GameObjects.Container,
-    y: number,
-    copy: string,
-    strokeColor: number
-  ): void {
-    const { width } = this.scale;
-    const promiseWidth = width - EDGE * 2 - 24;
-    const promise = this.add
-      .rectangle(width / 2, y, promiseWidth, 48, UI.tape, 0.96)
-      .setStrokeStyle(3, strokeColor, 1);
-    const promiseText = label(
-      this,
-      width / 2,
-      y,
-      copy,
-      copy.length > 40 ? 17 : 21,
-      UI.ink,
-      true
-    );
-    container.add([promise, promiseText]);
+    if (!this.practiceMode) {
+      const machineX = width - EDGE - machineW / 2;
+      const machine = this.add
+        .rectangle(machineX, y, machineW, 48, UI.gold, 1)
+        .setStrokeStyle(3, UI.inkHex, 1)
+        .setInteractive({ useHandCursor: true });
+      const machineLabel = label(
+        this,
+        machineX,
+        y,
+        'Capsule',
+        22,
+        UI.ink,
+        true
+      );
+      container.add([machine, machineLabel]);
+      machine.on('pointerup', () => this.openCapsuleFromDraw());
+    }
   }
 
   private shortPenLabel(pen: PenCatalogEntry): string {
@@ -864,11 +818,11 @@ export class Draw extends Scene {
       this,
       0,
       -panelH / 2 + 30,
-      'Start drawing!',
+      DRAW_RULES_COPY,
       TYPE.body,
       UI.ink,
       true
-    );
+    ).setLineSpacing(-3);
     card.add(this.reactionText);
     this.elementBadgeRef = elementBadge(
       this,
@@ -893,7 +847,7 @@ export class Draw extends Scene {
       'aria-label',
       this.practiceMode
         ? 'Draw a temporary practice fighter. The server reads its shape and returns a reward-free battle replay.'
-        : 'Draw your Scribbit. Its shape and colors choose how it fights.'
+        : `Draw your Scribbit. Its shape and colors choose how it fights. Shape cues: ${DRAW_RULES_COPY.replace(/\n/g, '; ')}.${this.isFirstScribbit ? ' First run: draw, watch it fight, and earn Ink.' : ''}`
     );
     const square = Draw.CANVAS_SQUARE;
     this.overlay.place(this.canvas.element, {
@@ -905,7 +859,7 @@ export class Draw extends Scene {
     this.buildCanvasDareOverlay(square);
 
     if (this.practiceMode) {
-      this.buildPracticeChecklistOverlay();
+      this.buildPracticeProgressOverlay();
       return;
     }
 
@@ -947,35 +901,33 @@ export class Draw extends Scene {
     });
   }
 
-  private buildPracticeChecklistOverlay(): void {
-    const checklist = document.createElement('div');
-    checklist.setAttribute(
+  private buildPracticeProgressOverlay(): void {
+    const progress = document.createElement('div');
+    progress.setAttribute(
       'aria-label',
       practiceProgressCopy(this.practicePowers)
     );
-    checklist.textContent = practiceChecklistCopy(this.practicePowers);
-    Object.assign(checklist.style, {
+    progress.textContent = practiceProgressCopy(this.practicePowers);
+    Object.assign(progress.style, {
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
-      padding: '8px 14px',
+      padding: '4px 12px',
       boxSizing: 'border-box',
       fontFamily: FONT_STACK,
-      fontSize: '17px',
+      fontSize: '16px',
       fontWeight: '900',
-      lineHeight: '1.18',
-      whiteSpace: 'pre-line',
+      lineHeight: '1',
+      whiteSpace: 'nowrap',
       textAlign: 'center',
-      color: UI.ink,
-      background: UI.cream,
-      border: `4px solid ${UI.ink}`,
-      borderRadius: '14px',
+      color: UI.coralText,
+      background: 'transparent',
     });
-    this.overlay.place(checklist, {
+    this.overlay.place(progress, {
       x: EDGE,
-      y: Draw.NAME_Y - 42,
+      y: Draw.NAME_Y - 22,
       width: this.scale.width - EDGE * 2,
-      height: 84,
+      height: 44,
     });
   }
 
@@ -993,7 +945,7 @@ export class Draw extends Scene {
     overlay.setAttribute('role', 'note');
     overlay.setAttribute(
       'aria-label',
-      `${this.practiceMode ? 'Optional Practice target' : 'Optional Doodle Dare'}: ${dare.prompt}. ${DOODLE_DARE_HINT_BY_POWER[dare.suggestedPower]} Bonus twist: ${twist}. You may draw anything.`
+      `Optional Dare: ${dare.prompt}. ${DOODLE_DARE_HINT_BY_POWER[dare.suggestedPower]} Twist: ${twist}. You may draw anything.`
     );
     Object.assign(overlay.style, {
       display: 'flex',
@@ -1006,25 +958,13 @@ export class Draw extends Scene {
 
     const card = document.createElement('div');
     Object.assign(card.style, {
-      width: '78%',
-      padding: '8px 14px',
+      width: '68%',
+      padding: '10px 14px',
       background: 'rgba(255, 247, 232, 0.9)',
-      border: `2px dashed ${UI.coralText}`,
+      border: `2px solid ${UI.coralText}`,
       borderRadius: '14px',
       boxShadow: '0 5px 0 rgba(43, 32, 22, 0.12)',
       fontFamily: FONT_STACK,
-    });
-
-    const eyebrow = document.createElement('div');
-    eyebrow.textContent = this.practiceMode
-      ? 'PRACTICE TARGET • OPTIONAL'
-      : 'OPTIONAL DOODLE DARE';
-    Object.assign(eyebrow.style, {
-      fontSize: '12px',
-      fontWeight: '900',
-      letterSpacing: '1.4px',
-      color: UI.coralText,
-      marginBottom: '4px',
     });
     const prompt = document.createElement('div');
     prompt.textContent = dare.prompt.toUpperCase();
@@ -1032,26 +972,8 @@ export class Draw extends Scene {
       fontSize: '20px',
       fontWeight: '900',
       lineHeight: '1.08',
-      marginBottom: '6px',
     });
-    const hint = document.createElement('div');
-    hint.textContent = DOODLE_DARE_HINT_BY_POWER[dare.suggestedPower];
-    Object.assign(hint.style, {
-      fontSize: '14px',
-      fontWeight: '750',
-      color: UI.inkSoft,
-      lineHeight: '1.2',
-    });
-    const twistLabel = document.createElement('div');
-    twistLabel.textContent = `BONUS TWIST • ${twist}`;
-    Object.assign(twistLabel.style, {
-      fontSize: '13px',
-      fontWeight: '800',
-      color: UI.coralText,
-      lineHeight: '1.15',
-      marginTop: '5px',
-    });
-    card.append(eyebrow, prompt, hint, twistLabel);
+    card.append(prompt);
     overlay.append(card);
     this.overlay.place(overlay, {
       x: this.scale.width / 2 - square / 2,
@@ -1433,60 +1355,56 @@ export class Draw extends Scene {
 
   private revealCard(scribbit: Scribbit, textureKey: string): void {
     const { width, height } = this.scale;
-    const cardW = 420;
-    const cardH = 560;
-    const cardY = height / 2 + 20;
+    const cardW = 500;
+    const cardH = 440;
+    const cardY = height / 2 + 10;
     const card = stickerCard(this, width / 2, cardY, cardW, cardH, {
       gold: true,
       tapeColor: UI.tape,
     });
     card.setScale(0);
 
-    const artY = cardY - cardH / 2 + 165;
+    const artY = cardY - cardH / 2 + 130;
     const newborn = new LiveSprite(this, width / 2, artY, textureKey, {
-      displaySize: 270,
+      displaySize: 230,
       stats: scribbit.stats,
       depth: 10,
       reduceMotion: prefersReducedMotion(),
     });
-    const powerLabel = label(
+    const shapePowerName = getShapePowerSignatureName(
+      scribbit.element,
+      selectPrimaryPower(scribbit.stats)
+    ).toUpperCase();
+    const elementStyle = ELEMENT_STYLES[scribbit.element];
+    const mainLabel = label(
       this,
       width / 2,
-      cardY + 32,
-      `SHAPE POWER: ${getShapePowerSignatureName(
-        scribbit.element,
-        selectPrimaryPower(scribbit.stats)
-      ).toUpperCase()}`,
-      TYPE.caption,
-      UI.coralText,
-      true
-    )
-      .setAlpha(0)
-      .setDepth(10);
-    const nameLabel = label(
-      this,
-      width / 2,
-      cardY + 78,
-      this.practiceMode
-        ? 'SERVER-CHECKED PRACTICE BUILD'
-        : scribbit.name.toUpperCase(),
-      TYPE.display * 0.66,
+      cardY + 80,
+      this.practiceMode ? shapePowerName : scribbit.name.toUpperCase(),
+      34,
       UI.ink,
       true
     )
       .setAlpha(0)
-      .setDepth(10);
-    if (nameLabel.width > cardW - 70)
-      nameLabel.setScale((cardW - 70) / nameLabel.width);
-    const badge = elementBadge(
+      .setDepth(10)
+      .setWordWrapWidth(cardW - 70);
+    if (mainLabel.width > cardW - 70) {
+      mainLabel.setScale((cardW - 70) / mainLabel.width);
+    }
+    const detailLabel = label(
       this,
       width / 2,
-      cardY + 126,
-      scribbit.element,
-      0.85
+      cardY + 132,
+      this.practiceMode
+        ? `${elementStyle.emoji} ${elementStyle.label.toUpperCase()} · SERVER CHECKED`
+        : `${elementStyle.emoji} ${elementStyle.label.toUpperCase()} · ${shapePowerName}`,
+      20,
+      elementStyle.primaryText,
+      true
     )
       .setAlpha(0)
-      .setDepth(10);
+      .setDepth(10)
+      .setWordWrapWidth(cardW - 70);
 
     this.tweens.add({
       targets: card,
@@ -1496,25 +1414,9 @@ export class Draw extends Scene {
     });
     newborn.awaken();
     this.tweens.add({
-      targets: [powerLabel, nameLabel, badge],
+      targets: [mainLabel, detailLabel],
       alpha: 1,
       delay: 400,
-      duration: 400,
-    });
-
-    const grid = statGrid(
-      this,
-      width / 2,
-      cardY + cardH / 2 - 62,
-      cardW - 60,
-      118
-    );
-    grid.container.setAlpha(0).setDepth(10);
-    grid.setStats(scribbit.stats, false);
-    this.tweens.add({
-      targets: grid.container,
-      alpha: 1,
-      delay: 700,
       duration: 400,
     });
 
@@ -1523,8 +1425,8 @@ export class Draw extends Scene {
         this,
         width / 2,
         height - 245,
-        width - 100,
-        96,
+        width - 120,
+        76,
         { tape: false, tilt: -1 }
       )
         .setAlpha(0)
@@ -1534,12 +1436,12 @@ export class Draw extends Scene {
         0,
         0,
         this.practiceMode
-          ? `${practiceProgressCopy(this.practicePowers)}\nNo Ink • no roster slot • nothing saved`
-          : 'Exhibition now → tonight’s Rumble\nReturn for its result • Later: permanent Legacy page',
-        TYPE.caption,
+          ? `${this.practicePowers.length}/4 POWERS · NO REWARDS`
+          : `+${INK_REWARDS.dailyDraw} INK · ENTERED TONIGHT`,
+        20,
         UI.coralText,
         true
-      ).setLineSpacing(6);
+      );
       returnPromise.add(returnPromiseCopy);
       this.tweens.add({
         targets: returnPromise,
@@ -1554,10 +1456,10 @@ export class Draw extends Scene {
       width / 2,
       height - 80,
       this.practiceMode
-        ? 'Watch server replay →'
+        ? 'WATCH REPLAY →'
         : this.startFightAfterBirth
-          ? 'Watch safe exhibition spar →'
-          : 'Continue →',
+          ? 'WATCH SPAR →'
+          : 'CONTINUE →',
       () => this.continueAfterBirth(scribbit),
       420
     ).setDepth(10);

@@ -838,6 +838,7 @@ const memory = {
   },
   myBattles: [],
   previousRumbleReplay: null,
+  rumbleReplaysByDay: new Map(),
 };
 
 for (let index = 0; index < 10; index += 1) {
@@ -850,6 +851,23 @@ if (!inkyMoon) throw new Error('Mock Rumble replay needs Inky Moon.');
 memory.previousRumbleReplay = createBattleReport('rumble', inkyMoon, champion, {
   forecast: makeForecast(memory.dayNumber - 1),
 });
+memory.rumbleReplaysByDay.set(
+  memory.previousRumbleReplay.day,
+  memory.previousRumbleReplay
+);
+const olderScoutReplay = createBattleReport(
+  'rumble',
+  todayEntrants[0],
+  todayEntrants[1],
+  {
+    seed: 1,
+    forecast: makeForecast(memory.dayNumber - 2),
+  }
+);
+if (olderScoutReplay.winner !== 'a') {
+  throw new Error('Mock older Scout replay must preserve its Champion pick.');
+}
+memory.rumbleReplaysByDay.set(olderScoutReplay.day, olderScoutReplay);
 
 const scoutNotebookPick = (scribbit) => projectScoutNotebookPick(scribbit);
 
@@ -867,6 +885,17 @@ const visibleScoutNotebookPick = (scribbit) => {
   return scribbit && !memory.hiddenScribbitIds.has(scribbit.id)
     ? scoutNotebookPick(scribbit)
     : null;
+};
+
+const isMockRumbleReplayVisible = (day, backedScribbitId) => {
+  const report = memory.rumbleReplaysByDay.get(day);
+  return Boolean(
+    report &&
+    (report.a.id === backedScribbitId || report.b.id === backedScribbitId) &&
+    !memory.hiddenScribbitIds.has(backedScribbitId) &&
+    !memory.hiddenScribbitIds.has(report.a.id) &&
+    !memory.hiddenScribbitIds.has(report.b.id)
+  );
 };
 
 const scoutNotebookStateForPreview = (previewMode, previewHasPinnedPick) => {
@@ -917,11 +946,6 @@ const scoutNotebookStateForPreview = (previewMode, previewHasPinnedPick) => {
     (scribbit) => scribbit.name === 'Bubble Vice'
   );
   if (!bubbleVice) throw new Error('Mock Scout Notebook needs Bubble Vice.');
-  const previousReport = memory.previousRumbleReplay;
-  const previousReplayVisible =
-    previousReport !== null &&
-    !memory.hiddenScribbitIds.has(previousReport.a.id) &&
-    !memory.hiddenScribbitIds.has(previousReport.b.id);
   const historicalFixtures = [
     {
       picked: true,
@@ -929,8 +953,7 @@ const scoutNotebookStateForPreview = (previewMode, previewHasPinnedPick) => {
       status: 'no_clout',
       cloutEarned: 0,
       inkAwarded: 0,
-      replayAvailable:
-        visibleScoutNotebookPick(inkyMoon) !== null && previousReplayVisible,
+      replayAvailable: isMockRumbleReplayVisible(currentDay - 1, inkyMoon.id),
     },
     {
       picked: true,
@@ -938,7 +961,10 @@ const scoutNotebookStateForPreview = (previewMode, previewHasPinnedPick) => {
       status: 'champion',
       cloutEarned: 3,
       inkAwarded: INK_REWARDS.backedChampion,
-      replayAvailable: false,
+      replayAvailable: isMockRumbleReplayVisible(
+        currentDay - 2,
+        todayEntrants[0].id
+      ),
     },
     {
       picked: true,
@@ -1796,11 +1822,11 @@ const handleApi = async (request, response, url) => {
       return;
     }
     const resolvedDay = Number(url.searchParams.get('day'));
-    const report = memory.previousRumbleReplay;
+    const report = memory.rumbleReplaysByDay.get(resolvedDay);
     if (
       previewMode !== 'returning' ||
+      !isScoutNotebookReplayDay(memory.dayNumber, resolvedDay) ||
       !report ||
-      resolvedDay !== report.day ||
       memory.hiddenScribbitIds.has(report.a.id) ||
       memory.hiddenScribbitIds.has(report.b.id)
     ) {
@@ -2540,8 +2566,23 @@ const server = createServer(async (request, response) => {
   }
 });
 
+const shutDownServer = () => {
+  for (const response of reloadClients) response.end();
+  reloadClients.clear();
+  server.close(() => process.exit(0));
+  setTimeout(() => process.exit(1), 1_500).unref();
+};
+
+process.once('SIGTERM', shutDownServer);
+process.once('SIGINT', shutDownServer);
+
 server.listen(port, '127.0.0.1', () => {
-  console.log(`Scribbits mock server running at http://localhost:${port}`);
+  const address = server.address();
+  const listeningPort =
+    address && typeof address === 'object' ? address.port : port;
+  console.log(
+    `Scribbits mock server running at http://localhost:${listeningPort}`
+  );
   if (autoReload) {
     console.log('Auto reload watching dist/client.');
   }

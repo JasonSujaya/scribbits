@@ -1,4 +1,6 @@
 import { requestExpandedMode } from '@devvit/web/client';
+import '@fontsource/balsamiq-sans/400.css';
+import '@fontsource/balsamiq-sans/700.css';
 import type { SplashState } from '../shared/arena';
 
 // Splash is the inline feed view — deliberately light (no Phaser). The markup is
@@ -26,8 +28,8 @@ async function loadForecast(): Promise<void> {
     const state = (await response.json()) as SplashState;
     if (state.resolving) {
       if (forecastText) forecastText.textContent = 'The Rumble bell is ringing…';
-      if (todayStatus) todayStatus.textContent = '⚔️ Results are being tallied right now';
-      if (startButton) startButton.textContent = '⚔️ CHECK THE RESULTS';
+      if (todayStatus) todayStatus.textContent = 'Results are being tallied';
+      if (startButton) startButton.textContent = 'CHECK RESULTS';
       return;
     }
     if (forecastText && state.forecast?.blurb) {
@@ -35,17 +37,17 @@ async function loadForecast(): Promise<void> {
     }
     if (todayStatus) {
       const streak = state.loggedIn && state.playStreakDays > 0
-        ? `🔥 ${state.playStreakDays}-day streak · `
+        ? `${state.playStreakDays}-day streak · `
         : '';
       todayStatus.textContent = `${streak}${state.rumbleEntrants} contenders · rumble in ${formatCountdown(
         state.rumbleResolvesAt - Date.now()
       )}`;
     }
     if (startButton) {
-      if (!state.loggedIn) startButton.textContent = '▶ ENTER THE ARENA';
-      else if (!state.drawnToday) startButton.textContent = "✏️ DRAW TODAY'S SCRIBBIT";
-      else if (!state.backedToday) startButton.textContent = "🎟️ BACK TONIGHT'S CONTENDER";
-      else startButton.textContent = '⚔️ CHECK THE ARENA';
+      if (!state.loggedIn) startButton.textContent = 'ENTER ARENA';
+      else if (!state.drawnToday) startButton.textContent = 'DRAW TODAY';
+      else if (!state.backedToday) startButton.textContent = 'PICK A CONTENDER';
+      else startButton.textContent = 'OPEN ARENA';
     }
   } catch {
     // Keep the default copy on any failure.

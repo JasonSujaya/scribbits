@@ -11,7 +11,7 @@ import type { DoodleDare } from '../../shared/content/doodledares';
 export const PRACTICE_HEADER_TITLE = 'PRACTICE LAB';
 export const PRACTICE_PROMISE =
   "NOT TODAY'S SCRIBBIT  •  NOT SAVED  •  NO REWARDS";
-export const PRACTICE_SUBMIT_LABEL = 'TEST THIS SHAPE →';
+export const PRACTICE_SUBMIT_LABEL = 'TEST SHAPE';
 
 export type PracticeSession = Readonly<{
   triedPowers: readonly PrimaryPower[];

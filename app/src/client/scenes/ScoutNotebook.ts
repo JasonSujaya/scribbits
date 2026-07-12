@@ -10,17 +10,14 @@ import {
 } from '../lib/registry';
 import { fitDrawing, loadDrawing } from '../lib/scribbits';
 import {
-  DESIGN_HEIGHT,
   EDGE,
   ELEMENT_STYLES,
-  NAV_SAFE,
   prefersReducedMotion,
   TYPE,
   UI,
 } from '../lib/theme';
 import { mountLivingPaper } from '../lib/livingpaper';
 import {
-  appTabBar,
   button,
   errorPanel,
   fadeToScene,
@@ -31,7 +28,7 @@ import {
 } from '../lib/ui';
 import type { ErrorPanel } from '../lib/ui';
 import { openCloutBoard } from '../lib/cloutboard';
-import { dailyDrawTabLabel, navigateToDailyDraw } from '../lib/draweligibility';
+import { appDock } from '../lib/appdock';
 import {
   planScoutNotebookPage,
   planScoutNotebookSummary,
@@ -47,9 +44,9 @@ import type {
 } from '../../shared/arena';
 
 const NOTEBOOK_ENTRY_COUNT = 7;
-const PAGE_CENTER_Y = 748;
-const PAGE_HEIGHT = 718;
-const PAGE_ACTION_Y = DESIGN_HEIGHT - NAV_SAFE - PAGE_CENTER_Y - 86;
+const PAGE_CENTER_Y = 678;
+const PAGE_HEIGHT = 744;
+const PAGE_ACTION_Y = 286;
 
 function statusColor(status: ScoutNotebookStatus): number {
   switch (status) {
@@ -121,87 +118,31 @@ export class ScoutNotebook extends Scene {
 
   private buildHeader(): void {
     const { width } = this.scale;
-    handLettered(this, width / 2, 52, 'SCOUT NOTEBOOK', 39, UI.ink, true);
-    label(
-      this,
-      width / 2,
-      91,
-      'Seven days of picks, receipts, and field notes',
-      21,
-      UI.inkSoft,
-      true
-    );
-
+    handLettered(this, width / 2, 52, 'SCOUT', 43, UI.ink, true);
+    ghostButton(this, 66, 54, '🏅', () => openCloutBoard(this), 88);
     ghostButton(
       this,
-      width / 2 - 150,
-      145,
-      '🏅 Leaderboard',
-      () => openCloutBoard(this),
-      270
-    );
-    ghostButton(
-      this,
-      width / 2 + 150,
-      145,
-      'Field Guide ›',
+      width - 66,
+      54,
+      '?',
       () => fadeToScene(this, 'Bestiary'),
-      270
+      88
     );
   }
 
   private buildAppTabs(): void {
-    appTabBar(this, 'scout', [
-      {
-        key: 'arena',
-        icon: '🏟️',
-        label: 'Arena',
-        onClick: () => fadeToScene(this, 'ArenaHome'),
-      },
-      {
-        key: 'gallery',
-        icon: '🏆',
-        label: 'Gallery',
-        onClick: () => fadeToScene(this, 'Sketchbook'),
-      },
-      {
-        key: 'draw',
-        icon: '✏️',
-        label: dailyDrawTabLabel(this),
-        onClick: () => navigateToDailyDraw(this),
-      },
-      {
-        key: 'battles',
-        icon: '⚔️',
-        label: 'Battles',
-        onClick: () => fadeToScene(this, 'MyBattles'),
-      },
-      {
-        key: 'scout',
-        icon: '📖',
-        label: 'Scout',
-        onClick: () => undefined,
-      },
-    ]);
+    appDock(this, 'scout', { scout: () => undefined });
   }
 
   private showLoadingPage(): void {
     const { width } = this.scale;
-    const layer = this.add.container(width / 2, 650);
-    const card = paperCard(this, 0, 0, width - 100, 320);
-    const pencil = label(this, 0, -54, '✎', 58, UI.coralText, true);
+    const layer = this.add.container(width / 2, 520);
+    const card = paperCard(this, 0, 0, width - 120, 210);
+    const pencil = label(this, 0, -38, '✎', 52, UI.coralText, true);
     layer.add([
       card,
       pencil,
-      label(
-        this,
-        0,
-        42,
-        'Unclipping seven days of scouting notes…',
-        TYPE.body,
-        UI.inkSoft,
-        true
-      ),
+      label(this, 0, 36, 'Loading scout notes…', TYPE.body, UI.inkSoft, true),
     ]);
     if (!this.reduceMotion) {
       this.tweens.add({
@@ -276,44 +217,26 @@ export class ScoutNotebook extends Scene {
 
   private renderRecentForm(summary: ScoutNotebookSummaryPlan): void {
     const { width } = this.scale;
-    const card = this.add.container(width / 2, 324);
-    const paper = paperCard(this, 0, 0, width - EDGE * 2, 104);
+    const card = this.add.container(width / 2, 224);
+    const paper = paperCard(this, 0, 0, width - EDGE * 2, 58);
     card.add([
       paper,
       label(
         this,
-        -295,
-        -27,
-        summary.recentFormLabel,
-        18,
+        0,
+        0,
+        `PAST 7D · ★${summary.championPickCount} CHAMP · ◆${summary.finalistPickCount} FINAL · ${summary.lifetimeClout} CLOUT`,
+        17,
         UI.ink,
         true
-      ).setOrigin(0, 0.5),
-      label(
-        this,
-        -295,
-        5,
-        summary.lifetimeLine,
-        18,
-        UI.goldText,
-        true
-      ).setOrigin(0, 0.5),
-      label(
-        this,
-        -295,
-        34,
-        summary.recentFormDisclaimer,
-        14,
-        UI.inkSoft,
-        true
-      ).setOrigin(0, 0.5),
+      ),
     ]);
   }
 
   private renderDayTabs(entries: readonly ScoutNotebookEntry[]): void {
     this.tabsLayer?.destroy(true);
     const { width } = this.scale;
-    const layer = this.add.container(0, 230);
+    const layer = this.add.container(0, 142);
     const slotWidth = (width - EDGE * 2) / NOTEBOOK_ENTRY_COUNT;
 
     for (let index = 0; index < NOTEBOOK_ENTRY_COUNT; index += 1) {
@@ -326,21 +249,21 @@ export class ScoutNotebook extends Scene {
         selected ? statusColor(entry.status) : UI.creamHex,
         entry ? 1 : 0.42
       );
-      tabPaper.fillRoundedRect(-slotWidth / 2 + 3, -39, slotWidth - 6, 78, 12);
+      tabPaper.fillRoundedRect(-slotWidth / 2 + 3, -31, slotWidth - 6, 62, 12);
       tabPaper.lineStyle(selected ? 4 : 2, UI.inkHex, entry ? 1 : 0.2);
       tabPaper.strokeRoundedRect(
         -slotWidth / 2 + 3,
-        -39,
+        -31,
         slotWidth - 6,
-        78,
+        62,
         12
       );
       const dayText = label(
         this,
         0,
-        -7,
+        -6,
         entry ? `D${entry.day}` : '—',
-        20,
+        15,
         entry ? UI.ink : UI.inkSoft,
         true
       );
@@ -467,7 +390,7 @@ export class ScoutNotebook extends Scene {
   private drawNotebookBinding(layer: Phaser.GameObjects.Container): void {
     const binding = this.add.graphics();
     binding.lineStyle(3, UI.inkSoftHex, 0.28);
-    binding.lineBetween(-286, -325, -286, 325);
+    binding.lineBetween(-286, -330, -286, 330);
     for (let y = -288; y <= 288; y += 72) {
       binding.fillStyle(UI.inkHex, 0.5);
       binding.fillCircle(-286, y, 6);
@@ -488,20 +411,20 @@ export class ScoutNotebook extends Scene {
       label(
         this,
         -260,
-        -318,
+        -326,
         pagePlan.dayLabel,
         21,
         UI.inkSoft,
         true
       ).setOrigin(0, 0.5)
     );
-    const stamp = this.add.container(170, -314).setAngle(-1.4);
+    const stamp = this.add.container(178, -326).setAngle(-1.4);
     const stampBackground = this.add
-      .rectangle(0, 0, 260, 54, statusColor(entry.status), 0.92)
+      .rectangle(0, 0, 234, 48, statusColor(entry.status), 0.92)
       .setStrokeStyle(3, UI.inkHex, 0.85);
     stamp.add([
       stampBackground,
-      label(this, 0, 0, pagePlan.stamp, 20, UI.ink, true),
+      label(this, 0, 0, pagePlan.stamp, 19, UI.ink, true),
     ]);
     layer.add(stamp);
   }
@@ -513,69 +436,47 @@ export class ScoutNotebook extends Scene {
     pageGeneration: number
   ): void {
     const pick = entry.pick;
-    const pickCard = paperCard(this, -155, -142, 238, 246);
+    const pickCard = paperCard(this, -150, -138, 250, 292);
     layer.add(pickCard);
 
     if (!pick) {
       layer.add(
         label(
           this,
-          -155,
-          -155,
-          pagePlan.pickLine.replace('PICK • ', '').replace(' ', '\n'),
-          25,
+          -150,
+          -152,
+          pagePlan.pickLine,
+          28,
           UI.inkSoft,
           true
         ).setLineSpacing(7)
       );
-      layer.add(
-        label(
-          this,
-          -155,
-          -54,
-          pagePlan.artistLine,
-          18,
-          UI.inkSoft,
-          true
-        ).setWordWrapWidth(190)
-      );
       return;
     }
 
-    const portraitLayer = this.add.container(-155, -151);
+    const portraitLayer = this.add.container(-150, -178);
     layer.add(portraitLayer);
     const layerGuard = layer;
     void loadDrawing(this, pick).then((textureKey) => {
       if (!this.isCurrentPage(layerGuard, pageGeneration)) return;
-      portraitLayer.add(fitDrawing(this.add.image(0, 0, textureKey), 166));
+      portraitLayer.add(fitDrawing(this.add.image(0, 0, textureKey), 178));
     });
     const elementStyle = ELEMENT_STYLES[pick.element];
     layer.add(
-      label(this, -155, -54, pagePlan.pickLine, 22, UI.ink, true)
-        .setWordWrapWidth(210)
+      label(this, -150, -65, pagePlan.pickLine, 23, UI.ink, true)
+        .setWordWrapWidth(218)
         .setLineSpacing(-3)
     );
     layer.add(
       label(
         this,
-        -155,
-        -23,
-        `${pagePlan.artistLine} · ${elementStyle.emoji} ${elementStyle.label}`,
+        -150,
+        -27,
+        `${elementStyle.emoji} ${elementStyle.label} · ${pagePlan.artistLine}`,
         17,
         elementStyle.primaryText,
         true
-      ).setWordWrapWidth(210)
-    );
-    layer.add(
-      label(
-        this,
-        -155,
-        8,
-        `C${pick.stats.chonk} · S${pick.stats.spike} · Z${pick.stats.zip} · ♥${pick.stats.charm}`,
-        17,
-        UI.inkSoft,
-        true
-      )
+      ).setWordWrapWidth(218)
     );
   }
 
@@ -588,21 +489,18 @@ export class ScoutNotebook extends Scene {
     const nerfed = ELEMENT_STYLES[forecast.nerfedElement];
     const forecastCard = this.add.graphics();
     forecastCard.fillStyle(UI.tape, 0.34);
-    forecastCard.fillRoundedRect(4, -264, 272, 254, 18);
+    forecastCard.fillRoundedRect(4, -280, 274, 168, 18);
     forecastCard.lineStyle(3, UI.inkHex, 0.58);
-    forecastCard.strokeRoundedRect(4, -264, 272, 254, 18);
+    forecastCard.strokeRoundedRect(4, -280, 274, 168, 18);
     layer.add(forecastCard);
     layer.add(
-      label(this, 22, -235, 'EXACT FORECAST', 20, UI.ink, true).setOrigin(
-        0,
-        0.5
-      )
+      label(this, 22, -252, 'FORECAST', 17, UI.inkSoft, true).setOrigin(0, 0.5)
     );
     layer.add(
       label(
         this,
         22,
-        -194,
+        -213,
         `↑ ${boosted.label.toUpperCase()} +15%`,
         20,
         boosted.primaryText,
@@ -613,18 +511,12 @@ export class ScoutNotebook extends Scene {
       label(
         this,
         22,
-        -158,
+        -168,
         `↓ ${nerfed.label.toUpperCase()} −10%`,
         20,
         nerfed.primaryText,
         true
       ).setOrigin(0, 0.5)
-    );
-    layer.add(
-      label(this, 22, -92, forecast.blurb, 20, UI.inkSoft, false)
-        .setOrigin(0, 0.5)
-        .setWordWrapWidth(236, true)
-        .setLineSpacing(-2)
     );
   }
 
@@ -635,24 +527,18 @@ export class ScoutNotebook extends Scene {
   ): void {
     const divider = this.add.graphics();
     divider.lineStyle(3, UI.inkSoftHex, 0.25);
-    divider.lineBetween(-254, 38, 278, 38);
+    divider.lineBetween(12, -86, 276, -86);
     layer.add(divider);
-    layer.add(
-      label(this, 0, 77, pagePlan.title, 27, UI.ink, true).setStroke(
-        UI.cream,
-        4
-      )
-    );
     layer.add(
       label(
         this,
-        0,
-        119,
+        141,
+        -47,
         pagePlan.payoutLine,
         20,
         entry.cloutEarned > 0 ? UI.goldText : UI.inkSoft,
         true
-      ).setWordWrapWidth(520)
+      ).setWordWrapWidth(250)
     );
   }
 
@@ -662,25 +548,13 @@ export class ScoutNotebook extends Scene {
   ): void {
     const noteCard = this.add.graphics().setAngle(-0.3);
     noteCard.fillStyle(0xfff0a8, 0.56);
-    noteCard.fillRoundedRect(-250, 153, 520, 126, 14);
+    noteCard.fillRoundedRect(-250, 58, 520, 116, 14);
     noteCard.lineStyle(2, UI.inkHex, 0.35);
-    noteCard.strokeRoundedRect(-250, 153, 520, 126, 14);
+    noteCard.strokeRoundedRect(-250, 58, 520, 116, 14);
     layer.add(noteCard);
     layer.add(
-      label(
-        this,
-        -228,
-        174,
-        'AUTHORED FIELD NOTE',
-        18,
-        UI.coralText,
-        true
-      ).setOrigin(0, 0.5)
-    );
-    layer.add(
-      label(this, -228, 226, pagePlan.authoredNote, 21, UI.ink, false)
-        .setOrigin(0, 0.5)
-        .setWordWrapWidth(478, true)
+      label(this, 10, 116, `“${pagePlan.authoredNote}”`, 21, UI.ink, false)
+        .setWordWrapWidth(468, true)
         .setLineSpacing(-2)
     );
   }
@@ -721,7 +595,6 @@ export class ScoutNotebook extends Scene {
       pagePlan.actionKind === 'pick' ? UI.coral : UI.gold,
       UI.ink
     );
-    actionButton.setScale(0.82);
     layer.add(actionButton);
   }
 

@@ -2,11 +2,11 @@ import * as Phaser from 'phaser';
 import { Scene } from 'phaser';
 import { showToast } from '@devvit/web/client';
 import { deleteMyData } from '../lib/api';
-import { dailyDrawTabLabel, navigateToDailyDraw } from '../lib/draweligibility';
-import { EDGE, NAV_SAFE, SPACE, TYPE, UI } from '../lib/theme';
+import { navigateToDailyDraw } from '../lib/draweligibility';
+import { EDGE, TYPE, UI } from '../lib/theme';
 import { LivingPaper } from '../lib/livingpaper';
 import {
-  appTabBar,
+  button,
   elementBadge,
   fadeToScene,
   ghostButton,
@@ -15,33 +15,28 @@ import {
   stickerCard,
 } from '../lib/ui';
 import { ELEMENT_PAYLOAD_GUIDE } from '../../shared/combat/elementcontent';
+import { appDock } from '../lib/appdock';
+
+type GuideSection = 'shape' | 'elements' | 'ritual' | 'legends' | 'privacy';
 
 // A truthful rules + safety guide. It deliberately avoids a fake collection
 // catalog: every Scribbit is player-drawn, so the useful discovery is how the
 // shared systems work and how to control community content.
 export class Bestiary extends Scene {
-  private maxScroll = 0;
-  private scrollY = 0;
-  private dragging = false;
-  private dragStartPointerY = 0;
-  private dragStartScrollY = 0;
   private deleteDataArmed = false;
   private deletingData = false;
   private livingPaper: LivingPaper | null = null;
+  private guideModal: Phaser.GameObjects.Container | null = null;
 
   constructor() {
     super('Bestiary');
   }
 
   init(): void {
-    this.maxScroll = 0;
-    this.scrollY = 0;
-    this.dragging = false;
-    this.dragStartPointerY = 0;
-    this.dragStartScrollY = 0;
     this.deleteDataArmed = false;
     this.deletingData = false;
     this.livingPaper = null;
+    this.guideModal = null;
   }
 
   create(): void {
@@ -55,261 +50,266 @@ export class Bestiary extends Scene {
       this,
       width / 2,
       104,
-      'How drawings become fighters — and how to keep the arena safe',
-      TYPE.caption,
+      '4 systems · no hidden triangle',
+      21,
       UI.inkSoft,
       true
-    ).setWordWrapWidth(width - 100);
+    );
 
-    let cursor = 150;
-    cursor = this.buildStatsGuide(cursor);
-    cursor = this.buildElementGuide(cursor + SPACE.md);
-    cursor = this.buildDailyLoop(cursor + SPACE.md);
-    cursor = this.buildLegendGuide(cursor + SPACE.md);
-    cursor = this.buildSafetyGuide(cursor + SPACE.md);
-
-    this.setupScrolling(cursor + NAV_SAFE + SPACE.lg);
+    this.buildQuickGuide();
+    button(
+      this,
+      width / 2,
+      1048,
+      '✏️ DRAW TODAY',
+      () => navigateToDailyDraw(this),
+      width - EDGE * 4
+    );
     this.buildAppTabs();
     this.events.once('shutdown', () => {
-      this.cleanupScrolling();
+      this.guideModal = null;
       this.livingPaper?.destroy();
       this.livingPaper = null;
     });
   }
 
-  private buildStatsGuide(top: number): number {
-    const { width } = this.scale;
-    label(
-      this,
-      EDGE + 10,
-      top,
-      '✏️ SHAPE = BUILD',
-      TYPE.title,
-      UI.ink,
-      true
-    ).setOrigin(0, 0.5);
-    const cardHeight = 300;
-    const cardWidth = width - EDGE * 2;
-    const centerY = top + 176;
-    const card = stickerCard(this, width / 2, centerY, cardWidth, cardHeight, {
-      tapeColor: UI.tapeAlt,
+  private buildQuickGuide(): void {
+    const rows: ReadonlyArray<readonly [GuideSection, string, string, string]> =
+      [
+        ['shape', '✏️', 'SHAPE', 'Body becomes build'],
+        ['elements', '⚔️', 'ELEMENTS', 'Four payload styles'],
+        ['ritual', '🌙', 'RITUAL', 'Draw · Watch · Back · Return'],
+        ['legends', '🏆', 'LEGENDS', 'Three days to matter'],
+        ['privacy', '🛡️', 'PRIVACY', 'Report · Delete'],
+      ];
+
+    rows.forEach(([section, icon, title, summary], index) => {
+      this.buildGuideRow(section, icon, title, summary, 206 + index * 158);
     });
-    const rows = [
-      [
-        '🫓',
-        'CHONK / HP',
-        'Filled bodies take a few more hits and unlock Inkquake.',
-      ],
-      ['🌵', 'SPIKE / EDGE', 'Jagged outlines unlock three-quill Nib Halo.'],
-      [
-        '💨',
-        'ZIP / MOVE',
-        'Compact footprints move faster and unlock Smearstep.',
-      ],
-      [
-        '✨',
-        'CHARM / COLOR',
-        'Color variety unlocks Colorburst and nudges crits.',
-      ],
-    ] as const;
-    rows.forEach(([emoji, title, description], index) => {
-      const y = -104 + index * 68;
-      card.add(
-        label(this, -cardWidth / 2 + 42, y, emoji, 30, UI.ink).setOrigin(0, 0.5)
-      );
-      card.add(
-        label(
-          this,
-          -cardWidth / 2 + 88,
-          y - 12,
-          title,
-          TYPE.caption,
-          UI.ink,
-          true
-        ).setOrigin(0, 0.5)
-      );
-      card.add(
-        label(
-          this,
-          -cardWidth / 2 + 88,
-          y + 16,
-          description,
-          19,
-          UI.inkSoft
-        ).setOrigin(0, 0.5)
-      );
-    });
-    return centerY + cardHeight / 2;
   }
 
-  private buildElementGuide(top: number): number {
+  private buildGuideRow(
+    section: GuideSection,
+    icon: string,
+    title: string,
+    summary: string,
+    y: number
+  ): void {
     const { width } = this.scale;
-    label(
-      this,
-      EDGE + 10,
-      top,
-      '⚔️ ELEMENT PAYLOADS',
-      TYPE.title,
-      UI.ink,
-      true
-    ).setOrigin(0, 0.5);
-    const cardHeight = 360;
-    const centerY = top + 205;
     const cardWidth = width - EDGE * 2;
-    const card = stickerCard(this, width / 2, centerY, cardWidth, cardHeight, {
+    const card = stickerCard(this, width / 2, y, cardWidth, 128, {
       tape: false,
     });
-    ELEMENT_PAYLOAD_GUIDE.forEach((entry, index) => {
-      const rowY = -118 + index * 68;
-      const textX = -cardWidth / 2 + 116;
-      card.add(
-        elementBadge(this, -cardWidth / 2 + 66, rowY, entry.element, 0.5)
-      );
-      card.add(
-        label(this, textX, rowY - 12, entry.title, 19, UI.ink, true).setOrigin(
-          0,
-          0.5
-        )
-      );
-      card.add(
-        label(this, textX, rowY + 15, entry.detail, 18, UI.inkSoft)
-          .setOrigin(0, 0.5)
-          .setWordWrapWidth(cardWidth - 154)
-      );
-    });
+    card.add(label(this, -cardWidth / 2 + 60, 0, icon, 34, UI.ink));
     card.add(
-      label(
-        this,
+      label(this, -cardWidth / 2 + 112, -18, title, 24, UI.ink, true).setOrigin(
         0,
-        150,
-        'NO HIDDEN TRIANGLE  •  TONIGHT’S FORECAST STILL MATTERS',
-        17,
-        UI.coralText,
-        true
+        0.5
       )
     );
-    return centerY + cardHeight / 2;
+    card.add(
+      label(this, -cardWidth / 2 + 112, 20, summary, 19, UI.inkSoft).setOrigin(
+        0,
+        0.5
+      )
+    );
+    card.add(label(this, cardWidth / 2 - 48, 0, '›', 42, UI.coralText, true));
+    const hit = this.add
+      .rectangle(0, 0, cardWidth, 128, 0xffffff, 0.001)
+      .setInteractive({ useHandCursor: true });
+    hit.on('pointerup', () => this.openGuideSection(section));
+    card.add(hit);
   }
 
-  private buildDailyLoop(top: number): number {
-    const { width } = this.scale;
-    label(
-      this,
-      EDGE + 10,
-      top,
-      '🌙 THE DAILY RITUAL',
-      TYPE.title,
-      UI.ink,
-      true
-    ).setOrigin(0, 0.5);
-    const cardHeight = 330;
-    const cardWidth = width - EDGE * 2;
-    const centerY = top + 190;
-    const card = stickerCard(this, width / 2, centerY, cardWidth, cardHeight, {
-      tapeColor: UI.tape,
-    });
-    const steps = [
-      '1. Draw one Scribbit; it enters tonight automatically.',
-      '2. Watch its first exhibition fight immediately.',
-      '3. Back another player’s contender — one locked pick.',
-      '4. Return after UTC midnight for the Champion and Clout.',
-    ];
-    steps.forEach((step, index) => {
-      const text = label(
+  private openGuideSection(section: GuideSection): void {
+    this.closeGuideSection();
+    const { width, height } = this.scale;
+    const modal = this.add.container(0, 0).setDepth(2200);
+    const backdrop = this.add
+      .rectangle(width / 2, height / 2, width, height, UI.deskHex, 0.82)
+      .setInteractive({ useHandCursor: true });
+    backdrop.on('pointerup', () => this.closeGuideSection());
+    modal.add(backdrop);
+    modal.add(
+      stickerCard(this, width / 2, 600, width - 80, 820, {
+        tapeColor: UI.tapeAlt,
+        tapeWidth: 94,
+      })
+    );
+    modal.add(
+      ghostButton(
         this,
-        -cardWidth / 2 + 42,
-        -112 + index * 70,
-        step,
-        TYPE.body,
+        width - 92,
+        226,
+        '×',
+        () => this.closeGuideSection(),
+        88
+      )
+    );
+    modal.add(
+      label(
+        this,
+        width / 2,
+        260,
+        this.guideSectionTitle(section),
+        34,
         UI.ink,
-        index === 0
-      );
-      text.setOrigin(0, 0.5).setWordWrapWidth(cardWidth - 84);
-      card.add(text);
-    });
-    return centerY + cardHeight / 2;
-  }
-
-  private buildLegendGuide(top: number): number {
-    const { width } = this.scale;
-    label(
-      this,
-      EDGE + 10,
-      top,
-      '🏆 THREE DAYS TO MATTER',
-      TYPE.title,
-      UI.ink,
-      true
-    ).setOrigin(0, 0.5);
-    const cardHeight = 230;
-    const cardWidth = width - EDGE * 2;
-    const centerY = top + 142;
-    const card = stickerCard(this, width / 2, centerY, cardWidth, cardHeight, {
-      gold: true,
-    });
-    const copy = label(
-      this,
-      0,
-      -18,
-      'Care builds levels, wins build a record, and community Belief builds a legacy. A Champion crown or 25 Belief turns a short-lived Scribbit into a permanent Legend.',
-      TYPE.body,
-      UI.ink,
-      true
-    );
-    copy.setWordWrapWidth(cardWidth - 90).setLineSpacing(6);
-    card.add(copy);
-    return centerY + cardHeight / 2;
-  }
-
-  private buildSafetyGuide(top: number): number {
-    const { width } = this.scale;
-    label(
-      this,
-      EDGE + 10,
-      top,
-      '🛡️ DATA & SAFETY',
-      TYPE.title,
-      UI.ink,
-      true
-    ).setOrigin(0, 0.5);
-    const cardHeight = 330;
-    const centerY = top + 190;
-    const cardWidth = width - EDGE * 2;
-    const card = stickerCard(this, width / 2, centerY, cardWidth, cardHeight, {
-      tapeColor: UI.tapeAlt,
-    });
-    const copy = label(
-      this,
-      0,
-      -70,
-      'Scribbits stores your Reddit identity, drawings, battle history, inventory, streak, and scores only to run the game. Drawings use Reddit media hosting. Open any player card to Report it; open your own to Delete it.',
-      20,
-      UI.ink,
-      false
-    );
-    copy.setWordWrapWidth(cardWidth - 90).setLineSpacing(5);
-    card.add(copy);
-    const deleteButton = ghostButton(
-      this,
-      0,
-      86,
-      '🗑 Delete all my stored game data',
-      () => this.deleteStoredPlayerData(),
-      cardWidth - 90
-    );
-    card.add(deleteButton);
-    card.add(
-      label(
-        this,
-        0,
-        136,
-        'Two taps required · permanent',
-        17,
-        UI.coralText,
         true
       )
     );
-    return centerY + cardHeight / 2;
+    this.renderGuideSection(modal, section);
+    this.guideModal = modal;
+  }
+
+  private guideSectionTitle(section: GuideSection): string {
+    switch (section) {
+      case 'shape':
+        return 'SHAPE = BUILD';
+      case 'elements':
+        return 'ELEMENTS';
+      case 'ritual':
+        return 'DAILY RITUAL';
+      case 'legends':
+        return 'LEGENDS';
+      case 'privacy':
+        return 'PRIVACY & DATA';
+    }
+  }
+
+  private renderGuideSection(
+    modal: Phaser.GameObjects.Container,
+    section: GuideSection
+  ): void {
+    switch (section) {
+      case 'shape':
+        this.renderTextRows(modal, [
+          ['🫓', 'CHONK', 'More HP · Inkquake'],
+          ['🌵', 'SPIKE', 'Sharp edge · Nib Halo'],
+          ['💨', 'ZIP', 'Faster move · Smearstep'],
+          ['✨', 'CHARM', 'More crit · Colorburst'],
+        ]);
+        return;
+      case 'elements':
+        ELEMENT_PAYLOAD_GUIDE.forEach((entry, index) => {
+          const y = 368 + index * 130;
+          modal.add(elementBadge(this, 130, y, entry.element, 0.55));
+          modal.add(
+            label(this, 190, y - 20, entry.title, 22, UI.ink, true).setOrigin(
+              0,
+              0.5
+            )
+          );
+          modal.add(
+            label(this, 190, y + 20, entry.detail, 18, UI.inkSoft)
+              .setOrigin(0, 0.5)
+              .setWordWrapWidth(this.scale.width - 300)
+          );
+        });
+        modal.add(
+          label(
+            this,
+            this.scale.width / 2,
+            910,
+            'NO HIDDEN TRIANGLE',
+            19,
+            UI.coralText,
+            true
+          )
+        );
+        return;
+      case 'ritual':
+        this.renderTextRows(modal, [
+          ['1', 'DRAW', 'One Scribbit enters tonight'],
+          ['2', 'WATCH', 'See its power immediately'],
+          ['3', 'BACK', 'Lock one community pick'],
+          ['4', 'RETURN', 'Champion + Clout after midnight'],
+        ]);
+        return;
+      case 'legends':
+        modal.add(label(this, this.scale.width / 2, 430, '🏆', 92, UI.ink));
+        modal.add(
+          label(
+            this,
+            this.scale.width / 2,
+            540,
+            '3 DAYS',
+            46,
+            UI.goldText,
+            true
+          )
+        );
+        modal.add(
+          label(
+            this,
+            this.scale.width / 2,
+            680,
+            'Care builds levels. Wins build a record. A Champion crown or 25 Belief makes a Scribbit permanent.',
+            24,
+            UI.ink,
+            true
+          )
+            .setWordWrapWidth(this.scale.width - 170)
+            .setLineSpacing(8)
+        );
+        return;
+      case 'privacy':
+        modal.add(label(this, this.scale.width / 2, 382, '🛡️', 72, UI.ink));
+        modal.add(
+          label(
+            this,
+            this.scale.width / 2,
+            520,
+            'Scribbits stores your Reddit identity, drawings, battles, inventory, streak, and scores only to run the game. Report any player card; delete your own from its card.',
+            21,
+            UI.ink,
+            false
+          )
+            .setWordWrapWidth(this.scale.width - 170)
+            .setLineSpacing(6)
+        );
+        modal.add(
+          ghostButton(
+            this,
+            this.scale.width / 2,
+            770,
+            '🗑 Delete all my stored game data',
+            () => this.deleteStoredPlayerData(),
+            this.scale.width - 180
+          )
+        );
+        modal.add(
+          label(
+            this,
+            this.scale.width / 2,
+            842,
+            'Two taps · permanent',
+            17,
+            UI.coralText,
+            true
+          )
+        );
+    }
+  }
+
+  private renderTextRows(
+    modal: Phaser.GameObjects.Container,
+    rows: ReadonlyArray<readonly [string, string, string]>
+  ): void {
+    rows.forEach(([icon, title, detail], index) => {
+      const y = 378 + index * 142;
+      modal.add(label(this, 130, y, icon, 32, UI.ink, true));
+      modal.add(
+        label(this, 185, y - 18, title, 23, UI.ink, true).setOrigin(0, 0.5)
+      );
+      modal.add(
+        label(this, 185, y + 20, detail, 20, UI.inkSoft).setOrigin(0, 0.5)
+      );
+    });
+  }
+
+  private closeGuideSection(): void {
+    this.guideModal?.destroy(true);
+    this.guideModal = null;
   }
 
   private deleteStoredPlayerData(): void {
@@ -333,8 +333,8 @@ export class Bestiary extends Scene {
   }
 
   private renderDeletedState(removedScribbits: number): void {
-    this.cleanupScrolling();
     this.children.removeAll(true);
+    this.guideModal = null;
     this.livingPaper?.destroy();
     this.livingPaper = new LivingPaper(this, { edgeCreatures: false });
     const { width, height } = this.scale;
@@ -361,99 +361,8 @@ export class Bestiary extends Scene {
   }
 
   private buildAppTabs(): void {
-    appTabBar(this, 'scout', [
-      {
-        key: 'arena',
-        icon: '🏟️',
-        label: 'Arena',
-        onClick: () => fadeToScene(this, 'ArenaHome'),
-      },
-      {
-        key: 'gallery',
-        icon: '🏆',
-        label: 'Gallery',
-        onClick: () => fadeToScene(this, 'Sketchbook'),
-      },
-      {
-        key: 'draw',
-        icon: '✏️',
-        label: dailyDrawTabLabel(this),
-        onClick: () => navigateToDailyDraw(this),
-      },
-      {
-        key: 'battles',
-        icon: '⚔️',
-        label: 'Battles',
-        onClick: () => fadeToScene(this, 'MyBattles'),
-      },
-      {
-        key: 'scout',
-        icon: '📖',
-        label: 'Scout',
-        onClick: () => fadeToScene(this, 'ScoutNotebook'),
-      },
-    ]);
-  }
-
-  private setupScrolling(contentHeight: number): void {
-    this.maxScroll = Math.max(0, contentHeight - this.scale.height);
-    this.scrollY = Phaser.Math.Clamp(this.scrollY, 0, this.maxScroll);
-    this.cameras.main.setScroll(0, this.scrollY);
-    this.cleanupScrolling();
-    if (this.maxScroll <= 0) return;
-    this.input.on('pointerdown', this.onPointerDown, this);
-    this.input.on('pointermove', this.onPointerMove, this);
-    this.input.on('pointerup', this.onPointerUp, this);
-    this.input.on('pointerupoutside', this.onPointerUp, this);
-    this.input.on('wheel', this.onWheel, this);
-  }
-
-  private cleanupScrolling(): void {
-    this.input.off('pointerdown', this.onPointerDown, this);
-    this.input.off('pointermove', this.onPointerMove, this);
-    this.input.off('pointerup', this.onPointerUp, this);
-    this.input.off('pointerupoutside', this.onPointerUp, this);
-    this.input.off('wheel', this.onWheel, this);
-    this.dragging = false;
-  }
-
-  private onPointerDown(pointer: Phaser.Input.Pointer): void {
-    if (pointer.y >= this.scale.height - NAV_SAFE) return;
-    this.dragging = true;
-    this.dragStartPointerY = pointer.y;
-    this.dragStartScrollY = this.scrollY;
-  }
-
-  private onPointerMove(pointer: Phaser.Input.Pointer): void {
-    if (!this.dragging || !pointer.isDown) return;
-    this.scrollTo(this.dragStartScrollY + this.dragStartPointerY - pointer.y);
-  }
-
-  private onPointerUp(pointer: Phaser.Input.Pointer): void {
-    this.dragging = false;
-    if (this.scrollY <= 0 || pointer.y < this.scale.height - NAV_SAFE) return;
-
-    const dockIndex = Math.floor(pointer.x / (this.scale.width / 5));
-    if (dockIndex === 2) {
-      navigateToDailyDraw(this);
-      return;
-    }
-    const destination = ['ArenaHome', 'Sketchbook', '', 'MyBattles'][dockIndex];
-    if (destination) fadeToScene(this, destination);
-    else this.scrollTo(0);
-  }
-
-  private onWheel(
-    _pointer: Phaser.Input.Pointer,
-    _gameObjects: Phaser.GameObjects.GameObject[],
-    _deltaX: number,
-    deltaY: number
-  ): void {
-    this.scrollTo(this.scrollY + deltaY * 0.5);
-  }
-
-  private scrollTo(y: number): void {
-    this.scrollY = Phaser.Math.Clamp(y, 0, this.maxScroll);
-    this.cameras.main.setScroll(0, this.scrollY);
+    appDock(this, 'scout', {
+      scout: () => fadeToScene(this, 'ScoutNotebook'),
+    });
   }
 }

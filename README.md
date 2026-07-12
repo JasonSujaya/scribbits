@@ -10,11 +10,18 @@ jagged outlines summon a three-quill Nib Halo, compact shapes Smearstep, and
 colorful drawings fire Colorburst. Every drawing still receives the same
 100-point stat budget.
 
+The portrait UI uses progressive disclosure: each default card leads with one
+headline, one current status, and one obvious action. Exact rules, telemetry,
+privacy controls, and card history remain available behind the relevant tap
+instead of competing with the drawing or fight.
+
 ## Daily loop
 
 1. Take one of 32 optional daily Doodle Dares plus an expressive bonus twist—or
    ignore both and draw anything—while live feedback turns each stroke into a
-   visible Shape Power. The exact card does not repeat for 256 Arena days.
+   visible Shape Power. Before the first mark, one compact legend makes the hook
+   explicit: big smashes, spikes throw quills, compact shapes dash, and color
+   blasts. The exact card does not repeat for 256 Arena days.
 2. Fill the Daily Ink Trail through drawing, care, and a first spar win. Each
    care action opens a power-specific paper moment that changes across the
    Scribbit's three-day life. Spend earned Ink on a discounted daily Mystery
@@ -38,7 +45,7 @@ colorful drawings fire Colorburst. Every drawing still receives the same
     personal Legacy Card; a crown or enough community Belief gives it a gold
     finish and preserves it in the public Hall of Legends.
 
-The first screen states the whole promise—draw, watch it fight, earn Ink—and the
+The first session proves the whole promise—draw, watch it fight, earn Ink—and the
 first Scribbit immediately receives an exhibition fight. A new player sees
 their drawing come alive before meeting the deeper care, collection, and
 scouting systems. Phaser 4.2 turns the submitted PNG into a deforming Inkbody:
@@ -50,9 +57,9 @@ the client replays that immutable result as a continuous arena battle capped at
 and folds the arena inward for a short, legible finish. A full-height paper
 arena now separates combat from the quieter sketchbook screens: a torn page,
 localized element stains, rough truthful bounds, and transcript-triggered ink
-surges keep the center readable. A compact paper rail says **BOUT** and
-**SERVER-LOCKED REPLAY**; fighter strips keep names, numeric HP, and Shape Power
-state visible as READY → WINDUP → ACTIVE without returning to turn cards.
+surges keep the center readable. A compact paper rail keeps the battle kind,
+server lock, icon controls, fighter names, numeric HP, and Shape Power state
+visible as READY → WINDUP → ACTIVE without returning to turn cards.
 Transcript facts appear only as a transient paper margin, turning them into
 power-specific play-by-play without adding events or changing their order. A
 versioned shared Inkcast pack contains 104 globally unique lines across 25 strict
@@ -69,14 +76,25 @@ plays; the queue may omit lower-priority authored candidates for readability.
 Transcript-derived
 hitstop, lagging HP chunks, impact rings, mastery
 auras, folding arena walls, and optional procedural sound add spectacle without
-changing a single result. At the bell, an Inkcast Recap reports the transcript's
-exact finish, final HP, damage, signature, and biggest or final splat, while
+changing a single result. At the bell, a winner-first Inkcast Recap keeps the
+exact finish reason, duration, and final HP readable, while
 playback-only 2×/4× speed is reset before result controls animate. Only a
 knockout folds the loser; a double knockout folds both fighters, while time
-decisions leave both standing.
+decisions leave both standing. The compact payoff immediately says `YOU WON`,
+`YOU LOST`, or names the spectator winner, then gives one primary next move;
+Rival, Practice, tonight's pick, and the real return destination no longer read
+as four equal actions. Those canvas actions, Practice exits, archived returns,
+and Rival Draft choices are mirrored by focusable native buttons; critical
+targets remain at least 44 CSS pixels in the 320x568 fit and support visible
+focus plus Enter/Space without changing battle authority.
 Before the bell, a mode-specific VS card reveals both signature moves and one
 verified interaction from the exhaustive ten-pair Shape Power matrix—mechanics,
-never win odds. During replay, neutral no-clean-hit stamps avoid inventing a
+never win odds. Its portrait layout keeps one battle label, one title, one
+stakes line, large fighter art, and a two-line mechanics card. Both visible
+Halo reduction percentages derive from the same
+configuration value the combat engine consumes, and Smearstep's `TWICE` derives
+from the same dash count its authoritative schedule consumes, while exact-copy
+regressions still lock all ten cards. During replay, neutral no-clean-hit stamps avoid inventing a
 dodge or counter; shield and element cues appear only for explicit transcript
 events. The twenty founding opponents use deterministic stat-shaped mascot art,
 so their silhouette previews the same Shape Power the server runs. One frozen
@@ -107,13 +125,15 @@ without revealing the already-authored winner.
 Every founder now owns a validated three-page episode with a unique title and
 founder-specific scene cue. Page 1 opens the relationship, Page 2 reframes the
 rematch, and Page 3 names the decider. The next episode appears consistently in
-the Rival Draft, Next Goal, blue-tape margin, and VS ceremony. Page selection is
+the Rival Draft, Next Goal, compact Rival margin, and VS ceremony. Page selection is
 derived from the authoritative series score, so these 60 authored pages add no
 Redis schema, client-owned progression, predicted outcome, or reward promise.
 After the fight, the same page closes with one of 120 unique founder-authored
 result lines selected from the validated transcript winner. The result receipt
-shows the exact page title, new server score, and whether the thread continues
-or the margin is signed; it never invents Ink, XP, Clout, or another reward.
+leads with the new server score and whether the thread continues or the margin
+is signed; its page title remains visible in the VS ceremony and Rival Draft.
+The score and return day persist on the Arena Next Goal card without adding a
+new rule panel. None of these surfaces invent Ink, XP, Clout, or another reward.
 Every finished series becomes a permanent signed margin note, not currency,
 combat power, or a twenty-character checklist. A pending projection receipt lets
 Arena reads repair an ambiguous write after the battle report is safely stored;
@@ -123,19 +143,20 @@ source. Delayed receipts replay in Arena-day order and older checklist encounter
 migrate as archive-only history.
 
 The Battles tab is a Battle Scrapbook for the newest 20 server-stored reports,
-not a permanent career archive. Its recent reel preserves the player's win/loss
-perspective even after a Scribbit fades, pins Rumble and Champion pages before
-same-day exhibitions, and shows only transcript-proven finish, HP, duration, and
-FINAL/BIGGEST SPLAT facts. Reports without a usable transcript are clearly marked
-as saved results with no motion replay. Opening a page returns to the same
+not a permanent career archive. Its compact rows preserve the player's win/loss
+perspective even after a Scribbit fades, pin Rumble and Champion pages before
+same-day exhibitions, and lead with matchup, finish, and day. Opening a usable
+page reveals the exact server verdict, duration, and final HP in Replay. Reports
+without a usable transcript are clearly marked as saved results with no motion
+replay. Opening a page returns to the same
 Scrapbook page and never grants a reward or writes progression.
 
 The fifth app tab is now a Scout Notebook rather than another rules shortcut.
 It assembles tonight plus the prior six Arena days from existing server-owned
 Back records, payout receipts, forecasts, lifetime Clout, and visible featured
 Rumble reports. Each page has one explicit state—open, pending, champion,
-finalist, no Clout, or missed—and shows the exact picked drawing, artist, build,
-forecast, and filed payout when those facts still exist. Historical identity
+finalist, no Clout, or missed—and shows the exact picked drawing, artist,
+element, forecast, and filed payout when those facts still exist. Historical identity
 comes from the matching report or visible Scribbit record, never from today's
 Champion. Hidden or deleted art becomes unavailable, and Replay is offered only
 while that exact visible report remains loadable. Forty-eight validated margin
@@ -203,7 +224,7 @@ Public forecast flavor follows its own validated 32-day no-repeat rotation. It
 appears consistently in the app, Reddit post title, and result comment without
 sharing randomness with boosted/nerfed combat elements.
 
-The verification gate currently covers TypeScript, ESLint, 96 deterministic
+The verification gate currently covers TypeScript, ESLint, 98 deterministic
 simulation groups, and the production build.
 
 ## Data and safety

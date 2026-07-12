@@ -14,7 +14,6 @@ import type {
   ReplayBattleLayout,
   ReplayBattleSide,
 } from './battlepresentation';
-import { levelOf } from './scribbits';
 import { getShapePowerSignatureName } from './shapepowerpresentation';
 import { ELEMENT_STYLES, UI } from './theme';
 import { ghostButton, label } from './ui';
@@ -252,18 +251,6 @@ const createFighterBarView = (
     }
   );
 
-  const fighterLevel = levelOf(scribbit);
-  const level = label(
-    scene,
-    fighterLayout.levelBadgeX,
-    layout.fighterNameY + 4,
-    `LV ${fighterLevel}`,
-    15,
-    UI.ink,
-    true
-  ).setDepth(22);
-  fitTextToWidth(level, 52);
-
   const hitPointTrack = scene.add
     .rectangle(
       fighterLayout.healthBarAnchorX,
@@ -366,7 +353,7 @@ const createFighterBarView = (
     stateCenterX,
     0,
     readyPresentation.visibleLabel,
-    15,
+    18,
     readyPresentation.stateTextColor,
     true
   );
@@ -394,7 +381,6 @@ const createFighterBarView = (
     .container(0, 0, [
       panel,
       name,
-      level,
       hitPointTrack,
       hitPointTrail,
       hitPointBar,
@@ -441,8 +427,7 @@ const createBattleClockView = (
   const face = scene.add
     .circle(0, 0, layout.battleClockRadius, UI.creamHex, 1)
     .setStrokeStyle(4, UI.inkHex, 1);
-  const inkLabel = label(scene, 0, -13, 'SEC', 10, UI.inkSoft, true);
-  const seconds = label(scene, 0, 2, '25', 25, UI.ink, true);
+  const seconds = label(scene, 0, 0, '25', 25, UI.ink, true);
   const progressTrack = scene.add.rectangle(
     0,
     23,
@@ -461,7 +446,7 @@ const createBattleClockView = (
       1
     )
     .setOrigin(0, 0.5);
-  container.add([shadow, face, inkLabel, seconds, progressTrack, progressFill]);
+  container.add([shadow, face, seconds, progressTrack, progressFill]);
   return { container, face, seconds, progressFill };
 };
 
@@ -599,30 +584,21 @@ export function createReplayBattleHud(
     16
   );
 
-  const livePillWidth = 56;
+  const livePillWidth = 18;
   scene.add
     .rectangle(
       layout.kindLabelX + livePillWidth / 2,
       layout.battleKindY,
       livePillWidth,
-      28,
+      18,
       UI.coral,
       1
     )
     .setStrokeStyle(2, UI.creamHex, 0.86)
     .setDepth(79);
-  const livePillLabel = label(
-    scene,
-    layout.kindLabelX + livePillWidth / 2,
-    layout.battleKindY,
-    input.showPlaybackControls ? 'BOUT' : 'FINAL',
-    14,
-    UI.cream,
-    true
-  ).setDepth(80);
   const kind = label(
     scene,
-    layout.kindLabelX + livePillWidth + 10,
+    layout.kindLabelX + livePillWidth + 8,
     layout.battleKindY,
     input.battleLabel ?? getReplayBattleKindLabel(input.battleKind),
     20,
@@ -633,7 +609,7 @@ export function createReplayBattleHud(
     .setDepth(80);
   const kindMaximumWidth = Math.max(
     40,
-    layout.kindLabelMaximumWidth - livePillWidth - 10
+    layout.kindLabelMaximumWidth - livePillWidth - 8
   );
   if (kind.width > kindMaximumWidth) {
     kind.setScale(kindMaximumWidth / kind.width);
@@ -643,9 +619,9 @@ export function createReplayBattleHud(
     layout.kindLabelX,
     layout.serverTruthY,
     input.battleKind === 'practice'
-      ? 'SERVER-LOCKED REPLAY · NO REWARDS'
-      : 'SERVER-LOCKED REPLAY',
-    14,
+      ? 'NO REWARDS · SERVER LOCKED'
+      : 'SERVER LOCKED',
+    20,
     UI.coralText,
     true
   )
@@ -654,24 +630,6 @@ export function createReplayBattleHud(
   if (serverTruth.width > layout.kindLabelMaximumWidth) {
     serverTruth.setScale(layout.kindLabelMaximumWidth / serverTruth.width);
   }
-  const resultLabelX =
-    (layout.soundButtonX -
-      layout.soundButtonWidth / 2 +
-      layout.skipButtonX +
-      layout.skipButtonWidth / 2) /
-    2;
-  const resultLabel = label(
-    scene,
-    resultLabelX,
-    layout.toolbarY,
-    'FINAL · SERVER LOCKED',
-    20,
-    UI.coralText,
-    true
-  )
-    .setDepth(80)
-    .setVisible(!input.showPlaybackControls);
-
   let speedButtonLabel: Phaser.GameObjects.Text | null = null;
   let soundButtonLabel: Phaser.GameObjects.Text | null = null;
   const toolbarControls: Phaser.GameObjects.Container[] = [];
@@ -680,7 +638,7 @@ export function createReplayBattleHud(
       scene,
       layout.soundButtonX,
       layout.toolbarY,
-      input.initialSoundEnabled ? 'SFX' : 'OFF',
+      input.initialSoundEnabled ? '🔊' : '🔇',
       input.onToggleSound,
       layout.soundButtonWidth
     ).setDepth(80);
@@ -691,7 +649,7 @@ export function createReplayBattleHud(
       scene,
       layout.speedButtonX,
       layout.toolbarY,
-      `${input.initialPlaybackSpeed}×`,
+      `⏩ ${input.initialPlaybackSpeed}×`,
       input.onCycleSpeed,
       layout.speedButtonWidth
     ).setDepth(80);
@@ -702,7 +660,7 @@ export function createReplayBattleHud(
       scene,
       layout.skipButtonX,
       layout.toolbarY,
-      'Skip ⏭',
+      '⏭',
       input.onSkip,
       layout.skipButtonWidth
     ).setDepth(80);
@@ -857,10 +815,10 @@ export function createReplayBattleHud(
       ticker.setVisible(visible);
     },
     setPlaybackSpeed: (speed: number): void => {
-      speedButtonLabel?.setText(`${speed}×`);
+      speedButtonLabel?.setText(`⏩ ${speed}×`);
     },
     setSoundEnabled: (enabled: boolean): void => {
-      soundButtonLabel?.setText(enabled ? 'SFX' : 'OFF');
+      soundButtonLabel?.setText(enabled ? '🔊' : '🔇');
     },
     setFighterHitPoints,
     setFighterShapePowerState,
@@ -898,8 +856,6 @@ export function createReplayBattleHud(
     },
     setControlsVisible: (visible: boolean): void => {
       toolbarControls.forEach((control) => control.setVisible(visible));
-      livePillLabel.setText(visible ? 'BOUT' : 'FINAL');
-      resultLabel.setVisible(!visible);
     },
   };
 }

@@ -1,13 +1,27 @@
 import { Scene } from 'phaser';
+import { preloadVisualAssets } from '../lib/visualassets';
 
-// Boot does no asset loading — all baseline art is generated procedurally in
-// Preloader, and player drawings load on demand. We jump straight through.
+// Load the small shared visual kit once; player drawings still load on demand.
 export class Boot extends Scene {
   constructor() {
     super('Boot');
   }
 
+  preload(): void {
+    preloadVisualAssets(this);
+  }
+
   create(): void {
-    this.scene.start('Preloader');
+    const startPreloader = (): void => {
+      if (this.scene.isActive()) this.scene.start('Preloader');
+    };
+    if (typeof document === 'undefined' || !document.fonts) {
+      startPreloader();
+      return;
+    }
+    void Promise.all([
+      document.fonts.load('400 24px "Balsamiq Sans"'),
+      document.fonts.load('700 24px "Balsamiq Sans"'),
+    ]).then(startPreloader, startPreloader);
   }
 }

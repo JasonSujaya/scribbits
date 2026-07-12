@@ -23,7 +23,6 @@ export type LoadScoutNotebookOptions = Readonly<{
   currentDay: number;
   userId: string;
   utcDateKey: string;
-  hiddenScribbitIds?: ReadonlySet<string>;
 }>;
 
 type HiddenScribbitLookup = (scribbitId: string) => Promise<boolean>;
@@ -120,7 +119,6 @@ export const loadScoutNotebook = async (
 ): Promise<ScoutNotebookState> => {
   const hiddenLookupCache = new Map<string, Promise<boolean>>();
   const isHidden: HiddenScribbitLookup = (scribbitId) => {
-    if (options.hiddenScribbitIds?.has(scribbitId)) return Promise.resolve(true);
     const cachedLookup = hiddenLookupCache.get(scribbitId);
     if (cachedLookup) return cachedLookup;
     const lookup = isScribbitHidden(storage, options.userId, scribbitId);

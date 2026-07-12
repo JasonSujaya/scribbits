@@ -94,13 +94,16 @@ on one exercise.
   A visible post-lock Practice card also lets anyone test all four drawing powers
   without weakening the once-daily official submission.
 - **Polish:** portrait layout, paper visual identity, responsive controls,
+  a progressive-disclosure hierarchy with one headline, status, and action on
+  each default card,
   a full-height torn-paper arena with rough truthful bounds, localized element
   stains, transcript-reactive surges, compact HP/Shape Power state strips, a
   smaller fixed-tick clock, and transient paper commentary;
   a versioned 104-line Inkcast pack rotates through 25 fact-specific banks
   without authored repeats before reuse, while prioritized displayed copy retains its 900ms reading
-  dwell, twenty coherent founder voices, a transcript-derived Inkcast Recap with
-  truthful KO/time poses, a recent Battle Scrapbook with exact server evidence,
+  dwell, twenty coherent founder voices, a winner-first transcript recap with
+  truthful KO/time poses and exact duration/final HP, a compact recent Battle
+  Scrapbook with server evidence,
   deterministic simulation,
   error states, mobile-safe navigation, UGC report/delete controls, and a full
   verification gate.
@@ -241,7 +244,7 @@ on one exercise.
   turn-like podiums or a broadcast dashboard: a full-height deterministic torn
   page, clipping-safe 232px drawings, localized element stains, irregular
   authoritative bounds, reactive power surges, compact numeric-HP and
-  READY/WINDUP/ACTIVE strips, a smaller clock, SERVER-LOCKED REPLAY copy, a
+  READY/WINDUP/ACTIVE strips, a smaller clock, a compact server-lock label, a
   transient paper commentary margin, positional overlap depth, and separated
   post-fight actions. Playback can run at 4×, but
   the result ceremony always returns to normal presentation speed.
@@ -256,15 +259,21 @@ on one exercise.
 - Added a pure Inkcast editorial queue: one strongest line per simulation tick,
   900ms wall-clock dwell, and two pending beats. It remains bounded at 4×, clears
   on Skip/finish, and only prioritizes already-authored candidates.
-- Added a deterministic Inkcast Recap derived only from the validated battle
-  transcript: exact finish reason, final HP, damage, signature, and actual
-  decisive splat. KO, double-KO, and timeout poses now tell different truths,
+- Added a deterministic Inkcast Recap planner derived only from the validated
+  battle transcript. The compact result leads with `YOU WON`, `YOU LOST`, or
+  the spectator winner, then exact finish reason, duration, and final HP. One
+  primary Rival/pick action and a compact utility row replace four equal-looking
+  choices. Critical result, Practice, archived-return, and Rival Draft actions
+  remain at least 44 CSS pixels at 320x568 and mirror the canvas with native
+  focusable Enter/Space controls, while the validated damage/signature/splat facts still
+  feed server-safe follow-on content. KO, double-KO, and timeout poses tell different truths,
   and inconsistent top-level winner/fighter data or impossible terminal finish
   reasons are rejected before storage or replay.
 - Rebuilt recent battle history as a Battle Scrapbook for the newest 20 stored
   reports. Pages retain owned win/loss perspective after roster expiry, prioritize
-  Rumble and Champion fights within each day, show exact transcript-derived
-  finish/highlight/HP/duration facts, label result-only archives honestly, and
+  Rumble and Champion fights within each day, keep matchup/finish/day rows
+  compact, expose exact verdict/duration/final HP in Replay, label result-only
+  archives honestly, and
   return from Replay to the same page without adding rewards or persistence.
 - Added a seven-page Scout Notebook over existing authoritative data: tonight
   plus six prior Arena days, six explicit pick/result states, actual drawing and
@@ -284,6 +293,9 @@ on one exercise.
   epithet, and challenge; the prior authoritative decisive splat remains in the
   header. Off-card choices fail closed and the local mock imports the production
   selector instead of maintaining a second matchmaker.
+- Made the drawing hook visible before the first mark with one compact four-power
+  legend in the existing feedback card; it disappears into the actual analyzed
+  signature as soon as the drawing is ready, so no tutorial screen was added.
 - Added one server-authoritative Founder Rival Thread per player: first to two,
   maximum three qualifying battles, one score beat per Arena day, active-founder
   pinning across Rival Draft and quick spar, same-founder Champion advancement,
@@ -298,7 +310,9 @@ on one exercise.
   founder-specific cues shared by Rival Draft, Next Goal, Chronicle margin, and
   the VS ceremony, plus 120 unique result lines bound to the proven latest winner.
   The authoritative series score selects the page; authored content remains
-  immutable repo data and adds no Redis state or combat effect.
+  immutable repo data and adds no Redis state or combat effect. The result strip,
+  waiting Rival card, and persistent Arena evidence now keep that server score
+  and return day visible without restoring a dense rules panel.
 - Promoted the existing daily boss fight into a truthful Champion Contract with
   server-projected completion state, founder/community voice, exact signature,
   conditional +2 XP, a paper challenger picker, and a noninteractive used stamp.
@@ -311,6 +325,9 @@ on one exercise.
   later attempts rotate across all four powers and new prompt cards.
 - Added the battle ceremony, first-session exhibition, and living-paper
   interface, then simplified the theater to one server-authored combat model.
+- Bound both visible Halo `35%` matchup explanations and Smearstep's `TWICE`
+  label to the configuration the combat engine consumes, while retaining exact
+  snapshots for all ten cards and an unchanged Smearstep golden transcript.
 - Added real Reddit post scheduling and idempotent result comments.
 - Made transparent and legacy paper-backed PNGs produce identical
   server-authoritative stats, with automated parity coverage.
