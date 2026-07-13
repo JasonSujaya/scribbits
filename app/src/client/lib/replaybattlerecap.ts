@@ -3,12 +3,15 @@
 
 import * as Phaser from 'phaser';
 import { Scene } from 'phaser';
-import { formatBattleRecapLead } from './battlerecap';
+import {
+  formatBattleRecapLead,
+  planCompactBattleRecapLayout,
+  planCompactBattleRecapLesson,
+} from './battlerecap';
 import type { BattleRecapPerspective, BattleRecapPlan } from './battlerecap';
 import { ELEMENT_STYLES, UI } from './theme';
 import { label, stickerCard, tape } from './ui';
 
-const FULL_CARD_HEIGHT = 164;
 const MINIMUM_CONTENT_WIDTH = 1;
 const LONG_WORD_CHUNK_LENGTH = 18;
 
@@ -190,7 +193,8 @@ export function addBattleRecapLines(
   let cursor = options.top;
 
   if (compact) {
-    const headlineHeight = 42;
+    const compactLayout = planCompactBattleRecapLayout(false);
+    const headlineHeight = compactLayout.headlineHeight;
     addFittedLabel(scene, parent, {
       y: cursor + headlineHeight / 2,
       text: compactOutcomeLead(plan, options.perspective ?? 'spectator'),
@@ -201,9 +205,9 @@ export function addBattleRecapLines(
       bold: true,
       lineSpacing: -4,
     });
-    cursor += headlineHeight + 3;
+    cursor += headlineHeight + compactLayout.statusGap;
 
-    const statusHeight = 58;
+    const statusHeight = compactLayout.statusHeight;
     addFittedLabel(scene, parent, {
       y: cursor + statusHeight / 2,
       text: compactOutcomeStatus(plan),
@@ -215,6 +219,43 @@ export function addBattleRecapLines(
       lineSpacing: -1,
     });
     cursor += statusHeight;
+
+    cursor += compactLayout.lessonGap;
+    const lesson = planCompactBattleRecapLesson(plan);
+    const lessonHeight = compactLayout.lessonHeight;
+    const lessonWidth = contentWidth - 4;
+    const lessonLabelHeight = compactLayout.lessonLabelHeight;
+    addFittedLabel(scene, parent, {
+      y: cursor + lessonLabelHeight / 2,
+      text: lesson.label,
+      fontSize: 18,
+      color: elementStyle.primaryText,
+      width: lessonWidth - 14,
+      height: lessonLabelHeight,
+      bold: true,
+    });
+    const lessonDetailY = cursor + lessonLabelHeight + 17;
+    parent.add(
+      tape(
+        scene,
+        0,
+        lessonDetailY,
+        -0.25,
+        lessonWidth,
+        elementStyle.soft
+      )
+    );
+    addFittedLabel(scene, parent, {
+      y: lessonDetailY,
+      text: lesson.text,
+      fontSize: compactLayout.lessonFontSize,
+      color: elementStyle.primaryText,
+      width: lessonWidth - 14,
+      height: 30,
+      bold: true,
+      lineSpacing: -3,
+    });
+    cursor += lessonHeight;
     return cursor - options.top;
   }
 
@@ -312,7 +353,10 @@ export function createBattleRecapCard(
 ): Phaser.GameObjects.Container {
   const width = Math.max(MINIMUM_CONTENT_WIDTH, options.width);
   const elementStyle = ELEMENT_STYLES[plan.winnerElement];
-  const cardHeight = options.contextLine ? 190 : FULL_CARD_HEIGHT;
+  const compactLayout = planCompactBattleRecapLayout(
+    options.contextLine !== undefined
+  );
+  const cardHeight = compactLayout.cardHeight;
   const card = stickerCard(scene, options.x, options.y, width, cardHeight, {
     gold: true,
     tapeColor: elementStyle.soft,
@@ -321,7 +365,7 @@ export function createBattleRecapCard(
   card.setDepth(options.depth ?? 60);
 
   addBattleRecapLines(scene, card, plan, {
-    top: -cardHeight / 2 + 14,
+    top: compactLayout.contentTop,
     width: width - 24,
     compact: true,
     ...(options.perspective ? { perspective: options.perspective } : {}),
@@ -329,12 +373,12 @@ export function createBattleRecapCard(
 
   if (options.contextLine) {
     addFittedLabel(scene, card, {
-      y: cardHeight / 2 - 26,
+      y: compactLayout.contextCenterY ?? 0,
       text: options.contextLine,
       fontSize: 21,
       color: UI.coralText,
       width: width - 42,
-      height: 34,
+      height: compactLayout.contextHeight,
       bold: true,
       lineSpacing: -3,
     });

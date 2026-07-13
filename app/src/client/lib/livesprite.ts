@@ -47,7 +47,12 @@ export type LiveSpriteOptions = {
 // (breathe, walkIn, anticipate, lunge, hit, crumple). All motion is tween-based
 // so it composes with camera punches and time-scale slow-mo automatically.
 export class LiveSprite {
+  // Replay owns this root's world position. All squash, recoil, and idle motion
+  // lives in nested local containers so presentation can never snap the
+  // authoritative fixed-tick coordinates backward.
   readonly container: Phaser.GameObjects.Container;
+  private readonly reactionContainer: Phaser.GameObjects.Container;
+  private readonly poseContainer: Phaser.GameObjects.Container;
   private readonly scene: Scene;
   private readonly tiles: Tile[] = [];
   private readonly size: number;
@@ -59,6 +64,7 @@ export class LiveSprite {
   private meshMotion: InkMeshMotion | null = null;
   private meshUpdateAccumulatorMilliseconds = 0;
   private breatheTween: Phaser.Tweens.Tween | null = null;
+  private reactionTween: Phaser.Tweens.Tween | null = null;
   private idleTweens: Phaser.Tweens.Tween[] = [];
   private destroyed = false;
   private crumpled = false;
@@ -78,6 +84,10 @@ export class LiveSprite {
     this.reduceMotion = opts.reduceMotion ?? false;
     this.signatureTrait = getSignatureTrait(this.stats);
     this.container = scene.add.container(x, y);
+    this.reactionContainer = scene.add.container(0, 0);
+    this.poseContainer = scene.add.container(0, 0);
+    this.reactionContainer.add(this.poseContainer);
+    this.container.add(this.reactionContainer);
     if (opts.depth !== undefined) this.container.setDepth(opts.depth);
 
     // Real dimensions of the source texture. Production textures are network
@@ -135,7 +145,7 @@ export class LiveSprite {
     mesh.setSize(drawW, drawH);
     mesh.setScale(this.facing, 1);
     mesh.buildOrderedIndices(1, true);
-    this.container.add(mesh);
+    this.poseContainer.add(mesh);
     this.meshGeometry = geometry;
     this.meshMotion = {
       elapsedSeconds: 0,
@@ -219,7 +229,7 @@ export class LiveSprite {
         const image = this.scene.add.image(homeX, homeY, textureKey, frameName);
         image.setDisplaySize(dispW, dispH);
         image.setScale(image.scaleX * this.facing, image.scaleY);
-        this.container.add(image);
+        this.poseContainer.add(image);
         this.tiles.push({ image, homeX, homeY, col, row });
       }
     }
@@ -232,9 +242,7 @@ export class LiveSprite {
   private updateInkMesh(_time: number, deltaMilliseconds: number): void {
     if (this.destroyed || !this.meshGeometry || !this.meshMotion) return;
     this.meshUpdateAccumulatorMilliseconds += Math.max(0, deltaMilliseconds);
-    if (
-      this.meshUpdateAccumulatorMilliseconds < INK_MESH_FRAME_MILLISECONDS
-    ) {
+    if (this.meshUpdateAccumulatorMilliseconds < INK_MESH_FRAME_MILLISECONDS) {
       return;
     }
     const elapsedMilliseconds = this.meshUpdateAccumulatorMilliseconds;
@@ -270,12 +278,13 @@ export class LiveSprite {
   breathe(): void {
     this.stopIdle();
     if (this.reduceMotion) return;
+    this.poseContainer.setPosition(0, 0).setScale(1).setAngle(0);
     const zipRatio = Math.max(0, Math.min(1, this.stats.zip / 60));
     this.breatheTween = this.scene.tweens.add({
-      targets: this.container,
+      targets: this.poseContainer,
       scaleY: 1.035,
       scaleX: 0.985,
-      y: this.container.y - 4,
+      y: -4,
       duration: 1450 - zipRatio * 450,
       yoyo: true,
       repeat: -1,
@@ -301,9 +310,9 @@ export class LiveSprite {
   // same Mesh2D rig then follows the creature into its first battle.
   awaken(onDone?: () => void): void {
     if (this.reduceMotion) {
-      this.container.setAlpha(0);
+      this.poseContainer.setAlpha(0);
       this.scene.tweens.add({
-        targets: this.container,
+        targets: this.poseContainer,
         alpha: 1,
         duration: 180,
         onComplete: () => onDone?.(),
@@ -354,6 +363,9 @@ export class LiveSprite {
       onDone?.();
       return;
     }
+    this.stopIdle();
+    this.scene.tweens.killTweensOf(this.poseContainer);
+    this.poseContainer.setPosition(0, 0).setScale(1).setAngle(0);
     if (this.meshMotion) {
       this.meshMotion.signatureAmount = 0;
       this.scene.tweens.add({
@@ -363,21 +375,20 @@ export class LiveSprite {
         ease: 'Sine.easeInOut',
         onComplete: () => {
           if (this.meshMotion) this.meshMotion.signatureAmount = 0;
-          onDone?.();
         },
       });
     }
 
     const profile = this.signatureTrait;
-    const baseX = this.container.x;
-    const baseY = this.container.y;
+    const baseX = this.poseContainer.x;
+    const baseY = this.poseContainer.y;
     const tweenConfig: Phaser.Types.Tweens.TweenBuilderConfig = {
-      targets: this.container,
+      targets: this.poseContainer,
       duration: 310,
       yoyo: true,
       ease: 'Sine.easeInOut',
       onComplete: () =>
-        this.container.setPosition(baseX, baseY).setScale(1).setAngle(0),
+        this.poseContainer.setPosition(baseX, baseY).setScale(1).setAngle(0),
     };
     if (profile === 'chonk')
       Object.assign(tweenConfig, { scaleX: 1.14, scaleY: 0.8, y: baseY + 10 });
@@ -394,7 +405,14 @@ export class LiveSprite {
         scaleY: 1.1,
         angle: this.facing * 5,
       });
-    this.scene.tweens.add(tweenConfig);
+    this.scene.tweens.add({
+      ...tweenConfig,
+      onComplete: () => {
+        this.poseContainer.setPosition(0, 0).setScale(1).setAngle(0);
+        this.breathe();
+        onDone?.();
+      },
+    });
   }
 
   // The server event decides when a power activates; this method only gives
@@ -403,16 +421,17 @@ export class LiveSprite {
   activateShapePower(power: PrimaryPower): void {
     if (this.reduceMotion || this.destroyed) return;
     this.stopIdle();
-    this.container.setScale(1).setAngle(0);
+    this.scene.tweens.killTweensOf(this.poseContainer);
+    this.poseContainer.setPosition(0, 0).setScale(1).setAngle(0);
 
     const tweenConfig: Phaser.Types.Tweens.TweenBuilderConfig = {
-      targets: this.container,
+      targets: this.poseContainer,
       duration: power === 'smearstep' ? 130 : 210,
       yoyo: true,
       repeat: power === 'smearstep' ? 1 : 0,
       ease: power === 'inkquake' ? 'Quad.easeIn' : 'Back.easeOut',
       onComplete: () => {
-        this.container.setScale(1).setAngle(0);
+        this.poseContainer.setPosition(0, 0).setScale(1).setAngle(0);
         this.breathe();
       },
     };
@@ -484,12 +503,14 @@ export class LiveSprite {
   anticipate(): Promise<void> {
     this.stopIdle();
     if (this.reduceMotion) return Promise.resolve();
+    this.scene.tweens.killTweensOf(this.poseContainer);
+    this.poseContainer.setPosition(0, 0).setScale(1).setAngle(0);
     return new Promise((resolve) => {
       this.scene.tweens.add({
-        targets: this.container,
+        targets: this.poseContainer,
         scaleX: 1.14,
         scaleY: 0.82,
-        y: this.container.y + 8,
+        y: 8,
         duration: 150,
         ease: 'Quad.easeOut',
         onComplete: () => resolve(),
@@ -503,10 +524,10 @@ export class LiveSprite {
     const spikeRatio = Math.max(0, Math.min(1, this.stats.spike / 60));
     const zipRatio = Math.max(0, Math.min(1, this.stats.zip / 60));
     this.scene.tweens.chain({
-      targets: this.container,
+      targets: this.reactionContainer,
       tweens: [
         {
-          x: homeX + dir * this.size * 0.55,
+          x: dir * this.size * 0.55,
           scaleX: 1.16 + spikeRatio * 0.16,
           scaleY: 0.9,
           duration: this.reduceMotion ? 1 : 150 - zipRatio * 55,
@@ -514,7 +535,7 @@ export class LiveSprite {
           onComplete: () => onImpact?.(),
         },
         {
-          x: homeX,
+          x: 0,
           scaleX: 1,
           scaleY: 1,
           duration: this.reduceMotion ? 1 : 290 - zipRatio * 70,
@@ -541,15 +562,21 @@ export class LiveSprite {
       });
     }
     if (this.reduceMotion) return;
-    this.scene.tweens.add({
-      targets: this.container,
-      x: this.container.x + knockDir * 24,
+    this.reactionTween?.remove();
+    this.reactionContainer.setPosition(0, 0).setScale(1).setAngle(0);
+    this.reactionTween = this.scene.tweens.add({
+      targets: this.reactionContainer,
+      x: knockDir * 24,
       scaleX: 0.86,
       scaleY: 1.12,
       duration: 90,
       yoyo: true,
       repeat: 1,
       ease: 'Quad.easeOut',
+      onComplete: () => {
+        this.reactionContainer.setPosition(0, 0).setScale(1).setAngle(0);
+        this.reactionTween = null;
+      },
     });
     this.tiles.forEach((tile, index) => {
       this.scene.tweens.add({
@@ -585,12 +612,12 @@ export class LiveSprite {
       });
     }
     this.scene.tweens.add({
-      targets: this.container,
+      targets: this.reactionContainer,
       // Mesh vertices already fold toward the floor. Rotating that folded mesh
       // 82 degrees made it look like a vertical line; a small paper-tip reads
       // as a crumpled doodle while the slice fallback still needs the topple.
       angle: this.facing * (usesInkMesh ? 14 : 82),
-      y: this.container.y + this.size * 0.32,
+      y: this.size * 0.32,
       scaleY: 0.72,
       alpha: 0.7,
       duration: this.reduceMotion ? 180 : 620,
@@ -615,8 +642,8 @@ export class LiveSprite {
     if (this.meshMotion) this.meshMotion.celebrateAmount = 1;
     if (this.reduceMotion) return;
     this.scene.tweens.add({
-      targets: this.container,
-      y: this.container.y - 26,
+      targets: this.reactionContainer,
+      y: -26,
       scaleY: 1.08,
       duration: 420,
       yoyo: true,
@@ -629,6 +656,8 @@ export class LiveSprite {
     if (this.destroyed) return;
     this.destroyed = true;
     this.stopIdle();
+    this.reactionTween?.remove();
+    this.reactionTween = null;
     this.scene.events.off(
       Phaser.Scenes.Events.UPDATE,
       this.updateInkMesh,

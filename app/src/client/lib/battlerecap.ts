@@ -22,6 +22,26 @@ type DamageTimelineEvent = Extract<
 export type BattleRecapHighlight = Readonly<{
   label: string;
   text: string;
+  compactText: string;
+}>;
+
+export type CompactBattleRecapLesson = Readonly<{
+  label: string;
+  text: string;
+}>;
+
+export type CompactBattleRecapLayout = Readonly<{
+  cardHeight: number;
+  contentTop: number;
+  headlineHeight: number;
+  statusGap: number;
+  statusHeight: number;
+  lessonGap: number;
+  lessonHeight: number;
+  lessonLabelHeight: number;
+  lessonFontSize: number;
+  contextCenterY: number | null;
+  contextHeight: number;
 }>;
 
 export type BattleRecapPlan = Readonly<{
@@ -52,6 +72,49 @@ export function formatBattleRecapLead(
   if (perspective === 'viewer_win') return 'YOU WON';
   if (perspective === 'viewer_loss') return 'YOU LOST';
   return `${plan.winnerName.toUpperCase()} WON`;
+}
+
+/** One compact, transcript-backed lesson connecting the drawing to the result. */
+export function formatCompactBattleRecapLesson(
+  plan: Pick<BattleRecapPlan, 'highlight' | 'tapeLine'>
+): string {
+  const lesson = planCompactBattleRecapLesson(plan);
+  return `${lesson.label} · ${lesson.text}`;
+}
+
+export function planCompactBattleRecapLesson(
+  plan: Pick<BattleRecapPlan, 'highlight' | 'tapeLine'>
+): CompactBattleRecapLesson {
+  if (!plan.highlight) {
+    return { label: 'SHAPE POWER', text: plan.tapeLine };
+  }
+  return { label: plan.highlight.label, text: plan.highlight.compactText };
+}
+
+export function planCompactBattleRecapLayout(
+  hasContextLine: boolean
+): CompactBattleRecapLayout {
+  const cardHeight = hasContextLine ? 230 : 204;
+  return {
+    cardHeight,
+    contentTop: -cardHeight / 2 + 14,
+    headlineHeight: 42,
+    statusGap: 3,
+    statusHeight: 52,
+    lessonGap: 4,
+    lessonHeight: 52,
+    lessonLabelHeight: 18,
+    lessonFontSize: 24,
+    contextCenterY: hasContextLine ? cardHeight / 2 - 26 : null,
+    contextHeight: 34,
+  };
+}
+
+export function formatBattleRecapAnnouncement(
+  plan: BattleRecapPlan,
+  perspective: BattleRecapPerspective
+): string {
+  return `${formatBattleRecapLead(plan, perspective)}. ${plan.verdictLine}. ${formatCompactBattleRecapLesson(plan)}.`;
 }
 
 function fighterIndex(slot: FighterSlot): 0 | 1 {
@@ -153,6 +216,7 @@ function planHighlight(
     return {
       label: 'SERVER RESULT',
       text: 'Play-by-play limited; result and final HP preserved.',
+      compactText: 'PLAY-BY-PLAY LIMITED',
     };
   }
 
@@ -178,8 +242,9 @@ function planHighlight(
   );
 
   return {
-    label: terminalDamage === damageEvent ? 'FINAL SPLAT' : 'BIGGEST SPLAT',
+    label: terminalDamage === damageEvent ? 'FINAL SPLAT' : "WINNER'S SPLAT",
     text: `${damageSourceName}${damageEvent.critical ? ' CRIT' : ''} • ${damageEvent.amount} to ${targetFighter.name}`,
+    compactText: `${damageSourceName}${damageEvent.critical ? ' CRIT' : ''} · ${damageEvent.amount} DAMAGE`,
   };
 }
 

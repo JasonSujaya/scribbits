@@ -5,21 +5,8 @@ import {
   isRivalRunChallenge,
   rivalRunChallengeGoalMet,
 } from '../../shared/rivalrunchallenges';
-import type {
-  AuthoritativeBattleResult,
-  BattleEndReason,
-  BattleTranscript,
-  FighterSlot,
-} from '../../shared/combat';
-import {
-  COMBAT_MAXIMUM_TICKS,
-  COMBAT_TICK_RATE,
-  FIXED_POINT_SCALE,
-  MAXIMUM_CHECKPOINTS,
-  MAXIMUM_TIMELINE_EVENTS,
-  battleResultFinishIsConsistent,
-  isShapePowerId,
-} from '../../shared/combat';
+import type { FighterSlot } from '../../shared/combat/types';
+import { parseBattleTranscript } from '../../shared/combat/transcriptvalidation';
 import type { ArenaStorage, ArenaTransaction } from './storage';
 import {
   discardWatchedTransaction,
@@ -45,7 +32,7 @@ export const getUserBattlesKey = (userId: string): string => {
   return `battles:user:${userId}`;
 };
 
-export const getScribbitBattlesKey = (scribbitId: string): string => {
+const getScribbitBattlesKey = (scribbitId: string): string => {
   return `battles:scribbit:${scribbitId}`;
 };
 
@@ -59,90 +46,6 @@ const isRecord = (value: unknown): value is Record<string, unknown> => {
 
 const isFighterSlot = (value: unknown): value is FighterSlot => {
   return value === 'a' || value === 'b';
-};
-
-const isBattleEndReason = (value: unknown): value is BattleEndReason => {
-  return (
-    value === 'knockout' ||
-    value === 'double_knockout' ||
-    value === 'timeout_hp_percentage' ||
-    value === 'timeout_damage_dealt' ||
-    value === 'timeout_stable_tiebreak'
-  );
-};
-
-const isStoredResultFighter = (
-  value: unknown,
-  expectedSlot: FighterSlot,
-  expectedId: string
-): boolean => {
-  return (
-    isRecord(value) &&
-    value.slot === expectedSlot &&
-    value.id === expectedId &&
-    Number.isSafeInteger(value.finalHitPoints) &&
-    Number.isSafeInteger(value.maxHitPoints) &&
-    Number.isSafeInteger(value.hitPointPermille) &&
-    Number.isSafeInteger(value.damageDealt) &&
-    isShapePowerId(value.primaryPower) &&
-    typeof value.inkPressureUsed === 'boolean'
-  );
-};
-
-const isBattleTranscript = (value: unknown): value is BattleTranscript => {
-  if (
-    !isRecord(value) ||
-    !isRecord(value.result) ||
-    !Array.isArray(value.fighters) ||
-    value.fighters.length !== 2 ||
-    !isRecord(value.fighters[0]) ||
-    !isRecord(value.fighters[1]) ||
-    typeof value.fighters[0].id !== 'string' ||
-    typeof value.fighters[1].id !== 'string'
-  ) {
-    return false;
-  }
-
-  const result = value.result;
-  const fighterAId = value.fighters[0].id;
-  const fighterBId = value.fighters[1].id;
-  if (
-    !(
-      value.version === 1 &&
-      value.tickRate === COMBAT_TICK_RATE &&
-      value.fixedPointScale === FIXED_POINT_SCALE &&
-      value.maxTicks === COMBAT_MAXIMUM_TICKS &&
-      typeof value.battleId === 'string' &&
-      typeof value.seed === 'string' &&
-      typeof value.eventsTruncated === 'boolean' &&
-      Array.isArray(value.timeline) &&
-      value.timeline.length >= 2 &&
-      value.timeline.length <= MAXIMUM_TIMELINE_EVENTS &&
-      Array.isArray(value.checkpoints) &&
-      value.checkpoints.length >= 2 &&
-      value.checkpoints.length <= MAXIMUM_CHECKPOINTS &&
-      isFighterSlot(result.winner) &&
-      isFighterSlot(result.loser) &&
-      result.winner !== result.loser &&
-      isBattleEndReason(result.reason) &&
-      Number.isSafeInteger(result.completedTick) &&
-      Number(result.completedTick) >= 0 &&
-      Number(result.completedTick) <= COMBAT_MAXIMUM_TICKS &&
-      result.completedMilliseconds ===
-        Math.floor((Number(result.completedTick) * 1_000) / COMBAT_TICK_RATE) &&
-      Array.isArray(result.fighters) &&
-      result.fighters.length === 2 &&
-      isStoredResultFighter(result.fighters[0], 'a', fighterAId) &&
-      isStoredResultFighter(result.fighters[1], 'b', fighterBId)
-    )
-  ) {
-    return false;
-  }
-
-  return battleResultFinishIsConsistent(
-    result as unknown as AuthoritativeBattleResult,
-    COMBAT_MAXIMUM_TICKS
-  );
 };
 
 const isRivalRunReceipt = (
@@ -235,11 +138,12 @@ const isBattleReport = (value: unknown): value is BattleReport => {
   }
 
   if (value.simulation !== undefined) {
+    const simulation = parseBattleTranscript(value.simulation);
     if (
-      !isBattleTranscript(value.simulation) ||
-      value.a.id !== value.simulation.fighters[0].id ||
-      value.b.id !== value.simulation.fighters[1].id ||
-      value.winner !== value.simulation.result.winner
+      !simulation ||
+      value.a.id !== simulation.fighters[0].id ||
+      value.b.id !== simulation.fighters[1].id ||
+      value.winner !== simulation.result.winner
     ) {
       return false;
     }
@@ -345,7 +249,13 @@ const storeBattleReport = async (
     let transaction: ArenaTransaction | undefined;
     try {
       transaction = await storage.watch(key);
-      const storedReport = parseBattleReport(await storage.get(key));
+      const storedReportJson = await storage.get(key);
+      const storedReport = parseBattleReport(storedReportJson);
+      if (storedReportJson !== undefined && !storedReport) {
+        throw new Error(
+          `Stored battle report ${battleReport.id} is invalid and was preserved.`
+        );
+      }
       const reportToStore = mergeCompatibleReport(storedReport, battleReport);
       await transaction.multi();
       await transaction.set(key, JSON.stringify(reportToStore));
@@ -438,6 +348,9 @@ export const saveBattleReport = async (
   // even if a future route accidentally sends an ephemeral report here.
   if (battleReport.kind === 'practice') {
     throw new Error('Practice battle reports cannot be stored.');
+  }
+  if (!isBattleReport(battleReport) || battleReport.simulation === undefined) {
+    throw new Error('Battle report failed authoritative transcript validation.');
   }
 
   const storedBattleReport: BattleReport = {

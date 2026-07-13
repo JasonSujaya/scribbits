@@ -23,6 +23,10 @@ type OverlayPlacement = {
   followCamera: boolean;
 };
 
+export type OverlayOrderAnchor = Readonly<{
+  rootForOrdering: () => HTMLElement;
+}>;
+
 // Manages a set of DOM elements positioned in design-space over the Phaser
 // canvas. Call sync() on resize; call destroy() on scene shutdown.
 export class DomOverlay {
@@ -120,6 +124,14 @@ export class DomOverlay {
     });
   }
 
+  rootForOrdering(): HTMLElement {
+    return this.root;
+  }
+
+  moveAfter(anchor: OverlayOrderAnchor): void {
+    anchor.rootForOrdering().after(this.root);
+  }
+
   destroy(): void {
     if (this.destroyed) return;
     this.destroyed = true;
@@ -147,12 +159,19 @@ export type CanvasActionOverlayInput = Readonly<{
 
 /** Mirrors a canvas action with a native focusable control in the same bounds. */
 export class CanvasActionOverlay {
+  private static readonly pendingFocusLabels = new WeakMap<
+    Scene,
+    Map<string, string>
+  >();
   private readonly scene: Scene;
   private readonly overlay: DomOverlay;
   private destroyed = false;
   private readonly handleSceneShutdown = (): void => this.destroy();
 
-  constructor(scene: Scene) {
+  constructor(
+    scene: Scene,
+    private readonly focusScope: string | null = null
+  ) {
     this.scene = scene;
     this.overlay = new DomOverlay(scene);
     scene.events.once('shutdown', this.handleSceneShutdown);
@@ -193,10 +212,20 @@ export class CanvasActionOverlay {
     });
     nativeButton.addEventListener('focus', () => {
       focusRing.style.opacity = '1';
+      this.clearPendingFocusLabel();
     });
     nativeButton.addEventListener('blur', () => {
       focusRing.style.opacity = '0';
     });
+    const activate = (): void => {
+      if (this.focusScope) {
+        const sceneLabels =
+          CanvasActionOverlay.pendingFocusLabels.get(this.scene) ?? new Map();
+        sceneLabels.set(this.focusScope, input.label);
+        CanvasActionOverlay.pendingFocusLabels.set(this.scene, sceneLabels);
+      }
+      input.onActivate();
+    };
     nativeButton.addEventListener('keydown', (event) => {
       input.onKeyDown?.(event);
       if (event.defaultPrevented) return;
@@ -206,12 +235,62 @@ export class CanvasActionOverlay {
       // Prevent the browser's follow-up synthetic click so keyboard input and
       // pointer input each activate the action exactly once.
       event.preventDefault();
-      input.onActivate();
+      activate();
     });
-    nativeButton.addEventListener('click', input.onActivate);
+    nativeButton.addEventListener('click', activate);
     this.overlay.place(nativeButton, input.rect, input.followCamera);
     this.overlay.place(focusRing, input.rect, input.followCamera);
     return nativeButton;
+  }
+
+  focusedControlLabel(): string | null {
+    const activeElement = document.activeElement;
+    if (!(activeElement instanceof HTMLButtonElement)) return null;
+    if (!this.overlay.rootForOrdering().contains(activeElement)) return null;
+    return activeElement.getAttribute('aria-label');
+  }
+
+  pendingFocusLabel(): string | null {
+    if (!this.focusScope) return null;
+    return (
+      CanvasActionOverlay.pendingFocusLabels
+        .get(this.scene)
+        ?.get(this.focusScope) ?? null
+    );
+  }
+
+  clearPendingFocusLabel(): void {
+    if (!this.focusScope) return;
+    const sceneLabels = CanvasActionOverlay.pendingFocusLabels.get(this.scene);
+    sceneLabels?.delete(this.focusScope);
+    if (sceneLabels?.size === 0) {
+      CanvasActionOverlay.pendingFocusLabels.delete(this.scene);
+    }
+  }
+
+  restoreControlFocus(accessibleLabel: string): boolean {
+    const controls = [
+      ...this.overlay.rootForOrdering().querySelectorAll('button'),
+    ].filter(
+      (control): control is HTMLButtonElement =>
+        control instanceof HTMLButtonElement && !control.disabled
+    );
+    const exactControl = controls.find(
+      (control) => control.getAttribute('aria-label') === accessibleLabel
+    );
+    const fallbackControl = /\b(?:page|older|newer)\b/i.test(accessibleLabel)
+      ? controls.find((control) =>
+          /\b(?:page|older|newer)\b/i.test(
+            control.getAttribute('aria-label') ?? ''
+          )
+        )
+      : undefined;
+    const control = exactControl ?? fallbackControl;
+    control?.focus();
+    if (control && this.focusScope) {
+      this.clearPendingFocusLabel();
+    }
+    return control !== undefined;
   }
 
   addDescription(id: string, description: string): HTMLElement {
@@ -252,6 +331,14 @@ export class CanvasActionOverlay {
 
   setRootAttributes(attributes: Readonly<Record<string, string>>): void {
     if (!this.destroyed) this.overlay.setRootAttributes(attributes);
+  }
+
+  rootForOrdering(): HTMLElement {
+    return this.overlay.rootForOrdering();
+  }
+
+  moveAfter(anchor: OverlayOrderAnchor): void {
+    this.overlay.moveAfter(anchor);
   }
 
   destroy(): void {

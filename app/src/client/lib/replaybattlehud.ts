@@ -5,6 +5,7 @@ import * as Phaser from 'phaser';
 import { Scene } from 'phaser';
 import type { BattleReport, Scribbit } from '../../shared/arena';
 import type { PrimaryPower } from '../../shared/combat/types';
+import { formatCombatUpgradeSummary } from '../../shared/combat/upgrades';
 import {
   getReplayBattleKindLabel,
   planReplayBattleClock,
@@ -16,13 +17,14 @@ import type {
 } from './battlepresentation';
 import { getShapePowerSignatureName } from './shapepowerpresentation';
 import { ELEMENT_STYLES, UI } from './theme';
-import { ghostButton, label } from './ui';
+import { bindPressInteractionEvents } from './pressinteraction';
+import { label } from './ui';
+import { BATTLE_CONTROL_BUTTON_TEXTURE } from './visualassets';
 
 export type ReplayShapePowerState = 'ready' | 'telegraph' | 'active';
 
 type ShapePowerChipView = {
   container: Phaser.GameObjects.Container;
-  background: Phaser.GameObjects.Rectangle;
   stateBackground: Phaser.GameObjects.Rectangle;
   stateLabel: Phaser.GameObjects.Text;
   powerLabel: Phaser.GameObjects.Text;
@@ -52,8 +54,6 @@ type BattleClockView = {
 type ShapePowerStatePresentation = Readonly<{
   visibleLabel: string;
   accessibleLabel: string;
-  backgroundColor: number;
-  borderColor: number;
   stateBackgroundColor: number;
   stateTextColor: string;
   powerTextColor: string;
@@ -66,8 +66,6 @@ const SHAPE_POWER_STATE_PRESENTATIONS: Record<
   ready: {
     visibleLabel: 'READY',
     accessibleLabel: 'ready',
-    backgroundColor: UI.creamHex,
-    borderColor: UI.inkHex,
     stateBackgroundColor: UI.inkHex,
     stateTextColor: UI.cream,
     powerTextColor: UI.ink,
@@ -75,20 +73,16 @@ const SHAPE_POWER_STATE_PRESENTATIONS: Record<
   telegraph: {
     visibleLabel: 'WINDUP',
     accessibleLabel: 'telegraphing',
-    backgroundColor: UI.tape,
-    borderColor: UI.inkHex,
-    stateBackgroundColor: UI.inkHex,
-    stateTextColor: UI.cream,
+    stateBackgroundColor: UI.goldHex,
+    stateTextColor: UI.ink,
     powerTextColor: UI.ink,
   },
   active: {
     visibleLabel: 'ACTIVE',
     accessibleLabel: 'active',
-    backgroundColor: UI.inkHex,
-    borderColor: UI.goldHex,
-    stateBackgroundColor: UI.goldHex,
-    stateTextColor: UI.ink,
-    powerTextColor: UI.cream,
+    stateBackgroundColor: UI.coral,
+    stateTextColor: UI.cream,
+    powerTextColor: UI.ink,
   },
 };
 
@@ -132,6 +126,7 @@ const createShapePowerLiveRegion = (
 
 export type ReplayBattleHud = {
   announce: (text: string) => void;
+  announceResult: (text: string) => void;
   setAnnouncerText: (text: string) => void;
   setAnnouncerVisible: (visible: boolean) => void;
   setPlaybackSpeed: (speed: number) => void;
@@ -185,52 +180,11 @@ const createFighterBarView = (
 ): FighterBarView => {
   const fighterLayout = layout.fighters[side];
   const style = ELEMENT_STYLES[scribbit.element];
-  const panelRight = fighterLayout.panelLeft + layout.healthBarWidth;
-  const namePlateBottom = layout.fighterPanelTop + 48;
-  const clippedCorner = 14;
-  const panel = scene.add.graphics();
-  panel.fillStyle(UI.creamHex, 0.94);
-  panel.beginPath();
-  if (side === 'a') {
-    panel.moveTo(fighterLayout.panelLeft, layout.fighterPanelTop);
-    panel.lineTo(panelRight - clippedCorner, layout.fighterPanelTop);
-    panel.lineTo(panelRight, layout.fighterPanelTop + clippedCorner);
-    panel.lineTo(panelRight, namePlateBottom);
-    panel.lineTo(fighterLayout.panelLeft, namePlateBottom);
-  } else {
-    panel.moveTo(
-      fighterLayout.panelLeft + clippedCorner,
-      layout.fighterPanelTop
-    );
-    panel.lineTo(panelRight, layout.fighterPanelTop);
-    panel.lineTo(panelRight, namePlateBottom);
-    panel.lineTo(fighterLayout.panelLeft, namePlateBottom);
-    panel.lineTo(
-      fighterLayout.panelLeft,
-      layout.fighterPanelTop + clippedCorner
-    );
-  }
-  panel.closePath();
-  panel.fillPath();
-  panel.lineStyle(2, UI.inkHex, 0.72);
-  panel.lineBetween(
-    fighterLayout.panelLeft + 8,
-    namePlateBottom - 2,
-    panelRight - 8,
-    namePlateBottom - 2
-  );
-  panel.lineStyle(6, style.primary, 0.96);
-  panel.lineBetween(
-    fighterLayout.panelLeft + (side === 'a' ? 8 : clippedCorner + 6),
-    layout.fighterPanelTop + 3,
-    panelRight - (side === 'a' ? clippedCorner + 6 : 8),
-    layout.fighterPanelTop + 3
-  );
 
   const name = label(
     scene,
     fighterLayout.nameX,
-    layout.fighterNameY + 4,
+    layout.fighterNameY,
     scribbit.name,
     30,
     UI.ink,
@@ -238,7 +192,7 @@ const createFighterBarView = (
   )
     .setOrigin(fighterLayout.nameOriginX, 0.5)
     .setDepth(22);
-  const availableNameWidth = layout.healthBarWidth - 72;
+  const availableNameWidth = layout.healthBarWidth - 62;
   fitTextToWidth(name, availableNameWidth);
   name.setInteractive({ useHandCursor: true });
   name.on(
@@ -254,6 +208,38 @@ const createFighterBarView = (
     }
   );
 
+  const level = label(
+    scene,
+    fighterLayout.levelBadgeX,
+    layout.fighterNameY,
+    `LV${scribbit.level}`,
+    17,
+    UI.inkSoft,
+    true
+  )
+    .setOrigin(side === 'a' ? 1 : 0, 0.5)
+    .setDepth(22);
+
+  const upgradeSummary = formatCombatUpgradeSummary(scribbit.upgrades, '', 2);
+  const fighterMeta = label(
+    scene,
+    fighterLayout.nameX,
+    layout.fighterMetaY,
+    upgradeSummary,
+    15,
+    UI.inkSoft,
+    true
+  )
+    .setOrigin(fighterLayout.nameOriginX, 0.5)
+    .setDepth(22)
+    .setVisible(upgradeSummary.length > 0)
+    .setName(`${scribbit.name} Ink Mods: ${upgradeSummary}`)
+    .setData(
+      'accessibilityLabel',
+      `${scribbit.name} Ink Mods: ${upgradeSummary}`
+    );
+  fitTextToWidth(fighterMeta, layout.healthBarWidth);
+
   const hitPointTrack = scene.add
     .rectangle(
       fighterLayout.healthBarAnchorX,
@@ -268,7 +254,7 @@ const createFighterBarView = (
     .setDepth(22);
   const hitPointTrail = scene.add
     .rectangle(
-      fighterLayout.healthBarAnchorX,
+      fighterLayout.healthBarAnchorX + (side === 'a' ? 5 : -5),
       layout.healthBarY,
       layout.healthBarFillWidth,
       layout.healthBarFillHeight,
@@ -279,7 +265,7 @@ const createFighterBarView = (
     .setDepth(23);
   const hitPointBar = scene.add
     .rectangle(
-      fighterLayout.healthBarAnchorX,
+      fighterLayout.healthBarAnchorX + (side === 'a' ? 5 : -5),
       layout.healthBarY,
       layout.healthBarFillWidth,
       layout.healthBarFillHeight,
@@ -294,21 +280,18 @@ const createFighterBarView = (
     fighterLayout.chipCenterX,
     layout.healthBarY,
     '— / —',
-    29,
+    23,
     UI.ink,
     true
   );
-  hitPointValue.setStroke(UI.cream, 5);
+  hitPointValue.setStroke(UI.cream, 3);
 
-  const chipWidth = layout.healthBarWidth - 12;
+  const chipWidth = layout.healthBarWidth;
   const chipHeight = layout.fighterChipHeight;
-  const stateWidth = Math.min(102, Math.round(chipWidth * 0.38));
-  const powerWidth = chipWidth - stateWidth;
-  const innerDirection = side === 'a' ? 1 : -1;
-  const stateCenterX = (innerDirection * powerWidth) / 2;
-  const powerCenterX = (-innerDirection * stateWidth) / 2;
-  const dividerX = innerDirection * (chipWidth / 2 - stateWidth);
-  const elementAccentX = -innerDirection * (chipWidth / 2 - 5);
+  const stateWidth = Math.min(82, Math.round(chipWidth * 0.32));
+  const stateCenterX = chipWidth / 2 - stateWidth / 2;
+  const powerWidth = chipWidth - stateWidth - 10;
+  const powerCenterX = -chipWidth / 2 + powerWidth / 2;
   const readyPresentation = SHAPE_POWER_STATE_PRESENTATIONS.ready;
   const powerName = getShapePowerSignatureName(
     scribbit.element,
@@ -317,38 +300,12 @@ const createFighterBarView = (
   const shapePowerContainer = scene.add
     .container(fighterLayout.chipCenterX, layout.fighterChipY)
     .setSize(chipWidth, chipHeight);
-  const powerChip = scene.add
-    .rectangle(
-      0,
-      0,
-      chipWidth,
-      chipHeight,
-      readyPresentation.backgroundColor,
-      1
-    )
-    .setStrokeStyle(3, readyPresentation.borderColor, 1);
   const stateBackground = scene.add.rectangle(
     stateCenterX,
     0,
-    stateWidth - 4,
-    chipHeight - 6,
+    stateWidth,
+    chipHeight - 4,
     readyPresentation.stateBackgroundColor,
-    1
-  );
-  const divider = scene.add.rectangle(
-    dividerX,
-    0,
-    3,
-    chipHeight - 8,
-    UI.inkHex,
-    0.92
-  );
-  const elementAccent = scene.add.rectangle(
-    elementAccentX,
-    0,
-    5,
-    chipHeight - 9,
-    style.primary,
     1
   );
   const stateLabel = label(
@@ -356,7 +313,7 @@ const createFighterBarView = (
     stateCenterX,
     0,
     readyPresentation.visibleLabel,
-    27,
+    18,
     readyPresentation.stateTextColor,
     true
   );
@@ -365,25 +322,19 @@ const createFighterBarView = (
     powerCenterX,
     0,
     powerName,
-    28,
+    23,
     readyPresentation.powerTextColor,
     true
   );
-  fitTextToWidth(stateLabel, stateWidth - 14);
-  fitTextToWidth(powerLabel, powerWidth - 20);
-  shapePowerContainer.add([
-    powerChip,
-    stateBackground,
-    divider,
-    elementAccent,
-    stateLabel,
-    powerLabel,
-  ]);
+  fitTextToWidth(stateLabel, stateWidth - 12);
+  fitTextToWidth(powerLabel, powerWidth - 8);
+  shapePowerContainer.add([stateBackground, stateLabel, powerLabel]);
 
   const container = scene.add
     .container(0, 0, [
-      panel,
       name,
+      level,
+      fighterMeta,
       hitPointTrack,
       hitPointTrail,
       hitPointBar,
@@ -400,7 +351,6 @@ const createFighterBarView = (
     hitPointValue,
     shapePower: {
       container: shapePowerContainer,
-      background: powerChip,
       stateBackground,
       stateLabel,
       powerLabel,
@@ -469,9 +419,25 @@ const toolbarIconButton = (
   container: Phaser.GameObjects.Container;
   render: (value?: number | boolean) => void;
 }> => {
-  const container = ghostButton(scene, x, y, '', onClick, width);
+  const container = scene.add.container(x, y);
+  const buttonFace = scene.add
+    .image(0, 0, BATTLE_CONTROL_BUTTON_TEXTURE)
+    .setDisplaySize(80, 80);
   const iconLayer = scene.add.container(0, 0);
-  container.add(iconLayer);
+  const hitTarget = scene.add
+    .rectangle(0, 0, width, width, 0xffffff, 0.001)
+    .setInteractive({ useHandCursor: true });
+  container.add([buttonFace, iconLayer, hitTarget]);
+  bindPressInteractionEvents(
+    hitTarget,
+    {
+      press: () => container.setScale(0.92),
+      release: () => container.setScale(1),
+      activate: onClick,
+      pressOnHover: false,
+    },
+    { gameTarget: scene.game.events, shutdownTarget: scene.events }
+  );
 
   const render = (value: number | boolean = initialValue ?? true): void => {
     iconLayer.removeAll(true);
@@ -558,11 +524,8 @@ export function createReplayBattleHud(
     shapePowerStates[side] = state;
     const shapePower = fighterBars[side].shapePower;
     const presentation = SHAPE_POWER_STATE_PRESENTATIONS[state];
-    scene.tweens.killTweensOf(shapePower.container);
-    shapePower.container.setScale(1).setAlpha(1);
-    shapePower.background
-      .setFillStyle(presentation.backgroundColor, 1)
-      .setStrokeStyle(state === 'active' ? 4 : 3, presentation.borderColor, 1);
+    scene.tweens.killTweensOf(shapePower.stateBackground);
+    shapePower.stateBackground.setAlpha(1);
     shapePower.stateBackground.setFillStyle(
       presentation.stateBackgroundColor,
       1
@@ -583,20 +546,18 @@ export function createReplayBattleHud(
 
     if (!input.reduceMotion && state === 'telegraph') {
       scene.tweens.add({
-        targets: shapePower.container,
-        scaleX: 1.02,
-        scaleY: 1.08,
-        duration: 260,
+        targets: shapePower.stateBackground,
+        alpha: 0.58,
+        duration: 300,
         ease: 'Sine.easeInOut',
         yoyo: true,
         repeat: -1,
       });
     } else if (!input.reduceMotion && state === 'active') {
       scene.tweens.add({
-        targets: shapePower.container,
-        scaleX: 1.04,
-        scaleY: 1.12,
-        duration: 100,
+        targets: shapePower.stateBackground,
+        alpha: 0.5,
+        duration: 110,
         ease: 'Cubic.easeOut',
         yoyo: true,
       });
@@ -677,22 +638,6 @@ export function createReplayBattleHud(
   );
   if (kind.width > kindMaximumWidth) {
     kind.setScale(kindMaximumWidth / kind.width);
-  }
-  const serverTruth = label(
-    scene,
-    layout.kindLabelX,
-    layout.serverTruthY,
-    input.battleKind === 'practice'
-      ? 'NO REWARDS · SERVER LOCKED'
-      : 'SERVER LOCKED',
-    26,
-    UI.coralText,
-    true
-  )
-    .setOrigin(0, 0.5)
-    .setDepth(80);
-  if (serverTruth.width > layout.kindLabelMaximumWidth) {
-    serverTruth.setScale(layout.kindLabelMaximumWidth / serverTruth.width);
   }
   let renderSpeedButton: ((value?: number | boolean) => void) | null = null;
   let renderSoundButton: ((value?: number | boolean) => void) | null = null;
@@ -882,6 +827,9 @@ export function createReplayBattleHud(
     announce: (text: string): void => {
       showTransientAnnouncement(text);
     },
+    announceResult: (text: string): void => {
+      if (shapePowerLiveRegion) shapePowerLiveRegion.textContent = text;
+    },
     setAnnouncerText: (text: string): void => {
       announcer.setText(text);
       ticker.setVisible(true).setAlpha(1);
@@ -913,7 +861,6 @@ export function createReplayBattleHud(
       broadcastRail.setVisible(visible);
       livePill.setVisible(visible);
       kind.setVisible(visible);
-      serverTruth.setVisible(visible);
       Object.values(fighterBars).forEach((bars) => {
         bars.container.setVisible(visible);
       });

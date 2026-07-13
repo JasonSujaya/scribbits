@@ -2,6 +2,7 @@
 // Extend, never fork. Analyzer + balance invariants: plans/v3-scribbits-arena.md.
 
 import type { BattleTranscript } from './combat';
+import type { ScribbitUpgrade } from './combat/upgrades';
 import type { Element } from './elements';
 
 export { ELEMENTS, isElement } from './elements';
@@ -35,7 +36,7 @@ export type LegacyCosmeticSnapshot = {
 // roster. The Scribbit record keeps its original drawing and identity; this
 // stamp freezes the progression values used by the owner's Legacy Card.
 export type ScribbitLegacy = {
-  schemaVersion: 1;
+  schemaVersion: 1 | 2;
   archivedDay: number;
   finish: LegacyFinish;
   creatorTitle: LegacyCosmeticSnapshot | null;
@@ -45,6 +46,7 @@ export type ScribbitLegacy = {
   losses: number;
   belief: number;
   accessories: LegacyCosmeticSnapshot[];
+  upgrades: ScribbitUpgrade[];
 };
 
 export type Mood = 'happy' | 'hungry' | 'sleepy' | 'pumped';
@@ -66,6 +68,7 @@ export type Scribbit = {
   legendTitle: string | null; // e.g. "Champion of Day 12"
   isFounding: boolean; // NPC founding roster
   accessories: string[]; // accessory catalog ids welded to this scribbit
+  upgrades: ScribbitUpgrade[]; // one deterministic Ink Mod per level after 1
   // Tamagotchi layer — levels die with the scribbit; bonuses are small + capped
   level: number; // 1..MAX_LEVEL
   xp: number;
@@ -129,11 +132,19 @@ export type ScoutNotebookState = Readonly<{
   entries: readonly ScoutNotebookEntry[]; // today first, followed by up to six prior days
 }>;
 
+export type RumbleReturnFighter = Pick<
+  Scribbit,
+  'id' | 'name' | 'element' | 'stats' | 'imageUrl' | 'isFounding'
+>;
+
 export type BackedRumbleReceipt = {
   kind: 'backed';
   resolvedDay: number;
   backedName: string;
   championName: string;
+  pick: RumbleReturnFighter | null;
+  opponent: RumbleReturnFighter | null;
+  opponentIsChampion: boolean;
   cloutEarned: number;
   inkAwarded: number;
   replayAvailable: boolean; // server-selected last bout for the backed Scribbit
@@ -493,9 +504,10 @@ export const BELIEF_LEGEND_THRESHOLD = 25;
 export const MAX_ALIVE_PER_USER = 3;
 
 // Tamagotchi/level balance: growth should be visible without letting an older
-// Scribbit invalidate a better drawing. The full level 1 -> 5 journey adds only
-// 1.5% damage; shape, power matchup, and authored forecast remain dominant.
-// Level bonus dies with the Scribbit. XP awards live in XP_REWARDS above.
+// Scribbit invalidate a better drawing. Levels 2-5 each unlock one small,
+// deterministic Ink Mod, plus the existing capped 1.5% mastery bonus. Shape,
+// power matchup, and authored forecast remain dominant. All growth dies with
+// the Scribbit. XP awards live in XP_REWARDS above.
 export const MAX_LEVEL = 5;
 export const LEVEL_XP_THRESHOLDS = [0, 3, 7, 12, 18]; // xp needed for level 1..5
 export const LEVEL_DAMAGE_BONUS_PER_LEVEL = 0.00375; // +0.375%/level above 1, max +1.5%

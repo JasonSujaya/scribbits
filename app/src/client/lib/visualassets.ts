@@ -1,6 +1,7 @@
 import type * as Phaser from 'phaser';
 import type { Scene } from 'phaser';
 export const PAPER_STAGE_TEXTURE = 'scribbits-paper-stage';
+export const BATTLE_CONTROL_BUTTON_TEXTURE = 'ui-button-battle-control';
 
 export const UI_BUTTON_TEXTURES = {
   back: 'ui-button-back',
@@ -16,9 +17,10 @@ const assetUrl = (fileName: string): string => {
 };
 
 export function preloadVisualAssets(scene: Scene): void {
+  scene.load.image(PAPER_STAGE_TEXTURE, assetUrl('scribbits-paper-stage.jpg'));
   scene.load.image(
-    PAPER_STAGE_TEXTURE,
-    assetUrl('scribbits-paper-stage.jpg')
+    BATTLE_CONTROL_BUTTON_TEXTURE,
+    assetUrl('ui-button-battle-control.png')
   );
   Object.entries(UI_BUTTON_TEXTURES).forEach(([kind, texture]) => {
     scene.load.image(texture, assetUrl(`ui-button-${kind}.png`));

@@ -26,6 +26,8 @@ const cloneScribbit = (scribbit: Scribbit): Scribbit => {
   return {
     ...scribbit,
     stats: { ...scribbit.stats },
+    accessories: [...scribbit.accessories],
+    upgrades: scribbit.upgrades.map((upgrade) => ({ ...upgrade })),
     careDoneToday: [...scribbit.careDoneToday],
   };
 };

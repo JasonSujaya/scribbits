@@ -88,7 +88,8 @@ copy should keep the default view to one headline, one status, and one action.
    echo can still connect after that event.
    The finish is equally transcript-driven: a compact Inkcast Recap says
    `YOU WON`, `YOU LOST`, or names the spectator winner before the exact verdict,
-   duration, and final HP. Owned exhibitions promote `CHOOSE A RIVAL` to one
+   duration, final HP, and one Shape-Power lesson such as
+   `FINAL SPLAT · THUNDERFOLD · 25 DAMAGE`. Owned exhibitions promote `CHOOSE A RIVAL` to one
    primary action beside one compact return. When no Rival draft is available,
    tonight's pick becomes the primary; Practice remains reachable from Arena
    instead of competing with the result. Knockouts fold only
@@ -297,8 +298,10 @@ boundary during browser iteration—it is not the production game server.
   Ember afterburn, Tide shove, Moss barrier, and Storm windup. The Field Guide
   consumes this instead of maintaining the retired element triangle.
 - `src/shared/combat/resultvalidation.ts`: one KO/double-KO/timeout
-  terminal-state gate shared by stored-report parsing and client replay; both
-  callers also bind top-level fighters to their transcript slots.
+  terminal-state gate consumed by the full transcript parser.
+- `src/shared/combat/transcriptvalidation.ts`: the one browser-safe, version-aware
+  runtime parser for transcript fighters, events, checkpoints, and results. Both
+  storage and Replay fail closed through it.
 - `src/server/index.ts`: Hono server entry point.
 - `src/server/routes/api.ts`: REST API mounted at `/api`.
 - `src/server/core`: Redis-backed domain logic for arena days, Scribbits, ink,
@@ -336,8 +339,8 @@ boundary during browser iteration—it is not the production game server.
   shared icon buttons, completion states, native controls, and bounded cleanup.
 - `src/client/lib/inkmesh.ts`: deterministic Mesh2D geometry and stat-driven
   motion rules, kept pure for regression testing.
-- `src/client/lib/continuousreplay.ts`: transcript validation and checkpoint
-  interpolation used by the live-looking replay.
+- `src/client/lib/continuousreplay.ts`: report-to-transcript identity binding and
+  checkpoint interpolation used by the live-looking replay.
 - `src/client/lib/battlepresentation.ts`: pure impact, real-time paper-arena
   layout, non-overlapping outcome stack, HP, clock, shrinking-arena, and visible
   mastery plans derived from authoritative data.
@@ -461,9 +464,12 @@ Agent-safe shortcut:
 ../mock.command
 ```
 
-That shortcut runs a watch build beside the mock server and auto-refreshes the
-browser after rebuilds. Open `http://localhost:8902/?fresh` to exercise the
-brand-new-player route with an empty roster and no unlocked metagame items.
+That shortcut runs a dedicated Vite development server for immediate client
+updates and proxies API requests to the local mock backend. Backend bundles are
+rebuilt in staging and published only when successful, so the running game keeps
+the last-good server code during an invalid save. Running the shortcut again
+replaces its previous instance. Open `http://localhost:8902/?fresh` to exercise
+the brand-new-player route with an empty roster and no unlocked metagame items.
 For deterministic combat proof, use
 `/?debug&spar&power=inkquake&element=storm&seed=2`; swap in `nib_halo`,
 `smearstep`, or `colorburst`, and add `&canvas` or `&reduce-motion` for those
@@ -481,7 +487,7 @@ Run these before handing off changes:
 pnpm verify
 ```
 
-`pnpm verify` runs type-check, lint, 142 deterministic simulation groups, and
+`pnpm verify` runs type-check, lint, 146 deterministic simulation groups, and
 the production build.
 
 `pnpm run test:sim` covers deterministic analyzer, Inkbody mesh geometry, combat

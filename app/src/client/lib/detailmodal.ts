@@ -7,6 +7,7 @@
 import * as Phaser from 'phaser';
 import { Scene } from 'phaser';
 import type { Scribbit } from '../../shared/arena';
+import { formatCombatUpgradeSummary } from '../../shared/combat/upgrades';
 import {
   believe as believeApi,
   removeScribbit as removeScribbitApi,
@@ -86,6 +87,7 @@ export function openDetailModal(
     `${scribbit.name} by u/${scribbit.artist}.`,
     `${scribbit.element} Scribbit, level ${levelOf(scribbit)}, ${mood.label.toLowerCase()}.`,
     `${recordText(scribbit)}, ${scribbit.belief} belief.`,
+    `Ink Mods: ${formatCombatUpgradeSummary(scribbit.upgrades, 'none yet')}.`,
     scribbit.status === 'alive'
       ? `${daysLeft} ${daysLeft === 1 ? 'day' : 'days'} left.`
       : `${scribbit.status} record.`,
@@ -243,6 +245,25 @@ export function openDetailModal(
   const xpBar = progressBar(scene, 30, cursor, cardW - 200, style.primary, 16);
   card.add(xpBar.container);
   xpBar.set(xpProgress(scribbit), true);
+
+  cursor += 30;
+  const upgradeSummary = formatCombatUpgradeSummary(
+    scribbit.upgrades,
+    'NEXT INK MOD AT LV2'
+  );
+  const upgradeLabel = label(
+    scene,
+    0,
+    cursor,
+    upgradeSummary,
+    TYPE.caption,
+    UI.coralText,
+    true
+  );
+  if (upgradeLabel.width > cardW - 80) {
+    upgradeLabel.setScale((cardW - 80) / upgradeLabel.width);
+  }
+  card.add(upgradeLabel);
 
   // --- 2x2 stat grid --------------------------------------------------------
   cursor += 40;

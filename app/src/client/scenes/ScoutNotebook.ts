@@ -310,11 +310,15 @@ export class ScoutNotebook extends Scene {
   }
 
   private renderDayTabs(entries: readonly ScoutNotebookEntry[]): void {
+    const focusedDayTab = [...this.dayTabControls.values()].includes(
+      document.activeElement as HTMLButtonElement
+    );
     this.tabsLayer?.destroy(true);
     this.tabsOverlay?.destroy();
     this.dayTabControls.clear();
     this.dayTabController = null;
     this.tabsOverlay = new CanvasActionOverlay(this);
+    if (this.headerOverlay) this.tabsOverlay.moveAfter(this.headerOverlay);
     const tabDays = entries.map(({ day }) => day);
     const selectedDay = this.selectedDay ?? tabDays[0];
     if (selectedDay === undefined) return;
@@ -423,6 +427,9 @@ export class ScoutNotebook extends Scene {
     }
 
     this.tabsLayer = layer;
+    if (focusedDayTab && this.selectedDay !== null) {
+      this.dayTabControls.get(this.selectedDay)?.focus();
+    }
   }
 
   private selectDay(day: number): void {
@@ -551,6 +558,7 @@ export class ScoutNotebook extends Scene {
       whiteSpace: 'nowrap',
     });
     this.pageSemanticOverlay = new DomOverlay(this);
+    if (this.tabsOverlay) this.pageSemanticOverlay.moveAfter(this.tabsOverlay);
     this.pageSemanticOverlay.place(panel, {
       x: 36,
       y: 306,
@@ -783,6 +791,9 @@ export class ScoutNotebook extends Scene {
       id: SCOUT_PAGE_ACTIONS_ID,
       'aria-label': `Day ${entry.day} Scout action`,
     });
+    if (this.pageSemanticOverlay) {
+      this.pageActionOverlay.moveAfter(this.pageSemanticOverlay);
+    }
     this.pageActionControl =
       this.pageActionOverlay?.add({
         label: pagePlan.actionAccessibleLabel,

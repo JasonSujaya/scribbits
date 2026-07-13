@@ -75,6 +75,7 @@ execFileSync(
     'src/shared/combat/elementcontent.ts',
     'src/shared/combat/selection.ts',
     'src/shared/combat/resultvalidation.ts',
+    'src/shared/combat/transcriptvalidation.ts',
     'src/shared/combat/fixed-math.ts',
     'src/shared/combat/random.ts',
     'src/shared/combat/engine.ts',
@@ -203,6 +204,7 @@ const combatEngineTests = require(
   join(outDir, 'shared', 'combat', 'engine.test.js')
 );
 const combatEngine = require(join(outDir, 'shared', 'combat', 'engine.js'));
+const combatUpgrades = require(join(outDir, 'shared', 'combat', 'upgrades.js'));
 const combatConfig = require(join(outDir, 'shared', 'combat', 'config.js'));
 const combatSelection = require(
   join(outDir, 'shared', 'combat', 'selection.js')
@@ -307,6 +309,9 @@ const legacyReturnPresentation = require(
 const continuousReplay = require(
   join(outDir, 'client', 'lib', 'continuousreplay.js')
 );
+const combatTranscriptValidation = require(
+  join(outDir, 'shared', 'combat', 'transcriptvalidation.js')
+);
 const battlePresentation = require(
   join(outDir, 'client', 'lib', 'battlepresentation.js')
 );
@@ -335,9 +340,7 @@ const clientPens = require(join(outDir, 'client', 'lib', 'pens.js'));
 const pressInteraction = require(
   join(outDir, 'client', 'lib', 'pressinteraction.js')
 );
-const semanticTabs = require(
-  join(outDir, 'client', 'lib', 'semantictabs.js')
-);
+const semanticTabs = require(join(outDir, 'client', 'lib', 'semantictabs.js'));
 
 const passedChecks = [];
 
@@ -350,7 +353,9 @@ const readSourceFiles = (directory) =>
     const entryPath = join(directory, entry.name);
     if (entry.isDirectory()) return readSourceFiles(entryPath);
     if (!entry.isFile() || !/\.(?:mjs|ts)$/.test(entry.name)) return [];
-    if (entry.name === 'test-battle.mjs') return [];
+    if (entry.name === 'test-battle.mjs' || entry.name.endsWith('.test.ts')) {
+      return [];
+    }
     return [readFileSync(entryPath, 'utf8')];
   });
 
@@ -377,22 +382,30 @@ const combatRandomSource = readFileSync(
   join(repoRoot, 'src', 'shared', 'combat', 'random.ts'),
   'utf8'
 );
-const stableStringHashOwnerFamily = executableSourceFamily
-  .replace(combatRandomSource, '')
-  .replace(/(?<=[0-9a-f])_(?=[0-9a-f])/gi, '');
+const normalizeNumericSeparators = (source) =>
+  source.replace(/(?<=[0-9a-f])_(?=[0-9a-f])/gi, '');
+const stableStringHashOwnerFamily = normalizeNumericSeparators(
+  executableSourceFamily.replace(combatRandomSource, '')
+);
+assert.equal(normalizeNumericSeparators('0x811c_9dc5'), '0x811c9dc5');
+assert.equal(normalizeNumericSeparators('0X811C_9DC5'), '0X811C9DC5');
+assert.equal(normalizeNumericSeparators('2_166_136_261'), '2166136261');
 assert.match(stableHashSource, /Math\.imul\(hash, 0x01000193\)/);
 assert.equal(
-  stableStringHashOwnerFamily.match(/(?:2166136261|0x811c9dc5)/g)?.length,
+  stableStringHashOwnerFamily.match(/(?:2166136261|0x811c9dc5)/gi)?.length,
   1,
   'only the shared stable-hash primitive may own the FNV-1a offset basis'
 );
 assert.equal(
-  stableStringHashOwnerFamily.match(/(?:16777619|0x01000193)/g)?.length,
+  stableStringHashOwnerFamily.match(/(?:16777619|0x01000193)/gi)?.length,
   1,
   'only the shared stable-hash primitive may own the FNV-1a multiplier'
 );
 assert.match(
-  readFileSync(join(repoRoot, 'src', 'shared', 'rivalrunchallenges.ts'), 'utf8'),
+  readFileSync(
+    join(repoRoot, 'src', 'shared', 'rivalrunchallenges.ts'),
+    'utf8'
+  ),
   /import \{ hashStringToUint32 \} from '\.\/stablehash';/
 );
 pass('stable string hashing has one shared primitive and two domain names');
@@ -426,6 +439,10 @@ assert.match(verifyCommandSource, /ensure_node_modules/);
 assert.match(verifyCommandSource, /run_pnpm verify/);
 assert.doesNotMatch(contributorCommandsSource, /\bnpm (?:ci|run)\b/);
 assert.doesNotMatch(appReadmeSource, /\bnpm (?:ci|install|run)\b/);
+assert.doesNotMatch(
+  readFileSync(join(repoRoot, 'scripts', 'dev-mock.mjs'), 'utf8'),
+  /\bnpm (?:ci|install|run)\b/
+);
 assert.match(nodeBootstrapSource, /Node 22\.2\.0\+ is required/);
 assert.match(nodeBootstrapSource, /required_pnpm_version="11\.7\.0"/);
 pass('workspace verification has one clean-shell pnpm bootstrap');
@@ -585,12 +602,10 @@ assert.equal(
 );
 pass('Element values and runtime validation have one shared catalog');
 
-assert.deepEqual([...arena.SCRIBBIT_STAT_KEYS], [
-  'chonk',
-  'spike',
-  'zip',
-  'charm',
-]);
+assert.deepEqual(
+  [...arena.SCRIBBIT_STAT_KEYS],
+  ['chonk', 'spike', 'zip', 'charm']
+);
 assert.equal(Object.isFrozen(arena.SCRIBBIT_STAT_KEYS), true);
 assert.equal(combatConfig.DOMINANT_STAT_TIE_ORDER, arena.SCRIBBIT_STAT_KEYS);
 for (const relativePath of [
@@ -598,6 +613,8 @@ for (const relativePath of [
   'src/shared/scoutnotebook.ts',
   'src/shared/combat/config.ts',
   'src/client/lib/ui.ts',
+  'src/server/core/scribbit.ts',
+  'scripts/dev-mock.mjs',
 ]) {
   const consumerSource = readFileSync(join(repoRoot, relativePath), 'utf8');
   assert.match(consumerSource, /\bSCRIBBIT_STAT_KEYS\b/);
@@ -606,6 +623,59 @@ for (const relativePath of [
     /\[\s*['"]chonk['"]\s*,\s*['"]spike['"]\s*,\s*['"]zip['"]\s*,\s*['"]charm['"]\s*\]/
   );
 }
+const countCompleteStatKeyArrays = (source) => {
+  const sourceFile = typescript.createSourceFile(
+    'runtime-stat-catalog.ts',
+    source,
+    typescript.ScriptTarget.Latest,
+    true,
+    typescript.ScriptKind.TS
+  );
+  let count = 0;
+  const visit = (node) => {
+    if (
+      typescript.isArrayLiteralExpression(node) &&
+      node.elements.length === 4
+    ) {
+      const values = node.elements
+        .filter(
+          (element) =>
+            typescript.isStringLiteral(element) ||
+            typescript.isNoSubstitutionTemplateLiteral(element)
+        )
+        .map((element) => element.text);
+      const valueSet = new Set(values);
+      if (
+        values.length === 4 &&
+        ['chonk', 'spike', 'zip', 'charm'].every((key) => valueSet.has(key))
+      ) {
+        count += 1;
+      }
+    }
+    typescript.forEachChild(node, visit);
+  };
+  visit(sourceFile);
+  return count;
+};
+const runtimeStatCatalogCount = [
+  ...readSourceFiles(join(repoRoot, 'src')),
+  ...readSourceFiles(join(repoRoot, 'scripts')),
+].reduce((count, source) => count + countCompleteStatKeyArrays(source), 0);
+assert.equal(runtimeStatCatalogCount, 1);
+assert.equal(
+  countCompleteStatKeyArrays(
+    "const copied = ['spike', 'chonk', 'zip', 'charm'];"
+  ),
+  1,
+  'the runtime stat catalog guard must reject reordered copies'
+);
+assert.equal(
+  countCompleteStatKeyArrays(
+    'const copied = [`spike`, `chonk`, `zip`, `charm`];'
+  ),
+  1,
+  'the runtime stat catalog guard must reject template-literal copies'
+);
 pass('Scribbit stat order has one immutable shared catalog');
 
 const serverBattleSource = readFileSync(
@@ -758,8 +828,14 @@ const founderArtPlanSource = readFileSync(
   join(repoRoot, '..', 'plans', 'creature-art-spec.md'),
   'utf8'
 );
-assert.match(founderArtPlanSource, /old Higgsfield-to-static-sprite plan is superseded/);
-assert.match(founderArtPlanSource, /deterministic Inkbody\/procedural-doodle renderer/);
+assert.match(
+  founderArtPlanSource,
+  /old Higgsfield-to-static-sprite plan is superseded/
+);
+assert.match(
+  founderArtPlanSource,
+  /deterministic Inkbody\/procedural-doodle renderer/
+);
 assert.match(founderArtPlanSource, /Do not add a parallel `public\/creatures`/);
 assert.doesNotMatch(founderArtPlanSource, /Save as app\/public\/creatures/);
 pass('founder art plan matches the procedural runtime source of truth');
@@ -787,6 +863,56 @@ const listFilePaths = (directory) =>
     const entryPath = join(directory, entry.name);
     return entry.isDirectory() ? listFilePaths(entryPath) : [entryPath];
   });
+const collectTypeScriptStringLiterals = (source) => {
+  const sourceFile = typescript.createSourceFile(
+    'domain-copy.ts',
+    source,
+    typescript.ScriptTarget.Latest,
+    true,
+    typescript.ScriptKind.TS
+  );
+  const literals = [];
+  const visit = (node) => {
+    if (
+      typescript.isStringLiteral(node) ||
+      typescript.isNoSubstitutionTemplateLiteral(node)
+    ) {
+      literals.push(node.text);
+    }
+    if (typescript.isTemplateExpression(node)) {
+      literals.push(node.getText(sourceFile));
+    }
+    typescript.forEachChild(node, visit);
+  };
+  visit(sourceFile);
+  return literals;
+};
+assert.deepEqual(
+  collectTypeScriptStringLiterals(
+    'const copy = `Place your ${name} bet`;'
+  ).filter((copy) => /\bbet\b/.test(copy)),
+  ['`Place your ${name} bet`']
+);
+const domainCopyFiles = [
+  ...listFilePaths(join(repoRoot, 'src', 'client')),
+  ...listFilePaths(join(repoRoot, 'src', 'shared', 'content')),
+  join(repoRoot, 'src', 'shared', 'founders.ts'),
+  ...listFilePaths(join(repoRoot, 'src', 'server', 'routes')),
+].filter((filePath) => filePath.endsWith('.ts'));
+for (const filePath of domainCopyFiles) {
+  for (const copy of collectTypeScriptStringLiterals(
+    readFileSync(filePath, 'utf8')
+  )) {
+    if (copy === 'Continuous replay could not bracket the requested tick.') {
+      continue;
+    }
+    assert.doesNotMatch(
+      copy,
+      /\b(?:bet|bets|bracket|brackets)\b/i,
+      `${filePath} must use Back and Rumble in player-facing strings`
+    );
+  }
+}
 const typeOutputCleanerSource = readFileSync(
   join(repoRoot, 'scripts', 'clean-type-output.mjs'),
   'utf8'
@@ -1686,20 +1812,36 @@ assert.ok(cardPressOwnerCall);
 assert.match(cardPressOwnerCall.arguments[4] ?? '', /pressOnHover:\s*false/);
 
 const cardPressListeners = new Map();
+const gamePressListeners = new Map();
+const shutdownPressListeners = new Map();
 const cardPressEvents = [];
-pressInteraction.bindPressInteractionEvents(
-  {
-    on(event, listener) {
-      const listeners = cardPressListeners.get(event) ?? [];
-      listeners.push(listener);
-      cardPressListeners.set(event, listeners);
-    },
+const makePressEventTarget = (listeners) => ({
+  on(event, listener) {
+    const eventListeners = listeners.get(event) ?? [];
+    eventListeners.push(listener);
+    listeners.set(event, eventListeners);
   },
+  once(event, listener) {
+    this.on(event, listener);
+  },
+  off(event, listener) {
+    listeners.set(
+      event,
+      (listeners.get(event) ?? []).filter((candidate) => candidate !== listener)
+    );
+  },
+});
+pressInteraction.bindPressInteractionEvents(
+  makePressEventTarget(cardPressListeners),
   {
     press: () => cardPressEvents.push('press'),
     release: () => cardPressEvents.push('release'),
     activate: () => cardPressEvents.push('activate'),
     pressOnHover: false,
+  },
+  {
+    gameTarget: makePressEventTarget(gamePressListeners),
+    shutdownTarget: makePressEventTarget(shutdownPressListeners),
   }
 );
 assert.deepEqual([...cardPressListeners.keys()].sort(), [
@@ -1711,15 +1853,32 @@ assert.deepEqual([...cardPressListeners.keys()].sort(), [
 for (const listeners of cardPressListeners.values()) {
   assert.equal(listeners.length, 1, 'each card pointer event must bind once');
 }
-cardPressListeners.get('pointerdown')[0]();
+cardPressListeners.get('pointerup')[0]({ id: 1 });
+assert.deepEqual(cardPressEvents, []);
+cardPressListeners.get('pointerdown')[0]({ id: 1 });
 assert.deepEqual(cardPressEvents, ['press']);
-cardPressListeners.get('pointerout')[0]();
+cardPressListeners.get('pointerout')[0]({ id: 1 });
 assert.deepEqual(cardPressEvents, ['press', 'release']);
-cardPressListeners.get('pointerup')[0]();
+cardPressListeners.get('pointerup')[0]({ id: 1 });
 assert.deepEqual(cardPressEvents, ['press', 'release']);
-cardPressListeners.get('pointerdown')[0]();
-cardPressListeners.get('pointerup')[0]();
-assert.deepEqual(cardPressEvents, ['press', 'release', 'press', 'release', 'activate']);
+cardPressListeners.get('pointerdown')[0]({ id: 2 });
+cardPressListeners.get('pointerup')[0]({ id: 3 });
+assert.deepEqual(cardPressEvents, ['press', 'release', 'press']);
+cardPressListeners.get('pointerup')[0]({ id: 2 });
+assert.deepEqual(cardPressEvents, [
+  'press',
+  'release',
+  'press',
+  'release',
+  'activate',
+]);
+cardPressListeners.get('pointerdown')[0]({ id: 4 });
+gamePressListeners.get('gameout')[0]();
+assert.deepEqual(cardPressEvents.slice(-2), ['press', 'release']);
+cardPressListeners.get('pointerdown')[0]({ id: 5 });
+shutdownPressListeners.get('shutdown')[0]();
+assert.deepEqual(cardPressEvents.slice(-2), ['press', 'release']);
+assert.deepEqual(gamePressListeners.get('gameout'), []);
 pass('Gallery cards share one press interaction owner');
 
 const pressEventConsumers = [
@@ -1741,6 +1900,54 @@ const pressEventConsumers = [
     functionName: 'toolIconButton',
     source: readFileSync(
       join(repoRoot, 'src', 'client', 'scenes', 'Draw.ts'),
+      'utf8'
+    ),
+  },
+  {
+    name: 'draw palette',
+    modulePath: '../lib/pressinteraction',
+    functionName: 'buildPaletteRow',
+    source: readFileSync(
+      join(repoRoot, 'src', 'client', 'scenes', 'Draw.ts'),
+      'utf8'
+    ),
+  },
+  {
+    name: 'draw premium pen',
+    modulePath: '../lib/pressinteraction',
+    functionName: 'buildPremiumPenControl',
+    source: readFileSync(
+      join(repoRoot, 'src', 'client', 'scenes', 'Draw.ts'),
+      'utf8'
+    ),
+  },
+  {
+    name: 'draw brush size',
+    modulePath: '../lib/pressinteraction',
+    functionName: 'buildLineWidthControl',
+    source: readFileSync(
+      join(repoRoot, 'src', 'client', 'scenes', 'Draw.ts'),
+      'utf8'
+    ),
+  },
+  {
+    name: 'Gallery section tabs',
+    modulePath: '../lib/pressinteraction',
+    functionName: 'buildTabs',
+    source: gallerySceneSource,
+  },
+  {
+    name: 'Gallery Legend cards',
+    modulePath: '../lib/pressinteraction',
+    functionName: 'buildLegendCard',
+    source: gallerySceneSource,
+  },
+  {
+    name: 'Scout day tabs',
+    modulePath: '../lib/pressinteraction',
+    functionName: 'renderDayTabs',
+    source: readFileSync(
+      join(repoRoot, 'src', 'client', 'scenes', 'ScoutNotebook.ts'),
       'utf8'
     ),
   },
@@ -1814,6 +2021,44 @@ for (const consumer of semanticTabConsumers) {
     );
   }
 }
+assert.match(gallerySceneSource, /focusedSectionTab/);
+assert.match(
+  gallerySceneSource,
+  /if \(focusedSectionTab\) \{\s*this\.contentActionOverlay\?\.clearPendingFocusLabel\(\)/
+);
+assert.match(gallerySceneSource, /focusedControlLabel\(\)/);
+assert.match(
+  gallerySceneSource,
+  /new CanvasActionOverlay\(\s*this,\s*'gallery-content'\s*\)/
+);
+assert.match(
+  gallerySceneSource,
+  /contentActionOverlay\?\.restoreControlFocus\(accessibleLabel\)/
+);
+assert.match(
+  gallerySceneSource,
+  /if \(!restored\) this\.sectionPanel\?\.focus\(\)/
+);
+assert.match(
+  gallerySceneSource,
+  /sectionTabControls\.get\(this\.tab\)\?\.focus\(\)/
+);
+assert.match(
+  semanticTabConsumers[1].source,
+  /dayTabControls\.get\(this\.selectedDay\)\?\.focus\(\)/
+);
+assert.match(
+  gallerySceneSource,
+  /contentActionOverlay\.moveAfter\(this\.sectionSemanticOverlay\)/
+);
+assert.match(
+  semanticTabConsumers[1].source,
+  /tabsOverlay\.moveAfter\(this\.headerOverlay\)/
+);
+assert.match(
+  semanticTabConsumers[1].source,
+  /pageActionOverlay\.moveAfter\(this\.pageSemanticOverlay\)/
+);
 const originalDocument = globalThis.document;
 const fakeDocument = { activeElement: null };
 globalThis.document = fakeDocument;
@@ -1862,9 +2107,13 @@ try {
   assert.equal(prevented, true);
   assert.deepEqual(selectedKeys, ['c']);
   assert.equal(fakeDocument.activeElement, controls.get('c'));
+  controller.handleKey({ key: 'ArrowRight', preventDefault: () => {} }, 'c');
+  assert.deepEqual(selectedKeys, ['c', 'a']);
+  assert.equal(fakeDocument.activeElement, controls.get('a'));
   const panelAttributes = new Map();
   const panel = {
     id: '',
+    tabIndex: -1,
     textContent: '',
     setAttribute(name, value) {
       panelAttributes.set(name, value);
@@ -1873,20 +2122,79 @@ try {
   controller.configurePanel(panel, 'b', 'Selected section', {
     live: 'polite',
     atomic: true,
+    ownedControlRootId: 'section-actions',
   });
   assert.equal(panel.id, 'section-panel');
   assert.equal(panel.textContent, 'Selected section');
+  assert.equal(panel.tabIndex, 0);
   assert.deepEqual(Object.fromEntries(panelAttributes), {
     role: 'tabpanel',
     'aria-labelledby': 'section-b',
     'aria-live': 'polite',
     'aria-atomic': 'true',
+    'aria-owns': 'section-actions',
   });
 } finally {
   if (originalDocument === undefined) delete globalThis.document;
   else globalThis.document = originalDocument;
 }
 pass('Gallery and Scout share one semantic tab controller');
+
+const drawSceneSource = readFileSync(
+  join(repoRoot, 'src', 'client', 'scenes', 'Draw.ts'),
+  'utf8'
+);
+for (const [functionName, minimumNativeControls] of [
+  ['buildChrome', 1],
+  ['buildSubmitControl', 1],
+  ['buildPaletteRow', 1],
+  ['buildPremiumPenControl', 1],
+  ['toolIconButton', 1],
+  ['buildLineWidthControl', 1],
+]) {
+  const inspection = inspectNamedFunction(drawSceneSource, functionName);
+  assert.ok(
+    inspection.calls.filter(
+      ({ expression }) => expression === 'this.addNativeControl'
+    ).length >= minimumNativeControls,
+    `${functionName} must mirror its canvas controls for keyboard input`
+  );
+}
+assert.match(drawSceneSource, /this\.submitControl\.disabled = !ready/);
+assert.match(
+  drawSceneSource,
+  /this\.submitControl\.tabIndex = ready \? 0 : -1/
+);
+assert.match(
+  drawSceneSource,
+  /this\.overlay\.moveAfter\(this\.headerControlOverlay\)/
+);
+assert.match(
+  drawSceneSource,
+  /this\.toolControlOverlay\.moveAfter\(this\.overlay\)/
+);
+assert.match(
+  drawSceneSource,
+  /this\.submitOverlay\?\.moveAfter\(beforeSubmit\)/
+);
+const overlayLifecycleSource = readFileSync(
+  join(repoRoot, 'src', 'client', 'lib', 'overlay.ts'),
+  'utf8'
+);
+assert.match(overlayLifecycleSource, /liveOverlays = new Set<DomOverlay>/);
+assert.match(
+  overlayLifecycleSource,
+  /nativeButton\.addEventListener\('click', activate\)/
+);
+assert.match(
+  overlayLifecycleSource,
+  /event\.preventDefault\(\);\s*activate\(\)/
+);
+assert.match(
+  overlayLifecycleSource,
+  /for \(const overlay of \[\.\.\.DomOverlay\.liveOverlays\]\) overlay\.destroy\(\)/
+);
+pass('Draw keyboard controls and defensive overlay cleanup stay complete');
 
 const inspectTopLevelDeclarations = (source) => {
   const sourceFile = typescript.createSourceFile(
@@ -2075,6 +2383,34 @@ const privateClientSymbols = [
     ],
   },
   { source: legacyCardsClientSource, names: ['legacyEulogy'] },
+  {
+    source: readFileSync(
+      join(repoRoot, 'src', 'server', 'core', 'post.ts'),
+      'utf8'
+    ),
+    names: ['createPost'],
+  },
+  {
+    source: readFileSync(
+      join(repoRoot, 'src', 'server', 'core', 'battleStore.ts'),
+      'utf8'
+    ),
+    names: ['getFeaturedRumbleReportsKey', 'getScribbitBattlesKey'],
+  },
+  {
+    source: readFileSync(
+      join(repoRoot, 'src', 'server', 'core', 'scribbit.ts'),
+      'utf8'
+    ),
+    names: ['hydrateScribbitForUtcDay'],
+  },
+  {
+    source: readFileSync(
+      join(repoRoot, 'src', 'shared', 'cosmetics.ts'),
+      'utf8'
+    ),
+    names: ['findCosmeticCatalogEntry'],
+  },
 ];
 for (const { source, names } of privateClientSymbols) {
   const declarations = inspectTopLevelDeclarations(source);
@@ -2199,10 +2535,26 @@ const replaySceneSource = readFileSync(
   join(repoRoot, 'src', 'client', 'scenes', 'Replay.ts'),
   'utf8'
 );
+const liveSpriteSource = readFileSync(
+  join(repoRoot, 'src', 'client', 'lib', 'livesprite.ts'),
+  'utf8'
+);
 assert.match(replaySceneSource, /const restorePostFightFocus/);
 assert.match(replaySceneSource, /rivalDraftTrigger\?\.isConnected/);
 assert.match(replaySceneSource, /rivalDraftTrigger\.focus\(\)/);
 pass('Rival draft composes the canonical nested modal lifecycle');
+
+assert.match(liveSpriteSource, /private readonly reactionContainer/);
+assert.match(liveSpriteSource, /private readonly poseContainer/);
+assert.match(liveSpriteSource, /targets: this\.poseContainer/);
+assert.match(liveSpriteSource, /targets: this\.reactionContainer/);
+assert.doesNotMatch(
+  replaySceneSource,
+  /critFlash/,
+  'critical hits should stay local instead of flashing the whole viewport'
+);
+assert.match(replaySceneSource, /cameraShakeCooldownMilliseconds/);
+pass('replay presentation cannot fight authoritative fighter coordinates');
 
 productionApiContract.resetApiContractRuntime({
   userId: null,
@@ -2507,6 +2859,22 @@ try {
   assert.equal(
     (await requestMock('/api/rumble-replay?day=8&logged-out')).response.status,
     401
+  );
+
+  const returningArena = await requestMock('/api/arena');
+  assert.deepEqual(
+    {
+      pick: returningArena.body.lastRumbleReceipt.pick.id,
+      opponent: returningArena.body.lastRumbleReceipt.opponent.id,
+      opponentIsChampion:
+        returningArena.body.lastRumbleReceipt.opponentIsChampion,
+    },
+    {
+      pick: 'legend-inky-moon',
+      opponent: 'legend-solar-kiln',
+      opponentIsChampion: true,
+    },
+    'the returning Arena result must carry both matchup portraits'
   );
 
   const freshNotebook = await requestMock('/api/scout-notebook?fresh');
@@ -5323,15 +5691,39 @@ await inkStore.claimInkReward(ownedRumbleReturnStorage, {
   amount: 10,
   paidAtMs: 1_000,
 });
-const ownedRumbleFeaturedReport = {
-  id: 'owned-return-featured-report',
-  kind: 'rumble',
-  day: 8,
-  a: ownedRumbleReturnEntrant,
-  b: ownedRumbleReturnOpponent,
-  winner: 'a',
-  events: [],
+const createBattleReportWithWinner = (
+  fighterA,
+  fighterB,
+  day,
+  id,
+  kind,
+  winner
+) => {
+  const report = Array.from({ length: 100 }, (_, seed) =>
+    battle.simulate(
+      fighterA,
+      fighterB,
+      seed,
+      {
+        day,
+        boostedElement: 'storm',
+        nerfedElement: 'moss',
+        blurb: 'Winning transcript fixture.',
+      },
+      kind
+    )
+  ).find((candidate) => candidate.winner === winner);
+  assert.ok(report, `${id} should find one deterministic winning transcript`);
+  return { ...report, id };
 };
+const ownedRumbleFeaturedReport = createBattleReportWithWinner(
+  ownedRumbleReturnEntrant,
+  ownedRumbleReturnOpponent,
+  8,
+  'owned-return-featured-report',
+  'rumble',
+  'a'
+);
 await battleStore.saveBattleReport(
   ownedRumbleReturnStorage,
   ownedRumbleFeaturedReport,
@@ -5377,8 +5769,10 @@ assert.deepEqual(
     ownedRumbleReturnReceipt
   ),
   {
-    title: 'MARGIN MOTH WENT • 2–1',
-    detail: null,
+    outcome: 'defeat',
+    outcomeLabel: 'DEFEAT',
+    title: 'MARGIN MOTH WAS ELIMINATED',
+    detail: 'RUMBLE RECORD 2–1',
     reward: '+4 XP • +10 INK',
     highlight: false,
   }
@@ -5389,7 +5783,7 @@ assert.equal(
       ownedRumbleReturnReceipt
     )
   ),
-  'MARGIN MOTH WENT • 2–1. +4 XP • +10 INK'
+  'DEFEAT. MARGIN MOTH WAS ELIMINATED. RUMBLE RECORD 2–1. +4 XP • +10 INK'
 );
 assert.equal(
   rumbleReturnPresentation.formatRumbleReturnAccessibleSummary(
@@ -5403,7 +5797,26 @@ assert.equal(
       replayAvailable: true,
     })
   ),
-  'SCOUTING REPORT. Only Moon • OUT. Solar Kiln WON RUMBLE #8. NO REWARD • PICK AGAIN'
+  'DEFEAT. ONLY MOON WAS ELIMINATED. Solar Kiln WON RUMBLE #8. NO CLOUT EARNED'
+);
+assert.deepEqual(
+  rumbleReturnPresentation.planRumbleReturnPresentation({
+    kind: 'backed',
+    resolvedDay: 8,
+    backedName: 'Solar Kiln',
+    championName: 'Solar Kiln',
+    cloutEarned: 3,
+    inkAwarded: 5,
+    replayAvailable: true,
+  }),
+  {
+    outcome: 'victory',
+    outcomeLabel: 'VICTORY!',
+    title: 'SOLAR KILN WON THE RUMBLE',
+    detail: 'Solar Kiln WON RUMBLE #8',
+    reward: '+3 CLOUT • +5 INK',
+    highlight: true,
+  }
 );
 assert.equal(
   (
@@ -5535,15 +5948,14 @@ await scoutNotebookStorage.zAdd(clout.getCloutKey(), {
   member: scoutNotebookPlayer.userId,
   score: 4,
 });
-const scoutNotebookReport = {
-  id: 'scout-notebook-day-8-report',
-  kind: 'rumble',
-  day: 8,
-  a: championScoutPick,
-  b: scoutNotebookOpponent,
-  winner: 'a',
-  events: [],
-};
+const scoutNotebookReport = createBattleReportWithWinner(
+  championScoutPick,
+  scoutNotebookOpponent,
+  8,
+  'scout-notebook-day-8-report',
+  'rumble',
+  'a'
+);
 await battleStore.saveBattleReport(
   scoutNotebookStorage,
   scoutNotebookReport,
@@ -5837,15 +6249,15 @@ const chronicleReport = (
   winner,
   founder = chronicleFounder,
   kind = 'exhibition'
-) => ({
-  id,
-  kind,
-  day,
-  a: chronicleScribbit,
-  b: founder,
-  winner,
-  events: [],
-});
+) =>
+  createBattleReportWithWinner(
+    chronicleScribbit,
+    founder,
+    day,
+    id,
+    kind,
+    winner
+  );
 const firstChronicleReport = chronicleReport(
   'chronicle-mosswhisk-day-3-loss',
   3,
@@ -7105,10 +7517,10 @@ const debugOpponentPower = Object.freeze({
   colorburst: 'inkquake',
 });
 const debugSeedByPower = Object.freeze({
-  inkquake: 584,
-  nib_halo: 2,
-  smearstep: 282,
-  colorburst: 74,
+  inkquake: 11,
+  nib_halo: 15,
+  smearstep: 89,
+  colorburst: 343,
 });
 const debugFixtureForecast = Object.freeze({
   day: 9,
@@ -8267,6 +8679,31 @@ assert.ok(
   ),
   'continuous replay interpolation should keep both fighter positions finite'
 );
+const checkpointTicks = new Set(
+  reportOne.simulation.checkpoints.map((checkpoint) => checkpoint.tick)
+);
+for (const [eventKind, expectedPhase] of [
+  ['ability_telegraphed', 'telegraph'],
+  ['ability_activated', 'active'],
+  ['ability_finished', 'cooldown'],
+]) {
+  const phaseEvent = reportOne.simulation.timeline.find(
+    (event) => event.kind === eventKind && !checkpointTicks.has(event.tick)
+  );
+  assert.ok(
+    phaseEvent,
+    `${eventKind} fixture should occur between authoritative checkpoints`
+  );
+  const phaseFrame = continuousReplay.calculateReplayFrame(
+    reportOne.simulation,
+    phaseEvent.tick
+  );
+  assert.equal(
+    phaseFrame.fighters[phaseEvent.actor === 'a' ? 0 : 1].abilityPhase,
+    expectedPhase,
+    `${eventKind} should change the rendered phase on its exact event tick`
+  );
+}
 pass(
   'battle determinism, authoritative transcript, replay interpolation, and shared max HP'
 );
@@ -8316,7 +8753,7 @@ const goldenCombatCases = [
     }),
     seed: 7001,
     expectedHash:
-      '5f2e2f12f71216bceb386b0d57c0419acdb53a351ba4b36f6977807f8a1b8c3d',
+      'a15db55ec45e8db565a7a85443890e8e0e31370ce494c86aa420c177ac9ef94d',
   },
   {
     name: 'boundary archetypes',
@@ -8334,9 +8771,9 @@ const goldenCombatCases = [
     }),
     seed: 7002,
     expectedHash:
-      'a4ef46d69c9904a62ad6054fe6a475191852f58e34d493d987e4e7c03b8f4693',
+      'd2b58bf7f5f8775374eb5b82eb096ea22b5174404e9e743d9957a330db0069d4',
     previousHashWithoutBarrierSourceMetadata:
-      '6f2634d342b2bdb78c183138020f16f58e3b61abe19f8bde947fcd8e47ae4998',
+      'd5bb718d69b1335881d59c87f9ee06a7e9d8c826578067c94139d612bf1ab474',
   },
   {
     name: 'Smearstep dash schedule',
@@ -8354,7 +8791,7 @@ const goldenCombatCases = [
     }),
     seed: 7003,
     expectedHash:
-      '8d573dbde552349906be1200f116a2becc2651552b4e6aa28838988826401e91',
+      '31c6d044b5d336c3563137b2502419c28f525a0e9d4f541fe4c494cd035c14cc',
   },
 ];
 const transcriptHash = (transcript) =>
@@ -9014,6 +9451,190 @@ assert.equal(
   undefined,
   'stored finish reasons must agree with authoritative terminal HP'
 );
+
+assert.equal(
+  combatTranscriptValidation.parseBattleTranscript(lastFeaturedBout.simulation),
+  lastFeaturedBout.simulation,
+  'the shared parser should preserve a valid current transcript'
+);
+const legacyVersionOneTranscript = structuredClone(
+  lastFeaturedBout.simulation
+);
+legacyVersionOneTranscript.version = 1;
+for (const fighter of legacyVersionOneTranscript.fighters) {
+  delete fighter.upgrades;
+  delete fighter.damageModifierPermille;
+}
+assert.equal(
+  combatTranscriptValidation.parseBattleTranscript(legacyVersionOneTranscript),
+  legacyVersionOneTranscript,
+  'version-one transcripts should remain readable without Ink Mod fields'
+);
+const versionOneWithUpgrades = structuredClone(legacyVersionOneTranscript);
+versionOneWithUpgrades.fighters[0].upgrades = [];
+assert.equal(
+  combatTranscriptValidation.parseBattleTranscript(versionOneWithUpgrades),
+  undefined,
+  'version-one transcripts must not smuggle in version-two upgrade fields'
+);
+const versionTwoWithoutUpgrades = structuredClone(lastFeaturedBout.simulation);
+delete versionTwoWithoutUpgrades.fighters[0].upgrades;
+assert.equal(
+  combatTranscriptValidation.parseBattleTranscript(versionTwoWithoutUpgrades),
+  undefined,
+  'version-two transcripts must carry an explicit upgrades list'
+);
+
+const damageEventIndex = lastFeaturedBout.simulation.timeline.findIndex(
+  (event) => event.kind === 'damage'
+);
+assert.ok(damageEventIndex >= 0, 'validation fixture should contain damage');
+const transcriptCorruptionCases = [
+  {
+    name: 'blank-seed',
+    corrupt: (transcript) => {
+      transcript.seed = '   ';
+    },
+  },
+  {
+    name: 'blank-fighter-name',
+    corrupt: (transcript) => {
+      transcript.fighters[0].name = '';
+    },
+  },
+  {
+    name: 'null-timeline-event',
+    corrupt: (transcript) => {
+      transcript.timeline[0] = null;
+    },
+  },
+  {
+    name: 'zero-damage',
+    corrupt: (transcript) => {
+      transcript.timeline[damageEventIndex].amount = 0;
+    },
+  },
+  {
+    name: 'contradictory-final-checkpoint',
+    corrupt: (transcript) => {
+      const finalFighter = transcript.checkpoints.at(-1).fighters[0];
+      finalFighter.hitPoints =
+        finalFighter.hitPoints === 0 ? 1 : finalFighter.hitPoints - 1;
+    },
+  },
+];
+for (const { name, corrupt } of transcriptCorruptionCases) {
+  const malformedReport = structuredClone(lastFeaturedBout);
+  malformedReport.id = `malformed-transcript-${name}`;
+  corrupt(malformedReport.simulation);
+  assert.equal(
+    combatTranscriptValidation.parseBattleTranscript(
+      malformedReport.simulation
+    ),
+    undefined,
+    `${name} must fail the shared browser-safe parser`
+  );
+  await invalidBattleReportStorage.set(
+    battleStore.getBattleReportKey(malformedReport.id),
+    JSON.stringify(malformedReport)
+  );
+  assert.equal(
+    await battleStore.loadBattleReport(
+      invalidBattleReportStorage,
+      malformedReport.id
+    ),
+    undefined,
+    `${name} must fail the server storage boundary too`
+  );
+}
+
+const invalidIncomingStorage = createMemoryStorage();
+const eventOnlyIncomingReport = {
+  ...legacyTurnReport,
+  id: 'new-event-only-report',
+};
+await assert.rejects(
+  battleStore.saveBattleReport(
+    invalidIncomingStorage,
+    eventOnlyIncomingReport,
+    1
+  ),
+  /authoritative transcript validation/,
+  'legacy event-only reports may be read but must never enter the modern write path'
+);
+assert.equal(
+  await invalidIncomingStorage.get(
+    battleStore.getBattleReportKey(eventOnlyIncomingReport.id)
+  ),
+  undefined
+);
+const invalidIncomingReport = structuredClone(lastFeaturedBout);
+invalidIncomingReport.id = 'invalid-incoming-transcript';
+invalidIncomingReport.simulation.seed = '';
+await assert.rejects(
+  battleStore.saveBattleReport(
+    invalidIncomingStorage,
+    invalidIncomingReport,
+    1
+  ),
+  /authoritative transcript validation/,
+  'runtime-invalid reports must fail before the first storage write'
+);
+assert.equal(
+  await invalidIncomingStorage.get(
+    battleStore.getBattleReportKey(invalidIncomingReport.id)
+  ),
+  undefined
+);
+
+const preservedInvalidStorage = createMemoryStorage();
+const preservedInvalidReport = structuredClone(lastFeaturedBout);
+preservedInvalidReport.id = 'preserved-invalid-transcript';
+preservedInvalidReport.simulation.seed = '';
+const preservedInvalidJson = JSON.stringify(preservedInvalidReport);
+await preservedInvalidStorage.set(
+  battleStore.getBattleReportKey(preservedInvalidReport.id),
+  preservedInvalidJson
+);
+await assert.rejects(
+  battleStore.saveBattleReport(
+    preservedInvalidStorage,
+    { ...lastFeaturedBout, id: preservedInvalidReport.id },
+    1
+  ),
+  /invalid and was preserved/,
+  'a malformed historical value must not be silently replaced'
+);
+assert.equal(
+  await preservedInvalidStorage.get(
+    battleStore.getBattleReportKey(preservedInvalidReport.id)
+  ),
+  preservedInvalidJson,
+  'rejected historical bytes should remain untouched for diagnosis or repair'
+);
+
+const transcriptValidationSource = readFileSync(
+  join(repoRoot, 'src', 'shared', 'combat', 'transcriptvalidation.ts'),
+  'utf8'
+);
+const battleStoreSource = readFileSync(
+  join(repoRoot, 'src', 'server', 'core', 'battleStore.ts'),
+  'utf8'
+);
+const continuousReplaySource = readFileSync(
+  join(repoRoot, 'src', 'client', 'lib', 'continuousreplay.ts'),
+  'utf8'
+);
+assert.match(transcriptValidationSource, /TIMELINE_EVENT_FIELD_VALIDATORS/);
+for (const consumerSource of [battleStoreSource, continuousReplaySource]) {
+  assert.match(consumerSource, /parseBattleTranscript/);
+  assert.doesNotMatch(
+    consumerSource,
+    /TIMELINE_EVENT_FIELD_VALIDATORS|const isTimelineEvent|const checkpointsAreUsable/
+  );
+}
+pass('battle transcript validation has one shared server and client authority');
+
 assert.equal(
   await battleStore.getFeaturedRumbleReportId(
     featuredRumbleStorage,
@@ -9470,7 +10091,127 @@ assert.deepEqual(
   [],
   'old record should default daily care'
 );
+assert.deepEqual(
+  migratedOldRecord.upgrades,
+  [],
+  'old level-one records should start without Ink Mods'
+);
 pass('old-record migration defaults');
+
+const maximumLevelUpgrades = combatUpgrades.reconcileScribbitUpgrades(
+  'upgrade-proof',
+  arena.MAX_LEVEL,
+  []
+);
+assert.deepEqual(
+  maximumLevelUpgrades,
+  combatUpgrades.reconcileScribbitUpgrades(
+    'upgrade-proof',
+    arena.MAX_LEVEL,
+    []
+  ),
+  'Ink Mod rolls must be deterministic for retries and stored-record hydration'
+);
+assert.equal(
+  maximumLevelUpgrades.length,
+  combatUpgrades.MAXIMUM_COMBAT_UPGRADES,
+  'levels two through five should each unlock one Ink Mod'
+);
+assert.equal(
+  new Set(maximumLevelUpgrades.map((upgrade) => upgrade.id)).size,
+  maximumLevelUpgrades.length,
+  'v1 Ink Mods should not repeat on one Scribbit'
+);
+assert.deepEqual(
+  maximumLevelUpgrades.map((upgrade) => upgrade.acquiredAtLevel),
+  [2, 3, 4, 5],
+  'Ink Mods should preserve their acquisition level'
+);
+
+const upgradedTranscript = combatEngine.simulateCombat({
+  seed: 'upgrade-effect-proof',
+  fighters: [
+    {
+      id: 'upgrade-a',
+      name: 'Upgrade A',
+      element: 'moss',
+      stats: { chonk: 25, spike: 25, zip: 25, charm: 25 },
+      upgrades: ['v1-thick-paper'],
+    },
+    {
+      id: 'upgrade-b',
+      name: 'Upgrade B',
+      element: 'moss',
+      stats: { chonk: 25, spike: 25, zip: 25, charm: 25 },
+    },
+  ],
+});
+assert.equal(
+  upgradedTranscript.version,
+  2,
+  'Ink Mod transcripts should use combat schema v2'
+);
+assert.equal(
+  upgradedTranscript.fighters[0].upgrades[0],
+  'v1-thick-paper',
+  'the immutable transcript should freeze the server-owned loadout'
+);
+assert.ok(
+  upgradedTranscript.result.fighters[0].maxHitPoints >
+    upgradedTranscript.result.fighters[1].maxHitPoints,
+  'Thick Paper should increase authoritative maximum health'
+);
+
+const chooseUpgradeLoadouts = (values, count, startIndex = 0, prefix = []) => {
+  if (count === 0) return [prefix];
+  return values
+    .slice(startIndex)
+    .flatMap((value, offset) =>
+      chooseUpgradeLoadouts(values, count - 1, startIndex + offset + 1, [
+        ...prefix,
+        value,
+      ])
+    );
+};
+for (const loadout of chooseUpgradeLoadouts(
+  combatUpgrades.COMBAT_UPGRADE_IDS,
+  combatUpgrades.MAXIMUM_COMBAT_UPGRADES
+)) {
+  let upgradedWins = 0;
+  const seedCount = 200;
+  for (let seed = 0; seed < seedCount; seed += 1) {
+    for (const swapSlots of [false, true]) {
+      const upgradedFighter = {
+        id: 'upgrade-balance-full',
+        name: 'Upgrade Balance Full',
+        element: 'tide',
+        stats: { chonk: 25, spike: 25, zip: 25, charm: 25 },
+        upgrades: loadout,
+      };
+      const baseFighter = {
+        id: 'upgrade-balance-base',
+        name: 'Upgrade Balance Base',
+        element: 'tide',
+        stats: { chonk: 25, spike: 25, zip: 25, charm: 25 },
+      };
+      const transcript = combatEngine.simulateCombat({
+        seed: `upgrade-balance-${seed}`,
+        fighters: swapSlots
+          ? [baseFighter, upgradedFighter]
+          : [upgradedFighter, baseFighter],
+      });
+      const upgradedWon = swapSlots
+        ? transcript.result.winner === 'b'
+        : transcript.result.winner === 'a';
+      if (upgradedWon) upgradedWins += 1;
+    }
+  }
+  assert.ok(
+    upgradedWins <= seedCount * 2 * 0.6,
+    `four Ink Mods must stay below a 60% equal-build win rate; ${loadout.join(',')} won ${upgradedWins}/${seedCount * 2}`
+  );
+}
+pass('deterministic, visible, and bounded per-Scribbit Ink Mods');
 
 assert.equal(
   battle.getElementDamageMultiplier('ember', 'moss'),
@@ -9638,38 +10379,37 @@ assert.deepEqual(
     broadcastRailLeft: 12,
     broadcastRailTop: 8,
     broadcastRailWidth: 696,
-    broadcastRailHeight: 96,
+    broadcastRailHeight: 134,
     pageLeft: 20,
-    pageTop: 106,
+    pageTop: 144,
     pageWidth: 680,
-    pageHeight: 1156,
-    toolbarY: 56,
+    pageHeight: 1118,
+    toolbarY: 94,
     kindLabelX: 28,
-    battleKindY: 39,
-    serverTruthY: 74,
-    kindLabelMaximumWidth: 342,
-    soundButtonX: 432,
-    speedButtonX: 536,
-    skipButtonX: 648,
+    battleKindY: 34,
+    kindLabelMaximumWidth: 664,
+    soundButtonX: 256,
+    speedButtonX: 360,
+    skipButtonX: 464,
     soundButtonWidth: 96,
     speedButtonWidth: 96,
-    skipButtonWidth: 112,
-    fighterPanelTop: 108,
-    fighterPanelHeight: 124,
-    healthBarY: 177,
-    healthBarWidth: 292,
-    healthBarFillWidth: 284,
-    healthBarHeight: 44,
-    healthBarFillHeight: 32,
-    fighterNameY: 127,
-    fighterMetaY: 151,
-    fighterChipY: 214,
-    fighterChipHeight: 46,
+    skipButtonWidth: 96,
+    fighterPanelTop: 148,
+    fighterPanelHeight: 130,
+    healthBarY: 201,
+    healthBarWidth: 282,
+    healthBarFillWidth: 272,
+    healthBarHeight: 34,
+    healthBarFillHeight: 24,
+    fighterNameY: 164,
+    fighterMetaY: 266,
+    fighterChipY: 239,
+    fighterChipHeight: 28,
     battleClockX: 360,
-    battleClockY: 177,
-    battleClockRadius: 31,
-    battleClockProgressWidth: 44,
-    arenaTop: 158,
+    battleClockY: 201,
+    battleClockRadius: 25,
+    battleClockProgressWidth: 34,
+    arenaTop: 280,
     arenaBottom: 1250,
     arenaHorizontalPadding: 118,
     arenaVerticalPadding: 106,
@@ -9683,27 +10423,27 @@ assert.deepEqual(
     fighters: {
       a: {
         homeX: 194,
-        homeY: 704,
+        homeY: 765,
         facing: 1,
         healthBarAnchorX: 24,
         healthBarOriginX: 0,
         nameX: 36,
         nameOriginX: 0,
-        levelBadgeX: 292,
-        chipCenterX: 170,
+        levelBadgeX: 306,
+        chipCenterX: 165,
         panelLeft: 24,
       },
       b: {
         homeX: 526,
-        homeY: 704,
+        homeY: 765,
         facing: -1,
         healthBarAnchorX: 696,
         healthBarOriginX: 1,
         nameX: 684,
         nameOriginX: 1,
-        levelBadgeX: 428,
-        chipCenterX: 550,
-        panelLeft: 404,
+        levelBadgeX: 414,
+        chipCenterX: 555,
+        panelLeft: 414,
       },
     },
   },
@@ -9719,7 +10459,7 @@ assert.ok(
 assert.ok(
   replayBattleLayout.soundButtonWidth >= 96 &&
     replayBattleLayout.speedButtonWidth >= 96 &&
-    replayBattleLayout.skipButtonWidth >= 112,
+    replayBattleLayout.skipButtonWidth >= 96,
   'compact replay controls should remain practical at the 320px Reddit viewport'
 );
 assert.equal(
@@ -9735,8 +10475,16 @@ assert.ok(
   'fighter HUDs must leave a visible gutter around the server clock'
 );
 assert.ok(
-  replayBattleLayout.arenaBottom - replayBattleLayout.arenaTop >= 1080,
-  'live combat should reclaim vertical room from the old turn-card framing'
+  replayBattleLayout.arenaBottom - replayBattleLayout.arenaTop >= 960,
+  'live combat should retain a tall stage below the fixed battle header'
+);
+assert.ok(
+  replayBattleLayout.healthBarY + replayBattleLayout.healthBarHeight / 2 <
+    replayBattleLayout.fighterChipY -
+      replayBattleLayout.fighterChipHeight / 2 &&
+    replayBattleLayout.fighterChipY + replayBattleLayout.fighterChipHeight / 2 <
+      replayBattleLayout.fighterMetaY,
+  'health, power, and Ink Mod rows must not overlap'
 );
 assert.ok(
   replayBattleLayout.arenaHorizontalPadding >=
@@ -9875,7 +10623,7 @@ assert.deepEqual(
     maximumHitPoints: 100,
     fullWidth: replayBattleLayout.healthBarFillWidth,
   }),
-  { ratio: 0.5, width: 142, useDangerColor: false }
+  { ratio: 0.5, width: 136, useDangerColor: false }
 );
 assert.equal(
   battlePresentation.planReplayHitPointBar({
@@ -9983,7 +10731,7 @@ assert.deepEqual(
     maximumHalfWidth: replayArenaPresentation.maximumHalfWidth,
     maximumHalfHeight: replayArenaPresentation.maximumHalfHeight,
   },
-  { centerX: 360, centerY: 704, maximumHalfWidth: 242, maximumHalfHeight: 440 },
+  { centerX: 360, centerY: 765, maximumHalfWidth: 242, maximumHalfHeight: 379 },
   'all replay movement and effects should share the clipping-safe arena projection'
 );
 pass(
@@ -9993,7 +10741,7 @@ pass(
 const timeoutRecapReport = mockCombatBundle.simulate(
   { ...debugFixtureFighterByPower.colorburst, element: 'ember' },
   debugFixtureFighterByPower.inkquake,
-  74,
+  6,
   debugFixtureForecast,
   'exhibition'
 );
@@ -10010,11 +10758,12 @@ assert.deepEqual(
     loserName: 'Heavy Page',
     winnerElement: 'ember',
     headline: 'TIME • Prism Pop WINS ON INK LEFT',
-    verdictLine: '20.0s • INK LEFT 90/185 vs 56/225',
-    tapeLine: '169 TOTAL DAMAGE • WILDFIRE BLOOM',
+    verdictLine: '20.0s • INK LEFT 128/185 vs 138/225',
+    tapeLine: '87 TOTAL DAMAGE • WILDFIRE BLOOM',
     highlight: {
-      label: 'BIGGEST SPLAT',
-      text: 'Wildfire Bloom CRIT • 65 to Heavy Page',
+      label: "WINNER'S SPLAT",
+      text: 'Wildfire Bloom • 43 to Heavy Page',
+      compactText: 'Wildfire Bloom · 43 DAMAGE',
     },
     partial: false,
     finishPresentation: 'decision',
@@ -10038,6 +10787,42 @@ assert.equal(
   'PRISM POP WON',
   'compact results should lead with an immediate viewer-relative verdict'
 );
+assert.equal(
+  battleRecap.formatCompactBattleRecapLesson(timeoutRecapPlan),
+  "WINNER'S SPLAT · Wildfire Bloom · 43 DAMAGE",
+  'compact results should teach which drawing-derived move caused the biggest hit'
+);
+assert.equal(
+  battleRecap.formatBattleRecapAnnouncement(timeoutRecapPlan, 'viewer_win'),
+  "YOU WON. 20.0s • INK LEFT 128/185 vs 138/225. WINNER'S SPLAT · Wildfire Bloom · 43 DAMAGE.",
+  'assistive technology should receive the result and the drawing-derived lesson'
+);
+const compactRecapLayout = battleRecap.planCompactBattleRecapLayout(false);
+const compactContextRecapLayout =
+  battleRecap.planCompactBattleRecapLayout(true);
+const compactContentHeight =
+  compactRecapLayout.headlineHeight +
+  compactRecapLayout.statusGap +
+  compactRecapLayout.statusHeight +
+  compactRecapLayout.lessonGap +
+  compactRecapLayout.lessonHeight;
+assert.equal(compactRecapLayout.cardHeight, 204);
+assert.equal(compactContextRecapLayout.cardHeight, 230);
+assert.ok(
+  compactRecapLayout.contentTop + compactContentHeight <
+    compactRecapLayout.cardHeight / 2,
+  'compact recap content should stay inside the no-context card'
+);
+assert.ok(
+  compactContextRecapLayout.contentTop + compactContentHeight <
+    compactContextRecapLayout.contextCenterY -
+      compactContextRecapLayout.contextHeight / 2,
+  'compact recap content should not collide with the optional context line'
+);
+assert.ok(
+  compactRecapLayout.lessonFontSize * (320 / 720) >= 10,
+  'the decisive-hit lesson should remain at least 10 CSS pixels at 320px width before any FIT label adjustment'
+);
 
 const knockoutRecapReport = mockCombatBundle.simulate(
   { ...debugFixtureFighterByPower.inkquake, element: 'storm' },
@@ -10060,11 +10845,12 @@ assert.deepEqual(
   },
   {
     headline: 'KO • Heavy Page WINS',
-    verdictLine: '17.7s • INK LEFT 12/225 vs 0/185',
-    tapeLine: '170 TOTAL DAMAGE • THUNDERFOLD',
+    verdictLine: '16.1s • INK LEFT 201/225 vs 0/185',
+    tapeLine: '176 TOTAL DAMAGE • THUNDERFOLD',
     highlight: {
       label: 'FINAL SPLAT',
-      text: 'Thunderfold • 16 to Needle Star',
+      text: 'Thunderfold • 25 to Needle Star',
+      compactText: 'Thunderfold · 25 DAMAGE',
     },
     finishPresentation: 'knockout',
     finishSound: 'knockout',
@@ -10075,7 +10861,7 @@ assert.deepEqual(
 const doubleKnockoutRecapReport = mockCombatBundle.simulate(
   { ...debugFixtureFighterByPower.nib_halo, element: 'tide' },
   debugFixtureFighterByPower.smearstep,
-  2,
+  9,
   debugFixtureForecast,
   'exhibition'
 );
@@ -10152,8 +10938,17 @@ assert.deepEqual(
   {
     label: 'SERVER RESULT',
     text: 'Play-by-play limited; result and final HP preserved.',
+    compactText: 'PLAY-BY-PLAY LIMITED',
   },
   'truncated recaps must not invent a biggest or final hit'
+);
+assert.equal(
+  battleRecap.formatCompactBattleRecapLesson({
+    highlight: null,
+    tapeLine: '87 TOTAL DAMAGE • WILDFIRE BLOOM',
+  }),
+  'SHAPE POWER · 87 TOTAL DAMAGE • WILDFIRE BLOOM',
+  'compact results without a verified hit should retain the signature-and-damage lesson'
 );
 
 for (const [reason, presentation, sound, headlineFragment] of [
@@ -10176,6 +10971,17 @@ const tieStart = tieHighlightTranscript.timeline[0];
 const tieEnd = tieHighlightTranscript.timeline.at(-1);
 tieHighlightTranscript.timeline = [
   tieStart,
+  {
+    tick: 9,
+    kind: 'damage',
+    sourceFighter: 'b',
+    targetFighter: 'a',
+    source: 'contact',
+    amount: 50,
+    targetHitPoints: 130,
+    critical: false,
+    position: { x: 0, y: 0 },
+  },
   {
     tick: 10,
     kind: 'damage',
@@ -10201,11 +11007,16 @@ tieHighlightTranscript.timeline = [
   tieEnd,
 ];
 assert.equal(
+  battleRecap.planBattleRecap(tieHighlightTranscript).highlight?.label,
+  "WINNER'S SPLAT",
+  'a timeout lesson should truthfully scope the highlighted hit to the winner even when the loser landed the globally largest hit'
+);
+assert.equal(
   battleRecap.planBattleRecap(tieHighlightTranscript).highlight?.text,
   'body check • 30 to Heavy Page',
-  'equal recap hits should resolve to the earliest authoritative event'
+  'equal winner hits should resolve to the earliest authoritative event'
 );
-tieHighlightTranscript.timeline[1].amount = 29;
+tieHighlightTranscript.timeline[2].amount = 29;
 assert.equal(
   battleRecap.planBattleRecap(tieHighlightTranscript).highlight?.text,
   'Wildfire Bloom Echo • 30 to Heavy Page',
@@ -10237,11 +11048,11 @@ assert.match(journalDecisionPlan.accessibleLabel, /^Replay .+ D9\.$/);
 assert.equal(journalDecisionPlan.kindDayLabel, 'EXHIBITION SPAR • DAY 9');
 assert.equal(
   journalDecisionPlan.highlightLine,
-  'BIGGEST SPLAT • Wildfire Bloom CRIT • 65 to Heavy Page'
+  "WINNER'S SPLAT • Wildfire Bloom • 43 to Heavy Page"
 );
 assert.equal(
   journalDecisionPlan.metadataLine,
-  '20.0s • INK LEFT 90/185 vs 56/225'
+  '20.0s • INK LEFT 128/185 vs 138/225'
 );
 
 const journalKnockoutLoss = structuredClone(knockoutRecapReport);
@@ -10676,28 +11487,32 @@ const storedRunChallenger = makeScribbit({
   id: 'scribbit-runner',
   name: 'Run Challenger',
 });
-const storedBoutOneReport = {
-  id: 'run-report-1',
-  kind: 'exhibition',
-  day: 9,
-  a: storedRunChallenger,
-  b: makeScribbit({
-    id: 'founding-storage-even',
-    name: 'Storage Even',
-    isFounding: true,
-  }),
-  winner: 'a',
-  events: [],
-};
-const staleStoredBoutReport = {
-  ...storedBoutOneReport,
-  id: 'run-report-race',
-  b: makeScribbit({
-    id: 'founding-storage-risky',
-    name: 'Storage Risky',
-    isFounding: true,
-  }),
-};
+const storedEvenOpponent = makeScribbit({
+  id: 'founding-storage-even',
+  name: 'Storage Even',
+  isFounding: true,
+});
+const storedRiskyOpponent = makeScribbit({
+  id: 'founding-storage-risky',
+  name: 'Storage Risky',
+  isFounding: true,
+});
+const storedBoutOneReport = createBattleReportWithWinner(
+  storedRunChallenger,
+  storedEvenOpponent,
+  9,
+  'run-report-1',
+  'exhibition',
+  'a'
+);
+const staleStoredBoutReport = createBattleReportWithWinner(
+  storedRunChallenger,
+  storedRiskyOpponent,
+  9,
+  'run-report-race',
+  'exhibition',
+  'a'
+);
 const storedRivalRun = await rivalRunCore.getOrCreateRivalRun(rivalRunStorage, {
   userId: 'runner-user',
   runId: 'run-storage-1',
@@ -10849,7 +11664,7 @@ await assert.rejects(
     collisionSafeReportStorage,
     {
       ...collisionSafeReport,
-      winner: collisionSafeReport.winner === 'a' ? 'b' : 'a',
+      day: collisionSafeReport.day + 1,
     },
     2
   ),
@@ -13928,7 +14743,7 @@ assert.equal(faded.status, 'faded', 'low-belief Scribbits fade at expiry');
 assert.deepEqual(
   faded.legacy,
   {
-    schemaVersion: 1,
+    schemaVersion: 2,
     archivedDay: 4,
     finish: 'faded',
     creatorTitle: {
@@ -13944,6 +14759,10 @@ assert.deepEqual(
     accessories: [
       { id: 'beanie', name: 'Beanie', rarity: 'common' },
       { id: 'retired-pin', name: 'Retired Pin', rarity: 'common' },
+    ],
+    upgrades: [
+      { id: 'v1-thick-paper', acquiredAtLevel: 2 },
+      { id: 'v1-bold-tip', acquiredAtLevel: 3 },
     ],
   },
   'expiry should freeze a versioned creator-title and cosmetic snapshot'

@@ -20,6 +20,7 @@ import type {
   PracticeBattleReport,
   RivalRunChoice,
   RivalRunState,
+  RumbleReturnFighter,
   ScoutNotebookState,
   Scribbit,
   SparRequest,
@@ -35,7 +36,6 @@ import {
 import { isScoutNotebookReplayDay } from '../../shared/scoutnotebook';
 import { simulate } from '../core/battle';
 import {
-  getFeaturedRumbleReportId,
   loadBattleReport,
   loadBattleReportsForUser,
   loadFeaturedRumbleReport,
@@ -731,20 +731,55 @@ registerPlayerMutatingGet('/arena', async (c) => {
         player.userId
       );
       if (backedScribbitId) {
-        const [backedScribbit, cloutEarned, featuredReportId] =
-          await Promise.all([
+        const [backedScribbit, cloutEarned, featuredReport] = await Promise.all(
+          [
             loadScribbit(redis, backedScribbitId, utcDateKey),
             getUserCloutPayout(redis, resolvedDay, player.userId),
-            getFeaturedRumbleReportId(redis, backedScribbitId, resolvedDay),
-          ]);
+            loadFeaturedRumbleReport(redis, backedScribbitId, resolvedDay),
+          ]
+        );
+        const exactPick =
+          featuredReport?.a.id === backedScribbitId
+            ? featuredReport.a
+            : featuredReport?.b.id === backedScribbitId
+              ? featuredReport.b
+              : backedScribbit;
+        const exactOpponent =
+          featuredReport?.a.id === backedScribbitId
+            ? featuredReport.b
+            : featuredReport?.b.id === backedScribbitId
+              ? featuredReport.a
+              : currentChampion;
+        const visiblePick =
+          exactPick && !hiddenScribbitIds.has(exactPick.id) ? exactPick : null;
+        const visibleOpponent =
+          exactOpponent && !hiddenScribbitIds.has(exactOpponent.id)
+            ? exactOpponent
+            : null;
+        const toReturnFighter = (
+          scribbit: Scribbit | null
+        ): RumbleReturnFighter | null =>
+          scribbit
+            ? {
+                id: scribbit.id,
+                name: scribbit.name,
+                element: scribbit.element,
+                stats: scribbit.stats,
+                imageUrl: scribbit.imageUrl,
+                isFounding: scribbit.isFounding,
+              }
+            : null;
         lastRumbleReceipt = {
           kind: 'backed',
           resolvedDay,
           backedName: backedScribbit?.name ?? 'Your pick',
           championName: currentChampion?.name ?? 'No Champion',
+          pick: toReturnFighter(visiblePick),
+          opponent: toReturnFighter(visibleOpponent),
+          opponentIsChampion: visibleOpponent?.id === currentChampion?.id,
           cloutEarned,
           inkAwarded: cloutEarned === 3 ? INK_REWARDS.backedChampion : 0,
-          replayAvailable: featuredReportId !== null,
+          replayAvailable: featuredReport !== undefined,
         };
       } else {
         lastRumbleReceipt = await loadOwnedRumbleReturnReceipt(redis, {

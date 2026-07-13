@@ -91,7 +91,6 @@ export type ReplayBattleLayout = Readonly<{
   toolbarY: number;
   kindLabelX: number;
   battleKindY: number;
-  serverTruthY: number;
   kindLabelMaximumWidth: number;
   soundButtonX: number;
   speedButtonX: number;
@@ -177,42 +176,41 @@ export function planReplayBattleLayout(input: {
   const viewportWidth = Math.max(480, input.viewportWidth);
   const viewportHeight = Math.max(800, input.viewportHeight);
   const pageLeft = Math.round(clamp(viewportWidth * 0.028, 16, 20));
-  const pageTop = 106;
   const broadcastRailLeft = Math.round(clamp(viewportWidth * 0.017, 8, 12));
   const broadcastRailTop = 8;
-  const broadcastRailHeight = 96;
+  const broadcastRailHeight = 134;
   const broadcastRailWidth = viewportWidth - broadcastRailLeft * 2;
-  const toolbarY = broadcastRailTop + broadcastRailHeight / 2;
+  const pageTop = broadcastRailTop + broadcastRailHeight + 2;
+  const toolbarY = broadcastRailTop + 86;
   const controlGap = 8;
   const soundButtonWidth = 96;
   const speedButtonWidth = 96;
-  const skipButtonWidth = 112;
-  const controlsRight = viewportWidth - broadcastRailLeft - 4;
-  const skipButtonX = controlsRight - skipButtonWidth / 2;
-  const speedButtonX =
-    skipButtonX - skipButtonWidth / 2 - controlGap - speedButtonWidth / 2;
+  const skipButtonWidth = 96;
+  const controlsWidth =
+    soundButtonWidth + speedButtonWidth + skipButtonWidth + controlGap * 2;
   const soundButtonX =
-    speedButtonX - speedButtonWidth / 2 - controlGap - soundButtonWidth / 2;
+    (viewportWidth - controlsWidth) / 2 + soundButtonWidth / 2;
+  const speedButtonX =
+    soundButtonX + soundButtonWidth / 2 + controlGap + speedButtonWidth / 2;
+  const skipButtonX =
+    speedButtonX + speedButtonWidth / 2 + controlGap + skipButtonWidth / 2;
   const kindLabelX = broadcastRailLeft + 16;
-  const kindLabelMaximumWidth = Math.max(
-    84,
-    soundButtonX - soundButtonWidth / 2 - kindLabelX - 14
-  );
+  const kindLabelMaximumWidth = broadcastRailWidth - 32;
   const horizontalMargin = Math.round(clamp(viewportWidth * 0.034, 18, 24));
-  const fighterCenterGap = Math.round(clamp(viewportWidth * 0.125, 84, 88));
+  const fighterCenterGap = Math.round(clamp(viewportWidth * 0.15, 84, 108));
   const healthBarWidth = Math.round(
     (viewportWidth - horizontalMargin * 2 - fighterCenterGap) / 2
   );
-  const healthBarFillWidth = healthBarWidth - 8;
-  const fighterPanelTop = 108;
-  const fighterPanelHeight = 124;
-  const fighterNameY = 127;
-  const fighterMetaY = 151;
-  const healthBarY = 177;
-  const fighterChipY = 214;
+  const healthBarFillWidth = healthBarWidth - 10;
+  const fighterPanelTop = 148;
+  const fighterPanelHeight = 130;
+  const fighterNameY = 164;
+  const healthBarY = 201;
+  const fighterChipY = 239;
+  const fighterMetaY = 266;
   const tickerHeight = 72;
   const tickerY = viewportHeight - 54;
-  const arenaTop = 158;
+  const arenaTop = 280;
   const arenaBottom = Math.max(arenaTop + 420, viewportHeight - 30);
   const homeY = (arenaTop + arenaBottom) / 2;
   const leftPanelLeft = horizontalMargin;
@@ -231,8 +229,7 @@ export function planReplayBattleLayout(input: {
     pageHeight: viewportHeight - pageTop - 18,
     toolbarY,
     kindLabelX,
-    battleKindY: toolbarY - 17,
-    serverTruthY: toolbarY + 18,
+    battleKindY: broadcastRailTop + 26,
     kindLabelMaximumWidth,
     soundButtonX,
     speedButtonX,
@@ -245,16 +242,16 @@ export function planReplayBattleLayout(input: {
     healthBarY,
     healthBarWidth,
     healthBarFillWidth,
-    healthBarHeight: 44,
-    healthBarFillHeight: 32,
+    healthBarHeight: 34,
+    healthBarFillHeight: 24,
     fighterNameY,
     fighterMetaY,
     fighterChipY,
-    fighterChipHeight: 46,
+    fighterChipHeight: 28,
     battleClockX: viewportWidth / 2,
     battleClockY: healthBarY,
-    battleClockRadius: 31,
-    battleClockProgressWidth: 44,
+    battleClockRadius: 25,
+    battleClockProgressWidth: 34,
     arenaTop,
     arenaBottom,
     arenaHorizontalPadding: Math.round(clamp(viewportWidth * 0.164, 96, 118)),
@@ -275,7 +272,7 @@ export function planReplayBattleLayout(input: {
         healthBarOriginX: 0,
         nameX: horizontalMargin + 12,
         nameOriginX: 0,
-        levelBadgeX: horizontalMargin + healthBarWidth - 24,
+        levelBadgeX: horizontalMargin + healthBarWidth,
         chipCenterX: horizontalMargin + healthBarWidth / 2,
         panelLeft: leftPanelLeft,
       },
@@ -287,7 +284,7 @@ export function planReplayBattleLayout(input: {
         healthBarOriginX: 1,
         nameX: viewportWidth - horizontalMargin - 12,
         nameOriginX: 1,
-        levelBadgeX: viewportWidth - horizontalMargin - healthBarWidth + 24,
+        levelBadgeX: viewportWidth - horizontalMargin - healthBarWidth,
         chipCenterX: viewportWidth - horizontalMargin - healthBarWidth / 2,
         panelLeft: rightPanelLeft,
       },

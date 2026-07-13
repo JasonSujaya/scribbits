@@ -63,7 +63,11 @@ import type {
   BattleImpactPlan,
   ReplayBattleLayout,
 } from '../lib/battlepresentation';
-import { formatBattleRecapLead, planBattleRecap } from '../lib/battlerecap';
+import {
+  formatBattleRecapAnnouncement,
+  formatBattleRecapLead,
+  planBattleRecap,
+} from '../lib/battlerecap';
 import type {
   BattleRecapPerspective,
   BattleRecapPlan,
@@ -248,6 +252,7 @@ export class Replay extends Scene {
   private combatEffects: Phaser.GameObjects.Graphics | null = null;
   private readonly shapeEffects = new Map<'a' | 'b', ShapeEffect>();
   private impactHoldMilliseconds = 0;
+  private cameraShakeCooldownMilliseconds = 0;
   private readonly inkcastCandidatesByTick = new Map<
     number,
     InkcastEditorialCandidate[]
@@ -290,6 +295,7 @@ export class Replay extends Scene {
     this.combatEffects = null;
     this.shapeEffects.clear();
     this.impactHoldMilliseconds = 0;
+    this.cameraShakeCooldownMilliseconds = 0;
     this.clearInkcastEditorialState();
     this.founderChronicleBeat = null;
     this.founderRivalryStakes = null;
@@ -603,6 +609,10 @@ export class Replay extends Scene {
 
   override update(_time: number, deltaMilliseconds: number): void {
     const safeDeltaMilliseconds = Math.max(0, deltaMilliseconds);
+    this.cameraShakeCooldownMilliseconds = Math.max(
+      0,
+      this.cameraShakeCooldownMilliseconds - safeDeltaMilliseconds
+    );
     const backdropPlaybackSpeed = this.playbackRunning
       ? this.impactHoldMilliseconds > 0
         ? 0
@@ -928,7 +938,6 @@ export class Replay extends Scene {
           impactPlan.damageTextScale
         );
         this.setContinuousHitPoints(target, event.targetHitPoints);
-        if (event.critical) this.critFlash();
         this.soundboard.play(event.critical ? 'critical' : 'hit');
         if (
           target.primaryPower === 'nib_halo' &&
@@ -1219,17 +1228,17 @@ export class Replay extends Scene {
     this.hidePowerGhosts();
 
     const arena = this.getArenaPresentation(frame);
-    this.strokePaperArenaBoundary(
-      floorGraphics,
-      arena,
-      UI.creamHex,
-      10,
-      0.82,
-      1
-    );
-    this.strokePaperArenaBoundary(floorGraphics, arena, UI.inkHex, 4, 0.56, 0);
     const shrinkRatio = arena.currentHalfWidth / arena.maximumHalfWidth;
     if (shrinkRatio < 0.995) {
+      this.strokePaperArenaBoundary(
+        floorGraphics,
+        arena,
+        UI.creamHex,
+        10,
+        0.72,
+        1
+      );
+      this.strokePaperArenaBoundary(floorGraphics, arena, UI.inkHex, 4, 0.5, 0);
       const maximumLeft = arena.centerX - arena.maximumHalfWidth;
       const maximumTop = arena.centerY - arena.maximumHalfHeight;
       const maximumWidth = arena.maximumHalfWidth * 2;
@@ -1305,6 +1314,8 @@ export class Replay extends Scene {
         currentRight - 28,
         currentBottom
       );
+    } else {
+      this.drawPaperArenaCorners(floorGraphics, arena);
     }
 
     const fighterFrames = frame.fighters;
@@ -1364,6 +1375,26 @@ export class Replay extends Scene {
         this.drawShapePowerCommand(graphics, command)
       );
     }
+  }
+
+  private drawPaperArenaCorners(
+    graphics: Phaser.GameObjects.Graphics,
+    arena: ArenaPresentationPlan
+  ): void {
+    const left = arena.centerX - arena.currentHalfWidth;
+    const right = arena.centerX + arena.currentHalfWidth;
+    const top = arena.centerY - arena.currentHalfHeight;
+    const bottom = arena.centerY + arena.currentHalfHeight;
+    const cornerLength = 32;
+    graphics.lineStyle(4, UI.inkHex, 0.16);
+    graphics.lineBetween(left, top, left + cornerLength, top);
+    graphics.lineBetween(left, top, left, top + cornerLength);
+    graphics.lineBetween(right, top, right - cornerLength, top);
+    graphics.lineBetween(right, top, right, top + cornerLength);
+    graphics.lineBetween(left, bottom, left + cornerLength, bottom);
+    graphics.lineBetween(left, bottom, left, bottom - cornerLength);
+    graphics.lineBetween(right, bottom, right - cornerLength, bottom);
+    graphics.lineBetween(right, bottom, right, bottom - cornerLength);
   }
 
   private strokePaperArenaBoundary(
@@ -1913,7 +1944,9 @@ export class Replay extends Scene {
 
   // Camera punch-in: a quick zoom toward the struck fighter, then ease back.
   private cameraPunch(shakeIntensity: number): void {
-    if (!this.reduceMotion) this.cameras.main.shake(200, shakeIntensity);
+    if (this.reduceMotion || this.cameraShakeCooldownMilliseconds > 0) return;
+    this.cameraShakeCooldownMilliseconds = 140 / this.speed;
+    this.cameras.main.shake(120, Math.min(0.0045, shakeIntensity));
   }
 
   private impactBurst(x: number, y: number, tint: number, big: boolean): void {
@@ -1961,21 +1994,6 @@ export class Replay extends Scene {
       duration: 900,
       ease: 'Cubic.easeOut',
       onComplete: () => text.destroy(),
-    });
-  }
-
-  private critFlash(): void {
-    if (this.reduceMotion) return;
-    const { width, height } = this.scale;
-    // Screen-edge flash (a hollow border glow) rather than a full white wash.
-    const g = this.add.graphics().setDepth(30);
-    g.lineStyle(28, 0xffd447, 0.85);
-    g.strokeRect(14, 14, width - 28, height - 28);
-    this.tweens.add({
-      targets: g,
-      alpha: 0,
-      duration: 300,
-      onComplete: () => g.destroy(),
     });
   }
 
@@ -2160,11 +2178,17 @@ export class Replay extends Scene {
     this.battleHud?.setAnnouncerVisible(false);
     this.battleHud?.setClockVisible(false);
     this.battleHud?.setControlsVisible(false);
+    const resultAnnouncement = formatBattleRecapAnnouncement(
+      recap,
+      this.battleRecapPerspective(winner, loser)
+    );
     if (this.report.kind === 'practice') {
+      this.battleHud?.announceResult(resultAnnouncement);
       this.showPracticeOutcome(winner, recap);
       return;
     }
     this.battleHud?.setBattleChromeVisible(false);
+    this.battleHud?.announceResult(resultAnnouncement);
     this.add
       .rectangle(0, 0, this.scale.width, this.scale.height, UI.paper, 0.9)
       .setOrigin(0)

@@ -410,17 +410,21 @@ function wireButtonPress(
       ease: 'Back.easeOut',
     });
   };
-  bindPressInteractionEvents(hit, {
-    press,
-    release,
-    activate: onClick,
-    ...(pressed.pressOnHover === undefined
-      ? {}
-      : { pressOnHover: pressed.pressOnHover }),
-  }, {
-    gameTarget: scene.input,
-    shutdownTarget: scene.events,
-  });
+  bindPressInteractionEvents(
+    hit,
+    {
+      press,
+      release,
+      activate: onClick,
+      ...(pressed.pressOnHover === undefined
+        ? {}
+        : { pressOnHover: pressed.pressOnHover }),
+    },
+    {
+      gameTarget: scene.input,
+      shutdownTarget: scene.events,
+    }
+  );
 }
 
 type CardPressInteractionOptions = Readonly<{
@@ -800,15 +804,19 @@ function wireTab(
       ease: 'Back.easeOut',
     });
   };
-  bindPressInteractionEvents(hit, {
-    press,
-    release,
-    activate: onClick,
-    pressOnHover: false,
-  }, {
-    gameTarget: scene.input,
-    shutdownTarget: scene.events,
-  });
+  bindPressInteractionEvents(
+    hit,
+    {
+      press,
+      release,
+      activate: onClick,
+      pressOnHover: false,
+    },
+    {
+      gameTarget: scene.input,
+      shutdownTarget: scene.events,
+    }
+  );
 }
 
 export function appTabBar(

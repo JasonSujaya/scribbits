@@ -4,6 +4,7 @@
  */
 
 import type { Element } from '../elements';
+import type { CombatUpgradeId } from './upgrades';
 
 export type FighterSlot = 'a' | 'b';
 
@@ -30,6 +31,8 @@ export type CombatFighterInput = Readonly<{
   name: string;
   element: CombatElement;
   stats: RawCombatStats;
+  // Versioned, server-owned Ink Mods. Optional only for stored v1 transcripts.
+  upgrades?: readonly CombatUpgradeId[];
   // Server-owned daily forecast + capped level bonus. It changes damage only,
   // never the drawing-selected power, body, movement, or collision geometry.
   damageModifierPermille?: number;

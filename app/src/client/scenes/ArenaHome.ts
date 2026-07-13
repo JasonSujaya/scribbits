@@ -31,7 +31,14 @@ import {
   canCare,
   releaseRenderedDrawingTextures,
 } from '../lib/scribbits';
-import { ELEMENT_STYLES, EDGE, NAV_SAFE, TYPE, UI } from '../lib/theme';
+import {
+  ELEMENT_STYLES,
+  EDGE,
+  NAV_SAFE,
+  TYPE,
+  UI,
+  prefersReducedMotion,
+} from '../lib/theme';
 import { LivingPaper } from '../lib/livingpaper';
 import {
   ghostButton,
@@ -41,7 +48,6 @@ import {
   errorPanel,
   stickerCard,
   floatReward,
-  button,
   fadeToScene,
   spinner,
 } from '../lib/ui';
@@ -1041,71 +1047,218 @@ export class ArenaHome extends Scene {
     const acknowledgeReceipt = (): void => {
       markRumbleReceiptShown(this, receipt.resolvedDay);
     };
-    const card = stickerCard(this, width / 2, height / 2, width - 100, 610, {
-      gold: presentation.highlight,
-      tapeColor: UI.tapeAlt,
-    });
+    const hasOwnedPortrait = receipt.kind === 'owned';
+    const hasBackedMatchup =
+      receipt.kind === 'backed' &&
+      receipt.pick !== null &&
+      receipt.opponent !== null;
+    const cardHeight = hasOwnedPortrait || hasBackedMatchup ? 780 : 700;
+    const outcomeLabelY = hasOwnedPortrait || hasBackedMatchup ? -300 : -270;
+    const outcomeIconY = hasOwnedPortrait || hasBackedMatchup ? -225 : -185;
+    const titleY = hasOwnedPortrait ? -140 : -100;
+    const portraitY = -40;
+    const detailY = hasOwnedPortrait ? 45 : -40;
+    const rewardY = hasOwnedPortrait || hasBackedMatchup ? 105 : 15;
+    const replayButtonY = hasBackedMatchup ? 190 : hasOwnedPortrait ? 210 : 135;
+    const continueButtonY = hasBackedMatchup
+      ? 295
+      : hasOwnedPortrait
+        ? 315
+        : 245;
+    const actionWidth = width - 220;
+    const cardCenterY =
+      height / 2 - (hasOwnedPortrait || hasBackedMatchup ? 20 : 45);
+    const card = stickerCard(
+      this,
+      width / 2,
+      cardCenterY,
+      width - 100,
+      cardHeight,
+      {
+        gold: presentation.highlight,
+        tapeColor: UI.tapeAlt,
+      }
+    );
     layer.add(card);
 
-    const hasOwnedPortrait = receipt.kind === 'owned';
-    card.add(
-      label(this, 0, -220, presentation.title, 44, UI.ink, true)
-        .setWordWrapWidth(width - 180)
-        .setLineSpacing(-4)
-    );
+    const outcomeFill = presentation.outcome === 'victory' ? UI.gold : UI.coral;
+    const outcomeText =
+      presentation.outcome === 'victory' ? UI.goldText : UI.coralText;
+    card.add([
+      label(
+        this,
+        0,
+        outcomeLabelY,
+        presentation.outcomeLabel,
+        58,
+        outcomeText,
+        true
+      ),
+      paperIcon(
+        this,
+        presentation.outcome === 'victory' ? 'trophy' : 'defeat',
+        0,
+        outcomeIconY,
+        {
+          size: 104,
+          fill: outcomeFill,
+          stroke: UI.inkHex,
+        }
+      ),
+    ]);
+    if (!hasBackedMatchup) {
+      card.add(
+        label(this, 0, titleY, presentation.title, 36, UI.ink, true)
+          .setWordWrapWidth(width - 180)
+          .setLineSpacing(-3)
+      );
+    }
+    if (
+      receipt.kind === 'backed' &&
+      receipt.pick !== null &&
+      receipt.opponent !== null
+    ) {
+      const pick = receipt.pick;
+      const opponent = receipt.opponent;
+      const matchupY = -55;
+      const pickX = -145;
+      const opponentX = 145;
+      const portraitSize = 168;
+      const pickWon = presentation.outcome === 'victory';
+      card.add([
+        label(this, pickX, -145, 'YOUR PICK', 24, UI.inkSoft, true),
+        label(
+          this,
+          opponentX,
+          -145,
+          receipt.opponentIsChampion ? 'CHAMPION' : 'FINAL RIVAL',
+          24,
+          UI.inkSoft,
+          true
+        ),
+        label(this, 0, matchupY, 'VS', 27, UI.inkSoft, true),
+        label(this, pickX, 47, pick.name.toUpperCase(), 25, UI.ink, true)
+          .setWordWrapWidth(210)
+          .setLineSpacing(-3),
+        label(
+          this,
+          opponentX,
+          47,
+          opponent.name.toUpperCase(),
+          25,
+          UI.ink,
+          true
+        )
+          .setWordWrapWidth(210)
+          .setLineSpacing(-3),
+      ]);
+      void Promise.all([
+        loadDrawing(this, pick),
+        loadDrawing(this, opponent),
+      ]).then(([pickTexture, opponentTexture]) => {
+        if (!this.scene.isActive() || !layer.active || !card.active) return;
+        const pickPortrait = fitDrawing(
+          this.add.image(pickX, matchupY, pickTexture, '__BASE'),
+          portraitSize
+        );
+        const opponentPortrait = fitDrawing(
+          this.add.image(opponentX, matchupY, opponentTexture, '__BASE'),
+          portraitSize
+        );
+        const losingPortrait = pickWon ? opponentPortrait : pickPortrait;
+        const winnerPortrait = pickWon ? pickPortrait : opponentPortrait;
+        const winnerX = pickWon ? pickX : opponentX;
+        const winnerSparks = [
+          [-66, -62],
+          [64, -48],
+          [-70, 38],
+          [68, 46],
+        ].map(([offsetX, offsetY], index) => {
+          const spark = paperIcon(
+            this,
+            'spark',
+            winnerX + (offsetX ?? 0),
+            matchupY + (offsetY ?? 0),
+            {
+              size: index % 2 === 0 ? 28 : 22,
+              fill: UI.gold,
+              stroke: UI.inkHex,
+            }
+          );
+          spark.setAngle(index % 2 === 0 ? -12 : 14);
+          return spark;
+        });
+        losingPortrait.setTint(0x403832).setAlpha(0.58);
+        card.add([...winnerSparks, pickPortrait, opponentPortrait]);
+        if (!prefersReducedMotion()) {
+          this.tweens.add({
+            targets: winnerPortrait,
+            angle: { from: -5, to: 5 },
+            duration: 85,
+            yoyo: true,
+            repeat: 3,
+            ease: 'Sine.easeInOut',
+            onComplete: () => winnerPortrait.setAngle(0),
+          });
+          winnerSparks.forEach((spark, index) => {
+            spark.setAlpha(0.35).setScale(0.72);
+            this.tweens.add({
+              targets: spark,
+              alpha: 1,
+              scaleX: 1.08,
+              scaleY: 1.08,
+              duration: 210 + index * 30,
+              yoyo: true,
+              repeat: 1,
+              ease: 'Sine.easeInOut',
+            });
+          });
+        }
+      });
+    }
     if (hasOwnedPortrait) {
       void loadDrawing(this, receipt.entrant).then((textureKey) => {
         if (!this.scene.isActive() || !layer.active || !card.active) return;
         const portrait = fitDrawing(
-          this.add.image(0, -92, textureKey, '__BASE'),
-          176
+          this.add.image(0, portraitY, textureKey, '__BASE'),
+          126
         );
         card.add(portrait);
       });
     }
 
-    if (presentation.detail) {
+    if (presentation.detail && !hasBackedMatchup) {
       card.add(
-        label(this, 0, -100, presentation.detail, 32, UI.inkSoft, true)
+        label(this, 0, detailY, presentation.detail, 32, UI.inkSoft, true)
           .setWordWrapWidth(width - 190)
           .setLineSpacing(3)
       );
     }
-    card.add(
-      label(
-        this,
-        0,
-        hasOwnedPortrait ? 25 : 5,
-        presentation.reward,
-        32,
-        receipt.inkAwarded > 0 ? UI.goldText : UI.inkSoft,
-        true
-      ).setWordWrapWidth(width - 190)
-    );
+    if (
+      receipt.kind === 'owned' ||
+      receipt.cloutEarned > 0 ||
+      receipt.inkAwarded > 0
+    ) {
+      card.add(
+        label(
+          this,
+          0,
+          rewardY,
+          presentation.reward,
+          32,
+          receipt.inkAwarded > 0 ? UI.goldText : UI.inkSoft,
+          true
+        ).setWordWrapWidth(width - 190)
+      );
+    }
 
-    const drawEligibility = getDrawEligibility(this.state);
-    const nextLabel = afterContinue
-      ? 'LEGACY BOOK'
-      : this.state.drawnToday
-        ? 'CONTENDERS'
-        : drawEligibility.canDraw
-          ? `DRAW DAY ${this.state.dayNumber}`
-          : 'CONTINUE';
+    const nextLabel = 'GO BACK';
+    const continueIcon = 'back';
     const continueFromReceipt = (): void => {
       acknowledgeReceipt();
       actionOverlay.destroy();
       layer.destroy(true);
-      if (afterContinue) {
-        afterContinue();
-        return;
-      }
-      if (this.state.drawnToday) {
-        this.openContenderPicker();
-      } else if (drawEligibility.canDraw) {
-        this.startDraw();
-      } else {
-        showToast(drawEligibility.message);
-      }
+      afterContinue?.();
     };
 
     if (receipt.replayAvailable) {
@@ -1143,36 +1296,51 @@ export class ArenaHome extends Scene {
       const watchLabel =
         receipt.kind === 'owned' ? 'WATCH LAST BOUT' : 'WATCH BOUT';
       card.add(
-        button(
+        iconButton(
           this,
           0,
-          165,
+          replayButtonY,
+          'sword',
           watchLabel,
           watchReplay,
-          width - 220,
+          actionWidth,
           UI.gold,
-          UI.ink
+          UI.ink,
+          100,
+          UI.creamHex
         )
       );
       actionOverlay.add({
         label: `${receipt.kind === 'owned' ? 'Watch last bout' : 'Watch bout'}. ${accessibleSummary}`,
         rect: {
           x: 110,
-          y: height / 2 + 115,
-          width: width - 220,
+          y: cardCenterY + replayButtonY - 50,
+          width: actionWidth,
           height: 100,
         },
         onActivate: watchReplay,
       });
       card.add(
-        ghostButton(this, 0, 265, nextLabel, continueFromReceipt, width - 260)
+        iconButton(
+          this,
+          0,
+          continueButtonY,
+          continueIcon,
+          nextLabel,
+          continueFromReceipt,
+          actionWidth,
+          UI.creamHex,
+          UI.ink,
+          100,
+          UI.coral
+        )
       );
       actionOverlay.add({
         label: `${nextLabel}. ${accessibleSummary}`,
         rect: {
-          x: 130,
-          y: height / 2 + 215,
-          width: width - 260,
+          x: 110,
+          y: cardCenterY + continueButtonY - 50,
+          width: actionWidth,
           height: 100,
         },
         onActivate: continueFromReceipt,
@@ -1181,23 +1349,26 @@ export class ArenaHome extends Scene {
     }
 
     card.add(
-      button(
+      iconButton(
         this,
         0,
-        145,
+        continueButtonY,
+        continueIcon,
         nextLabel,
         continueFromReceipt,
-        width - 220,
+        actionWidth,
         UI.coral,
-        UI.ink
+        UI.ink,
+        100,
+        UI.creamHex
       )
     );
     actionOverlay.add({
       label: `${nextLabel}. ${accessibleSummary}`,
       rect: {
         x: 110,
-        y: height / 2 + 95,
-        width: width - 220,
+        y: cardCenterY + continueButtonY - 50,
+        width: actionWidth,
         height: 100,
       },
       onActivate: continueFromReceipt,

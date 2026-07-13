@@ -93,9 +93,11 @@ For browser-only iteration without Reddit login, run:
 ./mock.command
 ```
 
-Then open `http://localhost:8902/`. The command keeps `vite build --watch`
-running behind the mock server and injects a local reload hook, so saving client
-files rebuilds `dist/client` and refreshes the browser automatically.
+Then open `http://localhost:8902/`. The command serves client source through a
+dedicated Vite development server with live updates and proxies `/api` to the
+local mock backend. Backend rebuilds are staged separately and published only
+when complete, so saving files never exposes a half-built `dist` directory.
+Rerunning `./mock.command` replaces the previous local instance cleanly.
 
 ## Troubleshooting
 

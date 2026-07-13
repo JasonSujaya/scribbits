@@ -109,6 +109,7 @@ export class Gallery extends Scene {
   private sectionTabsOverlay: CanvasActionOverlay | null = null;
   private contentActionOverlay: CanvasActionOverlay | null = null;
   private sectionSemanticOverlay: DomOverlay | null = null;
+  private sectionPanel: HTMLElement | null = null;
   private readonly sectionTabControls = new Map<
     GalleryTab,
     HTMLButtonElement
@@ -150,6 +151,7 @@ export class Gallery extends Scene {
     this.sectionTabsOverlay = null;
     this.contentActionOverlay = null;
     this.sectionSemanticOverlay = null;
+    this.sectionPanel = null;
     this.sectionTabControls.clear();
     this.sectionTabController = null;
     this.openingLegendId = null;
@@ -354,6 +356,18 @@ export class Gallery extends Scene {
   }
 
   private build(): void {
+    const focusedSectionTab = [...this.sectionTabControls.values()].includes(
+      document.activeElement as HTMLButtonElement
+    );
+    if (focusedSectionTab) {
+      this.contentActionOverlay?.clearPendingFocusLabel();
+    }
+    const focusedContentActionLabel =
+      focusedSectionTab
+        ? null
+        : (this.contentActionOverlay?.focusedControlLabel() ??
+          this.contentActionOverlay?.pendingFocusLabel() ??
+          null);
     this.buildGeneration += 1;
     this.destroyBuildOverlays();
     this.children.removeAll(true);
@@ -369,6 +383,7 @@ export class Gallery extends Scene {
     handLettered(this, width / 2, 58, 'GALLERY', 40, UI.ink, true);
     this.buildTabs(150);
     this.mountSectionPanel();
+    if (focusedSectionTab) this.sectionTabControls.get(this.tab)?.focus();
     this.buildAppTabs();
 
     if (this.tab === 'collection') {
@@ -389,6 +404,7 @@ export class Gallery extends Scene {
         onEquipTitle: (titleId) => this.updateEquippedTitle(titleId),
         onInventoryChanged: () => this.build(),
       });
+      this.restoreContentActionFocus(focusedContentActionLabel);
       return;
     }
 
@@ -424,6 +440,7 @@ export class Gallery extends Scene {
         },
         onPrimaryAction: (card) => this.handleLegacyPrimaryAction(card),
       });
+      this.restoreContentActionFocus(focusedContentActionLabel);
       return;
     }
 
@@ -442,10 +459,25 @@ export class Gallery extends Scene {
           true
         )
       );
+      this.restoreContentActionFocus(focusedContentActionLabel);
       return;
     }
 
     this.buildLegends(320);
+    this.restoreContentActionFocus(focusedContentActionLabel);
+  }
+
+  private restoreContentActionFocus(accessibleLabel: string | null): void {
+    if (!accessibleLabel) return;
+    const buildGeneration = this.buildGeneration;
+    window.setTimeout(() => {
+      if (!this.scene.isActive() || buildGeneration !== this.buildGeneration) {
+        return;
+      }
+      const restored =
+        this.contentActionOverlay?.restoreControlFocus(accessibleLabel) ?? false;
+      if (!restored) this.sectionPanel?.focus();
+    }, 0);
   }
 
   private destroyBuildOverlays(): void {
@@ -455,17 +487,24 @@ export class Gallery extends Scene {
     this.contentActionOverlay = null;
     this.sectionSemanticOverlay?.destroy();
     this.sectionSemanticOverlay = null;
+    this.sectionPanel = null;
     this.sectionTabControls.clear();
     this.sectionTabController = null;
   }
 
   private ensureContentActionOverlay(): CanvasActionOverlay {
     if (!this.contentActionOverlay) {
-      this.contentActionOverlay = new CanvasActionOverlay(this);
+      this.contentActionOverlay = new CanvasActionOverlay(
+        this,
+        'gallery-content'
+      );
       this.contentActionOverlay.setRootAttributes({
         id: GALLERY_SECTION_ACTIONS_ID,
         'aria-label': 'Selected Gallery section actions',
       });
+      if (this.sectionSemanticOverlay) {
+        this.contentActionOverlay.moveAfter(this.sectionSemanticOverlay);
+      }
     }
     return this.contentActionOverlay;
   }
@@ -594,6 +633,7 @@ export class Gallery extends Scene {
     const definition = GALLERY_TABS.find(({ tab }) => tab === this.tab);
     if (!definition || !this.sectionTabController) return;
     const panel = document.createElement('div');
+    this.sectionPanel = panel;
     this.sectionTabController.configurePanel(
       panel,
       this.tab,
@@ -614,6 +654,9 @@ export class Gallery extends Scene {
       width: 1,
       height: 1,
     });
+    if (this.contentActionOverlay) {
+      this.contentActionOverlay.moveAfter(this.sectionSemanticOverlay);
+    }
   }
 
   private switchTab(tab: GalleryTab): void {

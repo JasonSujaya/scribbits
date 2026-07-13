@@ -94,7 +94,9 @@ exact finish reason, duration, and final HP readable, while
 playback-only 2×/4× speed is reset before result controls animate. Only a
 knockout folds the loser; a double knockout folds both fighters, while time
 decisions leave both standing. The compact payoff immediately says `YOU WON`,
-`YOU LOST`, or names the spectator winner, then gives one primary next move;
+`YOU LOST`, or names the spectator winner, then names the transcript-proven
+`FINAL SPLAT` or `WINNER'S SPLAT` with its Shape Power and damage before giving
+one primary next move;
 Rival, Practice, tonight's pick, and the real return destination no longer read
 as four equal actions. Those canvas actions, Practice exits, archived returns,
 and Rival Draft choices are mirrored by focusable native buttons; critical
@@ -232,15 +234,20 @@ pnpm already configured, the equivalent command is `cd app && pnpm verify`.
 For browser-only iteration without Reddit login:
 
 ```bash
-../mock.command
+./mock.command
 ```
 
-Open `http://localhost:8902/`. Add `?fresh` to test the brand-new-player path.
+Open `http://localhost:8902/`. The command runs a dedicated Vite development
+server, so client saves update immediately without rebuilding or deleting
+`dist/client`. Mock backend changes publish only after a successful build and
+restart automatically; a failed rebuild keeps the last-good server running.
+Running the command again cleanly replaces its previous instance. Add `?fresh`
+to test the brand-new-player path.
 Public forecast flavor follows its own validated 32-day no-repeat rotation. It
 appears consistently in the app, Reddit post title, and result comment without
 sharing randomness with boosted/nerfed combat elements.
 
-The verification gate currently covers TypeScript, ESLint, 142 deterministic
+The verification gate currently covers TypeScript, ESLint, 146 deterministic
 simulation groups, and the production build.
 
 ## Data and safety

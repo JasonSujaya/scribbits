@@ -61,6 +61,7 @@ const {
   projectAccessoryInventoryConsumption,
   projectCapsuleInventoryGrant,
   projectEquippedTitle,
+  reconcileScribbitUpgrades,
   selectFoundingSparRivalSlate,
   simulate: simulateProductionBattle,
   selectCapsuleDrop,
@@ -151,6 +152,7 @@ const makeScribbit = (options) => {
     ? Math.max(0, Math.floor(options.xp))
     : 0;
   const status = options.status ?? 'alive';
+  const level = getLevelForXp(xp);
   const scribbit = {
     id: options.id,
     name: options.name,
@@ -167,7 +169,11 @@ const makeScribbit = (options) => {
     legendTitle: options.legendTitle ?? null,
     isFounding: options.isFounding ?? false,
     accessories: options.accessories ? [...options.accessories] : [],
-    level: getLevelForXp(xp),
+    upgrades:
+      status === 'alive'
+        ? reconcileScribbitUpgrades(options.id, level, options.upgrades)
+        : [],
+    level,
     xp,
     mood: options.mood ?? 'hungry',
     careDoneToday: options.careDoneToday ? [...options.careDoneToday] : [],
@@ -806,7 +812,7 @@ const olderScoutReplay = createBattleReport(
   todayEntrants[0],
   todayEntrants[1],
   {
-    seed: 1,
+    seed: 39,
     forecast: makeForecast(memory.dayNumber - 2),
   }
 );
@@ -1359,6 +1365,9 @@ const arenaState = (economy, previewMode = 'returning') => {
       resolvedDay: memory.dayNumber - 1,
       backedName: 'Inky Moon',
       championName: memory.champion.name,
+      pick: cloneScribbit(inkyMoon),
+      opponent: cloneScribbit(memory.champion),
+      opponentIsChampion: true,
       cloutEarned: 0,
       inkAwarded: 0,
       replayAvailable: memory.previousRumbleReplay !== null,
@@ -2469,7 +2478,7 @@ const serveStatic = async (request, response, url) => {
     sendError(
       response,
       404,
-      'dist/client is missing. Run npm run build before npm run mock.'
+      'dist/client is missing. Run pnpm run build before pnpm run mock.'
     );
     return;
   }
@@ -2560,6 +2569,13 @@ const server = createServer(async (request, response) => {
       response.write('retry: 1000\n\n');
       reloadClients.add(response);
       request.on('close', () => reloadClients.delete(response));
+      return;
+    }
+
+    if (request.method === 'POST' && url.pathname === '/__mock/reset-fresh') {
+      resetFreshPreview();
+      response.writeHead(204, { 'Cache-Control': 'no-store' });
+      response.end();
       return;
     }
 

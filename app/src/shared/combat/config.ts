@@ -119,7 +119,7 @@ const abilityConfigByPower: AbilityConfigByPower = Object.freeze({
 });
 
 export const DEFAULT_COMBAT_RULES: CombatRules = Object.freeze({
-  version: 1,
+  version: 2,
   tickRate: COMBAT_TICK_RATE,
   maximumSeconds: COMBAT_MAXIMUM_SECONDS,
   maximumTicks: COMBAT_MAXIMUM_TICKS,

@@ -27,6 +27,10 @@ import {
   SCRIBBIT_STAT_KEYS,
 } from '../../shared/arena';
 import { isElement } from '../../shared/elements';
+import {
+  normalizeScribbitUpgrades,
+  reconcileScribbitUpgrades,
+} from '../../shared/combat/upgrades';
 import { formatUtcDateKey } from './day';
 import { findInkCatalogEntry, isAccessoryCatalogEntry } from './ink';
 import { findFoundingScribbit } from './species';
@@ -338,11 +342,17 @@ export const addXpToScribbit = (
   if (scribbit.status !== 'alive') return cloneScribbit(scribbit);
   const gainedXp = normalizeNonNegativeInteger(xpGain);
   const nextXp = normalizeNonNegativeInteger(scribbit.xp) + gainedXp;
+  const nextLevel = getLevelForXp(nextXp);
 
   return {
     ...scribbit,
     xp: nextXp,
-    level: getLevelForXp(nextXp),
+    level: nextLevel,
+    upgrades: reconcileScribbitUpgrades(
+      scribbit.id,
+      nextLevel,
+      scribbit.upgrades
+    ),
     careDoneToday: [...scribbit.careDoneToday],
   };
 };
@@ -917,7 +927,7 @@ export const createScribbitLegacy = (
 ): ScribbitLegacy => {
   const xp = normalizeNonNegativeInteger(scribbit.xp);
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     archivedDay: scribbit.expiresDay,
     finish: inferLegacyFinish(scribbit),
     creatorTitle: options.creatorTitle ? { ...options.creatorTitle } : null,
@@ -927,6 +937,7 @@ export const createScribbitLegacy = (
     losses: normalizeNonNegativeInteger(scribbit.losses),
     belief: normalizeNonNegativeInteger(scribbit.belief),
     accessories: scribbit.accessories.map(snapshotCosmetic),
+    upgrades: scribbit.upgrades.map((upgrade) => ({ ...upgrade })),
   };
 };
 
@@ -938,7 +949,9 @@ const normalizeStoredLegacy = (
     !isRecord(value) ||
     !isLegacyFinish(value.finish) ||
     !isLegacyFinishValidForStatus(value.finish, scribbit.status) ||
-    (value.schemaVersion !== undefined && value.schemaVersion !== 1) ||
+    (value.schemaVersion !== undefined &&
+      value.schemaVersion !== 1 &&
+      value.schemaVersion !== 2) ||
     typeof value.archivedDay !== 'number' ||
     !Number.isFinite(value.archivedDay) ||
     value.archivedDay !== scribbit.expiresDay ||
@@ -964,7 +977,7 @@ const normalizeStoredLegacy = (
         .slice(0, MAX_ACCESSORIES_PER_SCRIBBIT)
     : [];
   return {
-    schemaVersion: 1,
+    schemaVersion: value.schemaVersion === 2 ? 2 : 1,
     archivedDay: scribbit.expiresDay,
     finish: value.finish,
     creatorTitle: creatorTitle ?? null,
@@ -974,6 +987,10 @@ const normalizeStoredLegacy = (
     losses: normalizeNonNegativeInteger(value.losses),
     belief: normalizeNonNegativeInteger(value.belief),
     accessories: legacyAccessories,
+    upgrades:
+      value.schemaVersion === 2
+        ? normalizeScribbitUpgrades(value.upgrades)
+        : [],
   };
 };
 
@@ -1004,7 +1021,9 @@ export const normalizeScribbitRecord = (
     typeof value.isFounding === 'boolean'
   ) {
     const xp = normalizeNonNegativeInteger(value.xp);
+    const level = getLevelForXp(xp);
     const careDoneToday = normalizeCareDoneToday(value.careDoneToday);
+    const status = value.status;
 
     const normalizedScribbit: Scribbit = {
       id: value.id,
@@ -1021,11 +1040,15 @@ export const normalizeScribbitRecord = (
       belief: value.belief,
       wins: value.wins,
       losses: value.losses,
-      status: value.status,
+      status,
       legendTitle: value.legendTitle,
       isFounding: value.isFounding,
       accessories: normalizeScribbitAccessories(value.accessories),
-      level: getLevelForXp(xp),
+      upgrades:
+        status === 'alive'
+          ? reconcileScribbitUpgrades(value.id, level, value.upgrades)
+          : normalizeScribbitUpgrades(value.upgrades),
+      level,
       xp,
       mood: isMood(value.mood)
         ? value.mood
@@ -1095,6 +1118,7 @@ export const createScribbit = (options: {
     accessories: (options.draft.accessories ?? []).map((accessory) => {
       return accessory.id;
     }),
+    upgrades: [],
     level: 1,
     xp: 0,
     mood: 'hungry',
@@ -1108,6 +1132,7 @@ export const cloneScribbit = (scribbit: Scribbit): Scribbit => {
     ...scribbit,
     stats: { ...scribbit.stats },
     accessories: [...scribbit.accessories],
+    upgrades: scribbit.upgrades.map((upgrade) => ({ ...upgrade })),
     careDoneToday: [...scribbit.careDoneToday],
     legacy: scribbit.legacy
       ? {
@@ -1118,6 +1143,7 @@ export const cloneScribbit = (scribbit: Scribbit): Scribbit => {
           accessories: scribbit.legacy.accessories.map((accessory) => ({
             ...accessory,
           })),
+          upgrades: scribbit.legacy.upgrades.map((upgrade) => ({ ...upgrade })),
         }
       : null,
   };

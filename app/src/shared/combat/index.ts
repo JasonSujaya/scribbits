@@ -17,6 +17,22 @@ export { getOrbitingNibPosition, simulateCombat } from './engine';
 export { selectDominantStat, selectPrimaryPower } from './selection';
 export { battleResultFinishIsConsistent } from './resultvalidation';
 export {
+  COMBAT_UPGRADE_CATALOG,
+  COMBAT_UPGRADE_IDS,
+  MAXIMUM_COMBAT_UPGRADES,
+  formatCombatUpgradeSummary,
+  getCombatUpgradeModifiers,
+  isCombatUpgradeId,
+  normalizeScribbitUpgrades,
+  reconcileScribbitUpgrades,
+} from './upgrades';
+export type {
+  CombatUpgradeDefinition,
+  CombatUpgradeId,
+  CombatUpgradeModifiers,
+  ScribbitUpgrade,
+} from './upgrades';
+export {
   ELEMENT_BATTLE_CUE_BY_ELEMENT,
   SHAPE_POWER_CONTENT_BY_POWER,
   SHAPE_POWER_IDS,

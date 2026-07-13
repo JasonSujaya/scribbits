@@ -1,6 +1,7 @@
 import type { Scribbit } from '../../shared/arena';
 import { LEVEL_XP_THRESHOLDS } from '../../shared/arena';
 import { selectPrimaryPower } from '../../shared/combat/selection';
+import { reconcileScribbitUpgrades } from '../../shared/combat/upgrades';
 import {
   FOUNDING_SCRIBBIT_DEFINITIONS,
   type FoundingScribbitDefinition,
@@ -26,6 +27,7 @@ const createFoundingScribbit = (
     legendTitle: null,
     isFounding: true,
     accessories: [],
+    upgrades: reconcileScribbitUpgrades(definition.id, definition.level, []),
     level: definition.level,
     xp: LEVEL_XP_THRESHOLDS[definition.level - 1] ?? 0,
     mood: definition.mood,
@@ -47,6 +49,7 @@ const cloneFoundingScribbit = (scribbit: Scribbit): Scribbit => {
     ...scribbit,
     stats: { ...scribbit.stats },
     accessories: [...scribbit.accessories],
+    upgrades: scribbit.upgrades.map((upgrade) => ({ ...upgrade })),
     careDoneToday: [...scribbit.careDoneToday],
   };
 };

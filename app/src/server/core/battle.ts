@@ -48,6 +48,7 @@ const cloneScribbitSnapshot = (scribbit: Scribbit): Scribbit => {
     ...scribbit,
     stats: { ...scribbit.stats },
     accessories: [...scribbit.accessories],
+    upgrades: (scribbit.upgrades ?? []).map((upgrade) => ({ ...upgrade })),
     careDoneToday: [...scribbit.careDoneToday],
   };
 };
@@ -106,6 +107,7 @@ export const simulate = (
         name: fighterA.name,
         element: fighterA.element,
         stats: fighterA.stats,
+        upgrades: (fighterA.upgrades ?? []).map((upgrade) => upgrade.id),
         damageModifierPermille: getCombatDamageModifierPermille(
           fighterA,
           forecast
@@ -116,6 +118,7 @@ export const simulate = (
         name: fighterB.name,
         element: fighterB.element,
         stats: fighterB.stats,
+        upgrades: (fighterB.upgrades ?? []).map((upgrade) => upgrade.id),
         damageModifierPermille: getCombatDamageModifierPermille(
           fighterB,
           forecast

@@ -5,7 +5,7 @@
 > If the concept already has a home, extend that file. If a new home is truly
 > needed, explain why before writing a parallel implementation.
 
-_Last verified: 2026-07-13 against commit 821474a and the current uncommitted worktree. Update with the app-overview skill._
+_Last verified: 2026-07-13 against commit 614bac1 and the current uncommitted worktree. Update with the app-overview skill._
 
 ## What this app is
 
@@ -56,6 +56,7 @@ The hook is immediate and personal: a player's own drawing visibly changes how a
 | Cross-scene transient state | `app/src/client/lib/registry.ts` | introduce ad-hoc registry keys in scenes |
 | Scribbit validation, ownership, lifecycle, and Redis records | `app/src/server/core/scribbit.ts` | mutate Scribbit hashes directly from routes |
 | Fixed-tick combat outcome | `app/src/shared/combat/engine.ts` | calculate winners or damage in the client |
+| Battle transcript runtime validation | `app/src/shared/combat/transcriptvalidation.ts` | redefine event, checkpoint, fighter, or result validation in storage or Replay |
 | Battle report assembly | `app/src/server/core/battle.ts` | rebuild reports in replay presentation |
 | Drawing analysis rules | `app/src/shared/analyzer-core.ts` | trust client-only analysis for submission |
 | Nightly Rumble resolution order | `app/src/server/core/dailyJob.ts` | resolve or pay Rumbles from client activity |

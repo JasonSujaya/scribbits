@@ -4,9 +4,11 @@ import type { Element } from '../../shared/arena';
 import { ELEMENT_STYLES, UI } from './theme';
 
 export type PaperIconKey =
+  | 'back'
   | 'berry'
   | 'book'
   | 'clock'
+  | 'defeat'
   | 'heart'
   | 'paw'
   | 'replay'
@@ -345,11 +347,36 @@ function drawIcon(
   graphics.fillStyle(fill, 1);
   graphics.lineStyle(3 * scale, stroke, 1);
 
+  if (key === 'back') {
+    graphics.lineStyle(4 * scale, stroke, 1);
+    graphics.lineBetween(-12 * scale, 0, 13 * scale, 0);
+    graphics.lineBetween(-12 * scale, 0, -2 * scale, -10 * scale);
+    graphics.lineBetween(-12 * scale, 0, -2 * scale, 10 * scale);
+    return;
+  }
+
   if (key === 'clock') {
     graphics.fillCircle(0, 0, 13 * scale);
     graphics.strokeCircle(0, 0, 13 * scale);
     graphics.lineBetween(0, 0, 0, -7 * scale);
     graphics.lineBetween(0, 0, 6 * scale, 3 * scale);
+    return;
+  }
+
+  if (key === 'defeat') {
+    const tornBanner = [
+      new Phaser.Math.Vector2(-13 * scale, -12 * scale),
+      new Phaser.Math.Vector2(13 * scale, -12 * scale),
+      new Phaser.Math.Vector2(13 * scale, 9 * scale),
+      new Phaser.Math.Vector2(6 * scale, 13 * scale),
+      new Phaser.Math.Vector2(0, 9 * scale),
+      new Phaser.Math.Vector2(-6 * scale, 13 * scale),
+      new Phaser.Math.Vector2(-13 * scale, 9 * scale),
+    ];
+    graphics.fillPoints(tornBanner, true);
+    graphics.strokePoints(tornBanner, true);
+    graphics.lineBetween(-7 * scale, -6 * scale, 7 * scale, 7 * scale);
+    graphics.lineBetween(7 * scale, -6 * scale, -7 * scale, 7 * scale);
     return;
   }
 

@@ -88,7 +88,7 @@ const PALETTE_COLORS = [
   '#f2cf3d',
 ] as const;
 const PALETTE_COLOR_NAMES = [
-  'ink',
+  'black',
   'coral',
   'orange',
   'blue',
@@ -109,9 +109,12 @@ type AnalyzerWorkerResponse = Readonly<{
 
 export class Draw extends Scene {
   private overlay!: DomOverlay;
+  private nameOverlay: DomOverlay | null = null;
   private canvas!: DrawCanvas;
   private nameInput: HTMLInputElement | null = null;
-  private controlOverlay: CanvasActionOverlay | null = null;
+  private headerControlOverlay: CanvasActionOverlay | null = null;
+  private toolControlOverlay: CanvasActionOverlay | null = null;
+  private submitOverlay: CanvasActionOverlay | null = null;
   private submitControl: HTMLButtonElement | null = null;
 
   private reactionText!: Phaser.GameObjects.Text;
@@ -126,8 +129,11 @@ export class Draw extends Scene {
   private submitButton: Phaser.GameObjects.Container | null = null;
   private creationControlsReady: boolean | null = null;
 
-  private resizeHandler = (): void => this.overlay?.sync();
-  private visualViewportResizeHandler = (): void => this.overlay?.sync();
+  private resizeHandler = (): void => {
+    this.overlay?.sync();
+    this.nameOverlay?.sync();
+  };
+  private visualViewportResizeHandler = (): void => this.resizeHandler();
   private submitting = false;
   private errorPanelRef: ErrorPanel | null = null;
   private livingPaper: LivingPaper | null = null;
@@ -187,7 +193,10 @@ export class Draw extends Scene {
     this.practiceAttemptCount = 0;
     this.pendingPracticeReport = null;
     this.nameInput = null;
-    this.controlOverlay = null;
+    this.nameOverlay = null;
+    this.headerControlOverlay = null;
+    this.toolControlOverlay = null;
+    this.submitOverlay = null;
     this.submitControl = null;
   }
 
@@ -237,12 +246,18 @@ export class Draw extends Scene {
     // Calm living page (no forecast field / edge creatures) so it moves gently
     // without distracting from the drawing surface.
     this.livingPaper = new LivingPaper(this, { edgeCreatures: false });
-    this.controlOverlay = new CanvasActionOverlay(this);
-    this.controlOverlay.setRootAttributes({
-      'aria-label': this.practiceMode ? 'Practice drawing controls' : 'Drawing controls',
+    this.headerControlOverlay = new CanvasActionOverlay(this);
+    this.headerControlOverlay.setRootAttributes({
+      'aria-label': 'Drawing navigation',
+    });
+    this.toolControlOverlay = new CanvasActionOverlay(this);
+    this.toolControlOverlay.setRootAttributes({
+      'aria-label': this.practiceMode ? 'Practice drawing tools' : 'Drawing tools',
     });
     this.buildChrome();
     this.buildOverlay();
+    this.buildSubmitControl();
+    this.orderDrawingOverlays();
     this.startAnalyzerWorker();
     if (!this.practiceMode) this.setupStickers();
     this.refreshPreview();
@@ -268,8 +283,14 @@ export class Draw extends Scene {
     this.analysisWorker = null;
     this.canvas?.destroy();
     this.overlay?.destroy();
-    this.controlOverlay?.destroy();
-    this.controlOverlay = null;
+    this.nameOverlay?.destroy();
+    this.nameOverlay = null;
+    this.headerControlOverlay?.destroy();
+    this.headerControlOverlay = null;
+    this.toolControlOverlay?.destroy();
+    this.toolControlOverlay = null;
+    this.submitOverlay?.destroy();
+    this.submitOverlay = null;
     this.submitControl = null;
     this.livingPaper?.destroy();
     this.livingPaper = null;
@@ -396,10 +417,11 @@ export class Draw extends Scene {
     width: number,
     height: number,
     onActivate: () => void,
-    enabled = true
+    enabled = true,
+    overlay: CanvasActionOverlay | null = this.toolControlOverlay
   ): HTMLButtonElement | null {
     return (
-      this.controlOverlay?.add({
+      overlay?.add({
         label: accessibleLabel,
         rect: { x, y, width, height },
         pointerPassthrough: true,
@@ -409,14 +431,49 @@ export class Draw extends Scene {
     );
   }
 
+  private buildSubmitControl(): void {
+    this.submitOverlay = new CanvasActionOverlay(this);
+    this.submitOverlay.setRootAttributes({ 'aria-label': 'Drawing submission' });
+    this.submitControl = this.addNativeControl(
+      this.practiceMode ? PRACTICE_SUBMIT_LABEL : 'Bring drawing to life',
+      EDGE,
+      Draw.SUBMIT_Y - 48,
+      this.scale.width - EDGE * 2,
+      96,
+      () => this.trySubmit(),
+      false,
+      this.submitOverlay
+    );
+  }
+
+  private orderDrawingOverlays(): void {
+    if (this.headerControlOverlay) {
+      this.overlay.moveAfter(this.headerControlOverlay);
+    }
+    if (this.toolControlOverlay) {
+      this.toolControlOverlay.moveAfter(this.overlay);
+    }
+    const afterTools = this.toolControlOverlay ?? this.overlay;
+    if (this.nameOverlay) this.nameOverlay.moveAfter(afterTools);
+    const beforeSubmit = this.nameOverlay ?? afterTools;
+    this.submitOverlay?.moveAfter(beforeSubmit);
+  }
+
   // --- Phaser chrome (everything except the live canvas + name input) -------
   private buildChrome(): void {
     const { width } = this.scale;
     // Top bar: Back on the left, title centered in the remaining space so the
     // two never collide (the mission's header-clip bug).
     ghostButton(this, 90, 60, '‹', () => this.exitDraw(), 96);
-    this.addNativeControl('Back to Arena', 42, 12, 96, 96, () =>
-      this.exitDraw()
+    this.addNativeControl(
+      'Back to Arena',
+      42,
+      12,
+      96,
+      96,
+      () => this.exitDraw(),
+      true,
+      this.headerControlOverlay
     );
     handLettered(
       this,
@@ -453,15 +510,6 @@ export class Draw extends Scene {
       UI.ink
     );
     this.submitButton.setAlpha(0).setVisible(false);
-    this.submitControl = this.addNativeControl(
-      this.practiceMode ? PRACTICE_SUBMIT_LABEL : 'Bring drawing to life',
-      EDGE,
-      Draw.SUBMIT_Y - 48,
-      width - EDGE * 2,
-      96,
-      () => this.trySubmit(),
-      false
-    );
   }
 
   // Two compact rows: every base color remains visible, while editing tools and
@@ -887,7 +935,9 @@ export class Draw extends Scene {
     // Distinct row above the submit button — NAME_Y is its center; a 68px-tall
     // field spans 1076..1144, well clear of the 96px submit button (1170..1266).
     const nameH = 68;
-    this.overlay.place(this.nameInput, {
+    this.nameOverlay = new DomOverlay(this);
+    this.nameOverlay.setRootAttributes({ 'aria-label': 'Scribbit identity' });
+    this.nameOverlay.place(this.nameInput, {
       x: EDGE,
       y: Draw.NAME_Y - nameH / 2,
       width: this.scale.width - EDGE * 2,

@@ -45,7 +45,7 @@ currency, or combat power.
 
 ## Current Ship Gates
 
-- [x] `pnpm verify` passes: TypeScript, ESLint, 142 deterministic simulation
+- [x] `pnpm verify` passes: TypeScript, ESLint, 146 deterministic simulation
       groups, and the production build (July 13).
 - [x] Production and localhost now share one submission, progression, reward,
       capsule, title, and accessory rules boundary. Repeat daily submissions,
@@ -154,10 +154,12 @@ currency, or combat power.
       result tweens, and captures zero runtime or console errors (July 11).
 - [x] The post-fight Inkcast Recap now derives its winner, finish reason, final
       HP, damage, signature, and decisive splat only from the validated server
-      transcript. Browser proof covers knockout, double knockout, timeout,
+      transcript. Its compact result now preserves one memorable Shape Power
+      lesson (`FINAL SPLAT` or `WINNER'S SPLAT` plus exact damage) instead of
+      discarding that computed truth. Browser proof covers knockout, double knockout, timeout,
       owned loss, WebGL, and Canvas: only KO losers fold, timeout fighters stay
       standing, outcome actions remain usable, and captured runtime errors stay
-      at zero (July 11).
+      at zero (July 13).
 - [x] All 20 founding opponents now receive deterministic stat-shaped mascot art.
       Chonk, Spike, Zip, and Charm alter silhouette/anatomy from the same shared
       dominant-stat selector used by drawing preview, Inkbody, replay, and server

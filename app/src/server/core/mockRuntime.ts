@@ -28,6 +28,7 @@ export {
 export { COSMETIC_CATALOG } from '../../shared/cosmetics';
 export { ELEMENTS, isElement } from '../../shared/elements';
 export { hashStringToUint32 } from '../../shared/stablehash';
+export { reconcileScribbitUpgrades } from '../../shared/combat/upgrades';
 export {
   CAPSULE_COST,
   INK_REWARDS,

@@ -24,7 +24,13 @@ import {
   normalizeCombatSeed,
 } from './random';
 import { selectPrimaryPower as selectPrimaryPowerForStats } from './selection';
+import {
+  getCombatUpgradeModifiers,
+  isCombatUpgradeId,
+  MAXIMUM_COMBAT_UPGRADES,
+} from './upgrades';
 import { isElement } from '../elements';
+import type { CombatUpgradeModifiers } from './upgrades';
 import type {
   AbilityPhase,
   AuthoritativeBattleResult,
@@ -72,6 +78,7 @@ type EchoState = {
 type MutableFighterState = {
   slot: FighterSlot;
   input: CombatFighterInput;
+  upgradeModifiers: CombatUpgradeModifiers;
   primaryPower: PrimaryPower;
   position: MutableVector;
   velocity: MutableVector;
@@ -231,6 +238,14 @@ function validateFighterInput(fighter: CombatFighterInput): void {
   ) {
     throw new Error('Combat damage modifier must be 850 to 1250 permille.');
   }
+  const upgrades = fighter.upgrades ?? [];
+  if (
+    upgrades.length > MAXIMUM_COMBAT_UPGRADES ||
+    upgrades.some((upgradeId) => !isCombatUpgradeId(upgradeId)) ||
+    new Set(upgrades).size !== upgrades.length
+  ) {
+    throw new Error('Combat upgrades must contain up to four unique Ink Mods.');
+  }
 }
 
 function freezeFighterInput(fighter: CombatFighterInput): CombatFighterInput {
@@ -239,6 +254,7 @@ function freezeFighterInput(fighter: CombatFighterInput): CombatFighterInput {
     name: fighter.name,
     element: fighter.element,
     stats: Object.freeze({ ...fighter.stats }),
+    upgrades: Object.freeze([...(fighter.upgrades ?? [])]),
     damageModifierPermille: fighter.damageModifierPermille ?? 1_000,
   });
 }
@@ -295,6 +311,7 @@ function createFighterState(
   seed: string,
   rules: CombatRules
 ): MutableFighterState {
+  const upgradeModifiers = getCombatUpgradeModifiers(input.upgrades);
   const horizontalDirection = slot === 'a' ? 1 : -1;
   const verticalRoll = deterministicInteger(
     seed,
@@ -317,14 +334,20 @@ function createFighterState(
       'initial-ability-delay',
       rules.fighter.initialAbilityDelayRangeTicks,
       input.id
-    );
-  const maxHitPoints =
+    ) +
+    upgradeModifiers.initialDelayTicksDelta;
+  const baseMaxHitPoints =
     rules.fighter.baseHitPoints +
     input.stats.chonk * rules.fighter.hitPointsPerChonk;
+  const maxHitPoints = divideRounded(
+    baseMaxHitPoints * upgradeModifiers.maximumHitPointsPermille,
+    1_000
+  );
 
   return {
     slot,
     input,
+    upgradeModifiers,
     primaryPower: selectPrimaryPowerForStats(input.stats),
     position: {
       x: (slot === 'a' ? -1 : 1) * rules.fighter.startingHorizontalOffset,
@@ -457,14 +480,23 @@ function getEffectiveTelegraphTicks(
     fighter.input.element === 'storm'
       ? rules.elements.storm.telegraphReductionTicks
       : 0;
-  return Math.max(1, timing.telegraphTicks - stormReduction);
+  return Math.max(
+    1,
+    timing.telegraphTicks -
+      stormReduction +
+      fighter.upgradeModifiers.telegraphTicksDelta
+  );
 }
 
 function getEffectiveCooldownTicks(
   context: SimulationContext,
   fighter: MutableFighterState
 ): number {
-  const baseCooldown = getPowerTiming(fighter, context.rules).cooldownTicks;
+  const baseCooldown = divideRounded(
+    getPowerTiming(fighter, context.rules).cooldownTicks *
+      fighter.upgradeModifiers.cooldownPermille,
+    1_000
+  );
   if (context.tick < context.rules.lateFight.startsAtTick) {
     return baseCooldown;
   }
@@ -1168,7 +1200,8 @@ function rollAndApplyDamage(
   const criticalChance = Math.min(
     context.rules.fighter.maximumCriticalChancePermille,
     source.input.stats.charm *
-      context.rules.fighter.criticalChancePermillePerCharm
+      context.rules.fighter.criticalChancePermillePerCharm +
+      source.upgradeModifiers.criticalChanceBonusPermille
   );
   const critical =
     deterministicPermilleRoll(
@@ -1188,6 +1221,10 @@ function rollAndApplyDamage(
       damage * (source.input.damageModifierPermille ?? 1_000),
       1_000
     )
+  );
+  damage = Math.max(
+    1,
+    divideRounded(damage * source.upgradeModifiers.damagePermille, 1_000)
   );
   if (critical) {
     damage = Math.max(

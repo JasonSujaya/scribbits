@@ -9,48 +9,95 @@ ensure_node_modules
 
 cd "$app_dir"
 
-node scripts/make-test-drawing.mjs
-"$(local_bin vite)" build
-node scripts/build-mock-combat.mjs
+port="${PORT:-8902}"
+mock_api_port="${MOCK_API_PORT:-$((port + 1))}"
+runtime_dir="$app_dir/node_modules/.cache/scribbits-mock"
+pid_file="$runtime_dir/command.pid"
+reload_file="$runtime_dir/backend.reload"
+combat_build_dir="$runtime_dir/combat-build"
 
-printf "\nScribbits browser mock will run at http://localhost:%s\n" "${PORT:-8902}"
-printf "Auto rebuild and browser reload are enabled.\n"
-printf "This is the no-Reddit-login path for OpenCode/browser iteration.\n\n"
-
-"$(local_bin vite)" build --watch --clearScreen false &
-watch_pid="$!"
-node scripts/build-mock-combat.mjs --watch &
-combat_watch_pid="$!"
+mkdir -p "$runtime_dir"
+if [[ -s "$pid_file" ]]; then
+  previous_pid="$(<"$pid_file")"
+  previous_command="$(ps -p "$previous_pid" -o command= 2>/dev/null || true)"
+  previous_cwd="$(lsof -a -p "$previous_pid" -d cwd -Fn 2>/dev/null | sed -n 's/^n//p')"
+  if [[ "$previous_pid" =~ ^[0-9]+$ ]] &&
+    [[ "$previous_command" == *"mock.command"* ]] &&
+    [[ "$previous_cwd" == "$app_dir" ]] &&
+    kill -0 "$previous_pid" 2>/dev/null; then
+    printf "Stopping the previous Scribbits dev server (PID %s)...\n" "$previous_pid"
+    kill "$previous_pid" 2>/dev/null || true
+    for _ in {1..40}; do
+      if ! kill -0 "$previous_pid" 2>/dev/null; then
+        break
+      fi
+      sleep 0.1
+    done
+    if kill -0 "$previous_pid" 2>/dev/null; then
+      printf "Could not stop the previous Scribbits dev server (PID %s).\n" "$previous_pid" >&2
+      exit 1
+    fi
+  fi
+fi
+printf "%s\n" "$$" >"$pid_file"
+printf "0\n" >"$reload_file"
 
 cleanup() {
-  kill "$watch_pid" >/dev/null 2>&1 || true
-  kill "$combat_watch_pid" >/dev/null 2>&1 || true
+  trap - EXIT INT TERM
+  kill "${vite_pid:-}" >/dev/null 2>&1 || true
+  kill "${mock_server_pid:-}" >/dev/null 2>&1 || true
+  kill "${combat_watch_pid:-}" >/dev/null 2>&1 || true
+  wait "${vite_pid:-}" "${mock_server_pid:-}" "${combat_watch_pid:-}" 2>/dev/null || true
+  if [[ -f "$pid_file" && "$(<"$pid_file")" == "$$" ]]; then
+    rm -f "$pid_file"
+  fi
 }
 trap cleanup EXIT INT TERM
 
-wait_for_artifact() {
-  local artifact_path="$1"
-  local attempts=0
+node scripts/make-test-drawing.mjs
+node scripts/build-mock-combat.mjs
 
-  while [[ ! -s "$artifact_path" && "$attempts" -lt 120 ]]; do
-    if ! kill -0 "$watch_pid" >/dev/null 2>&1 ||
-      ! kill -0 "$combat_watch_pid" >/dev/null 2>&1; then
-      printf "A Scribbits watch build stopped before %s was ready.\n" "$artifact_path" >&2
-      exit 1
-    fi
-    sleep 0.25
-    attempts=$((attempts + 1))
-  done
+printf "\nStarting Scribbits at http://localhost:%s\n" "$port"
+printf "Client live updates and safe backend rebuilds are enabled.\n"
+printf "This is the no-Reddit-login path for OpenCode/browser iteration.\n\n"
 
-  if [[ ! -s "$artifact_path" ]]; then
-    printf "Timed out waiting for build artifact: %s\n" "$artifact_path" >&2
+# Build server code away from dist, then publish only complete bundles. A failed
+# rebuild leaves the running backend and its last-good production rules intact.
+node scripts/build-mock-combat.mjs \
+  --watch \
+  --out-dir "$combat_build_dir" \
+  --publish-dir "$app_dir/dist/mock-runtime" \
+  --reload-file "$reload_file" &
+combat_watch_pid="$!"
+
+PORT="$mock_api_port" \
+MOCK_BACKEND_RELOAD_FILE="$reload_file" \
+node scripts/run-mock-backend.mjs &
+mock_server_pid="$!"
+
+PORT="$port" \
+MOCK_API_PORT="$mock_api_port" \
+"$(local_bin vite)" \
+  --config vite.mock.config.ts \
+  --clearScreen false &
+vite_pid="$!"
+
+for _ in {1..120}; do
+  if ! kill -0 "$vite_pid" 2>/dev/null || ! kill -0 "$mock_server_pid" 2>/dev/null; then
+    printf "Scribbits stopped before the dev server was ready.\n" >&2
     exit 1
   fi
-}
+  if curl --silent --fail "http://127.0.0.1:$port/" >/dev/null 2>&1 &&
+    curl --silent --fail "http://127.0.0.1:$port/api/arena" >/dev/null 2>&1; then
+    printf "\nScribbits is ready: http://localhost:%s\n" "$port"
+    break
+  fi
+  sleep 0.25
+done
 
-# Vite clears dist before each watch build. Wait for both outputs before the
-# mock server starts so the first browser request cannot hit a half-built app.
-wait_for_artifact "$app_dir/dist/client/game.html"
-wait_for_artifact "$app_dir/dist/mock-runtime/battle.mjs"
+if ! curl --silent --fail "http://127.0.0.1:$port/" >/dev/null 2>&1; then
+  printf "Timed out waiting for Scribbits on port %s.\n" "$port" >&2
+  exit 1
+fi
 
-MOCK_AUTO_RELOAD=1 node --watch-preserve-output --watch scripts/dev-mock.mjs
+wait "$vite_pid"
