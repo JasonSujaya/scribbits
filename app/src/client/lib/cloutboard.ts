@@ -27,7 +27,7 @@ export function openCloutBoard(
     scene,
     'Scout ladder',
     () => close(),
-    'The top ten scouts ranked by Clout earned from backing Rumble winners.'
+    'The top ten scouts ranked by Clout earned from winning Rumble picks.'
   );
   layer.once('destroy', () => modalActions.destroy());
   const scrim = scene.add
@@ -59,7 +59,7 @@ export function openCloutBoard(
       scene,
       0,
       top + 92,
-      'Back winners. Earn Clout.',
+      'Pick winners. Earn Clout.',
       TYPE.caption,
       UI.inkSoft,
       true
@@ -123,7 +123,7 @@ export function openCloutBoard(
           scene,
           0,
           listTop + 60,
-          'No scouts yet —\nbe the first to back a winner!',
+          'No scouts yet —\nbe the first to pick a winner!',
           TYPE.body,
           UI.inkSoft,
           true

@@ -55,7 +55,7 @@ export function selectVisibleArenaEntrants(
     .slice(0, ARENA_BRACKET_MAXIMUM_VISIBLE_ENTRANTS);
 }
 
-/** Plans the semantic Back state without importing Phaser colors or callbacks. */
+/** Plans the player-facing Pick state without importing Phaser colors or callbacks. */
 export function planArenaBackAction(input: {
   entrantId: string;
   ownedScribbitIds: readonly string[];
@@ -64,7 +64,7 @@ export function planArenaBackAction(input: {
   if (input.backedScribbitId === input.entrantId) {
     return Object.freeze({
       kind: 'picked',
-      label: 'Picked',
+      label: 'Your Pick',
       enabled: false,
     });
   }
@@ -78,13 +78,13 @@ export function planArenaBackAction(input: {
   if (input.backedScribbitId) {
     return Object.freeze({
       kind: 'locked',
-      label: 'Pick locked',
+      label: 'Pick Locked',
       enabled: false,
     });
   }
   return Object.freeze({
     kind: 'available',
-    label: 'Back',
+    label: 'Pick',
     enabled: true,
   });
 }

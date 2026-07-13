@@ -42,7 +42,7 @@ const isDebugShapePower = (value: string | null): value is DebugShapePower => {
 const config: Phaser.Types.Core.GameConfig = {
   type: debugForcesCanvas ? CANVAS : AUTO,
   parent: 'game-container',
-  backgroundColor: '#2a2118',
+  backgroundColor: '#6f4a2f',
   scale: {
     mode: Phaser.Scale.FIT,
     autoCenter: Phaser.Scale.NO_CENTER,

@@ -12,7 +12,7 @@ export const MIN_TOUCH = 100;
 
 // Screen safe margins so nothing kisses the letterbox edge.
 export const EDGE = 30; // left/right page margin
-export const NAV_SAFE = 144; // 136px contained dock + bottom breathing room
+export const NAV_SAFE = 144; // preserve content layout above the 124px dock
 
 // Three type sizes + a display treatment. Keep the ladder short on purpose so
 // hierarchy stays legible: DISPLAY (hand-lettered headers), TITLE, BODY, CAPTION.

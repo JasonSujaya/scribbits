@@ -264,7 +264,7 @@ export function openFounderChronicleMargin(
             scene,
             0,
             actionY,
-            'CONTINUE THREAD',
+            'FIGHT RIVAL',
             () => {
               close();
               options.onContinue?.();

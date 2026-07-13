@@ -6,8 +6,14 @@ import type {
   Scribbit,
 } from '../../shared/arena';
 import { ELEMENT_PREY } from '../../shared/arena';
+import { cloneScribbit } from '../../shared/arena';
 import { getLevelDamageMultiplier } from '../../shared/battle';
 import { simulateCombat } from '../../shared/combat';
+import {
+  evaluateBattleArenaChallenge,
+  getBattleArenaForDay,
+  type BattleArenaId,
+} from '../../shared/battlearena';
 import { hashTextToSeed } from './random';
 
 // Retained for stored-report compatibility and forecast copy. The fixed-tick
@@ -43,24 +49,15 @@ export const getForecastDamageMultiplier = (
   return 1;
 };
 
-const cloneScribbitSnapshot = (scribbit: Scribbit): Scribbit => {
-  return {
-    ...scribbit,
-    stats: { ...scribbit.stats },
-    accessories: [...scribbit.accessories],
-    upgrades: (scribbit.upgrades ?? []).map((upgrade) => ({ ...upgrade })),
-    careDoneToday: [...scribbit.careDoneToday],
-  };
-};
-
 const createReportId = (
   fighterA: Scribbit,
   fighterB: Scribbit,
   seed: number,
   forecast: Forecast,
-  kind: BattleKind
+  kind: BattleKind,
+  battleArenaId: BattleArenaId
 ): string => {
-  const identity = `${kind}:${forecast.day}:${seed}:${fighterA.id}:${fighterB.id}`;
+  const identity = `${kind}:${forecast.day}:${battleArenaId}:${seed}:${fighterA.id}:${fighterB.id}`;
   const digest = [0, 1, 2, 3]
     .map((lane) => {
       return hashTextToSeed(`report-id-v2:${lane}:${identity}`)
@@ -76,9 +73,10 @@ const createCombatSeed = (
   fighterB: Scribbit,
   seed: number,
   forecast: Forecast,
-  kind: BattleKind
+  kind: BattleKind,
+  battleArenaId: BattleArenaId
 ): string => {
-  return `${kind}:${forecast.day}:${seed}:${fighterA.id}:${fighterB.id}`;
+  return `${kind}:${forecast.day}:${battleArenaId}:${seed}:${fighterA.id}:${fighterB.id}`;
 };
 
 const getCombatDamageModifierPermille = (
@@ -99,8 +97,17 @@ export const simulate = (
   forecast: Forecast,
   kind: BattleKind
 ): BattleReport => {
+  const battleArena = getBattleArenaForDay(forecast.day);
   const simulation = simulateCombat({
-    seed: createCombatSeed(fighterA, fighterB, seed, forecast, kind),
+    seed: createCombatSeed(
+      fighterA,
+      fighterB,
+      seed,
+      forecast,
+      kind,
+      battleArena.id
+    ),
+    battleArenaId: battleArena.id,
     fighters: [
       {
         id: fighterA.id,
@@ -128,12 +135,21 @@ export const simulate = (
   });
 
   return {
-    id: createReportId(fighterA, fighterB, seed, forecast, kind),
+    id: createReportId(
+      fighterA,
+      fighterB,
+      seed,
+      forecast,
+      kind,
+      battleArena.id
+    ),
     kind,
     day: forecast.day,
-    a: cloneScribbitSnapshot(fighterA),
-    b: cloneScribbitSnapshot(fighterB),
+    a: cloneScribbit(fighterA),
+    b: cloneScribbit(fighterB),
     winner: simulation.result.winner,
+    battleArenaId: battleArena.id,
+    arenaChallenge: evaluateBattleArenaChallenge(battleArena.id, simulation),
     simulation,
   };
 };

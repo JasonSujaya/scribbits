@@ -346,6 +346,8 @@ export const createPracticeBattle = (
       a: simulatedReport.a,
       b: simulatedReport.b,
       winner: simulatedReport.winner,
+      battleArenaId: simulatedReport.battleArenaId,
+      arenaChallenge: simulatedReport.arenaChallenge,
       simulation: simulatedReport.simulation,
     },
   };

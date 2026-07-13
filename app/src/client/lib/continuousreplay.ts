@@ -114,11 +114,19 @@ function calculateEventDrivenFighterStates(
     createFighterReplayState(baselineCheckpoint.fighters[1]),
   ];
 
-  for (const event of transcript.timeline) {
-    if (event.tick > tick) break;
-    // Checkpoints are captured after that tick's combat phases. Starting from
-    // the nearest prior checkpoint keeps capped timelines authoritative.
-    if (event.tick <= baselineCheckpoint.tick) continue;
+  // Checkpoints are captured after that tick's combat phases. Binary-searching
+  // the ordered event stream avoids rescanning the entire replay every frame.
+  const firstEventIndex = findFirstEventIndexAfterTick(
+    transcript.timeline,
+    baselineCheckpoint.tick
+  );
+  const finalEventIndex = findFirstEventIndexAfterTick(
+    transcript.timeline,
+    tick
+  );
+  for (let index = firstEventIndex; index < finalEventIndex; index += 1) {
+    const event = transcript.timeline[index];
+    if (!event) continue;
     if (event.kind === 'damage') {
       getFighterReplayState(states, event.targetFighter).hitPoints =
         event.targetHitPoints;
@@ -148,6 +156,24 @@ function calculateEventDrivenFighterStates(
   }
 
   return states;
+}
+
+function findFirstEventIndexAfterTick(
+  timeline: readonly BattleTimelineEvent[],
+  tick: number
+): number {
+  let startIndex = 0;
+  let endIndex = timeline.length;
+  while (startIndex < endIndex) {
+    const middleIndex = Math.floor((startIndex + endIndex) / 2);
+    const event = timeline[middleIndex];
+    if (event && event.tick <= tick) {
+      startIndex = middleIndex + 1;
+    } else {
+      endIndex = middleIndex;
+    }
+  }
+  return startIndex;
 }
 
 function calculateEchoPosition(
@@ -283,7 +309,13 @@ export function getTimelineEventsInRange(
   ) {
     return [];
   }
-  return transcript.timeline.filter(
-    (event) => event.tick > startTick && event.tick <= endTick
+  const firstEventIndex = findFirstEventIndexAfterTick(
+    transcript.timeline,
+    startTick
   );
+  const finalEventIndex = findFirstEventIndexAfterTick(
+    transcript.timeline,
+    endTick
+  );
+  return transcript.timeline.slice(firstEventIndex, finalEventIndex);
 }

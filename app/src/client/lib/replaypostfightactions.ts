@@ -91,6 +91,21 @@ export function createPostFightActions(
         UI.gold
       );
     }
+    if (action.kind === 'rivals' || action.kind === 'backContender') {
+      return iconButton(
+        scene,
+        x,
+        y,
+        action.kind === 'rivals' ? 'sword' : 'trophy',
+        action.label,
+        () => activateAction(action.kind),
+        width,
+        action.tone === 'coral' ? UI.coralDeep : UI.gold,
+        UI.ink,
+        plan.buttonHeight,
+        UI.creamHex
+      );
+    }
     if (action.tone === 'ghost') {
       return ghostButton(
         scene,
@@ -118,21 +133,29 @@ export function createPostFightActions(
   if (plan.primary) {
     const gap = 12;
     const returnWidth = plan.buttonHeight;
-    const replayWidth = plan.replayAction ? 160 : 0;
-    const replayGap = plan.replayAction ? gap : 0;
-    const primaryWidth =
-      input.width - returnWidth - replayWidth - gap - replayGap;
-    const returnX = -input.width / 2 + returnWidth / 2;
-    const replayX = returnX + returnWidth / 2 + gap + replayWidth / 2;
-    const primaryX = input.width / 2 - primaryWidth / 2;
-    container.add(createAction(plan.returnAction, returnX, 0, returnWidth, true));
+    const replayWidth = plan.replayAction ? Math.min(240, input.width - 112) : 0;
+    const primaryY = -58;
+    const utilityY = 58;
+    const utilityWidth = returnWidth + (plan.replayAction ? gap + replayWidth : 0);
+    const returnX = -utilityWidth / 2 + returnWidth / 2;
+    const replayX = utilityWidth / 2 - replayWidth / 2;
+    container.add([
+      createAction(plan.primary, 0, primaryY, input.width),
+      createAction(plan.returnAction, returnX, utilityY, returnWidth, true),
+    ]);
+    placeAccessibleAction(plan.primary, 0, primaryY, input.width);
+    placeAccessibleAction(plan.returnAction, returnX, utilityY, returnWidth);
     if (plan.replayAction) {
-      container.add(createAction(plan.replayAction, replayX, 0, replayWidth));
-      placeAccessibleAction(plan.replayAction, replayX, 0, replayWidth);
+      container.add(
+        createAction(plan.replayAction, replayX, utilityY, replayWidth)
+      );
+      placeAccessibleAction(
+        plan.replayAction,
+        replayX,
+        utilityY,
+        replayWidth
+      );
     }
-    container.add(createAction(plan.primary, primaryX, 0, primaryWidth));
-    placeAccessibleAction(plan.returnAction, returnX, 0, returnWidth);
-    placeAccessibleAction(plan.primary, primaryX, 0, primaryWidth);
   } else if (plan.replayAction) {
     const gap = 12;
     const returnWidth = plan.buttonHeight;

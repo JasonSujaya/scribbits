@@ -106,6 +106,171 @@ export function handLettered(
   return container;
 }
 
+export type PaperWordmarkOptions = Readonly<{
+  icon?: PaperIconKey;
+  fontSize?: number;
+  maxWidth?: number;
+  fill?: number;
+  accent?: number;
+  textColor?: string;
+  angle?: number;
+}>;
+
+/** A cut-paper display title with live text and an optional semantic icon. */
+export function paperWordmark(
+  scene: Scene,
+  x: number,
+  y: number,
+  text: string,
+  options: PaperWordmarkOptions = {}
+): Phaser.GameObjects.Container {
+  const fontSize = options.fontSize ?? 46;
+  const maxWidth = options.maxWidth ?? 560;
+  const fill = options.fill ?? UI.creamHex;
+  const accent = options.accent ?? UI.gold;
+  const iconSize = options.icon ? Math.min(52, fontSize + 4) : 0;
+  const iconGap = options.icon ? 18 : 0;
+  const horizontalPadding = 34;
+  const verticalPadding = 20;
+  const container = scene.add.container(x, y).setAngle(options.angle ?? -0.8);
+  const title = scene.add
+    .text(0, 0, text, {
+      fontFamily: FONT_STACK,
+      fontSize: `${fontSize}px`,
+      color: options.textColor ?? UI.ink,
+      fontStyle: 'bold',
+      align: 'center',
+    })
+    .setOrigin(0.5);
+  const availableTextWidth = Math.max(
+    80,
+    maxWidth - horizontalPadding * 2 - iconSize - iconGap
+  );
+  if (title.width > availableTextWidth) {
+    title.setScale(availableTextWidth / title.width);
+  }
+  const scaledTitleWidth = title.width * title.scaleX;
+  const contentWidth = iconSize + iconGap + scaledTitleWidth;
+  const plateWidth = Math.min(
+    maxWidth,
+    Math.max(220, contentWidth + horizontalPadding * 2)
+  );
+  const plateHeight = Math.max(82, fontSize + verticalPadding * 2);
+  const halfWidth = plateWidth / 2;
+  const halfHeight = plateHeight / 2;
+  const platePoints = [
+    new Phaser.Math.Vector2(-halfWidth + 8, -halfHeight),
+    new Phaser.Math.Vector2(halfWidth - 5, -halfHeight + 3),
+    new Phaser.Math.Vector2(halfWidth, halfHeight - 8),
+    new Phaser.Math.Vector2(halfWidth - 10, halfHeight),
+    new Phaser.Math.Vector2(-halfWidth + 4, halfHeight - 2),
+    new Phaser.Math.Vector2(-halfWidth, -halfHeight + 9),
+  ];
+  const shadow = scene.add.graphics().setPosition(7, 8);
+  shadow.fillStyle(0x9b754d, 0.92);
+  shadow.fillPoints(platePoints, true);
+  const face = scene.add.graphics();
+  face.fillStyle(fill, 1);
+  face.fillPoints(platePoints, true);
+  face.lineStyle(5, UI.inkHex, 1);
+  face.strokePoints(platePoints, true);
+  const contentStartX = -contentWidth / 2;
+  title.setX(contentStartX + iconSize + iconGap + scaledTitleWidth / 2);
+  container.add([shadow, face]);
+  if (options.icon) {
+    container.add(
+      paperIcon(scene, options.icon, contentStartX + iconSize / 2, 0, {
+        size: iconSize,
+        fill: accent,
+        stroke: UI.inkHex,
+      })
+    );
+  }
+  container.add(title);
+  return container;
+}
+
+export type PaperRoleTagOptions = Readonly<{
+  fontSize?: number;
+  width?: number;
+  fill?: number;
+  textColor?: string;
+  angle?: number;
+}>;
+
+/** A compact live-text label for roles such as Your Pick and Champion. */
+export function paperRoleTag(
+  scene: Scene,
+  x: number,
+  y: number,
+  text: string,
+  options: PaperRoleTagOptions = {}
+): Phaser.GameObjects.Container {
+  const fontSize = options.fontSize ?? 22;
+  const container = scene.add.container(x, y).setAngle(options.angle ?? -0.5);
+  const role = label(
+    scene,
+    0,
+    0,
+    text,
+    fontSize,
+    options.textColor ?? UI.ink,
+    true
+  );
+  const width = Math.max(116, options.width ?? role.width + 44);
+  const height = Math.max(42, fontSize + 22);
+  if (role.width > width - 28) role.setScale((width - 28) / role.width);
+  const shadow = scene.add
+    .rectangle(5, 6, width, height, 0x9b754d, 0.78)
+    .setStrokeStyle(2, UI.inkHex, 0.18);
+  const face = scene.add
+    .rectangle(0, 0, width, height, options.fill ?? UI.tape, 0.98)
+    .setStrokeStyle(3, UI.inkHex, 0.88);
+  container.add([shadow, face, role]);
+  return container;
+}
+
+export type VersusBadgeOptions = Readonly<{
+  size?: number;
+  fill?: number;
+  iconFill?: number;
+  textColor?: string;
+}>;
+
+/** One shared paper VS mark for matchup cards, intros, and result receipts. */
+export function versusBadge(
+  scene: Scene,
+  x: number,
+  y: number,
+  options: VersusBadgeOptions = {}
+): Phaser.GameObjects.Container {
+  const size = Math.max(64, options.size ?? 108);
+  const radius = size / 2;
+  const container = scene.add.container(x, y);
+  const shadow = scene.add
+    .circle(5, 7, radius, 0x9b754d, 0.88)
+    .setStrokeStyle(3, UI.inkHex, 0.24);
+  const face = scene.add
+    .circle(0, 0, radius, options.fill ?? UI.coral, 1)
+    .setStrokeStyle(Math.max(4, Math.round(size * 0.055)), UI.inkHex, 1);
+  const sword = paperIcon(scene, 'sword', 0, -size * 0.1, {
+    size: size * 0.4,
+    fill: options.iconFill ?? UI.gold,
+    stroke: UI.inkHex,
+  });
+  const versus = label(
+    scene,
+    0,
+    size * 0.27,
+    'VS',
+    Math.max(16, Math.round(size * 0.2)),
+    options.textColor ?? UI.ink,
+    true
+  );
+  container.add([shadow, face, sword, versus]);
+  return container;
+}
+
 // A translucent washi-tape strip, rotated, for sticking cards to the page.
 export function tape(
   scene: Scene,
@@ -789,8 +954,8 @@ function wireTab(
   const press = (): void => {
     scene.tweens.add({
       targets: target,
-      scaleX: 0.88,
-      scaleY: 0.86,
+      scaleX: 0.94,
+      scaleY: 0.94,
       duration: 60,
       ease: 'Quad.easeOut',
     });
@@ -800,8 +965,8 @@ function wireTab(
       targets: target,
       scaleX: 1,
       scaleY: 1,
-      duration: 110,
-      ease: 'Back.easeOut',
+      duration: 90,
+      ease: 'Quad.easeOut',
     });
   };
   bindPressInteractionEvents(
@@ -819,6 +984,57 @@ function wireTab(
   );
 }
 
+function tornDockPoints(width: number, height: number): Phaser.Math.Vector2[] {
+  const halfWidth = width / 2;
+  const halfHeight = height / 2;
+  const topOffsets = [2, -2, 1, -3, 2, 0, -2, 3, -1, 1, -3, 2, 0];
+  const points: Phaser.Math.Vector2[] = [];
+  const segments = topOffsets.length - 1;
+  for (let index = 0; index <= segments; index += 1) {
+    const topOffset = topOffsets[index] ?? 0;
+    points.push(
+      new Phaser.Math.Vector2(
+        -halfWidth + (width * index) / segments,
+        -halfHeight + topOffset
+      )
+    );
+  }
+  points.push(
+    new Phaser.Math.Vector2(halfWidth - 2, halfHeight - 1),
+    new Phaser.Math.Vector2(halfWidth - 48, halfHeight + 2),
+    new Phaser.Math.Vector2(0, halfHeight - 1),
+    new Phaser.Math.Vector2(-halfWidth + 54, halfHeight + 2),
+    new Phaser.Math.Vector2(-halfWidth + 1, halfHeight - 2)
+  );
+  return points;
+}
+
+function waxSeal(
+  scene: Scene,
+  x: number,
+  y: number
+): Phaser.GameObjects.Graphics {
+  const seal = scene.add.graphics().setPosition(x, y);
+  const points: Phaser.Math.Vector2[] = [];
+  for (let point = 0; point < 20; point += 1) {
+    const radius = point % 2 === 0 ? 31 : 27;
+    const angle = -Math.PI / 2 + (point * Math.PI) / 10;
+    points.push(
+      new Phaser.Math.Vector2(
+        Math.cos(angle) * radius,
+        Math.sin(angle) * radius
+      )
+    );
+  }
+  seal.fillStyle(UI.coralDeep, 1);
+  seal.fillPoints(points, true);
+  seal.lineStyle(2.5, UI.inkHex, 0.9);
+  seal.strokePoints(points, true);
+  seal.lineStyle(2, UI.gold, 0.9);
+  seal.strokeCircle(0, 0, 21);
+  return seal;
+}
+
 export function appTabBar(
   scene: Scene,
   active: AppTabKey,
@@ -826,8 +1042,8 @@ export function appTabBar(
 ): Phaser.GameObjects.Container {
   const { width, height } = scene.scale;
   const slotCount = 5;
-  const barWidth = width - 24;
-  const barHeight = 136;
+  const barWidth = width - 28;
+  const barHeight = 124;
   const bottomInset = 8;
   const y = height - bottomInset - barHeight / 2;
   const viewportX = width / 2;
@@ -864,34 +1080,23 @@ export function appTabBar(
   container.once('destroy', removeCameraFollower);
   followCamera();
 
-  const shadow = scene.add.graphics();
-  shadow.fillStyle(0x000000, 0.24);
-  shadow.fillRoundedRect(
-    -barWidth / 2 + 4,
-    -barHeight / 2 + 7,
-    barWidth,
-    barHeight,
-    20
-  );
+  const paperPoints = tornDockPoints(barWidth, barHeight);
+  const shadow = scene.add.graphics().setPosition(5, 7);
+  shadow.fillStyle(0x5f4027, 0.34);
+  shadow.fillPoints(paperPoints, true);
 
   const paperStrip = scene.add.graphics();
   paperStrip.fillStyle(UI.paper, 1);
-  paperStrip.fillRoundedRect(
-    -barWidth / 2,
-    -barHeight / 2,
-    barWidth,
-    barHeight,
-    20
-  );
-  paperStrip.lineStyle(3, UI.panelStroke, 0.9);
-  paperStrip.strokeRoundedRect(
-    -barWidth / 2,
-    -barHeight / 2,
-    barWidth,
-    barHeight,
-    20
-  );
-  container.add([shadow, paperStrip]);
+  paperStrip.fillPoints(paperPoints, true);
+  paperStrip.lineStyle(2.5, UI.panelStroke, 0.76);
+  paperStrip.strokePoints(paperPoints, true);
+  const leftTape = scene.add
+    .rectangle(-barWidth / 2 + 48, -barHeight / 2 + 5, 72, 22, UI.tape, 0.68)
+    .setAngle(-5);
+  const rightTape = scene.add
+    .rectangle(barWidth / 2 - 48, -barHeight / 2 + 5, 72, 22, UI.tapeAlt, 0.52)
+    .setAngle(5);
+  container.add([shadow, paperStrip, leftTape, rightTape]);
 
   const slotWidth = barWidth / slotCount;
   tabs.forEach((tab, index) => {
@@ -899,30 +1104,39 @@ export function appTabBar(
     const isActive = tab.key === active;
     const slot = scene.add.container(x, 0);
     if (isActive) {
-      const activeTicket = scene.add.graphics();
-      activeTicket.fillStyle(UI.coral, 1);
-      activeTicket.fillRoundedRect(
-        -slotWidth / 2 + 8,
-        -barHeight / 2 + 8,
-        slotWidth - 16,
-        barHeight - 16,
-        16
-      );
-      activeTicket.lineStyle(2.5, UI.inkHex, 0.7);
-      activeTicket.strokeRoundedRect(
-        -slotWidth / 2 + 8,
-        -barHeight / 2 + 8,
-        slotWidth - 16,
-        barHeight - 16,
-        16
-      );
-      slot.add(activeTicket);
+      slot.add(waxSeal(scene, 0, -24));
     }
 
-    const icon = paperDockIcon(scene, tab.key, 0, -24, 68, UI.inkHex);
+    const icon = paperDockIcon(
+      scene,
+      tab.key,
+      0,
+      -24,
+      46,
+      UI.inkHex,
+      true
+    );
     const visibleLabel = tab.key === 'draw' ? 'Draw' : tab.label;
-    const text = label(scene, 0, 40, visibleLabel, 28, UI.ink, true);
+    const text = label(
+      scene,
+      0,
+      32,
+      visibleLabel,
+      23,
+      UI.ink,
+      true
+    );
     slot.add([icon, text]);
+    if (isActive) {
+      const underline = scene.add.graphics();
+      underline.lineStyle(5, UI.coralDeep, 1);
+      underline.beginPath();
+      underline.moveTo(-22, 51);
+      underline.lineTo(-5, 48);
+      underline.lineTo(23, 50);
+      underline.strokePath();
+      slot.add(underline);
+    }
 
     const hit = scene.add
       .rectangle(x, 0, slotWidth, barHeight, 0xffffff, 0.001)
@@ -932,7 +1146,7 @@ export function appTabBar(
     const nativeTab = actionOverlay.add({
       label: tab.label,
       rect: {
-        x: 16 + slotWidth * index,
+        x: (width - barWidth) / 2 + slotWidth * index,
         y: y - barHeight / 2,
         width: slotWidth,
         height: barHeight,

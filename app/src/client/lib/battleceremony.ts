@@ -3,13 +3,15 @@
 
 import { Scene } from 'phaser';
 import type * as Phaser from 'phaser';
-import type {
-  BattleKind,
-  RivalRunReceipt,
-  Scribbit,
-} from '../../shared/arena';
+import type { BattleKind, RivalRunReceipt, Scribbit } from '../../shared/arena';
 import { ELEMENT_STYLES, prefersReducedMotion, UI } from './theme';
-import { handLettered, label, elementBadge, levelBadge } from './ui';
+import {
+  elementBadge,
+  label,
+  levelBadge,
+  paperWordmark,
+  versusBadge,
+} from './ui';
 import { loadDrawing, fitDrawing, levelOf } from './scribbits';
 import { planBattleMatchupBrief } from './matchupbrief';
 import type { FounderRivalryStakesPlan } from './founderchronicle';
@@ -207,14 +209,16 @@ export function showVsCeremony(scene: Scene, options: VsCeremonyOptions): void {
     .setAngle(-1.5);
   layer.add([topTape, topBattleLabel]);
 
-  const matchupTitle = handLettered(
+  const matchupTitle = paperWordmark(
     scene,
     width / 2,
     104,
     rivalryStakes?.episodeTitle ?? brief.title,
-    rivalryStakes ? 34 : 38,
-    UI.ink,
-    true
+    {
+      fontSize: rivalryStakes ? 34 : 38,
+      maxWidth: width - 92,
+      accent: UI.coral,
+    }
   );
   layer.add(matchupTitle);
 
@@ -307,14 +311,11 @@ export function showVsCeremony(scene: Scene, options: VsCeremonyOptions): void {
   layer.add(sideB);
 
   // VS badge in the center
-  const vsBadge = scene.add.container(width / 2, fighterCenterY);
-  const vsBg = scene.add
-    .circle(0, 0, 54, UI.coral, 1)
-    .setStrokeStyle(6, UI.inkHex, 1);
-  const vsText = label(scene, 0, 0, 'VS', 42, UI.ink, true);
-  vsBadge.add([vsBg, vsText]);
-  vsBadge.setScale(0);
-  layer.add(vsBadge);
+  const matchupBadge = versusBadge(scene, width / 2, fighterCenterY, {
+    size: 108,
+  });
+  matchupBadge.setScale(0);
+  layer.add(matchupBadge);
 
   // Animate fighters sliding in
   scene.tweens.add({
@@ -334,7 +335,7 @@ export function showVsCeremony(scene: Scene, options: VsCeremonyOptions): void {
   // VS badge pops in after fighters arrive
   scene.time.delayedCall(reduceMotion ? 1 : 400, () => {
     scene.tweens.add({
-      targets: vsBadge,
+      targets: matchupBadge,
       scale: 1,
       duration: reduceMotion ? 1 : 300,
       ease: 'Back.easeOut',

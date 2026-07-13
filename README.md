@@ -47,9 +47,9 @@ arena effects and Inkbody deformation update at a bounded 30 Hz.
    daily Champion Contract for +2 XP on a win.
 6. Once today's Scribbit locks, use the reward-free Four-Power Practice Lab to
    draw throwaway shapes and immediately watch more server-authored fights.
-7. Back another player’s contender. Champion backers earn 3 Clout; finalist
+7. Pick another player’s contender. Champion picks earn 3 Clout; finalist
    backers earn 1.
-8. Return after the UTC rollover to see the Champion, watch your backed
+8. Return after the UTC rollover to see the Champion, watch your picked
    Scribbit's last Rumble bout, and see the result comment on the real post.
 9. Open the seven-page Scout Notebook to compare tonight's pick with the prior
    six Arena days, including exact forecasts, filed results, and available replays.
@@ -168,7 +168,7 @@ Scrapbook page and never grants a reward or writes progression.
 
 The fifth app tab is now a Scout Notebook rather than another rules shortcut.
 It assembles tonight plus the prior six Arena days from existing server-owned
-Back records, payout receipts, forecasts, lifetime Clout, and visible featured
+Pick records, payout receipts, forecasts, lifetime Clout, and visible featured
 Rumble reports. Each page has one explicit state—open, pending, champion,
 finalist, no Clout, or missed—and shows the exact picked drawing, artist,
 element, forecast, and filed payout when those facts still exist. Historical identity
@@ -210,6 +210,10 @@ locally, so the battle looks real-time without WebSockets, latency-sensitive
 inputs, or a client that can change the result. `app/scripts/dev-mock.mjs` is only
 the local development stand-in for this hosted boundary.
 
+Each report also records one of ten rotating Battle Arenas. Their small symmetric
+modifiers and challenges are selected and scored with the fight on the server;
+the replay only renders the stored arena, timeline, and result.
+
 ## Repository
 
 - [`app/`](./app): the Devvit application and detailed developer README.
@@ -247,7 +251,7 @@ Public forecast flavor follows its own validated 32-day no-repeat rotation. It
 appears consistently in the app, Reddit post title, and result comment without
 sharing randomness with boosted/nerfed combat elements.
 
-The verification gate currently covers TypeScript, ESLint, 146 deterministic
+The verification gate currently covers TypeScript, ESLint, 151 deterministic
 simulation groups, and the production build.
 
 ## Data and safety
@@ -292,6 +296,6 @@ new pages before the normal Rumble scouting receipt, and can open the frozen
 record without turning retired Scribbits back into combat entities.
 
 The scouting receipt can play the server-selected last bout for the Scribbit a
-player backed; the client cannot choose or alter that report. After today's
+player picked; the client cannot choose or alter that report. After today's
 drawing, one Next Goal card progressively reveals the next useful action and
 only the XP, Belief, lifespan, Ink, and collection evidence needed for it.

@@ -46,17 +46,11 @@ const DEPTH = 2000;
 export type DetailModalActions = {
   // Mine:
   onCare?: (scribbit: Scribbit) => void;
-  onSpar?: (scribbit: Scribbit) => void;
-  onEnter?: (scribbit: Scribbit) => void;
-  enterLabel?: string; // e.g. "Enter Rumble" or "✓ Entered"
-  enterEnabled?: boolean;
   // Others':
-  onBack?: (scribbit: Scribbit) => void;
-  backLabel?: string; // e.g. "Back" / "Your pick" / "Backing locked"
-  backEnabled?: boolean;
+  onPick?: (scribbit: Scribbit) => void;
+  pickLabel?: string;
+  pickEnabled?: boolean;
   canBelieve?: boolean; // false to hide/disable Believe (own scribbit, logged out)
-  // History:
-  onReplay?: (scribbit: Scribbit) => void; // opens battle history flow
 };
 
 export type DetailModalOpts = {
@@ -304,62 +298,13 @@ export function openDetailModal(
   const actionsY = cardH / 2 - 76;
   buildActions(actionsY);
 
-  // --- Battle history hint --------------------------------------------------
-  if (opts.actions.onReplay) {
-    card.add(
-      ghostButton(
-        scene,
-        0,
-        actionsY - 90,
-        'Battle history',
-        () => {
-          close();
-          opts.actions.onReplay?.(scribbit);
-        },
-        cardW - 80
-      )
-    );
-    modalActions.add({
-      label: `Open ${scribbit.name} battle history`,
-      rect: {
-        x: cardX - (cardW - 80) / 2,
-        y: cardY + actionsY - 132,
-        width: cardW - 80,
-        height: 84,
-      },
-      onActivate: () => {
-        close();
-        opts.actions.onReplay?.(scribbit);
-      },
-    });
-  }
-
   scrim.on('pointerup', () => close());
   modalActions.focusInitial();
 
   function buildActions(y: number): void {
     const a = opts.actions;
     if (opts.mine) {
-      // feed/pat/train handled inline where sensible; here we offer Spar + Enter.
       const slots: ActionSlot[] = [];
-      if (a.onSpar) {
-        slots.push({
-          icon: 'sword',
-          label: 'Spar',
-          fill: UI.coralDeep,
-          enabled: true,
-          run: () => runAndClose(() => a.onSpar?.(scribbit)),
-        });
-      }
-      if (a.onEnter) {
-        slots.push({
-          icon: 'trophy',
-          label: a.enterLabel ?? 'Enter Rumble',
-          fill: UI.coral,
-          enabled: a.enterEnabled ?? true,
-          run: () => runAndClose(() => a.onEnter?.(scribbit)),
-        });
-      }
       if (a.onCare) {
         // A single "Care" shortcut that returns to home roster for the 3 actions.
         slots.push({
@@ -381,7 +326,7 @@ export function openDetailModal(
       }
       layoutSlots(slots, y);
     } else {
-      // Others': Believe (in-modal, optimistic) + Back.
+      // Others': Believe (in-modal, optimistic) + the nightly Pick.
       const slots: ActionSlot[] = [];
       if (a.canBelieve !== false) {
         slots.push({
@@ -392,13 +337,13 @@ export function openDetailModal(
           run: () => doBelieve(),
         });
       }
-      if (a.onBack) {
+      if (a.onPick) {
         slots.push({
           icon: 'trophy',
-          label: a.backLabel ?? 'Back',
+          label: a.pickLabel ?? 'Pick',
           fill: UI.gold,
-          enabled: a.backEnabled ?? true,
-          run: () => runAndClose(() => a.onBack?.(scribbit)),
+          enabled: a.pickEnabled ?? true,
+          run: () => runAndClose(() => a.onPick?.(scribbit)),
         });
       }
       if (!scribbit.isFounding) {

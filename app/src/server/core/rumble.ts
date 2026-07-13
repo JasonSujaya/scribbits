@@ -1,5 +1,5 @@
 import type { BattleReport, Forecast, Scribbit } from '../../shared/arena';
-import { MAX_LEVEL } from '../../shared/arena';
+import { cloneScribbit, MAX_LEVEL } from '../../shared/arena';
 import { getBattleMaxHp } from '../../shared/battle';
 import { simulate } from './battle';
 import { hashTextToSeed, shuffleWithSeed } from './random';
@@ -21,16 +21,6 @@ export type RumbleResolution = {
 
 const minimumRumbleEntrants = 6;
 const preferredRumbleEntrants = 8;
-
-const cloneScribbit = (scribbit: Scribbit): Scribbit => {
-  return {
-    ...scribbit,
-    stats: { ...scribbit.stats },
-    accessories: [...scribbit.accessories],
-    upgrades: scribbit.upgrades.map((upgrade) => ({ ...upgrade })),
-    careDoneToday: [...scribbit.careDoneToday],
-  };
-};
 
 export const getProjectedRumbleEntrantCount = (
   entrantCount: number

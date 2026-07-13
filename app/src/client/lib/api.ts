@@ -15,7 +15,6 @@ import type {
   CapsulePullRequest,
   CloutBoard,
   DirectBattleResponse,
-  EnterRumbleRequest,
   Inventory,
   EquipTitleRequest,
   LegacyCardsState,
@@ -132,14 +131,6 @@ export function practiceBattle(
   );
 }
 
-export function enterRumble(
-  scribbitId: string
-): Promise<ApiResult<{ entered: true }>> {
-  return postJson<EnterRumbleRequest, { entered: true }>('/api/enter-rumble', {
-    scribbitId,
-  });
-}
-
 export function fetchMyBattles(): Promise<ApiResult<BattleReport[]>> {
   return getJson<BattleReport[]>('/api/my-battles');
 }
@@ -227,8 +218,8 @@ export function spar(
   });
 }
 
-// Back one of tonight's Rumble entrants. One per user per day, final; it
-// locks when the rumble resolves. Returns the id you backed for confirmation.
+// Pick one of tonight's Rumble entrants. One per user per day, final; it
+// locks when the Rumble resolves. The legacy transport returns the picked id.
 export function backScribbit(
   scribbitId: string
 ): Promise<ApiResult<{ backed: string }>> {

@@ -2,11 +2,20 @@
 // Extend, never fork. Analyzer + balance invariants: plans/v3-scribbits-arena.md.
 
 import type { BattleTranscript } from './combat';
+import type {
+  BattleArenaChallengeProgress,
+  BattleArenaId,
+} from './battlearena';
 import type { ScribbitUpgrade } from './combat/upgrades';
 import type { Element } from './elements';
 
 export { ELEMENTS, isElement } from './elements';
 export type { Element } from './elements';
+export {
+  LEVEL_DAMAGE_BONUS_PER_LEVEL,
+  LEVEL_XP_THRESHOLDS,
+  MAX_LEVEL,
+} from './progression';
 
 // Always sums to exactly 100 after server normalization.
 export type ScribbitStats = {
@@ -22,7 +31,6 @@ export const SCRIBBIT_STAT_KEYS = Object.freeze([
   'zip',
   'charm',
 ] as const satisfies readonly (keyof ScribbitStats)[]);
-export type ScribbitStatKey = (typeof SCRIBBIT_STAT_KEYS)[number];
 
 export type ScribbitStatus = 'alive' | 'faded' | 'legend';
 export type LegacyFinish = 'faded' | 'believed' | 'champion';
@@ -75,6 +83,35 @@ export type Scribbit = {
   mood: Mood; // derived from care state; cosmetic + tiny xp multiplier
   careDoneToday: CareAction[]; // each action once per scribbit per day
   legacy: ScribbitLegacy | null; // null while alive, immutable snapshot afterward
+};
+
+// One dependency-free copy boundary for storage, combat reports, Rumble,
+// founding opponents, and the local mock. Keep every mutable nested field
+// isolated so adding a Scribbit field cannot silently create aliasing in one
+// subsystem while another remains safe.
+export const cloneScribbit = (scribbit: Scribbit): Scribbit => {
+  return {
+    ...scribbit,
+    stats: { ...scribbit.stats },
+    accessories: [...scribbit.accessories],
+    // Old in-memory battle fixtures predate Ink Mods. Storage validation still
+    // rejects missing runtime authority before writes; cloning preserves the
+    // battle facade's finite read compatibility by projecting no mods.
+    upgrades: (scribbit.upgrades ?? []).map((upgrade) => ({ ...upgrade })),
+    careDoneToday: [...scribbit.careDoneToday],
+    legacy: scribbit.legacy
+      ? {
+          ...scribbit.legacy,
+          creatorTitle: scribbit.legacy.creatorTitle
+            ? { ...scribbit.legacy.creatorTitle }
+            : null,
+          accessories: scribbit.legacy.accessories.map((accessory) => ({
+            ...accessory,
+          })),
+          upgrades: scribbit.legacy.upgrades.map((upgrade) => ({ ...upgrade })),
+        }
+      : null,
+  };
 };
 
 export type LegacyCard = {
@@ -408,6 +445,8 @@ export type BattleReport = {
   a: Scribbit;
   b: Scribbit;
   winner: 'a' | 'b';
+  battleArenaId?: BattleArenaId; // absent only on historical reports
+  arenaChallenge?: BattleArenaChallengeProgress;
   inkAwarded?: number; // actual reward attached by the resolving action, never inferred by the client
   rivalRun?: RivalRunReceipt; // immutable server receipt for a chosen three-bout Rival Run fight
   // Read-only compatibility for old Redis records. New reports omit this
@@ -446,7 +485,6 @@ export type SubmitScribbitRequest = {
   accessories?: AttachedAccessory[]; // max 2; server validates ownership + consumes copies
 };
 
-export type EnterRumbleRequest = { scribbitId: string };
 export type CareRequest = { scribbitId: string; action: CareAction };
 export type CareResponse = {
   scribbit: Scribbit;
@@ -508,15 +546,10 @@ export const MAX_ALIVE_PER_USER = 3;
 // deterministic Ink Mod, plus the existing capped 1.5% mastery bonus. Shape,
 // power matchup, and authored forecast remain dominant. All growth dies with
 // the Scribbit. XP awards live in XP_REWARDS above.
-export const MAX_LEVEL = 5;
-export const LEVEL_XP_THRESHOLDS = [0, 3, 7, 12, 18]; // xp needed for level 1..5
-export const LEVEL_DAMAGE_BONUS_PER_LEVEL = 0.00375; // +0.375%/level above 1, max +1.5%
-
 // REST endpoints (Hono, JSON; errors = ArenaErrorResponse with 4xx/5xx):
 // GET  /api/arena          -> ArenaState
 // GET  /api/scout-notebook -> ScoutNotebookState (signed-in caller, today + six prior days)
 // POST /api/scribbit       -> SubmitScribbitRequest -> Scribbit         (401 if logged out, 409 if drawnToday)
-// POST /api/enter-rumble   -> EnterRumbleRequest -> { entered: true }   (409 if enteredToday)
 // GET  /api/my-battles     -> BattleReport[]  (caller's battles, newest first, top 20)
 // GET  /api/rumble-replay?day -> BattleReport (server-selected bout for caller's Back)
 // POST /api/believe        -> BelieveRequest -> { belief: number }      (one per user per scribbit per day)

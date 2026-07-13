@@ -38,6 +38,7 @@ const {
   advanceRivalRunState,
   chooseFoundingSparOpponent,
   cloneScribbit,
+  collectLegacyCards,
   createEmptyFounderChronicle,
   createScribbit,
   createScribbitLegacy,
@@ -50,19 +51,25 @@ const {
   generateForecastForDay,
   getCapsuleCostForDailyState,
   getLevelForXp,
+  getNextLegacySeenThroughDay,
   getRumbleProgressionRewards,
   hashStringToUint32,
   isCareAction,
   isElement,
   isScoutNotebookReplayDay,
+  paginateLegacyCards,
+  parseLegacyCardsPageSize,
+  parseCompleteScribbitUpgrades,
   projectFounderChronicle,
+  projectLegacyReturnReceipt,
   projectScoutNotebookPick,
   planCareProgression,
   projectAccessoryInventoryConsumption,
   projectCapsuleInventoryGrant,
   projectEquippedTitle,
-  reconcileScribbitUpgrades,
+  createScribbitUpgradesForLevel,
   selectFoundingSparRivalSlate,
+  sortLegacyCardsNewestFirst,
   simulate: simulateProductionBattle,
   selectCapsuleDrop,
   validateAndAnalyzeScribbitSubmission,
@@ -83,8 +90,6 @@ const mockDrawingFileByDominantStat = Object.freeze({
 const submittedDrawingBytes = new Map();
 
 const maximumLegendsPageSize = 50;
-const maximumLegacyCardsPageSize = 24;
-const legacyReturnPreviewLimit = 3;
 const mockCapsuleCatalogIds = new Set(COSMETIC_CATALOG.map((drop) => drop.id));
 const productionCosmeticById = new Map(
   COSMETIC_CATALOG.map((drop) => [drop.id, drop])
@@ -153,6 +158,13 @@ const makeScribbit = (options) => {
     : 0;
   const status = options.status ?? 'alive';
   const level = getLevelForXp(xp);
+  const explicitUpgrades =
+    options.upgrades === undefined
+      ? undefined
+      : parseCompleteScribbitUpgrades(options.upgrades, level);
+  if (options.upgrades !== undefined && !explicitUpgrades) {
+    throw new Error(`Mock Scribbit ${options.id} has malformed Ink Mods.`);
+  }
   const scribbit = {
     id: options.id,
     name: options.name,
@@ -170,9 +182,7 @@ const makeScribbit = (options) => {
     isFounding: options.isFounding ?? false,
     accessories: options.accessories ? [...options.accessories] : [],
     upgrades:
-      status === 'alive'
-        ? reconcileScribbitUpgrades(options.id, level, options.upgrades)
-        : [],
+      explicitUpgrades ?? createScribbitUpgradesForLevel(options.id, level),
     level,
     xp,
     mood: options.mood ?? 'hungry',
@@ -812,7 +822,7 @@ const olderScoutReplay = createBattleReport(
   todayEntrants[0],
   todayEntrants[1],
   {
-    seed: 39,
+    seed: 38,
     forecast: makeForecast(memory.dayNumber - 2),
   }
 );
@@ -1066,84 +1076,15 @@ const getOwnedScribbitsForPreview = (previewMode) => {
   return getOwnedScribbits();
 };
 
-const toLegacyCard = (scribbit) => {
-  if (scribbit.status === 'alive' || !scribbit.legacy) return undefined;
-  const legacy = cloneScribbit(scribbit).legacy;
-  if (!legacy) return undefined;
-  return {
-    id: scribbit.id,
-    name: scribbit.name,
-    artist: scribbit.artist,
-    element: scribbit.element,
-    imageUrl: scribbit.imageUrl,
-    bornDay: scribbit.bornDay,
-    expiresDay: scribbit.expiresDay,
-    status: scribbit.status,
-    legendTitle: scribbit.legendTitle,
-    legacy,
-  };
-};
-
 const getPersonalLegacyCards = () => {
-  return getOwnedScribbits()
-    .map(toLegacyCard)
-    .filter(Boolean)
-    .sort((left, right) => {
-      const archivedDayDifference =
-        right.legacy.archivedDay - left.legacy.archivedDay;
-      return archivedDayDifference || right.id.localeCompare(left.id);
-    });
-};
-
-const encodeLegacyCursor = (card, cards) => {
-  const descendingIndex = cards.findIndex(
-    (candidate) => candidate.id === card.id
-  );
-  const ascendingRank = Math.max(0, cards.length - 1 - descendingIndex);
-  return `v2|${card.legacy.archivedDay}|${ascendingRank}|${encodeURIComponent(card.id)}`;
-};
-
-const getLegacyCursorOffset = (rawCursor, cards) => {
-  if (rawCursor === null) return 0;
-  if (/^\d+$/.test(rawCursor)) {
-    const offset = Number(rawCursor);
-    return Number.isSafeInteger(offset) ? offset : undefined;
-  }
-  const match = /^v2\|(\d+)\|(\d+)\|(.+)$/.exec(rawCursor);
-  const previousMatch = /^v1\|(\d+)\|(.+)$/.exec(rawCursor);
-  const cursorMatch = match ?? previousMatch;
-  if (!cursorMatch) return undefined;
-  const score = Number(cursorMatch[1]);
-  let member;
-  try {
-    member = decodeURIComponent(match ? match[3] : cursorMatch[2]);
-  } catch {
-    return undefined;
-  }
-  if (!Number.isSafeInteger(score) || !member) return undefined;
-  const exactIndex = cards.findIndex(
-    (card) => card.id === member && card.legacy.archivedDay === score
-  );
-  if (exactIndex >= 0) return exactIndex + 1;
-  const nextIndex = cards.findIndex(
-    (card) =>
-      card.legacy.archivedDay < score ||
-      (card.legacy.archivedDay === score && card.id < member)
-  );
-  return nextIndex < 0 ? cards.length : nextIndex;
+  return sortLegacyCardsNewestFirst(collectLegacyCards(getOwnedScribbits()));
 };
 
 const legacyReturnReceiptState = () => {
-  const unseenCards = getPersonalLegacyCards().filter(
-    (card) => card.legacy.archivedDay > memory.legacySeenThroughDay
+  return projectLegacyReturnReceipt(
+    getPersonalLegacyCards(),
+    memory.legacySeenThroughDay
   );
-  if (unseenCards.length === 0) return null;
-
-  return {
-    cards: unseenCards.slice(0, legacyReturnPreviewLimit),
-    total: unseenCards.length,
-    newestArchivedDay: unseenCards[0].legacy.archivedDay,
-  };
 };
 
 const removeScribbitFromList = (list, scribbitId) => {
@@ -1743,20 +1684,18 @@ const handleApi = async (request, response, url) => {
 
   if (method === 'GET' && path === '/api/legacy-cards') {
     const allCards = getPersonalLegacyCards();
-    const cursorOffset = getLegacyCursorOffset(
-      url.searchParams.get('cursor'),
-      allCards
+    const requestedLimit = parseLegacyCardsPageSize(
+      url.searchParams.get('limit')
     );
-    const requestedLimit = readPageNumber(
-      url.searchParams.get('limit'),
-      maximumLegacyCardsPageSize,
-      maximumLegacyCardsPageSize
-    );
-    if (
-      cursorOffset === undefined ||
-      requestedLimit === undefined ||
-      requestedLimit < 1
-    ) {
+    const page =
+      requestedLimit === undefined
+        ? undefined
+        : paginateLegacyCards(
+            allCards,
+            url.searchParams.get('cursor'),
+            requestedLimit
+          );
+    if (!page) {
       sendError(response, 400, 'Use a valid Legacy Deck cursor and page size.');
       return;
     }
@@ -1766,15 +1705,7 @@ const handleApi = async (request, response, url) => {
       return;
     }
 
-    const cards = allCards.slice(cursorOffset, cursorOffset + requestedLimit);
-    const nextOffset = cursorOffset + cards.length;
-    sendJson(response, 200, {
-      cards,
-      nextCursor:
-        nextOffset < allCards.length && cards.length > 0
-          ? encodeLegacyCursor(cards[cards.length - 1], allCards)
-          : null,
-    });
+    sendJson(response, 200, page);
     return;
   }
 
@@ -1804,7 +1735,7 @@ const handleApi = async (request, response, url) => {
       previewMode === 'fresh'
         ? 'freshLegacySeenThroughDay'
         : 'legacySeenThroughDay';
-    memory[seenThroughDayKey] = Math.max(
+    memory[seenThroughDayKey] = getNextLegacySeenThroughDay(
       memory[seenThroughDayKey],
       body.throughArchivedDay
     );
@@ -2299,35 +2230,6 @@ const handleApi = async (request, response, url) => {
       founderChronicle: getFounderChronicleForPreview(previewMode),
       founderChronicleBeat: founderChronicleBeats.at(-1) ?? null,
     });
-    return;
-  }
-
-  if (method === 'POST' && path === '/api/enter-rumble') {
-    const body = await readJsonBody(request);
-    const scribbitId = readScribbitId(body);
-    const scribbit = getLivingScribbitsForPreview(previewMode).find(
-      (entry) => entry.id === scribbitId
-    );
-
-    if (!scribbit) {
-      sendError(
-        response,
-        404,
-        'That living Scribbit is not in your active roster.'
-      );
-      return;
-    }
-
-    if (hasEnteredTodayForPreview(previewMode)) {
-      sendError(response, 409, "You already entered today's Rumble.");
-      return;
-    }
-
-    if (previewMode === 'returning') memory.enteredToday = true;
-    if (!memory.todayEntrants.some((entry) => entry.id === scribbit.id)) {
-      memory.todayEntrants.push(scribbit);
-    }
-    sendJson(response, 200, { entered: true });
     return;
   }
 

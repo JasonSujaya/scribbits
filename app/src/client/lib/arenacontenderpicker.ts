@@ -6,7 +6,14 @@ import { CanvasModalOverlay } from './overlay';
 import { elementPaperIcon, paperIcon } from './papericons';
 import { fitDrawing, loadDrawing } from './scribbits';
 import { TYPE, UI } from './theme';
-import { ghostButton, label, paperIconButton, stickerCard } from './ui';
+import {
+  ghostButton,
+  label,
+  paperIconButton,
+  paperRoleTag,
+  paperWordmark,
+  stickerCard,
+} from './ui';
 
 export type ArenaContenderPicker = Readonly<{ destroy: () => void }>;
 
@@ -50,7 +57,7 @@ export function openArenaContenderPicker(
   };
   const semanticSummary = backedScribbitId
     ? 'Tonight’s Rumble contenders. Your one daily pick is already locked.'
-    : 'Tonight’s Rumble contenders. Choose one Scribbit to back tonight.';
+    : 'Tonight’s Rumble contenders. Choose your one pick for tonight.';
   const modalActions = new CanvasModalOverlay(
     scene,
     'Tonight’s Rumble contenders',
@@ -93,16 +100,25 @@ export function openArenaContenderPicker(
     { tapeColor: UI.tapeAlt, tapeWidth: 96 }
   );
   layer.add(panel);
-  panel.add(label(scene, 0, -480, 'TONIGHT’S RUMBLE', 40, UI.ink, true));
   panel.add(
-    label(
+    paperWordmark(scene, 0, -455, 'CHOOSE YOUR PICK', {
+      icon: 'heart',
+      fontSize: 40,
+      maxWidth: 480,
+      accent: UI.coral,
+    })
+  );
+  panel.add(
+    paperRoleTag(
       scene,
       0,
-      -435,
+      -385,
       backedScribbitId ? 'PICK LOCKED' : 'ONE HEART • ONE PICK',
-      22,
-      backedScribbitId ? UI.goldText : UI.coralText,
-      true
+      {
+        width: 330,
+        fill: backedScribbitId ? UI.tapeAlt : UI.tape,
+        textColor: backedScribbitId ? UI.goldText : UI.coralText,
+      }
     )
   );
 

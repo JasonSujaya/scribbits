@@ -148,19 +148,11 @@ function addVerifiedHighlight(
 }
 
 function compactOutcomeStatus(plan: BattleRecapPlan): string {
-  // Keep the server-authored finish reason while moving the winner into the
-  // lead line. The suffix is removed only from the already-authored headline;
-  // duration and both final HP values remain in the status line.
-  const winnerMarker = ` • ${plan.winnerName}`;
-  const winnerMarkerIndex = plan.headline.lastIndexOf(winnerMarker);
-  const reason =
-    winnerMarkerIndex > 0
-      ? plan.headline.slice(0, winnerMarkerIndex)
-      : plan.headline;
-  const compactVerdict = plan.verdictLine
-    .replace(' • INK LEFT ', ' · ')
-    .replace(' vs ', ' – ');
-  return `${reason}\n${compactVerdict}`;
+  if (plan.finishPresentation === 'knockout') return 'KNOCKOUT';
+  if (plan.finishPresentation === 'double-knockout') {
+    return 'DOUBLE KNOCKOUT';
+  }
+  return 'TIME DECISION';
 }
 
 function compactOutcomeLead(
@@ -198,7 +190,7 @@ export function addBattleRecapLines(
     addFittedLabel(scene, parent, {
       y: cursor + headlineHeight / 2,
       text: compactOutcomeLead(plan, options.perspective ?? 'spectator'),
-      fontSize: 30,
+      fontSize: 44,
       color: elementStyle.primaryText,
       width: contentWidth - 8,
       height: headlineHeight,
@@ -211,7 +203,7 @@ export function addBattleRecapLines(
     addFittedLabel(scene, parent, {
       y: cursor + statusHeight / 2,
       text: compactOutcomeStatus(plan),
-      fontSize: 25,
+      fontSize: 30,
       color: UI.inkSoft,
       width: contentWidth - 8,
       height: statusHeight,
@@ -224,17 +216,7 @@ export function addBattleRecapLines(
     const lesson = planCompactBattleRecapLesson(plan);
     const lessonHeight = compactLayout.lessonHeight;
     const lessonWidth = contentWidth - 4;
-    const lessonLabelHeight = compactLayout.lessonLabelHeight;
-    addFittedLabel(scene, parent, {
-      y: cursor + lessonLabelHeight / 2,
-      text: lesson.label,
-      fontSize: 18,
-      color: elementStyle.primaryText,
-      width: lessonWidth - 14,
-      height: lessonLabelHeight,
-      bold: true,
-    });
-    const lessonDetailY = cursor + lessonLabelHeight + 17;
+    const lessonDetailY = cursor + lessonHeight / 2;
     parent.add(
       tape(
         scene,

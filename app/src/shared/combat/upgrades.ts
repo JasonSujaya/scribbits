@@ -1,4 +1,13 @@
+import {
+  clampScribbitLevel,
+  INK_MOD_ACQUISITION_LEVELS,
+  isInkModAcquisitionLevel,
+  MAXIMUM_COMBAT_UPGRADES,
+  type InkModAcquisitionLevel,
+} from '../progression';
 import { hashStringToUint32 } from '../stablehash';
+
+export { MAXIMUM_COMBAT_UPGRADES } from '../progression';
 
 export const COMBAT_UPGRADE_IDS = Object.freeze([
   'v1-bold-tip',
@@ -13,7 +22,7 @@ export type CombatUpgradeId = (typeof COMBAT_UPGRADE_IDS)[number];
 
 export type ScribbitUpgrade = Readonly<{
   id: CombatUpgradeId;
-  acquiredAtLevel: 2 | 3 | 4 | 5;
+  acquiredAtLevel: InkModAcquisitionLevel;
 }>;
 
 export type CombatUpgradeDefinition = Readonly<{
@@ -39,7 +48,10 @@ export type CombatUpgradeModifiers = Readonly<{
   initialDelayTicksDelta: number;
 }>;
 
-export const MAXIMUM_COMBAT_UPGRADES = 4;
+export type StoredScribbitUpgradeResolution =
+  | Readonly<{ status: 'valid'; upgrades: readonly ScribbitUpgrade[] }>
+  | Readonly<{ status: 'migrated'; upgrades: readonly ScribbitUpgrade[] }>
+  | Readonly<{ status: 'invalid' }>;
 
 export const COMBAT_UPGRADE_CATALOG: Readonly<
   Record<CombatUpgradeId, CombatUpgradeDefinition>
@@ -94,6 +106,10 @@ export const COMBAT_UPGRADE_CATALOG: Readonly<
   }),
 });
 
+if (MAXIMUM_COMBAT_UPGRADES > COMBAT_UPGRADE_IDS.length) {
+  throw new Error('Ink Mod acquisition levels exceed the authored catalog.');
+}
+
 export const isCombatUpgradeId = (value: unknown): value is CombatUpgradeId => {
   return (
     typeof value === 'string' &&
@@ -101,20 +117,38 @@ export const isCombatUpgradeId = (value: unknown): value is CombatUpgradeId => {
   );
 };
 
-const isAcquisitionLevel = (
-  value: unknown
-): value is ScribbitUpgrade['acquiredAtLevel'] => {
-  return value === 2 || value === 3 || value === 4 || value === 5;
+const freezeUpgrade = (
+  id: CombatUpgradeId,
+  acquiredAtLevel: InkModAcquisitionLevel
+): ScribbitUpgrade => {
+  return Object.freeze({ id, acquiredAtLevel });
 };
 
-export const normalizeScribbitUpgrades = (
-  value: unknown
-): ScribbitUpgrade[] => {
-  if (!Array.isArray(value)) return [];
+const expectedAcquisitionLevels = (
+  level: number
+): readonly InkModAcquisitionLevel[] => {
+  const maximumLevel = clampScribbitLevel(level);
+  return INK_MOD_ACQUISITION_LEVELS.filter(
+    (acquisitionLevel) => acquisitionLevel <= maximumLevel
+  );
+};
+
+/**
+ * Parses a complete current Ink Mod set. Present-but-partial, duplicate, or
+ * malformed arrays fail closed instead of being silently repaired.
+ */
+export const parseCompleteScribbitUpgrades = (
+  value: unknown,
+  level: number
+): ScribbitUpgrade[] | undefined => {
+  const requiredLevels = expectedAcquisitionLevels(level);
+  if (!Array.isArray(value) || value.length !== requiredLevels.length) {
+    return undefined;
+  }
 
   const upgrades: ScribbitUpgrade[] = [];
   const usedIds = new Set<CombatUpgradeId>();
-  const usedLevels = new Set<number>();
+  const usedLevels = new Set<InkModAcquisitionLevel>();
   for (const candidate of value) {
     if (
       typeof candidate !== 'object' ||
@@ -122,55 +156,41 @@ export const normalizeScribbitUpgrades = (
       !('id' in candidate) ||
       !('acquiredAtLevel' in candidate) ||
       !isCombatUpgradeId(candidate.id) ||
-      !isAcquisitionLevel(candidate.acquiredAtLevel) ||
+      !isInkModAcquisitionLevel(candidate.acquiredAtLevel) ||
+      !requiredLevels.includes(candidate.acquiredAtLevel) ||
       usedIds.has(candidate.id) ||
       usedLevels.has(candidate.acquiredAtLevel)
     ) {
-      continue;
+      return undefined;
     }
     usedIds.add(candidate.id);
     usedLevels.add(candidate.acquiredAtLevel);
-    upgrades.push(
-      Object.freeze({
-        id: candidate.id,
-        acquiredAtLevel: candidate.acquiredAtLevel,
-      })
-    );
+    upgrades.push(freezeUpgrade(candidate.id, candidate.acquiredAtLevel));
   }
 
-  return upgrades
-    .sort((left, right) => left.acquiredAtLevel - right.acquiredAtLevel)
-    .slice(0, MAXIMUM_COMBAT_UPGRADES);
+  if (requiredLevels.some((levelValue) => !usedLevels.has(levelValue))) {
+    return undefined;
+  }
+
+  return upgrades.sort(
+    (left, right) => left.acquiredAtLevel - right.acquiredAtLevel
+  );
 };
 
-const clampLevel = (level: number): number => {
-  if (!Number.isFinite(level)) return 1;
-  return Math.min(5, Math.max(1, Math.floor(level)));
-};
-
-/**
- * Reconciles one immutable, server-authored Ink Mod for every level after 1.
- * Existing valid picks stay frozen; missing historical picks are deterministic.
- */
-export const reconcileScribbitUpgrades = (
+const addDeterministicUpgrades = (
   scribbitId: string,
-  level: number,
-  existingValue: unknown
+  targetLevel: number,
+  existingUpgrades: readonly ScribbitUpgrade[]
 ): ScribbitUpgrade[] => {
-  const maximumAcquisitionLevel = clampLevel(level);
-  const upgrades = normalizeScribbitUpgrades(existingValue).filter(
-    (upgrade) => upgrade.acquiredAtLevel <= maximumAcquisitionLevel
+  const upgrades = existingUpgrades.map((upgrade) =>
+    freezeUpgrade(upgrade.id, upgrade.acquiredAtLevel)
   );
   const usedIds = new Set(upgrades.map((upgrade) => upgrade.id));
-  const usedLevels = new Set<number>(
+  const usedLevels = new Set(
     upgrades.map((upgrade) => upgrade.acquiredAtLevel)
   );
 
-  for (
-    let acquisitionLevel = 2;
-    acquisitionLevel <= maximumAcquisitionLevel;
-    acquisitionLevel += 1
-  ) {
+  for (const acquisitionLevel of expectedAcquisitionLevels(targetLevel)) {
     if (usedLevels.has(acquisitionLevel)) continue;
     const availableIds = COMBAT_UPGRADE_IDS.filter((id) => !usedIds.has(id));
     const selectedIndex =
@@ -178,19 +198,67 @@ export const reconcileScribbitUpgrades = (
         `scribbit-upgrade:v1:${scribbitId}:${acquisitionLevel}`
       ) % availableIds.length;
     const selectedId = availableIds[selectedIndex];
-    if (!selectedId) break;
-    upgrades.push(
-      Object.freeze({
-        id: selectedId,
-        acquiredAtLevel: acquisitionLevel as 2 | 3 | 4 | 5,
-      })
-    );
+    if (!selectedId) {
+      throw new Error('Ink Mod catalog cannot satisfy progression policy.');
+    }
+    upgrades.push(freezeUpgrade(selectedId, acquisitionLevel));
     usedIds.add(selectedId);
     usedLevels.add(acquisitionLevel);
   }
 
   return upgrades.sort(
     (left, right) => left.acquiredAtLevel - right.acquiredAtLevel
+  );
+};
+
+export const createScribbitUpgradesForLevel = (
+  scribbitId: string,
+  level: number
+): ScribbitUpgrade[] => {
+  return addDeterministicUpgrades(scribbitId, level, []);
+};
+
+/** Absent means pre-feature and may migrate; malformed present data may not. */
+export const resolveStoredScribbitUpgrades = (
+  scribbitId: string,
+  level: number,
+  storedValue: unknown
+): StoredScribbitUpgradeResolution => {
+  if (storedValue === undefined) {
+    return Object.freeze({
+      status: 'migrated',
+      upgrades: Object.freeze(createScribbitUpgradesForLevel(scribbitId, level)),
+    });
+  }
+  const upgrades = parseCompleteScribbitUpgrades(storedValue, level);
+  return upgrades
+    ? Object.freeze({ status: 'valid', upgrades: Object.freeze(upgrades) })
+    : Object.freeze({ status: 'invalid' });
+};
+
+export const advanceScribbitUpgrades = (
+  scribbitId: string,
+  previousLevel: number,
+  nextLevel: number,
+  existingValue: unknown
+): ScribbitUpgrade[] => {
+  const normalizedPreviousLevel = clampScribbitLevel(previousLevel);
+  const normalizedNextLevel = clampScribbitLevel(nextLevel);
+  if (normalizedNextLevel < normalizedPreviousLevel) {
+    throw new Error('Ink Mod progression cannot move backward.');
+  }
+  const existing = resolveStoredScribbitUpgrades(
+    scribbitId,
+    normalizedPreviousLevel,
+    existingValue
+  );
+  if (existing.status === 'invalid') {
+    throw new Error('Existing Ink Mod progression is malformed.');
+  }
+  return addDeterministicUpgrades(
+    scribbitId,
+    normalizedNextLevel,
+    existing.upgrades
   );
 };
 

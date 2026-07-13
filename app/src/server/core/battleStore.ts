@@ -1,11 +1,12 @@
 import type { BattleReport, RivalRunReceipt } from '../../shared/arena';
-import { RIVAL_RUN_LENGTH } from '../../shared/arena';
+import { cloneScribbit, RIVAL_RUN_LENGTH } from '../../shared/arena';
 import {
   createLegacyRivalRunChallenge,
   isRivalRunChallenge,
   rivalRunChallengeGoalMet,
 } from '../../shared/rivalrunchallenges';
 import type { FighterSlot } from '../../shared/combat/types';
+import { isBattleArenaId } from '../../shared/battlearena';
 import { parseBattleTranscript } from '../../shared/combat/transcriptvalidation';
 import type { ArenaStorage, ArenaTransaction } from './storage';
 import {
@@ -13,7 +14,6 @@ import {
   MAX_WATCH_TRANSACTION_ATTEMPTS,
 } from './storage';
 import {
-  cloneScribbit,
   getScribbitOwner,
   isScribbit,
   normalizeScribbitRecord,
@@ -46,6 +46,20 @@ const isRecord = (value: unknown): value is Record<string, unknown> => {
 
 const isFighterSlot = (value: unknown): value is FighterSlot => {
   return value === 'a' || value === 'b';
+};
+
+const isArenaChallengeProgress = (value: unknown): boolean => {
+  if (!isRecord(value)) return false;
+  const progress = Number(value.progress);
+  const target = Number(value.target);
+  return (
+    Number.isSafeInteger(progress) &&
+    Number.isSafeInteger(target) &&
+    progress >= 0 &&
+    target >= 1 &&
+    progress <= target &&
+    value.completed === progress >= target
+  );
 };
 
 const isRivalRunReceipt = (
@@ -111,6 +125,16 @@ const isBattleReport = (value: unknown): value is BattleReport => {
     return false;
   }
 
+  if (
+    (value.battleArenaId !== undefined &&
+      !isBattleArenaId(value.battleArenaId)) ||
+    (value.arenaChallenge !== undefined &&
+      !isArenaChallengeProgress(value.arenaChallenge)) ||
+    (value.battleArenaId === undefined) !== (value.arenaChallenge === undefined)
+  ) {
+    return false;
+  }
+
   if (value.simulation === undefined && !Array.isArray(value.events)) {
     return false;
   }
@@ -161,33 +185,38 @@ const parseBattleReport = (
 
   try {
     const parsedBattleReport: unknown = JSON.parse(storedBattleReport);
+    if (!isRecord(parsedBattleReport)) return undefined;
 
-    if (isBattleReport(parsedBattleReport)) {
-      const fighterA = normalizeScribbitRecord(parsedBattleReport.a);
-      const fighterB = normalizeScribbitRecord(parsedBattleReport.b);
+    // Historical report fighters pass through the same finite read migration
+    // as stored Scribbits before strict report validation. New writes still
+    // call isBattleReport directly and cannot invoke migration.
+    const fighterA = normalizeScribbitRecord(parsedBattleReport.a);
+    const fighterB = normalizeScribbitRecord(parsedBattleReport.b);
+    if (!fighterA || !fighterB) return undefined;
 
-      if (fighterA && fighterB) {
-        const rivalRun = parsedBattleReport.rivalRun;
-        const normalizedRivalRun =
-          rivalRun &&
-          (rivalRun as unknown as Record<string, unknown>).challenge ===
-            undefined
-            ? {
-                ...rivalRun,
-                challenge: createLegacyRivalRunChallenge(
-                  rivalRun.boutsCompleted,
-                  rivalRun.status
-                ),
-              }
-            : rivalRun;
-        return {
-          ...parsedBattleReport,
-          a: fighterA,
-          b: fighterB,
-          ...(normalizedRivalRun ? { rivalRun: normalizedRivalRun } : {}),
-        };
-      }
-    }
+    const normalizedBattleReport = {
+      ...parsedBattleReport,
+      a: fighterA,
+      b: fighterB,
+    };
+    if (!isBattleReport(normalizedBattleReport)) return undefined;
+
+    const rivalRun = normalizedBattleReport.rivalRun;
+    const normalizedRivalRun =
+      rivalRun &&
+      (rivalRun as unknown as Record<string, unknown>).challenge === undefined
+        ? {
+            ...rivalRun,
+            challenge: createLegacyRivalRunChallenge(
+              rivalRun.boutsCompleted,
+              rivalRun.status
+            ),
+          }
+        : rivalRun;
+    return {
+      ...normalizedBattleReport,
+      ...(normalizedRivalRun ? { rivalRun: normalizedRivalRun } : {}),
+    };
   } catch (error) {
     console.error('Failed to parse stored battle report:', error);
   }
@@ -350,7 +379,9 @@ export const saveBattleReport = async (
     throw new Error('Practice battle reports cannot be stored.');
   }
   if (!isBattleReport(battleReport) || battleReport.simulation === undefined) {
-    throw new Error('Battle report failed authoritative transcript validation.');
+    throw new Error(
+      'Battle report failed authoritative transcript validation.'
+    );
   }
 
   const storedBattleReport: BattleReport = {

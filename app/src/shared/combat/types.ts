@@ -4,6 +4,7 @@
  */
 
 import type { Element } from '../elements';
+import type { BattleArenaId } from '../battlearena';
 import type { CombatUpgradeId } from './upgrades';
 
 export type FighterSlot = 'a' | 'b';
@@ -40,6 +41,7 @@ export type CombatFighterInput = Readonly<{
 
 export type CombatSimulationInput = Readonly<{
   seed: string | number;
+  battleArenaId?: BattleArenaId;
   fighters: readonly [CombatFighterInput, CombatFighterInput];
 }>;
 

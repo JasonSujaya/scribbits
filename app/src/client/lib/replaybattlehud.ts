@@ -3,11 +3,9 @@
 
 import * as Phaser from 'phaser';
 import { Scene } from 'phaser';
-import type { BattleReport, Scribbit } from '../../shared/arena';
+import type { Scribbit } from '../../shared/arena';
 import type { PrimaryPower } from '../../shared/combat/types';
-import { formatCombatUpgradeSummary } from '../../shared/combat/upgrades';
 import {
-  getReplayBattleKindLabel,
   planReplayBattleClock,
   planReplayHitPointBar,
 } from './battlepresentation';
@@ -18,8 +16,8 @@ import type {
 import { getShapePowerSignatureName } from './shapepowerpresentation';
 import { ELEMENT_STYLES, UI } from './theme';
 import { bindPressInteractionEvents } from './pressinteraction';
-import { label } from './ui';
-import { BATTLE_CONTROL_BUTTON_TEXTURE } from './visualassets';
+import { label, paperRoleTag } from './ui';
+import { BATTLE_CONTROL_BUTTON_TEXTURES } from './visualassets';
 
 export type ReplayShapePowerState = 'ready' | 'telegraph' | 'active';
 
@@ -37,7 +35,6 @@ type FighterBarView = {
   hitPointTrack: Phaser.GameObjects.Rectangle;
   hitPointTrail: Phaser.GameObjects.Rectangle;
   hitPointBar: Phaser.GameObjects.Rectangle;
-  hitPointValue: Phaser.GameObjects.Text;
   shapePower: ShapePowerChipView;
   revision: number;
   displayedHitPoints: number | null;
@@ -46,9 +43,7 @@ type FighterBarView = {
 
 type BattleClockView = {
   container: Phaser.GameObjects.Container;
-  face: Phaser.GameObjects.Arc;
   seconds: Phaser.GameObjects.Text;
-  progressFill: Phaser.GameObjects.Rectangle;
 };
 
 type ShapePowerStatePresentation = Readonly<{
@@ -158,8 +153,9 @@ export type CreateReplayBattleHudInput = {
   fighterB: Scribbit;
   fighterAPrimaryPower: PrimaryPower;
   fighterBPrimaryPower: PrimaryPower;
-  battleKind: BattleReport['kind'];
   battleLabel?: string | null;
+  arenaName: string;
+  arenaRule: string;
   showPlaybackControls: boolean;
   reduceMotion: boolean;
   initialPlaybackSpeed: number;
@@ -192,7 +188,7 @@ const createFighterBarView = (
   )
     .setOrigin(fighterLayout.nameOriginX, 0.5)
     .setDepth(22);
-  const availableNameWidth = layout.healthBarWidth - 62;
+  const availableNameWidth = layout.healthBarWidth;
   fitTextToWidth(name, availableNameWidth);
   name.setInteractive({ useHandCursor: true });
   name.on(
@@ -207,38 +203,6 @@ const createFighterBarView = (
       onSelect();
     }
   );
-
-  const level = label(
-    scene,
-    fighterLayout.levelBadgeX,
-    layout.fighterNameY,
-    `LV${scribbit.level}`,
-    17,
-    UI.inkSoft,
-    true
-  )
-    .setOrigin(side === 'a' ? 1 : 0, 0.5)
-    .setDepth(22);
-
-  const upgradeSummary = formatCombatUpgradeSummary(scribbit.upgrades, '', 2);
-  const fighterMeta = label(
-    scene,
-    fighterLayout.nameX,
-    layout.fighterMetaY,
-    upgradeSummary,
-    15,
-    UI.inkSoft,
-    true
-  )
-    .setOrigin(fighterLayout.nameOriginX, 0.5)
-    .setDepth(22)
-    .setVisible(upgradeSummary.length > 0)
-    .setName(`${scribbit.name} Ink Mods: ${upgradeSummary}`)
-    .setData(
-      'accessibilityLabel',
-      `${scribbit.name} Ink Mods: ${upgradeSummary}`
-    );
-  fitTextToWidth(fighterMeta, layout.healthBarWidth);
 
   const hitPointTrack = scene.add
     .rectangle(
@@ -275,17 +239,6 @@ const createFighterBarView = (
     .setOrigin(fighterLayout.healthBarOriginX, 0.5)
     .setDepth(24);
 
-  const hitPointValue = label(
-    scene,
-    fighterLayout.chipCenterX,
-    layout.healthBarY,
-    '— / —',
-    23,
-    UI.ink,
-    true
-  );
-  hitPointValue.setStroke(UI.cream, 3);
-
   const chipWidth = layout.healthBarWidth;
   const chipHeight = layout.fighterChipHeight;
   const stateWidth = Math.min(82, Math.round(chipWidth * 0.32));
@@ -299,7 +252,8 @@ const createFighterBarView = (
   ).toUpperCase();
   const shapePowerContainer = scene.add
     .container(fighterLayout.chipCenterX, layout.fighterChipY)
-    .setSize(chipWidth, chipHeight);
+    .setSize(chipWidth, chipHeight)
+    .setVisible(false);
   const stateBackground = scene.add.rectangle(
     stateCenterX,
     0,
@@ -333,12 +287,9 @@ const createFighterBarView = (
   const container = scene.add
     .container(0, 0, [
       name,
-      level,
-      fighterMeta,
       hitPointTrack,
       hitPointTrail,
       hitPointBar,
-      hitPointValue,
       shapePowerContainer,
     ])
     .setDepth(20);
@@ -348,7 +299,6 @@ const createFighterBarView = (
     hitPointTrack,
     hitPointTrail,
     hitPointBar,
-    hitPointValue,
     shapePower: {
       container: shapePowerContainer,
       stateBackground,
@@ -372,37 +322,9 @@ const createBattleClockView = (
     .container(layout.battleClockX, layout.battleClockY)
     .setDepth(28)
     .setVisible(visible);
-  const shadow = scene.add.circle(
-    3,
-    5,
-    layout.battleClockRadius + 1,
-    0x000000,
-    0.22
-  );
-  const face = scene.add
-    .circle(0, 0, layout.battleClockRadius, UI.creamHex, 1)
-    .setStrokeStyle(4, UI.inkHex, 1);
-  const seconds = label(scene, 0, 0, '25', 28, UI.ink, true);
-  const progressTrack = scene.add.rectangle(
-    0,
-    23,
-    layout.battleClockProgressWidth,
-    5,
-    UI.inkHex,
-    0.18
-  );
-  const progressFill = scene.add
-    .rectangle(
-      -layout.battleClockProgressWidth / 2,
-      23,
-      layout.battleClockProgressWidth,
-      5,
-      UI.gold,
-      1
-    )
-    .setOrigin(0, 0.5);
-  container.add([shadow, face, seconds, progressTrack, progressFill]);
-  return { container, face, seconds, progressFill };
+  const seconds = label(scene, 0, 0, '25s', 19, UI.inkSoft, true);
+  container.add(seconds);
+  return { container, seconds };
 };
 
 type ToolbarIconKind = 'sound' | 'speed' | 'skip';
@@ -421,8 +343,8 @@ const toolbarIconButton = (
 }> => {
   const container = scene.add.container(x, y);
   const buttonFace = scene.add
-    .image(0, 0, BATTLE_CONTROL_BUTTON_TEXTURE)
-    .setDisplaySize(80, 80);
+    .image(0, 0, BATTLE_CONTROL_BUTTON_TEXTURES[kind])
+    .setDisplaySize(82, 82);
   const iconLayer = scene.add.container(0, 0);
   const hitTarget = scene.add
     .rectangle(0, 0, width, width, 0xffffff, 0.001)
@@ -441,39 +363,24 @@ const toolbarIconButton = (
 
   const render = (value: number | boolean = initialValue ?? true): void => {
     iconLayer.removeAll(true);
-    const ink = scene.add.graphics();
-    ink.fillStyle(UI.inkHex, 1);
-    ink.lineStyle(4, UI.inkHex, 1);
 
-    if (kind === 'sound') {
-      ink.fillRect(-18, -6, 8, 12);
-      ink.fillTriangle(-10, -7, 2, -15, 2, 15);
-      if (value === false) {
-        ink.lineBetween(8, -12, 22, 12);
-      } else {
-        ink.beginPath();
-        ink.arc(2, 0, 13, -0.7, 0.7, false);
-        ink.strokePath();
-        ink.beginPath();
-        ink.arc(2, 0, 21, -0.65, 0.65, false);
-        ink.strokePath();
-      }
-      iconLayer.add(ink);
+    if (kind === 'sound' && value === false) {
+      const mutedSlash = scene.add.graphics();
+      mutedSlash.lineStyle(7, UI.creamHex, 1);
+      mutedSlash.lineBetween(-18, -18, 18, 18);
+      mutedSlash.lineStyle(4, UI.coralDeep, 1);
+      mutedSlash.lineBetween(-18, -18, 18, 18);
+      iconLayer.add(mutedSlash);
       return;
     }
 
-    if (kind === 'skip') {
-      ink.fillTriangle(-22, -13, -22, 13, -3, 0);
-      ink.fillTriangle(-3, -13, -3, 13, 16, 0);
-      ink.fillRect(19, -14, 4, 28);
-      iconLayer.add(ink);
-      return;
+    if (kind === 'speed') {
+      const speedBadge = scene.add
+        .circle(24, 24, 15, UI.creamHex, 0.98)
+        .setStrokeStyle(2, UI.inkHex, 1);
+      const speed = label(scene, 24, 24, `${Number(value)}×`, 16, UI.ink, true);
+      iconLayer.add([speedBadge, speed]);
     }
-
-    ink.fillTriangle(-28, -11, -28, 11, -13, 0);
-    ink.fillTriangle(-12, -11, -12, 11, 3, 0);
-    const speed = label(scene, 23, 0, `${Number(value)}×`, 21, UI.ink, true);
-    iconLayer.add([ink, speed]);
   };
 
   render(initialValue);
@@ -540,6 +447,7 @@ export function createReplayBattleHud(
     );
     const accessibleDescription = describeShapePowerState(side);
     shapePower.container
+      .setVisible(state !== 'ready')
       .setName(accessibleDescription)
       .setData('shapePowerState', state)
       .setData('accessibilityLabel', accessibleDescription);
@@ -583,62 +491,44 @@ export function createReplayBattleHud(
     applyFighterShapePowerState(side, state, true);
   };
 
-  const broadcastRail = scene.add.graphics().setDepth(78);
-  broadcastRail.fillStyle(0x000000, 0.28);
-  broadcastRail.fillRoundedRect(
-    layout.broadcastRailLeft + 4,
-    layout.broadcastRailTop + 6,
-    layout.broadcastRailWidth,
-    layout.broadcastRailHeight,
-    16
-  );
-  broadcastRail.fillStyle(UI.creamHex, 0.98);
-  broadcastRail.fillRoundedRect(
-    layout.broadcastRailLeft,
-    layout.broadcastRailTop,
-    layout.broadcastRailWidth,
-    layout.broadcastRailHeight,
-    16
-  );
-  broadcastRail.lineStyle(3, UI.inkHex, 0.9);
-  broadcastRail.strokeRoundedRect(
-    layout.broadcastRailLeft,
-    layout.broadcastRailTop,
-    layout.broadcastRailWidth,
-    layout.broadcastRailHeight,
-    16
-  );
-
-  const livePillWidth = 18;
-  const livePill = scene.add
-    .rectangle(
-      layout.kindLabelX + livePillWidth / 2,
-      layout.battleKindY,
-      livePillWidth,
-      18,
-      UI.coral,
-      1
-    )
-    .setStrokeStyle(2, UI.creamHex, 0.86)
-    .setDepth(79);
-  const kind = label(
+  const battleCaption = paperRoleTag(
     scene,
-    layout.kindLabelX + livePillWidth + 8,
+    layout.viewportWidth / 2,
     layout.battleKindY,
-    input.battleLabel ?? getReplayBattleKindLabel(input.battleKind),
-    26,
-    UI.ink,
+    'BATTLE',
+    { width: 190, fill: UI.coral, fontSize: 28 }
+  ).setDepth(80);
+  const arenaCaption = label(
+    scene,
+    layout.viewportWidth / 2,
+    242,
+    input.arenaName.toUpperCase(),
+    21,
+    UI.cream,
     true
   )
-    .setOrigin(0, 0.5)
+    .setOrigin(0.5)
+    .setStroke(UI.ink, 5)
     .setDepth(80);
-  const kindMaximumWidth = Math.max(
-    40,
-    layout.kindLabelMaximumWidth - livePillWidth - 8
+  fitTextToWidth(arenaCaption, layout.viewportWidth - 96);
+  const arenaRule = label(
+    scene,
+    layout.viewportWidth / 2,
+    269,
+    input.arenaRule.toUpperCase(),
+    17,
+    UI.cream,
+    true
+  )
+    .setOrigin(0.5)
+    .setStroke(UI.ink, 4)
+    .setDepth(80);
+  fitTextToWidth(arenaRule, layout.viewportWidth - 110);
+  const clock = createBattleClockView(
+    scene,
+    layout,
+    input.showPlaybackControls
   );
-  if (kind.width > kindMaximumWidth) {
-    kind.setScale(kindMaximumWidth / kind.width);
-  }
   let renderSpeedButton: ((value?: number | boolean) => void) | null = null;
   let renderSoundButton: ((value?: number | boolean) => void) | null = null;
   const toolbarControls: Phaser.GameObjects.Container[] = [];
@@ -681,11 +571,6 @@ export function createReplayBattleHud(
     toolbarControls.push(skipButton.container);
   }
 
-  const clock = createBattleClockView(
-    scene,
-    layout,
-    input.showPlaybackControls
-  );
   const ticker = scene.add
     .container(layout.tickerX, layout.tickerY)
     .setDepth(30)
@@ -820,7 +705,6 @@ export function createReplayBattleHud(
           ].primary,
       1
     );
-    bars.hitPointValue.setText(`${safeHitPoints} / ${safeMaximumHitPoints}`);
   };
 
   return {
@@ -854,13 +738,12 @@ export function createReplayBattleHud(
         bars.hitPointTrack.setVisible(visible);
         bars.hitPointTrail.setVisible(visible);
         bars.hitPointBar.setVisible(visible);
-        bars.hitPointValue.setVisible(visible);
       });
     },
     setBattleChromeVisible: (visible: boolean): void => {
-      broadcastRail.setVisible(visible);
-      livePill.setVisible(visible);
-      kind.setVisible(visible);
+      battleCaption.setVisible(visible);
+      arenaCaption.setVisible(visible);
+      arenaRule.setVisible(visible);
       Object.values(fighterBars).forEach((bars) => {
         bars.container.setVisible(visible);
       });
@@ -880,22 +763,11 @@ export function createReplayBattleHud(
       });
       if (displayedClockLabel !== clockPlan.label) {
         displayedClockLabel = clockPlan.label;
-        clock.seconds.setText(clockPlan.label);
+        clock.seconds.setText(`${clockPlan.label}s`);
       }
-      clock.progressFill.width =
-        layout.battleClockProgressWidth * clockPlan.remainingRatio;
       if (displayedClockUrgent !== clockPlan.urgent) {
         displayedClockUrgent = clockPlan.urgent;
         clock.seconds.setColor(clockPlan.urgent ? UI.coralText : UI.ink);
-        clock.progressFill.setFillStyle(
-          clockPlan.urgent ? UI.coral : UI.gold,
-          1
-        );
-        clock.face.setStrokeStyle(
-          4,
-          clockPlan.urgent ? UI.coralDeep : UI.inkHex,
-          1
-        );
       }
     },
     setClockVisible: (visible: boolean): void => {

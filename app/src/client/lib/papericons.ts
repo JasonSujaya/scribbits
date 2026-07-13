@@ -20,6 +20,7 @@ export type PaperIconKey =
   | 'shield'
   | 'spark'
   | 'sword'
+  | 'target'
   | 'train'
   | 'trash'
   | 'trophy';
@@ -59,86 +60,134 @@ export function paperIcon(
   return container;
 }
 
-/** One optical-weight, monochrome icon family for the persistent app dock. */
+/** Shared dock icons, with an optional scrapbook-color treatment for the tabs. */
 export function paperDockIcon(
   scene: Scene,
   key: PaperDockIconKey,
   x: number,
   y: number,
-  size = 68,
-  color = UI.inkHex
+  size = 42,
+  color: number = UI.inkHex,
+  accented = false
 ): Phaser.GameObjects.Container {
-  const scale = size / 64;
+  const scale = size / 42;
   const container = scene.add.container(x, y);
   const graphics = scene.add.graphics();
-  graphics.lineStyle(4.5 * scale, color, 1);
+  graphics.lineStyle(3 * scale, color, 1);
   graphics.fillStyle(color, 1);
 
-  if (key === 'arena') {
-    const rosette: Phaser.Math.Vector2[] = [];
-    for (let point = 0; point < 16; point += 1) {
-      const radius = (point % 2 === 0 ? 25 : 21) * scale;
-      const angle = -Math.PI / 2 + (point * Math.PI) / 8;
-      rosette.push(
-        new Phaser.Math.Vector2(
-          Math.cos(angle) * radius,
-          Math.sin(angle) * radius
-        )
-      );
-    }
-    graphics.strokePoints(rosette, true);
-    graphics.strokeCircle(0, 0, 16 * scale);
-    drawFivePointStar(graphics, 0, 0, 9 * scale, 4 * scale, true);
-  } else if (key === 'gallery') {
-    graphics.strokeRoundedRect(
-      -12 * scale,
-      -23 * scale,
-      24 * scale,
-      25 * scale,
+  if (key === 'arena' && accented) {
+    graphics.fillStyle(UI.gold, 1);
+    drawFivePointStar(graphics, 0, 0, 17 * scale, 8 * scale, true);
+    graphics.lineStyle(3 * scale, color, 1);
+    drawFivePointStar(graphics, 0, 0, 17 * scale, 8 * scale, false);
+  } else if (key === 'gallery' && accented) {
+    graphics.fillStyle(UI.creamHex, 1);
+    graphics.fillRoundedRect(
+      -15 * scale,
+      -19 * scale,
+      30 * scale,
+      38 * scale,
       3 * scale
     );
-    graphics.beginPath();
-    graphics.arc(
+    graphics.strokeRoundedRect(
+      -15 * scale,
+      -19 * scale,
+      30 * scale,
+      38 * scale,
+      3 * scale
+    );
+    graphics.fillStyle(0x8fcf72, 1);
+    graphics.fillCircle(0, 1 * scale, 8 * scale);
+    graphics.fillTriangle(
+      -7 * scale,
+      -3 * scale,
+      -4 * scale,
       -12 * scale,
-      -13 * scale,
-      10 * scale,
-      Math.PI / 2,
-      Math.PI * 1.5
+      0,
+      -5 * scale
     );
-    graphics.strokePath();
-    graphics.beginPath();
-    graphics.arc(
-      12 * scale,
-      -13 * scale,
-      10 * scale,
-      -Math.PI / 2,
-      Math.PI / 2
+    graphics.fillTriangle(
+      7 * scale,
+      -3 * scale,
+      4 * scale,
+      -12 * scale,
+      0,
+      -5 * scale
     );
-    graphics.strokePath();
-    graphics.lineBetween(0, 2 * scale, 0, 17 * scale);
-    graphics.lineBetween(-15 * scale, 17 * scale, 15 * scale, 17 * scale);
-    graphics.lineBetween(-10 * scale, 24 * scale, 10 * scale, 24 * scale);
+    graphics.fillStyle(color, 1);
+    graphics.fillCircle(-3 * scale, 0, 1.4 * scale);
+    graphics.fillCircle(3 * scale, 0, 1.4 * scale);
+    graphics.lineBetween(-9 * scale, 14 * scale, 9 * scale, 14 * scale);
+  } else if (key === 'draw' && accented) {
+    const pencilBody = [
+      new Phaser.Math.Vector2(-13 * scale, 10 * scale),
+      new Phaser.Math.Vector2(9 * scale, -15 * scale),
+      new Phaser.Math.Vector2(17 * scale, -8 * scale),
+      new Phaser.Math.Vector2(-6 * scale, 17 * scale),
+    ];
+    graphics.fillStyle(UI.gold, 1);
+    graphics.fillPoints(pencilBody, true);
+    graphics.strokePoints(pencilBody, true);
+    graphics.fillStyle(UI.coral, 1);
+    graphics.fillTriangle(
+      9 * scale,
+      -15 * scale,
+      17 * scale,
+      -8 * scale,
+      14 * scale,
+      -18 * scale
+    );
+    graphics.lineBetween(-13 * scale, 10 * scale, -18 * scale, 21 * scale);
+    graphics.lineBetween(-18 * scale, 21 * scale, -6 * scale, 17 * scale);
+  } else if (key === 'battles' && accented) {
+    graphics.fillStyle(0xd8ad78, 1);
+    drawDockSword(graphics, scale, false, true);
+    graphics.fillStyle(0xbfd8e0, 1);
+    drawDockSword(graphics, scale, true, true);
+  } else if (key === 'scout' && accented) {
+    graphics.fillStyle(UI.creamHex, 1);
+    graphics.fillCircle(-4 * scale, -4 * scale, 14 * scale);
+    graphics.strokeCircle(-4 * scale, -4 * scale, 14 * scale);
+    graphics.lineBetween(7 * scale, 7 * scale, 18 * scale, 18 * scale);
+    graphics.fillStyle(UI.gold, 1);
+    graphics.fillCircle(-4 * scale, 1 * scale, 4.2 * scale);
+    graphics.fillCircle(-10 * scale, -6 * scale, 2.4 * scale);
+    graphics.fillCircle(-4 * scale, -9 * scale, 2.4 * scale);
+    graphics.fillCircle(2 * scale, -6 * scale, 2.4 * scale);
+    graphics.fillStyle(0x5fa85c, 1);
+    graphics.fillEllipse(17 * scale, 14 * scale, 7 * scale, 4 * scale);
+  } else if (key === 'arena') {
+    graphics.strokeCircle(0, 0, 18 * scale);
+    drawFivePointStar(graphics, 0, 0, 10 * scale, 4.5 * scale, false);
+  } else if (key === 'gallery') {
+    graphics.strokeRoundedRect(
+      -18 * scale,
+      -16 * scale,
+      36 * scale,
+      32 * scale,
+      4 * scale
+    );
+    graphics.lineBetween(-18 * scale, -4 * scale, 18 * scale, -4 * scale);
+    graphics.lineBetween(0, -16 * scale, 0, 16 * scale);
   } else if (key === 'draw') {
     const pencilBody = [
-      new Phaser.Math.Vector2(-21 * scale, 14 * scale),
-      new Phaser.Math.Vector2(12 * scale, -19 * scale),
-      new Phaser.Math.Vector2(22 * scale, -9 * scale),
-      new Phaser.Math.Vector2(-11 * scale, 24 * scale),
+      new Phaser.Math.Vector2(-15 * scale, 10 * scale),
+      new Phaser.Math.Vector2(10 * scale, -15 * scale),
+      new Phaser.Math.Vector2(17 * scale, -8 * scale),
+      new Phaser.Math.Vector2(-8 * scale, 17 * scale),
     ];
     graphics.strokePoints(pencilBody, true);
-    graphics.lineBetween(-21 * scale, 14 * scale, -26 * scale, 29 * scale);
-    graphics.lineBetween(-26 * scale, 29 * scale, -11 * scale, 24 * scale);
-    graphics.lineBetween(12 * scale, -19 * scale, 22 * scale, -9 * scale);
-    graphics.lineBetween(15 * scale, -22 * scale, 25 * scale, -12 * scale);
-    graphics.lineBetween(-23 * scale, 28 * scale, -27 * scale, 32 * scale);
+    graphics.lineBetween(-15 * scale, 10 * scale, -19 * scale, 21 * scale);
+    graphics.lineBetween(-19 * scale, 21 * scale, -8 * scale, 17 * scale);
+    graphics.lineBetween(10 * scale, -15 * scale, 17 * scale, -8 * scale);
   } else if (key === 'battles') {
     drawDockSword(graphics, scale, false);
     drawDockSword(graphics, scale, true);
   } else {
-    graphics.strokeCircle(-5 * scale, -6 * scale, 18 * scale);
-    graphics.lineBetween(8 * scale, 7 * scale, 25 * scale, 24 * scale);
-    graphics.strokeCircle(-5 * scale, -6 * scale, 6 * scale);
-    graphics.fillCircle(-5 * scale, -6 * scale, 2.2 * scale);
+    graphics.strokeCircle(-4 * scale, -4 * scale, 13 * scale);
+    graphics.lineBetween(6 * scale, 6 * scale, 17 * scale, 17 * scale);
+    graphics.fillCircle(-4 * scale, -4 * scale, 2 * scale);
   }
 
   container.add(graphics);
@@ -171,30 +220,32 @@ function drawFivePointStar(
 function drawDockSword(
   graphics: Phaser.GameObjects.Graphics,
   scale: number,
-  mirrored: boolean
+  mirrored: boolean,
+  fillBlade = false
 ): void {
   const direction = mirrored ? -1 : 1;
-  graphics.lineBetween(
-    -20 * direction * scale,
-    22 * scale,
-    16 * direction * scale,
-    -14 * scale
-  );
+  const blade = [
+    new Phaser.Math.Vector2(-11 * direction * scale, 13 * scale),
+    new Phaser.Math.Vector2(10 * direction * scale, -8 * scale),
+    new Phaser.Math.Vector2(18 * direction * scale, -18 * scale),
+    new Phaser.Math.Vector2(14 * direction * scale, -5 * scale),
+  ];
+  if (fillBlade) graphics.fillPoints(blade, true);
+  graphics.strokePoints(blade, true);
   graphics.fillTriangle(
-    16 * direction * scale,
-    -14 * scale,
-    25 * direction * scale,
-    -25 * scale,
-    21 * direction * scale,
-    -9 * scale
+    11 * direction * scale,
+    -9 * scale,
+    18 * direction * scale,
+    -18 * scale,
+    15 * direction * scale,
+    -5 * scale
   );
   graphics.lineBetween(
-    -25 * direction * scale,
-    10 * scale,
-    -9 * direction * scale,
-    26 * scale
+    -17 * direction * scale,
+    8 * scale,
+    -7 * direction * scale,
+    18 * scale
   );
-  graphics.strokeCircle(-23 * direction * scale, 25 * scale, 3 * scale);
 }
 
 export function elementPaperIcon(
@@ -360,6 +411,21 @@ function drawIcon(
     graphics.strokeCircle(0, 0, 13 * scale);
     graphics.lineBetween(0, 0, 0, -7 * scale);
     graphics.lineBetween(0, 0, 6 * scale, 3 * scale);
+    return;
+  }
+
+  if (key === 'target') {
+    graphics.fillCircle(0, 0, 13 * scale);
+    graphics.strokeCircle(0, 0, 13 * scale);
+    graphics.fillStyle(UI.creamHex, 1);
+    graphics.fillCircle(0, 0, 8 * scale);
+    graphics.strokeCircle(0, 0, 8 * scale);
+    graphics.fillStyle(fill, 1);
+    graphics.fillCircle(0, 0, 3.5 * scale);
+    graphics.lineBetween(-16 * scale, 0, -10 * scale, 0);
+    graphics.lineBetween(10 * scale, 0, 16 * scale, 0);
+    graphics.lineBetween(0, -16 * scale, 0, -10 * scale);
+    graphics.lineBetween(0, 10 * scale, 0, 16 * scale);
     return;
   }
 

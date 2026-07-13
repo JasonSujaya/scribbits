@@ -13,7 +13,7 @@ import { NAV_SAFE, prefersReducedMotion, TYPE, UI } from '../lib/theme';
 import { mountLivingPaper } from '../lib/livingpaper';
 import {
   label,
-  handLettered,
+  paperWordmark,
   paperPagination,
   stickerCard,
   errorPanel,
@@ -72,7 +72,12 @@ export class MyBattles extends Scene {
       this.actionOverlay = null;
     });
     const { width } = this.scale;
-    handLettered(this, width / 2, 54, 'BATTLES', 43, UI.ink, true);
+    paperWordmark(this, width / 2, 62, 'BATTLES', {
+      icon: 'sword',
+      fontSize: 40,
+      maxWidth: 360,
+      accent: UI.coral,
+    });
     this.buildAppTabs();
     this.loadingCard = stickerCard(this, width / 2, 390, width - 120, 160, {
       tapeColor: UI.tapeAlt,
@@ -332,15 +337,19 @@ export class MyBattles extends Scene {
         ease: 'Quad.easeOut',
       });
     };
-    bindPressInteractionEvents(hit, {
-      press,
-      release,
-      activate: openReport,
-      pressOnHover: false,
-    }, {
-      gameTarget: this.input,
-      shutdownTarget: this.events,
-    });
+    bindPressInteractionEvents(
+      hit,
+      {
+        press,
+        release,
+        activate: openReport,
+        pressOnHover: false,
+      },
+      {
+        gameTarget: this.input,
+        shutdownTarget: this.events,
+      }
+    );
     this.actionOverlay?.add({
       label: plan.accessibleLabel,
       rect: {

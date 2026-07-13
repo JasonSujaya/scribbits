@@ -32,7 +32,8 @@ const pendingDrawingLoads = new WeakMap<
 >();
 
 // Display never needs the server's full 512px source. A 256px edge keeps the
-// 232px battle art crisp while cutting decoded CPU/GPU texture memory by ~75%.
+// 280-design-pixel battle art crisp at mobile scale while cutting decoded
+// CPU/GPU texture memory by roughly 75%.
 const MAX_DRAWING_TEXTURE_EDGE = 256;
 const MAX_CACHED_DRAWING_TEXTURES = 12;
 const drawingTextureLastUse = new Map<string, number>();

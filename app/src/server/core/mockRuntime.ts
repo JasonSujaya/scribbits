@@ -8,7 +8,6 @@ export { getRumbleProgressionRewards } from './dailyJob';
 export {
   addXpToScribbit,
   applyBattleOutcomeToScribbit,
-  cloneScribbit,
   createScribbit,
   createScribbitLegacy,
   getLevelForXp,
@@ -16,6 +15,7 @@ export {
   planCareProgression,
   validateAndAnalyzeScribbitSubmission,
 } from './scribbit';
+export { cloneScribbit } from '../../shared/arena';
 export {
   advanceCapsulePity,
   createCapsuleProgress,
@@ -28,7 +28,10 @@ export {
 export { COSMETIC_CATALOG } from '../../shared/cosmetics';
 export { ELEMENTS, isElement } from '../../shared/elements';
 export { hashStringToUint32 } from '../../shared/stablehash';
-export { reconcileScribbitUpgrades } from '../../shared/combat/upgrades';
+export {
+  createScribbitUpgradesForLevel,
+  parseCompleteScribbitUpgrades,
+} from '../../shared/combat/upgrades';
 export {
   CAPSULE_COST,
   INK_REWARDS,
@@ -42,6 +45,18 @@ export {
   isScoutNotebookReplayDay,
   projectScoutNotebookPick,
 } from '../../shared/scoutnotebook';
+export {
+  LEGACY_CARDS_PAGE_SIZE_LIMIT,
+  LEGACY_RETURN_PREVIEW_LIMIT,
+  collectLegacyCards,
+  getNextLegacySeenThroughDay,
+  paginateLegacyCards,
+  parseLegacyCardCursor,
+  parseLegacyCardsPageSize,
+  projectLegacyReturnReceipt,
+  sortLegacyCardsNewestFirst,
+  toLegacyCard,
+} from '../../shared/legacycards';
 export {
   chooseFoundingSparOpponent,
   findFoundingScribbit,

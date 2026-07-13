@@ -34,6 +34,10 @@ import {
   XP_REWARDS,
 } from '../../shared/arena';
 import { isScoutNotebookReplayDay } from '../../shared/scoutnotebook';
+import {
+  isLegacyCardCursor,
+  parseLegacyCardsPageSize,
+} from '../../shared/legacycards';
 import { simulate } from '../core/battle';
 import {
   loadBattleReport,
@@ -58,7 +62,6 @@ import {
 import { hashTextToSeed } from '../core/random';
 import { loadPlayStreak, recordDailyPlay } from '../core/streak';
 import {
-  isLegacyCardCursor,
   loadLegacyCardPage,
   loadLegacyReturnReceipt,
   markLegacyCardsSeen,
@@ -148,7 +151,6 @@ import {
   loadScribbits,
   markDailyFlag,
   recordBattleOutcomeOnScribbit,
-  removeRumbleEntrant,
   releaseDailyCareAction,
   releaseDailyFlags,
   storeScribbit,
@@ -1060,71 +1062,6 @@ api.post('/scribbit', async (c) => {
 
     console.error('Submit Scribbit route failed:', error);
     return serverError(c, 'The ink would not dry. Try again soon.');
-  }
-});
-
-api.post('/enter-rumble', async (c) => {
-  const player = await getCurrentPlayer();
-
-  if (!player) {
-    return unauthorized(c, 'Sign in to enter the Rumble.');
-  }
-
-  const scribbitId = readScribbitId(await readJsonBody(c));
-
-  if (!scribbitId) {
-    return badRequest(c, 'Choose a valid Scribbit to enter.');
-  }
-
-  let addedEntrant: { id: string; day: number } | null = null;
-
-  try {
-    const now = new Date();
-    const dayNumber = await getWritableArenaDay(now);
-    if (!dayNumber) return arenaRolloverConflict(c);
-    const dailyFlags = await getDailyFlags(redis, player.userId, dayNumber);
-
-    if (dailyFlags.enteredToday) {
-      return conflict(c, "You already entered today's Rumble.");
-    }
-
-    const scribbit = await loadOwnedAliveScribbit(
-      player,
-      scribbitId,
-      dayNumber
-    );
-
-    if (!scribbit) {
-      return notFound(c, 'That living Scribbit is not in your active roster.');
-    }
-
-    await addRumbleEntrant(redis, dayNumber, scribbit.id);
-    addedEntrant = { id: scribbit.id, day: dayNumber };
-    await recordDailyPlay(redis, player.userId, now);
-
-    const createdEntryFlag = await claimDailyFlags(
-      redis,
-      player.userId,
-      dayNumber,
-      ['entered']
-    );
-
-    if (!createdEntryFlag) {
-      await removeRumbleEntrant(redis, dayNumber, scribbit.id);
-      return conflict(c, "You already entered today's Rumble.");
-    }
-
-    return c.json<{ entered: true }>({ entered: true });
-  } catch (error) {
-    if (addedEntrant) {
-      try {
-        await removeRumbleEntrant(redis, addedEntrant.day, addedEntrant.id);
-      } catch (cleanupError) {
-        console.error('Enter Rumble cleanup failed:', cleanupError);
-      }
-    }
-    console.error('Enter Rumble route failed:', error);
-    return serverError(c, 'The Rumble lost that entry. Try again soon.');
   }
 });
 
@@ -2112,7 +2049,6 @@ api.post('/boss-challenge', async (c) => {
 });
 
 const maximumLegendsPageSize = 50;
-const maximumLegacyCardsPageSize = 24;
 
 const readPageNumber = (
   value: string | undefined,
@@ -2185,11 +2121,7 @@ const loadVisibleLegendPage = async (
 
 registerPlayerMutatingGet('/legacy-cards', async (c) => {
   const cursor = c.req.query('cursor') ?? null;
-  const requestedLimit = readPageNumber(
-    c.req.query('limit'),
-    maximumLegacyCardsPageSize,
-    maximumLegacyCardsPageSize
-  );
+  const requestedLimit = parseLegacyCardsPageSize(c.req.query('limit'));
   if (
     !isLegacyCardCursor(cursor) ||
     requestedLimit === undefined ||

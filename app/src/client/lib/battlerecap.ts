@@ -94,19 +94,19 @@ export function planCompactBattleRecapLesson(
 export function planCompactBattleRecapLayout(
   hasContextLine: boolean
 ): CompactBattleRecapLayout {
-  const cardHeight = hasContextLine ? 230 : 204;
+  const cardHeight = hasContextLine ? 316 : 280;
   return {
     cardHeight,
-    contentTop: -cardHeight / 2 + 14,
-    headlineHeight: 42,
-    statusGap: 3,
-    statusHeight: 52,
-    lessonGap: 4,
-    lessonHeight: 52,
-    lessonLabelHeight: 18,
-    lessonFontSize: 24,
+    contentTop: -cardHeight / 2 + 22,
+    headlineHeight: 64,
+    statusGap: 6,
+    statusHeight: 64,
+    lessonGap: 8,
+    lessonHeight: 70,
+    lessonLabelHeight: 0,
+    lessonFontSize: 30,
     contextCenterY: hasContextLine ? cardHeight / 2 - 26 : null,
-    contextHeight: 34,
+    contextHeight: 44,
   };
 }
 

@@ -6,7 +6,6 @@ import {
   bossChallenge,
   careForScribbit,
   spar,
-  enterRumble,
   backScribbit,
   fetchRumbleReplay,
   markLegacyCardsSeen,
@@ -27,29 +26,21 @@ import {
 import {
   loadDrawing,
   fitDrawing,
-  levelOf,
   canCare,
   releaseRenderedDrawingTextures,
 } from '../lib/scribbits';
+import { EDGE, NAV_SAFE, UI, prefersReducedMotion } from '../lib/theme';
 import {
-  ELEMENT_STYLES,
-  EDGE,
-  NAV_SAFE,
-  TYPE,
-  UI,
-  prefersReducedMotion,
-} from '../lib/theme';
-import { LivingPaper } from '../lib/livingpaper';
-import {
-  ghostButton,
   iconButton,
   label,
-  handLettered,
   errorPanel,
   stickerCard,
   floatReward,
   fadeToScene,
   spinner,
+  paperWordmark,
+  paperRoleTag,
+  versusBadge,
 } from '../lib/ui';
 import type { ErrorPanel, Spinner } from '../lib/ui';
 import { openDetailModal } from '../lib/detailmodal';
@@ -64,16 +55,12 @@ import type {
   Scribbit,
 } from '../../shared/arena';
 import { getFoundingScribbitDefinition } from '../../shared/founders';
-import { selectPrimaryPower } from '../../shared/combat/selection';
-import { getShapePowerSignatureName } from '../../shared/combat/shapepowercontent';
 import { showVsCeremony } from '../lib/battleceremony';
 import { openLegacyReturnCeremony } from '../lib/legacycards';
-import { selectNextGoal, type NextGoalCard } from '../lib/nextgoal';
 import {
   planArenaBackAction,
   selectVisibleArenaEntrants,
 } from '../lib/arenabracket';
-import type { ArenaBackActionKind } from '../lib/arenabracket';
 import { planChampionChallenge } from '../lib/championchallenge';
 import { planFounderChronicle } from '../lib/founderchronicle';
 import { openFounderChronicleMargin } from '../lib/founderchroniclemargin';
@@ -83,31 +70,27 @@ import { openCareMomentOverlay } from '../lib/caremomentoverlay';
 import type { CareMomentOverlay } from '../lib/caremomentoverlay';
 import { openCarePicker, type CarePicker } from '../lib/carepicker';
 import { paperDockIcon, paperIcon } from '../lib/papericons';
-import {
-  getDrawEligibility,
-  navigateToDailyDraw,
-} from '../lib/draweligibility';
+import { arenaStage, UI_BUTTON_TEXTURES } from '../lib/visualassets';
 import { appDock } from '../lib/appdock';
 import {
   formatRumbleReturnAccessibleSummary,
   planRumbleReturnPresentation,
 } from '../lib/rumblereturnpresentation';
-import { CanvasActionOverlay, CanvasModalOverlay } from '../lib/overlay';
+import { CanvasActionOverlay } from '../lib/overlay';
 import {
   openArenaContenderPicker,
   type ArenaContenderPicker,
 } from '../lib/arenacontenderpicker';
+import { getBattleArenaForDay } from '../../shared/battlearena';
 
-// The landing scene: one daily action, one champion fight, one Rumble preview,
-// and a compact roster. Deeper choices open focused overlays instead of turning
-// the home screen into a dashboard. Polls /api/arena on wake.
+// One focused battle hub: choose an owned fighter, choose Champion or Spar,
+// fight, then optionally make one nightly Rumble Pick. Drawing stays in Draw.
 export class ArenaHome extends Scene {
   private state!: ArenaState;
   private errorPanelRef: ErrorPanel | null = null;
   private countdownTimer: Phaser.Time.TimerEvent | null = null;
   private countdownLabel: Phaser.GameObjects.Text | null = null;
   private inkChipLabel: Phaser.GameObjects.Text | null = null;
-  private livingPaper: LivingPaper | null = null;
   private busy = false;
   private spinner: Spinner | null = null;
   private founderChronicleMargin: FounderChronicleMargin | null = null;
@@ -116,6 +99,18 @@ export class ArenaHome extends Scene {
   private contenderPicker: ArenaContenderPicker | null = null;
   private rosterActionOverlay: CanvasActionOverlay | null = null;
   private homeInteractionSuspended = false;
+  private selectedArenaFighterId: string | null = null;
+  private selectedBattleMode: 'champion' | 'spar' = 'champion';
+  private fighterCarouselSlot: Phaser.GameObjects.Container | null = null;
+  private fighterCarouselCurrentView: Phaser.GameObjects.Container | null =
+    null;
+  private fighterCarouselViews = new Map<
+    string,
+    Phaser.GameObjects.Container
+  >();
+  private fighterCarouselRenderGeneration = 0;
+  private battleModeSlot: Phaser.GameObjects.Container | null = null;
+  private fightAction: HTMLButtonElement | null = null;
 
   // Drag-scroll bookkeeping. Scrolling uses velocity + inertia so a flick keeps
   // gliding and a wheel/keyboard nudge eases in, instead of snapping stiffly.
@@ -163,6 +158,14 @@ export class ArenaHome extends Scene {
     this.contenderPicker = null;
     this.rosterActionOverlay = null;
     this.homeInteractionSuspended = false;
+    this.selectedArenaFighterId = null;
+    this.selectedBattleMode = 'champion';
+    this.fighterCarouselSlot = null;
+    this.fighterCarouselCurrentView = null;
+    this.fighterCarouselViews.clear();
+    this.fighterCarouselRenderGeneration = 0;
+    this.battleModeSlot = null;
+    this.fightAction = null;
   }
 
   create(): void {
@@ -182,8 +185,6 @@ export class ArenaHome extends Scene {
   private cleanup(): void {
     this.events.off('wake', this.refreshOnWake);
     this.countdownTimer?.remove();
-    this.livingPaper?.destroy();
-    this.livingPaper = null;
     this.spinner?.destroy();
     this.spinner = null;
     this.founderChronicleMargin?.destroy();
@@ -216,32 +217,22 @@ export class ArenaHome extends Scene {
     this.rosterActionOverlay?.destroy();
     this.rosterActionOverlay = new CanvasActionOverlay(this);
     this.children.removeAll(true);
+    this.fighterCarouselSlot = null;
+    this.fighterCarouselCurrentView = null;
+    this.fighterCarouselViews.clear();
+    this.battleModeSlot = null;
+    this.fightAction = null;
     releaseRenderedDrawingTextures(this);
     this.countdownTimer?.remove();
     this.countdownLabel = null;
 
-    // The living, forecast-reactive sketchbook page under all content. Rebuilt
-    // each build() (removeAll cleared its objects); its own destroy() clears the
-    // timers/emitters/tweens the previous instance owned.
-    this.livingPaper?.destroy();
-    this.livingPaper = new LivingPaper(this, {
-      boostedElement: this.state.forecast.boostedElement,
-      rumbleResolvesAt: this.state.rumbleResolvesAt,
-      // The Arena header already carries live status and currency. Random edge
-      // creatures can peek through that compact chrome and read like a broken
-      // icon, so keep this decision screen visually still and unambiguous.
-      edgeCreatures: false,
-    });
+    arenaStage(this, -1000);
 
     const { width } = this.scale;
     let cursor = 30;
     cursor = this.drawTopBar(cursor);
-    cursor = this.buildPrimaryAction(width / 2, cursor + 18);
-    cursor = this.buildChampionPoster(width / 2, cursor + 18);
+    cursor = this.buildBattleSetup(width / 2, cursor + 18);
     cursor = this.buildRumbleSummary(width / 2, cursor + 18);
-    if (this.state.myScribbits.length > 0) {
-      cursor = this.buildRoster(cursor + 34);
-    }
     cursor += NAV_SAFE;
 
     this.contentHeight = cursor + 40;
@@ -399,28 +390,29 @@ export class ArenaHome extends Scene {
   // --- Top bar + live countdown ---------------------------------------------
   private drawTopBar(y: number): number {
     const { width } = this.scale;
-    handLettered(this, width / 2, y + 28, 'ARENA', 42, UI.ink, true).setDepth(
-      2
-    );
-    const statusY = y + 92;
+    const statusY = y + 120;
     label(
       this,
       width / 2 - 54,
       statusY,
       `DAY ${this.state.dayNumber}  •  ${this.state.playStreakDays}D`,
       21,
-      UI.inkSoft,
+      UI.cream,
       true
-    );
+    )
+      .setStroke(UI.ink, 5)
+      .setDepth(2);
     this.countdownLabel = label(
       this,
       width / 2 + 122,
       statusY,
       this.countdownText(),
       21,
-      UI.coralText,
+      '#ffd447',
       true
-    );
+    )
+      .setStroke(UI.ink, 5)
+      .setDepth(2);
     paperIcon(this, 'clock', width / 2 + 40, statusY, {
       size: 25,
       fill: UI.tapeAlt,
@@ -435,7 +427,7 @@ export class ArenaHome extends Scene {
     // It belongs to the scrolling header; the Daily Ink Trail remains available below.
     this.buildInkChip(width - 58, y + 30);
 
-    return y + 118;
+    return y + 210;
   }
 
   // The compact Ink chip. Part of the scrolling header and taps into the capsule machine. Its label
@@ -516,350 +508,372 @@ export class ArenaHome extends Scene {
     });
   }
 
-  private buildPrimaryAction(x: number, y: number): number {
-    const width = this.scale.width - EDGE * 2;
-    const drawEligibility = getDrawEligibility(this.state);
-    const goal = this.state.drawnToday ? selectNextGoal(this.state) : null;
-    const height = goal ? 164 : 236;
-    const centerY = y + height / 2;
-    const card = this.add.container(x, centerY);
-    const isDrawReady = !goal && this.state.loggedIn && drawEligibility.canDraw;
-    const fill = isDrawReady ? UI.coral : goal ? UI.paper : UI.tapeAlt;
-    const panel = this.add.graphics();
-    panel.fillStyle(0x6f4b32, 0.18);
-    panel.fillRoundedRect(-width / 2 + 6, -height / 2 + 8, width, height, 28);
-    panel.fillStyle(fill, 1);
-    panel.fillRoundedRect(-width / 2, -height / 2, width, height, 28);
-    panel.lineStyle(5, UI.inkHex, 1);
-    panel.strokeRoundedRect(-width / 2, -height / 2, width, height, 28);
-    card.add(panel);
-
-    let actionLabel: string;
-    let activate: (() => void) | null = null;
-    if (!goal) {
-      actionLabel = !this.state.loggedIn
-        ? 'SIGN IN TO DRAW'
-        : drawEligibility.canDraw
-          ? 'DRAW'
-          : 'ROSTER FULL';
-      const icon = drawEligibility.canDraw ? 'draw' : 'arena';
-      card.add(paperDockIcon(this, icon, 0, -42, 92, UI.inkHex));
-      card.add(label(this, 0, 66, actionLabel, 52, UI.ink, true));
-      if (!this.state.loggedIn || drawEligibility.canDraw) {
-        activate = () => this.startDraw();
-      }
-    } else {
-      const iconKey =
-        goal.actionKind === 'back' || goal.actionKind === 'care'
-          ? 'heart'
-          : goal.actionKind === 'capsule'
-            ? 'ink'
-            : goal.actionKind === 'wait'
-              ? 'clock'
-              : 'sword';
-      card.add(
-        paperIcon(this, iconKey, -width / 2 + 76, 0, {
-          size: 58,
-          fill: goal.actionKind === 'wait' ? UI.tapeAlt : UI.coral,
-        })
-      );
-      card.add(
-        label(
-          this,
-          -width / 2 + 130,
-          -25,
-          'NEXT',
-          19,
-          UI.inkSoft,
-          true
-        ).setOrigin(0, 0.5)
-      );
-      actionLabel =
-        goal.actionKind === 'wait'
-          ? 'RETURN AFTER RUMBLE'
-          : goal.buttonLabel.toUpperCase();
-      card.add(
-        label(this, -width / 2 + 130, 22, actionLabel, 32, UI.ink, true)
-          .setOrigin(0, 0.5)
-          .setWordWrapWidth(width - 190)
-      );
-      if (goal.actionKind !== 'wait') activate = () => this.runNextGoal(goal);
-    }
-
-    if (activate) {
-      const hit = this.add
-        .rectangle(0, 0, width, height, 0xffffff, 0.001)
-        .setInteractive({ useHandCursor: true });
-      hit.on('pointerup', () => {
-        if (!this.didDrag()) activate?.();
-      });
-      card.add(hit);
-      this.rosterActionOverlay?.add({
-        label: actionLabel,
-        rect: { x: x - width / 2, y, width, height },
-        followCamera: true,
-        pointerPassthrough: true,
-        onActivate: activate,
-      });
-    }
-    return centerY + height / 2;
-  }
-
-  private runNextGoal(goal: NextGoalCard): void {
-    if (goal.actionKind === 'enter') {
-      this.doEnter(goal.targetScribbit);
-      return;
-    }
-    if (goal.actionKind === 'back') {
-      this.openContenderPicker();
-      return;
-    }
-    if (goal.actionKind === 'challenge') {
-      this.startBossChallenge();
-      return;
-    }
-    if (goal.actionKind === 'rivalry') {
-      this.doSpar(goal.targetScribbit, goal.rivalFounderId ?? undefined);
-      return;
-    }
-    if (goal.actionKind === 'capsule') {
-      this.openCapsuleMachine();
-      return;
-    }
-    if (goal.actionKind === 'care') {
-      this.doCare(goal.targetScribbit, goal.careAction);
-    }
-  }
-
   private countdownText(): string {
     const remaining = this.state.rumbleResolvesAt - Date.now();
     return formatCountdown(remaining);
   }
 
-  // --- Champion poster (tappable; believe fix) ------------------------------
-  private buildChampionPoster(x: number, y: number): number {
-    const champ = this.state.champion;
-    const width = this.scale.width - EDGE * 2;
-    const height = 190;
+  // --- One battle setup: fighter -> mode -> fight ---------------------------
+  private buildBattleSetup(x: number, y: number): number {
+    const height = 630;
     const centerY = y + height / 2;
-    const card = stickerCard(this, x, centerY, width, height, {
-      gold: true,
-      tapeColor: UI.tape,
-      tapeWidth: 84,
-    });
-    card.add(
-      label(
+    const hero = this.add.container(x, centerY);
+    const battleArena = getBattleArenaForDay(this.state.dayNumber);
+    hero.add(
+      paperWordmark(
         this,
-        -width / 2 + 28,
-        -66,
-        'TODAY’S CHAMPION',
-        21,
-        UI.goldText,
-        true
-      ).setOrigin(0, 0.5)
+        0,
+        -282,
+        battleArena.challengeLabel.toUpperCase(),
+        {
+          icon: 'target',
+          fontSize: 38,
+          maxWidth: 430,
+        }
+      )
     );
 
-    if (!champ) {
-      card.add(
-        paperIcon(this, 'trophy', -width / 2 + 82, 15, {
-          size: 68,
-          fill: UI.gold,
-        })
+    const fighters = this.state.myScribbits;
+    this.selectedArenaFighter(fighters);
+    this.fighterCarouselSlot = this.add.container(0, 0);
+    hero.add(this.fighterCarouselSlot);
+
+    if (fighters.length > 1) {
+      const previous = this.arenaArrowButton(-170, -145, 'previous', () =>
+        this.cycleArenaFighter(-1)
       );
-      card.add(
-        label(
-          this,
-          -width / 2 + 144,
-          14,
-          'THRONE EMPTY',
-          32,
-          UI.ink,
-          true
-        ).setOrigin(0, 0.5)
+      const next = this.arenaArrowButton(170, -145, 'next', () =>
+        this.cycleArenaFighter(1)
       );
-      return centerY + height / 2;
+      hero.add([previous, next]);
+      this.rosterActionOverlay?.add({
+        label: 'Previous Arena fighter',
+        rect: { x: x - 220, y: centerY - 195, width: 100, height: 100 },
+        followCamera: true,
+        pointerPassthrough: true,
+        onActivate: () => this.cycleArenaFighter(-1),
+      });
+      this.rosterActionOverlay?.add({
+        label: 'Next Arena fighter',
+        rect: { x: x + 120, y: centerY - 195, width: 100, height: 100 },
+        followCamera: true,
+        pointerPassthrough: true,
+        onActivate: () => this.cycleArenaFighter(1),
+      });
     }
 
-    const challengePlan = planChampionChallenge(
-      champ,
-      this.state.bossChallengedToday
-    );
-    const artX = -width / 2 + 80;
-    const artY = 14;
-    const artFrame = 104;
-    const frame = this.add.graphics();
-    frame.fillStyle(UI.creamHex, 1);
-    frame.fillCircle(artX, artY, artFrame / 2);
-    frame.lineStyle(4, UI.inkHex, 1);
-    frame.strokeCircle(artX, artY, artFrame / 2);
-    card.add(frame);
-    const generation = this.buildGeneration;
-    void loadDrawing(this, champ).then((key) => {
-      if (!this.isCurrentBuild(generation)) return;
-      const img = fitDrawing(
-        this.add.image(x + artX, centerY + artY, key),
-        88
-      ).setDepth(3);
-      img.setInteractive({ useHandCursor: true });
-      img.on('pointerup', () => {
-        if (!this.didDrag()) this.openDetail(champ);
-      });
-    });
-
-    const infoX = artX + 72;
-    card.add(
-      label(this, infoX, artY - 10, champ.name.toUpperCase(), 30, UI.ink, true)
-        .setOrigin(0, 0.5)
-        .setWordWrapWidth(220)
-    );
-    const inspect = (): void => this.openDetail(champ);
-    card.add(
-      paperIcon(this, 'info', infoX + 28, artY + 42, {
-        size: 34,
-        fill: UI.coral,
-      })
-    );
-    const inspectHit = this.add
-      .circle(infoX + 28, artY + 42, 40, 0xffffff, 0.001)
-      .setInteractive({ useHandCursor: true });
-    inspectHit.on('pointerup', () => {
-      if (!this.didDrag()) inspect();
-    });
-    card.add(inspectHit);
+    hero.add(paperWordmark(this, 0, 42, 'CHOOSE RIVAL', { maxWidth: 390 }));
+    this.battleModeSlot = this.add.container(0, 0);
+    hero.add(this.battleModeSlot);
     this.rosterActionOverlay?.add({
-      label: `View ${champ.name}, today’s champion`,
-      rect: { x: x + infoX - 12, y: centerY + artY + 2, width: 80, height: 80 },
+      label: 'Choose today’s Champion as rival',
+      rect: { x: x - 275, y: centerY + 74, width: 250, height: 110 },
       followCamera: true,
       pointerPassthrough: true,
-      onActivate: inspect,
+      onActivate: () => this.selectBattleMode('champion'),
     });
-
-    const actionX = width / 2 - 108;
-    const actionY = 14;
-    if (challengePlan.status === 'open') {
-      card.add(
-        iconButton(
-          this,
-          actionX,
-          actionY,
-          'sword',
-          'FIGHT',
-          () => this.startBossChallenge(),
-          180,
-          UI.gold,
-          UI.ink,
-          100,
-          UI.creamHex
-        )
-      );
+    this.rosterActionOverlay?.add({
+      label: 'Choose a Spar rival',
+      rect: { x: x + 25, y: centerY + 74, width: 250, height: 110 },
+      followCamera: true,
+      pointerPassthrough: true,
+      onActivate: () => this.selectBattleMode('spar'),
+    });
+    this.fightAction =
       this.rosterActionOverlay?.add({
-        label: `Fight today’s champion, ${champ.name}`,
-        rect: {
-          x: x + actionX - 90,
-          y: centerY + actionY - 50,
-          width: 180,
-          height: 100,
-        },
+        label: 'Fight with selected Scribbit',
+        rect: { x: x - 190, y: centerY + 226, width: 380, height: 100 },
         followCamera: true,
         pointerPassthrough: true,
-        onActivate: () => this.startBossChallenge(),
-      });
-    } else {
-      card.add(
-        iconButton(
-          this,
-          actionX,
-          actionY,
-          'lock',
-          'DONE',
-          () => undefined,
-          180,
-          UI.tapeAlt,
-          UI.ink,
-          100,
-          UI.creamHex,
-          false
-        )
+        enabled: false,
+        onActivate: () => this.startSelectedBattle(),
+      }) ?? null;
+    this.renderArenaFighter();
+    this.renderBattleModeControls();
+
+    return centerY + height / 2;
+  }
+
+  private selectedArenaFighter(fighters: Scribbit[]): Scribbit | null {
+    if (fighters.length === 0) {
+      this.selectedArenaFighterId = null;
+      return null;
+    }
+    const selected = fighters.find(
+      (fighter) => fighter.id === this.selectedArenaFighterId
+    );
+    const fallback = selected ?? fighters[0] ?? null;
+    this.selectedArenaFighterId = fallback?.id ?? null;
+    return fallback;
+  }
+
+  private cycleArenaFighter(direction: -1 | 1): void {
+    const fighters = this.state.myScribbits;
+    if (fighters.length < 2) return;
+    const current = this.selectedArenaFighter(fighters);
+    const currentIndex = Math.max(
+      0,
+      fighters.findIndex((fighter) => fighter.id === current?.id)
+    );
+    const nextIndex =
+      (currentIndex + direction + fighters.length) % fighters.length;
+    this.selectedArenaFighterId = fighters[nextIndex]?.id ?? null;
+    this.renderArenaFighter();
+    this.renderBattleModeControls();
+  }
+
+  private renderArenaFighter(): void {
+    const slot = this.fighterCarouselSlot;
+    if (!slot?.active) return;
+    const fighter = this.selectedArenaFighter(this.state.myScribbits);
+    const renderGeneration = ++this.fighterCarouselRenderGeneration;
+
+    if (!fighter) {
+      slot.removeAll(true);
+      this.fighterCarouselCurrentView = null;
+      this.fighterCarouselViews.clear();
+      slot.add(
+        paperIcon(this, 'pencil', 0, -145, { size: 110, fill: UI.tapeAlt })
       );
+      slot.add(label(this, 0, -35, 'DRAW FIRST', 30, UI.inkSoft, true));
+      return;
     }
 
-    return centerY + height / 2;
-  }
-
-  // Compact roster strip. Care, Spar and Enter remain one tap away in detail.
-  private buildRoster(y: number): number {
-    const { width } = this.scale;
-    const roster = this.state.myScribbits;
-    const cardWidth = width - EDGE * 2;
-    const height = 190;
-    const centerY = y + height / 2;
-    const card = stickerCard(this, width / 2, centerY, cardWidth, height, {
-      tape: false,
-    });
-    card.add(
-      label(
-        this,
-        -cardWidth / 2 + 28,
-        -66,
-        'YOUR SCRIBBITS',
-        21,
-        UI.inkSoft,
-        true
-      ).setOrigin(0, 0.5)
+    const viewKey = fighter.id;
+    const cachedView = this.fighterCarouselViews.get(viewKey);
+    if (cachedView?.active) {
+      this.showArenaFighterView(cachedView);
+      return;
+    }
+    const nextView = this.add.container(0, 0).setVisible(false);
+    nextView.add(
+      label(this, 0, -28, fighter.name.toUpperCase(), 36, UI.ink, true)
     );
-    const generation = this.buildGeneration;
-    const count = Math.min(3, roster.length);
-    const slotWidth = (cardWidth - 48) / count;
-    roster.slice(0, 3).forEach((scribbit, index) => {
-      const slotX = -cardWidth / 2 + 24 + slotWidth * (index + 0.5);
-      const portraitY = 8;
-      const frame = this.add.graphics();
-      frame.fillStyle(UI.creamHex, 1);
-      frame.fillCircle(slotX, portraitY, 46);
-      frame.lineStyle(4, UI.inkHex, 1);
-      frame.strokeCircle(slotX, portraitY, 46);
-      card.add(frame);
-      const open = (): void => this.openDetail(scribbit);
-      void loadDrawing(this, scribbit).then((textureKey) => {
-        if (!this.isCurrentBuild(generation) || !card.active) return;
-        const portrait = fitDrawing(
-          this.add.image(slotX, portraitY, textureKey),
-          80
-        ).setInteractive({ useHandCursor: true });
-        portrait.on('pointerup', () => {
-          if (!this.didDrag()) open();
-        });
-        card.add(portrait);
+    void loadDrawing(this, fighter).then((key) => {
+      if (
+        !slot.active ||
+        renderGeneration !== this.fighterCarouselRenderGeneration
+      ) {
+        nextView.destroy(true);
+        return;
+      }
+      const portrait = fitDrawing(this.add.image(0, -145, key), 210);
+      portrait.setInteractive({ useHandCursor: true });
+      portrait.on('pointerup', () => {
+        if (!this.didDrag()) this.openDetail(fighter);
       });
-      card.add(
-        label(
-          this,
-          slotX,
-          68,
-          scribbit.name.toUpperCase(),
-          19,
-          UI.ink,
-          true
-        ).setWordWrapWidth(slotWidth - 16)
-      );
-      this.rosterActionOverlay?.add({
-        label: `Open ${scribbit.name}. Care, Spar, or enter the Rumble.`,
-        rect: {
-          x: width / 2 + slotX - slotWidth / 2,
-          y: centerY - 48,
-          width: slotWidth,
-          height: 142,
-        },
-        followCamera: true,
-        pointerPassthrough: true,
-        onActivate: open,
-      });
+      nextView.add(portrait);
+      this.fighterCarouselViews.set(viewKey, nextView);
+      slot.add(nextView);
+      this.showArenaFighterView(nextView);
     });
-    return centerY + height / 2;
   }
 
-  // The home page only previews the Rumble. The full eight-person choice lives
-  // in a focused picker so Arena stays game-like instead of becoming a grid.
+  private showArenaFighterView(nextView: Phaser.GameObjects.Container): void {
+    const previousView = this.fighterCarouselCurrentView;
+    if (previousView === nextView) {
+      nextView.setVisible(true).setAlpha(1);
+      return;
+    }
+    this.fighterCarouselCurrentView = nextView;
+    nextView.setVisible(true);
+    if (!previousView?.active) {
+      nextView.setAlpha(1);
+      return;
+    }
+    nextView.setAlpha(0);
+    this.tweens.add({
+      targets: nextView,
+      alpha: 1,
+      duration: 160,
+      ease: 'Quad.easeOut',
+    });
+    this.tweens.add({
+      targets: previousView,
+      alpha: 0,
+      duration: 120,
+      ease: 'Quad.easeOut',
+      onComplete: () => previousView.setVisible(false).setAlpha(1),
+    });
+  }
+
+  private renderBattleModeControls(): void {
+    const slot = this.battleModeSlot;
+    if (!slot?.active) return;
+    const fighter = this.selectedArenaFighter(this.state.myScribbits);
+    const championAvailable =
+      this.state.champion !== null && !this.state.bossChallengedToday;
+    if (!championAvailable && this.selectedBattleMode === 'champion') {
+      this.selectedBattleMode = 'spar';
+    }
+    slot.removeAll(true);
+    slot.add([
+      this.battleChoiceChip(
+        -145,
+        130,
+        'champion',
+        'CHAMPION',
+        () => this.selectBattleMode('champion'),
+        this.selectedBattleMode === 'champion',
+        championAvailable
+      ),
+      this.battleChoiceChip(
+        145,
+        130,
+        'spar',
+        'SPAR',
+        () => this.selectBattleMode('spar'),
+        this.selectedBattleMode === 'spar',
+        fighter !== null
+      ),
+    ]);
+    const canFight =
+      fighter !== null &&
+      (this.selectedBattleMode === 'spar' || championAvailable);
+    slot.add(
+      this.simpleFightButton(
+        0,
+        270,
+        fighter ? 'FIGHT' : 'DRAW FIRST',
+        () => this.startSelectedBattle(),
+        canFight
+      )
+    );
+    const rivalName =
+      this.selectedBattleMode === 'champion'
+        ? (this.state.champion?.name ?? 'Champion')
+        : 'a Spar rival';
+    const battleArena = getBattleArenaForDay(this.state.dayNumber);
+    this.updateFightAction(
+      fighter
+        ? `Fight ${rivalName} with ${fighter.name} in ${battleArena.name}. Arena goal: ${battleArena.challengeLabel}.`
+        : 'Draw a fighter first',
+      canFight
+    );
+  }
+
+  private selectBattleMode(mode: 'champion' | 'spar'): void {
+    if (
+      mode === 'champion' &&
+      (this.state.champion === null || this.state.bossChallengedToday)
+    ) {
+      showToast("Today's Champion fight is already complete.");
+      return;
+    }
+    this.selectedBattleMode = mode;
+    this.renderBattleModeControls();
+  }
+
+  private startSelectedBattle(): void {
+    const fighter = this.selectedArenaFighter(this.state.myScribbits);
+    if (!fighter) {
+      showToast('Draw a Scribbit first.');
+      return;
+    }
+    if (this.selectedBattleMode === 'champion') {
+      this.startBossChallenge(fighter);
+      return;
+    }
+    this.doSpar(fighter);
+  }
+
+  private updateFightAction(accessibleLabel: string, enabled: boolean): void {
+    const action = this.fightAction;
+    if (!action) return;
+    action.disabled = !enabled;
+    action.textContent = accessibleLabel;
+    action.setAttribute('aria-label', accessibleLabel);
+    action.style.cursor = enabled ? 'pointer' : 'default';
+  }
+
+  private battleChoiceChip(
+    x: number,
+    y: number,
+    mode: 'champion' | 'spar',
+    text: string,
+    onActivate: () => void,
+    selected: boolean,
+    enabled: boolean
+  ): Phaser.GameObjects.Container {
+    const width = 250;
+    const height = 88;
+    const chip = this.add.container(x, y).setAlpha(enabled ? 1 : 0.55);
+    const background = this.add.graphics();
+    background.fillStyle(
+      selected ? (mode === 'champion' ? UI.gold : UI.coral) : UI.creamHex,
+      1
+    );
+    background.fillRoundedRect(-width / 2, -height / 2, width, height, 18);
+    background.lineStyle(selected ? 5 : 3, UI.inkHex, selected ? 1 : 0.7);
+    background.strokeRoundedRect(-width / 2, -height / 2, width, height, 18);
+    const icon =
+      mode === 'champion'
+        ? paperIcon(this, 'trophy', -72, 0, { size: 38, fill: UI.gold })
+        : paperDockIcon(this, 'battles', -72, 0, 38, UI.inkHex);
+    const chipLabel = label(this, 24, 0, text, 24, UI.ink, true);
+    const hitArea = this.add.rectangle(0, 0, width, height, 0xffffff, 0.001);
+    if (enabled) {
+      hitArea.setInteractive({ useHandCursor: true });
+      hitArea.on('pointerup', () => {
+        if (!this.didDrag()) onActivate();
+      });
+    }
+    chip.add([background, icon, chipLabel, hitArea]);
+    return chip;
+  }
+
+  private simpleFightButton(
+    x: number,
+    y: number,
+    text: string,
+    onActivate: () => void,
+    enabled: boolean
+  ): Phaser.GameObjects.Container {
+    const width = 340;
+    const height = 88;
+    const button = this.add.container(x, y).setAlpha(enabled ? 1 : 0.58);
+    const background = this.add.graphics();
+    background.fillStyle(enabled ? UI.coral : UI.tapeAlt, 1);
+    background.fillRoundedRect(-width / 2, -height / 2, width, height, 18);
+    background.lineStyle(4, UI.inkHex, 1);
+    background.strokeRoundedRect(-width / 2, -height / 2, width, height, 18);
+    const sword = paperIcon(this, enabled ? 'sword' : 'lock', -78, 0, {
+      size: 38,
+      fill: enabled ? UI.gold : UI.creamHex,
+    });
+    const buttonLabel = label(this, 28, 0, text, 30, UI.ink, true);
+    const hitArea = this.add.rectangle(0, 0, width, height, 0xffffff, 0.001);
+    if (enabled) {
+      hitArea.setInteractive({ useHandCursor: true });
+      hitArea.on('pointerup', () => {
+        if (!this.didDrag()) onActivate();
+      });
+    }
+    button.add([background, sword, buttonLabel, hitArea]);
+    return button;
+  }
+
+  private arenaArrowButton(
+    x: number,
+    y: number,
+    direction: 'previous' | 'next',
+    onActivate: () => void
+  ): Phaser.GameObjects.Container {
+    const button = this.add.container(x, y);
+    const face = this.add
+      .image(0, 0, UI_BUTTON_TEXTURES[direction])
+      .setDisplaySize(100, 100);
+    const hitArea = this.add
+      .circle(0, 0, 50, 0xffffff, 0.001)
+      .setInteractive({ useHandCursor: true });
+    hitArea.on('pointerup', () => {
+      if (!this.didDrag()) onActivate();
+    });
+    button.add([face, hitArea]);
+    return button;
+  }
+
+  // The full field lives in a focused picker; Arena shows one clear Rumble door.
   private buildRumbleSummary(x: number, y: number): number {
     const width = this.scale.width - EDGE * 2;
     const height = 190;
@@ -869,12 +883,18 @@ export class ArenaHome extends Scene {
       tapeWidth: 84,
     });
     card.add(
+      paperRoleTag(this, -width / 2 + 110, -60, 'YOUR PICK', {
+        width: 180,
+        fill: UI.tapeAlt,
+      })
+    );
+    card.add(
       label(
         this,
-        -width / 2 + 28,
-        -66,
-        'TONIGHT’S RUMBLE',
-        21,
+        -width / 2 + 222,
+        -60,
+        "TONIGHT'S RUMBLE",
+        22,
         UI.inkSoft,
         true
       ).setOrigin(0, 0.5)
@@ -888,35 +908,19 @@ export class ArenaHome extends Scene {
       backedScribbitId: this.state.myBackedScribbitId,
     });
     const generation = this.buildGeneration;
-    entrants.slice(0, 3).forEach((entrant, index) => {
-      const portraitX = -width / 2 + 74 + index * 96;
-      const portraitY = 18;
-      const frame = this.add.graphics();
-      frame.fillStyle(UI.creamHex, 1);
-      frame.fillCircle(portraitX, portraitY, 44);
-      frame.lineStyle(4, UI.inkHex, 1);
-      frame.strokeCircle(portraitX, portraitY, 44);
-      card.add(frame);
-      void loadDrawing(this, entrant).then((textureKey) => {
-        if (!this.isCurrentBuild(generation) || !card.active) return;
-        card.add(
-          fitDrawing(this.add.image(portraitX, portraitY, textureKey), 76)
-        );
-      });
-    });
 
     if (entrants.length === 0) {
       card.add(
-        paperIcon(this, 'clock', -width / 2 + 84, 18, {
-          size: 64,
+        paperIcon(this, 'clock', -width / 2 + 104, 28, {
+          size: 80,
           fill: UI.tapeAlt,
         })
       );
       card.add(
         label(
           this,
-          -width / 2 + 138,
-          18,
+          -width / 2 + 174,
+          28,
           'WAITING',
           30,
           UI.ink,
@@ -926,32 +930,72 @@ export class ArenaHome extends Scene {
       return centerY + height / 2;
     }
 
-    const backed = entrants.find(
+    const picked = entrants.find(
       (entrant) => entrant.id === this.state.myBackedScribbitId
     );
-    const actionLabel = backed ? 'PICKED' : 'PICK';
+    if (picked) {
+      const portraitX = -width / 2 + 92;
+      void loadDrawing(this, picked).then((textureKey) => {
+        if (!this.isCurrentBuild(generation) || !card.active) return;
+        card.add(fitDrawing(this.add.image(portraitX, 30, textureKey), 92));
+      });
+      card.add(
+        label(
+          this,
+          -width / 2 + 154,
+          28,
+          picked.name.toUpperCase(),
+          28,
+          UI.ink,
+          true
+        ).setOrigin(0, 0.5)
+      );
+      card.add(
+        iconButton(
+          this,
+          width / 2 - 112,
+          30,
+          'lock',
+          'LOCKED',
+          () => undefined,
+          190,
+          UI.tapeAlt,
+          UI.ink,
+          100,
+          UI.creamHex,
+          false
+        )
+      );
+      return centerY + height / 2;
+    }
+
+    entrants.slice(0, 3).forEach((entrant, index) => {
+      const portraitX = -width / 2 + 92 + index * 106;
+      void loadDrawing(this, entrant).then((textureKey) => {
+        if (!this.isCurrentBuild(generation) || !card.active) return;
+        card.add(fitDrawing(this.add.image(portraitX, 32, textureKey), 92));
+      });
+    });
     const activate = (): void => this.openContenderPicker();
-    const actionX = width / 2 - 108;
+    const actionX = width / 2 - 122;
     card.add(
       iconButton(
         this,
         actionX,
-        18,
+        30,
         'heart',
-        actionLabel,
+        'CHOOSE PICK',
         activate,
-        180,
-        backed ? UI.gold : UI.coral,
+        220,
+        UI.coral,
         UI.ink,
         100,
-        backed ? UI.coralDeep : UI.gold
+        UI.gold
       )
     );
     this.rosterActionOverlay?.add({
-      label: backed
-        ? `Your Rumble pick is ${backed.name}. View contenders.`
-        : 'Pick a contender for tonight’s Rumble',
-      rect: { x: x + actionX - 90, y: centerY - 32, width: 180, height: 100 },
+      label: 'Choose a contender for tonight’s Rumble',
+      rect: { x: x + actionX - 110, y: centerY - 20, width: 220, height: 100 },
       followCamera: true,
       pointerPassthrough: true,
       onActivate: activate,
@@ -982,7 +1026,7 @@ export class ArenaHome extends Scene {
       backedScribbitId: this.state.myBackedScribbitId,
       onPick: (entrant) => {
         restoreHomeActions();
-        this.doBack(entrant);
+        this.doPick(entrant);
       },
       onInspect: (entrant) => {
         restoreHomeActions();
@@ -992,39 +1036,29 @@ export class ArenaHome extends Scene {
     });
   }
 
-  private backButtonPresentation(entrant: Scribbit): {
-    backKind: ArenaBackActionKind;
-    backLabel: string;
-    backEnabled: boolean;
-    backFill: number;
+  private pickButtonPresentation(entrant: Scribbit): {
+    pickLabel: string;
+    pickEnabled: boolean;
   } {
     const action = planArenaBackAction({
       entrantId: entrant.id,
       ownedScribbitIds: this.state.myScribbits.map((scribbit) => scribbit.id),
       backedScribbitId: this.state.myBackedScribbitId,
     });
-    const backFill =
-      action.kind === 'picked'
-        ? UI.gold
-        : action.kind === 'available'
-          ? UI.coral
-          : 0xb7aa92;
     return {
-      backKind: action.kind,
-      backLabel: action.label,
-      backEnabled: action.enabled,
-      backFill,
+      pickLabel: action.label,
+      pickEnabled: action.enabled,
     };
   }
 
-  private showBackLockedToast(): void {
+  private showPickLockedToast(): void {
     const pick = this.state.todayEntrants.find(
       (one) => one.id === this.state.myBackedScribbitId
     );
     showToast(
       pick
-        ? `You already backed ${pick.name} tonight — one pick per day!`
-        : 'You already used your Back tonight.'
+        ? `${pick.name} is already your locked pick tonight.`
+        : 'Your pick is already locked tonight.'
     );
   }
 
@@ -1126,17 +1160,18 @@ export class ArenaHome extends Scene {
       const portraitSize = 168;
       const pickWon = presentation.outcome === 'victory';
       card.add([
-        label(this, pickX, -145, 'YOUR PICK', 24, UI.inkSoft, true),
-        label(
+        paperRoleTag(this, pickX, -145, 'YOUR PICK', {
+          width: 170,
+          fill: UI.tapeAlt,
+        }),
+        paperRoleTag(
           this,
           opponentX,
           -145,
           receipt.opponentIsChampion ? 'CHAMPION' : 'FINAL RIVAL',
-          24,
-          UI.inkSoft,
-          true
+          { width: 190, fill: UI.tape }
         ),
-        label(this, 0, matchupY, 'VS', 27, UI.inkSoft, true),
+        versusBadge(this, 0, matchupY, { size: 72 }),
         label(this, pickX, 47, pick.name.toUpperCase(), 25, UI.ink, true)
           .setWordWrapWidth(210)
           .setLineSpacing(-3),
@@ -1493,22 +1528,15 @@ export class ArenaHome extends Scene {
     );
     const actions: DetailModalActions = {};
     if (mine) {
-      actions.onSpar = (s) => this.doSpar(s);
       actions.onCare = () => this.openCarePickerFor(scribbit);
-      // Enter is only meaningful for a drawn-but-not-yet-entered scribbit.
-      if (this.state.drawnToday && !this.state.enteredToday) {
-        actions.onEnter = (s) => this.doEnter(s);
-        actions.enterLabel = 'Enter Rumble';
-        actions.enterEnabled = true;
-      }
     } else {
       actions.canBelieve = scribbit.status === 'alive';
       if (isEntrant) {
-        const { backLabel, backEnabled } =
-          this.backButtonPresentation(scribbit);
-        actions.onBack = (s) => this.doBack(s);
-        actions.backLabel = backLabel;
-        actions.backEnabled = backEnabled;
+        const { pickLabel, pickEnabled } =
+          this.pickButtonPresentation(scribbit);
+        actions.onPick = (s) => this.doPick(s);
+        actions.pickLabel = pickLabel;
+        actions.pickEnabled = pickEnabled;
       }
     }
     openDetailModal(this, scribbit, {
@@ -1540,10 +1568,6 @@ export class ArenaHome extends Scene {
   }
 
   // --- Actions ---------------------------------------------------------------
-  private startDraw(): void {
-    navigateToDailyDraw(this);
-  }
-
   private doCare(
     scribbit: Scribbit,
     action: CareAction,
@@ -1622,22 +1646,7 @@ export class ArenaHome extends Scene {
     });
   }
 
-  private doEnter(scribbit: Scribbit): void {
-    if (!this.requireLogin()) return;
-    if (this.busy) return;
-    this.busy = true;
-    void enterRumble(scribbit.id).then((result) => {
-      this.busy = false;
-      if (!result.ok) {
-        this.showError(result.error);
-        return;
-      }
-      showToast(`${scribbit.name} is in tonight's Rumble!`);
-      void this.refresh();
-    });
-  }
-
-  private doBack(scribbit: Scribbit): void {
+  private doPick(scribbit: Scribbit): void {
     if (!this.requireLogin()) return;
     if (this.busy) return;
     const action = planArenaBackAction({
@@ -1650,7 +1659,7 @@ export class ArenaHome extends Scene {
       return;
     }
     if (action.kind !== 'available') {
-      this.showBackLockedToast();
+      this.showPickLockedToast();
       return;
     }
     this.busy = true;
@@ -1701,210 +1710,24 @@ export class ArenaHome extends Scene {
     this.build();
   }
 
-  private startBossChallenge(): void {
+  private startBossChallenge(challenger: Scribbit): void {
     if (!this.requireLogin()) return;
     if (this.state.bossChallengedToday) {
       showToast("Today's Champion Challenge is already complete.");
       return;
     }
-    const alive = this.state.myScribbits;
-    if (alive.length === 0) {
+    const ownedChallenger = this.state.myScribbits.find(
+      (scribbit) => scribbit.id === challenger.id
+    );
+    if (!ownedChallenger) {
       showToast('Draw a scribbit first, then challenge the champion!');
       return;
     }
-    if (alive.length === 1) {
-      const only = alive[0];
-      if (only) void this.resolveBoss(only);
-      return;
-    }
-    this.showChallengerPicker(alive);
-  }
-
-  private showChallengerPicker(alive: Scribbit[]): void {
-    const { width, height } = this.scale;
-    const champion = this.state.champion;
-    if (!champion) {
+    if (!this.state.champion) {
       showToast('No Champion is holding the contract today.');
       return;
     }
-    const challengePlan = planChampionChallenge(champion, false);
-    const overlay = this.add.container(0, 0).setScrollFactor(0).setDepth(500);
-    this.homeInteractionSuspended = true;
-    const closePicker = (): void => {
-      if (!overlay.active) return;
-      overlay.destroy(true);
-    };
-    const modalActions = new CanvasModalOverlay(
-      this,
-      'Choose a Champion challenger',
-      closePicker,
-      `${champion.name} holds today’s Champion Contract. Choose one of your Scribbits to fight, or close without fighting.`
-    );
-    overlay.once('destroy', () => {
-      this.homeInteractionSuspended = false;
-      modalActions.destroy();
-    });
-    const shade = this.add
-      .rectangle(width / 2, height / 2, width, height, UI.creamHex, 0.94)
-      .setScrollFactor(0)
-      .setInteractive();
-    shade.on('pointerup', closePicker);
-    overlay.add(shade);
-    const panel = stickerCard(this, width / 2, height * 0.51, width - 64, 780, {
-      gold: true,
-      tapeColor: UI.tapeAlt,
-      tilt: -0.2,
-    })
-      .setScrollFactor(0)
-      .setDepth(500);
-    overlay.add(panel);
-    overlay.add(
-      label(
-        this,
-        width / 2,
-        height * 0.25,
-        'CHAMPION CONTRACT',
-        TYPE.title,
-        UI.goldText,
-        true
-      ).setScrollFactor(0)
-    );
-    overlay.add(
-      label(
-        this,
-        width / 2,
-        height * 0.29,
-        `${champion.name.toUpperCase()}  •  ${challengePlan.epithet.toUpperCase()}`,
-        TYPE.body,
-        UI.ink,
-        true
-      )
-        .setScrollFactor(0)
-        .setWordWrapWidth(width - 130)
-    );
-    overlay.add(
-      label(
-        this,
-        width / 2,
-        height * 0.335,
-        `“${challengePlan.challengeLine}”`,
-        19,
-        UI.inkSoft,
-        true
-      )
-        .setScrollFactor(0)
-        .setWordWrapWidth(width - 130)
-        .setLineSpacing(-2)
-    );
-    overlay.add(
-      label(
-        this,
-        width / 2,
-        height * 0.39,
-        challengePlan.statusCopy,
-        TYPE.caption,
-        UI.coralText,
-        true
-      ).setScrollFactor(0)
-    );
-
-    alive.slice(0, 3).forEach((scribbit, index) => {
-      const slotX = width / 2 + (index - (alive.length - 1) / 2) * 200;
-      const slotY = height * 0.53;
-      const card = stickerCard(this, slotX, slotY, 184, 282, {
-        tape: false,
-        tilt: index % 2 === 0 ? -0.7 : 0.7,
-      });
-      card.setScrollFactor(0).setDepth(500);
-      overlay.add(card);
-      const generation = this.buildGeneration;
-      void loadDrawing(this, scribbit).then((key) => {
-        if (!this.isCurrentBuild(generation) || !overlay.active) return;
-        const img = fitDrawing(this.add.image(slotX, slotY - 44, key), 112)
-          .setScrollFactor(0)
-          .setDepth(501);
-        overlay.add(img);
-      });
-      const power = selectPrimaryPower(scribbit.stats);
-      overlay.add(
-        label(
-          this,
-          slotX,
-          slotY + 42,
-          scribbit.name,
-          TYPE.body,
-          UI.ink,
-          true
-        ).setScrollFactor(0)
-      );
-      overlay.add(
-        label(
-          this,
-          slotX,
-          slotY + 78,
-          getShapePowerSignatureName(scribbit.element, power).toUpperCase(),
-          16,
-          ELEMENT_STYLES[scribbit.element].primaryText,
-          true
-        )
-          .setScrollFactor(0)
-          .setWordWrapWidth(160)
-      );
-      overlay.add(
-        label(
-          this,
-          slotX,
-          slotY + 112,
-          `Lv${levelOf(scribbit)}  •  ${ELEMENT_STYLES[scribbit.element].label}`,
-          TYPE.caption,
-          UI.inkSoft,
-          true
-        ).setScrollFactor(0)
-      );
-      const hitArea = this.add
-        .rectangle(slotX, slotY, 184, 282, 0xffffff, 0.001)
-        .setScrollFactor(0)
-        .setDepth(502)
-        .setInteractive({ useHandCursor: true });
-      hitArea.on('pointerup', () => {
-        closePicker();
-        void this.resolveBoss(scribbit);
-      });
-      overlay.add(hitArea);
-      modalActions.add({
-        label: `Fight ${champion.name} with ${scribbit.name}, level ${levelOf(scribbit)} ${ELEMENT_STYLES[scribbit.element].label}`,
-        rect: {
-          x: slotX - 92,
-          y: slotY - 141,
-          width: 184,
-          height: 282,
-        },
-        onActivate: () => {
-          closePicker();
-          void this.resolveBoss(scribbit);
-        },
-      });
-    });
-    const closeButton = ghostButton(
-      this,
-      width / 2,
-      height * 0.76,
-      'Not yet',
-      closePicker,
-      200
-    ).setScrollFactor(0);
-    overlay.add(closeButton);
-    const nativeClose = modalActions.add({
-      label: 'Close Champion challenger picker',
-      rect: {
-        x: width / 2 - 100,
-        y: height * 0.76 - 50,
-        width: 200,
-        height: 100,
-      },
-      onActivate: closePicker,
-    });
-    modalActions.focusInitial(nativeClose);
+    void this.resolveBoss(ownedChallenger);
   }
 
   private async resolveBoss(scribbit: Scribbit): Promise<void> {

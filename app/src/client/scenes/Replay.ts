@@ -54,6 +54,7 @@ import {
   buildMasteryAuraSegments,
   planArenaPresentation,
   planBattleImpact,
+  planReplayArenaChallengeResult,
   planReplayBattleLayout,
   planReplayOutcomeLayout,
   projectCombatPosition,
@@ -61,6 +62,7 @@ import {
 import type {
   ArenaPresentationPlan,
   BattleImpactPlan,
+  ReplayArenaChallengeResultPlan,
   ReplayBattleLayout,
 } from '../lib/battlepresentation';
 import {
@@ -77,10 +79,7 @@ import { drawReplayBattleBackground } from '../lib/replaybattlebackground';
 import type { ReplayBattleBackdrop } from '../lib/replaybattlebackground';
 import { createReplayBattleHud } from '../lib/replaybattlehud';
 import type { ReplayBattleHud } from '../lib/replaybattlehud';
-import {
-  addBattleRecapLines,
-  createBattleRecapCard,
-} from '../lib/replaybattlerecap';
+import { createBattleRecapCard } from '../lib/replaybattlerecap';
 import { createSparRivalDraft } from '../lib/replaysparrivaldraft';
 import type { SparRivalDraft } from '../lib/replaysparrivaldraft';
 import { createPostFightActions } from '../lib/replaypostfightactions';
@@ -146,6 +145,7 @@ import {
 import { selectPrimaryPower } from '../../shared/combat/selection';
 import { isShapePowerId } from '../../shared/combat/shapepowercontent';
 import { getBattleMaxHp } from '../../shared/battle';
+import { getBattleArenaDefinition } from '../../shared/battlearena';
 
 type ReplayFighterRuntime = {
   side: 'a' | 'b';
@@ -243,6 +243,7 @@ export class Replay extends Scene {
   private transcript: BattleTranscript | null = null;
   private playbackRunning = false;
   private rematchLoading = false;
+  private arenaRefreshLoading = false;
   private rivalDraft: SparRivalDraft | null = null;
   private postFightActions: PostFightActions | null = null;
   private savedReplayIntro: SavedReplayIntro | null = null;
@@ -282,6 +283,7 @@ export class Replay extends Scene {
     this.fightersReady = false;
     this.skipRequested = false;
     this.rematchLoading = false;
+    this.arenaRefreshLoading = false;
     this.rivalDraft = null;
     this.postFightActions = null;
     this.savedReplayIntro = null;
@@ -397,6 +399,9 @@ export class Replay extends Scene {
       fighterAElement: this.report.a.element,
       fighterBElement: this.report.b.element,
       battleSeed: this.report.id,
+      ...(this.report.battleArenaId
+        ? { battleArenaId: this.report.battleArenaId }
+        : {}),
       reduceMotion: this.reduceMotion,
     });
     this.arenaFloorEffects = this.add.graphics().setDepth(2);
@@ -408,19 +413,21 @@ export class Replay extends Scene {
     this.fighterA = this.createFighterRuntime('a', initialFrame?.fighters[0]);
     this.fighterB = this.createFighterRuntime('b', initialFrame?.fighters[1]);
 
+    const battleArena = getBattleArenaDefinition(this.report.battleArenaId);
     this.battleHud = createReplayBattleHud(this, {
       layout: this.battleLayout,
       fighterA: this.report.a,
       fighterB: this.report.b,
       fighterAPrimaryPower: this.fighterA.primaryPower,
       fighterBPrimaryPower: this.fighterB.primaryPower,
-      battleKind: this.report.kind,
       battleLabel:
         (this.report.rivalRun
           ? formatRivalRunBattleLabel(this.report.rivalRun)
           : null) ??
         this.founderRivalryStakes?.battleLabel ??
         null,
+      arenaName: battleArena.name,
+      arenaRule: battleArena.shortRule,
       showPlaybackControls: this.transcript !== null,
       reduceMotion: this.reduceMotion,
       initialPlaybackSpeed: this.speed,
@@ -469,7 +476,7 @@ export class Replay extends Scene {
 
   private placeFighter(side: 'a' | 'b', textureKey: string): void {
     const fighter = side === 'a' ? this.fighterA : this.fighterB;
-    const offStageX = fighter.facing === 1 ? -140 : this.scale.width + 140;
+    const entranceX = fighter.screenX + (fighter.facing === 1 ? -48 : 48);
     const live = new LiveSprite(
       this,
       fighter.screenX,
@@ -485,8 +492,9 @@ export class Replay extends Scene {
     );
     fighter.sprite = live;
     fighter.powerGhosts = this.createPowerGhosts(fighter, textureKey);
-    // Walk in from off-stage, then breathe.
-    live.walkIn(offStageX, fighter.screenX, 520);
+    // Keep the entire drawing visible during its entrance. The old off-stage
+    // walk-in made wide player art look clipped before combat even began.
+    live.walkIn(entranceX, fighter.screenX, 360);
   }
 
   private createPowerGhosts(
@@ -690,6 +698,7 @@ export class Replay extends Scene {
   }
 
   private getArenaPresentation(frame: ReplayFrame): ArenaPresentationPlan {
+    const startingCheckpoint = this.transcript?.checkpoints[0];
     return planArenaPresentation({
       viewportWidth: this.battleLayout.viewportWidth,
       arenaTop: this.battleLayout.arenaTop,
@@ -698,8 +707,12 @@ export class Replay extends Scene {
       verticalPadding: this.battleLayout.arenaVerticalPadding,
       currentCombatHalfWidth: frame.arenaHalfWidth,
       currentCombatHalfHeight: frame.arenaHalfHeight,
-      startingCombatHalfWidth: DEFAULT_COMBAT_RULES.arena.startingHalfWidth,
-      startingCombatHalfHeight: DEFAULT_COMBAT_RULES.arena.startingHalfHeight,
+      startingCombatHalfWidth:
+        startingCheckpoint?.arenaHalfWidth ??
+        DEFAULT_COMBAT_RULES.arena.startingHalfWidth,
+      startingCombatHalfHeight:
+        startingCheckpoint?.arenaHalfHeight ??
+        DEFAULT_COMBAT_RULES.arena.startingHalfHeight,
     });
   }
 
@@ -750,15 +763,25 @@ export class Replay extends Scene {
   }
 
   private projectTimelinePosition(
-    position: FixedVector,
-    tick: number
+    position: FixedVector
   ): { x: number; y: number } {
-    if (!this.transcript) {
+    const startingCheckpoint = this.transcript?.checkpoints[0];
+    if (!startingCheckpoint) {
       return { x: this.scale.width / 2, y: this.scale.height / 2 };
     }
-    return this.projectReplayVector(
+    return projectCombatPosition(
       position,
-      calculateReplayFrame(this.transcript, tick)
+      planArenaPresentation({
+        viewportWidth: this.battleLayout.viewportWidth,
+        arenaTop: this.battleLayout.arenaTop,
+        arenaBottom: this.battleLayout.arenaBottom,
+        horizontalPadding: this.battleLayout.arenaHorizontalPadding,
+        verticalPadding: this.battleLayout.arenaVerticalPadding,
+        currentCombatHalfWidth: startingCheckpoint.arenaHalfWidth,
+        currentCombatHalfHeight: startingCheckpoint.arenaHalfHeight,
+        startingCombatHalfWidth: startingCheckpoint.arenaHalfWidth,
+        startingCombatHalfHeight: startingCheckpoint.arenaHalfHeight,
+      })
     );
   }
 
@@ -908,10 +931,7 @@ export class Replay extends Scene {
         if (isShapePowerId(event.source)) {
           this.markShapePowerConnected(event.sourceFighter, event.source);
         }
-        const impactPosition = this.projectTimelinePosition(
-          event.position,
-          event.tick
-        );
+        const impactPosition = this.projectTimelinePosition(event.position);
         const impactPlan = planBattleImpact({
           damage: event.amount,
           maximumHitPoints: target.hpMax,
@@ -1066,10 +1086,7 @@ export class Replay extends Scene {
     switch (event.kind) {
       case 'nib_wall_ejection': {
         const actor = this.fighterForSlot(event.actor);
-        const recoilPosition = this.projectTimelinePosition(
-          event.position,
-          event.tick
-        );
+        const recoilPosition = this.projectTimelinePosition(event.position);
         this.impactBurst(
           recoilPosition.x,
           recoilPosition.y,
@@ -1085,10 +1102,7 @@ export class Replay extends Scene {
       }
       case 'wall_bounce': {
         const actor = this.fighterForSlot(event.actor);
-        const bouncePosition = this.projectTimelinePosition(
-          event.position,
-          event.tick
-        );
+        const bouncePosition = this.projectTimelinePosition(event.position);
         this.impactBurst(
           bouncePosition.x,
           bouncePosition.y,
@@ -1099,10 +1113,7 @@ export class Replay extends Scene {
       }
       case 'fighter_collision': {
         this.cameraPunch(0.006);
-        const collisionPosition = this.projectTimelinePosition(
-          event.position,
-          event.tick
-        );
+        const collisionPosition = this.projectTimelinePosition(event.position);
         this.impactBurst(
           collisionPosition.x,
           collisionPosition.y,
@@ -1137,10 +1148,7 @@ export class Replay extends Scene {
       }
       case 'echo_created': {
         const actor = this.fighterForSlot(event.actor);
-        const echoPosition = this.projectTimelinePosition(
-          event.position,
-          event.tick
-        );
+        const echoPosition = this.projectTimelinePosition(event.position);
         this.impactBurst(
           echoPosition.x,
           echoPosition.y,
@@ -1156,10 +1164,7 @@ export class Replay extends Scene {
       }
       case 'echo_fired': {
         const actor = this.fighterForSlot(event.actor);
-        const echoPosition = this.projectTimelinePosition(
-          event.position,
-          event.tick
-        );
+        const echoPosition = this.projectTimelinePosition(event.position);
         this.cameraPunch(0.007);
         this.lingerColorburstEcho(actor, echoPosition.x, echoPosition.y);
         this.impactBurst(
@@ -1177,10 +1182,7 @@ export class Replay extends Scene {
       }
       case 'echo_shattered': {
         const owner = this.fighterForSlot(event.owner);
-        const echoPosition = this.projectTimelinePosition(
-          event.position,
-          event.tick
-        );
+        const echoPosition = this.projectTimelinePosition(event.position);
         this.impactBurst(
           echoPosition.x,
           echoPosition.y,
@@ -1228,17 +1230,20 @@ export class Replay extends Scene {
     this.hidePowerGhosts();
 
     const arena = this.getArenaPresentation(frame);
-    const shrinkRatio = arena.currentHalfWidth / arena.maximumHalfWidth;
+    const shrinkRatio = Math.min(
+      arena.currentHalfWidth / arena.maximumHalfWidth,
+      arena.currentHalfHeight / arena.maximumHalfHeight
+    );
     if (shrinkRatio < 0.995) {
+      this.strokePaperArenaBoundary(floorGraphics, arena, UI.coral, 16, 0.9, 1);
       this.strokePaperArenaBoundary(
         floorGraphics,
         arena,
         UI.creamHex,
-        10,
-        0.72,
-        1
+        6,
+        0.92,
+        0
       );
-      this.strokePaperArenaBoundary(floorGraphics, arena, UI.inkHex, 4, 0.5, 0);
       const maximumLeft = arena.centerX - arena.maximumHalfWidth;
       const maximumTop = arena.centerY - arena.maximumHalfHeight;
       const maximumWidth = arena.maximumHalfWidth * 2;
@@ -1247,10 +1252,9 @@ export class Replay extends Scene {
       const currentTop = arena.centerY - arena.currentHalfHeight;
       const currentRight = arena.centerX + arena.currentHalfWidth;
       const currentBottom = arena.centerY + arena.currentHalfHeight;
-      // The authoritative walls close as paper folds, rather than as gamey
-      // danger columns. Darkened flaps and doubled crease lines keep the
-      // shrinking bounds truthful even without relying on color.
-      floorGraphics.fillStyle(UI.inkHex, 0.045);
+      // The transcript extents own this shared death-zone overlay. Every skin
+      // darkens outside the safe space while the rough coral edge closes in.
+      floorGraphics.fillStyle(UI.inkHex, 0.36);
       floorGraphics.fillRect(
         maximumLeft,
         maximumTop,
@@ -1275,7 +1279,7 @@ export class Replay extends Scene {
         Math.max(0, currentRight - currentLeft),
         Math.max(0, maximumTop + maximumHeight - currentBottom)
       );
-      floorGraphics.lineStyle(16, UI.inkHex, 0.12);
+      floorGraphics.lineStyle(18, UI.coral, 0.2);
       floorGraphics.lineBetween(
         arena.centerX - arena.currentHalfWidth - 5,
         arena.centerY - arena.currentHalfHeight,
@@ -1288,7 +1292,7 @@ export class Replay extends Scene {
         arena.centerX + arena.currentHalfWidth + 5,
         arena.centerY + arena.currentHalfHeight
       );
-      floorGraphics.lineStyle(5, UI.coralDeep, 0.4);
+      floorGraphics.lineStyle(6, UI.coralDeep, 0.82);
       floorGraphics.lineBetween(
         currentLeft,
         currentTop,
@@ -1946,7 +1950,20 @@ export class Replay extends Scene {
   private cameraPunch(shakeIntensity: number): void {
     if (this.reduceMotion || this.cameraShakeCooldownMilliseconds > 0) return;
     this.cameraShakeCooldownMilliseconds = 140 / this.speed;
-    this.cameras.main.shake(120, Math.min(0.0045, shakeIntensity));
+    const intensity = Math.min(0.02, Math.max(0, shakeIntensity));
+    const camera = this.cameras.main;
+    camera.shake(100, intensity);
+    this.tweens.killTweensOf(camera);
+    camera.setZoom(1);
+    this.tweens.add({
+      targets: camera,
+      zoom: 1 + Math.min(0.03, intensity * 1.55),
+      duration: 52,
+      hold: 18,
+      yoyo: true,
+      ease: 'Cubic.easeOut',
+      onComplete: () => camera.setZoom(1),
+    });
   }
 
   private impactBurst(x: number, y: number, tint: number, big: boolean): void {
@@ -2155,15 +2172,18 @@ export class Replay extends Scene {
       crumple(this.fighterB);
     }
 
-    // The recap and choices are immediate. Finish poses can animate behind
-    // them without making reduced-motion or impatient viewers wait.
-    this.showOutcome(
-      winner,
-      loser,
-      recap,
-      founderOutcome,
-      founderEpisodeReceipt
-    );
+    // Let the authoritative finish pose and sound land before the result UI.
+    // Reduced-motion players still receive the result immediately.
+    this.time.delayedCall(this.reduceMotion ? 0 : 520, () => {
+      if (!this.scene.isActive()) return;
+      this.showOutcome(
+        winner,
+        loser,
+        recap,
+        founderOutcome,
+        founderEpisodeReceipt
+      );
+    });
   }
 
   private showOutcome(
@@ -2178,10 +2198,11 @@ export class Replay extends Scene {
     this.battleHud?.setAnnouncerVisible(false);
     this.battleHud?.setClockVisible(false);
     this.battleHud?.setControlsVisible(false);
-    const resultAnnouncement = formatBattleRecapAnnouncement(
+    const arenaChallenge = this.battleArenaChallengeResult();
+    const resultAnnouncement = `${formatBattleRecapAnnouncement(
       recap,
       this.battleRecapPerspective(winner, loser)
-    );
+    )}${arenaChallenge ? ` ${arenaChallenge.accessibleLabel}` : ''}`;
     if (this.report.kind === 'practice') {
       this.battleHud?.announceResult(resultAnnouncement);
       this.showPracticeOutcome(winner, recap);
@@ -2190,7 +2211,7 @@ export class Replay extends Scene {
     this.battleHud?.setBattleChromeVisible(false);
     this.battleHud?.announceResult(resultAnnouncement);
     this.add
-      .rectangle(0, 0, this.scale.width, this.scale.height, UI.paper, 0.9)
+      .rectangle(0, 0, this.scale.width, this.scale.height, UI.paper, 0.74)
       .setOrigin(0)
       .setDepth(54);
     const arena = getArena(this);
@@ -2220,6 +2241,17 @@ export class Replay extends Scene {
       arena?.myUsername,
       arena?.myScribbits.map((ownedScribbit) => ownedScribbit.id)
     );
+  }
+
+  private battleArenaChallengeResult(): ReplayArenaChallengeResultPlan | null {
+    return planReplayArenaChallengeResult({
+      ...(this.report.battleArenaId
+        ? { arenaId: this.report.battleArenaId }
+        : {}),
+      ...(this.report.arenaChallenge
+        ? { progress: this.report.arenaChallenge }
+        : {}),
+    });
   }
 
   private battleRecapPerspective(
@@ -2272,10 +2304,10 @@ export class Replay extends Scene {
     const canChooseRival =
       this.report.kind === 'exhibition' && this.isMine(winner.scribbit);
     const canBackContender = !getArena(this)?.myBackedScribbitId;
-    const victoryY = height * 0.36;
     const losingFighter =
       winner === this.fighterA ? this.fighterB : this.fighterA;
     const outcomeLayout = planReplayOutcomeLayout({ viewportHeight: height });
+    const victoryY = outcomeLayout.heroY;
     this.time.delayedCall(260, () => {
       if (this.scene.isActive()) this.soundboard.play('win');
     });
@@ -2293,7 +2325,10 @@ export class Replay extends Scene {
     }
     const contextLine = this.report.rivalRun
       ? formatRivalRunResultLine(this.report.rivalRun)
-      : (founderEpisodeReceipt?.headline ?? founderOutcome);
+      : (founderEpisodeReceipt?.headline ??
+        founderOutcome ??
+        this.battleArenaChallengeResult()?.label ??
+        null);
     const rivalActionCopy = planRivalRunActionCopy(this.report.rivalRun);
     const rivalRunFinish = planRivalRunFinishStamp(this.report.rivalRun);
     if (rivalRunFinish) {
@@ -2393,7 +2428,7 @@ export class Replay extends Scene {
   }
 
   // Loss flow — no dead ends. Lifespan remaining + a server-authored rival
-  // draft + Back only while tonight's pick is still open.
+  // draft + Pick only while tonight's choice is still open.
   private showLossCard(
     mine: Scribbit,
     currentDay: number,
@@ -2404,82 +2439,72 @@ export class Replay extends Scene {
     const { width, height } = this.scale;
     const daysLeft = daysLeftFor(mine, currentDay);
     const canBackContender = !getArena(this)?.myBackedScribbitId;
+    const winner = this.fighterForSlot(recap.winnerSlot);
+    const loser = this.fighterForSlot(recap.loserSlot);
     const rivalRunFinish = planRivalRunFinishStamp(this.report.rivalRun);
-    const cardHeight = rivalRunFinish ? 520 : 400;
-    const card = stickerCard(
+    const outcomeLayout = planReplayOutcomeLayout({ viewportHeight: height });
+
+    // Keep both submitted drawings in the payoff. The winner owns the visual
+    // focus; the player's defeated Scribbit remains visible instead of being
+    // erased behind a near-opaque result sheet.
+    if (winner.sprite) {
+      winner.sprite.setDepth(56);
+      this.tweens.add({
+        targets: winner.sprite.container,
+        x: width * 0.62,
+        y: outcomeLayout.heroY,
+        duration: this.reduceMotion ? 0 : 360,
+        ease: 'Cubic.easeOut',
+        onComplete: () => winner.sprite?.celebrate(),
+      });
+    }
+    if (loser.sprite) {
+      loser.sprite.setDepth(55);
+      loser.sprite.container.setAlpha(0.32);
+      this.tweens.add({
+        targets: loser.sprite.container,
+        x: width * 0.28,
+        y: outcomeLayout.heroY + 34,
+        duration: this.reduceMotion ? 0 : 360,
+        ease: 'Cubic.easeOut',
+      });
+    }
+
+    const contextLine = rivalRunFinish
+      ? `${rivalRunFinish.title} • ${rivalRunFinish.score}`
+      : this.report.rivalRun
+        ? formatRivalRunResultLine(this.report.rivalRun)
+        : (founderEpisodeReceipt?.headline ??
+          founderOutcome ??
+          this.battleArenaChallengeResult()?.label ??
+          null);
+    const rivalActionCopy = planRivalRunActionCopy(this.report.rivalRun);
+    createBattleRecapCard(this, recap, {
+      x: width / 2,
+      y: outcomeLayout.recapY,
+      width: width - 70,
+      depth: 60,
+      perspective: 'viewer_loss',
+      ...(contextLine ? { contextLine } : {}),
+    });
+    const lifeLabel = label(
       this,
       width / 2,
-      height / 2,
-      width - 70,
-      cardHeight,
-      { tapeColor: UI.tapeAlt }
-    );
-    card.setDepth(60).setScale(0.7);
-    this.tweens.add({
-      targets: card,
-      scale: 1,
-      duration: this.reduceMotion ? 0 : 300,
-      ease: 'Back.easeOut',
-    });
+      outcomeLayout.lifeY,
+      `${daysLeft} DAY${daysLeft === 1 ? '' : 'S'} LEFT`,
+      24,
+      UI.ink,
+      true
+    ).setDepth(61);
+    lifeLabel.setStroke(UI.cream, 5);
 
-    const top = -cardHeight / 2;
-    if (rivalRunFinish) {
-      card.add(
-        label(this, 0, top + 38, rivalRunFinish.title, 30, UI.coralText, true)
-      );
-      card.add(
-        label(
-          this,
-          0,
-          top + 88,
-          `${rivalRunFinish.score} • ${rivalRunFinish.record}`,
-          40,
-          UI.goldText,
-          true
-        ).setStroke(UI.ink, 5)
-      );
-    }
-    const recapTop = top + (rivalRunFinish ? 126 : 18);
-    const recapHeight = addBattleRecapLines(this, card, recap, {
-      top: recapTop,
-      width: width - 110,
-      compact: true,
-      perspective: 'viewer_loss',
-    });
-    let cursor = recapTop + recapHeight + 18;
-    const contextLine = this.report.rivalRun
-      ? formatRivalRunResultLine(this.report.rivalRun)
-      : (founderEpisodeReceipt?.headline ?? founderOutcome);
-    const rivalActionCopy = planRivalRunActionCopy(this.report.rivalRun);
-    if (contextLine && !rivalRunFinish) {
-      card.add(
-        label(this, 0, cursor + 16, contextLine, 20, UI.coralText, true)
-          .setWordWrapWidth(width - 130)
-          .setAlign('center')
-      );
-      cursor += 44;
-    }
-    card.add(
-      label(
-        this,
-        0,
-        cursor + 16,
-        `LIFE LEFT • ${daysLeft}D`,
-        17,
-        UI.ink,
-        true
-      ).setWordWrapWidth(width - 120)
-    );
-    cursor += 48;
-
-    const firstActionY = cursor + 48;
     this.postFightActions?.destroy();
     this.postFightActions = createPostFightActions(this, {
-      x: 0,
-      y: firstActionY,
+      x: width / 2,
+      y: outcomeLayout.actionY,
       accessibilityX: width / 2,
-      accessibilityY: height / 2 + firstActionY,
-      width: width - 140,
+      accessibilityY: outcomeLayout.actionY,
+      width: width - 70,
       canChooseRival: true,
       canBackContender,
       canReplay: this.canReplaySavedReport(),
@@ -2490,7 +2515,7 @@ export class Replay extends Scene {
       onReplay: () => this.replayAgain(),
       onReturn: () => this.exit(),
     });
-    card.add(this.postFightActions.container);
+    this.postFightActions.container.setDepth(61);
   }
 
   private compactReturnButtonLabel(): string {
@@ -2704,20 +2729,31 @@ export class Replay extends Scene {
   }
 
   private async refreshArenaAndLeave(focusEntrants: boolean): Promise<void> {
+    if (this.arenaRefreshLoading) return;
+    if (this.isSavedReplay() && !focusEntrants) {
+      fadeToScene(this, getReplayReturn(this));
+      return;
+    }
+
+    this.arenaRefreshLoading = true;
     const previousArena = getArena(this);
     const result = await fetchArena();
-    if (result.ok) {
-      if (previousArena) {
-        const rivalryBeats = findFounderChronicleBeats(
-          previousArena.founderChronicle,
-          result.data.founderChronicle
-        );
-        if (rivalryBeats.length > 0) {
-          setFounderChronicleBeats(this, rivalryBeats);
-        }
-      }
-      setArena(this, result.data);
+    this.arenaRefreshLoading = false;
+    if (!this.scene.isActive()) return;
+    if (!result.ok) {
+      showToast(result.error);
+      return;
     }
+    if (previousArena) {
+      const rivalryBeats = findFounderChronicleBeats(
+        previousArena.founderChronicle,
+        result.data.founderChronicle
+      );
+      if (rivalryBeats.length > 0) {
+        setFounderChronicleBeats(this, rivalryBeats);
+      }
+    }
+    setArena(this, result.data);
     if (focusEntrants) setArenaFocus(this, 'entrants');
     fadeToScene(this, focusEntrants ? 'ArenaHome' : getReplayReturn(this));
   }

@@ -1,8 +1,9 @@
 import type { Forecast, Scribbit } from '../../shared/arena';
+import { cloneScribbit } from '../../shared/arena';
 import { getArenaDayNumber, parseStoredPositiveInteger } from './day';
 import { generateForecastForDay, parseForecast } from './forecast';
 import type { ArenaStorage } from './storage';
-import { cloneScribbit, parseScribbit } from './scribbit';
+import { parseScribbit } from './scribbit';
 
 const currentArenaDayKey = 'arena:currentDay';
 const championKey = 'champion:current';

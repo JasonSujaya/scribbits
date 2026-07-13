@@ -30,6 +30,7 @@ import {
   MAXIMUM_COMBAT_UPGRADES,
 } from './upgrades';
 import { isElement } from '../elements';
+import { applyBattleArenaModifier } from '../battlearena';
 import type { CombatUpgradeModifiers } from './upgrades';
 import type {
   AbilityPhase,
@@ -244,7 +245,9 @@ function validateFighterInput(fighter: CombatFighterInput): void {
     upgrades.some((upgradeId) => !isCombatUpgradeId(upgradeId)) ||
     new Set(upgrades).size !== upgrades.length
   ) {
-    throw new Error('Combat upgrades must contain up to four unique Ink Mods.');
+    throw new Error(
+      `Combat upgrades must contain up to ${MAXIMUM_COMBAT_UPGRADES} unique Ink Mods.`
+    );
   }
 }
 
@@ -2005,7 +2008,10 @@ function validateRules(rules: CombatRules): void {
  * the returned sparse timeline/result and let any renderer play it later.
  */
 export function simulateCombat(input: CombatSimulationInput): BattleTranscript {
-  const rules = DEFAULT_COMBAT_RULES;
+  const rules = applyBattleArenaModifier(
+    DEFAULT_COMBAT_RULES,
+    input.battleArenaId
+  );
   validateRules(rules);
   const seed = normalizeCombatSeed(input.seed);
   const fighterAInput = freezeFighterInput(input.fighters[0]);

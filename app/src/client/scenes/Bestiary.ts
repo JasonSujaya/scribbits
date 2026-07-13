@@ -121,7 +121,7 @@ export class Bestiary extends Scene {
     > = [
       ['shape', 'pencil', 'SHAPE', 'Body becomes build'],
       ['elements', 'spark', 'ELEMENTS', 'Four payload styles'],
-      ['ritual', 'clock', 'RITUAL', 'Draw · Watch · Back · Return'],
+      ['ritual', 'clock', 'RITUAL', 'Draw · Watch · Pick · Return'],
       ['legends', 'trophy', 'LEGENDS', 'Three days to matter'],
       ['privacy', 'shield', 'PRIVACY', 'Report · Delete'],
     ];
@@ -251,7 +251,7 @@ export class Bestiary extends Scene {
       case 'elements':
         return `${ELEMENT_PAYLOAD_GUIDE.map((entry) => `${entry.title}: ${entry.detail}`).join(' ')} There is no hidden element triangle.`;
       case 'ritual':
-        return 'Draw one Scribbit. Watch its power immediately. Back one community contender. Return after midnight for the Champion and Clout result.';
+        return 'Draw one Scribbit. Watch its power immediately. Pick one community contender. Return after midnight for the Champion and Clout result.';
       case 'legends':
         return 'A Scribbit lives for three days. Care builds levels and wins build its record. A Champion crown or twenty-five Belief makes it permanent.';
       case 'privacy':
@@ -322,7 +322,7 @@ export class Bestiary extends Scene {
         this.renderTextRows(modal, [
           ['pencil', 'DRAW', 'One Scribbit enters tonight'],
           ['replay', 'WATCH', 'See its power immediately'],
-          ['heart', 'BACK', 'Lock one community pick'],
+          ['heart', 'PICK', 'Lock one community pick'],
           ['clock', 'RETURN', 'Champion + Clout after midnight'],
         ]);
         return null;

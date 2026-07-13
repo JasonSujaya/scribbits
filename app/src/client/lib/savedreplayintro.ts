@@ -2,10 +2,10 @@ import * as Phaser from 'phaser';
 import { Scene } from 'phaser';
 import type { BattleKind, Scribbit } from '../../shared/arena';
 import { planBattleMatchupBrief } from './matchupbrief';
-import { elementPaperIcon, paperIcon } from './papericons';
+import { elementPaperIcon } from './papericons';
 import { fitDrawing, loadDrawing } from './scribbits';
 import { ELEMENT_STYLES, prefersReducedMotion, TYPE, UI } from './theme';
-import { label, stickerCard } from './ui';
+import { label, stickerCard, versusBadge } from './ui';
 
 const INTRO_DEPTH = 2_550;
 const INTRO_VISIBLE_MILLISECONDS = 700;
@@ -117,16 +117,7 @@ export function showSavedReplayIntro(
     createFighterPortrait(scene, input.fighterB, fighterOffset, () => destroyed)
   );
 
-  const versus = scene.add.container(0, -2);
-  const versusPlate = scene.add
-    .circle(0, -5, 43, UI.coral, 1)
-    .setStrokeStyle(4, UI.inkHex, 1);
-  const sword = paperIcon(scene, 'sword', 0, -10, {
-    size: 42,
-    fill: UI.gold,
-  });
-  const versusLabel = label(scene, 0, 39, 'VS', 19, UI.ink, true);
-  versus.add([versusPlate, sword, versusLabel]);
+  const versus = versusBadge(scene, 0, -2, { size: 86 });
   ticket.add(versus);
 
   if (input.replayPass > 0) {

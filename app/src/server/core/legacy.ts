@@ -1,9 +1,17 @@
 import type {
-  LegacyCard,
   LegacyCardsState,
   LegacyReturnReceipt,
 } from '../../shared/arena';
-import type { Scribbit } from '../../shared/arena';
+import {
+  collectLegacyCards,
+  encodeLegacyCardCursor,
+  getNextLegacySeenThroughDay,
+  legacyEntryIsOlderThanAnchor,
+  parseLegacyCardCursor,
+  projectLegacyReturnReceipt,
+  type LegacyCardCursor,
+  type LegacyCardIndexEntry,
+} from '../../shared/legacycards';
 import type { ArenaStorage } from './storage';
 import {
   getUserLegacyCardsKey,
@@ -12,37 +20,6 @@ import {
 } from './scribbit';
 
 const legacyIndexVersion = '1';
-const legacyReturnPreviewLimit = 3;
-
-export const toLegacyCard = (scribbit: Scribbit): LegacyCard | undefined => {
-  if (scribbit.status === 'alive' || !scribbit.legacy) return undefined;
-  return {
-    id: scribbit.id,
-    name: scribbit.name,
-    artist: scribbit.artist,
-    element: scribbit.element,
-    imageUrl: scribbit.imageUrl,
-    bornDay: scribbit.bornDay,
-    expiresDay: scribbit.expiresDay,
-    status: scribbit.status,
-    legendTitle: scribbit.legendTitle,
-    legacy: {
-      ...scribbit.legacy,
-      creatorTitle: scribbit.legacy.creatorTitle
-        ? { ...scribbit.legacy.creatorTitle }
-        : null,
-      accessories: scribbit.legacy.accessories.map((accessory) => ({
-        ...accessory,
-      })),
-    },
-  };
-};
-
-const collectLegacyCards = (scribbits: Scribbit[]): LegacyCard[] => {
-  return scribbits
-    .map(toLegacyCard)
-    .filter((card): card is LegacyCard => card !== undefined);
-};
 
 export const getLegacyIndexVersionKey = (userId: string): string => {
   return `user:${userId}:scribbits:legacy-index-version`;
@@ -85,114 +62,15 @@ export const ensureLegacyCardIndex = async (
   await storage.set(versionKey, legacyIndexVersion);
 };
 
-type LegacyCursor =
-  | {
-      kind: 'anchor';
-      member: string;
-      score: number;
-      rankHint?: number;
-    }
-  | { kind: 'offset'; offset: number }
-  | null;
-
-type LegacyIndexEntry = {
-  member: string;
-  score: number;
-};
-
-const legacyCursorPrefix = 'v2|';
-const previousLegacyCursorPrefix = 'v1|';
-
-const createAnchorCursor = (
-  scoreText: string,
-  encodedMember: string,
-  rankHint?: number
-): LegacyCursor | undefined => {
-  const score = Number(scoreText);
-  let member: string;
-  try {
-    member = decodeURIComponent(encodedMember);
-  } catch {
-    return undefined;
-  }
-  if (
-    !Number.isSafeInteger(score) ||
-    score < 0 ||
-    (rankHint !== undefined &&
-      (!Number.isSafeInteger(rankHint) || rankHint < 0)) ||
-    member.length < 1 ||
-    member.length > 256 ||
-    [...member].some((character) => character.charCodeAt(0) < 32)
-  ) {
-    return undefined;
-  }
-  return { kind: 'anchor', member, score, rankHint };
-};
-
-const parseLegacyCursor = (
-  value: string | number | null
-): LegacyCursor | undefined => {
-  if (value === null) return null;
-  if (typeof value === 'number') {
-    return Number.isSafeInteger(value) && value >= 0
-      ? { kind: 'offset', offset: value }
-      : undefined;
-  }
-  if (/^\d+$/.test(value)) {
-    const offset = Number(value);
-    return Number.isSafeInteger(offset) && offset >= 0
-      ? { kind: 'offset', offset }
-      : undefined;
-  }
-  if (value.length > 440) {
-    return undefined;
-  }
-  if (value.startsWith(legacyCursorPrefix)) {
-    const scoreSeparator = value.indexOf('|', legacyCursorPrefix.length);
-    if (scoreSeparator < 0) return undefined;
-    const rankSeparator = value.indexOf('|', scoreSeparator + 1);
-    if (rankSeparator < 0) return undefined;
-    const rankHint = Number(value.slice(scoreSeparator + 1, rankSeparator));
-    return createAnchorCursor(
-      value.slice(legacyCursorPrefix.length, scoreSeparator),
-      value.slice(rankSeparator + 1),
-      rankHint
-    );
-  }
-  if (value.startsWith(previousLegacyCursorPrefix)) {
-    const separator = value.indexOf('|', previousLegacyCursorPrefix.length);
-    if (separator < 0) return undefined;
-    return createAnchorCursor(
-      value.slice(previousLegacyCursorPrefix.length, separator),
-      value.slice(separator + 1)
-    );
-  }
-  return undefined;
-};
-
-export const isLegacyCardCursor = (value: string | null): boolean => {
-  return parseLegacyCursor(value) !== undefined;
-};
-
-const encodeLegacyCursor = (
-  entry: LegacyIndexEntry,
-  rankHint: number | undefined
-): string => {
-  if (rankHint === undefined) {
-    return `${previousLegacyCursorPrefix}${entry.score}|${encodeURIComponent(entry.member)}`;
-  }
-  return `${legacyCursorPrefix}${entry.score}|${rankHint}|${encodeURIComponent(entry.member)}`;
-};
-
 const loadLegacyIndexBatch = async (
   storage: ArenaStorage,
   userId: string,
-  cursor: LegacyCursor,
+  cursor: LegacyCardCursor,
   batchSize: number
-): Promise<{ entries: LegacyIndexEntry[]; exhausted: boolean }> => {
+): Promise<{ entries: LegacyCardIndexEntry[]; exhausted: boolean }> => {
   const indexKey = getUserLegacyCardsKey(userId);
   const requestedCount = batchSize + 1;
-  let candidates: LegacyIndexEntry[];
+  let candidates: LegacyCardIndexEntry[];
 
   if (cursor === null) {
     candidates = await storage.zRange(indexKey, 0, requestedCount - 1, {
@@ -207,7 +85,11 @@ const loadLegacyIndexBatch = async (
       { by: 'rank', reverse: true }
     );
   } else {
-    const anchorRank = await storage.zRank(indexKey, cursor.member);
+    const storedAnchorScore = await storage.zScore(indexKey, cursor.member);
+    const anchorRank =
+      storedAnchorScore === cursor.score
+        ? await storage.zRank(indexKey, cursor.member)
+        : undefined;
     if (anchorRank !== undefined) {
       const oldestIncludedRank = Math.max(0, anchorRank - requestedCount);
       candidates =
@@ -222,31 +104,39 @@ const loadLegacyIndexBatch = async (
               )
             ).reverse();
     } else {
-      // Rare stale-anchor recovery stays rank-bounded even for forged input.
-      // V2 carries the anchor's ascending rank, so deletion can resume near
-      // the exact place without scanning a user's whole archive.
-      const recoveryCount = Math.min(200, Math.max(32, requestedCount * 2));
-      const recoveryEntries =
-        cursor.rankHint === undefined
-          ? await storage.zRange(indexKey, 0, recoveryCount - 1, {
-              by: 'rank',
-              reverse: true,
-            })
-          : cursor.rankHint <= 0
-            ? []
-            : (
-                await storage.zRange(
-                  indexKey,
-                  Math.max(0, cursor.rankHint - recoveryCount),
-                  cursor.rankHint - 1,
-                  { by: 'rank' }
-                )
-              ).reverse();
-      candidates = recoveryEntries.filter(
-        (entry) =>
-          entry.score < cursor.score ||
-          (entry.score === cursor.score && entry.member < cursor.member)
-      );
+      // Locate the deleted or score-mismatched anchor's insertion rank with a
+      // bounded binary search. This preserves deep V1 cursors without reading
+      // the whole deck and makes production match the in-memory paginator.
+      let lowerRank = 0;
+      let upperRank = await storage.zCard(indexKey);
+      while (lowerRank < upperRank) {
+        const middleRank = Math.floor((lowerRank + upperRank) / 2);
+        const [middleEntry] = await storage.zRange(
+          indexKey,
+          middleRank,
+          middleRank,
+          { by: 'rank' }
+        );
+        if (!middleEntry) {
+          upperRank = middleRank;
+        } else if (legacyEntryIsOlderThanAnchor(middleEntry, cursor)) {
+          lowerRank = middleRank + 1;
+        } else {
+          upperRank = middleRank;
+        }
+      }
+      const insertionRank = lowerRank;
+      candidates =
+        insertionRank <= 0
+          ? []
+          : (
+              await storage.zRange(
+                indexKey,
+                Math.max(0, insertionRank - requestedCount),
+                insertionRank - 1,
+                { by: 'rank' }
+              )
+            ).reverse();
     }
   }
 
@@ -263,13 +153,13 @@ export const loadLegacyCardPage = async (
   limit: number
 ): Promise<LegacyCardsState> => {
   await ensureLegacyCardIndex(storage, userId);
-  const parsedCursor = parseLegacyCursor(cursorValue);
+  const parsedCursor = parseLegacyCardCursor(cursorValue);
   if (parsedCursor === undefined) {
     throw new Error('Invalid Legacy Card cursor.');
   }
   const visibleCards: Array<{
-    card: LegacyCard;
-    entry: LegacyIndexEntry;
+    card: LegacyCardsState['cards'][number];
+    entry: LegacyCardIndexEntry;
   }> = [];
   const scanBatchSize = Math.min(50, Math.max(8, limit + 1));
   let scanCursor = parsedCursor;
@@ -298,8 +188,7 @@ export const loadLegacyCardPage = async (
       visibleCards.push({ card, entry });
       if (visibleCards.length > limit) {
         const returnedCards = visibleCards.slice(0, limit);
-        const lastReturnedEntry =
-          returnedCards[returnedCards.length - 1]?.entry;
+        const lastReturnedEntry = returnedCards.at(-1)?.entry;
         const lastReturnedRank = lastReturnedEntry
           ? await storage.zRank(
               getUserLegacyCardsKey(userId),
@@ -309,7 +198,7 @@ export const loadLegacyCardPage = async (
         return {
           cards: returnedCards.map((item) => item.card),
           nextCursor: lastReturnedEntry
-            ? encodeLegacyCursor(lastReturnedEntry, lastReturnedRank)
+            ? encodeLegacyCardCursor(lastReturnedEntry, lastReturnedRank)
             : null,
         };
       }
@@ -346,20 +235,13 @@ export const loadLegacyReturnReceipt = async (
   );
   if (unseenEntries.length === 0) return null;
 
-  const loadedCards = await loadScribbits(
-    storage,
-    unseenEntries.map((entry) => entry.member)
+  const cards = collectLegacyCards(
+    await loadScribbits(
+      storage,
+      unseenEntries.map((entry) => entry.member)
+    )
   );
-  const cards = collectLegacyCards(loadedCards);
-  if (cards.length === 0) return null;
-
-  return {
-    cards: cards.slice(0, legacyReturnPreviewLimit),
-    total: cards.length,
-    newestArchivedDay: Math.max(
-      ...cards.map((card) => card.legacy.archivedDay)
-    ),
-  };
+  return projectLegacyReturnReceipt(cards, seenThroughDay);
 };
 
 export const markLegacyCardsSeen = async (
@@ -368,9 +250,9 @@ export const markLegacyCardsSeen = async (
   throughArchivedDay: number
 ): Promise<number> => {
   const currentSeenDay = await readSeenThroughDay(storage, userId);
-  const nextSeenDay = Math.max(
+  const nextSeenDay = getNextLegacySeenThroughDay(
     currentSeenDay,
-    Math.max(0, Math.floor(throughArchivedDay))
+    throughArchivedDay
   );
   await storage.set(getLegacySeenDayKey(userId), nextSeenDay.toString());
   return nextSeenDay;

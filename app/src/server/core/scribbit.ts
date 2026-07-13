@@ -14,13 +14,12 @@ import { PNG } from 'pngjs';
 import {
   ACCESSORY_BASE_SIZE,
   BELIEF_LEGEND_THRESHOLD,
-  LEVEL_XP_THRESHOLDS,
+  cloneScribbit,
   LIFESPAN_DAYS,
   MAX_ALIVE_PER_USER,
   MAX_ACCESSORIES_PER_SCRIBBIT,
   MAX_ACCESSORY_ROTATION,
   MAX_ACCESSORY_SCALE,
-  MAX_LEVEL,
   MIN_ACCESSORY_ROTATION,
   MIN_ACCESSORY_SCALE,
   XP_REWARDS,
@@ -28,9 +27,12 @@ import {
 } from '../../shared/arena';
 import { isElement } from '../../shared/elements';
 import {
-  normalizeScribbitUpgrades,
-  reconcileScribbitUpgrades,
+  advanceScribbitUpgrades,
+  parseCompleteScribbitUpgrades,
+  resolveStoredScribbitUpgrades,
 } from '../../shared/combat/upgrades';
+import { getLevelForXp } from '../../shared/progression';
+export { getLevelForXp } from '../../shared/progression';
 import { formatUtcDateKey } from './day';
 import { findInkCatalogEntry, isAccessoryCatalogEntry } from './ink';
 import { findFoundingScribbit } from './species';
@@ -248,35 +250,12 @@ export const validateScribbitName = (value: unknown): string | undefined => {
   return name;
 };
 
-const clampNumber = (
-  value: number,
-  minimum: number,
-  maximum: number
-): number => {
-  return Math.min(maximum, Math.max(minimum, value));
-};
-
 const normalizeNonNegativeInteger = (value: unknown): number => {
   if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
     return 0;
   }
 
   return Math.floor(value);
-};
-
-export const getLevelForXp = (xp: number): number => {
-  const normalizedXp = normalizeNonNegativeInteger(xp);
-  let level = 1;
-
-  for (let index = 0; index < LEVEL_XP_THRESHOLDS.length; index += 1) {
-    const threshold = LEVEL_XP_THRESHOLDS[index];
-
-    if (threshold !== undefined && normalizedXp >= threshold) {
-      level = index + 1;
-    }
-  }
-
-  return clampNumber(level, 1, MAX_LEVEL);
 };
 
 export const isCareAction = (value: unknown): value is CareAction => {
@@ -341,15 +320,18 @@ export const addXpToScribbit = (
 ): Scribbit => {
   if (scribbit.status !== 'alive') return cloneScribbit(scribbit);
   const gainedXp = normalizeNonNegativeInteger(xpGain);
-  const nextXp = normalizeNonNegativeInteger(scribbit.xp) + gainedXp;
+  const currentXp = normalizeNonNegativeInteger(scribbit.xp);
+  const currentLevel = getLevelForXp(currentXp);
+  const nextXp = currentXp + gainedXp;
   const nextLevel = getLevelForXp(nextXp);
 
   return {
     ...scribbit,
     xp: nextXp,
     level: nextLevel,
-    upgrades: reconcileScribbitUpgrades(
+    upgrades: advanceScribbitUpgrades(
       scribbit.id,
+      currentLevel,
       nextLevel,
       scribbit.upgrades
     ),
@@ -919,26 +901,44 @@ const inferLegacyFinish = (
     : 'believed';
 };
 
+const createScribbitLegacySnapshot = (
+  scribbit: Scribbit,
+  schemaVersion: 1 | 2,
+  options: {
+    creatorTitle?: LegacyCosmeticSnapshot | null;
+  } = {}
+): ScribbitLegacy => {
+  const xp = normalizeNonNegativeInteger(scribbit.xp);
+  const level = getLevelForXp(xp);
+  const upgrades =
+    schemaVersion === 2
+      ? parseCompleteScribbitUpgrades(scribbit.upgrades, level)
+      : [];
+  if (!upgrades) {
+    throw new Error('Cannot archive malformed Ink Mod progression.');
+  }
+  return {
+    schemaVersion,
+    archivedDay: scribbit.expiresDay,
+    finish: inferLegacyFinish(scribbit),
+    creatorTitle: options.creatorTitle ? { ...options.creatorTitle } : null,
+    level,
+    xp,
+    wins: normalizeNonNegativeInteger(scribbit.wins),
+    losses: normalizeNonNegativeInteger(scribbit.losses),
+    belief: normalizeNonNegativeInteger(scribbit.belief),
+    accessories: scribbit.accessories.map(snapshotCosmetic),
+    upgrades: upgrades.map((upgrade) => ({ ...upgrade })),
+  };
+};
+
 export const createScribbitLegacy = (
   scribbit: Scribbit,
   options: {
     creatorTitle?: LegacyCosmeticSnapshot | null;
   } = {}
 ): ScribbitLegacy => {
-  const xp = normalizeNonNegativeInteger(scribbit.xp);
-  return {
-    schemaVersion: 2,
-    archivedDay: scribbit.expiresDay,
-    finish: inferLegacyFinish(scribbit),
-    creatorTitle: options.creatorTitle ? { ...options.creatorTitle } : null,
-    level: getLevelForXp(xp),
-    xp,
-    wins: normalizeNonNegativeInteger(scribbit.wins),
-    losses: normalizeNonNegativeInteger(scribbit.losses),
-    belief: normalizeNonNegativeInteger(scribbit.belief),
-    accessories: scribbit.accessories.map(snapshotCosmetic),
-    upgrades: scribbit.upgrades.map((upgrade) => ({ ...upgrade })),
-  };
+  return createScribbitLegacySnapshot(scribbit, 2, options);
 };
 
 const normalizeStoredLegacy = (
@@ -964,6 +964,16 @@ const normalizeStoredLegacy = (
   }
 
   const xp = normalizeNonNegativeInteger(value.xp);
+  const level = getLevelForXp(xp);
+  const schemaVersion = value.schemaVersion === 2 ? 2 : 1;
+  const upgrades =
+    schemaVersion === 2
+      ? parseCompleteScribbitUpgrades(value.upgrades, level)
+      : value.upgrades === undefined ||
+          (Array.isArray(value.upgrades) && value.upgrades.length === 0)
+        ? []
+        : undefined;
+  if (!upgrades) return undefined;
   const creatorTitle = normalizeLegacyCosmetic(
     value.creatorTitle ?? value.creatorTitleId
   );
@@ -977,29 +987,27 @@ const normalizeStoredLegacy = (
         .slice(0, MAX_ACCESSORIES_PER_SCRIBBIT)
     : [];
   return {
-    schemaVersion: value.schemaVersion === 2 ? 2 : 1,
+    schemaVersion,
     archivedDay: scribbit.expiresDay,
     finish: value.finish,
     creatorTitle: creatorTitle ?? null,
-    level: getLevelForXp(xp),
+    level,
     xp,
     wins: normalizeNonNegativeInteger(value.wins),
     losses: normalizeNonNegativeInteger(value.losses),
     belief: normalizeNonNegativeInteger(value.belief),
     accessories: legacyAccessories,
-    upgrades:
-      value.schemaVersion === 2
-        ? normalizeScribbitUpgrades(value.upgrades)
-        : [],
+    upgrades,
   };
 };
 
 export const isScribbit = (value: unknown): value is Scribbit => {
-  return normalizeScribbitRecord(value) !== undefined;
+  return normalizeScribbitRecordValue(value, false) !== undefined;
 };
 
-export const normalizeScribbitRecord = (
-  value: unknown
+const normalizeScribbitRecordValue = (
+  value: unknown,
+  allowPreFeatureMigration: boolean
 ): Scribbit | undefined => {
   if (!isRecord(value) || !isScribbitStats(value.stats)) {
     return undefined;
@@ -1024,6 +1032,43 @@ export const normalizeScribbitRecord = (
     const level = getLevelForXp(xp);
     const careDoneToday = normalizeCareDoneToday(value.careDoneToday);
     const status = value.status;
+    let upgrades: Scribbit['upgrades'];
+    if (status === 'alive') {
+      if (allowPreFeatureMigration) {
+        const upgradeResolution = resolveStoredScribbitUpgrades(
+          value.id,
+          level,
+          value.upgrades
+        );
+        if (upgradeResolution.status === 'invalid') return undefined;
+        upgrades = [...upgradeResolution.upgrades];
+      } else {
+        const parsedUpgrades = parseCompleteScribbitUpgrades(
+          value.upgrades,
+          level
+        );
+        if (!parsedUpgrades) return undefined;
+        upgrades = parsedUpgrades;
+      }
+    } else {
+      const hasVersionTwoLegacy =
+        isRecord(value.legacy) && value.legacy.schemaVersion === 2;
+      if (hasVersionTwoLegacy) {
+        const parsedUpgrades = parseCompleteScribbitUpgrades(
+          value.upgrades,
+          level
+        );
+        if (!parsedUpgrades) return undefined;
+        upgrades = parsedUpgrades;
+      } else if (
+        value.upgrades === undefined ||
+        (Array.isArray(value.upgrades) && value.upgrades.length === 0)
+      ) {
+        upgrades = [];
+      } else {
+        return undefined;
+      }
+    }
 
     const normalizedScribbit: Scribbit = {
       id: value.id,
@@ -1044,10 +1089,7 @@ export const normalizeScribbitRecord = (
       legendTitle: value.legendTitle,
       isFounding: value.isFounding,
       accessories: normalizeScribbitAccessories(value.accessories),
-      upgrades:
-        status === 'alive'
-          ? reconcileScribbitUpgrades(value.id, level, value.upgrades)
-          : normalizeScribbitUpgrades(value.upgrades),
+      upgrades,
       level,
       xp,
       mood: isMood(value.mood)
@@ -1058,15 +1100,29 @@ export const normalizeScribbitRecord = (
     };
 
     if (normalizedScribbit.status !== 'alive') {
-      normalizedScribbit.legacy =
-        normalizeStoredLegacy(value.legacy, normalizedScribbit) ??
-        createScribbitLegacy(normalizedScribbit);
+      if (value.legacy === undefined || value.legacy === null) {
+        if (!allowPreFeatureMigration) return undefined;
+        normalizedScribbit.legacy = createScribbitLegacySnapshot(
+          normalizedScribbit,
+          1
+        );
+      } else {
+        const legacy = normalizeStoredLegacy(value.legacy, normalizedScribbit);
+        if (!legacy) return undefined;
+        normalizedScribbit.legacy = legacy;
+      }
     }
 
     return normalizedScribbit;
   }
 
   return undefined;
+};
+
+export const normalizeScribbitRecord = (
+  value: unknown
+): Scribbit | undefined => {
+  return normalizeScribbitRecordValue(value, true);
 };
 
 export const parseScribbit = (
@@ -1124,28 +1180,6 @@ export const createScribbit = (options: {
     mood: 'hungry',
     careDoneToday: [],
     legacy: null,
-  };
-};
-
-export const cloneScribbit = (scribbit: Scribbit): Scribbit => {
-  return {
-    ...scribbit,
-    stats: { ...scribbit.stats },
-    accessories: [...scribbit.accessories],
-    upgrades: scribbit.upgrades.map((upgrade) => ({ ...upgrade })),
-    careDoneToday: [...scribbit.careDoneToday],
-    legacy: scribbit.legacy
-      ? {
-          ...scribbit.legacy,
-          creatorTitle: scribbit.legacy.creatorTitle
-            ? { ...scribbit.legacy.creatorTitle }
-            : null,
-          accessories: scribbit.legacy.accessories.map((accessory) => ({
-            ...accessory,
-          })),
-          upgrades: scribbit.legacy.upgrades.map((upgrade) => ({ ...upgrade })),
-        }
-      : null,
   };
 };
 
@@ -1250,17 +1284,58 @@ export const loadScribbits = async (
   return scribbits;
 };
 
+const prepareScribbitForStorage = (scribbit: Scribbit): Scribbit => {
+  const normalizedScribbit = normalizeScribbitRecordValue(scribbit, false);
+  if (!normalizedScribbit) {
+    throw new Error('Scribbit failed authoritative runtime validation.');
+  }
+  return normalizedScribbit;
+};
+
+const setValidatedScribbitRecord = async (
+  storage: ArenaStorage,
+  scribbit: Scribbit
+): Promise<void> => {
+  if (!storage.watch) {
+    throw new Error('Safe Scribbit storage requires transaction support.');
+  }
+  const key = getScribbitKey(scribbit.id);
+  const scribbitJson = JSON.stringify(scribbit);
+
+  for (
+    let attempt = 0;
+    attempt < MAX_WATCH_TRANSACTION_ATTEMPTS;
+    attempt += 1
+  ) {
+    let transaction: ArenaTransaction | undefined;
+    try {
+      transaction = await storage.watch(key);
+      const existingJson = await storage.get(key);
+      if (existingJson !== undefined && !parseScribbit(existingJson)) {
+        throw new Error(
+          `Stored Scribbit ${scribbit.id} is invalid and was preserved.`
+        );
+      }
+      await transaction.multi();
+      await transaction.set(key, scribbitJson);
+      const result = await transaction.exec();
+      if (Array.isArray(result) && result.length > 0) return;
+    } catch (error) {
+      await discardWatchedTransaction(transaction, 'Scribbit storage');
+      throw error;
+    }
+  }
+
+  throw new Error(`Scribbit ${scribbit.id} changed too often to save safely.`);
+};
+
 export const storeScribbit = async (
   storage: ArenaStorage,
   ownerUserId: string,
   scribbit: Scribbit
 ): Promise<void> => {
-  const storedScribbit = cloneScribbit(scribbit);
-
-  await storage.set(
-    getScribbitKey(storedScribbit.id),
-    JSON.stringify(storedScribbit)
-  );
+  const storedScribbit = prepareScribbitForStorage(scribbit);
+  await setValidatedScribbitRecord(storage, storedScribbit);
   await storage.set(getScribbitOwnerKey(storedScribbit.id), ownerUserId);
   await storage.zAdd(getUserScribbitsKey(ownerUserId), {
     member: storedScribbit.id,
@@ -1292,10 +1367,8 @@ export const updateScribbit = async (
     return;
   }
 
-  await storage.set(
-    getScribbitKey(scribbit.id),
-    JSON.stringify(cloneScribbit(scribbit))
-  );
+  const storedScribbit = prepareScribbitForStorage(scribbit);
+  await setValidatedScribbitRecord(storage, storedScribbit);
 };
 
 type AliveScribbitMutationResult = {

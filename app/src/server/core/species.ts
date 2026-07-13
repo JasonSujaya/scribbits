@@ -1,7 +1,7 @@
 import type { Scribbit } from '../../shared/arena';
-import { LEVEL_XP_THRESHOLDS } from '../../shared/arena';
+import { cloneScribbit, LEVEL_XP_THRESHOLDS } from '../../shared/arena';
 import { selectPrimaryPower } from '../../shared/combat/selection';
-import { reconcileScribbitUpgrades } from '../../shared/combat/upgrades';
+import { createScribbitUpgradesForLevel } from '../../shared/combat/upgrades';
 import {
   FOUNDING_SCRIBBIT_DEFINITIONS,
   type FoundingScribbitDefinition,
@@ -27,7 +27,7 @@ const createFoundingScribbit = (
     legendTitle: null,
     isFounding: true,
     accessories: [],
-    upgrades: reconcileScribbitUpgrades(definition.id, definition.level, []),
+    upgrades: createScribbitUpgradesForLevel(definition.id, definition.level),
     level: definition.level,
     xp: LEVEL_XP_THRESHOLDS[definition.level - 1] ?? 0,
     mood: definition.mood,
@@ -44,21 +44,11 @@ const foundingScribbitsById = new Map<string, Scribbit>(
   foundingScribbits.map((scribbit) => [scribbit.id, scribbit])
 );
 
-const cloneFoundingScribbit = (scribbit: Scribbit): Scribbit => {
-  return {
-    ...scribbit,
-    stats: { ...scribbit.stats },
-    accessories: [...scribbit.accessories],
-    upgrades: scribbit.upgrades.map((upgrade) => ({ ...upgrade })),
-    careDoneToday: [...scribbit.careDoneToday],
-  };
-};
-
 export const findFoundingScribbit = (
   scribbitId: string
 ): Scribbit | undefined => {
   const foundingScribbit = foundingScribbitsById.get(scribbitId);
-  return foundingScribbit ? cloneFoundingScribbit(foundingScribbit) : undefined;
+  return foundingScribbit ? cloneScribbit(foundingScribbit) : undefined;
 };
 
 export const chooseFoundingSparOpponent = (
@@ -104,7 +94,7 @@ export const chooseFoundingSparOpponent = (
     throw new Error('Founding spar roster is empty');
   }
 
-  return cloneFoundingScribbit(opponent);
+  return cloneScribbit(opponent);
 };
 
 type FoundingSparRivalCandidate = {
@@ -232,6 +222,6 @@ export const selectFoundingSparRivalSlate = (
   selectCandidates(extraLevelCandidates, false);
 
   return selectedCandidates.map(({ scribbit }) => {
-    return cloneFoundingScribbit(scribbit);
+    return cloneScribbit(scribbit);
   });
 };

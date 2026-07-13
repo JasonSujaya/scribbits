@@ -45,7 +45,7 @@ currency, or combat power.
 
 ## Current Ship Gates
 
-- [x] `pnpm verify` passes: TypeScript, ESLint, 146 deterministic simulation
+- [x] `pnpm verify` passes: TypeScript, ESLint, 151 deterministic simulation
       groups, and the production build (July 13).
 - [x] Production and localhost now share one submission, progression, reward,
       capsule, title, and accessory rules boundary. Repeat daily submissions,
@@ -121,14 +121,23 @@ currency, or combat power.
       lagging HP loss, visible arena folding, mute control, exact drawing art,
       and zero captured runtime errors on `localhost:8902` (July 11).
 - [x] The real-time replay now has a distinct paper arena instead of fixed
-      turn-like podiums or a broadcast dashboard: full-height torn paper,
-      clipping-safe 232px fighters, localized element stains, a rough truthful
-      boundary, transcript-reactive surges, compact numeric-HP/Shape Power state
-      strips, a smaller server clock, a compact server-lock label, a
+      turn-like podiums or a broadcast dashboard: ten server-selected stages,
+      clipping-safe 280px fighters, localized element washes, a rough truthful
+      boundary, transcript-reactive surges, visual HP bars, transient Shape Power
+      states, a smaller server clock, a compact arena caption, a
       15-second Sudden Scribble rush, and a transient commentary margin. Every
       replay ends by 20 seconds. Default, chosen-rival, 320x568 WebGL,
       Canvas, reduced-motion, Skip, and instrumented 1x -> 2x -> 4x -> normal-speed
       result paths have zero captured runtime or browser errors (July 11).
+- [x] Every arena now closes its loop with one server-scored micro-goal. Replay
+      renders the stored cleared/progress state on the compact result card and
+      accessibility announcement without inventing rewards or client-side combat
+      truth. Fresh 393x852 WebGL proof finishes at 60 FPS with zero runtime errors
+      (July 13).
+- [x] Arena now reveals the canonical daily micro-goal before the player chooses
+      a fighter or rival. One target-icon headline replaces the generic
+      `CHOOSE FIGHTER` box, the accessible Fight action includes the arena and
+      goal, and the result closes the same server-scored loop (July 13).
 - [x] Every current fight path—including a chosen Rival Draft rematch—now runs a
       mode-specific paper VS ceremony with both exact signature moves and one
       verified mechanics card. Deterministic coverage exhausts all sixteen ordered

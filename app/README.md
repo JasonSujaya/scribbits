@@ -7,7 +7,7 @@ enter daily community rumbles. The app identity is `scribbits` in
 
 All main scenes share `lib/appdock.ts`, the generated Craftbox paper stage, the
 same five optical-weight code-native navigation icons, and one GPT-generated
-hand-cut button family for primary, secondary, Back, close, and pagination
+hand-cut button family for primary, secondary, Pick, close, and pagination
 actions. The dock uses a flat contained active tile, readable labels, and no
 micro-badges or protruding cutout. DynaPuff 400/700 is
 bundled locally through Fontsource and loaded before Phaser renders text. Shared
@@ -56,13 +56,12 @@ copy should keep the default view to one headline, one status, and one action.
    cooldowns while the page completes its inward fold.
    There is no turn-based player path or outcome-changing cheer input;
    transcript-less records render as archived-result summaries.
-   The real-time paper arena uses one clipping-safe movement field and 232px
-   drawings on a deterministic torn page. Local element stains, an irregular
-   double-ink boundary, edge spectators, and transcript-triggered color surges
-   leave the combat center readable. A compact paper rail keeps battle kind,
-   server lock, and icon controls visible; fighter strips show names, numeric HP, exact
-   signature powers, and READY → WINDUP → ACTIVE state around a smaller
-   fixed-tick clock. Real transcript moments appear in a transient paper margin
+   The real-time paper arena uses one clipping-safe movement field and 280px
+   drawings across ten server-selected stage skins. Local element washes, a
+   truthful closing boundary, and transcript-triggered color surges leave the
+   combat center readable. The compact HUD keeps one arena label, names, visual
+   health bars, a small fixed-tick clock, and large sound/speed/Skip icons; Shape
+   Power state appears only while it changes. Real transcript moments appear in a transient paper margin
    instead of a permanent broadcast lower third. A
    presentation-only editorial queue chooses the
    strongest candidate per simulation tick, holds each displayed line for 900ms
@@ -89,7 +88,12 @@ copy should keep the default view to one headline, one status, and one action.
    The finish is equally transcript-driven: a compact Inkcast Recap says
    `YOU WON`, `YOU LOST`, or names the spectator winner before the exact verdict,
    duration, final HP, and one Shape-Power lesson such as
-   `FINAL SPLAT · THUNDERFOLD · 25 DAMAGE`. Owned exhibitions promote `CHOOSE A RIVAL` to one
+   `FINAL SPLAT · THUNDERFOLD · 25 DAMAGE`. Each server-selected arena also has
+   one small transcript-scored goal; Replay shows its exact cleared or progress
+   state on the result card without granting a second reward or recalculating it
+   in the client. Arena reveals that canonical daily goal before fighter and
+   rival selection through one target-icon headline, replacing the generic
+   `CHOOSE FIGHTER` box instead of adding another dashboard. Owned exhibitions promote `CHOOSE A RIVAL` to one
    primary action beside one compact return. When no Rival draft is available,
    tonight's pick becomes the primary; Practice remains reachable from Arena
    instead of competing with the result. Knockouts fold only
@@ -189,18 +193,18 @@ copy should keep the default view to one headline, one status, and one action.
    power—with no combat hooks.
    Living Scribbits also grow from level 1 to 5, but the full arc adds only 1.5%
    damage and is statistically capped at a 60% equal-build win rate.
-4. **Back:** choose another player’s contender before the nightly resolution.
+4. **Pick:** choose another player’s contender before the nightly resolution.
    Champion backers earn 3 Clout; runner-up backers earn 1.
    The Arena home shows only a three-portrait `TONIGHT'S RUMBLE` preview and one
    heart action. Tapping it opens the focused eight-contender picker; the grid is
    never part of the default home stack. Each contender keeps one inspect target
    and one server-planned heart or lock state, and the selected card turns gold.
-   If the player skipped Back but entered an owned Scribbit, the next visit leads
+   If the player skipped their Pick but entered an owned Scribbit, the next visit leads
    with that drawing's exact Rumble W/L, committed XP, committed Ink, and a
    server-selected last-bout replay. The client never reconstructs those rewards
    from cumulative totals.
 5. **Scout:** the fifth app tab is a seven-page Scout Notebook covering tonight
-   and up to six prior Arena days. It projects only server-owned Back records,
+   and up to six prior Arena days. It projects only server-owned Pick records,
    payout receipts, forecasts, lifetime Clout, and visible report/Scribbit
    snapshots into open, pending, champion, finalist, no-Clout, or missed pages.
    The selected drawing, artist, element, exact payout, and replay availability are
@@ -214,7 +218,7 @@ copy should keep the default view to one headline, one status, and one action.
    view adds no Redis key, reward, title, or combat authority; generated trophy
    and info controls keep Clout and the Field Guide secondary.
 6. **Return:** keep the visible UTC-day streak alive. The scheduler resolves
-   the bracket, crowns the Champion, stores the backed Scribbit's last played
+   the Rumble, crowns the Champion, stores the picked Scribbit's last played
    bout, creates the next Rumble post, and comments the real result on the
    resolved post. New archived pages lead into the scouting receipt, its
    server-selected replay, and then the Legacy Book.
@@ -289,6 +293,14 @@ boundary during browser iteration—it is not the production game server.
   valid forecasts/builds, and replay privacy requirements.
 - `src/shared/combat`: deterministic fixed-tick combat domain, balance tuning,
   transcript contract, and regression tests.
+- `src/shared/progression.ts`: dependency-leaf level thresholds, level lookup,
+  and Ink Mod acquisition limits shared by client, server, and combat.
+- `src/shared/arena.ts`: shared API and stored-state shapes plus the single
+  full-record Scribbit deep-copy policy used by storage, combat, Rumble,
+  founders, and the localhost mock.
+- `src/shared/combat/upgrades.ts`: the versioned Ink Mod catalog, deterministic
+  acquisition, and strict stored-state parsing. Only absent pre-feature data is
+  migrated; malformed present arrays fail closed.
 - `src/shared/combat/selection.ts`: the single dominant-stat and Shape Power
   selector shared by server simulation, drawing preview, Inkbody, and founder art.
 - `src/shared/combat/shapepowercontent.ts`: shared names, reveal copy, neutral
@@ -302,12 +314,15 @@ boundary during browser iteration—it is not the production game server.
 - `src/shared/combat/transcriptvalidation.ts`: the one browser-safe, version-aware
   runtime parser for transcript fighters, events, checkpoints, and results. Both
   storage and Replay fail closed through it.
+- `src/shared/legacycards.ts`: the browser-safe Legacy Card projection, cursor,
+  ordering, page-limit, return-preview, and seen-day policy shared by production
+  and the localhost mock.
 - `src/server/index.ts`: Hono server entry point.
 - `src/server/routes/api.ts`: REST API mounted at `/api`.
 - `src/server/core`: Redis-backed domain logic for arena days, Scribbits, ink,
   clout, battles, forecasts, daily jobs, and Reddit result comments.
-- `src/server/core/legacy.ts`: personal Legacy indexing, migration, cursor
-  pagination, and one-time return receipts over immutable retired snapshots.
+- `src/server/core/legacy.ts`: personal Legacy Redis indexing, migration, bounded
+  index scans, and one-time receipt persistence over immutable retired snapshots.
 - `src/server/core/battleStore.ts`: battle reports, per-Scribbit history, and
   the ordered featured Rumble report index used by overnight receipts.
 - `src/server/core/founderChronicle.ts`: versioned player-level Rival Thread
@@ -321,7 +336,7 @@ boundary during browser iteration—it is not the production game server.
   dependency. Redis request leases, migration guards, and rate keys protect the
   endpoint without turning Practice into progression state.
 - `src/server/core/scoutNotebook.ts`: bounded best-effort assembly over existing
-  eight-day Back records, payout receipts, forecasts, lifetime Clout, and
+  eight-day Pick records, payout receipts, forecasts, lifetime Clout, and
   30-day featured reports. It never reads `champion:current` for historical
   identity; it may ensure the existing deterministic forecast records but adds
   no Scout-specific persistence.
@@ -361,10 +376,10 @@ boundary during browser iteration—it is not the production game server.
 - `src/client/lib/scoutnotebook.ts`: pure page/summary planning from server
   statuses and payouts; `scenes/ScoutNotebook.ts` renders the paper notebook,
   day tabs, drawing snapshots, and same-day Replay return without deriving wins.
-- `src/client/lib/replaybattlebackground.ts`: deterministic torn-paper arena with
-  reduced-motion-safe edge ambience and transcript-triggered power surges;
-  `replaybattlehud.ts` owns the server-locked paper rail, compact numeric-HP and
-  Shape Power state strips, clock, controls, and transient commentary margin.
+- `src/client/lib/replaybattlebackground.ts`: ten deterministic stage skins,
+  including the dedicated Sticker Stadium art, with reduced-motion-safe ambience
+  and transcript-triggered power surges; `replaybattlehud.ts` owns names, visual
+  health bars, the arena caption, clock, icon controls, and transient commentary.
 - `src/client/lib/matchupbrief.ts`: pure mode-title, exact-signature, and
   exhaustive ten-pair Shape Power mechanics planning with no winner prediction;
   `battleceremony.ts` renders the plan before every current battle path.
@@ -409,8 +424,6 @@ boundary during browser iteration—it is not the production game server.
   finish treatments, pagination controls, and return ceremony.
 - `src/client/lib/legacyreturnpresentation.ts`: pure hero priority and bounded
   copy for the compact one-time Legacy return.
-- `src/client/lib/nextgoal.ts`: pure deterministic post-draw action priority and
-  compact XP, Belief, lifespan, Ink, and collection evidence.
 - `src/client/lib/livesprite.ts`: Phaser Mesh2D Inkbody renderer with a 3x3
   Canvas fallback.
 - `src/client/lib`: Phaser UI, API wrapper, drawing canvas, modals, and effects.
@@ -487,7 +500,7 @@ Run these before handing off changes:
 pnpm verify
 ```
 
-`pnpm verify` runs type-check, lint, 146 deterministic simulation groups, and
+`pnpm verify` runs type-check, lint, 151 deterministic simulation groups, and
 the production build.
 
 `pnpm run test:sim` covers deterministic analyzer, Inkbody mesh geometry, combat

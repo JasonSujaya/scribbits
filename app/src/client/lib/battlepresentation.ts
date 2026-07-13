@@ -4,6 +4,11 @@
 import { MAX_LEVEL } from '../../shared/arena';
 import type { BattleReport } from '../../shared/arena';
 import { getLevelDamageBonusPercent } from '../../shared/battle';
+import {
+  getBattleArenaDefinition,
+  type BattleArenaChallengeProgress,
+  type BattleArenaId,
+} from '../../shared/battlearena';
 import type { FighterSlot, FixedVector } from '../../shared/combat';
 
 export type BattleImpactTier = 'light' | 'solid' | 'heavy' | 'critical';
@@ -80,18 +85,12 @@ export type ReplayFighterLayout = Readonly<{
 export type ReplayBattleLayout = Readonly<{
   viewportWidth: number;
   viewportHeight: number;
-  broadcastRailLeft: number;
-  broadcastRailTop: number;
-  broadcastRailWidth: number;
-  broadcastRailHeight: number;
   pageLeft: number;
   pageTop: number;
   pageWidth: number;
   pageHeight: number;
   toolbarY: number;
-  kindLabelX: number;
   battleKindY: number;
-  kindLabelMaximumWidth: number;
   soundButtonX: number;
   speedButtonX: number;
   skipButtonX: number;
@@ -111,8 +110,6 @@ export type ReplayBattleLayout = Readonly<{
   fighterChipHeight: number;
   battleClockX: number;
   battleClockY: number;
-  battleClockRadius: number;
-  battleClockProgressWidth: number;
   arenaTop: number;
   arenaBottom: number;
   arenaHorizontalPadding: number;
@@ -141,8 +138,15 @@ export type ReplayBattleClockPlan = Readonly<{
 }>;
 
 export type ReplayOutcomeLayout = Readonly<{
+  heroY: number;
   recapY: number;
+  lifeY: number;
   actionY: number;
+}>;
+
+export type ReplayArenaChallengeResultPlan = Readonly<{
+  label: string;
+  accessibleLabel: string;
 }>;
 
 export type ReplayPostFightActionKind =
@@ -176,12 +180,8 @@ export function planReplayBattleLayout(input: {
   const viewportWidth = Math.max(480, input.viewportWidth);
   const viewportHeight = Math.max(800, input.viewportHeight);
   const pageLeft = Math.round(clamp(viewportWidth * 0.028, 16, 20));
-  const broadcastRailLeft = Math.round(clamp(viewportWidth * 0.017, 8, 12));
-  const broadcastRailTop = 8;
-  const broadcastRailHeight = 134;
-  const broadcastRailWidth = viewportWidth - broadcastRailLeft * 2;
-  const pageTop = broadcastRailTop + broadcastRailHeight + 2;
-  const toolbarY = broadcastRailTop + 86;
+  const pageTop = 8;
+  const toolbarY = viewportHeight - 160;
   const controlGap = 8;
   const soundButtonWidth = 96;
   const speedButtonWidth = 96;
@@ -194,24 +194,22 @@ export function planReplayBattleLayout(input: {
     soundButtonX + soundButtonWidth / 2 + controlGap + speedButtonWidth / 2;
   const skipButtonX =
     speedButtonX + speedButtonWidth / 2 + controlGap + skipButtonWidth / 2;
-  const kindLabelX = broadcastRailLeft + 16;
-  const kindLabelMaximumWidth = broadcastRailWidth - 32;
   const horizontalMargin = Math.round(clamp(viewportWidth * 0.034, 18, 24));
-  const fighterCenterGap = Math.round(clamp(viewportWidth * 0.15, 84, 108));
+  const fighterCenterGap = 84;
   const healthBarWidth = Math.round(
     (viewportWidth - horizontalMargin * 2 - fighterCenterGap) / 2
   );
   const healthBarFillWidth = healthBarWidth - 10;
-  const fighterPanelTop = 148;
-  const fighterPanelHeight = 130;
-  const fighterNameY = 164;
-  const healthBarY = 201;
-  const fighterChipY = 239;
-  const fighterMetaY = 266;
+  const fighterPanelTop = 76;
+  const fighterPanelHeight = 118;
+  const fighterNameY = 88;
+  const healthBarY = 126;
+  const fighterChipY = 170;
+  const fighterMetaY = 204;
   const tickerHeight = 72;
   const tickerY = viewportHeight - 54;
-  const arenaTop = 280;
-  const arenaBottom = Math.max(arenaTop + 420, viewportHeight - 30);
+  const arenaTop = 250;
+  const arenaBottom = toolbarY - 62;
   const homeY = (arenaTop + arenaBottom) / 2;
   const leftPanelLeft = horizontalMargin;
   const rightPanelLeft = viewportWidth - horizontalMargin - healthBarWidth;
@@ -219,18 +217,12 @@ export function planReplayBattleLayout(input: {
   return {
     viewportWidth,
     viewportHeight,
-    broadcastRailLeft,
-    broadcastRailTop,
-    broadcastRailWidth,
-    broadcastRailHeight,
     pageLeft,
     pageTop,
     pageWidth: viewportWidth - pageLeft * 2,
     pageHeight: viewportHeight - pageTop - 18,
     toolbarY,
-    kindLabelX,
-    battleKindY: broadcastRailTop + 26,
-    kindLabelMaximumWidth,
+    battleKindY: 35,
     soundButtonX,
     speedButtonX,
     skipButtonX,
@@ -242,20 +234,18 @@ export function planReplayBattleLayout(input: {
     healthBarY,
     healthBarWidth,
     healthBarFillWidth,
-    healthBarHeight: 34,
-    healthBarFillHeight: 24,
+    healthBarHeight: 40,
+    healthBarFillHeight: 28,
     fighterNameY,
     fighterMetaY,
     fighterChipY,
     fighterChipHeight: 28,
     battleClockX: viewportWidth / 2,
-    battleClockY: healthBarY,
-    battleClockRadius: 25,
-    battleClockProgressWidth: 34,
+    battleClockY: 65,
     arenaTop,
     arenaBottom,
-    arenaHorizontalPadding: Math.round(clamp(viewportWidth * 0.164, 96, 118)),
-    arenaVerticalPadding: 106,
+    arenaHorizontalPadding: Math.round(clamp(viewportWidth * 0.23, 140, 160)),
+    arenaVerticalPadding: 140,
     tickerX: viewportWidth / 2,
     tickerY,
     tickerWidth: Math.min(viewportWidth - 40, 664),
@@ -295,11 +285,35 @@ export function planReplayBattleLayout(input: {
 export function planReplayOutcomeLayout(input: {
   viewportHeight: number;
 }): ReplayOutcomeLayout {
-  const viewportHeight = Math.max(800, input.viewportHeight);
+  const viewportHeight = Math.max(1_280, input.viewportHeight);
   return {
-    recapY: viewportHeight - 330,
-    actionY: viewportHeight - 96,
+    heroY: Math.round(viewportHeight * 0.35),
+    recapY: viewportHeight - 450,
+    lifeY: viewportHeight - 265,
+    actionY: viewportHeight - 120,
   };
+}
+
+/** Compact result copy for the server-scored arena mini-goal. */
+export function planReplayArenaChallengeResult(input: {
+  arenaId?: BattleArenaId;
+  progress?: BattleArenaChallengeProgress;
+}): ReplayArenaChallengeResultPlan | null {
+  if (!input.progress) return null;
+  const arena = getBattleArenaDefinition(input.arenaId);
+  const progress = Math.min(
+    input.progress.target,
+    Math.max(0, input.progress.progress)
+  );
+  const goal = arena.challengeLabel.toUpperCase();
+  return Object.freeze({
+    label: input.progress.completed
+      ? `GOAL CLEARED • ${goal}`
+      : `${goal} • ${progress}/${input.progress.target}`,
+    accessibleLabel: input.progress.completed
+      ? `Arena goal cleared: ${arena.challengeLabel}.`
+      : `Arena goal: ${arena.challengeLabel}. ${progress} of ${input.progress.target}.`,
+  });
 }
 
 /** One obvious next move, with optional utilities kept visually secondary. */
@@ -350,8 +364,8 @@ export function planReplayPostFightActions(input: {
     return Object.freeze({
       primary: Object.freeze({
         kind: 'backContender',
-        label: "PICK TONIGHT'S WINNER",
-        accessibleLabel: "Pick tonight's winner",
+        label: 'PICK RUMBLE',
+        accessibleLabel: 'Pick a Rumble contender',
         tone: 'gold',
       }),
       replayAction,
