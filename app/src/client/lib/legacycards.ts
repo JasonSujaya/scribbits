@@ -6,6 +6,7 @@ import type {
   LegacyReturnReceipt,
 } from '../../shared/arena';
 import { fitDrawing, loadDrawing } from './scribbits';
+import { fitText } from './fittext';
 import { paperIcon, type PaperIconKey } from './papericons';
 import {
   formatLegacyFinishLabel,
@@ -85,8 +86,6 @@ export function renderLegacyBook(options: LegacyBookOptions): void {
   const { scene, top } = options;
   const { width, height } = scene.scale;
 
-  buildPageControls(options, top - 24);
-
   if (!options.loggedIn) {
     buildMessageCard(
       scene,
@@ -155,12 +154,14 @@ export function renderLegacyBook(options: LegacyBookOptions): void {
       x: firstX + column * (cardWidth + CARD_GAP),
       y: firstY + row * CARD_ROW_STEP,
       width: cardWidth,
-      tilt: index % 2 === 0 ? -0.35 : 0.35,
+      tilt: 0,
       onOpen: () =>
         openLegacyCardDetail(scene, card, () => options.onPrimaryAction(card)),
       actionOverlay: options.actionOverlay,
     });
   });
+
+  buildPageControls(options, top + 665);
 
   // The fixed app dock starts at this line. Keeping the geometry explicit makes
   // the 2x2 deck safe at the 720x1280 design size and every Scale.FIT viewport.
@@ -270,16 +271,6 @@ function buildLegacyCard(options: {
     36,
     9
   );
-  if (finish === 'champion') {
-    accent.lineStyle(2, style.accent, 0.72);
-    accent.strokeRoundedRect(
-      -width / 2 + 18,
-      -CARD_HEIGHT / 2 + 54,
-      width - 36,
-      CARD_HEIGHT - 68,
-      12
-    );
-  }
   card.add(accent);
 
   const seal = paperIcon(scene, style.icon, 0, -CARD_HEIGHT / 2 + 30, {
@@ -288,19 +279,11 @@ function buildLegacyCard(options: {
   });
   card.add(seal);
 
-  const artY = -37;
-  const artSize = 112;
+  const artY = -30;
+  const artSize = 118;
   const artFrame = scene.add.graphics();
   artFrame.fillStyle(UI.creamHex, 1);
   artFrame.fillRoundedRect(
-    -artSize / 2,
-    artY - artSize / 2,
-    artSize,
-    artSize,
-    12
-  );
-  artFrame.lineStyle(3, style.accent, finish === 'faded' ? 0.72 : 1);
-  artFrame.strokeRoundedRect(
     -artSize / 2,
     artY - artSize / 2,
     artSize,
@@ -321,27 +304,23 @@ function buildLegacyCard(options: {
   const name = label(
     scene,
     0,
-    45,
+    52,
     fitText(legacyCard.name.toUpperCase(), 18),
-    26,
+    25,
     UI.ink,
     true
   ).setWordWrapWidth(width - 28);
   const finishLine = label(
     scene,
     0,
-    78,
+    88,
     `${formatLegacyFinishLabel(legacyCard)} · DAY ${legacyCard.legacy.archivedDay}`,
     17,
     style.accentText,
     true
   );
-  const openMark = scene.add.graphics();
-  openMark.lineStyle(4, style.accent, 1);
-  openMark.lineBetween(width / 2 - 42, 108, width / 2 - 22, 108);
-  openMark.lineBetween(width / 2 - 30, 100, width / 2 - 22, 108);
-  openMark.lineBetween(width / 2 - 30, 116, width / 2 - 22, 108);
-  card.add([name, finishLine, openMark]);
+  const openLabel = label(scene, 0, 116, 'TAP TO OPEN', 17, UI.inkSoft, true);
+  card.add([name, finishLine, openLabel]);
 
   if (finish === 'champion' && !prefersReducedMotion()) {
     const glint = label(
@@ -680,9 +659,15 @@ export function openLegacyReturnCeremony(
   const style = FINISH_STYLES[finish];
   const turnedGold = finish !== 'faded';
   const layer = scene.add.container(0, 0).setScrollFactor(0).setDepth(3400);
-  const actionOverlay = new CanvasActionOverlay(scene);
+  let dismissCeremony = (): void => {};
+  const modalActions = new CanvasModalOverlay(
+    scene,
+    'Legacy return',
+    () => dismissCeremony(),
+    accessibilitySummary
+  );
   let busy = false;
-  layer.once('destroy', () => actionOverlay.destroy());
+  layer.once('destroy', () => modalActions.destroy());
   const shade = scene.add
     .rectangle(width / 2, height / 2, width + 80, height + 80, UI.inkHex, 0.68)
     .setInteractive();
@@ -705,9 +690,9 @@ export function openLegacyReturnCeremony(
     tapeColor: style.tape,
   });
   layer.add(page);
-  const dismissCeremony = (): void => {
+  dismissCeremony = (): void => {
     if (busy || !layer.active) return;
-    actionOverlay.destroy();
+    modalActions.destroy();
     layer.destroy(true);
     onDismiss?.();
   };
@@ -722,7 +707,7 @@ export function openLegacyReturnCeremony(
       90
     )
   );
-  actionOverlay.add({
+  modalActions.add({
     label: `Close Legacy return for now. ${accessibilitySummary}`,
     rect: {
       x: width / 2 + (width - 100) / 2 - 108,
@@ -796,18 +781,18 @@ export function openLegacyReturnCeremony(
   const continueFromCeremony = (): void => {
     if (!inputReady || busy) return;
     busy = true;
-    actionOverlay.setVisible(false);
+    modalActions.setVisible(false);
     status.setText('FILING…').setColor(UI.inkSoft);
     void onContinue()
       .then((errorMessage) => {
         if (!errorMessage) return;
         busy = false;
-        actionOverlay.setVisible(true);
+        modalActions.setVisible(true);
         status.setText(errorMessage).setColor(UI.coralText);
       })
       .catch(() => {
         busy = false;
-        actionOverlay.setVisible(true);
+        modalActions.setVisible(true);
         status
           .setText('The archive stamp slipped. Try again.')
           .setColor(UI.coralText);
@@ -826,7 +811,7 @@ export function openLegacyReturnCeremony(
       UI.ink
     )
   );
-  actionOverlay.add({
+  const continueControl = modalActions.add({
     label: `${continueLabel}. ${accessibilitySummary}`,
     rect: {
       x: 105,
@@ -838,7 +823,7 @@ export function openLegacyReturnCeremony(
   });
 
   if (!inputReady) {
-    actionOverlay.setVisible(false);
+    modalActions.setVisible(false);
     page.setAlpha(0).setScale(0.94);
     scene.tweens.add({
       targets: page,
@@ -848,9 +833,12 @@ export function openLegacyReturnCeremony(
       ease: 'Back.easeOut',
       onComplete: () => {
         inputReady = true;
-        actionOverlay.setVisible(true);
+        modalActions.setVisible(true);
+        modalActions.focusInitial(continueControl);
       },
     });
+  } else {
+    modalActions.focusInitial(continueControl);
   }
   return layer;
 }
@@ -871,10 +859,4 @@ function achievementLine(card: LegacyCard): string {
     return card.legendTitle ?? 'Believed into the Hall of Legends';
   }
   return `Finished its arena run on Day ${card.legacy.archivedDay}`;
-}
-
-function fitText(value: string, maxCharacters: number): string {
-  const compact = value.trim();
-  if (compact.length <= maxCharacters) return compact;
-  return `${compact.slice(0, Math.max(1, maxCharacters - 1)).trimEnd()}…`;
 }

@@ -8,6 +8,8 @@ import { saveBattleReport, setFeaturedRumbleReport } from './battleStore';
 import {
   ensureCurrentArenaDay,
   ensureForecastForDay,
+  getActiveScribbitSubmissionsKey,
+  getNightlyResolutionClaimsKey,
   setCurrentArenaDay,
   setCurrentChampion,
 } from './arenaStore';
@@ -22,7 +24,11 @@ import {
 } from './inkStore';
 import { findInkCatalogEntry } from './ink';
 import { resolveSwissRumble } from './rumble';
-import type { ArenaStorage } from './storage';
+import type { ArenaStorage, ArenaTransaction } from './storage';
+import {
+  discardWatchedTransaction,
+  MAX_WATCH_TRANSACTION_ATTEMPTS,
+} from './storage';
 import type { NightlyFencedStorage } from './nightlyStorageFence';
 import {
   crownScribbit,
@@ -95,32 +101,154 @@ export type ResolvedArenaDay = {
 };
 
 const resolutionOutboxKey = 'arena:resolution-outbox';
-const nightlyClaimKey = 'arena:nightly-resolution-claims';
 const nightlyClaimTimeoutMs = 10 * 60 * 1000;
+
+const parseNightlyClaimedAtMs = (storedClaim: string | undefined): number => {
+  if (storedClaim === undefined) return Number.NaN;
+  const legacyTimestamp = Number(storedClaim);
+  if (Number.isFinite(legacyTimestamp)) return legacyTimestamp;
+  try {
+    const parsed: unknown = JSON.parse(storedClaim);
+    if (
+      typeof parsed === 'object' &&
+      parsed !== null &&
+      'claimedAtMs' in parsed &&
+      typeof parsed.claimedAtMs === 'number' &&
+      Number.isFinite(parsed.claimedAtMs)
+    ) {
+      return parsed.claimedAtMs;
+    }
+  } catch {
+    // Malformed historical claims are stale and can be replaced under WATCH.
+  }
+  return Number.NaN;
+};
 
 const claimArenaDayResolution = async (
   storage: ArenaStorage,
   day: number,
-  claimedAtMs: number
-): Promise<boolean> => {
+  claimedAtMs: number,
+  claimId: string
+): Promise<string | null> => {
+  const nightlyClaimKey = getNightlyResolutionClaimsKey();
+  const activeSubmissionsKey = getActiveScribbitSubmissionsKey(day);
   const field = day.toString();
-  const existingClaim = Number(await storage.hGet(nightlyClaimKey, field));
-  if (Number.isFinite(existingClaim)) {
-    if (claimedAtMs - existingClaim < nightlyClaimTimeoutMs) return false;
-    // A worker died without releasing its claim. Removal is followed by
-    // hSetNX, so only one of several rescuers can take over.
-    await storage.hDel(nightlyClaimKey, [field]);
-  }
-  return (
-    (await storage.hSetNX(nightlyClaimKey, field, claimedAtMs.toString())) === 1
+  const claimValue = JSON.stringify({ claimedAtMs, claimId });
+
+  const expiredSubmissions = await storage.zRange(
+    activeSubmissionsKey,
+    0,
+    claimedAtMs,
+    { by: 'score' }
   );
+  if (expiredSubmissions.length > 0) {
+    await storage.zRem(
+      activeSubmissionsKey,
+      expiredSubmissions.map((entry) => entry.member)
+    );
+  }
+
+  if (!storage.watch) {
+    throw new Error('Nightly resolution claim requires transaction support.');
+  }
+  for (
+    let attempt = 0;
+    attempt < MAX_WATCH_TRANSACTION_ATTEMPTS;
+    attempt += 1
+  ) {
+    let transaction: ArenaTransaction | undefined;
+    try {
+      transaction = await storage.watch(nightlyClaimKey, activeSubmissionsKey);
+      const [storedClaim, activeSubmissionCount] = await Promise.all([
+        storage.hGet(nightlyClaimKey, field),
+        storage.zCard(activeSubmissionsKey),
+      ]);
+      const existingClaimedAtMs = parseNightlyClaimedAtMs(storedClaim);
+      if (activeSubmissionCount > 0) {
+        await transaction.unwatch();
+        return null;
+      }
+      if (
+        Number.isFinite(existingClaimedAtMs) &&
+        claimedAtMs - existingClaimedAtMs < nightlyClaimTimeoutMs
+      ) {
+        await transaction.unwatch();
+        return null;
+      }
+
+      await transaction.multi();
+      await transaction.hSet(nightlyClaimKey, {
+        [field]: claimValue,
+      });
+      const result = await transaction.exec();
+      if (!Array.isArray(result) || result.length === 0) continue;
+      if (result.length !== 1) {
+        throw new Error(
+          'Nightly resolution claim returned an unexpected transaction result.'
+        );
+      }
+      if (result[0] instanceof Error) {
+        throw new Error('Nightly resolution claim command failed.', {
+          cause: result[0],
+        });
+      }
+      return claimValue;
+    } catch (error) {
+      await discardWatchedTransaction(transaction, 'Nightly resolution claim');
+      if ((await storage.hGet(nightlyClaimKey, field)) === claimValue) {
+        return claimValue;
+      }
+      throw error;
+    }
+  }
+
+  throw new Error('Nightly resolution claim changed too often to acquire.');
 };
 
 const releaseArenaDayResolution = async (
   storage: ArenaStorage,
-  day: number
+  day: number,
+  claimValue: string
 ): Promise<void> => {
-  await storage.hDel(nightlyClaimKey, [day.toString()]);
+  if (!storage.watch) {
+    throw new Error('Nightly resolution claim release requires transaction support.');
+  }
+  const nightlyClaimKey = getNightlyResolutionClaimsKey();
+  const field = day.toString();
+  for (
+    let attempt = 0;
+    attempt < MAX_WATCH_TRANSACTION_ATTEMPTS;
+    attempt += 1
+  ) {
+    let transaction: ArenaTransaction | undefined;
+    try {
+      transaction = await storage.watch(nightlyClaimKey);
+      if ((await storage.hGet(nightlyClaimKey, field)) !== claimValue) {
+        await transaction.unwatch();
+        return;
+      }
+      await transaction.multi();
+      await transaction.hDel(nightlyClaimKey, [field]);
+      const result = await transaction.exec();
+      if (!Array.isArray(result) || result.length === 0) continue;
+      if (result.length !== 1) {
+        throw new Error(
+          'Nightly resolution claim release returned an unexpected transaction result.'
+        );
+      }
+      if (result[0] instanceof Error) {
+        throw new Error('Nightly resolution claim release command failed.', {
+          cause: result[0],
+        });
+      }
+      return;
+    } catch (error) {
+      await discardWatchedTransaction(transaction, 'Nightly resolution claim release');
+      if ((await storage.hGet(nightlyClaimKey, field)) !== claimValue) return;
+      throw error;
+    }
+  }
+  throw new Error('Nightly resolution claim changed too often to release.');
 };
 
 const parseResolvedArenaDay = (
@@ -341,9 +469,13 @@ export type NightlyArenaJobOptions = {
   force?: boolean;
 };
 
+type NightlyArenaJobCoreOptions = NightlyArenaJobOptions & {
+  claimId: string;
+};
+
 const runNightlyArenaJobCore = async (
   storage: ArenaStorage,
-  options: NightlyArenaJobOptions = {}
+  options: NightlyArenaJobCoreOptions
 ): Promise<NightlyArenaJobResult> => {
   const now = options.now ?? new Date();
   const previousDay = await ensureCurrentArenaDay(storage, now);
@@ -384,21 +516,22 @@ const runNightlyArenaJobCore = async (
     const pendingResolution = await loadOutboxResolution(storage, resolvedDay);
     let resolution = pendingResolution;
     if (!resolution) {
-      const claimed = await claimArenaDayResolution(
+      const claimValue = await claimArenaDayResolution(
         storage,
         resolvedDay,
-        now.getTime()
+        now.getTime(),
+        options.claimId
       );
-      if (!claimed) {
+      if (!claimValue) {
         throw new Error(`Arena day ${resolvedDay} is already being resolved.`);
       }
       try {
         resolution = await resolveArenaDay(storage, resolvedDay, now.getTime());
       } catch (error) {
-        await releaseArenaDayResolution(storage, resolvedDay);
+        await releaseArenaDayResolution(storage, resolvedDay, claimValue);
         throw error;
       }
-      await releaseArenaDayResolution(storage, resolvedDay);
+      await releaseArenaDayResolution(storage, resolvedDay, claimValue);
     }
     if (pendingResolution) {
       await setCurrentArenaDay(storage, resolvedDay + 1);
@@ -432,15 +565,20 @@ const runNightlyArenaJobCore = async (
 
 export const runNightlyArenaJob = (
   storage: NightlyFencedStorage,
-  options: NightlyArenaJobOptions = {}
+  options: NightlyArenaJobCoreOptions
 ): Promise<NightlyArenaJobResult> => {
   return runNightlyArenaJobCore(storage, options);
 };
 
 /** Deterministic core entrypoint for the in-memory simulation suite only. */
+let testingClaimSequence = 0;
 export const runNightlyArenaJobForTesting = (
   storage: ArenaStorage,
   options: NightlyArenaJobOptions = {}
 ): Promise<NightlyArenaJobResult> => {
-  return runNightlyArenaJobCore(storage, options);
+  testingClaimSequence += 1;
+  return runNightlyArenaJobCore(storage, {
+    ...options,
+    claimId: `test-nightly-claim-${testingClaimSequence}`,
+  });
 };

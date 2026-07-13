@@ -42,7 +42,9 @@ You are writing a Devvit web application that will be executed on Reddit.com.
   `pnpm-lock.yaml` when needed, and runs the complete gate.
 - `pnpm run type-check`: Check TypeScript types
 - `pnpm run lint`: Check the linter
-- `pnpm run test:sim`: Run deterministic simulation/core regression checks
+- `pnpm test`: Run discoverable Node suites and the legacy deterministic harness
+- `pnpm run test:suites`: Run only discoverable focused suites
+- `pnpm run test:sim`: Run only the legacy deterministic harness
 - `pnpm run build`: Build client and server bundles
 
 ## Code Style

@@ -25,6 +25,8 @@ if (!existsSync(fileURLToPath(mockCombatBundleUrl))) {
 }
 const {
   CAPSULE_COST,
+  GEAR_MERGE_COPY_COST,
+  MAX_GEAR_RANK,
   COSMETIC_CATALOG,
   INK_REWARDS,
   MAX_ALIVE_PER_USER,
@@ -67,6 +69,7 @@ const {
   projectAccessoryInventoryConsumption,
   projectCapsuleInventoryGrant,
   projectEquippedTitle,
+  projectGearMerge,
   createScribbitUpgradesForLevel,
   selectFoundingSparRivalSlate,
   sortLegacyCardsNewestFirst,
@@ -390,6 +393,7 @@ const debugPowerFighters = Object.freeze({
     stats: debugPowerStats.inkquake,
     xp: 7,
     mood: 'pumped',
+    accessories: ['inkquake-rumble-belt'],
   }),
   nib_halo: makeScribbit({
     id: 'debug-nib-halo-needle-star',
@@ -399,6 +403,7 @@ const debugPowerFighters = Object.freeze({
     stats: debugPowerStats.nib_halo,
     xp: 7,
     mood: 'pumped',
+    accessories: ['tiny-sword'],
   }),
   smearstep: makeScribbit({
     id: 'debug-smearstep-quick-swipe',
@@ -408,6 +413,7 @@ const debugPowerFighters = Object.freeze({
     stats: debugPowerStats.smearstep,
     xp: 7,
     mood: 'pumped',
+    accessories: ['tiny-sword'],
   }),
   colorburst: makeScribbit({
     id: 'debug-colorburst-prism-pop',
@@ -417,6 +423,7 @@ const debugPowerFighters = Object.freeze({
     stats: debugPowerStats.colorburst,
     xp: 7,
     mood: 'pumped',
+    accessories: ['inkquake-rumble-belt'],
   }),
 });
 
@@ -571,7 +578,7 @@ const legends = [
   }),
 ];
 
-const myFaded = [
+const archivedOwnedScribbits = [
   archivedNapCloud,
   makeScribbit({
     id: 'faded-pencil-puddle',
@@ -642,6 +649,7 @@ const myFaded = [
 const emptyInventoryState = () => {
   return {
     items: {},
+    gear: {},
     pens: [],
     titles: [],
     equippedTitle: null,
@@ -657,6 +665,7 @@ const createPreviewEconomy = (options = {}) => {
     pullsSinceEpic: options.pullsSinceEpic ?? 0,
     discountedCapsuleDay: null,
     capsuleOperations: new Map(),
+    gearMergeOperations: new Map(),
     sparWinRewardUtcDates: new Set(),
   };
 };
@@ -703,7 +712,7 @@ const memory = {
   myScribbits,
   todayEntrants,
   legends,
-  myFaded,
+  archivedOwnedScribbits,
   drawnToday: false,
   enteredToday: false,
   bossChallengedToday: false,
@@ -734,6 +743,10 @@ const memory = {
           'smearstep-ink-skates': 1,
           'colorburst-rosette': 1,
           'colorburst-prism-crown': 1,
+        },
+        gear: {
+          beanie: { rank: 6, copies: 2, rarity: 'common' },
+          cape: { rank: 5, copies: 1, rarity: 'rare' },
         },
         pens: ['warm-greys', 'gold-pen', 'rainbow-crayon', 'midnight-ink'],
         titles: ['doodler', 'inkslinger', 'brushlord', 'the-pen-ultimate'],
@@ -1026,6 +1039,7 @@ const resetPreviewEconomy = (economy) => {
   economy.pullsSinceEpic = 0;
   economy.discountedCapsuleDay = null;
   economy.capsuleOperations.clear();
+  economy.gearMergeOperations.clear();
   economy.sparWinRewardUtcDates.clear();
 };
 
@@ -1060,7 +1074,11 @@ const hasEnteredTodayForPreview = (previewMode) => {
 
 const getOwnedScribbits = () => {
   const ownedById = new Map();
-  for (const list of [memory.myScribbits, memory.myFaded, memory.legends]) {
+  for (const list of [
+    memory.myScribbits,
+    memory.archivedOwnedScribbits,
+    memory.legends,
+  ]) {
     for (const scribbit of list) {
       if (scribbit.artist === 'mock_player') {
         ownedById.set(scribbit.id, scribbit);
@@ -1098,7 +1116,7 @@ const removeScribbitEverywhere = (scribbitId) => {
     memory.myScribbits,
     memory.todayEntrants,
     memory.legends,
-    memory.myFaded,
+    memory.archivedOwnedScribbits,
   ]) {
     removeScribbitFromList(list, scribbitId);
   }
@@ -1112,7 +1130,7 @@ const visibleLists = () => [
   memory.myScribbits,
   memory.todayEntrants,
   memory.legends,
-  memory.myFaded,
+  memory.archivedOwnedScribbits,
   [memory.champion],
   Object.values(debugPowerFighters),
 ];
@@ -1365,12 +1383,31 @@ const arenaStateForPreview = (previewMode) => {
 };
 
 const inventoryState = (inventory) => {
+  const discovered = [...inventory.discovered];
+  const gear = Object.fromEntries(
+    discovered.flatMap((cosmeticId) => {
+      const cosmetic = productionCosmeticById.get(cosmeticId);
+      if (cosmetic?.kind !== 'accessory') return [];
+      const storedGear = inventory.gear?.[cosmeticId];
+      return [
+        [
+          cosmeticId,
+          {
+            rank: storedGear?.rank ?? 1,
+            copies: inventory.items[cosmeticId] ?? 0,
+            rarity: cosmetic.rarity,
+          },
+        ],
+      ];
+    })
+  );
   return {
     items: cloneItemCounts(inventory.items),
+    gear,
     pens: [...inventory.pens],
     titles: [...inventory.titles],
     equippedTitle: inventory.equippedTitle,
-    discovered: [...inventory.discovered],
+    discovered,
   };
 };
 
@@ -1583,6 +1620,47 @@ const handleApi = async (request, response, url) => {
     return;
   }
 
+  if (method === 'POST' && path === '/api/merge-gear') {
+    const body = await readJsonBody(request);
+    const operationId =
+      typeof body?.operationId === 'string' ? body.operationId.trim() : '';
+    const gearId = typeof body?.gearId === 'string' ? body.gearId.trim() : '';
+    if (!operationId || !gearId) {
+      sendError(response, 400, 'Choose valid Gear and a forge operation.');
+      return;
+    }
+    const cachedMerge = economy.gearMergeOperations.get(operationId);
+    if (cachedMerge) {
+      if (cachedMerge.gearId !== gearId) {
+        sendError(response, 409, 'That forge operation was already used.');
+        return;
+      }
+      sendJson(response, 200, cachedMerge);
+      return;
+    }
+    const merge = projectGearMerge(inventoryState(economy.inventory), gearId);
+    if (merge.status === 'invalid') {
+      sendError(response, 400, 'Discover that Gear before forging it.');
+      return;
+    }
+    if (merge.status === 'insufficientCopies') {
+      sendError(
+        response,
+        409,
+        'You need three copies to forge this Gear.'
+      );
+      return;
+    }
+    if (merge.status === 'maxRank') {
+      sendError(response, 409, 'That Gear is already at max rank.');
+      return;
+    }
+    economy.inventory = merge.response.inventory;
+    economy.gearMergeOperations.set(operationId, merge.response);
+    sendJson(response, 200, merge.response);
+    return;
+  }
+
   if (method === 'POST' && path === '/api/capsule') {
     const body = await readJsonBody(request);
     const operationId =
@@ -1632,6 +1710,11 @@ const handleApi = async (request, response, url) => {
         ...drop,
         isNew: inventoryGrant.isNew,
         ownedCount: inventoryGrant.ownedCount,
+        gearRank: inventoryGrant.inventory.gear[drop.id]?.rank ?? null,
+        mergeReady:
+          drop.kind === 'accessory' &&
+          (inventoryGrant.inventory.gear[drop.id]?.rank ?? 1) < MAX_GEAR_RANK &&
+          inventoryGrant.ownedCount >= GEAR_MERGE_COPY_COST,
       },
       ink: economy.ink,
       inventory: inventoryState(economy.inventory),
@@ -1782,8 +1865,6 @@ const handleApi = async (request, response, url) => {
     sendJson(response, 200, {
       legends: pageLegends,
       nextCursor,
-      myFaded:
-        previewMode === 'returning' ? memory.myFaded.map(cloneScribbit) : [],
     });
     return;
   }
@@ -1838,7 +1919,7 @@ const handleApi = async (request, response, url) => {
     const scribbitId = readScribbitId(body);
 
     if (!memory.todayEntrants.some((entry) => entry.id === scribbitId)) {
-      sendError(response, 400, "Back one of tonight's Rumble entrants.");
+      sendError(response, 400, "Pick one of tonight's Rumble entrants.");
       return;
     }
 
@@ -1846,13 +1927,13 @@ const handleApi = async (request, response, url) => {
       sendError(
         response,
         400,
-        "Back another Redditor's Scribbit, not your own."
+        "Pick another Redditor's Scribbit, not your own."
       );
       return;
     }
 
     if (getBackedScribbitIdForPreview(previewMode)) {
-      sendError(response, 409, 'You already backed a Scribbit today.');
+      sendError(response, 409, 'You already picked a Scribbit today.');
       return;
     }
 

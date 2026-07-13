@@ -131,6 +131,7 @@ export const createNightlyFencedStorage = (
         throw error;
       }
     },
+    type: storage.type ? (key) => storage.type!(key) : undefined,
     get: (key) => storage.get(key),
     set: (key, value) =>
       executeFencedMutation(storage, lease, (transaction) =>

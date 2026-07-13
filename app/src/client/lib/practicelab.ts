@@ -9,7 +9,7 @@ import { selectDoodleDareForPower } from '../../shared/content/doodledares';
 import type { DoodleDare } from '../../shared/content/doodledares';
 
 export const PRACTICE_HEADER_TITLE = 'PRACTICE LAB';
-export const PRACTICE_SUBMIT_LABEL = 'TEST SHAPE';
+export const PRACTICE_SUBMIT_LABEL = 'FIND MY POWER';
 
 export type PracticeSession = Readonly<{
   triedPowers: readonly PrimaryPower[];
@@ -27,6 +27,13 @@ type PracticeOutcomePlan = Readonly<{
   checklist: string;
   primaryButton: string;
   exitButton: string;
+}>;
+
+export type PracticeRevealPlan = Readonly<{
+  headline: string;
+  powerName: string;
+  progress: string;
+  primaryButton: string;
 }>;
 
 export function createPracticeSession(): PracticeSession {
@@ -142,6 +149,23 @@ export function practiceProgressCopy(
 ): string {
   const count = normalizePracticePowers(triedPowers).length;
   return `SERVER CHECKED  •  ${count}/${SHAPE_POWER_IDS.length} POWERS`;
+}
+
+export function planPracticeReveal(
+  sessionValue: PracticeSession,
+  elementalPowerName: string
+): PracticeRevealPlan {
+  const session = normalizePracticeSession(sessionValue);
+  const checkedPowerCount = session.triedPowers.length;
+  const fallbackPowerName = session.lastPower
+    ? getShapePowerDisplayName(session.lastPower)
+    : 'Shape Checked';
+  return {
+    headline: 'POWER FOUND!',
+    powerName: (elementalPowerName.trim() || fallbackPowerName).toUpperCase(),
+    progress: `${checkedPowerCount} OF ${SHAPE_POWER_IDS.length} FOUND`,
+    primaryButton: 'WATCH IT FIGHT',
+  };
 }
 
 function practiceChecklistCopy(triedPowers: readonly PrimaryPower[]): string {

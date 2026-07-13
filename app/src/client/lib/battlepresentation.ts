@@ -73,11 +73,8 @@ export type ReplayFighterLayout = Readonly<{
   homeX: number;
   homeY: number;
   facing: -1 | 1;
-  healthBarAnchorX: number;
-  healthBarOriginX: 0 | 1;
   nameX: number;
   nameOriginX: 0 | 1;
-  levelBadgeX: number;
   chipCenterX: number;
   panelLeft: number;
 }>;
@@ -90,7 +87,6 @@ export type ReplayBattleLayout = Readonly<{
   pageWidth: number;
   pageHeight: number;
   toolbarY: number;
-  battleKindY: number;
   soundButtonX: number;
   speedButtonX: number;
   skipButtonX: number;
@@ -99,11 +95,9 @@ export type ReplayBattleLayout = Readonly<{
   skipButtonWidth: number;
   fighterPanelTop: number;
   fighterPanelHeight: number;
-  healthBarY: number;
-  healthBarWidth: number;
-  healthBarFillWidth: number;
-  healthBarHeight: number;
-  healthBarFillHeight: number;
+  heartRowY: number;
+  heartRowWidth: number;
+  heartRowHeight: number;
   fighterNameY: number;
   fighterMetaY: number;
   fighterChipY: number;
@@ -124,10 +118,14 @@ export type ReplayBattleLayout = Readonly<{
   fighters: Readonly<Record<ReplayBattleSide, ReplayFighterLayout>>;
 }>;
 
-export type ReplayHitPointBarPlan = Readonly<{
+export type ReplayHeartState = 'full' | 'half' | 'empty';
+
+export type ReplayHeartMeterPlan = Readonly<{
   ratio: number;
-  width: number;
+  states: readonly ReplayHeartState[];
+  filledUnits: number;
   useDangerColor: boolean;
+  accessibleLabel: string;
 }>;
 
 export type ReplayBattleClockPlan = Readonly<{
@@ -196,23 +194,22 @@ export function planReplayBattleLayout(input: {
     speedButtonX + speedButtonWidth / 2 + controlGap + skipButtonWidth / 2;
   const horizontalMargin = Math.round(clamp(viewportWidth * 0.034, 18, 24));
   const fighterCenterGap = 84;
-  const healthBarWidth = Math.round(
+  const heartRowWidth = Math.round(
     (viewportWidth - horizontalMargin * 2 - fighterCenterGap) / 2
   );
-  const healthBarFillWidth = healthBarWidth - 10;
-  const fighterPanelTop = 76;
-  const fighterPanelHeight = 118;
-  const fighterNameY = 88;
-  const healthBarY = 126;
-  const fighterChipY = 170;
-  const fighterMetaY = 204;
+  const fighterPanelTop = 130;
+  const fighterPanelHeight = 128;
+  const fighterNameY = 145;
+  const heartRowY = 179;
+  const fighterChipY = 222;
+  const fighterMetaY = 256;
   const tickerHeight = 72;
   const tickerY = viewportHeight - 54;
-  const arenaTop = 250;
+  const arenaTop = 330;
   const arenaBottom = toolbarY - 62;
   const homeY = (arenaTop + arenaBottom) / 2;
   const leftPanelLeft = horizontalMargin;
-  const rightPanelLeft = viewportWidth - horizontalMargin - healthBarWidth;
+  const rightPanelLeft = viewportWidth - horizontalMargin - heartRowWidth;
 
   return {
     viewportWidth,
@@ -222,7 +219,6 @@ export function planReplayBattleLayout(input: {
     pageWidth: viewportWidth - pageLeft * 2,
     pageHeight: viewportHeight - pageTop - 18,
     toolbarY,
-    battleKindY: 35,
     soundButtonX,
     speedButtonX,
     skipButtonX,
@@ -231,17 +227,15 @@ export function planReplayBattleLayout(input: {
     skipButtonWidth,
     fighterPanelTop,
     fighterPanelHeight,
-    healthBarY,
-    healthBarWidth,
-    healthBarFillWidth,
-    healthBarHeight: 40,
-    healthBarFillHeight: 28,
+    heartRowY,
+    heartRowWidth,
+    heartRowHeight: 40,
     fighterNameY,
     fighterMetaY,
     fighterChipY,
     fighterChipHeight: 28,
     battleClockX: viewportWidth / 2,
-    battleClockY: 65,
+    battleClockY: 155,
     arenaTop,
     arenaBottom,
     arenaHorizontalPadding: Math.round(clamp(viewportWidth * 0.23, 140, 160)),
@@ -258,24 +252,18 @@ export function planReplayBattleLayout(input: {
         homeX: Math.round(viewportWidth * 0.27),
         homeY,
         facing: 1,
-        healthBarAnchorX: horizontalMargin,
-        healthBarOriginX: 0,
         nameX: horizontalMargin + 12,
         nameOriginX: 0,
-        levelBadgeX: horizontalMargin + healthBarWidth,
-        chipCenterX: horizontalMargin + healthBarWidth / 2,
+        chipCenterX: horizontalMargin + heartRowWidth / 2,
         panelLeft: leftPanelLeft,
       },
       b: {
         homeX: Math.round(viewportWidth * 0.73),
         homeY,
         facing: -1,
-        healthBarAnchorX: viewportWidth - horizontalMargin,
-        healthBarOriginX: 1,
         nameX: viewportWidth - horizontalMargin - 12,
         nameOriginX: 1,
-        levelBadgeX: viewportWidth - horizontalMargin - healthBarWidth,
-        chipCenterX: viewportWidth - horizontalMargin - healthBarWidth / 2,
+        chipCenterX: viewportWidth - horizontalMargin - heartRowWidth / 2,
         panelLeft: rightPanelLeft,
       },
     },
@@ -382,26 +370,53 @@ export function planReplayPostFightActions(input: {
   });
 }
 
-export function planReplayHitPointBar(input: {
+export function planReplayHeartMeter(input: {
   hitPoints: number;
   maximumHitPoints: number;
-  fullWidth: number;
-}): ReplayHitPointBarPlan {
+  heartCount?: number;
+}): ReplayHeartMeterPlan {
   const maximumHitPoints =
     Number.isFinite(input.maximumHitPoints) && input.maximumHitPoints > 0
-      ? input.maximumHitPoints
+      ? Math.round(input.maximumHitPoints)
       : 0;
-  const hitPoints = Number.isFinite(input.hitPoints) ? input.hitPoints : 0;
-  const fullWidth =
-    Number.isFinite(input.fullWidth) && input.fullWidth > 0
-      ? input.fullWidth
-      : 0;
+  const hitPoints = Math.round(
+    maximumHitPoints > 0 && Number.isFinite(input.hitPoints)
+      ? clamp(input.hitPoints, 0, maximumHitPoints)
+      : 0
+  );
+  const heartCount = Math.max(
+    1,
+    Number.isFinite(input.heartCount) ? Math.floor(input.heartCount ?? 6) : 6
+  );
   const ratio =
     maximumHitPoints > 0 ? clamp(hitPoints / maximumHitPoints, 0, 1) : 0;
+  // Two visual units per heart preserve meaningful damage steps without
+  // pretending that the server's continuous HP has become discrete combat.
+  const filledUnits =
+    hitPoints > 0 ? Math.max(1, Math.ceil(ratio * heartCount * 2)) : 0;
+  const states = Object.freeze(
+    Array.from({ length: heartCount }, (_, heartIndex): ReplayHeartState => {
+      const unitsInHeart = filledUnits - heartIndex * 2;
+      if (unitsInHeart >= 2) return 'full';
+      if (unitsInHeart === 1) return 'half';
+      return 'empty';
+    })
+  );
+  const fullHearts = Math.floor(filledUnits / 2);
+  const halfHeart = filledUnits % 2 === 1;
+  const visibleHeartLabel = halfHeart
+    ? fullHearts === 0
+      ? 'half a heart'
+      : `${fullHearts} and a half hearts`
+    : fullHearts === 1
+      ? '1 heart'
+      : `${fullHearts} hearts`;
   return {
     ratio,
-    width: fullWidth * ratio,
-    useDangerColor: ratio <= 0.28,
+    states,
+    filledUnits,
+    useDangerColor: hitPoints > 0 && ratio <= 0.28,
+    accessibleLabel: `${hitPoints} of ${maximumHitPoints} health; ${visibleHeartLabel} out of ${heartCount}`,
   };
 }
 

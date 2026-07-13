@@ -36,14 +36,15 @@ copy should keep the default view to one headline, one status, and one action.
    no exact prompt-plus-twist card before Day 257. The Draw screen gives the hero
    canvas most of the page, keeps all eight base colors visible, and puts brush,
    eraser, undo, optional stickers, and unlocked premium pens in one compact tool
-   row. Name and submit stay hidden and disabled until the shared analyzer says
-   the drawing is ready. Exact shape rules remain in the canvas accessibility
-   copy instead of a visible four-stat dashboard. The four analyzed traits still
+   row. One visible `NEXT` action stays disabled until the shared analyzer says
+   the drawing is ready; only then does a focused preview ask for its name and
+   confirmation. Exact shape rules stay out of a visible four-stat dashboard. The four analyzed traits still
    normalize to the same 100-point budget, and dominant color still chooses the
    element. After acceptance, `lib/birthceremony.ts` loads that exact submitted
    PNG and unfolds it through `LiveSprite.awaken()`—there is no placeholder egg.
-   The final card shows one Ink receipt and leads a fresh player directly to
-   `WATCH FIRST FIGHT`.
+   The final card replaces raw stat totals with one causal receipt such as
+   `SHARP EDGES → FIRETIP HALO` / `3 ROTATING QUILLS`, shows one Ink receipt,
+   and leads a fresh player directly to `WATCH FIRST FIGHT`.
 2. **Fight:** submission automatically enters tonight's Rumble. A new player's
    first Scribbit also receives an immediate exhibition so the core promise is
    visible in the first session. On WebGL, Phaser 4.2 maps the submitted PNG to
@@ -76,11 +77,11 @@ copy should keep the default view to one headline, one status, and one action.
    Presentation-only hitstop, HP trails, impact tiers, arena folds, mastery auras,
    and optional procedural sound make authored events land harder.
    Element × Shape Power combinations receive sixteen concise signature names.
-   Before every current fight, a mode-specific paper VS card keeps one battle
-   label, one match or Rival-page title, one stakes line, large fighter art,
-   both exact signatures, and one verified interaction from the exhaustive
-   ten-pair Shape Power matrix. It is explicitly framed as mechanics rather
-   than win odds. During
+   Before every current fight, a mode-specific paper VS card keeps one match or
+   Rival-page title, optional story stakes, large fighter art, and two concise
+   drawing receipts such as `MORE COLORS → CONE + DELAYED ECHO`. The shared
+   receipt plan is derived only from each server-returned fighter and never
+   predicts the winner. During
    replay, a power with no proven connection gets neutral no-clean-hit copy;
    shield and element cues appear only when the transcript explicitly proves them.
    Colorburst does not claim a miss at `ability_finished`, because its delayed
@@ -188,17 +189,21 @@ copy should keep the default view to one headline, one status, and one action.
    Earned-only Ink opens Mystery Capsules with a discounted daily pull, permanent
    discovery album, collector rank, and visible Epic pity countdown. Accessories
    and status rewards are cosmetic; pens are expressive sidegrades that can
-   change the normalized build split without adding stat points.
+   change the normalized build split without adding stat points. The Ink Kit
+   shows one aggregate card per owned gear style across weapon, armor, shoes,
+   and accessory sections; permanent pens and titles stay in a separate Styles
+   section.
    The 36-item catalog includes eight wearable Shape Power Relics—two per
    power—with no combat hooks.
    Living Scribbits also grow from level 1 to 5, but the full arc adds only 1.5%
    damage and is statistically capped at a 60% equal-build win rate.
 4. **Pick:** choose another player’s contender before the nightly resolution.
    Champion backers earn 3 Clout; runner-up backers earn 1.
-   The Arena home shows only a three-portrait `TONIGHT'S RUMBLE` preview and one
-   heart action. Tapping it opens the focused eight-contender picker; the grid is
-   never part of the default home stack. Each contender keeps one inspect target
-   and one server-planned heart or lock state, and the selected card turns gold.
+   Pick entry lives in the Scout Notebook; the Arena home stays focused on direct
+   Champion or Spar battles. An available Scout Pick opens the focused
+   eight-contender picker without adding a prediction panel to the default Arena
+   stack. Each contender keeps one inspect target and one server-planned heart or
+   lock state, and the selected card turns gold.
    If the player skipped their Pick but entered an owned Scribbit, the next visit leads
    with that drawing's exact Rumble W/L, committed XP, committed Ink, and a
    server-selected last-bout replay. The client never reconstructs those rewards
@@ -244,6 +249,16 @@ uploaded through Reddit media hosting; submissions fail closed if that upload
 fails. The server analyzes an authoritative base PNG, rejects drawings below the
 shared minimum-body threshold, and rejects decorated PNGs that change pixels
 outside declared accessory regions or erase base pixels.
+After media upload, every Redis/player-state effect of Scribbit birth commits in
+one transaction. A failed Redis transaction leaves no partial player state; an
+ambiguous commit is recovered from the exact Scribbit and index identity. Media
+hosting remains external, so a failed post-upload transaction may leave an
+unreferenced hosted asset but cannot spend inventory or award progression.
+Nightly resolution watches the per-day active-submission registry and cannot
+snapshot a Rumble while a committed birth is still being verified or repaired.
+Its distributed day claim carries the scheduler's unique operation ID, recovers
+an EXEC reply loss by exact readback, fails closed on command errors, and can be
+released only by that exact owner.
 Practice drawings are returned only inside one ephemeral replay. They are not
 uploaded or stored, and the battle store rejects a practice report before its
 first Redis operation. The route caps request bytes and uses short-lived Redis
@@ -302,7 +317,7 @@ boundary during browser iteration—it is not the production game server.
   acquisition, and strict stored-state parsing. Only absent pre-feature data is
   migrated; malformed present arrays fail closed.
 - `src/shared/combat/selection.ts`: the single dominant-stat and Shape Power
-  selector shared by server simulation, drawing preview, Inkbody, and founder art.
+  selector shared by server simulation, birth receipts, Inkbody, and founder art.
 - `src/shared/combat/shapepowercontent.ts`: shared names, reveal copy, neutral
   no-clean-hit cues, and the sixteen element-specific signature identities;
   combat numbers remain isolated in `config.ts`.
@@ -325,6 +340,14 @@ boundary during browser iteration—it is not the production game server.
   index scans, and one-time receipt persistence over immutable retired snapshots.
 - `src/server/core/battleStore.ts`: battle reports, per-Scribbit history, and
   the ordered featured Rumble report index used by overnight receipts.
+- `src/server/core/submission.ts`: the single Redis transaction owner for
+  Scribbit birth. It validates watched daily, roster, inventory, and streak
+  state, then atomically commits the Scribbit and indexes, Rumble entry, daily
+  flags, Ink, streak, and accessory spend. Exact readback reconciles an
+  ambiguous transaction reply or per-command error without duplicate rewards
+  or consumption. A short per-day active-submission lease makes nightly
+  resolution wait until any exact repair finishes; concurrent births keep
+  separate lease members instead of sharing a global mutex.
 - `src/server/core/founderChronicle.ts`: versioned player-level Rival Thread
   state, the one-beat-per-day reducer, pending projection receipts, transaction
   recovery, v1 checklist migration, and the bounded public Chronicle projection.
@@ -344,9 +367,6 @@ boundary during browser iteration—it is not the production game server.
   runtime Scribbits and owns fair opponent/slate selection and safe cloning.
 - `src/client/game.ts`: Phaser bootstrapping.
 - `src/client/scenes`: game screens.
-- `src/client/lib/drawonboarding.ts`: first-run promise copy and
-  blank/forming/ready draw-feedback plans; authored prompt selection lives only
-  in `src/shared/content/doodledares.ts`.
 - `src/client/lib/caremoment.ts`: pure server-snapshot-to-receipt planning;
   `caremomentoverlay.ts` renders the short paper celebration without owning
   rewards or persistence.
@@ -418,6 +438,13 @@ boundary during browser iteration—it is not the production game server.
   Shape Power Relics, joined into the normal accessory renderer.
 - `src/client/lib/cosmeticpreview.ts`: shared reward-art preview used by the
   capsule ceremony and Collection.
+- `src/client/lib/capsulepresentation.ts`: pure collector-rank, ownership-copy,
+  and portrait-safe prize-action layout plans. The Mystery Ink overlay keeps
+  odds in its accessible description, one compact progress card, one crank,
+  and one reward card instead of repeating collection facts on screen.
+- `src/client/lib/arenaasynclifecycle.ts`: pure latest-response policy for Arena
+  mutations and refreshes. Responses from a stopped or replaced scene can only
+  apply to the current activation or schedule a current/next-entry refresh.
 - `src/client/lib/collectionbook.ts`: paper-native discovery album, paging, and
   reward detail presentation.
 - `src/client/lib/legacycards.ts`: paper-native Legacy deck, archival detail,
@@ -436,7 +463,11 @@ boundary during browser iteration—it is not the production game server.
 - `scripts/dev-mock.mjs`: local Devvit/Redis stand-in for browser UI iteration.
 - `scripts/make-test-drawing.mjs`: four trimmed, dominant-stat fixture drawings
   used to prove each production Shape Power in both renderers.
-- `scripts/test-battle.mjs`: deterministic simulation/core regression checks.
+- `tests/**/*.test.mjs`: discoverable Node test suites for focused domain and
+  architecture contracts. Each run compiles production sources into an isolated
+  temporary directory and removes it afterward.
+- `scripts/test-battle.mjs`: legacy deterministic simulation/core regression
+  harness retained while its domains move into focused suites.
 
 ## Setup
 
@@ -500,8 +531,12 @@ Run these before handing off changes:
 pnpm verify
 ```
 
-`pnpm verify` runs type-check, lint, 151 deterministic simulation groups, and
-the production build.
+`pnpm verify` runs type-check, lint, all discoverable Node suites, the legacy
+deterministic harness, and the production build.
+
+Use `pnpm run test:suites` for the focused discoverable suites only, or
+`pnpm run test:sim` for the legacy harness only. `pnpm test` runs both and is
+the default test gate.
 
 `pnpm run test:sim` covers deterministic analyzer, Inkbody mesh geometry, combat
 determinism, payload caps, archetype balance, slot neutrality, battle,
@@ -517,8 +552,8 @@ replace route or browser testing. Recap coverage fixes timeout, knockout,
 double-knockout, truncated-timeline, tie-break, decisive-hit copy, and report
 fighter binding to the validated server transcript. First-draw coverage locks
 the 32-day prompt calendar, 256 unique prompt/twist cards, four-day Shape Power
-balance, catalog safety, live feedback phases, the shared minimum-body gate, and
-the valid zero-recoil wall-ejection edge case. Forecast coverage locks 32
+balance, catalog safety, concise causal receipts, the shared minimum-body gate,
+and the valid zero-recoil wall-ejection edge case. Forecast coverage locks 32
 nonrepeating public blurbs, reward-safe copy, selection independence from
 combat-element randomness, and mock parity.
 Care coverage locks all 72 unique lifespan reactions, exact matrix completeness,

@@ -5,7 +5,7 @@
 > If the concept already has a home, extend that file. If a new home is truly
 > needed, explain why before writing a parallel implementation.
 
-_Last verified: 2026-07-13 against commit c1e437f and the current uncommitted worktree. Update with the app-overview skill._
+_Last verified: 2026-07-13 against commit 2087457 and the current uncommitted worktree. Update with the app-overview skill._
 
 ## What this app is
 
@@ -17,20 +17,21 @@ The hook is immediate and personal: a player's own drawing visibly changes how a
 
 ## Words we use
 
-| Word | Plain meaning | Lives in code as | Do NOT also call it |
-|---|---|---|---|
-| Scribbit | One player-drawn creature | `Scribbit` | pet, unit, monster |
-| Shape Power | The dominant combat ability derived from drawing geometry | `PrimaryPower` | class, skill tree, weapon |
-| Rumble | The server-resolved nightly competition | `rumble` | tournament, bracket mode |
-| Spar | A server-authored exhibition fight | `spar` | duel, quick match |
-| Champion Contract | One daily fight against the current Champion | `bossChallenge` | boss raid, quest |
-| Pick | The player's one daily prediction on another contender | `backScribbit` transport boundary | Back, Backed, bet, cheer, vote |
-| Belief | Community support attached to a Scribbit | `belief` | like, heart count, cheer |
-| Ink | Earned currency used for Mystery Capsules | `myInk` | coins, gems, energy |
-| Legacy Card | The frozen record created when a Scribbit's life ends | `LegacyCard` | grave, archive item |
-| Founder Rival Thread | A paced story rivalry with a founding Scribbit | `FounderChronicle` | campaign, questline |
-| Rival Run | A server-authored three-bout scored challenge | `RivalRunState` | ladder, gauntlet |
-| Scout Notebook | Tonight plus six prior Arena days of prediction evidence | `ScoutNotebookState` | analytics, history feed |
+| Word                 | Plain meaning                                                   | Lives in code as                  | Do NOT also call it            |
+| -------------------- | --------------------------------------------------------------- | --------------------------------- | ------------------------------ |
+| Scribbit             | One player-drawn creature                                       | `Scribbit`                        | pet, unit, monster             |
+| Shape Power          | The dominant combat ability derived from drawing geometry       | `PrimaryPower`                    | class, skill tree, weapon      |
+| Rumble               | The server-resolved nightly competition                         | `rumble`                          | tournament, bracket mode       |
+| Spar                 | A server-authored exhibition fight                              | `spar`                            | duel, quick match              |
+| Champion Contract    | One daily fight against the current Champion                    | `bossChallenge`                   | boss raid, quest               |
+| Pick                 | The player's one daily prediction on another contender          | `backScribbit` transport boundary | Back, Backed, bet, cheer, vote |
+| Belief               | Community support attached to a Scribbit                        | `belief`                          | like, heart count, cheer       |
+| Ink                  | Earned currency used for Mystery Capsules                       | `myInk`                           | coins, gems, energy            |
+| Gear                 | A catalog item classified as weapon, armor, shoes, or accessory | `CosmeticGearCatalogEntry`        | sticker, Ink Mod               |
+| Legacy Card          | The frozen record created when a Scribbit's life ends           | `LegacyCard`                      | grave, archive item            |
+| Founder Rival Thread | A paced story rivalry with a founding Scribbit                  | `FounderChronicle`                | campaign, questline            |
+| Rival Run            | A server-authored three-bout scored challenge                   | `RivalRunState`                   | ladder, gauntlet               |
+| Scout Notebook       | Tonight plus six prior Arena days of prediction evidence        | `ScoutNotebookState`              | analytics, history feed        |
 
 ## The main flows
 
@@ -44,36 +45,40 @@ The hook is immediate and personal: a player's own drawing visibly changes how a
 
 ## One home per thing
 
-| Concern | The one home | Never |
-|---|---|---|
-| Shared REST and stored-state shapes | `app/src/shared/arena.ts` | redefine response shapes in scenes or routes |
-| Full Scribbit deep-copy policy | `app/src/shared/arena.ts` | hand-copy nested Scribbit fields in storage, combat, Rumble, founders, or mocks |
-| Browser API requests and friendly transport errors | `app/src/client/lib/api.ts` | call product endpoints directly from product scenes; splash and debug harnesses are explicit boundaries |
-| Public API route composition | `app/src/server/routes/api.ts` | add a second public router |
-| Generic Redis storage contract | `app/src/server/core/storage.ts` | define storage types inside a gameplay domain |
-| Server migration compatibility windows | `app/src/server/core/migrations.ts` | add feature-local rollout timers or indefinite dual writes |
-| Player-data deletion lease and generation | `app/src/server/core/dataDeletion.ts` | invent deletion locks inside individual gameplay features |
-| Nightly stale-worker storage fencing | `app/src/server/core/nightlyStorageFence.ts` | run production nightly mutations against raw Redis or a token-only lease |
-| Cross-scene transient state | `app/src/client/lib/registry.ts` | introduce ad-hoc registry keys in scenes |
-| Scribbit validation, ownership, lifecycle, and Redis records | `app/src/server/core/scribbit.ts` | mutate Scribbit hashes directly from routes |
-| Level thresholds and Ink Mod acquisition policy | `app/src/shared/progression.ts` | hardcode level or Ink Mod limits in combat, server, or client code |
-| Fixed-tick combat outcome | `app/src/shared/combat/engine.ts` | calculate winners or damage in the client |
-| Battle arena rotation, modifiers, and challenges | `app/src/shared/battlearena.ts` | hardcode arena rules in Replay, routes, or battle storage |
-| Battle transcript runtime validation | `app/src/shared/combat/transcriptvalidation.ts` | redefine event, checkpoint, fighter, or result validation in storage or Replay |
-| Battle report assembly | `app/src/server/core/battle.ts` | rebuild reports in replay presentation |
-| Drawing analysis rules | `app/src/shared/analyzer-core.ts` | trust client-only analysis for submission |
-| Nightly Rumble resolution order | `app/src/server/core/dailyJob.ts` | resolve or pay Rumbles from client activity |
-| Ink, capsule, inventory, and title persistence | `app/src/server/core/inkStore.ts` | store cosmetic authority in the browser |
-| Legacy Card cursor, projection, ordering, and page policy | `app/src/shared/legacycards.ts` | redefine limits, cursors, or card projection in routes or the local mock |
-| Legacy Card Redis index and receipt persistence | `app/src/server/core/legacy.ts` | reconstruct expired Scribbits from current rows or write the index from routes |
-| Canonical founding Scribbits | `app/src/shared/founders.ts` | copy founder stats or identities into UI files |
-| Authored reusable content packs | `app/src/shared/content/` | embed parallel content catalogs in scenes |
-| Rival Run challenge catalog and reducers | `app/src/shared/rivalrunchallenges.ts` | recalculate challenge progress in presentation |
-| Canvas-to-DOM accessibility layers | `app/src/client/lib/overlay.ts` | create unmanaged HTML buttons beside the canvas |
-| Persistent five-tab navigation | `app/src/client/lib/appdock.ts` | hand-build another dock in a scene |
-| Shared paper icons | `app/src/client/lib/papericons.ts` | use emoji or one-off icon drawing for standard actions |
-| Visual tokens and responsive design constants | `app/src/client/lib/theme.ts` | introduce scene-local font stacks or touch sizes |
-| Production-like local server fixtures | `app/src/server/core/mockRuntime.ts` | fork product rules inside browser-only mocks |
+| Concern                                                         | The one home                                    | Never                                                                                                   |
+| --------------------------------------------------------------- | ----------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| Shared REST and stored-state shapes                             | `app/src/shared/arena.ts`                       | redefine response shapes in scenes or routes                                                            |
+| Full Scribbit deep-copy policy                                  | `app/src/shared/arena.ts`                       | hand-copy nested Scribbit fields in storage, combat, Rumble, founders, or mocks                         |
+| Browser API requests and friendly transport errors              | `app/src/client/lib/api.ts`                     | call product endpoints directly from product scenes; splash and debug harnesses are explicit boundaries |
+| Public API route composition                                    | `app/src/server/routes/api.ts`                  | add a second public router                                                                              |
+| Generic Redis storage contract                                  | `app/src/server/core/storage.ts`                | define storage types inside a gameplay domain                                                           |
+| Server migration compatibility windows                          | `app/src/server/core/migrations.ts`             | add feature-local rollout timers or indefinite dual writes                                              |
+| Player-data deletion lease and generation                       | `app/src/server/core/dataDeletion.ts`           | invent deletion locks inside individual gameplay features                                               |
+| Nightly stale-worker storage fencing                            | `app/src/server/core/nightlyStorageFence.ts`    | run production nightly mutations against raw Redis or a token-only lease                                |
+| Cross-scene transient state                                     | `app/src/client/lib/registry.ts`                | introduce ad-hoc registry keys in scenes                                                                |
+| Scribbit validation, ownership, lifecycle, and Redis records    | `app/src/server/core/scribbit.ts`               | mutate Scribbit hashes directly from routes                                                             |
+| Level thresholds and Ink Mod acquisition policy                 | `app/src/shared/progression.ts`                 | hardcode level or Ink Mod limits in combat, server, or client code                                      |
+| Equipment categories, two-slot capacity, and loadout validation | `app/src/shared/equipment.ts`                   | repurpose birth-time `AttachedAccessory` placement data as reusable equipment                           |
+| Fixed-tick combat outcome                                       | `app/src/shared/combat/engine.ts`               | calculate winners or damage in the client                                                               |
+| Battle arena rotation, modifiers, and challenges                | `app/src/shared/battlearena.ts`                 | hardcode arena rules in Replay, routes, or battle storage                                               |
+| Battle transcript runtime validation                            | `app/src/shared/combat/transcriptvalidation.ts` | redefine event, checkpoint, fighter, or result validation in storage or Replay                          |
+| Battle report assembly                                          | `app/src/server/core/battle.ts`                 | rebuild reports in replay presentation                                                                  |
+| Drawing analysis rules                                          | `app/src/shared/analyzer-core.ts`               | trust client-only analysis for submission                                                               |
+| Nightly Rumble resolution order                                 | `app/src/server/core/dailyJob.ts`               | resolve or pay Rumbles from client activity                                                             |
+| Daily Care and Champion atomic receipts                         | `app/src/server/core/dailyActions.ts`            | split daily claims from their Scribbit, Ink, report, or outcome mutations                               |
+| Complete Scribbit removal across all indexes                    | `app/src/server/core/removal.ts`                 | copy battle, Champion, moderation, and Scribbit cleanup into routes or privacy deletion                  |
+| Returning-player Rumble receipt composition                     | `app/src/server/core/rumbleReturn.ts`            | project backed and owned return variants independently in routes                                        |
+| Ink, capsule, inventory, and title persistence                  | `app/src/server/core/inkStore.ts`               | store cosmetic authority in the browser                                                                 |
+| Legacy Card cursor, projection, ordering, and page policy       | `app/src/shared/legacycards.ts`                 | redefine limits, cursors, or card projection in routes or the local mock                                |
+| Legacy Card Redis index and receipt persistence                 | `app/src/server/core/legacy.ts`                 | reconstruct expired Scribbits from current rows or write the index from routes                          |
+| Canonical founding Scribbits                                    | `app/src/shared/founders.ts`                    | copy founder stats or identities into UI files                                                          |
+| Authored reusable content packs                                 | `app/src/shared/content/`                       | embed parallel content catalogs in scenes                                                               |
+| Rival Run challenge catalog and reducers                        | `app/src/shared/rivalrunchallenges.ts`          | recalculate challenge progress in presentation                                                          |
+| Canvas-to-DOM accessibility layers                              | `app/src/client/lib/overlay.ts`                 | create unmanaged HTML buttons beside the canvas                                                         |
+| Persistent five-tab navigation                                  | `app/src/client/lib/appdock.ts`                 | hand-build another dock in a scene                                                                      |
+| Shared paper icons                                              | `app/src/client/lib/papericons.ts`              | use emoji or one-off icon drawing for standard actions                                                  |
+| Visual tokens and responsive design constants                   | `app/src/client/lib/theme.ts`                   | introduce scene-local font stacks or touch sizes                                                        |
+| Production-like local server fixtures                           | `app/src/server/core/mockRuntime.ts`            | fork product rules inside browser-only mocks                                                            |
 
 ## Expected user behavior
 
@@ -82,4 +87,5 @@ Players draw in portrait, watch server-authored fights, make one meaningful dail
 ## Not built yet
 
 - There is no synchronous networked PvP transport; combat is server-resolved and then streamed from an immutable report as a replay. (`app/src/server/core/battle.ts`, `app/src/client/scenes/Replay.ts`)
+- Reusable per-Scribbit loadouts are not persisted or applied to combat yet. The shared contract reserves two weapon, armor, shoes, and accessory slots; current birth-time accessories remain consumed, baked into the submitted image, and presentation-only. (`app/src/shared/equipment.ts`, `app/src/server/core/submission.ts`, `app/src/shared/accessoryeffects.ts`)
 - Remaining cleanup opportunities are tracked in `SLOP-AUDIT.md`; none is a second gameplay authority path.

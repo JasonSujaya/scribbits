@@ -109,6 +109,7 @@ import {
 } from '../lib/inkcastqueue';
 import type { InkcastEditorialCandidate } from '../lib/inkcastqueue';
 import { BattleSoundboard } from '../lib/battlesound';
+import { WeaponFxRenderer } from '../lib/weaponfxrenderer';
 import { showVsCeremony } from '../lib/battleceremony';
 import {
   formatRivalRunBattleLabel,
@@ -221,6 +222,7 @@ export class Replay extends Scene {
   private battleLayout!: ReplayBattleLayout;
   private battleHud: ReplayBattleHud | null = null;
   private battleBackdrop: ReplayBattleBackdrop | null = null;
+  private weaponFxRenderer: WeaponFxRenderer | null = null;
   private battleBackdropElapsedMilliseconds = 0;
   private battleBackdropUpdateAccumulator = 0;
   private effectRenderAccumulator = 0;
@@ -274,6 +276,7 @@ export class Replay extends Scene {
     this.finished = false;
     this.battleHud = null;
     this.battleBackdrop = null;
+    this.weaponFxRenderer = null;
     this.battleBackdropElapsedMilliseconds = 0;
     this.battleBackdropUpdateAccumulator = 0;
     this.effectRenderAccumulator = 0;
@@ -349,6 +352,7 @@ export class Replay extends Scene {
     this.transcript = getUsableBattleTranscript(report) ?? null;
     this.cameras.main.setBackgroundColor(UI.desk);
     this.cameras.main.fadeIn(180, 255, 247, 232);
+    this.weaponFxRenderer = new WeaponFxRenderer(this, this.reduceMotion);
     this.buildArena();
     this.recordDebugPlaybackState('live');
 
@@ -359,6 +363,8 @@ export class Replay extends Scene {
       this.postFightActions = null;
       this.savedReplayIntro?.destroy();
       this.savedReplayIntro = null;
+      this.weaponFxRenderer?.destroy();
+      this.weaponFxRenderer = null;
       this.playbackRunning = false;
       this.shapeEffects.clear();
       this.hidePowerGhosts();
@@ -491,6 +497,14 @@ export class Replay extends Scene {
       }
     );
     fighter.sprite = live;
+    this.weaponFxRenderer?.attach(
+      side,
+      fighter.scribbit,
+      fighter.screenX,
+      fighter.screenY,
+      fighter.facing,
+      this.battleLayout.fighterDisplaySize
+    );
     fighter.powerGhosts = this.createPowerGhosts(fighter, textureKey);
     // Keep the entire drawing visible during its entrance. The old off-stage
     // walk-in made wide player art look clipped before combat even began.
@@ -617,6 +631,10 @@ export class Replay extends Scene {
 
   override update(_time: number, deltaMilliseconds: number): void {
     const safeDeltaMilliseconds = Math.max(0, deltaMilliseconds);
+    this.weaponFxRenderer?.update(
+      safeDeltaMilliseconds,
+      this.playbackRunning ? this.speed : 1
+    );
     this.cameraShakeCooldownMilliseconds = Math.max(
       0,
       this.cameraShakeCooldownMilliseconds - safeDeltaMilliseconds
@@ -736,6 +754,11 @@ export class Replay extends Scene {
       fighter.screenX = screenPosition.x;
       fighter.screenY = screenPosition.y;
       fighter.sprite?.setPosition(screenPosition.x, screenPosition.y);
+      this.weaponFxRenderer?.follow(
+        fighter.side,
+        screenPosition.x,
+        screenPosition.y
+      );
       this.setContinuousHitPoints(fighter, fighterFrame.hitPoints);
     });
 
@@ -762,9 +785,10 @@ export class Replay extends Scene {
     return slot === 'a' ? this.fighterA : this.fighterB;
   }
 
-  private projectTimelinePosition(
-    position: FixedVector
-  ): { x: number; y: number } {
+  private projectTimelinePosition(position: FixedVector): {
+    x: number;
+    y: number;
+  } {
     const startingCheckpoint = this.transcript?.checkpoints[0];
     if (!startingCheckpoint) {
       return { x: this.scale.width / 2, y: this.scale.height / 2 };
@@ -839,6 +863,7 @@ export class Replay extends Scene {
         this.battleBackdrop?.signalShapePower(event.actor, 'telegraph');
         this.battleHud?.setFighterShapePowerState(event.actor, 'telegraph');
         this.telegraphShapePower(event.actor, actor, event.power);
+        this.weaponFxRenderer?.trigger(event.actor, 'telegraph');
         this.soundboard.play('telegraph');
         this.announceReplayCommentary({
           kind: 'power-telegraph',
@@ -879,6 +904,7 @@ export class Replay extends Scene {
           ELEMENT_STYLES[actor.scribbit.element].particle
         );
         actor.sprite?.activateShapePower(event.power);
+        this.weaponFxRenderer?.trigger(event.actor, 'active');
         return;
       }
       case 'ability_finished': {
@@ -932,6 +958,11 @@ export class Replay extends Scene {
           this.markShapePowerConnected(event.sourceFighter, event.source);
         }
         const impactPosition = this.projectTimelinePosition(event.position);
+        this.weaponFxRenderer?.trigger(
+          event.sourceFighter,
+          'impact',
+          event.critical
+        );
         const impactPlan = planBattleImpact({
           damage: event.amount,
           maximumHitPoints: target.hpMax,
@@ -2022,6 +2053,7 @@ export class Replay extends Scene {
     this.recordDebugPlaybackState('result');
     this.clearInkcastEditorialState();
     this.shapeEffects.clear();
+    this.weaponFxRenderer?.stopAll();
     this.battleHud?.setFighterShapePowerState('a', 'ready');
     this.battleHud?.setFighterShapePowerState('b', 'ready');
     this.hidePowerGhosts();
@@ -2059,7 +2091,7 @@ export class Replay extends Scene {
     this.battleHud?.setAnnouncerVisible(false);
     this.battleHud?.setClockVisible(false);
     this.battleHud?.setControlsVisible(false);
-    this.battleHud?.setHitPointBarsVisible(false);
+    this.battleHud?.setHeartsVisible(false);
     this.battleHud?.setBattleChromeVisible(false);
 
     const winner = this.report.winner === 'a' ? this.fighterA : this.fighterB;
@@ -2269,7 +2301,7 @@ export class Replay extends Scene {
   ): void {
     const { width, height } = this.scale;
     const session = getPracticeSession(this);
-    this.battleHud?.setHitPointBarsVisible(false);
+    this.battleHud?.setHeartsVisible(false);
     winner.sprite?.celebrate();
     if (planPracticeOutcome(session).celebrateCompletion) {
       this.time.delayedCall(220, () => {
@@ -2325,7 +2357,7 @@ export class Replay extends Scene {
     }
     const contextLine = this.report.rivalRun
       ? formatRivalRunResultLine(this.report.rivalRun)
-      : (founderEpisodeReceipt?.headline ??
+      : (founderEpisodeReceipt?.resultLine ??
         founderOutcome ??
         this.battleArenaChallengeResult()?.label ??
         null);
@@ -2474,7 +2506,7 @@ export class Replay extends Scene {
       ? `${rivalRunFinish.title} • ${rivalRunFinish.score}`
       : this.report.rivalRun
         ? formatRivalRunResultLine(this.report.rivalRun)
-        : (founderEpisodeReceipt?.headline ??
+        : (founderEpisodeReceipt?.resultLine ??
           founderOutcome ??
           this.battleArenaChallengeResult()?.label ??
           null);

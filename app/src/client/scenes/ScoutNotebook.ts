@@ -24,7 +24,6 @@ import {
   button,
   errorPanel,
   fadeToScene,
-  handLettered,
   label,
   paperCard,
   paperIconButton,
@@ -47,6 +46,7 @@ import type {
 } from '../../shared/arena';
 import { SemanticTabController } from '../lib/semantictabs';
 import { bindPressInteractionEvents } from '../lib/pressinteraction';
+import { screenTitle } from '../lib/screentitle';
 
 const NOTEBOOK_ENTRY_COUNT = 7;
 const PAGE_CENTER_Y = 678;
@@ -155,7 +155,10 @@ export class ScoutNotebook extends Scene {
 
   private buildHeader(): void {
     const { width } = this.scale;
-    handLettered(this, width / 2, 52, 'SCOUT', 43, UI.ink, true);
+    screenTitle(this, width / 2, 18, 'SCOUT', {
+      maxWidth: 280,
+      maxHeight: 72,
+    });
     const openBoard = (): void => {
       if (this.cloutBoardModal) return;
       this.cloutBoardModal = openCloutBoard(this, {

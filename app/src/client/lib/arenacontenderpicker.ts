@@ -101,7 +101,7 @@ export function openArenaContenderPicker(
   );
   layer.add(panel);
   panel.add(
-    paperWordmark(scene, 0, -455, 'CHOOSE YOUR PICK', {
+    paperWordmark(scene, 0, -455, 'RUMBLE PICK', {
       icon: 'heart',
       fontSize: 40,
       maxWidth: 480,
@@ -113,9 +113,9 @@ export function openArenaContenderPicker(
       scene,
       0,
       -385,
-      backedScribbitId ? 'PICK LOCKED' : 'ONE HEART • ONE PICK',
+      backedScribbitId ? 'LOCKED' : 'CHOOSE ONE',
       {
-        width: 330,
+        width: 360,
         fill: backedScribbitId ? UI.tapeAlt : UI.tape,
         textColor: backedScribbitId ? UI.goldText : UI.coralText,
       }

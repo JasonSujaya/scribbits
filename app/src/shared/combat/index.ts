@@ -31,8 +31,13 @@ export {
   getShapePowerRevealCopy,
   getShapePowerSignatureName,
   isShapePowerId,
+  planShapeReceipt,
 } from './shapepowercontent';
-export type { ElementBattleCue, ShapePowerContent } from './shapepowercontent';
+export type {
+  ElementBattleCue,
+  ShapePowerContent,
+  ShapeReceiptPlan,
+} from './shapepowercontent';
 export {
   DIRECTION_SCALE,
   circleCenterIsInsideCone,

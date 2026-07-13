@@ -11,7 +11,7 @@ import {
   setReplay,
   stageDirectBattle,
 } from '../lib/registry';
-import { analyze, hasMinimumDrawingInk, MIN_INK_PIXELS } from '../lib/analyzer';
+import { analyze, hasMinimumDrawingInk } from '../lib/analyzer';
 import type { AnalyzerResult } from '../lib/analyzer';
 import { CanvasActionOverlay, DomOverlay } from '../lib/overlay';
 import { DrawCanvas } from '../lib/drawcanvas';
@@ -36,13 +36,8 @@ import type { AttachedAccessory } from '../../shared/arena';
 import { selectPrimaryPower } from '../../shared/combat/selection';
 import {
   getShapePowerDrawingCue,
-  getShapePowerSignatureName,
+  planShapeReceipt,
 } from '../../shared/combat/shapepowercontent';
-import {
-  DRAW_HEADER_TITLE,
-  DRAW_RULES_COPY,
-  planDrawFeedback,
-} from '../lib/drawonboarding';
 import {
   selectDailyDoodleDare,
   selectDailyDoodleDareTwist,
@@ -51,6 +46,7 @@ import type { DoodleDare } from '../../shared/content/doodledares';
 import {
   PRACTICE_HEADER_TITLE,
   PRACTICE_SUBMIT_LABEL,
+  planPracticeReveal,
   practiceProgressCopy,
   selectPracticeDoodleDare,
 } from '../lib/practicelab';
@@ -75,6 +71,13 @@ import { getDrawEligibility } from '../lib/draweligibility';
 import { showVsCeremony } from '../lib/battleceremony';
 import { LiveSprite } from '../lib/livesprite';
 import { playBirthCeremony } from '../lib/birthceremony';
+import { screenTitle } from '../lib/screentitle';
+import {
+  openDrawConfirmationModal,
+  type DrawConfirmationModal,
+} from '../lib/drawconfirmationmodal';
+
+const DRAW_HEADER_TITLE = 'DRAW';
 
 // Every base color is visible at once; premium pens remain a separate unlock.
 const PALETTE_COLORS = [
@@ -102,22 +105,30 @@ const MIN_LINE_WIDTH = 8;
 const MAX_LINE_WIDTH = 56;
 const LINE_WIDTH_STEP = 4;
 const DEFAULT_LINE_WIDTH = 24;
+const SELECTED_SWATCH_RADIUS = 35;
+const SWATCH_RADIUS = 21;
 type AnalyzerWorkerResponse = Readonly<{
   requestId: number;
   result: AnalyzerResult;
 }>;
+type SubmissionDraft = Readonly<{
+  result: AnalyzerResult;
+  accessories: AttachedAccessory[];
+  baseImageDataUrl: string;
+  imageDataUrl: string;
+}>;
 
 export class Draw extends Scene {
   private overlay!: DomOverlay;
-  private nameOverlay: DomOverlay | null = null;
   private canvas!: DrawCanvas;
-  private nameInput: HTMLInputElement | null = null;
   private headerControlOverlay: CanvasActionOverlay | null = null;
   private toolControlOverlay: CanvasActionOverlay | null = null;
   private submitOverlay: CanvasActionOverlay | null = null;
+  private revealControlOverlay: CanvasActionOverlay | null = null;
   private submitControl: HTMLButtonElement | null = null;
+  private drawConfirmation: DrawConfirmationModal | null = null;
+  private draftName = '';
 
-  private reactionText!: Phaser.GameObjects.Text;
   private lastResult: AnalyzerResult | null = null;
   private selectedColorIndex = 0;
   private paletteSwatches: Phaser.GameObjects.Arc[] = [];
@@ -126,12 +137,23 @@ export class Draw extends Scene {
   private premiumPenSwatch: Phaser.GameObjects.Arc | null = null;
   private lineWidth = DEFAULT_LINE_WIDTH;
   private lineWidthPreviewDot: Phaser.GameObjects.Arc | null = null;
+  private decreaseBrushSizeMark: Phaser.GameObjects.Graphics | null = null;
+  private increaseBrushSizeMark: Phaser.GameObjects.Graphics | null = null;
+  private decreaseBrushSizeControl: HTMLButtonElement | null = null;
+  private increaseBrushSizeControl: HTMLButtonElement | null = null;
+  private eraserToolButton: Phaser.GameObjects.Container | null = null;
+  private clearToolButton: Phaser.GameObjects.Container | null = null;
+  private undoToolButton: Phaser.GameObjects.Container | null = null;
+  private redoToolButton: Phaser.GameObjects.Container | null = null;
+  private eraserToolControl: HTMLButtonElement | null = null;
+  private clearToolControl: HTMLButtonElement | null = null;
+  private undoToolControl: HTMLButtonElement | null = null;
+  private redoToolControl: HTMLButtonElement | null = null;
   private submitButton: Phaser.GameObjects.Container | null = null;
   private creationControlsReady: boolean | null = null;
 
   private resizeHandler = (): void => {
     this.overlay?.sync();
-    this.nameOverlay?.sync();
   };
   private visualViewportResizeHandler = (): void => this.resizeHandler();
   private submitting = false;
@@ -172,6 +194,18 @@ export class Draw extends Scene {
     this.premiumPenSwatch = null;
     this.lineWidth = DEFAULT_LINE_WIDTH;
     this.lineWidthPreviewDot = null;
+    this.decreaseBrushSizeMark = null;
+    this.increaseBrushSizeMark = null;
+    this.decreaseBrushSizeControl = null;
+    this.increaseBrushSizeControl = null;
+    this.eraserToolButton = null;
+    this.clearToolButton = null;
+    this.undoToolButton = null;
+    this.redoToolButton = null;
+    this.eraserToolControl = null;
+    this.clearToolControl = null;
+    this.undoToolControl = null;
+    this.redoToolControl = null;
     this.submitButton = null;
     this.creationControlsReady = null;
     this.submitting = false;
@@ -192,11 +226,12 @@ export class Draw extends Scene {
     this.practicePowers = [];
     this.practiceAttemptCount = 0;
     this.pendingPracticeReport = null;
-    this.nameInput = null;
-    this.nameOverlay = null;
+    this.drawConfirmation = null;
+    this.draftName = '';
     this.headerControlOverlay = null;
     this.toolControlOverlay = null;
     this.submitOverlay = null;
+    this.revealControlOverlay = null;
     this.submitControl = null;
   }
 
@@ -252,7 +287,9 @@ export class Draw extends Scene {
     });
     this.toolControlOverlay = new CanvasActionOverlay(this);
     this.toolControlOverlay.setRootAttributes({
-      'aria-label': this.practiceMode ? 'Practice drawing tools' : 'Drawing tools',
+      'aria-label': this.practiceMode
+        ? 'Practice drawing tools'
+        : 'Drawing tools',
     });
     this.buildChrome();
     this.buildOverlay();
@@ -283,14 +320,16 @@ export class Draw extends Scene {
     this.analysisWorker = null;
     this.canvas?.destroy();
     this.overlay?.destroy();
-    this.nameOverlay?.destroy();
-    this.nameOverlay = null;
+    this.drawConfirmation?.destroy();
+    this.drawConfirmation = null;
     this.headerControlOverlay?.destroy();
     this.headerControlOverlay = null;
     this.toolControlOverlay?.destroy();
     this.toolControlOverlay = null;
     this.submitOverlay?.destroy();
     this.submitOverlay = null;
+    this.revealControlOverlay?.destroy();
+    this.revealControlOverlay = null;
     this.submitControl = null;
     this.livingPaper?.destroy();
     this.livingPaper = null;
@@ -401,14 +440,18 @@ export class Draw extends Scene {
   }
 
   // --- Layout budget (720x1280 design space) --------------------------------
-  // Canvas is the hero. Everything below stacks on a strict grid so nothing
-  // overlaps or clips: canvas → tools → stat panel → name → submit.
+  // Canvas is the hero. Official Draw ends with NEXT; Practice keeps its
+  // progress note and direct power check in the lower footer.
   private static readonly CANVAS_CENTER_Y = 410;
   private static readonly CANVAS_SQUARE = 620;
   private static readonly TOOLS_Y = 842;
-  private static readonly STATUS_Y = 1000;
-  private static readonly NAME_Y = 1092;
-  private static readonly SUBMIT_Y = 1200;
+  private static readonly OFFICIAL_SUBMIT_Y = 1060;
+  private static readonly PRACTICE_PROGRESS_Y = 1092;
+  private static readonly PRACTICE_SUBMIT_Y = 1200;
+
+  private submitCenterY(): number {
+    return this.practiceMode ? Draw.PRACTICE_SUBMIT_Y : Draw.OFFICIAL_SUBMIT_Y;
+  }
 
   private addNativeControl(
     accessibleLabel: string,
@@ -433,14 +476,16 @@ export class Draw extends Scene {
 
   private buildSubmitControl(): void {
     this.submitOverlay = new CanvasActionOverlay(this);
-    this.submitOverlay.setRootAttributes({ 'aria-label': 'Drawing submission' });
+    this.submitOverlay.setRootAttributes({
+      'aria-label': 'Drawing submission',
+    });
     this.submitControl = this.addNativeControl(
-      this.practiceMode ? PRACTICE_SUBMIT_LABEL : 'Bring drawing to life',
+      this.practiceMode ? PRACTICE_SUBMIT_LABEL : 'Next',
       EDGE,
-      Draw.SUBMIT_Y - 48,
+      this.submitCenterY() - 50,
       this.scale.width - EDGE * 2,
-      96,
-      () => this.trySubmit(),
+      100,
+      () => this.continueFromDrawing(),
       false,
       this.submitOverlay
     );
@@ -454,16 +499,13 @@ export class Draw extends Scene {
       this.toolControlOverlay.moveAfter(this.overlay);
     }
     const afterTools = this.toolControlOverlay ?? this.overlay;
-    if (this.nameOverlay) this.nameOverlay.moveAfter(afterTools);
-    const beforeSubmit = this.nameOverlay ?? afterTools;
-    this.submitOverlay?.moveAfter(beforeSubmit);
+    this.submitOverlay?.moveAfter(afterTools);
   }
 
   // --- Phaser chrome (everything except the live canvas + name input) -------
   private buildChrome(): void {
     const { width } = this.scale;
-    // Top bar: Back on the left, title centered in the remaining space so the
-    // two never collide (the mission's header-clip bug).
+    // Back stays left while the larger title centers over the drawing surface.
     ghostButton(this, 90, 60, '‹', () => this.exitDraw(), 96);
     this.addNativeControl(
       'Back to Arena',
@@ -475,14 +517,12 @@ export class Draw extends Scene {
       true,
       this.headerControlOverlay
     );
-    handLettered(
+    screenTitle(
       this,
-      width / 2 + 30,
-      56,
+      width / 2,
+      6,
       this.practiceMode ? PRACTICE_HEADER_TITLE : DRAW_HEADER_TITLE,
-      30,
-      UI.ink,
-      true
+      { maxWidth: 360, maxHeight: 80 }
     );
 
     // Hero canvas frame — the DOM canvas sits on top of this at the same rect.
@@ -498,18 +538,17 @@ export class Draw extends Scene {
     frame.strokeRoundedRect(left + 6, top + 6, square + 4, square + 4, 12);
 
     this.buildToolsBand(Draw.TOOLS_Y);
-    this.buildStatusStrip(Draw.STATUS_Y);
     this.submitButton = button(
       this,
       width / 2,
-      Draw.SUBMIT_Y,
-      this.practiceMode ? PRACTICE_SUBMIT_LABEL : 'BRING TO LIFE',
-      () => this.trySubmit(),
+      this.submitCenterY(),
+      this.practiceMode ? PRACTICE_SUBMIT_LABEL : 'NEXT',
+      () => this.continueFromDrawing(),
       width - EDGE * 2,
       this.practiceMode ? UI.tapeAlt : UI.coral,
       UI.ink
     );
-    this.submitButton.setAlpha(0).setVisible(false);
+    this.submitButton.setAlpha(0.58).setVisible(true);
   }
 
   // Two compact rows: every base color remains visible, while editing tools and
@@ -532,7 +571,9 @@ export class Draw extends Scene {
     const canUseStickers =
       !this.practiceMode && (this.getArenaState()?.myScribbits.length ?? 0) > 0;
     const hasPremiumPens = this.unlockedPens().length > 0;
-    const toolCount = 3 + Number(canUseStickers) + Number(hasPremiumPens);
+    // Brush sizing owns two slots so its minus and plus actions each keep a
+    // full thumb-sized target instead of hiding several widths behind one tap.
+    const toolCount = 6 + Number(canUseStickers) + Number(hasPremiumPens);
     const toolSpacing = panelW / toolCount;
     const toolWidth = Math.min(120, toolSpacing - 12);
     const toolSlots = Array.from(
@@ -540,19 +581,24 @@ export class Draw extends Scene {
       (_, index) => EDGE + toolSpacing * (index + 0.5)
     );
     let toolIndex = 0;
+    const brushLeftSlot = toolSlots[toolIndex] ?? width / 2 - toolSpacing / 2;
+    const brushRightSlot =
+      toolSlots[toolIndex + 1] ?? width / 2 + toolSpacing / 2;
     this.buildLineWidthControl(
-      toolSlots[toolIndex] ?? width / 2,
+      (brushLeftSlot + brushRightSlot) / 2,
       toolY,
-      toolWidth
+      toolSpacing * 2 - 12,
+      toolSpacing * 2
     );
-    toolIndex += 1;
+    toolIndex += 2;
     this.setLineWidth(DEFAULT_LINE_WIDTH);
 
     if (hasPremiumPens) {
       this.buildPremiumPenControl(
         toolSlots[toolIndex] ?? width / 2,
         toolY,
-        toolWidth
+        toolWidth,
+        toolSpacing
       );
       toolIndex += 1;
     }
@@ -563,7 +609,8 @@ export class Draw extends Scene {
         toolY,
         'sticker',
         () => this.toggleStickerDrawer(),
-        toolWidth
+        toolWidth,
+        toolSpacing
       );
       toolIndex += 1;
       this.stickerButtonLabel = label(
@@ -578,21 +625,42 @@ export class Draw extends Scene {
       stickerBtn.add(this.stickerButtonLabel);
     }
 
-    this.toolIconButton(
+    this.eraserToolButton = this.toolIconButton(
       toolSlots[toolIndex] ?? width - 260,
       toolY,
       'eraser',
-      () => this.canvas?.setEraser(),
-      toolWidth
+      () => this.selectEraser(),
+      toolWidth,
+      toolSpacing
     );
     toolIndex += 1;
-    this.toolIconButton(
+    this.clearToolButton = this.toolIconButton(
+      toolSlots[toolIndex] ?? width - 210,
+      toolY,
+      'clear',
+      () => this.clearDrawing(),
+      toolWidth,
+      toolSpacing
+    );
+    toolIndex += 1;
+    this.undoToolButton = this.toolIconButton(
       toolSlots[toolIndex] ?? width - 160,
       toolY,
       'undo',
-      () => this.canvas?.undo(),
-      toolWidth
+      () => this.undoDrawing(),
+      toolWidth,
+      toolSpacing
     );
+    toolIndex += 1;
+    this.redoToolButton = this.toolIconButton(
+      toolSlots[toolIndex] ?? width - 90,
+      toolY,
+      'redo',
+      () => this.redoDrawing(),
+      toolWidth,
+      toolSpacing
+    );
+    this.updateDrawingToolStates();
   }
 
   private buildPaletteRow(y: number, panelWidth: number): void {
@@ -604,12 +672,14 @@ export class Draw extends Scene {
         .circle(
           0,
           0,
-          colorIndex === this.selectedColorIndex ? 29 : 23,
+          colorIndex === this.selectedColorIndex
+            ? SELECTED_SWATCH_RADIUS
+            : SWATCH_RADIUS,
           Phaser.Display.Color.HexStringToColor(color).color,
           1
         )
         .setStrokeStyle(
-          colorIndex === this.selectedColorIndex ? 6 : 3,
+          colorIndex === this.selectedColorIndex ? 8 : 3,
           colorIndex === this.selectedColorIndex ? UI.goldHex : UI.inkHex,
           1
         );
@@ -652,15 +722,17 @@ export class Draw extends Scene {
     this.canvas?.setColor(color);
     this.premiumPenBackground?.setStrokeStyle(4, UI.inkHex, 1);
     this.refreshPaletteSelection();
+    this.updateDrawingToolStates();
   }
 
   private refreshPaletteSelection(): void {
+    const erasing = this.canvas?.isErasing() ?? false;
     this.paletteSwatches.forEach((swatch, colorIndex) => {
       const selected = colorIndex === this.selectedColorIndex;
-      swatch.setRadius(selected ? 29 : 23);
+      swatch.setRadius(selected ? SELECTED_SWATCH_RADIUS : SWATCH_RADIUS);
       swatch.setStrokeStyle(
-        selected ? 6 : 3,
-        selected ? UI.goldHex : UI.inkHex,
+        selected && !erasing ? 8 : 3,
+        selected && !erasing ? UI.goldHex : UI.inkHex,
         1
       );
     });
@@ -671,7 +743,12 @@ export class Draw extends Scene {
     return PEN_CATALOG.filter((pen) => unlocked.has(pen.id));
   }
 
-  private buildPremiumPenControl(x: number, y: number, width: number): void {
+  private buildPremiumPenControl(
+    x: number,
+    y: number,
+    width: number,
+    interactionWidth: number
+  ): void {
     const pens = this.unlockedPens();
     const firstPen = pens[0];
     if (!firstPen) return;
@@ -695,7 +772,7 @@ export class Draw extends Scene {
     cycleMarks.fillStyle(UI.inkHex, 0.55);
     [-10, 0, 10].forEach((offset) => cycleMarks.fillCircle(offset, 34, 2));
     const hit = this.add
-      .rectangle(0, 0, Math.max(width, MIN_TOUCH), MIN_TOUCH, 0xffffff, 0.001)
+      .rectangle(0, 0, interactionWidth, MIN_TOUCH, 0xffffff, 0.001)
       .setInteractive({ useHandCursor: true });
     container.add([
       this.premiumPenBackground,
@@ -716,9 +793,9 @@ export class Draw extends Scene {
     );
     this.addNativeControl(
       'Cycle unlocked premium pen',
-      x - Math.max(width, MIN_TOUCH) / 2,
+      x - interactionWidth / 2,
       y - MIN_TOUCH / 2,
-      Math.max(width, MIN_TOUCH),
+      interactionWidth,
       MIN_TOUCH,
       () => this.cyclePremiumPen()
     );
@@ -738,6 +815,7 @@ export class Draw extends Scene {
     this.selectedColorIndex = -1;
     this.refreshPaletteSelection();
     this.premiumPenBackground?.setStrokeStyle(6, UI.goldHex, 1);
+    this.updateDrawingToolStates();
   }
 
   private toolIconButton(
@@ -745,15 +823,16 @@ export class Draw extends Scene {
     y: number,
     icon: PaperToolIconKey,
     onClick: () => void,
-    width = 88
+    width = 88,
+    interactionWidth = Math.max(width, MIN_TOUCH)
   ): Phaser.GameObjects.Container {
     const container = this.add.container(x, y);
     const bg = this.add
       .rectangle(0, 0, width, 88, UI.creamHex, 1)
       .setStrokeStyle(4, UI.inkHex, 1);
-    const glyph = paperToolIcon(this, icon, 0, 0, 36);
+    const glyph = paperToolIcon(this, icon, 0, 0, 46);
     const hit = this.add
-      .rectangle(0, 0, Math.max(width, MIN_TOUCH), MIN_TOUCH, 0xffffff, 0.001)
+      .rectangle(0, 0, interactionWidth, MIN_TOUCH, 0xffffff, 0.001)
       .setInteractive({ useHandCursor: true });
     container.add([bg, glyph, hit]);
     const press = (): void => {
@@ -774,37 +853,149 @@ export class Draw extends Scene {
         ease: 'Back.easeOut',
       });
     };
-    bindPressInteractionEvents(hit, {
-      press,
-      release,
-      activate: onClick,
-      pressOnHover: false,
-    }, {
-      gameTarget: this.input,
-      shutdownTarget: this.events,
-    });
+    bindPressInteractionEvents(
+      hit,
+      {
+        press,
+        release,
+        activate: onClick,
+        pressOnHover: false,
+      },
+      {
+        gameTarget: this.input,
+        shutdownTarget: this.events,
+      }
+    );
     const accessibleLabel =
       icon === 'sticker'
         ? 'Add an accessory sticker'
         : icon === 'eraser'
-          ? 'Use eraser'
-          : 'Undo last stroke';
-    this.addNativeControl(
+          ? 'Use eraser across all ink colors'
+          : icon === 'clear'
+            ? 'Clear drawing'
+            : icon === 'undo'
+              ? 'Undo last stroke'
+              : 'Redo last stroke';
+    const nativeControl = this.addNativeControl(
       accessibleLabel,
-      x - Math.max(width, MIN_TOUCH) / 2,
+      x - interactionWidth / 2,
       y - MIN_TOUCH / 2,
-      Math.max(width, MIN_TOUCH),
+      interactionWidth,
       MIN_TOUCH,
       onClick
     );
+    if (icon === 'eraser') this.eraserToolControl = nativeControl;
+    if (icon === 'clear') this.clearToolControl = nativeControl;
+    if (icon === 'undo') this.undoToolControl = nativeControl;
+    if (icon === 'redo') this.redoToolControl = nativeControl;
     return container;
   }
 
-  private buildLineWidthControl(x: number, y: number, width: number): void {
+  private handleDrawingChanged(): void {
+    this.updateDrawingToolStates();
+    this.schedulePreview();
+  }
+
+  private selectEraser(): void {
+    this.canvas?.setEraser();
+    this.refreshPaletteSelection();
+    this.updateDrawingToolStates();
+  }
+
+  private clearDrawing(): void {
+    if (!this.lastResult || this.lastResult.inkedPixels <= 0) return;
+    this.canvas?.clear();
+  }
+
+  private undoDrawing(): void {
+    if (!this.canvas?.canUndo()) return;
+    this.canvas.undo();
+  }
+
+  private redoDrawing(): void {
+    if (!this.canvas?.canRedo()) return;
+    this.canvas.redo();
+  }
+
+  private updateDrawingToolStates(): void {
+    const erasing = this.canvas?.isErasing() ?? false;
+    const hasInk = (this.lastResult?.inkedPixels ?? 0) > 0;
+    const canUndo = this.canvas?.canUndo() ?? false;
+    const canRedo = this.canvas?.canRedo() ?? false;
+    this.setToolButtonState(this.eraserToolButton, true, erasing);
+    this.setToolButtonState(this.clearToolButton, hasInk, false);
+    this.setToolButtonState(this.undoToolButton, canUndo, false);
+    this.setToolButtonState(this.redoToolButton, canRedo, false);
+    this.setNativeToolControlState(this.eraserToolControl, true, erasing);
+    this.setNativeToolControlState(this.clearToolControl, hasInk);
+    this.setNativeToolControlState(this.undoToolControl, canUndo);
+    this.setNativeToolControlState(this.redoToolControl, canRedo);
+  }
+
+  private setToolButtonState(
+    toolButton: Phaser.GameObjects.Container | null,
+    enabled: boolean,
+    selected: boolean
+  ): void {
+    if (!toolButton) return;
+    toolButton.setAlpha(enabled ? 1 : 0.32);
+    toolButton.list.forEach((child) => {
+      if (child.input) child.input.enabled = enabled;
+    });
+    const background = toolButton.list[0];
+    if (!(background instanceof Phaser.GameObjects.Rectangle)) return;
+    background.setFillStyle(selected ? UI.tapeAlt : UI.creamHex, 1);
+    background.setStrokeStyle(
+      selected ? 6 : 4,
+      selected ? UI.coralDeep : UI.inkHex,
+      1
+    );
+  }
+
+  private setNativeToolControlState(
+    control: HTMLButtonElement | null,
+    enabled: boolean,
+    selected = false
+  ): void {
+    if (!control) return;
+    control.disabled = !enabled;
+    control.tabIndex = enabled ? 0 : -1;
+    control.setAttribute('aria-disabled', String(!enabled));
+    if (control === this.eraserToolControl) {
+      control.setAttribute('aria-pressed', String(selected));
+    } else {
+      control.removeAttribute('aria-pressed');
+    }
+  }
+
+  private buildLineWidthControl(
+    x: number,
+    y: number,
+    width: number,
+    interactionWidth: number
+  ): void {
     const preview = this.add.container(x, y);
     const bg = this.add
       .rectangle(0, 0, width, 88, UI.creamHex, 1)
       .setStrokeStyle(4, UI.inkHex, 1);
+    // Stroke samples communicate brush size without relying on typographic
+    // minus/plus marks that looked unrelated to the paper tool family.
+    this.decreaseBrushSizeMark = this.add.graphics();
+    this.decreaseBrushSizeMark.lineStyle(4, UI.inkHex, 1);
+    this.decreaseBrushSizeMark.lineBetween(
+      -width / 4 - 17,
+      0,
+      -width / 4 + 17,
+      0
+    );
+    this.increaseBrushSizeMark = this.add.graphics();
+    this.increaseBrushSizeMark.lineStyle(12, UI.inkHex, 1);
+    this.increaseBrushSizeMark.lineBetween(
+      width / 4 - 17,
+      0,
+      width / 4 + 17,
+      0
+    );
     this.lineWidthPreviewDot = this.add.circle(
       0,
       0,
@@ -813,33 +1004,73 @@ export class Draw extends Scene {
       1
     );
     const ring = this.add
-      .circle(0, 0, 31, UI.creamHex, 0)
+      .circle(0, 0, 24, UI.creamHex, 0)
       .setStrokeStyle(3, UI.inkHex, 0.35);
-    const hit = this.add
-      .rectangle(0, 0, width, MIN_TOUCH, 0xffffff, 0.001)
+    const decreaseHit = this.add
+      .rectangle(
+        -interactionWidth / 4,
+        0,
+        interactionWidth / 2,
+        MIN_TOUCH,
+        0xffffff,
+        0.001
+      )
       .setInteractive({ useHandCursor: true });
-    preview.add([bg, ring, this.lineWidthPreviewDot, hit]);
-    const cycleLineWidth = (): void => {
-      const next = this.lineWidth + LINE_WIDTH_STEP * 2;
-      this.setLineWidth(next > MAX_LINE_WIDTH ? MIN_LINE_WIDTH : next);
+    const increaseHit = this.add
+      .rectangle(
+        interactionWidth / 4,
+        0,
+        interactionWidth / 2,
+        MIN_TOUCH,
+        0xffffff,
+        0.001
+      )
+      .setInteractive({ useHandCursor: true });
+    preview.add([
+      bg,
+      this.decreaseBrushSizeMark,
+      this.increaseBrushSizeMark,
+      ring,
+      this.lineWidthPreviewDot,
+      decreaseHit,
+      increaseHit,
+    ]);
+    const bindBrushSizeAction = (
+      hit: Phaser.GameObjects.Rectangle,
+      onActivate: () => void
+    ): void => {
+      bindPressInteractionEvents(
+        hit,
+        {
+          press: () => preview.setScale(0.96),
+          release: () => preview.setScale(1),
+          activate: onActivate,
+          pressOnHover: false,
+        },
+        { gameTarget: this.input, shutdownTarget: this.events }
+      );
     };
-    bindPressInteractionEvents(
-      hit,
-      {
-        press: () => preview.setScale(0.92),
-        release: () => preview.setScale(1),
-        activate: cycleLineWidth,
-        pressOnHover: false,
-      },
-      { gameTarget: this.input, shutdownTarget: this.events }
-    );
-    this.addNativeControl(
-      'Change brush size',
-      x - width / 2,
+    const decreaseBrushSize = (): void =>
+      this.setLineWidth(this.lineWidth - LINE_WIDTH_STEP);
+    const increaseBrushSize = (): void =>
+      this.setLineWidth(this.lineWidth + LINE_WIDTH_STEP);
+    bindBrushSizeAction(decreaseHit, decreaseBrushSize);
+    bindBrushSizeAction(increaseHit, increaseBrushSize);
+    this.decreaseBrushSizeControl = this.addNativeControl(
+      'Decrease brush size',
+      x - interactionWidth / 2,
       y - MIN_TOUCH / 2,
-      width,
+      interactionWidth / 2,
       MIN_TOUCH,
-      cycleLineWidth
+      decreaseBrushSize
+    );
+    this.increaseBrushSizeControl = this.addNativeControl(
+      'Increase brush size',
+      x,
+      y - MIN_TOUCH / 2,
+      interactionWidth / 2,
+      MIN_TOUCH,
+      increaseBrushSize
     );
   }
 
@@ -847,10 +1078,32 @@ export class Draw extends Scene {
     this.lineWidth = Phaser.Math.Clamp(width, MIN_LINE_WIDTH, MAX_LINE_WIDTH);
     this.canvas?.setBrushSize(this.lineWidth);
     this.lineWidthPreviewDot?.setRadius(this.lineWidthPreviewRadius());
+    this.updateBrushSizeControlState();
+  }
+
+  private updateBrushSizeControlState(): void {
+    const atMinimum = this.lineWidth <= MIN_LINE_WIDTH;
+    const atMaximum = this.lineWidth >= MAX_LINE_WIDTH;
+    this.decreaseBrushSizeMark?.setAlpha(atMinimum ? 0.28 : 1);
+    this.increaseBrushSizeMark?.setAlpha(atMaximum ? 0.28 : 1);
+    if (this.decreaseBrushSizeControl) {
+      this.decreaseBrushSizeControl.disabled = atMinimum;
+      this.decreaseBrushSizeControl.setAttribute(
+        'aria-disabled',
+        String(atMinimum)
+      );
+    }
+    if (this.increaseBrushSizeControl) {
+      this.increaseBrushSizeControl.disabled = atMaximum;
+      this.increaseBrushSizeControl.setAttribute(
+        'aria-disabled',
+        String(atMaximum)
+      );
+    }
   }
 
   private lineWidthPreviewRadius(): number {
-    return Phaser.Math.Clamp(this.lineWidth / 2, 5, 23);
+    return Phaser.Math.Clamp(this.lineWidth / 2, 4, 18);
   }
 
   // The current arena snapshot (myPens/myInk live here).
@@ -858,36 +1111,19 @@ export class Draw extends Scene {
     return getArena(this);
   }
 
-  private buildStatusStrip(centerY: number): void {
-    const { width } = this.scale;
-    const panelW = width - EDGE * 2;
-    const panelH = 96;
-    const card = stickerCard(this, width / 2, centerY, panelW, panelH, {
-      tape: false,
-    });
-    this.reactionText = label(
-      this,
-      0,
-      0,
-      'DRAW A BODY',
-      TYPE.body,
-      UI.ink,
-      true
-    );
-    card.add(this.reactionText);
-  }
-
-  // --- DOM overlay (live canvas + name input) -------------------------------
+  // --- DOM overlay (live canvas) --------------------------------------------
   private buildOverlay(): void {
     this.overlay = new DomOverlay(this);
 
-    this.canvas = new DrawCanvas({ onStrokeEnd: () => this.schedulePreview() });
+    this.canvas = new DrawCanvas({
+      onStrokeEnd: () => this.handleDrawingChanged(),
+    });
     this.canvas.setBrushSize(this.lineWidth);
     this.canvas.element.setAttribute(
       'aria-label',
       this.practiceMode
         ? 'Draw a temporary practice fighter. The server reads its shape and returns a reward-free battle replay.'
-        : `Draw your Scribbit. Its shape and colors choose how it fights. Shape cues: ${DRAW_RULES_COPY.replace(/\n/g, '; ')}.${this.isFirstScribbit ? ' First run: draw, watch it fight, and earn Ink.' : ''}`
+        : `Draw your Scribbit. Its shape and colors choose how it fights.${this.isFirstScribbit ? ' First run: draw, watch it fight, and earn Ink.' : ''}`
     );
     const square = Draw.CANVAS_SQUARE;
     this.overlay.place(this.canvas.element, {
@@ -903,46 +1139,6 @@ export class Draw extends Scene {
       this.setCreationControlsReady(false);
       return;
     }
-
-    // Official births get a name. Practice deliberately does not: it is a
-    // throwaway shape test, not another roster object in disguise.
-    this.nameInput = document.createElement('input');
-    this.nameInput.type = 'text';
-    this.nameInput.className = 'scribbits-name-input';
-    this.nameInput.maxLength = 24;
-    this.nameInput.placeholder = 'Name your scribbit…';
-    this.nameInput.autocomplete = 'off';
-    this.nameInput.autocapitalize = 'words';
-    this.nameInput.enterKeyHint = 'done';
-    this.nameInput.setAttribute('aria-label', 'Name your Scribbit');
-    this.nameInput.addEventListener('keydown', (event) => {
-      if (event.key !== 'Enter' || event.isComposing) return;
-      event.preventDefault();
-      this.nameInput?.blur();
-      this.trySubmit();
-    });
-    Object.assign(this.nameInput.style, {
-      ...DOM_TYPE.title,
-      textAlign: 'center',
-      color: '#2b2016',
-      background: '#fff7e8',
-      border: '4px solid #2b2016',
-      borderRadius: '14px',
-      outline: 'none',
-      opacity: '0',
-      transition: prefersReducedMotion() ? 'none' : 'opacity 180ms ease-out',
-    });
-    // Distinct row above the submit button — NAME_Y is its center; a 68px-tall
-    // field spans 1076..1144, well clear of the 96px submit button (1170..1266).
-    const nameH = 68;
-    this.nameOverlay = new DomOverlay(this);
-    this.nameOverlay.setRootAttributes({ 'aria-label': 'Scribbit identity' });
-    this.nameOverlay.place(this.nameInput, {
-      x: EDGE,
-      y: Draw.NAME_Y - nameH / 2,
-      width: this.scale.width - EDGE * 2,
-      height: nameH,
-    });
     this.setCreationControlsReady(false);
   }
 
@@ -967,7 +1163,7 @@ export class Draw extends Scene {
     });
     this.overlay.place(progress, {
       x: EDGE,
-      y: Draw.NAME_Y - 22,
+      y: Draw.PRACTICE_PROGRESS_Y - 22,
       width: this.scale.width - EDGE * 2,
       height: 44,
     });
@@ -1087,55 +1283,33 @@ export class Draw extends Scene {
   }
 
   private updateReaction(result: AnalyzerResult): void {
-    const feedback = planDrawFeedback({
-      inkedPixels: result.inkedPixels,
-      minimumInkedPixels: MIN_INK_PIXELS,
-      stats: result.stats,
-      element: result.element,
-    });
-    const ready = feedback.phase === 'ready';
-    this.setCanvasDareVisible(feedback.phase === 'blank');
+    const ready = hasMinimumDrawingInk(result);
+    this.setCanvasDareVisible(result.inkedPixels === 0);
     this.setCreationControlsReady(ready);
-
-    if (this.reactionText.text !== feedback.message) {
-      this.reactionText.setText(feedback.message);
-      this.reactionText.setColor(
-        ready ? ELEMENT_STYLES[result.element].primaryText : UI.inkSoft
-      );
-      this.tweens.add({
-        targets: this.reactionText,
-        scale: 1.12,
-        duration: 160,
-        yoyo: true,
-      });
-    }
+    this.updateDrawingToolStates();
   }
 
   private setCreationControlsReady(ready: boolean): void {
     if (this.creationControlsReady === ready) return;
     this.creationControlsReady = ready;
 
-    if (this.nameInput) {
-      this.nameInput.style.opacity = ready ? '1' : '0';
-      this.nameInput.style.pointerEvents = ready ? 'auto' : 'none';
-      this.nameInput.disabled = !ready;
-      this.nameInput.tabIndex = ready ? 0 : -1;
-      this.nameInput.setAttribute('aria-hidden', ready ? 'false' : 'true');
-      if (!ready) this.nameInput.blur();
-    }
-
     if (this.submitControl) {
       this.submitControl.disabled = !ready;
       this.submitControl.tabIndex = ready ? 0 : -1;
-      this.submitControl.setAttribute('aria-hidden', ready ? 'false' : 'true');
+      this.submitControl.setAttribute('aria-hidden', 'false');
       if (!ready) this.submitControl.blur();
     }
 
     const submitButton = this.submitButton;
     if (!submitButton) return;
     this.tweens.killTweensOf(submitButton);
+    submitButton.list.forEach((child) => {
+      if (child.input) child.input.enabled = ready;
+    });
     if (!ready) {
-      submitButton.setAlpha(0).setVisible(false);
+      // Both Draw modes keep one visible disabled action so the page always
+      // shows where the flow continues once the Scribbit has enough ink.
+      submitButton.setVisible(true).setAlpha(0.58);
       return;
     }
     submitButton.setVisible(true);
@@ -1143,7 +1317,6 @@ export class Draw extends Scene {
       submitButton.setAlpha(1);
       return;
     }
-    submitButton.setAlpha(0);
     this.tweens.add({
       targets: submitButton,
       alpha: 1,
@@ -1152,11 +1325,11 @@ export class Draw extends Scene {
     });
   }
 
-  // --- Submit + ceremony ----------------------------------------------------
-  private trySubmit(): void {
-    if (this.submitting) return;
+  // --- Confirmation, submit + ceremony -------------------------------------
+  private continueFromDrawing(): void {
+    if (this.submitting || this.drawConfirmation) return;
     // Flush the debounced analyzer so the visible preview and exported base PNG
-    // represent the same final stroke set at the moment of submission.
+    // represent the same final stroke set in the confirmation and submission.
     this.previewTimer?.remove();
     this.previewTimer = null;
     this.refreshPreview();
@@ -1166,33 +1339,76 @@ export class Draw extends Scene {
       this.cameras.main.shake(220, 0.006);
       return;
     }
-    const name = this.practiceMode
-      ? 'Practice Shape'
-      : (this.nameInput?.value.trim() ?? '');
-    if (!this.practiceMode && name.length < 2) {
-      showToast('Give your scribbit a name (2+ letters).');
-      this.nameInput?.focus();
+    const draft = this.createSubmissionDraft(result);
+    if (this.practiceMode) {
+      this.beginSubmission('Practice Shape', draft);
       return;
     }
 
+    // The drawing surface is native DOM and otherwise renders above Phaser's
+    // modal card. The frozen preview replaces it until the player returns.
+    this.overlay.setVisible(false);
+    this.drawConfirmation = openDrawConfirmationModal(this, {
+      previewDataUrl: draft.imageDataUrl,
+      initialName: this.draftName,
+      trigger: this.submitControl,
+      onNameChange: (name) => {
+        this.draftName = name;
+      },
+      onClose: (name) => {
+        this.draftName = name;
+        this.drawConfirmation = null;
+        this.overlay.setVisible(true);
+      },
+      onConfirm: (name) => {
+        this.draftName = name;
+        this.drawConfirmation = null;
+        this.beginSubmission(name, draft);
+      },
+    });
+  }
+
+  private createSubmissionDraft(result: AnalyzerResult): SubmissionDraft {
+    const accessories = this.stickers?.toAttachedAccessories() ?? [];
+    const { baseImageDataUrl, imageDataUrl } =
+      this.canvas.exportSubmissionImages((ctx) => {
+        accessories.forEach((accessory) => {
+          const bakeSize = ACCESSORY_BASE_SIZE * accessory.scale;
+          drawAccessoryCanvas(
+            ctx,
+            accessory.id,
+            accessory.x,
+            accessory.y,
+            bakeSize,
+            accessory.rotation
+          );
+        });
+      });
+    return { result, accessories, baseImageDataUrl, imageDataUrl };
+  }
+
+  private beginSubmission(name: string, draft: SubmissionDraft): void {
+    if (this.submitting) return;
     this.submitting = true;
     // Hide the draggable stickers + drawer so only the baked PNG shows in the
     // ceremony; the metadata is captured first from their current transforms.
-    const accessories = this.practiceMode
-      ? []
-      : (this.stickers?.toAttachedAccessories() ?? []);
     this.stickers?.hideOverlays();
     this.overlay.setVisible(false);
     if (this.practiceMode) {
-      void this.submitPractice(name);
+      void this.submitPractice(name, draft);
     } else {
-      void this.submit(name, result, accessories);
+      void this.submit(name, draft);
     }
   }
 
-  private async submitPractice(name: string): Promise<void> {
-    const { baseImageDataUrl } = this.canvas.exportSubmissionImages();
-    const response = await practiceBattle({ name, baseImageDataUrl });
+  private async submitPractice(
+    name: string,
+    draft: SubmissionDraft
+  ): Promise<void> {
+    const response = await practiceBattle({
+      name,
+      baseImageDataUrl: draft.baseImageDataUrl,
+    });
     if (!response.ok) {
       this.submitting = false;
       this.showError(response.error);
@@ -1209,40 +1425,19 @@ export class Draw extends Scene {
       ...recordPracticePower(this, selectPrimaryPower(response.data.a.stats))
         .triedPowers,
     ];
-    this.playCeremony(response.data.a, baseImageDataUrl);
+    this.playCeremony(response.data.a, draft.baseImageDataUrl);
   }
 
-  private async submit(
-    name: string,
-    result: AnalyzerResult,
-    accessories: AttachedAccessory[]
-  ): Promise<void> {
-    // Export the untouched analyzer source plus a rendered copy with accessories
-    // baked at their canvas-space transforms. Metadata lets the server consume
-    // the owned copies without allowing cosmetics to affect combat stats.
-    const { baseImageDataUrl, imageDataUrl } =
-      this.canvas.exportSubmissionImages((ctx) => {
-        accessories.forEach((accessory) => {
-          // The AttachedAccessory scale is canvas-px-per-unit-box relative to the
-          // shared sticker box; convert back to a canvas-px box edge for the bake.
-          const bakeSize = ACCESSORY_BASE_SIZE * accessory.scale;
-          drawAccessoryCanvas(
-            ctx,
-            accessory.id,
-            accessory.x,
-            accessory.y,
-            bakeSize,
-            accessory.rotation
-          );
-        });
-      });
+  private async submit(name: string, draft: SubmissionDraft): Promise<void> {
     const response = await submitScribbit({
       name,
-      baseImageDataUrl,
-      imageDataUrl,
-      stats: result.stats,
-      element: result.element,
-      ...(accessories.length > 0 ? { accessories } : {}),
+      baseImageDataUrl: draft.baseImageDataUrl,
+      imageDataUrl: draft.imageDataUrl,
+      stats: draft.result.stats,
+      element: draft.result.element,
+      ...(draft.accessories.length > 0
+        ? { accessories: draft.accessories }
+        : {}),
     });
     if (!response.ok) {
       this.submitting = false;
@@ -1281,7 +1476,7 @@ export class Draw extends Scene {
         myScribbits: [response.data, ...arena.myScribbits].slice(0, 3),
       });
     }
-    this.playCeremony(response.data, imageDataUrl);
+    this.playCeremony(response.data, draft.imageDataUrl);
   }
 
   // Daily birth and ephemeral practice share one high-juice reveal. Practice
@@ -1294,6 +1489,16 @@ export class Draw extends Scene {
     this.livingPaper = null;
     this.stickers?.destroy();
     this.stickers = null;
+    this.headerControlOverlay?.setVisible(false);
+    this.toolControlOverlay?.setVisible(false);
+    this.submitOverlay?.setVisible(false);
+    this.revealControlOverlay?.destroy();
+    this.revealControlOverlay = new CanvasActionOverlay(this);
+    this.revealControlOverlay.setRootAttributes({
+      'aria-label': this.practiceMode
+        ? 'Practice power result'
+        : 'Scribbit birth result',
+    });
     this.children.removeAll(true);
     this.cameras.main.setBackgroundColor(UI.desk);
     paperBackdrop(this);
@@ -1314,7 +1519,9 @@ export class Draw extends Scene {
         this.showBirthReveal(scribbit, textureKey, newborn),
       onError: () =>
         this.showError(
-          'Your drawing was saved, but its reveal could not load.'
+          this.practiceMode
+            ? 'The practice result could not load. Try the shape again.'
+            : 'Your drawing was saved, but its reveal could not load.'
         ),
     });
   }
@@ -1324,13 +1531,17 @@ export class Draw extends Scene {
     textureKey: string,
     awakenedNewborn: LiveSprite | null
   ): void {
+    if (this.practiceMode) {
+      this.showPracticeReveal(scribbit, textureKey, awakenedNewborn);
+      return;
+    }
     const { width } = this.scale;
 
     const title = handLettered(
       this,
       width / 2,
       180,
-      this.practiceMode ? 'POWER FOUND!' : "IT'S ALIVE!",
+      "IT'S ALIVE!",
       62,
       UI.goldText,
       true
@@ -1344,6 +1555,131 @@ export class Draw extends Scene {
     this.cameras.main.shake(200, 0.008);
 
     this.revealCard(scribbit, textureKey, awakenedNewborn);
+  }
+
+  private showPracticeReveal(
+    scribbit: Scribbit,
+    textureKey: string,
+    awakenedNewborn: LiveSprite | null
+  ): void {
+    const { width, height } = this.scale;
+    const shapeReceipt = planShapeReceipt(
+      scribbit.element,
+      selectPrimaryPower(scribbit.stats)
+    );
+    const revealPlan = planPracticeReveal(
+      getPracticeSession(this),
+      shapeReceipt.move
+    );
+    const elementStyle = ELEMENT_STYLES[scribbit.element];
+    const cardY = height / 2 - 20;
+    const cardW = width - 120;
+    const cardH = 760;
+    const card = stickerCard(this, width / 2, cardY, cardW, cardH, {
+      tape: false,
+    })
+      .setScale(0.92)
+      .setAlpha(0);
+    const eyebrow = label(
+      this,
+      width / 2,
+      cardY - 300,
+      revealPlan.headline,
+      24,
+      UI.coralText,
+      true
+    )
+      .setDepth(10)
+      .setAlpha(0);
+    const spark = paperIcon(this, 'spark', width / 2 - 170, cardY - 302, {
+      size: 34,
+      fill: UI.gold,
+    })
+      .setDepth(10)
+      .setAlpha(0);
+    const halo = this.add
+      .circle(width / 2, cardY - 70, 150, elementStyle.soft, 0.34)
+      .setStrokeStyle(7, elementStyle.primary, 0.46)
+      .setDepth(5)
+      .setAlpha(0);
+    const newborn =
+      awakenedNewborn ??
+      new LiveSprite(this, width / 2, cardY - 70, textureKey, {
+        displaySize: 230,
+        stats: scribbit.stats,
+        depth: 10,
+        reduceMotion: prefersReducedMotion(),
+      });
+    newborn.setPosition(width / 2, cardY - 70).setDepth(10);
+    const powerName = handLettered(
+      this,
+      width / 2,
+      cardY + 132,
+      revealPlan.powerName,
+      52,
+      elementStyle.primaryText,
+      true
+    )
+      .setDepth(10)
+      .setAlpha(0);
+    if (powerName.width > cardW - 70) {
+      powerName.setScale((cardW - 70) / powerName.width);
+    }
+    const progress = label(
+      this,
+      width / 2,
+      cardY + 215,
+      `${shapeReceipt.battleLine}\n${revealPlan.progress}`,
+      22,
+      UI.inkSoft,
+      true
+    )
+      .setDepth(10)
+      .setAlpha(0);
+    const progressMaxWidth = cardW - 70;
+    if (progress.width > progressMaxWidth) {
+      progress.setScale(progressMaxWidth / progress.width);
+    }
+    const replayButton = iconButton(
+      this,
+      width / 2,
+      cardY + 300,
+      'replay',
+      revealPlan.primaryButton,
+      () => this.continueAfterBirth(scribbit),
+      430,
+      UI.coral,
+      UI.ink,
+      96,
+      UI.creamHex
+    )
+      .setDepth(10)
+      .setAlpha(0);
+    this.addNativeControl(
+      'Watch practice fight replay',
+      width / 2 - 215,
+      cardY + 252,
+      430,
+      96,
+      () => this.continueAfterBirth(scribbit),
+      true,
+      this.revealControlOverlay
+    );
+
+    this.tweens.add({
+      targets: card,
+      scale: 1,
+      alpha: 1,
+      duration: prefersReducedMotion() ? 1 : 320,
+      ease: 'Back.easeOut',
+    });
+    this.tweens.add({
+      targets: [eyebrow, spark, halo, powerName, progress, replayButton],
+      alpha: 1,
+      delay: prefersReducedMotion() ? 0 : 120,
+      duration: prefersReducedMotion() ? 1 : 260,
+    });
+    if (!awakenedNewborn) newborn.awaken();
   }
 
   private revealCard(
@@ -1371,16 +1707,16 @@ export class Draw extends Scene {
         reduceMotion: prefersReducedMotion(),
       });
     newborn.setPosition(width / 2, artY).setDepth(10);
-    const shapePowerName = getShapePowerSignatureName(
+    const shapeReceipt = planShapeReceipt(
       scribbit.element,
       selectPrimaryPower(scribbit.stats)
-    ).toUpperCase();
+    );
     const elementStyle = ELEMENT_STYLES[scribbit.element];
     const mainLabel = label(
       this,
       width / 2,
       cardY + 80,
-      this.practiceMode ? shapePowerName : scribbit.name.toUpperCase(),
+      scribbit.name.toUpperCase(),
       34,
       UI.ink,
       true
@@ -1394,17 +1730,16 @@ export class Draw extends Scene {
     const detailLabel = label(
       this,
       width / 2,
-      cardY + 132,
-      this.practiceMode
-        ? `${elementStyle.label.toUpperCase()} · SERVER CHECKED`
-        : `${elementStyle.label.toUpperCase()} · ${shapePowerName}`,
+      cardY + 145,
+      `${shapeReceipt.birthLine}\n${shapeReceipt.effect}`,
       20,
       elementStyle.primaryText,
       true
     )
       .setAlpha(0)
       .setDepth(10)
-      .setWordWrapWidth(cardW - 70);
+      .setWordWrapWidth(cardW - 70)
+      .setLineSpacing(6);
 
     this.tweens.add({
       targets: card,
@@ -1434,9 +1769,7 @@ export class Draw extends Scene {
       this,
       0,
       0,
-      this.practiceMode
-        ? `${this.practicePowers.length}/4 POWERS · NO REWARDS`
-        : `+${INK_REWARDS.dailyDraw} INK · ENTERED TONIGHT`,
+      `+${INK_REWARDS.dailyDraw} INK · ENTERED TONIGHT`,
       20,
       UI.coralText,
       true
@@ -1449,23 +1782,33 @@ export class Draw extends Scene {
       duration: 350,
     });
 
+    const actionLabel = this.startFightAfterBirth
+      ? 'WATCH FIRST FIGHT'
+      : 'CONTINUE';
     ghostButton(
       this,
       width / 2,
       height - 80,
-      this.practiceMode
-        ? 'WATCH REPLAY'
-        : this.startFightAfterBirth
-          ? 'WATCH FIRST FIGHT'
-          : 'CONTINUE',
+      actionLabel,
       () => this.continueAfterBirth(scribbit),
       420
     ).setDepth(10);
+    this.addNativeControl(
+      actionLabel === 'CONTINUE' ? 'Continue to Arena' : actionLabel,
+      width / 2 - 210,
+      height - 128,
+      420,
+      96,
+      () => this.continueAfterBirth(scribbit),
+      true,
+      this.revealControlOverlay
+    );
   }
 
   private continueAfterBirth(scribbit: Scribbit): void {
     if (this.birthContinuationStarted) return;
     this.birthContinuationStarted = true;
+    this.revealControlOverlay?.setVisible(false);
 
     if (this.practiceMode) {
       const report = this.pendingPracticeReport;

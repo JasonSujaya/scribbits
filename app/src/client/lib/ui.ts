@@ -1107,15 +1107,7 @@ export function appTabBar(
       slot.add(waxSeal(scene, 0, -24));
     }
 
-    const icon = paperDockIcon(
-      scene,
-      tab.key,
-      0,
-      -24,
-      46,
-      UI.inkHex,
-      true
-    );
+    const icon = paperDockIcon(scene, tab.key, 0, -24, 46, UI.inkHex, true);
     const visibleLabel = tab.key === 'draw' ? 'Draw' : tab.label;
     const text = label(
       scene,
@@ -1123,20 +1115,10 @@ export function appTabBar(
       32,
       visibleLabel,
       23,
-      UI.ink,
+      isActive ? UI.coralText : UI.ink,
       true
     );
     slot.add([icon, text]);
-    if (isActive) {
-      const underline = scene.add.graphics();
-      underline.lineStyle(5, UI.coralDeep, 1);
-      underline.beginPath();
-      underline.moveTo(-22, 51);
-      underline.lineTo(-5, 48);
-      underline.lineTo(23, 50);
-      underline.strokePath();
-      slot.add(underline);
-    }
 
     const hit = scene.add
       .rectangle(x, 0, slotWidth, barHeight, 0xffffff, 0.001)

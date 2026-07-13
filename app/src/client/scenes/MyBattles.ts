@@ -13,7 +13,6 @@ import { NAV_SAFE, prefersReducedMotion, TYPE, UI } from '../lib/theme';
 import { mountLivingPaper } from '../lib/livingpaper';
 import {
   label,
-  paperWordmark,
   paperPagination,
   stickerCard,
   errorPanel,
@@ -31,6 +30,7 @@ import type {
   BattleJournalEntryPlan,
   BattleJournalPerspective,
 } from '../lib/battlejournal';
+import { screenTitle } from '../lib/screentitle';
 
 const ROW_INNER_HEIGHT = 146;
 const ROW_STEP = 156;
@@ -72,11 +72,9 @@ export class MyBattles extends Scene {
       this.actionOverlay = null;
     });
     const { width } = this.scale;
-    paperWordmark(this, width / 2, 62, 'BATTLES', {
-      icon: 'sword',
-      fontSize: 40,
-      maxWidth: 360,
-      accent: UI.coral,
+    screenTitle(this, width / 2, 18, 'BATTLES', {
+      maxWidth: 390,
+      maxHeight: 90,
     });
     this.buildAppTabs();
     this.loadingCard = stickerCard(this, width / 2, 390, width - 120, 160, {

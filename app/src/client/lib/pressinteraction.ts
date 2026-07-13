@@ -50,6 +50,7 @@ export function bindPressInteractionEvents(
     callbacks.release();
   };
   const cancel = (pointer?: PressPointer): void => {
+    if (destroyed) return;
     if (
       pointer !== undefined &&
       armedPointerId !== null &&
@@ -73,6 +74,28 @@ export function bindPressInteractionEvents(
   const hover = (): void => {
     if (!destroyed && armedPointerId === null) showPressed();
   };
+  const destroyInternal = (restoreVisualState: boolean): void => {
+    if (destroyed) return;
+    if (restoreVisualState) release();
+    else {
+      armedPointerId = null;
+      visuallyPressed = false;
+    }
+    destroyed = true;
+    if (callbacks.pressOnHover ?? true) {
+      target.off?.('pointerover', hover);
+    }
+    target.off?.('pointerout', cancel);
+    target.off?.('pointerdown', press);
+    target.off?.('pointerup', activate);
+    target.off?.('pointerupoutside', cancel);
+    target.off?.('destroy', destroyFromLifecycle);
+    lifecycle.gameTarget?.off?.('gameout', cancel);
+    lifecycle.shutdownTarget?.off?.('shutdown', destroyFromLifecycle);
+  };
+  const destroy = (): void => destroyInternal(true);
+  const destroyFromLifecycle = (): void => destroyInternal(false);
+
   if (callbacks.pressOnHover ?? true) {
     target.on('pointerover', hover);
   }
@@ -80,15 +103,8 @@ export function bindPressInteractionEvents(
   target.on('pointerdown', press);
   target.on('pointerup', activate);
   target.on('pointerupoutside', cancel);
-
+  target.once?.('destroy', destroyFromLifecycle);
   lifecycle.gameTarget?.on('gameout', cancel);
-  const destroy = (): void => {
-    if (destroyed) return;
-    cancel();
-    destroyed = true;
-    lifecycle.gameTarget?.off?.('gameout', cancel);
-    lifecycle.shutdownTarget?.off?.('shutdown', destroy);
-  };
-  lifecycle.shutdownTarget?.once?.('shutdown', destroy);
+  lifecycle.shutdownTarget?.once?.('shutdown', destroyFromLifecycle);
   return { cancel: () => cancel(), destroy };
 }

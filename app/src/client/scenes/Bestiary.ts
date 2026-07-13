@@ -28,6 +28,7 @@ import {
 import type { DominantStat } from '../../shared/combat/types';
 import { appDock } from '../lib/appdock';
 import { CanvasActionOverlay, CanvasModalOverlay } from '../lib/overlay';
+import { screenTitle } from '../lib/screentitle';
 
 type GuideSection = 'shape' | 'elements' | 'ritual' | 'legends' | 'privacy';
 type GuideModal = Readonly<{
@@ -84,7 +85,10 @@ export class Bestiary extends Scene {
     this.livingPaper = new LivingPaper(this);
 
     const { width } = this.scale;
-    handLettered(this, width / 2, 58, 'FIELD GUIDE', 40, UI.ink, true);
+    screenTitle(this, width / 2, 18, 'FIELD GUIDE', {
+      maxWidth: 430,
+      maxHeight: 82,
+    });
     label(
       this,
       width / 2,

@@ -63,9 +63,19 @@ export const isScribbitHidden = async (
   );
 };
 
-export const clearScribbitReports = async (
+export const purgeScribbitModerationRecords = async (
   storage: ArenaStorage,
   scribbitId: string
 ): Promise<void> => {
-  await storage.del(getScribbitReportsKey(scribbitId));
+  const reportsKey = getScribbitReportsKey(scribbitId);
+  const reporterUserIds = await storage.hKeys(reportsKey);
+
+  for (const reporterUserId of reporterUserIds) {
+    await storage.hDel(getUserHiddenScribbitsKey(reporterUserId), [scribbitId]);
+    await storage.hDel(getUserReportedScribbitsKey(reporterUserId), [
+      scribbitId,
+    ]);
+  }
+
+  await storage.del(reportsKey);
 };

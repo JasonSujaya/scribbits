@@ -13,9 +13,11 @@ import {
   versusBadge,
 } from './ui';
 import { loadDrawing, fitDrawing, levelOf } from './scribbits';
-import { planBattleMatchupBrief } from './matchupbrief';
+import { BATTLE_MATCHUP_TITLE_BY_KIND } from './matchupbrief';
 import type { FounderRivalryStakesPlan } from './founderchronicle';
 import { formatRivalRunBattleLabel } from './rivalrunpresentation';
+import { selectPrimaryPower } from '../../shared/combat/selection';
+import { planShapeReceipt } from '../../shared/combat/shapepowercontent';
 
 export type VsCeremonyOptions = Readonly<{
   fighterA: Scribbit;
@@ -31,7 +33,6 @@ const FIGHTER_COLUMN_WIDTH = 292;
 
 type FighterSideOptions = Readonly<{
   fighter: Scribbit;
-  signatureName: string;
   startsOnLeft: boolean;
   centerY: number;
 }>;
@@ -40,7 +41,7 @@ function createFighterSide(
   scene: Scene,
   options: FighterSideOptions
 ): Phaser.GameObjects.Container {
-  const { fighter, signatureName, startsOnLeft, centerY } = options;
+  const { fighter, startsOnLeft, centerY } = options;
   const elementStyle = ELEMENT_STYLES[fighter.element];
   const side = scene.add.container(
     startsOnLeft ? 0 : scene.scale.width,
@@ -112,25 +113,6 @@ function createFighterSide(
     elementBadge(scene, 0, FIGHTER_ART_SIZE / 2 + 98, fighter.element, 0.82)
   );
 
-  const signatureTag = scene.add
-    .container(0, FIGHTER_ART_SIZE / 2 + 162)
-    .setAngle(startsOnLeft ? 1 : -1);
-  const signaturePlate = scene.add
-    .rectangle(0, 0, 278, 56, UI.creamHex, 0.94)
-    .setStrokeStyle(3, elementStyle.primary, 0.88);
-  const signature = label(
-    scene,
-    0,
-    0,
-    signatureName,
-    21,
-    elementStyle.primaryText,
-    true
-  );
-  if (signature.width > 248) signature.setScale(248 / signature.width);
-  signatureTag.add([signaturePlate, signature]);
-  side.add(signatureTag);
-
   return side;
 }
 
@@ -147,11 +129,6 @@ export function showVsCeremony(scene: Scene, options: VsCeremonyOptions): void {
   } = options;
   const { width, height } = scene.scale;
   const reduceMotion = prefersReducedMotion();
-  const brief = planBattleMatchupBrief({
-    battleKind,
-    fighterA,
-    fighterB,
-  });
   const fighterCenterY = rivalryStakes || rivalRun ? 490 : 450;
   const layer = scene.add.container(0, 0).setDepth(2000).setScrollFactor(0);
 
@@ -188,32 +165,34 @@ export function showVsCeremony(scene: Scene, options: VsCeremonyOptions): void {
     (rivalRun ? formatRivalRunBattleLabel(rivalRun) : null) ??
     rivalryStakes?.battleLabel ??
     battleKind.toUpperCase();
-  const topBattleLabel = label(
-    scene,
-    width / 2,
-    42,
-    battleLabelText,
-    19,
-    UI.inkSoft,
-    true
-  );
-  const topTape = scene.add
-    .rectangle(
+  if (rivalryStakes || rivalRun) {
+    const topBattleLabel = label(
+      scene,
       width / 2,
       42,
-      Math.min(width - 96, topBattleLabel.width + 72),
-      42,
-      UI.tape,
-      0.86
-    )
-    .setAngle(-1.5);
-  layer.add([topTape, topBattleLabel]);
+      battleLabelText,
+      19,
+      UI.inkSoft,
+      true
+    );
+    const topTape = scene.add
+      .rectangle(
+        width / 2,
+        42,
+        Math.min(width - 96, topBattleLabel.width + 72),
+        42,
+        UI.tape,
+        0.86
+      )
+      .setAngle(-1.5);
+    layer.add([topTape, topBattleLabel]);
+  }
 
   const matchupTitle = paperWordmark(
     scene,
     width / 2,
     104,
-    rivalryStakes?.episodeTitle ?? brief.title,
+    rivalryStakes?.episodeTitle ?? BATTLE_MATCHUP_TITLE_BY_KIND[battleKind],
     {
       fontSize: rivalryStakes ? 34 : 38,
       maxWidth: width - 92,
@@ -222,18 +201,34 @@ export function showVsCeremony(scene: Scene, options: VsCeremonyOptions): void {
   );
   layer.add(matchupTitle);
 
+  if (rivalryStakes) {
+    const episodeCue = label(
+      scene,
+      width / 2,
+      150,
+      rivalryStakes.episodeCue,
+      18,
+      UI.inkSoft,
+      true
+    )
+      .setWordWrapWidth(width - 120, true)
+      .setLineSpacing(-3);
+    layer.add(episodeCue);
+  }
+
   if (rivalryStakes || rivalRun) {
+    const stakesY = rivalryStakes ? 202 : 170;
     const contextDetail = rivalRun
       ? `${rivalRun.challenge.goal} • SCORE ${rivalRun.score - rivalRun.pointsAwarded} • ${rivalRun.tier.toUpperCase()} +${rivalRun.winPoints}`
       : (rivalryStakes?.detail ?? 'SERVER-LOCKED BATTLE');
     const stakesStrip = scene.add
-      .rectangle(width / 2, 170, width - 96, 54, UI.tapeAlt, 0.9)
+      .rectangle(width / 2, stakesY, width - 96, 54, UI.tapeAlt, 0.9)
       .setStrokeStyle(2, UI.inkHex, 0.52)
       .setAngle(0.3);
     const stakesDetail = label(
       scene,
       width / 2,
-      170,
+      stakesY,
       contextDetail,
       19,
       UI.ink,
@@ -244,7 +239,7 @@ export function showVsCeremony(scene: Scene, options: VsCeremonyOptions): void {
     layer.add([stakesStrip, stakesDetail]);
   }
 
-  const mechanicsY = height - 200;
+  const mechanicsY = height - 300;
   const mechanicsCard = scene.add
     .rectangle(width / 2, mechanicsY, width - 88, 152, UI.creamHex, 0.96)
     .setStrokeStyle(3, UI.inkHex, 0.3);
@@ -264,38 +259,50 @@ export function showVsCeremony(scene: Scene, options: VsCeremonyOptions): void {
     ELEMENT_STYLES[fighterB.element].primary,
     0.9
   );
-  const matchupLabel = label(
+  const receiptA = planShapeReceipt(
+    fighterA.element,
+    selectPrimaryPower(fighterA.stats)
+  );
+  const receiptB = planShapeReceipt(
+    fighterB.element,
+    selectPrimaryPower(fighterB.stats)
+  );
+  const receiptAView = label(
     scene,
     width / 2,
     mechanicsY - 32,
-    brief.matchup.label,
-    26,
-    UI.goldText,
+    receiptA.battleLine,
+    21,
+    ELEMENT_STYLES[fighterA.element].primaryText,
     true
   );
-  const matchupDetail = label(
+  const receiptBView = label(
     scene,
     width / 2,
-    mechanicsY + 25,
-    brief.matchup.detail,
-    22,
-    UI.inkSoft,
+    mechanicsY + 32,
+    receiptB.battleLine,
+    21,
+    ELEMENT_STYLES[fighterB.element].primaryText,
     true
-  )
-    .setWordWrapWidth(width - 144, true)
-    .setLineSpacing(-3);
+  );
+  const receiptWidth = width - 144;
+  if (receiptAView.width > receiptWidth) {
+    receiptAView.setScale(receiptWidth / receiptAView.width);
+  }
+  if (receiptBView.width > receiptWidth) {
+    receiptBView.setScale(receiptWidth / receiptBView.width);
+  }
   layer.add([
     mechanicsCard,
     leftMechanicsAccent,
     rightMechanicsAccent,
-    matchupLabel,
-    matchupDetail,
+    receiptAView,
+    receiptBView,
   ]);
 
   // Fighter A (left side)
   const sideA = createFighterSide(scene, {
     fighter: fighterA,
-    signatureName: brief.fighters.a.signatureName,
     startsOnLeft: true,
     centerY: fighterCenterY,
   });
@@ -304,7 +311,6 @@ export function showVsCeremony(scene: Scene, options: VsCeremonyOptions): void {
   // Fighter B (right side)
   const sideB = createFighterSide(scene, {
     fighter: fighterB,
-    signatureName: brief.fighters.b.signatureName,
     startsOnLeft: false,
     centerY: fighterCenterY,
   });
@@ -365,7 +371,7 @@ export function showVsCeremony(scene: Scene, options: VsCeremonyOptions): void {
   // Fade out and transition
   // Reduced motion removes the entrance motion, not the reading time. The old
   // 180ms reduced-motion dwell made the matchup card effectively invisible.
-  scene.time.delayedCall(rivalryStakes ? 2600 : 1800, () => {
+  scene.time.delayedCall(rivalryStakes ? 2600 : 2300, () => {
     scene.cameras.main.fadeOut(200, 255, 247, 232);
     scene.cameras.main.once('camerafadeoutcomplete', () => {
       layer.destroy(true);

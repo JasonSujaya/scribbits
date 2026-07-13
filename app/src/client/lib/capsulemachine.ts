@@ -10,7 +10,6 @@
 import * as Phaser from 'phaser';
 import { Scene } from 'phaser';
 import {
-  CAPSULE_COST,
   CAPSULE_FIRST_DAILY_COST,
   CAPSULE_RARITY_PERCENTAGES,
 } from '../../shared/arena';
@@ -25,44 +24,44 @@ import { label, handLettered, button, ghostButton, iconButton } from './ui';
 import { RARITY_STYLE } from './pens';
 import { COSMETIC_BY_ID } from '../../shared/cosmetics';
 import { renderCosmeticPreview } from './cosmeticpreview';
+import { gearRankStars } from './gearrankstars';
 import { CanvasModalOverlay } from './overlay';
+import {
+  collectorRankNameForPullCount,
+  planCapsulePrizeLayout,
+  prizeOwnershipAnnouncement,
+  prizeOwnershipLabel,
+} from './capsulepresentation';
 
 const DEPTH = 2500;
 const COLLECTION_BAR_WIDTH = 480;
 const COLLECTION_BAR_HEIGHT = 22;
-const CAPSULE_ODDS_COPY =
-  `${CAPSULE_RARITY_PERCENTAGES.common}% COMMON · ` +
-  `${CAPSULE_RARITY_PERCENTAGES.rare}% RARE · ` +
-  `${CAPSULE_RARITY_PERCENTAGES.epic}% EPIC`;
+const CAPSULE_ODDS_ACCESSIBLE_COPY =
+  `Odds are ${CAPSULE_RARITY_PERCENTAGES.common} percent common, ` +
+  `${CAPSULE_RARITY_PERCENTAGES.rare} percent rare, and ` +
+  `${CAPSULE_RARITY_PERCENTAGES.epic} percent epic.`;
 
-// Collector ranks are presentation-only milestones. Pull rewards, rarity, and
-// pity remain entirely server-authoritative.
-const COLLECTOR_RANKS = [
-  { minimumPullCount: 0, name: 'Ink Rookie' },
-  { minimumPullCount: 5, name: 'Capsule Scout' },
-  { minimumPullCount: 15, name: 'Curio Keeper' },
-  { minimumPullCount: 30, name: 'Ink Curator' },
-  { minimumPullCount: 60, name: 'Master Archivist' },
-] as const;
+const MACHINE_CAPSULE_DOTS = Object.freeze([
+  { x: -72, y: -106, color: 0x8a5cd8 },
+  { x: -28, y: -118, color: 0xffd447 },
+  { x: 20, y: -111, color: 0x4faa4f },
+  { x: 67, y: -98, color: 0xff6b4a },
+  { x: -88, y: -64, color: 0x4faa4f },
+  { x: -45, y: -72, color: 0x2f9fd8 },
+  { x: 0, y: -67, color: 0xff6b4a },
+  { x: 47, y: -60, color: 0xffd447 },
+  { x: 86, y: -54, color: 0x58c3cc },
+  { x: -68, y: -25, color: 0xff6b4a },
+  { x: -23, y: -34, color: 0x8a5cd8 },
+  { x: 24, y: -23, color: 0x2f9fd8 },
+  { x: 66, y: -18, color: 0x4faa4f },
+] as const);
 
 const createCapsuleOperationId = (): string => {
   return (
     globalThis.crypto?.randomUUID?.() ??
     `capsule-${Date.now()}-${Math.random().toString(36).slice(2, 14)}`
   );
-};
-
-const collectorRankNameForPullCount = (pullCount: number): string => {
-  let currentRankIndex = 0;
-  for (let index = COLLECTOR_RANKS.length - 1; index >= 0; index -= 1) {
-    const rank = COLLECTOR_RANKS[index];
-    if (rank && pullCount >= rank.minimumPullCount) {
-      currentRankIndex = index;
-      break;
-    }
-  }
-
-  return (COLLECTOR_RANKS[currentRankIndex] ?? COLLECTOR_RANKS[0]).name;
 };
 
 export type CapsuleMachineOpts = {
@@ -111,7 +110,7 @@ export function openCapsuleMachine(
       if (prizeOpen) dismissPrizeAction?.();
       else close();
     },
-    'Spend earned Ink to open one cosmetic capsule. The server owns the price, reward, and pity progress.'
+    `Spend earned Ink to open one cosmetic capsule. The server owns the price, reward, and pity progress. ${CAPSULE_ODDS_ACCESSIBLE_COPY}`
   );
   layer.once('destroy', () => {
     destroyed = true;
@@ -157,13 +156,13 @@ export function openCapsuleMachine(
     .setScrollFactor(0)
     .setDepth(DEPTH + 2);
   const progressPaper = scene.add
-    .rectangle(0, 0, width - 150, 116, UI.creamHex, 0.96)
+    .rectangle(0, 0, width - 150, 92, UI.creamHex, 0.96)
     .setStrokeStyle(3, UI.inkHex, 0.85);
-  const collectorRankText = label(scene, 0, -40, '', 19, UI.goldText, true);
+  const collectorRankText = label(scene, 0, -29, '', 19, UI.goldText, true);
   const collectionTrack = scene.add
     .rectangle(
       -COLLECTION_BAR_WIDTH / 2,
-      -8,
+      1,
       COLLECTION_BAR_WIDTH,
       COLLECTION_BAR_HEIGHT,
       UI.progressTrack,
@@ -174,22 +173,20 @@ export function openCapsuleMachine(
   const collectionFill = scene.add
     .rectangle(
       -COLLECTION_BAR_WIDTH / 2 + 3,
-      0,
+      1,
       6,
       COLLECTION_BAR_HEIGHT - 8,
       UI.gold,
       1
     )
     .setOrigin(0, 0.5);
-  const pityText = label(scene, 0, 22, '', 19, UI.coralText, true);
-  const oddsText = label(scene, 0, 47, CAPSULE_ODDS_COPY, 20, UI.inkSoft, true);
+  const pityText = label(scene, 0, 31, '', 19, UI.coralText, true);
   progressCard.add([
     progressPaper,
     collectorRankText,
     collectionTrack,
     collectionFill,
     pityText,
-    oddsText,
   ]);
   layer.add(progressCard);
 
@@ -207,9 +204,9 @@ export function openCapsuleMachine(
     const fillWidth = Math.max(6, (COLLECTION_BAR_WIDTH - 6) * collectionRatio);
     const collectorRankName = collectorRankNameForPullCount(pullCount);
     collectorRankText.setText(
-      `${collectorRankName.toUpperCase()} · ${discoveredCount}/${collectionTotal} FOUND`
+      `${collectorRankName.toUpperCase()} · ${discoveredCount} GEAR FOUND`
     );
-    pityText.setText(`EPIC IN ≤${pityRemaining}`);
+    pityText.setText(`EPIC BY ${pityRemaining}`);
     collectionFill.setVisible(collectionRatio > 0);
     scene.tweens.killTweensOf(collectionFill);
 
@@ -251,13 +248,6 @@ export function openCapsuleMachine(
   machine.add(capsule);
 
   // --- Pull button + copy ---------------------------------------------------
-  const priceCard = scene.add
-    .rectangle(width / 2, height * 0.7, width - 150, 64, UI.creamHex, 0.96)
-    .setStrokeStyle(3, UI.inkHex, 0.85)
-    .setScrollFactor(0)
-    .setDepth(DEPTH + 2);
-  layer.add(priceCard);
-
   const helper = label(
     scene,
     width / 2,
@@ -269,6 +259,7 @@ export function openCapsuleMachine(
   )
     .setScrollFactor(0)
     .setDepth(DEPTH + 2);
+  helper.setStroke(UI.ink, 4);
   helper.setWordWrapWidth(width - 190);
   layer.add(helper);
 
@@ -304,29 +295,29 @@ export function openCapsuleMachine(
     onActivate: () => close(),
   });
   const statusAnnouncement = modalActions.addStatus();
-  const prizeCardCenterY = getPrizeCardCenterY(height);
+  const prizeLayout = planCapsulePrizeLayout(
+    width,
+    height,
+    Boolean(opts.onViewCollection)
+  );
   const viewCollectionControl = opts.onViewCollection
     ? modalActions.add({
-        label: 'View cosmetic collection',
+        label: 'View Ink Kit',
         rect: {
-          x: width / 2 - 266,
-          y: prizeCardCenterY + 188,
-          width: 336,
+          x: prizeLayout.viewCollection?.overlayX ?? 0,
+          y: prizeLayout.overlayY,
+          width: prizeLayout.viewCollection?.width ?? 0,
           height: 100,
         },
         onActivate: () => close('collection'),
       })
     : null;
-  const acknowledgementWidth = opts.onViewCollection ? 184 : 320;
-  const acknowledgementCenterX = opts.onViewCollection
-    ? width / 2 + 178
-    : width / 2;
   const acknowledgementControl = modalActions.add({
     label: opts.onViewCollection ? 'Got it' : 'Keep drawing',
     rect: {
-      x: acknowledgementCenterX - acknowledgementWidth / 2,
-      y: prizeCardCenterY + 188,
-      width: acknowledgementWidth,
+      x: prizeLayout.acknowledgement.overlayX,
+      y: prizeLayout.overlayY,
+      width: prizeLayout.acknowledgement.width,
       height: 100,
     },
     onActivate: () => dismissPrizeAction?.(),
@@ -365,10 +356,10 @@ export function openCapsuleMachine(
     } else if (!pulling) {
       helper.setText(
         nextCost === CAPSULE_FIRST_DAILY_COST
-          ? `${nextCost} INK · DAILY DEAL · THEN ${CAPSULE_COST}`
+          ? `${nextCost} INK · DAILY DEAL`
           : `${nextCost} INK`
       );
-      helper.setColor(UI.inkSoft);
+      helper.setColor(UI.cream);
     }
   }
 
@@ -403,7 +394,7 @@ export function openCapsuleMachine(
     pulling = true;
     pullControl.disabled = true;
     helper.setText('Cranking…');
-    helper.setColor(UI.inkSoft);
+    helper.setColor(UI.cream);
     statusAnnouncement.textContent = 'Opening one Mystery Ink capsule.';
 
     // Crank + shake the machine.
@@ -463,19 +454,16 @@ export function openCapsuleMachine(
           acknowledgementLabel: 'KEEP DRAWING',
           onDismiss: onPrizeDismissed,
         };
-    statusAnnouncement.textContent = `${result.pull.rarity} ${result.pull.kind}: ${result.pull.name}. ${result.pull.description}`;
+    statusAnnouncement.textContent =
+      `${result.pull.rarity} ${result.pull.kind}: ${result.pull.name}. ` +
+      `${result.pull.description} ${prizeOwnershipAnnouncement(result.pull)} ` +
+      `Ink Kit now has ${result.progress.discoveredCount} found gear styles.`;
     setPrizeControlsVisible(true);
     acknowledgementControl.setAttribute(
       'aria-label',
       prizeActions.acknowledgementLabel
     );
-    dismissPrizeAction = revealPrize(
-      scene,
-      layer,
-      result.pull,
-      result.progress,
-      prizeActions
-    );
+    dismissPrizeAction = revealPrize(scene, layer, result.pull, prizeActions);
     modalActions.focusInitial(viewCollectionControl ?? acknowledgementControl);
   }
 
@@ -522,41 +510,49 @@ export function openCapsuleMachine(
 
 function drawMachine(scene: Scene, parent: Phaser.GameObjects.Container): void {
   const g = scene.add.graphics();
-  // Glass dome (a wobbly circle) full of tiny capsules.
-  g.fillStyle(0xbfe3f2, 0.5);
-  g.fillCircle(0, -70, 130);
+  // Calm, deterministic capsule placement keeps rebuilds from visually jumping.
+  g.fillStyle(0xbfe3f2, 0.62);
+  g.fillCircle(0, -72, 124);
   g.lineStyle(6, UI.inkHex, 1);
-  g.strokeCircle(0, -70, 130);
-  // A scatter of capsule dots inside the dome.
-  const dotColors = [0xff6b4a, 0xffd447, 0x4faa4f, 0x2f9fd8, 0x8a5cd8];
-  for (let index = 0; index < 22; index += 1) {
-    const angle = Math.random() * Math.PI * 2;
-    const radius = Math.random() * 100;
-    g.fillStyle(dotColors[index % dotColors.length] ?? 0xff6b4a, 0.9);
-    g.fillCircle(Math.cos(angle) * radius, -70 + Math.sin(angle) * radius, 12);
+  g.strokeCircle(0, -72, 124);
+  for (const dot of MACHINE_CAPSULE_DOTS) {
+    g.fillStyle(dot.color, 0.95);
+    g.fillCircle(dot.x, dot.y, 14);
+    g.lineStyle(2, UI.creamHex, 0.9);
+    g.lineBetween(dot.x - 10, dot.y + 2, dot.x + 10, dot.y + 2);
   }
-  // Body / base.
-  g.fillStyle(UI.creamHex, 1);
-  g.fillRoundedRect(-120, 40, 240, 150, 20);
+
+  // Coral dispenser body with a gold collar and a legible capsule hatch.
+  g.fillStyle(UI.coral, 1);
+  g.fillRoundedRect(-116, 36, 232, 164, 22);
   g.lineStyle(6, UI.inkHex, 1);
-  g.strokeRoundedRect(-120, 40, 240, 150, 20);
-  // Dispenser slot.
+  g.strokeRoundedRect(-116, 36, 232, 164, 22);
+  g.fillStyle(UI.gold, 1);
+  g.fillRoundedRect(-126, 24, 252, 36, 14);
+  g.strokeRoundedRect(-126, 24, 252, 36, 14);
+  g.fillStyle(UI.creamHex, 1);
+  g.fillRoundedRect(-52, 135, 104, 52, 12);
+  g.strokeRoundedRect(-52, 135, 104, 52, 12);
   g.fillStyle(UI.inkHex, 1);
-  g.fillRoundedRect(-46, 150, 92, 26, 8);
+  g.fillRoundedRect(-38, 148, 76, 25, 7);
   parent.add(g);
 
-  // The crank knob (a coin with a handle) that spins on pull.
-  const knob = scene.add.container(0, 96);
+  // The obvious side crank spins as one playful, readable mechanism.
+  const knob = scene.add.container(48, 92);
   const kg = scene.add.graphics();
   kg.fillStyle(UI.gold, 1);
-  kg.fillCircle(0, 0, 34);
+  kg.fillCircle(0, 0, 31);
   kg.lineStyle(5, UI.inkHex, 1);
-  kg.strokeCircle(0, 0, 34);
-  kg.lineStyle(8, UI.inkHex, 1);
-  kg.beginPath();
-  kg.moveTo(0, 0);
-  kg.lineTo(0, -22);
-  kg.strokePath();
+  kg.strokeCircle(0, 0, 31);
+  kg.lineStyle(13, 0x8a5700, 1);
+  kg.lineBetween(0, 0, 47, -12);
+  kg.lineStyle(5, UI.inkHex, 1);
+  kg.lineBetween(0, 0, 47, -12);
+  kg.fillStyle(UI.gold, 1);
+  kg.fillCircle(52, -13, 13);
+  kg.strokeCircle(52, -13, 13);
+  kg.fillStyle(UI.inkHex, 1);
+  kg.fillCircle(0, 0, 5);
   knob.add(kg);
   knob.setData('isKnob', true);
   parent.add(knob);
@@ -651,7 +647,6 @@ function revealPrize(
   scene: Scene,
   layer: Phaser.GameObjects.Container,
   pull: CapsulePull,
-  postPullProgress: CapsuleProgress,
   options: PrizeRevealOptions
 ): () => void {
   const { width, height } = scene.scale;
@@ -677,9 +672,12 @@ function revealPrize(
   revealLayer.add(inputBlocker);
   layer.add(revealLayer);
 
-  const cardWidth = Math.min(600, width - 64);
-  const cardHeight = 600;
-  const cardCenterY = getPrizeCardCenterY(height);
+  const prizeLayout = planCapsulePrizeLayout(
+    width,
+    height,
+    Boolean(options.onViewCollection)
+  );
+  const { cardWidth, cardHeight, cardCenterY } = prizeLayout;
   const card = scene.add.container(width / 2, cardCenterY).setScrollFactor(0);
   const cardPaper = scene.add.graphics();
   cardPaper.fillStyle(UI.paper, 1);
@@ -708,10 +706,15 @@ function revealPrize(
 
   const rarityColor = `#${rarityStyle.color.toString(16).padStart(6, '0')}`;
   card.add(
-    label(scene, 0, -264, rarityStyle.label, TYPE.caption, rarityColor, true)
-  );
-  card.add(
-    label(scene, 0, -232, pull.kind.toUpperCase(), 18, UI.inkSoft, true)
+    label(
+      scene,
+      0,
+      -232,
+      `${rarityStyle.label} ${pull.kind.toUpperCase()}`,
+      20,
+      rarityColor,
+      true
+    )
   );
 
   const catalogEntry = COSMETIC_BY_ID.get(pull.id);
@@ -720,8 +723,8 @@ function revealPrize(
       scene,
       parent: card,
       entry: catalogEntry,
-      y: -145,
-      size: 138,
+      y: -128,
+      size: 132,
       width: cardWidth - 120,
     }).setScale(0.15);
     scene.tweens.add({
@@ -734,7 +737,7 @@ function revealPrize(
     });
   } else {
     card.add(
-      label(scene, 0, -145, `YOUR ${pull.kind.toUpperCase()}`, 28, UI.ink, true)
+      label(scene, 0, -128, `YOUR ${pull.kind.toUpperCase()}`, 28, UI.ink, true)
     );
   }
 
@@ -742,7 +745,7 @@ function revealPrize(
     label(
       scene,
       0,
-      -50,
+      -35,
       pull.name,
       pull.rarity === 'epic' ? 40 : 34,
       UI.ink,
@@ -752,7 +755,7 @@ function revealPrize(
   const description = label(
     scene,
     0,
-    18,
+    30,
     pull.description,
     TYPE.body,
     UI.inkSoft,
@@ -762,29 +765,20 @@ function revealPrize(
     .setLineSpacing(3);
   card.add(description);
 
-  const footer = pull.isNew ? newPrizeFooter(pull) : duplicatePrizeFooter(pull);
+  if (catalogEntry?.kind === 'accessory') {
+    gearRankStars(scene, card, 0, 92, pull.gearRank ?? 1, 1.15);
+  }
+
   card.add(
     label(
       scene,
       0,
-      112,
-      footer,
-      21,
+      catalogEntry?.kind === 'accessory' ? 135 : 120,
+      prizeOwnershipLabel(pull),
+      catalogEntry?.kind === 'accessory' ? 18 : 22,
       pull.isNew ? UI.coralText : UI.goldText,
       true
     ).setWordWrapWidth(cardWidth - 72)
-  );
-  card.add(
-    label(
-      scene,
-      0,
-      158,
-      `COLLECTION NOW · ${postPullProgress.discoveredCount} / ` +
-        `${postPullProgress.collectionTotal} DISCOVERED`,
-      20,
-      UI.goldText,
-      true
-    )
   );
 
   let closingPrize = false;
@@ -813,20 +807,20 @@ function revealPrize(
     };
     const viewCollection = button(
       scene,
-      -98,
-      238,
-      'VIEW COLLECTION',
+      prizeLayout.viewCollection?.centerX ?? 0,
+      prizeLayout.actionCenterY,
+      pull.mergeReady ? 'FORGE IN INK KIT' : 'VIEW INK KIT',
       openCollection,
-      336,
+      prizeLayout.viewCollection?.width ?? 0,
       UI.gold
     );
     const pullAgain = ghostButton(
       scene,
-      178,
-      238,
+      prizeLayout.acknowledgement.centerX,
+      prizeLayout.actionCenterY,
       options.acknowledgementLabel,
       dismissPrize,
-      184
+      prizeLayout.acknowledgement.width
     );
     card.add([viewCollection, pullAgain]);
   } else {
@@ -834,10 +828,10 @@ function revealPrize(
       button(
         scene,
         0,
-        238,
+        prizeLayout.actionCenterY,
         options.acknowledgementLabel,
         dismissPrize,
-        320,
+        prizeLayout.acknowledgement.width,
         UI.coral
       )
     );
@@ -855,15 +849,6 @@ function revealPrize(
   return dismissPrize;
 }
 
-function getPrizeCardCenterY(height: number): number {
-  const cardHeight = 600;
-  return Phaser.Math.Clamp(
-    height * 0.52,
-    cardHeight / 2 + 24,
-    height - cardHeight / 2 - 24
-  );
-}
-
 function stopPointerPropagation(
   _pointer: unknown,
   _localX: unknown,
@@ -871,22 +856,6 @@ function stopPointerPropagation(
   event: Phaser.Types.Input.EventData
 ): void {
   event.stopPropagation?.();
-}
-
-function newPrizeFooter(pull: CapsulePull): string {
-  if (pull.kind === 'accessory') {
-    return `New accessory · ${pull.ownedCount} owned.`;
-  }
-
-  return `New ${pull.kind} unlocked!`;
-}
-
-function duplicatePrizeFooter(pull: CapsulePull): string {
-  if (pull.kind === 'accessory') {
-    return `Stacked copy — ${pull.ownedCount} owned.`;
-  }
-
-  return 'Already unlocked.';
 }
 
 function puff(

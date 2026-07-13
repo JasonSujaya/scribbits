@@ -19,11 +19,14 @@ scheduledTasks.post('/nightly-arena', async (c) => {
     .catch(() => undefined);
 
   try {
+    const nightlyOperationId = randomUUID();
     const nightlyRun = await runWithNightlyFence(
       redis,
-      randomUUID(),
+      nightlyOperationId,
       async (fencedStorage) => {
-        const result = await runNightlyArenaJob(fencedStorage);
+        const result = await runNightlyArenaJob(fencedStorage, {
+          claimId: nightlyOperationId,
+        });
         const currentForecast = await ensureForecastForDay(
           fencedStorage,
           result.newDay

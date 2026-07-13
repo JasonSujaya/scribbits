@@ -1,6 +1,7 @@
 import * as Phaser from 'phaser';
 import type { Scene } from 'phaser';
-import { FONT_STACK, UI } from './theme';
+import { UI } from './theme';
+import { screenTitle } from './screentitle';
 export const PAPER_STAGE_TEXTURE = 'scribbits-paper-stage';
 export const BATTLE_STAGE_TEXTURE = 'scribbits-battle-stage';
 
@@ -25,7 +26,10 @@ const assetUrl = (fileName: string): string => {
 
 export function preloadVisualAssets(scene: Scene): void {
   scene.load.image(PAPER_STAGE_TEXTURE, assetUrl('scribbits-paper-stage.jpg'));
-  scene.load.image(BATTLE_STAGE_TEXTURE, assetUrl('scribbits-battle-stage.jpg'));
+  scene.load.image(
+    BATTLE_STAGE_TEXTURE,
+    assetUrl('scribbits-battle-stage.jpg')
+  );
   Object.entries(BATTLE_CONTROL_BUTTON_TEXTURES).forEach(([kind, texture]) => {
     scene.load.image(texture, assetUrl(`ui-button-battle-${kind}.png`));
   });
@@ -111,7 +115,17 @@ export function arenaStage(
   const paperMaskShape = scene.add.graphics();
   paperMaskShape.fillStyle(0xffffff, 1);
   paperMaskShape.fillPoints(paperMaskPoints, true);
-  paperTexture.setMask(paperMaskShape.createGeometryMask());
+  if (scene.game.renderer.type === Phaser.WEBGL) {
+    paperTexture.enableFilters();
+    const paperMask = paperTexture.filters?.internal.addMask(
+      paperMaskShape,
+      false,
+      scene.cameras.main
+    );
+    if (paperMask) paperMask.autoUpdate = false;
+  } else {
+    paperTexture.setMask(paperMaskShape.createGeometryMask());
+  }
   paperMaskShape.setVisible(false);
   const arenaMarks = scene.add.graphics();
   arenaMarks.lineStyle(2, UI.inkHex, 0.15);
@@ -128,27 +142,10 @@ export function arenaStage(
   arenaMarks.lineBetween(width / 2, 256, width / 2, 273);
   arenaMarks.lineBetween(width / 2 - 18, 273, width / 2 + 18, 273);
 
-  const titleShadow = scene.add
-    .text(width / 2 + 7, 40, 'ARENA', {
-      fontFamily: FONT_STACK,
-      fontSize: '86px',
-      fontStyle: 'bold',
-      color: '#b77b42',
-      stroke: UI.ink,
-      strokeThickness: 9,
-    })
-    .setOrigin(0.5, 0);
-  const title = scene.add
-    .text(width / 2, 32, 'ARENA', {
-      fontFamily: FONT_STACK,
-      fontSize: '86px',
-      fontStyle: 'bold',
-      color: UI.cream,
-      stroke: UI.ink,
-      strokeThickness: 7,
-    })
-    .setOrigin(0.5, 0)
-    .setAngle(-0.5);
+  const title = screenTitle(scene, width / 2, 24, 'ARENA', {
+    maxWidth: 430,
+    maxHeight: 112,
+  });
   const leftTape = scene.add
     .rectangle(96, 154, 118, 38, UI.tape, 0.75)
     .setAngle(-13);
@@ -164,7 +161,6 @@ export function arenaStage(
     paperTexture,
     paperMaskShape,
     arenaMarks,
-    titleShadow,
     title,
     leftTape,
     rightTape,

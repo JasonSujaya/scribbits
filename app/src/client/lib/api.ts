@@ -20,6 +20,8 @@ import type {
   LegacyCardsState,
   LegendsState,
   MarkLegacySeenRequest,
+  MergeGearRequest,
+  MergeGearResponse,
   PracticeBattleRequest,
   PracticeBattleReport,
   ReportScribbitResponse,
@@ -271,6 +273,16 @@ export function pullCapsule(
 // The caller's unlocked pens + titles (drives the palette + locked slots).
 export function fetchInventory(): Promise<ApiResult<Inventory>> {
   return getJson<Inventory>('/api/inventory');
+}
+
+export function mergeGear(
+  gearId: string,
+  operationId: string
+): Promise<ApiResult<MergeGearResponse>> {
+  return postJson<MergeGearRequest, MergeGearResponse>('/api/merge-gear', {
+    gearId,
+    operationId,
+  });
 }
 
 // The caller's immutable personal archive. Cursor paging stays separate from

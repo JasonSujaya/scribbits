@@ -23,6 +23,7 @@ export type ArenaTransaction = {
 
 export type ArenaStorage = {
   watch?: (...keys: string[]) => Promise<ArenaTransaction>;
+  type?: (key: string) => Promise<string>;
   get: (key: string) => Promise<string | undefined>;
   set: (key: string, value: string) => Promise<unknown>;
   del: (...keys: string[]) => Promise<unknown>;

@@ -1,30 +1,65 @@
 import * as Phaser from 'phaser';
 import { Scene } from 'phaser';
-import type { CapsuleRarity, Inventory } from '../../shared/arena';
 import {
-  COSMETIC_BY_ID,
+  GEAR_MERGE_COPY_COST,
+  MAX_GEAR_RANK,
+  RED_STAR_GEAR_RANK,
+  type CapsuleRarity,
+  type GearRank,
+  type Inventory,
+  type MergeGearResponse,
+} from '../../shared/arena';
+import {
   COSMETIC_CATALOG,
+  GEAR_CATALOG_ENTRIES,
   type CosmeticCatalogEntry,
 } from '../../shared/cosmetics';
 import {
-  renderCosmeticPreview,
-  renderMysteryCosmeticPreview,
-} from './cosmeticpreview';
-import { NAV_SAFE, TYPE, UI } from './theme';
+  EQUIPMENT_CATEGORIES,
+  type EquipmentCategory,
+} from '../../shared/equipment';
+import { renderCosmeticPreview } from './cosmeticpreview';
+import { gearRankStars } from './gearrankstars';
+import { TYPE, UI } from './theme';
 import {
   addCardPressInteraction,
   ghostButton,
   iconButton,
   label,
+  paperIconButton,
   paperPagination,
   stickerCard,
 } from './ui';
 import { CanvasActionOverlay, CanvasModalOverlay } from './overlay';
+import type { PaperIconKey } from './papericons';
 
-const CARD_COLUMNS = 2;
+const CARD_COLUMNS = 3;
+const INK_KIT_PAGE_SIZE = 6;
 const CARD_HEIGHT = 220;
-const CARD_GAP = 22;
-const CARD_ROW_STEP = 246;
+const CARD_GAP = 14;
+const CARD_ROW_STEP = 240;
+
+export type InkKitSection = EquipmentCategory | 'styles';
+
+const GEAR_SECTION_PRESENTATION: Readonly<
+  Record<EquipmentCategory, { label: string; icon: PaperIconKey }>
+> = Object.freeze({
+  weapon: Object.freeze({ label: 'WEAPON', icon: 'sword' }),
+  armor: Object.freeze({ label: 'ARMOR', icon: 'armor' }),
+  shoes: Object.freeze({ label: 'SHOES', icon: 'boots' }),
+  accessory: Object.freeze({ label: 'ACCESSORY', icon: 'spark' }),
+});
+
+const INK_KIT_SECTIONS: ReadonlyArray<{
+  id: InkKitSection;
+  label: string;
+  icon: PaperIconKey;
+}> = Object.freeze([
+  ...EQUIPMENT_CATEGORIES.map((id) =>
+    Object.freeze({ id, ...GEAR_SECTION_PRESENTATION[id] })
+  ),
+  Object.freeze({ id: 'styles', label: 'STYLES', icon: 'pencil' }),
+]);
 
 const RARITY_STYLE: Record<CapsuleRarity, { color: number; label: string }> = {
   common: { color: 0xb6a894, label: 'COMMON' },
@@ -37,20 +72,39 @@ export type CollectionBookOptions = {
   actionOverlay: CanvasActionOverlay;
   top: number;
   page: number;
+  section: InkKitSection;
   inventory: Inventory | null;
   loggedIn: boolean;
   loading: boolean;
   errorMessage: string | null;
   onPageChange: (page: number) => void;
+  onSectionChange: (section: InkKitSection) => void;
   onRetry: () => void;
   onEquipTitle: (titleId: string | null) => Promise<string | null>;
+  onMergeGear: (
+    gearId: string,
+    operationId: string
+  ) => Promise<MergeGearResponse | { error: string }>;
   onInventoryChanged: () => void;
 };
 
 type CosmeticOwnership = {
-  discovered: boolean;
   summary: string;
+  rank: GearRank | null;
+  copies: number;
+  mergeReady: boolean;
+  maxRank: boolean;
 };
+
+type CollectionItem = {
+  entry: CosmeticCatalogEntry;
+  ownership: CosmeticOwnership;
+  viewKey: string;
+};
+
+const createMergeOperationId = (): string =>
+  globalThis.crypto?.randomUUID?.() ??
+  `merge-${Date.now()}-${Math.random().toString(36).slice(2, 14)}`;
 
 export function renderCollectionBook(options: CollectionBookOptions): void {
   const {
@@ -63,164 +117,282 @@ export function renderCollectionBook(options: CollectionBookOptions): void {
     onPageChange,
     onRetry,
   } = options;
-  const { width, height } = scene.scale;
-  const discoveredIds = collectDiscoveredIds(inventory);
-  const knownDiscoveryCount = inventory ? discoveredIds.size : null;
-  const progressText = `${knownDiscoveryCount ?? '—'} / ${COSMETIC_CATALOG.length} DISCOVERED`;
-
-  label(scene, width / 2, top - 84, progressText, TYPE.caption, UI.ink, true);
-  drawCollectionProgress(
+  const { width } = scene.scale;
+  label(
     scene,
     width / 2,
-    top - 54,
-    width - 120,
-    knownDiscoveryCount ?? 0,
-    COSMETIC_CATALOG.length
+    top - 46,
+    options.section === 'styles' ? 'YOUR STYLES' : 'YOUR GEAR',
+    TYPE.caption,
+    UI.ink,
+    true
   );
 
-  const firstCardY = top + 160;
-  const bottomLimit = height - NAV_SAFE;
-  const availableRows =
-    Math.floor((bottomLimit - firstCardY - CARD_HEIGHT / 2) / CARD_ROW_STEP) +
-    1;
-  const visibleRows = Math.max(1, Math.min(3, availableRows));
-  const pageSize = CARD_COLUMNS * visibleRows;
-  const totalPages = Math.max(1, Math.ceil(COSMETIC_CATALOG.length / pageSize));
-  const page = Phaser.Math.Clamp(options.page, 0, totalPages - 1);
+  if (!loggedIn) {
+    label(
+      scene,
+      width / 2,
+      top + 180,
+      'Sign in to open your Ink Kit.',
+      TYPE.body,
+      UI.inkSoft,
+      true
+    );
+    return;
+  }
 
   if (loading && !inventory) {
     label(
       scene,
       width / 2,
-      top + 4,
-      'Checking your collection…',
+      top + 180,
+      'Opening your Ink Kit…',
       TYPE.caption,
       UI.inkSoft,
       true
     );
+    return;
   } else if (errorMessage) {
-    iconButton(scene, width / 2, top + 4, 'replay', 'Retry sync', onRetry, 330);
+    iconButton(
+      scene,
+      width / 2,
+      top + 140,
+      'replay',
+      'Retry sync',
+      onRetry,
+      330
+    );
     options.actionOverlay.add({
-      label: 'Retry collection sync',
+      label: 'Retry Ink Kit sync',
       rect: {
         x: width / 2 - 165,
-        y: top - 46,
+        y: top + 90,
         width: 330,
         height: 100,
       },
       onActivate: onRetry,
     });
-  } else {
+    return;
+  }
+
+  if (!inventory) return;
+
+  buildInkKitSectionControls(
+    scene,
+    options.actionOverlay,
+    options.section,
+    top + 22,
+    options.onSectionChange
+  );
+
+  const ownedItems = buildOwnedItems(inventory, options.section);
+  const firstCardY = top + 194;
+  const pageSize = INK_KIT_PAGE_SIZE;
+  const totalPages = Math.max(1, Math.ceil(ownedItems.length / pageSize));
+  const page = Phaser.Math.Clamp(options.page, 0, totalPages - 1);
+
+  if (ownedItems.length === 0) {
+    label(
+      scene,
+      width / 2,
+      top + 255,
+      options.section === 'styles'
+        ? 'No permanent styles yet.'
+        : `No ${options.section} gear yet.\nOpen Mystery Ink to find some.`,
+      TYPE.body,
+      UI.inkSoft,
+      true
+    ).setLineSpacing(7);
+    return;
+  }
+
+  if (totalPages > 1) {
     buildPageControls(
       scene,
       options.actionOverlay,
       page,
       totalPages,
-      top + 4,
+      top + 620,
       onPageChange
     );
   }
 
-  const horizontalMargin = 36;
-  const cardWidth = (width - horizontalMargin * 2 - CARD_GAP) / CARD_COLUMNS;
+  const horizontalMargin = 26;
+  const cardWidth =
+    (width - horizontalMargin * 2 - CARD_GAP * (CARD_COLUMNS - 1)) /
+    CARD_COLUMNS;
   const firstCardX = horizontalMargin + cardWidth / 2;
-  const ownershipKnown = inventory !== null;
   const startIndex = page * pageSize;
 
-  COSMETIC_CATALOG.slice(startIndex, startIndex + pageSize).forEach(
-    (entry, index) => {
-      const column = index % CARD_COLUMNS;
-      const row = Math.floor(index / CARD_COLUMNS);
-      const x = firstCardX + column * (cardWidth + CARD_GAP);
-      const y = firstCardY + row * CARD_ROW_STEP;
-      const ownership = cosmeticOwnership(entry, inventory, discoveredIds);
-      buildCosmeticCard({
-        scene,
-        entry,
-        ownership,
-        ownershipKnown,
-        inventory,
-        loggedIn,
-        loading,
-        actionOverlay: options.actionOverlay,
-        onEquipTitle: options.onEquipTitle,
-        onInventoryChanged: options.onInventoryChanged,
-        x,
-        y,
-        width: cardWidth,
-        index: startIndex + index,
-      });
-    }
-  );
+  ownedItems.slice(startIndex, startIndex + pageSize).forEach((item, index) => {
+    const column = index % CARD_COLUMNS;
+    const row = Math.floor(index / CARD_COLUMNS);
+    const x = firstCardX + column * (cardWidth + CARD_GAP);
+    const y = firstCardY + row * CARD_ROW_STEP;
+    buildCosmeticCard({
+      scene,
+      ...item,
+      inventory,
+      loggedIn,
+      actionOverlay: options.actionOverlay,
+      onEquipTitle: options.onEquipTitle,
+      onMergeGear: options.onMergeGear,
+      onInventoryChanged: options.onInventoryChanged,
+      x,
+      y,
+      width: cardWidth,
+      index: startIndex + index,
+    });
+  });
 }
 
-function collectDiscoveredIds(inventory: Inventory | null): Set<string> {
-  const discoveredIds = new Set<string>();
-  if (!inventory) return discoveredIds;
+function buildInkKitSectionControls(
+  scene: Scene,
+  actionOverlay: CanvasActionOverlay,
+  selectedSection: InkKitSection,
+  y: number,
+  onSectionChange: (section: InkKitSection) => void
+): void {
+  const { width } = scene.scale;
+  const horizontalMargin = 18;
+  const gap = 6;
+  const buttonWidth =
+    (width - horizontalMargin * 2 - gap * (INK_KIT_SECTIONS.length - 1)) /
+    INK_KIT_SECTIONS.length;
+  const rowWidth =
+    buttonWidth * INK_KIT_SECTIONS.length + gap * (INK_KIT_SECTIONS.length - 1);
+  const firstX = (width - rowWidth) / 2 + buttonWidth / 2;
 
-  const rememberKnownCosmetic = (cosmeticId: string): void => {
-    if (COSMETIC_BY_ID.has(cosmeticId)) discoveredIds.add(cosmeticId);
-  };
-  inventory.discovered.forEach(rememberKnownCosmetic);
-  Object.entries(inventory.items).forEach(([cosmeticId, ownedCount]) => {
-    if (ownedCount > 0) rememberKnownCosmetic(cosmeticId);
+  INK_KIT_SECTIONS.forEach((section, index) => {
+    const selected = section.id === selectedSection;
+    const x = firstX + index * (buttonWidth + gap);
+    paperIconButton(
+      scene,
+      x,
+      y - 10,
+      section.icon,
+      () => {
+        if (!selected) onSectionChange(section.id);
+      },
+      92,
+      selected ? UI.coral : UI.creamHex,
+      selected ? UI.gold : UI.coral,
+      66
+    );
+    label(
+      scene,
+      x,
+      y + 42,
+      section.label,
+      15,
+      selected ? UI.coralText : UI.ink,
+      true
+    );
+    actionOverlay.add({
+      label: `${section.label}${section.id === 'styles' ? ' cosmetic styles' : ' gear'}${selected ? ', selected' : ''}`,
+      rect: {
+        x: x - buttonWidth / 2,
+        y: y - 50,
+        width: buttonWidth,
+        height: 100,
+      },
+      attributes: {
+        'aria-pressed': String(selected),
+        'data-ink-kit-section': section.id,
+      },
+      onActivate: () => {
+        if (!selected) onSectionChange(section.id);
+      },
+    });
   });
-  inventory.pens.forEach(rememberKnownCosmetic);
-  inventory.titles.forEach(rememberKnownCosmetic);
-  return discoveredIds;
+}
+
+function buildOwnedItems(
+  inventory: Inventory,
+  section: InkKitSection
+): CollectionItem[] {
+  if (section === 'styles') {
+    return COSMETIC_CATALOG.filter((entry) =>
+      entry.kind === 'pen'
+        ? inventory.pens.includes(entry.id)
+        : entry.kind === 'title' && inventory.titles.includes(entry.id)
+    ).map((entry) => ({
+      entry,
+      ownership: cosmeticOwnership(entry, inventory),
+      viewKey: `${entry.id}:style`,
+    }));
+  }
+
+  const gearItems = GEAR_CATALOG_ENTRIES.filter(
+    (entry) => entry.category === section
+  )
+    .map((entry) => ({ entry, ownership: cosmeticOwnership(entry, inventory) }))
+    .filter(({ ownership }) => ownership.copies > 0)
+    .sort((first, second) => {
+      const forgeOrder =
+        Number(second.ownership.mergeReady) -
+        Number(first.ownership.mergeReady);
+      if (forgeOrder !== 0) return forgeOrder;
+      return first.entry.name.localeCompare(second.entry.name);
+    })
+    .map(({ entry, ownership }) => ({
+      entry,
+      ownership,
+      viewKey: `${entry.id}:gear`,
+    }));
+  return gearItems;
 }
 
 function cosmeticOwnership(
   entry: CosmeticCatalogEntry,
-  inventory: Inventory | null,
-  discoveredIds: ReadonlySet<string>
+  inventory: Inventory
 ): CosmeticOwnership {
-  if (!inventory || !discoveredIds.has(entry.id)) {
-    return { discovered: false, summary: 'Tap for a clue' };
-  }
   if (entry.kind === 'accessory') {
-    const ownedCount = Math.max(0, inventory.items[entry.id] ?? 0);
+    const gear = inventory.gear[entry.id];
+    const ownedCount = Math.max(
+      0,
+      gear?.copies ?? inventory.items[entry.id] ?? 0
+    );
+    const rank = gear?.rank ?? 1;
+    const maxRank = rank >= MAX_GEAR_RANK;
+    const mergeReady = !maxRank && ownedCount >= GEAR_MERGE_COPY_COST;
+    const rankLabel =
+      rank === RED_STAR_GEAR_RANK ? 'MYTHIC RED STAR' : `${rank}★`;
     return {
-      discovered: true,
-      summary: `${ownedCount} ${ownedCount === 1 ? 'copy' : 'copies'} ready`,
+      summary: maxRank
+        ? `${rankLabel} · ${ownedCount} ${ownedCount === 1 ? 'COPY' : 'COPIES'} · MAX`
+        : mergeReady
+          ? `${rankLabel} · ${ownedCount} COPIES · FORGE READY`
+          : `${rankLabel} · FORGE ${ownedCount}/${GEAR_MERGE_COPY_COST}`,
+      rank,
+      copies: ownedCount,
+      mergeReady,
+      maxRank,
     };
   }
   if (entry.kind === 'pen') {
     return {
-      discovered: true,
       summary: inventory.pens.includes(entry.id)
         ? 'Permanent pen'
-        : 'Discovered',
+        : 'Owned pen',
+      rank: null,
+      copies: 0,
+      mergeReady: false,
+      maxRank: false,
     };
   }
   return {
-    discovered: true,
     summary:
       inventory.equippedTitle === entry.id
         ? 'Wearing title'
         : inventory.titles.includes(entry.id)
           ? 'Permanent title'
-          : 'Discovered',
+          : 'Owned title',
+    rank: null,
+    copies: 0,
+    mergeReady: false,
+    maxRank: false,
   };
-}
-
-function drawCollectionProgress(
-  scene: Scene,
-  x: number,
-  y: number,
-  width: number,
-  discoveredCount: number,
-  totalCount: number
-): void {
-  scene.add
-    .rectangle(x, y, width, 16, UI.creamHex, 0.92)
-    .setStrokeStyle(3, UI.inkHex, 1);
-  const ratio =
-    totalCount > 0 ? Phaser.Math.Clamp(discoveredCount / totalCount, 0, 1) : 0;
-  if (ratio <= 0) return;
-  scene.add
-    .rectangle(x - width / 2 + 3, y, (width - 6) * ratio, 10, UI.coral, 1)
-    .setOrigin(0, 0.5);
 }
 
 function buildPageControls(
@@ -237,8 +409,8 @@ function buildPageControls(
     y,
     page,
     pageCount: totalPages,
-    previousLabel: 'Previous Collection page',
-    nextLabel: 'Next Collection page',
+    previousLabel: 'Previous Ink Kit page',
+    nextLabel: 'Next Ink Kit page',
     onPrevious: () => onPageChange(page - 1),
     onNext: () => onPageChange(page + 1),
   });
@@ -248,12 +420,12 @@ function buildCosmeticCard(options: {
   scene: Scene;
   entry: CosmeticCatalogEntry;
   ownership: CosmeticOwnership;
-  ownershipKnown: boolean;
-  inventory: Inventory | null;
+  viewKey: string;
+  inventory: Inventory;
   loggedIn: boolean;
-  loading: boolean;
   actionOverlay: CanvasActionOverlay;
   onEquipTitle: (titleId: string | null) => Promise<string | null>;
+  onMergeGear: CollectionBookOptions['onMergeGear'];
   onInventoryChanged: () => void;
   x: number;
   y: number;
@@ -264,12 +436,12 @@ function buildCosmeticCard(options: {
     scene,
     entry,
     ownership,
-    ownershipKnown,
+    viewKey,
     inventory,
     loggedIn,
-    loading,
     actionOverlay,
     onEquipTitle,
+    onMergeGear,
     onInventoryChanged,
     x,
     y,
@@ -281,69 +453,55 @@ function buildCosmeticCard(options: {
     tape: false,
     tilt: index % 2 === 0 ? -0.35 : 0.35,
   });
+  const rarityFrame = scene.add
+    .rectangle(0, 0, width - 12, CARD_HEIGHT - 12, rarityStyle.color, 0.035)
+    .setStrokeStyle(entry.rarity === 'common' ? 3 : 5, rarityStyle.color, 0.9);
+  card.addAt(rarityFrame, 1);
 
   const rarityBackground = scene.add
     .rectangle(
-      -width / 2 + 56,
-      -CARD_HEIGHT / 2 + 24,
-      94,
-      30,
+      -width / 2 + 46,
+      -CARD_HEIGHT / 2 + 21,
+      78,
+      27,
       rarityStyle.color,
       0.24
     )
     .setStrokeStyle(2, rarityStyle.color, 1);
   const rarityLabel = label(
     scene,
-    -width / 2 + 56,
-    -CARD_HEIGHT / 2 + 24,
+    -width / 2 + 46,
+    -CARD_HEIGHT / 2 + 21,
     rarityStyle.label,
-    17,
+    14,
     UI.ink,
     true
   );
-  const kindLabel = label(
-    scene,
-    width / 2 - 48,
-    -CARD_HEIGHT / 2 + 24,
-    entry.kind.toUpperCase(),
-    16,
-    UI.inkSoft,
-    true
-  );
-  card.add([rarityBackground, rarityLabel, kindLabel]);
+  card.add([rarityBackground, rarityLabel]);
 
-  if (ownership.discovered) {
-    renderCosmeticPreview({
-      scene,
-      parent: card,
-      entry,
-      y: -34,
-      size: 98,
-      width: Math.min(224, width - 24),
-    });
-  } else {
-    renderMysteryCosmeticPreview({
-      scene,
-      parent: card,
-      entry,
-      y: -34,
-      size: 98,
-      width: Math.min(224, width - 24),
-      rarityColor: rarityStyle.color,
-    });
+  renderCosmeticPreview({
+    scene,
+    parent: card,
+    entry,
+    y: -44,
+    size: 82,
+    width: Math.min(176, width - 20),
+  });
+
+  if (ownership.rank !== null) {
+    gearRankStars(scene, card, 0, 9, ownership.rank, 0.86);
   }
 
-  const cosmeticName = ownership.discovered ? entry.name : '???';
-  const name = label(scene, 0, 38, cosmeticName, 23, UI.ink, true)
-    .setWordWrapWidth(width - 28)
+  const name = label(scene, 0, 43, entry.name, 20, UI.ink, true)
+    .setWordWrapWidth(width - 20)
     .setLineSpacing(-5);
   const ownershipLabel = label(
     scene,
     0,
-    83,
+    86,
     ownership.summary,
-    18,
-    ownership.discovered ? UI.coralText : UI.inkSoft,
+    13,
+    UI.coralText,
     true
   );
   card.add([name, ownershipLabel]);
@@ -353,12 +511,12 @@ function buildCosmeticCard(options: {
       scene,
       entry,
       ownership,
-      ownershipKnown,
       inventory,
       loggedIn,
-      loading,
       onEquipTitle,
+      onMergeGear,
       onInventoryChanged,
+      viewKey,
     });
   }
   addCardPressInteraction({
@@ -371,16 +529,17 @@ function buildCosmeticCard(options: {
     onActivate: openDetail,
   });
   actionOverlay.add({
-    label: ownership.discovered
-      ? `Open ${entry.name}. ${ownership.summary}.`
-      : `Open undiscovered ${entry.rarity} ${entry.kind} clue ${index + 1}.`,
+    label: `Open ${entry.name}. ${ownership.summary}.`,
     rect: {
-      x: x - Math.min(width - 20, 220) / 2,
-      y: y + CARD_HEIGHT / 2 - 108,
-      width: Math.min(width - 20, 220),
-      height: 100,
+      x: x - width / 2,
+      y: y - CARD_HEIGHT / 2,
+      width,
+      height: CARD_HEIGHT,
     },
-    attributes: { 'data-collection-entry-id': entry.id },
+    attributes: {
+      'data-ink-kit-entry-id': entry.id,
+      'data-ink-kit-entry-key': viewKey,
+    },
     onActivate: openDetail,
   });
 }
@@ -389,97 +548,86 @@ function openCosmeticDetail(options: {
   scene: Scene;
   entry: CosmeticCatalogEntry;
   ownership: CosmeticOwnership;
-  ownershipKnown: boolean;
-  inventory: Inventory | null;
+  inventory: Inventory;
   loggedIn: boolean;
-  loading: boolean;
   onEquipTitle: (titleId: string | null) => Promise<string | null>;
+  onMergeGear: CollectionBookOptions['onMergeGear'];
   onInventoryChanged: () => void;
+  viewKey: string;
 }): void {
   const {
     scene,
     entry,
     ownership,
-    ownershipKnown,
     inventory,
     loggedIn,
-    loading,
     onEquipTitle,
+    onMergeGear,
     onInventoryChanged,
+    viewKey,
   } = options;
   const { width, height } = scene.scale;
+  const detailWidth = width - 100;
   const overlay = scene.add.container(0, 0).setDepth(3000).setScrollFactor(0);
   const shade = scene.add
     .rectangle(width / 2, height / 2, width + 80, height + 80, 0x21170f, 0.68)
     .setInteractive();
-  const detail = stickerCard(scene, width / 2, height / 2, width - 100, 720, {
+  const detail = stickerCard(scene, width / 2, height / 2, detailWidth, 780, {
     tapeColor: RARITY_STYLE[entry.rarity].color,
   });
   const detailBlocker = scene.add
-    .rectangle(0, 0, width - 100, 720, 0xffffff, 0.001)
+    .rectangle(0, 0, detailWidth, 780, 0xffffff, 0.001)
     .setInteractive();
   detail.addAt(detailBlocker, 0);
 
   const rarityStyle = RARITY_STYLE[entry.rarity];
+  const hasRank = ownership.rank !== null;
   const rarityBackground = scene.add
-    .rectangle(0, -305, 130, 38, rarityStyle.color, 0.25)
+    .rectangle(0, -335, 130, 38, rarityStyle.color, 0.25)
     .setStrokeStyle(2, rarityStyle.color, 1);
-  const rarity = label(scene, 0, -305, rarityStyle.label, 20, UI.ink, true);
+  const rarity = label(scene, 0, -335, rarityStyle.label, 20, UI.ink, true);
   const kind = label(
     scene,
     0,
-    -265,
-    entry.kind.toUpperCase(),
-    18,
+    -300,
+    entry.kind === 'accessory'
+      ? `${entry.category.toUpperCase()} GEAR`
+      : entry.kind.toUpperCase(),
+    17,
     UI.inkSoft,
     true
   );
   detail.add([rarityBackground, rarity, kind]);
 
-  if (ownership.discovered) {
-    renderCosmeticPreview({
-      scene,
-      parent: detail,
-      entry,
-      y: -160,
-      size: 172,
-      width: Math.min(360, width - 180),
-    });
-  } else {
-    renderMysteryCosmeticPreview({
-      scene,
-      parent: detail,
-      entry,
-      y: -160,
-      size: 172,
-      width: Math.min(360, width - 180),
-      rarityColor: rarityStyle.color,
-    });
+  renderCosmeticPreview({
+    scene,
+    parent: detail,
+    entry,
+    y: hasRank ? -205 : -190,
+    size: hasRank ? 150 : 172,
+    width: Math.min(360, width - 180),
+  });
+
+  if (ownership.rank !== null) {
+    gearRankStars(scene, detail, 0, -115, ownership.rank, 1.4);
   }
 
   const name = label(
     scene,
     0,
-    -48,
-    ownership.discovered ? entry.name : 'UNDISCOVERED',
+    hasRank ? -72 : -58,
+    entry.name,
     TYPE.title,
     UI.ink,
     true
   ).setWordWrapWidth(width - 180);
   detail.add(name);
 
-  const detailCopy = ownership.discovered
-    ? entry.description
-    : lockedDetailHint({
-        loggedIn,
-        ownershipKnown,
-        loading,
-        rarity: entry.rarity,
-      });
+  const detailCopy = entry.description;
   const description = label(
     scene,
     0,
-    48,
+    hasRank ? 25 : 50,
     detailCopy,
     TYPE.body,
     UI.inkSoft,
@@ -491,27 +639,34 @@ function openCosmeticDetail(options: {
     scene,
     0,
     150,
-    ownership.discovered ? ownership.summary : 'LOCKED · MYSTERY INK',
+    ownership.summary,
     TYPE.caption,
-    ownership.discovered ? UI.coralText : UI.inkSoft,
+    UI.coralText,
     true
   );
   detail.add([description, status]);
 
   const titleOwned =
-    entry.kind === 'title' &&
-    ownership.discovered &&
-    inventory?.titles.includes(entry.id) === true;
+    entry.kind === 'title' && inventory?.titles.includes(entry.id) === true;
   let wearingTitle = inventory?.equippedTitle === entry.id;
   let savingTitle = false;
+  let forgingGear = false;
   let inventoryChanged = false;
   let modalOpen = true;
   let titleAction: Phaser.GameObjects.Container | null = null;
   let titleNativeAction: HTMLButtonElement | null = null;
+  let mergeAction: Phaser.GameObjects.Container | null = null;
+  let mergeNativeAction: HTMLButtonElement | null = null;
 
   const closeDetail = (): void => {
-    if (savingTitle) {
-      status.setText('Finish saving this title first…').setColor(UI.inkSoft);
+    if (savingTitle || forgingGear) {
+      status
+        .setText(
+          forgingGear
+            ? 'Finish forging this gear first…'
+            : 'Finish saving this title first…'
+        )
+        .setColor(UI.inkSoft);
       return;
     }
     modalOpen = false;
@@ -521,25 +676,102 @@ function openCosmeticDetail(options: {
       requestAnimationFrame(() => {
         document
           .querySelector<HTMLButtonElement>(
-            `button[data-collection-entry-id="${entry.id}"]`
+            `button[data-ink-kit-entry-key="${CSS.escape(viewKey)}"]`
           )
           ?.focus();
       });
     }
   };
   const semanticDescription = [
-    `${ownership.discovered ? entry.name : 'Undiscovered cosmetic'}.`,
+    `${entry.name}.`,
     `${entry.rarity} ${entry.kind}.`,
     detailCopy,
     ownership.summary,
-  ].join(' ');
+  ]
+    .filter(Boolean)
+    .join(' ');
   const modalActions = new CanvasModalOverlay(
     scene,
-    `${ownership.discovered ? entry.name : 'Undiscovered cosmetic'} details`,
+    `${entry.name} details`,
     closeDetail,
     semanticDescription
   );
   overlay.once('destroy', () => modalActions.destroy());
+
+  const mergeCurrentGear = (): void => {
+    if (!ownership.mergeReady || forgingGear) return;
+    forgingGear = true;
+    status.setText('Forging three copies…').setColor(UI.goldText);
+    renderMergeAction();
+    const operationId = createMergeOperationId();
+    void onMergeGear(entry.id, operationId).then((result) => {
+      forgingGear = false;
+      if (!modalOpen || !overlay.active || !scene.scene.isActive()) return;
+      if ('error' in result) {
+        status.setText(result.error).setColor(UI.coralText);
+        renderMergeAction();
+        return;
+      }
+      inventoryChanged = true;
+      status
+        .setText(
+          result.toRank === RED_STAR_GEAR_RANK
+            ? 'MYTHIC RED STAR FORGED!'
+            : `FORGED! · ${result.toRank}★`
+        )
+        .setColor(UI.goldText);
+      scene.time.delayedCall(800, closeDetail);
+    });
+  };
+
+  const renderMergeAction = (): void => {
+    mergeAction?.destroy(true);
+    mergeAction = null;
+    if (entry.kind !== 'accessory' || !ownership.mergeReady || !loggedIn) {
+      return;
+    }
+    const nextRank = ((ownership.rank ?? 1) + 1) as GearRank;
+    const nextRankLabel =
+      nextRank === RED_STAR_GEAR_RANK ? 'MYTHIC RED STAR' : `${nextRank}★`;
+    mergeAction = iconButton(
+      scene,
+      0,
+      225,
+      'forge',
+      forgingGear ? 'FORGING…' : `FORGE ${nextRankLabel}`,
+      mergeCurrentGear,
+      390,
+      UI.coral,
+      UI.ink,
+      90,
+      UI.gold,
+      !forgingGear
+    );
+    detail.add(mergeAction);
+    if (mergeNativeAction) {
+      mergeNativeAction.disabled = forgingGear;
+      mergeNativeAction.setAttribute('aria-busy', String(forgingGear));
+    }
+  };
+  renderMergeAction();
+  if (entry.kind === 'accessory' && ownership.mergeReady && loggedIn) {
+    const nextRank = ((ownership.rank ?? 1) + 1) as GearRank;
+    const nextRankLabel =
+      nextRank === RED_STAR_GEAR_RANK
+        ? 'Mythic Red Star'
+        : `${nextRank} star`;
+    mergeNativeAction = modalActions.add({
+      label: `Forge three ${entry.name} copies into ${nextRankLabel}`,
+      rect: {
+        x: width / 2 - 195,
+        y: height / 2 + 175,
+        width: 390,
+        height: 100,
+      },
+      onActivate: mergeCurrentGear,
+    });
+    mergeNativeAction.setAttribute('aria-busy', 'false');
+  }
 
   const toggleTitle = (): void => {
     if (savingTitle) return;
@@ -616,35 +848,20 @@ function openCosmeticDetail(options: {
     );
   }
 
-  const close = ghostButton(scene, 0, 310, 'Close', closeDetail, 210);
+  const closeX = detailWidth / 2 - 56;
+  const closeY = -330;
+  const close = ghostButton(scene, closeX, closeY, '✕', closeDetail, 86, 86);
   detail.add(close);
   const nativeClose = modalActions.add({
-    label: `Close ${ownership.discovered ? entry.name : 'cosmetic'} details`,
+    label: `Close ${entry.name} details`,
     rect: {
-      x: width / 2 - 105,
-      y: height / 2 + 268,
-      width: 210,
-      height: 84,
+      x: width / 2 + closeX - 43,
+      y: height / 2 + closeY - 43,
+      width: 86,
+      height: 86,
     },
     onActivate: closeDetail,
   });
   overlay.add([shade, detail]);
   modalActions.focusInitial(nativeClose);
-}
-
-function lockedDetailHint(options: {
-  loggedIn: boolean;
-  ownershipKnown: boolean;
-  loading: boolean;
-  rarity: CapsuleRarity;
-}): string {
-  if (!options.loggedIn) {
-    return 'Sign in to sync your discoveries, then earn Ink and open Mystery Ink capsules.';
-  }
-  if (!options.ownershipKnown) {
-    return options.loading
-      ? 'Your discoveries are still syncing. Check again when the collection finishes loading.'
-      : 'Ownership could not be confirmed. Retry the collection sync to check this cosmetic.';
-  }
-  return `This ${options.rarity} cosmetic has not appeared for you yet. Keep opening Mystery Ink capsules with earned Ink.`;
 }

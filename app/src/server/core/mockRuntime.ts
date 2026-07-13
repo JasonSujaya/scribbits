@@ -22,6 +22,7 @@ export {
   getCapsuleCostForDailyState,
   projectAccessoryInventoryConsumption,
   projectCapsuleInventoryGrant,
+  projectGearMerge,
   projectEquippedTitle,
   selectCapsuleDrop,
 } from './inkStore';
@@ -34,8 +35,10 @@ export {
 } from '../../shared/combat/upgrades';
 export {
   CAPSULE_COST,
+  GEAR_MERGE_COPY_COST,
   INK_REWARDS,
   MAX_ALIVE_PER_USER,
+  MAX_GEAR_RANK,
   SCRIBBIT_STAT_KEYS,
   XP_REWARDS,
 } from '../../shared/arena';

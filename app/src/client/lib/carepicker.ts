@@ -1,11 +1,14 @@
 import * as Phaser from 'phaser';
 import { Scene } from 'phaser';
 import type { CareAction, Scribbit } from '../../shared/arena';
-import { CanvasModalOverlay } from './overlay';
 import type { PaperIconKey } from './papericons';
 import { canCare } from './scribbits';
+import {
+  createStickerModalShell,
+  type StickerModalShell,
+} from './stickermodalshell';
 import { CARE_STYLES, TYPE, UI } from './theme';
-import { ghostButton, iconButton, label, stickerCard } from './ui';
+import { ghostButton, iconButton, label } from './ui';
 
 const CARE_PICKER_DEPTH = 2_500;
 const CARD_WIDTH = 620;
@@ -42,68 +45,31 @@ export function openCarePicker(
   const cardCenterY = height / 2;
   const shouldMoveKeyboardFocus =
     document.activeElement instanceof HTMLButtonElement;
-  const accessibleActions = new CanvasModalOverlay(
-    scene,
-    `Care for ${boundedName(options.scribbit.name)}`,
-    () => close(),
-    'Choose one available daily care action or close the picker.'
-  );
-  accessibleActions.setVisible(false);
-
-  let destroyed = false;
-  let inputReady = false;
-  let openingTween: Phaser.Tweens.Tween | null = null;
   let firstAvailableAction: HTMLButtonElement | null = null;
 
-  const container = scene.add
-    .container(0, 0)
-    .setDepth(CARE_PICKER_DEPTH)
-    .setScrollFactor(0);
-  const shade = scene.add
-    .rectangle(width / 2, height / 2, width, height, UI.inkHex, 0.66)
-    .setScrollFactor(0)
-    .setInteractive();
-  container.add(shade);
-
-  const card = stickerCard(
-    scene,
-    cardCenterX,
-    cardCenterY,
-    CARD_WIDTH,
-    CARD_HEIGHT,
-    { tapeColor: UI.tapeAlt, tapeWidth: 82 }
-  )
-    .setScrollFactor(0)
-    .setAlpha(0)
-    .setScale(0.84);
-  container.add(card);
-
-  const destroyInternal = (): void => {
-    if (destroyed) return;
-    destroyed = true;
-    inputReady = false;
-    openingTween?.stop();
-    openingTween = null;
-    accessibleActions.destroy();
-    scene.events.off('shutdown', handleSceneShutdown);
-    container.destroy(true);
-  };
-
   const close = (): void => {
-    if (!inputReady || destroyed) return;
-    destroyInternal();
-    options.onClose();
+    shell.finish(options.onClose);
   };
 
   const choose = (action: CareAction): void => {
-    if (!inputReady || destroyed || !canCare(options.scribbit, action)) return;
-    destroyInternal();
-    options.onChoose(action);
+    if (!canCare(options.scribbit, action)) return;
+    shell.finish(() => options.onChoose(action));
   };
 
-  function handleSceneShutdown(): void {
-    destroyInternal();
-  }
+  const shell: StickerModalShell = createStickerModalShell({
+    scene,
+    title: `Care for ${boundedName(options.scribbit.name)}`,
+    description: 'Choose one available daily care action or close the picker.',
+    onRequestClose: close,
+    depth: CARE_PICKER_DEPTH,
+    cardCenterY,
+    cardWidth: CARD_WIDTH,
+    cardHeight: CARD_HEIGHT,
+    shadeAlpha: 0.66,
+    tapeWidth: 82,
+    openingDurationMilliseconds: OPENING_DURATION_MILLISECONDS,
+  });
+  const { actions: accessibleActions, card, container } = shell;
 
   card.add(label(scene, 0, -158, 'CARE', TYPE.title, UI.ink, true));
 
@@ -180,26 +146,13 @@ export function openCarePicker(
     }
   });
 
-  scene.events.once('shutdown', handleSceneShutdown);
-  openingTween = scene.tweens.add({
-    targets: card,
-    alpha: 1,
-    scaleX: 1,
-    scaleY: 1,
-    duration: OPENING_DURATION_MILLISECONDS,
-    ease: 'Back.easeOut',
-    onComplete: () => {
-      openingTween = null;
-      if (destroyed) return;
-      inputReady = true;
-      accessibleActions.setVisible(true);
-      if (shouldMoveKeyboardFocus) {
-        accessibleActions.focusInitial(firstAvailableAction ?? closeControl);
-      }
-    },
+  shell.open(() => {
+    if (shouldMoveKeyboardFocus) {
+      accessibleActions.focusInitial(firstAvailableAction ?? closeControl);
+    }
   });
 
-  return Object.freeze({ container, destroy: destroyInternal });
+  return Object.freeze({ container, destroy: shell.destroy });
 }
 
 function boundedName(value: string): string {

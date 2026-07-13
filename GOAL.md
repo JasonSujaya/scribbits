@@ -45,16 +45,30 @@ currency, or combat power.
 
 ## Current Ship Gates
 
-- [x] `pnpm verify` passes: TypeScript, ESLint, 151 deterministic simulation
+- [x] `pnpm verify` passes: TypeScript, ESLint, 176 deterministic simulation
       groups, and the production build (July 13).
+- [x] Scribbit birth now has one Redis transaction owner. The primary record,
+      owner/alive/expiry indexes, Rumble entry, daily flags, play streak, Ink,
+      and accessory spend commit together; exact readback recovers a lost EXEC
+      reply without duplicate reward or spend. Rejection, reply-loss, and
+      per-command EXEC-error tests fail closed. A bounded per-day active-birth
+      lease prevents nightly resolution from snapshotting between a partial EXEC
+      and exact repair; the nightly worker also fails closed if its distributed
+      claim command itself errors. Media remains an external upload phase that cannot
+      partially mutate player state (July 13).
 - [x] Production and localhost now share one submission, progression, reward,
       capsule, title, and accessory rules boundary. Repeat daily submissions,
       duplicate care, capsule retries, insufficient Ink, and hard pity have
       regression proof; the typed Phaser registry is the only home for
       cross-scene keys. The slop audit has zero open P0 findings (July 12).
-- [x] Draw onboarding and Field Guide now derive Shape Power names, stat order,
-      drawing cues, and guide effects from one shared content catalog instead of
-      maintaining parallel four-power copy tables (July 12).
+- [x] Birth, Practice, and the live VS ceremony now share one concise Shape
+      receipt derived from the server-returned fighter: the visible drawing cue
+      maps to its named move and plain combat effect without a raw stat panel.
+      The VS screen drops its duplicate mode rail and generic matchup paragraph
+      for two causal lines, with fresh 393x852 browser proof (July 13).
+- [x] Shared press interactions now self-release their scene-level listeners as
+      soon as a Phaser control is destroyed, so Gallery rebuilds cannot retain
+      stale tab, dock, or card closures until scene shutdown (July 13).
 - [x] The generic Redis storage and transaction contract now has one
       dependency-free server home; 13 domain callers no longer depend on the
       Scribbit module for unrelated infrastructure types (July 12).
@@ -62,12 +76,13 @@ currency, or combat power.
       receipt records; typed core modules now own those persistence boundaries
       and focused regression tests cover their current behavior (July 12).
 - [x] Fresh mobile browser proof covers the optional deterministic Doodle Dare,
-      first-run draw -> fight -> Ink promise, blank/forming/ready feedback,
-      full drawing, birth reveal, live paper-broadcast exhibition, Skip, and
+      first-run draw -> name -> fight -> Ink promise, the visible disabled/ready
+      Next action, full drawing, birth reveal, live paper-broadcast exhibition, Skip, and
       transcript-derived recap with zero captured runtime errors (July 11).
-- [x] An uncurated 320x568 browser run hand-drew `Spiral Splat`, visibly taught
-      the four drawing-to-power mappings before its first mark, produced its
-      server-analyzed Firetip Halo, and completed a normal-speed founder fight.
+- [x] An uncurated 320x568 browser run hand-drew `Spiral Splat`, produced its
+      server-analyzed Firetip Halo, and completed a normal-speed founder fight;
+      the current receipt now teaches that shape-to-power cause after drawing
+      without a four-power preamble.
       The immediate result, waiting Rival Draft, and persistent Arena card all
       retain the authoritative 1–0 score and Day 10 return cue with zero runtime
       or console errors (July 12).
@@ -171,7 +186,7 @@ currency, or combat power.
       at zero (July 13).
 - [x] All 20 founding opponents now receive deterministic stat-shaped mascot art.
       Chonk, Spike, Zip, and Charm alter silhouette/anatomy from the same shared
-      dominant-stat selector used by drawing preview, Inkbody, replay, and server
+      dominant-stat selector used by birth receipts, Inkbody, replay, and server
       combat; ordinary player-image failures remain neutral (July 11).
 - [x] All 20 founders now live in one immutable shared catalog with their exact
       prior IDs/stats/order plus 160 unique, bounded story strings. Rival cards,
@@ -201,8 +216,10 @@ currency, or combat power.
       unique founder-authored result lines. A pure receipt planner requires the
       pre-fight page, matching server Chronicle beat, named founder slot, owned
       fighter slot, and validated transcript winner before showing copy. The
-      result card exposes the new score and signed/continuing state without new
-      persistence or invented rewards. A 320x568 WebGL decider result keeps the
+      VS card now renders the authored page cue, and the existing result recap
+      renders the matching authored result line instead of repeating a generic
+      score headline. This adds no new panel, persistence, or invented reward.
+      A 320x568 WebGL decider result keeps the
       receipt and all actions visible with zero runtime or console errors (July 11).
 - [x] The existing once-daily Champion Challenge now has one truthful player-facing
       contract. Arena state projects the server-owned daily flag; founder/community
@@ -213,6 +230,22 @@ currency, or combat power.
 - [x] Browser proof verifies the Daily Ink Trail, discounted capsule CTA,
       collection/rank/pity overlay, server-confirmed pull ceremony, and persisted
       post-pull progress with no runtime errors on `localhost:8902` (July 10).
+- [x] Mystery Ink now presents one deterministic hand-drawn crank machine, one
+      compact collection/pity card, and one reward card with two clear actions.
+      Odds remain available to assistive technology without becoming a fourth
+      visual status line. Pure layout/copy tests and fresh 393x852 WebGL proof
+      cover the machine, paid pull, reveal, dismissal, and Gallery/Arena return
+      with zero browser warnings or errors (July 13).
+- [x] Gallery now exposes four owned items at a time in the renamed Ink Kit,
+      with full art, names, counts, and no undiscovered-item wall. Legends and
+      Legacy use the same four-card rhythm, and all paging controls sit below
+      their card grids instead of floating as an unexplained top-right arrow.
+      Fresh 393x852 WebGL proof has zero browser warnings or errors (July 13).
+- [x] Every Arena mutation and refresh continuation now passes through one pure
+      activation policy. Stopped-scene responses cannot rebuild destroyed DOM;
+      late results schedule a current or next-activation reconciliation, and
+      out-of-order same-activation refreshes are ignored. Deterministic runtime
+      cases cover all four outcomes (July 13).
 - [x] Fresh-browser proof verifies the complete earned loop from 0 Ink through
       submission, first spar win, care, a 5-Ink pull, tangible reward-art reveal,
       and persisted 1/28 Collection progress in the original 28-item catalog on
@@ -288,12 +321,11 @@ currency, or combat power.
       and Mystery Ink. Primary cards lead with one headline, one status, and one
       action; rules, moderation, and secondary facts move behind explicit taps
       without changing server authority or rewards (July 12).
-- [x] Arena home no longer embeds the eight-card contender grid. One compact
-      `TONIGHT'S RUMBLE` tile previews three drawings and opens a focused,
-      accessible picker with separate inspect and server-planned heart/lock
-      targets. The same pass replaces the forecast/HUD boxes with one quiet status
-      line, makes Draw an icon-led hero, and compacts Champion plus roster actions
-      without losing Enter, Care, Spar, Back, or the daily Next Goal (July 12).
+- [x] Arena home now contains one direct battle setup only: fighter carousel,
+      Champion/Spar choice, and one Fight action. The old `PICK A WINNER`/Rumble
+      preview is absent from the default stack; Scout deep-links into the focused
+      picker when that side activity is relevant. Empty rosters get one large
+      pencil-led Draw action with no hidden rival controls (July 13).
 - [x] The Craftbox visual system now gives all five main scenes one generated
       torn-paper stage, bundled DynaPuff, one optical-weight code-native dock
       icon family, one contained coral active tile, and shared paper status/
@@ -380,7 +412,8 @@ currency, or combat power.
 - Keep README/AGENTS/current plan aligned with the actual Hono + Phaser code.
 - Reduce route transaction complexity in `src/server/routes/api.ts`.
 - Split broad domain files when changes naturally touch them.
-- Maintain the existing route-level rollback and production API contract coverage.
+- Maintain atomic submission and production API contract coverage; do not
+  restore route-level best-effort rollback for Redis player state.
 - Keep generated logs out of git; store only concise evidence summaries when needed.
 - Split the combat engine behind its unchanged public contract when that work
   materially improves balance iteration; fixed-seed golden transcript hashes

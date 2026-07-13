@@ -32,11 +32,12 @@ arena effects and Inkbody deformation update at a bounded 30 Hz.
 ## Daily loop
 
 1. Take one of 32 optional daily Doodle Dares plus an expressive bonus twist—or
-   ignore both and draw anything—while live feedback turns each stroke into a
-   visible Shape Power. The screen keeps the Dare inside the canvas and collapses
-   ink, premium pens, brush size, erase, and undo into one icon rail; one status
-   replaces the former four-stat panel. The exact card does not repeat for 256
-   Arena days.
+   ignore both and draw anything. The screen keeps the Dare inside the canvas,
+   collapses ink, premium pens, brush size, erase, and undo into one icon rail,
+   and enables one visible `NEXT` action when the body is valid. Naming follows
+   in a focused preview; birth and VS receipts explain the resulting Shape Power
+   without restoring the former four-stat panel. The exact Dare card does not
+   repeat for 256 Arena days.
 2. Care for the Scribbit across its three-day life and spend earned Ink on a
    discounted daily Mystery Capsule.
 3. Grow a permanent cosmetic collection with visible collector rank, wearable
@@ -61,7 +62,9 @@ arena effects and Inkbody deformation update at a bounded 30 Hz.
 The first session proves the whole promise—draw, watch it fight, earn Ink—and the
 first Scribbit immediately receives an exhibition fight. A new player sees
 their drawing come alive before meeting the deeper care, collection, and
-scouting systems. Phaser 4.2 turns the submitted PNG into a deforming Inkbody:
+scouting systems. The birth receipt says what caused the build and what it does,
+for example `SHARP EDGES → FIRETIP HALO` and `3 ROTATING QUILLS`, instead of
+showing raw stat totals. Phaser 4.2 turns the submitted PNG into a deforming Inkbody:
 its dominant drawing stat controls its breathing and named Shape Power, while
 its element gives that power one of sixteen authored signature identities. The
 server resolves each 20 Hz fight ahead of time and stores a compact transcript;
@@ -102,14 +105,11 @@ as four equal actions. Those canvas actions, Practice exits, archived returns,
 and Rival Draft choices are mirrored by focusable native buttons; critical
 targets remain at least 44 CSS pixels in the 320x568 fit and support visible
 focus plus Enter/Space without changing battle authority.
-Before the bell, a mode-specific VS card reveals both signature moves and one
-verified interaction from the exhaustive ten-pair Shape Power matrix—mechanics,
-never win odds. Its portrait layout keeps one battle label, one title, one
-stakes line, large fighter art, and a two-line mechanics card. Both visible
-Halo reduction percentages derive from the same
-configuration value the combat engine consumes, and Smearstep's `TWICE` derives
-from the same dash count its authoritative schedule consumes, while exact-copy
-regressions still lock all ten cards. During replay, neutral no-clean-hit stamps avoid inventing a
+Before the bell, a mode-specific VS card keeps one title, optional story stakes,
+large fighter art, and two plain causal lines such as
+`MORE COLORS → CONE + DELAYED ECHO`. They come from the same immutable Shape
+Power content used by birth and replay and never claim win odds. During replay,
+neutral no-clean-hit stamps avoid inventing a
 dodge or counter; shield and element cues appear only for explicit transcript
 events. The twenty founding opponents use deterministic stat-shaped mascot art,
 so their silhouette previews the same Shape Power the server runs. One frozen

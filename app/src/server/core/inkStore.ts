@@ -3,13 +3,20 @@ import type {
   CapsulePull,
   CapsulePullResponse,
   CapsuleRarity,
+  GearInventoryEntry,
+  GearRank,
   Inventory,
+  MergeGearResponse,
 } from '../../shared/arena';
 import {
   CAPSULE_COST,
   CAPSULE_FIRST_DAILY_COST,
   CAPSULE_PITY,
   CAPSULE_RARITY_PERCENTAGES,
+  GEAR_MERGE_COPY_COST,
+  getGearMergeCopyCost,
+  isGearRank,
+  MAX_GEAR_RANK,
 } from '../../shared/arena';
 import { createMulberry32, hashTextToSeed } from './random';
 import type { ArenaStorage, ArenaTransaction } from './storage';
@@ -71,12 +78,19 @@ type InkRewardClaimOptions = {
   paidAtMs: number;
 };
 
+type StoredCounterParseResult =
+  | { status: 'missing' }
+  | { status: 'valid'; value: number }
+  | { status: 'invalid' };
+
 const capsuleDailyFlagTtlSeconds = 3 * 24 * 60 * 60;
 const capsuleOperationTtlSeconds = 3 * 24 * 60 * 60;
 const capsuleOperationPendingPrefix = 'pending:';
 const capsuleOperationKeyPrefix = 'capsule:operation:';
 const inventoryDiscoveryFieldPrefix = 'discovered:';
+const inventoryGearRankFieldPrefix = 'gear-rank:';
 const inventoryEquippedTitleField = 'equipped-title';
+const gearMergeOperationKeyPrefix = 'gear:merge:operation:';
 
 export const getInkKey = (userId: string): string => {
   return `ink:${userId}`;
@@ -86,8 +100,19 @@ export const getInventoryKey = (userId: string): string => {
   return `inventory:${userId}`;
 };
 
-const getInventoryDiscoveryField = (catalogId: string): string => {
+export const getInventoryDiscoveryField = (catalogId: string): string => {
   return `${inventoryDiscoveryFieldPrefix}${catalogId}`;
+};
+
+export const getInventoryGearRankField = (catalogId: string): string => {
+  return `${inventoryGearRankFieldPrefix}${catalogId}`;
+};
+
+export const getGearMergeOperationKey = (
+  userId: string,
+  operationId: string
+): string => {
+  return `${gearMergeOperationKeyPrefix}${userId}:${operationId}`;
 };
 
 export const getPullsSinceEpicKey = (userId: string): string => {
@@ -127,34 +152,55 @@ export const getRumbleWinInkPayoutKey = (day: number): string => {
   return `ink:payout:rumbleWin:${day}`;
 };
 
-const parseStoredNonNegativeInteger = (
-  storedValue: string | undefined
-): number => {
-  if (storedValue === undefined) {
-    return 0;
-  }
-
+const parseStoredCounter = (
+  storedValue: string | undefined,
+  maximumValue: number
+): StoredCounterParseResult => {
+  if (storedValue === undefined) return { status: 'missing' };
+  if (!/^(0|[1-9]\d*)$/.test(storedValue)) return { status: 'invalid' };
   const parsedValue = Number(storedValue);
-  if (!Number.isInteger(parsedValue) || parsedValue < 0) {
-    return 0;
+  if (
+    !Number.isSafeInteger(parsedValue) ||
+    parsedValue < 0 ||
+    parsedValue > maximumValue
+  ) {
+    return { status: 'invalid' };
   }
+  return { status: 'valid', value: parsedValue };
+};
 
-  return parsedValue;
+const readStoredCounter = async (
+  storage: ArenaStorage,
+  key: string,
+  counterName: string,
+  maximumValue = Number.MAX_SAFE_INTEGER
+): Promise<number> => {
+  const parsed = parseStoredCounter(await storage.get(key), maximumValue);
+  if (parsed.status === 'missing') return 0;
+  if (parsed.status === 'valid') return parsed.value;
+  throw new Error(`Stored ${counterName} is invalid.`);
+};
+
+const parseStoredInventoryCount = (storedValue: string | undefined): number => {
+  const parsedValue = Number(storedValue);
+  return Number.isInteger(parsedValue) && parsedValue >= 0 ? parsedValue : 0;
 };
 
 export const getInkBalance = async (
   storage: ArenaStorage,
   userId: string
 ): Promise<number> => {
-  return parseStoredNonNegativeInteger(await storage.get(getInkKey(userId)));
+  return await readStoredCounter(storage, getInkKey(userId), 'Ink balance');
 };
 
 const readPullCount = async (
   storage: ArenaStorage,
   userId: string
 ): Promise<number> => {
-  return parseStoredNonNegativeInteger(
-    await storage.get(getCapsulePullCountKey(userId))
+  return await readStoredCounter(
+    storage,
+    getCapsulePullCountKey(userId),
+    'capsule pull count'
   );
 };
 
@@ -162,8 +208,11 @@ const readPullsSinceEpic = async (
   storage: ArenaStorage,
   userId: string
 ): Promise<number> => {
-  return parseStoredNonNegativeInteger(
-    await storage.get(getPullsSinceEpicKey(userId))
+  return await readStoredCounter(
+    storage,
+    getPullsSinceEpicKey(userId),
+    'capsule pity counter',
+    CAPSULE_PITY - 1
   );
 };
 
@@ -176,6 +225,7 @@ export const awardInk = async (
     return await getInkBalance(storage, userId);
   }
 
+  await getInkBalance(storage, userId);
   return await storage.incrBy(getInkKey(userId), amount);
 };
 
@@ -191,6 +241,7 @@ export const claimInkReward = async (
     throw new Error('Atomic Ink rewards require transaction support.');
   }
 
+  const inkKey = getInkKey(options.userId);
   const receiptValue = `${options.userId}:${options.amount}:${options.paidAtMs}`;
   for (
     let attempt = 0;
@@ -199,7 +250,7 @@ export const claimInkReward = async (
   ) {
     let transaction: ArenaTransaction | undefined;
     try {
-      transaction = await storage.watch(options.payoutKey);
+      transaction = await storage.watch(options.payoutKey, inkKey);
       if (
         (await storage.hGet(options.payoutKey, options.payoutField)) !==
         undefined
@@ -207,12 +258,13 @@ export const claimInkReward = async (
         await transaction.unwatch();
         return false;
       }
+      await getInkBalance(storage, options.userId);
 
       await transaction.multi();
       await transaction.hSet(options.payoutKey, {
         [options.payoutField]: receiptValue,
       });
-      await transaction.incrBy(getInkKey(options.userId), options.amount);
+      await transaction.incrBy(inkKey, options.amount);
       const transactionResults = await transaction.exec();
       if (Array.isArray(transactionResults) && transactionResults.length > 0) {
         return true;
@@ -274,7 +326,7 @@ const hasPermanentDiscovery = (
   }
 
   if (entry.kind === 'accessory') {
-    return parseStoredNonNegativeInteger(storedInventory[entry.id]) > 0;
+    return parseStoredInventoryCount(storedInventory[entry.id]) > 0;
   }
 
   return storedInventory[entry.id] !== undefined;
@@ -288,16 +340,31 @@ const getDiscoveredCatalogIds = (
   }).map((entry) => entry.id);
 };
 
+const parseStoredGearRank = (storedValue: string | undefined): GearRank => {
+  const parsedRank = Number(storedValue);
+  return isGearRank(parsedRank) ? parsedRank : 1;
+};
+
 const inventoryFromStoredEntries = (
   storedInventory: Record<string, string>
 ): Inventory => {
   const items: Record<string, number> = {};
+  const gear: Record<string, GearInventoryEntry> = {};
 
   for (const entry of INK_ACCESSORY_CATALOG) {
-    const ownedCount = parseStoredNonNegativeInteger(storedInventory[entry.id]);
+    const ownedCount = parseStoredInventoryCount(storedInventory[entry.id]);
 
     if (ownedCount > 0) {
       items[entry.id] = ownedCount;
+    }
+    if (hasPermanentDiscovery(entry, storedInventory)) {
+      gear[entry.id] = {
+        rank: parseStoredGearRank(
+          storedInventory[getInventoryGearRankField(entry.id)]
+        ),
+        copies: ownedCount,
+        rarity: entry.rarity,
+      };
     }
   }
 
@@ -310,6 +377,7 @@ const inventoryFromStoredEntries = (
 
   return {
     items,
+    gear,
     pens: INK_PEN_CATALOG.filter((entry) => {
       return storedInventory[entry.id] !== undefined;
     }).map((entry) => {
@@ -336,6 +404,14 @@ const persistLegacyDiscoveryMarkers = async (
     const discoveryField = getInventoryDiscoveryField(catalogId);
     if (storedInventory[discoveryField] === undefined) {
       missingMarkers[discoveryField] = '1';
+    }
+    const catalogEntry = findInkCatalogEntry(catalogId);
+    const rankField = getInventoryGearRankField(catalogId);
+    if (
+      catalogEntry?.kind === 'accessory' &&
+      storedInventory[rankField] === undefined
+    ) {
+      missingMarkers[rankField] = '1';
     }
   }
 
@@ -370,6 +446,12 @@ export const projectEquippedTitle = (
 
   return {
     items: { ...inventory.items },
+    gear: Object.fromEntries(
+      Object.entries(inventory.gear ?? {}).map(([gearId, gear]) => [
+        gearId,
+        { ...gear },
+      ])
+    ),
     pens: [...inventory.pens],
     titles: [...inventory.titles],
     equippedTitle: titleId,
@@ -511,7 +593,8 @@ export const selectCapsuleDrop = (
 const createCapsulePull = (
   entry: InkCatalogEntry,
   isNew: boolean,
-  ownedCount: number
+  ownedCount: number,
+  gear: GearInventoryEntry | undefined
 ): CapsulePull => {
   return {
     rarity: entry.rarity,
@@ -521,6 +604,11 @@ const createCapsulePull = (
     description: entry.description,
     isNew,
     ownedCount,
+    gearRank: gear?.rank ?? null,
+    mergeReady:
+      gear !== undefined &&
+      gear.rank < MAX_GEAR_RANK &&
+      gear.copies >= GEAR_MERGE_COPY_COST,
   };
 };
 
@@ -537,6 +625,12 @@ export const projectCapsuleInventoryGrant = (
   const isNew = !inventory.discovered.includes(entry.id);
   const nextInventory: Inventory = {
     items: { ...inventory.items },
+    gear: Object.fromEntries(
+      Object.entries(inventory.gear ?? {}).map(([gearId, gear]) => [
+        gearId,
+        { ...gear },
+      ])
+    ),
     pens: [...inventory.pens],
     titles: [...inventory.titles],
     equippedTitle: inventory.equippedTitle,
@@ -549,6 +643,12 @@ export const projectCapsuleInventoryGrant = (
   if (entry.kind === 'accessory') {
     ownedCount = (nextInventory.items[entry.id] ?? 0) + 1;
     nextInventory.items[entry.id] = ownedCount;
+    const currentGear = nextInventory.gear[entry.id];
+    nextInventory.gear[entry.id] = {
+      rank: currentGear?.rank ?? 1,
+      copies: ownedCount,
+      rarity: entry.rarity,
+    };
   } else {
     const permanentInventory =
       entry.kind === 'pen' ? nextInventory.pens : nextInventory.titles;
@@ -583,6 +683,9 @@ const applyCapsulePullWithoutTransaction = async (
 
   await storage.hSet(inventoryKey, {
     [getInventoryDiscoveryField(entry.id)]: '1',
+    ...(entry.kind === 'accessory' && isNew
+      ? { [getInventoryGearRankField(entry.id)]: '1' }
+      : {}),
     ...(entry.kind !== 'accessory' && isNew ? { [entry.id]: entry.kind } : {}),
   });
 
@@ -622,6 +725,9 @@ const applyCapsulePullWithTransaction = async (
 
   await transaction.hSet(inventoryKey, {
     [getInventoryDiscoveryField(entry.id)]: '1',
+    ...(entry.kind === 'accessory' && isNew
+      ? { [getInventoryGearRankField(entry.id)]: '1' }
+      : {}),
     ...(entry.kind !== 'accessory' && isNew ? { [entry.id]: entry.kind } : {}),
   });
 
@@ -685,6 +791,40 @@ const normalizeReceiptDiscoveries = (
   return INK_CATALOG.filter((entry) => discoveredIds.has(entry.id)).map(
     (entry) => entry.id
   );
+};
+
+const normalizeReceiptGear = (
+  inventoryRecord: Record<string, unknown>,
+  itemCounts: Record<string, unknown>,
+  discovered: readonly string[]
+): Record<string, GearInventoryEntry> => {
+  const storedGear =
+    typeof inventoryRecord.gear === 'object' &&
+    inventoryRecord.gear !== null &&
+    !Array.isArray(inventoryRecord.gear)
+      ? (inventoryRecord.gear as Record<string, unknown>)
+      : {};
+  const discoveredIds = new Set(discovered);
+  const gear: Record<string, GearInventoryEntry> = {};
+
+  for (const entry of INK_ACCESSORY_CATALOG) {
+    if (!discoveredIds.has(entry.id)) continue;
+    const storedEntry = storedGear[entry.id];
+    const storedEntryRecord =
+      typeof storedEntry === 'object' &&
+      storedEntry !== null &&
+      !Array.isArray(storedEntry)
+        ? (storedEntry as Record<string, unknown>)
+        : {};
+    const storedRank = Number(storedEntryRecord.rank);
+    const rank: GearRank = isGearRank(storedRank) ? storedRank : 1;
+    const copies = isNonNegativeInteger(itemCounts[entry.id])
+      ? Number(itemCounts[entry.id])
+      : 0;
+    gear[entry.id] = { rank, copies, rarity: entry.rarity };
+  }
+
+  return gear;
 };
 
 const parseStoredCapsuleProgress = (
@@ -777,6 +917,11 @@ const parseCapsuleOperationResponse = (
       itemCounts as Record<string, unknown>,
       pullRecord.id
     );
+    const gear = normalizeReceiptGear(
+      inventoryRecord,
+      itemCounts as Record<string, unknown>,
+      discovered
+    );
     const needsCurrentProgress = record.progress === undefined;
     const progress = needsCurrentProgress
       ? createCapsuleProgress(0, 0, discovered.length)
@@ -791,10 +936,21 @@ const parseCapsuleOperationResponse = (
 
     return {
       response: {
-        pull: pullRecord as CapsulePull,
+        pull: {
+          ...(pullRecord as Omit<CapsulePull, 'gearRank' | 'mergeReady'>),
+          gearRank:
+            pullRecord.kind === 'accessory'
+              ? (gear[String(pullRecord.id)]?.rank ?? 1)
+              : null,
+          mergeReady:
+            pullRecord.kind === 'accessory' &&
+            (gear[String(pullRecord.id)]?.rank ?? 1) < MAX_GEAR_RANK &&
+            Number(pullRecord.ownedCount) >= GEAR_MERGE_COPY_COST,
+        },
         ink: record.ink,
         inventory: {
           items: itemCounts as Record<string, number>,
+          gear,
           pens: inventoryRecord.pens,
           titles: receiptTitles,
           equippedTitle,
@@ -852,6 +1008,10 @@ const normalizeLegacyCapsuleOperationResponse = async (
     ...parsedReceipt.response,
     inventory: {
       ...parsedReceipt.response.inventory,
+      gear: {
+        ...parsedReceipt.response.inventory.gear,
+        ...currentInventory.gear,
+      },
       equippedTitle: currentInventory.equippedTitle,
       discovered,
     },
@@ -1073,10 +1233,18 @@ export const pullCapsuleForUser = async (
       nextInventoryEntries[getInventoryDiscoveryField(selectedEntry.id)] = '1';
       if (selectedEntry.kind === 'accessory') {
         nextInventoryEntries[selectedEntry.id] = ownedCount.toString();
+        nextInventoryEntries[getInventoryGearRankField(selectedEntry.id)] =
+          inventoryGrant.inventory.gear[selectedEntry.id]?.rank.toString() ??
+          '1';
       } else if (isNew) {
         nextInventoryEntries[selectedEntry.id] = selectedEntry.kind;
       }
-      const pull = createCapsulePull(selectedEntry, isNew, ownedCount);
+      const pull = createCapsulePull(
+        selectedEntry,
+        isNew,
+        ownedCount,
+        inventoryGrant.inventory.gear[selectedEntry.id]
+      );
       const inventory = inventoryGrant.inventory;
       const progress = createCapsuleProgress(
         nextPullCount,
@@ -1143,30 +1311,12 @@ export const pullCapsuleForUser = async (
   throw new Error('Mystery Ink capsule pull did not settle.');
 };
 
-type RequiredAccessoryCounts = Map<string, number>;
+export type RequiredAccessoryCounts = ReadonlyMap<string, number>;
 
-export type AccessoryConsumeResult =
-  | {
-      status: 'consumed';
-      rollback: () => Promise<void>;
-    }
-  | {
-      status: 'insufficient';
-      accessoryId: string;
-    }
-  | {
-      status: 'race';
-      accessoryId: string;
-    }
-  | {
-      status: 'invalid';
-      accessoryId: string;
-    };
-
-const createRequiredAccessoryCounts = (
+export const planRequiredAccessoryCounts = (
   accessoryIds: string[]
 ): RequiredAccessoryCounts | undefined => {
-  const requiredCounts: RequiredAccessoryCounts = new Map();
+  const requiredCounts = new Map<string, number>();
 
   for (const accessoryId of accessoryIds) {
     if (!isAccessoryCatalogEntry(findInkCatalogEntry(accessoryId))) {
@@ -1188,7 +1338,7 @@ export const projectAccessoryInventoryConsumption = (
   inventory: Inventory,
   accessoryIds: string[]
 ): AccessoryInventoryProjection => {
-  const requiredCounts = createRequiredAccessoryCounts(accessoryIds);
+  const requiredCounts = planRequiredAccessoryCounts(accessoryIds);
   if (!requiredCounts) {
     return {
       status: 'invalid',
@@ -1211,6 +1361,15 @@ export const projectAccessoryInventoryConsumption = (
     status: 'consumed',
     inventory: {
       items: nextItems,
+      gear: Object.fromEntries(
+        Object.entries(inventory.gear ?? {}).map(([gearId, gear]) => [
+          gearId,
+          {
+            ...gear,
+            copies: nextItems[gearId] ?? 0,
+          },
+        ])
+      ),
       pens: [...inventory.pens],
       titles: [...inventory.titles],
       equippedTitle: inventory.equippedTitle,
@@ -1219,24 +1378,179 @@ export const projectAccessoryInventoryConsumption = (
   };
 };
 
-const getFirstRequiredAccessoryId = (
-  requiredCounts: RequiredAccessoryCounts
-): string => {
-  for (const accessoryId of requiredCounts.keys()) {
-    return accessoryId;
+export type GearMergeProjection =
+  | { status: 'merged'; response: MergeGearResponse }
+  | { status: 'invalid' }
+  | { status: 'insufficientCopies' }
+  | { status: 'maxRank' };
+
+export const projectGearMerge = (
+  inventory: Inventory,
+  gearId: string
+): GearMergeProjection => {
+  const catalogEntry = findInkCatalogEntry(gearId);
+  if (catalogEntry?.kind !== 'accessory') {
+    return { status: 'invalid' };
+  }
+  const currentGear =
+    inventory.gear?.[gearId] ??
+    (inventory.discovered.includes(gearId)
+      ? {
+          rank: 1 as const,
+          copies: inventory.items[gearId] ?? 0,
+          rarity: catalogEntry.rarity,
+        }
+      : undefined);
+  if (!currentGear) return { status: 'invalid' };
+  if (currentGear.rank >= MAX_GEAR_RANK) {
+    return { status: 'maxRank' };
+  }
+  const copiesRequired = getGearMergeCopyCost(currentGear.rank);
+  if (currentGear.copies < copiesRequired) {
+    return { status: 'insufficientCopies' };
   }
 
-  return 'accessory';
+  const fromRank = currentGear.rank;
+  const toRank = (fromRank + 1) as GearRank;
+  const nextCopies = currentGear.copies - copiesRequired;
+  const nextItems = { ...inventory.items };
+  if (nextCopies > 0) nextItems[gearId] = nextCopies;
+  else delete nextItems[gearId];
+  const nextInventory: Inventory = {
+    items: nextItems,
+    gear: {
+      ...(inventory.gear ?? {}),
+      [gearId]: {
+        ...currentGear,
+        rank: toRank,
+        copies: nextCopies,
+      },
+    },
+    pens: [...inventory.pens],
+    titles: [...inventory.titles],
+    equippedTitle: inventory.equippedTitle,
+    discovered: [...inventory.discovered],
+  };
+  return {
+    status: 'merged',
+    response: {
+      gearId,
+      fromRank,
+      toRank,
+      copiesSpent: copiesRequired,
+      inventory: nextInventory,
+    },
+  };
 };
 
-const findMissingAccessory = (
+export type GearMergeResult =
+  | { status: 'merged'; response: MergeGearResponse }
+  | { status: 'invalid' }
+  | { status: 'insufficientCopies' }
+  | { status: 'maxRank' }
+  | { status: 'operationConflict' };
+
+const parseGearMergeReceipt = (
+  storedValue: string | undefined
+): MergeGearResponse | undefined => {
+  if (!storedValue) return undefined;
+  try {
+    const parsed = JSON.parse(storedValue) as Partial<MergeGearResponse>;
+    const fromRank = Number(parsed.fromRank);
+    const toRank = Number(parsed.toRank);
+    if (
+      typeof parsed.gearId !== 'string' ||
+      !isGearRank(fromRank) ||
+      !isGearRank(toRank) ||
+      toRank !== fromRank + 1 ||
+      parsed.copiesSpent !== getGearMergeCopyCost(fromRank) ||
+      typeof parsed.inventory !== 'object' ||
+      parsed.inventory === null
+    ) {
+      return undefined;
+    }
+    return parsed as MergeGearResponse;
+  } catch {
+    return undefined;
+  }
+};
+
+export const mergeGearForUser = async (
+  storage: ArenaStorage,
+  userId: string,
+  gearId: string,
+  operationId: string
+): Promise<GearMergeResult> => {
+  if (!storage.watch) {
+    throw new Error('Atomic gear merges require transaction support.');
+  }
+  const inventoryKey = getInventoryKey(userId);
+  const operationKey = getGearMergeOperationKey(userId, operationId);
+
+  for (
+    let attempt = 0;
+    attempt < MAX_WATCH_TRANSACTION_ATTEMPTS;
+    attempt += 1
+  ) {
+    let transaction: ArenaTransaction | undefined;
+    try {
+      transaction = await storage.watch(inventoryKey, operationKey);
+      const storedReceipt = parseGearMergeReceipt(
+        await storage.get(operationKey)
+      );
+      if (storedReceipt) {
+        await transaction.unwatch();
+        return storedReceipt.gearId === gearId
+          ? { status: 'merged', response: storedReceipt }
+          : { status: 'operationConflict' };
+      }
+
+      const projection = projectGearMerge(
+        inventoryFromStoredEntries(await storage.hGetAll(inventoryKey)),
+        gearId
+      );
+      if (projection.status !== 'merged') {
+        await transaction.unwatch();
+        return projection;
+      }
+
+      await transaction.multi();
+      await transaction.hSet(inventoryKey, {
+        [getInventoryGearRankField(gearId)]:
+          projection.response.toRank.toString(),
+      });
+      await transaction.hIncrBy(
+        inventoryKey,
+        gearId,
+        -projection.response.copiesSpent
+      );
+      await transaction.set(operationKey, JSON.stringify(projection.response));
+      await transaction.expire(operationKey, capsuleOperationTtlSeconds);
+      const result = await transaction.exec();
+      if (Array.isArray(result) && result.length > 0) {
+        return { status: 'merged', response: projection.response };
+      }
+    } catch (error) {
+      await discardWatchedTransaction(transaction, 'Gear merge');
+      const recoveredReceipt = parseGearMergeReceipt(
+        await storage.get(operationKey)
+      );
+      if (recoveredReceipt?.gearId === gearId) {
+        return { status: 'merged', response: recoveredReceipt };
+      }
+      throw error;
+    }
+  }
+
+  throw new Error('Gear merge did not settle.');
+};
+
+export const findUnavailableAccessory = (
   inventoryEntries: Record<string, string>,
   requiredCounts: RequiredAccessoryCounts
 ): string | undefined => {
   for (const [accessoryId, requiredCount] of requiredCounts.entries()) {
-    const ownedCount = parseStoredNonNegativeInteger(
-      inventoryEntries[accessoryId]
-    );
+    const ownedCount = parseStoredInventoryCount(inventoryEntries[accessoryId]);
 
     if (ownedCount < requiredCount) {
       return accessoryId;
@@ -1246,152 +1560,17 @@ const findMissingAccessory = (
   return undefined;
 };
 
-const restoreAccessoryCounts = async (
-  storage: ArenaStorage,
-  inventoryKey: string,
-  requiredCounts: RequiredAccessoryCounts
-): Promise<void> => {
-  for (const [accessoryId, requiredCount] of requiredCounts.entries()) {
-    await storage.hIncrBy(inventoryKey, accessoryId, requiredCount);
-  }
-};
+export type AccessoryAvailability =
+  | { status: 'available' }
+  | { status: 'insufficient'; accessoryId: string }
+  | { status: 'invalid'; accessoryId: string };
 
-const createAccessoryRollback = (
-  storage: ArenaStorage,
-  inventoryKey: string,
-  requiredCounts: RequiredAccessoryCounts
-): (() => Promise<void>) => {
-  return async () => {
-    await restoreAccessoryCounts(storage, inventoryKey, requiredCounts);
-  };
-};
-
-const consumeAccessoriesWithTransaction = async (
-  storage: ArenaStorage,
-  userId: string,
-  requiredCounts: RequiredAccessoryCounts
-): Promise<AccessoryConsumeResult> => {
-  const inventoryKey = getInventoryKey(userId);
-
-  for (
-    let attempt = 0;
-    attempt < MAX_WATCH_TRANSACTION_ATTEMPTS;
-    attempt += 1
-  ) {
-    let transaction: ArenaTransaction | undefined;
-
-    try {
-      if (storage.watch) {
-        transaction = await storage.watch(inventoryKey);
-      }
-
-      const inventoryEntries = await storage.hGetAll(inventoryKey);
-      const missingAccessory = findMissingAccessory(
-        inventoryEntries,
-        requiredCounts
-      );
-
-      if (missingAccessory) {
-        if (transaction) {
-          await transaction.unwatch();
-        }
-
-        return {
-          status: 'insufficient',
-          accessoryId: missingAccessory,
-        };
-      }
-
-      if (!transaction) {
-        break;
-      }
-
-      await transaction.multi();
-
-      for (const [accessoryId, requiredCount] of requiredCounts.entries()) {
-        await transaction.hSet(inventoryKey, {
-          [getInventoryDiscoveryField(accessoryId)]: '1',
-        });
-        await transaction.hIncrBy(inventoryKey, accessoryId, -requiredCount);
-      }
-
-      const execResult: unknown = await transaction.exec();
-
-      if (Array.isArray(execResult) && execResult.length > 0) {
-        return {
-          status: 'consumed',
-          rollback: createAccessoryRollback(
-            storage,
-            inventoryKey,
-            requiredCounts
-          ),
-        };
-      }
-    } catch (error) {
-      await discardWatchedTransaction(transaction, 'Mystery Ink');
-      throw error;
-    }
-  }
-
-  return {
-    status: 'race',
-    accessoryId: getFirstRequiredAccessoryId(requiredCounts),
-  };
-};
-
-const consumeAccessoriesWithoutTransaction = async (
-  storage: ArenaStorage,
-  userId: string,
-  requiredCounts: RequiredAccessoryCounts
-): Promise<AccessoryConsumeResult> => {
-  const inventoryKey = getInventoryKey(userId);
-  const inventoryEntries = await storage.hGetAll(inventoryKey);
-  const missingAccessory = findMissingAccessory(
-    inventoryEntries,
-    requiredCounts
-  );
-
-  if (missingAccessory) {
-    return {
-      status: 'insufficient',
-      accessoryId: missingAccessory,
-    };
-  }
-
-  const decrementedCounts: RequiredAccessoryCounts = new Map();
-
-  for (const [accessoryId, requiredCount] of requiredCounts.entries()) {
-    await storage.hSet(inventoryKey, {
-      [getInventoryDiscoveryField(accessoryId)]: '1',
-    });
-    const nextCount = await storage.hIncrBy(
-      inventoryKey,
-      accessoryId,
-      -requiredCount
-    );
-    decrementedCounts.set(accessoryId, requiredCount);
-
-    if (nextCount < 0) {
-      await restoreAccessoryCounts(storage, inventoryKey, decrementedCounts);
-      return {
-        status: 'race',
-        accessoryId,
-      };
-    }
-  }
-
-  return {
-    status: 'consumed',
-    rollback: createAccessoryRollback(storage, inventoryKey, requiredCounts),
-  };
-};
-
-export const consumeAccessoriesForSubmit = async (
+export const checkAccessoriesForSubmit = async (
   storage: ArenaStorage,
   userId: string,
   accessoryIds: string[]
-): Promise<AccessoryConsumeResult> => {
-  const requiredCounts = createRequiredAccessoryCounts(accessoryIds);
+): Promise<AccessoryAvailability> => {
+  const requiredCounts = planRequiredAccessoryCounts(accessoryIds);
 
   if (!requiredCounts) {
     return {
@@ -1400,24 +1579,11 @@ export const consumeAccessoriesForSubmit = async (
     };
   }
 
-  if (requiredCounts.size === 0) {
-    return {
-      status: 'consumed',
-      rollback: async () => {},
-    };
-  }
-
-  if (storage.watch) {
-    return await consumeAccessoriesWithTransaction(
-      storage,
-      userId,
-      requiredCounts
-    );
-  }
-
-  return await consumeAccessoriesWithoutTransaction(
-    storage,
-    userId,
+  const missingAccessory = findUnavailableAccessory(
+    await storage.hGetAll(getInventoryKey(userId)),
     requiredCounts
   );
+  return missingAccessory
+    ? { status: 'insufficient', accessoryId: missingAccessory }
+    : { status: 'available' };
 };

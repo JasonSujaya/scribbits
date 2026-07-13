@@ -1,6 +1,5 @@
 import type { ArenaStorage } from './storage';
 import {
-  deleteStoredScribbit,
   getDailyFlagsKey,
   getUserDailySparWinRewardsKey,
   getUserAliveScribbitsKey,
@@ -13,9 +12,7 @@ import {
 import {
   getBattleReportKey,
   getUserBattlesKey,
-  purgeBattleReportsForScribbit,
 } from './battleStore';
-import { removeCurrentChampionIfMatches } from './arenaStore';
 import {
   getBackKey,
   getCloutKey,
@@ -35,6 +32,7 @@ import {
   getUserHiddenScribbitsKey,
   getUserReportedScribbitsKey,
 } from './moderation';
+import { removeScribbitCompletely } from './removal';
 import { getUserPlayStreakKey } from './streak';
 import { getLegacyIndexVersionKey, getLegacySeenDayKey } from './legacy';
 import {
@@ -80,9 +78,11 @@ const deletePlayerDataRecords = async (
 
   for (const scribbit of scribbits) {
     await requireDeletionOwnership(storage, deletionLease);
-    await purgeBattleReportsForScribbit(storage, scribbit.id);
-    await deleteStoredScribbit(storage, userId, scribbit.id, currentDay);
-    await removeCurrentChampionIfMatches(storage, scribbit.id);
+    await removeScribbitCompletely(storage, {
+      ownerUserId: userId,
+      scribbitId: scribbit.id,
+      currentDay,
+    });
   }
 
   const reportedTargets = await storage.hGetAll(

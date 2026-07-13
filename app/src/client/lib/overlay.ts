@@ -243,6 +243,15 @@ export class CanvasActionOverlay {
     return nativeButton;
   }
 
+  placeElement(
+    element: HTMLElement,
+    rect: OverlayRect,
+    followCamera = false
+  ): HTMLElement {
+    this.overlay.place(element, rect, followCamera);
+    return element;
+  }
+
   focusedControlLabel(): string | null {
     const activeElement = document.activeElement;
     if (!(activeElement instanceof HTMLButtonElement)) return null;
@@ -368,7 +377,7 @@ export class CanvasModalOverlay {
   private readonly scene: Scene;
   private readonly actionOverlay: CanvasActionOverlay;
   private readonly backgroundOverlays: BackgroundOverlayState[];
-  private readonly controls: HTMLButtonElement[] = [];
+  private readonly controls: HTMLElement[] = [];
   private readonly trigger: HTMLElement | null;
   private destroyed = false;
   private readonly handleSceneShutdown = (): void => this.destroy();
@@ -423,6 +432,20 @@ export class CanvasModalOverlay {
     return control;
   }
 
+  placeElement(
+    element: HTMLElement,
+    rect: OverlayRect,
+    options: Readonly<{ focusable?: boolean; followCamera?: boolean }> = {}
+  ): HTMLElement {
+    this.actionOverlay.placeElement(
+      element,
+      rect,
+      options.followCamera ?? false
+    );
+    if (options.focusable) this.controls.push(element);
+    return element;
+  }
+
   addStatus(initialMessage = ''): HTMLElement {
     return this.actionOverlay.addStatus(initialMessage);
   }
@@ -433,7 +456,7 @@ export class CanvasModalOverlay {
         !this.destroyed &&
         control?.isConnected &&
         !control.hidden &&
-        !control.disabled
+        !control.matches(':disabled')
       ) {
         control.focus();
       }
@@ -475,7 +498,11 @@ export class CanvasModalOverlay {
     if (event.key !== 'Tab') return;
 
     const availableControls = this.controls.filter(
-      (control) => control.isConnected && !control.hidden && !control.disabled
+      (control) =>
+        control.isConnected &&
+        !control.hidden &&
+        !control.matches(':disabled') &&
+        control.getAttribute('aria-disabled') !== 'true'
     );
     if (availableControls.length === 0) {
       event.preventDefault();
@@ -483,7 +510,7 @@ export class CanvasModalOverlay {
       return;
     }
     const activeIndex = availableControls.indexOf(
-      document.activeElement as HTMLButtonElement
+      document.activeElement as HTMLElement
     );
     const nextIndex = event.shiftKey
       ? activeIndex <= 0

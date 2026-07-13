@@ -285,8 +285,6 @@ export type SplashState = {
 };
 
 export type BackRequest = { scribbitId: string }; // one per user per day, final
-export type RemoveScribbitRequest = { scribbitId: string };
-export type ReportScribbitRequest = { scribbitId: string };
 export type ReportScribbitResponse = {
   hidden: string;
   removedForEveryone: boolean;
@@ -299,6 +297,28 @@ export type ReportScribbitResponse = {
 // accessories are the stars and are per-copy consumables.
 export type CapsuleRarity = 'common' | 'rare' | 'epic';
 export type CapsuleItemKind = 'accessory' | 'pen' | 'title';
+export const MAX_NORMAL_GEAR_RANK = 5 as const;
+export const RED_STAR_GEAR_RANK = 6 as const;
+export const NORMAL_GEAR_STAR_COUNT = MAX_NORMAL_GEAR_RANK;
+export const SPECIAL_GEAR_RANK = RED_STAR_GEAR_RANK;
+export const GEAR_RANKS = Object.freeze([1, 2, 3, 4, 5, 6] as const);
+export type GearRank = (typeof GEAR_RANKS)[number];
+export const MAX_GEAR_RANK: GearRank = SPECIAL_GEAR_RANK;
+export const GEAR_MERGE_COPY_COST = 3;
+export const getGearMergeCopyCost = (_fromRank: GearRank): number => {
+  return GEAR_MERGE_COPY_COST;
+};
+export const isGearRank = (value: unknown): value is GearRank => {
+  return typeof value === 'number' && GEAR_RANKS.includes(value as GearRank);
+};
+export const isSpecialGearRank = (rank: GearRank): boolean => {
+  return rank === SPECIAL_GEAR_RANK;
+};
+export type GearInventoryEntry = {
+  rank: GearRank;
+  copies: number; // loose accessory copies that can be attached or merged
+  rarity: CapsuleRarity; // catalog-derived, returned so clients never guess
+};
 export type CapsulePull = {
   rarity: CapsuleRarity;
   kind: CapsuleItemKind;
@@ -307,9 +327,12 @@ export type CapsulePull = {
   description: string;
   isNew: boolean; // first copy ever pulled (dupes still stack for accessories)
   ownedCount: number; // count in inventory after this pull
+  gearRank: GearRank | null; // accessory rank after this pull
+  mergeReady: boolean; // server-owned convenience flag for the reveal ceremony
 };
 export type Inventory = {
   items: Record<string, number>; // catalog id -> unattached copies owned
+  gear: Record<string, GearInventoryEntry>; // discovered accessories, including zero-copy gear
   pens: string[]; // permanent palette unlocks
   titles: string[];
   equippedTitle: string | null; // one owned title displayed on future Legacy Cards
@@ -323,6 +346,14 @@ export type CapsulePullResponse = {
   progress: CapsuleProgress;
 };
 export type CapsulePullRequest = { operationId: string };
+export type MergeGearRequest = { operationId: string; gearId: string };
+export type MergeGearResponse = {
+  gearId: string;
+  fromRank: GearRank;
+  toRank: GearRank;
+  copiesSpent: number;
+  inventory: Inventory;
+};
 export type EquipTitleRequest = { titleId: string | null };
 export type MarkLegacySeenRequest = { throughArchivedDay: number };
 // Cosmetic accessory attached during drawing; consumed from inventory at submit.
@@ -507,14 +538,11 @@ export type SparRequest = {
   opponentId?: string; // when present, must be in this challenger's current server-authored slate
   rivalRun?: SparRivalRunAttempt; // optional quick spars remain outside Rival Runs
 };
-export type BelieveRequest = { scribbitId: string };
 export type BossChallengeRequest = { scribbitId: string };
 
 export type LegendsState = {
   legends: Scribbit[]; // newest first, one server-bounded page
   nextCursor: string | null; // server-issued continuation token; null on the final page
-  /** @deprecated Use GET /api/legacy-cards for the complete personal deck. */
-  myFaded: Scribbit[];
 };
 
 export type LegacyCardsState = {
@@ -552,15 +580,15 @@ export const MAX_ALIVE_PER_USER = 3;
 // POST /api/scribbit       -> SubmitScribbitRequest -> Scribbit         (401 if logged out, 409 if drawnToday)
 // GET  /api/my-battles     -> BattleReport[]  (caller's battles, newest first, top 20)
 // GET  /api/rumble-replay?day -> BattleReport (server-selected bout for caller's Back)
-// POST /api/believe        -> BelieveRequest -> { belief: number }      (one per user per scribbit per day)
+// POST /api/believe        -> { scribbitId: string } -> { belief: number } (one per user per scribbit per day)
 // POST /api/boss-challenge -> BossChallengeRequest -> DirectBattleResponse (instant resolve vs champion; one per user per day)
 // POST /api/care           -> CareRequest -> CareResponse               (each action once per scribbit per UTC day)
 // POST /api/practice-battle -> PracticeBattleRequest -> BattleReport    (ephemeral, server-analyzed, no rewards or persistence)
 // GET  /api/spar-rivals?scribbitId -> SparRivalSlate                    (owned living challenger; stable server slate per UTC day)
 // POST /api/spar           -> SparRequest -> DirectBattleResponse       (chosen opponentId must be in that exact slate; omitted stays server-random)
 // POST /api/back           -> BackRequest -> { backed: string }         (one per user per day, locks at rumble resolve)
-// POST /api/remove-scribbit -> RemoveScribbitRequest -> { removed: string } (owner removal)
-// POST /api/report-scribbit -> ReportScribbitRequest -> ReportScribbitResponse (hide + safety report)
+// POST /api/remove-scribbit -> { scribbitId: string } -> { removed: string } (owner removal)
+// POST /api/report-scribbit -> { scribbitId: string } -> ReportScribbitResponse (hide + safety report)
 // GET  /api/clout-board    -> CloutBoard
 // POST /api/capsule        -> CapsulePullResponse                       (spends ink; seeded random + pity; duplicate accessories stack)
 // GET  /api/inventory      -> Inventory

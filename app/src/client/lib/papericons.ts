@@ -4,11 +4,14 @@ import type { Element } from '../../shared/arena';
 import { ELEMENT_STYLES, UI } from './theme';
 
 export type PaperIconKey =
+  | 'armor'
   | 'back'
   | 'berry'
   | 'book'
+  | 'boots'
   | 'clock'
   | 'defeat'
+  | 'forge'
   | 'heart'
   | 'paw'
   | 'replay'
@@ -24,7 +27,7 @@ export type PaperIconKey =
   | 'train'
   | 'trash'
   | 'trophy';
-export type PaperToolIconKey = 'sticker' | 'eraser' | 'undo';
+export type PaperToolIconKey = 'sticker' | 'eraser' | 'clear' | 'undo' | 'redo';
 export type PaperDockIconKey =
   | 'arena'
   | 'gallery'
@@ -82,43 +85,28 @@ export function paperDockIcon(
     graphics.lineStyle(3 * scale, color, 1);
     drawFivePointStar(graphics, 0, 0, 17 * scale, 8 * scale, false);
   } else if (key === 'gallery' && accented) {
-    graphics.fillStyle(UI.creamHex, 1);
-    graphics.fillRoundedRect(
-      -15 * scale,
-      -19 * scale,
-      30 * scale,
-      38 * scale,
-      3 * scale
-    );
-    graphics.strokeRoundedRect(
-      -15 * scale,
-      -19 * scale,
-      30 * scale,
-      38 * scale,
-      3 * scale
-    );
+    const leftPage = [
+      new Phaser.Math.Vector2(-18 * scale, -14 * scale),
+      new Phaser.Math.Vector2(-2 * scale, -11 * scale),
+      new Phaser.Math.Vector2(-2 * scale, 17 * scale),
+      new Phaser.Math.Vector2(-18 * scale, 13 * scale),
+    ];
+    const rightPage = [
+      new Phaser.Math.Vector2(2 * scale, -11 * scale),
+      new Phaser.Math.Vector2(18 * scale, -14 * scale),
+      new Phaser.Math.Vector2(18 * scale, 13 * scale),
+      new Phaser.Math.Vector2(2 * scale, 17 * scale),
+    ];
+    graphics.fillStyle(UI.tapeAlt, 0.72);
+    graphics.fillPoints(leftPage, true);
+    graphics.fillPoints(rightPage, true);
+    graphics.lineStyle(3 * scale, color, 1);
+    graphics.strokePoints(leftPage, true);
+    graphics.strokePoints(rightPage, true);
     graphics.fillStyle(0x8fcf72, 1);
-    graphics.fillCircle(0, 1 * scale, 8 * scale);
-    graphics.fillTriangle(
-      -7 * scale,
-      -3 * scale,
-      -4 * scale,
-      -12 * scale,
-      0,
-      -5 * scale
-    );
-    graphics.fillTriangle(
-      7 * scale,
-      -3 * scale,
-      4 * scale,
-      -12 * scale,
-      0,
-      -5 * scale
-    );
-    graphics.fillStyle(color, 1);
-    graphics.fillCircle(-3 * scale, 0, 1.4 * scale);
-    graphics.fillCircle(3 * scale, 0, 1.4 * scale);
-    graphics.lineBetween(-9 * scale, 14 * scale, 9 * scale, 14 * scale);
+    graphics.fillCircle(8 * scale, 2 * scale, 4 * scale);
+    graphics.lineBetween(-14 * scale, -5 * scale, -6 * scale, -3 * scale);
+    graphics.lineBetween(-14 * scale, 2 * scale, -6 * scale, 4 * scale);
   } else if (key === 'draw' && accented) {
     const pencilBody = [
       new Phaser.Math.Vector2(-13 * scale, 10 * scale),
@@ -146,15 +134,13 @@ export function paperDockIcon(
     graphics.fillStyle(0xbfd8e0, 1);
     drawDockSword(graphics, scale, true, true);
   } else if (key === 'scout' && accented) {
-    graphics.fillStyle(UI.creamHex, 1);
-    graphics.fillCircle(-4 * scale, -4 * scale, 14 * scale);
-    graphics.strokeCircle(-4 * scale, -4 * scale, 14 * scale);
+    graphics.fillStyle(UI.gold, 0.18);
+    graphics.fillCircle(-4 * scale, -4 * scale, 13 * scale);
+    graphics.lineStyle(3 * scale, color, 1);
+    graphics.strokeCircle(-4 * scale, -4 * scale, 13 * scale);
     graphics.lineBetween(7 * scale, 7 * scale, 18 * scale, 18 * scale);
     graphics.fillStyle(UI.gold, 1);
-    graphics.fillCircle(-4 * scale, 1 * scale, 4.2 * scale);
-    graphics.fillCircle(-10 * scale, -6 * scale, 2.4 * scale);
-    graphics.fillCircle(-4 * scale, -9 * scale, 2.4 * scale);
-    graphics.fillCircle(2 * scale, -6 * scale, 2.4 * scale);
+    graphics.fillCircle(-4 * scale, -4 * scale, 3.5 * scale);
     graphics.fillStyle(0x5fa85c, 1);
     graphics.fillEllipse(17 * scale, 14 * scale, 7 * scale, 4 * scale);
   } else if (key === 'arena') {
@@ -326,9 +312,14 @@ export function paperToolIcon(
   const container = scene.add.container(x, y);
   const backing = scene.add.graphics().setPosition(2 * scale, 3 * scale);
   const face = scene.add.graphics();
-  drawTool(backing, key, scale, 0x9b754d, 0x9b754d);
-  drawTool(face, key, scale, UI.creamHex, UI.inkHex);
-  container.add([backing, face]);
+  if (key !== 'undo' && key !== 'redo') {
+    drawTool(backing, key, scale, 0x9b754d, 0x9b754d);
+  }
+  const faceFill =
+    key === 'eraser' ? UI.coral : key === 'clear' ? UI.tapeAlt : UI.creamHex;
+  drawTool(face, key, scale, faceFill, UI.inkHex);
+  if (key === 'redo') face.setScale(-1, 1);
+  container.add(key === 'undo' || key === 'redo' ? [face] : [backing, face]);
   return container;
 }
 
@@ -340,7 +331,7 @@ function drawTool(
   stroke: number
 ): void {
   graphics.fillStyle(fill, 1);
-  graphics.lineStyle(3 * scale, stroke, 1);
+  graphics.lineStyle(4 * scale, stroke, 1);
 
   if (key === 'sticker') {
     const points: Phaser.Math.Vector2[] = [];
@@ -361,28 +352,59 @@ function drawTool(
 
   if (key === 'eraser') {
     const points = [
-      new Phaser.Math.Vector2(-13 * scale, 6 * scale),
-      new Phaser.Math.Vector2(3 * scale, -12 * scale),
-      new Phaser.Math.Vector2(13 * scale, -3 * scale),
-      new Phaser.Math.Vector2(-3 * scale, 14 * scale),
+      new Phaser.Math.Vector2(-15 * scale, 4 * scale),
+      new Phaser.Math.Vector2(2 * scale, -14 * scale),
+      new Phaser.Math.Vector2(15 * scale, -2 * scale),
+      new Phaser.Math.Vector2(-2 * scale, 15 * scale),
     ];
     graphics.fillPoints(points, true);
     graphics.strokePoints(points, true);
-    graphics.lineBetween(-7 * scale, 0, 4 * scale, 10 * scale);
+    graphics.lineBetween(-7 * scale, -4 * scale, 7 * scale, 9 * scale);
+    graphics.fillCircle(-12 * scale, 13 * scale, 2.2 * scale);
+    graphics.fillCircle(-5 * scale, 16 * scale, 1.5 * scale);
     return;
   }
 
-  if (key === 'undo') {
+  if (key === 'clear') {
+    graphics.fillRoundedRect(
+      -10 * scale,
+      -10 * scale,
+      20 * scale,
+      24 * scale,
+      3 * scale
+    );
+    graphics.strokeRoundedRect(
+      -10 * scale,
+      -10 * scale,
+      20 * scale,
+      24 * scale,
+      3 * scale
+    );
+    graphics.lineBetween(-14 * scale, -13 * scale, 14 * scale, -13 * scale);
+    graphics.lineBetween(-6 * scale, -17 * scale, 6 * scale, -17 * scale);
+    graphics.lineBetween(-4 * scale, -6 * scale, -3 * scale, 9 * scale);
+    graphics.lineBetween(4 * scale, -6 * scale, 3 * scale, 9 * scale);
+    return;
+  }
+
+  if (key === 'undo' || key === 'redo') {
+    // A joined, heavy return arrow reads as Undo at mobile size. The previous
+    // offset double-arc looked like a question mark once letterboxed.
+    graphics.lineStyle(5 * scale, stroke, 1);
     graphics.beginPath();
-    graphics.arc(2 * scale, 2 * scale, 11 * scale, -2.5, 1.5, false);
+    graphics.moveTo(-9 * scale, -6 * scale);
+    graphics.lineTo(5 * scale, -6 * scale);
+    graphics.arc(5 * scale, 3 * scale, 9 * scale, -Math.PI / 2, Math.PI / 2);
+    graphics.lineTo(2 * scale, 12 * scale);
     graphics.strokePath();
+    graphics.fillStyle(stroke, 1);
     graphics.fillTriangle(
-      -14 * scale,
-      -5 * scale,
-      -3 * scale,
-      -11 * scale,
+      -15 * scale,
+      -6 * scale,
       -4 * scale,
-      1 * scale
+      -15 * scale,
+      -4 * scale,
+      3 * scale
     );
     return;
   }
@@ -572,6 +594,42 @@ function drawIcon(
     return;
   }
 
+  if (key === 'armor') {
+    const armor = [
+      new Phaser.Math.Vector2(-14 * scale, -9 * scale),
+      new Phaser.Math.Vector2(-6 * scale, -14 * scale),
+      new Phaser.Math.Vector2(0, -8 * scale),
+      new Phaser.Math.Vector2(6 * scale, -14 * scale),
+      new Phaser.Math.Vector2(14 * scale, -9 * scale),
+      new Phaser.Math.Vector2(10 * scale, 13 * scale),
+      new Phaser.Math.Vector2(-10 * scale, 13 * scale),
+    ];
+    graphics.fillPoints(armor, true);
+    graphics.strokePoints(armor, true);
+    graphics.lineBetween(-8 * scale, -6 * scale, 8 * scale, -6 * scale);
+    graphics.lineBetween(0, -7 * scale, 0, 11 * scale);
+    graphics.lineBetween(-9 * scale, 6 * scale, 9 * scale, 6 * scale);
+    return;
+  }
+
+  if (key === 'boots') {
+    const boot = [
+      new Phaser.Math.Vector2(-9 * scale, -14 * scale),
+      new Phaser.Math.Vector2(4 * scale, -14 * scale),
+      new Phaser.Math.Vector2(3 * scale, 3 * scale),
+      new Phaser.Math.Vector2(13 * scale, 7 * scale),
+      new Phaser.Math.Vector2(13 * scale, 13 * scale),
+      new Phaser.Math.Vector2(-10 * scale, 13 * scale),
+      new Phaser.Math.Vector2(-10 * scale, 4 * scale),
+      new Phaser.Math.Vector2(-7 * scale, 2 * scale),
+    ];
+    graphics.fillPoints(boot, true);
+    graphics.strokePoints(boot, true);
+    graphics.lineBetween(-8 * scale, -7 * scale, 3 * scale, -7 * scale);
+    graphics.lineBetween(-9 * scale, 8 * scale, 11 * scale, 8 * scale);
+    return;
+  }
+
   if (key === 'trash') {
     graphics.fillRoundedRect(
       -9 * scale,
@@ -670,6 +728,58 @@ function drawIcon(
     graphics.lineBetween(-11 * scale, 11 * scale, -3 * scale, 11 * scale);
     graphics.lineBetween(11 * scale, -11 * scale, 11 * scale, -3 * scale);
     graphics.lineBetween(11 * scale, -11 * scale, 3 * scale, -11 * scale);
+    return;
+  }
+
+  if (key === 'forge') {
+    const anvilTop = [
+      new Phaser.Math.Vector2(-15 * scale, -2 * scale),
+      new Phaser.Math.Vector2(8 * scale, -2 * scale),
+      new Phaser.Math.Vector2(15 * scale, -7 * scale),
+      new Phaser.Math.Vector2(15 * scale, -11 * scale),
+      new Phaser.Math.Vector2(-10 * scale, -11 * scale),
+      new Phaser.Math.Vector2(-15 * scale, -7 * scale),
+    ];
+    graphics.fillPoints(anvilTop, true);
+    graphics.strokePoints(anvilTop, true);
+    graphics.fillPoints(
+      [
+        new Phaser.Math.Vector2(-5 * scale, -2 * scale),
+        new Phaser.Math.Vector2(6 * scale, -2 * scale),
+        new Phaser.Math.Vector2(4 * scale, 8 * scale),
+        new Phaser.Math.Vector2(11 * scale, 13 * scale),
+        new Phaser.Math.Vector2(-10 * scale, 13 * scale),
+        new Phaser.Math.Vector2(-3 * scale, 8 * scale),
+      ],
+      true
+    );
+    graphics.strokePoints(
+      [
+        new Phaser.Math.Vector2(-5 * scale, -2 * scale),
+        new Phaser.Math.Vector2(6 * scale, -2 * scale),
+        new Phaser.Math.Vector2(4 * scale, 8 * scale),
+        new Phaser.Math.Vector2(11 * scale, 13 * scale),
+        new Phaser.Math.Vector2(-10 * scale, 13 * scale),
+        new Phaser.Math.Vector2(-3 * scale, 8 * scale),
+      ],
+      true
+    );
+    graphics.lineStyle(4 * scale, stroke, 1);
+    graphics.lineBetween(-11 * scale, -14 * scale, 8 * scale, 8 * scale);
+    graphics.fillRoundedRect(
+      -15 * scale,
+      -17 * scale,
+      13 * scale,
+      8 * scale,
+      2 * scale
+    );
+    graphics.strokeRoundedRect(
+      -15 * scale,
+      -17 * scale,
+      13 * scale,
+      8 * scale,
+      2 * scale
+    );
     return;
   }
 

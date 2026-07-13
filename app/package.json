@@ -15,10 +15,11 @@
     "mock": "node scripts/make-test-drawing.mjs && vite build && node scripts/build-mock-combat.mjs && node scripts/dev-mock.mjs",
     "prettier": "prettier --write .",
     "release:check": "pnpm run verify && devvit whoami",
-    "test": "pnpm run test:sim",
+    "test": "node scripts/run-test-suites.mjs",
+    "test:suites": "node scripts/run-test-suites.mjs --suites-only",
     "test:sim": "node scripts/test-battle.mjs",
     "type-check": "node scripts/clean-type-output.mjs && tsc --build",
-    "verify": "pnpm run type-check && pnpm run lint && pnpm run test:sim && pnpm run build"
+    "verify": "pnpm run type-check && pnpm run lint && pnpm test && pnpm run build"
   },
   "engines": {
     "node": ">=22.2.0"

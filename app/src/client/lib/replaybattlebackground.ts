@@ -13,6 +13,7 @@ import type {
   ReplayBattleSide,
 } from './battlepresentation';
 import { ELEMENT_STYLES, UI } from './theme';
+import { battleStage } from './visualassets';
 
 export type ReplayBattleBackdrop = Readonly<{
   update: (elapsedMilliseconds: number) => void;
@@ -170,8 +171,18 @@ const drawArenaSkin = (
   const centerX = layout.viewportWidth / 2;
   const centerY = (layout.arenaTop + layout.arenaBottom) / 2;
   const arenaHeight = layout.arenaBottom - layout.arenaTop;
-  graphics.fillStyle(paint.background, 1);
-  graphics.fillRect(0, 0, layout.viewportWidth, layout.viewportHeight);
+
+  // The rendered paper stage is the scene background. Arena-specific colors
+  // live only inside the ring so they never replace the Scribbits visual
+  // system with a full-screen game-board color.
+  graphics.fillStyle(paint.background, 0.12);
+  graphics.fillRoundedRect(
+    38,
+    layout.arenaTop + 8,
+    layout.viewportWidth - 76,
+    arenaHeight - 16,
+    54
+  );
 
   switch (arenaId) {
     case 'v1-sticker-stadium': {
@@ -378,6 +389,7 @@ export function drawReplayBattleBackground(
   scene: Scene,
   input: ReplayBattleBackgroundInput
 ): ReplayBattleBackdrop {
+  battleStage(scene, -1000);
   drawArenaSkin(scene, input);
   return {
     update: () => {},

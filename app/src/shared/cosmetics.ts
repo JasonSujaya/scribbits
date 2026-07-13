@@ -1,4 +1,11 @@
 import type { CapsuleRarity } from './arena';
+import type { AccessoryEffectFamily } from './accessoryeffects';
+import {
+  EQUIPMENT_CATEGORIES,
+  parseEquipmentLoadout,
+  type EquipmentCategory,
+  type EquipmentLoadout,
+} from './equipment';
 
 export type CosmeticKind = 'accessory' | 'pen' | 'title';
 
@@ -10,10 +17,16 @@ type CosmeticCatalogEntryBase = {
   description: string;
 };
 
-export type CosmeticAccessoryCatalogEntry = CosmeticCatalogEntryBase & {
+export type CosmeticGearCatalogEntry = CosmeticCatalogEntryBase & {
   kind: 'accessory';
   label: string;
+  category: EquipmentCategory;
+  effectFamily: AccessoryEffectFamily;
 };
+
+// Compatibility name for the current persisted `kind: accessory` transport.
+// New equipment code should use CosmeticGearCatalogEntry.
+export type CosmeticAccessoryCatalogEntry = CosmeticGearCatalogEntry;
 
 export type CosmeticPenEffect = 'solid' | 'rainbow' | 'midnight';
 
@@ -28,210 +41,261 @@ export type CosmeticTitleCatalogEntry = CosmeticCatalogEntryBase & {
 };
 
 export type CosmeticCatalogEntry =
-  | CosmeticAccessoryCatalogEntry
+  | CosmeticGearCatalogEntry
   | CosmeticPenCatalogEntry
   | CosmeticTitleCatalogEntry;
 
-export const ACCESSORY_CATALOG_ENTRIES: readonly CosmeticAccessoryCatalogEntry[] =
-  [
-    {
-      id: 'bowtie',
-      kind: 'accessory',
-      rarity: 'common',
-      name: 'Bowtie',
-      label: 'Bowtie',
-      description: 'Instant tiny-gentleman energy for chaotic doodles.',
-    },
-    {
-      id: 'flower-crown',
-      kind: 'accessory',
-      rarity: 'common',
-      name: 'Flower Crown',
-      label: 'Flower Crown',
-      description: 'Petals for monsters who insist they are approachable.',
-    },
-    {
-      id: 'monocle',
-      kind: 'accessory',
-      rarity: 'common',
-      name: 'Monocle',
-      label: 'Monocle',
-      description: 'Makes every squiggle look like it owns a library ladder.',
-    },
-    {
-      id: 'beanie',
-      kind: 'accessory',
-      rarity: 'common',
-      name: 'Beanie',
-      label: 'Beanie',
-      description: 'A cozy hat for thoughts too weird to air out.',
-    },
-    {
-      id: 'round-glasses',
-      kind: 'accessory',
-      rarity: 'common',
-      name: 'Round Glasses',
-      label: 'Round Glasses',
-      description: 'Bookish circles for creatures with suspiciously big plans.',
-    },
-    {
-      id: 'tiny-sword',
-      kind: 'accessory',
-      rarity: 'common',
-      name: 'Tiny Sword',
-      label: 'Tiny Sword',
-      description: 'A pocket-sized blade for dramatic arena pointing.',
-    },
-    {
-      id: 'snail-shell-backpack',
-      kind: 'accessory',
-      rarity: 'common',
-      name: 'Snail Shell Backpack',
-      label: 'Snail Shell Backpack',
-      description: 'Carries snacks, secrets, and one heroic nap.',
-    },
-    {
-      id: 'party-hat',
-      kind: 'accessory',
-      rarity: 'common',
-      name: 'Party Hat',
-      label: 'Party Hat',
-      description: 'Proof that this battle is technically a celebration.',
-    },
-    {
-      id: 'mustache',
-      kind: 'accessory',
-      rarity: 'common',
-      name: 'Mustache',
-      label: 'Mustache',
-      description: 'Adds suspicious authority to any wobbly face.',
-    },
-    {
-      id: 'inkquake-rumble-belt',
-      kind: 'accessory',
-      rarity: 'common',
-      name: 'Inkquake Rumble Belt',
-      label: 'Rumble Belt',
-      description: 'A fault-line buckle that looks ready to split the page.',
-    },
-    {
-      id: 'nib-halo-headband',
-      kind: 'accessory',
-      rarity: 'common',
-      name: 'Nib Halo Headband',
-      label: 'Nib Headband',
-      description: 'Three tiny paper nibs in a very pointy parade formation.',
-    },
-    {
-      id: 'smearstep-speed-scarf',
-      kind: 'accessory',
-      rarity: 'common',
-      name: 'Smearstep Speed Scarf',
-      label: 'Speed Scarf',
-      description:
-        'A streaky scrap that looks fast while standing perfectly still.',
-    },
-    {
-      id: 'colorburst-rosette',
-      kind: 'accessory',
-      rarity: 'common',
-      name: 'Colorburst Rosette',
-      label: 'Colorburst Rosette',
-      description:
-        'A crayon-bright prize ribbon for winning the color argument.',
-    },
-    {
-      id: 'top-hat',
-      kind: 'accessory',
-      rarity: 'rare',
-      name: 'Top Hat',
-      label: 'Top Hat',
-      description: 'Tall enough to store one terrible arena scheme.',
-    },
-    {
-      id: 'cape',
-      kind: 'accessory',
-      rarity: 'rare',
-      name: 'Cape',
-      label: 'Cape',
-      description: 'Flaps heroically even when the Scribbit is standing still.',
-    },
-    {
-      id: 'headphones',
-      kind: 'accessory',
-      rarity: 'rare',
-      name: 'Headphones',
-      label: 'Headphones',
-      description: 'Blocks heckles and boosts imaginary theme music.',
-    },
-    {
-      id: 'eyepatch-scar',
-      kind: 'accessory',
-      rarity: 'rare',
-      name: 'Eyepatch + Scar',
-      label: 'Eyepatch',
-      description: 'A backstory shortcut with excellent squint potential.',
-    },
-    {
-      id: 'propeller-cap',
-      kind: 'accessory',
-      rarity: 'rare',
-      name: 'Propeller Cap',
-      label: 'Propeller Cap',
-      description: 'For Scribbits who believe gravity is negotiable.',
-    },
-    {
-      id: 'inkquake-crater-crown',
-      kind: 'accessory',
-      rarity: 'rare',
-      name: 'Inkquake Crater Crown',
-      label: 'Crater Crown',
-      description:
-        'A fault-lined crown chipped from the fanciest crater on paper.',
-    },
-    {
-      id: 'smearstep-ink-skates',
-      kind: 'accessory',
-      rarity: 'rare',
-      name: 'Smearstep Ink Skates',
-      label: 'Ink Skates',
-      description:
-        'Wobbly wheel-shoes with the speed lines already scribbled in.',
-    },
-    {
-      id: 'golden-crown',
-      kind: 'accessory',
-      rarity: 'epic',
-      name: 'GOLDEN CROWN',
-      label: 'Golden Crown',
-      description: 'Royal shine for a doodle with boss-fight posture.',
-    },
-    {
-      id: 'dragon-wings',
-      kind: 'accessory',
-      rarity: 'epic',
-      name: 'DRAGON WINGS',
-      label: 'Dragon Wings',
-      description: 'Big flap energy for tiny paper legends.',
-    },
-    {
-      id: 'nib-halo-circlet',
-      kind: 'accessory',
-      rarity: 'epic',
-      name: 'NIB HALO CIRCLET',
-      label: 'Nib Halo Circlet',
-      description: 'Three gilded nibs hold formation around one glorious halo.',
-    },
-    {
-      id: 'colorburst-prism-crown',
-      kind: 'accessory',
-      rarity: 'epic',
-      name: 'COLORBURST PRISM CROWN',
-      label: 'Prism Crown',
-      description:
-        'A hand-cut rainbow crown that turns every pose into an event.',
-    },
-  ];
+export const GEAR_CATALOG_ENTRIES: readonly CosmeticGearCatalogEntry[] = [
+  {
+    id: 'bowtie',
+    kind: 'accessory',
+    rarity: 'common',
+    name: 'Bowtie',
+    label: 'Bowtie',
+    category: 'accessory',
+    effectFamily: 'ready',
+    description: 'Instant tiny-gentleman energy for chaotic doodles.',
+  },
+  {
+    id: 'flower-crown',
+    kind: 'accessory',
+    rarity: 'common',
+    name: 'Flower Crown',
+    label: 'Flower Crown',
+    category: 'accessory',
+    effectFamily: 'fortune',
+    description: 'Petals for monsters who insist they are approachable.',
+  },
+  {
+    id: 'monocle',
+    kind: 'accessory',
+    rarity: 'common',
+    name: 'Monocle',
+    label: 'Monocle',
+    category: 'accessory',
+    effectFamily: 'focus',
+    description: 'Makes every squiggle look like it owns a library ladder.',
+  },
+  {
+    id: 'beanie',
+    kind: 'accessory',
+    rarity: 'common',
+    name: 'Beanie',
+    label: 'Beanie',
+    category: 'armor',
+    effectFamily: 'guard',
+    description: 'A cozy hat for thoughts too weird to air out.',
+  },
+  {
+    id: 'round-glasses',
+    kind: 'accessory',
+    rarity: 'common',
+    name: 'Round Glasses',
+    label: 'Round Glasses',
+    category: 'accessory',
+    effectFamily: 'focus',
+    description: 'Bookish circles for creatures with suspiciously big plans.',
+  },
+  {
+    id: 'tiny-sword',
+    kind: 'accessory',
+    rarity: 'common',
+    name: 'Tiny Sword',
+    label: 'Tiny Sword',
+    category: 'weapon',
+    effectFamily: 'aim',
+    description: 'A pocket-sized blade for dramatic arena pointing.',
+  },
+  {
+    id: 'snail-shell-backpack',
+    kind: 'accessory',
+    rarity: 'common',
+    name: 'Snail Shell Backpack',
+    label: 'Snail Shell Backpack',
+    category: 'armor',
+    effectFamily: 'guard',
+    description: 'Carries snacks, secrets, and one heroic nap.',
+  },
+  {
+    id: 'party-hat',
+    kind: 'accessory',
+    rarity: 'common',
+    name: 'Party Hat',
+    label: 'Party Hat',
+    category: 'accessory',
+    effectFamily: 'ready',
+    description: 'Proof that this battle is technically a celebration.',
+  },
+  {
+    id: 'mustache',
+    kind: 'accessory',
+    rarity: 'common',
+    name: 'Mustache',
+    label: 'Mustache',
+    category: 'accessory',
+    effectFamily: 'focus',
+    description: 'Adds suspicious authority to any wobbly face.',
+  },
+  {
+    id: 'inkquake-rumble-belt',
+    kind: 'accessory',
+    rarity: 'common',
+    name: 'Inkquake Rumble Belt',
+    label: 'Rumble Belt',
+    category: 'weapon',
+    effectFamily: 'ready',
+    description: 'A fault-line buckle that looks ready to split the page.',
+  },
+  {
+    id: 'nib-halo-headband',
+    kind: 'accessory',
+    rarity: 'common',
+    name: 'Nib Halo Headband',
+    label: 'Nib Headband',
+    category: 'accessory',
+    effectFamily: 'aim',
+    description: 'Three tiny paper nibs in a very pointy parade formation.',
+  },
+  {
+    id: 'smearstep-speed-scarf',
+    kind: 'accessory',
+    rarity: 'common',
+    name: 'Smearstep Speed Scarf',
+    label: 'Speed Scarf',
+    category: 'shoes',
+    effectFamily: 'rush',
+    description:
+      'A streaky scrap that looks fast while standing perfectly still.',
+  },
+  {
+    id: 'colorburst-rosette',
+    kind: 'accessory',
+    rarity: 'common',
+    name: 'Colorburst Rosette',
+    label: 'Colorburst Rosette',
+    category: 'accessory',
+    effectFamily: 'fortune',
+    description: 'A crayon-bright prize ribbon for winning the color argument.',
+  },
+  {
+    id: 'top-hat',
+    kind: 'accessory',
+    rarity: 'rare',
+    name: 'Top Hat',
+    label: 'Top Hat',
+    category: 'accessory',
+    effectFamily: 'ready',
+    description: 'Tall enough to store one terrible arena scheme.',
+  },
+  {
+    id: 'cape',
+    kind: 'accessory',
+    rarity: 'rare',
+    name: 'Cape',
+    label: 'Cape',
+    category: 'armor',
+    effectFamily: 'guard',
+    description: 'Flaps heroically even when the Scribbit is standing still.',
+  },
+  {
+    id: 'headphones',
+    kind: 'accessory',
+    rarity: 'rare',
+    name: 'Headphones',
+    label: 'Headphones',
+    category: 'accessory',
+    effectFamily: 'focus',
+    description: 'Blocks heckles and boosts imaginary theme music.',
+  },
+  {
+    id: 'eyepatch-scar',
+    kind: 'accessory',
+    rarity: 'rare',
+    name: 'Eyepatch + Scar',
+    label: 'Eyepatch',
+    category: 'accessory',
+    effectFamily: 'aim',
+    description: 'A backstory shortcut with excellent squint potential.',
+  },
+  {
+    id: 'propeller-cap',
+    kind: 'accessory',
+    rarity: 'rare',
+    name: 'Propeller Cap',
+    label: 'Propeller Cap',
+    category: 'shoes',
+    effectFamily: 'rush',
+    description: 'For Scribbits who believe gravity is negotiable.',
+  },
+  {
+    id: 'inkquake-crater-crown',
+    kind: 'accessory',
+    rarity: 'rare',
+    name: 'Inkquake Crater Crown',
+    label: 'Crater Crown',
+    category: 'armor',
+    effectFamily: 'guard',
+    description:
+      'A fault-lined crown chipped from the fanciest crater on paper.',
+  },
+  {
+    id: 'smearstep-ink-skates',
+    kind: 'accessory',
+    rarity: 'rare',
+    name: 'Smearstep Ink Skates',
+    label: 'Ink Skates',
+    category: 'shoes',
+    effectFamily: 'rush',
+    description:
+      'Wobbly wheel-shoes with the speed lines already scribbled in.',
+  },
+  {
+    id: 'golden-crown',
+    kind: 'accessory',
+    rarity: 'epic',
+    name: 'GOLDEN CROWN',
+    label: 'Golden Crown',
+    category: 'armor',
+    effectFamily: 'fortune',
+    description: 'Royal shine for a doodle with boss-fight posture.',
+  },
+  {
+    id: 'dragon-wings',
+    kind: 'accessory',
+    rarity: 'epic',
+    name: 'DRAGON WINGS',
+    label: 'Dragon Wings',
+    category: 'armor',
+    effectFamily: 'rush',
+    description: 'Big flap energy for tiny paper legends.',
+  },
+  {
+    id: 'nib-halo-circlet',
+    kind: 'accessory',
+    rarity: 'epic',
+    name: 'NIB HALO CIRCLET',
+    label: 'Nib Halo Circlet',
+    category: 'accessory',
+    effectFamily: 'aim',
+    description: 'Three gilded nibs hold formation around one glorious halo.',
+  },
+  {
+    id: 'colorburst-prism-crown',
+    kind: 'accessory',
+    rarity: 'epic',
+    name: 'COLORBURST PRISM CROWN',
+    label: 'Prism Crown',
+    category: 'accessory',
+    effectFamily: 'fortune',
+    description:
+      'A hand-cut rainbow crown that turns every pose into an event.',
+  },
+];
+
+// Persisted capsule receipts and drawing submissions still call these items
+// accessories. Keep one catalog reference while the transport migration is
+// deliberately deferred.
+export const ACCESSORY_CATALOG_ENTRIES = GEAR_CATALOG_ENTRIES;
 
 export const PEN_CATALOG_ENTRIES: readonly CosmeticPenCatalogEntry[] = [
   {
@@ -340,7 +404,7 @@ export const TITLE_CATALOG_ENTRIES: readonly CosmeticTitleCatalogEntry[] = [
 ];
 
 export const COSMETIC_CATALOG: readonly CosmeticCatalogEntry[] = [
-  ...ACCESSORY_CATALOG_ENTRIES,
+  ...GEAR_CATALOG_ENTRIES,
   ...PEN_CATALOG_ENTRIES,
   ...TITLE_CATALOG_ENTRIES,
 ];
@@ -360,3 +424,20 @@ export const findAccessoryCosmetic = (
   const entry = findCosmeticCatalogEntry(accessoryId);
   return entry?.kind === 'accessory' ? entry : undefined;
 };
+
+export const findGearCosmetic = findAccessoryCosmetic;
+
+export function validateCatalogEquipmentLoadout(
+  value: unknown
+): EquipmentLoadout | undefined {
+  const loadout = parseEquipmentLoadout(value);
+  if (!loadout) return undefined;
+
+  for (const category of EQUIPMENT_CATEGORIES) {
+    for (const catalogId of loadout[category]) {
+      if (catalogId === null) continue;
+      if (findGearCosmetic(catalogId)?.category !== category) return undefined;
+    }
+  }
+  return loadout;
+}

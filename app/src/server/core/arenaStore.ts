@@ -6,7 +6,16 @@ import type { ArenaStorage } from './storage';
 import { parseScribbit } from './scribbit';
 
 const currentArenaDayKey = 'arena:currentDay';
+const nightlyResolutionClaimsKey = 'arena:nightly-resolution-claims';
 const championKey = 'champion:current';
+
+export const getCurrentArenaDayKey = (): string => currentArenaDayKey;
+
+export const getNightlyResolutionClaimsKey = (): string =>
+  nightlyResolutionClaimsKey;
+
+export const getActiveScribbitSubmissionsKey = (day: number): string =>
+  `arena:active-submissions:${day}`;
 
 export const getForecastKey = (day: number): string => {
   return `forecast:${day}`;

@@ -35,6 +35,11 @@ export type StoredFounderChronicle = {
   legacyFounderIds: `founding-${string}`[];
 };
 
+export type StoredFounderChronicleParseResult =
+  | { status: 'missing' }
+  | { status: 'valid'; chronicle: StoredFounderChronicle }
+  | { status: 'invalid' };
+
 export type FounderChronicleBattleFact = {
   founderId: `founding-${string}`;
   reportId: string;
@@ -197,40 +202,40 @@ const parseStoredRivalryResolution = (
 
 export const parseStoredFounderChronicle = (
   storedChronicle: string | undefined
-): StoredFounderChronicle => {
-  if (storedChronicle === undefined) return createEmptyFounderChronicle();
+): StoredFounderChronicleParseResult => {
+  if (storedChronicle === undefined) return { status: 'missing' };
   try {
     const value: unknown = JSON.parse(storedChronicle);
     if (!isRecord(value) || value.schemaVersion !== 2) {
-      return createEmptyFounderChronicle();
+      return { status: 'invalid' };
     }
     const activeRivalry =
       value.activeRivalry === null
         ? null
         : parseStoredRivalryThread(value.activeRivalry);
     if (value.activeRivalry !== null && activeRivalry === null) {
-      return createEmptyFounderChronicle();
+      return { status: 'invalid' };
     }
     if (
       !Array.isArray(value.resolvedRivalries) ||
       value.resolvedRivalries.length > maximumResolvedRivalries
     ) {
-      return createEmptyFounderChronicle();
+      return { status: 'invalid' };
     }
     const resolvedRivalries = value.resolvedRivalries.map(
       parseStoredRivalryResolution
     );
     if (resolvedRivalries.some((rivalry) => rivalry === null)) {
-      return createEmptyFounderChronicle();
+      return { status: 'invalid' };
     }
     const completeRivalries =
       resolvedRivalries as StoredFounderRivalryResolution[];
     const founderIds = completeRivalries.map((rivalry) => rivalry.founderId);
     if (new Set(founderIds).size !== founderIds.length) {
-      return createEmptyFounderChronicle();
+      return { status: 'invalid' };
     }
     if (activeRivalry && founderIds.includes(activeRivalry.founderId)) {
-      return createEmptyFounderChronicle();
+      return { status: 'invalid' };
     }
     const lastAdvancedDay =
       value.lastAdvancedDay === null
@@ -238,22 +243,34 @@ export const parseStoredFounderChronicle = (
         : isArenaDay(value.lastAdvancedDay)
           ? value.lastAdvancedDay
           : undefined;
-    if (lastAdvancedDay === undefined) return createEmptyFounderChronicle();
+    if (lastAdvancedDay === undefined) return { status: 'invalid' };
     const legacyFounderIds =
       value.legacyFounderIds === undefined
         ? []
         : parseFounderIds(value.legacyFounderIds);
-    if (legacyFounderIds === null) return createEmptyFounderChronicle();
+    if (legacyFounderIds === null) return { status: 'invalid' };
     return {
-      schemaVersion: 2,
-      activeRivalry,
-      resolvedRivalries: completeRivalries,
-      lastAdvancedDay,
-      legacyFounderIds,
+      status: 'valid',
+      chronicle: {
+        schemaVersion: 2,
+        activeRivalry,
+        resolvedRivalries: completeRivalries,
+        lastAdvancedDay,
+        legacyFounderIds,
+      },
     };
   } catch {
-    return createEmptyFounderChronicle();
+    return { status: 'invalid' };
   }
+};
+
+const requireStoredFounderChronicle = (
+  storedChronicle: string | undefined
+): StoredFounderChronicle => {
+  const parsed = parseStoredFounderChronicle(storedChronicle);
+  if (parsed.status === 'missing') return createEmptyFounderChronicle();
+  if (parsed.status === 'valid') return parsed.chronicle;
+  throw new Error('Stored Founder Chronicle is invalid.');
 };
 
 const cloneStoredRivalryThread = (
@@ -460,11 +477,11 @@ const migrateLegacyFounderChronicle = async (
   const existingChronicle = await storage.get(chronicleKey);
   const legacyMilestones = await storage.hGetAll(legacyKey);
   if (Object.keys(legacyMilestones).length === 0) {
-    return parseStoredFounderChronicle(existingChronicle);
+    return requireStoredFounderChronicle(existingChronicle);
   }
 
   if (!storage.watch) {
-    const currentChronicle = parseStoredFounderChronicle(
+    const currentChronicle = requireStoredFounderChronicle(
       await storage.get(chronicleKey)
     );
     const currentLegacyMilestones = await storage.hGetAll(legacyKey);
@@ -485,7 +502,7 @@ const migrateLegacyFounderChronicle = async (
     let transaction: ArenaTransaction | undefined;
     try {
       transaction = await storage.watch(chronicleKey);
-      const currentChronicle = parseStoredFounderChronicle(
+      const currentChronicle = requireStoredFounderChronicle(
         await storage.get(chronicleKey)
       );
       const currentLegacyMilestones = await storage.hGetAll(legacyKey);
@@ -683,7 +700,7 @@ export const recordFounderChronicleBattle = async (
     let transaction: ArenaTransaction | undefined;
     try {
       transaction = await storage.watch(chronicleKey);
-      const current = parseStoredFounderChronicle(
+      const current = requireStoredFounderChronicle(
         await storage.get(chronicleKey)
       );
       const advanced = advanceFounderChronicle(current, fact);

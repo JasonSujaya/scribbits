@@ -111,7 +111,7 @@ export function createPostFightActions(
         scene,
         x,
         y,
-        compactReturn ? '‹' : action.label,
+        compactReturn ? `‹ ${action.label}` : action.label,
         () => activateAction(action.kind),
         width,
         plan.buttonHeight
@@ -132,8 +132,13 @@ export function createPostFightActions(
 
   if (plan.primary) {
     const gap = 12;
-    const returnWidth = plan.buttonHeight;
-    const replayWidth = plan.replayAction ? Math.min(240, input.width - 112) : 0;
+    const returnWidth = Math.min(
+      180,
+      Math.max(136, 72 + plan.returnAction.label.length * 12)
+    );
+    const replayWidth = plan.replayAction
+      ? Math.min(220, input.width - returnWidth - gap)
+      : 0;
     const primaryY = -58;
     const utilityY = 58;
     const utilityWidth = returnWidth + (plan.replayAction ? gap + replayWidth : 0);
@@ -158,7 +163,10 @@ export function createPostFightActions(
     }
   } else if (plan.replayAction) {
     const gap = 12;
-    const returnWidth = plan.buttonHeight;
+    const returnWidth = Math.min(
+      180,
+      Math.max(136, 72 + plan.returnAction.label.length * 12)
+    );
     const replayWidth = Math.min(220, input.width - returnWidth - gap);
     const groupWidth = returnWidth + gap + replayWidth;
     const returnX = -groupWidth / 2 + returnWidth / 2;

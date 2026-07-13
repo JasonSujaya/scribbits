@@ -4,6 +4,7 @@ import {
   fetchInventory,
   fetchLegacyCards,
   fetchLegends,
+  mergeGear,
 } from '../lib/api';
 import {
   getArena,
@@ -16,16 +17,9 @@ import {
   fitDrawing,
   releaseRenderedDrawingTextures,
 } from '../lib/scribbits';
-import { NAV_SAFE, prefersReducedMotion, TYPE, UI } from '../lib/theme';
+import { prefersReducedMotion, TYPE, UI } from '../lib/theme';
 import { LivingPaper } from '../lib/livingpaper';
-import {
-  label,
-  handLettered,
-  paperCard,
-  paperPagination,
-  stickerCard,
-  errorPanel,
-} from '../lib/ui';
+import { label, paperPagination, stickerCard, errorPanel } from '../lib/ui';
 import { openDetailModal } from '../lib/detailmodal';
 import type { ErrorPanel } from '../lib/ui';
 import type {
@@ -33,21 +27,29 @@ import type {
   LegacyCard,
   LegacyCardsState,
   LegendsState,
+  MergeGearResponse,
   Scribbit,
 } from '../../shared/arena';
 import { navigateToDailyDraw } from '../lib/draweligibility';
-import { renderCollectionBook } from '../lib/collectionbook';
+import {
+  renderCollectionBook,
+  type InkKitSection,
+} from '../lib/collectionbook';
 import { LEGACY_BOOK_PAGE_SIZE, renderLegacyBook } from '../lib/legacycards';
 import { appDock } from '../lib/appdock';
 import { CanvasActionOverlay, DomOverlay } from '../lib/overlay';
 import { paperIcon, type PaperIconKey } from '../lib/papericons';
 import { SemanticTabController } from '../lib/semantictabs';
 import { bindPressInteractionEvents } from '../lib/pressinteraction';
+import { screenTitle } from '../lib/screentitle';
+import { fitText } from '../lib/fittext';
 
-const LEGEND_CARD_HEIGHT = 250;
-const LEGEND_CARD_ROW_GAP = 14;
+const LEGEND_PAGE_SIZE = 4;
+const LEGEND_CARD_HEIGHT = 272;
+const LEGEND_CARD_ROW_GAP = 18;
 const LEGEND_CARD_ROW_STEP = LEGEND_CARD_HEIGHT + LEGEND_CARD_ROW_GAP;
-const LEGEND_CARD_TOP_GAP = 16;
+const LEGEND_CARD_TOP_GAP = 20;
+const GALLERY_CONTENT_TOP = 330;
 const GALLERY_SECTION_PANEL_ID = 'gallery-section-panel';
 const GALLERY_SECTION_ACTIONS_ID = 'gallery-section-actions';
 const galleryTabId = (tab: GalleryTab): string => `gallery-tab-${tab}`;
@@ -75,15 +77,15 @@ const GALLERY_TABS: ReadonlyArray<{
   },
   {
     tab: 'collection',
-    label: 'Collection',
-    visibleLabel: 'COLLECT',
+    label: 'Ink Kit',
+    visibleLabel: 'INK KIT',
     icon: 'spark',
-    panelSummary: 'Collection. Permanent cosmetic discoveries and titles.',
+    panelSummary: 'Ink Kit. Your owned cosmetic gear and titles.',
   },
 ]);
 
 // Three-tab gallery: community Legends, the caller's immutable Legacy Book,
-// and a permanent cosmetic Collection. This scene orchestrates data only;
+// and the caller's owned Ink Kit. This scene orchestrates data only;
 // archival/card presentation lives in legacycards.ts.
 export class Gallery extends Scene {
   private tab: GalleryTab = 'legends';
@@ -97,6 +99,7 @@ export class Gallery extends Scene {
   private legacyPage = 0;
   private legacyPages: LegacyCardsState[] = [];
   private collectionPage = 0;
+  private collectionSection: InkKitSection = 'weapon';
   private loadingOlderLegends = false;
   private loadingLegends = false;
   private loadingCollection = false;
@@ -129,6 +132,7 @@ export class Gallery extends Scene {
     this.legendPage = 0;
     this.legacyPage = 0;
     this.legacyPages = [];
+    this.collectionSection = 'weapon';
     const debugCollectionPage = new URLSearchParams(window.location.search).get(
       'collectionPage'
     );
@@ -311,7 +315,6 @@ export class Gallery extends Scene {
     const existingIds = new Set(existingLegends.map((legend) => legend.id));
     const newLegends: Scribbit[] = [];
     let nextCursor: string | null = startingCursor;
-    let fadedSnapshot = this.legendsState?.myFaded ?? [];
 
     // Offset cursors can overlap after a new Legend is inserted while this
     // player is browsing. Follow a few duplicate-only pages automatically so
@@ -333,7 +336,6 @@ export class Gallery extends Scene {
         return;
       }
 
-      fadedSnapshot = result.data.myFaded;
       nextCursor = result.data.nextCursor;
       for (const legend of result.data.legends) {
         if (existingIds.has(legend.id)) continue;
@@ -347,7 +349,6 @@ export class Gallery extends Scene {
     this.legendsState = {
       legends: [...existingLegends, ...newLegends],
       nextCursor,
-      myFaded: this.legendsState?.myFaded ?? fadedSnapshot,
     };
     if (newLegends.length > 0) {
       this.legendPage = Math.floor(existingLegends.length / pageSize);
@@ -362,12 +363,11 @@ export class Gallery extends Scene {
     if (focusedSectionTab) {
       this.contentActionOverlay?.clearPendingFocusLabel();
     }
-    const focusedContentActionLabel =
-      focusedSectionTab
-        ? null
-        : (this.contentActionOverlay?.focusedControlLabel() ??
-          this.contentActionOverlay?.pendingFocusLabel() ??
-          null);
+    const focusedContentActionLabel = focusedSectionTab
+      ? null
+      : (this.contentActionOverlay?.focusedControlLabel() ??
+        this.contentActionOverlay?.pendingFocusLabel() ??
+        null);
     this.buildGeneration += 1;
     this.destroyBuildOverlays();
     this.children.removeAll(true);
@@ -380,8 +380,11 @@ export class Gallery extends Scene {
     // the outer column and look like clipped card art, so keep this page calm.
     this.livingPaper = new LivingPaper(this, { edgeCreatures: false });
     const { width } = this.scale;
-    handLettered(this, width / 2, 58, 'GALLERY', 40, UI.ink, true);
-    this.buildTabs(150);
+    screenTitle(this, width / 2, 22, 'GALLERY', {
+      maxWidth: 340,
+      maxHeight: 82,
+    });
+    this.buildTabs(168);
     this.mountSectionPanel();
     if (focusedSectionTab) this.sectionTabControls.get(this.tab)?.focus();
     this.buildAppTabs();
@@ -390,8 +393,9 @@ export class Gallery extends Scene {
       renderCollectionBook({
         scene: this,
         actionOverlay: this.ensureContentActionOverlay(),
-        top: 320,
+        top: GALLERY_CONTENT_TOP,
         page: this.collectionPage,
+        section: this.collectionSection,
         inventory: this.inventory,
         loggedIn: this.loggedIn,
         loading: this.loadingCollection,
@@ -400,8 +404,15 @@ export class Gallery extends Scene {
           this.collectionPage = page;
           this.build();
         },
+        onSectionChange: (section) => {
+          this.collectionSection = section;
+          this.collectionPage = 0;
+          this.build();
+        },
         onRetry: () => void this.loadCollection(),
         onEquipTitle: (titleId) => this.updateEquippedTitle(titleId),
+        onMergeGear: (gearId, operationId) =>
+          this.mergeOwnedGear(gearId, operationId),
         onInventoryChanged: () => this.build(),
       });
       this.restoreContentActionFocus(focusedContentActionLabel);
@@ -413,7 +424,7 @@ export class Gallery extends Scene {
       renderLegacyBook({
         scene: this,
         actionOverlay: this.ensureContentActionOverlay(),
-        top: 320,
+        top: GALLERY_CONTENT_TOP,
         cards: currentPage?.cards ?? [],
         page: this.legacyPage,
         loadedPageCount: this.legacyPages.length,
@@ -445,7 +456,7 @@ export class Gallery extends Scene {
     }
 
     if (!this.legendsState) {
-      const loading = stickerCard(this, width / 2, 440, width - 100, 180, {
+      const loading = stickerCard(this, width / 2, 470, width - 100, 180, {
         tapeColor: UI.tapeAlt,
       });
       loading.add(
@@ -463,7 +474,7 @@ export class Gallery extends Scene {
       return;
     }
 
-    this.buildLegends(320);
+    this.buildLegends(GALLERY_CONTENT_TOP);
     this.restoreContentActionFocus(focusedContentActionLabel);
   }
 
@@ -475,7 +486,8 @@ export class Gallery extends Scene {
         return;
       }
       const restored =
-        this.contentActionOverlay?.restoreControlFocus(accessibleLabel) ?? false;
+        this.contentActionOverlay?.restoreControlFocus(accessibleLabel) ??
+        false;
       if (!restored) this.sectionPanel?.focus();
     }, 0);
   }
@@ -517,40 +529,18 @@ export class Gallery extends Scene {
 
   private buildTabs(y: number): void {
     const { width } = this.scale;
-    const controlW = width - 60;
-    const controlH = 100;
+    const controlWidth = width - 60;
+    const controlHeight = 84;
+    const tabGap = 10;
+    const tabWidth =
+      (controlWidth - tabGap * (GALLERY_TABS.length - 1)) / GALLERY_TABS.length;
     const tabs = this.add.container(width / 2, y);
-
-    const bg = this.add.graphics();
-    bg.fillStyle(UI.creamHex, 1);
-    bg.fillRoundedRect(-controlW / 2, -controlH / 2, controlW, controlH, 18);
-    bg.lineStyle(4, UI.inkHex, 1);
-    bg.strokeRoundedRect(-controlW / 2, -controlH / 2, controlW, controlH, 18);
-
-    const segmentWidth = controlW / GALLERY_TABS.length;
-    const controlLeft = -controlW / 2;
-    const activeIndex = GALLERY_TABS.findIndex(({ tab }) => tab === this.tab);
-    const activeX = controlLeft + segmentWidth * (activeIndex + 0.5);
-    const active = this.add.graphics();
-    active.fillStyle(UI.inkHex, 1);
-    active.fillRoundedRect(
-      activeX - segmentWidth / 2 + 6,
-      -controlH / 2 + 6,
-      segmentWidth - 12,
-      controlH - 12,
-      14
-    );
-
-    const dividers = [1, 2].map((dividerIndex) =>
-      this.add.rectangle(
-        controlLeft + segmentWidth * dividerIndex,
-        0,
-        3,
-        controlH - 18,
-        UI.inkHex,
-        0.18
-      )
-    );
+    const controlLeft = -controlWidth / 2;
+    const activeFillByTab: Readonly<Record<GalleryTab, number>> = {
+      legends: UI.goldHex,
+      legacy: UI.inkHex,
+      collection: UI.coral,
+    };
     this.sectionTabsOverlay = new CanvasActionOverlay(this);
     const sectionTabController = new SemanticTabController({
       keys: GALLERY_TABS.map(({ tab }) => tab),
@@ -567,26 +557,48 @@ export class Gallery extends Scene {
     );
     const tabContent = GALLERY_TABS.flatMap((definition, index) => {
       const { tab, label: accessibleLabel, visibleLabel, icon } = definition;
-      const centerX = controlLeft + segmentWidth * (index + 0.5);
+      const centerX = controlLeft + tabWidth / 2 + index * (tabWidth + tabGap);
       const activeTab = this.tab === tab;
-      const tabIcon = paperIcon(this, icon, centerX, -20, {
-        size: 32,
-        fill: activeTab ? UI.gold : UI.tapeAlt,
+      const tabFace = this.add.graphics();
+      tabFace.fillStyle(activeTab ? activeFillByTab[tab] : UI.creamHex, 1);
+      tabFace.fillRoundedRect(
+        centerX - tabWidth / 2,
+        -controlHeight / 2,
+        tabWidth,
+        controlHeight,
+        16
+      );
+      tabFace.lineStyle(3, UI.inkHex, activeTab ? 1 : 0.72);
+      tabFace.strokeRoundedRect(
+        centerX - tabWidth / 2,
+        -controlHeight / 2,
+        tabWidth,
+        controlHeight,
+        16
+      );
+      const activeTextColor = tab === 'legends' ? UI.ink : UI.cream;
+      const tabIcon = paperIcon(this, icon, centerX - 60, 0, {
+        size: 30,
+        fill: activeTab
+          ? tab === 'legends'
+            ? UI.inkHex
+            : UI.creamHex
+          : UI.tapeAlt,
       });
       const tabLabel = label(
         this,
-        centerX,
-        25,
+        centerX + 18,
+        1,
         visibleLabel,
-        28,
-        activeTab ? UI.cream : UI.ink,
+        24,
+        activeTab ? activeTextColor : UI.ink,
         true
       );
       const activateTab = (): void => {
         this.sectionTabController?.activate(tab);
       };
       const hit = this.add
-        .rectangle(centerX, 0, segmentWidth, controlH, 0xffffff, 0.001)
+        .rectangle(centerX, 0, tabWidth, controlHeight, 0xffffff, 0.001)
         .setInteractive({ useHandCursor: true });
       bindPressInteractionEvents(
         hit,
@@ -608,10 +620,10 @@ export class Gallery extends Scene {
         this.sectionTabsOverlay?.add({
           label: accessibleLabel,
           rect: {
-            x: width / 2 + centerX - segmentWidth / 2,
-            y: y - controlH / 2,
-            width: segmentWidth,
-            height: controlH,
+            x: width / 2 + centerX - tabWidth / 2,
+            y: y - controlHeight / 2,
+            width: tabWidth,
+            height: controlHeight,
           },
           attributes: sectionTabController.attributesFor(tab),
           pointerPassthrough: true,
@@ -623,10 +635,10 @@ export class Gallery extends Scene {
         this.sectionTabControls.set(tab, nativeTab);
         sectionTabController.register(tab, nativeTab);
       }
-      return [tabIcon, tabLabel, hit];
+      return [tabFace, tabIcon, tabLabel, hit];
     });
 
-    tabs.add([bg, active, ...dividers, ...tabContent]);
+    tabs.add(tabContent);
   }
 
   private mountSectionPanel(): void {
@@ -721,10 +733,8 @@ export class Gallery extends Scene {
       hasPrevious: page > 0,
       hasNext: page < totalPages - 1 || hasMore,
       isNextLoading: opening,
-      showUnavailable: true,
       previousX: width / 2 - 144,
       nextX: width / 2 + 144,
-      backgroundWidth: 398,
       pointerPassthrough: true,
       previousLabel: 'Previous Legends page',
       nextLabel: 'Next Legends page',
@@ -734,19 +744,8 @@ export class Gallery extends Scene {
     });
   }
 
-  private getLegendPageSize(top = 320): number {
-    const columns = 2;
-    const contentTop = top + LEGEND_CARD_TOP_GAP;
-    const contentBottom = this.scale.height - NAV_SAFE - 18;
-    const availableHeight = Math.max(
-      LEGEND_CARD_HEIGHT,
-      contentBottom - contentTop
-    );
-    const visibleRows = Math.max(
-      1,
-      Math.floor((availableHeight + LEGEND_CARD_ROW_GAP) / LEGEND_CARD_ROW_STEP)
-    );
-    return columns * visibleRows;
+  private getLegendPageSize(): number {
+    return LEGEND_PAGE_SIZE;
   }
 
   private isCurrentBuild(generation: number): boolean {
@@ -792,13 +791,13 @@ export class Gallery extends Scene {
     }
     const columns = 2;
     const cellWidth = (width - 60) / columns;
-    const pageSize = this.getLegendPageSize(top);
+    const pageSize = this.getLegendPageSize();
     const totalPages = Math.ceil(legends.length / pageSize);
     this.legendPage = Math.min(this.legendPage, totalPages - 1);
     const hasMore = this.legendsState?.nextCursor !== null;
     this.buildPageControls(
       totalPages,
-      top - 80,
+      top + 655,
       this.legendPage,
       (page) => {
         this.legendPage = page;
@@ -821,62 +820,62 @@ export class Gallery extends Scene {
   }
 
   private buildLegendCard(legend: Scribbit, x: number, y: number): void {
-    const cardWidth = 300;
-    const cardPaper = paperCard(
-      this,
-      x,
-      y,
-      cardWidth,
-      LEGEND_CARD_HEIGHT,
-      true
-    ).setDepth(1);
-    const top = y - LEGEND_CARD_HEIGHT / 2;
+    const cardWidth = 302;
+    const cardPaper = stickerCard(this, x, y, cardWidth, LEGEND_CARD_HEIGHT, {
+      gold: true,
+      tape: false,
+    }).setDepth(1);
     const status = planLegendStatus(legend);
 
-    const artY = top + 61;
+    const statusBand = this.add
+      .rectangle(
+        0,
+        -LEGEND_CARD_HEIGHT / 2 + 26,
+        cardWidth - 28,
+        38,
+        UI.goldHex,
+        0.22
+      )
+      .setStrokeStyle(2, UI.goldHex, 0.72);
+    const statusIcon = paperIcon(
+      this,
+      status.icon,
+      -102,
+      -LEGEND_CARD_HEIGHT / 2 + 26,
+      {
+        size: 23,
+        fill: status.icon === 'trophy' ? UI.gold : UI.coral,
+      }
+    );
+    const statusText = label(
+      this,
+      12,
+      -LEGEND_CARD_HEIGHT / 2 + 26,
+      status.label,
+      21,
+      UI.goldText,
+      true
+    );
+    if (statusText.width > 218) statusText.setScale(218 / statusText.width);
+    cardPaper.add([statusBand, statusIcon, statusText]);
+
+    const artY = y - 30;
     const generation = this.buildGeneration;
     void loadDrawing(this, legend).then((key) => {
       if (!this.isCurrentBuild(generation)) return;
-      fitDrawing(this.add.image(x, artY, key), 108).setDepth(2);
+      fitDrawing(this.add.image(x, artY, key), 124).setDepth(2);
     });
 
     label(
       this,
       x,
-      top + 132,
-      fitCardText(legend.name.toUpperCase(), 18),
-      28,
+      y + 62,
+      fitText(legend.name.toUpperCase(), 18),
+      27,
       UI.ink,
       true
     ).setDepth(3);
-    this.add
-      .rectangle(x, top + 169, 226, 42, UI.creamHex, 0.92)
-      .setStrokeStyle(2, UI.inkHex, 0.25)
-      .setDepth(2);
-    paperIcon(this, status.icon, x - 84, top + 169, {
-      size: 24,
-      fill: status.icon === 'trophy' ? UI.gold : UI.coral,
-    }).setDepth(3);
-    const statusText = label(
-      this,
-      x + 12,
-      top + 169,
-      status.label,
-      26,
-      UI.goldText,
-      true
-    ).setDepth(3);
-    if (statusText.width > 180) statusText.setScale(180 / statusText.width);
-    const actionY = top + 218;
-    this.add
-      .rectangle(x, actionY, 132, 42, UI.creamHex, 0.96)
-      .setStrokeStyle(2, UI.inkHex, 0.6)
-      .setDepth(2);
-    paperIcon(this, 'info', x - 42, actionY, {
-      size: 25,
-      fill: UI.tapeAlt,
-    }).setDepth(3);
-    label(this, x + 20, actionY, 'VIEW', 22, UI.ink, true).setDepth(3);
+    label(this, x, y + 101, 'TAP TO OPEN', 18, UI.inkSoft, true).setDepth(3);
 
     const openLegend = (): void => {
       if (this.openingLegendId) return;
@@ -903,7 +902,7 @@ export class Gallery extends Scene {
       { gameTarget: this.input, shutdownTarget: this.events }
     );
     this.ensureContentActionOverlay().add({
-      label: `Open ${fitCardText(legend.name, 24)}. ${status.label}.`,
+      label: `Open ${fitText(legend.name, 24)}. ${status.label}.`,
       rect: { x: x - 110, y: y + 20, width: 220, height: 100 },
       pointerPassthrough: true,
       onActivate: openLegend,
@@ -937,7 +936,7 @@ export class Gallery extends Scene {
   private async updateEquippedTitle(
     titleId: string | null
   ): Promise<string | null> {
-    if (!this.inventory) return 'Your title collection is still syncing.';
+    if (!this.inventory) return 'Your Ink Kit is still syncing.';
     const previousInventory = this.inventory;
     this.inventory = { ...previousInventory, equippedTitle: titleId };
 
@@ -948,6 +947,17 @@ export class Gallery extends Scene {
     }
     this.inventory = result.data;
     return null;
+  }
+
+  private async mergeOwnedGear(
+    gearId: string,
+    operationId: string
+  ): Promise<MergeGearResponse | { error: string }> {
+    if (!this.inventory) return { error: 'Your Ink Kit is still syncing.' };
+    const result = await mergeGear(gearId, operationId);
+    if (!result.ok) return { error: result.error };
+    this.inventory = result.data.inventory;
+    return result.data;
   }
 
   private handleLegacyPrimaryAction(card: LegacyCard): void {
@@ -978,12 +988,6 @@ export class Gallery extends Scene {
       }
     );
   }
-}
-
-function fitCardText(value: string, maxCharacters: number): string {
-  const compactValue = value.trim();
-  if (compactValue.length <= maxCharacters) return compactValue;
-  return `${compactValue.slice(0, maxCharacters - 1).trimEnd()}…`;
 }
 
 function planLegendStatus(legend: Scribbit): Readonly<{

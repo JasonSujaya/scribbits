@@ -76,15 +76,21 @@ import {
   formatRumbleReturnAccessibleSummary,
   planRumbleReturnPresentation,
 } from '../lib/rumblereturnpresentation';
-import { CanvasActionOverlay } from '../lib/overlay';
+import { CanvasActionOverlay, CanvasModalOverlay } from '../lib/overlay';
+import {
+  planArenaMutationResponse,
+  planArenaRefreshResponse,
+} from '../lib/arenaasynclifecycle';
 import {
   openArenaContenderPicker,
   type ArenaContenderPicker,
 } from '../lib/arenacontenderpicker';
 import { getBattleArenaForDay } from '../../shared/battlearena';
+import { navigateToDailyDraw } from '../lib/draweligibility';
 
 // One focused battle hub: choose an owned fighter, choose Champion or Spar,
-// fight, then optionally make one nightly Rumble Pick. Drawing stays in Draw.
+// then fight. Nightly Rumble picks live in Scout instead of competing with the
+// Arena's primary action.
 export class ArenaHome extends Scene {
   private state!: ArenaState;
   private errorPanelRef: ErrorPanel | null = null;
@@ -126,6 +132,9 @@ export class ArenaHome extends Scene {
   private scrollVelocity = 0; // px/frame, decays as inertia
   private dragDistance = 0; // total |movement| this gesture, for tap-vs-drag
   private buildGeneration = 0;
+  private sceneEpoch = 0;
+  private refreshRequestEpoch = 0;
+  private refreshOnNextActivation = false;
   private readonly refreshOnWake = (): void => {
     void this.refresh();
   };
@@ -140,6 +149,7 @@ export class ArenaHome extends Scene {
   }
 
   init(): void {
+    this.sceneEpoch += 1;
     this.errorPanelRef = null;
     this.countdownTimer = null;
     this.countdownLabel = null;
@@ -169,6 +179,8 @@ export class ArenaHome extends Scene {
   }
 
   create(): void {
+    const shouldRefreshOnCreate = this.refreshOnNextActivation;
+    this.refreshOnNextActivation = false;
     const state = getArena(this);
     if (!state) {
       this.scene.start('Preloader');
@@ -180,9 +192,11 @@ export class ArenaHome extends Scene {
     this.showReturnReceiptsIfNeeded();
     this.events.once('shutdown', () => this.cleanup());
     this.events.on('wake', this.refreshOnWake);
+    if (shouldRefreshOnCreate) void this.refresh();
   }
 
   private cleanup(): void {
+    this.refreshRequestEpoch += 1;
     this.events.off('wake', this.refreshOnWake);
     this.countdownTimer?.remove();
     this.spinner?.destroy();
@@ -232,7 +246,6 @@ export class ArenaHome extends Scene {
     let cursor = 30;
     cursor = this.drawTopBar(cursor);
     cursor = this.buildBattleSetup(width / 2, cursor + 18);
-    cursor = this.buildRumbleSummary(width / 2, cursor + 18);
     cursor += NAV_SAFE;
 
     this.contentHeight = cursor + 40;
@@ -383,8 +396,16 @@ export class ArenaHome extends Scene {
     this.scrollVelocity = 0;
   }
 
-  private isCurrentBuild(generation: number): boolean {
-    return this.scene.isActive() && generation === this.buildGeneration;
+  private acceptMutationResponse(sceneEpoch: number): boolean {
+    const action = planArenaMutationResponse({
+      active: this.scene.isActive(),
+      requestSceneEpoch: sceneEpoch,
+      currentSceneEpoch: this.sceneEpoch,
+    });
+    if (action === 'accept') return true;
+    if (action === 'refresh-current') void this.refresh();
+    if (action === 'refresh-next') this.refreshOnNextActivation = true;
+    return false;
   }
 
   // --- Top bar + live countdown ---------------------------------------------
@@ -481,12 +502,16 @@ export class ArenaHome extends Scene {
 
   private openCapsuleMachine(): void {
     if (!this.requireLogin()) return;
+    const sceneEpoch = this.sceneEpoch;
     openCapsuleMachine(this, {
       ink: this.state.myInk ?? 0,
       nextCost: this.state.nextCapsuleCost,
       progress: this.state.capsuleProgress,
       onPull: async (operationId) => {
         const result = await pullCapsule(operationId);
+        if (!this.acceptMutationResponse(sceneEpoch)) {
+          return result.ok ? result.data : { error: result.error };
+        }
         if (!result.ok) return { error: result.error };
         this.state = {
           ...this.state,
@@ -515,25 +540,27 @@ export class ArenaHome extends Scene {
 
   // --- One battle setup: fighter -> mode -> fight ---------------------------
   private buildBattleSetup(x: number, y: number): number {
-    const height = 630;
+    const height = 720;
     const centerY = y + height / 2;
     const hero = this.add.container(x, centerY);
     const battleArena = getBattleArenaForDay(this.state.dayNumber);
+    const fighters = this.state.myScribbits;
     hero.add(
       paperWordmark(
         this,
         0,
-        -282,
-        battleArena.challengeLabel.toUpperCase(),
+        -310,
+        fighters.length > 0
+          ? battleArena.challengeLabel.toUpperCase()
+          : 'DRAW YOUR FIGHTER',
         {
-          icon: 'target',
+          icon: fighters.length > 0 ? 'target' : 'pencil',
           fontSize: 38,
           maxWidth: 430,
         }
       )
     );
 
-    const fighters = this.state.myScribbits;
     this.selectedArenaFighter(fighters);
     this.fighterCarouselSlot = this.add.container(0, 0);
     hero.add(this.fighterCarouselSlot);
@@ -562,31 +589,32 @@ export class ArenaHome extends Scene {
       });
     }
 
-    hero.add(paperWordmark(this, 0, 42, 'CHOOSE RIVAL', { maxWidth: 390 }));
     this.battleModeSlot = this.add.container(0, 0);
     hero.add(this.battleModeSlot);
-    this.rosterActionOverlay?.add({
-      label: 'Choose today’s Champion as rival',
-      rect: { x: x - 275, y: centerY + 74, width: 250, height: 110 },
-      followCamera: true,
-      pointerPassthrough: true,
-      onActivate: () => this.selectBattleMode('champion'),
-    });
-    this.rosterActionOverlay?.add({
-      label: 'Choose a Spar rival',
-      rect: { x: x + 25, y: centerY + 74, width: 250, height: 110 },
-      followCamera: true,
-      pointerPassthrough: true,
-      onActivate: () => this.selectBattleMode('spar'),
-    });
+    if (fighters.length > 0) {
+      this.rosterActionOverlay?.add({
+        label: 'Choose today’s Champion as rival',
+        rect: { x: x - 275, y: centerY + 32, width: 250, height: 110 },
+        followCamera: true,
+        pointerPassthrough: true,
+        onActivate: () => this.selectBattleMode('champion'),
+      });
+      this.rosterActionOverlay?.add({
+        label: 'Choose a Spar rival',
+        rect: { x: x + 25, y: centerY + 32, width: 250, height: 110 },
+        followCamera: true,
+        pointerPassthrough: true,
+        onActivate: () => this.selectBattleMode('spar'),
+      });
+    }
     this.fightAction =
       this.rosterActionOverlay?.add({
         label: 'Fight with selected Scribbit',
-        rect: { x: x - 190, y: centerY + 226, width: 380, height: 100 },
+        rect: { x: x - 190, y: centerY + 174, width: 380, height: 100 },
         followCamera: true,
         pointerPassthrough: true,
         enabled: false,
-        onActivate: () => this.startSelectedBattle(),
+        onActivate: () => this.activatePrimaryArenaAction(),
       }) ?? null;
     this.renderArenaFighter();
     this.renderBattleModeControls();
@@ -633,9 +661,8 @@ export class ArenaHome extends Scene {
       this.fighterCarouselCurrentView = null;
       this.fighterCarouselViews.clear();
       slot.add(
-        paperIcon(this, 'pencil', 0, -145, { size: 110, fill: UI.tapeAlt })
+        paperIcon(this, 'pencil', 0, -120, { size: 130, fill: UI.tapeAlt })
       );
-      slot.add(label(this, 0, -35, 'DRAW FIRST', 30, UI.inkSoft, true));
       return;
     }
 
@@ -707,10 +734,24 @@ export class ArenaHome extends Scene {
       this.selectedBattleMode = 'spar';
     }
     slot.removeAll(true);
+    if (!fighter) {
+      slot.add(
+        this.simpleFightButton(
+          0,
+          140,
+          'DRAW',
+          () => navigateToDailyDraw(this),
+          true,
+          'pencil'
+        )
+      );
+      this.updateFightAction('Draw your first Scribbit', true);
+      return;
+    }
     slot.add([
       this.battleChoiceChip(
         -145,
-        130,
+        88,
         'champion',
         'CHAMPION',
         () => this.selectBattleMode('champion'),
@@ -719,7 +760,7 @@ export class ArenaHome extends Scene {
       ),
       this.battleChoiceChip(
         145,
-        130,
+        88,
         'spar',
         'SPAR',
         () => this.selectBattleMode('spar'),
@@ -733,9 +774,9 @@ export class ArenaHome extends Scene {
     slot.add(
       this.simpleFightButton(
         0,
-        270,
-        fighter ? 'FIGHT' : 'DRAW FIRST',
-        () => this.startSelectedBattle(),
+        224,
+        'FIGHT',
+        () => this.activatePrimaryArenaAction(),
         canFight
       )
     );
@@ -775,6 +816,14 @@ export class ArenaHome extends Scene {
       return;
     }
     this.doSpar(fighter);
+  }
+
+  private activatePrimaryArenaAction(): void {
+    if (!this.selectedArenaFighter(this.state.myScribbits)) {
+      navigateToDailyDraw(this);
+      return;
+    }
+    this.startSelectedBattle();
   }
 
   private updateFightAction(accessibleLabel: string, enabled: boolean): void {
@@ -827,7 +876,8 @@ export class ArenaHome extends Scene {
     y: number,
     text: string,
     onActivate: () => void,
-    enabled: boolean
+    enabled: boolean,
+    icon: 'sword' | 'pencil' = 'sword'
   ): Phaser.GameObjects.Container {
     const width = 340;
     const height = 88;
@@ -837,7 +887,7 @@ export class ArenaHome extends Scene {
     background.fillRoundedRect(-width / 2, -height / 2, width, height, 18);
     background.lineStyle(4, UI.inkHex, 1);
     background.strokeRoundedRect(-width / 2, -height / 2, width, height, 18);
-    const sword = paperIcon(this, enabled ? 'sword' : 'lock', -78, 0, {
+    const sword = paperIcon(this, enabled ? icon : 'lock', -78, 0, {
       size: 38,
       fill: enabled ? UI.gold : UI.creamHex,
     });
@@ -871,136 +921,6 @@ export class ArenaHome extends Scene {
     });
     button.add([face, hitArea]);
     return button;
-  }
-
-  // The full field lives in a focused picker; Arena shows one clear Rumble door.
-  private buildRumbleSummary(x: number, y: number): number {
-    const width = this.scale.width - EDGE * 2;
-    const height = 190;
-    const centerY = y + height / 2;
-    const card = stickerCard(this, x, centerY, width, height, {
-      tapeColor: UI.tapeAlt,
-      tapeWidth: 84,
-    });
-    card.add(
-      paperRoleTag(this, -width / 2 + 110, -60, 'YOUR PICK', {
-        width: 180,
-        fill: UI.tapeAlt,
-      })
-    );
-    card.add(
-      label(
-        this,
-        -width / 2 + 222,
-        -60,
-        "TONIGHT'S RUMBLE",
-        22,
-        UI.inkSoft,
-        true
-      ).setOrigin(0, 0.5)
-    );
-
-    const entrants = selectVisibleArenaEntrants({
-      entrantsInSourceOrder: this.state.todayEntrants,
-      ownedScribbitIdsInRosterOrder: this.state.myScribbits.map(
-        (scribbit) => scribbit.id
-      ),
-      backedScribbitId: this.state.myBackedScribbitId,
-    });
-    const generation = this.buildGeneration;
-
-    if (entrants.length === 0) {
-      card.add(
-        paperIcon(this, 'clock', -width / 2 + 104, 28, {
-          size: 80,
-          fill: UI.tapeAlt,
-        })
-      );
-      card.add(
-        label(
-          this,
-          -width / 2 + 174,
-          28,
-          'WAITING',
-          30,
-          UI.ink,
-          true
-        ).setOrigin(0, 0.5)
-      );
-      return centerY + height / 2;
-    }
-
-    const picked = entrants.find(
-      (entrant) => entrant.id === this.state.myBackedScribbitId
-    );
-    if (picked) {
-      const portraitX = -width / 2 + 92;
-      void loadDrawing(this, picked).then((textureKey) => {
-        if (!this.isCurrentBuild(generation) || !card.active) return;
-        card.add(fitDrawing(this.add.image(portraitX, 30, textureKey), 92));
-      });
-      card.add(
-        label(
-          this,
-          -width / 2 + 154,
-          28,
-          picked.name.toUpperCase(),
-          28,
-          UI.ink,
-          true
-        ).setOrigin(0, 0.5)
-      );
-      card.add(
-        iconButton(
-          this,
-          width / 2 - 112,
-          30,
-          'lock',
-          'LOCKED',
-          () => undefined,
-          190,
-          UI.tapeAlt,
-          UI.ink,
-          100,
-          UI.creamHex,
-          false
-        )
-      );
-      return centerY + height / 2;
-    }
-
-    entrants.slice(0, 3).forEach((entrant, index) => {
-      const portraitX = -width / 2 + 92 + index * 106;
-      void loadDrawing(this, entrant).then((textureKey) => {
-        if (!this.isCurrentBuild(generation) || !card.active) return;
-        card.add(fitDrawing(this.add.image(portraitX, 32, textureKey), 92));
-      });
-    });
-    const activate = (): void => this.openContenderPicker();
-    const actionX = width / 2 - 122;
-    card.add(
-      iconButton(
-        this,
-        actionX,
-        30,
-        'heart',
-        'CHOOSE PICK',
-        activate,
-        220,
-        UI.coral,
-        UI.ink,
-        100,
-        UI.gold
-      )
-    );
-    this.rosterActionOverlay?.add({
-      label: 'Choose a contender for tonight’s Rumble',
-      rect: { x: x + actionX - 110, y: centerY - 20, width: 220, height: 100 },
-      followCamera: true,
-      pointerPassthrough: true,
-      onActivate: activate,
-    });
-    return centerY + height / 2;
   }
 
   private openContenderPicker(): void {
@@ -1069,8 +989,6 @@ export class ArenaHome extends Scene {
 
     const { width, height } = this.scale;
     const layer = this.add.container(0, 0).setScrollFactor(0).setDepth(2200);
-    const actionOverlay = new CanvasActionOverlay(this);
-    this.events.once('shutdown', () => actionOverlay.destroy());
     const shade = this.add
       .rectangle(width / 2, height / 2, width, height, UI.inkHex, 0.58)
       .setInteractive();
@@ -1078,6 +996,14 @@ export class ArenaHome extends Scene {
 
     const presentation = planRumbleReturnPresentation(receipt);
     const accessibleSummary = formatRumbleReturnAccessibleSummary(presentation);
+    let dismissReceipt = (): void => {};
+    const modalActions = new CanvasModalOverlay(
+      this,
+      'Rumble result',
+      () => dismissReceipt(),
+      accessibleSummary
+    );
+    layer.once('destroy', () => modalActions.destroy());
     const acknowledgeReceipt = (): void => {
       markRumbleReceiptShown(this, receipt.resolvedDay);
     };
@@ -1291,10 +1217,11 @@ export class ArenaHome extends Scene {
     const continueIcon = 'back';
     const continueFromReceipt = (): void => {
       acknowledgeReceipt();
-      actionOverlay.destroy();
+      modalActions.destroy();
       layer.destroy(true);
       afterContinue?.();
     };
+    dismissReceipt = continueFromReceipt;
 
     if (receipt.replayAvailable) {
       let loadingReplay = false;
@@ -1313,7 +1240,7 @@ export class ArenaHome extends Scene {
               setGalleryTab(this, 'legacy');
             }
             acknowledgeReceipt();
-            actionOverlay.destroy();
+            modalActions.destroy();
             layer.destroy(true);
             setSavedReplay(
               this,
@@ -1345,7 +1272,7 @@ export class ArenaHome extends Scene {
           UI.creamHex
         )
       );
-      actionOverlay.add({
+      const watchControl = modalActions.add({
         label: `${receipt.kind === 'owned' ? 'Watch last bout' : 'Watch bout'}. ${accessibleSummary}`,
         rect: {
           x: 110,
@@ -1370,7 +1297,7 @@ export class ArenaHome extends Scene {
           UI.coral
         )
       );
-      actionOverlay.add({
+      modalActions.add({
         label: `${nextLabel}. ${accessibleSummary}`,
         rect: {
           x: 110,
@@ -1380,6 +1307,7 @@ export class ArenaHome extends Scene {
         },
         onActivate: continueFromReceipt,
       });
+      modalActions.focusInitial(watchControl);
       return true;
     }
 
@@ -1398,7 +1326,7 @@ export class ArenaHome extends Scene {
         UI.creamHex
       )
     );
-    actionOverlay.add({
+    const continueControl = modalActions.add({
       label: `${nextLabel}. ${accessibleSummary}`,
       rect: {
         x: 110,
@@ -1408,6 +1336,7 @@ export class ArenaHome extends Scene {
       },
       onActivate: continueFromReceipt,
     });
+    modalActions.focusInitial(continueControl);
     return true;
   }
 
@@ -1491,7 +1420,9 @@ export class ArenaHome extends Scene {
         }
       },
       onContinue: async () => {
+        const sceneEpoch = this.sceneEpoch;
         const result = await markLegacyCardsSeen(receipt.newestArchivedDay);
+        if (!this.acceptMutationResponse(sceneEpoch)) return null;
         if (!result.ok) return result.error;
         markLegacyReturnDismissed(this, receipt.newestArchivedDay);
 
@@ -1522,6 +1453,7 @@ export class ArenaHome extends Scene {
 
   // --- Detail modal (the one component, wired for context) ------------------
   private openDetail(scribbit: Scribbit): void {
+    const sceneEpoch = this.sceneEpoch;
     const mine = this.state.myScribbits.some((one) => one.id === scribbit.id);
     const isEntrant = this.state.todayEntrants.some(
       (one) => one.id === scribbit.id
@@ -1542,9 +1474,17 @@ export class ArenaHome extends Scene {
     openDetailModal(this, scribbit, {
       currentDay: this.state.dayNumber,
       mine,
-      onBelieved: (id, belief) => this.applyBelief(id, belief),
-      onRemoved: () => void this.refresh(),
-      onReported: () => void this.refresh(),
+      onBelieved: (id, belief) => {
+        if (this.acceptMutationResponse(sceneEpoch)) {
+          this.applyBelief(id, belief);
+        }
+      },
+      onRemoved: () => {
+        if (this.acceptMutationResponse(sceneEpoch)) void this.refresh();
+      },
+      onReported: () => {
+        if (this.acceptMutationResponse(sceneEpoch)) void this.refresh();
+      },
       actions,
     });
   }
@@ -1581,7 +1521,9 @@ export class ArenaHome extends Scene {
     }
     this.busy = true;
     this.spinner?.show(this.scale.width / 2, this.scale.height / 2);
+    const sceneEpoch = this.sceneEpoch;
     void careForScribbit(scribbit.id, action).then((result) => {
+      if (!this.acceptMutationResponse(sceneEpoch)) return;
       this.busy = false;
       this.spinner?.hide();
       if (!result.ok) {
@@ -1621,7 +1563,9 @@ export class ArenaHome extends Scene {
         ? `${scribbit.name} returns to ${opponent.name}'s blue-tape margin…`
         : `${scribbit.name} steps up for a friendly spar…`
     );
+    const sceneEpoch = this.sceneEpoch;
     void spar(scribbit.id, opponentId).then((result) => {
+      if (!this.acceptMutationResponse(sceneEpoch)) return;
       this.busy = false;
       this.spinner?.hide();
       if (!result.ok) {
@@ -1667,7 +1611,9 @@ export class ArenaHome extends Scene {
     const optimistic = { ...this.state, myBackedScribbitId: scribbit.id };
     this.state = optimistic;
     setArena(this, optimistic);
+    const sceneEpoch = this.sceneEpoch;
     void backScribbit(scribbit.id).then((result) => {
+      if (!this.acceptMutationResponse(sceneEpoch)) return;
       this.busy = false;
       if (!result.ok) {
         // Roll back and surface the error.
@@ -1739,7 +1685,9 @@ export class ArenaHome extends Scene {
         ? `${champion.name}: “${planChampionChallenge(champion, false).challengeLine}”`
         : `${scribbit.name} steps into the arena…`
     );
+    const sceneEpoch = this.sceneEpoch;
     const result = await bossChallenge(scribbit.id);
+    if (!this.acceptMutationResponse(sceneEpoch)) return;
     this.busy = false;
     if (!result.ok) {
       this.showError(result.error);
@@ -1770,8 +1718,20 @@ export class ArenaHome extends Scene {
   }
 
   private async refresh(): Promise<void> {
+    const sceneEpoch = this.sceneEpoch;
+    const requestEpoch = ++this.refreshRequestEpoch;
     this.spinner?.show(this.scale.width / 2, this.scale.height / 2);
     const result = await fetchArena();
+    const action = planArenaRefreshResponse({
+      active: this.scene.isActive(),
+      requestSceneEpoch: sceneEpoch,
+      currentSceneEpoch: this.sceneEpoch,
+      requestEpoch,
+      currentRequestEpoch: this.refreshRequestEpoch,
+    });
+    if (action === 'refresh-current') void this.refresh();
+    if (action === 'refresh-next') this.refreshOnNextActivation = true;
+    if (action !== 'accept') return;
     this.spinner?.hide();
     if (!result.ok) {
       this.showError(result.error);

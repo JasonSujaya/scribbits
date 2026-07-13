@@ -35,6 +35,7 @@ import { getLevelForXp } from '../../shared/progression';
 export { getLevelForXp } from '../../shared/progression';
 import { formatUtcDateKey } from './day';
 import { findInkCatalogEntry, isAccessoryCatalogEntry } from './ink';
+import { getInkKey } from './inkStore';
 import { findFoundingScribbit } from './species';
 import type { ArenaStorage, ArenaTransaction } from './storage';
 import {
@@ -110,7 +111,7 @@ const minimumPngHeaderBytes = 33;
 const pngSignature = [137, 80, 78, 71, 13, 10, 26, 10] as const;
 const visiblePixelTolerance = 1;
 const accessoryAntialiasPaddingPixels = 1;
-const dailyFlagTtlSeconds = 8 * 24 * 60 * 60;
+export const DAILY_FLAG_TTL_SECONDS = 8 * 24 * 60 * 60;
 const dailyProgressTtlSeconds = 8 * 24 * 60 * 60;
 const careActionOrder: CareAction[] = ['feed', 'pat', 'train'];
 const lightProfanityFragments = [
@@ -774,14 +775,6 @@ export const deleteStoredScribbit = async (
   await storage.hDel(getCommunityBeliefKey(), [scribbitId]);
 };
 
-export const removeRumbleEntrant = async (
-  storage: ArenaStorage,
-  day: number,
-  scribbitId: string
-): Promise<void> => {
-  await storage.zRem(getRumbleKey(day), [scribbitId]);
-};
-
 export const releaseDailyFlags = async (
   storage: ArenaStorage,
   userId: string,
@@ -794,7 +787,7 @@ export const releaseDailyFlags = async (
 
   const dailyFlagsKey = getDailyFlagsKey(userId, day);
   await storage.hDel(dailyFlagsKey, fields);
-  await storage.expire(dailyFlagsKey, dailyFlagTtlSeconds);
+  await storage.expire(dailyFlagsKey, DAILY_FLAG_TTL_SECONDS);
 };
 
 export const claimDailyFlags = async (
@@ -819,7 +812,7 @@ export const claimDailyFlags = async (
     claimedFields.push(field);
   }
 
-  await storage.expire(dailyFlagsKey, dailyFlagTtlSeconds);
+  await storage.expire(dailyFlagsKey, DAILY_FLAG_TTL_SECONDS);
   return true;
 };
 
@@ -1329,34 +1322,116 @@ const setValidatedScribbitRecord = async (
   throw new Error(`Scribbit ${scribbit.id} changed too often to save safely.`);
 };
 
-export const storeScribbit = async (
-  storage: ArenaStorage,
+export const queueStoredScribbit = async (
+  transaction: ArenaTransaction,
   ownerUserId: string,
   scribbit: Scribbit
-): Promise<void> => {
+): Promise<Scribbit> => {
   const storedScribbit = prepareScribbitForStorage(scribbit);
-  await setValidatedScribbitRecord(storage, storedScribbit);
-  await storage.set(getScribbitOwnerKey(storedScribbit.id), ownerUserId);
-  await storage.zAdd(getUserScribbitsKey(ownerUserId), {
+  await transaction.set(
+    getScribbitKey(storedScribbit.id),
+    JSON.stringify(storedScribbit)
+  );
+  await transaction.set(getScribbitOwnerKey(storedScribbit.id), ownerUserId);
+  await transaction.zAdd(getUserScribbitsKey(ownerUserId), {
     member: storedScribbit.id,
     score: storedScribbit.bornDay,
   });
 
   if (storedScribbit.status === 'alive') {
-    await storage.zAdd(getUserAliveScribbitsKey(ownerUserId), {
+    await transaction.zAdd(getUserAliveScribbitsKey(ownerUserId), {
       member: storedScribbit.id,
       score: storedScribbit.bornDay,
     });
-    await storage.zAdd(getExpiringScribbitsKey(), {
+    await transaction.zAdd(getExpiringScribbitsKey(), {
       member: storedScribbit.id,
       score: storedScribbit.expiresDay,
     });
   } else if (storedScribbit.legacy) {
-    await storage.zAdd(getUserLegacyCardsKey(ownerUserId), {
+    await transaction.zAdd(getUserLegacyCardsKey(ownerUserId), {
       member: storedScribbit.id,
       score: storedScribbit.legacy.archivedDay,
     });
   }
+
+  return storedScribbit;
+};
+
+const storedScribbitMatches = async (
+  storage: ArenaStorage,
+  ownerUserId: string,
+  scribbit: Scribbit
+): Promise<boolean> => {
+  const [storedJson, owner, userIndexScore, statusIndexScore] =
+    await Promise.all([
+      storage.get(getScribbitKey(scribbit.id)),
+      storage.get(getScribbitOwnerKey(scribbit.id)),
+      storage.zScore(getUserScribbitsKey(ownerUserId), scribbit.id),
+      scribbit.status === 'alive'
+        ? storage.zScore(getUserAliveScribbitsKey(ownerUserId), scribbit.id)
+        : scribbit.legacy
+          ? storage.zScore(getUserLegacyCardsKey(ownerUserId), scribbit.id)
+          : Promise.resolve(undefined),
+    ]);
+
+  if (
+    storedJson !== JSON.stringify(scribbit) ||
+    owner !== ownerUserId ||
+    userIndexScore !== scribbit.bornDay
+  ) {
+    return false;
+  }
+
+  if (scribbit.status === 'alive') {
+    return (
+      statusIndexScore === scribbit.bornDay &&
+      (await storage.zScore(getExpiringScribbitsKey(), scribbit.id)) ===
+        scribbit.expiresDay
+    );
+  }
+
+  return !scribbit.legacy || statusIndexScore === scribbit.legacy.archivedDay;
+};
+
+export const storeScribbit = async (
+  storage: ArenaStorage,
+  ownerUserId: string,
+  scribbit: Scribbit
+): Promise<void> => {
+  if (!storage.watch) {
+    throw new Error('Safe Scribbit storage requires transaction support.');
+  }
+  const storedScribbit = prepareScribbitForStorage(scribbit);
+  const scribbitKey = getScribbitKey(storedScribbit.id);
+
+  for (
+    let attempt = 0;
+    attempt < MAX_WATCH_TRANSACTION_ATTEMPTS;
+    attempt += 1
+  ) {
+    let transaction: ArenaTransaction | undefined;
+    try {
+      transaction = await storage.watch(scribbitKey);
+      const existingJson = await storage.get(scribbitKey);
+      if (existingJson !== undefined && !parseScribbit(existingJson)) {
+        throw new Error(
+          `Stored Scribbit ${storedScribbit.id} is invalid and was preserved.`
+        );
+      }
+      await transaction.multi();
+      await queueStoredScribbit(transaction, ownerUserId, storedScribbit);
+      const result = await transaction.exec();
+      if (Array.isArray(result) && result.length > 0) return;
+    } catch (error) {
+      await discardWatchedTransaction(transaction, 'Scribbit storage');
+      if (await storedScribbitMatches(storage, ownerUserId, storedScribbit)) {
+        return;
+      }
+      throw error;
+    }
+  }
+
+  throw new Error(`Scribbit ${scribbit.id} changed too often to save safely.`);
 };
 
 export const updateScribbit = async (
@@ -1524,7 +1599,7 @@ export const claimAndAwardDailySparWin = async (
 
   const dailyRewardKey = getUserDailySparWinRewardsKey(input.userId);
   const scribbitKey = getScribbitKey(input.scribbitId);
-  const inkKey = `ink:${input.userId}`;
+  const inkKey = getInkKey(input.userId);
   const receiptValue = `report:${input.reportId}`;
 
   for (
@@ -1797,20 +1872,6 @@ export const getUserScribbitIds = async (
   return rankedScribbits.map((entry) => entry.member);
 };
 
-/** @deprecated Use the paged Legacy Cards API for the complete owner archive. */
-export const getFadedScribbitsForUser = async (
-  storage: ArenaStorage,
-  userId: string,
-  limit: number
-): Promise<Scribbit[]> => {
-  const scribbitIds = await getUserScribbitIds(storage, userId, 100);
-  const scribbits = await loadScribbits(storage, scribbitIds);
-  return scribbits
-    .filter((scribbit) => scribbit.status === 'faded')
-    .sort(sortNewestFirst)
-    .slice(0, limit);
-};
-
 export const getDailyFlags = async (
   storage: ArenaStorage,
   userId: string,
@@ -1833,7 +1894,7 @@ export const markDailyFlag = async (
 ): Promise<boolean> => {
   const dailyFlagsKey = getDailyFlagsKey(userId, day);
   const createdFlag = await storage.hSetNX(dailyFlagsKey, field, '1');
-  await storage.expire(dailyFlagsKey, dailyFlagTtlSeconds);
+  await storage.expire(dailyFlagsKey, DAILY_FLAG_TTL_SECONDS);
   return createdFlag === 1;
 };
 

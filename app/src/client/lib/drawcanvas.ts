@@ -1,6 +1,6 @@
 // The 512x512 drawing surface behind the Draw scene. Wraps a native HTML canvas
 // so freehand strokes feel smooth on mobile (pointer events + round line caps).
-// Exposes an undo stack (one snapshot per completed stroke), brush controls, and
+// Exposes undo/redo snapshots (one per completed stroke), brush controls, and
 // readouts for the analyzer (getImageData) and submission PNGs.
 
 import type { CosmeticPenEffect } from '../../shared/cosmetics';
@@ -48,6 +48,7 @@ export class DrawCanvas {
   // Canvas snapshots avoid allocating a new 1 MiB JavaScript RGBA array at the
   // start of every stroke. Old snapshots are pooled for the next stroke.
   private history: HTMLCanvasElement[] = [];
+  private redoHistory: HTMLCanvasElement[] = [];
   private snapshotPool: HTMLCanvasElement[] = [];
   private readonly maxHistory = 10;
   private activeBounds: DOMRect | null = null;
@@ -125,20 +126,27 @@ export class DrawCanvas {
   undo(): void {
     const previous = this.history.pop();
     if (!previous) return;
-    this.ctx.clearRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
-    // Erasing leaves the live context in destination-out mode. Restore the
-    // snapshot with copy semantics so Undo works regardless of the active tool,
-    // then return to the caller's current brush mode.
-    this.ctx.save();
-    this.ctx.globalCompositeOperation = 'copy';
-    this.ctx.drawImage(previous, 0, 0);
-    this.ctx.restore();
+    this.pushCurrentSnapshot(this.redoHistory);
+    this.restoreSnapshot(previous);
     this.snapshotPool.push(previous);
     this.onStrokeEnd();
   }
 
   canUndo(): boolean {
     return this.history.length > 0;
+  }
+
+  redo(): void {
+    const next = this.redoHistory.pop();
+    if (!next) return;
+    this.pushCurrentSnapshot(this.history);
+    this.restoreSnapshot(next);
+    this.snapshotPool.push(next);
+    this.onStrokeEnd();
+  }
+
+  canRedo(): boolean {
+    return this.redoHistory.length > 0;
   }
 
   destroy(): void {
@@ -148,6 +156,7 @@ export class DrawCanvas {
     this.element.removeEventListener('pointerleave', this.handlePointerUp);
     this.element.removeEventListener('pointercancel', this.handlePointerUp);
     this.history = [];
+    this.redoHistory = [];
     this.snapshotPool = [];
     this.activeBounds = null;
     this.drawing = false;
@@ -188,6 +197,11 @@ export class DrawCanvas {
   }
 
   private pushHistory(): void {
+    this.releaseSnapshots(this.redoHistory);
+    this.pushCurrentSnapshot(this.history);
+  }
+
+  private pushCurrentSnapshot(target: HTMLCanvasElement[]): void {
     const snapshot =
       this.snapshotPool.pop() ?? document.createElement('canvas');
     snapshot.width = CANVAS_SIZE;
@@ -196,10 +210,27 @@ export class DrawCanvas {
     if (!context) return;
     context.clearRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
     context.drawImage(this.element, 0, 0);
-    this.history.push(snapshot);
-    if (this.history.length > this.maxHistory) {
-      const released = this.history.shift();
+    target.push(snapshot);
+    if (target.length > this.maxHistory) {
+      const released = target.shift();
       if (released) this.snapshotPool.push(released);
+    }
+  }
+
+  private restoreSnapshot(snapshot: HTMLCanvasElement): void {
+    this.ctx.clearRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
+    // Erasing leaves the live context in destination-out mode. Copy semantics
+    // restore the exact snapshot regardless of the currently selected tool.
+    this.ctx.save();
+    this.ctx.globalCompositeOperation = 'copy';
+    this.ctx.drawImage(snapshot, 0, 0);
+    this.ctx.restore();
+  }
+
+  private releaseSnapshots(snapshots: HTMLCanvasElement[]): void {
+    while (snapshots.length > 0) {
+      const snapshot = snapshots.pop();
+      if (snapshot) this.snapshotPool.push(snapshot);
     }
   }
 

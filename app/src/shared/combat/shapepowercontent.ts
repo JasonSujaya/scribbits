@@ -9,8 +9,17 @@ export type ShapePowerContent = Readonly<{
   drawingCue: string;
   fieldGuideCue: string;
   revealLine: string;
+  receiptEffect: string;
   playerHint: string;
   noCleanHitCallout: string;
+}>;
+
+export type ShapeReceiptPlan = Readonly<{
+  cause: string;
+  move: string;
+  effect: string;
+  birthLine: string;
+  battleLine: string;
 }>;
 
 export type ElementBattleCue = Readonly<{
@@ -33,6 +42,7 @@ export const SHAPE_POWER_CONTENT_BY_POWER: Readonly<
     drawingCue: 'Big, filled bodies',
     fieldGuideCue: 'More HP',
     revealLine: 'Shockwave + knockback',
+    receiptEffect: 'Expanding shockwave',
     playerHint: 'Filled bodies launch an expanding shockwave.',
     noCleanHitCallout: 'RING ENDS',
   }),
@@ -41,6 +51,7 @@ export const SHAPE_POWER_CONTENT_BY_POWER: Readonly<
     drawingCue: 'Sharp edges',
     fieldGuideCue: 'Sharp edge',
     revealLine: '3 quills + dead zone',
+    receiptEffect: '3 rotating quills',
     playerHint: 'Jagged edges summon three rotating quills.',
     noCleanHitCallout: 'NIBS SETTLE',
   }),
@@ -49,6 +60,7 @@ export const SHAPE_POWER_CONTENT_BY_POWER: Readonly<
     drawingCue: 'Small, compact shapes',
     fieldGuideCue: 'Faster move',
     revealLine: 'Predictive double dash',
+    receiptEffect: 'Predictive double dash',
     playerHint: 'Compact shapes predict and dash twice.',
     noCleanHitCallout: 'DASH ENDS',
   }),
@@ -57,6 +69,7 @@ export const SHAPE_POWER_CONTENT_BY_POWER: Readonly<
     drawingCue: 'More colors',
     fieldGuideCue: 'More crit',
     revealLine: 'Cone + delayed echo',
+    receiptEffect: 'Cone + delayed echo',
     playerHint: 'More colors fire a cone and delayed echo.',
     noCleanHitCallout: 'CONE FADES',
   }),
@@ -133,6 +146,24 @@ export function getShapePowerSignatureName(
   power: PrimaryPower
 ): string {
   return SIGNATURE_MOVE_NAME_BY_ELEMENT[element][power];
+}
+
+/** One reusable receipt connecting a submitted shape to its combat behavior. */
+export function planShapeReceipt(
+  element: CombatElement,
+  power: PrimaryPower
+): ShapeReceiptPlan {
+  const content = getShapePowerContent(power);
+  const cause = content.drawingCue.toUpperCase();
+  const move = getShapePowerSignatureName(element, power).toUpperCase();
+  const effect = content.receiptEffect.toUpperCase();
+  return Object.freeze({
+    cause,
+    move,
+    effect,
+    birthLine: `${cause} → ${move}`,
+    battleLine: `${cause} → ${effect}`,
+  });
 }
 
 export function getShapePowerRevealCopy(

@@ -16,7 +16,10 @@ import { tmpdir } from 'node:os';
 import { PNG } from 'pngjs';
 
 const repoRoot = process.cwd();
-const testTemporaryRoot = join(tmpdir(), 'scribbits-arena-sim-tests');
+const managedTestRoot = process.env.SCRIBBITS_TEST_TEMP_ROOT?.trim();
+const testTemporaryRoot = managedTestRoot
+  ? join(managedTestRoot, 'legacy')
+  : join(tmpdir(), 'scribbits-arena-sim-tests');
 const cleanupTestTemporaryRoot = () => {
   rmSync(testTemporaryRoot, { recursive: true, force: true });
 };
@@ -70,6 +73,8 @@ execFileSync(
     'src/shared/scoutnotebook.ts',
     'src/shared/analyzer-core.ts',
     'src/shared/battle.ts',
+    'src/shared/accessoryeffects.ts',
+    'src/shared/equipment.ts',
     'src/shared/cosmetics.ts',
     'src/shared/combat/types.ts',
     'src/shared/combat/shapepowercontent.ts',
@@ -96,6 +101,7 @@ execFileSync(
     'src/server/core/species.ts',
     'src/server/core/rumble.ts',
     'src/server/core/scribbit.ts',
+    'src/server/core/submission.ts',
     'src/server/core/dailyJob.ts',
     'src/server/core/resultComment.ts',
     'src/server/core/founderChronicle.ts',
@@ -109,7 +115,6 @@ execFileSync(
     'src/server/core/scoutNotebook.ts',
     'src/client/lib/inkmesh.ts',
     'src/client/lib/proceduraldoodleplan.ts',
-    'src/client/lib/drawonboarding.ts',
     'src/client/lib/caremoment.ts',
     'src/client/lib/practicelab.ts',
     'src/client/lib/matchupbrief.ts',
@@ -125,6 +130,7 @@ execFileSync(
     'src/client/lib/battlejournal.ts',
     'src/client/lib/scoutnotebook.ts',
     'src/client/lib/shapepowerpresentation.ts',
+    'src/client/lib/weaponfxpresentation.ts',
     'src/client/lib/championchallenge.ts',
     'src/client/lib/founderchronicle.ts',
     'src/client/lib/arenabracket.ts',
@@ -132,6 +138,8 @@ execFileSync(
     'src/client/lib/pens.ts',
     'src/client/lib/pressinteraction.ts',
     'src/client/lib/semantictabs.ts',
+    'src/client/lib/arenaasynclifecycle.ts',
+    'src/client/lib/capsulepresentation.ts',
   ],
   { cwd: repoRoot, stdio: 'inherit' }
 );
@@ -200,6 +208,10 @@ const require = createRequire(import.meta.url);
 const typescript = require('typescript');
 const analyzerCore = require(join(outDir, 'shared', 'analyzer-core.js'));
 const sharedBattle = require(join(outDir, 'shared', 'battle.js'));
+const sharedAccessoryEffects = require(
+  join(outDir, 'shared', 'accessoryeffects.js')
+);
+const sharedEquipment = require(join(outDir, 'shared', 'equipment.js'));
 const sharedCosmetics = require(join(outDir, 'shared', 'cosmetics.js'));
 const sharedProgression = require(join(outDir, 'shared', 'progression.js'));
 const battleArenas = require(join(outDir, 'shared', 'battlearena.js'));
@@ -271,6 +283,7 @@ const rumbleReturnCore = require(
   join(outDir, 'server', 'core', 'rumbleReturn.js')
 );
 const scribbitCore = require(join(outDir, 'server', 'core', 'scribbit.js'));
+const submissionCore = require(join(outDir, 'server', 'core', 'submission.js'));
 const streakCore = require(join(outDir, 'server', 'core', 'streak.js'));
 const moderationCore = require(join(outDir, 'server', 'core', 'moderation.js'));
 const privacyCore = require(join(outDir, 'server', 'core', 'privacy.js'));
@@ -287,11 +300,14 @@ const scoutNotebookCore = require(
   join(outDir, 'server', 'core', 'scoutNotebook.js')
 );
 const inkMeshCore = require(join(outDir, 'client', 'lib', 'inkmesh.js'));
+const arenaAsyncLifecycle = require(
+  join(outDir, 'client', 'lib', 'arenaasynclifecycle.js')
+);
+const capsulePresentation = require(
+  join(outDir, 'client', 'lib', 'capsulepresentation.js')
+);
 const proceduralDoodlePlan = require(
   join(outDir, 'client', 'lib', 'proceduraldoodleplan.js')
-);
-const drawOnboarding = require(
-  join(outDir, 'client', 'lib', 'drawonboarding.js')
 );
 const careMoment = require(join(outDir, 'client', 'lib', 'caremoment.js'));
 const practiceLab = require(join(outDir, 'client', 'lib', 'practicelab.js'));
@@ -328,6 +344,9 @@ const scoutNotebookPlan = require(
 );
 const shapePowerPresentation = require(
   join(outDir, 'client', 'lib', 'shapepowerpresentation.js')
+);
+const weaponFxPresentation = require(
+  join(outDir, 'client', 'lib', 'weaponfxpresentation.js')
 );
 const championChallenge = require(
   join(outDir, 'client', 'lib', 'championchallenge.js')
@@ -861,6 +880,44 @@ assert.match(architecturePlanSource, /Production never stores raw PNG bytes/);
 assert.doesNotMatch(architecturePlanSource, /fallback: PNG bytes in redis/i);
 pass('drawing media docs match the production and mock authority boundary');
 
+const submissionCoreSource = readFileSync(
+  join(repoRoot, 'src', 'server', 'core', 'submission.ts'),
+  'utf8'
+);
+const productionSubmissionRoute = productionApiSource.match(
+  /api\.post\('\/scribbit',[\s\S]*?\n}\);\n\napi\.post\('\/care'/
+)?.[0];
+assert.ok(productionSubmissionRoute);
+assert.match(productionSubmissionRoute, /commitScribbitSubmission\(/);
+assert.doesNotMatch(
+  productionSubmissionRoute,
+  /(?:storeScribbit|addRumbleEntrant|claimDailyFlags|awardInk|recordDailyPlay)\(/,
+  'the route must not restore independent Scribbit-birth writes'
+);
+assert.doesNotMatch(
+  productionSubmissionRoute,
+  /rollback|Submit Scribbit cleanup/,
+  'atomic Scribbit birth must not depend on best-effort route compensation'
+);
+assert.doesNotMatch(
+  productionServerSource,
+  /consumeAccessoriesForSubmit/,
+  'accessory spend belongs inside the authoritative birth transaction'
+);
+assert.match(submissionCoreSource, /storage\.watch\(/);
+assert.match(submissionCoreSource, /queueStoredScribbit\(/);
+assert.match(submissionCoreSource, /submissionWasCommitted\(/);
+assert.match(submissionCoreSource, /acquireActiveSubmission\(/);
+assert.match(submissionCoreSource, /releaseActiveSubmission\(/);
+assert.doesNotMatch(
+  submissionCoreSource,
+  /transaction\.(?:incrBy|hIncrBy)\(/,
+  'submission repair must use exact idempotent values, not additive retries'
+);
+assert.match(nightlyJobSource, /getActiveScribbitSubmissionsKey\(/);
+assert.match(nightlyJobSource, /activeSubmissionCount > 0/);
+pass('production Scribbit birth has one atomic reply-loss-safe owner');
+
 const founderArtPlanSource = readFileSync(
   join(repoRoot, '..', 'plans', 'creature-art-spec.md'),
   'utf8'
@@ -907,14 +964,40 @@ assert.match(
 );
 assert.match(
   arenaHomeSource,
-  /paperWordmark\([\s\S]*battleArena\.challengeLabel\.toUpperCase\(\)[\s\S]*icon: 'target'/,
-  'the generic fighter-selection heading must become one readable icon-led arena goal'
+  /paperWordmark\([\s\S]*battleArena\.challengeLabel\.toUpperCase\(\)[\s\S]*icon: fighters\.length > 0 \? 'target' : 'pencil'/,
+  'the Arena heading must use one icon-led goal or draw action'
 );
-assert.match(arenaHomeSource, /paperWordmark\(this, 0, 42, 'CHOOSE RIVAL'/);
+assert.doesNotMatch(
+  arenaHomeSource,
+  /'CHOOSE RIVAL'|buildRumbleSummary\(/,
+  'Arena home must keep one direct battle setup without the old pick-a-winner panel'
+);
+assert.match(
+  arenaHomeSource,
+  /'DRAW YOUR FIGHTER'[\s\S]*navigateToDailyDraw\(this\)/,
+  'the empty Arena must route its icon-led primary action into Draw'
+);
 assert.match(arenaHomeSource, /arenaArrowButton\(-170, -145, 'previous'/);
 assert.match(arenaHomeSource, /cycleArenaFighter\(1\)/);
 assert.match(arenaHomeSource, /selectedBattleMode: 'champion' \| 'spar'/);
 assert.match(arenaHomeSource, /UI_BUTTON_TEXTURES\[direction\]/);
+assert.match(arenaHomeSource, /private sceneEpoch = 0/);
+assert.match(arenaHomeSource, /private refreshRequestEpoch = 0/);
+assert.match(
+  arenaHomeSource,
+  /planArenaMutationResponse\([\s\S]*refreshOnNextActivation = true/,
+  'Arena mutation continuations must use the shared lifecycle policy'
+);
+assert.ok(
+  (arenaHomeSource.match(/acceptMutationResponse\(sceneEpoch\)/g) ?? [])
+    .length >= 9,
+  'every Arena mutation continuation must pass through the shared lifecycle guard'
+);
+assert.match(
+  arenaHomeSource,
+  /const requestEpoch = \+\+this\.refreshRequestEpoch[\s\S]*planArenaRefreshResponse\([\s\S]*action === 'refresh-next'/,
+  'Arena refreshes must reconcile stale scene responses through the shared lifecycle policy'
+);
 assert.doesNotMatch(arenaHomeSource, /YOUR CHALLENGER/);
 assert.doesNotMatch(arenaHomeSource, /BACKED/);
 assert.doesNotMatch(arenaHomeSource, /enterRumble|doEnter/);
@@ -932,7 +1015,257 @@ for (const retiredArenaSurface of [
     `Arena must not restore the retired ${retiredArenaSurface} dashboard surface`
   );
 }
-pass('Arena stays one focused fighter, rival, and Rumble hub');
+pass('Arena home stays focused on one direct battle path');
+
+assert.equal(
+  arenaAsyncLifecycle.planArenaMutationResponse({
+    active: true,
+    requestSceneEpoch: 4,
+    currentSceneEpoch: 4,
+  }),
+  'accept'
+);
+assert.equal(
+  arenaAsyncLifecycle.planArenaMutationResponse({
+    active: false,
+    requestSceneEpoch: 4,
+    currentSceneEpoch: 4,
+  }),
+  'refresh-next'
+);
+assert.equal(
+  arenaAsyncLifecycle.planArenaMutationResponse({
+    active: true,
+    requestSceneEpoch: 4,
+    currentSceneEpoch: 5,
+  }),
+  'refresh-current'
+);
+assert.equal(
+  arenaAsyncLifecycle.planArenaRefreshResponse({
+    active: true,
+    requestSceneEpoch: 5,
+    currentSceneEpoch: 5,
+    requestEpoch: 9,
+    currentRequestEpoch: 9,
+  }),
+  'accept'
+);
+assert.equal(
+  arenaAsyncLifecycle.planArenaRefreshResponse({
+    active: true,
+    requestSceneEpoch: 5,
+    currentSceneEpoch: 5,
+    requestEpoch: 8,
+    currentRequestEpoch: 9,
+  }),
+  'ignore'
+);
+assert.equal(
+  arenaAsyncLifecycle.planArenaRefreshResponse({
+    active: false,
+    requestSceneEpoch: 5,
+    currentSceneEpoch: 5,
+    requestEpoch: 8,
+    currentRequestEpoch: 9,
+  }),
+  'refresh-next'
+);
+assert.equal(
+  arenaAsyncLifecycle.planArenaRefreshResponse({
+    active: true,
+    requestSceneEpoch: 5,
+    currentSceneEpoch: 6,
+    requestEpoch: 8,
+    currentRequestEpoch: 9,
+  }),
+  'refresh-current'
+);
+pass(
+  'Arena async lifecycle rejects stale UI writes and schedules reconciliation'
+);
+
+const visualAssetsSource = readFileSync(
+  join(repoRoot, 'src', 'client', 'lib', 'visualassets.ts'),
+  'utf8'
+);
+assert.match(
+  visualAssetsSource,
+  /renderer\.type === Phaser\.WEBGL[\s\S]*filters\?\.internal\.addMask\(/
+);
+assert.match(
+  visualAssetsSource,
+  /else \{[\s\S]*paperTexture\.setMask\(paperMaskShape\.createGeometryMask\(\)\)/
+);
+pass('Arena stage uses supported WebGL and Canvas mask paths');
+
+const screenTitleSource = readFileSync(
+  join(repoRoot, 'src', 'client', 'lib', 'screentitle.ts'),
+  'utf8'
+);
+assert.match(screenTitleSource, /scene\.textures\.addCanvas\(/);
+assert.match(visualAssetsSource, /screenTitle\(scene, width \/ 2, 24, 'ARENA'/);
+for (const sceneFile of [
+  'Gallery.ts',
+  'MyBattles.ts',
+  'ScoutNotebook.ts',
+  'Draw.ts',
+  'Bestiary.ts',
+]) {
+  const sceneSource = readFileSync(
+    join(repoRoot, 'src', 'client', 'scenes', sceneFile),
+    'utf8'
+  );
+  assert.match(
+    sceneSource,
+    /screenTitle\(/,
+    `${sceneFile} must use the shared rendered screen title`
+  );
+}
+pass('primary screens share one rendered title texture owner');
+
+const replayBattleBackgroundSource = readFileSync(
+  join(repoRoot, 'src', 'client', 'lib', 'replaybattlebackground.ts'),
+  'utf8'
+);
+const replayBattleHudSource = readFileSync(
+  join(repoRoot, 'src', 'client', 'lib', 'replaybattlehud.ts'),
+  'utf8'
+);
+assert.match(replayBattleBackgroundSource, /battleStage\(scene, -1000\)/);
+assert.doesNotMatch(
+  replayBattleHudSource,
+  /paperRoleTag\([\s\S]{0,180}'BATTLE'/,
+  'the rendered battle title must not regress to a button-like role tag'
+);
+assert.match(replayBattleHudSource, /planReplayHeartMeter\(/);
+assert.match(replayBattleHudSource, /renderHeartMeter\(/);
+assert.doesNotMatch(
+  replayBattleHudSource,
+  /hitPointTrack|hitPointTrail|hitPointBar/,
+  'Replay health must stay a heart system instead of restoring bar layers'
+);
+pass('Replay uses the rendered battle stage instead of a button-like title');
+
+const capsuleMachineSource = readFileSync(
+  join(repoRoot, 'src', 'client', 'lib', 'capsulemachine.ts'),
+  'utf8'
+);
+assert.match(
+  capsuleMachineSource,
+  /const MACHINE_CAPSULE_DOTS = Object\.freeze/
+);
+assert.doesNotMatch(
+  capsuleMachineSource,
+  /const dotColors[\s\S]*Math\.random\(\)/,
+  'the capsule machine must not visually reshuffle whenever Arena rebuilds'
+);
+assert.match(capsuleMachineSource, /CAPSULE_ODDS_ACCESSIBLE_COPY/);
+assert.doesNotMatch(
+  capsuleMachineSource,
+  /oddsText/,
+  'capsule odds belong in the accessible description, not a fourth visual status line'
+);
+assert.doesNotMatch(
+  capsuleMachineSource,
+  /COLLECTION NOW/,
+  'the prize card must not repeat collection progress beside its collection action'
+);
+assert.doesNotMatch(
+  capsuleMachineSource,
+  /STYLE TRAIT|accessoryEffect/,
+  'capsule prizes should present the gear, not inactive internal trait names'
+);
+assert.match(capsuleMachineSource, /planCapsulePrizeLayout\(/);
+assert.match(capsuleMachineSource, /prizeOwnershipLabel\(pull\)/);
+pass('Mystery Ink keeps one calm deterministic machine and compact progress');
+
+const compactCapsulePrizeLayout = capsulePresentation.planCapsulePrizeLayout(
+  720,
+  1280,
+  true
+);
+assert.deepEqual(compactCapsulePrizeLayout.viewCollection, {
+  centerX: -98,
+  width: 336,
+  overlayX: 94,
+});
+assert.deepEqual(compactCapsulePrizeLayout.acknowledgement, {
+  centerX: 178,
+  width: 184,
+  overlayX: 446,
+});
+assert.ok(
+  compactCapsulePrizeLayout.viewCollection.overlayX +
+    compactCapsulePrizeLayout.viewCollection.width <
+    compactCapsulePrizeLayout.acknowledgement.overlayX,
+  'prize actions must remain separated'
+);
+assert.ok(
+  compactCapsulePrizeLayout.overlayY + 100 < 1280,
+  'prize action overlays must remain inside the portrait canvas'
+);
+assert.equal(
+  capsulePresentation.collectorRankNameForPullCount(24),
+  'Curio Keeper'
+);
+assert.equal(
+  capsulePresentation.prizeOwnershipLabel({
+    rarity: 'common',
+    kind: 'accessory',
+    id: 'round-glasses',
+    name: 'Round Glasses',
+    description: 'Bookish circles.',
+    isNew: false,
+    ownedCount: 2,
+    gearRank: 1,
+    mergeReady: false,
+  }),
+  '+1 COPY · 2/3 TO FORGE'
+);
+assert.equal(
+  capsulePresentation.prizeOwnershipAnnouncement({
+    rarity: 'epic',
+    kind: 'title',
+    id: 'ink-oracle',
+    name: 'Ink Oracle',
+    description: 'A permanent title.',
+    isNew: false,
+    ownedCount: 1,
+  }),
+  'Already unlocked.'
+);
+assert.equal(
+  capsulePresentation.prizeOwnershipLabel({
+    rarity: 'epic',
+    kind: 'accessory',
+    id: 'dragon-wings',
+    name: 'Dragon Wings',
+    description: 'A special red-star gear item.',
+    isNew: false,
+    ownedCount: 2,
+    gearRank: 6,
+    mergeReady: false,
+  }),
+  '+1 COPY · MYTHIC RED STAR'
+);
+assert.equal(
+  capsulePresentation.prizeOwnershipAnnouncement({
+    rarity: 'epic',
+    kind: 'accessory',
+    id: 'dragon-wings',
+    name: 'Dragon Wings',
+    description: 'A special red-star gear item.',
+    isNew: false,
+    ownedCount: 2,
+    gearRank: 6,
+    mergeReady: false,
+  }),
+  'Mythic Red Star gear. Maximum special rank.'
+);
+pass(
+  'Mystery Ink prize actions and red-star ownership use tested presentation plans'
+);
 
 const listFilePaths = (directory) =>
   readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
@@ -1206,6 +1539,7 @@ assert.deepEqual(publicRouteInventory, [
   'POST /api/delete-my-data',
   'POST /api/equip-title',
   'POST /api/legacy-cards/seen',
+  'POST /api/merge-gear',
   'POST /api/practice-battle',
   'POST /api/remove-scribbit',
   'POST /api/report-scribbit',
@@ -1788,6 +2122,9 @@ for (const consumer of paginationConsumers) {
     `${consumer.name} pagination must not rebuild semantic overlay controls`
   );
 }
+assert.match(paginationConsumers[0].source, /top \+ 620/);
+assert.match(paginationConsumers[1].source, /top \+ 665/);
+assert.match(paginationConsumers[3].source, /top \+ 655/);
 assert.equal(
   inspectNamedFunctionCalls(
     'class Example { buildPageControls() { this.ensureContentActionOverlay().add({}); } }',
@@ -1802,7 +2139,23 @@ const aliasedPaginationImport = inspectTypeScriptModule(
 assert.deepEqual(aliasedPaginationImport.imports.get('./ui'), [
   { imported: 'paperPagination', local: 'pageArrowButton' },
 ]);
-pass('paper pagination has one canvas and accessibility owner');
+pass('paper pagination has one owner and stays below Gallery card grids');
+
+assert.match(paginationConsumers[0].source, /function buildOwnedItems\(/);
+assert.doesNotMatch(
+  paginationConsumers[0].source,
+  /\.flatMap\(\(\{ entry, ownership \}\)/,
+  'owned counts should stay consolidated into one visible gear card'
+);
+assert.doesNotMatch(paginationConsumers[0].source, /FORGE ITEM/);
+assert.match(
+  paginationConsumers[0].source,
+  /type InkKitSection = EquipmentCategory \| 'styles'/
+);
+assert.doesNotMatch(paginationConsumers[0].source, /accessoryEffect/);
+pass(
+  'Ink Kit shows consolidated gear across the canonical equipment categories'
+);
 
 const cardPressConsumers = [
   {
@@ -1920,6 +2273,7 @@ pressInteraction.bindPressInteractionEvents(
   }
 );
 assert.deepEqual([...cardPressListeners.keys()].sort(), [
+  'destroy',
   'pointerdown',
   'pointerout',
   'pointerup',
@@ -1950,11 +2304,51 @@ assert.deepEqual(cardPressEvents, [
 cardPressListeners.get('pointerdown')[0]({ id: 4 });
 gamePressListeners.get('gameout')[0]();
 assert.deepEqual(cardPressEvents.slice(-2), ['press', 'release']);
+const eventCountBeforeShutdown = cardPressEvents.length;
 cardPressListeners.get('pointerdown')[0]({ id: 5 });
 shutdownPressListeners.get('shutdown')[0]();
-assert.deepEqual(cardPressEvents.slice(-2), ['press', 'release']);
+assert.equal(cardPressEvents.length, eventCountBeforeShutdown + 1);
+assert.equal(cardPressEvents.at(-1), 'press');
 assert.deepEqual(gamePressListeners.get('gameout'), []);
-pass('Gallery cards share one press interaction owner');
+for (const listeners of cardPressListeners.values()) {
+  assert.equal(listeners.length, 0, 'shutdown must release target listeners');
+}
+
+const destroyedTargetListeners = new Map();
+const destroyedTargetGameListeners = new Map();
+const destroyedTargetShutdownListeners = new Map();
+let destroyedTargetReleaseCount = 0;
+pressInteraction.bindPressInteractionEvents(
+  makePressEventTarget(destroyedTargetListeners),
+  {
+    press: () => {},
+    release: () => {
+      destroyedTargetReleaseCount += 1;
+    },
+    activate: () => {},
+  },
+  {
+    gameTarget: makePressEventTarget(destroyedTargetGameListeners),
+    shutdownTarget: makePressEventTarget(destroyedTargetShutdownListeners),
+  }
+);
+destroyedTargetListeners.get('pointerdown')[0]({ id: 1 });
+destroyedTargetListeners.get('destroy')[0]();
+assert.equal(
+  destroyedTargetReleaseCount,
+  0,
+  'Phaser teardown must not start a release tween on a destroying control'
+);
+assert.deepEqual(destroyedTargetGameListeners.get('gameout'), []);
+assert.deepEqual(destroyedTargetShutdownListeners.get('shutdown'), []);
+for (const listeners of destroyedTargetListeners.values()) {
+  assert.equal(
+    listeners.length,
+    0,
+    'destroyed controls must release every press listener immediately'
+  );
+}
+pass('press interactions release scene listeners with their controls');
 
 const pressEventConsumers = [
   {
@@ -2225,7 +2619,7 @@ for (const [functionName, minimumNativeControls] of [
   ['buildPaletteRow', 1],
   ['buildPremiumPenControl', 1],
   ['toolIconButton', 1],
-  ['buildLineWidthControl', 1],
+  ['buildLineWidthControl', 2],
 ]) {
   const inspection = inspectNamedFunction(drawSceneSource, functionName);
   assert.ok(
@@ -2242,15 +2636,41 @@ assert.match(
 );
 assert.match(
   drawSceneSource,
+  /this\.submitControl\.setAttribute\('aria-hidden', 'false'\)/,
+  'the visible disabled Draw action must remain exposed to assistive technology'
+);
+assert.match(
+  drawSceneSource,
+  /if \(child\.input\) child\.input\.enabled = ready/
+);
+assert.match(
+  drawSceneSource,
+  /if \(!ready\) \{[\s\S]*submitButton\.setVisible\(true\)\.setAlpha\(0\.58\)/,
+  'Draw keeps one visibly disabled next action instead of an empty footer'
+);
+assert.match(
+  drawSceneSource,
   /this\.overlay\.moveAfter\(this\.headerControlOverlay\)/
 );
 assert.match(
   drawSceneSource,
   /this\.toolControlOverlay\.moveAfter\(this\.overlay\)/
 );
+assert.match(drawSceneSource, /this\.submitOverlay\?\.moveAfter\(afterTools\)/);
+assert.match(drawSceneSource, /'Decrease brush size'/);
+assert.match(drawSceneSource, /'Increase brush size'/);
 assert.match(
   drawSceneSource,
-  /this\.submitOverlay\?\.moveAfter\(beforeSubmit\)/
+  /this\.setLineWidth\(this\.lineWidth - LINE_WIDTH_STEP\)/
+);
+assert.match(
+  drawSceneSource,
+  /this\.setLineWidth\(this\.lineWidth \+ LINE_WIDTH_STEP\)/
+);
+assert.doesNotMatch(
+  drawSceneSource,
+  /next > MAX_LINE_WIDTH \? MIN_LINE_WIDTH : next/,
+  'brush sizing must clamp instead of wrapping from thickest to thinnest'
 );
 const overlayLifecycleSource = readFileSync(
   join(repoRoot, 'src', 'client', 'lib', 'overlay.ts'),
@@ -2603,6 +3023,14 @@ const replaySceneSource = readFileSync(
   join(repoRoot, 'src', 'client', 'scenes', 'Replay.ts'),
   'utf8'
 );
+const replayPostFightActionsSource = readFileSync(
+  join(repoRoot, 'src', 'client', 'lib', 'replaypostfightactions.ts'),
+  'utf8'
+);
+const battleCeremonySource = readFileSync(
+  join(repoRoot, 'src', 'client', 'lib', 'battleceremony.ts'),
+  'utf8'
+);
 const liveSpriteSource = readFileSync(
   join(repoRoot, 'src', 'client', 'lib', 'livesprite.ts'),
   'utf8'
@@ -2631,6 +3059,29 @@ assert.match(
   'Arena must reveal the canonical daily arena goal before fighter selection'
 );
 pass('Rival draft composes the canonical nested modal lifecycle');
+
+assert.match(
+  replayPostFightActionsSource,
+  /compactReturn \? `‹ \$\{action\.label\}` : action\.label/,
+  'compact post-fight returns must keep their destination label visible'
+);
+assert.doesNotMatch(
+  replayPostFightActionsSource,
+  /compactReturn \? ['"]‹['"] : action\.label/,
+  'post-fight return must not collapse back into an unexplained arrow'
+);
+pass('post-fight return keeps its destination visible');
+
+assert.match(battleCeremonySource, /rivalryStakes\.episodeCue/);
+assert.match(replaySceneSource, /founderEpisodeReceipt\?\.resultLine/);
+assert.doesNotMatch(
+  replaySceneSource,
+  /founderEpisodeReceipt\?\.headline\s*\?\?/,
+  'post-fight Founder copy must pay off the authored result line instead of repeating its generic score headline'
+);
+pass(
+  'Founder Rival episode cues and result lines reach the live battle surfaces'
+);
 
 assert.match(liveSpriteSource, /private readonly reactionContainer/);
 assert.match(liveSpriteSource, /private readonly poseContainer/);
@@ -2697,6 +3148,7 @@ const inventoryResponse =
 assert.equal(inventoryResponse.status, 200);
 assert.deepEqual(await inventoryResponse.json(), {
   items: {},
+  gear: {},
   pens: [],
   titles: [],
   equippedTitle: null,
@@ -2774,6 +3226,7 @@ const equipTitleResponse = await productionApiContract.app.request(
 assert.equal(equipTitleResponse.status, 200);
 assert.deepEqual(await equipTitleResponse.json(), {
   items: {},
+  gear: {},
   pens: [],
   titles: [],
   equippedTitle: null,
@@ -3905,6 +4358,17 @@ assert.deepEqual(
     'More crit · Colorburst',
   ]
 );
+assert.deepEqual(
+  shapePowerContent.planShapeReceipt('ember', 'nib_halo'),
+  {
+    cause: 'SHARP EDGES',
+    move: 'FIRETIP HALO',
+    effect: '3 ROTATING QUILLS',
+    birthLine: 'SHARP EDGES → FIRETIP HALO',
+    battleLine: 'SHARP EDGES → 3 ROTATING QUILLS',
+  },
+  'birth and battle should share one plain-language drawing receipt'
+);
 for (const content of shapePowerGuideContent) {
   assert.ok(
     content.fieldGuideCue.length > 0 && content.fieldGuideCue.length <= 24
@@ -3918,54 +4382,42 @@ for (const content of shapePowerGuideContent) {
 }
 pass('Shape Power guide content has one complete canonical catalog');
 
-assert.deepEqual(
-  drawOnboarding.planDrawFeedback({
-    inkedPixels: 0,
-    minimumInkedPixels: 100,
-    stats: { chonk: 25, spike: 25, zip: 25, charm: 25 },
-    element: 'ember',
-  }),
-  {
-    phase: 'blank',
-    message: drawOnboarding.DRAW_RULES_COPY,
-    power: null,
-  },
-  'an empty page must teach the drawing-to-power contract without claiming a default power'
-);
-assert.equal(
-  drawOnboarding.planDrawFeedback({
-    inkedPixels: 99,
-    minimumInkedPixels: 100,
-    stats: { chonk: 25, spike: 25, zip: 25, charm: 25 },
-    element: 'ember',
-  }).phase,
-  'sketching',
-  'a tiny mark should ask for a body instead of locking in a misleading build'
-);
-for (const [power, stats] of Object.entries({
-  inkquake: { chonk: 55, spike: 15, zip: 15, charm: 15 },
-  nib_halo: { chonk: 15, spike: 55, zip: 15, charm: 15 },
-  smearstep: { chonk: 15, spike: 15, zip: 55, charm: 15 },
-  colorburst: { chonk: 15, spike: 15, zip: 15, charm: 55 },
-})) {
-  const feedback = drawOnboarding.planDrawFeedback({
-    inkedPixels: 100,
-    minimumInkedPixels: 100,
-    stats,
-    element: 'ember',
-  });
-  assert.equal(feedback.phase, 'ready');
-  assert.equal(feedback.power, power);
-  assert.ok(
-    feedback.message.startsWith(
-      shapePowerContent.getShapePowerSignatureName('ember', power).toUpperCase()
-    ),
-    `${power} feedback should use its shared elemental signature`
-  );
+for (const element of ['ember', 'tide', 'moss', 'storm']) {
+  for (const power of shapePowerContent.SHAPE_POWER_IDS) {
+    const receipt = shapePowerContent.planShapeReceipt(element, power);
+    assert.match(receipt.birthLine, / → /);
+    assert.match(receipt.battleLine, / → /);
+    assert.ok(receipt.birthLine.length <= 48);
+    assert.ok(receipt.battleLine.length <= 54);
+  }
 }
-pass('live draw feedback remains deterministic and server-truthful');
+pass('drawing receipts stay complete, concise, and deterministic');
+
+const drawReceiptSource = readFileSync(
+  join(repoRoot, 'src', 'client', 'scenes', 'Draw.ts'),
+  'utf8'
+);
+assert.ok(
+  (drawReceiptSource.match(/planShapeReceipt\(/g) ?? []).length >= 2,
+  'official and practice births must share the canonical shape receipt'
+);
+assert.doesNotMatch(drawReceiptSource, /statBudgetRevealCopy/);
+assert.match(
+  drawReceiptSource,
+  /progress\.width > progressMaxWidth[\s\S]*progress\.setScale/,
+  'the longest practice receipt must fit its paper card'
+);
+assert.match(battleCeremonySource, /receiptA\.battleLine/);
+assert.match(battleCeremonySource, /receiptB\.battleLine/);
+assert.doesNotMatch(
+  battleCeremonySource,
+  /brief\.matchup\.(?:label|detail)/,
+  'the VS card should teach the drawings instead of adding a generic matchup paragraph'
+);
+pass('birth and VS screens teach drawing behavior without raw stat copy');
 
 const practicedPowers = [];
+assert.equal(practiceLab.PRACTICE_SUBMIT_LABEL, 'FIND MY POWER');
 for (let practiceIndex = 0; practiceIndex < 4; practiceIndex += 1) {
   const target = practiceLab.selectPracticeTargetPower(
     practicedPowers,
@@ -4023,6 +4475,15 @@ const firstPracticeSession = practiceLab.recordPracticeSessionPower(
 assert.equal(firstPracticeSession.lastPowerWasNew, true);
 assert.deepEqual(firstPracticeSession.triedPowers, ['inkquake']);
 assert.equal(firstPracticeSession.attemptCount, 1);
+assert.deepEqual(
+  practiceLab.planPracticeReveal(firstPracticeSession, 'Firetip Halo'),
+  {
+    headline: 'POWER FOUND!',
+    powerName: 'FIRETIP HALO',
+    progress: '1 OF 4 FOUND',
+    primaryButton: 'WATCH IT FIGHT',
+  }
+);
 const repeatedPracticeSession = practiceLab.recordPracticeSessionPower(
   firstPracticeSession,
   'inkquake'
@@ -5461,6 +5922,9 @@ const createMemoryStorage = (options = {}) => {
       ? 1
       : 0;
   let watchConflictCount = 0;
+  let failedCommandIndex = Number.isSafeInteger(options.failCommandAtIndexOnce)
+    ? options.failCommandAtIndexOnce
+    : -1;
 
   const getKeyVersion = (key) => keyVersions.get(key) ?? 0;
   const bumpKeyVersion = (key) => {
@@ -5506,6 +5970,12 @@ const createMemoryStorage = (options = {}) => {
   };
 
   const storage = {
+    async type(key) {
+      if (values.has(key)) return 'string';
+      if (hashes.has(key)) return 'hash';
+      if (sortedSets.has(key)) return 'zset';
+      return 'none';
+    },
     async get(key) {
       return values.get(key);
     },
@@ -5767,7 +6237,13 @@ const createMemoryStorage = (options = {}) => {
             watchConflictCount += 1;
             return [];
           }
-          const results = queuedCommands.map((command) => command());
+          const results = queuedCommands.map((command, commandIndex) => {
+            if (commandIndex === failedCommandIndex) {
+              failedCommandIndex = -1;
+              return new Error('Simulated Redis command error during EXEC.');
+            }
+            return command();
+          });
           if (commitsUntilReplyLoss > 0) {
             commitsUntilReplyLoss -= 1;
             if (commitsUntilReplyLoss === 0) {
@@ -5792,6 +6268,448 @@ const createMemoryStorage = (options = {}) => {
 
   return storage;
 };
+
+const submissionAccessoryId = inkCatalog.INK_ACCESSORY_CATALOG[0].id;
+const atomicSubmissionStorage = createMemoryStorage();
+const atomicSubmissionUserId = 'atomic-submission-player';
+const atomicSubmissionDay = 88;
+const atomicSubmissionScribbit = makeScribbit({
+  id: 'atomic-submission-scribbit',
+  bornDay: atomicSubmissionDay,
+  expiresDay: atomicSubmissionDay + arena.LIFESPAN_DAYS,
+});
+await arenaStore.setCurrentArenaDay(
+  atomicSubmissionStorage,
+  atomicSubmissionDay
+);
+await atomicSubmissionStorage.set(
+  inkStore.getInkKey(atomicSubmissionUserId),
+  '12'
+);
+await atomicSubmissionStorage.hSet(
+  inkStore.getInventoryKey(atomicSubmissionUserId),
+  { [submissionAccessoryId]: '2' }
+);
+await atomicSubmissionStorage.hSet(
+  streakCore.getUserPlayStreakKey(atomicSubmissionUserId),
+  { lastPlayedDateKey: '20260712', streakDays: '4' }
+);
+const atomicSubmissionResult = await submissionCore.commitScribbitSubmission(
+  atomicSubmissionStorage,
+  {
+    userId: atomicSubmissionUserId,
+    scribbit: atomicSubmissionScribbit,
+    currentDate: new Date('2026-07-13T12:00:00.000Z'),
+    accessoryIds: [submissionAccessoryId],
+    rumbleScore: 7_777,
+    inkAward: arena.INK_REWARDS.dailyDraw,
+  }
+);
+assert.deepEqual(atomicSubmissionResult, {
+  status: 'committed',
+  recovered: false,
+});
+assert.equal(
+  await atomicSubmissionStorage.get(
+    scribbitCore.getScribbitKey(atomicSubmissionScribbit.id)
+  ),
+  JSON.stringify(atomicSubmissionScribbit)
+);
+assert.equal(
+  await atomicSubmissionStorage.get(
+    scribbitCore.getScribbitOwnerKey(atomicSubmissionScribbit.id)
+  ),
+  atomicSubmissionUserId
+);
+assert.equal(
+  await atomicSubmissionStorage.zScore(
+    scribbitCore.getUserScribbitsKey(atomicSubmissionUserId),
+    atomicSubmissionScribbit.id
+  ),
+  atomicSubmissionDay
+);
+assert.equal(
+  await atomicSubmissionStorage.zScore(
+    scribbitCore.getUserAliveScribbitsKey(atomicSubmissionUserId),
+    atomicSubmissionScribbit.id
+  ),
+  atomicSubmissionDay
+);
+assert.equal(
+  await atomicSubmissionStorage.zScore(
+    scribbitCore.getExpiringScribbitsKey(),
+    atomicSubmissionScribbit.id
+  ),
+  atomicSubmissionScribbit.expiresDay
+);
+assert.equal(
+  await atomicSubmissionStorage.zScore(
+    scribbitCore.getRumbleKey(atomicSubmissionDay),
+    atomicSubmissionScribbit.id
+  ),
+  7_777
+);
+assert.deepEqual(
+  await atomicSubmissionStorage.hGetAll(
+    scribbitCore.getDailyFlagsKey(atomicSubmissionUserId, atomicSubmissionDay)
+  ),
+  { drawn: '1', entered: '1' }
+);
+assert.equal(
+  atomicSubmissionStorage.getExpirationSeconds(
+    scribbitCore.getDailyFlagsKey(atomicSubmissionUserId, atomicSubmissionDay)
+  ),
+  scribbitCore.DAILY_FLAG_TTL_SECONDS
+);
+assert.equal(
+  await atomicSubmissionStorage.get(inkStore.getInkKey(atomicSubmissionUserId)),
+  String(12 + arena.INK_REWARDS.dailyDraw)
+);
+assert.deepEqual(
+  await atomicSubmissionStorage.hGetAll(
+    streakCore.getUserPlayStreakKey(atomicSubmissionUserId)
+  ),
+  { lastPlayedDateKey: '20260713', streakDays: '5' }
+);
+const atomicSubmissionInventory = await atomicSubmissionStorage.hGetAll(
+  inkStore.getInventoryKey(atomicSubmissionUserId)
+);
+assert.equal(atomicSubmissionInventory[submissionAccessoryId], '1');
+assert.equal(
+  atomicSubmissionInventory[
+    inkStore.getInventoryDiscoveryField(submissionAccessoryId)
+  ],
+  '1'
+);
+pass('Scribbit birth atomically commits every authoritative player write');
+
+const unavailableSubmissionStorage = createMemoryStorage();
+const unavailableSubmissionScribbit = makeScribbit({
+  id: 'unavailable-submission-scribbit',
+  bornDay: 89,
+  expiresDay: 89 + arena.LIFESPAN_DAYS,
+});
+await arenaStore.setCurrentArenaDay(unavailableSubmissionStorage, 89);
+const unavailableSubmissionResult =
+  await submissionCore.commitScribbitSubmission(unavailableSubmissionStorage, {
+    userId: 'unavailable-submission-player',
+    scribbit: unavailableSubmissionScribbit,
+    currentDate: new Date('2026-07-13T12:00:00.000Z'),
+    accessoryIds: [submissionAccessoryId],
+    rumbleScore: 1,
+    inkAward: arena.INK_REWARDS.dailyDraw,
+  });
+assert.deepEqual(unavailableSubmissionResult, {
+  status: 'insufficient-accessory',
+  accessoryId: submissionAccessoryId,
+});
+assert.equal(
+  await unavailableSubmissionStorage.get(
+    scribbitCore.getScribbitKey(unavailableSubmissionScribbit.id)
+  ),
+  undefined
+);
+assert.deepEqual(
+  await unavailableSubmissionStorage.hGetAll(
+    scribbitCore.getDailyFlagsKey('unavailable-submission-player', 89)
+  ),
+  {}
+);
+assert.equal(
+  await unavailableSubmissionStorage.get(
+    inkStore.getInkKey('unavailable-submission-player')
+  ),
+  undefined
+);
+pass('rejected Scribbit birth leaves every authoritative surface untouched');
+
+const replyLossSubmissionStorage = createMemoryStorage({
+  throwAfterCommitNumber: 2,
+});
+const replyLossSubmissionUserId = 'reply-loss-submission-player';
+const replyLossSubmissionScribbit = makeScribbit({
+  id: 'reply-loss-submission-scribbit',
+  bornDay: 90,
+  expiresDay: 90 + arena.LIFESPAN_DAYS,
+});
+await arenaStore.setCurrentArenaDay(replyLossSubmissionStorage, 90);
+await replyLossSubmissionStorage.set(
+  inkStore.getInkKey(replyLossSubmissionUserId),
+  '20'
+);
+await replyLossSubmissionStorage.hSet(
+  inkStore.getInventoryKey(replyLossSubmissionUserId),
+  { [submissionAccessoryId]: '2' }
+);
+const replyLossSubmissionInput = {
+  userId: replyLossSubmissionUserId,
+  scribbit: replyLossSubmissionScribbit,
+  currentDate: new Date('2026-07-13T12:00:00.000Z'),
+  accessoryIds: [submissionAccessoryId],
+  rumbleScore: 9_999,
+  inkAward: arena.INK_REWARDS.dailyDraw,
+};
+assert.deepEqual(
+  await submissionCore.commitScribbitSubmission(
+    replyLossSubmissionStorage,
+    replyLossSubmissionInput
+  ),
+  { status: 'committed', recovered: true }
+);
+assert.equal(
+  await replyLossSubmissionStorage.get(
+    inkStore.getInkKey(replyLossSubmissionUserId)
+  ),
+  String(20 + arena.INK_REWARDS.dailyDraw)
+);
+assert.equal(
+  (
+    await replyLossSubmissionStorage.hGetAll(
+      inkStore.getInventoryKey(replyLossSubmissionUserId)
+    )
+  )[submissionAccessoryId],
+  '1'
+);
+assert.deepEqual(
+  await submissionCore.commitScribbitSubmission(replyLossSubmissionStorage, {
+    ...replyLossSubmissionInput,
+    scribbit: makeScribbit({
+      id: 'reply-loss-submission-retry',
+      bornDay: 90,
+      expiresDay: 90 + arena.LIFESPAN_DAYS,
+    }),
+  }),
+  { status: 'already-drawn' }
+);
+assert.equal(
+  await replyLossSubmissionStorage.get(
+    inkStore.getInkKey(replyLossSubmissionUserId)
+  ),
+  String(20 + arena.INK_REWARDS.dailyDraw)
+);
+pass('Scribbit birth recovers reply loss without duplicate rewards or spend');
+
+const commandErrorSubmissionStorage = createMemoryStorage({
+  failCommandAtIndexOnce: 8,
+});
+const commandErrorSubmissionUserId = 'command-error-submission-player';
+const commandErrorSubmissionScribbit = makeScribbit({
+  id: 'command-error-submission-scribbit',
+  bornDay: 93,
+  expiresDay: 93 + arena.LIFESPAN_DAYS,
+});
+await arenaStore.setCurrentArenaDay(commandErrorSubmissionStorage, 93);
+await commandErrorSubmissionStorage.set(
+  inkStore.getInkKey(commandErrorSubmissionUserId),
+  '30'
+);
+assert.deepEqual(
+  await submissionCore.commitScribbitSubmission(commandErrorSubmissionStorage, {
+    userId: commandErrorSubmissionUserId,
+    scribbit: commandErrorSubmissionScribbit,
+    currentDate: new Date('2026-07-13T12:00:00.000Z'),
+    accessoryIds: [],
+    rumbleScore: 10_001,
+    inkAward: arena.INK_REWARDS.dailyDraw,
+  }),
+  { status: 'committed', recovered: true }
+);
+assert.equal(
+  await commandErrorSubmissionStorage.get(
+    inkStore.getInkKey(commandErrorSubmissionUserId)
+  ),
+  String(30 + arena.INK_REWARDS.dailyDraw)
+);
+assert.equal(
+  await commandErrorSubmissionStorage.zScore(
+    scribbitCore.getRumbleKey(93),
+    commandErrorSubmissionScribbit.id
+  ),
+  10_001
+);
+pass('Scribbit birth repairs a Redis EXEC command error to exact state');
+
+const guardedRepairStorage = createMemoryStorage({
+  failCommandAtIndexOnce: 5,
+});
+const guardedRepairUserId = 'guarded-repair-submission-player';
+const guardedRepairScribbit = makeScribbit({
+  id: 'guarded-repair-submission-scribbit',
+  bornDay: 95,
+  expiresDay: 95 + arena.LIFESPAN_DAYS,
+});
+await arenaStore.setCurrentArenaDay(guardedRepairStorage, 95);
+const baseGuardedRepairWatch =
+  guardedRepairStorage.watch.bind(guardedRepairStorage);
+let nightlyClaimWasBlockedByActiveSubmission = false;
+guardedRepairStorage.watch = async (...keys) => {
+  const transaction = await baseGuardedRepairWatch(...keys);
+  const baseExec = transaction.exec.bind(transaction);
+  transaction.exec = async () => {
+    const result = await baseExec();
+    if (keys.includes(scribbitCore.getScribbitKey(guardedRepairScribbit.id))) {
+      const activeSubmission = await guardedRepairStorage.zScore(
+        arenaStore.getActiveScribbitSubmissionsKey(95),
+        guardedRepairScribbit.id
+      );
+      nightlyClaimWasBlockedByActiveSubmission = activeSubmission !== undefined;
+      if (!nightlyClaimWasBlockedByActiveSubmission) {
+        await guardedRepairStorage.hSet(
+          arenaStore.getNightlyResolutionClaimsKey(),
+          { '95': '1234' }
+        );
+      }
+    }
+    return result;
+  };
+  return transaction;
+};
+assert.deepEqual(
+  await submissionCore.commitScribbitSubmission(guardedRepairStorage, {
+    userId: guardedRepairUserId,
+    scribbit: guardedRepairScribbit,
+    currentDate: new Date('2026-07-13T12:00:00.000Z'),
+    accessoryIds: [],
+    rumbleScore: 10_003,
+    inkAward: arena.INK_REWARDS.dailyDraw,
+  }),
+  { status: 'committed', recovered: true }
+);
+assert.equal(nightlyClaimWasBlockedByActiveSubmission, true);
+assert.equal(
+  await guardedRepairStorage.hGet(
+    arenaStore.getNightlyResolutionClaimsKey(),
+    '95'
+  ),
+  undefined
+);
+assert.equal(
+  await guardedRepairStorage.zScore(
+    scribbitCore.getRumbleKey(95),
+    guardedRepairScribbit.id
+  ),
+  10_003
+);
+assert.equal(
+  await guardedRepairStorage.zScore(
+    arenaStore.getActiveScribbitSubmissionsKey(95),
+    guardedRepairScribbit.id
+  ),
+  undefined
+);
+pass('active submission lease blocks nightly across partial EXEC repair');
+
+const rolloverSubmissionStorage = createMemoryStorage();
+const rolloverSubmissionScribbit = makeScribbit({
+  id: 'rollover-submission-scribbit',
+  bornDay: 94,
+  expiresDay: 94 + arena.LIFESPAN_DAYS,
+});
+await arenaStore.setCurrentArenaDay(rolloverSubmissionStorage, 94);
+const baseRolloverWatch = rolloverSubmissionStorage.watch.bind(
+  rolloverSubmissionStorage
+);
+let injectedRolloverClaim = false;
+rolloverSubmissionStorage.watch = async (...keys) => {
+  const transaction = await baseRolloverWatch(...keys);
+  const baseExec = transaction.exec.bind(transaction);
+  transaction.exec = async () => {
+    if (
+      !injectedRolloverClaim &&
+      keys.includes(arenaStore.getNightlyResolutionClaimsKey())
+    ) {
+      injectedRolloverClaim = true;
+      await rolloverSubmissionStorage.hSet(
+        arenaStore.getNightlyResolutionClaimsKey(),
+        { '94': '1234' }
+      );
+    }
+    return await baseExec();
+  };
+  return transaction;
+};
+assert.deepEqual(
+  await submissionCore.commitScribbitSubmission(rolloverSubmissionStorage, {
+    userId: 'rollover-submission-player',
+    scribbit: rolloverSubmissionScribbit,
+    currentDate: new Date('2026-07-13T12:00:00.000Z'),
+    accessoryIds: [],
+    rumbleScore: 10_002,
+    inkAward: arena.INK_REWARDS.dailyDraw,
+  }),
+  { status: 'rollover' }
+);
+assert.equal(
+  await rolloverSubmissionStorage.get(
+    scribbitCore.getScribbitKey(rolloverSubmissionScribbit.id)
+  ),
+  undefined
+);
+assert.equal(
+  await rolloverSubmissionStorage.zScore(
+    scribbitCore.getRumbleKey(94),
+    rolloverSubmissionScribbit.id
+  ),
+  undefined
+);
+pass(
+  'nightly resolution claim fences a late Scribbit before its Rumble commit'
+);
+
+const noTransactionSubmissionStorage = createMemoryStorage({
+  transactions: false,
+});
+const noTransactionSubmissionScribbit = makeScribbit({
+  id: 'no-transaction-submission-scribbit',
+  bornDay: 91,
+  expiresDay: 91 + arena.LIFESPAN_DAYS,
+});
+await arenaStore.setCurrentArenaDay(noTransactionSubmissionStorage, 91);
+await assert.rejects(
+  submissionCore.commitScribbitSubmission(noTransactionSubmissionStorage, {
+    userId: 'no-transaction-submission-player',
+    scribbit: noTransactionSubmissionScribbit,
+    currentDate: new Date('2026-07-13T12:00:00.000Z'),
+    accessoryIds: [],
+    rumbleScore: 1,
+    inkAward: arena.INK_REWARDS.dailyDraw,
+  }),
+  /requires transaction support/
+);
+assert.equal(
+  await noTransactionSubmissionStorage.get(
+    scribbitCore.getScribbitKey(noTransactionSubmissionScribbit.id)
+  ),
+  undefined
+);
+
+const replyLossStoreStorage = createMemoryStorage({
+  throwAfterCommitOnce: true,
+});
+const replyLossStoredScribbit = makeScribbit({
+  id: 'reply-loss-store-scribbit',
+  bornDay: 92,
+  expiresDay: 92 + arena.LIFESPAN_DAYS,
+});
+await scribbitCore.storeScribbit(
+  replyLossStoreStorage,
+  'reply-loss-store-player',
+  replyLossStoredScribbit
+);
+assert.equal(
+  await replyLossStoreStorage.get(
+    scribbitCore.getScribbitOwnerKey(replyLossStoredScribbit.id)
+  ),
+  'reply-loss-store-player'
+);
+assert.equal(
+  await replyLossStoreStorage.zScore(
+    scribbitCore.getUserAliveScribbitsKey('reply-loss-store-player'),
+    replyLossStoredScribbit.id
+  ),
+  replyLossStoredScribbit.bornDay
+);
+pass('Scribbit storage fails closed and reconciles an ambiguous atomic commit');
 
 const hashCompareStorage = createMemoryStorage();
 await hashCompareStorage.hSet('result-comment-claim-test', {
@@ -6349,6 +7267,7 @@ const pityDrop = mockCombatBundle.selectCapsuleDrop({
 assert.equal(pityDrop.rarity, 'epic');
 const emptyMockInventory = {
   items: {},
+  gear: {},
   pens: [],
   titles: [],
   equippedTitle: null,
@@ -6859,8 +7778,8 @@ assert.deepEqual(
 );
 assert.deepEqual(
   founderChronicleCore.parseStoredFounderChronicle('{"schemaVersion":999}'),
-  founderChronicleCore.createEmptyFounderChronicle(),
-  'unknown Chronicle schemas must fail closed before launch migration exists'
+  { status: 'invalid' },
+  'unknown Chronicle schemas must be distinguished from missing state'
 );
 pass('Founder Rival Thread is paced, recoverable, bounded, and mock-identical');
 
@@ -10642,27 +11561,24 @@ assert.deepEqual(
     pageWidth: 680,
     pageHeight: 1254,
     toolbarY: 1120,
-    battleKindY: 35,
     soundButtonX: 256,
     speedButtonX: 360,
     skipButtonX: 464,
     soundButtonWidth: 96,
     speedButtonWidth: 96,
     skipButtonWidth: 96,
-    fighterPanelTop: 76,
-    fighterPanelHeight: 118,
-    healthBarY: 126,
-    healthBarWidth: 294,
-    healthBarFillWidth: 284,
-    healthBarHeight: 40,
-    healthBarFillHeight: 28,
-    fighterNameY: 88,
-    fighterMetaY: 204,
-    fighterChipY: 170,
+    fighterPanelTop: 130,
+    fighterPanelHeight: 128,
+    heartRowY: 179,
+    heartRowWidth: 294,
+    heartRowHeight: 40,
+    fighterNameY: 145,
+    fighterMetaY: 256,
+    fighterChipY: 222,
     fighterChipHeight: 28,
     battleClockX: 360,
-    battleClockY: 65,
-    arenaTop: 250,
+    battleClockY: 155,
+    arenaTop: 330,
     arenaBottom: 1058,
     arenaHorizontalPadding: 160,
     arenaVerticalPadding: 140,
@@ -10676,31 +11592,33 @@ assert.deepEqual(
     fighters: {
       a: {
         homeX: 194,
-        homeY: 654,
+        homeY: 694,
         facing: 1,
-        healthBarAnchorX: 24,
-        healthBarOriginX: 0,
         nameX: 36,
         nameOriginX: 0,
-        levelBadgeX: 318,
         chipCenterX: 171,
         panelLeft: 24,
       },
       b: {
         homeX: 526,
-        homeY: 654,
+        homeY: 694,
         facing: -1,
-        healthBarAnchorX: 696,
-        healthBarOriginX: 1,
         nameX: 684,
         nameOriginX: 1,
-        levelBadgeX: 402,
         chipCenterX: 549,
         panelLeft: 402,
       },
     },
   },
   'portrait replay layout should remain a symmetric live Inkcast stage'
+);
+const minimumReplayLayout = battlePresentation.planReplayBattleLayout({
+  viewportWidth: 480,
+  viewportHeight: 800,
+});
+assert.ok(
+  minimumReplayLayout.heartRowWidth >= 6 * 24 + 5 * 4,
+  'six responsive hearts must fit the minimum Reddit battle panel'
 );
 assert.ok(
   replayBattleLayout.soundButtonX + replayBattleLayout.soundButtonWidth / 2 <
@@ -10716,14 +11634,14 @@ assert.ok(
   'compact replay controls should remain practical at the 320px Reddit viewport'
 );
 assert.equal(
-  replayBattleLayout.fighters.a.healthBarAnchorX,
-  720 - replayBattleLayout.fighters.b.healthBarAnchorX,
-  'fighter HUD anchors should mirror around the battle clock'
+  replayBattleLayout.fighters.a.chipCenterX,
+  720 - replayBattleLayout.fighters.b.chipCenterX,
+  'fighter heart rows should mirror around the battle clock'
 );
 assert.ok(
   replayBattleLayout.fighters.b.panelLeft -
     (replayBattleLayout.fighters.a.panelLeft +
-      replayBattleLayout.healthBarWidth) >=
+      replayBattleLayout.heartRowWidth) >=
     84,
   'fighter HUDs must preserve a clean center gutter'
 );
@@ -10734,16 +11652,16 @@ assert.ok(
   'playback controls should sit below combat and above the announcer'
 );
 assert.ok(
-  replayBattleLayout.arenaBottom - replayBattleLayout.arenaTop >= 740,
+  replayBattleLayout.arenaBottom - replayBattleLayout.arenaTop >= 700,
   'live combat should retain a tall stage below the fixed battle header'
 );
 assert.ok(
-  replayBattleLayout.healthBarY + replayBattleLayout.healthBarHeight / 2 <
+  replayBattleLayout.heartRowY + replayBattleLayout.heartRowHeight / 2 <
     replayBattleLayout.fighterChipY -
       replayBattleLayout.fighterChipHeight / 2 &&
     replayBattleLayout.fighterChipY + replayBattleLayout.fighterChipHeight / 2 <
       replayBattleLayout.fighterMetaY,
-  'health, power, and Ink Mod rows must not overlap'
+  'hearts, power, and Ink Mod rows must not overlap'
 );
 assert.ok(
   replayBattleLayout.arenaHorizontalPadding >=
@@ -10904,47 +11822,84 @@ assert.deepEqual(
 );
 
 assert.deepEqual(
-  battlePresentation.planReplayHitPointBar({
+  battlePresentation.planReplayHeartMeter({
     hitPoints: 50,
     maximumHitPoints: 100,
-    fullWidth: replayBattleLayout.healthBarFillWidth,
+    heartCount: 6,
   }),
-  { ratio: 0.5, width: 142, useDangerColor: false }
+  {
+    ratio: 0.5,
+    states: ['full', 'full', 'full', 'empty', 'empty', 'empty'],
+    filledUnits: 6,
+    useDangerColor: false,
+    accessibleLabel: '50 of 100 health; 3 hearts out of 6',
+  }
 );
 assert.equal(
-  battlePresentation.planReplayHitPointBar({
+  battlePresentation.planReplayHeartMeter({
     hitPoints: 28,
     maximumHitPoints: 100,
-    fullWidth: replayBattleLayout.healthBarFillWidth,
   }).useDangerColor,
   true,
   '28% HP should enter the danger color exactly at the existing threshold'
 );
 assert.equal(
-  battlePresentation.planReplayHitPointBar({
+  battlePresentation.planReplayHeartMeter({
     hitPoints: 29,
     maximumHitPoints: 100,
-    fullWidth: replayBattleLayout.healthBarFillWidth,
   }).useDangerColor,
   false
 );
-assert.equal(
-  battlePresentation.planReplayHitPointBar({
+assert.deepEqual(
+  battlePresentation.planReplayHeartMeter({
     hitPoints: 999,
     maximumHitPoints: 100,
-    fullWidth: replayBattleLayout.healthBarFillWidth,
-  }).width,
-  replayBattleLayout.healthBarFillWidth,
-  'overflow HP should clamp to the authored bar width'
+    heartCount: 6,
+  }).states,
+  ['full', 'full', 'full', 'full', 'full', 'full'],
+  'overflow HP should clamp to a full heart row'
 );
-assert.equal(
-  battlePresentation.planReplayHitPointBar({
+assert.deepEqual(
+  battlePresentation.planReplayHeartMeter({
     hitPoints: 50,
     maximumHitPoints: 0,
-    fullWidth: replayBattleLayout.healthBarFillWidth,
-  }).width,
-  0,
-  'invalid maximum HP should fail closed to an empty bar'
+    heartCount: 6,
+  }).states,
+  ['empty', 'empty', 'empty', 'empty', 'empty', 'empty'],
+  'invalid maximum HP should fail closed to empty hearts'
+);
+assert.deepEqual(
+  battlePresentation.planReplayHeartMeter({
+    hitPoints: 25,
+    maximumHitPoints: 100,
+    heartCount: 6,
+  }).states,
+  ['full', 'half', 'empty', 'empty', 'empty', 'empty'],
+  'continuous HP should project into half-heart steps without changing combat truth'
+);
+assert.deepEqual(
+  battlePresentation.planReplayHeartMeter({
+    hitPoints: 1,
+    maximumHitPoints: 1_000,
+    heartCount: 6,
+  }),
+  {
+    ratio: 0.001,
+    states: ['half', 'empty', 'empty', 'empty', 'empty', 'empty'],
+    filledUnits: 1,
+    useDangerColor: true,
+    accessibleLabel: '1 of 1000 health; half a heart out of 6',
+  },
+  'a living fighter must always retain at least half a visible heart'
+);
+assert.deepEqual(
+  battlePresentation.planReplayHeartMeter({
+    hitPoints: 99,
+    maximumHitPoints: 100,
+    heartCount: 6,
+  }).states,
+  ['full', 'full', 'full', 'full', 'full', 'full'],
+  'heart rounding may preserve a full row while exact damage remains visible in hit reactions'
 );
 
 assert.deepEqual(
@@ -11030,7 +11985,7 @@ assert.deepEqual(
   'all replay movement and effects should share the clipping-safe arena projection'
 );
 pass(
-  'live paper arena layout, HP bars, clock, outcome stack, and arena projection'
+  'live paper arena layout, hearts, clock, outcome stack, and arena projection'
 );
 
 const timeoutRecapReport = mockCombatBundle.simulate(
@@ -12226,6 +13181,256 @@ assert.equal(
   'every shared cosmetic id should be unique and indexed'
 );
 
+assert.deepEqual(sharedEquipment.EQUIPMENT_CATEGORIES, [
+  'weapon',
+  'armor',
+  'shoes',
+  'accessory',
+]);
+assert.deepEqual(sharedEquipment.EQUIPMENT_CAPACITY, {
+  weapon: 2,
+  armor: 2,
+  shoes: 2,
+  accessory: 2,
+});
+assert.equal(
+  sharedEquipment.MAX_EQUIPPED_ITEMS,
+  8,
+  'two slots in each of four categories should allow eight equipped items'
+);
+const emptyEquipmentLoadout = sharedEquipment.createEmptyEquipmentLoadout();
+assert.deepEqual(emptyEquipmentLoadout, {
+  weapon: [null, null],
+  armor: [null, null],
+  shoes: [null, null],
+  accessory: [null, null],
+});
+assert.equal(sharedEquipment.equippedItemCount(emptyEquipmentLoadout), 0);
+
+const fullEquipmentLoadout = Object.fromEntries(
+  sharedEquipment.EQUIPMENT_CATEGORIES.map((category) => [
+    category,
+    sharedCosmetics.GEAR_CATALOG_ENTRIES.filter(
+      (entry) => entry.category === category
+    )
+      .slice(0, 2)
+      .map((entry) => entry.id),
+  ])
+);
+const parsedFullEquipmentLoadout =
+  sharedCosmetics.validateCatalogEquipmentLoadout(fullEquipmentLoadout);
+assert.deepEqual(parsedFullEquipmentLoadout, fullEquipmentLoadout);
+assert.equal(
+  sharedEquipment.equippedItemCount(parsedFullEquipmentLoadout),
+  sharedEquipment.MAX_EQUIPPED_ITEMS
+);
+assert.equal(
+  sharedEquipment.parseEquipmentLoadout({
+    ...fullEquipmentLoadout,
+    armor: [fullEquipmentLoadout.weapon[0], fullEquipmentLoadout.armor[1]],
+  }),
+  undefined,
+  'one catalog id cannot occupy two loadout slots'
+);
+assert.equal(
+  sharedEquipment.parseEquipmentLoadout({
+    ...fullEquipmentLoadout,
+    shoes: [fullEquipmentLoadout.shoes[0]],
+  }),
+  undefined,
+  'every category should have exactly two slots'
+);
+assert.equal(
+  sharedEquipment.parseEquipmentLoadout({
+    ...fullEquipmentLoadout,
+    helmet: [null, null],
+  }),
+  undefined,
+  'unknown loadout categories should be rejected'
+);
+assert.equal(
+  sharedCosmetics.validateCatalogEquipmentLoadout({
+    ...fullEquipmentLoadout,
+    armor: [fullEquipmentLoadout.weapon[0], fullEquipmentLoadout.armor[1]],
+    weapon: [null, fullEquipmentLoadout.weapon[1]],
+  }),
+  undefined,
+  'catalog category metadata, not the client slot, should own classification'
+);
+assert.equal(
+  sharedCosmetics.validateCatalogEquipmentLoadout({
+    ...fullEquipmentLoadout,
+    accessory: ['not-real-gear', fullEquipmentLoadout.accessory[1]],
+  }),
+  undefined,
+  'unknown gear ids should be rejected'
+);
+for (const category of sharedEquipment.EQUIPMENT_CATEGORIES) {
+  assert.ok(
+    sharedCosmetics.GEAR_CATALOG_ENTRIES.some(
+      (entry) => entry.category === category
+    ),
+    `${category} should have at least one catalog item`
+  );
+}
+pass('equipment categories, capacities, and catalog validation stay canonical');
+
+assert.equal(
+  sharedAccessoryEffects.ACCESSORY_EFFECT_MODE,
+  'display-only',
+  'accessory traits must remain presentation-only until server snapshots and simulations ship'
+);
+const accessoryEffectFamilies = Object.keys(
+  sharedAccessoryEffects.ACCESSORY_EFFECTS
+).sort();
+assert.deepEqual(accessoryEffectFamilies, [
+  'aim',
+  'focus',
+  'fortune',
+  'guard',
+  'ready',
+  'rush',
+]);
+for (const family of accessoryEffectFamilies) {
+  const familyItems = sharedCosmetics.ACCESSORY_CATALOG_ENTRIES.filter(
+    (entry) => entry.effectFamily === family
+  );
+  assert.equal(
+    familyItems.length,
+    4,
+    `${family} should describe exactly four gear items`
+  );
+  assert.ok(
+    familyItems.some((entry) => entry.rarity === 'common'),
+    `${family} needs a Common representative so rarity cannot gate the style`
+  );
+  const effect = sharedAccessoryEffects.accessoryEffect(family);
+  assert.equal(effect.id, family);
+  assert.ok(effect.shortCopy.length > 0);
+  assert.ok(effect.futureBenefit.length > 0);
+  assert.ok(effect.futureTradeoff.length > 0);
+}
+const combatEngineSource = readFileSync(
+  join(repoRoot, 'src', 'shared', 'combat', 'engine.ts'),
+  'utf8'
+);
+assert.doesNotMatch(
+  `${combatEngineSource}\n${serverBattleSource}`,
+  /accessoryeffects/,
+  'display-only accessory traits must not enter production combat'
+);
+pass('gear style traits cover the catalog without changing combat authority');
+
+const tinySwordFx = weaponFxPresentation.resolveWeaponFxProfile({
+  accessories: ['bowtie', 'tiny-sword'],
+});
+assert.deepEqual(tinySwordFx, {
+  weaponId: 'tiny-sword',
+  family: 'aim',
+  shaderMode: 3,
+  tint: [0.55, 0.92, 0.48],
+  fallbackColor: 0x8cea7a,
+});
+const rumbleBeltFx = weaponFxPresentation.resolveWeaponFxProfile({
+  accessories: ['inkquake-rumble-belt'],
+});
+assert.equal(rumbleBeltFx?.family, 'ready');
+assert.equal(rumbleBeltFx?.shaderMode, 7);
+assert.equal(
+  weaponFxPresentation.resolveWeaponFxProfile({ accessories: ['bowtie'] }),
+  null,
+  'non-weapon gear must not trigger weapon VFX'
+);
+for (const weapon of sharedCosmetics.GEAR_CATALOG_ENTRIES.filter(
+  (entry) => entry.category === 'weapon'
+)) {
+  const profile = weaponFxPresentation.resolveWeaponFxProfile({
+    accessories: [weapon.id],
+  });
+  assert.equal(profile?.weaponId, weapon.id);
+  assert.ok(Number.isInteger(profile?.shaderMode));
+  assert.equal(profile?.tint.length, 3);
+  assert.ok(profile?.tint.every(Number.isFinite));
+}
+assert.equal(
+  weaponFxPresentation.chooseWeaponFxQuality({
+    webgl: false,
+    reduceMotion: false,
+    override: 'full',
+  }),
+  'off',
+  'Canvas must win over a debug quality override'
+);
+assert.equal(
+  weaponFxPresentation.chooseWeaponFxQuality({
+    webgl: true,
+    reduceMotion: true,
+    override: 'full',
+  }),
+  'off',
+  'reduced motion must win over a debug quality override'
+);
+assert.equal(
+  weaponFxPresentation.chooseWeaponFxQuality({
+    webgl: true,
+    reduceMotion: false,
+    hardwareConcurrency: 2,
+  }),
+  'off'
+);
+assert.equal(
+  weaponFxPresentation.chooseWeaponFxQuality({
+    webgl: true,
+    reduceMotion: false,
+    hardwareConcurrency: 4,
+  }),
+  'balanced'
+);
+assert.equal(
+  weaponFxPresentation.chooseWeaponFxQuality({
+    webgl: true,
+    reduceMotion: false,
+    hardwareConcurrency: 8,
+  }),
+  'full'
+);
+for (const phase of ['telegraph', 'active', 'impact']) {
+  for (const critical of [false, true]) {
+    const cue = weaponFxPresentation.planWeaponFxCue(phase, critical);
+    assert.equal(cue.phase, phase);
+    assert.ok(Number.isFinite(cue.durationMilliseconds));
+    assert.ok(cue.durationMilliseconds >= 200);
+    assert.ok(cue.durationMilliseconds <= 400);
+    assert.ok(Number.isFinite(cue.intensity));
+    assert.ok(cue.intensity > 0 && cue.intensity <= 1);
+  }
+}
+const weaponFxRendererSource = readFileSync(
+  join(repoRoot, 'src', 'client', 'lib', 'weaponfxrenderer.ts'),
+  'utf8'
+);
+const weaponFxShaderSource = readFileSync(
+  join(repoRoot, 'src', 'client', 'lib', 'weaponfxshader.ts'),
+  'utf8'
+);
+assert.match(weaponFxRendererSource, /1000 \/ 30/);
+assert.doesNotMatch(
+  `${weaponFxRendererSource}\n${weaponFxShaderSource}`,
+  /cameras\.main\.filters|enableFilters\(/,
+  'weapon VFX must stay on localized quads instead of full-screen filters'
+);
+assert.match(weaponFxRendererSource, /createWeaponFxShader/);
+assert.doesNotMatch(
+  weaponFxRendererSource,
+  /fragmentSource|POST_RENDER|\.add\s*\.shader/,
+  'weapon cue orchestration must not own Phaser shader construction'
+);
+assert.match(weaponFxShaderSource, /fragmentSource/);
+assert.match(weaponFxShaderSource, /POST_RENDER/);
+assert.match(weaponFxShaderSource, /300,\s*\n\s*420/);
+assert.match(weaponFxRendererSource, /setVisible\(false\)/);
+pass('weapon VFX shader is reusable, cosmetic, tiered, localized, and bounded');
+
 const shapePowerRelicIds = new Set([
   'inkquake-rumble-belt',
   'inkquake-crater-crown',
@@ -12424,6 +13629,130 @@ assert.equal(
 );
 pass('creator title equip requires ownership and persists');
 
+const gearMergeStorage = createMemoryStorage();
+const gearMergeUserId = 'gear-merge-player';
+const gearMergeId = 'bowtie';
+await gearMergeStorage.hSet(inkStore.getInventoryKey(gearMergeUserId), {
+  [gearMergeId]: '4',
+  [inkStore.getInventoryDiscoveryField(gearMergeId)]: '1',
+});
+const migratedGearInventory = await inkStore.loadInventory(
+  gearMergeStorage,
+  gearMergeUserId
+);
+assert.deepEqual(migratedGearInventory.gear[gearMergeId], {
+  rank: 1,
+  copies: 4,
+  rarity: 'common',
+});
+assert.equal(
+  await gearMergeStorage.hGet(
+    inkStore.getInventoryKey(gearMergeUserId),
+    inkStore.getInventoryGearRankField(gearMergeId)
+  ),
+  '1',
+  'legacy discovered accessories should lazily gain a rank marker'
+);
+const firstGearMerge = await inkStore.mergeGearForUser(
+  gearMergeStorage,
+  gearMergeUserId,
+  gearMergeId,
+  'gear-merge-proof-0001'
+);
+assert.equal(firstGearMerge.status, 'merged');
+assert.equal(firstGearMerge.response.toRank, 2);
+assert.equal(firstGearMerge.response.inventory.items[gearMergeId], 1);
+assert.deepEqual(firstGearMerge.response.inventory.gear[gearMergeId], {
+  rank: 2,
+  copies: 1,
+  rarity: 'common',
+});
+const repeatedGearMerge = await inkStore.mergeGearForUser(
+  gearMergeStorage,
+  gearMergeUserId,
+  gearMergeId,
+  'gear-merge-proof-0001'
+);
+assert.deepEqual(
+  repeatedGearMerge,
+  firstGearMerge,
+  'a repeated merge operation must return its original receipt without spending again'
+);
+assert.equal(
+  (
+    await inkStore.mergeGearForUser(
+      gearMergeStorage,
+      gearMergeUserId,
+      'cape',
+      'gear-merge-proof-0001'
+    )
+  ).status,
+  'operationConflict',
+  'one operation id cannot be reused for different gear'
+);
+assert.equal(
+  (
+    await inkStore.mergeGearForUser(
+      gearMergeStorage,
+      gearMergeUserId,
+      gearMergeId,
+      'gear-merge-proof-0002'
+    )
+  ).status,
+  'insufficientCopies'
+);
+assert.deepEqual(
+  mockCombatBundle.projectGearMerge(migratedGearInventory, gearMergeId),
+  inkStore.projectGearMerge(migratedGearInventory, gearMergeId),
+  'the browser mock must project the exact production gear merge'
+);
+assert.deepEqual(arena.GEAR_RANKS, [1, 2, 3, 4, 5, 6]);
+assert.equal(arena.MAX_NORMAL_GEAR_RANK, 5);
+assert.equal(arena.RED_STAR_GEAR_RANK, 6);
+let ascendingGearInventory = {
+  ...migratedGearInventory,
+  items: { ...migratedGearInventory.items, [gearMergeId]: 15 },
+  gear: {
+    ...migratedGearInventory.gear,
+    [gearMergeId]: {
+      rank: 1,
+      copies: 15,
+      rarity: 'common',
+    },
+  },
+};
+for (const expectedRank of [2, 3, 4, 5, 6]) {
+  const projection = inkStore.projectGearMerge(
+    ascendingGearInventory,
+    gearMergeId
+  );
+  assert.equal(projection.status, 'merged');
+  assert.equal(projection.response.toRank, expectedRank);
+  assert.equal(projection.response.copiesSpent, 3);
+  ascendingGearInventory = projection.response.inventory;
+}
+assert.equal(ascendingGearInventory.gear[gearMergeId].rank, 6);
+assert.equal(ascendingGearInventory.gear[gearMergeId].copies, 0);
+assert.equal(
+  inkStore.projectGearMerge(ascendingGearInventory, gearMergeId).status,
+  'maxRank',
+  'the red star is a terminal special tier'
+);
+const redStarStorage = createMemoryStorage();
+await redStarStorage.hSet(inkStore.getInventoryKey('red-star-player'), {
+  [gearMergeId]: '2',
+  [inkStore.getInventoryDiscoveryField(gearMergeId)]: '1',
+  [inkStore.getInventoryGearRankField(gearMergeId)]: '6',
+});
+assert.equal(
+  (await inkStore.loadInventory(redStarStorage, 'red-star-player')).gear[
+    gearMergeId
+  ].rank,
+  6,
+  'stored red-star gear should survive inventory parsing'
+);
+pass('gear ranks migrate through five normal stars into one terminal red star');
+
 assert.equal(
   inkStore.isCapsulePityPull(arena.CAPSULE_PITY - 2),
   false,
@@ -12550,15 +13879,27 @@ assert.equal(
   arena.CAPSULE_COST,
   'first daily capsule pull should deduct discounted ink'
 );
-const consumedFirstAccessory = await inkStore.consumeAccessoriesForSubmit(
+const accessorySubmissionScribbit = makeScribbit({
+  id: 'accessory-submission-scribbit',
+  bornDay: duplicateDay,
+  expiresDay: duplicateDay + arena.LIFESPAN_DAYS,
+});
+await arenaStore.setCurrentArenaDay(duplicateStorage, duplicateDay);
+const consumedFirstAccessory = await submissionCore.commitScribbitSubmission(
   duplicateStorage,
-  duplicateUserId,
-  [firstDuplicateDrop.id]
+  {
+    userId: duplicateUserId,
+    scribbit: accessorySubmissionScribbit,
+    currentDate: new Date('2026-07-12T12:00:00.000Z'),
+    accessoryIds: [firstDuplicateDrop.id],
+    rumbleScore: 1_000,
+    inkAward: 0,
+  }
 );
 assert.equal(
   consumedFirstAccessory.status,
-  'consumed',
-  'the first accessory copy should be consumable'
+  'committed',
+  'the first accessory copy should be consumed by Scribbit birth'
 );
 const inventoryAfterConsumption = await inkStore.loadInventory(
   duplicateStorage,
@@ -14323,6 +15664,7 @@ await assert.rejects(
     dailyJob.runNightlyArenaJob(fencedNightlyStorage, {
       force: true,
       now: new Date(Date.UTC(2026, 6, 13)),
+      claimId: 'stale-nightly-worker-claim',
     }),
   nightlyStorageFence.StaleNightlyWorkerError,
   'a resumed stale nightly job must fail before its next Redis mutation'
@@ -14538,6 +15880,125 @@ assert.equal(
   2,
   'no-op should keep stored day'
 );
+const activeSubmissionNightlyStorage = createMemoryStorage();
+await arenaStore.setCurrentArenaDay(activeSubmissionNightlyStorage, 2);
+await activeSubmissionNightlyStorage.zAdd(
+  arenaStore.getActiveScribbitSubmissionsKey(2),
+  { member: 'active-before-nightly', score: dayTwoUtc.getTime() + 60_000 }
+);
+await assert.rejects(
+  dailyJob.runNightlyArenaJobForTesting(activeSubmissionNightlyStorage, {
+    now: dayTwoUtc,
+    force: true,
+  }),
+  /already being resolved/,
+  'nightly must wait while any registered Scribbit birth can still repair'
+);
+assert.equal(
+  await arenaStore.ensureCurrentArenaDay(
+    activeSubmissionNightlyStorage,
+    dayTwoUtc
+  ),
+  2
+);
+pass('nightly resolution waits for active Scribbit submission leases');
+
+const failedNightlyClaimStorage = createMemoryStorage();
+await arenaStore.setCurrentArenaDay(failedNightlyClaimStorage, 2);
+const failedClaimEntrantBeforeResolution = makeScribbit({
+  id: 'failed-nightly-claim-entry',
+  expiresDay: 8,
+});
+await scribbitCore.storeScribbit(
+  failedNightlyClaimStorage,
+  'failed-nightly-claim-owner',
+  failedClaimEntrantBeforeResolution
+);
+await scribbitCore.addRumbleEntrant(
+  failedNightlyClaimStorage,
+  2,
+  failedClaimEntrantBeforeResolution.id
+);
+const baseFailedNightlyClaimWatch = failedNightlyClaimStorage.watch.bind(
+  failedNightlyClaimStorage
+);
+failedNightlyClaimStorage.watch = async (...keys) => {
+  const transaction = await baseFailedNightlyClaimWatch(...keys);
+  if (
+    keys.includes(arenaStore.getNightlyResolutionClaimsKey()) &&
+    keys.includes(arenaStore.getActiveScribbitSubmissionsKey(2))
+  ) {
+    transaction.exec = async () => {
+      await transaction.discard();
+      return [new Error('Simulated nightly claim HSET failure.')];
+    };
+  }
+  return transaction;
+};
+await assert.rejects(
+  dailyJob.runNightlyArenaJobForTesting(failedNightlyClaimStorage, {
+    now: dayTwoUtc,
+    force: true,
+  }),
+  /Nightly resolution claim command failed/,
+  'nightly must not resolve entrants when its distributed claim command fails'
+);
+assert.equal(
+  await arenaStore.ensureCurrentArenaDay(failedNightlyClaimStorage, dayTwoUtc),
+  2,
+  'a failed nightly claim must not advance the arena day'
+);
+const failedClaimEntrant = await scribbitCore.loadScribbit(
+  failedNightlyClaimStorage,
+  failedClaimEntrantBeforeResolution.id
+);
+assert.equal(failedClaimEntrant.wins + failedClaimEntrant.losses, 0);
+pass('nightly fails closed when its distributed claim command errors');
+
+const replyLossNightlyClaimStorage = createMemoryStorage({
+  throwAfterCommitNumber: 2,
+});
+await arenaStore.setCurrentArenaDay(replyLossNightlyClaimStorage, 2);
+const replyLossNightlyClaimEntrant = makeScribbit({
+  id: 'reply-loss-nightly-claim-entry',
+  expiresDay: 8,
+});
+await scribbitCore.storeScribbit(
+  replyLossNightlyClaimStorage,
+  'reply-loss-nightly-claim-owner',
+  replyLossNightlyClaimEntrant
+);
+await scribbitCore.addRumbleEntrant(
+  replyLossNightlyClaimStorage,
+  2,
+  replyLossNightlyClaimEntrant.id
+);
+const replyLossNightlyClaimJob = await dailyJob.runNightlyArenaJobForTesting(
+  replyLossNightlyClaimStorage,
+  {
+    now: dayTwoUtc,
+    force: true,
+  }
+);
+assert.equal(replyLossNightlyClaimJob.skipped, false);
+assert.equal(replyLossNightlyClaimJob.resolvedDay, 2);
+assert.equal(
+  await replyLossNightlyClaimStorage.hGet(
+    arenaStore.getNightlyResolutionClaimsKey(),
+    '2'
+  ),
+  undefined,
+  'a recovered claim must release only its exact owner value'
+);
+const resolvedReplyLossClaimEntrant = await scribbitCore.loadScribbit(
+  replyLossNightlyClaimStorage,
+  replyLossNightlyClaimEntrant.id
+);
+assert.ok(
+  resolvedReplyLossClaimEntrant.wins + resolvedReplyLossClaimEntrant.losses > 0
+);
+pass('nightly recovers its exact claim after an EXEC reply is lost');
+
 const forcedJob = await dailyJob.runNightlyArenaJobForTesting(dayMathStorage, {
   now: dayTwoUtc,
   force: true,
