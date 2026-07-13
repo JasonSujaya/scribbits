@@ -42,6 +42,15 @@ body {
   opacity: 1;
 }
 
+.bag-inventory-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+.bag-inventory-scroll:focus-visible,
+.bag-inventory-scroll button:focus-visible {
+  outline: 4px solid #b7351d;
+}
+
 .rotate-prompt {
   display: none;
 }

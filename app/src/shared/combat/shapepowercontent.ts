@@ -107,6 +107,14 @@ export const SIGNATURE_MOVE_NAME_BY_ELEMENT: Readonly<
   }),
 });
 
+const BATTLE_MOVE_NAME_BY_POWER: Readonly<Record<PrimaryPower, string>> =
+  Object.freeze({
+    inkquake: 'Shockwave',
+    nib_halo: 'Quill orbit',
+    smearstep: 'Double dash',
+    colorburst: 'Color burst',
+  });
+
 export const ELEMENT_BATTLE_CUE_BY_ELEMENT: Readonly<
   Record<CombatElement, ElementBattleCue>
 > = Object.freeze({
@@ -129,6 +137,11 @@ export function getShapePowerContent(power: PrimaryPower): ShapePowerContent {
 
 export function getShapePowerDisplayName(power: PrimaryPower): string {
   return getShapePowerContent(power).displayName;
+}
+
+/** Plain combat copy for the fast-moving replay surface. */
+export function getShapePowerBattleName(power: PrimaryPower): string {
+  return BATTLE_MOVE_NAME_BY_POWER[power];
 }
 
 export function getShapePowerDrawingCue(power: PrimaryPower): string {

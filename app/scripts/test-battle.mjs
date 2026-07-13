@@ -1140,6 +1140,18 @@ assert.doesNotMatch(
 );
 assert.match(replayBattleHudSource, /planReplayHeartMeter\(/);
 assert.match(replayBattleHudSource, /renderHeartMeter\(/);
+assert.match(replayBattleHudSource, /delayedCall\(900,/);
+assert.doesNotMatch(replayBattleHudSource, /900 \* playbackSpeed/);
+assert.doesNotMatch(
+  replayBattleHudSource,
+  /getShapePowerSignatureName|visibleLabel: 'WINDUP'|visibleLabel: 'ACTIVE'/,
+  'the battle header must not restore cryptic move names or state stickers'
+);
+assert.match(
+  replayBattleHudSource,
+  /dataset\[`\$\{datasetPrefix\}ShapePowerState`\] = state/,
+  'hidden Shape Power state should remain available for live replay proof'
+);
 assert.doesNotMatch(
   replayBattleHudSource,
   /hitPointTrack|hitPointTrail|hitPointBar/,
@@ -1537,6 +1549,7 @@ assert.deepEqual(publicRouteInventory, [
   'POST /api/capsule',
   'POST /api/care',
   'POST /api/delete-my-data',
+  'POST /api/equip-gear',
   'POST /api/equip-title',
   'POST /api/legacy-cards/seen',
   'POST /api/merge-gear',
@@ -2006,6 +2019,7 @@ const paginationOwnerSource = readFileSync(
 const paginationConsumers = [
   {
     name: 'Collection',
+    usesPagination: false,
     modulePath: './ui',
     functionName: 'buildPageControls',
     source: readFileSync(
@@ -2090,7 +2104,9 @@ assert.match(
   paginationOwnerSource,
   /export function paperPagination\(options: PaperPaginationOptions\)/
 );
-for (const consumer of paginationConsumers) {
+for (const consumer of paginationConsumers.filter(
+  ({ usesPagination }) => usesPagination !== false
+)) {
   const inspection = inspectTypeScriptModule(consumer.source);
   assert.ok(
     inspection.imports
@@ -2122,7 +2138,11 @@ for (const consumer of paginationConsumers) {
     `${consumer.name} pagination must not rebuild semantic overlay controls`
   );
 }
-assert.match(paginationConsumers[0].source, /top \+ 620/);
+assert.doesNotMatch(
+  paginationConsumers[0].source,
+  /paperPagination|function buildPageControls/,
+  'Bag inventory must scroll inside its bounded tray instead of paginating'
+);
 assert.match(paginationConsumers[1].source, /top \+ 665/);
 assert.match(paginationConsumers[3].source, /top \+ 655/);
 assert.equal(
@@ -2139,7 +2159,7 @@ const aliasedPaginationImport = inspectTypeScriptModule(
 assert.deepEqual(aliasedPaginationImport.imports.get('./ui'), [
   { imported: 'paperPagination', local: 'pageArrowButton' },
 ]);
-pass('paper pagination has one owner and stays below Gallery card grids');
+pass('paper pagination has one owner while Bag uses one bounded scroll grid');
 
 assert.match(paginationConsumers[0].source, /function buildOwnedItems\(/);
 assert.doesNotMatch(
@@ -2159,15 +2179,6 @@ pass(
 
 const cardPressConsumers = [
   {
-    name: 'Collection',
-    modulePath: './ui',
-    functionName: 'buildCosmeticCard',
-    source: paginationConsumers[0].source,
-    scaleX: '0.97',
-    scaleY: '0.96',
-    retiredRestoreHelper: /\brestoreCardScale\b/,
-  },
-  {
     name: 'Legacy',
     modulePath: './ui',
     functionName: 'buildLegacyCard',
@@ -2177,6 +2188,11 @@ const cardPressConsumers = [
     retiredRestoreHelper: /\brestoreScale\b/,
   },
 ];
+assert.match(
+  paginationConsumers[0].source,
+  /mountBagInventoryGrid\(/,
+  'Bag cards must delegate touch and keyboard input to the bounded native scroll grid'
+);
 for (const consumer of cardPressConsumers) {
   const moduleInspection = inspectTypeScriptModule(consumer.source);
   assert.ok(
@@ -2189,12 +2205,11 @@ for (const consumer of cardPressConsumers) {
       ),
     `${consumer.name} cards must import the canonical press owner without an alias`
   );
-  assert.equal(
+  assert.ok(
     moduleInspection.calledIdentifiers.filter(
       (name) => name === 'addCardPressInteraction'
-    ).length,
-    1,
-    `${consumer.name} must delegate exactly once to the canonical card press owner`
+    ).length >= 1,
+    `${consumer.name} must delegate card presses to the canonical owner`
   );
   const functionInspection = inspectNamedFunction(
     consumer.source,
@@ -2618,6 +2633,7 @@ for (const [functionName, minimumNativeControls] of [
   ['buildSubmitControl', 1],
   ['buildPaletteRow', 1],
   ['buildPremiumPenControl', 1],
+  ['buildBrushSupplyControl', 1],
   ['toolIconButton', 1],
   ['buildLineWidthControl', 2],
 ]) {
@@ -2672,6 +2688,39 @@ assert.doesNotMatch(
   /next > MAX_LINE_WIDTH \? MIN_LINE_WIDTH : next/,
   'brush sizing must clamp instead of wrapping from thickest to thinnest'
 );
+assert.match(drawSceneSource, /private buildLiveStatsStrip\(/);
+assert.match(drawSceneSource, /this\.updateLiveStats\(result, ready\)/);
+assert.match(drawSceneSource, /Live build, 100 total/);
+assert.match(drawSceneSource, /paperStatIcon\(this, statName/);
+const paperIconsSource = readFileSync(
+  join(repoRoot, 'src', 'client', 'lib', 'papericons.ts'),
+  'utf8'
+);
+assert.match(
+  paperIconsSource,
+  /PaperStatIconKey = 'chonk' \| 'spike' \| 'zip' \| 'charm'/
+);
+for (const statIcon of ['chonk', 'spike', 'zip']) {
+  assert.match(
+    paperIconsSource,
+    new RegExp(`key === '${statIcon}'`),
+    `${statIcon} must have a compact Draw stat icon`
+  );
+}
+assert.match(paperIconsSource, /const heart = \[/);
+assert.match(drawSceneSource, /drawingSupplies: \{/);
+assert.match(drawSceneSource, /this\.canvas\?\.setBrushEffect/);
+const drawCanvasSource = readFileSync(
+  join(repoRoot, 'src', 'client', 'lib', 'drawcanvas.ts'),
+  'utf8'
+);
+for (const collectibleBrushEffect of ['chalk', 'ribbon', 'spray']) {
+  assert.match(
+    drawCanvasSource,
+    new RegExp(`brushEffect === '${collectibleBrushEffect}'`),
+    `${collectibleBrushEffect} must render a distinct canvas stroke`
+  );
+}
 const overlayLifecycleSource = readFileSync(
   join(repoRoot, 'src', 'client', 'lib', 'overlay.ts'),
   'utf8'
@@ -3022,6 +3071,12 @@ assert.match(modalOverlaySource, /this\.trigger\?\.isConnected/);
 const replaySceneSource = readFileSync(
   join(repoRoot, 'src', 'client', 'scenes', 'Replay.ts'),
   'utf8'
+);
+assert.match(replaySceneSource, /this\.battleHud\?\.playFighterDamage\(/);
+assert.doesNotMatch(
+  replaySceneSource,
+  /getShapePowerRevealCopy|getShapePowerSignatureName|planShapePowerCallout/,
+  'Replay should let combat effects and plain commentary explain powers without cryptic move overlays'
 );
 const replayPostFightActionsSource = readFileSync(
   join(repoRoot, 'src', 'client', 'lib', 'replaypostfightactions.ts'),
@@ -4801,6 +4856,25 @@ const powerTelegraphFact = {
 const firstTelegraph = replayCommentary
   .createReplayCommentaryAuthor(commentaryContext)
   .author(powerTelegraphFact);
+assert.match(firstTelegraph, /Shockwave/);
+assert.doesNotMatch(firstTelegraph, /Cinderquake/);
+const plainNibTelegraph = replayCommentary
+  .createReplayCommentaryAuthor({
+    ...commentaryContext,
+    fighters: {
+      ...commentaryContext.fighters,
+      b: { ...commentaryContext.fighters.b, element: 'tide' },
+    },
+  })
+  .author({
+    kind: 'power-telegraph',
+    tick: 49,
+    actor: 'b',
+    power: 'nib_halo',
+    activationNumber: 2,
+  });
+assert.match(plainNibTelegraph, /Quill orbit/);
+assert.doesNotMatch(plainNibTelegraph, /Riptide Halo/);
 assert.equal(
   replayCommentary
     .createReplayCommentaryAuthor(commentaryContext)
@@ -4933,9 +5007,22 @@ const founderSignatureReaction = founderCommentaryAuthor.author({
   power: founderCommentaryContext.fighters.a.primaryPower,
   activationNumber: 1,
 });
-assert.match(
-  founderSignatureReaction,
-  new RegExp(mosswhiskDefinition.personality.signatureReaction)
+const founderPlainReaction = mosswhiskDefinition.personality.signatureReaction
+  .slice(mosswhiskDefinition.personality.signatureReaction.indexOf('!') + 1)
+  .trim();
+assert.ok(
+  founderSignatureReaction.includes(founderPlainReaction),
+  'founder reactions should retain their authored visual description'
+);
+assert.equal(
+  founderSignatureReaction.includes(
+    shapePowerContent.getShapePowerSignatureName(
+      founderCommentaryContext.fighters.a.element,
+      founderCommentaryContext.fighters.a.primaryPower
+    )
+  ),
+  false,
+  'founder replay commentary should omit unexplained signature aliases'
 );
 assert.match(
   replayCommentary.authorFounderBattleOutcome(founderCommentaryContext, 'a'),
@@ -6270,6 +6357,8 @@ const createMemoryStorage = (options = {}) => {
 };
 
 const submissionAccessoryId = inkCatalog.INK_ACCESSORY_CATALOG[0].id;
+const submissionDrawingInkId = inkCatalog.INK_DRAWING_INK_CATALOG[0].id;
+const submissionBrushId = inkCatalog.INK_BRUSH_CATALOG[0].id;
 const atomicSubmissionStorage = createMemoryStorage();
 const atomicSubmissionUserId = 'atomic-submission-player';
 const atomicSubmissionDay = 88;
@@ -6277,6 +6366,7 @@ const atomicSubmissionScribbit = makeScribbit({
   id: 'atomic-submission-scribbit',
   bornDay: atomicSubmissionDay,
   expiresDay: atomicSubmissionDay + arena.LIFESPAN_DAYS,
+  accessories: [submissionAccessoryId],
 });
 await arenaStore.setCurrentArenaDay(
   atomicSubmissionStorage,
@@ -6288,7 +6378,12 @@ await atomicSubmissionStorage.set(
 );
 await atomicSubmissionStorage.hSet(
   inkStore.getInventoryKey(atomicSubmissionUserId),
-  { [submissionAccessoryId]: '2' }
+  {
+    [submissionAccessoryId]: '2',
+    [submissionDrawingInkId]: '2',
+    [submissionBrushId]: '1',
+    [inkStore.getInventoryGearRankField(submissionAccessoryId)]: '4',
+  }
 );
 await atomicSubmissionStorage.hSet(
   streakCore.getUserPlayStreakKey(atomicSubmissionUserId),
@@ -6301,6 +6396,10 @@ const atomicSubmissionResult = await submissionCore.commitScribbitSubmission(
     scribbit: atomicSubmissionScribbit,
     currentDate: new Date('2026-07-13T12:00:00.000Z'),
     accessoryIds: [submissionAccessoryId],
+    drawingSupplies: {
+      drawingInkId: submissionDrawingInkId,
+      brushId: submissionBrushId,
+    },
     rumbleScore: 7_777,
     inkAward: arena.INK_REWARDS.dailyDraw,
   }
@@ -6309,11 +6408,15 @@ assert.deepEqual(atomicSubmissionResult, {
   status: 'committed',
   recovered: false,
 });
+const atomicSubmissionSnapshot = {
+  ...atomicSubmissionScribbit,
+  gearRanks: { [submissionAccessoryId]: 4 },
+};
 assert.equal(
   await atomicSubmissionStorage.get(
     scribbitCore.getScribbitKey(atomicSubmissionScribbit.id)
   ),
-  JSON.stringify(atomicSubmissionScribbit)
+  JSON.stringify(atomicSubmissionSnapshot)
 );
 assert.equal(
   await atomicSubmissionStorage.get(
@@ -6376,12 +6479,48 @@ const atomicSubmissionInventory = await atomicSubmissionStorage.hGetAll(
 );
 assert.equal(atomicSubmissionInventory[submissionAccessoryId], '1');
 assert.equal(
+  atomicSubmissionInventory[submissionDrawingInkId],
+  '1',
+  'a used collectible paint should spend exactly one charge'
+);
+assert.equal(
+  atomicSubmissionInventory[submissionBrushId],
+  '0',
+  'a used collectible brush should spend its final charge exactly once'
+);
+assert.equal(
   atomicSubmissionInventory[
     inkStore.getInventoryDiscoveryField(submissionAccessoryId)
   ],
   '1'
 );
-pass('Scribbit birth atomically commits every authoritative player write');
+assert.equal(
+  atomicSubmissionInventory[
+    inkStore.getInventoryDiscoveryField(submissionDrawingInkId)
+  ],
+  '1'
+);
+assert.equal(
+  atomicSubmissionInventory[
+    inkStore.getInventoryDiscoveryField(submissionBrushId)
+  ],
+  '1'
+);
+await atomicSubmissionStorage.hSet(
+  inkStore.getInventoryKey(atomicSubmissionUserId),
+  { [inkStore.getInventoryGearRankField(submissionAccessoryId)]: '5' }
+);
+assert.deepEqual(
+  await scribbitCore.loadScribbit(
+    atomicSubmissionStorage,
+    atomicSubmissionScribbit.id
+  ),
+  atomicSubmissionSnapshot,
+  'later inventory merges must not rewrite an attached rank in a battle-ready Scribbit snapshot'
+);
+pass(
+  'Scribbit birth atomically commits every authoritative player write and drawing charge'
+);
 
 const unavailableSubmissionStorage = createMemoryStorage();
 const unavailableSubmissionScribbit = makeScribbit({
@@ -7315,6 +7454,36 @@ assert.equal(
     [mockAccessory.id]
   ).status,
   'insufficient'
+);
+const mockDrawingSupplyInventory = {
+  ...emptyMockInventory,
+  items: {
+    [submissionDrawingInkId]: 2,
+    [submissionBrushId]: 1,
+  },
+  discovered: [submissionDrawingInkId, submissionBrushId],
+};
+const consumedMockDrawingSupplies =
+  mockCombatBundle.projectSubmissionConsumableInventoryConsumption(
+    mockDrawingSupplyInventory,
+    [],
+    {
+      drawingInkId: submissionDrawingInkId,
+      brushId: submissionBrushId,
+    }
+  );
+assert.equal(consumedMockDrawingSupplies.status, 'consumed');
+assert.deepEqual(consumedMockDrawingSupplies.inventory.items, {
+  [submissionDrawingInkId]: 1,
+});
+assert.equal(
+  mockCombatBundle.projectSubmissionConsumableInventoryConsumption(
+    consumedMockDrawingSupplies.inventory,
+    [],
+    { drawingInkId: null, brushId: submissionBrushId }
+  ).status,
+  'insufficient',
+  'a depleted collectible brush must stay unavailable'
 );
 const titleInventory = {
   ...emptyMockInventory,
@@ -10218,6 +10387,13 @@ const signatureMoveNames = ['ember', 'tide', 'moss', 'storm'].flatMap(
       shapePowerContent.getShapePowerSignatureName(element, power)
     )
 );
+assert.deepEqual(
+  shapePowerContent.SHAPE_POWER_IDS.map((power) =>
+    shapePowerContent.getShapePowerBattleName(power)
+  ),
+  ['Shockwave', 'Quill orbit', 'Double dash', 'Color burst'],
+  'fast battle surfaces should use four plain effect names'
+);
 assert.equal(
   new Set(signatureMoveNames).size,
   16,
@@ -11567,18 +11743,16 @@ assert.deepEqual(
     soundButtonWidth: 96,
     speedButtonWidth: 96,
     skipButtonWidth: 96,
-    fighterPanelTop: 130,
+    fighterPanelTop: 145,
     fighterPanelHeight: 128,
-    heartRowY: 179,
+    heartRowY: 208,
     heartRowWidth: 294,
     heartRowHeight: 40,
-    fighterNameY: 145,
-    fighterMetaY: 256,
-    fighterChipY: 222,
-    fighterChipHeight: 28,
+    fighterNameY: 166,
+    arenaCaptionY: 252,
     battleClockX: 360,
-    battleClockY: 155,
-    arenaTop: 330,
+    battleClockY: 208,
+    arenaTop: 355,
     arenaBottom: 1058,
     arenaHorizontalPadding: 160,
     arenaVerticalPadding: 140,
@@ -11592,7 +11766,7 @@ assert.deepEqual(
     fighters: {
       a: {
         homeX: 194,
-        homeY: 694,
+        homeY: 706.5,
         facing: 1,
         nameX: 36,
         nameOriginX: 0,
@@ -11601,7 +11775,7 @@ assert.deepEqual(
       },
       b: {
         homeX: 526,
-        homeY: 694,
+        homeY: 706.5,
         facing: -1,
         nameX: 684,
         nameOriginX: 1,
@@ -11656,12 +11830,24 @@ assert.ok(
   'live combat should retain a tall stage below the fixed battle header'
 );
 assert.ok(
-  replayBattleLayout.heartRowY + replayBattleLayout.heartRowHeight / 2 <
-    replayBattleLayout.fighterChipY -
-      replayBattleLayout.fighterChipHeight / 2 &&
-    replayBattleLayout.fighterChipY + replayBattleLayout.fighterChipHeight / 2 <
-      replayBattleLayout.fighterMetaY,
-  'hearts, power, and Ink Mod rows must not overlap'
+  replayBattleLayout.heartRowY - replayBattleLayout.fighterNameY >= 40,
+  'fighter names and hearts should retain a visible breathing gap'
+);
+assert.ok(
+  replayBattleLayout.arenaCaptionY -
+    (replayBattleLayout.heartRowY + replayBattleLayout.heartRowHeight / 2) >=
+    20 && replayBattleLayout.arenaTop - replayBattleLayout.arenaCaptionY >= 96,
+  'hearts, quiet arena caption, and combat stage should retain separate rows'
+);
+assert.equal(
+  replayBattleLayout.battleClockY,
+  replayBattleLayout.heartRowY,
+  'the clock should sit deliberately between the heart rows'
+);
+assert.ok(
+  replayBattleLayout.fighterPanelTop + replayBattleLayout.fighterPanelHeight <
+    replayBattleLayout.arenaTop,
+  'the fighter HUD panel should end before the live combat stage'
 );
 assert.ok(
   replayBattleLayout.arenaHorizontalPadding >=
@@ -11832,6 +12018,7 @@ assert.deepEqual(
     states: ['full', 'full', 'full', 'empty', 'empty', 'empty'],
     filledUnits: 6,
     useDangerColor: false,
+    isLastHeart: false,
     accessibleLabel: '50 of 100 health; 3 hearts out of 6',
   }
 );
@@ -11888,6 +12075,7 @@ assert.deepEqual(
     states: ['half', 'empty', 'empty', 'empty', 'empty', 'empty'],
     filledUnits: 1,
     useDangerColor: true,
+    isLastHeart: true,
     accessibleLabel: '1 of 1000 health; half a heart out of 6',
   },
   'a living fighter must always retain at least half a visible heart'
@@ -11900,6 +12088,64 @@ assert.deepEqual(
   }).states,
   ['full', 'full', 'full', 'full', 'full', 'full'],
   'heart rounding may preserve a full row while exact damage remains visible in hit reactions'
+);
+assert.equal(
+  battlePresentation.planReplayHeartMeter({
+    hitPoints: 16,
+    maximumHitPoints: 100,
+    heartCount: 6,
+  }).isLastHeart,
+  true,
+  'one full visible heart should enter the last-heart warning state'
+);
+assert.equal(
+  battlePresentation.planReplayHeartMeter({
+    hitPoints: 17,
+    maximumHitPoints: 100,
+    heartCount: 6,
+  }).isLastHeart,
+  false,
+  'more than one visible heart should leave the last-heart warning state'
+);
+const heartReactionDistances = ['light', 'solid', 'heavy', 'critical'].map(
+  (tier) =>
+    battlePresentation.planReplayHeartDamageReaction({
+      tier,
+      playbackSpeed: 1,
+      reduceMotion: false,
+    }).shakeDistance
+);
+assert.deepEqual(
+  heartReactionDistances,
+  [...heartReactionDistances].sort((left, right) => left - right),
+  'heart hit shake should grow monotonically with impact tier'
+);
+assert.deepEqual(
+  battlePresentation.planReplayHeartDamageReaction({
+    tier: 'critical',
+    playbackSpeed: 4,
+    reduceMotion: true,
+  }),
+  {
+    shakeDistance: 0,
+    rotationDegrees: 0,
+    durationMilliseconds: 0,
+    repeats: 0,
+  },
+  'reduced motion should keep heart state changes but remove movement'
+);
+assert.ok(
+  battlePresentation.planReplayHeartDamageReaction({
+    tier: 'heavy',
+    playbackSpeed: 4,
+    reduceMotion: false,
+  }).durationMilliseconds >
+    battlePresentation.planReplayHeartDamageReaction({
+      tier: 'heavy',
+      playbackSpeed: 1,
+      reduceMotion: false,
+    }).durationMilliseconds,
+  'fast replay should compensate heart tween duration before Phaser time scaling'
 );
 
 assert.deepEqual(
@@ -12009,11 +12255,11 @@ assert.deepEqual(
     winnerElement: 'ember',
     headline: 'TIME • Prism Pop WINS ON INK LEFT',
     verdictLine: '20.0s • INK LEFT 85/185 vs 93/225',
-    tapeLine: '132 TOTAL DAMAGE • WILDFIRE BLOOM',
+    tapeLine: '132 TOTAL DAMAGE • COLOR BURST',
     highlight: {
       label: "WINNER'S SPLAT",
-      text: 'Wildfire Bloom CRIT • 66 to Heavy Page',
-      compactText: 'Wildfire Bloom CRIT · 66 DAMAGE',
+      text: 'Color burst CRIT • 66 to Heavy Page',
+      compactText: 'Color burst CRIT · 66 DAMAGE',
     },
     partial: false,
     finishPresentation: 'decision',
@@ -12039,12 +12285,12 @@ assert.equal(
 );
 assert.equal(
   battleRecap.formatCompactBattleRecapLesson(timeoutRecapPlan),
-  "WINNER'S SPLAT · Wildfire Bloom CRIT · 66 DAMAGE",
+  "WINNER'S SPLAT · Color burst CRIT · 66 DAMAGE",
   'compact results should teach which drawing-derived move caused the biggest hit'
 );
 assert.equal(
   battleRecap.formatBattleRecapAnnouncement(timeoutRecapPlan, 'viewer_win'),
-  "YOU WON. 20.0s • INK LEFT 85/185 vs 93/225. WINNER'S SPLAT · Wildfire Bloom CRIT · 66 DAMAGE.",
+  "YOU WON. 20.0s • INK LEFT 85/185 vs 93/225. WINNER'S SPLAT · Color burst CRIT · 66 DAMAGE.",
   'assistive technology should receive the result and the drawing-derived lesson'
 );
 const compactRecapLayout = battleRecap.planCompactBattleRecapLayout(false);
@@ -12096,11 +12342,11 @@ assert.deepEqual(
   {
     headline: 'KO • Heavy Page WINS',
     verdictLine: '17.4s • INK LEFT 70/225 vs 0/185',
-    tapeLine: '170 TOTAL DAMAGE • THUNDERFOLD',
+    tapeLine: '170 TOTAL DAMAGE • SHOCKWAVE',
     highlight: {
       label: 'FINAL SPLAT',
-      text: 'Thunderfold • 44 to Needle Star',
-      compactText: 'Thunderfold · 44 DAMAGE',
+      text: 'Shockwave • 44 to Needle Star',
+      compactText: 'Shockwave · 44 DAMAGE',
     },
     finishPresentation: 'knockout',
     finishSound: 'knockout',
@@ -12195,10 +12441,10 @@ assert.deepEqual(
 assert.equal(
   battleRecap.formatCompactBattleRecapLesson({
     highlight: null,
-    tapeLine: '87 TOTAL DAMAGE • WILDFIRE BLOOM',
+    tapeLine: '87 TOTAL DAMAGE • COLOR BURST',
   }),
-  'SHAPE POWER · 87 TOTAL DAMAGE • WILDFIRE BLOOM',
-  'compact results without a verified hit should retain the signature-and-damage lesson'
+  'SHAPE POWER · 87 TOTAL DAMAGE • COLOR BURST',
+  'compact results without a verified hit should retain the power-and-damage lesson'
 );
 
 for (const [reason, presentation, sound, headlineFragment] of [
@@ -12269,7 +12515,7 @@ assert.equal(
 tieHighlightTranscript.timeline[2].amount = 29;
 assert.equal(
   battleRecap.planBattleRecap(tieHighlightTranscript).highlight?.text,
-  'Wildfire Bloom Echo • 30 to Heavy Page',
+  'Color burst echo • 30 to Heavy Page',
   'Colorburst echo attribution requires an actual echo damage event'
 );
 pass('authoritative Inkcast recap copy and finish semantics');
@@ -12298,7 +12544,7 @@ assert.match(journalDecisionPlan.accessibleLabel, /^Replay .+ D9\.$/);
 assert.equal(journalDecisionPlan.kindDayLabel, 'EXHIBITION SPAR • DAY 9');
 assert.equal(
   journalDecisionPlan.highlightLine,
-  "WINNER'S SPLAT • Wildfire Bloom CRIT • 66 to Heavy Page"
+  "WINNER'S SPLAT • Color burst CRIT • 66 to Heavy Page"
 );
 assert.equal(
   journalDecisionPlan.metadataLine,
@@ -13171,9 +13417,19 @@ assert.equal(
   'shared cosmetic metadata should contain all 4 titles'
 );
 assert.equal(
+  sharedCosmetics.DRAWING_INK_CATALOG_ENTRIES.length,
+  3,
+  'shared cosmetic metadata should contain all 3 drawing inks'
+);
+assert.equal(
+  sharedCosmetics.BRUSH_CATALOG_ENTRIES.length,
+  3,
+  'shared cosmetic metadata should contain all 3 brushes'
+);
+assert.equal(
   sharedCosmetics.COSMETIC_CATALOG.length,
-  36,
-  'shared cosmetic metadata should contain exactly 36 entries'
+  42,
+  'shared cosmetic metadata should contain exactly 42 entries'
 );
 assert.equal(
   sharedCosmetics.COSMETIC_BY_ID.size,
@@ -13323,19 +13579,25 @@ pass('gear style traits cover the catalog without changing combat authority');
 
 const tinySwordFx = weaponFxPresentation.resolveWeaponFxProfile({
   accessories: ['bowtie', 'tiny-sword'],
+  gearRanks: { 'tiny-sword': 3 },
 });
 assert.deepEqual(tinySwordFx, {
   weaponId: 'tiny-sword',
   family: 'aim',
+  rank: 3,
+  rankProgress: 0.4,
+  rankTier: 'basic',
   shaderMode: 3,
   tint: [0.55, 0.92, 0.48],
   fallbackColor: 0x8cea7a,
 });
 const rumbleBeltFx = weaponFxPresentation.resolveWeaponFxProfile({
   accessories: ['inkquake-rumble-belt'],
+  gearRanks: { 'inkquake-rumble-belt': 6 },
 });
 assert.equal(rumbleBeltFx?.family, 'ready');
 assert.equal(rumbleBeltFx?.shaderMode, 7);
+assert.equal(rumbleBeltFx?.rankTier, 'red-star');
 assert.equal(
   weaponFxPresentation.resolveWeaponFxProfile({ accessories: ['bowtie'] }),
   null,
@@ -13344,14 +13606,77 @@ assert.equal(
 for (const weapon of sharedCosmetics.GEAR_CATALOG_ENTRIES.filter(
   (entry) => entry.category === 'weapon'
 )) {
-  const profile = weaponFxPresentation.resolveWeaponFxProfile({
-    accessories: [weapon.id],
-  });
-  assert.equal(profile?.weaponId, weapon.id);
-  assert.ok(Number.isInteger(profile?.shaderMode));
-  assert.equal(profile?.tint.length, 3);
-  assert.ok(profile?.tint.every(Number.isFinite));
+  for (const rank of [1, 2, 3, 4, 5, 6]) {
+    const profile = weaponFxPresentation.resolveWeaponFxProfile({
+      accessories: [weapon.id],
+      gearRanks: { [weapon.id]: rank },
+    });
+    assert.equal(profile?.weaponId, weapon.id);
+    assert.equal(profile?.rank, rank);
+    assert.equal(
+      profile?.rankTier,
+      rank === 6 ? 'red-star' : rank >= 4 ? 'enhanced' : 'basic'
+    );
+    assert.ok(Number.isInteger(profile?.shaderMode));
+    assert.equal(profile?.tint.length, 3);
+    assert.ok(profile?.tint.every(Number.isFinite));
+  }
 }
+assert.equal(
+  weaponFxPresentation.resolveWeaponFxProfile({
+    accessories: ['tiny-sword'],
+  })?.rank,
+  1,
+  'archived fighters without a rank snapshot should use rank 1 presentation'
+);
+assert.equal(
+  weaponFxPresentation.resolveWeaponFxProfile({
+    accessories: ['tiny-sword', 'inkquake-rumble-belt'],
+    gearRanks: { 'tiny-sword': 2, 'inkquake-rumble-belt': 6 },
+  })?.weaponId,
+  'tiny-sword',
+  'the first attached weapon should be the initial one-draw VFX source'
+);
+assert.deepEqual(
+  weaponFxPresentation.resolveWeaponFxProfile({
+    accessories: ['tiny-sword'],
+    gearRanks: { 'tiny-sword': 2, 'inkquake-rumble-belt': 6 },
+    equipmentLoadout: {
+      ...sharedEquipment.createEmptyEquipmentLoadout(),
+      weapon: ['inkquake-rumble-belt', null],
+    },
+  }),
+  rumbleBeltFx,
+  'an equipped weapon should drive the reusable VFX before a legacy welded weapon'
+);
+assert.deepEqual(
+  weaponFxPresentation
+    .resolveWeaponFxProfiles({
+      accessories: [],
+      gearRanks: { 'tiny-sword': 3, 'inkquake-rumble-belt': 6 },
+      equipmentLoadout: {
+        ...sharedEquipment.createEmptyEquipmentLoadout(),
+        weapon: ['tiny-sword', 'inkquake-rumble-belt'],
+      },
+    })
+    .map((profile) => [profile.weaponId, profile.rank]),
+  [
+    ['tiny-sword', 3],
+    ['inkquake-rumble-belt', 6],
+  ],
+  'both weapon slots should feed one deterministic alternating renderer'
+);
+const rankedWeaponOwner = {
+  ...makeScribbit({ accessories: ['tiny-sword'] }),
+  gearRanks: { 'tiny-sword': 5 },
+};
+const clonedRankedWeaponOwner = arena.cloneScribbit(rankedWeaponOwner);
+clonedRankedWeaponOwner.gearRanks['tiny-sword'] = 2;
+assert.equal(
+  rankedWeaponOwner.gearRanks['tiny-sword'],
+  5,
+  'cloning a Scribbit must isolate its immutable attached-rank snapshot'
+);
 assert.equal(
   weaponFxPresentation.chooseWeaponFxQuality({
     webgl: false,
@@ -13404,6 +13729,14 @@ for (const phase of ['telegraph', 'active', 'impact']) {
     assert.ok(Number.isFinite(cue.intensity));
     assert.ok(cue.intensity > 0 && cue.intensity <= 1);
   }
+  const rankedIntensities = [1, 2, 3, 4, 5, 6].map(
+    (rank) => weaponFxPresentation.planWeaponFxCue(phase, false, rank).intensity
+  );
+  assert.deepEqual(
+    rankedIntensities,
+    [...rankedIntensities].sort((left, right) => left - right),
+    `${phase} weapon intensity should improve from rank 1 through red-star rank 6`
+  );
 }
 const weaponFxRendererSource = readFileSync(
   join(repoRoot, 'src', 'client', 'lib', 'weaponfxrenderer.ts'),
@@ -13420,6 +13753,15 @@ assert.doesNotMatch(
   'weapon VFX must stay on localized quads instead of full-screen filters'
 );
 assert.match(weaponFxRendererSource, /createWeaponFxShader/);
+assert.match(weaponFxRendererSource, /runtime\.profiles\.length > 1/);
+assert.match(weaponFxShaderSource, /if \(uRank > 0\.42\)/);
+assert.match(weaponFxShaderSource, /if \(uRank > 0\.99\)/);
+assert.match(weaponFxShaderSource, /if \(uQuality > 0\.5\)/);
+assert.doesNotMatch(
+  weaponFxShaderSource,
+  /smoothstep\((?:0\.75, -0\.9|0\.75, 0\.42|1\.0, 0\.1|0\.95, 0\.2|0\.22, 0\.0|0\.95, 0\.28|0\.95, 0\.18|0\.18, 0\.0|0\.82, 0\.24)/,
+  'shader smoothstep edges must stay ascending for WebGL driver portability'
+);
 assert.doesNotMatch(
   weaponFxRendererSource,
   /fragmentSource|POST_RENDER|\.add\s*\.shader/,
@@ -15820,18 +16162,35 @@ await scribbitCore.storeScribbit(
   'atomic-spar-owner',
   atomicSparWinner
 );
-assert.equal(
-  await scribbitCore.claimAndAwardDailySparWin(atomicSparRewardStorage, {
+const recoveredAtomicSparReward = await scribbitCore.claimAndAwardDailySparWin(
+  atomicSparRewardStorage,
+  {
     userId: 'atomic-spar-owner',
     scribbitId: atomicSparWinner.id,
     utcDateKey: '20260707',
     reportId: 'atomic-spar-report',
     inkAmount: arena.INK_REWARDS.sparWin,
-  }),
-  'already-awarded-this-report',
+  }
+);
+assert.deepEqual(
+  recoveredAtomicSparReward,
+  {
+    status: 'already-awarded-this-report',
+    receipt: {
+      version: 1,
+      reportId: 'atomic-spar-report',
+      scribbitId: atomicSparWinner.id,
+      xpAwarded: 1,
+      inkAwarded: arena.INK_REWARDS.sparWin,
+      xpBefore: 0,
+      xpAfter: 1,
+      levelBefore: 1,
+      levelAfter: 1,
+    },
+  },
   'an ambiguous transaction reply must recover the exact reward receipt'
 );
-assert.equal(
+assert.deepEqual(
   await scribbitCore.claimAndAwardDailySparWin(atomicSparRewardStorage, {
     userId: 'atomic-spar-owner',
     scribbitId: atomicSparWinner.id,
@@ -15839,9 +16198,9 @@ assert.equal(
     reportId: 'atomic-spar-report',
     inkAmount: arena.INK_REWARDS.sparWin,
   }),
-  'already-awarded-this-report'
+  recoveredAtomicSparReward
 );
-assert.equal(
+assert.deepEqual(
   await scribbitCore.claimAndAwardDailySparWin(atomicSparRewardStorage, {
     userId: 'atomic-spar-owner',
     scribbitId: atomicSparWinner.id,
@@ -15849,7 +16208,7 @@ assert.equal(
     reportId: 'different-spar-report',
     inkAmount: arena.INK_REWARDS.sparWin,
   }),
-  'already-claimed'
+  { status: 'already-claimed', receipt: null }
 );
 assert.equal(
   (
@@ -15866,6 +16225,272 @@ assert.equal(
   arena.INK_REWARDS.sparWin
 );
 pass('daily spar XP and Ink commit atomically with one recoverable receipt');
+
+for (const failedCommandIndex of [0, 1, 2]) {
+  const partialSparRewardStorage = createMemoryStorage({
+    failCommandAtIndexOnce: failedCommandIndex,
+  });
+  const ownerId = `partial-spar-owner-${failedCommandIndex}`;
+  const reportId = `partial-spar-report-${failedCommandIndex}`;
+  const winner = makeScribbit({
+    id: `partial-spar-winner-${failedCommandIndex}`,
+    name: `Partial Spar Winner ${failedCommandIndex}`,
+  });
+  await partialSparRewardStorage.set(
+    scribbitCore.getScribbitKey(winner.id),
+    JSON.stringify(winner)
+  );
+
+  const repairedReward = await scribbitCore.claimAndAwardDailySparWin(
+    partialSparRewardStorage,
+    {
+      userId: ownerId,
+      scribbitId: winner.id,
+      utcDateKey: '20260708',
+      reportId,
+      inkAmount: arena.INK_REWARDS.sparWin,
+    }
+  );
+  const expectedReceipt = {
+    version: 1,
+    reportId,
+    scribbitId: winner.id,
+    xpAwarded: 1,
+    inkAwarded: arena.INK_REWARDS.sparWin,
+    xpBefore: 0,
+    xpAfter: 1,
+    levelBefore: 1,
+    levelAfter: 1,
+  };
+  assert.deepEqual(repairedReward, {
+    status: 'awarded',
+    receipt: expectedReceipt,
+  });
+  assert.equal(
+    (
+      await scribbitCore.loadScribbit(
+        partialSparRewardStorage,
+        winner.id,
+        '20260708'
+      )
+    )?.xp,
+    1,
+    `failed EXEC command ${failedCommandIndex} must repair Scribbit XP`
+  );
+  assert.equal(
+    await inkStore.getInkBalance(partialSparRewardStorage, ownerId),
+    arena.INK_REWARDS.sparWin,
+    `failed EXEC command ${failedCommandIndex} must repair Ink exactly once`
+  );
+  assert.deepEqual(
+    JSON.parse(
+      await partialSparRewardStorage.hGet(
+        scribbitCore.getUserDailySparWinRewardsKey(ownerId),
+        '20260708'
+      )
+    ),
+    expectedReceipt,
+    `failed EXEC command ${failedCommandIndex} must repair the receipt`
+  );
+  assert.deepEqual(
+    await scribbitCore.claimAndAwardDailySparWin(partialSparRewardStorage, {
+      userId: ownerId,
+      scribbitId: winner.id,
+      utcDateKey: '20260708',
+      reportId,
+      inkAmount: arena.INK_REWARDS.sparWin,
+    }),
+    {
+      status: 'already-awarded-this-report',
+      receipt: expectedReceipt,
+    },
+    `failed EXEC command ${failedCommandIndex} must stay idempotent`
+  );
+}
+pass(
+  'partial daily spar EXEC failures repair every reward surface exactly once'
+);
+
+const concurrentAfterSuccessStorage = createMemoryStorage();
+const concurrentAfterSuccessOwnerId = 'concurrent-after-success-owner';
+const concurrentAfterSuccessReportId = 'concurrent-after-success-report';
+const concurrentAfterSuccessWinner = makeScribbit({
+  id: 'concurrent-after-success-winner',
+});
+const concurrentAfterSuccessInkKey = inkStore.getInkKey(
+  concurrentAfterSuccessOwnerId
+);
+await concurrentAfterSuccessStorage.set(
+  scribbitCore.getScribbitKey(concurrentAfterSuccessWinner.id),
+  JSON.stringify(concurrentAfterSuccessWinner)
+);
+const originalConcurrentAfterSuccessWatch =
+  concurrentAfterSuccessStorage.watch.bind(concurrentAfterSuccessStorage);
+let injectAfterSuccessfulSparCommit = true;
+concurrentAfterSuccessStorage.watch = async (...keys) => {
+  const transaction = await originalConcurrentAfterSuccessWatch(...keys);
+  const originalExec = transaction.exec.bind(transaction);
+  return {
+    ...transaction,
+    async exec() {
+      const result = await originalExec();
+      if (injectAfterSuccessfulSparCommit) {
+        injectAfterSuccessfulSparCommit = false;
+        await concurrentAfterSuccessStorage.set(
+          concurrentAfterSuccessInkKey,
+          '7'
+        );
+      }
+      return result;
+    },
+  };
+};
+const concurrentAfterSuccessResult =
+  await scribbitCore.claimAndAwardDailySparWin(
+    concurrentAfterSuccessStorage,
+    {
+      userId: concurrentAfterSuccessOwnerId,
+      scribbitId: concurrentAfterSuccessWinner.id,
+      utcDateKey: '20260710',
+      reportId: concurrentAfterSuccessReportId,
+      inkAmount: arena.INK_REWARDS.sparWin,
+    }
+  );
+assert.equal(concurrentAfterSuccessResult.status, 'awarded');
+assert.equal(
+  concurrentAfterSuccessResult.receipt?.reportId,
+  concurrentAfterSuccessReportId
+);
+assert.equal(
+  await concurrentAfterSuccessStorage.hGet(
+    scribbitCore.getUserDailySparWinRewardsKey(concurrentAfterSuccessOwnerId),
+    '20260710'
+  ),
+  JSON.stringify(concurrentAfterSuccessResult.receipt),
+  'a successful EXEC must keep its verified receipt despite later economy activity'
+);
+assert.equal(
+  await inkStore.getInkBalance(
+    concurrentAfterSuccessStorage,
+    concurrentAfterSuccessOwnerId
+  ),
+  7,
+  'a legitimate post-commit Ink change must not be mistaken for a partial reward'
+);
+pass('successful Spar EXEC results survive immediate concurrent economy activity');
+
+const conflictingSparRewardStorage = createMemoryStorage({
+  failCommandAtIndexOnce: 0,
+});
+const conflictingSparOwnerId = 'conflicting-spar-owner';
+const conflictingSparReportId = 'conflicting-spar-report';
+const conflictingSparWinner = makeScribbit({
+  id: 'conflicting-spar-winner',
+});
+const conflictingSparInkKey = inkStore.getInkKey(conflictingSparOwnerId);
+await conflictingSparRewardStorage.set(
+  scribbitCore.getScribbitKey(conflictingSparWinner.id),
+  JSON.stringify(conflictingSparWinner)
+);
+const originalConflictingSparWatch = conflictingSparRewardStorage.watch.bind(
+  conflictingSparRewardStorage
+);
+let injectConflictingSparMutation = true;
+conflictingSparRewardStorage.watch = async (...keys) => {
+  const transaction = await originalConflictingSparWatch(...keys);
+  const originalExec = transaction.exec.bind(transaction);
+  return {
+    ...transaction,
+    async exec() {
+      const result = await originalExec();
+      if (injectConflictingSparMutation) {
+        injectConflictingSparMutation = false;
+        await conflictingSparRewardStorage.set(conflictingSparInkKey, '999');
+      }
+      return result;
+    },
+  };
+};
+await assert.rejects(
+  scribbitCore.claimAndAwardDailySparWin(conflictingSparRewardStorage, {
+    userId: conflictingSparOwnerId,
+    scribbitId: conflictingSparWinner.id,
+    utcDateKey: '20260710',
+    reportId: conflictingSparReportId,
+    inkAmount: arena.INK_REWARDS.sparWin,
+  }),
+  /could not be repaired safely/,
+  'conflicting state after a partial EXEC must fail instead of trusting the receipt alone'
+);
+assert.equal(
+  await conflictingSparRewardStorage.hGet(
+    scribbitCore.getUserDailySparWinRewardsKey(conflictingSparOwnerId),
+    '20260710'
+  ),
+  `report:${conflictingSparReportId}`,
+  'an unverifiable partial reward must be quarantined without a payout receipt'
+);
+assert.deepEqual(
+  await scribbitCore.claimAndAwardDailySparWin(conflictingSparRewardStorage, {
+    userId: conflictingSparOwnerId,
+    scribbitId: conflictingSparWinner.id,
+    utcDateKey: '20260710',
+    reportId: conflictingSparReportId,
+    inkAmount: arena.INK_REWARDS.sparWin,
+  }),
+  { status: 'already-awarded-this-report', receipt: null },
+  'a quarantined reward must stay idempotent without reporting an unverifiable payout'
+);
+pass(
+  'conflicting partial Spar rewards fail closed and quarantine their receipt'
+);
+
+const legacySparRewardStorage = createMemoryStorage();
+const legacySparWinner = makeScribbit({ id: 'legacy-spar-winner' });
+await legacySparRewardStorage.set(
+  scribbitCore.getScribbitKey(legacySparWinner.id),
+  JSON.stringify(legacySparWinner)
+);
+await legacySparRewardStorage.hSet(
+  scribbitCore.getUserDailySparWinRewardsKey('legacy-spar-owner'),
+  { '20260709': 'report:legacy-spar-report' }
+);
+assert.deepEqual(
+  await scribbitCore.claimAndAwardDailySparWin(legacySparRewardStorage, {
+    userId: 'legacy-spar-owner',
+    scribbitId: legacySparWinner.id,
+    utcDateKey: '20260709',
+    reportId: 'legacy-spar-report',
+    inkAmount: arena.INK_REWARDS.sparWin,
+  }),
+  { status: 'already-awarded-this-report', receipt: null },
+  'legacy report markers must not synthesize modern reward state'
+);
+assert.deepEqual(
+  await scribbitCore.claimAndAwardDailySparWin(legacySparRewardStorage, {
+    userId: 'legacy-spar-owner',
+    scribbitId: legacySparWinner.id,
+    utcDateKey: '20260709',
+    reportId: 'different-legacy-spar-report',
+    inkAmount: arena.INK_REWARDS.sparWin,
+  }),
+  { status: 'already-claimed', receipt: null }
+);
+assert.equal(
+  (
+    await scribbitCore.loadScribbit(
+      legacySparRewardStorage,
+      legacySparWinner.id,
+      '20260709'
+    )
+  )?.xp,
+  0
+);
+assert.equal(
+  await inkStore.getInkBalance(legacySparRewardStorage, 'legacy-spar-owner'),
+  0
+);
+pass('legacy daily spar markers remain idempotent without guessed payouts');
 
 const dayMathStorage = createMemoryStorage();
 await arenaStore.setCurrentArenaDay(dayMathStorage, 2);

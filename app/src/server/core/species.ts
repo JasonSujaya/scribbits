@@ -6,6 +6,7 @@ import {
   FOUNDING_SCRIBBIT_DEFINITIONS,
   type FoundingScribbitDefinition,
 } from '../../shared/founders';
+import { createEmptyEquipmentLoadout } from '../../shared/equipment';
 import { shuffleWithSeed } from './random';
 
 const createFoundingScribbit = (
@@ -27,6 +28,7 @@ const createFoundingScribbit = (
     legendTitle: null,
     isFounding: true,
     accessories: [],
+    equipmentLoadout: createEmptyEquipmentLoadout(),
     upgrades: createScribbitUpgradesForLevel(definition.id, definition.level),
     level: definition.level,
     xp: LEVEL_XP_THRESHOLDS[definition.level - 1] ?? 0,

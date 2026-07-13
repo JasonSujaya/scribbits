@@ -14,6 +14,7 @@ import { isShapePowerId } from '../../shared/combat/shapepowercontent';
 export {
   getDamageSourceDisplayName,
   getElementBattleCue,
+  getShapePowerBattleName,
   getShapePowerDisplayName,
   getShapePowerNoCleanHitCallout,
   getShapePowerRevealCopy,

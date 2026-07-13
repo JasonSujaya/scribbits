@@ -5,7 +5,7 @@
 > If the concept already has a home, extend that file. If a new home is truly
 > needed, explain why before writing a parallel implementation.
 
-_Last verified: 2026-07-13 against commit 2087457 and the current uncommitted worktree. Update with the app-overview skill._
+_Last verified: 2026-07-13 against commit b2cd09a and the current uncommitted worktree. Update with the app-overview skill._
 
 ## What this app is
 
@@ -27,21 +27,20 @@ The hook is immediate and personal: a player's own drawing visibly changes how a
 | Pick                 | The player's one daily prediction on another contender          | `backScribbit` transport boundary | Back, Backed, bet, cheer, vote |
 | Belief               | Community support attached to a Scribbit                        | `belief`                          | like, heart count, cheer       |
 | Ink                  | Earned currency used for Mystery Capsules                       | `myInk`                           | coins, gems, energy            |
-| Gear                 | A catalog item classified as weapon, armor, shoes, or accessory | `CosmeticGearCatalogEntry`        | sticker, Ink Mod               |
+| Gear                 | A reusable catalog item equipped as a weapon, armor, shoes, or accessory | `CosmeticGearCatalogEntry` | sticker, Ink Mod               |
+| Bag                  | The player's inventory, Gear loadout, pens, and titles          | Gallery `collection` branch       | Ink Kit, Collection screen     |
 | Legacy Card          | The frozen record created when a Scribbit's life ends           | `LegacyCard`                      | grave, archive item            |
 | Founder Rival Thread | A paced story rivalry with a founding Scribbit                  | `FounderChronicle`                | campaign, questline            |
 | Rival Run            | A server-authored three-bout scored challenge                   | `RivalRunState`                   | ladder, gauntlet               |
-| Scout Notebook       | Tonight plus six prior Arena days of prediction evidence        | `ScoutNotebookState`              | analytics, history feed        |
 
 ## The main flows
 
 1. **A player opens the Reddit post → enters the expanded game → draws a Scribbit that comes alive and fights.** The lightweight splash shows live daily status, while Draw owns the canvas, Dare, name step, submission, and birth ceremony; the server rechecks the PNG before creating the Scribbit or granting durable rewards. (`app/src/client/splash.ts`, `app/src/client/scenes/Draw.ts`)
 2. **The server resolves a fight → the player watches a deterministic replay → the result returns to the right scene.** The fixed-tick engine owns outcomes and the arena micro-goal score; Replay only projects the immutable timeline, reports that stored goal state, and stages follow-up actions through the registry. (`app/src/shared/combat/engine.ts`, `app/src/shared/battlearena.ts`, `app/src/client/scenes/Replay.ts`)
 3. **A returning player opens Arena → sees today's arena goal → chooses one owned fighter → chooses Champion or Spar → fights.** Arena is the one home for starting living-Scribbit battles; its target-icon headline comes from the canonical daily arena definition. Battles remains replay history, Draw owns creation and Practice, and the generic Scribbit detail modal owns care/inspection rather than combat initiation. (`app/src/shared/battlearena.ts`, `app/src/client/scenes/ArenaHome.ts`, `app/src/client/scenes/MyBattles.ts`)
-4. **A player makes one Rumble Pick → the server locks that daily prediction → the nightly job awards Clout and files a receipt.** The Pick is a separate status card, not a fight button; the client never decides eligibility, placement, or payout. (`app/src/server/core/clout.ts`, `app/src/server/core/dailyJob.ts`)
-5. **A player earns Ink → pulls a Mystery Capsule → permanently grows a cosmetic collection.** Inventory, pity, duplicate handling, equipped titles, and operation recovery stay server-owned. (`app/src/server/core/inkStore.ts`, `app/src/client/lib/capsulemachine.ts`)
-6. **A Scribbit reaches the end of its life → the server freezes a Legacy Card → the player can revisit it in Gallery.** Public Legends, personal Legacy, and Collection share one Gallery scene, while one shared contract keeps production and localhost paging identical. (`app/src/shared/legacycards.ts`, `app/src/client/scenes/Gallery.ts`)
-7. **A player opens Scout → compares tonight with prior days → watches a real filed replay when available.** Scout projects existing Pick, payout, forecast, and report records; it does not invent historical outcomes. (`app/src/server/core/scoutNotebook.ts`, `app/src/client/scenes/ScoutNotebook.ts`)
+4. **A player opens Arena → makes one Rumble Pick → the server locks that daily prediction → the nightly job awards Clout and files a receipt.** Rumble Pick is a compact secondary Arena action, not a fight mode; the client never decides eligibility, placement, or payout. (`app/src/client/scenes/ArenaHome.ts`, `app/src/server/core/clout.ts`, `app/src/server/core/dailyJob.ts`)
+5. **A player earns Ink → pulls a Mystery Capsule → opens Bag → equips discovered Gear on a living Scribbit.** Bag centers the selected Scribbit inside two weapon, armor, shoes, and accessory slots; the server persists each loadout, while duplicate copies remain Forge material. Inventory, pity, duplicate handling, titles, Gear, and operation recovery stay server-owned. (`app/src/server/core/inkStore.ts`, `app/src/server/core/scribbit.ts`, `app/src/client/lib/collectionbook.ts`)
+6. **A Scribbit reaches the end of its life → the server freezes a Legacy Card → the player can revisit it in Gallery.** Gallery owns public Legends and personal Legacy; Bag owns mutable inventory and equipment. They reuse one orchestration scene without presenting those concepts as the same destination. (`app/src/shared/legacycards.ts`, `app/src/client/scenes/Gallery.ts`)
 
 ## One home per thing
 
@@ -58,7 +57,8 @@ The hook is immediate and personal: a player's own drawing visibly changes how a
 | Cross-scene transient state                                     | `app/src/client/lib/registry.ts`                | introduce ad-hoc registry keys in scenes                                                                |
 | Scribbit validation, ownership, lifecycle, and Redis records    | `app/src/server/core/scribbit.ts`               | mutate Scribbit hashes directly from routes                                                             |
 | Level thresholds and Ink Mod acquisition policy                 | `app/src/shared/progression.ts`                 | hardcode level or Ink Mod limits in combat, server, or client code                                      |
-| Equipment categories, two-slot capacity, and loadout validation | `app/src/shared/equipment.ts`                   | repurpose birth-time `AttachedAccessory` placement data as reusable equipment                           |
+| Equipment categories, two-slot capacity, and loadout projection | `app/src/shared/equipment.ts`                   | repurpose birth-time `AttachedAccessory` placement data as reusable equipment                           |
+| Per-Scribbit loadout ownership, persistence, and mutation        | `app/src/server/core/scribbit.ts`               | store loadout authority in routes, scenes, or the browser                                               |
 | Fixed-tick combat outcome                                       | `app/src/shared/combat/engine.ts`               | calculate winners or damage in the client                                                               |
 | Battle arena rotation, modifiers, and challenges                | `app/src/shared/battlearena.ts`                 | hardcode arena rules in Replay, routes, or battle storage                                               |
 | Battle transcript runtime validation                            | `app/src/shared/combat/transcriptvalidation.ts` | redefine event, checkpoint, fighter, or result validation in storage or Replay                          |
@@ -69,6 +69,8 @@ The hook is immediate and personal: a player's own drawing visibly changes how a
 | Complete Scribbit removal across all indexes                    | `app/src/server/core/removal.ts`                 | copy battle, Champion, moderation, and Scribbit cleanup into routes or privacy deletion                  |
 | Returning-player Rumble receipt composition                     | `app/src/server/core/rumbleReturn.ts`            | project backed and owned return variants independently in routes                                        |
 | Ink, capsule, inventory, and title persistence                  | `app/src/server/core/inkStore.ts`               | store cosmetic authority in the browser                                                                 |
+| Bag inventory and equipment presentation                       | `app/src/client/lib/collectionbook.ts`           | add inventory or loadout controls to Gallery Legends or Legacy                                          |
+| Bag bounded inventory scrolling and semantic item grid          | `app/src/client/lib/baginventorygrid.ts`         | make the whole Bag scene scroll or create a second item-grid input path                                  |
 | Legacy Card cursor, projection, ordering, and page policy       | `app/src/shared/legacycards.ts`                 | redefine limits, cursors, or card projection in routes or the local mock                                |
 | Legacy Card Redis index and receipt persistence                 | `app/src/server/core/legacy.ts`                 | reconstruct expired Scribbits from current rows or write the index from routes                          |
 | Canonical founding Scribbits                                    | `app/src/shared/founders.ts`                    | copy founder stats or identities into UI files                                                          |
@@ -82,10 +84,11 @@ The hook is immediate and personal: a player's own drawing visibly changes how a
 
 ## Expected user behavior
 
-Players draw in portrait, watch server-authored fights, make one meaningful daily Pick, care for living Scribbits, and return after the nightly resolution. They may ignore optional Dares, cosmetics, story threads, and scouting without breaking the critical path. A player never edits stats, chooses a winner, repeats an irreversible daily Pick, or needs to understand Redis, UTC storage keys, battle seeds, or replay internals. (`app/src/client/scenes/Draw.ts`, `app/src/server/core/scribbit.ts`)
+Players draw in portrait, watch server-authored fights, make one meaningful daily Pick from Arena, care for living Scribbits, manage equipment in Bag, and browse Legends or Legacy in Gallery. Discovered Gear is a reusable account unlock that may be equipped on multiple living Scribbits; loose copies are Forge material, not a second ownership requirement. Players may ignore optional Dares, cosmetics, and story threads without breaking the critical path. A player never edits stats, chooses a winner, repeats an irreversible daily Pick, or needs to understand Redis, UTC storage keys, battle seeds, or replay internals. (`app/src/client/scenes/Draw.ts`, `app/src/client/scenes/ArenaHome.ts`, `app/src/server/core/scribbit.ts`)
 
 ## Not built yet
 
 - There is no synchronous networked PvP transport; combat is server-resolved and then streamed from an immutable report as a replay. (`app/src/server/core/battle.ts`, `app/src/client/scenes/Replay.ts`)
-- Reusable per-Scribbit loadouts are not persisted or applied to combat yet. The shared contract reserves two weapon, armor, shoes, and accessory slots; current birth-time accessories remain consumed, baked into the submitted image, and presentation-only. (`app/src/shared/equipment.ts`, `app/src/server/core/submission.ts`, `app/src/shared/accessoryeffects.ts`)
+- Loadouts are persisted and displayed, and an equipped weapon selects its cosmetic battle-effect family. Gear does not change combat math or deterministic transcripts; armor, shoes, and accessories are presentation-only, and the submitted body PNG is not repainted around newly equipped pieces. Birth-time accessories remain a separate consumed, baked-image system. (`app/src/shared/equipment.ts`, `app/src/client/lib/weaponfxpresentation.ts`, `app/src/server/core/submission.ts`)
+- Scout Notebook is no longer a primary navigation destination. Its scene and API remain temporarily for saved-replay compatibility and can be removed after those return paths no longer reference it. (`app/src/client/scenes/ScoutNotebook.ts`, `app/src/server/core/scoutNotebook.ts`)
 - Remaining cleanup opportunities are tracked in `SLOP-AUDIT.md`; none is a second gameplay authority path.

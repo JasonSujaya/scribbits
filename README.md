@@ -20,7 +20,7 @@ after the player taps the three-portrait Rumble preview.
 
 The shared Craftbox shell uses a generated torn-paper stage, bundled DynaPuff,
 one die-cut icon family, and GPT-generated hand-cut paper buttons across Arena,
-Gallery, Draw, Battles, and Scout.
+Bag, Draw, Battles, and Gallery.
 The active tab is the only coral ticket; hearts, clocks, Ink, and Shape Powers
 use shared paper icons instead of emoji or text pretending to be controls.
 Compact or detected low-power devices keep that paper art but skip ambient
@@ -48,13 +48,13 @@ arena effects and Inkbody deformation update at a bounded 30 Hz.
    daily Champion Contract for +2 XP on a win.
 6. Once today's Scribbit locks, use the reward-free Four-Power Practice Lab to
    draw throwaway shapes and immediately watch more server-authored fights.
-7. Pick another player’s contender. Champion picks earn 3 Clout; finalist
-   backers earn 1.
+7. Use the compact Rumble Pick action in Arena to choose another player’s
+   contender. Champion picks earn 3 Clout; finalist backers earn 1.
 8. Return after the UTC rollover to see the Champion, watch your picked
    Scribbit's last Rumble bout, and see the result comment on the real post.
-9. Open the seven-page Scout Notebook to compare tonight's pick with the prior
-   six Arena days, including exact forecasts, filed results, and available replays.
-10. Keep a visible daily play streak and permanent Scout Clout.
+9. Open Bag to manage equipment, pens, and titles; open Gallery to browse
+   community Legends and personal Legacy Cards.
+10. Keep a visible daily play streak and permanent Clout.
 11. Keep a Scribbit alive for three days. Every finished run becomes an immutable
     personal Legacy Card; a crown or enough community Belief gives it a gold
     finish and preserves it in the public Hall of Legends.
@@ -105,6 +105,11 @@ as four equal actions. Those canvas actions, Practice exits, archived returns,
 and Rival Draft choices are mirrored by focusable native buttons; critical
 targets remain at least 44 CSS pixels in the 320x568 fit and support visible
 focus plus Enter/Space without changing battle authority.
+The first Spar win each UTC day commits one versioned reward receipt in the
+same Redis transaction as its XP and Ink. Fresh Replay can therefore celebrate
+`+1 XP • +2 INK` or an exact level-up without deriving progression on the
+client. Saved pages keep only Replay plus their truthful return action; they
+cannot reopen a live Rival or tonight's pick flow.
 Before the bell, a mode-specific VS card keeps one title, optional story stakes,
 large fighter art, and two plain causal lines such as
 `MORE COLORS → CONE + DELAYED ECHO`. They come from the same immutable Shape
@@ -166,19 +171,11 @@ without a usable transcript are clearly marked as saved results with no motion
 replay. Opening a page returns to the same
 Scrapbook page and never grants a reward or writes progression.
 
-The fifth app tab is now a Scout Notebook rather than another rules shortcut.
-It assembles tonight plus the prior six Arena days from existing server-owned
-Pick records, payout receipts, forecasts, lifetime Clout, and visible featured
-Rumble reports. Each page has one explicit state—open, pending, champion,
-finalist, no Clout, or missed—and shows the exact picked drawing, artist,
-element, forecast, and filed payout when those facts still exist. Historical identity
-comes from the matching report or visible Scribbit record, never from today's
-Champion. Hidden or deleted art becomes unavailable, and Replay is offered only
-while that exact visible report remains loadable. Forty-eight validated margin
-notes rotate without repeating for the same status inside the seven-page window.
-Replay returns to the selected day. This rolling view adds no Redis key, reward,
-title, or combat authority; the Field Guide remains available as a secondary
-button from the Notebook.
+The persistent dock is Arena, Bag, Draw, Battles, and Gallery. Bag is the one
+home for inventory and equipment; Gallery is the one home for Legends and
+Legacy Cards. Scout is not a primary destination. The compatibility Notebook
+scene can still resolve older saved-replay returns while that legacy path is
+retired, but the daily Rumble Pick remains directly reachable from Arena.
 
 The Practice Lab makes the drawing-to-combat hook replayable after the daily
 submission locks. Its endpoint accepts only a name and base PNG, re-analyzes the
@@ -273,12 +270,13 @@ one in-flight request per user, and a short Redis-backed request-rate guard.
 
 Mystery Ink is earned only through play. Capsules use visible 70/25/5 rarity
 odds, guarantee an Epic by pull 10, and reveal the actual reward art before a
-direct Collection handoff. Discovery, collector progress, pens, and titles
+direct Bag handoff. Discovery, collector progress, pens, and titles
 persist across Scribbits; permanent pen/title duplicates redirect within their
 rarity while useful accessory copies stack. Mystery Pens are expressive
 sidegrades that can change the build split through color, but every drawing
-still has exactly the same 100-point stat budget. The Gallery's Collection tab
-shows all 36 rewards with discovered art, locked silhouettes, rarity, copies,
+still has exactly the same 100-point stat budget. Bag anchors the selected
+Scribbit on a visible equipment platform, keeps filters below that stage, and
+shows owned rewards in a bounded scrollable tray with discovered art, rarity, copies,
 pen swatches, title badges, and persistent completion progress. Eight cosmetic
 Shape Power Relics connect capsule discovery to the battle fantasy without
 adding stats or changing analysis.

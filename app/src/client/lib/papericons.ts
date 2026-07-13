@@ -28,12 +28,8 @@ export type PaperIconKey =
   | 'trash'
   | 'trophy';
 export type PaperToolIconKey = 'sticker' | 'eraser' | 'clear' | 'undo' | 'redo';
-export type PaperDockIconKey =
-  | 'arena'
-  | 'gallery'
-  | 'draw'
-  | 'battles'
-  | 'scout';
+export type PaperStatIconKey = 'chonk' | 'spike' | 'zip' | 'charm';
+export type PaperDockIconKey = 'arena' | 'bag' | 'gallery' | 'draw' | 'battles';
 
 export type PaperIconOptions = Readonly<{
   size?: number;
@@ -84,6 +80,32 @@ export function paperDockIcon(
     drawFivePointStar(graphics, 0, 0, 17 * scale, 8 * scale, true);
     graphics.lineStyle(3 * scale, color, 1);
     drawFivePointStar(graphics, 0, 0, 17 * scale, 8 * scale, false);
+  } else if (key === 'bag' && accented) {
+    graphics.fillStyle(UI.coral, 0.82);
+    graphics.fillRoundedRect(
+      -18 * scale,
+      -11 * scale,
+      36 * scale,
+      27 * scale,
+      5 * scale
+    );
+    graphics.lineStyle(3 * scale, color, 1);
+    graphics.strokeRoundedRect(
+      -18 * scale,
+      -11 * scale,
+      36 * scale,
+      27 * scale,
+      5 * scale
+    );
+    graphics.strokeRoundedRect(
+      -10 * scale,
+      -20 * scale,
+      20 * scale,
+      15 * scale,
+      7 * scale
+    );
+    graphics.fillStyle(UI.gold, 1);
+    graphics.fillRoundedRect(-5 * scale, -3 * scale, 10 * scale, 8 * scale, 2);
   } else if (key === 'gallery' && accented) {
     const leftPage = [
       new Phaser.Math.Vector2(-18 * scale, -14 * scale),
@@ -133,19 +155,25 @@ export function paperDockIcon(
     drawDockSword(graphics, scale, false, true);
     graphics.fillStyle(0xbfd8e0, 1);
     drawDockSword(graphics, scale, true, true);
-  } else if (key === 'scout' && accented) {
-    graphics.fillStyle(UI.gold, 0.18);
-    graphics.fillCircle(-4 * scale, -4 * scale, 13 * scale);
-    graphics.lineStyle(3 * scale, color, 1);
-    graphics.strokeCircle(-4 * scale, -4 * scale, 13 * scale);
-    graphics.lineBetween(7 * scale, 7 * scale, 18 * scale, 18 * scale);
-    graphics.fillStyle(UI.gold, 1);
-    graphics.fillCircle(-4 * scale, -4 * scale, 3.5 * scale);
-    graphics.fillStyle(0x5fa85c, 1);
-    graphics.fillEllipse(17 * scale, 14 * scale, 7 * scale, 4 * scale);
   } else if (key === 'arena') {
     graphics.strokeCircle(0, 0, 18 * scale);
     drawFivePointStar(graphics, 0, 0, 10 * scale, 4.5 * scale, false);
+  } else if (key === 'bag') {
+    graphics.strokeRoundedRect(
+      -18 * scale,
+      -11 * scale,
+      36 * scale,
+      27 * scale,
+      5 * scale
+    );
+    graphics.strokeRoundedRect(
+      -10 * scale,
+      -20 * scale,
+      20 * scale,
+      15 * scale,
+      7 * scale
+    );
+    graphics.fillRoundedRect(-5 * scale, -3 * scale, 10 * scale, 8 * scale, 2);
   } else if (key === 'gallery') {
     graphics.strokeRoundedRect(
       -18 * scale,
@@ -171,8 +199,8 @@ export function paperDockIcon(
     drawDockSword(graphics, scale, false);
     drawDockSword(graphics, scale, true);
   } else {
-    graphics.strokeCircle(-4 * scale, -4 * scale, 13 * scale);
-    graphics.lineBetween(6 * scale, 6 * scale, 17 * scale, 17 * scale);
+    drawDockSword(graphics, scale, false);
+    drawDockSword(graphics, scale, true);
     graphics.fillCircle(-4 * scale, -4 * scale, 2 * scale);
   }
 
@@ -321,6 +349,96 @@ export function paperToolIcon(
   if (key === 'redo') face.setScale(-1, 1);
   container.add(key === 'undo' || key === 'redo' ? [face] : [backing, face]);
   return container;
+}
+
+/** Four readable combat-stat marks for compact build previews. */
+export function paperStatIcon(
+  scene: Scene,
+  key: PaperStatIconKey,
+  x: number,
+  y: number,
+  size: number,
+  color: number
+): Phaser.GameObjects.Container {
+  const scale = size / 34;
+  const container = scene.add.container(x, y);
+  const shadow = scene.add.graphics().setPosition(2 * scale, 3 * scale);
+  const face = scene.add.graphics();
+  drawStatIcon(shadow, key, scale, 0x9b754d, 0x9b754d);
+  drawStatIcon(face, key, scale, color, UI.inkHex);
+  container.add([shadow, face]);
+  return container;
+}
+
+function drawStatIcon(
+  graphics: Phaser.GameObjects.Graphics,
+  key: PaperStatIconKey,
+  scale: number,
+  fill: number,
+  stroke: number
+): void {
+  graphics.fillStyle(fill, 1);
+  graphics.lineStyle(3 * scale, stroke, 1);
+
+  if (key === 'chonk') {
+    graphics.fillEllipse(0, 2 * scale, 28 * scale, 23 * scale);
+    graphics.strokeEllipse(0, 2 * scale, 28 * scale, 23 * scale);
+    graphics.lineBetween(-9 * scale, 13 * scale, -5 * scale, 9 * scale);
+    graphics.lineBetween(9 * scale, 13 * scale, 5 * scale, 9 * scale);
+    return;
+  }
+
+  if (key === 'spike') {
+    const spikes = [
+      [
+        new Phaser.Math.Vector2(-14 * scale, 12 * scale),
+        new Phaser.Math.Vector2(-8 * scale, -10 * scale),
+        new Phaser.Math.Vector2(-2 * scale, 12 * scale),
+      ],
+      [
+        new Phaser.Math.Vector2(-6 * scale, 12 * scale),
+        new Phaser.Math.Vector2(0, -15 * scale),
+        new Phaser.Math.Vector2(6 * scale, 12 * scale),
+      ],
+      [
+        new Phaser.Math.Vector2(2 * scale, 12 * scale),
+        new Phaser.Math.Vector2(9 * scale, -8 * scale),
+        new Phaser.Math.Vector2(14 * scale, 12 * scale),
+      ],
+    ];
+    spikes.forEach((spike) => {
+      graphics.fillPoints(spike, true);
+      graphics.strokePoints(spike, true);
+    });
+    return;
+  }
+
+  if (key === 'zip') {
+    const bolt = [
+      new Phaser.Math.Vector2(3 * scale, -16 * scale),
+      new Phaser.Math.Vector2(-11 * scale, 2 * scale),
+      new Phaser.Math.Vector2(-2 * scale, 2 * scale),
+      new Phaser.Math.Vector2(-7 * scale, 16 * scale),
+      new Phaser.Math.Vector2(12 * scale, -5 * scale),
+      new Phaser.Math.Vector2(3 * scale, -5 * scale),
+    ];
+    graphics.fillPoints(bolt, true);
+    graphics.strokePoints(bolt, true);
+    return;
+  }
+
+  const heart = [
+    new Phaser.Math.Vector2(0, 15 * scale),
+    new Phaser.Math.Vector2(-13 * scale, 3 * scale),
+    new Phaser.Math.Vector2(-13 * scale, -5 * scale),
+    new Phaser.Math.Vector2(-7 * scale, -12 * scale),
+    new Phaser.Math.Vector2(0, -7 * scale),
+    new Phaser.Math.Vector2(7 * scale, -12 * scale),
+    new Phaser.Math.Vector2(13 * scale, -5 * scale),
+    new Phaser.Math.Vector2(13 * scale, 3 * scale),
+  ];
+  graphics.fillPoints(heart, true);
+  graphics.strokePoints(heart, true);
 }
 
 function drawTool(

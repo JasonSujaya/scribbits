@@ -206,7 +206,7 @@ export class ScoutNotebook extends Scene {
   }
 
   private buildAppTabs(): void {
-    appDock(this, 'scout', { scout: () => undefined });
+    appDock(this, 'gallery');
   }
 
   private showLoadingPage(): void {

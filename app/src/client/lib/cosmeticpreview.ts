@@ -1,7 +1,9 @@
 import * as Phaser from 'phaser';
 import { Scene } from 'phaser';
 import type {
+  CosmeticBrushCatalogEntry,
   CosmeticCatalogEntry,
+  CosmeticDrawingInkCatalogEntry,
   CosmeticPenCatalogEntry,
 } from '../../shared/cosmetics';
 import { drawAccessoryGraphics } from './accessories';
@@ -34,8 +36,19 @@ export function renderCosmeticPreview(
     return preview;
   }
 
-  if (options.entry.kind === 'pen') {
+  if (options.entry.kind === 'pen' || options.entry.kind === 'drawing-ink') {
     renderPenPreview(
+      options.scene,
+      preview,
+      options.entry,
+      options.size,
+      options.width
+    );
+    return preview;
+  }
+
+  if (options.entry.kind === 'brush') {
+    renderBrushPreview(
       options.scene,
       preview,
       options.entry,
@@ -58,7 +71,7 @@ export function renderCosmeticPreview(
 function renderPenPreview(
   scene: Scene,
   preview: Phaser.GameObjects.Container,
-  entry: CosmeticPenCatalogEntry,
+  entry: CosmeticPenCatalogEntry | CosmeticDrawingInkCatalogEntry,
   size: number,
   availableWidth: number
 ): void {
@@ -101,6 +114,45 @@ function renderPenPreview(
         .setStrokeStyle(2, UI.inkHex, 0.78)
     );
   });
+  preview.add(graphics);
+}
+
+function renderBrushPreview(
+  scene: Scene,
+  preview: Phaser.GameObjects.Container,
+  entry: CosmeticBrushCatalogEntry,
+  size: number,
+  availableWidth: number
+): void {
+  const graphics = scene.add.graphics();
+  const previewWidth = Math.min(availableWidth, Math.max(120, size * 1.75));
+  const color = UI.inkHex;
+  if (entry.effect === 'chalk') {
+    graphics.lineStyle(12, color, 0.58);
+    graphics.lineBetween(-previewWidth / 2, 8, -12, -2);
+    graphics.lineBetween(-4, -3, previewWidth / 2, -14);
+    graphics.fillStyle(color, 0.3);
+    graphics.fillCircle(-previewWidth * 0.2, 12, 3);
+    graphics.fillCircle(previewWidth * 0.28, -18, 2);
+  } else if (entry.effect === 'ribbon') {
+    graphics.lineStyle(20, color, 0.82);
+    graphics.lineBetween(-previewWidth / 2, 14, previewWidth / 2, -12);
+    graphics.lineStyle(4, UI.creamHex, 0.78);
+    graphics.lineBetween(-previewWidth / 2 + 6, 9, previewWidth / 2 - 6, -7);
+  } else {
+    graphics.fillStyle(color, 0.82);
+    const dots = [
+      [-0.44, 0.08, 5],
+      [-0.28, -0.12, 8],
+      [-0.1, 0.04, 6],
+      [0.1, -0.08, 9],
+      [0.3, 0.1, 6],
+      [0.46, -0.1, 4],
+    ] as const;
+    dots.forEach(([offset, y, radius]) => {
+      graphics.fillCircle(offset * previewWidth, y * size, radius);
+    });
+  }
   preview.add(graphics);
 }
 

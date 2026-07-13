@@ -3,7 +3,15 @@
 // Exposes undo/redo snapshots (one per completed stroke), brush controls, and
 // readouts for the analyzer (getImageData) and submission PNGs.
 
-import type { CosmeticPenEffect } from '../../shared/cosmetics';
+import type {
+  CosmeticBrushEffect,
+  CosmeticPenEffect,
+} from '../../shared/cosmetics';
+import {
+  eraseMatchingColorSegment,
+  parseHexColor,
+  type RgbColor,
+} from './coloreraser';
 
 export const CANVAS_SIZE = 512;
 
@@ -12,11 +20,12 @@ export const CANVAS_SIZE = 512;
 const PAPER_COLOR = '#fdf3df';
 
 export type BrushMode = 'draw' | 'erase';
+export type DrawCanvasChange = 'draw' | 'erase' | 'clear' | 'undo' | 'redo';
 
 export type DrawCanvasOptions = {
   // Called after every completed stroke (pointer-up) so the scene can re-run the
   // live analyzer and animate the stat preview.
-  onStrokeEnd: () => void;
+  onStrokeEnd: (change: DrawCanvasChange) => void;
 };
 
 export type DrawingSubmissionImages = {
@@ -29,19 +38,22 @@ export type DrawingSubmissionImages = {
 export class DrawCanvas {
   readonly element: HTMLCanvasElement;
   private readonly ctx: CanvasRenderingContext2D;
-  private readonly onStrokeEnd: () => void;
+  private readonly onStrokeEnd: (change: DrawCanvasChange) => void;
 
   private color = '#2b2016';
   private brushSize = 22;
   private mode: BrushMode = 'draw';
+  private eraserTargetColor: RgbColor = [43, 32, 22];
 
   // Active pen effect + its palette. Rainbow advances a hue as the stroke moves;
   // midnight flecks white specks over a near-black base.
   private penEffect: CosmeticPenEffect = 'solid';
   private penColors: string[] = ['#2b2016'];
+  private brushEffect: CosmeticBrushEffect | null = null;
   private huePhase = 0; // 0..1, advances along a rainbow stroke
 
   private drawing = false;
+  private strokeChanged = false;
   private lastX = 0;
   private lastY = 0;
 
@@ -109,7 +121,14 @@ export class DrawCanvas {
     this.brushSize = size;
   }
 
-  setEraser(): void {
+  setBrushEffect(effect: CosmeticBrushEffect | null): void {
+    this.brushEffect = effect;
+    this.mode = 'draw';
+  }
+
+  setEraser(targetColor = this.color): void {
+    this.eraserTargetColor =
+      parseHexColor(targetColor) ?? this.eraserTargetColor;
     this.mode = 'erase';
   }
 
@@ -120,7 +139,7 @@ export class DrawCanvas {
   clear(): void {
     this.pushHistory();
     this.paintPaper();
-    this.onStrokeEnd();
+    this.onStrokeEnd('clear');
   }
 
   undo(): void {
@@ -129,7 +148,7 @@ export class DrawCanvas {
     this.pushCurrentSnapshot(this.redoHistory);
     this.restoreSnapshot(previous);
     this.snapshotPool.push(previous);
-    this.onStrokeEnd();
+    this.onStrokeEnd('undo');
   }
 
   canUndo(): boolean {
@@ -142,7 +161,7 @@ export class DrawCanvas {
     this.pushCurrentSnapshot(this.history);
     this.restoreSnapshot(next);
     this.snapshotPool.push(next);
-    this.onStrokeEnd();
+    this.onStrokeEnd('redo');
   }
 
   canRedo(): boolean {
@@ -160,6 +179,7 @@ export class DrawCanvas {
     this.snapshotPool = [];
     this.activeBounds = null;
     this.drawing = false;
+    this.strokeChanged = false;
     this.element.remove();
   }
 
@@ -219,9 +239,10 @@ export class DrawCanvas {
 
   private restoreSnapshot(snapshot: HTMLCanvasElement): void {
     this.ctx.clearRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
-    // Erasing leaves the live context in destination-out mode. Copy semantics
-    // restore the exact snapshot regardless of the currently selected tool.
+    // Copy semantics restore the exact snapshot regardless of the selected
+    // paint, brush texture, or color-eraser target.
     this.ctx.save();
+    this.ctx.globalAlpha = 1;
     this.ctx.globalCompositeOperation = 'copy';
     this.ctx.drawImage(snapshot, 0, 0);
     this.ctx.restore();
@@ -258,19 +279,24 @@ export class DrawCanvas {
     event.preventDefault();
     this.pushHistory();
     this.drawing = true;
+    this.strokeChanged = false;
     this.activeBounds = this.element.getBoundingClientRect();
     this.huePhase = 0;
     const { x, y } = this.toCanvasCoords(event);
     this.lastX = x;
     this.lastY = y;
-    // A dot so single taps register as a mark.
-    this.applyBrush();
-    this.ctx.beginPath();
-    this.ctx.arc(x, y, this.brushSize / 2, 0, Math.PI * 2);
-    this.ctx.fillStyle =
-      this.mode === 'erase' ? 'rgba(0,0,0,1)' : this.currentStrokeColor();
-    this.ctx.fill();
-    if (this.mode !== 'erase') this.flingSpecks(x, y);
+    if (this.mode === 'erase') {
+      this.strokeChanged = this.eraseSelectedColorSegment(x, y, x, y) > 0;
+    } else {
+      // A dot so single taps register as a mark.
+      this.applyBrush();
+      this.ctx.beginPath();
+      this.ctx.arc(x, y, this.activeBrushWidth() / 2, 0, Math.PI * 2);
+      this.ctx.fillStyle = this.currentStrokeColor();
+      this.ctx.fill();
+      this.flingSpecks(x, y);
+      this.strokeChanged = true;
+    }
     try {
       this.element.setPointerCapture(event.pointerId);
     } catch {
@@ -282,18 +308,25 @@ export class DrawCanvas {
     if (!this.drawing) return;
     event.preventDefault();
     const { x, y } = this.toCanvasCoords(event);
+    if (this.mode === 'erase') {
+      this.strokeChanged =
+        this.eraseSelectedColorSegment(this.lastX, this.lastY, x, y) > 0 ||
+        this.strokeChanged;
+      this.lastX = x;
+      this.lastY = y;
+      return;
+    }
+
     this.applyBrush();
     // Rainbow advances its hue as the stroke travels, so the color is set per
     // segment; solid/midnight keep a stable base color.
-    if (this.mode !== 'erase') {
-      this.huePhase = (this.huePhase + 0.02) % 1;
-      this.ctx.strokeStyle = this.currentStrokeColor();
-    }
+    this.huePhase = (this.huePhase + 0.02) % 1;
+    this.ctx.strokeStyle = this.currentStrokeColor();
     this.ctx.beginPath();
     this.ctx.moveTo(this.lastX, this.lastY);
     this.ctx.lineTo(x, y);
     this.ctx.stroke();
-    if (this.mode !== 'erase') this.flingSpecks(x, y);
+    this.flingSpecks(x, y);
     this.lastX = x;
     this.lastY = y;
   }
@@ -310,21 +343,31 @@ export class DrawCanvas {
     return this.color;
   }
 
-  // Midnight ink: fleck a few tiny white specks around the brush point so the
-  // near-black stroke reads as a starry night ink. No-op for other pens.
+  // Ink and brush textures stay cosmetic. The submitted pixels remain the
+  // analyzer's source of truth, so every effect still produces honest stats.
   private flingSpecks(x: number, y: number): void {
-    if (this.penEffect !== 'midnight') return;
-    const count = 2;
+    const isMidnight = this.penEffect === 'midnight';
+    const isChalk = this.brushEffect === 'chalk';
+    const isSpray = this.brushEffect === 'spray';
+    if (!isMidnight && !isChalk && !isSpray) return;
+
+    const count = isSpray ? 10 : isChalk ? 4 : 2;
     this.ctx.save();
     this.ctx.globalCompositeOperation = 'source-over';
-    this.ctx.fillStyle = 'rgba(255,255,255,0.9)';
+    this.ctx.globalAlpha = isChalk ? 0.34 : 0.9;
+    this.ctx.fillStyle = isMidnight
+      ? 'rgba(255,255,255,0.9)'
+      : this.currentStrokeColor();
     for (let index = 0; index < count; index += 1) {
-      const radius = this.brushSize * 0.5 * Math.random();
+      const radius = this.brushSize * (isSpray ? 1.05 : 0.52) * Math.random();
       const angle = Math.random() * Math.PI * 2;
       const sx = x + Math.cos(angle) * radius;
       const sy = y + Math.sin(angle) * radius;
       this.ctx.beginPath();
-      this.ctx.arc(sx, sy, 0.8 + Math.random() * 1.2, 0, Math.PI * 2);
+      const speckRadius = isSpray
+        ? 0.8 + Math.random() * Math.max(1.4, this.brushSize * 0.09)
+        : 0.7 + Math.random() * 1.3;
+      this.ctx.arc(sx, sy, speckRadius, 0, Math.PI * 2);
       this.ctx.fill();
     }
     this.ctx.restore();
@@ -334,18 +377,75 @@ export class DrawCanvas {
     if (!this.drawing) return;
     this.drawing = false;
     this.activeBounds = null;
-    this.onStrokeEnd();
+    if (!this.strokeChanged) {
+      const unusedSnapshot = this.history.pop();
+      if (unusedSnapshot) this.snapshotPool.push(unusedSnapshot);
+      return;
+    }
+    this.onStrokeEnd(this.mode === 'erase' ? 'erase' : 'draw');
+  }
+
+  private eraseSelectedColorSegment(
+    startX: number,
+    startY: number,
+    endX: number,
+    endY: number
+  ): number {
+    const radius = this.brushSize / 2;
+    const padding = Math.ceil(radius) + 1;
+    const left = Math.max(0, Math.floor(Math.min(startX, endX) - padding));
+    const top = Math.max(0, Math.floor(Math.min(startY, endY) - padding));
+    const right = Math.min(
+      CANVAS_SIZE,
+      Math.ceil(Math.max(startX, endX) + padding)
+    );
+    const bottom = Math.min(
+      CANVAS_SIZE,
+      Math.ceil(Math.max(startY, endY) + padding)
+    );
+    const width = right - left;
+    const height = bottom - top;
+    if (width <= 0 || height <= 0) return 0;
+
+    const imageData = this.ctx.getImageData(left, top, width, height);
+    const erasedPixels = eraseMatchingColorSegment(
+      imageData.data,
+      width,
+      height,
+      {
+        startX: startX - left,
+        startY: startY - top,
+        endX: endX - left,
+        endY: endY - top,
+        radius,
+      },
+      this.eraserTargetColor
+    );
+    if (erasedPixels > 0) this.ctx.putImageData(imageData, left, top);
+    return erasedPixels;
   }
 
   private applyBrush(): void {
-    this.ctx.lineWidth = this.brushSize;
-    if (this.mode === 'erase') {
-      // Erase to transparency so the analyzer stops counting those pixels.
-      this.ctx.globalCompositeOperation = 'destination-out';
-      this.ctx.strokeStyle = 'rgba(0,0,0,1)';
-    } else {
-      this.ctx.globalCompositeOperation = 'source-over';
-      this.ctx.strokeStyle = this.currentStrokeColor();
+    this.ctx.globalAlpha = 1;
+    this.ctx.lineCap = 'round';
+    this.ctx.lineJoin = 'round';
+    this.ctx.lineWidth = this.activeBrushWidth();
+    this.ctx.globalCompositeOperation = 'source-over';
+    if (this.brushEffect === 'chalk') this.ctx.globalAlpha = 0.58;
+    if (this.brushEffect === 'ribbon') {
+      this.ctx.globalAlpha = 0.86;
+      this.ctx.lineCap = 'butt';
+      this.ctx.lineJoin = 'bevel';
     }
+    if (this.brushEffect === 'spray') this.ctx.globalAlpha = 0.72;
+    this.ctx.strokeStyle = this.currentStrokeColor();
+  }
+
+  private activeBrushWidth(): number {
+    if (this.mode === 'erase') return this.brushSize;
+    if (this.brushEffect === 'chalk') return this.brushSize * 0.72;
+    if (this.brushEffect === 'ribbon') return this.brushSize * 1.18;
+    if (this.brushEffect === 'spray') return this.brushSize * 0.42;
+    return this.brushSize;
   }
 }

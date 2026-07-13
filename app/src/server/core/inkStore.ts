@@ -3,6 +3,7 @@ import type {
   CapsulePull,
   CapsulePullResponse,
   CapsuleRarity,
+  DrawingSupplySelection,
   GearInventoryEntry,
   GearRank,
   Inventory,
@@ -26,11 +27,17 @@ import {
 } from './storage';
 import {
   INK_ACCESSORY_CATALOG,
+  INK_BRUSH_CATALOG,
   INK_CATALOG,
+  INK_DRAWING_INK_CATALOG,
   INK_PEN_CATALOG,
   INK_TITLE_CATALOG,
   findInkCatalogEntry,
   isAccessoryCatalogEntry,
+  isBrushCatalogEntry,
+  isConsumableCatalogEntry,
+  isDrawingInkCatalogEntry,
+  isPermanentCatalogEntry,
   type InkCatalogEntry,
 } from './ink';
 
@@ -368,6 +375,11 @@ const inventoryFromStoredEntries = (
     }
   }
 
+  for (const entry of [...INK_DRAWING_INK_CATALOG, ...INK_BRUSH_CATALOG]) {
+    const ownedCount = parseStoredInventoryCount(storedInventory[entry.id]);
+    if (ownedCount > 0) items[entry.id] = ownedCount;
+  }
+
   const titles = INK_TITLE_CATALOG.filter((entry) => {
     return storedInventory[entry.id] !== undefined;
   }).map((entry) => {
@@ -553,16 +565,17 @@ const chooseEntryForRarity = (
     throw new Error(`No Mystery Ink catalog entries for ${rarity}.`);
   }
 
-  // Accessory duplicates are useful consumable copies. A duplicate pen or
-  // title would be a paid no-op, so deterministically redirect it within the
-  // same rarity toward an undiscovered permanent or a usable accessory copy.
+  // Consumable duplicates are useful charges. A duplicate permanent pen or
+  // title would be a paid no-op, so redirect only those permanent kinds.
   // This keeps rarity odds and pity unchanged while removing dead pulls.
   if (
-    selectedEntry.kind !== 'accessory' &&
+    isPermanentCatalogEntry(selectedEntry) &&
     discoveredCatalogIds.has(selectedEntry.id)
   ) {
     const protectedEntries = matchingEntries.filter((entry) => {
-      return entry.kind === 'accessory' || !discoveredCatalogIds.has(entry.id);
+      return (
+        isConsumableCatalogEntry(entry) || !discoveredCatalogIds.has(entry.id)
+      );
     });
     const protectedEntry =
       protectedEntries[Math.floor(roll * protectedEntries.length)];
@@ -640,15 +653,17 @@ export const projectCapsuleInventoryGrant = (
   };
 
   let ownedCount = 1;
-  if (entry.kind === 'accessory') {
+  if (isConsumableCatalogEntry(entry)) {
     ownedCount = (nextInventory.items[entry.id] ?? 0) + 1;
     nextInventory.items[entry.id] = ownedCount;
-    const currentGear = nextInventory.gear[entry.id];
-    nextInventory.gear[entry.id] = {
-      rank: currentGear?.rank ?? 1,
-      copies: ownedCount,
-      rarity: entry.rarity,
-    };
+    if (entry.kind === 'accessory') {
+      const currentGear = nextInventory.gear[entry.id];
+      nextInventory.gear[entry.id] = {
+        rank: currentGear?.rank ?? 1,
+        copies: ownedCount,
+        rarity: entry.rarity,
+      };
+    }
   } else {
     const permanentInventory =
       entry.kind === 'pen' ? nextInventory.pens : nextInventory.titles;
@@ -686,10 +701,12 @@ const applyCapsulePullWithoutTransaction = async (
     ...(entry.kind === 'accessory' && isNew
       ? { [getInventoryGearRankField(entry.id)]: '1' }
       : {}),
-    ...(entry.kind !== 'accessory' && isNew ? { [entry.id]: entry.kind } : {}),
+    ...(isPermanentCatalogEntry(entry) && isNew
+      ? { [entry.id]: entry.kind }
+      : {}),
   });
 
-  if (entry.kind === 'accessory') {
+  if (isConsumableCatalogEntry(entry)) {
     await storage.hIncrBy(inventoryKey, entry.id, 1);
   }
 };
@@ -728,10 +745,12 @@ const applyCapsulePullWithTransaction = async (
     ...(entry.kind === 'accessory' && isNew
       ? { [getInventoryGearRankField(entry.id)]: '1' }
       : {}),
-    ...(entry.kind !== 'accessory' && isNew ? { [entry.id]: entry.kind } : {}),
+    ...(isPermanentCatalogEntry(entry) && isNew
+      ? { [entry.id]: entry.kind }
+      : {}),
   });
 
-  if (entry.kind === 'accessory') {
+  if (isConsumableCatalogEntry(entry)) {
     await transaction.hIncrBy(inventoryKey, entry.id, 1);
   }
 
@@ -892,7 +911,9 @@ const parseCapsuleOperationResponse = (
     }
     if (
       !['common', 'rare', 'epic'].includes(String(pullRecord.rarity)) ||
-      !['accessory', 'pen', 'title'].includes(String(pullRecord.kind)) ||
+      !['accessory', 'pen', 'title', 'drawing-ink', 'brush'].includes(
+        String(pullRecord.kind)
+      ) ||
       typeof pullRecord.id !== 'string' ||
       typeof pullRecord.name !== 'string' ||
       typeof pullRecord.description !== 'string' ||
@@ -1229,16 +1250,6 @@ export const pullCapsuleForUser = async (
         pullsSinceEpic,
         selectedEntry.rarity
       );
-      const nextInventoryEntries = { ...inventoryEntries };
-      nextInventoryEntries[getInventoryDiscoveryField(selectedEntry.id)] = '1';
-      if (selectedEntry.kind === 'accessory') {
-        nextInventoryEntries[selectedEntry.id] = ownedCount.toString();
-        nextInventoryEntries[getInventoryGearRankField(selectedEntry.id)] =
-          inventoryGrant.inventory.gear[selectedEntry.id]?.rank.toString() ??
-          '1';
-      } else if (isNew) {
-        nextInventoryEntries[selectedEntry.id] = selectedEntry.kind;
-      }
       const pull = createCapsulePull(
         selectedEntry,
         isNew,
@@ -1312,6 +1323,7 @@ export const pullCapsuleForUser = async (
 };
 
 export type RequiredAccessoryCounts = ReadonlyMap<string, number>;
+export type RequiredConsumableCounts = ReadonlyMap<string, number>;
 
 export const planRequiredAccessoryCounts = (
   accessoryIds: string[]
@@ -1327,6 +1339,33 @@ export const planRequiredAccessoryCounts = (
   }
 
   return requiredCounts;
+};
+
+export const planRequiredDrawingSupplyCounts = (
+  drawingSupplies: DrawingSupplySelection
+): RequiredConsumableCounts | undefined => {
+  const requiredCounts = new Map<string, number>();
+  if (drawingSupplies.drawingInkId !== null) {
+    const entry = findInkCatalogEntry(drawingSupplies.drawingInkId);
+    if (!isDrawingInkCatalogEntry(entry)) return undefined;
+    requiredCounts.set(entry.id, 1);
+  }
+  if (drawingSupplies.brushId !== null) {
+    const entry = findInkCatalogEntry(drawingSupplies.brushId);
+    if (!isBrushCatalogEntry(entry)) return undefined;
+    requiredCounts.set(entry.id, 1);
+  }
+  return requiredCounts;
+};
+
+export const planRequiredSubmissionConsumableCounts = (
+  accessoryIds: string[],
+  drawingSupplies: DrawingSupplySelection
+): RequiredConsumableCounts | undefined => {
+  const accessoryCounts = planRequiredAccessoryCounts(accessoryIds);
+  const drawingSupplyCounts = planRequiredDrawingSupplyCounts(drawingSupplies);
+  if (!accessoryCounts || !drawingSupplyCounts) return undefined;
+  return new Map([...accessoryCounts, ...drawingSupplyCounts]);
 };
 
 export type AccessoryInventoryProjection =
@@ -1368,6 +1407,60 @@ export const projectAccessoryInventoryConsumption = (
             ...gear,
             copies: nextItems[gearId] ?? 0,
           },
+        ])
+      ),
+      pens: [...inventory.pens],
+      titles: [...inventory.titles],
+      equippedTitle: inventory.equippedTitle,
+      discovered: [...inventory.discovered],
+    },
+  };
+};
+
+export type SubmissionConsumableInventoryProjection =
+  | { status: 'consumed'; inventory: Inventory }
+  | { status: 'insufficient'; consumableId: string }
+  | { status: 'invalid'; consumableId: string };
+
+export const projectSubmissionConsumableInventoryConsumption = (
+  inventory: Inventory,
+  accessoryIds: string[],
+  drawingSupplies: DrawingSupplySelection
+): SubmissionConsumableInventoryProjection => {
+  const requiredCounts = planRequiredSubmissionConsumableCounts(
+    accessoryIds,
+    drawingSupplies
+  );
+  if (!requiredCounts) {
+    return {
+      status: 'invalid',
+      consumableId:
+        drawingSupplies.drawingInkId ??
+        drawingSupplies.brushId ??
+        accessoryIds[0] ??
+        'drawing-supply',
+    };
+  }
+
+  const nextItems = { ...inventory.items };
+  for (const [consumableId, requiredCount] of requiredCounts) {
+    const ownedCount = nextItems[consumableId] ?? 0;
+    if (ownedCount < requiredCount) {
+      return { status: 'insufficient', consumableId };
+    }
+    const nextCount = ownedCount - requiredCount;
+    if (nextCount > 0) nextItems[consumableId] = nextCount;
+    else delete nextItems[consumableId];
+  }
+
+  return {
+    status: 'consumed',
+    inventory: {
+      items: nextItems,
+      gear: Object.fromEntries(
+        Object.entries(inventory.gear ?? {}).map(([gearId, gear]) => [
+          gearId,
+          { ...gear, copies: nextItems[gearId] ?? 0 },
         ])
       ),
       pens: [...inventory.pens],
@@ -1549,11 +1642,20 @@ export const findUnavailableAccessory = (
   inventoryEntries: Record<string, string>,
   requiredCounts: RequiredAccessoryCounts
 ): string | undefined => {
-  for (const [accessoryId, requiredCount] of requiredCounts.entries()) {
-    const ownedCount = parseStoredInventoryCount(inventoryEntries[accessoryId]);
+  return findUnavailableConsumable(inventoryEntries, requiredCounts);
+};
+
+export const findUnavailableConsumable = (
+  inventoryEntries: Record<string, string>,
+  requiredCounts: RequiredConsumableCounts
+): string | undefined => {
+  for (const [consumableId, requiredCount] of requiredCounts.entries()) {
+    const ownedCount = parseStoredInventoryCount(
+      inventoryEntries[consumableId]
+    );
 
     if (ownedCount < requiredCount) {
-      return accessoryId;
+      return consumableId;
     }
   }
 
@@ -1585,5 +1687,39 @@ export const checkAccessoriesForSubmit = async (
   );
   return missingAccessory
     ? { status: 'insufficient', accessoryId: missingAccessory }
+    : { status: 'available' };
+};
+
+export type SubmissionConsumableAvailability =
+  | { status: 'available' }
+  | { status: 'insufficient'; consumableId: string }
+  | { status: 'invalid'; consumableId: string };
+
+export const checkSubmissionConsumablesForSubmit = async (
+  storage: ArenaStorage,
+  userId: string,
+  accessoryIds: string[],
+  drawingSupplies: DrawingSupplySelection
+): Promise<SubmissionConsumableAvailability> => {
+  const requiredCounts = planRequiredSubmissionConsumableCounts(
+    accessoryIds,
+    drawingSupplies
+  );
+  if (!requiredCounts) {
+    return {
+      status: 'invalid',
+      consumableId:
+        drawingSupplies.drawingInkId ??
+        drawingSupplies.brushId ??
+        accessoryIds[0] ??
+        'drawing-supply',
+    };
+  }
+  const unavailable = findUnavailableConsumable(
+    await storage.hGetAll(getInventoryKey(userId)),
+    requiredCounts
+  );
+  return unavailable
+    ? { status: 'insufficient', consumableId: unavailable }
     : { status: 'available' };
 };

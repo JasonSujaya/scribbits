@@ -9,6 +9,7 @@ import {
   getReplayEntryMode,
   getReplayFounderChronicleBeat,
   getReplayFounderRivalryStakes,
+  getReplaySparReward,
   getReplayReturn,
   getReplayPass,
   getArena,
@@ -23,7 +24,6 @@ import {
   label,
   stickerCard,
   daysLeftFor,
-  floatReward,
   fadeToScene,
 } from '../lib/ui';
 import { openDetailModal } from '../lib/detailmodal';
@@ -33,10 +33,8 @@ import {
   buildShapePowerDrawCommands,
   getDamageSourceDisplayName,
   getElementBattleCue,
+  getShapePowerBattleName,
   getShapePowerNoCleanHitCallout,
-  getShapePowerRevealCopy,
-  getShapePowerSignatureName,
-  planShapePowerCallout,
   shouldAnnounceNoCleanHitAtAbilityFinish,
 } from '../lib/shapepowerpresentation';
 import type {
@@ -84,6 +82,8 @@ import { createSparRivalDraft } from '../lib/replaysparrivaldraft';
 import type { SparRivalDraft } from '../lib/replaysparrivaldraft';
 import { createPostFightActions } from '../lib/replaypostfightactions';
 import type { PostFightActions } from '../lib/replaypostfightactions';
+import { planReplayPostFightEligibility } from '../lib/replaypostfighteligibility';
+import { planReplayReward } from '../lib/replayreward';
 import { createPracticeOutcomeControls } from '../lib/replaypracticeoutcome';
 import {
   showSavedReplayIntro,
@@ -112,7 +112,6 @@ import { BattleSoundboard } from '../lib/battlesound';
 import { WeaponFxRenderer } from '../lib/weaponfxrenderer';
 import { showVsCeremony } from '../lib/battleceremony';
 import {
-  formatRivalRunBattleLabel,
   formatRivalRunResultLine,
   planRivalRunActionCopy,
   planRivalRunFinishStamp,
@@ -240,7 +239,6 @@ export class Replay extends Scene {
   private readonly soundboard = new BattleSoundboard();
   private fightersReady = false;
   private skipRequested = false;
-  private signatureShown = new Set<'a' | 'b'>();
   private elementCueShown = new Set<Element>();
   private transcript: BattleTranscript | null = null;
   private playbackRunning = false;
@@ -290,7 +288,6 @@ export class Replay extends Scene {
     this.rivalDraft = null;
     this.postFightActions = null;
     this.savedReplayIntro = null;
-    this.signatureShown.clear();
     this.elementCueShown.clear();
     this.transcript = null;
     this.playbackRunning = false;
@@ -363,6 +360,7 @@ export class Replay extends Scene {
       this.postFightActions = null;
       this.savedReplayIntro?.destroy();
       this.savedReplayIntro = null;
+      this.battleHud?.stopHeartAnimations();
       this.weaponFxRenderer?.destroy();
       this.weaponFxRenderer = null;
       this.playbackRunning = false;
@@ -426,14 +424,7 @@ export class Replay extends Scene {
       fighterB: this.report.b,
       fighterAPrimaryPower: this.fighterA.primaryPower,
       fighterBPrimaryPower: this.fighterB.primaryPower,
-      battleLabel:
-        (this.report.rivalRun
-          ? formatRivalRunBattleLabel(this.report.rivalRun)
-          : null) ??
-        this.founderRivalryStakes?.battleLabel ??
-        null,
       arenaName: battleArena.name,
-      arenaRule: battleArena.shortRule,
       showPlaybackControls: this.transcript !== null,
       reduceMotion: this.reduceMotion,
       initialPlaybackSpeed: this.speed,
@@ -862,7 +853,7 @@ export class Replay extends Scene {
         });
         this.battleBackdrop?.signalShapePower(event.actor, 'telegraph');
         this.battleHud?.setFighterShapePowerState(event.actor, 'telegraph');
-        this.telegraphShapePower(event.actor, actor, event.power);
+        this.telegraphShapePower(actor);
         this.weaponFxRenderer?.trigger(event.actor, 'telegraph');
         this.soundboard.play('telegraph');
         this.announceReplayCommentary({
@@ -989,6 +980,11 @@ export class Replay extends Scene {
           impactPlan.damageTextScale
         );
         this.setContinuousHitPoints(target, event.targetHitPoints);
+        this.battleHud?.playFighterDamage(
+          event.targetFighter,
+          impactPlan.tier,
+          this.speed
+        );
         this.soundboard.play(event.critical ? 'critical' : 'hit');
         if (
           target.primaryPower === 'nib_halo' &&
@@ -1012,10 +1008,11 @@ export class Replay extends Scene {
           tick: event.tick,
           sourceFighter: event.sourceFighter,
           targetFighter: event.targetFighter,
-          sourceName: getDamageSourceDisplayName(
-            event.source,
-            attacker.scribbit.element
-          ),
+          sourceName: isShapePowerId(event.source)
+            ? getShapePowerBattleName(event.source)
+            : event.source === 'colorburst_echo'
+              ? `${getShapePowerBattleName('colorburst')} echo`
+              : getDamageSourceDisplayName(event.source),
           sourcePower: isShapePowerId(event.source)
             ? event.source
             : event.source === 'colorburst_echo'
@@ -1644,60 +1641,10 @@ export class Replay extends Scene {
     });
   }
 
-  private telegraphShapePower(
-    side: 'a' | 'b',
-    actor: ReplayFighterRuntime,
-    power: PrimaryPower
-  ): void {
+  private telegraphShapePower(actor: ReplayFighterRuntime): void {
     actor.sprite?.telegraph();
     if (!actor.sprite) return;
-
-    const firstReveal = !this.signatureShown.has(side);
-    this.signatureShown.add(side);
     const style = ELEMENT_STYLES[actor.scribbit.element];
-    const powerText = firstReveal
-      ? getShapePowerRevealCopy(power, actor.scribbit.element)
-      : getShapePowerSignatureName(actor.scribbit.element, power).toUpperCase();
-    const opponent = side === 'a' ? this.fighterB : this.fighterA;
-    const callout = planShapePowerCallout({
-      side,
-      actorCenter: { x: actor.screenX, y: actor.screenY },
-      opponentCenter: { x: opponent.screenX, y: opponent.screenY },
-      firstReveal,
-      viewportWidth: this.scale.width,
-      viewportHeight: this.scale.height,
-    });
-    const calloutLabel = label(
-      this,
-      callout.position.x,
-      callout.position.y,
-      powerText,
-      callout.fontSize,
-      style.primaryText,
-      true
-    )
-      .setDepth(30)
-      .setWordWrapWidth(firstReveal ? 260 : 240)
-      .setLineSpacing(-4)
-      .setScale(this.reduceMotion ? 1 : 0);
-    calloutLabel.setStroke('#fff7e8', firstReveal ? 9 : 6);
-    if (this.reduceMotion) {
-      this.time.delayedCall(firstReveal ? 900 : 520, () => {
-        calloutLabel.destroy();
-      });
-      this.shapePowerBurst(actor, style.particle);
-      return;
-    }
-    this.tweens.add({
-      targets: calloutLabel,
-      scale: 1,
-      y: calloutLabel.y - 18,
-      duration: this.reduceMotion ? 80 : 220,
-      ease: 'Back.easeOut',
-      yoyo: true,
-      hold: firstReveal ? 680 : 220,
-      onComplete: () => calloutLabel.destroy(),
-    });
     this.shapePowerBurst(actor, style.particle);
   }
 
@@ -2054,6 +2001,7 @@ export class Replay extends Scene {
     this.clearInkcastEditorialState();
     this.shapeEffects.clear();
     this.weaponFxRenderer?.stopAll();
+    this.battleHud?.stopHeartAnimations();
     this.battleHud?.setFighterShapePowerState('a', 'ready');
     this.battleHud?.setFighterShapePowerState('b', 'ready');
     this.hidePowerGhosts();
@@ -2231,10 +2179,21 @@ export class Replay extends Scene {
     this.battleHud?.setClockVisible(false);
     this.battleHud?.setControlsVisible(false);
     const arenaChallenge = this.battleArenaChallengeResult();
+    const rewardPlan = this.isMine(winner.scribbit)
+      ? this.replayRewardPlan()
+      : null;
+    const archivedInkReward =
+      this.isMine(winner.scribbit) && (this.report.inkAwarded ?? 0) > 0
+        ? `${this.isSavedReplay() ? 'Saved payout. ' : ''}${this.report.inkAwarded} Ink earned.`
+        : '';
+    const rewardAnnouncement =
+      rewardPlan?.accessibleLabel ?? archivedInkReward;
     const resultAnnouncement = `${formatBattleRecapAnnouncement(
       recap,
       this.battleRecapPerspective(winner, loser)
-    )}${arenaChallenge ? ` ${arenaChallenge.accessibleLabel}` : ''}`;
+    )}${arenaChallenge ? ` ${arenaChallenge.accessibleLabel}` : ''}${
+      rewardAnnouncement ? ` ${rewardAnnouncement}` : ''
+    }`;
     if (this.report.kind === 'practice') {
       this.battleHud?.announceResult(resultAnnouncement);
       this.showPracticeOutcome(winner, recap);
@@ -2295,6 +2254,27 @@ export class Replay extends Scene {
     return 'spectator';
   }
 
+  private postFightEligibility(ownedFighter?: Scribbit) {
+    const arena = getArena(this);
+    const ownedFighterAlive = Boolean(
+      ownedFighter?.status === 'alive' &&
+      arena?.myScribbits.some((scribbit) => scribbit.id === ownedFighter.id)
+    );
+    return planReplayPostFightEligibility({
+      reportKind: this.report.kind,
+      entryMode: getReplayEntryMode(this),
+      ownedFighterAlive,
+      hasBackedScribbit: Boolean(arena?.myBackedScribbitId),
+    });
+  }
+
+  private replayRewardPlan() {
+    return planReplayReward({
+      receipt: getReplaySparReward(this),
+      savedReplay: this.isSavedReplay(),
+    });
+  }
+
   private showPracticeOutcome(
     winner: ReplayFighterRuntime,
     recap: BattleRecapPlan
@@ -2333,11 +2313,14 @@ export class Replay extends Scene {
   ): void {
     const { width, height } = this.scale;
     const usesVerdictCeremony = recap.finishPresentation === 'double-knockout';
-    const canChooseRival =
-      this.report.kind === 'exhibition' && this.isMine(winner.scribbit);
-    const canBackContender = !getArena(this)?.myBackedScribbitId;
     const losingFighter =
       winner === this.fighterA ? this.fighterB : this.fighterA;
+    const ownedFighter = this.isMine(winner.scribbit)
+      ? winner.scribbit
+      : this.isMine(losingFighter.scribbit)
+        ? losingFighter.scribbit
+        : undefined;
+    const actionEligibility = this.postFightEligibility(ownedFighter);
     const outcomeLayout = planReplayOutcomeLayout({ viewportHeight: height });
     const victoryY = outcomeLayout.heroY;
     this.time.delayedCall(260, () => {
@@ -2404,25 +2387,36 @@ export class Replay extends Scene {
       perspective: this.battleRecapPerspective(winner, losingFighter),
       ...(!rivalRunFinish && contextLine ? { contextLine } : {}),
     });
-    // Only show a reward the server says this exact battle granted. Historical
-    // replays and later practice wins must never imply a second payout.
-    if (this.isMine(winner.scribbit) && (this.report.inkAwarded ?? 0) > 0) {
-      const rewardText = this.isSavedReplay()
-        ? `SAVED PAYOUT • +${this.report.inkAwarded} INK`
-        : `EARNED • +${this.report.inkAwarded} INK`;
-      if (this.reduceMotion) {
-        const reward = label(
-          this,
-          width / 2,
-          victoryY - 110,
-          rewardText,
-          28,
-          UI.goldText,
-          true
-        ).setDepth(62);
-        reward.setStroke(UI.cream, 7);
-      } else {
-        floatReward(this, width / 2, victoryY, rewardText, UI.goldText, 62);
+    // Fresh XP comes only from the action-specific server receipt. Saved
+    // history can still show its archived Ink payout without implying new XP.
+    const rewardPlan = this.replayRewardPlan();
+    const fallbackInkReward = (this.report.inkAwarded ?? 0) > 0;
+    if (this.isMine(winner.scribbit) && (rewardPlan || fallbackInkReward)) {
+      const rewardText =
+        rewardPlan?.label ??
+        (this.isSavedReplay()
+          ? `SAVED PAYOUT • +${this.report.inkAwarded} INK`
+          : `EARNED • +${this.report.inkAwarded} INK`);
+      const reward = label(
+        this,
+        width / 2,
+        outcomeLayout.lifeY,
+        rewardText,
+        30,
+        UI.goldText,
+        true
+      ).setDepth(62);
+      reward.setStroke(UI.cream, 8);
+      reward.setAlpha(this.reduceMotion ? 1 : 0);
+      reward.setScale(this.reduceMotion ? 1 : 0.72);
+      if (!this.reduceMotion) {
+        this.tweens.add({
+          targets: reward,
+          alpha: 1,
+          scale: 1,
+          duration: 280,
+          ease: 'Back.easeOut',
+        });
       }
     }
 
@@ -2446,8 +2440,8 @@ export class Replay extends Scene {
       accessibilityX: width / 2,
       accessibilityY: outcomeLayout.actionY,
       width: width - 70,
-      canChooseRival,
-      canBackContender,
+      canChooseRival: actionEligibility.canChooseRival,
+      canBackContender: actionEligibility.canPickRumble,
       canReplay: this.canReplaySavedReport(),
       returnLabel: this.compactReturnButtonLabel(),
       rivalActionCopy,
@@ -2470,7 +2464,7 @@ export class Replay extends Scene {
   ): void {
     const { width, height } = this.scale;
     const daysLeft = daysLeftFor(mine, currentDay);
-    const canBackContender = !getArena(this)?.myBackedScribbitId;
+    const actionEligibility = this.postFightEligibility(mine);
     const winner = this.fighterForSlot(recap.winnerSlot);
     const loser = this.fighterForSlot(recap.loserSlot);
     const rivalRunFinish = planRivalRunFinishStamp(this.report.rivalRun);
@@ -2537,8 +2531,8 @@ export class Replay extends Scene {
       accessibilityX: width / 2,
       accessibilityY: outcomeLayout.actionY,
       width: width - 70,
-      canChooseRival: true,
-      canBackContender,
+      canChooseRival: actionEligibility.canChooseRival,
+      canBackContender: actionEligibility.canPickRumble,
       canReplay: this.canReplaySavedReport(),
       returnLabel: this.compactReturnButtonLabel(),
       rivalActionCopy,

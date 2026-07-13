@@ -16,7 +16,7 @@ import { isShapePowerId } from '../shared/combat';
 import type { PrimaryPower } from '../shared/combat';
 import { isElement } from '../shared/elements';
 import type { Element } from '../shared/elements';
-import type { BattleReport, DirectBattleResponse } from '../shared/arena';
+import type { BattleReport, SparBattleResponse } from '../shared/arena';
 import {
   getArena,
   setReplay,
@@ -211,7 +211,7 @@ const StartGame = (parent: string): Phaser.Game => {
         body: JSON.stringify({ scribbitId: id }),
       });
       if (!res.ok) return `spar failed ${res.status}`;
-      const response = (await res.json()) as DirectBattleResponse;
+      const response = (await res.json()) as SparBattleResponse;
       const report = response.report;
       const stagedBattle = stageDirectBattle(home, arena, response, id);
       const startReplay = (): void => {

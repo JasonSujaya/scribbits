@@ -7,6 +7,8 @@ import type {
   BattleReport,
   DirectBattleResponse,
   FounderChronicleBeat,
+  SparBattleResponse,
+  SparRewardReceipt,
 } from '../../shared/arena';
 import type { PrimaryPower } from '../../shared/combat/types';
 import {
@@ -15,6 +17,7 @@ import {
   recordPracticeSessionPower,
 } from './practicelab';
 import type { PracticeSession } from './practicelab';
+import { selectReplaySparReward } from './replayreward';
 import {
   planFounderRivalryStakes,
   type FounderRivalryStakesPlan,
@@ -27,6 +30,7 @@ const REPLAY_ENTRY_MODE_KEY = 'replayEntryMode';
 const REPLAY_PASS_KEY = 'replayPass';
 const REPLAY_CHRONICLE_BEAT_KEY = 'replayChronicleBeat';
 const REPLAY_RIVALRY_STAKES_KEY = 'replayRivalryStakes';
+const REPLAY_SPAR_REWARD_KEY = 'replaySparReward';
 const GALLERY_TAB_KEY = 'galleryTab';
 const PRACTICE_SESSION_KEY = 'practiceSession';
 const FOUNDER_CHRONICLE_BEATS_KEY = 'founderChronicleBeats';
@@ -64,6 +68,7 @@ export function setReplay(
   scene.registry.set(REPLAY_RETURN_KEY, returnScene);
   scene.registry.set(REPLAY_ENTRY_MODE_KEY, 'fresh');
   scene.registry.set(REPLAY_PASS_KEY, 0);
+  scene.registry.remove(REPLAY_SPAR_REWARD_KEY);
   if (founderChronicleBeat) {
     scene.registry.set(REPLAY_CHRONICLE_BEAT_KEY, {
       ...founderChronicleBeat,
@@ -92,6 +97,16 @@ export function setSavedReplay(
 
 export function getReplay(scene: Scene): BattleReport | undefined {
   return scene.registry.get(REPLAY_KEY) as BattleReport | undefined;
+}
+
+export function getReplaySparReward(scene: Scene): SparRewardReceipt | null {
+  const reward = scene.registry.get(REPLAY_SPAR_REWARD_KEY) as
+    | SparRewardReceipt
+    | undefined;
+  const report = getReplay(scene);
+  return reward && report && reward.reportId === report.id
+    ? { ...reward }
+    : null;
 }
 
 export function getReplayReturn(scene: Scene): ReplayReturnScene {
@@ -180,7 +195,7 @@ type StagedDirectBattle = Readonly<{
 export function stageDirectBattle(
   scene: Scene,
   currentArena: ArenaState | undefined,
-  response: DirectBattleResponse,
+  response: DirectBattleResponse | SparBattleResponse,
   ownedScribbitId: string,
   returnScene: ReplayReturnScene = 'ArenaHome'
 ): StagedDirectBattle {
@@ -221,6 +236,14 @@ export function stageDirectBattle(
     response.founderChronicleBeat,
     rivalryStakes
   );
+  const rewardReceipt = selectReplaySparReward({
+    receipt: 'rewardReceipt' in response ? response.rewardReceipt : null,
+    reportId: response.report.id,
+    ownedScribbitId,
+  });
+  if (rewardReceipt) {
+    scene.registry.set(REPLAY_SPAR_REWARD_KEY, rewardReceipt);
+  }
   return Object.freeze({ arena: nextArena, rivalryStakes });
 }
 

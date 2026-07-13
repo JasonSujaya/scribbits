@@ -7,7 +7,12 @@ import {
   type EquipmentLoadout,
 } from './equipment';
 
-export type CosmeticKind = 'accessory' | 'pen' | 'title';
+export type CosmeticKind =
+  | 'accessory'
+  | 'pen'
+  | 'title'
+  | 'drawing-ink'
+  | 'brush';
 
 type CosmeticCatalogEntryBase = {
   id: string;
@@ -36,6 +41,19 @@ export type CosmeticPenCatalogEntry = CosmeticCatalogEntryBase & {
   effect: CosmeticPenEffect;
 };
 
+export type CosmeticDrawingInkCatalogEntry = CosmeticCatalogEntryBase & {
+  kind: 'drawing-ink';
+  colors: readonly string[];
+  effect: CosmeticPenEffect;
+};
+
+export type CosmeticBrushEffect = 'chalk' | 'ribbon' | 'spray';
+
+export type CosmeticBrushCatalogEntry = CosmeticCatalogEntryBase & {
+  kind: 'brush';
+  effect: CosmeticBrushEffect;
+};
+
 export type CosmeticTitleCatalogEntry = CosmeticCatalogEntryBase & {
   kind: 'title';
 };
@@ -43,7 +61,9 @@ export type CosmeticTitleCatalogEntry = CosmeticCatalogEntryBase & {
 export type CosmeticCatalogEntry =
   | CosmeticGearCatalogEntry
   | CosmeticPenCatalogEntry
-  | CosmeticTitleCatalogEntry;
+  | CosmeticTitleCatalogEntry
+  | CosmeticDrawingInkCatalogEntry
+  | CosmeticBrushCatalogEntry;
 
 export const GEAR_CATALOG_ENTRIES: readonly CosmeticGearCatalogEntry[] = [
   {
@@ -372,6 +392,72 @@ export const PEN_CATALOG_ENTRIES: readonly CosmeticPenCatalogEntry[] = [
   },
 ];
 
+export const DRAWING_INK_CATALOG_ENTRIES: readonly CosmeticDrawingInkCatalogEntry[] =
+  [
+    {
+      id: 'berry-jam-ink',
+      kind: 'drawing-ink',
+      rarity: 'common',
+      name: 'Berry Jam Ink',
+      description: 'A juicy berry-red paint charge for one finished Scribbit.',
+      colors: ['#8f315b'],
+      effect: 'solid',
+    },
+    {
+      id: 'ghostlight-ink',
+      kind: 'drawing-ink',
+      rarity: 'rare',
+      name: 'Ghostlight Ink',
+      description: 'An eerie blue-green paint charge that glows off the page.',
+      colors: ['#35d6c0'],
+      effect: 'solid',
+    },
+    {
+      id: 'prism-shift-ink',
+      kind: 'drawing-ink',
+      rarity: 'epic',
+      name: 'Prism Shift Ink',
+      description:
+        'A full-spectrum paint charge that changes color as it moves.',
+      colors: [
+        '#ff5a3d',
+        '#ff9a3d',
+        '#f2cf3d',
+        '#4faa4f',
+        '#3ba0e0',
+        '#8a5cd8',
+      ],
+      effect: 'rainbow',
+    },
+  ];
+
+export const BRUSH_CATALOG_ENTRIES: readonly CosmeticBrushCatalogEntry[] = [
+  {
+    id: 'sidewalk-chalk-brush',
+    kind: 'brush',
+    rarity: 'common',
+    name: 'Sidewalk Chalk Brush',
+    description: 'A dusty chalk charge for soft, broken-edged Scribbit lines.',
+    effect: 'chalk',
+  },
+  {
+    id: 'ribbon-brush',
+    kind: 'brush',
+    rarity: 'rare',
+    name: 'Ribbon Brush',
+    description: 'A flowing ribbon charge for broad, folded-looking strokes.',
+    effect: 'ribbon',
+  },
+  {
+    id: 'star-spray-brush',
+    kind: 'brush',
+    rarity: 'epic',
+    name: 'Star Spray Brush',
+    description: 'A sparkling spray charge for one gloriously messy Scribbit.',
+    effect: 'spray',
+  },
+];
+
 export const TITLE_CATALOG_ENTRIES: readonly CosmeticTitleCatalogEntry[] = [
   {
     id: 'doodler',
@@ -407,6 +493,8 @@ export const COSMETIC_CATALOG: readonly CosmeticCatalogEntry[] = [
   ...GEAR_CATALOG_ENTRIES,
   ...PEN_CATALOG_ENTRIES,
   ...TITLE_CATALOG_ENTRIES,
+  ...DRAWING_INK_CATALOG_ENTRIES,
+  ...BRUSH_CATALOG_ENTRIES,
 ];
 
 export const COSMETIC_BY_ID: ReadonlyMap<string, CosmeticCatalogEntry> =

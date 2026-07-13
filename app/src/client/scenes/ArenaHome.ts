@@ -89,8 +89,8 @@ import { getBattleArenaForDay } from '../../shared/battlearena';
 import { navigateToDailyDraw } from '../lib/draweligibility';
 
 // One focused battle hub: choose an owned fighter, choose Champion or Spar,
-// then fight. Nightly Rumble picks live in Scout instead of competing with the
-// Arena's primary action.
+// then fight. The compact Rumble Pick action remains here so removing Scout
+// from the primary dock never hides a daily progression choice.
 export class ArenaHome extends Scene {
   private state!: ArenaState;
   private errorPanelRef: ErrorPanel | null = null;
@@ -616,6 +616,32 @@ export class ArenaHome extends Scene {
         enabled: false,
         onActivate: () => this.activatePrimaryArenaAction(),
       }) ?? null;
+    const rumblePickLocked = this.state.myBackedScribbitId !== null;
+    const activateRumblePick = (): void => {
+      if (rumblePickLocked) {
+        this.showPickLockedToast();
+        return;
+      }
+      this.openContenderPicker();
+    };
+    hero.add(
+      this.rumblePickButton(
+        0,
+        310,
+        rumblePickLocked ? 'PICK LOCKED' : 'RUMBLE PICK',
+        activateRumblePick,
+        rumblePickLocked
+      )
+    );
+    this.rosterActionOverlay?.add({
+      label: rumblePickLocked
+        ? 'Tonight\'s Rumble Pick is locked'
+        : 'Choose tonight\'s Rumble Pick',
+      rect: { x: x - 165, y: centerY + 272, width: 330, height: 76 },
+      followCamera: true,
+      pointerPassthrough: true,
+      onActivate: activateRumblePick,
+    });
     this.renderArenaFighter();
     this.renderBattleModeControls();
 
@@ -900,6 +926,36 @@ export class ArenaHome extends Scene {
       });
     }
     button.add([background, sword, buttonLabel, hitArea]);
+    return button;
+  }
+
+  private rumblePickButton(
+    x: number,
+    y: number,
+    text: string,
+    onActivate: () => void,
+    locked: boolean
+  ): Phaser.GameObjects.Container {
+    const width = 300;
+    const height = 62;
+    const button = this.add.container(x, y);
+    const background = this.add.graphics();
+    background.fillStyle(locked ? UI.tapeAlt : UI.creamHex, 0.96);
+    background.fillRoundedRect(-width / 2, -height / 2, width, height, 16);
+    background.lineStyle(3, UI.inkHex, 0.82);
+    background.strokeRoundedRect(-width / 2, -height / 2, width, height, 16);
+    const icon = paperIcon(this, locked ? 'lock' : 'target', -92, 0, {
+      size: 28,
+      fill: locked ? UI.inkSoftHex : UI.gold,
+    });
+    const buttonLabel = label(this, 18, 0, text, 22, UI.ink, true);
+    const hitArea = this.add
+      .rectangle(0, 0, width, height, 0xffffff, 0.001)
+      .setInteractive({ useHandCursor: true });
+    hitArea.on('pointerup', () => {
+      if (!this.didDrag()) onActivate();
+    });
+    button.add([background, icon, buttonLabel, hitArea]);
     return button;
   }
 

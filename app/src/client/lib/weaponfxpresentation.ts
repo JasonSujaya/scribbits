@@ -1,13 +1,21 @@
-import type { Scribbit } from '../../shared/arena';
+import {
+  getAttachedGearRank,
+  type GearRank,
+  type Scribbit,
+} from '../../shared/arena';
 import type { AccessoryEffectFamily } from '../../shared/accessoryeffects';
 import { findGearCosmetic } from '../../shared/cosmetics';
 
 export type WeaponFxQuality = 'off' | 'balanced' | 'full';
 export type WeaponFxPhase = 'telegraph' | 'active' | 'impact';
+export type WeaponFxRankTier = 'basic' | 'enhanced' | 'red-star';
 
 export type WeaponFxProfile = Readonly<{
   weaponId: string;
   family: AccessoryEffectFamily;
+  rank: GearRank;
+  rankProgress: number;
+  rankTier: WeaponFxRankTier;
   shaderMode: number;
   tint: readonly [number, number, number];
   fallbackColor: number;
@@ -19,6 +27,14 @@ export type WeaponFxCue = Readonly<{
   intensity: number;
 }>;
 
+const weaponFxRankTier = (rank: GearRank): WeaponFxRankTier => {
+  if (rank === 6) return 'red-star';
+  if (rank >= 4) return 'enhanced';
+  return 'basic';
+};
+
+const weaponFxRankProgress = (rank: GearRank): number => (rank - 1) / 5;
+
 type WeaponFxCapabilityInput = Readonly<{
   webgl: boolean;
   reduceMotion: boolean;
@@ -28,7 +44,13 @@ type WeaponFxCapabilityInput = Readonly<{
 }>;
 
 const PROFILE_BY_FAMILY: Readonly<
-  Record<AccessoryEffectFamily, Omit<WeaponFxProfile, 'weaponId' | 'family'>>
+  Record<
+    AccessoryEffectFamily,
+    Omit<
+      WeaponFxProfile,
+      'weaponId' | 'family' | 'rank' | 'rankProgress' | 'rankTier'
+    >
+  >
 > = Object.freeze({
   rush: {
     shaderMode: 2,
@@ -62,22 +84,46 @@ const PROFILE_BY_FAMILY: Readonly<
   },
 });
 
-export function resolveWeaponFxProfile(
-  scribbit: Pick<Scribbit, 'accessories'>
-): WeaponFxProfile | null {
-  for (const gearId of scribbit.accessories) {
+export function resolveWeaponFxProfiles(
+  scribbit: Pick<Scribbit, 'accessories' | 'gearRanks'> &
+    Partial<Pick<Scribbit, 'equipmentLoadout'>>
+): readonly WeaponFxProfile[] {
+  const weaponIds = [
+    ...(scribbit.equipmentLoadout?.weapon.filter(
+      (gearId): gearId is string => gearId !== null
+    ) ?? []),
+    ...scribbit.accessories,
+  ];
+  const visitedWeaponIds = new Set<string>();
+  const profiles: WeaponFxProfile[] = [];
+  for (const gearId of weaponIds) {
+    if (visitedWeaponIds.has(gearId)) continue;
+    visitedWeaponIds.add(gearId);
     const gear = findGearCosmetic(gearId);
     if (!gear || gear.category !== 'weapon') continue;
     const profile = PROFILE_BY_FAMILY[gear.effectFamily];
-    return Object.freeze({
-      weaponId: gear.id,
-      family: gear.effectFamily,
-      shaderMode: profile.shaderMode,
-      tint: profile.tint,
-      fallbackColor: profile.fallbackColor,
-    });
+    const rank = getAttachedGearRank(scribbit, gear.id);
+    profiles.push(
+      Object.freeze({
+        weaponId: gear.id,
+        family: gear.effectFamily,
+        rank,
+        rankProgress: weaponFxRankProgress(rank),
+        rankTier: weaponFxRankTier(rank),
+        shaderMode: profile.shaderMode,
+        tint: profile.tint,
+        fallbackColor: profile.fallbackColor,
+      })
+    );
   }
-  return null;
+  return Object.freeze(profiles);
+}
+
+export function resolveWeaponFxProfile(
+  scribbit: Pick<Scribbit, 'accessories' | 'gearRanks'> &
+    Partial<Pick<Scribbit, 'equipmentLoadout'>>
+): WeaponFxProfile | null {
+  return resolveWeaponFxProfiles(scribbit)[0] ?? null;
 }
 
 export function chooseWeaponFxQuality(
@@ -109,25 +155,29 @@ export function chooseWeaponFxQuality(
 
 export function planWeaponFxCue(
   phase: WeaponFxPhase,
-  critical = false
+  critical = false,
+  rank: GearRank = 1
 ): WeaponFxCue {
+  // Rank changes presentation only. Cue duration stays constant so gear rank
+  // cannot alter combat readability or the authoritative replay timeline.
+  const rankIntensity = 0.8 + weaponFxRankProgress(rank) * 0.2;
   if (phase === 'telegraph') {
     return Object.freeze({
       phase,
       durationMilliseconds: 320,
-      intensity: 0.72,
+      intensity: 0.72 * rankIntensity,
     });
   }
   if (phase === 'active') {
     return Object.freeze({
       phase,
       durationMilliseconds: 380,
-      intensity: 0.92,
+      intensity: 0.92 * rankIntensity,
     });
   }
   return Object.freeze({
     phase,
     durationMilliseconds: critical ? 360 : 260,
-    intensity: critical ? 1 : 0.82,
+    intensity: (critical ? 1 : 0.82) * rankIntensity,
   });
 }

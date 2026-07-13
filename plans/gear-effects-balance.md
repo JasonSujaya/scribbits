@@ -2,22 +2,20 @@
 
 ## Product rule
 
-Gear rarity and forged rank improve art, foil, entrance, and KO presentation. They never multiply combat stats. Every accessory belongs to one of eight **Style Traits**, and each family has Common gear so rarity cannot become power.
+Gear rarity and forged rank improve art, foil, entrance, and KO presentation. They never multiply combat stats. Every Gear item belongs to one of six **Style Traits**, and each family has Common Gear so rarity cannot become power.
 
-The reusable loadout contract reserves two slots in each of four categories: weapon, armor, shoes, and accessory. This is capacity, not permission to stack eight independent effects. Current mode is `display-only`: trait metadata stays internal, player-facing collection and capsule screens do not name it, and gear does not enter combat input or change a transcript.
+The reusable loadout contract reserves two slots in each of four categories: weapon, armor, shoes, and accessory. This is capacity, not permission to stack eight independent effects. Current mode is `loadout-active, combat-neutral`: the Ink Kit exposes and persists equipped Gear, and an equipped weapon selects its cosmetic battle-effect family. Trait metadata stays internal, Gear does not enter combat simulation input, and no loadout changes a transcript.
 
 ## Proposed sidegrades
 
-| Trait   | Future benefit                         | Required tradeoff | Initial items                                 |
-| ------- | -------------------------------------- | ----------------- | --------------------------------------------- |
-| Guard   | +0.5% max HP                           | -0.5% damage      | Beanie, Snail Shell Backpack, Cape            |
-| Edge    | +0.5% damage                           | +1% cooldown      | Tiny Sword, Mustache, Golden Crown            |
-| Rush    | -1% cooldown                           | -0.5% max HP      | Speed Scarf, Propeller Cap, Ink Skates        |
-| Focus   | -1 telegraph tick                      | +1% cooldown      | Monocle, Round Glasses, Headphones            |
-| Ready   | -1 initial ability-delay tick          | -0.5% damage      | Bowtie, Party Hat, Top Hat                    |
-| Fortune | +0.6 percentage points critical chance | -0.3% damage      | Flower Crown, Colorburst Rosette, Prism Crown |
-| Impact  | +5% authored knockback                 | -1% movement      | Rumble Belt, Crater Crown, Dragon Wings       |
-| Aim     | +3% Shape Power collision/range        | -0.5% damage      | Nib Headband, Eyepatch, Nib Circlet           |
+| Trait   | Future benefit                          | Required tradeoff | Initial items                                                     |
+| ------- | --------------------------------------- | ----------------- | ----------------------------------------------------------------- |
+| Guard   | +0.5% max HP                            | -0.5% damage      | Beanie, Snail Shell Backpack, Cape, Crater Crown                  |
+| Rush    | -1% cooldown                            | -0.5% max HP      | Speed Scarf, Propeller Cap, Ink Skates, Dragon Wings              |
+| Focus   | -1 telegraph tick                       | +1% cooldown      | Monocle, Round Glasses, Mustache, Headphones                      |
+| Ready   | -1 initial ability-delay tick           | -0.5% damage      | Bowtie, Party Hat, Rumble Belt, Top Hat                           |
+| Fortune | +0.6 percentage points critical chance | -0.3% damage      | Flower Crown, Colorburst Rosette, Golden Crown, Prism Crown       |
+| Aim     | +3% Shape Power collision/range         | -0.5% damage      | Tiny Sword, Nib Headband, Eyepatch, Nib Circlet                   |
 
 When effects activate, each category resolves its two equipped pieces into at most one category perk, for four perks total. Two items never apply two raw modifiers, duplicate families do not stack, and rarity or forge rank never scales the values. A perk resolves atomically—if the benefit cannot apply, its tradeoff must not apply alone. Pair recipes can create the build-combo chase without turning eight slots into an unreadable modifier pile.
 
@@ -29,13 +27,13 @@ When effects activate, each category resolves its two equipped pieces into at mo
 
 ## Balance gates
 
-- Identical seed, stats, element, and Ink Mods produce identical transcripts in display-only mode regardless of accessory or rank.
-- Test 8 traits × all 15 legal four-of-six Ink Mod loadouts × 4 Shape Powers × 4 elements × slot swaps and representative seeds.
+- Identical seed, stats, element, and Ink Mods produce identical transcripts in combat-neutral mode regardless of equipped Gear or rank.
+- Test 6 traits × all 15 legal four-of-six Ink Mod loadouts × 4 Shape Powers × 4 elements × slot swaps and representative seeds.
 - Trait versus no-trait, same-build aggregate win rate stays within 45–55%.
 - No trait shifts a matchup by more than 5 percentage points from its baseline.
 - Absolute power-matchup win rate stays at or below 65%; identical slot A stays within 40–60%.
 - Maximum-level versus level-1 remains within the existing 60% cap.
 - Every fight remains within 400 ticks and existing event/entity caps.
-- Aim validates each power geometry independently; Impact touches only authored knockback and never wall-ejection safety.
+- Aim validates each power geometry independently; no trait may bypass wall-ejection or fixed-tick safety.
 
 Until those gates pass, Rumble and Boss battles remain accessory-neutral.

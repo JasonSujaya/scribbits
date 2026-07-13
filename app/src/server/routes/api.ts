@@ -23,10 +23,15 @@ import type {
   RivalRunState,
   ScoutNotebookState,
   Scribbit,
+  SparBattleResponse,
   SparRequest,
   SparRivalSlate,
   SplashState,
 } from '../../shared/arena';
+import {
+  createSparRewardReceipt,
+  type SparRewardReceipt,
+} from '../../shared/sparreward';
 import {
   CAPSULE_FIRST_DAILY_COST,
   INK_REWARDS,
@@ -38,6 +43,10 @@ import {
   isLegacyCardCursor,
   parseLegacyCardsPageSize,
 } from '../../shared/legacycards';
+import {
+  isEquipmentCategory,
+  type EquipGearRequest,
+} from '../../shared/equipment';
 import { simulate } from '../core/battle';
 import {
   loadBattleReport,
@@ -64,7 +73,7 @@ import {
   markLegacyCardsSeen,
 } from '../core/legacy';
 import {
-  checkAccessoriesForSubmit,
+  checkSubmissionConsumablesForSubmit,
   claimCapsuleOperation,
   createCapsuleProgress,
   getCapsuleOperationKey,
@@ -139,6 +148,7 @@ import {
   claimAndAwardDailySparWin,
   applyDailyBelief,
   createScribbit,
+  equipGearForScribbit,
   enforceAliveScribbitLimit,
   getAliveScribbitsForUser,
   getCommunityLegendCount,
@@ -324,6 +334,43 @@ const readScribbitIdentifier = (value: unknown): string | undefined => {
 
 const readScribbitId = (value: unknown): string | undefined => {
   return isRecord(value) ? readScribbitIdentifier(value.scribbitId) : undefined;
+};
+
+const readEquipGearRequest = (value: unknown): EquipGearRequest | undefined => {
+  if (!isRecord(value)) return undefined;
+  const fields = Object.keys(value);
+  if (
+    fields.length !== 4 ||
+    !fields.includes('scribbitId') ||
+    !fields.includes('category') ||
+    !fields.includes('slotIndex') ||
+    !fields.includes('gearId')
+  ) {
+    return undefined;
+  }
+
+  const scribbitId = readScribbitIdentifier(value.scribbitId);
+  if (
+    !scribbitId ||
+    !isEquipmentCategory(value.category) ||
+    (value.slotIndex !== 0 && value.slotIndex !== 1) ||
+    (value.gearId !== null && typeof value.gearId !== 'string')
+  ) {
+    return undefined;
+  }
+
+  const gearId =
+    typeof value.gearId === 'string' ? value.gearId.trim() : value.gearId;
+  if (gearId !== null && !/^[a-z0-9-]{2,64}$/.test(gearId)) {
+    return undefined;
+  }
+
+  return {
+    scribbitId,
+    category: value.category,
+    slotIndex: value.slotIndex,
+    gearId,
+  };
 };
 
 const readSparRequest = (value: unknown): SparRequest | undefined => {
@@ -576,7 +623,7 @@ const finalizeSparBattle = async (
     completedAt: Date;
     fallbackFounderChronicle: ArenaState['founderChronicle'];
   }>
-): Promise<DirectBattleResponse> => {
+): Promise<SparBattleResponse> => {
   const completedAtMilliseconds = input.completedAt.getTime();
   await saveBattleReport(redis, input.report, completedAtMilliseconds);
   await queueFounderChronicleBattle(
@@ -588,6 +635,13 @@ const finalizeSparBattle = async (
   );
 
   let inkAwarded = input.report.inkAwarded ?? 0;
+  let rewardReceipt: SparRewardReceipt | null = createSparRewardReceipt({
+    reportId: input.report.id,
+    scribbitId: input.challengerId,
+    xpBefore: input.report.a.xp,
+    xpAfter: input.report.a.xp,
+    inkAwarded: 0,
+  });
   if (input.report.winner === 'a') {
     const rewardResult = await claimAndAwardDailySparWin(redis, {
       userId: input.userId,
@@ -596,11 +650,14 @@ const finalizeSparBattle = async (
       reportId: input.report.id,
       inkAmount: INK_REWARDS.sparWin,
     });
-    if (
-      rewardResult === 'awarded' ||
-      rewardResult === 'already-awarded-this-report'
-    ) {
-      inkAwarded = INK_REWARDS.sparWin;
+    if (rewardResult.receipt) {
+      inkAwarded = rewardResult.receipt.inkAwarded;
+      rewardReceipt = rewardResult.receipt;
+    } else if (rewardResult.status === 'already-awarded-this-report') {
+      // A legacy report marker proves only that this report claimed the day.
+      // Preserve any archived report payout, but never invent a modern receipt
+      // or a fixed Ink amount without exact stored reward state.
+      rewardReceipt = null;
     }
   }
 
@@ -610,12 +667,13 @@ const finalizeSparBattle = async (
   };
   await saveBattleReport(redis, rewardedReport, completedAtMilliseconds);
   await recordDailyPlay(redis, input.userId, input.completedAt);
-  return finishDirectBattleResponse(
+  const directBattleResponse = await finishDirectBattleResponse(
     input.userId,
     rewardedReport,
     input.challengerId,
     input.fallbackFounderChronicle
   );
+  return { ...directBattleResponse, rewardReceipt };
 };
 
 const loadTodayRumbleEntrants = async (
@@ -663,6 +721,7 @@ registerPlayerMutatingGet('/arena', async (c) => {
     let myClout = 0;
     let myInk = 0;
     let myPens: string[] = [];
+    let myDrawingSupplies: Record<string, number> = {};
     let nextCapsuleCost = CAPSULE_FIRST_DAILY_COST;
     let capsuleProgress = createCapsuleProgress(0, 0, 0);
     let founderChronicle: ArenaState['founderChronicle'] = {
@@ -688,6 +747,7 @@ registerPlayerMutatingGet('/arena', async (c) => {
       myClout = await getUserClout(redis, player.userId);
       myInk = await getInkBalance(redis, player.userId);
       myPens = inventory.pens;
+      myDrawingSupplies = { ...inventory.items };
       capsuleProgress = await loadCapsuleProgress(
         redis,
         player.userId,
@@ -754,6 +814,7 @@ registerPlayerMutatingGet('/arena', async (c) => {
       myClout,
       myInk,
       myPens,
+      myDrawingSupplies,
       nextCapsuleCost,
       capsuleProgress,
       founderChronicle,
@@ -894,21 +955,22 @@ api.post('/scribbit', async (c) => {
     const accessoryIds = draft.accessories.map((accessory) => {
       return accessory.id;
     });
-    const accessoryAvailability = await checkAccessoriesForSubmit(
+    const consumableAvailability = await checkSubmissionConsumablesForSubmit(
       redis,
       player.userId,
-      accessoryIds
+      accessoryIds,
+      draft.drawingSupplies
     );
 
-    if (accessoryAvailability.status === 'invalid') {
+    if (consumableAvailability.status === 'invalid') {
       return badRequest(
         c,
-        'Choose valid accessories from the capsule catalog.'
+        'Choose valid accessories, paints, and brushes from Mystery Ink.'
       );
     }
 
-    if (accessoryAvailability.status === 'insufficient') {
-      return conflict(c, 'You do not have enough copies of that accessory.');
+    if (consumableAvailability.status === 'insufficient') {
+      return conflict(c, 'That drawing supply has already run out.');
     }
 
     const scribbitId = createScribbitId(dayNumber);
@@ -927,6 +989,7 @@ api.post('/scribbit', async (c) => {
       scribbit,
       currentDate: now,
       accessoryIds,
+      drawingSupplies: draft.drawingSupplies,
       rumbleScore: now.getTime(),
       inkAward: INK_REWARDS.dailyDraw,
     });
@@ -955,11 +1018,21 @@ api.post('/scribbit', async (c) => {
         'One accessory copy was already used. Refresh and try again.'
       );
     }
+    if (commitResult.status === 'invalid-supply') {
+      return badRequest(c, 'Choose valid paint and brush charges.');
+    }
+    if (commitResult.status === 'insufficient-supply') {
+      return conflict(c, 'That paint or brush charge was already used.');
+    }
     if (commitResult.status === 'id-collision') {
       return conflict(c, 'That Scribbit ID was already used. Try again.');
     }
 
-    return c.json<Scribbit>(scribbit, 201);
+    const committedScribbit = await loadScribbit(redis, scribbit.id);
+    if (!committedScribbit) {
+      throw new Error('Committed Scribbit could not be loaded.');
+    }
+    return c.json<Scribbit>(committedScribbit, 201);
   } catch (error) {
     console.error('Submit Scribbit route failed:', error);
     return serverError(c, 'The ink would not dry. Try again soon.');
@@ -1235,7 +1308,7 @@ api.post('/spar', async (c) => {
         storedReport.rivalRun.boutNumber ===
           sparRequest.rivalRun.expectedBoutsCompleted + 1
       ) {
-        return c.json<DirectBattleResponse>(
+        return c.json<SparBattleResponse>(
           await finalizeSparBattle({
             userId: player.userId,
             challengerId: challenger.id,
@@ -1327,7 +1400,7 @@ api.post('/spar', async (c) => {
       ...simulatedReport,
       ...(rivalRunReceipt ? { rivalRun: rivalRunReceipt } : {}),
     };
-    return c.json<DirectBattleResponse>(
+    return c.json<SparBattleResponse>(
       await finalizeSparBattle({
         userId: player.userId,
         challengerId: challenger.id,
@@ -1681,6 +1754,36 @@ registerPlayerMutatingGet('/inventory', async (c) => {
   } catch (error) {
     console.error('Inventory route failed:', error);
     return serverError(c, 'The ink drawer is stuck. Try again soon.');
+  }
+});
+
+api.post('/equip-gear', async (c) => {
+  const player = await getCurrentPlayer();
+  if (!player) return unauthorized(c, 'Sign in to equip Gear.');
+
+  const request = readEquipGearRequest(await readJsonBody(c));
+  if (!request) {
+    return badRequest(c, 'Choose a valid living Scribbit and Gear slot.');
+  }
+
+  try {
+    const result = await equipGearForScribbit(redis, player.userId, request);
+    if (
+      result.status === 'scribbit-unavailable' ||
+      result.status === 'not-owned'
+    ) {
+      return notFound(c, 'That Scribbit is not in your active roster.');
+    }
+    if (result.status === 'invalid-gear') {
+      return badRequest(c, 'Choose Gear that matches that slot category.');
+    }
+    if (result.status === 'gear-undiscovered') {
+      return badRequest(c, 'Discover that Gear before equipping it.');
+    }
+    return c.json<Scribbit>(result.scribbit);
+  } catch (error) {
+    console.error('Equip Gear route failed:', error);
+    return serverError(c, 'The Gear rack jammed. Try again soon.');
   }
 });
 

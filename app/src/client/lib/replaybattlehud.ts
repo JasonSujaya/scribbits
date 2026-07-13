@@ -4,17 +4,19 @@
 import * as Phaser from 'phaser';
 import { Scene } from 'phaser';
 import type { Scribbit } from '../../shared/arena';
+import { getShapePowerContent } from '../../shared/combat/shapepowercontent';
 import type { PrimaryPower } from '../../shared/combat/types';
 import {
   planReplayBattleClock,
+  planReplayHeartDamageReaction,
   planReplayHeartMeter,
 } from './battlepresentation';
 import type {
+  BattleImpactTier,
   ReplayBattleLayout,
   ReplayBattleSide,
   ReplayHeartMeterPlan,
 } from './battlepresentation';
-import { getShapePowerSignatureName } from './shapepowerpresentation';
 import { ELEMENT_STYLES, UI } from './theme';
 import { bindPressInteractionEvents } from './pressinteraction';
 import { label } from './ui';
@@ -22,24 +24,23 @@ import { BATTLE_CONTROL_BUTTON_TEXTURES } from './visualassets';
 
 export type ReplayShapePowerState = 'ready' | 'telegraph' | 'active';
 
-type ShapePowerChipView = {
-  container: Phaser.GameObjects.Container;
-  stateBackground: Phaser.GameObjects.Rectangle;
-  stateLabel: Phaser.GameObjects.Text;
-  powerLabel: Phaser.GameObjects.Text;
+type ShapePowerStatusView = {
   fighterName: string;
-  powerName: string;
+  effectDescription: string;
 };
 
 type FighterVitalsView = {
   container: Phaser.GameObjects.Container;
   heartMeter: Phaser.GameObjects.Container;
+  heartWarning: Phaser.GameObjects.Container;
   heartGraphics: Phaser.GameObjects.Graphics;
-  shapePower: ShapePowerChipView;
+  shapePower: ShapePowerStatusView;
   displayedHeartUnits: number | null;
   displayedDanger: boolean;
+  displayedLastHeart: boolean;
   displayedHitPoints: number | null;
   displayedMaximumHitPoints: number | null;
+  warningEvent: Phaser.Time.TimerEvent | null;
 };
 
 type BattleClockView = {
@@ -48,11 +49,7 @@ type BattleClockView = {
 };
 
 type ShapePowerStatePresentation = Readonly<{
-  visibleLabel: string;
   accessibleLabel: string;
-  stateBackgroundColor: number;
-  stateTextColor: string;
-  powerTextColor: string;
 }>;
 
 const SHAPE_POWER_STATE_PRESENTATIONS: Record<
@@ -60,25 +57,13 @@ const SHAPE_POWER_STATE_PRESENTATIONS: Record<
   ShapePowerStatePresentation
 > = {
   ready: {
-    visibleLabel: 'READY',
     accessibleLabel: 'ready',
-    stateBackgroundColor: UI.inkHex,
-    stateTextColor: UI.cream,
-    powerTextColor: UI.ink,
   },
   telegraph: {
-    visibleLabel: 'WINDUP',
-    accessibleLabel: 'telegraphing',
-    stateBackgroundColor: UI.goldHex,
-    stateTextColor: UI.ink,
-    powerTextColor: UI.ink,
+    accessibleLabel: 'winding up',
   },
   active: {
-    visibleLabel: 'ACTIVE',
     accessibleLabel: 'active',
-    stateBackgroundColor: UI.coral,
-    stateTextColor: UI.cream,
-    powerTextColor: UI.ink,
   },
 };
 
@@ -156,7 +141,7 @@ const renderHeartMeter = (
       traceHeart(graphics, x, 0, heartSize, state === 'half');
       graphics.fillPath();
     }
-    graphics.lineStyle(3, UI.inkHex, 0.96);
+    graphics.lineStyle(plan.isLastHeart ? 4 : 3, UI.inkHex, 0.96);
     traceHeart(graphics, x, 0, heartSize);
     graphics.strokePath();
   }
@@ -203,6 +188,12 @@ export type ReplayBattleHud = {
     maximumHitPoints: number,
     playbackSpeed: number
   ) => void;
+  playFighterDamage: (
+    side: ReplayBattleSide,
+    tier: BattleImpactTier,
+    playbackSpeed: number
+  ) => void;
+  stopHeartAnimations: () => void;
   setFighterShapePowerState: (
     side: ReplayBattleSide,
     state: ReplayShapePowerState
@@ -224,9 +215,7 @@ export type CreateReplayBattleHudInput = {
   fighterB: Scribbit;
   fighterAPrimaryPower: PrimaryPower;
   fighterBPrimaryPower: PrimaryPower;
-  battleLabel?: string | null;
   arenaName: string;
-  arenaRule: string;
   showPlaybackControls: boolean;
   reduceMotion: boolean;
   initialPlaybackSpeed: number;
@@ -288,79 +277,32 @@ const createFighterVitalsView = (
     style.primary,
     layout.heartRowWidth
   );
+  const heartWarning = scene.add.container(0, 0, [heartGraphics]);
   const heartMeter = scene.add
-    .container(fighterLayout.chipCenterX, layout.heartRowY, [heartGraphics])
+    .container(fighterLayout.chipCenterX, layout.heartRowY, [heartWarning])
     .setSize(layout.heartRowWidth, layout.heartRowHeight)
     .setDepth(24)
     .setName(initialHeartPlan.accessibleLabel)
     .setData('accessibilityLabel', initialHeartPlan.accessibleLabel)
     .setData('heartStates', initialHeartPlan.states);
 
-  const chipWidth = layout.heartRowWidth;
-  const chipHeight = layout.fighterChipHeight;
-  const stateWidth = Math.min(82, Math.round(chipWidth * 0.32));
-  const stateCenterX = chipWidth / 2 - stateWidth / 2;
-  const powerWidth = chipWidth - stateWidth - 10;
-  const powerCenterX = -chipWidth / 2 + powerWidth / 2;
-  const readyPresentation = SHAPE_POWER_STATE_PRESENTATIONS.ready;
-  const powerName = getShapePowerSignatureName(
-    scribbit.element,
-    primaryPower
-  ).toUpperCase();
-  const shapePowerContainer = scene.add
-    .container(fighterLayout.chipCenterX, layout.fighterChipY)
-    .setSize(chipWidth, chipHeight)
-    .setVisible(false);
-  const stateBackground = scene.add.rectangle(
-    stateCenterX,
-    0,
-    stateWidth,
-    chipHeight - 4,
-    readyPresentation.stateBackgroundColor,
-    1
-  );
-  const stateLabel = label(
-    scene,
-    stateCenterX,
-    0,
-    readyPresentation.visibleLabel,
-    18,
-    readyPresentation.stateTextColor,
-    true
-  );
-  const powerLabel = label(
-    scene,
-    powerCenterX,
-    0,
-    powerName,
-    23,
-    readyPresentation.powerTextColor,
-    true
-  );
-  fitTextToWidth(stateLabel, stateWidth - 12);
-  fitTextToWidth(powerLabel, powerWidth - 8);
-  shapePowerContainer.add([stateBackground, stateLabel, powerLabel]);
-
-  const container = scene.add
-    .container(0, 0, [name, heartMeter, shapePowerContainer])
-    .setDepth(20);
+  const container = scene.add.container(0, 0, [name, heartMeter]).setDepth(20);
 
   return {
     container,
     heartMeter,
+    heartWarning,
     heartGraphics,
     shapePower: {
-      container: shapePowerContainer,
-      stateBackground,
-      stateLabel,
-      powerLabel,
       fighterName: scribbit.name,
-      powerName,
+      effectDescription: getShapePowerContent(primaryPower).receiptEffect,
     },
     displayedHeartUnits: null,
     displayedDanger: false,
+    displayedLastHeart: false,
     displayedHitPoints: null,
     displayedMaximumHitPoints: null,
+    warningEvent: null,
   };
 };
 
@@ -469,7 +411,7 @@ export function createReplayBattleHud(
   const describeShapePowerState = (side: ReplayBattleSide): string => {
     const shapePower = fighterVitals[side].shapePower;
     const state = SHAPE_POWER_STATE_PRESENTATIONS[shapePowerStates[side]];
-    return `${shapePower.fighterName}: Shape Power ${shapePower.powerName} is ${state.accessibleLabel}`;
+    return `${shapePower.fighterName}'s Shape Power is ${state.accessibleLabel}. ${shapePower.effectDescription}.`;
   };
   let shapePowerLiveRegion: HTMLParagraphElement | null = null;
   const applyFighterShapePowerState = (
@@ -480,59 +422,26 @@ export function createReplayBattleHud(
     if (announceChange && shapePowerStates[side] === state) return;
 
     shapePowerStates[side] = state;
-    const shapePower = fighterVitals[side].shapePower;
-    const presentation = SHAPE_POWER_STATE_PRESENTATIONS[state];
-    scene.tweens.killTweensOf(shapePower.stateBackground);
-    shapePower.stateBackground.setAlpha(1);
-    shapePower.stateBackground.setFillStyle(
-      presentation.stateBackgroundColor,
-      1
-    );
-    shapePower.stateLabel
-      .setText(presentation.visibleLabel)
-      .setColor(presentation.stateTextColor);
-    shapePower.powerLabel.setColor(presentation.powerTextColor);
-    fitTextToWidth(
-      shapePower.stateLabel,
-      shapePower.stateBackground.width - 10
-    );
     const accessibleDescription = describeShapePowerState(side);
-    shapePower.container
-      .setVisible(state !== 'ready')
+    const fighter = fighterVitals[side];
+    fighter.container
       .setName(accessibleDescription)
       .setData('shapePowerState', state)
       .setData('accessibilityLabel', accessibleDescription);
-
-    if (!input.reduceMotion && state === 'telegraph') {
-      scene.tweens.add({
-        targets: shapePower.stateBackground,
-        alpha: 0.58,
-        duration: 300,
-        ease: 'Sine.easeInOut',
-        yoyo: true,
-        repeat: -1,
-      });
-    } else if (!input.reduceMotion && state === 'active') {
-      scene.tweens.add({
-        targets: shapePower.stateBackground,
-        alpha: 0.5,
-        duration: 110,
-        ease: 'Cubic.easeOut',
-        yoyo: true,
-      });
-    }
+    const datasetPrefix = side === 'a' ? 'fighterA' : 'fighterB';
+    scene.game.canvas.dataset[`${datasetPrefix}ShapePowerState`] = state;
 
     // Announce the actionable wind-up once; active/ready transitions can fire
     // rapidly at 4× and would otherwise flood a polite assistive live region.
     if (announceChange && state === 'telegraph' && shapePowerLiveRegion) {
-      shapePowerLiveRegion.textContent = `${describeShapePowerState('a')}. ${describeShapePowerState('b')}.`;
+      shapePowerLiveRegion.textContent = describeShapePowerState(side);
     }
   };
   applyFighterShapePowerState('a', 'ready', false);
   applyFighterShapePowerState('b', 'ready', false);
   shapePowerLiveRegion = createShapePowerLiveRegion(
     scene,
-    `${describeShapePowerState('a')}. ${describeShapePowerState('b')}.`
+    `${describeShapePowerState('a')} ${describeShapePowerState('b')}`
   );
 
   const setFighterShapePowerState = (
@@ -545,29 +454,16 @@ export function createReplayBattleHud(
   const arenaCaption = label(
     scene,
     layout.viewportWidth / 2,
-    282,
+    layout.arenaCaptionY,
     input.arenaName.toUpperCase(),
-    21,
-    UI.cream,
-    true
-  )
-    .setOrigin(0.5)
-    .setStroke(UI.ink, 5)
-    .setDepth(80);
-  fitTextToWidth(arenaCaption, layout.viewportWidth - 96);
-  const arenaRule = label(
-    scene,
-    layout.viewportWidth / 2,
-    309,
-    input.arenaRule.toUpperCase(),
     17,
-    UI.cream,
+    UI.inkSoft,
     true
   )
     .setOrigin(0.5)
-    .setStroke(UI.ink, 4)
-    .setDepth(80);
-  fitTextToWidth(arenaRule, layout.viewportWidth - 110);
+    .setAlpha(0.72)
+    .setDepth(26);
+  fitTextToWidth(arenaCaption, layout.viewportWidth - 96);
   const clock = createBattleClockView(
     scene,
     layout,
@@ -659,6 +555,8 @@ export function createReplayBattleHud(
   let tickerHideEvent: Phaser.Time.TimerEvent | null = null;
   let displayedClockLabel = '';
   let displayedClockUrgent: boolean | null = null;
+  let playbackSpeed = input.initialPlaybackSpeed;
+  let heartsVisible = true;
 
   const showTransientAnnouncement = (text: string): void => {
     tickerHideEvent?.remove(false);
@@ -689,6 +587,122 @@ export function createReplayBattleHud(
     });
   };
 
+  const setHeartFxState = (
+    side: ReplayBattleSide,
+    state: 'idle' | 'hit' | 'last'
+  ): void => {
+    const datasetPrefix = side === 'a' ? 'fighterA' : 'fighterB';
+    scene.game.canvas.dataset[`${datasetPrefix}HeartFx`] = state;
+    fighterVitals[side].heartMeter.setData('heartFx', state);
+  };
+
+  const resetHeartTransforms = (side: ReplayBattleSide): void => {
+    const vitals = fighterVitals[side];
+    vitals.heartMeter
+      .setPosition(layout.fighters[side].chipCenterX, layout.heartRowY)
+      .setAngle(0)
+      .setScale(1);
+    vitals.heartWarning.setPosition(0, 0).setAngle(0).setScale(1);
+  };
+
+  const stopLastHeartWarning = (side: ReplayBattleSide): void => {
+    const vitals = fighterVitals[side];
+    vitals.warningEvent?.remove(false);
+    vitals.warningEvent = null;
+    scene.tweens.killTweensOf(vitals.heartWarning);
+    vitals.heartWarning.setPosition(0, 0).setAngle(0).setScale(1);
+  };
+
+  const scheduleLastHeartWarning = (side: ReplayBattleSide): void => {
+    const vitals = fighterVitals[side];
+    vitals.warningEvent?.remove(false);
+    vitals.warningEvent = null;
+    if (!vitals.displayedLastHeart || !heartsVisible) return;
+    if (vitals.heartMeter.getData('heartFx') !== 'hit') {
+      setHeartFxState(side, 'last');
+    }
+    if (input.reduceMotion) return;
+
+    // Replay leaves Phaser's Clock at real time, so warning cadence remains
+    // calm and consistent even when only its TweenManager runs at 2x or 4x.
+    vitals.warningEvent = scene.time.delayedCall(900, () => {
+      vitals.warningEvent = null;
+      if (!vitals.displayedLastHeart || !heartsVisible) return;
+      const direction = side === 'a' ? -1 : 1;
+      vitals.heartWarning.setPosition(0, 0).setAngle(0).setScale(1);
+      scene.tweens.add({
+        targets: vitals.heartWarning,
+        x: direction * 2,
+        angle: direction * 1.2,
+        scale: 1.045,
+        duration: 70 * playbackSpeed,
+        ease: 'Sine.easeInOut',
+        yoyo: true,
+        repeat: 1,
+        onComplete: () => {
+          vitals.heartWarning.setPosition(0, 0).setAngle(0).setScale(1);
+        },
+      });
+      scheduleLastHeartWarning(side);
+    });
+  };
+
+  const stopHeartAnimations = (): void => {
+    (['a', 'b'] as const).forEach((side) => {
+      const vitals = fighterVitals[side];
+      stopLastHeartWarning(side);
+      scene.tweens.killTweensOf(vitals.heartMeter);
+      resetHeartTransforms(side);
+      setHeartFxState(side, 'idle');
+    });
+  };
+
+  const playFighterDamage = (
+    side: ReplayBattleSide,
+    tier: BattleImpactTier,
+    eventPlaybackSpeed: number
+  ): void => {
+    const vitals = fighterVitals[side];
+    const reaction = planReplayHeartDamageReaction({
+      tier,
+      playbackSpeed: eventPlaybackSpeed,
+      reduceMotion: input.reduceMotion,
+    });
+    setHeartFxState(side, 'hit');
+    scene.tweens.killTweensOf(vitals.heartMeter);
+    vitals.heartMeter
+      .setPosition(layout.fighters[side].chipCenterX, layout.heartRowY)
+      .setAngle(0)
+      .setScale(1);
+
+    if (reaction.durationMilliseconds === 0) {
+      setHeartFxState(side, vitals.displayedLastHeart ? 'last' : 'idle');
+      return;
+    }
+
+    const direction = side === 'a' ? -1 : 1;
+    const segmentDuration = Math.max(
+      24,
+      Math.round(reaction.durationMilliseconds / ((reaction.repeats + 1) * 2))
+    );
+    scene.tweens.add({
+      targets: vitals.heartMeter,
+      x: layout.fighters[side].chipCenterX + direction * reaction.shakeDistance,
+      angle: direction * reaction.rotationDegrees,
+      duration: segmentDuration,
+      ease: 'Sine.easeInOut',
+      yoyo: true,
+      repeat: reaction.repeats,
+      onComplete: () => {
+        vitals.heartMeter
+          .setPosition(layout.fighters[side].chipCenterX, layout.heartRowY)
+          .setAngle(0)
+          .setScale(1);
+        setHeartFxState(side, vitals.displayedLastHeart ? 'last' : 'idle');
+      },
+    });
+  };
+
   const setFighterHitPoints = (
     side: ReplayBattleSide,
     hitPoints: number,
@@ -714,6 +728,7 @@ export function createReplayBattleHud(
     });
     const previousHeartUnits = vitals.displayedHeartUnits;
     const wasDanger = vitals.displayedDanger;
+    const wasLastHeart = vitals.displayedLastHeart;
     const fighterName =
       side === 'a' ? input.fighterA.name : input.fighterB.name;
     const accessibilityLabel = `${fighterName}: ${plan.accessibleLabel}`;
@@ -721,6 +736,7 @@ export function createReplayBattleHud(
     vitals.displayedMaximumHitPoints = safeMaximumHitPoints;
     vitals.displayedHeartUnits = plan.filledUnits;
     vitals.displayedDanger = plan.useDangerColor;
+    vitals.displayedLastHeart = plan.isLastHeart;
     renderHeartMeter(
       vitals.heartGraphics,
       plan,
@@ -734,6 +750,7 @@ export function createReplayBattleHud(
       .setName(accessibilityLabel)
       .setData('accessibilityLabel', accessibilityLabel)
       .setData('heartStates', plan.states)
+      .setData('lastHeart', plan.isLastHeart)
       .setData('hitPoints', safeHitPoints)
       .setData('maximumHitPoints', safeMaximumHitPoints);
     const datasetPrefix = side === 'a' ? 'fighterA' : 'fighterB';
@@ -741,28 +758,19 @@ export function createReplayBattleHud(
     scene.game.canvas.dataset[`${datasetPrefix}HitPoints`] =
       `${safeHitPoints}/${safeMaximumHitPoints}`;
 
-    if (
-      shapePowerLiveRegion &&
-      previousHeartUnits !== null &&
-      !wasDanger &&
-      plan.useDangerColor
-    ) {
-      shapePowerLiveRegion.textContent = `${fighterName} is in danger. ${plan.accessibleLabel}.`;
+    if (shapePowerLiveRegion && previousHeartUnits !== null) {
+      if (!wasLastHeart && plan.isLastHeart) {
+        shapePowerLiveRegion.textContent = `${fighterName} is on their last heart. ${plan.accessibleLabel}.`;
+      } else if (!wasDanger && plan.useDangerColor) {
+        shapePowerLiveRegion.textContent = `${fighterName} is in danger. ${plan.accessibleLabel}.`;
+      }
     }
 
-    if (
-      !input.reduceMotion &&
-      previousHeartUnits !== null &&
-      plan.filledUnits < previousHeartUnits
-    ) {
-      scene.tweens.killTweensOf(vitals.heartMeter);
-      vitals.heartMeter.setScale(1.09);
-      scene.tweens.add({
-        targets: vitals.heartMeter,
-        scale: 1,
-        duration: 180,
-        ease: 'Back.easeOut',
-      });
+    if (!wasLastHeart && plan.isLastHeart) {
+      scheduleLastHeartWarning(side);
+    } else if (wasLastHeart && !plan.isLastHeart) {
+      stopLastHeartWarning(side);
+      setHeartFxState(side, 'idle');
     }
   };
 
@@ -785,27 +793,45 @@ export function createReplayBattleHud(
       ticker.setVisible(visible);
     },
     setPlaybackSpeed: (speed: number): void => {
+      playbackSpeed = speed;
       renderSpeedButton?.(speed);
+      (['a', 'b'] as const).forEach((side) => {
+        if (fighterVitals[side].displayedLastHeart && heartsVisible) {
+          scheduleLastHeartWarning(side);
+        }
+      });
     },
     setSoundEnabled: (enabled: boolean): void => {
       renderSoundButton?.(enabled);
     },
     setFighterHitPoints,
+    playFighterDamage,
+    stopHeartAnimations,
     setFighterShapePowerState,
     setHeartsVisible: (visible: boolean): void => {
+      heartsVisible = visible;
       Object.values(fighterVitals).forEach((vitals) => {
         vitals.heartMeter.setVisible(visible);
       });
+      if (!visible) {
+        stopHeartAnimations();
+      } else {
+        (['a', 'b'] as const).forEach((side) => {
+          if (fighterVitals[side].displayedLastHeart) {
+            scheduleLastHeartWarning(side);
+          }
+        });
+      }
     },
     setBattleChromeVisible: (visible: boolean): void => {
       arenaCaption.setVisible(visible);
-      arenaRule.setVisible(visible);
       Object.values(fighterVitals).forEach((vitals) => {
         vitals.container.setVisible(visible);
       });
       if (!visible && shapePowerLiveRegion) {
         shapePowerLiveRegion.textContent = '';
       }
+      if (!visible) stopHeartAnimations();
     },
     updateClock: (
       currentTick: number,

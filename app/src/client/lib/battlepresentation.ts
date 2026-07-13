@@ -99,9 +99,7 @@ export type ReplayBattleLayout = Readonly<{
   heartRowWidth: number;
   heartRowHeight: number;
   fighterNameY: number;
-  fighterMetaY: number;
-  fighterChipY: number;
-  fighterChipHeight: number;
+  arenaCaptionY: number;
   battleClockX: number;
   battleClockY: number;
   arenaTop: number;
@@ -125,7 +123,15 @@ export type ReplayHeartMeterPlan = Readonly<{
   states: readonly ReplayHeartState[];
   filledUnits: number;
   useDangerColor: boolean;
+  isLastHeart: boolean;
   accessibleLabel: string;
+}>;
+
+export type ReplayHeartDamageReactionPlan = Readonly<{
+  shakeDistance: number;
+  rotationDegrees: number;
+  durationMilliseconds: number;
+  repeats: number;
 }>;
 
 export type ReplayBattleClockPlan = Readonly<{
@@ -197,15 +203,14 @@ export function planReplayBattleLayout(input: {
   const heartRowWidth = Math.round(
     (viewportWidth - horizontalMargin * 2 - fighterCenterGap) / 2
   );
-  const fighterPanelTop = 130;
+  const fighterPanelTop = 145;
   const fighterPanelHeight = 128;
-  const fighterNameY = 145;
-  const heartRowY = 179;
-  const fighterChipY = 222;
-  const fighterMetaY = 256;
+  const fighterNameY = 166;
+  const heartRowY = 208;
+  const arenaCaptionY = 252;
   const tickerHeight = 72;
   const tickerY = viewportHeight - 54;
-  const arenaTop = 330;
+  const arenaTop = 355;
   const arenaBottom = toolbarY - 62;
   const homeY = (arenaTop + arenaBottom) / 2;
   const leftPanelLeft = horizontalMargin;
@@ -231,11 +236,9 @@ export function planReplayBattleLayout(input: {
     heartRowWidth,
     heartRowHeight: 40,
     fighterNameY,
-    fighterMetaY,
-    fighterChipY,
-    fighterChipHeight: 28,
+    arenaCaptionY,
     battleClockX: viewportWidth / 2,
-    battleClockY: 155,
+    battleClockY: heartRowY,
     arenaTop,
     arenaBottom,
     arenaHorizontalPadding: Math.round(clamp(viewportWidth * 0.23, 140, 160)),
@@ -416,7 +419,39 @@ export function planReplayHeartMeter(input: {
     states,
     filledUnits,
     useDangerColor: hitPoints > 0 && ratio <= 0.28,
+    isLastHeart: hitPoints > 0 && filledUnits <= 2,
     accessibleLabel: `${hitPoints} of ${maximumHitPoints} health; ${visibleHeartLabel} out of ${heartCount}`,
+  };
+}
+
+export function planReplayHeartDamageReaction(input: {
+  tier: BattleImpactTier;
+  playbackSpeed: number;
+  reduceMotion: boolean;
+}): ReplayHeartDamageReactionPlan {
+  if (input.reduceMotion) {
+    return {
+      shakeDistance: 0,
+      rotationDegrees: 0,
+      durationMilliseconds: 0,
+      repeats: 0,
+    };
+  }
+
+  const speed = clamp(input.playbackSpeed, 1, 4);
+  const tierPlan = {
+    light: { distance: 3, rotation: 0.8, duration: 140, repeats: 0 },
+    solid: { distance: 5, rotation: 1.2, duration: 170, repeats: 1 },
+    heavy: { distance: 7, rotation: 1.7, duration: 210, repeats: 1 },
+    critical: { distance: 10, rotation: 2.3, duration: 250, repeats: 2 },
+  }[input.tier];
+  return {
+    shakeDistance: tierPlan.distance,
+    rotationDegrees: tierPlan.rotation,
+    // Replay speeds Phaser's TweenManager up. This compensation keeps faster
+    // playback crisp without collapsing the hit response into one frame.
+    durationMilliseconds: Math.round(tierPlan.duration * Math.sqrt(speed)),
+    repeats: tierPlan.repeats,
   };
 }
 

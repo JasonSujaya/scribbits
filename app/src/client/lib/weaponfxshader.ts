@@ -9,6 +9,7 @@ export type WeaponFxShaderUniforms = {
   phase: number;
   facing: number;
   quality: number;
+  rank: number;
   tint: readonly [number, number, number];
 };
 
@@ -39,6 +40,7 @@ uniform float uMode;
 uniform float uPhase;
 uniform float uFacing;
 uniform float uQuality;
+uniform float uRank;
 uniform vec3 uTint;
 
 float lineMask(float distanceToLine, float width) {
@@ -74,28 +76,49 @@ void main() {
   } else if (uMode < 2.5) {
     float trail = lineMask(abs(point.y) + max(0.0, point.x) * 0.12, 0.055);
     float speedBands = step(0.68, fract((point.y + 1.0) * 7.0 + progress * 3.0));
-    effect = trail * speedBands * smoothstep(0.75, -0.9, point.x);
+    effect = trail * speedBands * (1.0 - smoothstep(-0.9, 0.75, point.x));
   } else if (uMode < 3.5) {
     float reticle = ringMask(radius, mix(0.68, 0.3, pulse), 0.028);
     float cross = lineMask(abs(point.x), 0.018) + lineMask(abs(point.y), 0.018);
-    effect = reticle + cross * smoothstep(0.75, 0.42, radius) * 0.7;
+    effect = reticle + cross * (1.0 - smoothstep(0.42, 0.75, radius)) * 0.7;
   } else if (uMode < 4.5) {
     float angle = atan(point.y, point.x) / 6.2831853 + 0.5;
     color = 0.55 + 0.45 * cos(6.2831853 * (angle + vec3(0.0, 0.33, 0.67) + progress));
     float prism = ringMask(radius, mix(0.18, 0.92, progress), 0.05);
     float sparkle = step(0.94, hash21(floor(point * 12.0) + progress));
-    effect = prism + sparkle * pulse * uQuality * smoothstep(1.0, 0.1, radius);
+    effect = prism + sparkle * pulse * uQuality * (1.0 - smoothstep(0.1, 1.0, radius));
   } else if (uMode < 5.5) {
     float shield = max(abs(point.x) * 0.84 + abs(point.y) * 0.58, radius * 0.82);
     effect = lineMask(abs(shield - mix(0.45, 0.82, pulse)), 0.035);
   } else if (uMode < 6.5) {
     float aperture = abs(abs(point.x) - abs(point.y));
-    effect = lineMask(aperture, 0.026) * smoothstep(0.95, 0.2, radius);
+    effect = lineMask(aperture, 0.026) * (1.0 - smoothstep(0.2, 0.95, radius));
     effect += ringMask(radius, 0.46, 0.022) * pulse;
   } else {
     float rays = abs(sin(atan(point.y, point.x) * 8.0));
-    float star = smoothstep(0.22, 0.0, rays) * smoothstep(0.95, 0.28, radius);
+    float star = (1.0 - smoothstep(0.0, 0.22, rays)) * (1.0 - smoothstep(0.28, 0.95, radius));
     effect = star * smoothstep(0.18, 0.5, radius) + ringMask(radius, 0.34 + pulse * 0.24, 0.03);
+  }
+
+  // All ranks share one shader and one bounded draw. Ranks 1-3 progressively
+  // add a basic echo, 4-5 reveal same-pass detail, and rank 6 earns a red-star
+  // signature without particles, textures, loops, or additional quads.
+  if (uRank > 0.01) {
+    float rankEcho = ringMask(radius, mix(0.2, 0.94, progress), 0.022);
+    effect += rankEcho * uRank * 0.28;
+  }
+  if (uRank > 0.42) {
+    float enhanced = smoothstep(0.42, 0.62, uRank);
+    effect += ringMask(radius, mix(0.12, 0.76, progress), 0.014) * enhanced * 0.42;
+    if (uQuality > 0.5) {
+      float rankSparkle = step(0.955, hash21(floor(point * 11.0) + progress * 2.0));
+      effect += rankSparkle * pulse * enhanced * (1.0 - smoothstep(0.18, 0.95, radius)) * 0.5;
+    }
+  }
+  if (uRank > 0.99) {
+    float redStarRays = 1.0 - smoothstep(0.0, 0.18, abs(sin(atan(point.y, point.x) * 5.0)));
+    effect += redStarRays * (1.0 - smoothstep(0.24, 0.82, radius)) * 0.65;
+    color = mix(color, vec3(1.0, 0.16, 0.08), 0.45 + pulse * 0.35);
   }
 
   float phaseBoost = mix(0.82, 1.0, step(0.5, uPhase));
@@ -133,6 +156,7 @@ export function createWeaponFxShader(
           setUniform('uPhase', input.uniforms.phase);
           setUniform('uFacing', input.uniforms.facing);
           setUniform('uQuality', input.uniforms.quality);
+          setUniform('uRank', input.uniforms.rank);
           setUniform('uTint', input.uniforms.tint);
         },
       },

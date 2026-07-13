@@ -937,7 +937,7 @@ export function paperPagination(options: PaperPaginationOptions): void {
   );
 }
 
-export type AppTabKey = 'arena' | 'gallery' | 'draw' | 'battles' | 'scout';
+export type AppTabKey = 'arena' | 'bag' | 'draw' | 'battles' | 'gallery';
 
 export type AppTabItem = {
   key: AppTabKey;

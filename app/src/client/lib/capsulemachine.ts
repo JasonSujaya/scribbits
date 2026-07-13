@@ -302,7 +302,7 @@ export function openCapsuleMachine(
   );
   const viewCollectionControl = opts.onViewCollection
     ? modalActions.add({
-        label: 'View Ink Kit',
+        label: 'View Bag',
         rect: {
           x: prizeLayout.viewCollection?.overlayX ?? 0,
           y: prizeLayout.overlayY,
@@ -457,7 +457,7 @@ export function openCapsuleMachine(
     statusAnnouncement.textContent =
       `${result.pull.rarity} ${result.pull.kind}: ${result.pull.name}. ` +
       `${result.pull.description} ${prizeOwnershipAnnouncement(result.pull)} ` +
-      `Ink Kit now has ${result.progress.discoveredCount} found gear styles.`;
+      `Your Bag now has ${result.progress.discoveredCount} found gear styles.`;
     setPrizeControlsVisible(true);
     acknowledgementControl.setAttribute(
       'aria-label',
@@ -705,12 +705,18 @@ function revealPrize(
   revealLayer.add(card);
 
   const rarityColor = `#${rarityStyle.color.toString(16).padStart(6, '0')}`;
+  const kindLabel =
+    pull.kind === 'drawing-ink'
+      ? 'DRAWING INK'
+      : pull.kind === 'accessory'
+        ? 'GEAR'
+        : pull.kind.toUpperCase();
   card.add(
     label(
       scene,
       0,
       -232,
-      `${rarityStyle.label} ${pull.kind.toUpperCase()}`,
+      `${rarityStyle.label} ${kindLabel}`,
       20,
       rarityColor,
       true
@@ -736,9 +742,7 @@ function revealPrize(
       ease: 'Back.easeOut',
     });
   } else {
-    card.add(
-      label(scene, 0, -128, `YOUR ${pull.kind.toUpperCase()}`, 28, UI.ink, true)
-    );
+    card.add(label(scene, 0, -128, `YOUR ${kindLabel}`, 28, UI.ink, true));
   }
 
   card.add(

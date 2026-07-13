@@ -3,13 +3,15 @@
 
 import {
   getDamageSourceDisplayName,
-  getShapePowerSignatureName,
+  getShapePowerBattleName,
+  isShapePowerId,
 } from '../../shared/combat/shapepowercontent';
 import type {
   BattleEndReason,
   BattleTimelineEvent,
   BattleTranscript,
   CombatElement,
+  DamageSource,
   FighterResult,
   FighterSlot,
 } from '../../shared/combat/types';
@@ -18,6 +20,14 @@ type DamageTimelineEvent = Extract<
   BattleTimelineEvent,
   Readonly<{ kind: 'damage' }>
 >;
+
+function getRecapDamageSourceName(source: DamageSource): string {
+  if (source === 'colorburst_echo') {
+    return `${getShapePowerBattleName('colorburst')} echo`;
+  }
+  if (isShapePowerId(source)) return getShapePowerBattleName(source);
+  return getDamageSourceDisplayName(source);
+}
 
 export type BattleRecapHighlight = Readonly<{
   label: string;
@@ -59,10 +69,7 @@ export type BattleRecapPlan = Readonly<{
   finishSound: 'knockout' | 'bell';
 }>;
 
-export type BattleRecapPerspective =
-  | 'viewer_win'
-  | 'viewer_loss'
-  | 'spectator';
+export type BattleRecapPerspective = 'viewer_win' | 'viewer_loss' | 'spectator';
 
 /** Keeps the emotional result immediate without changing transcript truth. */
 export function formatBattleRecapLead(
@@ -232,14 +239,9 @@ function planHighlight(
     return null;
   }
 
-  const sourceFighter =
-    transcript.fighters[fighterIndex(damageEvent.sourceFighter)];
   const targetFighter =
     transcript.fighters[fighterIndex(damageEvent.targetFighter)];
-  const damageSourceName = getDamageSourceDisplayName(
-    damageEvent.source,
-    sourceFighter.element
-  );
+  const damageSourceName = getRecapDamageSourceName(damageEvent.source);
 
   return {
     label: terminalDamage === damageEvent ? 'FINAL SPLAT' : "WINNER'S SPLAT",
@@ -256,10 +258,7 @@ export function planBattleRecap(transcript: BattleTranscript): BattleRecapPlan {
   const loserFighter = transcript.fighters[fighterIndex(loserSlot)];
   const winnerResult = fighterResultForSlot(transcript, winnerSlot);
   const loserResult = fighterResultForSlot(transcript, loserSlot);
-  const winnerSignature = getShapePowerSignatureName(
-    winnerFighter.element,
-    winnerResult.primaryPower
-  );
+  const winnerMove = getShapePowerBattleName(winnerResult.primaryPower);
   const finishPresentation = finishPresentationForReason(result.reason);
 
   return {
@@ -270,7 +269,7 @@ export function planBattleRecap(transcript: BattleTranscript): BattleRecapPlan {
     winnerElement: winnerFighter.element,
     headline: headlineForReason(result.reason, winnerFighter.name),
     verdictLine: `${formatDuration(result.completedMilliseconds)} • INK LEFT ${winnerResult.finalHitPoints}/${winnerResult.maxHitPoints} vs ${loserResult.finalHitPoints}/${loserResult.maxHitPoints}`,
-    tapeLine: `${winnerResult.damageDealt} TOTAL DAMAGE • ${winnerSignature.toUpperCase()}`,
+    tapeLine: `${winnerResult.damageDealt} TOTAL DAMAGE • ${winnerMove.toUpperCase()}`,
     highlight: planHighlight(transcript, winnerSlot, loserSlot),
     partial: transcript.eventsTruncated,
     finishPresentation,

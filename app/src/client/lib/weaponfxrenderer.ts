@@ -4,7 +4,7 @@ import type { Scribbit } from '../../shared/arena';
 import {
   chooseWeaponFxQuality,
   planWeaponFxCue,
-  resolveWeaponFxProfile,
+  resolveWeaponFxProfiles,
   type WeaponFxPhase,
   type WeaponFxProfile,
   type WeaponFxQuality,
@@ -18,7 +18,9 @@ import {
 type FighterSide = 'a' | 'b';
 
 type WeaponFxRuntime = {
+  profiles: readonly WeaponFxProfile[];
   profile: WeaponFxProfile;
+  profileIndex: number;
   shader: Phaser.GameObjects.Shader | null;
   fallback: Phaser.GameObjects.Graphics;
   uniforms: WeaponFxShaderUniforms;
@@ -78,15 +80,20 @@ export class WeaponFxRenderer {
 
   attach(
     side: FighterSide,
-    scribbit: Pick<Scribbit, 'accessories'>,
+    scribbit: Pick<Scribbit, 'accessories' | 'gearRanks'> &
+      Partial<Pick<Scribbit, 'equipmentLoadout'>>,
     x: number,
     y: number,
     facing: 1 | -1,
     fighterDisplaySize: number
   ): void {
     this.destroyRuntime(side);
-    const profile = resolveWeaponFxProfile(scribbit);
-    if (!profile) return;
+    const profiles = resolveWeaponFxProfiles(scribbit);
+    const profile = profiles[0];
+    if (!profile) {
+      this.updateDebugState();
+      return;
+    }
 
     const fallback = this.scene.add
       .graphics()
@@ -100,6 +107,7 @@ export class WeaponFxRenderer {
       phase: 0,
       facing,
       quality: this.quality === 'full' ? 1 : 0,
+      rank: profile.rankProgress,
       tint: profile.tint,
     };
     const shader =
@@ -114,7 +122,9 @@ export class WeaponFxRenderer {
             quality: this.quality,
           });
     this.runtimes.set(side, {
+      profiles,
       profile,
+      profileIndex: -1,
       shader,
       fallback,
       uniforms,
@@ -123,6 +133,7 @@ export class WeaponFxRenderer {
       durationMilliseconds: 1,
       active: false,
     });
+    this.updateDebugState();
   }
 
   follow(side: FighterSide, x: number, y: number): void {
@@ -135,7 +146,16 @@ export class WeaponFxRenderer {
   trigger(side: FighterSide, phase: WeaponFxPhase, critical = false): void {
     const runtime = this.runtimes.get(side);
     if (!runtime) return;
-    const cue = planWeaponFxCue(phase, critical);
+    if (phase === 'telegraph' && runtime.profiles.length > 1) {
+      runtime.profileIndex =
+        (runtime.profileIndex + 1) % runtime.profiles.length;
+      const nextProfile = runtime.profiles[runtime.profileIndex];
+      if (nextProfile !== undefined) runtime.profile = nextProfile;
+      runtime.uniforms.mode = runtime.profile.shaderMode;
+      runtime.uniforms.rank = runtime.profile.rankProgress;
+      runtime.uniforms.tint = runtime.profile.tint;
+    }
+    const cue = planWeaponFxCue(phase, critical, runtime.profile.rank);
     runtime.phase = phase;
     runtime.elapsedMilliseconds = 0;
     runtime.durationMilliseconds = cue.durationMilliseconds;
@@ -183,11 +203,15 @@ export class WeaponFxRenderer {
     this.runtimes.clear();
     this.scene.game.canvas.dataset.activeWeaponFx = '0';
     this.scene.game.canvas.dataset.weaponFxPhase = 'idle';
+    this.scene.game.canvas.dataset.weaponFxIds = 'none';
+    this.scene.game.canvas.dataset.weaponFxRanks = 'none';
+    this.scene.game.canvas.dataset.weaponFxTiers = 'none';
   }
 
   private drawFallback(runtime: WeaponFxRuntime, progress: number): void {
     const graphics = runtime.fallback;
     const color = runtime.profile.fallbackColor;
+    const rank = runtime.profile.rank;
     const pulse = Math.sin(Math.max(0, Math.min(1, progress)) * PI);
     const alpha = 0.45 + pulse * 0.45;
     graphics.clear().lineStyle(7, color, alpha);
@@ -239,6 +263,27 @@ export class WeaponFxRenderer {
           );
         }
     }
+
+    if (rank >= 2) {
+      graphics.lineStyle(2 + rank * 0.4, color, alpha * 0.34);
+      graphics.strokeCircle(0, 0, 30 + progress * (50 + rank * 7));
+    }
+    if (rank >= 4) {
+      graphics.lineStyle(3, 0xfff4d6, alpha * 0.42);
+      graphics.strokeCircle(0, 0, 20 + progress * (44 + rank * 5));
+    }
+    if (rank === 6) {
+      graphics.lineStyle(4, 0xff291f, alpha * 0.7);
+      for (let ray = 0; ray < 5; ray += 1) {
+        const angle = (ray / 5) * PI * 2 - PI / 2;
+        graphics.lineBetween(
+          Math.cos(angle) * 34,
+          Math.sin(angle) * 34,
+          Math.cos(angle) * (76 + pulse * 18),
+          Math.sin(angle) * (76 + pulse * 18)
+        );
+      }
+    }
   }
 
   private deactivate(runtime: WeaponFxRuntime): void {
@@ -265,5 +310,19 @@ export class WeaponFxRenderer {
       active.map((runtime) => runtime.phase).join(',') || 'idle';
     this.scene.game.canvas.dataset.weaponFxIds =
       active.map((runtime) => runtime.profile.weaponId).join(',') || 'none';
+    this.scene.game.canvas.dataset.weaponFxRanks =
+      [...this.runtimes.entries()]
+        .map(
+          ([side, runtime]) =>
+            `${side}:${runtime.profiles.map((profile) => profile.rank).join('+')}`
+        )
+        .join(',') || 'none';
+    this.scene.game.canvas.dataset.weaponFxTiers =
+      [...this.runtimes.entries()]
+        .map(
+          ([side, runtime]) =>
+            `${side}:${runtime.profiles.map((profile) => profile.rankTier).join('+')}`
+        )
+        .join(',') || 'none';
   }
 }

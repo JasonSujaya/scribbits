@@ -2,9 +2,11 @@ import type {
   ArenaState,
   AttachedAccessory,
   CareAction,
+  DrawingSupplySelection,
   Element,
   LegacyCosmeticSnapshot,
   Mood,
+  GearRank,
   Scribbit,
   ScribbitLegacy,
   ScribbitStats,
@@ -22,6 +24,7 @@ import {
   MAX_ACCESSORY_SCALE,
   MIN_ACCESSORY_ROTATION,
   MIN_ACCESSORY_SCALE,
+  isGearRank,
   XP_REWARDS,
   SCRIBBIT_STAT_KEYS,
 } from '../../shared/arena';
@@ -33,9 +36,35 @@ import {
 } from '../../shared/combat/upgrades';
 import { getLevelForXp } from '../../shared/progression';
 export { getLevelForXp } from '../../shared/progression';
+import {
+  createSparRewardReceipt,
+  isSparRewardReceipt,
+  type SparRewardReceipt,
+} from '../../shared/sparreward';
+import {
+  createEmptyEquipmentLoadout,
+  EQUIPMENT_CATEGORIES,
+  equipGearInLoadout,
+  isEquipmentCategory,
+  type EquipGearRequest,
+} from '../../shared/equipment';
+import {
+  findGearCosmetic,
+  validateCatalogEquipmentLoadout,
+} from '../../shared/cosmetics';
 import { formatUtcDateKey } from './day';
-import { findInkCatalogEntry, isAccessoryCatalogEntry } from './ink';
-import { getInkKey } from './inkStore';
+import {
+  findInkCatalogEntry,
+  isAccessoryCatalogEntry,
+  isBrushCatalogEntry,
+  isDrawingInkCatalogEntry,
+} from './ink';
+import {
+  getInkKey,
+  getInventoryDiscoveryField,
+  getInventoryGearRankField,
+  getInventoryKey,
+} from './inkStore';
 import { findFoundingScribbit } from './species';
 import type { ArenaStorage, ArenaTransaction } from './storage';
 import {
@@ -81,6 +110,7 @@ export type ValidatedScribbitDraft = {
   stats: ScribbitStats;
   element: Element;
   accessories: AttachedAccessory[];
+  drawingSupplies: DrawingSupplySelection;
 };
 
 export type ScribbitSubmissionValidation =
@@ -432,6 +462,33 @@ const validateAttachedAccessories = (
   return accessories;
 };
 
+const validateDrawingSupplySelection = (
+  value: unknown
+): DrawingSupplySelection | undefined => {
+  if (value === undefined) {
+    return { drawingInkId: null, brushId: null };
+  }
+  if (!isRecord(value)) return undefined;
+
+  const drawingInkId = value.drawingInkId;
+  const brushId = value.brushId;
+  if (
+    drawingInkId !== null &&
+    (typeof drawingInkId !== 'string' ||
+      !isDrawingInkCatalogEntry(findInkCatalogEntry(drawingInkId)))
+  ) {
+    return undefined;
+  }
+  if (
+    brushId !== null &&
+    (typeof brushId !== 'string' ||
+      !isBrushCatalogEntry(findInkCatalogEntry(brushId)))
+  ) {
+    return undefined;
+  }
+  return { drawingInkId, brushId };
+};
+
 const normalizeScribbitAccessories = (value: unknown): string[] => {
   if (!Array.isArray(value)) {
     return [];
@@ -446,6 +503,19 @@ const normalizeScribbitAccessories = (value: unknown): string[] => {
     .slice(0, MAX_ACCESSORIES_PER_SCRIBBIT);
 };
 
+const normalizeScribbitGearRanks = (
+  value: unknown,
+  accessories: readonly string[]
+): Record<string, GearRank> => {
+  const storedRanks = isRecord(value) ? value : {};
+  return Object.fromEntries(
+    accessories.map((gearId) => {
+      const rank = storedRanks[gearId];
+      return [gearId, isGearRank(rank) ? rank : 1];
+    })
+  );
+};
+
 export const validateSubmitScribbitRequest = (
   value: unknown
 ): ValidatedScribbitDraft | undefined => {
@@ -455,12 +525,14 @@ export const validateSubmitScribbitRequest = (
 
   const name = validateScribbitName(value.name);
   const accessories = validateAttachedAccessories(value.accessories);
+  const drawingSupplies = validateDrawingSupplySelection(value.drawingSupplies);
 
   if (
     !name ||
     typeof value.baseImageDataUrl !== 'string' ||
     typeof value.imageDataUrl !== 'string' ||
-    !accessories
+    !accessories ||
+    !drawingSupplies
   ) {
     return undefined;
   }
@@ -474,6 +546,7 @@ export const validateSubmitScribbitRequest = (
     stats: normalizeStats(value.stats),
     element: isElement(value.element) ? value.element : 'ember',
     accessories,
+    drawingSupplies,
   };
 };
 
@@ -1063,6 +1136,20 @@ const normalizeScribbitRecordValue = (
       }
     }
 
+    const accessories = normalizeScribbitAccessories(value.accessories);
+    const equipmentLoadout =
+      value.equipmentLoadout === undefined
+        ? createEmptyEquipmentLoadout()
+        : validateCatalogEquipmentLoadout(value.equipmentLoadout);
+    if (!equipmentLoadout) return undefined;
+    const rankedGearIds = [
+      ...accessories,
+      ...EQUIPMENT_CATEGORIES.flatMap((category) =>
+        equipmentLoadout[category].filter(
+          (gearId): gearId is string => gearId !== null
+        )
+      ),
+    ];
     const normalizedScribbit: Scribbit = {
       id: value.id,
       name: value.name,
@@ -1081,7 +1168,9 @@ const normalizeScribbitRecordValue = (
       status,
       legendTitle: value.legendTitle,
       isFounding: value.isFounding,
-      accessories: normalizeScribbitAccessories(value.accessories),
+      accessories,
+      gearRanks: normalizeScribbitGearRanks(value.gearRanks, rankedGearIds),
+      equipmentLoadout,
       upgrades,
       level,
       xp,
@@ -1149,6 +1238,9 @@ export const createScribbit = (options: {
   imageUrl: string;
   day: number;
 }): Scribbit => {
+  const accessories = (options.draft.accessories ?? []).map((accessory) => {
+    return accessory.id;
+  });
   return {
     id: options.id,
     name: options.draft.name,
@@ -1164,9 +1256,11 @@ export const createScribbit = (options: {
     status: 'alive',
     legendTitle: null,
     isFounding: false,
-    accessories: (options.draft.accessories ?? []).map((accessory) => {
-      return accessory.id;
-    }),
+    accessories,
+    gearRanks: Object.fromEntries(
+      accessories.map((gearId) => [gearId, 1 as const])
+    ),
+    equipmentLoadout: createEmptyEquipmentLoadout(),
     upgrades: [],
     level: 1,
     xp: 0,
@@ -1507,6 +1601,144 @@ const mutateAliveScribbit = async (
   throw new Error(`Scribbit ${scribbitId} changed too often to update safely.`);
 };
 
+export type EquipGearResult =
+  | Readonly<{ status: 'updated'; scribbit: Scribbit }>
+  | Readonly<{ status: 'scribbit-unavailable' }>
+  | Readonly<{ status: 'not-owned' }>
+  | Readonly<{ status: 'invalid-gear' }>
+  | Readonly<{ status: 'gear-undiscovered' }>;
+
+export const equipGearForScribbit = async (
+  storage: ArenaStorage,
+  userId: string,
+  request: EquipGearRequest
+): Promise<EquipGearResult> => {
+  if (!storage.watch) {
+    throw new Error('Atomic Gear equipment requires transaction support.');
+  }
+  if (
+    !isEquipmentCategory(request.category) ||
+    (request.slotIndex !== 0 && request.slotIndex !== 1) ||
+    (request.gearId !== null && !/^[a-z0-9-]{2,64}$/.test(request.gearId))
+  ) {
+    return { status: 'invalid-gear' };
+  }
+
+  const gear =
+    request.gearId === null ? undefined : findGearCosmetic(request.gearId);
+  if (request.gearId !== null && gear?.category !== request.category) {
+    return { status: 'invalid-gear' };
+  }
+
+  const scribbitKey = getScribbitKey(request.scribbitId);
+  const ownerKey = getScribbitOwnerKey(request.scribbitId);
+  const inventoryKey = getInventoryKey(userId);
+
+  for (
+    let attempt = 0;
+    attempt < MAX_WATCH_TRANSACTION_ATTEMPTS;
+    attempt += 1
+  ) {
+    let transaction: ArenaTransaction | undefined;
+    let expectedScribbit: Scribbit | undefined;
+    try {
+      transaction = await storage.watch(scribbitKey, ownerKey, inventoryKey);
+      const [storedScribbitJson, ownerUserId] = await Promise.all([
+        storage.get(scribbitKey),
+        storage.get(ownerKey),
+      ]);
+      const scribbit = parseScribbit(storedScribbitJson);
+      if (!scribbit || scribbit.isFounding || scribbit.status !== 'alive') {
+        await transaction.unwatch();
+        return { status: 'scribbit-unavailable' };
+      }
+      if (ownerUserId !== userId) {
+        await transaction.unwatch();
+        return { status: 'not-owned' };
+      }
+
+      let equippedRank: GearRank = 1;
+      if (request.gearId !== null) {
+        const storedInventory = await storage.hGetAll(inventoryKey);
+        const storedCopies = Number(storedInventory[request.gearId] ?? '0');
+        const permanentlyDiscovered =
+          storedInventory[getInventoryDiscoveryField(request.gearId)] === '1';
+        const storedRank = Number(
+          storedInventory[getInventoryGearRankField(request.gearId)]
+        );
+        const hasDurableGearRank = isGearRank(storedRank);
+        if (hasDurableGearRank) equippedRank = storedRank;
+        const hasLegacyOwnedCopy =
+          Number.isSafeInteger(storedCopies) && storedCopies > 0;
+        if (
+          !permanentlyDiscovered &&
+          !hasDurableGearRank &&
+          !hasLegacyOwnedCopy
+        ) {
+          await transaction.unwatch();
+          return { status: 'gear-undiscovered' };
+        }
+      }
+
+      const projectedLoadout = validateCatalogEquipmentLoadout(
+        equipGearInLoadout(scribbit.equipmentLoadout, request)
+      );
+      if (!projectedLoadout) {
+        throw new Error(
+          'Projected equipment loadout failed catalog validation.'
+        );
+      }
+      expectedScribbit = prepareScribbitForStorage({
+        ...scribbit,
+        equipmentLoadout: projectedLoadout,
+        gearRanks:
+          request.gearId === null
+            ? scribbit.gearRanks
+            : {
+                ...(scribbit.gearRanks ?? {}),
+                [request.gearId]: equippedRank,
+              },
+      });
+      await transaction.multi();
+      await transaction.set(scribbitKey, JSON.stringify(expectedScribbit));
+      const result = await transaction.exec();
+      if (Array.isArray(result) && result.length > 0) {
+        return {
+          status: 'updated',
+          scribbit: cloneScribbit(expectedScribbit),
+        };
+      }
+    } catch (error) {
+      await discardWatchedTransaction(transaction, 'Gear equipment');
+      if (expectedScribbit) {
+        const [storedAfterFailure, ownerAfterFailure] = await Promise.all([
+          storage.get(scribbitKey),
+          storage.get(ownerKey),
+        ]);
+        const recoveredScribbit = parseScribbit(storedAfterFailure);
+        if (
+          ownerAfterFailure === userId &&
+          recoveredScribbit?.status === 'alive' &&
+          JSON.stringify(recoveredScribbit.equipmentLoadout) ===
+            JSON.stringify(expectedScribbit.equipmentLoadout) &&
+          JSON.stringify(recoveredScribbit.gearRanks) ===
+            JSON.stringify(expectedScribbit.gearRanks)
+        ) {
+          return {
+            status: 'updated',
+            scribbit: cloneScribbit(recoveredScribbit),
+          };
+        }
+      }
+      throw error;
+    }
+  }
+
+  throw new Error(
+    `Scribbit ${request.scribbitId} changed too often to equip Gear safely.`
+  );
+};
+
 export type DailyCareClaim = {
   claimed: boolean;
   careDoneToday: CareAction[];
@@ -1570,10 +1802,221 @@ export const claimUserDailySparWinReward = async (
   return createdDailyReward === 1;
 };
 
-export type DailySparWinRewardResult =
-  | 'awarded'
-  | 'already-awarded-this-report'
-  | 'already-claimed';
+export type DailySparWinRewardResult = Readonly<{
+  status: 'awarded' | 'already-awarded-this-report' | 'already-claimed';
+  receipt: SparRewardReceipt | null;
+}>;
+
+const parseStoredDailySparReward = (
+  value: string
+): Readonly<{ reportId: string; receipt: SparRewardReceipt | null }> | null => {
+  if (value.startsWith('report:')) {
+    const reportId = value.slice('report:'.length);
+    return reportId ? { reportId, receipt: null } : null;
+  }
+  try {
+    const receipt: unknown = JSON.parse(value);
+    return isSparRewardReceipt(receipt)
+      ? { reportId: receipt.reportId, receipt }
+      : null;
+  } catch {
+    return null;
+  }
+};
+
+type DailySparRewardKeys = Readonly<{
+  dailyRewardKey: string;
+  scribbitKey: string;
+  inkKey: string;
+}>;
+
+type DailySparRewardProjection = Readonly<{
+  receipt: SparRewardReceipt;
+  receiptValue: string;
+  scribbitBeforeValue: string;
+  scribbitAfterValue: string;
+  inkBeforeValue: string | undefined;
+  inkAfterValue: string;
+}>;
+
+const assertDailySparRewardStorageTypes = async (
+  storage: ArenaStorage,
+  keys: DailySparRewardKeys
+): Promise<void> => {
+  if (!storage.type) {
+    throw new Error('Atomic spar rewards require Redis type checks.');
+  }
+  const [rewardType, scribbitType, inkType] = await Promise.all([
+    storage.type(keys.dailyRewardKey),
+    storage.type(keys.scribbitKey),
+    storage.type(keys.inkKey),
+  ]);
+  if (
+    (rewardType !== 'none' && rewardType !== 'hash') ||
+    (scribbitType !== 'none' && scribbitType !== 'string') ||
+    (inkType !== 'none' && inkType !== 'string')
+  ) {
+    throw new Error('Daily spar reward found incompatible stored data.');
+  }
+};
+
+const dailySparRewardWasCommitted = async (
+  storage: ArenaStorage,
+  keys: DailySparRewardKeys,
+  utcDateKey: string,
+  projection: DailySparRewardProjection
+): Promise<boolean> => {
+  const [receiptValue, scribbitValue, inkValue] = await Promise.all([
+    storage.hGet(keys.dailyRewardKey, utcDateKey),
+    storage.get(keys.scribbitKey),
+    storage.get(keys.inkKey),
+  ]);
+  return (
+    receiptValue === projection.receiptValue &&
+    scribbitValue === projection.scribbitAfterValue &&
+    inkValue === projection.inkAfterValue
+  );
+};
+
+const transactionCommandsSucceeded = (
+  result: unknown,
+  expectedCommandCount: number
+): boolean => {
+  return (
+    Array.isArray(result) &&
+    result.length === expectedCommandCount &&
+    result.every((commandResult) => !(commandResult instanceof Error))
+  );
+};
+
+const refreshDailySparRewardExpiry = async (
+  storage: ArenaStorage,
+  dailyRewardKey: string
+): Promise<void> => {
+  try {
+    await storage.expire(dailyRewardKey, dailyProgressTtlSeconds);
+  } catch (error) {
+    console.warn('Daily spar reward expiry refresh failed:', error);
+  }
+};
+
+const repairDailySparReward = async (
+  storage: ArenaStorage,
+  keys: DailySparRewardKeys,
+  utcDateKey: string,
+  projection: DailySparRewardProjection
+): Promise<boolean> => {
+  for (
+    let attempt = 0;
+    attempt < MAX_WATCH_TRANSACTION_ATTEMPTS;
+    attempt += 1
+  ) {
+    let transaction: ArenaTransaction | undefined;
+    try {
+      transaction = await storage.watch!(
+        keys.dailyRewardKey,
+        keys.scribbitKey,
+        keys.inkKey
+      );
+      await assertDailySparRewardStorageTypes(storage, keys);
+      const [receiptValue, scribbitValue, inkValue] = await Promise.all([
+        storage.hGet(keys.dailyRewardKey, utcDateKey),
+        storage.get(keys.scribbitKey),
+        storage.get(keys.inkKey),
+      ]);
+      if (
+        (receiptValue !== undefined &&
+          receiptValue !== projection.receiptValue) ||
+        (scribbitValue !== projection.scribbitBeforeValue &&
+          scribbitValue !== projection.scribbitAfterValue) ||
+        (inkValue !== projection.inkBeforeValue &&
+          inkValue !== projection.inkAfterValue)
+      ) {
+        await transaction.unwatch();
+        return false;
+      }
+
+      await transaction.multi();
+      await transaction.set(keys.scribbitKey, projection.scribbitAfterValue);
+      await transaction.set(keys.inkKey, projection.inkAfterValue);
+      await transaction.hSet(keys.dailyRewardKey, {
+        [utcDateKey]: projection.receiptValue,
+      });
+      const result = await transaction.exec();
+      if (transactionCommandsSucceeded(result, 3)) {
+        await refreshDailySparRewardExpiry(storage, keys.dailyRewardKey);
+        return true;
+      }
+    } catch (error) {
+      await discardWatchedTransaction(transaction, 'Daily spar reward repair');
+      if (
+        await dailySparRewardWasCommitted(
+          storage,
+          keys,
+          utcDateKey,
+          projection
+        )
+      ) {
+        await refreshDailySparRewardExpiry(storage, keys.dailyRewardKey);
+        return true;
+      }
+      if (attempt === MAX_WATCH_TRANSACTION_ATTEMPTS - 1) throw error;
+    }
+  }
+  return false;
+};
+
+const quarantineDailySparReward = async (
+  storage: ArenaStorage,
+  dailyRewardKey: string,
+  utcDateKey: string,
+  projection: DailySparRewardProjection
+): Promise<void> => {
+  const quarantineValue = `report:${projection.receipt.reportId}`;
+  for (
+    let attempt = 0;
+    attempt < MAX_WATCH_TRANSACTION_ATTEMPTS;
+    attempt += 1
+  ) {
+    let transaction: ArenaTransaction | undefined;
+    try {
+      transaction = await storage.watch!(dailyRewardKey);
+      const currentValue = await storage.hGet(dailyRewardKey, utcDateKey);
+      if (
+        currentValue !== undefined &&
+        currentValue !== projection.receiptValue &&
+        currentValue !== quarantineValue
+      ) {
+        await transaction.unwatch();
+        return;
+      }
+      if (currentValue === quarantineValue) {
+        await transaction.unwatch();
+        return;
+      }
+      await transaction.multi();
+      await transaction.hSet(dailyRewardKey, {
+        [utcDateKey]: quarantineValue,
+      });
+      const result = await transaction.exec();
+      if (transactionCommandsSucceeded(result, 1)) {
+        await refreshDailySparRewardExpiry(storage, dailyRewardKey);
+        return;
+      }
+    } catch (error) {
+      await discardWatchedTransaction(
+        transaction,
+        'Daily spar reward quarantine'
+      );
+      if ((await storage.hGet(dailyRewardKey, utcDateKey)) === quarantineValue) {
+        return;
+      }
+      if (attempt === MAX_WATCH_TRANSACTION_ATTEMPTS - 1) {
+        console.error('Daily spar reward quarantine failed:', error);
+      }
+    }
+  }
+};
 
 export const claimAndAwardDailySparWin = async (
   storage: ArenaStorage,
@@ -1585,8 +2028,10 @@ export const claimAndAwardDailySparWin = async (
     inkAmount: number;
   }>
 ): Promise<DailySparWinRewardResult> => {
-  if (!storage.watch) {
-    throw new Error('Atomic spar rewards require transaction support.');
+  if (!storage.watch || !storage.type) {
+    throw new Error(
+      'Atomic spar rewards require transaction support and Redis type checks.'
+    );
   }
   if (
     !input.reportId ||
@@ -1597,10 +2042,11 @@ export const claimAndAwardDailySparWin = async (
     throw new Error('Spar reward input is invalid.');
   }
 
-  const dailyRewardKey = getUserDailySparWinRewardsKey(input.userId);
-  const scribbitKey = getScribbitKey(input.scribbitId);
-  const inkKey = getInkKey(input.userId);
-  const receiptValue = `report:${input.reportId}`;
+  const keys: DailySparRewardKeys = {
+    dailyRewardKey: getUserDailySparWinRewardsKey(input.userId),
+    scribbitKey: getScribbitKey(input.scribbitId),
+    inkKey: getInkKey(input.userId),
+  };
 
   for (
     let attempt = 0;
@@ -1608,43 +2054,137 @@ export const claimAndAwardDailySparWin = async (
     attempt += 1
   ) {
     let transaction: ArenaTransaction | undefined;
+    let projection: DailySparRewardProjection | undefined;
     try {
-      transaction = await storage.watch(dailyRewardKey, scribbitKey, inkKey);
+      transaction = await storage.watch(
+        keys.dailyRewardKey,
+        keys.scribbitKey,
+        keys.inkKey
+      );
+      await assertDailySparRewardStorageTypes(storage, keys);
       const existingReceipt = await storage.hGet(
-        dailyRewardKey,
+        keys.dailyRewardKey,
         input.utcDateKey
       );
       if (existingReceipt !== undefined) {
         await transaction.unwatch();
-        return existingReceipt === receiptValue
-          ? 'already-awarded-this-report'
-          : 'already-claimed';
+        const storedReward = parseStoredDailySparReward(existingReceipt);
+        return storedReward?.reportId === input.reportId
+          ? {
+              status: 'already-awarded-this-report',
+              receipt: storedReward.receipt,
+            }
+          : { status: 'already-claimed', receipt: null };
       }
 
-      const scribbit = parseScribbit(await storage.get(scribbitKey));
+      const [scribbitValue, inkValue] = await Promise.all([
+        storage.get(keys.scribbitKey),
+        storage.get(keys.inkKey),
+      ]);
+      const scribbit = parseScribbit(scribbitValue);
       if (!scribbit || scribbit.isFounding || scribbit.status !== 'alive') {
         await transaction.unwatch();
-        return 'already-claimed';
+        return { status: 'already-claimed', receipt: null };
+      }
+      const inkBalance = Number(inkValue ?? '0');
+      if (!Number.isSafeInteger(inkBalance) || inkBalance < 0) {
+        throw new Error('Stored Ink balance is invalid.');
       }
       const rewardedScribbit = addXpToScribbit(scribbit, XP_REWARDS.sparWin);
-      await transaction.multi();
-      await transaction.hSet(dailyRewardKey, {
-        [input.utcDateKey]: receiptValue,
+      const rewardReceipt = createSparRewardReceipt({
+        reportId: input.reportId,
+        scribbitId: input.scribbitId,
+        xpBefore: scribbit.xp,
+        xpAfter: rewardedScribbit.xp,
+        inkAwarded: input.inkAmount,
       });
-      await transaction.expire(dailyRewardKey, dailyProgressTtlSeconds);
-      await transaction.set(
-        scribbitKey,
-        JSON.stringify(cloneScribbit(rewardedScribbit))
-      );
-      await transaction.incrBy(inkKey, input.inkAmount);
+      projection = {
+        receipt: rewardReceipt,
+        receiptValue: JSON.stringify(rewardReceipt),
+        scribbitBeforeValue: scribbitValue!,
+        scribbitAfterValue: JSON.stringify(cloneScribbit(rewardedScribbit)),
+        inkBeforeValue: inkValue,
+        inkAfterValue: (inkBalance + input.inkAmount).toString(),
+      };
+      await transaction.multi();
+      await transaction.set(keys.scribbitKey, projection.scribbitAfterValue);
+      await transaction.set(keys.inkKey, projection.inkAfterValue);
+      await transaction.hSet(keys.dailyRewardKey, {
+        [input.utcDateKey]: projection.receiptValue,
+      });
       const result = await transaction.exec();
-      if (Array.isArray(result) && result.length > 0) return 'awarded';
+      if (transactionCommandsSucceeded(result, 3)) {
+        await refreshDailySparRewardExpiry(storage, keys.dailyRewardKey);
+        return { status: 'awarded', receipt: rewardReceipt };
+      }
+      if (Array.isArray(result) && result.length > 0) {
+        if (
+          (await dailySparRewardWasCommitted(
+            storage,
+            keys,
+            input.utcDateKey,
+            projection
+          )) ||
+          (await repairDailySparReward(
+            storage,
+            keys,
+            input.utcDateKey,
+            projection
+          ))
+        ) {
+          await refreshDailySparRewardExpiry(storage, keys.dailyRewardKey);
+          return { status: 'awarded', receipt: rewardReceipt };
+        }
+        throw new Error('Daily spar reward could not be repaired safely.');
+      }
     } catch (error) {
-      await discardWatchedTransaction(transaction, 'Scribbit mutation');
+      await discardWatchedTransaction(transaction, 'Daily spar reward');
       if (
-        (await storage.hGet(dailyRewardKey, input.utcDateKey)) === receiptValue
+        projection &&
+        ((await dailySparRewardWasCommitted(
+          storage,
+          keys,
+          input.utcDateKey,
+          projection
+        )) ||
+          (await repairDailySparReward(
+            storage,
+            keys,
+            input.utcDateKey,
+            projection
+          )))
       ) {
-        return 'already-awarded-this-report';
+        await refreshDailySparRewardExpiry(storage, keys.dailyRewardKey);
+        return {
+          status: 'already-awarded-this-report',
+          receipt: projection.receipt,
+        };
+      }
+      if (projection) {
+        // Exact payout state could not be proven. Replace any partial modern
+        // receipt with a no-payout marker so retries cannot duplicate or claim
+        // an unverifiable reward, then preserve the original failure.
+        await quarantineDailySparReward(
+          storage,
+          keys.dailyRewardKey,
+          input.utcDateKey,
+          projection
+        );
+        throw error;
+      }
+      const storedReceipt = await storage.hGet(
+        keys.dailyRewardKey,
+        input.utcDateKey
+      );
+      const storedReward =
+        storedReceipt === undefined
+          ? null
+          : parseStoredDailySparReward(storedReceipt);
+      if (storedReward?.reportId === input.reportId) {
+        return {
+          status: 'already-awarded-this-report',
+          receipt: storedReward.receipt,
+        };
       }
       throw error;
     }

@@ -17,7 +17,10 @@
   "include": [
     "../src/shared/**/*.ts",
     "../src/server/core/**/*.ts",
-    "../src/client/lib/fittext.ts"
+    "../src/client/lib/coloreraser.ts",
+    "../src/client/lib/fittext.ts",
+    "../src/client/lib/replaypostfighteligibility.ts",
+    "../src/client/lib/replayreward.ts"
   ],
   "exclude": []
 }

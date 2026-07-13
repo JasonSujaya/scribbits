@@ -7,7 +7,6 @@ import { EDGE, TYPE, UI } from '../lib/theme';
 import { LivingPaper } from '../lib/livingpaper';
 import {
   elementBadge,
-  fadeToScene,
   ghostButton,
   handLettered,
   iconButton,
@@ -532,8 +531,6 @@ export class Bestiary extends Scene {
   }
 
   private buildAppTabs(): void {
-    appDock(this, 'scout', {
-      scout: () => fadeToScene(this, 'ScoutNotebook'),
-    });
+    appDock(this, 'gallery');
   }
 }

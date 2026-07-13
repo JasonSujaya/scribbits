@@ -8,9 +8,18 @@ import type {
 } from './battlearena';
 import type { ScribbitUpgrade } from './combat/upgrades';
 import type { Element } from './elements';
+import type { EquipmentLoadout } from './equipment';
+import type { SparRewardReceipt } from './sparreward';
+import {
+  cloneEquipmentLoadout,
+  createEmptyEquipmentLoadout,
+  parseEquipmentLoadout,
+} from './equipment';
 
 export { ELEMENTS, isElement } from './elements';
 export type { Element } from './elements';
+export type { EquipGearRequest } from './equipment';
+export type { SparRewardReceipt } from './sparreward';
 export {
   LEVEL_DAMAGE_BONUS_PER_LEVEL,
   LEVEL_XP_THRESHOLDS,
@@ -76,6 +85,8 @@ export type Scribbit = {
   legendTitle: string | null; // e.g. "Champion of Day 12"
   isFounding: boolean; // NPC founding roster
   accessories: string[]; // accessory catalog ids welded to this scribbit
+  gearRanks?: Record<string, GearRank>; // presentation snapshot for welded/equipped Gear; old records default to rank 1
+  equipmentLoadout: EquipmentLoadout; // two server-authoritative slots per Gear category
   upgrades: ScribbitUpgrade[]; // one deterministic Ink Mod per level after 1
   // Tamagotchi layer — levels die with the scribbit; bonuses are small + capped
   level: number; // 1..MAX_LEVEL
@@ -90,10 +101,16 @@ export type Scribbit = {
 // isolated so adding a Scribbit field cannot silently create aliasing in one
 // subsystem while another remains safe.
 export const cloneScribbit = (scribbit: Scribbit): Scribbit => {
+  const equipmentLoadout =
+    parseEquipmentLoadout(scribbit.equipmentLoadout) ??
+    createEmptyEquipmentLoadout();
+
   return {
     ...scribbit,
     stats: { ...scribbit.stats },
     accessories: [...scribbit.accessories],
+    gearRanks: { ...(scribbit.gearRanks ?? {}) },
+    equipmentLoadout: cloneEquipmentLoadout(equipmentLoadout),
     // Old in-memory battle fixtures predate Ink Mods. Storage validation still
     // rejects missing runtime authority before writes; cloning preserves the
     // battle facade's finite read compatibility by projecting no mods.
@@ -264,6 +281,7 @@ export type ArenaState = {
   myClout: number; // lifetime talent-scout score
   myInk: number; // Mystery Ink balance
   myPens: string[]; // unlocked palette pen ids
+  myDrawingSupplies?: Record<string, number>; // consumable drawing-ink and brush charges
   nextCapsuleCost: number; // authoritative current price (daily discount already applied)
   capsuleProgress: CapsuleProgress;
   founderChronicle: FounderChronicle;
@@ -296,7 +314,12 @@ export type ReportScribbitResponse = {
 // palette boosts too? No — pens remain permanent unlocks (small part of pool);
 // accessories are the stars and are per-copy consumables.
 export type CapsuleRarity = 'common' | 'rare' | 'epic';
-export type CapsuleItemKind = 'accessory' | 'pen' | 'title';
+export type CapsuleItemKind =
+  | 'accessory'
+  | 'pen'
+  | 'title'
+  | 'drawing-ink'
+  | 'brush';
 export const MAX_NORMAL_GEAR_RANK = 5 as const;
 export const RED_STAR_GEAR_RANK = 6 as const;
 export const NORMAL_GEAR_STAR_COUNT = MAX_NORMAL_GEAR_RANK;
@@ -313,6 +336,13 @@ export const isGearRank = (value: unknown): value is GearRank => {
 };
 export const isSpecialGearRank = (rank: GearRank): boolean => {
   return rank === SPECIAL_GEAR_RANK;
+};
+export const getAttachedGearRank = (
+  scribbit: Pick<Scribbit, 'gearRanks'>,
+  gearId: string
+): GearRank => {
+  const rank = scribbit.gearRanks?.[gearId];
+  return isGearRank(rank) ? rank : 1;
 };
 export type GearInventoryEntry = {
   rank: GearRank;
@@ -331,7 +361,7 @@ export type CapsulePull = {
   mergeReady: boolean; // server-owned convenience flag for the reveal ceremony
 };
 export type Inventory = {
-  items: Record<string, number>; // catalog id -> unattached copies owned
+  items: Record<string, number>; // consumable catalog id -> available copies or paint charges
   gear: Record<string, GearInventoryEntry>; // discovered accessories, including zero-copy gear
   pens: string[]; // permanent palette unlocks
   titles: string[];
@@ -369,6 +399,10 @@ export type AttachedAccessory = {
   y: number;
   scale: number; // MIN_ACCESSORY_SCALE..MAX_ACCESSORY_SCALE
   rotation: number; // MIN_ACCESSORY_ROTATION..MAX_ACCESSORY_ROTATION radians
+};
+export type DrawingSupplySelection = {
+  drawingInkId: string | null;
+  brushId: string | null;
 };
 export const MAX_ACCESSORIES_PER_SCRIBBIT = 2;
 export const INK_REWARDS = {
@@ -492,6 +526,10 @@ export type DirectBattleResponse = {
   founderChronicleBeat: FounderChronicleBeat | null;
 };
 
+export type SparBattleResponse = DirectBattleResponse & {
+  rewardReceipt: SparRewardReceipt | null;
+};
+
 export type PracticeBattleRequest = {
   name: string;
   baseImageDataUrl: string;
@@ -514,6 +552,9 @@ export type SubmitScribbitRequest = {
   stats: ScribbitStats; // deprecated: client preview only; server recomputes from PNG
   element: Element; // deprecated: client preview only; server recomputes from PNG
   accessories?: AttachedAccessory[]; // max 2; server validates ownership + consumes copies
+  // Server validates both ids and spends one charge from each selected supply
+  // only inside the atomic successful Scribbit-birth transaction.
+  drawingSupplies?: DrawingSupplySelection;
 };
 
 export type CareRequest = { scribbitId: string; action: CareAction };
@@ -592,6 +633,7 @@ export const MAX_ALIVE_PER_USER = 3;
 // GET  /api/clout-board    -> CloutBoard
 // POST /api/capsule        -> CapsulePullResponse                       (spends ink; seeded random + pity; duplicate accessories stack)
 // GET  /api/inventory      -> Inventory
+// POST /api/equip-gear     -> EquipGearRequest -> Scribbit              (owned living Scribbit + discovered Gear)
 // POST /api/equip-title    -> EquipTitleRequest -> Inventory
 // GET  /api/legends?cursor&limit -> LegendsState (limit defaults to and is capped at 50)
 // GET  /api/legacy-cards?cursor&limit -> LegacyCardsState (owner-only deck)

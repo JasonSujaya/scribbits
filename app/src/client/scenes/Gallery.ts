@@ -1,5 +1,6 @@
 import { Scene } from 'phaser';
 import {
+  equipGear,
   equipTitle as saveEquippedTitle,
   fetchInventory,
   fetchLegacyCards,
@@ -9,9 +10,11 @@ import {
 import {
   getArena,
   getGalleryTab,
+  setArena,
   setGalleryTab,
   type GalleryTab,
 } from '../lib/registry';
+import type { EquipmentCategory } from '../../shared/equipment';
 import {
   loadDrawing,
   fitDrawing,
@@ -49,9 +52,17 @@ const LEGEND_CARD_HEIGHT = 272;
 const LEGEND_CARD_ROW_GAP = 18;
 const LEGEND_CARD_ROW_STEP = LEGEND_CARD_HEIGHT + LEGEND_CARD_ROW_GAP;
 const LEGEND_CARD_TOP_GAP = 20;
+const BAG_CONTENT_TOP = 168;
 const GALLERY_CONTENT_TOP = 330;
 const GALLERY_SECTION_PANEL_ID = 'gallery-section-panel';
 const GALLERY_SECTION_ACTIONS_ID = 'gallery-section-actions';
+const DEBUG_INK_KIT_SECTIONS: readonly InkKitSection[] = [
+  'weapon',
+  'armor',
+  'shoes',
+  'accessory',
+  'styles',
+];
 const galleryTabId = (tab: GalleryTab): string => `gallery-tab-${tab}`;
 const GALLERY_TABS: ReadonlyArray<{
   tab: GalleryTab;
@@ -75,18 +86,11 @@ const GALLERY_TABS: ReadonlyArray<{
     panelSummary:
       'Legacy Book. Your completed Scribbits and their saved stories.',
   },
-  {
-    tab: 'collection',
-    label: 'Ink Kit',
-    visibleLabel: 'INK KIT',
-    icon: 'spark',
-    panelSummary: 'Ink Kit. Your owned cosmetic gear and titles.',
-  },
 ]);
 
-// Three-tab gallery: community Legends, the caller's immutable Legacy Book,
-// and the caller's owned Ink Kit. This scene orchestrates data only;
-// archival/card presentation lives in legacycards.ts.
+// One scene hosts two explicit dock destinations without duplicating data
+// orchestration: Bag owns inventory/equipment, while Gallery owns community
+// Legends and the caller's immutable Legacy Book.
 export class Gallery extends Scene {
   private tab: GalleryTab = 'legends';
   private legendsState: LegendsState | null = null;
@@ -98,13 +102,16 @@ export class Gallery extends Scene {
   private legendPage = 0;
   private legacyPage = 0;
   private legacyPages: LegacyCardsState[] = [];
-  private collectionPage = 0;
+  private collectionScrollOffset = 0;
   private collectionSection: InkKitSection = 'weapon';
   private loadingOlderLegends = false;
   private loadingLegends = false;
   private loadingCollection = false;
   private loadingLegacy = false;
   private collectionError: string | null = null;
+  private equipmentError: string | null = null;
+  private selectedEquipmentScribbitId: string | null = null;
+  private savingEquipment = false;
   private legacyError: string | null = null;
   private legendsRequestEpoch = 0;
   private collectionRequestEpoch = 0;
@@ -132,24 +139,24 @@ export class Gallery extends Scene {
     this.legendPage = 0;
     this.legacyPage = 0;
     this.legacyPages = [];
-    this.collectionSection = 'weapon';
-    const debugCollectionPage = new URLSearchParams(window.location.search).get(
-      'collectionPage'
-    );
-    const requestedCollectionPage = Number.parseInt(
-      debugCollectionPage ?? '',
-      10
-    );
-    this.collectionPage =
+    const requestedInkKitSection = new URLSearchParams(
+      window.location.search
+    ).get('gearSection') as InkKitSection | null;
+    this.collectionSection =
       window.location.search.includes('debug') &&
-      Number.isFinite(requestedCollectionPage)
-        ? Math.max(0, requestedCollectionPage - 1)
-        : 0;
+      requestedInkKitSection !== null &&
+      DEBUG_INK_KIT_SECTIONS.includes(requestedInkKitSection)
+        ? requestedInkKitSection
+        : 'weapon';
+    this.collectionScrollOffset = 0;
     this.loadingOlderLegends = false;
     this.loadingLegends = false;
     this.loadingCollection = false;
     this.loadingLegacy = false;
     this.collectionError = null;
+    this.equipmentError = null;
+    this.selectedEquipmentScribbitId = null;
+    this.savingEquipment = false;
     this.legacyError = null;
     this.inventory = null;
     this.sectionTabsOverlay = null;
@@ -380,35 +387,64 @@ export class Gallery extends Scene {
     // the outer column and look like clipped card art, so keep this page calm.
     this.livingPaper = new LivingPaper(this, { edgeCreatures: false });
     const { width } = this.scale;
-    screenTitle(this, width / 2, 22, 'GALLERY', {
+    const bagActive = this.tab === 'collection';
+    screenTitle(this, width / 2, 22, bagActive ? 'BAG' : 'GALLERY', {
       maxWidth: 340,
       maxHeight: 82,
     });
-    this.buildTabs(168);
-    this.mountSectionPanel();
-    if (focusedSectionTab) this.sectionTabControls.get(this.tab)?.focus();
+    if (!bagActive) {
+      this.buildTabs(168);
+      this.mountSectionPanel();
+      if (focusedSectionTab) this.sectionTabControls.get(this.tab)?.focus();
+    }
     this.buildAppTabs();
 
     if (this.tab === 'collection') {
+      const myScribbits = getArena(this)?.myScribbits ?? [];
+      const selectedScribbit =
+        myScribbits.find(
+          (scribbit) => scribbit.id === this.selectedEquipmentScribbitId
+        ) ?? myScribbits[0];
+      if (
+        selectedScribbit &&
+        this.selectedEquipmentScribbitId !== selectedScribbit.id
+      ) {
+        this.selectedEquipmentScribbitId = selectedScribbit.id;
+      }
       renderCollectionBook({
         scene: this,
         actionOverlay: this.ensureContentActionOverlay(),
-        top: GALLERY_CONTENT_TOP,
-        page: this.collectionPage,
+        top: BAG_CONTENT_TOP,
         section: this.collectionSection,
+        scrollOffset: this.collectionScrollOffset,
         inventory: this.inventory,
         loggedIn: this.loggedIn,
         loading: this.loadingCollection,
         errorMessage: this.collectionError,
-        onPageChange: (page) => {
-          this.collectionPage = page;
-          this.build();
+        scribbits: myScribbits,
+        selectedScribbitId: selectedScribbit?.id ?? null,
+        equipmentBusy: this.savingEquipment,
+        equipmentError: this.equipmentError,
+        onScrollOffsetChange: (offset) => {
+          this.collectionScrollOffset = offset;
         },
         onSectionChange: (section) => {
           this.collectionSection = section;
-          this.collectionPage = 0;
+          this.collectionScrollOffset = 0;
+          this.equipmentError = null;
           this.build();
         },
+        onSelectScribbit: (scribbitId) => {
+          this.selectedEquipmentScribbitId = scribbitId;
+          this.equipmentError = null;
+          this.build();
+        },
+        onEquipmentMessage: (message) => {
+          this.equipmentError = message;
+          this.build();
+        },
+        onEquipGear: (scribbitId, category, slotIndex, gearId) =>
+          this.updateEquipmentSlot(scribbitId, category, slotIndex, gearId),
         onRetry: () => void this.loadCollection(),
         onEquipTitle: (titleId) => this.updateEquippedTitle(titleId),
         onMergeGear: (gearId, operationId) =>
@@ -512,7 +548,10 @@ export class Gallery extends Scene {
       );
       this.contentActionOverlay.setRootAttributes({
         id: GALLERY_SECTION_ACTIONS_ID,
-        'aria-label': 'Selected Gallery section actions',
+        'aria-label':
+          this.tab === 'collection'
+            ? 'Bag inventory and equipment actions'
+            : 'Selected Gallery section actions',
       });
       if (this.sectionSemanticOverlay) {
         this.contentActionOverlay.moveAfter(this.sectionSemanticOverlay);
@@ -522,7 +561,8 @@ export class Gallery extends Scene {
   }
 
   private buildAppTabs(): void {
-    appDock(this, 'gallery', {
+    appDock(this, this.tab === 'collection' ? 'bag' : 'gallery', {
+      bag: () => this.switchTab('collection'),
       gallery: () => this.switchTab('legends'),
     });
   }
@@ -678,7 +718,7 @@ export class Gallery extends Scene {
     this.tab = tab;
     if (tab === 'legends') this.legendPage = 0;
     else if (tab === 'legacy') this.legacyPage = 0;
-    else this.collectionPage = 0;
+    else this.collectionScrollOffset = 0;
     setGalleryTab(this, tab);
     this.build();
     if (tab === 'collection') {
@@ -933,10 +973,45 @@ export class Gallery extends Scene {
   }
 
   // --- Actions --------------------------------------------------------------
+  private async updateEquipmentSlot(
+    scribbitId: string,
+    category: EquipmentCategory,
+    slotIndex: 0 | 1,
+    gearId: string | null
+  ): Promise<Scribbit | { error: string }> {
+    if (this.savingEquipment) {
+      return { error: 'Finish saving the current loadout first.' };
+    }
+    this.savingEquipment = true;
+    this.equipmentError = null;
+    this.build();
+
+    const result = await equipGear(scribbitId, category, slotIndex, gearId);
+    this.savingEquipment = false;
+    if (!result.ok) {
+      this.equipmentError = result.error;
+      if (this.scene.isActive() && this.tab === 'collection') this.build();
+      return { error: result.error };
+    }
+
+    const arena = getArena(this);
+    if (arena) {
+      setArena(this, {
+        ...arena,
+        myScribbits: arena.myScribbits.map((scribbit) =>
+          scribbit.id === result.data.id ? result.data : scribbit
+        ),
+      });
+    }
+    this.selectedEquipmentScribbitId = result.data.id;
+    if (this.scene.isActive() && this.tab === 'collection') this.build();
+    return result.data;
+  }
+
   private async updateEquippedTitle(
     titleId: string | null
   ): Promise<string | null> {
-    if (!this.inventory) return 'Your Ink Kit is still syncing.';
+    if (!this.inventory) return 'Your Bag is still syncing.';
     const previousInventory = this.inventory;
     this.inventory = { ...previousInventory, equippedTitle: titleId };
 
@@ -953,7 +1028,7 @@ export class Gallery extends Scene {
     gearId: string,
     operationId: string
   ): Promise<MergeGearResponse | { error: string }> {
-    if (!this.inventory) return { error: 'Your Ink Kit is still syncing.' };
+    if (!this.inventory) return { error: 'Your Bag is still syncing.' };
     const result = await mergeGear(gearId, operationId);
     if (!result.ok) return { error: result.error };
     this.inventory = result.data.inventory;

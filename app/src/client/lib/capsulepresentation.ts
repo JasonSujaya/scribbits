@@ -67,6 +67,9 @@ export function prizeOwnershipLabel(pull: CapsulePull): string {
     if (pull.mergeReady) return `+1 COPY · FORGE READY`;
     return `+1 COPY · ${pull.ownedCount}/3 TO FORGE`;
   }
+  if (pull.kind === 'drawing-ink' || pull.kind === 'brush') {
+    return `+1 CHARGE · ${pull.ownedCount} LEFT`;
+  }
   if (pull.isNew) return 'NEW PERMANENT STYLE';
   return 'ALREADY OWNED';
 }
@@ -80,6 +83,9 @@ export function prizeOwnershipAnnouncement(pull: CapsulePull): string {
     return pull.mergeReady
       ? `${rank} star gear. Ready to forge with ${pull.ownedCount} copies.`
       : `${rank} star gear. ${pull.ownedCount} of 3 copies ready to forge.`;
+  }
+  if (pull.kind === 'drawing-ink' || pull.kind === 'brush') {
+    return `One drawing charge added. ${pull.ownedCount} left.`;
   }
   if (pull.isNew) return 'New permanent style.';
   return 'Already unlocked.';

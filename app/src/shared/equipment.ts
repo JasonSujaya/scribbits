@@ -27,6 +27,13 @@ export type EquipmentLoadout = Readonly<
   Record<EquipmentCategory, EquipmentSlots>
 >;
 
+export type EquipGearRequest = Readonly<{
+  scribbitId: string;
+  category: EquipmentCategory;
+  slotIndex: 0 | 1;
+  gearId: string | null;
+}>;
+
 const emptySlots = (): EquipmentSlots => Object.freeze([null, null]);
 
 export function createEmptyEquipmentLoadout(): EquipmentLoadout {
@@ -36,6 +43,45 @@ export function createEmptyEquipmentLoadout(): EquipmentLoadout {
     shoes: emptySlots(),
     accessory: emptySlots(),
   });
+}
+
+export function cloneEquipmentLoadout(
+  loadout: EquipmentLoadout
+): EquipmentLoadout {
+  return Object.freeze({
+    weapon: Object.freeze([...loadout.weapon]) as EquipmentSlots,
+    armor: Object.freeze([...loadout.armor]) as EquipmentSlots,
+    shoes: Object.freeze([...loadout.shoes]) as EquipmentSlots,
+    accessory: Object.freeze([...loadout.accessory]) as EquipmentSlots,
+  });
+}
+
+export function equipGearInLoadout(
+  loadout: EquipmentLoadout,
+  request: Pick<EquipGearRequest, 'category' | 'slotIndex' | 'gearId'>
+): EquipmentLoadout {
+  const projectedSlots: Record<
+    EquipmentCategory,
+    [string | null, string | null]
+  > = {
+    weapon: [...loadout.weapon],
+    armor: [...loadout.armor],
+    shoes: [...loadout.shoes],
+    accessory: [...loadout.accessory],
+  };
+
+  if (request.gearId !== null) {
+    for (const category of EQUIPMENT_CATEGORIES) {
+      for (let slotIndex = 0; slotIndex < 2; slotIndex += 1) {
+        if (projectedSlots[category][slotIndex] === request.gearId) {
+          projectedSlots[category][slotIndex] = null;
+        }
+      }
+    }
+  }
+
+  projectedSlots[request.category][request.slotIndex] = request.gearId;
+  return cloneEquipmentLoadout(projectedSlots);
 }
 
 export function isEquipmentCategory(

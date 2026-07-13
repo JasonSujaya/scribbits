@@ -16,17 +16,28 @@ export {
   validateAndAnalyzeScribbitSubmission,
 } from './scribbit';
 export { cloneScribbit } from '../../shared/arena';
+export { createSparRewardReceipt } from '../../shared/sparreward';
 export {
   advanceCapsulePity,
   createCapsuleProgress,
   getCapsuleCostForDailyState,
   projectAccessoryInventoryConsumption,
+  projectSubmissionConsumableInventoryConsumption,
   projectCapsuleInventoryGrant,
   projectGearMerge,
   projectEquippedTitle,
   selectCapsuleDrop,
 } from './inkStore';
 export { COSMETIC_CATALOG } from '../../shared/cosmetics';
+export {
+  findGearCosmetic,
+  validateCatalogEquipmentLoadout,
+} from '../../shared/cosmetics';
+export {
+  createEmptyEquipmentLoadout,
+  equipGearInLoadout,
+  isEquipmentCategory,
+} from '../../shared/equipment';
 export { ELEMENTS, isElement } from '../../shared/elements';
 export { hashStringToUint32 } from '../../shared/stablehash';
 export {

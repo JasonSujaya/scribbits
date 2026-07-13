@@ -42,6 +42,7 @@ const {
   cloneScribbit,
   collectLegacyCards,
   createEmptyFounderChronicle,
+  createEmptyEquipmentLoadout,
   createScribbit,
   createScribbitLegacy,
   createPracticeBattle,
@@ -49,6 +50,7 @@ const {
   createRivalRunChoices,
   createRivalRunState,
   createScoutNotebookState,
+  createSparRewardReceipt,
   findFoundingScribbit,
   generateForecastForDay,
   getCapsuleCostForDailyState,
@@ -66,16 +68,20 @@ const {
   projectLegacyReturnReceipt,
   projectScoutNotebookPick,
   planCareProgression,
-  projectAccessoryInventoryConsumption,
+  projectSubmissionConsumableInventoryConsumption,
   projectCapsuleInventoryGrant,
   projectEquippedTitle,
   projectGearMerge,
   createScribbitUpgradesForLevel,
+  equipGearInLoadout,
+  findGearCosmetic,
+  isEquipmentCategory,
   selectFoundingSparRivalSlate,
   sortLegacyCardsNewestFirst,
   simulate: simulateProductionBattle,
   selectCapsuleDrop,
   validateAndAnalyzeScribbitSubmission,
+  validateCatalogEquipmentLoadout,
 } = await import(mockCombatBundleUrl.href);
 const transparentPng = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAFgwJ/lw5l6wAAAABJRU5ErkJggg==',
@@ -168,6 +174,7 @@ const makeScribbit = (options) => {
   if (options.upgrades !== undefined && !explicitUpgrades) {
     throw new Error(`Mock Scribbit ${options.id} has malformed Ink Mods.`);
   }
+  const accessories = options.accessories ? [...options.accessories] : [];
   const scribbit = {
     id: options.id,
     name: options.name,
@@ -183,7 +190,11 @@ const makeScribbit = (options) => {
     status,
     legendTitle: options.legendTitle ?? null,
     isFounding: options.isFounding ?? false,
-    accessories: options.accessories ? [...options.accessories] : [],
+    accessories,
+    gearRanks: Object.fromEntries(
+      accessories.map((gearId) => [gearId, options.gearRanks?.[gearId] ?? 1])
+    ),
+    equipmentLoadout: options.equipmentLoadout ?? createEmptyEquipmentLoadout(),
     upgrades:
       explicitUpgrades ?? createScribbitUpgradesForLevel(options.id, level),
     level,
@@ -394,6 +405,7 @@ const debugPowerFighters = Object.freeze({
     xp: 7,
     mood: 'pumped',
     accessories: ['inkquake-rumble-belt'],
+    gearRanks: { 'inkquake-rumble-belt': 6 },
   }),
   nib_halo: makeScribbit({
     id: 'debug-nib-halo-needle-star',
@@ -404,6 +416,7 @@ const debugPowerFighters = Object.freeze({
     xp: 7,
     mood: 'pumped',
     accessories: ['tiny-sword'],
+    gearRanks: { 'tiny-sword': 3 },
   }),
   smearstep: makeScribbit({
     id: 'debug-smearstep-quick-swipe',
@@ -414,6 +427,7 @@ const debugPowerFighters = Object.freeze({
     xp: 7,
     mood: 'pumped',
     accessories: ['tiny-sword'],
+    gearRanks: { 'tiny-sword': 4 },
   }),
   colorburst: makeScribbit({
     id: 'debug-colorburst-prism-pop',
@@ -424,6 +438,7 @@ const debugPowerFighters = Object.freeze({
     xp: 7,
     mood: 'pumped',
     accessories: ['inkquake-rumble-belt'],
+    gearRanks: { 'inkquake-rumble-belt': 5 },
   }),
 });
 
@@ -667,6 +682,7 @@ const createPreviewEconomy = (options = {}) => {
     capsuleOperations: new Map(),
     gearMergeOperations: new Map(),
     sparWinRewardUtcDates: new Set(),
+    sparRewardReceipts: new Map(),
   };
 };
 
@@ -727,6 +743,10 @@ const memory = {
       ink: 35,
       inventory: {
         items: {
+          'berry-jam-ink': 2,
+          'ghostlight-ink': 1,
+          'sidewalk-chalk-brush': 2,
+          'ribbon-brush': 1,
           'golden-crown': 2,
           'tiny-sword': 1,
           'party-hat': 3,
@@ -764,6 +784,10 @@ const memory = {
           'gold-pen',
           'rainbow-crayon',
           'midnight-ink',
+          'berry-jam-ink',
+          'ghostlight-ink',
+          'sidewalk-chalk-brush',
+          'ribbon-brush',
           'doodler',
           'inkslinger',
           'brushlord',
@@ -1041,6 +1065,7 @@ const resetPreviewEconomy = (economy) => {
   economy.capsuleOperations.clear();
   economy.gearMergeOperations.clear();
   economy.sparWinRewardUtcDates.clear();
+  economy.sparRewardReceipts.clear();
 };
 
 const isLivingScribbit = (scribbit) => {
@@ -1316,6 +1341,7 @@ const arenaState = (economy, previewMode = 'returning') => {
     myClout: memory.myClout,
     myInk: economy.ink,
     myPens: [...economy.inventory.pens],
+    myDrawingSupplies: cloneItemCounts(economy.inventory.items),
     nextCapsuleCost: capsuleCostForCurrentPull(economy).cost,
     capsuleProgress: capsuleProgressState(economy),
     founderChronicle: getFounderChronicleForPreview(previewMode),
@@ -1569,6 +1595,86 @@ const handleApi = async (request, response, url) => {
     return;
   }
 
+  if (method === 'POST' && path === '/api/equip-gear') {
+    const body = await readJsonBody(request);
+    const scribbitId = readScribbitId(body);
+    const category = body?.category;
+    const slotIndex = body?.slotIndex;
+    const gearId =
+      body?.gearId === null
+        ? null
+        : typeof body?.gearId === 'string'
+          ? body.gearId.trim()
+          : undefined;
+    if (
+      !scribbitId ||
+      !isEquipmentCategory(category) ||
+      (slotIndex !== 0 && slotIndex !== 1) ||
+      (gearId !== null &&
+        (typeof gearId !== 'string' || !/^[a-z0-9-]{2,64}$/.test(gearId)))
+    ) {
+      sendError(response, 400, 'Choose a valid living Scribbit and Gear slot.');
+      return;
+    }
+
+    const scribbit = getLivingScribbitsForPreview(previewMode).find(
+      (entry) => entry.id === scribbitId
+    );
+    if (!scribbit || scribbit.isFounding) {
+      sendError(response, 404, 'That Scribbit is not in your active roster.');
+      return;
+    }
+
+    const gear = gearId === null ? undefined : findGearCosmetic(gearId);
+    if (gearId !== null && gear?.category !== category) {
+      sendError(response, 400, 'Choose Gear that matches that slot category.');
+      return;
+    }
+    const inventory = inventoryState(economy.inventory);
+    if (gearId !== null && inventory.gear[gearId] === undefined) {
+      sendError(response, 400, 'Discover that Gear before equipping it.');
+      return;
+    }
+
+    const currentLoadout =
+      validateCatalogEquipmentLoadout(scribbit.equipmentLoadout) ??
+      createEmptyEquipmentLoadout();
+    const projectedLoadout = validateCatalogEquipmentLoadout(
+      equipGearInLoadout(currentLoadout, { category, slotIndex, gearId })
+    );
+    if (!projectedLoadout) {
+      sendError(response, 400, 'Choose Gear that matches that slot category.');
+      return;
+    }
+    const presentedGearIds = new Set([
+      ...scribbit.accessories,
+      ...Object.values(projectedLoadout).flatMap((slots) =>
+        slots.filter((catalogId) => catalogId !== null)
+      ),
+    ]);
+    const projectedGearRanks = Object.fromEntries(
+      [...presentedGearIds].map((catalogId) => [
+        catalogId,
+        catalogId === gearId
+          ? (inventory.gear[catalogId]?.rank ?? 1)
+          : (scribbit.gearRanks?.[catalogId] ?? 1),
+      ])
+    );
+    scribbit.equipmentLoadout = projectedLoadout;
+    scribbit.gearRanks = projectedGearRanks;
+    for (const mirroredList of [memory.myScribbits, memory.todayEntrants]) {
+      const mirroredScribbit = mirroredList.find(
+        (entry) => entry.id === scribbitId
+      );
+      if (mirroredScribbit && mirroredScribbit !== scribbit) {
+        mirroredScribbit.equipmentLoadout = projectedLoadout;
+        mirroredScribbit.gearRanks = { ...projectedGearRanks };
+      }
+    }
+    sendJson(response, 200, cloneScribbit(scribbit));
+    return;
+  }
+
   if (method === 'GET' && path === '/api/scout-notebook') {
     if (previewMode === 'logged-out') {
       sendError(response, 401, 'Sign in to open your Scout Notebook.');
@@ -1644,11 +1750,7 @@ const handleApi = async (request, response, url) => {
       return;
     }
     if (merge.status === 'insufficientCopies') {
-      sendError(
-        response,
-        409,
-        'You need three copies to forge this Gear.'
-      );
+      sendError(response, 409, 'You need three copies to forge this Gear.');
       return;
     }
     if (merge.status === 'maxRank') {
@@ -2157,10 +2259,20 @@ const handleApi = async (request, response, url) => {
         );
       });
       if (storedRunReport) {
+        const storedRewardReceipt =
+          economy.sparRewardReceipts.get(storedRunReport.id) ??
+          createSparRewardReceipt({
+            reportId: storedRunReport.id,
+            scribbitId: challenger.id,
+            xpBefore: storedRunReport.a.xp,
+            xpAfter: storedRunReport.a.xp,
+            inkAwarded: 0,
+          });
         sendJson(response, 200, {
           report: storedRunReport,
           founderChronicle: getFounderChronicleForPreview(previewMode),
           founderChronicleBeat: null,
+          rewardReceipt: storedRewardReceipt,
         });
         return;
       }
@@ -2241,19 +2353,35 @@ const handleApi = async (request, response, url) => {
       });
     }
     let rewardedReport = report;
+    let rewardReceipt = createSparRewardReceipt({
+      reportId: report.id,
+      scribbitId: challenger.id,
+      xpBefore: challenger.xp,
+      xpAfter: challenger.xp,
+      inkAwarded: 0,
+    });
 
     if (report.winner === 'a') {
       const utcDateKey = currentUtcDateKey();
       if (!economy.sparWinRewardUtcDates.has(utcDateKey)) {
         economy.sparWinRewardUtcDates.add(utcDateKey);
         economy.ink += INK_REWARDS.sparWin;
+        const xpBefore = challenger.xp;
         Object.assign(
           challenger,
           addXpToScribbit(challenger, XP_REWARDS.sparWin)
         );
+        rewardReceipt = createSparRewardReceipt({
+          reportId: report.id,
+          scribbitId: challenger.id,
+          xpBefore,
+          xpAfter: challenger.xp,
+          inkAwarded: INK_REWARDS.sparWin,
+        });
         rewardedReport = { ...report, inkAwarded: INK_REWARDS.sparWin };
       }
     }
+    economy.sparRewardReceipts.set(report.id, rewardReceipt);
 
     if (rivalRunReceipt) {
       rewardedReport = { ...rewardedReport, rivalRun: rivalRunReceipt };
@@ -2269,6 +2397,7 @@ const handleApi = async (request, response, url) => {
       report: rewardedReport,
       founderChronicle: getFounderChronicleForPreview(previewMode),
       founderChronicleBeat: founderChronicleBeats.at(-1) ?? null,
+      rewardReceipt,
     });
     return;
   }
@@ -2347,19 +2476,26 @@ const handleApi = async (request, response, url) => {
       return;
     }
 
-    const accessoryConsumption = projectAccessoryInventoryConsumption(
-      inventoryState(economy.inventory),
-      draft.accessories.map(({ id: accessoryId }) => accessoryId)
-    );
-    if (accessoryConsumption.status === 'invalid') {
-      sendError(response, 400, 'Choose valid Mystery Ink accessories.');
+    const inventoryBeforeSubmission = inventoryState(economy.inventory);
+    const consumableConsumption =
+      projectSubmissionConsumableInventoryConsumption(
+        inventoryBeforeSubmission,
+        draft.accessories.map(({ id: accessoryId }) => accessoryId),
+        draft.drawingSupplies
+      );
+    if (consumableConsumption.status === 'invalid') {
+      sendError(
+        response,
+        400,
+        'Choose valid Mystery Ink accessories and drawing supplies.'
+      );
       return;
     }
-    if (accessoryConsumption.status === 'insufficient') {
+    if (consumableConsumption.status === 'insufficient') {
       sendError(
         response,
         409,
-        `You do not have enough ${getProductionCosmetic(accessoryConsumption.accessoryId, 'accessory').name} accessory copies.`
+        `Your ${getProductionCosmetic(consumableConsumption.consumableId).name} supply has run out.`
       );
       return;
     }
@@ -2381,8 +2517,14 @@ const handleApi = async (request, response, url) => {
       imageUrl: `/api/drawing/${id}`,
       day: memory.dayNumber,
     });
+    scribbit.gearRanks = Object.fromEntries(
+      scribbit.accessories.map((gearId) => [
+        gearId,
+        inventoryBeforeSubmission.gear[gearId]?.rank ?? 1,
+      ])
+    );
 
-    economy.inventory = accessoryConsumption.inventory;
+    economy.inventory = consumableConsumption.inventory;
     memory.myScribbits.unshift(scribbit);
     memory.todayEntrants.push(scribbit);
     if (previewMode === 'returning') {

@@ -8,7 +8,8 @@ enter daily community rumbles. The app identity is `scribbits` in
 All main scenes share `lib/appdock.ts`, the generated Craftbox paper stage, the
 same five optical-weight code-native navigation icons, and one GPT-generated
 hand-cut button family for primary, secondary, Pick, close, and pagination
-actions. The dock uses a flat contained active tile, readable labels, and no
+actions. The dock is Arena, Bag, Draw, Battles, and Gallery. It uses a flat
+contained active tile, readable labels, and no
 micro-badges or protruding cutout. DynaPuff 400/700 is
 bundled locally through Fontsource and loaded before Phaser renders text. Shared
 heart, clock, Ink, sparkle, and element marks live in `lib/papericons.ts`; scene
@@ -189,39 +190,33 @@ copy should keep the default view to one headline, one status, and one action.
    Earned-only Ink opens Mystery Capsules with a discounted daily pull, permanent
    discovery album, collector rank, and visible Epic pity countdown. Accessories
    and status rewards are cosmetic; pens are expressive sidegrades that can
-   change the normalized build split without adding stat points. The Ink Kit
-   shows one aggregate card per owned gear style across weapon, armor, shoes,
-   and accessory sections; permanent pens and titles stay in a separate Styles
-   section.
+   change the normalized build split without adding stat points. Bag
+   centers one selected living Scribbit inside eight persistent equipment
+   slots: two each for weapon, armor, shoes, and accessory. Tapping discovered
+   Gear fills an open matching slot; a full category requires an explicit remove
+   before replacement. Gear discovery is reusable across living Scribbits,
+   while duplicate copies remain Forge material. Equipped weapons select their
+   cosmetic battle-effect family without changing combat math; permanent pens
+   and titles stay in a separate Styles section.
    The 36-item catalog includes eight wearable Shape Power Relics—two per
    power—with no combat hooks.
    Living Scribbits also grow from level 1 to 5, but the full arc adds only 1.5%
    damage and is statistically capped at a 60% equal-build win rate.
 4. **Pick:** choose another player’s contender before the nightly resolution.
    Champion backers earn 3 Clout; runner-up backers earn 1.
-   Pick entry lives in the Scout Notebook; the Arena home stays focused on direct
-   Champion or Spar battles. An available Scout Pick opens the focused
-   eight-contender picker without adding a prediction panel to the default Arena
-   stack. Each contender keeps one inspect target and one server-planned heart or
-   lock state, and the selected card turns gold.
+   Pick entry is a compact secondary action in Arena, below the direct Champion
+   or Spar battle setup. It opens the focused eight-contender picker without
+   adding a prediction panel to the default stack. Each contender keeps one
+   inspect target and one server-planned heart or lock state, and the selected
+   card turns gold.
    If the player skipped their Pick but entered an owned Scribbit, the next visit leads
    with that drawing's exact Rumble W/L, committed XP, committed Ink, and a
    server-selected last-bout replay. The client never reconstructs those rewards
    from cumulative totals.
-5. **Scout:** the fifth app tab is a seven-page Scout Notebook covering tonight
-   and up to six prior Arena days. It projects only server-owned Pick records,
-   payout receipts, forecasts, lifetime Clout, and visible report/Scribbit
-   snapshots into open, pending, champion, finalist, no-Clout, or missed pages.
-   The selected drawing, artist, element, exact payout, and replay availability are
-   shown only when their source still exists. Historical identity is never
-   inferred from `champion:current`; hidden or deleted art is withheld. Its 48
-   validated field notes provide eight variants per status with no same-status
-   repeat inside a seven-day window; the selected page renders exactly one note.
-   Seven word-labelled 100x144 day targets replace symbolic shorthand, seven-day
-   form is separated from total Clout, and native tabs support arrow/Home/End
-   selection. Replay exposes a busy state and returns to the selected day. The
-   view adds no Redis key, reward, title, or combat authority; generated trophy
-   and info controls keep Clout and the Field Guide secondary.
+5. **Navigate:** the persistent dock is Arena, Bag, Draw, Battles, and Gallery.
+   Bag owns inventory, equipment, pens, and titles. Gallery owns community
+   Legends and personal Legacy Cards. The Scout Notebook is no longer in the
+   primary dock; its scene remains temporarily for older saved-replay returns.
 6. **Return:** keep the visible UTC-day streak alive. The scheduler resolves
    the Rumble, crowns the Champion, stores the picked Scribbit's last played
    bout, creates the next Rumble post, and comments the real result on the
@@ -230,8 +225,8 @@ copy should keep the default view to one headline, one status, and one action.
 7. **Become a Legend:** Scribbits live for three days. Winning a crown or
    reaching the Belief threshold preserves one in the public Gallery. Every
    completed Scribbit also becomes an immutable card in its creator's private,
-   paginated Legacy Book. Gallery keeps Legends, Legacy, and Collection behind
-   three full-size trophy/book/spark tabs with native keyboard navigation. The
+   paginated Legacy Book. Gallery keeps Legends and Legacy behind two full-size
+   trophy/book tabs with native keyboard navigation. The
    six-card Hall uses drawing-first cards, generated trophy/heart status, and one
    info-led `VIEW`. Every Gallery card and page control has a native keyboard
    target; described detail dialogs trap focus, isolate background actions, and
@@ -280,9 +275,14 @@ persistence. The local `dev-mock.mjs` process substitutes for that hosted
 boundary during browser iteration—it is not the production game server.
 
 - `src/shared/arena.ts`: client/server contract and gameplay constants.
+- `src/shared/sparreward.ts`: versioned, runtime-validated Spar payout receipt;
+  its exact XP/level/Ink transition is persisted inside the existing atomic
+  daily-win claim and remains separate from the immutable battle report.
 - `src/shared/analyzer-core.ts`: deterministic PNG analyzer used by both sides.
 - `src/shared/cosmetics.ts`: authoritative 36-item reward catalog shared by the
   server, client inventory tools, and Gallery Collection.
+- `src/shared/equipment.ts`: four equipment categories, two-slot capacity, empty
+  loadouts, cloning, validation, and the shared equip/move/unequip projection.
 - `src/shared/founders.ts`: one immutable source for all twenty founding Scribbit
   definitions and 160 validated story strings; clients look up presentation by
   the existing `founding-*` ID without adding report or Redis fields.
@@ -338,6 +338,10 @@ boundary during browser iteration—it is not the production game server.
   clout, battles, forecasts, daily jobs, and Reddit result comments.
 - `src/server/core/legacy.ts`: personal Legacy Redis indexing, migration, bounded
   index scans, and one-time receipt persistence over immutable retired snapshots.
+- `src/server/core/scribbit.ts`: Scribbit lifecycle and ownership plus the atomic
+  per-Scribbit Gear equip mutation. It accepts permanent discovery—including
+  zero-copy forged unlocks—rejects retired/founding targets, and recovers an
+  ambiguous transaction reply by exact readback.
 - `src/server/core/battleStore.ts`: battle reports, per-Scribbit history, and
   the ordered featured Rumble report index used by overnight receipts.
 - `src/server/core/submission.ts`: the single Redis transaction owner for
@@ -419,6 +423,9 @@ boundary during browser iteration—it is not the production game server.
 - `src/client/lib/sparrivals.ts`: pure rival-card truth planning from server
   Scribbits, forecast, prior-bout recap, and Founder Chronicle state;
   `replaysparrivaldraft.ts` owns the Phaser draft layout.
+- `src/client/lib/replayreward.ts`: compact XP/Ink and level-up copy from the
+  fresh server receipt; `replaypostfighteligibility.ts` keeps saved history from
+  offering live Rival or Rumble-pick actions.
 - `src/client/lib/founderchronicle.ts`: pure active-thread, daily availability,
   score, beat, pre-fight stakes, and transcript-winner-bound result receipt
   planning; `founderchroniclemargin.ts` renders the compact paper overlay.
@@ -445,8 +452,12 @@ boundary during browser iteration—it is not the production game server.
 - `src/client/lib/arenaasynclifecycle.ts`: pure latest-response policy for Arena
   mutations and refreshes. Responses from a stopped or replaced scene can only
   apply to the current activation or schedule a current/next-entry refresh.
-- `src/client/lib/collectionbook.ts`: paper-native discovery album, paging, and
-  reward detail presentation.
+- `src/client/lib/collectionbook.ts`: Archero-inspired Bag with a large staged
+  living Scribbit, eight persistent equipment slots, filters below the stage,
+  explicit removal/full-category feedback, and separate Styles inventory.
+- `src/client/lib/baginventorygrid.ts`: one masked, bounded inventory tray whose
+  native scroll surface provides touch inertia, wheel and keyboard access while
+  keeping the Phaser item grid and scrollbar synchronized.
 - `src/client/lib/legacycards.ts`: paper-native Legacy deck, archival detail,
   finish treatments, pagination controls, and return ceremony.
 - `src/client/lib/legacyreturnpresentation.ts`: pure hero priority and bounded

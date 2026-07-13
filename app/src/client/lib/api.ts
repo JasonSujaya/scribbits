@@ -29,9 +29,11 @@ import type {
   Scribbit,
   ScoutNotebookState,
   SparRivalSlate,
+  SparBattleResponse,
   SparRequest,
   SubmitScribbitRequest,
 } from '../../shared/arena';
+import type { EquipmentCategory } from '../../shared/equipment';
 
 export type ApiResult<T> = { ok: true; data: T } | { ok: false; error: string };
 
@@ -205,8 +207,8 @@ export function spar(
   scribbitId: string,
   opponentId?: string,
   rivalRun?: RivalRunState
-): Promise<ApiResult<DirectBattleResponse>> {
-  return postJson<SparRequest, DirectBattleResponse>('/api/spar', {
+): Promise<ApiResult<SparBattleResponse>> {
+  return postJson<SparRequest, SparBattleResponse>('/api/spar', {
     scribbitId,
     ...(opponentId ? { opponentId } : {}),
     ...(rivalRun
@@ -283,6 +285,23 @@ export function mergeGear(
     gearId,
     operationId,
   });
+}
+
+export function equipGear(
+  scribbitId: string,
+  category: EquipmentCategory,
+  slotIndex: 0 | 1,
+  gearId: string | null
+): Promise<ApiResult<Scribbit>> {
+  return postJson<
+    {
+      scribbitId: string;
+      category: EquipmentCategory;
+      slotIndex: 0 | 1;
+      gearId: string | null;
+    },
+    Scribbit
+  >('/api/equip-gear', { scribbitId, category, slotIndex, gearId });
 }
 
 // The caller's immutable personal archive. Cursor paging stays separate from

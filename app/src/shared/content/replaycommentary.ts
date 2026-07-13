@@ -264,7 +264,7 @@ export const INKCAST_COMMENTARY_BANKS: readonly InkcastCommentaryBank[] =
       [
         defineVariant(
           'v1.nib_halo.miss.clean-quills',
-          "{actor}'s {move} quills find no clean hit!"
+          "No clean hit lands from {actor}'s {move}!"
         ),
         defineVariant(
           'v1.nib_halo.miss.circle-out',
@@ -314,7 +314,7 @@ export const INKCAST_COMMENTARY_BANKS: readonly InkcastCommentaryBank[] =
       [
         defineVariant(
           'v1.smearstep.telegraph.two-step',
-          '{actor} sketches a two-step {move} dash!'
+          '{actor} sketches a two-step {move}!'
         ),
         defineVariant(
           'v1.smearstep.telegraph.escape-line',
@@ -345,7 +345,7 @@ export const INKCAST_COMMENTARY_BANKS: readonly InkcastCommentaryBank[] =
         ),
         defineVariant(
           'v1.smearstep.miss.two-dashes',
-          "{actor}'s two {move} dashes make no clean hit!"
+          "{actor}'s two passes of {move} make no clean hit!"
         ),
         defineVariant(
           'v1.smearstep.miss.empty-line',

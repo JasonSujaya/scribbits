@@ -7,7 +7,7 @@ import type {
   FighterSlot,
   PrimaryPower,
 } from '../../shared/combat/types';
-import { getShapePowerSignatureName } from '../../shared/combat/shapepowercontent';
+import { getShapePowerBattleName } from '../../shared/combat/shapepowercontent';
 import { getFoundingScribbitDefinition } from '../../shared/founders';
 import {
   renderInkcastCommentaryTemplate,
@@ -226,21 +226,15 @@ function renderReplayCommentaryFact(
   switch (fact.kind) {
     case 'battle-start':
       return renderInkcastCommentaryTemplate(template, {
-        moveA: getShapePowerSignatureName(
-          fighterA.element,
-          fighterA.primaryPower
-        ),
-        moveB: getShapePowerSignatureName(
-          fighterB.element,
-          fighterB.primaryPower
-        ),
+        moveA: getShapePowerBattleName(fighterA.primaryPower),
+        moveB: getShapePowerBattleName(fighterB.primaryPower),
       });
     case 'power-telegraph':
     case 'power-missed': {
       const actor = context.fighters[fact.actor];
       return renderInkcastCommentaryTemplate(template, {
         actor: safeName(actor.name),
-        move: getShapePowerSignatureName(actor.element, fact.power),
+        move: getShapePowerBattleName(fact.power),
       });
     }
     case 'damage':
@@ -274,7 +268,7 @@ function renderReplayCommentaryFact(
       const actor = context.fighters[fact.actor];
       return renderInkcastCommentaryTemplate(template, {
         actor: safeName(actor.name),
-        move: getShapePowerSignatureName(actor.element, 'colorburst'),
+        move: getShapePowerBattleName('colorburst'),
       });
     }
     default:
@@ -293,10 +287,11 @@ function authorFounderSignatureReaction(
   const actor = context.fighters[fact.actor];
   const founder = getFoundingScribbitDefinition(actor.id);
   if (!founder) return null;
-  return formatFounderCommentary(
-    actor.name,
-    founder.personality.signatureReaction
-  );
+  const authoredReaction = founder.personality.signatureReaction;
+  const plainReaction = authoredReaction.includes('!')
+    ? authoredReaction.slice(authoredReaction.indexOf('!') + 1).trim()
+    : authoredReaction;
+  return formatFounderCommentary(actor.name, plainReaction);
 }
 
 function snapshotReplayCommentaryContext(

@@ -31,9 +31,8 @@ After the official daily drawing locks, an ephemeral Four-Power Practice Lab
 makes the core drawing-to-fight hook repeatable without rewards or persistence.
 The Battle Scrapbook makes the newest 20 server-stored fights worth revisiting
 without pretending to be permanent history or adding another progression track.
-The seven-page Scout Notebook turns existing Back, forecast, payout, Clout, and
-featured-report truth into a visible rolling scouting habit without new storage,
-currency, or combat power.
+Rumble Pick stays directly reachable from Arena. Bag owns inventory and
+equipment, while Gallery owns community Legends and personal Legacy Cards.
 
 ## Scope
 
@@ -45,6 +44,26 @@ currency, or combat power.
 
 ## Current Ship Gates
 
+- [ ] Bag uses a character-first equipment stage with a visible platform,
+      eight surrounding slots, filters below the character, and one bounded
+      scrollable inventory tray. The tray must preserve its position through
+      equipment saves, support touch/wheel/keyboard input, and pass live mobile
+      browser proof without runtime or console errors.
+- [x] The persistent dock is Arena, Bag, Draw, Battles, and Gallery. Scout is
+      removed from primary navigation, Bag opens inventory/equipment directly,
+      Gallery opens Legends/Legacy, and Arena retains a compact Rumble Pick
+      action. The final release gate passes 16 suites / 50 tests, 176
+      deterministic simulation groups, lint, type-check, and production build.
+      A clean 393x852 live-browser pass confirms the exact dock order, distinct
+      Bag/Gallery active states, zero Scout buttons, zero runtime errors, and no
+      console warnings or errors (July 13).
+- [x] Bag now has one server-authoritative, per-Scribbit loadout: two slots
+      each for weapon, armor, shoes, and accessory. Discovered Gear is reusable,
+      duplicate copies remain Forge material, equipped weapons select cosmetic
+      battle effects, and localhost proof covers two pets, two weapon slots,
+      reload persistence, zero runtime errors, and the 393x852 mobile layout.
+      The final release gate passes 15 suites / 46 tests, 176 deterministic
+      simulation groups, lint, type-check, and production build (July 13).
 - [x] `pnpm verify` passes: TypeScript, ESLint, 176 deterministic simulation
       groups, and the production build (July 13).
 - [x] Scribbit birth now has one Redis transaction owner. The primary record,
@@ -297,7 +316,7 @@ currency, or combat power.
       Inkcast variants while preserving founder truth, and makes no API mutation
       or reward claim. WebGL plus Canvas/reduced-motion proof stays clean at
       320x568 with stable Arena JSON and zero runtime errors (July 12).
-- [x] Scout is now the canonical fifth tab. Its paper Notebook renders tonight
+- [x] The former Scout fifth-tab implementation rendered tonight
       plus six prior Arena days as explicit open/pending/champion/finalist/
       no-Clout/missed pages using only existing Back, payout, forecast, lifetime
       Clout, visible Scribbit, and featured-report state. Forty-eight validated
@@ -311,6 +330,8 @@ currency, or combat power.
       Clout, renders one existing authored margin note, and adds native header,
       tab, and action controls with arrow/Home/End navigation and replay busy
       state. WebGL and Canvas/reduced-motion return to the selected day cleanly.
+      This historical gate was superseded on July 13 when Scout left primary
+      navigation; its scene remains only for saved-replay compatibility.
 - [x] A player who entered their own Scribbit but skipped Back now returns to
       one owned-Rumble receipt: exact entrant drawing, daily W/L, committed XP,
       committed Ink, and the server-selected last real bout. Back receipts keep

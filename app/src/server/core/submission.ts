@@ -1,4 +1,10 @@
-import { MAX_ALIVE_PER_USER, type Scribbit } from '../../shared/arena';
+import {
+  type DrawingSupplySelection,
+  MAX_ALIVE_PER_USER,
+  isGearRank,
+  type GearRank,
+  type Scribbit,
+} from '../../shared/arena';
 import {
   getActiveScribbitSubmissionsKey,
   getCurrentArenaDayKey,
@@ -6,11 +12,13 @@ import {
 } from './arenaStore';
 import { formatUtcDateKey } from './day';
 import {
-  findUnavailableAccessory,
+  findUnavailableConsumable,
   getInkKey,
   getInventoryDiscoveryField,
+  getInventoryGearRankField,
   getInventoryKey,
   planRequiredAccessoryCounts,
+  planRequiredSubmissionConsumableCounts,
 } from './inkStore';
 import {
   DAILY_FLAG_TTL_SECONDS,
@@ -42,20 +50,24 @@ export type ScribbitSubmissionCommitResult =
   | Readonly<{ status: 'alive-limit' }>
   | Readonly<{ status: 'id-collision' }>
   | Readonly<{ status: 'invalid-accessory'; accessoryId: string }>
-  | Readonly<{ status: 'insufficient-accessory'; accessoryId: string }>;
+  | Readonly<{ status: 'insufficient-accessory'; accessoryId: string }>
+  | Readonly<{ status: 'invalid-supply'; supplyId: string }>
+  | Readonly<{ status: 'insufficient-supply'; supplyId: string }>;
 
 export type ScribbitSubmissionCommitInput = Readonly<{
   userId: string;
   scribbit: Scribbit;
   currentDate: Date;
   accessoryIds: string[];
+  drawingSupplies?: DrawingSupplySelection;
   rumbleScore: number;
   inkAward: number;
 }>;
 
 type ExpectedSubmissionState = Readonly<{
+  scribbit: Scribbit;
   inkBalance: number;
-  accessoryCounts: ReadonlyMap<string, number>;
+  consumableCounts: ReadonlyMap<string, number>;
   currentDateKey: string;
   streakDays: number;
 }>;
@@ -71,6 +83,22 @@ const isStoredNonNegativeSafeInteger = (
   if (storedValue === undefined) return true;
   const value = Number(storedValue);
   return Number.isSafeInteger(value) && value >= 0;
+};
+
+const snapshotAttachedGearRanks = (
+  scribbit: Scribbit,
+  inventoryEntries: Readonly<Record<string, string>>
+): Scribbit => {
+  const gearRanks: Record<string, GearRank> = {};
+  for (const gearId of scribbit.accessories) {
+    const storedRank = inventoryEntries[getInventoryGearRankField(gearId)];
+    const parsedRank = storedRank === undefined ? 1 : Number(storedRank);
+    if (!isGearRank(parsedRank)) {
+      throw new Error('Stored attached Gear rank is invalid.');
+    }
+    gearRanks[gearId] = parsedRank;
+  }
+  return { ...scribbit, gearRanks };
 };
 
 const assertStorageTypes = async (
@@ -210,7 +238,7 @@ const submissionWasCommitted = async (
   input: ScribbitSubmissionCommitInput,
   expected: ExpectedSubmissionState
 ): Promise<boolean> => {
-  const scribbit = input.scribbit;
+  const scribbit = expected.scribbit;
   const [
     storedJson,
     ownerUserId,
@@ -251,10 +279,10 @@ const submissionWasCommitted = async (
     return false;
   }
 
-  for (const [accessoryId, count] of expected.accessoryCounts) {
+  for (const [consumableId, count] of expected.consumableCounts) {
     if (
-      inventory[accessoryId] !== count.toString() ||
-      inventory[getInventoryDiscoveryField(accessoryId)] !== '1'
+      inventory[consumableId] !== count.toString() ||
+      inventory[getInventoryDiscoveryField(consumableId)] !== '1'
     ) {
       return false;
     }
@@ -271,9 +299,9 @@ const queueSubmission = async (
   const dailyFlagsKey = getDailyFlagsKey(input.userId, input.scribbit.bornDay);
   const inventoryUpdates: Record<string, string> = {};
 
-  await queueStoredScribbit(transaction, input.userId, input.scribbit);
-  await transaction.zAdd(getRumbleKey(input.scribbit.bornDay), {
-    member: input.scribbit.id,
+  await queueStoredScribbit(transaction, input.userId, expected.scribbit);
+  await transaction.zAdd(getRumbleKey(expected.scribbit.bornDay), {
+    member: expected.scribbit.id,
     score: input.rumbleScore,
   });
   await transaction.hSet(dailyFlagsKey, { drawn: '1', entered: '1' });
@@ -287,9 +315,9 @@ const queueSubmission = async (
     streakDays: expected.streakDays.toString(),
   });
 
-  for (const [accessoryId, count] of expected.accessoryCounts) {
-    inventoryUpdates[accessoryId] = count.toString();
-    inventoryUpdates[getInventoryDiscoveryField(accessoryId)] = '1';
+  for (const [consumableId, count] of expected.consumableCounts) {
+    inventoryUpdates[consumableId] = count.toString();
+    inventoryUpdates[getInventoryDiscoveryField(consumableId)] = '1';
   }
   if (Object.keys(inventoryUpdates).length > 0) {
     await transaction.hSet(getInventoryKey(input.userId), inventoryUpdates);
@@ -367,6 +395,10 @@ export const commitScribbitSubmission = async (
   ) {
     throw new Error('Scribbit submission rewards or Rumble score are invalid.');
   }
+  const drawingSupplies = input.drawingSupplies ?? {
+    drawingInkId: null,
+    brushId: null,
+  };
 
   const requiredAccessoryCounts = planRequiredAccessoryCounts(
     input.accessoryIds
@@ -375,6 +407,19 @@ export const commitScribbitSubmission = async (
     return {
       status: 'invalid-accessory',
       accessoryId: input.accessoryIds[0] ?? 'accessory',
+    };
+  }
+  const requiredConsumableCounts = planRequiredSubmissionConsumableCounts(
+    input.accessoryIds,
+    drawingSupplies
+  );
+  if (!requiredConsumableCounts) {
+    return {
+      status: 'invalid-supply',
+      supplyId:
+        drawingSupplies.drawingInkId ??
+        drawingSupplies.brushId ??
+        'drawing-supply',
     };
   }
 
@@ -476,16 +521,21 @@ export const commitScribbitSubmission = async (
           throw new Error('Stored Ink balance is invalid.');
         }
 
-        const unavailableAccessory = findUnavailableAccessory(
+        const unavailableConsumable = findUnavailableConsumable(
           inventoryEntries,
-          requiredAccessoryCounts
+          requiredConsumableCounts
         );
-        if (unavailableAccessory) {
+        if (unavailableConsumable) {
           await transaction.unwatch();
-          return {
-            status: 'insufficient-accessory',
-            accessoryId: unavailableAccessory,
-          };
+          return input.accessoryIds.includes(unavailableConsumable)
+            ? {
+                status: 'insufficient-accessory',
+                accessoryId: unavailableConsumable,
+              }
+            : {
+                status: 'insufficient-supply',
+                supplyId: unavailableConsumable,
+              };
         }
 
         const inkBalance = Number(storedInk ?? '0') + input.inkAward;
@@ -496,17 +546,18 @@ export const commitScribbitSubmission = async (
         }
         const previousStreak = parsePlayStreak(storedStreak);
         const nextStreak = advancePlayStreak(previousStreak, currentDateKey);
-        const accessoryCounts = new Map<string, number>();
-        for (const [accessoryId, requiredCount] of requiredAccessoryCounts) {
-          const ownedCount = Number(inventoryEntries[accessoryId] ?? '0');
+        const consumableCounts = new Map<string, number>();
+        for (const [consumableId, requiredCount] of requiredConsumableCounts) {
+          const ownedCount = Number(inventoryEntries[consumableId] ?? '0');
           if (!Number.isSafeInteger(ownedCount) || ownedCount < requiredCount) {
-            throw new Error('Stored accessory count is invalid.');
+            throw new Error('Stored drawing consumable count is invalid.');
           }
-          accessoryCounts.set(accessoryId, ownedCount - requiredCount);
+          consumableCounts.set(consumableId, ownedCount - requiredCount);
         }
         expected = {
+          scribbit: snapshotAttachedGearRanks(input.scribbit, inventoryEntries),
           inkBalance,
-          accessoryCounts,
+          consumableCounts,
           currentDateKey,
           streakDays: nextStreak.days,
         };
