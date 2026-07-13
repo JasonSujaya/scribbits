@@ -10,6 +10,10 @@ import { cloneScribbit } from '../../shared/arena';
 import { getLevelDamageMultiplier } from '../../shared/battle';
 import { simulateCombat } from '../../shared/combat';
 import {
+  gearCombatFingerprint,
+  resolveGearCombatLoadout,
+} from '../../shared/gearcombat';
+import {
   evaluateBattleArenaChallenge,
   getBattleArenaForDay,
   type BattleArenaId,
@@ -55,9 +59,11 @@ const createReportId = (
   seed: number,
   forecast: Forecast,
   kind: BattleKind,
-  battleArenaId: BattleArenaId
+  battleArenaId: BattleArenaId,
+  gearFingerprint: string
 ): string => {
-  const identity = `${kind}:${forecast.day}:${battleArenaId}:${seed}:${fighterA.id}:${fighterB.id}`;
+  const gearIdentity = gearFingerprint ? `:gear-v1:${gearFingerprint}` : '';
+  const identity = `${kind}:${forecast.day}:${battleArenaId}:${seed}:${fighterA.id}:${fighterB.id}${gearIdentity}`;
   const digest = [0, 1, 2, 3]
     .map((lane) => {
       return hashTextToSeed(`report-id-v2:${lane}:${identity}`)
@@ -74,9 +80,13 @@ const createCombatSeed = (
   seed: number,
   forecast: Forecast,
   kind: BattleKind,
-  battleArenaId: BattleArenaId
+  battleArenaId: BattleArenaId,
+  gearFingerprint: string
 ): string => {
-  return `${kind}:${forecast.day}:${battleArenaId}:${seed}:${fighterA.id}:${fighterB.id}`;
+  const gearIdentity = gearFingerprint
+    ? `:gear-v1:${hashTextToSeed(`combat-gear-v1:${gearFingerprint}`).toString(36)}`
+    : '';
+  return `${kind}:${forecast.day}:${battleArenaId}:${seed}:${fighterA.id}:${fighterB.id}${gearIdentity}`;
 };
 
 const getCombatDamageModifierPermille = (
@@ -98,6 +108,15 @@ export const simulate = (
   kind: BattleKind
 ): BattleReport => {
   const battleArena = getBattleArenaForDay(forecast.day);
+  // Active Gear starts in direct Exhibition/Spar fights. Rumble, Champion,
+  // and Practice stay on the combat-neutral rules until the wider matrix ships.
+  const gearEnabled = kind === 'exhibition';
+  const fighterAGear = resolveGearCombatLoadout(fighterA);
+  const fighterBGear = resolveGearCombatLoadout(fighterB);
+  const gearFingerprint =
+    gearEnabled && (fighterAGear.snapshot || fighterBGear.snapshot)
+      ? `a[${gearCombatFingerprint(fighterAGear)}]:b[${gearCombatFingerprint(fighterBGear)}]`
+      : '';
   const simulation = simulateCombat({
     seed: createCombatSeed(
       fighterA,
@@ -105,7 +124,8 @@ export const simulate = (
       seed,
       forecast,
       kind,
-      battleArena.id
+      battleArena.id,
+      gearFingerprint
     ),
     battleArenaId: battleArena.id,
     fighters: [
@@ -119,6 +139,9 @@ export const simulate = (
           fighterA,
           forecast
         ),
+        ...(gearEnabled && fighterAGear.snapshot
+          ? { gear: fighterAGear.snapshot }
+          : {}),
       },
       {
         id: fighterB.id,
@@ -130,6 +153,9 @@ export const simulate = (
           fighterB,
           forecast
         ),
+        ...(gearEnabled && fighterBGear.snapshot
+          ? { gear: fighterBGear.snapshot }
+          : {}),
       },
     ],
   });
@@ -141,7 +167,8 @@ export const simulate = (
       seed,
       forecast,
       kind,
-      battleArena.id
+      battleArena.id,
+      gearFingerprint
     ),
     kind,
     day: forecast.day,

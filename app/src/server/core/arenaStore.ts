@@ -2,8 +2,16 @@ import type { Forecast, Scribbit } from '../../shared/arena';
 import { cloneScribbit } from '../../shared/arena';
 import { getArenaDayNumber, parseStoredPositiveInteger } from './day';
 import { generateForecastForDay, parseForecast } from './forecast';
-import type { ArenaStorage } from './storage';
-import { parseScribbit } from './scribbit';
+import type { ArenaStorage, ArenaTransaction } from './storage';
+import {
+  parseScribbit,
+  parseStoredScribbit,
+  serializeScribbit,
+} from './scribbit';
+import {
+  discardWatchedTransaction,
+  MAX_WATCH_TRANSACTION_ATTEMPTS,
+} from './storage';
 
 const currentArenaDayKey = 'arena:currentDay';
 const nightlyResolutionClaimsKey = 'arena:nightly-resolution-claims';
@@ -13,6 +21,11 @@ export const getCurrentArenaDayKey = (): string => currentArenaDayKey;
 
 export const getNightlyResolutionClaimsKey = (): string =>
   nightlyResolutionClaimsKey;
+
+export const loadCurrentArenaDay = async (
+  storage: ArenaStorage
+): Promise<number | undefined> =>
+  parseStoredPositiveInteger(await storage.get(currentArenaDayKey));
 
 export const getActiveScribbitSubmissionsKey = (day: number): string =>
   `arena:active-submissions:${day}`;
@@ -29,9 +42,7 @@ export const ensureCurrentArenaDay = async (
   storage: ArenaStorage,
   now: Date
 ): Promise<number> => {
-  const storedDay = parseStoredPositiveInteger(
-    await storage.get(currentArenaDayKey)
-  );
+  const storedDay = await loadCurrentArenaDay(storage);
 
   if (storedDay) {
     return storedDay;
@@ -76,7 +87,36 @@ export const setCurrentChampion = async (
   storage: ArenaStorage,
   champion: Scribbit
 ): Promise<void> => {
-  await storage.set(championKey, JSON.stringify(cloneScribbit(champion)));
+  if (!storage.watch) {
+    throw new Error('Safe Champion storage requires transaction support.');
+  }
+  const championJson = serializeScribbit(champion);
+  for (
+    let attempt = 0;
+    attempt < MAX_WATCH_TRANSACTION_ATTEMPTS;
+    attempt += 1
+  ) {
+    let transaction: ArenaTransaction | undefined;
+    try {
+      transaction = await storage.watch(championKey);
+      const existingJson = await storage.get(championKey);
+      const existingChampion = parseStoredScribbit(existingJson);
+      if (existingChampion.status === 'invalid') {
+        throw new Error(
+          'Stored current Champion is invalid and was preserved.'
+        );
+      }
+      await transaction.multi();
+      await transaction.set(championKey, championJson);
+      const result = await transaction.exec();
+      if (Array.isArray(result) && result.length > 0) return;
+    } catch (error) {
+      await discardWatchedTransaction(transaction, 'Champion storage');
+      if ((await storage.get(championKey)) === championJson) return;
+      throw error;
+    }
+  }
+  throw new Error('Current Champion changed too often to save safely.');
 };
 
 export const removeCurrentChampionIfMatches = async (

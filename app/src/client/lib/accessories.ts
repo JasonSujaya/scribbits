@@ -545,6 +545,115 @@ const ACCESSORY_PAINT_BY_ID: Record<string, AccessoryPaintDefinition> = {
       pen.line(50, 58, 82, 52);
     },
   },
+  'comet-crayon-blade': {
+    paint: (pen) => {
+      pen.stroke(4, '#ff8a3d');
+      pen.line(7, 82, 26, 65);
+      pen.stroke(3, '#ffd447');
+      pen.line(7, 70, 25, 58);
+
+      pen.fill('#ff6b4a');
+      pen.poly(
+        [
+          [21, 73],
+          [67, 13],
+          [78, 7],
+          [74, 20],
+          [35, 79],
+        ],
+        true,
+        true
+      );
+      outline(pen, 5);
+      pen.poly(
+        [
+          [21, 73],
+          [67, 13],
+          [78, 7],
+          [74, 20],
+          [35, 79],
+        ],
+        true,
+        false
+      );
+      pen.fill('#ffd447');
+      pen.poly(
+        [
+          [17, 67],
+          [42, 85],
+          [36, 93],
+          [11, 75],
+        ],
+        true,
+        true
+      );
+      outline(pen, 4);
+      pen.fill('#8a5cd8');
+      pen.circle(27, 80, 5, true);
+      outline(pen, 3);
+      pen.circle(27, 80, 5, false);
+      pen.stroke(3, '#fff0b0');
+      pen.line(38, 68, 69, 23);
+    },
+  },
+  'rocket-eraser-boots': {
+    paint: (pen) => {
+      const boot = (offsetX: number, color: string): void => {
+        pen.fill(color);
+        pen.poly(
+          [
+            [offsetX, 22],
+            [offsetX + 25, 22],
+            [offsetX + 28, 55],
+            [offsetX + 38, 64],
+            [offsetX + 36, 76],
+            [offsetX - 2, 76],
+          ],
+          true,
+          true
+        );
+        outline(pen, 4);
+        pen.poly(
+          [
+            [offsetX, 22],
+            [offsetX + 25, 22],
+            [offsetX + 28, 55],
+            [offsetX + 38, 64],
+            [offsetX + 36, 76],
+            [offsetX - 2, 76],
+          ],
+          true,
+          false
+        );
+        pen.fill('#fff0c2');
+        pen.poly(
+          [
+            [offsetX + 4, 27],
+            [offsetX + 21, 27],
+            [offsetX + 22, 40],
+            [offsetX + 3, 40],
+          ],
+          true,
+          true
+        );
+        pen.fill('#ffd447');
+        pen.poly(
+          [
+            [offsetX + 4, 78],
+            [offsetX + 13, 94],
+            [offsetX + 20, 78],
+          ],
+          true,
+          true
+        );
+      };
+      boot(12, '#ff6b4a');
+      boot(52, '#4f9fcb');
+      pen.stroke(3, '#ff9a3d');
+      pen.line(20, 80, 25, 92);
+      pen.line(60, 80, 65, 92);
+    },
+  },
   ...SHAPE_POWER_RELIC_PAINT_BY_ID,
 };
 

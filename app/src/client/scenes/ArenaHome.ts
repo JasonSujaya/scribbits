@@ -5,7 +5,6 @@ import {
   fetchArena,
   bossChallenge,
   careForScribbit,
-  spar,
   backScribbit,
   fetchRumbleReplay,
   markLegacyCardsSeen,
@@ -38,7 +37,6 @@ import {
   floatReward,
   fadeToScene,
   spinner,
-  paperWordmark,
   paperRoleTag,
   versusBadge,
 } from '../lib/ui';
@@ -46,15 +44,12 @@ import type { ErrorPanel, Spinner } from '../lib/ui';
 import { openDetailModal } from '../lib/detailmodal';
 import type { DetailModalActions } from '../lib/detailmodal';
 import { formatCountdown } from '../lib/cloutboard';
-import { openCapsuleMachine } from '../lib/capsulemachine';
-import { pullCapsule } from '../lib/api';
 import type {
   ArenaState,
   CareAction,
   FounderChronicleBeat,
   Scribbit,
 } from '../../shared/arena';
-import { getFoundingScribbitDefinition } from '../../shared/founders';
 import { showVsCeremony } from '../lib/battleceremony';
 import { openLegacyReturnCeremony } from '../lib/legacycards';
 import {
@@ -72,6 +67,7 @@ import { openCarePicker, type CarePicker } from '../lib/carepicker';
 import { paperDockIcon, paperIcon } from '../lib/papericons';
 import { arenaStage, UI_BUTTON_TEXTURES } from '../lib/visualassets';
 import { appDock } from '../lib/appdock';
+import { appMenu, type AppMenu } from '../lib/appmenu';
 import {
   formatRumbleReturnAccessibleSummary,
   planRumbleReturnPresentation,
@@ -86,23 +82,27 @@ import {
   type ArenaContenderPicker,
 } from '../lib/arenacontenderpicker';
 import { getBattleArenaForDay } from '../../shared/battlearena';
+import { selectCommunityDoodleDare } from '../../shared/content/communitydrawthemes';
 import { navigateToDailyDraw } from '../lib/draweligibility';
+import { openRivalRun, type RivalRunFlow } from '../lib/rivalrunflow';
 
 // One focused battle hub: choose an owned fighter, choose Champion or Spar,
 // then fight. The compact Rumble Pick action remains here so removing Scout
 // from the primary dock never hides a daily progression choice.
 export class ArenaHome extends Scene {
+  private static readonly BATTLE_SETUP_HEIGHT = 780;
   private state!: ArenaState;
   private errorPanelRef: ErrorPanel | null = null;
   private countdownTimer: Phaser.Time.TimerEvent | null = null;
   private countdownLabel: Phaser.GameObjects.Text | null = null;
-  private inkChipLabel: Phaser.GameObjects.Text | null = null;
   private busy = false;
   private spinner: Spinner | null = null;
   private founderChronicleMargin: FounderChronicleMargin | null = null;
   private careMomentOverlay: CareMomentOverlay | null = null;
   private carePicker: CarePicker | null = null;
   private contenderPicker: ArenaContenderPicker | null = null;
+  private rivalRunFlow: RivalRunFlow | null = null;
+  private menu: AppMenu | null = null;
   private rosterActionOverlay: CanvasActionOverlay | null = null;
   private homeInteractionSuspended = false;
   private selectedArenaFighterId: string | null = null;
@@ -115,7 +115,11 @@ export class ArenaHome extends Scene {
     Phaser.GameObjects.Container
   >();
   private fighterCarouselRenderGeneration = 0;
+  private battleOpponentSlot: Phaser.GameObjects.Container | null = null;
+  private battleOpponentRenderGeneration = 0;
   private battleModeSlot: Phaser.GameObjects.Container | null = null;
+  private championModeAction: HTMLButtonElement | null = null;
+  private sparModeAction: HTMLButtonElement | null = null;
   private fightAction: HTMLButtonElement | null = null;
 
   // Drag-scroll bookkeeping. Scrolling uses velocity + inertia so a flick keeps
@@ -166,6 +170,7 @@ export class ArenaHome extends Scene {
     this.careMomentOverlay = null;
     this.carePicker = null;
     this.contenderPicker = null;
+    this.rivalRunFlow = null;
     this.rosterActionOverlay = null;
     this.homeInteractionSuspended = false;
     this.selectedArenaFighterId = null;
@@ -174,7 +179,11 @@ export class ArenaHome extends Scene {
     this.fighterCarouselCurrentView = null;
     this.fighterCarouselViews.clear();
     this.fighterCarouselRenderGeneration = 0;
+    this.battleOpponentSlot = null;
+    this.battleOpponentRenderGeneration = 0;
     this.battleModeSlot = null;
+    this.championModeAction = null;
+    this.sparModeAction = null;
     this.fightAction = null;
   }
 
@@ -209,6 +218,8 @@ export class ArenaHome extends Scene {
     this.carePicker = null;
     this.contenderPicker?.destroy();
     this.contenderPicker = null;
+    this.rivalRunFlow?.destroy();
+    this.rivalRunFlow = null;
     this.rosterActionOverlay?.destroy();
     this.rosterActionOverlay = null;
   }
@@ -228,13 +239,18 @@ export class ArenaHome extends Scene {
     this.carePicker = null;
     this.contenderPicker?.destroy();
     this.contenderPicker = null;
+    this.rivalRunFlow?.destroy();
+    this.rivalRunFlow = null;
     this.rosterActionOverlay?.destroy();
     this.rosterActionOverlay = new CanvasActionOverlay(this);
     this.children.removeAll(true);
     this.fighterCarouselSlot = null;
     this.fighterCarouselCurrentView = null;
     this.fighterCarouselViews.clear();
+    this.battleOpponentSlot = null;
     this.battleModeSlot = null;
+    this.championModeAction = null;
+    this.sparModeAction = null;
     this.fightAction = null;
     releaseRenderedDrawingTextures(this);
     this.countdownTimer?.remove();
@@ -242,10 +258,14 @@ export class ArenaHome extends Scene {
 
     arenaStage(this, -1000);
 
-    const { width } = this.scale;
+    const { width, height } = this.scale;
     let cursor = 30;
     cursor = this.drawTopBar(cursor);
-    cursor = this.buildBattleSetup(width / 2, cursor + 18);
+    const battleSetupTop = Math.max(
+      cursor + 18,
+      (height - NAV_SAFE - ArenaHome.BATTLE_SETUP_HEIGHT) / 2
+    );
+    cursor = this.buildBattleSetup(width / 2, battleSetupTop);
     cursor += NAV_SAFE;
 
     this.contentHeight = cursor + 40;
@@ -411,31 +431,20 @@ export class ArenaHome extends Scene {
   // --- Top bar + live countdown ---------------------------------------------
   private drawTopBar(y: number): number {
     const { width } = this.scale;
-    const statusY = y + 120;
-    label(
-      this,
-      width / 2 - 54,
-      statusY,
-      `DAY ${this.state.dayNumber}  •  ${this.state.playStreakDays}D`,
-      21,
-      UI.cream,
-      true
-    )
-      .setStroke(UI.ink, 5)
-      .setDepth(2);
+    const statusY = y + 86;
     this.countdownLabel = label(
       this,
-      width / 2 + 122,
+      width / 2 + 34,
       statusY,
       this.countdownText(),
-      21,
+      22,
       '#ffd447',
       true
     )
       .setStroke(UI.ink, 5)
       .setDepth(2);
-    paperIcon(this, 'clock', width / 2 + 40, statusY, {
-      size: 25,
+    paperIcon(this, 'clock', width / 2 - 48, statusY, {
+      size: 27,
       fill: UI.tapeAlt,
     });
     this.countdownTimer = this.time.addEvent({
@@ -444,42 +453,7 @@ export class ArenaHome extends Scene {
       callback: () => this.countdownLabel?.setText(this.countdownText()),
     });
 
-    // Ink chip — the Mystery Ink balance, tappable to open the capsule machine.
-    // It belongs to the scrolling header; the Daily Ink Trail remains available below.
-    this.buildInkChip(width - 58, y + 30);
-
-    return y + 210;
-  }
-
-  // The compact Ink chip. Part of the scrolling header and taps into the capsule machine. Its label
-  // is stored so ink-earn floats and pull results can update it in place.
-  private buildInkChip(x: number, y: number): void {
-    const chip = this.add.container(x, y).setDepth(120);
-    const activate = (): void => {
-      if (!this.didDrag()) this.openCapsuleMachine();
-    };
-    const t = label(this, 0, 18, `${this.state.myInk ?? 0}`, 18, UI.ink, true);
-    const bg = this.add
-      .circle(0, 0, 48, UI.creamHex, 1)
-      .setStrokeStyle(3, UI.inkHex, 1)
-      .setInteractive({ useHandCursor: true });
-    bg.on('pointerup', activate);
-    chip.add([
-      bg,
-      paperIcon(this, 'ink', 0, -13, {
-        size: 30,
-        fill: UI.gold,
-      }),
-      t,
-    ]);
-    this.rosterActionOverlay?.add({
-      label: `${this.state.myInk ?? 0} Ink. Open capsule machine.`,
-      rect: { x: x - 50, y: y - 50, width: 100, height: 100 },
-      followCamera: true,
-      pointerPassthrough: true,
-      onActivate: activate,
-    });
-    this.inkChipLabel = t;
+    return y + 156;
   }
 
   // Float a concise Ink reward from a point, and bump the chip. Optimistic; the
@@ -489,48 +463,7 @@ export class ArenaHome extends Scene {
     const next = (this.state.myInk ?? 0) + amount;
     this.state = { ...this.state, myInk: next };
     setArena(this, this.state);
-    this.inkChipLabel?.setText(`${next}`);
     floatReward(this, x, y, `+${amount} INK`, UI.goldText, 3000, true);
-    if (this.inkChipLabel)
-      this.tweens.add({
-        targets: this.inkChipLabel,
-        scale: 1.25,
-        duration: 140,
-        yoyo: true,
-      });
-  }
-
-  private openCapsuleMachine(): void {
-    if (!this.requireLogin()) return;
-    const sceneEpoch = this.sceneEpoch;
-    openCapsuleMachine(this, {
-      ink: this.state.myInk ?? 0,
-      nextCost: this.state.nextCapsuleCost,
-      progress: this.state.capsuleProgress,
-      onPull: async (operationId) => {
-        const result = await pullCapsule(operationId);
-        if (!this.acceptMutationResponse(sceneEpoch)) {
-          return result.ok ? result.data : { error: result.error };
-        }
-        if (!result.ok) return { error: result.error };
-        this.state = {
-          ...this.state,
-          myInk: result.data.ink,
-          myPens: [...result.data.inventory.pens],
-          nextCapsuleCost: result.data.nextCost,
-          capsuleProgress: result.data.progress,
-        };
-        setArena(this, this.state);
-        this.inkChipLabel?.setText(`${result.data.ink}`);
-        return result.data;
-      },
-      // On close, re-fetch so the roster/ink/palette reflect the server truth.
-      onClose: () => void this.refresh(),
-      onViewCollection: () => {
-        setGalleryTab(this, 'collection');
-        fadeToScene(this, 'Gallery');
-      },
-    });
   }
 
   private countdownText(): string {
@@ -540,49 +473,79 @@ export class ArenaHome extends Scene {
 
   // --- One battle setup: fighter -> mode -> fight ---------------------------
   private buildBattleSetup(x: number, y: number): number {
-    const height = 720;
+    const height = ArenaHome.BATTLE_SETUP_HEIGHT;
     const centerY = y + height / 2;
     const hero = this.add.container(x, centerY);
     const battleArena = getBattleArenaForDay(this.state.dayNumber);
     const fighters = this.state.myScribbits;
-    hero.add(
-      paperWordmark(
-        this,
-        0,
-        -310,
-        fighters.length > 0
-          ? battleArena.challengeLabel.toUpperCase()
-          : 'DRAW YOUR FIGHTER',
-        {
-          icon: fighters.length > 0 ? 'target' : 'pencil',
-          fontSize: 38,
-          maxWidth: 430,
-        }
-      )
-    );
+    if (fighters.length > 0) {
+      const venueInfo = `${battleArena.name}. ${battleArena.shortRule}. Arena goal: ${battleArena.challengeLabel}.`;
+      hero.add([
+        label(
+          this,
+          0,
+          -362,
+          battleArena.name.toUpperCase(),
+          27,
+          UI.ink,
+          true
+        ).setWordWrapWidth(390),
+        paperIcon(this, 'info', 226, -362, {
+          size: 38,
+          fill: UI.tapeAlt,
+        }),
+        paperIcon(this, 'target', -132, -322, {
+          size: 30,
+          fill: UI.gold,
+        }),
+        label(
+          this,
+          18,
+          -322,
+          battleArena.challengeLabel.toUpperCase(),
+          22,
+          UI.inkSoft,
+          true
+        ).setWordWrapWidth(300),
+      ]);
+      this.rosterActionOverlay?.add({
+        label: venueInfo,
+        rect: { x: x + 180, y: centerY - 407, width: 92, height: 92 },
+        followCamera: true,
+        pointerPassthrough: true,
+        onActivate: () => {
+          showToast(
+            `${battleArena.name} • ${battleArena.shortRule} • ${battleArena.challengeLabel}`
+          );
+        },
+      });
+    }
 
     this.selectedArenaFighter(fighters);
     this.fighterCarouselSlot = this.add.container(0, 0);
     hero.add(this.fighterCarouselSlot);
 
+    this.battleOpponentSlot = this.add.container(0, 0);
+    hero.add(this.battleOpponentSlot);
+
     if (fighters.length > 1) {
-      const previous = this.arenaArrowButton(-170, -145, 'previous', () =>
+      const previous = this.arenaArrowButton(-208, -260, 'previous', () =>
         this.cycleArenaFighter(-1)
       );
-      const next = this.arenaArrowButton(170, -145, 'next', () =>
+      const next = this.arenaArrowButton(-82, -260, 'next', () =>
         this.cycleArenaFighter(1)
       );
       hero.add([previous, next]);
       this.rosterActionOverlay?.add({
         label: 'Previous Arena fighter',
-        rect: { x: x - 220, y: centerY - 195, width: 100, height: 100 },
+        rect: { x: x - 258, y: centerY - 310, width: 100, height: 100 },
         followCamera: true,
         pointerPassthrough: true,
         onActivate: () => this.cycleArenaFighter(-1),
       });
       this.rosterActionOverlay?.add({
         label: 'Next Arena fighter',
-        rect: { x: x + 120, y: centerY - 195, width: 100, height: 100 },
+        rect: { x: x - 132, y: centerY - 310, width: 100, height: 100 },
         followCamera: true,
         pointerPassthrough: true,
         onActivate: () => this.cycleArenaFighter(1),
@@ -592,56 +555,58 @@ export class ArenaHome extends Scene {
     this.battleModeSlot = this.add.container(0, 0);
     hero.add(this.battleModeSlot);
     if (fighters.length > 0) {
+      const championAvailable =
+        this.state.champion !== null && !this.state.bossChallengedToday;
+      this.championModeAction =
+        this.rosterActionOverlay?.add({
+          label: 'Choose today’s Champion as rival',
+          rect: { x: x - 275, y: centerY - 5, width: 250, height: 110 },
+          attributes: {
+            'aria-pressed': String(this.selectedBattleMode === 'champion'),
+          },
+          followCamera: true,
+          pointerPassthrough: true,
+          enabled: championAvailable,
+          onActivate: () => this.selectBattleMode('champion'),
+        }) ?? null;
+      this.sparModeAction =
+        this.rosterActionOverlay?.add({
+          label: 'Choose a Spar rival',
+          rect: { x: x + 25, y: centerY - 5, width: 250, height: 110 },
+          attributes: {
+            'aria-pressed': String(this.selectedBattleMode === 'spar'),
+          },
+          followCamera: true,
+          pointerPassthrough: true,
+          onActivate: () => this.selectBattleMode('spar'),
+        }) ?? null;
+      const rumblePickLocked = this.state.myBackedScribbitId !== null;
+      const activateRumblePick = (): void => {
+        if (rumblePickLocked) {
+          this.showPickLockedToast();
+          return;
+        }
+        this.openContenderPicker();
+      };
       this.rosterActionOverlay?.add({
-        label: 'Choose today’s Champion as rival',
-        rect: { x: x - 275, y: centerY + 32, width: 250, height: 110 },
+        label: rumblePickLocked
+          ? "Tonight's Rumble prediction is locked"
+          : "Choose tonight's Rumble prediction",
+        rect: { x: x - 155, y: centerY + 260, width: 310, height: 100 },
         followCamera: true,
         pointerPassthrough: true,
-        onActivate: () => this.selectBattleMode('champion'),
-      });
-      this.rosterActionOverlay?.add({
-        label: 'Choose a Spar rival',
-        rect: { x: x + 25, y: centerY + 32, width: 250, height: 110 },
-        followCamera: true,
-        pointerPassthrough: true,
-        onActivate: () => this.selectBattleMode('spar'),
+        onActivate: activateRumblePick,
       });
     }
     this.fightAction =
       this.rosterActionOverlay?.add({
         label: 'Fight with selected Scribbit',
-        rect: { x: x - 190, y: centerY + 174, width: 380, height: 100 },
+        rect: { x: x - 200, y: centerY + 132, width: 400, height: 116 },
         followCamera: true,
         pointerPassthrough: true,
         enabled: false,
         onActivate: () => this.activatePrimaryArenaAction(),
       }) ?? null;
-    const rumblePickLocked = this.state.myBackedScribbitId !== null;
-    const activateRumblePick = (): void => {
-      if (rumblePickLocked) {
-        this.showPickLockedToast();
-        return;
-      }
-      this.openContenderPicker();
-    };
-    hero.add(
-      this.rumblePickButton(
-        0,
-        310,
-        rumblePickLocked ? 'PICK LOCKED' : 'RUMBLE PICK',
-        activateRumblePick,
-        rumblePickLocked
-      )
-    );
-    this.rosterActionOverlay?.add({
-      label: rumblePickLocked
-        ? 'Tonight\'s Rumble Pick is locked'
-        : 'Choose tonight\'s Rumble Pick',
-      rect: { x: x - 165, y: centerY + 272, width: 330, height: 76 },
-      followCamera: true,
-      pointerPassthrough: true,
-      onActivate: activateRumblePick,
-    });
     this.renderArenaFighter();
     this.renderBattleModeControls();
 
@@ -662,6 +627,7 @@ export class ArenaHome extends Scene {
   }
 
   private cycleArenaFighter(direction: -1 | 1): void {
+    if (this.busy || this.rivalRunFlow) return;
     const fighters = this.state.myScribbits;
     if (fighters.length < 2) return;
     const current = this.selectedArenaFighter(fighters);
@@ -687,7 +653,7 @@ export class ArenaHome extends Scene {
       this.fighterCarouselCurrentView = null;
       this.fighterCarouselViews.clear();
       slot.add(
-        paperIcon(this, 'pencil', 0, -120, { size: 130, fill: UI.tapeAlt })
+        paperIcon(this, 'pencil', 0, -105, { size: 156, fill: UI.gold })
       );
       return;
     }
@@ -700,7 +666,9 @@ export class ArenaHome extends Scene {
     }
     const nextView = this.add.container(0, 0).setVisible(false);
     nextView.add(
-      label(this, 0, -28, fighter.name.toUpperCase(), 36, UI.ink, true)
+      label(this, -145, -42, fighter.name.toUpperCase(), 25, UI.ink, true)
+        .setWordWrapWidth(220)
+        .setLineSpacing(-3)
     );
     void loadDrawing(this, fighter).then((key) => {
       if (
@@ -710,7 +678,7 @@ export class ArenaHome extends Scene {
         nextView.destroy(true);
         return;
       }
-      const portrait = fitDrawing(this.add.image(0, -145, key), 210);
+      const portrait = fitDrawing(this.add.image(-145, -150, key), 178);
       portrait.setInteractive({ useHandCursor: true });
       portrait.on('pointerup', () => {
         if (!this.didDrag()) this.openDetail(fighter);
@@ -720,6 +688,46 @@ export class ArenaHome extends Scene {
       slot.add(nextView);
       this.showArenaFighterView(nextView);
     });
+  }
+
+  private renderBattleOpponent(): void {
+    const slot = this.battleOpponentSlot;
+    if (!slot?.active) return;
+    const fighter = this.selectedArenaFighter(this.state.myScribbits);
+    const renderGeneration = ++this.battleOpponentRenderGeneration;
+    slot.removeAll(true);
+    if (!fighter) return;
+
+    slot.add(versusBadge(this, 0, -150, { size: 72 }));
+    const rivalX = 145;
+    const rivalY = -150;
+    if (this.selectedBattleMode === 'champion' && this.state.champion) {
+      const champion = this.state.champion;
+      slot.add(
+        label(this, rivalX, -42, champion.name.toUpperCase(), 25, UI.ink, true)
+          .setWordWrapWidth(220)
+          .setLineSpacing(-3)
+      );
+      void loadDrawing(this, champion).then((key) => {
+        if (
+          !slot.active ||
+          renderGeneration !== this.battleOpponentRenderGeneration
+        ) {
+          return;
+        }
+        slot.add(fitDrawing(this.add.image(rivalX, rivalY, key), 178));
+      });
+      return;
+    }
+
+    const rivalBadge = this.add
+      .circle(rivalX, rivalY, 82, UI.creamHex, 0.96)
+      .setStrokeStyle(4, UI.inkHex, 0.9);
+    slot.add([
+      rivalBadge,
+      paperDockIcon(this, 'battles', rivalX, rivalY, 92, UI.inkHex, true),
+      label(this, rivalX, -42, 'RIVAL', 25, UI.ink, true),
+    ]);
   }
 
   private showArenaFighterView(nextView: Phaser.GameObjects.Container): void {
@@ -759,67 +767,134 @@ export class ArenaHome extends Scene {
     if (!championAvailable && this.selectedBattleMode === 'champion') {
       this.selectedBattleMode = 'spar';
     }
+    this.championModeAction?.setAttribute(
+      'aria-pressed',
+      String(this.selectedBattleMode === 'champion')
+    );
+    this.sparModeAction?.setAttribute(
+      'aria-pressed',
+      String(this.selectedBattleMode === 'spar')
+    );
     slot.removeAll(true);
+    this.renderBattleOpponent();
     if (!fighter) {
       slot.add(
-        this.simpleFightButton(
+        iconButton(
+          this,
           0,
-          140,
+          120,
+          'pencil',
           'DRAW',
-          () => navigateToDailyDraw(this),
-          true,
-          'pencil'
+          () => {
+            if (!this.didDrag()) navigateToDailyDraw(this);
+          },
+          350,
+          UI.coral,
+          UI.ink,
+          112,
+          UI.gold,
+          true
         )
       );
       this.updateFightAction('Draw your first Scribbit', true);
       return;
     }
-    slot.add([
-      this.battleChoiceChip(
-        -145,
-        88,
-        'champion',
-        'CHAMPION',
-        () => this.selectBattleMode('champion'),
-        this.selectedBattleMode === 'champion',
-        championAvailable
-      ),
-      this.battleChoiceChip(
-        145,
-        88,
-        'spar',
-        'SPAR',
-        () => this.selectBattleMode('spar'),
-        this.selectedBattleMode === 'spar',
-        fighter !== null
-      ),
-    ]);
+    const championButton = iconButton(
+      this,
+      -145,
+      50,
+      championAvailable ? 'trophy' : 'lock',
+      'CHAMPION',
+      () => {
+        if (!this.didDrag()) this.selectBattleMode('champion');
+      },
+      250,
+      this.selectedBattleMode === 'champion' ? UI.gold : UI.creamHex,
+      UI.ink,
+      100,
+      championAvailable ? UI.gold : UI.inkSoftHex,
+      championAvailable
+    ).setAlpha(championAvailable ? 1 : 0.48);
+    const sparButton = iconButton(
+      this,
+      145,
+      50,
+      'sword',
+      'SPAR',
+      () => {
+        if (!this.didDrag()) this.selectBattleMode('spar');
+      },
+      250,
+      this.selectedBattleMode === 'spar' ? UI.tapeAlt : UI.creamHex,
+      UI.ink,
+      100,
+      UI.gold,
+      true
+    );
+    slot.add([championButton, sparButton]);
     const canFight =
       fighter !== null &&
       (this.selectedBattleMode === 'spar' || championAvailable);
-    slot.add(
-      this.simpleFightButton(
-        0,
-        224,
-        'FIGHT',
-        () => this.activatePrimaryArenaAction(),
-        canFight
-      )
-    );
     const rivalName =
       this.selectedBattleMode === 'champion'
         ? (this.state.champion?.name ?? 'Champion')
-        : 'a Spar rival';
+        : 'a rival';
+    const fightLabel =
+      this.selectedBattleMode === 'spar'
+        ? 'CHOOSE A RIVAL'
+        : `FIGHT ${rivalName.toUpperCase()}`;
+    const fightButton = iconButton(
+      this,
+      0,
+      190,
+      canFight ? 'sword' : 'lock',
+      fightLabel,
+      () => {
+        if (!this.didDrag()) this.activatePrimaryArenaAction();
+      },
+      390,
+      canFight ? UI.coral : UI.tapeAlt,
+      UI.ink,
+      116,
+      canFight ? UI.gold : UI.creamHex,
+      canFight
+    ).setAlpha(canFight ? 1 : 0.55);
+    const rumblePickLocked = this.state.myBackedScribbitId !== null;
+    const rumbleButton = iconButton(
+      this,
+      0,
+      308,
+      rumblePickLocked ? 'lock' : 'target',
+      rumblePickLocked ? 'PICKED' : 'RUMBLE PICK',
+      () => {
+        if (this.didDrag()) return;
+        if (rumblePickLocked) {
+          this.showPickLockedToast();
+          return;
+        }
+        this.openContenderPicker();
+      },
+      280,
+      UI.creamHex,
+      UI.ink,
+      100,
+      rumblePickLocked ? UI.inkSoftHex : UI.gold,
+      true
+    ).setAlpha(rumblePickLocked ? 0.65 : 0.9);
+    slot.add([fightButton, rumbleButton]);
     const battleArena = getBattleArenaForDay(this.state.dayNumber);
     this.updateFightAction(
       fighter
-        ? `Fight ${rivalName} with ${fighter.name} in ${battleArena.name}. Arena goal: ${battleArena.challengeLabel}.`
+        ? this.selectedBattleMode === 'spar'
+          ? `Choose a Spar rival for ${fighter.name}. Arena goal: ${battleArena.challengeLabel}.`
+          : `Fight ${rivalName} with ${fighter.name} in ${battleArena.name}. Arena goal: ${battleArena.challengeLabel}.`
         : 'Draw a fighter first',
       canFight
     );
   }
 
   private selectBattleMode(mode: 'champion' | 'spar'): void {
+    if (this.busy || this.rivalRunFlow) return;
     if (
       mode === 'champion' &&
       (this.state.champion === null || this.state.bossChallengedToday)
@@ -861,104 +936,6 @@ export class ArenaHome extends Scene {
     action.style.cursor = enabled ? 'pointer' : 'default';
   }
 
-  private battleChoiceChip(
-    x: number,
-    y: number,
-    mode: 'champion' | 'spar',
-    text: string,
-    onActivate: () => void,
-    selected: boolean,
-    enabled: boolean
-  ): Phaser.GameObjects.Container {
-    const width = 250;
-    const height = 88;
-    const chip = this.add.container(x, y).setAlpha(enabled ? 1 : 0.55);
-    const background = this.add.graphics();
-    background.fillStyle(
-      selected ? (mode === 'champion' ? UI.gold : UI.coral) : UI.creamHex,
-      1
-    );
-    background.fillRoundedRect(-width / 2, -height / 2, width, height, 18);
-    background.lineStyle(selected ? 5 : 3, UI.inkHex, selected ? 1 : 0.7);
-    background.strokeRoundedRect(-width / 2, -height / 2, width, height, 18);
-    const icon =
-      mode === 'champion'
-        ? paperIcon(this, 'trophy', -72, 0, { size: 38, fill: UI.gold })
-        : paperDockIcon(this, 'battles', -72, 0, 38, UI.inkHex);
-    const chipLabel = label(this, 24, 0, text, 24, UI.ink, true);
-    const hitArea = this.add.rectangle(0, 0, width, height, 0xffffff, 0.001);
-    if (enabled) {
-      hitArea.setInteractive({ useHandCursor: true });
-      hitArea.on('pointerup', () => {
-        if (!this.didDrag()) onActivate();
-      });
-    }
-    chip.add([background, icon, chipLabel, hitArea]);
-    return chip;
-  }
-
-  private simpleFightButton(
-    x: number,
-    y: number,
-    text: string,
-    onActivate: () => void,
-    enabled: boolean,
-    icon: 'sword' | 'pencil' = 'sword'
-  ): Phaser.GameObjects.Container {
-    const width = 340;
-    const height = 88;
-    const button = this.add.container(x, y).setAlpha(enabled ? 1 : 0.58);
-    const background = this.add.graphics();
-    background.fillStyle(enabled ? UI.coral : UI.tapeAlt, 1);
-    background.fillRoundedRect(-width / 2, -height / 2, width, height, 18);
-    background.lineStyle(4, UI.inkHex, 1);
-    background.strokeRoundedRect(-width / 2, -height / 2, width, height, 18);
-    const sword = paperIcon(this, enabled ? icon : 'lock', -78, 0, {
-      size: 38,
-      fill: enabled ? UI.gold : UI.creamHex,
-    });
-    const buttonLabel = label(this, 28, 0, text, 30, UI.ink, true);
-    const hitArea = this.add.rectangle(0, 0, width, height, 0xffffff, 0.001);
-    if (enabled) {
-      hitArea.setInteractive({ useHandCursor: true });
-      hitArea.on('pointerup', () => {
-        if (!this.didDrag()) onActivate();
-      });
-    }
-    button.add([background, sword, buttonLabel, hitArea]);
-    return button;
-  }
-
-  private rumblePickButton(
-    x: number,
-    y: number,
-    text: string,
-    onActivate: () => void,
-    locked: boolean
-  ): Phaser.GameObjects.Container {
-    const width = 300;
-    const height = 62;
-    const button = this.add.container(x, y);
-    const background = this.add.graphics();
-    background.fillStyle(locked ? UI.tapeAlt : UI.creamHex, 0.96);
-    background.fillRoundedRect(-width / 2, -height / 2, width, height, 16);
-    background.lineStyle(3, UI.inkHex, 0.82);
-    background.strokeRoundedRect(-width / 2, -height / 2, width, height, 16);
-    const icon = paperIcon(this, locked ? 'lock' : 'target', -92, 0, {
-      size: 28,
-      fill: locked ? UI.inkSoftHex : UI.gold,
-    });
-    const buttonLabel = label(this, 18, 0, text, 22, UI.ink, true);
-    const hitArea = this.add
-      .rectangle(0, 0, width, height, 0xffffff, 0.001)
-      .setInteractive({ useHandCursor: true });
-    hitArea.on('pointerup', () => {
-      if (!this.didDrag()) onActivate();
-    });
-    button.add([background, icon, buttonLabel, hitArea]);
-    return button;
-  }
-
   private arenaArrowButton(
     x: number,
     y: number,
@@ -968,7 +945,7 @@ export class ArenaHome extends Scene {
     const button = this.add.container(x, y);
     const face = this.add
       .image(0, 0, UI_BUTTON_TEXTURES[direction])
-      .setDisplaySize(100, 100);
+      .setDisplaySize(76, 76);
     const hitArea = this.add
       .circle(0, 0, 50, 0xffffff, 0.001)
       .setInteractive({ useHandCursor: true });
@@ -998,6 +975,7 @@ export class ArenaHome extends Scene {
     this.contenderPicker = openArenaContenderPicker({
       scene: this,
       entrants,
+      themePrompt: selectCommunityDoodleDare(this.state.dayNumber).prompt,
       ownedScribbitIds: this.state.myScribbits.map((scribbit) => scribbit.id),
       backedScribbitId: this.state.myBackedScribbitId,
       onPick: (entrant) => {
@@ -1425,8 +1403,7 @@ export class ArenaHome extends Scene {
       newestBeat,
       ...(plan.activeRivalry?.readyToday && challenger
         ? {
-            onContinue: () =>
-              this.doSpar(challenger, plan.activeRivalry?.founderId),
+            onContinue: () => this.doSpar(challenger),
           }
         : {}),
       onClose: () => {
@@ -1495,16 +1472,12 @@ export class ArenaHome extends Scene {
     return ceremony !== null;
   }
 
-  private openLegends(): void {
-    setGalleryTab(this, 'legends');
-    fadeToScene(this, 'Gallery');
-  }
-
   private buildAppTabs(): void {
+    this.menu?.destroy();
     appDock(this, 'arena', {
       arena: () => this.scrollTo(0),
-      gallery: () => this.openLegends(),
     });
+    this.menu = appMenu(this);
   }
 
   // --- Detail modal (the one component, wired for context) ------------------
@@ -1606,43 +1579,48 @@ export class ArenaHome extends Scene {
     });
   }
 
-  private doSpar(scribbit: Scribbit, opponentId?: string): void {
+  private doSpar(scribbit: Scribbit): void {
     if (!this.requireLogin()) return;
-    if (this.busy) return;
-    this.busy = true;
-    this.spinner?.show(this.scale.width / 2, this.scale.height / 2);
-    const opponent = opponentId
-      ? getFoundingScribbitDefinition(opponentId)
-      : null;
-    showToast(
-      opponent
-        ? `${scribbit.name} returns to ${opponent.name}'s blue-tape margin…`
-        : `${scribbit.name} steps up for a friendly spar…`
-    );
-    const sceneEpoch = this.sceneEpoch;
-    void spar(scribbit.id, opponentId).then((result) => {
-      if (!this.acceptMutationResponse(sceneEpoch)) return;
-      this.busy = false;
-      this.spinner?.hide();
-      if (!result.ok) {
-        this.showError(result.error);
-        return;
-      }
-      const stagedBattle = stageDirectBattle(
-        this,
-        this.state,
-        result.data,
-        scribbit.id
-      );
-      if (stagedBattle.arena) this.state = stagedBattle.arena;
-      // Show dramatic VS ceremony before the battle replay
-      showVsCeremony(this, {
-        fighterA: result.data.report.a,
-        fighterB: result.data.report.b,
-        battleKind: result.data.report.kind,
-        rivalryStakes: stagedBattle.rivalryStakes,
-        onComplete: () => this.scene.start('Replay'),
+    if (this.busy || this.rivalRunFlow) return;
+    this.selectedArenaFighterId = scribbit.id;
+    this.selectedBattleMode = 'spar';
+    this.renderArenaFighter();
+    this.renderBattleModeControls();
+
+    const trigger =
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : this.fightAction;
+    const restoreArena = (): void => {
+      this.rivalRunFlow = null;
+      this.homeInteractionSuspended = false;
+      this.rosterActionOverlay?.setVisible(true);
+      requestAnimationFrame(() => {
+        if (trigger?.isConnected) trigger.focus();
       });
+    };
+    this.homeInteractionSuspended = true;
+    this.rosterActionOverlay?.setVisible(false);
+    this.rivalRunFlow = openRivalRun(this, {
+      challenger: scribbit,
+      trigger,
+      closeLabel: 'Back to Arena',
+      returnScene: 'ArenaHome',
+      onBusyChange: (busy) => {
+        this.busy = busy;
+        if (busy) {
+          this.spinner?.show(this.scale.width / 2, this.scale.height / 2);
+          this.fightAction?.setAttribute('aria-busy', 'true');
+        } else {
+          this.spinner?.hide();
+          this.fightAction?.removeAttribute('aria-busy');
+        }
+      },
+      onDismissed: restoreArena,
+      onResolved: () => {
+        this.rivalRunFlow = null;
+      },
+      onCeremonyComplete: () => this.scene.start('Replay'),
     });
   }
 
@@ -1729,12 +1707,13 @@ export class ArenaHome extends Scene {
       showToast('No Champion is holding the contract today.');
       return;
     }
-    void this.resolveBoss(ownedChallenger);
+    void this.launchChampionBattle(ownedChallenger);
   }
 
-  private async resolveBoss(scribbit: Scribbit): Promise<void> {
+  private async launchChampionBattle(scribbit: Scribbit): Promise<void> {
     if (this.busy) return;
     this.busy = true;
+    this.spinner?.show(this.scale.width / 2, this.scale.height / 2);
     const champion = this.state.champion;
     showToast(
       champion
@@ -1742,28 +1721,37 @@ export class ArenaHome extends Scene {
         : `${scribbit.name} steps into the arena…`
     );
     const sceneEpoch = this.sceneEpoch;
-    const result = await bossChallenge(scribbit.id);
-    if (!this.acceptMutationResponse(sceneEpoch)) return;
-    this.busy = false;
-    if (!result.ok) {
-      this.showError(result.error);
-      return;
+    try {
+      const result = await bossChallenge(scribbit.id);
+      if (!this.acceptMutationResponse(sceneEpoch)) return;
+      if (!result.ok) {
+        this.showError(result.error);
+        return;
+      }
+      const stagedBattle = stageDirectBattle(
+        this,
+        this.state,
+        result.data,
+        scribbit.id
+      );
+      if (stagedBattle.arena) this.state = stagedBattle.arena;
+      showVsCeremony(this, {
+        fighterA: result.data.report.a,
+        fighterB: result.data.report.b,
+        battleKind: result.data.report.kind,
+        rivalryStakes: stagedBattle.rivalryStakes,
+        onComplete: () => this.scene.start('Replay'),
+      });
+    } catch {
+      if (this.acceptMutationResponse(sceneEpoch)) {
+        this.showError('The battle could not start. Try again.');
+      }
+    } finally {
+      if (sceneEpoch === this.sceneEpoch) {
+        this.busy = false;
+        this.spinner?.hide();
+      }
     }
-    const stagedBattle = stageDirectBattle(
-      this,
-      this.state,
-      result.data,
-      scribbit.id
-    );
-    if (stagedBattle.arena) this.state = stagedBattle.arena;
-    // Show dramatic VS ceremony before the boss battle replay
-    showVsCeremony(this, {
-      fighterA: result.data.report.a,
-      fighterB: result.data.report.b,
-      battleKind: result.data.report.kind,
-      rivalryStakes: stagedBattle.rivalryStakes,
-      onComplete: () => this.scene.start('Replay'),
-    });
   }
 
   private requireLogin(): boolean {

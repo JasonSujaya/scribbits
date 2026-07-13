@@ -94,6 +94,7 @@ const capsuleDailyFlagTtlSeconds = 3 * 24 * 60 * 60;
 const capsuleOperationTtlSeconds = 3 * 24 * 60 * 60;
 const capsuleOperationPendingPrefix = 'pending:';
 const capsuleOperationKeyPrefix = 'capsule:operation:';
+const userOperationReceiptIndexSuffix = 'operation-receipts';
 const inventoryDiscoveryFieldPrefix = 'discovered:';
 const inventoryGearRankFieldPrefix = 'gear-rank:';
 const inventoryEquippedTitleField = 'equipped-title';
@@ -139,6 +140,62 @@ export const getCapsuleOperationKey = (
   operationId: string
 ): string => {
   return `${capsuleOperationKeyPrefix}${userId}:${operationId}`;
+};
+
+export const getUserOperationReceiptIndexKey = (userId: string): string => {
+  return `user:${userId}:${userOperationReceiptIndexSuffix}`;
+};
+
+export const loadUserOperationReceiptKeys = async (
+  storage: ArenaStorage,
+  userId: string
+): Promise<string[]> => {
+  const entries = await storage.zRange(
+    getUserOperationReceiptIndexKey(userId),
+    0,
+    -1,
+    { by: 'rank' }
+  );
+  const capsulePrefix = `${capsuleOperationKeyPrefix}${userId}:`;
+  const gearMergePrefix = `${gearMergeOperationKeyPrefix}${userId}:`;
+  return entries
+    .map((entry) => entry.member)
+    .filter(
+      (operationKey) =>
+        operationKey.startsWith(capsulePrefix) ||
+        operationKey.startsWith(gearMergePrefix)
+    );
+};
+
+const trackOperationReceipt = async (
+  transaction: Pick<ArenaTransaction, 'zAdd' | 'expire'>,
+  userId: string,
+  operationKey: string,
+  expiresAtMs: number
+): Promise<void> => {
+  const indexKey = getUserOperationReceiptIndexKey(userId);
+  await transaction.zAdd(indexKey, {
+    member: operationKey,
+    score: expiresAtMs,
+  });
+  await transaction.expire(indexKey, capsuleOperationTtlSeconds);
+};
+
+const pruneExpiredOperationReceipts = async (
+  storage: ArenaStorage,
+  userId: string,
+  nowMs: number
+): Promise<void> => {
+  const indexKey = getUserOperationReceiptIndexKey(userId);
+  const expiredEntries = await storage.zRange(indexKey, 0, nowMs, {
+    by: 'score',
+  });
+  if (expiredEntries.length > 0) {
+    await storage.zRem(
+      indexKey,
+      expiredEntries.map((entry) => entry.member)
+    );
+  }
 };
 
 export const getCapsuleCostForDailyState = (pulledToday: boolean): number => {
@@ -427,9 +484,11 @@ const persistLegacyDiscoveryMarkers = async (
     }
   }
 
-  if (Object.keys(missingMarkers).length > 0) {
-    await storage.hSet(inventoryKey, missingMarkers);
-  }
+  await Promise.all(
+    Object.entries(missingMarkers).map(async ([field, value]) => {
+      await storage.hSetNX(inventoryKey, field, value);
+    })
+  );
 };
 
 export const loadInventory = async (
@@ -723,6 +782,7 @@ const applyCapsulePullWithTransaction = async (
   operationCommit?: {
     operationKey: string;
     responseJson: string;
+    expiresAtMs: number;
   }
 ): Promise<boolean> => {
   const inventoryKey = getInventoryKey(userId);
@@ -762,6 +822,12 @@ const applyCapsulePullWithTransaction = async (
     await transaction.expire(
       operationCommit.operationKey,
       capsuleOperationTtlSeconds
+    );
+    await trackOperationReceipt(
+      transaction,
+      userId,
+      operationCommit.operationKey,
+      operationCommit.expiresAtMs
     );
   }
 
@@ -988,14 +1054,21 @@ const parseCapsuleOperationResponse = (
   }
 };
 
-const getUserIdFromCapsuleOperationKey = (
-  operationKey: string
+const getUserIdFromOperationKey = (
+  operationKey: string,
+  operationKeyPrefix: string
 ): string | undefined => {
-  if (!operationKey.startsWith(capsuleOperationKeyPrefix)) return undefined;
-  const keySuffix = operationKey.slice(capsuleOperationKeyPrefix.length);
+  if (!operationKey.startsWith(operationKeyPrefix)) return undefined;
+  const keySuffix = operationKey.slice(operationKeyPrefix.length);
   const operationSeparatorIndex = keySuffix.lastIndexOf(':');
   if (operationSeparatorIndex <= 0) return undefined;
   return keySuffix.slice(0, operationSeparatorIndex);
+};
+
+const getUserIdFromCapsuleOperationKey = (
+  operationKey: string
+): string | undefined => {
+  return getUserIdFromOperationKey(operationKey, capsuleOperationKeyPrefix);
 };
 
 const normalizeLegacyCapsuleOperationResponse = async (
@@ -1057,7 +1130,13 @@ export const claimCapsuleOperation = async (
   if (!storage.watch) {
     throw new Error('Atomic capsule operations require transaction support.');
   }
+  const userId = getUserIdFromCapsuleOperationKey(operationKey);
+  if (!userId) {
+    throw new Error('Capsule operation key is invalid.');
+  }
+  await pruneExpiredOperationReceipts(storage, userId, claimedAtMs);
   const pendingValue = `${capsuleOperationPendingPrefix}${claimedAtMs}`;
+  const expiresAtMs = claimedAtMs + capsuleOperationTtlSeconds * 1000;
 
   for (
     let attempt = 0;
@@ -1077,6 +1156,12 @@ export const claimCapsuleOperation = async (
           claimedAtMs - pendingAtMs < pendingTimeoutMs
         ) {
           await transaction.unwatch();
+          await trackOperationReceipt(
+            storage,
+            userId,
+            operationKey,
+            pendingAtMs + capsuleOperationTtlSeconds * 1000
+          );
           return { status: 'pending' };
         }
       } else if (storedValue !== undefined) {
@@ -1094,6 +1179,12 @@ export const claimCapsuleOperation = async (
             await transaction.multi();
             await transaction.set(operationKey, JSON.stringify(response));
             await transaction.expire(operationKey, capsuleOperationTtlSeconds);
+            await trackOperationReceipt(
+              transaction,
+              userId,
+              operationKey,
+              expiresAtMs
+            );
             const execResult: unknown = await transaction.exec();
             if (Array.isArray(execResult) && execResult.length > 0) {
               return { status: 'completed', response };
@@ -1102,6 +1193,12 @@ export const claimCapsuleOperation = async (
           }
 
           await transaction.unwatch();
+          await trackOperationReceipt(
+            storage,
+            userId,
+            operationKey,
+            expiresAtMs
+          );
           return { status: 'completed', response };
         }
       }
@@ -1109,6 +1206,12 @@ export const claimCapsuleOperation = async (
       await transaction.multi();
       await transaction.set(operationKey, pendingValue);
       await transaction.expire(operationKey, capsuleOperationTtlSeconds);
+      await trackOperationReceipt(
+        transaction,
+        userId,
+        operationKey,
+        expiresAtMs
+      );
       const execResult: unknown = await transaction.exec();
       if (Array.isArray(execResult) && execResult.length > 0) {
         return { status: 'claimed', pendingValue };
@@ -1132,6 +1235,10 @@ export const releaseCapsuleOperation = async (
   if (!storage.watch) {
     throw new Error('Atomic capsule operations require transaction support.');
   }
+  const userId = getUserIdFromCapsuleOperationKey(operationKey);
+  if (!userId) {
+    throw new Error('Capsule operation key is invalid.');
+  }
 
   for (
     let attempt = 0;
@@ -1148,6 +1255,9 @@ export const releaseCapsuleOperation = async (
 
       await transaction.multi();
       await transaction.del(operationKey);
+      await transaction.zRem(getUserOperationReceiptIndexKey(userId), [
+        operationKey,
+      ]);
       const execResult: unknown = await transaction.exec();
       if (Array.isArray(execResult) && execResult.length > 0) return true;
     } catch (error) {
@@ -1292,6 +1402,7 @@ export const pullCapsuleForUser = async (
             ? {
                 operationKey: operation.operationKey,
                 responseJson: JSON.stringify(operationResponse),
+                expiresAtMs: Date.now() + capsuleOperationTtlSeconds * 1000,
               }
             : undefined
         );
@@ -1579,6 +1690,8 @@ export const mergeGearForUser = async (
   }
   const inventoryKey = getInventoryKey(userId);
   const operationKey = getGearMergeOperationKey(userId, operationId);
+  const operationExpiresAtMs = Date.now() + capsuleOperationTtlSeconds * 1000;
+  await pruneExpiredOperationReceipts(storage, userId, Date.now());
 
   for (
     let attempt = 0;
@@ -1593,6 +1706,12 @@ export const mergeGearForUser = async (
       );
       if (storedReceipt) {
         await transaction.unwatch();
+        await trackOperationReceipt(
+          storage,
+          userId,
+          operationKey,
+          operationExpiresAtMs
+        );
         return storedReceipt.gearId === gearId
           ? { status: 'merged', response: storedReceipt }
           : { status: 'operationConflict' };
@@ -1619,6 +1738,12 @@ export const mergeGearForUser = async (
       );
       await transaction.set(operationKey, JSON.stringify(projection.response));
       await transaction.expire(operationKey, capsuleOperationTtlSeconds);
+      await trackOperationReceipt(
+        transaction,
+        userId,
+        operationKey,
+        operationExpiresAtMs
+      );
       const result = await transaction.exec();
       if (Array.isArray(result) && result.length > 0) {
         return { status: 'merged', response: projection.response };

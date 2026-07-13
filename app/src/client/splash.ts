@@ -1,15 +1,55 @@
 import { requestExpandedMode } from '@devvit/web/client';
 import '@fontsource/dynapuff/latin-400.css';
 import '@fontsource/dynapuff/latin-700.css';
-import type { SplashState } from '../shared/arena';
+import type { SplashCreation, SplashState } from '../shared/arena';
 
 // Splash is the inline feed view — deliberately light (no Phaser). The markup is
 // fully static and visible without this script; JS only wires the button and
-// upgrades the forecast line. Everything here is defensive so a failure in the
+// upgrades community/state data. Everything here is defensive so a failure in the
 // sandboxed embed can never blank the (already-rendered) content.
 const startButton = document.getElementById('start-button') as HTMLButtonElement | null;
-const forecastText = document.querySelector<HTMLElement>('#forecast-line .fc-text');
-const todayStatus = document.getElementById('today-status');
+const showcaseLabel = document.getElementById('showcase-label');
+
+type ShowcaseSlot = Readonly<{
+  container: HTMLElement;
+  image: HTMLImageElement;
+  name: HTMLElement;
+  artist: HTMLElement;
+  fallbackName: string;
+  fallbackArtist: string;
+  fallbackSource: string;
+}>;
+
+const showcaseSlots: ShowcaseSlot[] = [];
+for (const container of document.querySelectorAll<HTMLElement>(
+  '[data-showcase-slot]'
+)) {
+  const image = container.querySelector<HTMLImageElement>('.showcase-image');
+  const name = container.querySelector<HTMLElement>('.showcase-name');
+  const artist = container.querySelector<HTMLElement>('.showcase-artist');
+  const fallbackName = container.dataset.fallbackName;
+  const fallbackArtist = container.dataset.fallbackArtist;
+  const fallbackSource = image?.getAttribute('src');
+  if (
+    !image ||
+    !name ||
+    !artist ||
+    !fallbackName ||
+    !fallbackArtist ||
+    !fallbackSource
+  ) {
+    continue;
+  }
+  showcaseSlots.push({
+    container,
+    image,
+    name,
+    artist,
+    fallbackName,
+    fallbackArtist,
+    fallbackSource,
+  });
+}
 
 startButton?.addEventListener('click', (event) => {
   try {
@@ -19,46 +59,59 @@ startButton?.addEventListener('click', (event) => {
   }
 });
 
-// Cheaply fetch tonight's forecast blurb if the endpoint is ready. Failures are
-// silent — the splash keeps its default copy and never blocks or errors.
-async function loadForecast(): Promise<void> {
+// Cheaply fetch live community/state data if the endpoint is ready. Failures
+// are silent — the splash keeps its static defaults and never blocks or errors.
+async function loadSplashState(): Promise<void> {
   try {
     const response = await fetch('/api/splash', { headers: { Accept: 'application/json' } });
     if (!response.ok) return;
     const state = (await response.json()) as SplashState;
-    if (state.resolving) {
-      if (forecastText) forecastText.textContent = 'The Rumble bell is ringing…';
-      if (todayStatus) todayStatus.textContent = 'Results are being tallied';
-      if (startButton) startButton.textContent = 'CHECK RESULTS';
-      return;
-    }
-    if (forecastText && state.forecast?.blurb) {
-      forecastText.textContent = state.forecast.blurb;
-    }
-    if (todayStatus) {
-      const streak = state.loggedIn && state.playStreakDays > 0
-        ? `${state.playStreakDays}-day streak · `
-        : '';
-      todayStatus.textContent = `${streak}${state.rumbleEntrants} contenders · rumble in ${formatCountdown(
-        state.rumbleResolvesAt - Date.now()
-      )}`;
-    }
+    renderFeaturedCreations(state.featuredCreations ?? []);
     if (startButton) {
       if (!state.loggedIn) startButton.textContent = 'ENTER ARENA';
-      else if (!state.drawnToday) startButton.textContent = 'DRAW TODAY';
-      else if (!state.backedToday) startButton.textContent = 'PICK A CONTENDER';
-      else startButton.textContent = 'OPEN ARENA';
+      else if (!state.hasCreatedScribbit) startButton.textContent = 'DRAW TODAY';
+      else startButton.textContent = 'CONTINUE';
     }
   } catch {
     // Keep the default copy on any failure.
   }
 }
 
-function formatCountdown(milliseconds: number): string {
-  const totalMinutes = Math.max(0, Math.floor(milliseconds / 60_000));
-  const hours = Math.floor(totalMinutes / 60);
-  const minutes = totalMinutes % 60;
-  return hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
+function resetShowcaseSlot(slot: ShowcaseSlot): void {
+  slot.image.src = slot.fallbackSource;
+  slot.image.alt = `${slot.fallbackName}, drawn in Scribbits`;
+  slot.name.textContent = slot.fallbackName.toUpperCase();
+  slot.artist.textContent = `BY ${slot.fallbackArtist.toUpperCase()}`;
 }
 
-void loadForecast();
+function renderFeaturedCreations(
+  featuredCreations: readonly SplashCreation[]
+): void {
+  showcaseSlots.forEach(resetShowcaseSlot);
+  if (showcaseLabel) showcaseLabel.textContent = 'FROM OUR SKETCHBOOK';
+
+  let loadedCreationCount = 0;
+  featuredCreations.slice(0, showcaseSlots.length).forEach((creation, index) => {
+    const slot = showcaseSlots[index];
+    if (!slot) return;
+    const candidateImage = new Image();
+    candidateImage.decoding = 'async';
+    candidateImage.addEventListener(
+      'load',
+      () => {
+        slot.image.src = creation.imageUrl;
+        slot.image.alt = `${creation.name}, drawn by u/${creation.artist}`;
+        slot.name.textContent = creation.name.toUpperCase();
+        slot.artist.textContent = `BY u/${creation.artist}`;
+        loadedCreationCount += 1;
+        if (showcaseLabel && loadedCreationCount > 0) {
+          showcaseLabel.textContent = 'FROM THE COMMUNITY';
+        }
+      },
+      { once: true }
+    );
+    candidateImage.src = creation.imageUrl;
+  });
+}
+
+void loadSplashState();

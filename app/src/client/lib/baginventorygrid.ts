@@ -13,7 +13,6 @@ export type BagInventoryAction = Readonly<{
 export type BagInventoryGridItem = Readonly<{
   view: Phaser.GameObjects.Container;
   primaryAction: BagInventoryAction;
-  detailAction?: BagInventoryAction;
 }>;
 
 export type BagInventoryGridOptions = Readonly<{
@@ -28,8 +27,6 @@ export type BagInventoryGridOptions = Readonly<{
   initialScrollOffset: number;
   onScrollOffsetChange: (offset: number) => void;
 }>;
-
-const DETAIL_TARGET_SIZE = 80;
 
 function styleTransparentButton(button: HTMLButtonElement): void {
   Object.assign(button.style, {
@@ -93,10 +90,30 @@ export function mountBagInventoryGrid(options: BagInventoryGridOptions): void {
     viewport.width,
     viewport.height
   );
-  const viewportMask = maskShape.createGeometryMask();
-  canvasContent.setMask(viewportMask);
+  scene.children.remove(maskShape);
+  let viewportMaskFilter: Phaser.Filters.Mask | null = null;
+  let viewportFilterList: Phaser.GameObjects.Components.FilterList | null = null;
+  if (scene.game.renderer.type === Phaser.WEBGL) {
+    canvasContent.enableFilters();
+    viewportFilterList = canvasContent.filters?.internal ?? null;
+    if (!viewportFilterList) {
+      throw new Error('Unable to create the Bag inventory mask filter.');
+    }
+    viewportMaskFilter = viewportFilterList.addMask(
+      maskShape,
+      false,
+      scene.cameras.main,
+      'world'
+    );
+  } else {
+    canvasContent.setMask(maskShape.createGeometryMask());
+  }
   canvasContent.once('destroy', () => {
-    canvasContent.clearMask(true);
+    if (viewportMaskFilter && viewportFilterList) {
+      viewportFilterList.remove(viewportMaskFilter, true);
+    } else {
+      canvasContent.clearMask(true);
+    }
     maskShape.destroy();
   });
 
@@ -157,33 +174,10 @@ export function mountBagInventoryGrid(options: BagInventoryGridOptions): void {
     primaryButton.addEventListener('click', item.primaryAction.onActivate);
     semanticItem.appendChild(primaryButton);
 
-    if (item.detailAction) {
-      const detailButton = document.createElement('button');
-      detailButton.type = 'button';
-      detailButton.disabled = item.detailAction.disabled === true;
-      detailButton.textContent = item.detailAction.label;
-      detailButton.setAttribute('aria-label', item.detailAction.label);
-      Object.entries(item.detailAction.attributes ?? {}).forEach(
-        ([name, value]) => detailButton.setAttribute(name, value)
-      );
-      styleTransparentButton(detailButton);
-      Object.assign(detailButton.style, {
-        height: `${DETAIL_TARGET_SIZE}px`,
-        right: '0',
-        top: '0',
-        width: `${DETAIL_TARGET_SIZE}px`,
-        zIndex: '2',
-      });
-      detailButton.addEventListener('click', (event) => {
-        event.stopPropagation();
-        item.detailAction?.onActivate();
-      });
-      semanticItem.appendChild(detailButton);
-    }
     semanticContent.appendChild(semanticItem);
   });
 
-  const scrollbarX = viewport.x + viewport.width - 8;
+  const scrollbarX = viewport.x + viewport.width + 12;
   const scrollbarTrack = scene.add
     .rectangle(
       scrollbarX,

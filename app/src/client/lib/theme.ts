@@ -1,16 +1,40 @@
 // Central design tokens for the Scribbits Arena client. Portrait-first mobile
-// layout. Design resolution is 720x1280; Scale.FIT letterboxes to any device.
+// layout. Width stays at 720 design pixels; height expands once at boot to the
+// host's portrait aspect ratio so tall phones gain real game space, not a dead
+// letterbox below the dock.
 
 import type { Element } from '../../shared/arena';
 
 export const DESIGN_WIDTH = 720;
 export const DESIGN_HEIGHT = 1280;
+export const MAX_DESIGN_HEIGHT = 1680;
+
+export const responsiveDesignHeight = (
+  viewportWidth: number,
+  viewportHeight: number
+): number => {
+  if (
+    !Number.isFinite(viewportWidth) ||
+    !Number.isFinite(viewportHeight) ||
+    viewportWidth <= 0 ||
+    viewportHeight <= 0
+  ) {
+    return DESIGN_HEIGHT;
+  }
+  const fittedHeight = Math.round(
+    (DESIGN_WIDTH * viewportHeight) / viewportWidth
+  );
+  return Math.min(
+    MAX_DESIGN_HEIGHT,
+    Math.max(DESIGN_HEIGHT, fittedHeight)
+  );
+};
 
 // Baseline canvas target. Critical 320px actions request 100 design pixels so
 // their fitted target remains at least 44 CSS pixels.
 export const MIN_TOUCH = 100;
 
-// Screen safe margins so nothing kisses the letterbox edge.
+// Screen safe margins so nothing kisses the canvas edge.
 export const EDGE = 30; // left/right page margin
 export const NAV_SAFE = 144; // preserve content layout above the 124px dock
 
@@ -18,7 +42,7 @@ export const NAV_SAFE = 144; // preserve content layout above the 124px dock
 // hierarchy stays legible: DISPLAY (hand-lettered headers), TITLE, BODY, CAPTION.
 // Sizes are design-space px on the 720-wide canvas, which Scale.FIT shrinks to
 // ~0.55x on a phone-width Reddit webview — so these are tuned up to stay legible
-// once letterboxed (caption ~13px CSS, body ~15px CSS on a 390px viewport).
+// there (caption ~13px CSS, body ~15px CSS on a 390px viewport).
 export const TYPE = {
   display: 60,
   title: 36,

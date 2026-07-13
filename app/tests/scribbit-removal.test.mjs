@@ -17,9 +17,11 @@ const arenaStore = require(join(compiledServerRoot, 'core', 'arenaStore.js'));
 const battle = require(join(compiledServerRoot, 'core', 'battle.js'));
 const battleStore = require(join(compiledServerRoot, 'core', 'battleStore.js'));
 const forecast = require(join(compiledServerRoot, 'core', 'forecast.js'));
+const inkStore = require(join(compiledServerRoot, 'core', 'inkStore.js'));
 const moderation = require(join(compiledServerRoot, 'core', 'moderation.js'));
 const privacy = require(join(compiledServerRoot, 'core', 'privacy.js'));
 const removal = require(join(compiledServerRoot, 'core', 'removal.js'));
+const rivalRun = require(join(compiledServerRoot, 'core', 'rivalRun.js'));
 const scribbits = require(join(compiledServerRoot, 'core', 'scribbit.js'));
 
 const currentDay = 4;
@@ -85,17 +87,10 @@ const seedRemovalScenario = async (
   const ownerUserId = `owner-${suffix}`;
   const opponentOwnerUserId = `opponent-owner-${suffix}`;
   const target = createScribbit(`target-${suffix}`, ownerUserId);
-  const opponent = createScribbit(
-    `opponent-${suffix}`,
-    opponentOwnerUserId
-  );
+  const opponent = createScribbit(`opponent-${suffix}`, opponentOwnerUserId);
 
   await scribbits.storeScribbit(memory.storage, ownerUserId, target);
-  await scribbits.storeScribbit(
-    memory.storage,
-    opponentOwnerUserId,
-    opponent
-  );
+  await scribbits.storeScribbit(memory.storage, opponentOwnerUserId, opponent);
   await scribbits.addRumbleEntrant(memory.storage, currentDay, target.id);
   await memory.storage.zAdd(scribbits.getLegendsKey(), {
     member: target.id,
@@ -138,7 +133,10 @@ const assertCompletelyRemoved = async (memory, scenario) => {
     scenario;
   const { target } = scenario;
 
-  assert.equal(await scribbits.loadScribbit(memory.storage, target.id), undefined);
+  assert.equal(
+    await scribbits.loadScribbit(memory.storage, target.id),
+    undefined
+  );
   assert.equal(
     await scribbits.getScribbitOwner(memory.storage, target.id),
     undefined
@@ -191,9 +189,7 @@ const assertCompletelyRemoved = async (memory, scenario) => {
     []
   );
   assert.deepEqual(
-    await memory.storage.hGetAll(
-      moderation.getScribbitReportsKey(target.id)
-    ),
+    await memory.storage.hGetAll(moderation.getScribbitReportsKey(target.id)),
     {}
   );
   for (const reporterUserId of reporterUserIds) {
@@ -261,6 +257,29 @@ test('privacy deletion reuses canonical removal for owned Scribbits', async () =
     'outside-reporter-one',
     'outside-reporter-two',
   ]);
+  const rivalRunKey = rivalRun.getRivalRunKey(scenario.ownerUserId);
+  const capsuleOperationKey = inkStore.getCapsuleOperationKey(
+    scenario.ownerUserId,
+    'privacy-capsule-operation'
+  );
+  const gearMergeOperationKey = inkStore.getGearMergeOperationKey(
+    scenario.ownerUserId,
+    'privacy-merge-operation'
+  );
+  const operationIndexKey = inkStore.getUserOperationReceiptIndexKey(
+    scenario.ownerUserId
+  );
+  const unrelatedGlobalKey = 'global:privacy-index-corruption-proof';
+  await memory.storage.set(rivalRunKey, '{"id":"private-run"}');
+  await memory.storage.set(capsuleOperationKey, '{"pull":"private"}');
+  await memory.storage.set(gearMergeOperationKey, '{"gear":"private"}');
+  await memory.storage.set(unrelatedGlobalKey, 'must-survive');
+  await memory.storage.zAdd(
+    operationIndexKey,
+    { member: capsuleOperationKey, score: 10_000 },
+    { member: gearMergeOperationKey, score: 10_000 },
+    { member: unrelatedGlobalKey, score: 10_000 }
+  );
 
   const result = await privacy.deletePlayerData(
     memory.storage,
@@ -273,4 +292,13 @@ test('privacy deletion reuses canonical removal for owned Scribbits', async () =
 
   assert.deepEqual(result, { status: 'deleted', removedScribbits: 1 });
   await assertCompletelyRemoved(memory, scenario);
+  for (const deletedKey of [
+    rivalRunKey,
+    capsuleOperationKey,
+    gearMergeOperationKey,
+  ]) {
+    assert.equal(await memory.storage.get(deletedKey), undefined);
+  }
+  assert.equal(await memory.storage.zCard(operationIndexKey), 0);
+  assert.equal(await memory.storage.get(unrelatedGlobalKey), 'must-survive');
 });

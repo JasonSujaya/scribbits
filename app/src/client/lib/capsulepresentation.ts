@@ -1,4 +1,9 @@
-import { RED_STAR_GEAR_RANK, type CapsulePull } from '../../shared/arena';
+import {
+  CAPSULE_COST,
+  CAPSULE_MAX_BATCH_SIZE,
+  RED_STAR_GEAR_RANK,
+  type CapsulePull,
+} from '../../shared/arena';
 
 const COLLECTOR_RANKS = [
   { minimumPullCount: 0, name: 'Ink Rookie' },
@@ -23,6 +28,101 @@ export type CapsulePrizeLayout = Readonly<{
   acknowledgement: CapsuleActionLayout;
   viewCollection: CapsuleActionLayout | null;
 }>;
+
+export type CapsuleBatchSummary = Readonly<{
+  common: number;
+  rare: number;
+  epic: number;
+  newItems: number;
+}>;
+
+export type CapsuleOpenAffordance = Readonly<{
+  primaryLabel: string;
+  primaryAccessibleLabel: string;
+  primaryEnabled: boolean;
+  secondaryLabel: string;
+  secondaryAccessibleLabel: string;
+  secondaryEnabled: boolean;
+  requiredInk: number;
+  remainingCount: number;
+  retrying: boolean;
+}>;
+
+export function capsuleOpenCost(
+  openCount: number,
+  nextOpenCost: number
+): number {
+  if (
+    !Number.isInteger(openCount) ||
+    openCount < 1 ||
+    openCount > CAPSULE_MAX_BATCH_SIZE
+  ) {
+    throw new Error(
+      `Chest batches must contain 1-${CAPSULE_MAX_BATCH_SIZE} opens.`
+    );
+  }
+  return nextOpenCost + (openCount - 1) * CAPSULE_COST;
+}
+
+export function planCapsuleOpenAffordance(
+  ink: number,
+  nextOpenCost: number,
+  pendingBatchTarget: number | null,
+  completedBatchCount: number
+): CapsuleOpenAffordance {
+  if (pendingBatchTarget !== null) {
+    if (
+      !Number.isInteger(pendingBatchTarget) ||
+      pendingBatchTarget < 1 ||
+      pendingBatchTarget > CAPSULE_MAX_BATCH_SIZE ||
+      !Number.isInteger(completedBatchCount) ||
+      completedBatchCount < 0 ||
+      completedBatchCount >= pendingBatchTarget
+    ) {
+      throw new Error('Pending chest progress is invalid.');
+    }
+    const remainingCount = pendingBatchTarget - completedBatchCount;
+    const retryCost = capsuleOpenCost(remainingCount, nextOpenCost);
+    return {
+      primaryLabel: `RETRY ${remainingCount} · ${retryCost}`,
+      primaryAccessibleLabel: `Retry the remaining ${remainingCount} Mystery Ink ${remainingCount === 1 ? 'chest' : 'chests'} for ${retryCost} Ink`,
+      primaryEnabled: ink >= retryCost,
+      secondaryLabel: `SAFE ${completedBatchCount}/${pendingBatchTarget}`,
+      secondaryAccessibleLabel: `${completedBatchCount} of ${pendingBatchTarget} Mystery Ink chests are safely recorded`,
+      secondaryEnabled: false,
+      requiredInk: retryCost,
+      remainingCount,
+      retrying: true,
+    };
+  }
+
+  const oneCost = capsuleOpenCost(1, nextOpenCost);
+  const tenCost = capsuleOpenCost(CAPSULE_MAX_BATCH_SIZE, nextOpenCost);
+  return {
+    primaryLabel: `OPEN 1 · ${oneCost}`,
+    primaryAccessibleLabel: `Open one Mystery Ink chest for ${oneCost} Ink`,
+    primaryEnabled: ink >= oneCost,
+    secondaryLabel: `OPEN ${CAPSULE_MAX_BATCH_SIZE} · ${tenCost}`,
+    secondaryAccessibleLabel: `Open ten Mystery Ink chests for ${tenCost} Ink`,
+    secondaryEnabled: ink >= tenCost,
+    requiredInk: oneCost,
+    remainingCount: 1,
+    retrying: false,
+  };
+}
+
+export function summarizeCapsuleBatch(
+  pulls: readonly CapsulePull[]
+): CapsuleBatchSummary {
+  return pulls.reduce<CapsuleBatchSummary>(
+    (summary, pull) => ({
+      ...summary,
+      [pull.rarity]: summary[pull.rarity] + 1,
+      newItems: summary.newItems + (pull.isNew ? 1 : 0),
+    }),
+    { common: 0, rare: 0, epic: 0, newItems: 0 }
+  );
+}
 
 export function collectorRankNameForPullCount(pullCount: number): string {
   for (let index = COLLECTOR_RANKS.length - 1; index >= 0; index -= 1) {

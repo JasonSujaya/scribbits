@@ -3,13 +3,14 @@ import type {
   LegacyCosmeticSnapshot,
   Scribbit,
 } from '../../shared/arena';
-import { INK_REWARDS, XP_REWARDS } from '../../shared/arena';
+import { INK_REWARDS, XP_REWARDS, isElement } from '../../shared/arena';
 import { saveBattleReport, setFeaturedRumbleReport } from './battleStore';
 import {
   ensureCurrentArenaDay,
   ensureForecastForDay,
   getActiveScribbitSubmissionsKey,
   getNightlyResolutionClaimsKey,
+  loadCurrentArenaDay,
   setCurrentArenaDay,
   setCurrentChampion,
 } from './arenaStore';
@@ -36,6 +37,7 @@ import {
   getRumbleEntrantIds,
   getScribbitOwner,
   loadScribbits,
+  normalizeScribbitRecord,
   recordRumbleStandingOnScribbit,
 } from './scribbit';
 
@@ -102,6 +104,8 @@ export type ResolvedArenaDay = {
 
 const resolutionOutboxKey = 'arena:resolution-outbox';
 const nightlyClaimTimeoutMs = 10 * 60 * 1000;
+
+export const getArenaResolutionOutboxKey = (): string => resolutionOutboxKey;
 
 const parseNightlyClaimedAtMs = (storedClaim: string | undefined): number => {
   if (storedClaim === undefined) return Number.NaN;
@@ -211,7 +215,9 @@ const releaseArenaDayResolution = async (
   claimValue: string
 ): Promise<void> => {
   if (!storage.watch) {
-    throw new Error('Nightly resolution claim release requires transaction support.');
+    throw new Error(
+      'Nightly resolution claim release requires transaction support.'
+    );
   }
   const nightlyClaimKey = getNightlyResolutionClaimsKey();
   const field = day.toString();
@@ -243,7 +249,10 @@ const releaseArenaDayResolution = async (
       }
       return;
     } catch (error) {
-      await discardWatchedTransaction(transaction, 'Nightly resolution claim release');
+      await discardWatchedTransaction(
+        transaction,
+        'Nightly resolution claim release'
+      );
       if ((await storage.hGet(nightlyClaimKey, field)) !== claimValue) return;
       throw error;
     }
@@ -251,27 +260,107 @@ const releaseArenaDayResolution = async (
   throw new Error('Nightly resolution claim changed too often to release.');
 };
 
-const parseResolvedArenaDay = (
-  storedResolution: string | undefined
-): ResolvedArenaDay | undefined => {
-  if (!storedResolution) return undefined;
-  try {
-    const parsed: unknown = JSON.parse(storedResolution);
-    if (
-      typeof parsed === 'object' &&
-      parsed !== null &&
-      'resolvedDay' in parsed &&
-      typeof parsed.resolvedDay === 'number' &&
-      'champion' in parsed &&
-      typeof parsed.champion === 'object' &&
-      parsed.champion !== null
-    ) {
-      return parsed as ResolvedArenaDay;
-    }
-  } catch {
+const isRecord = (value: unknown): value is Record<string, unknown> => {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+};
+
+const isNonNegativeInteger = (value: unknown): value is number => {
+  return Number.isSafeInteger(value) && Number(value) >= 0;
+};
+
+const parseResolutionForecast = (
+  value: unknown,
+  expectedDay: number
+): Forecast | undefined => {
+  if (
+    !isRecord(value) ||
+    value.day !== expectedDay ||
+    !isElement(value.boostedElement) ||
+    !isElement(value.nerfedElement) ||
+    value.boostedElement === value.nerfedElement ||
+    typeof value.blurb !== 'string'
+  ) {
     return undefined;
   }
-  return undefined;
+  return {
+    day: expectedDay,
+    boostedElement: value.boostedElement,
+    nerfedElement: value.nerfedElement,
+    blurb: value.blurb,
+  };
+};
+
+const parseResolvedArenaDay = (
+  storedResolution: string | undefined,
+  expectedDay: number
+): ResolvedArenaDay | undefined => {
+  if (storedResolution === undefined) return undefined;
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(storedResolution);
+  } catch {
+    throw new Error(
+      `Stored Arena resolution for day ${expectedDay} is invalid.`
+    );
+  }
+
+  if (!isRecord(parsed) || parsed.resolvedDay !== expectedDay) {
+    throw new Error(
+      `Stored Arena resolution for day ${expectedDay} is invalid.`
+    );
+  }
+
+  const champion = normalizeScribbitRecord(parsed.champion);
+  const runnerUp =
+    parsed.runnerUp === null ? null : normalizeScribbitRecord(parsed.runnerUp);
+  const resolvedForecast = parseResolutionForecast(
+    parsed.resolvedForecast,
+    expectedDay
+  );
+  const nextForecast = parseResolutionForecast(
+    parsed.nextForecast,
+    expectedDay + 1
+  );
+  const cloutPayout = parsed.cloutPayout;
+  const expired = parsed.expired;
+
+  if (
+    !champion ||
+    runnerUp === undefined ||
+    !resolvedForecast ||
+    !nextForecast ||
+    !isNonNegativeInteger(parsed.reportCount) ||
+    !isRecord(cloutPayout) ||
+    !isNonNegativeInteger(cloutPayout.championBackers) ||
+    !isNonNegativeInteger(cloutPayout.runnerUpBackers) ||
+    !isNonNegativeInteger(cloutPayout.paidBackers) ||
+    !isRecord(expired) ||
+    !isNonNegativeInteger(expired.faded) ||
+    !isNonNegativeInteger(expired.legends)
+  ) {
+    throw new Error(
+      `Stored Arena resolution for day ${expectedDay} is invalid.`
+    );
+  }
+
+  return {
+    resolvedDay: expectedDay,
+    champion,
+    runnerUp,
+    reportCount: parsed.reportCount,
+    resolvedForecast,
+    nextForecast,
+    cloutPayout: {
+      championBackers: cloutPayout.championBackers,
+      runnerUpBackers: cloutPayout.runnerUpBackers,
+      paidBackers: cloutPayout.paidBackers,
+    },
+    expired: {
+      faded: expired.faded,
+      legends: expired.legends,
+    },
+  };
 };
 
 const loadOutboxResolution = async (
@@ -279,7 +368,8 @@ const loadOutboxResolution = async (
   day: number
 ): Promise<ResolvedArenaDay | undefined> => {
   return parseResolvedArenaDay(
-    await storage.hGet(resolutionOutboxKey, day.toString())
+    await storage.hGet(resolutionOutboxKey, day.toString()),
+    day
   );
 };
 
@@ -287,12 +377,23 @@ export const loadPendingArenaResolutions = async (
   storage: ArenaStorage
 ): Promise<ResolvedArenaDay[]> => {
   const pending = await storage.hGetAll(resolutionOutboxKey);
-  return Object.values(pending)
-    .map(parseResolvedArenaDay)
-    .filter(
-      (resolution): resolution is ResolvedArenaDay => resolution !== undefined
-    )
-    .sort((left, right) => left.resolvedDay - right.resolvedDay);
+  const resolutions = Object.entries(pending).map(([dayField, value]) => {
+    if (!/^[1-9]\d*$/.test(dayField)) {
+      throw new Error(`Stored Arena resolution field ${dayField} is invalid.`);
+    }
+    const day = Number(dayField);
+    if (!Number.isSafeInteger(day)) {
+      throw new Error(`Stored Arena resolution field ${dayField} is invalid.`);
+    }
+    const resolution = parseResolvedArenaDay(value, day);
+    if (!resolution) {
+      throw new Error(`Stored Arena resolution for day ${day} is missing.`);
+    }
+    return resolution;
+  });
+  return resolutions.sort(
+    (left, right) => left.resolvedDay - right.resolvedDay
+  );
 };
 
 export const acknowledgeArenaResolution = async (
@@ -477,9 +578,24 @@ const runNightlyArenaJobCore = async (
   storage: ArenaStorage,
   options: NightlyArenaJobCoreOptions
 ): Promise<NightlyArenaJobResult> => {
+  // Validate the complete outbox before any authoritative day write. A corrupt
+  // stale field must block later days instead of being discovered only when the
+  // scheduler asks for publication payloads after resolution has advanced.
+  const pendingResolutions = await loadPendingArenaResolutions(storage);
   const now = options.now ?? new Date();
-  const previousDay = await ensureCurrentArenaDay(storage, now);
   const canonicalDay = getArenaDayNumber(now);
+  const storedDay = await loadCurrentArenaDay(storage);
+  const effectiveDay = storedDay ?? canonicalDay;
+  const latestDueResolutionDay = Math.max(effectiveDay, canonicalDay - 1);
+  const futureResolution = pendingResolutions.find(
+    (resolution) => resolution.resolvedDay > latestDueResolutionDay
+  );
+  if (futureResolution) {
+    throw new Error(
+      `Stored Arena resolution for future day ${futureResolution.resolvedDay} is invalid while the current day is ${effectiveDay}.`
+    );
+  }
+  const previousDay = await ensureCurrentArenaDay(storage, now);
 
   if (!options.force && previousDay >= canonicalDay) {
     console.log(

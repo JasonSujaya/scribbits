@@ -12,6 +12,7 @@ import {
   parseHexColor,
   type RgbColor,
 } from './coloreraser';
+import type { DrawAutomationStroke } from './drawautomation';
 
 export const CANVAS_SIZE = 512;
 
@@ -54,6 +55,7 @@ export class DrawCanvas {
 
   private drawing = false;
   private strokeChanged = false;
+  private enabled = true;
   private lastX = 0;
   private lastY = 0;
 
@@ -136,8 +138,28 @@ export class DrawCanvas {
     return this.mode === 'erase';
   }
 
+  setEnabled(enabled: boolean): void {
+    if (!enabled && this.drawing) this.endStroke();
+    this.enabled = enabled;
+    this.element.style.pointerEvents = enabled ? 'auto' : 'none';
+    this.element.style.cursor = enabled ? 'crosshair' : 'default';
+    if (enabled) return;
+    this.drawing = false;
+    this.strokeChanged = false;
+    this.activeBounds = null;
+  }
+
   clear(): void {
     this.pushHistory();
+    this.paintPaper();
+    this.onStrokeEnd('clear');
+  }
+
+  // A timed attempt that did not contain enough ink starts over completely;
+  // unlike Clear, Reset cannot be undone back into the expired round.
+  reset(): void {
+    this.releaseSnapshots(this.history);
+    this.releaseSnapshots(this.redoHistory);
     this.paintPaper();
     this.onStrokeEnd('clear');
   }
@@ -209,6 +231,65 @@ export class DrawCanvas {
     };
   }
 
+  // Local authoring automation draws into this exact backing store, then uses
+  // the same analyzer and PNG export as pointer strokes. The browser hook that
+  // calls this is restricted to localhost + explicit debug flags.
+  drawAutomationStrokes(strokes: readonly DrawAutomationStroke[]): number {
+    if (!this.enabled) return 0;
+    const validStrokes = strokes.filter(
+      (stroke) =>
+        /^#[0-9a-f]{6}$/i.test(stroke.color) &&
+        Number.isFinite(stroke.size) &&
+        stroke.size >= 1 &&
+        stroke.size <= 160 &&
+        stroke.points.length > 0 &&
+        stroke.points.every(
+          ({ x, y }) =>
+            Number.isFinite(x) &&
+            Number.isFinite(y) &&
+            x >= 0 &&
+            x <= CANVAS_SIZE &&
+            y >= 0 &&
+            y <= CANVAS_SIZE
+        )
+    );
+    if (validStrokes.length === 0) return 0;
+
+    this.pushHistory();
+    for (const stroke of validStrokes) {
+      const firstPoint = stroke.points[0];
+      if (!firstPoint) continue;
+      this.ctx.save();
+      this.ctx.globalAlpha = 1;
+      this.ctx.globalCompositeOperation = 'source-over';
+      this.ctx.lineCap = 'round';
+      this.ctx.lineJoin = 'round';
+      this.ctx.lineWidth = stroke.size;
+      this.ctx.fillStyle = stroke.color;
+      this.ctx.strokeStyle = stroke.color;
+      this.ctx.beginPath();
+      this.ctx.arc(
+        firstPoint.x,
+        firstPoint.y,
+        stroke.size / 2,
+        0,
+        Math.PI * 2
+      );
+      this.ctx.fill();
+      if (stroke.points.length > 1) {
+        this.ctx.beginPath();
+        this.ctx.moveTo(firstPoint.x, firstPoint.y);
+        for (const point of stroke.points.slice(1)) {
+          this.ctx.lineTo(point.x, point.y);
+        }
+        this.ctx.stroke();
+      }
+      this.ctx.restore();
+    }
+    this.onStrokeEnd('draw');
+    return validStrokes.length;
+  }
+
   // --- Internals ------------------------------------------------------------
 
   // Reset the backing store to a fully transparent (empty) page.
@@ -276,6 +357,7 @@ export class DrawCanvas {
   }
 
   private startStroke(event: PointerEvent): void {
+    if (!this.enabled) return;
     event.preventDefault();
     this.pushHistory();
     this.drawing = true;
@@ -305,7 +387,7 @@ export class DrawCanvas {
   }
 
   private moveStroke(event: PointerEvent): void {
-    if (!this.drawing) return;
+    if (!this.enabled || !this.drawing) return;
     event.preventDefault();
     const { x, y } = this.toCanvasCoords(event);
     if (this.mode === 'erase') {

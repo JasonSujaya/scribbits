@@ -310,6 +310,26 @@ export const GEAR_CATALOG_ENTRIES: readonly CosmeticGearCatalogEntry[] = [
     description:
       'A hand-cut rainbow crown that turns every pose into an event.',
   },
+  {
+    id: 'comet-crayon-blade',
+    kind: 'accessory',
+    rarity: 'epic',
+    name: 'COMET CRAYON BLADE',
+    label: 'Comet Blade',
+    category: 'weapon',
+    effectFamily: 'aim',
+    description: 'A blazing crayon sword that leaves a bright scribble trail.',
+  },
+  {
+    id: 'rocket-eraser-boots',
+    kind: 'accessory',
+    rarity: 'epic',
+    name: 'ROCKET ERASER BOOTS',
+    label: 'Rocket Boots',
+    category: 'shoes',
+    effectFamily: 'rush',
+    description: 'Twin eraser rockets built for very fast corrections.',
+  },
 ];
 
 // Persisted capsule receipts and drawing submissions still call these items

@@ -1,0 +1,275 @@
+{
+  "frames": {
+    "bowtie": {
+      "frame": {
+        "x": 45,
+        "y": 39,
+        "w": 127,
+        "h": 89
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 127,
+        "h": 89
+      },
+      "sourceSize": {
+        "w": 127,
+        "h": 89
+      }
+    },
+    "flower-crown": {
+      "frame": {
+        "x": 192,
+        "y": 25,
+        "w": 170,
+        "h": 111
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 170,
+        "h": 111
+      },
+      "sourceSize": {
+        "w": 170,
+        "h": 111
+      }
+    },
+    "monocle": {
+      "frame": {
+        "x": 362,
+        "y": 33,
+        "w": 141,
+        "h": 103
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 141,
+        "h": 103
+      },
+      "sourceSize": {
+        "w": 141,
+        "h": 103
+      }
+    },
+    "beanie": {
+      "frame": {
+        "x": 551,
+        "y": 33,
+        "w": 127,
+        "h": 103
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 127,
+        "h": 103
+      },
+      "sourceSize": {
+        "w": 127,
+        "h": 103
+      }
+    },
+    "round-glasses": {
+      "frame": {
+        "x": 39,
+        "y": 175,
+        "w": 142,
+        "h": 76
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 142,
+        "h": 76
+      },
+      "sourceSize": {
+        "w": 142,
+        "h": 76
+      }
+    },
+    "tiny-sword": {
+      "frame": {
+        "x": 218,
+        "y": 136,
+        "w": 141,
+        "h": 135
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 141,
+        "h": 135
+      },
+      "sourceSize": {
+        "w": 141,
+        "h": 135
+      }
+    },
+    "snail-shell-backpack": {
+      "frame": {
+        "x": 379,
+        "y": 136,
+        "w": 116,
+        "h": 130
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 116,
+        "h": 130
+      },
+      "sourceSize": {
+        "w": 116,
+        "h": 130
+      }
+    },
+    "party-hat": {
+      "frame": {
+        "x": 564,
+        "y": 151,
+        "w": 88,
+        "h": 116
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 88,
+        "h": 116
+      },
+      "sourceSize": {
+        "w": 88,
+        "h": 116
+      }
+    },
+    "mustache": {
+      "frame": {
+        "x": 36,
+        "y": 300,
+        "w": 141,
+        "h": 108
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 141,
+        "h": 108
+      },
+      "sourceSize": {
+        "w": 141,
+        "h": 108
+      }
+    },
+    "inkquake-rumble-belt": {
+      "frame": {
+        "x": 200,
+        "y": 284,
+        "w": 143,
+        "h": 95
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 143,
+        "h": 95
+      },
+      "sourceSize": {
+        "w": 143,
+        "h": 95
+      }
+    },
+    "nib-halo-headband": {
+      "frame": {
+        "x": 372,
+        "y": 272,
+        "w": 171,
+        "h": 110
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 171,
+        "h": 110
+      },
+      "sourceSize": {
+        "w": 171,
+        "h": 110
+      }
+    },
+    "smearstep-speed-scarf": {
+      "frame": {
+        "x": 543,
+        "y": 286,
+        "w": 152,
+        "h": 103
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 152,
+        "h": 103
+      },
+      "sourceSize": {
+        "w": 152,
+        "h": 103
+      }
+    },
+    "colorburst-rosette": {
+      "frame": {
+        "x": 56,
+        "y": 408,
+        "w": 106,
+        "h": 109
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 106,
+        "h": 109
+      },
+      "sourceSize": {
+        "w": 106,
+        "h": 109
+      }
+    }
+  },
+  "meta": {
+    "app": "Scribbits Gear atlas builder",
+    "version": "1",
+    "image": "gear-common-atlas.png",
+    "format": "RGBA8888",
+    "size": {
+      "w": 724,
+      "h": 544
+    },
+    "scale": "1"
+  }
+}

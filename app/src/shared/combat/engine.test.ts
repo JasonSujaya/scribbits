@@ -13,6 +13,15 @@ import {
   selectPrimaryPower,
   simulateCombat,
 } from './index';
+import {
+  COMBAT_UPGRADE_CATALOG,
+  COMBAT_UPGRADE_IDS,
+  formatCombatUpgradeEffectLines,
+  getCombatUpgradeModifiers,
+  MAXIMUM_COMBAT_UPGRADES,
+} from './upgrades';
+import type { CombatUpgradeId } from './upgrades';
+import { BATTLE_ARENA_IDS } from '../battlearena';
 import type {
   BattleTranscript,
   CombatElement,
@@ -518,6 +527,230 @@ function testSlotOrderNeutrality(): void {
   );
 }
 
+function fighterWithUpgrade(
+  upgrade: CombatUpgradeId | undefined
+): CombatFighterInput {
+  return Object.freeze({
+    ...makeFighter('mod-actor', 'chonk', 'tide'),
+    upgrades:
+      upgrade === undefined ? Object.freeze([]) : Object.freeze([upgrade]),
+  });
+}
+
+function testInkModPrimitives(): void {
+  const expectedModifiers = Object.freeze({
+    'v1-bold-tip': ['damagePermille', 1_012],
+    'v1-quick-dry': ['cooldownPermille', 988],
+    'v1-thick-paper': ['maximumHitPointsPermille', 1_010],
+    'v1-first-mark': ['initialDelayTicksDelta', -1],
+    'v1-lucky-splash': ['criticalChanceBonusPermille', 4],
+    'v1-steady-hand': ['telegraphTicksDelta', -1],
+  } as const satisfies Readonly<
+    Record<
+      CombatUpgradeId,
+      readonly [keyof ReturnType<typeof getCombatUpgradeModifiers>, number]
+    >
+  >);
+  for (const id of COMBAT_UPGRADE_IDS) {
+    const [primitive, expectedValue] = expectedModifiers[id];
+    assertEqual(
+      getCombatUpgradeModifiers([id])[primitive],
+      expectedValue,
+      `${id} must change its authored integer combat primitive`
+    );
+    assertEqual(
+      formatCombatUpgradeEffectLines([{ id }])[0],
+      `${COMBAT_UPGRADE_CATALOG[id].shortName} · ${COMBAT_UPGRADE_CATALOG[id].description}`,
+      `${id} details must reuse its exact authored effect description`
+    );
+  }
+
+  const target = makeFighter('mod-target', 'chonk', 'tide');
+  const simulate = (seed: string, upgrade?: CombatUpgradeId) =>
+    simulateCombat({ seed, fighters: [fighterWithUpgrade(upgrade), target] });
+  const timingBase = simulate('primitive-timing');
+  const firstActorEvent = (
+    transcript: BattleTranscript,
+    kind: 'ability_telegraphed' | 'ability_activated',
+    activationNumber: number
+  ) =>
+    transcript.timeline.find(
+      (event) =>
+        event.kind === kind &&
+        event.actor === 'a' &&
+        event.activationNumber === activationNumber
+    );
+
+  let boldTipIncreasedDamage = false;
+  for (let seed = 0; seed < 128 && !boldTipIncreasedDamage; seed += 1) {
+    const seedLabel = `primitive-v1-bold-tip-${seed}`;
+    const boldBase = simulate(seedLabel);
+    const bold = simulate(seedLabel, 'v1-bold-tip');
+    const baseBoldHit = boldBase.timeline.find(
+      (event) =>
+        event.kind === 'damage' &&
+        event.sourceFighter === 'a' &&
+        event.source === 'inkquake' &&
+        !event.critical
+    );
+    const boldHit = bold.timeline.find(
+      (event) =>
+        event.kind === 'damage' &&
+        event.sourceFighter === 'a' &&
+        event.source === 'inkquake' &&
+        !event.critical
+    );
+    boldTipIncreasedDamage =
+      baseBoldHit?.kind === 'damage' &&
+      boldHit?.kind === 'damage' &&
+      boldHit.amount > baseBoldHit.amount;
+  }
+  assert(
+    boldTipIncreasedDamage,
+    'Bold Tip must increase resolved integer damage'
+  );
+
+  const quickDry = simulate('primitive-timing', 'v1-quick-dry');
+  assert(
+    (firstActorEvent(quickDry, 'ability_telegraphed', 2)?.tick ?? Infinity) <
+      (firstActorEvent(timingBase, 'ability_telegraphed', 2)?.tick ??
+        -Infinity),
+    'Quick Dry must advance the second Shape Power cycle'
+  );
+
+  const thickPaper = simulate('primitive-hp', 'v1-thick-paper');
+  const baseHitPoints =
+    simulate('primitive-hp').result.fighters[0].maxHitPoints;
+  assert(
+    thickPaper.result.fighters[0].maxHitPoints > baseHitPoints,
+    'Thick Paper must increase integer maximum health'
+  );
+
+  const firstMark = simulate('primitive-timing', 'v1-first-mark');
+  assert(
+    (firstActorEvent(firstMark, 'ability_telegraphed', 1)?.tick ?? Infinity) <
+      (firstActorEvent(timingBase, 'ability_telegraphed', 1)?.tick ??
+        -Infinity),
+    'First Mark must advance the first Shape Power start'
+  );
+
+  let luckySplashCreatedCritical = false;
+  for (let seed = 0; seed < 128 && !luckySplashCreatedCritical; seed += 1) {
+    const seedLabel = `primitive-v1-lucky-splash-${seed}`;
+    const base = simulate(seedLabel);
+    const lucky = simulate(seedLabel, 'v1-lucky-splash');
+    luckySplashCreatedCritical = lucky.timeline.some((event) => {
+      if (
+        event.kind !== 'damage' ||
+        event.sourceFighter !== 'a' ||
+        !event.critical
+      ) {
+        return false;
+      }
+      return base.timeline.some(
+        (baseEvent) =>
+          baseEvent.kind === 'damage' &&
+          baseEvent.sourceFighter === 'a' &&
+          baseEvent.source === event.source &&
+          baseEvent.tick === event.tick &&
+          !baseEvent.critical
+      );
+    });
+  }
+  assert(
+    luckySplashCreatedCritical,
+    'Lucky Splash must convert a deterministic non-critical hit into a critical hit'
+  );
+
+  const steadyHand = simulate('primitive-timing', 'v1-steady-hand');
+  assert(
+    (firstActorEvent(steadyHand, 'ability_activated', 1)?.tick ?? Infinity) <
+      (firstActorEvent(timingBase, 'ability_activated', 1)?.tick ?? -Infinity),
+    'Steady Hand must shorten the first Shape Power wind-up'
+  );
+}
+
+function chooseInkModLoadouts(
+  count: number,
+  startIndex = 0,
+  prefix: readonly CombatUpgradeId[] = []
+): readonly (readonly CombatUpgradeId[])[] {
+  if (count === 0) return [prefix];
+  return COMBAT_UPGRADE_IDS.slice(startIndex).flatMap((id, offset) =>
+    chooseInkModLoadouts(count - 1, startIndex + offset + 1, [...prefix, id])
+  );
+}
+
+function testBoundedInkModAggregate(): void {
+  const dominantStats: readonly DominantStat[] = [
+    'chonk',
+    'spike',
+    'zip',
+    'charm',
+  ];
+  const elements: readonly CombatElement[] = ['ember', 'tide', 'moss', 'storm'];
+  const fullLoadouts = chooseInkModLoadouts(MAXIMUM_COMBAT_UPGRADES);
+  const configurations: readonly (readonly CombatUpgradeId[])[] = [
+    ...COMBAT_UPGRADE_IDS.map((id) => Object.freeze([id])),
+    ...fullLoadouts,
+  ];
+
+  for (const upgrades of configurations) {
+    let baseWins = 0;
+    let upgradedWins = 0;
+    let fightCount = 0;
+    for (const dominantStat of dominantStats) {
+      for (const element of elements) {
+        for (const battleArenaId of BATTLE_ARENA_IDS) {
+          for (const swapSlots of [false, true]) {
+            const subject = makeFighter(
+              'ink-mod-subject',
+              dominantStat,
+              element
+            );
+            const rival = makeFighter('ink-mod-rival', dominantStat, element);
+            const upgradedSubject = Object.freeze({
+              ...subject,
+              upgrades: Object.freeze([...upgrades]),
+            });
+            const seed = `ink-mod-balance:${dominantStat}:${element}:${battleArenaId}`;
+            const baseTranscript = simulateCombat({
+              seed,
+              battleArenaId,
+              fighters: swapSlots ? [rival, subject] : [subject, rival],
+            });
+            const upgradedTranscript = simulateCombat({
+              seed,
+              battleArenaId,
+              fighters: swapSlots
+                ? [rival, upgradedSubject]
+                : [upgradedSubject, rival],
+            });
+            const subjectSlot = swapSlots ? 'b' : 'a';
+            if (baseTranscript.result.winner === subjectSlot) baseWins += 1;
+            if (upgradedTranscript.result.winner === subjectSlot) {
+              upgradedWins += 1;
+            }
+            fightCount += 1;
+          }
+        }
+      }
+    }
+
+    const permittedSamplingDrift = Math.ceil(fightCount * 0.02);
+    assert(
+      upgradedWins + permittedSamplingDrift >= baseWins,
+      `${upgrades.join(',')} must stay within two points of mirrored neutral; base ${baseWins}/${fightCount}, upgraded ${upgradedWins}/${fightCount}`
+    );
+    if (upgrades.length === MAXIMUM_COMBAT_UPGRADES) {
+      assert(
+        upgradedWins <= fightCount * 0.6,
+        `${upgrades.join(',')} must preserve the 60% ceiling; won ${upgradedWins}/${fightCount}`
+      );
+    }
+  }
+}
+
 /** Runs without a test framework so server and client build environments can use it. */
 export function runCombatEngineTests(): readonly string[] {
   testDomainSeparatedRandomness();
@@ -529,6 +762,8 @@ export function runCombatEngineTests(): readonly string[] {
   testPrimaryPowerBalance();
   testPrimaryPowerDurationMatrix();
   testSlotOrderNeutrality();
+  testInkModPrimitives();
+  testBoundedInkModAggregate();
 
   return Object.freeze([
     'domain-separated randomness',
@@ -540,5 +775,7 @@ export function runCombatEngineTests(): readonly string[] {
     'primary-power matchup balance',
     'ten-matchup replay duration matrix',
     'slot-order neutrality',
+    'six measurable Ink Mod primitives',
+    'bounded mirrored Ink Mod aggregate',
   ]);
 }

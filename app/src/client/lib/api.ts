@@ -201,8 +201,8 @@ export function fetchSparRivals(
   return getJson<SparRivalSlate>(`/api/spar-rivals?${query.toString()}`);
 }
 
-// Exhibition spar vs a server-approved founding NPC. Unlimited; xp only on the
-// first daily win. Omitting opponentId preserves the server-random quick path.
+// Exhibition spar vs a server-approved founding NPC. Player-facing scenes pass
+// an explicit Rival Run choice; omitted opponentId is compatibility-only.
 export function spar(
   scribbitId: string,
   opponentId?: string,

@@ -14,6 +14,11 @@ export {
   PRIMARY_POWER_BY_DOMINANT_STAT,
 } from './config';
 export { getOrbitingNibPosition, simulateCombat } from './engine';
+export {
+  freezeGearCombatSnapshot,
+  isGearCombatModifiers,
+  isGearCombatSnapshot,
+} from './gearsnapshot';
 export { selectDominantStat, selectPrimaryPower } from './selection';
 export { battleResultFinishIsConsistent } from './resultvalidation';
 export {

@@ -38,7 +38,7 @@
   position: relative;
   width: 100%;
   max-width: 420px;
-  padding: 30px 26px 24px;
+  padding: 28px 24px 24px;
   text-align: center;
   color: #2b2016;
   /* Cream sketchbook paper with faint grain. */
@@ -48,6 +48,17 @@
   border: 3px solid #2b2016;
   border-radius: 22px;
   box-shadow: 0 10px 0 rgba(0, 0, 0, 0.35), 0 18px 40px rgba(0, 0, 0, 0.4);
+  isolation: isolate;
+}
+
+.page::before {
+  content: "";
+  position: absolute;
+  inset: 8px;
+  z-index: -1;
+  pointer-events: none;
+  border: 1.5px dashed rgba(90, 74, 54, 0.18);
+  border-radius: 16px 20px 15px 22px;
 }
 
 /* Washi-tape corners. */
@@ -72,30 +83,26 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 10px;
-  margin-top: 4px;
+  margin-top: 0;
 }
 
 .logo {
-  font-size: clamp(2.4rem, 13vw, 3.4rem);
-  font-weight: 700;
-  letter-spacing: 0.02em;
-  color: #2b2016;
-  transform: rotate(-1.5deg);
-  text-shadow: 3px 3px 0 #ff6b4a;
+  width: 100%;
+  line-height: 0;
 }
 
-.sub {
-  font-size: clamp(1rem, 5vw, 1.4rem);
-  font-weight: 700;
-  letter-spacing: 0.3em;
-  color: #ff6b4a;
-  transform: rotate(1deg);
-  margin-top: -2px;
+.logo-image {
+  display: block;
+  width: 100%;
+  max-width: 360px;
+  height: auto;
+  margin: 0 auto;
+  transform-origin: 28% 58%;
+  animation: logo-settle 620ms cubic-bezier(0.2, 0.9, 0.25, 1.15) both;
 }
 
 .tagline {
-  margin-top: 14px;
+  margin-top: 8px;
   font-size: clamp(0.95rem, 4.2vw, 1.1rem);
   font-weight: 400;
   color: #5a4a36;
@@ -106,36 +113,106 @@
   color: #2b2016;
 }
 
-.forecast {
-  margin: 16px auto 0;
+.scribbit-showcase {
+  margin: 17px auto 0;
   max-width: 340px;
-  padding: 10px 14px;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  justify-content: center;
-  background: #fff7e8;
-  border: 2.5px solid #2b2016;
-  border-radius: 14px;
-  transform: rotate(-0.6deg);
-}
-.fc-text {
-  font-size: 0.9rem;
-  font-weight: 700;
-  color: #b06a1a;
-  line-height: 1.3;
-  text-align: left;
+  padding: 9px 9px 10px;
+  background: #f1d38b;
+  border: 3px solid #2b2016;
+  border-radius: 16px 13px 17px 14px;
+  box-shadow: 3px 4px 0 rgba(43, 32, 22, 0.16);
+  transform: rotate(0.45deg);
 }
 
-.today-status {
-  margin-top: 12px;
-  color: #5a4a36;
-  font-size: 0.82rem;
+.showcase-label {
+  display: block;
+  margin-bottom: 7px;
+  color: #2b2016;
+  font-size: 0.68rem;
   font-weight: 700;
+  letter-spacing: 0.13em;
+}
+
+.showcase-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.showcase-card {
+  position: relative;
+  min-width: 0;
+  padding: 7px 5px 6px;
+  background: #fff7e8;
+  border: 2px solid #2b2016;
+  border-radius: 9px 12px 8px 11px;
+  box-shadow: 2px 3px 0 rgba(43, 32, 22, 0.14);
+}
+
+.showcase-card:nth-child(1) {
+  transform: rotate(-1.2deg);
+}
+
+.showcase-card:nth-child(2) {
+  transform: translateY(-2px) rotate(0.5deg);
+}
+
+.showcase-card:nth-child(3) {
+  transform: rotate(1.1deg);
+}
+
+.showcase-image {
+  display: block;
+  width: 100%;
+  height: 68px;
+  object-fit: contain;
+  filter: drop-shadow(1px 2px 0 rgba(43, 32, 22, 0.12));
+}
+
+.showcase-name {
+  display: block;
+  margin-top: 3px;
+  overflow: hidden;
+  color: #2b2016;
+  font-size: 0.61rem;
+  font-weight: 700;
+  line-height: 1.1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.showcase-artist {
+  display: block;
+  margin-top: 3px;
+  overflow: hidden;
+  color: #8b4c31;
+  font-size: 0.46rem;
+  font-weight: 700;
+  line-height: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@keyframes logo-settle {
+  0% {
+    opacity: 0;
+    transform: translateY(11px) rotate(-1.8deg) scale(0.94);
+  }
+  55% {
+    opacity: 1;
+    transform: translateY(-1px) rotate(1deg) scale(1.025);
+  }
+  76% {
+    transform: translateY(0) rotate(-0.45deg) scale(0.995);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) rotate(0deg) scale(1);
+  }
 }
 
 .start-button {
-  margin-top: 14px;
+  margin-top: 12px;
   width: 100%;
   max-width: 320px;
   background: transparent url("./assets/ui-button-primary.png") center / 100% 100%
@@ -166,7 +243,35 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .logo-image,
   .start-button {
+    animation: none;
     transition: none;
+  }
+}
+
+@media (max-width: 340px) {
+  .app {
+    padding: 12px;
+  }
+
+  .page {
+    padding: 24px 18px 20px;
+  }
+
+  .scribbit-showcase {
+    padding-inline: 7px;
+  }
+
+  .showcase-grid {
+    gap: 5px;
+  }
+
+  .showcase-image {
+    height: 60px;
+  }
+
+  .showcase-name {
+    font-size: 0.56rem;
   }
 }

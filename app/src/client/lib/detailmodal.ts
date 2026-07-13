@@ -7,7 +7,7 @@
 import * as Phaser from 'phaser';
 import { Scene } from 'phaser';
 import type { Scribbit } from '../../shared/arena';
-import { formatCombatUpgradeSummary } from '../../shared/combat/upgrades';
+import { formatCombatUpgradeEffectLines } from '../../shared/combat/upgrades';
 import {
   believe as believeApi,
   removeScribbit as removeScribbitApi,
@@ -77,11 +77,15 @@ export function openDetailModal(
   const reduceMotion = prefersReducedMotion();
   const mood = moodStyleOf(scribbit);
   const daysLeft = daysLeftFor(scribbit, opts.currentDay);
+  const upgradeEffectLines = formatCombatUpgradeEffectLines(
+    scribbit.upgrades,
+    'none yet'
+  );
   const semanticDescription = [
     `${scribbit.name} by u/${scribbit.artist}.`,
     `${scribbit.element} Scribbit, level ${levelOf(scribbit)}, ${mood.label.toLowerCase()}.`,
     `${recordText(scribbit)}, ${scribbit.belief} belief.`,
-    `Ink Mods: ${formatCombatUpgradeSummary(scribbit.upgrades, 'none yet')}.`,
+    `Ink Mods: ${upgradeEffectLines.join('; ')}.`,
     scribbit.status === 'alive'
       ? `${daysLeft} ${daysLeft === 1 ? 'day' : 'days'} left.`
       : `${scribbit.status} record.`,
@@ -240,27 +244,52 @@ export function openDetailModal(
   card.add(xpBar.container);
   xpBar.set(xpProgress(scribbit), true);
 
-  cursor += 30;
-  const upgradeSummary = formatCombatUpgradeSummary(
-    scribbit.upgrades,
-    'NEXT INK MOD AT LV2'
+  cursor += 24;
+  card.add(
+    label(
+      scene,
+      -cardW / 2 + 40,
+      cursor,
+      'INK MODS',
+      TYPE.caption,
+      UI.coralText,
+      true
+    ).setOrigin(0, 0.5)
   );
-  const upgradeLabel = label(
-    scene,
-    0,
-    cursor,
-    upgradeSummary,
-    TYPE.caption,
-    UI.coralText,
-    true
-  );
-  if (upgradeLabel.width > cardW - 80) {
-    upgradeLabel.setScale((cardW - 80) / upgradeLabel.width);
+  if (scribbit.upgrades.length > 0) {
+    const upgradeLabel = label(
+      scene,
+      -cardW / 2 + 40,
+      cursor + 15,
+      upgradeEffectLines.join('\n'),
+      TYPE.caption * 0.88,
+      UI.inkSoft,
+      false
+    )
+      .setOrigin(0, 0)
+      .setAlign('left')
+      .setLineSpacing(2);
+    if (upgradeLabel.width > cardW - 80) {
+      upgradeLabel.setScale((cardW - 80) / upgradeLabel.width);
+    }
+    card.add(upgradeLabel);
+    cursor += 15 + upgradeLabel.displayHeight + 14;
+  } else {
+    card.add(
+      label(
+        scene,
+        cardW / 2 - 40,
+        cursor,
+        'NEXT AT LV2',
+        TYPE.caption,
+        UI.inkSoft,
+        true
+      ).setOrigin(1, 0.5)
+    );
+    cursor += 34;
   }
-  card.add(upgradeLabel);
 
   // --- 2x2 stat grid --------------------------------------------------------
-  cursor += 40;
   const grid = statGrid(scene, 0, cursor + 60, cardW - 80, 130);
   grid.setStats(scribbit.stats, true);
   card.add(grid.container);

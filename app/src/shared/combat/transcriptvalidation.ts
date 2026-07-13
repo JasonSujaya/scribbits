@@ -10,11 +10,9 @@ import {
   MAXIMUM_TIMELINE_EVENTS,
 } from './config';
 import { battleResultFinishIsConsistent } from './resultvalidation';
+import { isGearCombatSnapshot } from './gearsnapshot';
 import { isShapePowerId } from './shapepowercontent';
-import {
-  isCombatUpgradeId,
-  MAXIMUM_COMBAT_UPGRADES,
-} from './upgrades';
+import { isCombatUpgradeId, MAXIMUM_COMBAT_UPGRADES } from './upgrades';
 import type {
   AbilityPhase,
   BattleCheckpoint,
@@ -149,9 +147,7 @@ const barrierHitSourceMetadataIsUsable = (
   );
 };
 
-type TimelineEventFieldValidator = (
-  value: Record<string, unknown>
-) => boolean;
+type TimelineEventFieldValidator = (value: Record<string, unknown>) => boolean;
 
 const TIMELINE_EVENT_FIELD_VALIDATORS = {
   battle_started: (value) => isNonEmptyText(value.battleId, 240),
@@ -261,7 +257,7 @@ const isTimelineEvent = (
 
 const transcriptUpgradesAreUsable = (
   value: unknown,
-  version: 1 | 2
+  version: 1 | 2 | 3
 ): boolean => {
   if (version === 1) return value === undefined;
   return (
@@ -272,14 +268,20 @@ const transcriptUpgradesAreUsable = (
   );
 };
 
-const transcriptDamageModifierIsUsable = (
-  value: unknown
+const transcriptGearIsUsable = (
+  value: unknown,
+  version: 1 | 2 | 3
 ): boolean => {
+  if (version < 3) return value === undefined;
+  return value === undefined || isGearCombatSnapshot(value);
+};
+
+const transcriptDamageModifierIsUsable = (value: unknown): boolean => {
   if (value === undefined) return true;
   return isBoundedInteger(value, 850, 1_250);
 };
 
-const isTranscriptFighter = (value: unknown, version: 1 | 2): boolean => {
+const isTranscriptFighter = (value: unknown, version: 1 | 2 | 3): boolean => {
   if (!isRecord(value) || !isRecord(value.stats)) return false;
   return (
     isNonEmptyText(value.id, 120) &&
@@ -290,7 +292,8 @@ const isTranscriptFighter = (value: unknown, version: 1 | 2): boolean => {
     isBoundedInteger(value.stats.zip, 0, 1_000) &&
     isBoundedInteger(value.stats.charm, 0, 1_000) &&
     transcriptUpgradesAreUsable(value.upgrades, version) &&
-    transcriptDamageModifierIsUsable(value.damageModifierPermille)
+    transcriptDamageModifierIsUsable(value.damageModifierPermille) &&
+    transcriptGearIsUsable(value.gear, version)
   );
 };
 
@@ -482,7 +485,7 @@ export function parseBattleTranscript(
 ): BattleTranscript | undefined {
   if (
     !isRecord(value) ||
-    (value.version !== 1 && value.version !== 2) ||
+    (value.version !== 1 && value.version !== 2 && value.version !== 3) ||
     value.tickRate !== COMBAT_TICK_RATE ||
     value.fixedPointScale !== FIXED_POINT_SCALE ||
     value.maxTicks !== COMBAT_MAXIMUM_TICKS ||
@@ -508,6 +511,9 @@ export function parseBattleTranscript(
     typeof fighterA.id !== 'string' ||
     typeof fighterB.id !== 'string' ||
     fighterA.id === fighterB.id ||
+    (version === 3 &&
+      fighterA.gear === undefined &&
+      fighterB.gear === undefined) ||
     !transcriptResultIsUsable(value.result, fighterA.id, fighterB.id)
   ) {
     return undefined;

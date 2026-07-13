@@ -76,7 +76,7 @@ on one exercise.
 ## Judging story
 
 - **Delightful UX:** feed card identifies the next action; new players start on
-  the canvas with one of 32 optional Doodle Dares, an expressive bonus twist,
+  the canvas with the shared three-day theme from a one-year calendar, an expressive bonus twist,
   and the clear promise
   “draw → watch it fight → earn Ink”; forming/ready feedback explains every
   stroke; the first submission immediately fights; returning players first see
@@ -184,9 +184,11 @@ on one exercise.
 - Replaced the earlier catch/collection direction with the current daily
   draw-to-stats Rumble loop.
 - Added deterministic server-side PNG analysis and fair stat normalization.
-- Added 32 optional daily Doodle Dares, balanced eight per Shape Power, plus
-  eight reward-free twists. The versioned schedule covers every prompt before
-  repeating and produces 256 distinct cards. Progressive blank/forming/ready
+- Added 122 authored community drawing themes covering 366 Arena days.
+  One theme is shared by every player for three days, new Scribbits retain its
+  immutable category id, and append-only versioned seasons extend the schedule
+  without moving published days. The Rumble picker groups community creations
+  beneath the theme name. Progressive blank/forming/ready
   feedback and a shared client/server minimum-body gate reject tap-sized submissions.
 - Added 32 validated public forecast blurbs on an independent no-repeat rotation.
   App, Reddit post, result comment, and browser mock share that copy without

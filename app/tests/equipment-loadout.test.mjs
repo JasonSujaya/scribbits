@@ -329,6 +329,61 @@ test('equip recovers an EXEC reply loss and an exact retry stays idempotent', as
   );
 });
 
+test('a forged rank refreshes every living Scribbit wearing reusable Gear', async () => {
+  const memory = createMemoryStorage();
+  const userId = 'forge-rank-player';
+  await discoverGear(memory.storage, userId, 'tiny-sword');
+  const createEquippedScribbit = async (id) => {
+    const scribbit = scribbitStore.createScribbit({
+      id,
+      draft: {
+        name: id,
+        element: 'storm',
+        stats: { chonk: 25, spike: 25, zip: 25, charm: 25 },
+        accessories: [],
+      },
+      artist: userId,
+      imageUrl: `/api/drawing/${id}`,
+      day: 4,
+    });
+    await scribbitStore.storeScribbit(memory.storage, userId, scribbit);
+    const equipped = await scribbitStore.equipGearForScribbit(
+      memory.storage,
+      userId,
+      {
+        scribbitId: id,
+        category: 'weapon',
+        slotIndex: 0,
+        gearId: 'tiny-sword',
+      }
+    );
+    assert.equal(equipped.status, 'updated');
+  };
+  await createEquippedScribbit('forge-rank-one');
+  await createEquippedScribbit('forge-rank-two');
+
+  await scribbitStore.refreshEquippedGearRankForUser(
+    memory.storage,
+    userId,
+    'tiny-sword',
+    3
+  );
+  await scribbitStore.refreshEquippedGearRankForUser(
+    memory.storage,
+    userId,
+    'tiny-sword',
+    3
+  );
+
+  for (const scribbitId of ['forge-rank-one', 'forge-rank-two']) {
+    const refreshed = await scribbitStore.loadScribbit(
+      memory.storage,
+      scribbitId
+    );
+    assert.equal(refreshed?.gearRanks['tiny-sword'], 3);
+  }
+});
+
 test('expiry retains the Scribbit embedded equipment loadout', () => {
   const livingScribbit = scribbitStore.parseScribbit(
     JSON.stringify(createOldStoredScribbit({ id: 'expiring-loadout-scribbit' }))
@@ -355,4 +410,9 @@ test('the production API exposes the exact equip Gear route contract', async () 
   assert.match(apiSource, /api\.post\('\/equip-gear'/);
   assert.match(apiSource, /const readEquipGearRequest/);
   assert.match(apiSource, /return c\.json<Scribbit>\(result\.scribbit\)/);
+  assert.match(
+    apiSource,
+    /await refreshEquippedGearRankForUser\([\s\S]*?result\.response\.toRank[\s\S]*?\);/,
+    'the forge route must durably refresh every equipped Scribbit before replying'
+  );
 });

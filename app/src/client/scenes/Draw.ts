@@ -1,15 +1,15 @@
 import * as Phaser from 'phaser';
 import { Scene } from 'phaser';
 import { showToast } from '@devvit/web/client';
-import { practiceBattle, submitScribbit, fetchArena, spar } from '../lib/api';
+import { practiceBattle, submitScribbit, fetchArena } from '../lib/api';
 import {
   getArena,
+  getArenaRevision,
   endPracticeSession,
   getPracticeSession,
   recordPracticePower,
   setArena,
   setReplay,
-  stageDirectBattle,
 } from '../lib/registry';
 import { analyze, hasMinimumDrawingInk } from '../lib/analyzer';
 import type { AnalyzerResult } from '../lib/analyzer';
@@ -21,9 +21,9 @@ import {
   DOM_TYPE,
   FONT_STACK,
   MIN_TOUCH,
+  NAV_SAFE,
   prefersReducedMotion,
   STAT_STYLES,
-  TYPE,
   UI,
 } from '../lib/theme';
 import { paperIcon, paperStatIcon, paperToolIcon } from '../lib/papericons';
@@ -44,9 +44,11 @@ import {
   planShapeReceipt,
 } from '../../shared/combat/shapepowercontent';
 import {
-  selectDailyDoodleDare,
-  selectDailyDoodleDareTwist,
-} from '../../shared/content/doodledares';
+  COMMUNITY_DRAW_THEME_DAYS,
+  selectCommunityDoodleDare,
+} from '../../shared/content/communitydrawthemes';
+import type { CommunityDrawTheme } from '../../shared/content/communitydrawthemes';
+import { selectDailyDoodleDareTwist } from '../../shared/content/doodledares';
 import type { DoodleDare } from '../../shared/content/doodledares';
 import {
   PRACTICE_HEADER_TITLE,
@@ -88,6 +90,21 @@ import {
   type CosmeticBrushEffect,
   type CosmeticDrawingInkCatalogEntry,
 } from '../../shared/cosmetics';
+import {
+  createDrawRoundClock,
+  expireDrawRoundClock,
+  getDrawRoundUrgencyMotion,
+  pauseDrawRoundClock,
+  readDrawRoundClock,
+  startDrawRoundClock,
+  type DrawRoundClock,
+} from '../lib/drawroundclock';
+import {
+  isLocalDrawAutomationMode,
+  type DrawAutomationStroke,
+} from '../lib/drawautomation';
+import { planSceneMutationResponse } from '../lib/arenaasynclifecycle';
+import { openRivalRun, type RivalRunFlow } from '../lib/rivalrunflow';
 
 const DRAW_HEADER_TITLE = 'DRAW';
 
@@ -123,6 +140,9 @@ type AnalyzerWorkerResponse = Readonly<{
   requestId: number;
   result: AnalyzerResult;
 }>;
+const isPracticeDoodleDare = (
+  dare: DoodleDare | CommunityDrawTheme
+): dare is DoodleDare => 'suggestedPower' in dare;
 type SubmissionDraft = Readonly<{
   result: AnalyzerResult;
   accessories: AttachedAccessory[];
@@ -144,6 +164,18 @@ type PaintChoice =
       entry: CosmeticDrawingInkCatalogEntry;
       charges: number;
     }>;
+
+type LocalDrawAutomationApi = Readonly<{
+  reset: () => boolean;
+  draw: (strokes: readonly DrawAutomationStroke[]) => number;
+  exportPng: () => string;
+}>;
+
+type LocalDrawAutomationWindow = Window &
+  typeof globalThis & {
+    __scribbitsMockDrawAutomation?: boolean;
+    scribbitsDrawAutomation?: LocalDrawAutomationApi;
+  };
 
 export class Draw extends Scene {
   private overlay!: DomOverlay;
@@ -203,6 +235,28 @@ export class Draw extends Scene {
   >();
   private submitButton: Phaser.GameObjects.Container | null = null;
   private creationControlsReady: boolean | null = null;
+  private drawingControlContainers: Phaser.GameObjects.Container[] = [];
+  private drawingNativeControls: HTMLButtonElement[] = [];
+  private basicToolContainers: Phaser.GameObjects.Container[] = [];
+  private advancedToolContainers: Phaser.GameObjects.Container[] = [];
+  private basicToolNativeControls: HTMLButtonElement[] = [];
+  private advancedToolNativeControls: HTMLButtonElement[] = [];
+  private moreToolsButton: Phaser.GameObjects.Container | null = null;
+  private moreToolsControl: HTMLButtonElement | null = null;
+  private advancedToolBadge: Phaser.GameObjects.Arc | null = null;
+  private advancedToolsOpen = false;
+  private drawingLocked = false;
+  private drawRoundClock: DrawRoundClock = createDrawRoundClock();
+  private drawRoundTimerEvent: Phaser.Time.TimerEvent | null = null;
+  private drawTimerContainer: Phaser.GameObjects.Container | null = null;
+  private drawTimerBackground: Phaser.GameObjects.Graphics | null = null;
+  private drawTimerValue: Phaser.GameObjects.Text | null = null;
+  private drawTimerStatus: HTMLElement | null = null;
+  private displayedDrawSeconds: number | null = null;
+  private lastDrawTimerShakeMilliseconds = 0;
+  private drawTimerShakeDirection = 1;
+  private preStartShade: Phaser.GameObjects.Graphics | null = null;
+  private drawStartControl: HTMLButtonElement | null = null;
 
   private resizeHandler = (): void => {
     this.overlay?.sync();
@@ -217,27 +271,46 @@ export class Draw extends Scene {
   private previewTimer: Phaser.Time.TimerEvent | null = null;
   private analysisWorker: Worker | null = null;
   private analysisRequestId = 0;
+  private stickerInventoryRequestEpoch = 0;
   private startFightAfterBirth = false;
   private birthContinuationStarted = false;
   private canvasDareOverlay: HTMLDivElement | null = null;
-  private dailyDare: DoodleDare | null = null;
+  private dailyDare: DoodleDare | CommunityDrawTheme | null = null;
   private dailyDareTwist: string | null = null;
   private isFirstScribbit = false;
   private practiceMode = false;
+  private automationMode = false;
   private practicePowers: PrimaryPower[] = [];
   private practiceAttemptCount = 0;
   private pendingPracticeReport: BattleReport | null = null;
+  private rivalRunFlow: RivalRunFlow | null = null;
+  private localAutomationBridge: HTMLDivElement | null = null;
+  private sceneVisitEpoch = 0;
+  private arenaReconciliationEpoch = 0;
 
   constructor() {
     super('Draw');
   }
 
   init(data?: unknown): void {
+    this.sceneVisitEpoch += 1;
     this.practiceMode =
       typeof data === 'object' &&
       data !== null &&
       'mode' in data &&
       data.mode === 'practice';
+    const automationWindow = window as LocalDrawAutomationWindow;
+    const requestedAutomationMode =
+      typeof data === 'object' &&
+      data !== null &&
+      'mode' in data &&
+      data.mode === 'automation';
+    this.automationMode =
+      requestedAutomationMode &&
+      isLocalDrawAutomationMode(
+        window.location,
+        automationWindow.__scribbitsMockDrawAutomation === true
+      );
     this.lastResult = null;
     this.selectedColorIndex = 0;
     this.paletteSwatches = [];
@@ -279,6 +352,28 @@ export class Draw extends Scene {
     this.liveStatCards = new Map();
     this.submitButton = null;
     this.creationControlsReady = null;
+    this.drawingControlContainers = [];
+    this.drawingNativeControls = [];
+    this.basicToolContainers = [];
+    this.advancedToolContainers = [];
+    this.basicToolNativeControls = [];
+    this.advancedToolNativeControls = [];
+    this.moreToolsButton = null;
+    this.moreToolsControl = null;
+    this.advancedToolBadge = null;
+    this.advancedToolsOpen = false;
+    this.drawingLocked = false;
+    this.drawRoundClock = createDrawRoundClock();
+    this.drawRoundTimerEvent = null;
+    this.drawTimerContainer = null;
+    this.drawTimerBackground = null;
+    this.drawTimerValue = null;
+    this.drawTimerStatus = null;
+    this.displayedDrawSeconds = null;
+    this.lastDrawTimerShakeMilliseconds = 0;
+    this.drawTimerShakeDirection = 1;
+    this.preStartShade = null;
+    this.drawStartControl = null;
     this.submitting = false;
     this.errorPanelRef = null;
     this.livingPaper = null;
@@ -297,6 +392,8 @@ export class Draw extends Scene {
     this.practicePowers = [];
     this.practiceAttemptCount = 0;
     this.pendingPracticeReport = null;
+    this.rivalRunFlow = null;
+    this.localAutomationBridge = null;
     this.drawConfirmation = null;
     this.draftName = '';
     this.headerControlOverlay = null;
@@ -342,7 +439,7 @@ export class Draw extends Scene {
           arena.myUsername,
           this.practiceAttemptCount
         )
-      : selectDailyDoodleDare(arena.dayNumber, arena.myUsername);
+      : selectCommunityDoodleDare(arena.dayNumber);
     this.dailyDareTwist = selectDailyDoodleDareTwist(
       arena.dayNumber + (this.practiceMode ? this.practiceAttemptCount : 0),
       arena.myUsername
@@ -364,6 +461,7 @@ export class Draw extends Scene {
     });
     this.buildChrome();
     this.buildOverlay();
+    this.installLocalDrawAutomationApi();
     this.buildSubmitControl();
     this.orderDrawingOverlays();
     this.startAnalyzerWorker();
@@ -380,6 +478,8 @@ export class Draw extends Scene {
   }
 
   private cleanup(): void {
+    this.sceneVisitEpoch += 1;
+    this.removeLocalDrawAutomationApi();
     window.removeEventListener('resize', this.resizeHandler);
     window.visualViewport?.removeEventListener(
       'resize',
@@ -387,6 +487,8 @@ export class Draw extends Scene {
     );
     this.previewTimer?.remove();
     this.previewTimer = null;
+    this.drawRoundTimerEvent?.remove();
+    this.drawRoundTimerEvent = null;
     this.analysisWorker?.terminate();
     this.analysisWorker = null;
     this.canvas?.destroy();
@@ -401,6 +503,8 @@ export class Draw extends Scene {
     this.submitOverlay = null;
     this.revealControlOverlay?.destroy();
     this.revealControlOverlay = null;
+    this.rivalRunFlow?.destroy();
+    this.rivalRunFlow = null;
     this.submitControl = null;
     this.livingPaper?.destroy();
     this.livingPaper = null;
@@ -445,7 +549,7 @@ export class Draw extends Scene {
     const square = Draw.CANVAS_SQUARE;
     return {
       x: this.scale.width / 2 - square / 2,
-      y: Draw.CANVAS_CENTER_Y - square / 2,
+      y: this.canvasCenterY() - square / 2,
       width: square,
       height: square,
     };
@@ -458,8 +562,17 @@ export class Draw extends Scene {
   }
 
   private async refreshStickerInventory(): Promise<void> {
+    const sceneVisitEpoch = this.sceneVisitEpoch;
+    const requestEpoch = this.stickerInventoryRequestEpoch + 1;
+    this.stickerInventoryRequestEpoch = requestEpoch;
     const result = await fetchInventory();
-    if (!this.scene.isActive() || this.submitting) return;
+    if (
+      !this.isCurrentSceneVisit(sceneVisitEpoch) ||
+      requestEpoch !== this.stickerInventoryRequestEpoch ||
+      this.submitting
+    ) {
+      return;
+    }
 
     const items = result.ok ? result.data.items : {};
 
@@ -472,8 +585,11 @@ export class Draw extends Scene {
     this.stickers = new StickerAttach(this, {
       items,
       canvasRect: this.canvasRect(),
-      onChange: () => this.updateStickerButton(),
+      onChange: () => {
+        this.updateStickerButton();
+      },
     });
+    this.stickers.setEnabled(this.isDrawingInputActive());
     this.updateStickerButton();
   }
   private updateStickerButton(): void {
@@ -482,7 +598,7 @@ export class Draw extends Scene {
   }
 
   private toggleStickerDrawer(): void {
-    if (!this.stickers) return;
+    if (!this.isDrawingInputActive() || !this.stickers) return;
     if (!this.stickers.hasAnyOwned()) {
       showToast(
         'Win accessories from the capsule machine to sticker your scribbit!'
@@ -492,7 +608,7 @@ export class Draw extends Scene {
     this.drawerOpen = !this.drawerOpen;
     if (this.drawerOpen)
       this.stickers.openDrawer(
-        Draw.CANVAS_CENTER_Y + Draw.CANVAS_SQUARE / 2 + 96
+        this.canvasCenterY() + Draw.CANVAS_SQUARE / 2 + 96
       );
     else this.stickers.closeDrawer();
   }
@@ -517,12 +633,30 @@ export class Draw extends Scene {
   private static readonly CANVAS_SQUARE = 620;
   private static readonly LIVE_STATS_Y = 792;
   private static readonly TOOLS_Y = 986;
-  private static readonly OFFICIAL_SUBMIT_Y = 1222;
-  private static readonly PRACTICE_PROGRESS_Y = 1152;
-  private static readonly PRACTICE_SUBMIT_Y = 1222;
+  private static readonly SUBMIT_Y = 1222;
+
+  private verticalLayoutSlack(): number {
+    return Math.max(0, this.scale.height - 1280);
+  }
+
+  private canvasCenterY(): number {
+    return Math.round(Draw.CANVAS_CENTER_Y + this.verticalLayoutSlack() * 0.15);
+  }
+
+  private liveStatsY(): number {
+    return Math.round(Draw.LIVE_STATS_Y + this.verticalLayoutSlack() * 0.36);
+  }
+
+  private toolsY(): number {
+    return Math.round(Draw.TOOLS_Y + this.verticalLayoutSlack() * 0.58);
+  }
 
   private submitCenterY(): number {
-    return this.practiceMode ? Draw.PRACTICE_SUBMIT_Y : Draw.OFFICIAL_SUBMIT_Y;
+    return Math.max(Draw.SUBMIT_Y, this.scale.height - NAV_SAFE - 70);
+  }
+
+  private practiceProgressY(): number {
+    return this.submitCenterY() - 70;
   }
 
   private addNativeControl(
@@ -596,12 +730,13 @@ export class Draw extends Scene {
       this.practiceMode ? PRACTICE_HEADER_TITLE : DRAW_HEADER_TITLE,
       { maxWidth: 320, maxHeight: 76 }
     );
+    this.buildDrawTimer();
 
     // Hero canvas frame — the DOM canvas sits on top of this at the same rect.
     const square = Draw.CANVAS_SQUARE;
     const frame = this.add.graphics();
     const left = width / 2 - square / 2 - 8;
-    const top = Draw.CANVAS_CENTER_Y - square / 2 - 8;
+    const top = this.canvasCenterY() - square / 2 - 8;
     frame.fillStyle(UI.creamHex, 1);
     frame.fillRoundedRect(left, top, square + 16, square + 16, 16);
     frame.lineStyle(6, UI.goldHex, 1);
@@ -609,8 +744,8 @@ export class Draw extends Scene {
     frame.lineStyle(3, UI.inkHex, 0.7);
     frame.strokeRoundedRect(left + 6, top + 6, square + 4, square + 4, 12);
 
-    this.buildLiveStatsStrip(Draw.LIVE_STATS_Y);
-    this.buildToolsBand(Draw.TOOLS_Y);
+    this.buildLiveStatsStrip(this.liveStatsY());
+    this.buildToolsBand(this.toolsY());
     this.submitButton = button(
       this,
       width / 2,
@@ -622,6 +757,298 @@ export class Draw extends Scene {
       UI.ink
     );
     this.submitButton.setAlpha(0.58).setVisible(true);
+
+    if (!this.isUntimedDrawingMode()) {
+      const shadeTop = this.canvasCenterY() - Draw.CANVAS_SQUARE / 2 - 12;
+      this.preStartShade = this.add.graphics().setDepth(25);
+      this.preStartShade.fillStyle(UI.inkHex, 0.38);
+      this.preStartShade.fillRect(
+        0,
+        shadeTop,
+        width,
+        this.scale.height - shadeTop
+      );
+    }
+  }
+
+  private isUntimedDrawingMode(): boolean {
+    return this.practiceMode || this.automationMode;
+  }
+
+  private buildDrawTimer(): void {
+    if (this.isUntimedDrawingMode()) return;
+    const container = this.add
+      .container(this.scale.width - 120, 80)
+      .setDepth(30);
+    this.drawTimerContainer = container;
+    this.drawTimerBackground = this.add.graphics();
+    const clockIcon = paperIcon(this, 'clock', -60, 0, {
+      size: 42,
+      fill: UI.gold,
+    });
+    this.drawTimerValue = label(this, 36, 0, '60s', 38, UI.ink, true);
+    container.add([this.drawTimerBackground, clockIcon, this.drawTimerValue]);
+    this.drawTimerStatus =
+      this.headerControlOverlay?.addStatus(
+        '60 second drawing round. Press Start when you are ready.'
+      ) ?? null;
+    this.renderDrawTimer();
+  }
+
+  private isWaitingToStart(): boolean {
+    return (
+      !this.isUntimedDrawingMode() &&
+      !this.drawRoundClock.started &&
+      !this.drawingLocked
+    );
+  }
+
+  private isDrawingInputActive(): boolean {
+    return !this.drawingLocked && !this.isWaitingToStart();
+  }
+
+  private beginDrawingRound(): void {
+    if (!this.isWaitingToStart() || this.submitting || this.drawConfirmation) {
+      return;
+    }
+    this.canvas.element.setAttribute(
+      'aria-label',
+      `Draw your Scribbit. The 60 second round is running. Its shape and colors choose how it fights.${this.isFirstScribbit ? ' First run: draw, watch it fight, and earn Ink.' : ''}`
+    );
+    this.setCanvasDareVisible(false);
+    this.startDrawingRound();
+  }
+
+  private startDrawingRound(): void {
+    if (
+      this.isUntimedDrawingMode() ||
+      this.drawingLocked ||
+      this.submitting ||
+      this.drawConfirmation
+    ) {
+      return;
+    }
+    const wasStarted = this.drawRoundClock.started;
+    this.drawRoundClock = startDrawRoundClock(this.drawRoundClock, Date.now());
+    if (this.drawRoundClock.deadlineMilliseconds === null) return;
+    this.drawRoundTimerEvent ??= this.time.addEvent({
+      delay: 200,
+      loop: true,
+      callback: () => this.tickDrawingRound(),
+    });
+    this.syncDrawingInteractionState();
+    this.renderDrawTimer();
+    if (wasStarted || !this.drawTimerContainer || prefersReducedMotion())
+      return;
+    this.drawTimerStatus?.replaceChildren(
+      document.createTextNode('Drawing timer started. 60 seconds remaining.')
+    );
+    this.tweens.add({
+      targets: this.drawTimerContainer,
+      scaleX: 1.08,
+      scaleY: 0.94,
+      duration: 90,
+      yoyo: true,
+      ease: 'Quad.easeOut',
+    });
+  }
+
+  private pauseDrawingRound(): void {
+    if (this.isUntimedDrawingMode()) return;
+    this.drawRoundClock = pauseDrawRoundClock(this.drawRoundClock, Date.now());
+    this.drawRoundTimerEvent?.remove();
+    this.drawRoundTimerEvent = null;
+    this.renderDrawTimer();
+  }
+
+  private tickDrawingRound(): void {
+    const nowMilliseconds = Date.now();
+    const snapshot = readDrawRoundClock(this.drawRoundClock, nowMilliseconds);
+    if (snapshot.expired) {
+      this.finishDrawingRound();
+      return;
+    }
+    this.renderDrawTimer();
+  }
+
+  private renderDrawTimer(): void {
+    if (
+      this.isUntimedDrawingMode() ||
+      !this.drawTimerContainer ||
+      !this.drawTimerBackground ||
+      !this.drawTimerValue
+    ) {
+      return;
+    }
+    const nowMilliseconds = Date.now();
+    const snapshot = readDrawRoundClock(this.drawRoundClock, nowMilliseconds);
+    const secondChanged =
+      this.displayedDrawSeconds !== snapshot.remainingSeconds;
+    this.displayedDrawSeconds = snapshot.remainingSeconds;
+
+    this.drawTimerBackground.clear();
+    this.drawTimerBackground.fillStyle(
+      snapshot.expired || (snapshot.urgent && snapshot.remainingSeconds <= 3)
+        ? UI.coralDeep
+        : snapshot.urgent
+          ? UI.coral
+          : UI.creamHex,
+      snapshot.started ? 1 : 0.88
+    );
+    this.drawTimerBackground.fillRoundedRect(-104, -40, 208, 80, 28);
+    this.drawTimerBackground.lineStyle(
+      snapshot.urgent || snapshot.expired ? 3 : 2,
+      snapshot.expired || (snapshot.urgent && snapshot.remainingSeconds <= 3)
+        ? UI.inkHex
+        : snapshot.urgent
+          ? UI.coralDeep
+          : UI.inkHex,
+      snapshot.started ? 1 : 0.5
+    );
+    this.drawTimerBackground.strokeRoundedRect(-104, -40, 208, 80, 28);
+    this.drawTimerValue
+      .setText(snapshot.expired ? 'TIME' : `${snapshot.remainingSeconds}s`)
+      .setColor(snapshot.urgent || snapshot.expired ? UI.cream : UI.ink)
+      .setAlpha(snapshot.started ? 1 : 0.76);
+
+    if (snapshot.running && secondChanged) {
+      if (snapshot.remainingSeconds === 10 || snapshot.remainingSeconds === 5) {
+        this.drawTimerStatus?.replaceChildren(
+          document.createTextNode(
+            `${snapshot.remainingSeconds} seconds remaining.`
+          )
+        );
+      }
+    }
+    this.animateDrawTimerUrgency(snapshot.remainingSeconds, nowMilliseconds);
+  }
+
+  private animateDrawTimerUrgency(
+    remainingSeconds: number,
+    nowMilliseconds: number
+  ): void {
+    if (!this.drawTimerContainer || prefersReducedMotion()) return;
+    const motion = getDrawRoundUrgencyMotion(remainingSeconds);
+    if (
+      !motion ||
+      nowMilliseconds - this.lastDrawTimerShakeMilliseconds <
+        motion.intervalMilliseconds
+    ) {
+      return;
+    }
+    this.lastDrawTimerShakeMilliseconds = nowMilliseconds;
+    this.drawTimerShakeDirection *= -1;
+    const critical = remainingSeconds <= 3;
+    this.tweens.killTweensOf(this.drawTimerContainer);
+    this.drawTimerContainer.setAngle(
+      -this.drawTimerShakeDirection * motion.angleDegrees * 0.45
+    );
+    this.tweens.add({
+      targets: this.drawTimerContainer,
+      scaleX: motion.scale,
+      scaleY: 2 - motion.scale,
+      angle: this.drawTimerShakeDirection * motion.angleDegrees,
+      duration: critical ? 45 : remainingSeconds <= 6 ? 55 : 70,
+      yoyo: true,
+      repeat: critical ? 1 : 0,
+      ease: 'Sine.easeInOut',
+      onComplete: () => this.drawTimerContainer?.setScale(1).setAngle(0),
+    });
+  }
+
+  private finishDrawingRound(): void {
+    if (this.isUntimedDrawingMode() || this.drawingLocked) return;
+    this.drawRoundClock = expireDrawRoundClock(this.drawRoundClock);
+    this.drawRoundTimerEvent?.remove();
+    this.drawRoundTimerEvent = null;
+    this.setDrawingLocked(true);
+    this.previewTimer?.remove();
+    this.previewTimer = null;
+    this.refreshPreview();
+    this.renderDrawTimer();
+
+    const result = this.lastResult;
+    if (!result || !hasMinimumDrawingInk(result)) {
+      this.drawTimerStatus?.replaceChildren(
+        document.createTextNode(
+          'Time is up. The drawing needs more ink, so a fresh round will begin.'
+        )
+      );
+      showToast('Too little ink — fresh 60-second round.');
+      this.time.delayedCall(500, () => this.resetExpiredDrawingRound());
+      return;
+    }
+
+    this.drawTimerStatus?.replaceChildren(
+      document.createTextNode('Time is up. Opening the naming preview.')
+    );
+    showToast('Time! Name your Scribbit.');
+    this.time.delayedCall(320, () => {
+      if (!this.scene.isActive() || this.submitting || this.drawConfirmation) {
+        return;
+      }
+      this.continueFromDrawing();
+    });
+  }
+
+  private resetExpiredDrawingRound(): void {
+    if (!this.scene.isActive() || this.submitting) return;
+    this.drawRoundClock = createDrawRoundClock();
+    this.displayedDrawSeconds = null;
+    this.setDrawingLocked(false);
+    this.canvas.reset();
+    this.previewTimer?.remove();
+    this.previewTimer = null;
+    this.refreshPreview();
+    this.renderDrawTimer();
+    this.canvas.element.setAttribute(
+      'aria-label',
+      `Press Start for a 60 second Scribbit drawing round. Its shape and colors choose how it fights.${this.isFirstScribbit ? ' First run: draw, watch it fight, and earn Ink.' : ''}`
+    );
+    this.setCanvasDareVisible(true);
+    this.drawTimerStatus?.replaceChildren(
+      document.createTextNode(
+        'Fresh 60 second drawing round. Press Start when you are ready.'
+      )
+    );
+    requestAnimationFrame(() => this.drawStartControl?.focus());
+  }
+
+  private setDrawingLocked(locked: boolean): void {
+    this.drawingLocked = locked;
+    this.syncDrawingInteractionState();
+  }
+
+  private syncDrawingInteractionState(): void {
+    const inputEnabled = this.isDrawingInputActive();
+    const waitingToStart = this.isWaitingToStart();
+    const controlAlpha = inputEnabled ? 1 : this.drawingLocked ? 0.32 : 0.42;
+    this.canvas?.setEnabled(inputEnabled);
+    if (this.canvas?.element) {
+      this.canvas.element.style.opacity = waitingToStart ? '0.72' : '1';
+      this.canvas.element.style.filter = waitingToStart
+        ? 'brightness(0.68) saturate(0.58)'
+        : 'none';
+      this.canvas.element.setAttribute('aria-disabled', String(!inputEnabled));
+    }
+    this.stickers?.setEnabled(inputEnabled);
+    if (!inputEnabled) this.drawerOpen = false;
+    this.drawingControlContainers.forEach((control) => {
+      control.setAlpha(controlAlpha);
+      control.list.forEach((child) => {
+        if (child.input) child.input.enabled = inputEnabled;
+      });
+    });
+    this.drawingNativeControls.forEach((control) => {
+      control.disabled = !inputEnabled;
+      control.tabIndex = inputEnabled ? 0 : -1;
+      control.setAttribute('aria-disabled', String(!inputEnabled));
+    });
+    this.preStartShade?.setVisible(waitingToStart);
+    this.drawTimerContainer?.setAlpha(waitingToStart ? 0.62 : 1);
+    this.updateBrushSizeControlState();
+    this.updateDrawingToolStates();
+    this.syncToolPageVisibility();
   }
 
   // A single compact allocation strip makes the analyzer's fixed 100-point
@@ -681,12 +1108,12 @@ export class Draw extends Scene {
     card.strokeRoundedRect(x - width / 2, y - 30, width, 60, 14);
   }
 
-  // Three calm rows keep every target in its own lane: colors, drawing tools,
-  // then destructive/history actions. Optional items never squeeze the basics.
+  // Color stays visible. The default rail keeps only the three actions used on
+  // nearly every stroke; collectible and destructive tools live one tap away.
   private buildToolsBand(centerY: number): void {
     const { width } = this.scale;
     const panelW = width - EDGE * 2;
-    const panelH = 276;
+    const panelH = 300;
     const panelTop = centerY - panelH / 2;
     const panel = this.add.graphics();
     panel.fillStyle(UI.creamHex, 0.84);
@@ -694,98 +1121,222 @@ export class Draw extends Scene {
     panel.lineStyle(2, UI.inkHex, 0.32);
     panel.strokeRoundedRect(EDGE, panelTop, panelW, panelH, 22);
 
-    const paletteY = centerY - 91;
-    const toolY = centerY;
-    const historyY = centerY + 91;
+    const paletteY = centerY - 50;
+    const toolY = centerY + 100;
     this.buildPaletteRow(paletteY, panelW);
 
     const canUseStickers =
       !this.practiceMode && (this.getArenaState()?.myScribbits.length ?? 0) > 0;
-    const actionX = canUseStickers ? [300, 400, 500, 600] : [320, 440, 560];
     const roundControlWidth = 76;
     const roundInteractionWidth = 96;
-    this.buildLineWidthControl(148, toolY, 196, 208);
-    this.setLineWidth(DEFAULT_LINE_WIDTH);
-
-    this.buildPremiumPenControl(
-      actionX[0] ?? 320,
-      toolY,
-      roundControlWidth,
-      roundInteractionWidth
-    );
-    this.buildBrushSupplyControl(
-      actionX[1] ?? 440,
-      toolY,
-      roundControlWidth,
-      roundInteractionWidth
-    );
-
-    if (canUseStickers) {
-      const stickerBtn = this.toolIconButton(
-        actionX[3] ?? 600,
+    this.captureToolPage('basic', () => {
+      this.buildLineWidthControl(148, toolY, 196, 208);
+      this.setLineWidth(DEFAULT_LINE_WIDTH);
+      this.eraserToolButton = this.toolIconButton(
+        340,
         toolY,
-        'sticker',
-        () => this.toggleStickerDrawer(),
+        'eraser',
+        () => this.selectEraser(),
         roundControlWidth,
         roundInteractionWidth
       );
-      this.stickerButtonLabel = label(
-        this,
-        24,
-        -27,
-        '',
-        15,
-        UI.coralText,
-        true
+      this.eraserTargetSwatch = this.add
+        .circle(
+          25,
+          -24,
+          10,
+          Phaser.Display.Color.HexStringToColor(this.activeStrokeColor).color,
+          1
+        )
+        .setStrokeStyle(2, UI.inkHex, 1);
+      this.eraserToolButton.add(this.eraserTargetSwatch);
+      this.undoToolButton = this.toolIconButton(
+        460,
+        toolY,
+        'undo',
+        () => this.undoDrawing(),
+        roundControlWidth,
+        roundInteractionWidth
       );
-      stickerBtn.add(this.stickerButtonLabel);
-    }
+      this.moreToolsButton = this.toolIconButton(
+        580,
+        toolY,
+        'tools',
+        () => this.setAdvancedToolsOpen(true),
+        roundControlWidth,
+        roundInteractionWidth,
+        'More drawing tools'
+      );
+      this.moreToolsControl =
+        this.drawingNativeControls[this.drawingNativeControls.length - 1] ??
+        null;
+      this.advancedToolBadge = this.add
+        .circle(25, -25, 11, UI.gold, 1)
+        .setStrokeStyle(3, UI.inkHex, 1)
+        .setVisible(false);
+      this.moreToolsButton.add(this.advancedToolBadge);
+    });
 
-    this.eraserToolButton = this.toolIconButton(
-      actionX[2] ?? 560,
-      toolY,
-      'eraser',
-      () => this.selectEraser(),
-      roundControlWidth,
-      roundInteractionWidth
+    const advancedX = canUseStickers
+      ? [100, 204, 308, 412, 516, 620]
+      : [120, 240, 360, 480, 600];
+    this.captureToolPage('advanced', () => {
+      this.buildPremiumPenControl(
+        advancedX[0] ?? 120,
+        toolY,
+        roundControlWidth,
+        roundInteractionWidth
+      );
+      this.buildBrushSupplyControl(
+        advancedX[1] ?? 240,
+        toolY,
+        roundControlWidth,
+        roundInteractionWidth
+      );
+      let nextAction = 2;
+      if (canUseStickers) {
+        const stickerBtn = this.toolIconButton(
+          advancedX[nextAction] ?? 308,
+          toolY,
+          'sticker',
+          () => this.toggleStickerDrawer(),
+          roundControlWidth,
+          roundInteractionWidth
+        );
+        this.stickerButtonLabel = label(
+          this,
+          24,
+          -27,
+          '',
+          15,
+          UI.coralText,
+          true
+        );
+        stickerBtn.add(this.stickerButtonLabel);
+        nextAction += 1;
+      }
+      this.clearToolButton = this.toolIconButton(
+        advancedX[nextAction] ?? 360,
+        toolY,
+        'clear',
+        () => this.clearDrawing(),
+        roundControlWidth,
+        roundInteractionWidth
+      );
+      nextAction += 1;
+      this.redoToolButton = this.toolIconButton(
+        advancedX[nextAction] ?? 480,
+        toolY,
+        'redo',
+        () => this.redoDrawing(),
+        roundControlWidth,
+        roundInteractionWidth
+      );
+      nextAction += 1;
+      this.toolIconButton(
+        advancedX[nextAction] ?? 600,
+        toolY,
+        'tools',
+        () => this.setAdvancedToolsOpen(false),
+        roundControlWidth,
+        roundInteractionWidth,
+        'Back to basic drawing tools'
+      );
+    });
+    this.setAdvancedToolsOpen(false);
+  }
+
+  private captureToolPage(
+    page: 'basic' | 'advanced',
+    buildControls: () => void
+  ): void {
+    const containerStart = this.drawingControlContainers.length;
+    const nativeStart = this.drawingNativeControls.length;
+    buildControls();
+    const pageContainers = this.drawingControlContainers.slice(containerStart);
+    const pageNativeControls = this.drawingNativeControls.slice(nativeStart);
+    if (page === 'basic') {
+      this.basicToolContainers.push(...pageContainers);
+      this.basicToolNativeControls.push(...pageNativeControls);
+      return;
+    }
+    this.advancedToolContainers.push(...pageContainers);
+    this.advancedToolNativeControls.push(...pageNativeControls);
+  }
+
+  private setAdvancedToolsOpen(open: boolean): void {
+    if (open && !this.isDrawingInputActive()) return;
+    const shouldMoveFocus =
+      document.activeElement instanceof HTMLButtonElement &&
+      this.drawingNativeControls.includes(document.activeElement);
+    this.advancedToolsOpen = open;
+    if (!open && this.drawerOpen) this.toggleStickerDrawer();
+    this.syncToolPageVisibility();
+    if (!shouldMoveFocus) return;
+    const focusTarget = open
+      ? this.advancedToolNativeControls.find((control) => !control.disabled)
+      : this.moreToolsControl;
+    requestAnimationFrame(() => focusTarget?.focus());
+  }
+
+  private syncToolPageVisibility(): void {
+    this.setToolPageVisible(
+      this.basicToolContainers,
+      this.basicToolNativeControls,
+      !this.advancedToolsOpen
     );
-    this.eraserTargetSwatch = this.add
-      .circle(
-        25,
-        -24,
-        10,
-        Phaser.Display.Color.HexStringToColor(this.activeStrokeColor).color,
-        1
-      )
-      .setStrokeStyle(2, UI.inkHex, 1);
-    this.eraserToolButton.add(this.eraserTargetSwatch);
-    const historyWidth = 70;
-    const historyInteractionWidth = 92;
-    this.clearToolButton = this.toolIconButton(
-      width / 2 - 100,
-      historyY,
-      'clear',
-      () => this.clearDrawing(),
-      historyWidth,
-      historyInteractionWidth
+    this.setToolPageVisible(
+      this.advancedToolContainers,
+      this.advancedToolNativeControls,
+      this.advancedToolsOpen
     );
-    this.undoToolButton = this.toolIconButton(
-      width / 2,
-      historyY,
-      'undo',
-      () => this.undoDrawing(),
-      historyWidth,
-      historyInteractionWidth
-    );
-    this.redoToolButton = this.toolIconButton(
-      width / 2 + 100,
-      historyY,
-      'redo',
-      () => this.redoDrawing(),
-      historyWidth,
-      historyInteractionWidth
-    );
+    this.updateBrushSizeControlState();
     this.updateDrawingToolStates();
+    this.hideInactiveToolPage();
+  }
+
+  private setToolPageVisible(
+    containers: Phaser.GameObjects.Container[],
+    nativeControls: HTMLButtonElement[],
+    visible: boolean
+  ): void {
+    const inputEnabled = this.isDrawingInputActive();
+    const controlAlpha = inputEnabled ? 1 : this.drawingLocked ? 0.32 : 0.42;
+    containers.forEach((container) => {
+      container.setVisible(visible).setAlpha(controlAlpha);
+      container.list.forEach((child) => {
+        if (child.input) child.input.enabled = visible && inputEnabled;
+      });
+    });
+    nativeControls.forEach((control) => {
+      control.hidden = !visible;
+      control.setAttribute('aria-hidden', String(!visible));
+      control.disabled = !visible || !inputEnabled;
+      control.tabIndex = visible && inputEnabled ? 0 : -1;
+      control.setAttribute('aria-disabled', String(!visible || !inputEnabled));
+    });
+  }
+
+  private hideInactiveToolPage(): void {
+    const containers = this.advancedToolsOpen
+      ? this.basicToolContainers
+      : this.advancedToolContainers;
+    const nativeControls = this.advancedToolsOpen
+      ? this.basicToolNativeControls
+      : this.advancedToolNativeControls;
+    containers.forEach((container) => {
+      container.setVisible(false);
+      container.list.forEach((child) => {
+        if (child.input) child.input.enabled = false;
+      });
+    });
+    nativeControls.forEach((control) => {
+      control.hidden = true;
+      control.disabled = true;
+      control.tabIndex = -1;
+      control.setAttribute('aria-hidden', 'true');
+      control.setAttribute('aria-disabled', 'true');
+    });
   }
 
   private playControlFeedback(
@@ -839,10 +1390,15 @@ export class Draw extends Scene {
   }
 
   private buildPaletteRow(y: number, panelWidth: number): void {
-    const spacing = panelWidth / PALETTE_COLORS.length;
+    const columns = 4;
+    const rowHeight = MIN_TOUCH;
+    const spacing = panelWidth / columns;
     PALETTE_COLORS.forEach((color, colorIndex) => {
-      const x = EDGE + spacing * (colorIndex + 0.5);
-      const container = this.add.container(x, y);
+      const column = colorIndex % columns;
+      const row = Math.floor(colorIndex / columns);
+      const x = EDGE + spacing * (column + 0.5);
+      const swatchY = y + (row - 0.5) * rowHeight;
+      const container = this.add.container(x, swatchY);
       const swatch = this.add
         .circle(
           0,
@@ -859,7 +1415,7 @@ export class Draw extends Scene {
           colorIndex === this.selectedColorIndex ? 1 : 0.82
         );
       const hit = this.add
-        .rectangle(0, 0, spacing, 84, 0xffffff, 0.001)
+        .rectangle(0, 0, spacing, rowHeight, 0xffffff, 0.001)
         .setInteractive({ useHandCursor: true });
       container.add([swatch, hit]);
       const press = (): void => {
@@ -882,20 +1438,23 @@ export class Draw extends Scene {
         },
         { gameTarget: this.input, shutdownTarget: this.events }
       );
-      this.addNativeControl(
+      const nativeControl = this.addNativeControl(
         `Use ${PALETTE_COLOR_NAMES[colorIndex] ?? color} ink`,
         x - spacing / 2,
-        y - 42,
+        swatchY - rowHeight / 2,
         spacing,
-        84,
+        rowHeight,
         activate
       );
+      if (nativeControl) this.drawingNativeControls.push(nativeControl);
       this.paletteSwatches.push(swatch);
       this.paletteControls.push(container);
+      this.drawingControlContainers.push(container);
     });
   }
 
   private selectBaseColor(colorIndex: number): void {
+    if (!this.isDrawingInputActive()) return;
     const color = PALETTE_COLORS[colorIndex];
     if (!color) return;
     this.selectedColorIndex = colorIndex;
@@ -974,6 +1533,7 @@ export class Draw extends Scene {
     const firstChoice = this.paintChoices()[0];
     const container = this.add.container(x, y);
     this.premiumPenControl = container;
+    this.drawingControlContainers.push(container);
     this.premiumPenBackground = this.add
       .circle(0, 0, width / 2, UI.creamHex, 1)
       .setStrokeStyle(2, UI.inkHex, 0.72);
@@ -1032,7 +1592,7 @@ export class Draw extends Scene {
       },
       { gameTarget: this.input, shutdownTarget: this.events }
     );
-    this.addNativeControl(
+    const nativeControl = this.addNativeControl(
       'Cycle permanent pens and collectible paint charges',
       x - interactionWidth / 2,
       y - MIN_TOUCH / 2,
@@ -1040,9 +1600,11 @@ export class Draw extends Scene {
       MIN_TOUCH,
       activate
     );
+    if (nativeControl) this.drawingNativeControls.push(nativeControl);
   }
 
   private cyclePremiumPen(): void {
+    if (!this.isDrawingInputActive()) return;
     const choices = this.paintChoices();
     if (choices.length === 0) {
       showToast('Find collectible paints in Mystery Ink.');
@@ -1095,6 +1657,7 @@ export class Draw extends Scene {
   ): void {
     const container = this.add.container(x, y);
     this.brushSupplyControl = container;
+    this.drawingControlContainers.push(container);
     this.brushSupplyBackground = this.add
       .circle(0, 0, width / 2, UI.creamHex, 1)
       .setStrokeStyle(2, UI.inkHex, 0.72);
@@ -1128,7 +1691,7 @@ export class Draw extends Scene {
       },
       { gameTarget: this.input, shutdownTarget: this.events }
     );
-    this.addNativeControl(
+    const nativeControl = this.addNativeControl(
       'Cycle brush style. Round brush is unlimited',
       x - interactionWidth / 2,
       y - MIN_TOUCH / 2,
@@ -1136,9 +1699,11 @@ export class Draw extends Scene {
       MIN_TOUCH,
       activate
     );
+    if (nativeControl) this.drawingNativeControls.push(nativeControl);
   }
 
   private cycleBrushSupply(): void {
+    if (!this.isDrawingInputActive()) return;
     const brushes = this.ownedBrushes();
     if (brushes.length === 0) {
       showToast('Round brush is unlimited. Find brush charges in Mystery Ink.');
@@ -1231,9 +1796,11 @@ export class Draw extends Scene {
     icon: PaperToolIconKey,
     onClick: () => void,
     width = 88,
-    interactionWidth = Math.max(width, MIN_TOUCH)
+    interactionWidth = Math.max(width, MIN_TOUCH),
+    accessibleLabelOverride?: string
   ): Phaser.GameObjects.Container {
     const container = this.add.container(x, y);
+    this.drawingControlContainers.push(container);
     const bg = this.add
       .circle(0, 0, width / 2, UI.creamHex, 1)
       .setStrokeStyle(2, UI.inkHex, 0.72);
@@ -1278,7 +1845,8 @@ export class Draw extends Scene {
       }
     );
     const accessibleLabel =
-      icon === 'sticker'
+      accessibleLabelOverride ??
+      (icon === 'sticker'
         ? 'Add an accessory sticker'
         : icon === 'eraser'
           ? 'Erase only the selected ink color'
@@ -1286,7 +1854,9 @@ export class Draw extends Scene {
             ? 'Clear drawing'
             : icon === 'undo'
               ? 'Undo last stroke'
-              : 'Redo last stroke';
+              : icon === 'redo'
+                ? 'Redo last stroke'
+                : 'More drawing tools');
     const nativeControl = this.addNativeControl(
       accessibleLabel,
       x - interactionWidth / 2,
@@ -1295,6 +1865,7 @@ export class Draw extends Scene {
       MIN_TOUCH,
       activate
     );
+    if (nativeControl) this.drawingNativeControls.push(nativeControl);
     if (icon === 'eraser') this.eraserToolControl = nativeControl;
     if (icon === 'clear') this.clearToolControl = nativeControl;
     if (icon === 'undo') this.undoToolControl = nativeControl;
@@ -1368,6 +1939,7 @@ export class Draw extends Scene {
   }
 
   private selectEraser(): void {
+    if (!this.isDrawingInputActive()) return;
     this.canvas?.setEraser(this.activeStrokeColor);
     this.updateEraserTargetIndicator();
     this.refreshPaletteSelection();
@@ -1376,33 +1948,67 @@ export class Draw extends Scene {
   }
 
   private clearDrawing(): void {
+    if (!this.isDrawingInputActive()) return;
     if (!this.lastResult || this.lastResult.inkedPixels <= 0) return;
     this.canvas?.clear();
   }
 
   private undoDrawing(): void {
+    if (!this.isDrawingInputActive()) return;
     if (!this.canvas?.canUndo()) return;
     this.canvas.undo();
   }
 
   private redoDrawing(): void {
+    if (!this.isDrawingInputActive()) return;
     if (!this.canvas?.canRedo()) return;
     this.canvas.redo();
   }
 
   private updateDrawingToolStates(): void {
+    const editable = this.isDrawingInputActive();
     const erasing = this.canvas?.isErasing() ?? false;
     const hasInk = (this.lastResult?.inkedPixels ?? 0) > 0;
     const canUndo = this.canvas?.canUndo() ?? false;
     const canRedo = this.canvas?.canRedo() ?? false;
-    this.setToolButtonState(this.eraserToolButton, true, erasing);
-    this.setToolButtonState(this.clearToolButton, hasInk, false);
-    this.setToolButtonState(this.undoToolButton, canUndo, false);
-    this.setToolButtonState(this.redoToolButton, canRedo, false);
-    this.setNativeToolControlState(this.eraserToolControl, true, erasing);
-    this.setNativeToolControlState(this.clearToolControl, hasInk);
-    this.setNativeToolControlState(this.undoToolControl, canUndo);
-    this.setNativeToolControlState(this.redoToolControl, canRedo);
+    this.setToolButtonState(this.eraserToolButton, editable, erasing);
+    this.setToolButtonState(this.clearToolButton, editable && hasInk, false);
+    this.setToolButtonState(this.undoToolButton, editable && canUndo, false);
+    this.setToolButtonState(this.redoToolButton, editable && canRedo, false);
+    this.setNativeToolControlState(this.eraserToolControl, editable, erasing);
+    this.setNativeToolControlState(this.clearToolControl, editable && hasInk);
+    this.setNativeToolControlState(this.undoToolControl, editable && canUndo);
+    this.setNativeToolControlState(this.redoToolControl, editable && canRedo);
+    this.refreshAdvancedToolIndicator();
+  }
+
+  private refreshAdvancedToolIndicator(): void {
+    const specialPaintActive = this.premiumPenIndex >= 0;
+    const specialBrushActive = this.selectedBrushId !== null;
+    const active = specialPaintActive || specialBrushActive;
+    this.advancedToolBadge
+      ?.setVisible(active)
+      .setFillStyle(
+        specialPaintActive
+          ? Phaser.Display.Color.HexStringToColor(this.activeStrokeColor).color
+          : UI.gold,
+        1
+      )
+      .setStrokeStyle(
+        specialBrushActive ? 4 : 3,
+        specialBrushActive ? UI.goldHex : UI.inkHex,
+        1
+      );
+    const activeParts = [
+      specialPaintActive ? 'special paint' : null,
+      specialBrushActive ? 'collectible brush' : null,
+    ].filter((part): part is string => part !== null);
+    this.moreToolsControl?.setAttribute(
+      'aria-label',
+      activeParts.length > 0
+        ? `More drawing tools. ${activeParts.join(' and ')} active`
+        : 'More drawing tools'
+    );
   }
 
   private setToolButtonState(
@@ -1453,6 +2059,7 @@ export class Draw extends Scene {
     interactionWidth: number
   ): void {
     const preview = this.add.container(x, y);
+    this.drawingControlContainers.push(preview);
     const bg = this.add.graphics();
     bg.fillStyle(UI.creamHex, 1);
     bg.fillRoundedRect(-width / 2, -38, width, 76, 24);
@@ -1528,10 +2135,12 @@ export class Draw extends Scene {
       );
     };
     const decreaseBrushSize = (): void => {
+      if (!this.isDrawingInputActive()) return;
       this.playControlFeedback(preview);
       this.setLineWidth(this.lineWidth - LINE_WIDTH_STEP);
     };
     const increaseBrushSize = (): void => {
+      if (!this.isDrawingInputActive()) return;
       this.playControlFeedback(preview);
       this.setLineWidth(this.lineWidth + LINE_WIDTH_STEP);
     };
@@ -1553,6 +2162,12 @@ export class Draw extends Scene {
       MIN_TOUCH,
       increaseBrushSize
     );
+    if (this.decreaseBrushSizeControl) {
+      this.drawingNativeControls.push(this.decreaseBrushSizeControl);
+    }
+    if (this.increaseBrushSizeControl) {
+      this.drawingNativeControls.push(this.increaseBrushSizeControl);
+    }
   }
 
   private setLineWidth(width: number): void {
@@ -1565,20 +2180,21 @@ export class Draw extends Scene {
   private updateBrushSizeControlState(): void {
     const atMinimum = this.lineWidth <= MIN_LINE_WIDTH;
     const atMaximum = this.lineWidth >= MAX_LINE_WIDTH;
+    const inputEnabled = this.isDrawingInputActive();
     this.decreaseBrushSizeMark?.setAlpha(atMinimum ? 0.28 : 1);
     this.increaseBrushSizeMark?.setAlpha(atMaximum ? 0.28 : 1);
     if (this.decreaseBrushSizeControl) {
-      this.decreaseBrushSizeControl.disabled = atMinimum;
+      this.decreaseBrushSizeControl.disabled = !inputEnabled || atMinimum;
       this.decreaseBrushSizeControl.setAttribute(
         'aria-disabled',
-        String(atMinimum)
+        String(!inputEnabled || atMinimum)
       );
     }
     if (this.increaseBrushSizeControl) {
-      this.increaseBrushSizeControl.disabled = atMaximum;
+      this.increaseBrushSizeControl.disabled = !inputEnabled || atMaximum;
       this.increaseBrushSizeControl.setAttribute(
         'aria-disabled',
-        String(atMaximum)
+        String(!inputEnabled || atMaximum)
       );
     }
   }
@@ -1619,16 +2235,22 @@ export class Draw extends Scene {
       'aria-label',
       this.practiceMode
         ? 'Draw a temporary practice fighter. The server reads its shape and returns a reward-free battle replay.'
-        : `Draw your Scribbit. Its shape and colors choose how it fights.${this.isFirstScribbit ? ' First run: draw, watch it fight, and earn Ink.' : ''}`
+        : this.automationMode
+          ? 'Untimed local asset drawing. This uses the same Scribbits canvas, analyzer, and PNG export as the player drawing tool.'
+          : `Press Start for a 60 second Scribbit drawing round. Its shape and colors choose how it fights.${this.isFirstScribbit ? ' First run: draw, watch it fight, and earn Ink.' : ''}`
     );
+    this.canvas.element.style.transition = prefersReducedMotion()
+      ? 'none'
+      : 'opacity 160ms ease-out, filter 160ms ease-out';
     const square = Draw.CANVAS_SQUARE;
     this.overlay.place(this.canvas.element, {
       x: this.scale.width / 2 - square / 2,
-      y: Draw.CANVAS_CENTER_Y - square / 2,
+      y: this.canvasCenterY() - square / 2,
       width: square,
       height: square,
     });
     this.buildCanvasDareOverlay(square);
+    this.syncDrawingInteractionState();
 
     if (this.practiceMode) {
       this.buildPracticeProgressOverlay();
@@ -1636,6 +2258,59 @@ export class Draw extends Scene {
       return;
     }
     this.setCreationControlsReady(false);
+  }
+
+  private installLocalDrawAutomationApi(): void {
+    if (!this.automationMode) return;
+    const automationWindow = window as LocalDrawAutomationWindow;
+    this.canvas.element.dataset.automationMode = 'untimed';
+    automationWindow.scribbitsDrawAutomation = {
+      reset: () => {
+        if (!this.scene.isActive() || this.submitting) return false;
+        this.canvas.reset();
+        return true;
+      },
+      draw: (strokes) => {
+        if (!this.scene.isActive() || this.submitting) return 0;
+        return this.canvas.drawAutomationStrokes(strokes);
+      },
+      exportPng: () => this.canvas.exportSubmissionImages().baseImageDataUrl,
+    };
+
+    const bridge = document.createElement('div');
+    Object.assign(bridge.style, {
+      position: 'fixed',
+      top: '0',
+      left: '0',
+      width: '1px',
+      height: '1px',
+      overflow: 'hidden',
+      opacity: '0',
+      pointerEvents: 'none',
+    });
+    const exportButton = document.createElement('button');
+    exportButton.type = 'button';
+    exportButton.setAttribute('aria-label', 'Export local Scribbits drawing');
+    const resetButton = document.createElement('button');
+    resetButton.type = 'button';
+    resetButton.setAttribute('aria-label', 'Reset local Scribbits drawing');
+    const output = document.createElement('output');
+    output.setAttribute('aria-label', 'Local Scribbits drawing PNG');
+    exportButton.addEventListener('click', () => {
+      output.textContent =
+        this.canvas.exportSubmissionImages().baseImageDataUrl;
+    });
+    resetButton.addEventListener('click', () => this.canvas.reset());
+    bridge.append(exportButton, resetButton, output);
+    document.body.append(bridge);
+    this.localAutomationBridge = bridge;
+  }
+
+  private removeLocalDrawAutomationApi(): void {
+    const automationWindow = window as LocalDrawAutomationWindow;
+    delete automationWindow.scribbitsDrawAutomation;
+    this.localAutomationBridge?.remove();
+    this.localAutomationBridge = null;
   }
 
   private buildPracticeProgressOverlay(): void {
@@ -1659,7 +2334,7 @@ export class Draw extends Scene {
     });
     this.overlay.place(progress, {
       x: EDGE,
-      y: Draw.PRACTICE_PROGRESS_Y - 16,
+      y: this.practiceProgressY() - 16,
       width: this.scale.width - EDGE * 2,
       height: 32,
     });
@@ -1668,18 +2343,27 @@ export class Draw extends Scene {
   private buildCanvasDareOverlay(square: number): void {
     const dare =
       this.dailyDare ??
-      selectDailyDoodleDare(0, this.getArenaState()?.myUsername ?? null);
+      selectCommunityDoodleDare(this.getArenaState()?.dayNumber ?? 1);
     const twist =
       this.dailyDareTwist ??
       selectDailyDoodleDareTwist(
         this.getArenaState()?.dayNumber ?? 1,
         this.getArenaState()?.myUsername ?? null
       );
+    const practicePower =
+      this.practiceMode && isPracticeDoodleDare(dare)
+        ? dare.suggestedPower
+        : null;
     const overlay = document.createElement('div');
-    overlay.setAttribute('role', 'note');
+    overlay.setAttribute(
+      'role',
+      this.isUntimedDrawingMode() ? 'note' : 'group'
+    );
     overlay.setAttribute(
       'aria-label',
-      `Optional Dare: ${dare.prompt}. ${getShapePowerDrawingCue(dare.suggestedPower)} Twist: ${twist}. You may draw anything.`
+      practicePower
+        ? `Practice idea: Draw ${dare.prompt}. ${getShapePowerDrawingCue(practicePower)} Twist: ${twist}.`
+        : `Three-day community theme: Draw ${dare.prompt}. Everyone receives the same theme. Press Start for the 60 second round.`
     );
     Object.assign(overlay.style, {
       display: 'flex',
@@ -1692,34 +2376,88 @@ export class Draw extends Scene {
 
     const card = document.createElement('div');
     Object.assign(card.style, {
-      width: '68%',
-      padding: '10px 14px',
+      width: '74%',
+      padding: '12px 14px',
       background: 'rgba(255, 247, 232, 0.9)',
       border: `2px solid ${UI.coralText}`,
       borderRadius: '14px',
       boxShadow: '0 5px 0 rgba(43, 32, 22, 0.12)',
       fontFamily: FONT_STACK,
     });
+    const context = document.createElement('div');
+    context.textContent = this.practiceMode
+      ? 'PRACTICE IDEA'
+      : `${COMMUNITY_DRAW_THEME_DAYS}-DAY COMMUNITY THEME`;
+    Object.assign(context.style, {
+      ...DOM_TYPE.caption,
+      color: UI.coralText,
+      marginBottom: '5px',
+    });
     const prompt = document.createElement('div');
-    prompt.textContent = dare.prompt.toUpperCase();
+    prompt.textContent = `DRAW ${dare.prompt.toUpperCase()}`;
     Object.assign(prompt.style, {
       ...DOM_TYPE.title,
     });
-    card.append(prompt);
+    card.append(context, prompt);
+    if (!this.isUntimedDrawingMode()) {
+      const startButton = document.createElement('button');
+      startButton.type = 'button';
+      startButton.textContent = 'START';
+      startButton.setAttribute('aria-label', 'Start 60 second drawing round');
+      Object.assign(startButton.style, {
+        width: '100%',
+        minHeight: '76px',
+        marginTop: '18px',
+        padding: '10px 18px',
+        border: `3px solid ${UI.ink}`,
+        borderRadius: '16px',
+        background: '#ff6b4a',
+        boxShadow: '0 7px 0 rgba(43, 32, 22, 0.34)',
+        color: UI.ink,
+        cursor: 'pointer',
+        ...DOM_TYPE.title,
+        letterSpacing: '1px',
+        touchAction: 'manipulation',
+      });
+      const releaseButton = (): void => {
+        startButton.style.transform = 'translateY(0)';
+        startButton.style.boxShadow = '0 7px 0 rgba(43, 32, 22, 0.34)';
+      };
+      startButton.addEventListener('pointerdown', () => {
+        startButton.style.transform = 'translateY(4px)';
+        startButton.style.boxShadow = '0 3px 0 rgba(43, 32, 22, 0.34)';
+      });
+      startButton.addEventListener('pointerup', releaseButton);
+      startButton.addEventListener('pointercancel', releaseButton);
+      startButton.addEventListener('pointerleave', releaseButton);
+      startButton.addEventListener('click', () => this.beginDrawingRound());
+      card.append(startButton);
+      this.drawStartControl = startButton;
+    }
     overlay.append(card);
     this.overlay.place(overlay, {
       x: this.scale.width / 2 - square / 2,
-      y: Draw.CANVAS_CENTER_Y - square / 2,
+      y: this.canvasCenterY() - square / 2,
       width: square,
       height: square,
     });
-    overlay.style.pointerEvents = 'none';
     this.canvasDareOverlay = overlay;
+    this.setCanvasDareVisible(true);
   }
 
   private setCanvasDareVisible(visible: boolean): void {
     if (!this.canvasDareOverlay) return;
     this.canvasDareOverlay.style.opacity = visible ? '1' : '0';
+    this.canvasDareOverlay.style.visibility = visible ? 'visible' : 'hidden';
+    this.canvasDareOverlay.setAttribute('aria-hidden', String(!visible));
+    const startIsAvailable = visible && this.drawStartControl !== null;
+    this.canvasDareOverlay.style.pointerEvents = startIsAvailable
+      ? 'auto'
+      : 'none';
+    if (this.drawStartControl) {
+      this.drawStartControl.disabled = !startIsAvailable;
+      this.drawStartControl.tabIndex = startIsAvailable ? 0 : -1;
+    }
   }
 
   // --- Live analyzer preview ------------------------------------------------
@@ -1784,7 +2522,10 @@ export class Draw extends Scene {
       this.usedDrawingInkId = null;
       this.usedBrushId = null;
     }
-    this.setCanvasDareVisible(result.inkedPixels === 0);
+    this.setCanvasDareVisible(
+      result.inkedPixels === 0 &&
+        (this.isUntimedDrawingMode() || this.isWaitingToStart())
+    );
     this.updateLiveStats(result, ready);
     this.setCreationControlsReady(ready);
     this.updateDrawingToolStates();
@@ -1815,7 +2556,7 @@ export class Draw extends Scene {
         this.drawLiveStatCard(
           card,
           x,
-          Draw.LIVE_STATS_Y,
+          this.liveStatsY(),
           cardWidth,
           STAT_STYLES[statName].color,
           ready && statName === dominantStat
@@ -1891,6 +2632,7 @@ export class Draw extends Scene {
       this.beginSubmission('Practice Shape', draft);
       return;
     }
+    this.pauseDrawingRound();
 
     // The drawing surface is native DOM and otherwise renders above Phaser's
     // modal card. The frozen preview replaces it until the player returns.
@@ -1899,6 +2641,13 @@ export class Draw extends Scene {
       previewDataUrl: draft.imageDataUrl,
       initialName: this.draftName,
       trigger: this.submitControl,
+      ...(this.drawingLocked
+        ? {
+            description:
+              'Time is up. Preview your drawing, name it, then bring it to life.',
+            closeLabel: 'Close timed drawing preview',
+          }
+        : {}),
       onNameChange: (name) => {
         this.draftName = name;
       },
@@ -1906,6 +2655,7 @@ export class Draw extends Scene {
         this.draftName = name;
         this.drawConfirmation = null;
         this.overlay.setVisible(true);
+        if (!this.drawingLocked) this.startDrawingRound();
       },
       onConfirm: (name) => {
         this.draftName = name;
@@ -1946,25 +2696,30 @@ export class Draw extends Scene {
   private beginSubmission(name: string, draft: SubmissionDraft): void {
     if (this.submitting) return;
     this.submitting = true;
+    this.drawRoundTimerEvent?.remove();
+    this.drawRoundTimerEvent = null;
     // Hide the draggable stickers + drawer so only the baked PNG shows in the
     // ceremony; the metadata is captured first from their current transforms.
     this.stickers?.hideOverlays();
     this.overlay.setVisible(false);
+    const sceneVisitEpoch = this.sceneVisitEpoch;
     if (this.practiceMode) {
-      void this.submitPractice(name, draft);
+      void this.submitPractice(name, draft, sceneVisitEpoch);
     } else {
-      void this.submit(name, draft);
+      void this.submit(name, draft, sceneVisitEpoch);
     }
   }
 
   private async submitPractice(
     name: string,
-    draft: SubmissionDraft
+    draft: SubmissionDraft,
+    sceneVisitEpoch: number
   ): Promise<void> {
     const response = await practiceBattle({
       name,
       baseImageDataUrl: draft.baseImageDataUrl,
     });
+    if (!this.isCurrentSceneVisit(sceneVisitEpoch)) return;
     if (!response.ok) {
       this.submitting = false;
       this.showError(response.error);
@@ -1984,7 +2739,11 @@ export class Draw extends Scene {
     this.playCeremony(response.data.a, draft.baseImageDataUrl);
   }
 
-  private async submit(name: string, draft: SubmissionDraft): Promise<void> {
+  private async submit(
+    name: string,
+    draft: SubmissionDraft,
+    sceneVisitEpoch: number
+  ): Promise<void> {
     const response = await submitScribbit({
       name,
       baseImageDataUrl: draft.baseImageDataUrl,
@@ -1998,28 +2757,69 @@ export class Draw extends Scene {
         ? { drawingSupplies: draft.drawingSupplies }
         : {}),
     });
+    if (!this.acceptSubmissionResponse(sceneVisitEpoch)) {
+      if (!response.ok) {
+        void this.reconcileArenaSnapshot();
+        return;
+      }
+      if (this.applySubmittedScribbit(response.data, draft) === null) {
+        void this.reconcileArenaSnapshot();
+        return;
+      }
+      // The prior visit committed this daily birth. A newer daily Draw visit
+      // is now invalid, so do not let the player finish a doomed second entry.
+      if (this.scene.isActive() && !this.practiceMode) {
+        this.submitting = true;
+        showToast('Your Scribbit made it into today’s Rumble.');
+        this.exitTo('ArenaHome');
+      }
+      return;
+    }
     if (!response.ok) {
-      this.submitting = false;
       // A client timeout does not prove the server failed. Reconcile before
       // inviting a second submit, which could otherwise look like a lost
       // drawing after the first request actually committed.
-      const reconciledArena = await fetchArena();
-      if (reconciledArena.ok && reconciledArena.data.drawnToday) {
-        setArena(this, reconciledArena.data);
+      const reconciledArena = await this.reconcileArenaSnapshot();
+      if (!this.isCurrentSceneVisit(sceneVisitEpoch)) return;
+      if (reconciledArena?.drawnToday) {
         showToast(
           'Your Scribbit made it into the Rumble — the reply arrived late.'
         );
         this.exitTo('ArenaHome');
         return;
       }
+      this.submitting = false;
       this.showError(response.error);
       return;
     }
-    // Optimistically refresh arena's drawnToday via a light re-fetch on wake;
-    // for now update local snapshot so ArenaHome reflects the new roster.
+    // Merge only this committed birth into the latest registry snapshot so an
+    // older Draw visit cannot overwrite unrelated Arena activity.
+    const wasFirstScribbit = this.applySubmittedScribbit(response.data, draft);
+    if (wasFirstScribbit === null) {
+      await this.reconcileArenaSnapshot();
+      if (!this.isCurrentSceneVisit(sceneVisitEpoch)) return;
+      showToast('The Arena day changed while your Scribbit was saving.');
+      this.exitTo('ArenaHome');
+      return;
+    }
+    this.startFightAfterBirth = wasFirstScribbit;
+    this.playCeremony(response.data, draft.imageDataUrl);
+  }
+
+  private applySubmittedScribbit(
+    scribbit: Scribbit,
+    draft: SubmissionDraft
+  ): boolean | null {
     const arena = getArena(this);
-    if (arena) {
-      const myDrawingSupplies = { ...(arena.myDrawingSupplies ?? {}) };
+    if (!arena || scribbit.bornDay !== arena.dayNumber) return null;
+    const wasFirstScribbit = !arena.hasCreatedScribbit;
+    const alreadyTracked =
+      arena.todayEntrants.some((entrant) => entrant.id === scribbit.id) ||
+      arena.myScribbits.some(
+        (ownedScribbit) => ownedScribbit.id === scribbit.id
+      );
+    const myDrawingSupplies = { ...(arena.myDrawingSupplies ?? {}) };
+    if (!alreadyTracked) {
       [
         draft.drawingSupplies.drawingInkId,
         draft.drawingSupplies.brushId,
@@ -2029,24 +2829,59 @@ export class Draw extends Scene {
         if (nextCount > 0) myDrawingSupplies[supplyId] = nextCount;
         else delete myDrawingSupplies[supplyId];
       });
-      this.startFightAfterBirth = arena.myScribbits.length === 0;
-      const todayEntrants = arena.todayEntrants.some(
-        (entrant) => entrant.id === response.data.id
-      )
-        ? arena.todayEntrants
-        : [response.data, ...arena.todayEntrants];
-      setArena(this, {
-        ...arena,
-        drawnToday: true,
-        enteredToday: true,
-        rumbleEntrants: todayEntrants.length,
-        todayEntrants,
-        myInk: (arena.myInk ?? 0) + INK_REWARDS.dailyDraw,
-        myDrawingSupplies,
-        myScribbits: [response.data, ...arena.myScribbits].slice(0, 3),
-      });
     }
-    this.playCeremony(response.data, draft.imageDataUrl);
+    const todayEntrants = arena.todayEntrants.some(
+      (entrant) => entrant.id === scribbit.id
+    )
+      ? arena.todayEntrants
+      : [scribbit, ...arena.todayEntrants];
+    const myScribbits = arena.myScribbits.some(
+      (ownedScribbit) => ownedScribbit.id === scribbit.id
+    )
+      ? arena.myScribbits
+      : [scribbit, ...arena.myScribbits].slice(0, 3);
+    setArena(this, {
+      ...arena,
+      hasCreatedScribbit: true,
+      drawnToday: true,
+      enteredToday: true,
+      rumbleEntrants: todayEntrants.length,
+      todayEntrants,
+      myInk: (arena.myInk ?? 0) + (alreadyTracked ? 0 : INK_REWARDS.dailyDraw),
+      myDrawingSupplies,
+      myScribbits,
+    });
+    return wasFirstScribbit;
+  }
+
+  private isCurrentSceneVisit(sceneVisitEpoch: number): boolean {
+    return this.scene.isActive() && sceneVisitEpoch === this.sceneVisitEpoch;
+  }
+
+  private acceptSubmissionResponse(sceneVisitEpoch: number): boolean {
+    const action = planSceneMutationResponse({
+      active: this.scene.isActive(),
+      requestSceneEpoch: sceneVisitEpoch,
+      currentSceneEpoch: this.sceneVisitEpoch,
+    });
+    return action === 'accept';
+  }
+
+  private async reconcileArenaSnapshot(): Promise<ArenaState | null> {
+    const reconciliationEpoch = this.arenaReconciliationEpoch + 1;
+    this.arenaReconciliationEpoch = reconciliationEpoch;
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const arenaRevision = getArenaRevision(this);
+      const result = await fetchArena();
+      if (reconciliationEpoch !== this.arenaReconciliationEpoch) return null;
+      if (!result.ok) return null;
+      if (arenaRevision !== getArenaRevision(this)) {
+        continue;
+      }
+      setArena(this, result.data);
+      return result.data;
+    }
+    return getArena(this) ?? null;
   }
 
   // Daily birth and ephemeral practice share one high-juice reveal. Practice
@@ -2339,7 +3174,7 @@ export class Draw extends Scene {
       this,
       0,
       0,
-      `+${INK_REWARDS.dailyDraw} INK · ENTERED TONIGHT`,
+      `+${INK_REWARDS.dailyDraw} INK · ENTERED TONIGHT’S RUMBLE`,
       20,
       UI.coralText,
       true
@@ -2353,16 +3188,31 @@ export class Draw extends Scene {
     });
 
     const actionLabel = this.startFightAfterBirth
-      ? 'WATCH FIRST FIGHT'
+      ? 'CHOOSE FIRST RIVAL'
       : 'CONTINUE';
-    ghostButton(
-      this,
-      width / 2,
-      height - 80,
-      actionLabel,
-      () => this.continueAfterBirth(scribbit),
-      420
-    ).setDepth(10);
+    const actionButton = this.startFightAfterBirth
+      ? iconButton(
+          this,
+          width / 2,
+          height - 80,
+          'sword',
+          actionLabel,
+          () => this.continueAfterBirth(scribbit),
+          420,
+          UI.coral,
+          UI.ink,
+          104,
+          UI.gold
+        )
+      : ghostButton(
+          this,
+          width / 2,
+          height - 80,
+          actionLabel,
+          () => this.continueAfterBirth(scribbit),
+          420
+        );
+    actionButton.setDepth(10);
     this.addNativeControl(
       actionLabel === 'CONTINUE' ? 'Continue to Arena' : actionLabel,
       width / 2 - 210,
@@ -2403,100 +3253,34 @@ export class Draw extends Scene {
       return;
     }
 
-    this.requestFirstFight(scribbit);
+    this.openFirstRivalRun(scribbit);
   }
 
-  private requestFirstFight(scribbit: Scribbit): void {
-    const { width, height } = this.scale;
-    const statusCard = stickerCard(
-      this,
-      width / 2,
-      height / 2,
-      width - 160,
-      170,
-      {
-        tapeColor: UI.tapeAlt,
-      }
-    ).setDepth(200);
-    statusCard.add(
-      paperIcon(this, 'sword', -210, -24, {
-        size: 40,
-        fill: UI.coral,
-      })
-    );
-    statusCard.add(
-      label(this, 18, -24, 'Finding an opponent…', TYPE.title, UI.ink, true)
-    );
-    statusCard.add(
-      label(
-        this,
-        0,
-        30,
-        'Your Scribbit is safe in tonight’s Rumble.',
-        TYPE.caption,
-        UI.inkSoft,
-        true
-      )
-    );
-
-    void spar(scribbit.id).then((result) => {
-      if (!this.scene.isActive()) return;
-      statusCard.destroy(true);
-      if (!result.ok) {
-        this.showFirstFightRetry(scribbit, result.error);
-        return;
-      }
-      const currentArena = getArena(this);
-      const stagedBattle = stageDirectBattle(
-        this,
-        currentArena,
-        result.data,
-        scribbit.id
-      );
-      showVsCeremony(this, {
-        fighterA: result.data.report.a,
-        fighterB: result.data.report.b,
-        battleKind: result.data.report.kind,
-        rivalryStakes: stagedBattle.rivalryStakes,
-        onComplete: () => this.scene.start('Replay'),
+  private openFirstRivalRun(scribbit: Scribbit): void {
+    if (this.rivalRunFlow) return;
+    const trigger =
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
+    const restoreBirthReceipt = (): void => {
+      this.rivalRunFlow = null;
+      this.birthContinuationStarted = false;
+      this.revealControlOverlay?.setVisible(true);
+      requestAnimationFrame(() => {
+        if (trigger?.isConnected) trigger.focus();
       });
-    });
-  }
-
-  private showFirstFightRetry(scribbit: Scribbit, message: string): void {
-    const { width, height } = this.scale;
-    const panel = stickerCard(this, width / 2, height / 2, width - 120, 300, {
-      tapeColor: UI.tapeAlt,
-    }).setDepth(210);
-    panel.add(
-      label(this, 0, -92, 'The opponent ran away', TYPE.title, UI.ink, true)
-    );
-    const copy = label(this, 0, -35, message, TYPE.body, UI.inkSoft, true);
-    copy.setWordWrapWidth(width - 220);
-    panel.add(copy);
-
-    const retry = iconButton(
-      this,
-      width / 2,
-      height / 2 + 54,
-      'sword',
-      'Retry fight',
-      () => {
-        panel.destroy(true);
-        retry.destroy(true);
-        continueButton.destroy(true);
-        this.requestFirstFight(scribbit);
+    };
+    this.rivalRunFlow = openRivalRun(this, {
+      challenger: scribbit,
+      trigger,
+      closeLabel: 'Back to birth',
+      returnScene: 'ArenaHome',
+      onDismissed: restoreBirthReceipt,
+      onResolved: () => {
+        this.rivalRunFlow = null;
       },
-      width - 220
-    ).setDepth(220);
-    const continueButton = ghostButton(
-      this,
-      width / 2,
-      height / 2 + 135,
-      'Continue to Arena',
-      () => this.exitTo('ArenaHome'),
-      width - 220
-    ).setDepth(220);
+      onCeremonyComplete: () => this.scene.start('Replay'),
+    });
   }
 
   private showError(message: string): void {
@@ -2512,6 +3296,7 @@ export class Draw extends Scene {
         this.errorPanelRef = null;
         this.overlay.setVisible(true);
         this.stickers?.showOverlays();
+        if (!this.drawingLocked) this.startDrawingRound();
       }
     );
   }

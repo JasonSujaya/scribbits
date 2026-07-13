@@ -39,6 +39,7 @@ import {
   XP_REWARDS,
 } from '../../shared/arena';
 import { isScoutNotebookReplayDay } from '../../shared/scoutnotebook';
+import { selectCommunityDoodleDare } from '../../shared/content/communitydrawthemes';
 import {
   isLegacyCardCursor,
   parseLegacyCardsPageSize,
@@ -66,7 +67,7 @@ import {
   loadCloutBoard,
 } from '../core/clout';
 import { hashTextToSeed } from '../core/random';
-import { loadPlayStreak, recordDailyPlay } from '../core/streak';
+import { recordDailyPlay } from '../core/streak';
 import {
   loadLegacyCardPage,
   loadLegacyReturnReceipt,
@@ -111,6 +112,7 @@ import {
   loadRumbleReturnReceipt,
 } from '../core/rumbleReturn';
 import { loadScoutNotebook } from '../core/scoutNotebook';
+import { selectSplashCreations } from '../core/splashShowcase';
 import {
   completeFounderChronicleBattle,
   loadFounderChronicle,
@@ -151,6 +153,7 @@ import {
   equipGearForScribbit,
   enforceAliveScribbitLimit,
   getAliveScribbitsForUser,
+  getUserScribbitIds,
   getCommunityLegendCount,
   getDailyFlags,
   getLegendIds,
@@ -161,6 +164,7 @@ import {
   isScribbitOwnedByUser,
   loadScribbit,
   loadScribbits,
+  refreshEquippedGearRankForUser,
   validateAndAnalyzeScribbitSubmission,
   type CurrentPlayer,
 } from '../core/scribbit';
@@ -713,6 +717,7 @@ registerPlayerMutatingGet('/arena', async (c) => {
     const forecast = await ensureForecastForDay(redis, dayNumber);
     const player = await getCurrentPlayer();
     let myScribbits: Scribbit[] = [];
+    let hasCreatedScribbit = false;
     let drawnToday = false;
     let enteredToday = false;
     let bossChallengedToday = false;
@@ -736,6 +741,8 @@ registerPlayerMutatingGet('/arena', async (c) => {
       const dailyFlags = await getDailyFlags(redis, player.userId, dayNumber);
       const inventory = await loadInventory(redis, player.userId);
       myScribbits = await getAliveScribbitsForUser(redis, player.userId);
+      hasCreatedScribbit =
+        (await getUserScribbitIds(redis, player.userId, 1)).length > 0;
       drawnToday = dailyFlags.drawnToday;
       enteredToday = dailyFlags.enteredToday;
       bossChallengedToday = dailyFlags.bossChallengedToday;
@@ -795,6 +802,7 @@ registerPlayerMutatingGet('/arena', async (c) => {
     return c.json<ArenaState>({
       dayNumber,
       loggedIn: Boolean(player),
+      hasCreatedScribbit,
       myUsername: player?.username ?? null,
       forecast,
       champion:
@@ -831,29 +839,30 @@ api.get('/splash', async (c) => {
   try {
     const now = new Date();
     const dayNumber = await ensureCurrentArenaDay(redis, now);
-    const resolving = dayNumber < getArenaDayNumber(now);
     const player = await getCurrentPlayer();
-    const dailyFlags = player
-      ? await getDailyFlags(redis, player.userId, dayNumber)
-      : null;
-    const backedScribbitId = player
-      ? await getBackedScribbitId(redis, dayNumber, player.userId)
-      : null;
-    const playStreak = player
-      ? await loadPlayStreak(redis, player.userId)
-      : { days: 0 };
+    const [recentCreationIds, hiddenScribbitIds, createdScribbitIds] =
+      await Promise.all([
+        getRumbleEntrantIds(redis, dayNumber, { limit: 12, reverse: true }),
+        player
+          ? getHiddenScribbitIds(redis, player.userId)
+          : Promise.resolve(new Set<string>()),
+        player
+          ? getUserScribbitIds(redis, player.userId, 1)
+          : Promise.resolve([]),
+      ]);
+    const recentCreations = await loadScribbits(
+      redis,
+      recentCreationIds,
+      formatUtcDateKey(now)
+    );
 
     return c.json<SplashState>({
       loggedIn: Boolean(player),
-      resolving,
-      forecast: await ensureForecastForDay(redis, dayNumber),
-      rumbleEntrants: getProjectedRumbleEntrantCount(
-        await getRumbleEntrantCount(redis, dayNumber)
-      ),
-      rumbleResolvesAt: getNextUtcDayStartMs(now),
-      drawnToday: dailyFlags?.drawnToday ?? false,
-      backedToday: backedScribbitId !== null,
-      playStreakDays: playStreak.days,
+      hasCreatedScribbit: createdScribbitIds.length > 0,
+      featuredCreations: selectSplashCreations({
+        recentCreations,
+        hiddenScribbitIds,
+      }),
     });
   } catch (error) {
     console.error('Splash route failed:', error);
@@ -982,6 +991,7 @@ api.post('/scribbit', async (c) => {
       artist: player.username,
       imageUrl,
       day: dayNumber,
+      drawingThemeId: selectCommunityDoodleDare(dayNumber).id,
     });
 
     const commitResult = await commitScribbitSubmission(redis, {
@@ -1859,6 +1869,12 @@ api.post('/merge-gear', async (c) => {
     if (result.status === 'operationConflict') {
       return conflict(c, 'That forge operation was already used.');
     }
+    await refreshEquippedGearRankForUser(
+      redis,
+      player.userId,
+      gearId,
+      result.response.toRank
+    );
     return c.json<MergeGearResponse>(result.response);
   } catch (error) {
     console.error('Merge gear route failed:', error);

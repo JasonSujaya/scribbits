@@ -26,6 +26,7 @@ import {
 } from '../../shared/combat/config';
 import type { DominantStat } from '../../shared/combat/types';
 import { appDock } from '../lib/appdock';
+import { appMenu } from '../lib/appmenu';
 import { CanvasActionOverlay, CanvasModalOverlay } from '../lib/overlay';
 import { screenTitle } from '../lib/screentitle';
 
@@ -531,6 +532,7 @@ export class Bestiary extends Scene {
   }
 
   private buildAppTabs(): void {
-    appDock(this, 'gallery');
+    appDock(this, null);
+    appMenu(this);
   }
 }

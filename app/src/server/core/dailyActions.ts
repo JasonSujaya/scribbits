@@ -11,6 +11,7 @@ import {
   parseScribbit,
   planCareProgression,
   readCareDoneToday,
+  serializeScribbit,
 } from './scribbit';
 import type { ArenaStorage, ArenaTransaction } from './storage';
 import {
@@ -158,7 +159,7 @@ export const commitDailyCareAction = async (
       await transaction.expire(careKey, DAILY_FLAG_TTL_SECONDS);
       await transaction.set(
         scribbitKey,
-        JSON.stringify(cloneScribbit(projection.scribbit))
+        serializeScribbit(projection.scribbit)
       );
       await transaction.incrBy(inkKey, input.inkAward);
       const result = await transaction.exec();
@@ -322,7 +323,7 @@ export const commitDailyChampionOutcome = async (
       await transaction.expire(dailyFlagsKey, DAILY_FLAG_TTL_SECONDS);
       await transaction.set(
         scribbitKey,
-        JSON.stringify(cloneScribbit(updatedScribbit))
+        serializeScribbit(updatedScribbit)
       );
       const result = await transaction.exec();
       if (Array.isArray(result) && result.length > 0) {

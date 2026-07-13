@@ -80,6 +80,7 @@ const {
   sortLegacyCardsNewestFirst,
   simulate: simulateProductionBattle,
   selectCapsuleDrop,
+  selectCommunityDoodleDare,
   validateAndAnalyzeScribbitSubmission,
   validateCatalogEquipmentLoadout,
 } = await import(mockCombatBundleUrl.href);
@@ -175,6 +176,15 @@ const makeScribbit = (options) => {
     throw new Error(`Mock Scribbit ${options.id} has malformed Ink Mods.`);
   }
   const accessories = options.accessories ? [...options.accessories] : [];
+  const equipmentLoadout =
+    options.equipmentLoadout ?? createEmptyEquipmentLoadout();
+  const presentedGearIds = new Set([
+    ...accessories,
+    ...Object.values(equipmentLoadout)
+      .flat()
+      .filter((gearId) => typeof gearId === 'string'),
+  ]);
+  const bornDay = options.bornDay ?? 8;
   const scribbit = {
     id: options.id,
     name: options.name,
@@ -182,7 +192,10 @@ const makeScribbit = (options) => {
     element: options.element,
     stats: { ...options.stats },
     imageUrl: options.imageUrl ?? defaultImageUrl,
-    bornDay: options.bornDay ?? 8,
+    drawingThemeId: options.isFounding
+      ? null
+      : (options.drawingThemeId ?? selectCommunityDoodleDare(bornDay).id),
+    bornDay,
     expiresDay: options.expiresDay ?? 11,
     belief: options.belief ?? 0,
     wins: options.wins ?? 0,
@@ -192,9 +205,12 @@ const makeScribbit = (options) => {
     isFounding: options.isFounding ?? false,
     accessories,
     gearRanks: Object.fromEntries(
-      accessories.map((gearId) => [gearId, options.gearRanks?.[gearId] ?? 1])
+      [...presentedGearIds].map((gearId) => [
+        gearId,
+        options.gearRanks?.[gearId] ?? 1,
+      ])
     ),
-    equipmentLoadout: options.equipmentLoadout ?? createEmptyEquipmentLoadout(),
+    equipmentLoadout,
     upgrades:
       explicitUpgrades ?? createScribbitUpgradesForLevel(options.id, level),
     level,
@@ -263,6 +279,18 @@ const myScribbits = [
     mood: 'pumped',
     careDoneToday: ['feed', 'pat', 'train'],
     accessories: ['bowtie', 'tiny-sword'],
+    gearRanks: {
+      'tiny-sword': 6,
+      beanie: 5,
+      'smearstep-speed-scarf': 4,
+      'round-glasses': 3,
+    },
+    equipmentLoadout: {
+      weapon: ['tiny-sword', null],
+      armor: ['beanie', null],
+      shoes: ['smearstep-speed-scarf', null],
+      accessory: ['round-glasses', null],
+    },
   }),
   makeScribbit({
     id: 'mine-moss-bun',
@@ -338,11 +366,54 @@ const todayEntrants = [
     xp: 5,
     mood: 'sleepy',
   }),
-  makeFoundingScribbit('founding-coalimp', 3),
-  makeFoundingScribbit('founding-kelpkit', 5),
-  makeFoundingScribbit('founding-barkbloom', 2),
-  makeFoundingScribbit('founding-cloudpip', 8),
-  makeFoundingScribbit('founding-pearlmote', 6),
+  makeScribbit({
+    id: 'community-puffball',
+    name: 'Puffball',
+    artist: 'doodle_ana',
+    element: 'storm',
+    stats: { chonk: 35, spike: 14, zip: 22, charm: 29 },
+    belief: 9,
+    wins: 2,
+    losses: 1,
+    xp: 6,
+    mood: 'happy',
+  }),
+  makeScribbit({
+    id: 'community-mistbun',
+    name: 'Mistbun',
+    artist: 'pencil_jo',
+    element: 'tide',
+    stats: { chonk: 28, spike: 18, zip: 34, charm: 20 },
+    belief: 5,
+    wins: 1,
+    losses: 2,
+    xp: 3,
+    mood: 'sleepy',
+  }),
+  makeScribbit({
+    id: 'community-snorebit',
+    name: 'Snorebit',
+    artist: 'ink_sam',
+    element: 'moss',
+    stats: { chonk: 40, spike: 20, zip: 16, charm: 24 },
+    belief: 11,
+    wins: 4,
+    losses: 3,
+    xp: 9,
+    mood: 'hungry',
+  }),
+  makeScribbit({
+    id: 'community-dewdrop',
+    name: 'Dewdrop',
+    artist: 'marker_lee',
+    element: 'tide',
+    stats: { chonk: 18, spike: 24, zip: 20, charm: 38 },
+    belief: 14,
+    wins: 5,
+    losses: 2,
+    xp: 12,
+    mood: 'pumped',
+  }),
 ];
 
 const mockSparRivalSlate = (challenger, previewMode, rivalRun) => {
@@ -767,6 +838,7 @@ const memory = {
         gear: {
           beanie: { rank: 6, copies: 2, rarity: 'common' },
           cape: { rank: 5, copies: 1, rarity: 'rare' },
+          'tiny-sword': { rank: 6, copies: 1, rarity: 'common' },
         },
         pens: ['warm-greys', 'gold-pen', 'rainbow-crayon', 'midnight-ink'],
         titles: ['doodler', 'inkslinger', 'brushlord', 'the-pen-ultimate'],
@@ -859,7 +931,7 @@ const olderScoutReplay = createBattleReport(
   todayEntrants[0],
   todayEntrants[1],
   {
-    seed: 38,
+    seed: 0,
     forecast: makeForecast(memory.dayNumber - 2),
   }
 );
@@ -1081,6 +1153,34 @@ const getLivingScribbitsForPreview = (previewMode) => {
     );
   }
   return livingScribbits;
+};
+
+const featuredCreationsForPreview = () => {
+  const featuredCreations = [];
+  const selectedIds = new Set();
+  const candidates = [...memory.todayEntrants].reverse();
+
+  for (const scribbit of candidates) {
+    if (
+      featuredCreations.length >= 3 ||
+      selectedIds.has(scribbit.id) ||
+      memory.hiddenScribbitIds.has(scribbit.id) ||
+      scribbit.isFounding ||
+      !scribbit.artist?.trim() ||
+      !scribbit.imageUrl?.trim()
+    ) {
+      continue;
+    }
+    selectedIds.add(scribbit.id);
+    featuredCreations.push({
+      id: scribbit.id,
+      name: scribbit.name,
+      artist: scribbit.artist,
+      imageUrl: scribbit.imageUrl,
+    });
+  }
+
+  return featuredCreations;
 };
 
 const hasDrawnTodayForPreview = (previewMode) => {
@@ -1321,6 +1421,7 @@ const arenaState = (economy, previewMode = 'returning') => {
   return {
     dayNumber: memory.dayNumber,
     loggedIn: true,
+    hasCreatedScribbit: true,
     myUsername: 'mock_player',
     forecast: memory.forecast,
     champion: memory.hiddenScribbitIds.has(memory.champion.id)
@@ -1372,6 +1473,7 @@ const freshPlayerArenaState = (economy) => {
 
   return {
     ...arenaState(economy, 'fresh'),
+    hasCreatedScribbit: submittedScribbits.length > 0,
     myScribbits: submittedScribbits.map(cloneScribbit),
     drawnToday: submittedScribbits.length > 0,
     enteredToday,
@@ -1387,6 +1489,7 @@ const loggedOutArenaState = () => {
   return {
     ...arenaState(createPreviewEconomy(), 'logged-out'),
     loggedIn: false,
+    hasCreatedScribbit: false,
     myUsername: null,
     myScribbits: [],
     drawnToday: false,
@@ -1547,13 +1650,8 @@ const handleApi = async (request, response, url) => {
     const state = arenaStateForPreview(previewMode);
     sendJson(response, 200, {
       loggedIn: state.loggedIn,
-      resolving: false,
-      forecast: state.forecast,
-      rumbleEntrants: state.rumbleEntrants,
-      rumbleResolvesAt: state.rumbleResolvesAt,
-      drawnToday: state.drawnToday,
-      backedToday: state.myBackedScribbitId !== null,
-      playStreakDays: state.playStreakDays,
+      hasCreatedScribbit: state.hasCreatedScribbit,
+      featuredCreations: featuredCreationsForPreview(),
     });
     return;
   }
@@ -1731,6 +1829,18 @@ const handleApi = async (request, response, url) => {
     const operationId =
       typeof body?.operationId === 'string' ? body.operationId.trim() : '';
     const gearId = typeof body?.gearId === 'string' ? body.gearId.trim() : '';
+    const refreshMockEquippedRanks = (rank) => {
+      for (const list of [memory.myScribbits, memory.todayEntrants]) {
+        for (const scribbit of list) {
+          const wearsGear = Object.values(scribbit.equipmentLoadout).some(
+            (slots) => slots.includes(gearId)
+          );
+          if (wearsGear) {
+            scribbit.gearRanks = { ...scribbit.gearRanks, [gearId]: rank };
+          }
+        }
+      }
+    };
     if (!operationId || !gearId) {
       sendError(response, 400, 'Choose valid Gear and a forge operation.');
       return;
@@ -1741,6 +1851,7 @@ const handleApi = async (request, response, url) => {
         sendError(response, 409, 'That forge operation was already used.');
         return;
       }
+      refreshMockEquippedRanks(cachedMerge.toRank);
       sendJson(response, 200, cachedMerge);
       return;
     }
@@ -1758,6 +1869,7 @@ const handleApi = async (request, response, url) => {
       return;
     }
     economy.inventory = merge.response.inventory;
+    refreshMockEquippedRanks(merge.response.toRank);
     economy.gearMergeOperations.set(operationId, merge.response);
     sendJson(response, 200, merge.response);
     return;
@@ -2516,6 +2628,7 @@ const handleApi = async (request, response, url) => {
       artist: 'mock_player',
       imageUrl: `/api/drawing/${id}`,
       day: memory.dayNumber,
+      drawingThemeId: selectCommunityDoodleDare(memory.dayNumber).id,
     });
     scribbit.gearRanks = Object.fromEntries(
       scribbit.accessories.map((gearId) => [
@@ -2694,6 +2807,14 @@ const server = createServer(async (request, response) => {
       response.write('retry: 1000\n\n');
       reloadClients.add(response);
       request.on('close', () => reloadClients.delete(response));
+      return;
+    }
+
+    if (
+      request.method === 'GET' &&
+      url.pathname === '/__mock/draw-automation'
+    ) {
+      sendJson(response, 200, { enabled: true });
       return;
     }
 

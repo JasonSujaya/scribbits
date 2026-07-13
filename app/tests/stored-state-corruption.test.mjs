@@ -16,10 +16,153 @@ const require = createRequire(import.meta.url);
 const founderChronicle = require(
   join(compiledServerRoot, 'core', 'founderChronicle.js')
 );
+const arenaStore = require(join(compiledServerRoot, 'core', 'arenaStore.js'));
+const dailyJob = require(join(compiledServerRoot, 'core', 'dailyJob.js'));
 const inkStore = require(join(compiledServerRoot, 'core', 'inkStore.js'));
 const rivalRun = require(join(compiledServerRoot, 'core', 'rivalRun.js'));
+const scribbits = require(join(compiledServerRoot, 'core', 'scribbit.js'));
 
 const createRecordingStorage = (options) => createMemoryStorage(options);
+
+const createStoredResolution = (resolvedDay) => ({
+  resolvedDay,
+  champion: scribbits.createScribbit({
+    id: `resolution-champion-${resolvedDay}`,
+    draft: {
+      name: 'Outbox Champ',
+      stats: { chonk: 25, spike: 25, zip: 25, charm: 25 },
+      element: 'ember',
+      accessories: [],
+    },
+    artist: 'outbox-artist',
+    imageUrl: '/api/drawing/outbox-champ',
+    day: resolvedDay,
+  }),
+  runnerUp: null,
+  reportCount: 0,
+  resolvedForecast: {
+    day: resolvedDay,
+    boostedElement: 'ember',
+    nerfedElement: 'tide',
+    blurb: 'Stored forecast',
+  },
+  nextForecast: {
+    day: resolvedDay + 1,
+    boostedElement: 'moss',
+    nerfedElement: 'storm',
+    blurb: 'Next stored forecast',
+  },
+  cloutPayout: {
+    championBackers: 0,
+    runnerUpBackers: 0,
+    paidBackers: 0,
+  },
+  expired: { faded: 0, legends: 0 },
+});
+
+test('Arena resolution corruption fails closed and preserves exact bytes', async (t) => {
+  const outboxKey = dailyJob.getArenaResolutionOutboxKey();
+  const cases = [
+    ['malformed JSON', '{"resolvedDay":2'],
+    ['partial payload', JSON.stringify({ resolvedDay: 2, champion: {} })],
+    ['hash day mismatch', JSON.stringify(createStoredResolution(3))],
+  ];
+
+  for (const [name, corruptBytes] of cases) {
+    await t.test(name, async () => {
+      const recording = createRecordingStorage({
+        hashes: { [outboxKey]: { 2: corruptBytes } },
+      });
+      await assert.rejects(
+        dailyJob.loadPendingArenaResolutions(recording.storage),
+        /Stored Arena resolution/
+      );
+      assert.equal(recording.hashValues.get(outboxKey).get('2'), corruptBytes);
+      assert.deepEqual(recording.mutations, []);
+    });
+  }
+});
+
+test('Invalid Arena recovery cannot advance the authoritative day', async () => {
+  const outboxKey = dailyJob.getArenaResolutionOutboxKey();
+  const currentDayKey = arenaStore.getCurrentArenaDayKey();
+  const corruptBytes = JSON.stringify({
+    ...createStoredResolution(2),
+    reportCount: -1,
+  });
+  const recording = createRecordingStorage({
+    strings: { [currentDayKey]: '2' },
+    hashes: { [outboxKey]: { 2: corruptBytes } },
+    watch: true,
+  });
+
+  await assert.rejects(
+    dailyJob.runNightlyArenaJobForTesting(recording.storage, { force: true }),
+    /Stored Arena resolution for day 2 is invalid/
+  );
+  assert.equal(recording.stringValues.get(currentDayKey), '2');
+  assert.equal(recording.hashValues.get(outboxKey).get('2'), corruptBytes);
+  assert.deepEqual(recording.mutations, []);
+});
+
+test('A corrupt stale Arena resolution blocks every later day write', async () => {
+  const outboxKey = dailyJob.getArenaResolutionOutboxKey();
+  const currentDayKey = arenaStore.getCurrentArenaDayKey();
+  const corruptBytes = '{"resolvedDay":1,"champion":{}}';
+  const recording = createRecordingStorage({
+    strings: { [currentDayKey]: '2' },
+    hashes: { [outboxKey]: { 1: corruptBytes } },
+    watch: true,
+  });
+
+  await assert.rejects(
+    dailyJob.runNightlyArenaJobForTesting(recording.storage, { force: true }),
+    /Stored Arena resolution for day 1 is invalid/
+  );
+  assert.equal(recording.stringValues.get(currentDayKey), '2');
+  assert.equal(recording.hashValues.get(outboxKey).get('1'), corruptBytes);
+  assert.deepEqual(recording.mutations, []);
+});
+
+test('A valid-looking future Arena resolution cannot advance or publish', async () => {
+  const outboxKey = dailyJob.getArenaResolutionOutboxKey();
+  const currentDayKey = arenaStore.getCurrentArenaDayKey();
+  const futureBytes = JSON.stringify(createStoredResolution(999));
+  const recording = createRecordingStorage({
+    strings: { [currentDayKey]: '2' },
+    hashes: { [outboxKey]: { 999: futureBytes } },
+    watch: true,
+  });
+
+  await assert.rejects(
+    dailyJob.runNightlyArenaJobForTesting(recording.storage, { force: true }),
+    /future day 999 is invalid while the current day is 2/
+  );
+  assert.equal(recording.stringValues.get(currentDayKey), '2');
+  assert.equal(recording.hashValues.get(outboxKey).get('999'), futureBytes);
+  assert.deepEqual(recording.mutations, []);
+});
+
+test('A future Arena resolution cannot initialize a missing current day', async () => {
+  const outboxKey = dailyJob.getArenaResolutionOutboxKey();
+  const currentDayKey = arenaStore.getCurrentArenaDayKey();
+  const futureBytes = JSON.stringify(createStoredResolution(999));
+  const recording = createRecordingStorage({
+    hashes: { [outboxKey]: { 999: futureBytes } },
+    watch: true,
+  });
+
+  await assert.rejects(
+    dailyJob.runNightlyArenaJobForTesting(recording.storage, {
+      force: true,
+      now: new Date(Date.UTC(2026, 6, 5)),
+    }),
+    /future day 999 is invalid while the current day is 2/
+  );
+  assert.equal(recording.stringValues.has(currentDayKey), false);
+  assert.equal(recording.hashValues.get(outboxKey).get('999'), futureBytes);
+  assert.deepEqual(recording.mutations, []);
+});
 
 test('Founder Chronicle classifies missing, valid, and invalid stored bytes', () => {
   assert.deepEqual(founderChronicle.parseStoredFounderChronicle(undefined), {

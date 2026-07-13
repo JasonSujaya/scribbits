@@ -2,6 +2,7 @@ import { Scene } from 'phaser';
 import {
   equipGear,
   equipTitle as saveEquippedTitle,
+  fetchArena,
   fetchInventory,
   fetchLegacyCards,
   fetchLegends,
@@ -9,6 +10,7 @@ import {
 } from '../lib/api';
 import {
   getArena,
+  getArenaRevision,
   getGalleryTab,
   setArena,
   setGalleryTab,
@@ -26,6 +28,7 @@ import { label, paperPagination, stickerCard, errorPanel } from '../lib/ui';
 import { openDetailModal } from '../lib/detailmodal';
 import type { ErrorPanel } from '../lib/ui';
 import type {
+  GearRank,
   Inventory,
   LegacyCard,
   LegacyCardsState,
@@ -40,12 +43,18 @@ import {
 } from '../lib/collectionbook';
 import { LEGACY_BOOK_PAGE_SIZE, renderLegacyBook } from '../lib/legacycards';
 import { appDock } from '../lib/appdock';
-import { CanvasActionOverlay, DomOverlay } from '../lib/overlay';
+import { appMenu, type AppMenu } from '../lib/appmenu';
+import {
+  CanvasActionOverlay,
+  CanvasModalOverlay,
+  DomOverlay,
+} from '../lib/overlay';
 import { paperIcon, type PaperIconKey } from '../lib/papericons';
 import { SemanticTabController } from '../lib/semantictabs';
 import { bindPressInteractionEvents } from '../lib/pressinteraction';
 import { screenTitle } from '../lib/screentitle';
 import { fitText } from '../lib/fittext';
+import { planSceneMutationResponse } from '../lib/arenaasynclifecycle';
 
 const LEGEND_PAGE_SIZE = 4;
 const LEGEND_CARD_HEIGHT = 272;
@@ -116,6 +125,12 @@ export class Gallery extends Scene {
   private legendsRequestEpoch = 0;
   private collectionRequestEpoch = 0;
   private legacyRequestEpoch = 0;
+  private sceneVisitEpoch = 0;
+  private equipmentMutationEpoch = 0;
+  private titleMutationEpoch = 0;
+  private gearMergeMutationEpoch = 0;
+  private arenaReconciliationEpoch = 0;
+  private collectionRefreshRequested = false;
   private sectionTabsOverlay: CanvasActionOverlay | null = null;
   private contentActionOverlay: CanvasActionOverlay | null = null;
   private sectionSemanticOverlay: DomOverlay | null = null;
@@ -126,16 +141,17 @@ export class Gallery extends Scene {
   >();
   private sectionTabController: SemanticTabController<GalleryTab> | null = null;
   private openingLegendId: string | null = null;
+  private menu: AppMenu | null = null;
 
   constructor() {
     super('Gallery');
   }
 
   init(): void {
+    this.sceneVisitEpoch += 1;
     this.legendsState = null;
     this.errorPanelRef = null;
     this.livingPaper = null;
-    this.buildGeneration = 0;
     this.legendPage = 0;
     this.legacyPage = 0;
     this.legacyPages = [];
@@ -166,6 +182,8 @@ export class Gallery extends Scene {
     this.sectionTabControls.clear();
     this.sectionTabController = null;
     this.openingLegendId = null;
+    this.menu = null;
+    this.collectionRefreshRequested = false;
   }
 
   create(): void {
@@ -173,7 +191,10 @@ export class Gallery extends Scene {
     this.cameras.main.fadeIn(180, 255, 247, 232);
     this.tab = getGalleryTab(this);
     this.loggedIn = getArena(this)?.loggedIn ?? false;
-    this.events.once('shutdown', () => this.destroyBuildOverlays());
+    this.events.once('shutdown', () => {
+      this.sceneVisitEpoch += 1;
+      this.destroyBuildOverlays();
+    });
     this.build();
     if (this.tab === 'collection') {
       if (this.loggedIn) void this.loadCollection();
@@ -185,12 +206,16 @@ export class Gallery extends Scene {
   }
 
   private async loadLegends(): Promise<void> {
+    const sceneVisitEpoch = this.sceneVisitEpoch;
     const requestEpoch = this.legendsRequestEpoch + 1;
     this.legendsRequestEpoch = requestEpoch;
     this.loadingLegends = true;
     this.loadingOlderLegends = false;
     const result = await fetchLegends(null, this.getLegendPageSize());
-    if (!this.scene.isActive() || requestEpoch !== this.legendsRequestEpoch) {
+    if (
+      !this.isCurrentSceneVisit(sceneVisitEpoch) ||
+      requestEpoch !== this.legendsRequestEpoch
+    ) {
       return;
     }
     this.loadingLegends = false;
@@ -205,6 +230,7 @@ export class Gallery extends Scene {
 
   private async loadLegacyBook(): Promise<void> {
     if (!this.loggedIn || this.loadingLegacy) return;
+    const sceneVisitEpoch = this.sceneVisitEpoch;
     const requestEpoch = this.legacyRequestEpoch + 1;
     this.legacyRequestEpoch = requestEpoch;
     this.loadingLegacy = true;
@@ -212,7 +238,10 @@ export class Gallery extends Scene {
     if (this.tab === 'legacy') this.build();
 
     const result = await fetchLegacyCards(null, LEGACY_BOOK_PAGE_SIZE);
-    if (!this.scene.isActive() || requestEpoch !== this.legacyRequestEpoch) {
+    if (
+      !this.isCurrentSceneVisit(sceneVisitEpoch) ||
+      requestEpoch !== this.legacyRequestEpoch
+    ) {
       return;
     }
 
@@ -233,6 +262,7 @@ export class Gallery extends Scene {
     let nextCursor = currentPage?.nextCursor ?? null;
     if (!nextCursor) return;
 
+    const sceneVisitEpoch = this.sceneVisitEpoch;
     const requestEpoch = this.legacyRequestEpoch;
     this.loadingLegacy = true;
     this.legacyError = null;
@@ -246,7 +276,10 @@ export class Gallery extends Scene {
     // a few duplicate-only pages so Older still advances without an open loop.
     for (let attempt = 0; attempt < 4 && nextCursor; attempt += 1) {
       const result = await fetchLegacyCards(nextCursor, LEGACY_BOOK_PAGE_SIZE);
-      if (!this.scene.isActive() || requestEpoch !== this.legacyRequestEpoch) {
+      if (
+        !this.isCurrentSceneVisit(sceneVisitEpoch) ||
+        requestEpoch !== this.legacyRequestEpoch
+      ) {
         return;
       }
       if (!result.ok) {
@@ -285,6 +318,7 @@ export class Gallery extends Scene {
 
   private async loadCollection(): Promise<void> {
     if (!this.loggedIn || this.loadingCollection) return;
+    const sceneVisitEpoch = this.sceneVisitEpoch;
     const requestEpoch = this.collectionRequestEpoch + 1;
     this.collectionRequestEpoch = requestEpoch;
     this.loadingCollection = true;
@@ -293,7 +327,7 @@ export class Gallery extends Scene {
 
     const result = await fetchInventory();
     if (
-      !this.scene.isActive() ||
+      !this.isCurrentSceneVisit(sceneVisitEpoch) ||
       requestEpoch !== this.collectionRequestEpoch
     ) {
       return;
@@ -303,10 +337,12 @@ export class Gallery extends Scene {
     if (!result.ok) {
       this.collectionError = result.error;
       if (this.tab === 'collection') this.build();
+      this.continueRequestedCollectionRefresh();
       return;
     }
     this.inventory = result.data;
     if (this.tab === 'collection') this.build();
+    this.continueRequestedCollectionRefresh();
   }
 
   private async loadOlderLegends(pageSize: number): Promise<void> {
@@ -315,6 +351,7 @@ export class Gallery extends Scene {
       return;
     }
 
+    const sceneVisitEpoch = this.sceneVisitEpoch;
     const requestEpoch = this.legendsRequestEpoch;
     this.loadingOlderLegends = true;
     this.build();
@@ -328,7 +365,10 @@ export class Gallery extends Scene {
     // Older still makes visible progress without an unbounded request loop.
     for (let attempt = 0; attempt < 4 && nextCursor; attempt += 1) {
       const result = await fetchLegends(nextCursor, pageSize);
-      if (!this.scene.isActive() || requestEpoch !== this.legendsRequestEpoch) {
+      if (
+        !this.isCurrentSceneVisit(sceneVisitEpoch) ||
+        requestEpoch !== this.legendsRequestEpoch
+      ) {
         return;
       }
       if (!result.ok) {
@@ -364,6 +404,7 @@ export class Gallery extends Scene {
   }
 
   private build(): void {
+    CanvasModalOverlay.destroyAll();
     const focusedSectionTab = [...this.sectionTabControls.values()].includes(
       document.activeElement as HTMLButtonElement
     );
@@ -415,6 +456,7 @@ export class Gallery extends Scene {
         scene: this,
         actionOverlay: this.ensureContentActionOverlay(),
         top: BAG_CONTENT_TOP,
+        dayNumber: getArena(this)?.dayNumber ?? 1,
         section: this.collectionSection,
         scrollOffset: this.collectionScrollOffset,
         inventory: this.inventory,
@@ -437,10 +479,6 @@ export class Gallery extends Scene {
         onSelectScribbit: (scribbitId) => {
           this.selectedEquipmentScribbitId = scribbitId;
           this.equipmentError = null;
-          this.build();
-        },
-        onEquipmentMessage: (message) => {
-          this.equipmentError = message;
           this.build();
         },
         onEquipGear: (scribbitId, category, slotIndex, gearId) =>
@@ -529,6 +567,8 @@ export class Gallery extends Scene {
   }
 
   private destroyBuildOverlays(): void {
+    this.menu?.destroy();
+    this.menu = null;
     this.sectionTabsOverlay?.destroy();
     this.sectionTabsOverlay = null;
     this.contentActionOverlay?.destroy();
@@ -561,10 +601,10 @@ export class Gallery extends Scene {
   }
 
   private buildAppTabs(): void {
-    appDock(this, this.tab === 'collection' ? 'bag' : 'gallery', {
+    appDock(this, this.tab === 'collection' ? 'bag' : null, {
       bag: () => this.switchTab('collection'),
-      gallery: () => this.switchTab('legends'),
     });
+    this.menu = appMenu(this);
   }
 
   private buildTabs(y: number): void {
@@ -985,8 +1025,23 @@ export class Gallery extends Scene {
     this.savingEquipment = true;
     this.equipmentError = null;
     this.build();
+    const sceneVisitEpoch = this.sceneVisitEpoch;
+    const mutationEpoch = this.equipmentMutationEpoch + 1;
+    this.equipmentMutationEpoch = mutationEpoch;
 
     const result = await equipGear(scribbitId, category, slotIndex, gearId);
+    if (
+      !this.isCurrentCollectionMutation(
+        sceneVisitEpoch,
+        mutationEpoch,
+        this.equipmentMutationEpoch
+      )
+    ) {
+      if (result.ok) {
+        void this.reconcileArenaSnapshot();
+      }
+      return result.ok ? result.data : { error: result.error };
+    }
     this.savingEquipment = false;
     if (!result.ok) {
       this.equipmentError = result.error;
@@ -994,15 +1049,7 @@ export class Gallery extends Scene {
       return { error: result.error };
     }
 
-    const arena = getArena(this);
-    if (arena) {
-      setArena(this, {
-        ...arena,
-        myScribbits: arena.myScribbits.map((scribbit) =>
-          scribbit.id === result.data.id ? result.data : scribbit
-        ),
-      });
-    }
+    this.applyEquipmentResult(result.data);
     this.selectedEquipmentScribbitId = result.data.id;
     if (this.scene.isActive() && this.tab === 'collection') this.build();
     return result.data;
@@ -1014,8 +1061,23 @@ export class Gallery extends Scene {
     if (!this.inventory) return 'Your Bag is still syncing.';
     const previousInventory = this.inventory;
     this.inventory = { ...previousInventory, equippedTitle: titleId };
+    const sceneVisitEpoch = this.sceneVisitEpoch;
+    const mutationEpoch = this.titleMutationEpoch + 1;
+    this.titleMutationEpoch = mutationEpoch;
 
     const result = await saveEquippedTitle(titleId);
+    if (
+      !this.isCurrentCollectionMutation(
+        sceneVisitEpoch,
+        mutationEpoch,
+        this.titleMutationEpoch
+      )
+    ) {
+      if (result.ok && this.scene.isActive()) {
+        this.requestCollectionRefresh();
+      }
+      return result.ok ? null : result.error;
+    }
     if (!result.ok) {
       this.inventory = previousInventory;
       return result.error;
@@ -1029,10 +1091,108 @@ export class Gallery extends Scene {
     operationId: string
   ): Promise<MergeGearResponse | { error: string }> {
     if (!this.inventory) return { error: 'Your Bag is still syncing.' };
+    const sceneVisitEpoch = this.sceneVisitEpoch;
+    const mutationEpoch = this.gearMergeMutationEpoch + 1;
+    this.gearMergeMutationEpoch = mutationEpoch;
     const result = await mergeGear(gearId, operationId);
+    if (
+      !this.isCurrentCollectionMutation(
+        sceneVisitEpoch,
+        mutationEpoch,
+        this.gearMergeMutationEpoch
+      )
+    ) {
+      if (result.ok && this.scene.isActive()) {
+        this.requestCollectionRefresh();
+      }
+      return result.ok ? result.data : { error: result.error };
+    }
     if (!result.ok) return { error: result.error };
     this.inventory = result.data.inventory;
+    this.applyForgedGearRank(result.data.gearId, result.data.toRank);
     return result.data;
+  }
+
+  private applyForgedGearRank(gearId: string, rank: GearRank): void {
+    const arena = getArena(this);
+    if (!arena) return;
+    let changed = false;
+    const myScribbits = arena.myScribbits.map((scribbit) => {
+      const wearsGear = Object.values(scribbit.equipmentLoadout).some((slots) =>
+        slots.includes(gearId)
+      );
+      if (!wearsGear || scribbit.gearRanks?.[gearId] === rank) return scribbit;
+      changed = true;
+      return {
+        ...scribbit,
+        gearRanks: { ...(scribbit.gearRanks ?? {}), [gearId]: rank },
+      };
+    });
+    if (changed) setArena(this, { ...arena, myScribbits });
+  }
+
+  private isCurrentSceneVisit(sceneVisitEpoch: number): boolean {
+    return this.scene.isActive() && sceneVisitEpoch === this.sceneVisitEpoch;
+  }
+
+  private isCurrentCollectionMutation(
+    sceneVisitEpoch: number,
+    mutationEpoch: number,
+    currentMutationEpoch: number
+  ): boolean {
+    const action = planSceneMutationResponse({
+      active: this.scene.isActive(),
+      requestSceneEpoch: sceneVisitEpoch,
+      currentSceneEpoch: this.sceneVisitEpoch,
+    });
+    if (action === 'accept' && mutationEpoch === currentMutationEpoch) {
+      return true;
+    }
+    return false;
+  }
+
+  private applyEquipmentResult(updatedScribbit: Scribbit): void {
+    const arena = getArena(this);
+    if (!arena) return;
+    setArena(this, {
+      ...arena,
+      myScribbits: arena.myScribbits.map((scribbit) =>
+        scribbit.id === updatedScribbit.id ? updatedScribbit : scribbit
+      ),
+    });
+  }
+
+  private async reconcileArenaSnapshot(): Promise<void> {
+    const reconciliationEpoch = this.arenaReconciliationEpoch + 1;
+    this.arenaReconciliationEpoch = reconciliationEpoch;
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const arenaRevision = getArenaRevision(this);
+      const result = await fetchArena();
+      if (reconciliationEpoch !== this.arenaReconciliationEpoch) return;
+      if (!result.ok) return;
+      if (arenaRevision !== getArenaRevision(this)) continue;
+      setArena(this, result.data);
+      if (this.scene.isActive() && this.tab === 'collection') this.build();
+      return;
+    }
+  }
+
+  private requestCollectionRefresh(): void {
+    if (this.tab !== 'collection') {
+      this.inventory = null;
+      return;
+    }
+    if (this.loadingCollection) {
+      this.collectionRefreshRequested = true;
+      return;
+    }
+    void this.loadCollection();
+  }
+
+  private continueRequestedCollectionRefresh(): void {
+    if (!this.collectionRefreshRequested) return;
+    this.collectionRefreshRequested = false;
+    void this.loadCollection();
   }
 
   private handleLegacyPrimaryAction(card: LegacyCard): void {

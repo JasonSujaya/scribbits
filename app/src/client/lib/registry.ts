@@ -24,6 +24,7 @@ import {
 } from './founderchronicle';
 
 const ARENA_KEY = 'arena';
+const ARENA_REVISION_KEY = 'arenaRevision';
 const REPLAY_KEY = 'replayReport';
 const REPLAY_RETURN_KEY = 'replayReturn';
 const REPLAY_ENTRY_MODE_KEY = 'replayEntryMode';
@@ -50,10 +51,18 @@ type ReplayEntryMode = 'fresh' | 'saved';
 
 export function setArena(scene: Scene, state: ArenaState): void {
   scene.registry.set(ARENA_KEY, state);
+  scene.registry.set(ARENA_REVISION_KEY, getArenaRevision(scene) + 1);
 }
 
 export function getArena(scene: Scene): ArenaState | undefined {
   return scene.registry.get(ARENA_KEY) as ArenaState | undefined;
+}
+
+export function getArenaRevision(scene: Scene): number {
+  const revision = scene.registry.get(ARENA_REVISION_KEY) as unknown;
+  return typeof revision === 'number' && Number.isSafeInteger(revision)
+    ? revision
+    : 0;
 }
 
 // Hand a battle report to the Replay scene, plus where to return afterward.

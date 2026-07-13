@@ -4,9 +4,10 @@ import { fetchArena } from '../lib/api';
 import { generateAllElementBadges, generateCoreArt } from '../lib/art';
 import { mountLivingPaper } from '../lib/livingpaper';
 import { FONT_STACK, UI } from '../lib/theme';
-import { errorPanel, handLettered } from '../lib/ui';
+import { errorPanel } from '../lib/ui';
 import type { ErrorPanel } from '../lib/ui';
 import { setArena } from '../lib/registry';
+import { BRAND_LOGO_TEXTURE } from '../lib/visualassets';
 import type { ArenaState } from '../../shared/arena';
 
 // Preloader fetches the arena snapshot, bakes baseline textures (UI panel, dot,
@@ -33,7 +34,16 @@ export class Preloader extends Scene {
     generateAllElementBadges(this);
     mountLivingPaper(this, { edgeCreatures: false });
 
-    handLettered(this, width / 2, height * 0.4, 'SCRIBBITS', 76, UI.ink, true);
+    const brandLogo = this.add.image(
+      width / 2,
+      height * 0.34,
+      BRAND_LOGO_TEXTURE
+    );
+    const brandLogoScale = Math.min(
+      (width * 0.74) / brandLogo.width,
+      250 / brandLogo.height
+    );
+    brandLogo.setScale(brandLogoScale);
     this.add
       .text(width / 2, height * 0.47, 'Draw it. Its shape becomes its stats.', {
         fontFamily: FONT_STACK,
@@ -65,7 +75,7 @@ export class Preloader extends Scene {
   private startArena(state: ArenaState): void {
     setArena(this, state);
     const needsFirstScribbit =
-      state.loggedIn && !state.drawnToday && state.myScribbits.length === 0;
+      state.loggedIn && !state.hasCreatedScribbit && !state.drawnToday;
     this.scene.start(needsFirstScribbit ? 'Draw' : 'ArenaHome');
   }
 

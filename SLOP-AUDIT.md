@@ -1,10 +1,10 @@
 # Slop Audit — Scribbits Arena
 
-_Last verified: 2026-07-13 against the current dirty worktree._
+_Last verified: 2026-07-14 against the current dirty worktree._
 
 ## Summary
 
-The cleanup closed every verified P0 and P1 finding and four of the six P2 findings. Current verified open totals: **0 P0, 0 P1, 2 P2**. The remaining work is bounded: migrate the 17k-line legacy deterministic harness into focused suites, and decide whether to keep or delete one unreferenced 312 KB Arena source bitmap.
+The cleanup closed every verified P0 and P1 finding and five of the six P2 findings. Current verified open totals: **0 P0, 0 P1, 1 P2**. Migration of the legacy deterministic harness now has focused battle-presentation and capsule-presentation suites. The remaining work is bounded to continuing that domain-by-domain migration.
 
 The player-facing cleanup is also complete: the Ink Kit now has the four canonical Gear categories plus a separate Styles section, each Gear style renders once with aggregate Forge progress, the retired Impact and Edge effect families are gone, and Replay health is presented as full/half/empty hearts.
 
@@ -73,39 +73,69 @@ The player-facing cleanup is also complete: the Ink Kit now has the four canonic
 - Player copy uses Pick, Gear, and Forge while `/api/back`, stored `backed`, and other compatibility identifiers remain stable internally.
 - `app/tests/player-vocabulary.test.mjs` guards both sides of that boundary.
 
+### P2-7 — one Arena action system and one Mystery Ink entry
+
+- Arena now renders the selected Scribbit and selected opponent as one visible
+  matchup, then uses the shared paper `iconButton` system for Champion, Spar,
+  Fight, and the compact Rumble action. Three local rounded-box button variants
+  are deleted.
+- Champion keeps one focused daily-contract launcher. Every player-facing Spar
+  from Arena, first birth, or a Replay result delegates to
+  `app/src/client/lib/rivalrunflow.ts`, which owns the server slate, UTC rollover,
+  selected-opponent request, report staging, errors, and VS ceremony. The three
+  former scene-local or blind paths are removed.
+- Mystery Ink moved from the Arena header to Shop, so its earned-currency chest
+  ceremony has one focused home instead of competing with battle or Bag loadout.
+- `app/tests/arena-hub-ui.test.mjs` guards the hierarchy, shared button owner,
+  removed legacy wording, Shop capsule entry, and single Rival Run controller.
+
+### P2-4 — legacy stage bitmaps removed
+
+- The unreferenced Arena, battle, and paper JPG stages are removed from the
+  current worktree.
+- Gameplay now preloads one shared `scribbits-stage.png`; Shop deliberately owns
+  the separate `scribbits-shop-stage.png` because its reward-machine composition
+  is a different surface.
+- No runtime or test reference to the deleted JPG names remains.
+
 ### Additional requested cleanup
 
 - Impact and Edge are no longer Gear effect families; their six items were reassigned across the six supported families.
 - Replay now plans and renders six heart icons with full, half, and empty states; numeric health remains available through the accessibility label.
+- Draw has one compact two-page tool owner: base colors plus everyday controls
+  stay visible, while optional supplies and destructive/history actions share
+  one advanced page. Native focus, timer recovery, and active-supply state use
+  that same owner rather than parallel canvas-only behavior.
+- Responsive boot height, overlay scaling, Draw vertical slack, and uniformly
+  scaled stage art now share the 720-wide portrait model without scene-local
+  width scaling or vertically stretched backgrounds.
 - `renderMysteryCosmeticPreview`, `removeRumbleEntrant`, and unused request/slot type aliases were deleted.
 
 ## Remaining P2 work
 
 ### P2-2 — finish splitting the legacy deterministic harness
 
-- **Current improvement:** `app/scripts/run-test-suites.mjs` discovers `app/tests/**/*.test.mjs`, compiles through `app/tools/tsconfig.tests.json` into an isolated temporary directory, removes that directory after the run, and then runs the legacy harness for compatibility coverage.
-- **Still open:** `app/scripts/test-battle.mjs` remains a 17k-line domain-spanning suite with its older compilation/import wiring.
-- **Next cut:** move one domain at a time into `app/tests`, beginning with combat presentation and equipment/economy, then remove each migrated legacy block.
-
-### P2-4 — one unreferenced Arena source bitmap remains
-
-- `app/src/client/assets/scribbits-arena-stage.jpg` is unreferenced and approximately 312 KB.
-- It is currently untracked and may be active user artwork, so it was preserved rather than deleted during a shared dirty-worktree cleanup.
-- The dead renderer, dead server function, and dead type exports from this finding are already removed.
+- **Current improvement:** `app/scripts/run-test-suites.mjs` discovers `app/tests/**/*.test.mjs`, compiles through `app/tools/tsconfig.tests.json` into an isolated temporary directory, removes that directory after the run, and then runs the legacy harness for compatibility coverage. `app/tests/battle-presentation.test.mjs` owns the battle-presentation domain, while `app/tests/capsule-presentation.test.mjs` now owns the capsule layout, cost, retry, batch, collector, ownership, and Red-Star presentation assertions removed from the broad harness.
+- **Still open:** the remaining legacy harness is still large and domain-spanning, with older compilation/import wiring for unmigrated areas.
+- **Next cut:** move the next coherent equipment/economy block into `app/tests`, then continue one domain at a time and delete each migrated legacy block.
 
 ## Verification snapshot
 
 - `./verify.command`: pass.
 - Type-check: pass.
 - ESLint: pass.
-- Discoverable suites: **29/29 tests pass** across 10 files.
-- Legacy deterministic harness: **176/176 groups pass**.
-- Production build: pass in **5169 ms**.
-- Live mobile browser proof: Ink Kit exposes Weapon, Armor, Shoes, Accessory, and Styles; Weapon shows one card per style; runtime errors: **0**.
-- Screenshot: `artifacts/scribbits-ink-kit-cleanup-verified.png`.
+- Discoverable suites: **126/126 tests pass** across 32 files.
+- Legacy deterministic harness: **181/181 groups pass** after capsule migration.
+- Production build: pass in **4630 ms**.
+- Live browser proof: Arena opens the chooser before the first Spar; the selected rival reaches the VS and replay; all three server-scored bouts complete; `NEW RIVAL RUN` rolls to a fresh bout 1/3 slate; the compact modal clears and dims the dock.
+- Shop proof: the fifth dock tab opens its dedicated scene, completes a
+  server-backed single chest, and routes the confirmed reward into Bag.
+- Screenshots: `artifacts/screenshots/rival-run-canonical-entry-final.png`,
+  `artifacts/screenshots/rival-run-three-bout-finish-final.png`,
+  `artifacts/screenshots/scribbits-shop-live-final.png`, and
+  `artifacts/screenshots/scribbits-shop-reward-final.png`.
 
 ## Next cleanup order
 
-1. Migrate combat-presentation assertions from `test-battle.mjs` into a focused suite.
-2. Continue by equipment/economy domain until the legacy harness can be deleted.
-3. Confirm ownership of `scribbits-arena-stage.jpg`, then either wire it intentionally or delete it.
+1. Migrate the next equipment/economy assertion block into a focused suite.
+2. Continue one coherent domain at a time until the legacy harness can be deleted.

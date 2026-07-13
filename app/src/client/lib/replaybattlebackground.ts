@@ -43,11 +43,11 @@ type ArenaPaint = Readonly<{
 const ARENA_PAINTS: Readonly<Record<BattleArenaId, ArenaPaint>> = Object.freeze(
   {
     'v1-sticker-stadium': {
-      background: 0x087f83,
+      background: 0xf29a3d,
       floor: 0xf6c344,
       accent: 0xff6f61,
       detail: 0xfff4d6,
-      ink: 0x143438,
+      ink: 0x5b2b1b,
     },
     'v1-ink-playground': {
       background: 0xff8b75,
@@ -186,19 +186,8 @@ const drawArenaSkin = (
 
   switch (arenaId) {
     case 'v1-sticker-stadium': {
-      const leftStyle = ELEMENT_STYLES[input.fighterAElement];
-      const rightStyle = ELEMENT_STYLES[input.fighterBElement];
       drawOvalCourt(graphics, layout, paint);
       drawCornerGlyphs(graphics, layout, paint);
-      graphics.fillStyle(leftStyle.soft, 0.08);
-      graphics.fillEllipse(112, centerY, 170, arenaHeight * 0.56);
-      graphics.fillStyle(rightStyle.soft, 0.08);
-      graphics.fillEllipse(
-        layout.viewportWidth - 112,
-        centerY,
-        170,
-        arenaHeight * 0.56
-      );
       break;
     }
     case 'v1-ink-playground':

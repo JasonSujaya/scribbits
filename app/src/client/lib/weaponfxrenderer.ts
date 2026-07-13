@@ -98,7 +98,7 @@ export class WeaponFxRenderer {
     const fallback = this.scene.add
       .graphics()
       .setPosition(x, y)
-      .setDepth(8)
+      .setDepth(12)
       .setVisible(false);
     const uniforms: WeaponFxShaderUniforms = {
       progress: 0,
@@ -164,8 +164,11 @@ export class WeaponFxRenderer {
     runtime.uniforms.phase = weaponFxPhaseUniform(phase);
     runtime.uniforms.intensity = cue.intensity;
     runtime.shader?.setVisible(true);
-    runtime.fallback.setVisible(runtime.shader === null);
-    if (runtime.shader === null) {
+    const needsReadableBladeOverlay = runtime.profile.family === 'aim';
+    runtime.fallback.setVisible(
+      runtime.shader === null || needsReadableBladeOverlay
+    );
+    if (runtime.shader === null || needsReadableBladeOverlay) {
       this.drawFallback(runtime, this.reduceMotion ? 0.62 : 0);
     }
     this.updateDebugState();
@@ -185,7 +188,10 @@ export class WeaponFxRenderer {
         runtime.elapsedMilliseconds / runtime.durationMilliseconds
       );
       runtime.uniforms.progress = progress;
-      if (runtime.shader === null && !this.reduceMotion) {
+      if (
+        (runtime.shader === null || runtime.profile.family === 'aim') &&
+        !this.reduceMotion
+      ) {
         this.drawFallback(runtime, progress);
       }
       if (progress >= 1) this.deactivate(runtime);
@@ -210,7 +216,10 @@ export class WeaponFxRenderer {
 
   private drawFallback(runtime: WeaponFxRuntime, progress: number): void {
     const graphics = runtime.fallback;
-    const color = runtime.profile.fallbackColor;
+    const color =
+      runtime.profile.family === 'aim' && runtime.profile.rank === 6
+        ? 0xff3b30
+        : runtime.profile.fallbackColor;
     const rank = runtime.profile.rank;
     const pulse = Math.sin(Math.max(0, Math.min(1, progress)) * PI);
     const alpha = 0.45 + pulse * 0.45;
@@ -235,9 +244,44 @@ export class WeaponFxRenderer {
         }
         break;
       case 3:
-        graphics.strokeCircle(0, 0, 76 - pulse * 30);
-        graphics.lineBetween(-108, 0, 108, 0);
-        graphics.lineBetween(0, -108, 0, 108);
+        for (const laneY of [-68, 0, 68]) {
+          const facing = runtime.uniforms.facing;
+          const travelX = (-112 + progress * 224) * facing;
+          const tailX = travelX - 48 * facing;
+          const tipX = travelX + 66 * facing;
+          graphics.fillStyle(0x3a2018, alpha * 0.92);
+          graphics.fillTriangle(
+            tailX,
+            laneY - 15,
+            tipX,
+            laneY,
+            tailX,
+            laneY + 15
+          );
+          graphics.fillStyle(0xfff4d6, alpha);
+          graphics.fillTriangle(
+            tailX + 8 * facing,
+            laneY - 9,
+            tipX - 9 * facing,
+            laneY,
+            tailX + 8 * facing,
+            laneY + 9
+          );
+          graphics.lineStyle(7, color, alpha * 0.9);
+          graphics.lineBetween(
+            travelX - 82 * facing,
+            laneY,
+            tailX - 4 * facing,
+            laneY
+          );
+          graphics.lineStyle(7, 0x3a2018, alpha);
+          graphics.lineBetween(
+            tailX - 5 * facing,
+            laneY - 22,
+            tailX - 5 * facing,
+            laneY + 22
+          );
+        }
         break;
       case 4:
         graphics.strokeCircle(0, 0, 34 + progress * 82);
@@ -264,15 +308,15 @@ export class WeaponFxRenderer {
         }
     }
 
-    if (rank >= 2) {
+    if (rank >= 2 && runtime.profile.family !== 'aim') {
       graphics.lineStyle(2 + rank * 0.4, color, alpha * 0.34);
       graphics.strokeCircle(0, 0, 30 + progress * (50 + rank * 7));
     }
-    if (rank >= 4) {
+    if (rank >= 4 && runtime.profile.family !== 'aim') {
       graphics.lineStyle(3, 0xfff4d6, alpha * 0.42);
       graphics.strokeCircle(0, 0, 20 + progress * (44 + rank * 5));
     }
-    if (rank === 6) {
+    if (rank === 6 && runtime.profile.family !== 'aim') {
       graphics.lineStyle(4, 0xff291f, alpha * 0.7);
       for (let ray = 0; ray < 5; ray += 1) {
         const angle = (ray / 5) * PI * 2 - PI / 2;

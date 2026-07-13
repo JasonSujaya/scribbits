@@ -7,6 +7,8 @@ import type {
   CosmeticPenCatalogEntry,
 } from '../../shared/cosmetics';
 import { drawAccessoryGraphics } from './accessories';
+import { fitCosmeticPreviewBounds } from './cosmeticpreviewfit';
+import { gearArtTextureForRarity } from './gearart';
 import { UI } from './theme';
 import { label } from './ui';
 
@@ -18,6 +20,8 @@ export type CosmeticPreviewOptions = {
   y: number;
   size: number;
   width: number;
+  height?: number;
+  maxScale?: number;
 };
 
 // Shared vector presentation for Collection cards, Collection details, and the
@@ -26,17 +30,24 @@ export type CosmeticPreviewOptions = {
 export function renderCosmeticPreview(
   options: CosmeticPreviewOptions
 ): Phaser.GameObjects.Container {
-  const preview = options.scene.add.container(options.x ?? 0, options.y);
-  options.parent.add(preview);
+  const preview = options.scene.add.container(0, 0);
 
   if (options.entry.kind === 'accessory') {
-    const graphics = options.scene.add.graphics();
-    drawAccessoryGraphics(graphics, options.entry.id, options.size);
-    preview.add(graphics);
-    return preview;
-  }
-
-  if (options.entry.kind === 'pen' || options.entry.kind === 'drawing-ink') {
+    const textureKey = gearArtTextureForRarity(options.entry.rarity);
+    const texture = options.scene.textures.get(textureKey);
+    if (texture.has(options.entry.id)) {
+      preview.add(
+        options.scene.add.image(0, 0, textureKey, options.entry.id).setOrigin(0.5)
+      );
+    } else {
+      const graphics = options.scene.add.graphics();
+      drawAccessoryGraphics(graphics, options.entry.id, options.size);
+      preview.add(graphics);
+    }
+  } else if (
+    options.entry.kind === 'pen' ||
+    options.entry.kind === 'drawing-ink'
+  ) {
     renderPenPreview(
       options.scene,
       preview,
@@ -44,10 +55,7 @@ export function renderCosmeticPreview(
       options.size,
       options.width
     );
-    return preview;
-  }
-
-  if (options.entry.kind === 'brush') {
+  } else if (options.entry.kind === 'brush') {
     renderBrushPreview(
       options.scene,
       preview,
@@ -55,16 +63,30 @@ export function renderCosmeticPreview(
       options.size,
       options.width
     );
-    return preview;
+  } else {
+    renderTitlePreview(
+      options.scene,
+      preview,
+      options.entry.name,
+      options.size,
+      options.width
+    );
   }
 
-  renderTitlePreview(
-    options.scene,
-    preview,
-    options.entry.name,
-    options.size,
-    options.width
+  const previewBounds = preview.getBounds();
+  const fit = fitCosmeticPreviewBounds(
+    previewBounds,
+    options.width,
+    options.height ?? options.size,
+    options.maxScale ?? 1
   );
+  preview
+    .setScale(fit.scale)
+    .setPosition(
+      (options.x ?? 0) + fit.offsetX,
+      options.y + fit.offsetY
+    );
+  options.parent.add(preview);
   return preview;
 }
 

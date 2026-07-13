@@ -18,7 +18,7 @@
     "test": "node scripts/run-test-suites.mjs",
     "test:suites": "node scripts/run-test-suites.mjs --suites-only",
     "test:sim": "node scripts/test-battle.mjs",
-    "type-check": "node scripts/clean-type-output.mjs && tsc --build",
+    "type-check": "node scripts/clean-type-output.mjs && tsc --build --force",
     "verify": "pnpm run type-check && pnpm run lint && pnpm test && pnpm run build"
   },
   "engines": {

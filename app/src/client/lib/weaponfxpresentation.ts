@@ -5,6 +5,7 @@ import {
 } from '../../shared/arena';
 import type { AccessoryEffectFamily } from '../../shared/accessoryeffects';
 import { findGearCosmetic } from '../../shared/cosmetics';
+import { resolveGearCombatLoadout } from '../../shared/gearcombat';
 
 export type WeaponFxQuality = 'off' | 'balanced' | 'full';
 export type WeaponFxPhase = 'telegraph' | 'active' | 'impact';
@@ -88,19 +89,20 @@ export function resolveWeaponFxProfiles(
   scribbit: Pick<Scribbit, 'accessories' | 'gearRanks'> &
     Partial<Pick<Scribbit, 'equipmentLoadout'>>
 ): readonly WeaponFxProfile[] {
-  const weaponIds = [
-    ...(scribbit.equipmentLoadout?.weapon.filter(
-      (gearId): gearId is string => gearId !== null
-    ) ?? []),
-    ...scribbit.accessories,
-  ];
+  const activeTechniqueIds = resolveGearCombatLoadout(scribbit).techniques.map(
+    (technique) => technique.leadGearId
+  );
+  const legacyWeaponIds = scribbit.accessories.filter((gearId) => {
+    return findGearCosmetic(gearId)?.category === 'weapon';
+  });
+  const weaponIds = [...activeTechniqueIds, ...legacyWeaponIds];
   const visitedWeaponIds = new Set<string>();
   const profiles: WeaponFxProfile[] = [];
   for (const gearId of weaponIds) {
     if (visitedWeaponIds.has(gearId)) continue;
     visitedWeaponIds.add(gearId);
     const gear = findGearCosmetic(gearId);
-    if (!gear || gear.category !== 'weapon') continue;
+    if (!gear) continue;
     const profile = PROFILE_BY_FAMILY[gear.effectFamily];
     const rank = getAttachedGearRank(scribbit, gear.id);
     profiles.push(

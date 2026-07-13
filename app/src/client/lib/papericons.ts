@@ -22,14 +22,21 @@ export type PaperIconKey =
   | 'pencil'
   | 'shield'
   | 'spark'
+  | 'settings'
   | 'sword'
   | 'target'
   | 'train'
   | 'trash'
   | 'trophy';
-export type PaperToolIconKey = 'sticker' | 'eraser' | 'clear' | 'undo' | 'redo';
+export type PaperToolIconKey =
+  | 'sticker'
+  | 'eraser'
+  | 'clear'
+  | 'undo'
+  | 'redo'
+  | 'tools';
 export type PaperStatIconKey = 'chonk' | 'spike' | 'zip' | 'charm';
-export type PaperDockIconKey = 'arena' | 'bag' | 'gallery' | 'draw' | 'battles';
+export type PaperDockIconKey = 'arena' | 'bag' | 'shop' | 'draw' | 'battles';
 
 export type PaperIconOptions = Readonly<{
   size?: number;
@@ -106,29 +113,30 @@ export function paperDockIcon(
     );
     graphics.fillStyle(UI.gold, 1);
     graphics.fillRoundedRect(-5 * scale, -3 * scale, 10 * scale, 8 * scale, 2);
-  } else if (key === 'gallery' && accented) {
-    const leftPage = [
-      new Phaser.Math.Vector2(-18 * scale, -14 * scale),
-      new Phaser.Math.Vector2(-2 * scale, -11 * scale),
-      new Phaser.Math.Vector2(-2 * scale, 17 * scale),
-      new Phaser.Math.Vector2(-18 * scale, 13 * scale),
-    ];
-    const rightPage = [
-      new Phaser.Math.Vector2(2 * scale, -11 * scale),
-      new Phaser.Math.Vector2(18 * scale, -14 * scale),
-      new Phaser.Math.Vector2(18 * scale, 13 * scale),
-      new Phaser.Math.Vector2(2 * scale, 17 * scale),
-    ];
-    graphics.fillStyle(UI.tapeAlt, 0.72);
-    graphics.fillPoints(leftPage, true);
-    graphics.fillPoints(rightPage, true);
+  } else if (key === 'shop' && accented) {
+    graphics.fillStyle(0x8a5cd8, 0.9);
+    graphics.fillRoundedRect(
+      -18 * scale,
+      -10 * scale,
+      36 * scale,
+      27 * scale,
+      5 * scale
+    );
     graphics.lineStyle(3 * scale, color, 1);
-    graphics.strokePoints(leftPage, true);
-    graphics.strokePoints(rightPage, true);
-    graphics.fillStyle(0x8fcf72, 1);
-    graphics.fillCircle(8 * scale, 2 * scale, 4 * scale);
-    graphics.lineBetween(-14 * scale, -5 * scale, -6 * scale, -3 * scale);
-    graphics.lineBetween(-14 * scale, 2 * scale, -6 * scale, 4 * scale);
+    graphics.strokeRoundedRect(
+      -18 * scale,
+      -10 * scale,
+      36 * scale,
+      27 * scale,
+      5 * scale
+    );
+    graphics.beginPath();
+    graphics.arc(0, -9 * scale, 10 * scale, Math.PI, 0, false);
+    graphics.strokePath();
+    graphics.fillStyle(UI.gold, 1);
+    drawFivePointStar(graphics, 0, 4 * scale, 7 * scale, 3 * scale, true);
+    graphics.lineStyle(2 * scale, color, 1);
+    drawFivePointStar(graphics, 0, 4 * scale, 7 * scale, 3 * scale, false);
   } else if (key === 'draw' && accented) {
     const pencilBody = [
       new Phaser.Math.Vector2(-13 * scale, 10 * scale),
@@ -174,16 +182,18 @@ export function paperDockIcon(
       7 * scale
     );
     graphics.fillRoundedRect(-5 * scale, -3 * scale, 10 * scale, 8 * scale, 2);
-  } else if (key === 'gallery') {
+  } else if (key === 'shop') {
     graphics.strokeRoundedRect(
       -18 * scale,
-      -16 * scale,
+      -10 * scale,
       36 * scale,
-      32 * scale,
-      4 * scale
+      27 * scale,
+      5 * scale
     );
-    graphics.lineBetween(-18 * scale, -4 * scale, 18 * scale, -4 * scale);
-    graphics.lineBetween(0, -16 * scale, 0, 16 * scale);
+    graphics.beginPath();
+    graphics.arc(0, -9 * scale, 10 * scale, Math.PI, 0, false);
+    graphics.strokePath();
+    drawFivePointStar(graphics, 0, 4 * scale, 7 * scale, 3 * scale, false);
   } else if (key === 'draw') {
     const pencilBody = [
       new Phaser.Math.Vector2(-15 * scale, 10 * scale),
@@ -505,6 +515,20 @@ function drawTool(
     return;
   }
 
+  if (key === 'tools') {
+    graphics.lineStyle(4 * scale, stroke, 1);
+    graphics.lineBetween(-15 * scale, -10 * scale, 15 * scale, -10 * scale);
+    graphics.lineBetween(-15 * scale, 0, 15 * scale, 0);
+    graphics.lineBetween(-15 * scale, 10 * scale, 15 * scale, 10 * scale);
+    graphics.fillCircle(-5 * scale, -10 * scale, 4.5 * scale);
+    graphics.strokeCircle(-5 * scale, -10 * scale, 4.5 * scale);
+    graphics.fillCircle(7 * scale, 0, 4.5 * scale);
+    graphics.strokeCircle(7 * scale, 0, 4.5 * scale);
+    graphics.fillCircle(-1 * scale, 10 * scale, 4.5 * scale);
+    graphics.strokeCircle(-1 * scale, 10 * scale, 4.5 * scale);
+    return;
+  }
+
   if (key === 'undo' || key === 'redo') {
     // A joined, heavy return arrow reads as Undo at mobile size. The previous
     // offset double-arc looked like a question mark once letterboxed.
@@ -791,6 +815,26 @@ function drawIcon(
     graphics.strokeCircle(0, 0, 13 * scale);
     graphics.lineBetween(0, -1 * scale, 0, 8 * scale);
     graphics.fillCircle(0, -7 * scale, 1.8 * scale);
+    return;
+  }
+
+  if (key === 'settings') {
+    const teeth: Phaser.Math.Vector2[] = [];
+    for (let tooth = 0; tooth < 16; tooth += 1) {
+      const radius = (tooth % 2 === 0 ? 14 : 11) * scale;
+      const angle = -Math.PI / 2 + (tooth * Math.PI) / 8;
+      teeth.push(
+        new Phaser.Math.Vector2(
+          Math.cos(angle) * radius,
+          Math.sin(angle) * radius
+        )
+      );
+    }
+    graphics.fillPoints(teeth, true);
+    graphics.strokePoints(teeth, true);
+    graphics.fillStyle(UI.creamHex, 1);
+    graphics.fillCircle(0, 0, 6 * scale);
+    graphics.strokeCircle(0, 0, 6 * scale);
     return;
   }
 

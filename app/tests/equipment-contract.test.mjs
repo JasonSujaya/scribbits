@@ -96,9 +96,34 @@ test('Ink Kit derives categories from equipment and avoids scrap vocabulary', ()
     /entry\.category === section/,
     'Each gear section must filter the canonical catalog category directly'
   );
+  assert.match(
+    collectionBookSource,
+    /ACTIVE \$\{attachedRankLabel\}/,
+    'equipped lead Gear details must show the frozen combat rank'
+  );
+  assert.match(
+    collectionBookSource,
+    /SUPPORT \$\{attachedRankLabel\} · BOOSTS/,
+    'equipped support Gear details must explain the combined technique'
+  );
+  assert.match(
+    collectionBookSource,
+    /gearWeekDay\.challenge/,
+    'Bag must show the current Gear Week challenge'
+  );
+  assert.match(
+    collectionBookSource,
+    /gearWeekDay\.featuredGearIds/,
+    'Bag must consume the daily featured Gear list'
+  );
+  assert.match(
+    collectionBookSource,
+    /data-gear-week-featured/,
+    'daily featured Gear must be exposed to the accessible UI'
+  );
 });
 
-test('gear style metadata omits retired Edge and Impact families', () => {
+test('gear technique metadata omits retired Edge and Impact families', () => {
   const effectFamilies = Object.keys(accessoryEffects.ACCESSORY_EFFECTS).sort();
   assert.deepEqual(effectFamilies, [
     'aim',
@@ -109,11 +134,16 @@ test('gear style metadata omits retired Edge and Impact families', () => {
     'rush',
   ]);
   for (const family of effectFamilies) {
-    assert.equal(
-      cosmetics.ACCESSORY_CATALOG_ENTRIES.filter(
-        (entry) => entry.effectFamily === family
-      ).length,
-      4
+    const familyGear = cosmetics.ACCESSORY_CATALOG_ENTRIES.filter(
+      (entry) => entry.effectFamily === family
+    );
+    assert.ok(
+      familyGear.length >= 4,
+      `${family} needs at least four Gear choices`
+    );
+    assert.ok(
+      familyGear.some((entry) => entry.rarity === 'common'),
+      `${family} needs a Common choice so rarity is not power`
     );
   }
 });

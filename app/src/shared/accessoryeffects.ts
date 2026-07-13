@@ -1,4 +1,4 @@
-export const ACCESSORY_EFFECT_MODE = 'display-only' as const;
+export const ACCESSORY_EFFECT_MODE = 'combat-active-v1' as const;
 
 export type AccessoryEffectFamily =
   | 'guard'
@@ -11,10 +11,9 @@ export type AccessoryEffectFamily =
 export type AccessoryEffectDefinition = Readonly<{
   id: AccessoryEffectFamily;
   name: string;
+  techniqueName: string;
+  battleCue: string;
   shortCopy: string;
-  futureBenefit: string;
-  futureTradeoff: string;
-  engineReadiness: 'existing-axes' | 'new-axis-required';
 }>;
 
 export const ACCESSORY_EFFECTS: Readonly<
@@ -23,50 +22,44 @@ export const ACCESSORY_EFFECTS: Readonly<
   guard: {
     id: 'guard',
     name: 'Guard',
+    techniqueName: 'Paper Guard',
+    battleCue: 'A paper shield toughens the heart row.',
     shortCopy: 'A sturdy, patient battle style.',
-    futureBenefit: '+0.5% maximum HP',
-    futureTradeoff: '-0.5% damage',
-    engineReadiness: 'existing-axes',
   },
   rush: {
     id: 'rush',
     name: 'Rush',
+    techniqueName: 'Dash Blades',
+    battleCue: 'Fast ink blades trail each Shape Power.',
     shortCopy: 'A quicker, lighter battle style.',
-    futureBenefit: '-1% ability cooldown',
-    futureTradeoff: '-0.5% maximum HP',
-    engineReadiness: 'existing-axes',
   },
   focus: {
     id: 'focus',
     name: 'Focus',
+    techniqueName: 'Orbiting Nibs',
+    battleCue: 'Orbiting nibs tighten the next wind-up.',
     shortCopy: 'Earlier tells with slower recovery.',
-    futureBenefit: '-1 telegraph tick',
-    futureTradeoff: '+1% ability cooldown',
-    engineReadiness: 'existing-axes',
   },
   ready: {
     id: 'ready',
     name: 'Ready',
+    techniqueName: 'First Strike',
+    battleCue: 'A first-mark slash opens the fight sooner.',
     shortCopy: 'Starts quickly, then hits a little softer.',
-    futureBenefit: '-1 initial ability-delay tick',
-    futureTradeoff: '-0.5% damage',
-    engineReadiness: 'existing-axes',
   },
   fortune: {
     id: 'fortune',
     name: 'Fortune',
+    techniqueName: 'Lucky Echo',
+    battleCue: 'A lucky echo can sharpen a clean hit.',
     shortCopy: 'A lucky style with softer base hits.',
-    futureBenefit: '+0.6 percentage points critical chance',
-    futureTradeoff: '-0.3% damage',
-    engineReadiness: 'existing-axes',
   },
   aim: {
     id: 'aim',
     name: 'Aim',
+    techniqueName: 'Blade Volley',
+    battleCue: 'A focused blade volley adds impact.',
     shortCopy: 'Reaches farther with softer base hits.',
-    futureBenefit: '+3% Shape Power collision or range',
-    futureTradeoff: '-0.5% damage',
-    engineReadiness: 'new-axis-required',
   },
 });
 

@@ -12,7 +12,11 @@ import {
   type LegacyCardCursor,
   type LegacyCardIndexEntry,
 } from '../../shared/legacycards';
-import type { ArenaStorage } from './storage';
+import type { ArenaStorage, ArenaTransaction } from './storage';
+import {
+  discardWatchedTransaction,
+  MAX_WATCH_TRANSACTION_ATTEMPTS,
+} from './storage';
 import {
   getUserLegacyCardsKey,
   getUserScribbitsKey,
@@ -249,11 +253,37 @@ export const markLegacyCardsSeen = async (
   userId: string,
   throughArchivedDay: number
 ): Promise<number> => {
-  const currentSeenDay = await readSeenThroughDay(storage, userId);
-  const nextSeenDay = getNextLegacySeenThroughDay(
-    currentSeenDay,
-    throughArchivedDay
-  );
-  await storage.set(getLegacySeenDayKey(userId), nextSeenDay.toString());
-  return nextSeenDay;
+  if (!storage.watch) {
+    throw new Error('Monotonic Legacy receipts require transaction support.');
+  }
+  const seenDayKey = getLegacySeenDayKey(userId);
+  for (
+    let attempt = 0;
+    attempt < MAX_WATCH_TRANSACTION_ATTEMPTS;
+    attempt += 1
+  ) {
+    let transaction: ArenaTransaction | undefined;
+    try {
+      transaction = await storage.watch(seenDayKey);
+      const currentSeenDay = await readSeenThroughDay(storage, userId);
+      const nextSeenDay = getNextLegacySeenThroughDay(
+        currentSeenDay,
+        throughArchivedDay
+      );
+      if (nextSeenDay === currentSeenDay) {
+        await transaction.unwatch();
+        return currentSeenDay;
+      }
+      await transaction.multi();
+      await transaction.set(seenDayKey, nextSeenDay.toString());
+      const result = await transaction.exec();
+      if (Array.isArray(result) && result.length > 0) return nextSeenDay;
+    } catch (error) {
+      await discardWatchedTransaction(transaction, 'Legacy seen receipt');
+      const recoveredSeenDay = await readSeenThroughDay(storage, userId);
+      if (recoveredSeenDay >= throughArchivedDay) return recoveredSeenDay;
+      throw error;
+    }
+  }
+  throw new Error('Legacy seen receipt changed too often to save safely.');
 };

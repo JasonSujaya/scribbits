@@ -337,7 +337,7 @@ const toolbarIconButton = (
   const container = scene.add.container(x, y);
   const buttonFace = scene.add
     .image(0, 0, BATTLE_CONTROL_BUTTON_TEXTURES[kind])
-    .setDisplaySize(82, 82);
+    .setDisplaySize(104, 104);
   const iconLayer = scene.add.container(0, 0);
   const hitTarget = scene.add
     .rectangle(0, 0, width, width, 0xffffff, 0.001)
@@ -360,18 +360,18 @@ const toolbarIconButton = (
     if (kind === 'sound' && value === false) {
       const mutedSlash = scene.add.graphics();
       mutedSlash.lineStyle(7, UI.creamHex, 1);
-      mutedSlash.lineBetween(-18, -18, 18, 18);
+      mutedSlash.lineBetween(-22, -22, 22, 22);
       mutedSlash.lineStyle(4, UI.coralDeep, 1);
-      mutedSlash.lineBetween(-18, -18, 18, 18);
+      mutedSlash.lineBetween(-22, -22, 22, 22);
       iconLayer.add(mutedSlash);
       return;
     }
 
     if (kind === 'speed') {
       const speedBadge = scene.add
-        .circle(24, 24, 15, UI.creamHex, 0.98)
+        .circle(31, 31, 17, UI.creamHex, 0.98)
         .setStrokeStyle(2, UI.inkHex, 1);
-      const speed = label(scene, 24, 24, `${Number(value)}×`, 16, UI.ink, true);
+      const speed = label(scene, 31, 31, `${Number(value)}×`, 17, UI.ink, true);
       iconLayer.add([speedBadge, speed]);
     }
   };
@@ -549,7 +549,7 @@ export function createReplayBattleHud(
   );
   ticker.add(tickerGraphics);
   const announcerWidth = layout.tickerWidth - 56;
-  const announcer = label(scene, 10, 0, 'Get ready…', 26, UI.ink, true);
+  const announcer = label(scene, 10, 0, 'Get ready…', 22, UI.ink, true);
   announcer.setWordWrapWidth(announcerWidth);
   ticker.add(announcer);
   let tickerHideEvent: Phaser.Time.TimerEvent | null = null;
@@ -559,11 +559,19 @@ export function createReplayBattleHud(
   let heartsVisible = true;
 
   const showTransientAnnouncement = (text: string): void => {
+    const announcement = text.trim();
+    if (!announcement) {
+      tickerHideEvent?.remove(false);
+      tickerHideEvent = null;
+      scene.tweens.killTweensOf(ticker);
+      ticker.setVisible(false).setAlpha(1).setScale(1);
+      return;
+    }
     tickerHideEvent?.remove(false);
     tickerHideEvent = null;
     scene.tweens.killTweensOf(ticker);
     ticker.setVisible(true).setAlpha(1);
-    announcer.setText(text);
+    announcer.setText(announcement);
     if (!input.reduceMotion) {
       scene.tweens.add({
         targets: ticker,
@@ -782,13 +790,24 @@ export function createReplayBattleHud(
       if (shapePowerLiveRegion) shapePowerLiveRegion.textContent = text;
     },
     setAnnouncerText: (text: string): void => {
-      announcer.setText(text);
-      ticker.setVisible(true).setAlpha(1);
+      const announcement = text.trim();
+      tickerHideEvent?.remove(false);
+      tickerHideEvent = null;
+      scene.tweens.killTweensOf(ticker);
+      ticker.setAlpha(1).setScale(1);
+      if (!announcement) {
+        ticker.setVisible(false);
+        return;
+      }
+      announcer.setText(announcement);
+      ticker.setVisible(true);
     },
     setAnnouncerVisible: (visible: boolean): void => {
       if (!visible) {
         tickerHideEvent?.remove(false);
         tickerHideEvent = null;
+        scene.tweens.killTweensOf(ticker);
+        ticker.setAlpha(1).setScale(1);
       }
       ticker.setVisible(visible);
     },

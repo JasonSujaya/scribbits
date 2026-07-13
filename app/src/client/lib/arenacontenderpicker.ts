@@ -20,6 +20,7 @@ export type ArenaContenderPicker = Readonly<{ destroy: () => void }>;
 export type ArenaContenderPickerOptions = Readonly<{
   scene: Scene;
   entrants: readonly Scribbit[];
+  themePrompt: string;
   ownedScribbitIds: readonly string[];
   backedScribbitId: string | null;
   onPick: (entrant: Scribbit) => void;
@@ -33,6 +34,7 @@ export function openArenaContenderPicker(
   const {
     scene,
     entrants,
+    themePrompt,
     ownedScribbitIds,
     backedScribbitId,
     onPick,
@@ -56,8 +58,8 @@ export function openArenaContenderPicker(
     onInspect(entrant);
   };
   const semanticSummary = backedScribbitId
-    ? 'Tonight’s Rumble contenders. Your one daily pick is already locked.'
-    : 'Tonight’s Rumble contenders. Choose your one pick for tonight.';
+    ? `Community creations for this theme: ${themePrompt}. Your one daily pick is already locked.`
+    : `Community creations for this theme: ${themePrompt}. Choose your one pick for tonight.`;
   const modalActions = new CanvasModalOverlay(
     scene,
     'Tonight’s Rumble contenders',
@@ -101,7 +103,7 @@ export function openArenaContenderPicker(
   );
   layer.add(panel);
   panel.add(
-    paperWordmark(scene, 0, -455, 'RUMBLE PICK', {
+    paperWordmark(scene, 0, -455, 'COMMUNITY CREATIONS', {
       icon: 'heart',
       fontSize: 40,
       maxWidth: 480,
@@ -109,16 +111,23 @@ export function openArenaContenderPicker(
     })
   );
   panel.add(
-    paperRoleTag(
+    paperRoleTag(scene, 0, -385, themePrompt.toUpperCase(), {
+      width: 360,
+      fill: UI.tape,
+      textColor: UI.coralText,
+    })
+  );
+  panel.add(
+    label(
       scene,
       0,
-      -385,
-      backedScribbitId ? 'LOCKED' : 'CHOOSE ONE',
-      {
-        width: 360,
-        fill: backedScribbitId ? UI.tapeAlt : UI.tape,
-        textColor: backedScribbitId ? UI.goldText : UI.coralText,
-      }
+      -337,
+      backedScribbitId
+        ? '3-DAY THEME • PICK LOCKED'
+        : '3-DAY THEME • CHOOSE ONE',
+      18,
+      UI.inkSoft,
+      true
     )
   );
 
@@ -158,7 +167,7 @@ export function openArenaContenderPicker(
   const gap = 16;
   const cardWidth = (panelWidth - 72 - gap) / columns;
   const cardHeight = 184;
-  const firstY = -322;
+  const firstY = -225;
   const rowStep = 202;
 
   entrants.slice(0, 8).forEach((entrant, index) => {

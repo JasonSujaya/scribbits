@@ -3,12 +3,12 @@
 // elements, and native <input> gives the mobile keyboard for free.
 //
 // We overlay absolutely-positioned HTML elements on top of the Phaser canvas and
-// keep them aligned to design-space (720x1280) coordinates. The Phaser canvas is
-// letterboxed by Scale.FIT, so we read its on-screen bounding rect and convert
-// design coordinates → screen pixels, re-syncing on resize.
+// keep them aligned to Phaser design-space coordinates. The width is always 720,
+// while the boot-time height can grow for tall phones. We read the canvas bounds
+// and current game size, then convert design coordinates → screen pixels.
 
 import type { Scene } from 'phaser';
-import { DESIGN_HEIGHT, DESIGN_WIDTH, FONT_STACK, UI } from './theme';
+import { FONT_STACK, UI } from './theme';
 
 export type OverlayRect = {
   x: number; // design-space top-left
@@ -41,6 +41,15 @@ export class DomOverlay {
     document
       .querySelectorAll(`.${DomOverlay.ROOT_CLASS}`)
       .forEach((el) => el.remove());
+  }
+
+  static destroyDialogs(): void {
+    for (const overlay of [...DomOverlay.liveOverlays]) {
+      if (overlay.root.getAttribute('role') === 'dialog') overlay.destroy();
+    }
+    document
+      .querySelectorAll(`.${DomOverlay.ROOT_CLASS}[role="dialog"]`)
+      .forEach((element) => element.remove());
   }
 
   private readonly scene: Scene;
@@ -93,8 +102,8 @@ export class DomOverlay {
     const canvas = this.scene.game.canvas;
     if (!canvas) return;
     const bounds = canvas.getBoundingClientRect();
-    const scaleX = bounds.width / DESIGN_WIDTH;
-    const scaleY = bounds.height / DESIGN_HEIGHT;
+    const scaleX = bounds.width / this.scene.scale.width;
+    const scaleY = bounds.height / this.scene.scale.height;
     const { element, followCamera, rect } = placement;
     const rectX = followCamera
       ? rect.x - this.scene.cameras.main.scrollX
@@ -104,7 +113,7 @@ export class DomOverlay {
       : rect.y;
     element.style.left = `${bounds.left + rectX * scaleX}px`;
     element.style.top = `${bounds.top + rectY * scaleY}px`;
-    // Keep every overlay element in the same 720x1280 design space as Phaser,
+    // Keep every overlay element in the same current design space as Phaser,
     // then scale the complete element. Scaling only its box left CSS text,
     // borders and padding at raw screen pixels, which made the HTML controls
     // look as if they belonged to a different app on narrow phones.
@@ -382,6 +391,13 @@ export class CanvasModalOverlay {
   private destroyed = false;
   private readonly handleSceneShutdown = (): void => this.destroy();
 
+  static destroyAll(): void {
+    for (const modal of [...CanvasModalOverlay.activeStack].reverse()) {
+      modal.destroy();
+    }
+    DomOverlay.destroyDialogs();
+  }
+
   constructor(
     scene: Scene,
     label: string,
@@ -474,7 +490,12 @@ export class CanvasModalOverlay {
     if (stackIndex >= 0) CanvasModalOverlay.activeStack.splice(stackIndex, 1);
     this.scene.events.off('shutdown', this.handleSceneShutdown);
     document.removeEventListener('keydown', this.handleDocumentKeyDown, true);
+    const modalRoot = this.actionOverlay.rootForOrdering();
     this.actionOverlay.destroy();
+    // A modal can close from the same native button event that immediately
+    // rebuilds its Phaser scene. Remove the root defensively so that rapid
+    // rebuild cannot leave an invisible, focusable dialog in the document.
+    modalRoot.remove();
     this.backgroundOverlays.forEach(
       ({ root, ariaHidden, hadInertAttribute }) => {
         if (!root.isConnected) return;

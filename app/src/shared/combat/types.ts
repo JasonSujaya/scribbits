@@ -5,6 +5,9 @@
 
 import type { Element } from '../elements';
 import type { BattleArenaId } from '../battlearena';
+import type { AccessoryEffectFamily } from '../accessoryeffects';
+import type { GearRank } from '../arena';
+import type { EquipmentCategory } from '../equipment';
 import type { CombatUpgradeId } from './upgrades';
 
 export type FighterSlot = 'a' | 'b';
@@ -16,6 +19,30 @@ export type RawCombatStats = Readonly<{
   spike: number;
   zip: number;
   charm: number;
+}>;
+
+export type GearCombatModifiers = Readonly<{
+  damagePermille: number;
+  maximumHitPointsPermille: number;
+  cooldownPermille: number;
+  criticalChanceBonusPermille: number;
+  telegraphTicksDelta: number;
+  initialDelayTicksDelta: number;
+}>;
+
+export type GearCombatTechniqueSnapshot = Readonly<{
+  category: EquipmentCategory;
+  effectFamily: AccessoryEffectFamily;
+  leadGearId: string;
+  leadRank: GearRank;
+  supportGearId: string | null;
+  supportRank: GearRank | null;
+}>;
+
+export type GearCombatSnapshot = Readonly<{
+  version: 1;
+  techniques: readonly GearCombatTechniqueSnapshot[];
+  modifiers: GearCombatModifiers;
 }>;
 
 export type DominantStat = keyof RawCombatStats;
@@ -37,6 +64,9 @@ export type CombatFighterInput = Readonly<{
   // Server-owned daily forecast + capped level bonus. It changes damage only,
   // never the drawing-selected power, body, movement, or collision geometry.
   damageModifierPermille?: number;
+  // Server-resolved from the frozen Scribbit loadout. Raw drawing stats remain
+  // untouched so Gear cannot change Shape Power selection or the 100-point rule.
+  gear?: GearCombatSnapshot;
 }>;
 
 export type CombatSimulationInput = Readonly<{

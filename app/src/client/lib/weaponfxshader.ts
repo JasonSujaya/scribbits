@@ -51,6 +51,22 @@ float ringMask(float radius, float target, float width) {
   return lineMask(abs(radius - target), width);
 }
 
+float boxMask(vec2 point, vec2 halfSize) {
+  vec2 edge = abs(point) - halfSize;
+  return 1.0 - smoothstep(0.0, 0.025, max(edge.x, edge.y));
+}
+
+float bladeMask(vec2 point) {
+  float blade = 1.0 - smoothstep(
+    0.9,
+    1.0,
+    abs(point.x) / 0.34 + abs(point.y) / 0.075
+  );
+  float guard = boxMask(point + vec2(0.25, 0.0), vec2(0.026, 0.13));
+  float handle = boxMask(point + vec2(0.34, 0.0), vec2(0.09, 0.035));
+  return max(blade, max(guard, handle));
+}
+
 float hash21(vec2 point) {
   return fract(sin(dot(point, vec2(127.1, 311.7))) * 43758.5453);
 }
@@ -61,6 +77,7 @@ void main() {
   float progress = clamp(uProgress, 0.0, 1.0);
   float pulse = sin(progress * 3.14159265);
   float radius = length(point);
+  float isBladeVolley = uMode > 2.5 && uMode < 3.5 ? 1.0 : 0.0;
   float effect = 0.0;
   vec3 color = uTint;
 
@@ -78,9 +95,18 @@ void main() {
     float speedBands = step(0.68, fract((point.y + 1.0) * 7.0 + progress * 3.0));
     effect = trail * speedBands * (1.0 - smoothstep(-0.9, 0.75, point.x));
   } else if (uMode < 3.5) {
-    float reticle = ringMask(radius, mix(0.68, 0.3, pulse), 0.028);
-    float cross = lineMask(abs(point.x), 0.018) + lineMask(abs(point.y), 0.018);
-    effect = reticle + cross * (1.0 - smoothstep(0.42, 0.75, radius)) * 0.7;
+    float travel = mix(-0.62, 0.46, progress);
+    float topBlade = bladeMask(point - vec2(travel + 0.08, -0.34));
+    float middleBlade = bladeMask(point - vec2(travel, 0.0));
+    float bottomBlade = bladeMask(point - vec2(travel + 0.08, 0.34));
+    float topTrail = lineMask(abs(point.y + 0.34), 0.016) *
+      (1.0 - smoothstep(travel - 0.56, travel - 0.18, point.x));
+    float middleTrail = lineMask(abs(point.y), 0.016) *
+      (1.0 - smoothstep(travel - 0.62, travel - 0.2, point.x));
+    float bottomTrail = lineMask(abs(point.y - 0.34), 0.016) *
+      (1.0 - smoothstep(travel - 0.56, travel - 0.18, point.x));
+    effect = topBlade + middleBlade + bottomBlade;
+    effect += (topTrail + middleTrail + bottomTrail) * pulse * 0.5;
   } else if (uMode < 4.5) {
     float angle = atan(point.y, point.x) / 6.2831853 + 0.5;
     color = 0.55 + 0.45 * cos(6.2831853 * (angle + vec3(0.0, 0.33, 0.67) + progress));
@@ -105,11 +131,11 @@ void main() {
   // signature without particles, textures, loops, or additional quads.
   if (uRank > 0.01) {
     float rankEcho = ringMask(radius, mix(0.2, 0.94, progress), 0.022);
-    effect += rankEcho * uRank * 0.28;
+    effect += rankEcho * uRank * mix(0.28, 0.035, isBladeVolley);
   }
   if (uRank > 0.42) {
     float enhanced = smoothstep(0.42, 0.62, uRank);
-    effect += ringMask(radius, mix(0.12, 0.76, progress), 0.014) * enhanced * 0.42;
+    effect += ringMask(radius, mix(0.12, 0.76, progress), 0.014) * enhanced * mix(0.42, 0.055, isBladeVolley);
     if (uQuality > 0.5) {
       float rankSparkle = step(0.955, hash21(floor(point * 11.0) + progress * 2.0));
       effect += rankSparkle * pulse * enhanced * (1.0 - smoothstep(0.18, 0.95, radius)) * 0.5;
@@ -117,7 +143,8 @@ void main() {
   }
   if (uRank > 0.99) {
     float redStarRays = 1.0 - smoothstep(0.0, 0.18, abs(sin(atan(point.y, point.x) * 5.0)));
-    effect += redStarRays * (1.0 - smoothstep(0.24, 0.82, radius)) * 0.65;
+    float redStarStrength = mix(0.65, 0.12, isBladeVolley);
+    effect += redStarRays * (1.0 - smoothstep(0.24, 0.82, radius)) * redStarStrength;
     color = mix(color, vec3(1.0, 0.16, 0.08), 0.45 + pulse * 0.35);
   }
 

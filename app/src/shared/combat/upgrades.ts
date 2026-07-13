@@ -60,31 +60,32 @@ export const COMBAT_UPGRADE_CATALOG: Readonly<
     id: 'v1-bold-tip',
     name: 'Bold Tip',
     shortName: 'BOLD TIP',
-    description: '+0.5% damage',
+    description: '+1.2% damage',
     tag: 'offense',
-    damagePermille: 5,
+    damagePermille: 12,
   }),
   'v1-quick-dry': Object.freeze({
     id: 'v1-quick-dry',
     name: 'Quick Dry',
     shortName: 'QUICK DRY',
-    description: 'Shape Power recovers 1% faster',
+    description: '1.2% shorter cooldown · -0.5% health',
     tag: 'offense',
-    cooldownPermille: -10,
+    cooldownPermille: -12,
+    maximumHitPointsPermille: -5,
   }),
   'v1-thick-paper': Object.freeze({
     id: 'v1-thick-paper',
     name: 'Thick Paper',
     shortName: 'THICK PAPER',
-    description: '+0.5% maximum health',
+    description: '+1% maximum health',
     tag: 'defense',
-    maximumHitPointsPermille: 5,
+    maximumHitPointsPermille: 10,
   }),
   'v1-first-mark': Object.freeze({
     id: 'v1-first-mark',
     name: 'First Mark',
     shortName: 'FIRST MARK',
-    description: 'First Shape Power starts 1 tick sooner',
+    description: 'First Shape Power starts 0.05s sooner',
     tag: 'mobility',
     initialDelayTicksDelta: -1,
   }),
@@ -92,15 +93,15 @@ export const COMBAT_UPGRADE_CATALOG: Readonly<
     id: 'v1-lucky-splash',
     name: 'Lucky Splash',
     shortName: 'LUCKY',
-    description: '+0.3% critical-hit chance',
+    description: '+0.4% critical-hit chance',
     tag: 'utility',
-    criticalChanceBonusPermille: 3,
+    criticalChanceBonusPermille: 4,
   }),
   'v1-steady-hand': Object.freeze({
     id: 'v1-steady-hand',
     name: 'Steady Hand',
     shortName: 'STEADY',
-    description: 'Shape Power winds up 1 tick faster',
+    description: 'Shape Power winds up 0.05s faster',
     tag: 'utility',
     telegraphTicksDelta: -1,
   }),
@@ -227,7 +228,9 @@ export const resolveStoredScribbitUpgrades = (
   if (storedValue === undefined) {
     return Object.freeze({
       status: 'migrated',
-      upgrades: Object.freeze(createScribbitUpgradesForLevel(scribbitId, level)),
+      upgrades: Object.freeze(
+        createScribbitUpgradesForLevel(scribbitId, level)
+      ),
     });
   }
   const upgrades = parseCompleteScribbitUpgrades(storedValue, level);
@@ -307,5 +310,22 @@ export const formatCombatUpgradeSummary = (
     .map((upgrade) => COMBAT_UPGRADE_CATALOG[upgrade.id].shortName)
     .join(' · ');
   const hiddenCount = upgrades.length - visibleCount;
-  return hiddenCount > 0 ? `${visibleSummary} · +${hiddenCount}` : visibleSummary;
+  return hiddenCount > 0
+    ? `${visibleSummary} · +${hiddenCount}`
+    : visibleSummary;
+};
+
+export const formatCombatUpgradeEffectLines = (
+  upgrades: readonly Pick<ScribbitUpgrade, 'id'>[] | undefined,
+  emptyLabel = 'NO INK MODS'
+): readonly string[] => {
+  if (!upgrades || upgrades.length === 0) {
+    return Object.freeze([emptyLabel]);
+  }
+  return Object.freeze(
+    upgrades.map((upgrade) => {
+      const definition = COMBAT_UPGRADE_CATALOG[upgrade.id];
+      return `${definition.shortName} · ${definition.description}`;
+    })
+  );
 };

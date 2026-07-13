@@ -937,7 +937,7 @@ export function paperPagination(options: PaperPaginationOptions): void {
   );
 }
 
-export type AppTabKey = 'arena' | 'bag' | 'draw' | 'battles' | 'gallery';
+export type AppTabKey = 'arena' | 'bag' | 'draw' | 'battles' | 'shop';
 
 export type AppTabItem = {
   key: AppTabKey;
@@ -1037,7 +1037,7 @@ function waxSeal(
 
 export function appTabBar(
   scene: Scene,
-  active: AppTabKey,
+  active: AppTabKey | null,
   tabs: AppTabItem[]
 ): Phaser.GameObjects.Container {
   const { width, height } = scene.scale;

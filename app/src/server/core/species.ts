@@ -19,6 +19,7 @@ const createFoundingScribbit = (
     element: definition.element,
     stats: { ...definition.stats },
     imageUrl: definition.imageUrl,
+    drawingThemeId: null,
     bornDay: 0,
     expiresDay: Number.MAX_SAFE_INTEGER,
     belief: 0,

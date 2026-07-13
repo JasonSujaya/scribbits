@@ -9,9 +9,10 @@ import { Draw } from './scenes/Draw';
 import { Replay } from './scenes/Replay';
 import { MyBattles } from './scenes/MyBattles';
 import { Gallery } from './scenes/Gallery';
+import { Shop } from './scenes/Shop';
 import { Bestiary } from './scenes/Bestiary';
 import { ScoutNotebook } from './scenes/ScoutNotebook';
-import { DESIGN_HEIGHT, DESIGN_WIDTH } from './lib/theme';
+import { DESIGN_WIDTH, responsiveDesignHeight } from './lib/theme';
 import { isShapePowerId } from '../shared/combat';
 import type { PrimaryPower } from '../shared/combat';
 import { isElement } from '../shared/elements';
@@ -24,16 +25,21 @@ import {
   stageDirectBattle,
 } from './lib/registry';
 import { showVsCeremony } from './lib/battleceremony';
+import { isLocalDrawAutomationRequest } from './lib/drawautomation';
 
 // Scribbits Arena — Devvit Web + Phaser 4. Draw a creature; its shape is its
 // stat sheet; it fights async auto-battles and lives 3 days. Portrait-first:
-// a fixed 720x1280 design resolution scaled with FIT to fill any mobile screen.
+// a stable 720-wide design canvas grows vertically once at boot for tall phones.
 const debugBrowserMode =
   typeof window !== 'undefined' && window.location.search.includes('debug');
 const debugForcesCanvas =
   debugBrowserMode && window.location.search.includes('canvas');
 const debugUsesArchivedReport =
   debugBrowserMode && window.location.search.includes('archived');
+type LocalDrawAutomationWindow = Window &
+  typeof globalThis & {
+    __scribbitsMockDrawAutomation?: boolean;
+  };
 type DebugShapePower = PrimaryPower;
 const isDebugShapePower = (value: string | null): value is DebugShapePower => {
   return isShapePowerId(value);
@@ -41,14 +47,7 @@ const isDebugShapePower = (value: string | null): value is DebugShapePower => {
 
 const config: Phaser.Types.Core.GameConfig = {
   type: debugForcesCanvas ? CANVAS : AUTO,
-  parent: 'game-container',
   backgroundColor: '#6f4a2f',
-  scale: {
-    mode: Phaser.Scale.FIT,
-    autoCenter: Phaser.Scale.NO_CENTER,
-    width: DESIGN_WIDTH,
-    height: DESIGN_HEIGHT,
-  },
   scene: [
     Boot,
     Preloader,
@@ -57,15 +56,31 @@ const config: Phaser.Types.Core.GameConfig = {
     Replay,
     MyBattles,
     Gallery,
+    Shop,
     ScoutNotebook,
     Bestiary,
   ],
 };
 
 const StartGame = (parent: string): Phaser.Game => {
-  const game = new Game({ ...config, parent });
+  const host = document.getElementById(parent);
+  const hostWidth = host?.clientWidth ?? window.innerWidth;
+  const hostHeight = host?.clientHeight ?? window.innerHeight;
+  const designHeight = responsiveDesignHeight(hostWidth, hostHeight);
+  const game = new Game({
+    ...config,
+    parent,
+    scale: {
+      mode: Phaser.Scale.FIT,
+      autoCenter: Phaser.Scale.NO_CENTER,
+      autoRound: true,
+      width: DESIGN_WIDTH,
+      height: designHeight,
+    },
+  });
   game.canvas.dataset.renderer =
     game.renderer.type === Phaser.WEBGL ? 'webgl' : 'canvas';
+  game.canvas.dataset.designHeight = String(designHeight);
   // Reddit's compact landscape WebView only shows the rotate prompt. Suspend
   // Phaser while hidden so particles and mesh updates do not burn battery in
   // the background, then resume without resetting scene state in portrait.
@@ -141,7 +156,7 @@ const StartGame = (parent: string): Phaser.Game => {
         onDebugUnhandledRejection
       );
     });
-    // Jump straight to any scene (Draw, Gallery, MyBattles...) for screenshots.
+    // Jump straight to any scene (Draw, Gallery, Shop, MyBattles...) for screenshots.
     win.debugScene = (key: string): string => {
       game.scene
         .getScenes(true)
@@ -271,6 +286,36 @@ const StartGame = (parent: string): Phaser.Game => {
       window.setTimeout(() => {
         void startDebugSparWhenReady();
       }, 300);
+    } else if (
+      window.location.search.includes('untimed-draw') &&
+      (window as LocalDrawAutomationWindow).__scribbitsMockDrawAutomation ===
+        true
+    ) {
+      const startAutomationDrawWhenReady = (attempt = 0): void => {
+        const home = game.scene.getScene('ArenaHome') as Phaser.Scene;
+        if (!getArena(home) && attempt < 12) {
+          window.setTimeout(
+            () => startAutomationDrawWhenReady(attempt + 1),
+            200
+          );
+          return;
+        }
+        game.scene
+          .getScenes(true)
+          .forEach((scene) => game.scene.stop(scene.scene.key));
+        game.scene.start('Draw', { mode: 'automation' });
+      };
+      window.setTimeout(() => startAutomationDrawWhenReady(), 300);
+    } else if (window.location.search.includes('shop')) {
+      const startDebugShopWhenReady = (attempt = 0): void => {
+        const home = game.scene.getScene('ArenaHome') as Phaser.Scene;
+        if (!getArena(home) && attempt < 12) {
+          window.setTimeout(() => startDebugShopWhenReady(attempt + 1), 200);
+          return;
+        }
+        win.debugScene?.('Shop');
+      };
+      window.setTimeout(() => startDebugShopWhenReady(), 300);
     } else if (window.location.search.includes('collection')) {
       const startDebugCollectionWhenReady = (attempt = 0): void => {
         const home = game.scene.getScene('ArenaHome') as Phaser.Scene;
@@ -291,5 +336,25 @@ const StartGame = (parent: string): Phaser.Game => {
 };
 
 document.addEventListener('DOMContentLoaded', () => {
-  StartGame('game-container');
+  const start = async (): Promise<void> => {
+    if (isLocalDrawAutomationRequest(window.location)) {
+      try {
+        const response = await fetch('/__mock/draw-automation', {
+          headers: { Accept: 'application/json' },
+        });
+        if (response.ok) {
+          const capability = (await response.json()) as { enabled?: boolean };
+          if (capability.enabled === true) {
+            (
+              window as LocalDrawAutomationWindow
+            ).__scribbitsMockDrawAutomation = true;
+          }
+        }
+      } catch {
+        // Production has no mock capability endpoint, so Draw stays timed.
+      }
+    }
+    StartGame('game-container');
+  };
+  void start();
 });

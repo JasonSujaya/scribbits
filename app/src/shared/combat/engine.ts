@@ -29,6 +29,7 @@ import {
   isCombatUpgradeId,
   MAXIMUM_COMBAT_UPGRADES,
 } from './upgrades';
+import { freezeGearCombatSnapshot, isGearCombatSnapshot } from './gearsnapshot';
 import { isElement } from '../elements';
 import { applyBattleArenaModifier } from '../battlearena';
 import type { CombatUpgradeModifiers } from './upgrades';
@@ -249,6 +250,9 @@ function validateFighterInput(fighter: CombatFighterInput): void {
       `Combat upgrades must contain up to ${MAXIMUM_COMBAT_UPGRADES} unique Ink Mods.`
     );
   }
+  if (fighter.gear !== undefined && !isGearCombatSnapshot(fighter.gear)) {
+    throw new Error('Combat Gear snapshot is malformed or outside its caps.');
+  }
 }
 
 function freezeFighterInput(fighter: CombatFighterInput): CombatFighterInput {
@@ -259,6 +263,27 @@ function freezeFighterInput(fighter: CombatFighterInput): CombatFighterInput {
     stats: Object.freeze({ ...fighter.stats }),
     upgrades: Object.freeze([...(fighter.upgrades ?? [])]),
     damageModifierPermille: fighter.damageModifierPermille ?? 1_000,
+    ...(fighter.gear ? { gear: freezeGearCombatSnapshot(fighter.gear) } : {}),
+  });
+}
+
+function getCombinedCombatModifiers(
+  input: CombatFighterInput
+): CombatUpgradeModifiers {
+  const upgrades = getCombatUpgradeModifiers(input.upgrades);
+  const gear = input.gear?.modifiers;
+  if (!gear) return upgrades;
+  return Object.freeze({
+    damagePermille: upgrades.damagePermille + gear.damagePermille - 1_000,
+    maximumHitPointsPermille:
+      upgrades.maximumHitPointsPermille + gear.maximumHitPointsPermille - 1_000,
+    cooldownPermille: upgrades.cooldownPermille + gear.cooldownPermille - 1_000,
+    criticalChanceBonusPermille:
+      upgrades.criticalChanceBonusPermille + gear.criticalChanceBonusPermille,
+    telegraphTicksDelta:
+      upgrades.telegraphTicksDelta + gear.telegraphTicksDelta,
+    initialDelayTicksDelta:
+      upgrades.initialDelayTicksDelta + gear.initialDelayTicksDelta,
   });
 }
 
@@ -314,7 +339,7 @@ function createFighterState(
   seed: string,
   rules: CombatRules
 ): MutableFighterState {
-  const upgradeModifiers = getCombatUpgradeModifiers(input.upgrades);
+  const upgradeModifiers = getCombinedCombatModifiers(input);
   const horizontalDirection = slot === 'a' ? 1 : -1;
   const verticalRoll = deterministicInteger(
     seed,
@@ -2021,11 +2046,13 @@ export function simulateCombat(input: CombatSimulationInput): BattleTranscript {
   if (fighterAInput.id === fighterBInput.id) {
     throw new Error('Combat fighter ids must be unique.');
   }
+  const transcriptVersion =
+    fighterAInput.gear || fighterBInput.gear ? 3 : rules.version;
   const battleId = createStableBattleId(
     seed,
     fighterAInput.id,
     fighterBInput.id,
-    rules.version
+    transcriptVersion
   );
   const context: SimulationContext = {
     rules,
@@ -2064,7 +2091,7 @@ export function simulateCombat(input: CombatSimulationInput): BattleTranscript {
   assertEntityCap(context);
 
   return Object.freeze({
-    version: rules.version,
+    version: transcriptVersion,
     battleId,
     seed,
     tickRate: rules.tickRate,

@@ -37,22 +37,33 @@ import {
   mountBagInventoryGrid,
   type BagInventoryGridItem,
 } from './baginventorygrid';
+import { BAG_RARITY_FRAME_STYLE } from './bagrarity';
+import {
+  formatGearTechnique,
+  resolveGearCombatLoadout,
+} from '../../shared/gearcombat';
+import { selectGearWeekDay } from '../../shared/content/gearweek';
+
+const BAG_GEAR_TILE_SIZE = 96;
 
 const BAG_LAYOUT = Object.freeze({
   stageCenterOffset: 170,
-  filterOffset: 410,
-  inventoryTopOffset: 495,
-  inventoryViewportOffset: 565,
-  inventoryViewportHeight: 354,
-  horizontalMargin: 24,
-  cardColumns: 3,
-  cardGap: 12,
-  cardHeight: 154,
-  cardRowGap: 12,
-  stageWidth: 672,
-  stageHeight: 386,
-  slotWidth: 86,
-  slotHeight: 84,
+  filterOffset: 434,
+  inventoryTopOffset: 519,
+  inventoryViewportOffset: 617,
+  inventoryViewportHeight: 302,
+  inventoryPanelMargin: 18,
+  inventoryContentMargin: 72,
+  cardColumns: 5,
+  cardGap: 24,
+  cardHeight: BAG_GEAR_TILE_SIZE,
+  cardRowGap: 18,
+});
+
+const BAG_GEAR_PREVIEW_BOX = Object.freeze({
+  width: 60,
+  height: 56,
+  maxScale: 1.2,
 });
 
 export type InkKitSection = EquipmentCategory | 'styles';
@@ -78,15 +89,19 @@ const INK_KIT_SECTIONS: ReadonlyArray<{
 ]);
 
 const RARITY_STYLE: Record<CapsuleRarity, { color: number; label: string }> = {
-  common: { color: 0xb6a894, label: 'COMMON' },
-  rare: { color: 0x4fb0d8, label: 'RARE' },
-  epic: { color: UI.goldHex, label: 'EPIC' },
+  common: {
+    color: BAG_RARITY_FRAME_STYLE.common.color,
+    label: 'COMMON',
+  },
+  rare: { color: BAG_RARITY_FRAME_STYLE.rare.color, label: 'RARE' },
+  epic: { color: BAG_RARITY_FRAME_STYLE.epic.color, label: 'EPIC' },
 };
 
 export type CollectionBookOptions = {
   scene: Scene;
   actionOverlay: CanvasActionOverlay;
   top: number;
+  dayNumber: number;
   section: InkKitSection;
   scrollOffset: number;
   inventory: Inventory | null;
@@ -100,7 +115,6 @@ export type CollectionBookOptions = {
   onScrollOffsetChange: (offset: number) => void;
   onSectionChange: (section: InkKitSection) => void;
   onSelectScribbit: (scribbitId: string) => void;
-  onEquipmentMessage: (message: string) => void;
   onEquipGear: (
     scribbitId: string,
     category: EquipmentCategory,
@@ -139,15 +153,8 @@ const createMergeOperationId = (): string =>
   `merge-${Date.now()}-${Math.random().toString(36).slice(2, 14)}`;
 
 export function renderCollectionBook(options: CollectionBookOptions): void {
-  const {
-    scene,
-    top,
-    inventory,
-    loggedIn,
-    loading,
-    errorMessage,
-    onRetry,
-  } = options;
+  const { scene, top, inventory, loggedIn, loading, errorMessage, onRetry } =
+    options;
   const { width } = scene.scale;
 
   if (!loggedIn) {
@@ -199,6 +206,7 @@ export function renderCollectionBook(options: CollectionBookOptions): void {
 
   if (!inventory) return;
 
+  const gearWeekDay = selectGearWeekDay(options.dayNumber);
   const selectedScribbit =
     options.scribbits.find(
       (scribbit) => scribbit.id === options.selectedScribbitId
@@ -206,9 +214,7 @@ export function renderCollectionBook(options: CollectionBookOptions): void {
   buildBagCharacterStage({
     scene,
     actionOverlay: options.actionOverlay,
-    inventory,
-    selectedSection:
-      options.section === 'styles' ? null : options.section,
+    selectedSection: options.section === 'styles' ? null : options.section,
     scribbits: options.scribbits,
     selectedScribbit,
     centerY: top + BAG_LAYOUT.stageCenterOffset,
@@ -226,19 +232,24 @@ export function renderCollectionBook(options: CollectionBookOptions): void {
     options.onSectionChange
   );
 
-  const ownedItems = buildOwnedItems(inventory, options.section);
+  const featuredGearIds = new Set(gearWeekDay.featuredGearIds);
+  const ownedItems = buildOwnedItems(inventory, options.section).sort(
+    (left, right) =>
+      Number(featuredGearIds.has(right.entry.id)) -
+      Number(featuredGearIds.has(left.entry.id))
+  );
   const inventoryTop = top + BAG_LAYOUT.inventoryTopOffset;
   const viewport = {
-    x: BAG_LAYOUT.horizontalMargin,
+    x: BAG_LAYOUT.inventoryContentMargin,
     y: top + BAG_LAYOUT.inventoryViewportOffset,
-    width: width - BAG_LAYOUT.horizontalMargin * 2,
+    width: width - BAG_LAYOUT.inventoryContentMargin * 2,
     height: BAG_LAYOUT.inventoryViewportHeight,
   };
   stickerCard(
     scene,
     width / 2,
     inventoryTop + 224,
-    width - 36,
+    width - BAG_LAYOUT.inventoryPanelMargin * 2,
     440,
     { tape: false, tilt: 0 }
   );
@@ -248,13 +259,24 @@ export function renderCollectionBook(options: CollectionBookOptions): void {
       : GEAR_SECTION_PRESENTATION[options.section].label;
   label(
     scene,
-    BAG_LAYOUT.horizontalMargin + 18,
+    BAG_LAYOUT.inventoryContentMargin,
     inventoryTop + 30,
     `${sectionLabel} · ${ownedItems.length} OWNED`,
     20,
     UI.ink,
     true
   ).setOrigin(0, 0.5);
+  label(
+    scene,
+    width / 2,
+    inventoryTop + 70,
+    `GEAR WEEK ${gearWeekDay.day}/7 · ${gearWeekDay.title.toUpperCase()}\nTODAY · ${gearWeekDay.challenge.toUpperCase()}`,
+    18,
+    UI.coralText,
+    true
+  )
+    .setWordWrapWidth(width - BAG_LAYOUT.inventoryContentMargin * 2)
+    .setLineSpacing(2);
   const visibleRowCount = Math.floor(
     (viewport.height + BAG_LAYOUT.cardRowGap) /
       (BAG_LAYOUT.cardHeight + BAG_LAYOUT.cardRowGap)
@@ -263,7 +285,7 @@ export function renderCollectionBook(options: CollectionBookOptions): void {
   if (rowCount > visibleRowCount) {
     label(
       scene,
-      width - BAG_LAYOUT.horizontalMargin - 18,
+      width - BAG_LAYOUT.inventoryContentMargin,
       inventoryTop + 30,
       'SWIPE TO BROWSE',
       15,
@@ -287,10 +309,6 @@ export function renderCollectionBook(options: CollectionBookOptions): void {
     return;
   }
 
-  const cardWidth =
-    (viewport.width -
-      BAG_LAYOUT.cardGap * (BAG_LAYOUT.cardColumns - 1)) /
-    BAG_LAYOUT.cardColumns;
   const gridItems = ownedItems.map((item, index) =>
     buildCosmeticCard({
       scene,
@@ -301,10 +319,9 @@ export function renderCollectionBook(options: CollectionBookOptions): void {
       onMergeGear: options.onMergeGear,
       selectedScribbit,
       equipmentBusy: options.equipmentBusy,
-      onEquipmentMessage: options.onEquipmentMessage,
       onEquipGear: options.onEquipGear,
       onInventoryChanged: options.onInventoryChanged,
-      width: cardWidth,
+      featured: featuredGearIds.has(item.entry.id),
       index,
     })
   );
@@ -386,7 +403,6 @@ function buildBagFilters(
 function buildBagCharacterStage(options: {
   scene: Scene;
   actionOverlay: CanvasActionOverlay;
-  inventory: Inventory;
   selectedSection: EquipmentCategory | null;
   scribbits: readonly Scribbit[];
   selectedScribbit: Scribbit | undefined;
@@ -400,7 +416,6 @@ function buildBagCharacterStage(options: {
   const {
     scene,
     actionOverlay,
-    inventory,
     selectedSection,
     scribbits,
     selectedScribbit,
@@ -412,26 +427,20 @@ function buildBagCharacterStage(options: {
     onEquipGear,
   } = options;
   const { width } = scene.scale;
-  const stage = stickerCard(
-    scene,
-    width / 2,
-    centerY,
-    BAG_LAYOUT.stageWidth,
-    BAG_LAYOUT.stageHeight,
-    {
-      tape: false,
-      tilt: 0,
-    }
-  );
+  const stage = scene.add.container(width / 2, centerY);
   const stageBackdrop = scene.add.graphics();
-  stageBackdrop.fillStyle(UI.tapeAlt, 0.14);
-  stageBackdrop.fillRoundedRect(-128, -138, 256, 286, 118);
-  stageBackdrop.lineStyle(3, UI.inkSoftHex, 0.16);
-  stageBackdrop.strokeRoundedRect(-128, -138, 256, 286, 118);
-  stageBackdrop.fillStyle(UI.gold, 0.08);
-  stageBackdrop.fillTriangle(-96, -126, 0, 104, 96, -126);
+  stageBackdrop.fillStyle(UI.inkHex, 0.08);
+  stageBackdrop.fillRoundedRect(-185, -145, 370, 324, 158);
+  stageBackdrop.fillStyle(UI.paper, 1);
+  stageBackdrop.fillRoundedRect(-180, -153, 360, 316, 154);
+  stageBackdrop.lineStyle(5, UI.inkSoftHex, 0.42);
+  stageBackdrop.strokeRoundedRect(-180, -153, 360, 316, 154);
+  stageBackdrop.lineStyle(3, UI.tapeAlt, 0.72);
+  stageBackdrop.strokeRoundedRect(-170, -143, 340, 296, 144);
+  stageBackdrop.fillStyle(UI.tapeAlt, 0.1);
+  stageBackdrop.fillTriangle(-148, -136, 0, 136, 148, -136);
   stage.add(stageBackdrop);
-  drawScribbitPlatform(scene, stage, 0, 108);
+  drawScribbitPlatform(scene, stage, 0, 130);
 
   if (!selectedScribbit) {
     stage.add([
@@ -456,18 +465,18 @@ function buildBagCharacterStage(options: {
     0,
     scribbits.findIndex((scribbit) => scribbit.id === selectedScribbit.id)
   );
-  const portrait = scene.add.container(0, -4);
+  const portrait = scene.add.container(0, 5);
   stage.add(portrait);
   void loadDrawing(scene, selectedScribbit).then((textureKey) => {
     if (!portrait.active || !stage.active || !scene.scene.isActive()) return;
     portrait.add(
-      fitDrawing(scene.add.image(0, 0, textureKey), 194).setOrigin(0.5)
+      fitDrawing(scene.add.image(0, 0, textureKey), 270).setOrigin(0.5)
     );
   });
   const nameText = label(
     scene,
     0,
-    -154,
+    -168,
     `${selectedScribbit.name.toUpperCase()} · LV ${selectedScribbit.level}`,
     21,
     UI.ink,
@@ -486,21 +495,21 @@ function buildBagCharacterStage(options: {
     };
     const previous = ghostButton(
       scene,
-      -152,
-      -154,
+      -176,
+      -168,
       '‹',
       () => selectRelativeScribbit(-1),
-      78,
-      78
+      68,
+      68
     );
     const next = ghostButton(
       scene,
-      152,
-      -154,
+      176,
+      -168,
       '‹',
       () => selectRelativeScribbit(1),
-      78,
-      78
+      68,
+      68
     ).setAngle(180);
     previous.setAlpha(equipmentBusy ? 0.42 : 1);
     next.setAlpha(equipmentBusy ? 0.42 : 1);
@@ -508,7 +517,7 @@ function buildBagCharacterStage(options: {
     actionOverlay.add({
       label: `Previous Scribbit. ${selectedIndex + 1} of ${scribbits.length} selected.`,
       rect: {
-        x: width / 2 - 202,
+        x: width / 2 - 226,
         y: centerY - 204,
         width: 100,
         height: 100,
@@ -519,7 +528,7 @@ function buildBagCharacterStage(options: {
     actionOverlay.add({
       label: `Next Scribbit. ${selectedIndex + 1} of ${scribbits.length} selected.`,
       rect: {
-        x: width / 2 + 102,
+        x: width / 2 + 126,
         y: centerY - 204,
         width: 100,
         height: 100,
@@ -529,44 +538,32 @@ function buildBagCharacterStage(options: {
     });
   }
 
-  const slotPairCenters: Readonly<
+  const slotXByCategory: Readonly<Record<EquipmentCategory, number>> = {
+    weapon: 62,
+    shoes: 62,
+    armor: width - 62,
+    accessory: width - 62,
+  };
+  const slotYByCategory: Readonly<
     Record<EquipmentCategory, readonly [number, number]>
   > = {
-    weapon: [74, 168],
-    armor: [width - 168, width - 74],
-    shoes: [74, 168],
-    accessory: [width - 168, width - 74],
+    weapon: [centerY - 156, centerY - 52],
+    armor: [centerY - 156, centerY - 52],
+    shoes: [centerY + 52, centerY + 156],
+    accessory: [centerY + 52, centerY + 156],
   };
-  const slotRowByCategory: Readonly<Record<EquipmentCategory, number>> = {
-    weapon: centerY - 42,
-    armor: centerY - 42,
-    shoes: centerY + 78,
-    accessory: centerY + 78,
-  };
-
   EQUIPMENT_CATEGORIES.forEach((category) => {
-    const pairCenters = slotPairCenters[category];
-    const rowY = slotRowByCategory[category];
-    const groupCenterX = (pairCenters[0] + pairCenters[1]) / 2;
-    label(
-      scene,
-      groupCenterX,
-      rowY - 58,
-      GEAR_SECTION_PRESENTATION[category].label,
-      14,
-      selectedSection === category ? UI.coralText : UI.inkSoft,
-      true
-    );
+    const slotX = slotXByCategory[category];
+    const slotYs = slotYByCategory[category];
     ([0, 1] as const).forEach((slotIndex) => {
       buildEquipmentSlot({
         scene,
         actionOverlay,
-        inventory,
         scribbit: selectedScribbit,
         category,
         slotIndex,
-        x: pairCenters[slotIndex],
-        y: rowY,
+        x: slotX,
+        y: slotYs[slotIndex],
         selectedCategory: selectedSection === category,
         equipmentBusy,
         onBrowseCategory: () => onSectionChange(category),
@@ -587,7 +584,7 @@ function buildBagCharacterStage(options: {
   label(
     scene,
     width / 2,
-    centerY + 166,
+    centerY + 180,
     visibleEquipmentStatus,
     15,
     equipmentError ? UI.coralText : equipmentBusy ? UI.goldText : UI.inkSoft,
@@ -608,20 +605,19 @@ function drawScribbitPlatform(
 ): void {
   const platform = scene.add.graphics();
   platform.fillStyle(UI.inkHex, 0.12);
-  platform.fillEllipse(x, y + 14, 236, 48);
+  platform.fillEllipse(x, y + 14, 276, 50);
   platform.fillStyle(UI.tapeAlt, 0.62);
-  platform.fillEllipse(x, y, 222, 46);
+  platform.fillEllipse(x, y, 260, 48);
   platform.lineStyle(4, UI.inkHex, 0.72);
-  platform.strokeEllipse(x, y, 222, 46);
+  platform.strokeEllipse(x, y, 260, 48);
   platform.lineStyle(2, UI.creamHex, 0.74);
-  platform.strokeEllipse(x, y - 2, 188, 28);
+  platform.strokeEllipse(x, y - 2, 220, 30);
   stage.add(platform);
 }
 
 function buildEquipmentSlot(options: {
   scene: Scene;
   actionOverlay: CanvasActionOverlay;
-  inventory: Inventory;
   scribbit: Scribbit;
   category: EquipmentCategory;
   slotIndex: 0 | 1;
@@ -635,7 +631,6 @@ function buildEquipmentSlot(options: {
   const {
     scene,
     actionOverlay,
-    inventory,
     scribbit,
     category,
     slotIndex,
@@ -648,62 +643,30 @@ function buildEquipmentSlot(options: {
   } = options;
   const gearId = equipmentSlots(scribbit, category)[slotIndex];
   const entry = gearId ? GEAR_BY_ID.get(gearId) : undefined;
-  const slot = stickerCard(
+  const slot = createBagGearTile(
     scene,
-    x,
-    y,
-    BAG_LAYOUT.slotWidth,
-    BAG_LAYOUT.slotHeight,
-    { tape: false, tilt: slotIndex === 0 ? -0.4 : 0.4 }
+    entry?.rarity ?? null,
+    slotIndex,
+    selectedCategory
   );
-  const selectionFrame = scene.add
-    .rectangle(
-      0,
-      0,
-      BAG_LAYOUT.slotWidth - 6,
-      BAG_LAYOUT.slotHeight - 6,
-      UI.coral,
-      entry ? 0.08 : 0.025
-    )
-    .setStrokeStyle(
-      selectedCategory ? 3 : 2,
-      selectedCategory ? UI.coral : UI.inkSoftHex,
-      selectedCategory ? 0.88 : 0.34
-    );
-  slot.addAt(selectionFrame, 1);
+  slot.setPosition(x, y);
 
   if (entry) {
-    slot.add(
-      label(
-        scene,
-        BAG_LAYOUT.slotWidth / 2 - 13,
-        -BAG_LAYOUT.slotHeight / 2 + 12,
-        '×',
-        18,
-        UI.coralText,
-        true
-      )
-    );
     renderCosmeticPreview({
       scene,
       parent: slot,
       entry,
-      y: -8,
-      size: 48,
-      width: 62,
+      y: 0,
+      size: 82,
+      ...BAG_GEAR_PREVIEW_BOX,
     });
-    const rank = inventory.gear[entry.id]?.rank;
-    slot.add(
-      label(scene, 0, 26, rank ? `${rank}★` : 'GEAR', 12, UI.coralText, true)
-    );
   } else {
-    slot.add([
-      paperIcon(scene, GEAR_SECTION_PRESENTATION[category].icon, 0, -8, {
+    slot.add(
+      paperIcon(scene, GEAR_SECTION_PRESENTATION[category].icon, 0, 0, {
         size: 28,
         fill: UI.inkSoftHex,
-      }),
-      label(scene, 0, 26, `${slotIndex + 1}`, 12, UI.inkSoft, true),
-    ]);
+      })
+    );
   }
 
   const activate = (): void => {
@@ -717,8 +680,8 @@ function buildEquipmentSlot(options: {
   addCardPressInteraction({
     scene,
     card: slot,
-    width: 94,
-    height: 94,
+    width: BAG_GEAR_TILE_SIZE,
+    height: BAG_GEAR_TILE_SIZE,
     pressedScaleX: 0.93,
     pressedScaleY: 0.92,
     onActivate: activate,
@@ -729,10 +692,10 @@ function buildEquipmentSlot(options: {
       ? `Unequip ${entry.name} from ${scribbit.name}, ${category} slot ${slotIndex + 1}.`
       : `Empty ${category} slot ${slotIndex + 1} on ${scribbit.name}. Browse ${category} Gear.`,
     rect: {
-      x: x - 47,
-      y: y - 47,
-      width: 94,
-      height: 94,
+      x: x - BAG_GEAR_TILE_SIZE / 2,
+      y: y - BAG_GEAR_TILE_SIZE / 2,
+      width: BAG_GEAR_TILE_SIZE,
+      height: BAG_GEAR_TILE_SIZE,
     },
     attributes: {
       'data-equipment-slot': `${category}-${slotIndex}`,
@@ -854,6 +817,52 @@ function cosmeticOwnership(
   };
 }
 
+function createBagGearTile(
+  scene: Scene,
+  rarity: CapsuleRarity | null,
+  index: number,
+  selected = false
+): Phaser.GameObjects.Container {
+  const width = BAG_GEAR_TILE_SIZE;
+  const height = BAG_GEAR_TILE_SIZE;
+  const rarityFrame = rarity
+    ? BAG_RARITY_FRAME_STYLE[rarity]
+    : {
+        color: selected ? UI.coral : UI.inkSoftHex,
+        fillAlpha: selected ? 0.075 : 0.025,
+        strokeWidth: selected ? 5 : 3,
+      };
+  const tile = scene.add
+    .container(0, 0)
+    .setAngle(index % 2 === 0 ? -0.18 : 0.18);
+  const left = -width / 2;
+  const top = -height / 2;
+  const shadow = scene.add.graphics().setPosition(4, 7);
+  shadow.fillStyle(UI.inkHex, 0.2);
+  shadow.fillRoundedRect(left, top, width, height, 15);
+  const face = scene.add.graphics();
+  face.fillStyle(UI.paper, 1);
+  face.fillRoundedRect(left, top, width, height, 15);
+  face.fillStyle(rarityFrame.color, rarityFrame.fillAlpha);
+  face.fillRoundedRect(left + 5, top + 5, width - 10, height - 10, 12);
+  face.lineStyle(rarityFrame.strokeWidth, rarityFrame.color, 1);
+  face.strokeRoundedRect(left + 5, top + 5, width - 10, height - 10, 12);
+  tile.add([shadow, face]);
+  if (rarity === 'epic') {
+    const epicInnerFrame = scene.add.graphics();
+    epicInnerFrame.lineStyle(2, UI.goldHex, 0.95);
+    epicInnerFrame.strokeRoundedRect(
+      left + 15,
+      top + 15,
+      width - 30,
+      height - 30,
+      9
+    );
+    tile.add(epicInnerFrame);
+  }
+  return tile;
+}
+
 function buildCosmeticCard(options: {
   scene: Scene;
   entry: CosmeticCatalogEntry;
@@ -865,10 +874,9 @@ function buildCosmeticCard(options: {
   onMergeGear: CollectionBookOptions['onMergeGear'];
   selectedScribbit: Scribbit | undefined;
   equipmentBusy: boolean;
-  onEquipmentMessage: (message: string) => void;
   onEquipGear: CollectionBookOptions['onEquipGear'];
   onInventoryChanged: () => void;
-  width: number;
+  featured: boolean;
   index: number;
 }): BagInventoryGridItem {
   const {
@@ -882,28 +890,12 @@ function buildCosmeticCard(options: {
     onMergeGear,
     selectedScribbit,
     equipmentBusy,
-    onEquipmentMessage,
     onEquipGear,
     onInventoryChanged,
-    width,
+    featured,
     index,
   } = options;
-  const rarityStyle = RARITY_STYLE[entry.rarity];
-  const card = stickerCard(scene, 0, 0, width, BAG_LAYOUT.cardHeight, {
-    tape: false,
-    tilt: index % 2 === 0 ? -0.22 : 0.22,
-  });
-  const rarityFrame = scene.add
-    .rectangle(
-      0,
-      0,
-      width - 12,
-      BAG_LAYOUT.cardHeight - 12,
-      rarityStyle.color,
-      0.035
-    )
-    .setStrokeStyle(entry.rarity === 'common' ? 3 : 5, rarityStyle.color, 0.9);
-  card.addAt(rarityFrame, 1);
+  const card = createBagGearTile(scene, entry.rarity, index);
   const equippedSlots =
     entry.kind === 'accessory' && selectedScribbit
       ? equipmentSlots(selectedScribbit, entry.category)
@@ -911,64 +903,56 @@ function buildCosmeticCard(options: {
           .filter((slotNumber) => slotNumber > 0)
       : [];
   if (equippedSlots.length > 0) {
-    rarityFrame.setStrokeStyle(6, UI.coral, 1);
-  }
-  const selectedCategoryIsFull =
-    entry.kind === 'accessory' &&
-    selectedScribbit !== undefined &&
-    equipmentSlots(selectedScribbit, entry.category).every(
-      (gearId) => gearId !== null
+    const equippedBadge = scene.add
+      .circle(
+        BAG_GEAR_TILE_SIZE / 2 - 15,
+        -BAG_GEAR_TILE_SIZE / 2 + 15,
+        12,
+        UI.coral,
+        1
+      )
+      .setStrokeStyle(3, UI.inkHex, 1);
+    const equippedCheck = label(
+      scene,
+      BAG_GEAR_TILE_SIZE / 2 - 15,
+      -BAG_GEAR_TILE_SIZE / 2 + 14,
+      '✓',
+      14,
+      UI.paperText,
+      true
     );
-
-  const rarityBackground = scene.add
-    .rectangle(
-      -width / 2 + 40,
-      -BAG_LAYOUT.cardHeight / 2 + 18,
-      66,
-      22,
-      rarityStyle.color,
-      0.24
-    )
-    .setStrokeStyle(2, rarityStyle.color, 1);
-  const rarityLabel = label(
-    scene,
-    -width / 2 + 40,
-    -BAG_LAYOUT.cardHeight / 2 + 18,
-    rarityStyle.label,
-    12,
-    UI.ink,
-    true
-  );
-  card.add([rarityBackground, rarityLabel]);
+    card.add([equippedBadge, equippedCheck]);
+  }
+  if (featured) {
+    const featuredBadge = scene.add
+      .circle(
+        -BAG_GEAR_TILE_SIZE / 2 + 15,
+        -BAG_GEAR_TILE_SIZE / 2 + 15,
+        12,
+        UI.goldHex,
+        1
+      )
+      .setStrokeStyle(3, UI.inkHex, 1);
+    const featuredStar = label(
+      scene,
+      -BAG_GEAR_TILE_SIZE / 2 + 15,
+      -BAG_GEAR_TILE_SIZE / 2 + 14,
+      '★',
+      13,
+      UI.ink,
+      true
+    );
+    card.add([featuredBadge, featuredStar]);
+  }
 
   renderCosmeticPreview({
     scene,
     parent: card,
     entry,
-    y: -28,
-    size: 58,
-    width: Math.min(176, width - 20),
+    y: 0,
+    size: 82,
+    ...BAG_GEAR_PREVIEW_BOX,
   });
-
-  if (ownership.rank !== null) {
-    gearRankStars(scene, card, 0, 1, ownership.rank, 0.66);
-  }
-
-  const name = label(scene, 0, 31, entry.name, 16, UI.ink, true)
-    .setWordWrapWidth(width - 20)
-    .setLineSpacing(-5);
-  const ownershipLabel = label(
-    scene,
-    0,
-    59,
-    equippedSlots.length > 0
-      ? `EQUIPPED ${equippedSlots.join(' + ')}`
-      : compactOwnershipSummary(ownership),
-    11,
-    UI.coralText,
-    true
-  );
-  card.add([name, ownershipLabel]);
 
   function openDetail(): void {
     openCosmeticDetail({
@@ -981,99 +965,39 @@ function buildCosmeticCard(options: {
       onMergeGear,
       onInventoryChanged,
       viewKey,
+      selectedScribbit,
+      equipmentBusy,
+      onEquipGear,
     });
   }
-
-  const equipGearOnSelectedScribbit = (): void => {
-    if (entry.kind !== 'accessory' || equipmentBusy) {
-      return;
-    }
-    if (!selectedScribbit || equippedSlots.length > 0) {
-      openDetail();
-      return;
-    }
-    const slots = equipmentSlots(selectedScribbit, entry.category);
-    const slotIndex = slots[0] === null ? 0 : slots[1] === null ? 1 : null;
-    if (slotIndex === null) {
-      onEquipmentMessage(
-        `Both ${entry.category} slots are full. Tap an occupied slot above to unequip it first.`
-      );
-      return;
-    }
-    void onEquipGear(selectedScribbit.id, entry.category, slotIndex, entry.id);
-  };
-  const primaryAction =
-    entry.kind === 'accessory' ? equipGearOnSelectedScribbit : openDetail;
-  const primaryLabel =
-    entry.kind === 'accessory'
-      ? equippedSlots.length > 0
-        ? `Open ${entry.name} details. Equipped to ${selectedScribbit?.name ?? 'the selected Scribbit'} in slot ${equippedSlots.join(' and ')}. Tap that loadout slot to unequip it.`
-        : selectedScribbit
-          ? selectedCategoryIsFull
-            ? `Both ${entry.category} slots on ${selectedScribbit.name} are full. Tap for instructions.`
-            : `Equip ${entry.name} to ${selectedScribbit.name}. ${ownership.summary}.`
-          : `Open ${entry.name} details. Draw a living Scribbit before equipping Gear.`
-      : `Open ${entry.name}. ${ownership.summary}.`;
+  const primaryLabel = `Open ${entry.name} details. ${featured ? 'Featured today. ' : ''}${ownership.summary}.`;
   const primaryAttributes = {
     'data-ink-kit-entry-id': entry.id,
     'data-ink-kit-entry-key': viewKey,
+    'data-ink-kit-entry-rarity': entry.rarity,
+    'data-ink-kit-entry-rank': ownership.rank?.toString() ?? '',
     'data-equipped-slots': equippedSlots.join(','),
+    'data-gear-week-featured': String(featured),
   };
 
   addCardPressInteraction({
     scene,
     card,
-    width,
-    height: BAG_LAYOUT.cardHeight,
+    width: BAG_GEAR_TILE_SIZE,
+    height: BAG_GEAR_TILE_SIZE,
     pressedScaleX: 0.97,
     pressedScaleY: 0.96,
-    onActivate: primaryAction,
+    onActivate: openDetail,
   });
-
-  if (entry.kind === 'accessory') {
-    card.add(
-      paperIcon(
-        scene,
-        'info',
-        width / 2 - 24,
-        -BAG_LAYOUT.cardHeight / 2 + 22,
-        { size: 23, fill: UI.coral }
-      )
-    );
-    return {
-      view: card,
-      primaryAction: {
-        label: primaryLabel,
-        attributes: primaryAttributes,
-        disabled: equipmentBusy,
-        onActivate: primaryAction,
-      },
-      detailAction: {
-        label: `Open ${entry.name} details and Forge options.`,
-        attributes: { 'data-ink-kit-entry-details': entry.id },
-        disabled: equipmentBusy,
-        onActivate: openDetail,
-      },
-    };
-  }
   return {
     view: card,
     primaryAction: {
       label: primaryLabel,
       attributes: primaryAttributes,
       disabled: equipmentBusy,
-      onActivate: primaryAction,
+      onActivate: openDetail,
     },
   };
-}
-
-function compactOwnershipSummary(ownership: CosmeticOwnership): string {
-  if (ownership.rank !== null) {
-    if (ownership.maxRank) return `${ownership.rank}★ · MAX`;
-    if (ownership.mergeReady) return `${ownership.rank}★ · FORGE`;
-    return `${ownership.rank}★ · ${ownership.copies}/${GEAR_MERGE_COPY_COST}`;
-  }
-  return ownership.summary.toUpperCase();
 }
 
 function openCosmeticDetail(options: {
@@ -1086,6 +1010,9 @@ function openCosmeticDetail(options: {
   onMergeGear: CollectionBookOptions['onMergeGear'];
   onInventoryChanged: () => void;
   viewKey: string;
+  selectedScribbit: Scribbit | undefined;
+  equipmentBusy: boolean;
+  onEquipGear: CollectionBookOptions['onEquipGear'];
 }): void {
   const {
     scene,
@@ -1097,7 +1024,31 @@ function openCosmeticDetail(options: {
     onMergeGear,
     onInventoryChanged,
     viewKey,
+    selectedScribbit,
+    equipmentBusy,
+    onEquipGear,
   } = options;
+  const resolvedGearTechnique =
+    entry.kind === 'accessory' && selectedScribbit
+      ? resolveGearCombatLoadout(selectedScribbit).techniques.find(
+          (technique) =>
+            technique.leadGearId === entry.id ||
+            technique.supportGearId === entry.id
+        )
+      : undefined;
+  const activeTechnique = resolvedGearTechnique?.leadGearId === entry.id;
+  const supportTechnique = resolvedGearTechnique?.supportGearId === entry.id;
+  const attachedGearRank = activeTechnique
+    ? (resolvedGearTechnique?.leadRank ?? null)
+    : supportTechnique
+      ? (resolvedGearTechnique?.supportRank ?? null)
+      : null;
+  const attachedRankLabel =
+    attachedGearRank === RED_STAR_GEAR_RANK
+      ? 'RED★'
+      : attachedGearRank
+        ? `${attachedGearRank}★`
+        : null;
   const { width, height } = scene.scale;
   const detailWidth = width - 100;
   const overlay = scene.add.container(0, 0).setDepth(3000).setScrollFactor(0);
@@ -1156,6 +1107,14 @@ function openCosmeticDetail(options: {
   detail.add(name);
 
   const detailCopy = entry.description;
+  const gearEffectCopy =
+    entry.kind === 'accessory'
+      ? activeTechnique && resolvedGearTechnique && attachedRankLabel
+        ? `ACTIVE ${attachedRankLabel} · ${resolvedGearTechnique.effect.name.toUpperCase()}\n${resolvedGearTechnique.effect.summary}`
+        : supportTechnique && resolvedGearTechnique && attachedRankLabel
+          ? `SUPPORT ${attachedRankLabel} · BOOSTS ${resolvedGearTechnique.effect.name.toUpperCase()}\n${resolvedGearTechnique.effect.summary}`
+          : formatGearTechnique(entry, ownership.rank ?? 1)
+      : null;
   const description = label(
     scene,
     0,
@@ -1202,6 +1161,7 @@ function openCosmeticDetail(options: {
       return;
     }
     modalOpen = false;
+    modalActions.destroy();
     overlay.destroy(true);
     if (inventoryChanged) {
       onInventoryChanged();
@@ -1218,6 +1178,7 @@ function openCosmeticDetail(options: {
     `${entry.name}.`,
     `${entry.rarity} ${entry.kind}.`,
     detailCopy,
+    gearEffectCopy,
     ownership.summary,
   ]
     .filter(Boolean)
@@ -1229,6 +1190,102 @@ function openCosmeticDetail(options: {
     semanticDescription
   );
   overlay.once('destroy', () => modalActions.destroy());
+
+  const gearSlots =
+    entry.kind === 'accessory' && selectedScribbit
+      ? equipmentSlots(selectedScribbit, entry.category)
+      : null;
+  const equippedGearSlot = gearSlots?.findIndex(
+    (gearId) => gearId === entry.id
+  );
+  const equippedGearSlotIndex =
+    equippedGearSlot === 0 || equippedGearSlot === 1 ? equippedGearSlot : null;
+  const openGearSlotIndex = gearSlots
+    ? gearSlots[0] === null
+      ? 0
+      : gearSlots[1] === null
+        ? 1
+        : null
+    : null;
+  const targetGearSlotIndex = equippedGearSlotIndex ?? openGearSlotIndex;
+  const gearActionEnabled =
+    entry.kind === 'accessory' &&
+    selectedScribbit !== undefined &&
+    targetGearSlotIndex !== null &&
+    !equipmentBusy;
+  if (entry.kind === 'accessory') {
+    detail.add(
+      label(
+        scene,
+        0,
+        180,
+        gearEffectCopy ?? '',
+        17,
+        activeTechnique ? UI.coralText : UI.inkSoft,
+        true
+      )
+        .setWordWrapWidth(width - 190)
+        .setLineSpacing(3)
+    );
+  }
+
+  const toggleGear = (): void => {
+    if (
+      entry.kind !== 'accessory' ||
+      !selectedScribbit ||
+      targetGearSlotIndex === null ||
+      equipmentBusy
+    ) {
+      return;
+    }
+    const nextGearId = equippedGearSlotIndex === null ? entry.id : null;
+    closeDetail();
+    void onEquipGear(
+      selectedScribbit.id,
+      entry.category,
+      targetGearSlotIndex,
+      nextGearId
+    );
+  };
+
+  if (entry.kind === 'accessory') {
+    const gearActionLabel =
+      equippedGearSlotIndex !== null
+        ? `UNEQUIP SLOT ${equippedGearSlotIndex + 1}`
+        : openGearSlotIndex !== null
+          ? `EQUIP TO SLOT ${openGearSlotIndex + 1}`
+          : '2 / 2 SLOTS FULL';
+    const gearAction = iconButton(
+      scene,
+      0,
+      270,
+      equippedGearSlotIndex !== null ? 'trash' : 'spark',
+      gearActionLabel,
+      toggleGear,
+      390,
+      equippedGearSlotIndex !== null ? UI.creamHex : UI.coral,
+      UI.ink,
+      90,
+      equippedGearSlotIndex !== null ? UI.coral : UI.gold,
+      gearActionEnabled
+    );
+    detail.add(gearAction);
+    modalActions.add({
+      label: `${gearActionLabel} ${entry.name}${selectedScribbit ? ` on ${selectedScribbit.name}` : ''}`,
+      rect: {
+        x: width / 2 - 195,
+        y: height / 2 + 225,
+        width: 390,
+        height: 90,
+      },
+      enabled: gearActionEnabled,
+      attributes: {
+        'data-gear-detail-equip': entry.id,
+        'aria-pressed': String(equippedGearSlotIndex !== null),
+      },
+      onActivate: toggleGear,
+    });
+  }
 
   const mergeCurrentGear = (): void => {
     if (!ownership.mergeReady || forgingGear) return;
@@ -1268,7 +1325,7 @@ function openCosmeticDetail(options: {
     mergeAction = iconButton(
       scene,
       0,
-      225,
+      entry.kind === 'accessory' ? 365 : 225,
       'forge',
       forgingGear ? 'FORGING…' : `FORGE ${nextRankLabel}`,
       mergeCurrentGear,
@@ -1294,10 +1351,11 @@ function openCosmeticDetail(options: {
       label: `Forge three ${entry.name} copies into ${nextRankLabel}`,
       rect: {
         x: width / 2 - 195,
-        y: height / 2 + 175,
+        y: height / 2 + (entry.kind === 'accessory' ? 320 : 175),
         width: 390,
-        height: 100,
+        height: 90,
       },
+      attributes: { 'data-gear-detail-forge': entry.id },
       onActivate: mergeCurrentGear,
     });
     mergeNativeAction.setAttribute('aria-busy', 'false');

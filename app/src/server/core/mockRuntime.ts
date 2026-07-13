@@ -16,6 +16,7 @@ export {
   validateAndAnalyzeScribbitSubmission,
 } from './scribbit';
 export { cloneScribbit } from '../../shared/arena';
+export { selectCommunityDoodleDare } from '../../shared/content/communitydrawthemes';
 export { createSparRewardReceipt } from '../../shared/sparreward';
 export {
   advanceCapsulePity,

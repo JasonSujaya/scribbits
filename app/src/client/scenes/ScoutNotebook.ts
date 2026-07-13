@@ -31,6 +31,7 @@ import {
 import type { ErrorPanel } from '../lib/ui';
 import { openCloutBoard, type CloutBoardModal } from '../lib/cloutboard';
 import { appDock } from '../lib/appdock';
+import { appMenu } from '../lib/appmenu';
 import {
   planScoutNotebookPage,
   planScoutNotebookSummary,
@@ -128,6 +129,7 @@ export class ScoutNotebook extends Scene {
     mountLivingPaper(this);
     this.buildHeader();
     this.buildAppTabs();
+    appMenu(this);
     this.showLoadingPage();
 
     const sceneGeneration = this.sceneGeneration;
@@ -167,7 +169,6 @@ export class ScoutNotebook extends Scene {
         },
       });
     };
-    const openGuide = (): void => fadeToScene(this, 'Bestiary');
     paperIconButton(
       this,
       60,
@@ -179,17 +180,6 @@ export class ScoutNotebook extends Scene {
       UI.gold,
       100
     );
-    paperIconButton(
-      this,
-      width - 60,
-      54,
-      'info',
-      openGuide,
-      100,
-      UI.creamHex,
-      UI.tapeAlt,
-      100
-    );
     this.headerOverlay = new CanvasActionOverlay(this);
     this.headerOverlay.add({
       label: 'Open Clout board',
@@ -197,16 +187,10 @@ export class ScoutNotebook extends Scene {
       pointerPassthrough: true,
       onActivate: openBoard,
     });
-    this.headerOverlay.add({
-      label: 'Open field guide',
-      rect: { x: width - 110, y: 4, width: 100, height: 100 },
-      pointerPassthrough: true,
-      onActivate: openGuide,
-    });
   }
 
   private buildAppTabs(): void {
-    appDock(this, 'gallery');
+    appDock(this, null);
   }
 
   private showLoadingPage(): void {

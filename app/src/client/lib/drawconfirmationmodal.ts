@@ -27,6 +27,8 @@ export type DrawConfirmationModalOptions = Readonly<{
   previewDataUrl: string;
   initialName: string;
   trigger?: HTMLElement | null;
+  description?: string;
+  closeLabel?: string;
   onNameChange: (name: string) => void;
   onConfirm: (name: string) => void;
   onClose: (name: string) => void;
@@ -54,7 +56,9 @@ export function openDrawConfirmationModal(
   const shell: StickerModalShell = createStickerModalShell({
     scene,
     title: 'Name your Scribbit',
-    description: 'Preview your drawing, name it, then bring it to life.',
+    description:
+      options.description ??
+      'Preview your drawing, name it, then bring it to life.',
     onRequestClose: close,
     trigger: options.trigger,
     depth: MODAL_DEPTH,
@@ -93,7 +97,7 @@ export function openDrawConfirmationModal(
     )
   );
   modalActions.add({
-    label: 'Close and keep drawing',
+    label: options.closeLabel ?? 'Close and keep drawing',
     rect: {
       x: cardCenterX + closeX - CLOSE_TARGET_SIZE / 2,
       y: CARD_CENTER_Y + closeY - CLOSE_TARGET_SIZE / 2,

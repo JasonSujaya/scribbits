@@ -67,6 +67,7 @@ export class StickerAttach {
   private drawer: Phaser.GameObjects.Container | null = null;
   private controls: Phaser.GameObjects.Container | null = null;
   private selected: PlacedSticker | null = null;
+  private enabled = true;
   private destroyed = false;
 
   constructor(scene: Scene, opts: StickerAttachOptions) {
@@ -90,6 +91,21 @@ export class StickerAttach {
 
   updateInventory(items: Record<string, number>): void {
     this.items = items;
+  }
+
+  setEnabled(enabled: boolean): void {
+    this.enabled = enabled;
+    if (!enabled) {
+      this.closeDrawer();
+      this.controls?.destroy(true);
+      this.controls = null;
+    }
+    this.placed.forEach((sticker) => {
+      sticker.container.list.forEach((child) => {
+        if (child.input) child.input.enabled = enabled;
+      });
+      sticker.container.setAlpha(enabled ? 1 : 0.82);
+    });
   }
 
   // The AttachedAccessory[] in 512-canvas coordinates, ready for submit. The
@@ -119,6 +135,7 @@ export class StickerAttach {
   // Open the drawer of owned accessories anchored above `y` (design px). Each
   // entry is a doodle preview + count; tap to add a sticker to the canvas.
   openDrawer(y: number): void {
+    if (!this.enabled) return;
     this.closeDrawer();
     const { width } = this.scene.scale;
     const owned = Object.entries(this.items).filter(
@@ -235,6 +252,7 @@ export class StickerAttach {
 
   // Place a fresh draggable sticker centered on the canvas.
   private addSticker(id: string): void {
+    if (!this.enabled) return;
     if (this.placed.length >= MAX_ACCESSORIES_PER_SCRIBBIT) {
       this.flashCap();
       return;
@@ -327,6 +345,7 @@ export class StickerAttach {
 
   // Select a sticker and show its scale/rotate/remove controls.
   private select(sticker: PlacedSticker): void {
+    if (!this.enabled) return;
     this.selected = sticker;
     this.placed.forEach((one) =>
       one.container.setAlpha(one === sticker ? 1 : 0.85)
@@ -337,6 +356,7 @@ export class StickerAttach {
   // Scale + rotation sliders and a remove button for the selected sticker.
   private buildControls(): void {
     this.controls?.destroy(true);
+    if (!this.enabled) return;
     const sticker = this.selected;
     if (!sticker) return;
     const { width } = this.scene.scale;
@@ -469,7 +489,7 @@ export class StickerAttach {
 
   showOverlays(): void {
     this.placed.forEach((sticker) => sticker.container.setVisible(true));
-    if (this.selected) this.buildControls();
+    if (this.selected && this.enabled) this.buildControls();
   }
 
   destroy(): void {

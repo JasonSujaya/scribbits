@@ -9,10 +9,7 @@ import {
   loadScribbits,
   removeUserBeliefReceipts,
 } from './scribbit';
-import {
-  getBattleReportKey,
-  getUserBattlesKey,
-} from './battleStore';
+import { getBattleReportKey, getUserBattlesKey } from './battleStore';
 import {
   getBackKey,
   getCloutKey,
@@ -26,6 +23,8 @@ import {
   getInventoryKey,
   getPullsSinceEpicKey,
   getRumbleWinInkPayoutKey,
+  getUserOperationReceiptIndexKey,
+  loadUserOperationReceiptKeys,
 } from './inkStore';
 import {
   getScribbitReportsKey,
@@ -47,6 +46,7 @@ import {
   withPlayerDataDeletionHeartbeat,
   type PlayerDataDeletionLease,
 } from './dataDeletion';
+import { getRivalRunKey } from './rivalRun';
 
 const requireDeletionOwnership = async (
   storage: ArenaStorage,
@@ -126,6 +126,12 @@ const deletePlayerDataRecords = async (
   }
 
   await requireDeletionOwnership(storage, deletionLease);
+  const operationReceiptKeys = await loadUserOperationReceiptKeys(
+    storage,
+    userId
+  );
+
+  await requireDeletionOwnership(storage, deletionLease);
   await storage.del(
     getUserScribbitsKey(userId),
     getUserAliveScribbitsKey(userId),
@@ -144,7 +150,10 @@ const deletePlayerDataRecords = async (
     getUserBeliefTargetsKey(userId),
     getFounderChronicleKey(userId),
     getLegacyFounderChronicleKey(userId),
-    getPendingFounderChronicleKey(userId)
+    getPendingFounderChronicleKey(userId),
+    getRivalRunKey(userId),
+    getUserOperationReceiptIndexKey(userId),
+    ...operationReceiptKeys
   );
   await storage.zRem(getCloutKey(), [userId]);
   await storage.hDel(getCloutUsernameKey(), [userId]);

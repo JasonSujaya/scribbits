@@ -15,13 +15,14 @@ Legend.
 Battles are server-authored but presented as continuous action: a deterministic
 20 Hz simulation fixes the winner and emits a bounded transcript, then Phaser
 interpolates it into an arena replay capped at 20 seconds. Drawing choices
-select the fighter's identity and power. Accessories and titles never affect
+select the fighter's identity and power. Birth stickers and titles never affect
 analysis or stats; Mystery Pens can change the normalized split but never add
-stat points.
+stat points. Earned reusable Gear adds only bounded Exhibition sidegrades and
+never mutates that fixed drawing build.
 
 The retention loop is visible rather than buried: one Next Goal advances entry,
-Back, the daily Champion Contract, capsule, or care; daily actions fill an Ink
-Trail toward the discounted Mystery Capsule; and discovery, collector rank, Epic
+Back, the daily Champion Contract, chest, or care; earned Ink opens a flat-price
+Mystery Ink Chest one or ten times, and discovery, collector rank, Epic
 pity, wearable titles, and immutable personal Legacy Cards persist after
 individual Scribbits fade.
 One player-level Founder Rival Thread adds a paced return story without power:
@@ -31,8 +32,9 @@ After the official daily drawing locks, an ephemeral Four-Power Practice Lab
 makes the core drawing-to-fight hook repeatable without rewards or persistence.
 The Battle Scrapbook makes the newest 20 server-stored fights worth revisiting
 without pretending to be permanent history or adding another progression track.
-Rumble Pick stays directly reachable from Arena. Bag owns inventory and
-equipment, while Gallery owns community Legends and personal Legacy Cards.
+Rumble Pick stays directly reachable from Arena. Shop owns earned-Ink Mystery
+Chests, Bag owns inventory and equipment, and Gallery owns community Legends
+and personal Legacy Cards outside the primary dock.
 
 ## Scope
 
@@ -44,23 +46,48 @@ equipment, while Gallery owns community Legends and personal Legacy Cards.
 
 ## Current Ship Gates
 
-- [ ] Bag uses a character-first equipment stage with a visible platform,
-      eight surrounding slots, filters below the character, and one bounded
-      scrollable inventory tray. The tray must preserve its position through
-      equipment saves, support touch/wheel/keyboard input, and pass live mobile
-      browser proof without runtime or console errors.
-- [x] The persistent dock is Arena, Bag, Draw, Battles, and Gallery. Scout is
-      removed from primary navigation, Bag opens inventory/equipment directly,
-      Gallery opens Legends/Legacy, and Arena retains a compact Rumble Pick
+- [x] All 26 earned Gear items now resolve into six server-authored Exhibition
+      techniques across 1★–5★ and Red★. One lead plus one 25% support per
+      category keeps the fixed 100-point drawing build intact, Bag shows the
+      frozen active/support rank and exact effect, and Gear Week supplies seven
+      visible daily beats. Forge refreshes every living Scribbit wearing that
+      reusable Gear before returning. All six ranks now pass the mirrored
+      family matrix; simulation tuning softened the 5★ Guard downside, increased
+      Rush recovery cost, and capped stacked timing at one tick. The final gate
+      passes 126/126 focused
+      tests, 181/181 deterministic groups, lint, type-check, production build,
+      and fresh 393x852 live renders in
+      `artifacts/screenshots/gear-red-star-blade-volley-live.png`,
+      `artifacts/screenshots/gear-live-balance-result.png`, and
+      `artifacts/screenshots/gear-week-seven-day-content-final.png` (July 14).
+- [x] Bag uses a character-first equipment stage with a visible platform,
+      eight surrounding slots, category filters below the character, and one
+      bounded scrollable inventory tray. Gear tiles are icon-only: strong taupe,
+      blue, and purple/gold frames communicate Common, Rare, and Epic rarity,
+      while a separate check badge preserves equipped state. Tapping the whole
+      tile opens the item's stars, copy count, description, Equip/Unequip action,
+      and Forge action without silently replacing a full slot. Every preview is
+      measured and centered inside a fixed safe box. The character now floats
+      directly on the collage without a large parent paper panel. Equipped and
+      inventory Gear now use the exact same 96x96 outer-square renderer, rarity
+      frame, and 60x56 preview box; the inventory uses an airier five-column
+      square grid.
+      A 393x852 WebGL pass proves the same Party Hat at identical outer and icon
+      sizes in both places and captures zero console warnings or errors. The
+      release gate passes 26 suites / 82 tests,
+      180 deterministic groups, lint, type-check, and production build (July 13).
+- [x] The persistent dock is Arena, Bag, Draw, Battles, and Shop. Scout and
+      Gallery are removed from primary navigation, Bag opens inventory/equipment
+      directly, Shop opens earned-Ink Mystery Chests, and Arena retains a compact Rumble Pick
       action. The final release gate passes 16 suites / 50 tests, 176
       deterministic simulation groups, lint, type-check, and production build.
       A clean 393x852 live-browser pass confirms the exact dock order, distinct
-      Bag/Gallery active states, zero Scout buttons, zero runtime errors, and no
-      console warnings or errors (July 13).
+      Bag/Shop active states, zero Scout buttons, zero runtime errors, and no
+      console warnings or errors (July 14).
 - [x] Bag now has one server-authoritative, per-Scribbit loadout: two slots
       each for weapon, armor, shoes, and accessory. Discovered Gear is reusable,
-      duplicate copies remain Forge material, equipped weapons select cosmetic
-      battle effects, and localhost proof covers two pets, two weapon slots,
+      duplicate copies remain Forge material, equipped Gear resolves into at
+      most one bounded Exhibition technique per category, and localhost proof covers two pets, two weapon slots,
       reload persistence, zero runtime errors, and the 393x852 mobile layout.
       The final release gate passes 15 suites / 46 tests, 176 deterministic
       simulation groups, lint, type-check, and production build (July 13).
@@ -164,14 +191,24 @@ equipment, while Gallery owns community Legends and personal Legacy Cards.
       Canvas, reduced-motion, Skip, and instrumented 1x -> 2x -> 4x -> normal-speed
       result paths have zero captured runtime or browser errors (July 11).
 - [x] Every arena now closes its loop with one server-scored micro-goal. Replay
-      renders the stored cleared/progress state on the compact result card and
-      accessibility announcement without inventing rewards or client-side combat
-      truth. Fresh 393x852 WebGL proof finishes at 60 FPS with zero runtime errors
-      (July 13).
+      renders a dedicated compact target stamp above the recap, so founder story
+      copy can coexist with the stored cleared/progress state. The accessibility
+      announcement keeps the exact goal without inventing rewards or client-side
+      combat truth. Fresh browser proof is captured in
+      `artifacts/screenshots/battle-goal-payoff.png` (July 13).
 - [x] Arena now reveals the canonical daily micro-goal before the player chooses
-      a fighter or rival. One target-icon headline replaces the generic
-      `CHOOSE FIGHTER` box, the accessible Fight action includes the arena and
-      goal, and the result closes the same server-scored loop (July 13).
+      a fighter or rival. The venue name and target goal replace the generic
+      `CHOOSE FIGHTER` box, one info icon owns the short venue rule, the accessible
+      Fight action includes the arena and goal, and the result closes the same
+      server-scored loop. Fresh proof is captured in
+      `artifacts/screenshots/arena-venue-polish.png`; 119/119 focused suites and
+      182/182 legacy groups pass (July 13).
+- [x] Ink Mods now produce measurable fixed-tick effects instead of sub-pixel
+      progression. The six existing IDs keep deterministic level assignment and
+      the four-mod cap, Scribbit details show each exact effect, and mirrored
+      coverage spans all four builds, four elements, and ten arenas while keeping
+      full loadouts below the 60% equal-build ceiling. Fresh mobile proof is in
+      `artifacts/screenshots/ink-mod-details-final.png` (July 13).
 - [x] Every current fight path—including a chosen Rival Draft rematch—now runs a
       mode-specific paper VS ceremony with both exact signature moves and one
       verified mechanics card. Deterministic coverage exhausts all sixteen ordered
@@ -246,15 +283,16 @@ equipment, while Gallery owns community Legends and personal Legacy Cards.
       noninteractive completion stamp replace a stale always-live CTA. Default and
       320x568 WebGL proof cover full-card selection, VS, replay/Skip, result, return,
       completion, and empty browser error logs (July 11).
-- [x] Browser proof verifies the Daily Ink Trail, discounted capsule CTA,
+- [x] Browser proof verifies the Daily Ink Trail, original 5-Ink chest CTA,
       collection/rank/pity overlay, server-confirmed pull ceremony, and persisted
       post-pull progress with no runtime errors on `localhost:8902` (July 10).
-- [x] Mystery Ink now presents one deterministic hand-drawn crank machine, one
-      compact collection/pity card, and one reward card with two clear actions.
-      Odds remain available to assistive technology without becoming a fourth
-      visual status line. Pure layout/copy tests and fresh 393x852 WebGL proof
-      cover the machine, paid pull, reveal, dismissal, and Gallery/Arena return
-      with zero browser warnings or errors (July 13).
+- [x] Mystery Ink now presents one clickable hand-drawn chest, a Loot
+      banner with real Gear art, visible 70/25/5 odds, and Epic pity by open ten.
+      Players can open one or a maximum batch of ten; server-safe retries resume
+      the unfinished open, and there is no 100-open or auto-repeat action. A
+      disabled Reddit Gold Styles card stays cosmetic-only and coming soon.
+      Fresh 393x852 proof covers one-open, ten-open, reveal, Bag return, and zero
+      browser warnings or errors (July 13).
 - [x] Gallery now exposes four owned items at a time in the renamed Ink Kit,
       with full art, names, counts, and no undiscovered-item wall. Legends and
       Legacy use the same four-card rhythm, and all paging controls sit below
@@ -342,12 +380,23 @@ equipment, while Gallery owns community Legends and personal Legacy Cards.
       and Mystery Ink. Primary cards lead with one headline, one status, and one
       action; rules, moderation, and secondary facts move behind explicit taps
       without changing server authority or rewards (July 12).
-- [x] Arena home now contains one direct battle setup only: fighter carousel,
-      Champion/Spar choice, and one Fight action. The old `PICK A WINNER`/Rumble
-      preview is absent from the default stack; Scout deep-links into the focused
-      picker when that side activity is relevant. Empty rosters get one large
-      pencil-led Draw action with no hidden rival controls (July 13).
-- [x] The Craftbox visual system now gives all five main scenes one generated
+- [x] Draw now keeps its 620-pixel canvas as the hero, presents all eight base
+      colors in two four-color rows with full touch targets, and shows only
+      size, eraser, undo, and one Tools icon by default. Collectible paints,
+      brushes, stickers, Clear, and Redo remain one tap away; active special
+      supplies stay visibly badged. Failed submission resumes the authoritative
+      60-second clock, and the first-birth Rival Run chooser retains native
+      keyboard controls plus a return to the birth receipt. Tall phones distribute vertical slack without stretching the
+      drawing square or stage art (July 13).
+- [x] Arena home now contains one direct battle setup only: a visible
+      Scribbit-versus-opponent matchup, Champion/Spar selectors, and one paper
+      Champion fight or `CHOOSE A RIVAL` action. The old `PICK A WINNER` grid, modifier strips,
+      day/streak copy, and Ink utility are absent from the default stack; Rumble
+      is one compact secondary control. Empty rosters get one large pencil-led
+      Draw action with no hidden rival controls. Mystery Ink now opens from Shop,
+      Champion keeps one lifecycle-safe launcher while every Spar enters the
+      shared server-authored Rival Run flow (July 14).
+- [x] The Craftbox visual system now gives all five dock scenes one generated
       torn-paper stage, bundled DynaPuff, one optical-weight code-native dock
       icon family, one contained coral active tile, and shared paper status/
       element icons. Arena drops
@@ -409,6 +458,13 @@ equipment, while Gallery owns community Legends and personal Legacy Cards.
       and the exact previous FINAL/BIGGEST SPLAT follows into the next choice. The
       complete compact mobile loop is browser-proven with reachable enlarged FIGHT
       targets and zero captured runtime errors (July 11).
+- [x] The three-choice Rival Run board is now the first decision for every
+      player-facing Spar: Arena, first birth, and post-fight continuation all
+      share one controller for slate fetch, day rollover, selected-opponent
+      request, report staging, and VS ceremony. Opponent-less scene calls and
+      the blind opening fight are removed. Live mobile proof completes all three
+      bouts, reaches the final challenge receipt, and rolls into a fresh bout
+      1/3 board; the compact chooser clears the persistent dock (July 14).
 - [x] Four-Power Practice Lab is server-analyzed, reward-free, session-scoped,
       and rejected before battle storage. It has a post-lock Arena entry,
       server-decided power feedback, continuous replay, no profile/Belief path,

@@ -1,16 +1,17 @@
-// The Mystery Ink capsule machine — a hand-drawn gacha panel in the sketchbook
-// aesthetic (Phaser-drawn, no image assets). Opened as a pinned overlay from
-// ArenaHome. The player spends ink to crank the machine: it shakes, a capsule
-// drops and pops open with a rarity-tiered ceremony:
+// The Mystery Ink chest — a satisfying, non-predatory reward screen in the
+// sketchbook aesthetic. Shop supplies the generated stage while this module
+// owns the code-rendered chest, controls, and ceremony. The player spends
+// battle-earned Ink, taps the chest, and gets a rarity-tiered ceremony:
 //   common → a soft puff
 //   rare   → a gold burst
 //   epic   → a full-screen rainbow moment + hand-lettered banner
-// Duplicate accessories stack; duplicate permanent unlocks report "already got it".
+// One or ten opens are supported; there is deliberately no 100-open action,
+// auto-repeat, near-miss reel, or paid banner. Duplicate Gear feeds Forge.
 
 import * as Phaser from 'phaser';
 import { Scene } from 'phaser';
 import {
-  CAPSULE_FIRST_DAILY_COST,
+  CAPSULE_MAX_BATCH_SIZE,
   CAPSULE_RARITY_PERCENTAGES,
 } from '../../shared/arena';
 import type {
@@ -19,18 +20,28 @@ import type {
   CapsulePullResponse,
   CapsuleRarity,
 } from '../../shared/arena';
-import { UI, TYPE } from './theme';
+import { NAV_SAFE, UI, TYPE, prefersReducedMotion } from './theme';
 import { label, handLettered, button, ghostButton, iconButton } from './ui';
 import { RARITY_STYLE } from './pens';
 import { COSMETIC_BY_ID } from '../../shared/cosmetics';
+import type { CosmeticGearCatalogEntry } from '../../shared/cosmetics';
 import { renderCosmeticPreview } from './cosmeticpreview';
-import { gearRankStars } from './gearrankstars';
-import { CanvasModalOverlay } from './overlay';
 import {
-  collectorRankNameForPullCount,
+  openFeaturedGearDetail as showFeaturedGearDetail,
+  type FeaturedGearDetail,
+} from './featuredgeardetail';
+import { gearRankStars } from './gearrankstars';
+import { CanvasActionOverlay, CanvasModalOverlay } from './overlay';
+import type { CanvasActionOverlayInput } from './overlay';
+import { bindPressInteractionEvents } from './pressinteraction';
+import { createStickerShine } from './stickerfxshader';
+import {
+  capsuleOpenCost,
+  planCapsuleOpenAffordance,
   planCapsulePrizeLayout,
   prizeOwnershipAnnouncement,
   prizeOwnershipLabel,
+  summarizeCapsuleBatch,
 } from './capsulepresentation';
 
 const DEPTH = 2500;
@@ -41,21 +52,15 @@ const CAPSULE_ODDS_ACCESSIBLE_COPY =
   `${CAPSULE_RARITY_PERCENTAGES.rare} percent rare, and ` +
   `${CAPSULE_RARITY_PERCENTAGES.epic} percent epic.`;
 
-const MACHINE_CAPSULE_DOTS = Object.freeze([
-  { x: -72, y: -106, color: 0x8a5cd8 },
-  { x: -28, y: -118, color: 0xffd447 },
-  { x: 20, y: -111, color: 0x4faa4f },
-  { x: 67, y: -98, color: 0xff6b4a },
-  { x: -88, y: -64, color: 0x4faa4f },
-  { x: -45, y: -72, color: 0x2f9fd8 },
-  { x: 0, y: -67, color: 0xff6b4a },
-  { x: 47, y: -60, color: 0xffd447 },
-  { x: 86, y: -54, color: 0x58c3cc },
-  { x: -68, y: -25, color: 0xff6b4a },
-  { x: -23, y: -34, color: 0x8a5cd8 },
-  { x: 24, y: -23, color: 0x2f9fd8 },
-  { x: 66, y: -18, color: 0x4faa4f },
-] as const);
+const FEATURED_GEAR_ID = 'comet-crayon-blade';
+
+type ChestOpenCount = 1 | typeof CAPSULE_MAX_BATCH_SIZE;
+
+type ChestArt = Readonly<{
+  container: Phaser.GameObjects.Container;
+  glow: Phaser.GameObjects.Arc;
+  lid: Phaser.GameObjects.Container;
+}>;
 
 const createCapsuleOperationId = (): string => {
   return (
@@ -68,13 +73,15 @@ export type CapsuleMachineOpts = {
   ink: number; // current ink balance
   nextCost: number; // server-authoritative current price
   progress: CapsuleProgress; // server-authoritative collection and pity snapshot
-  // Perform the pull. The server owns costs, discounts, and final inventory; the
+  // Perform the pull. The server owns price, inventory, and the final reward; the
   // machine only mirrors the returned presentation snapshot.
   onPull: (
     operationId: string
   ) => Promise<CapsulePullResponse | { error: string }>;
   onClose: (finalInk: number) => void;
-  // Optional terminal action used by ArenaHome. Draw omits it so closing the
+  embedded?: boolean;
+  onTransactionLockChange?: (locked: boolean) => void;
+  // Optional terminal action used by inventory hosts. Draw omits it so closing the
   // machine always restores the live drawing canvas exactly as before.
   onViewCollection?: (finalInk: number) => void;
 };
@@ -87,6 +94,43 @@ type PrizeRevealOptions = {
   onViewCollection?: () => void;
 };
 
+type CapsuleActionSurface = Readonly<{
+  add: (input: CanvasActionOverlayInput) => HTMLButtonElement;
+  addStatus: (initialMessage?: string) => HTMLElement;
+  destroy: () => void;
+  focusInitial: (control?: HTMLElement) => void;
+}>;
+
+function createEmbeddedCapsuleActions(scene: Scene): CapsuleActionSurface {
+  const overlay = new CanvasActionOverlay(scene, 'shop-chest');
+  const descriptionId = 'shop-chest-description';
+  overlay.addDescription(
+    descriptionId,
+    `Spend battle-earned Ink to open one or ten reward chests containing Gear and styles. Tap the featured Loot Gear to preview its battle effect. Ten is the largest batch. The server owns every price, reward, and pity step. Reddit Gold Styles is disabled, cosmetic only, and coming soon. ${CAPSULE_ODDS_ACCESSIBLE_COPY}`
+  );
+  overlay.setRootAttributes({
+    role: 'region',
+    'aria-label': 'Mystery Ink chest',
+    'aria-describedby': descriptionId,
+  });
+  return {
+    add: (input) => overlay.add(input),
+    addStatus: (initialMessage) => overlay.addStatus(initialMessage),
+    destroy: () => overlay.destroy(),
+    focusInitial: (control) => {
+      requestAnimationFrame(() => {
+        if (
+          control?.isConnected &&
+          !control.hidden &&
+          !control.matches(':disabled')
+        ) {
+          control.focus();
+        }
+      });
+    },
+  };
+}
+
 export function openCapsuleMachine(
   scene: Scene,
   opts: CapsuleMachineOpts
@@ -98,36 +142,46 @@ export function openCapsuleMachine(
   let pulling = false;
   let prizeOpen = false;
   let pendingOperationId: string | null = null;
+  let pendingBatchTarget: ChestOpenCount | null = null;
+  let completedBatchPulls: CapsulePull[] = [];
   let closeRequested = false;
   let destroyed = false;
   let dismissPrizeAction: (() => void) | null = null;
+  let featuredGearDetail: FeaturedGearDetail | null = null;
 
-  const layer = scene.add.container(0, 0).setDepth(DEPTH).setScrollFactor(0);
-  const modalActions = new CanvasModalOverlay(
-    scene,
-    'Mystery Ink capsule machine',
-    () => {
-      if (prizeOpen) dismissPrizeAction?.();
-      else close();
-    },
-    `Spend earned Ink to open one cosmetic capsule. The server owns the price, reward, and pity progress. ${CAPSULE_ODDS_ACCESSIBLE_COPY}`
-  );
+  const layer = scene.add
+    .container(0, 0)
+    .setDepth(opts.embedded ? 1000 : DEPTH)
+    .setScrollFactor(0);
+  const modalActions: CapsuleActionSurface = opts.embedded
+    ? createEmbeddedCapsuleActions(scene)
+    : new CanvasModalOverlay(
+        scene,
+        'Mystery Ink chest',
+        () => {
+          if (prizeOpen) dismissPrizeAction?.();
+          else close();
+        },
+        `Spend battle-earned Ink to open one or ten reward chests containing Gear and styles. Tap the featured Loot Gear to preview its battle effect. Ten is the largest batch. The server owns every price, reward, and pity step. Reddit Gold Styles is disabled, cosmetic only, and coming soon. ${CAPSULE_ODDS_ACCESSIBLE_COPY}`
+      );
   layer.once('destroy', () => {
     destroyed = true;
     modalActions.destroy();
   });
-  const scrim = scene.add
-    .rectangle(width / 2, height / 2, width, height, 0x1a1320, 0.72)
-    .setScrollFactor(0)
-    .setInteractive();
-  layer.add(scrim);
+  const scrim = opts.embedded
+    ? null
+    : scene.add
+        .rectangle(width / 2, height / 2, width, height, 0x1a1320, 0.72)
+        .setScrollFactor(0)
+        .setInteractive();
+  if (scrim) layer.add(scrim);
 
   const title = handLettered(
     scene,
     width / 2,
-    130,
-    'MYSTERY INK',
-    48,
+    82,
+    opts.embedded ? 'SHOP' : 'MYSTERY INK CHEST',
+    opts.embedded ? 62 : 43,
     '#ffd447',
     true
   )
@@ -139,7 +193,7 @@ export function openCapsuleMachine(
   const inkChip = label(
     scene,
     width / 2,
-    188,
+    137,
     `${ink} INK`,
     TYPE.title,
     UI.cream,
@@ -149,10 +203,19 @@ export function openCapsuleMachine(
     .setDepth(DEPTH + 2);
   layer.add(inkChip);
 
-  // Permanent collection progress lives above the machine so it remains
+  const featuredGearControl = drawBannerDeck(
+    scene,
+    layer,
+    modalActions,
+    width,
+    242,
+    openFeaturedGearDetail
+  );
+
+  // Permanent collection progress lives above the chest so it remains
   // readable while prize cards animate over the lower half of the portrait UI.
   const progressCard = scene.add
-    .container(width / 2, 274)
+    .container(width / 2, 410)
     .setScrollFactor(0)
     .setDepth(DEPTH + 2);
   const progressPaper = scene.add
@@ -191,7 +254,6 @@ export function openCapsuleMachine(
   layer.add(progressCard);
 
   function refreshProgress(animate: boolean): void {
-    const pullCount = Math.max(0, Math.floor(progress.pullCount));
     const collectionTotal = Math.max(0, Math.floor(progress.collectionTotal));
     const discoveredCount = Phaser.Math.Clamp(
       Math.floor(progress.discoveredCount),
@@ -202,15 +264,14 @@ export function openCapsuleMachine(
       collectionTotal === 0 ? 0 : discoveredCount / collectionTotal;
     const pityRemaining = Math.max(1, Math.floor(progress.pityRemaining));
     const fillWidth = Math.max(6, (COLLECTION_BAR_WIDTH - 6) * collectionRatio);
-    const collectorRankName = collectorRankNameForPullCount(pullCount);
     collectorRankText.setText(
-      `${collectorRankName.toUpperCase()} · ${discoveredCount} GEAR FOUND`
+      `${discoveredCount}/${collectionTotal} STYLES FOUND`
     );
-    pityText.setText(`EPIC BY ${pityRemaining}`);
+    pityText.setText(`EPIC IN ${pityRemaining} OR SOONER`);
     collectionFill.setVisible(collectionRatio > 0);
     scene.tweens.killTweensOf(collectionFill);
 
-    if (animate && collectionRatio > 0) {
+    if (animate && collectionRatio > 0 && !prefersReducedMotion()) {
       scene.tweens.add({
         targets: collectionFill,
         width: fillWidth,
@@ -232,26 +293,32 @@ export function openCapsuleMachine(
 
   refreshProgress(false);
 
-  // --- The machine (hand-drawn) --------------------------------------------
-  const machineX = width / 2;
-  const machineY = height * 0.47;
-  const machine = scene.add
-    .container(machineX, machineY)
-    .setScrollFactor(0)
-    .setDepth(DEPTH + 1);
-  layer.add(machine);
-  drawMachine(scene, machine);
+  // --- The hand-drawn chest -------------------------------------------------
+  const chestY = Math.min(
+    height - NAV_SAFE - 360,
+    Math.max(720, height * 0.52)
+  );
+  const chest = createChestArt(scene, width / 2, chestY);
+  chest.container.setDepth(DEPTH + 1).setScrollFactor(0);
+  layer.add(chest.container);
+  chest.container.setSize(380, 310).setInteractive({ useHandCursor: true });
+  bindPressInteractionEvents(
+    chest.container,
+    {
+      press: () => chest.container.setScale(0.96),
+      release: () => chest.container.setScale(1),
+      activate: () => void openChests(1),
+      pressOnHover: false,
+    },
+    { gameTarget: scene.input, shutdownTarget: scene.events }
+  );
 
-  // The capsule sits inside the dome; revealed on pull.
-  const capsule = scene.add.container(0, -70).setScale(0);
-  drawCapsule(scene, capsule, 0xff6b4a);
-  machine.add(capsule);
-
-  // --- Pull button + copy ---------------------------------------------------
+  // --- Open buttons + copy --------------------------------------------------
+  const actionY = Math.min(height - NAV_SAFE - 84, chestY + 345);
   const helper = label(
     scene,
     width / 2,
-    height * 0.7,
+    actionY - 112,
     '',
     TYPE.caption,
     UI.inkSoft,
@@ -263,37 +330,79 @@ export function openCapsuleMachine(
   helper.setWordWrapWidth(width - 190);
   layer.add(helper);
 
-  const pullBtn = iconButton(
+  const actionGap = 18;
+  const actionWidth = (width - 178 - actionGap) / 2;
+  const oneButtonX = 80 + actionWidth / 2;
+  const tenButtonX = width - 80 - actionWidth / 2;
+  let primaryActionEnabled = ink >= nextCost;
+  let secondaryActionEnabled =
+    ink >= capsuleOpenCost(CAPSULE_MAX_BATCH_SIZE, nextCost);
+  const openOneButton = iconButton(
     scene,
-    width / 2,
-    height * 0.82,
+    oneButtonX,
+    actionY,
     'spark',
-    'PULL',
-    () => void doPull(),
-    width - 160,
+    `OPEN 1 · ${nextCost}`,
+    () => {
+      if (primaryActionEnabled) void openChests(1);
+    },
+    actionWidth,
     UI.coral
   )
     .setScrollFactor(0)
     .setDepth(DEPTH + 2);
-  layer.add(pullBtn);
+  const openTenButton = iconButton(
+    scene,
+    tenButtonX,
+    actionY,
+    'spark',
+    `OPEN 10 · ${capsuleOpenCost(CAPSULE_MAX_BATCH_SIZE, nextCost)}`,
+    () => {
+      if (secondaryActionEnabled) void openChests(CAPSULE_MAX_BATCH_SIZE);
+    },
+    actionWidth,
+    UI.gold
+  )
+    .setScrollFactor(0)
+    .setDepth(DEPTH + 2);
+  layer.add([openOneButton, openTenButton]);
 
-  const pullControl = modalActions.add({
-    label: `Open one Mystery Ink capsule for ${nextCost} Ink`,
+  const openOneControl = modalActions.add({
+    label: `Open one Mystery Ink chest for ${nextCost} Ink`,
     rect: {
       x: 80,
-      y: height * 0.82 - 50,
-      width: width - 160,
+      y: actionY - 50,
+      width: actionWidth,
       height: 100,
     },
     enabled: ink >= nextCost,
     pointerPassthrough: true,
-    onActivate: () => void doPull(),
+    onActivate: () => void openChests(1),
   });
-  const closeControl = modalActions.add({
-    label: 'Close Mystery Ink capsule machine',
-    rect: { x: width / 2 - 110, y: height - 130, width: 220, height: 100 },
-    onActivate: () => close(),
+  const openTenControl = modalActions.add({
+    label: `Open ten Mystery Ink chests for ${capsuleOpenCost(CAPSULE_MAX_BATCH_SIZE, nextCost)} Ink`,
+    rect: {
+      x: 80 + actionWidth + actionGap,
+      y: actionY - 50,
+      width: actionWidth,
+      height: 100,
+    },
+    enabled: ink >= capsuleOpenCost(CAPSULE_MAX_BATCH_SIZE, nextCost),
+    pointerPassthrough: true,
+    onActivate: () => void openChests(CAPSULE_MAX_BATCH_SIZE),
   });
+  const closeControl = opts.embedded
+    ? null
+    : modalActions.add({
+        label: 'Close Mystery Ink chest',
+        rect: {
+          x: width / 2 - 110,
+          y: height - 130,
+          width: 220,
+          height: 100,
+        },
+        onActivate: () => close(),
+      });
   const statusAnnouncement = modalActions.addStatus();
   const prizeLayout = planCapsulePrizeLayout(
     width,
@@ -324,13 +433,19 @@ export function openCapsuleMachine(
   });
 
   const setPrizeControlsVisible = (visible: boolean): void => {
-    pullControl.hidden = visible;
-    closeControl.hidden = visible;
+    openOneControl.hidden = visible;
+    openTenControl.hidden = visible;
+    if (featuredGearControl) {
+      featuredGearControl.hidden = visible;
+      featuredGearControl.disabled = visible;
+    }
+    if (closeControl) closeControl.hidden = visible;
     if (visible) {
-      pullControl.disabled = true;
-      closeControl.disabled = true;
+      openOneControl.disabled = true;
+      openTenControl.disabled = true;
+      if (closeControl) closeControl.disabled = true;
     } else {
-      closeControl.disabled = false;
+      if (closeControl) closeControl.disabled = false;
     }
     if (viewCollectionControl) {
       viewCollectionControl.hidden = !visible;
@@ -341,88 +456,143 @@ export function openCapsuleMachine(
   };
   setPrizeControlsVisible(false);
 
+  const setActionButtonLabel = (
+    actionButton: Phaser.GameObjects.Container,
+    text: string
+  ): void => {
+    const textLabel = actionButton.list.find(
+      (child): child is Phaser.GameObjects.Text =>
+        child instanceof Phaser.GameObjects.Text
+    );
+    const actionIcon = actionButton.list[1];
+    if (!textLabel || !actionIcon) return;
+    textLabel.setText(text);
+    const iconSize = 38;
+    const contentWidth = iconSize + 12 + textLabel.width;
+    const iconX = -contentWidth / 2 + iconSize / 2;
+    (actionIcon as Phaser.GameObjects.Container).setX(iconX);
+    textLabel.setX(iconX + iconSize / 2 + 12 + textLabel.width / 2);
+  };
+
   function refreshAffordance(): void {
     inkChip.setText(`${ink} INK`);
-    const canAfford = ink >= nextCost;
-    pullBtn.setAlpha(canAfford ? 1 : 0.55);
-    pullControl.disabled = pulling || prizeOpen || !canAfford;
-    pullControl.setAttribute(
-      'aria-label',
-      `Open one Mystery Ink capsule for ${nextCost} Ink`
+    const affordance = planCapsuleOpenAffordance(
+      ink,
+      nextCost,
+      pendingBatchTarget,
+      completedBatchPulls.length
     );
-    if (!canAfford && !pulling) {
-      helper.setText(`NEED ${Math.max(0, nextCost - ink)} MORE INK`);
-      helper.setColor(UI.coralText);
-    } else if (!pulling) {
+    setActionButtonLabel(openOneButton, affordance.primaryLabel);
+    setActionButtonLabel(openTenButton, affordance.secondaryLabel);
+    primaryActionEnabled = affordance.primaryEnabled;
+    secondaryActionEnabled = affordance.secondaryEnabled;
+    openOneButton.setAlpha(affordance.primaryEnabled ? 1 : 0.55);
+    openTenButton.setAlpha(affordance.secondaryEnabled ? 1 : 0.55);
+    openOneControl.disabled =
+      pulling || prizeOpen || !affordance.primaryEnabled;
+    openTenControl.disabled =
+      pulling || prizeOpen || !affordance.secondaryEnabled;
+    if (featuredGearControl) {
+      featuredGearControl.disabled = pulling || prizeOpen;
+    }
+    openOneControl.setAttribute(
+      'aria-label',
+      affordance.primaryAccessibleLabel
+    );
+    openTenControl.setAttribute(
+      'aria-label',
+      affordance.secondaryAccessibleLabel
+    );
+    if (!affordance.primaryEnabled && !pulling) {
       helper.setText(
-        nextCost === CAPSULE_FIRST_DAILY_COST
-          ? `${nextCost} INK · DAILY DEAL`
-          : `${nextCost} INK`
+        `WIN A BATTLE · NEED ${Math.max(0, affordance.requiredInk - ink)} MORE INK`
       );
+      helper.setColor(UI.coralText);
+    } else if (affordance.retrying && !pulling) {
+      helper.setText(
+        `RETRY ${affordance.remainingCount} · SAFE PROGRESS ${completedBatchPulls.length}/${pendingBatchTarget}`
+      );
+      helper.setColor(UI.cream);
+    } else if (!pulling) {
+      helper.setText(`${nextCost} INK EACH · TEN IS THE MAX BATCH`);
       helper.setColor(UI.cream);
     }
   }
 
-  const closeBtn = ghostButton(
-    scene,
-    width / 2,
-    height - 80,
-    'Done',
-    () => close(),
-    220
-  )
-    .setScrollFactor(0)
-    .setDepth(DEPTH + 2);
-  layer.add(closeBtn);
+  if (!opts.embedded) {
+    const closeBtn = ghostButton(
+      scene,
+      width / 2,
+      height - 80,
+      'Done',
+      () => close(),
+      220
+    )
+      .setScrollFactor(0)
+      .setDepth(DEPTH + 2);
+    layer.add(closeBtn);
+  }
 
   refreshAffordance();
-  modalActions.focusInitial(ink >= nextCost ? pullControl : closeControl);
+  modalActions.focusInitial(
+    ink >= nextCost ? openOneControl : (closeControl ?? openOneControl)
+  );
 
-  async function doPull(): Promise<void> {
+  async function openChests(requestedCount: ChestOpenCount): Promise<void> {
     if (pulling || prizeOpen) return;
-    if (ink < nextCost) {
-      // Playful shake + copy already shown; give a tiny nudge.
-      scene.tweens.add({
-        targets: pullBtn,
-        x: pullBtn.x + 6,
-        duration: 60,
-        yoyo: true,
-        repeat: 3,
-      });
+    const targetCount = pendingBatchTarget ?? requestedCount;
+    const remainingCount = targetCount - completedBatchPulls.length;
+    const requiredInk = capsuleOpenCost(remainingCount, nextCost);
+    if (ink < requiredInk) {
+      await nudgeChest(scene, chest.container);
       return;
     }
+    pendingBatchTarget = targetCount;
     pulling = true;
-    pullControl.disabled = true;
-    helper.setText('Cranking…');
+    opts.onTransactionLockChange?.(true);
+    openOneControl.disabled = true;
+    openTenControl.disabled = true;
+    if (featuredGearControl) featuredGearControl.disabled = true;
+    helper.setText(targetCount === 1 ? 'SHAKE THE CHEST…' : 'OPENING TEN…');
     helper.setColor(UI.cream);
-    statusAnnouncement.textContent = 'Opening one Mystery Ink capsule.';
+    statusAnnouncement.textContent = `Opening ${targetCount} Mystery Ink ${targetCount === 1 ? 'chest' : 'chests'}.`;
 
-    // Crank + shake the machine.
-    await shakeMachine(scene, machine);
+    await shakeChest(scene, chest.container);
     if (destroyed || !scene.sys.isActive()) return;
 
-    pendingOperationId ??= createCapsuleOperationId();
-    let result: CapsulePullResponse | { error: string };
-    try {
-      result = await opts.onPull(pendingOperationId);
-    } catch {
-      result = { error: 'The capsule reply slipped.' };
+    while (completedBatchPulls.length < targetCount) {
+      pendingOperationId ??= createCapsuleOperationId();
+      let result: CapsulePullResponse | { error: string };
+      try {
+        result = await opts.onPull(pendingOperationId);
+      } catch {
+        result = { error: 'The chest reply slipped.' };
+      }
+      if (destroyed || !scene.sys.isActive()) return;
+      if ('error' in result) {
+        pulling = false;
+        refreshAffordance();
+        helper.setText(
+          `${completedBatchPulls.length}/${targetCount} OPENED · RETRY ${targetCount - completedBatchPulls.length}`
+        );
+        helper.setColor(UI.coralText);
+        statusAnnouncement.textContent = `${result.error} ${completedBatchPulls.length} of ${targetCount} opens are safely recorded. Retry resumes the same open.`;
+        return;
+      }
+      ink = result.ink;
+      nextCost = result.nextCost;
+      progress = result.progress;
+      completedBatchPulls.push(result.pull);
+      pendingOperationId = null;
+      helper.setText(`${completedBatchPulls.length}/${targetCount} OPENED`);
+      statusAnnouncement.textContent = `Opened ${completedBatchPulls.length} of ${targetCount}.`;
     }
-    if (destroyed || !scene.sys.isActive()) return;
-    if ('error' in result) {
-      pulling = false;
-      pullControl.disabled = ink < nextCost;
-      helper.setText(`${result.error} Tap PULL to safely retry.`);
-      helper.setColor(UI.coralText);
-      statusAnnouncement.textContent = `${result.error} Retry the same pull.`;
-      return;
-    }
-    ink = result.ink;
-    nextCost = result.nextCost;
-    progress = result.progress;
     refreshProgress(true);
-    pendingOperationId = null;
-    await dropAndPop(scene, capsule, result.pull.rarity);
+    const revealedPulls = [...completedBatchPulls];
+    completedBatchPulls = [];
+    pendingBatchTarget = null;
+    opts.onTransactionLockChange?.(false);
+    await openChest(scene, chest, highestRarity(revealedPulls));
     if (destroyed || !scene.sys.isActive()) return;
     pulling = false;
     refreshAffordance();
@@ -434,6 +604,7 @@ export function openCapsuleMachine(
     const onPrizeDismissed = (): void => {
       dismissPrizeAction = null;
       prizeOpen = false;
+      resetChest(chest);
       if (!opts.onViewCollection) {
         close();
         return;
@@ -441,7 +612,9 @@ export function openCapsuleMachine(
       setPrizeControlsVisible(false);
       refreshAffordance();
       modalActions.focusInitial(
-        pullControl.disabled ? closeControl : pullControl
+        openOneControl.disabled
+          ? (closeControl ?? openOneControl)
+          : openOneControl
       );
     };
     const prizeActions: PrizeRevealOptions = opts.onViewCollection
@@ -454,37 +627,60 @@ export function openCapsuleMachine(
           acknowledgementLabel: 'KEEP DRAWING',
           onDismiss: onPrizeDismissed,
         };
-    statusAnnouncement.textContent =
-      `${result.pull.rarity} ${result.pull.kind}: ${result.pull.name}. ` +
-      `${result.pull.description} ${prizeOwnershipAnnouncement(result.pull)} ` +
-      `Your Bag now has ${result.progress.discoveredCount} found gear styles.`;
+    const singlePull =
+      revealedPulls.length === 1 ? revealedPulls[0] : undefined;
+    if (singlePull) {
+      statusAnnouncement.textContent =
+        `${singlePull.rarity} ${singlePull.kind}: ${singlePull.name}. ` +
+        `${singlePull.description} ${prizeOwnershipAnnouncement(singlePull)} ` +
+        `Your Bag now has ${progress.discoveredCount} found styles.`;
+    } else {
+      const summary = summarizeCapsuleBatch(revealedPulls);
+      statusAnnouncement.textContent =
+        `Ten chests opened: ${summary.common} common, ${summary.rare} rare, ` +
+        `${summary.epic} epic, and ${summary.newItems} new styles. ` +
+        `Your Bag now has ${progress.discoveredCount} found styles.`;
+    }
     setPrizeControlsVisible(true);
     acknowledgementControl.setAttribute(
       'aria-label',
       prizeActions.acknowledgementLabel
     );
-    dismissPrizeAction = revealPrize(scene, layer, result.pull, prizeActions);
+    dismissPrizeAction = singlePull
+      ? revealPrize(scene, layer, singlePull, prizeActions)
+      : revealBatchPrizes(scene, layer, revealedPulls, prizeActions);
     modalActions.focusInitial(viewCollectionControl ?? acknowledgementControl);
   }
 
-  scrim.on('pointerup', () => {
+  scrim?.on('pointerup', () => {
     if (!prizeOpen) close();
   });
+
+  function openFeaturedGearDetail(
+    entry: CosmeticGearCatalogEntry,
+    trigger: HTMLButtonElement
+  ): void {
+    if (destroyed || pulling || prizeOpen) return;
+    featuredGearDetail?.destroy();
+    featuredGearDetail = showFeaturedGearDetail(scene, entry, trigger, () => {
+      featuredGearDetail = null;
+    });
+  }
 
   function close(destination: 'machine' | 'collection' = 'machine'): void {
     if (destroyed || !layer.active) return;
     if (prizeOpen && destination === 'machine') return;
-    if (pulling || pendingOperationId) {
+    if (pulling || pendingOperationId || pendingBatchTarget) {
       closeRequested = true;
       helper.setText(
         pulling
-          ? 'Finishing this paid pull before closing…'
-          : 'Tap PULL once to safely reconcile this pull.'
+          ? 'Finishing the paid chest before closing…'
+          : 'Tap RETRY once to safely reconcile this chest.'
       );
       helper.setColor(UI.coralText);
       statusAnnouncement.textContent = pulling
-        ? 'Finishing the paid pull before closing.'
-        : 'Retry the same pull to reconcile it before closing.';
+        ? 'Finishing the paid chest before closing.'
+        : 'Retry the same open to reconcile it before closing.';
       return;
     }
     const onClosed =
@@ -499,7 +695,11 @@ export function openCapsuleMachine(
     if (destroyed) return;
     destroyed = true;
     dismissPrizeAction = null;
+    const detail = featuredGearDetail;
+    featuredGearDetail = null;
+    detail?.destroy();
     modalActions.destroy();
+    opts.onTransactionLockChange?.(false);
     if (layer.active) layer.destroy(true);
   }
 
@@ -508,137 +708,367 @@ export function openCapsuleMachine(
 
 // --- Drawing helpers --------------------------------------------------------
 
-function drawMachine(scene: Scene, parent: Phaser.GameObjects.Container): void {
-  const g = scene.add.graphics();
-  // Calm, deterministic capsule placement keeps rebuilds from visually jumping.
-  g.fillStyle(0xbfe3f2, 0.62);
-  g.fillCircle(0, -72, 124);
-  g.lineStyle(6, UI.inkHex, 1);
-  g.strokeCircle(0, -72, 124);
-  for (const dot of MACHINE_CAPSULE_DOTS) {
-    g.fillStyle(dot.color, 0.95);
-    g.fillCircle(dot.x, dot.y, 14);
-    g.lineStyle(2, UI.creamHex, 0.9);
-    g.lineBetween(dot.x - 10, dot.y + 2, dot.x + 10, dot.y + 2);
+function drawBannerDeck(
+  scene: Scene,
+  layer: Phaser.GameObjects.Container,
+  actions: CapsuleActionSurface,
+  width: number,
+  y: number,
+  onInspect: (
+    entry: CosmeticGearCatalogEntry,
+    trigger: HTMLButtonElement
+  ) => void
+): HTMLButtonElement | null {
+  const margin = 42;
+  const activeWidth = width - margin * 2;
+  const active = scene.add
+    .container(margin + activeWidth / 2, y)
+    .setScrollFactor(0)
+    .setDepth(DEPTH + 2);
+  const activePaper = scene.add
+    .rectangle(0, 0, activeWidth, 126, UI.creamHex, 0.98)
+    .setStrokeStyle(4, UI.goldHex, 1);
+  const activeTitle = label(
+    scene,
+    -activeWidth / 2 + 104,
+    -31,
+    'LOOT',
+    34,
+    UI.ink,
+    true
+  );
+  const activeSubhead = label(
+    scene,
+    -activeWidth / 2 + 166,
+    5,
+    'EARNED INK · TAP FEATURED GEAR',
+    16,
+    UI.coralText,
+    true
+  );
+  const odds = label(
+    scene,
+    0,
+    45,
+    `${CAPSULE_RARITY_PERCENTAGES.common}% COMMON · ${CAPSULE_RARITY_PERCENTAGES.rare}% RARE · ${CAPSULE_RARITY_PERCENTAGES.epic}% EPIC`,
+    17,
+    UI.inkSoft,
+    true
+  );
+  active.add([activePaper, activeTitle, activeSubhead, odds]);
+  const featuredEntry = COSMETIC_BY_ID.get(FEATURED_GEAR_ID);
+  let featuredControl: HTMLButtonElement | null = null;
+  if (featuredEntry?.kind === 'accessory') {
+    const featuredX = activeWidth / 2 - 83;
+    const featuredY = -10;
+    const featured = scene.add.container(featuredX, featuredY);
+    const aura = scene.add
+      .circle(0, 0, 49, UI.gold, 0.13)
+      .setStrokeStyle(3, UI.goldHex, 0.44);
+    const backing = scene.add
+      .circle(0, 0, 39, UI.creamHex, 0.97)
+      .setStrokeStyle(4, UI.goldHex, 0.98);
+    const innerRing = scene.add
+      .circle(0, 0, 31, UI.gold, 0.08)
+      .setStrokeStyle(2, UI.coral, 0.7);
+    const upperSparkle = scene.add.star(-38, -35, 4, 4, 15, UI.goldHex, 1);
+    const lowerSparkle = scene.add.star(40, 29, 4, 3, 11, UI.creamHex, 0.96);
+    const featuredBadge = label(
+      scene,
+      0,
+      -48,
+      'FEATURED',
+      13,
+      UI.goldText,
+      true
+    );
+    const effectHint = label(
+      scene,
+      0,
+      48,
+      'SEE EFFECT',
+      13,
+      UI.coralText,
+      true
+    );
+    const hitTarget = scene.add
+      .circle(0, 0, 50, 0xffffff, 0.001)
+      .setInteractive();
+    featured.add([
+      aura,
+      backing,
+      innerRing,
+      upperSparkle,
+      lowerSparkle,
+      featuredBadge,
+      effectHint,
+    ]);
+    renderCosmeticPreview({
+      scene,
+      parent: featured,
+      entry: featuredEntry,
+      x: 0,
+      y: 0,
+      size: 70,
+      width: 76,
+      height: 76,
+    });
+    featured.add(hitTarget);
+    active.add(featured);
+
+    featuredControl = actions.add({
+      label: `Inspect featured Gear: ${featuredEntry.name}. ${featuredEntry.rarity} ${featuredEntry.category}.`,
+      rect: {
+        x: width / 2 + featuredX - 50,
+        y: y + featuredY - 50,
+        width: 100,
+        height: 100,
+      },
+      pointerPassthrough: true,
+      onActivate: () => {
+        if (featuredControl) onInspect(featuredEntry, featuredControl);
+      },
+    });
+    bindPressInteractionEvents(
+      hitTarget,
+      {
+        press: () => featured.setScale(0.94),
+        release: () => featured.setScale(1),
+        activate: () => {
+          if (featuredControl) onInspect(featuredEntry, featuredControl);
+        },
+        pressOnHover: false,
+      },
+      { gameTarget: scene.input, shutdownTarget: scene.events }
+    );
+
+    const shine = createStickerShine({
+      scene,
+      x: width / 2 + featuredX,
+      y: y + featuredY,
+      width: 120,
+      height: 120,
+      depth: layer.depth + 3,
+      reduceMotion: prefersReducedMotion(),
+      tint: [1, 0.78, 0.24],
+      intensity: 0.72,
+    });
+    scene.time.delayedCall(260, () => shine?.play(680));
+    layer.once('destroy', () => shine?.destroy());
   }
+  layer.add(active);
 
-  // Coral dispenser body with a gold collar and a legible capsule hatch.
-  g.fillStyle(UI.coral, 1);
-  g.fillRoundedRect(-116, 36, 232, 164, 22);
-  g.lineStyle(6, UI.inkHex, 1);
-  g.strokeRoundedRect(-116, 36, 232, 164, 22);
-  g.fillStyle(UI.gold, 1);
-  g.fillRoundedRect(-126, 24, 252, 36, 14);
-  g.strokeRoundedRect(-126, 24, 252, 36, 14);
-  g.fillStyle(UI.creamHex, 1);
-  g.fillRoundedRect(-52, 135, 104, 52, 12);
-  g.strokeRoundedRect(-52, 135, 104, 52, 12);
-  g.fillStyle(UI.inkHex, 1);
-  g.fillRoundedRect(-38, 148, 76, 25, 7);
-  parent.add(g);
-
-  // The obvious side crank spins as one playful, readable mechanism.
-  const knob = scene.add.container(48, 92);
-  const kg = scene.add.graphics();
-  kg.fillStyle(UI.gold, 1);
-  kg.fillCircle(0, 0, 31);
-  kg.lineStyle(5, UI.inkHex, 1);
-  kg.strokeCircle(0, 0, 31);
-  kg.lineStyle(13, 0x8a5700, 1);
-  kg.lineBetween(0, 0, 47, -12);
-  kg.lineStyle(5, UI.inkHex, 1);
-  kg.lineBetween(0, 0, 47, -12);
-  kg.fillStyle(UI.gold, 1);
-  kg.fillCircle(52, -13, 13);
-  kg.strokeCircle(52, -13, 13);
-  kg.fillStyle(UI.inkHex, 1);
-  kg.fillCircle(0, 0, 5);
-  knob.add(kg);
-  knob.setData('isKnob', true);
-  parent.add(knob);
+  const futureWidth = width - 190;
+  const future = scene.add
+    .container(width / 2, y + 94)
+    .setScrollFactor(0)
+    .setDepth(DEPTH + 2);
+  const futurePaper = scene.add
+    .rectangle(0, 0, futureWidth, 48, 0x3b263c, 0.94)
+    .setStrokeStyle(3, 0x9a7b8f, 0.9);
+  future.add([
+    futurePaper,
+    label(
+      scene,
+      0,
+      0,
+      'REDDIT GOLD STYLES · COSMETIC ONLY · COMING SOON',
+      16,
+      '#fff2d8',
+      true
+    ),
+  ]);
+  future.setAlpha(0.78);
+  layer.add(future);
+  return featuredControl;
 }
 
-function drawCapsule(
-  scene: Scene,
-  parent: Phaser.GameObjects.Container,
-  topColor: number
-): void {
-  const g = scene.add.graphics();
-  // Bottom half (cream), top half (colored), split line.
-  g.fillStyle(0xfff2d8, 1);
-  g.fillCircle(0, 0, 40);
-  g.fillStyle(topColor, 1);
-  g.beginPath();
-  g.arc(0, 0, 40, Math.PI, 0, false);
-  g.closePath();
-  g.fillPath();
-  g.lineStyle(5, UI.inkHex, 1);
-  g.strokeCircle(0, 0, 40);
-  g.beginPath();
-  g.moveTo(-40, 0);
-  g.lineTo(40, 0);
-  g.strokePath();
-  parent.add(g);
+function createChestArt(scene: Scene, x: number, y: number): ChestArt {
+  const container = scene.add.container(x, y);
+  const glow = scene.add.circle(0, -12, 178, UI.gold, 0.12);
+  const shadow = scene.add.ellipse(8, 128, 340, 62, 0x160d16, 0.38);
+  const stickerEdge = scene.add.graphics();
+  stickerEdge.fillStyle(UI.creamHex, 0.96);
+  stickerEdge.fillRoundedRect(-174, -106, 348, 242, 30);
+
+  const body = scene.add.graphics();
+  const bodyShape = [
+    new Phaser.Math.Vector2(-160, -22),
+    new Phaser.Math.Vector2(160, -22),
+    new Phaser.Math.Vector2(139, 120),
+    new Phaser.Math.Vector2(-139, 120),
+  ];
+  body.fillStyle(0x7441b8, 1);
+  body.fillPoints(bodyShape, true);
+  body.lineStyle(7, UI.inkHex, 1);
+  body.strokePoints(bodyShape, true);
+  body.fillStyle(0x8f58d2, 1);
+  body.fillRoundedRect(-139, 18, 278, 86, 12);
+  body.lineStyle(3, 0xc6a9ee, 0.78);
+  body.lineBetween(-126, 44, 126, 44);
+  body.lineBetween(-120, 76, 120, 76);
+  body.fillStyle(0x5b2f98, 0.7);
+  body.fillTriangle(139, 18, 160, -22, 139, 104);
+
+  const cornerPlates = scene.add.graphics();
+  cornerPlates.fillStyle(UI.gold, 1);
+  cornerPlates.lineStyle(4, UI.inkHex, 1);
+  [
+    [-139, 86],
+    [101, 86],
+  ].forEach(([plateX, plateY]) => {
+    cornerPlates.fillRoundedRect(plateX ?? 0, plateY ?? 0, 38, 34, 6);
+    cornerPlates.strokeRoundedRect(plateX ?? 0, plateY ?? 0, 38, 34, 6);
+  });
+
+  const lid = scene.add.container(0, -62);
+  const lidGraphics = scene.add.graphics();
+  const lidShape = [
+    new Phaser.Math.Vector2(-163, 26),
+    new Phaser.Math.Vector2(-138, -58),
+    new Phaser.Math.Vector2(138, -58),
+    new Phaser.Math.Vector2(163, 26),
+  ];
+  lidGraphics.fillStyle(0x9b68d8, 1);
+  lidGraphics.fillPoints(lidShape, true);
+  lidGraphics.lineStyle(7, UI.inkHex, 1);
+  lidGraphics.strokePoints(lidShape, true);
+  lidGraphics.lineStyle(3, 0xc6a9ee, 0.72);
+  lidGraphics.lineBetween(-116, -36, 116, -36);
+  lidGraphics.lineBetween(-136, -10, 136, -10);
+  lidGraphics.fillStyle(UI.gold, 1);
+  lidGraphics.fillRoundedRect(-168, 12, 336, 36, 12);
+  lidGraphics.lineStyle(6, UI.inkHex, 1);
+  lidGraphics.strokeRoundedRect(-168, 12, 336, 36, 12);
+  const lidCorners = scene.add.graphics();
+  lidCorners.fillStyle(UI.gold, 1);
+  lidCorners.lineStyle(4, UI.inkHex, 1);
+  lidCorners.fillRoundedRect(-151, -42, 30, 56, 8);
+  lidCorners.strokeRoundedRect(-151, -42, 30, 56, 8);
+  lidCorners.fillRoundedRect(121, -42, 30, 56, 8);
+  lidCorners.strokeRoundedRect(121, -42, 30, 56, 8);
+  lid.add([lidGraphics, lidCorners]);
+
+  const straps = scene.add.graphics();
+  straps.fillStyle(UI.gold, 1);
+  straps.fillRoundedRect(-108, -20, 28, 134, 8);
+  straps.fillRoundedRect(80, -20, 28, 134, 8);
+  straps.lineStyle(4, UI.inkHex, 1);
+  straps.strokeRoundedRect(-108, -20, 28, 134, 8);
+  straps.strokeRoundedRect(80, -20, 28, 134, 8);
+  const lock = scene.add.graphics();
+  lock.fillStyle(UI.gold, 1);
+  lock.fillRoundedRect(-40, 7, 80, 72, 16);
+  lock.lineStyle(5, UI.inkHex, 1);
+  lock.strokeRoundedRect(-40, 7, 80, 72, 16);
+  lock.fillStyle(UI.inkHex, 1);
+  lock.fillCircle(0, 35, 9);
+  lock.fillRoundedRect(-5, 35, 10, 20, 3);
+
+  const sparkles = scene.add.graphics();
+  sparkles.fillStyle(UI.gold, 1);
+  sparkles.fillCircle(-175, -38, 6);
+  sparkles.fillCircle(176, 24, 5);
+  sparkles.fillStyle(0x8a5cd8, 1);
+  sparkles.fillCircle(-164, 43, 4);
+  sparkles.fillCircle(164, -56, 4);
+  container.add([
+    glow,
+    shadow,
+    stickerEdge,
+    body,
+    cornerPlates,
+    straps,
+    lid,
+    lock,
+    sparkles,
+  ]);
+  return { container, glow, lid };
 }
 
-function shakeMachine(
+function highestRarity(pulls: readonly CapsulePull[]): CapsuleRarity {
+  if (pulls.some((pull) => pull.rarity === 'epic')) return 'epic';
+  if (pulls.some((pull) => pull.rarity === 'rare')) return 'rare';
+  return 'common';
+}
+
+function nudgeChest(
   scene: Scene,
-  machine: Phaser.GameObjects.Container
+  chest: Phaser.GameObjects.Container
 ): Promise<void> {
+  if (prefersReducedMotion()) return Promise.resolve();
   return new Promise((resolve) => {
-    // Spin the crank knob.
-    const knob = machine.list.find((o) =>
-      (o as Phaser.GameObjects.Container).getData?.('isKnob')
-    ) as Phaser.GameObjects.Container | undefined;
-    if (knob)
-      scene.tweens.add({
-        targets: knob,
-        angle: 360,
-        duration: 520,
-        ease: 'Cubic.easeInOut',
-      });
     scene.tweens.add({
-      targets: machine,
-      angle: 3,
-      duration: 70,
+      targets: chest,
+      x: chest.x + 7,
+      duration: 55,
       yoyo: true,
-      repeat: 5,
+      repeat: 2,
+      onComplete: () => resolve(),
+    });
+  });
+}
+
+function shakeChest(
+  scene: Scene,
+  chest: Phaser.GameObjects.Container
+): Promise<void> {
+  if (prefersReducedMotion()) return Promise.resolve();
+  const startY = chest.y;
+  return new Promise((resolve) => {
+    scene.tweens.add({
+      targets: chest,
+      angle: 4,
+      y: chest.y - 6,
+      duration: 62,
+      yoyo: true,
+      repeat: 4,
       ease: 'Sine.easeInOut',
       onComplete: () => {
-        machine.setAngle(0);
+        chest.setAngle(0).setY(startY);
         resolve();
       },
     });
   });
 }
 
-function dropAndPop(
+function openChest(
   scene: Scene,
-  capsule: Phaser.GameObjects.Container,
+  chest: ChestArt,
   rarity: CapsuleRarity
 ): Promise<void> {
+  const rarityColor = RARITY_STYLE[rarity].color;
+  chest.glow.setFillStyle(rarityColor, 0.18);
+  chest.lid.setPosition(0, -62).setAngle(0);
+  if (prefersReducedMotion()) {
+    chest.lid.setPosition(-8, -126).setAngle(-9);
+    chest.glow.setAlpha(0.68);
+    return Promise.resolve();
+  }
   return new Promise((resolve) => {
-    const tint = RARITY_STYLE[rarity].color;
-    // Re-tint the capsule top to match rarity.
-    capsule.removeAll(true);
-    drawCapsule(scene, capsule, tint);
-    capsule.setScale(0).setPosition(0, -70);
     scene.tweens.add({
-      targets: capsule,
-      scale: 1,
-      duration: 200,
-      ease: 'Back.easeOut',
+      targets: chest.glow,
+      alpha: 0.72,
+      scaleX: 1.22,
+      scaleY: 1.22,
+      duration: 260,
+      ease: 'Sine.easeOut',
     });
-    // Drop into the dispenser then bob.
-    scene.tweens.chain({
-      targets: capsule,
-      tweens: [
-        { y: 120, duration: 380, ease: 'Bounce.easeOut', delay: 160 },
-        { y: 108, scaleX: 1.1, scaleY: 0.9, duration: 120, yoyo: true },
-      ],
+    scene.tweens.add({
+      targets: chest.lid,
+      y: -126,
+      x: -8,
+      angle: -9,
+      duration: 330,
+      ease: 'Back.easeOut',
       onComplete: () => resolve(),
     });
   });
+}
+
+function resetChest(chest: ChestArt): void {
+  chest.lid.setPosition(0, -62).setAngle(0);
+  chest.glow.setScale(1).setAlpha(1).setFillStyle(UI.gold, 0.1);
 }
 
 // The prize reveal + rarity ceremony. It owns a full-screen interactive blocker
@@ -732,15 +1162,17 @@ function revealPrize(
       y: -128,
       size: 132,
       width: cardWidth - 120,
-    }).setScale(0.15);
-    scene.tweens.add({
-      targets: preview,
-      scaleX: 1,
-      scaleY: 1,
-      duration: 420,
-      delay: 100,
-      ease: 'Back.easeOut',
-    });
+    }).setScale(prefersReducedMotion() ? 1 : 0.15);
+    if (!prefersReducedMotion()) {
+      scene.tweens.add({
+        targets: preview,
+        scaleX: 1,
+        scaleY: 1,
+        duration: 420,
+        delay: 100,
+        ease: 'Back.easeOut',
+      });
+    }
   } else {
     card.add(label(scene, 0, -128, `YOUR ${kindLabel}`, 28, UI.ink, true));
   }
@@ -789,6 +1221,11 @@ function revealPrize(
   const dismissPrize = (): void => {
     if (closingPrize || !revealLayer.active) return;
     closingPrize = true;
+    if (prefersReducedMotion()) {
+      revealLayer.destroy(true);
+      options.onDismiss();
+      return;
+    }
     scene.tweens.add({
       targets: card,
       alpha: 0,
@@ -813,12 +1250,12 @@ function revealPrize(
       scene,
       prizeLayout.viewCollection?.centerX ?? 0,
       prizeLayout.actionCenterY,
-      pull.mergeReady ? 'FORGE IN INK KIT' : 'VIEW INK KIT',
+      pull.mergeReady ? 'FORGE IN BAG' : 'VIEW BAG',
       openCollection,
       prizeLayout.viewCollection?.width ?? 0,
       UI.gold
     );
-    const pullAgain = ghostButton(
+    const continueButton = ghostButton(
       scene,
       prizeLayout.acknowledgement.centerX,
       prizeLayout.actionCenterY,
@@ -826,7 +1263,7 @@ function revealPrize(
       dismissPrize,
       prizeLayout.acknowledgement.width
     );
-    card.add([viewCollection, pullAgain]);
+    card.add([viewCollection, continueButton]);
   } else {
     card.add(
       button(
@@ -841,15 +1278,213 @@ function revealPrize(
     );
   }
 
-  card.setScale(0.68).setAlpha(0);
-  scene.tweens.add({
-    targets: card,
-    scaleX: 1,
-    scaleY: 1,
-    alpha: 1,
-    duration: 360,
-    ease: 'Back.easeOut',
+  if (prefersReducedMotion()) card.setScale(1).setAlpha(1);
+  else {
+    card.setScale(0.68).setAlpha(0);
+    scene.tweens.add({
+      targets: card,
+      scaleX: 1,
+      scaleY: 1,
+      alpha: 1,
+      duration: 360,
+      ease: 'Back.easeOut',
+    });
+  }
+  return dismissPrize;
+}
+
+function revealBatchPrizes(
+  scene: Scene,
+  layer: Phaser.GameObjects.Container,
+  pulls: readonly CapsulePull[],
+  options: PrizeRevealOptions
+): () => void {
+  const { width, height } = scene.scale;
+  const topRarity = highestRarity(pulls);
+  const rarityStyle = RARITY_STYLE[topRarity];
+  if (topRarity === 'epic') rainbowMoment(scene, layer);
+  else if (topRarity === 'rare')
+    goldBurst(scene, layer, width / 2, height * 0.46);
+  else puff(scene, layer, width / 2, height * 0.46);
+
+  const revealLayer = scene.add
+    .container(0, 0)
+    .setScrollFactor(0)
+    .setDepth(DEPTH + 5);
+  const inputBlocker = scene.add
+    .rectangle(width / 2, height / 2, width, height, 0xffffff, 0.001)
+    .setScrollFactor(0)
+    .setInteractive();
+  inputBlocker.on('pointerdown', stopPointerPropagation);
+  inputBlocker.on('pointerup', stopPointerPropagation);
+  revealLayer.add(inputBlocker);
+  layer.add(revealLayer);
+
+  const prizeLayout = planCapsulePrizeLayout(
+    width,
+    height,
+    Boolean(options.onViewCollection)
+  );
+  const { cardWidth, cardHeight, cardCenterY } = prizeLayout;
+  const card = scene.add.container(width / 2, cardCenterY).setScrollFactor(0);
+  const paper = scene.add.graphics();
+  paper.fillStyle(UI.paper, 1);
+  paper.fillRoundedRect(
+    -cardWidth / 2,
+    -cardHeight / 2,
+    cardWidth,
+    cardHeight,
+    24
+  );
+  paper.lineStyle(6, rarityStyle.color, 1);
+  paper.strokeRoundedRect(
+    -cardWidth / 2,
+    -cardHeight / 2,
+    cardWidth,
+    cardHeight,
+    24
+  );
+  const cardInputBlocker = scene.add
+    .rectangle(0, 0, cardWidth, cardHeight, 0xffffff, 0.001)
+    .setInteractive();
+  cardInputBlocker.on('pointerdown', stopPointerPropagation);
+  cardInputBlocker.on('pointerup', stopPointerPropagation);
+  card.add([paper, cardInputBlocker]);
+  revealLayer.add(card);
+
+  const summary = summarizeCapsuleBatch(pulls);
+  card.add([
+    handLettered(scene, 0, -230, 'TEN CHESTS OPENED', 32, UI.ink, true),
+    label(
+      scene,
+      0,
+      -194,
+      `${summary.epic} EPIC · ${summary.rare} RARE · ${summary.newItems} NEW`,
+      17,
+      UI.coralText,
+      true
+    ),
+  ]);
+
+  const columns = 5;
+  const tileGap = 8;
+  const gridWidth = cardWidth - 42;
+  const tileWidth = (gridWidth - tileGap * (columns - 1)) / columns;
+  pulls.slice(0, CAPSULE_MAX_BATCH_SIZE).forEach((pull, index) => {
+    const column = index % columns;
+    const row = Math.floor(index / columns);
+    const tileX =
+      -gridWidth / 2 + tileWidth / 2 + column * (tileWidth + tileGap);
+    const tileY = -90 + row * 146;
+    const tile = scene.add.container(tileX, tileY);
+    const tileRarity = RARITY_STYLE[pull.rarity];
+    tile.add(
+      scene.add
+        .rectangle(0, 0, tileWidth, 132, UI.creamHex, 1)
+        .setStrokeStyle(4, tileRarity.color, 1)
+    );
+    const catalogEntry = COSMETIC_BY_ID.get(pull.id);
+    if (catalogEntry?.kind === pull.kind) {
+      renderCosmeticPreview({
+        scene,
+        parent: tile,
+        entry: catalogEntry,
+        y: -27,
+        size: 62,
+        width: tileWidth - 14,
+        height: 62,
+      });
+    }
+    const itemName = label(scene, 0, 32, pull.name, 13, UI.ink, true)
+      .setWordWrapWidth(tileWidth - 8)
+      .setLineSpacing(-4);
+    const ownership = label(
+      scene,
+      0,
+      57,
+      pull.isNew ? 'NEW' : pull.kind === 'accessory' ? 'FORGE +1' : 'OWNED',
+      12,
+      pull.isNew ? UI.coralText : UI.goldText,
+      true
+    );
+    tile.add([itemName, ownership]);
+    card.add(tile);
   });
+
+  let closingPrize = false;
+  const dismissPrize = (): void => {
+    if (closingPrize || !revealLayer.active) return;
+    closingPrize = true;
+    if (prefersReducedMotion()) {
+      revealLayer.destroy(true);
+      options.onDismiss();
+      return;
+    }
+    scene.tweens.add({
+      targets: card,
+      alpha: 0,
+      scaleX: 0.82,
+      scaleY: 0.82,
+      duration: 220,
+      ease: 'Cubic.easeIn',
+      onComplete: () => {
+        revealLayer.destroy(true);
+        options.onDismiss();
+      },
+    });
+  };
+
+  if (options.onViewCollection) {
+    const openCollection = (): void => {
+      if (closingPrize) return;
+      closingPrize = true;
+      options.onViewCollection?.();
+    };
+    card.add([
+      button(
+        scene,
+        prizeLayout.viewCollection?.centerX ?? 0,
+        prizeLayout.actionCenterY,
+        'VIEW BAG',
+        openCollection,
+        prizeLayout.viewCollection?.width ?? 0,
+        UI.gold
+      ),
+      ghostButton(
+        scene,
+        prizeLayout.acknowledgement.centerX,
+        prizeLayout.actionCenterY,
+        options.acknowledgementLabel,
+        dismissPrize,
+        prizeLayout.acknowledgement.width
+      ),
+    ]);
+  } else {
+    card.add(
+      button(
+        scene,
+        0,
+        prizeLayout.actionCenterY,
+        options.acknowledgementLabel,
+        dismissPrize,
+        prizeLayout.acknowledgement.width,
+        UI.coral
+      )
+    );
+  }
+
+  if (prefersReducedMotion()) card.setScale(1).setAlpha(1);
+  else {
+    card.setScale(0.68).setAlpha(0);
+    scene.tweens.add({
+      targets: card,
+      scaleX: 1,
+      scaleY: 1,
+      alpha: 1,
+      duration: 360,
+      ease: 'Back.easeOut',
+    });
+  }
   return dismissPrize;
 }
 
@@ -868,6 +1503,7 @@ function puff(
   x: number,
   y: number
 ): void {
+  if (prefersReducedMotion()) return;
   const emitter = scene.add.particles(x, y, 'dot', {
     speed: { min: 40, max: 140 },
     scale: { start: 0.7, end: 0 },
@@ -888,6 +1524,7 @@ function goldBurst(
   x: number,
   y: number
 ): void {
+  if (prefersReducedMotion()) return;
   const emitter = scene.add.particles(x, y, 'spark', {
     speed: { min: 120, max: 340 },
     scale: { start: 0.7, end: 0 },
@@ -906,6 +1543,7 @@ function rainbowMoment(
   scene: Scene,
   layer: Phaser.GameObjects.Container
 ): void {
+  if (prefersReducedMotion()) return;
   const { width, height } = scene.scale;
   // Full-screen rainbow wash sweeping through hues.
   const hues = [0xff5a3d, 0xff9a3d, 0xf2cf3d, 0x4faa4f, 0x3ba0e0, 0x8a5cd8];
@@ -929,7 +1567,7 @@ function rainbowMoment(
     scene,
     width / 2,
     height * 0.28,
-    'EPIC PULL!',
+    'EPIC FIND!',
     64,
     UI.goldText,
     true

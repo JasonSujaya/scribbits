@@ -20,8 +20,8 @@ export type DoodleDareCatalogValidation = Readonly<{
 }>;
 
 export const DOODLE_DARE_CALENDAR_VERSION = 1;
-const PROMPTS_PER_POWER = 8;
 const PROMPT_MAXIMUM_LENGTH = 52;
+const PROMPTS_PER_POWER = 8;
 const EXPECTED_TWIST_COUNT = 8;
 const TWIST_MAXIMUM_LENGTH = 52;
 const PROMPT_ID_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
@@ -171,7 +171,7 @@ export const DOODLE_DARES: readonly DoodleDare[] = Object.freeze(
       },
       {
         id: 'paint-squid',
-        prompt: 'a paint-splatter squid',
+        prompt: 'a colorful squid',
         suggestedPower: 'colorburst',
       },
       {
@@ -316,6 +316,14 @@ const daresByPower: ReadonlyMap<PrimaryPower, readonly DoodleDare[]> = new Map(
   ])
 );
 
+const daresById: ReadonlyMap<string, DoodleDare> = new Map(
+  DOODLE_DARES.map((dare) => [dare.id, dare])
+);
+
+export function isDoodleDareId(value: unknown): value is string {
+  return typeof value === 'string' && daresById.has(value);
+}
+
 export function selectDoodleDareForPower(
   power: PrimaryPower,
   stableKey: string
@@ -326,38 +334,6 @@ export function selectDoodleDareForPower(
   }
   const prompt = prompts[hashContentKey(stableKey) % prompts.length];
   if (!prompt) throw new Error(`Doodle dare selection failed for ${power}.`);
-  return prompt;
-}
-
-// Each player receives all four drawing identities every four Arena days and all
-// 32 prompts before their schedule repeats. Username offsets keep the community
-// from receiving one identical brief while reloads remain stable.
-export function selectDailyDoodleDare(
-  dayNumber: number,
-  username: string | null
-): DoodleDare {
-  const stableDay =
-    Number.isSafeInteger(dayNumber) && dayNumber >= 1 ? dayNumber : 1;
-  const stablePlayer = username?.trim().toLowerCase() || 'anonymous';
-  const zeroBasedDay = stableDay - 1;
-  const powerOffset =
-    hashContentKey(`v${DOODLE_DARE_CALENDAR_VERSION}:power:${stablePlayer}`) %
-    SHAPE_POWER_IDS.length;
-  const power =
-    SHAPE_POWER_IDS[(zeroBasedDay + powerOffset) % SHAPE_POWER_IDS.length] ??
-    'inkquake';
-  const prompts = daresByPower.get(power);
-  if (!prompts || prompts.length === 0) {
-    throw new Error(`Doodle dare catalog is missing ${power}.`);
-  }
-  const fourDayCycle = Math.floor(zeroBasedDay / SHAPE_POWER_IDS.length);
-  const promptOffset =
-    hashContentKey(
-      `v${DOODLE_DARE_CALENDAR_VERSION}:prompt:${stablePlayer}:${power}`
-    ) % prompts.length;
-  const prompt = prompts[(fourDayCycle + promptOffset) % prompts.length];
-  if (!prompt)
-    throw new Error(`Daily Doodle Dare selection failed for ${power}.`);
   return prompt;
 }
 

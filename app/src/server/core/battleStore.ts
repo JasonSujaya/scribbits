@@ -8,6 +8,7 @@ import {
 import type { FighterSlot } from '../../shared/combat/types';
 import { isBattleArenaId } from '../../shared/battlearena';
 import { parseBattleTranscript } from '../../shared/combat/transcriptvalidation';
+import { gearCombatSnapshotMatchesScribbit } from '../../shared/gearcombat';
 import type { ArenaStorage, ArenaTransaction } from './storage';
 import {
   discardWatchedTransaction,
@@ -117,7 +118,7 @@ const isRivalRunReceipt = (
   );
 };
 
-const isBattleReport = (value: unknown): value is BattleReport => {
+export const isBattleReport = (value: unknown): value is BattleReport => {
   if (
     !isRecord(value) ||
     (value.events !== undefined && !Array.isArray(value.events))
@@ -167,7 +168,17 @@ const isBattleReport = (value: unknown): value is BattleReport => {
       !simulation ||
       value.a.id !== simulation.fighters[0].id ||
       value.b.id !== simulation.fighters[1].id ||
-      value.winner !== simulation.result.winner
+      value.winner !== simulation.result.winner ||
+      (simulation.version === 3 && value.kind !== 'exhibition') ||
+      (simulation.version === 3 &&
+        (!gearCombatSnapshotMatchesScribbit(
+          simulation.fighters[0].gear,
+          value.a
+        ) ||
+          !gearCombatSnapshotMatchesScribbit(
+            simulation.fighters[1].gear,
+            value.b
+          )))
     ) {
       return false;
     }

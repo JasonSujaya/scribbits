@@ -8,7 +8,7 @@ enter daily community rumbles. The app identity is `scribbits` in
 All main scenes share `lib/appdock.ts`, the generated Craftbox paper stage, the
 same five optical-weight code-native navigation icons, and one GPT-generated
 hand-cut button family for primary, secondary, Pick, close, and pagination
-actions. The dock is Arena, Bag, Draw, Battles, and Gallery. It uses a flat
+actions. The dock is Arena, Bag, Draw, Battles, and Shop. It uses a flat
 contained active tile, readable labels, and no
 micro-badges or protruding cutout. DynaPuff 400/700 is
 bundled locally through Fontsource and loaded before Phaser renders text. Shared
@@ -31,21 +31,23 @@ copy should keep the default view to one headline, one status, and one action.
 
 ## How to play
 
-1. **Draw:** one Scribbit per UTC day. A validated catalog supplies 32 optional
-   Doodle Dares, eight per Shape Power, plus eight optional bonus twists. Each
-   player sees all four powers every four days, every prompt before Day 33, and
-   no exact prompt-plus-twist card before Day 257. The Draw screen gives the hero
+1. **Draw:** one Scribbit per UTC day. A validated, versioned calendar supplies
+   122 shared community themes covering 366 Arena days, with one theme staying
+   consistent for each three-day block. New seasons append without moving
+   published days, while Practice keeps its separate Shape Power prompts. The Draw screen gives the hero
    canvas most of the page, keeps all eight base colors visible, and puts brush,
    eraser, undo, optional stickers, and unlocked premium pens in one compact tool
    row. One visible `NEXT` action stays disabled until the shared analyzer says
-   the drawing is ready; only then does a focused preview ask for its name and
+   the drawing is ready; optional paints, brushes, stickers, Clear, and Redo sit
+   behind one Tools icon, with a persistent badge when a special supply is
+   active. Only then does a focused preview ask for its name and
    confirmation. Exact shape rules stay out of a visible four-stat dashboard. The four analyzed traits still
    normalize to the same 100-point budget, and dominant color still chooses the
    element. After acceptance, `lib/birthceremony.ts` loads that exact submitted
    PNG and unfolds it through `LiveSprite.awaken()`—there is no placeholder egg.
    The final card replaces raw stat totals with one causal receipt such as
    `SHARP EDGES → FIRETIP HALO` / `3 ROTATING QUILLS`, shows one Ink receipt,
-   and leads a fresh player directly to `WATCH FIRST FIGHT`.
+   and leads a fresh player directly to `START FIRST SPAR`.
 2. **Fight:** submission automatically enters tonight's Rumble. A new player's
    first Scribbit also receives an immediate exhibition so the core promise is
    visible in the first session. On WebGL, Phaser 4.2 maps the submitted PNG to
@@ -92,10 +94,11 @@ copy should keep the default view to one headline, one status, and one action.
    duration, final HP, and one Shape-Power lesson such as
    `FINAL SPLAT · THUNDERFOLD · 25 DAMAGE`. Each server-selected arena also has
    one small transcript-scored goal; Replay shows its exact cleared or progress
-   state on the result card without granting a second reward or recalculating it
-   in the client. Arena reveals that canonical daily goal before fighter and
-   rival selection through one target-icon headline, replacing the generic
-   `CHOOSE FIGHTER` box instead of adding another dashboard. Owned exhibitions promote `CHOOSE A RIVAL` to one
+   state in a dedicated target stamp above the recap without granting a second
+   reward or recalculating it in the client. Arena reveals the canonical venue
+   name and daily goal before fighter and rival selection, while one info icon
+   owns the short venue rule. This replaces the generic `CHOOSE FIGHTER` box
+   instead of adding another dashboard. Owned exhibitions promote `CHOOSE A RIVAL` to one
    primary action beside one compact return. When no Rival draft is available,
    tonight's pick becomes the primary; Practice remains reachable from Arena
    instead of competing with the result. Knockouts fold only
@@ -108,8 +111,10 @@ copy should keep the default view to one headline, one status, and one action.
    the existing pre-`FIGHT!` ticker beat, and their first power and result receive a
    fact-safe reaction, and a founding Rumble champion carries its voice into the
    Reddit result comment. None of this content enters the transcript or combat math.
-   After a win or loss in an owned exhibition, a paper Rival Draft offers three
-   server-selected founders. The slate is stable for the UTC day, prioritizes
+   Before every player-facing Spar—and again after each bout—a compact paper
+   Rival Run board offers three server-selected founders. Arena, first birth,
+   and Replay all call the same client controller; no scene starts a blind
+   opponent-less fight. The slate is stable for the UTC day and prioritizes
    close levels and distinct Shape Powers. Each compact card shows drawing,
    element, level, risk, points, a paper info control, and an icon-led SPAR action;
    signature, level comparison, and forecast move behind the info tap. The slate
@@ -117,14 +122,14 @@ copy should keep the default view to one headline, one status, and one action.
    and forecast so a Replay left open across UTC rollover cannot advertise stale
    matchup or Rival-page rules. A
    chosen `opponentId` is accepted only when it still belongs to that exact
-   server-authored slate. Omitted IDs use the same production selector and pin
-   an active Founder Rival Thread before considering a fresh opponent.
+   server-authored slate. The server retains an opponent-less compatibility
+   fallback, but it is not a player-facing client path.
    Every card remains immediately sparable after today's story beat: the card
    says when its next Rival page unlocks while starting a reward-capped
    exhibition now. This keeps combat replayable without bypassing the server's
    one-story-beat-per-day or one-spar-reward-per-day rules.
    Chosen-rival fights form a server-authored three-bout Rival Run. Each fresh
-   bout receives one relative `SAFE +1`, `EVEN +2`, and `RISKY +3` option ranked
+   bout receives one relative `SAFE +1`, `EVEN +2`, and `BOLD +3` option ranked
    from five deterministic projections through the real combat engine, so level,
    forecast, stats, elements, and Shape Powers all affect risk. Wins add the displayed run points;
    losses add zero but still advance the bout, and fought opponents leave later
@@ -134,8 +139,8 @@ copy should keep the default view to one headline, one status, and one action.
    combat power, or extra Founder Chronicle beat.
    Each player can have exactly one active Founder Rival Thread: first to two,
    maximum three qualifying battles, and no more than one authoritative story
-   beat per Arena day. The active founder remains pinned across future drafts and
-   quick spar; a Champion Contract advances the same thread only when that founder
+   beat per Arena day. The active founder remains pinned across future drafts; a
+   Champion Contract advances the same thread only when that founder
    is the Champion. Unrelated founders are exhibitions. A completed series
    becomes a permanent signed margin note with no Ink, stat, or checklist reward.
    Qualifying ceremonies expose only truthful pre-fight stakes—new thread, match
@@ -187,16 +192,18 @@ copy should keep the default view to one headline, one status, and one action.
    honest DONE states, full mobile targets, drag-safe activation, and a receipt
    that stays focused until keyboard dismissal. The five dock tabs mirror native
    labels and active-page state without covering their canvas artwork.
-   Earned-only Ink opens Mystery Capsules with a discounted daily pull, permanent
-   discovery album, collector rank, and visible Epic pity countdown. Accessories
-   and status rewards are cosmetic; pens are expressive sidegrades that can
+   Shop opens earned-only Mystery Ink Chests for a flat 5 Ink each, with
+   one-open and maximum ten-open actions, permanent discovery, and visible Epic
+   pity by open ten. There is no 100-open or auto-repeat action. Birth
+   stickers and status rewards are cosmetic; pens are expressive sidegrades that can
    change the normalized build split without adding stat points. Bag
    centers one selected living Scribbit inside eight persistent equipment
    slots: two each for weapon, armor, shoes, and accessory. Tapping discovered
    Gear fills an open matching slot; a full category requires an explicit remove
    before replacement. Gear discovery is reusable across living Scribbits,
-   while duplicate copies remain Forge material. Equipped weapons select their
-   cosmetic battle-effect family without changing combat math; permanent pens
+   while duplicate copies remain Forge material. Earned reusable Gear resolves
+   into at most one bounded Exhibition technique per category, with its exact
+   forged-rank effect snapshotted into the deterministic report; permanent pens
    and titles stay in a separate Styles section.
    The 36-item catalog includes eight wearable Shape Power Relics—two per
    power—with no combat hooks.
@@ -204,8 +211,9 @@ copy should keep the default view to one headline, one status, and one action.
    damage and is statistically capped at a 60% equal-build win rate.
 4. **Pick:** choose another player’s contender before the nightly resolution.
    Champion backers earn 3 Clout; runner-up backers earn 1.
-   Pick entry is a compact secondary action in Arena, below the direct Champion
-   or Spar battle setup. It opens the focused eight-contender picker without
+   Pick entry is the compact `RUMBLE` action in Arena, below the visible
+   Scribbit-versus-Champion/Spar matchup and its single `CHOOSE A RIVAL` action.
+   It opens the focused eight-contender picker without
    adding a prediction panel to the default stack. Each contender keeps one
    inspect target and one server-planned heart or lock state, and the selected
    card turns gold.
@@ -213,10 +221,11 @@ copy should keep the default view to one headline, one status, and one action.
    with that drawing's exact Rumble W/L, committed XP, committed Ink, and a
    server-selected last-bout replay. The client never reconstructs those rewards
    from cumulative totals.
-5. **Navigate:** the persistent dock is Arena, Bag, Draw, Battles, and Gallery.
-   Bag owns inventory, equipment, pens, and titles. Gallery owns community
-   Legends and personal Legacy Cards. The Scout Notebook is no longer in the
-   primary dock; its scene remains temporarily for older saved-replay returns.
+5. **Navigate:** the persistent dock is Arena, Bag, Draw, Battles, and Shop.
+   Shop owns earned-Ink Mystery Ink Chests. Bag owns inventory, equipment,
+   pens, and titles. Gallery owns community Legends and personal Legacy Cards
+   outside the primary dock and opens from the top-right Settings menu. The Scout Notebook is also outside the primary
+   dock; its scene remains temporarily for older saved-replay returns.
 6. **Return:** keep the visible UTC-day streak alive. The scheduler resolves
    the Rumble, crowns the Champion, stores the picked Scribbit's last played
    bout, creates the next Rumble post, and comments the real result on the
@@ -290,9 +299,10 @@ boundary during browser iteration—it is not the production game server.
   schedules without consuming or perturbing combat randomness.
 - `src/shared/content/carereactions.ts`: validated 72-line care deck covering
   Shape Power, action, three-day lifespan, and two stable per-Scribbit variants.
-- `src/shared/content/doodledares.ts`: validated 32-prompt/eight-twist authored
-  calendar shared by official Draw and Practice; deterministic selection stores
-  no player state and is version-locked against accidental schedule drift.
+- `src/shared/content/communitydrawthemes.ts`: append-only official Draw seasons
+  with 122 unique themes covering 366 Arena days in stable three-day blocks.
+- `src/shared/content/doodledares.ts`: separate validated 32-prompt/eight-twist
+  Practice catalog; deterministic selection stores no player state.
 - `src/shared/content/forecastblurbs.ts`: validated 32-day public-copy rotation
   used by production forecast generation and the browser mock without consuming
   combat-element randomness.
@@ -315,7 +325,9 @@ boundary during browser iteration—it is not the production game server.
   founders, and the localhost mock.
 - `src/shared/combat/upgrades.ts`: the versioned Ink Mod catalog, deterministic
   acquisition, and strict stored-state parsing. Only absent pre-feature data is
-  migrated; malformed present arrays fail closed.
+  migrated; malformed present arrays fail closed. Every authored mod crosses the
+  fixed-tick engine's integer resolution, and Scribbit details reuse the exact
+  catalog description instead of showing an unexplained upgrade name.
 - `src/shared/combat/selection.ts`: the single dominant-stat and Shape Power
   selector shared by server simulation, birth receipts, Inkbody, and founder art.
 - `src/shared/combat/shapepowercontent.ts`: shared names, reveal copy, neutral
@@ -386,7 +398,7 @@ boundary during browser iteration—it is not the production game server.
 - `src/client/lib/overlay.ts`: design-space DOM alignment plus the shared native
   action adapter; `replaypostfightactions.ts`, `replaypracticeoutcome.ts`, and
   `replaysparrivaldraft.ts` keep canvas presentation while exposing matching
-  focusable controls and restoring the correct layer after Rival Draft errors or
+  focusable controls and restoring the correct layer after Rival Run errors or
   close.
 - `src/client/lib/battlerecap.ts`: pure transcript-to-recap copy and finish
   semantics; `replaybattlerecap.ts` renders that plan without inferring results.
@@ -423,6 +435,9 @@ boundary during browser iteration—it is not the production game server.
 - `src/client/lib/sparrivals.ts`: pure rival-card truth planning from server
   Scribbits, forecast, prior-bout recap, and Founder Chronicle state;
   `replaysparrivaldraft.ts` owns the Phaser draft layout.
+- `src/client/lib/rivalrunflow.ts`: the one player-facing controller for slate
+  fetch, day rollover, chooser lifecycle, selected-rival Spar, report staging,
+  and VS ceremony. Arena, Draw, and Replay provide only their return/focus hooks.
 - `src/client/lib/replayreward.ts`: compact XP/Ink and level-up copy from the
   fresh server receipt; `replaypostfighteligibility.ts` keeps saved history from
   offering live Rival or Rumble-pick actions.
@@ -444,17 +459,25 @@ boundary during browser iteration—it is not the production game server.
 - `src/client/lib/shapepowerrelicart.ts`: vector painters for the eight cosmetic
   Shape Power Relics, joined into the normal accessory renderer.
 - `src/client/lib/cosmeticpreview.ts`: shared reward-art preview used by the
-  capsule ceremony and Collection.
+  chest ceremony and Bag.
 - `src/client/lib/capsulepresentation.ts`: pure collector-rank, ownership-copy,
-  and portrait-safe prize-action layout plans. The Mystery Ink overlay keeps
-  odds in its accessible description, one compact progress card, one crank,
-  and one reward card instead of repeating collection facts on screen.
+  batch-price, batch-summary, and portrait-safe prize-action plans. The Mystery
+  Ink Shop shows honest odds, a clickable chest, one or ten opens, one compact
+  progress card, and a disabled Reddit Gold Styles preview over a generated
+  scrapbook stage; its one player-facing entry lives in `src/client/scenes/Shop.ts`.
+- `src/client/lib/appmenu.ts`: shared top-right Settings menu for secondary
+  Gallery and Field Guide destinations without consuming a primary dock slot.
 - `src/client/lib/arenaasynclifecycle.ts`: pure latest-response policy for Arena
   mutations and refreshes. Responses from a stopped or replaced scene can only
   apply to the current activation or schedule a current/next-entry refresh.
 - `src/client/lib/collectionbook.ts`: Archero-inspired Bag with a large staged
   living Scribbit, eight persistent equipment slots, filters below the stage,
-  explicit removal/full-category feedback, and separate Styles inventory.
+  icon-only inventory tiles, tap-for-details Equip/Forge actions, explicit
+  removal/full-category feedback, and separate Styles inventory.
+- `src/client/lib/cosmeticpreviewfit.ts`: pure bounds-fitting plan that centers
+  differently shaped Gear art inside the Bag's fixed item and slot safe boxes.
+- `src/client/lib/bagrarity.ts`: one high-contrast common/Rare/Epic border
+  system shared by Bag inventory tiles and equipped slots.
 - `src/client/lib/baginventorygrid.ts`: one masked, bounded inventory tray whose
   native scroll surface provides touch inertia, wheel and keyboard access while
   keeping the Phaser item grid and scrollbar synchronized.

@@ -17,21 +17,75 @@
       <div class="tape tape-r"></div>
 
       <div class="logo-row">
-        <h1 class="logo">SCRIBBITS</h1>
+        <h1 class="logo">
+          <img
+            class="logo-image"
+            src="./assets/scribbits-logo.png"
+            alt="Scribbits"
+          />
+        </h1>
       </div>
-      <p class="sub">ARENA</p>
 
       <p class="tagline">
-        <strong>Draw it. Watch it fight.</strong>
+        <strong>Draw a Scribbit. Watch it fight.</strong>
       </p>
 
-      <div class="forecast" id="forecast-line">
-        <span class="fc-text">Tonight's forecast is brewing…</span>
-      </div>
-
-      <p class="today-status" id="today-status" role="status" aria-live="polite">
-        One drawing. One pick. Results tonight.
-      </p>
+      <section
+        class="scribbit-showcase"
+        id="today-status"
+        aria-labelledby="showcase-label"
+      >
+        <span class="showcase-label" id="showcase-label">
+          FROM OUR SKETCHBOOK
+        </span>
+        <div class="showcase-grid">
+          <article
+            class="showcase-card"
+            data-showcase-slot
+            data-fallback-name="Mossmop"
+            data-fallback-artist="Scribbits"
+          >
+            <img
+              class="showcase-image"
+              src="./assets/splash-doodle-mossmop.png"
+              alt="Mossmop, drawn in Scribbits"
+              decoding="async"
+            />
+            <strong class="showcase-name">MOSSMOP</strong>
+            <span class="showcase-artist">BY SCRIBBITS</span>
+          </article>
+          <article
+            class="showcase-card"
+            data-showcase-slot
+            data-fallback-name="Looplet"
+            data-fallback-artist="Scribbits"
+          >
+            <img
+              class="showcase-image"
+              src="./assets/splash-doodle-looplet.png"
+              alt="Looplet, drawn in Scribbits"
+              decoding="async"
+            />
+            <strong class="showcase-name">LOOPLET</strong>
+            <span class="showcase-artist">BY SCRIBBITS</span>
+          </article>
+          <article
+            class="showcase-card"
+            data-showcase-slot
+            data-fallback-name="Stormpuff"
+            data-fallback-artist="Scribbits"
+          >
+            <img
+              class="showcase-image"
+              src="./assets/splash-doodle-stormpuff.png"
+              alt="Stormpuff, drawn in Scribbits"
+              decoding="async"
+            />
+            <strong class="showcase-name">STORMPUFF</strong>
+            <span class="showcase-artist">BY SCRIBBITS</span>
+          </article>
+        </div>
+      </section>
 
       <button class="start-button" id="start-button" type="button">
         ENTER ARENA

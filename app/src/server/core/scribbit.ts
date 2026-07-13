@@ -36,6 +36,7 @@ import {
 } from '../../shared/combat/upgrades';
 import { getLevelForXp } from '../../shared/progression';
 export { getLevelForXp } from '../../shared/progression';
+import { isCommunityDrawThemeId } from '../../shared/content/communitydrawthemes';
 import {
   createSparRewardReceipt,
   isSparRewardReceipt,
@@ -71,6 +72,7 @@ import {
   discardWatchedTransaction,
   MAX_WATCH_TRANSACTION_ATTEMPTS,
 } from './storage';
+import { createVersionedJsonCodec } from './versionedJson';
 import {
   LEGACY_BELIEF_PRIVACY_MILLISECONDS,
   LEGACY_BELIEF_RECEIPT_MILLISECONDS,
@@ -1068,10 +1070,12 @@ const normalizeStoredLegacy = (
 };
 
 export const isScribbit = (value: unknown): value is Scribbit => {
-  return normalizeScribbitRecordValue(value, false) !== undefined;
+  return normalizeScribbitV1Value(value, false) !== undefined;
 };
 
-const normalizeScribbitRecordValue = (
+// Frozen v1 semantics. A future v2 must add a separate normalizer and migration
+// instead of changing which missing or legacy fields v0 -> v1 accepts.
+const normalizeScribbitV1Value = (
   value: unknown,
   allowPreFeatureMigration: boolean
 ): Scribbit | undefined => {
@@ -1137,6 +1141,13 @@ const normalizeScribbitRecordValue = (
     }
 
     const accessories = normalizeScribbitAccessories(value.accessories);
+    const drawingThemeId =
+      value.drawingThemeId === undefined || value.drawingThemeId === null
+        ? null
+        : isCommunityDrawThemeId(value.drawingThemeId)
+          ? value.drawingThemeId
+          : undefined;
+    if (drawingThemeId === undefined) return undefined;
     const equipmentLoadout =
       value.equipmentLoadout === undefined
         ? createEmptyEquipmentLoadout()
@@ -1160,6 +1171,7 @@ const normalizeScribbitRecordValue = (
       // writes so old fights and Legacy Cards remain immutable.
       stats: { ...value.stats },
       imageUrl: value.imageUrl,
+      drawingThemeId,
       bornDay: value.bornDay,
       expiresDay: value.expiresDay,
       belief: value.belief,
@@ -1204,28 +1216,115 @@ const normalizeScribbitRecordValue = (
 export const normalizeScribbitRecord = (
   value: unknown
 ): Scribbit | undefined => {
-  return normalizeScribbitRecordValue(value, true);
+  return normalizeScribbitV1Value(value, true);
+};
+
+export const SCRIBBIT_SCHEMA_VERSION = 1;
+
+const storedJsonValuesMatch = (left: unknown, right: unknown): boolean => {
+  if (left === right) return true;
+  if (Array.isArray(left) || Array.isArray(right)) {
+    return (
+      Array.isArray(left) &&
+      Array.isArray(right) &&
+      left.length === right.length &&
+      left.every((value, index) => storedJsonValuesMatch(value, right[index]))
+    );
+  }
+  if (!isRecord(left) || !isRecord(right)) return false;
+  const leftKeys = Object.keys(left);
+  const rightKeys = Object.keys(right);
+  return (
+    leftKeys.length === rightKeys.length &&
+    leftKeys.every(
+      (key) =>
+        Object.hasOwn(right, key) &&
+        storedJsonValuesMatch(left[key], right[key])
+    )
+  );
+};
+
+// This explicit key list is the immutable v1 storage shape. Keeping it separate
+// from cloneScribbit prevents a future runtime field from silently changing old
+// migration output.
+const encodeScribbitV1 = (scribbit: Scribbit): Record<string, unknown> => {
+  const clonedScribbit = cloneScribbit(scribbit);
+  return {
+    schemaVersion: 1,
+    id: clonedScribbit.id,
+    name: clonedScribbit.name,
+    artist: clonedScribbit.artist,
+    element: clonedScribbit.element,
+    stats: clonedScribbit.stats,
+    imageUrl: clonedScribbit.imageUrl,
+    drawingThemeId: clonedScribbit.drawingThemeId,
+    bornDay: clonedScribbit.bornDay,
+    expiresDay: clonedScribbit.expiresDay,
+    belief: clonedScribbit.belief,
+    wins: clonedScribbit.wins,
+    losses: clonedScribbit.losses,
+    status: clonedScribbit.status,
+    legendTitle: clonedScribbit.legendTitle,
+    isFounding: clonedScribbit.isFounding,
+    accessories: clonedScribbit.accessories,
+    gearRanks: clonedScribbit.gearRanks,
+    equipmentLoadout: clonedScribbit.equipmentLoadout,
+    upgrades: clonedScribbit.upgrades,
+    level: clonedScribbit.level,
+    xp: clonedScribbit.xp,
+    mood: clonedScribbit.mood,
+    careDoneToday: clonedScribbit.careDoneToday,
+    legacy: clonedScribbit.legacy,
+  };
+};
+
+export const migrateScribbitV0ToV1 = (storedValue: unknown): unknown => {
+  const normalizedScribbit = normalizeScribbitV1Value(storedValue, true);
+  return normalizedScribbit
+    ? encodeScribbitV1(normalizedScribbit)
+    : storedValue;
+};
+
+const scribbitJsonCodec = createVersionedJsonCodec<Scribbit>({
+  currentVersion: SCRIBBIT_SCHEMA_VERSION,
+  legacyVersion: 0,
+  migrations: { 0: migrateScribbitV0ToV1 },
+  decodeCurrent: (storedValue) => {
+    if (
+      !isRecord(storedValue) ||
+      storedValue.schemaVersion !== SCRIBBIT_SCHEMA_VERSION
+    ) {
+      return undefined;
+    }
+    const scribbitValue = { ...storedValue };
+    delete scribbitValue.schemaVersion;
+    const scribbit = normalizeScribbitV1Value(scribbitValue, false);
+    if (!scribbit) return undefined;
+    const canonicalValue = encodeScribbitV1(scribbit);
+    delete canonicalValue.schemaVersion;
+    return storedJsonValuesMatch(scribbitValue, canonicalValue)
+      ? scribbit
+      : undefined;
+  },
+  encodeCurrent: encodeScribbitV1,
+});
+
+export const parseStoredScribbit = (storedScribbit: string | undefined) =>
+  scribbitJsonCodec.parse(storedScribbit);
+
+export const serializeScribbit = (scribbit: Scribbit): string => {
+  const normalizedScribbit = normalizeScribbitV1Value(scribbit, false);
+  if (!normalizedScribbit) {
+    throw new Error('Scribbit failed authoritative runtime validation.');
+  }
+  return scribbitJsonCodec.serialize(normalizedScribbit);
 };
 
 export const parseScribbit = (
   storedScribbit: string | undefined
 ): Scribbit | undefined => {
-  if (storedScribbit === undefined) {
-    return undefined;
-  }
-
-  try {
-    const parsedScribbit: unknown = JSON.parse(storedScribbit);
-    const scribbit = normalizeScribbitRecord(parsedScribbit);
-
-    if (scribbit) {
-      return scribbit;
-    }
-  } catch (error) {
-    console.error('Failed to parse stored scribbit:', error);
-  }
-
-  return undefined;
+  const parsedScribbit = parseStoredScribbit(storedScribbit);
+  return parsedScribbit.status === 'valid' ? parsedScribbit.value : undefined;
 };
 
 export const createScribbit = (options: {
@@ -1237,6 +1336,7 @@ export const createScribbit = (options: {
   artist: string;
   imageUrl: string;
   day: number;
+  drawingThemeId?: string | null;
 }): Scribbit => {
   const accessories = (options.draft.accessories ?? []).map((accessory) => {
     return accessory.id;
@@ -1248,6 +1348,7 @@ export const createScribbit = (options: {
     element: options.draft.element,
     stats: normalizeStats(options.draft.stats),
     imageUrl: options.imageUrl,
+    drawingThemeId: options.drawingThemeId ?? null,
     bornDay: options.day,
     expiresDay: options.day + LIFESPAN_DAYS,
     belief: 0,
@@ -1372,7 +1473,7 @@ export const loadScribbits = async (
 };
 
 const prepareScribbitForStorage = (scribbit: Scribbit): Scribbit => {
-  const normalizedScribbit = normalizeScribbitRecordValue(scribbit, false);
+  const normalizedScribbit = normalizeScribbitV1Value(scribbit, false);
   if (!normalizedScribbit) {
     throw new Error('Scribbit failed authoritative runtime validation.');
   }
@@ -1387,7 +1488,7 @@ const setValidatedScribbitRecord = async (
     throw new Error('Safe Scribbit storage requires transaction support.');
   }
   const key = getScribbitKey(scribbit.id);
-  const scribbitJson = JSON.stringify(scribbit);
+  const scribbitJson = serializeScribbit(scribbit);
 
   for (
     let attempt = 0;
@@ -1409,6 +1510,7 @@ const setValidatedScribbitRecord = async (
       if (Array.isArray(result) && result.length > 0) return;
     } catch (error) {
       await discardWatchedTransaction(transaction, 'Scribbit storage');
+      if ((await storage.get(key)) === scribbitJson) return;
       throw error;
     }
   }
@@ -1424,7 +1526,7 @@ export const queueStoredScribbit = async (
   const storedScribbit = prepareScribbitForStorage(scribbit);
   await transaction.set(
     getScribbitKey(storedScribbit.id),
-    JSON.stringify(storedScribbit)
+    serializeScribbit(storedScribbit)
   );
   await transaction.set(getScribbitOwnerKey(storedScribbit.id), ownerUserId);
   await transaction.zAdd(getUserScribbitsKey(ownerUserId), {
@@ -1469,7 +1571,7 @@ const storedScribbitMatches = async (
     ]);
 
   if (
-    storedJson !== JSON.stringify(scribbit) ||
+    storedJson !== serializeScribbit(scribbit) ||
     owner !== ownerUserId ||
     userIndexScore !== scribbit.bornDay
   ) {
@@ -1584,10 +1686,7 @@ const mutateAliveScribbit = async (
 
       const updatedScribbit = await mutate(scribbit);
       await transaction.multi();
-      await transaction.set(
-        scribbitKey,
-        JSON.stringify(cloneScribbit(updatedScribbit))
-      );
+      await transaction.set(scribbitKey, serializeScribbit(updatedScribbit));
       const result = await transaction.exec();
       if (Array.isArray(result) && result.length > 0) {
         return { scribbit: updatedScribbit, changed: true };
@@ -1700,7 +1799,7 @@ export const equipGearForScribbit = async (
               },
       });
       await transaction.multi();
-      await transaction.set(scribbitKey, JSON.stringify(expectedScribbit));
+      await transaction.set(scribbitKey, serializeScribbit(expectedScribbit));
       const result = await transaction.exec();
       if (Array.isArray(result) && result.length > 0) {
         return {
@@ -1737,6 +1836,93 @@ export const equipGearForScribbit = async (
   throw new Error(
     `Scribbit ${request.scribbitId} changed too often to equip Gear safely.`
   );
+};
+
+export const refreshEquippedGearRankForUser = async (
+  storage: ArenaStorage,
+  userId: string,
+  gearId: string,
+  rank: GearRank
+): Promise<void> => {
+  if (!storage.watch || !findGearCosmetic(gearId) || !isGearRank(rank)) {
+    throw new Error('Refreshing forged Gear requires valid durable state.');
+  }
+  const rankedScribbits = await storage.zRange(
+    getUserAliveScribbitsKey(userId),
+    0,
+    MAX_ALIVE_PER_USER + 10,
+    { by: 'rank', reverse: true }
+  );
+
+  for (const { member: scribbitId } of rankedScribbits) {
+    const scribbitKey = getScribbitKey(scribbitId);
+    const ownerKey = getScribbitOwnerKey(scribbitId);
+    let settled = false;
+    for (
+      let attempt = 0;
+      attempt < MAX_WATCH_TRANSACTION_ATTEMPTS;
+      attempt += 1
+    ) {
+      let transaction: ArenaTransaction | undefined;
+      let expectedScribbit: Scribbit | undefined;
+      try {
+        transaction = await storage.watch(scribbitKey, ownerKey);
+        const [storedScribbitJson, ownerUserId] = await Promise.all([
+          storage.get(scribbitKey),
+          storage.get(ownerKey),
+        ]);
+        const scribbit = parseScribbit(storedScribbitJson);
+        if (!scribbit && storedScribbitJson !== undefined) {
+          throw new Error(
+            `Stored Scribbit ${scribbitId} is invalid and was preserved.`
+          );
+        }
+        const wearsGear =
+          scribbit?.status === 'alive' &&
+          Object.values(scribbit.equipmentLoadout).some((slots) =>
+            slots.includes(gearId)
+          );
+        if (!scribbit || ownerUserId !== userId || !wearsGear) {
+          await transaction.unwatch();
+          settled = true;
+          break;
+        }
+        if (scribbit.gearRanks?.[gearId] === rank) {
+          await transaction.unwatch();
+          settled = true;
+          break;
+        }
+
+        expectedScribbit = prepareScribbitForStorage({
+          ...scribbit,
+          gearRanks: { ...(scribbit.gearRanks ?? {}), [gearId]: rank },
+        });
+        await transaction.multi();
+        await transaction.set(scribbitKey, serializeScribbit(expectedScribbit));
+        const result = await transaction.exec();
+        if (Array.isArray(result) && result.length > 0) {
+          settled = true;
+          break;
+        }
+      } catch (error) {
+        await discardWatchedTransaction(transaction, 'Forged Gear refresh');
+        const recoveredScribbit = parseScribbit(await storage.get(scribbitKey));
+        if (
+          expectedScribbit &&
+          recoveredScribbit?.gearRanks?.[gearId] === rank
+        ) {
+          settled = true;
+          break;
+        }
+        throw error;
+      }
+    }
+    if (!settled) {
+      throw new Error(
+        `Scribbit ${scribbitId} changed too often to apply forged Gear.`
+      );
+    }
+  }
 };
 
 export type DailyCareClaim = {
@@ -1950,12 +2136,7 @@ const repairDailySparReward = async (
     } catch (error) {
       await discardWatchedTransaction(transaction, 'Daily spar reward repair');
       if (
-        await dailySparRewardWasCommitted(
-          storage,
-          keys,
-          utcDateKey,
-          projection
-        )
+        await dailySparRewardWasCommitted(storage, keys, utcDateKey, projection)
       ) {
         await refreshDailySparRewardExpiry(storage, keys.dailyRewardKey);
         return true;
@@ -2008,7 +2189,9 @@ const quarantineDailySparReward = async (
         transaction,
         'Daily spar reward quarantine'
       );
-      if ((await storage.hGet(dailyRewardKey, utcDateKey)) === quarantineValue) {
+      if (
+        (await storage.hGet(dailyRewardKey, utcDateKey)) === quarantineValue
+      ) {
         return;
       }
       if (attempt === MAX_WATCH_TRANSACTION_ATTEMPTS - 1) {
@@ -2102,7 +2285,7 @@ export const claimAndAwardDailySparWin = async (
         receipt: rewardReceipt,
         receiptValue: JSON.stringify(rewardReceipt),
         scribbitBeforeValue: scribbitValue!,
-        scribbitAfterValue: JSON.stringify(cloneScribbit(rewardedScribbit)),
+        scribbitAfterValue: serializeScribbit(rewardedScribbit),
         inkBeforeValue: inkValue,
         inkAfterValue: (inkBalance + input.inkAmount).toString(),
       };
@@ -2286,10 +2469,7 @@ export const recordRumbleStandingOnScribbit = async (
 
       await transaction.multi();
       if (updatedScribbit && !updatedScribbit.isFounding) {
-        await transaction.set(
-          scribbitKey,
-          JSON.stringify(cloneScribbit(updatedScribbit))
-        );
+        await transaction.set(scribbitKey, serializeScribbit(updatedScribbit));
       }
       await transaction.hSet(receiptKey, {
         [receiptField]: receiptValue,

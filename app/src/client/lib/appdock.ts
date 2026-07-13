@@ -4,12 +4,7 @@ import { setGalleryTab } from './registry';
 import { appTabBar, fadeToScene } from './ui';
 import type { AppTabItem, AppTabKey } from './ui';
 
-type AppDockRoute =
-  | 'ArenaHome'
-  | 'bag'
-  | 'gallery'
-  | 'dailyDraw'
-  | 'MyBattles';
+type AppDockRoute = 'ArenaHome' | 'bag' | 'dailyDraw' | 'MyBattles' | 'Shop';
 
 type AppDockDefinition = {
   key: AppTabKey;
@@ -22,7 +17,7 @@ const APP_DOCK_TABS: readonly AppDockDefinition[] = [
   { key: 'bag', label: 'Bag', route: 'bag' },
   { key: 'draw', label: 'Draw', route: 'dailyDraw' },
   { key: 'battles', label: 'Battles', route: 'MyBattles' },
-  { key: 'gallery', label: 'Gallery', route: 'gallery' },
+  { key: 'shop', label: 'Shop', route: 'Shop' },
 ];
 
 export type AppDockOverrides = Readonly<Partial<Record<AppTabKey, () => void>>>;
@@ -32,8 +27,8 @@ function followAppDockRoute(scene: Scene, route: AppDockRoute): void {
     navigateToDailyDraw(scene);
     return;
   }
-  if (route === 'bag' || route === 'gallery') {
-    setGalleryTab(scene, route === 'bag' ? 'collection' : 'legends');
+  if (route === 'bag') {
+    setGalleryTab(scene, 'collection');
     fadeToScene(scene, 'Gallery');
     return;
   }
@@ -42,7 +37,7 @@ function followAppDockRoute(scene: Scene, route: AppDockRoute): void {
 
 export function appDock(
   scene: Scene,
-  active: AppTabKey,
+  active: AppTabKey | null,
   overrides: AppDockOverrides = {}
 ): ReturnType<typeof appTabBar> {
   const tabs: AppTabItem[] = APP_DOCK_TABS.map((definition) => ({

@@ -2,8 +2,16 @@ import * as Phaser from 'phaser';
 import type { Scene } from 'phaser';
 import { UI } from './theme';
 import { screenTitle } from './screentitle';
-export const PAPER_STAGE_TEXTURE = 'scribbits-paper-stage';
-export const BATTLE_STAGE_TEXTURE = 'scribbits-battle-stage';
+import {
+  COMMON_GEAR_ART_TEXTURE,
+  RARE_EPIC_GEAR_ART_TEXTURE,
+} from './gearart';
+export const SCRIBBITS_STAGE_TEXTURE = 'scribbits-stage';
+export const PAPER_STAGE_TEXTURE = SCRIBBITS_STAGE_TEXTURE;
+export const BATTLE_STAGE_TEXTURE = SCRIBBITS_STAGE_TEXTURE;
+export const FIGHT_START_TEXTURE = 'ui-fight-start';
+export const BRAND_LOGO_TEXTURE = 'scribbits-logo';
+export const SHOP_STAGE_TEXTURE = 'scribbits-shop-stage';
 
 export const BATTLE_CONTROL_BUTTON_TEXTURES = {
   sound: 'ui-button-battle-sound',
@@ -25,11 +33,20 @@ const assetUrl = (fileName: string): string => {
 };
 
 export function preloadVisualAssets(scene: Scene): void {
-  scene.load.image(PAPER_STAGE_TEXTURE, assetUrl('scribbits-paper-stage.jpg'));
-  scene.load.image(
-    BATTLE_STAGE_TEXTURE,
-    assetUrl('scribbits-battle-stage.jpg')
+  scene.load.image(SCRIBBITS_STAGE_TEXTURE, assetUrl('scribbits-stage.png'));
+  scene.load.image(FIGHT_START_TEXTURE, assetUrl('ui-fight-start.png'));
+  scene.load.image(BRAND_LOGO_TEXTURE, assetUrl('scribbits-logo.png'));
+  scene.load.atlas(
+    COMMON_GEAR_ART_TEXTURE,
+    assetUrl('gear-common-atlas.png'),
+    assetUrl('gear-common-atlas.json')
   );
+  scene.load.atlas(
+    RARE_EPIC_GEAR_ART_TEXTURE,
+    assetUrl('gear-rare-epic-atlas.png'),
+    assetUrl('gear-rare-epic-atlas.json')
+  );
+  scene.load.image(SHOP_STAGE_TEXTURE, assetUrl('scribbits-shop-stage.png'));
   Object.entries(BATTLE_CONTROL_BUTTON_TEXTURES).forEach(([kind, texture]) => {
     scene.load.image(texture, assetUrl(`ui-button-battle-${kind}.png`));
   });
@@ -93,21 +110,21 @@ export function arenaStage(
   // Reuse the neutral paper texture for real fiber and wear. The live stage
   // supplies the arena marks, cork desk, and title.
   const paperTexture = scene.add
-    .image(0, 0, PAPER_STAGE_TEXTURE)
-    .setOrigin(0)
-    .setDisplaySize(width, height)
-    .setCrop(64, 205, 592, 990);
+    .image(width / 2, height / 2, PAPER_STAGE_TEXTURE)
+    .setOrigin(0.5)
+    .setCrop(64, 205, 592, 990)
+    .setScale(Math.max(width / 592, height / 990));
   const paperMaskPoints = [
     { x: 66, y: 238 },
     { x: 118, y: 226 },
     { x: width / 2 - 38, y: 233 },
     { x: width - 110, y: 224 },
     { x: width - 65, y: 242 },
-    { x: width - 72, y: 1180 },
-    { x: width - 126, y: 1194 },
-    { x: width / 2 + 24, y: 1185 },
-    { x: 118, y: 1195 },
-    { x: 64, y: 1174 },
+    { x: width - 72, y: height - 100 },
+    { x: width - 126, y: height - 86 },
+    { x: width / 2 + 24, y: height - 95 },
+    { x: 118, y: height - 85 },
+    { x: 64, y: height - 106 },
   ].map(({ x, y }) => new Phaser.Math.Vector2(x, y));
   const paperShadow = scene.add.graphics().setPosition(7, 9);
   paperShadow.fillStyle(0x4f321f, 0.35);
@@ -175,16 +192,24 @@ export function battleStage(
   return fixedStage(scene, BATTLE_STAGE_TEXTURE, depth);
 }
 
+export function shopStage(
+  scene: Scene,
+  depth = -100
+): Phaser.GameObjects.Image {
+  return fixedStage(scene, SHOP_STAGE_TEXTURE, depth);
+}
+
 function fixedStage(
   scene: Scene,
   texture: string,
   depth: number
 ): Phaser.GameObjects.Image {
   const { width, height } = scene.scale;
-  return scene.add
-    .image(0, 0, texture)
-    .setOrigin(0)
-    .setDisplaySize(width, height)
+  const stage = scene.add.image(width / 2, height / 2, texture);
+  const coverScale = Math.max(width / stage.width, height / stage.height);
+  return stage
+    .setOrigin(0.5)
+    .setScale(coverScale)
     .setScrollFactor(0)
     .setDepth(depth);
 }

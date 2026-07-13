@@ -1,0 +1,345 @@
+import assert from 'node:assert/strict';
+import { createRequire } from 'node:module';
+import { join } from 'node:path';
+import test from 'node:test';
+
+const compiledSharedRoot = process.env.SCRIBBITS_COMPILED_SHARED_ROOT;
+const compiledServerRoot = process.env.SCRIBBITS_COMPILED_SERVER_ROOT;
+
+if (!compiledSharedRoot || !compiledServerRoot) {
+  throw new Error(
+    'Run Gear balance tests through scripts/run-test-suites.mjs.'
+  );
+}
+
+const require = createRequire(import.meta.url);
+const arena = require(join(compiledSharedRoot, 'arena.js'));
+const combat = require(join(compiledSharedRoot, 'combat', 'index.js'));
+const combatSelection = require(
+  join(compiledSharedRoot, 'combat', 'selection.js')
+);
+const combatTranscript = require(
+  join(compiledSharedRoot, 'combat', 'transcriptvalidation.js')
+);
+const cosmetics = require(join(compiledSharedRoot, 'cosmetics.js'));
+const equipment = require(join(compiledSharedRoot, 'equipment.js'));
+const gearCombat = require(join(compiledSharedRoot, 'gearcombat.js'));
+const battle = require(join(compiledServerRoot, 'core', 'battle.js'));
+const battleStore = require(join(compiledServerRoot, 'core', 'battleStore.js'));
+const forecast = require(join(compiledServerRoot, 'core', 'forecast.js'));
+
+const builds = {
+  inkquake: { chonk: 55, spike: 15, zip: 15, charm: 15 },
+  nib_halo: { chonk: 15, spike: 55, zip: 15, charm: 15 },
+  smearstep: { chonk: 15, spike: 15, zip: 55, charm: 15 },
+  colorburst: { chonk: 15, spike: 15, zip: 15, charm: 55 },
+};
+
+const makeFighter = (id, stats, loadout, gearRanks = {}) => ({
+  id,
+  name: id,
+  artist: 'gear-balance',
+  element: 'tide',
+  stats,
+  imageUrl: `/api/drawing/${id}`,
+  bornDay: 8,
+  expiresDay: 11,
+  belief: 0,
+  wins: 0,
+  losses: 0,
+  status: 'alive',
+  legendTitle: null,
+  isFounding: false,
+  accessories: [],
+  gearRanks,
+  equipmentLoadout: loadout,
+  upgrades: [],
+  level: 1,
+  xp: 0,
+  mood: 'happy',
+  careDoneToday: [],
+  legacy: null,
+});
+
+const fighterWithGear = (id, stats, gearId, rank) => {
+  const gear = cosmetics.findGearCosmetic(gearId);
+  assert.ok(gear, `Missing Gear ${gearId}`);
+  return makeFighter(
+    id,
+    stats,
+    equipment.equipGearInLoadout(equipment.createEmptyEquipmentLoadout(), {
+      category: gear.category,
+      slotIndex: 0,
+      gearId,
+    }),
+    { [gearId]: rank }
+  );
+};
+
+const balancedForecast = forecast.generateForecastForDay(9);
+
+test('Gear resolution keeps the 100-point drawing identity and freezes v3 transcripts', () => {
+  const stats = builds.nib_halo;
+  const geared = fighterWithGear('gear-v3', stats, 'tiny-sword', 6);
+  const plain = makeFighter(
+    'plain-v3',
+    stats,
+    equipment.createEmptyEquipmentLoadout()
+  );
+  const report = battle.simulate(
+    geared,
+    plain,
+    41,
+    balancedForecast,
+    'exhibition'
+  );
+
+  assert.equal(
+    Object.values(geared.stats).reduce((sum, value) => sum + value),
+    100
+  );
+  assert.equal(combatSelection.selectPrimaryPower(geared.stats), 'nib_halo');
+  assert.equal(report.simulation.version, 3);
+  assert.equal(
+    report.simulation.fighters[0].gear.techniques[0].leadGearId,
+    'tiny-sword'
+  );
+  assert.ok(combatTranscript.parseBattleTranscript(report.simulation));
+  assert.equal(battleStore.isBattleReport(report), true);
+  assert.equal(
+    battleStore.isBattleReport({ ...report, kind: 'rumble' }),
+    false
+  );
+  assert.equal(battleStore.isBattleReport({ ...report, kind: 'boss' }), false);
+
+  const rumble = battle.simulate(geared, plain, 41, balancedForecast, 'rumble');
+  assert.equal(rumble.simulation.version, 2);
+  assert.equal(rumble.simulation.fighters[0].gear, undefined);
+  assert.equal(battleStore.isBattleReport(rumble), true);
+});
+
+test('Gear summaries expose every applied benefit and tradeoff', () => {
+  const rush = gearCombat.getGearTechniqueEffect(
+    cosmetics.findGearCosmetic('smearstep-speed-scarf'),
+    6
+  );
+  const aim = gearCombat.getGearTechniqueEffect(
+    cosmetics.findGearCosmetic('tiny-sword'),
+    6
+  );
+  const focus = gearCombat.getGearTechniqueEffect(
+    cosmetics.findGearCosmetic('monocle'),
+    1
+  );
+
+  assert.match(rush.summary, /DASH IMPACT/);
+  assert.match(rush.summary, /HEARTS/);
+  assert.match(rush.summary, /COOLDOWN/);
+  assert.match(aim.summary, /IMPACT/);
+  assert.match(aim.summary, /HEARTS/);
+  assert.match(aim.summary, /COOLDOWN/);
+  assert.match(focus.summary, /CRIT/);
+  assert.match(focus.summary, /RECOVERY/);
+  assert.doesNotMatch(focus.summary, /OPENING/);
+});
+
+test('one strongest lead and one support resolve into a bounded category technique', () => {
+  const loadout = {
+    ...equipment.createEmptyEquipmentLoadout(),
+    weapon: ['tiny-sword', 'inkquake-rumble-belt'],
+  };
+  const fighter = makeFighter('lead-support', builds.inkquake, loadout, {
+    'tiny-sword': 3,
+    'inkquake-rumble-belt': 6,
+  });
+  const resolved = gearCombat.resolveGearCombatLoadout(fighter);
+
+  assert.equal(resolved.techniques.length, 1);
+  assert.equal(resolved.techniques[0].leadGearId, 'inkquake-rumble-belt');
+  assert.equal(resolved.techniques[0].supportGearId, 'tiny-sword');
+  assert.equal(resolved.techniques[0].effectFamily, 'ready');
+  assert.equal(resolved.snapshot.techniques.length, 1);
+  assert.ok(resolved.modifiers.damagePermille >= 970);
+  assert.ok(resolved.modifiers.initialDelayTicksDelta >= -2);
+});
+
+test('all six Gear families stay near neutral across powers and slot swaps', () => {
+  const representativeGearIds = [
+    'beanie',
+    'smearstep-speed-scarf',
+    'monocle',
+    'bowtie',
+    'flower-crown',
+    'tiny-sword',
+  ];
+  const checkedRates = [];
+  const outOfBounds = [];
+
+  for (const gearId of representativeGearIds) {
+    for (const rank of arena.GEAR_RANKS) {
+      for (const [power, stats] of Object.entries(builds)) {
+        let gearWins = 0;
+        let fights = 0;
+        for (let seed = 1; seed <= 600; seed += 1) {
+          const geared = fighterWithGear(
+            `${gearId}-${rank}-${power}-gear`,
+            stats,
+            gearId,
+            rank
+          );
+          const plain = makeFighter(
+            `${gearId}-${rank}-${power}-plain`,
+            stats,
+            equipment.createEmptyEquipmentLoadout()
+          );
+          const first = battle.simulate(
+            geared,
+            plain,
+            seed,
+            balancedForecast,
+            'exhibition'
+          );
+          const second = battle.simulate(
+            plain,
+            geared,
+            seed,
+            balancedForecast,
+            'exhibition'
+          );
+          gearWins +=
+            Number(first.winner === 'a') + Number(second.winner === 'b');
+          fights += 2;
+        }
+        const rate = gearWins / fights;
+        checkedRates.push({ gearId, rank, power, rate });
+        if (rate < 0.4 || rate > 0.6) {
+          outOfBounds.push(
+            `${gearId} ${rank}★ ${power}: ${(rate * 100).toFixed(1)}%`
+          );
+        }
+      }
+    }
+  }
+
+  assert.equal(checkedRates.length, 144);
+  assert.deepEqual(outOfBounds, []);
+});
+
+test('full Red Star builds cover all families and remain bounded against one-star', () => {
+  const familyCoveringBuilds = [
+    ['tiny-sword', 'beanie', 'smearstep-speed-scarf', 'flower-crown'],
+    ['inkquake-rumble-belt', 'beanie', 'smearstep-speed-scarf', 'monocle'],
+  ];
+  const makeFullBuild = (id, rank, gearIds) => {
+    let loadout = equipment.createEmptyEquipmentLoadout();
+    const gearRanks = {};
+    for (const gearId of gearIds) {
+      const gear = cosmetics.findGearCosmetic(gearId);
+      loadout = equipment.equipGearInLoadout(loadout, {
+        category: gear.category,
+        slotIndex: 0,
+        gearId,
+      });
+      gearRanks[gearId] = rank;
+    }
+    return makeFighter(id, builds.colorburst, loadout, gearRanks);
+  };
+
+  const coveredFamilies = new Set();
+  for (const gearIds of familyCoveringBuilds) {
+    for (const gearId of gearIds) {
+      coveredFamilies.add(cosmetics.findGearCosmetic(gearId).effectFamily);
+    }
+  }
+  assert.deepEqual(
+    [...coveredFamilies].sort(),
+    ['aim', 'focus', 'fortune', 'guard', 'ready', 'rush']
+  );
+
+  for (const [buildIndex, gearIds] of familyCoveringBuilds.entries()) {
+    let redWins = 0;
+    let fights = 0;
+    for (let seed = 1; seed <= 200; seed += 1) {
+      const red = makeFullBuild(`full-red-${buildIndex}`, 6, gearIds);
+      const oneStar = makeFullBuild(
+        `full-one-star-${buildIndex}`,
+        1,
+        gearIds
+      );
+      const first = battle.simulate(
+        red,
+        oneStar,
+        seed,
+        balancedForecast,
+        'exhibition'
+      );
+      const second = battle.simulate(
+        oneStar,
+        red,
+        seed,
+        balancedForecast,
+        'exhibition'
+      );
+      redWins += Number(first.winner === 'a') + Number(second.winner === 'b');
+      fights += 2;
+    }
+    const redWinRate = redWins / fights;
+    assert.ok(
+      redWinRate >= 0.42 && redWinRate <= 0.58,
+      `full Red Star build ${buildIndex + 1} produced ${(redWinRate * 100).toFixed(1)}% wins against one-star`
+    );
+  }
+});
+
+test('Gear identity changes report ids and malformed snapshots fail closed', () => {
+  const stats = builds.inkquake;
+  const rankOne = fighterWithGear('identity-gear', stats, 'beanie', 1);
+  const red = fighterWithGear('identity-gear', stats, 'beanie', 6);
+  const plain = makeFighter(
+    'identity-plain',
+    stats,
+    equipment.createEmptyEquipmentLoadout()
+  );
+  const first = battle.simulate(
+    rankOne,
+    plain,
+    9,
+    balancedForecast,
+    'exhibition'
+  );
+  const second = battle.simulate(red, plain, 9, balancedForecast, 'exhibition');
+  assert.notEqual(first.id, second.id);
+  assert.notEqual(first.simulation.seed, second.simulation.seed);
+
+  const invalidGear = {
+    ...first.simulation.fighters[0].gear,
+    modifiers: {
+      ...first.simulation.fighters[0].gear.modifiers,
+      damagePermille: 1_200,
+    },
+  };
+  assert.throws(
+    () =>
+      combat.simulateCombat({
+        seed: 'invalid-gear',
+        fighters: [
+          {
+            id: 'invalid-a',
+            name: 'Invalid A',
+            element: 'tide',
+            stats,
+            upgrades: [],
+            gear: invalidGear,
+          },
+          {
+            id: 'invalid-b',
+            name: 'Invalid B',
+            element: 'tide',
+            stats,
+            upgrades: [],
+          },
+        ],
+      }),
+    /Gear snapshot/
+  );
+});

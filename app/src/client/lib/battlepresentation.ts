@@ -185,11 +185,11 @@ export function planReplayBattleLayout(input: {
   const viewportHeight = Math.max(800, input.viewportHeight);
   const pageLeft = Math.round(clamp(viewportWidth * 0.028, 16, 20));
   const pageTop = 8;
-  const toolbarY = viewportHeight - 160;
-  const controlGap = 8;
-  const soundButtonWidth = 96;
-  const speedButtonWidth = 96;
-  const skipButtonWidth = 96;
+  const toolbarY = viewportHeight - 140;
+  const controlGap = 16;
+  const soundButtonWidth = 112;
+  const speedButtonWidth = 112;
+  const skipButtonWidth = 112;
   const controlsWidth =
     soundButtonWidth + speedButtonWidth + skipButtonWidth + controlGap * 2;
   const soundButtonX =
@@ -208,8 +208,8 @@ export function planReplayBattleLayout(input: {
   const fighterNameY = 166;
   const heartRowY = 208;
   const arenaCaptionY = 252;
-  const tickerHeight = 72;
-  const tickerY = viewportHeight - 54;
+  const tickerHeight = 56;
+  const tickerY = viewportHeight - 50;
   const arenaTop = 355;
   const arenaBottom = toolbarY - 62;
   const homeY = (arenaTop + arenaBottom) / 2;
@@ -245,7 +245,7 @@ export function planReplayBattleLayout(input: {
     arenaVerticalPadding: 140,
     tickerX: viewportWidth / 2,
     tickerY,
-    tickerWidth: Math.min(viewportWidth - 40, 664),
+    tickerWidth: Math.min(viewportWidth - 64, 632),
     tickerHeight,
     tickerTagWidth: 0,
     fighterDisplaySize: 232,

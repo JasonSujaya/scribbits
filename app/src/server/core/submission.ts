@@ -30,6 +30,7 @@ import {
   getUserAliveScribbitsKey,
   getUserScribbitsKey,
   queueStoredScribbit,
+  serializeScribbit,
 } from './scribbit';
 import {
   advancePlayStreak,
@@ -264,7 +265,7 @@ const submissionWasCommitted = async (
   ]);
 
   if (
-    storedJson !== JSON.stringify(scribbit) ||
+    storedJson !== serializeScribbit(scribbit) ||
     ownerUserId !== input.userId ||
     dailyFlags.drawn !== '1' ||
     dailyFlags.entered !== '1' ||

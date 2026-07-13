@@ -13,19 +13,13 @@ import {
   getReplayReturn,
   getReplayPass,
   getArena,
-  stageDirectBattle,
   setArena,
   setFounderChronicleBeats,
   setArenaFocus,
 } from '../lib/registry';
 import { loadDrawing, levelOf } from '../lib/scribbits';
 import { ELEMENT_STYLES, prefersReducedMotion, UI } from '../lib/theme';
-import {
-  label,
-  stickerCard,
-  daysLeftFor,
-  fadeToScene,
-} from '../lib/ui';
+import { label, stickerCard, daysLeftFor, fadeToScene } from '../lib/ui';
 import { openDetailModal } from '../lib/detailmodal';
 import { LiveSprite } from '../lib/livesprite';
 import {
@@ -41,7 +35,7 @@ import type {
   ShapePowerDrawCommand,
   ShapePowerVisualEffect,
 } from '../lib/shapepowerpresentation';
-import { fetchArena, fetchSparRivals, spar } from '../lib/api';
+import { fetchArena } from '../lib/api';
 import {
   calculateReplayFrame,
   getTimelineEventsInRange,
@@ -75,11 +69,14 @@ import type {
 import { isScribbitOwnedByViewer } from '../lib/battlejournal';
 import { drawReplayBattleBackground } from '../lib/replaybattlebackground';
 import type { ReplayBattleBackdrop } from '../lib/replaybattlebackground';
+import { FIGHT_START_TEXTURE } from '../lib/visualassets';
+import {
+  createStickerShine,
+  type StickerShineHandle,
+} from '../lib/stickerfxshader';
 import { createReplayBattleHud } from '../lib/replaybattlehud';
 import type { ReplayBattleHud } from '../lib/replaybattlehud';
 import { createBattleRecapCard } from '../lib/replaybattlerecap';
-import { createSparRivalDraft } from '../lib/replaysparrivaldraft';
-import type { SparRivalDraft } from '../lib/replaysparrivaldraft';
 import { createPostFightActions } from '../lib/replaypostfightactions';
 import type { PostFightActions } from '../lib/replaypostfightactions';
 import { planReplayPostFightEligibility } from '../lib/replaypostfighteligibility';
@@ -110,7 +107,6 @@ import {
 import type { InkcastEditorialCandidate } from '../lib/inkcastqueue';
 import { BattleSoundboard } from '../lib/battlesound';
 import { WeaponFxRenderer } from '../lib/weaponfxrenderer';
-import { showVsCeremony } from '../lib/battleceremony';
 import {
   formatRivalRunResultLine,
   planRivalRunActionCopy,
@@ -125,11 +121,11 @@ import type {
   FounderRivalryStakesPlan,
 } from '../lib/founderchronicle';
 import { showToast } from '@devvit/web/client';
+import { paperIcon } from '../lib/papericons';
 import type {
   BattleReport,
   Element,
   FounderChronicleBeat,
-  RivalRunState,
   Scribbit,
 } from '../../shared/arena';
 import type {
@@ -146,6 +142,7 @@ import { selectPrimaryPower } from '../../shared/combat/selection';
 import { isShapePowerId } from '../../shared/combat/shapepowercontent';
 import { getBattleMaxHp } from '../../shared/battle';
 import { getBattleArenaDefinition } from '../../shared/battlearena';
+import { openRivalRun, type RivalRunFlow } from '../lib/rivalrunflow';
 
 type ReplayFighterRuntime = {
   side: 'a' | 'b';
@@ -228,7 +225,8 @@ export class Replay extends Scene {
   private fighterA!: ReplayFighterRuntime;
   private fighterB!: ReplayFighterRuntime;
   private finished = false;
-  private introBanner: Phaser.GameObjects.Text | null = null;
+  private introBanner: Phaser.GameObjects.Image | null = null;
+  private introShine: StickerShineHandle | null = null;
   private reduceMotion = false;
 
   // Fast-forward: cycles 1x → 2x → 4x → 1x. Scales the scene clock + tweens so
@@ -244,7 +242,7 @@ export class Replay extends Scene {
   private playbackRunning = false;
   private rematchLoading = false;
   private arenaRefreshLoading = false;
-  private rivalDraft: SparRivalDraft | null = null;
+  private rivalRunFlow: RivalRunFlow | null = null;
   private postFightActions: PostFightActions | null = null;
   private savedReplayIntro: SavedReplayIntro | null = null;
   private playbackTick = 0;
@@ -279,13 +277,14 @@ export class Replay extends Scene {
     this.battleBackdropUpdateAccumulator = 0;
     this.effectRenderAccumulator = 0;
     this.introBanner = null;
+    this.introShine = null;
     this.reduceMotion = prefersReducedMotion();
     this.speedIndex = 0;
     this.fightersReady = false;
     this.skipRequested = false;
     this.rematchLoading = false;
     this.arenaRefreshLoading = false;
-    this.rivalDraft = null;
+    this.rivalRunFlow = null;
     this.postFightActions = null;
     this.savedReplayIntro = null;
     this.elementCueShown.clear();
@@ -354,13 +353,14 @@ export class Replay extends Scene {
     this.recordDebugPlaybackState('live');
 
     this.events.once('shutdown', () => {
-      this.rivalDraft?.destroy();
-      this.rivalDraft = null;
+      this.rivalRunFlow?.destroy();
+      this.rivalRunFlow = null;
       this.postFightActions?.destroy();
       this.postFightActions = null;
       this.savedReplayIntro?.destroy();
       this.savedReplayIntro = null;
       this.battleHud?.stopHeartAnimations();
+      this.clearIntroBanner();
       this.weaponFxRenderer?.destroy();
       this.weaponFxRenderer = null;
       this.playbackRunning = false;
@@ -551,54 +551,96 @@ export class Replay extends Scene {
   }
 
   private playFightBanner(): void {
-    const { width, height } = this.scale;
+    const { width } = this.scale;
     const founderOpening = authorFounderBattleOpening(
       this.replayCommentaryContext()
     );
     if (founderOpening) this.displayInkcastText(founderOpening);
-    const banner = label(
-      this,
-      width / 2,
-      height / 2,
-      'FIGHT!',
-      90,
-      UI.goldText,
-      true
-    )
+    const banner = this.add.image(0, 0, FIGHT_START_TEXTURE);
+    const finalScale = Math.min(460, width * 0.66) / banner.width;
+    const fighterTop =
+      Math.min(
+        this.battleLayout.fighters.a.homeY,
+        this.battleLayout.fighters.b.homeY
+      ) -
+      this.battleLayout.fighterDisplaySize / 2;
+    const bannerY = fighterTop - (banner.height * finalScale) / 2 - 10;
+    banner
+      .setPosition(width / 2, bannerY)
       .setScale(0)
       .setDepth(60);
-    banner.setStroke('#2b2016', 10);
+    const shine = createStickerShine({
+      scene: this,
+      x: width / 2,
+      y: bannerY,
+      width: banner.width,
+      height: banner.height,
+      depth: 61,
+      reduceMotion: this.reduceMotion,
+      tint: [1, 0.66, 0.18],
+      intensity: 0.92,
+    });
+    shine?.displayObject.setScale(0);
     this.introBanner = banner;
-    // Keep the matchup readable, then reach actual combat in about one second.
+    this.introShine = shine;
+    this.game.canvas.dataset.fightIntroShine = shine
+      ? 'shader'
+      : this.reduceMotion
+        ? 'reduced'
+        : 'fallback';
+    this.game.canvas.dataset.fightIntroShake = this.reduceMotion
+      ? 'off'
+      : 'punch';
+    // Keep the matchup readable, then reach combat after one strong intro beat.
     this.time.delayedCall(360, () => {
       if (this.finished || !this.scene.isActive()) return;
       this.soundboard.play('fight');
       if (this.reduceMotion) {
-        banner.setScale(1);
-        this.time.delayedCall(400, () => {
+        banner.setScale(finalScale);
+        this.time.delayedCall(700, () => {
           if (this.finished || !this.scene.isActive()) return;
           this.clearIntroBanner();
           this.startContinuousReplay();
         });
         return;
       }
+      const introTargets = shine ? [banner, shine.displayObject] : [banner];
+      if (shine) {
+        shine.play(700);
+      }
       this.tweens.add({
-        targets: banner,
-        scale: 1,
+        targets: introTargets,
+        scale: finalScale,
         duration: 220,
         ease: 'Back.easeOut',
         yoyo: true,
-        hold: 180,
+        hold: 450,
         onComplete: () => {
           this.clearIntroBanner();
-          if (!this.finished) this.startContinuousReplay();
+          if (!this.finished && this.scene.isActive()) {
+            this.startContinuousReplay();
+          }
         },
       });
-      this.cameras.main.shake(180, 0.006);
+      this.tweens.add({
+        targets: introTargets,
+        angle: { from: -2.4, to: 2.4 },
+        duration: 58,
+        ease: 'Sine.easeInOut',
+        yoyo: true,
+        repeat: 2,
+      });
+      this.cameras.main.shake(240, 0.008);
     });
   }
 
   private clearIntroBanner(): void {
+    if (this.introBanner) this.tweens.killTweensOf(this.introBanner);
+    if (this.introShine) {
+      this.tweens.killTweensOf(this.introShine.displayObject);
+      this.introShine.destroy();
+    }
+    this.introShine = null;
     this.introBanner?.destroy();
     this.introBanner = null;
   }
@@ -1263,88 +1305,68 @@ export class Replay extends Scene {
       arena.currentHalfHeight / arena.maximumHalfHeight
     );
     if (shrinkRatio < 0.995) {
-      this.strokePaperArenaBoundary(floorGraphics, arena, UI.coral, 16, 0.9, 1);
-      this.strokePaperArenaBoundary(
+      const currentLeft = arena.centerX - arena.currentHalfWidth;
+      const currentRight = arena.centerX + arena.currentHalfWidth;
+      const warningHalfHeight = Math.min(84, arena.currentHalfHeight * 0.38);
+      // Four corner brackets and two inward-facing rails communicate the
+      // shrinking safe space without drawing a closed box over the fighters.
+      this.drawPaperArenaCorners(
         floorGraphics,
         arena,
-        UI.creamHex,
+        UI.coralDeep,
         6,
-        0.92,
-        0
+        0.82,
+        44
       );
-      const maximumLeft = arena.centerX - arena.maximumHalfWidth;
-      const maximumTop = arena.centerY - arena.maximumHalfHeight;
-      const maximumWidth = arena.maximumHalfWidth * 2;
-      const maximumHeight = arena.maximumHalfHeight * 2;
-      const currentLeft = arena.centerX - arena.currentHalfWidth;
-      const currentTop = arena.centerY - arena.currentHalfHeight;
-      const currentRight = arena.centerX + arena.currentHalfWidth;
-      const currentBottom = arena.centerY + arena.currentHalfHeight;
-      // The transcript extents own this shared death-zone overlay. Every skin
-      // darkens outside the safe space while the rough coral edge closes in.
-      floorGraphics.fillStyle(UI.inkHex, 0.36);
-      floorGraphics.fillRect(
-        maximumLeft,
-        maximumTop,
-        Math.max(0, currentLeft - maximumLeft),
-        maximumHeight
-      );
-      floorGraphics.fillRect(
-        currentRight,
-        maximumTop,
-        Math.max(0, maximumLeft + maximumWidth - currentRight),
-        maximumHeight
-      );
-      floorGraphics.fillRect(
-        currentLeft,
-        maximumTop,
-        Math.max(0, currentRight - currentLeft),
-        Math.max(0, currentTop - maximumTop)
-      );
-      floorGraphics.fillRect(
-        currentLeft,
-        currentBottom,
-        Math.max(0, currentRight - currentLeft),
-        Math.max(0, maximumTop + maximumHeight - currentBottom)
-      );
-      floorGraphics.lineStyle(18, UI.coral, 0.2);
+      floorGraphics.lineStyle(18, UI.coral, 0.16);
       floorGraphics.lineBetween(
-        arena.centerX - arena.currentHalfWidth - 5,
-        arena.centerY - arena.currentHalfHeight,
-        arena.centerX - arena.currentHalfWidth - 5,
-        arena.centerY + arena.currentHalfHeight
+        currentLeft - 5,
+        arena.centerY - warningHalfHeight,
+        currentLeft - 5,
+        arena.centerY + warningHalfHeight
       );
       floorGraphics.lineBetween(
-        arena.centerX + arena.currentHalfWidth + 5,
-        arena.centerY - arena.currentHalfHeight,
-        arena.centerX + arena.currentHalfWidth + 5,
-        arena.centerY + arena.currentHalfHeight
+        currentRight + 5,
+        arena.centerY - warningHalfHeight,
+        currentRight + 5,
+        arena.centerY + warningHalfHeight
       );
       floorGraphics.lineStyle(6, UI.coralDeep, 0.82);
       floorGraphics.lineBetween(
         currentLeft,
-        currentTop,
+        arena.centerY - warningHalfHeight,
         currentLeft,
-        currentBottom
+        arena.centerY + warningHalfHeight
       );
       floorGraphics.lineBetween(
         currentRight,
-        currentTop,
+        arena.centerY - warningHalfHeight,
         currentRight,
-        currentBottom
+        arena.centerY + warningHalfHeight
       );
-      floorGraphics.lineStyle(3, UI.inkHex, 0.2);
       floorGraphics.lineBetween(
         currentLeft,
-        currentTop + 34,
-        currentLeft + 28,
-        currentTop
+        arena.centerY,
+        currentLeft + 20,
+        arena.centerY - 14
+      );
+      floorGraphics.lineBetween(
+        currentLeft,
+        arena.centerY,
+        currentLeft + 20,
+        arena.centerY + 14
       );
       floorGraphics.lineBetween(
         currentRight,
-        currentBottom - 34,
-        currentRight - 28,
-        currentBottom
+        arena.centerY,
+        currentRight - 20,
+        arena.centerY - 14
+      );
+      floorGraphics.lineBetween(
+        currentRight,
+        arena.centerY,
+        currentRight - 20,
+        arena.centerY + 14
       );
     } else {
       this.drawPaperArenaCorners(floorGraphics, arena);
@@ -1411,14 +1433,17 @@ export class Replay extends Scene {
 
   private drawPaperArenaCorners(
     graphics: Phaser.GameObjects.Graphics,
-    arena: ArenaPresentationPlan
+    arena: ArenaPresentationPlan,
+    color: number = UI.inkHex,
+    lineWidth: number = 4,
+    alpha: number = 0.16,
+    cornerLength: number = 32
   ): void {
     const left = arena.centerX - arena.currentHalfWidth;
     const right = arena.centerX + arena.currentHalfWidth;
     const top = arena.centerY - arena.currentHalfHeight;
     const bottom = arena.centerY + arena.currentHalfHeight;
-    const cornerLength = 32;
-    graphics.lineStyle(4, UI.inkHex, 0.16);
+    graphics.lineStyle(lineWidth, color, alpha);
     graphics.lineBetween(left, top, left + cornerLength, top);
     graphics.lineBetween(left, top, left, top + cornerLength);
     graphics.lineBetween(right, top, right - cornerLength, top);
@@ -1427,61 +1452,6 @@ export class Replay extends Scene {
     graphics.lineBetween(left, bottom, left, bottom - cornerLength);
     graphics.lineBetween(right, bottom, right - cornerLength, bottom);
     graphics.lineBetween(right, bottom, right, bottom - cornerLength);
-  }
-
-  private strokePaperArenaBoundary(
-    graphics: Phaser.GameObjects.Graphics,
-    arena: ArenaPresentationPlan,
-    color: number,
-    lineWidth: number,
-    alpha: number,
-    jitterOffset: number
-  ): void {
-    const left = arena.centerX - arena.currentHalfWidth;
-    const right = arena.centerX + arena.currentHalfWidth;
-    const top = arena.centerY - arena.currentHalfHeight;
-    const bottom = arena.centerY + arena.currentHalfHeight;
-    const horizontalSegments = 7;
-    const verticalSegments = 9;
-    const jitter = [0, -2, 3, -1, 2, -3, 1, 0, -1, 2] as const;
-    const points: Array<{ x: number; y: number }> = [];
-
-    for (let index = 0; index <= horizontalSegments; index += 1) {
-      points.push({
-        x: left + ((right - left) * index) / horizontalSegments,
-        y: top + (jitter[(index + jitterOffset) % jitter.length] ?? 0),
-      });
-    }
-    for (let index = 1; index <= verticalSegments; index += 1) {
-      points.push({
-        x: right + (jitter[(index + jitterOffset + 2) % jitter.length] ?? 0),
-        y: top + ((bottom - top) * index) / verticalSegments,
-      });
-    }
-    for (let index = 1; index <= horizontalSegments; index += 1) {
-      points.push({
-        x: right - ((right - left) * index) / horizontalSegments,
-        y: bottom + (jitter[(index + jitterOffset + 4) % jitter.length] ?? 0),
-      });
-    }
-    for (let index = 1; index < verticalSegments; index += 1) {
-      points.push({
-        x: left + (jitter[(index + jitterOffset + 6) % jitter.length] ?? 0),
-        y: bottom - ((bottom - top) * index) / verticalSegments,
-      });
-    }
-
-    const firstPoint = points[0];
-    if (!firstPoint) return;
-    graphics.lineStyle(lineWidth, color, alpha);
-    graphics.beginPath();
-    graphics.moveTo(firstPoint.x, firstPoint.y);
-    for (let index = 1; index < points.length; index += 1) {
-      const point = points[index];
-      if (point) graphics.lineTo(point.x, point.y);
-    }
-    graphics.closePath();
-    graphics.strokePath();
   }
 
   private hidePowerGhosts(): void {
@@ -2186,8 +2156,7 @@ export class Replay extends Scene {
       this.isMine(winner.scribbit) && (this.report.inkAwarded ?? 0) > 0
         ? `${this.isSavedReplay() ? 'Saved payout. ' : ''}${this.report.inkAwarded} Ink earned.`
         : '';
-    const rewardAnnouncement =
-      rewardPlan?.accessibleLabel ?? archivedInkReward;
+    const rewardAnnouncement = rewardPlan?.accessibleLabel ?? archivedInkReward;
     const resultAnnouncement = `${formatBattleRecapAnnouncement(
       recap,
       this.battleRecapPerspective(winner, loser)
@@ -2243,6 +2212,48 @@ export class Replay extends Scene {
         ? { progress: this.report.arenaChallenge }
         : {}),
     });
+  }
+
+  private drawArenaChallengeStamp(y: number, hidden = false): void {
+    const result = this.battleArenaChallengeResult();
+    const progress = this.report.arenaChallenge;
+    if (hidden || !result || !progress) return;
+
+    const completed = progress.completed;
+    const stamp = this.add
+      .container(this.scale.width / 2, y)
+      .setDepth(62)
+      .setAlpha(this.reduceMotion ? 1 : 0)
+      .setScale(this.reduceMotion ? 1 : 0.76);
+    const stampText = completed
+      ? 'GOAL CLEARED'
+      : `GOAL ${Math.min(progress.progress, progress.target)}/${progress.target}`;
+    const stampLabel = label(
+      this,
+      20,
+      0,
+      stampText,
+      24,
+      completed ? UI.goldText : UI.inkSoft,
+      true
+    ).setStroke(UI.cream, 6);
+    stamp.add([
+      paperIcon(this, 'target', -105, 0, {
+        size: 34,
+        fill: completed ? UI.gold : UI.tapeAlt,
+      }),
+      stampLabel,
+    ]);
+
+    if (!this.reduceMotion) {
+      this.tweens.add({
+        targets: stamp,
+        alpha: 1,
+        scale: 1,
+        duration: 260,
+        ease: 'Back.easeOut',
+      });
+    }
   }
 
   private battleRecapPerspective(
@@ -2340,10 +2351,7 @@ export class Replay extends Scene {
     }
     const contextLine = this.report.rivalRun
       ? formatRivalRunResultLine(this.report.rivalRun)
-      : (founderEpisodeReceipt?.resultLine ??
-        founderOutcome ??
-        this.battleArenaChallengeResult()?.label ??
-        null);
+      : (founderEpisodeReceipt?.resultLine ?? founderOutcome ?? null);
     const rivalActionCopy = planRivalRunActionCopy(this.report.rivalRun);
     const rivalRunFinish = planRivalRunFinishStamp(this.report.rivalRun);
     if (rivalRunFinish) {
@@ -2379,6 +2387,10 @@ export class Replay extends Scene {
       ).setDepth(62);
       finishRecord.setStroke(UI.cream, 5);
     }
+    this.drawArenaChallengeStamp(
+      outcomeLayout.recapY - 172,
+      Boolean(rivalRunFinish)
+    );
     createBattleRecapCard(this, recap, {
       x: width / 2,
       y: outcomeLayout.recapY,
@@ -2500,11 +2512,12 @@ export class Replay extends Scene {
       ? `${rivalRunFinish.title} • ${rivalRunFinish.score}`
       : this.report.rivalRun
         ? formatRivalRunResultLine(this.report.rivalRun)
-        : (founderEpisodeReceipt?.resultLine ??
-          founderOutcome ??
-          this.battleArenaChallengeResult()?.label ??
-          null);
+        : (founderEpisodeReceipt?.resultLine ?? founderOutcome ?? null);
     const rivalActionCopy = planRivalRunActionCopy(this.report.rivalRun);
+    this.drawArenaChallengeStamp(
+      outcomeLayout.recapY - 172,
+      Boolean(rivalRunFinish)
+    );
     createBattleRecapCard(this, recap, {
       x: width / 2,
       y: outcomeLayout.recapY,
@@ -2595,8 +2608,7 @@ export class Replay extends Scene {
   }
 
   private openRivalDraft(mine: Scribbit): void {
-    if (this.rematchLoading || this.rivalDraft) return;
-    this.rematchLoading = true;
+    if (this.rematchLoading || this.rivalRunFlow) return;
     const rivalDraftTrigger =
       document.activeElement instanceof HTMLElement
         ? document.activeElement
@@ -2608,137 +2620,27 @@ export class Replay extends Scene {
       });
     };
     this.postFightActions?.setAccessibleVisible(false);
-    showToast('Pinning up three fair rivals…');
-    void fetchSparRivals(mine.id)
-      .then(async (result) => {
-        if (!this.scene.isActive()) return;
-        this.rematchLoading = false;
-        if (!result.ok) {
-          showToast(result.error);
-          restorePostFightFocus();
-          return;
-        }
-        if (
-          result.data.challenger.id !== mine.id ||
-          result.data.choices.length === 0
-        ) {
-          showToast('The rival board came back blank. Try again.');
-          restorePostFightFocus();
-          return;
-        }
-        const arena = getArena(this);
-        if (!arena) {
-          showToast('The arena state is missing. Return and try again.');
-          restorePostFightFocus();
-          return;
-        }
-        if (arena.dayNumber !== result.data.dayNumber) {
-          this.rematchLoading = true;
-          const latestArena = await fetchArena();
-          if (!this.scene.isActive()) return;
-          this.rematchLoading = false;
-          if (!latestArena.ok) {
-            showToast('A new Arena day started. Try the board again.');
-            restorePostFightFocus();
-            return;
-          }
-          setArena(this, latestArena.data);
-          showToast('A new Arena day started. Opening today’s board…');
-          fadeToScene(this, 'ArenaHome');
-          return;
-        }
-        const refreshedArena = {
-          ...arena,
-          forecast: result.data.forecast,
-          founderChronicle: result.data.founderChronicle,
-        };
-        const rivalryBeats = findFounderChronicleBeats(
-          arena.founderChronicle,
-          refreshedArena.founderChronicle
-        );
-        if (rivalryBeats.length > 0) {
-          setFounderChronicleBeats(this, rivalryBeats);
-        }
-        setArena(this, refreshedArena);
-        this.rivalDraft = createSparRivalDraft(this, {
-          challenger: result.data.challenger,
-          choices: result.data.choices,
-          rivalRun: result.data.rivalRun,
-          forecast: result.data.forecast,
-          founderChronicle: result.data.founderChronicle,
-          currentDay: result.data.dayNumber,
-          trigger: rivalDraftTrigger,
-          onChoose: (rival, plan) =>
-            this.fightRival(
-              mine,
-              rival,
-              plan.challengeLine,
-              result.data.rivalRun
-            ),
-          onClose: () => {
-            restorePostFightFocus();
-            this.rivalDraft?.destroy();
-            this.rivalDraft = null;
-          },
-        });
-      })
-      .catch(() => {
-        if (!this.scene.isActive()) return;
-        this.rematchLoading = false;
+    this.rivalRunFlow = openRivalRun(this, {
+      challenger: mine,
+      trigger: rivalDraftTrigger,
+      closeLabel: 'Back to result',
+      returnScene: getReplayReturn(this),
+      onBusyChange: (busy) => {
+        this.rematchLoading = busy;
+      },
+      onDismissed: () => {
+        this.rivalRunFlow = null;
         restorePostFightFocus();
-        showToast('The rival board fell down. Try again.');
-      });
-  }
-
-  private fightRival(
-    mine: Scribbit,
-    rival: Scribbit,
-    challengeLine: string | null,
-    rivalRun: RivalRunState
-  ): void {
-    if (this.rematchLoading) return;
-    this.rematchLoading = true;
-    showToast(
-      challengeLine
-        ? `${rival.name}: “${challengeLine}”`
-        : `${mine.name} challenges ${rival.name}…`
-    );
-    void spar(mine.id, rival.id, rivalRun)
-      .then((result) => {
-        if (!this.scene.isActive()) return;
-        if (!result.ok) {
-          this.rematchLoading = false;
-          this.rivalDraft?.setAccessibleVisible(true);
-          showToast(result.error);
-          return;
-        }
-        this.rivalDraft?.destroy();
-        this.rivalDraft = null;
+      },
+      onResolved: () => {
+        this.rivalRunFlow = null;
+      },
+      onBattleStart: () => {
         this.postFightActions?.destroy();
         this.postFightActions = null;
-        const stagedBattle = stageDirectBattle(
-          this,
-          getArena(this),
-          result.data,
-          mine.id
-        );
-        showVsCeremony(this, {
-          fighterA: result.data.report.a,
-          fighterB: result.data.report.b,
-          battleKind: result.data.report.kind,
-          rivalryStakes: stagedBattle.rivalryStakes,
-          ...(result.data.report.rivalRun
-            ? { rivalRun: result.data.report.rivalRun }
-            : {}),
-          onComplete: () => this.scene.restart(),
-        });
-      })
-      .catch(() => {
-        if (!this.scene.isActive()) return;
-        this.rematchLoading = false;
-        this.rivalDraft?.setAccessibleVisible(true);
-        showToast('The challenge bell did not ring. Try again.');
-      });
+      },
+      onCeremonyComplete: () => this.scene.restart(),
+    });
   }
 
   private goBackEntrants(): void {

@@ -76,6 +76,7 @@ export type Scribbit = {
   element: Element;
   stats: ScribbitStats;
   imageUrl: string; // Reddit-hosted in production; local mock fixtures may use /api/drawing/{id}
+  drawingThemeId: string | null; // immutable community-theme category; null for founders and older records
   bornDay: number;
   expiresDay: number; // bornDay + 3
   belief: number;
@@ -108,6 +109,7 @@ export const cloneScribbit = (scribbit: Scribbit): Scribbit => {
   return {
     ...scribbit,
     stats: { ...scribbit.stats },
+    drawingThemeId: scribbit.drawingThemeId ?? null,
     accessories: [...scribbit.accessories],
     gearRanks: { ...(scribbit.gearRanks ?? {}) },
     equipmentLoadout: cloneEquipmentLoadout(equipmentLoadout),
@@ -265,6 +267,7 @@ export type CapsuleProgress = {
 export type ArenaState = {
   dayNumber: number;
   loggedIn: boolean;
+  hasCreatedScribbit: boolean;
   myUsername: string | null;
   forecast: Forecast;
   champion: Scribbit | null; // frozen snapshot, today's boss
@@ -282,24 +285,25 @@ export type ArenaState = {
   myInk: number; // Mystery Ink balance
   myPens: string[]; // unlocked palette pen ids
   myDrawingSupplies?: Record<string, number>; // consumable drawing-ink and brush charges
-  nextCapsuleCost: number; // authoritative current price (daily discount already applied)
+  nextCapsuleCost: number; // authoritative current Mystery Ink chest price
   capsuleProgress: CapsuleProgress;
   founderChronicle: FounderChronicle;
   lastRumbleReceipt: DailyRumbleReceipt | null; // yesterday's Back payoff, otherwise the player's owned entrant result
   legacyReturnReceipt: LegacyReturnReceipt | null; // unseen expiry payoff, cleared explicitly
 };
 
+export type SplashCreation = Readonly<
+  Pick<Scribbit, 'id' | 'name' | 'artist' | 'imageUrl'>
+>;
+
 // Lightweight, read-only inline feed contract. It deliberately excludes
-// rosters, inventories, drawings, and the full entrant gallery.
+// rosters, inventories, and the full entrant gallery. The bounded creation
+// previews give the static splash real community art without exposing combat
+// or progression data.
 export type SplashState = {
   loggedIn: boolean;
-  resolving: boolean;
-  forecast: Forecast;
-  rumbleEntrants: number;
-  rumbleResolvesAt: number;
-  drawnToday: boolean;
-  backedToday: boolean;
-  playStreakDays: number;
+  hasCreatedScribbit: boolean;
+  featuredCreations: SplashCreation[];
 };
 
 export type BackRequest = { scribbitId: string }; // one per user per day, final
@@ -419,8 +423,11 @@ export const XP_REWARDS = {
   rumbleWin: 2,
   championWin: 2,
 } as const;
-export const CAPSULE_COST = 10;
-export const CAPSULE_FIRST_DAILY_COST = 5; // first pull each day is discounted
+export const CAPSULE_COST = 5;
+// Kept as a separate transport constant while older daily-pull records age out.
+// The earned-Ink chest now has one honest price instead of urgency pricing.
+export const CAPSULE_FIRST_DAILY_COST = CAPSULE_COST;
+export const CAPSULE_MAX_BATCH_SIZE = 10;
 export const CAPSULE_PITY = 10; // epic guaranteed within N pulls
 export const CAPSULE_RARITY_PERCENTAGES = {
   common: 70,

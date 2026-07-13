@@ -14,13 +14,15 @@ The portrait UI uses progressive disclosure: each default card leads with one
 headline, one current status, and one obvious action. Exact rules, telemetry,
 privacy controls, and card history remain available behind the relevant tap
 instead of competing with the drawing or fight.
-Arena home is intentionally not a bracket dashboard: Draw is the hero, Champion
-and Rumble are one-action cards, and the full eight-contender choice opens only
-after the player taps the three-portrait Rumble preview.
+Arena home is intentionally not a bracket dashboard: it shows the selected
+Scribbit versus the Champion or a Rival placeholder. Champion gets one direct
+fight action; Spar gets one `CHOOSE A RIVAL` action that opens three
+server-ranked risk choices before any fight. Rumble remains one compact
+secondary control.
 
 The shared Craftbox shell uses a generated torn-paper stage, bundled DynaPuff,
 one die-cut icon family, and GPT-generated hand-cut paper buttons across Arena,
-Bag, Draw, Battles, and Gallery.
+Bag, Draw, Battles, and Shop.
 The active tab is the only coral ticket; hearts, clocks, Ink, and Shape Powers
 use shared paper icons instead of emoji or text pretending to be controls.
 Compact or detected low-power devices keep that paper art but skip ambient
@@ -31,15 +33,19 @@ arena effects and Inkbody deformation update at a bounded 30 Hz.
 
 ## Daily loop
 
-1. Take one of 32 optional daily Doodle Dares plus an expressive bonus twist—or
-   ignore both and draw anything. The screen keeps the Dare inside the canvas,
-   collapses ink, premium pens, brush size, erase, and undo into one icon rail,
-   and enables one visible `NEXT` action when the body is valid. Naming follows
+1. Draw the shared three-day community theme. Everyone receives the same clear
+   brief, each new Scribbit keeps that theme id as its category, and the Rumble
+   picker gathers the matching community creations under the theme name. The
+   versioned calendar contains 122 unique themes covering 366 Arena days. The
+   next season must append before day 367, so published days never remap.
+   The screen keeps the theme inside the canvas,
+   keeps all eight base colors visible, shows only size, eraser, undo, and Tools
+   by default, and keeps collectible paint, brushes, stickers, Clear, and Redo
+   one tap away. One visible `NEXT` action enables when the body is valid. Naming follows
    in a focused preview; birth and VS receipts explain the resulting Shape Power
-   without restoring the former four-stat panel. The exact Dare card does not
-   repeat for 256 Arena days.
-2. Care for the Scribbit across its three-day life and spend earned Ink on a
-   discounted daily Mystery Capsule.
+   without restoring the former four-stat panel.
+2. Care for the Scribbit across its three-day life, then open Shop to spend
+   earned Ink on one Mystery Ink Chest or a maximum batch of ten.
 3. Grow a permanent cosmetic collection with visible collector rank, wearable
    titles, and an honest countdown to the guaranteed Epic pull.
 4. The Scribbit enters the nightly asynchronous Rumble automatically.
@@ -52,15 +58,17 @@ arena effects and Inkbody deformation update at a bounded 30 Hz.
    contender. Champion picks earn 3 Clout; finalist backers earn 1.
 8. Return after the UTC rollover to see the Champion, watch your picked
    Scribbit's last Rumble bout, and see the result comment on the real post.
-9. Open Bag to manage equipment, pens, and titles; open Gallery to browse
-   community Legends and personal Legacy Cards.
+9. Open Shop for Mystery Ink Chests and Bag to manage equipment, pens, and
+   titles. Gallery remains available for community Legends and personal Legacy
+   Cards without occupying a primary dock slot.
 10. Keep a visible daily play streak and permanent Clout.
 11. Keep a Scribbit alive for three days. Every finished run becomes an immutable
     personal Legacy Card; a crown or enough community Belief gives it a gold
     finish and preserves it in the public Hall of Legends.
 
-The first session proves the whole promise—draw, watch it fight, earn Ink—and the
-first Scribbit immediately receives an exhibition fight. A new player sees
+The first session proves the whole promise—draw, choose a rival, watch it fight,
+earn Ink. The first Scribbit's birth receipt opens the same three-choice Rival
+Run used by Arena instead of silently assigning an opponent. A new player sees
 their drawing come alive before meeting the deeper care, collection, and
 scouting systems. The birth receipt says what caused the build and what it does,
 for example `SHARP EDGES → FIRETIP HALO` and `3 ROTATING QUILLS`, instead of
@@ -108,7 +116,9 @@ focus plus Enter/Space without changing battle authority.
 The first Spar win each UTC day commits one versioned reward receipt in the
 same Redis transaction as its XP and Ink. Fresh Replay can therefore celebrate
 `+1 XP • +2 INK` or an exact level-up without deriving progression on the
-client. Saved pages keep only Replay plus their truthful return action; they
+client. Earned Ink Mods now cross the fixed-tick engine's integer resolution,
+stay inside the four-mod balance cap, and expose their exact effects only in the
+Scribbit detail view. Saved pages keep only Replay plus their truthful return action; they
 cannot reopen a live Rival or tonight's pick flow.
 Before the bell, a mode-specific VS card keeps one title, optional story stakes,
 large fighter art, and two plain causal lines such as
@@ -125,8 +135,8 @@ cannot schedule events or affect a result. There is no turn-based player path or
 outcome-changing cheer input. No WebSocket or client combat authority is
 required.
 
-After any owned exhibition, the player can immediately pick from three
-server-authored founding rivals instead of silently rerolling a random rematch.
+Before every player-facing Spar—and again after each bout—the player picks from
+three server-authored founding rivals instead of receiving a blind random fight.
 The daily slate is stable, level-bounded, and power-varied; its cards disclose
 each rival's real level, element, Shape Power, signature move, forecast status,
 canonical epithet, and challenge line. The draft also carries the previous
@@ -135,10 +145,16 @@ the chosen rival against the current slate before authoring a fresh transcript,
 so matchup choice adds agency and story continuity without combat authority or
 fake win odds.
 
+Each Rival Run lasts exactly three bouts. Every slate offers `SAFE +1`,
+`EVEN +2`, and `BOLD +3`; only wins add the displayed points, while losses still
+advance the run. Bout and score follow through the chooser, VS receipt, battle,
+and result. The third result offers one explicit new-run action and the server
+rolls a fresh bout 1/3 slate.
+
 One founder can become the player's active Rival Thread. It is a server-owned
 best-of-three capped at three qualifying battles, and only one score beat can be
 written per Arena day. The active founder is pinned into tomorrow's draft and
-quick spar; unrelated fights remain exhibitions and cannot replace the thread.
+future slates; unrelated fights remain exhibitions and cannot replace the thread.
 Before a qualifying bout, the paper ceremony names the stakes—new thread, match
 point, or deciding bout—and the live rail becomes RIVAL BOUT or RIVAL DECIDER
 without revealing the already-authored winner.
@@ -171,9 +187,10 @@ without a usable transcript are clearly marked as saved results with no motion
 replay. Opening a page returns to the same
 Scrapbook page and never grants a reward or writes progression.
 
-The persistent dock is Arena, Bag, Draw, Battles, and Gallery. Bag is the one
-home for inventory and equipment; Gallery is the one home for Legends and
-Legacy Cards. Scout is not a primary destination. The compatibility Notebook
+The persistent dock is Arena, Bag, Draw, Battles, and Shop. Shop is the one home
+for earned-Ink Mystery Chests; Bag is the one home for inventory and equipment;
+Gallery is the one home for Legends and Legacy Cards and opens from the
+top-right Settings menu. Scout and Gallery are not primary destinations. The compatibility Notebook
 scene can still resolve older saved-replay returns while that legacy path is
 retired, but the daily Rumble Pick remains directly reachable from Arena.
 
@@ -248,7 +265,7 @@ Public forecast flavor follows its own validated 32-day no-repeat rotation. It
 appears consistently in the app, Reddit post title, and result comment without
 sharing randomness with boosted/nerfed combat elements.
 
-The verification gate currently covers TypeScript, ESLint, 151 deterministic
+The verification gate currently covers TypeScript, ESLint, 180 deterministic
 simulation groups, and the production build.
 
 ## Data and safety
@@ -268,18 +285,23 @@ not uploaded or stored, and practice reports are rejected before the battle
 store's first Redis operation. The route also enforces a bounded request body,
 one in-flight request per user, and a short Redis-backed request-rate guard.
 
-Mystery Ink is earned only through play. Capsules use visible 70/25/5 rarity
-odds, guarantee an Epic by pull 10, and reveal the actual reward art before a
-direct Bag handoff. Discovery, collector progress, pens, and titles
+Mystery Ink is earned only through play. Shop owns the chest ceremony rather
+than competing with the Arena fight or Bag equipment. Chests cost 5 Ink each, use visible 70/25/5
+rarity odds, guarantee an Epic by open 10, and reveal the actual reward art in
+place. Players can open one or ten at a time; there is no 100-open or auto-repeat
+action. The Reddit Gold Styles card is a disabled cosmetic-only preview.
+Discovery, collector progress, pens, and titles
 persist across Scribbits; permanent pen/title duplicates redirect within their
 rarity while useful accessory copies stack. Mystery Pens are expressive
 sidegrades that can change the build split through color, but every drawing
 still has exactly the same 100-point stat budget. Bag anchors the selected
 Scribbit on a visible equipment platform, keeps filters below that stage, and
-shows owned rewards in a bounded scrollable tray with discovered art, rarity, copies,
-pen swatches, title badges, and persistent completion progress. Eight cosmetic
-Shape Power Relics connect capsule discovery to the battle fantasy without
-adding stats or changing analysis.
+shows owned rewards in a bounded scrollable tray of icon-only tiles. Strong
+common, Rare, and Epic borders carry rarity at a glance; tapping a tile opens
+its name, stars, copies, Forge progress, exact Gear technique, and Equip action.
+Earned reusable Gear adds bounded Exhibition sidegrades without adding to the
+100-point drawing build or changing analysis; Rumble and Champion remain
+Gear-neutral while the broader balance matrix is unfinished.
 
 Scribbits grow from level 1 to 5, but the complete journey adds only 1.5%
 damage. Regression simulations keep a max-level fighter at or below a 60%

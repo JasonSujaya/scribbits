@@ -1,5 +1,5 @@
-// Phaser adapter for the server-authored rival slate. Replay owns networking;
-// this file owns the paper-native draft layout and nothing about battle rules.
+// Phaser adapter for the server-authored rival slate. Rival Run flow owns
+// networking; this file owns the paper-native draft layout and no battle rules.
 
 import * as Phaser from 'phaser';
 import { Scene } from 'phaser';
@@ -30,6 +30,7 @@ export type SparRivalDraftOptions = Readonly<{
   founderChronicle: FounderChronicle;
   currentDay: number;
   trigger?: HTMLElement | null;
+  closeLabel?: string;
   onChoose: (rival: Scribbit, plan: SparRivalCardPlan) => void;
   onClose: () => void;
 }>;
@@ -99,10 +100,10 @@ export function createSparRivalDraft(
   };
   const backdrop = scene.add
     .rectangle(width / 2, height / 2, width, height, UI.deskHex, 0.88)
-    .setDepth(99)
+    .setDepth(2_000)
     .setInteractive();
   const cardWidth = width - 64;
-  const cardHeight = 1_060;
+  const cardHeight = 940;
   const card = stickerCard(
     scene,
     width / 2,
@@ -111,7 +112,7 @@ export function createSparRivalDraft(
     cardHeight,
     { tapeColor: UI.tapeAlt, tapeWidth: 92 }
   );
-  card.setDepth(100).setScale(reduceMotion ? 1 : 0.78);
+  card.setDepth(2_001).setScale(reduceMotion ? 1 : 0.78);
   if (!reduceMotion) {
     scene.tweens.add({
       targets: card,
@@ -124,23 +125,18 @@ export function createSparRivalDraft(
     });
   }
 
-  card.add(label(scene, 0, -480, heading.title, 38, UI.ink, true));
-  card.add(label(scene, 0, -438, heading.subtitle, 20, UI.inkSoft, true));
-  card.add(
-    label(scene, 0, -400, challengeCopy.premise, 20, UI.inkSoft, true)
-      .setWordWrapWidth(cardWidth - 100)
-      .setLineSpacing(-2)
-  );
+  card.add(label(scene, 0, -420, heading.title, 38, UI.ink, true));
+  card.add(label(scene, 0, -380, heading.subtitle, 20, UI.inkSoft, true));
   card.add(
     scene.add
-      .rectangle(0, -354, cardWidth - 120, 48, UI.tape, 0.82)
+      .rectangle(0, -330, cardWidth - 120, 48, UI.tape, 0.82)
       .setStrokeStyle(2, UI.inkHex, 0.3)
   );
   card.add(
     label(
       scene,
       0,
-      -354,
+      -330,
       `${challengeCopy.goal} • ${challengeCopy.progress}`,
       20,
       UI.goldText,
@@ -281,7 +277,7 @@ export function createSparRivalDraft(
     options.founderChronicle,
     options.currentDay
   );
-  const rowCenters = [-225, 20, 265] as const;
+  const rowCenters = [-205, 25, 255] as const;
 
   plans.slice(0, rowCenters.length).forEach((plan, index) => {
     const choice = options.choices[index];
@@ -290,7 +286,7 @@ export function createSparRivalDraft(
     if (!rival || !choice || rowY === undefined) return;
     const style = ELEMENT_STYLES[plan.element];
     const background = scene.add
-      .rectangle(0, rowY, cardWidth - 88, 200, style.soft, 0.3)
+      .rectangle(0, rowY, cardWidth - 88, 190, style.soft, 0.3)
       .setStrokeStyle(4, style.primary, 0.95);
     card.add(background);
 
@@ -415,13 +411,13 @@ export function createSparRivalDraft(
     );
   }
 
-  const close = ghostButton(scene, 0, 445, '‹', closeDraft, 100, 100);
+  const close = ghostButton(scene, 0, 408, '‹', closeDraft, 100, 100);
   card.add(close);
   draftModalActions.add({
-    label: 'Back to result',
+    label: options.closeLabel ?? 'Back',
     rect: {
       x: width / 2 - 50,
-      y: height / 2 + 395,
+      y: height / 2 + 358,
       width: 100,
       height: 100,
     },
