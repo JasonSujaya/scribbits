@@ -93,17 +93,52 @@ test('Shop acquires, Bag equips, and Home opens Gallery', () => {
     /appDock\(this, this\.tab === 'collection' \? 'bag' : null/
   );
   assert.match(gallerySource, /bag: \(\) => this\.switchTab\('collection'\)/);
-  assert.match(appMenuSource, /label: translate\('appMenu\.openSettings'\)/);
-  assert.match(
-    appMenuSource,
-    /settingsButton\.add\([\s\S]*translate\('appMenu\.title'\)/
-  );
   assert.doesNotMatch(
     appMenuSource,
     /setGalleryTab|startScene\(scene, 'Gallery'\)/
   );
-  assert.match(homeSource, /setGalleryTab\(this, 'legends'\)/);
+  assert.match(homeSource, /setGalleryTab\(this, 'growing'\)/);
   assert.match(homeSource, /startScene\(this, 'Gallery'\)/);
+});
+
+test('Paper icons are optically centered without moving their hit targets', () => {
+  assert.match(appMenuSource, /label: translate\('appMenu\.openSettings'\)/);
+  assert.doesNotMatch(appMenuSource, /settingsButton\.add\(/);
+  assert.match(appMenuSource, /const SETTINGS_BUTTON_SIZE = 92;/);
+  assert.match(appMenuSource, /const SETTINGS_BUTTON_RIGHT_OFFSET = 60;/);
+  assert.match(
+    uiSource,
+    /const PAPER_ICON_OPTICAL_OFFSET_X = -4;/
+  );
+  assert.match(
+    uiSource,
+    /const PAPER_ICON_OPTICAL_OFFSET_Y = -5;/
+  );
+  assert.match(appMenuSource, /width - SETTINGS_BUTTON_RIGHT_OFFSET/);
+  assert.match(
+    appMenuSource,
+    /x: width - SETTINGS_BUTTON_RIGHT_OFFSET - SETTINGS_HIT_SIZE \/ 2/
+  );
+  assert.match(
+    uiSource,
+    /options\.iconOffsetX \?\? PAPER_ICON_OPTICAL_OFFSET_X/
+  );
+  assert.match(
+    uiSource,
+    /options\.iconOffsetY \?\? PAPER_ICON_OPTICAL_OFFSET_Y/
+  );
+});
+
+test('Gallery opens the owned lifecycle collection with bounded sections', () => {
+  assert.match(gallerySource, /const GALLERY_CONTENT_TOP = 240;/);
+  assert.match(gallerySource, /this\.buildTabs\(GALLERY_TABS_Y\)/);
+  assert.match(gallerySource, /visibleLabel: 'GROWING'/);
+  assert.match(gallerySource, /visibleLabel: 'MATURE'/);
+  assert.match(gallerySource, /visibleLabel: 'ARCHIVED'/);
+  assert.match(gallerySource, /MAX_GROWING_PER_USER/);
+  assert.match(gallerySource, /MAX_MATURE_PER_USER/);
+  assert.match(gallerySource, /LEGACY_BOOK_PAGE_SIZE/);
+  assert.doesNotMatch(gallerySource, /fetchLegends|loadLegends/);
 });
 
 test('Scout is hidden from navigation without hiding the compact Rumble action', () => {

@@ -30,6 +30,7 @@ const {
   COSMETIC_CATALOG,
   INK_REWARDS,
   MAX_ALIVE_PER_USER,
+  MAX_GROWING_PER_USER,
   SCRIBBIT_STAT_KEYS,
   SCOUT_NOTEBOOK_MAXIMUM_ENTRIES,
   XP_REWARDS,
@@ -66,6 +67,7 @@ const {
   parseCompleteScribbitUpgrades,
   projectFounderChronicle,
   projectLegacyReturnReceipt,
+  resolveExpiredScribbitStatus,
   projectScoutNotebookPick,
   planCareProgression,
   projectSubmissionConsumableInventoryConsumption,
@@ -301,7 +303,7 @@ const myScribbits = [
     element: 'moss',
     stats: { chonk: 42, spike: 16, zip: 18, charm: 24 },
     bornDay: 7,
-    expiresDay: 10,
+    expiresDay: 9,
     belief: 2,
     wins: 1,
     losses: 2,
@@ -932,17 +934,38 @@ memory.rumbleReplaysByDay.set(
   memory.previousRumbleReplay.day,
   memory.previousRumbleReplay
 );
-const olderScoutReplay = createBattleReport(
-  'rumble',
-  todayEntrants[0],
-  todayEntrants[1],
-  {
-    seed: 0,
-    forecast: makeForecast(memory.dayNumber - 2),
+let olderScoutReplay = null;
+const championPick = todayEntrants[0];
+for (const opponent of todayEntrants.slice(1)) {
+  for (let seed = 0; seed < 100 && !olderScoutReplay; seed += 1) {
+    for (const [fighterA, fighterB] of [
+      [championPick, opponent],
+      [opponent, championPick],
+    ]) {
+      const candidateReplay = createBattleReport('rumble', fighterA, fighterB, {
+        seed,
+        forecast: makeForecast(memory.dayNumber - 2),
+      });
+      const winner =
+        candidateReplay.winner === 'a' ? candidateReplay.a : candidateReplay.b;
+      if (winner.id === championPick.id) {
+        olderScoutReplay = candidateReplay;
+        break;
+      }
+    }
   }
-);
-if (olderScoutReplay.winner !== 'a') {
-  throw new Error('Mock older Scout replay must preserve its Champion pick.');
+  if (olderScoutReplay) break;
+}
+if (!olderScoutReplay) {
+  olderScoutReplay = createBattleReport(
+    'rumble',
+    championPick,
+    todayEntrants[1],
+    {
+      seed: 0,
+      forecast: makeForecast(memory.dayNumber - 2),
+    }
+  );
 }
 memory.rumbleReplaysByDay.set(olderScoutReplay.day, olderScoutReplay);
 
@@ -1209,7 +1232,7 @@ const resetPreviewEconomy = (economy) => {
 };
 
 const isLivingScribbit = (scribbit) => {
-  return scribbit.status === 'alive' && scribbit.expiresDay > memory.dayNumber;
+  return scribbit.status === 'alive';
 };
 
 const getLivingScribbitsForPreview = (previewMode) => {
@@ -1462,7 +1485,7 @@ const readPageNumber = (value, fallback, maximum) => {
   return maximum === undefined ? parsedValue : Math.min(parsedValue, maximum);
 };
 
-const previewModeFromUrl = (url) => {
+const explicitPreviewModeFromUrl = (url) => {
   if (
     url.searchParams.has('logged-out') ||
     url.searchParams.has('loggedOut') ||
@@ -1470,14 +1493,27 @@ const previewModeFromUrl = (url) => {
   ) {
     return 'logged-out';
   }
-  return url.searchParams.has('fresh') ? 'fresh' : 'returning';
+  if (
+    url.searchParams.has('fixtures') ||
+    url.searchParams.has('returning')
+  ) {
+    return 'returning';
+  }
+  if (url.searchParams.has('fresh')) return 'fresh';
+  return null;
+};
+
+const previewModeFromUrl = (url) => {
+  return explicitPreviewModeFromUrl(url) ?? 'fresh';
 };
 
 const requestPreviewMode = (request, url) => {
-  const directMode = previewModeFromUrl(url);
-  if (directMode !== 'returning') return directMode;
+  const directMode = explicitPreviewModeFromUrl(url);
+  if (directMode) return directMode;
 
   const referrer = request.headers.referer;
+  // Direct API calls are fixture-rich for test compatibility. Browser previews
+  // inherit the page mode, whose default is the empty new-player experience.
   if (typeof referrer !== 'string') return 'returning';
   try {
     return previewModeFromUrl(new URL(referrer));
@@ -1790,7 +1826,11 @@ const handleApi = async (request, response, url) => {
       typeof body.videoDataUrl !== 'string' ||
       !body.videoDataUrl.startsWith('data:video/')
     ) {
-      sendError(response, 400, 'Send one WebM or MP4 battle clip under 8 MB.');
+      sendError(
+        response,
+        400,
+        'Send one WebM or MP4 battle clip under 2.5 MB.'
+      );
       return;
     }
     sendJson(response, 200, {
@@ -2330,6 +2370,44 @@ const handleApi = async (request, response, url) => {
     return;
   }
 
+  if (method === 'POST' && path === '/api/retire-scribbit') {
+    if (previewMode === 'logged-out') {
+      sendError(response, 401, 'Sign in to retire your Scribbit.');
+      return;
+    }
+    const body = await readJsonBody(request);
+    const scribbitId = readScribbitId(body);
+    const scribbit = getOwnedScribbitsForPreview(previewMode).find(
+      (entry) => entry.id === scribbitId
+    );
+
+    if (!scribbit || scribbit.isFounding) {
+      sendError(response, 404, 'That Scribbit is not yours to retire.');
+      return;
+    }
+    if (scribbit.status !== 'alive') {
+      sendJson(response, 200, { retired: cloneScribbit(scribbit) });
+      return;
+    }
+    if (memory.todayEntrants.some((entry) => entry.id === scribbitId)) {
+      sendError(
+        response,
+        409,
+        "This Scribbit is entered in today's Rumble. Retire it after the results."
+      );
+      return;
+    }
+
+    const retired = resolveExpiredScribbitStatus(scribbit, {
+      archivedDay: memory.dayNumber,
+    });
+    removeScribbitFromList(memory.myScribbits, scribbitId);
+    memory.archivedOwnedScribbits.push(retired);
+    if (retired.status === 'legend') memory.legends.push(retired);
+    sendJson(response, 200, { retired: cloneScribbit(retired) });
+    return;
+  }
+
   if (method === 'POST' && path === '/api/report-scribbit') {
     const body = await readJsonBody(request);
     const scribbitId = readScribbitId(body);
@@ -2818,10 +2896,11 @@ const handleApi = async (request, response, url) => {
       sendError(response, 409, "You already entered today's Rumble.");
       return;
     }
-    if (
-      getLivingScribbitsForPreview(previewMode).length >= MAX_ALIVE_PER_USER
-    ) {
-      sendError(response, 409, 'You already have three living Scribbits.');
+    const growingScribbitCount = getLivingScribbitsForPreview(
+      previewMode
+    ).filter((scribbit) => scribbit.expiresDay > memory.dayNumber).length;
+    if (growingScribbitCount >= MAX_GROWING_PER_USER) {
+      sendError(response, 409, 'You already have three growing Scribbits.');
       return;
     }
 

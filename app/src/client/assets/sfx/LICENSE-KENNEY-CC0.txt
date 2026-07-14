@@ -1,0 +1,17 @@
+Scribbits curated SFX
+
+The local files in this directory were converted from selected sounds in
+Kenney's Interface Sounds, Impact Sounds, and RPG Audio packs.
+
+Creator/distributor: Kenney (https://kenney.nl)
+License: Creative Commons Zero 1.0 Universal (CC0-1.0)
+License URL: https://creativecommons.org/publicdomain/zero/1.0/
+
+These sounds may be used in personal, educational, and commercial projects.
+Attribution is not required. The original source filename and source pack for
+every converted file are recorded in src/client/lib/audiocatalog.ts.
+
+Source packs:
+- https://kenney.nl/assets/interface-sounds
+- https://kenney.nl/assets/impact-sounds
+- https://kenney.nl/assets/rpg-audio

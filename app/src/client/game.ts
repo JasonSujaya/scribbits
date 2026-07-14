@@ -28,6 +28,11 @@ import {
 import { showVsCeremony } from './lib/battleceremony';
 import { isLocalDrawAutomationRequest } from './lib/drawautomation';
 import { initializeLocalization, localizeDocument } from './lib/localization';
+import { installSfx } from './lib/sfx';
+import {
+  markGameBootPhase,
+  reportGameBootError,
+} from './lib/gameboot';
 
 initializeLocalization();
 localizeDocument();
@@ -68,13 +73,17 @@ const config: Phaser.Types.Core.GameConfig = {
   ],
 };
 
-const StartGame = (parent: string): Phaser.Game => {
+const StartGame = (
+  parent: string,
+  rendererType: number = config.type ?? AUTO
+): Phaser.Game => {
   const host = document.getElementById(parent);
   const hostWidth = host?.clientWidth ?? window.innerWidth;
   const hostHeight = host?.clientHeight ?? window.innerHeight;
   const designHeight = responsiveDesignHeight(hostWidth, hostHeight);
   const game = new Game({
     ...config,
+    type: rendererType,
     parent,
     scale: {
       mode: Phaser.Scale.FIT,
@@ -83,6 +92,11 @@ const StartGame = (parent: string): Phaser.Game => {
       width: DESIGN_WIDTH,
       height: designHeight,
     },
+  });
+  installSfx(game);
+  game.canvas.addEventListener('webglcontextlost', (event) => {
+    event.preventDefault();
+    reportGameBootError('The graphics context was lost.');
   });
   game.canvas.dataset.renderer =
     game.renderer.type === Phaser.WEBGL ? 'webgl' : 'canvas';
@@ -344,6 +358,7 @@ const StartGame = (parent: string): Phaser.Game => {
 
 document.addEventListener('DOMContentLoaded', () => {
   const start = async (): Promise<void> => {
+    markGameBootPhase('starting', 'Loading the arena…');
     if (isLocalDrawAutomationRequest(window.location)) {
       try {
         const response = await fetch('/__mock/draw-automation', {
@@ -361,7 +376,17 @@ document.addEventListener('DOMContentLoaded', () => {
         // Production has no mock capability endpoint, so Draw stays timed.
       }
     }
-    StartGame('game-container');
+    try {
+      StartGame('game-container');
+    } catch (error) {
+      const gameContainer = document.getElementById('game-container');
+      gameContainer?.replaceChildren();
+      try {
+        StartGame('game-container', CANVAS);
+      } catch (canvasError) {
+        reportGameBootError(canvasError ?? error);
+      }
+    }
   };
-  void start();
+  void start().catch(reportGameBootError);
 });

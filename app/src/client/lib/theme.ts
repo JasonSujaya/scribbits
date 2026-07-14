@@ -4,6 +4,7 @@
 // letterbox below the dock.
 
 import type { Element } from '../../shared/arena';
+import type { CombatRole } from '../../shared/combat/types';
 
 export const DESIGN_WIDTH = 720;
 export const DESIGN_HEIGHT = 1280;
@@ -24,10 +25,7 @@ export const responsiveDesignHeight = (
   const fittedHeight = Math.round(
     (DESIGN_WIDTH * viewportHeight) / viewportWidth
   );
-  return Math.min(
-    MAX_DESIGN_HEIGHT,
-    Math.max(DESIGN_HEIGHT, fittedHeight)
-  );
+  return Math.min(MAX_DESIGN_HEIGHT, Math.max(DESIGN_HEIGHT, fittedHeight));
 };
 
 // Baseline canvas target. Critical 320px actions request 100 design pixels so
@@ -160,6 +158,36 @@ export const STAT_STYLES = {
     colorText: '#7d3a99',
   },
 } as const;
+
+// Combat roles keep one color identity from matchup cards through live weapon
+// silhouettes. Element color remains secondary battle flavor.
+export const ROLE_STYLES: Readonly<
+  Record<
+    CombatRole,
+    Readonly<{ color: number; colorText: string; soft: number }>
+  >
+> = Object.freeze({
+  brawler: Object.freeze({
+    color: 0xf06f4f,
+    colorText: '#a63822',
+    soft: 0xf7c3b5,
+  }),
+  longshot: Object.freeze({
+    color: 0x4b78c4,
+    colorText: '#315a9d',
+    soft: 0xc8d8f2,
+  }),
+  gunner: Object.freeze({
+    color: 0x3b9f72,
+    colorText: '#257653',
+    soft: 0xbfe3d1,
+  }),
+  mage: Object.freeze({
+    color: 0x8d5ac7,
+    colorText: '#67399e',
+    soft: 0xd9c5ee,
+  }),
+});
 
 export const FONT_STACK =
   '"DynaPuff", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';

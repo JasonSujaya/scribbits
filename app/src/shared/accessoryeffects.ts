@@ -1,4 +1,4 @@
-export const ACCESSORY_EFFECT_MODE = 'combat-active-v1' as const;
+export const ACCESSORY_EFFECT_MODE = 'role-sidegrade-v1' as const;
 
 export type AccessoryEffectFamily =
   | 'guard'
@@ -29,37 +29,37 @@ export const ACCESSORY_EFFECTS: Readonly<
   rush: {
     id: 'rush',
     name: 'Rush',
-    techniqueName: 'Dash Blades',
-    battleCue: 'Fast ink blades trail each Shape Power.',
-    shortCopy: 'A quicker, lighter battle style.',
+    techniqueName: 'Quickstep',
+    battleCue: 'Fast ink helps the role weapon recover between actions.',
+    shortCopy: 'Faster handling with a lighter guard.',
   },
   focus: {
     id: 'focus',
     name: 'Focus',
-    techniqueName: 'Orbiting Nibs',
-    battleCue: 'Orbiting nibs tighten the next wind-up.',
+    techniqueName: 'Steady Hands',
+    battleCue: 'A steady rhythm tightens the next visible wind-up.',
     shortCopy: 'Earlier tells with slower recovery.',
   },
   ready: {
     id: 'ready',
     name: 'Ready',
-    techniqueName: 'First Strike',
-    battleCue: 'A first-mark slash opens the fight sooner.',
+    techniqueName: 'Quick Draw',
+    battleCue: 'A quick setup opens the role attack sooner.',
     shortCopy: 'Starts quickly, then hits a little softer.',
   },
   fortune: {
     id: 'fortune',
     name: 'Fortune',
-    techniqueName: 'Lucky Echo',
-    battleCue: 'A lucky echo can sharpen a clean hit.',
-    shortCopy: 'A lucky style with softer base hits.',
+    techniqueName: 'Focus Cycle',
+    battleCue: 'A fixed focus rhythm sharpens a predictable clean hit.',
+    shortCopy: 'Predictable focus hits with softer base impact.',
   },
   aim: {
     id: 'aim',
     name: 'Aim',
-    techniqueName: 'Blade Volley',
-    battleCue: 'A focused blade volley adds impact.',
-    shortCopy: 'Reaches farther with softer base hits.',
+    techniqueName: 'True Aim',
+    battleCue: 'Careful handling adds impact to the role weapon.',
+    shortCopy: 'Harder impact with a lighter guard.',
   },
 });
 

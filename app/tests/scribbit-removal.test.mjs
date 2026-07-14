@@ -225,6 +225,51 @@ test('owner removal clears storage, battles, Champion, and moderation reverses',
   });
 
   await assertCompletelyRemoved(memory, scenario);
+  assert.equal(
+    await scribbits.hasUserCreatedScribbit(
+      memory.storage,
+      scenario.ownerUserId
+    ),
+    true,
+    'removing a Scribbit must not make an established account look new again'
+  );
+});
+
+test('legacy creation state backfills once and survives last-Scribbit removal', async () => {
+  const memory = createMemoryStorage();
+  const ownerUserId = 'legacy-creation-owner';
+  const scribbit = createScribbit('legacy-creation-target', ownerUserId);
+  await scribbits.storeScribbit(memory.storage, ownerUserId, scribbit);
+  await memory.storage.del(scribbits.getUserHasCreatedScribbitKey(ownerUserId));
+
+  assert.equal(
+    await scribbits.hasUserCreatedScribbit(memory.storage, ownerUserId),
+    true
+  );
+  await removal.removeScribbitCompletely(memory.storage, {
+    ownerUserId,
+    scribbitId: scribbit.id,
+    currentDay,
+  });
+  assert.equal(
+    await scribbits.hasUserCreatedScribbit(memory.storage, ownerUserId),
+    true
+  );
+});
+
+test('creation state survives a lost transaction reply', async () => {
+  const memory = createMemoryStorage({ loseNextCommitReply: true });
+  const ownerUserId = 'reply-loss-creation-owner';
+  await scribbits.storeScribbit(
+    memory.storage,
+    ownerUserId,
+    createScribbit('reply-loss-creation-target', ownerUserId)
+  );
+
+  assert.equal(
+    await scribbits.hasUserCreatedScribbit(memory.storage, ownerUserId),
+    true
+  );
 });
 
 test('report-threshold removal rechecks ownership and converges on canonical cleanup', async () => {
@@ -363,6 +408,14 @@ test('privacy deletion reuses canonical removal for owned Scribbits', async () =
 
   assert.deepEqual(result, { status: 'deleted', removedScribbits: 1 });
   await assertCompletelyRemoved(memory, scenario);
+  assert.equal(
+    await scribbits.hasUserCreatedScribbit(
+      memory.storage,
+      scenario.ownerUserId
+    ),
+    false,
+    'privacy deletion must reset the account creation state'
+  );
   for (const deletedKey of [
     rivalRunKey,
     capsuleOperationKey,

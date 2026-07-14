@@ -14,6 +14,7 @@ import {
   elementPaperIcon,
   paperDockIcon,
   paperIcon,
+  paperStatIcon,
   type PaperIconKey,
 } from './papericons';
 import {
@@ -27,6 +28,8 @@ import {
 import { UI_BUTTON_TEXTURES } from './visualassets';
 import { bindPressInteractionEvents } from './pressinteraction';
 import { translate } from './localization';
+import { markSfxManaged, playSfx } from './sfx';
+import type { SfxCue } from './audiocatalog';
 
 const TRANSITION_COLOR = { red: 42, green: 33, blue: 24 } as const;
 // Some scenes rebuild their entire canvas tree after async data arrives. Keep
@@ -334,8 +337,8 @@ export function stickerCard(
   return container;
 }
 
-// A small mood chip. Mood is intentionally word-first so it stays readable and
-// avoids introducing a second icon vocabulary for transient expressions.
+// A labeled mood card. The category eyebrow prevents values such as "Pumped"
+// from reading like an unexplained button beside the element card.
 export function moodChip(
   scene: Scene,
   x: number,
@@ -345,20 +348,51 @@ export function moodChip(
   scale = 1
 ): Phaser.GameObjects.Container {
   const container = scene.add.container(x, y);
-  const w = 130 * scale;
-  const bg = scene.add
-    .rectangle(0, 0, w, 40 * scale, UI.creamHex, 1)
-    .setStrokeStyle(3, UI.inkHex, 1);
-  const txt = label(
+  const width = 180 * scale;
+  const height = 62 * scale;
+  const accent = Number.parseInt(color.replace('#', ''), 16);
+  const shadow = scene.add.rectangle(
+    3 * scale,
+    4 * scale,
+    width,
+    height,
+    UI.inkHex,
+    0.15
+  );
+  const face = scene.add
+    .rectangle(0, 0, width, height, UI.creamHex, 1)
+    .setStrokeStyle(3 * scale, accent, 0.9);
+  const accentStrip = scene.add.rectangle(
+    -width / 2 + 8 * scale,
+    0,
+    8 * scale,
+    height - 14 * scale,
+    accent,
+    1
+  );
+  const icon = paperIcon(scene, 'spark', -width / 2 + 34 * scale, 0, {
+    size: 29 * scale,
+    fill: accent,
+  });
+  const category = label(
     scene,
-    0,
-    0,
+    -width / 2 + 58 * scale,
+    -12 * scale,
+    'MOOD',
+    13 * scale,
+    UI.inkSoft,
+    true
+  ).setOrigin(0, 0.5);
+  const value = label(
+    scene,
+    -width / 2 + 58 * scale,
+    10 * scale,
     moodLabel.toUpperCase(),
     22 * scale,
     color,
     true
-  );
-  container.add([bg, txt]);
+  ).setOrigin(0, 0.5);
+  container.add([shadow, face, accentStrip, icon, category, value]);
   return container;
 }
 
@@ -419,26 +453,49 @@ export function careButton(
   fill: number,
   onClick: () => void,
   width = 130,
-  height = MIN_TOUCH
+  height = MIN_TOUCH,
+  layout: 'stacked' | 'inline' = 'stacked'
 ): Phaser.GameObjects.Container {
   const container = scene.add.container(x, y);
   const bg = paperButtonPlate(scene, 'secondary', width, height, fill);
   const hit = scene.add
     .rectangle(0, 0, width, Math.max(MIN_TOUCH, height), 0xffffff, 0.001)
     .setInteractive({ useHandCursor: true });
-  const actionIcon = paperIcon(scene, iconKey, 0, text ? -16 : 0, {
-    size: text ? 30 : 38,
-    fill: UI.creamHex,
-  });
-  const txt = label(scene, 0, text ? 21 : 0, text, 20, UI.ink, true);
+  const inline = layout === 'inline' && Boolean(text);
+  const actionIcon = paperIcon(
+    scene,
+    iconKey,
+    inline ? -54 : 0,
+    inline ? 0 : text ? -16 : 0,
+    {
+      size: text ? 30 : 38,
+      fill: UI.creamHex,
+    }
+  );
+  const txt = label(
+    scene,
+    inline ? 18 : 0,
+    inline ? 0 : text ? 21 : 0,
+    text,
+    inline ? TYPE.caption : 20,
+    UI.ink,
+    true
+  );
   txt.setAlign('center');
   txt.setWordWrapWidth(width - 8);
   container.add([bg, actionIcon, txt, hit]);
-  wireButtonPress(scene, hit, container, onClick, {
-    scaleX: 0.92,
-    scaleY: 0.9,
-    duration: 60,
-  });
+  wireButtonPress(
+    scene,
+    hit,
+    container,
+    onClick,
+    {
+      scaleX: 0.92,
+      scaleY: 0.9,
+      duration: 60,
+    },
+    'care.action'
+  );
   return container;
 }
 
@@ -554,7 +611,8 @@ function wireButtonPress(
     duration: number;
     ease?: string;
     pressOnHover?: boolean;
-  }>
+  }>,
+  cue: SfxCue = 'ui.tap'
 ): void {
   const press = (): void => {
     scene.tweens.add({
@@ -574,12 +632,16 @@ function wireButtonPress(
       ease: 'Back.easeOut',
     });
   };
+  markSfxManaged(hit);
   bindPressInteractionEvents(
     hit,
     {
       press,
       release,
-      activate: onClick,
+      activate: () => {
+        playSfx(cue);
+        onClick();
+      },
       ...(pressed.pressOnHover === undefined
         ? {}
         : { pressOnHover: pressed.pressOnHover }),
@@ -609,13 +671,20 @@ export function addCardPressInteraction(
     .rectangle(0, 0, options.width, options.height, 0xffffff, 0.001)
     .setInteractive({ useHandCursor: true });
   options.card.add(hitArea);
-  wireButtonPress(options.scene, hitArea, options.card, options.onActivate, {
-    scaleX: options.pressedScaleX ?? 0.97,
-    scaleY: options.pressedScaleY ?? 0.97,
-    duration: 70,
-    ease: 'Linear',
-    pressOnHover: false,
-  });
+  wireButtonPress(
+    options.scene,
+    hitArea,
+    options.card,
+    options.onActivate,
+    {
+      scaleX: options.pressedScaleX ?? 0.97,
+      scaleY: options.pressedScaleY ?? 0.97,
+      duration: 70,
+      ease: 'Linear',
+      pressOnHover: false,
+    },
+    'ui.open'
+  );
   return hitArea;
 }
 
@@ -648,11 +717,18 @@ export function button(
   txt.setWordWrapWidth(width - 24);
   container.add([bg, txt, hit]);
 
-  wireButtonPress(scene, hit, container, onClick, {
-    scaleX: 0.94,
-    scaleY: 0.92,
-    duration: 70,
-  });
+  wireButtonPress(
+    scene,
+    hit,
+    container,
+    onClick,
+    {
+      scaleX: 0.94,
+      scaleY: 0.92,
+      duration: 70,
+    },
+    'ui.primary'
+  );
 
   return container;
 }
@@ -698,16 +774,31 @@ export function iconButton(
   container.add([background, actionIcon, textLabel, hitTarget]);
 
   if (enabled) {
-    wireButtonPress(scene, hitTarget, container, onClick, {
-      scaleX: 0.94,
-      scaleY: 0.92,
-      duration: 70,
-    });
+    wireButtonPress(
+      scene,
+      hitTarget,
+      container,
+      onClick,
+      {
+        scaleX: 0.94,
+        scaleY: 0.92,
+        duration: 70,
+      },
+      'ui.primary'
+    );
   }
   return container;
 }
 
 /** A compact secondary paper button centered on a semantic icon. */
+type PaperIconButtonOptions = Readonly<{
+  iconOffsetX?: number;
+  iconOffsetY?: number;
+}>;
+
+const PAPER_ICON_OPTICAL_OFFSET_X = -4;
+const PAPER_ICON_OPTICAL_OFFSET_Y = -5;
+
 export function paperIconButton(
   scene: Scene,
   x: number,
@@ -717,7 +808,8 @@ export function paperIconButton(
   width = 100,
   fill: number = UI.coral,
   iconFill: number = UI.gold,
-  requestedHeight = 68
+  requestedHeight = 68,
+  options: PaperIconButtonOptions = {}
 ): Phaser.GameObjects.Container {
   const container = scene.add.container(x, y);
   const background = paperButtonPlate(
@@ -727,11 +819,17 @@ export function paperIconButton(
     requestedHeight,
     fill
   );
-  const actionIcon = paperIcon(scene, iconKey, 0, 0, {
-    size: 40,
-    fill: iconFill,
-    stroke: UI.inkHex,
-  });
+  const actionIcon = paperIcon(
+    scene,
+    iconKey,
+    options.iconOffsetX ?? PAPER_ICON_OPTICAL_OFFSET_X,
+    options.iconOffsetY ?? PAPER_ICON_OPTICAL_OFFSET_Y,
+    {
+      size: 40,
+      fill: iconFill,
+      stroke: UI.inkHex,
+    }
+  );
   const hitTarget = scene.add
     .rectangle(
       0,
@@ -744,11 +842,18 @@ export function paperIconButton(
     .setInteractive({ useHandCursor: true });
   container.add([background, actionIcon, hitTarget]);
 
-  wireButtonPress(scene, hitTarget, container, onClick, {
-    scaleX: 0.92,
-    scaleY: 0.9,
-    duration: 60,
-  });
+  wireButtonPress(
+    scene,
+    hitTarget,
+    container,
+    onClick,
+    {
+      scaleX: 0.92,
+      scaleY: 0.9,
+      duration: 60,
+    },
+    'ui.tap'
+  );
   return container;
 }
 
@@ -786,16 +891,23 @@ export function ghostButton(
   txt?.setWordWrapWidth(width - 20);
   container.add(txt ? [bg, txt, hit] : [bg, hit]);
 
-  wireButtonPress(scene, hit, container, onClick, {
-    scaleX: 0.94,
-    scaleY: 0.92,
-    duration: 70,
-  });
+  wireButtonPress(
+    scene,
+    hit,
+    container,
+    onClick,
+    {
+      scaleX: 0.94,
+      scaleY: 0.92,
+      duration: 70,
+    },
+    isBackIcon ? 'ui.back' : isCloseIcon ? 'ui.close' : 'ui.tap'
+  );
   return container;
 }
 
-/** Generated circular paper arrow for pagination and short directional moves. */
-function pageArrowButton(
+/** Shared circular paper arrow for pagination and short directional moves. */
+export function paperArrowButton(
   scene: Scene,
   x: number,
   y: number,
@@ -813,11 +925,19 @@ function pageArrowButton(
     .setInteractive({ useHandCursor: true });
   container.add([face, hit]);
 
-  wireButtonPress(scene, hit, container, onClick, {
-    scaleX: 0.9,
-    scaleY: 0.9,
-    duration: 60,
-  });
+  wireButtonPress(
+    scene,
+    hit,
+    container,
+    onClick,
+    {
+      scaleX: 0.84,
+      scaleY: 0.84,
+      duration: 80,
+      pressOnHover: false,
+    },
+    'ui.page'
+  );
   return container;
 }
 
@@ -854,7 +974,7 @@ export function paperPagination(options: PaperPaginationOptions): void {
     pageCount,
     isNextLoading = false,
     showUnavailable = false,
-    pointerPassthrough = false,
+    pointerPassthrough = true,
   } = options;
   const previousX = options.previousX ?? 104;
   const nextX = options.nextX ?? scene.scale.width - 104;
@@ -892,7 +1012,7 @@ export function paperPagination(options: PaperPaginationOptions): void {
     isLoading = false
   ): void => {
     if (!enabled && !showUnavailable && !isLoading) return;
-    const arrow = pageArrowButton(
+    const arrow = paperArrowButton(
       scene,
       x,
       y,
@@ -906,6 +1026,7 @@ export function paperPagination(options: PaperPaginationOptions): void {
     const control = actionOverlay?.add({
       label: accessibleLabel,
       rect: { x: x - 50, y: y - 50, width: 100, height: 100 },
+      attributes: { 'data-sfx-cue': 'ui.page' },
       pointerPassthrough: enabled ? pointerPassthrough : false,
       enabled: enabled && !isLoading,
       onActivate: enabled && !isLoading ? onActivate : () => {},
@@ -936,12 +1057,7 @@ export function paperPagination(options: PaperPaginationOptions): void {
   );
 }
 
-export type AppTabKey =
-  | 'home'
-  | 'arena'
-  | 'bag'
-  | 'battles'
-  | 'shop';
+export type AppTabKey = 'home' | 'arena' | 'bag' | 'battles' | 'shop';
 
 export type AppTabItem = {
   key: AppTabKey;
@@ -975,12 +1091,16 @@ function wireTab(
       ease: 'Quad.easeOut',
     });
   };
+  markSfxManaged(hit);
   bindPressInteractionEvents(
     hit,
     {
       press,
       release,
-      activate: onClick,
+      activate: () => {
+        playSfx('ui.tab');
+        onClick();
+      },
       pressOnHover: false,
     },
     {
@@ -1140,7 +1260,14 @@ export function appTabBar(
     }
     slot.add([icon, text]);
 
-    const hit = scene.add.rectangle(x, 0, slotWidth, barHeight, 0xffffff, 0.001);
+    const hit = scene.add.rectangle(
+      x,
+      0,
+      slotWidth,
+      barHeight,
+      0xffffff,
+      0.001
+    );
     hit.setInteractive({ useHandCursor: !isActive });
     container.add([slot, hit]);
     if (!isActive) wireTab(hit, slot, tab.onClick, scene);
@@ -1171,6 +1298,7 @@ export function errorPanel(
   message: string,
   onRetry: () => void
 ): ErrorPanel {
+  playSfx('ui.error');
   const width = 560;
   const height = 320;
   const container = scene.add.container(x, y).setDepth(1000);
@@ -1288,7 +1416,8 @@ function drawWobblyRect(
   graphics.strokePath();
 }
 
-// A small rounded element badge using the canonical element mark.
+// A labeled element card using the canonical element mark. Category + value
+// makes the pair self-explanatory when placed beside the mood card.
 export function elementBadge(
   scene: Scene,
   x: number,
@@ -1297,35 +1426,59 @@ export function elementBadge(
   scale = 1
 ): Phaser.GameObjects.Container {
   const style = ELEMENT_STYLES[element];
-  const width = 150 * scale;
-  const height = 56 * scale;
+  const width = 180 * scale;
+  const height = 62 * scale;
   const container = scene.add.container(x, y);
-  const bg = scene.add
-    .rectangle(0, 0, width, height, style.primary, 1)
-    .setStrokeStyle(3, 0x2b2016, 1);
+  const shadow = scene.add.rectangle(
+    3 * scale,
+    4 * scale,
+    width,
+    height,
+    UI.inkHex,
+    0.15
+  );
+  const face = scene.add
+    .rectangle(0, 0, width, height, UI.creamHex, 1)
+    .setStrokeStyle(3 * scale, style.primary, 0.9);
+  const accentStrip = scene.add.rectangle(
+    -width / 2 + 8 * scale,
+    0,
+    8 * scale,
+    height - 14 * scale,
+    style.primary,
+    1
+  );
   const icon = elementPaperIcon(
     scene,
     element,
-    -width / 2 + 28 * scale,
+    -width / 2 + 34 * scale,
     0,
-    34 * scale
+    30 * scale
   );
-  const text = label(
+  const category = label(
     scene,
-    18 * scale,
-    0,
-    style.label,
-    24 * scale,
-    UI.ink,
+    -width / 2 + 58 * scale,
+    -12 * scale,
+    'ELEMENT',
+    13 * scale,
+    UI.inkSoft,
     true
-  );
-  container.add([bg, icon, text]);
+  ).setOrigin(0, 0.5);
+  const value = label(
+    scene,
+    -width / 2 + 58 * scale,
+    10 * scale,
+    style.label.toUpperCase(),
+    22 * scale,
+    style.primaryText,
+    true
+  ).setOrigin(0, 0.5);
+  container.add([shadow, face, accentStrip, icon, category, value]);
   return container;
 }
 
-// A compact 2x2 stat grid — four labeled meters that NEVER clip. Sized to fit
-// inside a given width; each cell has an icon+label, a short bar, and a value.
-// Returns a controller whose setStats animates the fills. Centered on (x, y).
+// Four readable paper stat cards for phone-sized detail views. Two columns keep
+// the canonical marks and exact numbers large enough to survive canvas scaling.
 type StatGrid = {
   container: Phaser.GameObjects.Container;
   setStats: (stats: ScribbitStats, animate: boolean) => void;
@@ -1339,67 +1492,110 @@ export function statGrid(
   height: number
 ): StatGrid {
   const container = scene.add.container(x, y);
-  const colWidth = width / 2;
-  const rowHeight = height / 2;
-  const bars = new Map<StatKey, Phaser.GameObjects.Rectangle>();
+  const gap = 12;
+  const cardWidth = (width - gap) / 2;
+  const cardHeight = (height - gap) / 2;
+  const cards = new Map<StatKey, Phaser.GameObjects.Graphics>();
   const values = new Map<StatKey, Phaser.GameObjects.Text>();
-  const barMax = colWidth - 150;
 
   SCRIBBIT_STAT_KEYS.forEach((key, index) => {
     const style = STAT_STYLES[key];
-    const col = index % 2;
+    const column = index % 2;
     const row = Math.floor(index / 2);
-    const cellX = -width / 2 + colWidth * col + 12;
-    const cellY = -height / 2 + rowHeight * (row + 0.5);
+    const cardX = -width / 2 + cardWidth / 2 + column * (cardWidth + gap);
+    const cardY = -height / 2 + cardHeight / 2 + row * (cardHeight + gap);
+    const textX = cardX - cardWidth / 2 + 68;
+    const face = scene.add.graphics();
 
+    const valueText = label(
+      scene,
+      textX,
+      cardY + 18,
+      '0',
+      TYPE.body,
+      UI.ink,
+      true
+    ).setOrigin(0, 0.5);
     const name = label(
       scene,
-      cellX,
-      cellY - 16,
+      textX,
+      cardY - 17,
       style.label,
-      22,
+      TYPE.caption * 0.92,
       style.colorText,
       true
     ).setOrigin(0, 0.5);
-    const track = scene.add
-      .rectangle(cellX, cellY + 12, barMax, 16, UI.progressTrack, 0.16)
-      .setOrigin(0, 0.5)
-      .setStrokeStyle(2, UI.progressTrack, 0.3);
-    const fill = scene.add
-      .rectangle(cellX + 2, cellY + 12, 1, 11, style.color, 1)
-      .setOrigin(0, 0.5);
-    const valueText = label(
-      scene,
-      cellX + barMax + 30,
-      cellY + 12,
-      '0',
-      22,
-      UI.ink,
-      true
-    ).setOrigin(0.5);
-    container.add([name, track, fill, valueText]);
-    bars.set(key, fill);
+    container.add([
+      face,
+      paperStatIcon(
+        scene,
+        key,
+        cardX - cardWidth / 2 + 36,
+        cardY,
+        42,
+        style.color,
+        false
+      ),
+      valueText,
+      name,
+    ]);
+    cards.set(key, face);
     values.set(key, valueText);
   });
 
   const setStats = (stats: ScribbitStats, animate: boolean): void => {
+    const dominantStat = SCRIBBIT_STAT_KEYS.reduce((current, key) =>
+      stats[key] > stats[current] ? key : current
+    );
     SCRIBBIT_STAT_KEYS.forEach((key) => {
-      const fill = bars.get(key);
+      const card = cards.get(key);
       const valueText = values.get(key);
-      if (!fill || !valueText) return;
+      if (!card || !valueText) return;
       const value = stats[key];
-      const target = Math.max(2, (barMax - 4) * Math.min(1, value / 55));
+      const index = SCRIBBIT_STAT_KEYS.indexOf(key);
+      const column = index % 2;
+      const row = Math.floor(index / 2);
+      const cardX = -width / 2 + cardWidth / 2 + column * (cardWidth + gap);
+      const cardY = -height / 2 + cardHeight / 2 + row * (cardHeight + gap);
+      card.clear();
+      card.fillStyle(UI.creamHex, 1);
+      card.fillRoundedRect(
+        cardX - cardWidth / 2,
+        cardY - cardHeight / 2,
+        cardWidth,
+        cardHeight,
+        14
+      );
+      card.fillStyle(STAT_STYLES[key].color, 1);
+      card.fillRoundedRect(
+        cardX - cardWidth / 2 + 8,
+        cardY - cardHeight / 2 + 10,
+        8,
+        cardHeight - 20,
+        4
+      );
+      const dominant = key === dominantStat;
+      card.lineStyle(
+        dominant ? 5 : 3,
+        dominant ? UI.goldHex : STAT_STYLES[key].color,
+        1
+      );
+      card.strokeRoundedRect(
+        cardX - cardWidth / 2,
+        cardY - cardHeight / 2,
+        cardWidth,
+        cardHeight,
+        14
+      );
+      valueText.setText(String(value));
       if (animate) {
         scene.tweens.add({
-          targets: fill,
-          width: target,
-          duration: 260,
-          ease: 'Cubic.easeOut',
+          targets: valueText,
+          scale: { from: 0.78, to: 1 },
+          duration: 220,
+          ease: 'Back.easeOut',
         });
-      } else {
-        fill.width = target;
       }
-      valueText.setText(String(value));
     });
   };
 

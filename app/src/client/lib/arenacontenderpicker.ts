@@ -14,6 +14,7 @@ import {
   paperWordmark,
   stickerCard,
 } from './ui';
+import { setSfxCue } from './sfx';
 
 export type ArenaContenderPicker = Readonly<{ destroy: () => void }>;
 
@@ -71,6 +72,7 @@ export function openArenaContenderPicker(
   const shade = scene.add
     .rectangle(width / 2, height / 2, width, height, UI.inkHex, 0.66)
     .setInteractive();
+  setSfxCue(shade, 'ui.close');
   let shadePointerDown: { x: number; y: number } | null = null;
   shade.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
     shadePointerDown = { x: pointer.x, y: pointer.y };

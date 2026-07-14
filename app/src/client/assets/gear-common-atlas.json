@@ -2,262 +2,262 @@
   "frames": {
     "bowtie": {
       "frame": {
-        "x": 45,
-        "y": 39,
-        "w": 127,
-        "h": 89
+        "x": 37,
+        "y": 33,
+        "w": 107,
+        "h": 69
       },
       "rotated": false,
       "trimmed": false,
       "spriteSourceSize": {
         "x": 0,
         "y": 0,
-        "w": 127,
-        "h": 89
+        "w": 107,
+        "h": 69
       },
       "sourceSize": {
-        "w": 127,
-        "h": 89
+        "w": 107,
+        "h": 69
       }
     },
     "flower-crown": {
       "frame": {
-        "x": 192,
-        "y": 25,
-        "w": 170,
-        "h": 111
+        "x": 191,
+        "y": 16,
+        "w": 161,
+        "h": 103
       },
       "rotated": false,
       "trimmed": false,
       "spriteSourceSize": {
         "x": 0,
         "y": 0,
-        "w": 170,
-        "h": 111
+        "w": 161,
+        "h": 103
       },
       "sourceSize": {
-        "w": 170,
-        "h": 111
+        "w": 161,
+        "h": 103
       }
     },
     "monocle": {
       "frame": {
-        "x": 362,
-        "y": 33,
-        "w": 141,
-        "h": 103
+        "x": 401,
+        "y": 21,
+        "w": 102,
+        "h": 94
       },
       "rotated": false,
       "trimmed": false,
       "spriteSourceSize": {
         "x": 0,
         "y": 0,
-        "w": 141,
-        "h": 103
+        "w": 102,
+        "h": 94
       },
       "sourceSize": {
-        "w": 141,
-        "h": 103
+        "w": 102,
+        "h": 94
       }
     },
     "beanie": {
       "frame": {
-        "x": 551,
-        "y": 33,
-        "w": 127,
-        "h": 103
+        "x": 580,
+        "y": 22,
+        "w": 107,
+        "h": 92
       },
       "rotated": false,
       "trimmed": false,
       "spriteSourceSize": {
         "x": 0,
         "y": 0,
-        "w": 127,
-        "h": 103
+        "w": 107,
+        "h": 92
       },
       "sourceSize": {
-        "w": 127,
-        "h": 103
+        "w": 107,
+        "h": 92
       }
     },
     "round-glasses": {
       "frame": {
-        "x": 39,
-        "y": 175,
-        "w": 142,
-        "h": 76
+        "x": 29,
+        "y": 176,
+        "w": 123,
+        "h": 56
       },
       "rotated": false,
       "trimmed": false,
       "spriteSourceSize": {
         "x": 0,
         "y": 0,
-        "w": 142,
-        "h": 76
+        "w": 123,
+        "h": 56
       },
       "sourceSize": {
-        "w": 142,
-        "h": 76
+        "w": 123,
+        "h": 56
       }
     },
     "tiny-sword": {
       "frame": {
-        "x": 218,
-        "y": 136,
-        "w": 141,
-        "h": 135
+        "x": 230,
+        "y": 153,
+        "w": 83,
+        "h": 101
       },
       "rotated": false,
       "trimmed": false,
       "spriteSourceSize": {
         "x": 0,
         "y": 0,
-        "w": 141,
-        "h": 135
+        "w": 83,
+        "h": 101
       },
       "sourceSize": {
-        "w": 141,
-        "h": 135
+        "w": 83,
+        "h": 101
       }
     },
     "snail-shell-backpack": {
       "frame": {
-        "x": 379,
-        "y": 136,
-        "w": 116,
-        "h": 130
+        "x": 404,
+        "y": 158,
+        "w": 96,
+        "h": 91
       },
       "rotated": false,
       "trimmed": false,
       "spriteSourceSize": {
         "x": 0,
         "y": 0,
-        "w": 116,
-        "h": 130
+        "w": 96,
+        "h": 91
       },
       "sourceSize": {
-        "w": 116,
-        "h": 130
+        "w": 96,
+        "h": 91
       }
     },
     "party-hat": {
       "frame": {
-        "x": 564,
-        "y": 151,
-        "w": 88,
-        "h": 116
+        "x": 599,
+        "y": 156,
+        "w": 68,
+        "h": 96
       },
       "rotated": false,
       "trimmed": false,
       "spriteSourceSize": {
         "x": 0,
         "y": 0,
-        "w": 88,
-        "h": 116
+        "w": 68,
+        "h": 96
       },
       "sourceSize": {
-        "w": 88,
-        "h": 116
+        "w": 68,
+        "h": 96
       }
     },
     "mustache": {
       "frame": {
-        "x": 36,
-        "y": 300,
-        "w": 141,
-        "h": 108
+        "x": 30,
+        "y": 318,
+        "w": 121,
+        "h": 44
       },
       "rotated": false,
       "trimmed": false,
       "spriteSourceSize": {
         "x": 0,
         "y": 0,
-        "w": 141,
-        "h": 108
+        "w": 121,
+        "h": 44
       },
       "sourceSize": {
-        "w": 141,
-        "h": 108
+        "w": 121,
+        "h": 44
       }
     },
     "inkquake-rumble-belt": {
       "frame": {
-        "x": 200,
-        "y": 284,
-        "w": 143,
-        "h": 95
+        "x": 210,
+        "y": 302,
+        "w": 123,
+        "h": 75
       },
       "rotated": false,
       "trimmed": false,
       "spriteSourceSize": {
         "x": 0,
         "y": 0,
-        "w": 143,
-        "h": 95
+        "w": 123,
+        "h": 75
       },
       "sourceSize": {
-        "w": 143,
-        "h": 95
+        "w": 123,
+        "h": 75
       }
     },
     "nib-halo-headband": {
       "frame": {
-        "x": 372,
-        "y": 272,
-        "w": 171,
-        "h": 110
+        "x": 401,
+        "y": 290,
+        "w": 103,
+        "h": 100
       },
       "rotated": false,
       "trimmed": false,
       "spriteSourceSize": {
         "x": 0,
         "y": 0,
-        "w": 171,
-        "h": 110
+        "w": 103,
+        "h": 100
       },
       "sourceSize": {
-        "w": 171,
-        "h": 110
+        "w": 103,
+        "h": 100
       }
     },
     "smearstep-speed-scarf": {
       "frame": {
-        "x": 543,
-        "y": 286,
-        "w": 152,
-        "h": 103
+        "x": 556,
+        "y": 298,
+        "w": 155,
+        "h": 83
       },
       "rotated": false,
       "trimmed": false,
       "spriteSourceSize": {
         "x": 0,
         "y": 0,
-        "w": 152,
-        "h": 103
+        "w": 155,
+        "h": 83
       },
       "sourceSize": {
-        "w": 152,
-        "h": 103
+        "w": 155,
+        "h": 83
       }
     },
     "colorburst-rosette": {
       "frame": {
-        "x": 56,
-        "y": 408,
-        "w": 106,
-        "h": 109
+        "x": 47,
+        "y": 419,
+        "w": 86,
+        "h": 113
       },
       "rotated": false,
       "trimmed": false,
       "spriteSourceSize": {
         "x": 0,
         "y": 0,
-        "w": 106,
-        "h": 109
+        "w": 86,
+        "h": 113
       },
       "sourceSize": {
-        "w": 106,
-        "h": 109
+        "w": 86,
+        "h": 113
       }
     }
   },

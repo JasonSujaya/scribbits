@@ -17,8 +17,8 @@ import { loadDrawing, fitDrawing, levelOf } from './scribbits';
 import { BATTLE_MATCHUP_TITLE_BY_KIND } from './matchupbrief';
 import type { FounderRivalryStakesPlan } from './founderchronicle';
 import { formatRivalRunBattleLabel } from './rivalrunpresentation';
-import { selectPrimaryPower } from '../../shared/combat/selection';
-import { planShapeReceipt } from '../../shared/combat/shapepowercontent';
+import { selectCombatRole } from '../../shared/combat/selection';
+import { getCombatRoleContent } from '../../shared/combat/roles';
 
 export type VsCeremonyOptions = Readonly<{
   fighterA: Scribbit;
@@ -97,10 +97,23 @@ function createFighterSide(
   );
   side.add(artwork);
 
+  const role = getCombatRoleContent(selectCombatRole(fighter.stats));
+  side.add(
+    label(
+      scene,
+      0,
+      FIGHTER_ART_SIZE / 2 + 18,
+      `${role.displayName.toUpperCase()} · ${role.rangeLabel}`,
+      17,
+      elementStyle.primaryText,
+      true
+    )
+  );
+
   const fighterName = label(
     scene,
     0,
-    FIGHTER_ART_SIZE / 2 + 44,
+    FIGHTER_ART_SIZE / 2 + 49,
     fighter.name,
     30,
     UI.ink,
@@ -260,19 +273,13 @@ export function showVsCeremony(scene: Scene, options: VsCeremonyOptions): void {
     ELEMENT_STYLES[fighterB.element].primary,
     0.9
   );
-  const receiptA = planShapeReceipt(
-    fighterA.element,
-    selectPrimaryPower(fighterA.stats)
-  );
-  const receiptB = planShapeReceipt(
-    fighterB.element,
-    selectPrimaryPower(fighterB.stats)
-  );
+  const roleA = getCombatRoleContent(selectCombatRole(fighterA.stats));
+  const roleB = getCombatRoleContent(selectCombatRole(fighterB.stats));
   const receiptAView = label(
     scene,
     width / 2,
     mechanicsY - 32,
-    receiptA.battleLine,
+    `${fighterA.name.toUpperCase()}: ${roleA.weaponName.toUpperCase()} · ${roleA.basicAttackName} → ${roleA.signatureName}`,
     21,
     ELEMENT_STYLES[fighterA.element].primaryText,
     true
@@ -281,7 +288,7 @@ export function showVsCeremony(scene: Scene, options: VsCeremonyOptions): void {
     scene,
     width / 2,
     mechanicsY + 32,
-    receiptB.battleLine,
+    `${fighterB.name.toUpperCase()}: ${roleB.weaponName.toUpperCase()} · ${roleB.basicAttackName} → ${roleB.signatureName}`,
     21,
     ELEMENT_STYLES[fighterB.element].primaryText,
     true

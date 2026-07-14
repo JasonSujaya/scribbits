@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -14,6 +15,10 @@ const {
   stageDirectBattle,
   takeSkipArenaReceiptsOnce,
 } = require(join(compiledClientRoot, 'lib', 'registry.js'));
+const birthCeremonySource = await readFile(
+  new URL('../src/client/lib/birthceremony.ts', import.meta.url),
+  'utf8'
+);
 
 const createScene = () => {
   const values = new Map();
@@ -54,4 +59,12 @@ test('direct battle staging rejects a report without the owned Scribbit', () => 
     null
   );
   assert.equal(values.size, 0);
+});
+
+test('birth finish adds edge paper flecks without animating reduced-motion players', () => {
+  assert.match(birthCeremonySource, /export function playBirthFinishVfx/);
+  assert.match(birthCeremonySource, /if \(prefersReducedMotion\(\)\) return/);
+  assert.match(birthCeremonySource, /createPaperFlecks\(input\.centerX - edgeOffset, -1\)/);
+  assert.match(birthCeremonySource, /createPaperFlecks\(input\.centerX \+ edgeOffset, 1\)/);
+  assert.match(birthCeremonySource, /gravityY: 145/);
 });

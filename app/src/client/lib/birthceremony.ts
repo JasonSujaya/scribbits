@@ -12,6 +12,41 @@ export type BirthCeremonyResult = Readonly<{
   newborn: LiveSprite | null;
 }>;
 
+export function playBirthFinishVfx(
+  scene: Scene,
+  input: Readonly<{
+    centerX: number;
+    centerY: number;
+    cardWidth: number;
+    tint: number;
+  }>
+): void {
+  if (prefersReducedMotion()) return;
+
+  const createPaperFlecks = (x: number, direction: 1 | -1): void => {
+    const flecks = scene.add.particles(x, input.centerY - 30, 'spark', {
+      speedX: {
+        min: direction < 0 ? -105 : 28,
+        max: direction < 0 ? -28 : 105,
+      },
+      speedY: { min: -85, max: -28 },
+      gravityY: 145,
+      rotate: { min: -35, max: 35 },
+      scale: { start: 0.16, end: 0.07 },
+      alpha: { start: 0.68, end: 0 },
+      lifespan: { min: 650, max: 920 },
+      tint: [UI.creamHex, UI.gold, input.tint],
+      emitting: false,
+    });
+    flecks.setDepth(9).explode(7);
+    scene.time.delayedCall(980, () => flecks.destroy());
+  };
+
+  const edgeOffset = input.cardWidth / 2 - 18;
+  createPaperFlecks(input.centerX - edgeOffset, -1);
+  createPaperFlecks(input.centerX + edgeOffset, 1);
+}
+
 export function playBirthCeremony(
   scene: Scene,
   input: Readonly<{

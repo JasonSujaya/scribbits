@@ -24,6 +24,15 @@ const handleAppSetup = async (c: HonoContext) => {
       username: context.username ?? 'Scribbits',
     });
     const post = await ensureCurrentArenaPost(redis, now);
+    console.log(
+      JSON.stringify({
+        appVersion: context.appVersion,
+        event: 'scribbits.app_setup.ready',
+        postId: post.id,
+        subreddit: context.subredditName,
+        trigger: input.type,
+      })
+    );
 
     return c.json<TriggerResponse>(
       {

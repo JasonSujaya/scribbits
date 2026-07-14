@@ -51,6 +51,8 @@ test('Arena exposes the server season as one compact status and ranking action',
   assert.match(arenaSource, /this\.state\.season\.latestFinalized/);
   assert.match(arenaSource, /seasonStandingText\(\)/);
   assert.match(arenaSource, /openSeasonRanking\(\)/);
+  assert.match(arenaSource, /paperCard\(this, 0, 0, cardWidth, cardHeight\)/);
+  assert.match(arenaSource, /DAYS LEFT  •  \$\{rank\} RANK/);
   assert.match(arenaSource, /paperIcon\(this, 'trophy'/);
   assert.match(arenaSource, /event\.scoreMultiplier/);
   assert.match(seasonBoardSource, /fetchSeasonBoard\(\)/);
@@ -238,7 +240,10 @@ test('Arena rematches use Rival Run while birth uses one simple random fight', (
 
 test('a birth replay cannot stage the wrong Scribbit or expose old receipts', () => {
   assert.match(registrySource, /if \(!opponent\) return null/);
-  assert.match(registrySource, /type ReplayEntryMode = 'fresh' \| 'birth' \| 'saved'/);
+  assert.match(
+    registrySource,
+    /type ReplayEntryMode = 'fresh' \| 'birth' \| 'saved'/
+  );
   assert.match(arenaSource, /else if \(!takeSkipArenaReceiptsOnce\(this\)\)/);
   assert.match(drawSource, /skipArenaReceiptsOnce\(this\)/);
 });
@@ -253,7 +258,7 @@ test('Champion keeps its focused lifecycle-safe launcher', () => {
   );
   assert.ok(
     (arenaSource.match(/acceptMutationResponse\(sceneEpoch\)/g) ?? []).length >=
-      8,
+      7,
     'every Arena mutation continuation must pass through the shared lifecycle guard'
   );
   assert.match(

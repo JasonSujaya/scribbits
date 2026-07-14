@@ -168,7 +168,7 @@ const orderForLevelMatchmaking = (
 
 /**
  * Adjacent levels are the only raw-power signal used here. Drawing stats,
- * element, and Shape Power are deliberately excluded so players cannot queue
+ * element, and combat role are deliberately excluded so players cannot queue
  * dodge a counter or optimize the matcher instead of drawing creatively.
  */
 const pairClosestLevels = (

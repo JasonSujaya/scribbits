@@ -16,6 +16,8 @@ internal.route('/scheduler', scheduledTasks);
 app.route('/api', api);
 app.route('/internal', internal);
 
+app.get('/api/health', (c) => c.json({ status: 'ok' as const }));
+
 serve({
   fetch: app.fetch,
   createServer,

@@ -9,6 +9,7 @@
 
 import type { Scene } from 'phaser';
 import { FONT_STACK, UI } from './theme';
+import { playSfx } from './sfx';
 
 export type OverlayRect = {
   x: number; // design-space top-left
@@ -269,7 +270,9 @@ export class CanvasActionOverlay {
       // Prevent the browser's follow-up synthetic click so keyboard input and
       // pointer input each activate the action exactly once.
       event.preventDefault();
-      activate();
+      // Keep keyboard and pointer activation on the same event path so every
+      // native canvas action also reaches the global button SFX listener.
+      nativeButton.click();
     });
     nativeButton.addEventListener('click', activate);
     this.overlay.place(nativeButton, input.rect, input.followCamera);
@@ -538,6 +541,7 @@ export class CanvasModalOverlay {
     if (event.key === 'Escape') {
       event.preventDefault();
       event.stopImmediatePropagation();
+      playSfx('ui.close');
       this.onDismiss();
       return;
     }

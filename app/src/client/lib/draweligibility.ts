@@ -1,6 +1,9 @@
 import type { Scene } from 'phaser';
 import { showLoginPrompt, showToast } from '@devvit/web/client';
-import { MAX_ALIVE_PER_USER } from '../../shared/arena';
+import {
+  getScribbitLifecycleStage,
+  MAX_GROWING_PER_USER,
+} from '../../shared/arena';
 import type { ArenaState, FreeDrawing } from '../../shared/arena';
 import { beginPracticeSession, getArena } from './registry';
 import { startScene } from './ui';
@@ -71,15 +74,17 @@ export const getDrawEligibility = (
 export const needsScribbitCreation = (
   state: ArenaState | undefined
 ): boolean => {
-  return Boolean(
-    state?.loggedIn && state.myScribbits.length === 0 && !state.drawnToday
-  );
+  return Boolean(state?.loggedIn && !state.hasCreatedScribbit);
 };
 
 export const getCommunityThemeEligibility = (
   state: ArenaState
 ): CommunityThemeEligibility => {
-  if (state.myScribbits.length >= MAX_ALIVE_PER_USER) {
+  const growingCount = state.myScribbits.filter(
+    (scribbit) =>
+      getScribbitLifecycleStage(scribbit, state.dayNumber) === 'growing'
+  ).length;
+  if (growingCount >= MAX_GROWING_PER_USER) {
     return {
       canJoin: false,
       message: translate('drawEligibility.full'),

@@ -16,15 +16,10 @@ import {
 import { paperIcon, type PaperIconKey } from '../lib/papericons';
 import { ELEMENT_PAYLOAD_GUIDE } from '../../shared/combat/elementcontent';
 import {
-  getShapePowerContent,
-  getShapePowerDrawingCue,
-  getShapePowerFieldGuideCue,
-} from '../../shared/combat/shapepowercontent';
-import {
-  DOMINANT_STAT_TIE_ORDER,
-  PRIMARY_POWER_BY_DOMINANT_STAT,
-} from '../../shared/combat/config';
-import type { DominantStat } from '../../shared/combat/types';
+  COMBAT_ROLE_IDS,
+  getCombatRoleContent,
+} from '../../shared/combat/roles';
+import type { CombatRole } from '../../shared/combat/types';
 import { appDock } from '../lib/appdock';
 import { appMenu } from '../lib/appmenu';
 import { CanvasActionOverlay, CanvasModalOverlay } from '../lib/overlay';
@@ -39,22 +34,20 @@ type GuideModal = Readonly<{
   deleteControl: HTMLButtonElement | null;
   status: HTMLElement;
 }>;
-const SHAPE_POWER_GUIDE_ICON_BY_STAT: Readonly<
-  Record<DominantStat, PaperIconKey>
-> = Object.freeze({
-  chonk: 'heart',
-  spike: 'sword',
-  zip: 'clock',
-  charm: 'spark',
-});
-const SHAPE_POWER_GUIDE_ENTRIES = DOMINANT_STAT_TIE_ORDER.map((stat) => {
-  const power = PRIMARY_POWER_BY_DOMINANT_STAT[stat];
-  const content = getShapePowerContent(power);
+const ROLE_GUIDE_ICON: Readonly<Record<CombatRole, PaperIconKey>> =
+  Object.freeze({
+    brawler: 'heart',
+    longshot: 'sword',
+    gunner: 'clock',
+    mage: 'spark',
+  });
+const SHAPE_POWER_GUIDE_ENTRIES = COMBAT_ROLE_IDS.map((role) => {
+  const content = getCombatRoleContent(role);
   return Object.freeze({
-    icon: SHAPE_POWER_GUIDE_ICON_BY_STAT[stat],
-    statLabel: stat.toUpperCase(),
-    detail: getShapePowerFieldGuideCue(power),
-    description: `${stat.toUpperCase()} gives ${content.fieldGuideCue.toLowerCase()}. ${getShapePowerDrawingCue(power)}`,
+    icon: ROLE_GUIDE_ICON[role],
+    statLabel: `${content.displayName.toUpperCase()} · ${content.rangeLabel}`,
+    detail: `${content.weaponName} · ${content.basicAttackName} → ${content.signatureName}`,
+    description: `${content.drawingCue} creates a ${content.displayName}. ${content.behavior}`,
   });
 });
 
@@ -266,7 +259,7 @@ export class Bestiary extends Scene {
   private guideSectionTitle(section: GuideSection): string {
     switch (section) {
       case 'shape':
-        return 'SHAPE = BUILD';
+        return 'DRAWING = ROLE';
       case 'elements':
         return 'ELEMENTS';
       case 'ritual':

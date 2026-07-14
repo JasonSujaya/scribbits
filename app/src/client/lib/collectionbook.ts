@@ -45,6 +45,7 @@ import {
   type GearCombatSummaryItem,
 } from '../../shared/gearcombat';
 import { selectGearWeekDay } from '../../shared/content/gearweek';
+import { getCombatRoleContent } from '../../shared/combat';
 
 const BAG_GEAR_TILE_SIZE = 120;
 
@@ -1457,7 +1458,13 @@ function openCosmeticDetail(options: {
   ).setWordWrapWidth(width - 180);
   detail.add(name);
 
-  const detailCopy = entry.description;
+  const roleRelicCopy =
+    entry.kind === 'accessory' && entry.roleAffinity
+      ? `${getCombatRoleContent(entry.roleAffinity).displayName.toUpperCase()} RELIC · ${entry.roleEffect ?? 'Tunes this Gear to the role weapon.'}`
+      : null;
+  const detailCopy = [entry.description, roleRelicCopy]
+    .filter(Boolean)
+    .join('\n');
   const gearEffectCopy =
     entry.kind === 'accessory'
       ? activeTechnique && resolvedGearTechnique && attachedRankLabel

@@ -271,12 +271,13 @@ For browser-only iteration without Reddit login:
 ./mock.command
 ```
 
-Open `http://localhost:8902/`. The command runs a dedicated Vite development
-server, so client saves update immediately without rebuilding or deleting
-`dist/client`. Mock backend changes publish only after a successful build and
-restart automatically; a failed rebuild keeps the last-good server running.
-Running the command again cleanly replaces its previous instance. Add `?fresh`
-to test the brand-new-player path.
+Open `http://localhost:8902/`. The default preview starts with an empty roster so
+the only Scribbits shown are drawings submitted during that preview. Add
+`?fixtures` to opt into the seeded QA roster. The command runs a dedicated Vite
+development server, so client saves update immediately without rebuilding or
+deleting `dist/client`. Mock backend changes publish only after a successful
+build and restart automatically; a failed rebuild keeps the last-good server
+running. Running the command again cleanly replaces its previous instance.
 Public forecast flavor follows its own validated 32-day no-repeat rotation. It
 appears consistently in the app, Reddit post title, and result comment without
 sharing randomness with boosted/nerfed combat elements.

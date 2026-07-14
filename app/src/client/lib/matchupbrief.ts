@@ -3,11 +3,19 @@
 
 import type { BattleKind } from '../../shared/arena';
 import { ABILITY_CONFIG_BY_POWER } from '../../shared/combat/config';
-import { selectPrimaryPower } from '../../shared/combat/selection';
+import {
+  selectCombatRole,
+  selectPrimaryPower,
+} from '../../shared/combat/selection';
+import {
+  createCombatRoleMatchupRead,
+  getCombatRoleContent,
+} from '../../shared/combat/roles';
 import { getShapePowerSignatureName } from '../../shared/combat/shapepowercontent';
 import { getFoundingScribbitDefinition } from '../../shared/founders';
 import type {
   CombatElement,
+  CombatRole,
   PrimaryPower,
   RawCombatStats,
 } from '../../shared/combat/types';
@@ -21,6 +29,10 @@ export type BattleMatchupFighterPick = Readonly<{
 export type BattleMatchupFighterPlan = Readonly<{
   power: PrimaryPower;
   signatureName: string;
+  role: CombatRole;
+  roleName: string;
+  rangeLabel: string;
+  weaponName: string;
   founderEpithet: string | null;
 }>;
 
@@ -57,14 +69,13 @@ export type BattleMatchupPowerPairKey =
   | 'smearstep|colorburst'
   | 'colorburst|colorburst';
 
-export const BATTLE_MATCHUP_BRIEF_CAPTION =
-  'WATCH FOR • MECHANICS, NOT WIN ODDS';
+export const BATTLE_MATCHUP_BRIEF_CAPTION = 'ROLE MATCHUP • READ THE RANGE';
 
 export const BATTLE_MATCHUP_TITLE_BY_KIND: Readonly<
   Record<BattleKind, string>
 > = Object.freeze({
   exhibition: 'EXHIBITION MATCHUP',
-  practice: 'POWER PRACTICE',
+  practice: 'ROLE PRACTICE',
   boss: 'CHAMPION CHALLENGE',
   rumble: 'RUMBLE BOUT',
 });
@@ -142,7 +153,7 @@ function assertUnreachablePower(power: never): never {
   throw new Error(`Unhandled matchup power: ${power}`);
 }
 
-function getBattleMatchupPowerPairKey(
+export function getBattleMatchupPowerPairKey(
   firstPower: PrimaryPower,
   secondPower: PrimaryPower
 ): BattleMatchupPowerPairKey {
@@ -208,21 +219,26 @@ function planBattleMatchupFighter(
   fighter: BattleMatchupFighterPick
 ): BattleMatchupFighterPlan {
   const power = selectPrimaryPower(fighter.stats);
+  const role = selectCombatRole(fighter.stats);
+  const roleContent = getCombatRoleContent(role);
   const founder = getFoundingScribbitDefinition(fighter.id);
   return Object.freeze({
     power,
     signatureName: getShapePowerSignatureName(fighter.element, power),
+    role,
+    roleName: roleContent.displayName,
+    rangeLabel: roleContent.rangeLabel,
+    weaponName: roleContent.weaponName,
     founderEpithet: founder?.personality.epithet ?? null,
   });
 }
 
-function getBattleMatchup(
-  firstPower: PrimaryPower,
-  secondPower: PrimaryPower
+function getRoleBattleMatchup(
+  firstRole: CombatRole,
+  secondRole: CombatRole
 ): BattleMatchup {
-  return BATTLE_MATCHUP_CONTENT_BY_POWER_PAIR[
-    getBattleMatchupPowerPairKey(firstPower, secondPower)
-  ];
+  const matchup = createCombatRoleMatchupRead(firstRole, secondRole);
+  return Object.freeze({ label: matchup.label, detail: matchup.detail });
 }
 
 export function planBattleMatchupBrief(
@@ -233,7 +249,7 @@ export function planBattleMatchupBrief(
   return Object.freeze({
     title: BATTLE_MATCHUP_TITLE_BY_KIND[input.battleKind],
     caption: BATTLE_MATCHUP_BRIEF_CAPTION,
-    matchup: getBattleMatchup(fighterA.power, fighterB.power),
+    matchup: getRoleBattleMatchup(fighterA.role, fighterB.role),
     fighters: Object.freeze({ a: fighterA, b: fighterB }),
   });
 }

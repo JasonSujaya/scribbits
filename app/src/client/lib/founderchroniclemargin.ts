@@ -17,6 +17,7 @@ import { generateDoodleTexture } from './proceduraldoodleart';
 import { ELEMENT_STYLES, TYPE, UI } from './theme';
 import { button, ghostButton, handLettered, label, stickerCard } from './ui';
 import { CanvasModalOverlay } from './overlay';
+import { setSfxCue } from './sfx';
 
 export type FounderChronicleMarginOptions = Readonly<{
   chronicle: FounderChronicle;
@@ -68,6 +69,7 @@ export function openFounderChronicleMargin(
     .setScrollFactor(0)
     .setDepth(2_300)
     .setInteractive();
+  setSfxCue(backdrop, 'ui.close');
   const card = stickerCard(
     scene,
     width / 2,

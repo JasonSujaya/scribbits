@@ -1,5 +1,6 @@
 import type { CapsuleRarity } from './arena';
 import type { AccessoryEffectFamily } from './accessoryeffects';
+import type { CombatRole } from './combat';
 import {
   EQUIPMENT_CATEGORIES,
   parseEquipmentLoadout,
@@ -27,6 +28,8 @@ export type CosmeticGearCatalogEntry = CosmeticCatalogEntryBase & {
   label: string;
   category: EquipmentCategory;
   effectFamily: AccessoryEffectFamily;
+  roleAffinity?: CombatRole;
+  roleEffect?: string;
 };
 
 // Compatibility name for the current persisted `kind: accessory` transport.
@@ -164,6 +167,8 @@ export const GEAR_CATALOG_ENTRIES: readonly CosmeticGearCatalogEntry[] = [
     label: 'Rumble Belt',
     category: 'weapon',
     effectFamily: 'ready',
+    roleAffinity: 'brawler',
+    roleEffect: 'Tightens the opening Body Slam and reinforces Inkquake.',
     description: 'A fault-line buckle that looks ready to split the page.',
   },
   {
@@ -174,6 +179,8 @@ export const GEAR_CATALOG_ENTRIES: readonly CosmeticGearCatalogEntry[] = [
     label: 'Nib Headband',
     category: 'accessory',
     effectFamily: 'aim',
+    roleAffinity: 'longshot',
+    roleEffect: 'Steadies Piercing Quill aim and the three-shot Nib Volley.',
     description: 'Three tiny paper nibs in a very pointy parade formation.',
   },
   {
@@ -184,6 +191,8 @@ export const GEAR_CATALOG_ENTRIES: readonly CosmeticGearCatalogEntry[] = [
     label: 'Speed Scarf',
     category: 'shoes',
     effectFamily: 'rush',
+    roleAffinity: 'gunner',
+    roleEffect: 'Sharpens Ink Blaster movement and Smearstep recovery.',
     description:
       'A streaky scrap that looks fast while standing perfectly still.',
   },
@@ -195,6 +204,8 @@ export const GEAR_CATALOG_ENTRIES: readonly CosmeticGearCatalogEntry[] = [
     label: 'Colorburst Rosette',
     category: 'accessory',
     effectFamily: 'fortune',
+    roleAffinity: 'mage',
+    roleEffect: 'Focuses Color Bolts and reinforces the Colorburst channel.',
     description: 'A crayon-bright prize ribbon for winning the color argument.',
   },
   {
@@ -255,6 +266,8 @@ export const GEAR_CATALOG_ENTRIES: readonly CosmeticGearCatalogEntry[] = [
     label: 'Crater Crown',
     category: 'armor',
     effectFamily: 'guard',
+    roleAffinity: 'brawler',
+    roleEffect: 'Adds close-range guard while the Brawler closes distance.',
     description:
       'A fault-lined crown chipped from the fanciest crater on paper.',
   },
@@ -266,6 +279,8 @@ export const GEAR_CATALOG_ENTRIES: readonly CosmeticGearCatalogEntry[] = [
     label: 'Ink Skates',
     category: 'shoes',
     effectFamily: 'rush',
+    roleAffinity: 'gunner',
+    roleEffect: 'Improves strafe recovery between Ink Blaster bursts.',
     description:
       'Wobbly wheel-shoes with the speed lines already scribbled in.',
   },
@@ -297,6 +312,8 @@ export const GEAR_CATALOG_ENTRIES: readonly CosmeticGearCatalogEntry[] = [
     label: 'Nib Halo Circlet',
     category: 'accessory',
     effectFamily: 'aim',
+    roleAffinity: 'longshot',
+    roleEffect: 'Stabilizes long-range aim before a heavy Nib Volley.',
     description: 'Three gilded nibs hold formation around one glorious halo.',
   },
   {
@@ -307,6 +324,8 @@ export const GEAR_CATALOG_ENTRIES: readonly CosmeticGearCatalogEntry[] = [
     label: 'Prism Crown',
     category: 'accessory',
     effectFamily: 'fortune',
+    roleAffinity: 'mage',
+    roleEffect: 'Strengthens the palette ward during a visible channel.',
     description:
       'A hand-cut rainbow crown that turns every pose into an event.',
   },

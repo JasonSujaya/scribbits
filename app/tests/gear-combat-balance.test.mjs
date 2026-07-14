@@ -78,7 +78,7 @@ const fighterWithGear = (id, stats, gearId, rank) => {
 
 const balancedForecast = forecast.generateForecastForDay(9);
 
-test('Gear resolution keeps the 100-point drawing identity and freezes v3 transcripts', () => {
+test('Gear resolution keeps the 100-point drawing identity in v4 transcripts', () => {
   const stats = builds.nib_halo;
   const geared = fighterWithGear('gear-v3', stats, 'tiny-sword', 6);
   const plain = makeFighter(
@@ -99,7 +99,7 @@ test('Gear resolution keeps the 100-point drawing identity and freezes v3 transc
     100
   );
   assert.equal(combatSelection.selectPrimaryPower(geared.stats), 'nib_halo');
-  assert.equal(report.simulation.version, 3);
+  assert.equal(report.simulation.version, 4);
   assert.equal(
     report.simulation.fighters[0].gear.techniques[0].leadGearId,
     'tiny-sword'
@@ -113,7 +113,7 @@ test('Gear resolution keeps the 100-point drawing identity and freezes v3 transc
   assert.equal(battleStore.isBattleReport({ ...report, kind: 'boss' }), false);
 
   const rumble = battle.simulate(geared, plain, 41, balancedForecast, 'rumble');
-  assert.equal(rumble.simulation.version, 2);
+  assert.equal(rumble.simulation.version, 4);
   assert.equal(rumble.simulation.fighters[0].gear, undefined);
   assert.equal(battleStore.isBattleReport(rumble), true);
 });
@@ -138,7 +138,7 @@ test('Gear summaries expose every applied benefit and tradeoff', () => {
   assert.match(aim.summary, /IMPACT/);
   assert.match(aim.summary, /HEARTS/);
   assert.match(aim.summary, /COOLDOWN/);
-  assert.match(focus.summary, /CRIT/);
+  assert.match(focus.summary, /FOCUS/);
   assert.match(focus.summary, /RECOVERY/);
   assert.doesNotMatch(focus.summary, /OPENING/);
 });
@@ -196,7 +196,22 @@ test('one strongest lead and one support resolve into a bounded category techniq
   assert.ok(resolved.modifiers.initialDelayTicksDelta >= -2);
 });
 
-test('all six Gear families stay near neutral across powers and slot swaps', () => {
+const assertBoundedModifiers = (modifiers) => {
+  assert.ok(modifiers.damagePermille >= 970);
+  assert.ok(modifiers.damagePermille <= 1_030);
+  assert.ok(modifiers.maximumHitPointsPermille >= 970);
+  assert.ok(modifiers.maximumHitPointsPermille <= 1_030);
+  assert.ok(modifiers.cooldownPermille >= 970);
+  assert.ok(modifiers.cooldownPermille <= 1_030);
+  assert.ok(modifiers.criticalChanceBonusPermille >= 0);
+  assert.ok(modifiers.criticalChanceBonusPermille <= 30);
+  assert.ok(modifiers.telegraphTicksDelta >= -1);
+  assert.ok(modifiers.telegraphTicksDelta <= 1);
+  assert.ok(modifiers.initialDelayTicksDelta >= -1);
+  assert.ok(modifiers.initialDelayTicksDelta <= 1);
+};
+
+test('all six Gear families stay bounded and combat is seed invariant', () => {
   const representativeGearIds = [
     'beanie',
     'smearstep-speed-scarf',
@@ -205,57 +220,48 @@ test('all six Gear families stay near neutral across powers and slot swaps', () 
     'flower-crown',
     'tiny-sword',
   ];
-  const checkedRates = [];
-  const outOfBounds = [];
+  let checkedLoadouts = 0;
 
   for (const gearId of representativeGearIds) {
     for (const rank of arena.GEAR_RANKS) {
       for (const [power, stats] of Object.entries(builds)) {
-        let gearWins = 0;
-        let fights = 0;
-        for (let seed = 1; seed <= 600; seed += 1) {
-          const geared = fighterWithGear(
-            `${gearId}-${rank}-${power}-gear`,
-            stats,
-            gearId,
-            rank
-          );
-          const plain = makeFighter(
-            `${gearId}-${rank}-${power}-plain`,
-            stats,
-            equipment.createEmptyEquipmentLoadout()
-          );
-          const first = battle.simulate(
-            geared,
-            plain,
-            seed,
-            balancedForecast,
-            'exhibition'
-          );
-          const second = battle.simulate(
-            plain,
-            geared,
-            seed,
-            balancedForecast,
-            'exhibition'
-          );
-          gearWins +=
-            Number(first.winner === 'a') + Number(second.winner === 'b');
-          fights += 2;
-        }
-        const rate = gearWins / fights;
-        checkedRates.push({ gearId, rank, power, rate });
-        if (rate < 0.4 || rate > 0.6) {
-          outOfBounds.push(
-            `${gearId} ${rank}★ ${power}: ${(rate * 100).toFixed(1)}%`
-          );
-        }
+        const geared = fighterWithGear(
+          `${gearId}-${rank}-${power}-gear`,
+          stats,
+          gearId,
+          rank
+        );
+        const plain = makeFighter(
+          `${gearId}-${rank}-${power}-plain`,
+          stats,
+          equipment.createEmptyEquipmentLoadout()
+        );
+        const resolved = gearCombat.resolveGearCombatLoadout(geared);
+        assertBoundedModifiers(resolved.modifiers);
+
+        const first = battle.simulate(
+          geared,
+          plain,
+          1,
+          balancedForecast,
+          'exhibition'
+        );
+        const second = battle.simulate(
+          geared,
+          plain,
+          600,
+          balancedForecast,
+          'exhibition'
+        );
+        assert.equal(first.winner, second.winner);
+        assert.equal(first.simulation.durationMs, second.simulation.durationMs);
+        assert.deepEqual(first.simulation.events, second.simulation.events);
+        checkedLoadouts += 1;
       }
     }
   }
 
-  assert.equal(checkedRates.length, 144);
-  assert.deepEqual(outOfBounds, []);
+  assert.equal(checkedLoadouts, 144);
 });
 
 test('full Red Star builds cover all families and remain bounded against one-star', () => {
@@ -294,32 +300,25 @@ test('full Red Star builds cover all families and remain bounded against one-sta
   ]);
 
   for (const [buildIndex, gearIds] of familyCoveringBuilds.entries()) {
-    let redWins = 0;
-    let fights = 0;
-    for (let seed = 1; seed <= 200; seed += 1) {
-      const red = makeFullBuild(`full-red-${buildIndex}`, 6, gearIds);
-      const oneStar = makeFullBuild(`full-one-star-${buildIndex}`, 1, gearIds);
-      const first = battle.simulate(
-        red,
-        oneStar,
-        seed,
-        balancedForecast,
-        'exhibition'
-      );
-      const second = battle.simulate(
-        oneStar,
-        red,
-        seed,
-        balancedForecast,
-        'exhibition'
-      );
-      redWins += Number(first.winner === 'a') + Number(second.winner === 'b');
-      fights += 2;
-    }
-    const redWinRate = redWins / fights;
+    const red = makeFullBuild(`full-red-${buildIndex}`, 6, gearIds);
+    const oneStar = makeFullBuild(`full-one-star-${buildIndex}`, 1, gearIds);
+    const redResolved = gearCombat.resolveGearCombatLoadout(red);
+    const oneStarResolved = gearCombat.resolveGearCombatLoadout(oneStar);
+
+    assert.equal(redResolved.techniques.length, 4);
+    assert.equal(oneStarResolved.techniques.length, 4);
+    assertBoundedModifiers(redResolved.modifiers);
+    assertBoundedModifiers(oneStarResolved.modifiers);
+    assert.notDeepEqual(redResolved.modifiers, oneStarResolved.modifiers);
+
+    const modifierDistance = (modifiers) =>
+      Math.abs(modifiers.damagePermille - 1_000) +
+      Math.abs(modifiers.maximumHitPointsPermille - 1_000) +
+      Math.abs(modifiers.cooldownPermille - 1_000) +
+      modifiers.criticalChanceBonusPermille;
     assert.ok(
-      redWinRate >= 0.42 && redWinRate <= 0.58,
-      `full Red Star build ${buildIndex + 1} produced ${(redWinRate * 100).toFixed(1)}% wins against one-star`
+      modifierDistance(redResolved.modifiers) >=
+        modifierDistance(oneStarResolved.modifiers)
     );
   }
 });

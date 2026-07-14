@@ -54,6 +54,7 @@ import {
   capsuleRevealAnnouncement,
   planCapsuleBatchReveal,
 } from './capsulereveal';
+import { playSfx, setSfxCue } from './sfx';
 
 const DEPTH = 2500;
 const COLLECTION_BAR_WIDTH = 480;
@@ -286,7 +287,10 @@ export function openCapsuleMachine(
         .rectangle(width / 2, height / 2, width, height, 0x1a1320, 0.72)
         .setScrollFactor(0)
         .setInteractive();
-  if (scrim) layer.add(scrim);
+  if (scrim) {
+    setSfxCue(scrim, 'ui.close');
+    layer.add(scrim);
+  }
 
   const title = handLettered(
     scene,
@@ -701,6 +705,7 @@ export function openCapsuleMachine(
       nextCost = result.nextCost;
       progress = result.progress;
       inkWallet.balance.setText(`${ink} INK`);
+      playSfx('reward.ink');
       animateInkSpend(
         scene,
         layer,
@@ -934,6 +939,7 @@ function drawBannerDeck(
     const hitTarget = scene.add
       .circle(0, 0, 55, 0xffffff, 0.001)
       .setInteractive();
+    setSfxCue(hitTarget, 'ui.open');
     featured.add([aura, backing, innerRing, upperSparkle, lowerSparkle]);
     renderCosmeticPreview({
       scene,
@@ -1111,6 +1117,7 @@ function openChest(
   chest: ChestArt,
   rarity: CapsuleRarity
 ): Promise<void> {
+  playSfx('reward.reveal');
   const rarityColor = RARITY_STYLE[rarity].color;
   const openScaleX = chest.closedScaleX * OPEN_CHEST_HORIZONTAL_SCALE;
   const openScaleY = chest.closedScaleY;

@@ -44,7 +44,7 @@ export const startBattleClipRecording = (
     stream = canvas.captureStream(30);
     const recorder = new MediaRecorder(stream, {
       mimeType: format.mimeType,
-      videoBitsPerSecond: 900_000,
+      videoBitsPerSecond: 700_000,
     });
     const chunks: Blob[] = [];
     let cancelled = false;
@@ -89,7 +89,7 @@ export const startBattleClipRecording = (
     recorder.start(500);
     maximumDurationTimer = window.setTimeout(() => {
       if (recorder.state !== 'inactive') recorder.stop();
-    }, 25_000);
+    }, 22_000);
 
     return Object.freeze({
       stop: () => {

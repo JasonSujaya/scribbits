@@ -10,6 +10,8 @@ export const BATTLE_STAGE_TEXTURE = SCRIBBITS_STAGE_TEXTURE;
 export const FIGHT_START_TEXTURE = 'ui-fight-start';
 export const BRAND_LOGO_TEXTURE = 'scribbits-logo';
 export const HOME_STAGE_TEXTURE = 'scribbits-home-stage';
+export const HOME_TITLE_TEXTURE = 'scribbits-home-title';
+export const MATURITY_GEAR_TEXTURE = 'scribbits-maturity-gear-icons';
 export const HOME_PROP_TEXTURES = {
   window: 'scribbits-home-window',
   shelf: 'scribbits-home-shelf',
@@ -22,6 +24,12 @@ export const SHOP_CHEST_TEXTURES = {
   open: 'scribbits-shop-chest-open',
 } as const;
 export const INK_TOKEN_TEXTURE = 'scribbits-ink-token';
+const SHOP_VISUAL_TEXTURES = [
+  SHOP_STAGE_TEXTURE,
+  SHOP_CHEST_TEXTURES.closed,
+  SHOP_CHEST_TEXTURES.open,
+  INK_TOKEN_TEXTURE,
+] as const;
 
 export const BATTLE_CONTROL_BUTTON_TEXTURES = {
   sound: 'ui-button-battle-sound',
@@ -46,10 +54,6 @@ export function preloadVisualAssets(scene: Scene): void {
   scene.load.image(SCRIBBITS_STAGE_TEXTURE, assetUrl('scribbits-stage.png'));
   scene.load.image(FIGHT_START_TEXTURE, assetUrl('ui-fight-start.png'));
   scene.load.image(BRAND_LOGO_TEXTURE, assetUrl('scribbits-logo.png'));
-  scene.load.image(HOME_STAGE_TEXTURE, assetUrl('scribbits-home-stage.png'));
-  Object.values(HOME_PROP_TEXTURES).forEach((texture) => {
-    scene.load.image(texture, assetUrl(`${texture}.png`));
-  });
   scene.load.atlas(
     COMMON_GEAR_ART_TEXTURE,
     assetUrl('gear-common-atlas.png'),
@@ -68,17 +72,44 @@ export function preloadVisualAssets(scene: Scene): void {
   });
 }
 
+export function preloadHomeVisualAssets(scene: Scene): void {
+  scene.load.image(HOME_STAGE_TEXTURE, assetUrl('scribbits-home-stage.png'));
+  scene.load.image(HOME_TITLE_TEXTURE, assetUrl('scribbits-home-title.png'));
+  Object.values(HOME_PROP_TEXTURES).forEach((texture) => {
+    scene.load.image(texture, assetUrl(`${texture}.png`));
+  });
+  scene.load.spritesheet(
+    MATURITY_GEAR_TEXTURE,
+    assetUrl('maturity-gear-icons.png'),
+    { frameWidth: 256, frameHeight: 256 }
+  );
+}
+
 export function preloadShopVisualAssets(scene: Scene): void {
-  scene.load.image(SHOP_STAGE_TEXTURE, assetUrl('scribbits-shop-stage.png'));
-  scene.load.image(
-    SHOP_CHEST_TEXTURES.closed,
-    assetUrl('scribbits-shop-chest-closed.png')
+  if (!scene.textures.exists(SHOP_STAGE_TEXTURE)) {
+    scene.load.image(SHOP_STAGE_TEXTURE, assetUrl('scribbits-shop-stage.png'));
+  }
+  if (!scene.textures.exists(SHOP_CHEST_TEXTURES.closed)) {
+    scene.load.image(
+      SHOP_CHEST_TEXTURES.closed,
+      assetUrl('scribbits-shop-chest-closed.png')
+    );
+  }
+  if (!scene.textures.exists(SHOP_CHEST_TEXTURES.open)) {
+    scene.load.image(
+      SHOP_CHEST_TEXTURES.open,
+      assetUrl('scribbits-shop-chest-open.png')
+    );
+  }
+  if (!scene.textures.exists(INK_TOKEN_TEXTURE)) {
+    scene.load.image(INK_TOKEN_TEXTURE, assetUrl('scribbits-ink-token.png'));
+  }
+}
+
+export function shopVisualAssetsReady(scene: Scene): boolean {
+  return SHOP_VISUAL_TEXTURES.every((texture) =>
+    scene.textures.exists(texture)
   );
-  scene.load.image(
-    SHOP_CHEST_TEXTURES.open,
-    assetUrl('scribbits-shop-chest-open.png')
-  );
-  scene.load.image(INK_TOKEN_TEXTURE, assetUrl('scribbits-ink-token.png'));
 }
 
 export function paperStage(

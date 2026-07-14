@@ -10,6 +10,8 @@ import {
   type Scribbit,
 } from '../../shared/arena';
 import type { DamageSource } from '../../shared/combat/types';
+import { selectCombatRole } from '../../shared/combat/selection';
+import { createCombatRoleMatchupRead } from '../../shared/combat/roles';
 import {
   advanceRivalRunChallenge,
   createLegacyRivalRunChallenge,
@@ -20,6 +22,7 @@ import {
 import { battleReportTtlSeconds, getBattleReportKey } from './battleStore';
 import { simulate } from './battle';
 import { hashTextToSeed } from './random';
+import { jsonValuesMatch } from './jsonValues';
 import type { ArenaStorage, ArenaTransaction } from './storage';
 import {
   discardWatchedTransaction,
@@ -246,7 +249,7 @@ const storedReportMatches = (
     }
     const { inkAwarded: _storedReward, ...storedCore } = parsed;
     const { inkAwarded: _expectedReward, ...expectedCore } = expected;
-    return JSON.stringify(storedCore) === JSON.stringify(expectedCore);
+    return jsonValuesMatch(storedCore, expectedCore);
   } catch {
     return false;
   }
@@ -293,40 +296,36 @@ export const createRivalRunChoices = (
   rivals: readonly Scribbit[],
   forecast: Forecast
 ): RivalRunChoice[] => {
-  const projectionSeeds = [0, 1, 2, 3, 4] as const;
   const rankedRivals = rivals
     .map((rival) => {
-      let challengerWins = 0;
-      let hitPointMargin = 0;
-      for (const projectionIndex of projectionSeeds) {
-        const report = simulate(
-          challenger,
-          rival,
-          hashTextToSeed(
-            `rival-risk:${forecast.day}:${challenger.id}:${rival.id}:${projectionIndex}`
-          ),
-          forecast,
-          'exhibition'
-        );
-        const result = report.simulation?.result;
-        if (!result) continue;
-        if (result.winner === 'a') challengerWins += 1;
-        const challengerResult = result.fighters.find(
-          (fighter) => fighter.slot === 'a'
-        );
-        const rivalResult = result.fighters.find(
-          (fighter) => fighter.slot === 'b'
-        );
-        if (challengerResult && rivalResult) {
-          hitPointMargin +=
-            challengerResult.hitPointPermille - rivalResult.hitPointPermille;
-        }
-      }
-      return { rival, challengerWins, hitPointMargin };
+      const report = simulate(
+        challenger,
+        rival,
+        hashTextToSeed(
+          `rival-risk:v4:${forecast.day}:${challenger.id}:${rival.id}`
+        ),
+        forecast,
+        'exhibition'
+      );
+      const result = report.simulation?.result;
+      const challengerResult = result?.fighters.find(
+        (fighter) => fighter.slot === 'a'
+      );
+      const rivalResult = result?.fighters.find(
+        (fighter) => fighter.slot === 'b'
+      );
+      return {
+        rival,
+        challengerWon: result?.winner === 'a',
+        hitPointMargin:
+          challengerResult && rivalResult
+            ? challengerResult.hitPointPermille - rivalResult.hitPointPermille
+            : 0,
+      };
     })
     .sort((left, right) => {
       return (
-        right.challengerWins - left.challengerWins ||
+        Number(right.challengerWon) - Number(left.challengerWon) ||
         right.hitPointMargin - left.hitPointMargin ||
         left.rival.id.localeCompare(right.rival.id)
       );
@@ -339,7 +338,18 @@ export const createRivalRunChoices = (
   ] as const;
   return rankedRivals.slice(0, tiers.length).flatMap((rival, index) => {
     const tier = tiers[index];
-    return tier ? [{ rival, ...tier }] : [];
+    return tier
+      ? [
+          {
+            rival,
+            ...tier,
+            matchup: createCombatRoleMatchupRead(
+              selectCombatRole(challenger.stats),
+              selectCombatRole(rival.stats)
+            ),
+          },
+        ]
+      : [];
   });
 };
 

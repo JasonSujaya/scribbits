@@ -547,7 +547,8 @@ export function openLegacyCardDetail(
       .setLineSpacing(7)
   );
 
-  const actionLabel = finish === 'faded' ? 'Draw successor' : 'See in Hall';
+  const actionLabel =
+    finish === 'faded' ? 'Draw successor' : 'Back to Gallery';
   detail.add(
     button(
       scene,

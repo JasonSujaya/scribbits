@@ -160,8 +160,45 @@ export const RIVAL_RUN_V2_CHALLENGES: readonly RivalRunChallengeDefinition[] =
     }),
   ]);
 
+// New runs use role language. The v2 snapshots remain readable because stored
+// runs and reports carry their full immutable challenge content.
+export const RIVAL_RUN_V3_CHALLENGES: readonly RivalRunChallengeDefinition[] =
+  Object.freeze([
+    challenge({
+      id: 'v3-signature-moves',
+      name: 'SIGNATURE MOVES',
+      premise: 'Let your role show what makes it different.',
+      goal: 'TRIGGER 3 SIGNATURES',
+      stamp: 'ROLE READY',
+      condition: { kind: 'player_ability_activations', target: 3 },
+    }),
+    challenge({
+      id: 'v3-signature-connect',
+      name: 'SIGNATURE CONNECT',
+      premise: 'Make your role signature connect.',
+      goal: 'SIGNATURE HIT ×2',
+      stamp: 'CONNECTED',
+      condition: { kind: 'player_shape_power_hit_bouts', target: 2 },
+    }),
+    challenge({
+      id: 'v3-late-signature',
+      name: 'LATE SIGNATURE',
+      premise: 'Show your role after the late bell.',
+      goal: 'SIGNATURE AFTER 15S',
+      stamp: 'LATE MARK',
+      condition: { kind: 'player_late_shape_power_activations', target: 1 },
+    }),
+  ]);
+
 const RIVAL_RUN_CHALLENGE_SELECTION_CATALOG: readonly RivalRunChallengeDefinition[] =
-  Object.freeze([...RIVAL_RUN_CHALLENGES, ...RIVAL_RUN_V2_CHALLENGES]);
+  Object.freeze([...RIVAL_RUN_CHALLENGES, ...RIVAL_RUN_V3_CHALLENGES]);
+
+const RIVAL_RUN_CHALLENGE_READ_CATALOG: readonly RivalRunChallengeDefinition[] =
+  Object.freeze([
+    ...RIVAL_RUN_CHALLENGES,
+    ...RIVAL_RUN_V2_CHALLENGES,
+    ...RIVAL_RUN_V3_CHALLENGES,
+  ]);
 
 const LEGACY_FINISH_DEFINITION: RivalRunChallengeDefinition = challenge({
   id: 'v1-finish-the-card',
@@ -173,7 +210,7 @@ const LEGACY_FINISH_DEFINITION: RivalRunChallengeDefinition = challenge({
 });
 
 const definitionById = new Map(
-  [...RIVAL_RUN_CHALLENGE_SELECTION_CATALOG, LEGACY_FINISH_DEFINITION].map(
+  [...RIVAL_RUN_CHALLENGE_READ_CATALOG, LEGACY_FINISH_DEFINITION].map(
     (definition) => [definition.id, definition]
   )
 );
@@ -195,10 +232,10 @@ export const createRivalRunChallenge = (
   challengerId: string,
   excludedChallengeId?: string
 ): RivalRunChallenge => {
-  // This v2 seed intentionally applies only when creating a new run. Existing
-  // runs and battle reports carry full challenge snapshots, so their v1/v2
+  // This v3 seed intentionally applies only when creating a new run. Existing
+  // runs and battle reports carry full challenge snapshots, so their older
   // definitions and progress remain immutable.
-  const seed = `rival-run-challenge:v2:${runId}:${dayNumber}:${challengerId}`;
+  const seed = `rival-run-challenge:v3:${runId}:${dayNumber}:${challengerId}`;
   const selectedIndex =
     hashStringToUint32(seed) % RIVAL_RUN_CHALLENGE_SELECTION_CATALOG.length;
   const firstChoice = RIVAL_RUN_CHALLENGE_SELECTION_CATALOG[selectedIndex];

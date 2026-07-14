@@ -71,7 +71,7 @@
     }
   },
   "scripts": {
-    "build": "NODE_OPTIONS=--max-old-space-size=4096 vite build",
+    "build": "NODE_OPTIONS=--max-old-space-size=4096 vite build && node scripts/verify-devvit-build.mjs",
     "dev": "vite build --watch"
   },
   "dev": {

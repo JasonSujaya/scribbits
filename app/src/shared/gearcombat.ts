@@ -109,7 +109,7 @@ export function summarizeGearCombatModifiers(
     }),
     Object.freeze({
       key: 'crit',
-      label: 'CRIT',
+      label: 'FOCUS',
       value: summaryPercent(modifiers.criticalChanceBonusPermille),
       tone: modifiers.criticalChanceBonusPermille > 0 ? 'benefit' : 'neutral',
     }),
@@ -212,7 +212,7 @@ const effectForStrength = (
       };
       summary =
         timingDelta === 0
-          ? `${percentagePoint(strengthPermille)} CRIT · ${signedPercent(strengthPermille)} RECOVERY`
+          ? `${percentagePoint(strengthPermille)} FOCUS · ${signedPercent(strengthPermille)} RECOVERY`
           : `${Math.abs(timingDelta)}T FASTER WIND-UP · ${signedPercent(strengthPermille)} RECOVERY`;
       break;
     case 'ready':
@@ -224,7 +224,7 @@ const effectForStrength = (
       };
       summary =
         timingDelta === 0
-          ? `${percentagePoint(strengthPermille)} CRIT`
+          ? `${percentagePoint(strengthPermille)} FOCUS`
           : `${Math.abs(timingDelta)}T FASTER START · ${signedPercent(-tradeoff)} IMPACT`;
       break;
     case 'fortune':
@@ -233,7 +233,7 @@ const effectForStrength = (
         damagePermille: 1_000 - lightTradeoff,
         criticalChanceBonusPermille: strengthPermille,
       };
-      summary = `${percentagePoint(strengthPermille)} CRIT · ${signedPercent(-lightTradeoff)} IMPACT`;
+      summary = `${percentagePoint(strengthPermille)} FOCUS · ${signedPercent(-lightTradeoff)} IMPACT`;
       break;
     case 'aim':
       modifiers = {

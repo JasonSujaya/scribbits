@@ -5,6 +5,7 @@ import { ELEMENT_STYLES, UI } from './theme';
 
 export type PaperIconKey =
   | 'armor'
+  | 'archive'
   | 'back'
   | 'berry'
   | 'book'
@@ -12,6 +13,7 @@ export type PaperIconKey =
   | 'clock'
   | 'defeat'
   | 'forge'
+  | 'gun'
   | 'heart'
   | 'paw'
   | 'replay'
@@ -123,13 +125,7 @@ export function paperDockIcon(
     );
     graphics.fillStyle(UI.gold, 1);
     graphics.fillRoundedRect(-4 * scale, 6 * scale, 8 * scale, 13 * scale, 2);
-    graphics.strokeRoundedRect(
-      -4 * scale,
-      6 * scale,
-      8 * scale,
-      13 * scale,
-      2
-    );
+    graphics.strokeRoundedRect(-4 * scale, 6 * scale, 8 * scale, 13 * scale, 2);
   } else if (key === 'arena' && accented) {
     graphics.fillStyle(UI.gold, 1);
     drawFivePointStar(graphics, 0, 0, 17 * scale, 8 * scale, true);
@@ -442,15 +438,19 @@ export function paperStatIcon(
   x: number,
   y: number,
   size: number,
-  color: number
+  color: number,
+  showShadow = true
 ): Phaser.GameObjects.Container {
   const scale = size / 34;
   const container = scene.add.container(x, y);
-  const shadow = scene.add.graphics().setPosition(2 * scale, 3 * scale);
   const face = scene.add.graphics();
-  drawStatIcon(shadow, key, scale, 0x9b754d, 0x9b754d);
+  if (showShadow) {
+    const shadow = scene.add.graphics().setPosition(2 * scale, 3 * scale);
+    drawStatIcon(shadow, key, scale, 0x9b754d, 0x9b754d);
+    container.add(shadow);
+  }
   drawStatIcon(face, key, scale, color, UI.inkHex);
-  container.add([shadow, face]);
+  container.add(face);
   return container;
 }
 
@@ -462,7 +462,7 @@ function drawStatIcon(
   stroke: number
 ): void {
   graphics.fillStyle(fill, 1);
-  graphics.lineStyle(3 * scale, stroke, 1);
+  graphics.lineStyle(2.2 * scale, stroke, 1);
 
   if (key === 'chonk') {
     graphics.fillEllipse(0, 2 * scale, 28 * scale, 23 * scale);
@@ -684,6 +684,45 @@ function drawIcon(
     return;
   }
 
+  if (key === 'gun') {
+    const barrel = [
+      new Phaser.Math.Vector2(-14 * scale, -8 * scale),
+      new Phaser.Math.Vector2(14 * scale, -8 * scale),
+      new Phaser.Math.Vector2(14 * scale, 2 * scale),
+      new Phaser.Math.Vector2(2 * scale, 2 * scale),
+      new Phaser.Math.Vector2(-2 * scale, 7 * scale),
+      new Phaser.Math.Vector2(-8 * scale, 7 * scale),
+      new Phaser.Math.Vector2(-8 * scale, 2 * scale),
+      new Phaser.Math.Vector2(-14 * scale, 2 * scale),
+    ];
+    const grip = [
+      new Phaser.Math.Vector2(0, 2 * scale),
+      new Phaser.Math.Vector2(10 * scale, 2 * scale),
+      new Phaser.Math.Vector2(7 * scale, 14 * scale),
+      new Phaser.Math.Vector2(-2 * scale, 14 * scale),
+    ];
+    graphics.fillPoints(barrel, true);
+    graphics.strokePoints(barrel, true);
+    graphics.fillPoints(grip, true);
+    graphics.strokePoints(grip, true);
+    graphics.fillStyle(UI.creamHex, 1);
+    graphics.fillRoundedRect(
+      5 * scale,
+      -5 * scale,
+      6 * scale,
+      4 * scale,
+      scale
+    );
+    graphics.strokeRoundedRect(
+      5 * scale,
+      -5 * scale,
+      6 * scale,
+      4 * scale,
+      scale
+    );
+    return;
+  }
+
   if (key === 'defeat') {
     const tornBanner = [
       new Phaser.Math.Vector2(-13 * scale, -12 * scale),
@@ -719,6 +758,42 @@ function drawIcon(
     graphics.lineBetween(0, -10 * scale, 0, 11 * scale);
     graphics.lineBetween(-10 * scale, -5 * scale, -4 * scale, -3 * scale);
     graphics.lineBetween(4 * scale, -3 * scale, 10 * scale, -5 * scale);
+    return;
+  }
+
+  if (key === 'archive') {
+    graphics.fillRoundedRect(
+      -13 * scale,
+      -3 * scale,
+      26 * scale,
+      16 * scale,
+      3 * scale
+    );
+    graphics.strokeRoundedRect(
+      -13 * scale,
+      -3 * scale,
+      26 * scale,
+      16 * scale,
+      3 * scale
+    );
+    graphics.fillRoundedRect(
+      -15 * scale,
+      -9 * scale,
+      30 * scale,
+      7 * scale,
+      2 * scale
+    );
+    graphics.strokeRoundedRect(
+      -15 * scale,
+      -9 * scale,
+      30 * scale,
+      7 * scale,
+      2 * scale
+    );
+    graphics.lineBetween(-5 * scale, 3 * scale, 5 * scale, 3 * scale);
+    graphics.lineBetween(0, -17 * scale, 0, -7 * scale);
+    graphics.lineBetween(-4 * scale, -11 * scale, 0, -7 * scale);
+    graphics.lineBetween(4 * scale, -11 * scale, 0, -7 * scale);
     return;
   }
 
@@ -904,8 +979,15 @@ function drawIcon(
   if (key === 'info') {
     graphics.fillCircle(0, 0, 13 * scale);
     graphics.strokeCircle(0, 0, 13 * scale);
-    graphics.lineBetween(0, -1 * scale, 0, 8 * scale);
-    graphics.fillCircle(0, -7 * scale, 1.8 * scale);
+    graphics.fillStyle(stroke, 1);
+    graphics.fillCircle(0, -7 * scale, 2.2 * scale);
+    graphics.fillRoundedRect(
+      -2 * scale,
+      -2 * scale,
+      4 * scale,
+      11 * scale,
+      2 * scale
+    );
     return;
   }
 

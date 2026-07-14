@@ -2,6 +2,7 @@
 // Extend, never fork. Analyzer + balance invariants: plans/v3-scribbits-arena.md.
 
 import type { BattleTranscript } from './combat';
+import type { CombatRoleMatchupRead } from './combat/roles';
 import type {
   BattleArenaChallengeProgress,
   BattleArenaId,
@@ -39,8 +40,8 @@ export {
 // Always sums to exactly 100 after server normalization.
 export type ScribbitStats = {
   chonk: number; // HP/body size + Inkquake identity
-  spike: number; // contact damage + Nib Halo identity
-  zip: number; // continuous movement + Smearstep identity
+  spike: number; // long-range physical identity
+  zip: number; // gun movement and burst identity
   charm: number; // crit chance + Colorburst identity
 };
 
@@ -52,6 +53,7 @@ export const SCRIBBIT_STAT_KEYS = Object.freeze([
 ] as const satisfies readonly (keyof ScribbitStats)[]);
 
 export type ScribbitStatus = 'alive' | 'faded' | 'legend';
+export type ScribbitLifecycleStage = 'growing' | 'mature' | 'archived';
 export type LegacyFinish = 'faded' | 'believed' | 'champion';
 export type LegacyCosmeticSnapshot = {
   id: string;
@@ -63,7 +65,7 @@ export type LegacyCosmeticSnapshot = {
 // roster. The Scribbit record keeps its original drawing and identity; this
 // stamp freezes the progression values used by the owner's Legacy Card.
 export type ScribbitLegacy = {
-  schemaVersion: 1 | 2;
+  schemaVersion: 1 | 2 | 3;
   archivedDay: number;
   finish: LegacyFinish;
   creatorTitle: LegacyCosmeticSnapshot | null;
@@ -88,7 +90,7 @@ export type Scribbit = {
   imageUrl: string; // Reddit-hosted in production; local mock fixtures may use /api/drawing/{id}
   drawingThemeId: string | null; // immutable community-theme category; null for founders and older records
   bornDay: number;
-  expiresDay: number; // bornDay + 3
+  expiresDay: number; // maturity day: bornDay + 3 (legacy field name)
   belief: number;
   wins: number;
   losses: number;
@@ -281,7 +283,7 @@ export type ArenaState = {
   myUsername: string | null;
   forecast: Forecast;
   champion: Scribbit | null; // frozen snapshot, today's boss
-  myScribbits: Scribbit[]; // alive, newest first, max 3
+  myScribbits: Scribbit[]; // growing + mature, newest first, max 6
   drawnToday: boolean;
   todayFreeDrawing: FreeDrawing | null; // non-null only for this exact Arena day
   enteredToday: boolean; // rumble entry used
@@ -319,6 +321,8 @@ export type SplashState = {
 };
 
 export type BackRequest = { scribbitId: string }; // one per user per day, final
+export type RetireScribbitRequest = { scribbitId: string };
+export type RetireScribbitResponse = { retired: Scribbit };
 export type ReportScribbitResponse = {
   hidden: string;
   removedForEveryone: boolean;
@@ -523,6 +527,7 @@ export type RivalRunChoice = {
   rival: Scribbit;
   tier: RivalRunTier;
   winPoints: RivalRunWinPoints;
+  matchup: CombatRoleMatchupRead;
 };
 
 export type BattleReport = {
@@ -666,7 +671,17 @@ export const STAT_MIN = 10;
 export const STAT_MAX = 55;
 export const LIFESPAN_DAYS = 3;
 export const BELIEF_LEGEND_THRESHOLD = 25;
-export const MAX_ALIVE_PER_USER = 3;
+export const MAX_GROWING_PER_USER = 3;
+export const MAX_MATURE_PER_USER = 3;
+export const MAX_ALIVE_PER_USER = MAX_GROWING_PER_USER + MAX_MATURE_PER_USER;
+
+export const getScribbitLifecycleStage = (
+  scribbit: Pick<Scribbit, 'status' | 'expiresDay'>,
+  currentArenaDay: number
+): ScribbitLifecycleStage => {
+  if (scribbit.status !== 'alive') return 'archived';
+  return currentArenaDay >= scribbit.expiresDay ? 'mature' : 'growing';
+};
 
 // Tamagotchi/level balance: growth should be visible without letting an older
 // Scribbit invalidate a better drawing. Levels 2-5 each unlock one small,
@@ -686,6 +701,7 @@ export const MAX_ALIVE_PER_USER = 3;
 // GET  /api/spar-rivals?scribbitId -> SparRivalSlate                    (owned living challenger; stable server slate per UTC day)
 // POST /api/spar           -> SparRequest -> DirectBattleResponse       (chosen opponentId must be in that exact slate; omitted stays server-random)
 // POST /api/back           -> BackRequest -> { backed: string }         (one per user per day, locks at rumble resolve)
+// POST /api/retire-scribbit -> RetireScribbitRequest -> RetireScribbitResponse (owner moves an active Scribbit to Archived)
 // POST /api/remove-scribbit -> { scribbitId: string } -> { removed: string } (owner removal)
 // POST /api/report-scribbit -> { scribbitId: string } -> ReportScribbitResponse (hide + safety report)
 // GET  /api/clout-board    -> CloutBoard

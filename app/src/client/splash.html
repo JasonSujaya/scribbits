@@ -7,13 +7,12 @@
     <title data-i18n="app.name">Scribbits</title>
   </head>
   <body class="app">
-    <!-- Sketchbook page. Everything is static + intrinsically sized so it renders
-         in Reddit's inline feed embed with NO JS and NO viewport-height collapse. -->
-    <div class="page">
-      <div class="tape tape-l"></div>
-      <div class="tape tape-r"></div>
+    <!-- Static fallback markup keeps the Reddit inline card useful before JS. -->
+    <main class="page">
+      <div class="tape tape-left" aria-hidden="true"></div>
+      <div class="tape tape-right" aria-hidden="true"></div>
 
-      <div class="logo-row">
+      <header class="splash-header">
         <h1 class="logo">
           <img
             class="logo-image"
@@ -21,134 +20,112 @@
             alt="Scribbits"
           />
         </h1>
-      </div>
-
-      <p class="tagline">
-        <strong data-i18n="splash.tagline">
+        <p class="tagline" data-i18n="splash.tagline">
           Draw a Scribbit. Watch it fight.
-        </strong>
-      </p>
+        </p>
+      </header>
 
-      <section class="battle-proof" aria-labelledby="battle-proof-title">
-        <div class="battle-proof-frame">
-          <div
-            class="battle-stage"
-            id="battle-poster"
-            role="img"
-            aria-label="Two hand-drawn Scribbits facing off in the arena"
-          >
-            <span class="battle-health battle-health-left"></span>
-            <span class="battle-health battle-health-right"></span>
-            <img
-              class="battle-fighter battle-fighter-left"
-              src="./assets/splash-doodle-mossmop.png"
-              alt=""
-            />
-            <strong class="battle-versus">VS</strong>
-            <img
-              class="battle-fighter battle-fighter-right"
-              src="./assets/splash-doodle-stormpuff.png"
-              alt=""
-            />
+      <section class="creation-story" aria-label="Draw, then battle">
+        <article class="story-panel draw-panel">
+          <div class="step-heading">
+            <span class="step-number">1</span>
+            <strong data-i18n="splash.story.draw">DRAW IT</strong>
           </div>
-          <video
-            class="shared-battle-video"
-            id="shared-battle-video"
-            muted
-            loop
-            playsinline
-            controls
-            preload="metadata"
-            hidden
-          ></video>
-          <span
-            class="battle-proof-stamp"
-            id="battle-proof-stamp"
-            data-i18n="splash.battle.real"
-          >
-            REAL BATTLE
-          </span>
-        </div>
-        <div class="battle-proof-copy">
-          <strong id="battle-proof-title" data-i18n="splash.battle.title">
-            DRAW → FIGHT → GROW
-          </strong>
-          <span data-i18n="splash.battle.detail">
-            Your drawing becomes the fighter.
-          </span>
-        </div>
-      </section>
-
-      <section
-        class="scribbit-showcase"
-        id="today-status"
-        aria-labelledby="showcase-label"
-      >
-        <span
-          class="showcase-label"
-          id="showcase-label"
-          data-i18n="splash.showcase.sketchbook"
-        >
-          FROM OUR SKETCHBOOK
-        </span>
-        <div class="showcase-grid">
-          <article
-            class="showcase-card"
-            data-showcase-slot
-            data-fallback-name="Mossmop"
-            data-fallback-artist="Scribbits"
-          >
+          <div class="creation-card">
+            <span
+              class="creation-source"
+              id="creation-source"
+              data-i18n="splash.showcase.sketchbook"
+            >
+              FROM OUR SKETCHBOOK
+            </span>
             <img
-              class="showcase-image"
+              class="hero-creation-image"
+              id="hero-creation-image"
               src="./assets/splash-doodle-mossmop.png"
               alt="Mossmop, drawn in Scribbits"
               decoding="async"
             />
-            <strong class="showcase-name">MOSSMOP</strong>
-            <span class="showcase-artist">BY SCRIBBITS</span>
-          </article>
-          <article
-            class="showcase-card"
-            data-showcase-slot
-            data-fallback-name="Looplet"
-            data-fallback-artist="Scribbits"
-          >
-            <img
-              class="showcase-image"
-              src="./assets/splash-doodle-looplet.png"
-              alt="Looplet, drawn in Scribbits"
-              decoding="async"
-            />
-            <strong class="showcase-name">LOOPLET</strong>
-            <span class="showcase-artist">BY SCRIBBITS</span>
-          </article>
-          <article
-            class="showcase-card"
-            data-showcase-slot
-            data-fallback-name="Stormpuff"
-            data-fallback-artist="Scribbits"
-          >
-            <img
-              class="showcase-image"
-              src="./assets/splash-doodle-stormpuff.png"
-              alt="Stormpuff, drawn in Scribbits"
-              decoding="async"
-            />
-            <strong class="showcase-name">STORMPUFF</strong>
-            <span class="showcase-artist">BY SCRIBBITS</span>
-          </article>
+            <strong class="creation-name" id="hero-creation-name">
+              MOSSMOP
+            </strong>
+            <span class="creation-artist" id="hero-creation-artist">
+              BY SCRIBBITS
+            </span>
+          </div>
+        </article>
+
+        <div class="story-arrow" aria-hidden="true">
+          <span data-i18n="splash.story.becomes">BECOMES</span>
+          <strong>&rarr;</strong>
         </div>
+
+        <article class="story-panel battle-panel">
+          <div class="step-heading">
+            <span class="step-number">2</span>
+            <strong data-i18n="splash.story.battle">BATTLE</strong>
+          </div>
+          <div class="battle-frame">
+            <div
+              class="battle-stage"
+              id="battle-poster"
+              role="img"
+              aria-label="Two hand-drawn Scribbits facing off in the arena"
+            >
+              <span class="battle-health battle-health-left"></span>
+              <span class="battle-health battle-health-right"></span>
+              <img
+                class="battle-fighter battle-fighter-left"
+                id="battle-hero-image"
+                src="./assets/splash-doodle-mossmop.png"
+                alt=""
+              />
+              <strong class="battle-versus">VS</strong>
+              <img
+                class="battle-fighter battle-fighter-right"
+                id="battle-rival-image"
+                src="./assets/splash-doodle-stormpuff.png"
+                alt=""
+              />
+            </div>
+            <video
+              class="shared-battle-video"
+              id="shared-battle-video"
+              muted
+              loop
+              playsinline
+              controls
+              preload="metadata"
+              hidden
+            ></video>
+            <span
+              class="battle-proof-stamp"
+              id="battle-proof-stamp"
+              data-i18n="splash.battle.real"
+            >
+              REAL BATTLE
+            </span>
+          </div>
+          <p class="battle-caption" data-i18n="splash.battle.detail">
+            Your drawing becomes the fighter.
+          </p>
+        </article>
       </section>
 
-      <button
-        class="start-button"
-        id="start-button"
-        type="button"
-        data-i18n="splash.action.enterArena"
-      >
-        ENTER ARENA
-      </button>
-    </div>
+      <footer class="splash-footer">
+        <span class="matchup-note" data-i18n="splash.story.matchup">
+          A fresh matchup every visit.
+        </span>
+        <button
+          class="start-button"
+          id="start-button"
+          type="button"
+          data-i18n="splash.action.enterArena"
+        >
+          ENTER ARENA
+        </button>
+      </footer>
+    </main>
     <script type="module" src="splash.ts" defer></script>
   </body>
 </html>

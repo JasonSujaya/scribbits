@@ -5,7 +5,8 @@ import * as Phaser from 'phaser';
 import { Scene } from 'phaser';
 import type { Scribbit } from '../../shared/arena';
 import { getShapePowerContent } from '../../shared/combat/shapepowercontent';
-import type { PrimaryPower } from '../../shared/combat/types';
+import { getCombatRoleContent } from '../../shared/combat/roles';
+import type { CombatRole, PrimaryPower } from '../../shared/combat/types';
 import {
   planReplayBattleClock,
   planReplayHeartDamageReaction,
@@ -17,7 +18,7 @@ import type {
   ReplayBattleSide,
   ReplayHeartMeterPlan,
 } from './battlepresentation';
-import { ELEMENT_STYLES, UI } from './theme';
+import { UI } from './theme';
 import { bindPressInteractionEvents } from './pressinteraction';
 import { translate } from './localization';
 import { label } from './ui';
@@ -36,6 +37,10 @@ type FighterVitalsView = {
   heartWarning: Phaser.GameObjects.Container;
   heartGraphics: Phaser.GameObjects.Graphics;
   healthLabel: Phaser.GameObjects.Text;
+  floatingVitals: Phaser.GameObjects.Container;
+  floatingVitalsFeedback: Phaser.GameObjects.Container;
+  floatingHealthFill: Phaser.GameObjects.Rectangle;
+  floatingHealthBarWidth: number;
   shapePower: ShapePowerStatusView;
   displayedHeartUnits: number | null;
   displayedDanger: boolean;
@@ -83,6 +88,10 @@ const HEART_COUNT = 6;
 const MIN_HEART_SIZE = 26;
 const MAX_HEART_SIZE = 40;
 const EMPTY_HEART_FILL = 0xd9ccb5;
+const HEALTHY_HEART_COLOR = UI.coral;
+const FLOATING_VITALS_WIDTH = 190;
+const FLOATING_VITALS_HEIGHT = 58;
+const FLOATING_HEALTH_BAR_HEIGHT = 10;
 
 type HeartFill = 'full' | 'left' | 'right';
 
@@ -116,7 +125,6 @@ const renderHeartMeter = (
   graphics: Phaser.GameObjects.Graphics,
   plan: ReplayHeartMeterPlan,
   side: ReplayBattleSide,
-  healthyColor: number,
   availableWidth: number
 ): void => {
   graphics.clear();
@@ -128,7 +136,7 @@ const renderHeartMeter = (
   );
   const step = heartSize + gap;
   const firstX = -((plan.states.length - 1) * step) / 2;
-  const activeColor = plan.useDangerColor ? 0xe8555c : healthyColor;
+  const activeColor = plan.useDangerColor ? 0xe8555c : HEALTHY_HEART_COLOR;
   const halfFill = side === 'a' ? 'left' : 'right';
 
   for (let position = 0; position < plan.states.length; position += 1) {
@@ -201,6 +209,11 @@ export type ReplayBattleHud = {
     maximumHitPoints: number,
     playbackSpeed: number
   ) => void;
+  setFighterScreenPosition: (
+    side: ReplayBattleSide,
+    x: number,
+    y: number
+  ) => void;
   playFighterDamage: (
     side: ReplayBattleSide,
     tier: BattleImpactTier,
@@ -228,6 +241,8 @@ export type CreateReplayBattleHudInput = {
   fighterB: Scribbit;
   fighterAPrimaryPower: PrimaryPower;
   fighterBPrimaryPower: PrimaryPower;
+  fighterARole?: CombatRole;
+  fighterBRole?: CombatRole;
   arenaName: string;
   showPlaybackControls: boolean;
   reduceMotion: boolean;
@@ -245,57 +260,96 @@ const createFighterVitalsView = (
   side: ReplayBattleSide,
   scribbit: Scribbit,
   primaryPower: PrimaryPower,
+  combatRole: CombatRole | undefined,
   onSelect: () => void
 ): FighterVitalsView => {
   const fighterLayout = layout.fighters[side];
-  const style = ELEMENT_STYLES[scribbit.element];
 
-  const name = label(
-    scene,
-    fighterLayout.nameX,
-    layout.fighterNameY,
-    scribbit.name,
-    30,
-    UI.ink,
-    true
-  )
-    .setOrigin(fighterLayout.nameOriginX, 0.5)
-    .setDepth(22);
-  const availableNameWidth = layout.heartRowWidth;
-  fitTextToWidth(name, availableNameWidth);
-  name.setInteractive({ useHandCursor: true });
-  name.on(
-    'pointerup',
-    (
-      _pointer: unknown,
-      _localX: unknown,
-      _localY: unknown,
-      event: Phaser.Types.Input.EventData
-    ) => {
-      event.stopPropagation?.();
-      onSelect();
-    }
+  const floatingVitalsWidth = Math.min(
+    FLOATING_VITALS_WIDTH,
+    layout.fighterDisplaySize - 20
   );
-
-  const battleNameTagWidth = Math.min(154, layout.fighterDisplaySize - 32);
-  const battleNameTag = scene.add.container(
+  const floatingHealthBarWidth = floatingVitalsWidth - 24;
+  const floatingVitals = scene.add.container(
     fighterLayout.homeX,
     fighterLayout.homeY + layout.fighterDisplaySize / 2 + 22
   );
-  const battleNameTagBackground = scene.add
-    .rectangle(0, 0, battleNameTagWidth, 38, UI.paper, 0.9)
+  const floatingVitalsBackground = scene.add
+    .rectangle(
+      0,
+      0,
+      floatingVitalsWidth,
+      FLOATING_VITALS_HEIGHT,
+      UI.paper,
+      0.94
+    )
     .setStrokeStyle(2, UI.inkHex, 0.92);
-  const battleName = label(
+  const floatingName = label(
     scene,
     0,
-    0,
+    combatRole ? -2 : -11,
     scribbit.name.toUpperCase(),
     18,
     UI.ink,
     true
-  );
-  fitTextToWidth(battleName, battleNameTagWidth - 18);
-  battleNameTag.add([battleNameTagBackground, battleName]);
+  ).setOrigin(0.5);
+  fitTextToWidth(floatingName, floatingVitalsWidth - 24);
+  const floatingRole = combatRole
+    ? label(
+        scene,
+        0,
+        -19,
+        getCombatRoleContent(combatRole).displayName.toUpperCase(),
+        12,
+        UI.coralText,
+        true
+      ).setOrigin(0.5)
+    : null;
+  const floatingHealthTrack = scene.add
+    .rectangle(
+      -floatingHealthBarWidth / 2,
+      15,
+      floatingHealthBarWidth,
+      FLOATING_HEALTH_BAR_HEIGHT,
+      UI.progressTrack,
+      0.24
+    )
+    .setOrigin(0, 0.5)
+    .setStrokeStyle(2, UI.inkHex, 0.9);
+  const floatingHealthFill = scene.add
+    .rectangle(
+      -floatingHealthBarWidth / 2,
+      15,
+      floatingHealthBarWidth,
+      FLOATING_HEALTH_BAR_HEIGHT,
+      HEALTHY_HEART_COLOR,
+      1
+    )
+    .setOrigin(0, 0.5);
+  const floatingVitalsFeedback = scene.add.container(0, 0, [
+    floatingVitalsBackground,
+    floatingName,
+    ...(floatingRole ? [floatingRole] : []),
+    floatingHealthTrack,
+    floatingHealthFill,
+  ]);
+  floatingVitals
+    .add(floatingVitalsFeedback)
+    .setSize(floatingVitalsWidth, FLOATING_VITALS_HEIGHT)
+    .setInteractive({ useHandCursor: true })
+    .setDepth(23)
+    .on(
+      'pointerup',
+      (
+        _pointer: unknown,
+        _localX: unknown,
+        _localY: unknown,
+        event: Phaser.Types.Input.EventData
+      ) => {
+        event.stopPropagation?.();
+        onSelect();
+      }
+    );
 
   const initialHeartPlan = planReplayHeartMeter({
     hitPoints: 1,
@@ -303,13 +357,7 @@ const createFighterVitalsView = (
     heartCount: HEART_COUNT,
   });
   const heartGraphics = scene.add.graphics();
-  renderHeartMeter(
-    heartGraphics,
-    initialHeartPlan,
-    side,
-    style.primary,
-    layout.heartRowWidth
-  );
+  renderHeartMeter(heartGraphics, initialHeartPlan, side, layout.heartRowWidth);
   const heartWarning = scene.add.container(0, 0, [heartGraphics]);
   const healthLabel = label(
     scene,
@@ -334,7 +382,7 @@ const createFighterVitalsView = (
     .setData('heartStates', initialHeartPlan.states);
 
   const container = scene.add
-    .container(0, 0, [name, battleNameTag, heartMeter])
+    .container(0, 0, [floatingVitals, heartMeter])
     .setDepth(20);
 
   return {
@@ -343,9 +391,15 @@ const createFighterVitalsView = (
     heartWarning,
     heartGraphics,
     healthLabel,
+    floatingVitals,
+    floatingVitalsFeedback,
+    floatingHealthFill,
+    floatingHealthBarWidth,
     shapePower: {
       fighterName: scribbit.name,
-      effectDescription: getShapePowerContent(primaryPower).receiptEffect,
+      effectDescription: combatRole
+        ? `${getCombatRoleContent(combatRole).displayName}: ${getCombatRoleContent(combatRole).behavior}`
+        : getShapePowerContent(primaryPower).receiptEffect,
     },
     displayedHeartUnits: null,
     displayedDanger: false,
@@ -442,6 +496,7 @@ export function createReplayBattleHud(
       'a',
       input.fighterA,
       input.fighterAPrimaryPower,
+      input.fighterARole,
       () => input.onSelectFighter('a')
     ),
     b: createFighterVitalsView(
@@ -450,6 +505,7 @@ export function createReplayBattleHud(
       'b',
       input.fighterB,
       input.fighterBPrimaryPower,
+      input.fighterBRole,
       () => input.onSelectFighter('b')
     ),
   };
@@ -461,7 +517,11 @@ export function createReplayBattleHud(
   const describeShapePowerState = (side: ReplayBattleSide): string => {
     const shapePower = fighterVitals[side].shapePower;
     const state = SHAPE_POWER_STATE_PRESENTATIONS[shapePowerStates[side]];
-    return `${shapePower.fighterName}'s Shape Power is ${state.accessibleLabel}. ${shapePower.effectDescription}.`;
+    const effectDescription = shapePower.effectDescription.replace(
+      /[.!?]+$/,
+      ''
+    );
+    return `${shapePower.fighterName}'s signature move is ${state.accessibleLabel}. ${effectDescription}.`;
   };
   let shapePowerLiveRegion: HTMLParagraphElement | null = null;
   const applyFighterShapePowerState = (
@@ -693,7 +753,9 @@ export function createReplayBattleHud(
       stopLastHeartWarning(side);
       scene.tweens.killTweensOf(vitals.heartMeter);
       scene.tweens.killTweensOf(vitals.healthLabel);
+      scene.tweens.killTweensOf(vitals.floatingVitalsFeedback);
       vitals.healthLabel.setAngle(0).setScale(1);
+      vitals.floatingVitalsFeedback.setPosition(0, 0).setAngle(0).setScale(1);
       resetHeartTransforms(side);
       setHeartFxState(side, 'idle');
     });
@@ -712,10 +774,12 @@ export function createReplayBattleHud(
     });
     setHeartFxState(side, 'hit');
     scene.tweens.killTweensOf(vitals.heartMeter);
+    scene.tweens.killTweensOf(vitals.floatingVitalsFeedback);
     vitals.heartMeter
       .setPosition(layout.fighters[side].chipCenterX, layout.heartRowY)
       .setAngle(0)
       .setScale(1);
+    vitals.floatingVitalsFeedback.setPosition(0, 0).setAngle(0).setScale(1);
 
     if (reaction.durationMilliseconds === 0) {
       setHeartFxState(side, vitals.displayedLastHeart ? 'last' : 'idle');
@@ -744,6 +808,40 @@ export function createReplayBattleHud(
         setHeartFxState(side, vitals.displayedLastHeart ? 'last' : 'idle');
       },
     });
+    scene.tweens.add({
+      targets: vitals.floatingVitalsFeedback,
+      x: direction * Math.max(3, reaction.shakeDistance * 0.7),
+      angle: direction * reaction.rotationDegrees,
+      scale: 1.045,
+      duration: segmentDuration,
+      ease: 'Sine.easeInOut',
+      yoyo: true,
+      repeat: reaction.repeats,
+      onComplete: () => {
+        vitals.floatingVitalsFeedback.setPosition(0, 0).setAngle(0).setScale(1);
+      },
+    });
+  };
+
+  const setFighterScreenPosition = (
+    side: ReplayBattleSide,
+    x: number,
+    y: number
+  ): void => {
+    const horizontalPadding = FLOATING_VITALS_WIDTH / 2 + 12;
+    const verticalOffset = layout.fighterDisplaySize / 2 + 22;
+    fighterVitals[side].floatingVitals.setPosition(
+      Phaser.Math.Clamp(
+        x,
+        horizontalPadding,
+        layout.viewportWidth - horizontalPadding
+      ),
+      Phaser.Math.Clamp(
+        y + verticalOffset,
+        layout.arenaTop + FLOATING_VITALS_HEIGHT / 2,
+        layout.arenaBottom - FLOATING_VITALS_HEIGHT / 2
+      )
+    );
   };
 
   const setFighterHitPoints = (
@@ -781,15 +879,7 @@ export function createReplayBattleHud(
     vitals.displayedHeartUnits = plan.filledUnits;
     vitals.displayedDanger = plan.useDangerColor;
     vitals.displayedLastHeart = plan.isLastHeart;
-    renderHeartMeter(
-      vitals.heartGraphics,
-      plan,
-      side,
-      ELEMENT_STYLES[
-        side === 'a' ? input.fighterA.element : input.fighterB.element
-      ].primary,
-      layout.heartRowWidth
-    );
+    renderHeartMeter(vitals.heartGraphics, plan, side, layout.heartRowWidth);
     vitals.heartMeter
       .setName(accessibilityLabel)
       .setData('accessibilityLabel', accessibilityLabel)
@@ -805,6 +895,14 @@ export function createReplayBattleHud(
         })
       )
       .setColor(plan.useDangerColor ? UI.coralText : UI.ink);
+    const floatingHealthRatio = plan.ratio;
+    vitals.floatingHealthFill
+      .setDisplaySize(
+        vitals.floatingHealthBarWidth * floatingHealthRatio,
+        FLOATING_HEALTH_BAR_HEIGHT
+      )
+      .setFillStyle(plan.useDangerColor ? 0xe8555c : HEALTHY_HEART_COLOR, 1)
+      .setVisible(floatingHealthRatio > 0);
     const hitPointsChanged =
       previousHitPoints !== null && previousHitPoints !== safeHitPoints;
     scene.tweens.killTweensOf(vitals.healthLabel);
@@ -884,6 +982,7 @@ export function createReplayBattleHud(
       renderSoundButton?.(enabled);
     },
     setFighterHitPoints,
+    setFighterScreenPosition,
     playFighterDamage,
     stopHeartAnimations,
     setFighterShapePowerState,
@@ -892,6 +991,7 @@ export function createReplayBattleHud(
       Object.values(fighterVitals).forEach((vitals) => {
         vitals.heartMeter.setVisible(visible);
         vitals.healthLabel.setVisible(visible);
+        vitals.floatingVitals.setVisible(visible);
       });
       if (!visible) {
         stopHeartAnimations();

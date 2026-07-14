@@ -1,5 +1,6 @@
 export {
   ABILITY_CONFIG_BY_POWER,
+  COMBAT_ROLE_BY_DOMINANT_STAT,
   COMBAT_MAXIMUM_SECONDS,
   COMBAT_MAXIMUM_TICKS,
   COMBAT_PHASE_ORDER,
@@ -19,7 +20,22 @@ export {
   isGearCombatModifiers,
   isGearCombatSnapshot,
 } from './gearsnapshot';
-export { selectDominantStat, selectPrimaryPower } from './selection';
+export {
+  selectCombatRole,
+  selectDominantStat,
+  selectPrimaryPower,
+} from './selection';
+export {
+  COMBAT_ROLE_ADVANTAGE,
+  COMBAT_ROLE_CONTENT,
+  COMBAT_ROLE_IDS,
+  COMBAT_ROLE_RULES,
+  getCombatRoleAdvantage,
+  getCombatRoleContent,
+  getCombatRoleRules,
+  isCombatRole,
+} from './roles';
+export type { CombatRange, CombatRoleContent, CombatRoleRules } from './roles';
 export { battleResultFinishIsConsistent } from './resultvalidation';
 export {
   ELEMENT_BATTLE_CUE_BY_ELEMENT,

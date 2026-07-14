@@ -28,6 +28,7 @@ import {
   getScribbitKey,
   getScribbitOwnerKey,
   getUserAliveScribbitsKey,
+  getUserHasCreatedScribbitKey,
   getUserScribbitsKey,
   queueStoredScribbit,
   serializeScribbit,
@@ -251,6 +252,7 @@ const submissionWasCommitted = async (
     inkBalance,
     inventory,
     streak,
+    hasCreatedScribbit,
   ] = await Promise.all([
     storage.get(getScribbitKey(scribbit.id)),
     storage.get(getScribbitOwnerKey(scribbit.id)),
@@ -262,6 +264,7 @@ const submissionWasCommitted = async (
     storage.get(getInkKey(input.userId)),
     storage.hGetAll(getInventoryKey(input.userId)),
     storage.hGetAll(getUserPlayStreakKey(input.userId)),
+    storage.get(getUserHasCreatedScribbitKey(input.userId)),
   ]);
 
   if (
@@ -275,7 +278,8 @@ const submissionWasCommitted = async (
     rumbleScore !== input.rumbleScore ||
     inkBalance !== expected.inkBalance.toString() ||
     streak.lastPlayedDateKey !== expected.currentDateKey ||
-    streak.streakDays !== expected.streakDays.toString()
+    streak.streakDays !== expected.streakDays.toString() ||
+    hasCreatedScribbit !== '1'
   ) {
     return false;
   }
@@ -438,6 +442,7 @@ export const commitScribbitSubmission = async (
     const streakKey = getUserPlayStreakKey(input.userId);
     const inkKey = getInkKey(input.userId);
     const scribbitKey = getScribbitKey(input.scribbit.id);
+    const hasCreatedScribbitKey = getUserHasCreatedScribbitKey(input.userId);
     const currentArenaDayKey = getCurrentArenaDayKey();
     const resolutionClaimsKey = getNightlyResolutionClaimsKey();
     const watchedKeys = [
@@ -449,6 +454,7 @@ export const commitScribbitSubmission = async (
       streakKey,
       inkKey,
       scribbitKey,
+      hasCreatedScribbitKey,
     ];
     const typeExpectations = [
       [currentArenaDayKey, 'string'],
@@ -459,6 +465,7 @@ export const commitScribbitSubmission = async (
       [streakKey, 'hash'],
       [inkKey, 'string'],
       [scribbitKey, 'string'],
+      [hasCreatedScribbitKey, 'string'],
       [getUserScribbitsKey(input.userId), 'zset'],
       [getExpiringScribbitsKey(), 'zset'],
       [getRumbleKey(input.scribbit.bornDay), 'zset'],

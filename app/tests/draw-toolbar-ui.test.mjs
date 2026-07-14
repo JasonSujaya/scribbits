@@ -41,14 +41,12 @@ test('Draw keeps the everyday rail compact and puts optional tools one tap away'
   );
   assert.match(paperIconSource, /\| 'bucket'/);
   assert.match(paperIconSource, /if \(key === 'bucket'\)/);
-  assert.match(drawSource, /private liveStatCardLayout\(/);
-  assert.match(
-    drawSource,
-    /paperStatIcon\(this, statName, x - 39, centerY - 3, 44, UI\.creamHex\)/
-  );
-  assert.match(drawSource, /style\.label,\s+18,/);
-  assert.match(drawSource, /card\.fillStyle\(color, active \? 1 : 0\.84\)/);
-  assert.match(drawSource, /without adding another white panel/);
+  assert.match(drawSource, /private buildLiveStatsStrip\(centerY: number\)/);
+  assert.match(drawSource, /DRAW TO REVEAL YOUR ROLE/);
+  assert.match(drawSource, /BIG BODY · SHARP EDGES · SMALL SIZE · MANY COLORS/);
+  assert.match(drawSource, /The role is the primary live read/);
+  assert.doesNotMatch(drawSource, /liveStatCards/);
+  assert.doesNotMatch(drawSource, /drawLiveStatCard/);
 });
 
 test('Draw sends the newborn straight into one guarded random first fight', () => {
@@ -62,6 +60,12 @@ test('Draw sends the newborn straight into one guarded random first fight', () =
     /private async startFirstBattle\(scribbit: Scribbit\)/
   );
   assert.match(drawSource, /await spar\(scribbit\.id\)/);
+  assert.match(drawSource, /FINDING A RIVAL…/);
+  assert.match(drawSource, /FIRST FIGHT PAUSED/);
+  assert.doesNotMatch(
+    drawSource,
+    /showToast\(`\$\{scribbit\.name\} meets a first rival…`\)/
+  );
   assert.match(
     drawSource,
     /stageDirectBattle\([\s\S]{0,180}scribbit\.id,[\s\S]{0,60}'ScribbitHome',[\s\S]{0,40}'birth'/

@@ -30,7 +30,7 @@ import {
   canCare,
   releaseRenderedDrawingTextures,
 } from '../lib/scribbits';
-import { EDGE, NAV_SAFE, UI, prefersReducedMotion } from '../lib/theme';
+import { EDGE, NAV_SAFE, TYPE, UI, prefersReducedMotion } from '../lib/theme';
 import {
   iconButton,
   label,
@@ -40,6 +40,7 @@ import {
   startScene,
   spinner,
   paperRoleTag,
+  paperCard,
   versusBadge,
 } from '../lib/ui';
 import type { ErrorPanel, Spinner } from '../lib/ui';
@@ -76,6 +77,7 @@ import {
   planRumbleReturnPresentation,
 } from '../lib/rumblereturnpresentation';
 import { CanvasActionOverlay, CanvasModalOverlay } from '../lib/overlay';
+import { playSfx } from '../lib/sfx';
 import {
   planArenaMutationResponse,
   planArenaRefreshResponse,
@@ -92,6 +94,7 @@ import {
   planFirstChestTrailStep,
   type FirstChestTrailStep,
 } from '../lib/firstchesttrail';
+import { fitText } from '../lib/fittext';
 
 // One focused battle hub: choose an owned fighter, choose Champion or Spar,
 // then fight. The compact Rumble Pick action remains here so removing Scout
@@ -453,43 +456,96 @@ export class ArenaHome extends Scene {
       this.state.season.next ??
       this.state.season.latestFinalized;
     if (season) {
-      label(
+      const cardWidth = Math.min(width - 140, 500);
+      const cardHeight = 168;
+      const cardY = y + 190;
+      const cardLeft = width / 2 - cardWidth / 2;
+      const cardTop = cardY - cardHeight / 2;
+      const seasonCard = this.add.container(width / 2, cardY);
+      const cardShadow = this.add.graphics().setPosition(7, 9);
+      cardShadow.fillStyle(0x4f321f, 0.28);
+      cardShadow.fillRoundedRect(
+        -cardWidth / 2,
+        -cardHeight / 2,
+        cardWidth,
+        cardHeight,
+        18
+      );
+      const cardFace = paperCard(this, 0, 0, cardWidth, cardHeight);
+      const seasonTape = this.add
+        .rectangle(
+          -cardWidth / 2 + 92,
+          -cardHeight / 2 + 4,
+          138,
+          31,
+          UI.tape,
+          0.82
+        )
+        .setAngle(-3);
+      const seasonName = label(
         this,
-        width / 2,
-        y + 105,
-        `${season.name.toUpperCase()} · ${season.campaignName.toUpperCase()}`,
-        25,
+        -cardWidth / 2 + 34,
+        -45,
+        season.name.toUpperCase(),
+        20,
+        UI.coralText,
+        true
+      ).setOrigin(0, 0.5);
+      const campaignName = label(
+        this,
+        -cardWidth / 2 + 34,
+        -8,
+        fitText(season.campaignName.toUpperCase(), 18),
+        TYPE.title,
         UI.ink,
         true
-      ).setWordWrapWidth(width - 160);
-      label(
+      ).setOrigin(0, 0.5);
+      const divider = this.add.graphics();
+      divider.lineStyle(3, UI.inkHex, 0.22);
+      divider.lineBetween(-cardWidth / 2 + 30, 24, cardWidth / 2 - 30, 24);
+      const standing = label(
         this,
-        width / 2,
-        y + 145,
+        0,
+        55,
         this.seasonStandingText(),
-        20,
+        TYPE.caption,
         UI.inkSoft,
         true
-      );
-      paperIcon(this, 'trophy', width - 58, y + 123, {
-        size: 35,
+      ).setWordWrapWidth(cardWidth - 86);
+      const trophy = paperIcon(this, 'trophy', cardWidth / 2 - 48, -24, {
+        size: 42,
         fill: UI.gold,
       });
+      seasonCard.add([
+        cardShadow,
+        cardFace,
+        seasonTape,
+        seasonName,
+        campaignName,
+        divider,
+        standing,
+        trophy,
+      ]);
       this.add
-        .circle(width - 58, y + 123, 42, 0xffffff, 0.001)
+        .rectangle(width / 2, cardY, cardWidth, cardHeight, 0xffffff, 0.001)
         .setInteractive({ useHandCursor: true })
         .on('pointerup', () => {
           if (!this.didDrag()) this.openSeasonRanking();
         });
       this.rosterActionOverlay?.add({
-        label: `Open ${season.name} ranking`,
-        rect: { x: width - 102, y: y + 81, width: 88, height: 84 },
+        label: `Open ${season.name} ranking. ${this.seasonStandingText()}`,
+        rect: {
+          x: cardLeft,
+          y: cardTop,
+          width: cardWidth,
+          height: cardHeight,
+        },
         followCamera: true,
         pointerPassthrough: true,
         onActivate: () => this.openSeasonRanking(),
       });
     }
-    const statusY = y + 187;
+    const statusY = season ? y + 310 : y + 120;
     this.countdownLabel = label(
       this,
       width / 2 + 20,
@@ -512,7 +568,7 @@ export class ArenaHome extends Scene {
       callback: () => this.countdownLabel?.setText(this.countdownText()),
     });
 
-    return y + 230;
+    return statusY + 43;
   }
 
   private seasonStandingText(): string {
@@ -527,8 +583,9 @@ export class ArenaHome extends Scene {
     if (season.status === 'paused') return 'RANKING PAUSED';
     if (season.status === 'finalized') return 'FINAL STANDINGS';
     const standing = season.me;
-    const rank = standing && standing.rank > 0 ? `#${standing.rank}` : 'UNRANKED';
-    return `${season.daysRemaining}D LEFT · ${rank} · ${standing?.score ?? 0} PTS`;
+    const rank =
+      standing && standing.rank > 0 ? `#${standing.rank}` : 'UNRANKED';
+    return `${season.daysRemaining} DAYS LEFT  •  ${rank} RANK  •  ${standing?.score ?? 0} PTS`;
   }
 
   private openSeasonRanking(): void {
@@ -1121,6 +1178,10 @@ export class ArenaHome extends Scene {
     layer.add(shade);
 
     const presentation = planRumbleReturnPresentation(receipt);
+    playSfx(presentation.outcome === 'victory' ? 'battle.win' : 'battle.loss');
+    if (receipt.inkAwarded > 0) {
+      this.time.delayedCall(220, () => playSfx('reward.ink'));
+    }
     const accessibleSummary = formatRumbleReturnAccessibleSummary(presentation);
     let dismissReceipt = (): void => {};
     const modalActions = new CanvasModalOverlay(
@@ -1363,7 +1424,7 @@ export class ArenaHome extends Scene {
               return;
             }
             if (afterContinue) {
-              setGalleryTab(this, 'legacy');
+              setGalleryTab(this, 'archived');
             }
             acknowledgeReceipt();
             modalActions.destroy();
@@ -1526,7 +1587,7 @@ export class ArenaHome extends Scene {
       rumbleReceipt !== null &&
       !isRumbleReceiptShown(this, rumbleReceipt.resolvedDay);
     const openLegacyBook = (): void => {
-      setGalleryTab(this, 'legacy');
+      setGalleryTab(this, 'archived');
       startScene(this, 'Gallery');
     };
 
@@ -1582,7 +1643,6 @@ export class ArenaHome extends Scene {
     if (mine) {
       actions.onCare = () => this.openCarePickerFor(scribbit);
     } else {
-      actions.canBelieve = scribbit.status === 'alive';
       if (isEntrant) {
         const { pickLabel, pickEnabled } =
           this.pickButtonPresentation(scribbit);
@@ -1593,12 +1653,8 @@ export class ArenaHome extends Scene {
     }
     openDetailModal(this, scribbit, {
       currentDay: this.state.dayNumber,
+      nextArenaDayStartsAt: this.state.rumbleResolvesAt,
       mine,
-      onBelieved: (id, belief) => {
-        if (this.acceptMutationResponse(sceneEpoch)) {
-          this.applyBelief(id, belief);
-        }
-      },
       onRemoved: () => {
         if (this.acceptMutationResponse(sceneEpoch)) void this.refresh();
       },
@@ -1620,9 +1676,7 @@ export class ArenaHome extends Scene {
         : null;
     this.carePicker = openCarePicker(this, {
       scribbit,
-      ...(firstChestStep
-        ? { goalLabel: firstChestStep.statusLabel }
-        : {}),
+      ...(firstChestStep ? { goalLabel: firstChestStep.statusLabel } : {}),
       onChoose: (action) => {
         this.carePicker = null;
         this.doCare(
@@ -1685,8 +1739,7 @@ export class ArenaHome extends Scene {
           ...(continuesFirstChestTrail
             ? {
                 progressLabel:
-                  firstChestStep?.statusLabel ??
-                  'FIRST CHEST • EARN MORE INK',
+                  firstChestStep?.statusLabel ?? 'FIRST CHEST • EARN MORE INK',
                 onDismiss: () => {
                   this.careMomentOverlay = null;
                   if (firstChestStep) {
@@ -1820,21 +1873,6 @@ export class ArenaHome extends Scene {
     const nextState = { ...this.state, myScribbits: nextRoster };
     this.state = nextState;
     setArena(this, nextState);
-    this.build();
-  }
-
-  // Reconcile a belief count into the snapshot wherever the scribbit appears.
-  private applyBelief(id: string, belief: number): void {
-    const patch = (s: Scribbit): Scribbit =>
-      s.id === id ? { ...s, belief } : s;
-    const next: ArenaState = {
-      ...this.state,
-      champion: this.state.champion ? patch(this.state.champion) : null,
-      myScribbits: this.state.myScribbits.map(patch),
-      todayEntrants: this.state.todayEntrants.map(patch),
-    };
-    this.state = next;
-    setArena(this, next);
     this.build();
   }
 

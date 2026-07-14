@@ -1,11 +1,7 @@
-const READY_SET_SCRIBBLE_URL = new URL(
-  '../assets/ready-set-scribble.mp3',
-  import.meta.url
-).href;
-const HOME_SOUNDTRACK_URLS = [
-  new URL('../assets/pocketful-of-ink.mp3', import.meta.url).href,
-  new URL('../assets/legends-in-the-margins.mp3', import.meta.url).href,
-] as const;
+import { MUSIC_CATALOG } from './audiocatalog';
+
+const READY_SET_SCRIBBLE_TRACK = MUSIC_CATALOG.drawing[0];
+const HOME_SOUNDTRACKS = MUSIC_CATALOG.home;
 
 type SoundtrackMode = 'drawing' | 'home';
 
@@ -14,12 +10,18 @@ let currentMode: SoundtrackMode | null = null;
 let hasPlayedHomeSoundtrack = false;
 let playbackRequested = false;
 let retryListenersInstalled = false;
+let pendingHomeStop: number | null = null;
+let visibilityHandlerInstalled = false;
+
+const hasTrustedAudioGesture = (): boolean => {
+  return navigator.userActivation?.hasBeenActive === true;
+};
 
 export const chooseHomeTrackIndex = (
   hasPlayedHomeTrack: boolean,
   randomValue: number
 ): number => {
-  const trackCount = HOME_SOUNDTRACK_URLS.length;
+  const trackCount = HOME_SOUNDTRACKS.length;
   if (!hasPlayedHomeTrack) return 0;
   const normalizedRandom = Math.min(Math.max(randomValue, 0), 0.999999);
   return Math.floor(normalizedRandom * trackCount);
@@ -27,8 +29,8 @@ export const chooseHomeTrackIndex = (
 
 const removeRetryListeners = (): void => {
   if (!retryListenersInstalled || typeof document === 'undefined') return;
-  document.removeEventListener('pointerdown', retryPlayback);
-  document.removeEventListener('keydown', retryPlayback);
+  document.removeEventListener('pointerdown', retryPlayback, true);
+  document.removeEventListener('keydown', retryPlayback, true);
   retryListenersInstalled = false;
 };
 
@@ -36,6 +38,10 @@ const requestPlayback = (): void => {
   const audio = currentAudio;
   if (!audio) return;
   playbackRequested = true;
+  if (document.hidden || !hasTrustedAudioGesture()) {
+    installRetryListeners();
+    return;
+  }
   void audio.play().then(
     () => removeRetryListeners(),
     () => installRetryListeners()
@@ -49,23 +55,49 @@ function retryPlayback(): void {
 
 function installRetryListeners(): void {
   if (retryListenersInstalled || typeof document === 'undefined') return;
-  document.addEventListener('pointerdown', retryPlayback);
-  document.addEventListener('keydown', retryPlayback);
+  document.addEventListener('pointerdown', retryPlayback, true);
+  document.addEventListener('keydown', retryPlayback, true);
   retryListenersInstalled = true;
 }
+
+const installVisibilityHandler = (): void => {
+  if (visibilityHandlerInstalled || typeof document === 'undefined') return;
+  visibilityHandlerInstalled = true;
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) {
+      currentAudio?.pause();
+      return;
+    }
+    if (playbackRequested) requestPlayback();
+  });
+};
+
+const cancelPendingHomeStop = (): void => {
+  if (pendingHomeStop === null || typeof window === 'undefined') return;
+  window.clearTimeout(pendingHomeStop);
+  pendingHomeStop = null;
+};
 
 const replaceSoundtrack = (
   mode: SoundtrackMode,
   source: string,
   onEnded?: () => void
 ): void => {
+  installVisibilityHandler();
   stopSoundtrack();
   if (typeof Audio === 'undefined') return;
 
-  const audio = new Audio(source);
+  const audio = new Audio();
   audio.dataset.scribbitsSoundtrack = mode;
-  audio.preload = 'auto';
-  audio.volume = 0.32;
+  // Each MP3 is fetched only when it becomes the active track. In particular,
+  // opening Home never downloads the drawing song or both idle songs.
+  audio.preload = 'none';
+  audio.src = source;
+  audio.volume =
+    mode === 'drawing'
+      ? READY_SET_SCRIBBLE_TRACK.volume
+      : (HOME_SOUNDTRACKS.find((track) => track.url === source)?.volume ??
+        0.32);
   audio.onended = onEnded ?? null;
   audio.style.display = 'none';
   document.body.append(audio);
@@ -74,21 +106,47 @@ const replaceSoundtrack = (
   requestPlayback();
 };
 
-export const playHomeSoundtrack = (): void => {
+const startNextHomeSoundtrack = (): void => {
   const nextTrackIndex = chooseHomeTrackIndex(
     hasPlayedHomeSoundtrack,
     Math.random()
   );
   hasPlayedHomeSoundtrack = true;
   const source =
-    HOME_SOUNDTRACK_URLS[nextTrackIndex] ?? HOME_SOUNDTRACK_URLS[0];
+    HOME_SOUNDTRACKS[nextTrackIndex]?.url ?? HOME_SOUNDTRACKS[0].url;
   replaceSoundtrack('home', source, () => {
-    if (currentMode === 'home') playHomeSoundtrack();
+    if (currentMode === 'home') startNextHomeSoundtrack();
   });
 };
 
+export const playHomeSoundtrack = (): void => {
+  cancelPendingHomeStop();
+  if (currentMode === 'home' && currentAudio) {
+    requestPlayback();
+    return;
+  }
+  startNextHomeSoundtrack();
+};
+
+// Home and Gallery are one uninterrupted idle-music area. Scene shutdown runs
+// before the destination scene starts, so a short deferred release lets the
+// destination claim the existing track without pausing or restarting it.
+export const releaseHomeSoundtrack = (): void => {
+  if (
+    currentMode !== 'home' ||
+    pendingHomeStop !== null ||
+    typeof window === 'undefined'
+  ) {
+    return;
+  }
+  pendingHomeStop = window.setTimeout(() => {
+    pendingHomeStop = null;
+    if (currentMode === 'home') stopSoundtrack();
+  }, 100);
+};
+
 export const startDrawingSoundtrack = (): void => {
-  replaceSoundtrack('drawing', READY_SET_SCRIBBLE_URL);
+  replaceSoundtrack('drawing', READY_SET_SCRIBBLE_TRACK.url);
 };
 
 export const resumeDrawingSoundtrack = (): void => {
@@ -107,6 +165,7 @@ export const pauseDrawingSoundtrack = (): void => {
 
 export const stopSoundtrack = (): void => {
   playbackRequested = false;
+  cancelPendingHomeStop();
   removeRetryListeners();
   currentMode = null;
   if (!currentAudio) return;

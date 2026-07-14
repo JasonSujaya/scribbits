@@ -12,9 +12,9 @@ export type GearWeekDay = Readonly<{
 export const GEAR_WEEK: readonly GearWeekDay[] = Object.freeze([
   Object.freeze({
     day: 1,
-    title: 'Blade Basics',
+    title: 'Steady Hands',
     family: 'aim',
-    challenge: 'Win once with Blade Volley equipped.',
+    challenge: 'Win once with Steady Hands equipped.',
     featuredGearIds: Object.freeze([
       'tiny-sword',
       'nib-halo-headband',
@@ -49,9 +49,9 @@ export const GEAR_WEEK: readonly GearWeekDay[] = Object.freeze([
   }),
   Object.freeze({
     day: 4,
-    title: 'Orbit School',
+    title: 'Focus Cycle',
     family: 'focus',
-    challenge: 'Land a critical Shape Power with Orbiting Nibs.',
+    challenge: 'Land a focused signature hit with Focus Cycle.',
     featuredGearIds: Object.freeze([
       'monocle',
       'round-glasses',
@@ -61,9 +61,9 @@ export const GEAR_WEEK: readonly GearWeekDay[] = Object.freeze([
   }),
   Object.freeze({
     day: 5,
-    title: 'Dash Blades',
+    title: 'Quickstep',
     family: 'rush',
-    challenge: 'Cast four Shape Powers with Dash Blades.',
+    challenge: 'Trigger four role signatures with Quickstep.',
     featuredGearIds: Object.freeze([
       'smearstep-speed-scarf',
       'propeller-cap',
@@ -74,9 +74,9 @@ export const GEAR_WEEK: readonly GearWeekDay[] = Object.freeze([
   }),
   Object.freeze({
     day: 6,
-    title: 'Lucky Echo',
+    title: 'True Aim',
     family: 'fortune',
-    challenge: 'Land a critical Shape Power with Lucky Echo.',
+    challenge: 'Land a focused signature hit with True Aim.',
     featuredGearIds: Object.freeze([
       'flower-crown',
       'colorburst-rosette',

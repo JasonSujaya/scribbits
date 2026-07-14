@@ -7,9 +7,13 @@ import type {
   FounderChronicle,
   Scribbit,
 } from '../../shared/arena';
-import { selectPrimaryPower } from '../../shared/combat/selection';
+import {
+  selectCombatRole,
+  selectPrimaryPower,
+} from '../../shared/combat/selection';
+import { getCombatRoleContent } from '../../shared/combat/roles';
 import { getShapePowerSignatureName } from '../../shared/combat/shapepowercontent';
-import type { PrimaryPower } from '../../shared/combat/types';
+import type { CombatRole, PrimaryPower } from '../../shared/combat/types';
 import { getFoundingScribbitDefinition } from '../../shared/founders';
 import { planFounderRivalryStakes } from './founderchronicle';
 
@@ -20,6 +24,10 @@ export type SparRivalCardPlan = Readonly<{
   element: Element;
   power: PrimaryPower;
   signatureName: string;
+  role: CombatRole;
+  roleName: string;
+  rangeLabel: string;
+  weaponName: string;
   challengeLine: string | null;
   levelLine: string;
   forecastLine: string;
@@ -53,6 +61,8 @@ export function planSparRivalCard(
   currentDay?: number
 ): SparRivalCardPlan {
   const power = selectPrimaryPower(rival.stats);
+  const role = selectCombatRole(rival.stats);
+  const roleContent = getCombatRoleContent(role);
   const founder = getFoundingScribbitDefinition(rival.id);
   const activeRivalry = founderChronicle?.activeRivalry;
   const isActiveRival = activeRivalry?.founderId === rival.id;
@@ -64,11 +74,7 @@ export function planSparRivalCard(
     founderChronicle !== undefined && authoritativeDay !== null;
   const rivalryStakes =
     founder && founderChronicle && authoritativeDay !== null
-      ? planFounderRivalryStakes(
-          founderChronicle,
-          authoritativeDay,
-          founder.id
-        )
+      ? planFounderRivalryStakes(founderChronicle, authoritativeDay, founder.id)
       : null;
   const activeRivalryReady =
     isActiveRival &&
@@ -111,6 +117,10 @@ export function planSparRivalCard(
     element: rival.element,
     power,
     signatureName: getShapePowerSignatureName(rival.element, power),
+    role,
+    roleName: roleContent.displayName,
+    rangeLabel: roleContent.rangeLabel,
+    weaponName: roleContent.weaponName,
     challengeLine: founder?.personality.challengeLine ?? null,
     levelLine: levelLine(challenger.level, rival.level),
     forecastLine: forecastLine(rival.element, forecast),

@@ -8,6 +8,7 @@ import { label, ghostButton, stickerCard, handLettered } from './ui';
 import { paperIcon } from './papericons';
 import { CanvasModalOverlay } from './overlay';
 import type { CloutBoard } from '../../shared/arena';
+import { setSfxCue } from './sfx';
 
 const DEPTH = 2000;
 
@@ -34,6 +35,7 @@ export function openCloutBoard(
     .rectangle(width / 2, height / 2, width, height, 0x1a1320, 0.68)
     .setScrollFactor(0)
     .setInteractive();
+  setSfxCue(scrim, 'ui.close');
   layer.add(scrim);
 
   const cardW = Math.min(width - 40, 640);

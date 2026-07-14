@@ -11,6 +11,7 @@ import { BRAND_LOGO_TEXTURE } from '../lib/visualassets';
 import type { ArenaState } from '../../shared/arena';
 import { translate } from '../lib/localization';
 import { needsScribbitCreation } from '../lib/draweligibility';
+import { markGameBootPhase } from '../lib/gameboot';
 
 // Preloader fetches the arena snapshot, bakes baseline textures (UI panel, dot,
 // spark, element badges), stashes state in the registry, then opens ArenaHome.
@@ -29,6 +30,7 @@ export class Preloader extends Scene {
   }
 
   create(): void {
+    markGameBootPhase('ready');
     const { width, height } = this.scale;
     this.cameras.main.setBackgroundColor(UI.desk);
 

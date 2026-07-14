@@ -210,6 +210,10 @@ export function getDamageSourceDisplayName(
   if (source === 'ember_burn') return 'Ember afterburn';
   if (source === 'nib_wall_recoil') return 'recoiling nib';
   if (source === 'contact') return 'body check';
+  if (source === 'brawler_slam') return 'Body Slam';
+  if (source === 'longshot_quill') return 'Piercing Quill';
+  if (source === 'gunner_shot') return 'Ink Blaster';
+  if (source === 'mage_bolt') return 'Color Bolt';
   return element
     ? getShapePowerSignatureName(element, source)
     : getShapePowerDisplayName(source);

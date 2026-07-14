@@ -9,8 +9,12 @@ import {
   setGalleryCollectionSection,
   setGalleryTab,
 } from '../lib/registry';
-import { startScene } from '../lib/ui';
-import { preloadShopVisualAssets, shopStage } from '../lib/visualassets';
+import { errorPanel, label, startScene, type ErrorPanel } from '../lib/ui';
+import {
+  preloadShopVisualAssets,
+  shopStage,
+  shopVisualAssetsReady,
+} from '../lib/visualassets';
 import { UI } from '../lib/theme';
 import { COSMETIC_BY_ID } from '../../shared/cosmetics';
 import type { CapsulePull } from '../../shared/arena';
@@ -19,6 +23,7 @@ import type { CapsulePull } from '../../shared/arena';
 export class Shop extends Scene {
   private capsuleMachine: CapsuleMachine | null = null;
   private menu: AppMenu | null = null;
+  private assetErrorPanel: ErrorPanel | null = null;
   private transactionLocked = false;
 
   constructor() {
@@ -32,11 +37,20 @@ export class Shop extends Scene {
   init(): void {
     this.capsuleMachine = null;
     this.menu = null;
+    this.assetErrorPanel = null;
     this.transactionLocked = false;
   }
 
   create(): void {
     this.cameras.main.setBackgroundColor(UI.desk);
+    if (!shopVisualAssetsReady(this)) {
+      this.retryShopVisualAssets();
+      return;
+    }
+    this.createLoadedShop();
+  }
+
+  private createLoadedShop(): void {
     shopStage(this, -1000);
 
     appDock(this, 'shop', {
@@ -46,8 +60,7 @@ export class Shop extends Scene {
           setGalleryTab(this, 'collection');
           startScene(this, 'Gallery');
         }),
-      battles: () =>
-        this.navigateWhenSafe(() => startScene(this, 'MyBattles')),
+      battles: () => this.navigateWhenSafe(() => startScene(this, 'MyBattles')),
       shop: () => undefined,
     });
     this.menu = appMenu(this, {
@@ -104,6 +117,46 @@ export class Shop extends Scene {
       this.capsuleMachine = null;
       this.menu?.destroy();
       this.menu = null;
+      this.assetErrorPanel?.destroy();
+      this.assetErrorPanel = null;
+    });
+  }
+
+  private retryShopVisualAssets(): void {
+    this.assetErrorPanel?.destroy();
+    this.assetErrorPanel = null;
+    const { width, height } = this.scale;
+    const loadingText = label(
+      this,
+      width / 2,
+      height / 2,
+      'OPENING SHOP...',
+      30,
+      UI.cream,
+      true
+    );
+    const onLoadComplete = (): void => {
+      loadingText.destroy();
+      if (shopVisualAssetsReady(this)) {
+        this.createLoadedShop();
+        return;
+      }
+      this.assetErrorPanel = errorPanel(
+        this,
+        width / 2,
+        height / 2,
+        'The Shop artwork did not load.',
+        () => this.retryShopVisualAssets()
+      );
+    };
+    this.load.once('complete', onLoadComplete);
+    preloadShopVisualAssets(this);
+    this.load.start();
+    this.events.once('shutdown', () => {
+      this.load.off('complete', onLoadComplete);
+      loadingText.destroy();
+      this.assetErrorPanel?.destroy();
+      this.assetErrorPanel = null;
     });
   }
 

@@ -3,6 +3,7 @@ import type { Scene } from 'phaser';
 import type { AccessoryEffectFamily } from '../../shared/accessoryeffects';
 import type { CosmeticGearCatalogEntry } from '../../shared/cosmetics';
 import { getGearTechniqueEffect } from '../../shared/gearcombat';
+import { getCombatRoleContent } from '../../shared/combat';
 import { renderCosmeticPreview } from './cosmeticpreview';
 import { createStickerShine } from './stickerfxshader';
 import { createStickerModalShell } from './stickermodalshell';
@@ -31,6 +32,9 @@ export function openFeaturedGearDetail(
   const { width, height } = scene.scale;
   const centerY = Math.min(height / 2, 700);
   const effect = getGearTechniqueEffect(entry, 1);
+  const roleRelicCopy = entry.roleAffinity
+    ? `${getCombatRoleContent(entry.roleAffinity).displayName} relic. ${entry.roleEffect ?? ''}`
+    : 'Works with every role weapon.';
   const effectColor = EFFECT_COLORS[entry.effectFamily];
   const reducedMotion = prefersReducedMotion();
   let destroyed = false;
@@ -45,7 +49,7 @@ export function openFeaturedGearDetail(
     title: `${entry.name} effect`,
     description:
       `${entry.name}. ${entry.rarity} ${entry.category} Gear. ` +
-      `${entry.description} ${effect.name}. ${effect.battleCue} ${effect.summary}.`,
+      `${entry.description} ${roleRelicCopy} ${effect.name}. ${effect.battleCue} ${effect.summary}.`,
     onRequestClose: close,
     trigger,
     depth: 3300,
@@ -129,7 +133,9 @@ export function openFeaturedGearDetail(
     scene,
     0,
     154,
-    effect.battleCue,
+    entry.roleAffinity
+      ? `${getCombatRoleContent(entry.roleAffinity).displayName.toUpperCase()} RELIC · ${entry.roleEffect ?? effect.battleCue}`
+      : effect.battleCue,
     TYPE.body,
     UI.ink,
     true

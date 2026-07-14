@@ -4,3 +4,4 @@
 *.log
 codex-*.txt
 playtest.log
+artifacts/devvit-smoke/

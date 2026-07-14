@@ -19,6 +19,7 @@ import {
   isScribbit,
   normalizeScribbitRecord,
 } from './scribbit';
+import { jsonValuesMatch } from './jsonValues';
 
 export const battleReportTtlSeconds = 30 * 24 * 60 * 60;
 // One score bucket per arena day. A million report positions is far above the
@@ -170,7 +171,22 @@ export const isBattleReport = (value: unknown): value is BattleReport => {
       value.b.id !== simulation.fighters[1].id ||
       value.winner !== simulation.result.winner ||
       (simulation.version === 3 && value.kind !== 'exhibition') ||
+      (simulation.version === 4 &&
+        value.kind !== 'exhibition' &&
+        (simulation.fighters[0].gear !== undefined ||
+          simulation.fighters[1].gear !== undefined)) ||
       (simulation.version === 3 &&
+        (!gearCombatSnapshotMatchesScribbit(
+          simulation.fighters[0].gear,
+          value.a
+        ) ||
+          !gearCombatSnapshotMatchesScribbit(
+            simulation.fighters[1].gear,
+            value.b
+          ))) ||
+      (simulation.version === 4 &&
+        (simulation.fighters[0].gear !== undefined ||
+          simulation.fighters[1].gear !== undefined) &&
         (!gearCombatSnapshotMatchesScribbit(
           simulation.fighters[0].gear,
           value.a
@@ -250,7 +266,7 @@ const reportsShareImmutableIdentity = (
 ): boolean => {
   const { inkAwarded: _existingReward, ...existingCore } = existing;
   const { inkAwarded: _incomingReward, ...incomingCore } = incoming;
-  return JSON.stringify(existingCore) === JSON.stringify(incomingCore);
+  return jsonValuesMatch(existingCore, incomingCore);
 };
 
 const mergeCompatibleReport = (

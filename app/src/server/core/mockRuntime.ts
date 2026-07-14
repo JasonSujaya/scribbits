@@ -13,6 +13,7 @@ export {
   getLevelForXp,
   isCareAction,
   planCareProgression,
+  resolveExpiredScribbitStatus,
   validateAndAnalyzeScribbitSubmission,
 } from './scribbit';
 export { cloneScribbit } from '../../shared/arena';
@@ -50,6 +51,7 @@ export {
   GEAR_MERGE_COPY_COST,
   INK_REWARDS,
   MAX_ALIVE_PER_USER,
+  MAX_GROWING_PER_USER,
   MAX_GEAR_RANK,
   SCRIBBIT_STAT_KEYS,
   XP_REWARDS,

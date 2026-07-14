@@ -1,0 +1,222 @@
+import assert from 'node:assert/strict';
+import { createRequire } from 'node:module';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import test from 'node:test';
+import { createMemoryStorage } from './support/memory-storage.mjs';
+
+const compiledSharedRoot = process.env.SCRIBBITS_COMPILED_SHARED_ROOT;
+const compiledServerRoot = process.env.SCRIBBITS_COMPILED_SERVER_ROOT;
+
+if (!compiledSharedRoot || !compiledServerRoot) {
+  throw new Error(
+    'Run Gallery lifecycle tests through scripts/run-test-suites.mjs.'
+  );
+}
+
+const require = createRequire(import.meta.url);
+const arena = require(join(compiledSharedRoot, 'arena.js'));
+const scribbits = require(join(compiledServerRoot, 'core', 'scribbit.js'));
+
+const createOwnedScribbit = (id, bornDay) =>
+  scribbits.createScribbit({
+    id,
+    draft: {
+      name: id,
+      stats: { chonk: 25, spike: 25, zip: 25, charm: 25 },
+      element: 'ember',
+      accessories: [],
+    },
+    artist: 'gallery-owner',
+    imageUrl: `/api/drawing/${id}`,
+    day: bornDay,
+  });
+
+test('Gallery lifecycle has three growing slots and three mature slots', () => {
+  assert.equal(arena.MAX_GROWING_PER_USER, 3);
+  assert.equal(arena.MAX_MATURE_PER_USER, 3);
+  assert.equal(arena.MAX_ALIVE_PER_USER, 6);
+
+  const growing = createOwnedScribbit('growing', 7);
+  assert.equal(arena.getScribbitLifecycleStage(growing, 9), 'growing');
+  assert.equal(arena.getScribbitLifecycleStage(growing, 10), 'mature');
+  assert.equal(
+    arena.getScribbitLifecycleStage(
+      scribbits.resolveExpiredScribbitStatus(growing),
+      10
+    ),
+    'archived'
+  );
+});
+
+test('a fourth mature Scribbit archives the oldest and preserves the newest three', async () => {
+  const memory = createMemoryStorage();
+  const ownerUserId = 'gallery-owner';
+  const roster = [
+    createOwnedScribbit('mature-one', 1),
+    createOwnedScribbit('mature-two', 2),
+    createOwnedScribbit('mature-three', 3),
+    createOwnedScribbit('mature-four', 4),
+  ];
+  for (const scribbit of roster) {
+    await scribbits.storeScribbit(memory.storage, ownerUserId, scribbit);
+  }
+
+  const result = await scribbits.expireDueScribbits(memory.storage, 7);
+  assert.deepEqual(result, { faded: 1, legends: 0 });
+
+  const activeRoster = await scribbits.getAliveScribbitsForUser(
+    memory.storage,
+    ownerUserId
+  );
+  assert.deepEqual(
+    activeRoster.map(({ id }) => id),
+    ['mature-four', 'mature-three', 'mature-two']
+  );
+  assert.ok(
+    activeRoster.every(
+      (scribbit) => arena.getScribbitLifecycleStage(scribbit, 7) === 'mature'
+    )
+  );
+
+  const archived = await scribbits.loadScribbit(memory.storage, 'mature-one');
+  assert.equal(archived?.status, 'faded');
+  assert.equal(
+    await memory.storage.zScore(
+      scribbits.getUserLegacyCardsKey(ownerUserId),
+      'mature-one'
+    ),
+    7
+  );
+});
+
+for (const [label, bornDay, retirementDay] of [
+  ['growing', 10, 12],
+  ['mature', 4, 12],
+]) {
+  test(`an owner can retire a ${label} Scribbit without losing its record`, async () => {
+    const memory = createMemoryStorage();
+    const ownerUserId = 'gallery-owner';
+    const scribbit = {
+      ...createOwnedScribbit(`retire-${label}`, bornDay),
+      wins: 5,
+      losses: 2,
+      belief: 9,
+    };
+    await scribbits.storeScribbit(memory.storage, ownerUserId, scribbit);
+
+    const result = await scribbits.retireOwnedScribbit(
+      memory.storage,
+      ownerUserId,
+      scribbit.id,
+      retirementDay
+    );
+    assert.equal(result.status, 'retired');
+    assert.equal(result.scribbit.imageUrl, scribbit.imageUrl);
+    assert.equal(result.scribbit.expiresDay, scribbit.expiresDay);
+    assert.equal(result.scribbit.wins, 5);
+    assert.equal(result.scribbit.losses, 2);
+    assert.equal(result.scribbit.belief, 9);
+    assert.equal(result.scribbit.legacy?.schemaVersion, 3);
+    assert.equal(result.scribbit.legacy?.archivedDay, retirementDay);
+    assert.equal(
+      await memory.storage.zScore(
+        scribbits.getUserAliveScribbitsKey(ownerUserId),
+        scribbit.id
+      ),
+      undefined
+    );
+    assert.equal(
+      await memory.storage.zScore(
+        scribbits.getExpiringScribbitsKey(),
+        scribbit.id
+      ),
+      undefined
+    );
+    assert.equal(
+      await memory.storage.zScore(
+        scribbits.getUserLegacyCardsKey(ownerUserId),
+        scribbit.id
+      ),
+      retirementDay
+    );
+
+    const retry = await scribbits.retireOwnedScribbit(
+      memory.storage,
+      ownerUserId,
+      scribbit.id,
+      retirementDay
+    );
+    assert.equal(retry.status, 'already-retired');
+  });
+}
+
+test("a Scribbit entered in today's Rumble cannot be retired", async () => {
+  const memory = createMemoryStorage();
+  const ownerUserId = 'gallery-owner';
+  const scribbit = createOwnedScribbit('entered-scribbit', 10);
+  await scribbits.storeScribbit(memory.storage, ownerUserId, scribbit);
+  await memory.storage.zAdd(scribbits.getRumbleKey(12), {
+    member: scribbit.id,
+    score: 1,
+  });
+
+  const result = await scribbits.retireOwnedScribbit(
+    memory.storage,
+    ownerUserId,
+    scribbit.id,
+    12
+  );
+  assert.equal(result.status, 'entered-today');
+  assert.equal(
+    (await scribbits.loadScribbit(memory.storage, scribbit.id))?.status,
+    'alive'
+  );
+});
+
+test('Gallery exposes Retire for active owned Scribbits and moves success to Archived', () => {
+  const detailSource = readFileSync(
+    join(process.cwd(), 'src', 'client', 'lib', 'detailmodal.ts'),
+    'utf8'
+  );
+  const gallerySource = readFileSync(
+    join(process.cwd(), 'src', 'client', 'scenes', 'Gallery.ts'),
+    'utf8'
+  );
+  const uiSource = readFileSync(
+    join(process.cwd(), 'src', 'client', 'lib', 'ui.ts'),
+    'utf8'
+  );
+
+  assert.match(detailSource, /label: 'Retire'/);
+  assert.match(detailSource, /icon: 'archive'/);
+  assert.match(detailSource, /The drawing and record stay in Archived/);
+  assert.doesNotMatch(detailSource, /label: 'Believe'|'BELIEF'/);
+  assert.match(detailSource, /maturityCountdownHeadline/);
+  assert.match(detailSource, /Explain .* element and all Scribbit skills/);
+  assert.match(detailSource, /COMBAT_UPGRADE_IDS\.forEach/);
+  assert.match(detailSource, /POWER GUIDE · \$\{pageNumber\} OF 3/);
+  assert.match(detailSource, /'YOUR ELEMENT'/);
+  assert.match(detailSource, /'INK MODS'/);
+  assert.match(detailSource, /'HOW TO EARN'/);
+  assert.match(
+    detailSource,
+    /const guidePages = \[elementPage, modsPage, earnPage\]/
+  );
+  assert.match(detailSource, /paperIcon\(scene, modIcons\[id\]/);
+  assert.match(detailSource, /ONE NEW MOD AT LV2, LV3, LV4, AND LV5/);
+  assert.match(detailSource, /LOSSES GIVE 0 XP/);
+  assert.match(uiSource, /'ELEMENT'/);
+  assert.match(uiSource, /'MOOD'/);
+  assert.match(uiSource, /paperStatIcon\(\s*scene,\s*key/);
+  assert.match(uiSource, /dominant \? UI\.goldHex : STAT_STYLES\[key\]\.color/);
+  assert.match(
+    gallerySource,
+    /canRetire: mine && scribbit\.status === 'alive'/
+  );
+  assert.match(
+    gallerySource,
+    /onRetired: \(\) => void this\.showRetiredScribbit\(\)/
+  );
+  assert.match(gallerySource, /this\.tab = 'archived'/);
+});

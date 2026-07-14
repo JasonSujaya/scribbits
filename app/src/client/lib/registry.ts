@@ -10,12 +10,12 @@ import type {
   SparBattleResponse,
   SparRewardReceipt,
 } from '../../shared/arena';
-import type { PrimaryPower } from '../../shared/combat/types';
+import type { CombatRole } from '../../shared/combat/types';
 import type { EquipmentCategory } from '../../shared/equipment';
 import {
   createPracticeSession,
   normalizePracticeSession,
-  recordPracticeSessionPower,
+  recordPracticeSessionRole,
 } from './practicelab';
 import type { PracticeSession } from './practicelab';
 import { selectReplaySparReward } from './replayreward';
@@ -45,7 +45,7 @@ const FIRST_CHEST_TRAIL_KEY = 'firstChestTrail';
 const LAST_RUMBLE_RECEIPT_SHOWN_DAY_KEY = 'lastRumbleReceiptShownDay';
 const LAST_LEGACY_RETURN_DISMISSED_DAY_KEY = 'lastLegacyReturnDismissedDay';
 
-export type GalleryTab = 'legends' | 'legacy' | 'collection';
+export type GalleryTab = 'growing' | 'mature' | 'archived' | 'collection';
 export type ReplayReturnScene =
   | 'ScribbitHome'
   | 'ArenaHome'
@@ -133,9 +133,7 @@ export function getReplayReturn(scene: Scene): ReplayReturnScene {
 
 export function getReplayEntryMode(scene: Scene): ReplayEntryMode {
   const entryMode = scene.registry.get(REPLAY_ENTRY_MODE_KEY);
-  return entryMode === 'saved' || entryMode === 'birth'
-    ? entryMode
-    : 'fresh';
+  return entryMode === 'saved' || entryMode === 'birth' ? entryMode : 'fresh';
 }
 
 export function getReplayPass(scene: Scene): number {
@@ -278,11 +276,11 @@ export function getPracticeSession(scene: Scene): PracticeSession {
   );
 }
 
-export function recordPracticePower(
+export function recordPracticeRole(
   scene: Scene,
-  power: PrimaryPower
+  role: CombatRole
 ): PracticeSession {
-  const next = recordPracticeSessionPower(getPracticeSession(scene), power);
+  const next = recordPracticeSessionRole(getPracticeSession(scene), role);
   scene.registry.set(PRACTICE_SESSION_KEY, next);
   return next;
 }
@@ -403,9 +401,11 @@ export function setGalleryTab(scene: Scene, tab: GalleryTab): void {
 }
 
 export function getGalleryTab(scene: Scene): GalleryTab {
-  return (
-    (scene.registry.get(GALLERY_TAB_KEY) as GalleryTab | undefined) ?? 'legends'
-  );
+  const storedTab = scene.registry.get(GALLERY_TAB_KEY);
+  if (storedTab === 'collection') return 'collection';
+  if (storedTab === 'mature') return 'mature';
+  if (storedTab === 'archived' || storedTab === 'legacy') return 'archived';
+  return 'growing';
 }
 
 export function setGalleryCollectionSection(

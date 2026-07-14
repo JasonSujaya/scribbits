@@ -19,29 +19,48 @@ import {
   releaseRenderedDrawingTextures,
 } from '../lib/scribbits';
 import { generateDoodleTexture } from '../lib/proceduraldoodleart';
+import { maturityCountdownHeadline } from '../lib/maturitycountdown';
 import {
   button,
-  daysLeftFor,
   ghostButton,
   iconButton,
   label,
+  paperArrowButton,
   paperIconButton,
   startScene,
   stickerCard,
 } from '../lib/ui';
-import { HOME_PROP_TEXTURES, homeStage } from '../lib/visualassets';
+import {
+  HOME_PROP_TEXTURES,
+  HOME_TITLE_TEXTURE,
+  MATURITY_GEAR_TEXTURE,
+  homeStage,
+  preloadHomeVisualAssets,
+} from '../lib/visualassets';
 import { getArena, setGalleryTab } from '../lib/registry';
-import { playHomeSoundtrack, stopSoundtrack } from '../lib/soundtrack';
-import { EDGE, NAV_SAFE, TYPE, UI, prefersReducedMotion } from '../lib/theme';
+import { playHomeSoundtrack, releaseHomeSoundtrack } from '../lib/soundtrack';
+import {
+  EDGE,
+  ELEMENT_STYLES,
+  NAV_SAFE,
+  TYPE,
+  UI,
+  prefersReducedMotion,
+} from '../lib/theme';
+import { setSfxCue } from '../lib/sfx';
+import {
+  createStickerShine,
+  type StickerShineHandle,
+} from '../lib/stickerfxshader';
 import type { ArenaState, Scribbit } from '../../shared/arena';
 
 const SCRIBBIT_DEPTH = 120;
 const HOME_PROP_DEPTH = 10;
 const HOME_SCRIBBIT_DISPLAY_SIZE = 380;
 const HOME_SCRIBBIT_HIT_SIZE = 400;
-const MATURITY_CARD_SUMMARY = 'BATTLE MODIFIERS STOP • MATURE ARENA';
+const MATURITY_CARD_SUMMARY = 'STATS LOCK • GEAR UP FOR MATURE ARENA';
 const MATURITY_DESCRIPTION =
-  'For its first 3 days, every completed battle gives this Scribbit a random stat modifier, whether it wins or loses. At maturity, battle modifiers stop and its final stats lock forever. Afterward, it competes in the Mature Arena against other fully grown Scribbits.';
+  'For its first 3 days, every completed battle gives this Scribbit a random stat modifier, whether it wins or loses. At maturity, battle modifiers stop and its base stats lock forever. Afterward, upgrade Gear to add bonuses and increase its battle stats in the Mature Arena.';
 
 const MATURITY_STEPS: readonly Readonly<{
   icon: PaperIconKey;
@@ -59,26 +78,39 @@ const MATURITY_STEPS: readonly Readonly<{
     body: 'After 3 days, random stat modifiers stop and its final stats lock forever.',
   },
   {
-    icon: 'sword',
-    title: 'NEXT: MATURE ARENA',
-    body: 'It enters the Mature Arena to compete against other fully grown Scribbits.',
+    icon: 'spark',
+    title: 'MATURE ARENA: UPGRADE GEAR',
+    body: 'Base stats stay locked. Upgrade Gear to add bonuses and increase its battle stats.',
   },
 ];
+
+const MATURITY_GEAR_ICONS: readonly Readonly<{
+  frame: number;
+  centerOffsetX: number;
+}>[] = [
+  {
+    frame: 0,
+    centerOffsetX: -180,
+  },
+  {
+    frame: 1,
+    centerOffsetX: -60,
+  },
+  {
+    frame: 2,
+    centerOffsetX: 60,
+  },
+  {
+    frame: 3,
+    centerOffsetX: 180,
+  },
+];
+const MATURITY_GEAR_ICON_SIZE = 120;
 
 type MaturityModal = Readonly<{
   container: Phaser.GameObjects.Container;
   actions: CanvasModalOverlay;
 }>;
-
-const maturityHeadlineFor = (
-  scribbit: Scribbit,
-  currentArenaDay: number
-): string => {
-  const daysLeft = daysLeftFor(scribbit, currentArenaDay);
-  if (daysLeft <= 0) return 'MATURES TODAY';
-  if (daysLeft === 1) return 'MATURES IN 1 DAY';
-  return `MATURES IN ${daysLeft} DAYS`;
-};
 
 type HomePropConfig = Readonly<{
   texture: string;
@@ -101,6 +133,8 @@ type HomePropRest = Readonly<{
   scaleY: number;
 }>;
 
+type DrawFlairTarget = Phaser.GameObjects.Container | Phaser.GameObjects.Arc;
+
 const HOME_PROPS: readonly HomePropConfig[] = [
   {
     texture: HOME_PROP_TEXTURES.window,
@@ -109,10 +143,10 @@ const HOME_PROPS: readonly HomePropConfig[] = [
     sourceY: 274,
     sourceWidth: 360,
     sourceHeight: 388,
-    shakeAngle: 4,
-    idleAngle: 1,
-    idleDriftY: -2.5,
-    idleDurationMs: 2400,
+    shakeAngle: 6,
+    idleAngle: 1.5,
+    idleDriftY: -4,
+    idleDurationMs: 2900,
     idleDelayMs: 0,
   },
   {
@@ -122,11 +156,11 @@ const HOME_PROPS: readonly HomePropConfig[] = [
     sourceY: 270,
     sourceWidth: 330,
     sourceHeight: 330,
-    shakeAngle: 5,
-    idleAngle: 0.8,
-    idleDriftY: -1.5,
-    idleDurationMs: 2700,
-    idleDelayMs: 300,
+    shakeAngle: 7,
+    idleAngle: 1.3,
+    idleDriftY: -3.5,
+    idleDurationMs: 3300,
+    idleDelayMs: 180,
   },
   {
     texture: HOME_PROP_TEXTURES.bowl,
@@ -135,11 +169,11 @@ const HOME_PROPS: readonly HomePropConfig[] = [
     sourceY: 1208,
     sourceWidth: 220,
     sourceHeight: 142,
-    shakeAngle: 3,
-    idleAngle: 1.2,
-    idleDriftY: -2,
-    idleDurationMs: 1900,
-    idleDelayMs: 600,
+    shakeAngle: 8,
+    idleAngle: 2.1,
+    idleDriftY: -5,
+    idleDurationMs: 2300,
+    idleDelayMs: 520,
   },
   {
     texture: HOME_PROP_TEXTURES.bed,
@@ -148,11 +182,11 @@ const HOME_PROPS: readonly HomePropConfig[] = [
     sourceY: 1202,
     sourceWidth: 375,
     sourceHeight: 285,
-    shakeAngle: 4,
-    idleAngle: 0.7,
-    idleDriftY: -2,
-    idleDurationMs: 2200,
-    idleDelayMs: 450,
+    shakeAngle: 6,
+    idleAngle: 1.7,
+    idleDriftY: -4.5,
+    idleDurationMs: 2700,
+    idleDelayMs: 900,
   },
 ];
 
@@ -168,9 +202,17 @@ export class ScribbitHome extends Scene {
     Phaser.GameObjects.Image,
     Phaser.Tweens.Tween
   >();
+  private readonly drawButtonTweens: Phaser.Tweens.Tween[] = [];
+  private readonly drawButtonTimers: Phaser.Time.TimerEvent[] = [];
+  private maturityCountdownTimer: Phaser.Time.TimerEvent | null = null;
+  private drawButtonShine: StickerShineHandle | null = null;
 
   constructor() {
     super('ScribbitHome');
+  }
+
+  preload(): void {
+    preloadHomeVisualAssets(this);
   }
 
   init(): void {
@@ -180,6 +222,7 @@ export class ScribbitHome extends Scene {
     this.menu = null;
     this.actionOverlay = null;
     this.maturityModal = null;
+    this.maturityCountdownTimer = null;
   }
 
   create(): void {
@@ -201,7 +244,9 @@ export class ScribbitHome extends Scene {
   private build(): void {
     this.renderGeneration += 1;
     this.closeMaturityInfo();
+    this.clearMaturityCountdown();
     this.clearHomePropIdleTweens();
+    this.clearDrawButtonEffects();
     this.children.removeAll(true);
     this.liveSprite?.destroy();
     this.liveSprite = null;
@@ -209,6 +254,7 @@ export class ScribbitHome extends Scene {
     this.actionOverlay = new CanvasActionOverlay(this);
 
     const stage = homeStage(this);
+    this.renderHomeTitle();
     this.renderHomeProps(stage);
     this.renderGalleryButton();
     if (this.state.myScribbits.length === 0) {
@@ -230,7 +276,7 @@ export class ScribbitHome extends Scene {
 
   private renderGalleryButton(): void {
     const openGallery = (): void => {
-      setGalleryTab(this, 'legends');
+      setGalleryTab(this, 'growing');
       startScene(this, 'Gallery');
     };
     const galleryButton = paperIconButton(
@@ -255,9 +301,20 @@ export class ScribbitHome extends Scene {
     });
   }
 
+  private renderHomeTitle(): void {
+    const { width } = this.scale;
+    this.add
+      .image(width / 2, 120, HOME_TITLE_TEXTURE)
+      .setOrigin(0.5, 0)
+      .setDisplaySize(320, 107)
+      .setDepth(80);
+  }
+
   private cleanup(): void {
-    stopSoundtrack();
+    releaseHomeSoundtrack();
+    this.clearMaturityCountdown();
     this.clearHomePropIdleTweens();
+    this.clearDrawButtonEffects();
     this.liveSprite?.destroy();
     this.liveSprite = null;
     this.closeMaturityInfo();
@@ -403,17 +460,37 @@ export class ScribbitHome extends Scene {
     this.stopHomePropIdle(prop);
     this.resetHomeProp(prop, rest);
     const reduceMotion = prefersReducedMotion();
-    this.tweens.add({
+    if (!reduceMotion) {
+      this.burstPaperSparks(
+        prop.x,
+        prop.y - prop.displayHeight * 0.22,
+        UI.gold,
+        4,
+        HOME_PROP_DEPTH + 2
+      );
+    }
+    this.tweens.chain({
       targets: prop,
-      x: reduceMotion ? rest.x : rest.x + 4,
-      y: reduceMotion ? rest.y : rest.y - 3,
-      angle: reduceMotion ? 0 : config.shakeAngle,
-      scaleX: rest.scaleX * (reduceMotion ? 1.03 : 1.04),
-      scaleY: rest.scaleY * (reduceMotion ? 1.03 : 0.96),
-      duration: reduceMotion ? 90 : 60,
-      yoyo: true,
-      repeat: reduceMotion ? 0 : 2,
-      ease: 'Sine.easeInOut',
+      tweens: [
+        {
+          x: reduceMotion ? rest.x : rest.x + 6,
+          y: reduceMotion ? rest.y : rest.y - 4,
+          angle: reduceMotion ? 0 : config.shakeAngle,
+          scaleX: rest.scaleX * (reduceMotion ? 1.03 : 1.06),
+          scaleY: rest.scaleY * (reduceMotion ? 1.03 : 0.94),
+          duration: 90,
+          ease: 'Quad.easeOut',
+        },
+        {
+          x: rest.x,
+          y: rest.y,
+          angle: 0,
+          scaleX: rest.scaleX,
+          scaleY: rest.scaleY,
+          duration: reduceMotion ? 1 : 480,
+          ease: 'Back.easeOut',
+        },
+      ],
       onComplete: () => {
         this.resetHomeProp(prop, rest);
         this.startHomePropIdle(prop, rest, config);
@@ -439,26 +516,6 @@ export class ScribbitHome extends Scene {
     const buttonY = Math.min(height - NAV_SAFE - 96, creatureY + 360);
     const mood = moodStyleOf(scribbit);
 
-    const name = label(
-      this,
-      centerX,
-      116,
-      scribbit.name.toUpperCase(),
-      TYPE.title,
-      UI.ink,
-      true
-    ).setDepth(80);
-    if (name.width > width - 90) name.setScale((width - 90) / name.width);
-    label(
-      this,
-      centerX,
-      158,
-      'YOUR SCRIBBIT',
-      TYPE.caption,
-      UI.inkSoft,
-      true
-    ).setDepth(80);
-
     const maturityCard = this.add
       .container(centerX, creatureY - 262)
       .setDepth(82);
@@ -468,17 +525,29 @@ export class ScribbitHome extends Scene {
       .setAngle(-0.25);
     maturityCard.add(maturityPaper);
 
-    const maturity = label(
-      this,
-      -24,
-      -23,
-      maturityHeadlineFor(scribbit, this.state.dayNumber),
-      TYPE.body,
-      UI.coralText,
-      true
-    );
-    if (maturity.width > width - 260)
-      maturity.setScale((width - 260) / maturity.width);
+    const maturity = label(this, -24, -23, '', TYPE.body, UI.coralText, true);
+    const refreshMaturityCountdown = (): void => {
+      if (!maturity.active) return;
+      maturity
+        .setScale(1)
+        .setText(
+          maturityCountdownHeadline(
+            scribbit,
+            this.state.dayNumber,
+            this.state.rumbleResolvesAt
+          )
+        );
+      if (maturity.width > width - 260)
+        maturity.setScale((width - 260) / maturity.width);
+    };
+    refreshMaturityCountdown();
+    if (scribbit.expiresDay > this.state.dayNumber) {
+      this.maturityCountdownTimer = this.time.addEvent({
+        delay: 1_000,
+        loop: true,
+        callback: refreshMaturityCountdown,
+      });
+    }
 
     const maturityMeaning = label(
       this,
@@ -519,10 +588,21 @@ export class ScribbitHome extends Scene {
         onActivate: openMaturityInfo,
       }) ?? null;
 
+    const name = label(
+      this,
+      centerX,
+      creatureY + 198,
+      scribbit.name.toUpperCase(),
+      TYPE.title,
+      UI.ink,
+      true
+    ).setDepth(80);
+    if (name.width > width - 100) name.setScale((width - 100) / name.width);
+
     const summary = label(
       this,
       centerX,
-      creatureY + 210,
+      creatureY + 234,
       `LV ${levelOf(scribbit)}  •  ${mood.label.toUpperCase()}`,
       TYPE.caption,
       UI.ink,
@@ -537,24 +617,30 @@ export class ScribbitHome extends Scene {
 
     this.actionOverlay?.add({
       label: `${scribbit.name}, tap to pet`,
+      attributes: { 'data-sfx-cue': 'care.action' },
       rect: {
         x: centerX - HOME_SCRIBBIT_HIT_SIZE / 2,
         y: creatureY - HOME_SCRIBBIT_HIT_SIZE / 2,
         width: HOME_SCRIBBIT_HIT_SIZE,
         height: HOME_SCRIBBIT_HIT_SIZE,
       },
-      onActivate: () => this.liveSprite?.jiggle(),
+      onActivate: () => this.reactToCreature(scribbit, centerX, creatureY),
     });
+  }
+
+  private clearMaturityCountdown(): void {
+    this.maturityCountdownTimer?.remove(false);
+    this.maturityCountdownTimer = null;
   }
 
   private openMaturityInfo(trigger: HTMLElement | null = null): void {
     this.closeMaturityInfo();
     const { width, height } = this.scale;
     const cardWidth = width - 80;
-    const cardHeight = Math.min(720, height - 120);
-    const cardCenterY = height / 2;
-    const cardTop = cardCenterY - cardHeight / 2;
-    const cardBottom = cardCenterY + cardHeight / 2;
+    const cardTop = Math.max(60, height / 2 - 360);
+    const cardHeight = Math.min(820, height - cardTop - 80);
+    const cardCenterY = cardTop + cardHeight / 2;
+    const cardBottom = cardTop + cardHeight;
     const container = this.add
       .container(0, 0)
       .setDepth(2400)
@@ -573,6 +659,7 @@ export class ScribbitHome extends Scene {
       .rectangle(width / 2, height / 2, width, height, UI.inkHex, 0.72)
       .setScrollFactor(0)
       .setInteractive({ useHandCursor: true });
+    setSfxCue(shade, 'ui.close');
     shade.on('pointerup', closeMaturityInfo);
     container.add(shade);
 
@@ -627,25 +714,31 @@ export class ScribbitHome extends Scene {
     const rowStartY = cardTop + 255;
     MATURITY_STEPS.forEach((step, index) => {
       const rowY = rowStartY + index * 125;
+      const contentY = rowY - (index === 2 ? 20 : 0);
+      const textX = 172;
       container.add(
-        paperIcon(this, step.icon, 120, rowY + 8, {
-          size: 46,
-          fill: index === 1 ? UI.gold : UI.coral,
+        paperIcon(this, step.icon, 120, contentY + 8, {
+          size: index === 2 ? 70 : 46,
+          fill: index >= 1 ? UI.gold : UI.coral,
         }).setScrollFactor(0)
       );
       container.add(
-        label(this, 172, rowY - 12, step.title, 23, UI.ink, true)
+        label(this, textX, contentY - 12, step.title, 23, UI.ink, true)
           .setOrigin(0, 0.5)
           .setScrollFactor(0)
       );
       container.add(
-        label(this, 172, rowY + 27, step.body, 19, UI.inkSoft)
+        label(this, textX, contentY + 27, step.body, 19, UI.inkSoft)
           .setOrigin(0, 0.5)
           .setAlign('left')
-          .setWordWrapWidth(width - 260)
+          .setWordWrapWidth(width - textX - 88)
           .setLineSpacing(3)
           .setScrollFactor(0)
       );
+
+      if (index === 2) {
+        this.renderMaturityGearCluster(container, width / 2, rowY + 117);
+      }
     });
 
     const gotItY = cardBottom - 70;
@@ -689,11 +782,44 @@ export class ScribbitHome extends Scene {
     actions.focusInitial(closeControl);
   }
 
+  private renderMaturityGearCluster(
+    parent: Phaser.GameObjects.Container,
+    centerX: number,
+    centerY: number
+  ): void {
+    MATURITY_GEAR_ICONS.forEach((gear, index) => {
+      const preview = this.add
+        .image(
+          centerX + gear.centerOffsetX,
+          centerY,
+          MATURITY_GEAR_TEXTURE,
+          gear.frame
+        )
+        .setDisplaySize(MATURITY_GEAR_ICON_SIZE, MATURITY_GEAR_ICON_SIZE)
+        .setScrollFactor(0);
+      parent.add(preview);
+
+      if (!prefersReducedMotion()) {
+        this.tweens.add({
+          targets: preview,
+          angle: { from: -5, to: 5 },
+          duration: 180,
+          ease: 'Sine.InOut',
+          yoyo: true,
+          repeat: -1,
+          repeatDelay: 650,
+          delay: index * 140,
+        });
+      }
+    });
+  }
+
   private closeMaturityInfo(): void {
     const modal = this.maturityModal;
     if (!modal) return;
     this.maturityModal = null;
     modal.actions.destroy();
+    this.tweens.killTweensOf(modal.container.list);
     modal.container.destroy(true);
   }
 
@@ -704,7 +830,7 @@ export class ScribbitHome extends Scene {
     height: number
   ): void {
     const labelText = this.state.loggedIn ? 'DRAW!' : 'SIGN IN';
-    iconButton(
+    const drawButton = iconButton(
       this,
       x,
       y,
@@ -720,7 +846,8 @@ export class ScribbitHome extends Scene {
       height,
       UI.coral
     ).setDepth(90);
-    this.addDrawButtonFlair(x, y, width);
+    const flairTargets = this.addDrawButtonFlair(x, y, width);
+    this.startDrawButtonEffects(drawButton, flairTargets, x, y, width, height);
 
     this.actionOverlay?.add({
       label: this.state.loggedIn ? 'Draw a Scribbit' : 'Sign in',
@@ -732,19 +859,170 @@ export class ScribbitHome extends Scene {
     });
   }
 
-  private addDrawButtonFlair(x: number, y: number, width: number): void {
+  private addDrawButtonFlair(
+    x: number,
+    y: number,
+    width: number
+  ): readonly DrawFlairTarget[] {
     const burst = this.add.container(x, y).setDepth(92).setAlpha(0.95);
     const half = width / 2;
-    burst.add([
-      paperIcon(this, 'spark', -half + 32, -44, { size: 25, fill: UI.coral }),
-      paperIcon(this, 'spark', half - 34, -42, { size: 22, fill: UI.creamHex }),
-      this.add
-        .circle(-half + 45, 43, 6, UI.coral, 0.92)
-        .setStrokeStyle(2, UI.inkHex, 0.5),
-      this.add
-        .circle(half - 48, 40, 5, UI.creamHex, 0.92)
-        .setStrokeStyle(2, UI.inkHex, 0.5),
-    ]);
+    const leftSpark = paperIcon(this, 'spark', -half + 32, -44, {
+      size: 25,
+      fill: UI.coral,
+    });
+    const rightSpark = paperIcon(this, 'spark', half - 34, -42, {
+      size: 22,
+      fill: UI.creamHex,
+    });
+    const leftDot = this.add
+      .circle(-half + 45, 43, 6, UI.coral, 0.92)
+      .setStrokeStyle(2, UI.inkHex, 0.5);
+    const rightDot = this.add
+      .circle(half - 48, 40, 5, UI.creamHex, 0.92)
+      .setStrokeStyle(2, UI.inkHex, 0.5);
+    const flairTargets: DrawFlairTarget[] = [
+      leftSpark,
+      rightSpark,
+      leftDot,
+      rightDot,
+    ];
+    burst.add(flairTargets);
+    return flairTargets;
+  }
+
+  private startDrawButtonEffects(
+    drawButton: Phaser.GameObjects.Container,
+    flairTargets: readonly DrawFlairTarget[],
+    x: number,
+    y: number,
+    width: number,
+    height: number
+  ): void {
+    const reduceMotion = prefersReducedMotion();
+    const glow = this.add
+      .ellipse(x, y + 2, width + 26, height + 30, UI.gold, 0.12)
+      .setDepth(89);
+
+    if (!reduceMotion) {
+      drawButton.setY(y + 24).setAlpha(0);
+      this.drawButtonTweens.push(
+        this.tweens.add({
+          targets: drawButton,
+          y,
+          alpha: 1,
+          duration: 340,
+          ease: 'Back.easeOut',
+        }),
+        this.tweens.add({
+          targets: glow,
+          scaleX: 1.04,
+          scaleY: 1.14,
+          alpha: 0.25,
+          duration: 1200,
+          ease: 'Sine.easeInOut',
+          yoyo: true,
+          repeat: -1,
+        })
+      );
+
+      flairTargets.forEach((target, index) => {
+        target.setScale(index < 2 ? 0.78 : 0.86).setAlpha(0.62);
+        this.drawButtonTweens.push(
+          this.tweens.add({
+            targets: target,
+            scale: index < 2 ? 1.18 : 1.08,
+            alpha: 1,
+            angle: index % 2 === 0 ? 8 : -8,
+            duration: 720 + index * 90,
+            delay: index * 170,
+            ease: 'Sine.easeInOut',
+            yoyo: true,
+            repeat: -1,
+          })
+        );
+      });
+    }
+
+    this.drawButtonShine = createStickerShine({
+      scene: this,
+      x,
+      y,
+      width: width - 24,
+      height: height - 18,
+      depth: 91,
+      reduceMotion,
+      tint: [1, 0.76, 0.24],
+      intensity: 0.88,
+    });
+    if (!this.drawButtonShine) return;
+
+    if (reduceMotion) {
+      this.drawButtonShine.hide();
+      return;
+    }
+    this.drawButtonTimers.push(
+      this.time.delayedCall(560, () => this.drawButtonShine?.play(820)),
+      this.time.addEvent({
+        delay: 4800,
+        loop: true,
+        callback: () => this.drawButtonShine?.play(820),
+      })
+    );
+  }
+
+  private clearDrawButtonEffects(): void {
+    this.drawButtonTweens.forEach((tween) => tween.remove());
+    this.drawButtonTweens.length = 0;
+    this.drawButtonTimers.forEach((timer) => timer.remove(false));
+    this.drawButtonTimers.length = 0;
+    this.drawButtonShine?.destroy();
+    this.drawButtonShine = null;
+  }
+
+  private reactToCreature(scribbit: Scribbit, x: number, y: number): void {
+    this.liveSprite?.jiggle();
+    this.burstPaperSparks(
+      x,
+      y - 24,
+      ELEMENT_STYLES[scribbit.element].particle,
+      7,
+      SCRIBBIT_DEPTH + 4
+    );
+  }
+
+  private burstPaperSparks(
+    x: number,
+    y: number,
+    color: number,
+    count: number,
+    depth: number
+  ): void {
+    if (prefersReducedMotion() || !this.scene.isActive()) return;
+    const colors = [color, UI.gold, UI.creamHex] as const;
+    for (let index = 0; index < count; index += 1) {
+      const progress = count === 1 ? 0.5 : index / (count - 1);
+      const angle = Phaser.Math.DegToRad(-165 + progress * 150);
+      const distance = 42 + (index % 3) * 12;
+      const size = 18 + (index % 2) * 8;
+      const spark = this.add
+        .image(x, y, 'spark')
+        .setDisplaySize(size, size)
+        .setTint(colors[index % colors.length] ?? color)
+        .setDepth(depth)
+        .setScale(0.4)
+        .setAlpha(0.95);
+      this.tweens.add({
+        targets: spark,
+        x: x + Math.cos(angle) * distance,
+        y: y + Math.sin(angle) * distance,
+        scale: 1.08,
+        alpha: 0,
+        angle: index % 2 === 0 ? 55 : -55,
+        duration: 420 + index * 30,
+        ease: 'Quad.easeOut',
+        onComplete: () => spark.destroy(),
+      });
+    }
   }
 
   private renderCreature(scribbit: Scribbit, x: number, y: number): void {
@@ -789,8 +1067,9 @@ export class ScribbitHome extends Scene {
       ),
       Phaser.Geom.Rectangle.Contains
     );
+    setSfxCue(this.liveSprite.container, 'care.action');
     this.liveSprite.container.on('pointerup', () => {
-      this.liveSprite?.jiggle();
+      this.reactToCreature(scribbit, x, y);
     });
     this.liveSprite.breathe();
   }
@@ -798,59 +1077,53 @@ export class ScribbitHome extends Scene {
   private renderRosterControls(scribbit: Scribbit, creatureY: number): void {
     if (this.state.myScribbits.length <= 1) return;
     const { width } = this.scale;
-    const previous = this.add
-      .container(74, creatureY)
-      .setDepth(120)
-      .setInteractive(
-        new Phaser.Geom.Circle(0, 0, 52),
-        Phaser.Geom.Circle.Contains
-      );
-    const previousPlate = this.add
-      .circle(0, 0, 52, UI.creamHex, 0.95)
-      .setStrokeStyle(4, UI.inkHex);
-    previous.add([
-      previousPlate,
-      paperIcon(this, 'back', 0, 0, { size: 44, fill: UI.inkHex }),
-    ]);
-    previous.on('pointerup', () => this.shiftSelected(-1));
-
-    const next = this.add
-      .container(width - 74, creatureY)
-      .setDepth(120)
-      .setInteractive(
-        new Phaser.Geom.Circle(0, 0, 52),
-        Phaser.Geom.Circle.Contains
-      );
-    const nextPlate = this.add
-      .circle(0, 0, 52, UI.creamHex, 0.95)
-      .setStrokeStyle(4, UI.inkHex);
-    const nextIcon = paperIcon(this, 'back', 0, 0, {
-      size: 44,
-      fill: UI.inkHex,
-    });
-    nextIcon.setScale(-1, 1);
-    next.add([nextPlate, nextIcon]);
-    next.on('pointerup', () => this.shiftSelected(1));
-
-    const ordinal = label(
+    paperArrowButton(
       this,
-      width / 2,
-      creatureY + 250,
-      `${this.selectedIndex + 1}/${this.state.myScribbits.length}`,
-      20,
-      UI.inkSoft,
+      74,
+      creatureY,
+      'previous',
+      () => this.shiftSelected(-1),
+      104
+    ).setDepth(120);
+    paperArrowButton(
+      this,
+      width - 74,
+      creatureY,
+      'next',
+      () => this.shiftSelected(1),
+      104
+    ).setDepth(120);
+
+    const rosterBadge = this.add
+      .container(width / 2, creatureY + 274)
+      .setDepth(140);
+    const rosterBadgePaper = this.add
+      .rectangle(0, 0, 154, 42, UI.paper, 0.96)
+      .setStrokeStyle(3, UI.inkHex, 0.65)
+      .setAngle(-0.5);
+    const rosterBadgeText = label(
+      this,
+      0,
+      0,
+      `${this.selectedIndex + 1} OF ${this.state.myScribbits.length}`,
+      TYPE.caption,
+      UI.ink,
       true
-    ).setDepth(90);
-    ordinal.setAlpha(0.82);
+    );
+    rosterBadge.add([rosterBadgePaper, rosterBadgeText]);
 
     this.actionOverlay?.add({
       label: `Previous Scribbit from ${scribbit.name}`,
       rect: { x: 22, y: creatureY - 52, width: 104, height: 104 },
+      attributes: { 'data-sfx-cue': 'ui.page' },
+      pointerPassthrough: true,
       onActivate: () => this.shiftSelected(-1),
     });
     this.actionOverlay?.add({
       label: `Next Scribbit from ${scribbit.name}`,
       rect: { x: width - 126, y: creatureY - 52, width: 104, height: 104 },
+      attributes: { 'data-sfx-cue': 'ui.page' },
+      pointerPassthrough: true,
       onActivate: () => this.shiftSelected(1),
     });
   }

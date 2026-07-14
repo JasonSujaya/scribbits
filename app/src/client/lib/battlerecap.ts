@@ -93,7 +93,7 @@ export function planCompactBattleRecapLesson(
   plan: Pick<BattleRecapPlan, 'highlight' | 'tapeLine'>
 ): CompactBattleRecapLesson {
   if (!plan.highlight) {
-    return { label: 'SHAPE POWER', text: plan.tapeLine };
+    return { label: 'ROLE READ', text: plan.tapeLine };
   }
   return { label: plan.highlight.label, text: plan.highlight.compactText };
 }

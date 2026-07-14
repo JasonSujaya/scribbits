@@ -19,6 +19,8 @@ import {
   cloneScribbit,
   LIFESPAN_DAYS,
   MAX_ALIVE_PER_USER,
+  MAX_GROWING_PER_USER,
+  MAX_MATURE_PER_USER,
   MAX_ACCESSORIES_PER_SCRIBBIT,
   MAX_ACCESSORY_ROTATION,
   MAX_ACCESSORY_SCALE,
@@ -73,6 +75,7 @@ import {
   MAX_WATCH_TRANSACTION_ATTEMPTS,
 } from './storage';
 import { createVersionedJsonCodec } from './versionedJson';
+import { jsonValuesMatch } from './jsonValues';
 import {
   LEGACY_BELIEF_PRIVACY_MILLISECONDS,
   LEGACY_BELIEF_RECEIPT_MILLISECONDS,
@@ -168,6 +171,10 @@ export const getScribbitOwnerKey = (scribbitId: string): string => {
 
 export const getUserScribbitsKey = (userId: string): string => {
   return `user:${userId}:scribbits`;
+};
+
+export const getUserHasCreatedScribbitKey = (userId: string): string => {
+  return `user:${userId}:has-created-scribbit`;
 };
 
 export const getUserAliveScribbitsKey = (userId: string): string => {
@@ -971,15 +978,16 @@ const inferLegacyFinish = (
 
 const createScribbitLegacySnapshot = (
   scribbit: Scribbit,
-  schemaVersion: 1 | 2,
+  schemaVersion: 1 | 2 | 3,
   options: {
     creatorTitle?: LegacyCosmeticSnapshot | null;
+    archivedDay?: number;
   } = {}
 ): ScribbitLegacy => {
   const xp = normalizeNonNegativeInteger(scribbit.xp);
   const level = getLevelForXp(xp);
   const upgrades =
-    schemaVersion === 2
+    schemaVersion >= 2
       ? parseCompleteScribbitUpgrades(scribbit.upgrades, level)
       : [];
   if (!upgrades) {
@@ -987,7 +995,11 @@ const createScribbitLegacySnapshot = (
   }
   return {
     schemaVersion,
-    archivedDay: scribbit.expiresDay,
+    archivedDay:
+      Number.isSafeInteger(options.archivedDay) &&
+      (options.archivedDay ?? 0) >= scribbit.bornDay
+        ? (options.archivedDay as number)
+        : scribbit.expiresDay,
     finish: inferLegacyFinish(scribbit),
     creatorTitle: options.creatorTitle ? { ...options.creatorTitle } : null,
     level,
@@ -1004,9 +1016,17 @@ export const createScribbitLegacy = (
   scribbit: Scribbit,
   options: {
     creatorTitle?: LegacyCosmeticSnapshot | null;
+    archivedDay?: number;
   } = {}
 ): ScribbitLegacy => {
-  return createScribbitLegacySnapshot(scribbit, 2, options);
+  return createScribbitLegacySnapshot(
+    scribbit,
+    options.archivedDay !== undefined &&
+      options.archivedDay !== scribbit.expiresDay
+      ? 3
+      : 2,
+    options
+  );
 };
 
 const normalizeStoredLegacy = (
@@ -1019,10 +1039,12 @@ const normalizeStoredLegacy = (
     !isLegacyFinishValidForStatus(value.finish, scribbit.status) ||
     (value.schemaVersion !== undefined &&
       value.schemaVersion !== 1 &&
-      value.schemaVersion !== 2) ||
+      value.schemaVersion !== 2 &&
+      value.schemaVersion !== 3) ||
     typeof value.archivedDay !== 'number' ||
-    !Number.isFinite(value.archivedDay) ||
-    value.archivedDay !== scribbit.expiresDay ||
+    !Number.isSafeInteger(value.archivedDay) ||
+    value.archivedDay < scribbit.bornDay ||
+    (value.schemaVersion !== 3 && value.archivedDay !== scribbit.expiresDay) ||
     typeof value.xp !== 'number' ||
     typeof value.wins !== 'number' ||
     typeof value.losses !== 'number' ||
@@ -1033,9 +1055,10 @@ const normalizeStoredLegacy = (
 
   const xp = normalizeNonNegativeInteger(value.xp);
   const level = getLevelForXp(xp);
-  const schemaVersion = value.schemaVersion === 2 ? 2 : 1;
+  const schemaVersion =
+    value.schemaVersion === 3 ? 3 : value.schemaVersion === 2 ? 2 : 1;
   const upgrades =
-    schemaVersion === 2
+    schemaVersion >= 2
       ? parseCompleteScribbitUpgrades(value.upgrades, level)
       : value.upgrades === undefined ||
           (Array.isArray(value.upgrades) && value.upgrades.length === 0)
@@ -1056,7 +1079,7 @@ const normalizeStoredLegacy = (
     : [];
   return {
     schemaVersion,
-    archivedDay: scribbit.expiresDay,
+    archivedDay: value.archivedDay,
     finish: value.finish,
     creatorTitle: creatorTitle ?? null,
     level,
@@ -1121,9 +1144,10 @@ const normalizeScribbitV1Value = (
         upgrades = parsedUpgrades;
       }
     } else {
-      const hasVersionTwoLegacy =
-        isRecord(value.legacy) && value.legacy.schemaVersion === 2;
-      if (hasVersionTwoLegacy) {
+      const hasCompleteLegacy =
+        isRecord(value.legacy) &&
+        (value.legacy.schemaVersion === 2 || value.legacy.schemaVersion === 3);
+      if (hasCompleteLegacy) {
         const parsedUpgrades = parseCompleteScribbitUpgrades(
           value.upgrades,
           level
@@ -1221,29 +1245,6 @@ export const normalizeScribbitRecord = (
 
 export const SCRIBBIT_SCHEMA_VERSION = 1;
 
-const storedJsonValuesMatch = (left: unknown, right: unknown): boolean => {
-  if (left === right) return true;
-  if (Array.isArray(left) || Array.isArray(right)) {
-    return (
-      Array.isArray(left) &&
-      Array.isArray(right) &&
-      left.length === right.length &&
-      left.every((value, index) => storedJsonValuesMatch(value, right[index]))
-    );
-  }
-  if (!isRecord(left) || !isRecord(right)) return false;
-  const leftKeys = Object.keys(left);
-  const rightKeys = Object.keys(right);
-  return (
-    leftKeys.length === rightKeys.length &&
-    leftKeys.every(
-      (key) =>
-        Object.hasOwn(right, key) &&
-        storedJsonValuesMatch(left[key], right[key])
-    )
-  );
-};
-
 // This explicit key list is the immutable v1 storage shape. Keeping it separate
 // from cloneScribbit prevents a future runtime field from silently changing old
 // migration output.
@@ -1302,7 +1303,7 @@ const scribbitJsonCodec = createVersionedJsonCodec<Scribbit>({
     if (!scribbit) return undefined;
     const canonicalValue = encodeScribbitV1(scribbit);
     delete canonicalValue.schemaVersion;
-    return storedJsonValuesMatch(scribbitValue, canonicalValue)
+    return jsonValuesMatch(scribbitValue, canonicalValue)
       ? scribbit
       : undefined;
   },
@@ -1529,6 +1530,7 @@ export const queueStoredScribbit = async (
     serializeScribbit(storedScribbit)
   );
   await transaction.set(getScribbitOwnerKey(storedScribbit.id), ownerUserId);
+  await transaction.set(getUserHasCreatedScribbitKey(ownerUserId), '1');
   await transaction.zAdd(getUserScribbitsKey(ownerUserId), {
     member: storedScribbit.id,
     score: storedScribbit.bornDay,
@@ -1558,21 +1560,28 @@ const storedScribbitMatches = async (
   ownerUserId: string,
   scribbit: Scribbit
 ): Promise<boolean> => {
-  const [storedJson, owner, userIndexScore, statusIndexScore] =
-    await Promise.all([
-      storage.get(getScribbitKey(scribbit.id)),
-      storage.get(getScribbitOwnerKey(scribbit.id)),
-      storage.zScore(getUserScribbitsKey(ownerUserId), scribbit.id),
-      scribbit.status === 'alive'
-        ? storage.zScore(getUserAliveScribbitsKey(ownerUserId), scribbit.id)
-        : scribbit.legacy
-          ? storage.zScore(getUserLegacyCardsKey(ownerUserId), scribbit.id)
-          : Promise.resolve(undefined),
-    ]);
+  const [
+    storedJson,
+    owner,
+    hasCreatedScribbit,
+    userIndexScore,
+    statusIndexScore,
+  ] = await Promise.all([
+    storage.get(getScribbitKey(scribbit.id)),
+    storage.get(getScribbitOwnerKey(scribbit.id)),
+    storage.get(getUserHasCreatedScribbitKey(ownerUserId)),
+    storage.zScore(getUserScribbitsKey(ownerUserId), scribbit.id),
+    scribbit.status === 'alive'
+      ? storage.zScore(getUserAliveScribbitsKey(ownerUserId), scribbit.id)
+      : scribbit.legacy
+        ? storage.zScore(getUserLegacyCardsKey(ownerUserId), scribbit.id)
+        : Promise.resolve(undefined),
+  ]);
 
   if (
     storedJson !== serializeScribbit(scribbit) ||
     owner !== ownerUserId ||
+    hasCreatedScribbit !== '1' ||
     userIndexScore !== scribbit.bornDay
   ) {
     return false;
@@ -2580,10 +2589,14 @@ export const getAliveScribbitsForUser = async (
 
 export const enforceAliveScribbitLimit = async (
   storage: ArenaStorage,
-  userId: string
+  userId: string,
+  currentArenaDay: number
 ): Promise<boolean> => {
   const aliveScribbits = await getAliveScribbitsForUser(storage, userId);
-  return aliveScribbits.length < MAX_ALIVE_PER_USER;
+  const growingCount = aliveScribbits.filter(
+    (scribbit) => scribbit.expiresDay > currentArenaDay
+  ).length;
+  return growingCount < MAX_GROWING_PER_USER;
 };
 
 export const getUserScribbitIds = async (
@@ -2600,6 +2613,21 @@ export const getUserScribbitIds = async (
     { by: 'rank', reverse: true }
   );
   return rankedScribbits.map((entry) => entry.member);
+};
+
+export const hasUserCreatedScribbit = async (
+  storage: ArenaStorage,
+  userId: string
+): Promise<boolean> => {
+  const creationStateKey = getUserHasCreatedScribbitKey(userId);
+  if ((await storage.get(creationStateKey)) === '1') return true;
+
+  // Older accounts predate the explicit marker. Their permanent owner index
+  // is authoritative, and the one-time backfill keeps the answer durable even
+  // if every individual Scribbit is later removed.
+  if ((await getUserScribbitIds(storage, userId, 1)).length === 0) return false;
+  await storage.set(creationStateKey, '1');
+  return true;
 };
 
 export const getDailyFlags = async (
@@ -2713,6 +2741,7 @@ export const resolveExpiredScribbitStatus = (
   scribbit: Scribbit,
   options: {
     creatorTitle?: LegacyCosmeticSnapshot | null;
+    archivedDay?: number;
   } = {}
 ): Scribbit => {
   if (scribbit.status !== 'alive' || scribbit.isFounding) {
@@ -2750,6 +2779,101 @@ export type ExpireDueScribbitsOptions = {
   getCreatorTitleWatchKey?: (ownerUserId: string) => string;
 };
 
+export type RetireOwnedScribbitResult =
+  | Readonly<{ status: 'retired'; scribbit: Scribbit }>
+  | Readonly<{ status: 'already-retired'; scribbit: Scribbit }>
+  | Readonly<{ status: 'scribbit-unavailable' }>
+  | Readonly<{ status: 'not-owned' }>
+  | Readonly<{ status: 'entered-today' }>;
+
+const fileArchivedScribbit = async (
+  storage: ArenaStorage,
+  ownerUserId: string,
+  scribbit: Scribbit,
+  currentArenaDay: number
+): Promise<void> => {
+  if (!scribbit.legacy || scribbit.status === 'alive') return;
+
+  await storage.zRem(getUserAliveScribbitsKey(ownerUserId), [scribbit.id]);
+  await storage.zRem(getExpiringScribbitsKey(), [scribbit.id]);
+  await storage.zRem(getRumbleKey(currentArenaDay), [scribbit.id]);
+  await storage.zAdd(getUserLegacyCardsKey(ownerUserId), {
+    member: scribbit.id,
+    score: scribbit.legacy.archivedDay,
+  });
+
+  if (scribbit.status === 'legend') {
+    await addLegend(storage, scribbit, scribbit.legacy.archivedDay);
+  }
+};
+
+export const retireOwnedScribbit = async (
+  storage: ArenaStorage,
+  ownerUserId: string,
+  scribbitId: string,
+  currentArenaDay: number,
+  options: ExpireDueScribbitsOptions = {}
+): Promise<RetireOwnedScribbitResult> => {
+  const scribbit = await loadScribbit(storage, scribbitId);
+  if (!scribbit || scribbit.isFounding) {
+    return { status: 'scribbit-unavailable' };
+  }
+  if ((await getScribbitOwner(storage, scribbitId)) !== ownerUserId) {
+    return { status: 'not-owned' };
+  }
+  if (scribbit.status !== 'alive') {
+    await fileArchivedScribbit(storage, ownerUserId, scribbit, currentArenaDay);
+    return { status: 'already-retired', scribbit };
+  }
+  if (
+    (await storage.zScore(getRumbleKey(currentArenaDay), scribbitId)) !==
+    undefined
+  ) {
+    return { status: 'entered-today' };
+  }
+
+  const titleWatchKey = options.getCreatorTitle
+    ? options.getCreatorTitleWatchKey?.(ownerUserId)
+    : undefined;
+  if (options.getCreatorTitle && !titleWatchKey) {
+    throw new Error('Legacy title snapshots require an inventory watch key.');
+  }
+
+  const transition = await mutateAliveScribbit(
+    storage,
+    scribbitId,
+    async (currentScribbit) => {
+      const creatorTitle = options.getCreatorTitle
+        ? await options.getCreatorTitle(ownerUserId)
+        : null;
+      return resolveExpiredScribbitStatus(currentScribbit, {
+        creatorTitle,
+        archivedDay: currentArenaDay,
+      });
+    },
+    {
+      additionalWatchedKeys: [
+        getScribbitBeliefVersionKey(scribbitId),
+        ...(titleWatchKey ? [titleWatchKey] : []),
+      ],
+    }
+  );
+
+  if (!transition.scribbit || transition.scribbit.status === 'alive') {
+    return { status: 'scribbit-unavailable' };
+  }
+  await fileArchivedScribbit(
+    storage,
+    ownerUserId,
+    transition.scribbit,
+    currentArenaDay
+  );
+  return {
+    status: transition.changed ? 'retired' : 'already-retired',
+    scribbit: transition.scribbit,
+  };
+};
+
 export const expireDueScribbits = async (
   storage: ArenaStorage,
   day: number,
@@ -2777,9 +2901,46 @@ export const expireDueScribbits = async (
       }
 
       const ownerUserId = await getScribbitOwner(storage, scribbit.id);
-      let transitionedAtExpiry = false;
-      let expiredScribbit = scribbit;
-      if (scribbit.status === 'alive') {
+
+      // A previous worker may have committed the archive snapshot and stopped
+      // before filing its owner/public indexes. Keep the queue entry as the
+      // recovery receipt until those idempotent writes finish.
+      if (scribbit.status !== 'alive') {
+        if (ownerUserId && scribbit.legacy) {
+          await fileArchivedScribbit(storage, ownerUserId, scribbit, day);
+        } else {
+          await storage.zRem(getExpiringScribbitsKey(), [entry.member]);
+        }
+        continue;
+      }
+
+      // Reaching expiresDay now means maturity: the Scribbit remains active,
+      // keeps its locked base build, and can use Gear in the Mature Arena.
+      // Remove the one-shot maturity queue entry before enforcing the owner's
+      // bounded mature roster. A fourth mature Scribbit retires the oldest one
+      // into the immutable archive; no drawing is ever discarded.
+      await storage.zRem(getExpiringScribbitsKey(), [entry.member]);
+      if (!ownerUserId) continue;
+
+      const matureScribbits = (
+        await getAliveScribbitsForUser(storage, ownerUserId)
+      )
+        .filter((candidate) => candidate.expiresDay <= day)
+        .sort((left, right) => {
+          if (left.expiresDay !== right.expiresDay) {
+            return left.expiresDay - right.expiresDay;
+          }
+          if (left.bornDay !== right.bornDay) {
+            return left.bornDay - right.bornDay;
+          }
+          return left.id.localeCompare(right.id);
+        });
+      const archiveCount = Math.max(
+        0,
+        matureScribbits.length - MAX_MATURE_PER_USER
+      );
+
+      for (const matureScribbit of matureScribbits.slice(0, archiveCount)) {
         const titleWatchKey =
           ownerUserId && options.getCreatorTitle
             ? options.getCreatorTitleWatchKey?.(ownerUserId)
@@ -2791,7 +2952,7 @@ export const expireDueScribbits = async (
         }
         const transition = await mutateAliveScribbit(
           storage,
-          scribbit.id,
+          matureScribbit.id,
           async (currentScribbit) => {
             // This lookup runs after WATCH. A transient failure or concurrent
             // equip change aborts without filing an incomplete/stale card.
@@ -2801,50 +2962,35 @@ export const expireDueScribbits = async (
                 : null;
             return resolveExpiredScribbitStatus(currentScribbit, {
               creatorTitle,
+              archivedDay: day,
             });
           },
           {
             additionalWatchedKeys: [
-              getScribbitBeliefVersionKey(scribbit.id),
+              getScribbitBeliefVersionKey(matureScribbit.id),
               ...(titleWatchKey ? [titleWatchKey] : []),
             ],
           }
         );
         if (!transition.scribbit) {
-          await storage.zRem(getExpiringScribbitsKey(), [entry.member]);
           continue;
         }
-        expiredScribbit = transition.scribbit;
-        transitionedAtExpiry = transition.changed;
-      } else if (expiredScribbit.legacy) {
-        // Persist synthesized V1 stamps for records archived before Legacy Cards.
-        await updateScribbit(storage, expiredScribbit);
-      }
+        const expiredScribbit = transition.scribbit;
+        const transitionedAtExpiry = transition.changed;
 
-      if (ownerUserId && expiredScribbit.legacy) {
-        await storage.zRem(getUserAliveScribbitsKey(ownerUserId), [
-          scribbit.id,
-        ]);
-        await storage.zAdd(getUserLegacyCardsKey(ownerUserId), {
-          member: expiredScribbit.id,
-          score: expiredScribbit.legacy.archivedDay,
-        });
-      }
+        await fileArchivedScribbit(storage, ownerUserId, expiredScribbit, day);
 
-      if (expiredScribbit.status === 'legend') {
-        await addLegend(
-          storage,
-          expiredScribbit,
-          expiredScribbit.legacy?.archivedDay ?? expiredScribbit.expiresDay
-        );
-        if (transitionedAtExpiry) legends += 1;
-      } else if (expiredScribbit.status === 'faded' && transitionedAtExpiry) {
-        faded += 1;
+        if (expiredScribbit.status === 'legend') {
+          await addLegend(
+            storage,
+            expiredScribbit,
+            expiredScribbit.legacy?.archivedDay ?? expiredScribbit.expiresDay
+          );
+          if (transitionedAtExpiry) legends += 1;
+        } else if (expiredScribbit.status === 'faded' && transitionedAtExpiry) {
+          faded += 1;
+        }
       }
-
-      // Remove the due member only after the terminal record and every required
-      // index are durable. A retry repairs partial work without double-counting.
-      await storage.zRem(getExpiringScribbitsKey(), [entry.member]);
     }
   }
 

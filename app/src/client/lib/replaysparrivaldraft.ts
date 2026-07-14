@@ -10,8 +10,9 @@ import type {
   RivalRunState,
   Scribbit,
 } from '../../shared/arena';
+import type { CombatRole } from '../../shared/combat/types';
 import { generateDoodleTexture } from './proceduraldoodleart';
-import { elementPaperIcon, paperIcon } from './papericons';
+import { elementPaperIcon, paperIcon, type PaperIconKey } from './papericons';
 import { planSparRivalCards } from './sparrivals';
 import type { SparRivalCardPlan } from './sparrivals';
 import { CanvasModalOverlay } from './overlay';
@@ -19,8 +20,14 @@ import {
   planRivalRunChallengeCopy,
   planRivalRunDraftHeading,
 } from './rivalrunpresentation';
-import { ELEMENT_STYLES, prefersReducedMotion, TYPE, UI } from './theme';
-import { ghostButton, iconButton, label, stickerCard } from './ui';
+import {
+  ELEMENT_STYLES,
+  prefersReducedMotion,
+  ROLE_STYLES,
+  TYPE,
+  UI,
+} from './theme';
+import { addCardPressInteraction, ghostButton, label, stickerCard } from './ui';
 
 export type SparRivalDraftOptions = Readonly<{
   challenger: Scribbit;
@@ -58,9 +65,16 @@ function leftLabel(
 }
 
 function riskLabel(tier: RivalRunChoice['tier']): string {
-  if (tier === 'safe') return 'SAFE';
-  if (tier === 'even') return 'EVEN';
-  return 'BOLD';
+  if (tier === 'safe') return 'LOW RISK';
+  if (tier === 'even') return 'MEDIUM RISK';
+  return 'HIGH RISK';
+}
+
+function roleIconKey(role: CombatRole): PaperIconKey {
+  if (role === 'brawler') return 'sword';
+  if (role === 'longshot') return 'target';
+  if (role === 'gunner') return 'gun';
+  return 'spark';
 }
 
 export function createSparRivalDraft(
@@ -167,7 +181,7 @@ export function createSparRivalDraft(
       scene,
       `${plan.name} rival details`,
       closeRivalInfo,
-      `${plan.signatureName}. ${plan.element}, level ${plan.level}. ${riskLabel(choice.tier)} risk for ${choice.winPoints} ${choice.winPoints === 1 ? 'point' : 'points'}. ${plan.levelLine}. ${plan.forecastLine}.`
+      `${plan.roleName}, ${plan.rangeLabel}, using ${plan.weaponName} and ${plan.signatureName}. ${choice.matchup.label}. ${choice.matchup.detail}. ${plan.element}, level ${plan.level}. ${riskLabel(choice.tier)} risk for ${choice.winPoints} ${choice.winPoints === 1 ? 'point' : 'points'}. ${plan.levelLine}. ${plan.forecastLine}.`
     );
     detailContent?.destroy(true);
     detailContent = scene.add.container(0, 0);
@@ -214,7 +228,7 @@ export function createSparRivalDraft(
         scene,
         -154,
         -92,
-        plan.signatureName.toUpperCase(),
+        `${plan.roleName.toUpperCase()} · ${plan.rangeLabel}`,
         26,
         UI.ink,
         335,
@@ -259,7 +273,7 @@ export function createSparRivalDraft(
         scene,
         0,
         154,
-        `${plan.levelLine} • ${plan.forecastLine}`,
+        `${choice.matchup.label} • ${plan.levelLine} • ${plan.forecastLine}`,
         TYPE.caption,
         UI.inkSoft,
         true
@@ -284,11 +298,54 @@ export function createSparRivalDraft(
     const rival = choice?.rival;
     const rowY = rowCenters[index];
     if (!rival || !choice || rowY === undefined) return;
-    const style = ELEMENT_STYLES[plan.element];
-    const background = scene.add
-      .rectangle(0, rowY, cardWidth - 88, 190, style.soft, 0.3)
-      .setStrokeStyle(4, style.primary, 0.95);
-    card.add(background);
+    const roleStyle = ROLE_STYLES[plan.role];
+    const rowWidth = cardWidth - 88;
+    const rowHeight = 190;
+    const row = scene.add.container(0, rowY);
+    card.add(row);
+
+    const chooseRival = (): void => {
+      if (!inputReady) return;
+      setInteractionReady(false);
+      options.onChoose(rival, plan);
+    };
+
+    const background = scene.add.graphics();
+    background.fillStyle(UI.creamHex, 0.98);
+    background.fillRoundedRect(
+      -rowWidth / 2,
+      -rowHeight / 2,
+      rowWidth,
+      rowHeight,
+      22
+    );
+    background.lineStyle(3, roleStyle.color, 0.78);
+    background.strokeRoundedRect(
+      -rowWidth / 2,
+      -rowHeight / 2,
+      rowWidth,
+      rowHeight,
+      22
+    );
+    row.add(background);
+
+    addCardPressInteraction({
+      scene,
+      card: row,
+      width: rowWidth,
+      height: rowHeight,
+      onActivate: chooseRival,
+    });
+
+    const roleStripe = scene.add.graphics();
+    roleStripe.fillStyle(roleStyle.color, 1);
+    roleStripe.fillRoundedRect(-rowWidth / 2 + 10, -66, 10, 132, 5);
+    row.add(roleStripe);
+
+    const mascotBacking = scene.add
+      .circle(-218, 0, 60, roleStyle.soft, 0.32)
+      .setStrokeStyle(2, roleStyle.color, 0.42);
+    row.add(mascotBacking);
 
     const texture = generateDoodleTexture(
       scene,
@@ -296,101 +353,96 @@ export function createSparRivalDraft(
       rival.element,
       rival.stats
     );
-    const mascot = scene.add.image(-186, rowY + 4, texture);
-    mascot.setDisplaySize(124, 124);
-    card.add(mascot);
+    const mascot = scene.add.image(-218, 0, texture);
+    mascot.setDisplaySize(102, 102);
+    row.add(mascot);
 
-    card.add(
-      leftLabel(scene, -100, rowY - 52, plan.name, 32, UI.ink, 290, true)
-    );
-    card.add(elementPaperIcon(scene, plan.element, -82, rowY + 1, 36));
-    card.add(
-      leftLabel(
-        scene,
-        -54,
-        rowY + 1,
-        `LV ${plan.level}`,
-        23,
-        style.primaryText,
-        90,
-        true
-      )
-    );
-
-    const riskChip = scene.add
-      .rectangle(58, rowY + 1, 88, 42, UI.creamHex, 0.96)
-      .setStrokeStyle(3, style.primary, 0.95);
-    card.add(riskChip);
-    card.add(label(scene, 58, rowY, riskLabel(choice.tier), 19, UI.ink, true));
-    card.add(
-      paperIcon(scene, 'spark', 127, rowY + 1, {
-        size: 27,
-        fill: UI.gold,
+    row.add(leftLabel(scene, -146, -42, plan.name, 30, UI.ink, 244, true));
+    row.add(
+      paperIcon(scene, roleIconKey(plan.role), -132, 4, {
+        size: 28,
+        fill: roleStyle.color,
+        stroke: UI.inkHex,
       })
     );
-    card.add(
+    row.add(
       leftLabel(
         scene,
-        148,
-        rowY + 1,
-        `+${choice.winPoints}`,
-        25,
-        UI.coralText,
-        52,
+        -108,
+        4,
+        plan.roleName.toUpperCase(),
+        21,
+        roleStyle.colorText,
+        196,
         true
       )
     );
+    row.add(
+      leftLabel(
+        scene,
+        -132,
+        40,
+        `WIN ${choice.winPoints} ${choice.winPoints === 1 ? 'POINT' : 'POINTS'}`,
+        19,
+        UI.inkSoft,
+        220,
+        true
+      )
+    );
+    const riskChip = scene.add.graphics();
+    riskChip.fillStyle(UI.tape, 0.72);
+    riskChip.fillRoundedRect(104, -45, 144, 44, 16);
+    riskChip.lineStyle(2, UI.inkHex, 0.42);
+    riskChip.strokeRoundedRect(104, -45, 144, 44, 16);
+    row.add(riskChip);
+    row.add(label(scene, 176, -23, riskLabel(choice.tier), 20, UI.ink, true));
+
+    const fightPlate = scene.add.graphics();
+    fightPlate.fillStyle(roleStyle.color, 1);
+    fightPlate.fillRoundedRect(104, 19, 144, 62, 18);
+    fightPlate.lineStyle(3, UI.inkHex, 0.72);
+    fightPlate.strokeRoundedRect(104, 19, 144, 62, 18);
+    row.add(fightPlate);
+    row.add(
+      paperIcon(scene, 'sword', 130, 50, {
+        size: 28,
+        fill: UI.creamHex,
+        stroke: UI.inkHex,
+      })
+    );
+    row.add(label(scene, 197, 50, 'FIGHT', 22, UI.cream, true));
 
     const openInfo = (): void => showRivalInfo(plan, choice);
-    const infoControl = scene.add.container(232, rowY - 52);
+    const infoControl = scene.add.container(252, -58);
     const infoMark = paperIcon(scene, 'info', 0, 0, {
-      size: 54,
+      size: 42,
       fill: UI.creamHex,
       stroke: UI.inkHex,
     });
     const infoHit = scene.add
-      .rectangle(0, 0, 100, 100, 0xffffff, 0.001)
+      .rectangle(0, 0, 84, 84, 0xffffff, 0.001)
       .setInteractive({ useHandCursor: true });
     infoHit.on('pointerup', openInfo);
     infoControl.add([infoMark, infoHit]);
-    card.add(infoControl);
+    row.add(infoControl);
     draftModalActions.add({
       label: `More about ${plan.name}`,
       rect: {
-        x: width / 2 + 232 - 50,
-        y: height / 2 + rowY - 52 - 50,
-        width: 100,
-        height: 100,
+        x: width / 2 + 252 - 42,
+        y: height / 2 + rowY - 58 - 42,
+        width: 84,
+        height: 84,
       },
       onActivate: openInfo,
     });
 
-    const chooseRival = (): void => {
-      if (!inputReady) return;
-      setInteractionReady(false);
-      options.onChoose(rival, plan);
-    };
-    const fightLabel = options.rivalRun.boutsCompleted === 2 ? 'FINAL' : 'SPAR';
-    const fight = iconButton(
-      scene,
-      180,
-      rowY + 58,
-      'sword',
-      fightLabel,
-      chooseRival,
-      170,
-      style.primary,
-      UI.ink,
-      100
-    );
-    card.add(fight);
     const nativeFight = draftModalActions.add({
       label: `Fight ${plan.name}: ${riskLabel(choice.tier).toLowerCase()}, win ${choice.winPoints} ${choice.winPoints === 1 ? 'point' : 'points'}. Challenge: ${challengeCopy.name}, ${challengeCopy.goal}, ${challengeCopy.progress}.`,
       rect: {
-        x: width / 2 + 180 - 85,
-        y: height / 2 + rowY + 58 - 50,
-        width: 170,
-        height: 100,
+        x: width / 2 + 104,
+        y: height / 2 + rowY + 19,
+        width: 144,
+        height: 62,
       },
       onActivate: chooseRival,
     });
@@ -411,15 +463,29 @@ export function createSparRivalDraft(
     );
   }
 
-  const close = ghostButton(scene, 0, 408, '‹', closeDraft, 100, 100);
-  card.add(close);
+  const backControlSize = 84;
+  const backInsetX = 58;
+  const backInsetY = 62;
+  const backCenterX = -cardWidth / 2 + backInsetX;
+  const backCenterY = -cardHeight / 2 + backInsetY;
+  card.add(
+    ghostButton(
+      scene,
+      backCenterX,
+      backCenterY,
+      '‹',
+      closeDraft,
+      backControlSize,
+      backControlSize
+    )
+  );
   draftModalActions.add({
     label: options.closeLabel ?? 'Back',
     rect: {
-      x: width / 2 - 50,
-      y: height / 2 + 358,
-      width: 100,
-      height: 100,
+      x: width / 2 + backCenterX - backControlSize / 2,
+      y: height / 2 + backCenterY - backControlSize / 2,
+      width: backControlSize,
+      height: backControlSize,
     },
     onActivate: closeDraft,
   });

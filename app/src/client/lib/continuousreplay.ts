@@ -136,6 +136,8 @@ function calculateEventDrivenFighterStates(
       getFighterReplayState(states, event.actor).abilityPhase = 'active';
     } else if (event.kind === 'ability_finished') {
       getFighterReplayState(states, event.actor).abilityPhase = 'cooldown';
+    } else if (event.kind === 'ability_interrupted') {
+      getFighterReplayState(states, event.actor).abilityPhase = 'cooldown';
     } else if (event.kind === 'barrier_created') {
       getFighterReplayState(states, event.actor).barrierHitPoints =
         event.hitPoints;

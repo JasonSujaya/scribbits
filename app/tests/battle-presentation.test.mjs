@@ -30,6 +30,34 @@ const liveSpriteSource = readFileSync(
   new URL('../src/client/lib/livesprite.ts', import.meta.url),
   'utf8'
 );
+const rivalDraftSource = readFileSync(
+  new URL('../src/client/lib/replaysparrivaldraft.ts', import.meta.url),
+  'utf8'
+);
+
+test('rival choices use calm role cards with one compact fight action', () => {
+  assert.match(rivalDraftSource, /ROLE_STYLES\[plan\.role\]/);
+  assert.match(rivalDraftSource, /background\.fillRoundedRect/);
+  assert.match(rivalDraftSource, /addCardPressInteraction\(/);
+  assert.match(rivalDraftSource, /roleIconKey\(plan\.role\)/);
+  assert.match(rivalDraftSource, /LOW RISK/);
+  assert.match(rivalDraftSource, /MEDIUM RISK/);
+  assert.match(rivalDraftSource, /HIGH RISK/);
+  assert.match(rivalDraftSource, /`WIN \$\{choice\.winPoints\}/);
+  assert.doesNotMatch(rivalDraftSource, /rangeIconKey/);
+  assert.match(
+    rivalDraftSource,
+    /const backCenterX = -cardWidth \/ 2 \+ backInsetX/
+  );
+  assert.match(
+    rivalDraftSource,
+    /const backCenterY = -cardHeight \/ 2 \+ backInsetY/
+  );
+  assert.match(rivalDraftSource, /'FIGHT', 22/);
+  assert.doesNotMatch(rivalDraftSource, /ghostButton\(scene, 0, 408, '‹'/);
+  assert.doesNotMatch(rivalDraftSource, /const fightLabel =/);
+  assert.doesNotMatch(rivalDraftSource, /iconButton\([\s\S]{0,120}fightLabel/);
+});
 
 test('battle impact, arena shrink, and mastery plans preserve presentation truth', () => {
   const lightImpact = battlePresentation.planBattleImpact({
@@ -605,21 +633,41 @@ test('every damage event shows exact HP loss and a red target flash', () => {
   );
 });
 
-test('both fighter names stay visible below their battle lanes', () => {
+test('fighter names and HP bars follow their moving battle characters', () => {
   assert.match(
     replayBattleHudSource,
-    /const battleNameTag = scene\.add\.container\(\s*fighterLayout\.homeX,\s*fighterLayout\.homeY \+ layout\.fighterDisplaySize \/ 2 \+ 22/,
-    'each side should keep a clear name tag below its fighter lane'
+    /const floatingVitals = scene\.add\.container\(\s*fighterLayout\.homeX,\s*fighterLayout\.homeY \+ layout\.fighterDisplaySize \/ 2 \+ 22/,
+    'each side should start with a clear floating vitals tag'
   );
   assert.match(
     replayBattleHudSource,
     /scribbit\.name\.toUpperCase\(\)/,
-    'the battle tag should use the authoritative Scribbit name'
+    'the floating tag should use the authoritative Scribbit name'
   );
   assert.match(
     replayBattleHudSource,
-    /\.container\(0, 0, \[name, battleNameTag, heartMeter\]\)/,
-    'the battle tag should share the HUD visibility lifecycle'
+    /floatingHealthFill[\s\S]*floatingHealthBarWidth/,
+    'the floating tag should carry one proportional HP bar'
+  );
+  assert.match(
+    replayBattleHudSource,
+    /\.container\(0, 0, \[floatingVitals, heartMeter\]\)/,
+    'the floating name should replace the duplicate fixed name while exact HP remains in the top HUD'
+  );
+  assert.match(
+    replayBattleHudSource,
+    /floatingVitals[\s\S]*\.setInteractive\(\{ useHandCursor: true \}\)[\s\S]*onSelect\(\)/,
+    'the moving nameplate should retain the fighter detail action'
+  );
+  assert.match(
+    replayBattleHudSource,
+    /const setFighterScreenPosition =[\s\S]*floatingVitals\.setPosition\([\s\S]*Phaser\.Math\.Clamp/,
+    'the floating vitals anchor should follow the fighter while staying in arena bounds'
+  );
+  assert.match(
+    replaySource,
+    /fighter\.sprite\?\.setPosition\(screenPosition\.x, screenPosition\.y\);[\s\S]*setFighterScreenPosition\(\s*fighter\.side,\s*screenPosition\.x,\s*screenPosition\.y/,
+    'the replay frame should move the floating vitals beside the fighter sprite'
   );
 });
 
@@ -671,6 +719,11 @@ test('heart damage reactions scale by impact and honor reduced motion', () => {
   );
   assert.match(
     replayBattleHudSource,
+    /targets: vitals\.floatingVitalsFeedback,[\s\S]*scale: 1\.045/,
+    'the character-attached HP bar should shake without fighting its moving anchor'
+  );
+  assert.match(
+    replayBattleHudSource,
     /previousHitPoints !== null && previousHitPoints !== safeHitPoints[\s\S]*targets: vitals\.healthLabel/,
     'every real HP change after initialization should animate the exact value'
   );
@@ -686,6 +739,24 @@ test('half hearts fill toward each fighter side', () => {
     replayBattleHudSource,
     /state === 'half' \? halfFill : 'full'/,
     'only half-heart states should use the side-aware partial fill'
+  );
+});
+
+test('healthy battle hearts use one readable coral health color', () => {
+  assert.match(
+    replayBattleHudSource,
+    /const HEALTHY_HEART_COLOR = UI\.coral/,
+    'health should stay coral instead of changing with fighter element'
+  );
+  assert.doesNotMatch(
+    replayBattleHudSource,
+    /ELEMENT_STYLES\[[\s\S]*\]\.primary,[\s\S]*layout\.heartRowWidth/,
+    'heart rendering should not reuse element colors'
+  );
+  assert.match(
+    replayBattleHudSource,
+    /vitals\.floatingVitals\.setVisible\(visible\)/,
+    'floating vitals should share the battle health visibility lifecycle'
   );
 });
 

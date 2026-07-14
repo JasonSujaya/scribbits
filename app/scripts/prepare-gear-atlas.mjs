@@ -6,7 +6,8 @@ import { PNG } from 'pngjs';
 
 const GRID_COLUMNS = 4;
 const GRID_ROWS = 4;
-const FRAME_PADDING = 10;
+const VISIBLE_ALPHA_THRESHOLD = 8;
+const MINIMUM_COMPONENT_PIXELS = 20;
 
 const argumentValue = (name) => {
   const index = process.argv.indexOf(name);
@@ -84,8 +85,107 @@ while (queueStart < queueEnd) {
 
 const columnBoundary = (column) =>
   Math.round((column * source.width) / GRID_COLUMNS);
-const rowBoundary = (row) =>
-  Math.round((row * source.height) / GRID_ROWS);
+const rowBoundary = (row) => Math.round((row * source.height) / GRID_ROWS);
+const componentVisited = new Uint8Array(source.width * source.height);
+const components = [];
+
+for (
+  let startPosition = 0;
+  startPosition < componentVisited.length;
+  startPosition += 1
+) {
+  if (
+    componentVisited[startPosition] === 1 ||
+    source.data[startPosition * 4 + 3] <= VISIBLE_ALPHA_THRESHOLD
+  ) {
+    continue;
+  }
+
+  const positions = [];
+  let left = source.width;
+  let right = 0;
+  let top = source.height;
+  let bottom = 0;
+  let totalX = 0;
+  let totalY = 0;
+  queueStart = 0;
+  queueEnd = 0;
+  queue[queueEnd] = startPosition;
+  queueEnd += 1;
+  componentVisited[startPosition] = 1;
+
+  while (queueStart < queueEnd) {
+    const position = queue[queueStart];
+    queueStart += 1;
+    if (position === undefined) continue;
+    positions.push(position);
+    const x = position % source.width;
+    const y = Math.floor(position / source.width);
+    left = Math.min(left, x);
+    right = Math.max(right, x);
+    top = Math.min(top, y);
+    bottom = Math.max(bottom, y);
+    totalX += x;
+    totalY += y;
+
+    for (let offsetY = -1; offsetY <= 1; offsetY += 1) {
+      for (let offsetX = -1; offsetX <= 1; offsetX += 1) {
+        if (offsetX === 0 && offsetY === 0) continue;
+        const neighborX = x + offsetX;
+        const neighborY = y + offsetY;
+        if (
+          neighborX < 0 ||
+          neighborY < 0 ||
+          neighborX >= source.width ||
+          neighborY >= source.height
+        ) {
+          continue;
+        }
+        const neighborPosition = neighborY * source.width + neighborX;
+        if (
+          componentVisited[neighborPosition] === 1 ||
+          source.data[neighborPosition * 4 + 3] <= VISIBLE_ALPHA_THRESHOLD
+        ) {
+          continue;
+        }
+        componentVisited[neighborPosition] = 1;
+        queue[queueEnd] = neighborPosition;
+        queueEnd += 1;
+      }
+    }
+  }
+
+  if (positions.length < MINIMUM_COMPONENT_PIXELS) continue;
+  components.push({
+    positions,
+    left,
+    right,
+    top,
+    bottom,
+    centerX: totalX / positions.length,
+    centerY: totalY / positions.length,
+  });
+}
+
+const componentGroups = Array.from({ length: ids.length }, () => []);
+components.forEach((component) => {
+  const column = Math.min(
+    GRID_COLUMNS - 1,
+    Math.floor((component.centerX * GRID_COLUMNS) / source.width)
+  );
+  const row = Math.min(
+    GRID_ROWS - 1,
+    Math.floor((component.centerY * GRID_ROWS) / source.height)
+  );
+  const index = row * GRID_COLUMNS + column;
+  if (index < componentGroups.length) componentGroups[index].push(component);
+});
+
+const normalizedSource = new PNG({
+  width: source.width,
+  height: source.height,
+});
+normalizedSource.data.fill(0);
 const frames = {};
 
 ids.forEach((id, index) => {
@@ -95,33 +195,47 @@ ids.forEach((id, index) => {
   const cellRight = columnBoundary(column + 1);
   const cellTop = rowBoundary(row);
   const cellBottom = rowBoundary(row + 1);
-  let left = cellRight;
-  let right = cellLeft;
-  let top = cellBottom;
-  let bottom = cellTop;
-
-  for (let y = cellTop; y < cellBottom; y += 1) {
-    for (let x = cellLeft; x < cellRight; x += 1) {
-      const alpha = source.data[pixelIndex(x, y) + 3] ?? 0;
-      if (alpha <= 8) continue;
-      left = Math.min(left, x);
-      right = Math.max(right, x);
-      top = Math.min(top, y);
-      bottom = Math.max(bottom, y);
-    }
-  }
-
-  if (right < left || bottom < top) {
+  const group = componentGroups[index];
+  if (!group || group.length === 0) {
     throw new Error(`Generated sheet cell ${index} for ${id} is empty.`);
   }
-  left = Math.max(cellLeft, left - FRAME_PADDING);
-  right = Math.min(cellRight - 1, right + FRAME_PADDING);
-  top = Math.max(cellTop, top - FRAME_PADDING);
-  bottom = Math.min(cellBottom - 1, bottom + FRAME_PADDING);
+  const left = Math.min(...group.map((component) => component.left));
+  const right = Math.max(...group.map((component) => component.right));
+  const top = Math.min(...group.map((component) => component.top));
+  const bottom = Math.max(...group.map((component) => component.bottom));
   const width = right - left + 1;
   const height = bottom - top + 1;
+  const destinationLeft =
+    cellLeft + Math.floor((cellRight - cellLeft - width) / 2);
+  const destinationTop =
+    cellTop + Math.floor((cellBottom - cellTop - height) / 2);
+  if (destinationLeft < cellLeft || destinationTop < cellTop) {
+    throw new Error(`${id} does not fit inside its normalized atlas cell.`);
+  }
+
+  group.forEach((component) => {
+    component.positions.forEach((position) => {
+      const sourceX = position % source.width;
+      const sourceY = Math.floor(position / source.width);
+      const destinationX = destinationLeft + sourceX - left;
+      const destinationY = destinationTop + sourceY - top;
+      const sourceIndex = pixelIndex(sourceX, sourceY);
+      const destinationIndex =
+        (destinationY * normalizedSource.width + destinationX) * 4;
+      for (let channel = 0; channel < 4; channel += 1) {
+        normalizedSource.data[destinationIndex + channel] =
+          source.data[sourceIndex + channel];
+      }
+    });
+  });
+
   frames[id] = {
-    frame: { x: left, y: top, w: width, h: height },
+    frame: {
+      x: destinationLeft,
+      y: destinationTop,
+      w: width,
+      h: height,
+    },
     rotated: false,
     trimmed: false,
     spriteSourceSize: { x: 0, y: 0, w: width, h: height },
@@ -143,7 +257,7 @@ const atlas = {
 
 mkdirSync(dirname(resolve(outputImagePath)), { recursive: true });
 mkdirSync(dirname(resolve(outputJsonPath)), { recursive: true });
-writeFileSync(resolve(outputImagePath), PNG.sync.write(source));
+writeFileSync(resolve(outputImagePath), PNG.sync.write(normalizedSource));
 writeFileSync(resolve(outputJsonPath), `${JSON.stringify(atlas, null, 2)}\n`);
 
 console.log(

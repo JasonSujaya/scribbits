@@ -5,9 +5,15 @@ import { paperIconButton } from './ui';
 import { ghostButton, iconButton, label, startScene, stickerCard } from './ui';
 import { UI } from './theme';
 import { translate } from './localization';
+import { setSfxCue } from './sfx';
 
 export type AppMenu = Readonly<{ destroy: () => void }>;
 export type AppMenuOptions = Readonly<{ canNavigate?: () => boolean }>;
+
+const SETTINGS_BUTTON_SIZE = 92;
+const SETTINGS_HIT_SIZE = 100;
+const SETTINGS_BUTTON_RIGHT_OFFSET = 60;
+const SETTINGS_BUTTON_Y = 58;
 
 /** Top-right home for Settings actions that do not belong in the dock. */
 export function appMenu(scene: Scene, options: AppMenuOptions = {}): AppMenu {
@@ -31,6 +37,7 @@ export function appMenu(scene: Scene, options: AppMenuOptions = {}): AppMenu {
     const scrim = scene.add
       .rectangle(width / 2, height / 2, width, height, 0x1a1320, 0.62)
       .setInteractive();
+    setSfxCue(scrim, 'ui.close');
     const card = stickerCard(scene, width / 2, centerY, width - 120, 360, {
       tapeColor: UI.tapeAlt,
       tilt: -0.4,
@@ -106,24 +113,21 @@ export function appMenu(scene: Scene, options: AppMenuOptions = {}): AppMenu {
 
   const settingsButton = paperIconButton(
     scene,
-    width - 60,
-    58,
+    width - SETTINGS_BUTTON_RIGHT_OFFSET,
+    SETTINGS_BUTTON_Y,
     'settings',
     openMenu,
-    92,
+    SETTINGS_BUTTON_SIZE,
     UI.creamHex,
     UI.gold,
-    92
+    SETTINGS_BUTTON_SIZE
   ).setDepth(2200);
-  settingsButton.add(
-    label(scene, 0, 62, translate('appMenu.title'), 20, UI.ink, true)
-  );
   const camera = scene.cameras.main;
   const followCamera = (): void => {
     if (!settingsButton.active) return;
     settingsButton.setPosition(
-      width - 60 + camera.scrollX,
-      58 + camera.scrollY
+      width - SETTINGS_BUTTON_RIGHT_OFFSET + camera.scrollX,
+      SETTINGS_BUTTON_Y + camera.scrollY
     );
   };
   scene.events.on('postupdate', followCamera);
@@ -131,7 +135,12 @@ export function appMenu(scene: Scene, options: AppMenuOptions = {}): AppMenu {
 
   settingsControl = actionOverlay.add({
     label: translate('appMenu.openSettings'),
-    rect: { x: width - 106, y: 12, width: 92, height: 124 },
+    rect: {
+      x: width - SETTINGS_BUTTON_RIGHT_OFFSET - SETTINGS_HIT_SIZE / 2,
+      y: SETTINGS_BUTTON_Y - SETTINGS_HIT_SIZE / 2,
+      width: SETTINGS_HIT_SIZE,
+      height: SETTINGS_HIT_SIZE,
+    },
     pointerPassthrough: true,
     onActivate: openMenu,
   });

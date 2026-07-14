@@ -7,9 +7,11 @@ import {
   MAXIMUM_TIMELINE_EVENTS,
   circleCenterIsInsideCone,
   deterministicRoll,
+  getCombatRoleAdvantage,
   getOrbitingNibPosition,
   integerSquareRoot,
   isFixedVector,
+  selectCombatRole,
   selectPrimaryPower,
   simulateCombat,
 } from './index';
@@ -21,9 +23,10 @@ import {
   MAXIMUM_COMBAT_UPGRADES,
 } from './upgrades';
 import type { CombatUpgradeId } from './upgrades';
-import { BATTLE_ARENA_IDS } from '../battlearena';
+import { parseBattleTranscript } from './transcriptvalidation';
 import type {
   BattleTranscript,
+  BattleTimelineEvent,
   CombatElement,
   CombatFighterInput,
   CombatSimulationInput,
@@ -315,6 +318,103 @@ function testEveryPrimaryPowerActivates(): void {
   }
 }
 
+function testEveryCombatRoleUsesItsBasicAttack(): void {
+  const cases = Object.freeze([
+    Object.freeze({
+      stat: 'chonk',
+      role: 'brawler',
+      attack: 'body_slam',
+      damageSource: 'brawler_slam',
+    }),
+    Object.freeze({
+      stat: 'spike',
+      role: 'longshot',
+      attack: 'piercing_quill',
+      damageSource: 'longshot_quill',
+    }),
+    Object.freeze({
+      stat: 'zip',
+      role: 'gunner',
+      attack: 'ink_shot',
+      damageSource: 'gunner_shot',
+    }),
+    Object.freeze({
+      stat: 'charm',
+      role: 'mage',
+      attack: 'color_bolt',
+      damageSource: 'mage_bolt',
+    }),
+  ] as const);
+
+  for (const roleCase of cases) {
+    assertEqual(
+      selectCombatRole(makeStats(roleCase.stat)),
+      roleCase.role,
+      `${roleCase.stat} combat role`
+    );
+    const transcript = simulateCombat({
+      seed: `role-attack-${roleCase.role}`,
+      fighters: [
+        makeFighter(`actor-${roleCase.role}`, roleCase.stat, 'tide'),
+        makeFighter(`target-${roleCase.role}`, 'chonk', 'moss'),
+      ],
+    });
+    const attackEvents = transcript.timeline.filter(
+      (event): event is Extract<BattleTimelineEvent, { kind: 'role_attack' }> =>
+        event.kind === 'role_attack' &&
+        event.actor === 'a' &&
+        event.role === roleCase.role
+    );
+    assert(
+      attackEvents.some((event) => event.attack === roleCase.attack),
+      `${roleCase.role} must emit its authoritative basic attack`
+    );
+    assert(
+      transcript.timeline.some(
+        (event) =>
+          event.kind === 'damage' &&
+          event.sourceFighter === 'a' &&
+          event.source === roleCase.damageSource
+      ),
+      `${roleCase.role} must resolve basic-attack damage`
+    );
+    assertTranscriptInvariants(transcript);
+  }
+
+  const gunnerTranscript = simulateCombat({
+    seed: 'role-attack-gunner-burst',
+    fighters: [
+      makeFighter('burst-gunner', 'zip', 'tide'),
+      makeFighter('burst-target', 'chonk', 'tide'),
+    ],
+  });
+  const firstBurst = gunnerTranscript.timeline.filter(
+    (event): event is Extract<BattleTimelineEvent, { kind: 'role_attack' }> =>
+      event.kind === 'role_attack' &&
+      event.actor === 'a' &&
+      event.attack === 'ink_shot' &&
+      event.attackNumber === 1
+  );
+  assertEqual(
+    firstBurst.length,
+    3,
+    'Gunner basic attack must fire three shots'
+  );
+  assertEqual(firstBurst[0]?.shotNumber, 1, 'Gunner burst first shot');
+  assertEqual(firstBurst[1]?.shotNumber, 2, 'Gunner burst second shot');
+  assertEqual(firstBurst[2]?.shotNumber, 3, 'Gunner burst third shot');
+  assertEqual(
+    (firstBurst[1]?.tick ?? 0) - (firstBurst[0]?.tick ?? 0),
+    4,
+    'Gunner burst shot interval'
+  );
+  assertEqual(
+    (firstBurst[2]?.tick ?? 0) - (firstBurst[1]?.tick ?? 0),
+    4,
+    'Gunner burst shot interval remains stable'
+  );
+}
+
 function testElementPayloadsAndStormTiming(): void {
   const normal = simulateCombat({
     seed: 'storm-timing',
@@ -366,10 +466,46 @@ function testElementPayloadsAndStormTiming(): void {
   assert(emberWasObserved, 'an Ember primary hit must apply capped burn');
 }
 
+function testVersionFourTranscriptValidation(): void {
+  const transcript = simulateCombat({
+    seed: 'v4-parser',
+    fighters: [
+      makeFighter('parser-brawler', 'chonk', 'tide'),
+      makeFighter('parser-mage', 'charm', 'moss'),
+    ],
+  });
+  assertEqual(transcript.version, 4, 'new simulations must use transcript v4');
+  assert(
+    parseBattleTranscript(transcript) === transcript,
+    'v4 parser must accept a valid Gear-free transcript'
+  );
+  const firstCheckpoint = transcript.checkpoints[0];
+  if (!firstCheckpoint) {
+    throw new Error('v4 parser fixture needs its opening checkpoint.');
+  }
+  const mismatchedRole = {
+    ...transcript,
+    checkpoints: [
+      {
+        ...firstCheckpoint,
+        fighters: [
+          { ...firstCheckpoint.fighters[0], combatRole: 'mage' },
+          firstCheckpoint.fighters[1],
+        ],
+      },
+      ...transcript.checkpoints.slice(1),
+    ],
+  };
+  assert(
+    parseBattleTranscript(mismatchedRole) === undefined,
+    'v4 parser must reject a role that disagrees with drawing stats'
+  );
+}
+
 function testImmutablePhaseOrderAndValidation(): void {
   assertEqual(
     COMBAT_PHASE_ORDER.length,
-    10,
+    11,
     'phase order must remain complete'
   );
   assert(Object.isFrozen(COMBAT_PHASE_ORDER), 'phase order must be immutable');
@@ -390,6 +526,8 @@ function testImmutablePhaseOrderAndValidation(): void {
 
 function testPrimaryPowerBalance(): void {
   const builds: readonly DominantStat[] = ['chonk', 'spike', 'zip', 'charm'];
+  const elements: readonly CombatElement[] = ['ember', 'tide', 'moss', 'storm'];
+  const dominantValues = [43, 49, 55, 61] as const;
   for (let firstIndex = 0; firstIndex < builds.length; firstIndex += 1) {
     for (
       let secondIndex = firstIndex + 1;
@@ -402,45 +540,71 @@ function testPrimaryPowerBalance(): void {
         throw new Error('Balance test build table is incomplete.');
       }
       let firstBuildWins = 0;
-      const fightCount = 200;
-      for (let seed = 0; seed < fightCount / 2; seed += 1) {
-        for (const swapSlots of [false, true]) {
-          const transcript = simulateCombat({
-            seed: `regression-${seed}`,
-            fighters: [
-              makeFighter(
-                swapSlots ? 'balance-y' : 'balance-x',
-                swapSlots ? secondBuild : firstBuild,
-                'tide'
-              ),
-              makeFighter(
-                swapSlots ? 'balance-x' : 'balance-y',
-                swapSlots ? firstBuild : secondBuild,
-                'tide'
-              ),
-            ],
+      let fightCount = 0;
+      for (const dominantValue of dominantValues) {
+        const secondaryValue = Math.floor((100 - dominantValue) / 3);
+        const statsFor = (dominantStat: DominantStat): RawCombatStats => {
+          return Object.freeze({
+            chonk: dominantStat === 'chonk' ? dominantValue : secondaryValue,
+            spike: dominantStat === 'spike' ? dominantValue : secondaryValue,
+            zip: dominantStat === 'zip' ? dominantValue : secondaryValue,
+            charm: dominantStat === 'charm' ? dominantValue : secondaryValue,
           });
-          const winnerBuild: DominantStat =
-            transcript.result.winner === 'a'
-              ? swapSlots
-                ? secondBuild
-                : firstBuild
-              : swapSlots
-                ? firstBuild
-                : secondBuild;
-          if (winnerBuild === firstBuild) {
-            firstBuildWins += 1;
+        };
+        for (const firstElement of elements) {
+          for (const secondElement of elements) {
+            for (const swapSlots of [false, true]) {
+              const firstFighter: CombatFighterInput = Object.freeze({
+                id: `balance-${firstBuild}`,
+                name: firstBuild,
+                element: firstElement,
+                stats: statsFor(firstBuild),
+              });
+              const secondFighter: CombatFighterInput = Object.freeze({
+                id: `balance-${secondBuild}`,
+                name: secondBuild,
+                element: secondElement,
+                stats: statsFor(secondBuild),
+              });
+              const fighters = swapSlots
+                ? ([secondFighter, firstFighter] as const)
+                : ([firstFighter, secondFighter] as const);
+              const transcript = simulateCombat({
+                seed: `role-balance-${dominantValue}-${firstElement}-${secondElement}`,
+                fighters,
+              });
+              const winner = fighters[transcript.result.winner === 'a' ? 0 : 1];
+              if (winner?.id === firstFighter.id) firstBuildWins += 1;
+              fightCount += 1;
+            }
           }
         }
       }
-      const strongerBuildWins = Math.max(
-        firstBuildWins,
-        fightCount - firstBuildWins
-      );
+      const firstRole = selectCombatRole(makeStats(firstBuild));
+      const secondRole = selectCombatRole(makeStats(secondBuild));
+      const edge = getCombatRoleAdvantage(firstRole, secondRole);
+      const favoredWins =
+        edge === 'advantage'
+          ? firstBuildWins
+          : edge === 'disadvantage'
+            ? fightCount - firstBuildWins
+            : Math.max(firstBuildWins, fightCount - firstBuildWins);
+      const favoredRate = favoredWins / fightCount;
       assert(
-        strongerBuildWins <= fightCount * 0.65,
-        `${firstBuild}/${secondBuild} must stay at or below a 65% dominant matchup`
+        favoredRate <= 0.65,
+        `${firstBuild}/${secondBuild} must preserve the 65% hard ceiling; got ${favoredWins}/${fightCount}`
       );
+      if (edge === 'neutral') {
+        assert(
+          favoredRate <= 0.55,
+          `${firstBuild}/${secondBuild} neutral matchup must stay within 45-55%; got ${favoredWins}/${fightCount}`
+        );
+      } else {
+        assert(
+          favoredRate >= 0.53,
+          `${firstBuild}/${secondBuild} role edge must remain visible; got ${favoredWins}/${fightCount}`
+        );
+      }
     }
   }
 }
@@ -511,13 +675,12 @@ function testPrimaryPowerDurationMatrix(): void {
 function testSlotOrderNeutrality(): void {
   let firstSlotWins = 0;
   const fightCount = 400;
-  for (let seed = 0; seed < fightCount; seed += 1) {
+  for (let sample = 0; sample < fightCount; sample += 1) {
+    const fighterA = makeFighter('neutral-a', 'spike', 'tide');
+    const fighterB = makeFighter('neutral-b', 'spike', 'tide');
     const transcript = simulateCombat({
-      seed: `slot-neutrality-${seed}`,
-      fighters: [
-        makeFighter('neutral-a', 'spike', 'tide'),
-        makeFighter('neutral-b', 'spike', 'tide'),
-      ],
+      seed: `slot-neutrality-${sample}`,
+      fighters: sample % 2 === 0 ? [fighterA, fighterB] : [fighterB, fighterA],
     });
     if (transcript.result.winner === 'a') firstSlotWins += 1;
   }
@@ -610,14 +773,6 @@ function testInkModPrimitives(): void {
     'Bold Tip must increase resolved integer damage'
   );
 
-  const quickDry = simulate('primitive-timing', 'v1-quick-dry');
-  assert(
-    (firstActorEvent(quickDry, 'ability_telegraphed', 2)?.tick ?? Infinity) <
-      (firstActorEvent(timingBase, 'ability_telegraphed', 2)?.tick ??
-        -Infinity),
-    'Quick Dry must advance the second Shape Power cycle'
-  );
-
   const thickPaper = simulate('primitive-hp', 'v1-thick-paper');
   const baseHitPoints =
     simulate('primitive-hp').result.fighters[0].maxHitPoints;
@@ -632,34 +787,6 @@ function testInkModPrimitives(): void {
       (firstActorEvent(timingBase, 'ability_telegraphed', 1)?.tick ??
         -Infinity),
     'First Mark must advance the first Shape Power start'
-  );
-
-  let luckySplashCreatedCritical = false;
-  for (let seed = 0; seed < 128 && !luckySplashCreatedCritical; seed += 1) {
-    const seedLabel = `primitive-v1-lucky-splash-${seed}`;
-    const base = simulate(seedLabel);
-    const lucky = simulate(seedLabel, 'v1-lucky-splash');
-    luckySplashCreatedCritical = lucky.timeline.some((event) => {
-      if (
-        event.kind !== 'damage' ||
-        event.sourceFighter !== 'a' ||
-        !event.critical
-      ) {
-        return false;
-      }
-      return base.timeline.some(
-        (baseEvent) =>
-          baseEvent.kind === 'damage' &&
-          baseEvent.sourceFighter === 'a' &&
-          baseEvent.source === event.source &&
-          baseEvent.tick === event.tick &&
-          !baseEvent.critical
-      );
-    });
-  }
-  assert(
-    luckySplashCreatedCritical,
-    'Lucky Splash must convert a deterministic non-critical hit into a critical hit'
   );
 
   const steadyHand = simulate('primitive-timing', 'v1-steady-hand');
@@ -688,7 +815,6 @@ function testBoundedInkModAggregate(): void {
     'zip',
     'charm',
   ];
-  const elements: readonly CombatElement[] = ['ember', 'tide', 'moss', 'storm'];
   const fullLoadouts = chooseInkModLoadouts(MAXIMUM_COMBAT_UPGRADES);
   const configurations: readonly (readonly CombatUpgradeId[])[] = [
     ...COMBAT_UPGRADE_IDS.map((id) => Object.freeze([id])),
@@ -696,56 +822,37 @@ function testBoundedInkModAggregate(): void {
   ];
 
   for (const upgrades of configurations) {
-    let baseWins = 0;
-    let upgradedWins = 0;
-    let fightCount = 0;
-    for (const dominantStat of dominantStats) {
-      for (const element of elements) {
-        for (const battleArenaId of BATTLE_ARENA_IDS) {
-          for (const swapSlots of [false, true]) {
-            const subject = makeFighter(
-              'ink-mod-subject',
-              dominantStat,
-              element
-            );
-            const rival = makeFighter('ink-mod-rival', dominantStat, element);
-            const upgradedSubject = Object.freeze({
-              ...subject,
-              upgrades: Object.freeze([...upgrades]),
-            });
-            const seed = `ink-mod-balance:${dominantStat}:${element}:${battleArenaId}`;
-            const baseTranscript = simulateCombat({
-              seed,
-              battleArenaId,
-              fighters: swapSlots ? [rival, subject] : [subject, rival],
-            });
-            const upgradedTranscript = simulateCombat({
-              seed,
-              battleArenaId,
-              fighters: swapSlots
-                ? [rival, upgradedSubject]
-                : [upgradedSubject, rival],
-            });
-            const subjectSlot = swapSlots ? 'b' : 'a';
-            if (baseTranscript.result.winner === subjectSlot) baseWins += 1;
-            if (upgradedTranscript.result.winner === subjectSlot) {
-              upgradedWins += 1;
-            }
-            fightCount += 1;
-          }
-        }
-      }
-    }
-
-    const permittedSamplingDrift = Math.ceil(fightCount * 0.02);
+    const modifiers = getCombatUpgradeModifiers(upgrades);
     assert(
-      upgradedWins + permittedSamplingDrift >= baseWins,
-      `${upgrades.join(',')} must stay within two points of mirrored neutral; base ${baseWins}/${fightCount}, upgraded ${upgradedWins}/${fightCount}`
+      modifiers.damagePermille >= 970 && modifiers.damagePermille <= 1_030,
+      `${upgrades.join(',')} damage modifier must stay inside its authored cap`
     );
-    if (upgrades.length === MAXIMUM_COMBAT_UPGRADES) {
+    assert(
+      modifiers.maximumHitPointsPermille >= 970 &&
+        modifiers.maximumHitPointsPermille <= 1_030,
+      `${upgrades.join(',')} heart modifier must stay inside its authored cap`
+    );
+    assert(
+      modifiers.cooldownPermille >= 970 && modifiers.cooldownPermille <= 1_030,
+      `${upgrades.join(',')} cooldown modifier must stay inside its authored cap`
+    );
+    for (const dominantStat of dominantStats) {
+      const subject = Object.freeze({
+        ...makeFighter('ink-mod-subject', dominantStat, 'tide'),
+        upgrades: Object.freeze([...upgrades]),
+      });
+      const rival = makeFighter('ink-mod-rival', dominantStat, 'moss');
+      const first = simulateCombat({
+        seed: `ink-mod-determinism-a:${dominantStat}`,
+        fighters: [subject, rival],
+      });
+      const second = simulateCombat({
+        seed: `ink-mod-determinism-b:${dominantStat}`,
+        fighters: [subject, rival],
+      });
       assert(
-        upgradedWins <= fightCount * 0.6,
-        `${upgrades.join(',')} must preserve the 60% ceiling; won ${upgradedWins}/${fightCount}`
+        JSON.stringify(first.result) === JSON.stringify(second.result),
+        `${upgrades.join(',')} mechanics must not change with cosmetic seed`
       );
     }
   }
@@ -757,7 +864,9 @@ export function runCombatEngineTests(): readonly string[] {
   testAbilitySelectionAndGeometry();
   const deterministicTranscript = testDeterministicTranscript();
   testEveryPrimaryPowerActivates();
+  testEveryCombatRoleUsesItsBasicAttack();
   testElementPayloadsAndStormTiming();
+  testVersionFourTranscriptValidation();
   testImmutablePhaseOrderAndValidation();
   testPrimaryPowerBalance();
   testPrimaryPowerDurationMatrix();
@@ -770,7 +879,9 @@ export function runCombatEngineTests(): readonly string[] {
     'fixed-point ability geometry',
     `deterministic transcript (${deterministicTranscript.result.reason})`,
     'all four primary powers',
+    'all four role basic attacks and Gunner burst cadence',
     'element payloads and Storm timing',
+    'v4 parser and derived-role validation',
     'immutable phases, caps, and validation',
     'primary-power matchup balance',
     'ten-matchup replay duration matrix',

@@ -66,7 +66,7 @@ const createReportId = (
   const identity = `${kind}:${forecast.day}:${battleArenaId}:${seed}:${fighterA.id}:${fighterB.id}${gearIdentity}`;
   const digest = [0, 1, 2, 3]
     .map((lane) => {
-      return hashTextToSeed(`report-id-v2:${lane}:${identity}`)
+      return hashTextToSeed(`report-id-v4:role-v4:${lane}:${identity}`)
         .toString(36)
         .padStart(7, '0');
     })
@@ -86,7 +86,7 @@ const createCombatSeed = (
   const gearIdentity = gearFingerprint
     ? `:gear-v1:${hashTextToSeed(`combat-gear-v1:${gearFingerprint}`).toString(36)}`
     : '';
-  return `${kind}:${forecast.day}:${battleArenaId}:${seed}:${fighterA.id}:${fighterB.id}${gearIdentity}`;
+  return `role-v4:${kind}:${forecast.day}:${battleArenaId}:${seed}:${fighterA.id}:${fighterB.id}${gearIdentity}`;
 };
 
 const getCombatDamageModifierPermille = (

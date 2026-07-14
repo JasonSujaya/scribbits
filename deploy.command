@@ -29,6 +29,7 @@ ensure_clean_git_tree() {
 
 ensure_node_modules
 ensure_clean_git_tree
+export NODE_OPTIONS="${NODE_OPTIONS:+$NODE_OPTIONS }--max-old-space-size=4096"
 
 cd "$app_dir"
 

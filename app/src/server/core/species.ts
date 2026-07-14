@@ -217,7 +217,7 @@ export const selectFoundingSparRivalSlate = (
     }
   };
 
-  // Stay in the closest level tier while it can add a new Shape Power. Reach
+  // Stay in the closest level tier while it can add a new combat role. Reach
   // into only the next distance tier when doing so adds genuine build variety.
   selectCandidates(closestLevelCandidates, true);
   selectCandidates(extraLevelCandidates, true);

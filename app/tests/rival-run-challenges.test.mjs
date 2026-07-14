@@ -138,7 +138,7 @@ const advanceStoredRun = async (initial, battleReport, suffix = 'one') => {
   });
 };
 
-test('Signature Ink selection is deterministic and preserves the immutable v1 catalog', () => {
+test('new role challenge selection is deterministic and preserves older catalogs', () => {
   const selectedOnce = challenges.createRivalRunChallenge(
     'trial-1',
     8,
@@ -151,7 +151,7 @@ test('Signature Ink selection is deterministic and preserves the immutable v1 ca
   );
 
   assert.deepEqual(selectedAgain, selectedOnce);
-  assert.equal(selectedOnce.id, 'v2-signature-ink');
+  assert.match(selectedOnce.id, /^(?:v1|v3)-/);
   assert.equal(
     challenges.RIVAL_RUN_CHALLENGES.every((entry) =>
       entry.id.startsWith('v1-')
@@ -166,34 +166,34 @@ test('Signature Ink selection is deterministic and preserves the immutable v1 ca
     stamp: 'SIGNATURE',
     condition: { kind: 'player_ability_activations', target: 3 },
   });
+  assert.deepEqual(challenges.RIVAL_RUN_V3_CHALLENGES[0], {
+    id: 'v3-signature-moves',
+    name: 'SIGNATURE MOVES',
+    premise: 'Let your role show what makes it different.',
+    goal: 'TRIGGER 3 SIGNATURES',
+    stamp: 'ROLE READY',
+    condition: { kind: 'player_ability_activations', target: 3 },
+  });
 });
 
-test('Technique Trials remain a deterministic three-card share of the 15-card catalog', () => {
+test('role trials replace legacy power trials only for newly selected runs', () => {
   assert.equal(challenges.RIVAL_RUN_CHALLENGES.length, 12);
   assert.equal(challenges.RIVAL_RUN_V2_CHALLENGES.length, 3);
+  assert.equal(challenges.RIVAL_RUN_V3_CHALLENGES.length, 3);
   assert.equal(
-    challenges.RIVAL_RUN_V2_CHALLENGES.length /
+    challenges.RIVAL_RUN_V3_CHALLENGES.length /
       (challenges.RIVAL_RUN_CHALLENGES.length +
-        challenges.RIVAL_RUN_V2_CHALLENGES.length),
+        challenges.RIVAL_RUN_V3_CHALLENGES.length),
     3 / 15
   );
 
-  assert.deepEqual(
-    [
-      ['trial-1', 'v2-signature-ink'],
-      ['trial-10', 'v2-ink-connect'],
-      ['trial-8', 'v2-late-mark'],
-    ].map(([runId, challengeId]) => [
-      runId,
-      challenges.createRivalRunChallenge(runId, 8, 'player-fighter').id,
-      challengeId,
-    ]),
-    [
-      ['trial-1', 'v2-signature-ink', 'v2-signature-ink'],
-      ['trial-10', 'v2-ink-connect', 'v2-ink-connect'],
-      ['trial-8', 'v2-late-mark', 'v2-late-mark'],
-    ]
-  );
+  for (let index = 1; index <= 40; index += 1) {
+    assert.doesNotMatch(
+      challenges.createRivalRunChallenge(`trial-${index}`, 8, 'player-fighter')
+        .id,
+      /^v2-/
+    );
+  }
   assert.deepEqual(challenges.RIVAL_RUN_V2_CHALLENGES.slice(1), [
     {
       id: 'v2-ink-connect',

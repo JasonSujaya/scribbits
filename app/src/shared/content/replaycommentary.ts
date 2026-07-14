@@ -201,7 +201,7 @@ export const INKCAST_COMMENTARY_BANKS: readonly InkcastCommentaryBank[] =
         ),
         defineVariant(
           'v1.inkquake.miss.wide-ring',
-          '{actor} cannot land {move}.'
+          '{actor} tries {move}, but it does not hit.'
         ),
       ]
     ),
@@ -278,7 +278,7 @@ export const INKCAST_COMMENTARY_BANKS: readonly InkcastCommentaryBank[] =
         ),
         defineVariant(
           'v1.nib_halo.miss.orbit-complete',
-          '{actor} finishes {move} without a hit.'
+          '{actor} finishes {move}, but it misses.'
         ),
       ]
     ),
@@ -351,7 +351,7 @@ export const INKCAST_COMMENTARY_BANKS: readonly InkcastCommentaryBank[] =
         ),
         defineVariant(
           'v1.smearstep.miss.empty-line',
-          '{actor} uses {move} without landing a hit.'
+          '{actor} uses {move}, but the attack misses.'
         ),
         defineVariant(
           'v1.smearstep.miss.dry-streak',

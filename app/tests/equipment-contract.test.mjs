@@ -36,6 +36,28 @@ test('equipment has one canonical four-category contract', () => {
   assert.equal(equipment.MAX_EQUIPPED_ITEMS, 8);
 });
 
+test('role relics preserve stored IDs while declaring clear affinities', () => {
+  const expectedRelics = {
+    'inkquake-rumble-belt': ['brawler', 'weapon'],
+    'inkquake-crater-crown': ['brawler', 'armor'],
+    'nib-halo-headband': ['longshot', 'accessory'],
+    'nib-halo-circlet': ['longshot', 'accessory'],
+    'smearstep-speed-scarf': ['gunner', 'shoes'],
+    'smearstep-ink-skates': ['gunner', 'shoes'],
+    'colorburst-rosette': ['mage', 'accessory'],
+    'colorburst-prism-crown': ['mage', 'accessory'],
+  };
+
+  for (const [gearId, [role, category]] of Object.entries(expectedRelics)) {
+    const gear = cosmetics.findGearCosmetic(gearId);
+    assert.ok(gear, `missing persisted relic ${gearId}`);
+    assert.equal(gear.roleAffinity, role);
+    assert.equal(gear.category, category);
+    assert.match(gear.roleEffect, /\S/);
+  }
+  assert.equal(accessoryEffects.ACCESSORY_EFFECT_MODE, 'role-sidegrade-v1');
+});
+
 test('Ink Kit derives categories from equipment and avoids scrap vocabulary', () => {
   const collectionBookSource = readFileSync(
     join(appRoot, 'src', 'client', 'lib', 'collectionbook.ts'),

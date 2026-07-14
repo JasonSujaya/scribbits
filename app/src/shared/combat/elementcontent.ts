@@ -29,12 +29,12 @@ export const ELEMENT_PAYLOAD_GUIDE: readonly ElementPayloadGuideEntry[] =
     defineElementPayload(
       'moss',
       'PAPER BARRIER',
-      'A Shape Power can fold a temporary barrier around its user.'
+      'A signature move can fold a temporary barrier around its user.'
     ),
     defineElementPayload(
       'storm',
       'QUICKER WINDUP',
-      'Shape Powers spend less time telegraphing before they activate.'
+      'Signature moves spend less time telegraphing before they activate.'
     ),
   ]);
 

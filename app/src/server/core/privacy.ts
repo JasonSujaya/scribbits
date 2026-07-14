@@ -4,6 +4,7 @@ import {
   getUserDailySparWinRewardsKey,
   getUserAliveScribbitsKey,
   getUserBeliefTargetsKey,
+  getUserHasCreatedScribbitKey,
   getUserLegacyCardsKey,
   getUserScribbitsKey,
   loadScribbits,
@@ -213,6 +214,7 @@ const deletePlayerDataRecords = async (
   await requireDeletionOwnership(storage, deletionLease);
   await storage.del(
     getUserScribbitsKey(userId),
+    getUserHasCreatedScribbitKey(userId),
     getUserAliveScribbitsKey(userId),
     getUserLegacyCardsKey(userId),
     getLegacyIndexVersionKey(userId),

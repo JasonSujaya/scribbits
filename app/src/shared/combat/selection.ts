@@ -1,8 +1,14 @@
 import {
+  COMBAT_ROLE_BY_DOMINANT_STAT,
   DOMINANT_STAT_TIE_ORDER,
   PRIMARY_POWER_BY_DOMINANT_STAT,
 } from './config';
-import type { DominantStat, PrimaryPower, RawCombatStats } from './types';
+import type {
+  CombatRole,
+  DominantStat,
+  PrimaryPower,
+  RawCombatStats,
+} from './types';
 
 // Drawing analysis, previews, animation, and server simulation must agree on
 // the same stable tie order. Keep this selector framework-free so every layer
@@ -19,4 +25,8 @@ export function selectDominantStat(stats: RawCombatStats): DominantStat {
 
 export function selectPrimaryPower(stats: RawCombatStats): PrimaryPower {
   return PRIMARY_POWER_BY_DOMINANT_STAT[selectDominantStat(stats)];
+}
+
+export function selectCombatRole(stats: RawCombatStats): CombatRole {
+  return COMBAT_ROLE_BY_DOMINANT_STAT[selectDominantStat(stats)];
 }

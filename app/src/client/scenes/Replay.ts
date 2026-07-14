@@ -115,7 +115,9 @@ import {
 } from '../lib/inkcastqueue';
 import type { InkcastEditorialCandidate } from '../lib/inkcastqueue';
 import { BattleSoundboard } from '../lib/battlesound';
+import { playSfx } from '../lib/sfx';
 import { WeaponFxRenderer } from '../lib/weaponfxrenderer';
+import { RoleWeaponRenderer } from '../lib/roleweaponrenderer';
 import {
   formatRivalRunResultLine,
   planRivalRunActionCopy,
@@ -140,6 +142,7 @@ import type {
 import type {
   BattleTimelineEvent,
   BattleTranscript,
+  CombatRole,
   FixedVector,
   PrimaryPower,
 } from '../../shared/combat';
@@ -147,7 +150,10 @@ import {
   COMBAT_TICK_RATE,
   DEFAULT_COMBAT_RULES,
 } from '../../shared/combat/config';
-import { selectPrimaryPower } from '../../shared/combat/selection';
+import {
+  selectCombatRole,
+  selectPrimaryPower,
+} from '../../shared/combat/selection';
 import { isShapePowerId } from '../../shared/combat/shapepowercontent';
 import { getBattleMaxHp } from '../../shared/battle';
 import { getBattleArenaDefinition } from '../../shared/battlearena';
@@ -169,6 +175,7 @@ type ReplayFighterRuntime = {
   screenX: number;
   screenY: number;
   hpMax: number;
+  combatRole: CombatRole;
   primaryPower: PrimaryPower;
   facing: 1 | -1;
   powerGhosts: Phaser.GameObjects.Image[];
@@ -183,8 +190,17 @@ type ShapeEffect = ShapePowerVisualEffect & {
 type AbilityLifecycleTimelineEvent = Extract<
   BattleTimelineEvent,
   {
-    kind: 'ability_telegraphed' | 'ability_activated' | 'ability_finished';
+    kind:
+      | 'ability_telegraphed'
+      | 'ability_activated'
+      | 'ability_finished'
+      | 'ability_interrupted';
   }
+>;
+
+type RoleAttackTimelineEvent = Extract<
+  BattleTimelineEvent,
+  { kind: 'role_attack' }
 >;
 
 type DamageAndStatusTimelineEvent = Extract<
@@ -237,6 +253,7 @@ export class Replay extends Scene {
   private battleHud: ReplayBattleHud | null = null;
   private battleBackdrop: ReplayBattleBackdrop | null = null;
   private weaponFxRenderer: WeaponFxRenderer | null = null;
+  private roleWeaponRenderer: RoleWeaponRenderer | null = null;
   private battleBackdropElapsedMilliseconds = 0;
   private battleBackdropUpdateAccumulator = 0;
   private effectRenderAccumulator = 0;
@@ -295,6 +312,7 @@ export class Replay extends Scene {
     this.battleHud = null;
     this.battleBackdrop = null;
     this.weaponFxRenderer = null;
+    this.roleWeaponRenderer = null;
     this.battleBackdropElapsedMilliseconds = 0;
     this.battleBackdropUpdateAccumulator = 0;
     this.effectRenderAccumulator = 0;
@@ -374,6 +392,7 @@ export class Replay extends Scene {
     this.transcript = getUsableBattleTranscript(report) ?? null;
     this.cameras.main.setBackgroundColor(UI.desk);
     this.weaponFxRenderer = new WeaponFxRenderer(this, this.reduceMotion);
+    this.roleWeaponRenderer = new RoleWeaponRenderer(this, this.reduceMotion);
     this.buildArena();
     this.recordDebugPlaybackState('live');
 
@@ -390,6 +409,8 @@ export class Replay extends Scene {
       this.clearIntroBanner();
       this.weaponFxRenderer?.destroy();
       this.weaponFxRenderer = null;
+      this.roleWeaponRenderer?.destroy();
+      this.roleWeaponRenderer = null;
       this.playbackRunning = false;
       this.shapeEffects.clear();
       this.hidePowerGhosts();
@@ -457,6 +478,12 @@ export class Replay extends Scene {
       fighterB: this.report.b,
       fighterAPrimaryPower: this.fighterA.primaryPower,
       fighterBPrimaryPower: this.fighterB.primaryPower,
+      ...(this.transcript?.version === 4
+        ? {
+            fighterARole: this.fighterA.combatRole,
+            fighterBRole: this.fighterB.combatRole,
+          }
+        : {}),
       arenaName: battleArena.name,
       showPlaybackControls: this.transcript !== null,
       reduceMotion: this.reduceMotion,
@@ -497,6 +524,7 @@ export class Replay extends Scene {
       screenX: fighterLayout.homeX,
       screenY: fighterLayout.homeY,
       hpMax: transcriptFighter?.maxHitPoints ?? getBattleMaxHp(scribbit.stats),
+      combatRole: selectCombatRole(scribbit.stats),
       primaryPower:
         transcriptFighter?.primaryPower ?? selectPrimaryPower(scribbit.stats),
       facing: fighterLayout.facing,
@@ -529,6 +557,16 @@ export class Replay extends Scene {
       fighter.facing,
       this.battleLayout.fighterDisplaySize
     );
+    if (this.transcript?.version === 4) {
+      this.roleWeaponRenderer?.attach(
+        side,
+        fighter.combatRole,
+        fighter.screenX,
+        fighter.screenY,
+        fighter.facing,
+        this.battleLayout.fighterDisplaySize
+      );
+    }
     fighter.powerGhosts = this.createPowerGhosts(fighter, textureKey);
     // Keep the entire drawing visible during its entrance. The old off-stage
     // walk-in made wide player art look clipped before combat even began.
@@ -558,8 +596,11 @@ export class Replay extends Scene {
     const mine = this.isMine(scribbit);
     openDetailModal(this, scribbit, {
       currentDay: arena?.dayNumber ?? scribbit.expiresDay,
+      ...(arena?.rumbleResolvesAt === undefined
+        ? {}
+        : { nextArenaDayStartsAt: arena.rumbleResolvesAt }),
       mine,
-      actions: mine ? {} : { canBelieve: true },
+      actions: {},
       onRemoved: () => this.scene.start('MyBattles'),
       onReported: () => this.scene.start('MyBattles'),
     });
@@ -820,7 +861,17 @@ export class Replay extends Scene {
       fighter.screenX = screenPosition.x;
       fighter.screenY = screenPosition.y;
       fighter.sprite?.setPosition(screenPosition.x, screenPosition.y);
+      this.battleHud?.setFighterScreenPosition(
+        fighter.side,
+        screenPosition.x,
+        screenPosition.y
+      );
       this.weaponFxRenderer?.follow(
+        fighter.side,
+        screenPosition.x,
+        screenPosition.y
+      );
+      this.roleWeaponRenderer?.follow(
         fighter.side,
         screenPosition.x,
         screenPosition.y
@@ -889,7 +940,11 @@ export class Replay extends Scene {
       case 'ability_telegraphed':
       case 'ability_activated':
       case 'ability_finished':
+      case 'ability_interrupted':
         this.presentAbilityLifecycleEvent(event);
+        return;
+      case 'role_attack':
+        this.presentRoleAttackEvent(event);
         return;
       case 'damage':
       case 'burn_applied':
@@ -1008,9 +1063,31 @@ export class Replay extends Scene {
         }
         return;
       }
+      case 'ability_interrupted': {
+        this.shapeEffects.delete(event.actor);
+        this.battleHud?.setFighterShapePowerState(event.actor, 'ready');
+        this.weaponFxRenderer?.trigger(event.interruptedBy, 'impact');
+        this.soundboard.play('hit');
+        return;
+      }
       default:
         this.assertNeverTimelineEvent(event);
     }
+  }
+
+  private presentRoleAttackEvent(event: RoleAttackTimelineEvent): void {
+    this.weaponFxRenderer?.trigger(
+      event.actor,
+      event.hit ? 'impact' : 'active'
+    );
+    const target = this.projectTimelinePosition(event.target);
+    this.roleWeaponRenderer?.trigger(
+      event.actor,
+      event.attack,
+      target.x,
+      target.y,
+      event.hit
+    );
   }
 
   private presentDamageAndStatusEvent(
@@ -2068,6 +2145,8 @@ export class Replay extends Scene {
     const loser = this.report.winner === 'a' ? this.fighterB : this.fighterA;
     winner.sprite?.celebrate();
     const perspective = this.battleRecapPerspective(winner, loser);
+    if (perspective === 'viewer_win') this.soundboard.play('win');
+    else if (perspective === 'viewer_loss') this.soundboard.play('loss');
 
     const { width, height } = this.scale;
     const card = stickerCard(this, width / 2, height / 2, width - 70, 286, {
@@ -2459,6 +2538,7 @@ export class Replay extends Scene {
     const rewardPlan = this.replayRewardPlan();
     const fallbackInkReward = (this.report.inkAwarded ?? 0) > 0;
     if (this.isMine(winner.scribbit) && (rewardPlan || fallbackInkReward)) {
+      if (!this.isSavedReplay()) playSfx('reward.ink');
       const rewardText =
         rewardPlan?.label ??
         (this.isSavedReplay()
@@ -2545,6 +2625,9 @@ export class Replay extends Scene {
     const loser = this.fighterForSlot(recap.loserSlot);
     const rivalRunFinish = planRivalRunFinishStamp(this.report.rivalRun);
     const outcomeLayout = planReplayOutcomeLayout({ viewportHeight: height });
+    this.time.delayedCall(260, () => {
+      if (this.scene.isActive()) this.soundboard.play('loss');
+    });
 
     // Keep both submitted drawings in the payoff. The winner owns the visual
     // focus; the player's defeated Scribbit remains visible instead of being

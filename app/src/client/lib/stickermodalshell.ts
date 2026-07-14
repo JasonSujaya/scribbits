@@ -3,6 +3,7 @@ import { Scene } from 'phaser';
 import { CanvasModalOverlay } from './overlay';
 import { UI } from './theme';
 import { stickerCard } from './ui';
+import { setSfxCue } from './sfx';
 
 export type StickerModalShell = Readonly<{
   container: Phaser.GameObjects.Container;
@@ -68,6 +69,7 @@ export function createStickerModalShell(
     )
     .setScrollFactor(0)
     .setInteractive();
+  setSfxCue(shade, 'ui.close');
   container.add(shade);
 
   if (options.blockCard) {

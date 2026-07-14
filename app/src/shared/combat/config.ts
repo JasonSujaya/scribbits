@@ -1,5 +1,6 @@
 import type {
   AbilityConfigByPower,
+  CombatRole,
   CombatPhase,
   CombatRules,
   DominantStat,
@@ -27,6 +28,7 @@ export const COMBAT_PHASE_ORDER: readonly CombatPhase[] = Object.freeze([
   'movement',
   'wall_constraints',
   'fighter_collision',
+  'role_attacks',
   'ability_collisions',
   'status_effects',
   'ink_pressure',
@@ -44,6 +46,15 @@ export const PRIMARY_POWER_BY_DOMINANT_STAT: Readonly<
   spike: 'nib_halo',
   zip: 'smearstep',
   charm: 'colorburst',
+});
+
+export const COMBAT_ROLE_BY_DOMINANT_STAT: Readonly<
+  Record<DominantStat, CombatRole>
+> = Object.freeze({
+  chonk: 'brawler',
+  spike: 'longshot',
+  zip: 'gunner',
+  charm: 'mage',
 });
 
 const abilityConfigByPower: AbilityConfigByPower = Object.freeze({
@@ -119,7 +130,7 @@ const abilityConfigByPower: AbilityConfigByPower = Object.freeze({
 });
 
 export const DEFAULT_COMBAT_RULES: CombatRules = Object.freeze({
-  version: 2,
+  version: 4,
   tickRate: COMBAT_TICK_RATE,
   maximumSeconds: COMBAT_MAXIMUM_SECONDS,
   maximumTicks: COMBAT_MAXIMUM_TICKS,
@@ -165,8 +176,8 @@ export const DEFAULT_COMBAT_RULES: CombatRules = Object.freeze({
     criticalChancePermillePerCharm: 2,
     maximumCriticalChancePermille: 180,
     criticalDamageMultiplierPermille: 1_500,
-    minimumDamageVariancePermille: 950,
-    maximumDamageVariancePermille: 1_050,
+    minimumDamageVariancePermille: 1_000,
+    maximumDamageVariancePermille: 1_000,
     initialAbilityDelayMinimumTicks: 18,
     initialAbilityDelayRangeTicks: 13,
   }),

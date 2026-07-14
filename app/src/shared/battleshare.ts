@@ -1,4 +1,6 @@
-export const BATTLE_CLIP_MAXIMUM_BYTES = 8 * 1024 * 1024;
+// Devvit Web rejects request bodies above 4 MB. Base64 adds roughly one third,
+// so keep the raw clip comfortably below that platform boundary.
+export const BATTLE_CLIP_MAXIMUM_BYTES = Math.floor(2.5 * 1024 * 1024);
 export const BATTLE_SHARE_DATA_MAXIMUM_CHARACTERS = 1024;
 
 export type BattleClipUploadRequest = Readonly<{

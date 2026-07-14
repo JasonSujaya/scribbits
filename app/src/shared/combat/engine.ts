@@ -16,14 +16,12 @@ import {
   normalizeVector,
   squaredDistance,
 } from './fixed-math';
+import { createStableBattleId, normalizeCombatSeed } from './random';
 import {
-  createStableBattleId,
-  deterministicInteger,
-  deterministicPermilleRoll,
-  deterministicRoll,
-  normalizeCombatSeed,
-} from './random';
-import { selectPrimaryPower as selectPrimaryPowerForStats } from './selection';
+  selectCombatRole,
+  selectPrimaryPower as selectPrimaryPowerForStats,
+} from './selection';
+import { getCombatRoleRules } from './roles';
 import {
   getCombatUpgradeModifiers,
   isCombatUpgradeId,
@@ -42,6 +40,7 @@ import type {
   BattleTranscript,
   CombatFighterInput,
   CombatPhase,
+  CombatRole,
   CombatRules,
   CombatSimulationInput,
   DamageSource,
@@ -81,6 +80,7 @@ type MutableFighterState = {
   slot: FighterSlot;
   input: CombatFighterInput;
   upgradeModifiers: CombatUpgradeModifiers;
+  combatRole: CombatRole;
   primaryPower: PrimaryPower;
   position: MutableVector;
   velocity: MutableVector;
@@ -89,6 +89,11 @@ type MutableFighterState = {
   hitPoints: number;
   maxHitPoints: number;
   damageDealt: number;
+  basicAttackReadyAtTick: number;
+  basicAttackNumber: number;
+  burstShotsRemaining: number;
+  nextBurstShotTick: number;
+  resolvedAttackCount: number;
   defenseUntilTick: number;
   contactReadyTick: number;
   barrierCreated: boolean;
@@ -107,6 +112,7 @@ type MutableFighterState = {
   haloNextTargetHitTick: number;
   haloNextWallRiskTick: number;
   smearstepHitMask: number;
+  roleSpecialShotMask: number;
   smearstepCurrentDash: number;
   colorburstFired: boolean;
   inkPressureUsed: boolean;
@@ -336,33 +342,47 @@ function appendEvent(
 function createFighterState(
   input: CombatFighterInput,
   slot: FighterSlot,
-  seed: string,
+  _seed: string,
   rules: CombatRules
 ): MutableFighterState {
   const upgradeModifiers = getCombinedCombatModifiers(input);
+  const combatRole = selectCombatRole(input.stats);
   const horizontalDirection = slot === 'a' ? 1 : -1;
-  const verticalRoll = deterministicInteger(
-    seed,
-    'initial-vertical-velocity',
-    801,
-    input.id
-  );
-  const movementPerTick =
+  const verticalDirectionByRole: Readonly<Record<CombatRole, number>> = {
+    brawler: 0,
+    longshot: 0,
+    gunner: 0,
+    mage: 0,
+  };
+  const baseMovementPerTick =
     rules.fighter.baseMovementPerTick +
     input.stats.zip * rules.fighter.movementPerZip;
+  const movementPerTick =
+    combatRole === 'brawler'
+      ? divideRounded(baseMovementPerTick * 1_200, 1_000)
+      : baseMovementPerTick;
   const velocity = normalizeVector(
-    { x: horizontalDirection * DIRECTION_SCALE, y: verticalRoll - 400 },
+    {
+      x: horizontalDirection * DIRECTION_SCALE,
+      y: verticalDirectionByRole[combatRole],
+    },
     movementPerTick,
     { x: horizontalDirection * DIRECTION_SCALE, y: 0 }
   );
+  const initialAbilityDelayByRole: Readonly<Record<CombatRole, number>> = {
+    brawler: 18,
+    longshot: 28,
+    gunner: 20,
+    mage: 32,
+  };
+  const initialBasicAttackDelayByRole: Readonly<Record<CombatRole, number>> = {
+    brawler: 8,
+    longshot: 22,
+    gunner: 14,
+    mage: 26,
+  };
   const initialDelay =
-    rules.fighter.initialAbilityDelayMinimumTicks +
-    deterministicInteger(
-      seed,
-      'initial-ability-delay',
-      rules.fighter.initialAbilityDelayRangeTicks,
-      input.id
-    ) +
+    initialAbilityDelayByRole[combatRole] +
     upgradeModifiers.initialDelayTicksDelta;
   const baseMaxHitPoints =
     rules.fighter.baseHitPoints +
@@ -376,10 +396,11 @@ function createFighterState(
     slot,
     input,
     upgradeModifiers,
+    combatRole,
     primaryPower: selectPrimaryPowerForStats(input.stats),
     position: {
       x: (slot === 'a' ? -1 : 1) * rules.fighter.startingHorizontalOffset,
-      y: slot === 'a' ? -300 : 300,
+      y: 0,
     },
     velocity: copyVector(velocity),
     radius:
@@ -389,6 +410,11 @@ function createFighterState(
     hitPoints: maxHitPoints,
     maxHitPoints,
     damageDealt: 0,
+    basicAttackReadyAtTick: initialBasicAttackDelayByRole[combatRole],
+    basicAttackNumber: 0,
+    burstShotsRemaining: 0,
+    nextBurstShotTick: 0,
+    resolvedAttackCount: 0,
     defenseUntilTick: 0,
     contactReadyTick: 0,
     barrierCreated: false,
@@ -407,6 +433,7 @@ function createFighterState(
     haloNextTargetHitTick: 0,
     haloNextWallRiskTick: 0,
     smearstepHitMask: 0,
+    roleSpecialShotMask: 0,
     smearstepCurrentDash: -1,
     colorburstFired: false,
     inkPressureUsed: false,
@@ -631,25 +658,17 @@ function aimSmearstepDash(
     },
     opponent.radius
   );
-  const towardPrediction = normalizeVector(
-    {
-      x: predicted.x - fighter.position.x,
-      y: predicted.y - fighter.position.y,
-    },
-    config.overshootDistance,
-    fighter.aimDirection
-  );
-  const overshootTarget = {
-    x: predicted.x + towardPrediction.x,
-    y: predicted.y + towardPrediction.y,
-  };
+  const awayX = fighter.position.x - predicted.x;
+  const awayY = fighter.position.y - predicted.y;
+  const strafeSign =
+    (fighter.slot === 'a' ? 1 : -1) * (dashIndex % 2 === 0 ? 1 : -1);
   const dashVelocity = normalizeVector(
     {
-      x: overshootTarget.x - fighter.position.x,
-      y: overshootTarget.y - fighter.position.y,
+      x: awayX * 2 - awayY * strafeSign,
+      y: awayY * 2 + awayX * strafeSign,
     },
     config.dashSpeed,
-    fighter.aimDirection
+    { x: -fighter.aimDirection.x, y: -fighter.aimDirection.y }
   );
   fighter.velocity = copyVector(dashVelocity);
   fighter.smearstepCurrentDash = dashIndex;
@@ -675,6 +694,15 @@ function beginAbilityTelegraph(
       { x: fighter.slot === 'a' ? DIRECTION_SCALE : -DIRECTION_SCALE, y: 0 }
     )
   );
+  if (fighter.combatRole === 'mage' && fighter.barrierHitPoints <= 0) {
+    fighter.barrierHitPoints = 6;
+    appendEvent(context, {
+      tick: context.tick,
+      kind: 'barrier_created',
+      actor: fighter.slot,
+      hitPoints: fighter.barrierHitPoints,
+    });
+  }
   appendEvent(context, {
     tick: context.tick,
     kind: 'ability_telegraphed',
@@ -700,6 +728,7 @@ function activateAbility(
   fighter.haloNextTargetHitTick = context.tick;
   fighter.haloNextWallRiskTick = context.tick;
   fighter.smearstepHitMask = 0;
+  fighter.roleSpecialShotMask = 0;
   fighter.smearstepCurrentDash = -1;
   fighter.colorburstFired = false;
 
@@ -841,23 +870,44 @@ function updateMovementIntent(
     context.tick % context.rules.fighter.steeringIntervalTicks === 0
   ) {
     const opponent = getOpponent(context, fighter);
-    const pursuit = normalizeVector(
-      {
-        x: opponent.position.x - fighter.position.x,
-        y: opponent.position.y - fighter.position.y,
-      },
-      context.rules.fighter.steeringStrength,
-      fighter.aimDirection
+    const towardOpponent = {
+      x: opponent.position.x - fighter.position.x,
+      y: opponent.position.y - fighter.position.y,
+    };
+    const distance = integerSquareRoot(
+      squaredDistance(fighter.position, opponent.position)
     );
+    const roleRules = getCombatRoleRules(fighter.combatRole);
+    let movementIntent: FixedVector;
+    if (fighter.combatRole === 'brawler') {
+      movementIntent = towardOpponent;
+    } else if (
+      fighter.combatRole === 'mage' &&
+      (fighter.abilityPhase === 'telegraph' ||
+        fighter.abilityPhase === 'active')
+    ) {
+      fighter.velocity = { x: 0, y: 0 };
+      return;
+    } else if (distance < roleRules.preferredRangeMinimum) {
+      movementIntent = {
+        x: -towardOpponent.x,
+        y: -towardOpponent.y,
+      };
+    } else if (distance > roleRules.preferredRangeMaximum) {
+      movementIntent = towardOpponent;
+    } else {
+      const strafeSign = fighter.slot === 'a' ? 1 : -1;
+      movementIntent = {
+        x: -towardOpponent.y * strafeSign,
+        y: towardOpponent.x * strafeSign,
+      };
+    }
+    const movementSpeed =
+      fighter.combatRole === 'brawler' && opponent.combatRole === 'gunner'
+        ? divideRounded(fighter.baseMovementPerTick * 1_375, 1_000)
+        : fighter.baseMovementPerTick;
     fighter.velocity = copyVector(
-      normalizeVector(
-        {
-          x: fighter.velocity.x + pursuit.x,
-          y: fighter.velocity.y + pursuit.y,
-        },
-        fighter.baseMovementPerTick,
-        fighter.aimDirection
-      )
+      normalizeVector(movementIntent, movementSpeed, fighter.aimDirection)
     );
   }
 }
@@ -1199,50 +1249,74 @@ function applyResolvedDamage(
   return actualDamage;
 }
 
+const ROLE_MATCHUP_DAMAGE_MULTIPLIERS: Readonly<
+  Record<CombatRole, Readonly<Record<CombatRole, number>>>
+> = Object.freeze({
+  brawler: Object.freeze({
+    brawler: 1_000,
+    longshot: 965,
+    gunner: 1_000,
+    mage: 800,
+  }),
+  longshot: Object.freeze({
+    brawler: 1_075,
+    longshot: 1_000,
+    gunner: 965,
+    mage: 900,
+  }),
+  gunner: Object.freeze({
+    brawler: 1_000,
+    longshot: 1_070,
+    gunner: 1_000,
+    mage: 950,
+  }),
+  mage: Object.freeze({
+    brawler: 1_200,
+    longshot: 1_100,
+    gunner: 1_100,
+    mage: 1_000,
+  }),
+});
+
+function getRoleMatchupDamageMultiplierPermille(
+  attacker: CombatRole,
+  defender: CombatRole
+): number {
+  return ROLE_MATCHUP_DAMAGE_MULTIPLIERS[attacker][defender];
+}
+
 function rollAndApplyDamage(
   context: SimulationContext,
   source: MutableFighterState,
   target: MutableFighterState,
   damageSource: DamageSource,
   baseDamage: number,
-  rollCoordinate: string | number,
+  _rollCoordinate: string | number,
   applyElementPayload: boolean
 ): number {
-  const varianceRange =
-    context.rules.fighter.maximumDamageVariancePermille -
-    context.rules.fighter.minimumDamageVariancePermille +
-    1;
-  const variance =
-    context.rules.fighter.minimumDamageVariancePermille +
-    deterministicInteger(
-      context.seed,
-      'damage-variance',
-      varianceRange,
-      source.input.id,
-      target.input.id,
-      damageSource,
-      context.tick,
-      source.activationNumber,
-      rollCoordinate
-    );
   const criticalChance = Math.min(
     context.rules.fighter.maximumCriticalChancePermille,
     source.input.stats.charm *
       context.rules.fighter.criticalChancePermillePerCharm +
       source.upgradeModifiers.criticalChanceBonusPermille
   );
-  const critical =
-    deterministicPermilleRoll(
-      context.seed,
-      'critical-hit',
-      source.input.id,
-      target.input.id,
-      damageSource,
-      context.tick,
-      source.activationNumber,
-      rollCoordinate
-    ) < criticalChance;
-  let damage = Math.max(1, divideRounded(baseDamage * variance, 1_000));
+  source.resolvedAttackCount += 1;
+  const criticalInterval =
+    criticalChance <= 0
+      ? Number.MAX_SAFE_INTEGER
+      : Math.ceil(1_000 / criticalChance);
+  const critical = source.resolvedAttackCount % criticalInterval === 0;
+  const roleMultiplierPermille =
+    source.slot === target.slot
+      ? 1_000
+      : getRoleMatchupDamageMultiplierPermille(
+          source.combatRole,
+          target.combatRole
+        );
+  let damage = Math.max(
+    1,
+    divideRounded(baseDamage * roleMultiplierPermille, 1_000)
+  );
   damage = Math.max(
     1,
     divideRounded(
@@ -1294,6 +1368,198 @@ function pushAwayFrom(
       context.rules.fighter.maximumVelocityPerAxis
     )
   );
+}
+
+function interruptTelegraphedAbility(
+  context: SimulationContext,
+  target: MutableFighterState,
+  interrupter: MutableFighterState
+): void {
+  if (target.abilityPhase !== 'telegraph') {
+    return;
+  }
+  appendEvent(context, {
+    tick: context.tick,
+    kind: 'ability_interrupted',
+    actor: target.slot,
+    interruptedBy: interrupter.slot,
+    power: target.primaryPower,
+    activationNumber: target.activationNumber,
+  });
+  target.abilityPhase = 'cooldown';
+  target.abilityPhaseEndsAtTick = context.tick;
+  target.abilityReadyAtTick =
+    context.tick +
+    Math.max(10, Math.floor(getEffectiveCooldownTicks(context, target) / 2));
+}
+
+function getRoleStat(fighter: MutableFighterState): number {
+  switch (fighter.combatRole) {
+    case 'brawler':
+      return fighter.input.stats.chonk;
+    case 'longshot':
+      return fighter.input.stats.spike;
+    case 'gunner':
+      return fighter.input.stats.zip;
+    case 'mage':
+      return fighter.input.stats.charm;
+  }
+}
+
+function appendRoleAttack(
+  context: SimulationContext,
+  fighter: MutableFighterState,
+  attack: Extract<BattleTimelineEvent, { kind: 'role_attack' }>['attack'],
+  attackNumber: number,
+  shotNumber: number,
+  targetPosition: FixedVector,
+  hit: boolean
+): void {
+  appendEvent(context, {
+    tick: context.tick,
+    kind: 'role_attack',
+    actor: fighter.slot,
+    role: fighter.combatRole,
+    attack,
+    attackNumber,
+    shotNumber,
+    origin: freezeVector(fighter.position),
+    target: freezeVector(targetPosition),
+    hit,
+  });
+}
+
+function executeSingleRoleAttack(
+  context: SimulationContext,
+  fighter: MutableFighterState,
+  attackNumber: number,
+  shotNumber: number
+): void {
+  const opponent = getOpponent(context, fighter);
+  const roleRules = getCombatRoleRules(fighter.combatRole);
+  const distance = integerSquareRoot(
+    squaredDistance(fighter.position, opponent.position)
+  );
+  const maximumRange =
+    roleRules.preferredRangeMaximum +
+    (fighter.combatRole === 'gunner'
+      ? 2_400
+      : fighter.combatRole === 'mage'
+        ? 400
+        : 1_000);
+  const damage =
+    roleRules.basicAttackBaseDamage +
+    Math.floor(getRoleStat(fighter) / roleRules.basicAttackStatDivisor);
+  let attack: Extract<BattleTimelineEvent, { kind: 'role_attack' }>['attack'];
+  let source: DamageSource;
+  switch (fighter.combatRole) {
+    case 'longshot':
+      attack = 'piercing_quill';
+      source = 'longshot_quill';
+      break;
+    case 'gunner':
+      attack = 'ink_shot';
+      source = 'gunner_shot';
+      break;
+    case 'mage':
+      attack = 'color_bolt';
+      source = 'mage_bolt';
+      break;
+    case 'brawler':
+      return;
+  }
+  const inRange = distance <= maximumRange;
+  const actualDamage = inRange
+    ? rollAndApplyDamage(
+        context,
+        fighter,
+        opponent,
+        source,
+        damage,
+        attackNumber,
+        true
+      )
+    : 0;
+  appendRoleAttack(
+    context,
+    fighter,
+    attack,
+    attackNumber,
+    shotNumber,
+    opponent.position,
+    actualDamage > 0
+  );
+  if (actualDamage > 0 && fighter.combatRole === 'longshot') {
+    pushAwayFrom(context, fighter.position, opponent, 180);
+  }
+  if (
+    actualDamage > 0 &&
+    fighter.combatRole === 'gunner' &&
+    opponent.combatRole === 'longshot'
+  ) {
+    opponent.basicAttackReadyAtTick = Math.max(
+      opponent.basicAttackReadyAtTick,
+      context.tick + 5
+    );
+    interruptTelegraphedAbility(context, opponent, fighter);
+  }
+}
+
+function executeRoleAttacks(context: SimulationContext): void {
+  const fightersByStableIdentity = [...context.fighters].sort((left, right) =>
+    left.input.id.localeCompare(right.input.id)
+  );
+  for (const fighter of fightersByStableIdentity) {
+    if (fighter.hitPoints <= 0 || fighter.combatRole === 'brawler') {
+      continue;
+    }
+    const roleRules = getCombatRoleRules(fighter.combatRole);
+    if (fighter.combatRole === 'gunner' && fighter.burstShotsRemaining > 0) {
+      if (context.tick < fighter.nextBurstShotTick) {
+        continue;
+      }
+      const shotNumber =
+        roleRules.burstShotCount - fighter.burstShotsRemaining + 1;
+      executeSingleRoleAttack(
+        context,
+        fighter,
+        fighter.basicAttackNumber,
+        shotNumber
+      );
+      fighter.burstShotsRemaining -= 1;
+      fighter.nextBurstShotTick =
+        context.tick + roleRules.burstShotIntervalTicks;
+      if (fighter.burstShotsRemaining === 0) {
+        fighter.basicAttackReadyAtTick =
+          context.tick + roleRules.basicAttackCooldownTicks;
+      }
+      continue;
+    }
+    if (fighter.abilityPhase !== 'cooldown') {
+      continue;
+    }
+    if (context.tick < fighter.basicAttackReadyAtTick) {
+      continue;
+    }
+    if (fighter.combatRole === 'gunner') {
+      fighter.basicAttackNumber += 1;
+      fighter.burstShotsRemaining = roleRules.burstShotCount;
+      fighter.nextBurstShotTick = context.tick;
+      executeSingleRoleAttack(context, fighter, fighter.basicAttackNumber, 1);
+      fighter.burstShotsRemaining -= 1;
+      fighter.nextBurstShotTick =
+        context.tick + roleRules.burstShotIntervalTicks;
+      if (fighter.burstShotsRemaining === 0) {
+        fighter.basicAttackReadyAtTick =
+          context.tick + roleRules.basicAttackCooldownTicks;
+      }
+    } else {
+      fighter.basicAttackNumber += 1;
+      executeSingleRoleAttack(context, fighter, fighter.basicAttackNumber, 1);
+      fighter.basicAttackReadyAtTick =
+        context.tick + roleRules.basicAttackCooldownTicks;
+    }
+  }
 }
 
 function resolveInkquake(
@@ -1353,63 +1619,6 @@ function resolveInkquake(
   }
 }
 
-function nibIsOutsideArena(
-  context: SimulationContext,
-  position: FixedVector,
-  radius: number
-): boolean {
-  return (
-    position.x - radius < -context.arenaHalfWidth ||
-    position.x + radius > context.arenaHalfWidth ||
-    position.y - radius < -context.arenaHalfHeight ||
-    position.y + radius > context.arenaHalfHeight
-  );
-}
-
-function resolveNibWallRisk(
-  context: SimulationContext,
-  fighter: MutableFighterState,
-  nibPositions: readonly FixedVector[]
-): void {
-  const config = context.rules.abilities.nib_halo;
-  if (
-    context.tick < fighter.haloNextWallRiskTick ||
-    !nibPositions.some((position) =>
-      nibIsOutsideArena(context, position, config.nibRadius)
-    )
-  ) {
-    return;
-  }
-  fighter.haloNextWallRiskTick = context.tick + config.wallRiskLockTicks;
-  fighter.velocity = copyVector(
-    normalizeVector(
-      { x: -fighter.position.x, y: -fighter.position.y },
-      config.wallEjectionSpeed,
-      { x: fighter.slot === 'a' ? DIRECTION_SCALE : -DIRECTION_SCALE, y: 0 }
-    )
-  );
-  const selfDamage = applyResolvedDamage(
-    context,
-    fighter,
-    fighter,
-    'nib_wall_recoil',
-    config.wallSelfDamage,
-    {
-      applyElementPayload: false,
-      bypassDefense: true,
-      bypassBarrier: true,
-      critical: false,
-    }
-  );
-  appendEvent(context, {
-    tick: context.tick,
-    kind: 'nib_wall_ejection',
-    actor: fighter.slot,
-    selfDamage,
-    position: freezeVector(fighter.position),
-  });
-}
-
 function resolveNibHalo(
   context: SimulationContext,
   fighter: MutableFighterState
@@ -1417,60 +1626,40 @@ function resolveNibHalo(
   const config = context.rules.abilities.nib_halo;
   const opponent = getOpponent(context, fighter);
   const age = context.tick - fighter.abilityActivatedAtTick;
-  const nibPositions: FixedVector[] = [];
-  for (let nibIndex = 0; nibIndex < config.nibCount; nibIndex += 1) {
-    nibPositions.push(
-      getOrbitingNibPosition(fighter.position, age, nibIndex, config)
-    );
-  }
-  resolveNibWallRisk(context, fighter, nibPositions);
+  const shotAges = [0, 10, 20] as const;
+  const shotIndex = shotAges.indexOf(age as 0 | 10 | 20);
+  if (shotIndex < 0) return;
+  const shotMask = 1 << shotIndex;
+  if ((fighter.roleSpecialShotMask & shotMask) !== 0) return;
+  fighter.roleSpecialShotMask |= shotMask;
 
-  const opponentDistance = integerSquareRoot(
+  const distance = integerSquareRoot(
     squaredDistance(fighter.position, opponent.position)
   );
-  if (
-    context.tick >= fighter.haloNextTargetHitTick &&
-    opponentDistance >= config.innerDeadZoneRadius
-  ) {
-    const hitNibIndex = nibPositions.findIndex((position) =>
-      circlesOverlap(
-        position,
-        config.nibRadius,
-        opponent.position,
-        opponent.radius
-      )
-    );
-    if (hitNibIndex >= 0) {
-      fighter.haloNextTargetHitTick =
-        context.tick + config.targetRehitLockTicks;
-      rollAndApplyDamage(
+  const inRange = distance <= 7_500;
+  const actualDamage = inRange
+    ? rollAndApplyDamage(
         context,
         fighter,
         opponent,
         'nib_halo',
-        config.baseDamage +
-          Math.floor(fighter.input.stats.spike / config.spikeDamageDivisor) +
-          Math.floor(
-            opponent.maxHitPoints / config.targetMaxHitPointDamageDivisor
-          ),
-        `${age}:${hitNibIndex}`,
+        Math.max(1, Math.floor(config.baseDamage / 2)) +
+          Math.floor(fighter.input.stats.spike / 12),
+        `${fighter.activationNumber}:${shotIndex}`,
         true
-      );
-    }
-  }
-
-  if (
-    opponent.echo !== null &&
-    nibPositions.some((position) =>
-      circlesOverlap(
-        position,
-        config.nibRadius,
-        opponent.echo?.position ?? position,
-        context.rules.abilities.colorburst.echoRadius
       )
-    )
-  ) {
-    shatterEcho(context, opponent, fighter.slot);
+    : 0;
+  appendRoleAttack(
+    context,
+    fighter,
+    'nib_volley',
+    fighter.activationNumber,
+    shotIndex + 1,
+    opponent.position,
+    actualDamage > 0
+  );
+  if (actualDamage > 0 && opponent.combatRole === 'brawler') {
+    pushAwayFrom(context, fighter.position, opponent, 260);
   }
 }
 
@@ -1488,26 +1677,37 @@ function resolveSmearstep(
     return;
   }
   const dashMask = 1 << dashIndex;
-  if (
-    (fighter.smearstepHitMask & dashMask) === 0 &&
-    circlesOverlap(
-      fighter.position,
-      fighter.radius + config.collisionRadiusBonus,
-      opponent.position,
-      opponent.radius
-    )
-  ) {
-    fighter.smearstepHitMask |= dashMask;
-    rollAndApplyDamage(
+  const activeAge = context.tick - fighter.abilityActivatedAtTick;
+  const dashAge = activeAge - dashIndex * getSmearstepDashStrideTicks(config);
+  if (dashAge === 0 && (fighter.roleSpecialShotMask & dashMask) === 0) {
+    fighter.roleSpecialShotMask |= dashMask;
+    const inRange =
+      integerSquareRoot(squaredDistance(fighter.position, opponent.position)) <=
+      5_400;
+    const actualDamage = inRange
+      ? rollAndApplyDamage(
+          context,
+          fighter,
+          opponent,
+          'smearstep',
+          Math.max(1, config.baseDamage - 6) +
+            Math.floor(fighter.input.stats.zip / 6),
+          dashIndex,
+          true
+        )
+      : 0;
+    appendRoleAttack(
       context,
       fighter,
-      opponent,
-      'smearstep',
-      config.baseDamage +
-        Math.floor(fighter.input.stats.zip / config.zipDamageDivisor),
-      dashIndex,
-      true
+      'smearstep_barrage',
+      fighter.activationNumber,
+      dashIndex + 1,
+      opponent.position,
+      actualDamage > 0
     );
+    if (actualDamage > 0 && opponent.combatRole === 'longshot') {
+      interruptTelegraphedAbility(context, opponent, fighter);
+    }
   }
   if (
     opponent.echo !== null &&
@@ -1547,8 +1747,8 @@ function resolveColorburst(
       fighter,
       opponent,
       'colorburst',
-      config.baseDamage +
-        Math.floor(fighter.input.stats.charm / config.charmDamageDivisor),
+      Math.max(1, config.baseDamage - 6) +
+        Math.floor(fighter.input.stats.charm / 4),
       0,
       true
     );
@@ -1627,8 +1827,8 @@ function resolveEchoes(context: SimulationContext): void {
       )
     ) {
       const fullDamage =
-        config.baseDamage +
-        Math.floor(fighter.input.stats.charm / config.charmDamageDivisor);
+        Math.max(1, config.baseDamage - 6) +
+        Math.floor(fighter.input.stats.charm / 4);
       rollAndApplyDamage(
         context,
         fighter,
@@ -1651,7 +1851,11 @@ function resolveContactDamage(context: SimulationContext): void {
     return;
   }
   const eligibleAtStart = context.fighters.map((fighter) => {
-    return fighter.hitPoints > 0 && context.tick >= fighter.contactReadyTick;
+    return (
+      fighter.hitPoints > 0 &&
+      fighter.combatRole === 'brawler' &&
+      context.tick >= fighter.contactReadyTick
+    );
   });
   for (let index = 0; index < context.fighters.length; index += 1) {
     if (eligibleAtStart[index] !== true) {
@@ -1664,18 +1868,32 @@ function resolveContactDamage(context: SimulationContext): void {
     const opponent = getOpponent(context, fighter);
     fighter.contactReadyTick =
       context.tick + context.rules.fighter.contactCooldownTicks;
-    rollAndApplyDamage(
+    fighter.basicAttackNumber += 1;
+    const actualDamage = rollAndApplyDamage(
       context,
       fighter,
       opponent,
-      'contact',
-      context.rules.fighter.contactBaseDamage +
+      'brawler_slam',
+      getCombatRoleRules('brawler').basicAttackBaseDamage +
         Math.floor(
-          fighter.input.stats.spike / context.rules.fighter.contactSpikeDivisor
+          fighter.input.stats.chonk /
+            getCombatRoleRules('brawler').basicAttackStatDivisor
         ),
       context.tick,
       false
     );
+    appendRoleAttack(
+      context,
+      fighter,
+      'body_slam',
+      fighter.basicAttackNumber,
+      1,
+      opponent.position,
+      actualDamage > 0
+    );
+    if (actualDamage > 0 && opponent.combatRole === 'mage') {
+      interruptTelegraphedAbility(context, opponent, fighter);
+    }
   }
 }
 
@@ -1760,19 +1978,6 @@ function executeInkPressure(context: SimulationContext): void {
 function chooseStableWinner(context: SimulationContext): FighterSlot {
   const fighterA = context.fighters[0];
   const fighterB = context.fighters[1];
-  const scoreA = deterministicRoll(
-    context.seed,
-    'stable-timeout-tiebreak',
-    fighterA.input.id
-  );
-  const scoreB = deterministicRoll(
-    context.seed,
-    'stable-timeout-tiebreak',
-    fighterB.input.id
-  );
-  if (scoreA !== scoreB) {
-    return scoreA > scoreB ? 'a' : 'b';
-  }
   return fighterA.input.id <= fighterB.input.id ? 'a' : 'b';
 }
 
@@ -1824,6 +2029,7 @@ function createFighterResult(fighter: MutableFighterState): FighterResult {
     ),
     damageDealt: fighter.damageDealt,
     primaryPower: fighter.primaryPower,
+    combatRole: fighter.combatRole,
     inkPressureUsed: fighter.inkPressureUsed,
   });
 }
@@ -1895,6 +2101,7 @@ function createFighterCheckpoint(
 ): FighterCheckpoint {
   return Object.freeze({
     slot: fighter.slot,
+    combatRole: fighter.combatRole,
     hitPoints: fighter.hitPoints,
     maxHitPoints: fighter.maxHitPoints,
     position: freezeVector(fighter.position),
@@ -1966,6 +2173,9 @@ function executePhase(context: SimulationContext, phase: CombatPhase): void {
       return;
     case 'fighter_collision':
       executeFighterCollision(context);
+      return;
+    case 'role_attacks':
+      executeRoleAttacks(context);
       return;
     case 'ability_collisions':
       executeAbilityCollisions(context);
@@ -2046,8 +2256,7 @@ export function simulateCombat(input: CombatSimulationInput): BattleTranscript {
   if (fighterAInput.id === fighterBInput.id) {
     throw new Error('Combat fighter ids must be unique.');
   }
-  const transcriptVersion =
-    fighterAInput.gear || fighterBInput.gear ? 3 : rules.version;
+  const transcriptVersion = rules.version;
   const battleId = createStableBattleId(
     seed,
     fighterAInput.id,

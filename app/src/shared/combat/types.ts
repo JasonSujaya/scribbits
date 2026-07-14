@@ -49,6 +49,8 @@ export type DominantStat = keyof RawCombatStats;
 
 export type PrimaryPower = 'inkquake' | 'nib_halo' | 'smearstep' | 'colorburst';
 
+export type CombatRole = 'brawler' | 'longshot' | 'gunner' | 'mage';
+
 export type FixedVector = Readonly<{
   x: number;
   y: number;
@@ -65,7 +67,7 @@ export type CombatFighterInput = Readonly<{
   // never the drawing-selected power, body, movement, or collision geometry.
   damageModifierPermille?: number;
   // Server-resolved from the frozen Scribbit loadout. Raw drawing stats remain
-  // untouched so Gear cannot change Shape Power selection or the 100-point rule.
+  // untouched so Gear cannot change role selection or the 100-point rule.
   gear?: GearCombatSnapshot;
 }>;
 
@@ -79,6 +81,10 @@ export type AbilityPhase = 'cooldown' | 'telegraph' | 'active';
 
 export type DamageSource =
   | PrimaryPower
+  | 'brawler_slam'
+  | 'longshot_quill'
+  | 'gunner_shot'
+  | 'mage_bolt'
   | 'colorburst_echo'
   | 'contact'
   | 'ember_burn'
@@ -97,6 +103,7 @@ export type CombatPhase =
   | 'movement'
   | 'wall_constraints'
   | 'fighter_collision'
+  | 'role_attacks'
   | 'ability_collisions'
   | 'status_effects'
   | 'ink_pressure'
@@ -145,6 +152,32 @@ export type BattleTimelineEvent =
       actor: FighterSlot;
       power: PrimaryPower;
       activationNumber: number;
+    }>
+  | Readonly<{
+      tick: number;
+      kind: 'ability_interrupted';
+      actor: FighterSlot;
+      interruptedBy: FighterSlot;
+      power: PrimaryPower;
+      activationNumber: number;
+    }>
+  | Readonly<{
+      tick: number;
+      kind: 'role_attack';
+      actor: FighterSlot;
+      role: CombatRole;
+      attack:
+        | 'body_slam'
+        | 'piercing_quill'
+        | 'ink_shot'
+        | 'color_bolt'
+        | 'nib_volley'
+        | 'smearstep_barrage';
+      attackNumber: number;
+      shotNumber: number;
+      origin: FixedVector;
+      target: FixedVector;
+      hit: boolean;
     }>
   | Readonly<{
       tick: number;
@@ -247,6 +280,7 @@ export type BattleTimelineEvent =
 
 export type FighterCheckpoint = Readonly<{
   slot: FighterSlot;
+  combatRole?: CombatRole;
   hitPoints: number;
   maxHitPoints: number;
   position: FixedVector;
@@ -272,6 +306,7 @@ export type FighterResult = Readonly<{
   hitPointPermille: number;
   damageDealt: number;
   primaryPower: PrimaryPower;
+  combatRole?: CombatRole;
   inkPressureUsed: boolean;
 }>;
 

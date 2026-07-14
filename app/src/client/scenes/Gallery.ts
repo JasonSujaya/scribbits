@@ -5,7 +5,6 @@ import {
   fetchArena,
   fetchInventory,
   fetchLegacyCards,
-  fetchLegends,
   mergeGear,
 } from '../lib/api';
 import {
@@ -23,24 +22,22 @@ import {
   fitDrawing,
   releaseRenderedDrawingTextures,
 } from '../lib/scribbits';
-import { prefersReducedMotion, TYPE, UI } from '../lib/theme';
+import { UI } from '../lib/theme';
 import { LivingPaper } from '../lib/livingpaper';
-import {
-  errorPanel,
-  label,
-  paperPagination,
-  stickerCard,
-} from '../lib/ui';
+import { label, stickerCard } from '../lib/ui';
 import { openDetailModal } from '../lib/detailmodal';
-import type { ErrorPanel } from '../lib/ui';
 import type {
   GearRank,
   Inventory,
   LegacyCard,
   LegacyCardsState,
-  LegendsState,
   MergeGearResponse,
   Scribbit,
+} from '../../shared/arena';
+import {
+  getScribbitLifecycleStage,
+  MAX_GROWING_PER_USER,
+  MAX_MATURE_PER_USER,
 } from '../../shared/arena';
 import { navigateToDailyDraw } from '../lib/draweligibility';
 import {
@@ -62,14 +59,16 @@ import { screenTitle } from '../lib/screentitle';
 import { translate } from '../lib/localization';
 import { fitText } from '../lib/fittext';
 import { planSceneMutationResponse } from '../lib/arenaasynclifecycle';
+import { playHomeSoundtrack, releaseHomeSoundtrack } from '../lib/soundtrack';
 
-const LEGEND_PAGE_SIZE = 4;
 const LEGEND_CARD_HEIGHT = 272;
 const LEGEND_CARD_ROW_GAP = 18;
 const LEGEND_CARD_ROW_STEP = LEGEND_CARD_HEIGHT + LEGEND_CARD_ROW_GAP;
 const LEGEND_CARD_TOP_GAP = 20;
 const BAG_CONTENT_TOP = 168;
-const GALLERY_CONTENT_TOP = 330;
+const GALLERY_TABS_Y = 150;
+const GALLERY_TAB_HEIGHT = 76;
+const GALLERY_CONTENT_TOP = 240;
 const GALLERY_SECTION_PANEL_ID = 'gallery-section-panel';
 const GALLERY_SECTION_ACTIONS_ID = 'gallery-section-actions';
 const DEBUG_INK_KIT_SECTIONS: readonly InkKitSection[] = [
@@ -88,40 +87,42 @@ const GALLERY_TABS: ReadonlyArray<{
   panelSummary: string;
 }> = Object.freeze([
   {
-    tab: 'legends',
-    label: 'Legends',
-    visibleLabel: 'LEGENDS',
-    icon: 'trophy',
-    panelSummary: 'Community Legends. Open a saved Legend for details.',
+    tab: 'growing',
+    label: 'Growing Scribbits',
+    visibleLabel: 'GROWING',
+    icon: 'pencil',
+    panelSummary: 'Growing Scribbits. Their base stats are still developing.',
   },
   {
-    tab: 'legacy',
-    label: 'Legacy Book',
-    visibleLabel: 'LEGACY',
+    tab: 'mature',
+    label: 'Mature Scribbits',
+    visibleLabel: 'MATURE',
+    icon: 'trophy',
+    panelSummary: 'Mature Scribbits. Their base stats are locked.',
+  },
+  {
+    tab: 'archived',
+    label: 'Archived Scribbits',
+    visibleLabel: 'ARCHIVED',
     icon: 'book',
     panelSummary:
-      'Legacy Book. Your completed Scribbits and their saved stories.',
+      'Archived Scribbits. Completed runs are kept as immutable cards.',
   },
 ]);
 
 // One scene hosts two explicit dock destinations without duplicating data
-// orchestration: Bag owns inventory/equipment, while Gallery owns community
-// Legends and the caller's immutable Legacy Book.
+// orchestration: Bag owns inventory/equipment, while Gallery owns the player's
+// Growing, Mature, and Archived Scribbits.
 export class Gallery extends Scene {
-  private tab: GalleryTab = 'legends';
-  private legendsState: LegendsState | null = null;
+  private tab: GalleryTab = 'growing';
   private inventory: Inventory | null = null;
-  private errorPanelRef: ErrorPanel | null = null;
   private loggedIn = false;
   private livingPaper: LivingPaper | null = null;
   private buildGeneration = 0;
-  private legendPage = 0;
   private legacyPage = 0;
   private legacyPages: LegacyCardsState[] = [];
   private collectionScrollOffset = 0;
   private collectionSection: InkKitSection = 'weapon';
-  private loadingOlderLegends = false;
-  private loadingLegends = false;
   private loadingCollection = false;
   private loadingLegacy = false;
   private collectionError: string | null = null;
@@ -129,7 +130,6 @@ export class Gallery extends Scene {
   private selectedEquipmentScribbitId: string | null = null;
   private savingEquipment = false;
   private legacyError: string | null = null;
-  private legendsRequestEpoch = 0;
   private collectionRequestEpoch = 0;
   private legacyRequestEpoch = 0;
   private sceneVisitEpoch = 0;
@@ -147,7 +147,7 @@ export class Gallery extends Scene {
     HTMLButtonElement
   >();
   private sectionTabController: SemanticTabController<GalleryTab> | null = null;
-  private openingLegendId: string | null = null;
+  private openingScribbitId: string | null = null;
   private menu: AppMenu | null = null;
 
   constructor() {
@@ -156,10 +156,7 @@ export class Gallery extends Scene {
 
   init(): void {
     this.sceneVisitEpoch += 1;
-    this.legendsState = null;
-    this.errorPanelRef = null;
     this.livingPaper = null;
-    this.legendPage = 0;
     this.legacyPage = 0;
     this.legacyPages = [];
     const requestedInkKitSection = new URLSearchParams(
@@ -173,8 +170,6 @@ export class Gallery extends Scene {
         ? requestedInkKitSection
         : 'weapon');
     this.collectionScrollOffset = 0;
-    this.loadingOlderLegends = false;
-    this.loadingLegends = false;
     this.loadingCollection = false;
     this.loadingLegacy = false;
     this.collectionError = null;
@@ -189,50 +184,27 @@ export class Gallery extends Scene {
     this.sectionPanel = null;
     this.sectionTabControls.clear();
     this.sectionTabController = null;
-    this.openingLegendId = null;
+    this.openingScribbitId = null;
     this.menu = null;
     this.collectionRefreshRequested = false;
   }
 
   create(): void {
     this.cameras.main.setBackgroundColor(UI.desk);
+    playHomeSoundtrack();
     this.tab = getGalleryTab(this);
     this.loggedIn = getArena(this)?.loggedIn ?? false;
     this.events.once('shutdown', () => {
       this.sceneVisitEpoch += 1;
+      releaseHomeSoundtrack();
       this.destroyBuildOverlays();
     });
     this.build();
     if (this.tab === 'collection') {
       if (this.loggedIn) void this.loadCollection();
-    } else if (this.tab === 'legacy') {
+    } else if (this.tab === 'archived') {
       if (this.loggedIn) void this.loadLegacyBook();
-    } else {
-      void this.loadLegends();
     }
-  }
-
-  private async loadLegends(): Promise<void> {
-    const sceneVisitEpoch = this.sceneVisitEpoch;
-    const requestEpoch = this.legendsRequestEpoch + 1;
-    this.legendsRequestEpoch = requestEpoch;
-    this.loadingLegends = true;
-    this.loadingOlderLegends = false;
-    const result = await fetchLegends(null, this.getLegendPageSize());
-    if (
-      !this.isCurrentSceneVisit(sceneVisitEpoch) ||
-      requestEpoch !== this.legendsRequestEpoch
-    ) {
-      return;
-    }
-    this.loadingLegends = false;
-    if (!result.ok) {
-      if (this.tab === 'legends') this.showError(result.error);
-      return;
-    }
-    this.legendsState = result.data;
-    this.legendPage = 0;
-    if (this.tab === 'legends') this.build();
   }
 
   private async loadLegacyBook(): Promise<void> {
@@ -242,7 +214,7 @@ export class Gallery extends Scene {
     this.legacyRequestEpoch = requestEpoch;
     this.loadingLegacy = true;
     this.legacyError = null;
-    if (this.tab === 'legacy') this.build();
+    if (this.tab === 'archived') this.build();
 
     const result = await fetchLegacyCards(null, LEGACY_BOOK_PAGE_SIZE);
     if (
@@ -255,12 +227,12 @@ export class Gallery extends Scene {
     this.loadingLegacy = false;
     if (!result.ok) {
       this.legacyError = result.error;
-      if (this.tab === 'legacy') this.build();
+      if (this.tab === 'archived') this.build();
       return;
     }
     this.legacyPages = [result.data];
     this.legacyPage = 0;
-    if (this.tab === 'legacy') this.build();
+    if (this.tab === 'archived') this.build();
   }
 
   private async loadOlderLegacyCards(): Promise<void> {
@@ -292,7 +264,7 @@ export class Gallery extends Scene {
       if (!result.ok) {
         this.loadingLegacy = false;
         this.legacyError = result.error;
-        if (this.tab === 'legacy') this.build();
+        if (this.tab === 'archived') this.build();
         return;
       }
 
@@ -320,7 +292,7 @@ export class Gallery extends Scene {
         nextCursor: nextPage?.nextCursor ?? nextCursor,
       };
     }
-    if (this.tab === 'legacy') this.build();
+    if (this.tab === 'archived') this.build();
   }
 
   private async loadCollection(): Promise<void> {
@@ -352,64 +324,6 @@ export class Gallery extends Scene {
     this.continueRequestedCollectionRefresh();
   }
 
-  private async loadOlderLegends(pageSize: number): Promise<void> {
-    const startingCursor = this.legendsState?.nextCursor;
-    if (!startingCursor || this.loadingLegends || this.loadingOlderLegends) {
-      return;
-    }
-
-    const sceneVisitEpoch = this.sceneVisitEpoch;
-    const requestEpoch = this.legendsRequestEpoch;
-    this.loadingOlderLegends = true;
-    this.build();
-    const existingLegends = this.legendsState?.legends ?? [];
-    const existingIds = new Set(existingLegends.map((legend) => legend.id));
-    const newLegends: Scribbit[] = [];
-    let nextCursor: string | null = startingCursor;
-
-    // Offset cursors can overlap after a new Legend is inserted while this
-    // player is browsing. Follow a few duplicate-only pages automatically so
-    // Older still makes visible progress without an unbounded request loop.
-    for (let attempt = 0; attempt < 4 && nextCursor; attempt += 1) {
-      const result = await fetchLegends(nextCursor, pageSize);
-      if (
-        !this.isCurrentSceneVisit(sceneVisitEpoch) ||
-        requestEpoch !== this.legendsRequestEpoch
-      ) {
-        return;
-      }
-      if (!result.ok) {
-        this.loadingOlderLegends = false;
-        this.build();
-        if (this.tab === 'legends') {
-          this.showError(
-            result.error,
-            () => void this.loadOlderLegends(pageSize)
-          );
-        }
-        return;
-      }
-
-      nextCursor = result.data.nextCursor;
-      for (const legend of result.data.legends) {
-        if (existingIds.has(legend.id)) continue;
-        existingIds.add(legend.id);
-        newLegends.push(legend);
-      }
-      if (newLegends.length > 0) break;
-    }
-
-    this.loadingOlderLegends = false;
-    this.legendsState = {
-      legends: [...existingLegends, ...newLegends],
-      nextCursor,
-    };
-    if (newLegends.length > 0) {
-      this.legendPage = Math.floor(existingLegends.length / pageSize);
-    }
-    this.build();
-  }
-
   private build(): void {
     CanvasModalOverlay.destroyAll();
     const focusedSectionTab = [...this.sectionTabControls.values()].includes(
@@ -426,8 +340,7 @@ export class Gallery extends Scene {
     this.buildGeneration += 1;
     this.destroyBuildOverlays();
     this.children.removeAll(true);
-    this.errorPanelRef = null;
-    this.openingLegendId = null;
+    this.openingScribbitId = null;
     releaseRenderedDrawingTextures(this);
     // Calm living page (no forecast field, no countdown) rebuilt each build.
     this.livingPaper?.destroy();
@@ -439,15 +352,15 @@ export class Gallery extends Scene {
     screenTitle(
       this,
       width / 2,
-      22,
+      24,
       translate(bagActive ? 'screen.bag' : 'screen.gallery'),
       {
-        maxWidth: 340,
-        maxHeight: 82,
+        maxWidth: 320,
+        maxHeight: 74,
       }
     );
     if (!bagActive) {
-      this.buildTabs(168);
+      this.buildTabs(GALLERY_TABS_Y);
       this.mountSectionPanel();
       if (focusedSectionTab) this.sectionTabControls.get(this.tab)?.focus();
     }
@@ -506,8 +419,17 @@ export class Gallery extends Scene {
       return;
     }
 
-    if (this.tab === 'legacy') {
+    if (this.tab === 'archived') {
       const currentPage = this.legacyPages[this.legacyPage];
+      label(
+        this,
+        width / 2,
+        GALLERY_CONTENT_TOP - 18,
+        `${LEGACY_BOOK_PAGE_SIZE} ARCHIVED CARDS PER PAGE`,
+        18,
+        UI.inkSoft,
+        true
+      );
       renderLegacyBook({
         scene: this,
         actionOverlay: this.ensureContentActionOverlay(),
@@ -542,26 +464,7 @@ export class Gallery extends Scene {
       return;
     }
 
-    if (!this.legendsState) {
-      const loading = stickerCard(this, width / 2, 470, width - 100, 180, {
-        tapeColor: UI.tapeAlt,
-      });
-      loading.add(
-        label(
-          this,
-          0,
-          0,
-          'Opening the community gallery…',
-          TYPE.body,
-          UI.inkSoft,
-          true
-        )
-      );
-      this.restoreContentActionFocus(focusedContentActionLabel);
-      return;
-    }
-
-    this.buildLegends(GALLERY_CONTENT_TOP);
+    this.buildOwnedScribbits(GALLERY_CONTENT_TOP);
     this.restoreContentActionFocus(focusedContentActionLabel);
   }
 
@@ -623,15 +526,16 @@ export class Gallery extends Scene {
   private buildTabs(y: number): void {
     const { width } = this.scale;
     const controlWidth = width - 60;
-    const controlHeight = 84;
-    const tabGap = 10;
+    const controlHeight = GALLERY_TAB_HEIGHT;
+    const tabGap = 12;
     const tabWidth =
       (controlWidth - tabGap * (GALLERY_TABS.length - 1)) / GALLERY_TABS.length;
     const tabs = this.add.container(width / 2, y);
     const controlLeft = -controlWidth / 2;
     const activeFillByTab: Readonly<Record<GalleryTab, number>> = {
-      legends: UI.goldHex,
-      legacy: UI.inkHex,
+      growing: UI.coral,
+      mature: UI.goldHex,
+      archived: UI.inkHex,
       collection: UI.coral,
     };
     this.sectionTabsOverlay = new CanvasActionOverlay(this);
@@ -669,21 +573,22 @@ export class Gallery extends Scene {
         controlHeight,
         16
       );
-      const activeTextColor = tab === 'legends' ? UI.ink : UI.cream;
-      const tabIcon = paperIcon(this, icon, centerX - 60, 0, {
-        size: 30,
+      const lightActiveTab = tab === 'mature';
+      const activeTextColor = lightActiveTab ? UI.ink : UI.cream;
+      const tabIcon = paperIcon(this, icon, centerX - 43, 0, {
+        size: 27,
         fill: activeTab
-          ? tab === 'legends'
+          ? lightActiveTab
             ? UI.inkHex
             : UI.creamHex
           : UI.tapeAlt,
       });
       const tabLabel = label(
         this,
-        centerX + 18,
+        centerX + 23,
         1,
         visibleLabel,
-        24,
+        18,
         activeTab ? activeTextColor : UI.ink,
         true
       );
@@ -769,14 +674,13 @@ export class Gallery extends Scene {
       return;
     }
     this.tab = tab;
-    if (tab === 'legends') this.legendPage = 0;
-    else if (tab === 'legacy') this.legacyPage = 0;
-    else this.collectionScrollOffset = 0;
+    if (tab === 'archived') this.legacyPage = 0;
+    if (tab === 'collection') this.collectionScrollOffset = 0;
     setGalleryTab(this, tab);
     this.build();
     if (tab === 'collection') {
       if (this.loggedIn && !this.inventory) void this.loadCollection();
-    } else if (tab === 'legacy') {
+    } else if (tab === 'archived') {
       if (
         this.loggedIn &&
         this.legacyPages.length === 0 &&
@@ -784,141 +688,112 @@ export class Gallery extends Scene {
       ) {
         void this.loadLegacyBook();
       }
-    } else if (!this.legendsState && !this.loadingLegends) {
-      void this.loadLegends();
     }
-  }
-
-  private buildPageControls(
-    totalPages: number,
-    y: number,
-    page: number,
-    changePage: (page: number) => void,
-    hasMore = false,
-    loadMore?: () => void
-  ): void {
-    if (totalPages <= 1 && !hasMore) return;
-    const { width } = this.scale;
-    const opening =
-      this.loadingOlderLegends && page === totalPages - 1 && hasMore;
-    const goPrevious = (): void => {
-      changePage(page - 1);
-      this.build();
-    };
-    const goNext = (): void => {
-      if (page < totalPages - 1) {
-        changePage(page + 1);
-        this.build();
-        return;
-      }
-      loadMore?.();
-    };
-    paperPagination({
-      scene: this,
-      actionOverlay: this.ensureContentActionOverlay(),
-      y,
-      page,
-      pageCount: totalPages,
-      pageLabel: opening
-        ? 'OPENING…'
-        : `PAGE ${page + 1} / ${totalPages}${hasMore ? '+' : ''}`,
-      fontSize: 22,
-      hasPrevious: page > 0,
-      hasNext: page < totalPages - 1 || hasMore,
-      isNextLoading: opening,
-      previousX: width / 2 - 144,
-      nextX: width / 2 + 144,
-      pointerPassthrough: true,
-      previousLabel: 'Previous Legends page',
-      nextLabel: 'Next Legends page',
-      loadingNextLabel: 'Opening next Legends page',
-      onPrevious: goPrevious,
-      onNext: goNext,
-    });
-  }
-
-  private getLegendPageSize(): number {
-    return LEGEND_PAGE_SIZE;
   }
 
   private isCurrentBuild(generation: number): boolean {
     return this.scene.isActive() && generation === this.buildGeneration;
   }
 
-  // --- Legends hall ---------------------------------------------------------
-  private buildLegends(top: number): void {
+  private buildOwnedScribbits(top: number): void {
     const { width } = this.scale;
-    const legends = this.legendsState?.legends ?? [];
-    if (legends.length === 0) {
-      const card = stickerCard(this, width / 2, 560, width - 80, 220, {
-        gold: true,
-        tilt: -0.6,
-      });
-      const trophy = paperIcon(this, 'trophy', 0, -40, {
-        size: 54,
-        fill: UI.gold,
-      });
-      card.add(trophy);
-      if (!prefersReducedMotion()) {
-        this.tweens.add({
-          targets: trophy,
-          y: trophy.y - 6,
-          duration: 900,
-          yoyo: true,
-          repeat: -1,
-          ease: 'Sine.easeInOut',
-        });
-      }
-      card.add(
+    const arena = getArena(this);
+    const lifecycleStage = this.tab === 'mature' ? 'mature' : 'growing';
+    const capacity =
+      lifecycleStage === 'mature' ? MAX_MATURE_PER_USER : MAX_GROWING_PER_USER;
+    const scribbits = (arena?.myScribbits ?? [])
+      .filter(
+        (scribbit) =>
+          getScribbitLifecycleStage(
+            scribbit,
+            arena?.dayNumber ?? scribbit.bornDay
+          ) === lifecycleStage
+      )
+      .slice(0, capacity);
+
+    label(
+      this,
+      width / 2,
+      top + 20,
+      `${scribbits.length} / ${capacity} ${lifecycleStage.toUpperCase()} SLOTS`,
+      20,
+      lifecycleStage === 'mature' ? UI.goldText : UI.coralText,
+      true
+    );
+
+    if (scribbits.length === 0) {
+      const emptyCard = stickerCard(
+        this,
+        width / 2,
+        top + 175,
+        width - 90,
+        220,
+        {
+          gold: lifecycleStage === 'mature',
+          tilt: -0.6,
+        }
+      );
+      const emptyIcon = paperIcon(
+        this,
+        lifecycleStage === 'mature' ? 'trophy' : 'pencil',
+        0,
+        -42,
+        {
+          size: 52,
+          fill: lifecycleStage === 'mature' ? UI.gold : UI.coral,
+        }
+      );
+      emptyCard.add(emptyIcon);
+      emptyCard.add(
         label(
           this,
           0,
           30,
-          'No legends yet!\nWin the rumble or reach 25 belief to be immortalized!',
-          TYPE.body,
+          lifecycleStage === 'mature'
+            ? 'No Mature Scribbits yet.\nAfter three days, locked builds move here.'
+            : 'No Growing Scribbits yet.\nDraw one from Home to start a new story.',
+          24,
           UI.inkSoft,
           true
         ).setLineSpacing(8)
       );
       return;
     }
+
     const columns = 2;
     const cellWidth = (width - 60) / columns;
-    const pageSize = this.getLegendPageSize();
-    const totalPages = Math.ceil(legends.length / pageSize);
-    this.legendPage = Math.min(this.legendPage, totalPages - 1);
-    const hasMore = this.legendsState?.nextCursor !== null;
-    this.buildPageControls(
-      totalPages,
-      top + 655,
-      this.legendPage,
-      (page) => {
-        this.legendPage = page;
-      },
-      hasMore && this.legendPage === totalPages - 1,
-      () => void this.loadOlderLegends(pageSize)
-    );
-    const start = this.legendPage * pageSize;
-    legends.slice(start, start + pageSize).forEach((legend, index) => {
+    scribbits.forEach((scribbit, index) => {
       const col = index % columns;
       const row = Math.floor(index / columns);
       const x = 30 + cellWidth * (col + 0.5);
       const y =
         top +
+        55 +
         LEGEND_CARD_TOP_GAP +
         LEGEND_CARD_HEIGHT / 2 +
         row * LEGEND_CARD_ROW_STEP;
-      this.buildLegendCard(legend, x, y);
+      this.buildOwnedScribbitCard(scribbit, lifecycleStage, x, y);
     });
   }
 
-  private buildLegendCard(legend: Scribbit, x: number, y: number): void {
+  private buildOwnedScribbitCard(
+    scribbit: Scribbit,
+    lifecycleStage: 'growing' | 'mature',
+    x: number,
+    y: number
+  ): void {
     const cardWidth = 302;
     const cardPaper = stickerCard(this, x, y, cardWidth, LEGEND_CARD_HEIGHT, {
-      gold: true,
+      gold: lifecycleStage === 'mature',
       tape: false,
     }).setDepth(1);
-    const status = planLegendStatus(legend);
+    const arenaDay = getArena(this)?.dayNumber ?? scribbit.bornDay;
+    const growingDay = Math.max(1, arenaDay - scribbit.bornDay + 1);
+    const statusLabel =
+      lifecycleStage === 'mature'
+        ? 'MATURE • STATS LOCKED'
+        : `DAY ${growingDay} • GROWING`;
+    const statusColor = lifecycleStage === 'mature' ? UI.goldHex : UI.coral;
 
     const statusBand = this.add
       .rectangle(
@@ -926,27 +801,27 @@ export class Gallery extends Scene {
         -LEGEND_CARD_HEIGHT / 2 + 26,
         cardWidth - 28,
         38,
-        UI.goldHex,
+        statusColor,
         0.22
       )
-      .setStrokeStyle(2, UI.goldHex, 0.72);
+      .setStrokeStyle(2, statusColor, 0.72);
     const statusIcon = paperIcon(
       this,
-      status.icon,
+      lifecycleStage === 'mature' ? 'trophy' : 'pencil',
       -102,
       -LEGEND_CARD_HEIGHT / 2 + 26,
       {
         size: 23,
-        fill: status.icon === 'trophy' ? UI.gold : UI.coral,
+        fill: lifecycleStage === 'mature' ? UI.gold : UI.coral,
       }
     );
     const statusText = label(
       this,
       12,
       -LEGEND_CARD_HEIGHT / 2 + 26,
-      status.label,
-      21,
-      UI.goldText,
+      statusLabel,
+      18,
+      lifecycleStage === 'mature' ? UI.goldText : UI.coralText,
       true
     );
     if (statusText.width > 218) statusText.setScale(218 / statusText.width);
@@ -954,7 +829,7 @@ export class Gallery extends Scene {
 
     const artY = y - 30;
     const generation = this.buildGeneration;
-    void loadDrawing(this, legend).then((key) => {
+    void loadDrawing(this, scribbit).then((key) => {
       if (!this.isCurrentBuild(generation)) return;
       fitDrawing(this.add.image(x, artY, key), 124).setDepth(2);
     });
@@ -963,19 +838,19 @@ export class Gallery extends Scene {
       this,
       x,
       y + 62,
-      fitText(legend.name.toUpperCase(), 18),
+      fitText(scribbit.name.toUpperCase(), 18),
       27,
       UI.ink,
       true
     ).setDepth(3);
     label(this, x, y + 101, 'TAP TO OPEN', 18, UI.inkSoft, true).setDepth(3);
 
-    const openLegend = (): void => {
-      if (this.openingLegendId) return;
-      this.openingLegendId = legend.id;
+    const openScribbit = (): void => {
+      if (this.openingScribbitId) return;
+      this.openingScribbitId = scribbit.id;
       this.sectionTabsOverlay?.setVisible(false);
       this.contentActionOverlay?.setVisible(false);
-      this.openDetail(legend);
+      this.openDetail(scribbit);
     };
 
     // One full-card target keeps the compact presentation easy to tap. Every
@@ -989,40 +864,53 @@ export class Gallery extends Scene {
       {
         press: () => cardPaper.setAlpha(0.78),
         release: () => cardPaper.setAlpha(1),
-        activate: openLegend,
+        activate: openScribbit,
         pressOnHover: false,
       },
       { gameTarget: this.input, shutdownTarget: this.events }
     );
     this.ensureContentActionOverlay().add({
-      label: `Open ${fitText(legend.name, 24)}. ${status.label}.`,
+      label: `Open ${fitText(scribbit.name, 24)}. ${statusLabel}.`,
       rect: { x: x - 110, y: y + 20, width: 220, height: 100 },
       pointerPassthrough: true,
-      onActivate: openLegend,
+      onActivate: openScribbit,
     });
   }
 
-  // Community terminal records are inspectable, but Belief freezes when a
-  // Scribbit leaves the active roster. Only a future alive gallery surface may
-  // opt into Believe here.
   private openDetail(scribbit: Scribbit): void {
     const arena = getArena(this);
     const mine = arena?.myUsername === scribbit.artist;
     openDetailModal(this, scribbit, {
       currentDay: arena?.dayNumber ?? scribbit.expiresDay,
+      ...(arena?.rumbleResolvesAt === undefined
+        ? {}
+        : { nextArenaDayStartsAt: arena.rumbleResolvesAt }),
       mine,
       actions:
         mine || scribbit.status !== 'alive'
-          ? { canBelieve: false }
-          : { canBelieve: this.loggedIn },
-      onRemoved: () => void this.loadLegends(),
-      onReported: () => void this.loadLegends(),
+          ? {
+              canRetire: mine && scribbit.status === 'alive',
+            }
+          : {},
+      onRemoved: () => void this.reconcileArenaSnapshot(),
+      onRetired: () => void this.showRetiredScribbit(),
       onClose: () => {
-        this.openingLegendId = null;
+        this.openingScribbitId = null;
         this.sectionTabsOverlay?.setVisible(true);
         this.contentActionOverlay?.setVisible(true);
       },
     });
+  }
+
+  private async showRetiredScribbit(): Promise<void> {
+    this.tab = 'archived';
+    setGalleryTab(this, 'archived');
+    this.legacyPage = 0;
+    this.legacyPages = [];
+    this.legacyError = null;
+    this.build();
+    await this.reconcileArenaSnapshot();
+    await this.loadLegacyBook();
   }
 
   // --- Actions --------------------------------------------------------------
@@ -1058,7 +946,7 @@ export class Gallery extends Scene {
     this.savingEquipment = false;
     if (!result.ok) {
       this.equipmentError = result.error;
-      if (this.scene.isActive() && this.tab === 'collection') this.build();
+      if (this.scene.isActive()) this.build();
       return { error: result.error };
     }
 
@@ -1185,7 +1073,7 @@ export class Gallery extends Scene {
       if (!result.ok) return;
       if (arenaRevision !== getArenaRevision(this)) continue;
       setArena(this, result.data);
-      if (this.scene.isActive() && this.tab === 'collection') this.build();
+      if (this.scene.isActive()) this.build();
       return;
     }
   }
@@ -1213,45 +1101,6 @@ export class Gallery extends Scene {
       navigateToDailyDraw(this);
       return;
     }
-    this.switchTab('legends');
+    this.switchTab('archived');
   }
-
-  private showError(
-    message: string,
-    retry = (): void => {
-      void this.loadLegends();
-    }
-  ): void {
-    if (this.errorPanelRef) return;
-    const { width, height } = this.scale;
-    this.errorPanelRef = errorPanel(
-      this,
-      width / 2,
-      height / 2,
-      message,
-      () => {
-        this.errorPanelRef?.destroy();
-        this.errorPanelRef = null;
-        retry();
-      }
-    );
-  }
-}
-
-function planLegendStatus(legend: Scribbit): Readonly<{
-  icon: 'trophy' | 'heart';
-  label: string;
-}> {
-  const championPrefix = 'Champion of Day ';
-  if (legend.legendTitle?.startsWith(championPrefix)) {
-    const championDay = legend.legendTitle.slice(championPrefix.length).trim();
-    return Object.freeze({
-      icon: 'trophy',
-      label: championDay ? `CHAMPION • D${championDay}` : 'CHAMPION',
-    });
-  }
-  return Object.freeze({
-    icon: 'heart',
-    label: `BELOVED • ${legend.belief} BELIEF`,
-  });
 }

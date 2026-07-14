@@ -14,7 +14,7 @@ import {
   getArenaRevision,
   endPracticeSession,
   getPracticeSession,
-  recordPracticePower,
+  recordPracticeRole,
   setArena,
   setReplay,
   skipArenaReceiptsOnce,
@@ -35,23 +35,17 @@ import {
   STAT_STYLES,
   UI,
 } from '../lib/theme';
-import { paperIcon, paperStatIcon, paperToolIcon } from '../lib/papericons';
+import { paperIcon, paperToolIcon } from '../lib/papericons';
 import type { PaperToolIconKey } from '../lib/papericons';
 import { paperBackdrop } from '../lib/art';
 import { LivingPaper } from '../lib/livingpaper';
 import { StickerAttach } from '../lib/stickerdrawer';
 import { fetchInventory } from '../lib/api';
 import { drawAccessoryCanvas } from '../lib/accessories';
-import {
-  SCRIBBIT_STAT_KEYS,
-  type AttachedAccessory,
-  type ScribbitStats,
-} from '../../shared/arena';
-import { selectPrimaryPower } from '../../shared/combat/selection';
-import {
-  getShapePowerDrawingCue,
-  planShapeReceipt,
-} from '../../shared/combat/shapepowercontent';
+import { SCRIBBIT_STAT_KEYS, type AttachedAccessory } from '../../shared/arena';
+import { selectCombatRole } from '../../shared/combat/selection';
+import { getCombatRoleContent } from '../../shared/combat/roles';
+import { getShapePowerDrawingCue } from '../../shared/combat/shapepowercontent';
 import {
   COMMUNITY_DRAW_THEME_DAYS,
   selectCommunityDoodleDare,
@@ -86,7 +80,7 @@ import type {
   FreeDrawing,
   Scribbit,
 } from '../../shared/arena';
-import type { PrimaryPower } from '../../shared/combat/types';
+import type { CombatRole } from '../../shared/combat/types';
 import {
   getCommunityThemeEligibility,
   getDrawEligibility,
@@ -96,7 +90,7 @@ import {
 import { fitDrawing, loadDrawing } from '../lib/scribbits';
 import { showVsCeremony } from '../lib/battleceremony';
 import { LiveSprite } from '../lib/livesprite';
-import { playBirthCeremony } from '../lib/birthceremony';
+import { playBirthCeremony, playBirthFinishVfx } from '../lib/birthceremony';
 import { screenTitle } from '../lib/screentitle';
 import {
   openDrawConfirmationModal,
@@ -130,6 +124,12 @@ import {
   startDrawingSoundtrack,
   stopSoundtrack,
 } from '../lib/soundtrack';
+import { markSfxManaged, playSfx } from '../lib/sfx';
+import AnalyzerWorker from '../workers/analyzer.worker?worker&inline';
+import {
+  createDrawSubmissionLoadingOverlay,
+  type DrawSubmissionLoadingOverlay,
+} from '../lib/drawsubmissionloading';
 
 const DRAW_START_CARD_ART_URL = new URL(
   '../assets/draw-start-challenge-card.jpg',
@@ -151,6 +151,7 @@ const PALETTE_COLORS = [
   '#8a5cd8',
   '#f2cf3d',
   '#ffffff',
+  '#ff7fb0',
 ] as const;
 const PALETTE_COLOR_NAMES = [
   'black',
@@ -162,12 +163,13 @@ const PALETTE_COLOR_NAMES = [
   'purple',
   'gold',
   'white',
+  'pink',
 ] as const;
 
 const MIN_LINE_WIDTH = 8;
 const MAX_LINE_WIDTH = 56;
 const LINE_WIDTH_STEP = 4;
-const DEFAULT_LINE_WIDTH = 24;
+const DEFAULT_LINE_WIDTH = MIN_LINE_WIDTH;
 const SELECTED_SWATCH_RADIUS = 30;
 const SWATCH_RADIUS = 21;
 type AnalyzerWorkerResponse = Readonly<{
@@ -230,6 +232,7 @@ export class Draw extends Scene {
   private revealControlOverlay: CanvasActionOverlay | null = null;
   private submitControl: HTMLButtonElement | null = null;
   private drawConfirmation: DrawConfirmationModal | null = null;
+  private submissionLoading: DrawSubmissionLoadingOverlay | null = null;
   private draftName = '';
 
   private lastResult: AnalyzerResult | null = null;
@@ -272,14 +275,8 @@ export class Draw extends Scene {
   private clearToolControl: HTMLButtonElement | null = null;
   private undoToolControl: HTMLButtonElement | null = null;
   private redoToolControl: HTMLButtonElement | null = null;
-  private liveStatValues = new Map<
-    keyof ScribbitStats,
-    Phaser.GameObjects.Text
-  >();
-  private liveStatCards = new Map<
-    keyof ScribbitStats,
-    Phaser.GameObjects.Graphics
-  >();
+  private liveRoleLabel: Phaser.GameObjects.Text | null = null;
+  private liveRoleDetail: Phaser.GameObjects.Text | null = null;
   private submitButton: Phaser.GameObjects.Container | null = null;
   private creationControlsReady: boolean | null = null;
   private drawingControlContainers: Phaser.GameObjects.Container[] = [];
@@ -324,13 +321,20 @@ export class Draw extends Scene {
   private analysisRequestId = 0;
   private stickerInventoryRequestEpoch = 0;
   private birthContinuationStarted = false;
+  private firstFightButton: Phaser.GameObjects.Container | null = null;
+  private firstFightButtonLabel: Phaser.GameObjects.Text | null = null;
+  private firstFightControl: HTMLButtonElement | null = null;
+  private firstFightPromise: Phaser.GameObjects.Container | null = null;
+  private firstFightPromiseCopy: Phaser.GameObjects.Text | null = null;
+  private firstFightStatus: HTMLElement | null = null;
+  private firstFightLoadingTween: Phaser.Tweens.Tween | null = null;
   private canvasDareOverlay: HTMLDivElement | null = null;
   private dailyDare: DoodleDare | CommunityDrawTheme | null = null;
   private dailyDareTwist: string | null = null;
   private isFirstScribbit = false;
   private practiceMode = false;
   private automationMode = false;
-  private practicePowers: PrimaryPower[] = [];
+  private practiceRoles: CombatRole[] = [];
   private practiceAttemptCount = 0;
   private pendingPracticeReport: BattleReport | null = null;
   private localAutomationBridge: HTMLDivElement | null = null;
@@ -404,8 +408,8 @@ export class Draw extends Scene {
     this.clearToolControl = null;
     this.undoToolControl = null;
     this.redoToolControl = null;
-    this.liveStatValues = new Map();
-    this.liveStatCards = new Map();
+    this.liveRoleLabel = null;
+    this.liveRoleDetail = null;
     this.submitButton = null;
     this.creationControlsReady = null;
     this.drawingControlContainers = [];
@@ -444,15 +448,23 @@ export class Draw extends Scene {
     this.analysisWorker = null;
     this.analysisRequestId = 0;
     this.birthContinuationStarted = false;
+    this.firstFightButton = null;
+    this.firstFightButtonLabel = null;
+    this.firstFightControl = null;
+    this.firstFightPromise = null;
+    this.firstFightPromiseCopy = null;
+    this.firstFightStatus = null;
+    this.firstFightLoadingTween = null;
     this.canvasDareOverlay = null;
     this.dailyDare = null;
     this.dailyDareTwist = null;
     this.isFirstScribbit = false;
-    this.practicePowers = [];
+    this.practiceRoles = [];
     this.practiceAttemptCount = 0;
     this.pendingPracticeReport = null;
     this.localAutomationBridge = null;
     this.drawConfirmation = null;
+    this.submissionLoading = null;
     this.draftName = '';
     this.headerControlOverlay = null;
     this.toolControlOverlay = null;
@@ -499,13 +511,11 @@ export class Draw extends Scene {
     }
     this.isFirstScribbit = !this.practiceMode && arena.myScribbits.length === 0;
     const practiceSession = this.practiceMode ? getPracticeSession(this) : null;
-    this.practicePowers = practiceSession
-      ? [...practiceSession.triedPowers]
-      : [];
+    this.practiceRoles = practiceSession ? [...practiceSession.triedRoles] : [];
     this.practiceAttemptCount = practiceSession?.attemptCount ?? 0;
     this.dailyDare = this.practiceMode
       ? selectPracticeDoodleDare(
-          this.practicePowers,
+          this.practiceRoles,
           arena.dayNumber,
           arena.myUsername,
           this.practiceAttemptCount
@@ -566,6 +576,7 @@ export class Draw extends Scene {
     this.overlay?.destroy();
     this.drawConfirmation?.destroy();
     this.drawConfirmation = null;
+    this.hideSubmissionLoading();
     this.headerControlOverlay?.destroy();
     this.headerControlOverlay = null;
     this.toolControlOverlay?.destroy();
@@ -574,6 +585,14 @@ export class Draw extends Scene {
     this.submitOverlay = null;
     this.revealControlOverlay?.destroy();
     this.revealControlOverlay = null;
+    this.firstFightLoadingTween?.stop();
+    this.firstFightLoadingTween = null;
+    this.firstFightButton = null;
+    this.firstFightButtonLabel = null;
+    this.firstFightControl = null;
+    this.firstFightPromise = null;
+    this.firstFightPromiseCopy = null;
+    this.firstFightStatus = null;
     this.submitControl = null;
     this.livingPaper?.destroy();
     this.livingPaper = null;
@@ -583,10 +602,7 @@ export class Draw extends Scene {
 
   private startAnalyzerWorker(): void {
     try {
-      const worker = new Worker(
-        new URL('../workers/analyzer.worker.ts', import.meta.url),
-        { type: 'module' }
-      );
+      const worker = new AnalyzerWorker();
       worker.onmessage = (event: MessageEvent<AnalyzerWorkerResponse>) => {
         if (
           !this.scene.isActive() ||
@@ -1193,6 +1209,7 @@ export class Draw extends Scene {
     this.drawTimerValue.style.opacity = snapshot.started ? '1' : '0.76';
 
     if (snapshot.running && secondChanged) {
+      if (snapshot.remainingSeconds <= 10) playSfx('draw.tick');
       if (snapshot.remainingSeconds === 10 || snapshot.remainingSeconds === 5) {
         this.drawTimerStatus?.replaceChildren(
           document.createTextNode(
@@ -1340,63 +1357,39 @@ export class Draw extends Scene {
     this.syncToolPageVisibility();
   }
 
-  private liveStatCardLayout(index: number): { x: number; width: number } {
-    const gap = 8;
-    const panelWidth = this.scale.width - EDGE * 2;
-    const width =
-      (panelWidth - gap * (SCRIBBIT_STAT_KEYS.length - 1)) /
-      SCRIBBIT_STAT_KEYS.length;
-    return {
-      x: EDGE + width / 2 + index * (width + gap),
-      width,
-    };
-  }
-
-  // Four colored stickers keep the analyzer's fixed 100-point shape split
-  // readable over the paper background without adding another white panel.
+  // The role is the primary live read. Exact analyzer stats remain in the
+  // accessible canvas description and final detail sheet.
   private buildLiveStatsStrip(centerY: number): void {
-    SCRIBBIT_STAT_KEYS.forEach((statName, index) => {
-      const style = STAT_STYLES[statName];
-      const { x, width } = this.liveStatCardLayout(index);
-      const card = this.add.graphics();
-      this.drawLiveStatCard(card, x, centerY, width, style.color, false);
-      paperStatIcon(this, statName, x - 39, centerY - 3, 44, UI.creamHex);
-      const value = label(this, x + 29, centerY - 10, '—', 30, UI.ink, true);
-      const name = label(
-        this,
-        x + 29,
-        centerY + 21,
-        style.label,
-        18,
-        UI.ink,
-        true
-      );
-      name.setAlpha(0.88);
-      value.setAlpha(0.68);
-      this.liveStatValues.set(statName, value);
-      this.liveStatCards.set(statName, card);
-    });
-  }
-
-  private drawLiveStatCard(
-    card: Phaser.GameObjects.Graphics,
-    x: number,
-    y: number,
-    width: number,
-    color: number,
-    active: boolean
-  ): void {
-    card.clear();
+    const panelWidth = this.scale.width - EDGE * 2;
+    const card = this.add.graphics();
     card.fillStyle(UI.inkHex, 0.24);
-    card.fillRoundedRect(x - width / 2 + 4, y - 34, width, 72, 16);
-    card.fillStyle(color, active ? 1 : 0.84);
-    card.fillRoundedRect(x - width / 2, y - 38, width, 72, 16);
-    card.lineStyle(active ? 5 : 3, active ? UI.goldHex : UI.inkHex, 1);
-    card.strokeRoundedRect(x - width / 2, y - 38, width, 72, 16);
+    card.fillRoundedRect(EDGE + 4, centerY - 34, panelWidth, 72, 16);
+    card.fillStyle(UI.creamHex, 1);
+    card.fillRoundedRect(EDGE, centerY - 38, panelWidth, 72, 16);
+    card.lineStyle(4, UI.goldHex, 1);
+    card.strokeRoundedRect(EDGE, centerY - 38, panelWidth, 72, 16);
+    this.liveRoleLabel = label(
+      this,
+      this.scale.width / 2,
+      centerY - 13,
+      'DRAW TO REVEAL YOUR ROLE',
+      24,
+      UI.ink,
+      true
+    );
+    this.liveRoleDetail = label(
+      this,
+      this.scale.width / 2,
+      centerY + 18,
+      'BIG BODY · SHARP EDGES · SMALL SIZE · MANY COLORS',
+      14,
+      UI.inkSoft,
+      true
+    );
   }
 
-  // Color stays visible. The default rail keeps only the three actions used on
-  // nearly every stroke; collectible and destructive tools live one tap away.
+  // Color and stroke history stay visible. Collectible and destructive tools
+  // live one tap away so the everyday rail remains quick to scan.
   private buildToolsBand(centerY: number): void {
     const { width } = this.scale;
     const panelW = width - EDGE * 2;
@@ -1417,10 +1410,10 @@ export class Draw extends Scene {
     const roundControlWidth = 72;
     const roundInteractionWidth = 88;
     this.captureToolPage('basic', () => {
-      this.buildLineWidthControl(132, toolY, 160, 168);
+      this.buildLineWidthControl(110, toolY, 160, 168);
       this.setLineWidth(DEFAULT_LINE_WIDTH);
       this.fillToolButton = this.toolIconButton(
-        270,
+        248,
         toolY,
         'bucket',
         () => this.selectFill(),
@@ -1438,7 +1431,7 @@ export class Draw extends Scene {
         .setStrokeStyle(2, UI.inkHex, 1);
       this.fillToolButton.add(this.fillTargetSwatch);
       this.eraserToolButton = this.toolIconButton(
-        374,
+        346,
         toolY,
         'eraser',
         () => this.selectEraser(),
@@ -1456,15 +1449,23 @@ export class Draw extends Scene {
         .setStrokeStyle(2, UI.inkHex, 1);
       this.eraserToolButton.add(this.eraserTargetSwatch);
       this.undoToolButton = this.toolIconButton(
-        478,
+        444,
         toolY,
         'undo',
         () => this.undoDrawing(),
         roundControlWidth,
         roundInteractionWidth
       );
+      this.redoToolButton = this.toolIconButton(
+        542,
+        toolY,
+        'redo',
+        () => this.redoDrawing(),
+        roundControlWidth,
+        roundInteractionWidth
+      );
       this.moreToolsButton = this.toolIconButton(
-        582,
+        640,
         toolY,
         'tools',
         () => this.setAdvancedToolsOpen(true),
@@ -1525,15 +1526,6 @@ export class Draw extends Scene {
         toolY,
         'clear',
         () => this.clearDrawing(),
-        roundControlWidth,
-        roundInteractionWidth
-      );
-      nextAction += 1;
-      this.redoToolButton = this.toolIconButton(
-        advancedX[nextAction] ?? 480,
-        toolY,
-        'redo',
-        () => this.redoDrawing(),
         roundControlWidth,
         roundInteractionWidth
       );
@@ -1646,8 +1638,10 @@ export class Draw extends Scene {
 
   private playControlFeedback(
     control: Phaser.GameObjects.Container,
-    style: 'pop' | 'shake' = 'pop'
+    style: 'pop' | 'shake' = 'pop',
+    playSound = true
   ): void {
+    if (playSound) playSfx('draw.tool');
     this.tweens.killTweensOf(control);
     control.setScale(1).setAngle(0);
     if (prefersReducedMotion()) return;
@@ -1727,6 +1721,7 @@ export class Draw extends Scene {
       const hit = this.add
         .rectangle(0, 0, spacing, rowHeight, 0xffffff, 0.001)
         .setInteractive({ useHandCursor: true });
+      markSfxManaged(hit);
       container.add([swatch, hit]);
       const press = (): void => {
         container.setScale(0.9);
@@ -1887,6 +1882,7 @@ export class Draw extends Scene {
     const hit = this.add
       .rectangle(0, 0, interactionWidth, MIN_TOUCH, 0xffffff, 0.001)
       .setInteractive({ useHandCursor: true });
+    markSfxManaged(hit);
     container.add([
       this.premiumPenBackground,
       this.premiumPenSwatch,
@@ -1988,6 +1984,7 @@ export class Draw extends Scene {
     const hit = this.add
       .rectangle(0, 0, interactionWidth, MIN_TOUCH, 0xffffff, 0.001)
       .setInteractive({ useHandCursor: true });
+    markSfxManaged(hit);
     container.add([
       this.brushSupplyBackground,
       this.brushSupplyPreview,
@@ -2127,6 +2124,7 @@ export class Draw extends Scene {
     const hit = this.add
       .rectangle(0, 0, interactionWidth, MIN_TOUCH, 0xffffff, 0.001)
       .setInteractive({ useHandCursor: true });
+    markSfxManaged(hit);
     container.add([bg, glyph, hit]);
     const press = (): void => {
       this.tweens.add({
@@ -2216,13 +2214,13 @@ export class Draw extends Scene {
   private playActiveDrawingToolFeedback(change: DrawCanvasChange): void {
     if (change === 'erase') {
       if (this.eraserToolButton) {
-        this.playControlFeedback(this.eraserToolButton, 'shake');
+        this.playControlFeedback(this.eraserToolButton, 'shake', false);
       }
       return;
     }
     if (change === 'fill') {
       if (this.fillToolButton) {
-        this.playControlFeedback(this.fillToolButton, 'pop');
+        this.playControlFeedback(this.fillToolButton, 'pop', false);
       }
     } else if (change !== 'draw') {
       return;
@@ -2232,17 +2230,20 @@ export class Draw extends Scene {
       this.selectedColorIndex >= 0
         ? this.paletteControls[this.selectedColorIndex]
         : this.premiumPenControl;
-    if (paintControl) this.playControlFeedback(paintControl, 'shake');
+    if (paintControl) this.playControlFeedback(paintControl, 'shake', false);
     if (
       change === 'draw' &&
       this.selectedBrushEffect &&
       this.brushSupplyControl
     ) {
-      this.playControlFeedback(this.brushSupplyControl, 'shake');
+      this.playControlFeedback(this.brushSupplyControl, 'shake', false);
     }
   }
 
   private handleDrawingChanged(change: DrawCanvasChange): void {
+    if (change === 'draw' || change === 'erase' || change === 'fill') {
+      playSfx('draw.ink');
+    }
     if (change === 'undo') {
       const previous = this.supplyHistory.pop();
       if (previous) {
@@ -2460,6 +2461,8 @@ export class Draw extends Scene {
         0.001
       )
       .setInteractive({ useHandCursor: true });
+    markSfxManaged(decreaseHit);
+    markSfxManaged(increaseHit);
     preview.add([
       bg,
       this.decreaseBrushSizeMark,
@@ -2676,9 +2679,9 @@ export class Draw extends Scene {
     const progress = document.createElement('div');
     progress.setAttribute(
       'aria-label',
-      practiceProgressCopy(this.practicePowers)
+      practiceProgressCopy(this.practiceRoles)
     );
-    progress.textContent = practiceProgressCopy(this.practicePowers);
+    progress.textContent = practiceProgressCopy(this.practiceRoles);
     Object.assign(progress.style, {
       display: 'flex',
       alignItems: 'center',
@@ -3264,36 +3267,26 @@ export class Draw extends Scene {
   }
 
   private updateLiveStats(result: AnalyzerResult, ready: boolean): void {
-    const dominantStat = SCRIBBIT_STAT_KEYS.reduce((current, statName) => {
-      return result.stats[statName] > result.stats[current]
-        ? statName
-        : current;
-    }, SCRIBBIT_STAT_KEYS[0]);
-    SCRIBBIT_STAT_KEYS.forEach((statName, index) => {
-      const value = this.liveStatValues.get(statName);
-      const card = this.liveStatCards.get(statName);
-      if (value) {
-        value.setText(ready ? String(result.stats[statName]) : '—');
-        value.setAlpha(ready ? 1 : 0.58);
-      }
-      if (card) {
-        const { x, width } = this.liveStatCardLayout(index);
-        this.drawLiveStatCard(
-          card,
-          x,
-          this.liveStatsY(),
-          width,
-          STAT_STYLES[statName].color,
-          ready && statName === dominantStat
-        );
-      }
-    });
+    if (ready) {
+      const role = getCombatRoleContent(selectCombatRole(result.stats));
+      this.liveRoleLabel?.setText(
+        `BECOMING A ${role.displayName.toUpperCase()}`
+      );
+      this.liveRoleDetail?.setText(
+        `${role.drawingCue.toUpperCase()} · ${role.weaponName.toUpperCase()} · ${role.rangeLabel}`
+      );
+    } else {
+      this.liveRoleLabel?.setText('DRAW TO REVEAL YOUR ROLE');
+      this.liveRoleDetail?.setText(
+        'BIG BODY · SHARP EDGES · SMALL SIZE · MANY COLORS'
+      );
+    }
 
     if (this.canvas?.element) {
       this.canvas.element.setAttribute(
         'aria-description',
         ready
-          ? `Live build, 100 total: ${SCRIBBIT_STAT_KEYS.map(
+          ? `${getCombatRoleContent(selectCombatRole(result.stats)).displayName} role. ${getCombatRoleContent(selectCombatRole(result.stats)).behavior} Live build, 100 total: ${SCRIBBIT_STAT_KEYS.map(
               (statName) =>
                 `${STAT_STYLES[statName].label} ${result.stats[statName]}`
             ).join(', ')}`
@@ -3352,6 +3345,7 @@ export class Draw extends Scene {
       this.cameras.main.shake(220, 0.006);
       return;
     }
+    playSfx('draw.finish');
     const draft = this.createSubmissionDraft(result);
     if (this.practiceMode) {
       this.beginSubmission('Practice Shape', draft);
@@ -3430,12 +3424,23 @@ export class Draw extends Scene {
   private beginSubmission(name: string, draft: SubmissionDraft): void {
     if (this.submitting) return;
     this.submitting = true;
+    playSfx('draw.submit');
     this.drawRoundTimerEvent?.remove();
     this.drawRoundTimerEvent = null;
     // Hide the draggable stickers + drawer so only the baked PNG shows in the
     // ceremony; the metadata is captured first from their current transforms.
     this.stickers?.hideOverlays();
     this.overlay.setVisible(false);
+    this.setSubmissionControlsVisible(false);
+    this.submissionLoading = createDrawSubmissionLoadingOverlay(this, {
+      mode: this.practiceMode
+        ? 'practice'
+        : this.playerDrawMode === 'free'
+          ? 'free-draw'
+          : 'scribbit',
+      name,
+      previewDataUrl: draft.imageDataUrl,
+    });
     const sceneVisitEpoch = this.sceneVisitEpoch;
     if (this.practiceMode) {
       void this.submitPractice(name, draft, sceneVisitEpoch);
@@ -3476,6 +3481,7 @@ export class Draw extends Scene {
       return;
     }
     if (!response.ok) {
+      this.submissionLoading?.showReconciliationStatus();
       const reconciledArena = await this.reconcileArenaSnapshot();
       if (!this.isCurrentSceneVisit(sceneVisitEpoch)) return;
       if (getTodayFreeDrawing(reconciledArena ?? undefined)) {
@@ -3492,6 +3498,7 @@ export class Draw extends Scene {
       ? mergeTodayFreeDrawing(arena, response.data)
       : null;
     if (!nextArena) {
+      this.submissionLoading?.showReconciliationStatus();
       const reconciledArena = await this.reconcileArenaSnapshot();
       if (!this.isCurrentSceneVisit(sceneVisitEpoch)) return;
       if (getTodayFreeDrawing(reconciledArena ?? undefined)) {
@@ -3535,9 +3542,9 @@ export class Draw extends Scene {
     }
 
     this.pendingPracticeReport = response.data;
-    this.practicePowers = [
-      ...recordPracticePower(this, selectPrimaryPower(response.data.a.stats))
-        .triedPowers,
+    this.practiceRoles = [
+      ...recordPracticeRole(this, selectCombatRole(response.data.a.stats))
+        .triedRoles,
     ];
     this.playCeremony(response.data.a, draft.baseImageDataUrl);
   }
@@ -3582,6 +3589,7 @@ export class Draw extends Scene {
       // A client timeout does not prove the server failed. Reconcile before
       // inviting a second submit, which could otherwise look like a lost
       // drawing after the first request actually committed.
+      this.submissionLoading?.showReconciliationStatus();
       const reconciledArena = await this.reconcileArenaSnapshot();
       if (!this.isCurrentSceneVisit(sceneVisitEpoch)) return;
       if (reconciledArena?.drawnToday) {
@@ -3598,6 +3606,7 @@ export class Draw extends Scene {
     // Merge only this committed birth into the latest registry snapshot so an
     // older Draw visit cannot overwrite unrelated Arena activity.
     if (!this.applySubmittedScribbit(response.data, draft)) {
+      this.submissionLoading?.showReconciliationStatus();
       await this.reconcileArenaSnapshot();
       if (!this.isCurrentSceneVisit(sceneVisitEpoch)) return;
       showToast('The Arena day changed while your Scribbit was saving.');
@@ -3687,6 +3696,7 @@ export class Draw extends Scene {
   // Daily birth and ephemeral practice share one high-juice reveal. Practice
   // changes the promise and reward layer so it never looks like a saved birth.
   private playCeremony(scribbit: Scribbit, dataUrl: string): void {
+    this.hideSubmissionLoading();
     const { width, height } = this.scale;
     // The living page owned timers/emitters; tear it down before the ceremony
     // takes over the screen so nothing keeps ticking behind the reveal.
@@ -3740,6 +3750,7 @@ export class Draw extends Scene {
       this.showPracticeReveal(scribbit, textureKey, awakenedNewborn);
       return;
     }
+    playSfx('scribbit.birth');
     const { width } = this.scale;
 
     const title = handLettered(
@@ -3768,14 +3779,7 @@ export class Draw extends Scene {
     awakenedNewborn: LiveSprite | null
   ): void {
     const { width, height } = this.scale;
-    const shapeReceipt = planShapeReceipt(
-      scribbit.element,
-      selectPrimaryPower(scribbit.stats)
-    );
-    const revealPlan = planPracticeReveal(
-      getPracticeSession(this),
-      shapeReceipt.move
-    );
+    const revealPlan = planPracticeReveal(getPracticeSession(this));
     const elementStyle = ELEMENT_STYLES[scribbit.element];
     const cardY = height / 2 - 20;
     const cardW = width - 120;
@@ -3816,25 +3820,25 @@ export class Draw extends Scene {
         reduceMotion: prefersReducedMotion(),
       });
     newborn.setPosition(width / 2, cardY - 70).setDepth(10);
-    const powerName = handLettered(
+    const roleName = handLettered(
       this,
       width / 2,
       cardY + 132,
-      revealPlan.powerName,
+      revealPlan.roleName,
       52,
       elementStyle.primaryText,
       true
     )
       .setDepth(10)
       .setAlpha(0);
-    if (powerName.width > cardW - 70) {
-      powerName.setScale((cardW - 70) / powerName.width);
+    if (roleName.width > cardW - 70) {
+      roleName.setScale((cardW - 70) / roleName.width);
     }
     const progress = label(
       this,
       width / 2,
       cardY + 215,
-      `${shapeReceipt.battleLine}\n${revealPlan.progress}`,
+      `${revealPlan.roleDetail}\n${revealPlan.progress}`,
       22,
       UI.inkSoft,
       true
@@ -3879,7 +3883,7 @@ export class Draw extends Scene {
       ease: 'Back.easeOut',
     });
     this.tweens.add({
-      targets: [eyebrow, spark, halo, powerName, progress, replayButton],
+      targets: [eyebrow, spark, halo, roleName, progress, replayButton],
       alpha: 1,
       delay: prefersReducedMotion() ? 0 : 120,
       duration: prefersReducedMotion() ? 1 : 260,
@@ -3912,10 +3916,7 @@ export class Draw extends Scene {
         reduceMotion: prefersReducedMotion(),
       });
     newborn.setPosition(width / 2, artY).setDepth(10);
-    const shapeReceipt = planShapeReceipt(
-      scribbit.element,
-      selectPrimaryPower(scribbit.stats)
-    );
+    const combatRole = getCombatRoleContent(selectCombatRole(scribbit.stats));
     const elementStyle = ELEMENT_STYLES[scribbit.element];
     const mainLabel = label(
       this,
@@ -3936,7 +3937,7 @@ export class Draw extends Scene {
       this,
       width / 2,
       cardY + 145,
-      `${shapeReceipt.birthLine}\n${shapeReceipt.effect}`,
+      `${combatRole.displayName.toUpperCase()} · ${combatRole.rangeLabel}\n${combatRole.basicAttackName} · ${combatRole.signatureName}`,
       20,
       elementStyle.primaryText,
       true
@@ -3951,6 +3952,12 @@ export class Draw extends Scene {
       scale: 1,
       duration: 500,
       ease: 'Back.easeOut',
+    });
+    playBirthFinishVfx(this, {
+      centerX: width / 2,
+      centerY: cardY,
+      cardWidth: cardW,
+      tint: elementStyle.primary,
     });
     if (!awakenedNewborn) newborn.awaken();
     this.tweens.add({
@@ -3980,6 +3987,8 @@ export class Draw extends Scene {
       true
     );
     returnPromise.add(returnPromiseCopy);
+    this.firstFightPromise = returnPromise;
+    this.firstFightPromiseCopy = returnPromiseCopy;
     this.tweens.add({
       targets: returnPromise,
       alpha: 1,
@@ -4002,7 +4011,13 @@ export class Draw extends Scene {
       UI.gold
     );
     actionButton.setDepth(10);
-    this.addNativeControl(
+    this.firstFightButton = actionButton;
+    this.firstFightButtonLabel =
+      actionButton.list.find(
+        (child): child is Phaser.GameObjects.Text =>
+          child instanceof Phaser.GameObjects.Text
+      ) ?? null;
+    this.firstFightControl = this.addNativeControl(
       actionLabel,
       width / 2 - 210,
       height - 128,
@@ -4012,14 +4027,15 @@ export class Draw extends Scene {
       true,
       this.revealControlOverlay
     );
+    this.firstFightStatus = this.revealControlOverlay?.addStatus() ?? null;
   }
 
   private continueAfterBirth(scribbit: Scribbit): void {
     if (this.birthContinuationStarted) return;
     this.birthContinuationStarted = true;
-    this.revealControlOverlay?.setVisible(false);
 
     if (this.practiceMode) {
+      this.revealControlOverlay?.setVisible(false);
       const report = this.pendingPracticeReport;
       if (!report || report.kind !== 'practice') {
         this.birthContinuationStarted = false;
@@ -4042,13 +4058,14 @@ export class Draw extends Scene {
 
   private async startFirstBattle(scribbit: Scribbit): Promise<void> {
     const sceneVisitEpoch = this.sceneVisitEpoch;
-    showToast(`${scribbit.name} meets a first rival…`);
+    this.setFirstFightBusy(scribbit, true);
     const result = await spar(scribbit.id);
     if (!this.isCurrentSceneVisit(sceneVisitEpoch)) return;
     if (!result.ok) {
+      console.error('First fight failed:', result.error);
       this.birthContinuationStarted = false;
-      this.revealControlOverlay?.setVisible(true);
-      showToast(result.error);
+      this.setFirstFightBusy(scribbit, false);
+      this.showFirstFightRetry();
       return;
     }
     const stagedBattle = stageDirectBattle(
@@ -4061,10 +4078,12 @@ export class Draw extends Scene {
     );
     if (!stagedBattle) {
       this.birthContinuationStarted = false;
-      this.revealControlOverlay?.setVisible(true);
-      showToast('The first fight returned the wrong Scribbit. Try again.');
+      this.setFirstFightBusy(scribbit, false);
+      this.showFirstFightRetry();
       return;
     }
+    this.setFirstFightBusy(scribbit, false);
+    this.revealControlOverlay?.setVisible(false);
     skipArenaReceiptsOnce(this);
     showVsCeremony(this, {
       fighterA: result.data.report.a,
@@ -4075,7 +4094,62 @@ export class Draw extends Scene {
     });
   }
 
+  private setFirstFightBusy(scribbit: Scribbit, busy: boolean): void {
+    const buttonLabel = busy ? 'FINDING A RIVAL…' : 'START FIRST FIGHT';
+    this.firstFightButtonLabel?.setText(buttonLabel);
+    if (this.firstFightControl) {
+      this.firstFightControl.disabled = busy;
+      const accessibleLabel = busy
+        ? `Finding ${scribbit.name}'s first rival`
+        : 'Start first fight';
+      this.firstFightControl.textContent = accessibleLabel;
+      this.firstFightControl.setAttribute('aria-label', accessibleLabel);
+    }
+
+    this.firstFightLoadingTween?.stop();
+    this.firstFightLoadingTween = null;
+    this.firstFightButton?.setAlpha(1);
+    if (busy && this.firstFightButton && !prefersReducedMotion()) {
+      this.firstFightLoadingTween = this.tweens.add({
+        targets: this.firstFightButton,
+        alpha: 0.72,
+        duration: 520,
+        yoyo: true,
+        repeat: -1,
+      });
+    }
+
+    if (busy) {
+      this.firstFightPromise?.setAlpha(1);
+      this.firstFightPromiseCopy
+        ?.setText(`+${INK_REWARDS.dailyDraw} INK · ENTERED TONIGHT’S RUMBLE`)
+        .setFontSize(20)
+        .setColor(UI.coralText);
+      if (this.firstFightStatus) {
+        this.firstFightStatus.setAttribute('role', 'status');
+        this.firstFightStatus.setAttribute('aria-live', 'polite');
+        this.firstFightStatus.textContent = `${scribbit.name} is finding a first rival.`;
+      }
+    }
+  }
+
+  private showFirstFightRetry(): void {
+    this.firstFightPromise?.setAlpha(1);
+    this.firstFightPromiseCopy
+      ?.setText('FIRST FIGHT PAUSED\nTAP BELOW TO TRY AGAIN')
+      .setFontSize(19)
+      .setLineSpacing(2)
+      .setColor(UI.coralText);
+    if (this.firstFightStatus) {
+      this.firstFightStatus.setAttribute('role', 'alert');
+      this.firstFightStatus.setAttribute('aria-live', 'assertive');
+      this.firstFightStatus.textContent =
+        "The first fight couldn't start. Use Start first fight to try again.";
+    }
+  }
+
   private showError(message: string): void {
+    this.hideSubmissionLoading();
     if (this.errorPanelRef) return;
     const { width, height } = this.scale;
     this.errorPanelRef = errorPanel(
@@ -4087,9 +4161,21 @@ export class Draw extends Scene {
         this.errorPanelRef?.destroy();
         this.errorPanelRef = null;
         this.overlay.setVisible(true);
+        this.setSubmissionControlsVisible(true);
         this.stickers?.showOverlays();
         if (!this.drawingLocked) this.startDrawingRound();
       }
     );
+  }
+
+  private hideSubmissionLoading(): void {
+    this.submissionLoading?.destroy();
+    this.submissionLoading = null;
+  }
+
+  private setSubmissionControlsVisible(visible: boolean): void {
+    this.headerControlOverlay?.setVisible(visible);
+    this.toolControlOverlay?.setVisible(visible);
+    this.submitOverlay?.setVisible(visible);
   }
 }

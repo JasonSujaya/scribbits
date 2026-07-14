@@ -5,6 +5,7 @@ import { CanvasModalOverlay } from './overlay';
 import { paperIcon } from './papericons';
 import { TYPE, UI } from './theme';
 import { ghostButton, handLettered, label, stickerCard } from './ui';
+import { setSfxCue } from './sfx';
 
 const DEPTH = 2300;
 
@@ -46,6 +47,7 @@ export function openSeasonBoard(
     .rectangle(width / 2, height / 2, width, height, UI.inkHex, 0.68)
     .setScrollFactor(0)
     .setInteractive();
+  setSfxCue(scrim, 'ui.close');
   layer.add(scrim);
 
   const cardWidth = Math.min(width - 44, 640);

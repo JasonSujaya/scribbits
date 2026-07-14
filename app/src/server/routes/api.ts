@@ -22,6 +22,7 @@ import type {
   PracticeBattleReport,
   RivalRunChoice,
   RivalRunState,
+  RetireScribbitResponse,
   ScoutNotebookState,
   SeasonBoard,
   SeasonPublicState,
@@ -85,11 +86,13 @@ import {
   getInkBalance,
   loadCapsuleProgress,
   loadInventory,
+  getInventoryKey,
   mergeGearForUser,
   pullCapsuleForUser,
   releaseCapsuleOperation,
   setEquippedTitle,
 } from '../core/inkStore';
+import { findInkCatalogEntry } from '../core/ink';
 import {
   commitDailyCareAction,
   commitDailyChampionOutcome,
@@ -173,7 +176,6 @@ import {
   equipGearForScribbit,
   enforceAliveScribbitLimit,
   getAliveScribbitsForUser,
-  getUserScribbitIds,
   getCommunityLegendCount,
   getDailyFlags,
   getLegendIds,
@@ -184,7 +186,9 @@ import {
   isScribbitOwnedByUser,
   loadScribbit,
   loadScribbits,
+  hasUserCreatedScribbit,
   refreshEquippedGearRankForUser,
+  retireOwnedScribbit,
   validateAndAnalyzeScribbitSubmission,
   type CurrentPlayer,
 } from '../core/scribbit';
@@ -359,6 +363,18 @@ const withPlayerMutationLease: MiddlewareHandler = async (c, next) => {
     return serverError(c, 'Your game action lost its safety lock. Try again.');
   }
 };
+
+api.use('*', async (c, next) => {
+  const startedAt = Date.now();
+  await next();
+  const elapsedMilliseconds = Date.now() - startedAt;
+  c.header('Server-Timing', `scribbits;dur=${elapsedMilliseconds}`);
+  if (elapsedMilliseconds >= 5_000) {
+    console.warn(
+      `Slow API request: ${c.req.method} ${c.req.path} returned ${c.res.status} in ${elapsedMilliseconds}ms`
+    );
+  }
+});
 
 // Every non-GET game action mutates or may repair player state. The deletion
 // endpoint owns the inverse side of this lease and therefore must not acquire
@@ -804,27 +820,43 @@ registerPlayerMutatingGet('/arena', async (c) => {
 
     if (player) {
       playStreakDays = (await recordDailyPlay(redis, player.userId, now)).days;
-      const dailyFlags = await getDailyFlags(redis, player.userId, dayNumber);
-      const inventory = await loadInventory(redis, player.userId);
-      myScribbits = await getAliveScribbitsForUser(redis, player.userId);
-      hasCreatedScribbit =
-        (await getUserScribbitIds(redis, player.userId, 1)).length > 0;
-      const [freeDrawingLocked, loadedFreeDrawing] = await Promise.all([
+      const [
+        dailyFlags,
+        inventory,
+        loadedScribbits,
+        loadedHasCreatedScribbit,
+        freeDrawingLocked,
+        loadedFreeDrawing,
+        loadedBackedScribbitId,
+        loadedClout,
+        loadedInk,
+        loadedNextCapsuleCost,
+        loadedFounderChronicle,
+        loadedLegacyReturnReceipt,
+      ] = await Promise.all([
+        getDailyFlags(redis, player.userId, dayNumber),
+        loadInventory(redis, player.userId),
+        getAliveScribbitsForUser(redis, player.userId),
+        hasUserCreatedScribbit(redis, player.userId),
         hasFreeDrawingForDay(redis, player.userId, dayNumber),
         loadFreeDrawingForDay(redis, player.userId, dayNumber),
+        getBackedScribbitId(redis, dayNumber, player.userId),
+        getUserClout(redis, player.userId),
+        getInkBalance(redis, player.userId),
+        getNextCapsuleCost(redis, player.userId, dayNumber),
+        loadPlayerFounderChronicle(player.userId),
+        loadLegacyReturnReceipt(redis, player.userId),
       ]);
+      myScribbits = loadedScribbits;
+      hasCreatedScribbit = loadedHasCreatedScribbit;
       todayFreeDrawing = loadedFreeDrawing ?? null;
       drawnToday =
         dailyFlags.drawnToday || freeDrawingLocked || todayFreeDrawing !== null;
       enteredToday = dailyFlags.enteredToday;
       bossChallengedToday = dailyFlags.bossChallengedToday;
-      myBackedScribbitId = await getBackedScribbitId(
-        redis,
-        dayNumber,
-        player.userId
-      );
-      myClout = await getUserClout(redis, player.userId);
-      myInk = await getInkBalance(redis, player.userId);
+      myBackedScribbitId = loadedBackedScribbitId;
+      myClout = loadedClout;
+      myInk = loadedInk;
       myPens = inventory.pens;
       myDrawingSupplies = { ...inventory.items };
       capsuleProgress = await loadCapsuleProgress(
@@ -832,37 +864,40 @@ registerPlayerMutatingGet('/arena', async (c) => {
         player.userId,
         inventory
       );
-      nextCapsuleCost = await getNextCapsuleCost(
-        redis,
-        player.userId,
-        dayNumber
-      );
-      founderChronicle = await loadPlayerFounderChronicle(player.userId);
-      legacyReturnReceipt = await loadLegacyReturnReceipt(redis, player.userId);
+      nextCapsuleCost = loadedNextCapsuleCost;
+      founderChronicle = loadedFounderChronicle;
+      legacyReturnReceipt = loadedLegacyReturnReceipt;
     }
 
-    const allTodayEntrants = await loadTodayRumbleEntrants(
-      dayNumber,
-      utcDateKey,
-      [
-        myBackedScribbitId,
-        ...myScribbits.map((scribbit) => scribbit.id),
-      ].filter((scribbitId): scribbitId is string => scribbitId !== null)
-    );
-    const hiddenScribbitIds = player
-      ? await getHiddenScribbitIds(redis, player.userId)
-      : new Set<string>();
+    const [
+      allTodayEntrants,
+      hiddenScribbitIds,
+      storedRumbleEntrantCount,
+      currentChampion,
+      season,
+      communityLegendCount,
+    ] = await Promise.all([
+      loadTodayRumbleEntrants(
+        dayNumber,
+        utcDateKey,
+        [
+          myBackedScribbitId,
+          ...myScribbits.map((scribbit) => scribbit.id),
+        ].filter((scribbitId): scribbitId is string => scribbitId !== null)
+      ),
+      player
+        ? getHiddenScribbitIds(redis, player.userId)
+        : Promise.resolve(new Set<string>()),
+      getRumbleEntrantCount(redis, dayNumber),
+      getCurrentChampion(redis),
+      loadSeasonPublicState(redis, dayNumber, player?.userId),
+      getCommunityLegendCount(redis),
+    ]);
     const todayEntrants = allTodayEntrants.filter(
       (entrant) => !hiddenScribbitIds.has(entrant.id)
     );
     const rumbleEntrantCount = getProjectedRumbleEntrantCount(
-      await getRumbleEntrantCount(redis, dayNumber)
-    );
-    const currentChampion = await getCurrentChampion(redis);
-    const season = await loadSeasonPublicState(
-      redis,
-      dayNumber,
-      player?.userId
+      storedRumbleEntrantCount
     );
     let lastRumbleReceipt: ArenaState['lastRumbleReceipt'] = null;
     if (player && dayNumber > 1) {
@@ -892,7 +927,7 @@ registerPlayerMutatingGet('/arena', async (c) => {
       enteredToday,
       bossChallengedToday,
       rumbleEntrants: rumbleEntrantCount,
-      communityLegendCount: await getCommunityLegendCount(redis),
+      communityLegendCount,
       rumbleResolvesAt: getNextUtcDayStartMs(now),
       season,
       todayEntrants,
@@ -944,20 +979,20 @@ api.get('/season-board', async (c) => {
   }
 });
 
-api.get('/splash', async (c) => {
+registerPlayerMutatingGet('/splash', async (c) => {
   try {
     const now = new Date();
     const dayNumber = await ensureCurrentArenaDay(redis, now);
     const player = await getCurrentPlayer();
-    const [recentCreationIds, hiddenScribbitIds, createdScribbitIds] =
+    const [recentCreationIds, hiddenScribbitIds, hasCreatedScribbit] =
       await Promise.all([
         getRumbleEntrantIds(redis, dayNumber, { limit: 12, reverse: true }),
         player
           ? getHiddenScribbitIds(redis, player.userId)
           : Promise.resolve(new Set<string>()),
         player
-          ? getUserScribbitIds(redis, player.userId, 1)
-          : Promise.resolve([]),
+          ? hasUserCreatedScribbit(redis, player.userId)
+          : Promise.resolve(false),
       ]);
     const recentCreations = await loadScribbits(
       redis,
@@ -967,7 +1002,7 @@ api.get('/splash', async (c) => {
 
     return c.json<SplashState>({
       loggedIn: Boolean(player),
-      hasCreatedScribbit: createdScribbitIds.length > 0,
+      hasCreatedScribbit,
       featuredCreations: selectSplashCreations({
         recentCreations,
         hiddenScribbitIds,
@@ -985,14 +1020,14 @@ api.post('/battle-clip', async (c) => {
 
   const body = await readBoundedJsonBody(c, battleClipMaximumBodyBytes);
   if (body.status === 'too-large') {
-    return payloadTooLarge(c, 'Battle clips must be 8 MB or smaller.');
+    return payloadTooLarge(c, 'Battle clips must be 2.5 MB or smaller.');
   }
   const clip =
     body.status === 'parsed' && isRecord(body.value)
       ? parseBattleClipDataUrl(body.value.videoDataUrl)
       : null;
   if (!clip) {
-    return badRequest(c, 'Send one WebM or MP4 battle clip under 8 MB.');
+    return badRequest(c, 'Send one WebM or MP4 battle clip under 2.5 MB.');
   }
 
   try {
@@ -1196,8 +1231,8 @@ api.post('/scribbit', async (c) => {
       return conflict(c, 'You already chose today’s Free Draw.');
     }
 
-    if (!(await enforceAliveScribbitLimit(redis, player.userId))) {
-      return conflict(c, 'You already have three living Scribbits.');
+    if (!(await enforceAliveScribbitLimit(redis, player.userId, dayNumber))) {
+      return conflict(c, 'You already have three growing Scribbits.');
     }
 
     const accessoryIds = draft.accessories.map((accessory) => {
@@ -1849,6 +1884,56 @@ api.post('/back', async (c) => {
   } catch (error) {
     console.error('Back route failed:', error);
     return serverError(c, 'The Pick slip blew away. Try again soon.');
+  }
+});
+
+api.post('/retire-scribbit', async (c) => {
+  const player = await getCurrentPlayer();
+  if (!player) return unauthorized(c, 'Sign in to retire your Scribbit.');
+
+  const scribbitId = readScribbitId(await readJsonBody(c));
+  if (!scribbitId) return badRequest(c, 'Choose a valid Scribbit to retire.');
+
+  try {
+    const dayNumber = await getWritableArenaDay(new Date());
+    if (!dayNumber) return arenaRolloverConflict(c);
+    const result = await retireOwnedScribbit(
+      redis,
+      player.userId,
+      scribbitId,
+      dayNumber,
+      {
+        getCreatorTitleWatchKey: getInventoryKey,
+        getCreatorTitle: async (ownerUserId) => {
+          const inventory = await loadInventory(redis, ownerUserId);
+          if (!inventory.equippedTitle) return null;
+          const entry = findInkCatalogEntry(inventory.equippedTitle);
+          if (!entry || entry.kind !== 'title') return null;
+          return {
+            id: entry.id,
+            name: entry.name,
+            rarity: entry.rarity,
+          };
+        },
+      }
+    );
+
+    if (
+      result.status === 'scribbit-unavailable' ||
+      result.status === 'not-owned'
+    ) {
+      return notFound(c, 'That Scribbit is not yours to retire.');
+    }
+    if (result.status === 'entered-today') {
+      return conflict(
+        c,
+        "This Scribbit is entered in today's Rumble. Retire it after the results."
+      );
+    }
+    return c.json<RetireScribbitResponse>({ retired: result.scribbit });
+  } catch (error) {
+    console.error('Retire Scribbit route failed:', error);
+    return serverError(c, 'That Scribbit could not be retired. Try again.');
   }
 });
 

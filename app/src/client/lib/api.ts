@@ -28,6 +28,8 @@ import type {
   PracticeBattleRequest,
   PracticeBattleReport,
   ReportScribbitResponse,
+  RetireScribbitRequest,
+  RetireScribbitResponse,
   RivalRunState,
   SeasonBoard,
   SeasonPublicState,
@@ -50,12 +52,16 @@ import { getLocale, translate } from './localization';
 export type ApiResult<T> = { ok: true; data: T } | { ok: false; error: string };
 
 const DEFAULT_TIMEOUT_MS = 12000;
+const ARENA_TIMEOUT_MS = 28_000;
 // Submissions carry base and rendered PNG data URLs, so they get a longer leash.
 const SUBMIT_TIMEOUT_MS = 20000;
 const MEDIA_UPLOAD_TIMEOUT_MS = 35000;
 
-async function getJson<T>(url: string): Promise<ApiResult<T>> {
-  return request<T>(url, { method: 'GET' }, DEFAULT_TIMEOUT_MS);
+async function getJson<T>(
+  url: string,
+  timeoutMs = DEFAULT_TIMEOUT_MS
+): Promise<ApiResult<T>> {
+  return request<T>(url, { method: 'GET' }, timeoutMs);
 }
 
 async function postJson<TBody, TResponse>(
@@ -145,7 +151,7 @@ function friendlyError(error: unknown): string {
 // --- Contract endpoints -----------------------------------------------------
 
 export function fetchArena(): Promise<ApiResult<ArenaState>> {
-  return getJson<ArenaState>('/api/arena');
+  return getJson<ArenaState>('/api/arena', ARENA_TIMEOUT_MS);
 }
 
 export function fetchSeason(): Promise<ApiResult<SeasonPublicState>> {
@@ -211,14 +217,6 @@ export function fetchRumbleReplay(
 ): Promise<ApiResult<BattleReport>> {
   const query = new URLSearchParams({ day: String(resolvedDay) });
   return getJson<BattleReport>(`/api/rumble-replay?${query.toString()}`);
-}
-
-export function believe(
-  scribbitId: string
-): Promise<ApiResult<{ belief: number }>> {
-  return postJson<{ scribbitId: string }, { belief: number }>('/api/believe', {
-    scribbitId,
-  });
 }
 
 export function bossChallenge(
@@ -298,6 +296,15 @@ export function removeScribbit(
 ): Promise<ApiResult<{ removed: string }>> {
   return postJson<{ scribbitId: string }, { removed: string }>(
     '/api/remove-scribbit',
+    { scribbitId }
+  );
+}
+
+export function retireScribbit(
+  scribbitId: string
+): Promise<ApiResult<RetireScribbitResponse>> {
+  return postJson<RetireScribbitRequest, RetireScribbitResponse>(
+    '/api/retire-scribbit',
     { scribbitId }
   );
 }

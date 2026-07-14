@@ -139,7 +139,7 @@ test('Mystery Ink prize actions and red-star ownership use tested presentation p
   );
 });
 
-test('Shop visual assets load lazily from Shop instead of core preload', () => {
+test('Shop visual assets load lazily and are checked before rendering', () => {
   const visualAssetsSource = readFileSync(
     join(appRoot, 'src', 'client', 'lib', 'visualassets.ts'),
     'utf8'
@@ -182,6 +182,16 @@ test('Shop visual assets load lazily from Shop instead of core preload', () => {
     shopSceneSource.indexOf('preloadShopVisualAssets(this)') <
       shopSceneSource.indexOf('create(): void'),
     'Shop visual preload must be declared before create()'
+  );
+  assert.match(
+    shopSceneSource,
+    /if \(!shopVisualAssetsReady\(this\)\) \{[\s\S]{0,120}retryShopVisualAssets\(\)/,
+    'Shop must not render missing Phaser textures'
+  );
+  assert.match(
+    shopSceneSource,
+    /preloadShopVisualAssets\(this\);[\s\S]{0,80}this\.load\.start\(\)/,
+    'Shop must retry a stale or failed lazy asset load'
   );
 });
 

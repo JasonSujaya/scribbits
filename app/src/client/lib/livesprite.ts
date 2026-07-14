@@ -163,7 +163,10 @@ export class LiveSprite {
       0,
       textureKey,
       geometry.vertices,
-      geometry.indices
+      geometry.indices,
+      // Canvas/image pixels are top-down, while Mesh2D samples GL textures
+      // bottom-up. Keep the drawing upright on every WebGL LiveSprite surface.
+      true
     );
     mesh.setSize(drawW, drawH);
     mesh.setScale(this.facing, 1);

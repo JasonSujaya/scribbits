@@ -20,7 +20,8 @@ const [clipSource, replaySource, apiSource, serverSource, splashSource] =
 test('Replay records the rendered canvas and shares a Reddit-hosted clip', () => {
   assert.match(clipSource, /canvas\.captureStream\(30\)/);
   assert.match(clipSource, /new MediaRecorder/);
-  assert.match(clipSource, /videoBitsPerSecond: 900_000/);
+  assert.match(clipSource, /videoBitsPerSecond: 700_000/);
+  assert.match(clipSource, /}, 22_000\);/);
   assert.match(clipSource, /showShareSheet/);
   assert.match(replaySource, /startBattleClipRecording\(this\.game\.canvas\)/);
   assert.match(replaySource, /SHARE|shareRecordedBattleClip/);
