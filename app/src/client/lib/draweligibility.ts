@@ -5,7 +5,7 @@ import {
   MAX_GROWING_PER_USER,
 } from '../../shared/arena';
 import type { ArenaState, FreeDrawing } from '../../shared/arena';
-import { beginPracticeSession, getArena } from './registry';
+import { getArena } from './registry';
 import { startScene } from './ui';
 import { translate } from './localization';
 
@@ -20,12 +20,19 @@ export type CommunityThemeEligibility = {
   message: string;
 };
 
-export type DailyDrawRoute =
-  | 'preloader'
-  | 'draw'
-  | 'practice'
-  | 'login'
-  | 'arena';
+export type DailyDrawRoute = 'preloader' | 'draw' | 'login' | 'arena';
+
+export const countGrowingScribbits = (state: ArenaState | undefined): number =>
+  state?.myScribbits.filter(
+    (scribbit) =>
+      getScribbitLifecycleStage(scribbit, state.dayNumber) === 'growing'
+  ).length ?? 0;
+
+export const isGrowingRosterFull = (state: ArenaState | undefined): boolean =>
+  countGrowingScribbits(state) >= MAX_GROWING_PER_USER;
+
+export const growingRosterFullMessage = (): string =>
+  translate('drawEligibility.full', { capacity: MAX_GROWING_PER_USER });
 
 export const getTodayFreeDrawing = (
   state: ArenaState | undefined
@@ -61,33 +68,30 @@ export const getDrawEligibility = (
       message: translate('drawEligibility.signIn'),
     };
   }
-  if (state.drawnToday) {
+  if (state.drawCharges.available <= 0) {
     return {
       canDraw: false,
-      tabLabel: translate('nav.drawDone'),
-      message: translate('drawEligibility.alreadyDrawn'),
+      tabLabel: translate('nav.drawRefilling'),
+      message: translate('drawEligibility.refilling'),
+    };
+  }
+  if (isGrowingRosterFull(state)) {
+    return {
+      canDraw: false,
+      tabLabel: translate('nav.drawFull'),
+      message: growingRosterFullMessage(),
     };
   }
   return { canDraw: true, tabLabel: translate('nav.draw'), message: '' };
 };
 
-export const needsScribbitCreation = (
-  state: ArenaState | undefined
-): boolean => {
-  return Boolean(state?.loggedIn && !state.hasCreatedScribbit);
-};
-
 export const getCommunityThemeEligibility = (
   state: ArenaState
 ): CommunityThemeEligibility => {
-  const growingCount = state.myScribbits.filter(
-    (scribbit) =>
-      getScribbitLifecycleStage(scribbit, state.dayNumber) === 'growing'
-  ).length;
-  if (growingCount >= MAX_GROWING_PER_USER) {
+  if (isGrowingRosterFull(state)) {
     return {
       canJoin: false,
-      message: translate('drawEligibility.full'),
+      message: growingRosterFullMessage(),
     };
   }
   return { canJoin: true, message: '' };
@@ -103,7 +107,6 @@ export const getDailyDrawRoute = (
   if (!state) return 'preloader';
   if (getTodayFreeDrawing(state)) return 'draw';
   if (getDrawEligibility(state).canDraw) return 'draw';
-  if (state.loggedIn && state.drawnToday) return 'practice';
   if (!state.loggedIn) return 'login';
   return 'arena';
 };
@@ -116,10 +119,6 @@ export const navigateToDailyDraw = (scene: Scene): void => {
     return;
   }
   if (route === 'draw') return startScene(scene, 'Draw');
-  if (route === 'practice') {
-    beginPracticeSession(scene);
-    return startScene(scene, 'Draw', { mode: 'practice' });
-  }
   if (route === 'login') showLoginPrompt();
   else if (state) showToast(getDrawEligibility(state).message);
 

@@ -10,6 +10,14 @@ import type {
   RawCombatStats,
 } from './types';
 
+const FIGHTER_STYLE_STATS: Readonly<Record<CombatRole, RawCombatStats>> =
+  Object.freeze({
+    brawler: Object.freeze({ chonk: 40, spike: 20, zip: 20, charm: 20 }),
+    longshot: Object.freeze({ chonk: 20, spike: 40, zip: 20, charm: 20 }),
+    gunner: Object.freeze({ chonk: 20, spike: 20, zip: 40, charm: 20 }),
+    mage: Object.freeze({ chonk: 20, spike: 20, zip: 20, charm: 40 }),
+  });
+
 // Drawing analysis, previews, animation, and server simulation must agree on
 // the same stable tie order. Keep this selector framework-free so every layer
 // can share it without importing the full combat engine.
@@ -29,4 +37,14 @@ export function selectPrimaryPower(stats: RawCombatStats): PrimaryPower {
 
 export function selectCombatRole(stats: RawCombatStats): CombatRole {
   return COMBAT_ROLE_BY_DOMINANT_STAT[selectDominantStat(stats)];
+}
+
+/**
+ * One explicit fighter-style choice becomes one stable 100-point build.
+ * Drawing pixels still prove that art was made, but never secretly choose the
+ * role. Keeping the build symmetric also prevents color preference from
+ * granting more total combat power.
+ */
+export function getStatsForFighterStyle(role: CombatRole): RawCombatStats {
+  return FIGHTER_STYLE_STATS[role];
 }

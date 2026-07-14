@@ -112,17 +112,18 @@ test('official Draw requires an explicit start and locks at time', () => {
   assert.match(drawSource, /: 'DRAWING TIME!'/);
   assert.match(drawSource, /'\.\.\/assets\/ui-button-close\.png'/);
   assert.match(drawSource, /'Close drawing theme'/);
-  assert.match(drawSource, /this\.closeDrawStartPopup\(\)/);
   assert.match(
     drawSource,
-    /this\.isFirstScribbit \? 'ArenaHome' : 'ScribbitHome'/
+    /closeButton\.addEventListener\('click', \(\) => this\.exitDraw\(\)\)/
   );
   assert.match(drawSource, /freeDrawLabel\.textContent = 'FREE DRAW'/);
   assert.match(
     drawSource,
     /if \(!this\.isFirstScribbit\) \{[\s\S]{0,180}const freeDrawButton/
   );
-  assert.match(drawSource, /Draw your first Scribbit to unlock Home\./);
+  assert.match(drawSource, /private exitDraw\(\): void/);
+  assert.match(drawSource, /this\.exitTo\('ScribbitHome'\)/);
+  assert.doesNotMatch(drawSource, /Draw your first Scribbit to unlock Home\./);
   assert.match(drawSource, /Draw your first Scribbit to unlock Free Draw\./);
   assert.match(drawSource, /noTimerLabel\.textContent = 'NO TIMER'/);
   assert.match(

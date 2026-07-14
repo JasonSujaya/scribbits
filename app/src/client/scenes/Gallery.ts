@@ -16,7 +16,10 @@ import {
   takeGalleryCollectionSection,
   type GalleryTab,
 } from '../lib/registry';
-import type { EquipmentCategory } from '../../shared/equipment';
+import {
+  EQUIPMENT_CATEGORIES,
+  type EquipmentCategory,
+} from '../../shared/equipment';
 import {
   loadDrawing,
   fitDrawing,
@@ -65,7 +68,7 @@ const LEGEND_CARD_HEIGHT = 272;
 const LEGEND_CARD_ROW_GAP = 18;
 const LEGEND_CARD_ROW_STEP = LEGEND_CARD_HEIGHT + LEGEND_CARD_ROW_GAP;
 const LEGEND_CARD_TOP_GAP = 20;
-const BAG_CONTENT_TOP = 168;
+const BAG_CONTENT_TOP = 116;
 const GALLERY_TABS_Y = 150;
 const GALLERY_TAB_HEIGHT = 76;
 const GALLERY_CONTENT_TOP = 240;
@@ -76,7 +79,9 @@ const DEBUG_INK_KIT_SECTIONS: readonly InkKitSection[] = [
   'armor',
   'shoes',
   'accessory',
-  'styles',
+  'colors',
+  'brushes',
+  'titles',
 ];
 const galleryTabId = (tab: GalleryTab): string => `gallery-tab-${tab}`;
 const GALLERY_TABS: ReadonlyArray<{
@@ -122,6 +127,7 @@ export class Gallery extends Scene {
   private legacyPage = 0;
   private legacyPages: LegacyCardsState[] = [];
   private collectionScrollOffset = 0;
+  private collectionInventoryExpanded = false;
   private collectionSection: InkKitSection = 'weapon';
   private loadingCollection = false;
   private loadingLegacy = false;
@@ -170,6 +176,7 @@ export class Gallery extends Scene {
         ? requestedInkKitSection
         : 'weapon');
     this.collectionScrollOffset = 0;
+    this.collectionInventoryExpanded = false;
     this.loadingCollection = false;
     this.loadingLegacy = false;
     this.collectionError = null;
@@ -385,6 +392,7 @@ export class Gallery extends Scene {
         dayNumber: getArena(this)?.dayNumber ?? 1,
         section: this.collectionSection,
         scrollOffset: this.collectionScrollOffset,
+        inventoryExpanded: this.collectionInventoryExpanded,
         inventory: this.inventory,
         loggedIn: this.loggedIn,
         loading: this.loadingCollection,
@@ -396,9 +404,18 @@ export class Gallery extends Scene {
         onScrollOffsetChange: (offset) => {
           this.collectionScrollOffset = offset;
         },
+        onInventoryExpandedChange: (expanded) => {
+          this.collectionInventoryExpanded = expanded;
+          this.build();
+        },
         onSectionChange: (section) => {
+          const changingBagMode =
+            EQUIPMENT_CATEGORIES.includes(
+              this.collectionSection as EquipmentCategory
+            ) !== EQUIPMENT_CATEGORIES.includes(section as EquipmentCategory);
           this.collectionSection = section;
           this.collectionScrollOffset = 0;
+          if (changingBagMode) this.collectionInventoryExpanded = false;
           this.equipmentError = null;
           this.build();
         },
@@ -675,7 +692,10 @@ export class Gallery extends Scene {
     }
     this.tab = tab;
     if (tab === 'archived') this.legacyPage = 0;
-    if (tab === 'collection') this.collectionScrollOffset = 0;
+    if (tab === 'collection') {
+      this.collectionScrollOffset = 0;
+      this.collectionInventoryExpanded = false;
+    }
     setGalleryTab(this, tab);
     this.build();
     if (tab === 'collection') {

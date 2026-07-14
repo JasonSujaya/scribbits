@@ -1,10 +1,5 @@
 import type { Element, ScribbitStats } from './arena';
-import {
-  SCRIBBIT_STAT_KEYS,
-  STAT_BUDGET,
-  STAT_MAX,
-  STAT_MIN,
-} from './arena';
+import { SCRIBBIT_STAT_KEYS, STAT_BUDGET, STAT_MAX, STAT_MIN } from './arena';
 
 export type RgbaPixelData = Uint8Array | Uint8ClampedArray | readonly number[];
 
@@ -29,6 +24,8 @@ const paperColorTolerance = 8;
 const hueBucketDegrees = 30;
 const hueCoverageMin = 0.02;
 const maxDistinctHues = 6;
+const charmColorWeight = 1.25;
+const spikeJaggednessRange = 1;
 const bucketCount = 360 / hueBucketDegrees;
 
 // 1,500 pixels is ~0.57% of a 512x512 canvas: still permissive for thin doodles,
@@ -319,7 +316,10 @@ export function analyze(field: PixelField): AnalyzerResult {
   const outlinePx = countOutlinePixels(inked, field.width, field.height);
   const jaggedness = jaggednessFrom(outlinePx, inkedPixels);
   const hues = distinctHues(hueBuckets);
-  const spikeShape = (jaggedness - 1) / 2;
+  // A recognizable five-point star has roughly 1.7-1.9x the perimeter of a
+  // smooth shape with the same area. Scale that real doodle range to a useful
+  // SPIKE signal instead of requiring the theoretical clamped maximum.
+  const spikeShape = (jaggedness - 1) / spikeJaggednessRange;
   const strokeWeight = clamp(fillDensity / 0.25, 0.22, 1);
   const raw = {
     // Big filled blobs and thick strokes should read as CHONK. Raw ink ratio
@@ -327,9 +327,13 @@ export function analyze(field: PixelField): AnalyzerResult {
     chonk: clamp(inkRatio * 2.4 + fillDensity * 0.55, 0, 1),
     // The old outline/area ratio treated every thin line drawing as max SPIKE.
     // Keep jagged pointy silhouettes valuable, but dampen plain outline strokes.
-    spike: clamp(spikeShape * strokeWeight, 0, 0.72),
+    spike: clamp(spikeShape * strokeWeight, 0, 0.9),
     zip: 1 - clamp(footprint, 0, 1),
-    charm: hues / maxDistinctHues,
+    // Five or six clearly different colors should remain the strongest signal
+    // even when the player colors a solid body. Without this small weight,
+    // dense rainbow drawings tied or lost to CHONK despite deliberate palette
+    // variety. One to three colors still stay well below strong shape signals.
+    charm: (hues / maxDistinctHues) * charmColorWeight,
   };
 
   return {

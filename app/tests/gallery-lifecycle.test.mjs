@@ -32,7 +32,11 @@ const createOwnedScribbit = (id, bornDay) =>
     day: bornDay,
   });
 
-test('Gallery lifecycle has three growing slots and three mature slots', () => {
+test('Gallery lifecycle caps the active roster at three growing and three mature Scribbits', () => {
+  assert.deepEqual(arena.SCRIBBIT_ROSTER_CAPACITY, {
+    growing: 3,
+    mature: 3,
+  });
   assert.equal(arena.MAX_GROWING_PER_USER, 3);
   assert.equal(arena.MAX_MATURE_PER_USER, 3);
   assert.equal(arena.MAX_ALIVE_PER_USER, 6);
@@ -193,19 +197,21 @@ test('Gallery exposes Retire for active owned Scribbits and moves success to Arc
   assert.match(detailSource, /The drawing and record stay in Archived/);
   assert.doesNotMatch(detailSource, /label: 'Believe'|'BELIEF'/);
   assert.match(detailSource, /maturityCountdownHeadline/);
-  assert.match(detailSource, /Explain .* element and all Scribbit skills/);
-  assert.match(detailSource, /COMBAT_UPGRADE_IDS\.forEach/);
+  assert.match(detailSource, /Open .* Power-Up build and catalog/);
+  assert.match(detailSource, /POWER_UP_IDS\.forEach/);
   assert.match(detailSource, /POWER GUIDE · \$\{pageNumber\} OF 3/);
-  assert.match(detailSource, /'YOUR ELEMENT'/);
-  assert.match(detailSource, /'INK MODS'/);
-  assert.match(detailSource, /'HOW TO EARN'/);
+  assert.match(detailSource, /'YOUR BUILD'/);
+  assert.match(detailSource, /'POWER-UP CATALOG'/);
+  assert.match(detailSource, /'WIN → CHOOSE 1'/);
   assert.match(
     detailSource,
-    /const guidePages = \[elementPage, modsPage, earnPage\]/
+    /const guidePages = \[buildPage, catalogPage, earnPage\]/
   );
-  assert.match(detailSource, /paperIcon\(scene, modIcons\[id\]/);
-  assert.match(detailSource, /ONE NEW MOD AT LV2, LV3, LV4, AND LV5/);
-  assert.match(detailSource, /LOSSES GIVE 0 XP/);
+  assert.match(detailSource, /POWER_UP_ICONS\[powerUpId\]/);
+  assert.match(detailSource, /STANDARD WIN/);
+  assert.match(detailSource, /CHAMPION WIN/);
+  assert.match(detailSource, /LOSS = NO POWER-UP/);
+  assert.doesNotMatch(detailSource, /Ink Mods|INK MODS|YOUR ELEMENT/);
   assert.match(uiSource, /'ELEMENT'/);
   assert.match(uiSource, /'MOOD'/);
   assert.match(uiSource, /paperStatIcon\(\s*scene,\s*key/);

@@ -66,7 +66,7 @@ const createReportId = (
   const identity = `${kind}:${forecast.day}:${battleArenaId}:${seed}:${fighterA.id}:${fighterB.id}${gearIdentity}`;
   const digest = [0, 1, 2, 3]
     .map((lane) => {
-      return hashTextToSeed(`report-id-v4:role-v4:${lane}:${identity}`)
+      return hashTextToSeed(`report-id-v5:power-ups-v1:${lane}:${identity}`)
         .toString(36)
         .padStart(7, '0');
     })
@@ -86,19 +86,11 @@ const createCombatSeed = (
   const gearIdentity = gearFingerprint
     ? `:gear-v1:${hashTextToSeed(`combat-gear-v1:${gearFingerprint}`).toString(36)}`
     : '';
-  return `role-v4:${kind}:${forecast.day}:${battleArenaId}:${seed}:${fighterA.id}:${fighterB.id}${gearIdentity}`;
+  return `power-ups-v1:${kind}:${forecast.day}:${battleArenaId}:${seed}:${fighterA.id}:${fighterB.id}${gearIdentity}`;
 };
 
-const getCombatDamageModifierPermille = (
-  fighter: Scribbit,
-  forecast: Forecast
-): number => {
-  return Math.round(
-    getLevelDamageMultiplier(fighter.level) *
-      getForecastDamageMultiplier(fighter.element, forecast) *
-      1_000
-  );
-};
+const getCombatDamageModifierPermille = (fighter: Scribbit): number =>
+  Math.round(getLevelDamageMultiplier(fighter.level) * 1_000);
 
 export const simulate = (
   fighterA: Scribbit,
@@ -132,13 +124,9 @@ export const simulate = (
       {
         id: fighterA.id,
         name: fighterA.name,
-        element: fighterA.element,
         stats: fighterA.stats,
-        upgrades: (fighterA.upgrades ?? []).map((upgrade) => upgrade.id),
-        damageModifierPermille: getCombatDamageModifierPermille(
-          fighterA,
-          forecast
-        ),
+        powerUpIds: [...(fighterA.powerUpIds ?? [])],
+        damageModifierPermille: getCombatDamageModifierPermille(fighterA),
         ...(gearEnabled && fighterAGear.snapshot
           ? { gear: fighterAGear.snapshot }
           : {}),
@@ -146,13 +134,9 @@ export const simulate = (
       {
         id: fighterB.id,
         name: fighterB.name,
-        element: fighterB.element,
         stats: fighterB.stats,
-        upgrades: (fighterB.upgrades ?? []).map((upgrade) => upgrade.id),
-        damageModifierPermille: getCombatDamageModifierPermille(
-          fighterB,
-          forecast
-        ),
+        powerUpIds: [...(fighterB.powerUpIds ?? [])],
+        damageModifierPermille: getCombatDamageModifierPermille(fighterB),
         ...(gearEnabled && fighterBGear.snapshot
           ? { gear: fighterBGear.snapshot }
           : {}),

@@ -5,7 +5,9 @@ import test from 'node:test';
 
 const compiledClientRoot = process.env.SCRIBBITS_COMPILED_CLIENT_ROOT;
 if (!compiledClientRoot) {
-  throw new Error('Run first chest trail tests through scripts/run-test-suites.mjs.');
+  throw new Error(
+    'Run first chest trail tests through scripts/run-test-suites.mjs.'
+  );
 }
 
 const require = createRequire(import.meta.url);
@@ -22,8 +24,8 @@ const makeScribbit = (careDoneToday = []) => ({
 
 const completedRun = { status: 'complete' };
 
-test('a fresh completed run points an all-loss player through three Care actions', () => {
-  assert.deepEqual(
+test('a fresh completed run never invents Care Ink for the first chest', () => {
+  assert.equal(
     firstChestTrail.planFirstChestTrailEntry({
       isFreshResult: true,
       rivalRun: completedRun,
@@ -32,28 +34,18 @@ test('a fresh completed run points an all-loss player through three Care actions
       chestCost: 5,
       capsulePullCount: 0,
     }),
-    {
-      kind: 'care',
-      label: 'CARE FOR CRATER PAL',
-      accessibleLabel:
-        'Care for Crater Pal. Earn 1 Ink toward a 5 Ink Mystery Ink Chest. 3 Ink needed.',
-      statusLabel: 'FIRST CHEST • 2/5 INK',
-      ink: 2,
-      inkNeeded: 3,
-      availableCareActions: ['feed', 'pat', 'train'],
-    }
+    null
   );
 });
 
-test('one Care action bridges a rewarded first win into the chest', () => {
-  const careStep = firstChestTrail.planFirstChestTrailStep({
+test('the trail opens Shop only when the committed balance covers the chest', () => {
+  const insufficientStep = firstChestTrail.planFirstChestTrailStep({
     scribbit: makeScribbit(),
     ink: 4,
     chestCost: 5,
     capsulePullCount: 0,
   });
-  assert.equal(careStep?.kind, 'care');
-  assert.equal(careStep?.inkNeeded, 1);
+  assert.equal(insufficientStep, null);
 
   assert.deepEqual(
     firstChestTrail.planFirstChestTrailStep({
@@ -70,7 +62,6 @@ test('one Care action bridges a rewarded first win into the chest', () => {
       statusLabel: 'CHEST READY • 5/5 INK',
       ink: 5,
       inkNeeded: 0,
-      availableCareActions: ['pat', 'train'],
     }
   );
 });

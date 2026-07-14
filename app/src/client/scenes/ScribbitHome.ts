@@ -1,12 +1,15 @@
 import * as Phaser from 'phaser';
 import { Scene } from 'phaser';
 import { showLoginPrompt } from '@devvit/web/client';
+import { claimDailyLogin, fetchArena } from '../lib/api';
 import { appDock } from '../lib/appdock';
 import { appMenu, type AppMenu } from '../lib/appmenu';
 import {
+  growingRosterFullMessage,
+  isGrowingRosterFull,
   navigateToDailyDraw,
-  needsScribbitCreation,
 } from '../lib/draweligibility';
+import { openDetailModal } from '../lib/detailmodal';
 import { LiveSprite } from '../lib/livesprite';
 import { translate } from '../lib/localization';
 import { CanvasActionOverlay, CanvasModalOverlay } from '../lib/overlay';
@@ -37,7 +40,11 @@ import {
   homeStage,
   preloadHomeVisualAssets,
 } from '../lib/visualassets';
-import { getArena, setGalleryTab } from '../lib/registry';
+import { getArena, setArena, setGalleryTab } from '../lib/registry';
+import {
+  openDailyLoginModal,
+  type DailyLoginModal,
+} from '../lib/dailyloginmodal';
 import { playHomeSoundtrack, releaseHomeSoundtrack } from '../lib/soundtrack';
 import {
   EDGE,
@@ -49,15 +56,25 @@ import {
 } from '../lib/theme';
 import { setSfxCue } from '../lib/sfx';
 import {
+  drawChargeCountLabel,
+  drawChargeRefreshLabel,
+} from '../lib/drawcharges';
+import {
   createStickerShine,
   type StickerShineHandle,
 } from '../lib/stickerfxshader';
-import type { ArenaState, Scribbit } from '../../shared/arena';
+import {
+  getScribbitLifecycleStage,
+  MAX_GROWING_PER_USER,
+  type ArenaState,
+  type Scribbit,
+} from '../../shared/arena';
 
 const SCRIBBIT_DEPTH = 120;
 const HOME_PROP_DEPTH = 10;
 const HOME_SCRIBBIT_DISPLAY_SIZE = 380;
 const HOME_SCRIBBIT_HIT_SIZE = 400;
+const EMPTY_HOME_CARD_MAX_Y = 670;
 const MATURITY_CARD_SUMMARY = 'STATS LOCK • GEAR UP FOR MATURE ARENA';
 const MATURITY_DESCRIPTION =
   'For its first 3 days, every completed battle gives this Scribbit a random stat modifier, whether it wins or loses. At maturity, battle modifiers stop and its base stats lock forever. Afterward, upgrade Gear to add bonuses and increase its battle stats in the Mature Arena.';
@@ -108,6 +125,11 @@ const MATURITY_GEAR_ICONS: readonly Readonly<{
 const MATURITY_GEAR_ICON_SIZE = 120;
 
 type MaturityModal = Readonly<{
+  container: Phaser.GameObjects.Container;
+  actions: CanvasModalOverlay;
+}>;
+
+type RosterFullModal = Readonly<{
   container: Phaser.GameObjects.Container;
   actions: CanvasModalOverlay;
 }>;
@@ -198,6 +220,8 @@ export class ScribbitHome extends Scene {
   private menu: AppMenu | null = null;
   private actionOverlay: CanvasActionOverlay | null = null;
   private maturityModal: MaturityModal | null = null;
+  private rosterFullModal: RosterFullModal | null = null;
+  private dailyLoginModal: DailyLoginModal | null = null;
   private readonly homePropIdleTweens = new Map<
     Phaser.GameObjects.Image,
     Phaser.Tweens.Tween
@@ -222,6 +246,8 @@ export class ScribbitHome extends Scene {
     this.menu = null;
     this.actionOverlay = null;
     this.maturityModal = null;
+    this.rosterFullModal = null;
+    this.dailyLoginModal = null;
     this.maturityCountdownTimer = null;
   }
 
@@ -229,10 +255,6 @@ export class ScribbitHome extends Scene {
     const state = getArena(this);
     if (!state) {
       this.scene.start('Preloader');
-      return;
-    }
-    if (needsScribbitCreation(state)) {
-      this.scene.start('Draw');
       return;
     }
     this.state = state;
@@ -243,7 +265,10 @@ export class ScribbitHome extends Scene {
 
   private build(): void {
     this.renderGeneration += 1;
+    this.dailyLoginModal?.destroy();
+    this.dailyLoginModal = null;
     this.closeMaturityInfo();
+    this.closeRosterFullModal();
     this.clearMaturityCountdown();
     this.clearHomePropIdleTweens();
     this.clearDrawButtonEffects();
@@ -257,6 +282,7 @@ export class ScribbitHome extends Scene {
     this.renderHomeTitle();
     this.renderHomeProps(stage);
     this.renderGalleryButton();
+    this.renderDailyLoginButton();
     if (this.state.myScribbits.length === 0) {
       this.renderEmptyHome();
     } else {
@@ -301,6 +327,71 @@ export class ScribbitHome extends Scene {
     });
   }
 
+  private renderDailyLoginButton(): void {
+    const { width } = this.scale;
+    let trigger: HTMLButtonElement | null = null;
+    let claimedDuringVisit = false;
+    const openRewards = (): void => {
+      if (!trigger || this.dailyLoginModal) return;
+      this.dailyLoginModal = openDailyLoginModal(
+        this,
+        trigger,
+        this.state.dailyLogin,
+        claimDailyLogin,
+        (response) => {
+          claimedDuringVisit = true;
+          this.state = {
+            ...this.state,
+            dailyLogin: response.dailyLogin,
+            myInk: response.ink,
+          };
+          setArena(this, this.state);
+        },
+        () => {
+          this.dailyLoginModal = null;
+          if (claimedDuringVisit && this.scene.isActive()) this.build();
+        }
+      );
+    };
+    const buttonX = width - 150;
+    const loginButton = paperIconButton(
+      this,
+      buttonX,
+      58,
+      'gift',
+      openRewards,
+      80,
+      UI.creamHex,
+      this.state.dailyLogin.claimedToday ? UI.gold : UI.coral,
+      80
+    ).setDepth(2200);
+    const nextDay = this.state.dailyLogin.nextReward.trackDay;
+    loginButton.add(
+      label(
+        this,
+        0,
+        57,
+        this.state.dailyLogin.claimedToday
+          ? 'LOGIN ✓'
+          : nextDay === null
+            ? 'DAILY'
+            : `DAY ${nextDay}`,
+        17,
+        UI.ink,
+        true
+      )
+    );
+    trigger =
+      this.actionOverlay?.add({
+        label: this.state.dailyLogin.claimedToday
+          ? 'Open claimed daily login rewards'
+          : 'Claim daily login reward',
+        rect: { x: buttonX - 40, y: 18, width: 80, height: 116 },
+        pointerPassthrough: true,
+        onActivate: openRewards,
+      }) ?? null;
+  }
+
   private renderHomeTitle(): void {
     const { width } = this.scale;
     this.add
@@ -318,6 +409,8 @@ export class ScribbitHome extends Scene {
     this.liveSprite?.destroy();
     this.liveSprite = null;
     this.closeMaturityInfo();
+    this.dailyLoginModal?.destroy();
+    this.dailyLoginModal = null;
     this.actionOverlay?.destroy();
     this.actionOverlay = null;
     this.menu?.destroy();
@@ -327,7 +420,7 @@ export class ScribbitHome extends Scene {
 
   private renderEmptyHome(): void {
     const { width, height } = this.scale;
-    const centerY = Math.min(height - NAV_SAFE - 330, 720);
+    const centerY = Math.min(height - NAV_SAFE - 330, EMPTY_HOME_CARD_MAX_Y);
     const card = this.add.container(width / 2, centerY).setDepth(50);
     const paper = this.add
       .rectangle(0, 0, width - EDGE * 2, 290, UI.paper, 0.94)
@@ -823,40 +916,240 @@ export class ScribbitHome extends Scene {
     modal.container.destroy(true);
   }
 
+  private closeRosterFullModal(): void {
+    const modal = this.rosterFullModal;
+    if (!modal) return;
+    this.rosterFullModal = null;
+    modal.actions.destroy();
+    modal.container.destroy(true);
+  }
+
+  private growingScribbits(): Scribbit[] {
+    return this.state.myScribbits.filter(
+      (scribbit) =>
+        getScribbitLifecycleStage(scribbit, this.state.dayNumber) === 'growing'
+    );
+  }
+
+  private async refreshArenaAfterRosterChange(): Promise<void> {
+    const result = await fetchArena();
+    if (!result.ok) {
+      this.state = {
+        ...this.state,
+        myScribbits: this.state.myScribbits.filter(
+          (scribbit) =>
+            getScribbitLifecycleStage(scribbit, this.state.dayNumber) !==
+              'archived' && scribbit.status === 'alive'
+        ),
+      };
+      setArena(this, this.state);
+      this.build();
+      return;
+    }
+    this.state = result.data;
+    setArena(this, result.data);
+    this.selectedIndex = Math.min(
+      this.selectedIndex,
+      Math.max(0, result.data.myScribbits.length - 1)
+    );
+    this.build();
+  }
+
+  private openRosterFullModal(trigger: HTMLElement | null = null): void {
+    this.closeRosterFullModal();
+    const { width, height } = this.scale;
+    const growing = this.growingScribbits().slice(0, MAX_GROWING_PER_USER);
+    const cardWidth = width - 72;
+    const cardHeight = 480;
+    const cardX = width / 2;
+    const cardY = Math.min(height - 300, Math.max(310, height / 2));
+    const container = this.add
+      .container(0, 0)
+      .setDepth(2500)
+      .setScrollFactor(0);
+    const close = (): void => this.closeRosterFullModal();
+    const actions = new CanvasModalOverlay(
+      this,
+      'Growing roster full',
+      close,
+      growingRosterFullMessage(),
+      trigger
+    );
+    container.once('destroy', () => actions.destroy());
+    this.rosterFullModal = { container, actions };
+
+    const shade = this.add
+      .rectangle(width / 2, height / 2, width, height, UI.inkHex, 0.66)
+      .setInteractive();
+    const card = stickerCard(this, cardX, cardY, cardWidth, cardHeight, {
+      tilt: -0.4,
+    });
+    container.add([shade, card]);
+
+    card.add(
+      label(
+        this,
+        0,
+        -cardHeight / 2 + 54,
+        'GROWING SLOTS FULL',
+        28,
+        UI.ink,
+        true
+      )
+    );
+    const message = label(
+      this,
+      0,
+      -cardHeight / 2 + 92,
+      `You can keep ${MAX_GROWING_PER_USER} growing Scribbits. Retire one to Archived before drawing.`,
+      18,
+      UI.inkSoft,
+      true
+    );
+    message.setWordWrapWidth(cardWidth - 82);
+    card.add(message);
+
+    growing.forEach((scribbit, index) => {
+      const rowY = -cardHeight / 2 + 162 + index * 76;
+      const row = button(
+        this,
+        0,
+        rowY,
+        `${scribbit.name.toUpperCase()}  •  RETIRE`,
+        () => {
+          this.closeRosterFullModal();
+          this.openRetireDetail(scribbit);
+        },
+        cardWidth - 96,
+        UI.creamHex,
+        UI.ink,
+        60
+      );
+      row.setScale(0.96);
+      card.add(row);
+      actions.add({
+        label: `Retire ${scribbit.name} to make room`,
+        rect: {
+          x: cardX - (cardWidth - 96) / 2,
+          y: cardY + rowY - 30,
+          width: cardWidth - 96,
+          height: 60,
+        },
+        onActivate: () => {
+          this.closeRosterFullModal();
+          this.openRetireDetail(scribbit);
+        },
+      });
+    });
+
+    const closeButton = ghostButton(
+      this,
+      0,
+      cardHeight / 2 - 58,
+      'Not now',
+      close,
+      220
+    );
+    card.add(closeButton);
+    actions.add({
+      label: 'Close growing roster full popup',
+      rect: {
+        x: cardX - 110,
+        y: cardY + cardHeight / 2 - 100,
+        width: 220,
+        height: 84,
+      },
+      onActivate: close,
+    });
+    shade.on('pointerup', close);
+    actions.focusInitial();
+  }
+
+  private openRetireDetail(scribbit: Scribbit): void {
+    openDetailModal(this, scribbit, {
+      currentDay: this.state.dayNumber,
+      ...(this.state.rumbleResolvesAt === undefined
+        ? {}
+        : { nextArenaDayStartsAt: this.state.rumbleResolvesAt }),
+      mine: true,
+      actions: { canRetire: scribbit.status === 'alive' },
+      onRetired: () => void this.refreshArenaAfterRosterChange(),
+      onRemoved: () => void this.refreshArenaAfterRosterChange(),
+    });
+  }
+
   private renderDrawButton(
     x: number,
     y: number,
     width: number,
     height: number
   ): void {
-    const labelText = this.state.loggedIn ? 'DRAW!' : 'SIGN IN';
+    const drawCharges = this.state.drawCharges;
+    const rosterFull = isGrowingRosterFull(this.state);
+    const canDraw =
+      this.state.loggedIn && drawCharges.available > 0 && !rosterFull;
+    const labelText = this.state.loggedIn
+      ? rosterFull
+        ? 'ROSTER FULL'
+        : `DRAW!  ${drawChargeCountLabel(drawCharges)}`
+      : 'SIGN IN';
+    let drawControl: HTMLButtonElement | null = null;
+    const activateDraw = (): void => {
+      if (!this.state.loggedIn) showLoginPrompt();
+      else if (rosterFull) this.openRosterFullModal(drawControl);
+      else navigateToDailyDraw(this);
+    };
     const drawButton = iconButton(
       this,
       x,
       y,
       this.state.loggedIn ? 'pencil' : 'lock',
       labelText,
-      () => {
-        if (!this.state.loggedIn) showLoginPrompt();
-        else navigateToDailyDraw(this);
-      },
+      activateDraw,
       width,
       UI.gold,
       UI.ink,
       height,
-      UI.coral
+      UI.coral,
+      canDraw || !this.state.loggedIn || rosterFull
     ).setDepth(90);
-    const flairTargets = this.addDrawButtonFlair(x, y, width);
-    this.startDrawButtonEffects(drawButton, flairTargets, x, y, width, height);
+    if (rosterFull) drawButton.setAlpha(0.58);
+    if (this.state.loggedIn) {
+      drawButton.add(
+        label(
+          this,
+          0,
+          35,
+          drawChargeRefreshLabel(drawCharges),
+          16,
+          UI.inkSoft,
+          true
+        )
+      );
+    }
+    if (canDraw) {
+      const flairTargets = this.addDrawButtonFlair(x, y, width);
+      this.startDrawButtonEffects(
+        drawButton,
+        flairTargets,
+        x,
+        y,
+        width,
+        height
+      );
+    }
 
-    this.actionOverlay?.add({
-      label: this.state.loggedIn ? 'Draw a Scribbit' : 'Sign in',
-      rect: { x: x - width / 2, y: y - height / 2, width, height },
-      onActivate: () => {
-        if (!this.state.loggedIn) showLoginPrompt();
-        else navigateToDailyDraw(this);
-      },
-    });
+    drawControl =
+      this.actionOverlay?.add({
+        label: this.state.loggedIn
+          ? rosterFull
+            ? `${growingRosterFullMessage()} Tap to choose one to retire.`
+            : `Draw a Scribbit. ${drawChargeCountLabel(drawCharges)} Draw Charges. ${drawChargeRefreshLabel(drawCharges)}.`
+          : 'Sign in',
+        rect: { x: x - width / 2, y: y - height / 2, width, height },
+        onActivate: activateDraw,
+        enabled: canDraw || !this.state.loggedIn || rosterFull,
+      }) ?? null;
   }
 
   private addDrawButtonFlair(

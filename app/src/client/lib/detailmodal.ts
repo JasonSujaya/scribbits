@@ -7,11 +7,13 @@
 import { Scene, type Types } from 'phaser';
 import { getScribbitLifecycleStage, type Scribbit } from '../../shared/arena';
 import {
-  COMBAT_UPGRADE_CATALOG,
-  COMBAT_UPGRADE_IDS,
-  formatCombatUpgradeEffectLines,
-} from '../../shared/combat/upgrades';
-import { ELEMENT_PAYLOAD_GUIDE } from '../../shared/combat/elementcontent';
+  MAXIMUM_POWER_UPS,
+  POWER_UP_CATALOG,
+  POWER_UP_IDS,
+  isPowerUpId,
+  type PowerUpId,
+  type PowerUpRarity,
+} from '../../shared/combat/powerups';
 import { selectCombatRole } from '../../shared/combat/selection';
 import { getCombatRoleContent } from '../../shared/combat/roles';
 import {
@@ -28,19 +30,8 @@ import {
   levelOf,
   xpProgress,
 } from './scribbits';
-import {
-  ELEMENT_STYLES,
-  prefersReducedMotion,
-  STAT_STYLES,
-  TYPE,
-  UI,
-} from './theme';
-import {
-  elementPaperIcon,
-  paperIcon,
-  paperStatIcon,
-  type PaperIconKey,
-} from './papericons';
+import { prefersReducedMotion, STAT_STYLES, TYPE, UI } from './theme';
+import { paperIcon, paperStatIcon, type PaperIconKey } from './papericons';
 import { CanvasModalOverlay } from './overlay';
 import { setSfxCue } from './sfx';
 import { maturityCountdownHeadline } from './maturitycountdown';
@@ -48,7 +39,6 @@ import {
   label,
   ghostButton,
   careButton,
-  elementBadge,
   levelBadge,
   moodChip,
   statGrid,
@@ -57,6 +47,57 @@ import {
 } from './ui';
 
 const DEPTH = 2000;
+
+const POWER_UP_ICONS: Readonly<Record<PowerUpId, PaperIconKey>> = {
+  'v1-edge-spring': 'resize',
+  'v1-smudge-step': 'boots',
+  'v1-paper-shield': 'shield',
+  'v1-combo-spark': 'spark',
+  'v1-center-fold': 'target',
+  'v1-double-doodle': 'pencil',
+  'v1-backup-plan': 'clock',
+  'v1-counter-sketch': 'sword',
+  'v1-wallop': 'gun',
+  'v1-echo-mark': 'target',
+  'v1-last-scribble': 'heart',
+  'v1-second-draft': 'replay',
+  'v1-paper-twin': 'paw',
+  'v1-masterpiece': 'trophy',
+  'v1-endless-draft': 'ink',
+};
+
+const POWER_UP_RARITY_STYLE: Readonly<
+  Record<
+    PowerUpRarity,
+    Readonly<{ label: string; color: number; textColor: string }>
+  >
+> = {
+  common: { label: 'COMMON', color: UI.inkSoftHex, textColor: UI.inkSoft },
+  rare: { label: 'RARE', color: 0x4f9dcc, textColor: '#276789' },
+  epic: { label: 'EPIC', color: 0x8a5cd8, textColor: '#6540a8' },
+  legendary: { label: 'LEGENDARY', color: UI.gold, textColor: UI.goldText },
+};
+
+type PowerUpBearingScribbit = Scribbit & {
+  powerUps?: readonly unknown[];
+  powerUpIds?: readonly unknown[];
+};
+
+const getOwnedPowerUpIds = (scribbit: Scribbit): readonly PowerUpId[] => {
+  const candidate = scribbit as PowerUpBearingScribbit;
+  const rawPowerUps = candidate.powerUps ?? candidate.powerUpIds ?? [];
+  const ids: PowerUpId[] = [];
+  rawPowerUps.forEach((rawPowerUp) => {
+    const rawId =
+      typeof rawPowerUp === 'object' &&
+      rawPowerUp !== null &&
+      'id' in rawPowerUp
+        ? (rawPowerUp as { id?: unknown }).id
+        : rawPowerUp;
+    if (isPowerUpId(rawId) && !ids.includes(rawId)) ids.push(rawId);
+  });
+  return ids.slice(0, MAXIMUM_POWER_UPS);
+};
 
 // Which actions this caller wants offered. Only provided handlers render.
 export type DetailModalActions = {
@@ -92,6 +133,8 @@ export function openDetailModal(
   const { width, height } = scene.scale;
   const reduceMotion = prefersReducedMotion();
   const mood = moodStyleOf(scribbit);
+  const combatRole = getCombatRoleContent(selectCombatRole(scribbit.stats));
+  const ownedPowerUpIds = getOwnedPowerUpIds(scribbit);
   const lifecycleStage = getScribbitLifecycleStage(scribbit, opts.currentDay);
   const growingDay = Math.min(
     3,
@@ -114,15 +157,14 @@ export function openDetailModal(
     }
     return `MATURES ON ARENA DAY ${scribbit.expiresDay}`;
   };
-  const upgradeEffectLines = formatCombatUpgradeEffectLines(
-    scribbit.upgrades,
-    'none yet'
+  const ownedPowerUpNames = ownedPowerUpIds.map(
+    (id) => POWER_UP_CATALOG[id].name
   );
   const semanticDescription = [
     `${scribbit.name} by u/${scribbit.artist}.`,
-    `${scribbit.element} Scribbit, level ${levelOf(scribbit)}, ${mood.label.toLowerCase()}.`,
+    `${combatRole.displayName}, level ${levelOf(scribbit)}, ${mood.label.toLowerCase()}.`,
     `${recordText(scribbit)}.`,
-    `Ink Mods: ${upgradeEffectLines.join('; ')}.`,
+    `Power-Ups: ${ownedPowerUpNames.length > 0 ? ownedPowerUpNames.join(', ') : 'none yet'}, ${ownedPowerUpIds.length} of ${MAXIMUM_POWER_UPS} slots filled.`,
     lifecycleStage === 'growing'
       ? `Growing, day ${growingDay} of 3. ${lifecycleTiming()}.`
       : lifecycleStage === 'mature'
@@ -152,7 +194,7 @@ export function openDetailModal(
   const cardH = 1180;
   const cardX = width / 2;
   const cardY = height / 2;
-  const style = ELEMENT_STYLES[scribbit.element];
+  const roleColor = STAT_STYLES[combatRole.dominantStat].color;
 
   const card = stickerCard(scene, cardX, cardY, cardW, cardH, {
     gold: scribbit.status === 'legend',
@@ -253,22 +295,57 @@ export function openDetailModal(
     )
   );
 
-  // --- Element badge + mood chip row ---------------------------------------
+  // --- Power-Up guide + mood chip row --------------------------------------
   cursor += 44;
   const identityCardScale = 0.84;
   const identityCardWidth = 180 * identityCardScale;
   const identityCardHeight = 62 * identityCardScale;
-  const elementCardX = -cardW / 4;
+  const powerUpCardX = -cardW / 4;
   const moodCardX = cardW / 4;
-  card.add(
-    elementBadge(
-      scene,
-      elementCardX,
-      cursor,
-      scribbit.element,
-      identityCardScale
-    )
+  const powerUpChip = scene.add.container(powerUpCardX, cursor);
+  const powerUpChipPlate = scene.add.graphics();
+  powerUpChipPlate.fillStyle(UI.creamHex, 1);
+  powerUpChipPlate.fillRoundedRect(
+    -identityCardWidth / 2,
+    -identityCardHeight / 2,
+    identityCardWidth,
+    identityCardHeight,
+    12
   );
+  powerUpChipPlate.lineStyle(3, UI.coral, 1);
+  powerUpChipPlate.strokeRoundedRect(
+    -identityCardWidth / 2,
+    -identityCardHeight / 2,
+    identityCardWidth,
+    identityCardHeight,
+    12
+  );
+  powerUpChip.add([
+    powerUpChipPlate,
+    paperIcon(scene, 'spark', -identityCardWidth / 2 + 27, 0, {
+      size: 34,
+      fill: UI.coral,
+    }),
+    label(
+      scene,
+      -identityCardWidth / 2 + 51,
+      -9,
+      'POWER-UPS',
+      TYPE.caption * 0.66,
+      UI.coralText,
+      true
+    ).setOrigin(0, 0.5),
+    label(
+      scene,
+      -identityCardWidth / 2 + 51,
+      12,
+      `${ownedPowerUpIds.length}/${MAXIMUM_POWER_UPS}`,
+      TYPE.caption * 0.82,
+      UI.ink,
+      true
+    ).setOrigin(0, 0.5),
+  ]);
+  card.add(powerUpChip);
   card.add(
     moodChip(
       scene,
@@ -321,12 +398,12 @@ export function openDetailModal(
     });
   };
   addIdentityGuideAction(
-    elementCardX,
-    `Explain ${style.label} element and all Scribbit skills`
+    powerUpCardX,
+    `Open ${scribbit.name} Power-Up build and catalog`
   );
   addIdentityGuideAction(
     moodCardX,
-    `Explain ${mood.label} mood and how Scribbits gain skills`
+    `Explain ${mood.label} mood and how Scribbits earn Power-Ups`
   );
 
   // --- Level XP bar ---------------------------------------------------------
@@ -342,13 +419,12 @@ export function openDetailModal(
       true
     ).setOrigin(0, 0.5)
   );
-  const xpBar = progressBar(scene, 30, cursor, cardW - 200, style.primary, 16);
+  const xpBar = progressBar(scene, 30, cursor, cardW - 200, roleColor, 16);
   card.add(xpBar.container);
   xpBar.set(xpProgress(scribbit), true);
 
-  // --- Combat identity, exact analyzer stats, then supporting Ink Mods -------
+  // --- Combat identity, exact analyzer stats, then roguelite Power-Ups -------
   cursor += 24;
-  const combatRole = getCombatRoleContent(selectCombatRole(scribbit.stats));
   const roleBandWidth = cardW - 80;
   const roleBandHeight = 64;
   const roleBandY = cursor + roleBandHeight / 2;
@@ -425,105 +501,143 @@ export function openDetailModal(
   card.add(grid.container);
   cursor += gridHeight + 10;
 
-  const modLines = scribbit.upgrades.length > 0 ? upgradeEffectLines : [];
-  const modRowHeight = 38;
-  const modPanelHeight = 42 + Math.max(1, modLines.length) * modRowHeight + 10;
-  const modPanelTop = cursor + 8;
-  const modPanelWidth = cardW - 80;
-  const modPanel = scene.add.graphics();
-  modPanel.fillStyle(UI.coral, 0.06);
-  modPanel.fillRoundedRect(
-    -modPanelWidth / 2,
-    modPanelTop,
-    modPanelWidth,
-    modPanelHeight,
+  const powerUpPanelTop = cursor + 8;
+  const powerUpPanelWidth = cardW - 80;
+  const powerUpPanelHeight = 146;
+  const powerUpPanel = scene.add.graphics();
+  powerUpPanel.fillStyle(UI.coral, 0.06);
+  powerUpPanel.fillRoundedRect(
+    -powerUpPanelWidth / 2,
+    powerUpPanelTop,
+    powerUpPanelWidth,
+    powerUpPanelHeight,
     15
   );
-  modPanel.lineStyle(2, UI.coralDeep, 0.32);
-  modPanel.strokeRoundedRect(
-    -modPanelWidth / 2,
-    modPanelTop,
-    modPanelWidth,
-    modPanelHeight,
+  powerUpPanel.lineStyle(2, UI.coralDeep, 0.32);
+  powerUpPanel.strokeRoundedRect(
+    -powerUpPanelWidth / 2,
+    powerUpPanelTop,
+    powerUpPanelWidth,
+    powerUpPanelHeight,
     15
   );
-  modPanel.fillStyle(UI.coral, 1);
-  modPanel.fillRoundedRect(
-    -modPanelWidth / 2 + 12,
-    modPanelTop + 10,
-    132,
-    32,
-    10
-  );
-  card.add(modPanel);
+  card.add(powerUpPanel);
   card.add(
     label(
       scene,
-      -modPanelWidth / 2 + 78,
-      modPanelTop + 26,
-      'INK MODS',
-      TYPE.caption * 0.8,
-      UI.cream,
+      -powerUpPanelWidth / 2 + 18,
+      powerUpPanelTop + 22,
+      `POWER-UPS ${ownedPowerUpIds.length}/${MAXIMUM_POWER_UPS}`,
+      TYPE.caption * 0.82,
+      UI.coralText,
       true
-    )
+    ).setOrigin(0, 0.5)
   );
-  if (modLines.length > 0) {
-    modLines.forEach((line, index) => {
-      const separator = line.indexOf(' · ');
-      const modName = separator >= 0 ? line.slice(0, separator) : line;
-      const modEffect = separator >= 0 ? line.slice(separator + 3) : '';
-      const rowY = modPanelTop + 56 + index * modRowHeight;
-      if (index > 0) {
-        const divider = scene.add.graphics();
-        divider.lineStyle(1, UI.inkHex, 0.12);
-        divider.lineBetween(
-          -modPanelWidth / 2 + 18,
-          rowY - modRowHeight / 2,
-          modPanelWidth / 2 - 18,
-          rowY - modRowHeight / 2
-        );
-        card.add(divider);
-      }
+  card.add(
+    label(
+      scene,
+      powerUpPanelWidth / 2 - 18,
+      powerUpPanelTop + 22,
+      'TAP TO SEE ALL',
+      TYPE.caption * 0.66,
+      UI.inkSoft,
+      true
+    ).setOrigin(1, 0.5)
+  );
+  const powerUpSlotGap = 8;
+  const powerUpSlotWidth =
+    (powerUpPanelWidth - 28 - powerUpSlotGap * (MAXIMUM_POWER_UPS - 1)) /
+    MAXIMUM_POWER_UPS;
+  const powerUpSlotY = powerUpPanelTop + 91;
+  for (let slotIndex = 0; slotIndex < MAXIMUM_POWER_UPS; slotIndex += 1) {
+    const powerUpId = ownedPowerUpIds[slotIndex];
+    const slotCenterX =
+      -powerUpPanelWidth / 2 +
+      14 +
+      powerUpSlotWidth / 2 +
+      slotIndex * (powerUpSlotWidth + powerUpSlotGap);
+    const rarityStyle = powerUpId
+      ? POWER_UP_RARITY_STYLE[POWER_UP_CATALOG[powerUpId].rarity]
+      : null;
+    const slotPlate = scene.add.graphics();
+    slotPlate.fillStyle(
+      powerUpId ? (rarityStyle?.color ?? UI.coral) : UI.creamHex,
+      powerUpId ? 0.14 : 0.55
+    );
+    slotPlate.fillRoundedRect(
+      slotCenterX - powerUpSlotWidth / 2,
+      powerUpSlotY - 42,
+      powerUpSlotWidth,
+      84,
+      12
+    );
+    slotPlate.lineStyle(
+      powerUpId ? 3 : 2,
+      rarityStyle?.color ?? UI.inkSoftHex,
+      powerUpId ? 0.95 : 0.28
+    );
+    slotPlate.strokeRoundedRect(
+      slotCenterX - powerUpSlotWidth / 2,
+      powerUpSlotY - 42,
+      powerUpSlotWidth,
+      84,
+      12
+    );
+    card.add(slotPlate);
+    if (!powerUpId) {
       card.add(
-        label(
-          scene,
-          -modPanelWidth / 2 + 20,
-          rowY,
-          modName,
-          TYPE.caption * 0.78,
-          UI.coralText,
-          true
-        ).setOrigin(0, 0.5)
+        label(scene, slotCenterX, powerUpSlotY, '+', 28, UI.inkSoft, true)
       );
-      const effect = label(
+      continue;
+    }
+    const definition = POWER_UP_CATALOG[powerUpId];
+    card.add([
+      paperIcon(
         scene,
-        modPanelWidth / 2 - 20,
-        rowY,
-        modEffect,
-        TYPE.caption * 0.78,
-        UI.inkSoft,
-        false
-      ).setOrigin(1, 0.5);
-      const maximumEffectWidth = modPanelWidth - 190;
-      if (effect.width > maximumEffectWidth) {
-        effect.setScale(maximumEffectWidth / effect.width);
-      }
-      card.add(effect);
-    });
-  } else {
-    card.add(
+        POWER_UP_ICONS[powerUpId],
+        slotCenterX,
+        powerUpSlotY - 10,
+        {
+          size: 40,
+          fill: rarityStyle?.color ?? UI.coral,
+        }
+      ),
       label(
         scene,
-        modPanelWidth / 2 - 20,
-        modPanelTop + 61,
-        'NEXT AT LV2',
-        TYPE.caption * 0.82,
-        UI.inkSoft,
+        slotCenterX,
+        powerUpSlotY + 26,
+        definition.shortName,
+        TYPE.caption * 0.48,
+        rarityStyle?.textColor ?? UI.ink,
         true
-      ).setOrigin(1, 0.5)
-    );
+      ).setWordWrapWidth(powerUpSlotWidth - 8),
+    ]);
   }
-  cursor = modPanelTop + modPanelHeight;
+  const openPowerUpGuide = (): void => openProgressionGuide(null);
+  const powerUpPanelHit = scene.add
+    .rectangle(
+      0,
+      powerUpPanelTop + powerUpPanelHeight / 2,
+      powerUpPanelWidth,
+      powerUpPanelHeight,
+      0xffffff,
+      0.001
+    )
+    .setInteractive({ useHandCursor: true });
+  setSfxCue(powerUpPanelHit, 'ui.open');
+  powerUpPanelHit.on('pointerup', openPowerUpGuide);
+  card.add(powerUpPanelHit);
+  modalActions.add({
+    label: `Open ${scribbit.name} Power-Up build and catalog`,
+    rect: {
+      x: cardX - powerUpPanelWidth / 2,
+      y: cardY + powerUpPanelTop,
+      width: powerUpPanelWidth,
+      height: powerUpPanelHeight,
+    },
+    onActivate: openPowerUpGuide,
+  });
+  cursor = powerUpPanelTop + powerUpPanelHeight;
 
   // --- One readable record + lifecycle strip -------------------------------
   cursor += 48;
@@ -737,30 +851,25 @@ export function openDetailModal(
     const guideTop = height / 2 - guideCardHeight / 2;
     const guideBottom = guideTop + guideCardHeight;
     const pageDescriptions = [
-      `Page 1 of 3. ${style.label} is this Scribbit's element. Drawing color sets it at birth, and it never changes. ${ELEMENT_PAYLOAD_GUIDE.map(
-        (entry) => `${entry.element}: ${entry.title}`
-      ).join('. ')}.`,
-      `Page 2 of 3. The six possible Ink Mods are ${COMBAT_UPGRADE_IDS.map(
-        (id) => COMBAT_UPGRADE_CATALOG[id].name
-      ).join(', ')}. A Scribbit can own four.`,
-      'Page 3 of 3. Care gives 1 XP, or 2 when Pumped. A Spar win gives 1 XP. A Rumble or Champion win gives 2 XP. Losses give 0 XP. One new Ink Mod unlocks at levels 2, 3, 4, and 5.',
+      `Page 1 of 3. ${scribbit.name} owns ${ownedPowerUpNames.length > 0 ? ownedPowerUpNames.join(', ') : 'no Power-Ups yet'}. A Scribbit can own five unique Power-Ups, including at most one Legendary. Role comes from the drawing. Gear owns reusable stat boosts.`,
+      `Page 2 of 3. Fifteen Power-Ups. ${POWER_UP_IDS.map((id) => {
+        const definition = POWER_UP_CATALOG[id];
+        return `${definition.name}, ${definition.rarity}: ${definition.description}`;
+      }).join(' ')}`,
+      'Page 3 of 3. Wins offer three Power-Ups and you choose one. Standard wins offer Common, Common, Rare. Big wins offer Common, Rare, Epic. Champion wins offer Rare, Epic, Legendary. Losses offer no Power-Up.',
     ] as const;
-    let guideOverlay: CanvasModalOverlay | null = null;
     const closeGuide = (): void => {
       if (!guideLayer.active) return;
       guideLayer.destroy(true);
     };
-    guideOverlay = new CanvasModalOverlay(
+    const guideOverlay = new CanvasModalOverlay(
       scene,
       'How Scribbit powers and progression work',
       closeGuide,
-      'A three-page picture guide to elements, Ink Mods, and how Scribbits earn them.',
+      'A three-page icon guide to your build, every Power-Up, and win rewards.',
       trigger
     );
-    guideLayer.once('destroy', () => {
-      guideOverlay?.destroy();
-      guideOverlay = null;
-    });
+    guideLayer.once('destroy', () => guideOverlay.destroy());
 
     const shade = scene.add
       .rectangle(width / 2, height / 2, width, height, UI.inkHex, 0.78)
@@ -880,91 +989,121 @@ export function openDetailModal(
       page.add(plate);
     };
 
-    const elementPage = createPage(
+    const buildPage = createPage(
       1,
-      'YOUR ELEMENT',
-      'YOUR DRAWING COLOR PICKS IT AT BIRTH'
+      'YOUR BUILD',
+      `${ownedPowerUpIds.length}/${MAXIMUM_POWER_UPS} POWER-UPS · MAX 1 LEGENDARY`
     );
-    const elementHeroY = guideTop + 230;
-    const elementHalo = scene.add
-      .circle(width / 2, elementHeroY, 76, style.soft, 0.72)
-      .setStrokeStyle(5, style.primary, 1)
-      .setScrollFactor(0);
-    elementPage.add([
-      elementHalo,
-      elementPaperIcon(scene, scribbit.element, width / 2, elementHeroY, 116),
-      label(
-        scene,
-        width / 2,
-        elementHeroY + 112,
-        style.label.toUpperCase(),
-        34,
-        style.primaryText,
-        true
-      ).setScrollFactor(0),
-      label(
-        scene,
-        width / 2,
-        elementHeroY + 148,
-        'YOURS FOREVER',
-        17,
-        UI.goldText,
-        true
-      ).setScrollFactor(0),
-      label(
-        scene,
-        width / 2,
-        guideTop + 410,
-        'THE 4 ELEMENT POWERS',
-        22,
-        UI.ink,
-        true
-      ).setScrollFactor(0),
-    ]);
-    const elementCardWidth = (guideCardWidth - 100) / 2;
-    ELEMENT_PAYLOAD_GUIDE.forEach((entry, index) => {
-      const entryStyle = ELEMENT_STYLES[entry.element];
-      const isCurrent = entry.element === scribbit.element;
-      const column = index % 2;
-      const row = Math.floor(index / 2);
-      const cardCenterX =
-        width / 2 + (column === 0 ? -1 : 1) * (elementCardWidth / 2 + 9);
-      const cardCenterY = guideTop + 500 + row * 164;
+    const buildSlotGap = 12;
+    const buildSlotWidth = (guideCardWidth - 104 - buildSlotGap * 4) / 5;
+    const buildSlotY = guideTop + 250;
+    for (let slotIndex = 0; slotIndex < MAXIMUM_POWER_UPS; slotIndex += 1) {
+      const powerUpId = ownedPowerUpIds[slotIndex];
+      const slotX =
+        width / 2 -
+        (buildSlotWidth * 5 + buildSlotGap * 4) / 2 +
+        buildSlotWidth / 2 +
+        slotIndex * (buildSlotWidth + buildSlotGap);
+      const definition = powerUpId ? POWER_UP_CATALOG[powerUpId] : null;
+      const rarity = definition
+        ? POWER_UP_RARITY_STYLE[definition.rarity]
+        : null;
       addCardPlate(
-        elementPage,
-        cardCenterX,
-        cardCenterY,
-        elementCardWidth,
-        142,
-        isCurrent ? entryStyle.soft : UI.creamHex,
-        isCurrent ? UI.gold : entryStyle.primary,
-        isCurrent
+        buildPage,
+        slotX,
+        buildSlotY,
+        buildSlotWidth,
+        150,
+        UI.creamHex,
+        rarity?.color ?? UI.inkSoftHex,
+        Boolean(definition)
       );
-      elementPage.add([
-        elementPaperIcon(
-          scene,
-          entry.element,
-          cardCenterX - elementCardWidth / 2 + 44,
-          cardCenterY - 28,
-          50
-        ),
+      if (!definition || !powerUpId) {
+        buildPage.add([
+          label(scene, slotX, buildSlotY - 12, '+', 38, UI.inkSoft, true),
+          label(scene, slotX, buildSlotY + 34, 'EMPTY', 12, UI.inkSoft, true),
+        ]);
+        continue;
+      }
+      buildPage.add([
+        paperIcon(scene, POWER_UP_ICONS[powerUpId], slotX, buildSlotY - 25, {
+          size: 54,
+          fill: rarity?.color ?? UI.coral,
+        }).setScrollFactor(0),
         label(
           scene,
-          cardCenterX - elementCardWidth / 2 + 80,
-          cardCenterY - 39,
-          entry.element.toUpperCase(),
-          19,
-          entryStyle.primaryText,
+          slotX,
+          buildSlotY + 28,
+          definition.shortName,
+          12,
+          UI.ink,
           true
         )
-          .setOrigin(0, 0.5)
+          .setWordWrapWidth(buildSlotWidth - 8)
+          .setAlign('center')
           .setScrollFactor(0),
         label(
           scene,
-          cardCenterX - elementCardWidth / 2 + 80,
-          cardCenterY - 14,
-          entry.title,
-          15,
+          slotX,
+          buildSlotY + 57,
+          rarity?.label ?? '',
+          10,
+          rarity?.textColor ?? UI.inkSoft,
+          true
+        ).setScrollFactor(0),
+      ]);
+    }
+    const buildRuleWidth = guideCardWidth - 92;
+    const buildRules = [
+      {
+        y: guideTop + 465,
+        icon: 'pencil' as const,
+        title: 'ROLE = YOUR DRAWING',
+        detail: 'How your Scribbit moves and attacks.',
+        color: roleColor,
+      },
+      {
+        y: guideTop + 625,
+        icon: 'spark' as const,
+        title: 'POWER-UPS = RUN TWISTS',
+        detail: 'Triggered tricks that change what happens in a fight.',
+        color: UI.coral,
+      },
+      {
+        y: guideTop + 785,
+        icon: 'armor' as const,
+        title: 'GEAR = REUSABLE STATS',
+        detail: 'Damage, hearts, timing, and other equipped boosts.',
+        color: UI.gold,
+      },
+    ];
+    buildRules.forEach((rule) => {
+      addCardPlate(
+        buildPage,
+        width / 2,
+        rule.y,
+        buildRuleWidth,
+        126,
+        UI.creamHex,
+        rule.color
+      );
+      buildPage.add([
+        paperIcon(
+          scene,
+          rule.icon,
+          width / 2 - buildRuleWidth / 2 + 62,
+          rule.y,
+          {
+            size: 62,
+            fill: rule.color,
+          }
+        ).setScrollFactor(0),
+        label(
+          scene,
+          width / 2 - buildRuleWidth / 2 + 112,
+          rule.y - 20,
+          rule.title,
+          17,
           UI.ink,
           true
         )
@@ -972,176 +1111,225 @@ export function openDetailModal(
           .setScrollFactor(0),
         label(
           scene,
-          cardCenterX,
-          cardCenterY + 37,
-          entry.detail,
+          width / 2 - buildRuleWidth / 2 + 112,
+          rule.y + 20,
+          rule.detail,
           14,
           UI.inkSoft,
           false
         )
-          .setWordWrapWidth(elementCardWidth - 26)
-          .setAlign('center')
+          .setOrigin(0, 0.5)
+          .setWordWrapWidth(buildRuleWidth - 142)
           .setScrollFactor(0),
       ]);
     });
 
-    const modsPage = createPage(
+    const catalogPage = createPage(
       2,
-      'INK MODS',
-      'LEVEL UP TO COLLECT 4 OF THESE 6'
+      'POWER-UP CATALOG',
+      'TAP ANY ICON TO READ ITS EFFECT'
     );
-    modsPage.add([
-      paperIcon(scene, 'ink', width / 2 - 68, guideTop + 197, {
-        size: 82,
-        fill: UI.coral,
-      }).setScrollFactor(0),
-      label(scene, width / 2 + 30, guideTop + 180, '4', 56, UI.ink, true)
-        .setOrigin(0, 0.5)
-        .setScrollFactor(0),
-      label(
-        scene,
-        width / 2 + 74,
-        guideTop + 190,
-        'MODS\nPER LIFE',
-        18,
-        UI.coralText,
-        true
-      )
-        .setOrigin(0, 0.5)
-        .setAlign('left')
-        .setScrollFactor(0),
-    ]);
-    const modIcons: Readonly<
-      Record<(typeof COMBAT_UPGRADE_IDS)[number], PaperIconKey>
-    > = {
-      'v1-bold-tip': 'sword',
-      'v1-quick-dry': 'clock',
-      'v1-thick-paper': 'shield',
-      'v1-first-mark': 'spark',
-      'v1-lucky-splash': 'trophy',
-      'v1-steady-hand': 'target',
-    };
-    const modCardWidth = (guideCardWidth - 100) / 2;
-    COMBAT_UPGRADE_IDS.forEach((id, index) => {
-      const definition = COMBAT_UPGRADE_CATALOG[id];
-      const column = index % 2;
-      const row = Math.floor(index / 2);
-      const cardCenterX =
-        width / 2 + (column === 0 ? -1 : 1) * (modCardWidth / 2 + 9);
-      const cardCenterY = guideTop + 330 + row * 166;
-      const owned = scribbit.upgrades.some((upgrade) => upgrade.id === id);
+    const catalogCardGap = 9;
+    const catalogCardWidth = (guideCardWidth - 88 - catalogCardGap * 2) / 3;
+    const catalogCardHeight = 112;
+    const catalogControls: HTMLButtonElement[] = [];
+    const selectedPowerUpName = label(
+      scene,
+      width / 2 - (guideCardWidth - 92) / 2 + 18,
+      guideTop + 824,
+      POWER_UP_CATALOG[POWER_UP_IDS[0]].name.toUpperCase(),
+      17,
+      UI.ink,
+      true
+    )
+      .setOrigin(0, 0.5)
+      .setScrollFactor(0);
+    const selectedPowerUpDescription = label(
+      scene,
+      width / 2 - (guideCardWidth - 92) / 2 + 18,
+      guideTop + 862,
+      POWER_UP_CATALOG[POWER_UP_IDS[0]].description,
+      14,
+      UI.inkSoft,
+      false
+    )
+      .setOrigin(0, 0.5)
+      .setWordWrapWidth(guideCardWidth - 128)
+      .setScrollFactor(0);
+    POWER_UP_IDS.forEach((powerUpId, index) => {
+      const definition = POWER_UP_CATALOG[powerUpId];
+      const rarity = POWER_UP_RARITY_STYLE[definition.rarity];
+      const column = index % 3;
+      const row = Math.floor(index / 3);
+      const cardX =
+        width / 2 -
+        (catalogCardWidth * 3 + catalogCardGap * 2) / 2 +
+        catalogCardWidth / 2 +
+        column * (catalogCardWidth + catalogCardGap);
+      const cardY = guideTop + 205 + row * (catalogCardHeight + 10);
       addCardPlate(
-        modsPage,
-        cardCenterX,
-        cardCenterY,
-        modCardWidth,
-        142,
-        owned ? UI.tape : UI.creamHex,
-        owned ? UI.gold : UI.coral,
-        owned
+        catalogPage,
+        cardX,
+        cardY,
+        catalogCardWidth,
+        catalogCardHeight,
+        UI.creamHex,
+        rarity.color,
+        ownedPowerUpIds.includes(powerUpId)
       );
-      modsPage.add([
-        paperIcon(scene, modIcons[id], cardCenterX, cardCenterY - 31, {
-          size: 54,
-          fill: owned ? UI.gold : UI.coral,
+      catalogPage.add([
+        paperIcon(scene, POWER_UP_ICONS[powerUpId], cardX, cardY - 24, {
+          size: 44,
+          fill: rarity.color,
         }).setScrollFactor(0),
-        label(
-          scene,
-          cardCenterX,
-          cardCenterY + 16,
-          definition.shortName,
-          18,
-          UI.coralText,
-          true
-        ).setScrollFactor(0),
-        label(
-          scene,
-          cardCenterX,
-          cardCenterY + 45,
-          definition.description,
-          14,
-          UI.inkSoft,
-          false
-        )
-          .setWordWrapWidth(modCardWidth - 24)
+        label(scene, cardX, cardY + 18, definition.shortName, 12, UI.ink, true)
+          .setWordWrapWidth(catalogCardWidth - 10)
           .setAlign('center')
           .setScrollFactor(0),
+        label(
+          scene,
+          cardX,
+          cardY + 42,
+          rarity.label,
+          9,
+          rarity.textColor,
+          true
+        ).setScrollFactor(0),
       ]);
-      if (owned) {
-        modsPage.add(
-          label(
-            scene,
-            cardCenterX + modCardWidth / 2 - 12,
-            cardCenterY - 56,
-            'YOURS',
-            12,
-            UI.goldText,
-            true
-          )
-            .setOrigin(1, 0.5)
-            .setScrollFactor(0)
-        );
-      }
+      catalogControls.push(
+        guideOverlay.add({
+          label: `${definition.name}, ${rarity.label}. ${definition.description}${ownedPowerUpIds.includes(powerUpId) ? ' Owned.' : ''}`,
+          rect: {
+            x: cardX - catalogCardWidth / 2,
+            y: cardY - catalogCardHeight / 2,
+            width: catalogCardWidth,
+            height: catalogCardHeight,
+          },
+          onActivate: () => {
+            selectedPowerUpName.setText(
+              `${definition.name.toUpperCase()} · ${rarity.label}`
+            );
+            selectedPowerUpDescription.setText(definition.description);
+            pageStatus.textContent = `${definition.name}. ${definition.description}`;
+          },
+        })
+      );
     });
-    modsPage.add(
-      label(
-        scene,
-        width / 2,
-        guideTop + 840,
-        'ONE NEW MOD AT LV2, LV3, LV4, AND LV5',
-        17,
-        UI.coralText,
-        true
-      ).setScrollFactor(0)
+    addCardPlate(
+      catalogPage,
+      width / 2,
+      guideTop + 850,
+      guideCardWidth - 92,
+      112,
+      UI.tape,
+      UI.coral
     );
+    catalogPage.add([selectedPowerUpName, selectedPowerUpDescription]);
 
     const earnPage = createPage(
       3,
-      'HOW TO EARN',
-      'GET XP → LEVEL UP → UNLOCK A MOD'
+      'WIN → CHOOSE 1',
+      'EVERY WIN OFFERS 3 DISTINCT POWER-UPS'
     );
-    const stepCardWidth = guideCardWidth - 88;
-    const drawStepY = guideTop + 240;
-    addCardPlate(
-      earnPage,
-      width / 2,
-      drawStepY,
-      stepCardWidth,
-      150,
-      UI.creamHex,
-      style.primary
-    );
+    const rewardCardWidth = guideCardWidth - 92;
+    const rewardRows = [
+      {
+        y: guideTop + 260,
+        icon: 'sword' as const,
+        title: 'STANDARD WIN',
+        slots: ['COMMON', 'COMMON', 'RARE'] as const,
+        colors: [UI.inkSoftHex, UI.inkSoftHex, 0x4f9dcc] as const,
+      },
+      {
+        y: guideTop + 470,
+        icon: 'spark' as const,
+        title: 'BIG WIN',
+        slots: ['COMMON', 'RARE', 'EPIC'] as const,
+        colors: [UI.inkSoftHex, 0x4f9dcc, 0x8a5cd8] as const,
+      },
+      {
+        y: guideTop + 680,
+        icon: 'trophy' as const,
+        title: 'CHAMPION WIN',
+        slots: ['RARE', 'EPIC', 'LEGENDARY'] as const,
+        colors: [0x4f9dcc, 0x8a5cd8, UI.gold] as const,
+      },
+    ];
+    rewardRows.forEach((reward) => {
+      addCardPlate(
+        earnPage,
+        width / 2,
+        reward.y,
+        rewardCardWidth,
+        172,
+        UI.creamHex,
+        reward.colors[2]
+      );
+      earnPage.add([
+        paperIcon(
+          scene,
+          reward.icon,
+          width / 2 - rewardCardWidth / 2 + 56,
+          reward.y - 43,
+          { size: 52, fill: reward.colors[2] }
+        ).setScrollFactor(0),
+        label(
+          scene,
+          width / 2 - rewardCardWidth / 2 + 96,
+          reward.y - 43,
+          reward.title,
+          18,
+          UI.ink,
+          true
+        )
+          .setOrigin(0, 0.5)
+          .setScrollFactor(0),
+      ]);
+      reward.slots.forEach((slot, slotIndex) => {
+        const slotX = width / 2 - 140 + slotIndex * 140;
+        const slotColor = reward.colors[slotIndex] ?? UI.inkSoftHex;
+        earnPage.add([
+          scene.add
+            .circle(slotX, reward.y + 30, 32, UI.creamHex, 1)
+            .setStrokeStyle(5, slotColor, 1)
+            .setScrollFactor(0),
+          paperIcon(scene, 'spark', slotX, reward.y + 25, {
+            size: 38,
+            fill: slotColor,
+          }).setScrollFactor(0),
+          label(
+            scene,
+            slotX,
+            reward.y + 70,
+            slot,
+            11,
+            UI.ink,
+            true
+          ).setScrollFactor(0),
+        ]);
+      });
+    });
     earnPage.add([
-      paperIcon(scene, 'pencil', width / 2 - 118, drawStepY, {
-        size: 70,
-        fill: UI.gold,
+      paperIcon(scene, 'defeat', width / 2 - 132, guideTop + 860, {
+        size: 48,
+        fill: UI.inkSoftHex,
       }).setScrollFactor(0),
       label(
         scene,
-        width / 2 - 32,
-        drawStepY,
-        '→',
-        44,
-        UI.ink,
-        true
-      ).setScrollFactor(0),
-      elementPaperIcon(scene, scribbit.element, width / 2 + 54, drawStepY, 68),
-      label(
-        scene,
-        width / 2 + 132,
-        drawStepY - 16,
-        'ELEMENT',
+        width / 2 - 92,
+        guideTop + 848,
+        'LOSS = NO POWER-UP',
         17,
-        style.primaryText,
+        UI.inkSoft,
         true
       )
         .setOrigin(0, 0.5)
         .setScrollFactor(0),
       label(
         scene,
-        width / 2 + 132,
-        drawStepY + 16,
-        'SET AT BIRTH',
+        width / 2 - 92,
+        guideTop + 878,
+        'Choose one after a win. Your build stops at 5/5.',
         14,
         UI.inkSoft,
         false
@@ -1150,150 +1338,18 @@ export function openDetailModal(
         .setScrollFactor(0),
     ]);
 
-    const xpStepY = guideTop + 485;
-    addCardPlate(
-      earnPage,
-      width / 2,
-      xpStepY,
-      stepCardWidth,
-      274,
-      UI.creamHex,
-      UI.coral
-    );
-    earnPage.add(
-      label(
-        scene,
-        width / 2,
-        xpStepY - 106,
-        'EARN XP',
-        22,
-        UI.ink,
-        true
-      ).setScrollFactor(0)
-    );
-    const xpRewards = [
-      {
-        icon: 'heart' as const,
-        title: 'CARE',
-        amount: '+1 XP',
-        note: 'PUMPED +2',
-      },
-      { icon: 'sword' as const, title: 'SPAR WIN', amount: '+1 XP', note: '' },
-      {
-        icon: 'trophy' as const,
-        title: 'BIG WIN',
-        amount: '+2 XP',
-        note: 'RUMBLE / CHAMPION',
-      },
-      { icon: 'defeat' as const, title: 'LOSS', amount: '+0 XP', note: '' },
-    ];
-    xpRewards.forEach((reward, index) => {
-      const column = index % 2;
-      const row = Math.floor(index / 2);
-      const rewardX = width / 2 + (column === 0 ? -140 : 140);
-      const rewardY = xpStepY - 36 + row * 112;
-      earnPage.add([
-        paperIcon(scene, reward.icon, rewardX - 52, rewardY, {
-          size: 52,
-          fill: reward.icon === 'defeat' ? UI.inkSoftHex : UI.coral,
-        }).setScrollFactor(0),
-        label(scene, rewardX - 10, rewardY - 16, reward.title, 16, UI.ink, true)
-          .setOrigin(0, 0.5)
-          .setScrollFactor(0),
-        label(
-          scene,
-          rewardX - 10,
-          rewardY + 12,
-          reward.amount,
-          20,
-          reward.icon === 'defeat' ? UI.inkSoft : UI.coralText,
-          true
-        )
-          .setOrigin(0, 0.5)
-          .setScrollFactor(0),
-        label(
-          scene,
-          rewardX - 10,
-          rewardY + 37,
-          reward.note,
-          11,
-          UI.inkSoft,
-          false
-        )
-          .setOrigin(0, 0.5)
-          .setScrollFactor(0),
-      ]);
-    });
-
-    const levelStepY = guideTop + 746;
-    addCardPlate(
-      earnPage,
-      width / 2,
-      levelStepY,
-      stepCardWidth,
-      154,
-      UI.tape,
-      UI.gold
-    );
-    earnPage.add([
-      paperIcon(scene, 'spark', width / 2 - 222, levelStepY, {
-        size: 62,
-        fill: UI.gold,
-      }).setScrollFactor(0),
-      label(
-        scene,
-        width / 2 - 166,
-        levelStepY - 30,
-        'NEW MOD',
-        18,
-        UI.goldText,
-        true
-      )
-        .setOrigin(0, 0.5)
-        .setScrollFactor(0),
-    ]);
-    [2, 3, 4, 5].forEach((level, index) => {
-      const levelX = width / 2 - 112 + index * 100;
-      earnPage.add([
-        scene.add
-          .circle(levelX, levelStepY + 10, 35, UI.creamHex, 1)
-          .setStrokeStyle(4, UI.coral, 1)
-          .setScrollFactor(0),
-        label(
-          scene,
-          levelX,
-          levelStepY + 4,
-          `LV${level}`,
-          17,
-          UI.ink,
-          true
-        ).setScrollFactor(0),
-      ]);
-    });
-    earnPage.add(
-      label(
-        scene,
-        width / 2,
-        guideTop + 846,
-        'LOSSES GIVE 0 XP',
-        17,
-        UI.inkSoft,
-        true
-      ).setScrollFactor(0)
-    );
-
     const buttonY = guideBottom - 68;
-    const guidePages = [elementPage, modsPage, earnPage];
+    const guidePages = [buildPage, catalogPage, earnPage];
     const navigationVisual = scene.add.container(0, 0).setScrollFactor(0);
     guideLayer.add(navigationVisual);
     const pageStatus = guideOverlay.addStatus(pageDescriptions[0]);
     const pageOneNextControl = guideOverlay.add({
-      label: 'Next, Ink Mods, page 2 of 3',
+      label: 'Next, Power-Up catalog, page 2 of 3',
       rect: { x: width / 2 - 140, y: buttonY - 41, width: 280, height: 82 },
       onActivate: () => showPage(1),
     });
     const pageTwoBackControl = guideOverlay.add({
-      label: 'Back, Element, page 1 of 3',
+      label: 'Back, your build, page 1 of 3',
       rect: { x: width / 2 - 242, y: buttonY - 41, width: 220, height: 82 },
       onActivate: () => showPage(0),
     });
@@ -1303,7 +1359,7 @@ export function openDetailModal(
       onActivate: () => showPage(2),
     });
     const pageThreeBackControl = guideOverlay.add({
-      label: 'Back, Ink Mods, page 2 of 3',
+      label: 'Back, Power-Up catalog, page 2 of 3',
       rect: { x: width / 2 - 242, y: buttonY - 41, width: 220, height: 82 },
       onActivate: () => showPage(1),
     });
@@ -1381,11 +1437,20 @@ export function openDetailModal(
           control.disabled = !visible;
         });
       });
+      catalogControls.forEach((control) => {
+        const visible = safePageIndex === 1;
+        control.hidden = !visible;
+        control.disabled = !visible;
+      });
       renderNavigation(safePageIndex);
       const activePageDescription =
         pageDescriptions[safePageIndex] ?? pageDescriptions[0];
       pageStatus.textContent = activePageDescription;
-      pageControls[safePageIndex]?.[0]?.focus();
+      if (safePageIndex === 1) {
+        catalogControls[0]?.focus();
+      } else {
+        pageControls[safePageIndex]?.[0]?.focus();
+      }
     }
     const closeButtonX = width / 2 + guideCardWidth / 2 - 48;
     const closeButtonY = guideTop + 46;

@@ -260,7 +260,13 @@ export function shopStage(
   scene: Scene,
   depth = -100
 ): Phaser.GameObjects.Image {
-  return fixedStage(scene, SHOP_STAGE_TEXTURE, depth);
+  const stage = fixedStage(scene, SHOP_STAGE_TEXTURE, depth);
+  const verticalOverflow = Math.max(
+    0,
+    stage.displayHeight - scene.scale.height
+  );
+  stage.y += Math.min(30, verticalOverflow / 2);
+  return stage;
 }
 
 function fixedStage(

@@ -94,8 +94,8 @@ test('Ink Kit derives categories from equipment and avoids scrap vocabulary', ()
   assert.ok(inkKitSection, 'Ink Kit must expose its section type');
   assert.equal(
     inkKitSection.type.getText(collectionBookModule),
-    "EquipmentCategory | 'styles'",
-    'gear sections must use the canonical categories while styles remain separate'
+    'EquipmentCategory | DrawKitSection',
+    'Gear must use canonical categories while Draw Kit owns its separate sections'
   );
 
   assert.doesNotMatch(

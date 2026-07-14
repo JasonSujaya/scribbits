@@ -22,6 +22,10 @@ const paperIconsSource = await readFile(
   new URL('../src/client/lib/papericons.ts', import.meta.url),
   'utf8'
 );
+const dailyLoginModalSource = await readFile(
+  new URL('../src/client/lib/dailyloginmodal.ts', import.meta.url),
+  'utf8'
+);
 
 test('Home is the living Scribbit screen with one big Draw action', () => {
   const maturityGearSource = homeSource.slice(
@@ -72,7 +76,7 @@ test('Home is the living Scribbit screen with one big Draw action', () => {
   );
   assert.match(homeSource, /timer\.remove\(false\)/);
   assert.match(homeSource, /this\.drawButtonShine\?\.destroy\(\)/);
-  assert.match(homeSource, /needsScribbitCreation\(state\)/);
+  assert.doesNotMatch(homeSource, /needsScribbitCreation\(state\)/);
   assert.doesNotMatch(homeSource, /'YOUR SCRIBBIT'/);
   assert.match(
     homeSource,
@@ -157,6 +161,13 @@ test('Home is the living Scribbit screen with one big Draw action', () => {
   assert.match(homeSource, /new CanvasModalOverlay/);
   assert.doesNotMatch(homeSource, /`by u\/\$\{scribbit\.artist\}`/);
   assert.match(homeSource, /navigateToDailyDraw\(this\)/);
+  assert.match(homeSource, /isGrowingRosterFull\(this\.state\)/);
+  assert.match(homeSource, /openRosterFullModal\(drawControl\)/);
+  assert.match(homeSource, /openDetailModal\(this, scribbit/);
+  assert.match(homeSource, /MAX_GROWING_PER_USER/);
+  assert.match(homeSource, /drawChargeCountLabel\(drawCharges\)/);
+  assert.match(homeSource, /drawChargeRefreshLabel\(drawCharges\)/);
+  assert.match(homeSource, /drawCharges\.available > 0/);
   assert.match(homeSource, /renderDrawButton\(centerX, buttonY, 520, 124\)/);
   assert.match(homeSource, /appDock\(this, 'home'/);
   assert.match(homeSource, /paperIconButton\([\s\S]*?'book'/);
@@ -167,7 +178,22 @@ test('Home is the living Scribbit screen with one big Draw action', () => {
   );
   assert.match(homeSource, /setGalleryTab\(this, 'growing'\)/);
   assert.match(homeSource, /startScene\(this, 'Gallery'\)/);
-  assert.doesNotMatch(homeSource, /openCarePicker|openDetailModal|ArenaHome/);
+  assert.match(homeSource, /private renderDailyLoginButton\(\)/);
+  assert.match(homeSource, /claimDailyLogin/);
+  assert.match(homeSource, /'gift'/);
+  assert.match(homeSource, /'Claim daily login reward'/);
+  assert.match(dailyLoginModalSource, /DAILY_LOGIN_TRACK/);
+  assert.match(dailyLoginModalSource, /7-DAY LOGIN BONUS/);
+  assert.match(dailyLoginModalSource, /7-DAY BONUS UNLOCKED!/);
+  assert.match(dailyLoginModalSource, /★ DAY 7 BONUS ★/);
+  assert.match(dailyLoginModalSource, /EPIC GOLDEN CROWN/);
+  assert.match(dailyLoginModalSource, /CLAIM 7-DAY BONUS/);
+  assert.match(dailyLoginModalSource, /renderCosmeticPreview\(/);
+  assert.match(
+    paperIconsSource,
+    /if \(key === 'gift'\)[\s\S]*fillRoundedRect[\s\S]*strokeRoundedRect/
+  );
+  assert.doesNotMatch(homeSource, /openCarePicker|ArenaHome/);
   assert.doesNotMatch(appDockSource, /key: 'draw'|route: 'dailyDraw'/);
   assert.match(
     visualAssetsSource,

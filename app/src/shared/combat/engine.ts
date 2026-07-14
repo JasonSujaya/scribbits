@@ -22,15 +22,16 @@ import {
   selectPrimaryPower as selectPrimaryPowerForStats,
 } from './selection';
 import { getCombatRoleRules } from './roles';
-import {
-  getCombatUpgradeModifiers,
-  isCombatUpgradeId,
-  MAXIMUM_COMBAT_UPGRADES,
-} from './upgrades';
 import { freezeGearCombatSnapshot, isGearCombatSnapshot } from './gearsnapshot';
-import { isElement } from '../elements';
 import { applyBattleArenaModifier } from '../battlearena';
-import type { CombatUpgradeModifiers } from './upgrades';
+import {
+  MAXIMUM_POWER_UP_BONUS_DAMAGE,
+  MAXIMUM_POWER_UP_TRIGGER_EVENTS,
+  POWER_UP_CATALOG,
+  parsePowerUpBuild,
+  validatePowerUpBuild,
+} from './powerups';
+import type { PowerUpId } from './powerups';
 import type {
   AbilityPhase,
   AuthoritativeBattleResult,
@@ -48,6 +49,7 @@ import type {
   FighterResult,
   FighterSlot,
   FixedVector,
+  GearCombatModifiers,
   NibHaloAbilityConfig,
   PrimaryPower,
   RawCombatStats,
@@ -63,12 +65,6 @@ type MutableVector = {
   y: number;
 };
 
-type BurnState = {
-  sourceFighter: FighterSlot;
-  remainingDamage: number;
-  nextPulseTick: number;
-};
-
 type EchoState = {
   position: MutableVector;
   aimDirection: MutableVector;
@@ -76,10 +72,32 @@ type EchoState = {
   expiresAtTick: number;
 };
 
+type ScheduledPowerUpEffect = {
+  tick: number;
+  powerUpId: PowerUpId;
+  target: FighterSlot;
+  damage: number;
+};
+
 type MutableFighterState = {
   slot: FighterSlot;
   input: CombatFighterInput;
-  upgradeModifiers: CombatUpgradeModifiers;
+  combatModifiers: GearCombatModifiers;
+  powerUpIds: readonly PowerUpId[];
+  powerUpActivations: Map<PowerUpId, number>;
+  powerUpTriggerCount: number;
+  powerUpBonusDamageSpent: number;
+  triggeredNonLegendaryPowerUps: Set<PowerUpId>;
+  endlessDraftExtraPowerUpId: PowerUpId | null;
+  scheduledPowerUpEffects: ScheduledPowerUpEffect[];
+  basicHitStreak: number;
+  currentBasicAttackHit: boolean;
+  currentBasicAttackDamage: number;
+  movementOverrideUntilTick: number;
+  paperTwinAttacksRemaining: number;
+  echoMarkArmed: boolean;
+  lastKnockbackBy: FighterSlot | null;
+  lastKnockbackTick: number;
   combatRole: CombatRole;
   primaryPower: PrimaryPower;
   position: MutableVector;
@@ -96,10 +114,7 @@ type MutableFighterState = {
   resolvedAttackCount: number;
   defenseUntilTick: number;
   contactReadyTick: number;
-  barrierCreated: boolean;
   barrierHitPoints: number;
-  burn: BurnState | null;
-  emberBurnDamageSpent: number;
   abilityPhase: AbilityPhase;
   abilityPhaseEndsAtTick: number;
   abilityReadyAtTick: number;
@@ -235,9 +250,6 @@ function validateFighterInput(fighter: CombatFighterInput): void {
   validateText(fighter.id, 'Fighter id', 120);
   validateText(fighter.name, 'Fighter name', 80);
   validateStats(fighter.stats);
-  if (!isElement(fighter.element)) {
-    throw new Error(`Unsupported combat element: ${fighter.element}.`);
-  }
   if (
     fighter.damageModifierPermille !== undefined &&
     (!Number.isSafeInteger(fighter.damageModifierPermille) ||
@@ -246,14 +258,10 @@ function validateFighterInput(fighter: CombatFighterInput): void {
   ) {
     throw new Error('Combat damage modifier must be 850 to 1250 permille.');
   }
-  const upgrades = fighter.upgrades ?? [];
-  if (
-    upgrades.length > MAXIMUM_COMBAT_UPGRADES ||
-    upgrades.some((upgradeId) => !isCombatUpgradeId(upgradeId)) ||
-    new Set(upgrades).size !== upgrades.length
-  ) {
+  const powerUpValidation = validatePowerUpBuild(fighter.powerUpIds ?? []);
+  if (!powerUpValidation.valid) {
     throw new Error(
-      `Combat upgrades must contain up to ${MAXIMUM_COMBAT_UPGRADES} unique Ink Mods.`
+      `Combat Power-Up build is invalid: ${powerUpValidation.reason}.`
     );
   }
   if (fighter.gear !== undefined && !isGearCombatSnapshot(fighter.gear)) {
@@ -265,32 +273,28 @@ function freezeFighterInput(fighter: CombatFighterInput): CombatFighterInput {
   return Object.freeze({
     id: fighter.id,
     name: fighter.name,
-    element: fighter.element,
     stats: Object.freeze({ ...fighter.stats }),
-    upgrades: Object.freeze([...(fighter.upgrades ?? [])]),
+    powerUpIds: Object.freeze([...(fighter.powerUpIds ?? [])]),
     damageModifierPermille: fighter.damageModifierPermille ?? 1_000,
     ...(fighter.gear ? { gear: freezeGearCombatSnapshot(fighter.gear) } : {}),
   });
 }
 
-function getCombinedCombatModifiers(
+function getGearCombatModifiers(
   input: CombatFighterInput
-): CombatUpgradeModifiers {
-  const upgrades = getCombatUpgradeModifiers(input.upgrades);
+): GearCombatModifiers {
   const gear = input.gear?.modifiers;
-  if (!gear) return upgrades;
-  return Object.freeze({
-    damagePermille: upgrades.damagePermille + gear.damagePermille - 1_000,
-    maximumHitPointsPermille:
-      upgrades.maximumHitPointsPermille + gear.maximumHitPointsPermille - 1_000,
-    cooldownPermille: upgrades.cooldownPermille + gear.cooldownPermille - 1_000,
-    criticalChanceBonusPermille:
-      upgrades.criticalChanceBonusPermille + gear.criticalChanceBonusPermille,
-    telegraphTicksDelta:
-      upgrades.telegraphTicksDelta + gear.telegraphTicksDelta,
-    initialDelayTicksDelta:
-      upgrades.initialDelayTicksDelta + gear.initialDelayTicksDelta,
-  });
+  return (
+    gear ??
+    Object.freeze({
+      damagePermille: 1_000,
+      maximumHitPointsPermille: 1_000,
+      cooldownPermille: 1_000,
+      criticalChanceBonusPermille: 0,
+      telegraphTicksDelta: 0,
+      initialDelayTicksDelta: 0,
+    })
+  );
 }
 
 export function getOrbitingNibPosition(
@@ -339,13 +343,137 @@ function appendEvent(
   }
 }
 
+function fighterOwnsPowerUp(
+  fighter: MutableFighterState,
+  powerUpId: PowerUpId
+): boolean {
+  return fighter.powerUpIds.includes(powerUpId);
+}
+
+function triggerPowerUp(
+  context: SimulationContext,
+  fighter: MutableFighterState,
+  powerUpId: PowerUpId,
+  target?: MutableFighterState,
+  bonusDamage?: number
+): boolean {
+  if (!fighterOwnsPowerUp(fighter, powerUpId)) return false;
+  const definition = POWER_UP_CATALOG[powerUpId];
+  const activations = fighter.powerUpActivations.get(powerUpId) ?? 0;
+  const activationLimit =
+    definition.maximumActivations +
+    (fighter.endlessDraftExtraPowerUpId === powerUpId ? 1 : 0);
+  if (
+    activations >= activationLimit ||
+    fighter.powerUpTriggerCount >= MAXIMUM_POWER_UP_TRIGGER_EVENTS
+  ) {
+    return false;
+  }
+
+  fighter.powerUpActivations.set(powerUpId, activations + 1);
+  fighter.powerUpTriggerCount += 1;
+  appendEvent(context, {
+    tick: context.tick,
+    kind: 'power_up_triggered',
+    actor: fighter.slot,
+    powerUpId,
+    ...(target ? { target: target.slot } : {}),
+    ...(bonusDamage !== undefined ? { bonusDamage } : {}),
+  });
+
+  if (definition.rarity !== 'legendary') {
+    fighter.triggeredNonLegendaryPowerUps.add(powerUpId);
+  }
+  if (
+    definition.rarity === 'common' &&
+    fighter.endlessDraftExtraPowerUpId === null &&
+    triggerPowerUp(context, fighter, 'v1-endless-draft')
+  ) {
+    fighter.endlessDraftExtraPowerUpId = powerUpId;
+  }
+  if (
+    fighter.triggeredNonLegendaryPowerUps.size >= 3 &&
+    fighterOwnsPowerUp(fighter, 'v1-masterpiece')
+  ) {
+    const opponent = getOpponent(context, fighter);
+    dealPowerUpDamage(
+      context,
+      fighter,
+      opponent,
+      'v1-masterpiece',
+      POWER_UP_CATALOG['v1-masterpiece'].bonusDamage ?? 0
+    );
+  }
+  return true;
+}
+
+function dealPowerUpDamage(
+  context: SimulationContext,
+  fighter: MutableFighterState,
+  target: MutableFighterState,
+  powerUpId: PowerUpId,
+  requestedDamage: number
+): number {
+  if (!triggerPowerUp(context, fighter, powerUpId, target, requestedDamage)) {
+    return 0;
+  }
+  return applyBudgetedPowerUpDamage(context, fighter, target, requestedDamage);
+}
+
+function applyBudgetedPowerUpDamage(
+  context: SimulationContext,
+  fighter: MutableFighterState,
+  target: MutableFighterState,
+  requestedDamage: number
+): number {
+  const remainingBudget =
+    MAXIMUM_POWER_UP_BONUS_DAMAGE - fighter.powerUpBonusDamageSpent;
+  const budgetedDamage = Math.max(
+    0,
+    Math.min(requestedDamage, remainingBudget)
+  );
+  if (budgetedDamage <= 0) return 0;
+  fighter.powerUpBonusDamageSpent += budgetedDamage;
+  return applyResolvedDamage(
+    context,
+    fighter,
+    target,
+    'power_up',
+    budgetedDamage,
+    {
+      applyElementPayload: false,
+      bypassDefense: false,
+      bypassBarrier: false,
+      critical: false,
+    }
+  );
+}
+
+function schedulePowerUpDamage(
+  context: SimulationContext,
+  fighter: MutableFighterState,
+  powerUpId: PowerUpId,
+  target: MutableFighterState,
+  delayTicks: number,
+  damage: number
+): void {
+  if (!triggerPowerUp(context, fighter, powerUpId, target)) return;
+  fighter.scheduledPowerUpEffects.push({
+    tick: context.tick + delayTicks,
+    powerUpId,
+    target: target.slot,
+    damage,
+  });
+}
+
 function createFighterState(
   input: CombatFighterInput,
   slot: FighterSlot,
   _seed: string,
   rules: CombatRules
 ): MutableFighterState {
-  const upgradeModifiers = getCombinedCombatModifiers(input);
+  const combatModifiers = getGearCombatModifiers(input);
+  const powerUpIds = parsePowerUpBuild(input.powerUpIds ?? []) ?? [];
   const combatRole = selectCombatRole(input.stats);
   const horizontalDirection = slot === 'a' ? 1 : -1;
   const verticalDirectionByRole: Readonly<Record<CombatRole, number>> = {
@@ -383,19 +511,34 @@ function createFighterState(
   };
   const initialDelay =
     initialAbilityDelayByRole[combatRole] +
-    upgradeModifiers.initialDelayTicksDelta;
+    combatModifiers.initialDelayTicksDelta;
   const baseMaxHitPoints =
     rules.fighter.baseHitPoints +
     input.stats.chonk * rules.fighter.hitPointsPerChonk;
   const maxHitPoints = divideRounded(
-    baseMaxHitPoints * upgradeModifiers.maximumHitPointsPermille,
+    baseMaxHitPoints * combatModifiers.maximumHitPointsPermille,
     1_000
   );
 
   return {
     slot,
     input,
-    upgradeModifiers,
+    combatModifiers,
+    powerUpIds,
+    powerUpActivations: new Map(),
+    powerUpTriggerCount: 0,
+    powerUpBonusDamageSpent: 0,
+    triggeredNonLegendaryPowerUps: new Set(),
+    endlessDraftExtraPowerUpId: null,
+    scheduledPowerUpEffects: [],
+    basicHitStreak: 0,
+    currentBasicAttackHit: false,
+    currentBasicAttackDamage: 0,
+    movementOverrideUntilTick: 0,
+    paperTwinAttacksRemaining: 0,
+    echoMarkArmed: false,
+    lastKnockbackBy: null,
+    lastKnockbackTick: -1,
     combatRole,
     primaryPower: selectPrimaryPowerForStats(input.stats),
     position: {
@@ -417,10 +560,7 @@ function createFighterState(
     resolvedAttackCount: 0,
     defenseUntilTick: 0,
     contactReadyTick: 0,
-    barrierCreated: false,
     barrierHitPoints: 0,
-    burn: null,
-    emberBurnDamageSpent: 0,
     abilityPhase: 'cooldown',
     abilityPhaseEndsAtTick: 0,
     abilityReadyAtTick: initialDelay,
@@ -531,15 +671,9 @@ function getEffectiveTelegraphTicks(
   rules: CombatRules
 ): number {
   const timing = getPowerTiming(fighter, rules);
-  const stormReduction =
-    fighter.input.element === 'storm'
-      ? rules.elements.storm.telegraphReductionTicks
-      : 0;
   return Math.max(
     1,
-    timing.telegraphTicks -
-      stormReduction +
-      fighter.upgradeModifiers.telegraphTicksDelta
+    timing.telegraphTicks + fighter.combatModifiers.telegraphTicksDelta
   );
 }
 
@@ -549,7 +683,7 @@ function getEffectiveCooldownTicks(
 ): number {
   const baseCooldown = divideRounded(
     getPowerTiming(fighter, context.rules).cooldownTicks *
-      fighter.upgradeModifiers.cooldownPermille,
+      fighter.combatModifiers.cooldownPermille,
     1_000
   );
   if (context.tick < context.rules.lateFight.startsAtTick) {
@@ -581,23 +715,6 @@ function clampPositionInsideArena(
       context.arenaHalfHeight - radius
     ),
   };
-}
-
-function createMossBarrierIfAvailable(
-  context: SimulationContext,
-  fighter: MutableFighterState
-): void {
-  if (fighter.input.element !== 'moss' || fighter.barrierCreated) {
-    return;
-  }
-  fighter.barrierCreated = true;
-  fighter.barrierHitPoints = context.rules.elements.moss.barrierHitPoints;
-  appendEvent(context, {
-    tick: context.tick,
-    kind: 'barrier_created',
-    actor: fighter.slot,
-    hitPoints: fighter.barrierHitPoints,
-  });
 }
 
 function createColorburstEcho(
@@ -732,7 +849,6 @@ function activateAbility(
   fighter.smearstepCurrentDash = -1;
   fighter.colorburstFired = false;
 
-  createMossBarrierIfAvailable(context, fighter);
   if (fighter.primaryPower === 'smearstep') {
     aimSmearstepDash(context, fighter, 0);
   } else if (fighter.primaryPower === 'colorburst') {
@@ -753,6 +869,34 @@ function finishAbility(
   context: SimulationContext,
   fighter: MutableFighterState
 ): void {
+  if (!fighter.abilityHitOpponent) {
+    const retryPowerUpId: PowerUpId | null = fighterOwnsPowerUp(
+      fighter,
+      'v1-second-draft'
+    )
+      ? 'v1-second-draft'
+      : fighterOwnsPowerUp(fighter, 'v1-backup-plan')
+        ? 'v1-backup-plan'
+        : null;
+    if (retryPowerUpId) {
+      const definition = POWER_UP_CATALOG[retryPowerUpId];
+      schedulePowerUpDamage(
+        context,
+        fighter,
+        retryPowerUpId,
+        getOpponent(context, fighter),
+        definition.delayTicks ?? 0,
+        Math.max(
+          1,
+          divideRounded(
+            getSignatureBaseDamage(fighter, context.rules) *
+              (definition.powerPermille ?? 0),
+            1_000
+          )
+        )
+      );
+    }
+  }
   appendEvent(context, {
     tick: context.tick,
     kind: 'ability_finished',
@@ -777,6 +921,42 @@ function finishAbility(
   } else {
     fighter.abilityReadyAtTick =
       context.tick + getEffectiveCooldownTicks(context, fighter);
+  }
+}
+
+function getSignatureBaseDamage(
+  fighter: MutableFighterState,
+  rules: CombatRules
+): number {
+  switch (fighter.primaryPower) {
+    case 'inkquake': {
+      const config = rules.abilities.inkquake;
+      return (
+        config.baseDamage +
+        Math.floor(fighter.input.stats.chonk / config.chonkDamageDivisor)
+      );
+    }
+    case 'nib_halo': {
+      const config = rules.abilities.nib_halo;
+      return (
+        Math.max(1, Math.floor(config.baseDamage / 2)) +
+        Math.floor(fighter.input.stats.spike / 12)
+      );
+    }
+    case 'smearstep': {
+      const config = rules.abilities.smearstep;
+      return (
+        Math.max(1, config.baseDamage - 6) +
+        Math.floor(fighter.input.stats.zip / 6)
+      );
+    }
+    case 'colorburst': {
+      const config = rules.abilities.colorburst;
+      return (
+        Math.max(1, config.baseDamage - 6) +
+        Math.floor(fighter.input.stats.charm / 4)
+      );
+    }
   }
 }
 
@@ -840,6 +1020,7 @@ function updateMovementIntent(
   context: SimulationContext,
   fighter: MutableFighterState
 ): void {
+  if (context.tick < fighter.movementOverrideUntilTick) return;
   if (
     fighter.primaryPower === 'smearstep' &&
     fighter.abilityPhase === 'active'
@@ -958,6 +1139,29 @@ function constrainFighterToArena(
       axis: bouncedX && bouncedY ? 'both' : bouncedX ? 'x' : 'y',
       position: freezeVector(fighter.position),
     });
+    if (triggerPowerUp(context, fighter, 'v1-edge-spring')) {
+      fighter.velocity = copyVector(
+        normalizeVector(
+          { x: -fighter.position.x, y: -fighter.position.y },
+          fighter.baseMovementPerTick * 2,
+          fighter.velocity
+        )
+      );
+      fighter.movementOverrideUntilTick = context.tick + 3;
+    }
+    if (
+      fighter.lastKnockbackBy !== null &&
+      context.tick - fighter.lastKnockbackTick <= 2
+    ) {
+      const wallopOwner = getFighter(context, fighter.lastKnockbackBy);
+      dealPowerUpDamage(
+        context,
+        wallopOwner,
+        fighter,
+        'v1-wallop',
+        POWER_UP_CATALOG['v1-wallop'].bonusDamage ?? 0
+      );
+    }
   }
 }
 
@@ -1091,63 +1295,23 @@ function getDefenseTicks(context: SimulationContext): number {
     : context.rules.lateFight.normalDefenseTicks;
 }
 
-function applyTideKnockback(
-  context: SimulationContext,
-  source: MutableFighterState,
-  target: MutableFighterState
-): void {
-  const knockback = normalizeVector(
-    {
-      x: target.position.x - source.position.x,
-      y: target.position.y - source.position.y,
-    },
-    context.rules.elements.tide.knockbackSpeed,
-    source.aimDirection
-  );
-  target.velocity = copyVector(
-    clampVectorComponents(
-      {
-        x: target.velocity.x + knockback.x,
-        y: target.velocity.y + knockback.y,
-      },
-      context.rules.fighter.maximumVelocityPerAxis
-    )
+function isSignatureDamageSource(
+  fighter: MutableFighterState,
+  damageSource: DamageSource
+): boolean {
+  return (
+    damageSource === fighter.primaryPower ||
+    (fighter.primaryPower === 'colorburst' &&
+      damageSource === 'colorburst_echo')
   );
 }
 
-function applyEmberBurn(
-  context: SimulationContext,
-  source: MutableFighterState,
-  target: MutableFighterState
-): void {
-  const config = context.rules.elements.ember;
-  const fightBudget =
-    config.maximumDamagePerFight - source.emberBurnDamageSpent;
-  if (fightBudget <= 0) {
-    return;
-  }
-  const applicationDamage = Math.min(
-    config.maximumDamagePerApplication,
-    fightBudget
+function getBasicAttackDamage(fighter: MutableFighterState): number {
+  const roleRules = getCombatRoleRules(fighter.combatRole);
+  return (
+    roleRules.basicAttackBaseDamage +
+    Math.floor(getRoleStat(fighter) / roleRules.basicAttackStatDivisor)
   );
-  const existingDamage = target.burn?.remainingDamage ?? 0;
-  const nextPulseTick = Math.min(
-    target.burn?.nextPulseTick ?? Number.MAX_SAFE_INTEGER,
-    context.tick + config.pulseIntervalTicks
-  );
-  target.burn = {
-    sourceFighter: source.slot,
-    remainingDamage: Math.max(existingDamage, applicationDamage),
-    nextPulseTick,
-  };
-  appendEvent(context, {
-    tick: context.tick,
-    kind: 'burn_applied',
-    sourceFighter: source.slot,
-    targetFighter: target.slot,
-    remainingCappedDamage: target.burn.remainingDamage,
-    nextPulseTick: target.burn.nextPulseTick,
-  });
 }
 
 function applyResolvedDamage(
@@ -1158,6 +1322,27 @@ function applyResolvedDamage(
   requestedDamage: number,
   options: DamageOptions
 ): number {
+  if (!options.bypassDefense && context.tick < target.defenseUntilTick) {
+    return 0;
+  }
+  const incomingSignature =
+    source.slot !== target.slot &&
+    isSignatureDamageSource(source, damageSource);
+  let damageAfterPowerUpDefense = requestedDamage;
+  if (
+    incomingSignature &&
+    fighterOwnsPowerUp(target, 'v1-paper-shield') &&
+    (target.powerUpActivations.get('v1-paper-shield') ?? 0) === 0
+  ) {
+    const preventedDamage = Math.min(
+      requestedDamage,
+      POWER_UP_CATALOG['v1-paper-shield'].preventedDamage ?? 0
+    );
+    if (preventedDamage > 0) {
+      triggerPowerUp(context, target, 'v1-paper-shield', source);
+      damageAfterPowerUpDefense -= preventedDamage;
+    }
+  }
   const haloInterceptsAreaDamage =
     target.primaryPower === 'nib_halo' &&
     target.abilityPhase === 'active' &&
@@ -1166,16 +1351,13 @@ function applyResolvedDamage(
       damageSource === 'colorburst_echo');
   const damageAfterHaloInterception = haloInterceptsAreaDamage
     ? divideRounded(
-        requestedDamage *
+        damageAfterPowerUpDefense *
           (1_000 -
             context.rules.abilities.nib_halo.areaDamageReductionPermille),
         1_000
       )
-    : requestedDamage;
-  if (
-    damageAfterHaloInterception <= 0 ||
-    (!options.bypassDefense && context.tick < target.defenseUntilTick)
-  ) {
+    : damageAfterPowerUpDefense;
+  if (damageAfterHaloInterception <= 0) {
     return 0;
   }
 
@@ -1212,16 +1394,31 @@ function applyResolvedDamage(
     0,
     target.hitPoints - protectedHitPoints
   );
-  const actualDamage = Math.min(damageableHitPoints, remainingDamage);
+  let actualDamage = Math.min(damageableHitPoints, remainingDamage);
+  if (
+    context.tick >= context.rules.fighter.knockoutsEnabledAtTick &&
+    actualDamage >= target.hitPoints &&
+    triggerPowerUp(context, target, 'v1-last-scribble', source)
+  ) {
+    actualDamage = Math.max(0, target.hitPoints - 1);
+    target.defenseUntilTick = Math.max(
+      target.defenseUntilTick,
+      context.tick + (POWER_UP_CATALOG['v1-last-scribble'].durationTicks ?? 0)
+    );
+  }
   if (actualDamage <= 0) {
     return 0;
   }
+  const hitPointsBeforeDamage = target.hitPoints;
   target.hitPoints -= actualDamage;
   if (source.slot !== target.slot) {
     source.damageDealt += actualDamage;
   }
   if (!options.bypassDefense) {
-    target.defenseUntilTick = context.tick + getDefenseTicks(context);
+    target.defenseUntilTick = Math.max(
+      target.defenseUntilTick,
+      context.tick + getDefenseTicks(context)
+    );
   }
   appendEvent(context, {
     tick: context.tick,
@@ -1235,15 +1432,68 @@ function applyResolvedDamage(
     position: freezeVector(target.position),
   });
 
+  if (incomingSignature && actualDamage > 0) {
+    source.abilityHitOpponent = true;
+    const doubleDoodle = POWER_UP_CATALOG['v1-double-doodle'];
+    schedulePowerUpDamage(
+      context,
+      source,
+      'v1-double-doodle',
+      target,
+      doubleDoodle.delayTicks ?? 0,
+      Math.min(
+        doubleDoodle.bonusDamageCap ?? Number.MAX_SAFE_INTEGER,
+        Math.max(
+          1,
+          divideRounded(actualDamage * (doubleDoodle.powerPermille ?? 0), 1_000)
+        )
+      )
+    );
+    if (
+      fighterOwnsPowerUp(source, 'v1-echo-mark') &&
+      (source.powerUpActivations.get('v1-echo-mark') ?? 0) === 0
+    ) {
+      source.echoMarkArmed = true;
+    }
+    const counterSketch = POWER_UP_CATALOG['v1-counter-sketch'];
+    schedulePowerUpDamage(
+      context,
+      target,
+      'v1-counter-sketch',
+      source,
+      1,
+      Math.min(
+        counterSketch.bonusDamageCap ?? Number.MAX_SAFE_INTEGER,
+        Math.max(
+          1,
+          divideRounded(
+            getBasicAttackDamage(target) * (counterSketch.powerPermille ?? 0),
+            1_000
+          )
+        )
+      )
+    );
+  }
   if (
-    options.applyElementPayload &&
-    source.slot !== target.slot &&
-    target.hitPoints > 0
+    hitPointsBeforeDamage * 2 > target.maxHitPoints &&
+    target.hitPoints * 2 <= target.maxHitPoints
   ) {
-    if (source.input.element === 'ember') {
-      applyEmberBurn(context, source, target);
-    } else if (source.input.element === 'tide') {
-      applyTideKnockback(context, source, target);
+    if (triggerPowerUp(context, target, 'v1-center-fold')) {
+      target.velocity = copyVector(
+        normalizeVector(
+          { x: -target.position.x, y: -target.position.y },
+          target.baseMovementPerTick,
+          target.velocity
+        )
+      );
+      target.defenseUntilTick = Math.max(
+        target.defenseUntilTick,
+        context.tick + (POWER_UP_CATALOG['v1-center-fold'].durationTicks ?? 0)
+      );
+    }
+    if (triggerPowerUp(context, target, 'v1-paper-twin')) {
+      target.paperTwinAttacksRemaining =
+        POWER_UP_CATALOG['v1-paper-twin'].repeatedAttacks ?? 0;
     }
   }
   return actualDamage;
@@ -1298,7 +1548,7 @@ function rollAndApplyDamage(
     context.rules.fighter.maximumCriticalChancePermille,
     source.input.stats.charm *
       context.rules.fighter.criticalChancePermillePerCharm +
-      source.upgradeModifiers.criticalChanceBonusPermille
+      source.combatModifiers.criticalChanceBonusPermille
   );
   source.resolvedAttackCount += 1;
   const criticalInterval =
@@ -1326,7 +1576,7 @@ function rollAndApplyDamage(
   );
   damage = Math.max(
     1,
-    divideRounded(damage * source.upgradeModifiers.damagePermille, 1_000)
+    divideRounded(damage * source.combatModifiers.damagePermille, 1_000)
   );
   if (critical) {
     damage = Math.max(
@@ -1347,6 +1597,7 @@ function rollAndApplyDamage(
 
 function pushAwayFrom(
   context: SimulationContext,
+  source: MutableFighterState,
   sourcePosition: FixedVector,
   target: MutableFighterState,
   speed: number
@@ -1368,6 +1619,8 @@ function pushAwayFrom(
       context.rules.fighter.maximumVelocityPerAxis
     )
   );
+  target.lastKnockbackBy = source.slot;
+  target.lastKnockbackTick = context.tick;
 }
 
 function interruptTelegraphedAbility(
@@ -1427,6 +1680,73 @@ function appendRoleAttack(
     target: freezeVector(targetPosition),
     hit,
   });
+}
+
+function finalizeBasicAttack(
+  context: SimulationContext,
+  fighter: MutableFighterState,
+  target: MutableFighterState,
+  hit: boolean,
+  landedDamage: number
+): void {
+  if (!hit) {
+    fighter.basicHitStreak = 0;
+    if (triggerPowerUp(context, fighter, 'v1-smudge-step')) {
+      const strafeSign = fighter.slot === 'a' ? 1 : -1;
+      fighter.velocity = copyVector(
+        normalizeVector(
+          {
+            x: -fighter.velocity.y * strafeSign,
+            y: fighter.velocity.x * strafeSign,
+          },
+          fighter.baseMovementPerTick * 2,
+          fighter.aimDirection
+        )
+      );
+      fighter.movementOverrideUntilTick = context.tick + 3;
+    }
+    return;
+  }
+
+  fighter.basicHitStreak += 1;
+  if (
+    fighter.basicHitStreak ===
+    (POWER_UP_CATALOG['v1-combo-spark'].requiredConsecutiveHits ?? 3)
+  ) {
+    dealPowerUpDamage(
+      context,
+      fighter,
+      target,
+      'v1-combo-spark',
+      POWER_UP_CATALOG['v1-combo-spark'].bonusDamage ?? 0
+    );
+  }
+  if (fighter.echoMarkArmed) {
+    fighter.echoMarkArmed = false;
+    dealPowerUpDamage(
+      context,
+      fighter,
+      target,
+      'v1-echo-mark',
+      POWER_UP_CATALOG['v1-echo-mark'].bonusDamage ?? 0
+    );
+  }
+  if (fighter.paperTwinAttacksRemaining > 0) {
+    fighter.paperTwinAttacksRemaining -= 1;
+    const paperTwin = POWER_UP_CATALOG['v1-paper-twin'];
+    applyBudgetedPowerUpDamage(
+      context,
+      fighter,
+      target,
+      Math.min(
+        paperTwin.bonusDamageCap ?? Number.MAX_SAFE_INTEGER,
+        Math.max(
+          1,
+          divideRounded(landedDamage * (paperTwin.powerPermille ?? 0), 1_000)
+        )
+      )
+    );
+  }
 }
 
 function executeSingleRoleAttack(
@@ -1489,8 +1809,27 @@ function executeSingleRoleAttack(
     opponent.position,
     actualDamage > 0
   );
+  fighter.currentBasicAttackHit ||= actualDamage > 0;
+  fighter.currentBasicAttackDamage = Math.max(
+    fighter.currentBasicAttackDamage,
+    actualDamage
+  );
+  const basicAttackFinished =
+    fighter.combatRole !== 'gunner' ||
+    shotNumber === getCombatRoleRules('gunner').burstShotCount;
+  if (basicAttackFinished) {
+    finalizeBasicAttack(
+      context,
+      fighter,
+      opponent,
+      fighter.currentBasicAttackHit,
+      fighter.currentBasicAttackDamage
+    );
+    fighter.currentBasicAttackHit = false;
+    fighter.currentBasicAttackDamage = 0;
+  }
   if (actualDamage > 0 && fighter.combatRole === 'longshot') {
-    pushAwayFrom(context, fighter.position, opponent, 180);
+    pushAwayFrom(context, fighter, fighter.position, opponent, 180);
   }
   if (
     actualDamage > 0 &&
@@ -1599,6 +1938,7 @@ function resolveInkquake(
     );
     pushAwayFrom(
       context,
+      fighter,
       fighter.abilityOrigin,
       opponent,
       config.knockbackSpeed
@@ -1659,7 +1999,7 @@ function resolveNibHalo(
     actualDamage > 0
   );
   if (actualDamage > 0 && opponent.combatRole === 'brawler') {
-    pushAwayFrom(context, fighter.position, opponent, 260);
+    pushAwayFrom(context, fighter, fighter.position, opponent, 260);
   }
 }
 
@@ -1891,6 +2231,13 @@ function resolveContactDamage(context: SimulationContext): void {
       opponent.position,
       actualDamage > 0
     );
+    finalizeBasicAttack(
+      context,
+      fighter,
+      opponent,
+      actualDamage > 0,
+      actualDamage
+    );
     if (actualDamage > 0 && opponent.combatRole === 'mage') {
       interruptTelegraphedAbility(context, opponent, fighter);
     }
@@ -1910,40 +2257,19 @@ function executeAbilityCollisions(context: SimulationContext): void {
 }
 
 function executeStatusEffects(context: SimulationContext): void {
-  for (const target of context.fighters) {
-    const burn = target.burn;
-    if (burn === null || context.tick < burn.nextPulseTick) {
-      continue;
+  for (const fighter of context.fighters) {
+    const pendingEffects: ScheduledPowerUpEffect[] = [];
+    for (const effect of fighter.scheduledPowerUpEffects) {
+      if (effect.tick > context.tick) {
+        pendingEffects.push(effect);
+        continue;
+      }
+      const target = getFighter(context, effect.target);
+      if (fighter.hitPoints > 0 && target.hitPoints > 0) {
+        applyBudgetedPowerUpDamage(context, fighter, target, effect.damage);
+      }
     }
-    const source = getFighter(context, burn.sourceFighter);
-    const config = context.rules.elements.ember;
-    const fightBudget =
-      config.maximumDamagePerFight - source.emberBurnDamageSpent;
-    const pulseDamage = Math.min(
-      config.pulseDamage,
-      burn.remainingDamage,
-      Math.max(0, fightBudget)
-    );
-    if (pulseDamage <= 0) {
-      target.burn = null;
-      continue;
-    }
-    source.emberBurnDamageSpent += pulseDamage;
-    burn.remainingDamage -= pulseDamage;
-    applyResolvedDamage(context, source, target, 'ember_burn', pulseDamage, {
-      applyElementPayload: false,
-      bypassDefense: true,
-      bypassBarrier: false,
-      critical: false,
-    });
-    if (
-      burn.remainingDamage <= 0 ||
-      source.emberBurnDamageSpent >= config.maximumDamagePerFight
-    ) {
-      target.burn = null;
-    } else {
-      burn.nextPulseTick = context.tick + config.pulseIntervalTicks;
-    }
+    fighter.scheduledPowerUpEffects = pendingEffects;
   }
 }
 

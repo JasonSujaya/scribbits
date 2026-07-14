@@ -4,12 +4,12 @@
 import { Scene } from 'phaser';
 import type * as Phaser from 'phaser';
 import type { BattleKind, RivalRunReceipt, Scribbit } from '../../shared/arena';
-import { ELEMENT_STYLES, prefersReducedMotion, UI } from './theme';
+import { prefersReducedMotion, ROLE_STYLES, UI } from './theme';
 import {
-  elementBadge,
   fadeSceneOut,
   label,
   levelBadge,
+  paperRoleTag,
   paperWordmark,
   versusBadge,
 } from './ui';
@@ -43,7 +43,8 @@ function createFighterSide(
   options: FighterSideOptions
 ): Phaser.GameObjects.Container {
   const { fighter, startsOnLeft, centerY } = options;
-  const elementStyle = ELEMENT_STYLES[fighter.element];
+  const role = getCombatRoleContent(selectCombatRole(fighter.stats));
+  const roleStyle = ROLE_STYLES[role.id];
   const side = scene.add.container(
     startsOnLeft ? 0 : scene.scale.width,
     centerY
@@ -56,7 +57,7 @@ function createFighterSide(
       10,
       FIGHTER_ART_SIZE + 18,
       FIGHTER_ART_SIZE + 18,
-      elementStyle.soft,
+      roleStyle.soft,
       0.78
     )
     .setStrokeStyle(3, UI.inkHex, 0.28);
@@ -68,7 +69,7 @@ function createFighterSide(
     FIGHTER_ART_SIZE,
     FIGHTER_ART_SIZE
   );
-  frame.lineStyle(7, elementStyle.primary, 1);
+  frame.lineStyle(7, roleStyle.color, 1);
   frame.strokeRect(
     -FIGHTER_ART_SIZE / 2,
     -FIGHTER_ART_SIZE / 2,
@@ -97,7 +98,6 @@ function createFighterSide(
   );
   side.add(artwork);
 
-  const role = getCombatRoleContent(selectCombatRole(fighter.stats));
   side.add(
     label(
       scene,
@@ -105,7 +105,7 @@ function createFighterSide(
       FIGHTER_ART_SIZE / 2 + 18,
       `${role.displayName.toUpperCase()} · ${role.rangeLabel}`,
       17,
-      elementStyle.primaryText,
+      roleStyle.colorText,
       true
     )
   );
@@ -124,7 +124,13 @@ function createFighterSide(
   }
   side.add(fighterName);
   side.add(
-    elementBadge(scene, 0, FIGHTER_ART_SIZE / 2 + 98, fighter.element, 0.82)
+    paperRoleTag(
+      scene,
+      0,
+      FIGHTER_ART_SIZE / 2 + 98,
+      `POWER-UPS ${fighter.powerUpIds?.length ?? 0}/5`,
+      { width: 190, fill: UI.tapeAlt }
+    )
   );
 
   return side;
@@ -143,6 +149,10 @@ export function showVsCeremony(scene: Scene, options: VsCeremonyOptions): void {
   } = options;
   const { width, height } = scene.scale;
   const reduceMotion = prefersReducedMotion();
+  const roleA = getCombatRoleContent(selectCombatRole(fighterA.stats));
+  const roleB = getCombatRoleContent(selectCombatRole(fighterB.stats));
+  const roleAStyle = ROLE_STYLES[roleA.id];
+  const roleBStyle = ROLE_STYLES[roleB.id];
   const fighterCenterY = rivalryStakes || rivalRun ? 490 : 450;
   const layer = scene.add.container(0, 0).setDepth(2000).setScrollFactor(0);
 
@@ -156,9 +166,9 @@ export function showVsCeremony(scene: Scene, options: VsCeremonyOptions): void {
 
   // Two translucent element washes meet along a hand-inked paper fold.
   const splitPaper = scene.add.graphics();
-  splitPaper.fillStyle(ELEMENT_STYLES[fighterA.element].soft, 0.28);
+  splitPaper.fillStyle(roleAStyle.soft, 0.28);
   splitPaper.fillTriangle(0, 0, width * 0.58, 0, 0, height);
-  splitPaper.fillStyle(ELEMENT_STYLES[fighterB.element].soft, 0.28);
+  splitPaper.fillStyle(roleBStyle.soft, 0.28);
   splitPaper.fillTriangle(width, 0, width, height, width * 0.42, height);
   const foldTravel = width * 0.42;
   const foldTopX = width / 2 - foldTravel * (fighterCenterY / height);
@@ -262,7 +272,7 @@ export function showVsCeremony(scene: Scene, options: VsCeremonyOptions): void {
     mechanicsY,
     12,
     96,
-    ELEMENT_STYLES[fighterA.element].primary,
+    roleAStyle.color,
     0.9
   );
   const rightMechanicsAccent = scene.add.rectangle(
@@ -270,18 +280,16 @@ export function showVsCeremony(scene: Scene, options: VsCeremonyOptions): void {
     mechanicsY,
     12,
     96,
-    ELEMENT_STYLES[fighterB.element].primary,
+    roleBStyle.color,
     0.9
   );
-  const roleA = getCombatRoleContent(selectCombatRole(fighterA.stats));
-  const roleB = getCombatRoleContent(selectCombatRole(fighterB.stats));
   const receiptAView = label(
     scene,
     width / 2,
     mechanicsY - 32,
     `${fighterA.name.toUpperCase()}: ${roleA.weaponName.toUpperCase()} · ${roleA.basicAttackName} → ${roleA.signatureName}`,
     21,
-    ELEMENT_STYLES[fighterA.element].primaryText,
+    roleAStyle.colorText,
     true
   );
   const receiptBView = label(
@@ -290,7 +298,7 @@ export function showVsCeremony(scene: Scene, options: VsCeremonyOptions): void {
     mechanicsY + 32,
     `${fighterB.name.toUpperCase()}: ${roleB.weaponName.toUpperCase()} · ${roleB.basicAttackName} → ${roleB.signatureName}`,
     21,
-    ELEMENT_STYLES[fighterB.element].primaryText,
+    roleBStyle.colorText,
     true
   );
   const receiptWidth = width - 144;
@@ -366,8 +374,8 @@ export function showVsCeremony(scene: Scene, options: VsCeremonyOptions): void {
         lifespan: 800,
         quantity: 20,
         tint: [
-          ELEMENT_STYLES[fighterA.element].particle,
-          ELEMENT_STYLES[fighterB.element].particle,
+          roleAStyle.color,
+          roleBStyle.color,
         ],
         emitting: false,
       });

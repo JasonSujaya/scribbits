@@ -32,6 +32,10 @@ export {
 } from './inkStore';
 export { COSMETIC_CATALOG } from '../../shared/cosmetics';
 export {
+  DAILY_LOGIN_TRACK,
+  dailyLoginRewardAfterClaims,
+} from '../../shared/dailylogin';
+export {
   findGearCosmetic,
   validateCatalogEquipmentLoadout,
 } from '../../shared/cosmetics';
@@ -46,6 +50,14 @@ export {
   createScribbitUpgradesForLevel,
   parseCompleteScribbitUpgrades,
 } from '../../shared/combat/upgrades';
+export {
+  createDeterministicPowerUpOffer,
+  isPowerUpId,
+  MAXIMUM_POWER_UPS,
+  POWER_UP_CATALOG,
+  POWER_UP_IDS,
+  validatePowerUpBuild,
+} from '../../shared/combat/powerups';
 export {
   CAPSULE_COST,
   GEAR_MERGE_COPY_COST,

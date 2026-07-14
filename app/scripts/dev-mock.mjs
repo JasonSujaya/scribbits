@@ -28,9 +28,12 @@ const {
   GEAR_MERGE_COPY_COST,
   MAX_GEAR_RANK,
   COSMETIC_CATALOG,
+  DAILY_LOGIN_TRACK,
   INK_REWARDS,
   MAX_ALIVE_PER_USER,
   MAX_GROWING_PER_USER,
+  MAXIMUM_POWER_UPS,
+  POWER_UP_CATALOG,
   SCRIBBIT_STAT_KEYS,
   SCOUT_NOTEBOOK_MAXIMUM_ENTRIES,
   XP_REWARDS,
@@ -44,6 +47,7 @@ const {
   collectLegacyCards,
   createEmptyFounderChronicle,
   createEmptyEquipmentLoadout,
+  createDeterministicPowerUpOffer,
   createScribbit,
   createScribbitLegacy,
   createPracticeBattle,
@@ -51,6 +55,7 @@ const {
   createRivalRunChoices,
   createRivalRunState,
   createScoutNotebookState,
+  dailyLoginRewardAfterClaims,
   createSparRewardReceipt,
   findFoundingScribbit,
   generateForecastForDay,
@@ -61,6 +66,7 @@ const {
   hashStringToUint32,
   isCareAction,
   isElement,
+  isPowerUpId,
   isScoutNotebookReplayDay,
   paginateLegacyCards,
   parseLegacyCardsPageSize,
@@ -217,6 +223,9 @@ const makeScribbit = (options) => {
     equipmentLoadout,
     upgrades:
       explicitUpgrades ?? createScribbitUpgradesForLevel(options.id, level),
+    powerUpIds: Array.isArray(options.powerUpIds)
+      ? options.powerUpIds.filter(isPowerUpId).slice(0, MAXIMUM_POWER_UPS)
+      : [],
     level,
     xp,
     mood: options.mood ?? 'hungry',
@@ -758,6 +767,12 @@ const createPreviewEconomy = (options = {}) => {
     gearMergeOperations: new Map(),
     sparWinRewardUtcDates: new Set(),
     sparRewardReceipts: new Map(),
+    pendingPowerUpOffers: new Map(),
+    dailyLogin: {
+      claimedTrackDays: options.dailyLoginClaimedTrackDays ?? 0,
+      lastClaimDateKey: null,
+      lastReward: null,
+    },
   };
 };
 
@@ -806,6 +821,10 @@ const memory = {
   archivedOwnedScribbits,
   drawnToday: false,
   enteredToday: false,
+  drawChargesByPreviewMode: {
+    returning: { available: 3, capacity: 3, nextRefreshAt: null },
+    fresh: { available: 3, capacity: 3, nextRefreshAt: null },
+  },
   freeDrawingIdByPreviewMode: {
     returning: null,
     fresh: null,
@@ -885,7 +904,7 @@ const memory = {
       capsulePullCount: 13,
       pullsSinceEpic: 6,
     }),
-    fresh: createPreviewEconomy(),
+    fresh: createPreviewEconomy({ dailyLoginClaimedTrackDays: 6 }),
   },
   founderChronicleByPreviewMode: {
     returning: returningFounderChronicle,
@@ -1229,6 +1248,7 @@ const resetPreviewEconomy = (economy) => {
   economy.gearMergeOperations.clear();
   economy.sparWinRewardUtcDates.clear();
   economy.sparRewardReceipts.clear();
+  economy.pendingPowerUpOffers.clear();
 };
 
 const isLivingScribbit = (scribbit) => {
@@ -1376,6 +1396,18 @@ const removeScribbitEverywhere = (scribbitId) => {
   submittedDrawingBytes.delete(scribbitId);
 };
 
+const battleReportsForPreview = (previewMode) => {
+  if (previewMode === 'logged-out') return [];
+  const belongsToFreshPreview = (report) =>
+    report.a.id.startsWith('mock-submitted-') ||
+    report.b.id.startsWith('mock-submitted-');
+  return memory.myBattles.filter((report) =>
+    previewMode === 'fresh'
+      ? belongsToFreshPreview(report)
+      : !belongsToFreshPreview(report)
+  );
+};
+
 const visibleLists = () => [
   memory.myScribbits,
   memory.todayEntrants,
@@ -1493,10 +1525,7 @@ const explicitPreviewModeFromUrl = (url) => {
   ) {
     return 'logged-out';
   }
-  if (
-    url.searchParams.has('fixtures') ||
-    url.searchParams.has('returning')
-  ) {
+  if (url.searchParams.has('fixtures') || url.searchParams.has('returning')) {
     return 'returning';
   }
   if (url.searchParams.has('fresh')) return 'fresh';
@@ -1536,6 +1565,16 @@ const requestHasPreviewFlag = (request, url, flag) => {
 
 const currentUtcDateKey = () => {
   return new Date().toISOString().slice(0, 10);
+};
+
+const dailyLoginState = (economy) => {
+  return {
+    claimedTrackDays: economy.dailyLogin.claimedTrackDays,
+    claimedToday: economy.dailyLogin.lastClaimDateKey === currentUtcDateKey(),
+    nextReward: dailyLoginRewardAfterClaims(
+      economy.dailyLogin.claimedTrackDays
+    ),
+  };
 };
 
 const capsuleCostForCurrentPull = (economy) => {
@@ -1580,6 +1619,12 @@ const arenaState = (economy, previewMode = 'returning') => {
       ? null
       : cloneScribbit(memory.champion),
     myScribbits: getLivingScribbitsForPreview(previewMode).map(cloneScribbit),
+    drawCharges: memory.drawChargesByPreviewMode[previewMode] ?? {
+      available: 0,
+      capacity: 3,
+      nextRefreshAt: null,
+    },
+    paintBucket: { level: 1, capacity: 350_000 },
     drawnToday: hasDrawnTodayForPreview(previewMode),
     todayFreeDrawing: getTodayFreeDrawingForPreview(previewMode),
     enteredToday: memory.enteredToday,
@@ -1593,6 +1638,7 @@ const arenaState = (economy, previewMode = 'returning') => {
       .map(cloneScribbit),
     myBackedScribbitId: getBackedScribbitIdForPreview(previewMode),
     playStreakDays: memory.playStreakDays,
+    dailyLogin: dailyLoginState(economy),
     myClout: memory.myClout,
     myInk: economy.ink,
     myPens: [...economy.inventory.pens],
@@ -1852,6 +1898,14 @@ const handleApi = async (request, response, url) => {
       sendError(response, 404, 'That living Scribbit is not ready to spar.');
       return;
     }
+    if (economy.pendingPowerUpOffers.has(challenger.id)) {
+      sendError(
+        response,
+        409,
+        'Choose the pending Power-Up before the next fight.'
+      );
+      return;
+    }
     const rivalRun = getOrCreateMockRivalRun(challenger, previewMode);
     sendJson(response, 200, {
       challenger: cloneScribbit(challenger),
@@ -2058,6 +2112,51 @@ const handleApi = async (request, response, url) => {
     return;
   }
 
+  if (method === 'POST' && path === '/api/daily-login/claim') {
+    const dateKey = currentUtcDateKey();
+    if (economy.dailyLogin.lastClaimDateKey === dateKey) {
+      sendJson(response, 200, {
+        dailyLogin: dailyLoginState(economy),
+        reward: economy.dailyLogin.lastReward,
+        ink: economy.ink,
+      });
+      return;
+    }
+
+    const rewardPlan = dailyLoginRewardAfterClaims(
+      economy.dailyLogin.claimedTrackDays
+    );
+    const reward = {
+      trackDay: rewardPlan.trackDay,
+      inkAwarded: rewardPlan.ink,
+      gearId: rewardPlan.gearId,
+      claimedAtMs: Date.now(),
+    };
+    economy.ink += reward.inkAwarded;
+    if (reward.gearId) {
+      const gear = getProductionCosmetic(reward.gearId);
+      const grant = projectCapsuleInventoryGrant(
+        inventoryState(economy.inventory),
+        gear
+      );
+      economy.inventory = grant.inventory;
+    }
+    if (reward.trackDay !== null) {
+      economy.dailyLogin.claimedTrackDays = Math.min(
+        DAILY_LOGIN_TRACK.length,
+        economy.dailyLogin.claimedTrackDays + 1
+      );
+    }
+    economy.dailyLogin.lastClaimDateKey = dateKey;
+    economy.dailyLogin.lastReward = reward;
+    sendJson(response, 200, {
+      dailyLogin: dailyLoginState(economy),
+      reward,
+      ink: economy.ink,
+    });
+    return;
+  }
+
   if (method === 'POST' && path === '/api/capsule') {
     const body = await readJsonBody(request);
     const operationId =
@@ -2127,7 +2226,7 @@ const handleApi = async (request, response, url) => {
     sendJson(
       response,
       200,
-      memory.myBattles
+      battleReportsForPreview(previewMode)
         .filter(
           (report) =>
             !memory.hiddenScribbitIds.has(report.a.id) &&
@@ -2313,10 +2412,8 @@ const handleApi = async (request, response, url) => {
     const careProgression = planCareProgression(scribbit.careDoneToday);
     scribbit.mood = careProgression.mood;
     Object.assign(scribbit, addXpToScribbit(scribbit, careProgression.xpGain));
-    economy.ink += INK_REWARDS.care;
     sendJson(response, 200, {
       scribbit: cloneScribbit(scribbit),
-      inkAwarded: INK_REWARDS.care,
     });
     return;
   }
@@ -2731,6 +2828,32 @@ const handleApi = async (request, response, url) => {
       rewardedReport = { ...rewardedReport, rivalRun: rivalRunReceipt };
     }
 
+    let powerUpOffer = null;
+    if (report.winner === 'a' && challenger.powerUpIds.length < MAXIMUM_POWER_UPS) {
+      const source = rivalRunReceipt
+        ? rivalRunReceipt.status === 'complete'
+          ? 'rival-run-final-win'
+          : 'rival-run-win'
+        : 'exhibition-win';
+      const choices = createDeterministicPowerUpOffer({
+        seed: `power-up-offer:v1:${report.id}:${challenger.id}`,
+        source,
+        ownedPowerUpIds: challenger.powerUpIds,
+      });
+      if (choices?.length === 3) {
+        powerUpOffer = {
+          version: 1,
+          id: `power-up-offer:v1:${report.id}:${challenger.id}`,
+          scribbitId: challenger.id,
+          sourceReportId: report.id,
+          source,
+          choices,
+          createdAtMs: Date.now(),
+        };
+        economy.pendingPowerUpOffers.set(challenger.id, powerUpOffer);
+      }
+    }
+
     memory.myBattles.unshift(rewardedReport);
     const founderChronicleBeats = requestedOpponentId
       ? recordMockFounderChronicleBattle(
@@ -2744,6 +2867,37 @@ const handleApi = async (request, response, url) => {
       founderChronicle: getFounderChronicleForPreview(previewMode),
       founderChronicleBeat: founderChronicleBeats.at(-1) ?? null,
       rewardReceipt,
+      powerUpOffer,
+    });
+    return;
+  }
+
+  if (method === 'POST' && path === '/api/power-up/choose') {
+    const body = await readJsonBody(request);
+    const scribbitId = readScribbitId(body);
+    const scribbit = getLivingScribbitsForPreview(previewMode).find(
+      (entry) => entry.id === scribbitId
+    );
+    const offer = scribbitId
+      ? economy.pendingPowerUpOffers.get(scribbitId)
+      : null;
+    if (
+      !scribbit ||
+      !offer ||
+      body?.offerId !== offer.id ||
+      !isPowerUpId(body?.selectedId) ||
+      !offer.choices.includes(body.selectedId) ||
+      body?.expectedPowerUpCount !== scribbit.powerUpIds.length
+    ) {
+      sendError(response, 409, 'That Power-Up offer changed. Reopen the reward.');
+      return;
+    }
+    scribbit.powerUpIds = [...scribbit.powerUpIds, body.selectedId];
+    economy.pendingPowerUpOffers.delete(scribbit.id);
+    sendJson(response, 200, {
+      scribbitId: scribbit.id,
+      selectedId: body.selectedId,
+      powerUpIds: [...scribbit.powerUpIds],
     });
     return;
   }
@@ -2888,12 +3042,29 @@ const handleApi = async (request, response, url) => {
       return;
     }
     const { draft } = submission;
-    if (hasDrawnTodayForPreview(previewMode)) {
-      sendError(response, 409, 'You already drew a Scribbit today.');
+    const submissionId =
+      body && typeof body.submissionId === 'string' ? body.submissionId : null;
+    if (!submissionId) {
+      sendError(response, 400, 'Send a valid Scribbit submission ID.');
       return;
     }
-    if (hasEnteredTodayForPreview(previewMode)) {
-      sendError(response, 409, "You already entered today's Rumble.");
+    const id = `mock-submitted-${submissionId.replaceAll('_', '-')}`;
+    const existingScribbit = memory.myScribbits.find(
+      (scribbit) => scribbit.id === id
+    );
+    if (existingScribbit) {
+      sendJson(response, 200, {
+        scribbit: cloneScribbit(existingScribbit),
+        drawCharges: memory.drawChargesByPreviewMode[previewMode],
+        enteredRumble: memory.todayEntrants.some(
+          (entrant) => entrant.id === id
+        ),
+      });
+      return;
+    }
+    const drawCharges = memory.drawChargesByPreviewMode[previewMode];
+    if (!drawCharges || drawCharges.available <= 0) {
+      sendError(response, 409, 'No Draw Charges left.');
       return;
     }
     const growingScribbitCount = getLivingScribbitsForPreview(
@@ -2928,7 +3099,6 @@ const handleApi = async (request, response, url) => {
       return;
     }
 
-    const id = `mock-submitted-${Date.now()}`;
     // Display the decorated copy while keeping the undecorated copy separate,
     // matching production's cosmetic-only accessory boundary.
     submittedDrawingBytes.set(
@@ -2955,13 +3125,24 @@ const handleApi = async (request, response, url) => {
 
     economy.inventory = consumableConsumption.inventory;
     memory.myScribbits.unshift(scribbit);
-    memory.todayEntrants.push(scribbit);
+    const enteredRumble = !hasEnteredTodayForPreview(previewMode);
+    if (enteredRumble) memory.todayEntrants.push(scribbit);
+    memory.drawChargesByPreviewMode[previewMode] = {
+      available: drawCharges.available - 1,
+      capacity: drawCharges.capacity,
+      nextRefreshAt:
+        drawCharges.nextRefreshAt ?? Date.now() + 8 * 60 * 60 * 1_000,
+    };
     if (previewMode === 'returning') {
       memory.drawnToday = true;
       memory.enteredToday = true;
     }
     economy.ink += INK_REWARDS.dailyDraw;
-    sendJson(response, 201, cloneScribbit(scribbit));
+    sendJson(response, 201, {
+      scribbit: cloneScribbit(scribbit),
+      drawCharges: memory.drawChargesByPreviewMode[previewMode],
+      enteredRumble,
+    });
     return;
   }
 

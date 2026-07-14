@@ -78,7 +78,7 @@ const fighterWithGear = (id, stats, gearId, rank) => {
 
 const balancedForecast = forecast.generateForecastForDay(9);
 
-test('Gear resolution keeps the 100-point drawing identity in v4 transcripts', () => {
+test('Gear resolution keeps the 100-point drawing identity in v5 transcripts', () => {
   const stats = builds.nib_halo;
   const geared = fighterWithGear('gear-v3', stats, 'tiny-sword', 6);
   const plain = makeFighter(
@@ -99,7 +99,7 @@ test('Gear resolution keeps the 100-point drawing identity in v4 transcripts', (
     100
   );
   assert.equal(combatSelection.selectPrimaryPower(geared.stats), 'nib_halo');
-  assert.equal(report.simulation.version, 4);
+  assert.equal(report.simulation.version, 5);
   assert.equal(
     report.simulation.fighters[0].gear.techniques[0].leadGearId,
     'tiny-sword'
@@ -113,7 +113,7 @@ test('Gear resolution keeps the 100-point drawing identity in v4 transcripts', (
   assert.equal(battleStore.isBattleReport({ ...report, kind: 'boss' }), false);
 
   const rumble = battle.simulate(geared, plain, 41, balancedForecast, 'rumble');
-  assert.equal(rumble.simulation.version, 4);
+  assert.equal(rumble.simulation.version, 5);
   assert.equal(rumble.simulation.fighters[0].gear, undefined);
   assert.equal(battleStore.isBattleReport(rumble), true);
 });

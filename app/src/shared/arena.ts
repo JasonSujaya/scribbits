@@ -2,16 +2,20 @@
 // Extend, never fork. Analyzer + balance invariants: plans/v3-scribbits-arena.md.
 
 import type { BattleTranscript } from './combat';
+import type { CombatRole } from './combat/types';
 import type { CombatRoleMatchupRead } from './combat/roles';
 import type {
   BattleArenaChallengeProgress,
   BattleArenaId,
 } from './battlearena';
 import type { ScribbitUpgrade } from './combat/upgrades';
+import type { PowerUpId, PowerUpOffer } from './combat/powerups';
 import type { Element } from './elements';
 import type { EquipmentLoadout } from './equipment';
 import type { SparRewardReceipt } from './sparreward';
 import type { SeasonPublicState } from './season';
+import type { PaintBucketState } from './paintbucket';
+import type { DailyLoginState } from './dailylogin';
 import {
   cloneEquipmentLoadout,
   createEmptyEquipmentLoadout,
@@ -22,6 +26,18 @@ export { ELEMENTS, isElement } from './elements';
 export type { Element } from './elements';
 export type { EquipGearRequest } from './equipment';
 export type { SparRewardReceipt } from './sparreward';
+export type { PaintBucketState } from './paintbucket';
+export type {
+  DailyLoginClaimResponse,
+  DailyLoginReward,
+  DailyLoginState,
+} from './dailylogin';
+export type { PowerUpId } from './combat/powerups';
+export type {
+  ChoosePowerUpRequest,
+  ChoosePowerUpResponse,
+  PowerUpOffer,
+} from './combat/powerups';
 export type {
   SeasonBoard,
   SeasonBoardEntry,
@@ -100,7 +116,10 @@ export type Scribbit = {
   accessories: string[]; // accessory catalog ids welded to this scribbit
   gearRanks?: Record<string, GearRank>; // presentation snapshot for welded/equipped Gear; old records default to rank 1
   equipmentLoadout: EquipmentLoadout; // two server-authoritative slots per Gear category
-  upgrades: ScribbitUpgrade[]; // one deterministic Ink Mod per level after 1
+  // Legacy v1 progression retained only so archived reports/cards remain
+  // readable. New fights and player-facing progression use Power-Ups.
+  upgrades: ScribbitUpgrade[];
+  powerUpIds?: PowerUpId[]; // up to five behavioral rewards; Gear owns raw stats
   // Tamagotchi layer — levels die with the scribbit; bonuses are small + capped
   level: number; // 1..MAX_LEVEL
   xp: number;
@@ -129,6 +148,7 @@ export const cloneScribbit = (scribbit: Scribbit): Scribbit => {
     // rejects missing runtime authority before writes; cloning preserves the
     // battle facade's finite read compatibility by projecting no mods.
     upgrades: (scribbit.upgrades ?? []).map((upgrade) => ({ ...upgrade })),
+    powerUpIds: [...(scribbit.powerUpIds ?? [])],
     careDoneToday: [...scribbit.careDoneToday],
     legacy: scribbit.legacy
       ? {
@@ -276,6 +296,15 @@ export type CapsuleProgress = {
   collectionTotal: number;
 };
 
+export const DRAW_CHARGE_CAPACITY = 3;
+export const DRAW_CHARGE_REFILL_INTERVAL_MS = 8 * 60 * 60 * 1_000;
+
+export type DrawChargeState = {
+  available: number;
+  capacity: number;
+  nextRefreshAt: number | null;
+};
+
 export type ArenaState = {
   dayNumber: number;
   loggedIn: boolean;
@@ -283,7 +312,9 @@ export type ArenaState = {
   myUsername: string | null;
   forecast: Forecast;
   champion: Scribbit | null; // frozen snapshot, today's boss
-  myScribbits: Scribbit[]; // growing + mature, newest first, max 6
+  myScribbits: Scribbit[]; // growing + mature, newest first, max 12
+  drawCharges: DrawChargeState; // server-owned birth energy, lazily refilled
+  paintBucket: PaintBucketState; // persistent capacity; each drawing starts full
   drawnToday: boolean;
   todayFreeDrawing: FreeDrawing | null; // non-null only for this exact Arena day
   enteredToday: boolean; // rumble entry used
@@ -295,6 +326,7 @@ export type ArenaState = {
   todayEntrants: Scribbit[]; // tonight's Rumble field (gallery + Back targets)
   myBackedScribbitId: string | null; // today's Back, null if unused
   playStreakDays: number; // consecutive UTC days with an expanded game session
+  dailyLogin: DailyLoginState; // server-owned seven-login starter track + daily reward
   myClout: number; // lifetime talent-scout score
   myInk: number; // Mystery Ink balance
   myPens: string[]; // unlocked palette pen ids
@@ -426,7 +458,6 @@ export type DrawingSupplySelection = {
 };
 export const MAX_ACCESSORIES_PER_SCRIBBIT = 2;
 export const INK_REWARDS = {
-  care: 1,
   sparWin: 2,
   rumbleWin: 5,
   backedChampion: 5,
@@ -555,11 +586,14 @@ export type DirectBattleResponse = {
 
 export type SparBattleResponse = DirectBattleResponse & {
   rewardReceipt: SparRewardReceipt | null;
+  powerUpOffer: PowerUpOffer | null;
 };
 
 export type PracticeBattleRequest = {
   name: string;
   baseImageDataUrl: string;
+  /** Explicit style chosen in Draw. Optional only for one legacy-client window. */
+  fighterStyle?: CombatRole;
 };
 
 export type PracticeBattleReport = Omit<
@@ -573,15 +607,24 @@ export type PracticeBattleReport = Omit<
 };
 
 export type SubmitScribbitRequest = {
+  submissionId: string; // client operation id; retries return the exact same birth
   name: string;
-  baseImageDataUrl: string; // undecorated PNG analyzed for stats, 512x512, <=400KB
+  baseImageDataUrl: string; // undecorated PNG checked for real drawing ink, 512x512, <=400KB
   imageDataUrl: string; // rendered PNG uploaded/displayed, 512x512, <=400KB
-  stats: ScribbitStats; // deprecated: client preview only; server recomputes from PNG
+  stats: ScribbitStats; // deprecated: client preview only; server derives canonical style stats
   element: Element; // deprecated: client preview only; server recomputes from PNG
+  /** Explicit role choice. The server converts it into canonical stats. */
+  fighterStyle?: CombatRole;
   accessories?: AttachedAccessory[]; // max 2; server validates ownership + consumes copies
   // Server validates both ids and spends one charge from each selected supply
   // only inside the atomic successful Scribbit-birth transaction.
   drawingSupplies?: DrawingSupplySelection;
+};
+
+export type SubmitScribbitResponse = {
+  scribbit: Scribbit;
+  drawCharges: DrawChargeState;
+  enteredRumble: boolean;
 };
 
 // Free Draws are private, untimed creations. They deliberately do not carry
@@ -607,7 +650,6 @@ export type SubmitFreeDrawingRequest = {
 export type CareRequest = { scribbitId: string; action: CareAction };
 export type CareResponse = {
   scribbit: Scribbit;
-  inkAwarded: number; // exact committed side effect; zero when non-critical award fails
 };
 export type SparRivalSlate = {
   challenger: Scribbit; // current server snapshot after any just-earned XP
@@ -671,8 +713,12 @@ export const STAT_MIN = 10;
 export const STAT_MAX = 55;
 export const LIFESPAN_DAYS = 3;
 export const BELIEF_LEGEND_THRESHOLD = 25;
-export const MAX_GROWING_PER_USER = 3;
-export const MAX_MATURE_PER_USER = 3;
+export const SCRIBBIT_ROSTER_CAPACITY = {
+  growing: 3,
+  mature: 3,
+} as const;
+export const MAX_GROWING_PER_USER = SCRIBBIT_ROSTER_CAPACITY.growing;
+export const MAX_MATURE_PER_USER = SCRIBBIT_ROSTER_CAPACITY.mature;
 export const MAX_ALIVE_PER_USER = MAX_GROWING_PER_USER + MAX_MATURE_PER_USER;
 
 export const getScribbitLifecycleStage = (
@@ -690,8 +736,9 @@ export const getScribbitLifecycleStage = (
 // the Scribbit. XP awards live in XP_REWARDS above.
 // REST endpoints (Hono, JSON; errors = ArenaErrorResponse with 4xx/5xx):
 // GET  /api/arena          -> ArenaState
+// POST /api/daily-login/claim -> DailyLoginClaimResponse
 // GET  /api/scout-notebook -> ScoutNotebookState (signed-in caller, today + six prior days)
-// POST /api/scribbit       -> SubmitScribbitRequest -> Scribbit         (401 if logged out, 409 if drawnToday)
+// POST /api/scribbit       -> SubmitScribbitRequest -> SubmitScribbitResponse (401 logged out, 409 no charge/full roster)
 // GET  /api/my-battles     -> BattleReport[]  (caller's battles, newest first, top 20)
 // GET  /api/rumble-replay?day -> BattleReport (server-selected bout for caller's Back)
 // POST /api/believe        -> { scribbitId: string } -> { belief: number } (one per user per scribbit per day)

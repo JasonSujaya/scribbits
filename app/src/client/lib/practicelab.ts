@@ -12,7 +12,7 @@ import { selectDoodleDareForPower } from '../../shared/content/doodledares';
 import type { DoodleDare } from '../../shared/content/doodledares';
 
 export const PRACTICE_HEADER_TITLE = 'PRACTICE LAB';
-export const PRACTICE_SUBMIT_LABEL = 'FIND MY ROLE';
+export const PRACTICE_SUBMIT_LABEL = 'TRY THIS STYLE';
 
 export type PracticeSession = Readonly<{
   triedRoles: readonly CombatRole[];
@@ -187,7 +187,7 @@ export function planPracticeReveal(
   const session = normalizePracticeSession(sessionValue);
   const role = getCombatRoleContent(session.lastRole ?? 'brawler');
   return {
-    headline: 'ROLE FOUND!',
+    headline: 'STYLE READY!',
     roleName: role.displayName.toUpperCase(),
     roleDetail: `${role.rangeLabel} · ${role.weaponName.toUpperCase()} · ${role.signatureName.toUpperCase()}`,
     progress: `${session.triedRoles.length} OF ${COMBAT_ROLE_IDS.length} FOUND`,

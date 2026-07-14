@@ -99,6 +99,8 @@ test('Shop acquires, Bag equips, and Home opens Gallery', () => {
   );
   assert.match(homeSource, /setGalleryTab\(this, 'growing'\)/);
   assert.match(homeSource, /startScene\(this, 'Gallery'\)/);
+  assert.doesNotMatch(gallerySource, /renderDrawChargeInventory/);
+  assert.doesNotMatch(gallerySource, /DRAW CHARGES|PAINT BUCKET/);
 });
 
 test('Paper icons are optically centered without moving their hit targets', () => {
@@ -106,14 +108,8 @@ test('Paper icons are optically centered without moving their hit targets', () =
   assert.doesNotMatch(appMenuSource, /settingsButton\.add\(/);
   assert.match(appMenuSource, /const SETTINGS_BUTTON_SIZE = 92;/);
   assert.match(appMenuSource, /const SETTINGS_BUTTON_RIGHT_OFFSET = 60;/);
-  assert.match(
-    uiSource,
-    /const PAPER_ICON_OPTICAL_OFFSET_X = -4;/
-  );
-  assert.match(
-    uiSource,
-    /const PAPER_ICON_OPTICAL_OFFSET_Y = -5;/
-  );
+  assert.match(uiSource, /const PAPER_ICON_OPTICAL_OFFSET_X = -4;/);
+  assert.match(uiSource, /const PAPER_ICON_OPTICAL_OFFSET_Y = -5;/);
   assert.match(appMenuSource, /width - SETTINGS_BUTTON_RIGHT_OFFSET/);
   assert.match(
     appMenuSource,

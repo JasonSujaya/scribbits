@@ -1,0 +1,50 @@
+# Role Classification Edge Cases
+
+Generated: 2026-07-14T22:33:47.028Z
+
+Runner: `app/tools/balancer/run.mjs`
+
+This report bypasses API/routes/storage and calls the production combat mock bundle directly.
+
+| Target | Opponent | Win rate | Avg duration | Power-Up triggers | Timeouts | Close | Blowouts | Verdict |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| Edge · 25 all | Brawler base | 100.0% | 13.7s | 0.00 | 0.0% | 100.0% | 0.0% | FLAG_WIN_RATE |
+| Edge · 25 all | Longshot base | 0.0% | 13.3s | 0.00 | 0.0% | 0.0% | 0.0% | FLAG_WIN_RATE |
+| Edge · 25 all | Gunner base | 50.0% | 14.3s | 0.00 | 0.0% | 100.0% | 0.0% | OK |
+| Edge · 25 all | Mage base | 100.0% | 13.1s | 0.00 | 0.0% | 100.0% | 0.0% | FLAG_WIN_RATE |
+| Edge · 28 Chonk | Brawler base | 100.0% | 13.7s | 0.00 | 0.0% | 100.0% | 0.0% | FLAG_WIN_RATE |
+| Edge · 28 Chonk | Longshot base | 0.0% | 13.9s | 0.00 | 0.0% | 0.0% | 0.0% | FLAG_WIN_RATE |
+| Edge · 28 Chonk | Gunner base | 0.0% | 14.1s | 0.00 | 0.0% | 50.0% | 0.0% | FLAG_WIN_RATE |
+| Edge · 28 Chonk | Mage base | 100.0% | 13.9s | 0.00 | 0.0% | 100.0% | 0.0% | FLAG_WIN_RATE |
+| Edge · 28 Spike | Brawler base | 0.0% | 14.0s | 0.00 | 0.0% | 50.0% | 0.0% | FLAG_WIN_RATE |
+| Edge · 28 Spike | Longshot base | 0.0% | 14.3s | 0.00 | 0.0% | 100.0% | 0.0% | FLAG_WIN_RATE |
+| Edge · 28 Spike | Gunner base | 50.0% | 19.3s | 0.00 | 0.0% | 50.0% | 0.0% | OK |
+| Edge · 28 Spike | Mage base | 0.0% | 16.7s | 0.00 | 0.0% | 50.0% | 0.0% | FLAG_WIN_RATE |
+| Edge · 28 Zip | Brawler base | 0.0% | 14.8s | 0.00 | 0.0% | 100.0% | 0.0% | FLAG_WIN_RATE |
+| Edge · 28 Zip | Longshot base | 0.0% | 17.6s | 0.00 | 0.0% | 0.0% | 0.0% | FLAG_WIN_RATE |
+| Edge · 28 Zip | Gunner base | 50.0% | 19.5s | 0.00 | 0.0% | 50.0% | 0.0% | OK |
+| Edge · 28 Zip | Mage base | 100.0% | 19.3s | 0.00 | 0.0% | 0.0% | 0.0% | FLAG_WIN_RATE |
+| Edge · 28 Charm | Brawler base | 0.0% | 14.4s | 0.00 | 0.0% | 50.0% | 0.0% | FLAG_WIN_RATE |
+| Edge · 28 Charm | Longshot base | 0.0% | 16.5s | 0.00 | 0.0% | 50.0% | 0.0% | FLAG_WIN_RATE |
+| Edge · 28 Charm | Gunner base | 100.0% | 15.6s | 0.00 | 0.0% | 50.0% | 0.0% | FLAG_WIN_RATE |
+| Edge · 28 Charm | Mage base | 0.0% | 14.8s | 0.00 | 0.0% | 0.0% | 0.0% | FLAG_WIN_RATE |
+
+## Flags
+
+- Edge · 25 all vs Brawler base: FLAG_WIN_RATE (100.0%, 13.7s avg)
+- Edge · 25 all vs Longshot base: FLAG_WIN_RATE (0.0%, 13.3s avg)
+- Edge · 25 all vs Mage base: FLAG_WIN_RATE (100.0%, 13.1s avg)
+- Edge · 28 Chonk vs Brawler base: FLAG_WIN_RATE (100.0%, 13.7s avg)
+- Edge · 28 Chonk vs Longshot base: FLAG_WIN_RATE (0.0%, 13.9s avg)
+- Edge · 28 Chonk vs Gunner base: FLAG_WIN_RATE (0.0%, 14.1s avg)
+- Edge · 28 Chonk vs Mage base: FLAG_WIN_RATE (100.0%, 13.9s avg)
+- Edge · 28 Spike vs Brawler base: FLAG_WIN_RATE (0.0%, 14.0s avg)
+- Edge · 28 Spike vs Longshot base: FLAG_WIN_RATE (0.0%, 14.3s avg)
+- Edge · 28 Spike vs Mage base: FLAG_WIN_RATE (0.0%, 16.7s avg)
+- Edge · 28 Zip vs Brawler base: FLAG_WIN_RATE (0.0%, 14.8s avg)
+- Edge · 28 Zip vs Longshot base: FLAG_WIN_RATE (0.0%, 17.6s avg)
+- Edge · 28 Zip vs Mage base: FLAG_WIN_RATE (100.0%, 19.3s avg)
+- Edge · 28 Charm vs Brawler base: FLAG_WIN_RATE (0.0%, 14.4s avg)
+- Edge · 28 Charm vs Longshot base: FLAG_WIN_RATE (0.0%, 16.5s avg)
+- Edge · 28 Charm vs Gunner base: FLAG_WIN_RATE (100.0%, 15.6s avg)
+- Edge · 28 Charm vs Mage base: FLAG_WIN_RATE (0.0%, 14.8s avg)

@@ -4,6 +4,7 @@ import {
   GEAR_MERGE_COPY_COST,
   MAX_GEAR_RANK,
   RED_STAR_GEAR_RANK,
+  getScribbitLifecycleStage,
   type CapsuleRarity,
   type GearRank,
   type Inventory,
@@ -22,7 +23,7 @@ import {
 import { renderCosmeticPreview } from './cosmeticpreview';
 import { gearRankStars } from './gearrankstars';
 import { fitDrawing, loadDrawing } from './scribbits';
-import { TYPE, UI } from './theme';
+import { NAV_SAFE, TYPE, UI } from './theme';
 import {
   addCardPressInteraction,
   ghostButton,
@@ -45,16 +46,22 @@ import {
   type GearCombatSummaryItem,
 } from '../../shared/gearcombat';
 import { selectGearWeekDay } from '../../shared/content/gearweek';
-import { getCombatRoleContent } from '../../shared/combat';
+import { getCombatRoleContent, selectCombatRole } from '../../shared/combat';
 
 const BAG_GEAR_TILE_SIZE = 120;
+const BAG_EQUIPMENT_SLOT_SIZE = 76;
+const BAG_EQUIPMENT_SLOT_HIT_WIDTH = 90;
+const BAG_BINDER_WIDTH = 640;
+const BAG_BINDER_HEIGHT = 540;
 
 const BAG_LAYOUT = Object.freeze({
-  stageCenterOffset: 220,
-  filterOffset: 640,
-  inventoryTopOffset: 736,
-  inventoryViewportHeaderHeight: 70,
-  inventoryBottomMargin: 156,
+  modeOffset: 50,
+  binderTopOffset: 110,
+  filterGap: 50,
+  expandedFilterOffset: 165,
+  inventoryGap: 78,
+  inventoryViewportHeaderHeight: 100,
+  inventoryBottomGap: 12,
   inventoryPanelMargin: 18,
   inventoryContentMargin: 42,
   cardColumns: 4,
@@ -62,6 +69,35 @@ const BAG_LAYOUT = Object.freeze({
   cardHeight: BAG_GEAR_TILE_SIZE,
   cardRowGap: 20,
 });
+
+function planBagLayout(
+  top: number,
+  height: number,
+  inventoryExpanded: boolean,
+  mode: BagMode
+): {
+  modeY: number;
+  binderCenterY: number;
+  showBinder: boolean;
+  filterY: number;
+  inventoryTop: number;
+  inventoryBottom: number;
+} {
+  const binderTop = top + BAG_LAYOUT.binderTopOffset;
+  const binderBottom = binderTop + BAG_BINDER_HEIGHT;
+  const showBinder = mode === 'equipment' && !inventoryExpanded;
+  const filterY = !showBinder
+    ? top + BAG_LAYOUT.expandedFilterOffset
+    : binderBottom + BAG_LAYOUT.filterGap;
+  return {
+    modeY: top + BAG_LAYOUT.modeOffset,
+    binderCenterY: binderTop + BAG_BINDER_HEIGHT / 2,
+    showBinder,
+    filterY,
+    inventoryTop: filterY + BAG_LAYOUT.inventoryGap,
+    inventoryBottom: height - NAV_SAFE - BAG_LAYOUT.inventoryBottomGap,
+  };
+}
 
 const BAG_GEAR_PREVIEW_BOX = Object.freeze({
   width: 88,
@@ -71,7 +107,9 @@ const BAG_GEAR_PREVIEW_BOX = Object.freeze({
 
 const UNEQUIPPED_GEAR_TILE_COLOR = 0xd6d4cf;
 
-export type InkKitSection = EquipmentCategory | 'styles';
+export type DrawKitSection = 'colors' | 'brushes' | 'titles';
+export type InkKitSection = EquipmentCategory | DrawKitSection;
+type BagMode = 'equipment' | 'draw-kit';
 
 const GEAR_SECTION_PRESENTATION: Readonly<
   Record<EquipmentCategory, { label: string; icon: PaperIconKey }>
@@ -82,16 +120,43 @@ const GEAR_SECTION_PRESENTATION: Readonly<
   accessory: Object.freeze({ label: 'ACCESSORY', icon: 'spark' }),
 });
 
-const INK_KIT_SECTIONS: ReadonlyArray<{
+type BagSectionPresentation = Readonly<{
   id: InkKitSection;
   label: string;
   icon: PaperIconKey;
-}> = Object.freeze([
-  ...EQUIPMENT_CATEGORIES.map((id) =>
+}>;
+
+const EQUIPMENT_SECTIONS: readonly BagSectionPresentation[] = Object.freeze(
+  EQUIPMENT_CATEGORIES.map((id) =>
     Object.freeze({ id, ...GEAR_SECTION_PRESENTATION[id] })
-  ),
-  Object.freeze({ id: 'styles', label: 'STYLES', icon: 'pencil' }),
+  )
+);
+
+const DRAW_KIT_SECTIONS: readonly BagSectionPresentation[] = Object.freeze([
+  Object.freeze({ id: 'colors', label: 'COLORS', icon: 'ink' }),
+  Object.freeze({ id: 'brushes', label: 'BRUSHES', icon: 'pencil' }),
+  Object.freeze({ id: 'titles', label: 'TITLES', icon: 'trophy' }),
 ]);
+
+const bagModeForSection = (section: InkKitSection): BagMode =>
+  EQUIPMENT_CATEGORIES.includes(section as EquipmentCategory)
+    ? 'equipment'
+    : 'draw-kit';
+
+const sectionsForMode = (mode: BagMode): readonly BagSectionPresentation[] =>
+  mode === 'equipment' ? EQUIPMENT_SECTIONS : DRAW_KIT_SECTIONS;
+
+const presentationForSection = (
+  section: InkKitSection
+): BagSectionPresentation => {
+  if (bagModeForSection(section) === 'equipment') {
+    const category = section as EquipmentCategory;
+    return { id: category, ...GEAR_SECTION_PRESENTATION[category] };
+  }
+  return (
+    DRAW_KIT_SECTIONS.find(({ id }) => id === section) ?? DRAW_KIT_SECTIONS[0]!
+  );
+};
 
 const RARITY_STYLE: Record<CapsuleRarity, { color: number; label: string }> = {
   common: {
@@ -109,6 +174,7 @@ export type CollectionBookOptions = {
   dayNumber: number;
   section: InkKitSection;
   scrollOffset: number;
+  inventoryExpanded: boolean;
   inventory: Inventory | null;
   loggedIn: boolean;
   loading: boolean;
@@ -118,6 +184,7 @@ export type CollectionBookOptions = {
   equipmentBusy: boolean;
   equipmentError: string | null;
   onScrollOffsetChange: (offset: number) => void;
+  onInventoryExpandedChange: (expanded: boolean) => void;
   onSectionChange: (section: InkKitSection) => void;
   onSelectScribbit: (scribbitId: string) => void;
   onEquipGear: (
@@ -161,6 +228,8 @@ export function renderCollectionBook(options: CollectionBookOptions): void {
   const { scene, top, inventory, loggedIn, loading, errorMessage, onRetry } =
     options;
   const { width, height } = scene.scale;
+  const mode = bagModeForSection(options.section);
+  const layout = planBagLayout(top, height, options.inventoryExpanded, mode);
 
   if (!loggedIn) {
     label(
@@ -216,24 +285,35 @@ export function renderCollectionBook(options: CollectionBookOptions): void {
     options.scribbits.find(
       (scribbit) => scribbit.id === options.selectedScribbitId
     ) ?? options.scribbits[0];
-  buildBagCharacterStage({
+  buildBagModeTabs({
     scene,
     actionOverlay: options.actionOverlay,
-    selectedSection: options.section === 'styles' ? null : options.section,
-    scribbits: options.scribbits,
-    selectedScribbit,
-    centerY: top + BAG_LAYOUT.stageCenterOffset,
-    equipmentBusy: options.equipmentBusy,
-    equipmentError: options.equipmentError,
-    onSectionChange: options.onSectionChange,
-    onSelectScribbit: options.onSelectScribbit,
-    onEquipGear: options.onEquipGear,
+    selectedMode: mode,
+    y: layout.modeY,
+    onModeChange: (nextMode) =>
+      options.onSectionChange(nextMode === 'equipment' ? 'weapon' : 'colors'),
   });
+  if (layout.showBinder) {
+    buildBagCharacterStage({
+      scene,
+      actionOverlay: options.actionOverlay,
+      selectedSection: options.section as EquipmentCategory,
+      scribbits: options.scribbits,
+      selectedScribbit,
+      centerY: layout.binderCenterY,
+      dayNumber: options.dayNumber,
+      equipmentBusy: options.equipmentBusy,
+      equipmentError: options.equipmentError,
+      onSectionChange: options.onSectionChange,
+      onSelectScribbit: options.onSelectScribbit,
+      onEquipGear: options.onEquipGear,
+    });
+  }
   buildBagFilters(
     scene,
     options.actionOverlay,
     options.section,
-    top + BAG_LAYOUT.filterOffset,
+    layout.filterY,
     options.onSectionChange
   );
 
@@ -243,9 +323,9 @@ export function renderCollectionBook(options: CollectionBookOptions): void {
       Number(featuredGearIds.has(right.entry.id)) -
       Number(featuredGearIds.has(left.entry.id))
   );
-  const inventoryTop = top + BAG_LAYOUT.inventoryTopOffset;
-  const inventoryBottom = height - BAG_LAYOUT.inventoryBottomMargin;
-  const inventoryPanelHeight = Math.max(260, inventoryBottom - inventoryTop);
+  const inventoryTop = layout.inventoryTop;
+  const inventoryBottom = layout.inventoryBottom;
+  const inventoryPanelHeight = Math.max(0, inventoryBottom - inventoryTop);
   const viewport = {
     x: BAG_LAYOUT.inventoryContentMargin,
     y: inventoryTop + BAG_LAYOUT.inventoryViewportHeaderHeight,
@@ -263,19 +343,57 @@ export function renderCollectionBook(options: CollectionBookOptions): void {
     inventoryPanelHeight,
     { tape: false, tilt: 0 }
   );
-  const sectionLabel =
-    options.section === 'styles'
-      ? 'STYLES'
-      : GEAR_SECTION_PRESENTATION[options.section].label;
+  const sectionLabel = presentationForSection(options.section).label;
   label(
     scene,
     BAG_LAYOUT.inventoryContentMargin,
     inventoryTop + 30,
     `${sectionLabel} · ${ownedItems.length} OWNED`,
-    20,
+    TYPE.caption,
     UI.ink,
     true
   ).setOrigin(0, 0.5);
+  if (mode === 'equipment') {
+    const inventoryToggleX = width - 142;
+    const inventoryToggleY = inventoryTop + 50;
+    const inventoryToggleWidth = 230;
+    ghostButton(
+      scene,
+      inventoryToggleX,
+      inventoryToggleY,
+      options.inventoryExpanded ? 'SHOW BINDER ↓' : 'EXPAND ↑',
+      () => options.onInventoryExpandedChange(!options.inventoryExpanded),
+      inventoryToggleWidth,
+      BAG_LAYOUT.inventoryViewportHeaderHeight
+    );
+    options.actionOverlay.add({
+      label: options.inventoryExpanded
+        ? 'Show Scribbit Binder and collapse Gear inventory'
+        : 'Expand Gear inventory',
+      rect: {
+        x: inventoryToggleX - inventoryToggleWidth / 2,
+        y: inventoryToggleY - BAG_LAYOUT.inventoryViewportHeaderHeight / 2,
+        width: inventoryToggleWidth,
+        height: BAG_LAYOUT.inventoryViewportHeaderHeight,
+      },
+      attributes: {
+        'aria-expanded': String(options.inventoryExpanded),
+        'data-bag-inventory-expanded': String(options.inventoryExpanded),
+      },
+      onActivate: () =>
+        options.onInventoryExpandedChange(!options.inventoryExpanded),
+    });
+  } else {
+    label(
+      scene,
+      width - BAG_LAYOUT.inventoryContentMargin,
+      inventoryTop + 30,
+      'SELECT WHILE DRAWING',
+      18,
+      UI.inkSoft,
+      true
+    ).setOrigin(1, 0.5);
+  }
   const visibleRowCount = Math.floor(
     (viewport.height + BAG_LAYOUT.cardRowGap) /
       (BAG_LAYOUT.cardHeight + BAG_LAYOUT.cardRowGap)
@@ -298,9 +416,13 @@ export function renderCollectionBook(options: CollectionBookOptions): void {
       scene,
       width / 2,
       viewport.y + 105,
-      options.section === 'styles'
-        ? 'No permanent styles yet.'
-        : `No ${options.section} gear yet.\nOpen Mystery Ink to find some.`,
+      options.section === 'colors'
+        ? 'No special colors yet.\nOpen Mystery Ink to find some.'
+        : options.section === 'brushes'
+          ? 'No collectible brushes yet.\nThe round brush is always available in Draw.'
+          : options.section === 'titles'
+            ? 'No titles yet.\nOpen Mystery Ink to find some.'
+            : `No ${options.section} gear yet.\nOpen Mystery Ink to find some.`,
       TYPE.body,
       UI.inkSoft,
       true
@@ -337,6 +459,60 @@ export function renderCollectionBook(options: CollectionBookOptions): void {
   });
 }
 
+function buildBagModeTabs(options: {
+  scene: Scene;
+  actionOverlay: CanvasActionOverlay;
+  selectedMode: BagMode;
+  y: number;
+  onModeChange: (mode: BagMode) => void;
+}): void {
+  const { scene, actionOverlay, selectedMode, y, onModeChange } = options;
+  const modes: readonly Readonly<{
+    id: BagMode;
+    label: string;
+  }>[] = [
+    { id: 'equipment', label: 'EQUIPMENT' },
+    { id: 'draw-kit', label: 'DRAW KIT' },
+  ];
+  const buttonWidth = 320;
+  const buttonHeight = 100;
+  modes.forEach((mode, index) => {
+    const x = index === 0 ? 190 : 530;
+    const selected = mode.id === selectedMode;
+    const button = ghostButton(
+      scene,
+      x,
+      y,
+      mode.label,
+      () => {
+        if (!selected) onModeChange(mode.id);
+      },
+      buttonWidth,
+      buttonHeight
+    );
+    button.setAlpha(selected ? 1 : 0.8);
+    scene.add
+      .rectangle(x, y + 43, buttonWidth - 34, selected ? 8 : 3, UI.coral, 1)
+      .setOrigin(0.5);
+    actionOverlay.add({
+      label: `${mode.label}${selected ? ', selected' : ''}`,
+      rect: {
+        x: x - buttonWidth / 2,
+        y: y - buttonHeight / 2,
+        width: buttonWidth,
+        height: buttonHeight,
+      },
+      attributes: {
+        'aria-pressed': String(selected),
+        'data-bag-mode': mode.id,
+      },
+      onActivate: () => {
+        if (!selected) onModeChange(mode.id);
+      },
+    });
+  });
+}
+
 function buildBagFilters(
   scene: Scene,
   actionOverlay: CanvasActionOverlay,
@@ -345,16 +521,17 @@ function buildBagFilters(
   onSectionChange: (section: InkKitSection) => void
 ): void {
   const { width } = scene.scale;
+  const mode = bagModeForSection(selectedSection);
+  const sections = sectionsForMode(mode);
   const horizontalMargin = 18;
   const gap = 6;
   const buttonWidth =
-    (width - horizontalMargin * 2 - gap * (INK_KIT_SECTIONS.length - 1)) /
-    INK_KIT_SECTIONS.length;
-  const rowWidth =
-    buttonWidth * INK_KIT_SECTIONS.length + gap * (INK_KIT_SECTIONS.length - 1);
+    (width - horizontalMargin * 2 - gap * (sections.length - 1)) /
+    sections.length;
+  const rowWidth = buttonWidth * sections.length + gap * (sections.length - 1);
   const firstX = (width - rowWidth) / 2 + buttonWidth / 2;
 
-  INK_KIT_SECTIONS.forEach((section, index) => {
+  sections.forEach((section, index) => {
     const selected = section.id === selectedSection;
     const x = firstX + index * (buttonWidth + gap);
     paperIconButton(
@@ -375,12 +552,12 @@ function buildBagFilters(
       x,
       y + 42,
       section.label,
-      15,
+      22,
       selected ? UI.coralText : UI.ink,
       true
     );
     actionOverlay.add({
-      label: `${section.label}${section.id === 'styles' ? ' cosmetic styles' : ' gear'}${selected ? ', selected' : ''}`,
+      label: `${section.label} ${mode === 'equipment' ? 'Gear' : 'Draw Kit'}${selected ? ', selected' : ''}`,
       rect: {
         x: x - buttonWidth / 2,
         y: y - 50,
@@ -405,6 +582,7 @@ function buildBagCharacterStage(options: {
   scribbits: readonly Scribbit[];
   selectedScribbit: Scribbit | undefined;
   centerY: number;
+  dayNumber: number;
   equipmentBusy: boolean;
   equipmentError: string | null;
   onSectionChange: (section: InkKitSection) => void;
@@ -418,6 +596,7 @@ function buildBagCharacterStage(options: {
     scribbits,
     selectedScribbit,
     centerY,
+    dayNumber,
     equipmentBusy,
     equipmentError,
     onSectionChange,
@@ -426,36 +605,136 @@ function buildBagCharacterStage(options: {
   } = options;
   const { width } = scene.scale;
   const stage = scene.add.container(width / 2, centerY);
-  const stageBackdrop = scene.add.graphics();
-  stageBackdrop.fillStyle(UI.inkHex, 0.08);
-  stageBackdrop.fillRoundedRect(-235, -205, 470, 430, 188);
-  stageBackdrop.fillStyle(UI.paper, 1);
-  stageBackdrop.fillRoundedRect(-230, -215, 460, 430, 184);
-  stageBackdrop.lineStyle(5, UI.inkSoftHex, 0.42);
-  stageBackdrop.strokeRoundedRect(-230, -215, 460, 430, 184);
-  stageBackdrop.lineStyle(3, UI.tapeAlt, 0.72);
-  stageBackdrop.strokeRoundedRect(-220, -205, 440, 410, 174);
-  stageBackdrop.fillStyle(UI.tapeAlt, 0.1);
-  stageBackdrop.fillTriangle(-184, -184, 0, 174, 184, -184);
-  stage.add(stageBackdrop);
-  drawScribbitPlatform(scene, stage, 0, 168);
+  const binder = scene.add.graphics();
+  const binderLeft = -BAG_BINDER_WIDTH / 2;
+  const binderTop = -BAG_BINDER_HEIGHT / 2;
+  binder.fillStyle(UI.inkHex, 0.2);
+  binder.fillRoundedRect(
+    binderLeft + 9,
+    binderTop + 13,
+    BAG_BINDER_WIDTH,
+    BAG_BINDER_HEIGHT,
+    38
+  );
+  binder.fillStyle(UI.coral, 1);
+  binder.fillRoundedRect(
+    binderLeft,
+    binderTop,
+    BAG_BINDER_WIDTH,
+    BAG_BINDER_HEIGHT,
+    38
+  );
+  binder.lineStyle(6, UI.inkHex, 1);
+  binder.strokeRoundedRect(
+    binderLeft,
+    binderTop,
+    BAG_BINDER_WIDTH,
+    BAG_BINDER_HEIGHT,
+    38
+  );
+  binder.fillStyle(UI.paper, 1);
+  binder.fillRoundedRect(binderLeft + 20, binderTop + 20, 600, 428, 26);
+  binder.lineStyle(4, UI.inkHex, 0.92);
+  binder.strokeRoundedRect(binderLeft + 20, binderTop + 20, 600, 428, 26);
+  binder.fillStyle(UI.creamHex, 1);
+  binder.fillRoundedRect(binderLeft + 20, binderTop + 458, 600, 62, 20);
+  binder.strokeRoundedRect(binderLeft + 20, binderTop + 458, 600, 62, 20);
+  binder.lineStyle(3, UI.inkHex, 0.46);
+  binder.lineBetween(-296, -105, 296, -105);
+  binder.lineBetween(-296, 38, 296, 38);
+  binder.lineBetween(0, -105, 0, 178);
+  stage.add(binder);
+
+  [-64, 40, 144].forEach((ringY) => {
+    const ring = scene.add.graphics();
+    ring.fillStyle(UI.paper, 1);
+    ring.fillRoundedRect(-12, ringY - 17, 24, 34, 10);
+    ring.lineStyle(4, UI.inkHex, 1);
+    ring.strokeRoundedRect(-12, ringY - 17, 24, 34, 10);
+    stage.add(ring);
+  });
+
+  const equipmentPanelCenter: Readonly<
+    Record<EquipmentCategory, Readonly<{ x: number; y: number }>>
+  > = {
+    weapon: { x: -155, y: -46 },
+    armor: { x: 155, y: -46 },
+    shoes: { x: -155, y: 106 },
+    accessory: { x: 155, y: 106 },
+  };
+  EQUIPMENT_CATEGORIES.forEach((category) => {
+    const panel = equipmentPanelCenter[category];
+    const presentation = GEAR_SECTION_PRESENTATION[category];
+    stage.add(
+      paperIcon(scene, presentation.icon, panel.x - 104, panel.y - 46, {
+        size: 28,
+        fill: selectedSection === category ? UI.coral : UI.inkHex,
+      })
+    );
+    const categoryLabel = label(
+      scene,
+      panel.x - 83,
+      panel.y - 46,
+      presentation.label,
+      20,
+      selectedSection === category ? UI.coralText : UI.ink,
+      true
+    ).setOrigin(0, 0.5);
+    if (categoryLabel.width > 122) {
+      categoryLabel.setScale(122 / categoryLabel.width);
+    }
+    stage.add(categoryLabel);
+  });
 
   if (!selectedScribbit) {
     stage.add([
-      paperIcon(scene, 'paw', 0, -8, {
-        size: 76,
+      paperIcon(scene, 'paw', -210, -192, {
+        size: 62,
         fill: UI.inkSoftHex,
       }),
       label(
         scene,
-        0,
-        72,
-        'DRAW A LIVING SCRIBBIT\nTO EQUIP GEAR',
+        -30,
+        -192,
+        'DRAW A LIVING SCRIBBIT\nTO START ITS BINDER',
         TYPE.caption,
         UI.inkSoft,
         true
       ).setLineSpacing(7),
     ]);
+    EQUIPMENT_CATEGORIES.forEach((category) => {
+      ([0, 1] as const).forEach((slotIndex) => {
+        const slot = createBagGearTile(
+          scene,
+          null,
+          selectedSection === category,
+          false,
+          BAG_EQUIPMENT_SLOT_SIZE,
+          true
+        ).setPosition(
+          equipmentPanelCenter[category].x - 58 + slotIndex * 116,
+          equipmentPanelCenter[category].y + 24
+        );
+        slot.add(
+          paperIcon(scene, GEAR_SECTION_PRESENTATION[category].icon, 0, 0, {
+            size: 24,
+            fill: UI.paper,
+          })
+        );
+        stage.add(slot);
+      });
+    });
+    stage.add(
+      label(
+        scene,
+        0,
+        226,
+        'EQUIPMENT SLOTS · DRAW A SCRIBBIT TO START',
+        20,
+        UI.inkSoft,
+        true
+      )
+    );
     return;
   }
 
@@ -463,25 +742,59 @@ function buildBagCharacterStage(options: {
     0,
     scribbits.findIndex((scribbit) => scribbit.id === selectedScribbit.id)
   );
-  const portrait = scene.add.container(0, 5);
+  const portrait = scene.add.container(-220, -194);
   stage.add(portrait);
   void loadDrawing(scene, selectedScribbit).then((textureKey) => {
     if (!portrait.active || !stage.active || !scene.scene.isActive()) return;
     portrait.add(
-      fitDrawing(scene.add.image(0, 0, textureKey), 320).setOrigin(0.5)
+      fitDrawing(scene.add.image(0, 0, textureKey), 112).setOrigin(0.5)
     );
   });
+  drawScribbitPlatform(scene, stage, -220, -137);
   const nameText = label(
     scene,
-    0,
-    -240,
+    -70,
+    -232,
     `${selectedScribbit.name.toUpperCase()} · LV ${selectedScribbit.level}`,
-    21,
+    22,
     UI.ink,
     true
-  );
-  if (nameText.width > 252) nameText.setScale(252 / nameText.width);
+  ).setOrigin(0, 0.5);
+  if (nameText.width > 220) nameText.setScale(220 / nameText.width);
   stage.add(nameText);
+
+  const lifecycle = getScribbitLifecycleStage(selectedScribbit, dayNumber);
+  const growthDay = Math.min(
+    3,
+    Math.max(1, dayNumber - selectedScribbit.bornDay + 1)
+  );
+  const themeName = selectedScribbit.drawingThemeId
+    ? selectedScribbit.drawingThemeId.replaceAll('-', ' ').toUpperCase()
+    : 'ORIGINAL DRAWING';
+  const metadataLines = [
+    `${selectedScribbit.element.toUpperCase()} ELEMENT · ${getCombatRoleContent(selectCombatRole(selectedScribbit.stats)).displayName.toUpperCase()}`,
+    `DRAWING STYLE · ${themeName}`,
+    lifecycle === 'mature'
+      ? 'MATURE · STATS LOCKED'
+      : `GROWING · DAY ${growthDay}/3`,
+    `CHONK ${selectedScribbit.stats.chonk} · SPIKE ${selectedScribbit.stats.spike}`,
+    `ZIP ${selectedScribbit.stats.zip} · CHARM ${selectedScribbit.stats.charm}`,
+  ];
+  metadataLines.forEach((metadata, index) => {
+    const metadataText = label(
+      scene,
+      -70,
+      -204 + index * 21,
+      metadata,
+      index < 3 ? 15 : 14,
+      index === 2 && lifecycle === 'mature' ? UI.goldText : UI.inkSoft,
+      true
+    ).setOrigin(0, 0.5);
+    if (metadataText.width > 230) {
+      metadataText.setScale(230 / metadataText.width);
+    }
+    stage.add(metadataText);
+  });
 
   if (scribbits.length > 1) {
     const selectRelativeScribbit = (offset: number): void => {
@@ -493,31 +806,43 @@ function buildBagCharacterStage(options: {
     };
     const previous = ghostButton(
       scene,
-      -212,
-      -240,
+      190,
+      -180,
       '‹',
       () => selectRelativeScribbit(-1),
-      68,
-      68
+      58,
+      100
     );
     const next = ghostButton(
       scene,
-      212,
-      -240,
+      282,
+      -180,
       '‹',
       () => selectRelativeScribbit(1),
-      68,
-      68
+      58,
+      100
     ).setAngle(180);
     previous.setAlpha(equipmentBusy ? 0.42 : 1);
     next.setAlpha(equipmentBusy ? 0.42 : 1);
     stage.add([previous, next]);
+    stage.add(label(scene, 236, -232, 'CHANGE SCRIBBIT', 17, UI.ink, true));
+    stage.add(
+      label(
+        scene,
+        236,
+        -180,
+        `${selectedIndex + 1} / ${scribbits.length}`,
+        18,
+        UI.inkSoft,
+        true
+      )
+    );
     actionOverlay.add({
       label: `Previous Scribbit. ${selectedIndex + 1} of ${scribbits.length} selected.`,
       rect: {
-        x: width / 2 - 262,
-        y: centerY - 276,
-        width: 100,
+        x: width / 2 + 150,
+        y: centerY - 230,
+        width: 80,
         height: 100,
       },
       enabled: !equipmentBusy,
@@ -526,9 +851,9 @@ function buildBagCharacterStage(options: {
     actionOverlay.add({
       label: `Next Scribbit. ${selectedIndex + 1} of ${scribbits.length} selected.`,
       rect: {
-        x: width / 2 + 162,
-        y: centerY - 276,
-        width: 100,
+        x: width / 2 + 242,
+        y: centerY - 230,
+        width: 80,
         height: 100,
       },
       enabled: !equipmentBusy,
@@ -536,23 +861,8 @@ function buildBagCharacterStage(options: {
     });
   }
 
-  const slotXByCategory: Readonly<Record<EquipmentCategory, number>> = {
-    weapon: 70,
-    shoes: 70,
-    armor: width - 70,
-    accessory: width - 70,
-  };
-  const slotYByCategory: Readonly<
-    Record<EquipmentCategory, readonly [number, number]>
-  > = {
-    weapon: [centerY - 170, centerY - 55],
-    armor: [centerY - 170, centerY - 55],
-    shoes: [centerY + 55, centerY + 170],
-    accessory: [centerY + 55, centerY + 170],
-  };
   EQUIPMENT_CATEGORIES.forEach((category) => {
-    const slotX = slotXByCategory[category];
-    const slotYs = slotYByCategory[category];
+    const panel = equipmentPanelCenter[category];
     ([0, 1] as const).forEach((slotIndex) => {
       buildEquipmentSlot({
         scene,
@@ -560,8 +870,8 @@ function buildBagCharacterStage(options: {
         scribbit: selectedScribbit,
         category,
         slotIndex,
-        x: slotX,
-        y: slotYs[slotIndex],
+        x: width / 2 + panel.x - 58 + slotIndex * 116,
+        y: centerY + panel.y + 24,
         selectedCategory: selectedSection === category,
         equipmentBusy,
         onBrowseCategory: () => onSectionChange(category),
@@ -582,12 +892,12 @@ function buildBagCharacterStage(options: {
     label(
       scene,
       width / 2,
-      centerY + 228,
+      centerY + 184,
       visibleEquipmentStatus,
-      17,
+      20,
       equipmentError ? UI.coralText : UI.goldText,
       true
-    ).setWordWrapWidth(560);
+    ).setWordWrapWidth(300);
   }
   buildLoadoutEffectsSummary({
     scene,
@@ -595,7 +905,7 @@ function buildBagCharacterStage(options: {
     scribbit: selectedScribbit,
     equippedCount,
     x: width / 2,
-    y: centerY + 292,
+    y: centerY + 230,
   });
   if (equipmentError || equipmentBusy) {
     actionOverlay.addStatus(
@@ -637,38 +947,33 @@ function buildLoadoutEffectsSummary(options: {
   const resolvedLoadout = resolveGearCombatLoadout(scribbit);
   const summaries = summarizeGearCombatModifiers(resolvedLoadout.modifiers);
   const summary = scene.add.container(x, y);
-  const width = 566;
-  const height = 112;
-  const shadow = scene.add.graphics().setPosition(4, 6);
-  shadow.fillStyle(UI.inkHex, 0.18);
-  shadow.fillRoundedRect(-width / 2, -height / 2, width, height, 18);
-  const face = scene.add.graphics();
-  face.fillStyle(UI.paper, 1);
-  face.fillRoundedRect(-width / 2, -height / 2, width, height, 18);
-  face.lineStyle(4, UI.inkSoftHex, 0.82);
-  face.strokeRoundedRect(-width / 2, -height / 2, width, height, 18);
-  summary.add([shadow, face]);
+  const width = 604;
+  const height = 62;
   summary.add(
     label(
       scene,
       0,
-      -35,
+      -20,
       `LOADOUT EFFECTS · ${equippedCount}/8 · TAP FOR INFO`,
-      17,
+      20,
       UI.ink,
       true
     )
   );
-  const columnWidth = width / 3;
-  summaries.forEach((item, index) => {
-    const column = index % 3;
-    const row = Math.floor(index / 3);
+  const visibleSummaries = [
+    ...summaries.filter((item) => item.tone !== 'neutral'),
+    ...summaries.filter((item) => item.tone === 'neutral'),
+  ].slice(0, 4);
+  const columnWidth = width / 2;
+  visibleSummaries.forEach((item, index) => {
+    const column = index % 2;
+    const row = Math.floor(index / 2);
     const itemLabel = label(
       scene,
       -width / 2 + columnWidth * (column + 0.5),
-      row === 0 ? -5 : 28,
+      row === 0 ? 3 : 23,
       `${item.label} ${item.value}`,
-      15,
+      18,
       summaryToneColor(item),
       true
     );
@@ -919,17 +1224,20 @@ function drawScribbitPlatform(
   scene: Scene,
   stage: Phaser.GameObjects.Container,
   x: number,
-  y: number
+  y: number,
+  width = 212
 ): void {
+  const shadowWidth = width + 12;
+  const innerWidth = Math.max(80, width - 32);
   const platform = scene.add.graphics();
   platform.fillStyle(UI.inkHex, 0.12);
-  platform.fillEllipse(x, y + 14, 276, 50);
+  platform.fillEllipse(x, y + 10, shadowWidth, 38);
   platform.fillStyle(UI.tapeAlt, 0.62);
-  platform.fillEllipse(x, y, 260, 48);
+  platform.fillEllipse(x, y, width, 36);
   platform.lineStyle(4, UI.inkHex, 0.72);
-  platform.strokeEllipse(x, y, 260, 48);
+  platform.strokeEllipse(x, y, width, 36);
   platform.lineStyle(2, UI.creamHex, 0.74);
-  platform.strokeEllipse(x, y - 2, 220, 30);
+  platform.strokeEllipse(x, y - 2, innerWidth, 22);
   stage.add(platform);
 }
 
@@ -964,7 +1272,10 @@ function buildEquipmentSlot(options: {
   const slot = createBagGearTile(
     scene,
     entry?.rarity ?? null,
-    selectedCategory
+    selectedCategory,
+    false,
+    BAG_EQUIPMENT_SLOT_SIZE,
+    entry === undefined
   );
   slot.setPosition(x, y);
 
@@ -974,14 +1285,20 @@ function buildEquipmentSlot(options: {
       parent: slot,
       entry,
       y: 0,
-      size: 104,
-      ...BAG_GEAR_PREVIEW_BOX,
+      size: (104 * BAG_EQUIPMENT_SLOT_SIZE) / BAG_GEAR_TILE_SIZE,
+      width:
+        (BAG_GEAR_PREVIEW_BOX.width * BAG_EQUIPMENT_SLOT_SIZE) /
+        BAG_GEAR_TILE_SIZE,
+      height:
+        (BAG_GEAR_PREVIEW_BOX.height * BAG_EQUIPMENT_SLOT_SIZE) /
+        BAG_GEAR_TILE_SIZE,
+      maxScale: BAG_GEAR_PREVIEW_BOX.maxScale,
     });
   } else {
     slot.add(
       paperIcon(scene, GEAR_SECTION_PRESENTATION[category].icon, 0, 0, {
-        size: 36,
-        fill: UI.inkHex,
+        size: 24,
+        fill: UI.paper,
       })
     );
   }
@@ -997,8 +1314,8 @@ function buildEquipmentSlot(options: {
   addCardPressInteraction({
     scene,
     card: slot,
-    width: BAG_GEAR_TILE_SIZE,
-    height: BAG_GEAR_TILE_SIZE,
+    width: BAG_EQUIPMENT_SLOT_SIZE,
+    height: BAG_EQUIPMENT_SLOT_SIZE,
     pressedScaleX: 0.93,
     pressedScaleY: 0.92,
     onActivate: activate,
@@ -1009,10 +1326,10 @@ function buildEquipmentSlot(options: {
       ? `Unequip ${entry.name} from ${scribbit.name}, ${category} slot ${slotIndex + 1}.`
       : `Empty ${category} slot ${slotIndex + 1} on ${scribbit.name}. Browse ${category} Gear.`,
     rect: {
-      x: x - BAG_GEAR_TILE_SIZE / 2,
-      y: y - BAG_GEAR_TILE_SIZE / 2,
-      width: BAG_GEAR_TILE_SIZE,
-      height: BAG_GEAR_TILE_SIZE,
+      x: x - BAG_EQUIPMENT_SLOT_HIT_WIDTH / 2,
+      y: y - BAG_EQUIPMENT_SLOT_SIZE / 2,
+      width: BAG_EQUIPMENT_SLOT_HIT_WIDTH,
+      height: BAG_EQUIPMENT_SLOT_SIZE,
     },
     attributes: {
       'data-equipment-slot': `${category}-${slotIndex}`,
@@ -1036,18 +1353,25 @@ function buildOwnedItems(
   inventory: Inventory,
   section: InkKitSection
 ): CollectionItem[] {
-  if (section === 'styles') {
-    return COSMETIC_CATALOG.filter((entry) =>
-      entry.kind === 'pen'
-        ? inventory.pens.includes(entry.id)
-        : entry.kind === 'title'
-          ? inventory.titles.includes(entry.id)
-          : (entry.kind === 'drawing-ink' || entry.kind === 'brush') &&
-            inventory.discovered.includes(entry.id)
-    ).map((entry) => ({
+  if (section === 'colors' || section === 'brushes' || section === 'titles') {
+    return COSMETIC_CATALOG.filter((entry) => {
+      if (section === 'colors') {
+        return (
+          (entry.kind === 'pen' && inventory.pens.includes(entry.id)) ||
+          (entry.kind === 'drawing-ink' &&
+            inventory.discovered.includes(entry.id))
+        );
+      }
+      if (section === 'brushes') {
+        return (
+          entry.kind === 'brush' && inventory.discovered.includes(entry.id)
+        );
+      }
+      return entry.kind === 'title' && inventory.titles.includes(entry.id);
+    }).map((entry) => ({
       entry,
       ownership: cosmeticOwnership(entry, inventory),
-      viewKey: `${entry.id}:style`,
+      viewKey: `${entry.id}:${section}`,
     }));
   }
 
@@ -1100,8 +1424,8 @@ function cosmeticOwnership(
   if (entry.kind === 'pen') {
     return {
       summary: inventory.pens.includes(entry.id)
-        ? 'Permanent pen'
-        : 'Owned pen',
+        ? 'PERMANENT · ∞ USES'
+        : 'OWNED COLOR',
       rank: null,
       copies: 0,
       mergeReady: false,
@@ -1113,8 +1437,8 @@ function cosmeticOwnership(
     return {
       summary:
         charges > 0
-          ? `${charges} ${charges === 1 ? 'charge' : 'charges'} left`
-          : 'Out of charges',
+          ? `×${charges} · 1 USE EACH`
+          : 'EMPTY · FIND MORE IN MYSTERY INK',
       rank: null,
       copies: charges,
       mergeReady: false,
@@ -1139,54 +1463,90 @@ function createBagGearTile(
   scene: Scene,
   rarity: CapsuleRarity | null,
   selected = false,
-  mutedBackground = false
+  mutedBackground = false,
+  size = BAG_GEAR_TILE_SIZE,
+  emptyBackground = false
 ): Phaser.GameObjects.Container {
-  const width = BAG_GEAR_TILE_SIZE;
-  const height = BAG_GEAR_TILE_SIZE;
+  const width = size;
+  const height = size;
+  const scale = size / BAG_GEAR_TILE_SIZE;
+  const outerRadius = Math.max(8, 15 * scale);
+  const innerRadius = Math.max(6, 12 * scale);
+  const frameInset = Math.max(3, 5 * scale);
   const rarityFrame = rarity
     ? BAG_RARITY_FRAME_STYLE[rarity]
     : {
-        color: selected ? UI.coral : UI.inkSoftHex,
+        color: selected
+          ? UI.coral
+          : emptyBackground
+            ? UI.creamHex
+            : UI.inkSoftHex,
         fillAlpha: selected ? 0.075 : 0.025,
         strokeWidth: selected ? 5 : 3,
       };
   const tile = scene.add.container(0, 0);
   const left = -width / 2;
   const top = -height / 2;
-  const shadow = scene.add.graphics().setPosition(4, 7);
+  const shadow = scene.add
+    .graphics()
+    .setPosition(Math.max(2, 4 * scale), Math.max(3, 7 * scale));
   shadow.fillStyle(UI.inkHex, 0.2);
-  shadow.fillRoundedRect(left, top, width, height, 15);
+  shadow.fillRoundedRect(left, top, width, height, outerRadius);
   const face = scene.add.graphics();
-  face.fillStyle(mutedBackground ? UNEQUIPPED_GEAR_TILE_COLOR : UI.paper, 1);
-  face.fillRoundedRect(left, top, width, height, 15);
-  if (!mutedBackground) {
+  face.fillStyle(
+    emptyBackground
+      ? UI.inkHex
+      : mutedBackground
+        ? UNEQUIPPED_GEAR_TILE_COLOR
+        : UI.paper,
+    1
+  );
+  face.fillRoundedRect(left, top, width, height, outerRadius);
+  if (!mutedBackground && !emptyBackground) {
     face.fillStyle(rarityFrame.color, rarityFrame.fillAlpha);
-    face.fillRoundedRect(left + 5, top + 5, width - 10, height - 10, 12);
+    face.fillRoundedRect(
+      left + frameInset,
+      top + frameInset,
+      width - frameInset * 2,
+      height - frameInset * 2,
+      innerRadius
+    );
   }
-  face.lineStyle(rarityFrame.strokeWidth, rarityFrame.color, 1);
-  face.strokeRoundedRect(left + 5, top + 5, width - 10, height - 10, 12);
+  face.lineStyle(
+    Math.max(2, rarityFrame.strokeWidth * scale),
+    rarityFrame.color,
+    1
+  );
+  face.strokeRoundedRect(
+    left + frameInset,
+    top + frameInset,
+    width - frameInset * 2,
+    height - frameInset * 2,
+    innerRadius
+  );
   tile.add([shadow, face]);
   if (selected) {
     const selectedFrame = scene.add.graphics();
-    selectedFrame.lineStyle(4, UI.coral, 1);
+    selectedFrame.lineStyle(Math.max(2, 4 * scale), UI.coral, 1);
     selectedFrame.strokeRoundedRect(
       left + 1,
       top + 1,
       width - 2,
       height - 2,
-      15
+      outerRadius
     );
     tile.add(selectedFrame);
   }
   if (rarity === 'epic') {
+    const epicInset = Math.max(7, 15 * scale);
     const epicInnerFrame = scene.add.graphics();
-    epicInnerFrame.lineStyle(2, UI.goldHex, 0.95);
+    epicInnerFrame.lineStyle(Math.max(1, 2 * scale), UI.goldHex, 0.95);
     epicInnerFrame.strokeRoundedRect(
-      left + 15,
-      top + 15,
-      width - 30,
-      height - 30,
-      9
+      left + epicInset,
+      top + epicInset,
+      width - epicInset * 2,
+      height - epicInset * 2,
+      Math.max(5, 9 * scale)
     );
     tile.add(epicInnerFrame);
   }
@@ -1229,11 +1589,17 @@ function buildCosmeticCard(options: {
           .map((gearId, slotIndex) => (gearId === entry.id ? slotIndex + 1 : 0))
           .filter((slotNumber) => slotNumber > 0)
       : [];
+  const drawingInventoryItem = entry.kind !== 'accessory';
+  const emptySupply =
+    (entry.kind === 'drawing-ink' || entry.kind === 'brush') &&
+    ownership.copies === 0;
   const card = createBagGearTile(
     scene,
     entry.rarity,
     false,
-    entry.kind === 'accessory' && equippedSlots.length === 0
+    entry.kind === 'accessory' && equippedSlots.length === 0,
+    BAG_GEAR_TILE_SIZE,
+    emptySupply
   );
   if (equippedSlots.length > 0) {
     const equippedBadge = scene.add
@@ -1282,10 +1648,63 @@ function buildCosmeticCard(options: {
     scene,
     parent: card,
     entry,
-    y: 0,
-    size: 104,
-    ...BAG_GEAR_PREVIEW_BOX,
+    y: drawingInventoryItem ? -12 : 0,
+    size: drawingInventoryItem ? 78 : 104,
+    ...(drawingInventoryItem
+      ? { width: 74, height: 64, maxScale: 1.2 }
+      : BAG_GEAR_PREVIEW_BOX),
   });
+
+  if (drawingInventoryItem) {
+    const itemName = label(
+      scene,
+      0,
+      39,
+      entry.name.toUpperCase(),
+      14,
+      emptySupply ? UI.paperText : UI.ink,
+      true
+    );
+    if (itemName.width > 102) itemName.setScale(102 / itemName.width);
+    card.add(itemName);
+
+    const quantityText =
+      entry.kind === 'pen'
+        ? '∞'
+        : entry.kind === 'drawing-ink' || entry.kind === 'brush'
+          ? `×${ownership.copies}`
+          : inventory.equippedTitle === entry.id
+            ? 'WORN'
+            : 'TITLE';
+    const quantityBadge = scene.add.graphics();
+    const badgeWidth = quantityText.length > 3 ? 50 : 36;
+    quantityBadge.fillStyle(emptySupply ? UI.inkHex : UI.goldHex, 1);
+    quantityBadge.fillRoundedRect(
+      BAG_GEAR_TILE_SIZE / 2 - badgeWidth - 7,
+      -BAG_GEAR_TILE_SIZE / 2 + 7,
+      badgeWidth,
+      27,
+      9
+    );
+    quantityBadge.lineStyle(2, emptySupply ? UI.paper : UI.inkHex, 1);
+    quantityBadge.strokeRoundedRect(
+      BAG_GEAR_TILE_SIZE / 2 - badgeWidth - 7,
+      -BAG_GEAR_TILE_SIZE / 2 + 7,
+      badgeWidth,
+      27,
+      9
+    );
+    const quantityLabel = label(
+      scene,
+      BAG_GEAR_TILE_SIZE / 2 - badgeWidth / 2 - 7,
+      -BAG_GEAR_TILE_SIZE / 2 + 20,
+      quantityText,
+      13,
+      emptySupply ? UI.paperText : UI.ink,
+      true
+    );
+    card.add([quantityBadge, quantityLabel]);
+  }
 
   let detailOpen = false;
   function openDetail(): void {

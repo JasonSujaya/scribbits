@@ -27,6 +27,7 @@ import {
   button,
   ghostButton,
   paperButtonPlate,
+  paperIconButton,
 } from './ui';
 import { RARITY_STYLE } from './pens';
 import { COSMETIC_BY_ID } from '../../shared/cosmetics';
@@ -55,6 +56,7 @@ import {
   planCapsuleBatchReveal,
 } from './capsulereveal';
 import { playSfx, setSfxCue } from './sfx';
+import { openInkEarningGuide, type InkEarningGuide } from './inkearningguide';
 
 const DEPTH = 2500;
 const COLLECTION_BAR_WIDTH = 480;
@@ -126,6 +128,7 @@ type InkWallet = Readonly<{
 type InkOpenButton = Readonly<{
   container: Phaser.GameObjects.Container;
   setContent: (actionLabel: string, cost: number | null) => void;
+  setEnabled: (enabled: boolean) => void;
 }>;
 
 type CapsuleActionSurface = Readonly<{
@@ -196,38 +199,52 @@ function createInkOpenButton(
   x: number,
   y: number,
   width: number,
+  height: number,
   variant: 'primary' | 'secondary',
   actionLabel: string,
   cost: number,
   onActivate: () => void
 ): InkOpenButton {
-  const height = 100;
   const container = scene.add.container(x, y);
   const plate = paperButtonPlate(scene, variant, width, height);
-  const actionText = label(scene, 0, -20, actionLabel, 25, UI.ink, true);
-  const token = scene.add
-    .image(0, 22, INK_TOKEN_TEXTURE)
-    .setDisplaySize(31, 31);
-  const costText = label(scene, 0, 21, String(cost), 25, UI.ink, true);
+  const actionText = label(scene, 0, -1, actionLabel, 25, UI.ink, true);
+  const token = scene.add.image(0, 0, INK_TOKEN_TEXTURE).setDisplaySize(31, 31);
+  const costText = label(scene, 0, -1, String(cost), 25, UI.ink, true);
+  const content = scene.add.container(0, 0, [actionText, token, costText]);
   const hitTarget = scene.add
     .rectangle(0, 0, width, height, 0xffffff, 0.001)
     .setInteractive({ useHandCursor: true });
-  container.add([plate, actionText, token, costText, hitTarget]);
+  container.add([plate, content, hitTarget]);
 
   const setContent = (
     nextActionLabel: string,
     nextCost: number | null
   ): void => {
     actionText.setText(nextActionLabel);
-    actionText.setY(nextCost === null ? 0 : -20);
     token.setVisible(nextCost !== null);
     costText.setVisible(nextCost !== null);
-    if (nextCost === null) return;
+    if (nextCost === null) {
+      actionText.setPosition(0, -1);
+      return;
+    }
     costText.setText(String(nextCost));
-    const gap = 7;
-    const groupWidth = token.displayWidth + gap + costText.width;
-    token.setX(-groupWidth / 2 + token.displayWidth / 2);
-    costText.setX(groupWidth / 2 - costText.width / 2);
+    const actionPriceGap = 12;
+    const tokenPriceGap = 7;
+    const priceWidth = token.displayWidth + tokenPriceGap + costText.width;
+    const contentWidth = actionText.width + actionPriceGap + priceWidth;
+    const contentLeft = -contentWidth / 2;
+    actionText.setPosition(contentLeft + actionText.width / 2, -1);
+    token.setPosition(
+      contentLeft + actionText.width + actionPriceGap + token.displayWidth / 2,
+      0
+    );
+    costText.setPosition(
+      token.x + token.displayWidth / 2 + tokenPriceGap + costText.width / 2,
+      -1
+    );
+  };
+  const setEnabled = (enabled: boolean): void => {
+    content.setAlpha(enabled ? 1 : 0.65);
   };
   setContent(actionLabel, cost);
   bindPressInteractionEvents(
@@ -240,7 +257,7 @@ function createInkOpenButton(
     },
     { gameTarget: scene.input, shutdownTarget: scene.events }
   );
-  return { container, setContent };
+  return { container, setContent, setEnabled };
 }
 
 export function openCapsuleMachine(
@@ -261,6 +278,7 @@ export function openCapsuleMachine(
   let destroyed = false;
   let dismissPrizeAction: (() => void) | null = null;
   let featuredGearDetail: FeaturedGearDetail | null = null;
+  let inkEarningGuide: InkEarningGuide | null = null;
 
   const layer = scene.add
     .container(0, 0)
@@ -309,23 +327,46 @@ export function openCapsuleMachine(
   inkWallet.container.setScrollFactor(0).setDepth(DEPTH + 2);
   layer.add(inkWallet.container);
 
-  const featuredGearControl = firstChestVisit
-    ? null
-    : drawBannerDeck(
-        scene,
-        layer,
-        modalActions,
-        width,
-        242,
-        openFeaturedGearDetail
-      );
-  if (firstChestVisit) {
-    layer.add(
-      label(scene, width / 2, 250, 'YOUR FIRST GEAR', 30, UI.goldText, true)
-        .setScrollFactor(0)
-        .setDepth(DEPTH + 2)
+  let inkInfoControl: HTMLButtonElement | null = null;
+  const openInkInfo = (): void => {
+    if (destroyed || pulling || prizeOpen || !inkInfoControl) return;
+    inkEarningGuide?.destroy();
+    inkEarningGuide = openInkEarningGuide(
+      scene,
+      inkInfoControl,
+      () => (inkEarningGuide = null)
     );
-  }
+  };
+  const inkInfoButtonX = width / 2 + 138;
+  const inkInfoButton = paperIconButton(
+    scene,
+    inkInfoButtonX,
+    140,
+    'info',
+    openInkInfo,
+    58,
+    UI.creamHex,
+    UI.coral,
+    58
+  )
+    .setScrollFactor(0)
+    .setDepth(DEPTH + 2);
+  layer.add(inkInfoButton);
+  inkInfoControl = modalActions.add({
+    label: 'How to earn Ink',
+    rect: { x: inkInfoButtonX - 29, y: 111, width: 58, height: 58 },
+    onActivate: openInkInfo,
+  });
+
+  const featuredGearControl = drawBannerDeck(
+    scene,
+    layer,
+    modalActions,
+    width,
+    242,
+    firstChestVisit,
+    openFeaturedGearDetail
+  );
 
   // Permanent collection progress lives above the chest so it remains
   // readable while prize cards animate over the lower half of the portrait UI.
@@ -366,7 +407,6 @@ export function openCapsuleMachine(
     collectionFill,
     pityText,
   ]);
-  progressCard.setVisible(!firstChestVisit);
   layer.add(progressCard);
 
   function refreshProgress(animate: boolean): void {
@@ -383,7 +423,11 @@ export function openCapsuleMachine(
     collectorRankText.setText(
       `${discoveredCount}/${collectionTotal} STYLES FOUND`
     );
-    pityText.setText(`EPIC IN ${pityRemaining} OR SOONER`);
+    pityText.setText(
+      firstChestVisit
+        ? 'FIRST CHEST STARTS YOUR COLLECTION'
+        : `EPIC IN ${pityRemaining} OR SOONER`
+    );
     collectionFill.setVisible(collectionRatio > 0);
     scene.tweens.killTweensOf(collectionFill);
 
@@ -410,9 +454,10 @@ export function openCapsuleMachine(
   refreshProgress(false);
 
   // --- The hand-drawn chest -------------------------------------------------
-  const chestY = firstChestVisit
-    ? Math.min(height - NAV_SAFE - 390, Math.max(580, height * 0.4))
-    : Math.min(height - NAV_SAFE - 360, Math.max(720, height * 0.52));
+  const chestY = Math.min(
+    height - NAV_SAFE - 360,
+    Math.max(720, height * 0.52)
+  );
   const chest = createChestArt(scene, width / 2, chestY);
   chest.container.setDepth(DEPTH + 1).setScrollFactor(0);
   layer.add(chest.container);
@@ -429,10 +474,7 @@ export function openCapsuleMachine(
   );
 
   // --- Open buttons + copy --------------------------------------------------
-  const actionY = Math.min(
-    height - NAV_SAFE - 84,
-    chestY + (firstChestVisit ? 310 : 345)
-  );
+  const actionY = Math.min(height - NAV_SAFE - 84, chestY + 345);
   const helper = label(
     scene,
     width / 2,
@@ -449,10 +491,13 @@ export function openCapsuleMachine(
   layer.add(helper);
 
   const actionGap = 18;
+  const availableActionWidth = width - 160;
   const actionWidth = firstChestVisit
-    ? width - 160
+    ? availableActionWidth
     : (width - 178 - actionGap) / 2;
+  const actionHeight = firstChestVisit ? 112 : 100;
   const oneButtonX = firstChestVisit ? width / 2 : 80 + actionWidth / 2;
+  const oneButtonLeft = oneButtonX - actionWidth / 2;
   const tenButtonX = width - 80 - actionWidth / 2;
   let primaryActionEnabled = ink >= nextCost;
   let secondaryActionEnabled =
@@ -462,6 +507,7 @@ export function openCapsuleMachine(
     oneButtonX,
     actionY,
     actionWidth,
+    actionHeight,
     'primary',
     'OPEN ×1',
     nextCost,
@@ -475,6 +521,7 @@ export function openCapsuleMachine(
     tenButtonX,
     actionY,
     actionWidth,
+    actionHeight,
     'secondary',
     'OPEN ×10',
     capsuleOpenCost(CAPSULE_MAX_BATCH_SIZE, nextCost),
@@ -491,10 +538,10 @@ export function openCapsuleMachine(
   const openOneControl = modalActions.add({
     label: `Open one Mystery Ink chest for ${nextCost} Ink`,
     rect: {
-      x: 80,
-      y: actionY - 50,
+      x: oneButtonLeft,
+      y: actionY - actionHeight / 2,
       width: actionWidth,
-      height: 100,
+      height: actionHeight,
     },
     enabled: ink >= nextCost,
     pointerPassthrough: true,
@@ -504,9 +551,9 @@ export function openCapsuleMachine(
     label: `Open ten Mystery Ink chests for ${capsuleOpenCost(CAPSULE_MAX_BATCH_SIZE, nextCost)} Ink`,
     rect: {
       x: tenButtonX - actionWidth / 2,
-      y: actionY - 50,
+      y: actionY - actionHeight / 2,
       width: actionWidth,
-      height: 100,
+      height: actionHeight,
     },
     enabled: ink >= capsuleOpenCost(CAPSULE_MAX_BATCH_SIZE, nextCost),
     pointerPassthrough: true,
@@ -606,8 +653,8 @@ export function openCapsuleMachine(
     );
     primaryActionEnabled = affordance.primaryEnabled;
     secondaryActionEnabled = affordance.secondaryEnabled;
-    openOneButton.container.setAlpha(affordance.primaryEnabled ? 1 : 0.55);
-    openTenButton.container.setAlpha(affordance.secondaryEnabled ? 1 : 0.55);
+    openOneButton.setEnabled(affordance.primaryEnabled);
+    openTenButton.setEnabled(affordance.secondaryEnabled);
     openOneControl.disabled =
       pulling || prizeOpen || !affordance.primaryEnabled;
     openTenControl.disabled =
@@ -626,7 +673,7 @@ export function openCapsuleMachine(
     if (!affordance.primaryEnabled && !pulling) {
       helper.setText(
         firstChestVisit
-          ? `NEED ${Math.max(0, affordance.requiredInk - ink)} MORE INK`
+          ? `EARN ${Math.max(0, affordance.requiredInk - ink)} MORE INK BY PLAYING`
           : `EARN ${Math.max(0, affordance.requiredInk - ink)} MORE INK`
       );
       helper.setColor(UI.coralText);
@@ -636,7 +683,11 @@ export function openCapsuleMachine(
       );
       helper.setColor(UI.cream);
     } else if (!pulling) {
-      helper.setText(firstChestVisit ? '' : '10× MAX · EARN INK BY PLAYING');
+      helper.setText(
+        firstChestVisit
+          ? 'FIRST CHEST GUARANTEES EQUIPPABLE GEAR'
+          : '10× MAX · EARN INK BY PLAYING'
+      );
       helper.setColor(UI.cream);
     }
   }
@@ -861,6 +912,9 @@ export function openCapsuleMachine(
     const detail = featuredGearDetail;
     featuredGearDetail = null;
     detail?.destroy();
+    const guide = inkEarningGuide;
+    inkEarningGuide = null;
+    guide?.destroy();
     modalActions.destroy();
     opts.onTransactionLockChange?.(false);
     if (layer.active) layer.destroy(true);
@@ -877,6 +931,7 @@ function drawBannerDeck(
   actions: CapsuleActionSurface,
   width: number,
   y: number,
+  firstChestVisit: boolean,
   onInspect: (
     entry: CosmeticGearCatalogEntry,
     trigger: HTMLButtonElement
@@ -895,7 +950,7 @@ function drawBannerDeck(
     scene,
     -activeWidth / 2 + 104,
     -31,
-    'LOOT',
+    firstChestVisit ? 'FIRST CHEST' : 'LOOT',
     34,
     UI.ink,
     true
@@ -904,7 +959,9 @@ function drawBannerDeck(
     scene,
     -activeWidth / 2 + 180,
     5,
-    'TAP GLOWING GEAR FOR EFFECT',
+    firstChestVisit
+      ? 'GUARANTEED EQUIPPABLE GEAR'
+      : 'TAP GLOWING GEAR FOR EFFECT',
     18,
     UI.coralText,
     true
@@ -1010,7 +1067,9 @@ function drawBannerDeck(
       scene,
       0,
       0,
-      'REDDIT GOLD STYLES · COSMETIC ONLY · COMING SOON',
+      firstChestVisit
+        ? 'EQUIP YOUR REWARD IN BAG'
+        : 'REDDIT GOLD STYLES · COSMETIC ONLY · COMING SOON',
       16,
       '#fff2d8',
       true

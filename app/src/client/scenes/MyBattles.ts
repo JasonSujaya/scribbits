@@ -1,434 +1,640 @@
+import { showToast } from '@devvit/web/client';
 import { Scene } from 'phaser';
-import { fetchMyBattles } from '../lib/api';
+import type {
+  RivalRunChoice,
+  RivalRunTier,
+  Scribbit,
+  SparRivalSlate,
+} from '../../shared/arena';
+import { getCombatRoleContent } from '../../shared/combat/roles';
+import { fetchArena, fetchSparRivals, spar } from '../lib/api';
+import { appDock } from '../lib/appdock';
+import { appMenu } from '../lib/appmenu';
 import {
-  getArena,
-  getBattleHistoryPage,
-  setBattleHistoryPage,
-  setSavedReplay,
-} from '../lib/registry';
-import { loadDrawing, fitDrawing } from '../lib/scribbits';
+  isBattleBoardCharacterLocked,
+  selectBattleBoardChoices,
+} from '../lib/battleboard';
+import { showVsCeremony } from '../lib/battleceremony';
+import { fitText } from '../lib/fittext';
+import { translate } from '../lib/localization';
+import { mountLivingPaper } from '../lib/livingpaper';
 import { CanvasActionOverlay } from '../lib/overlay';
 import { paperIcon } from '../lib/papericons';
-import { NAV_SAFE, prefersReducedMotion, TYPE, UI } from '../lib/theme';
-import { mountLivingPaper } from '../lib/livingpaper';
+import {
+  getArena,
+  getBattleBoardCharacter,
+  setArena,
+  setBattleBoardCharacter,
+  stageDirectBattle,
+} from '../lib/registry';
+import { screenTitle } from '../lib/screentitle';
+import { fitDrawing, loadDrawing } from '../lib/scribbits';
+import { planSparRivalCard } from '../lib/sparrivals';
+import { ROLE_STYLES, TYPE, UI } from '../lib/theme';
 import {
   errorPanel,
+  ghostButton,
+  iconButton,
   label,
-  paperPagination,
   stickerCard,
 } from '../lib/ui';
 import type { ErrorPanel } from '../lib/ui';
-import type { BattleReport } from '../../shared/arena';
-import { appDock } from '../lib/appdock';
-import { appMenu } from '../lib/appmenu';
-import { bindPressInteractionEvents } from '../lib/pressinteraction';
-import {
-  orderBattleJournalReports,
-  planBattleJournalEntry,
-  planBattleJournalSummary,
-} from '../lib/battlejournal';
-import type {
-  BattleJournalEntryPlan,
-  BattleJournalPerspective,
-} from '../lib/battlejournal';
-import { screenTitle } from '../lib/screentitle';
-import { translate } from '../lib/localization';
 
-const ROW_INNER_HEIGHT = 146;
-const ROW_STEP = 156;
-const ROW_START_Y = 350;
+const SELECTOR_CENTER_Y = 246;
+const SELECTOR_HEIGHT = 178;
+const FIRST_RIVAL_CENTER_Y = 520;
+const RIVAL_CARD_HEIGHT = 188;
+const RIVAL_CARD_WIDTH_MARGIN = 54;
+const FIGHT_BUTTON_WIDTH = 170;
+const FIGHT_BUTTON_HEIGHT = 82;
 
-// Recent server-locked fights become a replayable paper scrapbook. The scene
-// never invents combat facts: its pure planner reuses validated transcripts and
-// clearly labels old result-only reports when motion is unavailable.
+/** Active, server-authored Rival Run board. Past reports live one level deeper. */
 export class MyBattles extends Scene {
+  private actionOverlay: CanvasActionOverlay | null = null;
   private errorPanelRef: ErrorPanel | null = null;
   private loadingCard: ReturnType<typeof stickerCard> | null = null;
   private renderGeneration = 0;
-  private page = 0;
-  private reduceMotion = false;
-  private actionOverlay: CanvasActionOverlay | null = null;
-  private openingReportId: string | null = null;
+  private selectedScribbitId: string | null = null;
+  private characterSelect: HTMLSelectElement | null = null;
+  private busy = false;
 
   constructor() {
     super('MyBattles');
   }
 
-  init(data?: { page?: number }): void {
+  init(data?: { scribbitId?: string }): void {
     this.renderGeneration += 1;
+    this.actionOverlay = null;
     this.errorPanelRef = null;
     this.loadingCard = null;
-    this.page = Math.max(0, data?.page ?? getBattleHistoryPage(this));
-    this.reduceMotion = prefersReducedMotion();
-    this.actionOverlay = null;
-    this.openingReportId = null;
+    this.characterSelect = null;
+    this.busy = false;
+    this.selectedScribbitId = data?.scribbitId ?? getBattleBoardCharacter(this);
   }
 
   create(): void {
     this.cameras.main.setBackgroundColor(UI.desk);
     mountLivingPaper(this);
-    this.actionOverlay = new CanvasActionOverlay(this);
+    this.actionOverlay = new CanvasActionOverlay(this, 'battle-board');
     this.events.once('shutdown', () => {
       this.actionOverlay?.destroy();
       this.actionOverlay = null;
+      this.characterSelect = null;
     });
-    const { width } = this.scale;
-    screenTitle(this, width / 2, 18, translate('screen.battles'), {
+
+    screenTitle(this, this.scale.width / 2, 18, translate('screen.battles'), {
       maxWidth: 390,
       maxHeight: 90,
     });
-    this.buildAppTabs();
-    this.loadingCard = stickerCard(this, width / 2, 390, width - 120, 160, {
-      tapeColor: UI.tapeAlt,
-    });
+    appDock(this, 'battles', { battles: () => undefined });
+    appMenu(this);
+    this.showLoading();
+    void this.loadBoard(this.renderGeneration);
+  }
+
+  private showLoading(): void {
+    this.loadingCard = stickerCard(
+      this,
+      this.scale.width / 2,
+      500,
+      this.scale.width - 150,
+      150,
+      { tapeColor: UI.tapeAlt }
+    );
     this.loadingCard.add(
       label(
         this,
         0,
         0,
-        translate('battles.loading'),
+        translate('battles.board.loading'),
         TYPE.body,
         UI.inkSoft,
         true
       )
     );
-    void this.loadBattles(this.renderGeneration);
   }
 
-  private buildAppTabs(): void {
-    appDock(this, 'battles', { battles: () => undefined });
-    appMenu(this);
-  }
-
-  private async loadBattles(renderGeneration: number): Promise<void> {
-    const result = await fetchMyBattles();
-    if (!this.scene.isActive() || renderGeneration !== this.renderGeneration) {
-      return;
+  private async loadBoard(renderGeneration: number): Promise<void> {
+    let arena = getArena(this);
+    if (!arena) {
+      const arenaResult = await fetchArena();
+      if (!this.isCurrent(renderGeneration)) return;
+      if (!arenaResult.ok) {
+        this.showError(arenaResult.error);
+        return;
+      }
+      arena = arenaResult.data;
+      setArena(this, arena);
     }
-    if (!result.ok) {
+
+    const roster = arena.myScribbits.filter(
+      (scribbit) => scribbit.status === 'alive'
+    );
+    if (roster.length === 0) {
       this.loadingCard?.destroy(true);
       this.loadingCard = null;
-      this.showError(result.error);
+      this.showEmpty();
       return;
     }
+
+    const selected =
+      roster.find((scribbit) => scribbit.id === this.selectedScribbitId) ??
+      roster[0];
+    if (!selected) return;
+    this.selectedScribbitId = selected.id;
+    setBattleBoardCharacter(this, selected.id);
+    const slateResult = await fetchSparRivals(selected.id);
+    if (!this.isCurrent(renderGeneration)) return;
+    if (!slateResult.ok) {
+      this.showError(slateResult.error);
+      return;
+    }
+    if (
+      slateResult.data.challenger.id !== selected.id ||
+      slateResult.data.choices.length === 0
+    ) {
+      this.showError(translate('battles.board.blank'));
+      return;
+    }
+    if (slateResult.data.dayNumber !== arena.dayNumber) {
+      showToast(translate('battles.board.dayChanged'));
+      const latestArena = await fetchArena();
+      if (!this.isCurrent(renderGeneration)) return;
+      if (!latestArena.ok) {
+        this.showError(latestArena.error);
+        return;
+      }
+      setArena(this, latestArena.data);
+      this.scene.restart({ scribbitId: selected.id });
+      return;
+    }
+
+    setArena(this, {
+      ...arena,
+      forecast: slateResult.data.forecast,
+      founderChronicle: slateResult.data.founderChronicle,
+    });
     this.loadingCard?.destroy(true);
     this.loadingCard = null;
-    this.render(result.data);
+    this.buildCharacterSelector(
+      roster,
+      selected,
+      isBattleBoardCharacterLocked(slateResult.data.rivalRun)
+    );
+    this.renderBoard(slateResult.data);
   }
 
-  private render(reports: BattleReport[]): void {
-    const { width } = this.scale;
-    const arena = getArena(this);
-    const livingOwnedIds = arena?.myScribbits.map((scribbit) => scribbit.id);
-    const orderedReports = orderBattleJournalReports(reports);
-
-    if (orderedReports.length === 0) {
-      const card = stickerCard(this, width / 2, 500, width - 100, 220, {
-        tilt: -0.6,
-      });
-      const swords = paperIcon(this, 'sword', 0, -52, {
-        size: 52,
-        fill: UI.gold,
-      });
-      card.add(swords);
-      if (!this.reduceMotion) {
-        this.tweens.add({
-          targets: swords,
-          angle: { from: -10, to: 10 },
-          duration: 800,
-          yoyo: true,
-          repeat: -1,
-          ease: 'Sine.easeInOut',
-        });
-      }
-      card.add(
-        label(
-          this,
-          0,
-          36,
-          translate('battles.empty'),
-          TYPE.body,
-          UI.inkSoft,
-          true
-        ).setLineSpacing(8)
-      );
-      return;
-    }
-
-    const summary = planBattleJournalSummary(
-      orderedReports,
-      arena?.myUsername,
-      livingOwnedIds
-    );
-    this.buildRecentReelSummary(summary);
-
-    const visibleRows = Math.max(
-      1,
-      Math.floor((this.scale.height - NAV_SAFE - 252) / ROW_STEP)
-    );
-    const totalPages = Math.ceil(orderedReports.length / visibleRows);
-    this.page = Math.min(this.page, totalPages - 1);
-    setBattleHistoryPage(this, this.page);
-    const start = this.page * visibleRows;
-    this.buildPagination(totalPages);
-
-    orderedReports
-      .slice(start, start + visibleRows)
-      .forEach((report, index) => {
-        const plan = planBattleJournalEntry(
-          report,
-          arena?.myUsername,
-          livingOwnedIds
-        );
-        this.buildRow(report, plan, ROW_START_Y + index * ROW_STEP, index);
-      });
+  private isCurrent(renderGeneration: number): boolean {
+    return this.scene.isActive() && renderGeneration === this.renderGeneration;
   }
 
-  private buildRecentReelSummary(
-    summary: ReturnType<typeof planBattleJournalSummary>
+  private buildCharacterSelector(
+    roster: readonly Scribbit[],
+    selected: Scribbit,
+    locked: boolean
   ): void {
-    const record = summary.recordLine.startsWith('WATCH MODE')
-      ? translate('battles.watchMode')
-      : translate('battles.record', {
-          wins: summary.ownedWins,
-          losses: summary.ownedLosses,
-        });
-    const card = stickerCard(
+    const { width } = this.scale;
+    const cardWidth = width - 76;
+    label(
       this,
-      this.scale.width / 2,
-      142,
-      this.scale.width - 76,
-      74,
-      {
-        tapeColor: UI.tapeAlt,
-        tapeWidth: 92,
-        tilt: -0.25,
-      }
+      width / 2,
+      144,
+      translate('battles.board.fightingWith'),
+      TYPE.caption,
+      UI.inkSoft,
+      true
     );
-    card.add(
+    const selector = this.add.container(width / 2, SELECTOR_CENTER_Y);
+    const selectorLeft = -cardWidth / 2;
+    const selectorTop = -SELECTOR_HEIGHT / 2;
+    const selectorSurface = this.add.graphics();
+    selectorSurface.fillStyle(UI.creamHex, 0.68);
+    selectorSurface.fillRoundedRect(
+      selectorLeft,
+      selectorTop,
+      cardWidth,
+      SELECTOR_HEIGHT,
+      26
+    );
+    selectorSurface.fillStyle(UI.tapeAlt, 0.28);
+    selectorSurface.fillRoundedRect(
+      selectorLeft + 22,
+      selectorTop + 20,
+      180,
+      SELECTOR_HEIGHT - 40,
+      28
+    );
+    selector.add(selectorSurface);
+    const portraitX = selectorLeft + 112;
+    const portraitBacking = this.add
+      .circle(portraitX, 0, 70, UI.paper, 1)
+      .setStrokeStyle(3, UI.inkHex, 0.42);
+    selector.add(portraitBacking);
+    const generation = this.renderGeneration;
+    void loadDrawing(this, selected).then((texture) => {
+      if (this.isCurrent(generation) && selector.active) {
+        selector.add(fitDrawing(this.add.image(portraitX, 0, texture), 132));
+      }
+    });
+    const textX = selectorLeft + 220;
+    selector.add(
       label(
         this,
-        0,
-        0,
-        translate('battles.summary', {
-          count: summary.savedCount,
-          record,
+        textX,
+        -36,
+        fitText(selected.name.toUpperCase(), 14),
+        31,
+        UI.coralText,
+        true
+      ).setOrigin(0, 0.5)
+    );
+    selector.add(
+      label(
+        this,
+        textX,
+        8,
+        translate('battles.board.characterRecord', {
+          wins: selected.wins,
+          losses: selected.losses,
         }),
-        23,
+        21,
         UI.ink,
         true
-      )
+      ).setOrigin(0, 0.5)
     );
-  }
-
-  private buildPagination(totalPages: number): void {
-    const y = 232;
-    if (totalPages <= 1) return;
-    paperPagination({
-      scene: this,
-      actionOverlay: this.actionOverlay,
-      y,
-      page: this.page,
-      pageCount: totalPages,
-      fontSize: 17,
-      pointerPassthrough: true,
-      previousLabel: translate('battles.pagination.previous'),
-      nextLabel: translate('battles.pagination.next'),
-      onPrevious: () => this.changePage(this.page - 1),
-      onNext: () => this.changePage(this.page + 1),
-    });
-  }
-
-  private changePage(page: number): void {
-    const nextPage = Math.max(0, page);
-    setBattleHistoryPage(this, nextPage);
-    this.scene.restart({ page: nextPage });
-  }
-
-  private buildRow(
-    report: BattleReport,
-    plan: BattleJournalEntryPlan,
-    y: number,
-    index: number
-  ): void {
-    const { width } = this.scale;
-    const cardWidth = width - 44;
-    const tilt = ((report.id.charCodeAt(0) % 5) - 2) * 0.28;
-    const card = stickerCard(this, width / 2, y, cardWidth, ROW_INNER_HEIGHT, {
-      gold: plan.perspective === 'win',
-      tapeColor: this.tapeColorForPerspective(plan.perspective),
-      tapeWidth: 64,
-      tilt,
-    });
-
-    const hit = this.add
-      .rectangle(0, 0, cardWidth, ROW_INNER_HEIGHT, 0xffffff, 0.001)
-      .setInteractive({ useHandCursor: true });
-    card.add(hit);
-
-    const frameX = cardWidth / 2 - 55;
-    [report.a, report.b].forEach((fighter, fighterIndex) => {
-      const localX = fighterIndex === 0 ? -frameX : frameX;
-      const frame = this.add.graphics();
-      frame.fillStyle(UI.creamHex, 1);
-      frame.fillRect(localX - 36, -36, 72, 72);
-      frame.lineStyle(3, UI.inkHex, 1);
-      frame.strokeRect(localX - 36, -36, 72, 72);
-      card.add(frame);
-      const generation = this.renderGeneration;
-      void loadDrawing(this, fighter).then((key) => {
-        if (this.scene.isActive() && generation === this.renderGeneration) {
-          card.add(
-            fitDrawing(this.add.image(localX, 0, key), 62).setAngle(
-              fighterIndex === 0 ? -1.5 : 1.5
-            )
-          );
-        }
-      });
-    });
-
-    const matchup = label(this, 0, -42, plan.matchup, 22, UI.ink, true);
-    matchup.setWordWrapWidth(cardWidth - 190);
-    card.add(matchup);
-
-    card.add(
+    selector.add(
       label(
         this,
-        0,
-        -8,
-        plan.rowStatusLabel,
-        18,
-        this.perspectiveTextColor(plan.perspective),
+        textX,
+        44,
+        translate('battles.board.tapToSwitch'),
+        15,
+        UI.inkSoft,
         true
-      )
+      ).setOrigin(0, 0.5)
     );
-    const actionWidth = plan.replayMotionAvailable ? 146 : 190;
-    const actionY = 40;
-    const actionPlate = this.add
-      .rectangle(0, actionY, actionWidth, 46, UI.creamHex, 0.96)
-      .setStrokeStyle(2, UI.inkHex, 0.62);
-    const actionIcon = paperIcon(
-      this,
-      plan.replayMotionAvailable ? 'replay' : 'book',
-      -actionWidth / 2 + 25,
-      actionY,
-      { size: 28, fill: plan.replayMotionAvailable ? UI.gold : UI.tapeAlt }
+    const selectorMarkX = cardWidth / 2 - 54;
+    if (locked) {
+      selector.add(
+        paperIcon(this, 'lock', selectorMarkX, 0, {
+          size: 40,
+          fill: UI.tapeAlt,
+        })
+      );
+      selector.add(
+        label(
+          this,
+          selectorMarkX - 30,
+          43,
+          translate('battles.board.runLocked'),
+          13,
+          UI.inkSoft,
+          true
+        ).setOrigin(1, 0.5)
+      );
+    } else {
+      const arrowBacking = this.add.circle(selectorMarkX, 0, 36, UI.tapeAlt, 0.5);
+      const chevron = this.add.graphics();
+      chevron.fillStyle(UI.inkHex, 1);
+      chevron.fillTriangle(
+        selectorMarkX - 18,
+        -10,
+        selectorMarkX + 18,
+        -10,
+        selectorMarkX,
+        14
+      );
+      selector.add([arrowBacking, chevron]);
+    }
+    const focusRing = this.add.graphics().setAlpha(0);
+    focusRing.lineStyle(6, UI.coral, 1);
+    focusRing.strokeRoundedRect(
+      -cardWidth / 2 + 5,
+      -SELECTOR_HEIGHT / 2 + 5,
+      cardWidth - 10,
+      SELECTOR_HEIGHT - 10,
+      18
     );
-    const actionLabel = label(
+    selector.add(focusRing);
+
+    const select = document.createElement('select');
+    select.setAttribute(
+      'aria-label',
+      translate('battles.board.chooseCharacter')
+    );
+    for (const scribbit of roster) {
+      const option = document.createElement('option');
+      option.value = scribbit.id;
+      option.textContent = scribbit.name;
+      select.appendChild(option);
+    }
+    select.value = selected.id;
+    select.disabled = locked;
+    Object.assign(select.style, {
+      appearance: 'none',
+      background: 'transparent',
+      border: '0',
+      color: 'transparent',
+      cursor: 'pointer',
+      opacity: '0',
+    });
+    select.addEventListener('change', () => {
+      if (this.busy) return;
+      const nextId = select.value;
+      if (!roster.some((scribbit) => scribbit.id === nextId)) return;
+      setBattleBoardCharacter(this, nextId);
+      this.scene.restart({ scribbitId: nextId });
+    });
+    select.addEventListener('focus', () => focusRing.setAlpha(1));
+    select.addEventListener('blur', () => focusRing.setAlpha(0));
+    this.characterSelect = select;
+    this.actionOverlay?.placeElement(select, {
+      x: width / 2 - cardWidth / 2,
+      y: SELECTOR_CENTER_Y - SELECTOR_HEIGHT / 2,
+      width: cardWidth,
+      height: SELECTOR_HEIGHT,
+    });
+  }
+
+  private renderBoard(slate: SparRivalSlate): void {
+    label(
       this,
-      13,
-      actionY,
-      plan.actionLabel,
-      17,
+      this.scale.width / 2,
+      108,
+      translate('battles.board.progress', {
+        completed: slate.rivalRun.boutsCompleted,
+        score: slate.rivalRun.score,
+      }),
+      22,
       UI.ink,
       true
     );
-    card.add([actionPlate, actionIcon, actionLabel]);
 
-    const openReport = (): void => {
-      if (this.openingReportId) return;
-      this.openingReportId = report.id;
-      setBattleHistoryPage(this, this.page);
-      setSavedReplay(this, report, 'MyBattles');
-      this.scene.start('Replay');
-    };
-    const release = (): void => {
-      if (!card.active) return;
-      this.tweens.add({
-        targets: card,
-        scaleX: 1,
-        scaleY: 1,
-        duration: 100,
-        ease: 'Back.easeOut',
-      });
-    };
-    const press = (): void => {
-      this.tweens.add({
-        targets: card,
-        scaleX: 0.985,
-        scaleY: 0.975,
-        duration: 60,
-        ease: 'Quad.easeOut',
-      });
-    };
-    bindPressInteractionEvents(
-      hit,
-      {
-        press,
-        release,
-        activate: openReport,
-        pressOnHover: false,
-      },
-      {
-        gameTarget: this.input,
-        shutdownTarget: this.events,
-      }
+    const choices = selectBattleBoardChoices(slate.choices);
+    const cardStep = 214;
+    choices.forEach((choice, index) => {
+      this.buildRivalCard(
+        choice,
+        slate,
+        FIRST_RIVAL_CENTER_Y + index * cardStep
+      );
+    });
+    const pastY =
+      FIRST_RIVAL_CENTER_Y +
+      Math.max(0, choices.length - 1) * cardStep +
+      RIVAL_CARD_HEIGHT / 2 +
+      74;
+
+    ghostButton(
+      this,
+      this.scale.width / 2,
+      pastY,
+      translate('battles.board.past'),
+      () => this.scene.start('BattleHistory'),
+      270,
+      76
     );
     this.actionOverlay?.add({
-      label: plan.accessibleLabel,
+      label: translate('battles.board.past'),
       rect: {
-        x: width / 2 - 110,
-        y: y - 50,
-        width: 220,
-        height: 100,
+        x: this.scale.width / 2 - 135,
+        y: pastY - 38,
+        width: 270,
+        height: 76,
       },
       pointerPassthrough: true,
-      onActivate: openReport,
+      onActivate: () => this.scene.start('BattleHistory'),
+    });
+  }
+
+  private buildRivalCard(
+    choice: RivalRunChoice,
+    slate: SparRivalSlate,
+    y: number
+  ): void {
+    const { width } = this.scale;
+    const cardWidth = width - RIVAL_CARD_WIDTH_MARGIN;
+    const opponent = choice.rival;
+    const plan = planSparRivalCard(
+      slate.challenger,
+      opponent,
+      slate.forecast,
+      slate.founderChronicle,
+      slate.dayNumber
+    );
+    const roleStyle = ROLE_STYLES[plan.role];
+    const card = stickerCard(this, width / 2, y, cardWidth, RIVAL_CARD_HEIGHT, {
+      tapeColor: UI.tape,
+      tapeWidth: 58,
     });
 
-    if (!this.reduceMotion) {
-      card
-        .setAlpha(0)
-        .setScale(0.96)
-        .setX(width / 2 + (index % 2 ? 18 : -18));
-      this.tweens.add({
-        targets: card,
-        x: width / 2,
-        alpha: 1,
-        scale: 1,
-        duration: 190,
-        delay: index * 55,
-        ease: 'Back.easeOut',
-      });
-    }
+    const stripeX = -cardWidth / 2 + 16;
+    const stripe = this.add.graphics();
+    stripe.fillStyle(roleStyle.color, 1);
+    stripe.fillRoundedRect(stripeX, -64, 10, 128, 5);
+    card.add(stripe);
+
+    const portraitX = -cardWidth / 2 + 105;
+    card.add(
+      this.add
+        .circle(portraitX, 4, 64, roleStyle.soft, 0.36)
+        .setStrokeStyle(2, roleStyle.color, 0.48)
+    );
+    const generation = this.renderGeneration;
+    void loadDrawing(this, opponent).then((texture) => {
+      if (this.isCurrent(generation) && card.active) {
+        card.add(fitDrawing(this.add.image(portraitX, 4, texture), 120));
+      }
+    });
+
+    const textX = -cardWidth / 2 + 184;
+    card.add(
+      label(
+        this,
+        textX,
+        -55,
+        fitText(opponent.name.toUpperCase(), 16),
+        29,
+        roleStyle.colorText,
+        true
+      ).setOrigin(0, 0.5)
+    );
+    card.add(
+      paperIcon(this, getCombatRoleContent(plan.role).icon, textX + 14, -10, {
+        size: 29,
+        fill: roleStyle.color,
+      })
+    );
+    card.add(
+      label(
+        this,
+        textX + 40,
+        -10,
+        `${plan.roleName.toUpperCase()} · ${this.difficultyLabel(choice.tier)}`,
+        20,
+        UI.ink,
+        true
+      ).setOrigin(0, 0.5)
+    );
+    card.add(
+      paperIcon(this, 'spark', textX + 14, 42, {
+        size: 30,
+        fill: UI.gold,
+      })
+    );
+
+    const pointsUnit =
+      choice.winPoints === 1
+        ? translate('battles.board.point')
+        : translate('battles.board.pointsPlural');
+    card.add(
+      label(
+        this,
+        textX + 40,
+        42,
+        translate('battles.board.points', {
+          points: choice.winPoints,
+          unit: pointsUnit,
+        }),
+        20,
+        UI.inkSoft,
+        true
+      ).setOrigin(0, 0.5)
+    );
+
+    const actionX = cardWidth / 2 - 104;
+    const startFight = (): void => {
+      void this.startFight(slate, choice);
+    };
+    const fightButton = iconButton(
+      this,
+      actionX,
+      20,
+      'sword',
+      translate('battles.board.fight'),
+      startFight,
+      FIGHT_BUTTON_WIDTH,
+      UI.gold,
+      UI.ink,
+      FIGHT_BUTTON_HEIGHT,
+      UI.creamHex
+    );
+    card.add(fightButton);
+    this.actionOverlay?.add({
+      label: translate('battles.board.fightAccessible', {
+        rival: opponent.name,
+        challenger: slate.challenger.name,
+        difficulty: this.difficultyLabel(choice.tier),
+        points: choice.winPoints,
+        unit: pointsUnit.toLowerCase(),
+      }),
+      rect: {
+        x: width / 2 + actionX - FIGHT_BUTTON_WIDTH / 2,
+        y: y + 20 - FIGHT_BUTTON_HEIGHT / 2,
+        width: FIGHT_BUTTON_WIDTH,
+        height: FIGHT_BUTTON_HEIGHT,
+      },
+      pointerPassthrough: true,
+      onActivate: startFight,
+    });
   }
 
-  private perspectiveTextColor(perspective: BattleJournalPerspective): string {
-    switch (perspective) {
-      case 'win':
-        return '#317a39';
-      case 'loss':
-        return UI.coralText;
-      case 'watch':
-        return '#366b80';
-    }
+  private difficultyLabel(tier: RivalRunTier | undefined): string {
+    if (tier === 'safe') return translate('battles.board.easy');
+    if (tier === 'risky') return translate('battles.board.hard');
+    return translate('battles.board.medium');
   }
 
-  private tapeColorForPerspective(
-    perspective: BattleJournalPerspective
-  ): number {
-    switch (perspective) {
-      case 'win':
-        return UI.gold;
-      case 'loss':
-        return UI.tapeAlt;
-      case 'watch':
-        return UI.tape;
+  private async startFight(
+    slate: SparRivalSlate,
+    choice: RivalRunChoice
+  ): Promise<void> {
+    if (this.busy) return;
+    this.busy = true;
+    if (this.characterSelect) this.characterSelect.disabled = true;
+    showToast(
+      translate('battles.board.starting', {
+        challenger: slate.challenger.name,
+        rival: choice.rival.name,
+      })
+    );
+    const result = await spar(
+      slate.challenger.id,
+      choice.rival.id,
+      slate.rivalRun
+    );
+    if (!this.scene.isActive()) return;
+    if (!result.ok) {
+      this.busy = false;
+      if (this.characterSelect) this.characterSelect.disabled = false;
+      showToast(result.error);
+      return;
     }
+
+    const stagedBattle = stageDirectBattle(
+      this,
+      getArena(this),
+      result.data,
+      slate.challenger.id,
+      'MyBattles'
+    );
+    if (!stagedBattle) {
+      this.busy = false;
+      if (this.characterSelect) this.characterSelect.disabled = false;
+      showToast(translate('battles.board.wrongCharacter'));
+      return;
+    }
+
+    showVsCeremony(this, {
+      fighterA: result.data.report.a,
+      fighterB: result.data.report.b,
+      battleKind: result.data.report.kind,
+      rivalryStakes: stagedBattle.rivalryStakes,
+      ...(result.data.report.rivalRun
+        ? { rivalRun: result.data.report.rivalRun }
+        : {}),
+      onComplete: () => this.scene.start('Replay'),
+    });
+  }
+
+  private showEmpty(): void {
+    const card = stickerCard(
+      this,
+      this.scale.width / 2,
+      500,
+      this.scale.width - 100,
+      220,
+      { tapeColor: UI.tapeAlt }
+    );
+    card.add(paperIcon(this, 'sword', 0, -50, { size: 52, fill: UI.gold }));
+    card.add(
+      label(
+        this,
+        0,
+        38,
+        translate('battles.board.empty'),
+        TYPE.body,
+        UI.inkSoft,
+        true
+      ).setWordWrapWidth(this.scale.width - 180)
+    );
   }
 
   private showError(message: string): void {
+    this.loadingCard?.destroy(true);
+    this.loadingCard = null;
     if (this.errorPanelRef) return;
-    const { width, height } = this.scale;
     this.errorPanelRef = errorPanel(
       this,
-      width / 2,
-      height / 2,
+      this.scale.width / 2,
+      this.scale.height / 2,
       message,
       () => {
         this.errorPanelRef?.destroy();
         this.errorPanelRef = null;
-        void this.loadBattles(this.renderGeneration);
+        this.scene.restart({
+          scribbitId: this.selectedScribbitId ?? undefined,
+        });
       }
     );
   }

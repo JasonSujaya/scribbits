@@ -1,0 +1,31 @@
+# Rival Run Risk
+
+Generated: 2026-07-14T22:33:47.025Z
+
+Runner: `app/tools/balancer/run.mjs`
+
+This report bypasses API/routes/storage and calls the production combat mock bundle directly.
+
+| Target | Opponent | Win rate | Avg duration | Power-Up triggers | Timeouts | Close | Blowouts | Verdict |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| Brawler base · SAFE | Mage rare Power-Ups | 50.0% | 15.2s | 3.00 | 0.0% | 100.0% | 0.0% | OK |
+| Brawler base · EVEN | Longshot base | 50.0% | 14.0s | 0.00 | 0.0% | 50.0% | 0.0% | OK |
+| Brawler base · RISKY | Brawler common Power-Ups | 100.0% | 13.5s | 1.00 | 0.0% | 100.0% | 0.0% | FLAG_WIN_RATE |
+| Longshot base · SAFE | Brawler base | 50.0% | 14.0s | 0.00 | 0.0% | 50.0% | 0.0% | OK |
+| Longshot base · EVEN | Brawler common Power-Ups | 50.0% | 14.5s | 2.50 | 0.0% | 50.0% | 0.0% | OK |
+| Longshot base · RISKY | Longshot base | 50.0% | 13.0s | 0.00 | 0.0% | 100.0% | 0.0% | OK |
+| Gunner base · SAFE | Mage base | 100.0% | 15.8s | 0.00 | 0.0% | 50.0% | 0.0% | FLAG_WIN_RATE |
+| Gunner base · EVEN | Brawler base | 100.0% | 13.2s | 0.00 | 0.0% | 50.0% | 0.0% | FLAG_WIN_RATE |
+| Gunner base · RISKY | Longshot base | 100.0% | 17.9s | 0.00 | 0.0% | 100.0% | 0.0% | FLAG_WIN_RATE |
+| Mage base · SAFE | Longshot base | 100.0% | 13.0s | 0.00 | 0.0% | 0.0% | 0.0% | FLAG_WIN_RATE |
+| Mage base · EVEN | Brawler common Power-Ups | 100.0% | 13.9s | 2.00 | 0.0% | 100.0% | 0.0% | FLAG_WIN_RATE |
+| Mage base · RISKY | Mage base | 50.0% | 17.2s | 0.00 | 0.0% | 100.0% | 0.0% | OK |
+
+## Flags
+
+- Brawler base · RISKY vs Brawler common Power-Ups: FLAG_WIN_RATE (100.0%, 13.5s avg)
+- Gunner base · SAFE vs Mage base: FLAG_WIN_RATE (100.0%, 15.8s avg)
+- Gunner base · EVEN vs Brawler base: FLAG_WIN_RATE (100.0%, 13.2s avg)
+- Gunner base · RISKY vs Longshot base: FLAG_WIN_RATE (100.0%, 17.9s avg)
+- Mage base · SAFE vs Longshot base: FLAG_WIN_RATE (100.0%, 13.0s avg)
+- Mage base · EVEN vs Brawler common Power-Ups: FLAG_WIN_RATE (100.0%, 13.9s avg)

@@ -3,7 +3,7 @@ import type { Scene } from 'phaser';
 import type { Scribbit } from '../../shared/arena';
 import { planArenaBackAction } from './arenabracket';
 import { CanvasModalOverlay } from './overlay';
-import { elementPaperIcon, paperIcon } from './papericons';
+import { paperIcon } from './papericons';
 import { fitDrawing, loadDrawing } from './scribbits';
 import { TYPE, UI } from './theme';
 import {
@@ -219,7 +219,12 @@ export function openArenaContenderPicker(
       .setOrigin(0, 0.5)
       .setWordWrapWidth(cardWidth - 142);
     entrantCard.add(name);
-    entrantCard.add(elementPaperIcon(scene, entrant.element, artX + 76, 2, 32));
+    entrantCard.add(
+      paperIcon(scene, 'spark', artX + 76, 2, {
+        size: 32,
+        fill: UI.coral,
+      })
+    );
 
     const actionX = cardWidth / 2 - 58;
     const actionY = 48;

@@ -13,6 +13,7 @@ export type PaperIconKey =
   | 'clock'
   | 'defeat'
   | 'forge'
+  | 'gift'
   | 'gun'
   | 'heart'
   | 'paw'
@@ -203,10 +204,7 @@ export function paperDockIcon(
     graphics.lineBetween(-13 * scale, 10 * scale, -18 * scale, 21 * scale);
     graphics.lineBetween(-18 * scale, 21 * scale, -6 * scale, 17 * scale);
   } else if (key === 'battles' && accented) {
-    graphics.fillStyle(0xd8ad78, 1);
-    drawDockSword(graphics, scale, false, true);
-    graphics.fillStyle(0xbfd8e0, 1);
-    drawDockSword(graphics, scale, true, true);
+    drawDockBattleGlove(graphics, scale, UI.coral, UI.gold, color);
   } else if (key === 'home') {
     graphics.beginPath();
     graphics.moveTo(-19 * scale, -4 * scale);
@@ -270,12 +268,7 @@ export function paperDockIcon(
     graphics.lineBetween(-19 * scale, 21 * scale, -8 * scale, 17 * scale);
     graphics.lineBetween(10 * scale, -15 * scale, 17 * scale, -8 * scale);
   } else if (key === 'battles') {
-    drawDockSword(graphics, scale, false);
-    drawDockSword(graphics, scale, true);
-  } else {
-    drawDockSword(graphics, scale, false);
-    drawDockSword(graphics, scale, true);
-    graphics.fillCircle(-4 * scale, -4 * scale, 2 * scale);
+    drawDockBattleGlove(graphics, scale, UI.creamHex, UI.gold, color);
   }
 
   container.add(graphics);
@@ -305,35 +298,55 @@ function drawFivePointStar(
   else graphics.strokePoints(points, true);
 }
 
-function drawDockSword(
+function drawDockBattleGlove(
   graphics: Phaser.GameObjects.Graphics,
   scale: number,
-  mirrored: boolean,
-  fillBlade = false
+  gloveFill: number,
+  cuffFill: number,
+  stroke: number
 ): void {
-  const direction = mirrored ? -1 : 1;
-  const blade = [
-    new Phaser.Math.Vector2(-11 * direction * scale, 13 * scale),
-    new Phaser.Math.Vector2(10 * direction * scale, -8 * scale),
-    new Phaser.Math.Vector2(18 * direction * scale, -18 * scale),
-    new Phaser.Math.Vector2(14 * direction * scale, -5 * scale),
+  const cuff = [
+    new Phaser.Math.Vector2(-11 * scale, 8 * scale),
+    new Phaser.Math.Vector2(8 * scale, 8 * scale),
+    new Phaser.Math.Vector2(10 * scale, 20 * scale),
+    new Phaser.Math.Vector2(-9 * scale, 21 * scale),
   ];
-  if (fillBlade) graphics.fillPoints(blade, true);
-  graphics.strokePoints(blade, true);
-  graphics.fillTriangle(
-    11 * direction * scale,
-    -9 * scale,
-    18 * direction * scale,
-    -18 * scale,
-    15 * direction * scale,
-    -5 * scale
-  );
-  graphics.lineBetween(
-    -17 * direction * scale,
-    8 * scale,
-    -7 * direction * scale,
-    18 * scale
-  );
+  graphics.fillStyle(cuffFill, 1);
+  graphics.fillPoints(cuff, true);
+  graphics.strokePoints(cuff, true);
+
+  const glove = [
+    new Phaser.Math.Vector2(-11 * scale, 10 * scale),
+    new Phaser.Math.Vector2(-16 * scale, 9 * scale),
+    new Phaser.Math.Vector2(-20 * scale, 5 * scale),
+    new Phaser.Math.Vector2(-21 * scale, 0),
+    new Phaser.Math.Vector2(-19 * scale, -4 * scale),
+    new Phaser.Math.Vector2(-15 * scale, -5 * scale),
+    new Phaser.Math.Vector2(-11 * scale, -2 * scale),
+    new Phaser.Math.Vector2(-12 * scale, -9 * scale),
+    new Phaser.Math.Vector2(-10 * scale, -14 * scale),
+    new Phaser.Math.Vector2(-5 * scale, -18 * scale),
+    new Phaser.Math.Vector2(2 * scale, -20 * scale),
+    new Phaser.Math.Vector2(10 * scale, -18 * scale),
+    new Phaser.Math.Vector2(16 * scale, -13 * scale),
+    new Phaser.Math.Vector2(19 * scale, -7 * scale),
+    new Phaser.Math.Vector2(19 * scale, 0),
+    new Phaser.Math.Vector2(16 * scale, 6 * scale),
+    new Phaser.Math.Vector2(11 * scale, 9 * scale),
+    new Phaser.Math.Vector2(7 * scale, 10 * scale),
+  ];
+  graphics.fillStyle(gloveFill, 1);
+  graphics.fillPoints(glove, true);
+  graphics.strokePoints(glove, true);
+
+  const thumbSeam = [
+    new Phaser.Math.Vector2(-11 * scale, -2 * scale),
+    new Phaser.Math.Vector2(-8 * scale, 1 * scale),
+    new Phaser.Math.Vector2(-7 * scale, 6 * scale),
+  ];
+  graphics.lineStyle(2.4 * scale, stroke, 1);
+  graphics.strokePoints(thumbSeam, false);
+  graphics.lineBetween(-3 * scale, -13 * scale, 7 * scale, -12 * scale);
 }
 
 export function elementPaperIcon(
@@ -835,6 +848,47 @@ function drawIcon(
     );
     graphics.fillRect(-7 * scale, -14 * scale, 14 * scale, 5 * scale);
     graphics.strokeRect(-7 * scale, -14 * scale, 14 * scale, 5 * scale);
+    return;
+  }
+
+  if (key === 'gift') {
+    graphics.fillRoundedRect(
+      -13 * scale,
+      -4 * scale,
+      26 * scale,
+      17 * scale,
+      2 * scale
+    );
+    graphics.strokeRoundedRect(
+      -13 * scale,
+      -4 * scale,
+      26 * scale,
+      17 * scale,
+      2 * scale
+    );
+    graphics.fillRoundedRect(
+      -15 * scale,
+      -10 * scale,
+      30 * scale,
+      7 * scale,
+      2 * scale
+    );
+    graphics.strokeRoundedRect(
+      -15 * scale,
+      -10 * scale,
+      30 * scale,
+      7 * scale,
+      2 * scale
+    );
+    graphics.fillStyle(UI.creamHex, 0.9);
+    graphics.fillRect(-3 * scale, -9 * scale, 6 * scale, 21 * scale);
+    graphics.strokeRect(-3 * scale, -9 * scale, 6 * scale, 21 * scale);
+    graphics.beginPath();
+    graphics.arc(-6 * scale, -12 * scale, 6 * scale, -0.2, Math.PI, true);
+    graphics.strokePath();
+    graphics.beginPath();
+    graphics.arc(6 * scale, -12 * scale, 6 * scale, 0, Math.PI + 0.2, false);
+    graphics.strokePath();
     return;
   }
 

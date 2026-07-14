@@ -1363,12 +1363,14 @@ assert.deepEqual(publicRouteInventory, [
   'POST /api/boss-challenge',
   'POST /api/capsule',
   'POST /api/care',
+  'POST /api/daily-login/claim',
   'POST /api/delete-my-data',
   'POST /api/equip-gear',
   'POST /api/equip-title',
   'POST /api/free-drawing',
   'POST /api/legacy-cards/seen',
   'POST /api/merge-gear',
+  'POST /api/power-up/choose',
   'POST /api/practice-battle',
   'POST /api/remove-scribbit',
   'POST /api/report-scribbit',
@@ -2022,10 +2024,11 @@ const paginationConsumers = [
   },
   {
     name: 'Battles',
+    paginationCallCount: 2,
     modulePath: '../lib/ui',
     functionName: 'buildPagination',
     source: readFileSync(
-      join(repoRoot, 'src', 'client', 'scenes', 'MyBattles.ts'),
+      join(repoRoot, 'src', 'client', 'scenes', 'BattleHistory.ts'),
       'utf8'
     ),
   },
@@ -2105,8 +2108,8 @@ for (const consumer of paginationConsumers.filter(
   assert.equal(
     inspection.calledIdentifiers.filter((name) => name === 'paperPagination')
       .length,
-    1,
-    `${consumer.name} must delegate exactly once to the canonical pagination owner`
+    consumer.paginationCallCount ?? 1,
+    `${consumer.name} must delegate each pagination surface to the canonical owner`
   );
   assert.equal(
     inspection.calledIdentifiers.includes('pageArrowButton'),
@@ -2159,7 +2162,11 @@ assert.doesNotMatch(
 assert.doesNotMatch(paginationConsumers[0].source, /FORGE ITEM/);
 assert.match(
   paginationConsumers[0].source,
-  /type InkKitSection = EquipmentCategory \| 'styles'/
+  /export type DrawKitSection = 'colors' \| 'brushes' \| 'titles'/
+);
+assert.match(
+  paginationConsumers[0].source,
+  /export type InkKitSection = EquipmentCategory \| DrawKitSection/
 );
 assert.doesNotMatch(paginationConsumers[0].source, /accessoryEffect/);
 pass(
@@ -2523,13 +2530,16 @@ assert.doesNotMatch(
   'brush sizing must clamp instead of wrapping from thickest to thinnest'
 );
 assert.match(drawSceneSource, /private buildLiveStatsStrip\(/);
-assert.match(drawSceneSource, /this\.updateLiveStats\(result, ready\)/);
-assert.match(drawSceneSource, /Live build, 100 total/);
+assert.match(drawSceneSource, /this\.updateLiveStats\(ready\)/);
+assert.match(drawSceneSource, /this\.buildFighterStyleControls\(panelWidth\)/);
 assert.match(
   drawSceneSource,
-  /BECOMING A \$\{role\.displayName\.toUpperCase\(\)\}/
+  /getCombatRoleContent\(this\.selectedFighterStyle\)/
 );
-assert.match(drawSceneSource, /role\.weaponName\.toUpperCase\(\)/);
+assert.match(
+  drawSceneSource,
+  /Pen colors are artistic and do not change fighter style\./
+);
 const paperIconsSource = readFileSync(
   join(repoRoot, 'src', 'client', 'lib', 'papericons.ts'),
   'utf8'
@@ -3577,6 +3587,19 @@ try {
         'a repeated deterministic bout must return the same mock report'
       );
     }
+    if (runFight.body.powerUpOffer) {
+      const powerUpClaim = await requestMock('/api/power-up/choose', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          scribbitId: runSlate.challenger.id,
+          offerId: runFight.body.powerUpOffer.id,
+          selectedId: runFight.body.powerUpOffer.choices[0],
+          expectedPowerUpCount: runSlate.challenger.powerUpIds.length,
+        }),
+      });
+      assert.equal(powerUpClaim.response.status, 200);
+    }
     previousRunReport = runFight.body.report;
     if (boutIndex < 2) {
       runSlate = (
@@ -3603,7 +3626,17 @@ try {
   );
 
   const freshDrawingDataUrl = createAuthoritativeSubmissionDataUrl();
+  const freshBattlesBeforeSubmission = await requestMock(
+    '/api/my-battles?fresh'
+  );
+  assert.equal(freshBattlesBeforeSubmission.response.status, 200);
+  assert.deepEqual(
+    freshBattlesBeforeSubmission.body,
+    [],
+    'a fresh preview must not leak returning-player battle fixtures'
+  );
   const freshSubmissionBody = {
+    submissionId: 'progression-proof-0001',
     name: 'Progression Proof',
     baseImageDataUrl: freshDrawingDataUrl,
     imageDataUrl: freshDrawingDataUrl,
@@ -3617,16 +3650,23 @@ try {
     body: JSON.stringify(freshSubmissionBody),
   });
   assert.equal(freshSubmission.response.status, 201);
-  assert.equal(freshSubmission.body.element, 'ember');
-  assert.equal(freshSubmission.body.xp, 0);
-  assert.equal(freshSubmission.body.level, 1);
-  assert.equal(freshSubmission.body.mood, 'hungry');
+  assert.equal(freshSubmission.body.scribbit.element, 'ember');
+  assert.equal(freshSubmission.body.scribbit.xp, 0);
+  assert.equal(freshSubmission.body.scribbit.level, 1);
+  assert.equal(freshSubmission.body.scribbit.mood, 'hungry');
+  assert.equal(freshSubmission.body.drawCharges.available, 2);
+  assert.equal(freshSubmission.body.enteredRumble, true);
   const repeatedFreshSubmission = await requestMock('/api/scribbit?fresh', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ ...freshSubmissionBody, name: 'Repeat Reward' }),
+    body: JSON.stringify(freshSubmissionBody),
   });
-  assert.equal(repeatedFreshSubmission.response.status, 409);
+  assert.equal(repeatedFreshSubmission.response.status, 200);
+  assert.deepEqual(
+    repeatedFreshSubmission.body,
+    freshSubmission.body,
+    'repeating one submission id must return the exact birth without consuming another charge'
+  );
   const arenaAfterRepeatedSubmission = await requestMock('/api/arena?fresh');
   assert.equal(arenaAfterRepeatedSubmission.body.myScribbits.length, 1);
   assert.equal(
@@ -3639,18 +3679,18 @@ try {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        scribbitId: freshSubmission.body.id,
+        scribbitId: freshSubmission.body.scribbit.id,
         action,
       }),
     });
     assert.equal(careResult.response.status, 200);
-    assert.equal(careResult.body.inkAwarded, arena.INK_REWARDS.care);
+    assert.equal('inkAwarded' in careResult.body, false);
   }
   const repeatedCare = await requestMock('/api/care?fresh', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      scribbitId: freshSubmission.body.id,
+      scribbitId: freshSubmission.body.scribbit.id,
       action: 'train',
     }),
   });
@@ -3658,7 +3698,7 @@ try {
 
   const caredFreshArena = await requestMock('/api/arena?fresh');
   const caredFreshScribbit = caredFreshArena.body.myScribbits.find(
-    ({ id }) => id === freshSubmission.body.id
+    ({ id }) => id === freshSubmission.body.scribbit.id
   );
   assert.ok(caredFreshScribbit);
   assert.deepEqual(
@@ -3671,7 +3711,7 @@ try {
       careDoneToday: caredFreshScribbit.careDoneToday,
     },
     {
-      ink: arena.INK_REWARDS.dailyDraw + arena.INK_REWARDS.care * 3,
+      ink: arena.INK_REWARDS.dailyDraw,
       nextCapsuleCost: arena.CAPSULE_FIRST_DAILY_COST,
       xp: arena.XP_REWARDS.care * 2 + arena.XP_REWARDS.carePumped,
       level: 2,
@@ -3686,26 +3726,18 @@ try {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ operationId: 'fresh-progression-proof' }),
   });
-  assert.equal(firstCapsulePull.response.status, 200);
-  assert.equal(firstCapsulePull.body.ink, 0);
-  assert.equal(firstCapsulePull.body.nextCost, arena.CAPSULE_COST);
+  assert.equal(firstCapsulePull.response.status, 402);
   const repeatedCapsulePull = await requestMock('/api/capsule?fresh', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ operationId: 'fresh-progression-proof' }),
   });
-  assert.equal(repeatedCapsulePull.response.status, 200);
+  assert.equal(repeatedCapsulePull.response.status, 402);
   assert.deepEqual(
     repeatedCapsulePull.body,
     firstCapsulePull.body,
-    'repeating one operation id must not spend Ink or advance pity twice'
+    'repeating an unaffordable operation must remain side-effect free'
   );
-  const unaffordableCapsulePull = await requestMock('/api/capsule?fresh', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ operationId: 'fresh-insufficient-proof' }),
-  });
-  assert.equal(unaffordableCapsulePull.response.status, 402);
   const spentFreshArena = await requestMock('/api/arena?fresh');
   assert.deepEqual(
     {
@@ -3713,32 +3745,42 @@ try {
       nextCapsuleCost: spentFreshArena.body.nextCapsuleCost,
       pullCount: spentFreshArena.body.capsuleProgress.pullCount,
     },
-    { ink: 0, nextCapsuleCost: arena.CAPSULE_COST, pullCount: 1 },
-    'retries and rejected pulls must leave the committed capsule state unchanged'
+    {
+      ink: arena.INK_REWARDS.dailyDraw,
+      nextCapsuleCost: arena.CAPSULE_COST,
+      pullCount: 0,
+    },
+    'rejected pulls must leave the earned Ink and capsule state unchanged'
   );
 
   const firstBirthBattle = await requestMock('/api/spar?fresh', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ scribbitId: freshSubmission.body.id }),
+    body: JSON.stringify({ scribbitId: freshSubmission.body.scribbit.id }),
   });
   assert.equal(firstBirthBattle.response.status, 200);
   assert.equal(firstBirthBattle.body.report.kind, 'exhibition');
-  assert.equal(firstBirthBattle.body.report.a.id, freshSubmission.body.id);
-  assert.notEqual(firstBirthBattle.body.report.b.id, freshSubmission.body.id);
+  assert.equal(
+    firstBirthBattle.body.report.a.id,
+    freshSubmission.body.scribbit.id
+  );
+  assert.notEqual(
+    firstBirthBattle.body.report.b.id,
+    freshSubmission.body.scribbit.id
+  );
   assert.equal(firstBirthBattle.body.report.b.isFounding, true);
   assert.equal(firstBirthBattle.body.report.rivalRun, undefined);
   assert.equal(firstBirthBattle.body.founderChronicleBeat, null);
   assert.equal(
     firstBirthBattle.body.rewardReceipt.scribbitId,
-    freshSubmission.body.id
+    freshSubmission.body.scribbit.id
   );
   const arenaAfterFirstBirthBattle = await requestMock('/api/arena?fresh');
   assert.equal(arenaAfterFirstBirthBattle.body.lastRumbleReceipt, null);
   assert.equal(arenaAfterFirstBirthBattle.body.legacyReturnReceipt, null);
   assert.equal(
     arenaAfterFirstBirthBattle.body.myScribbits.some(
-      ({ id }) => id === freshSubmission.body.id
+      ({ id }) => id === freshSubmission.body.scribbit.id
     ),
     true
   );
@@ -4225,16 +4267,15 @@ const firstCareMomentPlan = careMoment.planCareMoment(
   beforeCareMoment,
   afterCareMoment,
   'feed',
-  9,
-  1
+  9
 );
 assert.equal(firstCareMomentPlan.lifeDay, 1);
 assert.equal(firstCareMomentPlan.power, 'inkquake');
 assert.equal(firstCareMomentPlan.experienceGained, 1);
-assert.equal(firstCareMomentPlan.inkAwarded, 1);
 assert.equal(firstCareMomentPlan.careMarkCount, 1);
 assert.match(firstCareMomentPlan.headline, /SNACK BREAK: CRATER PAL/);
-assert.match(firstCareMomentPlan.rewardLine, /\+1 XP.*\+1 INK/);
+assert.match(firstCareMomentPlan.rewardLine, /SERVER CHECKED.*\+1 XP/);
+assert.doesNotMatch(firstCareMomentPlan.rewardLine, /INK/);
 assert.match(firstCareMomentPlan.progressLine, /SLEEPY.*1\/3 CARE MARKS/);
 const finalCareMomentPlan = careMoment.planCareMoment(
   makeScribbit({ ...beforeCareMoment, xp: 4, careDoneToday: ['feed', 'pat'] }),
@@ -4245,14 +4286,12 @@ const finalCareMomentPlan = careMoment.planCareMoment(
     careDoneToday: ['feed', 'pat', 'train'],
   }),
   'train',
-  11,
-  0
+  11
 );
 assert.equal(finalCareMomentPlan.lifeDay, 3);
 assert.equal(finalCareMomentPlan.experienceGained, 2);
-assert.equal(finalCareMomentPlan.inkAwarded, 0);
-assert.match(finalCareMomentPlan.rewardLine, /\+2 XP.*CARE SAVED/);
-assert.doesNotMatch(finalCareMomentPlan.rewardLine, /\+\d+ INK/);
+assert.match(finalCareMomentPlan.rewardLine, /SERVER CHECKED.*\+2 XP/);
+assert.doesNotMatch(finalCareMomentPlan.rewardLine, /INK/);
 pass('Care Reaction Deck stays complete, varied, safe, and server-truthful');
 
 const shapePowerGuideContent = shapePowerContent.SHAPE_POWER_IDS.map((power) =>
@@ -4275,10 +4314,10 @@ assert.deepEqual(
     shapePowerContent.getShapePowerDrawingCue(power)
   ),
   [
-    'Big, filled bodies wake Inkquake.',
-    'Sharp edges wake Nib Halo.',
-    'Small, compact shapes wake Smearstep.',
-    'More colors wake Colorburst.',
+    'Coral style wake Inkquake.',
+    'Blue style wake Nib Halo.',
+    'Green style wake Smearstep.',
+    'Purple style wake Colorburst.',
   ]
 );
 assert.deepEqual(
@@ -4295,11 +4334,11 @@ assert.deepEqual(
 assert.deepEqual(
   shapePowerContent.planShapeReceipt('ember', 'nib_halo'),
   {
-    cause: 'SHARP EDGES',
+    cause: 'BLUE STYLE',
     move: 'FIRETIP HALO',
     effect: '3 ROTATING QUILLS',
-    birthLine: 'SHARP EDGES → FIRETIP HALO',
-    battleLine: 'SHARP EDGES → 3 ROTATING QUILLS',
+    birthLine: 'BLUE STYLE → FIRETIP HALO',
+    battleLine: 'BLUE STYLE → 3 ROTATING QUILLS',
   },
   'birth and battle should share one plain-language drawing receipt'
 );
@@ -4359,7 +4398,7 @@ const signaturePowerByRole = {
   gunner: 'smearstep',
   mage: 'colorburst',
 };
-assert.equal(practiceLab.PRACTICE_SUBMIT_LABEL, 'FIND MY ROLE');
+assert.equal(practiceLab.PRACTICE_SUBMIT_LABEL, 'TRY THIS STYLE');
 for (let practiceIndex = 0; practiceIndex < 4; practiceIndex += 1) {
   const target = practiceLab.selectPracticeTargetRole(
     practicedRoles,
@@ -4416,7 +4455,7 @@ assert.equal(firstPracticeSession.lastRoleWasNew, true);
 assert.deepEqual(firstPracticeSession.triedRoles, ['brawler']);
 assert.equal(firstPracticeSession.attemptCount, 1);
 assert.deepEqual(practiceLab.planPracticeReveal(firstPracticeSession), {
-  headline: 'ROLE FOUND!',
+    headline: 'STYLE READY!',
   roleName: 'BRAWLER',
   roleDetail: 'CLOSE RANGE · INK FISTS · INKQUAKE',
   progress: '1 OF 4 FOUND',
@@ -6102,6 +6141,19 @@ const submissionBrushId = inkCatalog.INK_BRUSH_CATALOG[0].id;
 const atomicSubmissionStorage = createMemoryStorage();
 const atomicSubmissionUserId = 'atomic-submission-player';
 const atomicSubmissionDay = 88;
+const expectedSubmissionDrawCharges = {
+  available: 2,
+  capacity: 3,
+  nextRefreshAt: Date.parse('2026-07-13T20:00:00.000Z'),
+};
+const assertCommittedSubmission = (result, recovered) => {
+  assert.deepEqual(result, {
+    status: 'committed',
+    recovered,
+    drawCharges: expectedSubmissionDrawCharges,
+    enteredRumble: true,
+  });
+};
 const atomicSubmissionScribbit = makeScribbit({
   id: 'atomic-submission-scribbit',
   bornDay: atomicSubmissionDay,
@@ -6144,10 +6196,7 @@ const atomicSubmissionResult = await submissionCore.commitScribbitSubmission(
     inkAward: arena.INK_REWARDS.dailyDraw,
   }
 );
-assert.deepEqual(atomicSubmissionResult, {
-  status: 'committed',
-  recovered: false,
-});
+assertCommittedSubmission(atomicSubmissionResult, false);
 const atomicSubmissionSnapshot = {
   ...atomicSubmissionScribbit,
   gearRanks: { [submissionAccessoryId]: 4 },
@@ -6328,12 +6377,12 @@ const replyLossSubmissionInput = {
   rumbleScore: 9_999,
   inkAward: arena.INK_REWARDS.dailyDraw,
 };
-assert.deepEqual(
+assertCommittedSubmission(
   await submissionCore.commitScribbitSubmission(
     replyLossSubmissionStorage,
     replyLossSubmissionInput
   ),
-  { status: 'committed', recovered: true }
+  true
 );
 assert.equal(
   await replyLossSubmissionStorage.get(
@@ -6350,15 +6399,11 @@ assert.equal(
   '1'
 );
 assert.deepEqual(
-  await submissionCore.commitScribbitSubmission(replyLossSubmissionStorage, {
-    ...replyLossSubmissionInput,
-    scribbit: makeScribbit({
-      id: 'reply-loss-submission-retry',
-      bornDay: 90,
-      expiresDay: 90 + arena.LIFESPAN_DAYS,
-    }),
-  }),
-  { status: 'already-drawn' }
+  await submissionCore.commitScribbitSubmission(
+    replyLossSubmissionStorage,
+    replyLossSubmissionInput
+  ),
+  { status: 'id-collision' }
 );
 assert.equal(
   await replyLossSubmissionStorage.get(
@@ -6382,7 +6427,7 @@ await commandErrorSubmissionStorage.set(
   inkStore.getInkKey(commandErrorSubmissionUserId),
   '30'
 );
-assert.deepEqual(
+assertCommittedSubmission(
   await submissionCore.commitScribbitSubmission(commandErrorSubmissionStorage, {
     userId: commandErrorSubmissionUserId,
     scribbit: commandErrorSubmissionScribbit,
@@ -6391,7 +6436,7 @@ assert.deepEqual(
     rumbleScore: 10_001,
     inkAward: arena.INK_REWARDS.dailyDraw,
   }),
-  { status: 'committed', recovered: true }
+  true
 );
 assert.equal(
   await commandErrorSubmissionStorage.get(
@@ -6443,7 +6488,7 @@ guardedRepairStorage.watch = async (...keys) => {
   };
   return transaction;
 };
-assert.deepEqual(
+assertCommittedSubmission(
   await submissionCore.commitScribbitSubmission(guardedRepairStorage, {
     userId: guardedRepairUserId,
     scribbit: guardedRepairScribbit,
@@ -6452,7 +6497,7 @@ assert.deepEqual(
     rumbleScore: 10_003,
     inkAward: arena.INK_REWARDS.dailyDraw,
   }),
-  { status: 'committed', recovered: true }
+  true
 );
 assert.equal(nightlyClaimWasBlockedByActiveSubmission, true);
 assert.equal(
@@ -9560,7 +9605,7 @@ const goldenCombatCases = [
     }),
     seed: 7001,
     expectedHash:
-      '68411a174d13d2e44101eb91b0eb3076694915af52ff1af07e0a778c33b0b938',
+      '76115bf893b4fbbd65cc16e346902177f0051f720f0d5cf83eacb52e1278107e',
   },
   {
     name: 'boundary archetypes',
@@ -9578,7 +9623,7 @@ const goldenCombatCases = [
     }),
     seed: 7002,
     expectedHash:
-      '41a9129866acb7213a90230294bbfe0864c7f85f7c6fa365215e13e46c0899ee',
+      '6c41daa299247c66f8c4a4c49612073bde41597f8bca1c2815e9adaec4e04d38',
   },
   {
     name: 'Smearstep Barrage schedule',
@@ -9596,7 +9641,7 @@ const goldenCombatCases = [
     }),
     seed: 7003,
     expectedHash:
-      'f0ecb369e1881793b290abcbef552b27c4a88dfdc3f9e99961e09d043a2775d3',
+      '4256a33a316d4dac40c3b29d2ada7f537eafa550c6fc52ee2f94d84fffac48a6',
   },
 ];
 const transcriptHash = (transcript) =>
@@ -10151,10 +10196,9 @@ const loadedPreInkModBattleReport = await battleStore.loadBattleReport(
 );
 assert.deepEqual(loadedPreInkModBattleReport?.a.upgrades, []);
 assert.deepEqual(loadedPreInkModBattleReport?.b.upgrades, []);
-await assert.rejects(
+await assert.doesNotReject(
   battleStore.saveBattleReport(featuredRumbleStorage, preInkModBattleReport, 1),
-  /authoritative transcript validation/,
-  'historical fighter migration must remain unavailable to new report writes'
+  'v5 transcript validation should not depend on retired top-level upgrades'
 );
 const emptyBattleReport = {
   ...firstFeaturedBout,
@@ -10275,6 +10319,11 @@ assert.equal(
 const legacyVersionOneTranscript = structuredClone(lastFeaturedBout.simulation);
 legacyVersionOneTranscript.version = 1;
 for (const fighter of legacyVersionOneTranscript.fighters) {
+  fighter.element =
+    fighter.id === lastFeaturedBout.a.id
+      ? lastFeaturedBout.a.element
+      : lastFeaturedBout.b.element;
+  delete fighter.powerUpIds;
   delete fighter.upgrades;
   delete fighter.damageModifierPermille;
 }
@@ -10290,7 +10339,11 @@ assert.equal(
   undefined,
   'version-one transcripts must not smuggle in version-two upgrade fields'
 );
-const versionTwoWithoutUpgrades = structuredClone(lastFeaturedBout.simulation);
+const versionTwoWithoutUpgrades = structuredClone(legacyVersionOneTranscript);
+versionTwoWithoutUpgrades.version = 2;
+for (const fighter of versionTwoWithoutUpgrades.fighters) {
+  fighter.upgrades = [];
+}
 delete versionTwoWithoutUpgrades.fighters[0].upgrades;
 assert.equal(
   combatTranscriptValidation.parseBattleTranscript(versionTwoWithoutUpgrades),
@@ -10818,8 +10871,11 @@ const validLevelThreeRecord = {
 };
 assert.deepEqual(
   scribbitCore.normalizeScribbitRecord(validLevelThreeRecord)?.upgrades,
-  authoredLevelThreeUpgrades,
-  'valid stored picks must stay frozen instead of being rerolled'
+  combatUpgrades.createScribbitUpgradesForLevel(
+    validLevelThreeRecord.id,
+    3
+  ),
+  'v2 migration must replace retired authored Ink Mods deterministically'
 );
 
 const malformedUpgradeValues = [
@@ -10839,14 +10895,15 @@ const malformedUpgradeValues = [
   ],
 ];
 for (const [caseIndex, upgrades] of malformedUpgradeValues.entries()) {
-  assert.equal(
+  const scribbitId = `malformed-upgrades-${caseIndex}`;
+  assert.deepEqual(
     scribbitCore.normalizeScribbitRecord({
       ...validLevelThreeRecord,
-      id: `malformed-upgrades-${caseIndex}`,
+      id: scribbitId,
       upgrades,
-    }),
-    undefined,
-    `malformed present Ink Mod case ${caseIndex} must fail closed`
+    })?.upgrades,
+    combatUpgrades.createScribbitUpgradesForLevel(scribbitId, 3),
+    `retired Ink Mod case ${caseIndex} must migrate deterministically`
   );
 }
 
@@ -11005,14 +11062,14 @@ assert.deepEqual(
 pass('Ink Mod storage distinguishes absent migration from malformed authority');
 
 const upgradedTranscript = combatEngine.simulateCombat({
-  seed: 'upgrade-effect-proof',
+  seed: 'power-up-freeze-proof',
   fighters: [
     {
       id: 'upgrade-a',
       name: 'Upgrade A',
       element: 'moss',
       stats: { chonk: 25, spike: 25, zip: 25, charm: 25 },
-      upgrades: ['v1-thick-paper'],
+      powerUpIds: ['v1-paper-shield'],
     },
     {
       id: 'upgrade-b',
@@ -11024,18 +11081,13 @@ const upgradedTranscript = combatEngine.simulateCombat({
 });
 assert.equal(
   upgradedTranscript.version,
-  4,
-  'Ink Mod transcripts should use the role combat schema v4'
+  5,
+  'current combat transcripts should use the Power-Up schema v5'
 );
-assert.equal(
-  upgradedTranscript.fighters[0].upgrades[0],
-  'v1-thick-paper',
-  'the immutable transcript should freeze the server-owned loadout'
-);
-assert.ok(
-  upgradedTranscript.result.fighters[0].maxHitPoints >
-    upgradedTranscript.result.fighters[1].maxHitPoints,
-  'Thick Paper should increase authoritative maximum health'
+assert.deepEqual(
+  upgradedTranscript.fighters[0].powerUpIds,
+  ['v1-paper-shield'],
+  'v5 transcripts should freeze the server-owned Power-Up build'
 );
 
 const chooseUpgradeLoadouts = (values, count, startIndex = 0, prefix = []) => {
@@ -11267,13 +11319,13 @@ assert.deepEqual(
     finishSound: knockoutRecap.finishSound,
   },
   {
-    headline: 'KO • Needle Star WINS',
-    verdictLine: '14.4s • INK LEFT 1/185 vs 0/225',
-    tapeLine: '225 TOTAL DAMAGE • QUILL ORBIT',
+    headline: 'KO • Heavy Page WINS',
+    verdictLine: '14.3s • INK LEFT 9/225 vs 0/185',
+    tapeLine: '185 TOTAL DAMAGE • SHOCKWAVE',
     highlight: {
       label: 'FINAL SPLAT',
-      text: 'Piercing Quill • 9 to Heavy Page',
-      compactText: 'Piercing Quill · 9 DAMAGE',
+      text: 'Body Slam • 3 to Needle Star',
+      compactText: 'Body Slam · 3 DAMAGE',
     },
     finishPresentation: 'knockout',
     finishSound: 'knockout',
@@ -11620,12 +11672,12 @@ assert.deepEqual(journalSummary, {
   savedCount: 4,
   ownedWins: 3,
   ownedLosses: 1,
-  knockoutCount: 2,
+  knockoutCount: 1,
   decisionCount: 1,
-  archivedCount: 1,
+  archivedCount: 2,
   savedLine: '4 SAVED BATTLES',
   recordLine: 'YOUR REEL • 3 W–1 L',
-  finishLine: '2 KO • 1 DECISION • 1 ARCHIVED',
+  finishLine: '1 KO • 1 DECISION • 2 ARCHIVED',
 });
 assert.ok(Object.isFrozen(journalSummary));
 for (const plan of [

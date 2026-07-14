@@ -9,6 +9,7 @@ import type { AccessoryEffectFamily } from '../accessoryeffects';
 import type { GearRank } from '../arena';
 import type { EquipmentCategory } from '../equipment';
 import type { CombatUpgradeId } from './upgrades';
+import type { PowerUpId } from './powerups';
 
 export type FighterSlot = 'a' | 'b';
 
@@ -59,9 +60,14 @@ export type FixedVector = Readonly<{
 export type CombatFighterInput = Readonly<{
   id: string;
   name: string;
-  element: CombatElement;
   stats: RawCombatStats;
-  // Versioned, server-owned Ink Mods. Optional only for stored v1 transcripts.
+  // The active v5 combat build. The simulator freezes an empty build when the
+  // caller has not earned a Power-Up yet.
+  powerUpIds?: readonly PowerUpId[];
+  // Legacy-only transcript fields. Newly simulated fights ignore and omit
+  // these so archived v1-v4 battles can remain readable without preserving
+  // Element or Ink Mod behavior in the live ruleset.
+  element?: CombatElement;
   upgrades?: readonly CombatUpgradeId[];
   // Server-owned daily forecast + capped level bonus. It changes damage only,
   // never the drawing-selected power, body, movement, or collision geometry.
@@ -88,6 +94,7 @@ export type DamageSource =
   | 'colorburst_echo'
   | 'contact'
   | 'ember_burn'
+  | 'power_up'
   | 'nib_wall_recoil';
 
 export type BattleEndReason =
@@ -265,6 +272,14 @@ export type BattleTimelineEvent =
       kind: 'ink_pressure';
       actor: FighterSlot;
       refreshedImmediately: boolean;
+    }>
+  | Readonly<{
+      tick: number;
+      kind: 'power_up_triggered';
+      actor: FighterSlot;
+      powerUpId: PowerUpId;
+      target?: FighterSlot;
+      bonusDamage?: number;
     }>
   | Readonly<{
       tick: number;

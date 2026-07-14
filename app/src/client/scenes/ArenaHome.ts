@@ -21,7 +21,6 @@ import {
   markLegacyReturnDismissed,
   takeFounderChronicleBeats,
   takeArenaFocus,
-  takeFirstChestTrail,
   takeSkipArenaReceiptsOnce,
 } from '../lib/registry';
 import {
@@ -30,13 +29,12 @@ import {
   canCare,
   releaseRenderedDrawingTextures,
 } from '../lib/scribbits';
-import { EDGE, NAV_SAFE, TYPE, UI, prefersReducedMotion } from '../lib/theme';
+import { NAV_SAFE, TYPE, UI, prefersReducedMotion } from '../lib/theme';
 import {
   iconButton,
   label,
   errorPanel,
   stickerCard,
-  floatReward,
   startScene,
   spinner,
   paperRoleTag,
@@ -90,10 +88,6 @@ import { getBattleArenaForDay } from '../../shared/battlearena';
 import { selectCommunityDoodleDare } from '../../shared/content/communitydrawthemes';
 import { navigateToDailyDraw } from '../lib/draweligibility';
 import { openRivalRun, type RivalRunFlow } from '../lib/rivalrunflow';
-import {
-  planFirstChestTrailStep,
-  type FirstChestTrailStep,
-} from '../lib/firstchesttrail';
 import { fitText } from '../lib/fittext';
 
 // One focused battle hub: choose an owned fighter, choose Champion or Spar,
@@ -209,10 +203,7 @@ export class ArenaHome extends Scene {
     }
     this.state = state;
     this.build();
-    const firstChestTrail = takeFirstChestTrail(this);
-    if (firstChestTrail) {
-      this.continueFirstChestTrail(firstChestTrail.scribbitId);
-    } else if (!takeSkipArenaReceiptsOnce(this)) {
+    if (!takeSkipArenaReceiptsOnce(this)) {
       this.showReturnReceiptsIfNeeded();
     }
     this.events.once('shutdown', () => this.cleanup());
@@ -599,16 +590,6 @@ export class ArenaHome extends Scene {
         this.rosterActionOverlay?.setVisible(true);
       },
     });
-  }
-
-  // Float a concise Ink reward from a point, and bump the chip. Optimistic; the
-  // caller supplies the amount. Pinned so it reads over any scroll.
-  private floatInk(amount: number, x: number, y: number): void {
-    if (amount <= 0) return;
-    const next = (this.state.myInk ?? 0) + amount;
-    this.state = { ...this.state, myInk: next };
-    setArena(this, this.state);
-    floatReward(this, x, y, `+${amount} INK`, UI.goldText, 3000, true);
   }
 
   private countdownText(): string {
@@ -1665,10 +1646,7 @@ export class ArenaHome extends Scene {
     });
   }
 
-  private openCarePickerFor(
-    scribbit: Scribbit,
-    firstChestStep: FirstChestTrailStep | null = null
-  ): void {
+  private openCarePickerFor(scribbit: Scribbit): void {
     if (this.busy || this.carePicker) return;
     const returnFocus =
       document.activeElement instanceof HTMLButtonElement
@@ -1676,15 +1654,9 @@ export class ArenaHome extends Scene {
         : null;
     this.carePicker = openCarePicker(this, {
       scribbit,
-      ...(firstChestStep ? { goalLabel: firstChestStep.statusLabel } : {}),
       onChoose: (action) => {
         this.carePicker = null;
-        this.doCare(
-          scribbit,
-          action,
-          returnFocus !== null,
-          firstChestStep !== null
-        );
+        this.doCare(scribbit, action, returnFocus !== null);
       },
       onClose: () => {
         this.carePicker = null;
@@ -1696,8 +1668,7 @@ export class ArenaHome extends Scene {
   private doCare(
     scribbit: Scribbit,
     action: CareAction,
-    focusReceipt = false,
-    continuesFirstChestTrail = false
+    focusReceipt = false
   ): void {
     if (!this.requireLogin()) return;
     if (this.busy) return;
@@ -1721,63 +1692,18 @@ export class ArenaHome extends Scene {
         scribbit,
         updatedScribbit,
         action,
-        this.state.dayNumber,
-        result.data.inkAwarded
+        this.state.dayNumber
       );
-      // Render only the exact Ink amount confirmed by the server response.
-      this.floatInk(result.data.inkAwarded, this.scale.width - EDGE - 40, 120);
       this.applyScribbitUpdate(updatedScribbit);
-      const firstChestStep = continuesFirstChestTrail
-        ? this.firstChestTrailStep(updatedScribbit)
-        : null;
       this.careMomentOverlay = openCareMomentOverlay(
         this,
         updatedScribbit,
         careMoment,
         {
           focusOnOpen: focusReceipt,
-          ...(continuesFirstChestTrail
-            ? {
-                progressLabel:
-                  firstChestStep?.statusLabel ?? 'FIRST CHEST • EARN MORE INK',
-                onDismiss: () => {
-                  this.careMomentOverlay = null;
-                  if (firstChestStep) {
-                    this.continueFirstChestTrail(updatedScribbit.id);
-                  }
-                },
-              }
-            : {}),
         }
       );
     });
-  }
-
-  private firstChestTrailStep(scribbit: Scribbit): FirstChestTrailStep | null {
-    return planFirstChestTrailStep({
-      scribbit,
-      ink: this.state.myInk,
-      chestCost: this.state.nextCapsuleCost,
-      capsulePullCount: this.state.capsuleProgress.pullCount,
-    });
-  }
-
-  private continueFirstChestTrail(scribbitId: string): void {
-    if (this.busy || this.carePicker || this.careMomentOverlay) return;
-    const scribbit = this.state.myScribbits.find(
-      (candidate) => candidate.id === scribbitId
-    );
-    if (!scribbit) return;
-    const step = this.firstChestTrailStep(scribbit);
-    if (!step) {
-      showToast('Keep earning Ink — your first chest is waiting in Shop.');
-      return;
-    }
-    if (step.kind === 'shop') {
-      startScene(this, 'Shop');
-      return;
-    }
-    this.openCarePickerFor(scribbit, step);
   }
 
   private doSpar(scribbit: Scribbit): void {

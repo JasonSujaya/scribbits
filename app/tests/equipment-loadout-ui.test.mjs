@@ -27,7 +27,7 @@ test('client posts the canonical eight-slot equipment mutation', () => {
   }
 });
 
-test('Bag presents a staged Scribbit, eight semantic slots, filters, and a scrollable Gear tray', () => {
+test('Bag presents the mobile Binder, character details, eight slots, and separate Gear and Draw Kit trays', () => {
   const collectionSource = readClientFile('lib', 'collectionbook.ts');
   const cosmeticPreviewSource = readClientFile('lib', 'cosmeticpreview.ts');
   const inventoryGridSource = readClientFile('lib', 'baginventorygrid.ts');
@@ -58,34 +58,48 @@ test('Bag presents a staged Scribbit, eight semantic slots, filters, and a scrol
   );
   assert.match(collectionSource, /drawScribbitPlatform/);
   assert.match(collectionSource, /const BAG_GEAR_TILE_SIZE = 120/);
+  assert.match(collectionSource, /const BAG_EQUIPMENT_SLOT_SIZE = 76/);
+  assert.match(collectionSource, /const BAG_EQUIPMENT_SLOT_HIT_WIDTH = 90/);
+  assert.match(collectionSource, /const BAG_BINDER_WIDTH = 640/);
+  assert.match(collectionSource, /const BAG_BINDER_HEIGHT = 540/);
   assert.match(collectionSource, /cardColumns: 4/);
   assert.match(collectionSource, /inventoryPanelMargin: 18/);
   assert.match(collectionSource, /inventoryContentMargin: 42/);
   assert.match(collectionSource, /cardGap: 18/);
   assert.match(collectionSource, /cardRowGap: 20/);
   assert.match(collectionSource, /cardHeight: BAG_GEAR_TILE_SIZE/);
-  assert.match(collectionSource, /filterOffset: 640/);
-  assert.match(collectionSource, /inventoryTopOffset: 736/);
-  assert.match(collectionSource, /inventoryViewportHeaderHeight: 70/);
+  assert.match(collectionSource, /filterGap: 50/);
+  assert.match(collectionSource, /expandedFilterOffset: 165/);
+  assert.match(collectionSource, /inventoryGap: 78/);
+  assert.match(collectionSource, /inventoryViewportHeaderHeight: 100/);
+  assert.match(collectionSource, /function planBagLayout\(/);
+  assert.match(collectionSource, /if \(layout\.showBinder\)/);
+  assert.match(collectionSource, /SHOW BINDER ↓/);
+  assert.match(collectionSource, /EXPAND ↑/);
+  assert.match(collectionSource, /data-bag-inventory-expanded/);
+  assert.match(collectionSource, /'aria-expanded'/);
   assert.doesNotMatch(collectionSource, /`GEAR WEEK/);
   assert.doesNotMatch(collectionSource, /gearWeekDay\.challenge/);
   assert.match(
     collectionSource,
-    /fitDrawing\(scene\.add\.image\(0, 0, textureKey\), 320\)/
+    /fitDrawing\(scene\.add\.image\(0, 0, textureKey\), 112\)/
   );
   assert.match(
     collectionSource,
     /BAG_GEAR_PREVIEW_BOX = Object\.freeze\(\{[\s\S]*width: 88,[\s\S]*height: 82/
   );
   assert.equal(
-    (collectionSource.match(/\.\.\.BAG_GEAR_PREVIEW_BOX/g) ?? []).length,
-    2,
-    'equipped and inventory Gear must use the same preview box'
+    (collectionSource.match(/: BAG_GEAR_PREVIEW_BOX\)/g) ?? []).length,
+    1,
+    'inventory Gear uses the canonical preview box directly'
   );
-  assert.equal(
-    (collectionSource.match(/size: 104,/g) ?? []).length,
-    2,
-    'equipped and inventory Gear must start from the same authored size'
+  assert.match(
+    collectionSource,
+    /BAG_GEAR_PREVIEW_BOX\.width \* BAG_EQUIPMENT_SLOT_SIZE/
+  );
+  assert.match(
+    collectionSource,
+    /BAG_GEAR_PREVIEW_BOX\.height \* BAG_EQUIPMENT_SLOT_SIZE/
   );
   assert.doesNotMatch(
     collectionSource,
@@ -96,11 +110,30 @@ test('Bag presents a staged Scribbit, eight semantic slots, filters, and a scrol
     characterStageSource,
     /scene\.add\.container\(width \/ 2, centerY\)/
   );
-  assert.doesNotMatch(
+  assert.match(
     characterStageSource,
-    /stickerCard\(/,
-    'the character stage should float directly on the screen without a parent paper card'
+    /binder\.fillRoundedRect\([\s\S]*binder\.strokeRoundedRect\(/
   );
+  assert.match(characterStageSource, /CHANGE SCRIBBIT/);
+  assert.match(characterStageSource, /\.element\.toUpperCase\(\).*ELEMENT/);
+  assert.match(characterStageSource, /DRAWING STYLE/);
+  assert.match(characterStageSource, /MATURE · STATS LOCKED/);
+  assert.match(characterStageSource, /CHONK/);
+  assert.match(characterStageSource, /SPIKE/);
+  assert.match(characterStageSource, /ZIP/);
+  assert.match(characterStageSource, /CHARM/);
+  assert.match(collectionSource, /data-bag-mode/);
+  assert.match(collectionSource, /'draw-kit', label: 'DRAW KIT'/);
+  assert.match(collectionSource, /'colors', label: 'COLORS'/);
+  assert.match(collectionSource, /'brushes', label: 'BRUSHES'/);
+  assert.match(collectionSource, /'titles', label: 'TITLES'/);
+  assert.match(collectionSource, /SELECT WHILE DRAWING/);
+  assert.match(collectionSource, /PERMANENT · ∞ USES/);
+  assert.match(collectionSource, /×\$\{charges\} · 1 USE EACH/);
+  assert.match(collectionSource, /EMPTY · FIND MORE IN MYSTERY INK/);
+  assert.match(cardSource, /entry\.name\.toUpperCase\(\)/);
+  assert.match(cardSource, /const quantityText/);
+  assert.match(cardSource, /emptySupply/);
   assert.match(cosmeticPreviewSource, /fitCosmeticPreviewBounds\(/);
   assert.match(collectionSource, /EQUIPMENT_CATEGORIES\.forEach/);
   assert.match(collectionSource, /\(\[0, 1\] as const\)\.forEach/);
@@ -124,8 +157,8 @@ test('Bag presents a staged Scribbit, eight semantic slots, filters, and a scrol
   assert.match(cardSource, /createBagGearTile\(/);
   assert.equal(
     (collectionSource.match(/createBagGearTile\(/g) ?? []).length,
-    3,
-    'one shared renderer must define and draw both equipped and inventory outer squares'
+    4,
+    'one shared renderer must define and draw empty, equipped, and inventory outer squares'
   );
   assert.match(cardSource, /renderCosmeticPreview\(/);
   assert.match(cardSource, /onActivate: openDetail/);
@@ -149,14 +182,17 @@ test('Bag presents a staged Scribbit, eight semantic slots, filters, and a scrol
   assert.doesNotMatch(collectionSource, /\.setAngle\(index % 2/);
   assert.match(
     collectionSource,
-    /GEAR_SECTION_PRESENTATION\[category\]\.icon[\s\S]*size: 36,[\s\S]*fill: UI\.inkHex/
+    /GEAR_SECTION_PRESENTATION\[category\]\.icon[\s\S]*size: 24,[\s\S]*fill: UI\.paper/
   );
   assert.match(inventoryGridSource, /Math\.round\(x \+ cardWidth \/ 2\)/);
   assert.match(inventoryGridSource, /data-scrollable/);
   assert.match(inventoryGridSource, /data-scroll-maximum/);
   assert.match(inventoryGridSource, /maximumScroll > 0 \? 0\.3 : 0\.16/);
   assert.match(inventoryGridSource, /maximumScroll > 0 \? 0\.95 : 0\.42/);
-  assert.match(collectionSource, /selectedFrame\.lineStyle\(4, UI\.coral, 1\)/);
+  assert.match(
+    collectionSource,
+    /selectedFrame\.lineStyle\(Math\.max\(2, 4 \* scale\), UI\.coral, 1\)/
+  );
   assert.match(collectionSource, /const UNEQUIPPED_GEAR_TILE_COLOR = 0xd6d4cf/);
   assert.match(
     cardSource,
@@ -164,7 +200,7 @@ test('Bag presents a staged Scribbit, eight semantic slots, filters, and a scrol
   );
   assert.match(
     collectionSource,
-    /mutedBackground \? UNEQUIPPED_GEAR_TILE_COLOR : UI\.paper/
+    /emptyBackground[\s\S]*\? UI\.inkHex[\s\S]*UNEQUIPPED_GEAR_TILE_COLOR/
   );
   assert.match(
     overlaySource,
@@ -191,8 +227,9 @@ test('Bag presents a staged Scribbit, eight semantic slots, filters, and a scrol
   assert.match(collectionSource, /actionOverlay\.addStatus\(/);
   assert.match(
     collectionSource,
-    /inventoryBottom = height - BAG_LAYOUT\.inventoryBottomMargin/
+    /inventoryBottom: height - NAV_SAFE - BAG_LAYOUT\.inventoryBottomGap/
   );
+  assert.doesNotMatch(collectionSource, /Math\.max\(260,/);
   assert.match(
     collectionSource,
     /inventoryPanelHeight - BAG_LAYOUT\.inventoryViewportHeaderHeight/
@@ -210,6 +247,14 @@ test('Bag replaces the selected living Scribbit after a successful equip', () =>
     /private build\(\): void \{[\s\S]*CanvasModalOverlay\.destroyAll\(\)/
   );
   assert.match(gallerySource, /private collectionScrollOffset = 0/);
+  assert.match(gallerySource, /private collectionInventoryExpanded = false/);
+  assert.match(
+    gallerySource,
+    /inventoryExpanded: this\.collectionInventoryExpanded/
+  );
+  assert.match(gallerySource, /onInventoryExpandedChange: \(expanded\) =>/);
+  assert.doesNotMatch(gallerySource, /renderDrawChargeInventory/);
+  assert.doesNotMatch(gallerySource, /DRAW CHARGES|PAINT BUCKET/);
   assert.doesNotMatch(gallerySource, /collectionPage/);
   assert.match(gallerySource, /private async updateEquipmentSlot\(/);
   assert.match(gallerySource, /setArena\(this, \{/);

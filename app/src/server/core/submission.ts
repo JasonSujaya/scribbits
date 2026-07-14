@@ -1,5 +1,6 @@
 import {
   type DrawingSupplySelection,
+  type DrawChargeState,
   MAX_ALIVE_PER_USER,
   isGearRank,
   type GearRank,
@@ -43,12 +44,25 @@ import {
   discardWatchedTransaction,
   MAX_WATCH_TRANSACTION_ATTEMPTS,
 } from './storage';
+import {
+  getDrawChargeKey,
+  getDrawChargeRecordFields,
+  loadDrawCharges,
+  planDrawChargeConsumption,
+  type DrawChargeRecord,
+} from './drawCharges';
 
 export type ScribbitSubmissionCommitResult =
-  | Readonly<{ status: 'committed'; recovered: boolean }>
+  | Readonly<{
+      status: 'committed';
+      recovered: boolean;
+      drawCharges: DrawChargeState;
+      enteredRumble: boolean;
+    }>
   | Readonly<{ status: 'rollover' }>
   | Readonly<{ status: 'already-drawn' }>
   | Readonly<{ status: 'already-entered' }>
+  | Readonly<{ status: 'no-draw-charges' }>
   | Readonly<{ status: 'alive-limit' }>
   | Readonly<{ status: 'id-collision' }>
   | Readonly<{ status: 'invalid-accessory'; accessoryId: string }>
@@ -72,6 +86,9 @@ type ExpectedSubmissionState = Readonly<{
   consumableCounts: ReadonlyMap<string, number>;
   currentDateKey: string;
   streakDays: number;
+  drawChargeRecord: DrawChargeRecord;
+  drawCharges: DrawChargeState;
+  enteredRumble: boolean;
 }>;
 
 type StorageTypeExpectation = readonly [key: string, type: string];
@@ -253,6 +270,7 @@ const submissionWasCommitted = async (
     inventory,
     streak,
     hasCreatedScribbit,
+    drawChargeRecord,
   ] = await Promise.all([
     storage.get(getScribbitKey(scribbit.id)),
     storage.get(getScribbitOwnerKey(scribbit.id)),
@@ -265,7 +283,12 @@ const submissionWasCommitted = async (
     storage.hGetAll(getInventoryKey(input.userId)),
     storage.hGetAll(getUserPlayStreakKey(input.userId)),
     storage.get(getUserHasCreatedScribbitKey(input.userId)),
+    storage.hGetAll(getDrawChargeKey(input.userId)),
   ]);
+
+  const expectedDrawChargeRecord = getDrawChargeRecordFields(
+    expected.drawChargeRecord
+  );
 
   if (
     storedJson !== serializeScribbit(scribbit) ||
@@ -275,11 +298,16 @@ const submissionWasCommitted = async (
     userScore !== scribbit.bornDay ||
     aliveScore !== scribbit.bornDay ||
     expiryScore !== scribbit.expiresDay ||
-    rumbleScore !== input.rumbleScore ||
+    (expected.enteredRumble
+      ? rumbleScore !== input.rumbleScore
+      : rumbleScore !== undefined) ||
     inkBalance !== expected.inkBalance.toString() ||
     streak.lastPlayedDateKey !== expected.currentDateKey ||
     streak.streakDays !== expected.streakDays.toString() ||
-    hasCreatedScribbit !== '1'
+    hasCreatedScribbit !== '1' ||
+    drawChargeRecord.available !== expectedDrawChargeRecord.available ||
+    drawChargeRecord['refill-anchor-ms'] !==
+      expectedDrawChargeRecord['refill-anchor-ms']
   ) {
     return false;
   }
@@ -305,12 +333,21 @@ const queueSubmission = async (
   const inventoryUpdates: Record<string, string> = {};
 
   await queueStoredScribbit(transaction, input.userId, expected.scribbit);
-  await transaction.zAdd(getRumbleKey(expected.scribbit.bornDay), {
-    member: expected.scribbit.id,
-    score: input.rumbleScore,
-  });
-  await transaction.hSet(dailyFlagsKey, { drawn: '1', entered: '1' });
+  if (expected.enteredRumble) {
+    await transaction.zAdd(getRumbleKey(expected.scribbit.bornDay), {
+      member: expected.scribbit.id,
+      score: input.rumbleScore,
+    });
+  }
+  await transaction.hSet(
+    dailyFlagsKey,
+    expected.enteredRumble ? { drawn: '1', entered: '1' } : { drawn: '1' }
+  );
   await transaction.expire(dailyFlagsKey, DAILY_FLAG_TTL_SECONDS);
+  await transaction.hSet(
+    getDrawChargeKey(input.userId),
+    getDrawChargeRecordFields(expected.drawChargeRecord)
+  );
   await transaction.set(
     getInkKey(input.userId),
     expected.inkBalance.toString()
@@ -443,6 +480,7 @@ export const commitScribbitSubmission = async (
     const inkKey = getInkKey(input.userId);
     const scribbitKey = getScribbitKey(input.scribbit.id);
     const hasCreatedScribbitKey = getUserHasCreatedScribbitKey(input.userId);
+    const drawChargeKey = getDrawChargeKey(input.userId);
     const currentArenaDayKey = getCurrentArenaDayKey();
     const resolutionClaimsKey = getNightlyResolutionClaimsKey();
     const watchedKeys = [
@@ -455,6 +493,7 @@ export const commitScribbitSubmission = async (
       inkKey,
       scribbitKey,
       hasCreatedScribbitKey,
+      drawChargeKey,
     ];
     const typeExpectations = [
       [currentArenaDayKey, 'string'],
@@ -466,6 +505,7 @@ export const commitScribbitSubmission = async (
       [inkKey, 'string'],
       [scribbitKey, 'string'],
       [hasCreatedScribbitKey, 'string'],
+      [drawChargeKey, 'hash'],
       [getUserScribbitsKey(input.userId), 'zset'],
       [getExpiringScribbitsKey(), 'zset'],
       [getRumbleKey(input.scribbit.bornDay), 'zset'],
@@ -491,6 +531,7 @@ export const commitScribbitSubmission = async (
           storedStreak,
           storedInk,
           storedJson,
+          drawChargeProjection,
         ] = await Promise.all([
           storage.get(currentArenaDayKey),
           storage.hGet(resolutionClaimsKey, input.scribbit.bornDay.toString()),
@@ -500,6 +541,7 @@ export const commitScribbitSubmission = async (
           storage.hGetAll(streakKey),
           storage.get(inkKey),
           storage.get(scribbitKey),
+          loadDrawCharges(storage, input.userId, input.currentDate.getTime()),
         ]);
 
         if (
@@ -509,14 +551,6 @@ export const commitScribbitSubmission = async (
           await transaction.unwatch();
           return { status: 'rollover' };
         }
-        if (dailyFlags.drawn !== undefined) {
-          await transaction.unwatch();
-          return { status: 'already-drawn' };
-        }
-        if (dailyFlags.entered !== undefined) {
-          await transaction.unwatch();
-          return { status: 'already-entered' };
-        }
         if (aliveCount >= MAX_ALIVE_PER_USER) {
           await transaction.unwatch();
           return { status: 'alive-limit' };
@@ -524,6 +558,14 @@ export const commitScribbitSubmission = async (
         if (storedJson !== undefined) {
           await transaction.unwatch();
           return { status: 'id-collision' };
+        }
+        const drawChargePlan = planDrawChargeConsumption(
+          drawChargeProjection.record,
+          input.currentDate.getTime()
+        );
+        if (drawChargePlan.status === 'unavailable') {
+          await transaction.unwatch();
+          return { status: 'no-draw-charges' };
         }
         if (!isStoredNonNegativeSafeInteger(storedInk)) {
           throw new Error('Stored Ink balance is invalid.');
@@ -568,6 +610,9 @@ export const commitScribbitSubmission = async (
           consumableCounts,
           currentDateKey,
           streakDays: nextStreak.days,
+          drawChargeRecord: drawChargePlan.record,
+          drawCharges: drawChargePlan.state,
+          enteredRumble: dailyFlags.entered === undefined,
         };
 
         await transaction.multi();
@@ -575,7 +620,12 @@ export const commitScribbitSubmission = async (
         const result = await transaction.exec();
         if (Array.isArray(result) && result.length > 0) {
           if (await submissionWasCommitted(storage, input, expected)) {
-            return { status: 'committed', recovered: false };
+            return {
+              status: 'committed',
+              recovered: false,
+              drawCharges: expected.drawCharges,
+              enteredRumble: expected.enteredRumble,
+            };
           }
           if (
             await repairSubmission(
@@ -586,7 +636,12 @@ export const commitScribbitSubmission = async (
               typeExpectations
             )
           ) {
-            return { status: 'committed', recovered: true };
+            return {
+              status: 'committed',
+              recovered: true,
+              drawCharges: expected.drawCharges,
+              enteredRumble: expected.enteredRumble,
+            };
           }
           throw new Error('Scribbit submission did not fully commit.');
         }
@@ -594,7 +649,12 @@ export const commitScribbitSubmission = async (
         await discardWatchedTransaction(transaction, 'Scribbit submission');
         if (expected) {
           if (await submissionWasCommitted(storage, input, expected)) {
-            return { status: 'committed', recovered: true };
+            return {
+              status: 'committed',
+              recovered: true,
+              drawCharges: expected.drawCharges,
+              enteredRumble: expected.enteredRumble,
+            };
           }
           if (
             await repairSubmission(
@@ -605,7 +665,12 @@ export const commitScribbitSubmission = async (
               typeExpectations
             )
           ) {
-            return { status: 'committed', recovered: true };
+            return {
+              status: 'committed',
+              recovered: true,
+              drawCharges: expected.drawCharges,
+              enteredRumble: expected.enteredRumble,
+            };
           }
         }
         throw error;

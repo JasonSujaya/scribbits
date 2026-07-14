@@ -41,6 +41,16 @@ export type BattleJournalSummaryPlan = Readonly<{
   finishLine: string;
 }>;
 
+export type BattleJournalCharacterPlan = Readonly<{
+  id: string;
+  name: string;
+}>;
+
+export type PersonalBattleJournalPlan = Readonly<{
+  reports: readonly BattleReport[];
+  characters: readonly BattleJournalCharacterPlan[];
+}>;
+
 function assertUnreachable(value: never): never {
   throw new Error(`Unhandled Battle Scrapbook value: ${String(value)}`);
 }
@@ -159,11 +169,61 @@ export function isScribbitOwnedByViewer(
   return viewer.length > 0 && normalizedUsername(scribbit.artist) === viewer;
 }
 
+/**
+ * Removes spectator/history noise and derives stable character filters from
+ * the same ownership rule used by battle perspective labels.
+ */
+export function planPersonalBattleJournal(
+  reports: readonly BattleReport[],
+  viewerUsername: string | null | undefined,
+  livingOwnedIds?: readonly string[]
+): PersonalBattleJournalPlan {
+  const personalReports: BattleReport[] = [];
+  const charactersById = new Map<string, BattleJournalCharacterPlan>();
+
+  for (const report of orderBattleJournalReports(reports)) {
+    const ownedFighters = [report.a, report.b].filter((fighter) =>
+      isScribbitOwnedByViewer(fighter, viewerUsername, livingOwnedIds)
+    );
+    if (ownedFighters.length === 0) continue;
+
+    personalReports.push(report);
+    for (const fighter of ownedFighters) {
+      if (charactersById.has(fighter.id)) continue;
+      charactersById.set(
+        fighter.id,
+        Object.freeze({
+          id: fighter.id,
+          name: boundedDisplayName(fighter.name),
+        })
+      );
+    }
+  }
+
+  return Object.freeze({
+    reports: Object.freeze(personalReports),
+    characters: Object.freeze([...charactersById.values()]),
+  });
+}
+
+export function filterBattleJournalReportsByCharacter(
+  reports: readonly BattleReport[],
+  characterId: string | null
+): readonly BattleReport[] {
+  if (!characterId) return reports;
+  return Object.freeze(
+    reports.filter(
+      (report) => report.a.id === characterId || report.b.id === characterId
+    )
+  );
+}
+
 function planPerspective(
   report: BattleReport,
   winnerSlot: FighterSlot,
   viewerUsername: string | null | undefined,
-  livingOwnedIds: readonly string[] | undefined
+  livingOwnedIds: readonly string[] | undefined,
+  viewedCharacterId?: string | null
 ): BattleJournalPerspective {
   const ownsFighterA = isScribbitOwnedByViewer(
     report.a,
@@ -176,6 +236,13 @@ function planPerspective(
     livingOwnedIds
   );
   if (!ownsFighterA && !ownsFighterB) return 'watch';
+
+  if (viewedCharacterId === report.a.id && ownsFighterA) {
+    return winnerSlot === 'a' ? 'win' : 'loss';
+  }
+  if (viewedCharacterId === report.b.id && ownsFighterB) {
+    return winnerSlot === 'b' ? 'win' : 'loss';
+  }
 
   const ownsWinner = winnerSlot === 'a' ? ownsFighterA : ownsFighterB;
   return ownsWinner ? 'win' : 'loss';
@@ -215,7 +282,8 @@ function finishLabel(finishKind: BattleJournalFinishKind): string {
 export function planBattleJournalEntry(
   report: BattleReport,
   viewerUsername?: string | null,
-  livingOwnedIds?: readonly string[]
+  livingOwnedIds?: readonly string[],
+  viewedCharacterId?: string | null
 ): BattleJournalEntryPlan {
   const fighterAName = boundedDisplayName(report.a.name);
   const fighterBName = boundedDisplayName(report.b.name);
@@ -232,7 +300,8 @@ export function planBattleJournalEntry(
       report,
       winnerSlot,
       viewerUsername,
-      livingOwnedIds
+      livingOwnedIds,
+      viewedCharacterId
     );
     const plannedFinishLabel = finishLabel(archivedFinish);
     return Object.freeze({
@@ -264,7 +333,8 @@ export function planBattleJournalEntry(
     report,
     recap.winnerSlot,
     viewerUsername,
-    livingOwnedIds
+    livingOwnedIds,
+    viewedCharacterId
   );
   const plannedFinishLabel = finishLabel(plannedFinish);
   return Object.freeze({
@@ -297,7 +367,8 @@ function pluralizedCount(count: number, singular: string): string {
 export function planBattleJournalSummary(
   reports: readonly BattleReport[],
   viewerUsername?: string | null,
-  livingOwnedIds?: readonly string[]
+  livingOwnedIds?: readonly string[],
+  viewedCharacterId?: string | null
 ): BattleJournalSummaryPlan {
   let ownedWins = 0;
   let ownedLosses = 0;
@@ -309,7 +380,8 @@ export function planBattleJournalSummary(
     const entry = planBattleJournalEntry(
       report,
       viewerUsername,
-      livingOwnedIds
+      livingOwnedIds,
+      viewedCharacterId
     );
     if (entry.perspective === 'win') ownedWins += 1;
     if (entry.perspective === 'loss') ownedLosses += 1;

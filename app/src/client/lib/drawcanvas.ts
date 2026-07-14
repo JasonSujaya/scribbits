@@ -20,6 +20,9 @@ export const CANVAS_SIZE = 512;
 // The cream page color is visual-only. The exported backing store stays
 // transparent so the server sees the same pixels as the live analyzer.
 const PAPER_COLOR = '#fdf3df';
+const DARK_PAPER_COLOR = '#57504a';
+
+export type CanvasPreviewMode = 'paper' | 'dark';
 
 export type BrushMode = 'draw' | 'erase' | 'fill';
 export type DrawCanvasChange =
@@ -30,10 +33,15 @@ export type DrawCanvasChange =
   | 'undo'
   | 'redo';
 
+export type PaintUseKind = 'stroke' | 'fill';
+
 export type DrawCanvasOptions = {
   // Called after every completed stroke (pointer-up) so the scene can re-run the
   // live analyzer and animate the stat preview.
   onStrokeEnd: (change: DrawCanvasChange) => void;
+  hasPaint?: () => boolean;
+  requestPaint?: (amount: number, kind: PaintUseKind) => boolean;
+  onPaintBlocked?: () => void;
 };
 
 export type DrawingSubmissionImages = {
@@ -47,6 +55,12 @@ export class DrawCanvas {
   readonly element: HTMLCanvasElement;
   private readonly ctx: CanvasRenderingContext2D;
   private readonly onStrokeEnd: (change: DrawCanvasChange) => void;
+  private readonly hasPaint: () => boolean;
+  private readonly requestPaint: (
+    amount: number,
+    kind: PaintUseKind
+  ) => boolean;
+  private readonly onPaintBlocked: () => void;
 
   private color = '#2b2016';
   private brushSize = 22;
@@ -82,6 +96,9 @@ export class DrawCanvas {
 
   constructor(options: DrawCanvasOptions) {
     this.onStrokeEnd = options.onStrokeEnd;
+    this.hasPaint = options.hasPaint ?? (() => true);
+    this.requestPaint = options.requestPaint ?? (() => true);
+    this.onPaintBlocked = options.onPaintBlocked ?? (() => undefined);
 
     const canvas = document.createElement('canvas');
     canvas.width = CANVAS_SIZE;
@@ -92,7 +109,8 @@ export class DrawCanvas {
     canvas.style.display = 'block';
     // The cream paper shows through CSS so the backing store stays transparent —
     // that way the analyzer (which keys on alpha) only ever sees real strokes.
-    canvas.style.background = PAPER_COLOR;
+    canvas.style.backgroundColor = PAPER_COLOR;
+    canvas.dataset.previewMode = 'paper';
     this.element = canvas;
 
     const context = canvas.getContext('2d', { willReadFrequently: true });
@@ -164,6 +182,14 @@ export class DrawCanvas {
     this.drawing = false;
     this.strokeChanged = false;
     this.activeBounds = null;
+  }
+
+  // Changes only the CSS behind transparent drawing pixels. Analyzer input,
+  // undo snapshots, and exported PNGs keep the exact same backing-store data.
+  setPreviewMode(mode: CanvasPreviewMode): void {
+    this.element.style.backgroundColor =
+      mode === 'dark' ? DARK_PAPER_COLOR : PAPER_COLOR;
+    this.element.dataset.previewMode = mode;
   }
 
   clear(): void {
@@ -378,6 +404,12 @@ export class DrawCanvas {
       return;
     }
 
+    if (this.mode === 'draw' && !this.hasPaint()) {
+      this.onPaintBlocked();
+      this.activeBounds = null;
+      return;
+    }
+
     this.pushHistory();
     this.drawing = true;
     this.strokeChanged = false;
@@ -387,14 +419,7 @@ export class DrawCanvas {
     if (this.mode === 'erase') {
       this.strokeChanged = this.eraseSelectedColorSegment(x, y, x, y) > 0;
     } else {
-      // A dot so single taps register as a mark.
-      this.applyBrush();
-      this.ctx.beginPath();
-      this.ctx.arc(x, y, this.activeBrushWidth() / 2, 0, Math.PI * 2);
-      this.ctx.fillStyle = this.currentStrokeColor();
-      this.ctx.fill();
-      this.flingSpecks(x, y);
-      this.strokeChanged = true;
+      this.strokeChanged = this.paintStrokeSegment(x, y, x, y, true);
     }
     try {
       this.element.setPointerCapture(event.pointerId);
@@ -416,18 +441,95 @@ export class DrawCanvas {
       return;
     }
 
-    this.applyBrush();
-    // Rainbow advances its hue as the stroke travels, so the color is set per
-    // segment; solid/midnight keep a stable base color.
-    this.huePhase = (this.huePhase + 0.02) % 1;
-    this.ctx.strokeStyle = this.currentStrokeColor();
-    this.ctx.beginPath();
-    this.ctx.moveTo(this.lastX, this.lastY);
-    this.ctx.lineTo(x, y);
-    this.ctx.stroke();
-    this.flingSpecks(x, y);
+    if (!this.hasPaint()) {
+      this.onPaintBlocked();
+      this.lastX = x;
+      this.lastY = y;
+      return;
+    }
+
+    this.strokeChanged =
+      this.paintStrokeSegment(this.lastX, this.lastY, x, y, false) ||
+      this.strokeChanged;
     this.lastX = x;
     this.lastY = y;
+  }
+
+  private paintStrokeSegment(
+    startX: number,
+    startY: number,
+    endX: number,
+    endY: number,
+    dot: boolean
+  ): boolean {
+    const padding = Math.ceil(this.activeBrushWidth() * 2.25 + 4);
+    const left = Math.floor(Math.min(startX, endX) - padding);
+    const top = Math.floor(Math.min(startY, endY) - padding);
+    const right = Math.ceil(Math.max(startX, endX) + padding);
+    const bottom = Math.ceil(Math.max(startY, endY) + padding);
+    return this.paintMeasuredRegion(left, top, right, bottom, () => {
+      this.applyBrush();
+      if (dot) {
+        this.ctx.beginPath();
+        this.ctx.arc(
+          endX,
+          endY,
+          this.activeBrushWidth() / 2,
+          0,
+          Math.PI * 2
+        );
+        this.ctx.fillStyle = this.currentStrokeColor();
+        this.ctx.fill();
+      } else {
+        // Rainbow advances its hue as the stroke travels, so the color is set
+        // per segment; solid/midnight keep a stable base color.
+        this.huePhase = (this.huePhase + 0.02) % 1;
+        this.ctx.strokeStyle = this.currentStrokeColor();
+        this.ctx.beginPath();
+        this.ctx.moveTo(startX, startY);
+        this.ctx.lineTo(endX, endY);
+        this.ctx.stroke();
+      }
+      this.flingSpecks(endX, endY);
+    });
+  }
+
+  private paintMeasuredRegion(
+    rawLeft: number,
+    rawTop: number,
+    rawRight: number,
+    rawBottom: number,
+    paint: () => void
+  ): boolean {
+    const left = Math.max(0, rawLeft);
+    const top = Math.max(0, rawTop);
+    const right = Math.min(CANVAS_SIZE, rawRight);
+    const bottom = Math.min(CANVAS_SIZE, rawBottom);
+    const width = right - left;
+    const height = bottom - top;
+    if (width <= 0 || height <= 0) return false;
+
+    const before = this.ctx.getImageData(left, top, width, height);
+    paint();
+    const after = this.ctx.getImageData(left, top, width, height);
+    let changedPixels = 0;
+    for (let offset = 0; offset < before.data.length; offset += 4) {
+      if (
+        before.data[offset] !== after.data[offset] ||
+        before.data[offset + 1] !== after.data[offset + 1] ||
+        before.data[offset + 2] !== after.data[offset + 2] ||
+        before.data[offset + 3] !== after.data[offset + 3]
+      ) {
+        changedPixels += 1;
+      }
+    }
+    if (changedPixels === 0) return false;
+    if (!this.requestPaint(changedPixels, 'stroke')) {
+      this.ctx.putImageData(before, left, top);
+      this.onPaintBlocked();
+      return false;
+    }
+    return true;
   }
 
   // The color for the current stroke segment. Rainbow interpolates through its
@@ -525,6 +627,10 @@ export class DrawCanvas {
   }
 
   private fillRegion(x: number, y: number): void {
+    if (!this.hasPaint()) {
+      this.onPaintBlocked();
+      return;
+    }
     const imageData = this.ctx.getImageData(0, 0, CANVAS_SIZE, CANVAS_SIZE);
     const changedPixels = floodFillRegion(
       imageData.data,
@@ -535,6 +641,11 @@ export class DrawCanvas {
       this.fillColor
     );
     if (changedPixels === 0) return;
+
+    if (!this.requestPaint(changedPixels, 'fill')) {
+      this.onPaintBlocked();
+      return;
+    }
 
     // Capture the original canvas only after confirming the click changes a
     // region, so a no-op fill preserves both undo and redo history.

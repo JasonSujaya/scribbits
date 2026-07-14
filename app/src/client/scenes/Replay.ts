@@ -10,17 +10,25 @@ import {
   getReplayFounderChronicleBeat,
   getReplayFounderRivalryStakes,
   getReplaySparReward,
+  getReplayPowerUpOffer,
+  clearReplayPowerUpOffer,
   getReplayReturn,
   getReplayPass,
   getArena,
   setArena,
   setFounderChronicleBeats,
   setArenaFocus,
-  setFirstChestTrail,
 } from '../lib/registry';
 import { loadDrawing, levelOf } from '../lib/scribbits';
 import { ELEMENT_STYLES, prefersReducedMotion, UI } from '../lib/theme';
-import { daysLeftFor, label, startScene, stickerCard } from '../lib/ui';
+import {
+  daysLeftFor,
+  ghostButton,
+  label,
+  startScene,
+  stickerCard,
+} from '../lib/ui';
+import { CanvasActionOverlay } from '../lib/overlay';
 import { openDetailModal } from '../lib/detailmodal';
 import { LiveSprite } from '../lib/livesprite';
 import {
@@ -90,6 +98,10 @@ import { createPostFightActions } from '../lib/replaypostfightactions';
 import type { PostFightActions } from '../lib/replaypostfightactions';
 import { planReplayPostFightEligibility } from '../lib/replaypostfighteligibility';
 import { planReplayReward } from '../lib/replayreward';
+import {
+  openPowerUpDraft,
+  type PowerUpDraftHandle,
+} from '../lib/powerupdraft';
 import { createPracticeOutcomeControls } from '../lib/replaypracticeoutcome';
 import {
   showSavedReplayIntro,
@@ -150,6 +162,7 @@ import {
   COMBAT_TICK_RATE,
   DEFAULT_COMBAT_RULES,
 } from '../../shared/combat/config';
+import { POWER_UP_CATALOG } from '../../shared/combat/powerups';
 import {
   selectCombatRole,
   selectPrimaryPower,
@@ -241,6 +254,11 @@ type EchoAndBattleFlowTimelineEvent = Extract<
   }
 >;
 
+type PowerUpTimelineEvent = Extract<
+  BattleTimelineEvent,
+  { kind: 'power_up_triggered' }
+>;
+
 // Battle theater — the demo moment. On WebGL, each submitted PNG is a Phaser
 // 4.2 Mesh2D Inkbody: 25 vertices breathe, telegraph its shape-powered move,
 // ripple on impact, and fold on KO. Canvas retains the 3x3 slice fallback.
@@ -279,7 +297,9 @@ export class Replay extends Scene {
   private arenaRefreshLoading = false;
   private rivalRunFlow: RivalRunFlow | null = null;
   private postFightActions: PostFightActions | null = null;
+  private powerUpDraft: PowerUpDraftHandle | null = null;
   private savedReplayIntro: SavedReplayIntro | null = null;
+  private savedReplayExitOverlay: CanvasActionOverlay | null = null;
   private battleClipRecorder: BattleClipRecorder | null = null;
   private battleClipPromise: Promise<BattleClip | null> | null = null;
   private sharedBattleClipUrl: string | null = null;
@@ -326,7 +346,9 @@ export class Replay extends Scene {
     this.arenaRefreshLoading = false;
     this.rivalRunFlow = null;
     this.postFightActions = null;
+    this.powerUpDraft = null;
     this.savedReplayIntro = null;
+    this.savedReplayExitOverlay = null;
     this.battleClipRecorder = null;
     this.battleClipPromise = null;
     this.sharedBattleClipUrl = null;
@@ -394,6 +416,7 @@ export class Replay extends Scene {
     this.weaponFxRenderer = new WeaponFxRenderer(this, this.reduceMotion);
     this.roleWeaponRenderer = new RoleWeaponRenderer(this, this.reduceMotion);
     this.buildArena();
+    this.buildSavedReplayExit();
     this.recordDebugPlaybackState('live');
 
     this.events.once('shutdown', () => {
@@ -401,8 +424,12 @@ export class Replay extends Scene {
       this.rivalRunFlow = null;
       this.postFightActions?.destroy();
       this.postFightActions = null;
+      this.powerUpDraft?.destroy();
+      this.powerUpDraft = null;
       this.savedReplayIntro?.destroy();
       this.savedReplayIntro = null;
+      this.savedReplayExitOverlay?.destroy();
+      this.savedReplayExitOverlay = null;
       this.battleClipRecorder?.cancel();
       this.battleClipRecorder = null;
       this.battleHud?.stopHeartAnimations();
@@ -511,6 +538,18 @@ export class Replay extends Scene {
     }
   }
 
+  private buildSavedReplayExit(): void {
+    if (!this.isSavedReplay()) return;
+
+    ghostButton(this, 58, 58, '‹', () => this.exit(), 88).setDepth(3_000);
+    this.savedReplayExitOverlay = new CanvasActionOverlay(this);
+    this.savedReplayExitOverlay.add({
+      label: this.returnButtonLabel(),
+      rect: { x: 14, y: 14, width: 88, height: 88 },
+      onActivate: () => this.exit(),
+    });
+  }
+
   private createFighterRuntime(
     side: 'a' | 'b',
     transcriptFighter?: ReplayFrame['fighters'][number]
@@ -594,6 +633,7 @@ export class Replay extends Scene {
   private openIntroDetail(scribbit: Scribbit): void {
     const arena = getArena(this);
     const mine = this.isMine(scribbit);
+    const returnScene = getReplayReturn(this);
     openDetailModal(this, scribbit, {
       currentDay: arena?.dayNumber ?? scribbit.expiresDay,
       ...(arena?.rumbleResolvesAt === undefined
@@ -601,8 +641,8 @@ export class Replay extends Scene {
         : { nextArenaDayStartsAt: arena.rumbleResolvesAt }),
       mine,
       actions: {},
-      onRemoved: () => this.scene.start('MyBattles'),
-      onReported: () => this.scene.start('MyBattles'),
+      onRemoved: () => this.scene.start(returnScene),
+      onReported: () => this.scene.start(returnScene),
     });
   }
 
@@ -960,9 +1000,39 @@ export class Replay extends Scene {
       case 'fighter_collision':
         this.presentArenaAndCollisionEvent(event);
         return;
+      case 'power_up_triggered':
+        this.presentPowerUpEvent(event);
+        return;
       default:
         this.assertNeverTimelineEvent(event);
     }
+  }
+
+  private presentPowerUpEvent(event: PowerUpTimelineEvent): void {
+    const fighter = this.fighterForSlot(event.actor);
+    const callout = label(
+      this,
+      fighter.screenX,
+      fighter.screenY - 120,
+      POWER_UP_CATALOG[event.powerUpId].name.toUpperCase(),
+      21,
+      UI.goldText,
+      true
+    )
+      .setDepth(90)
+      .setStroke(UI.ink, 5);
+    if (this.reduceMotion) {
+      this.time.delayedCall(450, () => callout.destroy());
+      return;
+    }
+    this.tweens.add({
+      targets: callout,
+      y: callout.y - 34,
+      alpha: 0,
+      duration: 650,
+      ease: 'Cubic.easeOut',
+      onComplete: () => callout.destroy(),
+    });
   }
 
   private presentAbilityLifecycleEvent(
@@ -2606,6 +2676,39 @@ export class Replay extends Scene {
       onReturn: () => this.exit(),
     });
     this.postFightActions.container.setDepth(61);
+    const powerUpOffer = getReplayPowerUpOffer(this);
+    if (powerUpOffer && this.isMine(winner.scribbit)) {
+      this.time.delayedCall(this.reduceMotion ? 0 : 360, () => {
+        if (!this.scene.isActive()) return;
+        const ownedPowerUpCount = winner.scribbit.powerUpIds?.length ?? 0;
+        this.powerUpDraft?.destroy();
+        this.powerUpDraft = openPowerUpDraft(
+          this,
+          powerUpOffer,
+          ownedPowerUpCount,
+          (selectedId) => {
+            const nextPowerUpIds = [
+              ...(winner.scribbit.powerUpIds ?? []),
+              selectedId,
+            ];
+            winner.scribbit.powerUpIds = nextPowerUpIds;
+            const arena = getArena(this);
+            if (arena) {
+              setArena(this, {
+                ...arena,
+                myScribbits: arena.myScribbits.map((scribbit) =>
+                  scribbit.id === winner.scribbit.id
+                    ? { ...scribbit, powerUpIds: [...nextPowerUpIds] }
+                    : scribbit
+                ),
+              });
+            }
+            clearReplayPowerUpOffer(this);
+            this.powerUpDraft = null;
+          }
+        );
+      });
+    }
   }
 
   // Loss flow — no dead ends. Lifespan remaining + a server-authored rival
@@ -2720,7 +2823,9 @@ export class Replay extends Scene {
       case 'Gallery':
         return 'LEGACY';
       case 'MyBattles':
-        return 'SCRAPBOOK';
+        return 'ARENA';
+      case 'BattleHistory':
+        return 'HISTORY';
       case 'ScoutNotebook':
         return 'SCOUT';
       case 'ArenaHome':
@@ -2786,7 +2891,9 @@ export class Replay extends Scene {
       case 'Gallery':
         return 'Open Legacy Book';
       case 'MyBattles':
-        return 'Back to Battle Scrapbook';
+        return 'Back to Arena';
+      case 'BattleHistory':
+        return 'Back to Past Battles';
       case 'ScoutNotebook':
         return 'Back to Scout Notebook';
       case 'ArenaHome':
@@ -2928,11 +3035,7 @@ export class Replay extends Scene {
         startScene(this, 'Shop');
         return;
       }
-      if (step?.kind === 'care') {
-        setFirstChestTrail(this, destination.scribbitId);
-      } else {
-        showToast('Keep earning Ink — your first chest is waiting in Shop.');
-      }
+      showToast('Keep earning Ink — your first chest is waiting in Shop.');
       startScene(this, 'ArenaHome');
       return;
     }

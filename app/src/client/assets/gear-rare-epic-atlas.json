@@ -2,262 +2,262 @@
   "frames": {
     "top-hat": {
       "frame": {
-        "x": 28,
-        "y": 16,
-        "w": 124,
-        "h": 104
+        "x": 24,
+        "y": 30,
+        "w": 208,
+        "h": 195
       },
       "rotated": false,
       "trimmed": false,
       "spriteSourceSize": {
         "x": 0,
         "y": 0,
-        "w": 124,
-        "h": 104
+        "w": 208,
+        "h": 195
       },
       "sourceSize": {
-        "w": 124,
-        "h": 104
+        "w": 208,
+        "h": 195
       }
     },
     "cape": {
       "frame": {
-        "x": 204,
-        "y": 15,
-        "w": 135,
-        "h": 105
+        "x": 280,
+        "y": 53,
+        "w": 208,
+        "h": 150
       },
       "rotated": false,
       "trimmed": false,
       "spriteSourceSize": {
         "x": 0,
         "y": 0,
-        "w": 135,
-        "h": 105
+        "w": 208,
+        "h": 150
       },
       "sourceSize": {
-        "w": 135,
-        "h": 105
+        "w": 208,
+        "h": 150
       }
     },
     "headphones": {
       "frame": {
-        "x": 394,
-        "y": 15,
-        "w": 116,
-        "h": 106
+        "x": 540,
+        "y": 24,
+        "w": 200,
+        "h": 208
       },
       "rotated": false,
       "trimmed": false,
       "spriteSourceSize": {
         "x": 0,
         "y": 0,
-        "w": 116,
-        "h": 106
+        "w": 200,
+        "h": 208
       },
       "sourceSize": {
-        "w": 116,
-        "h": 106
+        "w": 200,
+        "h": 208
       }
     },
     "eyepatch-scar": {
       "frame": {
-        "x": 566,
-        "y": 22,
-        "w": 134,
-        "h": 91
+        "x": 792,
+        "y": 58,
+        "w": 208,
+        "h": 140
       },
       "rotated": false,
       "trimmed": false,
       "spriteSourceSize": {
         "x": 0,
         "y": 0,
-        "w": 134,
-        "h": 91
+        "w": 208,
+        "h": 140
       },
       "sourceSize": {
-        "w": 134,
-        "h": 91
+        "w": 208,
+        "h": 140
       }
     },
     "propeller-cap": {
       "frame": {
-        "x": 16,
-        "y": 150,
-        "w": 149,
-        "h": 107
+        "x": 24,
+        "y": 284,
+        "w": 208,
+        "h": 200
       },
       "rotated": false,
       "trimmed": false,
       "spriteSourceSize": {
         "x": 0,
         "y": 0,
-        "w": 149,
-        "h": 107
+        "w": 208,
+        "h": 200
       },
       "sourceSize": {
-        "w": 149,
-        "h": 107
+        "w": 208,
+        "h": 200
       }
     },
     "inkquake-crater-crown": {
       "frame": {
-        "x": 204,
-        "y": 146,
-        "w": 134,
-        "h": 115
+        "x": 280,
+        "y": 314,
+        "w": 208,
+        "h": 140
       },
       "rotated": false,
       "trimmed": false,
       "spriteSourceSize": {
         "x": 0,
         "y": 0,
-        "w": 134,
-        "h": 115
+        "w": 208,
+        "h": 140
       },
       "sourceSize": {
-        "w": 134,
-        "h": 115
+        "w": 208,
+        "h": 140
       }
     },
     "smearstep-ink-skates": {
       "frame": {
-        "x": 386,
-        "y": 150,
-        "w": 133,
-        "h": 108
+        "x": 536,
+        "y": 281,
+        "w": 208,
+        "h": 205
       },
       "rotated": false,
       "trimmed": false,
       "spriteSourceSize": {
         "x": 0,
         "y": 0,
-        "w": 133,
-        "h": 108
+        "w": 208,
+        "h": 205
       },
       "sourceSize": {
-        "w": 133,
-        "h": 108
+        "w": 208,
+        "h": 205
       }
     },
     "golden-crown": {
       "frame": {
-        "x": 562,
-        "y": 143,
-        "w": 143,
-        "h": 122
+        "x": 792,
+        "y": 302,
+        "w": 208,
+        "h": 163
       },
       "rotated": false,
       "trimmed": false,
       "spriteSourceSize": {
         "x": 0,
         "y": 0,
-        "w": 143,
-        "h": 122
+        "w": 208,
+        "h": 163
       },
       "sourceSize": {
-        "w": 143,
-        "h": 122
+        "w": 208,
+        "h": 163
       }
     },
     "dragon-wings": {
       "frame": {
-        "x": 9,
-        "y": 296,
-        "w": 163,
-        "h": 87
+        "x": 24,
+        "y": 582,
+        "w": 208,
+        "h": 116
       },
       "rotated": false,
       "trimmed": false,
       "spriteSourceSize": {
         "x": 0,
         "y": 0,
-        "w": 163,
-        "h": 87
+        "w": 208,
+        "h": 116
       },
       "sourceSize": {
-        "w": 163,
-        "h": 87
+        "w": 208,
+        "h": 116
       }
     },
     "nib-halo-circlet": {
       "frame": {
-        "x": 210,
-        "y": 286,
-        "w": 122,
-        "h": 108
+        "x": 280,
+        "y": 551,
+        "w": 208,
+        "h": 177
       },
       "rotated": false,
       "trimmed": false,
       "spriteSourceSize": {
         "x": 0,
         "y": 0,
-        "w": 122,
-        "h": 108
+        "w": 208,
+        "h": 177
       },
       "sourceSize": {
-        "w": 122,
-        "h": 108
+        "w": 208,
+        "h": 177
       }
     },
     "colorburst-prism-crown": {
       "frame": {
-        "x": 387,
-        "y": 284,
-        "w": 131,
-        "h": 112
+        "x": 536,
+        "y": 547,
+        "w": 208,
+        "h": 186
       },
       "rotated": false,
       "trimmed": false,
       "spriteSourceSize": {
         "x": 0,
         "y": 0,
-        "w": 131,
-        "h": 112
+        "w": 208,
+        "h": 186
       },
       "sourceSize": {
-        "w": 131,
-        "h": 112
+        "w": 208,
+        "h": 186
       }
     },
     "comet-crayon-blade": {
       "frame": {
-        "x": 556,
-        "y": 285,
-        "w": 154,
-        "h": 110
+        "x": 813,
+        "y": 536,
+        "w": 165,
+        "h": 208
       },
       "rotated": false,
       "trimmed": false,
       "spriteSourceSize": {
         "x": 0,
         "y": 0,
-        "w": 154,
-        "h": 110
+        "w": 165,
+        "h": 208
       },
       "sourceSize": {
-        "w": 154,
-        "h": 110
+        "w": 165,
+        "h": 208
       }
     },
     "rocket-eraser-boots": {
       "frame": {
-        "x": 18,
-        "y": 423,
-        "w": 145,
-        "h": 106
+        "x": 24,
+        "y": 802,
+        "w": 208,
+        "h": 187
       },
       "rotated": false,
       "trimmed": false,
       "spriteSourceSize": {
         "x": 0,
         "y": 0,
-        "w": 145,
-        "h": 106
+        "w": 208,
+        "h": 187
       },
       "sourceSize": {
-        "w": 145,
-        "h": 106
+        "w": 208,
+        "h": 187
       }
     }
   },
@@ -267,8 +267,8 @@
     "image": "gear-rare-epic-atlas.png",
     "format": "RGBA8888",
     "size": {
-      "w": 724,
-      "h": 544
+      "w": 1024,
+      "h": 1024
     },
     "scale": "1"
   }

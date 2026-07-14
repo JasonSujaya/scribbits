@@ -1,6 +1,7 @@
 import type { CombatRole, DominantStat, PrimaryPower } from './types';
 
 export type CombatRange = 'close' | 'long' | 'medium' | 'medium-long';
+export type CombatRoleIcon = 'sword' | 'target' | 'gun' | 'spark';
 
 export type CombatRoleContent = Readonly<{
   id: CombatRole;
@@ -16,7 +17,7 @@ export type CombatRoleContent = Readonly<{
   behavior: string;
   strength: string;
   weakness: string;
-  icon: 'fist' | 'crosshair' | 'blaster' | 'orb';
+  icon: CombatRoleIcon;
 }>;
 
 export type CombatRoleRules = Readonly<{
@@ -54,14 +55,14 @@ export const COMBAT_ROLE_CONTENT: Readonly<
     signaturePower: 'inkquake',
     range: 'close',
     rangeLabel: 'CLOSE RANGE',
-    drawingCue: 'Big, filled bodies',
+    drawingCue: 'Coral fighter style',
     weaponName: 'Ink Fists',
     basicAttackName: 'Body Slam',
     signatureName: 'Inkquake',
     behavior: 'Closes distance and breaks charged attacks.',
     strength: 'Closes on Mage before the cast completes.',
     weakness: 'Longshot can punish its direct approach.',
-    icon: 'fist',
+    icon: 'sword',
   }),
   longshot: Object.freeze({
     id: 'longshot',
@@ -70,14 +71,14 @@ export const COMBAT_ROLE_CONTENT: Readonly<
     signaturePower: 'nib_halo',
     range: 'long',
     rangeLabel: 'LONG RANGE',
-    drawingCue: 'Sharp, jagged edges',
+    drawingCue: 'Blue fighter style',
     weaponName: 'Quill Launcher',
     basicAttackName: 'Piercing Quill',
     signatureName: 'Nib Volley',
     behavior: 'Keeps its distance and lines up heavy quill shots.',
     strength: 'Lines up Brawler during its approach.',
     weakness: 'Gunner pressure interrupts its slow aim.',
-    icon: 'crosshair',
+    icon: 'target',
   }),
   gunner: Object.freeze({
     id: 'gunner',
@@ -86,14 +87,14 @@ export const COMBAT_ROLE_CONTENT: Readonly<
     signaturePower: 'smearstep',
     range: 'medium',
     rangeLabel: 'MID RANGE',
-    drawingCue: 'Small, compact shapes',
+    drawingCue: 'Green fighter style',
     weaponName: 'Ink Blaster',
     basicAttackName: 'Ink Burst',
     signatureName: 'Smearstep Barrage',
     behavior: 'Strafes, fires short bursts, and reloads in the open.',
     strength: 'Suppresses Longshot before the quill is ready.',
     weakness: 'Mage barriers and area attacks trap its firing lane.',
-    icon: 'blaster',
+    icon: 'gun',
   }),
   mage: Object.freeze({
     id: 'mage',
@@ -102,14 +103,14 @@ export const COMBAT_ROLE_CONTENT: Readonly<
     signaturePower: 'colorburst',
     range: 'medium-long',
     rangeLabel: 'RANGED MAGIC',
-    drawingCue: 'Many distinct colors',
+    drawingCue: 'Purple fighter style',
     weaponName: 'Palette Orb',
     basicAttackName: 'Color Bolt',
     signatureName: 'Colorburst',
     behavior: 'Channels a visible cast, releases it, then retreats.',
     strength: 'Controls Gunner firing lanes with barriers and color.',
     weakness: 'Brawler can interrupt its channel at close range.',
-    icon: 'orb',
+    icon: 'spark',
   }),
 });
 

@@ -266,7 +266,9 @@ export function planBattleRecap(transcript: BattleTranscript): BattleRecapPlan {
     loserSlot,
     winnerName: winnerFighter.name,
     loserName: loserFighter.name,
-    winnerElement: winnerFighter.element,
+    // v5 Power-Up transcripts no longer carry Element. Legacy replays keep
+    // their old accent; new fights use the neutral coral palette.
+    winnerElement: winnerFighter.element ?? 'ember',
     headline: headlineForReason(result.reason, winnerFighter.name),
     verdictLine: `${formatDuration(result.completedMilliseconds)} • INK LEFT ${winnerResult.finalHitPoints}/${winnerResult.maxHitPoints} vs ${loserResult.finalHitPoints}/${loserResult.maxHitPoints}`,
     tapeLine: `${winnerResult.damageDealt} TOTAL DAMAGE • ${winnerMove.toUpperCase()}`,

@@ -9,6 +9,7 @@ import { ArenaHome } from './scenes/ArenaHome';
 import { Draw } from './scenes/Draw';
 import { Replay } from './scenes/Replay';
 import { MyBattles } from './scenes/MyBattles';
+import { BattleHistory } from './scenes/BattleHistory';
 import { Gallery } from './scenes/Gallery';
 import { Shop } from './scenes/Shop';
 import { Bestiary } from './scenes/Bestiary';
@@ -29,10 +30,7 @@ import { showVsCeremony } from './lib/battleceremony';
 import { isLocalDrawAutomationRequest } from './lib/drawautomation';
 import { initializeLocalization, localizeDocument } from './lib/localization';
 import { installSfx } from './lib/sfx';
-import {
-  markGameBootPhase,
-  reportGameBootError,
-} from './lib/gameboot';
+import { markGameBootPhase, reportGameBootError } from './lib/gameboot';
 
 initializeLocalization();
 localizeDocument();
@@ -66,6 +64,7 @@ const config: Phaser.Types.Core.GameConfig = {
     Draw,
     Replay,
     MyBattles,
+    BattleHistory,
     Gallery,
     Shop,
     ScoutNotebook,

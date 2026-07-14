@@ -17,12 +17,20 @@ test('Undo and Redo stay together on the main drawing toolbar', () => {
     drawSource.indexOf('this.setAdvancedToolsOpen(false)')
   );
 
-  assert.match(basicToolbarSource, /this\.undoToolButton = this\.toolIconButton/);
-  assert.match(basicToolbarSource, /this\.redoToolButton = this\.toolIconButton/);
   assert.match(
     basicToolbarSource,
-    /this\.undoToolButton[\s\S]*this\.redoToolButton[\s\S]*this\.moreToolsButton/
+    /this\.undoToolButton = this\.toolIconButton/
   );
+  assert.match(
+    basicToolbarSource,
+    /this\.redoToolButton = this\.toolIconButton/
+  );
+  assert.match(
+    basicToolbarSource,
+    /this\.undoToolButton[\s\S]*this\.redoToolButton/
+  );
+  assert.doesNotMatch(basicToolbarSource, /this\.moreToolsButton/);
+  assert.match(drawSource, /private buildDrawingSettingsControl\(\): void/);
   assert.match(drawSource, /'Undo last stroke'/);
   assert.match(drawSource, /'Redo last stroke'/);
   assert.doesNotMatch(advancedToolbarSource, /this\.redoToolButton/);

@@ -1,4 +1,4 @@
-// Player-facing Shape Power content shared by drawing, server reports, and
+// Player-facing fighter-style power content shared by drawing, server reports, and
 // replay. Combat numbers stay in config.ts; this file only owns stable names
 // and concise explanations so presentation copy cannot drift between layers.
 
@@ -39,38 +39,38 @@ export const SHAPE_POWER_CONTENT_BY_POWER: Readonly<
 > = Object.freeze({
   inkquake: Object.freeze({
     displayName: 'Inkquake',
-    drawingCue: 'Big, filled bodies',
+    drawingCue: 'Coral style',
     fieldGuideCue: 'More HP',
     revealLine: 'Shockwave + knockback',
     receiptEffect: 'Expanding shockwave',
-    playerHint: 'Filled bodies launch an expanding shockwave.',
+    playerHint: 'Coral style launches an expanding shockwave.',
     noCleanHitCallout: 'RING ENDS',
   }),
   nib_halo: Object.freeze({
     displayName: 'Nib Halo',
-    drawingCue: 'Sharp edges',
+    drawingCue: 'Blue style',
     fieldGuideCue: 'Sharp edge',
     revealLine: '3 quills + dead zone',
     receiptEffect: '3 rotating quills',
-    playerHint: 'Jagged edges summon three rotating quills.',
+    playerHint: 'Blue style summons three rotating quills.',
     noCleanHitCallout: 'NIBS SETTLE',
   }),
   smearstep: Object.freeze({
     displayName: 'Smearstep',
-    drawingCue: 'Small, compact shapes',
+    drawingCue: 'Green style',
     fieldGuideCue: 'Faster move',
     revealLine: 'Predictive double dash',
     receiptEffect: 'Predictive double dash',
-    playerHint: 'Compact shapes predict and dash twice.',
+    playerHint: 'Green style predicts and dashes twice.',
     noCleanHitCallout: 'DASH ENDS',
   }),
   colorburst: Object.freeze({
     displayName: 'Colorburst',
-    drawingCue: 'More colors',
+    drawingCue: 'Purple style',
     fieldGuideCue: 'More crit',
     revealLine: 'Cone + delayed echo',
     receiptEffect: 'Cone + delayed echo',
-    playerHint: 'More colors fire a cone and delayed echo.',
+    playerHint: 'Purple style fires a cone and delayed echo.',
     noCleanHitCallout: 'CONE FADES',
   }),
 });
@@ -208,13 +208,17 @@ export function getDamageSourceDisplayName(
       : `${getShapePowerDisplayName('colorburst')} Echo`;
   }
   if (source === 'ember_burn') return 'Ember afterburn';
+  if (source === 'power_up') return 'Power-Up';
   if (source === 'nib_wall_recoil') return 'recoiling nib';
   if (source === 'contact') return 'body check';
   if (source === 'brawler_slam') return 'Body Slam';
   if (source === 'longshot_quill') return 'Piercing Quill';
   if (source === 'gunner_shot') return 'Ink Blaster';
   if (source === 'mage_bolt') return 'Color Bolt';
-  return element
-    ? getShapePowerSignatureName(element, source)
-    : getShapePowerDisplayName(source);
+  if (isShapePowerId(source)) {
+    return element
+      ? getShapePowerSignatureName(element, source)
+      : getShapePowerDisplayName(source);
+  }
+  return 'Power-Up';
 }

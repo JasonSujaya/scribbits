@@ -35,6 +35,7 @@ import {
 } from './moderation';
 import { removeScribbitCompletely } from './removal';
 import { getUserPlayStreakKey } from './streak';
+import { getDailyLoginKey } from './dailyLogin';
 import { getLegacyIndexVersionKey, getLegacySeenDayKey } from './legacy';
 import {
   getFounderChronicleKey,
@@ -49,6 +50,8 @@ import {
   type PlayerDataDeletionLease,
 } from './dataDeletion';
 import { getRivalRunKey } from './rivalRun';
+import { getDrawChargeKey } from './drawCharges';
+import { getPaintBucketKey } from './paintBucket';
 import {
   deleteFreeDrawingsForUser,
   getUserFreeDrawingDayKey,
@@ -222,10 +225,13 @@ const deletePlayerDataRecords = async (
     getUserBattlesKey(userId),
     getInkKey(userId),
     getInventoryKey(userId),
+    getDrawChargeKey(userId),
+    getPaintBucketKey(userId),
     getPullsSinceEpicKey(userId),
     getCapsulePullCountKey(userId),
     getUserDailySparWinRewardsKey(userId),
     getUserPlayStreakKey(userId),
+    getDailyLoginKey(userId),
     getUserHiddenScribbitsKey(userId),
     getUserReportedScribbitsKey(userId),
     getUserBeliefTargetsKey(userId),

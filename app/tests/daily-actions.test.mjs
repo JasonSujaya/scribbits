@@ -14,7 +14,6 @@ const require = createRequire(import.meta.url);
 const dailyActions = require(
   join(compiledServerRoot, 'core', 'dailyActions.js')
 );
-const inkStore = require(join(compiledServerRoot, 'core', 'inkStore.js'));
 const scribbitStore = require(join(compiledServerRoot, 'core', 'scribbit.js'));
 
 const createScribbit = (overrides = {}) => ({
@@ -41,24 +40,19 @@ const createScribbit = (overrides = {}) => ({
   legacy: null,
 });
 
-test('Care recovers an EXEC reply loss without duplicate XP or Ink', async () => {
+test('Care recovers an EXEC reply loss without duplicate XP', async () => {
   const memory = createMemoryStorage({ loseNextCommitReply: true });
-  const userId = 'care-player';
   const scribbit = createScribbit({ id: 'care-scribbit' });
   const scribbitKey = scribbitStore.getScribbitKey(scribbit.id);
-  const inkKey = inkStore.getInkKey(userId);
   const input = {
-    userId,
     scribbitId: scribbit.id,
     action: 'feed',
     utcDateKey: '20260713',
     operationId: 'care-operation-1',
     claimedAtMilliseconds: 1_000,
-    inkAward: 2,
   };
 
   await memory.storage.set(scribbitKey, JSON.stringify(scribbit));
-  await memory.storage.set(inkKey, '5');
 
   const firstResult = await dailyActions.commitDailyCareAction(
     memory.storage,
@@ -69,7 +63,6 @@ test('Care recovers an EXEC reply loss without duplicate XP or Ink', async () =>
   const committedScribbit = JSON.parse(await memory.storage.get(scribbitKey));
   const committedXp = committedScribbit.xp;
   assert.ok(committedXp > 0);
-  assert.equal(await memory.storage.get(inkKey), '7');
 
   const sameOperationRetry = await dailyActions.commitDailyCareAction(
     memory.storage,
@@ -81,7 +74,6 @@ test('Care recovers an EXEC reply loss without duplicate XP or Ink', async () =>
     JSON.parse(await memory.storage.get(scribbitKey)).xp,
     committedXp
   );
-  assert.equal(await memory.storage.get(inkKey), '7');
 
   const newOperationRetry = await dailyActions.commitDailyCareAction(
     memory.storage,
@@ -92,7 +84,6 @@ test('Care recovers an EXEC reply loss without duplicate XP or Ink', async () =>
     JSON.parse(await memory.storage.get(scribbitKey)).xp,
     committedXp
   );
-  assert.equal(await memory.storage.get(inkKey), '7');
 });
 
 test('Champion retries resume one deterministic report and one outcome', async () => {

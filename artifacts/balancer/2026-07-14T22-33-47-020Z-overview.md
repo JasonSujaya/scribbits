@@ -1,0 +1,33 @@
+# Scribbits Balance Overview
+
+Generated: 2026-07-14T22:33:47.030Z
+
+No live tuning was changed. This is simulation evidence only.
+
+| Suite | Fights | Rows | Flags |
+| --- | ---: | ---: | ---: |
+| Role Matrix | 2560 | 16 | 8 |
+| Growing Progression | 6144 | 64 | 41 |
+| Power-Up Combos | 7680 | 24 | 24 |
+| Rival Run Risk | 1536 | 12 | 6 |
+| Three-Day Growing Loop | 72 | 4 | 1 |
+| Reward Path | 400 | 5 | 5 |
+| Rival Run Advancement Flow | 24 | 4 | 0 |
+| Generated Opponent Pool | 3072 | 4 | 1 |
+| Gear + Power-Up Interaction | 1600 | 5 | 3 |
+| Role Classification Edge Cases | 1600 | 20 | 17 |
+| Fight Feel Metrics | 5880 | 49 | 30 |
+
+Reports:
+
+- role-matrix.md
+- growth-progression.md
+- powerup-combos.md
+- rival-run-risk.md
+- three-day-loop.md
+- reward-path.md
+- rival-run-flow.md
+- generated-pool.md
+- gear-powerups.md
+- role-edges.md
+- fight-feel.md

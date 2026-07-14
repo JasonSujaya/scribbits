@@ -8,6 +8,7 @@ import type {
   BattleReport,
   CareAction,
   CareResponse,
+  DailyLoginClaimResponse,
   CapsulePullResponse,
   CloutBoard,
   DirectBattleResponse,
@@ -31,7 +32,11 @@ import type {
   SparRequest,
   SparRivalSlate,
   SplashState,
+  SubmitScribbitResponse,
+  ChoosePowerUpRequest,
+  ChoosePowerUpResponse,
 } from '../../shared/arena';
+import { isPowerUpId } from '../../shared/combat/powerups';
 import {
   createSparRewardReceipt,
   type SparRewardReceipt,
@@ -43,6 +48,8 @@ import {
   XP_REWARDS,
 } from '../../shared/arena';
 import { isScoutNotebookReplayDay } from '../../shared/scoutnotebook';
+import { getPaintBucketState } from '../../shared/paintbucket';
+import { dailyLoginRewardAfterClaims } from '../../shared/dailylogin';
 import { selectCommunityDoodleDare } from '../../shared/content/communitydrawthemes';
 import {
   isLegacyCardCursor,
@@ -98,6 +105,9 @@ import {
   commitDailyChampionOutcome,
 } from '../core/dailyActions';
 import { commitScribbitSubmission } from '../core/submission';
+import { loadDrawCharges } from '../core/drawCharges';
+import { loadPaintBucket } from '../core/paintBucket';
+import { claimDailyLoginReward, loadDailyLoginState } from '../core/dailyLogin';
 import {
   getFreeDrawingOwner,
   hasFreeDrawingForDay,
@@ -170,6 +180,11 @@ import {
 } from '../core/season';
 import { runWithPlayerMutationLease } from '../core/dataDeletion';
 import {
+  claimPowerUpOffer,
+  getOrCreatePowerUpOffer,
+  loadPendingPowerUpOffer,
+} from '../core/powerUpOffers';
+import {
   claimAndAwardDailySparWin,
   applyDailyBelief,
   createScribbit,
@@ -181,6 +196,7 @@ import {
   getLegendIds,
   getRumbleEntrantIds,
   getRumbleEntrantCount,
+  getRumbleKey,
   getScribbitOwner,
   isCareAction,
   isScribbitOwnedByUser,
@@ -201,6 +217,7 @@ const capsuleOperationPendingTimeoutMs = 15_000;
 const foundingSparRivalSlateLimit = 3;
 const scribbitIdPattern = /^[A-Za-z0-9:_-]{4,90}$/;
 const freeDrawingSubmissionIdPattern = /^[A-Za-z0-9_-]{16,80}$/;
+const scribbitSubmissionIdPattern = /^[A-Za-z0-9_-]{16,80}$/;
 const practiceRequestMaximumBodyBytes = 560 * 1024;
 const battleClipMaximumBodyBytes =
   Math.ceil((BATTLE_CLIP_MAXIMUM_BYTES * 4) / 3) + 1024;
@@ -504,8 +521,36 @@ const readCareRequest = (
   };
 };
 
-const createScribbitId = (day: number): string => {
-  return `scribbit-${day}-${randomUUID().replaceAll('-', '').slice(0, 16)}`;
+const readChoosePowerUpRequest = (
+  value: unknown
+): ChoosePowerUpRequest | undefined => {
+  if (
+    !isRecord(value) ||
+    !readScribbitIdentifier(value.scribbitId) ||
+    typeof value.offerId !== 'string' ||
+    value.offerId.length < 1 ||
+    value.offerId.length > 300 ||
+    !isPowerUpId(value.selectedId) ||
+    !Number.isSafeInteger(value.expectedPowerUpCount) ||
+    Number(value.expectedPowerUpCount) < 0 ||
+    Number(value.expectedPowerUpCount) >= 5
+  ) {
+    return undefined;
+  }
+  return {
+    scribbitId: readScribbitIdentifier(value.scribbitId)!,
+    offerId: value.offerId,
+    selectedId: value.selectedId,
+    expectedPowerUpCount: Number(value.expectedPowerUpCount),
+  };
+};
+
+const createScribbitId = (userId: string, submissionId: string): string => {
+  const digest = createHash('sha256')
+    .update(`${userId}:${submissionId}`)
+    .digest('hex')
+    .slice(0, 20);
+  return `scribbit-${digest}`;
 };
 
 const createFreeDrawingId = (userId: string, submissionId: string): string => {
@@ -739,6 +784,24 @@ const finalizeSparBattle = async (
     }
   }
 
+  const rewardedScribbit =
+    input.report.winner === 'a'
+      ? await loadScribbit(redis, input.challengerId)
+      : undefined;
+  const powerUpOffer = rewardedScribbit
+    ? await getOrCreatePowerUpOffer(redis, {
+        userId: input.userId,
+        scribbit: rewardedScribbit,
+        reportId: input.report.id,
+        source: input.report.rivalRun
+          ? input.report.rivalRun.status === 'complete'
+            ? 'rival-run-final-win'
+            : 'rival-run-win'
+          : 'exhibition-win',
+        createdAtMs: completedAtMilliseconds,
+      })
+    : null;
+
   const rewardedReport: BattleReport = {
     ...input.report,
     ...(inkAwarded > 0 ? { inkAwarded } : {}),
@@ -757,7 +820,7 @@ const finalizeSparBattle = async (
         founderChronicle: input.fallbackFounderChronicle,
         founderChronicleBeat: null,
       };
-  return { ...directBattleResponse, rewardReceipt };
+  return { ...directBattleResponse, rewardReceipt, powerUpOffer };
 };
 
 const loadTodayRumbleEntrants = async (
@@ -805,10 +868,21 @@ registerPlayerMutatingGet('/arena', async (c) => {
     let bossChallengedToday = false;
     let myBackedScribbitId: string | null = null;
     let playStreakDays = 0;
+    let dailyLogin: ArenaState['dailyLogin'] = {
+      claimedTrackDays: 0,
+      claimedToday: false,
+      nextReward: dailyLoginRewardAfterClaims(0),
+    };
     let myClout = 0;
     let myInk = 0;
     let myPens: string[] = [];
     let myDrawingSupplies: Record<string, number> = {};
+    let drawCharges: ArenaState['drawCharges'] = {
+      available: 0,
+      capacity: 3,
+      nextRefreshAt: null,
+    };
+    let paintBucket = getPaintBucketState();
     let nextCapsuleCost = CAPSULE_FIRST_DAILY_COST;
     let capsuleProgress = createCapsuleProgress(0, 0, 0);
     let founderChronicle: ArenaState['founderChronicle'] = {
@@ -833,6 +907,9 @@ registerPlayerMutatingGet('/arena', async (c) => {
         loadedNextCapsuleCost,
         loadedFounderChronicle,
         loadedLegacyReturnReceipt,
+        loadedDrawCharges,
+        loadedPaintBucket,
+        loadedDailyLogin,
       ] = await Promise.all([
         getDailyFlags(redis, player.userId, dayNumber),
         loadInventory(redis, player.userId),
@@ -846,6 +923,9 @@ registerPlayerMutatingGet('/arena', async (c) => {
         getNextCapsuleCost(redis, player.userId, dayNumber),
         loadPlayerFounderChronicle(player.userId),
         loadLegacyReturnReceipt(redis, player.userId),
+        loadDrawCharges(redis, player.userId, now.getTime()),
+        loadPaintBucket(redis, player.userId),
+        loadDailyLoginState(redis, player.userId, utcDateKey),
       ]);
       myScribbits = loadedScribbits;
       hasCreatedScribbit = loadedHasCreatedScribbit;
@@ -867,6 +947,9 @@ registerPlayerMutatingGet('/arena', async (c) => {
       nextCapsuleCost = loadedNextCapsuleCost;
       founderChronicle = loadedFounderChronicle;
       legacyReturnReceipt = loadedLegacyReturnReceipt;
+      drawCharges = loadedDrawCharges.state;
+      paintBucket = loadedPaintBucket;
+      dailyLogin = loadedDailyLogin;
     }
 
     const [
@@ -922,6 +1005,8 @@ registerPlayerMutatingGet('/arena', async (c) => {
           ? currentChampion
           : null,
       myScribbits,
+      drawCharges,
+      paintBucket,
       drawnToday,
       todayFreeDrawing,
       enteredToday,
@@ -933,6 +1018,7 @@ registerPlayerMutatingGet('/arena', async (c) => {
       todayEntrants,
       myBackedScribbitId,
       playStreakDays,
+      dailyLogin,
       myClout,
       myInk,
       myPens,
@@ -946,6 +1032,32 @@ registerPlayerMutatingGet('/arena', async (c) => {
   } catch (error) {
     console.error('Arena route failed:', error);
     return serverError(c, 'The arena doors are jammed. Try again soon.');
+  }
+});
+
+api.post('/daily-login/claim', async (c) => {
+  const player = await getCurrentPlayer();
+  if (!player) {
+    return unauthorized(c, 'Sign in to claim your daily login reward.');
+  }
+
+  try {
+    const now = new Date();
+    const dayNumber = await getWritableArenaDay(now);
+    if (!dayNumber) return arenaRolloverConflict(c);
+    const claim = await claimDailyLoginReward(redis, {
+      userId: player.userId,
+      currentDateKey: formatUtcDateKey(now),
+      claimedAtMs: now.getTime(),
+    });
+    return c.json<DailyLoginClaimResponse>({
+      dailyLogin: claim.dailyLogin,
+      reward: claim.reward,
+      ink: await getInkBalance(redis, player.userId),
+    });
+  } catch (error) {
+    console.error('Daily login claim failed:', error);
+    return serverError(c, 'Your daily reward would not open. Try again soon.');
   }
 });
 
@@ -1171,13 +1283,18 @@ api.post('/scribbit', async (c) => {
     return unauthorized(c, 'Sign in to draw a Scribbit.');
   }
 
-  const submission = validateAndAnalyzeScribbitSubmission(
-    await readJsonBody(c)
-  );
+  const rawSubmission = await readJsonBody(c);
+  const submissionId =
+    isRecord(rawSubmission) &&
+    typeof rawSubmission.submissionId === 'string' &&
+    scribbitSubmissionIdPattern.test(rawSubmission.submissionId)
+      ? rawSubmission.submissionId
+      : undefined;
+  const submission = validateAndAnalyzeScribbitSubmission(rawSubmission);
 
   if (
-    submission.status === 'invalid' &&
-    submission.reason === 'invalid-request'
+    !submissionId ||
+    (submission.status === 'invalid' && submission.reason === 'invalid-request')
   ) {
     return badRequest(
       c,
@@ -1217,14 +1334,24 @@ api.post('/scribbit', async (c) => {
     const now = new Date();
     const dayNumber = await getWritableArenaDay(now);
     if (!dayNumber) return arenaRolloverConflict(c);
-    const dailyFlags = await getDailyFlags(redis, player.userId, dayNumber);
-
-    if (dailyFlags.drawnToday) {
-      return conflict(c, 'You already drew a Scribbit today.');
+    const scribbitId = createScribbitId(player.userId, submissionId);
+    const [existingScribbit, existingOwner] = await Promise.all([
+      loadScribbit(redis, scribbitId, formatUtcDateKey(now)),
+      getScribbitOwner(redis, scribbitId),
+    ]);
+    if (existingScribbit && existingOwner === player.userId) {
+      const [drawChargeProjection, rumbleScore] = await Promise.all([
+        loadDrawCharges(redis, player.userId, now.getTime()),
+        redis.zScore(getRumbleKey(existingScribbit.bornDay), scribbitId),
+      ]);
+      return c.json<SubmitScribbitResponse>({
+        scribbit: existingScribbit,
+        drawCharges: drawChargeProjection.state,
+        enteredRumble: rumbleScore !== undefined,
+      });
     }
-
-    if (dailyFlags.enteredToday) {
-      return conflict(c, "You already entered today's Rumble.");
+    if (existingScribbit || existingOwner) {
+      return conflict(c, 'That Scribbit submission ID is already in use.');
     }
 
     if (await hasFreeDrawingForDay(redis, player.userId, dayNumber)) {
@@ -1232,7 +1359,7 @@ api.post('/scribbit', async (c) => {
     }
 
     if (!(await enforceAliveScribbitLimit(redis, player.userId, dayNumber))) {
-      return conflict(c, 'You already have three growing Scribbits.');
+      return conflict(c, 'Your growing Scribbit roster is full.');
     }
 
     const accessoryIds = draft.accessories.map((accessory) => {
@@ -1256,7 +1383,6 @@ api.post('/scribbit', async (c) => {
       return conflict(c, 'That drawing supply has already run out.');
     }
 
-    const scribbitId = createScribbitId(dayNumber);
     const imageUrl = await uploadDrawing(draft.imageDataUrl);
 
     const scribbit = createScribbit({
@@ -1287,8 +1413,14 @@ api.post('/scribbit', async (c) => {
     if (commitResult.status === 'already-entered') {
       return conflict(c, "You already entered today's Rumble.");
     }
+    if (commitResult.status === 'no-draw-charges') {
+      return conflict(
+        c,
+        'No Draw Charges left. Your next charge is still refilling.'
+      );
+    }
     if (commitResult.status === 'alive-limit') {
-      return conflict(c, 'You already have three living Scribbits.');
+      return conflict(c, 'Your living Scribbit roster is full.');
     }
     if (commitResult.status === 'invalid-accessory') {
       return badRequest(
@@ -1309,14 +1441,43 @@ api.post('/scribbit', async (c) => {
       return conflict(c, 'That paint or brush charge was already used.');
     }
     if (commitResult.status === 'id-collision') {
-      return conflict(c, 'That Scribbit ID was already used. Try again.');
+      const retriedScribbit = await loadScribbit(
+        redis,
+        scribbit.id,
+        formatUtcDateKey(now)
+      );
+      if (
+        retriedScribbit &&
+        (await getScribbitOwner(redis, scribbit.id)) === player.userId
+      ) {
+        const [drawChargeProjection, rumbleScore] = await Promise.all([
+          loadDrawCharges(redis, player.userId, now.getTime()),
+          redis.zScore(getRumbleKey(retriedScribbit.bornDay), scribbit.id),
+        ]);
+        return c.json<SubmitScribbitResponse>({
+          scribbit: retriedScribbit,
+          drawCharges: drawChargeProjection.state,
+          enteredRumble: rumbleScore !== undefined,
+        });
+      }
+      return conflict(
+        c,
+        'That Scribbit submission is still finishing. Retry once.'
+      );
     }
 
     const committedScribbit = await loadScribbit(redis, scribbit.id);
     if (!committedScribbit) {
       throw new Error('Committed Scribbit could not be loaded.');
     }
-    return c.json<Scribbit>(committedScribbit, 201);
+    return c.json<SubmitScribbitResponse>(
+      {
+        scribbit: committedScribbit,
+        drawCharges: commitResult.drawCharges,
+        enteredRumble: commitResult.enteredRumble,
+      },
+      201
+    );
   } catch (error) {
     console.error('Submit Scribbit route failed:', error);
     return serverError(c, 'The ink would not dry. Try again soon.');
@@ -1367,13 +1528,11 @@ api.post('/care', async (c) => {
     }
 
     const careCommit = await commitDailyCareAction(redis, {
-      userId: player.userId,
       scribbitId: scribbit.id,
       action: careRequest.action,
       utcDateKey,
       operationId: randomUUID(),
       claimedAtMilliseconds: now.getTime(),
-      inkAward: INK_REWARDS.care,
     });
 
     if (careCommit.status === 'already-claimed') {
@@ -1388,7 +1547,6 @@ api.post('/care', async (c) => {
     );
     return c.json<CareResponse>({
       scribbit: careCommit.scribbit,
-      inkAwarded: careCommit.inkAwarded,
     });
   } catch (error) {
     console.error('Care route failed:', error);
@@ -1422,6 +1580,9 @@ registerPlayerMutatingGet('/spar-rivals', async (c) => {
 
     if (!challenger) {
       return notFound(c, 'That living Scribbit is not ready to spar.');
+    }
+    if (await loadPendingPowerUpOffer(redis, player.userId, challenger.id)) {
+      return conflict(c, 'Choose the pending Power-Up before the next fight.');
     }
 
     const founderChronicle = await loadPlayerFounderChronicle(player.userId);
@@ -1559,6 +1720,9 @@ api.post('/spar', async (c) => {
 
     if (!challenger) {
       return notFound(c, 'That living Scribbit is not ready to spar.');
+    }
+    if (await loadPendingPowerUpOffer(redis, player.userId, challenger.id)) {
+      return conflict(c, 'Choose the pending Power-Up before the next fight.');
     }
 
     const randomSparSeed = hashTextToSeed(
@@ -1699,6 +1863,31 @@ api.post('/spar', async (c) => {
   } catch (error) {
     console.error('Spar route failed:', error);
     return serverError(c, 'The practice bell fell off. Try again soon.');
+  }
+});
+
+api.post('/power-up/choose', async (c) => {
+  const player = await getCurrentPlayer();
+  if (!player) return unauthorized(c, 'Sign in to choose a Power-Up.');
+  const request = readChoosePowerUpRequest(await readJsonBody(c));
+  if (!request) return badRequest(c, 'Choose one offered Power-Up.');
+  try {
+    if (
+      !(await isScribbitOwnedByUser(redis, player.userId, request.scribbitId))
+    ) {
+      return notFound(c, 'That Scribbit is not in your roster.');
+    }
+    const result = await claimPowerUpOffer(redis, {
+      userId: player.userId,
+      scribbitId: request.scribbitId,
+      request,
+    });
+    return result
+      ? c.json<ChoosePowerUpResponse>(result)
+      : conflict(c, 'That Power-Up offer changed. Reopen the reward.');
+  } catch (error) {
+    console.error('Power-Up claim failed:', error);
+    return serverError(c, 'The Power-Up card slipped away. Try again.');
   }
 });
 

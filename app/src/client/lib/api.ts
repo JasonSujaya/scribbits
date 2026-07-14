@@ -17,6 +17,7 @@ import type {
   CapsulePullRequest,
   CloutBoard,
   DirectBattleResponse,
+  DailyLoginClaimResponse,
   Inventory,
   EquipTitleRequest,
   FreeDrawing,
@@ -39,7 +40,10 @@ import type {
   SparBattleResponse,
   SparRequest,
   SubmitScribbitRequest,
+  SubmitScribbitResponse,
   SubmitFreeDrawingRequest,
+  ChoosePowerUpRequest,
+  ChoosePowerUpResponse,
 } from '../../shared/arena';
 import type { EquipmentCategory } from '../../shared/equipment';
 import type {
@@ -154,6 +158,13 @@ export function fetchArena(): Promise<ApiResult<ArenaState>> {
   return getJson<ArenaState>('/api/arena', ARENA_TIMEOUT_MS);
 }
 
+export function claimDailyLogin(): Promise<ApiResult<DailyLoginClaimResponse>> {
+  return postJson<Record<string, never>, DailyLoginClaimResponse>(
+    '/api/daily-login/claim',
+    {}
+  );
+}
+
 export function fetchSeason(): Promise<ApiResult<SeasonPublicState>> {
   return getJson<SeasonPublicState>('/api/season');
 }
@@ -174,8 +185,8 @@ export function uploadBattleClip(
 
 export function submitScribbit(
   request: SubmitScribbitRequest
-): Promise<ApiResult<Scribbit>> {
-  return postJson<SubmitScribbitRequest, Scribbit>(
+): Promise<ApiResult<SubmitScribbitResponse>> {
+  return postJson<SubmitScribbitRequest, SubmitScribbitResponse>(
     '/api/scribbit',
     request,
     SUBMIT_TIMEOUT_MS
@@ -241,8 +252,8 @@ export function fetchLegends(
   );
 }
 
-// Tamagotchi care: feed/pat/train a scribbit once each per UTC day. Returns the
-// updated Scribbit plus the exact committed Ink award. 409 when already done.
+// Tamagotchi care: feed/pat/train a Scribbit once each per UTC day for mood and
+// XP progression. Care is deliberately not an Ink source. 409 when done.
 export function careForScribbit(
   scribbitId: string,
   action: CareAction
@@ -281,6 +292,15 @@ export function spar(
         }
       : {}),
   });
+}
+
+export function choosePowerUp(
+  request: ChoosePowerUpRequest
+): Promise<ApiResult<ChoosePowerUpResponse>> {
+  return postJson<ChoosePowerUpRequest, ChoosePowerUpResponse>(
+    '/api/power-up/choose',
+    request
+  );
 }
 
 // Pick one of tonight's Rumble entrants. One per user per day, final; it

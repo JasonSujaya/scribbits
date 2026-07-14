@@ -76,15 +76,9 @@ test('splash tells one large creation-to-battle story without live API data', ()
 });
 
 test('splash and expanded game share one durable new-player flow', () => {
-  assert.match(
-    preloaderScript,
-    /needsScribbitCreation\(state\) \? 'Draw' : 'ScribbitHome'/
-  );
+  assert.match(preloaderScript, /this\.scene\.start\('ScribbitHome'\)/);
   assert.match(drawScript, /hasCreatedScribbit: true/);
-  assert.match(
-    drawEligibilityScript,
-    /state\?\.loggedIn && !state\.hasCreatedScribbit/
-  );
+  assert.doesNotMatch(drawEligibilityScript, /needsScribbitCreation/);
   assert.match(drawScript, /START FIRST FIGHT/);
   assert.match(
     drawScript,

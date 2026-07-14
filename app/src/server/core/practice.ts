@@ -6,6 +6,8 @@ import {
   analyze as analyzeDrawing,
   hasMinimumDrawingInk,
 } from '../../shared/analyzer-core';
+import { isCombatRole } from '../../shared/combat/roles';
+import { getStatsForFighterStyle } from '../../shared/combat/selection';
 import { simulate } from './battle';
 import { generateForecastForDay } from './forecast';
 import { hashTextToSeed } from './random';
@@ -263,19 +265,27 @@ const parsePracticeBattleRequest = (
 
   const fields = Object.keys(request);
   if (
-    fields.length !== 2 ||
+    (fields.length !== 2 && fields.length !== 3) ||
     !fields.includes('name') ||
-    !fields.includes('baseImageDataUrl')
+    !fields.includes('baseImageDataUrl') ||
+    (fields.length === 3 && !fields.includes('fighterStyle'))
   ) {
     return undefined;
   }
 
   const name = validateScribbitName(request.name);
-  if (!name || typeof request.baseImageDataUrl !== 'string') return undefined;
+  if (
+    !name ||
+    typeof request.baseImageDataUrl !== 'string' ||
+    (request.fighterStyle !== undefined && !isCombatRole(request.fighterStyle))
+  ) {
+    return undefined;
+  }
 
   return {
     name,
     baseImageDataUrl: request.baseImageDataUrl,
+    ...(request.fighterStyle ? { fighterStyle: request.fighterStyle } : {}),
   };
 };
 
@@ -302,6 +312,7 @@ export const createPracticeBattle = (
     day: input.canonicalDay,
     nonce: input.nonce,
     name: request.name,
+    fighterStyle: request.fighterStyle ?? null,
     drawingFingerprint: hashTextToSeed(request.baseImageDataUrl),
   });
   const practiceScribbitIdSeed = hashTextToSeed(
@@ -314,7 +325,9 @@ export const createPracticeBattle = (
     id: `practice-${input.canonicalDay}-${practiceScribbitIdSeed.toString(36)}`,
     draft: {
       name: request.name,
-      stats: drawingAnalysis.stats,
+      stats: request.fighterStyle
+        ? getStatsForFighterStyle(request.fighterStyle)
+        : drawingAnalysis.stats,
       element: drawingAnalysis.element,
       accessories: [],
     },

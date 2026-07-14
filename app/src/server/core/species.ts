@@ -31,6 +31,7 @@ const createFoundingScribbit = (
     accessories: [],
     equipmentLoadout: createEmptyEquipmentLoadout(),
     upgrades: createScribbitUpgradesForLevel(definition.id, definition.level),
+    powerUpIds: [],
     level: definition.level,
     xp: LEVEL_XP_THRESHOLDS[definition.level - 1] ?? 0,
     mood: definition.mood,

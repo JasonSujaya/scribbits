@@ -39,7 +39,7 @@ test('rival choices use calm role cards with one compact fight action', () => {
   assert.match(rivalDraftSource, /ROLE_STYLES\[plan\.role\]/);
   assert.match(rivalDraftSource, /background\.fillRoundedRect/);
   assert.match(rivalDraftSource, /addCardPressInteraction\(/);
-  assert.match(rivalDraftSource, /roleIconKey\(plan\.role\)/);
+  assert.match(rivalDraftSource, /getCombatRoleContent\(plan\.role\)\.icon/);
   assert.match(rivalDraftSource, /LOW RISK/);
   assert.match(rivalDraftSource, /MEDIUM RISK/);
   assert.match(rivalDraftSource, /HIGH RISK/);
@@ -489,6 +489,19 @@ test('post-fight actions expose only valid rival, pick, replay, and return paths
     },
     'a rendered fight should expose one explicit Reddit-hosted clip action'
   );
+});
+
+test('saved replays expose an immediate return before playback finishes', () => {
+  assert.match(replaySource, /private buildSavedReplayExit\(\): void/);
+  assert.match(
+    replaySource,
+    /if \(!this\.isSavedReplay\(\)\) return;[\s\S]{0,500}this\.returnButtonLabel\(\)/
+  );
+  assert.match(
+    replaySource,
+    /this\.buildArena\(\);\s*this\.buildSavedReplayExit\(\);/
+  );
+  assert.match(replaySource, /this\.savedReplayExitOverlay\?\.destroy\(\)/);
 });
 
 test('heart meter plans clamp health while preserving danger and accessibility states', () => {

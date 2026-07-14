@@ -10,9 +10,9 @@ import type {
   RivalRunState,
   Scribbit,
 } from '../../shared/arena';
-import type { CombatRole } from '../../shared/combat/types';
+import { getCombatRoleContent } from '../../shared/combat/roles';
 import { generateDoodleTexture } from './proceduraldoodleart';
-import { elementPaperIcon, paperIcon, type PaperIconKey } from './papericons';
+import { paperIcon } from './papericons';
 import { planSparRivalCards } from './sparrivals';
 import type { SparRivalCardPlan } from './sparrivals';
 import { CanvasModalOverlay } from './overlay';
@@ -20,13 +20,7 @@ import {
   planRivalRunChallengeCopy,
   planRivalRunDraftHeading,
 } from './rivalrunpresentation';
-import {
-  ELEMENT_STYLES,
-  prefersReducedMotion,
-  ROLE_STYLES,
-  TYPE,
-  UI,
-} from './theme';
+import { prefersReducedMotion, ROLE_STYLES, TYPE, UI } from './theme';
 import { addCardPressInteraction, ghostButton, label, stickerCard } from './ui';
 
 export type SparRivalDraftOptions = Readonly<{
@@ -68,13 +62,6 @@ function riskLabel(tier: RivalRunChoice['tier']): string {
   if (tier === 'safe') return 'LOW RISK';
   if (tier === 'even') return 'MEDIUM RISK';
   return 'HIGH RISK';
-}
-
-function roleIconKey(role: CombatRole): PaperIconKey {
-  if (role === 'brawler') return 'sword';
-  if (role === 'longshot') return 'target';
-  if (role === 'gunner') return 'gun';
-  return 'spark';
 }
 
 export function createSparRivalDraft(
@@ -181,7 +168,7 @@ export function createSparRivalDraft(
       scene,
       `${plan.name} rival details`,
       closeRivalInfo,
-      `${plan.roleName}, ${plan.rangeLabel}, using ${plan.weaponName} and ${plan.signatureName}. ${choice.matchup.label}. ${choice.matchup.detail}. ${plan.element}, level ${plan.level}. ${riskLabel(choice.tier)} risk for ${choice.winPoints} ${choice.winPoints === 1 ? 'point' : 'points'}. ${plan.levelLine}. ${plan.forecastLine}.`
+      `${plan.roleName}, ${plan.rangeLabel}, using ${plan.weaponName} and ${plan.signatureName}. ${choice.matchup.label}. ${choice.matchup.detail}. Level ${plan.level}. ${riskLabel(choice.tier)} rival. Win to earn ${choice.winPoints} ${choice.winPoints === 1 ? 'point' : 'points'}. ${plan.levelLine}.`
     );
     detailContent?.destroy(true);
     detailContent = scene.add.container(0, 0);
@@ -236,15 +223,20 @@ export function createSparRivalDraft(
       )
     );
 
-    detailContent.add(elementPaperIcon(scene, plan.element, -190, -12, 36));
+    detailContent.add(
+      paperIcon(scene, 'spark', -190, -12, {
+        size: 36,
+        fill: UI.coral,
+      })
+    );
     detailContent.add(
       leftLabel(
         scene,
         -154,
         -12,
-        `${plan.element.toUpperCase()} • LV ${plan.level}`,
+        `POWER-UPS ${choice.rival.powerUpIds?.length ?? 0}/5 • LV ${plan.level}`,
         26,
-        ELEMENT_STYLES[plan.element].primaryText,
+        UI.coralText,
         335,
         true
       )
@@ -261,7 +253,7 @@ export function createSparRivalDraft(
         scene,
         -154,
         68,
-        `${riskLabel(choice.tier)} • +${choice.winPoints} PT${choice.winPoints === 1 ? '' : 'S'}`,
+        `${riskLabel(choice.tier)} • WIN ${choice.winPoints} ${choice.winPoints === 1 ? 'POINT' : 'POINTS'}`,
         26,
         UI.coralText,
         335,
@@ -359,7 +351,7 @@ export function createSparRivalDraft(
 
     row.add(leftLabel(scene, -146, -42, plan.name, 30, UI.ink, 244, true));
     row.add(
-      paperIcon(scene, roleIconKey(plan.role), -132, 4, {
+      paperIcon(scene, getCombatRoleContent(plan.role).icon, -132, 4, {
         size: 28,
         fill: roleStyle.color,
         stroke: UI.inkHex,

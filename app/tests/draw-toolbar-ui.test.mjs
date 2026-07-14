@@ -10,6 +10,10 @@ const paperIconSource = await readFile(
   new URL('../src/client/lib/papericons.ts', import.meta.url),
   'utf8'
 );
+const drawCanvasSource = await readFile(
+  new URL('../src/client/lib/drawcanvas.ts', import.meta.url),
+  'utf8'
+);
 
 test('Draw keeps the everyday rail compact and puts optional tools one tap away', () => {
   assert.match(drawSource, /const panelH = 300/);
@@ -17,6 +21,20 @@ test('Draw keeps the everyday rail compact and puts optional tools one tap away'
   assert.match(drawSource, /this\.captureToolPage\('advanced'/);
   assert.match(drawSource, /'More drawing tools'/);
   assert.match(drawSource, /'Back to basic drawing tools'/);
+  assert.match(drawSource, /private buildDrawingSettingsControl\(\): void/);
+  assert.match(
+    drawSource,
+    /this\.moreToolsButton = this\.toolIconButton\(\s*196,\s*50,\s*'tools'/
+  );
+  assert.match(
+    drawSource,
+    /\(\) => this\.setAdvancedToolsOpen\(!this\.advancedToolsOpen\),\s*84,\s*96/
+  );
+  assert.doesNotMatch(
+    drawSource,
+    /this\.moreToolsButton = this\.toolIconButton\(\s*640,\s*toolY/
+  );
+  assert.match(drawSource, /Math\.min\(46, width \* 0\.55\)/);
   assert.match(drawSource, /private syncToolPageVisibility\(\): void/);
   assert.match(
     drawSource,
@@ -42,11 +60,88 @@ test('Draw keeps the everyday rail compact and puts optional tools one tap away'
   assert.match(paperIconSource, /\| 'bucket'/);
   assert.match(paperIconSource, /if \(key === 'bucket'\)/);
   assert.match(drawSource, /private buildLiveStatsStrip\(centerY: number\)/);
-  assert.match(drawSource, /DRAW TO REVEAL YOUR ROLE/);
-  assert.match(drawSource, /BIG BODY · SHARP EDGES · SMALL SIZE · MANY COLORS/);
-  assert.match(drawSource, /The role is the primary live read/);
+  assert.match(drawSource, /private getPersistentDrawingPrompt\(\): string/);
+  assert.match(
+    drawSource,
+    /`DRAW: \$\{formatThemePrompt\(dare\.prompt\)\.toUpperCase\(\)\}`/
+  );
+  assert.match(drawSource, /FREE DRAW • DRAW ANYTHING/);
+  assert.match(drawSource, /private buildFighterStyleControls/);
+  assert.match(drawSource, /private selectFighterStyle\(role: CombatRole\)/);
+  assert.match(drawSource, /const content = getCombatRoleContent\(role\)/);
+  assert.match(drawSource, /content\.icon/);
+  assert.match(drawSource, /ROLE_STYLES\[role\]/);
+  assert.match(drawSource, /role: 'radiogroup'/);
+  assert.match(drawSource, /setAttribute\('aria-checked'/);
+  assert.match(drawSource, /CHOOSE FIGHTER STYLE/);
+  assert.match(drawSource, /COLOR PICKS THE POWER · DRAW FREELY/);
+  assert.match(drawSource, /Coral is Brawler/);
+  assert.match(drawSource, /blue is Longshot/);
+  assert.match(drawSource, /green is Gunner/);
+  assert.match(drawSource, /purple is Mage/);
+  assert.match(drawSource, /PEN COLORS ARE FOR YOUR ART/);
+  assert.match(drawSource, /fighterStyle: draft\.fighterStyle/);
+  assert.doesNotMatch(drawSource, /STYLE FORMING…/);
+  assert.doesNotMatch(drawSource, /Your drawing decides it/i);
+  assert.doesNotMatch(drawSource, /Big filled shapes make Brawler/);
+  assert.doesNotMatch(drawSource, /Sharp jagged edges make Longshot/);
+  assert.match(
+    drawSource,
+    /private openRoleStyleInfo[\s\S]*this\.overlay\.setVisible\(false\)/
+  );
+  assert.match(
+    drawSource,
+    /if \(this\.scene\.isActive\(\)\) this\.overlay\.setVisible\(true\)/
+  );
+  assert.doesNotMatch(drawSource, /DRAW A LITTLE MORE TO REVEAL YOUR ROLE/);
+  assert.doesNotMatch(drawSource, /BECOMING A/);
+  assert.match(drawSource, /private fitLivePromptLabel\(\): void/);
   assert.doesNotMatch(drawSource, /liveStatCards/);
   assert.doesNotMatch(drawSource, /drawLiveStatCard/);
+});
+
+test('Draw always offers a clear route back to Home', () => {
+  const chromeSource = drawSource.slice(
+    drawSource.indexOf('private buildChrome()'),
+    drawSource.indexOf('private isUntimedDrawingMode()')
+  );
+  assert.match(chromeSource, /ghostButton\(this, 72, 54, '‹'/);
+  assert.match(chromeSource, /'Back to Home'/);
+  assert.doesNotMatch(chromeSource, /if \(!this\.isFirstScribbit\)/);
+  assert.match(
+    drawSource,
+    /closeButton\.addEventListener\('click', \(\) => this\.exitDraw\(\)\)/
+  );
+  assert.doesNotMatch(drawSource, /private closeDrawStartPopup/);
+});
+
+test('Draw offers a quiet visual-only dark canvas preview', () => {
+  assert.match(
+    drawSource,
+    /private buildCanvasContrastToggle\(square: number\)/
+  );
+  assert.match(
+    drawSource,
+    /Use \$\{nextMode === 'dark' \? 'dark' : 'light'\} canvas preview/
+  );
+  assert.match(drawSource, /this\.canvas\.setPreviewMode\(/);
+  assert.match(drawSource, /saveDarkCanvasPreview\(this\.darkCanvasPreview\)/);
+  assert.match(drawSource, /button\.setAttribute\('aria-pressed'/);
+  assert.match(
+    drawSource,
+    /button\.textContent = this\.darkCanvasPreview \? '☀' : '☾'/
+  );
+  assert.match(drawSource, /x: canvasLeft \+ square \+ 2/);
+  assert.match(
+    drawCanvasSource,
+    /export type CanvasPreviewMode = 'paper' \| 'dark'/
+  );
+  assert.match(drawCanvasSource, /this\.element\.style\.backgroundColor =/);
+  assert.match(drawCanvasSource, /this\.element\.dataset\.previewMode = mode/);
+  assert.doesNotMatch(
+    drawCanvasSource,
+    /setPreviewMode[\s\S]{0,300}(?:fillRect|clearRect|getImageData|drawImage)/
+  );
 });
 
 test('Draw sends the newborn straight into one guarded random first fight', () => {

@@ -9,6 +9,7 @@ import type {
   FounderChronicleBeat,
   SparBattleResponse,
   SparRewardReceipt,
+  PowerUpOffer,
 } from '../../shared/arena';
 import type { CombatRole } from '../../shared/combat/types';
 import type { EquipmentCategory } from '../../shared/equipment';
@@ -33,15 +34,17 @@ const REPLAY_PASS_KEY = 'replayPass';
 const REPLAY_CHRONICLE_BEAT_KEY = 'replayChronicleBeat';
 const REPLAY_RIVALRY_STAKES_KEY = 'replayRivalryStakes';
 const REPLAY_SPAR_REWARD_KEY = 'replaySparReward';
+const REPLAY_POWER_UP_OFFER_KEY = 'replayPowerUpOffer';
 const GALLERY_TAB_KEY = 'galleryTab';
 const GALLERY_COLLECTION_SECTION_KEY = 'galleryCollectionSection';
 const PRACTICE_SESSION_KEY = 'practiceSession';
 const FOUNDER_CHRONICLE_BEATS_KEY = 'founderChronicleBeats';
 const BATTLE_HISTORY_PAGE_KEY = 'battleHistoryPage';
+const BATTLE_HISTORY_CHARACTER_KEY = 'battleHistoryCharacter';
+const BATTLE_BOARD_CHARACTER_KEY = 'battleBoardCharacter';
 const SCOUT_NOTEBOOK_DAY_KEY = 'scoutNotebookDay';
 const ARENA_FOCUS_KEY = 'arenaFocus';
 const SKIP_ARENA_RECEIPTS_ONCE_KEY = 'skipArenaReceiptsOnce';
-const FIRST_CHEST_TRAIL_KEY = 'firstChestTrail';
 const LAST_RUMBLE_RECEIPT_SHOWN_DAY_KEY = 'lastRumbleReceiptShownDay';
 const LAST_LEGACY_RETURN_DISMISSED_DAY_KEY = 'lastLegacyReturnDismissedDay';
 
@@ -51,6 +54,7 @@ export type ReplayReturnScene =
   | 'ArenaHome'
   | 'Gallery'
   | 'MyBattles'
+  | 'BattleHistory'
   | 'ScoutNotebook';
 type ReplayEntryMode = 'fresh' | 'birth' | 'saved';
 
@@ -84,6 +88,7 @@ export function setReplay(
   scene.registry.set(REPLAY_ENTRY_MODE_KEY, entryMode);
   scene.registry.set(REPLAY_PASS_KEY, 0);
   scene.registry.remove(REPLAY_SPAR_REWARD_KEY);
+  scene.registry.remove(REPLAY_POWER_UP_OFFER_KEY);
   if (founderChronicleBeat) {
     scene.registry.set(REPLAY_CHRONICLE_BEAT_KEY, {
       ...founderChronicleBeat,
@@ -122,6 +127,23 @@ export function getReplaySparReward(scene: Scene): SparRewardReceipt | null {
   return reward && report && reward.reportId === report.id
     ? { ...reward }
     : null;
+}
+
+export function getReplayPowerUpOffer(scene: Scene): PowerUpOffer | null {
+  const offer = scene.registry.get(REPLAY_POWER_UP_OFFER_KEY) as
+    | PowerUpOffer
+    | undefined;
+  const report = getReplay(scene);
+  return offer && report && offer.sourceReportId === report.id
+    ? {
+        ...offer,
+        choices: [offer.choices[0], offer.choices[1], offer.choices[2]],
+      }
+    : null;
+}
+
+export function clearReplayPowerUpOffer(scene: Scene): void {
+  scene.registry.remove(REPLAY_POWER_UP_OFFER_KEY);
 }
 
 export function getReplayReturn(scene: Scene): ReplayReturnScene {
@@ -163,6 +185,40 @@ export function getBattleHistoryPage(scene: Scene): number {
   return typeof storedPage === 'number' && Number.isSafeInteger(storedPage)
     ? Math.max(0, storedPage)
     : 0;
+}
+
+export function setBattleHistoryCharacter(
+  scene: Scene,
+  characterId: string | null
+): void {
+  if (characterId) {
+    scene.registry.set(BATTLE_HISTORY_CHARACTER_KEY, characterId);
+  } else {
+    scene.registry.remove(BATTLE_HISTORY_CHARACTER_KEY);
+  }
+}
+
+export function getBattleHistoryCharacter(scene: Scene): string | null {
+  const characterId = scene.registry.get(
+    BATTLE_HISTORY_CHARACTER_KEY
+  ) as unknown;
+  return typeof characterId === 'string' && characterId.length > 0
+    ? characterId
+    : null;
+}
+
+export function setBattleBoardCharacter(
+  scene: Scene,
+  characterId: string
+): void {
+  scene.registry.set(BATTLE_BOARD_CHARACTER_KEY, characterId);
+}
+
+export function getBattleBoardCharacter(scene: Scene): string | null {
+  const characterId = scene.registry.get(BATTLE_BOARD_CHARACTER_KEY) as unknown;
+  return typeof characterId === 'string' && characterId.length > 0
+    ? characterId
+    : null;
 }
 
 export function setScoutNotebookDay(scene: Scene, day: number): void {
@@ -261,6 +317,9 @@ export function stageDirectBattle(
   if (rewardReceipt) {
     scene.registry.set(REPLAY_SPAR_REWARD_KEY, rewardReceipt);
   }
+  if ('powerUpOffer' in response && response.powerUpOffer) {
+    scene.registry.set(REPLAY_POWER_UP_OFFER_KEY, response.powerUpOffer);
+  }
   return Object.freeze({ arena: nextArena, rivalryStakes });
 }
 
@@ -339,26 +398,6 @@ export function takeSkipArenaReceiptsOnce(scene: Scene): boolean {
   const shouldSkip = scene.registry.get(SKIP_ARENA_RECEIPTS_ONCE_KEY) === true;
   if (shouldSkip) scene.registry.remove(SKIP_ARENA_RECEIPTS_ONCE_KEY);
   return shouldSkip;
-}
-
-export type FirstChestTrailIntent = Readonly<{ scribbitId: string }>;
-
-/** Stages one read-once, client-only route into server-backed Care. */
-export function setFirstChestTrail(scene: Scene, scribbitId: string): void {
-  if (scribbitId.length < 1) return;
-  scene.registry.set(FIRST_CHEST_TRAIL_KEY, { scribbitId });
-}
-
-export function takeFirstChestTrail(
-  scene: Scene
-): FirstChestTrailIntent | null {
-  const value = scene.registry.get(FIRST_CHEST_TRAIL_KEY) as
-    | FirstChestTrailIntent
-    | undefined;
-  scene.registry.remove(FIRST_CHEST_TRAIL_KEY);
-  return value && typeof value.scribbitId === 'string' && value.scribbitId
-    ? { scribbitId: value.scribbitId }
-    : null;
 }
 
 export function isRumbleReceiptShown(

@@ -1,6 +1,5 @@
 import type { BattleReport, CareAction, Scribbit } from '../../shared/arena';
 import { cloneScribbit } from '../../shared/arena';
-import { getInkKey } from './inkStore';
 import {
   addXpToScribbit,
   applyBattleOutcomeToScribbit,
@@ -33,7 +32,6 @@ export type DailyCareCommitResult =
   | {
       status: 'committed';
       scribbit: Scribbit;
-      inkAwarded: number;
       recovered: boolean;
     }
   | { status: 'already-claimed' }
@@ -74,15 +72,13 @@ export const getDailyCareReceiptValue = (
 
 const loadCommittedCareResult = async (
   storage: ArenaStorage,
-  scribbitKey: string,
-  inkAward: number
+  scribbitKey: string
 ): Promise<DailyCareCommitResult> => {
   const scribbit = parseScribbit(await storage.get(scribbitKey));
   return scribbit
     ? {
         status: 'committed',
         scribbit,
-        inkAwarded: inkAward,
         recovered: true,
       }
     : { status: 'target-unavailable' };
@@ -91,13 +87,11 @@ const loadCommittedCareResult = async (
 export const commitDailyCareAction = async (
   storage: ArenaStorage,
   input: Readonly<{
-    userId: string;
     scribbitId: string;
     action: CareAction;
     utcDateKey: string;
     operationId: string;
     claimedAtMilliseconds: number;
-    inkAward: number;
   }>
 ): Promise<DailyCareCommitResult> => {
   if (!storage.watch) {
@@ -107,16 +101,13 @@ export const commitDailyCareAction = async (
     !input.operationId ||
     input.operationId.length > 128 ||
     !Number.isSafeInteger(input.claimedAtMilliseconds) ||
-    input.claimedAtMilliseconds < 0 ||
-    !Number.isSafeInteger(input.inkAward) ||
-    input.inkAward <= 0
+    input.claimedAtMilliseconds < 0
   ) {
     throw new Error('Daily care input is invalid.');
   }
 
   const careKey = getScribbitCareKey(input.scribbitId, input.utcDateKey);
   const scribbitKey = getScribbitKey(input.scribbitId);
-  const inkKey = getInkKey(input.userId);
   const receiptValue = getDailyCareReceiptValue(
     input.operationId,
     input.claimedAtMilliseconds
@@ -129,7 +120,7 @@ export const commitDailyCareAction = async (
   ) {
     let transaction: ArenaTransaction | undefined;
     try {
-      transaction = await storage.watch(careKey, scribbitKey, inkKey);
+      transaction = await storage.watch(careKey, scribbitKey);
       const [existingReceipt, storedScribbit, completedActions] =
         await Promise.all([
           storage.hGet(careKey, input.action),
@@ -139,7 +130,7 @@ export const commitDailyCareAction = async (
       if (existingReceipt !== undefined) {
         await transaction.unwatch();
         return existingReceipt === receiptValue
-          ? await loadCommittedCareResult(storage, scribbitKey, input.inkAward)
+          ? await loadCommittedCareResult(storage, scribbitKey)
           : { status: 'already-claimed' };
       }
 
@@ -161,13 +152,11 @@ export const commitDailyCareAction = async (
         scribbitKey,
         serializeScribbit(projection.scribbit)
       );
-      await transaction.incrBy(inkKey, input.inkAward);
       const result = await transaction.exec();
       if (Array.isArray(result) && result.length > 0) {
         return {
           status: 'committed',
           scribbit: projection.scribbit,
-          inkAwarded: input.inkAward,
           recovered: false,
         };
       }
@@ -175,11 +164,7 @@ export const commitDailyCareAction = async (
       await discardWatchedTransaction(transaction, 'Daily care');
       const recoveredReceipt = await storage.hGet(careKey, input.action);
       if (recoveredReceipt === receiptValue) {
-        return await loadCommittedCareResult(
-          storage,
-          scribbitKey,
-          input.inkAward
-        );
+        return await loadCommittedCareResult(storage, scribbitKey);
       }
       if (recoveredReceipt !== undefined) {
         return { status: 'already-claimed' };
@@ -321,10 +306,7 @@ export const commitDailyChampionOutcome = async (
         [bossChallengeReportField]: serializeBattleReport(report),
       });
       await transaction.expire(dailyFlagsKey, DAILY_FLAG_TTL_SECONDS);
-      await transaction.set(
-        scribbitKey,
-        serializeScribbit(updatedScribbit)
-      );
+      await transaction.set(scribbitKey, serializeScribbit(updatedScribbit));
       const result = await transaction.exec();
       if (Array.isArray(result) && result.length > 0) {
         return { status: 'committed', report, recovered: false };

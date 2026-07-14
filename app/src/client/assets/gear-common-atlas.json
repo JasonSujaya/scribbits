@@ -2,262 +2,262 @@
   "frames": {
     "bowtie": {
       "frame": {
-        "x": 37,
-        "y": 33,
-        "w": 107,
-        "h": 69
+        "x": 24,
+        "y": 63,
+        "w": 208,
+        "h": 129
       },
       "rotated": false,
       "trimmed": false,
       "spriteSourceSize": {
         "x": 0,
         "y": 0,
-        "w": 107,
-        "h": 69
+        "w": 208,
+        "h": 129
       },
       "sourceSize": {
-        "w": 107,
-        "h": 69
+        "w": 208,
+        "h": 129
       }
     },
     "flower-crown": {
       "frame": {
-        "x": 191,
-        "y": 16,
-        "w": 161,
-        "h": 103
+        "x": 280,
+        "y": 71,
+        "w": 208,
+        "h": 113
       },
       "rotated": false,
       "trimmed": false,
       "spriteSourceSize": {
         "x": 0,
         "y": 0,
-        "w": 161,
-        "h": 103
+        "w": 208,
+        "h": 113
       },
       "sourceSize": {
-        "w": 161,
-        "h": 103
+        "w": 208,
+        "h": 113
       }
     },
     "monocle": {
       "frame": {
-        "x": 401,
-        "y": 21,
-        "w": 102,
-        "h": 94
+        "x": 551,
+        "y": 24,
+        "w": 177,
+        "h": 208
       },
       "rotated": false,
       "trimmed": false,
       "spriteSourceSize": {
         "x": 0,
         "y": 0,
-        "w": 102,
-        "h": 94
+        "w": 177,
+        "h": 208
       },
       "sourceSize": {
-        "w": 102,
-        "h": 94
+        "w": 177,
+        "h": 208
       }
     },
     "beanie": {
       "frame": {
-        "x": 580,
-        "y": 22,
-        "w": 107,
-        "h": 92
+        "x": 792,
+        "y": 45,
+        "w": 208,
+        "h": 166
       },
       "rotated": false,
       "trimmed": false,
       "spriteSourceSize": {
         "x": 0,
         "y": 0,
-        "w": 107,
-        "h": 92
+        "w": 208,
+        "h": 166
       },
       "sourceSize": {
-        "w": 107,
-        "h": 92
+        "w": 208,
+        "h": 166
       }
     },
     "round-glasses": {
       "frame": {
-        "x": 29,
-        "y": 176,
-        "w": 123,
-        "h": 56
+        "x": 24,
+        "y": 338,
+        "w": 208,
+        "h": 91
       },
       "rotated": false,
       "trimmed": false,
       "spriteSourceSize": {
         "x": 0,
         "y": 0,
-        "w": 123,
-        "h": 56
+        "w": 208,
+        "h": 91
       },
       "sourceSize": {
-        "w": 123,
-        "h": 56
+        "w": 208,
+        "h": 91
       }
     },
     "tiny-sword": {
       "frame": {
-        "x": 230,
-        "y": 153,
-        "w": 83,
-        "h": 101
+        "x": 304,
+        "y": 280,
+        "w": 160,
+        "h": 208
       },
       "rotated": false,
       "trimmed": false,
       "spriteSourceSize": {
         "x": 0,
         "y": 0,
-        "w": 83,
-        "h": 101
+        "w": 160,
+        "h": 208
       },
       "sourceSize": {
-        "w": 83,
-        "h": 101
+        "w": 160,
+        "h": 208
       }
     },
     "snail-shell-backpack": {
       "frame": {
-        "x": 404,
-        "y": 158,
-        "w": 96,
-        "h": 91
+        "x": 539,
+        "y": 280,
+        "w": 201,
+        "h": 208
       },
       "rotated": false,
       "trimmed": false,
       "spriteSourceSize": {
         "x": 0,
         "y": 0,
-        "w": 96,
-        "h": 91
+        "w": 201,
+        "h": 208
       },
       "sourceSize": {
-        "w": 96,
-        "h": 91
+        "w": 201,
+        "h": 208
       }
     },
     "party-hat": {
       "frame": {
-        "x": 599,
-        "y": 156,
-        "w": 68,
-        "h": 96
+        "x": 826,
+        "y": 280,
+        "w": 140,
+        "h": 208
       },
       "rotated": false,
       "trimmed": false,
       "spriteSourceSize": {
         "x": 0,
         "y": 0,
-        "w": 68,
-        "h": 96
+        "w": 140,
+        "h": 208
       },
       "sourceSize": {
-        "w": 68,
-        "h": 96
+        "w": 140,
+        "h": 208
       }
     },
     "mustache": {
       "frame": {
-        "x": 30,
-        "y": 318,
-        "w": 121,
-        "h": 44
+        "x": 24,
+        "y": 603,
+        "w": 208,
+        "h": 74
       },
       "rotated": false,
       "trimmed": false,
       "spriteSourceSize": {
         "x": 0,
         "y": 0,
-        "w": 121,
-        "h": 44
+        "w": 208,
+        "h": 74
       },
       "sourceSize": {
-        "w": 121,
-        "h": 44
+        "w": 208,
+        "h": 74
       }
     },
     "inkquake-rumble-belt": {
       "frame": {
-        "x": 210,
-        "y": 302,
-        "w": 123,
-        "h": 75
+        "x": 280,
+        "y": 570,
+        "w": 208,
+        "h": 140
       },
       "rotated": false,
       "trimmed": false,
       "spriteSourceSize": {
         "x": 0,
         "y": 0,
-        "w": 123,
-        "h": 75
+        "w": 208,
+        "h": 140
       },
       "sourceSize": {
-        "w": 123,
-        "h": 75
+        "w": 208,
+        "h": 140
       }
     },
     "nib-halo-headband": {
       "frame": {
-        "x": 401,
-        "y": 290,
-        "w": 103,
-        "h": 100
+        "x": 536,
+        "y": 546,
+        "w": 208,
+        "h": 187
       },
       "rotated": false,
       "trimmed": false,
       "spriteSourceSize": {
         "x": 0,
         "y": 0,
-        "w": 103,
-        "h": 100
+        "w": 208,
+        "h": 187
       },
       "sourceSize": {
-        "w": 103,
-        "h": 100
+        "w": 208,
+        "h": 187
       }
     },
     "smearstep-speed-scarf": {
       "frame": {
-        "x": 556,
-        "y": 298,
-        "w": 155,
-        "h": 83
+        "x": 792,
+        "y": 555,
+        "w": 208,
+        "h": 170
       },
       "rotated": false,
       "trimmed": false,
       "spriteSourceSize": {
         "x": 0,
         "y": 0,
-        "w": 155,
-        "h": 83
+        "w": 208,
+        "h": 170
       },
       "sourceSize": {
-        "w": 155,
-        "h": 83
+        "w": 208,
+        "h": 170
       }
     },
     "colorburst-rosette": {
       "frame": {
-        "x": 47,
-        "y": 419,
-        "w": 86,
-        "h": 113
+        "x": 45,
+        "y": 792,
+        "w": 165,
+        "h": 208
       },
       "rotated": false,
       "trimmed": false,
       "spriteSourceSize": {
         "x": 0,
         "y": 0,
-        "w": 86,
-        "h": 113
+        "w": 165,
+        "h": 208
       },
       "sourceSize": {
-        "w": 86,
-        "h": 113
+        "w": 165,
+        "h": 208
       }
     }
   },
@@ -267,8 +267,8 @@
     "image": "gear-common-atlas.png",
     "format": "RGBA8888",
     "size": {
-      "w": 724,
-      "h": 544
+      "w": 1024,
+      "h": 1024
     },
     "scale": "1"
   }

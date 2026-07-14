@@ -1,0 +1,18 @@
+# Rival Run Advancement Flow
+
+Generated: 2026-07-14T22:33:47.027Z
+
+Runner: `app/tools/balancer/run.mjs`
+
+This report bypasses API/routes/storage and calls the production combat mock bundle directly.
+
+| Target | Opponent | Win rate | Avg duration | Power-Up triggers | Timeouts | Close | Blowouts | Score | Verdict |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| Brawler base | Rival Run flow | 100.0% | 14.2s | 0.00 | 0.0% | 0.0% | 0.0% | 6 | OK |
+| Longshot base | Rival Run flow | 100.0% | 13.9s | 0.00 | 0.0% | 0.0% | 0.0% | 6 | OK |
+| Gunner base | Rival Run flow | 100.0% | 15.7s | 0.00 | 0.0% | 0.0% | 0.0% | 6 | OK |
+| Mage base | Rival Run flow | 100.0% | 14.7s | 0.00 | 0.0% | 0.0% | 0.0% | 6 | OK |
+
+## Flags
+
+No balance flags from current thresholds.

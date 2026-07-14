@@ -25,7 +25,6 @@ export type CareMomentPlan = Readonly<{
   progressLine: string;
   rewardLine: string;
   experienceGained: number;
-  inkAwarded: number;
   careMarkCount: number;
 }>;
 
@@ -53,8 +52,7 @@ export function planCareMoment(
   beforeCare: Scribbit,
   afterCare: Scribbit,
   action: CareAction,
-  currentDay: number,
-  inkAwarded: number
+  currentDay: number
 ): CareMomentPlan {
   const lifeDay = careLifeDay(currentDay, afterCare.bornDay);
   const power = selectPrimaryPower(afterCare.stats);
@@ -63,12 +61,8 @@ export function planCareMoment(
     0,
     Math.floor(afterCare.xp) - Math.floor(beforeCare.xp)
   );
-  const safeInkAwarded = Math.max(0, Math.floor(inkAwarded));
   const careMarkCount = Math.min(3, new Set(afterCare.careDoneToday).size);
   const mood = MOOD_STYLES[afterCare.mood];
-  const rewardParts = [`+${experienceGained} XP`];
-  if (safeInkAwarded > 0) rewardParts.push(`+${safeInkAwarded} INK`);
-  else rewardParts.push('CARE SAVED');
 
   return Object.freeze({
     reactionId: reaction.id,
@@ -79,9 +73,8 @@ export function planCareMoment(
     headline: `${CARE_ACTION_HEADLINES[action]}: ${safeDisplayName(afterCare.name).toUpperCase()}`,
     reaction: reaction.line,
     progressLine: `${mood.label.toUpperCase()}  •  ${careMarkCount}/3 CARE MARKS`,
-    rewardLine: `SERVER CHECKED  •  ${rewardParts.join('  •  ')}`,
+    rewardLine: `SERVER CHECKED  •  +${experienceGained} XP`,
     experienceGained,
-    inkAwarded: safeInkAwarded,
     careMarkCount,
   });
 }

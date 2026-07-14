@@ -15,6 +15,7 @@ import { isShapePowerId } from './shapepowercontent';
 import { isCombatRole } from './roles';
 import { selectCombatRole } from './selection';
 import { isCombatUpgradeId, MAXIMUM_COMBAT_UPGRADES } from './upgrades';
+import { isPowerUpId, validatePowerUpBuild } from './powerups';
 import type {
   AbilityPhase,
   BattleCheckpoint,
@@ -29,6 +30,8 @@ import type {
 } from './types';
 
 const MAXIMUM_TRANSCRIPT_VALUE = 1_000_000;
+type LegacyTranscriptVersion = 1 | 2 | 3 | 4;
+type TranscriptVersion = LegacyTranscriptVersion | 5;
 const MAXIMUM_CHECKPOINT_GAP = COMBAT_TICK_RATE / 2;
 // A battle may end while an authored telegraph, active phase, burn, or echo
 // still points a short distance beyond the final simulation tick.
@@ -90,6 +93,7 @@ const isDamageSource = (value: unknown): value is DamageSource => {
     value === 'mage_bolt' ||
     value === 'contact' ||
     value === 'ember_burn' ||
+    value === 'power_up' ||
     value === 'nib_wall_recoil'
   );
 };
@@ -255,6 +259,12 @@ const TIMELINE_EVENT_FIELD_VALIDATORS = {
   ink_pressure: (value) =>
     isFighterSlot(value.actor) &&
     typeof value.refreshedImmediately === 'boolean',
+  power_up_triggered: (value) =>
+    isFighterSlot(value.actor) &&
+    isPowerUpId(value.powerUpId) &&
+    (value.target === undefined || isFighterSlot(value.target)) &&
+    (value.bonusDamage === undefined ||
+      isBoundedInteger(value.bonusDamage, 0, MAXIMUM_TRANSCRIPT_VALUE)),
   fighter_defeated: (value) => isFighterSlot(value.actor),
   battle_ended: (value) =>
     isFighterSlot(value.winner) && isBattleEndReason(value.reason),
@@ -283,7 +293,7 @@ const isTimelineEvent = (
 
 const transcriptUpgradesAreUsable = (
   value: unknown,
-  version: 1 | 2 | 3 | 4
+  version: LegacyTranscriptVersion
 ): boolean => {
   if (version === 1) return value === undefined;
   return (
@@ -296,7 +306,7 @@ const transcriptUpgradesAreUsable = (
 
 const transcriptGearIsUsable = (
   value: unknown,
-  version: 1 | 2 | 3 | 4
+  version: TranscriptVersion
 ): boolean => {
   if (version < 3) return value === undefined;
   return value === undefined || isGearCombatSnapshot(value);
@@ -309,18 +319,25 @@ const transcriptDamageModifierIsUsable = (value: unknown): boolean => {
 
 const isTranscriptFighter = (
   value: unknown,
-  version: 1 | 2 | 3 | 4
+  version: TranscriptVersion
 ): boolean => {
   if (!isRecord(value) || !isRecord(value.stats)) return false;
+  const versionedBuildIsUsable =
+    version === 5
+      ? value.element === undefined &&
+        value.upgrades === undefined &&
+        validatePowerUpBuild(value.powerUpIds).valid
+      : value.powerUpIds === undefined &&
+        isElement(value.element) &&
+        transcriptUpgradesAreUsable(value.upgrades, version);
   return (
     isNonEmptyText(value.id, 120) &&
     isNonEmptyText(value.name, 80) &&
-    isElement(value.element) &&
+    versionedBuildIsUsable &&
     isBoundedInteger(value.stats.chonk, 0, 1_000) &&
     isBoundedInteger(value.stats.spike, 0, 1_000) &&
     isBoundedInteger(value.stats.zip, 0, 1_000) &&
     isBoundedInteger(value.stats.charm, 0, 1_000) &&
-    transcriptUpgradesAreUsable(value.upgrades, version) &&
     transcriptDamageModifierIsUsable(value.damageModifierPermille) &&
     transcriptGearIsUsable(value.gear, version)
   );
@@ -329,7 +346,7 @@ const isTranscriptFighter = (
 const isFighterCheckpoint = (
   value: unknown,
   expectedSlot: FighterSlot,
-  version: 1 | 2 | 3 | 4
+  version: TranscriptVersion
 ): value is FighterCheckpoint => {
   return (
     isRecord(value) &&
@@ -348,7 +365,7 @@ const isFighterCheckpoint = (
 
 const isCheckpoint = (
   value: unknown,
-  version: 1 | 2 | 3 | 4
+  version: TranscriptVersion
 ): value is BattleCheckpoint => {
   return (
     isRecord(value) &&
@@ -366,7 +383,7 @@ const isResultFighter = (
   value: unknown,
   expectedSlot: FighterSlot,
   expectedId: string,
-  version: 1 | 2 | 3 | 4
+  version: TranscriptVersion
 ): value is FighterResult => {
   return (
     isRecord(value) &&
@@ -386,7 +403,7 @@ const transcriptResultIsUsable = (
   value: unknown,
   fighterAId: string,
   fighterBId: string,
-  version: 1 | 2 | 3 | 4
+  version: TranscriptVersion
 ): value is BattleTranscript['result'] => {
   if (!isRecord(value) || !Array.isArray(value.fighters)) return false;
   if (
@@ -429,7 +446,7 @@ const checkpointsAreUsable = (
   result: BattleTranscript['result'],
   fighterAId: string,
   fighterBId: string,
-  version: 1 | 2 | 3 | 4
+  version: TranscriptVersion
 ): values is readonly BattleCheckpoint[] => {
   const first = values[0];
   const last = values.at(-1);
@@ -474,7 +491,8 @@ const checkpointsAreUsable = (
 const timelineIsUsable = (
   values: readonly unknown[],
   battleId: string,
-  result: BattleTranscript['result']
+  result: BattleTranscript['result'],
+  version: TranscriptVersion
 ): values is readonly BattleTimelineEvent[] => {
   if (values.length < 2 || values.length > MAXIMUM_TIMELINE_EVENTS) {
     return false;
@@ -483,6 +501,16 @@ const timelineIsUsable = (
   for (const value of values) {
     if (!isTimelineEvent(value, result.completedTick)) return false;
     if (value.tick < previousTick) return false;
+    if (
+      (version === 5 &&
+        (value.kind === 'burn_applied' ||
+          (value.kind === 'damage' && value.source === 'ember_burn'))) ||
+      (version < 5 &&
+        (value.kind === 'power_up_triggered' ||
+          (value.kind === 'damage' && value.source === 'power_up')))
+    ) {
+      return false;
+    }
     if (value.kind === 'battle_started') {
       if (value.tick !== 0 || value.battleId !== battleId) return false;
     }
@@ -526,7 +554,8 @@ export function parseBattleTranscript(
     (value.version !== 1 &&
       value.version !== 2 &&
       value.version !== 3 &&
-      value.version !== 4) ||
+      value.version !== 4 &&
+      value.version !== 5) ||
     value.tickRate !== COMBAT_TICK_RATE ||
     value.fixedPointScale !== FIXED_POINT_SCALE ||
     value.maxTicks !== COMBAT_MAXIMUM_TICKS ||
@@ -571,10 +600,12 @@ export function parseBattleTranscript(
   ) {
     return undefined;
   }
-  if (!timelineIsUsable(value.timeline, value.battleId, value.result)) {
+  if (
+    !timelineIsUsable(value.timeline, value.battleId, value.result, version)
+  ) {
     return undefined;
   }
-  if (version === 4) {
+  if (version >= 4) {
     if (!isRecord(fighterA.stats) || !isRecord(fighterB.stats)) {
       return undefined;
     }

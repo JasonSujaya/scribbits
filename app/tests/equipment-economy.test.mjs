@@ -36,12 +36,10 @@ test('published capsule odds/Ink pacing', () => {
     100,
     'published capsule rarity percentages should cover the full roll'
   );
-  const newPlayerDailyInk =
-    arena.INK_REWARDS.dailyDraw + arena.INK_REWARDS.care * 3;
   assert.equal(
-    newPlayerDailyInk,
-    arena.CAPSULE_FIRST_DAILY_COST,
-    'drawing and caring for one new Scribbit should fund one earned-Ink chest'
+    Object.hasOwn(arena.INK_REWARDS, 'care'),
+    false,
+    'Care should never be a source of Ink'
   );
   assert.equal(
     arena.INK_REWARDS.rumbleWin,

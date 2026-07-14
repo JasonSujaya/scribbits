@@ -6,7 +6,6 @@ import { navigateToDailyDraw } from '../lib/draweligibility';
 import { EDGE, TYPE, UI } from '../lib/theme';
 import { LivingPaper } from '../lib/livingpaper';
 import {
-  elementBadge,
   ghostButton,
   handLettered,
   iconButton,
@@ -14,19 +13,23 @@ import {
   stickerCard,
 } from '../lib/ui';
 import { paperIcon, type PaperIconKey } from '../lib/papericons';
-import { ELEMENT_PAYLOAD_GUIDE } from '../../shared/combat/elementcontent';
+import {
+  MAXIMUM_POWER_UPS,
+  POWER_UP_CATALOG,
+  POWER_UP_IDS,
+  type PowerUpRarity,
+} from '../../shared/combat/powerups';
 import {
   COMBAT_ROLE_IDS,
   getCombatRoleContent,
 } from '../../shared/combat/roles';
-import type { CombatRole } from '../../shared/combat/types';
 import { appDock } from '../lib/appdock';
 import { appMenu } from '../lib/appmenu';
 import { CanvasActionOverlay, CanvasModalOverlay } from '../lib/overlay';
 import { screenTitle } from '../lib/screentitle';
 import { translate } from '../lib/localization';
 
-type GuideSection = 'shape' | 'elements' | 'ritual' | 'legends' | 'privacy';
+type GuideSection = 'shape' | 'powerups' | 'ritual' | 'legends' | 'privacy';
 type GuideModal = Readonly<{
   container: Phaser.GameObjects.Container;
   section: GuideSection;
@@ -34,20 +37,13 @@ type GuideModal = Readonly<{
   deleteControl: HTMLButtonElement | null;
   status: HTMLElement;
 }>;
-const ROLE_GUIDE_ICON: Readonly<Record<CombatRole, PaperIconKey>> =
-  Object.freeze({
-    brawler: 'heart',
-    longshot: 'sword',
-    gunner: 'clock',
-    mage: 'spark',
-  });
-const SHAPE_POWER_GUIDE_ENTRIES = COMBAT_ROLE_IDS.map((role) => {
+const FIGHTER_STYLE_GUIDE_ENTRIES = COMBAT_ROLE_IDS.map((role) => {
   const content = getCombatRoleContent(role);
   return Object.freeze({
-    icon: ROLE_GUIDE_ICON[role],
+    icon: content.icon,
     statLabel: `${content.displayName.toUpperCase()} · ${content.rangeLabel}`,
     detail: `${content.weaponName} · ${content.basicAttackName} → ${content.signatureName}`,
-    description: `${content.drawingCue} creates a ${content.displayName}. ${content.behavior}`,
+    description: `${content.drawingCue} selects ${content.displayName}. ${content.behavior}`,
   });
 });
 
@@ -116,8 +112,8 @@ export class Bestiary extends Scene {
     const rows: ReadonlyArray<
       readonly [GuideSection, PaperIconKey, string, string]
     > = [
-      ['shape', 'pencil', 'SHAPE', 'Body becomes build'],
-      ['elements', 'spark', 'ELEMENTS', 'Four payload styles'],
+      ['shape', 'pencil', 'STYLE', 'Pick color · get role'],
+      ['powerups', 'spark', 'POWER-UPS', 'Win · choose 1 of 3'],
       ['ritual', 'clock', 'RITUAL', 'Draw · Watch · Pick · Return'],
       ['legends', 'trophy', 'LEGENDS', 'Three days to matter'],
       ['privacy', 'shield', 'PRIVACY', 'Report · Delete'],
@@ -244,9 +240,9 @@ export class Bestiary extends Scene {
   private guideSectionDescription(section: GuideSection): string {
     switch (section) {
       case 'shape':
-        return `Shape becomes build. ${SHAPE_POWER_GUIDE_ENTRIES.map((entry) => entry.description).join(' ')}`;
-      case 'elements':
-        return `${ELEMENT_PAYLOAD_GUIDE.map((entry) => `${entry.title}: ${entry.detail}`).join(' ')} There is no hidden element triangle.`;
+        return `Pick one fighter-style color before submitting. Pen colors remain artistic. ${FIGHTER_STYLE_GUIDE_ENTRIES.map((entry) => entry.description).join(' ')}`;
+      case 'powerups':
+        return 'Wins offer three behavioral Power-Ups. Choose one. A Scribbit can hold five and at most one Legendary. Gear remains the only source of raw stat bonuses.';
       case 'ritual':
         return 'Draw one Scribbit. Watch its power immediately. Pick one community contender. Return after midnight for the Champion and Clout result.';
       case 'legends':
@@ -259,9 +255,9 @@ export class Bestiary extends Scene {
   private guideSectionTitle(section: GuideSection): string {
     switch (section) {
       case 'shape':
-        return 'DRAWING = ROLE';
-      case 'elements':
-        return 'ELEMENTS';
+        return 'COLOR = ROLE';
+      case 'powerups':
+        return 'POWER-UPS';
       case 'ritual':
         return 'DAILY RITUAL';
       case 'legends':
@@ -280,25 +276,52 @@ export class Bestiary extends Scene {
       case 'shape':
         this.renderTextRows(
           modal,
-          SHAPE_POWER_GUIDE_ENTRIES.map((entry) => [
+          FIGHTER_STYLE_GUIDE_ENTRIES.map((entry) => [
             entry.icon,
             entry.statLabel,
             entry.detail,
           ])
         );
         return null;
-      case 'elements':
-        ELEMENT_PAYLOAD_GUIDE.forEach((entry, index) => {
+      case 'powerups': {
+        const rarities: readonly PowerUpRarity[] = [
+          'common',
+          'rare',
+          'epic',
+          'legendary',
+        ];
+        rarities.forEach((rarity, index) => {
           const y = 368 + index * 130;
-          modal.add(elementBadge(this, 130, y, entry.element, 0.55));
           modal.add(
-            label(this, 190, y - 20, entry.title, 22, UI.ink, true).setOrigin(
-              0,
-              0.5
+            paperIcon(
+              this,
+              rarity === 'legendary' ? 'trophy' : 'spark',
+              130,
+              y,
+              {
+                size: 44,
+                fill: rarity === 'legendary' ? UI.gold : UI.coral,
+              }
             )
           );
+          const names = POWER_UP_IDS.filter(
+            (id) => POWER_UP_CATALOG[id].rarity === rarity
+          )
+            .map((id) => POWER_UP_CATALOG[id].name)
+            .join(' · ');
           modal.add(
-            label(this, 190, y + 20, entry.detail, 18, UI.inkSoft)
+            label(
+              this,
+              190,
+              y - 20,
+              rarity.toUpperCase(),
+              22,
+              UI.ink,
+              true
+            ).setOrigin(0, 0.5)
+          );
+          modal.add(
+            label(this, 190, y + 20, names, 18, UI.inkSoft)
               .setOrigin(0, 0.5)
               .setWordWrapWidth(this.scale.width - 300)
           );
@@ -308,13 +331,14 @@ export class Bestiary extends Scene {
             this,
             this.scale.width / 2,
             910,
-            'NO HIDDEN TRIANGLE',
+            `${MAXIMUM_POWER_UPS} MAX · 1 LEGENDARY · GEAR OWNS STATS`,
             19,
             UI.coralText,
             true
           )
         );
         return null;
+      }
       case 'ritual':
         this.renderTextRows(modal, [
           ['pencil', 'DRAW', 'One Scribbit enters tonight'],

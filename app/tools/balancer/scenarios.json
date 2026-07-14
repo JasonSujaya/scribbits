@@ -1,0 +1,241 @@
+{
+  "forecastDay": 9,
+  "battleKind": "exhibition",
+  "baseBuildIds": ["brawler-base", "longshot-base", "gunner-base", "mage-base"],
+  "rivalPoolBuildIds": [
+    "brawler-base",
+    "longshot-base",
+    "gunner-base",
+    "mage-base",
+    "brawler-common-build",
+    "gunner-common-build",
+    "mage-rare-build"
+  ],
+  "suites": {
+    "roleMatrix": {
+      "seedsPerPairing": 80
+    },
+    "growthProgression": {
+      "seedsPerPairing": 48
+    },
+    "powerUpCombos": {
+      "targetBuildId": "gunner-base",
+      "seedsPerPairing": 40
+    },
+    "rivalRunRisk": {
+      "challengerBuildIds": [
+        "brawler-base",
+        "longshot-base",
+        "gunner-base",
+        "mage-base"
+      ],
+      "seedsPerChoice": 64
+    },
+    "generatedPool": {
+      "opponentCount": 32,
+      "seedsPerOpponent": 12
+    },
+    "gearPowerUps": {
+      "targetBuildId": "gunner-base",
+      "seedsPerPairing": 40
+    },
+    "roleEdges": {
+      "seedsPerPairing": 40
+    },
+    "fightFeel": {
+      "seedsPerPairing": 60
+    },
+    "rewardPath": {
+      "targetBuildId": "brawler-base",
+      "opponentBuildId": "gunner-base",
+      "seedsPerSource": 40
+    }
+  },
+  "rewardSources": [
+    "exhibition-win",
+    "rival-run-win",
+    "rival-run-final-win",
+    "rumble-day-win",
+    "champion-win"
+  ],
+  "growthStages": [
+    {
+      "id": "day-1-zero",
+      "label": "Day 1 · 0 PU",
+      "powerUpIds": []
+    },
+    {
+      "id": "day-1-one",
+      "label": "Day 1 · 1 PU",
+      "powerUpIds": ["v1-edge-spring"]
+    },
+    {
+      "id": "day-2-three",
+      "label": "Day 2 · 3 PU",
+      "powerUpIds": ["v1-edge-spring", "v1-paper-shield", "v1-wallop"]
+    },
+    {
+      "id": "day-3-five",
+      "label": "Day 3 · 5 PU",
+      "powerUpIds": [
+        "v1-edge-spring",
+        "v1-paper-shield",
+        "v1-wallop",
+        "v1-double-doodle",
+        "v1-masterpiece"
+      ]
+    }
+  ],
+  "powerUpCombos": [
+    {
+      "id": "defensive-common",
+      "label": "Defensive Common",
+      "powerUpIds": ["v1-paper-shield", "v1-center-fold", "v1-edge-spring"]
+    },
+    {
+      "id": "combo-damage",
+      "label": "Combo Damage",
+      "powerUpIds": ["v1-combo-spark", "v1-wallop", "v1-echo-mark"]
+    },
+    {
+      "id": "legendary-masterpiece",
+      "label": "Masterpiece Legendary",
+      "powerUpIds": ["v1-masterpiece"]
+    },
+    {
+      "id": "legendary-endless-draft",
+      "label": "Endless Draft Legendary",
+      "powerUpIds": ["v1-endless-draft"]
+    }
+  ],
+  "gearPowerUpLoadouts": [
+    {
+      "id": "no-gear-no-powerups",
+      "label": "No Gear · 0 PU",
+      "powerUpIds": [],
+      "gear": []
+    },
+    {
+      "id": "rank-one-gear",
+      "label": "Rank 1 Gear · 0 PU",
+      "powerUpIds": [],
+      "gear": [{ "id": "tiny-sword", "rank": 1 }]
+    },
+    {
+      "id": "red-gear",
+      "label": "Red Gear · 0 PU",
+      "powerUpIds": [],
+      "gear": [{ "id": "tiny-sword", "rank": 6 }]
+    },
+    {
+      "id": "red-gear-three-pu",
+      "label": "Red Gear · 3 PU",
+      "powerUpIds": ["v1-smudge-step", "v1-combo-spark", "v1-echo-mark"],
+      "gear": [{ "id": "tiny-sword", "rank": 6 }]
+    },
+    {
+      "id": "two-red-gear-five-pu",
+      "label": "2 Red Gear · 5 PU",
+      "powerUpIds": [
+        "v1-smudge-step",
+        "v1-combo-spark",
+        "v1-echo-mark",
+        "v1-paper-shield",
+        "v1-masterpiece"
+      ],
+      "gear": [
+        { "id": "tiny-sword", "rank": 6, "slotIndex": 0 },
+        { "id": "smearstep-speed-scarf", "rank": 6, "slotIndex": 0 }
+      ]
+    }
+  ],
+  "roleEdgeBuilds": [
+    {
+      "id": "edge-balanced",
+      "label": "Edge · 25 all",
+      "stats": { "chonk": 25, "spike": 25, "zip": 25, "charm": 25 },
+      "powerUpIds": []
+    },
+    {
+      "id": "edge-slight-brawler",
+      "label": "Edge · 28 Chonk",
+      "stats": { "chonk": 28, "spike": 24, "zip": 24, "charm": 24 },
+      "powerUpIds": []
+    },
+    {
+      "id": "edge-slight-longshot",
+      "label": "Edge · 28 Spike",
+      "stats": { "chonk": 24, "spike": 28, "zip": 24, "charm": 24 },
+      "powerUpIds": []
+    },
+    {
+      "id": "edge-slight-gunner",
+      "label": "Edge · 28 Zip",
+      "stats": { "chonk": 24, "spike": 24, "zip": 28, "charm": 24 },
+      "powerUpIds": []
+    },
+    {
+      "id": "edge-slight-mage",
+      "label": "Edge · 28 Charm",
+      "stats": { "chonk": 24, "spike": 24, "zip": 24, "charm": 28 },
+      "powerUpIds": []
+    }
+  ],
+  "fightFeelBuildIds": [
+    "brawler-base",
+    "longshot-base",
+    "gunner-base",
+    "mage-base",
+    "brawler-common-build",
+    "gunner-common-build",
+    "mage-rare-build"
+  ],
+  "builds": [
+    {
+      "id": "brawler-base",
+      "label": "Brawler base",
+      "stats": { "chonk": 55, "spike": 15, "zip": 15, "charm": 15 },
+      "powerUpIds": []
+    },
+    {
+      "id": "longshot-base",
+      "label": "Longshot base",
+      "stats": { "chonk": 15, "spike": 55, "zip": 15, "charm": 15 },
+      "powerUpIds": []
+    },
+    {
+      "id": "gunner-base",
+      "label": "Gunner base",
+      "stats": { "chonk": 15, "spike": 15, "zip": 55, "charm": 15 },
+      "powerUpIds": []
+    },
+    {
+      "id": "mage-base",
+      "label": "Mage base",
+      "stats": { "chonk": 15, "spike": 15, "zip": 15, "charm": 55 },
+      "powerUpIds": []
+    },
+    {
+      "id": "brawler-common-build",
+      "label": "Brawler common Power-Ups",
+      "stats": { "chonk": 55, "spike": 15, "zip": 15, "charm": 15 },
+      "powerUpIds": ["v1-edge-spring", "v1-paper-shield", "v1-wallop"]
+    },
+    {
+      "id": "gunner-common-build",
+      "label": "Gunner common Power-Ups",
+      "stats": { "chonk": 15, "spike": 15, "zip": 55, "charm": 15 },
+      "powerUpIds": ["v1-smudge-step", "v1-combo-spark", "v1-echo-mark"]
+    },
+    {
+      "id": "mage-rare-build",
+      "label": "Mage rare Power-Ups",
+      "stats": { "chonk": 15, "spike": 15, "zip": 15, "charm": 55 },
+      "powerUpIds": [
+        "v1-double-doodle",
+        "v1-counter-sketch",
+        "v1-last-scribble"
+      ]
+    }
+  ]
+}

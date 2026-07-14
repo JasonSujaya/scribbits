@@ -10,7 +10,6 @@ import { setArena } from '../lib/registry';
 import { BRAND_LOGO_TEXTURE } from '../lib/visualassets';
 import type { ArenaState } from '../../shared/arena';
 import { translate } from '../lib/localization';
-import { needsScribbitCreation } from '../lib/draweligibility';
 import { markGameBootPhase } from '../lib/gameboot';
 
 // Preloader fetches the arena snapshot, bakes baseline textures (UI panel, dot,
@@ -78,7 +77,7 @@ export class Preloader extends Scene {
 
   private startArena(state: ArenaState): void {
     setArena(this, state);
-    this.scene.start(needsScribbitCreation(state) ? 'Draw' : 'ScribbitHome');
+    this.scene.start('ScribbitHome');
   }
 
   private showRetry(message: string): void {

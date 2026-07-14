@@ -1,0 +1,18 @@
+# Three-Day Growing Loop
+
+Generated: 2026-07-14T22:33:47.026Z
+
+Runner: `app/tools/balancer/run.mjs`
+
+This report bypasses API/routes/storage and calls the production combat mock bundle directly.
+
+| Target | Opponent | Win rate | Avg duration | Power-Up triggers | Timeouts | Close | Blowouts | Final PU | Verdict |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| Brawler base | 3-day loop | 33.3% | 13.3s | 1.17 | 0.0% | 0.0% | 0.0% | 3 | OK |
+| Longshot base | 3-day loop | 33.3% | 16.4s | 1.33 | 0.0% | 0.0% | 0.0% | 3 | OK |
+| Gunner base | 3-day loop | 55.6% | 17.6s | 2.22 | 0.0% | 0.0% | 0.0% | 5 | OK |
+| Mage base | 3-day loop | 11.1% | 15.3s | 0.78 | 0.0% | 0.0% | 0.0% | 1 | FLAG_LOOP_WIN_RATE |
+
+## Flags
+
+- Mage base vs 3-day loop: FLAG_LOOP_WIN_RATE (11.1%, 15.3s avg)

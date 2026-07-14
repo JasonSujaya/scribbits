@@ -28,10 +28,8 @@ test('daily Draw routing distinguishes a saved Free Draw, an authoritative lock,
     drawEligibilitySource,
     /if \(getDrawEligibility\(state\)\.canDraw\) return 'draw';/
   );
-  assert.match(
-    drawEligibilitySource,
-    /if \(state\.loggedIn && state\.drawnToday\) return 'practice';/
-  );
+  assert.match(drawEligibilitySource, /state\.drawCharges\.available <= 0/);
+  assert.doesNotMatch(drawEligibilitySource, /return 'practice'/);
 });
 
 test('Arena keeps the lock authoritative while exposing only a verified current-day drawing', () => {

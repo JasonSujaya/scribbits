@@ -32,10 +32,15 @@ import {
 } from '../../shared/arena';
 import { isElement } from '../../shared/elements';
 import {
-  advanceScribbitUpgrades,
   parseCompleteScribbitUpgrades,
   resolveStoredScribbitUpgrades,
 } from '../../shared/combat/upgrades';
+import {
+  parsePowerUpBuild,
+  POWER_UP_CATALOG,
+  POWER_UP_IDS,
+  type PowerUpId,
+} from '../../shared/combat/powerups';
 import { getLevelForXp } from '../../shared/progression';
 export { getLevelForXp } from '../../shared/progression';
 import { isCommunityDrawThemeId } from '../../shared/content/communitydrawthemes';
@@ -93,6 +98,9 @@ import {
   hasMinimumDrawingInk,
   normalizeStats,
 } from '../../shared/analyzer-core';
+import { isCombatRole } from '../../shared/combat/roles';
+import { getStatsForFighterStyle } from '../../shared/combat/selection';
+import type { CombatRole } from '../../shared/combat/types';
 
 export type CurrentPlayer = {
   userId: string;
@@ -114,6 +122,7 @@ export type ValidatedScribbitDraft = {
   imageDataUrl: string;
   stats: ScribbitStats;
   element: Element;
+  fighterStyle: CombatRole | null;
   accessories: AttachedAccessory[];
   drawingSupplies: DrawingSupplySelection;
 };
@@ -361,7 +370,6 @@ export const addXpToScribbit = (
   if (scribbit.status !== 'alive') return cloneScribbit(scribbit);
   const gainedXp = normalizeNonNegativeInteger(xpGain);
   const currentXp = normalizeNonNegativeInteger(scribbit.xp);
-  const currentLevel = getLevelForXp(currentXp);
   const nextXp = currentXp + gainedXp;
   const nextLevel = getLevelForXp(nextXp);
 
@@ -369,12 +377,7 @@ export const addXpToScribbit = (
     ...scribbit,
     xp: nextXp,
     level: nextLevel,
-    upgrades: advanceScribbitUpgrades(
-      scribbit.id,
-      currentLevel,
-      nextLevel,
-      scribbit.upgrades
-    ),
+    powerUpIds: [...(scribbit.powerUpIds ?? [])],
     careDoneToday: [...scribbit.careDoneToday],
   };
 };
@@ -535,13 +538,20 @@ export const validateSubmitScribbitRequest = (
   const name = validateScribbitName(value.name);
   const accessories = validateAttachedAccessories(value.accessories);
   const drawingSupplies = validateDrawingSupplySelection(value.drawingSupplies);
+  const fighterStyle =
+    value.fighterStyle === undefined
+      ? null
+      : isCombatRole(value.fighterStyle)
+        ? value.fighterStyle
+        : undefined;
 
   if (
     !name ||
     typeof value.baseImageDataUrl !== 'string' ||
     typeof value.imageDataUrl !== 'string' ||
     !accessories ||
-    !drawingSupplies
+    !drawingSupplies ||
+    fighterStyle === undefined
   ) {
     return undefined;
   }
@@ -551,9 +561,10 @@ export const validateSubmitScribbitRequest = (
     baseImageDataUrl: value.baseImageDataUrl,
     imageDataUrl: value.imageDataUrl,
     // Deprecated client-provided values are kept for request compatibility.
-    // The submit route overwrites both with server analyzer output.
+    // The submit route replaces stats from the style choice and element from art.
     stats: normalizeStats(value.stats),
     element: isElement(value.element) ? value.element : 'ember',
+    fighterStyle,
     accessories,
     drawingSupplies,
   };
@@ -830,7 +841,11 @@ export const validateAndAnalyzeScribbitSubmission = (
     status: 'valid',
     draft: {
       ...draft,
-      stats: analysis.stats,
+      // New clients choose a clear color-coded fighter style. Analyzer stats
+      // remain only as a short compatibility fallback for already-open clients.
+      stats: draft.fighterStyle
+        ? getStatsForFighterStyle(draft.fighterStyle)
+        : analysis.stats,
       element: analysis.element,
     },
   };
@@ -1092,10 +1107,6 @@ const normalizeStoredLegacy = (
   };
 };
 
-export const isScribbit = (value: unknown): value is Scribbit => {
-  return normalizeScribbitV1Value(value, false) !== undefined;
-};
-
 // Frozen v1 semantics. A future v2 must add a separate normalizer and migration
 // instead of changing which missing or legacy fields v0 -> v1 accepts.
 const normalizeScribbitV1Value = (
@@ -1240,10 +1251,10 @@ const normalizeScribbitV1Value = (
 export const normalizeScribbitRecord = (
   value: unknown
 ): Scribbit | undefined => {
-  return normalizeScribbitV1Value(value, true);
+  return normalizeScribbitV2Value(value, true, true);
 };
 
-export const SCRIBBIT_SCHEMA_VERSION = 1;
+export const SCRIBBIT_SCHEMA_VERSION = 2;
 
 // This explicit key list is the immutable v1 storage shape. Keeping it separate
 // from cloneScribbit prevents a future runtime field from silently changing old
@@ -1286,10 +1297,88 @@ export const migrateScribbitV0ToV1 = (storedValue: unknown): unknown => {
     : storedValue;
 };
 
+const LEGACY_MIGRATION_POWER_UP_IDS = POWER_UP_IDS.filter(
+  (powerUpId) => POWER_UP_CATALOG[powerUpId].rarity === 'common'
+);
+
+const migrateLegacyProgressionToPowerUps = (
+  scribbitId: string,
+  legacyUpgradeCount: number
+): readonly PowerUpId[] => {
+  const count = Math.min(4, Math.max(0, legacyUpgradeCount));
+  if (count === 0) return [];
+  const startIndex = [...scribbitId].reduce(
+    (sum, character) =>
+      (sum + character.charCodeAt(0)) % LEGACY_MIGRATION_POWER_UP_IDS.length,
+    0
+  );
+  return Array.from({ length: count }, (_, index) => {
+    return LEGACY_MIGRATION_POWER_UP_IDS[
+      (startIndex + index) % LEGACY_MIGRATION_POWER_UP_IDS.length
+    ]!;
+  });
+};
+
+const normalizeScribbitV2Value = (
+  value: unknown,
+  allowMissingPowerUps: boolean,
+  allowLegacyUpgradeMigration: boolean
+): Scribbit | undefined => {
+  if (!isRecord(value)) return undefined;
+  const legacyCompatibleValue =
+    allowLegacyUpgradeMigration && value.status === 'alive'
+      ? { ...value, upgrades: undefined }
+      : value;
+  const normalizedV1 = normalizeScribbitV1Value(
+    legacyCompatibleValue,
+    allowLegacyUpgradeMigration
+  );
+  if (!normalizedV1) return undefined;
+  const powerUpIds =
+    value.powerUpIds === undefined && allowMissingPowerUps
+      ? []
+      : parsePowerUpBuild(value.powerUpIds);
+  if (!powerUpIds) return undefined;
+  return {
+    ...normalizedV1,
+    powerUpIds: [...powerUpIds],
+  };
+};
+
+export const isScribbit = (value: unknown): value is Scribbit => {
+  return normalizeScribbitV2Value(value, true, true) !== undefined;
+};
+
+const encodeScribbitV2 = (scribbit: Scribbit): Record<string, unknown> => {
+  const encodedV1 = encodeScribbitV1(scribbit);
+  return {
+    ...encodedV1,
+    schemaVersion: 2,
+    powerUpIds: [...(scribbit.powerUpIds ?? [])],
+  };
+};
+
+export const migrateScribbitV1ToV2 = (storedValue: unknown): unknown => {
+  if (!isRecord(storedValue)) return storedValue;
+  const scribbitValue = { ...storedValue };
+  delete scribbitValue.schemaVersion;
+  const normalizedV1 = normalizeScribbitV1Value(scribbitValue, true);
+  if (!normalizedV1) return storedValue;
+  return encodeScribbitV2({
+    ...normalizedV1,
+    powerUpIds: [
+      ...migrateLegacyProgressionToPowerUps(
+        normalizedV1.id,
+        normalizedV1.upgrades.length
+      ),
+    ],
+  });
+};
+
 const scribbitJsonCodec = createVersionedJsonCodec<Scribbit>({
   currentVersion: SCRIBBIT_SCHEMA_VERSION,
   legacyVersion: 0,
-  migrations: { 0: migrateScribbitV0ToV1 },
+  migrations: { 0: migrateScribbitV0ToV1, 1: migrateScribbitV1ToV2 },
   decodeCurrent: (storedValue) => {
     if (
       !isRecord(storedValue) ||
@@ -1299,22 +1388,22 @@ const scribbitJsonCodec = createVersionedJsonCodec<Scribbit>({
     }
     const scribbitValue = { ...storedValue };
     delete scribbitValue.schemaVersion;
-    const scribbit = normalizeScribbitV1Value(scribbitValue, false);
+    const scribbit = normalizeScribbitV2Value(scribbitValue, false, true);
     if (!scribbit) return undefined;
-    const canonicalValue = encodeScribbitV1(scribbit);
+    const canonicalValue = encodeScribbitV2(scribbit);
     delete canonicalValue.schemaVersion;
     return jsonValuesMatch(scribbitValue, canonicalValue)
       ? scribbit
       : undefined;
   },
-  encodeCurrent: encodeScribbitV1,
+  encodeCurrent: encodeScribbitV2,
 });
 
 export const parseStoredScribbit = (storedScribbit: string | undefined) =>
   scribbitJsonCodec.parse(storedScribbit);
 
 export const serializeScribbit = (scribbit: Scribbit): string => {
-  const normalizedScribbit = normalizeScribbitV1Value(scribbit, false);
+  const normalizedScribbit = normalizeScribbitV2Value(scribbit, true, true);
   if (!normalizedScribbit) {
     throw new Error('Scribbit failed authoritative runtime validation.');
   }
@@ -1364,6 +1453,7 @@ export const createScribbit = (options: {
     ),
     equipmentLoadout: createEmptyEquipmentLoadout(),
     upgrades: [],
+    powerUpIds: [],
     level: 1,
     xp: 0,
     mood: 'hungry',

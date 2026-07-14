@@ -18,6 +18,10 @@ const capsuleMachineSource = await readFile(
   new URL('../src/client/lib/capsulemachine.ts', import.meta.url),
   'utf8'
 );
+const inkEarningGuideSource = await readFile(
+  new URL('../src/client/lib/inkearningguide.ts', import.meta.url),
+  'utf8'
+);
 const featuredGearDetailSource = await readFile(
   new URL('../src/client/lib/featuredgeardetail.ts', import.meta.url),
   'utf8'
@@ -192,16 +196,39 @@ test('Mystery Ink lives in Shop while Bag remains equipment-only', () => {
   assert.doesNotMatch(capsuleMachineSource, /INK KIT/);
 });
 
-test('the first completed Rival Run has one server-backed trail into first Gear', () => {
+test('Shop explains the intended gameplay Ink sources without Care or IAP', () => {
+  assert.match(capsuleMachineSource, /paperIconButton\(/);
+  assert.match(capsuleMachineSource, /'info'/);
+  assert.match(capsuleMachineSource, /label: 'How to earn Ink'/);
+  assert.match(capsuleMachineSource, /openInkEarningGuide\(/);
+  assert.match(inkEarningGuideSource, /icon: 'sword'/);
+  assert.match(inkEarningGuideSource, /WIN BATTLES/);
+  assert.match(inkEarningGuideSource, /first growing-stage Spar win/);
+  assert.match(inkEarningGuideSource, /icon: 'trophy'/);
+  assert.match(inkEarningGuideSource, /SEASON RANKING/);
+  assert.match(inkEarningGuideSource, /seasonal rank rewards are coming/);
+  assert.match(inkEarningGuideSource, /icon: 'clock'/);
+  assert.match(inkEarningGuideSource, /DAILY LOGIN/);
+  assert.match(inkEarningGuideSource, /Login 7 gives Epic Golden Crown Gear/);
+  assert.equal(
+    (inkEarningGuideSource.match(/phaseLabel: 'UPCOMING'/g) ?? []).length,
+    1
+  );
+  assert.doesNotMatch(inkEarningGuideSource, /CARE|INK_REWARDS\.care/);
+  assert.match(inkEarningGuideSource, /NO IAP/);
+  assert.match(inkEarningGuideSource, /createStickerModalShell\(/);
+});
+
+test('the first completed Rival Run opens first Gear only from committed Ink', () => {
   assert.match(replaySource, /planFirstChestTrailEntry\(/);
   assert.match(replaySource, /refreshArenaAndNavigate\(\{/);
-  assert.match(replaySource, /setFirstChestTrail\(this/);
-  assert.match(arenaSource, /takeFirstChestTrail\(this\)/);
-  assert.match(arenaSource, /continueFirstChestTrail\(/);
+  assert.doesNotMatch(replaySource, /setFirstChestTrail\(this/);
+  assert.doesNotMatch(arenaSource, /takeFirstChestTrail\(this\)/);
+  assert.doesNotMatch(arenaSource, /continueFirstChestTrail\(/);
   assert.match(
-    arenaSource,
-    /if \(firstChestTrail\) \{[\s\S]{0,160}continueFirstChestTrail[\s\S]{0,160}else if \(!takeSkipArenaReceiptsOnce\(this\)\) \{[\s\S]{0,160}showReturnReceiptsIfNeeded/,
-    'the first Gear trail should open before optional story receipts'
+    replaySource,
+    /if \(step\?\.kind === 'shop'\) \{[\s\S]{0,80}startScene\(this, 'Shop'\)/,
+    'first Gear may open Shop only after refreshed server state confirms the balance'
   );
   assert.match(replaySource, /label: 'FIRST GEAR'/);
   assert.match(arenaSource, /careForScribbit\(scribbit\.id, action\)/);
@@ -209,8 +236,36 @@ test('the first completed Rival Run has one server-backed trail into first Gear'
     capsuleMachineSource,
     /firstChestVisit = progress\.pullCount === 0/
   );
-  assert.match(capsuleMachineSource, /YOUR FIRST GEAR/);
+  assert.match(capsuleMachineSource, /FIRST CHEST/);
   assert.match(capsuleMachineSource, /OPEN ×1/);
+  assert.match(
+    capsuleMachineSource,
+    /firstChestVisit[\s\S]{0,80}availableActionWidth/,
+    'the first chest action must match the scale of the primary actions on other screens'
+  );
+  assert.match(capsuleMachineSource, /'FIRST CHEST STARTS YOUR COLLECTION'/);
+  assert.match(capsuleMachineSource, /'GUARANTEED EQUIPPABLE GEAR'/);
+  assert.match(capsuleMachineSource, /'EQUIP YOUR REWARD IN BAG'/);
+  assert.doesNotMatch(
+    capsuleMachineSource,
+    /featuredGearControl = firstChestVisit[\s\S]{0,20}\? null/,
+    'the first Shop visit must not remove the Loot card and Gear preview'
+  );
+  assert.match(
+    capsuleMachineSource,
+    /openOneButton\.setEnabled\(affordance\.primaryEnabled\)/,
+    'an unaffordable first chest must dim its content without fading the paper plate'
+  );
+  assert.match(
+    capsuleMachineSource,
+    /const contentWidth = actionText\.width \+ actionPriceGap \+ priceWidth/,
+    'the action label and Ink price must share one centered row'
+  );
+  assert.doesNotMatch(
+    capsuleMachineSource,
+    /actionText\.setY\(nextCost === null \? 0 : -20\)/,
+    'the Ink price must not be pushed into the lower button border'
+  );
   assert.match(
     shopSource,
     /setGalleryCollectionSection\(this, reward\.category\)/
@@ -244,7 +299,7 @@ test('a birth replay cannot stage the wrong Scribbit or expose old receipts', ()
     registrySource,
     /type ReplayEntryMode = 'fresh' \| 'birth' \| 'saved'/
   );
-  assert.match(arenaSource, /else if \(!takeSkipArenaReceiptsOnce\(this\)\)/);
+  assert.match(arenaSource, /if \(!takeSkipArenaReceiptsOnce\(this\)\)/);
   assert.match(drawSource, /skipArenaReceiptsOnce\(this\)/);
 });
 

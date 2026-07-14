@@ -16,6 +16,18 @@ export {
 } from './config';
 export { getOrbitingNibPosition, simulateCombat } from './engine';
 export {
+  MAXIMUM_LEGENDARY_POWER_UPS,
+  MAXIMUM_POWER_UP_BONUS_DAMAGE,
+  MAXIMUM_POWER_UP_TRIGGER_EVENTS,
+  MAXIMUM_POWER_UPS,
+  POWER_UP_CATALOG,
+  POWER_UP_IDS,
+  isPowerUpId,
+  parsePowerUpBuild,
+  validatePowerUpBuild,
+} from './powerups';
+export type { PowerUpDefinition, PowerUpId, PowerUpRarity } from './powerups';
+export {
   freezeGearCombatSnapshot,
   isGearCombatModifiers,
   isGearCombatSnapshot,

@@ -102,7 +102,7 @@ test('Gear forging copy avoids accessory, loose, and merge vocabulary', () => {
   const mockForgeRoute = sliceSource(
     mockSource,
     "if (method === 'POST' && path === '/api/merge-gear')",
-    "if (method === 'POST' && path === '/api/capsule')"
+    "if (method === 'POST' && path === '/api/daily-login/claim')"
   );
   const statusValues = [
     'string',
