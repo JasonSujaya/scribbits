@@ -1718,11 +1718,7 @@ const handleApi = async (request, response, url) => {
     ) {
       sendJson(response, 200, {
         ...state,
-        lastRumbleReceipt: requestHasPreviewFlag(
-          request,
-          url,
-          'backed-return'
-        )
+        lastRumbleReceipt: requestHasPreviewFlag(request, url, 'backed-return')
           ? backedReturnReceiptState()
           : null,
         legacyReturnReceipt: requestHasPreviewFlag(
@@ -1783,6 +1779,22 @@ const handleApi = async (request, response, url) => {
       loggedIn: state.loggedIn,
       hasCreatedScribbit: state.hasCreatedScribbit,
       featuredCreations: featuredCreationsForPreview(),
+    });
+    return;
+  }
+
+  if (method === 'POST' && path === '/api/battle-clip') {
+    const body = await readJsonBody(request);
+    if (
+      !body ||
+      typeof body.videoDataUrl !== 'string' ||
+      !body.videoDataUrl.startsWith('data:video/')
+    ) {
+      sendError(response, 400, 'Send one WebM or MP4 battle clip under 8 MB.');
+      return;
+    }
+    sendJson(response, 200, {
+      videoUrl: 'https://v.redd.it/scribbits-mock-battle.webm',
     });
     return;
   }
@@ -2742,6 +2754,14 @@ const handleApi = async (request, response, url) => {
         response,
         409,
         'That Free Draw submission ID is already in use.'
+      );
+      return;
+    }
+    if (getLivingScribbitsForPreview(previewMode).length === 0) {
+      sendError(
+        response,
+        409,
+        'Draw your first Scribbit before using Free Draw.'
       );
       return;
     }

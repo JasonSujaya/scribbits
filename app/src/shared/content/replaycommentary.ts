@@ -1,5 +1,5 @@
 // Versioned, immutable presentation copy for the deterministic Inkcast replay.
-// Every bank has an explicit token contract and fixed v1 rotation; bank sizes
+// Every bank has an explicit token contract and stable line IDs; bank sizes
 // vary from three to five according to how often that fact can recur.
 // Combat, rewards, and transcript facts remain owned by the authoritative server.
 
@@ -65,7 +65,10 @@ export type InkcastCommentaryTemplateValues = Readonly<
   Partial<Record<InkcastCommentaryToken, string | number>>
 >;
 
-export const INKCAST_COMMENTARY_PACK_VERSION = 1;
+// v2 keeps the stable line IDs while replacing internal combat jargon with
+// short player-facing sentences. The selection seed changes deliberately so
+// old and new wording do not pretend to be the same presentation pack.
+export const INKCAST_COMMENTARY_PACK_VERSION = 2;
 export const INKCAST_COMMENTARY_EXPECTED_LINE_COUNT = 104;
 
 export const INKCAST_COMMENTARY_BANK_IDS: readonly InkcastCommentaryBankId[] =
@@ -111,14 +114,13 @@ const FORBIDDEN_MISS_MECHANIC_CLAIM =
 const FORBIDDEN_ACTOR_WIDE_MISS_CLAIM =
   /(?:no damage from \{actor\}|\{actor\} (?:deals?|does) no damage)/i;
 const TRUTHFUL_MISS_RESULT =
-  /\b(?:no clean (?:hit|nib contact)|without (?:a clean hit|damage)|no damage)\b/i;
+  /\b(?:miss(?:es|ed)?|no (?:clean )?hit|does not (?:hit|land)|without (?:a clean )?hit(?:ting)?)\b/i;
 const FORBIDDEN_ARENA_SHRINK_CLAIM =
   /\b(?:collisions?|hide|hiding|nowhere|damage|hits?|crush(?:ed|es|ing)?)\b/i;
 const REQUIRED_ARENA_SHRINK_TRUTH =
   /\b(?:arena|edges?|fold(?:s|ed|ing)?|shrink(?:s|ing)?)\b/i;
 const FORBIDDEN_INK_PRESSURE_TIMING_CLAIM =
   /\b(?:refresh(?:ed|es|ing)?|recharge(?:d|s|ing)?|cooldowns?|immediate(?:ly)?|pending|queued|banks?|one more power)\b/i;
-const REQUIRED_INK_PRESSURE_TRUTH = /\bINK PRESSURE\b/i;
 const FORBIDDEN_LATE_FIGHT_CLAIM = /\bpage speeds? up\b/i;
 const REQUIRED_LATE_FIGHT_TRUTH = /\b(?:cooldowns?|recharge)\b/i;
 const MAXIMUM_TEMPLATE_VALUES: Readonly<
@@ -160,23 +162,23 @@ export const INKCAST_COMMENTARY_BANKS: readonly InkcastCommentaryBank[] =
       [
         defineVariant(
           'v1.inkquake.telegraph.page-load',
-          '{actor} loads the page for {move}!'
+          '{actor} gets ready to use {move}.'
         ),
         defineVariant(
           'v1.inkquake.telegraph.floor-ripple',
-          'The floor ripples as {actor} winds up {move}!'
+          '{actor} starts charging {move}.'
         ),
         defineVariant(
           'v1.inkquake.telegraph.fresh-ink',
-          '{actor} plants fresh ink for {move}!'
+          '{actor} is preparing {move}.'
         ),
         defineVariant(
           'v1.inkquake.telegraph.underfoot',
-          '{move} swells under {actor}!'
+          '{actor} is about to use {move}.'
         ),
         defineVariant(
           'v1.inkquake.telegraph.broad-ring',
-          "A broad ink ring gathers beneath {actor}'s {move}!"
+          '{actor} winds up {move}.'
         ),
       ]
     ),
@@ -187,19 +189,19 @@ export const INKCAST_COMMENTARY_BANKS: readonly InkcastCommentaryBank[] =
       [
         defineVariant(
           'v1.inkquake.miss.clean-ring',
-          "{actor}'s {move} finds no clean hit!"
+          "{actor}'s {move} misses."
         ),
         defineVariant(
           'v1.inkquake.miss.empty-paper',
-          '{move} rolls through empty paper around {actor} without damage!'
+          '{actor} uses {move}, but it misses.'
         ),
         defineVariant(
           'v1.inkquake.miss.ring-expires',
-          "{actor}'s {move} ring expires without damage!"
+          '{move} from {actor} does not hit.'
         ),
         defineVariant(
           'v1.inkquake.miss.wide-ring',
-          '{actor} sends {move} wide — no clean hit!'
+          '{actor} cannot land {move}.'
         ),
       ]
     ),
@@ -210,23 +212,23 @@ export const INKCAST_COMMENTARY_BANKS: readonly InkcastCommentaryBank[] =
       [
         defineVariant(
           'v1.inkquake.hit.page-buckle',
-          '{source} buckles the page — {amount} to {target}!'
+          "{source}'s shockwave hits {target} for {amount}."
         ),
         defineVariant(
           'v1.inkquake.hit.ringing-impact',
-          '{source} rings {target} for {amount}!'
+          "{target} takes {amount} damage from {source}'s shockwave."
         ),
         defineVariant(
           'v1.inkquake.hit.ripple-impact',
-          'The ripple from {source} deals {amount} to {target}!'
+          '{source} catches {target} with a shockwave for {amount}.'
         ),
         defineVariant(
           'v1.inkquake.hit.folded-lane',
-          "{source} folds {target}'s lane for {amount}!"
+          '{source} sends a shockwave into {target} for {amount}.'
         ),
         defineVariant(
           'v1.inkquake.hit.point-tremor',
-          '{source} sends a {amount}-point tremor through {target}!'
+          '{source} deals {amount} shockwave damage to {target}.'
         ),
       ]
     ),
@@ -237,23 +239,23 @@ export const INKCAST_COMMENTARY_BANKS: readonly InkcastCommentaryBank[] =
       [
         defineVariant(
           'v1.nib_halo.telegraph.uncapped-quills',
-          '{actor} uncaps three quills for {move}!'
+          '{actor} gets three quills ready for {move}.'
         ),
         defineVariant(
           'v1.nib_halo.telegraph.orbit-start',
-          '{move} starts circling {actor}!'
+          '{actor} starts spinning three quills with {move}.'
         ),
         defineVariant(
           'v1.nib_halo.telegraph.live-nibs',
-          '{actor} sets three live nibs into {move}!'
+          '{actor} brings out three quills for {move}.'
         ),
         defineVariant(
           'v1.nib_halo.telegraph.sharpened-ring',
-          '{actor} sharpens the ring for {move}!'
+          '{actor} prepares three quills with {move}.'
         ),
         defineVariant(
           'v1.nib_halo.telegraph.three-points',
-          "Three points lock around {actor}'s {move}!"
+          '{actor} is ready to use {move}.'
         ),
       ]
     ),
@@ -264,19 +266,19 @@ export const INKCAST_COMMENTARY_BANKS: readonly InkcastCommentaryBank[] =
       [
         defineVariant(
           'v1.nib_halo.miss.clean-quills',
-          "No clean hit lands from {actor}'s {move}!"
+          "{actor}'s {move} misses its target."
         ),
         defineVariant(
           'v1.nib_halo.miss.circle-out',
-          '{move} circles out around {actor} without damage!'
+          '{actor} uses {move}, but no hit lands.'
         ),
         defineVariant(
           'v1.nib_halo.miss.nib-contact',
-          "No clean nib contact from {actor}'s {move}!"
+          '{move} does not hit for {actor}.'
         ),
         defineVariant(
           'v1.nib_halo.miss.orbit-complete',
-          "{actor}'s {move} completes with no damage!"
+          '{actor} finishes {move} without a hit.'
         ),
       ]
     ),
@@ -287,23 +289,23 @@ export const INKCAST_COMMENTARY_BANKS: readonly InkcastCommentaryBank[] =
       [
         defineVariant(
           'v1.nib_halo.hit.quill-clip',
-          '{source} clips {target} for {amount}!'
+          "{source}'s quills hit {target} for {amount}."
         ),
         defineVariant(
           'v1.nib_halo.hit.orbit-connect',
-          '{source} circles into {target} for {amount}!'
+          "{target} takes {amount} damage from {source}'s quills."
         ),
         defineVariant(
           'v1.nib_halo.hit.orbiting-ink',
-          'Orbiting ink from {source} deals {amount} to {target}!'
+          '{source} catches {target} with a quill for {amount}.'
         ),
         defineVariant(
           'v1.nib_halo.hit.quill-meet',
-          "{target} meets {source}'s quills for {amount}!"
+          '{source} sends a quill into {target} for {amount}.'
         ),
         defineVariant(
           'v1.nib_halo.hit.three-quill-mark',
-          'Three quills from {source} mark {target} for {amount}!'
+          '{source} deals {amount} quill damage to {target}.'
         ),
       ]
     ),
@@ -314,23 +316,23 @@ export const INKCAST_COMMENTARY_BANKS: readonly InkcastCommentaryBank[] =
       [
         defineVariant(
           'v1.smearstep.telegraph.two-step',
-          '{actor} sketches a two-step {move}!'
+          '{actor} gets ready to dash with {move}.'
         ),
         defineVariant(
           'v1.smearstep.telegraph.escape-line',
-          '{actor} lines up the lane for {move}!'
+          '{actor} prepares to move fast with {move}.'
         ),
         defineVariant(
           'v1.smearstep.telegraph.predicted-lane',
-          '{actor} predicts the page for {move}!'
+          '{actor} is about to dash with {move}.'
         ),
         defineVariant(
           'v1.smearstep.telegraph.loaded-dashes',
-          'Two dashes load beneath {actor} for {move}!'
+          '{actor} gets two quick dashes ready for {move}.'
         ),
         defineVariant(
           'v1.smearstep.telegraph.quick-lanes',
-          '{actor} marks two quick lanes for {move}!'
+          '{actor} starts moving into {move}.'
         ),
       ]
     ),
@@ -341,19 +343,19 @@ export const INKCAST_COMMENTARY_BANKS: readonly InkcastCommentaryBank[] =
       [
         defineVariant(
           'v1.smearstep.miss.clean-pass',
-          "{actor}'s {move} finishes without a clean hit!"
+          '{actor} dashes with {move}, but misses.'
         ),
         defineVariant(
           'v1.smearstep.miss.two-dashes',
-          "{actor}'s two passes of {move} make no clean hit!"
+          "{actor}'s {move} does not land."
         ),
         defineVariant(
           'v1.smearstep.miss.empty-line',
-          "{actor}'s {move} line finds no clean hit!"
+          '{actor} uses {move} without landing a hit.'
         ),
         defineVariant(
           'v1.smearstep.miss.dry-streak',
-          '{move} leaves {actor} a dry streak with no clean hit!'
+          '{actor} tries {move}, but no hit lands.'
         ),
       ]
     ),
@@ -364,23 +366,23 @@ export const INKCAST_COMMENTARY_BANKS: readonly InkcastCommentaryBank[] =
       [
         defineVariant(
           'v1.smearstep.hit.dash-through',
-          '{source} dashes through {target} for {amount}!'
+          "{source}'s dash hits {target} for {amount}."
         ),
         defineVariant(
           'v1.smearstep.hit.lane-catch',
-          '{source} catches {target} in the lane for {amount}!'
+          "{target} takes {amount} damage from {source}'s dash."
         ),
         defineVariant(
           'v1.smearstep.hit.two-step-ink',
-          'Two-step ink from {source} hits {target} for {amount}!'
+          '{source} catches {target} with a dash for {amount}.'
         ),
         defineVariant(
           'v1.smearstep.hit.ink-pass',
-          '{target} takes a {amount}-point pass from {source}!'
+          '{source} dashes into {target} for {amount}.'
         ),
         defineVariant(
           'v1.smearstep.hit.page-streak',
-          '{source} streaks across {target} for {amount}!'
+          '{source} deals {amount} dash damage to {target}.'
         ),
       ]
     ),
@@ -391,23 +393,23 @@ export const INKCAST_COMMENTARY_BANKS: readonly InkcastCommentaryBank[] =
       [
         defineVariant(
           'v1.colorburst.telegraph.mixed-page',
-          '{actor} mixes the page for {move}!'
+          '{actor} gathers color for {move}.'
         ),
         defineVariant(
           'v1.colorburst.telegraph.wide-cone',
-          '{actor} opens a wide cone for {move}!'
+          '{actor} gets ready for {move}.'
         ),
         defineVariant(
           'v1.colorburst.telegraph.loaded-color',
-          '{actor} loads fresh color into {move}!'
+          '{actor} prepares a bright {move} attack.'
         ),
         defineVariant(
           'v1.colorburst.telegraph.palette-flash',
-          'The palette flashes around {actor} for {move}!'
+          '{actor} is ready to launch {move}.'
         ),
         defineVariant(
           'v1.colorburst.telegraph.color-fan',
-          '{actor} fans every color into {move}!'
+          '{actor} charges up {move}.'
         ),
       ]
     ),
@@ -418,23 +420,23 @@ export const INKCAST_COMMENTARY_BANKS: readonly InkcastCommentaryBank[] =
       [
         defineVariant(
           'v1.colorburst.hit.color-splash',
-          '{source} splashes {target} for {amount}!'
+          "{source}'s color blast hits {target} for {amount}."
         ),
         defineVariant(
           'v1.colorburst.hit.cone-catch',
-          '{source} catches {target} in the cone for {amount}!'
+          "{target} takes {amount} damage from {source}'s color blast."
         ),
         defineVariant(
           'v1.colorburst.hit.color-fan',
-          'The fan from {source} paints {target} for {amount}!'
+          '{source} catches {target} with a color blast for {amount}.'
         ),
         defineVariant(
           'v1.colorburst.hit.palette-pop',
-          "{source}'s palette pops {amount} across {target}!"
+          '{source} sends a color blast into {target} for {amount}.'
         ),
         defineVariant(
           'v1.colorburst.hit.color-wash',
-          'Color from {source} washes {amount} over {target}!'
+          '{source} deals {amount} color damage to {target}.'
         ),
       ]
     ),
@@ -445,23 +447,23 @@ export const INKCAST_COMMENTARY_BANKS: readonly InkcastCommentaryBank[] =
       [
         defineVariant(
           'v1.general.battle-start.drawings-decide',
-          '{moveA} meets {moveB} — drawings decide!'
+          '{moveA} vs {moveB}. Fight!'
         ),
         defineVariant(
           'v1.general.battle-start.bring-and-answer',
-          '{moveA} enters; {moveB} answers!'
+          '{moveA} and {moveB} are ready.'
         ),
         defineVariant(
           'v1.general.battle-start.fresh-ink',
-          'Fresh ink: {moveA} versus {moveB}!'
+          'Here we go: {moveA} against {moveB}.'
         ),
         defineVariant(
           'v1.general.battle-start.moving-page',
-          '{moveA} and {moveB} hit the moving page!'
+          '{moveA} faces {moveB}.'
         ),
         defineVariant(
           'v1.general.battle-start.first-bell',
-          'First bell: {moveA} faces {moveB}!'
+          'The fight between {moveA} and {moveB} begins.'
         ),
       ]
     ),
@@ -472,23 +474,23 @@ export const INKCAST_COMMENTARY_BANKS: readonly InkcastCommentaryBank[] =
       [
         defineVariant(
           'v1.general.normal-hit.clean-tag',
-          '{source} tags {target} for {amount}!'
+          '{source} hits {target} for {amount}.'
         ),
         defineVariant(
           'v1.general.normal-hit.clean-land',
-          '{source} lands clean — {amount} to {target}!'
+          '{target} takes {amount} damage from {source}.'
         ),
         defineVariant(
           'v1.general.normal-hit.ink-connects',
-          'Ink connects: {source} deals {amount} to {target}!'
+          '{source} lands a hit on {target} for {amount}.'
         ),
         defineVariant(
           'v1.general.normal-hit.page-check',
-          '{source} page-checks {target} for {amount}!'
+          '{source} catches {target} for {amount}.'
         ),
         defineVariant(
           'v1.general.normal-hit.ink-mark',
-          '{source} inks {target} for {amount}!'
+          '{source} deals {amount} damage to {target}.'
         ),
       ]
     ),
@@ -499,23 +501,23 @@ export const INKCAST_COMMENTARY_BANKS: readonly InkcastCommentaryBank[] =
       [
         defineVariant(
           'v1.general.critical-hit.crit-call',
-          'CRIT! {source} deals {amount} to {target}!'
+          'Big hit! {source} deals {amount} to {target}.'
         ),
         defineVariant(
           'v1.general.critical-hit.paper-fold',
-          '{source} finds the fold — {amount} CRIT to {target}!'
+          '{source} hits {target} hard for {amount}.'
         ),
         defineVariant(
           'v1.general.critical-hit.big-splat',
-          'BIG SPLAT! {target} takes {amount} from {source}!'
+          'Huge hit! {target} takes {amount} from {source}.'
         ),
         defineVariant(
           'v1.general.critical-hit.point-crit',
-          '{source} lands a {amount}-point CRIT on {target}!'
+          '{source} lands a powerful hit on {target} for {amount}.'
         ),
         defineVariant(
           'v1.general.critical-hit.crit-splat',
-          '{source} splats {target} for {amount} CRIT!'
+          '{source} catches {target} with a big {amount}-damage hit.'
         ),
       ]
     ),
@@ -526,15 +528,15 @@ export const INKCAST_COMMENTARY_BANKS: readonly InkcastCommentaryBank[] =
       [
         defineVariant(
           'v1.general.burn.capped-afterburn',
-          '{target} catches a capped Ember afterburn!'
+          '{target} is burning.'
         ),
         defineVariant(
           'v1.general.burn.ink-keeps-burning',
-          'Ember ink keeps burning under {target}!'
+          '{target} takes more burn damage.'
         ),
         defineVariant(
           'v1.general.burn.smoldering-hit',
-          '{target} is still smoldering from the hit!'
+          'The burn keeps hurting {target}.'
         ),
       ]
     ),
@@ -545,15 +547,15 @@ export const INKCAST_COMMENTARY_BANKS: readonly InkcastCommentaryBank[] =
       [
         defineVariant(
           'v1.general.barrier-created.paper-shield',
-          '{actor} grows a Moss paper shield!'
+          '{actor} puts up a shield.'
         ),
         defineVariant(
           'v1.general.barrier-created.folded-guard',
-          'A folded Moss guard wraps {actor}!'
+          'A shield forms around {actor}.'
         ),
         defineVariant(
           'v1.general.barrier-created.layered-page',
-          '{actor} layers the page into a shield!'
+          '{actor} is protected by a shield.'
         ),
       ]
     ),
@@ -564,19 +566,19 @@ export const INKCAST_COMMENTARY_BANKS: readonly InkcastCommentaryBank[] =
       [
         defineVariant(
           'v1.general.barrier-hit.absorbed',
-          "{actor}'s shield absorbs {amount}!"
+          "{actor}'s shield blocks {amount}."
         ),
         defineVariant(
           'v1.general.barrier-hit.paper-guard',
-          'Paper guard! {actor} blocks {amount}.'
+          '{actor} blocks {amount} damage.'
         ),
         defineVariant(
           'v1.general.barrier-hit.fold-away',
-          '{actor} folds away {amount} damage!'
+          'The shield stops {amount} damage for {actor}.'
         ),
         defineVariant(
           'v1.general.barrier-hit.moss-catch',
-          'The Moss shield catches {amount} for {actor}!'
+          "{actor}'s guard holds and stops {amount}."
         ),
       ]
     ),
@@ -587,15 +589,15 @@ export const INKCAST_COMMENTARY_BANKS: readonly InkcastCommentaryBank[] =
       [
         defineVariant(
           'v1.general.barrier-broken.tears-open',
-          "{actor}'s paper shield tears open!"
+          "{actor}'s shield breaks."
         ),
         defineVariant(
           'v1.general.barrier-broken.guard-rips',
-          'The Moss guard around {actor} rips apart!'
+          "{actor}'s guard is gone."
         ),
         defineVariant(
           'v1.general.barrier-broken.last-fold',
-          "{actor}'s last shield fold gives way!"
+          "{actor}'s protection runs out."
         ),
       ]
     ),
@@ -604,17 +606,14 @@ export const INKCAST_COMMENTARY_BANKS: readonly InkcastCommentaryBank[] =
       ['actor'],
       ['actor'],
       [
-        defineVariant(
-          'v1.general.ink-pressure.surge',
-          '{actor} surges with INK PRESSURE!'
-        ),
+        defineVariant('v1.general.ink-pressure.surge', '{actor} powers up.'),
         defineVariant(
           'v1.general.ink-pressure.refresh',
-          'INK PRESSURE gathers around {actor}!'
+          '{actor} gets a burst of energy.'
         ),
         defineVariant(
           'v1.general.ink-pressure.page-flash',
-          'The page flashes INK PRESSURE around {actor}!'
+          '{actor} is ready to strike again.'
         ),
       ]
     ),
@@ -625,19 +624,19 @@ export const INKCAST_COMMENTARY_BANKS: readonly InkcastCommentaryBank[] =
       [
         defineVariant(
           'v1.general.nib-recoil.snap-back',
-          "{actor}'s wall nib snaps back!"
+          '{actor} bounces off the edge.'
         ),
         defineVariant(
           'v1.general.nib-recoil.edge-clip',
-          '{actor} clips the edge and recoils!'
+          '{actor} hits the edge and falls back.'
         ),
         defineVariant(
           'v1.general.nib-recoil.page-kick',
-          'The page kicks a loose nib back at {actor}!'
+          'The edge knocks {actor} back.'
         ),
         defineVariant(
           'v1.general.nib-recoil.margin-snap',
-          'A margin nib springs into {actor}!'
+          '{actor} gets pushed back from the edge.'
         ),
       ]
     ),
@@ -648,15 +647,15 @@ export const INKCAST_COMMENTARY_BANKS: readonly InkcastCommentaryBank[] =
       [
         defineVariant(
           'v1.general.arena-shrink.fold-inward',
-          'The paper fold begins — the arena is shrinking!'
+          'The arena is getting smaller.'
         ),
         defineVariant(
           'v1.general.arena-shrink.live-page',
-          'The live page starts shrinking around both drawings!'
+          'The arena edges move inward.'
         ),
         defineVariant(
           'v1.general.arena-shrink.collisions-coming',
-          'Arena edges start folding inward!'
+          'The arena leaves less room to move.'
         ),
       ]
     ),
@@ -667,19 +666,19 @@ export const INKCAST_COMMENTARY_BANKS: readonly InkcastCommentaryBank[] =
       [
         defineVariant(
           'v1.general.echo-created.living-copy',
-          '{actor} leaves a living {move} echo!'
+          '{actor} sets up another {move} attack.'
         ),
         defineVariant(
           'v1.general.echo-created.delayed-copy',
-          'A delayed {move} copy hangs behind {actor}!'
+          '{actor} saves a {move} follow-up.'
         ),
         defineVariant(
           'v1.general.echo-created.waiting-color',
-          "{actor}'s {move} echo waits on the page!"
+          "{actor}'s next {move} is waiting."
         ),
         defineVariant(
           'v1.general.echo-created.second-splash',
-          '{actor} pins a second {move} splash to the paper!'
+          '{actor} prepares a second {move}.'
         ),
       ]
     ),
@@ -690,19 +689,19 @@ export const INKCAST_COMMENTARY_BANKS: readonly InkcastCommentaryBank[] =
       [
         defineVariant(
           'v1.general.echo-fired.echo-fires',
-          "{actor}'s {move} echo fires!"
+          '{actor} uses {move} again.'
         ),
         defineVariant(
           'v1.general.echo-fired.delayed-color',
-          'Delayed color! {actor} flashes {move} again!'
+          "{actor}'s follow-up {move} lands."
         ),
         defineVariant(
           'v1.general.echo-fired.waiting-copy',
-          "{actor}'s waiting {move} copy comes alive!"
+          '{actor} follows up with {move}.'
         ),
         defineVariant(
           'v1.general.echo-fired.second-bloom',
-          "The page releases {actor}'s second {move} bloom!"
+          '{actor} gets another {move} attack.'
         ),
       ]
     ),
@@ -713,15 +712,15 @@ export const INKCAST_COMMENTARY_BANKS: readonly InkcastCommentaryBank[] =
       [
         defineVariant(
           'v1.general.echo-shattered.echo-breaks',
-          "{actor}'s {move} echo shatters!"
+          "{actor}'s follow-up {move} is stopped."
         ),
         defineVariant(
           'v1.general.echo-shattered.color-erased',
-          'The delayed {move} around {actor} is erased!'
+          "{actor}'s delayed {move} is gone."
         ),
         defineVariant(
           'v1.general.echo-shattered.before-fire',
-          "{actor}'s {move} echo breaks before it can fire!"
+          "{actor}'s next {move} ends early."
         ),
       ]
     ),
@@ -732,15 +731,15 @@ export const INKCAST_COMMENTARY_BANKS: readonly InkcastCommentaryBank[] =
       [
         defineVariant(
           'v1.general.late-fight.recharge',
-          'SUDDEN SCRIBBLE! Power cooldowns shorten!'
+          'Powers recharge faster now.'
         ),
         defineVariant(
           'v1.general.late-fight.page-speeds',
-          'SUDDEN SCRIBBLE! Powers recharge faster!'
+          'The fight speeds up. Powers recharge sooner.'
         ),
         defineVariant(
           'v1.general.late-fight.final-strokes',
-          'Final strokes — power cooldowns tick faster!'
+          'Power moves recharge more often now.'
         ),
       ]
     ),
@@ -964,13 +963,11 @@ export function validateInkcastCommentaryPack(
           errors.push(`${variant.id} needs a truthful shrink-start claim.`);
         }
       }
-      if (bank.id === 'general.ink-pressure') {
-        if (FORBIDDEN_INK_PRESSURE_TIMING_CLAIM.test(variant.template)) {
-          errors.push(`${variant.id} invents Ink Pressure timing.`);
-        }
-        if (!REQUIRED_INK_PRESSURE_TRUTH.test(variant.template)) {
-          errors.push(`${variant.id} must name INK PRESSURE.`);
-        }
+      if (
+        bank.id === 'general.ink-pressure' &&
+        FORBIDDEN_INK_PRESSURE_TIMING_CLAIM.test(variant.template)
+      ) {
+        errors.push(`${variant.id} invents Ink Pressure timing.`);
       }
       if (bank.id === 'general.late-fight') {
         if (FORBIDDEN_LATE_FIGHT_CLAIM.test(variant.template)) {

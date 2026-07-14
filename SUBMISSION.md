@@ -90,8 +90,9 @@ on one exercise.
   a signed margin.
   Power-specific care notes give each drawing nine distinct moments across its
   three-day life, with a paper receipt showing the exact server-confirmed reward.
-  The canonical Scout tab keeps tonight and the prior six days readable after the
-  receipt, then returns from a saved Replay to the same dated page.
+  The Battle Scrapbook keeps the newest 20 authoritative results readable and
+  returns from a saved Replay to the same page. The former Scout Notebook is a
+  compatibility-only return surface while older replay links are retired.
   A visible post-lock Practice card also lets anyone test all four drawing powers
   without weakening the once-daily official submission.
 - **Polish:** portrait layout, a generated Craftbox paper stage, bundled
@@ -116,16 +117,16 @@ on one exercise.
   ambient suppression, cached HUD labels, and 30 Hz presentation effects keep
   the live 320x568 battle near 59 FPS without changing server authority.
 - **Reddit-y:** real Reddit identity, player drawings, daily custom posts,
-  Belief, Back/Clout competition, and app-authored result comments using actual
-  Rumble data.
+  Belief, Back/Clout competition, app-authored result comments using actual
+  Rumble data, and an explicit Share action that hosts a silent replay clip on
+  Reddit media and opens Reddit's share sheet.
 - **Hook-y:** one daily drawing, a locked prediction, overnight anticipation,
   a visible daily streak, permanent Scout Clout, a three-day life-or-Legend arc,
-  and an earned-only capsule collection with daily discount, collector rank,
+  and an earned-only 5-Ink chest collection with collector rank,
   permanent discovery, transparent Epic pity, wearable titles, and a permanent
   Legacy Book. The daily-paced Founder Rival Thread adds a relationship without
-  stats or another reward track. A bounded seven-day Scout Notebook turns Back
-  results into visible form without another reward track; the newest 20 stored
-  fights remain watchable in a truthful Battle Scrapbook. Session-only Practice
+  stats or another reward track. The newest 20 stored fights remain watchable
+  in a truthful Battle Scrapbook. Session-only Practice
   adds replayability without another currency
   or farmable reward. Pens expand expression while the fixed 100-point budget
   prevents purchased or progression-based raw power.
@@ -160,8 +161,8 @@ on one exercise.
    and the transcript-derived recap.
 5. **37–43s:** Show a Day 9 Founder margin and 2–1 score, then open Rivals to prove
    the active founder is pinned beside two fresh exhibition choices.
-6. **43–49s:** Open Scout, flip from tonight to a filed Day 8 drawing, start its
-   saved replay, then return to that same page.
+6. **43–49s:** Tap Share on the finished fight, then show the Reddit link opening
+   with the hosted battle clip inline on the Scribbits splash.
 7. **49–55s:** Flash the daily Champion Contract, then cut through the reward-free
    Practice Lab's four checked powers and
    land on its gold 4/4 completion card.
@@ -225,7 +226,7 @@ on one exercise.
 - Separated authoritative base drawings from decorated display PNGs so equipped
   accessories stay cosmetic and cannot alter combat analysis.
 - Promoted Mystery Ink into a visible return loop: daily action progress toward
-  a discounted capsule, permanent collection discovery, collector ranks, and a
+  a 5-Ink chest, permanent collection discovery, collector ranks, and a
   tangible item-art reveal with a direct Collection handoff. Capsules disclose
   70/25/5 rarity odds and guarantee an Epic by pull 10; permanent pen/title
   duplicates redirect within rarity while useful accessory copies stack.

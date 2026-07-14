@@ -44,19 +44,36 @@ test('Arena keeps the lock authoritative while exposing only a verified current-
 });
 
 test('Draw renders the minimal saved viewer and transitions into it immediately after save', () => {
-  assert.match(drawSource, /private buildFreeDrawingViewer\(drawing: FreeDrawing\)/);
+  assert.match(
+    drawSource,
+    /private buildFreeDrawingViewer\(drawing: FreeDrawing\)/
+  );
   assert.match(drawSource, /translate\('freeDraw\.savedToday'\)/);
   assert.match(drawSource, /translate\('freeDraw\.practice'\)/);
   assert.match(drawSource, /'aria-label': `Saved today: \$\{drawing\.name\}`/);
   assert.match(drawSource, /'Practice with a temporary fighter'/);
   assert.match(drawSource, /mergeTodayFreeDrawing\(arena, response\.data\)/);
-  assert.match(drawSource, /setArena\(this, nextArena\);[\s\S]{0,80}restartIntoFreeDrawingViewer\(\)/);
+  assert.match(
+    drawSource,
+    /setArena\(this, nextArena\);[\s\S]{0,80}restartIntoFreeDrawingViewer\(\)/
+  );
 });
 
 test('Free Draw confirmation saves a drawing instead of bringing a Scribbit to life', () => {
   assert.match(drawSource, /mode: 'free-draw' as const/);
   assert.match(modalSource, /isFreeDraw \? 'SAVE DRAWING' : 'BRING TO LIFE'/);
-  assert.match(modalSource, /isFreeDraw[\s\S]*'Save Free Draw'[\s\S]*'Bring Scribbit to life'/);
+  assert.match(
+    modalSource,
+    /isFreeDraw[\s\S]*'Save Free Draw'[\s\S]*'Bring Scribbit to life'/
+  );
+  assert.match(
+    arenaRouteSource,
+    /getAliveScribbitsForUser\(redis, player\.userId\)\)\.length === 0/
+  );
+  assert.match(
+    arenaRouteSource,
+    /Draw your first Scribbit before using Free Draw\./
+  );
 });
 
 test('Free Draw reply-loss reconciliation requires the saved drawing snapshot', () => {

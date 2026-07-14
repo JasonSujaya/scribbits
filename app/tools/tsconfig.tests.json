@@ -31,6 +31,7 @@
     "../src/client/lib/localization.ts",
     "../src/client/lib/legacyreturnpresentation.ts",
     "../src/client/lib/registry.ts",
+    "../src/client/lib/replaycommentary.ts",
     "../src/client/lib/replaypostfighteligibility.ts",
     "../src/client/lib/replayreward.ts",
     "../src/client/lib/rumblereturnpresentation.ts",

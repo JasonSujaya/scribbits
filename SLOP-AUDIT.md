@@ -4,7 +4,7 @@ _Last verified: 2026-07-14 against the current dirty worktree._
 
 ## Summary
 
-The cleanup closed every verified P0 and P1 finding and five of the six P2 findings. Current verified open totals: **0 P0, 0 P1, 1 P2**. Migration of the legacy deterministic harness now has focused battle-presentation, capsule-presentation, equipment-economy, Founder Rival Episode, semantic-tab, Element Payload Guide, Arena UI, async-lifecycle, public Legend pagination, Legacy Card, Rumble-return, and Legacy-return-presentation ownership. The focused capsule suite also owns the generated Mystery Ink chest asset, compact-control contract, and lazy Shop preload boundary. The remaining work is bounded to continuing that domain-by-domain migration.
+The cleanup closed the previously verified P0 and P1 findings and five of the six P2 findings. Current verified open totals: **0 P0, 1 P1, 1 P2**. The new P1 is bounded to hardening the newly added battle-clip upload boundary. Migration of the legacy deterministic harness now has focused battle-presentation, capsule-presentation, equipment-economy, Founder Rival Episode, semantic-tab, Element Payload Guide, Arena UI, async-lifecycle, public Legend pagination, Legacy Card, Rumble-return, and Legacy-return-presentation ownership. The focused capsule suite also owns the generated Mystery Ink chest asset, compact-control contract, and lazy Shop preload boundary.
 
 The player-facing cleanup is also complete: the Ink Kit now has the four canonical Gear categories plus a separate Styles section, each Gear style renders once with aggregate Forge progress, the retired Impact and Edge effect families are gone, and Replay health is presented as full/half/empty hearts.
 
@@ -100,6 +100,17 @@ The player-facing cleanup is also complete: the Ink Kit now has the four canonic
 
 ### Additional requested cleanup
 
+- Clout and Rumble Ink payout hashes now expire after eight days and write one
+  per-user cleanup index in the same transaction as the currency award. Privacy
+  deletion validates receipt ownership, removes indexed receipts, scans the
+  fixed pre-index migration window plus the recent fallback window, and cannot
+  delete another player's receipt through a corrupt index entry.
+- Manual `Create Rumble` post creation now validates the subreddit menu target
+  and reauthorizes the current Reddit moderator before touching Arena storage.
+  Ranking-season administration composes that same live moderator check with
+  its separate owner allowlist.
+- Package and Devvit production builds now use the same explicit 4 GiB Node heap
+  ceiling, closing the local verification OOM without changing the bundle.
 - Impact and Edge are no longer Gear effect families; their six items were reassigned across the six supported families.
 - Replay now plans and renders six heart icons with full, half, and empty states; numeric health remains available through the accessibility label.
 - Draw has one compact two-page tool owner: base colors plus everyday controls
@@ -117,6 +128,20 @@ The player-facing cleanup is also complete: the Ink Kit now has the four canonic
   events, preserves frozen v1 challenge snapshots, and reuses the existing strip.
 - `renderMysteryCosmeticPreview`, `removeRumbleEntrant`, and unused request/slot type aliases were deleted.
 
+## Remaining P1 work
+
+### P1-1 — bind and throttle battle-clip uploads
+
+- `/api/battle-clip` requires login and rejects declared uploads above 8 MB,
+  while the client uploads only after an explicit Share action.
+- **Still open:** the request is not bound to an owned battle report, has no
+  per-user in-flight or rate guard, and validates the data-URL declaration
+  rather than WebM/MP4 container bytes. A signed-in caller can therefore use
+  the endpoint as a generic Reddit media uploader.
+- **Next cut:** include the report ID, verify report ownership, reuse a bounded
+  per-user request guard, validate container signatures, and add route-level
+  auth/failure/retry tests before calling sharing production-ready.
+
 ## Remaining P2 work
 
 ### P2-2 — finish splitting the legacy deterministic harness
@@ -127,12 +152,12 @@ The player-facing cleanup is also complete: the Ink Kit now has the four canonic
 
 ## Verification snapshot
 
-- `./verify.command`: pass.
+- Complete `./verify.command` stages: pass after the final fixes.
 - Type-check: pass.
 - ESLint: pass.
-- Discoverable suites: **197/197 tests pass** across 49 files.
-- Legacy deterministic harness: **168/168 groups pass** after the Legacy-return migration.
-- Production build: pass in **4889 ms**.
+- Discoverable suites: **214/214 tests pass** across 52 files.
+- Legacy deterministic harness: **168/168 groups pass**.
+- Production build: pass in **21,098 ms**.
 - Live browser proof: Arena opens the chooser before the first Spar; the selected rival reaches the VS and replay; all three server-scored bouts complete; `NEW RIVAL RUN` rolls to a fresh bout 1/3 slate; the compact modal clears and dims the dock.
 - Shop proof: the fifth dock tab opens its dedicated scene, completes a
   server-backed single chest, and routes the confirmed reward into Bag.

@@ -159,6 +159,7 @@ export type ReplayPostFightActionKind =
   | 'rivals'
   | 'firstChest'
   | 'backContender'
+  | 'share'
   | 'replay'
   | 'return';
 
@@ -172,6 +173,7 @@ export type ReplayPostFightAction = Readonly<{
 export type ReplayPostFightActionPlan = Readonly<{
   primary: ReplayPostFightAction | null;
   replayAction: ReplayPostFightAction | null;
+  shareAction?: ReplayPostFightAction;
   returnAction: ReplayPostFightAction;
   buttonHeight: number;
 }>;
@@ -212,7 +214,7 @@ export function planReplayBattleLayout(input: {
   const heartRowY = 208;
   const arenaCaptionY = 252;
   const tickerHeight = 56;
-  const tickerY = viewportHeight - 50;
+  const tickerY = 310;
   const arenaTop = 355;
   const arenaBottom = toolbarY - 62;
   const homeY = (arenaTop + arenaBottom) / 2;
@@ -315,6 +317,7 @@ export function planReplayPostFightActions(input: {
   canChooseRival: boolean;
   canBackContender: boolean;
   canReplay: boolean;
+  canShareClip?: boolean;
   returnLabel: string;
   primaryAction?: ReplayPostFightAction;
   rivalActionCopy?: Readonly<{
@@ -337,11 +340,22 @@ export function planReplayPostFightActions(input: {
         tone: 'ghost',
       })
     : null;
+  const shareAction: ReplayPostFightAction | undefined = input.canShareClip
+    ? Object.freeze({
+        kind: 'share',
+        label: 'SHARE CLIP',
+        accessibleLabel:
+          'Share this recorded battle clip. The clip is hosted by Reddit.',
+        tone: 'ghost',
+      })
+    : undefined;
+  const sharedPlan = shareAction ? { shareAction } : {};
 
   if (input.primaryAction) {
     return Object.freeze({
       primary: Object.freeze({ ...input.primaryAction }),
       replayAction,
+      ...sharedPlan,
       returnAction,
       buttonHeight,
     });
@@ -359,6 +373,7 @@ export function planReplayPostFightActions(input: {
         tone: 'coral',
       }),
       replayAction,
+      ...sharedPlan,
       returnAction,
       buttonHeight,
     });
@@ -373,6 +388,7 @@ export function planReplayPostFightActions(input: {
         tone: 'gold',
       }),
       replayAction,
+      ...sharedPlan,
       returnAction,
       buttonHeight,
     });
@@ -381,6 +397,7 @@ export function planReplayPostFightActions(input: {
   return Object.freeze({
     primary: null,
     replayAction,
+    ...sharedPlan,
     returnAction,
     buttonHeight,
   });

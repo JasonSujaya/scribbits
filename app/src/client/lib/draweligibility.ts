@@ -3,7 +3,7 @@ import { showLoginPrompt, showToast } from '@devvit/web/client';
 import { MAX_ALIVE_PER_USER } from '../../shared/arena';
 import type { ArenaState, FreeDrawing } from '../../shared/arena';
 import { beginPracticeSession, getArena } from './registry';
-import { fadeToScene } from './ui';
+import { startScene } from './ui';
 import { translate } from './localization';
 
 export type DrawEligibility = {
@@ -68,6 +68,14 @@ export const getDrawEligibility = (
   return { canDraw: true, tabLabel: translate('nav.draw'), message: '' };
 };
 
+export const needsScribbitCreation = (
+  state: ArenaState | undefined
+): boolean => {
+  return Boolean(
+    state?.loggedIn && state.myScribbits.length === 0 && !state.drawnToday
+  );
+};
+
 export const getCommunityThemeEligibility = (
   state: ArenaState
 ): CommunityThemeEligibility => {
@@ -102,15 +110,15 @@ export const navigateToDailyDraw = (scene: Scene): void => {
     scene.scene.start('Preloader');
     return;
   }
-  if (route === 'draw') return fadeToScene(scene, 'Draw');
+  if (route === 'draw') return startScene(scene, 'Draw');
   if (route === 'practice') {
     beginPracticeSession(scene);
-    return fadeToScene(scene, 'Draw', { mode: 'practice' });
+    return startScene(scene, 'Draw', { mode: 'practice' });
   }
   if (route === 'login') showLoginPrompt();
   else if (state) showToast(getDrawEligibility(state).message);
 
   if (scene.scene.key !== 'ArenaHome') {
-    fadeToScene(scene, 'ArenaHome');
+    startScene(scene, 'ArenaHome');
   }
 };

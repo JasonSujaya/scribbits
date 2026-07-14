@@ -8,9 +8,20 @@
   box-sizing: border-box;
   margin: 0;
   padding: 0;
-  font-family: "DynaPuff", -apple-system, BlinkMacSystemFont, "Segoe UI",
+  font-family:
+    'DynaPuff',
+    -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
     sans-serif;
   font-synthesis: none;
+}
+
+html,
+body {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
 }
 
 .app {
@@ -22,7 +33,8 @@
   justify-content: center;
   padding: 18px;
   background: #2a2118;
-  background-image: radial-gradient(
+  background-image:
+    radial-gradient(
       circle at 30% 20%,
       rgba(255, 176, 74, 0.12) 0%,
       rgba(255, 176, 74, 0) 55%
@@ -37,22 +49,28 @@
 .page {
   position: relative;
   width: 100%;
+  min-width: 0;
   max-width: 420px;
-  padding: 28px 24px 24px;
+  padding: 22px 22px 20px;
   text-align: center;
   color: #2b2016;
   /* Cream sketchbook paper with faint grain. */
   background: #fdf3df;
-  background-image: radial-gradient(rgba(122, 106, 86, 0.06) 1px, transparent 1px);
+  background-image: radial-gradient(
+    rgba(122, 106, 86, 0.06) 1px,
+    transparent 1px
+  );
   background-size: 14px 14px;
   border: 3px solid #2b2016;
   border-radius: 22px;
-  box-shadow: 0 10px 0 rgba(0, 0, 0, 0.35), 0 18px 40px rgba(0, 0, 0, 0.4);
+  box-shadow:
+    0 10px 0 rgba(0, 0, 0, 0.35),
+    0 18px 40px rgba(0, 0, 0, 0.4);
   isolation: isolate;
 }
 
 .page::before {
-  content: "";
+  content: '';
   position: absolute;
   inset: 8px;
   z-index: -1;
@@ -94,7 +112,7 @@
 .logo-image {
   display: block;
   width: 100%;
-  max-width: 360px;
+  max-width: 300px;
   height: auto;
   margin: 0 auto;
   transform-origin: 28% 58%;
@@ -102,11 +120,139 @@
 }
 
 .tagline {
-  margin-top: 8px;
+  margin-top: 2px;
   font-size: clamp(0.95rem, 4.2vw, 1.1rem);
   font-weight: 400;
   color: #5a4a36;
   line-height: 1.45;
+}
+
+.battle-proof {
+  display: grid;
+  grid-template-columns: minmax(0, 1.28fr) minmax(108px, 0.72fr);
+  gap: 10px;
+  align-items: center;
+  margin: 12px auto 0;
+  max-width: 340px;
+  text-align: left;
+}
+
+.battle-proof-frame {
+  position: relative;
+  min-width: 0;
+  overflow: hidden;
+  background: #2d2520;
+  border: 3px solid #2b2016;
+  border-radius: 13px 10px 14px 11px;
+  box-shadow: 3px 4px 0 rgba(43, 32, 22, 0.18);
+  transform: rotate(-0.6deg);
+}
+
+.battle-stage,
+.shared-battle-video {
+  display: block;
+  width: 100%;
+  height: 112px;
+}
+
+.battle-stage {
+  position: relative;
+  overflow: hidden;
+  background: #e7c98b url('./assets/scribbits-stage.png') center 46% / cover
+    no-repeat;
+}
+
+.battle-stage[hidden],
+.shared-battle-video[hidden] {
+  display: none;
+}
+
+.shared-battle-video {
+  object-fit: cover;
+  background: #2d2520;
+}
+
+.battle-fighter {
+  position: absolute;
+  bottom: 8px;
+  width: 62px;
+  height: 70px;
+  object-fit: contain;
+  filter: drop-shadow(2px 3px 0 rgba(43, 32, 22, 0.2));
+}
+
+.battle-fighter-left {
+  left: 15px;
+  transform: rotate(-4deg);
+}
+
+.battle-fighter-right {
+  right: 13px;
+  transform: rotate(4deg) scaleX(-1);
+}
+
+.battle-versus {
+  position: absolute;
+  top: 39px;
+  left: 50%;
+  color: #fff7e8;
+  font-size: 1rem;
+  text-shadow: 2px 2px 0 #2b2016;
+  transform: translateX(-50%) rotate(-4deg);
+}
+
+.battle-health {
+  position: absolute;
+  top: 10px;
+  z-index: 1;
+  width: 61px;
+  height: 9px;
+  background: linear-gradient(90deg, #ef5b42 0 80%, #e5d7ba 80%);
+  border: 2px solid #2b2016;
+  border-radius: 999px;
+}
+
+.battle-health-left {
+  left: 10px;
+}
+
+.battle-health-right {
+  right: 10px;
+  transform: scaleX(-1);
+}
+
+.battle-proof-stamp {
+  position: absolute;
+  right: 5px;
+  bottom: 5px;
+  padding: 3px 6px;
+  color: #fff7e8;
+  background: #8b4c31;
+  border: 1.5px solid #2b2016;
+  border-radius: 5px;
+  font-size: 0.46rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.battle-proof-copy strong,
+.battle-proof-copy span {
+  display: block;
+}
+
+.battle-proof-copy strong {
+  color: #8b4c31;
+  font-size: 0.76rem;
+  line-height: 1.35;
+}
+
+.battle-proof-copy span {
+  margin-top: 6px;
+  color: #5a4a36;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-size: 0.68rem;
+  font-weight: 700;
+  line-height: 1.35;
 }
 
 .tagline strong {
@@ -114,7 +260,7 @@
 }
 
 .scribbit-showcase {
-  margin: 17px auto 0;
+  margin: 12px auto 0;
   max-width: 340px;
   padding: 9px 9px 10px;
   background: #f1d38b;
@@ -164,7 +310,7 @@
 .showcase-image {
   display: block;
   width: 100%;
-  height: 68px;
+  height: 54px;
   object-fit: contain;
   filter: drop-shadow(1px 2px 0 rgba(43, 32, 22, 0.12));
 }
@@ -186,7 +332,8 @@
   margin-top: 3px;
   overflow: hidden;
   color: #8b4c31;
-  font-size: 0.46rem;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-size: 0.55rem;
   font-weight: 700;
   line-height: 1;
   text-overflow: ellipsis;
@@ -212,29 +359,31 @@
 }
 
 .start-button {
-  margin-top: 12px;
+  margin-top: 10px;
   width: 100%;
   max-width: 320px;
-  background: transparent url("./assets/ui-button-primary.png") center / 100% 100%
-    no-repeat;
+  background: transparent url('./assets/ui-button-primary.png') center / 100%
+    100% no-repeat;
   color: #2b2016;
   border: 0;
   padding: 18px 28px 22px;
-  min-height: 68px;
+  min-height: 62px;
   font-size: clamp(1.1rem, 5vw, 1.35rem);
   font-weight: 700;
   letter-spacing: 0.02em;
   border-radius: 0;
   cursor: pointer;
-  transform: rotate(-0.8deg);
-  transition: transform 0.12s ease, background-color 0.2s ease;
+  transform: none;
+  transition:
+    transform 0.12s ease,
+    background-color 0.2s ease;
   filter: drop-shadow(0 4px 0 rgba(43, 32, 22, 0.18));
 }
 .start-button:hover {
   filter: brightness(1.05) drop-shadow(0 4px 0 rgba(43, 32, 22, 0.18));
 }
 .start-button:active {
-  transform: rotate(-0.8deg) translateY(4px);
+  transform: translateY(4px);
   filter: brightness(0.98);
 }
 .start-button:focus-visible {
@@ -256,7 +405,19 @@
   }
 
   .page {
-    padding: 24px 18px 20px;
+    width: calc(100vw - 24px);
+    max-width: calc(100vw - 24px);
+    padding: 20px 16px 18px;
+  }
+
+  .battle-proof {
+    grid-template-columns: minmax(0, 1.4fr) minmax(94px, 0.6fr);
+    gap: 8px;
+  }
+
+  .battle-stage,
+  .shared-battle-video {
+    height: 102px;
   }
 
   .scribbit-showcase {
@@ -268,7 +429,7 @@
   }
 
   .showcase-image {
-    height: 60px;
+    height: 48px;
   }
 
   .showcase-name {

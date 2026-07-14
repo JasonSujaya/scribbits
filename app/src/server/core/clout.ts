@@ -7,10 +7,11 @@ import {
   discardWatchedTransaction,
   MAX_WATCH_TRANSACTION_ATTEMPTS,
 } from './storage';
+import { getSeasonRankingKey, type SeasonScoringContext } from './season';
 import {
-  getSeasonRankingKey,
-  type SeasonScoringContext,
-} from './season';
+  pruneExpiredPayoutReceipts,
+  trackPayoutReceipt,
+} from './payoutReceipt';
 
 const backTtlSeconds = 8 * 24 * 60 * 60;
 
@@ -202,8 +203,16 @@ const commitBackPayout = async (
         return false;
       }
 
+      await pruneExpiredPayoutReceipts(storage, userId, paidAtMs);
+
       await transaction.multi();
       await transaction.hSet(payoutKey, { [userId]: receiptValue });
+      await trackPayoutReceipt(
+        transaction,
+        userId,
+        { payoutKey, payoutField: userId },
+        paidAtMs
+      );
       await transaction.zIncrBy(getCloutKey(), userId, points);
       if (seasonScoring) {
         await transaction.zIncrBy(

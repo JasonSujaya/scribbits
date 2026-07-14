@@ -60,6 +60,43 @@ const createStoredResolution = (resolvedDay) => ({
   expired: { faded: 0, legends: 0 },
 });
 
+test('a cross-linked alive roster never exposes another player’s Scribbit', async () => {
+  const memory = createMemoryStorage();
+  const ownerUserId = 'roster-owner';
+  const otherUserId = 'other-owner';
+  const createRosterScribbit = (id, artist) =>
+    scribbits.createScribbit({
+      id,
+      draft: {
+        name: 'Roster Moth',
+        stats: { chonk: 25, spike: 25, zip: 25, charm: 25 },
+        element: 'ember',
+        accessories: [],
+      },
+      artist,
+      imageUrl: `/api/drawing/${id}`,
+      day: 7,
+    });
+  const ownedScribbit = createRosterScribbit('owned-roster-moth', 'owner');
+  const otherScribbit = createRosterScribbit('other-roster-moth', 'other');
+
+  await scribbits.storeScribbit(memory.storage, ownerUserId, ownedScribbit);
+  await scribbits.storeScribbit(memory.storage, otherUserId, otherScribbit);
+  await memory.storage.zAdd(scribbits.getUserAliveScribbitsKey(ownerUserId), {
+    member: otherScribbit.id,
+    score: 9_999,
+  });
+
+  const visibleScribbits = await scribbits.getAliveScribbitsForUser(
+    memory.storage,
+    ownerUserId
+  );
+  assert.deepEqual(
+    visibleScribbits.map(({ id }) => id),
+    [ownedScribbit.id]
+  );
+});
+
 test('Arena resolution corruption fails closed and preserves exact bytes', async (t) => {
   const outboxKey = dailyJob.getArenaResolutionOutboxKey();
   const cases = [

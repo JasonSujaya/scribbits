@@ -1361,6 +1361,7 @@ assert.deepEqual(publicRouteInventory, [
   'GET /api/spar-rivals',
   'GET /api/splash',
   'POST /api/back',
+  'POST /api/battle-clip',
   'POST /api/believe',
   'POST /api/boss-challenge',
   'POST /api/capsule',
@@ -1538,11 +1539,19 @@ assert.deepEqual(aliasedSchedulerImport.imports.get('../core/post'), [
   },
 ]);
 assert.match(arenaPostSource, /export const ensureCurrentArenaPost/);
+const requestArenaPostMenu = (
+  request = {
+    location: 'subreddit',
+    targetId: 't5_scribbits_test',
+  }
+) =>
+  productionApiContract.app.request('/internal/menu/post-create', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(request),
+  });
 productionApiContract.resetApiContractRuntime();
-const menuPostResponse = await productionApiContract.app.request(
-  '/internal/menu/post-create',
-  { method: 'POST' }
-);
+const menuPostResponse = await requestArenaPostMenu();
 assert.equal(menuPostResponse.status, 200);
 assert.deepEqual(await menuPostResponse.json(), {
   navigateTo:
@@ -1578,10 +1587,7 @@ const reversedInstallResponse = await productionApiContract.app.request(
   }
 );
 assert.equal(reversedInstallResponse.status, 200);
-const reversedMenuResponse = await productionApiContract.app.request(
-  '/internal/menu/post-create',
-  { method: 'POST' }
-);
+const reversedMenuResponse = await requestArenaPostMenu();
 assert.equal(reversedMenuResponse.status, 200);
 assert.equal(productionApiContract.apiContractRuntimeState.submittedPosts, 1);
 
@@ -1595,6 +1601,149 @@ const captureRouteErrors = async (action) => {
     console.error = originalError;
   }
 };
+
+productionApiContract.resetApiContractRuntime({ moderatorIds: [] });
+const nonModeratorMenuResponse = await requestArenaPostMenu();
+assert.equal(nonModeratorMenuResponse.status, 200);
+assert.deepEqual(await nonModeratorMenuResponse.json(), {
+  showToast: 'Create Rumble is restricted to moderators.',
+});
+assert.equal(productionApiContract.apiContractRuntimeState.submittedPosts, 0);
+assert.equal(
+  productionApiContract.getApiContractString('arena:currentDay'),
+  undefined,
+  'an unauthorized menu request must not initialize Arena storage'
+);
+
+productionApiContract.resetApiContractRuntime({
+  userId: null,
+  username: null,
+});
+const anonymousMenuResponse = await requestArenaPostMenu();
+assert.equal(anonymousMenuResponse.status, 200);
+assert.deepEqual(await anonymousMenuResponse.json(), {
+  showToast: 'Create Rumble is restricted to moderators.',
+});
+assert.equal(productionApiContract.apiContractRuntimeState.submittedPosts, 0);
+assert.equal(
+  productionApiContract.getApiContractString('arena:currentDay'),
+  undefined
+);
+
+productionApiContract.resetApiContractRuntime();
+const invalidTargetMenuResponse = await requestArenaPostMenu({
+  location: 'subreddit',
+  targetId: 't5_wrong_subreddit',
+});
+assert.equal(invalidTargetMenuResponse.status, 200);
+assert.deepEqual(await invalidTargetMenuResponse.json(), {
+  showToast: 'Invalid Create Rumble request.',
+});
+assert.equal(productionApiContract.apiContractRuntimeState.submittedPosts, 0);
+assert.equal(
+  productionApiContract.getApiContractString('arena:currentDay'),
+  undefined
+);
+
+const wrongLocationMenuResponse = await requestArenaPostMenu({
+  location: 'post',
+  targetId: 't5_scribbits_test',
+});
+assert.deepEqual(await wrongLocationMenuResponse.json(), {
+  showToast: 'Invalid Create Rumble request.',
+});
+
+const malformedMenuResponse = await productionApiContract.app.request(
+  '/internal/menu/post-create',
+  {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: '{',
+  }
+);
+assert.deepEqual(await malformedMenuResponse.json(), {
+  showToast: 'Invalid Create Rumble request.',
+});
+const missingBodyMenuResponse = await productionApiContract.app.request(
+  '/internal/menu/post-create',
+  { method: 'POST' }
+);
+assert.deepEqual(await missingBodyMenuResponse.json(), {
+  showToast: 'Invalid Create Rumble request.',
+});
+assert.equal(productionApiContract.apiContractRuntimeState.submittedPosts, 0);
+assert.equal(
+  productionApiContract.getApiContractString('arena:currentDay'),
+  undefined
+);
+
+productionApiContract.resetApiContractRuntime();
+productionApiContract.failNextApiContractModeratorLookup();
+const failedModeratorLookupAttempt = await captureRouteErrors(() =>
+  requestArenaPostMenu()
+);
+assert.equal(failedModeratorLookupAttempt.result.status, 400);
+assert.equal(failedModeratorLookupAttempt.errors.length, 1);
+assert.deepEqual(await failedModeratorLookupAttempt.result.json(), {
+  showToast: 'Failed to create arena post',
+});
+assert.equal(productionApiContract.apiContractRuntimeState.submittedPosts, 0);
+assert.equal(
+  productionApiContract.getApiContractString('arena:currentDay'),
+  undefined
+);
+pass('manual Arena post creation reauthorizes subreddit moderators');
+
+const requestSeasonManagement = () =>
+  productionApiContract.app.request('/internal/menu/seasons-manage', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      location: 'subreddit',
+      targetId: 't5_scribbits_test',
+    }),
+  });
+productionApiContract.resetApiContractRuntime({
+  userId: 't2_seasonowner',
+  username: 'season_owner',
+});
+productionApiContract.setApiContractSetting(
+  'seasonAdminUserIds',
+  't2_seasonowner'
+);
+const authorizedSeasonResponse = await requestSeasonManagement();
+assert.equal(
+  (await authorizedSeasonResponse.json()).showForm.name,
+  'manageSeasons'
+);
+
+productionApiContract.resetApiContractRuntime({
+  userId: 't2_othermoderator',
+  username: 'other_moderator',
+});
+productionApiContract.setApiContractSetting(
+  'seasonAdminUserIds',
+  't2_seasonowner'
+);
+assert.deepEqual(await (await requestSeasonManagement()).json(), {
+  showToast: 'Season controls are restricted.',
+});
+
+productionApiContract.resetApiContractRuntime({
+  userId: 't2_seasonowner',
+  username: 'season_owner',
+  moderatorIds: [],
+});
+productionApiContract.setApiContractSetting(
+  'seasonAdminUserIds',
+  't2_seasonowner'
+);
+assert.deepEqual(await (await requestSeasonManagement()).json(), {
+  showToast: 'Season controls are restricted.',
+});
+pass(
+  'season controls require both the owner allowlist and live moderator role'
+);
 
 productionApiContract.resetApiContractRuntime();
 const malformedInstallAttempt = await captureRouteErrors(() =>
@@ -1612,9 +1761,7 @@ assert.equal(productionApiContract.apiContractRuntimeState.submittedPosts, 0);
 productionApiContract.resetApiContractRuntime();
 productionApiContract.failNextApiContractArenaPostReceipt();
 const failedReceiptAttempt = await captureRouteErrors(() =>
-  productionApiContract.app.request('/internal/menu/post-create', {
-    method: 'POST',
-  })
+  requestArenaPostMenu()
 );
 const failedReceiptResponse = failedReceiptAttempt.result;
 assert.equal(failedReceiptResponse.status, 400);
@@ -1630,10 +1777,7 @@ assert.equal(
   ),
   'published:api-contract-post-1'
 );
-const recoveredReceiptResponse = await productionApiContract.app.request(
-  '/internal/menu/post-create',
-  { method: 'POST' }
-);
+const recoveredReceiptResponse = await requestArenaPostMenu();
 assert.equal(recoveredReceiptResponse.status, 200);
 assert.equal(productionApiContract.apiContractRuntimeState.submittedPosts, 1);
 assert.equal(
@@ -1644,9 +1788,7 @@ assert.equal(
 productionApiContract.resetApiContractRuntime();
 productionApiContract.failNextApiContractArenaPostMarker();
 const failedMarkerAttempt = await captureRouteErrors(() =>
-  productionApiContract.app.request('/internal/menu/post-create', {
-    method: 'POST',
-  })
+  requestArenaPostMenu()
 );
 assert.equal(failedMarkerAttempt.result.status, 400);
 assert.equal(failedMarkerAttempt.errors.length, 1);
@@ -1660,19 +1802,14 @@ assert.match(
   ) ?? '',
   /^\d+$/
 );
-const recoveredMarkerResponse = await productionApiContract.app.request(
-  '/internal/menu/post-create',
-  { method: 'POST' }
-);
+const recoveredMarkerResponse = await requestArenaPostMenu();
 assert.equal(recoveredMarkerResponse.status, 200);
 assert.equal(productionApiContract.apiContractRuntimeState.submittedPosts, 1);
 
 productionApiContract.resetApiContractRuntime();
 productionApiContract.failNextApiContractPostLookup();
 const failedLookupAttempt = await captureRouteErrors(() =>
-  productionApiContract.app.request('/internal/menu/post-create', {
-    method: 'POST',
-  })
+  requestArenaPostMenu()
 );
 assert.equal(failedLookupAttempt.result.status, 400);
 assert.equal(failedLookupAttempt.errors.length, 1);
@@ -1691,9 +1828,7 @@ assert.equal(
 productionApiContract.resetApiContractRuntime();
 productionApiContract.failNextApiContractPostSubmission();
 const failedSubmissionAttempt = await captureRouteErrors(() =>
-  productionApiContract.app.request('/internal/menu/post-create', {
-    method: 'POST',
-  })
+  requestArenaPostMenu()
 );
 const failedSubmissionResponse = failedSubmissionAttempt.result;
 assert.equal(failedSubmissionResponse.status, 400);
@@ -1713,9 +1848,7 @@ assert.match(
 productionApiContract.resetApiContractRuntime();
 const concurrentAttempt = await captureRouteErrors(() =>
   Promise.all([
-    productionApiContract.app.request('/internal/menu/post-create', {
-      method: 'POST',
-    }),
+    requestArenaPostMenu(),
     productionApiContract.app.request('/internal/triggers/on-app-install', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -2831,7 +2964,7 @@ assert.match(replaySceneSource, /rivalDraftTrigger\?\.isConnected/);
 assert.match(replaySceneSource, /rivalDraftTrigger\.focus\(\)/);
 assert.match(
   replaySceneSource,
-  /this\.isSavedReplay\(\) && destination\.kind === 'return'\)[\s\S]*fadeToScene\(this, getReplayReturn\(this\)\)/,
+  /this\.isSavedReplay\(\) && destination\.kind === 'return'\)[\s\S]*startScene\(this, getReplayReturn\(this\)\)/,
   'read-only saved replays should return without a blocking Arena refresh'
 );
 assert.match(

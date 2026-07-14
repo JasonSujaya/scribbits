@@ -16,10 +16,14 @@ const require = createRequire(import.meta.url);
 const arenaStore = require(join(compiledServerRoot, 'core', 'arenaStore.js'));
 const battle = require(join(compiledServerRoot, 'core', 'battle.js'));
 const battleStore = require(join(compiledServerRoot, 'core', 'battleStore.js'));
+const clout = require(join(compiledServerRoot, 'core', 'clout.js'));
 const forecast = require(join(compiledServerRoot, 'core', 'forecast.js'));
 const inkStore = require(join(compiledServerRoot, 'core', 'inkStore.js'));
 const moderation = require(join(compiledServerRoot, 'core', 'moderation.js'));
 const privacy = require(join(compiledServerRoot, 'core', 'privacy.js'));
+const payoutReceipt = require(
+  join(compiledServerRoot, 'core', 'payoutReceipt.js')
+);
 const removal = require(join(compiledServerRoot, 'core', 'removal.js'));
 const rivalRun = require(join(compiledServerRoot, 'core', 'rivalRun.js'));
 const scribbits = require(join(compiledServerRoot, 'core', 'scribbit.js'));
@@ -270,6 +274,15 @@ test('privacy deletion reuses canonical removal for owned Scribbits', async () =
     scenario.ownerUserId
   );
   const unrelatedGlobalKey = 'global:privacy-index-corruption-proof';
+  const legacyCloutPayoutKey = clout.getCloutPayoutKey(1);
+  const legacyRumblePayoutKey = inkStore.getRumbleWinInkPayoutKey(1);
+  const indexedRumblePayoutKey = inkStore.getRumbleWinInkPayoutKey(2);
+  const recentUnindexedRumblePayoutKey =
+    inkStore.getRumbleWinInkPayoutKey(currentDay);
+  const unrelatedRumbleField = 'unrelated-rumble-winner';
+  const payoutIndexKey = payoutReceipt.getUserPayoutReceiptIndexKey(
+    scenario.ownerUserId
+  );
   await memory.storage.set(rivalRunKey, '{"id":"private-run"}');
   await memory.storage.set(capsuleOperationKey, '{"pull":"private"}');
   await memory.storage.set(gearMergeOperationKey, '{"gear":"private"}');
@@ -279,6 +292,64 @@ test('privacy deletion reuses canonical removal for owned Scribbits', async () =
     { member: capsuleOperationKey, score: 10_000 },
     { member: gearMergeOperationKey, score: 10_000 },
     { member: unrelatedGlobalKey, score: 10_000 }
+  );
+  await memory.storage.hSet(legacyCloutPayoutKey, {
+    [scenario.ownerUserId]: '3:1000',
+    'unrelated-user': '1:1000',
+  });
+  await memory.storage.hSet(legacyRumblePayoutKey, {
+    'deleted-before-privacy': `${scenario.ownerUserId}:5:1000`,
+    [unrelatedRumbleField]: 'unrelated-user:5:1000',
+  });
+  await memory.storage.hSet(recentUnindexedRumblePayoutKey, {
+    'recent-unindexed-scribbit': `${scenario.ownerUserId}:5:1500`,
+  });
+  const expiredIndexMember = JSON.stringify([
+    legacyRumblePayoutKey,
+    'already-expired',
+  ]);
+  await memory.storage.zAdd(payoutIndexKey, {
+    member: expiredIndexMember,
+    score: 1_999,
+  });
+  assert.equal(
+    await inkStore.claimInkReward(memory.storage, {
+      payoutKey: indexedRumblePayoutKey,
+      payoutField: scenario.target.id,
+      userId: scenario.ownerUserId,
+      amount: 5,
+      paidAtMs: 2_000,
+    }),
+    true
+  );
+  assert.equal(
+    await memory.storage.zScore(payoutIndexKey, expiredIndexMember),
+    undefined,
+    'a later payout must prune expired receipt-index members'
+  );
+  await clout.claimDailyBack(
+    memory.storage,
+    2,
+    { userId: scenario.ownerUserId, username: 'Privacy Owner' },
+    'privacy-champion'
+  );
+  await clout.payCloutForRumble(memory.storage, {
+    day: 2,
+    championScribbitId: 'privacy-champion',
+    runnerUpScribbitId: null,
+    paidAtMs: 2_500,
+  });
+  await memory.storage.zAdd(payoutIndexKey, {
+    member: JSON.stringify([legacyRumblePayoutKey, unrelatedRumbleField]),
+    score: 10_000,
+  });
+  assert.equal(
+    memory.expirations.get(indexedRumblePayoutKey),
+    payoutReceipt.PAYOUT_RECEIPT_TTL_SECONDS
+  );
+  assert.equal(
+    memory.expirations.get(clout.getCloutPayoutKey(2)),
+    payoutReceipt.PAYOUT_RECEIPT_TTL_SECONDS
   );
 
   const result = await privacy.deletePlayerData(
@@ -301,4 +372,35 @@ test('privacy deletion reuses canonical removal for owned Scribbits', async () =
   }
   assert.equal(await memory.storage.zCard(operationIndexKey), 0);
   assert.equal(await memory.storage.get(unrelatedGlobalKey), 'must-survive');
+  assert.equal(
+    await memory.storage.hGet(legacyCloutPayoutKey, scenario.ownerUserId),
+    undefined
+  );
+  assert.equal(
+    await memory.storage.hGet(legacyRumblePayoutKey, 'deleted-before-privacy'),
+    undefined,
+    'privacy deletion must remove a legacy receipt after its Scribbit is gone'
+  );
+  assert.equal(
+    await memory.storage.hGet(indexedRumblePayoutKey, scenario.target.id),
+    undefined
+  );
+  assert.equal(
+    await memory.storage.hGet(
+      recentUnindexedRumblePayoutKey,
+      'recent-unindexed-scribbit'
+    ),
+    undefined,
+    'recent fallback must cover a missing payout-index entry'
+  );
+  assert.equal(
+    await memory.storage.hGet(legacyCloutPayoutKey, 'unrelated-user'),
+    '1:1000'
+  );
+  assert.equal(
+    await memory.storage.hGet(legacyRumblePayoutKey, unrelatedRumbleField),
+    'unrelated-user:5:1000',
+    'a corrupted payout index must not delete another player receipt'
+  );
+  assert.equal(await memory.storage.zCard(payoutIndexKey), 0);
 });

@@ -51,14 +51,28 @@ test('splash shows three drawings without depending on live API data', () => {
   );
   assert.doesNotMatch(splashHtml + splashScript, /WINNER|WINNING SCRIBBITS/);
   assert.doesNotMatch(splashScript, /rumbleCountdown|formatCountdown/);
+  assert.match(splashHtml, /class="battle-proof"/);
+  assert.match(splashHtml, /id="shared-battle-video"/);
+  assert.match(splashHtml, /DRAW → FIGHT → GROW/);
+  assert.match(splashScript, /renderSharedBattleClip/);
+  assert.match(splashScript, /getShareData/);
+  assert.match(
+    englishCatalog,
+    /'splash\.battle\.shared': 'SHARED BATTLE CLIP'/
+  );
 });
 
 test('splash and expanded game share one durable new-player flow', () => {
-  assert.match(preloaderScript, /!state\.hasCreatedScribbit/);
-  assert.match(preloaderScript, /needsFirstScribbit \? 'Draw' : 'ArenaHome'/);
+  assert.match(
+    preloaderScript,
+    /needsScribbitCreation\(state\) \? 'Draw' : 'ScribbitHome'/
+  );
   assert.match(drawScript, /hasCreatedScribbit: true/);
   assert.match(drawScript, /START FIRST FIGHT/);
-  assert.match(drawScript, /private async startFirstBattle\(scribbit: Scribbit\)/);
+  assert.match(
+    drawScript,
+    /private async startFirstBattle\(scribbit: Scribbit\)/
+  );
   assert.match(apiScript, /getUserScribbitIds\(redis, player\.userId, 1\)/);
 });
 

@@ -3,14 +3,13 @@ import { pullCapsule } from '../lib/api';
 import { appDock } from '../lib/appdock';
 import { appMenu, type AppMenu } from '../lib/appmenu';
 import { openCapsuleMachine, type CapsuleMachine } from '../lib/capsulemachine';
-import { navigateToDailyDraw } from '../lib/draweligibility';
 import {
   getArena,
   setArena,
   setGalleryCollectionSection,
   setGalleryTab,
 } from '../lib/registry';
-import { fadeToScene } from '../lib/ui';
+import { startScene } from '../lib/ui';
 import { preloadShopVisualAssets, shopStage } from '../lib/visualassets';
 import { UI } from '../lib/theme';
 import { COSMETIC_BY_ID } from '../../shared/cosmetics';
@@ -38,19 +37,17 @@ export class Shop extends Scene {
 
   create(): void {
     this.cameras.main.setBackgroundColor(UI.desk);
-    this.cameras.main.fadeIn(180, 255, 247, 232);
     shopStage(this, -1000);
 
     appDock(this, 'shop', {
-      arena: () => this.navigateWhenSafe(() => fadeToScene(this, 'ArenaHome')),
+      arena: () => this.navigateWhenSafe(() => startScene(this, 'ArenaHome')),
       bag: () =>
         this.navigateWhenSafe(() => {
           setGalleryTab(this, 'collection');
-          fadeToScene(this, 'Gallery');
+          startScene(this, 'Gallery');
         }),
-      draw: () => this.navigateWhenSafe(() => navigateToDailyDraw(this)),
       battles: () =>
-        this.navigateWhenSafe(() => fadeToScene(this, 'MyBattles')),
+        this.navigateWhenSafe(() => startScene(this, 'MyBattles')),
       shop: () => undefined,
     });
     this.menu = appMenu(this, {
@@ -59,7 +56,7 @@ export class Shop extends Scene {
 
     const arena = getArena(this);
     if (!arena) {
-      this.navigateWhenSafe(() => fadeToScene(this, 'ArenaHome'));
+      this.navigateWhenSafe(() => startScene(this, 'ArenaHome'));
       return;
     }
 
@@ -98,7 +95,7 @@ export class Shop extends Scene {
           setGalleryCollectionSection(this, reward.category);
         }
         setGalleryTab(this, 'collection');
-        fadeToScene(this, 'Gallery');
+        startScene(this, 'Gallery');
       },
     });
 

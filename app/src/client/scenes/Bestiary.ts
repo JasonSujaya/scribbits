@@ -82,7 +82,6 @@ export class Bestiary extends Scene {
 
   create(): void {
     this.cameras.main.setBackgroundColor(UI.desk);
-    this.cameras.main.fadeIn(180, 255, 247, 232);
     this.livingPaper = new LivingPaper(this);
 
     const { width } = this.scale;

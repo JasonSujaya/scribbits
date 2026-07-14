@@ -64,7 +64,7 @@ test('Draw sends the newborn straight into one guarded random first fight', () =
   assert.match(drawSource, /await spar\(scribbit\.id\)/);
   assert.match(
     drawSource,
-    /stageDirectBattle\([\s\S]{0,180}scribbit\.id,[\s\S]{0,60}'ArenaHome',[\s\S]{0,40}'birth'/
+    /stageDirectBattle\([\s\S]{0,180}scribbit\.id,[\s\S]{0,60}'ScribbitHome',[\s\S]{0,40}'birth'/
   );
   assert.match(drawSource, /if \(!stagedBattle\)/);
   assert.match(drawSource, /skipArenaReceiptsOnce\(this\)/);

@@ -28,25 +28,23 @@ import { UI_BUTTON_TEXTURES } from './visualassets';
 import { bindPressInteractionEvents } from './pressinteraction';
 import { translate } from './localization';
 
-const TRANSITION_MS = 180;
-const transitioningScenes = new WeakSet<Scene>();
+const TRANSITION_COLOR = { red: 42, green: 33, blue: 24 } as const;
 // Some scenes rebuild their entire canvas tree after async data arrives. Keep
 // one semantic dock mirror per scene so those rebuilds cannot leave duplicate
 // native tab controls above the new canvas dock.
 const appDockOverlays = new WeakMap<Scene, CanvasActionOverlay>();
 
-export function fadeToScene(
+export function startScene(
   scene: Scene,
   key: string,
   data?: Record<string, unknown>
 ): void {
-  if (transitioningScenes.has(scene)) return;
-  transitioningScenes.add(scene);
-  scene.cameras.main.fadeOut(TRANSITION_MS, 255, 247, 232);
-  scene.cameras.main.once('camerafadeoutcomplete', () => {
-    transitioningScenes.delete(scene);
-    scene.scene.start(key, data);
-  });
+  scene.scene.start(key, data);
+}
+
+export function fadeSceneOut(scene: Scene, duration: number): void {
+  const { red, green, blue } = TRANSITION_COLOR;
+  scene.cameras.main.fadeOut(duration, red, green, blue);
 }
 
 export type ErrorPanel = {
@@ -938,7 +936,12 @@ export function paperPagination(options: PaperPaginationOptions): void {
   );
 }
 
-export type AppTabKey = 'arena' | 'bag' | 'draw' | 'battles' | 'shop';
+export type AppTabKey =
+  | 'home'
+  | 'arena'
+  | 'bag'
+  | 'battles'
+  | 'shop';
 
 export type AppTabItem = {
   key: AppTabKey;
@@ -1044,7 +1047,7 @@ export function appTabBar(
   tabs: AppTabItem[]
 ): Phaser.GameObjects.Container {
   const { width, height } = scene.scale;
-  const slotCount = 5;
+  const slotCount = tabs.length;
   const barWidth = width - 28;
   const barHeight = 124;
   const bottomInset = 8;
@@ -1102,6 +1105,9 @@ export function appTabBar(
   container.add([shadow, paperStrip, leftTape, rightTape]);
 
   const slotWidth = barWidth / slotCount;
+  const compactDock = slotCount > 5;
+  const dockIconSize = compactDock ? 39 : 46;
+  const dockLabelSize = compactDock ? 19 : 23;
   tabs.forEach((tab, index) => {
     const x = -barWidth / 2 + slotWidth * (index + 0.5);
     const isActive = tab.key === active;
@@ -1110,27 +1116,34 @@ export function appTabBar(
       slot.add(waxSeal(scene, 0, -24));
     }
 
-    const icon = paperDockIcon(scene, tab.key, 0, -24, 46, UI.inkHex, true);
+    const icon = paperDockIcon(
+      scene,
+      tab.key,
+      0,
+      compactDock ? -26 : -24,
+      dockIconSize,
+      UI.inkHex,
+      true
+    );
     const text = label(
       scene,
       0,
-      32,
+      compactDock ? 27 : 32,
       tab.visibleLabel ?? tab.label,
-      23,
+      dockLabelSize,
       isActive ? UI.coralText : UI.ink,
       true
     );
-    const maximumLabelWidth = slotWidth - 10;
+    const maximumLabelWidth = slotWidth - 8;
     if (text.width > maximumLabelWidth) {
       text.setScale(maximumLabelWidth / text.width);
     }
     slot.add([icon, text]);
 
-    const hit = scene.add
-      .rectangle(x, 0, slotWidth, barHeight, 0xffffff, 0.001)
-      .setInteractive({ useHandCursor: true });
+    const hit = scene.add.rectangle(x, 0, slotWidth, barHeight, 0xffffff, 0.001);
+    hit.setInteractive({ useHandCursor: !isActive });
     container.add([slot, hit]);
-    wireTab(hit, slot, tab.onClick, scene);
+    if (!isActive) wireTab(hit, slot, tab.onClick, scene);
     const nativeTab = actionOverlay.add({
       label: tab.label,
       rect: {
@@ -1140,7 +1153,7 @@ export function appTabBar(
         height: barHeight,
       },
       pointerPassthrough: true,
-      onActivate: tab.onClick,
+      onActivate: isActive ? () => undefined : tab.onClick,
     });
     if (isActive) nativeTab.setAttribute('aria-current', 'page');
   });

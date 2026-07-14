@@ -37,7 +37,7 @@ import {
   errorPanel,
   stickerCard,
   floatReward,
-  fadeToScene,
+  startScene,
   spinner,
   paperRoleTag,
   versusBadge,
@@ -205,7 +205,6 @@ export class ArenaHome extends Scene {
       return;
     }
     this.state = state;
-    this.cameras.main.fadeIn(180, 255, 247, 232);
     this.build();
     const firstChestTrail = takeFirstChestTrail(this);
     if (firstChestTrail) {
@@ -1528,7 +1527,7 @@ export class ArenaHome extends Scene {
       !isRumbleReceiptShown(this, rumbleReceipt.resolvedDay);
     const openLegacyBook = (): void => {
       setGalleryTab(this, 'legacy');
-      fadeToScene(this, 'Gallery');
+      startScene(this, 'Gallery');
     };
 
     let ceremony: Phaser.GameObjects.Container | null = null;
@@ -1722,7 +1721,7 @@ export class ArenaHome extends Scene {
       return;
     }
     if (step.kind === 'shop') {
-      fadeToScene(this, 'Shop');
+      startScene(this, 'Shop');
       return;
     }
     this.openCarePickerFor(scribbit, step);

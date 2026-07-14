@@ -38,6 +38,10 @@ test('Season form submission reauthorizes exact owner IDs and current moderators
     join(appRoot, 'src/server/core/seasonAdminAuthorization.ts'),
     'utf8'
   );
+  const moderatorAuthorizationSource = await readFile(
+    join(appRoot, 'src/server/core/moderatorAuthorization.ts'),
+    'utf8'
+  );
   const routeSource = await readFile(
     join(appRoot, 'src/server/routes/seasonAdmin.ts'),
     'utf8'
@@ -48,8 +52,9 @@ test('Season form submission reauthorizes exact owner IDs and current moderators
     authorizationSource,
     /settings\.get<string>\('seasonAdminUserIds'\)/
   );
-  assert.match(authorizationSource, /reddit\.getCurrentUser\(\)/);
-  assert.match(authorizationSource, /reddit\s*\.getModerators\(/);
+  assert.match(authorizationSource, /return getCurrentSubredditModerator\(\)/);
+  assert.match(moderatorAuthorizationSource, /reddit\.getCurrentUser\(\)/);
+  assert.match(moderatorAuthorizationSource, /reddit\s*\.getModerators\(/);
   assert.match(routeSource, /post\('\/seasons-manage', openSeasonManagement\)/);
   assert.match(routeSource, /post\('\/seasons-submit'/);
   assert.equal(

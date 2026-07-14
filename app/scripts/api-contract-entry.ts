@@ -12,6 +12,7 @@ export {
   failNextApiContractArenaPostMarker,
   failNextApiContractArenaPostReceipt,
   failNextApiContractHashRead,
+  failNextApiContractModeratorLookup,
   failNextApiContractPostLookup,
   failNextApiContractPostSubmission,
   failNextApiContractResultCommentReceipt,
@@ -20,6 +21,7 @@ export {
   resetApiContractRuntime,
   seedApiContractComment,
   setApiContractHashField,
+  setApiContractSetting,
   setApiContractString,
   swapApiContractStringAfterReads,
 } from './api-contract-runtime.mjs';

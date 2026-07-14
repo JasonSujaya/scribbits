@@ -707,6 +707,33 @@ export class LiveSprite {
     });
   }
 
+  // A finite home-screen response for taps. Unlike celebrate(), it always
+  // settles back into the idle pose and can be restarted safely by rapid taps.
+  jiggle(): void {
+    if (this.destroyed) return;
+    this.stopIdle();
+    this.reactionTween?.remove();
+    this.scene.tweens.killTweensOf(this.reactionContainer);
+    this.reactionContainer.setPosition(0, 0).setScale(1).setAngle(0);
+    this.reactionTween = this.scene.tweens.add({
+      targets: this.reactionContainer,
+      x: this.reduceMotion ? 0 : 7,
+      y: this.reduceMotion ? -3 : -5,
+      angle: this.reduceMotion ? 0 : 5,
+      scaleX: this.reduceMotion ? 1.03 : 1.07,
+      scaleY: this.reduceMotion ? 1.03 : 0.94,
+      duration: this.reduceMotion ? 90 : 70,
+      yoyo: true,
+      repeat: this.reduceMotion ? 0 : 2,
+      ease: 'Sine.easeInOut',
+      onComplete: () => {
+        this.reactionContainer.setPosition(0, 0).setScale(1).setAngle(0);
+        this.reactionTween = null;
+        if (!this.destroyed) this.breathe();
+      },
+    });
+  }
+
   destroy(): void {
     if (this.destroyed) return;
     this.destroyed = true;

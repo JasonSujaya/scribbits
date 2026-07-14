@@ -29,6 +29,56 @@
         </strong>
       </p>
 
+      <section class="battle-proof" aria-labelledby="battle-proof-title">
+        <div class="battle-proof-frame">
+          <div
+            class="battle-stage"
+            id="battle-poster"
+            role="img"
+            aria-label="Two hand-drawn Scribbits facing off in the arena"
+          >
+            <span class="battle-health battle-health-left"></span>
+            <span class="battle-health battle-health-right"></span>
+            <img
+              class="battle-fighter battle-fighter-left"
+              src="./assets/splash-doodle-mossmop.png"
+              alt=""
+            />
+            <strong class="battle-versus">VS</strong>
+            <img
+              class="battle-fighter battle-fighter-right"
+              src="./assets/splash-doodle-stormpuff.png"
+              alt=""
+            />
+          </div>
+          <video
+            class="shared-battle-video"
+            id="shared-battle-video"
+            muted
+            loop
+            playsinline
+            controls
+            preload="metadata"
+            hidden
+          ></video>
+          <span
+            class="battle-proof-stamp"
+            id="battle-proof-stamp"
+            data-i18n="splash.battle.real"
+          >
+            REAL BATTLE
+          </span>
+        </div>
+        <div class="battle-proof-copy">
+          <strong id="battle-proof-title" data-i18n="splash.battle.title">
+            DRAW → FIGHT → GROW
+          </strong>
+          <span data-i18n="splash.battle.detail">
+            Your drawing becomes the fighter.
+          </span>
+        </div>
+      </section>
+
       <section
         class="scribbit-showcase"
         id="today-status"

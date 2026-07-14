@@ -11,7 +11,12 @@ import { CanvasActionOverlay } from '../lib/overlay';
 import { paperIcon } from '../lib/papericons';
 import { NAV_SAFE, prefersReducedMotion, TYPE, UI } from '../lib/theme';
 import { mountLivingPaper } from '../lib/livingpaper';
-import { label, paperPagination, stickerCard, errorPanel } from '../lib/ui';
+import {
+  errorPanel,
+  label,
+  paperPagination,
+  stickerCard,
+} from '../lib/ui';
 import type { ErrorPanel } from '../lib/ui';
 import type { BattleReport } from '../../shared/arena';
 import { appDock } from '../lib/appdock';
@@ -61,7 +66,6 @@ export class MyBattles extends Scene {
 
   create(): void {
     this.cameras.main.setBackgroundColor(UI.desk);
-    this.cameras.main.fadeIn(180, 255, 247, 232);
     mountLivingPaper(this);
     this.actionOverlay = new CanvasActionOverlay(this);
     this.events.once('shutdown', () => {

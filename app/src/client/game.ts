@@ -4,6 +4,7 @@ import '@fontsource/dynapuff/latin-400.css';
 import '@fontsource/dynapuff/latin-700.css';
 import { Boot } from './scenes/Boot';
 import { Preloader } from './scenes/Preloader';
+import { ScribbitHome } from './scenes/ScribbitHome';
 import { ArenaHome } from './scenes/ArenaHome';
 import { Draw } from './scenes/Draw';
 import { Replay } from './scenes/Replay';
@@ -55,6 +56,7 @@ const config: Phaser.Types.Core.GameConfig = {
   scene: [
     Boot,
     Preloader,
+    ScribbitHome,
     ArenaHome,
     Draw,
     Replay,

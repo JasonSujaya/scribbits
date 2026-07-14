@@ -85,6 +85,10 @@ test('official Draw requires an explicit start and locks at time', () => {
     join(process.cwd(), 'src', 'client', 'lib', 'drawcanvas.ts'),
     'utf8'
   );
+  const gameStyles = readFileSync(
+    join(process.cwd(), 'src', 'client', 'game.css'),
+    'utf8'
+  );
 
   assert.match(
     drawSource,
@@ -97,8 +101,58 @@ test('official Draw requires an explicit start and locks at time', () => {
   assert.match(drawSource, /draw-start-challenge-card\.jpg/);
   assert.match(drawSource, /timerLabel\.textContent = '60 SEC TO DRAW'/);
   assert.match(drawSource, /startButton\.textContent = 'START THEME'/);
+  assert.match(drawSource, /const formatThemePrompt = \(prompt: string\)/);
+  assert.match(
+    drawSource,
+    /prompt\.textContent = formatThemePrompt\(dare\.prompt\)/
+  );
+  assert.doesNotMatch(drawSource, /prompt\.textContent[^\n]*toUpperCase/);
+  assert.match(drawSource, /fontSize: '40px',[\s\S]{0,100}textWrap: 'balance'/);
+  assert.match(drawSource, /marginTop: '14px'/);
+  assert.match(drawSource, /: 'DRAWING TIME!'/);
+  assert.match(drawSource, /'\.\.\/assets\/ui-button-close\.png'/);
+  assert.match(drawSource, /'Close drawing theme'/);
+  assert.match(drawSource, /this\.closeDrawStartPopup\(\)/);
+  assert.match(
+    drawSource,
+    /this\.isFirstScribbit \? 'ArenaHome' : 'ScribbitHome'/
+  );
   assert.match(drawSource, /freeDrawLabel\.textContent = 'FREE DRAW'/);
+  assert.match(
+    drawSource,
+    /if \(!this\.isFirstScribbit\) \{[\s\S]{0,180}const freeDrawButton/
+  );
+  assert.match(drawSource, /Draw your first Scribbit to unlock Home\./);
+  assert.match(drawSource, /Draw your first Scribbit to unlock Free Draw\./);
   assert.match(drawSource, /noTimerLabel\.textContent = 'NO TIMER'/);
+  assert.match(
+    drawSource,
+    /private createThemeJourneyStrip\(\): HTMLDivElement/
+  );
+  assert.match(
+    drawSource,
+    /const steps = \['DRAW', 'NAME', 'RUMBLE'\] as const/
+  );
+  assert.match(drawSource, /private createThemeArtMotionLayer\(/);
+  assert.match(drawSource, /'draw-theme-art-crayon'/);
+  assert.match(drawSource, /'draw-theme-art-star-top'/);
+  assert.match(drawSource, /'draw-theme-art-star-bottom'/);
+  assert.match(
+    drawSource,
+    /const reducedThemeMotion = timedStart && prefersReducedMotion\(\)/
+  );
+  assert.match(drawSource, /draw-theme-reduced-motion/);
+  assert.match(drawSource, /if \(!reducedThemeMotion\)/);
+  assert.match(drawSource, /draw-theme-journey-number/);
+  assert.match(drawSource, /draw-theme-journey-connector/);
+  assert.match(gameStyles, /@keyframes draw-theme-crayon-rock/);
+  assert.match(gameStyles, /@keyframes draw-theme-star-float/);
+  assert.match(gameStyles, /@keyframes draw-theme-number-pulse/);
+  assert.match(
+    gameStyles,
+    /\.draw-theme-reduced-motion \.draw-theme-start-button/
+  );
+  assert.match(gameStyles, /@media \(prefers-reduced-motion: reduce\)/);
   assert.match(drawSource, /card\.append\(startButton\)/);
   assert.match(drawSource, /timerNotice\.append\(timerIcon, timerLabel\)/);
   assert.match(drawSource, /Start the 60 second Community Theme drawing round/);

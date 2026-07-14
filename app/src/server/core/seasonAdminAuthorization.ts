@@ -1,5 +1,6 @@
-import { context, reddit, settings } from '@devvit/web/server';
+import { context, settings } from '@devvit/web/server';
 import type { SeasonActor } from './season';
+import { getCurrentSubredditModerator } from './moderatorAuthorization';
 
 const redditUserIdPattern = /^t2_[a-z0-9]+$/i;
 
@@ -30,18 +31,5 @@ export const getAuthorizedSeasonAdmin = async (): Promise<
   );
   if (!allowedUserIds?.has(actorUserId)) return undefined;
 
-  const actor = await reddit.getCurrentUser();
-  if (!actor || actor.id !== actorUserId) return undefined;
-  const matchingModerators = await reddit
-    .getModerators({
-      subredditName: context.subredditName,
-      username: actor.username,
-      limit: 1,
-      pageSize: 1,
-    })
-    .get(1);
-  if (!matchingModerators.some((moderator) => moderator.id === actorUserId)) {
-    return undefined;
-  }
-  return { userId: actorUserId, username: actor.username };
+  return getCurrentSubredditModerator();
 };

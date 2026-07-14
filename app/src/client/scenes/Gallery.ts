@@ -25,7 +25,12 @@ import {
 } from '../lib/scribbits';
 import { prefersReducedMotion, TYPE, UI } from '../lib/theme';
 import { LivingPaper } from '../lib/livingpaper';
-import { label, paperPagination, stickerCard, errorPanel } from '../lib/ui';
+import {
+  errorPanel,
+  label,
+  paperPagination,
+  stickerCard,
+} from '../lib/ui';
 import { openDetailModal } from '../lib/detailmodal';
 import type { ErrorPanel } from '../lib/ui';
 import type {
@@ -191,7 +196,6 @@ export class Gallery extends Scene {
 
   create(): void {
     this.cameras.main.setBackgroundColor(UI.desk);
-    this.cameras.main.fadeIn(180, 255, 247, 232);
     this.tab = getGalleryTab(this);
     this.loggedIn = getArena(this)?.loggedIn ?? false;
     this.events.once('shutdown', () => {

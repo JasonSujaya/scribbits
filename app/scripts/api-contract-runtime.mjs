@@ -8,12 +8,14 @@ const sortedSets = new Map();
 const settingValues = new Map();
 const submittedPosts = [];
 const submittedComments = [];
+const moderatorUserIds = new Set();
 let stringSwapAfterRead = null;
 
 export const context = {
   userId: 'api-contract-user',
   username: 'api_contract_user',
   subredditName: 'scribbits_test',
+  subredditId: 't5_scribbits_test',
 };
 
 export const apiContractRuntimeState = {
@@ -25,6 +27,7 @@ export const apiContractRuntimeState = {
   failNextArenaPostMarker: false,
   failNextPostLookup: false,
   failNextPostSubmission: false,
+  failNextModeratorLookup: false,
   submittedComments: 0,
   failNextCommentLookup: false,
   failNextCommentSubmissionAfterCommit: false,
@@ -320,10 +323,23 @@ export const reddit = {
       ? { id: context.userId, username: context.username }
       : undefined;
   },
-  getModerators() {
+  getModerators(options) {
     return {
       async get() {
-        return [];
+        if (apiContractRuntimeState.failNextModeratorLookup) {
+          apiContractRuntimeState.failNextModeratorLookup = false;
+          throw new Error('simulated moderator lookup failure');
+        }
+        if (
+          !context.userId ||
+          !context.username ||
+          options.subredditName !== context.subredditName ||
+          options.username !== context.username ||
+          !moderatorUserIds.has(context.userId)
+        ) {
+          return [];
+        }
+        return [{ id: context.userId, username: context.username }];
       },
     };
   },
@@ -403,6 +419,7 @@ export function getServerPort() {
 export function resetApiContractRuntime({
   userId = 'api-contract-user',
   username = 'api_contract_user',
+  moderatorIds = userId ? [userId] : [],
 } = {}) {
   strings.clear();
   hashes.clear();
@@ -410,6 +427,10 @@ export function resetApiContractRuntime({
   settingValues.clear();
   submittedPosts.length = 0;
   submittedComments.length = 0;
+  moderatorUserIds.clear();
+  for (const moderatorUserId of moderatorIds) {
+    moderatorUserIds.add(moderatorUserId);
+  }
   context.userId = userId;
   context.username = username;
   apiContractRuntimeState.watchCalls = 0;
@@ -420,6 +441,7 @@ export function resetApiContractRuntime({
   apiContractRuntimeState.failNextArenaPostMarker = false;
   apiContractRuntimeState.failNextPostLookup = false;
   apiContractRuntimeState.failNextPostSubmission = false;
+  apiContractRuntimeState.failNextModeratorLookup = false;
   apiContractRuntimeState.submittedComments = 0;
   apiContractRuntimeState.failNextCommentLookup = false;
   apiContractRuntimeState.failNextCommentSubmissionAfterCommit = false;
@@ -445,6 +467,10 @@ export function failNextApiContractPostLookup() {
 
 export function failNextApiContractPostSubmission() {
   apiContractRuntimeState.failNextPostSubmission = true;
+}
+
+export function failNextApiContractModeratorLookup() {
+  apiContractRuntimeState.failNextModeratorLookup = true;
 }
 
 export function failNextApiContractCommentLookup() {

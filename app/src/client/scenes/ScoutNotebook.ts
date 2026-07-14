@@ -23,7 +23,7 @@ import { mountLivingPaper } from '../lib/livingpaper';
 import {
   button,
   errorPanel,
-  fadeToScene,
+  startScene,
   label,
   paperCard,
   paperIconButton,
@@ -126,7 +126,6 @@ export class ScoutNotebook extends Scene {
 
   create(): void {
     this.cameras.main.setBackgroundColor(UI.desk);
-    this.cameras.main.fadeIn(180, 255, 247, 232);
     mountLivingPaper(this);
     this.buildHeader();
     this.buildAppTabs();
@@ -806,7 +805,7 @@ export class ScoutNotebook extends Scene {
 
   private openArenaEntrants(): void {
     setArenaFocus(this, 'entrants');
-    fadeToScene(this, 'ArenaHome');
+    startScene(this, 'ArenaHome');
   }
 
   private async openReplay(
@@ -841,7 +840,7 @@ export class ScoutNotebook extends Scene {
 
     setScoutNotebookDay(this, entry.day);
     setSavedReplay(this, result.data, 'ScoutNotebook');
-    fadeToScene(this, 'Replay');
+    startScene(this, 'Replay');
   }
 
   private isCurrentScene(sceneGeneration: number): boolean {

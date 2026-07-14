@@ -40,6 +40,10 @@ import type {
   SubmitFreeDrawingRequest,
 } from '../../shared/arena';
 import type { EquipmentCategory } from '../../shared/equipment';
+import type {
+  BattleClipUploadRequest,
+  BattleClipUploadResponse,
+} from '../../shared/battleshare';
 import { DEFAULT_LOCALE } from '../locales/catalogs';
 import { getLocale, translate } from './localization';
 
@@ -48,6 +52,7 @@ export type ApiResult<T> = { ok: true; data: T } | { ok: false; error: string };
 const DEFAULT_TIMEOUT_MS = 12000;
 // Submissions carry base and rendered PNG data URLs, so they get a longer leash.
 const SUBMIT_TIMEOUT_MS = 20000;
+const MEDIA_UPLOAD_TIMEOUT_MS = 35000;
 
 async function getJson<T>(url: string): Promise<ApiResult<T>> {
   return request<T>(url, { method: 'GET' }, DEFAULT_TIMEOUT_MS);
@@ -149,6 +154,16 @@ export function fetchSeason(): Promise<ApiResult<SeasonPublicState>> {
 
 export function fetchSeasonBoard(): Promise<ApiResult<SeasonBoard>> {
   return getJson<SeasonBoard>('/api/season-board');
+}
+
+export function uploadBattleClip(
+  request: BattleClipUploadRequest
+): Promise<ApiResult<BattleClipUploadResponse>> {
+  return postJson<BattleClipUploadRequest, BattleClipUploadResponse>(
+    '/api/battle-clip',
+    request,
+    MEDIA_UPLOAD_TIMEOUT_MS
+  );
 }
 
 export function submitScribbit(

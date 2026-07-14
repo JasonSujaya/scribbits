@@ -20,7 +20,7 @@ import {
 } from '../lib/registry';
 import { loadDrawing, levelOf } from '../lib/scribbits';
 import { ELEMENT_STYLES, prefersReducedMotion, UI } from '../lib/theme';
-import { label, stickerCard, daysLeftFor, fadeToScene } from '../lib/ui';
+import { daysLeftFor, label, startScene, stickerCard } from '../lib/ui';
 import { openDetailModal } from '../lib/detailmodal';
 import { LiveSprite } from '../lib/livesprite';
 import {
@@ -37,6 +37,13 @@ import type {
   ShapePowerVisualEffect,
 } from '../lib/shapepowerpresentation';
 import { fetchArena } from '../lib/api';
+import {
+  shareBattleClip,
+  shareHostedBattleClip,
+  startBattleClipRecording,
+  type BattleClip,
+  type BattleClipRecorder,
+} from '../lib/battleclip';
 import {
   calculateReplayFrame,
   getTimelineEventsInRange,
@@ -256,6 +263,10 @@ export class Replay extends Scene {
   private rivalRunFlow: RivalRunFlow | null = null;
   private postFightActions: PostFightActions | null = null;
   private savedReplayIntro: SavedReplayIntro | null = null;
+  private battleClipRecorder: BattleClipRecorder | null = null;
+  private battleClipPromise: Promise<BattleClip | null> | null = null;
+  private sharedBattleClipUrl: string | null = null;
+  private battleClipShareBusy = false;
   private playbackTick = 0;
   private previousPlaybackTick = -1;
   private arenaFloorEffects: Phaser.GameObjects.Graphics | null = null;
@@ -298,6 +309,10 @@ export class Replay extends Scene {
     this.rivalRunFlow = null;
     this.postFightActions = null;
     this.savedReplayIntro = null;
+    this.battleClipRecorder = null;
+    this.battleClipPromise = null;
+    this.sharedBattleClipUrl = null;
+    this.battleClipShareBusy = false;
     this.elementCueShown.clear();
     this.transcript = null;
     this.playbackRunning = false;
@@ -358,7 +373,6 @@ export class Replay extends Scene {
     this.founderRivalryStakes = getReplayFounderRivalryStakes(this);
     this.transcript = getUsableBattleTranscript(report) ?? null;
     this.cameras.main.setBackgroundColor(UI.desk);
-    this.cameras.main.fadeIn(180, 255, 247, 232);
     this.weaponFxRenderer = new WeaponFxRenderer(this, this.reduceMotion);
     this.buildArena();
     this.recordDebugPlaybackState('live');
@@ -370,6 +384,8 @@ export class Replay extends Scene {
       this.postFightActions = null;
       this.savedReplayIntro?.destroy();
       this.savedReplayIntro = null;
+      this.battleClipRecorder?.cancel();
+      this.battleClipRecorder = null;
       this.battleHud?.stopHeartAnimations();
       this.clearIntroBanner();
       this.weaponFxRenderer?.destroy();
@@ -399,6 +415,12 @@ export class Replay extends Scene {
         this.showArchivedResult();
         return;
       }
+      this.battleClipRecorder = getArena(this)?.loggedIn
+        ? startBattleClipRecording(this.game.canvas)
+        : null;
+      this.game.canvas.dataset.battleClip = this.battleClipRecorder
+        ? 'recording'
+        : 'unavailable';
       this.playIntro();
     });
   }
@@ -1979,6 +2001,16 @@ export class Replay extends Scene {
   }
 
   private stopPlaybackPresentation(): void {
+    if (this.battleClipRecorder) {
+      const recorder = this.battleClipRecorder;
+      this.battleClipRecorder = null;
+      this.battleClipPromise = recorder.stop();
+      void this.battleClipPromise.then((clip) => {
+        this.game.canvas.dataset.battleClip = clip
+          ? `ready:${clip.blob.size}`
+          : 'failed';
+      });
+    }
     this.playbackRunning = false;
     this.time.timeScale = 1;
     this.tweens.timeScale = 1;
@@ -2009,6 +2041,10 @@ export class Replay extends Scene {
       this.showArchivedResult();
       return;
     }
+    this.battleClipRecorder?.cancel();
+    this.battleClipRecorder = null;
+    this.battleClipPromise = null;
+    this.game.canvas.dataset.battleClip = 'skipped';
     this.applyContinuousFrame(
       calculateReplayFrame(
         this.transcript,
@@ -2086,10 +2122,12 @@ export class Replay extends Scene {
       canChooseRival: false,
       canBackContender: false,
       canReplay: false,
+      canShareClip: false,
       returnLabel,
       onRivals: () => {},
       onBackContender: () => {},
       onReplay: () => {},
+      onShareClip: () => {},
       onReturn: () => this.exit(),
     });
     card.add(this.postFightActions.container);
@@ -2472,6 +2510,7 @@ export class Replay extends Scene {
       canChooseRival: actionEligibility.canChooseRival,
       canBackContender: actionEligibility.canPickRumble,
       canReplay: this.canReplaySavedReport(),
+      canShareClip: this.battleClipPromise !== null,
       returnLabel: this.compactReturnButtonLabel(),
       rivalActionCopy,
       ...(firstChestAction && ownedFighter
@@ -2483,6 +2522,7 @@ export class Replay extends Scene {
       onRivals: () => this.openRivalDraft(winner.scribbit),
       onBackContender: () => this.goBackEntrants(),
       onReplay: () => this.replayAgain(),
+      onShareClip: () => void this.shareRecordedBattleClip(),
       onReturn: () => this.exit(),
     });
     this.postFightActions.container.setDepth(61);
@@ -2571,6 +2611,7 @@ export class Replay extends Scene {
       canChooseRival: actionEligibility.canChooseRival,
       canBackContender: actionEligibility.canPickRumble,
       canReplay: this.canReplaySavedReport(),
+      canShareClip: this.battleClipPromise !== null,
       returnLabel: this.compactReturnButtonLabel(),
       rivalActionCopy,
       ...(firstChestAction
@@ -2582,6 +2623,7 @@ export class Replay extends Scene {
       onRivals: () => this.openRivalDraft(mine),
       onBackContender: () => this.goBackEntrants(),
       onReplay: () => this.replayAgain(),
+      onShareClip: () => void this.shareRecordedBattleClip(),
       onReturn: () => this.exit(),
     });
     this.postFightActions.container.setDepth(61);
@@ -2590,6 +2632,8 @@ export class Replay extends Scene {
   private compactReturnButtonLabel(): string {
     const returnScene = getReplayReturn(this);
     switch (returnScene) {
+      case 'ScribbitHome':
+        return 'HOME';
       case 'Gallery':
         return 'LEGACY';
       case 'MyBattles':
@@ -2609,6 +2653,39 @@ export class Replay extends Scene {
     return this.isSavedReplay() && this.transcript !== null;
   }
 
+  private async shareRecordedBattleClip(): Promise<void> {
+    if (this.battleClipShareBusy) return;
+    if (this.sharedBattleClipUrl) {
+      this.battleClipShareBusy = true;
+      try {
+        await shareHostedBattleClip(this.sharedBattleClipUrl, this.report);
+      } finally {
+        this.battleClipShareBusy = false;
+      }
+      return;
+    }
+    const clipPromise = this.battleClipPromise;
+    if (!clipPromise) {
+      showToast('Replay the fight without skipping to create a share clip.');
+      return;
+    }
+
+    this.battleClipShareBusy = true;
+    try {
+      showToast('Finishing your battle clip…');
+      const clip = await clipPromise;
+      if (!clip) {
+        showToast('This browser could not render a battle clip.');
+        return;
+      }
+      this.sharedBattleClipUrl = await shareBattleClip(clip, this.report);
+    } catch {
+      showToast('The battle clip could not be shared. Try again.');
+    } finally {
+      this.battleClipShareBusy = false;
+    }
+  }
+
   /** Restarts the exact local transcript; no fetch, simulation, or reward path. */
   private replayAgain(): void {
     if (!this.canReplaySavedReport()) return;
@@ -2621,6 +2698,8 @@ export class Replay extends Scene {
   private returnButtonLabel(): string {
     const returnScene = getReplayReturn(this);
     switch (returnScene) {
+      case 'ScribbitHome':
+        return 'Back Home';
       case 'Gallery':
         return 'Open Legacy Book';
       case 'MyBattles':
@@ -2634,7 +2713,7 @@ export class Replay extends Scene {
 
   private startPractice(): void {
     if (this.report.kind !== 'practice') beginPracticeSession(this);
-    fadeToScene(this, 'Draw', { mode: 'practice' });
+    startScene(this, 'Draw', { mode: 'practice' });
   }
 
   private openRivalDraft(mine: Scribbit): void {
@@ -2711,7 +2790,7 @@ export class Replay extends Scene {
   private exit(): void {
     if (this.report.kind === 'practice') {
       endPracticeSession(this);
-      fadeToScene(this, 'ArenaHome');
+      startScene(this, 'ArenaHome');
       return;
     }
     void this.refreshArenaAndNavigate({ kind: 'return' });
@@ -2722,7 +2801,7 @@ export class Replay extends Scene {
   ): Promise<void> {
     if (this.arenaRefreshLoading) return;
     if (this.isSavedReplay() && destination.kind === 'return') {
-      fadeToScene(this, getReplayReturn(this));
+      startScene(this, getReplayReturn(this));
       return;
     }
 
@@ -2747,7 +2826,7 @@ export class Replay extends Scene {
     setArena(this, result.data);
     if (destination.kind === 'entrants') {
       setArenaFocus(this, 'entrants');
-      fadeToScene(this, 'ArenaHome');
+      startScene(this, 'ArenaHome');
       return;
     }
     if (destination.kind === 'firstChest') {
@@ -2763,7 +2842,7 @@ export class Replay extends Scene {
           })
         : null;
       if (step?.kind === 'shop') {
-        fadeToScene(this, 'Shop');
+        startScene(this, 'Shop');
         return;
       }
       if (step?.kind === 'care') {
@@ -2771,9 +2850,9 @@ export class Replay extends Scene {
       } else {
         showToast('Keep earning Ink — your first chest is waiting in Shop.');
       }
-      fadeToScene(this, 'ArenaHome');
+      startScene(this, 'ArenaHome');
       return;
     }
-    fadeToScene(this, getReplayReturn(this));
+    startScene(this, getReplayReturn(this));
   }
 }

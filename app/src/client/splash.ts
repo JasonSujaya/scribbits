@@ -1,7 +1,8 @@
-import { requestExpandedMode } from '@devvit/web/client';
+import { getShareData, requestExpandedMode } from '@devvit/web/client';
 import '@fontsource/dynapuff/latin-400.css';
 import '@fontsource/dynapuff/latin-700.css';
 import type { SplashCreation, SplashState } from '../shared/arena';
+import { parseBattleShareData } from '../shared/battleshare';
 import {
   initializeLocalization,
   localizeDocument,
@@ -19,6 +20,11 @@ const startButton = document.getElementById(
   'start-button'
 ) as HTMLButtonElement | null;
 const showcaseLabel = document.getElementById('showcase-label');
+const battlePoster = document.getElementById('battle-poster');
+const battleVideo = document.getElementById(
+  'shared-battle-video'
+) as HTMLVideoElement | null;
+const battleProofStamp = document.getElementById('battle-proof-stamp');
 
 type ShowcaseSlot = Readonly<{
   container: HTMLElement;
@@ -61,6 +67,42 @@ for (const container of document.querySelectorAll<HTMLElement>(
   });
 }
 showcaseSlots.forEach(resetShowcaseSlot);
+
+function renderSharedBattleClip(): void {
+  if (!battleVideo || !battlePoster) return;
+  let sharedData: string | undefined;
+  try {
+    sharedData = getShareData();
+  } catch {
+    return;
+  }
+  const sharedBattle = parseBattleShareData(sharedData);
+  if (!sharedBattle) return;
+
+  battleVideo.src = sharedBattle.clipUrl;
+  battleVideo.hidden = false;
+  battlePoster.hidden = true;
+  if (battleProofStamp) {
+    battleProofStamp.textContent = translate('splash.battle.shared');
+  }
+  battleVideo.addEventListener(
+    'error',
+    () => {
+      battleVideo.hidden = true;
+      battleVideo.removeAttribute('src');
+      battlePoster.hidden = false;
+      if (battleProofStamp) {
+        battleProofStamp.textContent = translate('splash.battle.real');
+      }
+    },
+    { once: true }
+  );
+  void battleVideo.play().catch(() => {
+    // Muted autoplay is only a convenience; native controls remain available.
+  });
+}
+
+renderSharedBattleClip();
 
 startButton?.addEventListener('click', (event) => {
   try {

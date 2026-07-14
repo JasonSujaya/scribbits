@@ -7,6 +7,7 @@ import type { BattleKind, RivalRunReceipt, Scribbit } from '../../shared/arena';
 import { ELEMENT_STYLES, prefersReducedMotion, UI } from './theme';
 import {
   elementBadge,
+  fadeSceneOut,
   label,
   levelBadge,
   paperWordmark,
@@ -372,7 +373,7 @@ export function showVsCeremony(scene: Scene, options: VsCeremonyOptions): void {
   // Reduced motion removes the entrance motion, not the reading time. The old
   // 180ms reduced-motion dwell made the matchup card effectively invisible.
   scene.time.delayedCall(rivalryStakes ? 2600 : 2300, () => {
-    scene.cameras.main.fadeOut(200, 255, 247, 232);
+    fadeSceneOut(scene, 200);
     scene.cameras.main.once('camerafadeoutcomplete', () => {
       layer.destroy(true);
       onComplete();

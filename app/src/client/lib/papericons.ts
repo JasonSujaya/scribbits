@@ -37,7 +37,13 @@ export type PaperToolIconKey =
   | 'redo'
   | 'tools';
 export type PaperStatIconKey = 'chonk' | 'spike' | 'zip' | 'charm';
-export type PaperDockIconKey = 'arena' | 'bag' | 'shop' | 'draw' | 'battles';
+export type PaperDockIconKey =
+  | 'home'
+  | 'arena'
+  | 'bag'
+  | 'shop'
+  | 'draw'
+  | 'battles';
 
 export type PaperIconOptions = Readonly<{
   size?: number;
@@ -83,7 +89,48 @@ export function paperDockIcon(
   graphics.lineStyle(3 * scale, color, 1);
   graphics.fillStyle(color, 1);
 
-  if (key === 'arena' && accented) {
+  if (key === 'home' && accented) {
+    const roof = [
+      new Phaser.Math.Vector2(-19 * scale, -4 * scale),
+      new Phaser.Math.Vector2(0, -21 * scale),
+      new Phaser.Math.Vector2(19 * scale, -4 * scale),
+    ];
+    graphics.fillStyle(UI.coral, 0.92);
+    graphics.fillTriangle(
+      roof[0]?.x ?? 0,
+      roof[0]?.y ?? 0,
+      roof[1]?.x ?? 0,
+      roof[1]?.y ?? 0,
+      roof[2]?.x ?? 0,
+      roof[2]?.y ?? 0
+    );
+    graphics.lineStyle(3 * scale, color, 1);
+    graphics.strokePoints(roof, false);
+    graphics.fillStyle(UI.creamHex, 1);
+    graphics.fillRoundedRect(
+      -14 * scale,
+      -4 * scale,
+      28 * scale,
+      23 * scale,
+      2 * scale
+    );
+    graphics.strokeRoundedRect(
+      -14 * scale,
+      -4 * scale,
+      28 * scale,
+      23 * scale,
+      2 * scale
+    );
+    graphics.fillStyle(UI.gold, 1);
+    graphics.fillRoundedRect(-4 * scale, 6 * scale, 8 * scale, 13 * scale, 2);
+    graphics.strokeRoundedRect(
+      -4 * scale,
+      6 * scale,
+      8 * scale,
+      13 * scale,
+      2
+    );
+  } else if (key === 'arena' && accented) {
     graphics.fillStyle(UI.gold, 1);
     drawFivePointStar(graphics, 0, 0, 17 * scale, 8 * scale, true);
     graphics.lineStyle(3 * scale, color, 1);
@@ -164,6 +211,26 @@ export function paperDockIcon(
     drawDockSword(graphics, scale, false, true);
     graphics.fillStyle(0xbfd8e0, 1);
     drawDockSword(graphics, scale, true, true);
+  } else if (key === 'home') {
+    graphics.beginPath();
+    graphics.moveTo(-19 * scale, -4 * scale);
+    graphics.lineTo(0, -21 * scale);
+    graphics.lineTo(19 * scale, -4 * scale);
+    graphics.strokePath();
+    graphics.strokeRoundedRect(
+      -14 * scale,
+      -4 * scale,
+      28 * scale,
+      23 * scale,
+      2 * scale
+    );
+    graphics.strokeRoundedRect(
+      -4 * scale,
+      6 * scale,
+      8 * scale,
+      13 * scale,
+      2 * scale
+    );
   } else if (key === 'arena') {
     graphics.strokeCircle(0, 0, 18 * scale);
     drawFivePointStar(graphics, 0, 0, 10 * scale, 4.5 * scale, false);

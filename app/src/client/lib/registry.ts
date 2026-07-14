@@ -47,6 +47,7 @@ const LAST_LEGACY_RETURN_DISMISSED_DAY_KEY = 'lastLegacyReturnDismissedDay';
 
 export type GalleryTab = 'legends' | 'legacy' | 'collection';
 export type ReplayReturnScene =
+  | 'ScribbitHome'
   | 'ArenaHome'
   | 'Gallery'
   | 'MyBattles'

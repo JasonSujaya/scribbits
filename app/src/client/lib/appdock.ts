@@ -1,11 +1,15 @@
 import type { Scene } from 'phaser';
-import { dailyDrawTabLabel, navigateToDailyDraw } from './draweligibility';
 import { setGalleryTab } from './registry';
-import { appTabBar, fadeToScene } from './ui';
+import { appTabBar, startScene } from './ui';
 import type { AppTabItem, AppTabKey } from './ui';
 import { translate } from './localization';
 
-type AppDockRoute = 'ArenaHome' | 'bag' | 'dailyDraw' | 'MyBattles' | 'Shop';
+type AppDockRoute =
+  | 'ScribbitHome'
+  | 'ArenaHome'
+  | 'bag'
+  | 'MyBattles'
+  | 'Shop';
 
 type AppDockDefinition = {
   key: AppTabKey;
@@ -16,7 +20,7 @@ type AppDockDefinition = {
 const APP_DOCK_TABS: readonly AppDockDefinition[] = [
   { key: 'arena', label: 'nav.arena', route: 'ArenaHome' },
   { key: 'bag', label: 'nav.bag', route: 'bag' },
-  { key: 'draw', label: 'nav.draw', route: 'dailyDraw' },
+  { key: 'home', label: 'nav.home', route: 'ScribbitHome' },
   { key: 'battles', label: 'nav.battles', route: 'MyBattles' },
   { key: 'shop', label: 'nav.shop', route: 'Shop' },
 ];
@@ -24,16 +28,12 @@ const APP_DOCK_TABS: readonly AppDockDefinition[] = [
 export type AppDockOverrides = Readonly<Partial<Record<AppTabKey, () => void>>>;
 
 function followAppDockRoute(scene: Scene, route: AppDockRoute): void {
-  if (route === 'dailyDraw') {
-    navigateToDailyDraw(scene);
-    return;
-  }
   if (route === 'bag') {
     setGalleryTab(scene, 'collection');
-    fadeToScene(scene, 'Gallery');
+    startScene(scene, 'Gallery');
     return;
   }
-  fadeToScene(scene, route);
+  startScene(scene, route);
 }
 
 export function appDock(
@@ -43,13 +43,7 @@ export function appDock(
 ): ReturnType<typeof appTabBar> {
   const tabs: AppTabItem[] = APP_DOCK_TABS.map((definition) => ({
     key: definition.key,
-    ...(definition.key === 'draw'
-      ? { visibleLabel: translate('nav.draw') }
-      : {}),
-    label:
-      definition.key === 'draw'
-        ? dailyDrawTabLabel(scene)
-        : translate(definition.label),
+    label: translate(definition.label),
     onClick:
       overrides[definition.key] ??
       (() => followAppDockRoute(scene, definition.route)),

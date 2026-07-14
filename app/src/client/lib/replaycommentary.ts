@@ -226,8 +226,8 @@ function renderReplayCommentaryFact(
   switch (fact.kind) {
     case 'battle-start':
       return renderInkcastCommentaryTemplate(template, {
-        moveA: getShapePowerBattleName(fighterA.primaryPower),
-        moveB: getShapePowerBattleName(fighterB.primaryPower),
+        moveA: safeName(fighterA.name),
+        moveB: safeName(fighterB.name),
       });
     case 'power-telegraph':
     case 'power-missed': {
@@ -239,7 +239,7 @@ function renderReplayCommentaryFact(
     }
     case 'damage':
       return renderInkcastCommentaryTemplate(template, {
-        source: safeSourceName(fact.sourceName),
+        source: safeName(context.fighters[fact.sourceFighter].name),
         target: safeName(context.fighters[fact.targetFighter].name),
         amount: Math.max(0, Math.floor(fact.amount)),
       });
@@ -309,10 +309,6 @@ function snapshotReplayCommentaryContext(
 
 function safeName(value: string): string {
   return value.trim().replace(/\s+/g, ' ').slice(0, 24) || 'Scribbit';
-}
-
-function safeSourceName(value: string): string {
-  return value.trim().replace(/\s+/g, ' ').slice(0, 32) || 'impact';
 }
 
 function formatFounderCommentary(name: string, line: string): string {

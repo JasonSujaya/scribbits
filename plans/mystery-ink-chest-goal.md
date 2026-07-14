@@ -7,7 +7,7 @@ Create a polished, chest-led Shop that feels exciting without predatory gacha me
 ## Product rules
 
 - Shop acquires, Bag equips, and Gallery remembers.
-- Shop is a primary dock destination; Gallery opens from top-right Settings.
+- Shop is a primary dock destination; Gallery opens directly from Home.
 - Current earned currency remains Ink; battles are the main source while daily play can award small bridge amounts.
 - Common/Rare/Epic odds remain 70%/25%/5%, with Epic guaranteed by open ten.
 - One chest costs 5 Ink. Ten is the maximum batch and costs 50 Ink.
@@ -20,7 +20,7 @@ Create a polished, chest-led Shop that feels exciting without predatory gacha me
 
 - [x] Replaced the capsule vending machine and procedural chest geometry with matched generated closed/open chest art.
 - [x] Added a dedicated Shop scene with a generated scrapbook stage.
-- [x] Replaced the Gallery dock slot with Shop and moved Gallery into top-right Settings.
+- [x] Replaced the Gallery dock slot with Shop and moved Gallery to a compact Home action.
 - [x] Removed chest acquisition from Bag so inventory and equipment stay focused.
 - [x] Added a Loot banner with a shining featured Gear preview and tappable effect details.
 - [x] Added a disabled `REDDIT GOLD STYLES · COMING SOON` banner.

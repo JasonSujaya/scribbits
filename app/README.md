@@ -8,7 +8,8 @@ enter daily community rumbles. The app identity is `scribbits` in
 All main scenes share `lib/appdock.ts`, the generated Craftbox paper stage, the
 same five optical-weight code-native navigation icons, and one GPT-generated
 hand-cut button family for primary, secondary, Pick, close, and pagination
-actions. The dock is Arena, Bag, Draw, Battles, and Shop. It uses a flat
+actions. The dock is Arena, Bag, Home, Battles, and Shop, with Home centered;
+Draw opens from Home's large Draw button. It uses a flat
 contained active tile, readable labels, and no
 micro-badges or protruding cutout. DynaPuff 400/700 is
 bundled locally through Fontsource and loaded before Phaser renders text. Shared
@@ -19,6 +20,8 @@ Player-facing copy uses the typed catalog and locale runtime documented in
 [`docs/localization.md`](docs/localization.md). New UI copy belongs in the
 English source catalog and renders through `translate`; `?locale=en-XA` enables
 the clipping-focused pseudo-locale.
+Ranking-season lifecycle, scoring, administration, and recovery are documented
+in [`docs/ranking-seasons.md`](docs/ranking-seasons.md).
 
 ## Mobile performance
 
@@ -70,11 +73,13 @@ the clipping-focused pseudo-locale.
    truthful closing boundary, and transcript-triggered color surges leave the
    combat center readable. The compact HUD keeps one arena label, names, visual
    health bars, a small fixed-tick clock, and large sound/speed/Skip icons; Shape
-   Power state appears only while it changes. Real transcript moments appear in a transient paper margin
-   instead of a permanent broadcast lower third. A
+   Power state appears only while it changes. Real transcript moments stay in a
+   compact paper strip between the fighter HUD and arena instead of a broadcast
+   lower third. A
    presentation-only editorial queue chooses the
-   strongest candidate per simulation tick, holds each displayed line for 900ms
-   of wall-clock time, and keeps at most two pending beats. It never delays HP,
+   strongest candidate per simulation tick, keeps the latest line visible, and
+   holds each queue slot for 900ms of wall-clock time with at most two pending
+   beats. It never delays HP,
    Skip, finish, or any other authoritative state.
    The copy itself lives in a versioned shared pack: 104 globally unique lines
    across 25 fact-specific banks. A replay-scoped author deterministically
@@ -178,6 +183,10 @@ the clipping-focused pseudo-locale.
    icon-led `REPLAY` utility that restarts the same registry-held transcript with
    no fetch or reward path; only a session watch pass changes, rotating safe
    Inkcast variants while authoritative facts and founder lines stay fixed.
+   A signed-in player can explicitly Share a completed, unskipped replay. The
+   browser records a silent clip of the rendered Phaser canvas, uploads it to
+   Reddit media, and opens Reddit's share sheet. The clip is presentation only;
+   the stored report and transcript remain authoritative.
    After today's official Scribbit locks, the Arena also exposes a Four-Power
    Practice Lab. It reuses the analyzer and continuous replay, but not the birth,
    roster, reward, Rumble, history, or Legacy paths. The server alone derives
@@ -237,10 +246,11 @@ the clipping-focused pseudo-locale.
    with that drawing's exact Rumble W/L, committed XP, committed Ink, and a
    server-selected last-bout replay. The client never reconstructs those rewards
    from cumulative totals.
-5. **Navigate:** the persistent dock is Arena, Bag, Draw, Battles, and Shop.
+5. **Navigate:** the persistent dock is Arena, Bag, Home, Battles, and Shop.
+   Home owns the large Draw entry instead of giving Draw a second dock home.
    Shop owns earned-Ink Mystery Ink Chests. Bag owns inventory, equipment,
    pens, and titles. Gallery owns community Legends and personal Legacy Cards
-   outside the primary dock and opens from the top-right Settings menu. The Scout Notebook is also outside the primary
+   outside the primary dock and opens directly from Home. The Scout Notebook is also outside the primary
    dock; its scene remains temporarily for older saved-replay returns.
 6. **Return:** keep the visible UTC-day streak alive. The scheduler resolves
    the Rumble, crowns the Champion, stores the picked Scribbit's last played
@@ -287,6 +297,9 @@ progression data.
 Every community Scribbit card has a **Report** action. Owners have a
 two-step **Delete** action, and the Field Guide includes a two-step option to
 delete all stored game data.
+Battle clips are created and uploaded only after the player taps Share. The
+upload requires a signed-in Reddit account, is capped at 8 MB, and leaves the
+app boundary for Reddit media hosting.
 
 ## Architecture
 
@@ -300,6 +313,19 @@ persistence. The local `dev-mock.mjs` process substitutes for that hosted
 boundary during browser iteration—it is not the production game server.
 
 - `src/shared/arena.ts`: client/server contract and gameplay constants.
+- `src/client/scenes/ScribbitHome.ts`: centered Home destination and the single
+  primary entry into the official daily Draw flow.
+- `src/server/core/season.ts` and `src/server/routes/seasonAdmin.ts`: one
+  authoritative ranking-season lifecycle and its moderator administration
+  boundary.
+- `src/server/core/moderatorAuthorization.ts`: shared live Reddit moderator
+  verification for privileged menu actions.
+- `src/server/core/payoutReceipt.ts`: bounded Clout/Rumble Ink receipt TTLs and
+  the per-user cleanup index consumed by privacy deletion.
+- `src/client/lib/battleclip.ts`: bounded client-canvas recording, Reddit media
+  upload, and share-sheet handoff for completed replays.
+- `src/shared/battleshare.ts`: shared clip-size, data-URL, and Reddit-hosted
+  share-payload validation used by `/api/battle-clip` and the shared-link splash.
 - `src/shared/sparreward.ts`: versioned, runtime-validated Spar payout receipt;
   its exact XP/level/Ink transition is persisted inside the existing atomic
   daily-win claim and remains separate from the immutable battle report.
@@ -431,15 +457,16 @@ boundary during browser iteration—it is not the production game server.
 - `src/client/lib/replaybattlebackground.ts`: ten deterministic stage skins,
   including the dedicated Sticker Stadium art, with reduced-motion-safe ambience
   and transcript-triggered power surges; `replaybattlehud.ts` owns names, visual
-  health bars, the arena caption, clock, icon controls, and transient commentary.
+  health bars, the arena caption, clock, icon controls, and persistent top commentary.
 - `src/client/lib/matchupbrief.ts`: pure mode-title, exact-signature, and
   exhaustive ten-pair Shape Power mechanics planning with no winner prediction;
   `battleceremony.ts` renders the plan before every current battle path.
-- `src/shared/content/replaycommentary.ts`: immutable v1 Inkcast content pack,
-  stable line IDs, 25 per-fact token contracts, strict shared parser/renderer,
+- `src/shared/content/replaycommentary.ts`: v2 Inkcast presentation pack with
+  short player-facing sentences and stable v1 line IDs for continuity, 25
+  per-fact token contracts, strict shared parser/renderer,
   truth validation, and deterministic bank permutations for all 104 lines.
-  Treat v1 IDs, templates, and ordering as immutable; before a v2 pack ships,
-  bind its version to stored reports or explicitly accept historical copy drift.
+  The v2 selection seed explicitly accepts presentation-copy drift while battle
+  facts and stored outcomes remain unchanged.
 - `src/client/lib/replaycommentary.ts`: replay-scoped transcript-fact-to-copy
   authoring with bank-local occurrence state plus founder voice projection into
   existing replay beats; it cannot schedule events or change combat state.
@@ -484,8 +511,8 @@ boundary during browser iteration—it is not the production game server.
   scrapbook stage; its one player-facing entry lives in `src/client/scenes/Shop.ts`.
   Those four Shop-only textures preload with the Shop scene rather than consuming
   initial game-load decode and texture memory.
-- `src/client/lib/appmenu.ts`: shared top-right Settings menu for secondary
-  Gallery and Field Guide destinations without consuming a primary dock slot.
+- `src/client/lib/appmenu.ts`: shared top-right Settings menu for the Field Guide;
+  Gallery has its own compact book button on Home.
 - `src/client/lib/arenaasynclifecycle.ts`: pure latest-response policy for Arena
   mutations and refreshes. Responses from a stopped or replaced scene can only
   apply to the current activation or schedule a current/next-entry refresh.

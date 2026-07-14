@@ -84,6 +84,9 @@ and personal Legacy Cards outside the primary dock.
       A clean 393x852 live-browser pass confirms the exact dock order, distinct
       Bag/Shop active states, zero Scout buttons, zero runtime errors, and no
       console warnings or errors (July 14).
+- [x] Superseded navigation gate: the persistent dock is now Arena, Bag, Home,
+      Battles, and Shop, with Home centered and the official Draw flow opened
+      from Home's large Draw button (July 14).
 - [x] Bag now has one server-authoritative, per-Scribbit loadout: two slots
       each for weapon, armor, shoes, and accessory. Discovered Gear is reusable,
       duplicate copies remain Forge material, equipped Gear resolves into at
@@ -495,7 +498,7 @@ and personal Legacy Cards outside the primary dock.
       Arena, inventory, and battle-history hashes unchanged with no reward field
       (July 11). Deterministic regressions also lock four distinct post-4/4 target
       powers and prompt cards.
-- [ ] Installed Reddit playtest verifies the same loop plus boss/care/Back and
+- [ ] Installed Reddit playtest verifies the same loop plus boss/care/Pick and
       the scheduled result comment on mobile and desktop.
 - [ ] Devvit upload/install/demo post requires user Reddit login and subreddit access.
 - [ ] Add the public subreddit/post URLs and sub-one-minute video to the final

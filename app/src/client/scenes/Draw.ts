@@ -72,7 +72,7 @@ import {
   handLettered,
   stickerCard,
   errorPanel,
-  fadeToScene,
+  startScene,
   iconButton,
 } from '../lib/ui';
 import type { ErrorPanel } from '../lib/ui';
@@ -124,9 +124,19 @@ import {
 } from '../lib/drawautomation';
 import { planSceneMutationResponse } from '../lib/arenaasynclifecycle';
 import { translate } from '../lib/localization';
+import {
+  pauseDrawingSoundtrack,
+  resumeDrawingSoundtrack,
+  startDrawingSoundtrack,
+  stopSoundtrack,
+} from '../lib/soundtrack';
 
 const DRAW_START_CARD_ART_URL = new URL(
   '../assets/draw-start-challenge-card.jpg',
+  import.meta.url
+).href;
+const DRAW_CLOSE_BUTTON_ART_URL = new URL(
+  '../assets/ui-button-close.png',
   import.meta.url
 ).href;
 
@@ -167,6 +177,15 @@ type AnalyzerWorkerResponse = Readonly<{
 const isPracticeDoodleDare = (
   dare: DoodleDare | CommunityDrawTheme
 ): dare is DoodleDare => 'suggestedPower' in dare;
+const formatThemePrompt = (prompt: string): string => {
+  const naturalPrompt = prompt
+    .replace(/^draw\s+(?:a|an)\s+/i, '')
+    .replace(/^(?:a|an)\s+/i, '')
+    .trim();
+  return naturalPrompt
+    ? `${naturalPrompt.charAt(0).toUpperCase()}${naturalPrompt.slice(1)}`
+    : prompt;
+};
 type SubmissionDraft = Readonly<{
   result: AnalyzerResult;
   accessories: AttachedAccessory[];
@@ -445,6 +464,7 @@ export class Draw extends Scene {
   create(): void {
     // Defensive: clear any overlay a previous Draw visit might have left behind.
     DomOverlay.destroyAll();
+    stopSoundtrack();
 
     const arena = getArena(this);
     if (!arena) {
@@ -463,14 +483,14 @@ export class Draw extends Scene {
     if (this.practiceMode) {
       if (!arena.loggedIn) {
         showToast('Log in to open the server-checked Practice Lab.');
-        this.scene.start('ArenaHome');
+        this.scene.start('ScribbitHome');
         return;
       }
     } else {
       const eligibility = getDrawEligibility(arena);
       if (!eligibility.canDraw) {
         showToast(eligibility.message);
-        this.scene.start('ArenaHome');
+        this.scene.start('ScribbitHome');
         return;
       }
       const communityEligibility = getCommunityThemeEligibility(arena);
@@ -496,7 +516,6 @@ export class Draw extends Scene {
       arena.myUsername
     );
     this.cameras.main.setBackgroundColor(UI.desk);
-    this.cameras.main.fadeIn(180, 255, 247, 232);
     // Calm living page (no forecast field / edge creatures) so it moves gently
     // without distracting from the drawing surface.
     this.livingPaper = new LivingPaper(this, { edgeCreatures: false });
@@ -530,6 +549,7 @@ export class Draw extends Scene {
 
   private cleanup(): void {
     this.sceneVisitEpoch += 1;
+    stopSoundtrack();
     this.removeLocalDrawAutomationApi();
     window.removeEventListener('resize', this.resizeHandler);
     window.visualViewport?.removeEventListener(
@@ -667,12 +687,21 @@ export class Draw extends Scene {
   private exitTo(sceneKey: string): void {
     this.cleanup();
     DomOverlay.destroyAll();
-    fadeToScene(this, sceneKey);
+    startScene(this, sceneKey);
   }
 
   private exitDraw(): void {
+    if (this.isFirstScribbit && !this.practiceMode) {
+      showToast('Draw your first Scribbit to unlock Home.');
+      return;
+    }
     if (this.practiceMode) endPracticeSession(this);
-    this.exitTo('ArenaHome');
+    this.exitTo('ScribbitHome');
+  }
+
+  private closeDrawStartPopup(): void {
+    if (this.practiceMode) endPracticeSession(this);
+    this.exitTo(this.isFirstScribbit ? 'ArenaHome' : 'ScribbitHome');
   }
 
   // --- Layout budget (720x1280 design space) --------------------------------
@@ -774,7 +803,6 @@ export class Draw extends Scene {
     );
 
     this.cameras.main.setBackgroundColor(UI.desk);
-    this.cameras.main.fadeIn(180, 255, 247, 232);
     this.livingPaper = new LivingPaper(this, { edgeCreatures: false });
     card.setDepth(2);
 
@@ -881,24 +909,26 @@ export class Draw extends Scene {
     beginPracticeSession(this);
     this.cleanup();
     DomOverlay.destroyAll();
-    fadeToScene(this, 'Draw', { mode: 'practice' });
+    startScene(this, 'Draw', { mode: 'practice' });
   }
 
   // --- Phaser chrome (everything except the live canvas + name input) -------
   private buildChrome(): void {
     const { width } = this.scale;
     // Back stays left while the larger title centers over the drawing surface.
-    ghostButton(this, 72, 54, '‹', () => this.exitDraw(), 88);
-    this.addNativeControl(
-      'Back to Arena',
-      22,
-      4,
-      100,
-      100,
-      () => this.exitDraw(),
-      true,
-      this.headerControlOverlay
-    );
+    if (!this.isFirstScribbit) {
+      ghostButton(this, 72, 54, '‹', () => this.exitDraw(), 88);
+      this.addNativeControl(
+        'Back to Home',
+        22,
+        4,
+        100,
+        100,
+        () => this.exitDraw(),
+        true,
+        this.headerControlOverlay
+      );
+    }
     screenTitle(
       this,
       width / 2,
@@ -964,6 +994,7 @@ export class Draw extends Scene {
       background: UI.ink,
     });
     const minuteHand = document.createElement('span');
+    minuteHand.className = 'draw-clock-minute-hand';
     Object.assign(minuteHand.style, {
       position: 'absolute',
       left: 'calc(50% - 2px)',
@@ -1057,6 +1088,10 @@ export class Draw extends Scene {
     if (!this.isWaitingToStart() || this.submitting || this.drawConfirmation) {
       return;
     }
+    if (this.isFirstScribbit) {
+      showToast('Draw your first Scribbit to unlock Free Draw.');
+      return;
+    }
     this.playerDrawMode = 'free';
     this.canvas.element.setAttribute(
       'aria-label',
@@ -1084,6 +1119,8 @@ export class Draw extends Scene {
     const wasStarted = this.drawRoundClock.started;
     this.drawRoundClock = startDrawRoundClock(this.drawRoundClock, Date.now());
     if (this.drawRoundClock.deadlineMilliseconds === null) return;
+    if (wasStarted) resumeDrawingSoundtrack();
+    else startDrawingSoundtrack();
     this.drawRoundTimerEvent ??= this.time.addEvent({
       delay: 200,
       loop: true,
@@ -1107,6 +1144,7 @@ export class Draw extends Scene {
 
   private pauseDrawingRound(): void {
     if (this.isUntimedDrawingMode()) return;
+    pauseDrawingSoundtrack();
     this.drawRoundClock = pauseDrawRoundClock(this.drawRoundClock, Date.now());
     this.drawRoundTimerEvent?.remove();
     this.drawRoundTimerEvent = null;
@@ -1203,6 +1241,7 @@ export class Draw extends Scene {
 
   private finishDrawingRound(): void {
     if (this.isUntimedDrawingMode() || this.drawingLocked) return;
+    pauseDrawingSoundtrack();
     this.drawRoundClock = expireDrawRoundClock(this.drawRoundClock);
     this.drawRoundTimerEvent?.remove();
     this.drawRoundTimerEvent = null;
@@ -2675,13 +2714,21 @@ export class Draw extends Scene {
         ? dare.suggestedPower
         : null;
     const timedStart = !this.isUntimedDrawingMode();
+    const reducedThemeMotion = timedStart && prefersReducedMotion();
     const overlay = document.createElement('div');
+    if (timedStart) {
+      overlay.className = reducedThemeMotion
+        ? 'draw-theme-overlay draw-theme-reduced-motion'
+        : 'draw-theme-overlay';
+    }
     overlay.setAttribute('role', timedStart ? 'group' : 'note');
     overlay.setAttribute(
       'aria-label',
       practicePower
         ? `Practice idea: Draw ${dare.prompt}. ${getShapePowerDrawingCue(practicePower)} Twist: ${twist}.`
-        : `Three-day community theme: Draw ${dare.prompt}. Start Theme gives you 60 seconds. Free Draw has no timer and is saved separately.`
+        : this.isFirstScribbit
+          ? `Draw your first Scribbit: ${dare.prompt}. Start Theme gives you 60 seconds.`
+          : `Three-day community theme: Draw ${dare.prompt}. Draw, name, then enter the Rumble. Start Theme gives you 60 seconds. Free Draw has no timer and is saved separately.`
     );
     Object.assign(overlay.style, {
       display: 'flex',
@@ -2703,6 +2750,7 @@ export class Draw extends Scene {
     });
 
     const card = document.createElement('div');
+    if (timedStart) card.className = 'draw-theme-card';
     Object.assign(
       card.style,
       timedStart
@@ -2732,14 +2780,15 @@ export class Draw extends Scene {
           }
     );
     const copy = document.createElement('div');
+    if (timedStart) copy.className = 'draw-theme-copy';
     Object.assign(
       copy.style,
       timedStart
         ? {
             position: 'absolute',
-            top: '42%',
+            top: '40%',
             right: '9%',
-            bottom: '23%',
+            bottom: '24%',
             left: '9%',
             display: 'flex',
             flexDirection: 'column',
@@ -2748,14 +2797,93 @@ export class Draw extends Scene {
           }
         : {}
     );
+    if (timedStart) {
+      if (!reducedThemeMotion) {
+        card.append(
+          this.createThemeArtMotionLayer(
+            'draw-theme-art-crayon',
+            'polygon(10% 34%, 9% 30%, 13% 27%, 29% 21%, 34% 22%, 35% 25%, 29% 29%, 15% 34%)',
+            '22% 27%'
+          ),
+          this.createThemeArtMotionLayer(
+            'draw-theme-art-star-top',
+            'polygon(82% 30%, 84% 26%, 87% 25%, 89% 21%, 92% 25%, 96% 27%, 93% 30%, 91% 33%, 87% 31%)',
+            '89% 28%'
+          ),
+          this.createThemeArtMotionLayer(
+            'draw-theme-art-star-bottom',
+            'polygon(2% 93%, 4% 89%, 7% 88%, 9% 85%, 12% 89%, 15% 91%, 12% 94%, 9% 96%, 6% 94%)',
+            '8% 92%'
+          )
+        );
+      }
+
+      const tapeLabel = document.createElement('div');
+      tapeLabel.className = 'draw-theme-tape-label';
+      tapeLabel.setAttribute('aria-hidden', 'true');
+      tapeLabel.textContent = this.practiceMode
+        ? 'PRACTICE TIME!'
+        : 'DRAWING TIME!';
+      Object.assign(tapeLabel.style, {
+        position: 'absolute',
+        top: '2.1%',
+        right: '30%',
+        left: '30%',
+        height: '5.8%',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        color: UI.ink,
+        ...DOM_TYPE.caption,
+        fontSize: '24px',
+        letterSpacing: '0.8px',
+        textAlign: 'center',
+        textShadow: '0 2px 0 rgba(255, 247, 232, 0.32)',
+        transform: 'rotate(-0.5deg)',
+        pointerEvents: 'none',
+        zIndex: '2',
+      });
+      card.append(tapeLabel);
+
+      const closeButton = document.createElement('button');
+      closeButton.type = 'button';
+      closeButton.setAttribute('aria-label', 'Close drawing theme');
+      Object.assign(closeButton.style, {
+        position: 'absolute',
+        top: '1.8%',
+        right: '2.8%',
+        zIndex: '2',
+        width: '58px',
+        height: '58px',
+        padding: '0',
+        border: '0',
+        background: `transparent url(${DRAW_CLOSE_BUTTON_ART_URL}) center / 100% 100% no-repeat`,
+        cursor: 'pointer',
+        filter: 'drop-shadow(0 3px 0 rgba(43, 32, 22, 0.28))',
+        touchAction: 'manipulation',
+        pointerEvents: 'auto',
+      });
+      closeButton.addEventListener('pointerdown', () => {
+        closeButton.style.transform = 'translateY(2px) scale(0.94)';
+      });
+      const releaseCloseButton = (): void => {
+        closeButton.style.transform = 'translateY(0) scale(1)';
+      };
+      closeButton.addEventListener('pointerup', releaseCloseButton);
+      closeButton.addEventListener('pointercancel', releaseCloseButton);
+      closeButton.addEventListener('pointerleave', releaseCloseButton);
+      closeButton.addEventListener('click', () => this.closeDrawStartPopup());
+      card.append(closeButton);
+    }
     const context = document.createElement('div');
+    if (timedStart) context.className = 'draw-theme-context';
     context.textContent = this.practiceMode
       ? 'PRACTICE IDEA'
       : `${COMMUNITY_DRAW_THEME_DAYS}-DAY COMMUNITY THEME`;
     Object.assign(context.style, {
       ...DOM_TYPE.caption,
       color: UI.coralText,
-      marginBottom: timedStart ? '14px' : '5px',
+      marginBottom: timedStart ? '8px' : '5px',
       ...(timedStart
         ? {
             padding: '7px 16px',
@@ -2767,22 +2895,26 @@ export class Draw extends Scene {
         : {}),
     });
     const prompt = document.createElement('div');
-    prompt.textContent = `DRAW ${dare.prompt.toUpperCase()}`;
+    if (timedStart) prompt.className = 'draw-theme-prompt';
+    prompt.textContent = formatThemePrompt(dare.prompt);
     Object.assign(prompt.style, {
       ...DOM_TYPE.title,
       ...(timedStart
         ? {
-            maxWidth: '94%',
-            fontSize: '44px',
-            lineHeight: '1.02',
+            maxWidth: '100%',
+            fontSize: '40px',
+            lineHeight: '1.05',
+            textWrap: 'balance',
             textShadow: '0 3px 0 rgba(255, 247, 232, 0.82)',
           }
         : {}),
     });
     copy.append(context, prompt);
+    if (timedStart) copy.append(this.createThemeJourneyStrip());
     card.append(copy);
     if (timedStart) {
       const startButton = document.createElement('button');
+      startButton.className = 'draw-theme-start-button';
       startButton.type = 'button';
       startButton.textContent = 'START THEME';
       startButton.setAttribute(
@@ -2809,14 +2941,13 @@ export class Draw extends Scene {
         textShadow: '0 2px 0 rgba(255, 247, 232, 0.34)',
         touchAction: 'manipulation',
         pointerEvents: 'auto',
+        zIndex: '2',
       });
       const releaseButton = (): void => {
-        startButton.style.transform = 'translateY(0) scale(1)';
-        startButton.style.filter = 'brightness(1)';
+        startButton.classList.remove('is-pressed');
       };
       startButton.addEventListener('pointerdown', () => {
-        startButton.style.transform = 'translateY(4px) scale(0.985)';
-        startButton.style.filter = 'brightness(0.92)';
+        startButton.classList.add('is-pressed');
       });
       startButton.addEventListener('pointerup', releaseButton);
       startButton.addEventListener('pointercancel', releaseButton);
@@ -2832,6 +2963,7 @@ export class Draw extends Scene {
     overlay.append(card);
     if (timedStart) {
       const timerNotice = document.createElement('div');
+      timerNotice.className = 'draw-theme-timer-notice';
       timerNotice.setAttribute('aria-hidden', 'true');
       Object.assign(timerNotice.style, {
         width: 'min(88%, 635px)',
@@ -2844,7 +2976,9 @@ export class Draw extends Scene {
         fontFamily: FONT_STACK,
       });
       const timerIcon = this.createDrawClockIcon(48);
+      timerIcon.classList.add('draw-theme-timer-icon');
       const timerLabel = document.createElement('span');
+      timerLabel.className = 'draw-theme-timer-label';
       timerLabel.textContent = '60 SEC TO DRAW';
       Object.assign(timerLabel.style, {
         color: UI.cream,
@@ -2856,49 +2990,51 @@ export class Draw extends Scene {
       timerNotice.append(timerIcon, timerLabel);
       overlay.append(timerNotice);
 
-      const freeDrawButton = document.createElement('button');
-      freeDrawButton.type = 'button';
-      freeDrawButton.setAttribute(
-        'aria-label',
-        'Start an untimed Free Draw saved outside the Community Rumble'
-      );
-      Object.assign(freeDrawButton.style, {
-        width: 'min(88%, 635px)',
-        minHeight: '58px',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        gap: '12px',
-        padding: '10px 18px',
-        border: `3px solid ${UI.cream}`,
-        borderRadius: '18px',
-        background: 'rgba(43, 32, 22, 0.72)',
-        color: UI.cream,
-        boxShadow: '0 5px 0 rgba(13, 9, 6, 0.42)',
-        cursor: 'pointer',
-        fontFamily: FONT_STACK,
-        touchAction: 'manipulation',
-        pointerEvents: 'auto',
-      });
-      const freeDrawLabel = document.createElement('span');
-      freeDrawLabel.textContent = 'FREE DRAW';
-      Object.assign(freeDrawLabel.style, {
-        ...DOM_TYPE.title,
-        fontSize: '28px',
-      });
-      const noTimerLabel = document.createElement('span');
-      noTimerLabel.textContent = 'NO TIMER';
-      Object.assign(noTimerLabel.style, {
-        ...DOM_TYPE.caption,
-        padding: '5px 9px',
-        borderRadius: '999px',
-        background: UI.cream,
-        color: UI.ink,
-      });
-      freeDrawButton.append(freeDrawLabel, noTimerLabel);
-      freeDrawButton.addEventListener('click', () => this.beginFreeDrawing());
-      overlay.append(freeDrawButton);
-      this.freeDrawControl = freeDrawButton;
+      if (!this.isFirstScribbit) {
+        const freeDrawButton = document.createElement('button');
+        freeDrawButton.type = 'button';
+        freeDrawButton.setAttribute(
+          'aria-label',
+          'Start an untimed Free Draw saved outside the Community Rumble'
+        );
+        Object.assign(freeDrawButton.style, {
+          width: 'min(88%, 635px)',
+          minHeight: '58px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: '12px',
+          padding: '10px 18px',
+          border: `3px solid ${UI.cream}`,
+          borderRadius: '18px',
+          background: 'rgba(43, 32, 22, 0.72)',
+          color: UI.cream,
+          boxShadow: '0 5px 0 rgba(13, 9, 6, 0.42)',
+          cursor: 'pointer',
+          fontFamily: FONT_STACK,
+          touchAction: 'manipulation',
+          pointerEvents: 'auto',
+        });
+        const freeDrawLabel = document.createElement('span');
+        freeDrawLabel.textContent = 'FREE DRAW';
+        Object.assign(freeDrawLabel.style, {
+          ...DOM_TYPE.title,
+          fontSize: '28px',
+        });
+        const noTimerLabel = document.createElement('span');
+        noTimerLabel.textContent = 'NO TIMER';
+        Object.assign(noTimerLabel.style, {
+          ...DOM_TYPE.caption,
+          padding: '5px 9px',
+          borderRadius: '999px',
+          background: UI.cream,
+          color: UI.ink,
+        });
+        freeDrawButton.append(freeDrawLabel, noTimerLabel);
+        freeDrawButton.addEventListener('click', () => this.beginFreeDrawing());
+        overlay.append(freeDrawButton);
+        this.freeDrawControl = freeDrawButton;
+      }
     }
     this.overlay.place(
       overlay,
@@ -2918,6 +3054,116 @@ export class Draw extends Scene {
     );
     this.canvasDareOverlay = overlay;
     this.setCanvasDareVisible(true);
+  }
+
+  private createThemeArtMotionLayer(
+    motionClassName: string,
+    clipPath: string,
+    transformOrigin: string
+  ): HTMLDivElement {
+    const artLayer = document.createElement('div');
+    artLayer.className = `draw-theme-art-piece ${motionClassName}`;
+    artLayer.setAttribute('aria-hidden', 'true');
+    Object.assign(artLayer.style, {
+      backgroundImage: `url(${DRAW_START_CARD_ART_URL})`,
+      clipPath,
+      transformOrigin,
+    });
+    return artLayer;
+  }
+
+  private createThemeJourneyStrip(): HTMLDivElement {
+    const journey = document.createElement('div');
+    journey.className = 'draw-theme-journey';
+    journey.setAttribute('aria-hidden', 'true');
+    Object.assign(journey.style, {
+      width: '94%',
+      marginTop: '14px',
+      padding: '12px 10px 10px',
+      display: 'grid',
+      gridTemplateColumns: '1fr 34px 1fr 34px 1fr',
+      alignItems: 'start',
+      boxSizing: 'border-box',
+      borderTop: `2px dashed ${UI.coralText}`,
+      borderBottom: `2px dashed ${UI.coralText}`,
+      background: 'rgba(255, 247, 232, 0.34)',
+      transform: 'rotate(-0.35deg)',
+    });
+
+    const steps = ['DRAW', 'NAME', 'RUMBLE'] as const;
+    steps.forEach((step, index) => {
+      const stepContainer = document.createElement('div');
+      stepContainer.className = 'draw-theme-journey-step';
+      stepContainer.style.setProperty(
+        '--draw-theme-step-delay',
+        `${index * 0.58}s`
+      );
+      Object.assign(stepContainer.style, {
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        minWidth: '0',
+      });
+
+      const number = document.createElement('span');
+      number.className = 'draw-theme-journey-number';
+      number.textContent = String(index + 1);
+      number.style.setProperty(
+        '--draw-theme-step-rotation',
+        index === 1 ? '2deg' : '-2deg'
+      );
+      Object.assign(number.style, {
+        width: '38px',
+        height: '38px',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        border: `3px solid ${UI.coralText}`,
+        borderRadius: index === 1 ? '46% 54% 48% 52%' : '50%',
+        background: 'rgba(255, 247, 232, 0.88)',
+        color: UI.coralText,
+        boxShadow: '1px 2px 0 rgba(43, 32, 22, 0.2)',
+        ...DOM_TYPE.caption,
+        fontSize: '20px',
+      });
+
+      const stepLabel = document.createElement('span');
+      stepLabel.className = 'draw-theme-journey-label';
+      stepLabel.textContent = step;
+      Object.assign(stepLabel.style, {
+        marginTop: '5px',
+        color: UI.ink,
+        ...DOM_TYPE.caption,
+        fontSize: '18px',
+        letterSpacing: '0.5px',
+        whiteSpace: 'nowrap',
+      });
+      stepContainer.append(number, stepLabel);
+      journey.append(stepContainer);
+
+      if (index < steps.length - 1) {
+        const connector = document.createElement('span');
+        connector.className = 'draw-theme-journey-connector';
+        connector.style.setProperty(
+          '--draw-theme-connector-rotation',
+          index === 0 ? '-3deg' : '3deg'
+        );
+        connector.style.setProperty(
+          '--draw-theme-connector-delay',
+          `${0.34 + index * 0.58}s`
+        );
+        Object.assign(connector.style, {
+          width: '100%',
+          marginTop: '20px',
+          height: '3px',
+          backgroundImage: `repeating-linear-gradient(90deg, ${UI.ink} 0 8px, transparent 8px 14px)`,
+          backgroundSize: '28px 3px',
+          opacity: '0.52',
+        });
+        journey.append(connector);
+      }
+    });
+    return journey;
   }
 
   private setCanvasDareVisible(visible: boolean): void {
@@ -3328,7 +3574,7 @@ export class Draw extends Scene {
       if (this.scene.isActive() && !this.practiceMode) {
         this.submitting = true;
         showToast('Your Scribbit made it into today’s Rumble.');
-        this.exitTo('ArenaHome');
+        this.exitTo('ScribbitHome');
       }
       return;
     }
@@ -3342,7 +3588,7 @@ export class Draw extends Scene {
         showToast(
           'Your Scribbit made it into the Rumble — the reply arrived late.'
         );
-        this.exitTo('ArenaHome');
+        this.exitTo('ScribbitHome');
         return;
       }
       this.submitting = false;
@@ -3355,7 +3601,7 @@ export class Draw extends Scene {
       await this.reconcileArenaSnapshot();
       if (!this.isCurrentSceneVisit(sceneVisitEpoch)) return;
       showToast('The Arena day changed while your Scribbit was saving.');
-      this.exitTo('ArenaHome');
+      this.exitTo('ScribbitHome');
       return;
     }
     this.playCeremony(response.data, draft.imageDataUrl);
@@ -3778,10 +4024,10 @@ export class Draw extends Scene {
       if (!report || report.kind !== 'practice') {
         this.birthContinuationStarted = false;
         showToast('The practice replay went missing. Try the drawing again.');
-        this.exitTo('ArenaHome');
+        this.exitTo('ScribbitHome');
         return;
       }
-      setReplay(this, report, 'ArenaHome');
+      setReplay(this, report, 'ScribbitHome');
       showVsCeremony(this, {
         fighterA: report.a,
         fighterB: report.b,
@@ -3810,7 +4056,7 @@ export class Draw extends Scene {
       getArena(this),
       result.data,
       scribbit.id,
-      'ArenaHome',
+      'ScribbitHome',
       'birth'
     );
     if (!stagedBattle) {

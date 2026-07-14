@@ -62,6 +62,10 @@ test('the local authoring API uses the real Draw canvas and mock capability', ()
     join(process.cwd(), 'scripts', 'dev-mock.mjs'),
     'utf8'
   );
+  const viteMockSource = readFileSync(
+    join(process.cwd(), 'vite.mock.config.ts'),
+    'utf8'
+  );
 
   assert.match(drawSource, /scribbitsDrawAutomation/);
   assert.match(drawSource, /this\.canvas\.drawAutomationStrokes\(strokes\)/);
@@ -69,4 +73,5 @@ test('the local authoring API uses the real Draw canvas and mock capability', ()
   assert.match(canvasSource, /drawAutomationStrokes/);
   assert.match(gameSource, /__mock\/draw-automation/);
   assert.match(mockSource, /url\.pathname === '\/__mock\/draw-automation'/);
+  assert.match(viteMockSource, /'\/__mock': mockApiTarget/);
 });

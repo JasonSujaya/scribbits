@@ -151,7 +151,7 @@ test('portrait replay layout keeps controls, HUD, and fighters inside safe bound
       arenaHorizontalPadding: 160,
       arenaVerticalPadding: 140,
       tickerX: 360,
-      tickerY: 1230,
+      tickerY: 310,
       tickerWidth: 632,
       tickerHeight: 56,
       tickerTagWidth: 0,
@@ -217,15 +217,16 @@ test('portrait replay layout keeps controls, HUD, and fighters inside safe bound
     'fighter HUDs must preserve a clean center gutter'
   );
   assert.ok(
-    replayBattleLayout.toolbarY > replayBattleLayout.arenaBottom + 40 &&
-      replayBattleLayout.tickerY - replayBattleLayout.tickerHeight / 2 >
-        replayBattleLayout.toolbarY + 52 + 8,
-    'playback controls should sit below combat and above the announcer'
+    replayBattleLayout.tickerY - replayBattleLayout.tickerHeight / 2 >
+      replayBattleLayout.fighterPanelTop +
+        replayBattleLayout.fighterPanelHeight &&
+      replayBattleLayout.tickerY + replayBattleLayout.tickerHeight / 2 + 7 <
+        replayBattleLayout.arenaTop,
+    'the battle text should fill the top gap without touching the HUD or arena'
   );
   assert.ok(
-    replayBattleLayout.tickerY + replayBattleLayout.tickerHeight / 2 <=
-      replayBattleLayout.viewportHeight - 18,
-    'the transient announcer should remain contained inside the battle page'
+    minimumReplayLayout.tickerY === replayBattleLayout.tickerY,
+    'battle text should keep the same safe top anchor at minimum height'
   );
   assert.ok(
     replayBattleLayout.arenaBottom - replayBattleLayout.arenaTop >= 700,
@@ -443,6 +444,23 @@ test('post-fight actions expose only valid rival, pick, replay, and return paths
     },
     'saved motion should expose replay again beside the truthful return action'
   );
+  assert.deepEqual(
+    battlePresentation.planReplayPostFightActions({
+      canChooseRival: false,
+      canBackContender: false,
+      canReplay: false,
+      canShareClip: true,
+      returnLabel: 'ARENA ›',
+    }).shareAction,
+    {
+      kind: 'share',
+      label: 'SHARE CLIP',
+      accessibleLabel:
+        'Share this recorded battle clip. The clip is hosted by Reddit.',
+      tone: 'ghost',
+    },
+    'a rendered fight should expose one explicit Reddit-hosted clip action'
+  );
 });
 
 test('heart meter plans clamp health while preserving danger and accessibility states', () => {
@@ -561,6 +579,16 @@ test('every damage event shows exact HP loss and a red target flash', () => {
     'the heart row should expose exact current and maximum HP'
   );
   assert.match(
+    replayBattleHudSource,
+    /translate\('battle\.health',[\s\S]*24,[\s\S]*UI\.ink,[\s\S]*true/,
+    'exact HP should use strong, caption-sized battle typography'
+  );
+  assert.match(
+    replayBattleHudSource,
+    /\.container\(fighterLayout\.chipCenterX, layout\.heartRowY, \[[\s\S]*heartWarning,[\s\S]*healthLabel,[\s\S]*\]\)/,
+    'the hearts and exact HP should share one hit-reaction container'
+  );
+  assert.match(
     replaySource,
     /this\.damagePopAt\(\s*target\.screenX,\s*target\.screenY,\s*impactPlan\.damageText/,
     'damage numbers should stay anchored above the fighter that lost HP'
@@ -574,6 +602,24 @@ test('every damage event shows exact HP loss and a red target flash', () => {
     liveSpriteSource,
     /setTint\(0xff3f36\)[\s\S]*TintModes\.FILL[\s\S]*private flashDamage\([\s\S]*setAlpha\(0\.78\)/,
     'the exact fighter drawing should flash red on every confirmed hit'
+  );
+});
+
+test('both fighter names stay visible below their battle lanes', () => {
+  assert.match(
+    replayBattleHudSource,
+    /const battleNameTag = scene\.add\.container\(\s*fighterLayout\.homeX,\s*fighterLayout\.homeY \+ layout\.fighterDisplaySize \/ 2 \+ 22/,
+    'each side should keep a clear name tag below its fighter lane'
+  );
+  assert.match(
+    replayBattleHudSource,
+    /scribbit\.name\.toUpperCase\(\)/,
+    'the battle tag should use the authoritative Scribbit name'
+  );
+  assert.match(
+    replayBattleHudSource,
+    /\.container\(0, 0, \[name, battleNameTag, heartMeter\]\)/,
+    'the battle tag should share the HUD visibility lifecycle'
   );
 });
 
@@ -617,6 +663,29 @@ test('heart damage reactions scale by impact and honor reduced motion', () => {
         reduceMotion: false,
       }).durationMilliseconds,
     'fast replay should compensate heart tween duration before Phaser time scaling'
+  );
+  assert.match(
+    replayBattleHudSource,
+    /targets: vitals\.heartMeter,[\s\S]*scale: 1\.055/,
+    'the combined heart and HP display should punch outward on damage'
+  );
+  assert.match(
+    replayBattleHudSource,
+    /previousHitPoints !== null && previousHitPoints !== safeHitPoints[\s\S]*targets: vitals\.healthLabel/,
+    'every real HP change after initialization should animate the exact value'
+  );
+});
+
+test('half hearts fill toward each fighter side', () => {
+  assert.match(
+    replayBattleHudSource,
+    /const halfFill = side === 'a' \? 'left' : 'right'/,
+    'the right fighter half-heart should mirror the left fighter fill'
+  );
+  assert.match(
+    replayBattleHudSource,
+    /state === 'half' \? halfFill : 'full'/,
+    'only half-heart states should use the side-aware partial fill'
   );
 });
 

@@ -9,6 +9,13 @@ export const PAPER_STAGE_TEXTURE = SCRIBBITS_STAGE_TEXTURE;
 export const BATTLE_STAGE_TEXTURE = SCRIBBITS_STAGE_TEXTURE;
 export const FIGHT_START_TEXTURE = 'ui-fight-start';
 export const BRAND_LOGO_TEXTURE = 'scribbits-logo';
+export const HOME_STAGE_TEXTURE = 'scribbits-home-stage';
+export const HOME_PROP_TEXTURES = {
+  window: 'scribbits-home-window',
+  shelf: 'scribbits-home-shelf',
+  bowl: 'scribbits-home-bowl',
+  bed: 'scribbits-home-bed',
+} as const;
 export const SHOP_STAGE_TEXTURE = 'scribbits-shop-stage';
 export const SHOP_CHEST_TEXTURES = {
   closed: 'scribbits-shop-chest-closed',
@@ -39,6 +46,10 @@ export function preloadVisualAssets(scene: Scene): void {
   scene.load.image(SCRIBBITS_STAGE_TEXTURE, assetUrl('scribbits-stage.png'));
   scene.load.image(FIGHT_START_TEXTURE, assetUrl('ui-fight-start.png'));
   scene.load.image(BRAND_LOGO_TEXTURE, assetUrl('scribbits-logo.png'));
+  scene.load.image(HOME_STAGE_TEXTURE, assetUrl('scribbits-home-stage.png'));
+  Object.values(HOME_PROP_TEXTURES).forEach((texture) => {
+    scene.load.image(texture, assetUrl(`${texture}.png`));
+  });
   scene.load.atlas(
     COMMON_GEAR_ART_TEXTURE,
     assetUrl('gear-common-atlas.png'),
@@ -75,6 +86,13 @@ export function paperStage(
   depth = -100
 ): Phaser.GameObjects.Image {
   return fixedStage(scene, PAPER_STAGE_TEXTURE, depth);
+}
+
+export function homeStage(
+  scene: Scene,
+  depth = -100
+): Phaser.GameObjects.Image {
+  return fixedStage(scene, HOME_STAGE_TEXTURE, depth);
 }
 
 export function arenaStage(

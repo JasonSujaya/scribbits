@@ -2562,9 +2562,19 @@ export const getAliveScribbitsForUser = async (
     storage,
     rankedScribbits.map((entry) => entry.member)
   );
+  const ownedScribbits = await Promise.all(
+    scribbits.map(async (scribbit) => ({
+      scribbit,
+      isOwnedByUser: (await getScribbitOwner(storage, scribbit.id)) === userId,
+    }))
+  );
 
-  return scribbits
-    .filter((scribbit) => scribbit.status === 'alive')
+  return ownedScribbits
+    .filter(
+      ({ scribbit, isOwnedByUser }) =>
+        isOwnedByUser && scribbit.status === 'alive'
+    )
+    .map(({ scribbit }) => scribbit)
     .sort(sortNewestFirst);
 };
 

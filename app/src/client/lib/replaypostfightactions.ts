@@ -29,6 +29,7 @@ export function createPostFightActions(
     canChooseRival: boolean;
     canBackContender: boolean;
     canReplay: boolean;
+    canShareClip?: boolean;
     returnLabel: string;
     primaryAction?: ReplayPostFightAction;
     rivalActionCopy?: Readonly<{
@@ -39,6 +40,7 @@ export function createPostFightActions(
     onFirstChest?: () => void;
     onBackContender: () => void;
     onReplay: () => void;
+    onShareClip?: () => void;
     onReturn: () => void;
   }>
 ): PostFightActions {
@@ -50,6 +52,7 @@ export function createPostFightActions(
     firstChest: input.onFirstChest ?? (() => undefined),
     backContender: input.onBackContender,
     replay: input.onReplay,
+    share: input.onShareClip ?? (() => undefined),
     return: input.onReturn,
   };
   const activateAction = (kind: ReplayPostFightActionKind): void => {
@@ -92,6 +95,21 @@ export function createPostFightActions(
         UI.ink,
         plan.buttonHeight,
         UI.gold
+      );
+    }
+    if (action.kind === 'share') {
+      return iconButton(
+        scene,
+        x,
+        y,
+        'spark',
+        action.label,
+        () => activateAction(action.kind),
+        width,
+        UI.creamHex,
+        UI.ink,
+        plan.buttonHeight,
+        UI.coral
       );
     }
     if (
@@ -141,54 +159,47 @@ export function createPostFightActions(
     );
   };
 
-  if (plan.primary) {
+  const addUtilityActions = (y: number): void => {
     const gap = 12;
     const returnWidth = Math.min(
       180,
       Math.max(136, 72 + plan.returnAction.label.length * 12)
     );
-    const replayWidth = plan.replayAction
-      ? Math.min(220, input.width - returnWidth - gap)
-      : 0;
+    const optionalActions = [plan.replayAction, plan.shareAction].filter(
+      (action): action is ReplayPostFightAction => Boolean(action)
+    );
+    const optionalWidth =
+      optionalActions.length > 0
+        ? Math.min(
+            220,
+            (input.width - returnWidth - gap * optionalActions.length) /
+              optionalActions.length
+          )
+        : 0;
+    const utilityWidth =
+      returnWidth + optionalActions.length * (gap + optionalWidth);
+    let actionX = -utilityWidth / 2 + returnWidth / 2;
+    container.add(
+      createAction(plan.returnAction, actionX, y, returnWidth, true)
+    );
+    placeAccessibleAction(plan.returnAction, actionX, y, returnWidth);
+    actionX += returnWidth / 2;
+    for (const action of optionalActions) {
+      actionX += gap + optionalWidth / 2;
+      container.add(createAction(action, actionX, y, optionalWidth));
+      placeAccessibleAction(action, actionX, y, optionalWidth);
+      actionX += optionalWidth / 2;
+    }
+  };
+
+  if (plan.primary) {
     const primaryY = -58;
     const utilityY = 58;
-    const utilityWidth = returnWidth + (plan.replayAction ? gap + replayWidth : 0);
-    const returnX = -utilityWidth / 2 + returnWidth / 2;
-    const replayX = utilityWidth / 2 - replayWidth / 2;
-    container.add([
-      createAction(plan.primary, 0, primaryY, input.width),
-      createAction(plan.returnAction, returnX, utilityY, returnWidth, true),
-    ]);
+    container.add(createAction(plan.primary, 0, primaryY, input.width));
     placeAccessibleAction(plan.primary, 0, primaryY, input.width);
-    placeAccessibleAction(plan.returnAction, returnX, utilityY, returnWidth);
-    if (plan.replayAction) {
-      container.add(
-        createAction(plan.replayAction, replayX, utilityY, replayWidth)
-      );
-      placeAccessibleAction(
-        plan.replayAction,
-        replayX,
-        utilityY,
-        replayWidth
-      );
-    }
-  } else if (plan.replayAction) {
-    const gap = 12;
-    const returnWidth = Math.min(
-      180,
-      Math.max(136, 72 + plan.returnAction.label.length * 12)
-    );
-    const replayWidth = Math.min(220, input.width - returnWidth - gap);
-    const groupWidth = returnWidth + gap + replayWidth;
-    const returnX = -groupWidth / 2 + returnWidth / 2;
-    const replayX = groupWidth / 2 - replayWidth / 2;
-    container.add(createAction(plan.returnAction, returnX, 0, returnWidth, true));
-    container.add(createAction(plan.replayAction, replayX, 0, replayWidth));
-    placeAccessibleAction(plan.returnAction, returnX, 0, returnWidth);
-    placeAccessibleAction(plan.replayAction, replayX, 0, replayWidth);
+    addUtilityActions(utilityY);
   } else {
-    container.add(createAction(plan.returnAction, 0, 0, input.width));
-    placeAccessibleAction(plan.returnAction, 0, 0, input.width);
+    addUtilityActions(0);
   }
 
   let destroyed = false;

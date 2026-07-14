@@ -635,8 +635,8 @@ its encores rotate after completion while its reports cannot reach battle
 storage.
 Care now has a complete three-day personality arc and a truthful server receipt,
 the in-game rules teach the combat model that actually runs, and the Battle
-Scrapbook gives recent authoritative fights a replayable home. The Scout
-Notebook now turns existing server truth into a bounded seven-day return habit.
+Scrapbook gives recent authoritative fights a replayable home. The former Scout
+Notebook remains only for compatibility with older saved-replay returns.
 
 The owned overnight Rumble payoff now leads with the entered Scribbit's drawing,
 exact daily W/L, standing-receipt XP, payout-receipt Ink, and server-selected
@@ -648,10 +648,10 @@ combat power or another currency. Do not add another progression subsystem
 before the installed playtest; the next content decision should come from
 whether players can name their active rival, current score, and reason to return
 after one organic session.
-The organic playtest should now test whether players can explain both the active
-Rival score and their seven-day scouting form. Do not expand the Notebook into a
-permanent career database, prediction market, or reward currency before that
-evidence exists.
+The organic playtest should now test whether players can explain the active
+Rival score and find a saved fight through Battles. Do not revive the Notebook
+as a permanent career database, prediction market, or reward currency without
+new evidence.
 
 ## Completion standard
 

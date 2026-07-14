@@ -80,26 +80,30 @@ const fitTextToWidth = (
 };
 
 const HEART_COUNT = 6;
-const MIN_HEART_SIZE = 24;
-const MAX_HEART_SIZE = 34;
+const MIN_HEART_SIZE = 26;
+const MAX_HEART_SIZE = 40;
 const EMPTY_HEART_FILL = 0xd9ccb5;
+
+type HeartFill = 'full' | 'left' | 'right';
 
 const traceHeart = (
   graphics: Phaser.GameObjects.Graphics,
   x: number,
   y: number,
   size: number,
-  leftHalfOnly = false
+  fill: HeartFill = 'full'
 ): void => {
   const scale = size / 32;
   graphics.beginPath();
   graphics.moveTo(x, y + 13 * scale);
-  graphics.lineTo(x - 13 * scale, y + 3 * scale);
-  graphics.lineTo(x - 13 * scale, y - 6 * scale);
-  graphics.lineTo(x - 8 * scale, y - 12 * scale);
-  graphics.lineTo(x - 2 * scale, y - 12 * scale);
+  if (fill !== 'right') {
+    graphics.lineTo(x - 13 * scale, y + 3 * scale);
+    graphics.lineTo(x - 13 * scale, y - 6 * scale);
+    graphics.lineTo(x - 8 * scale, y - 12 * scale);
+    graphics.lineTo(x - 2 * scale, y - 12 * scale);
+  }
   graphics.lineTo(x, y - 8 * scale);
-  if (!leftHalfOnly) {
+  if (fill !== 'left') {
     graphics.lineTo(x + 2 * scale, y - 12 * scale);
     graphics.lineTo(x + 8 * scale, y - 12 * scale);
     graphics.lineTo(x + 13 * scale, y - 6 * scale);
@@ -125,6 +129,7 @@ const renderHeartMeter = (
   const step = heartSize + gap;
   const firstX = -((plan.states.length - 1) * step) / 2;
   const activeColor = plan.useDangerColor ? 0xe8555c : healthyColor;
+  const halfFill = side === 'a' ? 'left' : 'right';
 
   for (let position = 0; position < plan.states.length; position += 1) {
     const stateIndex =
@@ -140,7 +145,13 @@ const renderHeartMeter = (
     graphics.fillPath();
     if (state !== 'empty') {
       graphics.fillStyle(activeColor, 1);
-      traceHeart(graphics, x, 0, heartSize, state === 'half');
+      traceHeart(
+        graphics,
+        x,
+        0,
+        heartSize,
+        state === 'half' ? halfFill : 'full'
+      );
       graphics.fillPath();
     }
     graphics.lineStyle(plan.isLastHeart ? 4 : 3, UI.inkHex, 0.96);
@@ -266,6 +277,26 @@ const createFighterVitalsView = (
     }
   );
 
+  const battleNameTagWidth = Math.min(154, layout.fighterDisplaySize - 32);
+  const battleNameTag = scene.add.container(
+    fighterLayout.homeX,
+    fighterLayout.homeY + layout.fighterDisplaySize / 2 + 22
+  );
+  const battleNameTagBackground = scene.add
+    .rectangle(0, 0, battleNameTagWidth, 38, UI.paper, 0.9)
+    .setStrokeStyle(2, UI.inkHex, 0.92);
+  const battleName = label(
+    scene,
+    0,
+    0,
+    scribbit.name.toUpperCase(),
+    18,
+    UI.ink,
+    true
+  );
+  fitTextToWidth(battleName, battleNameTagWidth - 18);
+  battleNameTag.add([battleNameTagBackground, battleName]);
+
   const initialHeartPlan = planReplayHeartMeter({
     hitPoints: 1,
     maximumHitPoints: 1,
@@ -280,27 +311,30 @@ const createFighterVitalsView = (
     layout.heartRowWidth
   );
   const heartWarning = scene.add.container(0, 0, [heartGraphics]);
-  const heartMeter = scene.add
-    .container(fighterLayout.chipCenterX, layout.heartRowY, [heartWarning])
-    .setSize(layout.heartRowWidth, layout.heartRowHeight)
-    .setDepth(24)
-    .setName(initialHeartPlan.accessibleLabel)
-    .setData('accessibilityLabel', initialHeartPlan.accessibleLabel)
-    .setData('heartStates', initialHeartPlan.states);
   const healthLabel = label(
     scene,
-    fighterLayout.chipCenterX,
-    layout.heartRowY + 30,
+    0,
+    38,
     translate('battle.health', { current: 1, maximum: 1 }),
-    18,
-    UI.inkSoft,
+    24,
+    UI.ink,
     true
   )
     .setOrigin(0.5)
     .setDepth(25);
+  const heartMeter = scene.add
+    .container(fighterLayout.chipCenterX, layout.heartRowY, [
+      heartWarning,
+      healthLabel,
+    ])
+    .setSize(layout.heartRowWidth, layout.heartRowHeight + 34)
+    .setDepth(24)
+    .setName(initialHeartPlan.accessibleLabel)
+    .setData('accessibilityLabel', initialHeartPlan.accessibleLabel)
+    .setData('heartStates', initialHeartPlan.states);
 
   const container = scene.add
-    .container(0, 0, [name, heartMeter, healthLabel])
+    .container(0, 0, [name, battleNameTag, heartMeter])
     .setDepth(20);
 
   return {
@@ -568,23 +602,18 @@ export function createReplayBattleHud(
   const announcer = label(scene, 10, 0, 'Get ready…', 22, UI.ink, true);
   announcer.setWordWrapWidth(announcerWidth);
   ticker.add(announcer);
-  let tickerHideEvent: Phaser.Time.TimerEvent | null = null;
   let displayedClockLabel = '';
   let displayedClockUrgent: boolean | null = null;
   let playbackSpeed = input.initialPlaybackSpeed;
   let heartsVisible = true;
 
-  const showTransientAnnouncement = (text: string): void => {
+  const showBattleAnnouncement = (text: string): void => {
     const announcement = text.trim();
     if (!announcement) {
-      tickerHideEvent?.remove(false);
-      tickerHideEvent = null;
       scene.tweens.killTweensOf(ticker);
       ticker.setVisible(false).setAlpha(1).setScale(1);
       return;
     }
-    tickerHideEvent?.remove(false);
-    tickerHideEvent = null;
     scene.tweens.killTweensOf(ticker);
     ticker.setVisible(true).setAlpha(1);
     announcer.setText(announcement);
@@ -596,19 +625,6 @@ export function createReplayBattleHud(
         yoyo: true,
       });
     }
-    tickerHideEvent = scene.time.delayedCall(980, () => {
-      tickerHideEvent = null;
-      if (input.reduceMotion) {
-        ticker.setVisible(false);
-        return;
-      }
-      scene.tweens.add({
-        targets: ticker,
-        alpha: 0,
-        duration: 150,
-        onComplete: () => ticker.setVisible(false).setAlpha(1),
-      });
-    });
   };
 
   const setHeartFxState = (
@@ -676,6 +692,8 @@ export function createReplayBattleHud(
       const vitals = fighterVitals[side];
       stopLastHeartWarning(side);
       scene.tweens.killTweensOf(vitals.heartMeter);
+      scene.tweens.killTweensOf(vitals.healthLabel);
+      vitals.healthLabel.setAngle(0).setScale(1);
       resetHeartTransforms(side);
       setHeartFxState(side, 'idle');
     });
@@ -713,6 +731,7 @@ export function createReplayBattleHud(
       targets: vitals.heartMeter,
       x: layout.fighters[side].chipCenterX + direction * reaction.shakeDistance,
       angle: direction * reaction.rotationDegrees,
+      scale: 1.055,
       duration: segmentDuration,
       ease: 'Sine.easeInOut',
       yoyo: true,
@@ -731,7 +750,7 @@ export function createReplayBattleHud(
     side: ReplayBattleSide,
     hitPoints: number,
     maximumHitPoints: number,
-    _playbackSpeed: number
+    playbackSpeed: number
   ): void => {
     const vitals = fighterVitals[side];
     const safeMaximumHitPoints = Math.max(0, Math.round(maximumHitPoints));
@@ -751,6 +770,7 @@ export function createReplayBattleHud(
       heartCount: HEART_COUNT,
     });
     const previousHeartUnits = vitals.displayedHeartUnits;
+    const previousHitPoints = vitals.displayedHitPoints;
     const wasDanger = vitals.displayedDanger;
     const wasLastHeart = vitals.displayedLastHeart;
     const fighterName =
@@ -784,7 +804,27 @@ export function createReplayBattleHud(
           maximum: safeMaximumHitPoints,
         })
       )
-      .setColor(plan.useDangerColor ? UI.coralText : UI.inkSoft);
+      .setColor(plan.useDangerColor ? UI.coralText : UI.ink);
+    const hitPointsChanged =
+      previousHitPoints !== null && previousHitPoints !== safeHitPoints;
+    scene.tweens.killTweensOf(vitals.healthLabel);
+    vitals.healthLabel.setAngle(0).setScale(1);
+    if (hitPointsChanged && !input.reduceMotion) {
+      const changeDirection = side === 'a' ? -1 : 1;
+      const isDamage = safeHitPoints < previousHitPoints;
+      vitals.healthLabel
+        .setAngle(changeDirection * (isDamage ? 2 : 1))
+        .setScale(isDamage ? 1.2 : 1.12);
+      scene.tweens.add({
+        targets: vitals.healthLabel,
+        angle: 0,
+        scale: 1,
+        duration: Math.round(
+          170 * Math.sqrt(Phaser.Math.Clamp(playbackSpeed, 1, 4))
+        ),
+        ease: 'Back.easeOut',
+      });
+    }
     const datasetPrefix = side === 'a' ? 'fighterA' : 'fighterB';
     scene.game.canvas.dataset[`${datasetPrefix}Hearts`] = plan.states.join(',');
     scene.game.canvas.dataset[`${datasetPrefix}HitPoints`] =
@@ -808,15 +848,13 @@ export function createReplayBattleHud(
 
   return {
     announce: (text: string): void => {
-      showTransientAnnouncement(text);
+      showBattleAnnouncement(text);
     },
     announceResult: (text: string): void => {
       if (shapePowerLiveRegion) shapePowerLiveRegion.textContent = text;
     },
     setAnnouncerText: (text: string): void => {
       const announcement = text.trim();
-      tickerHideEvent?.remove(false);
-      tickerHideEvent = null;
       scene.tweens.killTweensOf(ticker);
       ticker.setAlpha(1).setScale(1);
       if (!announcement) {
@@ -828,8 +866,6 @@ export function createReplayBattleHud(
     },
     setAnnouncerVisible: (visible: boolean): void => {
       if (!visible) {
-        tickerHideEvent?.remove(false);
-        tickerHideEvent = null;
         scene.tweens.killTweensOf(ticker);
         ticker.setAlpha(1).setScale(1);
       }

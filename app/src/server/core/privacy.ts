@@ -24,6 +24,7 @@ import {
   getPullsSinceEpicKey,
   getRumbleWinInkPayoutKey,
   getUserOperationReceiptIndexKey,
+  inkRewardReceiptBelongsToUser,
   loadUserOperationReceiptKeys,
 } from './inkStore';
 import {
@@ -52,6 +53,71 @@ import {
   getUserFreeDrawingDayKey,
 } from './freeDrawingStore';
 import { deleteSeasonPlayerData } from './season';
+import {
+  ensurePayoutReceiptLegacyCutoffDay,
+  getUserPayoutReceiptIndexKey,
+  loadUserPayoutReceipts,
+  pruneExpiredPayoutReceipts,
+  type IndexedPayoutReceipt,
+} from './payoutReceipt';
+
+const cloutPayoutKeyPattern = /^clout:payout:[1-9]\d*$/;
+const rumbleInkPayoutKeyPattern = /^ink:payout:rumbleWin:[1-9]\d*$/;
+
+const deletePayoutReceiptIfOwned = async (
+  storage: ArenaStorage,
+  userId: string,
+  receipt: IndexedPayoutReceipt
+): Promise<void> => {
+  if (
+    cloutPayoutKeyPattern.test(receipt.payoutKey) &&
+    receipt.payoutField === userId
+  ) {
+    await storage.hDel(receipt.payoutKey, [receipt.payoutField]);
+    return;
+  }
+  if (!rumbleInkPayoutKeyPattern.test(receipt.payoutKey)) return;
+  const stored = await storage.hGet(receipt.payoutKey, receipt.payoutField);
+  if (stored && inkRewardReceiptBelongsToUser(stored, userId)) {
+    await storage.hDel(receipt.payoutKey, [receipt.payoutField]);
+  }
+};
+
+const deleteUserPayoutReceipts = async (
+  storage: ArenaStorage,
+  userId: string,
+  currentDay: number,
+  operationStartedAtMs: number,
+  deletionLease: PlayerDataDeletionLease
+): Promise<void> => {
+  await pruneExpiredPayoutReceipts(storage, userId, operationStartedAtMs);
+  const indexedReceipts = await loadUserPayoutReceipts(storage, userId);
+  for (const receipt of indexedReceipts) {
+    await requireDeletionOwnership(storage, deletionLease);
+    await deletePayoutReceiptIfOwned(storage, userId, receipt);
+  }
+
+  const legacyCutoffDay = await ensurePayoutReceiptLegacyCutoffDay(
+    storage,
+    currentDay
+  );
+  const daysToScan = new Set<number>();
+  for (let day = 1; day <= legacyCutoffDay; day += 1) daysToScan.add(day);
+  for (let day = Math.max(1, currentDay - 12); day <= currentDay; day += 1) {
+    daysToScan.add(day);
+  }
+  for (const day of daysToScan) {
+    await requireDeletionOwnership(storage, deletionLease);
+    await storage.hDel(getCloutPayoutKey(day), [userId]);
+    const rumbleReceipts = await storage.hGetAll(getRumbleWinInkPayoutKey(day));
+    const ownedFields = Object.entries(rumbleReceipts)
+      .filter(([, stored]) => inkRewardReceiptBelongsToUser(stored, userId))
+      .map(([field]) => field);
+    if (ownedFields.length > 0) {
+      await storage.hDel(getRumbleWinInkPayoutKey(day), ownedFields);
+    }
+  }
+};
 
 const requireDeletionOwnership = async (
   storage: ArenaStorage,
@@ -112,19 +178,20 @@ const deletePlayerDataRecords = async (
     operationStartedAtMs
   );
 
+  await deleteUserPayoutReceipts(
+    storage,
+    userId,
+    currentDay,
+    operationStartedAtMs,
+    deletionLease
+  );
+
   for (let day = Math.max(1, currentDay - 12); day <= currentDay; day += 1) {
     await requireDeletionOwnership(storage, deletionLease);
     await storage.hDel(getBackKey(day), [userId]);
-    await storage.hDel(getCloutPayoutKey(day), [userId]);
     await storage.del(getDailyFlagsKey(userId, day));
     await storage.del(getUserFreeDrawingDayKey(userId, day));
     await storage.del(getCapsuleDailyPullKey(userId, day));
-    if (scribbits.length > 0) {
-      await storage.hDel(
-        getRumbleWinInkPayoutKey(day),
-        scribbits.map((scribbit) => scribbit.id)
-      );
-    }
   }
 
   const battleEntries = await storage.zRange(getUserBattlesKey(userId), 0, -1, {
@@ -165,6 +232,7 @@ const deletePlayerDataRecords = async (
     getPendingFounderChronicleKey(userId),
     getRivalRunKey(userId),
     getUserOperationReceiptIndexKey(userId),
+    getUserPayoutReceiptIndexKey(userId),
     ...operationReceiptKeys
   );
   await storage.zRem(getCloutKey(), [userId]);

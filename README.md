@@ -70,8 +70,8 @@ arena effects and Inkbody deformation update at a bounded 30 Hz.
     personal Legacy Card; a crown or enough community Belief gives it a gold
     finish and preserves it in the public Hall of Legends.
 
-The first session proves the whole promise—draw, watch that exact Scribbit fight
-one simple random founding rival, then enter Arena for chosen battles. The birth
+The first session proves the whole promise—open Home, draw, watch that exact Scribbit fight
+one simple random founding rival, then return Home with Arena ready for chosen battles. The birth
 fight skips the three-choice Rival Run board so the core hook lands before the
 deeper decision layer. The birth receipt says what caused the build and what it does,
 for example `SHARP EDGES → FIRETIP HALO` and `3 ROTATING QUILLS`, instead of
@@ -138,6 +138,12 @@ cannot schedule events or affect a result. There is no turn-based player path or
 outcome-changing cheer input. No WebSocket or client combat authority is
 required.
 
+Signed-in players can explicitly share a completed, unskipped replay. The
+browser records a silent clip of the already-rendering Phaser canvas, uploads
+that clip to Reddit media, and opens Reddit's share sheet; a shared link can
+show the hosted clip on the Scribbits splash. The stored transcript remains the
+authoritative result—the client-rendered video is presentation, not proof.
+
 Before every player-facing Spar—and again after each bout—the player picks from
 three server-authored founding rivals instead of receiving a blind random fight.
 The daily slate is stable, level-bounded, and power-varied; its cards disclose
@@ -193,12 +199,14 @@ without a usable transcript are clearly marked as saved results with no motion
 replay. Opening a page returns to the same
 Scrapbook page and never grants a reward or writes progression.
 
-The persistent dock is Arena, Bag, Draw, Battles, and Shop. Shop is the one home
-for earned-Ink Mystery Chests; Bag is the one home for inventory and equipment;
-Gallery is the one home for Legends and Legacy Cards and opens from the
-top-right Settings menu. Scout and Gallery are not primary destinations. The compatibility Notebook
-scene can still resolve older saved-replay returns while that legacy path is
-retired, but the daily Rumble Pick remains directly reachable from Arena.
+The persistent dock is Arena, Bag, Home, Battles, and Shop, with Home centered.
+Draw opens from Home's large Draw button instead of occupying a dock tab. Shop
+is the one home for earned-Ink Mystery Chests; Bag is the one home for inventory
+and equipment; Gallery is the one home for Legends and Legacy Cards and opens
+directly from Home. Scout and Gallery are not primary
+destinations. The compatibility Notebook scene can still resolve older
+saved-replay returns while that legacy path is retired, but the daily Rumble
+Pick remains directly reachable from Arena.
 
 The Practice Lab makes the drawing-to-combat hook replayable after the daily
 submission locks. Its endpoint accepts only a name and base PNG, re-analyzes the
@@ -242,6 +250,8 @@ the replay only renders the stored arena, timeline, and result.
 - [`SUBMISSION.md`](./SUBMISSION.md): Devpost copy, proof checklist, and demo
   video shot list.
 - [`GOAL.md`](./GOAL.md): current ship gates and external blockers.
+- [`app/docs/ranking-seasons.md`](./app/docs/ranking-seasons.md): season
+  lifecycle, ranking policy, administration, and recovery contract.
 
 ## Verify locally
 
@@ -271,8 +281,8 @@ Public forecast flavor follows its own validated 32-day no-repeat rotation. It
 appears consistently in the app, Reddit post title, and result comment without
 sharing randomness with boosted/nerfed combat elements.
 
-The verification gate currently covers TypeScript, ESLint, 180 deterministic
-simulation groups, and the production build.
+The verification gate covers TypeScript, ESLint, every discoverable Node test
+suite, the deterministic simulation harness, and the production build.
 
 ## Data and safety
 
@@ -290,6 +300,9 @@ Practice drawings cross the response boundary only for their replay. They are
 not uploaded or stored, and practice reports are rejected before the battle
 store's first Redis operation. The route also enforces a bounded request body,
 one in-flight request per user, and a short Redis-backed request-rate guard.
+Battle clips upload only after the player taps Share, require a signed-in Reddit
+account, and are rejected above 8 MB. Accepted clips leave the app boundary and
+are hosted by Reddit media.
 
 Mystery Ink is earned only through play. Shop owns the chest ceremony rather
 than competing with the Arena fight or Bag equipment. Chests cost 5 Ink each, use visible 70/25/5
@@ -312,7 +325,8 @@ common, Rare, and Epic borders carry rarity at a glance; tapping a tile opens
 its name, stars, copies, Forge progress, exact Gear technique, and Equip action.
 Earned reusable Gear adds bounded Exhibition sidegrades without adding to the
 100-point drawing build or changing analysis; Rumble and Champion remain
-Gear-neutral while the broader balance matrix is unfinished.
+Gear-neutral by design. Exhaustive mirrored matchup tests cover all six Gear
+effect families and both equipment slots.
 
 Scribbits grow from level 1 to 5, but the complete journey adds only 1.5%
 damage. Regression simulations keep a max-level fighter at or below a 60%

@@ -26,6 +26,10 @@ import {
   MAX_WATCH_TRANSACTION_ATTEMPTS,
 } from './storage';
 import {
+  pruneExpiredPayoutReceipts,
+  trackPayoutReceipt,
+} from './payoutReceipt';
+import {
   INK_ACCESSORY_CATALOG,
   INK_BRUSH_CATALOG,
   INK_CATALOG,
@@ -323,11 +327,25 @@ export const claimInkReward = async (
         return false;
       }
       await getInkBalance(storage, options.userId);
+      await pruneExpiredPayoutReceipts(
+        storage,
+        options.userId,
+        options.paidAtMs
+      );
 
       await transaction.multi();
       await transaction.hSet(options.payoutKey, {
         [options.payoutField]: receiptValue,
       });
+      await trackPayoutReceipt(
+        transaction,
+        options.userId,
+        {
+          payoutKey: options.payoutKey,
+          payoutField: options.payoutField,
+        },
+        options.paidAtMs
+      );
       await transaction.incrBy(inkKey, options.amount);
       const transactionResults = await transaction.exec();
       if (Array.isArray(transactionResults) && transactionResults.length > 0) {
@@ -353,6 +371,31 @@ export const claimInkReward = async (
   throw new Error('Ink reward claim did not settle.');
 };
 
+const parseInkRewardReceipt = (
+  stored: string
+): Readonly<{ userId: string; amount: number }> | null => {
+  const paidAtSeparator = stored.lastIndexOf(':');
+  const amountSeparator = stored.lastIndexOf(':', paidAtSeparator - 1);
+  if (paidAtSeparator <= amountSeparator || amountSeparator < 1) return null;
+  const userId = stored.slice(0, amountSeparator);
+  const amount = Number(stored.slice(amountSeparator + 1, paidAtSeparator));
+  const paidAtMilliseconds = Number(stored.slice(paidAtSeparator + 1));
+  if (
+    !Number.isSafeInteger(amount) ||
+    amount < 0 ||
+    !Number.isSafeInteger(paidAtMilliseconds) ||
+    paidAtMilliseconds < 0
+  ) {
+    return null;
+  }
+  return { userId, amount };
+};
+
+export const inkRewardReceiptBelongsToUser = (
+  stored: string,
+  userId: string
+): boolean => parseInkRewardReceipt(stored)?.userId === userId;
+
 export const loadClaimedInkRewardAmount = async (
   storage: ArenaStorage,
   input: Readonly<{
@@ -363,22 +406,8 @@ export const loadClaimedInkRewardAmount = async (
 ): Promise<number> => {
   const stored = await storage.hGet(input.payoutKey, input.payoutField);
   if (stored === undefined) return 0;
-  const paidAtSeparator = stored.lastIndexOf(':');
-  const amountSeparator = stored.lastIndexOf(':', paidAtSeparator - 1);
-  if (paidAtSeparator <= amountSeparator || amountSeparator < 1) return 0;
-  const storedUserId = stored.slice(0, amountSeparator);
-  const amount = Number(stored.slice(amountSeparator + 1, paidAtSeparator));
-  const paidAtMilliseconds = Number(stored.slice(paidAtSeparator + 1));
-  if (
-    storedUserId !== input.userId ||
-    !Number.isSafeInteger(amount) ||
-    amount < 0 ||
-    !Number.isSafeInteger(paidAtMilliseconds) ||
-    paidAtMilliseconds < 0
-  ) {
-    return 0;
-  }
-  return amount;
+  const receipt = parseInkRewardReceipt(stored);
+  return receipt?.userId === input.userId ? receipt.amount : 0;
 };
 
 const hasPermanentDiscovery = (

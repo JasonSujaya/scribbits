@@ -16,6 +16,7 @@ export default defineConfig({
     strictPort: true,
     proxy: {
       '/api': mockApiTarget,
+      '/__mock': mockApiTarget,
       '/creatures': mockApiTarget,
     },
   },

@@ -19,7 +19,7 @@ import {
   createSparRivalDraft,
   type SparRivalDraft,
 } from './replaysparrivaldraft';
-import { fadeToScene } from './ui';
+import { startScene } from './ui';
 
 export type RivalRunFlow = Readonly<{
   destroy: () => void;
@@ -152,7 +152,7 @@ export function openRivalRun(
       setArena(scene, latestArena.data);
       showToast('A new Arena day started. Opening today’s Arena…');
       finish('resolved');
-      fadeToScene(scene, 'ArenaHome');
+      startScene(scene, 'ArenaHome');
       return;
     }
 

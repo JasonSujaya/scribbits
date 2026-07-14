@@ -124,6 +124,11 @@ import {
 import { loadScoutNotebook } from '../core/scoutNotebook';
 import { selectSplashCreations } from '../core/splashShowcase';
 import {
+  BATTLE_CLIP_MAXIMUM_BYTES,
+  parseBattleClipDataUrl,
+  type BattleClipUploadResponse,
+} from '../../shared/battleshare';
+import {
   completeFounderChronicleBattle,
   loadFounderChronicle,
   loadStoredFounderChronicle,
@@ -193,6 +198,8 @@ const foundingSparRivalSlateLimit = 3;
 const scribbitIdPattern = /^[A-Za-z0-9:_-]{4,90}$/;
 const freeDrawingSubmissionIdPattern = /^[A-Za-z0-9_-]{16,80}$/;
 const practiceRequestMaximumBodyBytes = 560 * 1024;
+const battleClipMaximumBodyBytes =
+  Math.ceil((BATTLE_CLIP_MAXIMUM_BYTES * 4) / 3) + 1024;
 
 const isRecord = (value: unknown): value is Record<string, unknown> => {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -972,6 +979,31 @@ api.get('/splash', async (c) => {
   }
 });
 
+api.post('/battle-clip', async (c) => {
+  const player = await getCurrentPlayer();
+  if (!player) return unauthorized(c, 'Sign in to share a battle clip.');
+
+  const body = await readBoundedJsonBody(c, battleClipMaximumBodyBytes);
+  if (body.status === 'too-large') {
+    return payloadTooLarge(c, 'Battle clips must be 8 MB or smaller.');
+  }
+  const clip =
+    body.status === 'parsed' && isRecord(body.value)
+      ? parseBattleClipDataUrl(body.value.videoDataUrl)
+      : null;
+  if (!clip) {
+    return badRequest(c, 'Send one WebM or MP4 battle clip under 8 MB.');
+  }
+
+  try {
+    const uploaded = await media.upload({ url: clip.dataUrl, type: 'video' });
+    return c.json<BattleClipUploadResponse>({ videoUrl: uploaded.mediaUrl });
+  } catch (error) {
+    console.error('Battle clip upload failed:', error);
+    return serverError(c, 'Reddit could not host that battle clip. Try again.');
+  }
+});
+
 api.get('/scout-notebook', async (c) => {
   try {
     const player = await getCurrentPlayer();
@@ -1066,6 +1098,9 @@ api.post('/free-drawing', async (c) => {
     }
     if (await hasFreeDrawingForDay(redis, player.userId, dayNumber)) {
       return conflict(c, 'You already saved today’s Free Draw.');
+    }
+    if ((await getAliveScribbitsForUser(redis, player.userId)).length === 0) {
+      return conflict(c, 'Draw your first Scribbit before using Free Draw.');
     }
 
     const imageUrl = await uploadDrawing(submission.draft.imageDataUrl);
