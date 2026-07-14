@@ -122,6 +122,10 @@ test('Bag presents the mobile Binder, character details, eight slots, and separa
   assert.match(characterStageSource, /SPIKE/);
   assert.match(characterStageSource, /ZIP/);
   assert.match(characterStageSource, /CHARM/);
+  assert.match(characterStageSource, /data-selected-scribbit-name/);
+  assert.match(characterStageSource, /data-selected-scribbit-element/);
+  assert.match(characterStageSource, /data-selected-scribbit-maturity/);
+  assert.match(characterStageSource, /data-selected-scribbit-theme/);
   assert.match(collectionSource, /data-bag-mode/);
   assert.match(collectionSource, /'draw-kit', label: 'DRAW KIT'/);
   assert.match(collectionSource, /'colors', label: 'COLORS'/);

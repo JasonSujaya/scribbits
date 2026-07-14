@@ -786,7 +786,7 @@ function buildBagCharacterStage(options: {
       -70,
       -204 + index * 21,
       metadata,
-      index < 3 ? 15 : 14,
+      index < 3 ? 17 : 16,
       index === 2 && lifecycle === 'mature' ? UI.goldText : UI.inkSoft,
       true
     ).setOrigin(0, 0.5);
@@ -838,23 +838,37 @@ function buildBagCharacterStage(options: {
       )
     );
     actionOverlay.add({
-      label: `Previous Scribbit. ${selectedIndex + 1} of ${scribbits.length} selected.`,
+      label: `Previous Scribbit. ${selectedScribbit.name} selected. ${metadataLines[1]}. ${metadataLines[2]}. ${selectedIndex + 1} of ${scribbits.length}.`,
       rect: {
         x: width / 2 + 150,
         y: centerY - 230,
         width: 80,
         height: 100,
       },
+      attributes: {
+        'data-selected-scribbit-id': selectedScribbit.id,
+        'data-selected-scribbit-name': selectedScribbit.name,
+        'data-selected-scribbit-element': selectedScribbit.element,
+        'data-selected-scribbit-maturity': lifecycle,
+        'data-selected-scribbit-theme': themeName,
+      },
       enabled: !equipmentBusy,
       onActivate: () => selectRelativeScribbit(-1),
     });
     actionOverlay.add({
-      label: `Next Scribbit. ${selectedIndex + 1} of ${scribbits.length} selected.`,
+      label: `Next Scribbit. ${selectedScribbit.name} selected. ${metadataLines[1]}. ${metadataLines[2]}. ${selectedIndex + 1} of ${scribbits.length}.`,
       rect: {
         x: width / 2 + 242,
         y: centerY - 230,
         width: 80,
         height: 100,
+      },
+      attributes: {
+        'data-selected-scribbit-id': selectedScribbit.id,
+        'data-selected-scribbit-name': selectedScribbit.name,
+        'data-selected-scribbit-element': selectedScribbit.element,
+        'data-selected-scribbit-maturity': lifecycle,
+        'data-selected-scribbit-theme': themeName,
       },
       enabled: !equipmentBusy,
       onActivate: () => selectRelativeScribbit(1),
