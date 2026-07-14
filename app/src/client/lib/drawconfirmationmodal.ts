@@ -24,6 +24,7 @@ export type DrawConfirmationModal = Readonly<{
 }>;
 
 export type DrawConfirmationModalOptions = Readonly<{
+  mode?: 'scribbit' | 'free-draw';
   previewDataUrl: string;
   initialName: string;
   trigger?: HTMLElement | null;
@@ -39,6 +40,12 @@ export function openDrawConfirmationModal(
   options: DrawConfirmationModalOptions
 ): DrawConfirmationModal {
   const { width } = scene.scale;
+  const isFreeDraw = options.mode === 'free-draw';
+  const title = isFreeDraw ? 'Name your Free Draw' : 'Name your Scribbit';
+  const confirmLabel = isFreeDraw ? 'SAVE DRAWING' : 'BRING TO LIFE';
+  const confirmAccessibleLabel = isFreeDraw
+    ? 'Save Free Draw'
+    : 'Bring Scribbit to life';
   const cardCenterX = width / 2;
   const shouldMoveKeyboardFocus =
     document.activeElement instanceof HTMLButtonElement;
@@ -55,7 +62,7 @@ export function openDrawConfirmationModal(
 
   const shell: StickerModalShell = createStickerModalShell({
     scene,
-    title: 'Name your Scribbit',
+    title,
     description:
       options.description ??
       'Preview your drawing, name it, then bring it to life.',
@@ -80,7 +87,7 @@ export function openDrawConfirmationModal(
   const { actions: modalActions, card, shade } = shell;
 
   card.add(
-    label(scene, 0, -390, 'NAME YOUR SCRIBBIT', TYPE.title, UI.ink, true)
+    label(scene, 0, -390, title.toUpperCase(), TYPE.title, UI.ink, true)
   );
 
   const closeX = CARD_WIDTH / 2 - CLOSE_TARGET_SIZE / 2 - 8;
@@ -150,11 +157,13 @@ export function openDrawConfirmationModal(
   nameInput.className = 'scribbits-name-input';
   nameInput.maxLength = 24;
   nameInput.value = options.initialName;
-  nameInput.placeholder = 'Name your scribbit…';
+  nameInput.placeholder = isFreeDraw
+    ? 'Name your drawing…'
+    : 'Name your scribbit…';
   nameInput.autocomplete = 'off';
   nameInput.autocapitalize = 'words';
   nameInput.enterKeyHint = 'done';
-  nameInput.setAttribute('aria-label', 'Name your Scribbit');
+  nameInput.setAttribute('aria-label', title);
   Object.assign(nameInput.style, {
     ...DOM_TYPE.title,
     textAlign: 'center',
@@ -171,7 +180,7 @@ export function openDrawConfirmationModal(
     scene,
     0,
     310,
-    'BRING TO LIFE',
+    confirmLabel,
     () => confirm(),
     CONFIRM_RECT.width,
     UI.coral,
@@ -180,7 +189,7 @@ export function openDrawConfirmationModal(
   );
   card.add(confirmButton);
   const confirmControl = modalActions.add({
-    label: 'Bring Scribbit to life',
+    label: confirmAccessibleLabel,
     rect: CONFIRM_RECT,
     enabled: false,
     onActivate: () => confirm(),

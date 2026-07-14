@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import test from 'node:test';
 
@@ -16,6 +17,18 @@ const require = createRequire(import.meta.url);
 const arena = require(join(compiledSharedRoot, 'arena.js'));
 const battlePresentation = require(
   join(compiledClientRoot, 'lib', 'battlepresentation.js')
+);
+const replaySource = readFileSync(
+  new URL('../src/client/scenes/Replay.ts', import.meta.url),
+  'utf8'
+);
+const replayBattleHudSource = readFileSync(
+  new URL('../src/client/lib/replaybattlehud.ts', import.meta.url),
+  'utf8'
+);
+const liveSpriteSource = readFileSync(
+  new URL('../src/client/lib/livesprite.ts', import.meta.url),
+  'utf8'
 );
 
 test('battle impact, arena shrink, and mastery plans preserve presentation truth', () => {
@@ -37,6 +50,20 @@ test('battle impact, arena shrink, and mastery plans preserve presentation truth
     criticalImpact.hitStopMilliseconds > lightImpact.hitStopMilliseconds &&
       criticalImpact.particleCount > lightImpact.particleCount,
     'critical authored damage should receive stronger presentation than a light hit'
+  );
+  assert.equal(lightImpact.damageText, '-8');
+  assert.equal(criticalImpact.damageText, '-24!');
+  assert.equal(lightImpact.damageTextDurationMilliseconds, 900);
+  assert.equal(
+    battlePresentation.planBattleImpact({
+      damage: 1,
+      maximumHitPoints: 200,
+      critical: false,
+      playbackSpeed: 4,
+      reduceMotion: false,
+    }).damageTextDurationMilliseconds,
+    3_600,
+    'fast playback should preserve the real-time readability of exact damage'
   );
 
   const reducedImpact = battlePresentation.planBattleImpact({
@@ -293,6 +320,37 @@ test('post-fight actions expose only valid rival, pick, replay, and return paths
   assert.deepEqual(
     battlePresentation.planReplayPostFightActions({
       canChooseRival: true,
+      canBackContender: true,
+      canReplay: false,
+      returnLabel: 'ARENA ›',
+      primaryAction: {
+        kind: 'firstChest',
+        label: 'CARE FOR CRATER PAL',
+        accessibleLabel: 'Care for Crater Pal toward a first chest',
+        tone: 'coral',
+      },
+    }),
+    {
+      primary: {
+        kind: 'firstChest',
+        label: 'CARE FOR CRATER PAL',
+        accessibleLabel: 'Care for Crater Pal toward a first chest',
+        tone: 'coral',
+      },
+      replayAction: null,
+      returnAction: {
+        kind: 'return',
+        label: 'ARENA ›',
+        accessibleLabel: 'ARENA',
+        tone: 'ghost',
+      },
+      buttonHeight: 100,
+    },
+    'a first-chest trail should replace the repeat Rival Run action'
+  );
+  assert.deepEqual(
+    battlePresentation.planReplayPostFightActions({
+      canChooseRival: true,
       canBackContender: false,
       canReplay: false,
       returnLabel: 'ARENA ›',
@@ -461,14 +519,20 @@ test('heart meter plans clamp health while preserving danger and accessibility s
     },
     'a living fighter must always retain at least half a visible heart'
   );
+  const barelyDamagedHeartPlan = battlePresentation.planReplayHeartMeter({
+    hitPoints: 99,
+    maximumHitPoints: 100,
+    heartCount: 6,
+  });
   assert.deepEqual(
-    battlePresentation.planReplayHeartMeter({
-      hitPoints: 99,
-      maximumHitPoints: 100,
-      heartCount: 6,
-    }).states,
+    barelyDamagedHeartPlan.states,
     ['full', 'full', 'full', 'full', 'full', 'full'],
     'heart rounding may preserve a full row while exact damage remains visible in hit reactions'
+  );
+  assert.match(
+    barelyDamagedHeartPlan.accessibleLabel,
+    /^99 of 100 health/,
+    'exact HP must remain available when a small hit does not cross a half-heart boundary'
   );
   assert.equal(
     battlePresentation.planReplayHeartMeter({
@@ -487,6 +551,29 @@ test('heart meter plans clamp health while preserving danger and accessibility s
     }).isLastHeart,
     false,
     'more than one visible heart should leave the last-heart warning state'
+  );
+});
+
+test('every damage event shows exact HP loss and a red target flash', () => {
+  assert.match(
+    replayBattleHudSource,
+    /healthLabel[\s\S]*translate\('battle\.health',[\s\S]*current: safeHitPoints,[\s\S]*maximum: safeMaximumHitPoints/,
+    'the heart row should expose exact current and maximum HP'
+  );
+  assert.match(
+    replaySource,
+    /this\.damagePopAt\(\s*target\.screenX,\s*target\.screenY,\s*impactPlan\.damageText/,
+    'damage numbers should stay anchored above the fighter that lost HP'
+  );
+  assert.match(
+    replaySource,
+    /target\.sprite\?\.hitReact\([\s\S]*this\.speed/,
+    'the struck fighter should receive speed-compensated hit feedback'
+  );
+  assert.match(
+    liveSpriteSource,
+    /setTint\(0xff3f36\)[\s\S]*TintModes\.FILL[\s\S]*private flashDamage\([\s\S]*setAlpha\(0\.78\)/,
+    'the exact fighter drawing should flash red on every confirmed hit'
   );
 });
 

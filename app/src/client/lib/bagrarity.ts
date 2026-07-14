@@ -11,18 +11,18 @@ export const BAG_RARITY_FRAME_STYLE: Readonly<
   Record<CapsuleRarity, BagRarityFrameStyle>
 > = Object.freeze({
   common: Object.freeze({
-    color: 0x6b5a45,
-    fillAlpha: 0.045,
-    strokeWidth: 6,
+    color: 0xa56724,
+    fillAlpha: 0.12,
+    strokeWidth: 7,
   }),
   rare: Object.freeze({
-    color: 0x167ead,
-    fillAlpha: 0.075,
+    color: 0x0f88bc,
+    fillAlpha: 0.14,
     strokeWidth: 7,
   }),
   epic: Object.freeze({
-    color: 0x7a3eb1,
-    fillAlpha: 0.1,
+    color: 0x8340bd,
+    fillAlpha: 0.16,
     strokeWidth: 8,
   }),
 });

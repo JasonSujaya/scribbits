@@ -30,6 +30,7 @@ export type PaperIconKey =
   | 'trophy';
 export type PaperToolIconKey =
   | 'sticker'
+  | 'bucket'
   | 'eraser'
   | 'clear'
   | 'undo'
@@ -354,7 +355,13 @@ export function paperToolIcon(
     drawTool(backing, key, scale, 0x9b754d, 0x9b754d);
   }
   const faceFill =
-    key === 'eraser' ? UI.coral : key === 'clear' ? UI.tapeAlt : UI.creamHex;
+    key === 'eraser'
+      ? UI.coral
+      : key === 'bucket'
+        ? UI.gold
+        : key === 'clear'
+          ? UI.tapeAlt
+          : UI.creamHex;
   drawTool(face, key, scale, faceFill, UI.inkHex);
   if (key === 'redo') face.setScale(-1, 1);
   container.add(key === 'undo' || key === 'redo' ? [face] : [backing, face]);
@@ -490,6 +497,23 @@ function drawTool(
     graphics.lineBetween(-7 * scale, -4 * scale, 7 * scale, 9 * scale);
     graphics.fillCircle(-12 * scale, 13 * scale, 2.2 * scale);
     graphics.fillCircle(-5 * scale, 16 * scale, 1.5 * scale);
+    return;
+  }
+
+  if (key === 'bucket') {
+    graphics.beginPath();
+    graphics.moveTo(-13 * scale, -5 * scale);
+    graphics.lineTo(13 * scale, -5 * scale);
+    graphics.lineTo(9 * scale, 13 * scale);
+    graphics.lineTo(-9 * scale, 13 * scale);
+    graphics.closePath();
+    graphics.fillPath();
+    graphics.strokePath();
+    graphics.beginPath();
+    graphics.arc(0, -5 * scale, 10 * scale, Math.PI, Math.PI * 2);
+    graphics.strokePath();
+    graphics.lineBetween(-11 * scale, 2 * scale, 11 * scale, 2 * scale);
+    graphics.fillCircle(15 * scale, 10 * scale, 3 * scale);
     return;
   }
 

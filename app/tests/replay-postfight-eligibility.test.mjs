@@ -44,6 +44,16 @@ const cases = [
     expected: { canChooseRival: false, canPickRumble: false },
   },
   {
+    name: 'birth exhibition returns to Arena before deeper battle choices',
+    input: {
+      reportKind: 'exhibition',
+      entryMode: 'birth',
+      ownedFighterAlive: true,
+      hasBackedScribbit: false,
+    },
+    expected: { canChooseRival: false, canPickRumble: false },
+  },
+  {
     name: 'fresh exhibition with a living owned fighter offers both eligible actions',
     input: {
       reportKind: 'exhibition',

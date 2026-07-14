@@ -1,0 +1,94 @@
+{
+  "kind": "scribbits-remotion-trailer-proof",
+  "generatedAt": "2026-07-14T01:00:49.171Z",
+  "sourceRepository": "/Users/m4-macmini16gb256/Documents/Github/RedditGame/scribbits",
+  "imageForceRepository": "/Users/m4-macmini16gb256/Documents/Github/Components/ImageForce",
+  "project": "/Users/m4-macmini16gb256/Documents/Github/RedditGame/scribbits/artifacts/trailer/scribbits-intro.project.json",
+  "video": "/Users/m4-macmini16gb256/Documents/Github/RedditGame/scribbits/artifacts/trailer/scribbits-intro-vertical.mp4",
+  "soundtrack": "/Users/m4-macmini16gb256/Documents/Github/RedditGame/scribbits/artifacts/trailer/scribbits-intro-soundtrack.wav",
+  "contactSheet": "/Users/m4-macmini16gb256/Documents/Github/RedditGame/scribbits/artifacts/trailer/scribbits-intro-contact-sheet.png",
+  "proofFrames": [
+    {
+      "frame": 45,
+      "file": "/Users/m4-macmini16gb256/Documents/Github/RedditGame/scribbits/artifacts/trailer/frames/scene-01-frame-45.png"
+    },
+    {
+      "frame": 120,
+      "file": "/Users/m4-macmini16gb256/Documents/Github/RedditGame/scribbits/artifacts/trailer/frames/scene-02-frame-120.png"
+    },
+    {
+      "frame": 200,
+      "file": "/Users/m4-macmini16gb256/Documents/Github/RedditGame/scribbits/artifacts/trailer/frames/scene-03-frame-200.png"
+    },
+    {
+      "frame": 315,
+      "file": "/Users/m4-macmini16gb256/Documents/Github/RedditGame/scribbits/artifacts/trailer/frames/scene-04-frame-315.png"
+    },
+    {
+      "frame": 410,
+      "file": "/Users/m4-macmini16gb256/Documents/Github/RedditGame/scribbits/artifacts/trailer/frames/scene-05-frame-410.png"
+    },
+    {
+      "frame": 520,
+      "file": "/Users/m4-macmini16gb256/Documents/Github/RedditGame/scribbits/artifacts/trailer/frames/scene-06-frame-520.png"
+    }
+  ],
+  "render": {
+    "file": "/Users/m4-macmini16gb256/Documents/Github/RedditGame/scribbits/artifacts/trailer/scribbits-intro-vertical.mp4",
+    "contentType": "video/mp4",
+    "slowestFrames": [
+      {
+        "frame": 0,
+        "time": 1238
+      },
+      {
+        "frame": 6,
+        "time": 48
+      },
+      {
+        "frame": 9,
+        "time": 45
+      },
+      {
+        "frame": 8,
+        "time": 19
+      },
+      {
+        "frame": 4,
+        "time": 8
+      },
+      {
+        "frame": 5,
+        "time": 7
+      },
+      {
+        "frame": 7,
+        "time": 7
+      },
+      {
+        "frame": 1,
+        "time": 2
+      },
+      {
+        "frame": 3,
+        "time": 1
+      },
+      {
+        "frame": 2,
+        "time": 1
+      }
+    ],
+    "width": 1080,
+    "height": 1920,
+    "fps": 30,
+    "durationInFrames": 540,
+    "bundleFingerprint": "f0779e664ffeb04536c340a5b8d79f0331deff8d0d196a95398313389507440d",
+    "bundleCacheHit": true
+  },
+  "checksums": {
+    "projectSha256": "7eef83d21ed17def983173f2c831d7a5f7f2d0aa704607f2aff6ff40776ba2f6",
+    "videoSha256": "4b1751054ede09988b549880634c0c172cd11833436c8e55976cd2eec6cca0c2",
+    "soundtrackSha256": "f971333792cf37bdf12fb9abd607fa4bb6bdac427e3023e4595a89162861cade",
+    "contactSheetSha256": "c8eea77ab3d302ef8169b72f32686025b291667db012fc8628ae732e1d2479c6"
+  }
+}

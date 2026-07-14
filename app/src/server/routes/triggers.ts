@@ -1,14 +1,28 @@
 import { Hono } from 'hono';
-import type { OnAppInstallRequest, TriggerResponse } from '@devvit/web/shared';
+import type { Context as HonoContext } from 'hono';
+import type {
+  OnAppInstallRequest,
+  OnAppUpgradeRequest,
+  TriggerResponse,
+} from '@devvit/web/shared';
 import { context, redis } from '@devvit/web/server';
 import { ensureCurrentArenaPost } from '../core/post';
+import { ensureCurrentArenaDay } from '../core/arenaStore';
+import { ensureInitialSeason } from '../core/season';
 
 export const triggers = new Hono();
 
-triggers.post('/on-app-install', async (c) => {
+const handleAppSetup = async (c: HonoContext) => {
   try {
-    const input = await c.req.json<OnAppInstallRequest>();
+    const input = await c.req.json<
+      OnAppInstallRequest | OnAppUpgradeRequest
+    >();
     const now = new Date();
+    const arenaDay = await ensureCurrentArenaDay(redis, now);
+    await ensureInitialSeason(redis, arenaDay, now.getTime(), {
+      userId: context.userId ?? 'system',
+      username: context.username ?? 'Scribbits',
+    });
     const post = await ensureCurrentArenaPost(redis, now);
 
     return c.json<TriggerResponse>(
@@ -28,4 +42,7 @@ triggers.post('/on-app-install', async (c) => {
       400
     );
   }
-});
+};
+
+triggers.post('/on-app-install', handleAppSetup);
+triggers.post('/on-app-upgrade', handleAppSetup);

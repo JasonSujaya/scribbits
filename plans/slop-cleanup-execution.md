@@ -23,16 +23,18 @@ Close every verified P0/P1 finding in `SLOP-AUDIT.md`, remove safe P2 debris, an
 ## Completed
 
 - Closed all P0 and P1 findings.
-- Closed four P2 findings and the safe code portion of the remaining dead-debris finding.
-- Added 10 discoverable Node suites with 29 passing tests while retaining 176 legacy groups during migration.
+- Closed five of the six original P2 findings; the only remaining finding is the bounded legacy-harness migration.
+- Added 49 discoverable Node suites with 197 passing tests while retaining 168 legacy groups during migration.
 - Retired Impact/Edge, consolidated Gear copies, and added full/half/empty Replay hearts.
-- Verified the live mobile Ink Kit with zero runtime errors and saved `artifacts/scribbits-ink-kit-cleanup-verified.png`.
-- Final gate passed: type-check, ESLint, 29 focused tests, 176 legacy groups, and production build.
+- Removed the unreferenced Arena, battle, and paper JPG stages; gameplay now has one shared stage owner and Shop has one intentional reward-stage owner.
+- Verified the live Arena, Rival Run, and lazy-loaded Shop flows; the latest Shop proof is `artifacts/screenshots/scribbits-shop-lazy-load-verified.jpg`.
+- Migrated Founder Rival Episode, semantic-tab, Element Payload Guide, Arena UI, Arena async-lifecycle, generated Mystery Ink chest presentation, public Legend pagination, Legacy Card paging, Rumble-return presentation, and Legacy-return presentation contracts out of the broad harness, including compile/import cleanup where ownership became exclusive.
+- Deferred 7,526,466 bytes of Shop-only textures from initial boot and added the server-authoritative `SIGNATURE INK` Rival Run Technique Trial without another screen or reward lane.
+- Final gate passed: type-check, ESLint, 197 focused tests, 168 legacy groups, and production build in 4889 ms.
 
 ## Remaining follow-up
 
 - Continue migrating the legacy 17k-line harness into focused suites.
-- Confirm whether the untracked `app/src/client/assets/scribbits-arena-stage.jpg` is intentional artwork before wiring or deleting it.
 
 ## Next command
 

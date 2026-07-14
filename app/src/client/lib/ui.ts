@@ -26,6 +26,7 @@ import {
 } from './theme';
 import { UI_BUTTON_TEXTURES } from './visualassets';
 import { bindPressInteractionEvents } from './pressinteraction';
+import { translate } from './localization';
 
 const TRANSITION_MS = 180;
 const transitioningScenes = new WeakSet<Scene>();
@@ -467,7 +468,7 @@ const PAPER_BUTTON_SLICE_CONFIG = {
 } as const;
 
 /** Canvas-safe nine-piece renderer for the generated paper button plates. */
-function paperButtonPlate(
+export function paperButtonPlate(
   scene: Scene,
   kind: PaperButtonPlateKind,
   width: number,
@@ -941,6 +942,8 @@ export type AppTabKey = 'arena' | 'bag' | 'draw' | 'battles' | 'shop';
 
 export type AppTabItem = {
   key: AppTabKey;
+  /** Visible copy may stay stable while the accessible label reports state. */
+  visibleLabel?: string;
   label: string;
   onClick: () => void;
 };
@@ -1108,16 +1111,19 @@ export function appTabBar(
     }
 
     const icon = paperDockIcon(scene, tab.key, 0, -24, 46, UI.inkHex, true);
-    const visibleLabel = tab.key === 'draw' ? 'Draw' : tab.label;
     const text = label(
       scene,
       0,
       32,
-      visibleLabel,
+      tab.visibleLabel ?? tab.label,
       23,
       isActive ? UI.coralText : UI.ink,
       true
     );
+    const maximumLabelWidth = slotWidth - 10;
+    if (text.width > maximumLabelWidth) {
+      text.setScale(maximumLabelWidth / text.width);
+    }
     slot.add([icon, text]);
 
     const hit = scene.add
@@ -1166,7 +1172,7 @@ export function errorPanel(
     0,
     70,
     'replay',
-    'Retry',
+    translate('common.retry'),
     onRetry,
     width - 120
   );

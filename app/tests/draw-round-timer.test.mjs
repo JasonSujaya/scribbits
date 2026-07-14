@@ -88,17 +88,33 @@ test('official Draw requires an explicit start and locks at time', () => {
 
   assert.match(
     drawSource,
-    /return this\.practiceMode \|\| this\.automationMode;/
+    /this\.practiceMode \|\| this\.automationMode \|\| this\.playerDrawMode === 'free'/
   );
   assert.match(drawSource, /private beginDrawingRound\(\): void/);
-  assert.match(drawSource, /startButton\.textContent = 'START'/);
-  assert.match(drawSource, /Start 60 second drawing round/);
+  assert.match(drawSource, /private beginFreeDrawing\(\): void/);
+  assert.match(drawSource, /private async submitFree\(/);
+  assert.match(drawSource, /submitFreeDrawing\(\{/);
+  assert.match(drawSource, /draw-start-challenge-card\.jpg/);
+  assert.match(drawSource, /timerLabel\.textContent = '60 SEC TO DRAW'/);
+  assert.match(drawSource, /startButton\.textContent = 'START THEME'/);
+  assert.match(drawSource, /freeDrawLabel\.textContent = 'FREE DRAW'/);
+  assert.match(drawSource, /noTimerLabel\.textContent = 'NO TIMER'/);
+  assert.match(drawSource, /card\.append\(startButton\)/);
+  assert.match(drawSource, /timerNotice\.append\(timerIcon, timerLabel\)/);
+  assert.match(drawSource, /Start the 60 second Community Theme drawing round/);
+  assert.match(drawSource, /background: 'rgba\(31, 24, 18, 0\.82\)'/);
+  assert.match(drawSource, /width: this\.scale\.width/);
+  assert.match(drawSource, /height: this\.scale\.height/);
   assert.match(
     drawSource,
     /style\.visibility = visible \? 'visible' : 'hidden'/
   );
   assert.match(drawSource, /private isWaitingToStart\(\): boolean/);
   assert.match(drawSource, /this\.canvas\?\.setEnabled\(inputEnabled\)/);
+  assert.match(
+    drawSource,
+    /this\.playerDrawMode === 'community' && !waitingToStart/
+  );
   assert.match(drawSource, /brightness\(0\.68\) saturate\(0\.58\)/);
   assert.doesNotMatch(
     drawSource,
@@ -107,7 +123,12 @@ test('official Draw requires an explicit start and locks at time', () => {
   assert.match(drawSource, /this\.setDrawingLocked\(true\)/);
   assert.match(drawSource, /Time! Name your Scribbit\./);
   assert.match(drawSource, /fresh 60-second round/);
-  assert.match(drawSource, /fillRoundedRect\(-104, -40, 208, 80, 28\)/);
+  assert.match(drawSource, /this\.overlay\.place\(this\.drawTimerContainer/);
+  assert.match(drawSource, /zIndex: '6'/);
+  assert.match(
+    drawSource,
+    /Phaser depth cannot render above an HTML canvas overlay/
+  );
   assert.match(drawSource, /getDrawRoundUrgencyMotion\(remainingSeconds\)/);
   assert.match(canvasSource, /setEnabled\(enabled: boolean\)/);
   assert.match(

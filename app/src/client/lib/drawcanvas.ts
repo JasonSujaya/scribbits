@@ -12,6 +12,7 @@ import {
   parseHexColor,
   type RgbColor,
 } from './coloreraser';
+import { floodFillRegion } from './bucketfill';
 import type { DrawAutomationStroke } from './drawautomation';
 
 export const CANVAS_SIZE = 512;
@@ -20,8 +21,14 @@ export const CANVAS_SIZE = 512;
 // transparent so the server sees the same pixels as the live analyzer.
 const PAPER_COLOR = '#fdf3df';
 
-export type BrushMode = 'draw' | 'erase';
-export type DrawCanvasChange = 'draw' | 'erase' | 'clear' | 'undo' | 'redo';
+export type BrushMode = 'draw' | 'erase' | 'fill';
+export type DrawCanvasChange =
+  | 'draw'
+  | 'erase'
+  | 'fill'
+  | 'clear'
+  | 'undo'
+  | 'redo';
 
 export type DrawCanvasOptions = {
   // Called after every completed stroke (pointer-up) so the scene can re-run the
@@ -45,6 +52,7 @@ export class DrawCanvas {
   private brushSize = 22;
   private mode: BrushMode = 'draw';
   private eraserTargetColor: RgbColor = [43, 32, 22];
+  private fillColor: RgbColor = [43, 32, 22];
 
   // Active pen effect + its palette. Rainbow advances a hue as the stroke moves;
   // midnight flecks white specks over a near-black base.
@@ -134,8 +142,17 @@ export class DrawCanvas {
     this.mode = 'erase';
   }
 
+  setFill(color = this.color): void {
+    this.fillColor = parseHexColor(color) ?? this.fillColor;
+    this.mode = 'fill';
+  }
+
   isErasing(): boolean {
     return this.mode === 'erase';
+  }
+
+  isFilling(): boolean {
+    return this.mode === 'fill';
   }
 
   setEnabled(enabled: boolean): void {
@@ -268,13 +285,7 @@ export class DrawCanvas {
       this.ctx.fillStyle = stroke.color;
       this.ctx.strokeStyle = stroke.color;
       this.ctx.beginPath();
-      this.ctx.arc(
-        firstPoint.x,
-        firstPoint.y,
-        stroke.size / 2,
-        0,
-        Math.PI * 2
-      );
+      this.ctx.arc(firstPoint.x, firstPoint.y, stroke.size / 2, 0, Math.PI * 2);
       this.ctx.fill();
       if (stroke.points.length > 1) {
         this.ctx.beginPath();
@@ -359,12 +370,18 @@ export class DrawCanvas {
   private startStroke(event: PointerEvent): void {
     if (!this.enabled) return;
     event.preventDefault();
+    this.activeBounds = this.element.getBoundingClientRect();
+    const { x, y } = this.toCanvasCoords(event);
+    if (this.mode === 'fill') {
+      this.fillRegion(x, y);
+      this.activeBounds = null;
+      return;
+    }
+
     this.pushHistory();
     this.drawing = true;
     this.strokeChanged = false;
-    this.activeBounds = this.element.getBoundingClientRect();
     this.huePhase = 0;
-    const { x, y } = this.toCanvasCoords(event);
     this.lastX = x;
     this.lastY = y;
     if (this.mode === 'erase') {
@@ -505,6 +522,25 @@ export class DrawCanvas {
     );
     if (erasedPixels > 0) this.ctx.putImageData(imageData, left, top);
     return erasedPixels;
+  }
+
+  private fillRegion(x: number, y: number): void {
+    const imageData = this.ctx.getImageData(0, 0, CANVAS_SIZE, CANVAS_SIZE);
+    const changedPixels = floodFillRegion(
+      imageData.data,
+      CANVAS_SIZE,
+      CANVAS_SIZE,
+      x,
+      y,
+      this.fillColor
+    );
+    if (changedPixels === 0) return;
+
+    // Capture the original canvas only after confirming the click changes a
+    // region, so a no-op fill preserves both undo and redo history.
+    this.pushHistory();
+    this.ctx.putImageData(imageData, 0, 0);
+    this.onStrokeEnd('fill');
   }
 
   private applyBrush(): void {

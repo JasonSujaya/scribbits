@@ -41,30 +41,34 @@ import { BAG_RARITY_FRAME_STYLE } from './bagrarity';
 import {
   formatGearTechnique,
   resolveGearCombatLoadout,
+  summarizeGearCombatModifiers,
+  type GearCombatSummaryItem,
 } from '../../shared/gearcombat';
 import { selectGearWeekDay } from '../../shared/content/gearweek';
 
-const BAG_GEAR_TILE_SIZE = 96;
+const BAG_GEAR_TILE_SIZE = 120;
 
 const BAG_LAYOUT = Object.freeze({
-  stageCenterOffset: 170,
-  filterOffset: 434,
-  inventoryTopOffset: 519,
-  inventoryViewportOffset: 617,
-  inventoryViewportHeight: 302,
+  stageCenterOffset: 220,
+  filterOffset: 640,
+  inventoryTopOffset: 736,
+  inventoryViewportHeaderHeight: 70,
+  inventoryBottomMargin: 156,
   inventoryPanelMargin: 18,
-  inventoryContentMargin: 72,
-  cardColumns: 5,
-  cardGap: 24,
+  inventoryContentMargin: 42,
+  cardColumns: 4,
+  cardGap: 18,
   cardHeight: BAG_GEAR_TILE_SIZE,
-  cardRowGap: 18,
+  cardRowGap: 20,
 });
 
 const BAG_GEAR_PREVIEW_BOX = Object.freeze({
-  width: 60,
-  height: 56,
-  maxScale: 1.2,
+  width: 88,
+  height: 82,
+  maxScale: 1.45,
 });
+
+const UNEQUIPPED_GEAR_TILE_COLOR = 0xd6d4cf;
 
 export type InkKitSection = EquipmentCategory | 'styles';
 
@@ -155,7 +159,7 @@ const createMergeOperationId = (): string =>
 export function renderCollectionBook(options: CollectionBookOptions): void {
   const { scene, top, inventory, loggedIn, loading, errorMessage, onRetry } =
     options;
-  const { width } = scene.scale;
+  const { width, height } = scene.scale;
 
   if (!loggedIn) {
     label(
@@ -239,18 +243,23 @@ export function renderCollectionBook(options: CollectionBookOptions): void {
       Number(featuredGearIds.has(left.entry.id))
   );
   const inventoryTop = top + BAG_LAYOUT.inventoryTopOffset;
+  const inventoryBottom = height - BAG_LAYOUT.inventoryBottomMargin;
+  const inventoryPanelHeight = Math.max(260, inventoryBottom - inventoryTop);
   const viewport = {
     x: BAG_LAYOUT.inventoryContentMargin,
-    y: top + BAG_LAYOUT.inventoryViewportOffset,
+    y: inventoryTop + BAG_LAYOUT.inventoryViewportHeaderHeight,
     width: width - BAG_LAYOUT.inventoryContentMargin * 2,
-    height: BAG_LAYOUT.inventoryViewportHeight,
+    height: Math.max(
+      BAG_GEAR_TILE_SIZE,
+      inventoryPanelHeight - BAG_LAYOUT.inventoryViewportHeaderHeight - 18
+    ),
   };
   stickerCard(
     scene,
     width / 2,
-    inventoryTop + 224,
+    inventoryTop + inventoryPanelHeight / 2,
     width - BAG_LAYOUT.inventoryPanelMargin * 2,
-    440,
+    inventoryPanelHeight,
     { tape: false, tilt: 0 }
   );
   const sectionLabel =
@@ -266,17 +275,6 @@ export function renderCollectionBook(options: CollectionBookOptions): void {
     UI.ink,
     true
   ).setOrigin(0, 0.5);
-  label(
-    scene,
-    width / 2,
-    inventoryTop + 70,
-    `GEAR WEEK ${gearWeekDay.day}/7 · ${gearWeekDay.title.toUpperCase()}\nTODAY · ${gearWeekDay.challenge.toUpperCase()}`,
-    18,
-    UI.coralText,
-    true
-  )
-    .setWordWrapWidth(width - BAG_LAYOUT.inventoryContentMargin * 2)
-    .setLineSpacing(2);
   const visibleRowCount = Math.floor(
     (viewport.height + BAG_LAYOUT.cardRowGap) /
       (BAG_LAYOUT.cardHeight + BAG_LAYOUT.cardRowGap)
@@ -309,7 +307,7 @@ export function renderCollectionBook(options: CollectionBookOptions): void {
     return;
   }
 
-  const gridItems = ownedItems.map((item, index) =>
+  const gridItems = ownedItems.map((item) =>
     buildCosmeticCard({
       scene,
       ...item,
@@ -322,7 +320,6 @@ export function renderCollectionBook(options: CollectionBookOptions): void {
       onEquipGear: options.onEquipGear,
       onInventoryChanged: options.onInventoryChanged,
       featured: featuredGearIds.has(item.entry.id),
-      index,
     })
   );
   mountBagInventoryGrid({
@@ -430,17 +427,17 @@ function buildBagCharacterStage(options: {
   const stage = scene.add.container(width / 2, centerY);
   const stageBackdrop = scene.add.graphics();
   stageBackdrop.fillStyle(UI.inkHex, 0.08);
-  stageBackdrop.fillRoundedRect(-185, -145, 370, 324, 158);
+  stageBackdrop.fillRoundedRect(-235, -205, 470, 430, 188);
   stageBackdrop.fillStyle(UI.paper, 1);
-  stageBackdrop.fillRoundedRect(-180, -153, 360, 316, 154);
+  stageBackdrop.fillRoundedRect(-230, -215, 460, 430, 184);
   stageBackdrop.lineStyle(5, UI.inkSoftHex, 0.42);
-  stageBackdrop.strokeRoundedRect(-180, -153, 360, 316, 154);
+  stageBackdrop.strokeRoundedRect(-230, -215, 460, 430, 184);
   stageBackdrop.lineStyle(3, UI.tapeAlt, 0.72);
-  stageBackdrop.strokeRoundedRect(-170, -143, 340, 296, 144);
+  stageBackdrop.strokeRoundedRect(-220, -205, 440, 410, 174);
   stageBackdrop.fillStyle(UI.tapeAlt, 0.1);
-  stageBackdrop.fillTriangle(-148, -136, 0, 136, 148, -136);
+  stageBackdrop.fillTriangle(-184, -184, 0, 174, 184, -184);
   stage.add(stageBackdrop);
-  drawScribbitPlatform(scene, stage, 0, 130);
+  drawScribbitPlatform(scene, stage, 0, 168);
 
   if (!selectedScribbit) {
     stage.add([
@@ -470,13 +467,13 @@ function buildBagCharacterStage(options: {
   void loadDrawing(scene, selectedScribbit).then((textureKey) => {
     if (!portrait.active || !stage.active || !scene.scene.isActive()) return;
     portrait.add(
-      fitDrawing(scene.add.image(0, 0, textureKey), 270).setOrigin(0.5)
+      fitDrawing(scene.add.image(0, 0, textureKey), 320).setOrigin(0.5)
     );
   });
   const nameText = label(
     scene,
     0,
-    -168,
+    -240,
     `${selectedScribbit.name.toUpperCase()} · LV ${selectedScribbit.level}`,
     21,
     UI.ink,
@@ -495,8 +492,8 @@ function buildBagCharacterStage(options: {
     };
     const previous = ghostButton(
       scene,
-      -176,
-      -168,
+      -212,
+      -240,
       '‹',
       () => selectRelativeScribbit(-1),
       68,
@@ -504,8 +501,8 @@ function buildBagCharacterStage(options: {
     );
     const next = ghostButton(
       scene,
-      176,
-      -168,
+      212,
+      -240,
       '‹',
       () => selectRelativeScribbit(1),
       68,
@@ -517,8 +514,8 @@ function buildBagCharacterStage(options: {
     actionOverlay.add({
       label: `Previous Scribbit. ${selectedIndex + 1} of ${scribbits.length} selected.`,
       rect: {
-        x: width / 2 - 226,
-        y: centerY - 204,
+        x: width / 2 - 262,
+        y: centerY - 276,
         width: 100,
         height: 100,
       },
@@ -528,8 +525,8 @@ function buildBagCharacterStage(options: {
     actionOverlay.add({
       label: `Next Scribbit. ${selectedIndex + 1} of ${scribbits.length} selected.`,
       rect: {
-        x: width / 2 + 126,
-        y: centerY - 204,
+        x: width / 2 + 162,
+        y: centerY - 276,
         width: 100,
         height: 100,
       },
@@ -539,18 +536,18 @@ function buildBagCharacterStage(options: {
   }
 
   const slotXByCategory: Readonly<Record<EquipmentCategory, number>> = {
-    weapon: 62,
-    shoes: 62,
-    armor: width - 62,
-    accessory: width - 62,
+    weapon: 70,
+    shoes: 70,
+    armor: width - 70,
+    accessory: width - 70,
   };
   const slotYByCategory: Readonly<
     Record<EquipmentCategory, readonly [number, number]>
   > = {
-    weapon: [centerY - 156, centerY - 52],
-    armor: [centerY - 156, centerY - 52],
-    shoes: [centerY + 52, centerY + 156],
-    accessory: [centerY + 52, centerY + 156],
+    weapon: [centerY - 170, centerY - 55],
+    armor: [centerY - 170, centerY - 55],
+    shoes: [centerY + 55, centerY + 170],
+    accessory: [centerY + 55, centerY + 170],
   };
   EQUIPMENT_CATEGORIES.forEach((category) => {
     const slotX = slotXByCategory[category];
@@ -579,22 +576,342 @@ function buildBagCharacterStage(options: {
   );
   const visibleEquipmentStatus = equipmentError?.startsWith('Both ')
     ? '2 / 2 FULL · REMOVE A SLOT ABOVE'
-    : (equipmentError ??
-      (equipmentBusy ? 'SAVING LOADOUT…' : `${equippedCount} / 8 EQUIPPED`));
-  label(
+    : (equipmentError ?? (equipmentBusy ? 'SAVING LOADOUT…' : null));
+  if (visibleEquipmentStatus) {
+    label(
+      scene,
+      width / 2,
+      centerY + 228,
+      visibleEquipmentStatus,
+      17,
+      equipmentError ? UI.coralText : UI.goldText,
+      true
+    ).setWordWrapWidth(560);
+  }
+  buildLoadoutEffectsSummary({
     scene,
-    width / 2,
-    centerY + 180,
-    visibleEquipmentStatus,
-    15,
-    equipmentError ? UI.coralText : equipmentBusy ? UI.goldText : UI.inkSoft,
-    true
-  ).setWordWrapWidth(560);
+    actionOverlay,
+    scribbit: selectedScribbit,
+    equippedCount,
+    x: width / 2,
+    y: centerY + 292,
+  });
   if (equipmentError || equipmentBusy) {
     actionOverlay.addStatus(
       equipmentError ?? `Saving ${selectedScribbit.name}'s equipment loadout.`
     );
   }
+}
+
+function summaryToneColor(item: GearCombatSummaryItem): string {
+  if (item.tone === 'benefit') return '#286f28';
+  if (item.tone === 'tradeoff') return UI.coralText;
+  return UI.inkSoft;
+}
+
+function summaryText(items: readonly GearCombatSummaryItem[]): string {
+  return items.map((item) => `${item.label} ${item.value}`).join(' · ');
+}
+
+function destroyModalVisuals(
+  overlay: Phaser.GameObjects.Container,
+  panel: Phaser.GameObjects.Container,
+  shade: Phaser.GameObjects.Rectangle
+): void {
+  panel.removeAll(true);
+  panel.destroy();
+  shade.destroy();
+  overlay.destroy();
+}
+
+function buildLoadoutEffectsSummary(options: {
+  scene: Scene;
+  actionOverlay: CanvasActionOverlay;
+  scribbit: Scribbit;
+  equippedCount: number;
+  x: number;
+  y: number;
+}): void {
+  const { scene, actionOverlay, scribbit, equippedCount, x, y } = options;
+  const resolvedLoadout = resolveGearCombatLoadout(scribbit);
+  const summaries = summarizeGearCombatModifiers(resolvedLoadout.modifiers);
+  const summary = scene.add.container(x, y);
+  const width = 566;
+  const height = 112;
+  const shadow = scene.add.graphics().setPosition(4, 6);
+  shadow.fillStyle(UI.inkHex, 0.18);
+  shadow.fillRoundedRect(-width / 2, -height / 2, width, height, 18);
+  const face = scene.add.graphics();
+  face.fillStyle(UI.paper, 1);
+  face.fillRoundedRect(-width / 2, -height / 2, width, height, 18);
+  face.lineStyle(4, UI.inkSoftHex, 0.82);
+  face.strokeRoundedRect(-width / 2, -height / 2, width, height, 18);
+  summary.add([shadow, face]);
+  summary.add(
+    label(
+      scene,
+      0,
+      -35,
+      `LOADOUT EFFECTS · ${equippedCount}/8 · TAP FOR INFO`,
+      17,
+      UI.ink,
+      true
+    )
+  );
+  const columnWidth = width / 3;
+  summaries.forEach((item, index) => {
+    const column = index % 3;
+    const row = Math.floor(index / 3);
+    const itemLabel = label(
+      scene,
+      -width / 2 + columnWidth * (column + 0.5),
+      row === 0 ? -5 : 28,
+      `${item.label} ${item.value}`,
+      15,
+      summaryToneColor(item),
+      true
+    );
+    if (itemLabel.width > columnWidth - 12) {
+      itemLabel.setScale((columnWidth - 12) / itemLabel.width);
+    }
+    summary.add(itemLabel);
+  });
+
+  let effectsPanelOpen = false;
+  const openEffects = (): void => {
+    if (effectsPanelOpen) return;
+    effectsPanelOpen = true;
+    openLoadoutEffectsDetail(scene, scribbit, equippedCount, () => {
+      effectsPanelOpen = false;
+    });
+  };
+  addCardPressInteraction({
+    scene,
+    card: summary,
+    width,
+    height,
+    pressedScaleX: 0.98,
+    pressedScaleY: 0.96,
+    onActivate: openEffects,
+  });
+  actionOverlay.add({
+    label: `Open all loadout effects for ${scribbit.name}. ${summaryText(summaries)}.`,
+    rect: {
+      x: x - width / 2,
+      y: y - height / 2,
+      width,
+      height,
+    },
+    attributes: {
+      'data-loadout-effects-summary': scribbit.id,
+      'data-equipped-count': String(equippedCount),
+    },
+    onActivate: openEffects,
+  });
+}
+
+function openLoadoutEffectsDetail(
+  scene: Scene,
+  scribbit: Scribbit,
+  equippedCount: number,
+  onClose: () => void
+): void {
+  const { width, height } = scene.scale;
+  const resolvedLoadout = resolveGearCombatLoadout(scribbit);
+  const summaries = summarizeGearCombatModifiers(resolvedLoadout.modifiers);
+  const panelWidth = width - 52;
+  const panelHeight = height - 108;
+  const panelTop = -panelHeight / 2;
+  const overlay = scene.add.container(0, 0).setDepth(3200).setScrollFactor(0);
+  const shade = scene.add
+    .rectangle(width / 2, height / 2, width + 80, height + 80, 0x21170f, 0.76)
+    .setInteractive();
+  const panel = stickerCard(
+    scene,
+    width / 2,
+    height / 2,
+    panelWidth,
+    panelHeight,
+    { tapeColor: UI.tapeAlt, tilt: 0 }
+  );
+  panel.addAt(
+    scene.add
+      .rectangle(0, 0, panelWidth, panelHeight, 0xffffff, 0.001)
+      .setInteractive(),
+    0
+  );
+  panel.add([
+    label(scene, 0, panelTop + 68, 'LOADOUT EFFECTS', TYPE.title, UI.ink, true),
+    label(
+      scene,
+      0,
+      panelTop + 112,
+      `${scribbit.name.toUpperCase()} · ${equippedCount}/8 EQUIPPED`,
+      19,
+      UI.inkSoft,
+      true
+    ),
+  ]);
+
+  const totalGridTop = panelTop + 180;
+  const totalCellWidth = (panelWidth - 112) / 2;
+  summaries.forEach((item, index) => {
+    const column = index % 2;
+    const row = Math.floor(index / 2);
+    const cellX = (column === 0 ? -1 : 1) * (totalCellWidth / 2 + 12);
+    const cellY = totalGridTop + row * 92;
+    const cell = scene.add.graphics();
+    cell.fillStyle(UI.paper, 0.98);
+    cell.fillRoundedRect(
+      cellX - totalCellWidth / 2,
+      cellY - 34,
+      totalCellWidth,
+      72,
+      14
+    );
+    cell.lineStyle(3, UI.inkSoftHex, 0.32);
+    cell.strokeRoundedRect(
+      cellX - totalCellWidth / 2,
+      cellY - 34,
+      totalCellWidth,
+      72,
+      14
+    );
+    const totalLabel = label(
+      scene,
+      cellX,
+      cellY - 13,
+      item.label,
+      17,
+      UI.inkSoft,
+      true
+    );
+    const totalValue = label(
+      scene,
+      cellX,
+      cellY + 15,
+      item.value,
+      23,
+      summaryToneColor(item),
+      true
+    );
+    if (totalValue.width > totalCellWidth - 18) {
+      totalValue.setScale((totalCellWidth - 18) / totalValue.width);
+    }
+    panel.add([cell, totalLabel, totalValue]);
+  });
+
+  const techniqueTitleY = totalGridTop + 298;
+  panel.add(
+    label(
+      scene,
+      -panelWidth / 2 + 44,
+      techniqueTitleY,
+      'ACTIVE TECHNIQUES',
+      20,
+      UI.ink,
+      true
+    ).setOrigin(0, 0.5)
+  );
+  const rowWidth = panelWidth - 76;
+  EQUIPMENT_CATEGORIES.forEach((category, index) => {
+    const technique = resolvedLoadout.techniques.find(
+      (candidate) => candidate.category === category
+    );
+    const rowY = techniqueTitleY + 70 + index * 104;
+    const row = scene.add.graphics();
+    row.fillStyle(index % 2 === 0 ? UI.paper : UI.creamHex, 0.94);
+    row.fillRoundedRect(-rowWidth / 2, rowY - 43, rowWidth, 86, 14);
+    row.lineStyle(2, UI.inkSoftHex, 0.28);
+    row.strokeRoundedRect(-rowWidth / 2, rowY - 43, rowWidth, 86, 14);
+    const categoryLabel = label(
+      scene,
+      -rowWidth / 2 + 22,
+      rowY - 17,
+      GEAR_SECTION_PRESENTATION[category].label,
+      17,
+      UI.ink,
+      true
+    ).setOrigin(0, 0.5);
+    const techniqueCopy = technique
+      ? `${technique.effect.name.toUpperCase()} · ${technique.effect.summary}`
+      : 'NO ACTIVE EFFECT';
+    const leadEntry = technique ? GEAR_BY_ID.get(technique.leadGearId) : null;
+    const supportEntry = technique?.supportGearId
+      ? GEAR_BY_ID.get(technique.supportGearId)
+      : null;
+    const gearCopy = technique
+      ? `LEAD ${leadEntry?.name ?? technique.leadGearId} ${technique.leadRank}★${
+          supportEntry && technique.supportRank
+            ? ` · SUPPORT ${supportEntry.name} ${technique.supportRank}★`
+            : ''
+        }`
+      : 'Equip Gear in this category to activate it.';
+    const effectLabel = label(
+      scene,
+      -rowWidth / 2 + 150,
+      rowY - 16,
+      techniqueCopy,
+      17,
+      technique ? UI.coralText : UI.inkSoft,
+      true
+    )
+      .setOrigin(0, 0.5)
+      .setWordWrapWidth(rowWidth - 172);
+    const gearLabel = label(
+      scene,
+      -rowWidth / 2 + 150,
+      rowY + 20,
+      gearCopy,
+      14,
+      UI.inkSoft,
+      true
+    )
+      .setOrigin(0, 0.5)
+      .setWordWrapWidth(rowWidth - 172);
+    panel.add([row, categoryLabel, effectLabel, gearLabel]);
+  });
+
+  const semanticDescription = `${scribbit.name}. ${equippedCount} of 8 equipped. ${summaryText(
+    summaries
+  )}. ${resolvedLoadout.techniques
+    .map(
+      (technique) =>
+        `${GEAR_SECTION_PRESENTATION[technique.category].label}: ${technique.effect.name}, ${technique.effect.summary}`
+    )
+    .join('. ')}`;
+  let closing = false;
+  function closeEffects(): void {
+    if (closing) return;
+    closing = true;
+    window.setTimeout(() => {
+      modalActions.destroy();
+      destroyModalVisuals(overlay, panel, shade);
+      onClose();
+    }, 0);
+  }
+  const modalActions = new CanvasModalOverlay(
+    scene,
+    `${scribbit.name} loadout effects`,
+    closeEffects,
+    semanticDescription
+  );
+  overlay.once('destroy', () => modalActions.destroy());
+  const closeX = panelWidth / 2 - 54;
+  const closeY = panelTop + 54;
+  panel.add(ghostButton(scene, closeX, closeY, '✕', closeEffects, 86, 86));
+  const nativeClose = modalActions.add({
+    label: `Close ${scribbit.name} loadout effects`,
+    rect: {
+      x: width / 2 + closeX - 43,
+      y: height / 2 + closeY - 43,
+      width: 86,
+      height: 86,
+    },
+    onActivate: closeEffects,
+  });
+  overlay.add([shade, panel]);
+  modalActions.focusInitial(nativeClose);
 }
 
 function drawScribbitPlatform(
@@ -646,7 +963,6 @@ function buildEquipmentSlot(options: {
   const slot = createBagGearTile(
     scene,
     entry?.rarity ?? null,
-    slotIndex,
     selectedCategory
   );
   slot.setPosition(x, y);
@@ -657,14 +973,14 @@ function buildEquipmentSlot(options: {
       parent: slot,
       entry,
       y: 0,
-      size: 82,
+      size: 104,
       ...BAG_GEAR_PREVIEW_BOX,
     });
   } else {
     slot.add(
       paperIcon(scene, GEAR_SECTION_PRESENTATION[category].icon, 0, 0, {
-        size: 28,
-        fill: UI.inkSoftHex,
+        size: 36,
+        fill: UI.inkHex,
       })
     );
   }
@@ -701,6 +1017,7 @@ function buildEquipmentSlot(options: {
       'data-equipment-slot': `${category}-${slotIndex}`,
       'data-equipment-category': category,
       'data-equipped-gear-id': gearId ?? '',
+      'data-equipped-gear-rarity': entry?.rarity ?? '',
     },
     enabled: !equipmentBusy,
     onActivate: activate,
@@ -820,8 +1137,8 @@ function cosmeticOwnership(
 function createBagGearTile(
   scene: Scene,
   rarity: CapsuleRarity | null,
-  index: number,
-  selected = false
+  selected = false,
+  mutedBackground = false
 ): Phaser.GameObjects.Container {
   const width = BAG_GEAR_TILE_SIZE;
   const height = BAG_GEAR_TILE_SIZE;
@@ -832,22 +1149,34 @@ function createBagGearTile(
         fillAlpha: selected ? 0.075 : 0.025,
         strokeWidth: selected ? 5 : 3,
       };
-  const tile = scene.add
-    .container(0, 0)
-    .setAngle(index % 2 === 0 ? -0.18 : 0.18);
+  const tile = scene.add.container(0, 0);
   const left = -width / 2;
   const top = -height / 2;
   const shadow = scene.add.graphics().setPosition(4, 7);
   shadow.fillStyle(UI.inkHex, 0.2);
   shadow.fillRoundedRect(left, top, width, height, 15);
   const face = scene.add.graphics();
-  face.fillStyle(UI.paper, 1);
+  face.fillStyle(mutedBackground ? UNEQUIPPED_GEAR_TILE_COLOR : UI.paper, 1);
   face.fillRoundedRect(left, top, width, height, 15);
-  face.fillStyle(rarityFrame.color, rarityFrame.fillAlpha);
-  face.fillRoundedRect(left + 5, top + 5, width - 10, height - 10, 12);
+  if (!mutedBackground) {
+    face.fillStyle(rarityFrame.color, rarityFrame.fillAlpha);
+    face.fillRoundedRect(left + 5, top + 5, width - 10, height - 10, 12);
+  }
   face.lineStyle(rarityFrame.strokeWidth, rarityFrame.color, 1);
   face.strokeRoundedRect(left + 5, top + 5, width - 10, height - 10, 12);
   tile.add([shadow, face]);
+  if (selected) {
+    const selectedFrame = scene.add.graphics();
+    selectedFrame.lineStyle(4, UI.coral, 1);
+    selectedFrame.strokeRoundedRect(
+      left + 1,
+      top + 1,
+      width - 2,
+      height - 2,
+      15
+    );
+    tile.add(selectedFrame);
+  }
   if (rarity === 'epic') {
     const epicInnerFrame = scene.add.graphics();
     epicInnerFrame.lineStyle(2, UI.goldHex, 0.95);
@@ -877,7 +1206,6 @@ function buildCosmeticCard(options: {
   onEquipGear: CollectionBookOptions['onEquipGear'];
   onInventoryChanged: () => void;
   featured: boolean;
-  index: number;
 }): BagInventoryGridItem {
   const {
     scene,
@@ -893,15 +1221,19 @@ function buildCosmeticCard(options: {
     onEquipGear,
     onInventoryChanged,
     featured,
-    index,
   } = options;
-  const card = createBagGearTile(scene, entry.rarity, index);
   const equippedSlots =
     entry.kind === 'accessory' && selectedScribbit
       ? equipmentSlots(selectedScribbit, entry.category)
           .map((gearId, slotIndex) => (gearId === entry.id ? slotIndex + 1 : 0))
           .filter((slotNumber) => slotNumber > 0)
       : [];
+  const card = createBagGearTile(
+    scene,
+    entry.rarity,
+    false,
+    entry.kind === 'accessory' && equippedSlots.length === 0
+  );
   if (equippedSlots.length > 0) {
     const equippedBadge = scene.add
       .circle(
@@ -950,11 +1282,14 @@ function buildCosmeticCard(options: {
     parent: card,
     entry,
     y: 0,
-    size: 82,
+    size: 104,
     ...BAG_GEAR_PREVIEW_BOX,
   });
 
+  let detailOpen = false;
   function openDetail(): void {
+    if (detailOpen) return;
+    detailOpen = true;
     openCosmeticDetail({
       scene,
       entry,
@@ -968,6 +1303,9 @@ function buildCosmeticCard(options: {
       selectedScribbit,
       equipmentBusy,
       onEquipGear,
+      onClose: () => {
+        detailOpen = false;
+      },
     });
   }
   const primaryLabel = `Open ${entry.name} details. ${featured ? 'Featured today. ' : ''}${ownership.summary}.`;
@@ -1013,6 +1351,7 @@ function openCosmeticDetail(options: {
   selectedScribbit: Scribbit | undefined;
   equipmentBusy: boolean;
   onEquipGear: CollectionBookOptions['onEquipGear'];
+  onClose: () => void;
 }): void {
   const {
     scene,
@@ -1027,6 +1366,7 @@ function openCosmeticDetail(options: {
     selectedScribbit,
     equipmentBusy,
     onEquipGear,
+    onClose,
   } = options;
   const resolvedGearTechnique =
     entry.kind === 'accessory' && selectedScribbit
@@ -1050,16 +1390,25 @@ function openCosmeticDetail(options: {
         ? `${attachedGearRank}★`
         : null;
   const { width, height } = scene.scale;
-  const detailWidth = width - 100;
+  const detailWidth = width - 52;
+  const detailHeight = height - 108;
   const overlay = scene.add.container(0, 0).setDepth(3000).setScrollFactor(0);
   const shade = scene.add
     .rectangle(width / 2, height / 2, width + 80, height + 80, 0x21170f, 0.68)
     .setInteractive();
-  const detail = stickerCard(scene, width / 2, height / 2, detailWidth, 780, {
-    tapeColor: RARITY_STYLE[entry.rarity].color,
-  });
+  const detail = stickerCard(
+    scene,
+    width / 2,
+    height / 2,
+    detailWidth,
+    detailHeight,
+    {
+      tapeColor: RARITY_STYLE[entry.rarity].color,
+      tilt: 0,
+    }
+  );
   const detailBlocker = scene.add
-    .rectangle(0, 0, detailWidth, 780, 0xffffff, 0.001)
+    .rectangle(0, 0, detailWidth, detailHeight, 0xffffff, 0.001)
     .setInteractive();
   detail.addAt(detailBlocker, 0);
 
@@ -1087,8 +1436,10 @@ function openCosmeticDetail(options: {
     parent: detail,
     entry,
     y: hasRank ? -205 : -190,
-    size: hasRank ? 150 : 172,
+    size: hasRank ? 200 : 190,
     width: Math.min(360, width - 180),
+    height: hasRank ? 180 : 190,
+    maxScale: 1.8,
   });
 
   if (ownership.rank !== null) {
@@ -1150,6 +1501,7 @@ function openCosmeticDetail(options: {
   let mergeNativeAction: HTMLButtonElement | null = null;
 
   const closeDetail = (): void => {
+    if (!modalOpen) return;
     if (savingTitle || forgingGear) {
       status
         .setText(
@@ -1162,7 +1514,8 @@ function openCosmeticDetail(options: {
     }
     modalOpen = false;
     modalActions.destroy();
-    overlay.destroy(true);
+    destroyModalVisuals(overlay, detail, shade);
+    onClose();
     if (inventoryChanged) {
       onInventoryChanged();
       requestAnimationFrame(() => {
@@ -1437,7 +1790,7 @@ function openCosmeticDetail(options: {
   }
 
   const closeX = detailWidth / 2 - 56;
-  const closeY = -330;
+  const closeY = -detailHeight / 2 + 56;
   const close = ghostButton(scene, closeX, closeY, '✕', closeDetail, 86, 86);
   detail.add(close);
   const nativeClose = modalActions.add({

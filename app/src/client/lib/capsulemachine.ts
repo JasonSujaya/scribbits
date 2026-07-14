@@ -1,6 +1,6 @@
 // The Mystery Ink chest — a satisfying, non-predatory reward screen in the
-// sketchbook aesthetic. Shop supplies the generated stage while this module
-// owns the code-rendered chest, controls, and ceremony. The player spends
+// sketchbook aesthetic. Shop supplies the generated stage and chest states while
+// this module owns the controls and ceremony. The player spends
 // battle-earned Ink, taps the chest, and gets a rarity-tiered ceremony:
 //   common → a soft puff
 //   rare   → a gold burst
@@ -21,7 +21,13 @@ import type {
   CapsuleRarity,
 } from '../../shared/arena';
 import { NAV_SAFE, UI, TYPE, prefersReducedMotion } from './theme';
-import { label, handLettered, button, ghostButton, iconButton } from './ui';
+import {
+  label,
+  handLettered,
+  button,
+  ghostButton,
+  paperButtonPlate,
+} from './ui';
 import { RARITY_STYLE } from './pens';
 import { COSMETIC_BY_ID } from '../../shared/cosmetics';
 import type { CosmeticGearCatalogEntry } from '../../shared/cosmetics';
@@ -35,6 +41,7 @@ import { CanvasActionOverlay, CanvasModalOverlay } from './overlay';
 import type { CanvasActionOverlayInput } from './overlay';
 import { bindPressInteractionEvents } from './pressinteraction';
 import { createStickerShine } from './stickerfxshader';
+import { INK_TOKEN_TEXTURE, SHOP_CHEST_TEXTURES } from './visualassets';
 import {
   capsuleOpenCost,
   planCapsuleOpenAffordance,
@@ -43,6 +50,10 @@ import {
   prizeOwnershipLabel,
   summarizeCapsuleBatch,
 } from './capsulepresentation';
+import {
+  capsuleRevealAnnouncement,
+  planCapsuleBatchReveal,
+} from './capsulereveal';
 
 const DEPTH = 2500;
 const COLLECTION_BAR_WIDTH = 480;
@@ -53,13 +64,19 @@ const CAPSULE_ODDS_ACCESSIBLE_COPY =
   `${CAPSULE_RARITY_PERCENTAGES.epic} percent epic.`;
 
 const FEATURED_GEAR_ID = 'comet-crayon-blade';
+const CHEST_DISPLAY_WIDTH = 410;
+const CHEST_DISPLAY_HEIGHT = 430;
+const OPEN_CHEST_HORIZONTAL_SCALE = 1.086;
+const OPEN_CHEST_Y_OFFSET = -47;
 
 type ChestOpenCount = 1 | typeof CAPSULE_MAX_BATCH_SIZE;
 
 type ChestArt = Readonly<{
   container: Phaser.GameObjects.Container;
   glow: Phaser.GameObjects.Arc;
-  lid: Phaser.GameObjects.Container;
+  image: Phaser.GameObjects.Image;
+  closedScaleX: number;
+  closedScaleY: number;
 }>;
 
 const createCapsuleOperationId = (): string => {
@@ -89,10 +106,26 @@ export type CapsuleMachineOpts = {
 export type CapsuleMachine = { destroy: () => void };
 
 type PrizeRevealOptions = {
-  acknowledgementLabel: 'GOT IT' | 'KEEP DRAWING';
+  acknowledgementLabel: 'GOT IT' | 'KEEP DRAWING' | 'VIEW BAG';
   onDismiss: () => void;
   onViewCollection?: () => void;
+  onBatchItemRevealed?: (
+    pull: CapsulePull,
+    index: number,
+    total: number
+  ) => void;
+  onBatchRevealComplete?: () => void;
 };
+
+type InkWallet = Readonly<{
+  container: Phaser.GameObjects.Container;
+  balance: Phaser.GameObjects.Text;
+}>;
+
+type InkOpenButton = Readonly<{
+  container: Phaser.GameObjects.Container;
+  setContent: (actionLabel: string, cost: number | null) => void;
+}>;
 
 type CapsuleActionSurface = Readonly<{
   add: (input: CanvasActionOverlayInput) => HTMLButtonElement;
@@ -101,12 +134,17 @@ type CapsuleActionSurface = Readonly<{
   focusInitial: (control?: HTMLElement) => void;
 }>;
 
-function createEmbeddedCapsuleActions(scene: Scene): CapsuleActionSurface {
+function createEmbeddedCapsuleActions(
+  scene: Scene,
+  firstChestVisit: boolean
+): CapsuleActionSurface {
   const overlay = new CanvasActionOverlay(scene, 'shop-chest');
   const descriptionId = 'shop-chest-description';
   overlay.addDescription(
     descriptionId,
-    `Spend battle-earned Ink to open one or ten reward chests containing Gear and styles. Tap the featured Loot Gear to preview its battle effect. Ten is the largest batch. The server owns every price, reward, and pity step. Reddit Gold Styles is disabled, cosmetic only, and coming soon. ${CAPSULE_ODDS_ACCESSIBLE_COPY}`
+    firstChestVisit
+      ? `Open your first earned-Ink chest. Its reward is equippable Gear and the server owns the price and reward. ${CAPSULE_ODDS_ACCESSIBLE_COPY}`
+      : `Spend battle-earned Ink to open one or ten reward chests containing Gear and styles. Tap the featured Loot Gear to preview its battle effect. Ten is the largest batch. The server owns every price, reward, and pity step. Reddit Gold Styles is disabled, cosmetic only, and coming soon. ${CAPSULE_ODDS_ACCESSIBLE_COPY}`
   );
   overlay.setRootAttributes({
     role: 'region',
@@ -131,6 +169,79 @@ function createEmbeddedCapsuleActions(scene: Scene): CapsuleActionSurface {
   };
 }
 
+function createInkWallet(
+  scene: Scene,
+  x: number,
+  y: number,
+  ink: number
+): InkWallet {
+  const container = scene.add.container(x, y);
+  const shadow = scene.add
+    .rectangle(3, 4, 196, 58, 0x1b1020, 0.42)
+    .setStrokeStyle(0);
+  const paper = scene.add
+    .rectangle(0, 0, 196, 58, 0x3b263c, 0.96)
+    .setStrokeStyle(4, UI.goldHex, 0.96);
+  const token = scene.add
+    .image(-66, 0, INK_TOKEN_TEXTURE)
+    .setDisplaySize(48, 48);
+  const balance = label(scene, 24, -1, `${ink} INK`, 26, UI.cream, true);
+  container.add([shadow, paper, token, balance]);
+  return { container, balance };
+}
+
+function createInkOpenButton(
+  scene: Scene,
+  x: number,
+  y: number,
+  width: number,
+  variant: 'primary' | 'secondary',
+  actionLabel: string,
+  cost: number,
+  onActivate: () => void
+): InkOpenButton {
+  const height = 100;
+  const container = scene.add.container(x, y);
+  const plate = paperButtonPlate(scene, variant, width, height);
+  const actionText = label(scene, 0, -20, actionLabel, 25, UI.ink, true);
+  const token = scene.add
+    .image(0, 22, INK_TOKEN_TEXTURE)
+    .setDisplaySize(31, 31);
+  const costText = label(scene, 0, 21, String(cost), 25, UI.ink, true);
+  const hitTarget = scene.add
+    .rectangle(0, 0, width, height, 0xffffff, 0.001)
+    .setInteractive({ useHandCursor: true });
+  container.add([plate, actionText, token, costText, hitTarget]);
+
+  const setContent = (
+    nextActionLabel: string,
+    nextCost: number | null
+  ): void => {
+    actionText.setText(nextActionLabel);
+    actionText.setY(nextCost === null ? 0 : -20);
+    token.setVisible(nextCost !== null);
+    costText.setVisible(nextCost !== null);
+    if (nextCost === null) return;
+    costText.setText(String(nextCost));
+    const gap = 7;
+    const groupWidth = token.displayWidth + gap + costText.width;
+    token.setX(-groupWidth / 2 + token.displayWidth / 2);
+    costText.setX(groupWidth / 2 - costText.width / 2);
+  };
+  setContent(actionLabel, cost);
+  bindPressInteractionEvents(
+    hitTarget,
+    {
+      press: () => container.setScale(0.94, 0.92),
+      release: () => container.setScale(1),
+      activate: onActivate,
+      pressOnHover: false,
+    },
+    { gameTarget: scene.input, shutdownTarget: scene.events }
+  );
+  return { container, setContent };
+}
+
 export function openCapsuleMachine(
   scene: Scene,
   opts: CapsuleMachineOpts
@@ -139,6 +250,7 @@ export function openCapsuleMachine(
   let ink = opts.ink;
   let nextCost = opts.nextCost;
   let progress = opts.progress;
+  const firstChestVisit = progress.pullCount === 0;
   let pulling = false;
   let prizeOpen = false;
   let pendingOperationId: string | null = null;
@@ -154,7 +266,7 @@ export function openCapsuleMachine(
     .setDepth(opts.embedded ? 1000 : DEPTH)
     .setScrollFactor(0);
   const modalActions: CapsuleActionSurface = opts.embedded
-    ? createEmbeddedCapsuleActions(scene)
+    ? createEmbeddedCapsuleActions(scene, firstChestVisit)
     : new CanvasModalOverlay(
         scene,
         'Mystery Ink chest',
@@ -189,28 +301,27 @@ export function openCapsuleMachine(
     .setDepth(DEPTH + 1);
   layer.add(title);
 
-  // Ink balance chip.
-  const inkChip = label(
-    scene,
-    width / 2,
-    137,
-    `${ink} INK`,
-    TYPE.title,
-    UI.cream,
-    true
-  )
-    .setScrollFactor(0)
-    .setDepth(DEPTH + 2);
-  layer.add(inkChip);
+  const inkWallet = createInkWallet(scene, width / 2, 140, ink);
+  inkWallet.container.setScrollFactor(0).setDepth(DEPTH + 2);
+  layer.add(inkWallet.container);
 
-  const featuredGearControl = drawBannerDeck(
-    scene,
-    layer,
-    modalActions,
-    width,
-    242,
-    openFeaturedGearDetail
-  );
+  const featuredGearControl = firstChestVisit
+    ? null
+    : drawBannerDeck(
+        scene,
+        layer,
+        modalActions,
+        width,
+        242,
+        openFeaturedGearDetail
+      );
+  if (firstChestVisit) {
+    layer.add(
+      label(scene, width / 2, 250, 'YOUR FIRST GEAR', 30, UI.goldText, true)
+        .setScrollFactor(0)
+        .setDepth(DEPTH + 2)
+    );
+  }
 
   // Permanent collection progress lives above the chest so it remains
   // readable while prize cards animate over the lower half of the portrait UI.
@@ -251,6 +362,7 @@ export function openCapsuleMachine(
     collectionFill,
     pityText,
   ]);
+  progressCard.setVisible(!firstChestVisit);
   layer.add(progressCard);
 
   function refreshProgress(animate: boolean): void {
@@ -294,10 +406,9 @@ export function openCapsuleMachine(
   refreshProgress(false);
 
   // --- The hand-drawn chest -------------------------------------------------
-  const chestY = Math.min(
-    height - NAV_SAFE - 360,
-    Math.max(720, height * 0.52)
-  );
+  const chestY = firstChestVisit
+    ? Math.min(height - NAV_SAFE - 390, Math.max(580, height * 0.4))
+    : Math.min(height - NAV_SAFE - 360, Math.max(720, height * 0.52));
   const chest = createChestArt(scene, width / 2, chestY);
   chest.container.setDepth(DEPTH + 1).setScrollFactor(0);
   layer.add(chest.container);
@@ -314,7 +425,10 @@ export function openCapsuleMachine(
   );
 
   // --- Open buttons + copy --------------------------------------------------
-  const actionY = Math.min(height - NAV_SAFE - 84, chestY + 345);
+  const actionY = Math.min(
+    height - NAV_SAFE - 84,
+    chestY + (firstChestVisit ? 310 : 345)
+  );
   const helper = label(
     scene,
     width / 2,
@@ -331,41 +445,44 @@ export function openCapsuleMachine(
   layer.add(helper);
 
   const actionGap = 18;
-  const actionWidth = (width - 178 - actionGap) / 2;
-  const oneButtonX = 80 + actionWidth / 2;
+  const actionWidth = firstChestVisit
+    ? width - 160
+    : (width - 178 - actionGap) / 2;
+  const oneButtonX = firstChestVisit ? width / 2 : 80 + actionWidth / 2;
   const tenButtonX = width - 80 - actionWidth / 2;
   let primaryActionEnabled = ink >= nextCost;
   let secondaryActionEnabled =
     ink >= capsuleOpenCost(CAPSULE_MAX_BATCH_SIZE, nextCost);
-  const openOneButton = iconButton(
+  const openOneButton = createInkOpenButton(
     scene,
     oneButtonX,
     actionY,
-    'spark',
-    `OPEN 1 · ${nextCost}`,
+    actionWidth,
+    'primary',
+    'OPEN ×1',
+    nextCost,
     () => {
       if (primaryActionEnabled) void openChests(1);
-    },
-    actionWidth,
-    UI.coral
-  )
-    .setScrollFactor(0)
-    .setDepth(DEPTH + 2);
-  const openTenButton = iconButton(
+    }
+  );
+  openOneButton.container.setScrollFactor(0).setDepth(DEPTH + 2);
+  const openTenButton = createInkOpenButton(
     scene,
     tenButtonX,
     actionY,
-    'spark',
-    `OPEN 10 · ${capsuleOpenCost(CAPSULE_MAX_BATCH_SIZE, nextCost)}`,
+    actionWidth,
+    'secondary',
+    'OPEN ×10',
+    capsuleOpenCost(CAPSULE_MAX_BATCH_SIZE, nextCost),
     () => {
       if (secondaryActionEnabled) void openChests(CAPSULE_MAX_BATCH_SIZE);
-    },
-    actionWidth,
-    UI.gold
-  )
+    }
+  );
+  openTenButton.container
     .setScrollFactor(0)
+    .setVisible(!firstChestVisit)
     .setDepth(DEPTH + 2);
-  layer.add([openOneButton, openTenButton]);
+  layer.add([openOneButton.container, openTenButton.container]);
 
   const openOneControl = modalActions.add({
     label: `Open one Mystery Ink chest for ${nextCost} Ink`,
@@ -382,7 +499,7 @@ export function openCapsuleMachine(
   const openTenControl = modalActions.add({
     label: `Open ten Mystery Ink chests for ${capsuleOpenCost(CAPSULE_MAX_BATCH_SIZE, nextCost)} Ink`,
     rect: {
-      x: 80 + actionWidth + actionGap,
+      x: tenButtonX - actionWidth / 2,
       y: actionY - 50,
       width: actionWidth,
       height: 100,
@@ -391,6 +508,8 @@ export function openCapsuleMachine(
     pointerPassthrough: true,
     onActivate: () => void openChests(CAPSULE_MAX_BATCH_SIZE),
   });
+  openTenControl.hidden = firstChestVisit;
+  openTenControl.disabled = firstChestVisit || openTenControl.disabled;
   const closeControl = opts.embedded
     ? null
     : modalActions.add({
@@ -404,12 +523,14 @@ export function openCapsuleMachine(
         onActivate: () => close(),
       });
   const statusAnnouncement = modalActions.addStatus();
+  const hasSeparateViewCollectionAction =
+    Boolean(opts.onViewCollection) && !firstChestVisit;
   const prizeLayout = planCapsulePrizeLayout(
     width,
     height,
-    Boolean(opts.onViewCollection)
+    hasSeparateViewCollectionAction
   );
-  const viewCollectionControl = opts.onViewCollection
+  const viewCollectionControl = hasSeparateViewCollectionAction
     ? modalActions.add({
         label: 'View Bag',
         rect: {
@@ -432,9 +553,12 @@ export function openCapsuleMachine(
     onActivate: () => dismissPrizeAction?.(),
   });
 
-  const setPrizeControlsVisible = (visible: boolean): void => {
+  const setPrizeControlsVisible = (
+    visible: boolean,
+    actionsReady = visible
+  ): void => {
     openOneControl.hidden = visible;
-    openTenControl.hidden = visible;
+    openTenControl.hidden = visible || firstChestVisit;
     if (featuredGearControl) {
       featuredGearControl.hidden = visible;
       featuredGearControl.disabled = visible;
@@ -448,50 +572,42 @@ export function openCapsuleMachine(
       if (closeControl) closeControl.disabled = false;
     }
     if (viewCollectionControl) {
-      viewCollectionControl.hidden = !visible;
-      viewCollectionControl.disabled = !visible;
+      viewCollectionControl.hidden = !visible || !actionsReady;
+      viewCollectionControl.disabled = !visible || !actionsReady;
     }
-    acknowledgementControl.hidden = !visible;
-    acknowledgementControl.disabled = !visible;
+    acknowledgementControl.hidden = !visible || !actionsReady;
+    acknowledgementControl.disabled = !visible || !actionsReady;
   };
   setPrizeControlsVisible(false);
 
-  const setActionButtonLabel = (
-    actionButton: Phaser.GameObjects.Container,
-    text: string
-  ): void => {
-    const textLabel = actionButton.list.find(
-      (child): child is Phaser.GameObjects.Text =>
-        child instanceof Phaser.GameObjects.Text
-    );
-    const actionIcon = actionButton.list[1];
-    if (!textLabel || !actionIcon) return;
-    textLabel.setText(text);
-    const iconSize = 38;
-    const contentWidth = iconSize + 12 + textLabel.width;
-    const iconX = -contentWidth / 2 + iconSize / 2;
-    (actionIcon as Phaser.GameObjects.Container).setX(iconX);
-    textLabel.setX(iconX + iconSize / 2 + 12 + textLabel.width / 2);
-  };
-
   function refreshAffordance(): void {
-    inkChip.setText(`${ink} INK`);
+    inkWallet.balance.setText(`${ink} INK`);
     const affordance = planCapsuleOpenAffordance(
       ink,
       nextCost,
       pendingBatchTarget,
       completedBatchPulls.length
     );
-    setActionButtonLabel(openOneButton, affordance.primaryLabel);
-    setActionButtonLabel(openTenButton, affordance.secondaryLabel);
+    openOneButton.setContent(
+      affordance.retrying ? `RETRY ×${affordance.remainingCount}` : 'OPEN ×1',
+      affordance.requiredInk
+    );
+    openTenButton.setContent(
+      affordance.retrying
+        ? `SAVED ${completedBatchPulls.length}/${pendingBatchTarget}`
+        : 'OPEN ×10',
+      affordance.retrying
+        ? null
+        : capsuleOpenCost(CAPSULE_MAX_BATCH_SIZE, nextCost)
+    );
     primaryActionEnabled = affordance.primaryEnabled;
     secondaryActionEnabled = affordance.secondaryEnabled;
-    openOneButton.setAlpha(affordance.primaryEnabled ? 1 : 0.55);
-    openTenButton.setAlpha(affordance.secondaryEnabled ? 1 : 0.55);
+    openOneButton.container.setAlpha(affordance.primaryEnabled ? 1 : 0.55);
+    openTenButton.container.setAlpha(affordance.secondaryEnabled ? 1 : 0.55);
     openOneControl.disabled =
       pulling || prizeOpen || !affordance.primaryEnabled;
     openTenControl.disabled =
-      pulling || prizeOpen || !affordance.secondaryEnabled;
+      firstChestVisit || pulling || prizeOpen || !affordance.secondaryEnabled;
     if (featuredGearControl) {
       featuredGearControl.disabled = pulling || prizeOpen;
     }
@@ -505,7 +621,9 @@ export function openCapsuleMachine(
     );
     if (!affordance.primaryEnabled && !pulling) {
       helper.setText(
-        `WIN A BATTLE · NEED ${Math.max(0, affordance.requiredInk - ink)} MORE INK`
+        firstChestVisit
+          ? `NEED ${Math.max(0, affordance.requiredInk - ink)} MORE INK`
+          : `EARN ${Math.max(0, affordance.requiredInk - ink)} MORE INK`
       );
       helper.setColor(UI.coralText);
     } else if (affordance.retrying && !pulling) {
@@ -514,7 +632,7 @@ export function openCapsuleMachine(
       );
       helper.setColor(UI.cream);
     } else if (!pulling) {
-      helper.setText(`${nextCost} INK EACH · TEN IS THE MAX BATCH`);
+      helper.setText(firstChestVisit ? '' : '10× MAX · EARN INK BY PLAYING');
       helper.setColor(UI.cream);
     }
   }
@@ -553,11 +671,11 @@ export function openCapsuleMachine(
     openOneControl.disabled = true;
     openTenControl.disabled = true;
     if (featuredGearControl) featuredGearControl.disabled = true;
-    helper.setText(targetCount === 1 ? 'SHAKE THE CHEST…' : 'OPENING TEN…');
+    helper.setText(targetCount === 1 ? 'SHAKE THE CHEST…' : 'CHARGING ×10…');
     helper.setColor(UI.cream);
     statusAnnouncement.textContent = `Opening ${targetCount} Mystery Ink ${targetCount === 1 ? 'chest' : 'chests'}.`;
 
-    await shakeChest(scene, chest.container);
+    await shakeChest(scene, chest.container, targetCount);
     if (destroyed || !scene.sys.isActive()) return;
 
     while (completedBatchPulls.length < targetCount) {
@@ -582,6 +700,14 @@ export function openCapsuleMachine(
       ink = result.ink;
       nextCost = result.nextCost;
       progress = result.progress;
+      inkWallet.balance.setText(`${ink} INK`);
+      animateInkSpend(
+        scene,
+        layer,
+        inkWallet.container,
+        chest.container,
+        completedBatchPulls.length
+      );
       completedBatchPulls.push(result.pull);
       pendingOperationId = null;
       helper.setText(`${completedBatchPulls.length}/${targetCount} OPENED`);
@@ -609,6 +735,10 @@ export function openCapsuleMachine(
         close();
         return;
       }
+      if (firstChestVisit) {
+        close('collection');
+        return;
+      }
       setPrizeControlsVisible(false);
       refreshAffordance();
       modalActions.focusInitial(
@@ -618,11 +748,16 @@ export function openCapsuleMachine(
       );
     };
     const prizeActions: PrizeRevealOptions = opts.onViewCollection
-      ? {
-          acknowledgementLabel: 'GOT IT',
-          onDismiss: onPrizeDismissed,
-          onViewCollection: () => close('collection'),
-        }
+      ? firstChestVisit
+        ? {
+            acknowledgementLabel: 'VIEW BAG',
+            onDismiss: onPrizeDismissed,
+          }
+        : {
+            acknowledgementLabel: 'GOT IT',
+            onDismiss: onPrizeDismissed,
+            onViewCollection: () => close('collection'),
+          }
       : {
           acknowledgementLabel: 'KEEP DRAWING',
           onDismiss: onPrizeDismissed,
@@ -641,15 +776,38 @@ export function openCapsuleMachine(
         `${summary.epic} epic, and ${summary.newItems} new styles. ` +
         `Your Bag now has ${progress.discoveredCount} found styles.`;
     }
-    setPrizeControlsVisible(true);
     acknowledgementControl.setAttribute(
       'aria-label',
       prizeActions.acknowledgementLabel
     );
-    dismissPrizeAction = singlePull
-      ? revealPrize(scene, layer, singlePull, prizeActions)
-      : revealBatchPrizes(scene, layer, revealedPulls, prizeActions);
-    modalActions.focusInitial(viewCollectionControl ?? acknowledgementControl);
+    if (singlePull) {
+      setPrizeControlsVisible(true);
+      dismissPrizeAction = revealPrize(scene, layer, singlePull, prizeActions);
+      modalActions.focusInitial(
+        viewCollectionControl ?? acknowledgementControl
+      );
+    } else {
+      setPrizeControlsVisible(true, false);
+      dismissPrizeAction = revealBatchPrizes(scene, layer, revealedPulls, {
+        ...prizeActions,
+        onBatchItemRevealed: (pull, index, total) => {
+          statusAnnouncement.textContent =
+            capsuleRevealAnnouncement(pull, index, total) +
+            ` ${prizeOwnershipAnnouncement(pull)}`;
+        },
+        onBatchRevealComplete: () => {
+          const summary = summarizeCapsuleBatch(revealedPulls);
+          statusAnnouncement.textContent =
+            `All ten rewards revealed. ${summary.common} common, ` +
+            `${summary.rare} rare, ${summary.epic} epic, and ` +
+            `${summary.newItems} new styles.`;
+          setPrizeControlsVisible(true, true);
+          modalActions.focusInitial(
+            viewCollectionControl ?? acknowledgementControl
+          );
+        },
+      });
+    }
   }
 
   scrim?.on('pointerup', () => {
@@ -739,10 +897,10 @@ function drawBannerDeck(
   );
   const activeSubhead = label(
     scene,
-    -activeWidth / 2 + 166,
+    -activeWidth / 2 + 180,
     5,
-    'EARNED INK · TAP FEATURED GEAR',
-    16,
+    'TAP GLOWING GEAR FOR EFFECT',
+    18,
     UI.coralText,
     true
   );
@@ -759,59 +917,33 @@ function drawBannerDeck(
   const featuredEntry = COSMETIC_BY_ID.get(FEATURED_GEAR_ID);
   let featuredControl: HTMLButtonElement | null = null;
   if (featuredEntry?.kind === 'accessory') {
-    const featuredX = activeWidth / 2 - 83;
-    const featuredY = -10;
+    const featuredX = activeWidth / 2 - 78;
+    const featuredY = -15;
     const featured = scene.add.container(featuredX, featuredY);
     const aura = scene.add
-      .circle(0, 0, 49, UI.gold, 0.13)
+      .circle(0, 0, 54, UI.gold, 0.15)
       .setStrokeStyle(3, UI.goldHex, 0.44);
     const backing = scene.add
-      .circle(0, 0, 39, UI.creamHex, 0.97)
+      .circle(0, 0, 43, UI.creamHex, 0.97)
       .setStrokeStyle(4, UI.goldHex, 0.98);
     const innerRing = scene.add
-      .circle(0, 0, 31, UI.gold, 0.08)
+      .circle(0, 0, 35, UI.gold, 0.08)
       .setStrokeStyle(2, UI.coral, 0.7);
     const upperSparkle = scene.add.star(-38, -35, 4, 4, 15, UI.goldHex, 1);
     const lowerSparkle = scene.add.star(40, 29, 4, 3, 11, UI.creamHex, 0.96);
-    const featuredBadge = label(
-      scene,
-      0,
-      -48,
-      'FEATURED',
-      13,
-      UI.goldText,
-      true
-    );
-    const effectHint = label(
-      scene,
-      0,
-      48,
-      'SEE EFFECT',
-      13,
-      UI.coralText,
-      true
-    );
     const hitTarget = scene.add
-      .circle(0, 0, 50, 0xffffff, 0.001)
+      .circle(0, 0, 55, 0xffffff, 0.001)
       .setInteractive();
-    featured.add([
-      aura,
-      backing,
-      innerRing,
-      upperSparkle,
-      lowerSparkle,
-      featuredBadge,
-      effectHint,
-    ]);
+    featured.add([aura, backing, innerRing, upperSparkle, lowerSparkle]);
     renderCosmeticPreview({
       scene,
       parent: featured,
       entry: featuredEntry,
       x: 0,
       y: 0,
-      size: 70,
-      width: 76,
-      height: 76,
+      size: 80,
+      width: 86,
+      height: 86,
     });
     featured.add(hitTarget);
     active.add(featured);
@@ -819,10 +951,10 @@ function drawBannerDeck(
     featuredControl = actions.add({
       label: `Inspect featured Gear: ${featuredEntry.name}. ${featuredEntry.rarity} ${featuredEntry.category}.`,
       rect: {
-        x: width / 2 + featuredX - 50,
-        y: y + featuredY - 50,
-        width: 100,
-        height: 100,
+        x: width / 2 + featuredX - 55,
+        y: y + featuredY - 55,
+        width: 110,
+        height: 110,
       },
       pointerPassthrough: true,
       onActivate: () => {
@@ -885,105 +1017,15 @@ function drawBannerDeck(
 
 function createChestArt(scene: Scene, x: number, y: number): ChestArt {
   const container = scene.add.container(x, y);
-  const glow = scene.add.circle(0, -12, 178, UI.gold, 0.12);
-  const shadow = scene.add.ellipse(8, 128, 340, 62, 0x160d16, 0.38);
-  const stickerEdge = scene.add.graphics();
-  stickerEdge.fillStyle(UI.creamHex, 0.96);
-  stickerEdge.fillRoundedRect(-174, -106, 348, 242, 30);
-
-  const body = scene.add.graphics();
-  const bodyShape = [
-    new Phaser.Math.Vector2(-160, -22),
-    new Phaser.Math.Vector2(160, -22),
-    new Phaser.Math.Vector2(139, 120),
-    new Phaser.Math.Vector2(-139, 120),
-  ];
-  body.fillStyle(0x7441b8, 1);
-  body.fillPoints(bodyShape, true);
-  body.lineStyle(7, UI.inkHex, 1);
-  body.strokePoints(bodyShape, true);
-  body.fillStyle(0x8f58d2, 1);
-  body.fillRoundedRect(-139, 18, 278, 86, 12);
-  body.lineStyle(3, 0xc6a9ee, 0.78);
-  body.lineBetween(-126, 44, 126, 44);
-  body.lineBetween(-120, 76, 120, 76);
-  body.fillStyle(0x5b2f98, 0.7);
-  body.fillTriangle(139, 18, 160, -22, 139, 104);
-
-  const cornerPlates = scene.add.graphics();
-  cornerPlates.fillStyle(UI.gold, 1);
-  cornerPlates.lineStyle(4, UI.inkHex, 1);
-  [
-    [-139, 86],
-    [101, 86],
-  ].forEach(([plateX, plateY]) => {
-    cornerPlates.fillRoundedRect(plateX ?? 0, plateY ?? 0, 38, 34, 6);
-    cornerPlates.strokeRoundedRect(plateX ?? 0, plateY ?? 0, 38, 34, 6);
-  });
-
-  const lid = scene.add.container(0, -62);
-  const lidGraphics = scene.add.graphics();
-  const lidShape = [
-    new Phaser.Math.Vector2(-163, 26),
-    new Phaser.Math.Vector2(-138, -58),
-    new Phaser.Math.Vector2(138, -58),
-    new Phaser.Math.Vector2(163, 26),
-  ];
-  lidGraphics.fillStyle(0x9b68d8, 1);
-  lidGraphics.fillPoints(lidShape, true);
-  lidGraphics.lineStyle(7, UI.inkHex, 1);
-  lidGraphics.strokePoints(lidShape, true);
-  lidGraphics.lineStyle(3, 0xc6a9ee, 0.72);
-  lidGraphics.lineBetween(-116, -36, 116, -36);
-  lidGraphics.lineBetween(-136, -10, 136, -10);
-  lidGraphics.fillStyle(UI.gold, 1);
-  lidGraphics.fillRoundedRect(-168, 12, 336, 36, 12);
-  lidGraphics.lineStyle(6, UI.inkHex, 1);
-  lidGraphics.strokeRoundedRect(-168, 12, 336, 36, 12);
-  const lidCorners = scene.add.graphics();
-  lidCorners.fillStyle(UI.gold, 1);
-  lidCorners.lineStyle(4, UI.inkHex, 1);
-  lidCorners.fillRoundedRect(-151, -42, 30, 56, 8);
-  lidCorners.strokeRoundedRect(-151, -42, 30, 56, 8);
-  lidCorners.fillRoundedRect(121, -42, 30, 56, 8);
-  lidCorners.strokeRoundedRect(121, -42, 30, 56, 8);
-  lid.add([lidGraphics, lidCorners]);
-
-  const straps = scene.add.graphics();
-  straps.fillStyle(UI.gold, 1);
-  straps.fillRoundedRect(-108, -20, 28, 134, 8);
-  straps.fillRoundedRect(80, -20, 28, 134, 8);
-  straps.lineStyle(4, UI.inkHex, 1);
-  straps.strokeRoundedRect(-108, -20, 28, 134, 8);
-  straps.strokeRoundedRect(80, -20, 28, 134, 8);
-  const lock = scene.add.graphics();
-  lock.fillStyle(UI.gold, 1);
-  lock.fillRoundedRect(-40, 7, 80, 72, 16);
-  lock.lineStyle(5, UI.inkHex, 1);
-  lock.strokeRoundedRect(-40, 7, 80, 72, 16);
-  lock.fillStyle(UI.inkHex, 1);
-  lock.fillCircle(0, 35, 9);
-  lock.fillRoundedRect(-5, 35, 10, 20, 3);
-
-  const sparkles = scene.add.graphics();
-  sparkles.fillStyle(UI.gold, 1);
-  sparkles.fillCircle(-175, -38, 6);
-  sparkles.fillCircle(176, 24, 5);
-  sparkles.fillStyle(0x8a5cd8, 1);
-  sparkles.fillCircle(-164, 43, 4);
-  sparkles.fillCircle(164, -56, 4);
-  container.add([
-    glow,
-    shadow,
-    stickerEdge,
-    body,
-    cornerPlates,
-    straps,
-    lid,
-    lock,
-    sparkles,
-  ]);
-  return { container, glow, lid };
+  const glow = scene.add.circle(0, -8, 192, UI.gold, 0.12);
+  const shadow = scene.add.ellipse(8, 143, 356, 66, 0x160d16, 0.34);
+  const image = scene.add
+    .image(0, 0, SHOP_CHEST_TEXTURES.closed)
+    .setDisplaySize(CHEST_DISPLAY_WIDTH, CHEST_DISPLAY_HEIGHT);
+  const closedScaleX = image.scaleX;
+  const closedScaleY = image.scaleY;
+  container.add([glow, shadow, image]);
+  return { container, glow, image, closedScaleX, closedScaleY };
 }
 
 function highestRarity(pulls: readonly CapsulePull[]): CapsuleRarity {
@@ -1009,23 +1051,55 @@ function nudgeChest(
   });
 }
 
+function animateInkSpend(
+  scene: Scene,
+  layer: Phaser.GameObjects.Container,
+  wallet: Phaser.GameObjects.Container,
+  chest: Phaser.GameObjects.Container,
+  sequenceIndex: number
+): void {
+  if (prefersReducedMotion()) return;
+  const token = scene.add
+    .image(wallet.x - 66, wallet.y, INK_TOKEN_TEXTURE)
+    .setDisplaySize(34, 34)
+    .setAlpha(0.96);
+  layer.add(token);
+  scene.tweens.add({
+    targets: token,
+    x: chest.x + ((sequenceIndex % 3) - 1) * 42,
+    y: chest.y - 28,
+    angle: 180 + sequenceIndex * 24,
+    scaleX: 0.42,
+    scaleY: 0.42,
+    alpha: 0,
+    duration: 430,
+    delay: sequenceIndex * 44,
+    ease: 'Cubic.easeIn',
+    onComplete: () => token.destroy(),
+  });
+}
+
 function shakeChest(
   scene: Scene,
-  chest: Phaser.GameObjects.Container
+  chest: Phaser.GameObjects.Container,
+  openCount: ChestOpenCount
 ): Promise<void> {
   if (prefersReducedMotion()) return Promise.resolve();
   const startY = chest.y;
+  const isTenOpen = openCount === CAPSULE_MAX_BATCH_SIZE;
   return new Promise((resolve) => {
     scene.tweens.add({
       targets: chest,
-      angle: 4,
-      y: chest.y - 6,
-      duration: 62,
+      angle: isTenOpen ? 6 : 4,
+      y: chest.y - (isTenOpen ? 10 : 6),
+      scaleX: isTenOpen ? 1.035 : 1.02,
+      scaleY: isTenOpen ? 0.965 : 0.98,
+      duration: isTenOpen ? 54 : 62,
       yoyo: true,
-      repeat: 4,
+      repeat: isTenOpen ? 7 : 4,
       ease: 'Sine.easeInOut',
       onComplete: () => {
-        chest.setAngle(0).setY(startY);
+        chest.setAngle(0).setY(startY).setScale(1);
         resolve();
       },
     });
@@ -1038,13 +1112,20 @@ function openChest(
   rarity: CapsuleRarity
 ): Promise<void> {
   const rarityColor = RARITY_STYLE[rarity].color;
+  const openScaleX = chest.closedScaleX * OPEN_CHEST_HORIZONTAL_SCALE;
+  const openScaleY = chest.closedScaleY;
   chest.glow.setFillStyle(rarityColor, 0.18);
-  chest.lid.setPosition(0, -62).setAngle(0);
+  scene.tweens.killTweensOf(chest.image);
+  chest.image
+    .setTexture(SHOP_CHEST_TEXTURES.open)
+    .setPosition(0, OPEN_CHEST_Y_OFFSET)
+    .setAlpha(1)
+    .setScale(openScaleX, openScaleY);
   if (prefersReducedMotion()) {
-    chest.lid.setPosition(-8, -126).setAngle(-9);
     chest.glow.setAlpha(0.68);
     return Promise.resolve();
   }
+  chest.image.setAlpha(0.72).setScale(openScaleX * 0.94, openScaleY * 0.94);
   return new Promise((resolve) => {
     scene.tweens.add({
       targets: chest.glow,
@@ -1055,10 +1136,10 @@ function openChest(
       ease: 'Sine.easeOut',
     });
     scene.tweens.add({
-      targets: chest.lid,
-      y: -126,
-      x: -8,
-      angle: -9,
+      targets: chest.image,
+      alpha: 1,
+      scaleX: openScaleX,
+      scaleY: openScaleY,
       duration: 330,
       ease: 'Back.easeOut',
       onComplete: () => resolve(),
@@ -1067,8 +1148,65 @@ function openChest(
 }
 
 function resetChest(chest: ChestArt): void {
-  chest.lid.setPosition(0, -62).setAngle(0);
+  chest.image.scene?.tweens.killTweensOf(chest.image);
+  chest.image
+    .setTexture(SHOP_CHEST_TEXTURES.closed)
+    .setPosition(0, 0)
+    .setAlpha(1)
+    .setScale(chest.closedScaleX, chest.closedScaleY);
   chest.glow.setScale(1).setAlpha(1).setFillStyle(UI.gold, 0.1);
+}
+
+function addRewardHalo(
+  scene: Scene,
+  parent: Phaser.GameObjects.Container,
+  y: number,
+  color: number
+): void {
+  const halo = scene.add.container(0, y);
+  const outerRing = scene.add
+    .circle(0, 0, 92, color, 0.12)
+    .setStrokeStyle(4, color, 0.72);
+  const innerRing = scene.add
+    .circle(0, 0, 68, UI.creamHex, 0.05)
+    .setStrokeStyle(2, UI.goldHex, 0.76);
+  halo.add([outerRing, innerRing]);
+  for (let index = 0; index < 8; index += 1) {
+    const angle = (Math.PI * 2 * index) / 8;
+    halo.add(
+      scene.add.star(
+        Math.cos(angle) * 82,
+        Math.sin(angle) * 82,
+        4,
+        3,
+        9,
+        index % 2 === 0 ? UI.goldHex : color,
+        0.9
+      )
+    );
+  }
+  parent.add(halo);
+  if (prefersReducedMotion()) return;
+  halo.setScale(0.72).setAlpha(0);
+  scene.tweens.add({
+    targets: halo,
+    scaleX: 1,
+    scaleY: 1,
+    alpha: 1,
+    angle: 22,
+    duration: 520,
+    ease: 'Back.easeOut',
+  });
+  scene.tweens.add({
+    targets: [outerRing, innerRing],
+    scaleX: 1.08,
+    scaleY: 1.08,
+    duration: 720,
+    delay: 520,
+    yoyo: true,
+    repeat: 1,
+    ease: 'Sine.easeInOut',
+  });
 }
 
 // The prize reveal + rarity ceremony. It owns a full-screen interactive blocker
@@ -1141,6 +1279,7 @@ function revealPrize(
       : pull.kind === 'accessory'
         ? 'GEAR'
         : pull.kind.toUpperCase();
+  addRewardHalo(scene, card, -128, rarityStyle.color);
   card.add(
     label(
       scene,
@@ -1300,12 +1439,9 @@ function revealBatchPrizes(
   options: PrizeRevealOptions
 ): () => void {
   const { width, height } = scene.scale;
+  const reduceMotion = prefersReducedMotion();
   const topRarity = highestRarity(pulls);
   const rarityStyle = RARITY_STYLE[topRarity];
-  if (topRarity === 'epic') rainbowMoment(scene, layer);
-  else if (topRarity === 'rare')
-    goldBurst(scene, layer, width / 2, height * 0.46);
-  else puff(scene, layer, width / 2, height * 0.46);
 
   const revealLayer = scene.add
     .container(0, 0)
@@ -1353,24 +1489,25 @@ function revealBatchPrizes(
   revealLayer.add(card);
 
   const summary = summarizeCapsuleBatch(pulls);
+  const revealProgress = label(
+    scene,
+    0,
+    -194,
+    `REVEALING 0/${CAPSULE_MAX_BATCH_SIZE}`,
+    17,
+    UI.coralText,
+    true
+  );
   card.add([
-    handLettered(scene, 0, -230, 'TEN CHESTS OPENED', 32, UI.ink, true),
-    label(
-      scene,
-      0,
-      -194,
-      `${summary.epic} EPIC · ${summary.rare} RARE · ${summary.newItems} NEW`,
-      17,
-      UI.coralText,
-      true
-    ),
+    handLettered(scene, 0, -230, '10 REWARDS', 34, UI.ink, true),
+    revealProgress,
   ]);
 
   const columns = 5;
   const tileGap = 8;
   const gridWidth = cardWidth - 42;
   const tileWidth = (gridWidth - tileGap * (columns - 1)) / columns;
-  pulls.slice(0, CAPSULE_MAX_BATCH_SIZE).forEach((pull, index) => {
+  const tiles = pulls.slice(0, CAPSULE_MAX_BATCH_SIZE).map((pull, index) => {
     const column = index % columns;
     const row = Math.floor(index / columns);
     const tileX =
@@ -1378,11 +1515,13 @@ function revealBatchPrizes(
     const tileY = -90 + row * 146;
     const tile = scene.add.container(tileX, tileY);
     const tileRarity = RARITY_STYLE[pull.rarity];
-    tile.add(
-      scene.add
-        .rectangle(0, 0, tileWidth, 132, UI.creamHex, 1)
-        .setStrokeStyle(4, tileRarity.color, 1)
-    );
+    const glow = scene.add
+      .rectangle(0, 0, tileWidth + 8, 140, tileRarity.color, 0.16)
+      .setStrokeStyle(2, tileRarity.color, 0.55);
+    const paperTile = scene.add
+      .rectangle(0, 0, tileWidth, 132, UI.creamHex, 1)
+      .setStrokeStyle(4, tileRarity.color, 1);
+    tile.add([glow, paperTile]);
     const catalogEntry = COSMETIC_BY_ID.get(pull.id);
     if (catalogEntry?.kind === pull.kind) {
       renderCosmeticPreview({
@@ -1408,14 +1547,28 @@ function revealBatchPrizes(
       true
     );
     tile.add([itemName, ownership]);
+    tile.setVisible(false);
     card.add(tile);
+    return tile;
   });
 
   let closingPrize = false;
+  let revealComplete = false;
+  let revealedCount = 0;
+  let epicCelebrated = false;
+  let actionsShown = false;
+  const scheduledEvents: Phaser.Time.TimerEvent[] = [];
+
+  const cancelScheduledEvents = (): void => {
+    scheduledEvents.splice(0).forEach((event) => event.remove(false));
+  };
+  revealLayer.once('destroy', cancelScheduledEvents);
+
   const dismissPrize = (): void => {
-    if (closingPrize || !revealLayer.active) return;
+    if (closingPrize || !revealComplete || !revealLayer.active) return;
     closingPrize = true;
-    if (prefersReducedMotion()) {
+    cancelScheduledEvents();
+    if (reduceMotion) {
       revealLayer.destroy(true);
       options.onDismiss();
       return;
@@ -1434,56 +1587,120 @@ function revealBatchPrizes(
     });
   };
 
-  if (options.onViewCollection) {
-    const openCollection = (): void => {
-      if (closingPrize) return;
-      closingPrize = true;
-      options.onViewCollection?.();
-    };
-    card.add([
-      button(
-        scene,
-        prizeLayout.viewCollection?.centerX ?? 0,
-        prizeLayout.actionCenterY,
-        'VIEW BAG',
-        openCollection,
-        prizeLayout.viewCollection?.width ?? 0,
-        UI.gold
-      ),
-      ghostButton(
-        scene,
-        prizeLayout.acknowledgement.centerX,
-        prizeLayout.actionCenterY,
-        options.acknowledgementLabel,
-        dismissPrize,
-        prizeLayout.acknowledgement.width
-      ),
-    ]);
-  } else {
-    card.add(
-      button(
-        scene,
-        0,
-        prizeLayout.actionCenterY,
-        options.acknowledgementLabel,
-        dismissPrize,
-        prizeLayout.acknowledgement.width,
-        UI.coral
-      )
-    );
-  }
+  const showPrizeActions = (): void => {
+    if (actionsShown || !card.active) return;
+    actionsShown = true;
+    if (options.onViewCollection) {
+      const openCollection = (): void => {
+        if (closingPrize) return;
+        closingPrize = true;
+        cancelScheduledEvents();
+        options.onViewCollection?.();
+      };
+      card.add([
+        button(
+          scene,
+          prizeLayout.viewCollection?.centerX ?? 0,
+          prizeLayout.actionCenterY,
+          'VIEW BAG',
+          openCollection,
+          prizeLayout.viewCollection?.width ?? 0,
+          UI.gold
+        ),
+        ghostButton(
+          scene,
+          prizeLayout.acknowledgement.centerX,
+          prizeLayout.actionCenterY,
+          options.acknowledgementLabel,
+          dismissPrize,
+          prizeLayout.acknowledgement.width
+        ),
+      ]);
+    } else {
+      card.add(
+        button(
+          scene,
+          0,
+          prizeLayout.actionCenterY,
+          options.acknowledgementLabel,
+          dismissPrize,
+          prizeLayout.acknowledgement.width,
+          UI.coral
+        )
+      );
+    }
+  };
 
-  if (prefersReducedMotion()) card.setScale(1).setAlpha(1);
-  else {
-    card.setScale(0.68).setAlpha(0);
+  const revealTile = (index: number): void => {
+    if (closingPrize || !revealLayer.active) return;
+    const pull = pulls[index];
+    const tile = tiles[index];
+    if (!pull || !tile || tile.visible) return;
+    tile.setVisible(true).setAlpha(1);
+    if (reduceMotion) tile.setScale(1).setAngle(0);
+    else {
+      tile
+        .setScale(0.18)
+        .setAlpha(0)
+        .setAngle(index % 2 === 0 ? -7 : 7);
+      scene.tweens.add({
+        targets: tile,
+        scaleX: 1,
+        scaleY: 1,
+        alpha: 1,
+        angle: 0,
+        duration: pull.rarity === 'epic' ? 520 : 360,
+        ease: 'Back.easeOut',
+      });
+      const burstX = width / 2 + tile.x;
+      const burstY = cardCenterY + tile.y;
+      if (pull.rarity === 'epic' && !epicCelebrated) {
+        epicCelebrated = true;
+        rainbowMoment(scene, revealLayer);
+      } else if (pull.rarity === 'rare') {
+        goldBurst(scene, revealLayer, burstX, burstY);
+      }
+    }
+    revealedCount += 1;
+    revealProgress.setText(
+      `REVEALED ${revealedCount}/${CAPSULE_MAX_BATCH_SIZE}`
+    );
+    options.onBatchItemRevealed?.(pull, index, pulls.length);
+  };
+
+  const completeReveal = (): void => {
+    if (revealComplete || !revealLayer.active) return;
+    tiles.forEach((_tile, index) => revealTile(index));
+    revealComplete = true;
+    revealProgress.setText(
+      `${summary.epic} EPIC · ${summary.rare} RARE · ${summary.newItems} NEW`
+    );
+    showPrizeActions();
+    options.onBatchRevealComplete?.();
+  };
+
+  const revealPlan = planCapsuleBatchReveal(pulls, reduceMotion);
+  if (reduceMotion) {
+    completeReveal();
+    card.setScale(1).setAlpha(1);
+  } else {
+    card.setScale(0.82).setAlpha(0);
     scene.tweens.add({
       targets: card,
       scaleX: 1,
       scaleY: 1,
       alpha: 1,
-      duration: 360,
+      duration: 320,
       ease: 'Back.easeOut',
     });
+    revealPlan.steps.forEach((step) => {
+      scheduledEvents.push(
+        scene.time.delayedCall(step.delayMs, () => revealTile(step.index))
+      );
+    });
+    scheduledEvents.push(
+      scene.time.delayedCall(revealPlan.completionDelayMs, completeReveal)
+    );
   }
   return dismissPrize;
 }

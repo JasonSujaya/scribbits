@@ -48,6 +48,7 @@ import type {
 import { SemanticTabController } from '../lib/semantictabs';
 import { bindPressInteractionEvents } from '../lib/pressinteraction';
 import { screenTitle } from '../lib/screentitle';
+import { translate } from '../lib/localization';
 
 const NOTEBOOK_ENTRY_COUNT = 7;
 const PAGE_CENTER_Y = 678;
@@ -157,7 +158,7 @@ export class ScoutNotebook extends Scene {
 
   private buildHeader(): void {
     const { width } = this.scale;
-    screenTitle(this, width / 2, 18, 'SCOUT', {
+    screenTitle(this, width / 2, 18, translate('screen.scout'), {
       maxWidth: 280,
       maxHeight: 72,
     });
@@ -182,7 +183,7 @@ export class ScoutNotebook extends Scene {
     );
     this.headerOverlay = new CanvasActionOverlay(this);
     this.headerOverlay.add({
-      label: 'Open Clout board',
+      label: translate('scout.openCloutBoard'),
       rect: { x: 10, y: 4, width: 100, height: 100 },
       pointerPassthrough: true,
       onActivate: openBoard,
@@ -204,7 +205,15 @@ export class ScoutNotebook extends Scene {
     layer.add([
       card,
       pencil,
-      label(this, 0, 36, 'Loading scout notes…', TYPE.body, UI.inkSoft, true),
+      label(
+        this,
+        0,
+        36,
+        translate('scout.loading'),
+        TYPE.body,
+        UI.inkSoft,
+        true
+      ),
     ]);
     if (!this.reduceMotion) {
       this.tweens.add({

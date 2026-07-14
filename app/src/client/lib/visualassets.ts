@@ -2,16 +2,19 @@ import * as Phaser from 'phaser';
 import type { Scene } from 'phaser';
 import { UI } from './theme';
 import { screenTitle } from './screentitle';
-import {
-  COMMON_GEAR_ART_TEXTURE,
-  RARE_EPIC_GEAR_ART_TEXTURE,
-} from './gearart';
+import { translate } from './localization';
+import { COMMON_GEAR_ART_TEXTURE, RARE_EPIC_GEAR_ART_TEXTURE } from './gearart';
 export const SCRIBBITS_STAGE_TEXTURE = 'scribbits-stage';
 export const PAPER_STAGE_TEXTURE = SCRIBBITS_STAGE_TEXTURE;
 export const BATTLE_STAGE_TEXTURE = SCRIBBITS_STAGE_TEXTURE;
 export const FIGHT_START_TEXTURE = 'ui-fight-start';
 export const BRAND_LOGO_TEXTURE = 'scribbits-logo';
 export const SHOP_STAGE_TEXTURE = 'scribbits-shop-stage';
+export const SHOP_CHEST_TEXTURES = {
+  closed: 'scribbits-shop-chest-closed',
+  open: 'scribbits-shop-chest-open',
+} as const;
+export const INK_TOKEN_TEXTURE = 'scribbits-ink-token';
 
 export const BATTLE_CONTROL_BUTTON_TEXTURES = {
   sound: 'ui-button-battle-sound',
@@ -46,13 +49,25 @@ export function preloadVisualAssets(scene: Scene): void {
     assetUrl('gear-rare-epic-atlas.png'),
     assetUrl('gear-rare-epic-atlas.json')
   );
-  scene.load.image(SHOP_STAGE_TEXTURE, assetUrl('scribbits-shop-stage.png'));
   Object.entries(BATTLE_CONTROL_BUTTON_TEXTURES).forEach(([kind, texture]) => {
     scene.load.image(texture, assetUrl(`ui-button-battle-${kind}.png`));
   });
   Object.entries(UI_BUTTON_TEXTURES).forEach(([kind, texture]) => {
     scene.load.image(texture, assetUrl(`ui-button-${kind}.png`));
   });
+}
+
+export function preloadShopVisualAssets(scene: Scene): void {
+  scene.load.image(SHOP_STAGE_TEXTURE, assetUrl('scribbits-shop-stage.png'));
+  scene.load.image(
+    SHOP_CHEST_TEXTURES.closed,
+    assetUrl('scribbits-shop-chest-closed.png')
+  );
+  scene.load.image(
+    SHOP_CHEST_TEXTURES.open,
+    assetUrl('scribbits-shop-chest-open.png')
+  );
+  scene.load.image(INK_TOKEN_TEXTURE, assetUrl('scribbits-ink-token.png'));
 }
 
 export function paperStage(
@@ -159,7 +174,7 @@ export function arenaStage(
   arenaMarks.lineBetween(width / 2, 256, width / 2, 273);
   arenaMarks.lineBetween(width / 2 - 18, 273, width / 2 + 18, 273);
 
-  const title = screenTitle(scene, width / 2, 24, 'ARENA', {
+  const title = screenTitle(scene, width / 2, 24, translate('screen.arena'), {
     maxWidth: 430,
     maxHeight: 112,
   });

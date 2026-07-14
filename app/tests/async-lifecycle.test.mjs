@@ -52,3 +52,83 @@ test('Arena keeps the shared scene-mutation lifecycle contract', () => {
     lifecycle.planSceneMutationResponse(response)
   );
 });
+
+test('Arena covers the full mutation and refresh response matrix', () => {
+  const mutationCases = [
+    {
+      response: {
+        active: true,
+        requestSceneEpoch: 4,
+        currentSceneEpoch: 4,
+      },
+      expected: 'accept',
+    },
+    {
+      response: {
+        active: false,
+        requestSceneEpoch: 4,
+        currentSceneEpoch: 4,
+      },
+      expected: 'refresh-next',
+    },
+    {
+      response: {
+        active: true,
+        requestSceneEpoch: 4,
+        currentSceneEpoch: 5,
+      },
+      expected: 'refresh-current',
+    },
+  ];
+
+  for (const { response, expected } of mutationCases) {
+    assert.equal(lifecycle.planArenaMutationResponse(response), expected);
+  }
+
+  const refreshCases = [
+    {
+      response: {
+        active: true,
+        requestSceneEpoch: 5,
+        currentSceneEpoch: 5,
+        requestEpoch: 9,
+        currentRequestEpoch: 9,
+      },
+      expected: 'accept',
+    },
+    {
+      response: {
+        active: true,
+        requestSceneEpoch: 5,
+        currentSceneEpoch: 5,
+        requestEpoch: 8,
+        currentRequestEpoch: 9,
+      },
+      expected: 'ignore',
+    },
+    {
+      response: {
+        active: false,
+        requestSceneEpoch: 5,
+        currentSceneEpoch: 5,
+        requestEpoch: 8,
+        currentRequestEpoch: 9,
+      },
+      expected: 'refresh-next',
+    },
+    {
+      response: {
+        active: true,
+        requestSceneEpoch: 5,
+        currentSceneEpoch: 6,
+        requestEpoch: 8,
+        currentRequestEpoch: 9,
+      },
+      expected: 'refresh-current',
+    },
+  ];
+
+  for (const { response, expected } of refreshCases) {
+    assert.equal(lifecycle.planArenaRefreshResponse(response), expected);
+  }
+});

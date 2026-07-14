@@ -14,6 +14,7 @@ import {
   getGalleryTab,
   setArena,
   setGalleryTab,
+  takeGalleryCollectionSection,
   type GalleryTab,
 } from '../lib/registry';
 import type { EquipmentCategory } from '../../shared/equipment';
@@ -53,6 +54,7 @@ import { paperIcon, type PaperIconKey } from '../lib/papericons';
 import { SemanticTabController } from '../lib/semantictabs';
 import { bindPressInteractionEvents } from '../lib/pressinteraction';
 import { screenTitle } from '../lib/screentitle';
+import { translate } from '../lib/localization';
 import { fitText } from '../lib/fittext';
 import { planSceneMutationResponse } from '../lib/arenaasynclifecycle';
 
@@ -159,11 +161,12 @@ export class Gallery extends Scene {
       window.location.search
     ).get('gearSection') as InkKitSection | null;
     this.collectionSection =
-      window.location.search.includes('debug') &&
+      takeGalleryCollectionSection(this) ??
+      (window.location.search.includes('debug') &&
       requestedInkKitSection !== null &&
       DEBUG_INK_KIT_SECTIONS.includes(requestedInkKitSection)
         ? requestedInkKitSection
-        : 'weapon';
+        : 'weapon');
     this.collectionScrollOffset = 0;
     this.loadingOlderLegends = false;
     this.loadingLegends = false;
@@ -429,10 +432,16 @@ export class Gallery extends Scene {
     this.livingPaper = new LivingPaper(this, { edgeCreatures: false });
     const { width } = this.scale;
     const bagActive = this.tab === 'collection';
-    screenTitle(this, width / 2, 22, bagActive ? 'BAG' : 'GALLERY', {
-      maxWidth: 340,
-      maxHeight: 82,
-    });
+    screenTitle(
+      this,
+      width / 2,
+      22,
+      translate(bagActive ? 'screen.bag' : 'screen.gallery'),
+      {
+        maxWidth: 340,
+        maxHeight: 82,
+      }
+    );
     if (!bagActive) {
       this.buildTabs(168);
       this.mountSectionPanel();

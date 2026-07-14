@@ -32,6 +32,10 @@ import {
 } from './storage';
 import type { NightlyFencedStorage } from './nightlyStorageFence';
 import {
+  finalizeDueSeasons,
+  loadSeasonScoringContext,
+} from './season';
+import {
   crownScribbit,
   expireDueScribbits,
   getRumbleEntrantIds,
@@ -522,12 +526,15 @@ const resolveArenaDay = async (
   );
   await setCurrentChampion(storage, champion);
   const runnerUp = resolution.standings[1]?.scribbit ?? null;
+  const seasonScoring = await loadSeasonScoringContext(storage, resolvedDay);
   const cloutPayout = await payCloutForRumble(storage, {
     day: resolvedDay,
     championScribbitId: champion.id,
     runnerUpScribbitId: runnerUp?.id ?? null,
     paidAtMs,
+    seasonScoring,
   });
+  await finalizeDueSeasons(storage, resolvedDay, paidAtMs);
 
   const expired = await expireDueScribbits(storage, nextDay, {
     getCreatorTitleWatchKey: getInventoryKey,

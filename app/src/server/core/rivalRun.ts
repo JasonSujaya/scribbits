@@ -9,6 +9,7 @@ import {
   type RivalRunWinPoints,
   type Scribbit,
 } from '../../shared/arena';
+import type { DamageSource } from '../../shared/combat/types';
 import {
   advanceRivalRunChallenge,
   createLegacyRivalRunChallenge,
@@ -350,6 +351,9 @@ export const advanceRivalRunState = (
     tier: RivalRunTier;
     winPoints: RivalRunWinPoints;
     opponentId: string;
+    playerAbilityActivations: number;
+    playerShapePowerHitBouts: number;
+    playerLateShapePowerActivations: number;
   }>
 ): RivalRunReceipt | null => {
   if (
@@ -385,12 +389,90 @@ export const advanceRivalRunState = (
       wins,
       score,
       status,
+      playerAbilityActivations: input.playerAbilityActivations,
+      playerShapePowerHitBouts: input.playerShapePowerHitBouts,
+      playerLateShapePowerActivations: input.playerLateShapePowerActivations,
     }),
     boutNumber: boutsCompleted,
     outcome,
     tier: input.tier,
     winPoints: input.winPoints,
     pointsAwarded,
+  };
+};
+
+const countPlayerAbilityActivations = (
+  report: BattleReport,
+  challengerId: string
+): number => {
+  if (report.a.id !== challengerId || !report.simulation) return 0;
+  return report.simulation.timeline.reduce(
+    (count, event) =>
+      count + Number(event.kind === 'ability_activated' && event.actor === 'a'),
+    0
+  );
+};
+
+const SHAPE_POWER_DAMAGE_SOURCES: ReadonlySet<DamageSource> = new Set([
+  'inkquake',
+  'nib_halo',
+  'smearstep',
+  'colorburst',
+  'colorburst_echo',
+]);
+
+type RivalRunTranscriptMetrics = Readonly<{
+  playerAbilityActivations: number;
+  playerShapePowerHitBouts: number;
+  playerLateShapePowerActivations: number;
+}>;
+
+const deriveRivalRunTranscriptMetrics = (
+  report: BattleReport,
+  challengerId: string
+): RivalRunTranscriptMetrics => {
+  const playerAbilityActivations = countPlayerAbilityActivations(
+    report,
+    challengerId
+  );
+  const simulation = report.simulation;
+  if (
+    report.a.id !== challengerId ||
+    !simulation ||
+    simulation.eventsTruncated !== false
+  ) {
+    return {
+      playerAbilityActivations,
+      playerShapePowerHitBouts: 0,
+      playerLateShapePowerActivations: 0,
+    };
+  }
+
+  const playerShapePowerHitBouts = Number(
+    simulation.timeline.some(
+      (event) =>
+        event.kind === 'damage' &&
+        event.sourceFighter === 'a' &&
+        SHAPE_POWER_DAMAGE_SOURCES.has(event.source)
+    )
+  );
+  const lateFightStarted = simulation.timeline.find(
+    (event) => event.kind === 'late_fight_started'
+  );
+  const playerLateShapePowerActivations = Number(
+    lateFightStarted !== undefined &&
+      simulation.timeline.some(
+        (event) =>
+          event.kind === 'ability_activated' &&
+          event.actor === 'a' &&
+          event.tick >= lateFightStarted.tick
+      )
+  );
+
+  return {
+    playerAbilityActivations,
+    playerShapePowerHitBouts,
+    playerLateShapePowerActivations,
   };
 };
 
@@ -539,7 +621,10 @@ export const advanceRivalRun = async (
         return null;
       }
 
-      const receipt = advanceRivalRunState(clonePublicState(current), input);
+      const receipt = advanceRivalRunState(clonePublicState(current), {
+        ...input,
+        ...deriveRivalRunTranscriptMetrics(input.report, current.challengerId),
+      });
       if (!receipt) {
         await transaction.unwatch();
         return null;
@@ -552,6 +637,7 @@ export const advanceRivalRun = async (
         score: receipt.score,
         opponentIds: receipt.opponentIds,
         status: receipt.status,
+        challenge: receipt.challenge,
         lastReportId: input.reportId,
         lastOutcome: receipt.outcome,
         lastTier: input.tier,

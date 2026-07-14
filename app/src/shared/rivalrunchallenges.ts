@@ -17,6 +17,9 @@ export type RivalRunChallengeBout = Readonly<{
   wins: number;
   score: number;
   status: RivalRunStatus;
+  playerAbilityActivations: number;
+  playerShapePowerHitBouts: number;
+  playerLateShapePowerActivations: number;
 }>;
 
 const challenge = (
@@ -127,6 +130,39 @@ export const RIVAL_RUN_CHALLENGES: readonly RivalRunChallengeDefinition[] =
     }),
   ]);
 
+// v2 content is intentionally separate from the frozen v1 catalog. Existing
+// challenge snapshots keep their original wording and conditions forever.
+export const RIVAL_RUN_V2_CHALLENGES: readonly RivalRunChallengeDefinition[] =
+  Object.freeze([
+    challenge({
+      id: 'v2-signature-ink',
+      name: 'SIGNATURE INK',
+      premise: 'Let your Shape Power leave its mark across the card.',
+      goal: 'TRIGGER 3 SHAPE POWERS',
+      stamp: 'SIGNATURE',
+      condition: { kind: 'player_ability_activations', target: 3 },
+    }),
+    challenge({
+      id: 'v2-ink-connect',
+      name: 'INK CONNECT',
+      premise: 'Make the Shape Power connect.',
+      goal: 'POWER HIT ×2',
+      stamp: 'CONNECTED',
+      condition: { kind: 'player_shape_power_hit_bouts', target: 2 },
+    }),
+    challenge({
+      id: 'v2-late-mark',
+      name: 'LATE MARK',
+      premise: 'Leave ink after the late bell.',
+      goal: 'POWER AFTER 15S',
+      stamp: 'LATE MARK',
+      condition: { kind: 'player_late_shape_power_activations', target: 1 },
+    }),
+  ]);
+
+const RIVAL_RUN_CHALLENGE_SELECTION_CATALOG: readonly RivalRunChallengeDefinition[] =
+  Object.freeze([...RIVAL_RUN_CHALLENGES, ...RIVAL_RUN_V2_CHALLENGES]);
+
 const LEGACY_FINISH_DEFINITION: RivalRunChallengeDefinition = challenge({
   id: 'v1-finish-the-card',
   name: 'FINISH THE CARD',
@@ -137,10 +173,9 @@ const LEGACY_FINISH_DEFINITION: RivalRunChallengeDefinition = challenge({
 });
 
 const definitionById = new Map(
-  [...RIVAL_RUN_CHALLENGES, LEGACY_FINISH_DEFINITION].map((definition) => [
-    definition.id,
-    definition,
-  ])
+  [...RIVAL_RUN_CHALLENGE_SELECTION_CATALOG, LEGACY_FINISH_DEFINITION].map(
+    (definition) => [definition.id, definition]
+  )
 );
 
 const cloneDefinition = (
@@ -160,13 +195,18 @@ export const createRivalRunChallenge = (
   challengerId: string,
   excludedChallengeId?: string
 ): RivalRunChallenge => {
-  const seed = `rival-run-challenge:v1:${runId}:${dayNumber}:${challengerId}`;
+  // This v2 seed intentionally applies only when creating a new run. Existing
+  // runs and battle reports carry full challenge snapshots, so their v1/v2
+  // definitions and progress remain immutable.
+  const seed = `rival-run-challenge:v2:${runId}:${dayNumber}:${challengerId}`;
   const selectedIndex =
-    hashStringToUint32(seed) % RIVAL_RUN_CHALLENGES.length;
-  const firstChoice = RIVAL_RUN_CHALLENGES[selectedIndex];
+    hashStringToUint32(seed) % RIVAL_RUN_CHALLENGE_SELECTION_CATALOG.length;
+  const firstChoice = RIVAL_RUN_CHALLENGE_SELECTION_CATALOG[selectedIndex];
   const selected =
     firstChoice?.id === excludedChallengeId
-      ? RIVAL_RUN_CHALLENGES[(selectedIndex + 1) % RIVAL_RUN_CHALLENGES.length]
+      ? RIVAL_RUN_CHALLENGE_SELECTION_CATALOG[
+          (selectedIndex + 1) % RIVAL_RUN_CHALLENGE_SELECTION_CATALOG.length
+        ]
       : firstChoice;
   if (!selected) throw new Error('Rival Run challenge catalog is empty.');
   return cloneDefinition(selected);
@@ -206,6 +246,9 @@ export const rivalRunChallengeTarget = (
     case 'minimum_score':
     case 'tier_picks':
     case 'tier_wins':
+    case 'player_ability_activations':
+    case 'player_shape_power_hit_bouts':
+    case 'player_late_shape_power_activations':
       return condition.target;
     case 'tier_set':
     case 'outcome_sequence':
@@ -251,6 +294,29 @@ export const advanceRivalRunChallenge = (
       if (bout.tier === condition.tier && bout.outcome === 'win') {
         progress = Math.min(condition.target, progress + 1);
       }
+      break;
+    case 'player_ability_activations':
+      progress = Math.min(
+        condition.target,
+        progress + Math.max(0, Math.floor(bout.playerAbilityActivations))
+      );
+      break;
+    case 'player_shape_power_hit_bouts':
+      progress = Math.min(
+        condition.target,
+        progress +
+          Math.min(1, Math.max(0, Math.floor(bout.playerShapePowerHitBouts)))
+      );
+      break;
+    case 'player_late_shape_power_activations':
+      progress = Math.min(
+        condition.target,
+        progress +
+          Math.min(
+            1,
+            Math.max(0, Math.floor(bout.playerLateShapePowerActivations))
+          )
+      );
       break;
     case 'tier_set':
       progress |= tierBit(bout.tier);

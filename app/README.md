@@ -15,6 +15,11 @@ bundled locally through Fontsource and loaded before Phaser renders text. Shared
 heart, clock, Ink, sparkle, and element marks live in `lib/papericons.ts`; scene
 copy should keep the default view to one headline, one status, and one action.
 
+Player-facing copy uses the typed catalog and locale runtime documented in
+[`docs/localization.md`](docs/localization.md). New UI copy belongs in the
+English source catalog and renders through `translate`; `?locale=en-XA` enables
+the clipping-focused pseudo-locale.
+
 ## Mobile performance
 
 - `lib/theme.ts` disables ambient-only loops on compact, reduced-motion, or
@@ -47,10 +52,10 @@ copy should keep the default view to one headline, one status, and one action.
    PNG and unfolds it through `LiveSprite.awaken()`—there is no placeholder egg.
    The final card replaces raw stat totals with one causal receipt such as
    `SHARP EDGES → FIRETIP HALO` / `3 ROTATING QUILLS`, shows one Ink receipt,
-   and leads a fresh player directly to `START FIRST SPAR`.
+   and leads directly to `START FIRST FIGHT`.
 2. **Fight:** submission automatically enters tonight's Rumble. A new player's
-   first Scribbit also receives an immediate exhibition so the core promise is
-   visible in the first session. On WebGL, Phaser 4.2 maps the submitted PNG to
+   exact Scribbit immediately fights one simple server-selected founding NPC so
+   the core promise is visible before Arena choices. On WebGL, Phaser 4.2 maps the submitted PNG to
    a 25-vertex **Inkbody** mesh. Its dominant drawing stat selects a visible
    Shape Power: INKQUAKE, NIB HALO, SMEARSTEP, or COLORBURST. The server runs a
    deterministic 20 Hz simulation and stores its winner, bounded timeline, and
@@ -111,10 +116,10 @@ copy should keep the default view to one headline, one status, and one action.
    the existing pre-`FIGHT!` ticker beat, and their first power and result receive a
    fact-safe reaction, and a founding Rumble champion carries its voice into the
    Reddit result comment. None of this content enters the transcript or combat math.
-   Before every player-facing Spar—and again after each bout—a compact paper
-   Rival Run board offers three server-selected founders. Arena, first birth,
-   and Replay all call the same client controller; no scene starts a blind
-   opponent-less fight. The slate is stable for the UTC day and prioritizes
+   Before every Arena Spar—and again after each Rival Run bout—a compact paper
+   board offers three server-selected founders. Arena and Replay share that
+   controller; birth deliberately uses the server's opponent-less quick spar
+   for one simple random first fight. The slate is stable for the UTC day and prioritizes
    close levels and distinct Shape Powers. Each compact card shows drawing,
    element, level, risk, points, a paper info control, and an icon-led SPAR action;
    signature, level comparison, and forecast move behind the info tap. The slate
@@ -122,8 +127,8 @@ copy should keep the default view to one headline, one status, and one action.
    and forecast so a Replay left open across UTC rollover cannot advertise stale
    matchup or Rival-page rules. A
    chosen `opponentId` is accepted only when it still belongs to that exact
-   server-authored slate. The server retains an opponent-less compatibility
-   fallback, but it is not a player-facing client path.
+   server-authored slate. An omitted opponent is reserved for the immediate
+   post-birth fight.
    Every card remains immediately sparable after today's story beat: the card
    says when its next Rival page unlocks while starting a reward-capped
    exhibition now. This keeps combat replayable without bypassing the server's
@@ -136,7 +141,10 @@ copy should keep the default view to one headline, one status, and one action.
    slates so each run changes shape. The committed score and record
    carry through Draft, VS, live HUD, result, and archived replay receipts. A
    completed run explicitly offers `NEW RIVAL RUN`; run score grants no Ink, XP,
-   combat power, or extra Founder Chronicle beat.
+   combat power, or extra Founder Chronicle beat. `SIGNATURE INK` is the first
+   Technique Trial: it asks for three Shape Power activations and advances only
+   from the player fighter's immutable `ability_activated` report events. It
+   reuses the challenge strip and result stamp instead of adding another screen.
    Each player can have exactly one active Founder Rival Thread: first to two,
    maximum three qualifying battles, and no more than one authoritative story
    beat per Arena day. The active founder remains pinned across future drafts; a
@@ -183,6 +191,10 @@ copy should keep the default view to one headline, one status, and one action.
    identity, and replaces the live CTA with a noninteractive completion stamp
    after use. Its paper-native challenger picker exposes every candidate's level,
    element, and signature; a win grants +2 XP, while a loss grants no XP or Ink.
+   Draw also offers an explicit untimed Free Draw path. It reuses the full
+   canvas and supplies, saves through `/api/free-drawing`, and stays outside
+   Scribbit birth, Rumble entry, rewards, battles, and Legacy. Returning to Draw
+   on the same Arena day shows the saved image, name, and one Practice action.
 3. **Collect:** drawing, care, and the first spar win fill the Daily Ink Trail.
    Care uses a validated 72-line deck across four Shape Powers, three actions,
    three life days, and two variants. Every Scribbit receives nine distinct
@@ -194,7 +206,11 @@ copy should keep the default view to one headline, one status, and one action.
    labels and active-page state without covering their canvas artwork.
    Shop opens earned-only Mystery Ink Chests for a flat 5 Ink each, with
    one-open and maximum ten-open actions, permanent discovery, and visible Epic
-   pity by open ten. There is no 100-open or auto-repeat action. Birth
+   pity by open ten. The first completed Rival Run replaces the repeat action
+   with one `FIRST GEAR` trail: Arena asks only for the remaining daily Care,
+   Shop removes batch and collector clutter, and the first pull is guaranteed
+   to be equippable Gear without changing rarity odds. Its reveal opens Bag on
+   the exact equipment category. There is no 100-open or auto-repeat action. Birth
    stickers and status rewards are cosmetic; pens are expressive sidegrades that can
    change the normalized build split without adding stat points. Bag
    centers one selected living Scribbit inside eight persistent equipment
@@ -462,9 +478,12 @@ boundary during browser iteration—it is not the production game server.
   chest ceremony and Bag.
 - `src/client/lib/capsulepresentation.ts`: pure collector-rank, ownership-copy,
   batch-price, batch-summary, and portrait-safe prize-action plans. The Mystery
-  Ink Shop shows honest odds, a clickable chest, one or ten opens, one compact
-  progress card, and a disabled Reddit Gold Styles preview over a generated
+  Ink Shop shows honest odds, matched generated closed/open chest art, a generated
+  Ink token on the wallet and exact `×1`/`×10` costs, a paid-order ten-reward
+  reveal grid, one compact progress card, and a disabled Reddit Gold Styles preview over a generated
   scrapbook stage; its one player-facing entry lives in `src/client/scenes/Shop.ts`.
+  Those four Shop-only textures preload with the Shop scene rather than consuming
+  initial game-load decode and texture memory.
 - `src/client/lib/appmenu.ts`: shared top-right Settings menu for secondary
   Gallery and Field Guide destinations without consuming a primary dock slot.
 - `src/client/lib/arenaasynclifecycle.ts`: pure latest-response policy for Arena

@@ -17,7 +17,17 @@ export function createMemoryStorage(options = {}) {
       new Map(Object.entries(fields)),
     ])
   );
-  const sortedSets = new Map();
+  const sortedSets = new Map(
+    Object.entries(options.sortedSets ?? {}).map(([key, members]) => [
+      key,
+      new Map(
+        Object.entries(members).map(([member, score]) => [
+          member,
+          Number(score),
+        ])
+      ),
+    ])
+  );
   const expirations = new Map();
   const versions = new Map();
   const mutations = [];

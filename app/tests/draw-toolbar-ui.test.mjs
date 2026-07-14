@@ -23,29 +23,56 @@ test('Draw keeps the everyday rail compact and puts optional tools one tap away'
     /const inputEnabled = this\.isDrawingInputActive\(\)/
   );
   assert.match(drawSource, /String\(!visible \|\| !inputEnabled\)/);
-  assert.match(drawSource, /const columns = 4/);
+  assert.match(drawSource, /const columns = 5/);
+  assert.match(drawSource, /'#ffffff'/);
+  assert.match(drawSource, /'white'/);
+  assert.match(drawSource, /const rowLeft =/);
   assert.match(drawSource, /const rowHeight = MIN_TOUCH/);
   assert.match(drawSource, /private refreshAdvancedToolIndicator\(\): void/);
   assert.match(
     drawSource,
     /requestAnimationFrame\(\(\) => focusTarget\?\.focus/
   );
+  assert.match(drawSource, /'bucket'/);
+  assert.match(drawSource, /private selectFill\(\): void/);
+  assert.match(
+    drawSource,
+    /Fill a line-bounded area with the selected ink color/
+  );
+  assert.match(paperIconSource, /\| 'bucket'/);
+  assert.match(paperIconSource, /if \(key === 'bucket'\)/);
+  assert.match(drawSource, /private liveStatCardLayout\(/);
+  assert.match(
+    drawSource,
+    /paperStatIcon\(this, statName, x - 39, centerY - 3, 44, UI\.creamHex\)/
+  );
+  assert.match(drawSource, /style\.label,\s+18,/);
+  assert.match(drawSource, /card\.fillStyle\(color, active \? 1 : 0\.84\)/);
+  assert.match(drawSource, /without adding another white panel/);
 });
 
-test('Draw uses a proper tools glyph and unambiguous first-session battle copy', () => {
+test('Draw sends the newborn straight into one guarded random first fight', () => {
   assert.match(paperIconSource, /\| 'tools'/);
   assert.match(paperIconSource, /if \(key === 'tools'\)/);
   assert.match(drawSource, /ENTERED TONIGHT’S RUMBLE/);
-  assert.match(drawSource, /CHOOSE FIRST RIVAL/);
+  assert.match(drawSource, /START FIRST FIGHT/);
   assert.match(drawSource, /'sword',[\s\S]{0,80}actionLabel/);
-  assert.match(drawSource, /private openFirstRivalRun\(scribbit: Scribbit\)/);
-  assert.match(drawSource, /openRivalRun\(this/);
-  assert.doesNotMatch(drawSource, /\bspar\(scribbit\.id\)/);
-  assert.doesNotMatch(drawSource, /WATCH FIRST FIGHT/);
-  assert.doesNotMatch(drawSource, /safe in tonight’s Rumble/);
-  assert.match(drawSource, /'Continue to Arena'/);
   assert.match(
     drawSource,
-    /if \(!this\.drawingLocked\) this\.startDrawingRound\(\)/
+    /private async startFirstBattle\(scribbit: Scribbit\)/
+  );
+  assert.match(drawSource, /await spar\(scribbit\.id\)/);
+  assert.match(
+    drawSource,
+    /stageDirectBattle\([\s\S]{0,180}scribbit\.id,[\s\S]{0,60}'ArenaHome',[\s\S]{0,40}'birth'/
+  );
+  assert.match(drawSource, /if \(!stagedBattle\)/);
+  assert.match(drawSource, /skipArenaReceiptsOnce\(this\)/);
+  assert.doesNotMatch(drawSource, /openRivalRun/);
+  assert.doesNotMatch(drawSource, /CHOOSE FIRST RIVAL/);
+  assert.doesNotMatch(drawSource, /safe in tonight’s Rumble/);
+  assert.match(
+    drawSource,
+    /!this\.drawingLocked && this\.playerDrawMode === 'community'/
   );
 });

@@ -16,6 +16,7 @@ import {
   setArena,
   setFounderChronicleBeats,
   setArenaFocus,
+  setFirstChestTrail,
 } from '../lib/registry';
 import { loadDrawing, levelOf } from '../lib/scribbits';
 import { ELEMENT_STYLES, prefersReducedMotion, UI } from '../lib/theme';
@@ -56,6 +57,7 @@ import type {
   BattleImpactPlan,
   ReplayArenaChallengeResultPlan,
   ReplayBattleLayout,
+  ReplayPostFightAction,
 } from '../lib/battlepresentation';
 import {
   formatBattleRecapAnnouncement,
@@ -143,6 +145,15 @@ import { isShapePowerId } from '../../shared/combat/shapepowercontent';
 import { getBattleMaxHp } from '../../shared/battle';
 import { getBattleArenaDefinition } from '../../shared/battlearena';
 import { openRivalRun, type RivalRunFlow } from '../lib/rivalrunflow';
+import {
+  planFirstChestTrailEntry,
+  planFirstChestTrailStep,
+} from '../lib/firstchesttrail';
+
+type ReplayArenaDestination =
+  | Readonly<{ kind: 'return' }>
+  | Readonly<{ kind: 'entrants' }>
+  | Readonly<{ kind: 'firstChest'; scribbitId: string }>;
 
 type ReplayFighterRuntime = {
   side: 'a' | 'b';
@@ -1006,7 +1017,8 @@ export class Replay extends Scene {
         this.queueImpactHold(impactPlan.hitStopMilliseconds);
         this.cameraPunch(impactPlan.cameraShake);
         target.sprite?.hitReact(
-          Math.sign(target.screenX - attacker.screenX) || target.facing
+          Math.sign(target.screenX - attacker.screenX) || target.facing,
+          this.speed
         );
         this.presentPlannedImpact(
           impactPosition.x,
@@ -1015,12 +1027,15 @@ export class Replay extends Scene {
           impactPlan
         );
         this.damagePopAt(
-          impactPosition.x,
-          impactPosition.y,
-          event.amount,
+          target.screenX,
+          target.screenY,
+          impactPlan.damageText,
           event.critical,
-          impactPlan.damageTextScale
+          impactPlan.damageTextScale,
+          impactPlan.damageTextDurationMilliseconds
         );
+        this.game.canvas.dataset.lastDamageText = impactPlan.damageText;
+        this.game.canvas.dataset.lastDamageTarget = event.targetFighter;
         this.setContinuousHitPoints(target, event.targetHitPoints);
         this.battleHud?.playFighterDamage(
           event.targetFighter,
@@ -1933,22 +1948,23 @@ export class Replay extends Scene {
   private damagePopAt(
     x: number,
     y: number,
-    damage: number,
+    damageText: string,
     crit: boolean,
-    emphasisScale = 1
+    emphasisScale: number,
+    durationMilliseconds: number
   ): void {
     const text = label(
       this,
       x,
       y - 80,
-      crit ? `${damage}!` : String(damage),
+      damageText,
       Math.round((crit ? 60 : 42) * emphasisScale),
       crit ? '#ffd447' : '#ff5a3d',
       true
     ).setDepth(29);
     text.setStroke('#2b2016', crit ? 7 : 5);
     if (this.reduceMotion) {
-      this.time.delayedCall(640, () => text.destroy());
+      this.time.delayedCall(durationMilliseconds, () => text.destroy());
       return;
     }
     this.tweens.add({
@@ -1956,7 +1972,7 @@ export class Replay extends Scene {
       y: y - 160,
       alpha: 0,
       scale: crit ? 1.3 : 1,
-      duration: 900,
+      duration: durationMilliseconds,
       ease: 'Cubic.easeOut',
       onComplete: () => text.destroy(),
     });
@@ -2332,6 +2348,7 @@ export class Replay extends Scene {
         ? losingFighter.scribbit
         : undefined;
     const actionEligibility = this.postFightEligibility(ownedFighter);
+    const firstChestAction = this.firstChestAction(ownedFighter);
     const outcomeLayout = planReplayOutcomeLayout({ viewportHeight: height });
     const victoryY = outcomeLayout.heroY;
     this.time.delayedCall(260, () => {
@@ -2457,6 +2474,12 @@ export class Replay extends Scene {
       canReplay: this.canReplaySavedReport(),
       returnLabel: this.compactReturnButtonLabel(),
       rivalActionCopy,
+      ...(firstChestAction && ownedFighter
+        ? {
+            primaryAction: firstChestAction,
+            onFirstChest: () => this.startFirstChestTrail(ownedFighter),
+          }
+        : {}),
       onRivals: () => this.openRivalDraft(winner.scribbit),
       onBackContender: () => this.goBackEntrants(),
       onReplay: () => this.replayAgain(),
@@ -2477,6 +2500,7 @@ export class Replay extends Scene {
     const { width, height } = this.scale;
     const daysLeft = daysLeftFor(mine, currentDay);
     const actionEligibility = this.postFightEligibility(mine);
+    const firstChestAction = this.firstChestAction(mine);
     const winner = this.fighterForSlot(recap.winnerSlot);
     const loser = this.fighterForSlot(recap.loserSlot);
     const rivalRunFinish = planRivalRunFinishStamp(this.report.rivalRun);
@@ -2549,6 +2573,12 @@ export class Replay extends Scene {
       canReplay: this.canReplaySavedReport(),
       returnLabel: this.compactReturnButtonLabel(),
       rivalActionCopy,
+      ...(firstChestAction
+        ? {
+            primaryAction: firstChestAction,
+            onFirstChest: () => this.startFirstChestTrail(mine),
+          }
+        : {}),
       onRivals: () => this.openRivalDraft(mine),
       onBackContender: () => this.goBackEntrants(),
       onReplay: () => this.replayAgain(),
@@ -2643,8 +2673,39 @@ export class Replay extends Scene {
     });
   }
 
+  private firstChestAction(
+    scribbit: Scribbit | undefined
+  ): ReplayPostFightAction | null {
+    const arena = getArena(this);
+    if (!arena || !scribbit) return null;
+    const step = planFirstChestTrailEntry({
+      isFreshResult: !this.isSavedReplay(),
+      rivalRun: this.report.rivalRun,
+      scribbit,
+      ink: arena.myInk,
+      chestCost: arena.nextCapsuleCost,
+      capsulePullCount: arena.capsuleProgress.pullCount,
+    });
+    return step
+      ? Object.freeze({
+          kind: 'firstChest',
+          label: 'FIRST GEAR',
+          accessibleLabel:
+            'Continue toward your first server-awarded Mystery Ink Gear.',
+          tone: 'coral',
+        })
+      : null;
+  }
+
+  private startFirstChestTrail(scribbit: Scribbit): void {
+    void this.refreshArenaAndNavigate({
+      kind: 'firstChest',
+      scribbitId: scribbit.id,
+    });
+  }
+
   private goBackEntrants(): void {
-    void this.refreshArenaAndLeave(true);
+    void this.refreshArenaAndNavigate({ kind: 'entrants' });
   }
 
   private exit(): void {
@@ -2653,12 +2714,14 @@ export class Replay extends Scene {
       fadeToScene(this, 'ArenaHome');
       return;
     }
-    void this.refreshArenaAndLeave(false);
+    void this.refreshArenaAndNavigate({ kind: 'return' });
   }
 
-  private async refreshArenaAndLeave(focusEntrants: boolean): Promise<void> {
+  private async refreshArenaAndNavigate(
+    destination: ReplayArenaDestination
+  ): Promise<void> {
     if (this.arenaRefreshLoading) return;
-    if (this.isSavedReplay() && !focusEntrants) {
+    if (this.isSavedReplay() && destination.kind === 'return') {
       fadeToScene(this, getReplayReturn(this));
       return;
     }
@@ -2682,7 +2745,35 @@ export class Replay extends Scene {
       }
     }
     setArena(this, result.data);
-    if (focusEntrants) setArenaFocus(this, 'entrants');
-    fadeToScene(this, focusEntrants ? 'ArenaHome' : getReplayReturn(this));
+    if (destination.kind === 'entrants') {
+      setArenaFocus(this, 'entrants');
+      fadeToScene(this, 'ArenaHome');
+      return;
+    }
+    if (destination.kind === 'firstChest') {
+      const scribbit = result.data.myScribbits.find(
+        (candidate) => candidate.id === destination.scribbitId
+      );
+      const step = scribbit
+        ? planFirstChestTrailStep({
+            scribbit,
+            ink: result.data.myInk,
+            chestCost: result.data.nextCapsuleCost,
+            capsulePullCount: result.data.capsuleProgress.pullCount,
+          })
+        : null;
+      if (step?.kind === 'shop') {
+        fadeToScene(this, 'Shop');
+        return;
+      }
+      if (step?.kind === 'care') {
+        setFirstChestTrail(this, destination.scribbitId);
+      } else {
+        showToast('Keep earning Ink — your first chest is waiting in Shop.');
+      }
+      fadeToScene(this, 'ArenaHome');
+      return;
+    }
+    fadeToScene(this, getReplayReturn(this));
   }
 }

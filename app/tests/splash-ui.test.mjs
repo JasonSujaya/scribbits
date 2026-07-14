@@ -2,13 +2,25 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { test } from 'node:test';
 
-const [splashHtml, splashCss, splashScript, preloaderScript, drawScript, apiScript] = await Promise.all([
+const [
+  splashHtml,
+  splashCss,
+  splashScript,
+  preloaderScript,
+  drawScript,
+  apiScript,
+  englishCatalog,
+] = await Promise.all([
   readFile(new URL('../src/client/splash.html', import.meta.url), 'utf8'),
   readFile(new URL('../src/client/splash.css', import.meta.url), 'utf8'),
   readFile(new URL('../src/client/splash.ts', import.meta.url), 'utf8'),
-  readFile(new URL('../src/client/scenes/Preloader.ts', import.meta.url), 'utf8'),
+  readFile(
+    new URL('../src/client/scenes/Preloader.ts', import.meta.url),
+    'utf8'
+  ),
   readFile(new URL('../src/client/scenes/Draw.ts', import.meta.url), 'utf8'),
   readFile(new URL('../src/server/routes/api.ts', import.meta.url), 'utf8'),
+  readFile(new URL('../src/client/locales/en.ts', import.meta.url), 'utf8'),
 ]);
 
 test('splash shows three drawings without depending on live API data', () => {
@@ -17,13 +29,21 @@ test('splash shows three drawings without depending on live API data', () => {
   assert.match(splashHtml, /splash-doodle-looplet\.png/);
   assert.match(splashHtml, /splash-doodle-stormpuff\.png/);
   assert.equal((splashHtml.match(/class="showcase-artist"/g) ?? []).length, 3);
-  assert.doesNotMatch(splashHtml + splashCss + splashScript, /streak-stat|streak-stamp|DAY STREAK/);
+  assert.doesNotMatch(
+    splashHtml + splashCss + splashScript,
+    /streak-stat|streak-stamp|DAY STREAK/
+  );
   assert.match(splashScript, /renderFeaturedCreations/);
   assert.match(splashScript, /candidateImage\.addEventListener/);
   assert.match(splashScript, /!state\.hasCreatedScribbit/);
-  assert.match(splashScript, /DRAW TODAY/);
-  assert.match(splashScript, /CONTINUE/);
-  assert.doesNotMatch(splashScript, /PICK A CONTENDER|OPEN ARENA|CHECK RESULTS/);
+  assert.match(splashScript, /translate\('splash\.action\.drawToday'\)/);
+  assert.match(splashScript, /translate\('splash\.action\.continue'\)/);
+  assert.match(englishCatalog, /'splash\.action\.drawToday': 'DRAW TODAY'/);
+  assert.match(englishCatalog, /'splash\.action\.continue': 'CONTINUE'/);
+  assert.doesNotMatch(
+    splashScript,
+    /PICK A CONTENDER|OPEN ARENA|CHECK RESULTS/
+  );
   assert.doesNotMatch(splashHtml, /TONIGHT'S RUMBLE/);
   assert.doesNotMatch(
     splashHtml + splashScript + splashCss,
@@ -36,8 +56,9 @@ test('splash shows three drawings without depending on live API data', () => {
 test('splash and expanded game share one durable new-player flow', () => {
   assert.match(preloaderScript, /!state\.hasCreatedScribbit/);
   assert.match(preloaderScript, /needsFirstScribbit \? 'Draw' : 'ArenaHome'/);
-  assert.match(drawScript, /const wasFirstScribbit = !arena\.hasCreatedScribbit/);
   assert.match(drawScript, /hasCreatedScribbit: true/);
+  assert.match(drawScript, /START FIRST FIGHT/);
+  assert.match(drawScript, /private async startFirstBattle\(scribbit: Scribbit\)/);
   assert.match(apiScript, /getUserScribbitIds\(redis, player\.userId, 1\)/);
 });
 

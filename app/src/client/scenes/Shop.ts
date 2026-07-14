@@ -4,10 +4,17 @@ import { appDock } from '../lib/appdock';
 import { appMenu, type AppMenu } from '../lib/appmenu';
 import { openCapsuleMachine, type CapsuleMachine } from '../lib/capsulemachine';
 import { navigateToDailyDraw } from '../lib/draweligibility';
-import { getArena, setArena, setGalleryTab } from '../lib/registry';
+import {
+  getArena,
+  setArena,
+  setGalleryCollectionSection,
+  setGalleryTab,
+} from '../lib/registry';
 import { fadeToScene } from '../lib/ui';
-import { shopStage } from '../lib/visualassets';
+import { preloadShopVisualAssets, shopStage } from '../lib/visualassets';
 import { UI } from '../lib/theme';
+import { COSMETIC_BY_ID } from '../../shared/cosmetics';
+import type { CapsulePull } from '../../shared/arena';
 
 /** Earned rewards live here; Bag remains the one place that equips them. */
 export class Shop extends Scene {
@@ -17,6 +24,10 @@ export class Shop extends Scene {
 
   constructor() {
     super('Shop');
+  }
+
+  preload(): void {
+    preloadShopVisualAssets(this);
   }
 
   init(): void {
@@ -52,6 +63,8 @@ export class Shop extends Scene {
       return;
     }
 
+    let latestPull: CapsulePull | null = null;
+
     this.capsuleMachine = openCapsuleMachine(this, {
       ink: arena.myInk,
       nextCost: arena.nextCapsuleCost,
@@ -63,6 +76,7 @@ export class Shop extends Scene {
       onPull: async (operationId) => {
         const result = await pullCapsule(operationId);
         if (!result.ok) return { error: result.error };
+        latestPull = result.data.pull;
         const currentArena = getArena(this);
         if (currentArena) {
           setArena(this, {
@@ -77,6 +91,12 @@ export class Shop extends Scene {
       },
       onClose: () => undefined,
       onViewCollection: () => {
+        const reward = latestPull
+          ? COSMETIC_BY_ID.get(latestPull.id)
+          : undefined;
+        if (reward?.kind === 'accessory') {
+          setGalleryCollectionSection(this, reward.category);
+        }
         setGalleryTab(this, 'collection');
         fadeToScene(this, 'Gallery');
       },

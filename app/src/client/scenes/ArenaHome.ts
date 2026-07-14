@@ -21,6 +21,8 @@ import {
   markLegacyReturnDismissed,
   takeFounderChronicleBeats,
   takeArenaFocus,
+  takeFirstChestTrail,
+  takeSkipArenaReceiptsOnce,
 } from '../lib/registry';
 import {
   loadDrawing,
@@ -44,6 +46,7 @@ import type { ErrorPanel, Spinner } from '../lib/ui';
 import { openDetailModal } from '../lib/detailmodal';
 import type { DetailModalActions } from '../lib/detailmodal';
 import { formatCountdown } from '../lib/cloutboard';
+import { openSeasonBoard, type SeasonBoardModal } from '../lib/seasonboard';
 import type {
   ArenaState,
   CareAction,
@@ -85,6 +88,10 @@ import { getBattleArenaForDay } from '../../shared/battlearena';
 import { selectCommunityDoodleDare } from '../../shared/content/communitydrawthemes';
 import { navigateToDailyDraw } from '../lib/draweligibility';
 import { openRivalRun, type RivalRunFlow } from '../lib/rivalrunflow';
+import {
+  planFirstChestTrailStep,
+  type FirstChestTrailStep,
+} from '../lib/firstchesttrail';
 
 // One focused battle hub: choose an owned fighter, choose Champion or Spar,
 // then fight. The compact Rumble Pick action remains here so removing Scout
@@ -104,6 +111,7 @@ export class ArenaHome extends Scene {
   private rivalRunFlow: RivalRunFlow | null = null;
   private menu: AppMenu | null = null;
   private rosterActionOverlay: CanvasActionOverlay | null = null;
+  private seasonBoardModal: SeasonBoardModal | null = null;
   private homeInteractionSuspended = false;
   private selectedArenaFighterId: string | null = null;
   private selectedBattleMode: 'champion' | 'spar' = 'champion';
@@ -172,6 +180,7 @@ export class ArenaHome extends Scene {
     this.contenderPicker = null;
     this.rivalRunFlow = null;
     this.rosterActionOverlay = null;
+    this.seasonBoardModal = null;
     this.homeInteractionSuspended = false;
     this.selectedArenaFighterId = null;
     this.selectedBattleMode = 'champion';
@@ -198,7 +207,12 @@ export class ArenaHome extends Scene {
     this.state = state;
     this.cameras.main.fadeIn(180, 255, 247, 232);
     this.build();
-    this.showReturnReceiptsIfNeeded();
+    const firstChestTrail = takeFirstChestTrail(this);
+    if (firstChestTrail) {
+      this.continueFirstChestTrail(firstChestTrail.scribbitId);
+    } else if (!takeSkipArenaReceiptsOnce(this)) {
+      this.showReturnReceiptsIfNeeded();
+    }
     this.events.once('shutdown', () => this.cleanup());
     this.events.on('wake', this.refreshOnWake);
     if (shouldRefreshOnCreate) void this.refresh();
@@ -222,6 +236,8 @@ export class ArenaHome extends Scene {
     this.rivalRunFlow = null;
     this.rosterActionOverlay?.destroy();
     this.rosterActionOverlay = null;
+    this.seasonBoardModal?.destroy();
+    this.seasonBoardModal = null;
   }
 
   // --- Layout: a vertical stack measured top-down so nothing overlaps and the
@@ -241,6 +257,8 @@ export class ArenaHome extends Scene {
     this.contenderPicker = null;
     this.rivalRunFlow?.destroy();
     this.rivalRunFlow = null;
+    this.seasonBoardModal?.destroy();
+    this.seasonBoardModal = null;
     this.rosterActionOverlay?.destroy();
     this.rosterActionOverlay = new CanvasActionOverlay(this);
     this.children.removeAll(true);
@@ -431,20 +449,62 @@ export class ArenaHome extends Scene {
   // --- Top bar + live countdown ---------------------------------------------
   private drawTopBar(y: number): number {
     const { width } = this.scale;
-    const statusY = y + 86;
+    const season =
+      this.state.season.current ??
+      this.state.season.next ??
+      this.state.season.latestFinalized;
+    if (season) {
+      label(
+        this,
+        width / 2,
+        y + 105,
+        `${season.name.toUpperCase()} · ${season.campaignName.toUpperCase()}`,
+        25,
+        UI.ink,
+        true
+      ).setWordWrapWidth(width - 160);
+      label(
+        this,
+        width / 2,
+        y + 145,
+        this.seasonStandingText(),
+        20,
+        UI.inkSoft,
+        true
+      );
+      paperIcon(this, 'trophy', width - 58, y + 123, {
+        size: 35,
+        fill: UI.gold,
+      });
+      this.add
+        .circle(width - 58, y + 123, 42, 0xffffff, 0.001)
+        .setInteractive({ useHandCursor: true })
+        .on('pointerup', () => {
+          if (!this.didDrag()) this.openSeasonRanking();
+        });
+      this.rosterActionOverlay?.add({
+        label: `Open ${season.name} ranking`,
+        rect: { x: width - 102, y: y + 81, width: 88, height: 84 },
+        followCamera: true,
+        pointerPassthrough: true,
+        onActivate: () => this.openSeasonRanking(),
+      });
+    }
+    const statusY = y + 187;
     this.countdownLabel = label(
       this,
-      width / 2 + 34,
+      width / 2 + 20,
       statusY,
       this.countdownText(),
-      22,
+      20,
       '#ffd447',
       true
     )
       .setStroke(UI.ink, 5)
+      .setWordWrapWidth(width - 120)
       .setDepth(2);
-    paperIcon(this, 'clock', width / 2 - 48, statusY, {
-      size: 27,
+    paperIcon(this, 'clock', 64, statusY, {
+      size: 25,
       fill: UI.tapeAlt,
     });
     this.countdownTimer = this.time.addEvent({
@@ -453,7 +513,36 @@ export class ArenaHome extends Scene {
       callback: () => this.countdownLabel?.setText(this.countdownText()),
     });
 
-    return y + 156;
+    return y + 230;
+  }
+
+  private seasonStandingText(): string {
+    const season =
+      this.state.season.current ??
+      this.state.season.next ??
+      this.state.season.latestFinalized;
+    if (!season) return 'SEASON STARTING SOON';
+    if (season.status === 'upcoming') {
+      return `${season.daysRemaining}D TO START`;
+    }
+    if (season.status === 'paused') return 'RANKING PAUSED';
+    if (season.status === 'finalized') return 'FINAL STANDINGS';
+    const standing = season.me;
+    const rank = standing && standing.rank > 0 ? `#${standing.rank}` : 'UNRANKED';
+    return `${season.daysRemaining}D LEFT · ${rank} · ${standing?.score ?? 0} PTS`;
+  }
+
+  private openSeasonRanking(): void {
+    if (this.seasonBoardModal || this.busy) return;
+    this.homeInteractionSuspended = true;
+    this.rosterActionOverlay?.setVisible(false);
+    this.seasonBoardModal = openSeasonBoard(this, {
+      onClose: () => {
+        this.seasonBoardModal = null;
+        this.homeInteractionSuspended = false;
+        this.rosterActionOverlay?.setVisible(true);
+      },
+    });
   }
 
   // Float a concise Ink reward from a point, and bump the chip. Optimistic; the
@@ -468,7 +557,11 @@ export class ArenaHome extends Scene {
 
   private countdownText(): string {
     const remaining = this.state.rumbleResolvesAt - Date.now();
-    return formatCountdown(remaining);
+    const rumble = `RUMBLE ${formatCountdown(remaining).toUpperCase()}`;
+    const event = this.state.season.current?.activeEvent;
+    return event
+      ? `${event.name.toUpperCase()} · ${event.scoreMultiplier}× · ${event.daysRemaining}D · ${rumble}`
+      : rumble;
   }
 
   // --- One battle setup: fighter -> mode -> fight ---------------------------
@@ -1374,17 +1467,16 @@ export class ArenaHome extends Scene {
     return true;
   }
 
-  private showReturnReceiptsIfNeeded(): void {
-    if (
-      this.showFounderChronicleBeatIfNeeded(() => {
-        if (this.showLegacyReturnIfNeeded()) return;
-        this.showRumbleReceiptIfNeeded();
-      })
-    ) {
-      return;
-    }
+  private showReturnReceiptsIfNeeded(afterReceipts?: () => void): void {
+    const continueAfterFounder = (): void => {
+      if (this.showLegacyReturnIfNeeded()) return;
+      if (this.showRumbleReceiptIfNeeded(afterReceipts)) return;
+      afterReceipts?.();
+    };
+    if (this.showFounderChronicleBeatIfNeeded(continueAfterFounder)) return;
     if (this.showLegacyReturnIfNeeded()) return;
-    this.showRumbleReceiptIfNeeded();
+    if (this.showRumbleReceiptIfNeeded(afterReceipts)) return;
+    afterReceipts?.();
   }
 
   private openFounderMargin(
@@ -1518,7 +1610,10 @@ export class ArenaHome extends Scene {
     });
   }
 
-  private openCarePickerFor(scribbit: Scribbit): void {
+  private openCarePickerFor(
+    scribbit: Scribbit,
+    firstChestStep: FirstChestTrailStep | null = null
+  ): void {
     if (this.busy || this.carePicker) return;
     const returnFocus =
       document.activeElement instanceof HTMLButtonElement
@@ -1526,9 +1621,17 @@ export class ArenaHome extends Scene {
         : null;
     this.carePicker = openCarePicker(this, {
       scribbit,
+      ...(firstChestStep
+        ? { goalLabel: firstChestStep.statusLabel }
+        : {}),
       onChoose: (action) => {
         this.carePicker = null;
-        this.doCare(scribbit, action, returnFocus !== null);
+        this.doCare(
+          scribbit,
+          action,
+          returnFocus !== null,
+          firstChestStep !== null
+        );
       },
       onClose: () => {
         this.carePicker = null;
@@ -1540,7 +1643,8 @@ export class ArenaHome extends Scene {
   private doCare(
     scribbit: Scribbit,
     action: CareAction,
-    focusReceipt = false
+    focusReceipt = false,
+    continuesFirstChestTrail = false
   ): void {
     if (!this.requireLogin()) return;
     if (this.busy) return;
@@ -1570,13 +1674,58 @@ export class ArenaHome extends Scene {
       // Render only the exact Ink amount confirmed by the server response.
       this.floatInk(result.data.inkAwarded, this.scale.width - EDGE - 40, 120);
       this.applyScribbitUpdate(updatedScribbit);
+      const firstChestStep = continuesFirstChestTrail
+        ? this.firstChestTrailStep(updatedScribbit)
+        : null;
       this.careMomentOverlay = openCareMomentOverlay(
         this,
         updatedScribbit,
         careMoment,
-        focusReceipt
+        {
+          focusOnOpen: focusReceipt,
+          ...(continuesFirstChestTrail
+            ? {
+                progressLabel:
+                  firstChestStep?.statusLabel ??
+                  'FIRST CHEST • EARN MORE INK',
+                onDismiss: () => {
+                  this.careMomentOverlay = null;
+                  if (firstChestStep) {
+                    this.continueFirstChestTrail(updatedScribbit.id);
+                  }
+                },
+              }
+            : {}),
+        }
       );
     });
+  }
+
+  private firstChestTrailStep(scribbit: Scribbit): FirstChestTrailStep | null {
+    return planFirstChestTrailStep({
+      scribbit,
+      ink: this.state.myInk,
+      chestCost: this.state.nextCapsuleCost,
+      capsulePullCount: this.state.capsuleProgress.pullCount,
+    });
+  }
+
+  private continueFirstChestTrail(scribbitId: string): void {
+    if (this.busy || this.carePicker || this.careMomentOverlay) return;
+    const scribbit = this.state.myScribbits.find(
+      (candidate) => candidate.id === scribbitId
+    );
+    if (!scribbit) return;
+    const step = this.firstChestTrailStep(scribbit);
+    if (!step) {
+      showToast('Keep earning Ink — your first chest is waiting in Shop.');
+      return;
+    }
+    if (step.kind === 'shop') {
+      fadeToScene(this, 'Shop');
+      return;
+    }
+    this.openCarePickerFor(scribbit, step);
   }
 
   private doSpar(scribbit: Scribbit): void {
@@ -1734,6 +1883,10 @@ export class ArenaHome extends Scene {
         result.data,
         scribbit.id
       );
+      if (!stagedBattle) {
+        this.showError('The Champion battle returned the wrong Scribbit.');
+        return;
+      }
       if (stagedBattle.arena) this.state = stagedBattle.arena;
       showVsCeremony(this, {
         fighterA: result.data.report.a,

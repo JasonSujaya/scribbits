@@ -29,6 +29,7 @@ import { appDock } from '../lib/appdock';
 import { appMenu } from '../lib/appmenu';
 import { CanvasActionOverlay, CanvasModalOverlay } from '../lib/overlay';
 import { screenTitle } from '../lib/screentitle';
+import { translate } from '../lib/localization';
 
 type GuideSection = 'shape' | 'elements' | 'ritual' | 'legends' | 'privacy';
 type GuideModal = Readonly<{
@@ -85,7 +86,7 @@ export class Bestiary extends Scene {
     this.livingPaper = new LivingPaper(this);
 
     const { width } = this.scale;
-    screenTitle(this, width / 2, 18, 'FIELD GUIDE', {
+    screenTitle(this, width / 2, 18, translate('screen.fieldGuide'), {
       maxWidth: 430,
       maxHeight: 82,
     });

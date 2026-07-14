@@ -4,6 +4,8 @@
 // retry) is the caller's job.
 
 import type {
+  ArenaErrorCode,
+  ArenaErrorResponse,
   ArenaState,
   BackRequest,
   BattleReport,
@@ -17,6 +19,7 @@ import type {
   DirectBattleResponse,
   Inventory,
   EquipTitleRequest,
+  FreeDrawing,
   LegacyCardsState,
   LegendsState,
   MarkLegacySeenRequest,
@@ -26,14 +29,19 @@ import type {
   PracticeBattleReport,
   ReportScribbitResponse,
   RivalRunState,
+  SeasonBoard,
+  SeasonPublicState,
   Scribbit,
   ScoutNotebookState,
   SparRivalSlate,
   SparBattleResponse,
   SparRequest,
   SubmitScribbitRequest,
+  SubmitFreeDrawingRequest,
 } from '../../shared/arena';
 import type { EquipmentCategory } from '../../shared/equipment';
+import { DEFAULT_LOCALE } from '../locales/catalogs';
+import { getLocale, translate } from './localization';
 
 export type ApiResult<T> = { ok: true; data: T } | { ok: false; error: string };
 
@@ -86,25 +94,47 @@ async function request<T>(
   }
 }
 
-// Server routes return { status: 'error', message } with friendly copy —
-// surface that message instead of a bare status code when present.
+const ERROR_MESSAGE_KEY_BY_CODE = {
+  bad_request: 'error.badRequest',
+  unauthorized: 'error.unauthorized',
+  not_found: 'error.notFound',
+  conflict: 'error.conflict',
+  too_many_requests: 'error.tooManyRequests',
+  payload_too_large: 'error.payloadTooLarge',
+  payment_required: 'error.paymentRequired',
+  server_error: 'error.serverError',
+} as const satisfies Record<ArenaErrorCode, Parameters<typeof translate>[0]>;
+
+// New servers return a stable code for client-side localization. English keeps
+// the detailed compatibility message; translated locales use the stable code.
 async function serverErrorMessage(response: Response): Promise<string> {
   try {
-    const body = (await response.json()) as { message?: unknown };
+    const body = (await response.json()) as Partial<ArenaErrorResponse>;
+    const code = body.code;
+    if (
+      getLocale() !== DEFAULT_LOCALE &&
+      code &&
+      code in ERROR_MESSAGE_KEY_BY_CODE
+    ) {
+      return translate(ERROR_MESSAGE_KEY_BY_CODE[code]);
+    }
     if (typeof body.message === 'string' && body.message.length > 0) {
       return body.message;
+    }
+    if (code && code in ERROR_MESSAGE_KEY_BY_CODE) {
+      return translate(ERROR_MESSAGE_KEY_BY_CODE[code]);
     }
   } catch {
     // fall through to the generic message
   }
-  return `Request failed (${response.status})`;
+  return translate('error.requestFailed', { status: response.status });
 }
 
 function friendlyError(error: unknown): string {
   if (error instanceof DOMException && error.name === 'AbortError') {
-    return 'The arena is slow to respond. Try again.';
+    return translate('error.timeout');
   }
-  return 'Could not reach the arena. Check your connection.';
+  return translate('error.connection');
 }
 
 // --- Contract endpoints -----------------------------------------------------
@@ -113,11 +143,29 @@ export function fetchArena(): Promise<ApiResult<ArenaState>> {
   return getJson<ArenaState>('/api/arena');
 }
 
+export function fetchSeason(): Promise<ApiResult<SeasonPublicState>> {
+  return getJson<SeasonPublicState>('/api/season');
+}
+
+export function fetchSeasonBoard(): Promise<ApiResult<SeasonBoard>> {
+  return getJson<SeasonBoard>('/api/season-board');
+}
+
 export function submitScribbit(
   request: SubmitScribbitRequest
 ): Promise<ApiResult<Scribbit>> {
   return postJson<SubmitScribbitRequest, Scribbit>(
     '/api/scribbit',
+    request,
+    SUBMIT_TIMEOUT_MS
+  );
+}
+
+export function submitFreeDrawing(
+  request: SubmitFreeDrawingRequest
+): Promise<ApiResult<FreeDrawing>> {
+  return postJson<SubmitFreeDrawingRequest, FreeDrawing>(
+    '/api/free-drawing',
     request,
     SUBMIT_TIMEOUT_MS
   );
@@ -201,8 +249,8 @@ export function fetchSparRivals(
   return getJson<SparRivalSlate>(`/api/spar-rivals?${query.toString()}`);
 }
 
-// Exhibition spar vs a server-approved founding NPC. Player-facing scenes pass
-// an explicit Rival Run choice; omitted opponentId is compatibility-only.
+// Exhibition spar vs a server-approved founding NPC. Birth uses no opponentId
+// for one immediate random matchup; Arena rematches pass an explicit Rival Run.
 export function spar(
   scribbitId: string,
   opponentId?: string,

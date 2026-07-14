@@ -124,6 +124,26 @@ test('deterministic capsule selection/entropy', () => {
   );
 });
 
+test('the first chest always starts with equippable Gear without changing rarity odds', () => {
+  const firstDrops = Array.from({ length: 96 }, (_, index) =>
+    inkStore.selectCapsuleDrop({
+      userId: `first-chest-player-${index}`,
+      day: 1,
+      pullCount: 1,
+      pullsSinceEpic: 0,
+      entropy: `first-chest-entropy-${index}`,
+    })
+  );
+  assert.ok(
+    firstDrops.every((drop) => drop.kind === 'accessory'),
+    'every first chest reward should be immediately equippable'
+  );
+  assert.ok(
+    new Set(firstDrops.map((drop) => drop.rarity)).size > 1,
+    'the first chest should still roll across the published rarity tiers'
+  );
+});
+
 test('catalog cardinality/indexing', () => {
   assert.equal(
     sharedCosmetics.ACCESSORY_CATALOG_ENTRIES.length,

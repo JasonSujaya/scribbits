@@ -2,8 +2,11 @@ import { Hono } from 'hono';
 import type { UiResponse } from '@devvit/web/shared';
 import { context, redis } from '@devvit/web/server';
 import { ensureCurrentArenaPost } from '../core/post';
+import { seasonAdmin } from './seasonAdmin';
 
 export const menu = new Hono();
+
+menu.route('/', seasonAdmin);
 
 menu.post('/post-create', async (c) => {
   try {

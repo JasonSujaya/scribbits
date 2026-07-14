@@ -1,7 +1,7 @@
 // Typed access to the Phaser game registry for cross-scene state. Keeps the
 // magic-string keys in one place so scenes read/write the same slots.
 
-import { Scene } from 'phaser';
+import type { Scene } from 'phaser';
 import type {
   ArenaState,
   BattleReport,
@@ -11,6 +11,7 @@ import type {
   SparRewardReceipt,
 } from '../../shared/arena';
 import type { PrimaryPower } from '../../shared/combat/types';
+import type { EquipmentCategory } from '../../shared/equipment';
 import {
   createPracticeSession,
   normalizePracticeSession,
@@ -33,11 +34,14 @@ const REPLAY_CHRONICLE_BEAT_KEY = 'replayChronicleBeat';
 const REPLAY_RIVALRY_STAKES_KEY = 'replayRivalryStakes';
 const REPLAY_SPAR_REWARD_KEY = 'replaySparReward';
 const GALLERY_TAB_KEY = 'galleryTab';
+const GALLERY_COLLECTION_SECTION_KEY = 'galleryCollectionSection';
 const PRACTICE_SESSION_KEY = 'practiceSession';
 const FOUNDER_CHRONICLE_BEATS_KEY = 'founderChronicleBeats';
 const BATTLE_HISTORY_PAGE_KEY = 'battleHistoryPage';
 const SCOUT_NOTEBOOK_DAY_KEY = 'scoutNotebookDay';
 const ARENA_FOCUS_KEY = 'arenaFocus';
+const SKIP_ARENA_RECEIPTS_ONCE_KEY = 'skipArenaReceiptsOnce';
+const FIRST_CHEST_TRAIL_KEY = 'firstChestTrail';
 const LAST_RUMBLE_RECEIPT_SHOWN_DAY_KEY = 'lastRumbleReceiptShownDay';
 const LAST_LEGACY_RETURN_DISMISSED_DAY_KEY = 'lastLegacyReturnDismissedDay';
 
@@ -47,7 +51,7 @@ export type ReplayReturnScene =
   | 'Gallery'
   | 'MyBattles'
   | 'ScoutNotebook';
-type ReplayEntryMode = 'fresh' | 'saved';
+type ReplayEntryMode = 'fresh' | 'birth' | 'saved';
 
 export function setArena(scene: Scene, state: ArenaState): void {
   scene.registry.set(ARENA_KEY, state);
@@ -71,11 +75,12 @@ export function setReplay(
   report: BattleReport,
   returnScene: ReplayReturnScene = 'ArenaHome',
   founderChronicleBeat: FounderChronicleBeat | null = null,
-  founderRivalryStakes: FounderRivalryStakesPlan | null = null
+  founderRivalryStakes: FounderRivalryStakesPlan | null = null,
+  entryMode: ReplayEntryMode = 'fresh'
 ): void {
   scene.registry.set(REPLAY_KEY, report);
   scene.registry.set(REPLAY_RETURN_KEY, returnScene);
-  scene.registry.set(REPLAY_ENTRY_MODE_KEY, 'fresh');
+  scene.registry.set(REPLAY_ENTRY_MODE_KEY, entryMode);
   scene.registry.set(REPLAY_PASS_KEY, 0);
   scene.registry.remove(REPLAY_SPAR_REWARD_KEY);
   if (founderChronicleBeat) {
@@ -126,8 +131,9 @@ export function getReplayReturn(scene: Scene): ReplayReturnScene {
 }
 
 export function getReplayEntryMode(scene: Scene): ReplayEntryMode {
-  return scene.registry.get(REPLAY_ENTRY_MODE_KEY) === 'saved'
-    ? 'saved'
+  const entryMode = scene.registry.get(REPLAY_ENTRY_MODE_KEY);
+  return entryMode === 'saved' || entryMode === 'birth'
+    ? entryMode
     : 'fresh';
 }
 
@@ -206,14 +212,16 @@ export function stageDirectBattle(
   currentArena: ArenaState | undefined,
   response: DirectBattleResponse | SparBattleResponse,
   ownedScribbitId: string,
-  returnScene: ReplayReturnScene = 'ArenaHome'
-): StagedDirectBattle {
+  returnScene: ReplayReturnScene = 'ArenaHome',
+  entryMode: Exclude<ReplayEntryMode, 'saved'> = 'fresh'
+): StagedDirectBattle | null {
   const opponent =
     response.report.a.id === ownedScribbitId
       ? response.report.b
       : response.report.b.id === ownedScribbitId
         ? response.report.a
         : null;
+  if (!opponent) return null;
   const plannedStakes =
     currentArena && opponent
       ? planFounderRivalryStakes(
@@ -243,7 +251,8 @@ export function stageDirectBattle(
     response.report,
     returnScene,
     response.founderChronicleBeat,
-    rivalryStakes
+    rivalryStakes,
+    entryMode
   );
   const rewardReceipt = selectReplaySparReward({
     receipt: 'rewardReceipt' in response ? response.rewardReceipt : null,
@@ -322,6 +331,37 @@ export function takeArenaFocus(scene: Scene): string | null {
   return value;
 }
 
+/** Keeps the immediate post-birth Arena handoff free of older story receipts. */
+export function skipArenaReceiptsOnce(scene: Scene): void {
+  scene.registry.set(SKIP_ARENA_RECEIPTS_ONCE_KEY, true);
+}
+
+export function takeSkipArenaReceiptsOnce(scene: Scene): boolean {
+  const shouldSkip = scene.registry.get(SKIP_ARENA_RECEIPTS_ONCE_KEY) === true;
+  if (shouldSkip) scene.registry.remove(SKIP_ARENA_RECEIPTS_ONCE_KEY);
+  return shouldSkip;
+}
+
+export type FirstChestTrailIntent = Readonly<{ scribbitId: string }>;
+
+/** Stages one read-once, client-only route into server-backed Care. */
+export function setFirstChestTrail(scene: Scene, scribbitId: string): void {
+  if (scribbitId.length < 1) return;
+  scene.registry.set(FIRST_CHEST_TRAIL_KEY, { scribbitId });
+}
+
+export function takeFirstChestTrail(
+  scene: Scene
+): FirstChestTrailIntent | null {
+  const value = scene.registry.get(FIRST_CHEST_TRAIL_KEY) as
+    | FirstChestTrailIntent
+    | undefined;
+  scene.registry.remove(FIRST_CHEST_TRAIL_KEY);
+  return value && typeof value.scribbitId === 'string' && value.scribbitId
+    ? { scribbitId: value.scribbitId }
+    : null;
+}
+
 export function isRumbleReceiptShown(
   scene: Scene,
   resolvedDay: number
@@ -365,4 +405,24 @@ export function getGalleryTab(scene: Scene): GalleryTab {
   return (
     (scene.registry.get(GALLERY_TAB_KEY) as GalleryTab | undefined) ?? 'legends'
   );
+}
+
+export function setGalleryCollectionSection(
+  scene: Scene,
+  section: EquipmentCategory
+): void {
+  scene.registry.set(GALLERY_COLLECTION_SECTION_KEY, section);
+}
+
+export function takeGalleryCollectionSection(
+  scene: Scene
+): EquipmentCategory | null {
+  const value = scene.registry.get(GALLERY_COLLECTION_SECTION_KEY) as unknown;
+  scene.registry.remove(GALLERY_COLLECTION_SECTION_KEY);
+  return value === 'weapon' ||
+    value === 'armor' ||
+    value === 'shoes' ||
+    value === 'accessory'
+    ? value
+    : null;
 }

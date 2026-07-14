@@ -47,6 +47,11 @@ import {
   type PlayerDataDeletionLease,
 } from './dataDeletion';
 import { getRivalRunKey } from './rivalRun';
+import {
+  deleteFreeDrawingsForUser,
+  getUserFreeDrawingDayKey,
+} from './freeDrawingStore';
+import { deleteSeasonPlayerData } from './season';
 
 const requireDeletionOwnership = async (
   storage: ArenaStorage,
@@ -85,6 +90,12 @@ const deletePlayerDataRecords = async (
     });
   }
 
+  await requireDeletionOwnership(storage, deletionLease);
+  await deleteFreeDrawingsForUser(storage, userId);
+
+  await requireDeletionOwnership(storage, deletionLease);
+  await deleteSeasonPlayerData(storage, userId);
+
   const reportedTargets = await storage.hGetAll(
     getUserReportedScribbitsKey(userId)
   );
@@ -106,6 +117,7 @@ const deletePlayerDataRecords = async (
     await storage.hDel(getBackKey(day), [userId]);
     await storage.hDel(getCloutPayoutKey(day), [userId]);
     await storage.del(getDailyFlagsKey(userId, day));
+    await storage.del(getUserFreeDrawingDayKey(userId, day));
     await storage.del(getCapsuleDailyPullKey(userId, day));
     if (scribbits.length > 0) {
       await storage.hDel(

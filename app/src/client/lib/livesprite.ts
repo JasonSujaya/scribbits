@@ -65,6 +65,9 @@ export class LiveSprite {
   private meshUpdateAccumulatorMilliseconds = 0;
   private breatheTween: Phaser.Tweens.Tween | null = null;
   private reactionTween: Phaser.Tweens.Tween | null = null;
+  private hitFlashImage: Phaser.GameObjects.Image | null = null;
+  private hitFlashTween: Phaser.Tweens.Tween | null = null;
+  private hitFlashClearEvent: Phaser.Time.TimerEvent | null = null;
   private idleTweens: Phaser.Tweens.Tween[] = [];
   private destroyed = false;
   private crumpled = false;
@@ -123,10 +126,30 @@ export class LiveSprite {
         drawH
       );
     }
+    this.createHitFlash(textureKey, drawW, drawH);
 
     scene.events.on(Phaser.Scenes.Events.UPDATE, this.updateInkMesh, this);
     scene.events.once(Phaser.Scenes.Events.SHUTDOWN, this.handleSceneShutdown);
     scene.events.once(Phaser.Scenes.Events.DESTROY, this.handleSceneShutdown);
+  }
+
+  private createHitFlash(
+    textureKey: string,
+    drawW: number,
+    drawH: number
+  ): void {
+    const hitFlashImage = this.scene.add.image(0, 0, textureKey);
+    hitFlashImage.setDisplaySize(drawW, drawH);
+    hitFlashImage.setScale(
+      hitFlashImage.scaleX * this.facing,
+      hitFlashImage.scaleY
+    );
+    hitFlashImage
+      .setTint(0xff3f36)
+      .setTintMode(Phaser.TintModes.FILL);
+    hitFlashImage.setAlpha(0);
+    this.poseContainer.add(hitFlashImage);
+    this.hitFlashImage = hitFlashImage;
   }
 
   private createInkMesh(
@@ -550,7 +573,8 @@ export class LiveSprite {
 
   // Jelly hit reaction: knock-back shiver plus a per-tile ripple so the drawing
   // visibly quivers where it was struck.
-  hitReact(knockDir: number): void {
+  hitReact(knockDir: number, playbackSpeed = 1): void {
+    this.flashDamage(playbackSpeed);
     if (this.meshMotion) {
       this.meshMotion.impactDirection = knockDir >= 0 ? 1 : -1;
       this.meshMotion.impactProgress = 0;
@@ -590,6 +614,37 @@ export class LiveSprite {
         ease: 'Sine.easeInOut',
         onComplete: () => tile.image.setPosition(tile.homeX, tile.homeY),
       });
+    });
+  }
+
+  private flashDamage(playbackSpeed: number): void {
+    const hitFlashImage = this.hitFlashImage;
+    if (!hitFlashImage) return;
+
+    this.hitFlashTween?.remove();
+    this.hitFlashTween = null;
+    this.hitFlashClearEvent?.remove(false);
+    this.hitFlashClearEvent = null;
+    hitFlashImage.setAlpha(0.78);
+
+    if (this.reduceMotion) {
+      this.hitFlashClearEvent = this.scene.time.delayedCall(180, () => {
+        hitFlashImage.setAlpha(0);
+        this.hitFlashClearEvent = null;
+      });
+      return;
+    }
+
+    const speed = Phaser.Math.Clamp(playbackSpeed, 1, 4);
+    this.hitFlashTween = this.scene.tweens.add({
+      targets: hitFlashImage,
+      alpha: 0,
+      duration: Math.round(260 * speed),
+      ease: 'Quad.easeOut',
+      onComplete: () => {
+        hitFlashImage.setAlpha(0);
+        this.hitFlashTween = null;
+      },
     });
   }
 
@@ -658,6 +713,10 @@ export class LiveSprite {
     this.stopIdle();
     this.reactionTween?.remove();
     this.reactionTween = null;
+    this.hitFlashTween?.remove();
+    this.hitFlashTween = null;
+    this.hitFlashClearEvent?.remove(false);
+    this.hitFlashClearEvent = null;
     this.scene.events.off(
       Phaser.Scenes.Events.UPDATE,
       this.updateInkMesh,

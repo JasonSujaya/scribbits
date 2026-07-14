@@ -98,6 +98,8 @@ const mockDrawingFileByDominantStat = Object.freeze({
   charm: 'drawing-charm-colorburst.png',
 });
 const submittedDrawingBytes = new Map();
+const freeDrawingsById = new Map();
+const freeDrawingOwnerById = new Map();
 
 const maximumLegendsPageSize = 50;
 const mockCapsuleCatalogIds = new Set(COSMETIC_CATALOG.map((drop) => drop.id));
@@ -802,6 +804,10 @@ const memory = {
   archivedOwnedScribbits,
   drawnToday: false,
   enteredToday: false,
+  freeDrawingIdByPreviewMode: {
+    returning: null,
+    fresh: null,
+  },
   bossChallengedToday: false,
   backedScribbitIdByPreviewMode: {
     returning: null,
@@ -811,7 +817,7 @@ const memory = {
   myClout: 14,
   economyByPreviewMode: {
     returning: createPreviewEconomy({
-      ink: 35,
+      ink: 65,
       inventory: {
         items: {
           'berry-jam-ink': 2,
@@ -1099,6 +1105,68 @@ const getFounderChronicleForPreview = (previewMode) => {
   );
 };
 
+const seasonSummaryForPreview = (previewMode) => {
+  const standing =
+    previewMode === 'logged-out'
+      ? null
+      : previewMode === 'fresh'
+        ? { score: 0, rank: 0 }
+        : { score: 84, rank: 3 };
+  return {
+    id: 'season-1',
+    number: 1,
+    name: 'Season 1',
+    campaignName: 'First Ink',
+    status: 'active',
+    startArenaDay: memory.dayNumber,
+    endArenaDay: memory.dayNumber + 59,
+    daysRemaining: 60,
+    scoringRuleSetId: 'rumble-clout-v1',
+    activeEvent: {
+      id: 'opening-rumble',
+      name: 'Opening Rumble',
+      startArenaDay: memory.dayNumber,
+      endArenaDay: memory.dayNumber + 6,
+      daysRemaining: 7,
+      ruleSetId: 'double-clout',
+      scoreMultiplier: 2,
+    },
+    me: standing,
+  };
+};
+
+const seasonStateForPreview = (previewMode) => ({
+  current: seasonSummaryForPreview(previewMode),
+  next: null,
+  latestFinalized: null,
+  latestReward: null,
+});
+
+const seasonBoardForPreview = (previewMode) => {
+  const season = seasonSummaryForPreview(previewMode);
+  const top = [
+    { username: 'inkwell_kay', score: 126, rank: 1, rewardTier: null },
+    { username: 'marker_jules', score: 101, rank: 2, rewardTier: null },
+    { username: 'mock_player', score: 84, rank: 3, rewardTier: null },
+    { username: 'pixel_mara', score: 77, rank: 4, rewardTier: null },
+    { username: 'crayon_lia', score: 65, rank: 5, rewardTier: null },
+    { username: 'paper_ren', score: 53, rank: 6, rewardTier: null },
+    { username: 'washitape_kit', score: 41, rank: 7, rewardTier: null },
+    { username: 'smudge_sam', score: 28, rank: 8, rewardTier: null },
+  ];
+  return {
+    season,
+    top,
+    me:
+      previewMode === 'logged-out'
+        ? null
+        : previewMode === 'fresh'
+          ? { username: 'mock_player', score: 0, rank: 0, rewardTier: null }
+          : top[2],
+    finalized: false,
+  };
+};
+
 const recordMockFounderChronicleBattle = (
   previewMode,
   report,
@@ -1184,9 +1252,30 @@ const featuredCreationsForPreview = () => {
 };
 
 const hasDrawnTodayForPreview = (previewMode) => {
-  return previewMode === 'fresh'
-    ? getLivingScribbitsForPreview(previewMode).length > 0
-    : memory.drawnToday;
+  const joinedCommunityTheme =
+    previewMode === 'fresh'
+      ? getLivingScribbitsForPreview(previewMode).length > 0
+      : memory.drawnToday;
+  return (
+    joinedCommunityTheme ||
+    Boolean(memory.freeDrawingIdByPreviewMode[previewMode])
+  );
+};
+
+const getTodayFreeDrawingForPreview = (previewMode) => {
+  const drawingId = memory.freeDrawingIdByPreviewMode[previewMode];
+  const drawing = drawingId ? freeDrawingsById.get(drawingId) : null;
+  return drawing?.createdDay === memory.dayNumber ? { ...drawing } : null;
+};
+
+const clearFreeDrawingForPreview = (previewMode) => {
+  const drawingId = memory.freeDrawingIdByPreviewMode[previewMode];
+  if (drawingId) {
+    freeDrawingsById.delete(drawingId);
+    freeDrawingOwnerById.delete(drawingId);
+    submittedDrawingBytes.delete(drawingId);
+  }
+  memory.freeDrawingIdByPreviewMode[previewMode] = null;
 };
 
 const hasEnteredTodayForPreview = (previewMode) => {
@@ -1229,6 +1318,19 @@ const legacyReturnReceiptState = () => {
     memory.legacySeenThroughDay
   );
 };
+
+const backedReturnReceiptState = () => ({
+  kind: 'backed',
+  resolvedDay: memory.dayNumber - 1,
+  backedName: 'Inky Moon',
+  championName: memory.champion.name,
+  pick: cloneScribbit(inkyMoon),
+  opponent: cloneScribbit(memory.champion),
+  opponentIsChampion: true,
+  cloutEarned: 0,
+  inkAwarded: 0,
+  replayAvailable: memory.previousRumbleReplay !== null,
+});
 
 const removeScribbitFromList = (list, scribbitId) => {
   for (let index = list.length - 1; index >= 0; index -= 1) {
@@ -1310,7 +1412,21 @@ const sendJson = (response, status, body) => {
 };
 
 const sendError = (response, status, message) => {
-  sendJson(response, status, { status: 'error', message });
+  const codeByStatus = {
+    400: 'bad_request',
+    401: 'unauthorized',
+    402: 'payment_required',
+    404: 'not_found',
+    409: 'conflict',
+    413: 'payload_too_large',
+    429: 'too_many_requests',
+    500: 'server_error',
+  };
+  sendJson(response, status, {
+    status: 'error',
+    code: codeByStatus[status] ?? 'server_error',
+    message,
+  });
 };
 
 const readJsonBody = async (request) => {
@@ -1428,12 +1544,14 @@ const arenaState = (economy, previewMode = 'returning') => {
       ? null
       : cloneScribbit(memory.champion),
     myScribbits: getLivingScribbitsForPreview(previewMode).map(cloneScribbit),
-    drawnToday: memory.drawnToday,
+    drawnToday: hasDrawnTodayForPreview(previewMode),
+    todayFreeDrawing: getTodayFreeDrawingForPreview(previewMode),
     enteredToday: memory.enteredToday,
     bossChallengedToday: memory.bossChallengedToday,
     rumbleEntrants: memory.todayEntrants.length,
     communityLegendCount: memory.legends.length,
     rumbleResolvesAt: nextUtcMidnightMs(),
+    season: seasonStateForPreview(previewMode),
     todayEntrants: memory.todayEntrants
       .filter((scribbit) => !memory.hiddenScribbitIds.has(scribbit.id))
       .map(cloneScribbit),
@@ -1446,19 +1564,8 @@ const arenaState = (economy, previewMode = 'returning') => {
     nextCapsuleCost: capsuleCostForCurrentPull(economy).cost,
     capsuleProgress: capsuleProgressState(economy),
     founderChronicle: getFounderChronicleForPreview(previewMode),
-    lastRumbleReceipt: {
-      kind: 'backed',
-      resolvedDay: memory.dayNumber - 1,
-      backedName: 'Inky Moon',
-      championName: memory.champion.name,
-      pick: cloneScribbit(inkyMoon),
-      opponent: cloneScribbit(memory.champion),
-      opponentIsChampion: true,
-      cloutEarned: 0,
-      inkAwarded: 0,
-      replayAvailable: memory.previousRumbleReplay !== null,
-    },
-    legacyReturnReceipt: legacyReturnReceiptState(),
+    lastRumbleReceipt: null,
+    legacyReturnReceipt: null,
   };
 };
 
@@ -1475,7 +1582,7 @@ const freshPlayerArenaState = (economy) => {
     ...arenaState(economy, 'fresh'),
     hasCreatedScribbit: submittedScribbits.length > 0,
     myScribbits: submittedScribbits.map(cloneScribbit),
-    drawnToday: submittedScribbits.length > 0,
+    drawnToday: hasDrawnTodayForPreview('fresh'),
     enteredToday,
     myBackedScribbitId: getBackedScribbitIdForPreview('fresh'),
     playStreakDays: 1,
@@ -1604,6 +1711,30 @@ const handleApi = async (request, response, url) => {
 
   if (method === 'GET' && path === '/api/arena') {
     const state = arenaStateForPreview(previewMode);
+    if (
+      previewMode === 'returning' &&
+      (requestHasPreviewFlag(request, url, 'backed-return') ||
+        requestHasPreviewFlag(request, url, 'legacy-return'))
+    ) {
+      sendJson(response, 200, {
+        ...state,
+        lastRumbleReceipt: requestHasPreviewFlag(
+          request,
+          url,
+          'backed-return'
+        )
+          ? backedReturnReceiptState()
+          : null,
+        legacyReturnReceipt: requestHasPreviewFlag(
+          request,
+          url,
+          'legacy-return'
+        )
+          ? legacyReturnReceiptState()
+          : null,
+      });
+      return;
+    }
     if (
       previewMode === 'returning' &&
       requestHasPreviewFlag(request, url, 'owned-return')
@@ -2088,6 +2219,16 @@ const handleApi = async (request, response, url) => {
     return;
   }
 
+  if (method === 'GET' && path === '/api/season') {
+    sendJson(response, 200, seasonStateForPreview(previewMode));
+    return;
+  }
+
+  if (method === 'GET' && path === '/api/season-board') {
+    sendJson(response, 200, seasonBoardForPreview(previewMode));
+    return;
+  }
+
   if (method === 'GET' && path.startsWith('/api/drawing/')) {
     const id = decodeURIComponent(path.slice('/api/drawing/'.length));
     response.writeHead(200, {
@@ -2225,6 +2366,7 @@ const handleApi = async (request, response, url) => {
     resetPreviewEconomy(economy);
     memory.founderChronicleByPreviewMode[previewMode] =
       createEmptyFounderChronicle();
+    clearFreeDrawingForPreview(previewMode);
     if (previewMode === 'fresh') {
       memory.freshLegacySeenThroughDay = 0;
     }
@@ -2500,11 +2642,13 @@ const handleApi = async (request, response, url) => {
     }
 
     memory.myBattles.unshift(rewardedReport);
-    const founderChronicleBeats = recordMockFounderChronicleBattle(
-      previewMode,
-      rewardedReport,
-      challenger.id
-    );
+    const founderChronicleBeats = requestedOpponentId
+      ? recordMockFounderChronicleBattle(
+          previewMode,
+          rewardedReport,
+          challenger.id
+        )
+      : [];
     sendJson(response, 200, {
       report: rewardedReport,
       founderChronicle: getFounderChronicleForPreview(previewMode),
@@ -2552,6 +2696,79 @@ const handleApi = async (request, response, url) => {
       founderChronicle: getFounderChronicleForPreview(previewMode),
       founderChronicleBeat: founderChronicleBeats.at(-1) ?? null,
     });
+    return;
+  }
+
+  if (method === 'POST' && path === '/api/free-drawing') {
+    const body = await readJsonBody(request);
+    const submissionId =
+      body &&
+      typeof body === 'object' &&
+      typeof body.submissionId === 'string' &&
+      /^[A-Za-z0-9_-]{16,80}$/.test(body.submissionId)
+        ? body.submissionId
+        : null;
+    const submission = validateAndAnalyzeScribbitSubmission(body);
+    if (!submissionId || submission.status === 'invalid') {
+      const messageByReason = {
+        'invalid-request':
+          'Send a submission ID, 2-24 character name, and valid drawing images.',
+        'invalid-png':
+          'Base and rendered drawings must be 512x512 PNG data URLs under 400 KB each.',
+        'rendered-mismatch':
+          'Rendered drawing must match the base PNG outside declared accessories and must not erase base pixels.',
+        'insufficient-ink':
+          'Your Free Draw needs a body. Add a few more lines before saving.',
+      };
+      sendError(
+        response,
+        400,
+        submission.status === 'invalid'
+          ? messageByReason[submission.reason]
+          : messageByReason['invalid-request']
+      );
+      return;
+    }
+
+    const id = `mock-free-${submissionId}`;
+    const existingDrawing = freeDrawingsById.get(id);
+    const existingOwner = freeDrawingOwnerById.get(id);
+    if (existingDrawing && existingOwner === previewMode) {
+      sendJson(response, 200, existingDrawing);
+      return;
+    }
+    if (existingDrawing || existingOwner) {
+      sendError(
+        response,
+        409,
+        'That Free Draw submission ID is already in use.'
+      );
+      return;
+    }
+    if (hasDrawnTodayForPreview(previewMode)) {
+      sendError(response, 409, 'You already chose a drawing mode today.');
+      return;
+    }
+
+    submittedDrawingBytes.set(
+      id,
+      Buffer.from(
+        submission.draft.imageDataUrl.slice('data:image/png;base64,'.length),
+        'base64'
+      )
+    );
+    const freeDrawing = {
+      id,
+      name: submission.draft.name,
+      artist: 'mock_player',
+      imageUrl: `/api/drawing/${id}`,
+      createdDay: memory.dayNumber,
+      createdAtMilliseconds: Date.now(),
+    };
+    freeDrawingsById.set(id, freeDrawing);
+    freeDrawingOwnerById.set(id, previewMode);
+    memory.freeDrawingIdByPreviewMode[previewMode] = id;
+    sendJson(response, 201, freeDrawing);
     return;
   }
 
@@ -2761,6 +2978,7 @@ const resetFreshPreview = () => {
     submittedDrawingBytes.delete(scribbitId);
   memory.drawnToday = false;
   memory.enteredToday = false;
+  clearFreeDrawingForPreview('fresh');
   memory.bossChallengedToday = false;
   setBackedScribbitIdForPreview('fresh', null);
   memory.freshLegacySeenThroughDay = 0;

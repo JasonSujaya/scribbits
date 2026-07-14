@@ -20,7 +20,10 @@ mkdir -p "$runtime_dir"
 if [[ -s "$pid_file" ]]; then
   previous_pid="$(<"$pid_file")"
   previous_command="$(ps -p "$previous_pid" -o command= 2>/dev/null || true)"
-  previous_cwd="$(lsof -a -p "$previous_pid" -d cwd -Fn 2>/dev/null | sed -n 's/^n//p')"
+  previous_cwd="$(
+    lsof -a -p "$previous_pid" -d cwd -Fn 2>/dev/null |
+      sed -n 's/^n//p' || true
+  )"
   if [[ "$previous_pid" =~ ^[0-9]+$ ]] &&
     [[ "$previous_command" == *"mock.command"* ]] &&
     [[ "$previous_cwd" == "$app_dir" ]] &&

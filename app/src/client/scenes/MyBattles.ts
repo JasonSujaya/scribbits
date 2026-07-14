@@ -27,6 +27,7 @@ import type {
   BattleJournalPerspective,
 } from '../lib/battlejournal';
 import { screenTitle } from '../lib/screentitle';
+import { translate } from '../lib/localization';
 
 const ROW_INNER_HEIGHT = 146;
 const ROW_STEP = 156;
@@ -68,7 +69,7 @@ export class MyBattles extends Scene {
       this.actionOverlay = null;
     });
     const { width } = this.scale;
-    screenTitle(this, width / 2, 18, 'BATTLES', {
+    screenTitle(this, width / 2, 18, translate('screen.battles'), {
       maxWidth: 390,
       maxHeight: 90,
     });
@@ -77,7 +78,15 @@ export class MyBattles extends Scene {
       tapeColor: UI.tapeAlt,
     });
     this.loadingCard.add(
-      label(this, 0, 0, 'Loading fights…', TYPE.body, UI.inkSoft, true)
+      label(
+        this,
+        0,
+        0,
+        translate('battles.loading'),
+        TYPE.body,
+        UI.inkSoft,
+        true
+      )
     );
     void this.loadBattles(this.renderGeneration);
   }
@@ -133,7 +142,7 @@ export class MyBattles extends Scene {
           this,
           0,
           36,
-          'No fights yet.\nDraw a Scribbit to ring the bell.',
+          translate('battles.empty'),
           TYPE.body,
           UI.inkSoft,
           true
@@ -175,8 +184,11 @@ export class MyBattles extends Scene {
     summary: ReturnType<typeof planBattleJournalSummary>
   ): void {
     const record = summary.recordLine.startsWith('WATCH MODE')
-      ? 'WATCH MODE'
-      : `${summary.ownedWins}W–${summary.ownedLosses}L`;
+      ? translate('battles.watchMode')
+      : translate('battles.record', {
+          wins: summary.ownedWins,
+          losses: summary.ownedLosses,
+        });
     const card = stickerCard(
       this,
       this.scale.width / 2,
@@ -194,7 +206,10 @@ export class MyBattles extends Scene {
         this,
         0,
         0,
-        `${summary.savedCount} FIGHTS  ·  ${record}`,
+        translate('battles.summary', {
+          count: summary.savedCount,
+          record,
+        }),
         23,
         UI.ink,
         true
@@ -213,8 +228,8 @@ export class MyBattles extends Scene {
       pageCount: totalPages,
       fontSize: 17,
       pointerPassthrough: true,
-      previousLabel: 'Previous battle page',
-      nextLabel: 'Next battle page',
+      previousLabel: translate('battles.pagination.previous'),
+      nextLabel: translate('battles.pagination.next'),
       onPrevious: () => this.changePage(this.page - 1),
       onNext: () => this.changePage(this.page + 1),
     });

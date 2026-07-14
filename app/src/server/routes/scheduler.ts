@@ -10,6 +10,8 @@ import {
 import { ensureForecastForDay, getCurrentChampion } from '../core/arenaStore';
 import { getOrCreateArenaPost, publishRumbleResultComment } from '../core/post';
 import { runWithNightlyFence } from '../core/nightlyStorageFence';
+import { getArenaDayNumber } from '../core/day';
+import { ensureInitialSeason } from '../core/season';
 
 export const scheduledTasks = new Hono();
 
@@ -24,8 +26,15 @@ scheduledTasks.post('/nightly-arena', async (c) => {
       redis,
       nightlyOperationId,
       async (fencedStorage) => {
+        const now = new Date();
+        await ensureInitialSeason(
+          fencedStorage,
+          getArenaDayNumber(now),
+          now.getTime()
+        );
         const result = await runNightlyArenaJob(fencedStorage, {
           claimId: nightlyOperationId,
+          now,
         });
         const currentForecast = await ensureForecastForDay(
           fencedStorage,

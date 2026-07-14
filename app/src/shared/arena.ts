@@ -10,6 +10,7 @@ import type { ScribbitUpgrade } from './combat/upgrades';
 import type { Element } from './elements';
 import type { EquipmentLoadout } from './equipment';
 import type { SparRewardReceipt } from './sparreward';
+import type { SeasonPublicState } from './season';
 import {
   cloneEquipmentLoadout,
   createEmptyEquipmentLoadout,
@@ -20,6 +21,15 @@ export { ELEMENTS, isElement } from './elements';
 export type { Element } from './elements';
 export type { EquipGearRequest } from './equipment';
 export type { SparRewardReceipt } from './sparreward';
+export type {
+  SeasonBoard,
+  SeasonBoardEntry,
+  SeasonEventSummary,
+  SeasonPlayerStanding,
+  SeasonPublicState,
+  SeasonRewardReceipt,
+  SeasonSummary,
+} from './season';
 export {
   LEVEL_DAMAGE_BONUS_PER_LEVEL,
   LEVEL_XP_THRESHOLDS,
@@ -273,11 +283,13 @@ export type ArenaState = {
   champion: Scribbit | null; // frozen snapshot, today's boss
   myScribbits: Scribbit[]; // alive, newest first, max 3
   drawnToday: boolean;
+  todayFreeDrawing: FreeDrawing | null; // non-null only for this exact Arena day
   enteredToday: boolean; // rumble entry used
   bossChallengedToday: boolean; // one authoritative Champion Challenge used
   rumbleEntrants: number;
   communityLegendCount: number;
   rumbleResolvesAt: number; // epoch ms — client renders live countdown
+  season: SeasonPublicState; // authoritative 60-day campaign, event, and player rank
   todayEntrants: Scribbit[]; // tonight's Rumble field (gallery + Back targets)
   myBackedScribbitId: string | null; // today's Back, null if unused
   playStreakDays: number; // consecutive UTC days with an expanded game session
@@ -471,6 +483,9 @@ export type RivalRunChallengeCondition =
   | { kind: 'minimum_score'; target: 5 | 6 | 9 }
   | { kind: 'tier_picks'; tier: RivalRunTier; target: 3 }
   | { kind: 'tier_wins'; tier: RivalRunTier; target: 1 | 2 }
+  | { kind: 'player_ability_activations'; target: 3 }
+  | { kind: 'player_shape_power_hit_bouts'; target: 2 }
+  | { kind: 'player_late_shape_power_activations'; target: 1 }
   | { kind: 'tier_set'; targetMask: 7 }
   | { kind: 'outcome_sequence'; sequence: 'loss-win-win' }
   | { kind: 'final_win' }
@@ -564,6 +579,26 @@ export type SubmitScribbitRequest = {
   drawingSupplies?: DrawingSupplySelection;
 };
 
+// Free Draws are private, untimed creations. They deliberately do not carry
+// theme, combat, reward, or Rumble fields from the Scribbit record.
+export type FreeDrawing = {
+  id: string;
+  name: string;
+  artist: string;
+  imageUrl: string;
+  createdDay: number;
+  createdAtMilliseconds: number;
+};
+
+export type SubmitFreeDrawingRequest = {
+  submissionId: string;
+  name: string;
+  baseImageDataUrl: string;
+  imageDataUrl: string;
+  accessories?: AttachedAccessory[];
+  drawingSupplies?: DrawingSupplySelection;
+};
+
 export type CareRequest = { scribbitId: string; action: CareAction };
 export type CareResponse = {
   scribbit: Scribbit;
@@ -598,7 +633,23 @@ export type LegacyCardsState = {
   nextCursor: string | null;
 };
 
-export type ArenaErrorResponse = { status: 'error'; message: string };
+export const ARENA_ERROR_CODES = [
+  'bad_request',
+  'unauthorized',
+  'not_found',
+  'conflict',
+  'too_many_requests',
+  'payload_too_large',
+  'payment_required',
+  'server_error',
+] as const;
+export type ArenaErrorCode = (typeof ARENA_ERROR_CODES)[number];
+export type ArenaErrorResponse = {
+  status: 'error';
+  code: ArenaErrorCode;
+  /** English compatibility fallback for older clients and operational logs. */
+  message: string;
+};
 
 // Legacy relation retained for archived-report compatibility helpers only.
 // Fixed-tick combat does not apply this +/-25% triangle; elements now provide

@@ -9,6 +9,7 @@ import type { ErrorPanel } from '../lib/ui';
 import { setArena } from '../lib/registry';
 import { BRAND_LOGO_TEXTURE } from '../lib/visualassets';
 import type { ArenaState } from '../../shared/arena';
+import { translate } from '../lib/localization';
 
 // Preloader fetches the arena snapshot, bakes baseline textures (UI panel, dot,
 // spark, element badges), stashes state in the registry, then opens ArenaHome.
@@ -45,7 +46,7 @@ export class Preloader extends Scene {
     );
     brandLogo.setScale(brandLogoScale);
     this.add
-      .text(width / 2, height * 0.47, 'Draw it. Its shape becomes its stats.', {
+      .text(width / 2, height * 0.47, translate('preloader.tagline'), {
         fontFamily: FONT_STACK,
         fontSize: '28px',
         color: UI.inkSoft,
@@ -53,7 +54,7 @@ export class Preloader extends Scene {
       .setOrigin(0.5);
 
     this.statusText = this.add
-      .text(width / 2, height * 0.56, 'Reading the forecast…', {
+      .text(width / 2, height * 0.56, translate('preloader.loading'), {
         fontFamily: FONT_STACK,
         fontSize: '26px',
         color: UI.inkSoft,
@@ -83,11 +84,17 @@ export class Preloader extends Scene {
     this.statusText?.setText('');
     if (this.errorPanelRef) return;
     const { width, height } = this.scale;
-    this.errorPanelRef = errorPanel(this, width / 2, height * 0.62, message, () => {
-      this.errorPanelRef?.destroy();
-      this.errorPanelRef = null;
-      this.statusText?.setText('Reading the forecast…');
-      void this.loadArena();
-    });
+    this.errorPanelRef = errorPanel(
+      this,
+      width / 2,
+      height * 0.62,
+      message,
+      () => {
+        this.errorPanelRef?.destroy();
+        this.errorPanelRef = null;
+        this.statusText?.setText(translate('preloader.loading'));
+        void this.loadArena();
+      }
+    );
   }
 }

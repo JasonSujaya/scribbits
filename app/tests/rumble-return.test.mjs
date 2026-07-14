@@ -7,16 +7,25 @@ import test from 'node:test';
 import { createMemoryStorage } from './support/memory-storage.mjs';
 
 const appRoot = process.env.SCRIBBITS_APP_ROOT;
+const compiledClientRoot = process.env.SCRIBBITS_COMPILED_CLIENT_ROOT;
 const compiledServerRoot = process.env.SCRIBBITS_COMPILED_SERVER_ROOT;
 const compiledSharedRoot = process.env.SCRIBBITS_COMPILED_SHARED_ROOT;
 
-if (!appRoot || !compiledServerRoot || !compiledSharedRoot) {
+if (
+  !appRoot ||
+  !compiledClientRoot ||
+  !compiledServerRoot ||
+  !compiledSharedRoot
+) {
   throw new Error(
     'Run Rumble return tests through scripts/run-test-suites.mjs.'
   );
 }
 
 const require = createRequire(import.meta.url);
+const rumbleReturnPresentation = require(
+  join(compiledClientRoot, 'lib', 'rumblereturnpresentation.js')
+);
 const arena = require(join(compiledSharedRoot, 'arena.js'));
 const battle = require(join(compiledServerRoot, 'core', 'battle.js'));
 const battleStore = require(join(compiledServerRoot, 'core', 'battleStore.js'));
@@ -202,6 +211,17 @@ test('unified Rumble return falls back to the exact owned receipt', async () => 
     1,
     4
   );
+  const returnRequest = {
+    userId,
+    resolvedDay,
+    utcDateKey: '20260711',
+    champion: opponent,
+  };
+  assert.equal(
+    await rumbleReturn.loadRumbleReturnReceipt(storage, returnRequest),
+    null,
+    'a winning standing must not guess Ink before its payout receipt exists'
+  );
   await inkStore.claimInkReward(storage, {
     payoutKey: inkStore.getRumbleWinInkPayoutKey(resolvedDay),
     payoutField: entrant.id,
@@ -217,12 +237,10 @@ test('unified Rumble return falls back to the exact owned receipt', async () => 
     'owned-return-report'
   );
 
-  const receipt = await rumbleReturn.loadRumbleReturnReceipt(storage, {
-    userId,
-    resolvedDay,
-    utcDateKey: '20260711',
-    champion: opponent,
-  });
+  const receipt = await rumbleReturn.loadRumbleReturnReceipt(
+    storage,
+    returnRequest
+  );
   assert.deepEqual(
     receipt && {
       kind: receipt.kind,
@@ -247,14 +265,97 @@ test('unified Rumble return falls back to the exact owned receipt', async () => 
   assert.equal(
     (
       await rumbleReturn.loadRumbleReturnReceipt(storage, {
-        userId,
-        resolvedDay,
-        utcDateKey: '20260711',
-        champion: opponent,
+        ...returnRequest,
         hiddenScribbitIds: new Set([opponent.id]),
       })
     )?.replayAvailable,
     false
+  );
+
+  const duplicateEntrant = createScribbit({
+    id: 'owned-return-duplicate',
+    name: 'Duplicate Entry',
+    artist: userId,
+  });
+  await scribbit.storeScribbit(storage, userId, duplicateEntrant);
+  await scribbit.recordRumbleStandingOnScribbit(
+    storage,
+    duplicateEntrant.id,
+    resolvedDay,
+    0,
+    1,
+    0
+  );
+  assert.equal(
+    await rumbleReturn.loadRumbleReturnReceipt(storage, returnRequest),
+    null,
+    'multiple owned standing receipts must fail closed instead of choosing one'
+  );
+});
+
+test('owned Rumble return presentation stays compact and accessible', () => {
+  const presentation = rumbleReturnPresentation.planRumbleReturnPresentation({
+    kind: 'owned',
+    resolvedDay: 8,
+    entrant: createScribbit({ name: 'Margin Moth' }),
+    wins: 2,
+    losses: 1,
+    xpAwarded: 4,
+    inkAwarded: 10,
+    isChampion: false,
+    replayAvailable: true,
+  });
+
+  assert.deepEqual(presentation, {
+    outcome: 'defeat',
+    outcomeLabel: 'DEFEAT',
+    title: 'MARGIN MOTH WAS ELIMINATED',
+    detail: 'RUMBLE RECORD 2–1',
+    reward: '+4 XP • +10 INK',
+    highlight: false,
+  });
+  assert.equal(
+    rumbleReturnPresentation.formatRumbleReturnAccessibleSummary(presentation),
+    'DEFEAT. MARGIN MOTH WAS ELIMINATED. RUMBLE RECORD 2–1. +4 XP • +10 INK'
+  );
+});
+
+test('backed Rumble return presentation distinguishes losses and wins', () => {
+  const losingPresentation =
+    rumbleReturnPresentation.planRumbleReturnPresentation({
+      kind: 'backed',
+      resolvedDay: 8,
+      backedName: 'Only Moon',
+      championName: 'Solar Kiln',
+      cloutEarned: 0,
+      inkAwarded: 0,
+      replayAvailable: true,
+    });
+  assert.equal(
+    rumbleReturnPresentation.formatRumbleReturnAccessibleSummary(
+      losingPresentation
+    ),
+    'DEFEAT. ONLY MOON WAS ELIMINATED. Solar Kiln WON RUMBLE #8. NO CLOUT EARNED'
+  );
+
+  assert.deepEqual(
+    rumbleReturnPresentation.planRumbleReturnPresentation({
+      kind: 'backed',
+      resolvedDay: 8,
+      backedName: 'Solar Kiln',
+      championName: 'Solar Kiln',
+      cloutEarned: 3,
+      inkAwarded: 5,
+      replayAvailable: true,
+    }),
+    {
+      outcome: 'victory',
+      outcomeLabel: 'VICTORY!',
+      title: 'SOLAR KILN WON THE RUMBLE',
+      detail: 'Solar Kiln WON RUMBLE #8',
+      reward: '+3 CLOUT • +5 INK',
+      highlight: true,
+    }
   );
 });
 

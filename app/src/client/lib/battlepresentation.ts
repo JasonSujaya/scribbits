@@ -20,6 +20,8 @@ export type BattleImpactPlan = Readonly<{
   cameraShake: number;
   particleCount: number;
   ringCount: number;
+  damageText: string;
+  damageTextDurationMilliseconds: number;
   damageTextScale: number;
 }>;
 
@@ -155,6 +157,7 @@ export type ReplayArenaChallengeResultPlan = Readonly<{
 
 export type ReplayPostFightActionKind =
   | 'rivals'
+  | 'firstChest'
   | 'backContender'
   | 'replay'
   | 'return';
@@ -313,6 +316,7 @@ export function planReplayPostFightActions(input: {
   canBackContender: boolean;
   canReplay: boolean;
   returnLabel: string;
+  primaryAction?: ReplayPostFightAction;
   rivalActionCopy?: Readonly<{
     label: string;
     accessibleLabel: string;
@@ -333,6 +337,15 @@ export function planReplayPostFightActions(input: {
         tone: 'ghost',
       })
     : null;
+
+  if (input.primaryAction) {
+    return Object.freeze({
+      primary: Object.freeze({ ...input.primaryAction }),
+      replayAction,
+      returnAction,
+      buttonHeight,
+    });
+  }
 
   if (input.canChooseRival) {
     const rivalActionCopy = input.rivalActionCopy ?? {
@@ -505,6 +518,7 @@ export function planBattleImpact(input: BattleImpactInput): BattleImpactPlan {
     critical: 96,
   }[tier];
   const speed = clamp(input.playbackSpeed, 1, 4);
+  const damage = Math.max(0, Math.round(input.damage));
 
   return {
     tier,
@@ -521,6 +535,12 @@ export function planBattleImpact(input: BattleImpactInput): BattleImpactPlan {
     ringCount: input.reduceMotion
       ? 0
       : { light: 1, solid: 1, heavy: 2, critical: 3 }[tier],
+    damageText: `-${damage}${input.critical ? '!' : ''}`,
+    // Replay accelerates Phaser's TweenManager at 2x and 4x. Compensating the
+    // authored duration keeps exact damage readable at every playback speed.
+    damageTextDurationMilliseconds: input.reduceMotion
+      ? 640
+      : Math.round(900 * speed),
     damageTextScale: {
       light: 0.9,
       solid: 1,

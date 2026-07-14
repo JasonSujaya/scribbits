@@ -1,6 +1,6 @@
 import type { BattleKind } from '../../shared/arena';
 
-export type ReplayEntryMode = 'fresh' | 'saved';
+export type ReplayEntryMode = 'fresh' | 'birth' | 'saved';
 
 export type ReplayPostFightEligibilityInput = Readonly<{
   reportKind: BattleKind;

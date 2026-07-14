@@ -286,13 +286,23 @@ and personal Legacy Cards outside the primary dock.
 - [x] Browser proof verifies the Daily Ink Trail, original 5-Ink chest CTA,
       collection/rank/pity overlay, server-confirmed pull ceremony, and persisted
       post-pull progress with no runtime errors on `localhost:8902` (July 10).
-- [x] Mystery Ink now presents one clickable hand-drawn chest, a Loot
+- [x] Mystery Ink now presents clickable generated hand-drawn chest states, a Loot
       banner with real Gear art, visible 70/25/5 odds, and Epic pity by open ten.
-      Players can open one or a maximum batch of ten; server-safe retries resume
-      the unfinished open, and there is no 100-open or auto-repeat action. A
+      Generated Ink tokens label the wallet and exact `OPEN ×1` / `OPEN ×10`
+      costs. Ten rewards reveal in paid order before the complete grid appears;
+      server-safe retries resume the unfinished open, and there is no 100-open
+      or auto-repeat action. Programmatic focus no longer paints red rectangles
+      over the canvas while keyboard focus remains visible. A
       disabled Reddit Gold Styles card stays cosmetic-only and coming soon.
       Fresh 393x852 proof covers one-open, ten-open, reveal, Bag return, and zero
       browser warnings or errors (July 13).
+- [x] Draw now opens with one visual choice between the timed three-day Community
+      Theme and untimed Free Draw. Free Draw reuses the large canvas and supplies,
+      saves idempotently in its own versioned server namespace, and never enters
+      Rumble, rewards, battles, roster, or Legacy. The confirmation says Save
+      Drawing, and Draw then shows the verified current-day image with one
+      Practice action. Fresh live proof covers the choice card and clean canvas
+      with zero browser warnings or errors (July 14).
 - [x] Gallery now exposes four owned items at a time in the renamed Ink Kit,
       with full art, names, counts, and no undiscovered-item wall. Legends and
       Legacy use the same four-card rhythm, and all paging controls sit below
@@ -385,8 +395,8 @@ and personal Legacy Cards outside the primary dock.
       size, eraser, undo, and one Tools icon by default. Collectible paints,
       brushes, stickers, Clear, and Redo remain one tap away; active special
       supplies stay visibly badged. Failed submission resumes the authoritative
-      60-second clock, and the first-birth Rival Run chooser retains native
-      keyboard controls plus a return to the birth receipt. Tall phones distribute vertical slack without stretching the
+      60-second clock, and every accepted Community Scribbit now starts one
+      guarded random founding-NPC fight using the submitted Scribbit ID. Tall phones distribute vertical slack without stretching the
       drawing square or stage art (July 13).
 - [x] Arena home now contains one direct battle setup only: a visible
       Scribbit-versus-opponent matchup, Champion/Spar selectors, and one paper
@@ -458,13 +468,20 @@ and personal Legacy Cards outside the primary dock.
       and the exact previous FINAL/BIGGEST SPLAT follows into the next choice. The
       complete compact mobile loop is browser-proven with reachable enlarged FIGHT
       targets and zero captured runtime errors (July 11).
-- [x] The three-choice Rival Run board is now the first decision for every
-      player-facing Spar: Arena, first birth, and post-fight continuation all
-      share one controller for slate fetch, day rollover, selected-opponent
-      request, report staging, and VS ceremony. Opponent-less scene calls and
-      the blind opening fight are removed. Live mobile proof completes all three
+- [x] The three-choice Rival Run board is the decision path for Arena Spar and
+      post-fight continuation, while birth intentionally skips that older board
+      for one simple server-selected founding opponent. Every staged report must
+      contain the submitted Scribbit ID, and the birth replay returns directly
+      to Arena without surfacing older Founder, Legacy, or Rumble receipts. Live mobile proof completes all three
       bouts, reaches the final challenge receipt, and rolls into a fresh bout
       1/3 board; the compact chooser clears the persistent dock (July 14).
+- [x] Rival Run now includes `SIGNATURE INK`, a server-authoritative Technique
+      Trial that counts three player Shape Power activations from immutable
+      battle events, caps progress exactly, preserves frozen v1 challenge
+      snapshots, and reuses the existing challenge/result surfaces (July 14).
+- [x] Shop-only stage, chest, and Ink-token textures now preload on Shop entry,
+      deferring 7,526,466 image bytes from initial Arena/Draw boot while a fresh
+      live route still renders the full Shop with zero runtime errors (July 14).
 - [x] Four-Power Practice Lab is server-analyzed, reward-free, session-scoped,
       and rejected before battle storage. It has a post-lock Arena entry,
       server-decided power feedback, continuous replay, no profile/Belief path,

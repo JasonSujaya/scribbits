@@ -41,11 +41,11 @@ const appMenuSource = await readFile(
 
 test('the primary dock is Arena, Bag, Draw, Battles, Shop', () => {
   const definitions = [
-    "{ key: 'arena', label: 'Arena', route: 'ArenaHome' }",
-    "{ key: 'bag', label: 'Bag', route: 'bag' }",
-    "{ key: 'draw', label: 'Draw', route: 'dailyDraw' }",
-    "{ key: 'battles', label: 'Battles', route: 'MyBattles' }",
-    "{ key: 'shop', label: 'Shop', route: 'Shop' }",
+    "{ key: 'arena', label: 'nav.arena', route: 'ArenaHome' }",
+    "{ key: 'bag', label: 'nav.bag', route: 'bag' }",
+    "{ key: 'draw', label: 'nav.draw', route: 'dailyDraw' }",
+    "{ key: 'battles', label: 'nav.battles', route: 'MyBattles' }",
+    "{ key: 'shop', label: 'nav.shop', route: 'Shop' }",
   ];
 
   let previousIndex = -1;
@@ -70,13 +70,16 @@ test('Shop acquires, Bag equips, and Settings opens Gallery', () => {
   assert.match(shopSource, /openCapsuleMachine\(this/);
   assert.match(shopSource, /embedded: true/);
   assert.doesNotMatch(gallerySource, /openCapsuleMachine|pullCapsule/);
-  assert.match(gallerySource, /bagActive \? 'BAG' : 'GALLERY'/);
+  assert.match(
+    gallerySource,
+    /translate\(bagActive \? 'screen\.bag' : 'screen\.gallery'\)/
+  );
   assert.match(
     gallerySource,
     /appDock\(this, this\.tab === 'collection' \? 'bag' : null/
   );
   assert.match(gallerySource, /bag: \(\) => this\.switchTab\('collection'\)/);
-  assert.match(appMenuSource, /label: 'Open settings and Gallery'/);
+  assert.match(appMenuSource, /label: translate\('appMenu\.openSettings'\)/);
   assert.match(appMenuSource, /setGalleryTab\(scene, 'legends'\)/);
   assert.match(appMenuSource, /fadeToScene\(scene, 'Gallery'\)/);
 });

@@ -49,6 +49,15 @@ export type ResolvedGearCombatLoadout = Readonly<{
   snapshot: GearCombatSnapshot | null;
 }>;
 
+export type GearCombatSummaryTone = 'benefit' | 'tradeoff' | 'neutral';
+
+export type GearCombatSummaryItem = Readonly<{
+  key: 'impact' | 'hearts' | 'crit' | 'cooldown' | 'windup' | 'start';
+  label: string;
+  value: string;
+  tone: GearCombatSummaryTone;
+}>;
+
 export const EMPTY_GEAR_COMBAT_MODIFIERS: GearCombatModifiers = Object.freeze({
   damagePermille: 1_000,
   maximumHitPointsPermille: 1_000,
@@ -66,6 +75,84 @@ const signedPercent = (deltaPermille: number): string => {
 const percentagePoint = (permille: number): string => {
   return `+${(permille / 10).toFixed(1)}%`;
 };
+
+const summaryPercent = (deltaPermille: number): string => {
+  if (deltaPermille === 0) return '0.0%';
+  return signedPercent(deltaPermille);
+};
+
+const timingSummary = (ticks: number): string => {
+  if (ticks === 0) return 'NORMAL';
+  return `${Math.abs(ticks)}T ${ticks < 0 ? 'FASTER' : 'SLOWER'}`;
+};
+
+export function summarizeGearCombatModifiers(
+  modifiers: GearCombatModifiers
+): readonly GearCombatSummaryItem[] {
+  const impactDelta = modifiers.damagePermille - 1_000;
+  const heartsDelta = modifiers.maximumHitPointsPermille - 1_000;
+  const cooldownDelta = modifiers.cooldownPermille - 1_000;
+  return Object.freeze([
+    Object.freeze({
+      key: 'impact',
+      label: 'IMPACT',
+      value: summaryPercent(impactDelta),
+      tone:
+        impactDelta > 0 ? 'benefit' : impactDelta < 0 ? 'tradeoff' : 'neutral',
+    }),
+    Object.freeze({
+      key: 'hearts',
+      label: 'HEARTS',
+      value: summaryPercent(heartsDelta),
+      tone:
+        heartsDelta > 0 ? 'benefit' : heartsDelta < 0 ? 'tradeoff' : 'neutral',
+    }),
+    Object.freeze({
+      key: 'crit',
+      label: 'CRIT',
+      value: summaryPercent(modifiers.criticalChanceBonusPermille),
+      tone: modifiers.criticalChanceBonusPermille > 0 ? 'benefit' : 'neutral',
+    }),
+    Object.freeze({
+      key: 'cooldown',
+      label: 'COOLDOWN',
+      value:
+        cooldownDelta === 0
+          ? 'NORMAL'
+          : `${(Math.abs(cooldownDelta) / 10).toFixed(1)}% ${
+              cooldownDelta < 0 ? 'FASTER' : 'SLOWER'
+            }`,
+      tone:
+        cooldownDelta < 0
+          ? 'benefit'
+          : cooldownDelta > 0
+            ? 'tradeoff'
+            : 'neutral',
+    }),
+    Object.freeze({
+      key: 'windup',
+      label: 'WIND-UP',
+      value: timingSummary(modifiers.telegraphTicksDelta),
+      tone:
+        modifiers.telegraphTicksDelta < 0
+          ? 'benefit'
+          : modifiers.telegraphTicksDelta > 0
+            ? 'tradeoff'
+            : 'neutral',
+    }),
+    Object.freeze({
+      key: 'start',
+      label: 'START',
+      value: timingSummary(modifiers.initialDelayTicksDelta),
+      tone:
+        modifiers.initialDelayTicksDelta < 0
+          ? 'benefit'
+          : modifiers.initialDelayTicksDelta > 0
+            ? 'tradeoff'
+            : 'neutral',
+    }),
+  ] satisfies GearCombatSummaryItem[]);
+}
 
 const freezeModifiers = (modifiers: GearCombatModifiers): GearCombatModifiers =>
   Object.freeze({ ...modifiers });

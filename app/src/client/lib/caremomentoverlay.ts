@@ -19,6 +19,12 @@ export type CareMomentOverlay = Readonly<{
   destroy: () => void;
 }>;
 
+export type CareMomentOverlayOptions = Readonly<{
+  focusOnOpen?: boolean;
+  progressLabel?: string;
+  onDismiss?: () => void;
+}>;
+
 /**
  * Opens a short, paper-native care receipt over the rebuilt Arena. The server
  * has already accepted the care action; this layer only celebrates that truth.
@@ -27,12 +33,12 @@ export function openCareMomentOverlay(
   scene: Scene,
   scribbit: Scribbit,
   plan: CareMomentPlan,
-  focusOnOpen = false
+  options: CareMomentOverlayOptions = {}
 ): CareMomentOverlay {
   const { width, height } = scene.scale;
   const style = ELEMENT_STYLES[scribbit.element];
   const reduceMotion = prefersReducedMotion();
-  const shouldMoveKeyboardFocus = focusOnOpen;
+  const shouldMoveKeyboardFocus = options.focusOnOpen ?? false;
   const cardWidth = width - 86;
   const cardHeight = 340;
   const cardCenterY = height - NAV_SAFE - cardHeight / 2 - 16;
@@ -107,7 +113,7 @@ export function openCareMomentOverlay(
     scene,
     0,
     145,
-    `${plan.progressLine}  •  TAP TO KEEP GOING`,
+    options.progressLabel ?? `${plan.progressLine}  •  TAP TO KEEP GOING`,
     18,
     UI.inkSoft,
     true
@@ -162,6 +168,7 @@ export function openCareMomentOverlay(
     actionOverlay.destroy();
     if (reduceMotion) {
       layer.destroy(true);
+      options.onDismiss?.();
       return;
     }
     scene.tweens.add({
@@ -170,7 +177,10 @@ export function openCareMomentOverlay(
       alpha: 0,
       duration: 150,
       ease: 'Cubic.easeIn',
-      onComplete: () => layer.destroy(true),
+      onComplete: () => {
+        layer.destroy(true);
+        options.onDismiss?.();
+      },
     });
     dismissSurface.disableInteractive();
   };
@@ -195,7 +205,7 @@ export function openCareMomentOverlay(
     plan.headline,
     plan.reaction,
     plan.rewardLine,
-    plan.progressLine,
+    options.progressLabel ?? plan.progressLine,
   ]
     .map((part) => part.trim().replace(/[.!?]+$/, ''))
     .join('. ');

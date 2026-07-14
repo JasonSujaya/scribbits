@@ -63,8 +63,7 @@ export function mountBagInventoryGrid(options: BagInventoryGridOptions): void {
     initialScrollOffset,
     onScrollOffsetChange,
   } = options;
-  const cardWidth =
-    (viewport.width - columnGap * (columns - 1)) / columns;
+  const cardWidth = (viewport.width - columnGap * (columns - 1)) / columns;
   const rowStep = cardHeight + rowGap;
   const rowCount = Math.ceil(items.length / columns);
   const contentHeight = Math.max(
@@ -84,15 +83,11 @@ export function mountBagInventoryGrid(options: BagInventoryGridOptions): void {
   );
   const maskShape = scene.add.graphics().setVisible(false);
   maskShape.fillStyle(0xffffff, 1);
-  maskShape.fillRect(
-    viewport.x,
-    viewport.y,
-    viewport.width,
-    viewport.height
-  );
+  maskShape.fillRect(viewport.x, viewport.y, viewport.width, viewport.height);
   scene.children.remove(maskShape);
   let viewportMaskFilter: Phaser.Filters.Mask | null = null;
-  let viewportFilterList: Phaser.GameObjects.Components.FilterList | null = null;
+  let viewportFilterList: Phaser.GameObjects.Components.FilterList | null =
+    null;
   if (scene.game.renderer.type === Phaser.WEBGL) {
     canvasContent.enableFilters();
     viewportFilterList = canvasContent.filters?.internal ?? null;
@@ -121,6 +116,8 @@ export function mountBagInventoryGrid(options: BagInventoryGridOptions): void {
   scrollViewport.className = 'bag-inventory-scroll';
   scrollViewport.setAttribute('role', 'region');
   scrollViewport.setAttribute('aria-label', 'Scrollable Bag inventory');
+  scrollViewport.setAttribute('data-scrollable', String(maximumScroll > 0));
+  scrollViewport.setAttribute('data-scroll-maximum', String(maximumScroll));
   scrollViewport.tabIndex = 0;
   Object.assign(scrollViewport.style, {
     overflowX: 'hidden',
@@ -145,7 +142,10 @@ export function mountBagInventoryGrid(options: BagInventoryGridOptions): void {
     const row = Math.floor(index / columns);
     const x = column * (cardWidth + columnGap);
     const y = row * rowStep;
-    item.view.setPosition(x + cardWidth / 2, y + cardHeight / 2);
+    item.view.setPosition(
+      Math.round(x + cardWidth / 2),
+      Math.round(y + cardHeight / 2)
+    );
     canvasContent.add(item.view);
 
     const semanticItem = document.createElement('div');
@@ -182,29 +182,28 @@ export function mountBagInventoryGrid(options: BagInventoryGridOptions): void {
     .rectangle(
       scrollbarX,
       viewport.y + viewport.height / 2,
-      6,
+      8,
       viewport.height - 12,
       UI.inkSoftHex,
-      maximumScroll > 0 ? 0.18 : 0
+      maximumScroll > 0 ? 0.3 : 0.16
     )
     .setDepth(3);
   const scrollbarThumbHeight =
     maximumScroll > 0
       ? Math.max(48, (viewport.height * viewport.height) / contentHeight)
-      : 0;
+      : viewport.height - 12;
   const scrollbarThumb = scene.add
     .rectangle(
       scrollbarX,
       viewport.y + 6,
-      6,
+      8,
       scrollbarThumbHeight,
-      UI.coral,
-      maximumScroll > 0 ? 0.88 : 0
+      maximumScroll > 0 ? UI.coral : UI.inkSoftHex,
+      maximumScroll > 0 ? 0.95 : 0.42
     )
     .setOrigin(0.5, 0)
     .setDepth(4);
-  const availableThumbTravel =
-    viewport.height - 12 - scrollbarThumbHeight;
+  const availableThumbTravel = viewport.height - 12 - scrollbarThumbHeight;
   const syncScrollPosition = (): void => {
     const scrollOffset = Phaser.Math.Clamp(
       scrollViewport.scrollTop,

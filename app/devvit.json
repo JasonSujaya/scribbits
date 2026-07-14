@@ -33,11 +33,34 @@
         "location": "subreddit",
         "forUserType": "moderator",
         "endpoint": "/internal/menu/post-create"
+      },
+      {
+        "label": "Manage Scribbits seasons",
+        "description": "Create, schedule, pause, and finalize ranking seasons",
+        "location": "subreddit",
+        "forUserType": "moderator",
+        "endpoint": "/internal/menu/seasons-manage"
       }
     ]
   },
+  "forms": {
+    "manageSeasons": "/internal/menu/seasons-submit"
+  },
+  "settings": {
+    "global": {
+      "seasonAdminUserIds": {
+        "type": "string",
+        "label": "Season admin Reddit user IDs",
+        "helpText": "Comma-separated Reddit account IDs using the t2_ prefix.",
+        "placeholder": "t2_abc,t2_def",
+        "isSecret": true,
+        "validationEndpoint": "/internal/menu/season-admin-user-ids-validate"
+      }
+    }
+  },
   "triggers": {
-    "onAppInstall": "/internal/triggers/on-app-install"
+    "onAppInstall": "/internal/triggers/on-app-install",
+    "onAppUpgrade": "/internal/triggers/on-app-upgrade"
   },
   "scheduler": {
     "tasks": {

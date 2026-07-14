@@ -3,11 +3,8 @@
   <head>
     <link rel="stylesheet" type="text/css" href="splash.css" />
     <meta charset="UTF-8" />
-    <meta
-      name="viewport"
-      content="width=device-width, initial-scale=1.0"
-    />
-    <title>Scribbits</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title data-i18n="app.name">Scribbits</title>
   </head>
   <body class="app">
     <!-- Sketchbook page. Everything is static + intrinsically sized so it renders
@@ -27,7 +24,9 @@
       </div>
 
       <p class="tagline">
-        <strong>Draw a Scribbit. Watch it fight.</strong>
+        <strong data-i18n="splash.tagline">
+          Draw a Scribbit. Watch it fight.
+        </strong>
       </p>
 
       <section
@@ -35,7 +34,11 @@
         id="today-status"
         aria-labelledby="showcase-label"
       >
-        <span class="showcase-label" id="showcase-label">
+        <span
+          class="showcase-label"
+          id="showcase-label"
+          data-i18n="splash.showcase.sketchbook"
+        >
           FROM OUR SKETCHBOOK
         </span>
         <div class="showcase-grid">
@@ -87,7 +90,12 @@
         </div>
       </section>
 
-      <button class="start-button" id="start-button" type="button">
+      <button
+        class="start-button"
+        id="start-button"
+        type="button"
+        data-i18n="splash.action.enterArena"
+      >
         ENTER ARENA
       </button>
     </div>

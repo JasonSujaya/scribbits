@@ -5,6 +5,7 @@
 const strings = new Map();
 const hashes = new Map();
 const sortedSets = new Map();
+const settingValues = new Map();
 const submittedPosts = [];
 const submittedComments = [];
 let stringSwapAfterRead = null;
@@ -314,6 +315,18 @@ export const reddit = {
   async getCurrentUsername() {
     return context.username;
   },
+  async getCurrentUser() {
+    return context.userId && context.username
+      ? { id: context.userId, username: context.username }
+      : undefined;
+  },
+  getModerators() {
+    return {
+      async get() {
+        return [];
+      },
+    };
+  },
   async submitCustomPost(options) {
     if (apiContractRuntimeState.failNextPostSubmission) {
       apiContractRuntimeState.failNextPostSubmission = false;
@@ -371,6 +384,12 @@ export const reddit = {
   },
 };
 
+export const settings = {
+  async get(key) {
+    return settingValues.get(key);
+  },
+};
+
 export const media = {};
 
 export function createServer() {
@@ -388,6 +407,7 @@ export function resetApiContractRuntime({
   strings.clear();
   hashes.clear();
   sortedSets.clear();
+  settingValues.clear();
   submittedPosts.length = 0;
   submittedComments.length = 0;
   context.userId = userId;
@@ -445,6 +465,10 @@ export function setApiContractString(key, value) {
 
 export function setApiContractHashField(key, field, value) {
   setHashFields(key, { [field]: value });
+}
+
+export function setApiContractSetting(key, value) {
+  settingValues.set(key, value);
 }
 
 export function deleteApiContractKeys(...keys) {

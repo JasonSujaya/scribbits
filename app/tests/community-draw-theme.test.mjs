@@ -169,11 +169,14 @@ test('Draw and the contender picker explain the shared category in game', () => 
   );
 
   assert.match(drawSource, /-DAY COMMUNITY THEME/);
-  assert.match(drawSource, /Everyone receives the same theme/);
+  assert.match(drawSource, /Start Theme gives you 60 seconds/);
+  assert.match(drawSource, /Free Draw has no timer and is saved separately/);
   assert.match(pickerSource, /COMMUNITY CREATIONS/);
   assert.match(pickerSource, /themePrompt\.toUpperCase\(\)/);
   assert.match(
     routeSource,
     /drawingThemeId: selectCommunityDoodleDare\(dayNumber\)\.id/
   );
+  assert.match(routeSource, /api\.post\('\/free-drawing'/);
+  assert.match(routeSource, /hasFreeDrawingForDay/);
 });

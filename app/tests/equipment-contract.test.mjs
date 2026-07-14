@@ -106,10 +106,15 @@ test('Ink Kit derives categories from equipment and avoids scrap vocabulary', ()
     /SUPPORT \$\{attachedRankLabel\} · BOOSTS/,
     'equipped support Gear details must explain the combined technique'
   );
-  assert.match(
+  assert.doesNotMatch(
+    collectionBookSource,
+    /GEAR WEEK/,
+    'Bag must not add weekly progress copy above the Gear grid'
+  );
+  assert.doesNotMatch(
     collectionBookSource,
     /gearWeekDay\.challenge/,
-    'Bag must show the current Gear Week challenge'
+    'Bag must not add the daily challenge above the Gear grid'
   );
   assert.match(
     collectionBookSource,

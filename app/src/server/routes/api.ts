@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import type { Context as HonoContext, Handler, MiddlewareHandler } from 'hono';
 import { context, media, redis, reddit } from '@devvit/web/server';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import type {
   ArenaErrorResponse,
   ArenaState,
@@ -13,6 +13,7 @@ import type {
   DirectBattleResponse,
   EquipTitleRequest,
   Forecast,
+  FreeDrawing,
   Inventory,
   LegacyCardsState,
   LegendsState,
@@ -22,6 +23,8 @@ import type {
   RivalRunChoice,
   RivalRunState,
   ScoutNotebookState,
+  SeasonBoard,
+  SeasonPublicState,
   Scribbit,
   SparBattleResponse,
   SparRequest,
@@ -93,6 +96,13 @@ import {
 } from '../core/dailyActions';
 import { commitScribbitSubmission } from '../core/submission';
 import {
+  getFreeDrawingOwner,
+  hasFreeDrawingForDay,
+  loadFreeDrawing,
+  loadFreeDrawingForDay,
+  saveFreeDrawing,
+} from '../core/freeDrawingStore';
+import {
   formatUtcDateKey,
   getArenaDayNumber,
   getNextUtcDayStartMs,
@@ -145,6 +155,11 @@ import {
   removeScribbitCompletely,
 } from '../core/removal';
 import { deletePlayerData } from '../core/privacy';
+import {
+  ensureInitialSeason,
+  loadSeasonBoard,
+  loadSeasonPublicState,
+} from '../core/season';
 import { runWithPlayerMutationLease } from '../core/dataDeletion';
 import {
   claimAndAwardDailySparWin,
@@ -176,6 +191,7 @@ export const api = new Hono();
 const capsuleOperationPendingTimeoutMs = 15_000;
 const foundingSparRivalSlateLimit = 3;
 const scribbitIdPattern = /^[A-Za-z0-9:_-]{4,90}$/;
+const freeDrawingSubmissionIdPattern = /^[A-Za-z0-9_-]{16,80}$/;
 const practiceRequestMaximumBodyBytes = 560 * 1024;
 
 const isRecord = (value: unknown): value is Record<string, unknown> => {
@@ -242,35 +258,59 @@ const readBoundedJsonBody = async (
 };
 
 const badRequest = (c: HonoContext, message: string) => {
-  return c.json<ErrorResponse>({ status: 'error', message }, 400);
+  return c.json<ErrorResponse>(
+    { status: 'error', code: 'bad_request', message },
+    400
+  );
 };
 
 const unauthorized = (c: HonoContext, message: string) => {
-  return c.json<ErrorResponse>({ status: 'error', message }, 401);
+  return c.json<ErrorResponse>(
+    { status: 'error', code: 'unauthorized', message },
+    401
+  );
 };
 
 const notFound = (c: HonoContext, message: string) => {
-  return c.json<ErrorResponse>({ status: 'error', message }, 404);
+  return c.json<ErrorResponse>(
+    { status: 'error', code: 'not_found', message },
+    404
+  );
 };
 
 const conflict = (c: HonoContext, message: string) => {
-  return c.json<ErrorResponse>({ status: 'error', message }, 409);
+  return c.json<ErrorResponse>(
+    { status: 'error', code: 'conflict', message },
+    409
+  );
 };
 
 const tooManyRequests = (c: HonoContext, message: string) => {
-  return c.json<ErrorResponse>({ status: 'error', message }, 429);
+  return c.json<ErrorResponse>(
+    { status: 'error', code: 'too_many_requests', message },
+    429
+  );
 };
 
 const payloadTooLarge = (c: HonoContext, message: string) => {
-  return c.json<ErrorResponse>({ status: 'error', message }, 413);
+  return c.json<ErrorResponse>(
+    { status: 'error', code: 'payload_too_large', message },
+    413
+  );
 };
 
 const paymentRequired = (c: HonoContext, message: string) => {
-  return c.json<ErrorResponse>({ status: 'error', message }, 402);
+  return c.json<ErrorResponse>(
+    { status: 'error', code: 'payment_required', message },
+    402
+  );
 };
 
 const serverError = (c: HonoContext, message: string) => {
-  return c.json<ErrorResponse>({ status: 'error', message }, 500);
+  return c.json<ErrorResponse>(
+    { status: 'error', code: 'server_error', message },
+    500
+  );
 };
 
 const getWritableArenaDay = async (now: Date): Promise<number | undefined> => {
@@ -443,6 +483,14 @@ const readCareRequest = (
 
 const createScribbitId = (day: number): string => {
   return `scribbit-${day}-${randomUUID().replaceAll('-', '').slice(0, 16)}`;
+};
+
+const createFreeDrawingId = (userId: string, submissionId: string): string => {
+  const digest = createHash('sha256')
+    .update(`${userId}:${submissionId}`)
+    .digest('hex')
+    .slice(0, 24);
+  return `free-${digest}`;
 };
 
 const uploadDrawing = async (imageDataUrl: string): Promise<string> => {
@@ -626,17 +674,20 @@ const finalizeSparBattle = async (
     utcDateKey: string;
     completedAt: Date;
     fallbackFounderChronicle: ArenaState['founderChronicle'];
+    tracksFounderChronicle: boolean;
   }>
 ): Promise<SparBattleResponse> => {
   const completedAtMilliseconds = input.completedAt.getTime();
   await saveBattleReport(redis, input.report, completedAtMilliseconds);
-  await queueFounderChronicleBattle(
-    redis,
-    input.userId,
-    input.report,
-    input.challengerId,
-    completedAtMilliseconds
-  );
+  if (input.tracksFounderChronicle) {
+    await queueFounderChronicleBattle(
+      redis,
+      input.userId,
+      input.report,
+      input.challengerId,
+      completedAtMilliseconds
+    );
+  }
 
   let inkAwarded = input.report.inkAwarded ?? 0;
   let rewardReceipt: SparRewardReceipt | null = createSparRewardReceipt({
@@ -671,12 +722,18 @@ const finalizeSparBattle = async (
   };
   await saveBattleReport(redis, rewardedReport, completedAtMilliseconds);
   await recordDailyPlay(redis, input.userId, input.completedAt);
-  const directBattleResponse = await finishDirectBattleResponse(
-    input.userId,
-    rewardedReport,
-    input.challengerId,
-    input.fallbackFounderChronicle
-  );
+  const directBattleResponse = input.tracksFounderChronicle
+    ? await finishDirectBattleResponse(
+        input.userId,
+        rewardedReport,
+        input.challengerId,
+        input.fallbackFounderChronicle
+      )
+    : {
+        report: rewardedReport,
+        founderChronicle: input.fallbackFounderChronicle,
+        founderChronicleBeat: null,
+      };
   return { ...directBattleResponse, rewardReceipt };
 };
 
@@ -714,11 +771,13 @@ registerPlayerMutatingGet('/arena', async (c) => {
     const utcDateKey = formatUtcDateKey(now);
     const dayNumber = await getWritableArenaDay(now);
     if (!dayNumber) return arenaRolloverConflict(c);
+    await ensureInitialSeason(redis, dayNumber, now.getTime());
     const forecast = await ensureForecastForDay(redis, dayNumber);
     const player = await getCurrentPlayer();
     let myScribbits: Scribbit[] = [];
     let hasCreatedScribbit = false;
     let drawnToday = false;
+    let todayFreeDrawing: FreeDrawing | null = null;
     let enteredToday = false;
     let bossChallengedToday = false;
     let myBackedScribbitId: string | null = null;
@@ -743,7 +802,13 @@ registerPlayerMutatingGet('/arena', async (c) => {
       myScribbits = await getAliveScribbitsForUser(redis, player.userId);
       hasCreatedScribbit =
         (await getUserScribbitIds(redis, player.userId, 1)).length > 0;
-      drawnToday = dailyFlags.drawnToday;
+      const [freeDrawingLocked, loadedFreeDrawing] = await Promise.all([
+        hasFreeDrawingForDay(redis, player.userId, dayNumber),
+        loadFreeDrawingForDay(redis, player.userId, dayNumber),
+      ]);
+      todayFreeDrawing = loadedFreeDrawing ?? null;
+      drawnToday =
+        dailyFlags.drawnToday || freeDrawingLocked || todayFreeDrawing !== null;
       enteredToday = dailyFlags.enteredToday;
       bossChallengedToday = dailyFlags.bossChallengedToday;
       myBackedScribbitId = await getBackedScribbitId(
@@ -787,6 +852,11 @@ registerPlayerMutatingGet('/arena', async (c) => {
       await getRumbleEntrantCount(redis, dayNumber)
     );
     const currentChampion = await getCurrentChampion(redis);
+    const season = await loadSeasonPublicState(
+      redis,
+      dayNumber,
+      player?.userId
+    );
     let lastRumbleReceipt: ArenaState['lastRumbleReceipt'] = null;
     if (player && dayNumber > 1) {
       const resolvedDay = dayNumber - 1;
@@ -811,11 +881,13 @@ registerPlayerMutatingGet('/arena', async (c) => {
           : null,
       myScribbits,
       drawnToday,
+      todayFreeDrawing,
       enteredToday,
       bossChallengedToday,
       rumbleEntrants: rumbleEntrantCount,
       communityLegendCount: await getCommunityLegendCount(redis),
       rumbleResolvesAt: getNextUtcDayStartMs(now),
+      season,
       todayEntrants,
       myBackedScribbitId,
       playStreakDays,
@@ -832,6 +904,36 @@ registerPlayerMutatingGet('/arena', async (c) => {
   } catch (error) {
     console.error('Arena route failed:', error);
     return serverError(c, 'The arena doors are jammed. Try again soon.');
+  }
+});
+
+api.get('/season', async (c) => {
+  try {
+    const now = new Date();
+    const dayNumber = await ensureCurrentArenaDay(redis, now);
+    await ensureInitialSeason(redis, dayNumber, now.getTime());
+    const player = await getCurrentPlayer();
+    return c.json<SeasonPublicState>(
+      await loadSeasonPublicState(redis, dayNumber, player?.userId)
+    );
+  } catch (error) {
+    console.error('Season route failed:', error);
+    return serverError(c, 'The season board is unavailable. Try again soon.');
+  }
+});
+
+api.get('/season-board', async (c) => {
+  try {
+    const now = new Date();
+    const dayNumber = await ensureCurrentArenaDay(redis, now);
+    await ensureInitialSeason(redis, dayNumber, now.getTime());
+    const player = await getCurrentPlayer();
+    const board = await loadSeasonBoard(redis, dayNumber, player);
+    if (!board) return notFound(c, 'No Scribbits season is available.');
+    return c.json<SeasonBoard>(board);
+  } catch (error) {
+    console.error('Season board route failed:', error);
+    return serverError(c, 'The season board is unavailable. Try again soon.');
   }
 });
 
@@ -891,6 +993,104 @@ api.get('/scout-notebook', async (c) => {
       c,
       'The Scout Notebook pages are stuck together. Try again soon.'
     );
+  }
+});
+
+api.post('/free-drawing', async (c) => {
+  const player = await getCurrentPlayer();
+  if (!player) {
+    return unauthorized(c, 'Sign in to save a Free Draw.');
+  }
+
+  const rawSubmission = await readJsonBody(c);
+  const submissionId =
+    isRecord(rawSubmission) &&
+    typeof rawSubmission.submissionId === 'string' &&
+    freeDrawingSubmissionIdPattern.test(rawSubmission.submissionId)
+      ? rawSubmission.submissionId
+      : undefined;
+  const submission = validateAndAnalyzeScribbitSubmission(rawSubmission);
+  if (!submissionId || submission.status === 'invalid') {
+    if (
+      submission.status === 'invalid' &&
+      submission.reason === 'insufficient-ink'
+    ) {
+      return badRequest(
+        c,
+        'Your Free Draw needs a body. Add a few more lines before saving.'
+      );
+    }
+    if (
+      submission.status === 'invalid' &&
+      submission.reason === 'rendered-mismatch'
+    ) {
+      return badRequest(
+        c,
+        'Rendered drawing must match the base PNG outside declared accessories and must not erase base pixels.'
+      );
+    }
+    if (
+      submission.status === 'invalid' &&
+      submission.reason === 'invalid-png'
+    ) {
+      return badRequest(
+        c,
+        'Base and rendered drawings must be 512x512 PNG data URLs under 400 KB each.'
+      );
+    }
+    return badRequest(
+      c,
+      'Send a submission ID, 2-24 character name, and valid drawing images.'
+    );
+  }
+
+  try {
+    const now = new Date();
+    const dayNumber = await getWritableArenaDay(now);
+    if (!dayNumber) return arenaRolloverConflict(c);
+    const drawingId = createFreeDrawingId(player.userId, submissionId);
+    const [existingDrawing, existingOwner] = await Promise.all([
+      loadFreeDrawing(redis, drawingId),
+      getFreeDrawingOwner(redis, drawingId),
+    ]);
+    if (existingDrawing && existingOwner === player.userId) {
+      return c.json<FreeDrawing>(existingDrawing);
+    }
+    if (existingDrawing || existingOwner) {
+      return conflict(c, 'That Free Draw submission ID is already in use.');
+    }
+
+    const dailyFlags = await getDailyFlags(redis, player.userId, dayNumber);
+    if (dailyFlags.drawnToday || dailyFlags.enteredToday) {
+      return conflict(c, 'You already chose today’s Community Theme.');
+    }
+    if (await hasFreeDrawingForDay(redis, player.userId, dayNumber)) {
+      return conflict(c, 'You already saved today’s Free Draw.');
+    }
+
+    const imageUrl = await uploadDrawing(submission.draft.imageDataUrl);
+    const drawing: FreeDrawing = {
+      id: drawingId,
+      name: submission.draft.name,
+      artist: player.username,
+      imageUrl,
+      createdDay: dayNumber,
+      createdAtMilliseconds: now.getTime(),
+    };
+    const saved = await saveFreeDrawing(redis, player.userId, drawing);
+    if (saved.status === 'already-drawn') {
+      return conflict(c, 'You already saved today’s Free Draw.');
+    }
+    if (saved.status === 'id-collision') {
+      return conflict(c, 'That Free Draw submission ID is already in use.');
+    }
+    return c.json<FreeDrawing>(
+      saved.drawing,
+      saved.status === 'saved' ? 201 : 200
+    );
+  } catch (error) {
+    console.error('Submit Free Draw route failed:', error);
+    return serverError(c, 'The Free Draw would not save. Try again soon.');
   }
 });
 
@@ -955,6 +1155,10 @@ api.post('/scribbit', async (c) => {
 
     if (dailyFlags.enteredToday) {
       return conflict(c, "You already entered today's Rumble.");
+    }
+
+    if (await hasFreeDrawingForDay(redis, player.userId, dayNumber)) {
+      return conflict(c, 'You already chose today’s Free Draw.');
     }
 
     if (!(await enforceAliveScribbitLimit(redis, player.userId))) {
@@ -1326,6 +1530,7 @@ api.post('/spar', async (c) => {
             utcDateKey,
             completedAt: now,
             fallbackFounderChronicle: founderChronicle,
+            tracksFounderChronicle: true,
           })
         );
       }
@@ -1418,6 +1623,7 @@ api.post('/spar', async (c) => {
         utcDateKey,
         completedAt: now,
         fallbackFounderChronicle: founderChronicle,
+        tracksFounderChronicle: sparRequest.opponentId !== undefined,
       })
     );
   } catch (error) {

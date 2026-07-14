@@ -44,6 +44,10 @@ arena effects and Inkbody deformation update at a bounded 30 Hz.
    one tap away. One visible `NEXT` action enables when the body is valid. Naming follows
    in a focused preview; birth and VS receipts explain the resulting Shape Power
    without restoring the former four-stat panel.
+   Players who only want to sketch can choose untimed `FREE DRAW` instead. It
+   uses the same large canvas and tools, saves once per Arena day in a separate
+   versioned store, and never creates a Rumble entrant or battle reward. The
+   Draw destination then shows that day’s saved image with one Practice action.
 2. Care for the Scribbit across its three-day life, then open Shop to spend
    earned Ink on one Mystery Ink Chest or a maximum batch of ten.
 3. Grow a permanent cosmetic collection with visible collector rank, wearable
@@ -66,11 +70,10 @@ arena effects and Inkbody deformation update at a bounded 30 Hz.
     personal Legacy Card; a crown or enough community Belief gives it a gold
     finish and preserves it in the public Hall of Legends.
 
-The first session proves the whole promise—draw, choose a rival, watch it fight,
-earn Ink. The first Scribbit's birth receipt opens the same three-choice Rival
-Run used by Arena instead of silently assigning an opponent. A new player sees
-their drawing come alive before meeting the deeper care, collection, and
-scouting systems. The birth receipt says what caused the build and what it does,
+The first session proves the whole promise—draw, watch that exact Scribbit fight
+one simple random founding rival, then enter Arena for chosen battles. The birth
+fight skips the three-choice Rival Run board so the core hook lands before the
+deeper decision layer. The birth receipt says what caused the build and what it does,
 for example `SHARP EDGES → FIRETIP HALO` and `3 ROTATING QUILLS`, instead of
 showing raw stat totals. Phaser 4.2 turns the submitted PNG into a deforming Inkbody:
 its dominant drawing stat controls its breathing and named Shape Power, while
@@ -149,7 +152,10 @@ Each Rival Run lasts exactly three bouts. Every slate offers `SAFE +1`,
 `EVEN +2`, and `BOLD +3`; only wins add the displayed points, while losses still
 advance the run. Bout and score follow through the chooser, VS receipt, battle,
 and result. The third result offers one explicit new-run action and the server
-rolls a fresh bout 1/3 slate.
+rolls a fresh bout 1/3 slate. The new `SIGNATURE INK` Technique Trial asks for
+three Shape Power activations across the run. Progress comes only from the
+player fighter's immutable server-authored battle events, so it adds a reason
+to watch each drawing's signature without adding power, rewards, or another screen.
 
 One founder can become the player's active Rival Thread. It is a server-owned
 best-of-three capped at three qualifying battles, and only one score beat can be
@@ -289,7 +295,12 @@ Mystery Ink is earned only through play. Shop owns the chest ceremony rather
 than competing with the Arena fight or Bag equipment. Chests cost 5 Ink each, use visible 70/25/5
 rarity odds, guarantee an Epic by open 10, and reveal the actual reward art in
 place. Players can open one or ten at a time; there is no 100-open or auto-repeat
-action. The Reddit Gold Styles card is a disabled cosmetic-only preview.
+action. A completed first Rival Run now leads through only the Care still needed
+for 5 Ink, then opens a simplified first-chest Shop. That first pull preserves
+the published rarity odds while guaranteeing equippable Gear, and its reveal
+opens Bag on the matching equipment category. The Reddit Gold Styles card is a
+disabled cosmetic-only preview. Shop's stage, two chest states, and Ink token
+load only when Shop opens, deferring 7,526,466 image bytes from initial game boot.
 Discovery, collector progress, pens, and titles
 persist across Scribbits; permanent pen/title duplicates redirect within their
 rarity while useful accessory copies stack. Mystery Pens are expressive

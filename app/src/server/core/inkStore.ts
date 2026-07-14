@@ -612,9 +612,11 @@ export const advanceCapsulePity = (
 const chooseEntryForRarity = (
   rarity: CapsuleRarity,
   roll: number,
-  discoveredCatalogIds: ReadonlySet<string>
+  discoveredCatalogIds: ReadonlySet<string>,
+  gearOnly = false
 ): InkCatalogEntry => {
-  const matchingEntries = INK_CATALOG.filter((entry) => {
+  const catalog = gearOnly ? INK_ACCESSORY_CATALOG : INK_CATALOG;
+  const matchingEntries = catalog.filter((entry) => {
     return entry.rarity === rarity;
   });
   const selectedEntry =
@@ -659,7 +661,14 @@ export const selectCapsuleDrop = (
     ? 'epic'
     : chooseCapsuleRarity(randomNumber());
 
-  return chooseEntryForRarity(rarity, randomNumber(), discoveredCatalogIds);
+  // The first chest always starts progression with equippable Gear. Rarity
+  // odds remain unchanged; only the eligible item pool is narrowed.
+  return chooseEntryForRarity(
+    rarity,
+    randomNumber(),
+    discoveredCatalogIds,
+    options.pullCount === 1
+  );
 };
 
 const createCapsulePull = (

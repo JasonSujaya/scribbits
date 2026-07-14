@@ -4,7 +4,7 @@ _Last verified: 2026-07-14 against the current dirty worktree._
 
 ## Summary
 
-The cleanup closed every verified P0 and P1 finding and five of the six P2 findings. Current verified open totals: **0 P0, 0 P1, 1 P2**. Migration of the legacy deterministic harness now has focused battle-presentation and capsule-presentation suites. The remaining work is bounded to continuing that domain-by-domain migration.
+The cleanup closed every verified P0 and P1 finding and five of the six P2 findings. Current verified open totals: **0 P0, 0 P1, 1 P2**. Migration of the legacy deterministic harness now has focused battle-presentation, capsule-presentation, equipment-economy, Founder Rival Episode, semantic-tab, Element Payload Guide, Arena UI, async-lifecycle, public Legend pagination, Legacy Card, Rumble-return, and Legacy-return-presentation ownership. The focused capsule suite also owns the generated Mystery Ink chest asset, compact-control contract, and lazy Shop preload boundary. The remaining work is bounded to continuing that domain-by-domain migration.
 
 The player-facing cleanup is also complete: the Ink Kit now has the four canonical Gear categories plus a separate Styles section, each Gear style renders once with aggregate Forge progress, the retired Impact and Edge effect families are gone, and Replay health is presented as full/half/empty hearts.
 
@@ -109,33 +109,45 @@ The player-facing cleanup is also complete: the Ink Kit now has the four canonic
 - Responsive boot height, overlay scaling, Draw vertical slack, and uniformly
   scaled stage art now share the 720-wide portrait model without scene-local
   width scaling or vertically stretched backgrounds.
+- Shop's stage, closed/open chest art, and Ink token now preload only with Shop,
+  deferring **7,526,466 bytes** of image fetch/decode and texture allocation from
+  the initial Arena/Draw boot while preserving the exact rendered reward scene.
+- Rival Run now has one server-authoritative `SIGNATURE INK` Technique Trial.
+  Its canonical reducer counts only the player's immutable Shape Power activation
+  events, preserves frozen v1 challenge snapshots, and reuses the existing strip.
 - `renderMysteryCosmeticPreview`, `removeRumbleEntrant`, and unused request/slot type aliases were deleted.
 
 ## Remaining P2 work
 
 ### P2-2 — finish splitting the legacy deterministic harness
 
-- **Current improvement:** `app/scripts/run-test-suites.mjs` discovers `app/tests/**/*.test.mjs`, compiles through `app/tools/tsconfig.tests.json` into an isolated temporary directory, removes that directory after the run, and then runs the legacy harness for compatibility coverage. `app/tests/battle-presentation.test.mjs` owns the battle-presentation domain, while `app/tests/capsule-presentation.test.mjs` now owns the capsule layout, cost, retry, batch, collector, ownership, and Red-Star presentation assertions removed from the broad harness.
+- **Current improvement:** `app/scripts/run-test-suites.mjs` discovers `app/tests/**/*.test.mjs`, compiles through `app/tools/tsconfig.tests.json` into an isolated temporary directory, removes that directory after the run, and then runs the legacy harness for compatibility coverage. Focused suites now own battle presentation, capsule presentation, equipment economy, Founder Rival Episode content, semantic-tab behavior/ownership, the Element Payload Guide contract, Arena UI source contracts, the complete Arena mutation/refresh lifecycle matrix, public Legend pagination, Legacy Card paging, Rumble-return presentation, and Legacy-return presentation. The latest cut moved finish labels, hero priority, fallback states, bounded copy, and empty-receipt behavior into `legacy-return-presentation.test.mjs`, then removed its exclusive legacy compile/import wiring.
 - **Still open:** the remaining legacy harness is still large and domain-spanning, with older compilation/import wiring for unmigrated areas.
-- **Next cut:** move the next coherent equipment/economy block into `app/tests`, then continue one domain at a time and delete each migrated legacy block.
+- **Next cut:** compare the remaining versioned Legacy Card expiry/migration block with `legends-contract.test.mjs`, then migrate only uncovered behavior.
 
 ## Verification snapshot
 
 - `./verify.command`: pass.
 - Type-check: pass.
 - ESLint: pass.
-- Discoverable suites: **126/126 tests pass** across 32 files.
-- Legacy deterministic harness: **181/181 groups pass** after capsule migration.
-- Production build: pass in **4630 ms**.
+- Discoverable suites: **197/197 tests pass** across 49 files.
+- Legacy deterministic harness: **168/168 groups pass** after the Legacy-return migration.
+- Production build: pass in **4889 ms**.
 - Live browser proof: Arena opens the chooser before the first Spar; the selected rival reaches the VS and replay; all three server-scored bouts complete; `NEW RIVAL RUN` rolls to a fresh bout 1/3 slate; the compact modal clears and dims the dock.
 - Shop proof: the fifth dock tab opens its dedicated scene, completes a
   server-backed single chest, and routes the confirmed reward into Bag.
+- Current Shop proof also covers the simplified Loot screen and the focused
+  featured-Gear effect dialog without changing the surrounding user edits.
+- Lazy-load proof opens Shop from a fresh Arena and renders the generated stage,
+  chest, Ink wallet, controls, and dock with no error-level runtime messages.
 - Screenshots: `artifacts/screenshots/rival-run-canonical-entry-final.png`,
   `artifacts/screenshots/rival-run-three-bout-finish-final.png`,
-  `artifacts/screenshots/scribbits-shop-live-final.png`, and
+  `artifacts/screenshots/scribbits-shop-lazy-load-verified.jpg`,
+  `artifacts/screenshots/scribbits-shop-current-final.png`,
+  `artifacts/screenshots/shop-featured-gear-before.png`, and
   `artifacts/screenshots/scribbits-shop-reward-final.png`.
 
 ## Next cleanup order
 
-1. Migrate the next equipment/economy assertion block into a focused suite.
-2. Continue one coherent domain at a time until the legacy harness can be deleted.
+1. Compare the versioned Legacy Card expiry/migration assertions with focused Legacy coverage.
+2. Migrate only uncovered behavior, delete the matching legacy block, and repeat until the broad harness can be deleted.

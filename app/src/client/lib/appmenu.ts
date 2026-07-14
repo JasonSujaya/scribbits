@@ -5,6 +5,7 @@ import { CanvasActionOverlay, CanvasModalOverlay } from './overlay';
 import { paperIconButton } from './ui';
 import { fadeToScene, ghostButton, iconButton, label, stickerCard } from './ui';
 import { UI } from './theme';
+import { translate } from './localization';
 
 export type AppMenu = Readonly<{ destroy: () => void }>;
 export type AppMenuOptions = Readonly<{ canNavigate?: () => boolean }>;
@@ -39,7 +40,7 @@ export function appMenu(scene: Scene, options: AppMenuOptions = {}): AppMenu {
       scene,
       width / 2,
       centerY - 164,
-      'SETTINGS',
+      translate('appMenu.title'),
       40,
       UI.ink,
       true
@@ -49,7 +50,7 @@ export function appMenu(scene: Scene, options: AppMenuOptions = {}): AppMenu {
       width / 2,
       centerY - 58,
       'book',
-      'GALLERY',
+      translate('appMenu.gallery'),
       () => openGallery(),
       width - 220,
       UI.gold
@@ -59,7 +60,7 @@ export function appMenu(scene: Scene, options: AppMenuOptions = {}): AppMenu {
       width / 2,
       centerY + 62,
       'info',
-      'FIELD GUIDE',
+      translate('appMenu.fieldGuide'),
       () => openFieldGuide(),
       width - 220,
       UI.tapeAlt
@@ -68,7 +69,7 @@ export function appMenu(scene: Scene, options: AppMenuOptions = {}): AppMenu {
       scene,
       width / 2,
       centerY + 174,
-      'Close',
+      translate('appMenu.close'),
       closeMenu,
       220
     );
@@ -84,13 +85,13 @@ export function appMenu(scene: Scene, options: AppMenuOptions = {}): AppMenu {
 
     modalOverlay = new CanvasModalOverlay(
       scene,
-      'Settings',
+      translate('appMenu.modalTitle'),
       closeMenu,
-      'Open Gallery or the Field Guide.',
+      translate('appMenu.modalDescription'),
       settingsControl
     );
     const galleryControl = modalOverlay.add({
-      label: 'Open Gallery',
+      label: translate('appMenu.openGallery'),
       rect: {
         x: 110,
         y: centerY - 108,
@@ -100,7 +101,7 @@ export function appMenu(scene: Scene, options: AppMenuOptions = {}): AppMenu {
       onActivate: openGallery,
     });
     modalOverlay.add({
-      label: 'Open Field Guide',
+      label: translate('appMenu.openFieldGuide'),
       rect: {
         x: 110,
         y: centerY + 12,
@@ -110,7 +111,7 @@ export function appMenu(scene: Scene, options: AppMenuOptions = {}): AppMenu {
       onActivate: openFieldGuide,
     });
     modalOverlay.add({
-      label: 'Close settings',
+      label: translate('appMenu.closeSettings'),
       rect: {
         x: width / 2 - 110,
         y: centerY + 124,
@@ -163,7 +164,7 @@ export function appMenu(scene: Scene, options: AppMenuOptions = {}): AppMenu {
   followCamera();
 
   settingsControl = actionOverlay.add({
-    label: 'Open settings and Gallery',
+    label: translate('appMenu.openSettings'),
     rect: { x: width - 106, y: 12, width: 92, height: 92 },
     pointerPassthrough: true,
     onActivate: openMenu,

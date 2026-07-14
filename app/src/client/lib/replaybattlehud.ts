@@ -19,6 +19,7 @@ import type {
 } from './battlepresentation';
 import { ELEMENT_STYLES, UI } from './theme';
 import { bindPressInteractionEvents } from './pressinteraction';
+import { translate } from './localization';
 import { label } from './ui';
 import { BATTLE_CONTROL_BUTTON_TEXTURES } from './visualassets';
 
@@ -34,6 +35,7 @@ type FighterVitalsView = {
   heartMeter: Phaser.GameObjects.Container;
   heartWarning: Phaser.GameObjects.Container;
   heartGraphics: Phaser.GameObjects.Graphics;
+  healthLabel: Phaser.GameObjects.Text;
   shapePower: ShapePowerStatusView;
   displayedHeartUnits: number | null;
   displayedDanger: boolean;
@@ -285,14 +287,28 @@ const createFighterVitalsView = (
     .setName(initialHeartPlan.accessibleLabel)
     .setData('accessibilityLabel', initialHeartPlan.accessibleLabel)
     .setData('heartStates', initialHeartPlan.states);
+  const healthLabel = label(
+    scene,
+    fighterLayout.chipCenterX,
+    layout.heartRowY + 30,
+    translate('battle.health', { current: 1, maximum: 1 }),
+    18,
+    UI.inkSoft,
+    true
+  )
+    .setOrigin(0.5)
+    .setDepth(25);
 
-  const container = scene.add.container(0, 0, [name, heartMeter]).setDepth(20);
+  const container = scene.add
+    .container(0, 0, [name, heartMeter, healthLabel])
+    .setDepth(20);
 
   return {
     container,
     heartMeter,
     heartWarning,
     heartGraphics,
+    healthLabel,
     shapePower: {
       fighterName: scribbit.name,
       effectDescription: getShapePowerContent(primaryPower).receiptEffect,
@@ -761,6 +777,14 @@ export function createReplayBattleHud(
       .setData('lastHeart', plan.isLastHeart)
       .setData('hitPoints', safeHitPoints)
       .setData('maximumHitPoints', safeMaximumHitPoints);
+    vitals.healthLabel
+      .setText(
+        translate('battle.health', {
+          current: safeHitPoints,
+          maximum: safeMaximumHitPoints,
+        })
+      )
+      .setColor(plan.useDangerColor ? UI.coralText : UI.inkSoft);
     const datasetPrefix = side === 'a' ? 'fighterA' : 'fighterB';
     scene.game.canvas.dataset[`${datasetPrefix}Hearts`] = plan.states.join(',');
     scene.game.canvas.dataset[`${datasetPrefix}HitPoints`] =
@@ -831,6 +855,7 @@ export function createReplayBattleHud(
       heartsVisible = visible;
       Object.values(fighterVitals).forEach((vitals) => {
         vitals.heartMeter.setVisible(visible);
+        vitals.healthLabel.setVisible(visible);
       });
       if (!visible) {
         stopHeartAnimations();

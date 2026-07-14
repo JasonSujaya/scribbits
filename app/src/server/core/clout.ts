@@ -7,6 +7,10 @@ import {
   discardWatchedTransaction,
   MAX_WATCH_TRANSACTION_ATTEMPTS,
 } from './storage';
+import {
+  getSeasonRankingKey,
+  type SeasonScoringContext,
+} from './season';
 
 const backTtlSeconds = 8 * 24 * 60 * 60;
 
@@ -172,13 +176,19 @@ const commitBackPayout = async (
   payoutKey: string,
   userId: string,
   points: number,
-  paidAtMs: number
+  paidAtMs: number,
+  seasonScoring: SeasonScoringContext | null
 ): Promise<boolean> => {
   if (!storage.watch) {
     throw new Error('Atomic Back payouts require transaction support.');
   }
 
-  const receiptValue = `${points}:${paidAtMs}`;
+  const seasonPoints = seasonScoring
+    ? points * seasonScoring.scoreMultiplier
+    : 0;
+  const receiptValue = seasonScoring
+    ? `${points}:${paidAtMs}:${seasonScoring.seasonId}:${seasonPoints}`
+    : `${points}:${paidAtMs}`;
   for (
     let attempt = 0;
     attempt < MAX_WATCH_TRANSACTION_ATTEMPTS;
@@ -195,6 +205,13 @@ const commitBackPayout = async (
       await transaction.multi();
       await transaction.hSet(payoutKey, { [userId]: receiptValue });
       await transaction.zIncrBy(getCloutKey(), userId, points);
+      if (seasonScoring) {
+        await transaction.zIncrBy(
+          getSeasonRankingKey(seasonScoring.seasonId),
+          userId,
+          seasonPoints
+        );
+      }
       if (points === 3) {
         await transaction.incrBy(getInkKey(userId), INK_REWARDS.backedChampion);
       }
@@ -226,6 +243,7 @@ export const payCloutForRumble = async (
     championScribbitId: string;
     runnerUpScribbitId: string | null;
     paidAtMs: number;
+    seasonScoring?: SeasonScoringContext | null;
   }
 ): Promise<CloutPayoutResult> => {
   const backEntries = await storage.hGetAll(getBackKey(options.day));
@@ -251,7 +269,8 @@ export const payCloutForRumble = async (
       payoutKey,
       userId,
       points,
-      options.paidAtMs
+      options.paidAtMs,
+      options.seasonScoring ?? null
     );
 
     if (!createdPayout) {

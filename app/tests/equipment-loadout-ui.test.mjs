@@ -42,7 +42,7 @@ test('Bag presents a staged Scribbit, eight semantic slots, filters, and a scrol
   );
   const characterStageSource = collectionSource.slice(
     collectionSource.indexOf('function buildBagCharacterStage('),
-    collectionSource.indexOf('function drawScribbitPlatform(')
+    collectionSource.indexOf('function summaryToneColor(')
   );
   const stageIndex = collectionSource.indexOf('buildBagCharacterStage({');
   const filterIndex = collectionSource.indexOf('buildBagFilters(');
@@ -57,20 +57,25 @@ test('Bag presents a staged Scribbit, eight semantic slots, filters, and a scrol
     'the scrollable inventory renders below the filters'
   );
   assert.match(collectionSource, /drawScribbitPlatform/);
-  assert.match(collectionSource, /const BAG_GEAR_TILE_SIZE = 96/);
-  assert.match(collectionSource, /cardColumns: 5/);
+  assert.match(collectionSource, /const BAG_GEAR_TILE_SIZE = 120/);
+  assert.match(collectionSource, /cardColumns: 4/);
   assert.match(collectionSource, /inventoryPanelMargin: 18/);
-  assert.match(collectionSource, /inventoryContentMargin: 72/);
-  assert.match(collectionSource, /cardGap: 24/);
-  assert.match(collectionSource, /cardRowGap: 18/);
+  assert.match(collectionSource, /inventoryContentMargin: 42/);
+  assert.match(collectionSource, /cardGap: 18/);
+  assert.match(collectionSource, /cardRowGap: 20/);
   assert.match(collectionSource, /cardHeight: BAG_GEAR_TILE_SIZE/);
+  assert.match(collectionSource, /filterOffset: 640/);
+  assert.match(collectionSource, /inventoryTopOffset: 736/);
+  assert.match(collectionSource, /inventoryViewportHeaderHeight: 70/);
+  assert.doesNotMatch(collectionSource, /`GEAR WEEK/);
+  assert.doesNotMatch(collectionSource, /gearWeekDay\.challenge/);
   assert.match(
     collectionSource,
-    /fitDrawing\(scene\.add\.image\(0, 0, textureKey\), 270\)/
+    /fitDrawing\(scene\.add\.image\(0, 0, textureKey\), 320\)/
   );
   assert.match(
     collectionSource,
-    /BAG_GEAR_PREVIEW_BOX = Object\.freeze\(\{[\s\S]*width: 60,[\s\S]*height: 56/
+    /BAG_GEAR_PREVIEW_BOX = Object\.freeze\(\{[\s\S]*width: 88,[\s\S]*height: 82/
   );
   assert.equal(
     (collectionSource.match(/\.\.\.BAG_GEAR_PREVIEW_BOX/g) ?? []).length,
@@ -78,7 +83,7 @@ test('Bag presents a staged Scribbit, eight semantic slots, filters, and a scrol
     'equipped and inventory Gear must use the same preview box'
   );
   assert.equal(
-    (collectionSource.match(/size: 82,/g) ?? []).length,
+    (collectionSource.match(/size: 104,/g) ?? []).length,
     2,
     'equipped and inventory Gear must start from the same authored size'
   );
@@ -101,6 +106,7 @@ test('Bag presents a staged Scribbit, eight semantic slots, filters, and a scrol
   assert.match(collectionSource, /\(\[0, 1\] as const\)\.forEach/);
   assert.match(collectionSource, /data-equipment-slot/);
   assert.match(collectionSource, /data-equipped-gear-id/);
+  assert.match(collectionSource, /data-equipped-gear-rarity/);
   assert.doesNotMatch(collectionSource, /× REMOVE/);
   assert.doesNotMatch(collectionSource, /paperPagination/);
   assert.match(collectionSource, /inventory\.gear\[entry\.id\] !== undefined/);
@@ -135,12 +141,31 @@ test('Bag presents a staged Scribbit, eight semantic slots, filters, and a scrol
   assert.match(detailSource, /data-gear-detail-forge/);
   assert.match(detailSource, /EQUIP TO SLOT/);
   assert.match(detailSource, /UNEQUIP SLOT/);
-  assert.match(raritySource, /common:[\s\S]*color: 0x6b5a45/);
-  assert.match(raritySource, /rare:[\s\S]*color: 0x167ead/);
-  assert.match(raritySource, /epic:[\s\S]*color: 0x7a3eb1/);
-  assert.match(raritySource, /strokeWidth: 6/);
+  assert.match(raritySource, /common:[\s\S]*color: 0xa56724/);
+  assert.match(raritySource, /rare:[\s\S]*color: 0x0f88bc/);
+  assert.match(raritySource, /epic:[\s\S]*color: 0x8340bd/);
   assert.match(raritySource, /strokeWidth: 7/);
   assert.match(raritySource, /strokeWidth: 8/);
+  assert.doesNotMatch(collectionSource, /\.setAngle\(index % 2/);
+  assert.match(
+    collectionSource,
+    /GEAR_SECTION_PRESENTATION\[category\]\.icon[\s\S]*size: 36,[\s\S]*fill: UI\.inkHex/
+  );
+  assert.match(inventoryGridSource, /Math\.round\(x \+ cardWidth \/ 2\)/);
+  assert.match(inventoryGridSource, /data-scrollable/);
+  assert.match(inventoryGridSource, /data-scroll-maximum/);
+  assert.match(inventoryGridSource, /maximumScroll > 0 \? 0\.3 : 0\.16/);
+  assert.match(inventoryGridSource, /maximumScroll > 0 \? 0\.95 : 0\.42/);
+  assert.match(collectionSource, /selectedFrame\.lineStyle\(4, UI\.coral, 1\)/);
+  assert.match(collectionSource, /const UNEQUIPPED_GEAR_TILE_COLOR = 0xd6d4cf/);
+  assert.match(
+    cardSource,
+    /entry\.kind === 'accessory' && equippedSlots\.length === 0/
+  );
+  assert.match(
+    collectionSource,
+    /mutedBackground \? UNEQUIPPED_GEAR_TILE_COLOR : UI\.paper/
+  );
   assert.match(
     overlaySource,
     /const modalRoot = this\.actionOverlay\.rootForOrdering\(\)[\s\S]*modalRoot\.remove\(\)/,
@@ -164,6 +189,18 @@ test('Bag presents a staged Scribbit, eight semantic slots, filters, and a scrol
     'native boolean attributes must not receive the string false'
   );
   assert.match(collectionSource, /actionOverlay\.addStatus\(/);
+  assert.match(
+    collectionSource,
+    /inventoryBottom = height - BAG_LAYOUT\.inventoryBottomMargin/
+  );
+  assert.match(
+    collectionSource,
+    /inventoryPanelHeight - BAG_LAYOUT\.inventoryViewportHeaderHeight/
+  );
+  assert.match(collectionSource, /function buildLoadoutEffectsSummary\(/);
+  assert.match(collectionSource, /data-loadout-effects-summary/);
+  assert.match(collectionSource, /function openLoadoutEffectsDetail\(/);
+  assert.match(collectionSource, /const detailHeight = height - 108/);
 });
 
 test('Bag replaces the selected living Scribbit after a successful equip', () => {

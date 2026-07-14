@@ -32,6 +32,7 @@ export type CarePicker = Readonly<{
 
 export type CarePickerOptions = Readonly<{
   scribbit: Scribbit;
+  goalLabel?: string;
   onChoose: (action: CareAction) => void;
   onClose: () => void;
 }>;
@@ -59,7 +60,9 @@ export function openCarePicker(
   const shell: StickerModalShell = createStickerModalShell({
     scene,
     title: `Care for ${boundedName(options.scribbit.name)}`,
-    description: 'Choose one available daily care action or close the picker.',
+    description: options.goalLabel
+      ? `${options.goalLabel}. Choose one available daily care action or close the picker.`
+      : 'Choose one available daily care action or close the picker.',
     onRequestClose: close,
     depth: CARE_PICKER_DEPTH,
     cardCenterY,
@@ -77,6 +80,13 @@ export function openCarePicker(
   const nameLabel = label(scene, 0, -100, name, TYPE.body, UI.inkSoft, true);
   if (nameLabel.width > 400) nameLabel.setScale(400 / nameLabel.width);
   card.add(nameLabel);
+  if (options.goalLabel) {
+    card.add(
+      label(scene, 0, -55, options.goalLabel, 19, UI.coralText, true)
+        .setWordWrapWidth(410)
+        .setLineSpacing(-3)
+    );
+  }
 
   const closeX = CARD_WIDTH / 2 - CLOSE_TARGET_SIZE / 2 - 8;
   const closeY = -CARD_HEIGHT / 2 + CLOSE_TARGET_SIZE / 2 + 8;

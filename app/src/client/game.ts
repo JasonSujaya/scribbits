@@ -26,6 +26,10 @@ import {
 } from './lib/registry';
 import { showVsCeremony } from './lib/battleceremony';
 import { isLocalDrawAutomationRequest } from './lib/drawautomation';
+import { initializeLocalization, localizeDocument } from './lib/localization';
+
+initializeLocalization();
+localizeDocument();
 
 // Scribbits Arena — Devvit Web + Phaser 4. Draw a creature; its shape is its
 // stat sheet; it fights async auto-battles and lives 3 days. Portrait-first:
@@ -229,6 +233,7 @@ const StartGame = (parent: string): Phaser.Game => {
       const response = (await res.json()) as SparBattleResponse;
       const report = response.report;
       const stagedBattle = stageDirectBattle(home, arena, response, id);
+      if (!stagedBattle) return 'spar returned wrong scribbit';
       const startReplay = (): void => {
         game.scene.stop('ArenaHome');
         game.scene.start('Replay');

@@ -27,6 +27,30 @@ export type OverlayOrderAnchor = Readonly<{
   rootForOrdering: () => HTMLElement;
 }>;
 
+let canvasFocusUsesKeyboard = false;
+let canvasFocusModalityTrackingInstalled = false;
+
+function installCanvasFocusModalityTracking(): void {
+  if (canvasFocusModalityTrackingInstalled) return;
+  canvasFocusModalityTrackingInstalled = true;
+  document.addEventListener(
+    'keydown',
+    (event) => {
+      if (!event.metaKey && !event.ctrlKey && !event.altKey) {
+        canvasFocusUsesKeyboard = true;
+      }
+    },
+    true
+  );
+  document.addEventListener(
+    'pointerdown',
+    () => {
+      canvasFocusUsesKeyboard = false;
+    },
+    true
+  );
+}
+
 // Manages a set of DOM elements positioned in design-space over the Phaser
 // canvas. Call sync() on resize; call destroy() on scene shutdown.
 export class DomOverlay {
@@ -181,6 +205,7 @@ export class CanvasActionOverlay {
     scene: Scene,
     private readonly focusScope: string | null = null
   ) {
+    installCanvasFocusModalityTracking();
     this.scene = scene;
     this.overlay = new DomOverlay(scene);
     scene.events.once('shutdown', this.handleSceneShutdown);
@@ -220,7 +245,7 @@ export class CanvasActionOverlay {
       pointerEvents: 'none',
     });
     nativeButton.addEventListener('focus', () => {
-      focusRing.style.opacity = '1';
+      focusRing.style.opacity = canvasFocusUsesKeyboard ? '1' : '0';
       this.clearPendingFocusLabel();
     });
     nativeButton.addEventListener('blur', () => {

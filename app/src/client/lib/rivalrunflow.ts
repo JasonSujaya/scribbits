@@ -99,6 +99,12 @@ export function openRivalRun(
       options.challenger.id,
       options.returnScene
     );
+    if (!stagedBattle) {
+      setBusy(false);
+      draft?.setAccessibleVisible(true);
+      showToast('The rival fight returned the wrong Scribbit. Try again.');
+      return;
+    }
     destroyed = true;
     setBusy(false);
     options.onResolved?.();

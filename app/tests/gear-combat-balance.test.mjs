@@ -143,6 +143,39 @@ test('Gear summaries expose every applied benefit and tradeoff', () => {
   assert.doesNotMatch(focus.summary, /OPENING/);
 });
 
+test('loadout summary presents all six authoritative combat modifiers', () => {
+  const emptySummary = gearCombat.summarizeGearCombatModifiers(
+    gearCombat.EMPTY_GEAR_COMBAT_MODIFIERS
+  );
+  assert.deepEqual(
+    emptySummary.map(({ key, value, tone }) => ({ key, value, tone })),
+    [
+      { key: 'impact', value: '0.0%', tone: 'neutral' },
+      { key: 'hearts', value: '0.0%', tone: 'neutral' },
+      { key: 'crit', value: '0.0%', tone: 'neutral' },
+      { key: 'cooldown', value: 'NORMAL', tone: 'neutral' },
+      { key: 'windup', value: 'NORMAL', tone: 'neutral' },
+      { key: 'start', value: 'NORMAL', tone: 'neutral' },
+    ]
+  );
+
+  const rush = gearCombat.getGearTechniqueEffect(
+    cosmetics.findGearCosmetic('smearstep-speed-scarf'),
+    6
+  );
+  const rushSummary = Object.fromEntries(
+    gearCombat
+      .summarizeGearCombatModifiers(rush.modifiers)
+      .map((item) => [item.key, item])
+  );
+  assert.equal(rushSummary.impact.value, '+2.0%');
+  assert.equal(rushSummary.hearts.value, '-2.0%');
+  assert.equal(rushSummary.cooldown.value, '2.0% SLOWER');
+  assert.equal(rushSummary.start.value, '1T FASTER');
+  assert.equal(rushSummary.cooldown.tone, 'tradeoff');
+  assert.equal(rushSummary.start.tone, 'benefit');
+});
+
 test('one strongest lead and one support resolve into a bounded category technique', () => {
   const loadout = {
     ...equipment.createEmptyEquipmentLoadout(),
@@ -251,21 +284,21 @@ test('full Red Star builds cover all families and remain bounded against one-sta
       coveredFamilies.add(cosmetics.findGearCosmetic(gearId).effectFamily);
     }
   }
-  assert.deepEqual(
-    [...coveredFamilies].sort(),
-    ['aim', 'focus', 'fortune', 'guard', 'ready', 'rush']
-  );
+  assert.deepEqual([...coveredFamilies].sort(), [
+    'aim',
+    'focus',
+    'fortune',
+    'guard',
+    'ready',
+    'rush',
+  ]);
 
   for (const [buildIndex, gearIds] of familyCoveringBuilds.entries()) {
     let redWins = 0;
     let fights = 0;
     for (let seed = 1; seed <= 200; seed += 1) {
       const red = makeFullBuild(`full-red-${buildIndex}`, 6, gearIds);
-      const oneStar = makeFullBuild(
-        `full-one-star-${buildIndex}`,
-        1,
-        gearIds
-      );
+      const oneStar = makeFullBuild(`full-one-star-${buildIndex}`, 1, gearIds);
       const first = battle.simulate(
         red,
         oneStar,

@@ -30,11 +30,13 @@ export function createPostFightActions(
     canBackContender: boolean;
     canReplay: boolean;
     returnLabel: string;
+    primaryAction?: ReplayPostFightAction;
     rivalActionCopy?: Readonly<{
       label: string;
       accessibleLabel: string;
     }>;
     onRivals: () => void;
+    onFirstChest?: () => void;
     onBackContender: () => void;
     onReplay: () => void;
     onReturn: () => void;
@@ -45,6 +47,7 @@ export function createPostFightActions(
   const accessibleOverlay = new CanvasActionOverlay(scene);
   const callbacks: Readonly<Record<ReplayPostFightActionKind, () => void>> = {
     rivals: input.onRivals,
+    firstChest: input.onFirstChest ?? (() => undefined),
     backContender: input.onBackContender,
     replay: input.onReplay,
     return: input.onReturn,
@@ -91,12 +94,20 @@ export function createPostFightActions(
         UI.gold
       );
     }
-    if (action.kind === 'rivals' || action.kind === 'backContender') {
+    if (
+      action.kind === 'rivals' ||
+      action.kind === 'firstChest' ||
+      action.kind === 'backContender'
+    ) {
       return iconButton(
         scene,
         x,
         y,
-        action.kind === 'rivals' ? 'sword' : 'trophy',
+        action.kind === 'rivals'
+          ? 'sword'
+          : action.kind === 'firstChest'
+            ? 'ink'
+            : 'trophy',
         action.label,
         () => activateAction(action.kind),
         width,
