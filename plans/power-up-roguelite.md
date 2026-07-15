@@ -16,21 +16,28 @@ archived, and never enter the reusable Gear inventory.
 
 ## Reward rules
 
-| Source                                         | Three-card offer      |
-| ---------------------------------------------- | --------------------- |
-| Birth, before the first fight                  | Common, Common, Rare  |
-| Exhibition or Rival Run win                    | Common, Common, Rare  |
-| Rival Run final win or a Rumble day with a win | Common, Rare, Epic    |
-| Champion win                                   | Rare, Epic, Legendary |
+| Source                                         | Common | Uncommon | Rare | Epic | Legendary |
+| ---------------------------------------------- | -----: | -------: | ---: | ---: | --------: |
+| Birth, before the first fight                  |    65% |      25% |   9% |   1% |        0% |
+| Exhibition or Rival Run win                    |    65% |      25% |   9% |   1% |        0% |
+| Rival Run final win or a Rumble day with a win |    35% |      35% |  22% |   8% |        0% |
+| Champion win                                   |     5% |      20% |  40% |  30% |        5% |
 
 - Losses do not create an offer.
+- Each of the three cards rolls its rarity from the source weights, selects a
+  distinct role-fit Power-Up, then the completed offer is shuffled so rarity
+  never owns a fixed card position.
+- Weights renormalize across available tiers when owned cards or the
+  one-Legendary cap make a tier unavailable.
 - Birth offers are generated from the committed Scribbit; later offers are generated from the battle report.
 - Closing or reloading cannot reroll or lose an offer.
 - Choices must be distinct, unowned, compatible, and outside any exclusive
   group already owned.
 - A Scribbit with five Power-Ups receives no further offer in v1.
-- A Scribbit that already owns a Legendary receives an Epic in the Legendary
-  choice slot.
+- A Scribbit that already owns a Legendary cannot roll another Legendary.
+- Direct Power-Up healing scales from maximum health and is capped at 30% of
+  maximum health across a fight so stacked sustain cannot become an infinite
+  loop.
 
 ## Launch catalog
 
@@ -42,44 +49,47 @@ stable, including the IDs behind the renamed Heart Ink and Ink Rage cards.
 
 ### Common
 
-- **Edge Spring · Bounce** — up to three wall touches restore 3 health, turn
+- **Edge Spring · Bounce** — up to three wall touches restore 1.5% max health, turn
   the Scribbit back toward the fight, and empower its next two normal hits.
-- **Smudge Step · Survival** — completely dodges every fourth incoming normal
-  attack, up to three times.
+- **Smudge Step · Survival** — completely dodges the fourth incoming normal
+  attack once per fight.
 - **Paper Shield · Survival** — blocks up to 5 damage from each of the first
   three incoming special hits.
-- **Combo Spark · Combo** — every third consecutive normal hit, up to three
-  times, deals 50% extra damage and restores 4 health.
-- **Center Fold · Survival** — first crossing below half health restores 12
+- **Combo Spark · Combo** — every third consecutive normal hit, up to two
+  times, deals 25% extra damage and restores 1% max health.
+- **Center Fold · Survival** — first crossing below half health restores 4% max
   health and briefly blocks incoming damage.
+
+### Uncommon
+
+- **Double Doodle · Special** — the first two special hits repeat for 25% of
+  their damage, capped at 4 damage each.
+- **Heart Ink · Combo** — every fourth landed normal attack restores 4% max health,
+  up to three times.
+- **Counter Sketch · Survival** — the first incoming special hit schedules a
+  counter for up to 3 damage and restores 0.5% max health.
 
 ### Rare
 
-- **Double Doodle · Special** — the first three special hits repeat for 40% of
-  their damage, capped at 6 damage each.
-- **Heart Ink · Combo** — every fourth landed normal attack restores 8 health,
-  up to three times.
-- **Counter Sketch · Survival** — the first three incoming special hits schedule
-  a counter for up to 6 damage and restore 3 health.
 - **Wallop · Bounce** — the first three knockbacks into a wall add 6 damage.
-- **Echo Mark · Special** — special hits empower the next two normal hits for 35%
-  extra damage, up to four empowered hits.
+- **Echo Mark · Special** — special hits empower the next two normal hits for 20%
+  extra damage, up to three activations.
 
 ### Epic
 
-- **Last Scribble · Survival** — once per fight, survives a knockout with 30%
-  health and briefly blocks damage.
-- **Ink Rage · Survival** — below half health, the next four normal hits add 5
-  damage and restore 2 health each.
-- **Paper Twin · Combo** — the first four normal hits repeat for 35% damage,
-  capped at 4 damage each.
+- **Last Scribble · Survival** — once per fight, survives a knockout blow with
+  1 health.
+- **Ink Rage · Survival** — below half health, the next three normal hits add 3
+  damage and restore 0.5% max health each.
+- **Paper Twin · Combo** — the first three normal hits repeat for 25% damage,
+  capped at 3 damage each.
 
 ### Legendary
 
 - **Masterpiece · Any Build** — after three different non-Legendary Power-Ups
-  activate, deals 12 damage and restores 10 health.
-- **Endless Draft · Any Build** — every Common and Rare Power-Up receives one
-  additional activation.
+  activate, deals 12 damage and restores 5% max health.
+- **Endless Draft · Any Build** — every Common, Uncommon, and Rare Power-Up
+  receives one additional activation.
 
 ## Build paths
 

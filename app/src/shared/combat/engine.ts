@@ -25,11 +25,16 @@ import {
   selectCombatRole,
   selectPrimaryPower as selectPrimaryPowerForStats,
 } from './selection';
-import { getCombatRoleRules, toCurrentCombatRole } from './roles';
+import {
+  getCombatRoleAdvantage,
+  getCombatRoleRules,
+  toCurrentCombatRole,
+} from './roles';
 import { freezeGearCombatSnapshot, isGearCombatSnapshot } from './gearsnapshot';
 import { applyBattleArenaModifier } from '../battlearena';
 import {
   MAXIMUM_POWER_UP_BONUS_DAMAGE,
+  MAXIMUM_POWER_UP_HEALING_PERMILLE,
   MAXIMUM_POWER_UP_TRIGGER_EVENTS,
   POWER_UP_CATALOG,
   parsePowerUpBuild,
@@ -91,6 +96,8 @@ type MutableFighterState = {
   powerUpActivations: Map<PowerUpId, number>;
   powerUpTriggerCount: number;
   powerUpBonusDamageSpent: number;
+  powerUpAdvantageDamageRemainderPermille: number;
+  powerUpHealingSpent: number;
   triggeredNonLegendaryPowerUps: Set<PowerUpId>;
   endlessDraftExtraPowerUpId: PowerUpId | null;
   scheduledPowerUpEffects: ScheduledPowerUpEffect[];
@@ -114,6 +121,8 @@ type MutableFighterState = {
   baseMovementPerTick: number;
   hitPoints: number;
   maxHitPoints: number;
+  inkPressureLostHitPointThreshold: number;
+  inkPressureThresholdReachedBeforePowerUpHealing: boolean;
   damageDealt: number;
   roleDamageRemainderPermille: number;
   basicAttackReadyAtTick: number;
@@ -372,7 +381,9 @@ function triggerPowerUp(
   const activationLimit =
     definition.maximumActivations +
     (fighterOwnsPowerUp(fighter, 'v1-endless-draft') &&
-    (definition.rarity === 'common' || definition.rarity === 'rare')
+    (definition.rarity === 'common' ||
+      definition.rarity === 'uncommon' ||
+      definition.rarity === 'rare')
       ? (POWER_UP_CATALOG['v1-endless-draft'].extraActivations ?? 0)
       : 0);
   if (
@@ -397,7 +408,9 @@ function triggerPowerUp(
     fighter.triggeredNonLegendaryPowerUps.add(powerUpId);
   }
   if (
-    (definition.rarity === 'common' || definition.rarity === 'rare') &&
+    (definition.rarity === 'common' ||
+      definition.rarity === 'uncommon' ||
+      definition.rarity === 'rare') &&
     fighter.endlessDraftExtraPowerUpId === null &&
     triggerPowerUp(context, fighter, 'v1-endless-draft')
   ) {
@@ -444,13 +457,31 @@ function healFighterFromPowerUp(
   fighter: MutableFighterState,
   powerUpId: PowerUpId
 ): number {
-  const requestedHealing = POWER_UP_CATALOG[powerUpId].healingAmount ?? 0;
+  const healingPermille =
+    POWER_UP_CATALOG[powerUpId].maximumHitPointHealingPermille ?? 0;
+  const requestedHealing = divideRounded(
+    fighter.maxHitPoints * healingPermille,
+    1_000
+  );
+  const maximumPowerUpHealing = divideRounded(
+    fighter.maxHitPoints * MAXIMUM_POWER_UP_HEALING_PERMILLE,
+    1_000
+  );
   const actualHealing = Math.min(
     requestedHealing,
-    fighter.maxHitPoints - fighter.hitPoints
+    fighter.maxHitPoints - fighter.hitPoints,
+    maximumPowerUpHealing - fighter.powerUpHealingSpent
   );
   if (actualHealing <= 0) return 0;
+  if (
+    !fighter.inkPressureUsed &&
+    fighter.maxHitPoints - fighter.hitPoints >=
+      fighter.inkPressureLostHitPointThreshold
+  ) {
+    fighter.inkPressureThresholdReachedBeforePowerUpHealing = true;
+  }
   fighter.hitPoints += actualHealing;
+  fighter.powerUpHealingSpent += actualHealing;
   appendEvent(context, {
     tick: context.tick,
     kind: 'healing',
@@ -477,12 +508,26 @@ function applyBudgetedPowerUpDamage(
   );
   if (budgetedDamage <= 0) return 0;
   fighter.powerUpBonusDamageSpent += budgetedDamage;
+  const advantageMultiplierPermille =
+    getCombatRoleAdvantage(fighter.combatRole, target.combatRole) ===
+    'advantage'
+      ? 1_100
+      : 1_000;
+  const scaledPowerUpDamage =
+    budgetedDamage * advantageMultiplierPermille +
+    fighter.powerUpAdvantageDamageRemainderPermille;
+  const resolvedPowerUpDamage = Math.max(
+    1,
+    Math.floor(scaledPowerUpDamage / 1_000)
+  );
+  fighter.powerUpAdvantageDamageRemainderPermille =
+    scaledPowerUpDamage % 1_000;
   return applyResolvedDamage(
     context,
     fighter,
     target,
     'power_up',
-    budgetedDamage,
+    resolvedPowerUpDamage,
     {
       applyElementPayload: false,
       bypassDefense: true,
@@ -571,6 +616,8 @@ function createFighterState(
     powerUpActivations: new Map(),
     powerUpTriggerCount: 0,
     powerUpBonusDamageSpent: 0,
+    powerUpAdvantageDamageRemainderPermille: 0,
+    powerUpHealingSpent: 0,
     triggeredNonLegendaryPowerUps: new Set(),
     endlessDraftExtraPowerUpId: null,
     scheduledPowerUpEffects: [],
@@ -599,6 +646,11 @@ function createFighterState(
     baseMovementPerTick: movementPerTick,
     hitPoints: maxHitPoints,
     maxHitPoints,
+    inkPressureLostHitPointThreshold: divideRounded(
+      baseMaxHitPoints * rules.inkPressure.lostHitPointPercentage,
+      100
+    ),
+    inkPressureThresholdReachedBeforePowerUpHealing: false,
     damageDealt: 0,
     roleDamageRemainderPermille: 0,
     basicAttackReadyAtTick: initialBasicAttackDelayByRole[combatRole],
@@ -1323,6 +1375,7 @@ function applyResolvedDamage(
   const incomingSignature =
     source.slot !== target.slot &&
     isSignatureDamageSource(source, damageSource);
+  let damageAfterSmudgeStep = requestedDamage;
   if (source.slot !== target.slot && isNormalAttackDamageSource(damageSource)) {
     target.incomingNormalAttackCount += 1;
     if (
@@ -1341,13 +1394,17 @@ function applyResolvedDamage(
         )
       );
       target.movementOverrideUntilTick = context.tick + 3;
-      return 0;
+      damageAfterSmudgeStep = Math.max(
+        0,
+        damageAfterSmudgeStep -
+          (POWER_UP_CATALOG['v1-smudge-step'].preventedDamage ?? 0)
+      );
     }
   }
-  let damageAfterPowerUpDefense = requestedDamage;
+  let damageAfterPowerUpDefense = damageAfterSmudgeStep;
   if (incomingSignature && fighterOwnsPowerUp(target, 'v1-paper-shield')) {
     const preventedDamage = Math.min(
-      requestedDamage,
+      damageAfterSmudgeStep,
       POWER_UP_CATALOG['v1-paper-shield'].preventedDamage ?? 0
     );
     if (
@@ -1533,20 +1590,20 @@ const ROLE_MATCHUP_DAMAGE_MULTIPLIERS: Readonly<
 > = Object.freeze({
   // These are small counterweights for each role's native range, cadence, and
   // shielding—not the player-facing edge by themselves. The complete engine
-  // is gated at 53–62% for Brawler > Mage > Longshot > Brawler.
+  // targets 60% for Brawler > Mage > Longshot > Brawler and 50% for mirrors.
   brawler: Object.freeze({
     brawler: 1_000,
-    longshot: 750,
-    mage: 1_080,
+    longshot: 1_005,
+    mage: 760,
   }),
   longshot: Object.freeze({
-    brawler: 1_255,
+    brawler: 1_400,
     longshot: 1_000,
-    mage: 1_015,
+    mage: 1_100,
   }),
   mage: Object.freeze({
-    brawler: 940,
-    longshot: 985,
+    brawler: 1_127,
+    longshot: 941,
     mage: 1_000,
   }),
 });
@@ -2375,12 +2432,13 @@ function executeInkPressure(context: SimulationContext): void {
     }
     const lostHitPoints = fighter.maxHitPoints - fighter.hitPoints;
     if (
-      lostHitPoints * 100 <
-      fighter.maxHitPoints * context.rules.inkPressure.lostHitPointPercentage
+      lostHitPoints < fighter.inkPressureLostHitPointThreshold &&
+      !fighter.inkPressureThresholdReachedBeforePowerUpHealing
     ) {
       continue;
     }
     fighter.inkPressureUsed = true;
+    fighter.inkPressureThresholdReachedBeforePowerUpHealing = false;
     const refreshedImmediately = fighter.abilityPhase === 'cooldown';
     if (refreshedImmediately) {
       fighter.abilityReadyAtTick = context.tick;

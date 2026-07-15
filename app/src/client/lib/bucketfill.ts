@@ -1,5 +1,15 @@
 import type { RgbColor } from './coloreraser';
 
+export type FloodFillResult = Readonly<{
+  changedPixels: number;
+  replacedColor: RgbColor | null;
+}>;
+
+const NO_FILL_CHANGE: FloodFillResult = Object.freeze({
+  changedPixels: 0,
+  replacedColor: null,
+});
+
 const TRANSPARENT_ALPHA_MAX = 8;
 const COLOR_CHANNEL_TOLERANCE = 8;
 
@@ -20,7 +30,7 @@ export function floodFillRegion(
   startX: number,
   startY: number,
   fillColor: RgbColor
-): number {
+): FloodFillResult {
   if (
     width <= 0 ||
     height <= 0 ||
@@ -28,12 +38,14 @@ export function floodFillRegion(
     !Number.isFinite(startX) ||
     !Number.isFinite(startY)
   ) {
-    return 0;
+    return NO_FILL_CHANGE;
   }
 
   const x = Math.floor(startX);
   const y = Math.floor(startY);
-  if (x < 0 || x >= width || y < 0 || y >= height) return 0;
+  if (x < 0 || x >= width || y < 0 || y >= height) {
+    return NO_FILL_CHANGE;
+  }
 
   const startPixel = y * width + x;
   const startOffset = startPixel * 4;
@@ -50,7 +62,7 @@ export function floodFillRegion(
     targetGreen === fillColor[1] &&
     targetBlue === fillColor[2]
   ) {
-    return 0;
+    return NO_FILL_CHANGE;
   }
 
   const matchesTarget = (pixel: number): boolean => {
@@ -102,5 +114,11 @@ export function floodFillRegion(
     if (pixel + width < pixelCount) enqueue(pixel + width);
   }
 
-  return changedPixels;
+  return Object.freeze({
+    changedPixels,
+    replacedColor:
+      targetIsBlank || targetAlpha !== 255
+        ? null
+        : ([targetRed, targetGreen, targetBlue] as const),
+  });
 }

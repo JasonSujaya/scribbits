@@ -39,6 +39,7 @@ import type {
   SubmitScribbitRequest,
   SubmitScribbitResponse,
   SubmitFreeDrawingRequest,
+  VenueBoard,
   ChoosePowerUpRequest,
   ChoosePowerUpResponse,
 } from '../../shared/arena';
@@ -168,6 +169,10 @@ export function fetchSeason(): Promise<ApiResult<SeasonPublicState>> {
 
 export function fetchSeasonBoard(): Promise<ApiResult<SeasonBoard>> {
   return getJson<SeasonBoard>('/api/season-board');
+}
+
+export function fetchVenueBoard(): Promise<ApiResult<VenueBoard>> {
+  return getJson<VenueBoard>('/api/venue-board');
 }
 
 export function uploadBattleClip(

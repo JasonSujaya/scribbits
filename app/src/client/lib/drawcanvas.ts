@@ -42,7 +42,11 @@ export type DrawCanvasOptions = {
   onEditStart?: () => void;
   onEditCancel?: () => void;
   hasPaint?: () => boolean;
-  requestPaint?: (amount: number, kind: PaintUseKind) => boolean;
+  requestPaint?: (
+    amount: number,
+    kind: PaintUseKind,
+    replacedColor?: RgbColor
+  ) => boolean;
   onPaintBlocked?: () => void;
 };
 
@@ -62,7 +66,8 @@ export class DrawCanvas {
   private readonly hasPaint: () => boolean;
   private readonly requestPaint: (
     amount: number,
-    kind: PaintUseKind
+    kind: PaintUseKind,
+    replacedColor?: RgbColor
   ) => boolean;
   private readonly onPaintBlocked: () => void;
 
@@ -644,7 +649,7 @@ export class DrawCanvas {
       return;
     }
     const imageData = this.ctx.getImageData(0, 0, CANVAS_SIZE, CANVAS_SIZE);
-    const changedPixels = floodFillRegion(
+    const fillResult = floodFillRegion(
       imageData.data,
       CANVAS_SIZE,
       CANVAS_SIZE,
@@ -652,10 +657,11 @@ export class DrawCanvas {
       y,
       this.fillColor
     );
+    const { changedPixels, replacedColor } = fillResult;
     if (changedPixels === 0) return;
 
     this.onEditStart();
-    if (!this.requestPaint(changedPixels, 'fill')) {
+    if (!this.requestPaint(changedPixels, 'fill', replacedColor ?? undefined)) {
       this.onEditCancel();
       this.onPaintBlocked();
       return;

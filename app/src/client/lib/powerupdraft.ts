@@ -11,14 +11,25 @@ import { prefersReducedMotion, UI } from './theme';
 import { label, stickerCard } from './ui';
 import { playSfx } from './sfx';
 
+const UNCOMMON_CARD_COLOR = 0x49a36d;
+const UNCOMMON_CARD_TEXT = '#2f7650';
 const RARE_CARD_COLOR = 0x4f9dcc;
 const RARE_CARD_TEXT = '#276789';
 const LEGENDARY_CARD_BORDER = 0xc58b10;
+const IDLE_SHAKE_DELAY_MINIMUM_MS = 1_300;
+const IDLE_SHAKE_DELAY_MAXIMUM_MS = 2_800;
+
+type IdleCardMotion = Readonly<{
+  canWiggle: () => boolean;
+  reset: () => void;
+  wiggle: (direction: -1 | 1) => void;
+}>;
 
 const rarityColor = (rarity: string): number => {
   if (rarity === 'legendary') return LEGENDARY_CARD_BORDER;
   if (rarity === 'epic') return 0xa96bd8;
   if (rarity === 'rare') return RARE_CARD_COLOR;
+  if (rarity === 'uncommon') return UNCOMMON_CARD_COLOR;
   return UI.inkHex;
 };
 
@@ -75,12 +86,45 @@ export const openPowerUpDraft = (
   );
   const controls: HTMLButtonElement[] = [];
   const resetCardVisuals: Array<() => void> = [];
+  const idleCardMotions: IdleCardMotion[] = [];
   const cardHeight = 186;
   const cardWidth = width - 110;
+  let idleShakeTimer: ReturnType<typeof scene.time.delayedCall> | null = null;
+
+  const randomInteger = (minimum: number, maximum: number): number =>
+    minimum + Math.floor(Math.random() * (maximum - minimum + 1));
+
+  const stopIdleMotion = (): void => {
+    idleShakeTimer?.remove(false);
+    idleShakeTimer = null;
+    idleCardMotions.forEach((motion) => motion.reset());
+  };
+
+  const scheduleIdleMotion = (): void => {
+    if (reduceMotion || destroyed || busy) return;
+    const delay = randomInteger(
+      IDLE_SHAKE_DELAY_MINIMUM_MS,
+      IDLE_SHAKE_DELAY_MAXIMUM_MS
+    );
+    idleShakeTimer = scene.time.delayedCall(delay, () => {
+      idleShakeTimer = null;
+      if (reduceMotion || destroyed || busy) return;
+      const availableMotions = idleCardMotions.filter((motion) =>
+        motion.canWiggle()
+      );
+      if (availableMotions.length > 0) {
+        const motion =
+          availableMotions[randomInteger(0, availableMotions.length - 1)];
+        motion?.wiggle(Math.random() < 0.5 ? -1 : 1);
+      }
+      scheduleIdleMotion();
+    });
+  };
 
   const destroy = (): void => {
     if (destroyed) return;
     destroyed = true;
+    stopIdleMotion();
     modal.destroy();
     sheet.destroy(true);
     backdrop.destroy();
@@ -89,6 +133,7 @@ export const openPowerUpDraft = (
   const selectPowerUp = async (selectedId: PowerUpId): Promise<void> => {
     if (busy || destroyed) return;
     busy = true;
+    stopIdleMotion();
     resetCardVisuals.forEach((resetCardVisual) => resetCardVisual());
     controls.forEach((control) => {
       control.disabled = true;
@@ -106,6 +151,7 @@ export const openPowerUpDraft = (
         control.disabled = false;
       });
       status.setText(result.error.toUpperCase());
+      scheduleIdleMotion();
       return;
     }
     playSfx('reward.ink');
@@ -117,7 +163,9 @@ export const openPowerUpDraft = (
     const definition = POWER_UP_CATALOG[powerUpId];
     const y = -202 + index * 202;
     const frameColor = rarityColor(definition.rarity);
+    const isUncommon = definition.rarity === 'uncommon';
     const isRare = definition.rarity === 'rare';
+    const hasTierAccent = isUncommon || isRare;
     const isLegendary = definition.rarity === 'legendary';
     const restingStrokeWidth =
       definition.rarity === 'common' ? 3 : isLegendary ? 5 : 4;
@@ -132,20 +180,20 @@ export const openPowerUpDraft = (
     const frame = scene.add
       .rectangle(0, 0, cardWidth, cardHeight, UI.creamHex, 1)
       .setStrokeStyle(restingStrokeWidth, frameColor, 1);
-    const rareRail = scene.add.rectangle(
+    const tierRail = scene.add.rectangle(
       -cardWidth / 2 + 7,
       0,
       9,
       cardHeight - 14,
-      RARE_CARD_COLOR,
-      isRare ? 0.72 : 0
+      frameColor,
+      hasTierAccent ? 0.72 : 0
     );
-    const rareIconBacking = scene.add.circle(
+    const tierIconBacking = scene.add.circle(
       -cardWidth / 2 + 72,
       0,
       39,
-      RARE_CARD_COLOR,
-      isRare ? 0.11 : 0
+      frameColor,
+      hasTierAccent ? 0.11 : 0
     );
     const legendaryIconHalo = scene.add.star(
       -cardWidth / 2 + 72,
@@ -168,9 +216,16 @@ export const openPowerUpDraft = (
     const rarityChip = scene.add.graphics();
     const drawRarityChip = (active: boolean): void => {
       rarityChip.clear();
-      if (isRare) {
-        rarityChip.fillStyle(RARE_CARD_COLOR, active ? 0.24 : 0.16);
-        rarityChip.fillRoundedRect(cardWidth / 2 - 112, -63, 96, 30, 10);
+      if (hasTierAccent) {
+        const chipWidth = isUncommon ? 126 : 96;
+        rarityChip.fillStyle(frameColor, active ? 0.24 : 0.16);
+        rarityChip.fillRoundedRect(
+          cardWidth / 2 - chipWidth - 16,
+          -63,
+          chipWidth,
+          30,
+          10
+        );
       } else if (isLegendary) {
         rarityChip.fillStyle(UI.goldHex, active ? 0.55 : 0.42);
         rarityChip.fillRoundedRect(cardWidth / 2 - 154, -65, 140, 34, 11);
@@ -193,11 +248,13 @@ export const openPowerUpDraft = (
     const rarityTextColor =
       definition.rarity === 'common'
         ? UI.inkSoft
-        : isRare
-          ? RARE_CARD_TEXT
-          : isLegendary
-            ? UI.goldText
-            : `#${frameColor.toString(16).padStart(6, '0')}`;
+        : isUncommon
+          ? UNCOMMON_CARD_TEXT
+          : isRare
+            ? RARE_CARD_TEXT
+            : isLegendary
+              ? UI.goldText
+              : `#${frameColor.toString(16).padStart(6, '0')}`;
     const rarity = label(
       scene,
       cardWidth / 2 - 22,
@@ -222,8 +279,8 @@ export const openPowerUpDraft = (
     const card = scene.add.container(0, y, [
       hoverShadow,
       frame,
-      rareRail,
-      rareIconBacking,
+      tierRail,
+      tierIconBacking,
       legendaryIconHalo,
       rarityChip,
       legendaryGlint,
@@ -246,13 +303,23 @@ export const openPowerUpDraft = (
     let hovered = false;
     let keyboardFocused = false;
     let pressed = false;
+    const rarityMotionIntensity =
+      definition.rarity === 'legendary'
+        ? 1.65
+        : definition.rarity === 'epic'
+          ? 1.45
+          : definition.rarity === 'rare'
+            ? 1.25
+            : definition.rarity === 'uncommon'
+              ? 1.12
+              : 1;
 
     const updateCardVisual = (): void => {
       const active = (hovered || keyboardFocused) && !control.disabled;
       hoverShadow.setFillStyle(UI.inkHex, active ? 0.12 : 0);
       frame.setFillStyle(active ? UI.paper : UI.creamHex, 1);
-      rareRail.setAlpha(isRare ? (active ? 0.9 : 0.72) : 0);
-      rareIconBacking.setAlpha(isRare ? (active ? 0.17 : 0.11) : 0);
+      tierRail.setAlpha(hasTierAccent ? (active ? 0.9 : 0.72) : 0);
+      tierIconBacking.setAlpha(hasTierAccent ? (active ? 0.17 : 0.11) : 0);
       legendaryIconHalo.setAlpha(isLegendary ? (active ? 0.32 : 0.22) : 0);
       legendaryGlint.setAlpha(isLegendary ? (active ? 1 : 0.9) : 0);
       drawRarityChip(active);
@@ -260,6 +327,7 @@ export const openPowerUpDraft = (
       const targetScale = pressed && active ? 0.995 : 1;
       const targetY = pressed && active ? y - 1 : active ? y - 3 : y;
       scene.tweens.killTweensOf(card);
+      card.setX(0).setAngle(0);
       if (reduceMotion) {
         card.setPosition(0, y).setScale(1);
         return;
@@ -308,6 +376,35 @@ export const openPowerUpDraft = (
       updateCardVisual();
     });
     control.addEventListener('pointercancel', resetPointerVisual);
+    idleCardMotions.push({
+      canWiggle: () =>
+        !busy &&
+        !destroyed &&
+        !hovered &&
+        !keyboardFocused &&
+        !pressed &&
+        !control.disabled,
+      reset: () => {
+        scene.tweens.killTweensOf(card);
+        if (card.active) card.setPosition(0, y).setAngle(0).setScale(1);
+      },
+      wiggle: (direction) => {
+        scene.tweens.killTweensOf(card);
+        card.setPosition(0, y).setAngle(0).setScale(1);
+        scene.tweens.add({
+          targets: card,
+          x: direction * 2.1 * rarityMotionIntensity,
+          angle: direction * 0.5 * rarityMotionIntensity,
+          duration: 90,
+          yoyo: true,
+          repeat: 1,
+          ease: 'Sine.easeInOut',
+          onComplete: () => {
+            if (card.active) card.setPosition(0, y).setAngle(0);
+          },
+        });
+      },
+    });
     resetCardVisuals.push(resetCardVisual);
     controls.push(control);
   });
@@ -318,7 +415,10 @@ export const openPowerUpDraft = (
       scale: 1,
       duration: 260,
       ease: 'Back.easeOut',
-      onComplete: () => modal.focusInitial(controls[0]),
+      onComplete: () => {
+        modal.focusInitial(controls[0]);
+        scheduleIdleMotion();
+      },
     });
   } else {
     modal.focusInitial(controls[0]);

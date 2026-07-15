@@ -7,6 +7,7 @@ import type { CombatRoleMatchupRead } from './combat/roles';
 import type {
   BattleArenaChallengeProgress,
   BattleArenaId,
+  NextBattleArenaUnlock,
 } from './battlearena';
 import type { ScribbitUpgrade } from './combat/upgrades';
 import type { PowerUpId, PowerUpOffer } from './combat/powerups';
@@ -16,6 +17,7 @@ import type { SparRewardReceipt } from './sparreward';
 import type { SeasonPublicState } from './season';
 import type { PaintBucketState } from './paintbucket';
 import type { DailyLoginState } from './dailylogin';
+import type { CommunityDrawTheme } from './content/communitydrawthemes';
 import {
   cloneEquipmentLoadout,
   createEmptyEquipmentLoadout,
@@ -304,6 +306,7 @@ export type ArenaState = {
   hasCreatedScribbit: boolean;
   hasCompletedBattle: boolean;
   myUsername: string | null;
+  communityDrawTheme: CommunityDrawTheme | null; // server-assigned, stable for this player and three-day cycle
   forecast: Forecast;
   champion: Scribbit | null; // frozen snapshot, today's boss
   myScribbits: Scribbit[]; // growing + mature, newest first, max 12
@@ -319,6 +322,7 @@ export type ArenaState = {
   communityLegendCount: number;
   rumbleResolvesAt: number; // epoch ms — client renders live countdown
   season: SeasonPublicState; // authoritative 60-day campaign, event, and player rank
+  venueStamp: VenueStampState; // caller's best result in today's rotating venue
   todayEntrants: Scribbit[]; // tonight's Rumble field (gallery + Back targets)
   myBackedScribbitId: string | null; // today's Back, null if unused
   playStreakDays: number; // consecutive UTC days with an expanded game session
@@ -333,6 +337,35 @@ export type ArenaState = {
   lastRumbleReceipt: DailyRumbleReceipt | null; // yesterday's Back payoff, otherwise the player's owned entrant result
   legacyReturnReceipt: LegacyReturnReceipt | null; // unseen expiry payoff, cleared explicitly
 };
+
+export type VenueStampState = Readonly<{
+  arenaId: BattleArenaId;
+  arenaName: string;
+  challengeLabel: string;
+  progress: number;
+  target: number;
+  cleared: boolean;
+  bestClearMilliseconds: number | null;
+  dailyRank: number | null;
+  clearCount: number;
+  nextUnlock: NextBattleArenaUnlock | null;
+}>;
+
+export type VenueBoardEntry = Readonly<{
+  username: string;
+  rank: number;
+  clearMilliseconds: number;
+}>;
+
+export type VenueBoard = Readonly<{
+  dayNumber: number;
+  arenaId: BattleArenaId;
+  arenaName: string;
+  challengeLabel: string;
+  clearCount: number;
+  top: readonly VenueBoardEntry[];
+  me: VenueBoardEntry | null;
+}>;
 
 export type SplashCreation = Readonly<
   Pick<Scribbit, 'id' | 'name' | 'artist' | 'imageUrl'>
@@ -472,7 +505,7 @@ export const INK_REWARDS = {
   sparWin: 2,
   rumbleWin: 5,
   backedChampion: 5,
-  dailyDraw: 2,
+  dailyDraw: 7,
 } as const;
 export const XP_REWARDS = {
   sparWin: 1,
@@ -481,7 +514,7 @@ export const XP_REWARDS = {
 } as const;
 // The core Daily Draw loop should immediately fund one chest. Battle rewards
 // remain valuable because they can fund additional opens.
-export const CAPSULE_COST = 2;
+export const CAPSULE_COST = 7;
 // Kept as a separate transport constant while older daily-pull records age out.
 // The earned-Ink chest now has one honest price instead of urgency pricing.
 export const CAPSULE_FIRST_DAILY_COST = CAPSULE_COST;
@@ -594,6 +627,7 @@ export type DirectBattleResponse = {
   report: BattleReport;
   founderChronicle: FounderChronicle;
   founderChronicleBeat: FounderChronicleBeat | null;
+  powerUpOffer?: PowerUpOffer | null;
 };
 
 export type SparBattleResponse = DirectBattleResponse & {
@@ -745,6 +779,7 @@ export const getScribbitLifecycleStage = (
 // the Scribbit. XP awards live in XP_REWARDS above.
 // REST endpoints (Hono, JSON; errors = ArenaErrorResponse with 4xx/5xx):
 // GET  /api/arena          -> ArenaState
+// GET  /api/venue-board    -> VenueBoard (today's fastest authoritative challenge clears)
 // POST /api/daily-login/claim -> DailyLoginClaimResponse
 // GET  /api/scout-notebook -> ScoutNotebookState (signed-in caller, today + six prior days)
 // POST /api/scribbit       -> SubmitScribbitRequest -> SubmitScribbitResponse (401 logged out, 409 no charge/full roster)

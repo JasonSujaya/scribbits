@@ -5,9 +5,10 @@ classes:
 
 | Drawing color group        | Role     | Beats    | Weak to  |
 | -------------------------- | -------- | -------- | -------- |
-| Coral + orange             | Brawler  | Mage     | Longshot |
-| Gold + green + aqua + blue | Longshot | Brawler  | Mage     |
-| Purple + pink              | Mage     | Longshot | Brawler  |
+| Brown + coral + orange     | Brawler  | Mage     | Longshot |
+| Gold + green + blue        | Longshot | Brawler  | Mage     |
+| Aqua + purple + pink       | Mage     | Longshot | Brawler  |
+| Black + grey + white       | Neutral  | —        | —        |
 
 The matchup edge should matter without deciding the fight by itself. The
 balancer must keep each intended edge near 53–62% across deterministic seeds.

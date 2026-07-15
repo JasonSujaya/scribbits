@@ -18,11 +18,14 @@ export { getOrbitingNibPosition, simulateCombat } from './engine';
 export {
   MAXIMUM_LEGENDARY_POWER_UPS,
   MAXIMUM_POWER_UP_BONUS_DAMAGE,
+  MAXIMUM_POWER_UP_HEALING_PERMILLE,
   MAXIMUM_POWER_UP_TRIGGER_EVENTS,
   MAXIMUM_POWER_UPS,
   POWER_UP_CATALOG,
   POWER_UP_IDS,
+  POWER_UP_OFFER_RARITY_WEIGHTS,
   POWER_UP_PLAYSTYLE_PROFILES,
+  POWER_UP_RARITIES,
   createDeterministicPowerUpOffer,
   isPowerUpId,
   parsePowerUpBuild,
@@ -35,6 +38,7 @@ export type {
   PowerUpId,
   PowerUpPlaystyleProfile,
   PowerUpRarity,
+  PowerUpRarityWeights,
 } from './powerups';
 export {
   freezeGearCombatSnapshot,

@@ -48,11 +48,42 @@ test('sustain Power-Ups restore health without exceeding maximum health', () => 
           ],
         });
         assert.ok(transcriptValidation.parseBattleTranscript(transcript));
-        healingEvents.push(
-          ...transcript.timeline.filter(
-            (event) => event.kind === 'healing' && event.actor === 'a'
-          )
+        const ownerResult = transcript.result.fighters.find(
+          (fighter) => fighter.slot === 'a'
         );
+        const ownerHealingEvents = transcript.timeline.filter(
+          (event) => event.kind === 'healing' && event.actor === 'a'
+        );
+        ownerHealingEvents.forEach((event) => {
+          const healingPermille =
+            combat.POWER_UP_CATALOG[event.powerUpId]
+              .maximumHitPointHealingPermille;
+          assert.ok(ownerResult);
+          assert.ok(healingPermille);
+          const requestedHealing = Math.round(
+            (ownerResult.maxHitPoints * healingPermille) / 1_000
+          );
+          const hitPointsBeforeHealing = event.targetHitPoints - event.amount;
+          const missingHitPoints =
+            ownerResult.maxHitPoints - hitPointsBeforeHealing;
+          assert.equal(
+            event.amount,
+            Math.min(requestedHealing, missingHitPoints)
+          );
+        });
+        assert.ok(ownerResult);
+        assert.ok(
+          ownerHealingEvents.reduce(
+            (total, event) => total + event.amount,
+            0
+          ) <=
+            Math.round(
+              (ownerResult.maxHitPoints *
+                combat.MAXIMUM_POWER_UP_HEALING_PERMILLE) /
+                1_000
+            )
+        );
+        healingEvents.push(...ownerHealingEvents);
       }
     }
   }

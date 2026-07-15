@@ -76,7 +76,7 @@ on one exercise.
 ## Judging story
 
 - **Delightful UX:** feed card identifies the next action; new players start on
-  the canvas with the shared three-day theme from a one-year calendar, an expressive bonus twist,
+  the canvas with a random assignment from the cycle's five-theme pool that advances after each completed theme, an expressive bonus twist,
   and the clear promise
   “draw → watch it fight → earn Ink”; forming/ready feedback explains every
   stroke; the first submission immediately fights; returning players first see
@@ -185,12 +185,16 @@ on one exercise.
 - Replaced the earlier catch/collection direction with the current daily
   draw-to-stats Rumble loop.
 - Added deterministic server-side PNG analysis and fair stat normalization.
-- Added 122 authored community drawing themes covering 366 Arena days.
-  One theme is shared by every player for three days, new Scribbits retain its
-  immutable category id, and append-only versioned seasons extend the schedule
-  without moving published days. The Rumble picker groups community creations
-  beneath the theme name. Progressive blank/forming/ready
-  feedback and a shared client/server minimum-body gate reject tap-sized submissions.
+- Added 120 authored community drawing themes covering 360 Arena days.
+  Every three-day cycle rotates to five themes and each player receives one
+  random assignment from a category-balanced pool spanning at least four of
+  animals, characters/fantasy, places/nature, vehicles, food, and objects, with
+  no more than two animals. It stays locked until submitted, then advances to
+  another theme in the same pool. New Scribbits retain the immutable category
+  id, and append-only versioned seasons extend the schedule without moving
+  published cycles. The Rumble picker groups matching community creations
+  beneath the theme name. Progressive blank/forming/ready feedback and a shared
+  client/server minimum-body gate reject tap-sized submissions.
 - Added 32 validated public forecast blurbs on an independent no-repeat rotation.
   App, Reddit post, result comment, and browser mock share that copy without
   changing boosted/nerfed element randomness.

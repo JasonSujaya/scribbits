@@ -86,6 +86,8 @@ test('Bag presents the mobile Binder, character details, eight slots, and separa
   assert.match(collectionSource, /EXPAND ↑/);
   assert.match(collectionSource, /data-bag-inventory-expanded/);
   assert.match(collectionSource, /'aria-expanded'/);
+  assert.match(collectionSource, /binderTop \+ binderOffsetY\(92\)/);
+  assert.doesNotMatch(collectionSource, /scene\.scale\.height - NAV_SAFE - 60/);
   assert.doesNotMatch(collectionSource, /`GEAR WEEK/);
   assert.doesNotMatch(collectionSource, /gearWeekDay\.challenge/);
   assert.match(

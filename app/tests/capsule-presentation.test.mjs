@@ -45,26 +45,26 @@ test('Mystery Ink prize actions and red-star ownership use tested presentation p
     'prize action overlays must remain inside the portrait canvas'
   );
   assert.equal(capsulePresentation.capsuleOpenCost(1, 2), 2);
-  assert.equal(capsulePresentation.capsuleOpenCost(10, 2), 20);
+  assert.equal(capsulePresentation.capsuleOpenCost(10, 2), 65);
   assert.throws(() => capsulePresentation.capsuleOpenCost(100, 2));
   assert.deepEqual(
-    capsulePresentation.planCapsuleOpenAffordance(18, 2, 10, 1),
+    capsulePresentation.planCapsuleOpenAffordance(58, 2, 10, 1),
     {
-      primaryLabel: 'RETRY 9 · 18',
+      primaryLabel: 'RETRY 9 · 58',
       primaryAccessibleLabel:
-        'Retry the remaining 9 Mystery Ink chests for 18 Ink',
+        'Retry the remaining 9 Mystery Ink chests for 58 Ink',
       primaryEnabled: true,
       secondaryLabel: 'SAFE 1/10',
       secondaryAccessibleLabel:
         '1 of 10 Mystery Ink chests are safely recorded',
       secondaryEnabled: false,
-      requiredInk: 18,
+      requiredInk: 58,
       remainingCount: 9,
       retrying: true,
     }
   );
   assert.equal(
-    capsulePresentation.planCapsuleOpenAffordance(17, 2, 10, 1).primaryEnabled,
+    capsulePresentation.planCapsuleOpenAffordance(57, 2, 10, 1).primaryEnabled,
     false,
     'a partial ten-open retry must require enough Ink for only the remaining opens'
   );
@@ -161,6 +161,7 @@ test('Shop visual assets load lazily and are checked before rendering', () => {
   for (const shopAsset of [
     'scribbits-shop-stage.webp',
     'scribbits-shop-claw-machine-shell.webp',
+    'scribbits-shop-capsule-shell.png',
     'scribbits-shop-chest-closed.webp',
     'scribbits-shop-chest-open.webp',
     'scribbits-ink-token.webp',
@@ -220,6 +221,7 @@ test('Mystery Ink uses generated reward art and a transparent animated claw mach
   assert.match(visualAssetsSource, /scribbits-shop-chest-closed\.webp/);
   assert.match(visualAssetsSource, /scribbits-shop-chest-open\.webp/);
   assert.match(visualAssetsSource, /scribbits-shop-claw-machine-shell\.webp/);
+  assert.match(visualAssetsSource, /scribbits-shop-capsule-shell\.png/);
   assert.doesNotMatch(visualAssetsSource, /scribbits-shop-lottery-machine/);
   assert.match(visualAssetsSource, /scribbits-ink-token\.webp/);
   assert.match(capsuleMachineSource, /SHOP_CHEST_TEXTURES\.open/);
@@ -281,7 +283,7 @@ test('Mystery Ink uses generated reward art and a transparent animated claw mach
     /scene\.add\.graphics|fillRoundedRect|lidGraphics/,
     'the generated chest states must replace the old procedural chest geometry'
   );
-  assert.match(capsuleMachineSource, /OPEN 10/);
+  assert.match(capsuleMachineSource, /TAKE 10/);
   assert.match(capsuleMachineSource, /OPEN CHEST/);
   assert.match(capsuleMachineSource, /function createClawMachine\(/);
   assert.match(capsuleMachineSource, /SHOP_CLAW_MACHINE_SHELL_TEXTURE/);
@@ -316,17 +318,48 @@ test('Mystery Ink uses generated reward art and a transparent animated claw mach
   );
   assert.match(capsuleMachineSource, /FIRST GEAR CLAW/);
   assert.match(capsuleMachineSource, /MYSTERY GEAR CLAW/);
+  assert.match(
+    capsuleMachineSource,
+    /const heading = label\([\s\S]{0,180}\.setStroke\(UI\.ink, 8\)/,
+    'the claw heading must stay readable over the illustrated marquee'
+  );
+  assert.match(
+    capsuleMachineSource,
+    /const message = label\([\s\S]{0,180}\.setStroke\(UI\.ink, 6\)/,
+    'the changing claw status must stay readable over the awning'
+  );
   assert.match(capsuleMachineSource, /-350,/);
   assert.match(capsuleMachineSource, /-312,/);
-  assert.match(capsuleMachineSource, /DROP CLAW/);
+  assert.match(capsuleMachineSource, /TAKE 1 OR TAKE 10/);
+  assert.match(capsuleMachineSource, /'TAKE 1'/);
+  assert.match(capsuleMachineSource, /Take 10 Mystery Gear capsules/);
+  assert.match(capsuleMachineSource, /const CLAW_CHOICE_WIDTH = 170/);
+  assert.match(capsuleMachineSource, /const CLAW_CHOICE_X_OFFSET = 92/);
+  assert.match(capsuleMachineSource, /const CLAW_CHOICE_HEIGHT = 92/);
+  assert.match(
+    capsuleMachineSource,
+    /const takeOneButton = createInkOpenButton/
+  );
   assert.match(capsuleMachineSource, /CLAW_MACHINE_SAMPLE_IDS/);
+  assert.match(capsuleMachineSource, /const EMPTY_CAPSULE_POSITIONS = \[/);
+  assert.match(capsuleMachineSource, /EMPTY_CAPSULE_POSITIONS\.forEach/);
+  assert.match(capsuleMachineSource, /SHOP_CAPSULE_SHELL_TEXTURE/);
+  assert.match(
+    capsuleMachineSource,
+    /bringToTop\(inkWallet\.container\)/,
+    'the Ink balance must render in front of the claw-machine marquee'
+  );
   assert.match(capsuleMachineSource, /renderCosmeticPreview\(\{/);
-  assert.match(capsuleMachineSource, /Play the First Gear claw machine/);
+  assert.match(capsuleMachineSource, /Take one capsule from the First Gear/);
   assert.match(
     capsuleMachineSource,
     /visible Gear are possible examples, not a prediction/
   );
   assert.match(capsuleMachineSource, /function startClawSearch\(/);
+  assert.match(capsuleMachineSource, /function startClawIdle\(/);
+  assert.match(capsuleMachineSource, /allowsAmbientMotion\(\)/);
+  assert.match(capsuleMachineSource, /stopClawIdle\?\.\(\)/);
+  assert.match(capsuleMachineSource, /burstClawGrabSparks\(/);
   assert.match(capsuleMachineSource, /function animateClawCatch\(/);
   assert.match(capsuleMachineSource, /COSMETIC_BY_ID\.get\(pull\.id\)/);
   assert.match(capsuleMachineSource, /function resetClawMachine\(/);

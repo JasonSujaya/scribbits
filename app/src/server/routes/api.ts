@@ -31,6 +31,7 @@ import type {
   SparRivalSlate,
   SplashState,
   SubmitScribbitResponse,
+  VenueBoard,
   ChoosePowerUpRequest,
   ChoosePowerUpResponse,
 } from '../../shared/arena';
@@ -41,6 +42,7 @@ import {
 } from '../../shared/sparreward';
 import {
   CAPSULE_FIRST_DAILY_COST,
+  getScribbitLifecycleStage,
   INK_REWARDS,
   RIVAL_RUN_LENGTH,
   XP_REWARDS,
@@ -65,6 +67,7 @@ import {
   loadFeaturedRumbleReport,
   saveBattleReport,
 } from '../core/battleStore';
+import { loadVenueBoard, loadVenueStampState } from '../core/venueStamp';
 import {
   ensureCurrentArenaDay,
   ensureForecastForDay,
@@ -116,6 +119,7 @@ import {
   getArenaDayNumber,
   getNextUtcDayStartMs,
 } from '../core/day';
+import { loadCompletedCommunityThemeDrawCount } from '../core/communityDrawTheme';
 import {
   getProjectedRumbleEntrantCount,
   prepareRumbleEntrants,
@@ -553,10 +557,11 @@ const uploadDrawing = async (imageDataUrl: string): Promise<string> => {
   return mediaAsset.mediaUrl;
 };
 
-const loadOwnedAliveScribbit = async (
+const loadOwnedScribbitForArenaStage = async (
   player: CurrentPlayer,
   scribbitId: string,
-  day: number
+  day: number,
+  requiredStage: 'growing' | 'mature'
 ): Promise<Scribbit | undefined> => {
   const scribbit = await loadScribbit(redis, scribbitId);
 
@@ -564,7 +569,7 @@ const loadOwnedAliveScribbit = async (
     !scribbit ||
     scribbit.status !== 'alive' ||
     scribbit.isFounding ||
-    scribbit.expiresDay <= day
+    getScribbitLifecycleStage(scribbit, day) !== requiredStage
   ) {
     return undefined;
   }
@@ -780,6 +785,7 @@ const finalizeSparBattle = async (
             : 'rival-run-win'
           : 'exhibition-win',
         createdAtMs: completedAtMilliseconds,
+        currentArenaDay: input.report.day,
       })
     : null;
 
@@ -823,6 +829,7 @@ const getOrCreateBirthPowerUpOffer = async (
     reportId: `birth:${scribbit.id}`,
     source: 'birth',
     createdAtMs,
+    currentArenaDay: scribbit.bornDay,
   });
 };
 
@@ -912,6 +919,7 @@ registerPlayerMutatingGet('/arena', async (c) => {
       lastAdvancedDay: null,
     };
     let legacyReturnReceipt: ArenaState['legacyReturnReceipt'] = null;
+    let completedCommunityThemeDrawCount = 0;
 
     if (player) {
       playStreakDays = (await recordDailyPlay(redis, player.userId, now)).days;
@@ -933,6 +941,7 @@ registerPlayerMutatingGet('/arena', async (c) => {
         loadedPaintBucket,
         loadedDailyLogin,
         loadedPowerUpDiscoveries,
+        loadedCompletedCommunityThemeDrawCount,
       ] = await Promise.all([
         getDailyFlags(redis, player.userId, dayNumber),
         loadInventory(redis, player.userId),
@@ -951,7 +960,9 @@ registerPlayerMutatingGet('/arena', async (c) => {
         loadPaintBucket(redis, player.userId),
         loadDailyLoginState(redis, player.userId, utcDateKey),
         loadPowerUpDiscoveries(redis, player.userId),
+        loadCompletedCommunityThemeDrawCount(redis, player.userId, dayNumber),
       ]);
+      completedCommunityThemeDrawCount = loadedCompletedCommunityThemeDrawCount;
       myScribbits = loadedScribbits;
       pendingPowerUpOffers = (
         await Promise.all(
@@ -997,6 +1008,7 @@ registerPlayerMutatingGet('/arena', async (c) => {
       currentChampion,
       season,
       communityLegendCount,
+      venueStamp,
     ] = await Promise.all([
       loadTodayRumbleEntrants(
         dayNumber,
@@ -1013,6 +1025,7 @@ registerPlayerMutatingGet('/arena', async (c) => {
       getCurrentChampion(redis),
       loadSeasonPublicState(redis, dayNumber, player?.userId),
       getCommunityLegendCount(redis),
+      loadVenueStampState(redis, dayNumber, player?.userId),
     ]);
     const todayEntrants = allTodayEntrants.filter(
       (entrant) => !hiddenScribbitIds.has(entrant.id)
@@ -1030,6 +1043,30 @@ registerPlayerMutatingGet('/arena', async (c) => {
         champion: currentChampion,
         hiddenScribbitIds,
       });
+      if (
+        lastRumbleReceipt?.kind === 'owned' &&
+        lastRumbleReceipt.wins > 0
+      ) {
+        const rumblePowerUpOffer = await getOrCreatePowerUpOffer(redis, {
+          userId: player.userId,
+          scribbit: lastRumbleReceipt.entrant,
+          reportId: `rumble-day-win:v1:${resolvedDay}:${lastRumbleReceipt.entrant.id}`,
+          source: 'rumble-day-win',
+          createdAtMs: now.getTime(),
+          currentArenaDay: dayNumber,
+        });
+        if (
+          rumblePowerUpOffer &&
+          !pendingPowerUpOffers.some(
+            (offer) => offer.id === rumblePowerUpOffer.id
+          )
+        ) {
+          pendingPowerUpOffers = [
+            ...pendingPowerUpOffers,
+            rumblePowerUpOffer,
+          ];
+        }
+      }
     }
 
     return c.json<ArenaState>({
@@ -1038,6 +1075,13 @@ registerPlayerMutatingGet('/arena', async (c) => {
       hasCreatedScribbit,
       hasCompletedBattle,
       myUsername: player?.username ?? null,
+      communityDrawTheme: player
+        ? selectCommunityDoodleDare(
+            dayNumber,
+            player.userId,
+            completedCommunityThemeDrawCount
+          )
+        : null,
       forecast,
       champion:
         currentChampion && !hiddenScribbitIds.has(currentChampion.id)
@@ -1056,6 +1100,7 @@ registerPlayerMutatingGet('/arena', async (c) => {
       communityLegendCount,
       rumbleResolvesAt: getNextUtcDayStartMs(now),
       season,
+      venueStamp,
       todayEntrants,
       myBackedScribbitId,
       playStreakDays,
@@ -1129,6 +1174,22 @@ api.get('/season-board', async (c) => {
   } catch (error) {
     console.error('Season board route failed:', error);
     return serverError(c, 'The season board is unavailable. Try again soon.');
+  }
+});
+
+api.get('/venue-board', async (c) => {
+  try {
+    const dayNumber = await ensureCurrentArenaDay(redis, new Date());
+    const player = await getCurrentPlayer();
+    return c.json<VenueBoard>(
+      await loadVenueBoard(redis, dayNumber, player ?? undefined)
+    );
+  } catch (error) {
+    console.error('Venue board route failed:', error);
+    return serverError(
+      c,
+      'Today’s venue ranking is unavailable. Try again soon.'
+    );
   }
 });
 
@@ -1432,6 +1493,12 @@ api.post('/scribbit', async (c) => {
     }
 
     const imageUrl = await uploadDrawing(draft.imageDataUrl);
+    const completedCommunityThemeDrawCount =
+      await loadCompletedCommunityThemeDrawCount(
+        redis,
+        player.userId,
+        dayNumber
+      );
 
     const scribbit = createScribbit({
       id: scribbitId,
@@ -1439,7 +1506,11 @@ api.post('/scribbit', async (c) => {
       artist: player.username,
       imageUrl,
       day: dayNumber,
-      drawingThemeId: selectCommunityDoodleDare(dayNumber).id,
+      drawingThemeId: selectCommunityDoodleDare(
+        dayNumber,
+        player.userId,
+        completedCommunityThemeDrawCount
+      ).id,
     });
 
     const commitResult = await commitScribbitSubmission(redis, {
@@ -1563,10 +1634,11 @@ registerPlayerMutatingGet('/spar-rivals', async (c) => {
     const utcDateKey = formatUtcDateKey(now);
     const dayNumber = await getWritableArenaDay(now);
     if (!dayNumber) return arenaRolloverConflict(c);
-    const challenger = await loadOwnedAliveScribbit(
+    const challenger = await loadOwnedScribbitForArenaStage(
       player,
       scribbitId,
-      dayNumber
+      dayNumber,
+      'growing'
     );
 
     if (!challenger) {
@@ -1699,10 +1771,11 @@ api.post('/spar', async (c) => {
     const utcDateKey = formatUtcDateKey(now);
     const dayNumber = await getWritableArenaDay(now);
     if (!dayNumber) return arenaRolloverConflict(c);
-    const challenger = await loadOwnedAliveScribbit(
+    const challenger = await loadOwnedScribbitForArenaStage(
       player,
       sparRequest.scribbitId,
-      dayNumber
+      dayNumber,
+      'growing'
     );
 
     if (!challenger) {
@@ -2478,15 +2551,19 @@ api.post('/boss-challenge', async (c) => {
     const now = new Date();
     const dayNumber = await getWritableArenaDay(now);
     if (!dayNumber) return arenaRolloverConflict(c);
-    const challenger = await loadOwnedAliveScribbit(
+    const challenger = await loadOwnedScribbitForArenaStage(
       player,
       scribbitId,
-      dayNumber
+      dayNumber,
+      'mature'
     );
     const champion = await getCurrentChampion(redis);
 
     if (!challenger) {
-      return notFound(c, 'That living Scribbit is not ready to fight.');
+      return notFound(
+        c,
+        'That Scribbit must mature before entering the Arena.'
+      );
     }
 
     if (!champion) {
@@ -2517,7 +2594,10 @@ api.post('/boss-challenge', async (c) => {
       return conflict(c, "You already challenged today's Champion.");
     }
     if (championCommit.status === 'target-unavailable') {
-      return notFound(c, 'That living Scribbit is not ready to fight.');
+      return notFound(
+        c,
+        'That Scribbit must mature before entering the Arena.'
+      );
     }
 
     const report = championCommit.report;
@@ -2533,14 +2613,30 @@ api.post('/boss-challenge', async (c) => {
       recordDailyPlay(redis, player.userId, now)
     );
 
-    return c.json<DirectBattleResponse>(
-      await finishDirectBattleResponse(
-        player.userId,
-        report,
-        challenger.id,
-        founderChronicle
-      )
+    const directResponse = await finishDirectBattleResponse(
+      player.userId,
+      report,
+      challenger.id,
+      founderChronicle
     );
+    const rewardedChallenger =
+      report.winner === 'a'
+        ? await loadScribbit(redis, challenger.id)
+        : undefined;
+    const powerUpOffer = rewardedChallenger
+      ? await getOrCreatePowerUpOffer(redis, {
+          userId: player.userId,
+          scribbit: rewardedChallenger,
+          reportId: report.id,
+          source: 'champion-win',
+          createdAtMs: now.getTime(),
+          currentArenaDay: dayNumber,
+        })
+      : null;
+    return c.json<DirectBattleResponse>({
+      ...directResponse,
+      powerUpOffer,
+    });
   } catch (error) {
     console.error('Boss challenge route failed:', error);
     return serverError(

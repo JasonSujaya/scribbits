@@ -60,7 +60,9 @@ const {
   findFoundingScribbit,
   generateForecastForDay,
   getCapsuleCostForDailyState,
+  getBattleArenaForDay,
   getLevelForXp,
+  getNextBattleArenaUnlock,
   getNextLegacySeenThroughDay,
   getPaintBucketState,
   getRumbleProgressionRewards,
@@ -204,7 +206,8 @@ const makeScribbit = (options) => {
     imageUrl: options.imageUrl ?? defaultImageUrl,
     drawingThemeId: options.isFounding
       ? null
-      : (options.drawingThemeId ?? selectCommunityDoodleDare(bornDay).id),
+      : (options.drawingThemeId ??
+        selectCommunityDoodleDare(bornDay, options.artist).id),
     bornDay,
     expiresDay: options.expiresDay ?? 11,
     belief: options.belief ?? 0,
@@ -792,6 +795,10 @@ const memory = {
   legends,
   archivedOwnedScribbits: seedOwnedScribbits ? [...archivedOwnedScribbits] : [],
   drawnToday: false,
+  communityThemeDrawCountByPreviewMode: {
+    returning: 0,
+    fresh: 0,
+  },
   enteredToday: false,
   drawChargesByPreviewMode: {
     returning: { available: 3, capacity: 3, nextRefreshAt: null },
@@ -906,7 +913,7 @@ const memory = {
       capsulePullCount: 13,
       pullsSinceEpic: 6,
     }),
-    fresh: createPreviewEconomy({ dailyLoginClaimedTrackDays: 6 }),
+    fresh: createPreviewEconomy(),
   },
   founderChronicleByPreviewMode: {
     returning: returningFounderChronicle,
@@ -1210,6 +1217,27 @@ const seasonBoardForPreview = (previewMode) => {
           ? { username: 'mock_player', score: 0, rank: 0, rewardTier: null }
           : top[2],
     finalized: false,
+  };
+};
+
+const venueBoardForPreview = (previewMode) => {
+  const arena = getBattleArenaForDay(memory.dayNumber);
+  const top = [
+    { username: 'inkwell_kay', rank: 1, clearMilliseconds: 8_920 },
+    { username: 'marker_jules', rank: 2, clearMilliseconds: 9_840 },
+    { username: 'pixel_mara', rank: 3, clearMilliseconds: 11_370 },
+    { username: 'mock_player', rank: 4, clearMilliseconds: 12_450 },
+    { username: 'crayon_lia', rank: 5, clearMilliseconds: 13_110 },
+    { username: 'paper_ren', rank: 6, clearMilliseconds: 14_025 },
+  ];
+  return {
+    dayNumber: memory.dayNumber,
+    arenaId: arena.id,
+    arenaName: arena.name,
+    challengeLabel: arena.challengeLabel,
+    clearCount: 18,
+    top,
+    me: previewMode === 'returning' ? top[3] : null,
   };
 };
 
@@ -1644,6 +1672,8 @@ const arenaState = (economy, previewMode = 'returning') => {
   const livingScribbitIds = new Set(
     getLivingScribbitsForPreview(previewMode).map((scribbit) => scribbit.id)
   );
+  const battleArena = getBattleArenaForDay(memory.dayNumber);
+  const venueCleared = previewMode === 'returning';
   return {
     dayNumber: memory.dayNumber,
     loggedIn: true,
@@ -1652,6 +1682,11 @@ const arenaState = (economy, previewMode = 'returning') => {
       memory.completedBattlePreviewModes.has(previewMode) ||
       economy.capsulePullCount > 0,
     myUsername: 'mock_player',
+    communityDrawTheme: selectCommunityDoodleDare(
+      memory.dayNumber,
+      `mock-player:${previewMode}`,
+      memory.communityThemeDrawCountByPreviewMode[previewMode] ?? 0
+    ),
     forecast: memory.forecast,
     champion: memory.hiddenScribbitIds.has(memory.champion.id)
       ? null
@@ -1679,6 +1714,18 @@ const arenaState = (economy, previewMode = 'returning') => {
     communityLegendCount: memory.legends.length,
     rumbleResolvesAt: nextUtcMidnightMs(),
     season: seasonStateForPreview(previewMode),
+    venueStamp: {
+      arenaId: battleArena.id,
+      arenaName: battleArena.name,
+      challengeLabel: battleArena.challengeLabel,
+      progress: venueCleared ? battleArena.challenge.target : 0,
+      target: battleArena.challenge.target,
+      cleared: venueCleared,
+      bestClearMilliseconds: venueCleared ? 12_450 : null,
+      dailyRank: venueCleared ? 4 : null,
+      clearCount: 18,
+      nextUnlock: getNextBattleArenaUnlock(memory.dayNumber),
+    },
     todayEntrants: memory.todayEntrants
       .filter((scribbit) => !memory.hiddenScribbitIds.has(scribbit.id))
       .map(cloneScribbit),
@@ -1727,6 +1774,7 @@ const loggedOutArenaState = () => {
     hasCreatedScribbit: false,
     hasCompletedBattle: false,
     myUsername: null,
+    communityDrawTheme: null,
     myScribbits: [],
     drawnToday: false,
     enteredToday: false,
@@ -2423,6 +2471,11 @@ const handleApi = async (request, response, url) => {
     return;
   }
 
+  if (method === 'GET' && path === '/api/venue-board') {
+    sendJson(response, 200, venueBoardForPreview(previewMode));
+    return;
+  }
+
   if (method === 'GET' && path.startsWith('/api/drawing/')) {
     const id = decodeURIComponent(path.slice('/api/drawing/'.length));
     response.writeHead(200, {
@@ -2566,6 +2619,7 @@ const handleApi = async (request, response, url) => {
     }
 
     resetPreviewEconomy(economy);
+    memory.communityThemeDrawCountByPreviewMode[previewMode] = 0;
     memory.createdScribbitPreviewModes.delete(previewMode);
     memory.completedBattlePreviewModes.delete(previewMode);
     memory.founderChronicleByPreviewMode[previewMode] =
@@ -2943,8 +2997,12 @@ const handleApi = async (request, response, url) => {
       (entry) => entry.id === scribbitId
     );
 
-    if (!challenger) {
-      sendError(response, 404, 'That living Scribbit is not ready to fight.');
+    if (!challenger || challenger.expiresDay > memory.dayNumber) {
+      sendError(
+        response,
+        404,
+        'That Scribbit must mature before entering the Arena.'
+      );
       return;
     }
 
@@ -3155,7 +3213,11 @@ const handleApi = async (request, response, url) => {
       artist: 'mock_player',
       imageUrl: `/api/drawing/${id}`,
       day: memory.dayNumber,
-      drawingThemeId: selectCommunityDoodleDare(memory.dayNumber).id,
+      drawingThemeId: selectCommunityDoodleDare(
+        memory.dayNumber,
+        `mock-player:${previewMode}`,
+        memory.communityThemeDrawCountByPreviewMode[previewMode] ?? 0
+      ).id,
     });
     scribbit.gearRanks = Object.fromEntries(
       scribbit.accessories.map((gearId) => [
@@ -3168,6 +3230,8 @@ const handleApi = async (request, response, url) => {
     memory.myScribbits.unshift(scribbit);
     submittedScribbitPreviewModes.set(id, previewMode);
     memory.createdScribbitPreviewModes.add(previewMode);
+    memory.communityThemeDrawCountByPreviewMode[previewMode] =
+      (memory.communityThemeDrawCountByPreviewMode[previewMode] ?? 0) + 1;
     const enteredRumble = !hasEnteredTodayForPreview(previewMode);
     if (enteredRumble) memory.todayEntrants.push(scribbit);
     memory.drawChargesByPreviewMode[previewMode] = {
@@ -3306,6 +3370,7 @@ const resetFreshPreview = () => {
   for (const scribbitId of submittedIds)
     submittedScribbitPreviewModes.delete(scribbitId);
   memory.drawnToday = false;
+  memory.communityThemeDrawCountByPreviewMode.fresh = 0;
   memory.enteredToday = false;
   clearFreeDrawingForPreview('fresh');
   memory.bossChallengedToday = false;

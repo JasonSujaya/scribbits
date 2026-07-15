@@ -37,20 +37,42 @@ function createPaintedPngDataUrl([red, green, blue]) {
   return `data:image/png;base64,${PNG.sync.write(png).toString('base64')}`;
 }
 
+function createEqualRolePngDataUrl() {
+  const png = new PNG({ width: 512, height: 512 });
+  const roleStripeColors = [
+    [255, 90, 61],
+    [79, 170, 79],
+    [138, 92, 216],
+  ];
+  for (let y = 160; y < 352; y += 1) {
+    for (let x = 160; x < 352; x += 1) {
+      const stripeIndex = Math.min(2, Math.floor((x - 160) / 64));
+      const [red, green, blue] = roleStripeColors[stripeIndex];
+      const offset = (y * png.width + x) * 4;
+      png.data[offset] = red;
+      png.data[offset + 1] = green;
+      png.data[offset + 2] = blue;
+      png.data[offset + 3] = 255;
+    }
+  }
+  return `data:image/png;base64,${PNG.sync.write(png).toString('base64')}`;
+}
+
 const roleColors = {
   brawler: [255, 90, 61],
   longshot: [59, 160, 224],
   mage: [138, 92, 216],
 };
 
-test('legacy gold and green drawing colors now join Longshot', () => {
-  for (const rgb of [
-    [79, 170, 79],
-    [242, 207, 61],
+test('everyday palette anchors land in their visible roles', () => {
+  for (const [rgb, expectedRole] of [
+    [[139, 90, 43], 'brawler'],
+    [[242, 207, 61], 'longshot'],
+    [[127, 216, 230], 'mage'],
   ]) {
     const result = createPracticeBattle({
       request: {
-        name: 'Merged Longshot Drawing',
+        name: 'Visible Palette Drawing',
         baseImageDataUrl: createPaintedPngDataUrl(rgb),
       },
       artist: 'style-test',
@@ -59,7 +81,7 @@ test('legacy gold and green drawing colors now join Longshot', () => {
       nonce: rgb.join('-'),
     });
     assert.equal(result.status, 'created');
-    assert.equal(selectCombatRole(result.report.a.stats), 'longshot');
+    assert.equal(selectCombatRole(result.report.a.stats), expectedRole);
   }
 });
 
@@ -91,6 +113,34 @@ for (const [fighterStyle, rgb] of Object.entries(roleColors)) {
     assert.equal(selectCombatRole(submission.draft.stats), fighterStyle);
   });
 }
+
+test('tied drawing colors resolve to one stable server-authoritative role', () => {
+  const drawing = createEqualRolePngDataUrl();
+  const practice = createPracticeBattle({
+    request: {
+      name: 'Equal Color Drawing',
+      baseImageDataUrl: drawing,
+    },
+    artist: 'tie-test',
+    playerId: 'tie-test-player',
+    canonicalDay: 1,
+    nonce: 'equal-colors',
+  });
+  const submission = validateAndAnalyzeScribbitSubmission({
+    name: 'Equal Color Drawing',
+    baseImageDataUrl: drawing,
+    imageDataUrl: drawing,
+    stats: { chonk: 25, spike: 25, zip: 25, charm: 25 },
+    element: 'ember',
+  });
+
+  assert.equal(practice.status, 'created');
+  assert.equal(submission.status, 'valid');
+  assert.equal(
+    selectCombatRole(practice.report.a.stats),
+    selectCombatRole(submission.draft.stats)
+  );
+});
 
 test('server ignores a spoofed fighter style in both submission paths', () => {
   const coralDrawing = createPaintedPngDataUrl(roleColors.brawler);

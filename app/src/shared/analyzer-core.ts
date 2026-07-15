@@ -49,8 +49,20 @@ export type ScanResult = {
   maxY: number;
   hueBuckets: number[];
   fighterStyleCounts: Record<CurrentCombatRole, number>;
+  fighterStyleTieSeed: number;
   inked: Uint8Array;
 };
+
+const fighterStyleRoles = [
+  'brawler',
+  'longshot',
+  'mage',
+] as const satisfies readonly CurrentCombatRole[];
+
+function mixTieSeed(seed: number, value: number): number {
+  const mixed = seed ^ value;
+  return Math.imul(mixed ^ (mixed >>> 16), 0x85ebca6b) >>> 0;
+}
 
 export function hueToElement(hueDegrees: number): Element {
   const hue = ((hueDegrees % 360) + 360) % 360;
@@ -70,13 +82,15 @@ export function hueToElement(hueDegrees: number): Element {
 }
 
 /**
- * The visible color wheel is split at the midpoints between the base palette
- * groups. Coral/orange ink makes Brawler, gold/cool ink makes Longshot, and
- * purple/pink ink makes Mage. This is intentionally one visible three-role choice.
+ * Boundaries sit halfway between the visible everyday palette colors. The
+ * repeated Longshot/Mage bands keep gold + green + blue together while aqua
+ * remains magical, so every advertised base swatch produces its visible role.
  */
 export function hueToFighterStyle(hueDegrees: number): CurrentCombatRole {
   const hue = ((hueDegrees % 360) + 360) % 360;
-  if (hue >= 353 || hue < 38) return 'brawler';
+  if (hue >= 353 || hue < 39) return 'brawler';
+  if (hue < 154) return 'longshot';
+  if (hue < 196) return 'mage';
   if (hue < 233) return 'longshot';
   return 'mage';
 }
@@ -140,6 +154,7 @@ export function scanPixels(field: PixelField): ScanResult {
     longshot: 0,
     mage: 0,
   };
+  let fighterStyleTieSeed = 0x9e3779b9;
 
   let inkedPixels = 0;
   let minX = width;
@@ -165,6 +180,14 @@ export function scanPixels(field: PixelField): ScanResult {
       if (isPaperBackground(r, g, b)) {
         continue;
       }
+
+      // Hash the submitted drawing itself so equal color groups get a varied
+      // but stable result in the live preview and on the authoritative server.
+      fighterStyleTieSeed = mixTieSeed(fighterStyleTieSeed, pixelIndex);
+      fighterStyleTieSeed = mixTieSeed(fighterStyleTieSeed, r);
+      fighterStyleTieSeed = mixTieSeed(fighterStyleTieSeed, g);
+      fighterStyleTieSeed = mixTieSeed(fighterStyleTieSeed, b);
+      fighterStyleTieSeed = mixTieSeed(fighterStyleTieSeed, alpha);
 
       inked[pixelIndex] = 1;
       inkedPixels += 1;
@@ -203,6 +226,7 @@ export function scanPixels(field: PixelField): ScanResult {
     maxY,
     hueBuckets,
     fighterStyleCounts,
+    fighterStyleTieSeed,
     inked,
   };
 }
@@ -285,21 +309,21 @@ export function dominantElement(hueBuckets: number[]): Element {
 
 /**
  * Mixed drawings use the fighter sector containing the most colored pixels.
- * The stable role order resolves exact ties; neutral-only art is Brawler.
+ * Exact ties use a drawing-derived seed so the choice is randomized across
+ * drawings while remaining identical in the live preview and on the server.
  */
 export function dominantFighterStyle(
-  counts: Readonly<Record<CurrentCombatRole, number>>
+  counts: Readonly<Record<CurrentCombatRole, number>>,
+  tieSeed: number
 ): CurrentCombatRole {
-  const roles = [
-    'brawler',
-    'longshot',
-    'mage',
-  ] as const satisfies readonly CurrentCombatRole[];
-  let dominantRole: CurrentCombatRole = 'brawler';
-  for (const role of roles.slice(1)) {
-    if (counts[role] > counts[dominantRole]) dominantRole = role;
-  }
-  return dominantRole;
+  const largestCount = Math.max(
+    ...fighterStyleRoles.map((role) => counts[role])
+  );
+  const tiedRoles = fighterStyleRoles.filter(
+    (role) => counts[role] === largestCount
+  );
+  const roleIndex = Math.abs(Math.trunc(tieSeed)) % tiedRoles.length;
+  return tiedRoles[roleIndex] ?? 'brawler';
 }
 
 function readRawStat(rawStats: unknown, statName: keyof ScribbitStats): number {
@@ -347,14 +371,23 @@ export function normalizeStats(rawStats: unknown): ScribbitStats {
 
 export function analyze(field: PixelField): AnalyzerResult {
   const scan = scanPixels(field);
-  const { inkedPixels, totalPixels, hueBuckets, fighterStyleCounts, inked } =
-    scan;
+  const {
+    inkedPixels,
+    totalPixels,
+    hueBuckets,
+    fighterStyleCounts,
+    fighterStyleTieSeed,
+    inked,
+  } = scan;
 
   if (inkedPixels < MIN_INK_PIXELS) {
     return {
       stats: normalizeStats({ chonk: 1, spike: 1, zip: 1, charm: 1 }),
       element: 'ember',
-      fighterStyle: dominantFighterStyle(fighterStyleCounts),
+      fighterStyle: dominantFighterStyle(
+        fighterStyleCounts,
+        fighterStyleTieSeed
+      ),
       inkRatio: totalPixels > 0 ? inkedPixels / totalPixels : 0,
       inkedPixels,
     };
@@ -392,7 +425,7 @@ export function analyze(field: PixelField): AnalyzerResult {
   return {
     stats: normalizeStats(raw),
     element: dominantElement(hueBuckets),
-    fighterStyle: dominantFighterStyle(fighterStyleCounts),
+    fighterStyle: dominantFighterStyle(fighterStyleCounts, fighterStyleTieSeed),
     inkRatio,
     inkedPixels,
   };

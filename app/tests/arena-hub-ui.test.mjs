@@ -54,6 +54,22 @@ const seasonBoardSource = await readFile(
   new URL('../src/client/lib/seasonboard.ts', import.meta.url),
   'utf8'
 );
+const battleArenaPresentationSource = await readFile(
+  new URL('../src/client/lib/battlearenapresentation.ts', import.meta.url),
+  'utf8'
+);
+const battleArenaSource = await readFile(
+  new URL('../src/shared/battlearena.ts', import.meta.url),
+  'utf8'
+);
+const replayBattleHudSource = await readFile(
+  new URL('../src/client/lib/replaybattlehud.ts', import.meta.url),
+  'utf8'
+);
+const venueBoardSource = await readFile(
+  new URL('../src/client/lib/venueboard.ts', import.meta.url),
+  'utf8'
+);
 
 test('Arena leads with the authoritative season and ranking action', () => {
   assert.match(arenaSource, /this\.state\.season\.latestFinalized/);
@@ -63,6 +79,8 @@ test('Arena leads with the authoritative season and ranking action', () => {
   assert.match(arenaSource, /'YOUR RANK'/);
   assert.match(arenaSource, /'SEASON PTS'/);
   assert.match(arenaSource, /'VIEW STANDINGS'/);
+  assert.match(arenaSource, /const seasonControlsShiftY = 36/);
+  assert.match(arenaSource, /FIELD_CHALLENGE_TOP_OFFSET = -30/);
   assert.doesNotMatch(arenaSource, /'VIEW TOP 10 STANDINGS  ›'/);
   assert.match(arenaSource, /private seasonHeaderText\(/);
   assert.match(arenaSource, /DAYS LEFT  •  \$\{rank\} RANK/);
@@ -82,18 +100,22 @@ test('Arena is a seasonal challenge board instead of a versus screen', () => {
     /PINNED_HEADER_HEIGHT = 128[\s\S]*\.setScrollFactor\(0\)[\s\S]*\.setDepth\(2100\)/,
     'scrolling competition content must pass beneath a pinned Arena header instead of covering it'
   );
+  assert.match(
+    arenaSource,
+    /PINNED_HEADER_HEIGHT,[\s\S]*UI\.paper,[\s\S]*const lowerEdge = this\.add\.graphics\(\)/,
+    'the pinned header should continue the Arena paper instead of looking like a detached brown slab'
+  );
   assert.match(arenaSource, /translate\('screen\.arena'\)/);
   assert.match(arenaSource, /paperIcon\(this, 'clock'/);
   assert.match(arenaSource, /private buildCompetitionHub\(/);
-  assert.match(arenaSource, /"TODAY'S ARENA"/);
-  assert.match(arenaSource, /'COMPETE TODAY'/);
-  assert.match(arenaSource, /'SEASON RUMBLE'/);
-  assert.match(arenaSource, /'CHAMPION CONTRACT'/);
+  assert.match(arenaSource, /"TODAY'S FIELD CHALLENGE"/);
+  assert.doesNotMatch(arenaSource, /'COMPETE TODAY'/);
+  assert.doesNotMatch(arenaSource, /'SEASON RUMBLE'/);
+  assert.doesNotMatch(arenaSource, /'CHAMPION CONTRACT'/);
   assert.doesNotMatch(arenaSource, /title: 'RIVAL RUN'/);
   assert.doesNotMatch(arenaSource, /private renderBattleOpponent\(/);
-  assert.match(arenaSource, /arenaArrowButton\(154, -138, 'previous'/);
-  assert.match(arenaSource, /cycleArenaFighter\(1\)/);
-  assert.match(arenaSource, /UI_BUTTON_TEXTURES\[direction\]/);
+  assert.doesNotMatch(arenaSource, /'MATURE COMPETITOR'/);
+  assert.doesNotMatch(arenaSource, /fighterCarousel|arenaArrowButton/);
 });
 
 test('Arena gives the rotating venue challenge a dedicated card', () => {
@@ -110,9 +132,67 @@ test('Arena gives the rotating venue challenge a dedicated card', () => {
     'the Arena must keep the daily goal visible and icon-led'
   );
   assert.match(arenaSource, /'ARENA CHALLENGE'/);
-  assert.match(arenaSource, /paperCard\(this, 0, 0, cardWidth, 158\)/);
+  assert.match(arenaSource, /paperCard\(this, 0, 50, cardWidth, 600\)/);
+  assert.match(
+    arenaSource,
+    /battleArenaPreview\([\s\S]*?battleArena\.id,[\s\S]*?0,[\s\S]*?-72,[\s\S]*?cardWidth - 48,[\s\S]*?188/
+  );
   assert.match(arenaSource, /paperIcon\(this, 'info'/);
   assert.match(arenaSource, /battleArena\.shortRule/);
+  assert.match(
+    arenaSource,
+    /`FIELD EFFECT • \$\{battleArena\.shortRule\.toUpperCase\(\)\}`/
+  );
+  assert.match(arenaSource, /battleArenaPreview\(/);
+  assert.match(arenaSource, /'MATURE SCRIBBIT REQUIRED • READY'/);
+  assert.match(arenaSource, /'MATURE SCRIBBIT REQUIRED • NOT READY'/);
+  assert.match(arenaSource, /getScribbitLifecycleStage\(/);
+  assert.match(
+    arenaSource,
+    /'NEW FIELD DAILY • ONE ATTEMPT • FASTEST RANKS'/
+  );
+  assert.match(arenaSource, /BATTLE_ARENA_IDS\.length/);
+  assert.match(arenaSource, /`ENTER WITH \$\{matureScribbit\.name\.toUpperCase\(\)\}`/);
+  assert.match(arenaSource, /private startFieldChallenge\(/);
+  assert.match(arenaSource, /private async launchFieldChallenge\(/);
+  assert.match(arenaSource, /bossChallenge\(scribbit\.id\)/);
+  assert.match(arenaSource, /stageDirectBattle\(/);
+  assert.match(arenaSource, /showVsCeremony\(/);
+  assert.match(arenaSource, /this\.state\.venueStamp/);
+  assert.match(arenaSource, /openVenueRanking\(\)/);
+  assert.match(
+    arenaSource,
+    /label: venueStamp\.dailyRank[\s\S]*?followCamera: true,\n\s*onActivate: \(\) => this\.openVenueRanking\(\)/,
+    'the ranking tile must catch pointer input instead of passing it through an inert canvas region'
+  );
+  assert.match(venueBoardSource, /fetchVenueBoard\(\)/);
+  assert.match(venueBoardSource, /board\.top\.slice\(0, 10\)/);
+  assert.match(
+    battleArenaPresentationSource,
+    /fillEllipse\([\s\S]*strokeEllipse\(/
+  );
+});
+
+test('Garden Patch applies and displays a real sticky-soil field effect', () => {
+  assert.match(
+    battleArenaSource,
+    /'v1-garden-patch':[\s\S]*shortRule: 'Sticky soil · movement 5% slower'[\s\S]*modifier: \{ movementPermille: 950 \}/
+  );
+  assert.match(replaySource, /arenaRule: battleArena\.shortRule/);
+  assert.match(
+    replayBattleHudSource,
+    /`FIELD EFFECT • \$\{input\.arenaRule\.toUpperCase\(\)\}`/
+  );
+});
+
+test('Arena removes the retired Compete Today block completely', () => {
+  assert.doesNotMatch(arenaSource, /'MATURE COMPETITOR'/);
+  assert.doesNotMatch(arenaSource, /'COMPETE TODAY'/);
+  assert.doesNotMatch(arenaSource, /title: 'SEASON RUMBLE'/);
+  assert.doesNotMatch(arenaSource, /title: 'CHAMPION CONTRACT'/);
+  assert.doesNotMatch(arenaSource, /private competitionCard\(/);
+  assert.doesNotMatch(arenaSource, /private startBossChallenge\(/);
+  assert.doesNotMatch(arenaSource, /private async launchChampionBattle\(/);
 });
 
 test('Replay keeps the arena goal visible when founder story copy is present', () => {
@@ -129,9 +209,7 @@ test('Replay keeps the arena goal visible when founder story copy is present', (
   );
 });
 
-test('Arena reuses the shared paper button system instead of local box variants', () => {
-  assert.match(arenaSource, /private competitionCard\(options:/);
-  assert.match(arenaSource, /iconButton\([\s\S]*options\.actionLabel/);
+test('Arena keeps retired dashboard button variants out', () => {
   assert.doesNotMatch(arenaSource, /private battleChoiceChip\(/);
   assert.doesNotMatch(arenaSource, /private simpleFightButton\(/);
   assert.doesNotMatch(arenaSource, /private rumblePickButton\(/);
@@ -149,9 +227,12 @@ test('Arena reuses the shared paper button system instead of local box variants'
   }
 });
 
-test('Arena keeps prediction compact and removes the old pick-grid language', () => {
-  assert.match(arenaSource, /title: 'SEASON RUMBLE'/);
-  assert.match(arenaSource, /rumblePickLocked \? 'PICKED' : 'MAKE PICK'/);
+test('Arena removes the home-screen prediction block and old pick-grid language', () => {
+  assert.doesNotMatch(arenaSource, /title: 'SEASON RUMBLE'/);
+  assert.doesNotMatch(
+    arenaSource,
+    /rumblePickLocked \? 'PICKED' : 'MAKE PICK'/
+  );
   assert.doesNotMatch(arenaSource, /PICK A WINNER|DRAW TODAY|PICK LOCKED/);
   assert.doesNotMatch(
     arenaSource,
@@ -165,12 +246,9 @@ test('Arena keeps prediction compact and removes the old pick-grid language', ()
   assert.doesNotMatch(arenaSource, /handLettered\(this, [^\n]*'ARENA'/);
 });
 
-test('The empty Arena keeps Draw as its direct primary action', () => {
-  assert.match(
-    arenaSource,
-    /'DRAW YOUR FIRST COMPETITOR'[\s\S]*navigateToDailyDraw\(this\)/,
-    'the empty Arena must route its icon-led primary action into Draw'
-  );
+test('The Arena venue does not restore a competing Draw action', () => {
+  assert.doesNotMatch(arenaSource, /'DRAW YOUR FIRST COMPETITOR'/);
+  assert.doesNotMatch(arenaSource, /navigateToDailyDraw\(this\)/);
 });
 
 test('Mystery Ink lives in Shop while Bag remains equipment-only', () => {
@@ -183,7 +261,7 @@ test('Mystery Ink lives in Shop while Bag remains equipment-only', () => {
   assert.match(shopSource, /pullCapsule\(operationId\)/);
   assert.match(shopSource, /onViewCollection:/);
   assert.match(capsuleMachineSource, /'VIEW BAG'/);
-  assert.match(capsuleMachineSource, /OPEN 10/);
+  assert.match(capsuleMachineSource, /TAKE 10/);
   assert.match(capsuleMachineSource, /COMING SOON/);
   assert.match(capsuleMachineSource, /COSMETIC ONLY/);
   assert.match(capsuleMachineSource, /'LOOT'/);
@@ -280,12 +358,16 @@ test('the first completed Rival Run opens first Gear only from committed Ink', (
   );
   assert.match(capsuleMachineSource, /FIRST GEAR CLAW/);
   assert.match(capsuleMachineSource, /SHOP_CLAW_MACHINE_SHELL_TEXTURE/);
-  assert.match(capsuleMachineSource, /DROP CLAW/);
+  assert.match(capsuleMachineSource, /TAKE 1 OR TAKE 10/);
+  assert.match(capsuleMachineSource, /'TAKE 1'/);
   assert.match(capsuleMachineSource, /'tiny-sword'/);
   assert.match(capsuleMachineSource, /'comet-crayon-blade'/);
   assert.match(capsuleMachineSource, /'star-eye-mask'/);
   assert.match(capsuleMachineSource, /renderCosmeticPreview\(\{/);
   assert.match(capsuleMachineSource, /function startClawSearch\(/);
+  assert.match(capsuleMachineSource, /function startClawIdle\(/);
+  assert.match(capsuleMachineSource, /allowsAmbientMotion\(\)/);
+  assert.match(capsuleMachineSource, /burstClawGrabSparks\(/);
   assert.match(capsuleMachineSource, /function animateClawCatch\(/);
   assert.match(capsuleMachineSource, /function celebrateClawMachine\(/);
   assert.match(capsuleMachineSource, /DRAW ONCE TO EARN \$\{nextCost\} INK/);
@@ -306,8 +388,8 @@ test('the first completed Rival Run opens first Gear only from committed Ink', (
   );
   assert.match(
     capsuleMachineSource,
-    /x: x - 75 \* CLAW_MACHINE_SCALE[\s\S]{0,140}width: 150 \* CLAW_MACHINE_SCALE/,
-    'the native action must cover the rendered claw-machine button'
+    /x: x \+ \(takeOneX - CLAW_CHOICE_WIDTH \/ 2\) \* CLAW_MACHINE_SCALE[\s\S]{0,240}width: CLAW_CHOICE_WIDTH \* CLAW_MACHINE_SCALE[\s\S]{0,100}height: CLAW_CHOICE_HEIGHT \* CLAW_MACHINE_SCALE/,
+    'the native action must cover the rendered TAKE 1 card'
   );
   assert.match(
     capsuleMachineSource,
@@ -362,7 +444,7 @@ test('a birth replay cannot stage the wrong Scribbit or expose old receipts', ()
   assert.match(drawSource, /skipArenaReceiptsOnce\(this\)/);
 });
 
-test('Champion keeps its focused lifecycle-safe launcher', () => {
+test('Arena keeps lifecycle-safe refresh handling for its focused field entry', () => {
   assert.match(arenaSource, /private sceneEpoch = 0/);
   assert.match(arenaSource, /private refreshRequestEpoch = 0/);
   assert.match(
@@ -370,32 +452,25 @@ test('Champion keeps its focused lifecycle-safe launcher', () => {
     /planArenaMutationResponse\([\s\S]*refreshOnNextActivation = true/,
     'Arena mutation continuations must use the shared lifecycle policy'
   );
-  assert.ok(
-    (arenaSource.match(/acceptMutationResponse\(sceneEpoch\)/g) ?? []).length >=
-      6,
-    'every Arena mutation continuation must pass through the shared lifecycle guard'
-  );
+  assert.match(arenaSource, /acceptMutationResponse\(sceneEpoch\)/);
   assert.match(
     arenaSource,
     /const requestEpoch = \+\+this\.refreshRequestEpoch[\s\S]*planArenaRefreshResponse\([\s\S]*action === 'refresh-next'/,
     'Arena refreshes must reconcile stale scene responses through the shared lifecycle policy'
   );
-  assert.match(arenaSource, /private async launchChampionBattle\(/);
+  assert.doesNotMatch(arenaSource, /private async launchChampionBattle\(/);
+  assert.match(arenaSource, /private async launchFieldChallenge\(/);
   assert.match(arenaSource, /await bossChallenge\(scribbit\.id\)/);
-  assert.match(
-    arenaSource,
-    /finally \{\s*if \(sceneEpoch === this\.sceneEpoch\) \{\s*this\.busy = false;/
-  );
 });
 
-test('Competition cards expose direct accessible challenge actions', () => {
-  assert.match(
+test('Removed competition cards expose no stale accessible actions', () => {
+  assert.doesNotMatch(
     arenaSource,
     /Choose tonight's Rumble prediction for season points/
   );
-  assert.match(
+  assert.doesNotMatch(
     arenaSource,
-    /Start today’s Champion Contract with the selected Scribbit/
+    /Start today’s Champion Contract with the selected mature Scribbit/
   );
   assert.doesNotMatch(
     arenaSource,

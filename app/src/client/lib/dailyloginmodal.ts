@@ -1,4 +1,5 @@
-import type { Scene } from 'phaser';
+import * as Phaser from 'phaser';
+import { Scene } from 'phaser';
 import {
   DAILY_LOGIN_TRACK,
   type DailyLoginClaimResponse,
@@ -48,10 +49,36 @@ export function openDailyLoginModal(
 ): DailyLoginModal {
   const { width, height } = scene.scale;
   const cardCenterY = Math.min(height / 2, 680);
+  const reducedMotion = prefersReducedMotion();
   let state = initialState;
   let busy = false;
   let errorMessage: string | null = null;
   let destroyed = false;
+  let modalOpened = false;
+  let contentRevealTween: Phaser.Tweens.Tween | null = null;
+  let claimablePulseTween: Phaser.Tweens.Tween | null = null;
+  let claimableEmphasis: Phaser.GameObjects.Shape | null = null;
+
+  const stopAnimationTweens = (): void => {
+    contentRevealTween?.stop();
+    contentRevealTween = null;
+    claimablePulseTween?.stop();
+    claimablePulseTween = null;
+  };
+
+  const startClaimablePulse = (): void => {
+    claimablePulseTween?.stop();
+    claimablePulseTween = null;
+    if (reducedMotion || busy || !claimableEmphasis || destroyed) return;
+    claimablePulseTween = scene.tweens.add({
+      targets: claimableEmphasis,
+      alpha: { from: 0.22, to: 0.58 },
+      duration: 760,
+      ease: 'Sine.easeInOut',
+      yoyo: true,
+      repeat: -1,
+    });
+  };
 
   const close = (): void => {
     shell.finish(() => undefined);
@@ -69,9 +96,10 @@ export function openDailyLoginModal(
     cardHeight: 1140,
     shadeAlpha: 0.74,
     tapeWidth: 0,
-    openingDurationMilliseconds: prefersReducedMotion() ? 1 : 220,
+    openingDurationMilliseconds: reducedMotion ? 1 : 220,
     blockCard: true,
     onDestroy: () => {
+      stopAnimationTweens();
       if (destroyed) return;
       destroyed = true;
       onDestroy();
@@ -108,6 +136,8 @@ export function openDailyLoginModal(
   };
 
   function render(): void {
+    stopAnimationTweens();
+    claimableEmphasis = null;
     content.removeAll(true);
     const daySevenReward = DAILY_LOGIN_TRACK[DAILY_LOGIN_TRACK.length - 1]!;
     const daySevenGear = daySevenReward.gearId
@@ -183,6 +213,12 @@ export function openDailyLoginModal(
             : 'CLAIM NOW'
           : 'LOCKED';
       const rewardTextColor = claimed ? UI.cream : UI.ink;
+      if (ready) {
+        claimableEmphasis = scene.add
+          .circle(x, y, 88, UI.goldHex, 0.22)
+          .setStrokeStyle(5, UI.coral, 0.72);
+        content.add(claimableEmphasis);
+      }
       content.add(scene.add.circle(x + 6, y + 9, 78, UI.inkHex, 0.13));
       content.add(
         scene.add
@@ -277,6 +313,13 @@ export function openDailyLoginModal(
     });
 
     const heroY = 350;
+    if (daySevenReady) {
+      claimableEmphasis = scene.add
+        .rectangle(0, heroY, 618, 348, UI.goldHex, 0.22)
+        .setStrokeStyle(6, UI.coral, 0.72)
+        .setAngle(-0.5);
+      content.add(claimableEmphasis);
+    }
     content.add(
       scene.add
         .rectangle(8, heroY + 10, 600, 330, UI.inkHex, 0.15)
@@ -463,6 +506,13 @@ export function openDailyLoginModal(
     if (busy) {
       content.add(label(scene, 0, 530, 'CLAIMING…', 20, UI.coralText, true));
     }
+
+    if (!modalOpened && !reducedMotion) {
+      content.setAlpha(0).setY(16);
+    } else {
+      content.setAlpha(1).setY(0);
+      startClaimablePulse();
+    }
   }
 
   render();
@@ -492,7 +542,26 @@ export function openDailyLoginModal(
     pointerPassthrough: false,
   });
   shell.shade.on('pointerup', close);
-  shell.open(() => shell.actions.focusInitial(primaryControl));
+  shell.open(() => {
+    modalOpened = true;
+    if (reducedMotion) {
+      content.setAlpha(1).setY(0);
+      startClaimablePulse();
+    } else {
+      contentRevealTween = scene.tweens.add({
+        targets: content,
+        alpha: 1,
+        y: 0,
+        duration: 320,
+        ease: 'Cubic.easeOut',
+        onComplete: () => {
+          contentRevealTween = null;
+          startClaimablePulse();
+        },
+      });
+    }
+    shell.actions.focusInitial(primaryControl);
+  });
 
   return Object.freeze({ destroy: shell.destroy });
 }

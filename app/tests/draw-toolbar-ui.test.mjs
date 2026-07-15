@@ -144,13 +144,16 @@ test('Draw keeps the everyday rail compact and puts optional tools one tap away'
   assert.doesNotMatch(drawSource, /setAttribute\('aria-checked'/);
   assert.match(drawSource, /COLOR DECIDES YOUR ROLE/);
   assert.match(drawSource, /THE BIGGEST COLOR AREA WINS/);
-  assert.match(drawSource, /Coral and orange make Brawler/);
-  assert.match(drawSource, /Gold, green, aqua, and blue make Longshot/);
-  assert.match(drawSource, /Purple and pink make Mage/);
+  assert.match(drawSource, /Brown, coral, and orange make Brawler/);
+  assert.match(drawSource, /Gold, green, and blue make Longshot/);
+  assert.match(drawSource, /Aqua, purple, and pink make Mage/);
   assert.match(drawSource, /Brawler beats Mage/);
   assert.match(drawSource, /Mage beats Longshot/);
   assert.match(drawSource, /Longshot beats Brawler/);
-  assert.match(drawSource, /BLACK \+ WHITE ARE NEUTRAL/);
+  assert.match(drawSource, /BLACK \+ GREY \+ WHITE ARE NEUTRAL/);
+  assert.match(drawSource, /A TIE PICKS ONE AT RANDOM/);
+  assert.match(drawSource, /Equal color groups are randomized/);
+  assert.doesNotMatch(drawSource, /NEUTRAL-ONLY ART BECOMES BRAWLER/);
   assert.doesNotMatch(drawSource, /fighterStyle: draft\.fighterStyle/);
   assert.doesNotMatch(drawSource, /STYLE FORMING…/);
   assert.doesNotMatch(drawSource, /Your drawing decides it/i);
@@ -257,6 +260,11 @@ test('Draw sends the newborn straight into one guarded random first fight', () =
   assert.match(drawSource, /ENTERED TONIGHT’S RUMBLE/);
   assert.match(drawSource, /START FIRST FIGHT/);
   assert.match(drawSource, /'sword',[\s\S]{0,80}actionLabel/);
+  assert.match(
+    drawSource,
+    /setIconButtonLabel\(this\.firstFightButton, 'START FIRST FIGHT'\)/
+  );
+  assert.doesNotMatch(drawSource, /firstFightButtonLabel/);
   assert.match(
     drawSource,
     /private async startFirstBattle\(scribbit: Scribbit\)/

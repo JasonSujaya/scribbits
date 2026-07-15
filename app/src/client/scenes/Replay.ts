@@ -528,6 +528,7 @@ export class Replay extends Scene {
           }
         : {}),
       arenaName: battleArena.name,
+      arenaRule: battleArena.shortRule,
       showPlaybackControls: this.transcript !== null,
       reduceMotion: this.reduceMotion,
       initialPlaybackSpeed: this.speed,

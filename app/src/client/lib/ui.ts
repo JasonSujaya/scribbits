@@ -674,6 +674,46 @@ export function button(
   return container;
 }
 
+type IconButtonLayout = Readonly<{
+  icon: Phaser.GameObjects.Container;
+  label: Phaser.GameObjects.Text;
+  iconSize: number;
+  iconGap: number;
+  maximumTextWidth: number;
+}>;
+
+const iconButtonLayouts = new WeakMap<
+  Phaser.GameObjects.Container,
+  IconButtonLayout
+>();
+
+function layoutIconButtonContent(layout: IconButtonLayout): void {
+  const {
+    icon,
+    label: textLabel,
+    iconSize,
+    iconGap,
+    maximumTextWidth,
+  } = layout;
+  textLabel.setWordWrapWidth(maximumTextWidth);
+  const textWidth = Math.min(maximumTextWidth, textLabel.width);
+  const contentWidth = iconSize + iconGap + textWidth;
+  const iconX = -contentWidth / 2 + iconSize / 2;
+  icon.setX(iconX);
+  textLabel.setX(iconX + iconSize / 2 + iconGap + textWidth / 2);
+}
+
+/** Change an icon button's label and keep its icon/text row centered. */
+export function setIconButtonLabel(
+  iconButton: Phaser.GameObjects.Container,
+  text: string
+): void {
+  const layout = iconButtonLayouts.get(iconButton);
+  if (!layout) return;
+  layout.label.setText(text);
+  layoutIconButtonContent(layout);
+}
+
 /** A primary paper button with a semantic icon and a short action label. */
 export function iconButton(
   scene: Scene,
@@ -709,18 +749,22 @@ export function iconButton(
     1,
     width - iconSize - iconGap - horizontalPadding * 2
   );
-  // Wrap before measuring. Narrow utility buttons such as SHARE CLIP use two
-  // lines; measuring the unwrapped label pushed the icon into the left border.
-  textLabel.setWordWrapWidth(maximumTextWidth);
-  const textWidth = Math.min(maximumTextWidth, textLabel.width);
-  const contentWidth = iconSize + iconGap + textWidth;
-  const iconX = -contentWidth / 2 + iconSize / 2;
-  const actionIcon = paperIcon(scene, iconKey, iconX, -2, {
+  const actionIcon = paperIcon(scene, iconKey, 0, -2, {
     size: iconSize,
     fill: iconFill,
     stroke: UI.inkHex,
   });
-  textLabel.setX(iconX + iconSize / 2 + iconGap + textWidth / 2);
+  const layout = {
+    icon: actionIcon,
+    label: textLabel,
+    iconSize,
+    iconGap,
+    maximumTextWidth,
+  } satisfies IconButtonLayout;
+  // Wrap before measuring. Narrow utility buttons such as SHARE CLIP use two
+  // lines; measuring the unwrapped label pushed the icon into the left border.
+  layoutIconButtonContent(layout);
+  iconButtonLayouts.set(container, layout);
   container.add([background, actionIcon, textLabel, hitTarget]);
 
   if (enabled) {

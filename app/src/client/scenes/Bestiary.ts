@@ -246,7 +246,7 @@ export class Bestiary extends Scene {
   private guideSectionDescription(section: GuideSection): string {
     switch (section) {
       case 'shape':
-        return `The color group covering the most drawing area sets the role. Black and white are neutral; neutral-only art becomes Brawler. ${FIGHTER_STYLE_GUIDE_ENTRIES.map((entry) => entry.description).join(' ')}`;
+        return `The color group covering the most drawing area sets the role. Equal groups pick a role at random. Black, grey, and white are neutral, so neutral-only art is randomized too. ${FIGHTER_STYLE_GUIDE_ENTRIES.map((entry) => entry.description).join(' ')}`;
       case 'powerups':
         return 'A new Scribbit immediately gets three randomized Power-Ups and chooses one. Later wins can offer more. A Scribbit can hold five and at most one Legendary. Gear remains the only source of raw stat bonuses.';
       case 'ritual':
@@ -292,12 +292,23 @@ export class Bestiary extends Scene {
       case 'powerups': {
         const rarities: readonly PowerUpRarity[] = [
           'common',
+          'uncommon',
           'rare',
           'epic',
           'legendary',
         ];
         rarities.forEach((rarity, index) => {
-          const y = 368 + index * 130;
+          const y = 340 + index * 112;
+          const rarityColor =
+            rarity === 'legendary'
+              ? UI.gold
+              : rarity === 'epic'
+                ? 0x8a5cd8
+                : rarity === 'rare'
+                  ? 0x4f9dcc
+                  : rarity === 'uncommon'
+                    ? 0x49a36d
+                    : UI.inkSoftHex;
           modal.add(
             paperIcon(
               this,
@@ -306,7 +317,7 @@ export class Bestiary extends Scene {
               y,
               {
                 size: 44,
-                fill: rarity === 'legendary' ? UI.gold : UI.coral,
+                fill: rarityColor,
               }
             )
           );
@@ -341,7 +352,7 @@ export class Bestiary extends Scene {
           label(
             this,
             this.scale.width / 2,
-            910,
+            890,
             `${MAXIMUM_POWER_UPS} MAX · 1 LEGENDARY · GEAR OWNS STATS`,
             19,
             UI.coralText,

@@ -12,16 +12,17 @@ export const GEAR_COMBAT_VERSION = 1 as const;
 
 export const GEAR_RANK_STRENGTH_PERMILLE: Readonly<Record<GearRank, number>> =
   Object.freeze({
-    1: 4,
+    1: 3,
     2: 7,
-    3: 10,
-    4: 13,
-    5: 16,
-    6: 20,
+    3: 11,
+    4: 16,
+    5: 20,
+    6: 24,
   });
 
 const SUPPORT_STRENGTH_DIVISOR = 4;
 const MAXIMUM_AXIS_DELTA_PERMILLE = 30;
+const MAXIMUM_RESOLVED_LOADOUT_AXIS_DELTA_PERMILLE = 5;
 const MAXIMUM_TIMING_DELTA_TICKS = 1;
 
 export type GearTechniqueEffect = Readonly<{
@@ -160,81 +161,68 @@ const freezeModifiers = (modifiers: GearCombatModifiers): GearCombatModifiers =>
 
 const effectForStrength = (
   family: AccessoryEffectFamily,
-  strengthPermille: number,
-  leadRank: GearRank
+  strengthPermille: number
 ): GearTechniqueEffect => {
   const definition = ACCESSORY_EFFECTS[family];
-  const tradeoff = Math.max(1, Math.round(strengthPermille / 2));
-  const lightTradeoff = Math.max(1, Math.round(strengthPermille / 3));
-  const timingDelta = leadRank >= 2 ? -1 : 0;
   let modifiers: GearCombatModifiers;
   let summary: string;
 
   switch (family) {
     case 'guard': {
-      const guardTradeoff =
-        leadRank <= 2
-          ? 0
-          : leadRank === 5
-            ? Math.round((strengthPermille * 3) / 4)
-            : strengthPermille;
       modifiers = {
         ...EMPTY_GEAR_COMBAT_MODIFIERS,
-        damagePermille: 1_000 - guardTradeoff,
         maximumHitPointsPermille: 1_000 + strengthPermille,
       };
-      summary =
-        guardTradeoff === 0
-          ? `${signedPercent(strengthPermille)} HEARTS`
-          : `${signedPercent(strengthPermille)} HEARTS · ${signedPercent(-guardTradeoff)} IMPACT`;
+      summary = `${signedPercent(strengthPermille)} HEARTS`;
       break;
     }
     case 'rush': {
       modifiers = {
         ...EMPTY_GEAR_COMBAT_MODIFIERS,
-        damagePermille: 1_000 + lightTradeoff,
+        damagePermille: 1_000 + strengthPermille,
       };
-      summary = `${signedPercent(lightTradeoff)} DASH IMPACT`;
+      summary = `${signedPercent(strengthPermille)} DASH IMPACT`;
       break;
     }
-    case 'focus':
+    case 'focus': {
+      const focusBonus = Math.max(1, Math.ceil(strengthPermille / 2));
       modifiers = {
         ...EMPTY_GEAR_COMBAT_MODIFIERS,
-        cooldownPermille: 1_000 + strengthPermille,
-        criticalChanceBonusPermille: timingDelta === 0 ? strengthPermille : 0,
-        telegraphTicksDelta: timingDelta,
+        cooldownPermille: 1_000 - strengthPermille,
+        criticalChanceBonusPermille: focusBonus,
       };
-      summary =
-        timingDelta === 0
-          ? `${percentagePoint(strengthPermille)} FOCUS · ${signedPercent(strengthPermille)} RECOVERY`
-          : `${Math.abs(timingDelta)}T FASTER WIND-UP · ${signedPercent(strengthPermille)} RECOVERY`;
+      summary = `${percentagePoint(focusBonus)} FOCUS · ${signedPercent(strengthPermille)} RECOVERY`;
       break;
-    case 'ready':
+    }
+    case 'ready': {
       modifiers = {
         ...EMPTY_GEAR_COMBAT_MODIFIERS,
-        damagePermille: timingDelta === 0 ? 1_000 : 1_000 - tradeoff,
-        criticalChanceBonusPermille: timingDelta === 0 ? strengthPermille : 0,
-        initialDelayTicksDelta: timingDelta,
+        criticalChanceBonusPermille: strengthPermille,
       };
-      summary =
-        timingDelta === 0
-          ? `${percentagePoint(strengthPermille)} FOCUS`
-          : `${Math.abs(timingDelta)}T FASTER START · ${signedPercent(-tradeoff)} IMPACT`;
+      summary = `${percentagePoint(strengthPermille)} OPENING FOCUS`;
       break;
-    case 'fortune':
+    }
+    case 'fortune': {
+      const fortuneFocus = Math.max(1, Math.ceil((strengthPermille * 3) / 4));
+      const fortuneGuard = Math.max(1, Math.ceil(strengthPermille / 3));
       modifiers = {
         ...EMPTY_GEAR_COMBAT_MODIFIERS,
-        criticalChanceBonusPermille: Math.max(1, Math.round(lightTradeoff / 4)),
+        maximumHitPointsPermille: 1_000 + fortuneGuard,
+        criticalChanceBonusPermille: fortuneFocus,
       };
-      summary = `${percentagePoint(Math.max(1, Math.round(lightTradeoff / 4)))} FOCUS`;
+      summary = `${percentagePoint(fortuneFocus)} FOCUS · ${signedPercent(fortuneGuard)} HEARTS`;
       break;
-    case 'aim':
+    }
+    case 'aim': {
+      const aimFocus = Math.max(1, Math.ceil(strengthPermille / 2));
       modifiers = {
         ...EMPTY_GEAR_COMBAT_MODIFIERS,
-        damagePermille: 1_000 + lightTradeoff,
+        damagePermille: 1_000 + strengthPermille,
+        criticalChanceBonusPermille: aimFocus,
       };
-      summary = `${signedPercent(lightTradeoff)} IMPACT`;
+      summary = `${signedPercent(strengthPermille)} IMPACT · ${percentagePoint(aimFocus)} FOCUS`;
       break;
+    }
   }
 
   return Object.freeze({
@@ -258,8 +246,7 @@ export function getGearTechniqueEffect(
     : 0;
   return effectForStrength(
     gear.effectFamily,
-    GEAR_RANK_STRENGTH_PERMILLE[rank] + supportStrength,
-    rank
+    GEAR_RANK_STRENGTH_PERMILLE[rank] + supportStrength
   );
 }
 
@@ -319,8 +306,47 @@ const combineModifiers = (
 
 const combineTechniqueEffects = (
   techniques: readonly ResolvedGearTechnique[]
-): GearCombatModifiers =>
-  combineModifiers(techniques.map((technique) => technique.effect.modifiers));
+): GearCombatModifiers => {
+  if (techniques.length === 0) return EMPTY_GEAR_COMBAT_MODIFIERS;
+  const combined = combineModifiers(
+    techniques.map((technique) => technique.effect.modifiers)
+  );
+  if (techniques.length === 1) return combined;
+
+  const averageDelta = (value: number, neutral: number): number =>
+    Math.round((value - neutral) / techniques.length);
+  const clampResolvedDelta = (value: number): number =>
+    Math.max(
+      -MAXIMUM_RESOLVED_LOADOUT_AXIS_DELTA_PERMILLE,
+      Math.min(MAXIMUM_RESOLVED_LOADOUT_AXIS_DELTA_PERMILLE, value)
+    );
+  return freezeModifiers({
+    damagePermille:
+      1_000 + clampResolvedDelta(averageDelta(combined.damagePermille, 1_000)),
+    maximumHitPointsPermille:
+      1_000 +
+      clampResolvedDelta(
+        averageDelta(combined.maximumHitPointsPermille, 1_000)
+      ),
+    cooldownPermille:
+      1_000 +
+      clampResolvedDelta(averageDelta(combined.cooldownPermille, 1_000)),
+    criticalChanceBonusPermille: Math.max(
+      0,
+      clampResolvedDelta(
+        Math.round(
+          combined.criticalChanceBonusPermille / techniques.length
+        )
+      )
+    ),
+    telegraphTicksDelta: clampTiming(
+      Math.round(combined.telegraphTicksDelta / techniques.length)
+    ),
+    initialDelayTicksDelta: clampTiming(
+      Math.round(combined.initialDelayTicksDelta / techniques.length)
+    ),
+  });
+};
 
 const getCombinedGearTechniqueEffect = (
   leadGear: Pick<CosmeticGearCatalogEntry, 'effectFamily'>,
@@ -343,11 +369,10 @@ const getCombinedGearTechniqueEffect = (
     )
   );
   // Mixed-family support contributes its scalar identity without importing
-  // another family's rank-gated one-tick timing proc into the lead technique.
+  // the support item's full-rank strength into the lead technique.
   const supportEffect = effectForStrength(
     supportGear.effectFamily,
-    supportStrength,
-    1
+    supportStrength
   );
   return Object.freeze({
     family: leadEffect.family,

@@ -32,6 +32,7 @@ import {
   type DrawCanvasChange,
   type PaintUseKind,
 } from '../lib/drawcanvas';
+import { parseHexColor, type RgbColor } from '../lib/coloreraser';
 import {
   ELEMENT_STYLES,
   EDGE,
@@ -79,6 +80,7 @@ import {
   errorPanel,
   startScene,
   iconButton,
+  setIconButtonLabel,
 } from '../lib/ui';
 import type { ErrorPanel } from '../lib/ui';
 import { PEN_CATALOG, penSwatchColor } from '../lib/pens';
@@ -138,6 +140,8 @@ import { planSceneMutationResponse } from '../lib/arenaasynclifecycle';
 import { translate } from '../lib/localization';
 import {
   pauseDrawingSoundtrack,
+  playHomeSoundtrack,
+  releaseHomeSoundtrack,
   resumeDrawingSoundtrack,
   startDrawingSoundtrack,
   stopSoundtrack,
@@ -152,6 +156,7 @@ import { getPaintBucketState } from '../../shared/paintbucket';
 import {
   createPaintReservoir,
   paintRemainingPercent,
+  returnPaint,
   tryUsePaint,
   type PaintReservoir,
 } from '../lib/paintreservoir';
@@ -173,9 +178,9 @@ const FIGHTER_STYLE_ROLES: readonly CurrentCombatRole[] = [
   'mage',
 ];
 const FIGHTER_STYLE_COLOR_NAMES: Readonly<Record<CurrentCombatRole, string>> = {
-  brawler: 'coral + orange',
-  longshot: 'gold + green + aqua + blue',
-  mage: 'purple + pink',
+  brawler: 'brown + coral + orange',
+  longshot: 'gold + green + blue',
+  mage: 'aqua + purple + pink',
 };
 const FIGHTER_STYLE_COUNTERS: Readonly<
   Record<CurrentCombatRole, Readonly<{ beats: string; weakTo: string }>>
@@ -188,28 +193,33 @@ const FIGHTER_STYLE_COUNTERS: Readonly<
 // Every base color is visible at once and grouped by its color-derived role.
 const PALETTE_COLORS = [
   '#2b2016',
-  '#ff5a3d',
-  '#f2cf3d',
-  '#7fd8e6',
-  '#8a5cd8',
+  '#b6a894',
   '#ffffff',
+  '#8b5a2b',
+  '#ff5a3d',
   '#ff9a3d',
+  '#f2cf3d',
   '#4faa4f',
   '#3ba0e0',
+  '#7fd8e6',
+  '#8a5cd8',
   '#ff7fb0',
 ] as const;
 const PALETTE_COLOR_NAMES = [
   'black',
-  'coral',
-  'gold',
-  'aqua',
-  'purple',
+  'grey',
   'white',
+  'brown',
+  'coral',
   'orange',
+  'gold',
   'green',
   'blue',
+  'aqua',
+  'purple',
   'pink',
 ] as const;
+const PALETTE_RGB_COLORS = PALETTE_COLORS.map((color) => parseHexColor(color));
 
 const PALETTE_GROUPS: ReadonlyArray<
   Readonly<{ label: string; role: CurrentCombatRole | null }>
@@ -222,27 +232,33 @@ const PALETTE_GROUPS: ReadonlyArray<
 
 const PALETTE_COLOR_ROLES: ReadonlyArray<CurrentCombatRole | null> = [
   null,
+  null,
+  null,
   'brawler',
+  'brawler',
+  'brawler',
+  'longshot',
   'longshot',
   'longshot',
   'mage',
-  null,
-  'brawler',
-  'longshot',
-  'longshot',
+  'mage',
   'mage',
 ];
 
+// Every group gets the same three-choice triangle. Neutral colors remain useful
+// drawing tools but never compete when the drawing's fighter role is analyzed.
 const PALETTE_COLOR_POSITIONS = Object.freeze([
-  { column: 0, row: 0, xOffset: 0 },
-  { column: 1, row: 0, xOffset: 0 },
-  { column: 2, row: 0, xOffset: -36 },
-  { column: 2, row: 1, xOffset: -36 },
-  { column: 3, row: 0, xOffset: 0 },
+  { column: 0, row: 0, xOffset: -36 },
+  { column: 0, row: 0, xOffset: 36 },
   { column: 0, row: 1, xOffset: 0 },
+  { column: 1, row: 0, xOffset: -36 },
+  { column: 1, row: 0, xOffset: 36 },
   { column: 1, row: 1, xOffset: 0 },
+  { column: 2, row: 0, xOffset: -36 },
   { column: 2, row: 0, xOffset: 36 },
-  { column: 2, row: 1, xOffset: 36 },
+  { column: 2, row: 1, xOffset: 0 },
+  { column: 3, row: 0, xOffset: -36 },
+  { column: 3, row: 0, xOffset: 36 },
   { column: 3, row: 1, xOffset: 0 },
 ] as const);
 
@@ -256,7 +272,6 @@ const MIN_LINE_WIDTH = 8;
 const MAX_LINE_WIDTH = 56;
 const LINE_WIDTH_STEP = 4;
 const DEFAULT_LINE_WIDTH = MIN_LINE_WIDTH;
-const SELECTED_SWATCH_RADIUS = 31;
 const SWATCH_RADIUS = 22;
 const EMPTY_PAINT_WELL_COLOR = UI.creamHex;
 
@@ -444,7 +459,6 @@ export class Draw extends Scene {
   private stickerInventoryRequestEpoch = 0;
   private birthContinuationStarted = false;
   private firstFightButton: Phaser.GameObjects.Container | null = null;
-  private firstFightButtonLabel: Phaser.GameObjects.Text | null = null;
   private firstFightControl: HTMLButtonElement | null = null;
   private firstFightPromise: Phaser.GameObjects.Container | null = null;
   private firstFightPromiseCopy: Phaser.GameObjects.Text | null = null;
@@ -598,7 +612,6 @@ export class Draw extends Scene {
     this.analysisRequestId = 0;
     this.birthContinuationStarted = false;
     this.firstFightButton = null;
-    this.firstFightButtonLabel = null;
     this.firstFightControl = null;
     this.firstFightPromise = null;
     this.firstFightPromiseCopy = null;
@@ -628,13 +641,14 @@ export class Draw extends Scene {
   create(): void {
     // Defensive: clear any overlay a previous Draw visit might have left behind.
     DomOverlay.destroyAll();
-    stopSoundtrack();
 
     const arena = getArena(this);
     if (!arena) {
       this.scene.start('Preloader');
       return;
     }
+    if (this.practiceMode || this.automationMode) stopSoundtrack();
+    else playHomeSoundtrack();
     this.paintReservoirs = createPalettePaintReservoirs(
       arena.paintBucket?.capacity ?? getPaintBucketState().capacity
     );
@@ -675,7 +689,8 @@ export class Draw extends Scene {
           arena.myUsername,
           this.practiceAttemptCount
         )
-      : selectCommunityDoodleDare(arena.dayNumber);
+      : (arena.communityDrawTheme ??
+        selectCommunityDoodleDare(arena.dayNumber));
     this.dailyDareTwist = selectDailyDoodleDareTwist(
       arena.dayNumber + (this.practiceMode ? this.practiceAttemptCount : 0),
       arena.myUsername
@@ -716,7 +731,15 @@ export class Draw extends Scene {
     this.sceneVisitEpoch += 1;
     this.roleStyleInfoLayer?.destroy();
     this.roleStyleInfoLayer = null;
-    stopSoundtrack();
+    if (
+      !this.practiceMode &&
+      !this.automationMode &&
+      !this.drawRoundClock.started
+    ) {
+      releaseHomeSoundtrack();
+    } else {
+      stopSoundtrack();
+    }
     this.removeLocalDrawAutomationApi();
     window.removeEventListener('resize', this.resizeHandler);
     window.visualViewport?.removeEventListener(
@@ -757,7 +780,6 @@ export class Draw extends Scene {
     this.firstFightLoadingTween?.stop();
     this.firstFightLoadingTween = null;
     this.firstFightButton = null;
-    this.firstFightButtonLabel = null;
     this.firstFightControl = null;
     this.firstFightPromise = null;
     this.firstFightPromiseCopy = null;
@@ -2041,7 +2063,7 @@ export class Draw extends Scene {
       if (this.scene.isActive()) this.overlay.setVisible(true);
     };
     const semanticDescription =
-      'The color group covering the most drawing area determines fighter style. Coral and orange make Brawler. Gold, green, aqua, and blue make Longshot. Purple and pink make Mage. Brawler beats Mage, Mage beats Longshot, and Longshot beats Brawler. Black and white do not compete; neutral-only drawings default to Brawler.';
+      'The color group covering the most drawing area determines fighter style. Brown, coral, and orange make Brawler. Gold, green, and blue make Longshot. Aqua, purple, and pink make Mage. Brawler beats Mage, Mage beats Longshot, and Longshot beats Brawler. Equal color groups are randomized. Black, grey, and white are neutral, so neutral-only drawings are randomized too.';
     const actions = new CanvasModalOverlay(
       this,
       'Fighter styles',
@@ -2182,7 +2204,7 @@ export class Draw extends Scene {
         this,
         width / 2,
         cardBottom - 154,
-        'MIX COLORS FREELY — THE MOST-USED GROUP WINS. BLACK + WHITE ARE NEUTRAL; NEUTRAL-ONLY ART BECOMES BRAWLER.',
+        'MIX COLORS FREELY — THE MOST-USED GROUP WINS. A TIE PICKS ONE AT RANDOM. BLACK + GREY + WHITE ARE NEUTRAL.',
         17,
         UI.inkSoft,
         true
@@ -2221,6 +2243,7 @@ export class Draw extends Scene {
     if (this.playerDrawMode === 'free') return 'FREE DRAW • DRAW ANYTHING';
     const dare =
       this.dailyDare ??
+      this.getArenaState()?.communityDrawTheme ??
       selectCommunityDoodleDare(this.getArenaState()?.dayNumber ?? 1);
     return formatThemePrompt(dare.prompt).toUpperCase();
   }
@@ -2539,7 +2562,8 @@ export class Draw extends Scene {
   private buildPaletteRow(y: number, panelWidth: number): void {
     const columns = PALETTE_GROUPS.length;
     const rowHeight = MIN_TOUCH;
-    const swatchTouchHeight = 70;
+    const swatchTouchWidth = 64;
+    const swatchTouchHeight = 48;
     const spacing = panelWidth / columns;
     const groupIconY = y - 70;
     const groupLabelY = y - 44;
@@ -2592,15 +2616,7 @@ export class Draw extends Scene {
       const swatchY = y - 5 + position.row * 52;
       const container = this.add.container(x, swatchY);
       const swatch = this.add
-        .circle(
-          0,
-          0,
-          colorIndex === this.selectedColorIndex
-            ? SELECTED_SWATCH_RADIUS
-            : SWATCH_RADIUS,
-          EMPTY_PAINT_WELL_COLOR,
-          1
-        )
+        .circle(0, 0, SWATCH_RADIUS, EMPTY_PAINT_WELL_COLOR, 1)
         .setStrokeStyle(
           colorIndex === this.selectedColorIndex ? 5 : 2,
           UI.inkHex,
@@ -2609,14 +2625,7 @@ export class Draw extends Scene {
       const paintFill = this.add.graphics();
       const paletteRole = fighterStyleForPaletteColor(colorIndex);
       const hit = this.add
-        .rectangle(
-          0,
-          0,
-          position.xOffset === 0 ? spacing : 70,
-          swatchTouchHeight,
-          0xffffff,
-          0.001
-        )
+        .rectangle(0, 0, swatchTouchWidth, swatchTouchHeight, 0xffffff, 0.001)
         .setInteractive({ useHandCursor: true });
       markSfxManaged(hit);
       container.add([swatch, paintFill, hit]);
@@ -2646,9 +2655,9 @@ export class Draw extends Scene {
             ? `counts toward ${getCombatRoleContent(paletteRole).displayName}`
             : 'neutral for fighter role'
         }, 100 percent remaining`,
-        x - spacing / 2,
+        x - swatchTouchWidth / 2,
         swatchY - swatchTouchHeight / 2,
-        spacing,
+        swatchTouchWidth,
         swatchTouchHeight,
         activate
       );
@@ -2686,7 +2695,7 @@ export class Draw extends Scene {
     const erasing = this.canvas?.isErasing() ?? false;
     this.paletteSwatches.forEach((swatch, colorIndex) => {
       const selected = colorIndex === this.selectedColorIndex;
-      swatch.setRadius(selected ? SELECTED_SWATCH_RADIUS : SWATCH_RADIUS);
+      swatch.setRadius(SWATCH_RADIUS);
       swatch.setStrokeStyle(
         selected ? 5 : 2,
         selected && erasing ? UI.coralDeep : UI.inkHex,
@@ -2730,17 +2739,25 @@ export class Draw extends Scene {
     return (this.activePaintReservoir()?.remaining ?? 1) > 0;
   }
 
-  private requestPaint(amount: number, kind: PaintUseKind): boolean {
+  private requestPaint(
+    amount: number,
+    kind: PaintUseKind,
+    replacedColor?: RgbColor
+  ): boolean {
     const colorIndex = this.selectedColorIndex;
     const reservoir = this.activePaintReservoir();
     // Collectible pens and drawing inks already have their own ownership and
     // charge rules, so base-color paint wells do not limit them.
-    if (colorIndex < 0 || !reservoir) return true;
+    if (colorIndex < 0 || !reservoir) {
+      this.returnReplacedPaint(amount, replacedColor);
+      return true;
+    }
 
     const result = tryUsePaint(reservoir, amount);
     if (result.accepted) {
       this.paintReservoirs[colorIndex] = result.reservoir;
       this.renderPalettePaintLevel(colorIndex, true);
+      this.returnReplacedPaint(amount, replacedColor);
       return true;
     }
 
@@ -2757,6 +2774,29 @@ export class Draw extends Scene {
       this.renderPalettePaintLevel(colorIndex, true);
     }
     return false;
+  }
+
+  private returnReplacedPaint(amount: number, replacedColor?: RgbColor): void {
+    if (!replacedColor) return;
+    const replacedColorIndex = PALETTE_RGB_COLORS.findIndex(
+      (color) =>
+        color !== null &&
+        color[0] === replacedColor[0] &&
+        color[1] === replacedColor[1] &&
+        color[2] === replacedColor[2]
+    );
+    if (
+      replacedColorIndex < 0 ||
+      replacedColorIndex === this.selectedColorIndex
+    ) {
+      return;
+    }
+    const reservoir = this.paintReservoirs[replacedColorIndex];
+    if (!reservoir) return;
+    const replenishedReservoir = returnPaint(reservoir, amount);
+    if (replenishedReservoir === reservoir) return;
+    this.paintReservoirs[replacedColorIndex] = replenishedReservoir;
+    this.renderPalettePaintLevel(replacedColorIndex, true);
   }
 
   private showPaintBlocked(): void {
@@ -3751,8 +3791,8 @@ export class Draw extends Scene {
       onEditStart: () => this.beginDrawingEdit(),
       onEditCancel: () => this.cancelDrawingEdit(),
       hasPaint: () => this.automationMode || this.hasActivePaint(),
-      requestPaint: (amount, kind) =>
-        this.automationMode || this.requestPaint(amount, kind),
+      requestPaint: (amount, kind, replacedColor) =>
+        this.automationMode || this.requestPaint(amount, kind, replacedColor),
       onPaintBlocked: () => this.showPaintBlocked(),
     });
     this.canvas.setBrushSize(this.lineWidth);
@@ -3880,6 +3920,7 @@ export class Draw extends Scene {
   private buildCanvasDareOverlay(square: number): void {
     const dare =
       this.dailyDare ??
+      this.getArenaState()?.communityDrawTheme ??
       selectCommunityDoodleDare(this.getArenaState()?.dayNumber ?? 1);
     const twist =
       this.dailyDareTwist ??
@@ -5124,7 +5165,9 @@ export class Draw extends Scene {
         reduceMotion: prefersReducedMotion(),
       });
     newborn.setPosition(width / 2, artY).setDepth(10);
-    const combatRole = getCombatRoleContent(selectCombatRole(scribbit.stats));
+    const combatRoleId = selectCombatRole(scribbit.stats);
+    const combatRole = getCombatRoleContent(combatRoleId);
+    const roleStyle = ROLE_STYLES[combatRoleId];
     const elementStyle = ELEMENT_STYLES[scribbit.element];
     const mainLabel = label(
       this,
@@ -5141,9 +5184,22 @@ export class Draw extends Scene {
     if (mainLabel.width > cardW - 70) {
       mainLabel.setScale((cardW - 70) / mainLabel.width);
     }
+    const roleIcon = paperIcon(
+      this,
+      combatRole.icon,
+      width / 2 - cardW / 2 + 72,
+      cardY + 145,
+      {
+        size: 54,
+        fill: roleStyle.color,
+        stroke: UI.inkHex,
+      }
+    )
+      .setAlpha(0)
+      .setDepth(10);
     const detailLabel = label(
       this,
-      width / 2,
+      width / 2 + 28,
       cardY + 145,
       `${combatRole.displayName.toUpperCase()} · ${combatRole.rangeLabel}\n${combatRole.basicAttackName} · ${combatRole.signatureName}`,
       20,
@@ -5152,7 +5208,7 @@ export class Draw extends Scene {
     )
       .setAlpha(0)
       .setDepth(10)
-      .setWordWrapWidth(cardW - 70)
+      .setWordWrapWidth(cardW - 170)
       .setLineSpacing(6);
 
     this.tweens.add({
@@ -5169,7 +5225,7 @@ export class Draw extends Scene {
     });
     if (!awakenedNewborn) newborn.awaken();
     this.tweens.add({
-      targets: [mainLabel, detailLabel],
+      targets: [mainLabel, roleIcon, detailLabel],
       alpha: 1,
       delay: 400,
       duration: 400,
@@ -5222,11 +5278,6 @@ export class Draw extends Scene {
     );
     actionButton.setDepth(10);
     this.firstFightButton = actionButton;
-    this.firstFightButtonLabel =
-      actionButton.list.find(
-        (child): child is Phaser.GameObjects.Text =>
-          child instanceof Phaser.GameObjects.Text
-      ) ?? null;
     this.firstFightControl = this.addNativeControl(
       actionLabel,
       width / 2 - 210,
@@ -5313,7 +5364,9 @@ export class Draw extends Scene {
   }
 
   private updateFirstFightAction(scribbit: Scribbit): void {
-    this.firstFightButtonLabel?.setText('START FIRST FIGHT');
+    if (this.firstFightButton) {
+      setIconButtonLabel(this.firstFightButton, 'START FIRST FIGHT');
+    }
     if (this.firstFightControl) {
       this.firstFightControl.disabled = false;
       this.firstFightControl.textContent = 'Start first fight';
@@ -5364,7 +5417,9 @@ export class Draw extends Scene {
 
   private setFirstFightBusy(scribbit: Scribbit, busy: boolean): void {
     const buttonLabel = busy ? 'FINDING A RIVAL…' : 'START FIRST FIGHT';
-    this.firstFightButtonLabel?.setText(buttonLabel);
+    if (this.firstFightButton) {
+      setIconButtonLabel(this.firstFightButton, buttonLabel);
+    }
     if (this.firstFightControl) {
       this.firstFightControl.disabled = busy;
       const accessibleLabel = busy

@@ -38,8 +38,8 @@ test('published capsule odds/Ink pacing', () => {
   );
   assert.equal(
     arena.CAPSULE_COST,
-    2,
-    'one chest should stay cheaper than the major battle rewards'
+    7,
+    'one chest should keep a single honest earned-Ink price'
   );
   assert.equal(
     arena.INK_REWARDS.dailyDraw,

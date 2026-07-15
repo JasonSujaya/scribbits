@@ -1,0 +1,120 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720">
+  <style>
+    .title { font-family: Arial, sans-serif; font-size: 28px; font-weight: 800; fill: #2b2016; text-anchor: middle; }
+    .subtitle { font-family: Arial, sans-serif; font-size: 13px; font-weight: 700; fill: #5f4f3b; text-anchor: middle; }
+    .name { font-family: Arial, sans-serif; font-size: 14px; font-weight: 800; fill: #2b2016; text-anchor: middle; }
+    .rule { font-family: Arial, sans-serif; font-size: 10px; font-weight: 700; fill: #5f4f3b; text-anchor: middle; }
+    .challenge { font-family: Arial, sans-serif; font-size: 9px; font-weight: 800; fill: #b7351d; text-anchor: middle; }
+    .number { font-family: Arial, sans-serif; font-size: 12px; font-weight: 800; fill: #2b2016; text-anchor: middle; dominant-baseline: central; }
+    .card { fill: #fff7e8; stroke: #2b2016; stroke-width: 5; stroke-linejoin: round; }
+    .preview { stroke: #2b2016; stroke-width: 3; }
+    .court { fill: none; stroke-width: 5; }
+    .court-detail { fill: none; stroke-width: 2; opacity: .48; }
+  </style>
+  <rect width="1280" height="720" fill="#6f4a2f"/>
+  <rect x="260" width="760" height="720" fill="#fff7e8"/>
+  <text x="640" y="36" class="title">10 ROTATING ARENAS</text>
+  <text x="640" y="60" class="subtitle">ONE DAILY SCREEN · TEN AUTHORED VENUES</text>
+
+  <!-- 1 Sticker Stadium -->
+  <g transform="translate(288 75)">
+    <path class="card" d="M5 2 L332 4 L338 96 L6 99 Z"/>
+    <rect class="preview" x="18" y="15" width="132" height="72" rx="15" fill="#fce1c4"/>
+    <ellipse cx="84" cy="52" rx="51" ry="24" fill="#f6c344"/>
+    <ellipse class="court" cx="84" cy="52" rx="51" ry="24" stroke="#ff6f61"/>
+    <path class="court-detail" d="M84 30 V74 M72 52 A12 12 0 1 0 96 52 A12 12 0 1 0 72 52" stroke="#5b2b1b"/>
+    <circle cx="18" cy="14" r="16" fill="#f6c344" stroke="#2b2016" stroke-width="3"/><text x="18" y="14" class="number">1</text>
+    <text x="244" y="29" class="name">STICKER STADIUM</text><text x="244" y="56" class="rule">EVEN GROUND</text><text x="244" y="82" class="challenge">FINISH THE FIGHT</text>
+  </g>
+  <!-- 2 Ink Playground -->
+  <g transform="translate(652 75)">
+    <path class="card" d="M4 3 L334 2 L338 97 L7 98 Z"/>
+    <rect class="preview" x="18" y="15" width="132" height="72" rx="15" fill="#fddfd2"/>
+    <ellipse cx="84" cy="52" rx="51" ry="24" fill="#fff0c9"/>
+    <ellipse class="court" cx="84" cy="52" rx="51" ry="24" stroke="#16a6bf"/>
+    <path class="court-detail" d="M84 30 V74 M72 52 A12 12 0 1 0 96 52 A12 12 0 1 0 72 52" stroke="#24334a"/>
+    <circle cx="18" cy="14" r="16" fill="#f6c344" stroke="#2b2016" stroke-width="3"/><text x="18" y="14" class="number">2</text>
+    <text x="244" y="29" class="name">INK PLAYGROUND</text><text x="244" y="56" class="rule">POWER DRILL</text><text x="244" y="82" class="challenge">CAST 8 POWERS</text>
+  </g>
+  <!-- 3 Element Clash -->
+  <g transform="translate(288 187)">
+    <path class="card" d="M6 2 L333 4 L337 96 L4 99 Z"/>
+    <rect class="preview" x="18" y="15" width="132" height="72" rx="15" fill="#ccd7e4"/>
+    <ellipse cx="84" cy="52" rx="51" ry="24" fill="#ffe7b8"/>
+    <ellipse class="court" cx="84" cy="52" rx="51" ry="24" stroke="#ef5f5f"/>
+    <path class="court-detail" d="M84 30 V74 M72 52 A12 12 0 1 0 96 52 A12 12 0 1 0 72 52" stroke="#1e2941"/>
+    <circle cx="18" cy="14" r="16" fill="#f6c344" stroke="#2b2016" stroke-width="3"/><text x="18" y="14" class="number">3</text>
+    <text x="244" y="29" class="name">ELEMENT CLASH</text><text x="244" y="56" class="rule">HEALTH 4% LOWER</text><text x="244" y="82" class="challenge">DEAL 100 POWER DAMAGE</text>
+  </g>
+  <!-- 4 Chalkboard Court -->
+  <g transform="translate(652 187)">
+    <path class="card" d="M5 3 L332 2 L339 98 L6 97 Z"/>
+    <rect class="preview" x="18" y="15" width="132" height="72" rx="15" fill="#c4d8cd"/>
+    <ellipse cx="84" cy="52" rx="51" ry="24" fill="#0b8e83"/>
+    <ellipse class="court" cx="84" cy="52" rx="51" ry="24" stroke="#ff7967"/>
+    <path class="court-detail" d="M84 30 V74 M72 52 A12 12 0 1 0 96 52 A12 12 0 1 0 72 52" stroke="#173b3b"/>
+    <circle cx="18" cy="14" r="16" fill="#f6c344" stroke="#2b2016" stroke-width="3"/><text x="18" y="14" class="number">4</text>
+    <text x="244" y="29" class="name">CHALKBOARD COURT</text><text x="244" y="56" class="rule">BOUNCE DRILL</text><text x="244" y="82" class="challenge">BOUNCE TWICE</text>
+  </g>
+  <!-- 5 Garden Patch -->
+  <g transform="translate(288 299)">
+    <path class="card" d="M4 3 L334 2 L337 97 L6 99 Z"/>
+    <rect class="preview" x="18" y="15" width="132" height="72" rx="15" fill="#e9efbd"/>
+    <ellipse cx="84" cy="52" rx="51" ry="24" fill="#cdf052"/>
+    <ellipse class="court" cx="84" cy="52" rx="51" ry="24" stroke="#f0588b"/>
+    <path class="court-detail" d="M84 30 V74 M72 52 A12 12 0 1 0 96 52 A12 12 0 1 0 72 52" stroke="#205739"/>
+    <circle cx="18" cy="14" r="16" fill="#f6c344" stroke="#2b2016" stroke-width="3"/><text x="18" y="14" class="number">5</text>
+    <text x="244" y="29" class="name">GARDEN PATCH</text><text x="244" y="56" class="rule">COLLISION DRILL</text><text x="244" y="82" class="challenge">COLLIDE TWICE</text>
+  </g>
+  <!-- 6 Neon Arcade -->
+  <g transform="translate(652 299)">
+    <path class="card" d="M6 2 L333 4 L338 96 L5 99 Z"/>
+    <rect class="preview" x="18" y="15" width="132" height="72" rx="15" fill="#c9bedf"/>
+    <ellipse cx="84" cy="52" rx="51" ry="24" fill="#33145a"/>
+    <ellipse class="court" cx="84" cy="52" rx="51" ry="24" stroke="#1dc6e5"/>
+    <path class="court-detail" d="M84 30 V74 M72 52 A12 12 0 1 0 96 52 A12 12 0 1 0 72 52" stroke="#f8e7b5"/>
+    <circle cx="18" cy="14" r="16" fill="#f6c344" stroke="#2b2016" stroke-width="3"/><text x="18" y="14" class="number">6</text>
+    <text x="244" y="29" class="name">NEON ARCADE</text><text x="244" y="56" class="rule">MOVEMENT 5% FASTER</text><text x="244" y="82" class="challenge">BOUNCE 3 TIMES</text>
+  </g>
+  <!-- 7 Candy Gym -->
+  <g transform="translate(288 411)">
+    <path class="card" d="M5 2 L332 3 L339 98 L7 97 Z"/>
+    <rect class="preview" x="18" y="15" width="132" height="72" rx="15" fill="#d8ede2"/>
+    <ellipse cx="84" cy="52" rx="51" ry="24" fill="#fff0d2"/>
+    <ellipse class="court" cx="84" cy="52" rx="51" ry="24" stroke="#ff7967"/>
+    <path class="court-detail" d="M84 30 V74 M72 52 A12 12 0 1 0 96 52 A12 12 0 1 0 72 52" stroke="#26394a"/>
+    <circle cx="18" cy="14" r="16" fill="#f6c344" stroke="#2b2016" stroke-width="3"/><text x="18" y="14" class="number">7</text>
+    <text x="244" y="29" class="name">CANDY GYM</text><text x="244" y="56" class="rule">POWERS 5% SLOWER</text><text x="244" y="82" class="challenge">LAND 2 BUMPS</text>
+  </g>
+  <!-- 8 Moonlight Puddle -->
+  <g transform="translate(652 411)">
+    <path class="card" d="M4 3 L334 2 L337 97 L5 99 Z"/>
+    <rect class="preview" x="18" y="15" width="132" height="72" rx="15" fill="#c5c6c4"/>
+    <ellipse cx="84" cy="52" rx="51" ry="24" fill="#27b8d0"/>
+    <ellipse class="court" cx="84" cy="52" rx="51" ry="24" stroke="#8369d8"/>
+    <path class="court-detail" d="M84 30 V74 M72 52 A12 12 0 1 0 96 52 A12 12 0 1 0 72 52" stroke="#dcecf4"/>
+    <circle cx="18" cy="14" r="16" fill="#f6c344" stroke="#2b2016" stroke-width="3"/><text x="18" y="14" class="number">8</text>
+    <text x="244" y="29" class="name">MOONLIGHT PUDDLE</text><text x="244" y="56" class="rule">HEALTH 4% HIGHER</text><text x="244" y="82" class="challenge">CAST 6 POWERS</text>
+  </g>
+  <!-- 9 Tournament Ring -->
+  <g transform="translate(288 523)">
+    <path class="card" d="M6 2 L333 4 L338 96 L5 99 Z"/>
+    <rect class="preview" x="18" y="15" width="132" height="72" rx="15" fill="#fdd3c5"/>
+    <ellipse cx="84" cy="52" rx="51" ry="24" fill="#fff4db"/>
+    <ellipse class="court" cx="84" cy="52" rx="51" ry="24" stroke="#f4b82f"/>
+    <path class="court-detail" d="M84 30 V74 M72 52 A12 12 0 1 0 96 52 A12 12 0 1 0 72 52" stroke="#472522"/>
+    <circle cx="18" cy="14" r="16" fill="#f6c344" stroke="#2b2016" stroke-width="3"/><text x="18" y="14" class="number">9</text>
+    <text x="244" y="29" class="name">TOURNAMENT RING</text><text x="244" y="56" class="rule">WIDER OPENING</text><text x="244" y="82" class="challenge">LAND 4 POWERS</text>
+  </g>
+  <!-- 10 Scribble Lab -->
+  <g transform="translate(652 523)">
+    <path class="card" d="M5 3 L332 2 L339 98 L6 97 Z"/>
+    <rect class="preview" x="18" y="15" width="132" height="72" rx="15" fill="#c8deda"/>
+    <ellipse cx="84" cy="52" rx="51" ry="24" fill="#a7e8c8"/>
+    <ellipse class="court" cx="84" cy="52" rx="51" ry="24" stroke="#ff7868"/>
+    <path class="court-detail" d="M84 30 V74 M72 52 A12 12 0 1 0 96 52 A12 12 0 1 0 72 52" stroke="#173957"/>
+    <circle cx="18" cy="14" r="16" fill="#f6c344" stroke="#2b2016" stroke-width="3"/><text x="18" y="14" class="number">10</text>
+    <text x="244" y="29" class="name">SCRIBBLE LAB</text><text x="244" y="56" class="rule">EARLY DEATH-ZONE</text><text x="244" y="82" class="challenge">POWER-HIT AFTER FOLD</text>
+  </g>
+  <text x="640" y="690" class="subtitle">A NEW VENUE UNLOCKS EVERY TWO DAYS</text>
+</svg>

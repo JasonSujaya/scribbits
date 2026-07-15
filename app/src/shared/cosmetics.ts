@@ -498,7 +498,17 @@ export const PEN_CATALOG_ENTRIES: readonly CosmeticPenCatalogEntry[] = [
     rarity: 'epic',
     name: 'Rainbow Crayon',
     description: 'Draws hue-cycling strokes like a parade got sharpened.',
-    colors: ['#ff5a3d', '#ff9a3d', '#f2cf3d', '#4faa4f', '#3ba0e0', '#8a5cd8'],
+    colors: [
+      '#8b5a2b',
+      '#ff5a3d',
+      '#ff9a3d',
+      '#f2cf3d',
+      '#4faa4f',
+      '#3ba0e0',
+      '#7fd8e6',
+      '#8a5cd8',
+      '#ff7fb0',
+    ],
     effect: 'rainbow',
   },
   {

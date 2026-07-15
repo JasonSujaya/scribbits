@@ -40,6 +40,7 @@ import {
 import { removeScribbitCompletely } from './removal';
 import { getUserPlayStreakKey } from './streak';
 import { getDailyLoginKey } from './dailyLogin';
+import { getUserCommunityThemeCompletionsKey } from './communityDrawTheme';
 import { getLegacyIndexVersionKey, getLegacySeenDayKey } from './legacy';
 import {
   getFounderChronicleKey,
@@ -57,6 +58,7 @@ import { getRivalRunKey } from './rivalRun';
 import { getDrawChargeKey } from './drawCharges';
 import { getPaintBucketKey } from './paintBucket';
 import { getPowerUpDiscoveriesKey } from './powerUpOffers';
+import { removeVenueStampDataForUser } from './venueStamp';
 import {
   deleteFreeDrawingsForUser,
   getUserFreeDrawingDayKey,
@@ -214,6 +216,9 @@ const deletePlayerDataRecords = async (
   }
 
   await requireDeletionOwnership(storage, deletionLease);
+  await removeVenueStampDataForUser(storage, userId);
+
+  await requireDeletionOwnership(storage, deletionLease);
   const operationReceiptKeys = await loadUserOperationReceiptKeys(
     storage,
     userId
@@ -222,6 +227,7 @@ const deletePlayerDataRecords = async (
   await requireDeletionOwnership(storage, deletionLease);
   await storage.del(
     getUserScribbitsKey(userId),
+    getUserCommunityThemeCompletionsKey(userId),
     getUserHasCreatedScribbitKey(userId),
     getUserAliveScribbitsKey(userId),
     getUserLegacyCardsKey(userId),

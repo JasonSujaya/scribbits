@@ -5,8 +5,9 @@ three days to become a Legend.**
 
 Scribbits Arena is a portrait-first Reddit mini game built with Devvit Web and
 Phaser. Every player can draw one Scribbit per day. The submitted PNG is both
-the art and the combat identity: coral/orange ink creates a Brawler,
-gold/green/aqua/blue creates a Longshot, and purple/pink creates a Mage. The
+the art and the combat identity: brown/coral/orange creates a Brawler,
+gold/green/blue creates a Longshot, and
+aqua/purple/pink creates a Mage. Black, grey, and white remain neutral. The
 counter loop is always Brawler > Mage > Longshot > Brawler. Every drawing still
 receives the same 100-point stat budget.
 
@@ -33,11 +34,14 @@ arena effects and Inkbody deformation update at a bounded 30 Hz.
 
 ## Daily loop
 
-1. Draw the shared three-day community theme. Everyone receives the same clear
-   brief, each new Scribbit keeps that theme id as its category, and the Rumble
-   picker gathers the matching community creations under the theme name. The
-   versioned calendar contains 122 unique themes covering 366 Arena days. The
-   next season must append before day 367, so published days never remap.
+1. Draw your assigned three-day community theme. Each cycle deals five clear
+   briefs from the authored catalog, then gives every player one random
+   assignment from that pool. The assignment stays locked until submitted, then
+   the player's next Draw advances to another randomized theme in the same pool.
+   Each new Scribbit keeps that theme id as its category, and the Rumble picker
+   gathers matching community creations under the theme name. The versioned
+   calendar covers 360 Arena days. The next season must append before day 361,
+   so published cycles never remap.
    The screen keeps the theme inside the canvas,
    keeps all eight base colors visible, shows only size, eraser, undo, and Tools
    by default, and keeps collectible paint, brushes, stickers, Clear, and Redo
@@ -119,9 +123,9 @@ focus plus Enter/Space without changing battle authority.
 The first Spar win each UTC day commits one versioned reward receipt in the
 same Redis transaction as its XP and Ink. Fresh Replay can therefore celebrate
 `+1 XP • +2 INK` or an exact level-up without deriving progression on the
-client. Earned Ink Mods now cross the fixed-tick engine's integer resolution,
-stay inside the four-mod balance cap, and expose their exact effects only in the
-Scribbit detail view. Saved pages keep only Replay plus their truthful return action; they
+client. Level gains apply one bounded shared damage curve, while randomized
+Power-Up offers and equipped Gear techniques are validated separately and
+together by the local combat balancer. Saved pages keep only Replay plus their truthful return action; they
 cannot reopen a live Rival or tonight's pick flow.
 Before the bell, a mode-specific VS card keeps one title, optional story stakes,
 large fighter art, and two plain causal lines such as

@@ -22,7 +22,13 @@ import type {
   CapsulePullResponse,
   CapsuleRarity,
 } from '../../shared/arena';
-import { NAV_SAFE, UI, TYPE, prefersReducedMotion } from './theme';
+import {
+  NAV_SAFE,
+  UI,
+  TYPE,
+  allowsAmbientMotion,
+  prefersReducedMotion,
+} from './theme';
 import {
   label,
   handLettered,
@@ -47,6 +53,7 @@ import { bindPressInteractionEvents } from './pressinteraction';
 import { createStickerShine } from './stickerfxshader';
 import {
   INK_TOKEN_TEXTURE,
+  SHOP_CAPSULE_SHELL_TEXTURE,
   SHOP_CHEST_TEXTURES,
   SHOP_CLAW_MACHINE_SHELL_TEXTURE,
 } from './visualassets';
@@ -88,10 +95,38 @@ const CLAW_MACHINE_SAMPLE_IDS = [
   'round-glasses',
   'cardboard-shield',
 ] as const;
+const EMPTY_CAPSULE_POSITIONS = [
+  { x: -150, y: 42, angle: -12, scale: 0.58 },
+  { x: -105, y: 24, angle: 8, scale: 0.6 },
+  { x: -58, y: 16, angle: -5, scale: 0.58 },
+  { x: -10, y: 12, angle: 6, scale: 0.62 },
+  { x: 38, y: 17, angle: -7, scale: 0.6 },
+  { x: 84, y: 25, angle: 10, scale: 0.58 },
+  { x: 130, y: 39, angle: -8, scale: 0.6 },
+  { x: -160, y: 68, angle: 8, scale: 0.68 },
+  { x: -120, y: 55, angle: -9, scale: 0.66 },
+  { x: -75, y: 48, angle: 6, scale: 0.64 },
+  { x: -28, y: 50, angle: -4, scale: 0.68 },
+  { x: 20, y: 46, angle: 8, scale: 0.66 },
+  { x: 65, y: 50, angle: -7, scale: 0.65 },
+  { x: 110, y: 56, angle: 6, scale: 0.68 },
+  { x: 155, y: 68, angle: -8, scale: 0.64 },
+  { x: -140, y: 82, angle: -6, scale: 0.72 },
+  { x: -92, y: 78, angle: 7, scale: 0.7 },
+  { x: -45, y: 84, angle: -8, scale: 0.72 },
+  { x: 5, y: 80, angle: 5, scale: 0.7 },
+  { x: 53, y: 84, angle: -7, scale: 0.72 },
+  { x: 100, y: 79, angle: 8, scale: 0.7 },
+  { x: 143, y: 83, angle: -5, scale: 0.72 },
+] as const;
 const CHEST_DISPLAY_WIDTH = 410;
 const CHEST_DISPLAY_HEIGHT = 430;
 const OPEN_CHEST_HORIZONTAL_SCALE = 1.086;
 const CLAW_MACHINE_SCALE = 1.1;
+const CLAW_CHOICE_WIDTH = 170;
+const CLAW_CHOICE_HEIGHT = 92;
+const CLAW_CHOICE_X_OFFSET = 92;
+const CLAW_CHOICE_Y = 253;
 const OPEN_CHEST_Y_OFFSET = -47;
 
 type ChestOpenCount = 1 | typeof CAPSULE_MAX_BATCH_SIZE;
@@ -165,6 +200,13 @@ type ClawMachine = Readonly<{
   leftArm: Phaser.GameObjects.Container;
   rightArm: Phaser.GameObjects.Container;
   windowContent: Phaser.GameObjects.Container;
+  prizeSamples: ReadonlyArray<
+    Readonly<{
+      container: Phaser.GameObjects.Container;
+      restingY: number;
+      restingAngle: number;
+    }>
+  >;
   controlGlow: Phaser.GameObjects.Arc;
   homeX: number;
   chuteX: number;
@@ -186,8 +228,8 @@ function createEmbeddedCapsuleActions(
   overlay.addDescription(
     descriptionId,
     firstChestVisit
-      ? `Play the First Gear claw machine for your first earned-Ink reward. The visible Gear are possible examples, not a prediction. The first reward is equippable Gear and the server owns the price and reward. ${CAPSULE_ODDS_ACCESSIBLE_COPY}`
-      : `Spend battle-earned Ink at the Mystery Gear claw machine for one reward or a batch of ten. Ten is the largest batch. The server owns every price, reward, and pity step. ${CAPSULE_ODDS_ACCESSIBLE_COPY}`
+      ? `Take one capsule from the First Gear claw machine for your first earned-Ink reward. The visible Gear are possible examples, not a prediction. The first reward is equippable Gear and the server owns the price and reward. ${CAPSULE_ODDS_ACCESSIBLE_COPY}`
+      : `Spend battle-earned Ink to take one or ten capsules from the Mystery Gear claw machine. Ten is the largest batch. The server owns every price, reward, and pity step. ${CAPSULE_ODDS_ACCESSIBLE_COPY}`
   );
   overlay.setRootAttributes({
     role: 'region',
@@ -248,26 +290,57 @@ function createInkOpenButton(
 ): InkOpenButton {
   const container = scene.add.container(x, y);
   const isPrimary = variant === 'primary';
+  const compact = height <= 96;
+  const actionY = compact ? -17 : -20;
+  const priceY = compact ? 19 : 22;
+  const actionSize = compact ? 24 : 29;
+  const priceSize = compact ? 18 : 22;
+  const tokenSize = compact ? 24 : 29;
   const plate = paperButtonPlate(scene, variant, width, height);
-  const actionText = label(scene, 0, -20, actionLabel, 29, UI.ink, true);
+  const actionText = label(
+    scene,
+    0,
+    actionY,
+    actionLabel,
+    actionSize,
+    UI.ink,
+    true
+  );
+  actionText.setWordWrapWidth(width - 30);
   const token = scene.add
-    .image(0, 22, INK_TOKEN_TEXTURE)
-    .setDisplaySize(29, 29);
-  const costText = label(scene, 0, 21, `${cost} INK`, 22, UI.ink, true);
+    .image(0, priceY, INK_TOKEN_TEXTURE)
+    .setDisplaySize(tokenSize, tokenSize);
+  const costText = label(
+    scene,
+    0,
+    priceY,
+    `${cost} INK`,
+    priceSize,
+    UI.ink,
+    true
+  );
   const content = scene.add.container(0, 0, [actionText, token, costText]);
-  const accents = isPrimary
-    ? [
-        scene.add.star(
-          -width / 2 + 35,
-          -height / 2 + 26,
-          4,
-          3,
-          10,
-          UI.creamHex
-        ),
-        scene.add.star(width / 2 - 35, -height / 2 + 26, 4, 3, 10, UI.creamHex),
-      ]
-    : [];
+  const accents =
+    isPrimary && width >= 220
+      ? [
+          scene.add.star(
+            -width / 2 + 35,
+            -height / 2 + 26,
+            4,
+            3,
+            10,
+            UI.creamHex
+          ),
+          scene.add.star(
+            width / 2 - 35,
+            -height / 2 + 26,
+            4,
+            3,
+            10,
+            UI.creamHex
+          ),
+        ]
+      : [];
   const hitTarget = scene.add
     .rectangle(0, 0, width, height, 0xffffff, 0.001)
     .setInteractive({ useHandCursor: true });
@@ -284,15 +357,15 @@ function createInkOpenButton(
       actionText.setPosition(0, 0);
       return;
     }
-    actionText.setPosition(0, -20);
+    actionText.setPosition(0, actionY);
     costText.setText(`${nextCost} INK`);
     const tokenPriceGap = 7;
     const priceWidth = token.displayWidth + tokenPriceGap + costText.width;
     const priceLeft = -priceWidth / 2;
-    token.setPosition(priceLeft + token.displayWidth / 2, 22);
+    token.setPosition(priceLeft + token.displayWidth / 2, priceY);
     costText.setPosition(
       token.x + token.displayWidth / 2 + tokenPriceGap + costText.width / 2,
-      21
+      priceY
     );
   };
   const setEnabled = (enabled: boolean): void => {
@@ -322,16 +395,39 @@ function createClawMachine(
 ): ClawMachine {
   const container = scene.add.container(x, y).setScale(CLAW_MACHINE_SCALE);
   const windowContent = scene.add.container(0, 0);
+  const prizeSamples: Array<{
+    container: Phaser.GameObjects.Container;
+    restingY: number;
+    restingAngle: number;
+  }> = [];
   const pileShadow = scene.add.ellipse(0, 74, 350, 68, 0x160d16, 0.28);
   windowContent.add(pileShadow);
+  EMPTY_CAPSULE_POSITIONS.forEach((position, index) => {
+    const emptyCapsule = scene.add
+      .container(position.x, position.y)
+      .setAngle(position.angle)
+      .setScale(position.scale);
+    emptyCapsule.add(
+      scene.add
+        .image(0, 0, SHOP_CAPSULE_SHELL_TEXTURE)
+        .setDisplaySize(92, 92)
+        .setFlipX(index % 2 === 0)
+    );
+    prizeSamples.push({
+      container: emptyCapsule,
+      restingY: position.y,
+      restingAngle: position.angle,
+    });
+    windowContent.add(emptyCapsule);
+  });
   const samplePositions = [
-    { x: -150, y: 58, angle: -14, scale: 0.76 },
-    { x: -100, y: 70, angle: 12, scale: 0.72 },
-    { x: -50, y: 54, angle: -8, scale: 0.78 },
-    { x: 0, y: 72, angle: 14, scale: 0.72 },
-    { x: 50, y: 55, angle: -13, scale: 0.76 },
-    { x: 100, y: 70, angle: 10, scale: 0.73 },
-    { x: 150, y: 57, angle: -7, scale: 0.76 },
+    { x: -120, y: 48, angle: -10, scale: 0.72 },
+    { x: -40, y: 37, angle: 7, scale: 0.76 },
+    { x: 40, y: 37, angle: -6, scale: 0.76 },
+    { x: 120, y: 48, angle: 10, scale: 0.72 },
+    { x: -80, y: 76, angle: -7, scale: 0.82 },
+    { x: 0, y: 72, angle: 5, scale: 0.86 },
+    { x: 80, y: 76, angle: 8, scale: 0.82 },
   ] as const;
   CLAW_MACHINE_SAMPLE_IDS.forEach((id, index) => {
     const entry = COSMETIC_BY_ID.get(id);
@@ -342,20 +438,25 @@ function createClawMachine(
       .container(position.x, position.y)
       .setAngle(position.angle)
       .setScale(position.scale);
-    preview.add(
-      scene.add
-        .circle(0, 0, 36, UI.creamHex, 0.98)
-        .setStrokeStyle(5, RARITY_STYLE[entry.rarity].color, 0.98)
-    );
+    const rarityColor = RARITY_STYLE[entry.rarity].color;
+    preview.add([
+      scene.add.circle(0, 2, 46, rarityColor, 0.24),
+      scene.add.image(0, 0, SHOP_CAPSULE_SHELL_TEXTURE).setDisplaySize(92, 92),
+    ]);
     renderCosmeticPreview({
       scene,
       parent: preview,
       entry,
-      y: 0,
-      size: 58,
-      width: 58,
-      height: 58,
-      maxScale: 0.86,
+      y: -4,
+      size: 52,
+      width: 52,
+      height: 52,
+      maxScale: 0.72,
+    });
+    prizeSamples.push({
+      container: preview,
+      restingY: position.y,
+      restingAngle: position.angle,
     });
     windowContent.add(preview);
   });
@@ -417,16 +518,21 @@ function createClawMachine(
     29,
     UI.cream,
     true
-  );
+  )
+    .setStroke(UI.ink, 8)
+    .setShadow(0, 3, UI.ink, 2, true, true);
   const message = label(
     scene,
     0,
     -312,
-    firstChestVisit ? 'FIRST PLAY GUARANTEED GEAR' : 'DROP CLAW FOR 1 REWARD',
+    firstChestVisit ? 'TAKE 1 · GUARANTEED GEAR' : 'TAKE 1 OR TAKE 10',
     17,
     UI.goldText,
     true
-  ).setWordWrapWidth(350);
+  )
+    .setWordWrapWidth(350)
+    .setStroke(UI.ink, 6)
+    .setShadow(0, 2, UI.ink, 1, true, true);
   container.add([heading, message]);
 
   const actionButton = scene.add.container(0, 128);
@@ -437,53 +543,33 @@ function createClawMachine(
   actionButton.add([controlGlow, buttonLabel]);
   container.add(actionButton);
 
-  const actionCenterX = 0;
-  const actionText = label(
+  const takeOneX = firstChestVisit ? 0 : -CLAW_CHOICE_X_OFFSET;
+  const takeOneButton = createInkOpenButton(
     scene,
-    actionCenterX,
-    213,
-    'DROP CLAW',
-    27,
-    UI.cream,
-    true
+    takeOneX,
+    CLAW_CHOICE_Y,
+    CLAW_CHOICE_WIDTH,
+    CLAW_CHOICE_HEIGHT,
+    'primary',
+    'TAKE 1',
+    cost,
+    onActivate
   );
-  actionText.setWordWrapWidth(260);
-  const token = scene.add
-    .image(-48, 254, INK_TOKEN_TEXTURE)
-    .setDisplaySize(28, 28);
-  const costText = label(scene, 0, 254, `${cost} INK`, 21, UI.cream, true);
-  container.add([actionText, token, costText]);
+  container.add(takeOneButton.container);
 
-  const placePrice = (): void => {
-    const gap = 7;
-    const priceWidth = token.displayWidth + gap + costText.width;
-    const priceLeft = actionCenterX - priceWidth / 2;
-    token.setX(priceLeft + token.displayWidth / 2);
-    costText.setX(token.x + token.displayWidth / 2 + gap + costText.width / 2);
-  };
   const setContent = (
     nextActionLabel: string,
     nextCost: number | null
   ): void => {
-    token.setVisible(nextCost !== null);
-    costText.setVisible(nextCost !== null);
-    if (nextCost !== null) {
-      actionText.setText(nextActionLabel.replace('OPEN CHEST', 'DROP CLAW'));
-      actionText.setPosition(actionCenterX, 213);
-      costText.setText(`${nextCost} INK`);
-      placePrice();
-    } else {
-      actionText.setText(
-        nextActionLabel.startsWith('DRAW ONCE') ? 'DRAW ONCE' : nextActionLabel
-      );
-      actionText.setPosition(actionCenterX, 237);
-    }
+    const visibleActionLabel = nextActionLabel.startsWith('DRAW ONCE')
+      ? 'DRAW ONCE'
+      : nextActionLabel.replace('OPEN CHEST', 'TAKE 1');
+    takeOneButton.setContent(visibleActionLabel, nextCost);
   };
   const setEnabled = (enabled: boolean): void => {
     actionButton.setAlpha(enabled ? 1 : 0.46);
-    actionText.setAlpha(enabled ? 1 : 0.88);
-    token.setAlpha(enabled ? 1 : 0.72);
-    costText.setAlpha(enabled ? 1 : 0.84);
+    takeOneButton.setEnabled(enabled);
+    takeOneButton.container.setAlpha(enabled ? 1 : 0.62);
     scene.tweens.killTweensOf(controlGlow);
     controlGlow.setAlpha(enabled ? 0.16 : 0.04).setScale(1);
     if (enabled && !prefersReducedMotion()) {
@@ -499,7 +585,7 @@ function createClawMachine(
       });
     }
   };
-  setContent('DROP CLAW', cost);
+  setContent('TAKE 1', cost);
 
   const controlHitTarget = scene.add
     .rectangle(0, 128, 150, 120, 0xffffff, 0.001)
@@ -515,16 +601,15 @@ function createClawMachine(
     },
     { gameTarget: scene.input, shutdownTarget: scene.events }
   );
-
   return {
     pullControl: { container, setContent, setEnabled },
     message,
     actionButton,
     actionRect: {
-      x: x - 75 * CLAW_MACHINE_SCALE,
-      y: y + 68 * CLAW_MACHINE_SCALE,
-      width: 150 * CLAW_MACHINE_SCALE,
-      height: 120 * CLAW_MACHINE_SCALE,
+      x: x + (takeOneX - CLAW_CHOICE_WIDTH / 2) * CLAW_MACHINE_SCALE,
+      y: y + (CLAW_CHOICE_Y - CLAW_CHOICE_HEIGHT / 2) * CLAW_MACHINE_SCALE,
+      width: CLAW_CHOICE_WIDTH * CLAW_MACHINE_SCALE,
+      height: CLAW_CHOICE_HEIGHT * CLAW_MACHINE_SCALE,
     },
     clawRig,
     cable,
@@ -532,6 +617,7 @@ function createClawMachine(
     leftArm,
     rightArm,
     windowContent,
+    prizeSamples,
     controlGlow,
     homeX,
     chuteX: 0,
@@ -781,6 +867,7 @@ export function openCapsuleMachine(
         }
       )
     : null;
+  let stopClawIdle = clawMachine ? startClawIdle(scene, clawMachine) : null;
 
   // --- The hand-drawn chest -------------------------------------------------
   const chestY = Math.min(
@@ -812,7 +899,7 @@ export function openCapsuleMachine(
   // --- Open buttons + copy --------------------------------------------------
   const actionY = Math.min(
     height - NAV_SAFE - 84,
-    chestY + (useClawMachine ? 315 * CLAW_MACHINE_SCALE : 345)
+    chestY + (useClawMachine ? CLAW_CHOICE_Y * CLAW_MACHINE_SCALE : 345)
   );
   const helper = label(
     scene,
@@ -839,14 +926,19 @@ export function openCapsuleMachine(
   };
 
   const actionGap = 18;
-  const availableActionWidth = width - 160;
   const actionWidth = useClawMachine
-    ? Math.min(320, availableActionWidth)
+    ? CLAW_CHOICE_WIDTH * CLAW_MACHINE_SCALE
     : (width - 178 - actionGap) / 2;
-  const actionHeight = 100;
-  const oneButtonX = useClawMachine ? width / 2 : 80 + actionWidth / 2;
+  const actionHeight = useClawMachine
+    ? CLAW_CHOICE_HEIGHT * CLAW_MACHINE_SCALE
+    : 100;
+  const oneButtonX = useClawMachine
+    ? width / 2 - CLAW_CHOICE_X_OFFSET * CLAW_MACHINE_SCALE
+    : 80 + actionWidth / 2;
   const oneButtonLeft = oneButtonX - actionWidth / 2;
-  const tenButtonX = useClawMachine ? width / 2 : width - 80 - actionWidth / 2;
+  const tenButtonX = useClawMachine
+    ? width / 2 + CLAW_CHOICE_X_OFFSET * CLAW_MACHINE_SCALE
+    : width - 80 - actionWidth / 2;
   const openOneButton =
     clawMachine?.pullControl ??
     createInkOpenButton(
@@ -870,7 +962,7 @@ export function openCapsuleMachine(
     actionWidth,
     actionHeight,
     'secondary',
-    'OPEN 10',
+    'TAKE 10',
     capsuleOpenCost(CAPSULE_MAX_BATCH_SIZE, nextCost),
     () => {
       if (secondaryActionEnabled) void openChests(CAPSULE_MAX_BATCH_SIZE);
@@ -881,10 +973,15 @@ export function openCapsuleMachine(
     .setVisible(!firstChestVisit)
     .setDepth(DEPTH + 2);
   layer.add([openOneButton.container, openTenButton.container]);
+  if (useClawMachine) {
+    layer.bringToTop(prizeGuideButton);
+    layer.bringToTop(inkWallet.container);
+    layer.bringToTop(inkInfoButton);
+  }
 
   const openOneControl = modalActions.add({
     label: useClawMachine
-      ? `${firstChestVisit ? 'Play the First Gear' : 'Play the Mystery Gear'} claw machine for ${nextCost} Ink`
+      ? `Take 1 ${firstChestVisit ? 'First Gear' : 'Mystery Gear'} capsule for ${nextCost} Ink`
       : `Open one Mystery Ink chest for ${nextCost} Ink`,
     rect: clawMachine?.actionRect ?? {
       x: oneButtonLeft,
@@ -1001,7 +1098,7 @@ export function openCapsuleMachine(
     openTenButton.setContent(
       affordance.retrying
         ? `SAVED ${completedBatchPulls.length}/${pendingBatchTarget}`
-        : 'OPEN 10',
+        : 'TAKE 10',
       affordance.retrying
         ? null
         : capsuleOpenCost(CAPSULE_MAX_BATCH_SIZE, nextCost)
@@ -1020,12 +1117,14 @@ export function openCapsuleMachine(
     openOneControl.setAttribute(
       'aria-label',
       useClawMachine
-        ? `${firstChestVisit ? 'Play the First Gear' : 'Play the Mystery Gear'} claw machine for ${affordance.requiredInk ?? nextCost} Ink`
+        ? `Take 1 ${firstChestVisit ? 'First Gear' : 'Mystery Gear'} capsule for ${affordance.requiredInk ?? nextCost} Ink`
         : affordance.primaryAccessibleLabel
     );
     openTenControl.setAttribute(
       'aria-label',
-      affordance.secondaryAccessibleLabel
+      useClawMachine && !affordance.retrying
+        ? `Take 10 Mystery Gear capsules for ${capsuleOpenCost(CAPSULE_MAX_BATCH_SIZE, nextCost)} Ink`
+        : affordance.secondaryAccessibleLabel
     );
     if (!affordance.primaryEnabled && !pulling) {
       setActionMessage(
@@ -1042,9 +1141,9 @@ export function openCapsuleMachine(
     } else if (!pulling) {
       setActionMessage(
         firstChestVisit
-          ? 'FIRST PLAY GUARANTEED GEAR'
+          ? 'TAKE 1 · GUARANTEED GEAR'
           : useClawMachine
-            ? 'DROP CLAW · OR PLAY 10 BELOW'
+            ? 'TAKE 1 OR TAKE 10'
             : '10× MAX · EARN INK BY PLAYING',
         UI.cream
       );
@@ -1101,7 +1200,9 @@ export function openCapsuleMachine(
       ? 'Claw searching. Opening one Mystery Ink chest.'
       : `Opening ${targetCount} Mystery Ink ${targetCount === 1 ? 'chest' : 'chests'}.`;
 
-    const stopClawSearch = clawMachine
+    stopClawIdle?.();
+    stopClawIdle = null;
+    let stopClawSearch = clawMachine
       ? startClawSearch(scene, clawMachine)
       : null;
     if (!clawMachine) {
@@ -1120,7 +1221,10 @@ export function openCapsuleMachine(
       if (destroyed || !scene.sys.isActive()) return;
       if ('error' in result) {
         stopClawSearch?.();
-        if (clawMachine) resetClawMachine(scene, clawMachine);
+        if (clawMachine) {
+          resetClawMachine(scene, clawMachine);
+          stopClawIdle = startClawIdle(scene, clawMachine);
+        }
         pulling = false;
         refreshAffordance();
         setActionMessage(
@@ -1154,6 +1258,9 @@ export function openCapsuleMachine(
         UI.cream
       );
       statusAnnouncement.textContent = `Opened ${completedBatchPulls.length} of ${targetCount}.`;
+      if (clawMachine && completedBatchPulls.length < targetCount) {
+        stopClawSearch = startClawSearch(scene, clawMachine);
+      }
     }
     refreshProgress(true);
     const revealedPulls = [...completedBatchPulls];
@@ -1163,6 +1270,7 @@ export function openCapsuleMachine(
     const revealRarity = highestRarity(revealedPulls);
     if (clawMachine) {
       await celebrateClawMachine(scene, clawMachine, revealRarity);
+      stopClawIdle = startClawIdle(scene, clawMachine);
     } else {
       await openChest(scene, chest, revealRarity);
     }
@@ -1301,6 +1409,8 @@ export function openCapsuleMachine(
   function teardown(): void {
     if (destroyed) return;
     destroyed = true;
+    stopClawIdle?.();
+    stopClawIdle = null;
     dismissPrizeAction = null;
     const detail = featuredGearDetail;
     featuredGearDetail = null;
@@ -1527,11 +1637,78 @@ function resetClawMachine(scene: Scene, machine: ClawMachine): void {
   scene.tweens.killTweensOf(machine.clawHead);
   scene.tweens.killTweensOf(machine.leftArm);
   scene.tweens.killTweensOf(machine.rightArm);
+  scene.tweens.killTweensOf(machine.windowContent);
+  for (const sample of machine.prizeSamples) {
+    scene.tweens.killTweensOf(sample.container);
+    sample.container.setY(sample.restingY).setAngle(sample.restingAngle);
+  }
   machine.clawRig.setX(machine.homeX);
   machine.cable.setScale(1);
-  machine.clawHead.setY(62);
+  machine.clawHead.setPosition(0, 62).setAngle(0).setScale(1);
   machine.leftArm.setAngle(36);
   machine.rightArm.setAngle(-36);
+  machine.windowContent.setPosition(0, 0).setAngle(0).setScale(1);
+}
+
+function startClawIdle(scene: Scene, machine: ClawMachine): () => void {
+  resetClawMachine(scene, machine);
+  if (!allowsAmbientMotion()) return () => undefined;
+
+  scene.tweens.add({
+    targets: machine.clawRig,
+    x: machine.homeX + 20,
+    duration: 1900,
+    yoyo: true,
+    repeat: -1,
+    ease: 'Sine.easeInOut',
+  });
+  scene.tweens.add({
+    targets: machine.clawHead,
+    y: 67,
+    angle: 1.5,
+    duration: 980,
+    yoyo: true,
+    repeat: -1,
+    ease: 'Sine.easeInOut',
+  });
+  scene.tweens.add({
+    targets: machine.cable,
+    scaleY: 1.1,
+    duration: 980,
+    yoyo: true,
+    repeat: -1,
+    ease: 'Sine.easeInOut',
+  });
+  scene.tweens.add({
+    targets: machine.leftArm,
+    angle: 32,
+    duration: 1180,
+    yoyo: true,
+    repeat: -1,
+    ease: 'Sine.easeInOut',
+  });
+  scene.tweens.add({
+    targets: machine.rightArm,
+    angle: -32,
+    duration: 1180,
+    yoyo: true,
+    repeat: -1,
+    ease: 'Sine.easeInOut',
+  });
+  machine.prizeSamples.forEach((sample, index) => {
+    scene.tweens.add({
+      targets: sample.container,
+      y: sample.restingY - 3 - (index % 2),
+      angle: sample.restingAngle + (index % 2 === 0 ? 1.5 : -1.5),
+      duration: 1160 + index * 75,
+      delay: index * 90,
+      yoyo: true,
+      repeat: -1,
+      ease: 'Sine.easeInOut',
+    });
+  });
+
+  return () => resetClawMachine(scene, machine);
 }
 
 function startClawSearch(scene: Scene, machine: ClawMachine): () => void {
@@ -1540,12 +1717,69 @@ function startClawSearch(scene: Scene, machine: ClawMachine): () => void {
   scene.tweens.add({
     targets: machine.clawRig,
     x: 132,
-    duration: 620,
+    duration: 540,
     yoyo: true,
     repeat: -1,
     ease: 'Sine.easeInOut',
   });
-  return () => scene.tweens.killTweensOf(machine.clawRig);
+  scene.tweens.add({
+    targets: machine.clawHead,
+    y: 70,
+    angle: 3,
+    duration: 180,
+    yoyo: true,
+    repeat: -1,
+    ease: 'Sine.easeInOut',
+  });
+  scene.tweens.add({
+    targets: [machine.leftArm, machine.rightArm],
+    scaleY: 1.06,
+    duration: 180,
+    yoyo: true,
+    repeat: -1,
+    ease: 'Sine.easeInOut',
+  });
+  return () => {
+    scene.tweens.killTweensOf(machine.clawRig);
+    scene.tweens.killTweensOf(machine.clawHead);
+    scene.tweens.killTweensOf(machine.leftArm);
+    scene.tweens.killTweensOf(machine.rightArm);
+    machine.clawHead.setY(62).setAngle(0);
+    machine.leftArm.setScale(1);
+    machine.rightArm.setScale(1);
+  };
+}
+
+function burstClawGrabSparks(
+  scene: Scene,
+  machine: ClawMachine,
+  color: number
+): void {
+  if (prefersReducedMotion()) return;
+  const originX = machine.clawRig.x;
+  const originY = -204 + machine.clawHead.y + 24;
+  for (let index = 0; index < 8; index += 1) {
+    const angle = (Math.PI * 2 * index) / 8 - Math.PI / 2;
+    const distance = 42 + (index % 2) * 18;
+    const spark = scene.add
+      .star(originX, originY, 4, 3, 9, color, 1)
+      .setScale(0.45)
+      .setAngle(index * 18);
+    machine.pullControl.container.add(spark);
+    scene.tweens.add({
+      targets: spark,
+      x: originX + Math.cos(angle) * distance,
+      y: originY + Math.sin(angle) * distance,
+      scaleX: 1.1,
+      scaleY: 1.1,
+      angle: spark.angle + 90,
+      alpha: 0,
+      duration: 320,
+      delay: index * 14,
+      ease: 'Cubic.easeOut',
+      onComplete: () => spark.destroy(),
+    });
+  }
 }
 
 function clawTargetX(rewardId: string): number {
@@ -1570,47 +1804,102 @@ async function animateClawCatch(
   await playClawTween(scene, {
     targets: machine.clawRig,
     x: targetX,
-    duration: 300,
-    ease: 'Cubic.easeOut',
+    duration: 340,
+    ease: 'Back.easeOut',
   });
+  await Promise.all([
+    playClawTween(scene, {
+      targets: machine.clawHead,
+      y: 52,
+      scaleX: 1.08,
+      scaleY: 0.92,
+      duration: 120,
+      ease: 'Cubic.easeOut',
+    }),
+    playClawTween(scene, {
+      targets: machine.cable,
+      scaleY: 0.82,
+      duration: 120,
+      ease: 'Cubic.easeOut',
+    }),
+    playClawTween(scene, {
+      targets: machine.leftArm,
+      angle: 55,
+      duration: 120,
+      ease: 'Back.easeOut',
+    }),
+    playClawTween(scene, {
+      targets: machine.rightArm,
+      angle: -55,
+      duration: 120,
+      ease: 'Back.easeOut',
+    }),
+  ]);
+  await Promise.all([
+    playClawTween(scene, {
+      targets: machine.clawHead,
+      scaleX: 1,
+      scaleY: 1,
+      duration: 90,
+      ease: 'Sine.easeOut',
+    }),
+    playClawTween(scene, {
+      targets: machine.windowContent,
+      y: 5,
+      scaleY: 0.97,
+      duration: 90,
+      yoyo: true,
+      ease: 'Sine.easeOut',
+    }),
+  ]);
   await Promise.all([
     playClawTween(scene, {
       targets: machine.cable,
       scaleY: 4.35,
-      duration: 430,
-      ease: 'Sine.easeInOut',
+      duration: 330,
+      ease: 'Cubic.easeIn',
     }),
     playClawTween(scene, {
       targets: machine.clawHead,
       y: 229,
-      duration: 430,
-      ease: 'Sine.easeInOut',
+      duration: 330,
+      ease: 'Cubic.easeIn',
     }),
     playClawTween(scene, {
       targets: machine.leftArm,
-      angle: 48,
-      duration: 210,
+      angle: 58,
+      duration: 180,
       ease: 'Sine.easeOut',
     }),
     playClawTween(scene, {
       targets: machine.rightArm,
-      angle: -48,
-      duration: 210,
+      angle: -58,
+      duration: 180,
       ease: 'Sine.easeOut',
     }),
   ]);
   playSfx('reward.reveal');
+  burstClawGrabSparks(scene, machine, RARITY_STYLE[pull.rarity].color);
+  scene.tweens.add({
+    targets: machine.windowContent,
+    y: 7,
+    scaleX: 1.02,
+    scaleY: 0.96,
+    duration: 85,
+    yoyo: true,
+    ease: 'Sine.easeOut',
+  });
   await Promise.all([
     playClawTween(scene, {
       targets: machine.leftArm,
       angle: 13,
-      duration: 170,
+      duration: 150,
       ease: 'Back.easeOut',
     }),
     playClawTween(scene, {
       targets: machine.rightArm,
       angle: -13,
-      duration: 170,
+      duration: 150,
       ease: 'Back.easeOut',
     }),
   ]);
@@ -1645,29 +1934,46 @@ async function animateClawCatch(
     scaleX: 0.78,
     scaleY: 0.78,
     alpha: 1,
-    duration: 170,
+    duration: 190,
     ease: 'Back.easeOut',
+  });
+  scene.tweens.add({
+    targets: caughtReward,
+    angle: 9,
+    duration: 180,
+    yoyo: true,
+    repeat: 1,
+    ease: 'Sine.easeInOut',
   });
   await Promise.all([
     playClawTween(scene, {
       targets: machine.cable,
       scaleY: 1,
-      duration: 390,
-      ease: 'Sine.easeInOut',
+      duration: 340,
+      ease: 'Back.easeOut',
     }),
     playClawTween(scene, {
       targets: machine.clawHead,
       y: 62,
-      duration: 390,
+      duration: 340,
+      ease: 'Back.easeOut',
+    }),
+  ]);
+  await Promise.all([
+    playClawTween(scene, {
+      targets: machine.clawRig,
+      x: machine.chuteX,
+      duration: 380,
+      ease: 'Cubic.easeInOut',
+    }),
+    playClawTween(scene, {
+      targets: machine.clawHead,
+      angle: -7,
+      duration: 190,
+      yoyo: true,
       ease: 'Sine.easeInOut',
     }),
   ]);
-  await playClawTween(scene, {
-    targets: machine.clawRig,
-    x: machine.chuteX,
-    duration: 360,
-    ease: 'Cubic.easeInOut',
-  });
   await Promise.all([
     playClawTween(scene, {
       targets: machine.leftArm,
@@ -1686,9 +1992,10 @@ async function animateClawCatch(
       y: 205,
       scaleX: 0.48,
       scaleY: 0.48,
+      angle: 125,
       alpha: 0,
-      duration: 300,
-      ease: 'Cubic.easeIn',
+      duration: 340,
+      ease: 'Back.easeIn',
     }),
   ]);
   caughtReward.destroy();
@@ -1707,10 +2014,29 @@ function celebrateClawMachine(
     .setStrokeStyle(8, RARITY_STYLE[rarity].color, 0.72);
   container.addAt(flash, 0);
   if (prefersReducedMotion()) {
-    flash.setAlpha(0.52);
+    flash.destroy();
     return Promise.resolve();
   }
   flash.setScale(0.72).setAlpha(0);
+  burstClawGrabSparks(scene, machine, RARITY_STYLE[rarity].color);
+  scene.tweens.add({
+    targets: machine.actionButton,
+    scaleX: 1.16,
+    scaleY: 1.12,
+    angle: 3,
+    duration: 120,
+    yoyo: true,
+    repeat: 1,
+    ease: 'Back.easeOut',
+  });
+  scene.tweens.add({
+    targets: container,
+    scaleX: CLAW_MACHINE_SCALE * 1.012,
+    scaleY: CLAW_MACHINE_SCALE * 0.988,
+    duration: 110,
+    yoyo: true,
+    ease: 'Sine.easeOut',
+  });
   return new Promise((resolve) => {
     scene.tweens.add({
       targets: flash,

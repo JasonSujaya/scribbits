@@ -40,14 +40,18 @@ in [`docs/ranking-seasons.md`](docs/ranking-seasons.md).
 ## How to play
 
 1. **Draw:** one Scribbit per UTC day. A validated, versioned calendar supplies
-   122 shared community themes covering 366 Arena days, with one theme staying
-   consistent for each three-day block. New seasons append without moving
-   published days, while Practice keeps its separate Combat Role prompts. The Draw screen gives the hero
-   canvas most of the page, keeps all eight base colors visible, and puts brush,
-   eraser, undo, optional stickers, and unlocked premium pens in one compact tool
-   row. One visible `NEXT` action stays disabled until the shared analyzer says
-   the drawing is ready; optional paints, brushes, stickers, Clear, and Redo sit
-   behind one Tools icon, with a persistent badge when a special supply is
+   120 shared community themes covering 360 Arena days, dealt as five-theme
+   pools that span at least four subject categories and contain at most two
+   animals. The catalog has 36 animals, 13 characters/fantasy subjects, 24
+   places/nature subjects, 7 vehicles, 11 foods, and 29 objects. Each assignment
+   stays consistent for its three-day block. New seasons append without moving
+   published days, while Practice keeps its separate Combat Role prompts. The
+   Draw screen gives the hero canvas most of the page, keeps all eight base
+   colors visible, and puts brush, eraser, undo, optional stickers, and unlocked
+   premium pens in one compact tool row. One visible `NEXT` action stays disabled
+   until the shared analyzer says the drawing is ready; optional paints, brushes,
+   stickers, Clear, and Redo sit behind one Tools icon, with a persistent badge
+   when a special supply is
    active. Only then does a focused preview ask for its name and
    confirmation. Exact shape rules stay out of a visible four-stat dashboard. The four analyzed traits still
    normalize to the same 100-point budget, and dominant color still chooses the
@@ -359,15 +363,13 @@ boundary during browser iteration—it is not the production game server.
 - `src/shared/combat`: deterministic fixed-tick combat domain, balance tuning,
   transcript contract, and regression tests.
 - `src/shared/progression.ts`: dependency-leaf level thresholds, level lookup,
-  and Ink Mod acquisition limits shared by client, server, and combat.
+  and bounded level damage policy shared by client, server, and combat.
 - `src/shared/arena.ts`: shared API and stored-state shapes plus the single
   full-record Scribbit deep-copy policy used by storage, combat, Rumble,
   founders, and the localhost mock.
-- `src/shared/combat/upgrades.ts`: the versioned Ink Mod catalog, deterministic
-  acquisition, and strict stored-state parsing. Only absent pre-feature data is
-  migrated; malformed present arrays fail closed. Every authored mod crosses the
-  fixed-tick engine's integer resolution, and Scribbit details reuse the exact
-  catalog description instead of showing an unexplained upgrade name.
+- `src/shared/combat/upgrades.ts`: compatibility parsing for versioned Ink Mod
+  records already stored on Scribbits and archived reports. Current combat
+  progression is owned by levels, Power-Ups, and equipped Gear.
 - `src/shared/combat/selection.ts`: the single dominant-stat, Combat Role, and
   legacy signature selector shared by server simulation, birth, Inkbody, and founder art.
 - `src/shared/combat/roles.ts`: canonical role names, drawing cues, ranges,
@@ -614,6 +616,9 @@ pnpm verify
 
 `pnpm verify` runs type-check, lint, all discoverable Node suites, the legacy
 deterministic harness, and the production build.
+
+`pnpm run release:check` additionally runs the non-mutating competitive balance
+gate and verifies the active Devvit login before any upload or publish command.
 
 Use `pnpm run test:suites` for the focused discoverable suites only, or
 `pnpm run test:sim` for the legacy harness only. `pnpm test` runs both and is

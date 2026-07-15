@@ -19,50 +19,101 @@ const themes = require(
   join(compiledSharedRoot, 'content', 'communitydrawthemes.js')
 );
 const scribbits = require(join(compiledServerRoot, 'core', 'scribbit.js'));
+const communityThemeProgress = require(
+  join(compiledServerRoot, 'core', 'communityDrawTheme.js')
+);
 
-test('360 days of simple community themes rotate in three-day blocks', () => {
-  const firstTheme = themes.selectCommunityDoodleDare(1);
-  const blockStartIds = [];
+test('five-theme pools rotate every three days with stable player assignments', () => {
+  const firstPool = themes.selectCommunityDoodleDarePool(1);
+  const themeAppearances = new Map();
+  const allThemes = themes.COMMUNITY_DRAW_THEME_SEASONS.flatMap(
+    (season) => season.themes
+  );
 
   assert.equal(themes.COMMUNITY_DRAW_THEME_DAYS, 3);
+  assert.equal(themes.COMMUNITY_DRAW_THEME_POOL_SIZE, 5);
   assert.equal(themes.COMMUNITY_DRAW_THEME_COUNT, 120);
   assert.equal(themes.COMMUNITY_DRAW_THEME_COVERAGE_DAYS, 360);
-  assert.equal(themes.selectCommunityDoodleDare(2).id, firstTheme.id);
-  assert.equal(themes.selectCommunityDoodleDare(3).id, firstTheme.id);
-  assert.notEqual(themes.selectCommunityDoodleDare(4).id, firstTheme.id);
-  assert.equal(
-    themes.selectCommunityDoodleDare(4).id,
-    themes.selectCommunityDoodleDare(6).id
+  assert.deepEqual(themes.COMMUNITY_DRAW_THEME_CATEGORY_COUNTS, {
+    animal: 36,
+    character: 13,
+    'place-nature': 24,
+    vehicle: 7,
+    food: 11,
+    object: 29,
+  });
+  assert.equal(firstPool.length, 5);
+  assert.equal(new Set(firstPool.map((theme) => theme.id)).size, 5);
+  assert.ok(Object.isFrozen(firstPool));
+  assert.deepEqual(themes.selectCommunityDoodleDarePool(2), firstPool);
+  assert.deepEqual(themes.selectCommunityDoodleDarePool(3), firstPool);
+  assert.notDeepEqual(themes.selectCommunityDoodleDarePool(4), firstPool);
+  assert.deepEqual(
+    themes.selectCommunityDoodleDarePool(4),
+    themes.selectCommunityDoodleDarePool(6)
   );
-  assert.notEqual(themes.selectCommunityDoodleDare(96).id, firstTheme.id);
-  assert.notEqual(themes.selectCommunityDoodleDare(97).id, firstTheme.id);
+
+  const playerTheme = themes.selectCommunityDoodleDare(1, 'player-42');
   assert.equal(
-    themes.selectCommunityDoodleDare(355).id,
-    themes.selectCommunityDoodleDare(357).id
+    themes.selectCommunityDoodleDare(2, 'PLAYER-42').id,
+    playerTheme.id
   );
   assert.equal(
-    themes.selectCommunityDoodleDare(358).id,
-    themes.selectCommunityDoodleDare(360).id
+    themes.selectCommunityDoodleDare(3, ' player-42 ').id,
+    playerTheme.id
   );
-  assert.notEqual(
-    themes.selectCommunityDoodleDare(357).id,
-    themes.selectCommunityDoodleDare(358).id
+  assert.ok(firstPool.some((theme) => theme.id === playerTheme.id));
+  const playerThemeOrder = Array.from({ length: 5 }, (_, completedDrawCount) =>
+    themes.selectCommunityDoodleDare(1, 'player-42', completedDrawCount)
+  );
+  assert.equal(new Set(playerThemeOrder.map((theme) => theme.id)).size, 5);
+  assert.notEqual(playerThemeOrder[0].id, playerThemeOrder[1].id);
+  assert.equal(
+    themes.selectCommunityDoodleDare(2, 'player-42', 1).id,
+    playerThemeOrder[1].id
+  );
+  assert.equal(
+    themes.selectCommunityDoodleDare(1, 'player-42', 5).id,
+    playerThemeOrder[0].id
+  );
+  assert.equal(
+    new Set(
+      Array.from(
+        { length: 100 },
+        (_, index) => themes.selectCommunityDoodleDare(1, `player-${index}`).id
+      )
+    ).size,
+    5
   );
 
   for (let blockStart = 1; blockStart <= 358; blockStart += 3) {
-    const themeId = themes.selectCommunityDoodleDare(blockStart).id;
-    blockStartIds.push(themeId);
+    const pool = themes.selectCommunityDoodleDarePool(blockStart);
+    assert.equal(pool.length, 5);
+    assert.equal(new Set(pool.map((theme) => theme.id)).size, 5);
+    assert.ok(
+      new Set(pool.map((theme) => theme.category)).size >= 4,
+      `Arena day ${blockStart} should span at least four subject categories`
+    );
+    assert.ok(
+      pool.filter((theme) => theme.category === 'animal').length <= 2,
+      `Arena day ${blockStart} should contain at most two animals`
+    );
     for (let day = blockStart; day <= blockStart + 2; day += 1) {
-      assert.equal(themes.selectCommunityDoodleDare(day).id, themeId);
+      assert.deepEqual(themes.selectCommunityDoodleDarePool(day), pool);
+      assert.equal(
+        themes.selectCommunityDoodleDare(day, 'stable-player').id,
+        themes.selectCommunityDoodleDare(blockStart, 'stable-player').id
+      );
+    }
+    for (const theme of pool) {
+      themeAppearances.set(theme.id, (themeAppearances.get(theme.id) ?? 0) + 1);
     }
   }
-  assert.equal(new Set(blockStartIds).size, 120);
+  assert.equal(themeAppearances.size, 120);
+  assert.ok([...themeAppearances.values()].every((count) => count === 5));
   assert.throws(
-    () => themes.selectCommunityDoodleDare(361),
+    () => themes.selectCommunityDoodleDarePool(361),
     /append the next season/
-  );
-  const allThemes = themes.COMMUNITY_DRAW_THEME_SEASONS.flatMap(
-    (season) => season.themes
   );
   assert.equal(
     allThemes.find((theme) => theme.id === 'bear').prompt,
@@ -73,6 +124,84 @@ test('360 days of simple community themes rotate in three-day blocks', () => {
     'a cat in boots'
   );
   assert.ok(allThemes.every((theme) => theme.prompt.split(/\s+/).length <= 4));
+});
+
+test('completed community drawings persist after removal and backfill older records', async () => {
+  const playerId = 'player-42';
+  const theme = themes.selectCommunityDoodleDare(4, playerId);
+  const completedScribbits = [4, 5].map((bornDay) =>
+    scribbits.createScribbit({
+      id: `theme-draw-${bornDay}`,
+      draft: {
+        name: `Theme Draw ${bornDay}`,
+        stats: { chonk: 25, spike: 25, zip: 25, charm: 25 },
+        element: 'ember',
+        accessories: [],
+      },
+      artist: 'artist',
+      imageUrl: '/drawing.png',
+      day: bornDay,
+      drawingThemeId: theme.id,
+    })
+  );
+  let indexedEntries = completedScribbits.map((scribbit) => ({
+    member: scribbit.id,
+    score: scribbit.bornDay,
+  }));
+  const completionEntries = [indexedEntries[0]];
+  const storedValues = new Map(
+    completedScribbits.flatMap((scribbit) => [
+      [`scribbit:${scribbit.id}`, scribbits.serializeScribbit(scribbit)],
+      [`scribbit:${scribbit.id}:owner`, playerId],
+    ])
+  );
+  const storage = {
+    get: async (key) => storedValues.get(key),
+    hGet: async () => undefined,
+    zRange: async (key, start, stop) => {
+      const source = key.endsWith(':community-theme-completions')
+        ? completionEntries
+        : indexedEntries;
+      return source.filter(
+        (entry) => entry.score >= Number(start) && entry.score <= Number(stop)
+      );
+    },
+    zAdd: async (_key, ...entries) => {
+      for (const entry of entries) {
+        if (
+          !completionEntries.some((stored) => stored.member === entry.member)
+        ) {
+          completionEntries.push(entry);
+        }
+      }
+    },
+  };
+
+  assert.equal(
+    await communityThemeProgress.loadCompletedCommunityThemeDrawCount(
+      storage,
+      playerId,
+      4
+    ),
+    1
+  );
+  assert.equal(
+    await communityThemeProgress.loadCompletedCommunityThemeDrawCount(
+      storage,
+      playerId,
+      6
+    ),
+    2
+  );
+  indexedEntries = [];
+  assert.equal(
+    await communityThemeProgress.loadCompletedCommunityThemeDrawCount(
+      storage,
+      playerId,
+      6
+    ),
+    2
+  );
 });
 
 test('community theme seasons validate coverage and append-only boundaries', () => {
@@ -101,12 +230,11 @@ test('community theme seasons validate coverage and append-only boundaries', () 
   const futureSeason = {
     version: 2,
     startsOnArenaDay: 361,
-    themes: [
-      {
-        id: 'future-theme',
-        prompt: 'a future creature',
-      },
-    ],
+    themes: Array.from({ length: 5 }, (_, index) => ({
+      id: `future-theme-${index + 1}`,
+      prompt: `future creature ${index + 1}`,
+      category: themes.COMMUNITY_DRAW_THEME_CATEGORIES[index],
+    })),
   };
   const appendedValidation = themes.validateCommunityDrawThemeSeasons([
     firstSeason,
@@ -141,6 +269,17 @@ test('community theme seasons validate coverage and append-only boundaries', () 
   ]);
   assert.equal(complicatedPromptValidation.valid, false);
   assert.match(complicatedPromptValidation.errors.join('\n'), /maximum is 4/);
+
+  const invalidCategoryValidation = themes.validateCommunityDrawThemeSeasons([
+    {
+      ...firstSeason,
+      themes: firstSeason.themes.map((theme, index) =>
+        index === 0 ? { ...theme, category: 'unknown' } : theme
+      ),
+    },
+  ]);
+  assert.equal(invalidCategoryValidation.valid, false);
+  assert.match(invalidCategoryValidation.errors.join('\n'), /invalid category/);
 });
 
 test('new Scribbits keep an immutable theme category and old records migrate', () => {
@@ -172,7 +311,7 @@ test('new Scribbits keep an immutable theme category and old records migrate', (
   );
 });
 
-test('Draw and the contender picker explain the shared category in game', () => {
+test('Draw and the contender picker use the server-assigned theme category', () => {
   const drawSource = readFileSync(
     join(appRoot, 'src', 'client', 'scenes', 'Draw.ts'),
     'utf8'
@@ -185,15 +324,37 @@ test('Draw and the contender picker explain the shared category in game', () => 
     join(appRoot, 'src', 'server', 'routes', 'api.ts'),
     'utf8'
   );
+  const submissionSource = readFileSync(
+    join(appRoot, 'src', 'server', 'core', 'submission.ts'),
+    'utf8'
+  );
+  const privacySource = readFileSync(
+    join(appRoot, 'src', 'server', 'core', 'privacy.ts'),
+    'utf8'
+  );
 
   assert.match(drawSource, /-DAY COMMUNITY THEME/);
+  assert.match(drawSource, /arena\.communityDrawTheme/);
   assert.match(drawSource, /Start Theme gives you 60 seconds/);
   assert.match(drawSource, /Free Draw has no timer and is saved separately/);
   assert.match(pickerSource, /COMMUNITY CREATIONS/);
   assert.match(pickerSource, /themePrompt\.toUpperCase\(\)/);
   assert.match(
     routeSource,
-    /drawingThemeId: selectCommunityDoodleDare\(dayNumber\)\.id/
+    /drawingThemeId: selectCommunityDoodleDare\([\s\S]*dayNumber,[\s\S]*player\.userId,[\s\S]*completedCommunityThemeDrawCount[\s\S]*\)\.id/
+  );
+  assert.match(routeSource, /loadCompletedCommunityThemeDrawCount/);
+  assert.match(
+    submissionSource,
+    /transaction\.zAdd\([\s\S]*getUserCommunityThemeCompletionsKey/
+  );
+  assert.match(privacySource, /getUserCommunityThemeCompletionsKey\(userId\)/);
+  assert.match(
+    readFileSync(
+      join(appRoot, 'src', 'client', 'scenes', 'ArenaHome.ts'),
+      'utf8'
+    ),
+    /entrant\.drawingThemeId === assignedTheme\.id/
   );
   assert.match(routeSource, /api\.post\('\/free-drawing'/);
   assert.match(routeSource, /hasFreeDrawingForDay/);

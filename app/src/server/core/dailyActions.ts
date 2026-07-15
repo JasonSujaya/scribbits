@@ -136,7 +136,12 @@ export const commitDailyChampionOutcome = async (
         return { status: 'committed', report: storedReport, recovered: true };
       }
       const scribbit = parseScribbit(storedScribbit);
-      if (!scribbit || scribbit.isFounding || scribbit.status !== 'alive') {
+      if (
+        !scribbit ||
+        scribbit.isFounding ||
+        scribbit.status !== 'alive' ||
+        scribbit.expiresDay > input.day
+      ) {
         await transaction.unwatch();
         return { status: 'target-unavailable' };
       }

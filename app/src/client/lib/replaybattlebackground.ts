@@ -14,6 +14,10 @@ import type {
 } from './battlepresentation';
 import { ELEMENT_STYLES, UI } from './theme';
 import { battleStage } from './visualassets';
+import {
+  battleArenaPaint,
+  type BattleArenaPaint,
+} from './battlearenapresentation';
 
 export type ReplayBattleBackdrop = Readonly<{
   update: (elapsedMilliseconds: number) => void;
@@ -32,93 +36,10 @@ export type ReplayBattleBackgroundInput = Readonly<{
   reduceMotion: boolean;
 }>;
 
-type ArenaPaint = Readonly<{
-  background: number;
-  floor: number;
-  accent: number;
-  detail: number;
-  ink: number;
-}>;
-
-const ARENA_PAINTS: Readonly<Record<BattleArenaId, ArenaPaint>> = Object.freeze(
-  {
-    'v1-sticker-stadium': {
-      background: 0xf29a3d,
-      floor: 0xf6c344,
-      accent: 0xff6f61,
-      detail: 0xfff4d6,
-      ink: 0x5b2b1b,
-    },
-    'v1-ink-playground': {
-      background: 0xff8b75,
-      floor: 0xfff0c9,
-      accent: 0x16a6bf,
-      detail: 0xf5c542,
-      ink: 0x24334a,
-    },
-    'v1-element-clash': {
-      background: 0x2f74d8,
-      floor: 0xffe7b8,
-      accent: 0xef5f5f,
-      detail: 0x53c7d2,
-      ink: 0x1e2941,
-    },
-    'v1-chalkboard-court': {
-      background: 0x087b72,
-      floor: 0x0b8e83,
-      accent: 0xff7967,
-      detail: 0xc3f3d8,
-      ink: 0x173b3b,
-    },
-    'v1-garden-patch': {
-      background: 0xa8df32,
-      floor: 0xcdf052,
-      accent: 0xf0588b,
-      detail: 0x1c9c62,
-      ink: 0x205739,
-    },
-    'v1-neon-arcade': {
-      background: 0x241043,
-      floor: 0x33145a,
-      accent: 0x1dc6e5,
-      detail: 0xff4f8b,
-      ink: 0xf8e7b5,
-    },
-    'v1-candy-gym': {
-      background: 0x77d4d0,
-      floor: 0xfff0d2,
-      accent: 0xff7967,
-      detail: 0xf4bf45,
-      ink: 0x26394a,
-    },
-    'v1-moonlight-puddle': {
-      background: 0x102b59,
-      floor: 0x27b8d0,
-      accent: 0x8369d8,
-      detail: 0xf6ca4a,
-      ink: 0xdcecf4,
-    },
-    'v1-tournament-ring': {
-      background: 0xff6557,
-      floor: 0xfff4db,
-      accent: 0xf4b82f,
-      detail: 0x3677d7,
-      ink: 0x472522,
-    },
-    'v1-scribble-lab': {
-      background: 0x1788e4,
-      floor: 0xa7e8c8,
-      accent: 0xff7868,
-      detail: 0xffd23f,
-      ink: 0x173957,
-    },
-  }
-);
-
 const drawOvalCourt = (
   graphics: Phaser.GameObjects.Graphics,
   layout: ReplayBattleLayout,
-  paint: ArenaPaint,
+  paint: BattleArenaPaint,
   widthScale = 0.88
 ): void => {
   const centerY = (layout.arenaTop + layout.arenaBottom) / 2;
@@ -143,7 +64,7 @@ const drawOvalCourt = (
 const drawCornerGlyphs = (
   graphics: Phaser.GameObjects.Graphics,
   layout: ReplayBattleLayout,
-  paint: ArenaPaint
+  paint: BattleArenaPaint
 ): void => {
   const positions = [
     [68, layout.arenaTop + 48],
@@ -165,7 +86,7 @@ const drawArenaSkin = (
   input: ReplayBattleBackgroundInput
 ): void => {
   const arenaId = input.battleArenaId ?? DEFAULT_BATTLE_ARENA_ID;
-  const paint = ARENA_PAINTS[arenaId];
+  const paint = battleArenaPaint(arenaId);
   const { layout } = input;
   const graphics = scene.add.graphics().setDepth(-20);
   const centerX = layout.viewportWidth / 2;

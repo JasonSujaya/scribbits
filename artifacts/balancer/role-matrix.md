@@ -1,6 +1,6 @@
 # Role Matrix
 
-Generated: 2026-07-15T05:54:35.343Z
+Generated: 2026-07-15T08:58:40.565Z
 
 Runner: `app/tools/balancer/run.mjs`
 
@@ -8,15 +8,15 @@ This report bypasses API/routes/storage and calls the production combat mock bun
 
 | Target | Opponent | Win rate | Avg duration | Power-Up triggers | Target PU | Timeouts | Close | Blowouts | Verdict |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
-| Brawler base | Brawler base | 50.0% | 13.5s | 0.00 | 0.00 | 0.0% | 100.0% | 0.0% | OK |
-| Brawler base | Longshot base | 45.0% | 13.7s | 0.00 | 0.00 | 0.0% | 50.0% | 0.0% | OK |
-| Brawler base | Mage base | 56.9% | 13.4s | 0.00 | 0.00 | 0.0% | 100.0% | 0.0% | OK |
-| Longshot base | Brawler base | 53.8% | 13.7s | 0.00 | 0.00 | 0.0% | 50.0% | 0.0% | OK |
-| Longshot base | Longshot base | 50.0% | 13.0s | 0.00 | 0.00 | 0.0% | 100.0% | 0.0% | OK |
-| Longshot base | Mage base | 38.1% | 13.9s | 0.00 | 0.00 | 0.0% | 85.0% | 0.0% | OK |
-| Mage base | Brawler base | 42.5% | 13.4s | 0.00 | 0.00 | 0.0% | 100.0% | 0.0% | OK |
-| Mage base | Longshot base | 64.4% | 13.9s | 0.00 | 0.00 | 0.0% | 78.1% | 0.0% | OK |
-| Mage base | Mage base | 51.2% | 17.1s | 0.00 | 0.00 | 0.0% | 100.0% | 0.0% | OK |
+| Brawler base | Brawler base | 49.6% | 10.6s | 0.00 | 0.00 | 0.0% | 100.0% | 0.0% | WATCH_DURATION |
+| Brawler base | Longshot base | 38.0% | 17.0s | 0.00 | 0.00 | 0.0% | 74.6% | 0.0% | OK |
+| Brawler base | Mage base | 60.8% | 15.3s | 0.00 | 0.00 | 0.0% | 64.5% | 0.0% | OK |
+| Longshot base | Brawler base | 59.8% | 17.0s | 0.00 | 0.00 | 0.0% | 75.4% | 0.0% | OK |
+| Longshot base | Longshot base | 48.9% | 19.2s | 0.00 | 0.00 | 0.0% | 100.0% | 0.0% | OK |
+| Longshot base | Mage base | 39.6% | 19.8s | 0.00 | 0.00 | 0.0% | 91.6% | 0.0% | OK |
+| Mage base | Brawler base | 41.6% | 15.3s | 0.00 | 0.00 | 0.0% | 64.8% | 0.0% | OK |
+| Mage base | Longshot base | 61.7% | 19.8s | 0.00 | 0.00 | 0.0% | 91.3% | 0.0% | OK |
+| Mage base | Mage base | 50.8% | 19.2s | 0.00 | 0.00 | 0.0% | 97.8% | 0.0% | OK |
 
 ## Hard flags
 
@@ -24,4 +24,4 @@ No balance flags from current thresholds.
 
 ## Watches
 
-No watch-only rows from current thresholds.
+- Brawler base vs Brawler base: WATCH_DURATION (49.6%, 10.6s avg)

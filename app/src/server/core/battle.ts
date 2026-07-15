@@ -81,13 +81,9 @@ const createCombatSeed = (
   seed: number,
   forecast: Forecast,
   kind: BattleKind,
-  battleArenaId: BattleArenaId,
-  gearFingerprint: string
+  battleArenaId: BattleArenaId
 ): string => {
-  const gearIdentity = gearFingerprint
-    ? `:gear-v1:${hashTextToSeed(`combat-gear-v1:${gearFingerprint}`).toString(36)}`
-    : '';
-  return `power-ups-v1:${kind}:${forecast.day}:${battleArenaId}:${seed}:${fighterA.id}:${fighterB.id}${gearIdentity}`;
+  return `power-ups-v1:${kind}:${forecast.day}:${battleArenaId}:${seed}:${fighterA.id}:${fighterB.id}`;
 };
 
 const getCombatDamageModifierPermille = (fighter: Scribbit): number =>
@@ -117,8 +113,7 @@ export const simulate = (
       seed,
       forecast,
       kind,
-      battleArena.id,
-      gearFingerprint
+      battleArena.id
     ),
     battleArenaId: battleArena.id,
     fighters: [

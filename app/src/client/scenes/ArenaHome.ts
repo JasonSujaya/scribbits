@@ -47,23 +47,28 @@ import {
 import type { DetailModalActions } from '../lib/detailmodal';
 import { formatCountdown } from '../lib/cloutboard';
 import { openSeasonBoard, type SeasonBoardModal } from '../lib/seasonboard';
-import type {
-  ArenaState,
-  FounderChronicleBeat,
-  Scribbit,
+import {
+  formatVenueClearTime,
+  openVenueBoard,
+  type VenueBoardModal,
+} from '../lib/venueboard';
+import {
+  getScribbitLifecycleStage,
+  type ArenaState,
+  type FounderChronicleBeat,
+  type Scribbit,
 } from '../../shared/arena';
-import { showVsCeremony } from '../lib/battleceremony';
 import { openLegacyReturnCeremony } from '../lib/legacycards';
+import { showVsCeremony } from '../lib/battleceremony';
 import {
   planArenaBackAction,
   selectVisibleArenaEntrants,
 } from '../lib/arenabracket';
-import { planChampionChallenge } from '../lib/championchallenge';
 import { planFounderChronicle } from '../lib/founderchronicle';
 import { openFounderChronicleMargin } from '../lib/founderchroniclemargin';
 import type { FounderChronicleMargin } from '../lib/founderchroniclemargin';
-import { paperIcon, type PaperIconKey } from '../lib/papericons';
-import { arenaStage, UI_BUTTON_TEXTURES } from '../lib/visualassets';
+import { paperIcon } from '../lib/papericons';
+import { arenaStage } from '../lib/visualassets';
 import { appDock } from '../lib/appdock';
 import { appMenu, type AppMenu } from '../lib/appmenu';
 import {
@@ -80,18 +85,21 @@ import {
   openArenaContenderPicker,
   type ArenaContenderPicker,
 } from '../lib/arenacontenderpicker';
-import { getBattleArenaForDay } from '../../shared/battlearena';
+import {
+  BATTLE_ARENA_IDS,
+  getBattleArenaForDay,
+} from '../../shared/battlearena';
+import { battleArenaPreview } from '../lib/battlearenapresentation';
 import { selectCommunityDoodleDare } from '../../shared/content/communitydrawthemes';
-import { navigateToDailyDraw } from '../lib/draweligibility';
 import { openRivalRun, type RivalRunFlow } from '../lib/rivalrunflow';
 import { fitText } from '../lib/fittext';
 import { screenTitle } from '../lib/screentitle';
 import { translate } from '../lib/localization';
 
-// The competitive home for each season: standings first, then today's venue
-// challenge and the two daily competition actions.
+// The competitive home for each season: standings first, then today's venue.
 export class ArenaHome extends Scene {
-  private static readonly COMPETITION_HUB_HEIGHT = 800;
+  private static readonly COMPETITION_HUB_HEIGHT = 740;
+  private static readonly FIELD_CHALLENGE_TOP_OFFSET = -30;
   private static readonly PINNED_HEADER_HEIGHT = 128;
   private state!: ArenaState;
   private errorPanelRef: ErrorPanel | null = null;
@@ -105,16 +113,8 @@ export class ArenaHome extends Scene {
   private menu: AppMenu | null = null;
   private rosterActionOverlay: CanvasActionOverlay | null = null;
   private seasonBoardModal: SeasonBoardModal | null = null;
+  private venueBoardModal: VenueBoardModal | null = null;
   private homeInteractionSuspended = false;
-  private selectedArenaFighterId: string | null = null;
-  private fighterCarouselSlot: Phaser.GameObjects.Container | null = null;
-  private fighterCarouselCurrentView: Phaser.GameObjects.Container | null =
-    null;
-  private fighterCarouselViews = new Map<
-    string,
-    Phaser.GameObjects.Container
-  >();
-  private fighterCarouselRenderGeneration = 0;
 
   // Drag-scroll bookkeeping. Scrolling uses velocity + inertia so a flick keeps
   // gliding and a wheel/keyboard nudge eases in, instead of snapping stiffly.
@@ -165,12 +165,8 @@ export class ArenaHome extends Scene {
     this.rivalRunFlow = null;
     this.rosterActionOverlay = null;
     this.seasonBoardModal = null;
+    this.venueBoardModal = null;
     this.homeInteractionSuspended = false;
-    this.selectedArenaFighterId = null;
-    this.fighterCarouselSlot = null;
-    this.fighterCarouselCurrentView = null;
-    this.fighterCarouselViews.clear();
-    this.fighterCarouselRenderGeneration = 0;
   }
 
   create(): void {
@@ -207,6 +203,8 @@ export class ArenaHome extends Scene {
     this.rosterActionOverlay = null;
     this.seasonBoardModal?.destroy();
     this.seasonBoardModal = null;
+    this.venueBoardModal?.destroy();
+    this.venueBoardModal = null;
   }
 
   // --- Layout: a vertical stack measured top-down so nothing overlaps and the
@@ -224,12 +222,11 @@ export class ArenaHome extends Scene {
     this.rivalRunFlow = null;
     this.seasonBoardModal?.destroy();
     this.seasonBoardModal = null;
+    this.venueBoardModal?.destroy();
+    this.venueBoardModal = null;
     this.rosterActionOverlay?.destroy();
     this.rosterActionOverlay = new CanvasActionOverlay(this);
     this.children.removeAll(true);
-    this.fighterCarouselSlot = null;
-    this.fighterCarouselCurrentView = null;
-    this.fighterCarouselViews.clear();
     releaseRenderedDrawingTextures(this);
     this.countdownTimer?.remove();
     this.countdownLabel = null;
@@ -240,7 +237,7 @@ export class ArenaHome extends Scene {
     let cursor = 48;
     cursor = this.drawTopBar(cursor);
     const competitionHubTop = Math.max(
-      cursor + 18,
+      cursor + ArenaHome.FIELD_CHALLENGE_TOP_OFFSET,
       (height - NAV_SAFE - ArenaHome.COMPETITION_HUB_HEIGHT) / 2
     );
     cursor = this.buildCompetitionHub(width / 2, competitionHubTop);
@@ -411,28 +408,50 @@ export class ArenaHome extends Scene {
     const { width } = this.scale;
     const header = this.add.container(0, 0).setScrollFactor(0).setDepth(2100);
     const headerFace = this.add
-      .rectangle(0, 0, width, ArenaHome.PINNED_HEADER_HEIGHT, 0x93643d, 1)
+      .rectangle(0, 0, width, ArenaHome.PINNED_HEADER_HEIGHT, UI.paper, 1)
       .setOrigin(0);
-    const lowerShadow = this.add
-      .rectangle(
-        0,
-        ArenaHome.PINNED_HEADER_HEIGHT - 7,
-        width,
-        7,
-        0x4f321f,
-        0.24
-      )
-      .setOrigin(0);
+    const paperGrain = this.add.graphics();
+    paperGrain.lineStyle(2, 0xc79a62, 0.18);
+    paperGrain.lineBetween(42, 33, 113, 31);
+    paperGrain.lineBetween(width - 144, 91, width - 68, 93);
+    paperGrain.lineBetween(88, 104, 154, 102);
+
+    const lowerEdge = this.add.graphics();
+    const edgeY = ArenaHome.PINNED_HEADER_HEIGHT - 6;
+    lowerEdge.fillStyle(0x4f321f, 0.16);
+    lowerEdge.fillPoints(
+      [
+        new Phaser.Math.Vector2(0, edgeY + 2),
+        new Phaser.Math.Vector2(width * 0.2, edgeY),
+        new Phaser.Math.Vector2(width * 0.42, edgeY + 3),
+        new Phaser.Math.Vector2(width * 0.65, edgeY + 1),
+        new Phaser.Math.Vector2(width * 0.84, edgeY + 4),
+        new Phaser.Math.Vector2(width, edgeY + 1),
+        new Phaser.Math.Vector2(width, ArenaHome.PINNED_HEADER_HEIGHT),
+        new Phaser.Math.Vector2(0, ArenaHome.PINNED_HEADER_HEIGHT),
+      ],
+      true
+    );
+    lowerEdge.lineStyle(3, UI.inkHex, 0.24);
+    lowerEdge.beginPath();
+    lowerEdge.moveTo(0, edgeY + 1);
+    lowerEdge.lineTo(width * 0.2, edgeY);
+    lowerEdge.lineTo(width * 0.42, edgeY + 3);
+    lowerEdge.lineTo(width * 0.65, edgeY + 1);
+    lowerEdge.lineTo(width * 0.84, edgeY + 4);
+    lowerEdge.lineTo(width, edgeY + 1);
+    lowerEdge.strokePath();
     const title = screenTitle(this, width / 2, 8, translate('screen.arena'), {
       maxWidth: 390,
       maxHeight: 96,
     });
-    header.add([headerFace, lowerShadow, title]);
+    header.add([headerFace, paperGrain, lowerEdge, title]);
   }
 
   // --- Top bar + live countdown ---------------------------------------------
   private drawTopBar(y: number): number {
     const { width } = this.scale;
+    const seasonControlsShiftY = 36;
     const season =
       this.state.season.current ??
       this.state.season.next ??
@@ -585,7 +604,8 @@ export class ArenaHome extends Scene {
         daysCaption,
         trophy,
       ]);
-      const standingsY = cardY + cardHeight / 2 + 50;
+      const standingsY =
+        cardY + cardHeight / 2 + 50 + seasonControlsShiftY;
       iconButton(
         this,
         width / 2,
@@ -615,7 +635,7 @@ export class ArenaHome extends Scene {
         onActivate: () => this.openSeasonRanking(),
       });
     }
-    const statusY = season ? y + 442 : y + 120;
+    const statusY = season ? y + 442 + seasonControlsShiftY : y + 120;
     this.countdownLabel = label(
       this,
       width / 2 + 20,
@@ -679,6 +699,19 @@ export class ArenaHome extends Scene {
     });
   }
 
+  private openVenueRanking(): void {
+    if (this.venueBoardModal || this.busy) return;
+    this.homeInteractionSuspended = true;
+    this.rosterActionOverlay?.setVisible(false);
+    this.venueBoardModal = openVenueBoard(this, {
+      onClose: () => {
+        this.venueBoardModal = null;
+        this.homeInteractionSuspended = false;
+        this.rosterActionOverlay?.setVisible(true);
+      },
+    });
+  }
+
   private countdownText(): string {
     return `NEXT ${this.rumbleCountdownText()}`;
   }
@@ -694,435 +727,336 @@ export class ArenaHome extends Scene {
     const centerY = y + height / 2;
     const competitionHub = this.add.container(x, centerY);
     const battleArena = getBattleArenaForDay(this.state.dayNumber);
-    const fighters = this.state.myScribbits;
     const cardWidth = Math.min(this.scale.width - 92, 548);
-    const cardLeft = x - cardWidth / 2;
+    const matureScribbit = this.state.myScribbits.find(
+      (scribbit) =>
+        getScribbitLifecycleStage(scribbit, this.state.dayNumber) === 'mature'
+    );
+    const hasMatureScribbit = matureScribbit !== undefined;
+    const matureRequirementLabel = matureScribbit
+      ? 'MATURE SCRIBBIT REQUIRED • READY'
+      : 'MATURE SCRIBBIT REQUIRED • NOT READY';
+    const canEnterField = Boolean(
+      matureScribbit &&
+        this.state.champion &&
+        !this.state.bossChallengedToday
+    );
+    const fieldActionLabel = this.state.bossChallengedToday
+      ? "TODAY'S ATTEMPT COMPLETE"
+      : !matureScribbit
+        ? 'MATURE SCRIBBIT NEEDED'
+        : !this.state.champion
+          ? 'FIELD CLOSED TODAY'
+          : `ENTER WITH ${matureScribbit.name.toUpperCase()}`;
 
-    competitionHub.add(label(this, 0, -388, "TODAY'S ARENA", 27, UI.ink, true));
+    competitionHub.add(
+      label(this, 0, -298, "TODAY'S FIELD CHALLENGE", 30, UI.ink, true)
+    );
 
-    const venueCard = this.add.container(0, -292);
+    const venueCard = this.add.container(0, -4);
+    const venueStamp = this.state.venueStamp;
+    const venueCopyLeft = -cardWidth / 2 + 30;
+    const venueCopyWidth = cardWidth - 60;
+    const tileWidth = (cardWidth - 72) / 3;
+    const tileCenters = [-cardWidth / 3, 0, cardWidth / 3] as const;
+    const bestLabel =
+      venueStamp.cleared && venueStamp.bestClearMilliseconds !== null
+        ? formatVenueClearTime(venueStamp.bestClearMilliseconds)
+        : `${venueStamp.progress}/${venueStamp.target}`;
+    const rankLabel = venueStamp.dailyRank ? `#${venueStamp.dailyRank}` : '—';
+    const nextUnlockLabel = venueStamp.nextUnlock
+      ? `${venueStamp.nextUnlock.daysAway}D`
+      : `${BATTLE_ARENA_IDS.length}`;
+    const stampLabel = venueStamp.cleared
+      ? 'CLEARED'
+      : venueStamp.progress > 0
+        ? `${venueStamp.progress}/${venueStamp.target}`
+        : 'NOT PLAYED';
+    const tileFaces = tileCenters.map((tileX) =>
+      this.add
+        .rectangle(tileX, 176, tileWidth, 92, UI.creamHex, 0.82)
+        .setStrokeStyle(2, UI.inkHex, 0.2)
+    );
     venueCard.add([
-      paperCard(this, 0, 0, cardWidth, 158),
-      paperIcon(this, 'target', -cardWidth / 2 + 46, -28, {
-        size: 42,
-        fill: UI.gold,
+      paperCard(this, 0, 50, cardWidth, 600),
+      battleArenaPreview(
+        this,
+        battleArena.id,
+        0,
+        -72,
+        cardWidth - 48,
+        188
+      ),
+      this.add
+        .rectangle(
+          0,
+          -136,
+          364,
+          38,
+          hasMatureScribbit ? UI.gold : UI.tapeAlt,
+          0.94
+        )
+        .setStrokeStyle(2, UI.inkHex, 0.72),
+      paperIcon(this, 'lock', -166, -136, {
+        size: 22,
+        fill: hasMatureScribbit ? UI.gold : UI.tapeAlt,
       }),
       label(
         this,
-        -cardWidth / 2 + 86,
-        -43,
+        10,
+        -136,
+        matureRequirementLabel,
+        15,
+        UI.ink,
+        true
+      ),
+      label(
+        this,
+        0,
+        -214,
         battleArena.name.toUpperCase(),
-        24,
+        30,
         UI.ink,
         true
       )
-        .setOrigin(0, 0.5)
-        .setWordWrapWidth(cardWidth - 190),
+        .setOrigin(0.5, 0.5)
+        .setWordWrapWidth(venueCopyWidth),
       label(
         this,
-        -cardWidth / 2 + 86,
-        -10,
-        battleArena.shortRule.toUpperCase(),
-        16,
-        UI.inkSoft,
+        0,
+        -178,
+        `FIELD EFFECT • ${battleArena.shortRule.toUpperCase()}`,
+        15,
+        UI.coralText,
         true
       )
-        .setOrigin(0, 0.5)
-        .setWordWrapWidth(cardWidth - 190),
+        .setOrigin(0.5, 0.5)
+        .setWordWrapWidth(venueCopyWidth),
+      this.add.rectangle(0, 38, cardWidth - 48, 2, UI.inkHex, 0.18),
+      paperIcon(this, 'target', venueCopyLeft + 12, 76, {
+        size: 30,
+        fill: venueStamp.cleared ? UI.gold : UI.tapeAlt,
+      }),
       label(
         this,
-        -cardWidth / 2 + 34,
-        38,
+        venueCopyLeft + 38,
+        62,
         'ARENA CHALLENGE',
-        15,
+        14,
         UI.coralText,
         true
       ).setOrigin(0, 0.5),
       label(
         this,
-        -cardWidth / 2 + 188,
-        38,
+        venueCopyLeft + 38,
+        92,
         battleArena.challengeLabel.toUpperCase(),
-        20,
+        18,
         UI.ink,
         true
       )
         .setOrigin(0, 0.5)
-        .setWordWrapWidth(cardWidth - 250),
-      paperIcon(this, 'info', cardWidth / 2 - 42, -35, {
-        size: 34,
-        fill: UI.tapeAlt,
+        .setWordWrapWidth(cardWidth - 320),
+      this.add
+        .rectangle(
+          cardWidth / 2 - 96,
+          76,
+          152,
+          60,
+          venueStamp.cleared ? UI.gold : UI.creamHex,
+          venueStamp.progress > 0 || venueStamp.cleared ? 0.92 : 0.62
+        )
+        .setStrokeStyle(2, UI.inkHex, venueStamp.cleared ? 0.8 : 0.32)
+        .setAngle(-3),
+      label(
+        this,
+        cardWidth / 2 - 96,
+        76,
+        stampLabel,
+        16,
+        venueStamp.cleared ? UI.ink : UI.inkSoft,
+        true
+      ).setAngle(-3),
+      this.add.rectangle(0, 122, cardWidth - 48, 2, UI.inkHex, 0.18),
+      ...tileFaces,
+      label(this, tileCenters[0], 160, bestLabel, 28, UI.ink, true),
+      label(this, tileCenters[0], 198, 'BEST TODAY', 13, UI.inkSoft, true),
+      label(
+        this,
+        tileCenters[1],
+        160,
+        rankLabel,
+        28,
+        venueStamp.dailyRank && venueStamp.dailyRank <= 3
+          ? UI.goldText
+          : UI.ink,
+        true
+      ),
+      label(this, tileCenters[1], 198, 'DAILY RANK ›', 13, UI.inkSoft, true),
+      label(this, tileCenters[2], 160, nextUnlockLabel, 28, UI.ink, true),
+      label(
+        this,
+        tileCenters[2],
+        198,
+        venueStamp.nextUnlock ? 'NEW FIELD' : 'FIELDS',
+        13,
+        UI.inkSoft,
+        true
+      ),
+      paperIcon(this, 'info', cardWidth / 2 - 40, -214, {
+        size: 30,
+        fill: UI.creamHex,
       }),
+      label(
+        this,
+        0,
+        238,
+        'NEW FIELD DAILY • ONE ATTEMPT • FASTEST RANKS',
+        13,
+        UI.inkSoft,
+        true
+      ),
+      iconButton(
+        this,
+        0,
+        292,
+        canEnterField ? 'sword' : 'lock',
+        fieldActionLabel,
+        () => {
+          if (matureScribbit) this.startFieldChallenge(matureScribbit);
+        },
+        cardWidth - 48,
+        canEnterField ? UI.coral : UI.creamHex,
+        UI.ink,
+        78,
+        canEnterField ? UI.gold : UI.tapeAlt,
+        canEnterField
+      ),
     ]);
     competitionHub.add(venueCard);
     this.rosterActionOverlay?.add({
-      label: `${battleArena.name}. ${battleArena.shortRule}. Arena challenge: ${battleArena.challengeLabel}.`,
+      label: `${battleArena.name}. ${battleArena.shortRule}. A mature Scribbit is required. ${hasMatureScribbit ? 'You have an eligible Scribbit.' : 'You do not have an eligible Scribbit yet.'} Arena challenge: ${battleArena.challengeLabel}. Best ${bestLabel}.`,
       rect: {
-        x: x + cardWidth / 2 - 86,
-        y: centerY - 366,
+        x: x + cardWidth / 2 - 82,
+        y: centerY - 256,
         width: 84,
         height: 84,
       },
       followCamera: true,
-      pointerPassthrough: true,
       onActivate: () => {
+        const nextUnlock = venueStamp.nextUnlock
+          ? `Next venue: ${venueStamp.nextUnlock.name} in ${venueStamp.nextUnlock.daysAway} day${venueStamp.nextUnlock.daysAway === 1 ? '' : 's'}.`
+          : 'All venues unlocked.';
         showToast(
-          `${battleArena.name} • ${battleArena.shortRule} • ${battleArena.challengeLabel}`
+          `${battleArena.name} • ${battleArena.challengeLabel} • Best ${bestLabel}. ${nextUnlock}`
         );
       },
     });
-
-    this.selectedArenaFighter(fighters);
-    const fighterCard = this.add.container(0, -138);
-    fighterCard.add([
-      paperCard(this, 0, 0, cardWidth, 124),
-      label(
-        this,
-        -cardWidth / 2 + 34,
-        -36,
-        'YOUR COMPETITOR',
-        16,
-        UI.coralText,
-        true
-      ).setOrigin(0, 0.5),
-    ]);
-    this.fighterCarouselSlot = this.add.container(0, 0);
-    fighterCard.add(this.fighterCarouselSlot);
-    competitionHub.add(fighterCard);
-
-    if (fighters.length > 1) {
-      const previous = this.arenaArrowButton(154, -138, 'previous', () =>
-        this.cycleArenaFighter(-1)
-      );
-      const next = this.arenaArrowButton(222, -138, 'next', () =>
-        this.cycleArenaFighter(1)
-      );
-      competitionHub.add([previous, next]);
-      this.rosterActionOverlay?.add({
-        label: 'Previous Arena fighter',
-        rect: { x: x + 112, y: centerY - 180, width: 84, height: 84 },
-        followCamera: true,
-        pointerPassthrough: true,
-        onActivate: () => this.cycleArenaFighter(-1),
-      });
-      this.rosterActionOverlay?.add({
-        label: 'Next Arena fighter',
-        rect: { x: x + 180, y: centerY - 180, width: 84, height: 84 },
-        followCamera: true,
-        pointerPassthrough: true,
-        onActivate: () => this.cycleArenaFighter(1),
-      });
-    }
-
-    competitionHub.add(label(this, 0, -52, 'COMPETE TODAY', 27, UI.ink, true));
-
-    const selectedFighter = this.selectedArenaFighter(fighters);
-    const rumblePickLocked = this.state.myBackedScribbitId !== null;
-    const eventMultiplier =
-      this.state.season.current?.activeEvent?.scoreMultiplier;
-    const rumbleAction = (): void => {
-      if (rumblePickLocked) {
-        this.showPickLockedToast();
-        return;
-      }
-      this.openContenderPicker();
-    };
-    const rumbleCard = this.competitionCard({
-      y: 44,
-      width: cardWidth,
-      icon: rumblePickLocked ? 'lock' : 'target',
-      title: 'SEASON RUMBLE',
-      subtitle: "PICK TONIGHT'S WINNER",
-      status: eventMultiplier
-        ? `${eventMultiplier}× SEASON POINTS`
-        : 'SEASON POINTS',
-      actionLabel: rumblePickLocked ? 'PICKED' : 'MAKE PICK',
-      actionFill: UI.gold,
-      enabled: fighters.length > 0,
-      onActivate: rumbleAction,
+    this.rosterActionOverlay?.add({
+      label: venueStamp.dailyRank
+        ? `Open today's ${battleArena.name} ranking. Your rank is ${venueStamp.dailyRank} of ${venueStamp.clearCount}.`
+        : `Open today's ${battleArena.name} ranking. Clear the Arena challenge to rank.`,
+      rect: {
+        x: x - tileWidth / 2,
+        y: centerY + 124,
+        width: tileWidth,
+        height: 96,
+      },
+      followCamera: true,
+      onActivate: () => this.openVenueRanking(),
     });
-    competitionHub.add(rumbleCard);
-
-    const championAvailable =
-      selectedFighter !== null &&
-      this.state.champion !== null &&
-      !this.state.bossChallengedToday;
-    const championCard = this.competitionCard({
-      y: 222,
-      width: cardWidth,
-      icon: championAvailable ? 'trophy' : 'lock',
-      title: 'CHAMPION CONTRACT',
-      subtitle: this.state.champion
-        ? `FACE ${this.state.champion.name.toUpperCase()}`
-        : 'NO CHAMPION TODAY',
-      status: this.state.bossChallengedToday
-        ? 'DAILY CONTRACT COMPLETE'
-        : 'ONE DAILY ATTEMPT',
-      actionLabel: this.state.bossChallengedToday ? 'DONE' : 'FIGHT',
-      actionFill: UI.coral,
-      enabled: championAvailable,
+    this.rosterActionOverlay?.add({
+      label: canEnterField
+        ? `Enter today's ${battleArena.name} field with ${matureScribbit?.name}. One attempt today.`
+        : fieldActionLabel,
+      rect: {
+        x: x - (cardWidth - 48) / 2,
+        y: centerY + 245,
+        width: cardWidth - 48,
+        height: 78,
+      },
+      followCamera: true,
+      pointerPassthrough: true,
+      enabled: canEnterField,
       onActivate: () => {
-        const fighter = this.selectedArenaFighter(this.state.myScribbits);
-        if (fighter) this.startBossChallenge(fighter);
+        if (matureScribbit) this.startFieldChallenge(matureScribbit);
       },
     });
-    competitionHub.add(championCard);
-
-    if (fighters.length === 0) {
-      const drawButton = iconButton(
-        this,
-        0,
-        350,
-        'pencil',
-        'DRAW YOUR FIRST COMPETITOR',
-        () => {
-          if (!this.didDrag()) navigateToDailyDraw(this);
-        },
-        cardWidth,
-        UI.coral,
-        UI.ink,
-        106,
-        UI.gold,
-        true
-      );
-      competitionHub.add(drawButton);
-      this.rosterActionOverlay?.add({
-        label: 'Draw your first Scribbit competitor',
-        rect: { x: cardLeft, y: centerY + 297, width: cardWidth, height: 106 },
-        followCamera: true,
-        pointerPassthrough: true,
-        onActivate: () => navigateToDailyDraw(this),
-      });
-    } else {
-      this.rosterActionOverlay?.add({
-        label: rumblePickLocked
-          ? "Tonight's Rumble prediction is locked"
-          : "Choose tonight's Rumble prediction for season points",
-        rect: { x: cardLeft, y: centerY - 31, width: cardWidth, height: 150 },
-        followCamera: true,
-        pointerPassthrough: true,
-        onActivate: rumbleAction,
-      });
-      this.rosterActionOverlay?.add({
-        label: this.state.bossChallengedToday
-          ? "Today's Champion Contract is complete"
-          : 'Start today’s Champion Contract with the selected Scribbit',
-        rect: { x: cardLeft, y: centerY + 147, width: cardWidth, height: 150 },
-        followCamera: true,
-        pointerPassthrough: true,
-        enabled: championAvailable,
-        onActivate: () => {
-          const fighter = this.selectedArenaFighter(this.state.myScribbits);
-          if (fighter) this.startBossChallenge(fighter);
-        },
-      });
-    }
-
-    this.renderArenaFighter();
 
     return centerY + height / 2;
   }
 
-  private competitionCard(options: {
-    y: number;
-    width: number;
-    icon: PaperIconKey;
-    title: string;
-    subtitle: string;
-    status: string;
-    actionLabel: string;
-    actionFill: number;
-    enabled: boolean;
-    onActivate: () => void;
-  }): Phaser.GameObjects.Container {
-    const card = this.add.container(0, options.y);
-    const actionWidth = 188;
-    const actionX = options.width / 2 - actionWidth / 2 - 22;
-    const copyLeft = -options.width / 2 + 82;
-    card.add([
-      paperCard(this, 0, 0, options.width, 150),
-      this.add.rectangle(
-        -options.width / 2 + 14,
-        0,
-        12,
-        112,
-        options.actionFill,
-        options.enabled ? 0.95 : 0.35
-      ),
-      paperIcon(this, options.icon, -options.width / 2 + 48, -33, {
-        size: 40,
-        fill: options.enabled ? options.actionFill : UI.inkSoftHex,
-      }),
-      label(this, copyLeft, -42, options.title, 21, UI.ink, true)
-        .setOrigin(0, 0.5)
-        .setWordWrapWidth(options.width - actionWidth - 122),
-      label(this, copyLeft, -10, options.subtitle, 17, UI.inkSoft, true)
-        .setOrigin(0, 0.5)
-        .setWordWrapWidth(options.width - actionWidth - 122),
-      label(
-        this,
-        copyLeft,
-        29,
-        fitText(options.status.toUpperCase(), 28),
-        14,
-        options.enabled ? UI.coralText : UI.inkSoft,
-        true
-      )
-        .setOrigin(0, 0.5)
-        .setWordWrapWidth(options.width - actionWidth - 122),
-      iconButton(
-        this,
-        actionX,
-        0,
-        options.icon,
-        options.actionLabel,
-        () => {
-          if (!this.didDrag()) options.onActivate();
-        },
-        actionWidth,
-        options.actionFill,
-        UI.ink,
-        82,
-        UI.creamHex,
-        options.enabled
-      ).setAlpha(options.enabled ? 1 : 0.55),
-    ]);
-    return card;
-  }
-
-  private selectedArenaFighter(fighters: Scribbit[]): Scribbit | null {
-    if (fighters.length === 0) {
-      this.selectedArenaFighterId = null;
-      return null;
-    }
-    const selected = fighters.find(
-      (fighter) => fighter.id === this.selectedArenaFighterId
-    );
-    const fallback = selected ?? fighters[0] ?? null;
-    this.selectedArenaFighterId = fallback?.id ?? null;
-    return fallback;
-  }
-
-  private cycleArenaFighter(direction: -1 | 1): void {
-    if (this.busy || this.rivalRunFlow) return;
-    const fighters = this.state.myScribbits;
-    if (fighters.length < 2) return;
-    const current = this.selectedArenaFighter(fighters);
-    const currentIndex = Math.max(
-      0,
-      fighters.findIndex((fighter) => fighter.id === current?.id)
-    );
-    const nextIndex =
-      (currentIndex + direction + fighters.length) % fighters.length;
-    this.selectedArenaFighterId = fighters[nextIndex]?.id ?? null;
-    this.renderArenaFighter();
-  }
-
-  private renderArenaFighter(): void {
-    const slot = this.fighterCarouselSlot;
-    if (!slot?.active) return;
-    const fighter = this.selectedArenaFighter(this.state.myScribbits);
-    const renderGeneration = ++this.fighterCarouselRenderGeneration;
-
-    if (!fighter) {
-      slot.removeAll(true);
-      this.fighterCarouselCurrentView = null;
-      this.fighterCarouselViews.clear();
-      slot.add([
-        paperIcon(this, 'pencil', -180, 8, { size: 72, fill: UI.gold }),
-        label(this, -112, 4, 'NO COMPETITOR YET', 22, UI.ink, true).setOrigin(
-          0,
-          0.5
-        ),
-      ]);
+  private startFieldChallenge(challenger: Scribbit): void {
+    if (!this.requireLogin() || this.busy) return;
+    if (this.state.bossChallengedToday) {
+      showToast("Today's field attempt is already complete.");
       return;
     }
-
-    const viewKey = fighter.id;
-    const cachedView = this.fighterCarouselViews.get(viewKey);
-    if (cachedView?.active) {
-      this.showArenaFighterView(cachedView);
+    if (
+      getScribbitLifecycleStage(challenger, this.state.dayNumber) !== 'mature'
+    ) {
+      showToast('A mature Scribbit is required for the field challenge.');
       return;
     }
-    const nextView = this.add.container(0, 0).setVisible(false);
-    nextView.add(
-      label(this, -112, 4, fighter.name.toUpperCase(), 24, UI.ink, true)
-        .setOrigin(0, 0.5)
-        .setWordWrapWidth(235)
-        .setLineSpacing(-3)
-    );
-    void loadDrawing(this, fighter).then((key) => {
-      if (
-        !slot.active ||
-        renderGeneration !== this.fighterCarouselRenderGeneration
-      ) {
-        nextView.destroy(true);
+    if (!this.state.champion) {
+      showToast('The Arena field is closed today.');
+      return;
+    }
+    void this.launchFieldChallenge(challenger);
+  }
+
+  private async launchFieldChallenge(scribbit: Scribbit): Promise<void> {
+    if (this.busy) return;
+    this.busy = true;
+    this.spinner?.show(this.scale.width / 2, this.scale.height / 2);
+    showToast(`${scribbit.name} enters today's field challenge…`);
+    const sceneEpoch = this.sceneEpoch;
+    try {
+      const result = await bossChallenge(scribbit.id);
+      if (!this.acceptMutationResponse(sceneEpoch)) return;
+      if (!result.ok) {
+        this.showError(result.error);
         return;
       }
-      const portrait = fitDrawing(this.add.image(-180, 6, key), 92);
-      portrait.setInteractive({ useHandCursor: true });
-      portrait.on('pointerup', () => {
-        if (!this.didDrag()) this.openDetail(fighter);
+      const stagedBattle = stageDirectBattle(
+        this,
+        this.state,
+        result.data,
+        scribbit.id
+      );
+      if (!stagedBattle) {
+        this.showError('The field battle returned the wrong Scribbit.');
+        return;
+      }
+      if (stagedBattle.arena) this.state = stagedBattle.arena;
+      showVsCeremony(this, {
+        fighterA: result.data.report.a,
+        fighterB: result.data.report.b,
+        battleKind: result.data.report.kind,
+        rivalryStakes: stagedBattle.rivalryStakes,
+        onComplete: () => this.scene.start('Replay'),
       });
-      nextView.add(portrait);
-      this.fighterCarouselViews.set(viewKey, nextView);
-      slot.add(nextView);
-      this.showArenaFighterView(nextView);
-    });
-  }
-
-  private showArenaFighterView(nextView: Phaser.GameObjects.Container): void {
-    const previousView = this.fighterCarouselCurrentView;
-    if (previousView === nextView) {
-      nextView.setVisible(true).setAlpha(1);
-      return;
+    } catch {
+      if (this.acceptMutationResponse(sceneEpoch)) {
+        this.showError('The field battle could not start. Try again.');
+      }
+    } finally {
+      if (sceneEpoch === this.sceneEpoch) {
+        this.busy = false;
+        this.spinner?.hide();
+      }
     }
-    this.fighterCarouselCurrentView = nextView;
-    nextView.setVisible(true);
-    if (!previousView?.active) {
-      nextView.setAlpha(1);
-      return;
-    }
-    nextView.setAlpha(0);
-    this.tweens.add({
-      targets: nextView,
-      alpha: 1,
-      duration: 160,
-      ease: 'Quad.easeOut',
-    });
-    this.tweens.add({
-      targets: previousView,
-      alpha: 0,
-      duration: 120,
-      ease: 'Quad.easeOut',
-      onComplete: () => previousView.setVisible(false).setAlpha(1),
-    });
-  }
-
-  private arenaArrowButton(
-    x: number,
-    y: number,
-    direction: 'previous' | 'next',
-    onActivate: () => void
-  ): Phaser.GameObjects.Container {
-    const button = this.add.container(x, y);
-    const face = this.add
-      .image(0, 0, UI_BUTTON_TEXTURES[direction])
-      .setDisplaySize(76, 76);
-    const hitArea = this.add
-      .circle(0, 0, 50, 0xffffff, 0.001)
-      .setInteractive({ useHandCursor: true });
-    hitArea.on('pointerup', () => {
-      if (!this.didDrag()) onActivate();
-    });
-    button.add([face, hitArea]);
-    return button;
   }
 
   private openContenderPicker(): void {
     if (this.contenderPicker || this.busy) return;
+    const assignedTheme =
+      this.state.communityDrawTheme ??
+      selectCommunityDoodleDare(this.state.dayNumber);
     const entrants = selectVisibleArenaEntrants({
-      entrantsInSourceOrder: this.state.todayEntrants,
+      entrantsInSourceOrder: this.state.todayEntrants.filter(
+        (entrant) => entrant.drawingThemeId === assignedTheme.id
+      ),
       ownedScribbitIdsInRosterOrder: this.state.myScribbits.map(
         (scribbit) => scribbit.id
       ),
@@ -1138,7 +1072,7 @@ export class ArenaHome extends Scene {
     this.contenderPicker = openArenaContenderPicker({
       scene: this,
       entrants,
-      themePrompt: selectCommunityDoodleDare(this.state.dayNumber).prompt,
+      themePrompt: assignedTheme.prompt,
       ownedScribbitIds: this.state.myScribbits.map((scribbit) => scribbit.id),
       backedScribbitId: this.state.myBackedScribbitId,
       onPick: (entrant) => {
@@ -1684,8 +1618,6 @@ export class ArenaHome extends Scene {
   private doSpar(scribbit: Scribbit): void {
     if (!this.requireLogin()) return;
     if (this.busy || this.rivalRunFlow) return;
-    this.selectedArenaFighterId = scribbit.id;
-    this.renderArenaFighter();
 
     const trigger =
       document.activeElement instanceof HTMLElement
@@ -1763,74 +1695,6 @@ export class ArenaHome extends Scene {
     });
     // Re-render immediately for the optimistic picked state.
     this.build();
-  }
-
-  private startBossChallenge(challenger: Scribbit): void {
-    if (!this.requireLogin()) return;
-    if (this.state.bossChallengedToday) {
-      showToast("Today's Champion Challenge is already complete.");
-      return;
-    }
-    const ownedChallenger = this.state.myScribbits.find(
-      (scribbit) => scribbit.id === challenger.id
-    );
-    if (!ownedChallenger) {
-      showToast('Draw a scribbit first, then challenge the champion!');
-      return;
-    }
-    if (!this.state.champion) {
-      showToast('No Champion is holding the contract today.');
-      return;
-    }
-    void this.launchChampionBattle(ownedChallenger);
-  }
-
-  private async launchChampionBattle(scribbit: Scribbit): Promise<void> {
-    if (this.busy) return;
-    this.busy = true;
-    this.spinner?.show(this.scale.width / 2, this.scale.height / 2);
-    const champion = this.state.champion;
-    showToast(
-      champion
-        ? `${champion.name}: “${planChampionChallenge(champion, false).challengeLine}”`
-        : `${scribbit.name} steps into the arena…`
-    );
-    const sceneEpoch = this.sceneEpoch;
-    try {
-      const result = await bossChallenge(scribbit.id);
-      if (!this.acceptMutationResponse(sceneEpoch)) return;
-      if (!result.ok) {
-        this.showError(result.error);
-        return;
-      }
-      const stagedBattle = stageDirectBattle(
-        this,
-        this.state,
-        result.data,
-        scribbit.id
-      );
-      if (!stagedBattle) {
-        this.showError('The Champion battle returned the wrong Scribbit.');
-        return;
-      }
-      if (stagedBattle.arena) this.state = stagedBattle.arena;
-      showVsCeremony(this, {
-        fighterA: result.data.report.a,
-        fighterB: result.data.report.b,
-        battleKind: result.data.report.kind,
-        rivalryStakes: stagedBattle.rivalryStakes,
-        onComplete: () => this.scene.start('Replay'),
-      });
-    } catch {
-      if (this.acceptMutationResponse(sceneEpoch)) {
-        this.showError('The battle could not start. Try again.');
-      }
-    } finally {
-      if (sceneEpoch === this.sceneEpoch) {
-        this.busy = false;
-        this.spinner?.hide();
-      }
-    }
   }
 
   private requireLogin(): boolean {

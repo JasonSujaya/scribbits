@@ -61,6 +61,21 @@ test('drawing music follows the timed round lifecycle', () => {
   );
 });
 
+test('Free Draw continues the idle soundtrack without replacing it', () => {
+  assert.match(
+    drawSource,
+    /if \(this\.practiceMode \|\| this\.automationMode\) stopSoundtrack\(\);\s*else playHomeSoundtrack\(\);/
+  );
+  assert.match(
+    drawSource,
+    /private beginFreeDrawing\(\): void \{[\s\S]{0,700}this\.playerDrawMode = 'free'/
+  );
+  assert.match(
+    drawSource,
+    /!this\.drawRoundClock\.started[\s\S]{0,100}releaseHomeSoundtrack\(\)/
+  );
+});
+
 test('battle music follows Replay and the battle sound toggle', () => {
   assert.match(audioCatalogSource, /scribbits-battle\.mp3/);
   assert.match(soundtrackSource, /MUSIC_CATALOG\.battle/);

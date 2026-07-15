@@ -37,7 +37,10 @@ test('bucket fill stays inside visible line boundaries', () => {
     setPixel(pixels, width, 5, coordinate, 43, 32, 22);
   }
 
-  assert.equal(floodFillRegion(pixels, width, height, 3, 3, [255, 90, 61]), 9);
+  assert.deepEqual(
+    floodFillRegion(pixels, width, height, 3, 3, [255, 90, 61]),
+    { changedPixels: 9, replacedColor: null }
+  );
   assert.deepEqual(readPixel(pixels, width, 3, 3), [255, 90, 61, 255]);
   assert.deepEqual(readPixel(pixels, width, 0, 0), [0, 0, 0, 0]);
   assert.deepEqual(readPixel(pixels, width, 3, 1), [43, 32, 22, 255]);
@@ -51,7 +54,10 @@ test('partially transparent antialiased line pixels still block blank fill', () 
     setPixel(pixels, width, 2, y, 43, 32, 22, 24);
   }
 
-  assert.equal(floodFillRegion(pixels, width, height, 0, 1, [79, 170, 79]), 6);
+  assert.equal(
+    floodFillRegion(pixels, width, height, 0, 1, [79, 170, 79]).changedPixels,
+    6
+  );
   assert.deepEqual(readPixel(pixels, width, 4, 1), [0, 0, 0, 0]);
 });
 
@@ -62,7 +68,10 @@ test('four-way fill does not slip diagonally through touching line corners', () 
   setPixel(pixels, width, 1, 0, 43, 32, 22);
   setPixel(pixels, width, 0, 1, 43, 32, 22);
 
-  assert.equal(floodFillRegion(pixels, width, height, 0, 0, [59, 160, 224]), 1);
+  assert.equal(
+    floodFillRegion(pixels, width, height, 0, 0, [59, 160, 224]).changedPixels,
+    1
+  );
   assert.deepEqual(readPixel(pixels, width, 1, 1), [0, 0, 0, 0]);
 });
 
@@ -74,14 +83,40 @@ test('transparent erased pixels fill regardless of their hidden RGB values', () 
   setPixel(pixels, width, 1, 0, 255, 90, 61, 0);
   setPixel(pixels, width, 2, 0, 138, 92, 216, 0);
 
-  assert.equal(floodFillRegion(pixels, width, height, 1, 0, [242, 207, 61]), 3);
+  assert.equal(
+    floodFillRegion(pixels, width, height, 1, 0, [242, 207, 61]).changedPixels,
+    3
+  );
 });
 
 test('same-color and out-of-bounds fills are no-ops', () => {
   const pixels = makePixels(2, 2);
   setPixel(pixels, 2, 0, 0, 59, 160, 224);
 
-  assert.equal(floodFillRegion(pixels, 2, 2, 0, 0, [59, 160, 224]), 0);
-  assert.equal(floodFillRegion(pixels, 2, 2, -1, 0, [255, 90, 61]), 0);
-  assert.equal(floodFillRegion(pixels, 2, 2, 2, 0, [255, 90, 61]), 0);
+  assert.deepEqual(floodFillRegion(pixels, 2, 2, 0, 0, [59, 160, 224]), {
+    changedPixels: 0,
+    replacedColor: null,
+  });
+  assert.equal(
+    floodFillRegion(pixels, 2, 2, -1, 0, [255, 90, 61]).changedPixels,
+    0
+  );
+  assert.equal(
+    floodFillRegion(pixels, 2, 2, 2, 0, [255, 90, 61]).changedPixels,
+    0
+  );
+});
+
+test('recoloring reports the prior solid color for paint return', () => {
+  const pixels = makePixels(2, 2);
+  for (let y = 0; y < 2; y += 1) {
+    for (let x = 0; x < 2; x += 1) {
+      setPixel(pixels, 2, x, y, 255, 90, 61);
+    }
+  }
+
+  assert.deepEqual(floodFillRegion(pixels, 2, 2, 0, 0, [59, 160, 224]), {
+    changedPixels: 4,
+    replacedColor: [255, 90, 61],
+  });
 });

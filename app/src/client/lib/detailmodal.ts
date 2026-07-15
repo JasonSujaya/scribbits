@@ -9,8 +9,11 @@ import { getScribbitLifecycleStage, type Scribbit } from '../../shared/arena';
 import {
   MAXIMUM_POWER_UPS,
   POWER_UP_CATALOG,
+  POWER_UP_OFFER_RARITY_WEIGHTS,
+  POWER_UP_RARITIES,
   isPowerUpId,
   type PowerUpId,
+  type PowerUpOfferSource,
   type PowerUpRarity,
 } from '../../shared/combat/powerups';
 import { selectCombatRole } from '../../shared/combat/selection';
@@ -29,12 +32,7 @@ import {
   xpProgress,
 } from './scribbits';
 import { prefersReducedMotion, STAT_STYLES, TYPE, UI } from './theme';
-import {
-  paperIcon,
-  paperStatIcon,
-  powerUpPaperIcon,
-  type PaperIconKey,
-} from './papericons';
+import { paperIcon, powerUpPaperIcon, type PaperIconKey } from './papericons';
 import { CanvasModalOverlay } from './overlay';
 import { setSfxCue } from './sfx';
 import { maturityCountdownHeadline } from './maturitycountdown';
@@ -57,12 +55,12 @@ const POWER_UP_RARITY_STYLE: Readonly<
   >
 > = {
   common: { label: 'COMMON', color: UI.inkSoftHex, textColor: UI.inkSoft },
+  uncommon: { label: 'UNCOMMON', color: 0x49a36d, textColor: '#2f7650' },
   rare: { label: 'RARE', color: 0x4f9dcc, textColor: '#276789' },
   epic: { label: 'EPIC', color: 0x8a5cd8, textColor: '#6540a8' },
   legendary: { label: 'LEGENDARY', color: UI.gold, textColor: UI.goldText },
 };
 
-const POWER_UP_GUIDE_PAGE_COUNT = 5;
 const LOCKED_POWER_UP_FILL = 0xd4c7ae;
 
 const POWER_UP_CATALOG_SECTIONS = [
@@ -78,15 +76,14 @@ const POWER_UP_CATALOG_SECTIONS = [
     ],
   },
   {
+    title: 'UNCOMMON POWER-UPS',
+    subtitle: 'BUILD-SHAPING TRIGGERS · GREEN CARDS',
+    ids: ['v1-double-doodle', 'v1-backup-plan', 'v1-counter-sketch'],
+  },
+  {
     title: 'RARE POWER-UPS',
     subtitle: 'STRONGER COMBOS · BLUE CARDS',
-    ids: [
-      'v1-double-doodle',
-      'v1-backup-plan',
-      'v1-counter-sketch',
-      'v1-wallop',
-      'v1-echo-mark',
-    ],
+    ids: ['v1-wallop', 'v1-echo-mark'],
   },
   {
     title: 'EPIC + LEGENDARY',
@@ -104,6 +101,18 @@ const POWER_UP_CATALOG_SECTIONS = [
   subtitle: string;
   ids: readonly PowerUpId[];
 }>[];
+
+const POWER_UP_GUIDE_PAGE_COUNT = POWER_UP_CATALOG_SECTIONS.length + 2;
+
+const formatPowerUpRarityOdds = (source: PowerUpOfferSource): string =>
+  POWER_UP_RARITIES.filter(
+    (rarity) => POWER_UP_OFFER_RARITY_WEIGHTS[source][rarity] > 0
+  )
+    .map(
+      (rarity) =>
+        `${POWER_UP_OFFER_RARITY_WEIGHTS[source][rarity]}% ${rarity.toUpperCase()}`
+    )
+    .join(' · ');
 
 type PowerUpBearingScribbit = Scribbit & {
   powerUps?: readonly unknown[];
@@ -484,15 +493,11 @@ export function openDetailModal(
   );
   card.add(roleBand);
   card.add(
-    paperStatIcon(
-      scene,
-      combatRole.dominantStat,
-      -roleBandWidth / 2 + 43,
-      roleBandY,
-      42,
-      STAT_STYLES[combatRole.dominantStat].color,
-      false
-    )
+    paperIcon(scene, combatRole.icon, -roleBandWidth / 2 + 43, roleBandY, {
+      size: 42,
+      fill: roleColor,
+      stroke: UI.inkHex,
+    })
   );
   card.add(
     label(
@@ -877,7 +882,7 @@ export function openDetailModal(
             })
             .join(' ')}`
       ),
-      `Page ${POWER_UP_GUIDE_PAGE_COUNT} of ${POWER_UP_GUIDE_PAGE_COUNT}. Birth immediately offers three randomized Power-Ups and you choose one. Standard wins offer Common, Common, Rare. Big wins offer Common, Rare, Epic. Champion wins offer Rare, Epic, Legendary. Losses offer no Power-Up.`,
+      `Page ${POWER_UP_GUIDE_PAGE_COUNT} of ${POWER_UP_GUIDE_PAGE_COUNT}. Every offer rolls rarity separately for three distinct Power-Ups, then shuffles their order. Birth and standard win odds are ${formatPowerUpRarityOdds('birth')}. Big win odds are ${formatPowerUpRarityOdds('rival-run-final-win')}. Champion win odds are ${formatPowerUpRarityOdds('champion-win')}. Losses offer no Power-Up.`,
     ];
     const closeGuide = (): void => {
       if (!guideLayer.active) return;
@@ -887,7 +892,7 @@ export function openDetailModal(
       scene,
       'How Scribbit powers and progression work',
       closeGuide,
-      'A five-page color-coded guide to your build, every Power-Up, and win rewards.',
+      `A ${POWER_UP_GUIDE_PAGE_COUNT}-page color-coded guide to your build, every Power-Up, and win rewards.`,
       trigger
     );
     guideLayer.once('destroy', () => guideOverlay.destroy());
@@ -1082,7 +1087,7 @@ export function openDetailModal(
     const buildRules = [
       {
         y: guideTop + 465,
-        icon: 'pencil' as const,
+        icon: combatRole.icon,
         title: 'ROLE = YOUR DRAWING',
         detail: 'How your Scribbit moves and attacks.',
         color: roleColor,
@@ -1510,9 +1515,9 @@ export function openDetailModal(
     );
 
     const earnPage = createPage(
-      5,
+      POWER_UP_GUIDE_PAGE_COUNT,
       'WIN → CHOOSE 1',
-      'EVERY WIN OFFERS 3 DISTINCT POWER-UPS'
+      '3 DISTINCT ROLLS · CARD ORDER SHUFFLED'
     );
     const rewardCardWidth = guideCardWidth - 92;
     const rewardRows = [
@@ -1520,22 +1525,22 @@ export function openDetailModal(
         y: guideTop + 260,
         icon: 'sword' as const,
         title: 'STANDARD WIN',
-        slots: ['COMMON', 'COMMON', 'RARE'] as const,
-        colors: [UI.inkSoftHex, UI.inkSoftHex, 0x4f9dcc] as const,
+        odds: formatPowerUpRarityOdds('exhibition-win'),
+        accentColor: 0x49a36d,
       },
       {
         y: guideTop + 470,
         icon: 'spark' as const,
         title: 'BIG WIN',
-        slots: ['COMMON', 'RARE', 'EPIC'] as const,
-        colors: [UI.inkSoftHex, 0x4f9dcc, 0x8a5cd8] as const,
+        odds: formatPowerUpRarityOdds('rival-run-final-win'),
+        accentColor: 0x8a5cd8,
       },
       {
         y: guideTop + 680,
         icon: 'trophy' as const,
         title: 'CHAMPION WIN',
-        slots: ['RARE', 'EPIC', 'LEGENDARY'] as const,
-        colors: [0x4f9dcc, 0x8a5cd8, UI.gold] as const,
+        odds: formatPowerUpRarityOdds('champion-win'),
+        accentColor: UI.gold,
       },
     ];
     rewardRows.forEach((reward) => {
@@ -1546,7 +1551,7 @@ export function openDetailModal(
         rewardCardWidth,
         172,
         UI.creamHex,
-        reward.colors[2]
+        reward.accentColor
       );
       earnPage.add([
         paperIcon(
@@ -1554,12 +1559,12 @@ export function openDetailModal(
           reward.icon,
           width / 2 - rewardCardWidth / 2 + 56,
           reward.y - 43,
-          { size: 52, fill: reward.colors[2] }
+          { size: 52, fill: reward.accentColor }
         ).setScrollFactor(0),
         label(
           scene,
           width / 2 - rewardCardWidth / 2 + 96,
-          reward.y - 43,
+          reward.y - 34,
           reward.title,
           18,
           UI.ink,
@@ -1568,29 +1573,20 @@ export function openDetailModal(
           .setOrigin(0, 0.5)
           .setScrollFactor(0),
       ]);
-      reward.slots.forEach((slot, slotIndex) => {
-        const slotX = width / 2 - 140 + slotIndex * 140;
-        const slotColor = reward.colors[slotIndex] ?? UI.inkSoftHex;
-        earnPage.add([
-          scene.add
-            .circle(slotX, reward.y + 30, 32, UI.creamHex, 1)
-            .setStrokeStyle(5, slotColor, 1)
-            .setScrollFactor(0),
-          paperIcon(scene, 'spark', slotX, reward.y + 25, {
-            size: 38,
-            fill: slotColor,
-          }).setScrollFactor(0),
-          label(
-            scene,
-            slotX,
-            reward.y + 70,
-            slot,
-            11,
-            UI.ink,
-            true
-          ).setScrollFactor(0),
-        ]);
-      });
+      earnPage.add(
+        label(
+          scene,
+          width / 2 - rewardCardWidth / 2 + 96,
+          reward.y + 30,
+          reward.odds,
+          15,
+          UI.inkSoft,
+          true
+        )
+          .setOrigin(0, 0.5)
+          .setWordWrapWidth(rewardCardWidth - 132)
+          .setScrollFactor(0)
+      );
     });
     earnPage.add([
       paperIcon(scene, 'defeat', width / 2 - 132, guideTop + 860, {
@@ -1627,6 +1623,7 @@ export function openDetailModal(
     const navigationPageNames = [
       'your build',
       'Common Power-Ups',
+      'Uncommon Power-Ups',
       'Rare Power-Ups',
       'Epic and Legendary Power-Ups',
       'win rewards',

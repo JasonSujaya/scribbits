@@ -206,6 +206,7 @@ test('Gallery exposes Retire for active owned Scribbits and uses Retired player-
   );
   assert.match(detailSource, /'YOUR BUILD'/);
   assert.match(detailSource, /'COMMON POWER-UPS'/);
+  assert.match(detailSource, /'UNCOMMON POWER-UPS'/);
   assert.match(detailSource, /'RARE POWER-UPS'/);
   assert.match(detailSource, /'EPIC \+ LEGENDARY'/);
   assert.match(detailSource, /'WIN → CHOOSE 1'/);

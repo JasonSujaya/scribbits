@@ -41,6 +41,24 @@ test('paint reservoir rejects overdraw and malformed usage without underflow', (
   }
 });
 
+test('returned paint replenishes only the replaced amount up to capacity', () => {
+  const used = reservoir.tryUsePaint(reservoir.createPaintReservoir(100), 70);
+  assert.equal(used.accepted, true);
+
+  assert.deepEqual(reservoir.returnPaint(used.reservoir, 25), {
+    capacity: 100,
+    remaining: 55,
+  });
+  assert.deepEqual(reservoir.returnPaint(used.reservoir, 500), {
+    capacity: 100,
+    remaining: 100,
+  });
+  assert.equal(
+    reservoir.returnPaint(used.reservoir, Number.NaN),
+    used.reservoir
+  );
+});
+
 test('paint bucket levels resolve to stable server-owned capacities', () => {
   assert.deepEqual(paintBucket.getPaintBucketState(), {
     level: 1,

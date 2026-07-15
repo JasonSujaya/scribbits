@@ -16,7 +16,19 @@ export {
 } from './scribbit';
 export { cloneScribbit } from '../../shared/arena';
 export { getPaintBucketState } from '../../shared/paintbucket';
-export { selectCommunityDoodleDare } from '../../shared/content/communitydrawthemes';
+export {
+  getBattleArenaForDay,
+  getNextBattleArenaUnlock,
+} from '../../shared/battlearena';
+export {
+  selectCommunityDoodleDare,
+  selectCommunityDoodleDarePool,
+  validateCommunityDrawThemeSeasons,
+} from '../../shared/content/communitydrawthemes';
+export {
+  selectGearWeekDay,
+  validateGearWeek,
+} from '../../shared/content/gearweek';
 export { createSparRewardReceipt } from '../../shared/sparreward';
 export {
   advanceCapsulePity,
@@ -43,6 +55,7 @@ export {
   equipGearInLoadout,
   isEquipmentCategory,
 } from '../../shared/equipment';
+export { resolveGearCombatLoadout } from '../../shared/gearcombat';
 export { ELEMENTS, isElement } from '../../shared/elements';
 export { hashStringToUint32 } from '../../shared/stablehash';
 export {
@@ -53,9 +66,12 @@ export {
   createDeterministicPowerUpOffer,
   isPowerUpId,
   MAXIMUM_POWER_UPS,
+  MAXIMUM_POWER_UP_HEALING_PERMILLE,
   POWER_UP_CATALOG,
   POWER_UP_IDS,
+  POWER_UP_OFFER_RARITY_WEIGHTS,
   POWER_UP_PLAYSTYLE_PROFILES,
+  POWER_UP_RARITIES,
   powerUpIsOfferableForRole,
   scorePowerUpFit,
   validatePowerUpBuild,
@@ -63,6 +79,7 @@ export {
 export { selectCombatRole } from '../../shared/combat/selection';
 export {
   CAPSULE_COST,
+  CAPSULE_PITY,
   GEAR_MERGE_COPY_COST,
   INK_REWARDS,
   MAX_ALIVE_PER_USER,

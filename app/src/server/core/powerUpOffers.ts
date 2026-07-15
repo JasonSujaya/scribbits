@@ -1,6 +1,8 @@
 import {
   createDeterministicPowerUpOffer,
   isPowerUpId,
+  MAXIMUM_GROWING_POWER_UPS,
+  MAXIMUM_POWER_UPS,
   POWER_UP_OFFER_SOURCES,
   validatePowerUpBuild,
   type ChoosePowerUpRequest,
@@ -115,9 +117,17 @@ export const getOrCreatePowerUpOffer = async (
     reportId: string;
     source: PowerUpOfferSource;
     createdAtMs: number;
+    currentArenaDay: number;
   }>
 ): Promise<PowerUpOffer | null> => {
-  if (!storage.watch || input.scribbit.status !== 'alive') return null;
+  if (
+    !storage.watch ||
+    input.scribbit.status !== 'alive' ||
+    !Number.isSafeInteger(input.currentArenaDay) ||
+    input.currentArenaDay < input.scribbit.bornDay
+  ) {
+    return null;
+  }
   const offerKey = getPowerUpOfferKey(input.userId, input.scribbit.id);
   for (
     let attempt = 0;
@@ -149,6 +159,10 @@ export const getOrCreatePowerUpOffer = async (
         ownedPowerUpIds: input.scribbit.powerUpIds ?? [],
         combatRole: selectCombatRole(input.scribbit.stats),
         gearFamilies,
+        maxPowerUps:
+          input.currentArenaDay < input.scribbit.expiresDay
+            ? MAXIMUM_GROWING_POWER_UPS
+            : MAXIMUM_POWER_UPS,
       });
       if (!choices || choices.length !== 3) {
         await transaction.unwatch();

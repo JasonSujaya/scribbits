@@ -76,6 +76,33 @@ const fighterWithGear = (id, stats, gearId, rank) => {
 
 const balancedForecast = forecast.generateForecastForDay(9);
 
+const divideRounded = (value, divisor) =>
+  Math.floor((value + Math.floor(divisor / 2)) / divisor);
+
+const canonicalOutcomeQuantum = (modifiers) => {
+  const baseHitPoints = 235;
+  const baseSignatureCooldownTicks = 72;
+  const baseCriticalChancePermille = 30;
+  const criticalChancePermille = Math.min(
+    180,
+    baseCriticalChancePermille + modifiers.criticalChanceBonusPermille
+  );
+  return {
+    damagePermille: modifiers.damagePermille,
+    maximumHitPoints: divideRounded(
+      baseHitPoints * modifiers.maximumHitPointsPermille,
+      1_000
+    ),
+    signatureCooldownTicks: divideRounded(
+      baseSignatureCooldownTicks * modifiers.cooldownPermille,
+      1_000
+    ),
+    criticalInterval: Math.ceil(1_000 / criticalChancePermille),
+    telegraphTicksDelta: modifiers.telegraphTicksDelta,
+    initialDelayTicksDelta: modifiers.initialDelayTicksDelta,
+  };
+};
+
 test('Gear resolution keeps the 100-point drawing identity in current transcripts', () => {
   const stats = builds.nib_halo;
   const geared = fighterWithGear('gear-v3', stats, 'tiny-sword', 6);
@@ -141,6 +168,57 @@ test('Gear summaries expose every applied benefit and tradeoff', () => {
   assert.doesNotMatch(focus.summary, /OPENING/);
 });
 
+test('health Gear cannot delay the Ink Pressure comeback trigger', () => {
+  const plainTarget = makeFighter(
+    'ink-pressure-target',
+    builds.inkquake,
+    equipment.createEmptyEquipmentLoadout()
+  );
+  const gearedTarget = fighterWithGear(
+    'ink-pressure-target',
+    builds.inkquake,
+    'inkquake-crater-crown',
+    6
+  );
+  const opponent = makeFighter(
+    'ink-pressure-opponent',
+    builds.nib_halo,
+    equipment.createEmptyEquipmentLoadout()
+  );
+  let comparedTriggers = 0;
+
+  for (let seed = 0; seed < 32; seed += 1) {
+    const plainReport = battle.simulate(
+      plainTarget,
+      opponent,
+      seed,
+      balancedForecast,
+      'exhibition'
+    );
+    const gearedReport = battle.simulate(
+      gearedTarget,
+      opponent,
+      seed,
+      balancedForecast,
+      'exhibition'
+    );
+    const plainTrigger = plainReport.simulation.timeline.find(
+      (event) => event.kind === 'ink_pressure' && event.actor === 'a'
+    );
+    const gearedTrigger = gearedReport.simulation.timeline.find(
+      (event) => event.kind === 'ink_pressure' && event.actor === 'a'
+    );
+    if (!plainTrigger || !gearedTrigger) continue;
+    assert.ok(
+      gearedTrigger.tick <= plainTrigger.tick,
+      `health Gear delayed Ink Pressure at seed ${seed}`
+    );
+    comparedTriggers += 1;
+  }
+
+  assert.ok(comparedTriggers > 0, 'expected comparable Ink Pressure triggers');
+});
+
 test('loadout summary presents all six authoritative combat modifiers', () => {
   const emptySummary = gearCombat.summarizeGearCombatModifiers(
     gearCombat.EMPTY_GEAR_COMBAT_MODIFIERS
@@ -166,7 +244,7 @@ test('loadout summary presents all six authoritative combat modifiers', () => {
       .summarizeGearCombatModifiers(rush.modifiers)
       .map((item) => [item.key, item])
   );
-  assert.equal(rushSummary.impact.value, '+0.7%');
+  assert.equal(rushSummary.impact.value, '+2.4%');
   assert.equal(rushSummary.hearts.value, '0.0%');
   assert.equal(rushSummary.cooldown.value, 'NORMAL');
   assert.equal(rushSummary.start.value, 'NORMAL');
@@ -224,6 +302,144 @@ test('mixed-family support contributes its own bounded technique identity', () =
   assert.match(mixedFamily.techniques[0].effect.summary, /QUICK DRAW SUPPORT/);
   assertBoundedModifiers(sameFamily.modifiers);
   assertBoundedModifiers(mixedFamily.modifiers);
+});
+
+test('all Gear families progress through six distinct monotonic combat quanta', () => {
+  const familyCases = [
+    {
+      family: 'guard',
+      gearId: 'beanie',
+      increasing: ['maximumHitPointsPermille'],
+      decreasing: [],
+    },
+    {
+      family: 'rush',
+      gearId: 'smearstep-speed-scarf',
+      increasing: ['damagePermille'],
+      decreasing: [],
+    },
+    {
+      family: 'focus',
+      gearId: 'monocle',
+      increasing: ['criticalChanceBonusPermille'],
+      decreasing: ['cooldownPermille'],
+    },
+    {
+      family: 'ready',
+      gearId: 'bowtie',
+      increasing: ['criticalChanceBonusPermille'],
+      decreasing: [],
+    },
+    {
+      family: 'fortune',
+      gearId: 'flower-crown',
+      increasing: ['maximumHitPointsPermille', 'criticalChanceBonusPermille'],
+      decreasing: [],
+    },
+    {
+      family: 'aim',
+      gearId: 'tiny-sword',
+      increasing: ['damagePermille', 'criticalChanceBonusPermille'],
+      decreasing: [],
+    },
+  ];
+
+  for (const familyCase of familyCases) {
+    const resolvedByRank = arena.GEAR_RANKS.map((rank) =>
+      gearCombat.resolveGearCombatLoadout(
+        fighterWithGear(
+          `${familyCase.family}-rank-${rank}`,
+          builds.nib_halo,
+          familyCase.gearId,
+          rank
+        )
+      )
+    );
+    const outcomeQuanta = resolvedByRank.map((resolved) =>
+      canonicalOutcomeQuantum(resolved.modifiers)
+    );
+
+    assert.equal(
+      new Set(outcomeQuanta.map((outcome) => JSON.stringify(outcome))).size,
+      arena.GEAR_RANKS.length,
+      `${familyCase.family} needs a distinct canonical combat outcome at every rank`
+    );
+
+    for (let index = 1; index < resolvedByRank.length; index += 1) {
+      const previous = resolvedByRank[index - 1].modifiers;
+      const current = resolvedByRank[index].modifiers;
+      assert.notDeepEqual(
+        current,
+        previous,
+        `${familyCase.family} rank ${index + 1} must change its modifiers`
+      );
+      for (const key of familyCase.increasing) {
+        assert.ok(
+          current[key] > previous[key],
+          `${familyCase.family} ${key} must increase at rank ${index + 1}`
+        );
+      }
+      for (const key of familyCase.decreasing) {
+        assert.ok(
+          current[key] < previous[key],
+          `${familyCase.family} ${key} must decrease at rank ${index + 1}`
+        );
+      }
+      assert.equal(
+        current.telegraphTicksDelta,
+        0,
+        `${familyCase.family} must not introduce a rank timing cliff`
+      );
+      assertBoundedModifiers(current);
+    }
+  }
+});
+
+test('rank-six Ready and Fortune supports add a real same-family benefit', () => {
+  const resolveAccessoryPair = (id, leadGearId, supportGearId) => {
+    const loadout = {
+      ...equipment.createEmptyEquipmentLoadout(),
+      accessory: [leadGearId, supportGearId],
+    };
+    return gearCombat.resolveGearCombatLoadout(
+      makeFighter(id, builds.nib_halo, loadout, {
+        [leadGearId]: 6,
+        [supportGearId]: 6,
+      })
+    );
+  };
+
+  const readyLead = gearCombat.resolveGearCombatLoadout(
+    fighterWithGear('ready-lead', builds.nib_halo, 'bowtie', 6)
+  );
+  const readySupported = resolveAccessoryPair(
+    'ready-supported',
+    'bowtie',
+    'party-hat'
+  );
+  assert.ok(
+    readySupported.modifiers.criticalChanceBonusPermille >
+      readyLead.modifiers.criticalChanceBonusPermille
+  );
+
+  const fortuneLead = gearCombat.resolveGearCombatLoadout(
+    fighterWithGear('fortune-lead', builds.nib_halo, 'flower-crown', 6)
+  );
+  const fortuneSupported = resolveAccessoryPair(
+    'fortune-supported',
+    'flower-crown',
+    'button-badge'
+  );
+  assert.ok(
+    fortuneSupported.modifiers.criticalChanceBonusPermille >
+      fortuneLead.modifiers.criticalChanceBonusPermille
+  );
+  assert.ok(
+    fortuneSupported.modifiers.maximumHitPointsPermille >
+      fortuneLead.modifiers.maximumHitPointsPermille
+  );
+  assertBoundedModifiers(readySupported.modifiers);
+  assertBoundedModifiers(fortuneSupported.modifiers);
 });
 
 const assertBoundedModifiers = (modifiers) => {

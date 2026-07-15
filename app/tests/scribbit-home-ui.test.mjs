@@ -212,6 +212,12 @@ test('Home is the living Scribbit screen with one big Draw action', () => {
   assert.match(dailyLoginModalSource, /\.circle\(/);
   assert.match(dailyLoginModalSource, /const primaryRect/);
   assert.match(dailyLoginModalSource, /size: 46/);
+  assert.match(dailyLoginModalSource, /contentRevealTween/);
+  assert.match(dailyLoginModalSource, /claimablePulseTween/);
+  assert.match(dailyLoginModalSource, /ease: 'Sine\.easeInOut'/);
+  assert.match(dailyLoginModalSource, /repeat: -1/);
+  assert.match(dailyLoginModalSource, /if \(reducedMotion \|\| busy/);
+  assert.match(dailyLoginModalSource, /stopAnimationTweens\(\)/);
   assert.doesNotMatch(dailyLoginModalSource, /\bbutton\(/);
   assert.match(paperIconsSource, /function drawInkBottle\(/);
   assert.match(paperIconsSource, /graphics\.fillStyle\(UI\.creamHex, 1\)/);

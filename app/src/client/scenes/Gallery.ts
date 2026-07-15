@@ -27,7 +27,7 @@ import {
 } from '../lib/scribbits';
 import { UI } from '../lib/theme';
 import { LivingPaper } from '../lib/livingpaper';
-import { label, stickerCard } from '../lib/ui';
+import { label, startScene, stickerCard } from '../lib/ui';
 import {
   collectDiscoveredPowerUpIds,
   openDetailModal,
@@ -73,7 +73,7 @@ const LEGEND_CARD_HEIGHT = 272;
 const LEGEND_CARD_ROW_GAP = 18;
 const LEGEND_CARD_ROW_STEP = LEGEND_CARD_HEIGHT + LEGEND_CARD_ROW_GAP;
 const LEGEND_CARD_TOP_GAP = 20;
-const BAG_CONTENT_TOP = 116;
+const BAG_CONTENT_TOP = 64;
 const GALLERY_TABS_Y = 150;
 const GALLERY_TAB_HEIGHT = 76;
 const GALLERY_CONTENT_TOP = 240;
@@ -561,7 +561,17 @@ export class Gallery extends Scene {
     appDock(this, this.tab === 'collection' ? 'bag' : 'home', {
       bag: () => this.switchTab('collection'),
     });
-    this.menu = appMenu(this);
+    this.menu = appMenu(
+      this,
+      this.tab === 'collection'
+        ? {}
+        : {
+            back: {
+              label: translate('gallery.backToHome'),
+              onActivate: () => startScene(this, 'ScribbitHome'),
+            },
+          }
+    );
   }
 
   private buildTabs(y: number): void {

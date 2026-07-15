@@ -651,11 +651,13 @@ function buildCompactBagInventory(options: {
   const compactInventoryFits =
     compactY + BAG_COMPACT_SLOT_SIZE / 2 <=
     scene.scale.height - NAV_SAFE - 8;
-  const expandX = scene.scale.width - 112;
+  const expandX = compactInventoryFits
+    ? scene.scale.width - 112
+    : scene.scale.width - 180;
   const expandY = compactInventoryFits
     ? binderTop + binderOffsetY(913)
-    : scene.scale.height - NAV_SAFE - 60;
-  const expandWidth = compactInventoryFits ? 138 : 174;
+    : binderTop + binderOffsetY(92);
+  const expandWidth = compactInventoryFits ? 138 : 150;
   ghostButton(
     scene,
     expandX,
@@ -1123,7 +1125,7 @@ function buildBagCharacterStage(options: {
     stage.add(
       label(
         scene,
-        0,
+        -60,
         binderOffsetY(-455),
         `CHANGE SCRIBBIT · ${selectedIndex + 1} / ${scribbits.length}`,
         20,

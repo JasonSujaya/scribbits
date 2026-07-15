@@ -13,22 +13,29 @@
   ],
   "suites": {
     "roleMatrix": {
-      "seedsPerPairing": 80
+      "seedsPerPairing": 800,
+      "minimumMirrorWinRate": 0.47,
+      "maximumMirrorWinRate": 0.53
     },
     "roleCycle": {
-      "seedsPerPairing": 120,
-      "minimumEdgeWinRate": 0.53,
-      "maximumEdgeWinRate": 0.62
+      "seedsPerPairing": 2000,
+      "minimumEdgeWinRate": 0.57,
+      "maximumEdgeWinRate": 0.65
     },
     "growthProgression": {
-      "seedsPerPairing": 48
+      "historiesPerRole": 400,
+      "minimumEqualProgressionWinRate": 0.45,
+      "maximumEqualProgressionWinRate": 0.55,
+      "minimumCounterWinRate": 0.55,
+      "minimumMatureCounterWinRate": 0.5,
+      "maximumCounterWinRate": 0.65
     },
     "powerUpCombos": {
       "targetBuildId": "longshot-base",
       "seedsPerPairing": 40
     },
     "powerUpUsefulness": {
-      "seedsPerPairing": 36
+      "seedsPerPairing": 400
     },
     "rivalRunRisk": {
       "challengerBuildIds": ["brawler-base", "longshot-base", "mage-base"],
@@ -38,15 +45,30 @@
       "runsPerRole": 80
     },
     "generatedPool": {
-      "opponentCount": 32,
-      "seedsPerOpponent": 12
+      "opponentCount": 96,
+      "seedsPerOpponent": 20
     },
     "damageSourceBreakdown": {
       "seedsPerPairing": 80,
       "generatedSeedsPerOpponent": 8
     },
     "gearPowerUps": {
-      "seedsPerPairing": 40
+      "seedsPerPairing": 200
+    },
+    "equipmentMeta": {
+      "samples": 256,
+      "seedsPerPairing": 8,
+      "powerUpCounts": [0, 3, 5],
+      "minimumFieldWinRate": 0.44,
+      "maximumFieldWinRate": 0.58,
+      "minimumLegalWinRate": 0.3,
+      "maximumLegalWinRate": 0.7,
+      "minimumCounterWinRate": 0.5,
+      "minimumMatureCounterWinRate": 0.35,
+      "maximumCounterWinRate": 0.7,
+      "minimumGearMarginal": -0.1,
+      "maximumGearMarginal": 0.05,
+      "maximumInteractionLift": 0.1
     },
     "roleEdges": {
       "seedsPerPairing": 40
@@ -55,9 +77,56 @@
       "seedsPerPairing": 60
     },
     "rewardPath": {
-      "targetBuildId": "brawler-base",
-      "opponentBuildId": "longshot-base",
-      "seedsPerSource": 40
+      "offersPerRole": 128
+    },
+    "thirtyDayContent": {
+      "days": 30,
+      "runsPerProfile": 48,
+      "checkpointDays": [1, 3, 7, 14, 21, 30],
+      "profiles": [
+        {
+          "id": "casual",
+          "label": "Casual",
+          "dailyDraws": 1,
+          "sparWinsPerDay": 0,
+          "sparWinCadenceDays": 3,
+          "rumbleWinsPerDay": 0,
+          "championWinCadenceDays": 0,
+          "backedChampionCadenceDays": 0,
+          "minimumDayThirtyCapsules": 35,
+          "maximumDayThirtyCapsules": 50
+        },
+        {
+          "id": "regular",
+          "label": "Regular",
+          "dailyDraws": 1,
+          "sparWinsPerDay": 1,
+          "sparWinCadenceDays": 0,
+          "rumbleWinsPerDay": 1,
+          "championWinCadenceDays": 0,
+          "backedChampionCadenceDays": 0,
+          "minimumDayThirtyCapsules": 60,
+          "maximumDayThirtyCapsules": 85
+        },
+        {
+          "id": "competitive",
+          "label": "Competitive",
+          "dailyDraws": 1,
+          "sparWinsPerDay": 1,
+          "sparWinCadenceDays": 0,
+          "rumbleWinsPerDay": 2,
+          "championWinCadenceDays": 3,
+          "backedChampionCadenceDays": 3,
+          "minimumDayThirtyCapsules": 90,
+          "maximumDayThirtyCapsules": 120
+        }
+      ],
+      "minimumDayThirtyGearRank": 2,
+      "maximumDayThirtyGearRank": 4,
+      "maximumDayThirtyCollectionRatio": 0.9,
+      "maximumEqualProgressionWinRate": 0.7,
+      "minimumEqualProgressionWinRate": 0.3,
+      "maximumCrossProfileWinRate": 0.72
     }
   },
   "rewardSources": [
@@ -84,9 +153,10 @@
       "powerUpCount": 3
     },
     {
-      "id": "day-3-three",
-      "label": "Day 3 · 3 PU",
-      "powerUpCount": 3
+      "id": "mature-five",
+      "label": "Mature · 5 PU",
+      "powerUpCount": 5,
+      "maximumPowerUps": 5
     }
   ],
   "powerUpCombos": [
@@ -113,32 +183,60 @@
   ],
   "gearPowerUpProfiles": [
     {
+      "id": "brawler-pressure",
+      "label": "Brawler pressure",
       "targetBuildId": "brawler-base",
-      "powerUpIds": ["v1-edge-spring", "v1-center-fold", "v1-wallop"],
+      "powerUpIds": ["v1-edge-spring", "v1-center-fold", "v1-echo-mark"],
       "gear": [
         { "id": "inkquake-rumble-belt", "rank": 6, "slotIndex": 0 },
-        { "id": "inkquake-crater-crown", "rank": 6, "slotIndex": 0 }
+        { "id": "tiny-sword", "rank": 6, "slotIndex": 1 }
       ]
     },
     {
+      "id": "brawler-sustain",
+      "label": "Brawler sustain",
+      "targetBuildId": "brawler-base",
+      "powerUpIds": ["v1-edge-spring", "v1-center-fold", "v1-backup-plan"],
+      "gear": [
+        { "id": "inkquake-crater-crown", "rank": 6, "slotIndex": 0 },
+        { "id": "cape", "rank": 6, "slotIndex": 1 }
+      ]
+    },
+    {
+      "id": "longshot-guard",
+      "label": "Longshot guard",
       "targetBuildId": "longshot-base",
-      "powerUpIds": ["v1-smudge-step", "v1-double-doodle", "v1-echo-mark"],
+      "powerUpIds": ["v1-smudge-step", "v1-center-fold", "v1-counter-sketch"],
       "gear": [
         { "id": "nib-halo-headband", "rank": 6, "slotIndex": 0 },
         { "id": "nib-halo-circlet", "rank": 6, "slotIndex": 1 }
       ]
     },
     {
+      "id": "longshot-pressure",
+      "label": "Longshot pressure",
       "targetBuildId": "longshot-base",
-      "powerUpIds": ["v1-combo-spark", "v1-paper-shield", "v1-echo-mark"],
+      "powerUpIds": ["v1-center-fold", "v1-wallop", "v1-smudge-step"],
       "gear": [
         { "id": "smearstep-speed-scarf", "rank": 6, "slotIndex": 0 },
         { "id": "smearstep-ink-skates", "rank": 6, "slotIndex": 1 }
       ]
     },
     {
+      "id": "mage-combo",
+      "label": "Mage combo",
       "targetBuildId": "mage-base",
-      "powerUpIds": ["v1-edge-spring", "v1-center-fold", "v1-paper-shield"],
+      "powerUpIds": ["v1-combo-spark", "v1-double-doodle", "v1-echo-mark"],
+      "gear": [
+        { "id": "colorburst-rosette", "rank": 6, "slotIndex": 0 },
+        { "id": "colorburst-prism-crown", "rank": 6, "slotIndex": 1 }
+      ]
+    },
+    {
+      "id": "mage-sustain",
+      "label": "Mage sustain",
+      "targetBuildId": "mage-base",
+      "powerUpIds": ["v1-center-fold", "v1-backup-plan", "v1-second-draft"],
       "gear": [
         { "id": "colorburst-rosette", "rank": 6, "slotIndex": 0 },
         { "id": "colorburst-prism-crown", "rank": 6, "slotIndex": 1 }
@@ -183,37 +281,37 @@
     {
       "id": "brawler-base",
       "label": "Brawler base",
-      "stats": { "chonk": 55, "spike": 15, "zip": 15, "charm": 15 },
+      "stats": { "chonk": 40, "spike": 20, "zip": 20, "charm": 20 },
       "powerUpIds": []
     },
     {
       "id": "longshot-base",
       "label": "Longshot base",
-      "stats": { "chonk": 15, "spike": 55, "zip": 15, "charm": 15 },
+      "stats": { "chonk": 20, "spike": 40, "zip": 20, "charm": 20 },
       "powerUpIds": []
     },
     {
       "id": "mage-base",
       "label": "Mage base",
-      "stats": { "chonk": 15, "spike": 15, "zip": 15, "charm": 55 },
+      "stats": { "chonk": 20, "spike": 20, "zip": 20, "charm": 40 },
       "powerUpIds": []
     },
     {
       "id": "brawler-common-build",
       "label": "Brawler common Power-Ups",
-      "stats": { "chonk": 55, "spike": 15, "zip": 15, "charm": 15 },
+      "stats": { "chonk": 40, "spike": 20, "zip": 20, "charm": 20 },
       "powerUpIds": ["v1-paper-shield", "v1-center-fold", "v1-combo-spark"]
     },
     {
       "id": "longshot-rush-build",
       "label": "Longshot rush Power-Ups",
-      "stats": { "chonk": 15, "spike": 55, "zip": 15, "charm": 15 },
+      "stats": { "chonk": 20, "spike": 40, "zip": 20, "charm": 20 },
       "powerUpIds": ["v1-combo-spark", "v1-paper-shield", "v1-echo-mark"]
     },
     {
       "id": "mage-rare-build",
       "label": "Mage rare Power-Ups",
-      "stats": { "chonk": 15, "spike": 15, "zip": 15, "charm": 55 },
+      "stats": { "chonk": 20, "spike": 20, "zip": 20, "charm": 40 },
       "powerUpIds": [
         "v1-double-doodle",
         "v1-counter-sketch",

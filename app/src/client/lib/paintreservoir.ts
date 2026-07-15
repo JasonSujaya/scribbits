@@ -46,8 +46,18 @@ export const tryUsePaint = (
   });
 };
 
-export const paintRemainingPercent = (
-  reservoir: PaintReservoir
-): number => {
+export const returnPaint = (
+  reservoir: PaintReservoir,
+  returnedAmount: number
+): PaintReservoir => {
+  if (!Number.isFinite(returnedAmount)) return reservoir;
+  const amount = Math.ceil(returnedAmount);
+  if (amount <= 0 || !Number.isSafeInteger(amount)) return reservoir;
+  const remaining = Math.min(reservoir.capacity, reservoir.remaining + amount);
+  if (remaining === reservoir.remaining) return reservoir;
+  return Object.freeze({ capacity: reservoir.capacity, remaining });
+};
+
+export const paintRemainingPercent = (reservoir: PaintReservoir): number => {
   return Math.round((reservoir.remaining / reservoir.capacity) * 100);
 };

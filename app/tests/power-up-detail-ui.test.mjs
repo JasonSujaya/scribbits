@@ -90,10 +90,11 @@ test('Power-Up choices react to hover and press without forcing motion', () => {
   );
   assert.match(powerUpDraftSource, /canvasFocusIsKeyboardDriven/);
   assert.match(powerUpDraftSource, /hoverShadow\.setFillStyle/);
-  assert.match(powerUpDraftSource, /const rareRail = scene\.add\.rectangle/);
+  assert.match(powerUpDraftSource, /UNCOMMON_CARD_COLOR = 0x49a36d/);
+  assert.match(powerUpDraftSource, /const tierRail = scene\.add\.rectangle/);
   assert.match(
     powerUpDraftSource,
-    /const rareIconBacking = scene\.add\.circle/
+    /const tierIconBacking = scene\.add\.circle/
   );
   assert.match(
     powerUpDraftSource,
@@ -107,9 +108,32 @@ test('Power-Up choices react to hover and press without forcing motion', () => {
   assert.match(powerUpDraftSource, /if \(reduceMotion\)/);
 });
 
-test('Power-Up guide divides the rarity catalog across five focused pages', () => {
+test('Power-Up cards twitch at random while idle and clean up safely', () => {
+  assert.match(powerUpDraftSource, /IDLE_SHAKE_DELAY_MINIMUM_MS = 1_300/);
+  assert.match(powerUpDraftSource, /IDLE_SHAKE_DELAY_MAXIMUM_MS = 2_800/);
+  assert.match(powerUpDraftSource, /scene\.time\.delayedCall\(delay/);
+  assert.match(
+    powerUpDraftSource,
+    /availableMotions\[randomInteger\(0, availableMotions\.length - 1\)\]/
+  );
+  assert.match(powerUpDraftSource, /Math\.random\(\) < 0\.5 \? -1 : 1/);
+  assert.match(
+    powerUpDraftSource,
+    /if \(reduceMotion \|\| destroyed \|\| busy\) return;/
+  );
+  assert.match(powerUpDraftSource, /idleShakeTimer\?\.remove\(false\)/);
+  assert.match(powerUpDraftSource, /scene\.tweens\.killTweensOf\(card\)/);
+  assert.match(powerUpDraftSource, /yoyo: true,[\s\S]*?repeat: 1/);
+  assert.match(
+    powerUpDraftSource,
+    /onComplete: \(\) => \{[\s\S]*?modal\.focusInitial\(controls\[0\]\);[\s\S]*?scheduleIdleMotion\(\);/
+  );
+});
+
+test('Power-Up guide divides the rarity catalog across six focused pages', () => {
   assert.match(detailSource, /'YOUR BUILD'/);
   assert.match(detailSource, /'COMMON POWER-UPS'/);
+  assert.match(detailSource, /'UNCOMMON POWER-UPS'/);
   assert.match(detailSource, /'RARE POWER-UPS'/);
   assert.match(detailSource, /'EPIC \+ LEGENDARY'/);
   assert.match(detailSource, /'WIN → CHOOSE 1'/);
@@ -117,13 +141,18 @@ test('Power-Up guide divides the rarity catalog across five focused pages', () =
     detailSource,
     /const guidePages = \[buildPage, \.\.\.catalogPages, earnPage\]/
   );
-  assert.match(detailSource, /POWER_UP_GUIDE_PAGE_COUNT = 5/);
+  assert.match(
+    detailSource,
+    /POWER_UP_GUIDE_PAGE_COUNT = POWER_UP_CATALOG_SECTIONS\.length \+ 2/
+  );
   assert.match(detailSource, /section\.ids\.forEach/);
   assert.match(detailSource, /CHARCOAL CARDS/);
+  assert.match(detailSource, /GREEN CARDS/);
   assert.match(detailSource, /BLUE CARDS/);
   assert.match(detailSource, /PURPLE = EPIC · GOLD = LEGENDARY/);
   assert.match(detailSource, /STANDARD WIN/);
   assert.match(detailSource, /CHAMPION WIN/);
+  assert.match(detailSource, /3 DISTINCT ROLLS · CARD ORDER SHUFFLED/);
   assert.match(detailSource, /LOSS = NO POWER-UP/);
 });
 

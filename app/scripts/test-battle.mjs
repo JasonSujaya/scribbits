@@ -465,7 +465,11 @@ assert.equal(
 );
 assert.equal(
   packageManifest.scripts['release:check'],
-  'pnpm run verify && devvit whoami'
+  'pnpm run verify && pnpm run balance:check && devvit whoami'
+);
+assert.equal(
+  packageManifest.scripts['balance:check'],
+  'node tools/balancer/run.mjs --check'
 );
 assert.match(deployCommandSource, /run_pnpm deploy/);
 assert.doesNotMatch(
@@ -1047,13 +1051,17 @@ const replayBattleBackgroundSource = readFileSync(
   join(repoRoot, 'src', 'client', 'lib', 'replaybattlebackground.ts'),
   'utf8'
 );
+const battleArenaPresentationSource = readFileSync(
+  join(repoRoot, 'src', 'client', 'lib', 'battlearenapresentation.ts'),
+  'utf8'
+);
 const replayBattleHudSource = readFileSync(
   join(repoRoot, 'src', 'client', 'lib', 'replaybattlehud.ts'),
   'utf8'
 );
 assert.match(replayBattleBackgroundSource, /battleStage\(scene, -1000\)/);
 assert.match(
-  replayBattleBackgroundSource,
+  battleArenaPresentationSource,
   /'v1-sticker-stadium': \{[\s\S]{0,100}background: 0xf29a3d/,
   'Sticker Stadium should keep its arena wash warm instead of adding a blue overlay'
 );
@@ -1351,6 +1359,7 @@ assert.deepEqual(publicRouteInventory, [
   'GET /api/season-board',
   'GET /api/spar-rivals',
   'GET /api/splash',
+  'GET /api/venue-board',
   'POST /api/back',
   'POST /api/battle-clip',
   'POST /api/believe',
@@ -3393,6 +3402,20 @@ try {
   const normalReturningArena = await requestMock('/api/arena');
   assert.equal(normalReturningArena.body.lastRumbleReceipt, null);
   assert.equal(normalReturningArena.body.legacyReturnReceipt, null);
+  const freshArena = await requestMock('/api/arena?fresh');
+  assert.deepEqual(
+    freshArena.body.dailyLogin,
+    {
+      claimedTrackDays: 0,
+      claimedToday: false,
+      nextReward: {
+        trackDay: 1,
+        ink: 1,
+        gearId: null,
+      },
+    },
+    'a fresh preview must begin on day one without claimed login rewards'
+  );
   const returningArena = await requestMock('/api/arena?backed-return');
   assert.deepEqual(
     {
@@ -3647,6 +3670,11 @@ try {
   assert.equal(freshSubmission.body.scribbit.element, 'ember');
   assert.equal(freshSubmission.body.scribbit.xp, 0);
   assert.equal(freshSubmission.body.scribbit.level, 1);
+  assert.equal(
+    freshSubmission.body.scribbit.drawingThemeId,
+    freshArena.body.communityDrawTheme.id,
+    'submission must keep the theme that was assigned before drawing'
+  );
   assert.equal(freshSubmission.body.drawCharges.available, 2);
   assert.equal(freshSubmission.body.enteredRumble, true);
   assert.equal(freshSubmission.body.powerUpOffer.source, 'birth');
@@ -3664,6 +3692,11 @@ try {
   );
   const arenaAfterRepeatedSubmission = await requestMock('/api/arena?fresh');
   assert.equal(arenaAfterRepeatedSubmission.body.myScribbits.length, 1);
+  assert.notEqual(
+    arenaAfterRepeatedSubmission.body.communityDrawTheme.id,
+    freshSubmission.body.scribbit.drawingThemeId,
+    'the next Draw must receive another theme after a completed submission'
+  );
   assert.deepEqual(arenaAfterRepeatedSubmission.body.pendingPowerUpOffers, [
     freshSubmission.body.powerUpOffer,
   ]);
@@ -3823,50 +3856,34 @@ pass(
 
 assert.equal(battleArenas.BATTLE_ARENA_IDS.length, 10);
 assert.equal(battleArenas.getUnlockedBattleArenaDefinitions(1).length, 1);
-assert.equal(battleArenas.getUnlockedBattleArenaDefinitions(19).length, 10);
-for (let day = 3; day <= 40; day += 1) {
+assert.equal(battleArenas.getUnlockedBattleArenaDefinitions(10).length, 10);
+for (let day = 2; day <= 40; day += 1) {
   assert.notEqual(
     battleArenas.getBattleArenaForDay(day).id,
     battleArenas.getBattleArenaForDay(day - 1).id,
     `battle arena should not repeat on adjacent day ${day}`
   );
 }
-const tightArenaRules = battleArenas.applyBattleArenaModifier(
+const bounceArenaRules = battleArenas.applyBattleArenaModifier(
   combatConfig.DEFAULT_COMBAT_RULES,
   'v1-chalkboard-court'
 );
-assert.equal(tightArenaRules.arena.startingHalfWidth, 7_360);
-assert.equal(tightArenaRules.arena.startingHalfHeight, 4_600);
-assert.equal(tightArenaRules.arena.finalHalfWidth, 5_000);
-const earlyFoldTranscript = combatEngine.simulateCombat({
-  seed: 'battle-arena-proof',
-  battleArenaId: 'v1-scribble-lab',
-  fighters: [
-    {
-      id: 'arena-proof-a',
-      name: 'Arena Proof A',
-      element: 'ember',
-      stats: { chonk: 25, spike: 25, zip: 25, charm: 25 },
-    },
-    {
-      id: 'arena-proof-b',
-      name: 'Arena Proof B',
-      element: 'tide',
-      stats: { chonk: 25, spike: 25, zip: 25, charm: 25 },
-    },
-  ],
-});
-assert.ok(
-  earlyFoldTranscript.timeline.some(
-    (event) => event.kind === 'arena_shrink_started' && event.tick === 260
-  )
+assert.equal(bounceArenaRules.arena.startingHalfWidth, 7_360);
+assert.equal(bounceArenaRules.arena.startingHalfHeight, 4_600);
+assert.equal(bounceArenaRules.arena.finalHalfWidth, 5_000);
+const earlyFoldRules = battleArenas.applyBattleArenaModifier(
+  combatConfig.DEFAULT_COMBAT_RULES,
+  'v1-scribble-lab'
 );
-assert.equal(
-  battleArenas.evaluateBattleArenaChallenge(
-    'v1-scribble-lab',
-    earlyFoldTranscript
-  ).target,
-  1
+assert.equal(earlyFoldRules.arena.shrinkStartsAtTick, 260);
+assert.deepEqual(
+  battleArenas.evaluateBattleArenaChallenge('v1-scribble-lab', {
+    timeline: [
+      { kind: 'damage', tick: 259, source: 'inkquake', amount: 20 },
+      { kind: 'damage', tick: 260, source: 'inkquake', amount: 1 },
+    ],
+  }),
+  { progress: 1, target: 1, completed: true }
 );
 pass(
   'ten battle arenas rotate, modify combat symmetrically, and score challenges'
@@ -4137,40 +4154,79 @@ for (const power of ['inkquake', 'nib_halo', 'smearstep', 'colorburst']) {
   assert.equal(doodleDareCatalogValidation.promptsPerPower[power], 8);
 }
 assert.equal(
-  communityThemeContent.selectCommunityDoodleDare(9).id,
-  communityThemeContent.selectCommunityDoodleDare(9).id,
-  'the same Arena day must never reroll the shared creative brief'
+  communityThemeContent.selectCommunityDoodleDare(9, 'player-42').id,
+  communityThemeContent.selectCommunityDoodleDare(9, 'player-42').id,
+  'the same player and Arena cycle must never reroll the creative brief'
+);
+const firstPlayerThemeOrder = Array.from(
+  { length: 5 },
+  (_, completedDrawCount) =>
+    communityThemeContent.selectCommunityDoodleDare(
+      9,
+      'player-42',
+      completedDrawCount
+    )
+);
+assert.equal(
+  new Set(firstPlayerThemeOrder.map((theme) => theme.id)).size,
+  5,
+  'each completed community drawing should advance to another theme in the cycle pool'
+);
+assert.equal(
+  communityThemeContent.selectCommunityDoodleDare(9, 'player-42', 5).id,
+  firstPlayerThemeOrder[0].id,
+  'the assignment order should wrap only after all five themes are used'
 );
 assert.equal(
   communityThemeContent.COMMUNITY_DRAW_THEME_DAYS,
   3,
-  'one shared theme should last for three Arena days'
+  'one assigned theme should last for three Arena days'
 );
-const firstThreeCommunityThemeIds = [1, 2, 3].map(
-  (dayNumber) => communityThemeContent.selectCommunityDoodleDare(dayNumber).id
+const firstCommunityThemePool =
+  communityThemeContent.selectCommunityDoodleDarePool(1);
+assert.equal(
+  firstCommunityThemePool.length,
+  5,
+  'each three-day cycle should offer five distinct themes'
 );
 assert.equal(
-  new Set(firstThreeCommunityThemeIds).size,
-  1,
-  'the community should draw from one comparable brief for three days'
+  new Set(firstCommunityThemePool.map((theme) => theme.id)).size,
+  5,
+  'a cycle pool must not repeat a theme'
 );
-assert.equal(
-  communityThemeContent.selectCommunityDoodleDare(4).id,
-  'cloud',
-  'the next authored community theme should begin on day four'
+assert.deepEqual(
+  communityThemeContent.selectCommunityDoodleDarePool(1),
+  communityThemeContent.selectCommunityDoodleDarePool(3),
+  'the five-theme pool should stay fixed across its three days'
 );
-const firstCommunityThemeRotation = Array.from(
+assert.notDeepEqual(
+  communityThemeContent.selectCommunityDoodleDarePool(1),
+  communityThemeContent.selectCommunityDoodleDarePool(4),
+  'the five-theme pool should rotate after three days'
+);
+const completeCommunityThemeRotation = Array.from(
   { length: 120 },
-  (_, themeIndex) =>
-    communityThemeContent.selectCommunityDoodleDare(themeIndex * 3 + 1)
-);
+  (_, blockIndex) =>
+    communityThemeContent.selectCommunityDoodleDarePool(blockIndex * 3 + 1)
+).flat();
 assert.equal(
-  new Set(firstCommunityThemeRotation.map((dare) => dare.id)).size,
+  new Set(completeCommunityThemeRotation.map((dare) => dare.id)).size,
   120,
-  'the community rotation should stay unique for the complete 360 days'
+  'all authored themes should appear across the complete 360-day rotation'
+);
+assert.ok(
+  Array.from({ length: 120 }, (_, themeIndex) => {
+    const themeId =
+      communityThemeContent.COMMUNITY_DRAW_THEME_SEASONS[0].themes[themeIndex]
+        .id;
+    return completeCommunityThemeRotation.filter(
+      (theme) => theme.id === themeId
+    ).length;
+  }).every((appearanceCount) => appearanceCount === 5),
+  'the complete rotation should deal every authored theme exactly five times'
 );
 assert.throws(
-  () => communityThemeContent.selectCommunityDoodleDare(361),
+  () => communityThemeContent.selectCommunityDoodleDarePool(361),
   /append the next season/,
   'unsupported days must fail before they can silently remap published themes'
 );
@@ -4230,10 +4286,10 @@ assert.deepEqual(
     shapePowerContent.getShapePowerDrawingCue(power)
   ),
   [
-    'Coral + orange ink wake Inkquake.',
-    'Aqua + blue ink wake Nib Halo.',
+    'Brown + coral + orange ink wake Inkquake.',
+    'Gold + green + blue ink wake Nib Halo.',
     'Gold + green ink wake Smearstep.',
-    'Purple + pink ink wake Colorburst.',
+    'Aqua + purple + pink ink wake Colorburst.',
   ]
 );
 assert.deepEqual(
@@ -4250,11 +4306,11 @@ assert.deepEqual(
 assert.deepEqual(
   shapePowerContent.planShapeReceipt('ember', 'nib_halo'),
   {
-    cause: 'AQUA + BLUE INK',
+    cause: 'GOLD + GREEN + BLUE INK',
     move: 'FIRETIP HALO',
     effect: '3 ROTATING QUILLS',
-    birthLine: 'AQUA + BLUE INK → FIRETIP HALO',
-    battleLine: 'AQUA + BLUE INK → 3 ROTATING QUILLS',
+    birthLine: 'GOLD + GREEN + BLUE INK → FIRETIP HALO',
+    battleLine: 'GOLD + GREEN + BLUE INK → 3 ROTATING QUILLS',
   },
   'birth and battle should share one plain-language drawing receipt'
 );
@@ -4290,7 +4346,10 @@ assert.match(
   drawReceiptSource,
   /planPracticeReveal\(getPracticeSession\(this\)\)/
 );
-assert.match(drawReceiptSource, /getCombatRoleContent\(selectCombatRole/);
+assert.match(
+  drawReceiptSource,
+  /const combatRoleId = selectCombatRole\([\s\S]{0,120}getCombatRoleContent\(combatRoleId\)/
+);
 assert.doesNotMatch(drawReceiptSource, /statBudgetRevealCopy/);
 assert.match(
   drawReceiptSource,
@@ -8282,7 +8341,7 @@ const debugOpponentPower = Object.freeze({
 const debugSeedByPower = Object.freeze({
   inkquake: 13,
   nib_halo: 3,
-  colorburst: 25,
+  colorburst: 3,
 });
 const debugFixtureForecast = Object.freeze({
   day: 9,
@@ -9450,7 +9509,7 @@ const goldenCombatCases = [
     }),
     seed: 7001,
     expectedHash:
-      '27950eb115e6a8d4bc06ea419f9b2f7c6ec9ecd86c56a4bfa80f8f65b3c061f0',
+      '793ba598abd173b98a44e82c69315b246845da6cf3b90d7b9a0437ff9f7d9a2d',
   },
   {
     name: 'boundary archetypes',
@@ -9468,7 +9527,7 @@ const goldenCombatCases = [
     }),
     seed: 7002,
     expectedHash:
-      'f048f62be73035df6d74079baf93f20d3888feed933c47b24be61eb3b8d9cea1',
+      'ff5d6be427ffba272cabba6fcd727fdd5f68e11ea850dd3faa1f502cdcf4b0ea',
   },
   {
     name: 'legacy Zip to Longshot schedule',
@@ -9486,7 +9545,7 @@ const goldenCombatCases = [
     }),
     seed: 7003,
     expectedHash:
-      '413733f929418fa36ae48057308d7fe368a9e0ac1c4f56d80b81c3992aaaba26',
+      'd1af557b00168fac7291622c4b3c9e58e0e67156a0571e2de24a04834ec9f022',
   },
 ];
 const transcriptHash = (transcript) =>
@@ -11152,12 +11211,12 @@ assert.deepEqual(
   },
   {
     headline: 'KO • Heavy Page WINS',
-    verdictLine: '13.4s • INK LEFT 1/225 vs 0/185',
-    tapeLine: '185 TOTAL DAMAGE • SHOCKWAVE',
+    verdictLine: '14.6s • INK LEFT 28/275 vs 0/235',
+    tapeLine: '235 TOTAL DAMAGE • SHOCKWAVE',
     highlight: {
       label: 'FINAL SPLAT',
-      text: 'Body Slam • 13 to Needle Star',
-      compactText: 'Body Slam · 13 DAMAGE',
+      text: 'Body Slam • 12 to Needle Star',
+      compactText: 'Body Slam · 12 DAMAGE',
     },
     finishPresentation: 'knockout',
     finishSound: 'knockout',
@@ -12216,7 +12275,7 @@ const redAimEffect = sharedGearCombat.getGearTechniqueEffect(
   6
 );
 assert.equal(redAimEffect.name, 'True Aim');
-assert.match(redAimEffect.summary, /\+0\.7% IMPACT/);
+assert.match(redAimEffect.summary, /\+2\.4% IMPACT/);
 pass('Gear rank effects climb monotonically from one star to Red Star');
 
 const tinySwordFx = weaponFxPresentation.resolveWeaponFxProfile({

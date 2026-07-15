@@ -264,6 +264,7 @@ export type CreateReplayBattleHudInput = {
   fighterARole?: CombatRole;
   fighterBRole?: CombatRole;
   arenaName: string;
+  arenaRule: string;
   showPlaybackControls: boolean;
   reduceMotion: boolean;
   initialPlaybackSpeed: number;
@@ -594,7 +595,7 @@ export function createReplayBattleHud(
   const arenaCaption = label(
     scene,
     layout.viewportWidth / 2,
-    layout.arenaCaptionY,
+    layout.arenaCaptionY - 10,
     input.arenaName.toUpperCase(),
     17,
     UI.inkSoft,
@@ -604,6 +605,21 @@ export function createReplayBattleHud(
     .setAlpha(0.72)
     .setDepth(26);
   fitTextToWidth(arenaCaption, layout.viewportWidth - 96);
+  const arenaEffectCaption = label(
+    scene,
+    layout.viewportWidth / 2,
+    layout.arenaCaptionY + 12,
+    `FIELD EFFECT • ${input.arenaRule.toUpperCase()}`,
+    14,
+    UI.coralText,
+    true
+  )
+    .setOrigin(0.5)
+    .setDepth(26);
+  fitTextToWidth(arenaEffectCaption, layout.viewportWidth - 96);
+  arenaCaption.setName(
+    `${input.arenaName}. Field effect: ${input.arenaRule}.`
+  );
   const clock = createBattleClockView(
     scene,
     layout,
@@ -1094,6 +1110,7 @@ export function createReplayBattleHud(
       battleChromeVisible = visible;
       battleTitle.setVisible(visible);
       arenaCaption.setVisible(visible);
+      arenaEffectCaption.setVisible(visible);
       Object.values(fighterVitals).forEach((vitals) => {
         vitals.container.setVisible(visible);
       });

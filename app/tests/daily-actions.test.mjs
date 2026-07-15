@@ -41,7 +41,10 @@ const createScribbit = (overrides = {}) => ({
 test('Champion retries resume one deterministic report and one outcome', async () => {
   const memory = createMemoryStorage({ loseNextCommitReply: true });
   const userId = 'champion-player';
-  const challenger = createScribbit({ id: 'champion-challenger' });
+  const challenger = createScribbit({
+    id: 'champion-challenger',
+    expiresDay: 4,
+  });
   const champion = createScribbit({
     id: 'champion-defender',
     artist: 'founding-cast',
@@ -102,4 +105,49 @@ test('Champion retries resume one deterministic report and one outcome', async (
   );
   assert.deepEqual(otherReportResult, { status: 'already-challenged' });
   assert.equal(JSON.parse(await memory.storage.get(scribbitKey)).wins, 1);
+});
+
+test('Champion commits reject a growing Scribbit at the atomic boundary', async () => {
+  const memory = createMemoryStorage();
+  const challenger = createScribbit({
+    id: 'growing-challenger',
+    expiresDay: 5,
+  });
+  const champion = createScribbit({
+    id: 'champion-defender',
+    artist: 'founding-cast',
+  });
+  const input = {
+    userId: 'growing-player',
+    day: 4,
+    challengerId: challenger.id,
+    championId: champion.id,
+    report: {
+      id: 'growing-boss-report-day-4',
+      kind: 'boss',
+      day: 4,
+      a: challenger,
+      b: champion,
+      winner: 'a',
+    },
+    winnerXpGain: 2,
+  };
+  const scribbitKey = scribbitStore.getScribbitKey(challenger.id);
+  await memory.storage.set(scribbitKey, JSON.stringify(challenger));
+
+  assert.deepEqual(
+    await dailyActions.commitDailyChampionOutcome(memory.storage, input),
+    { status: 'target-unavailable' }
+  );
+  assert.deepEqual(
+    JSON.parse(await memory.storage.get(scribbitKey)),
+    challenger
+  );
+  assert.equal(
+    await memory.storage.hGet(
+      scribbitStore.getDailyFlagsKey(input.userId, input.day),
+      'bossChallenge'
+    ),
+    undefined
+  );
 });

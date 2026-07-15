@@ -7,6 +7,7 @@
   "type": "module",
   "scripts": {
     "balance": "node tools/balancer/run.mjs",
+    "balance:check": "node tools/balancer/run.mjs --check",
     "build": "NODE_OPTIONS=--max-old-space-size=4096 vite build && node scripts/verify-devvit-build.mjs",
     "deploy": "pnpm run release:check && NODE_OPTIONS=--max-old-space-size=4096 devvit upload --bump patch",
     "dev": "NODE_OPTIONS=--max-old-space-size=4096 devvit playtest",
@@ -15,7 +16,7 @@
     "login": "devvit login",
     "mock": "../mock.command",
     "prettier": "prettier --write .",
-    "release:check": "pnpm run verify && devvit whoami",
+    "release:check": "pnpm run verify && pnpm run balance:check && devvit whoami",
     "test": "node scripts/run-test-suites.mjs",
     "test:devvit": "node scripts/test-devvit-playtest.mjs",
     "test:suites": "node scripts/run-test-suites.mjs --suites-only",

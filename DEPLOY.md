@@ -39,9 +39,10 @@ cd app
 pnpm run deploy
 ```
 
-`pnpm run deploy` owns the complete release path: full verification, Devvit
-authentication check, and a patch upload. The desktop command, CI, and direct
-terminal use all call it. The script refuses a dirty git tree unless
+`pnpm run deploy` owns the complete release path: full verification, the
+non-mutating 149,994-fight competitive balance gate, Devvit authentication
+check, and a patch upload. The desktop command, CI, and direct terminal use all
+call it. The script refuses a dirty git tree unless
 `ALLOW_DIRTY_DEPLOY=1` is set. It never edits package metadata, commits, or
 pushes after an upload.
 
@@ -105,6 +106,8 @@ Token expiry: rerun `pnpm exec devvit login` from `app/`, then rerun `./deploy.c
 
 Name conflicts: if `pnpm exec devvit upload` says the app name is unavailable or conflicts with another app, update the name in `app/devvit.json` and `app/package.json`, then rerun the deploy command.
 
-Build failures: fix the reported type-check, lint, simulation, or build error before retrying. The script stops before upload when any check fails.
+Build failures: fix the reported type-check, lint, combat-balance simulation, or
+build error before retrying. The script stops before upload when any check
+fails, and balance check mode does not rewrite tracked reports.
 
 Registration prompt: complete Reddit's one-time registration and Terms prompts when the deploy command opens them, then rerun it if the CLI asks you to.

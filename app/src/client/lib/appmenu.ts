@@ -1,6 +1,10 @@
 import * as Phaser from 'phaser';
 import type { Scene } from 'phaser';
 import { CanvasActionOverlay, CanvasModalOverlay } from './overlay';
+import {
+  openFighterGuidePopup,
+  type FighterGuidePopup,
+} from './fighterguidepopup';
 import { paperIconButton } from './ui';
 import { ghostButton, iconButton, label, startScene, stickerCard } from './ui';
 import { UI } from './theme';
@@ -8,19 +12,27 @@ import { translate } from './localization';
 import { setSfxCue } from './sfx';
 
 export type AppMenu = Readonly<{ destroy: () => void }>;
-export type AppMenuOptions = Readonly<{ canNavigate?: () => boolean }>;
+export type AppMenuOptions = Readonly<{
+  canNavigate?: () => boolean;
+  back?: Readonly<{
+    label: string;
+    onActivate: () => void;
+  }>;
+}>;
 
 const SETTINGS_BUTTON_SIZE = 92;
 const SETTINGS_HIT_SIZE = 100;
 const SETTINGS_BUTTON_RIGHT_OFFSET = 60;
 const SETTINGS_BUTTON_Y = 58;
+const BACK_BUTTON_LEFT_OFFSET = 60;
 
-/** Top-right home for Settings actions that do not belong in the dock. */
+/** Shared top chrome for Settings and an optional scene-level back action. */
 export function appMenu(scene: Scene, options: AppMenuOptions = {}): AppMenu {
   const { width, height } = scene.scale;
   const actionOverlay = new CanvasActionOverlay(scene, 'app-menu');
   let modalOverlay: CanvasModalOverlay | null = null;
   let menuLayer: Phaser.GameObjects.Container | null = null;
+  let fieldGuidePopup: FighterGuidePopup | null = null;
 
   const closeMenu = (): void => {
     modalOverlay?.destroy();
@@ -108,7 +120,14 @@ export function appMenu(scene: Scene, options: AppMenuOptions = {}): AppMenu {
       return;
     }
     closeMenu();
-    startScene(scene, 'Bestiary');
+    if (fieldGuidePopup) return;
+    fieldGuidePopup = openFighterGuidePopup(
+      scene,
+      () => startScene(scene, 'Bestiary'),
+      () => {
+        fieldGuidePopup = null;
+      }
+    );
   };
 
   const settingsButton = paperIconButton(
@@ -122,12 +141,32 @@ export function appMenu(scene: Scene, options: AppMenuOptions = {}): AppMenu {
     UI.gold,
     SETTINGS_BUTTON_SIZE
   ).setDepth(2200);
+  const backButton = options.back
+    ? paperIconButton(
+        scene,
+        BACK_BUTTON_LEFT_OFFSET,
+        SETTINGS_BUTTON_Y,
+        'back',
+        options.back.onActivate,
+        SETTINGS_BUTTON_SIZE,
+        UI.creamHex,
+        UI.coral,
+        SETTINGS_BUTTON_SIZE,
+        { iconOffsetX: 0 }
+      ).setDepth(2200)
+    : null;
   const followCamera = (): void => {
     if (!settingsButton.active) return;
     const camera = scene.cameras.main;
+    const scrollX = camera?.scrollX ?? 0;
+    const scrollY = camera?.scrollY ?? 0;
     settingsButton.setPosition(
-      width - SETTINGS_BUTTON_RIGHT_OFFSET + (camera?.scrollX ?? 0),
-      SETTINGS_BUTTON_Y + (camera?.scrollY ?? 0)
+      width - SETTINGS_BUTTON_RIGHT_OFFSET + scrollX,
+      SETTINGS_BUTTON_Y + scrollY
+    );
+    backButton?.setPosition(
+      BACK_BUTTON_LEFT_OFFSET + scrollX,
+      SETTINGS_BUTTON_Y + scrollY
     );
   };
   scene.events.on('postupdate', followCamera);
@@ -144,6 +183,19 @@ export function appMenu(scene: Scene, options: AppMenuOptions = {}): AppMenu {
     pointerPassthrough: true,
     onActivate: openMenu,
   });
+  if (options.back) {
+    actionOverlay.add({
+      label: options.back.label,
+      rect: {
+        x: BACK_BUTTON_LEFT_OFFSET - SETTINGS_HIT_SIZE / 2,
+        y: SETTINGS_BUTTON_Y - SETTINGS_HIT_SIZE / 2,
+        width: SETTINGS_HIT_SIZE,
+        height: SETTINGS_HIT_SIZE,
+      },
+      pointerPassthrough: true,
+      onActivate: options.back.onActivate,
+    });
+  }
 
   let destroyed = false;
   const destroy = (): void => {
@@ -151,8 +203,10 @@ export function appMenu(scene: Scene, options: AppMenuOptions = {}): AppMenu {
     destroyed = true;
     scene.events.off('postupdate', followCamera);
     closeMenu();
+    fieldGuidePopup?.destroy();
     actionOverlay.destroy();
     settingsButton.destroy(true);
+    backButton?.destroy(true);
   };
   scene.events.once('shutdown', destroy);
   return { destroy };

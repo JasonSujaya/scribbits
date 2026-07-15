@@ -1,6 +1,6 @@
 # Damage Source Breakdown
 
-Generated: 2026-07-15T05:54:35.361Z
+Generated: 2026-07-15T08:58:40.687Z
 
 Runner: `app/tools/balancer/run.mjs`
 
@@ -8,18 +8,18 @@ This report bypasses API/routes/storage and calls the production combat mock bun
 
 | Target | Opponent | Win rate | Avg duration | Power-Up triggers | Target PU | Target dmg/source | Taken dmg/source | Target hit rate | Timeouts | Close | Blowouts | Verdict |
 | --- | --- | ---: | ---: | ---: | ---: | --- | --- | --- | ---: | ---: | ---: | --- |
-| Brawler base | Brawler base | 50.0% | 13.5s | 0.00 | 0.00 | brawler_slam 137.1, inkquake 87.9 | brawler_slam 137.3, inkquake 87.7 | body_slam 65.3% | 0.0% | 100.0% | 0.0% | OK |
-| Brawler base | Longshot base | 46.3% | 13.7s | 0.00 | 0.00 | inkquake 87.2, brawler_slam 49.4 | nib_halo 135.1, longshot_quill 89.4 | body_slam 66.7% | 0.0% | 50.0% | 0.0% | OK |
-| Brawler base | Mage base | 60.0% | 13.4s | 0.00 | 0.00 | inkquake 94.0, brawler_slam 90.6 | colorburst 103.7, mage_bolt 57.0, colorburst_echo 54.5 | body_slam 57.0% | 0.0% | 100.0% | 0.0% | OK |
-| Longshot base | Brawler base | 55.0% | 13.7s | 0.00 | 0.00 | nib_halo 134.9, longshot_quill 89.7 | inkquake 87.0, brawler_slam 49.7 | nib_volley 100.0%, piercing_quill 98.8% | 0.0% | 50.0% | 0.0% | OK |
-| Longshot base | Longshot base | 50.0% | 13.0s | 0.00 | 0.00 | nib_halo 100.2, longshot_quill 84.8 | nib_halo 100.1, longshot_quill 84.9 | piercing_quill 100.0%, nib_volley 100.0% | 0.0% | 100.0% | 0.0% | OK |
-| Longshot base | Mage base | 40.6% | 13.9s | 0.00 | 0.00 | longshot_quill 90.0, nib_halo 82.0 | colorburst 106.8, mage_bolt 51.5, colorburst_echo 20.6 | piercing_quill 100.0%, nib_volley 100.0% | 0.0% | 78.1% | 0.0% | OK |
-| Mage base | Brawler base | 43.1% | 13.4s | 0.00 | 0.00 | colorburst 103.5, mage_bolt 56.7, colorburst_echo 54.4 | inkquake 93.4, brawler_slam 91.2 | color_bolt 90.8% | 0.0% | 100.0% | 0.0% | OK |
-| Mage base | Longshot base | 58.8% | 13.9s | 0.00 | 0.00 | colorburst 106.2, mage_bolt 51.4, colorburst_echo 20.4 | longshot_quill 90.4, nib_halo 81.9 | color_bolt 81.7% | 0.0% | 73.8% | 0.0% | OK |
-| Mage base | Mage base | 51.2% | 17.0s | 0.00 | 0.00 | colorburst 132.4, mage_bolt 51.5, colorburst_echo 0.8 | colorburst 132.2, mage_bolt 51.8, colorburst_echo 0.7 | color_bolt 66.7% | 0.0% | 100.0% | 0.0% | OK |
-| Brawler base | Generated field | 26.2% | 13.9s | 0.00 | 0.00 | brawler_slam 88.5, inkquake 86.7 | nib_halo 64.0, longshot_quill 48.4, brawler_slam 35.4 | body_slam 72.2% | 0.0% | 57.4% | 0.0% | OK |
-| Longshot base | Generated field | 48.0% | 13.9s | 0.00 | 0.00 | nib_halo 106.8, longshot_quill 85.5 | nib_halo 50.7, longshot_quill 41.7, colorburst 23.2 | nib_volley 100.0%, piercing_quill 92.6% | 0.0% | 75.6% | 0.0% | OK |
-| Mage base | Generated field | 61.3% | 14.5s | 0.00 | 0.00 | colorburst 113.7, mage_bolt 54.8, colorburst_echo 23.0 | longshot_quill 41.7, nib_halo 33.2, colorburst 32.0 | color_bolt 80.1% | 0.0% | 59.8% | 0.0% | OK |
+| Brawler base | Brawler base | 46.3% | 10.6s | 0.00 | 0.00 | brawler_slam 153.9, inkquake 104.5 | brawler_slam 154.3, inkquake 104.0 | body_slam 97.3% | 0.0% | 100.0% | 0.0% | OK |
+| Brawler base | Longshot base | 36.9% | 16.9s | 0.00 | 0.00 | brawler_slam 134.8, inkquake 86.8 | nib_halo 153.5, longshot_quill 105.5 | body_slam 89.2% | 0.0% | 70.6% | 0.0% | OK |
+| Brawler base | Mage base | 55.0% | 15.3s | 0.00 | 0.00 | brawler_slam 161.0, inkquake 78.0 | colorburst 116.4, mage_bolt 64.5, colorburst_echo 51.7 | body_slam 92.1% | 0.0% | 65.6% | 0.0% | OK |
+| Longshot base | Brawler base | 56.9% | 17.0s | 0.00 | 0.00 | nib_halo 153.5, longshot_quill 105.5 | brawler_slam 135.8, inkquake 88.3 | piercing_quill 100.0%, nib_volley 100.0% | 0.0% | 74.4% | 0.0% | OK |
+| Longshot base | Longshot base | 50.0% | 19.2s | 0.00 | 0.00 | nib_halo 134.9, longshot_quill 104.0 | nib_halo 134.8, longshot_quill 104.8 | piercing_quill 100.0%, nib_volley 100.0% | 0.0% | 100.0% | 0.0% | OK |
+| Longshot base | Mage base | 39.4% | 19.8s | 0.00 | 0.00 | nib_halo 121.2, longshot_quill 108.5 | colorburst 136.5, mage_bolt 67.3, colorburst_echo 20.6 | piercing_quill 100.0%, nib_volley 100.0% | 0.0% | 90.0% | 0.0% | OK |
+| Mage base | Brawler base | 46.3% | 15.3s | 0.00 | 0.00 | colorburst 117.1, mage_bolt 64.4, colorburst_echo 51.7 | brawler_slam 160.9, inkquake 78.2 | color_bolt 82.8% | 0.0% | 66.3% | 0.0% | OK |
+| Mage base | Longshot base | 63.1% | 19.8s | 0.00 | 0.00 | colorburst 137.4, mage_bolt 67.4, colorburst_echo 21.3 | nib_halo 121.0, longshot_quill 108.0 | color_bolt 76.5% | 0.0% | 93.1% | 0.0% | OK |
+| Mage base | Mage base | 61.3% | 19.2s | 0.00 | 0.00 | colorburst 148.4, mage_bolt 70.0, colorburst_echo 15.7 | colorburst 149.8, mage_bolt 69.4, colorburst_echo 11.8 | color_bolt 79.8% | 0.0% | 97.5% | 0.0% | OK |
+| Brawler base | Generated field | 57.0% | 14.3s | 0.00 | 0.00 | brawler_slam 138.9, inkquake 94.0 | brawler_slam 51.0, nib_halo 48.8, longshot_quill 36.5 | body_slam 95.3% | 0.0% | 67.1% | 0.0% | OK |
+| Longshot base | Generated field | 55.6% | 18.2s | 0.00 | 0.00 | nib_halo 134.5, longshot_quill 103.7 | nib_halo 46.1, colorburst 40.8, inkquake 38.0 | piercing_quill 100.0%, nib_volley 100.0% | 0.0% | 73.1% | 0.0% | OK |
+| Mage base | Generated field | 56.7% | 18.0s | 0.00 | 0.00 | colorburst 131.9, mage_bolt 65.9, colorburst_echo 31.7 | brawler_slam 48.2, colorburst 46.9, nib_halo 41.8 | color_bolt 78.9% | 0.0% | 70.8% | 0.0% | OK |
 
 ## Hard flags
 

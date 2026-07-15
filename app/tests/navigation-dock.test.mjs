@@ -200,6 +200,22 @@ test('Paper icons are optically centered without moving their hit targets', () =
   );
 });
 
+test('Gallery has a matched top-left back button to Home', () => {
+  assert.match(appMenuSource, /const BACK_BUTTON_LEFT_OFFSET = 60;/);
+  assert.match(
+    appMenuSource,
+    /options\.back[\s\S]*paperIconButton\([\s\S]*'back'[\s\S]*SETTINGS_BUTTON_SIZE/
+  );
+  assert.match(
+    appMenuSource,
+    /label: options\.back\.label[\s\S]*onActivate: options\.back\.onActivate/
+  );
+  assert.match(
+    gallerySource,
+    /this\.tab === 'collection'[\s\S]*back: {[\s\S]*translate\('gallery\.backToHome'\)[\s\S]*startScene\(this, 'ScribbitHome'\)/
+  );
+});
+
 test('narrow icon buttons wrap labels before centering their content', () => {
   const wrapIndex = uiSource.indexOf(
     'textLabel.setWordWrapWidth(maximumTextWidth)'
@@ -218,6 +234,10 @@ test('narrow icon buttons wrap labels before centering their content', () => {
     positionIndex > measureIndex,
     'the centered content row should use the wrapped label width'
   );
+  assert.match(
+    uiSource,
+    /setIconButtonLabel[\s\S]{0,240}layoutIconButtonContent\(layout\)/
+  );
 });
 
 test('Gallery opens the owned lifecycle collection with bounded sections', () => {
@@ -232,10 +252,10 @@ test('Gallery opens the owned lifecycle collection with bounded sections', () =>
   assert.doesNotMatch(gallerySource, /fetchLegends|loadLegends/);
 });
 
-test('Scout is hidden from navigation without hiding the compact Rumble action', () => {
+test('Scout and the retired compact Rumble action stay out of navigation', () => {
   assert.doesNotMatch(scoutSource, /appDock\(this, 'scout'/);
   assert.doesNotMatch(bestiarySource, /appDock\(this, 'scout'/);
-  assert.match(arenaSource, /rumblePickLocked \? 'PICKED' : 'MAKE PICK'/);
+  assert.doesNotMatch(arenaSource, /rumblePickLocked \? 'PICKED' : 'MAKE PICK'/);
   assert.match(arenaSource, /this\.openContenderPicker\(\)/);
 });
 

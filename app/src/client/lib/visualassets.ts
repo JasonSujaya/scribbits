@@ -25,6 +25,7 @@ export const HOME_PROP_TEXTURES = {
 export const SHOP_STAGE_TEXTURE = 'scribbits-shop-stage';
 export const SHOP_CLAW_MACHINE_SHELL_TEXTURE =
   'scribbits-shop-claw-machine-shell';
+export const SHOP_CAPSULE_SHELL_TEXTURE = 'scribbits-shop-capsule-shell';
 export const SHOP_CHEST_TEXTURES = {
   closed: 'scribbits-shop-chest-closed',
   open: 'scribbits-shop-chest-open',
@@ -33,6 +34,7 @@ export const INK_TOKEN_TEXTURE = 'scribbits-ink-token';
 const SHOP_VISUAL_TEXTURES = [
   SHOP_STAGE_TEXTURE,
   SHOP_CLAW_MACHINE_SHELL_TEXTURE,
+  SHOP_CAPSULE_SHELL_TEXTURE,
   SHOP_CHEST_TEXTURES.closed,
   SHOP_CHEST_TEXTURES.open,
   INK_TOKEN_TEXTURE,
@@ -124,6 +126,10 @@ const VISUAL_ASSET_URLS: Readonly<Record<string, string>> = Object.freeze({
   ).href,
   'scribbits-shop-claw-machine-shell.webp': new URL(
     '../assets/scribbits-shop-claw-machine-shell.webp',
+    import.meta.url
+  ).href,
+  'scribbits-shop-capsule-shell.png': new URL(
+    '../assets/scribbits-shop-capsule-shell.png',
     import.meta.url
   ).href,
   'scribbits-shop-stage.webp': new URL(
@@ -250,6 +256,12 @@ export function preloadShopVisualAssets(scene: Scene): void {
     scene.load.image(
       SHOP_CLAW_MACHINE_SHELL_TEXTURE,
       assetUrl('scribbits-shop-claw-machine-shell.webp')
+    );
+  }
+  if (!scene.textures.exists(SHOP_CAPSULE_SHELL_TEXTURE)) {
+    scene.load.image(
+      SHOP_CAPSULE_SHELL_TEXTURE,
+      assetUrl('scribbits-shop-capsule-shell.png')
     );
   }
   if (!scene.textures.exists(SHOP_CHEST_TEXTURES.open)) {

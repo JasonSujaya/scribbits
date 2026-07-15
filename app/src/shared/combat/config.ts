@@ -158,7 +158,7 @@ export const DEFAULT_COMBAT_RULES: CombatRules = Object.freeze({
     lostHitPointPercentage: 45,
   }),
   fighter: Object.freeze({
-    baseHitPoints: 170,
+    baseHitPoints: 220,
     hitPointsPerChonk: 1,
     baseRadius: 430,
     radiusPerChonk: 4,
@@ -171,10 +171,9 @@ export const DEFAULT_COMBAT_RULES: CombatRules = Object.freeze({
     contactCooldownTicks: 16,
     contactBaseDamage: 6,
     contactSpikeDivisor: 8,
-    // The replay has roughly two seconds of entrance/FIGHT ceremony. Fresh ink
-    // cannot fully fold before tick 260, keeping the visible match in the
-    // intended 15-20 second band without changing who dealt the damage.
-    knockoutsEnabledAtTick: 13 * COMBAT_TICK_RATE,
+    // Let combat damage decide the knockout naturally. The larger health pool
+    // keeps replays readable without creating a shared 1-HP timing cliff.
+    knockoutsEnabledAtTick: 0,
     criticalChancePermillePerCharm: 2,
     maximumCriticalChancePermille: 180,
     criticalDamageMultiplierPermille: 1_500,

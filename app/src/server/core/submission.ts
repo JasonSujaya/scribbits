@@ -51,6 +51,7 @@ import {
   planDrawChargeConsumption,
   type DrawChargeRecord,
 } from './drawCharges';
+import { getUserCommunityThemeCompletionsKey } from './communityDrawTheme';
 
 export type ScribbitSubmissionCommitResult =
   | Readonly<{
@@ -271,6 +272,7 @@ const submissionWasCommitted = async (
     streak,
     hasCreatedScribbit,
     drawChargeRecord,
+    communityThemeCompletionScore,
   ] = await Promise.all([
     storage.get(getScribbitKey(scribbit.id)),
     storage.get(getScribbitOwnerKey(scribbit.id)),
@@ -284,6 +286,10 @@ const submissionWasCommitted = async (
     storage.hGetAll(getUserPlayStreakKey(input.userId)),
     storage.get(getUserHasCreatedScribbitKey(input.userId)),
     storage.hGetAll(getDrawChargeKey(input.userId)),
+    storage.zScore(
+      getUserCommunityThemeCompletionsKey(input.userId),
+      scribbit.id
+    ),
   ]);
 
   const expectedDrawChargeRecord = getDrawChargeRecordFields(
@@ -307,7 +313,8 @@ const submissionWasCommitted = async (
     hasCreatedScribbit !== '1' ||
     drawChargeRecord.available !== expectedDrawChargeRecord.available ||
     drawChargeRecord['refill-anchor-ms'] !==
-      expectedDrawChargeRecord['refill-anchor-ms']
+      expectedDrawChargeRecord['refill-anchor-ms'] ||
+    communityThemeCompletionScore !== scribbit.bornDay
   ) {
     return false;
   }
@@ -333,6 +340,13 @@ const queueSubmission = async (
   const inventoryUpdates: Record<string, string> = {};
 
   await queueStoredScribbit(transaction, input.userId, expected.scribbit);
+  await transaction.zAdd(
+    getUserCommunityThemeCompletionsKey(input.userId),
+    {
+      member: expected.scribbit.id,
+      score: expected.scribbit.bornDay,
+    }
+  );
   if (expected.enteredRumble) {
     await transaction.zAdd(getRumbleKey(expected.scribbit.bornDay), {
       member: expected.scribbit.id,
@@ -481,6 +495,8 @@ export const commitScribbitSubmission = async (
     const scribbitKey = getScribbitKey(input.scribbit.id);
     const hasCreatedScribbitKey = getUserHasCreatedScribbitKey(input.userId);
     const drawChargeKey = getDrawChargeKey(input.userId);
+    const communityThemeCompletionsKey =
+      getUserCommunityThemeCompletionsKey(input.userId);
     const currentArenaDayKey = getCurrentArenaDayKey();
     const resolutionClaimsKey = getNightlyResolutionClaimsKey();
     const watchedKeys = [
@@ -509,6 +525,7 @@ export const commitScribbitSubmission = async (
       [getUserScribbitsKey(input.userId), 'zset'],
       [getExpiringScribbitsKey(), 'zset'],
       [getRumbleKey(input.scribbit.bornDay), 'zset'],
+      [communityThemeCompletionsKey, 'zset'],
     ] as const satisfies readonly StorageTypeExpectation[];
     const currentDateKey = formatUtcDateKey(input.currentDate);
 

@@ -9,8 +9,16 @@ const appRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const workspaceRoot = resolve(appRoot, '..');
 const toolRoot = dirname(fileURLToPath(import.meta.url));
 const scenariosPath = resolve(toolRoot, 'scenarios.json');
-const bundlePath = resolve(appRoot, 'dist/mock-runtime/battle.mjs');
+const balancerBundleDirectory = resolve(appRoot, 'dist/balancer-runtime');
+const bundlePath = resolve(balancerBundleDirectory, 'battle.mjs');
 const artifactRoot = resolve(workspaceRoot, 'artifacts/balancer');
+const checkOnly = process.argv.includes('--check');
+const requestedSuiteIds = new Set(
+  process.argv
+    .filter((argument) => argument.startsWith('--suite='))
+    .flatMap((argument) => argument.slice('--suite='.length).split(','))
+    .filter(Boolean)
+);
 
 const WIN_RATE_FLAG_LOW = 0.35;
 const WIN_RATE_FLAG_HIGH = 0.65;
@@ -22,14 +30,36 @@ const POWER_UP_DEAD_TRIGGER_RATE = 0.15;
 const POWER_UP_LOW_IMPACT_SWING = 0.03;
 const POWER_UP_HARMFUL_SWING = -0.12;
 const POWER_UP_CLUTCH_SWING = 0.08;
+const POWER_UP_OVERTUNED_SWING_BY_RARITY = Object.freeze({
+  common: 0.35,
+  uncommon: 0.35,
+  rare: 0.4,
+  epic: 0.4,
+  legendary: 0.45,
+});
+const POWER_UP_MARGINAL_BAND_BY_RARITY = Object.freeze({
+  common: Object.freeze({ minimum: -0.02, maximum: 0.2 }),
+  uncommon: Object.freeze({ minimum: -0.02, maximum: 0.22 }),
+  rare: Object.freeze({ minimum: -0.02, maximum: 0.25 }),
+  epic: Object.freeze({ minimum: -0.02, maximum: 0.28 }),
+});
 const CLOSE_FIGHT_HP_MARGIN = 150;
 const BLOWOUT_HP_MARGIN = 650;
+const EFFECTIVE_ROLE_MATCHUPS = Object.freeze({
+  brawler: 'mage',
+  mage: 'longshot',
+  longshot: 'brawler',
+});
 
 function ensureMockCombatBundle() {
-  execFileSync(process.execPath, ['scripts/build-mock-combat.mjs'], {
-    cwd: appRoot,
-    stdio: 'inherit',
-  });
+  execFileSync(
+    process.execPath,
+    ['scripts/build-mock-combat.mjs', '--out-dir', balancerBundleDirectory],
+    {
+      cwd: appRoot,
+      stdio: 'inherit',
+    }
+  );
 }
 
 async function readJson(path) {
@@ -86,14 +116,29 @@ function makeFighter(runtime, build, suffix, overrides = {}) {
 
 function makeGearLoadout(runtime, gearEntries) {
   let loadout = runtime.createEmptyEquipmentLoadout();
-  gearEntries.forEach((entry, index) => {
+  const nextSlotByCategory = new Map();
+  const equippedGearIds = new Set();
+  gearEntries.forEach((entry) => {
     const gear = runtime.findGearCosmetic(entry.id);
     if (!gear) throw new Error(`Missing Gear ${entry.id}.`);
+    if (equippedGearIds.has(entry.id)) {
+      throw new Error(`Duplicate Gear ${entry.id} in balance loadout.`);
+    }
+    const slotIndex =
+      entry.slotIndex ?? (nextSlotByCategory.get(gear.category) ?? 0);
+    if (slotIndex < 0 || slotIndex > 1) {
+      throw new Error(`Invalid ${gear.category} slot ${slotIndex}.`);
+    }
     loadout = runtime.equipGearInLoadout(loadout, {
       category: gear.category,
-      slotIndex: entry.slotIndex ?? Math.min(index, 1),
+      slotIndex,
       gearId: entry.id,
     });
+    equippedGearIds.add(entry.id);
+    nextSlotByCategory.set(
+      gear.category,
+      Math.max(nextSlotByCategory.get(gear.category) ?? 0, slotIndex + 1)
+    );
   });
   return loadout;
 }
@@ -165,7 +210,11 @@ function simulateTargetVsOpponent({
   opponentOverrides = {},
 }) {
   const rows = [];
+  const matchupSeedKey = [targetBuild.id, opponentBuild.id].sort().join(':');
   for (let seedIndex = 0; seedIndex < seeds; seedIndex += 1) {
+    const seed = runtime.hashStringToUint32(
+      `${seedPrefix}:paired-matchup:${matchupSeedKey}:${seedIndex}`
+    );
     for (const orientation of ['target-a', 'target-b']) {
       const targetIsA = orientation === 'target-a';
       const fighterA = makeFighter(
@@ -179,11 +228,6 @@ function simulateTargetVsOpponent({
         targetIsA ? opponentBuild : targetBuild,
         `${orientation}-b-${seedIndex}`,
         targetIsA ? opponentOverrides : targetOverrides
-      );
-      const fighterABuildId = targetIsA ? targetBuild.id : opponentBuild.id;
-      const fighterBBuildId = targetIsA ? opponentBuild.id : targetBuild.id;
-      const seed = runtime.hashStringToUint32(
-        `${seedPrefix}:slot-pair:${fighterABuildId}:${fighterBBuildId}:${seedIndex}`
       );
       const report = runtime.simulate(
         fighterA,
@@ -217,6 +261,7 @@ function simulateTargetVsOpponent({
         opponentLabel:
           opponentOverrides.label ?? opponentBuild.label ?? opponentBuild.id,
         orientation,
+        seedCluster: `${matchupSeedKey}:${seedIndex}`,
         seedIndex,
         seed,
         targetWon:
@@ -376,8 +421,65 @@ function summarizeMatrix(rows, groupFields) {
   }));
 }
 
+function buildPowerUpHistory({
+  runtime,
+  build,
+  historyIndex,
+  powerUpCount,
+  maximumPowerUps,
+  seedNamespace,
+  gearFamilies = [],
+}) {
+  const combatRole = runtime.selectCombatRole(build.stats);
+  const powerUpIds = [];
+  while (powerUpIds.length < powerUpCount) {
+    const pickupIndex = powerUpIds.length;
+    const source =
+      pickupIndex === powerUpCount - 1 && powerUpCount >= 3
+        ? 'rival-run-final-win'
+        : 'rival-run-win';
+    const offerSeed = `${seedNamespace}:${build.id}:${historyIndex}:${pickupIndex}`;
+    const choices = runtime.createDeterministicPowerUpOffer({
+      seed: offerSeed,
+      source,
+      ownedPowerUpIds: powerUpIds,
+      maxPowerUps: maximumPowerUps,
+      combatRole,
+      gearFamilies,
+    });
+    const validChoices = (choices ?? []).filter(
+      (powerUpId) =>
+        runtime.powerUpIsOfferableForRole(
+          powerUpId,
+          combatRole,
+          powerUpIds.length
+        ) &&
+        runtime.validatePowerUpBuild([...powerUpIds, powerUpId]).valid
+    );
+    if (validChoices.length === 0) {
+      throw new Error(
+        `No valid Power-Up choice for ${build.id} history ${historyIndex}.`
+      );
+    }
+    const selectedIndex =
+      runtime.hashStringToUint32(`${offerSeed}:selected`) % validChoices.length;
+    powerUpIds.push(validChoices[selectedIndex]);
+  }
+  return powerUpIds;
+}
+
 function formatPercent(value) {
   return `${(value * 100).toFixed(1)}%`;
+}
+
+function percentile(values, quantile) {
+  if (values.length === 0) return 0;
+  const sorted = [...values].sort((left, right) => left - right);
+  const index = Math.min(
+    sorted.length - 1,
+    Math.max(0, Math.ceil(quantile * sorted.length) - 1)
+  );
+  return sorted[index] ?? 0;
 }
 
 function csvEscape(value) {
@@ -458,6 +560,10 @@ function comboDefinitions(runtime, scenarios) {
 function runRoleMatrix({ runtime, scenarios, forecast }) {
   const builds = baseBuilds(scenarios);
   const rows = [];
+  const minimumMirrorWinRate =
+    scenarios.suites.roleMatrix.minimumMirrorWinRate ?? 0.47;
+  const maximumMirrorWinRate =
+    scenarios.suites.roleMatrix.maximumMirrorWinRate ?? 0.53;
   for (const targetBuild of builds) {
     for (const opponentBuild of builds) {
       rows.push(
@@ -484,6 +590,14 @@ function runRoleMatrix({ runtime, scenarios, forecast }) {
           .filter((token) => token !== 'OK');
         if (summary.targetWinRate < 0.32 || summary.targetWinRate > 0.68) {
           flags.push('FLAG_ROLE_MATRIX_EDGE');
+        }
+        const isMirror = summary.targetLabel === summary.opponentLabel;
+        if (
+          isMirror &&
+          (summary.targetWinRate < minimumMirrorWinRate ||
+            summary.targetWinRate > maximumMirrorWinRate)
+        ) {
+          flags.push('FLAG_ROLE_MIRROR');
         }
         return {
           ...summary,
@@ -541,8 +655,21 @@ function runRoleCycle({ runtime, scenarios, forecast }) {
 
 function runGrowthProgression({ runtime, scenarios, forecast }) {
   const builds = baseBuilds(scenarios);
-  const opponentBuilds = builds;
   const rows = [];
+  const config = scenarios.suites.growthProgression;
+  const historiesPerRole =
+    config.historiesPerRole ?? 64;
+  const minimumEqualProgressionWinRate =
+    config.minimumEqualProgressionWinRate ?? 0.45;
+  const maximumEqualProgressionWinRate =
+    config.maximumEqualProgressionWinRate ?? 0.55;
+  const minimumCounterWinRate = config.minimumCounterWinRate ?? 0.55;
+  const minimumMatureCounterWinRate =
+    config.minimumMatureCounterWinRate ?? minimumCounterWinRate;
+  const maximumCounterWinRate = config.maximumCounterWinRate ?? 0.65;
+  const powerUpCountByStage = new Map(
+    scenarios.growthStages.map((stage) => [stage.id, stage.powerUpCount ?? 0])
+  );
   const growingMaturityMaxPowerUps = Number.isSafeInteger(
     scenarios.growingMaturityMaxPowerUps
   )
@@ -554,74 +681,176 @@ function runGrowthProgression({ runtime, scenarios, forecast }) {
         )
       )
     : runtime.MAXIMUM_POWER_UPS;
-  for (const targetBuild of builds) {
-    const combatRole = runtime.selectCombatRole(targetBuild.stats);
-    for (const stage of scenarios.growthStages) {
-      let powerUpIds = Array.isArray(stage.powerUpIds)
-        ? [...stage.powerUpIds]
-        : [];
-      const requestedPowerUpCount = Number.isSafeInteger(stage.powerUpCount)
-        ? Math.max(
-            0,
-            Math.min(growingMaturityMaxPowerUps, Math.floor(stage.powerUpCount))
-          )
-        : powerUpIds.length;
-      while (powerUpIds.length < requestedPowerUpCount) {
-        const source =
-          powerUpIds.length === requestedPowerUpCount - 1 &&
-          requestedPowerUpCount >= 3
-            ? 'rival-run-final-win'
-            : 'rival-run-win';
-        const choices = runtime.createDeterministicPowerUpOffer({
-          seed: `growth-progression-v2:${targetBuild.id}:${stage.id}:${powerUpIds.length}`,
-          source,
-          ownedPowerUpIds: powerUpIds,
-          maxPowerUps: growingMaturityMaxPowerUps,
-          combatRole,
-        });
-        const selected = choices?.find(
-          (id) => runtime.validatePowerUpBuild([...powerUpIds, id]).valid
-        );
-        if (!selected) break;
-        powerUpIds = [...powerUpIds, selected];
-      }
-      for (const opponentBuild of opponentBuilds) {
-        rows.push(
-          ...simulateTargetVsOpponent({
+  for (const stage of scenarios.growthStages) {
+    const stageMaximumPowerUps = Math.max(
+      growingMaturityMaxPowerUps,
+      Math.min(runtime.MAXIMUM_POWER_UPS, stage.maximumPowerUps ?? 0)
+    );
+    const powerUpCount = Math.max(
+      0,
+      Math.min(stageMaximumPowerUps, stage.powerUpCount ?? 0)
+    );
+    for (
+      let historyIndex = 0;
+      historyIndex < historiesPerRole;
+      historyIndex += 1
+    ) {
+      const histories = new Map(
+        builds.map((build) => [
+          build.id,
+          buildPowerUpHistory({
             runtime,
-            forecast,
-            battleKind: scenarios.battleKind,
-            targetBuild,
-            opponentBuild,
-            targetOverrides: {
-              label: `${targetBuild.label} · ${stage.label}`,
-              powerUpIds,
-            },
-            seeds: scenarios.suites.growthProgression.seedsPerPairing,
-            seedPrefix: 'balancer:growth:v2',
-          })
-        );
+            build,
+            historyIndex,
+            powerUpCount,
+            maximumPowerUps: stageMaximumPowerUps,
+            seedNamespace: 'growth-history:v3',
+          }),
+        ])
+      );
+      for (const targetBuild of builds) {
+        const targetRole = runtime.selectCombatRole(targetBuild.stats);
+        for (const opponentBuild of builds) {
+          const opponentRole = runtime.selectCombatRole(opponentBuild.stats);
+          rows.push(
+            ...simulateTargetVsOpponent({
+              runtime,
+              forecast,
+              battleKind: scenarios.battleKind,
+              targetBuild,
+              opponentBuild,
+              targetOverrides: {
+                label: `${targetBuild.label} · ${stage.label}`,
+                powerUpIds: histories.get(targetBuild.id),
+              },
+              opponentOverrides: {
+                label: `${opponentBuild.label} · ${stage.label}`,
+                powerUpIds: histories.get(opponentBuild.id),
+              },
+              seeds: 1,
+              seedPrefix: `balancer:growth:v4:${stage.id}:${historyIndex}`,
+            }).map((row) => ({
+              ...row,
+              stageId: stage.id,
+              stageLabel: stage.label,
+              powerUpCount,
+              historyIndex,
+              targetRole,
+              opponentRole,
+              targetPowerUpIds: histories.get(targetBuild.id),
+              opponentPowerUpIds: histories.get(opponentBuild.id),
+            }))
+          );
+        }
       }
     }
   }
+  const directedSummaries = summarizeMatrix(rows, [
+    'stageId',
+    'targetRole',
+    'opponentRole',
+    'targetLabel',
+    'opponentLabel',
+  ]).map((summary) => {
+    const verdicts = removeVerdictToken(summary.verdict, 'FLAG_WIN_RATE')
+      .split('+')
+      .filter((verdict) => verdict !== 'OK');
+    const isMirror = summary.targetRole === summary.opponentRole;
+    const isIntendedCounter =
+      EFFECTIVE_ROLE_MATCHUPS[summary.targetRole] === summary.opponentRole;
+    const stageMinimumCounterWinRate =
+      summary.stageId === 'mature-five'
+        ? minimumMatureCounterWinRate
+        : minimumCounterWinRate;
+    if (
+      isMirror &&
+      (summary.targetWinRate < minimumEqualProgressionWinRate ||
+        summary.targetWinRate > maximumEqualProgressionWinRate)
+    ) {
+      verdicts.push('FLAG_GROWTH_MIRROR');
+    }
+    if (
+      (powerUpCountByStage.get(summary.stageId) ?? 0) > 0 &&
+      isIntendedCounter &&
+      (summary.targetWinRate < stageMinimumCounterWinRate ||
+        summary.targetWinRate > maximumCounterWinRate)
+    ) {
+      verdicts.push('FLAG_GROWTH_COUNTER_EDGE');
+    }
+    return {
+      ...summary,
+      verdict: verdicts.length > 0 ? verdicts.join('+') : 'OK',
+    };
+  });
+  const fieldSummaries = summarizeMatrix(rows, [
+    'stageId',
+    'stageLabel',
+    'targetRole',
+    'targetLabel',
+  ]);
+  const cardConditionalSummaries = [];
+  for (const stage of scenarios.growthStages) {
+    if ((stage.powerUpCount ?? 0) <= 0) continue;
+    for (const targetBuild of builds) {
+      const targetRole = runtime.selectCombatRole(targetBuild.stats);
+      for (const opponentBuild of builds) {
+        const opponentRole = runtime.selectCombatRole(opponentBuild.stats);
+        for (const powerUpId of runtime.POWER_UP_IDS) {
+          const matchingRows = rows.filter(
+            (row) =>
+              row.stageId === stage.id &&
+              row.targetBuild === targetBuild.id &&
+              row.opponentBuild === opponentBuild.id &&
+              row.targetPowerUpIds?.includes(powerUpId)
+          );
+          if (matchingRows.length === 0) continue;
+          cardConditionalSummaries.push({
+            targetLabel: `${targetBuild.label} · ${stage.label} · ${runtime.POWER_UP_CATALOG[powerUpId].shortName}`,
+            opponentLabel: `${opponentBuild.label} conditional field`,
+            stageId: stage.id,
+            targetRole,
+            opponentRole,
+            powerUpId,
+            ...summarizeRows(matchingRows),
+            verdict: 'INFO_GROWTH_CARD_DIAGNOSTIC',
+          });
+        }
+      }
+    }
+  }
+  const spreadByStage = new Map(
+    scenarios.growthStages.map((stage) => {
+      const rates = fieldSummaries
+        .filter((summary) => summary.stageId === stage.id)
+        .map((summary) => summary.targetWinRate);
+      return [stage.id, Math.max(...rates) - Math.min(...rates)];
+    })
+  );
   return {
     id: 'growth-progression',
     title: 'Growing Progression',
     rows,
-    summaries: summarizeMatrix(rows, ['targetLabel', 'opponentLabel']).map(
-      (summary) => {
-        const isThreePowerUpStage = summary.targetLabel.includes('· 3 PU');
-        const low = isThreePowerUpStage ? 0.25 : 0.28;
-        const high = isThreePowerUpStage ? 0.8 : 0.72;
+    summaries: [
+      ...fieldSummaries.map((summary) => {
+        const verdicts = [];
+        if (
+          summary.targetWinRate < minimumEqualProgressionWinRate ||
+          summary.targetWinRate > maximumEqualProgressionWinRate
+        ) {
+          verdicts.push('FLAG_GROWTH_FIELD');
+        }
+        if ((spreadByStage.get(summary.stageId) ?? 0) > 0.15) {
+          verdicts.push('FLAG_GROWTH_CLASS_SPREAD');
+        }
         return {
           ...summary,
-          verdict:
-            summary.targetWinRate < low || summary.targetWinRate > high
-              ? 'FLAG_GROWTH_STRESS_WIN_RATE'
-              : removeVerdictToken(summary.verdict, 'FLAG_WIN_RATE'),
+          opponentLabel: 'Equal-progression field',
+          verdict: verdicts.length > 0 ? verdicts.join('+') : 'OK',
         };
-      }
-    ),
+      }),
+      ...directedSummaries,
+      ...cardConditionalSummaries,
+    ],
   };
 }
 
@@ -695,12 +924,16 @@ function runPowerUpCombos({ runtime, scenarios, forecast }) {
           `${summary.targetBuild}:${summary.targetLabel}`
         );
         if (offerable === false) return 'INFO_FORCED_NON_OFFERED_COMBO';
+        const baseVerdict = removeVerdictToken(
+          summary.verdict,
+          'FLAG_WIN_RATE'
+        );
         return Math.abs(
           summary.targetWinRate -
             (baselineByBuild.get(summary.targetBuild) ?? 0)
         ) > POWER_UP_SWING_WATCH
-          ? `${summary.verdict === 'OK' ? '' : `${summary.verdict}+`}WATCH_SWING`
-          : summary.verdict;
+          ? `${baseVerdict === 'OK' ? '' : `${baseVerdict}+`}WATCH_SWING`
+          : baseVerdict;
       })(),
     })),
   };
@@ -731,7 +964,10 @@ function appendPowerUpUsefulnessVerdict(summary) {
   ) {
     flags.push('WATCH_LOW_IMPACT');
   }
-  if (summary.swingFromBaseline > POWER_UP_SWING_WATCH) {
+  if (
+    summary.swingFromBaseline >
+    POWER_UP_OVERTUNED_SWING_BY_RARITY[summary.rarity]
+  ) {
     flags.push('FLAG_OVERTUNED');
   }
   if (summary.swingFromBaseline < POWER_UP_HARMFUL_SWING) {
@@ -911,11 +1147,12 @@ function runRivalRunRisk({ runtime, scenarios, forecast }) {
       'tier',
       'winPoints',
     ]).map((summary) => {
-      if (summary.tier !== 'safe') return summary;
-      const flags = [];
-      if (summary.targetWinRate < 0.35) flags.push('FLAG_UNSAFE_SAFE_PICK');
-      if (summary.timeoutRate > TIMEOUT_RATE_FLAG_HIGH)
-        flags.push('FLAG_TIMEOUTS');
+      const flags = removeVerdictToken(summary.verdict, 'FLAG_WIN_RATE')
+        .split('+')
+        .filter((token) => token !== 'OK');
+      if (summary.tier === 'safe' && summary.targetWinRate < 0.35) {
+        flags.push('FLAG_UNSAFE_SAFE_PICK');
+      }
       const verdict = flags.length > 0 ? flags.join('+') : 'OK';
       return { ...summary, verdict };
     }),
@@ -924,10 +1161,17 @@ function runRivalRunRisk({ runtime, scenarios, forecast }) {
 
 function generatedBuilds(runtime, count) {
   const statKeys = ['chonk', 'spike', 'zip', 'charm'];
+  // New drawings have three selectable styles. Zip remains a stored stat and
+  // legacy compatibility input, but must not double-weight Longshot when this
+  // suite estimates class win rates against an evenly distributed field.
+  const currentRoleDominantStats = ['chonk', 'spike', 'charm'];
   return Array.from({ length: count }, (_, index) => {
-    const dominantKey = statKeys[index % statKeys.length];
+    const dominantKey =
+      currentRoleDominantStats[index % currentRoleDominantStats.length];
+    // Center the field on the canonical 40-point style build while still
+    // covering moderately broader and more specialized historical drawings.
     const dominantValue =
-      42 + (runtime.hashStringToUint32(`generated:${index}:dominant`) % 12);
+      34 + (runtime.hashStringToUint32(`generated:${index}:dominant`) % 13);
     const remaining = 100 - dominantValue;
     const otherKeys = statKeys.filter((key) => key !== dominantKey);
     const firstShare =
@@ -984,7 +1228,7 @@ function runGeneratedPool({ runtime, scenarios, forecast }) {
       const flags = removeVerdictToken(summary.verdict, 'FLAG_WIN_RATE')
         .split('+')
         .filter((token) => token !== 'OK');
-      if (summary.targetWinRate < 0.3 || summary.targetWinRate > 0.7) {
+      if (summary.targetWinRate < 0.35 || summary.targetWinRate > 0.65) {
         flags.push('FLAG_GENERATED_FIELD_WIN_RATE');
       }
       return {
@@ -1068,7 +1312,6 @@ function runDamageSourceBreakdown({ runtime, scenarios, forecast }) {
 
 function runGearPowerUpInteraction({ runtime, scenarios, forecast }) {
   const rows = [];
-  const opponents = baseBuilds(scenarios);
   for (const profile of scenarios.gearPowerUpProfiles) {
     const targetBuild = buildById(scenarios, profile.targetBuildId);
     const variants = [
@@ -1082,13 +1325,42 @@ function runGearPowerUpInteraction({ runtime, scenarios, forecast }) {
       },
       {
         id: 'combined',
-        label: 'Gear + Skills',
+        label: 'Target Gear + equal Skills',
+        powerUpIds: profile.powerUpIds,
+        gear: profile.gear,
+      },
+      {
+        id: 'equal-combined',
+        label: 'Equal Gear + Skills',
         powerUpIds: profile.powerUpIds,
         gear: profile.gear,
       },
     ];
     for (const variant of variants) {
-      for (const opponentBuild of opponents) {
+      const opponentProfiles =
+        variant.id === 'baseline' || variant.id === 'gear'
+          ? baseBuilds(scenarios).map((build) => ({
+              id: build.id,
+              label: build.label,
+              targetBuildId: build.id,
+              powerUpIds: [],
+              gear: [],
+            }))
+          : scenarios.gearPowerUpProfiles;
+      for (const opponentProfile of opponentProfiles) {
+        const opponentBuild = buildById(
+          scenarios,
+          opponentProfile.targetBuildId
+        );
+        const opponentVariant = {
+          powerUpIds:
+            variant.id === 'skills' ||
+            variant.id === 'combined' ||
+            variant.id === 'equal-combined'
+              ? opponentProfile.powerUpIds
+              : [],
+          gear: variant.id === 'equal-combined' ? opponentProfile.gear : [],
+        };
         rows.push(
           ...simulateTargetVsOpponent({
             runtime,
@@ -1097,15 +1369,21 @@ function runGearPowerUpInteraction({ runtime, scenarios, forecast }) {
             targetBuild,
             opponentBuild,
             targetOverrides: {
-              label: `${targetBuild.label} · ${variant.label}`,
+              label: `${profile.label} · ${variant.label}`,
               powerUpIds: variant.powerUpIds,
               gear: variant.gear,
             },
+            opponentOverrides: {
+              label: `${opponentProfile.label} · parity opponent`,
+              powerUpIds: opponentVariant.powerUpIds,
+              gear: opponentVariant.gear,
+            },
             seeds: scenarios.suites.gearPowerUps.seedsPerPairing,
-            seedPrefix: 'balancer:gear-power:v2',
+            seedPrefix: 'balancer:gear-power:v4',
           }).map((row) => ({
             ...row,
-            roleLabel: targetBuild.label,
+            profileId: profile.id,
+            profileLabel: profile.label,
             variantId: variant.id,
           }))
         );
@@ -1113,14 +1391,14 @@ function runGearPowerUpInteraction({ runtime, scenarios, forecast }) {
     }
   }
   const summaries = summarizeMatrix(rows, [
-    'targetBuild',
-    'roleLabel',
+    'profileId',
+    'profileLabel',
     'variantId',
     'targetLabel',
   ]);
-  const ratesByRoleAndVariant = new Map(
+  const ratesByProfileAndVariant = new Map(
     summaries.map((summary) => [
-      `${summary.targetBuild}:${summary.variantId}`,
+      `${summary.profileId}:${summary.variantId}`,
       summary.targetWinRate,
     ])
   );
@@ -1128,20 +1406,401 @@ function runGearPowerUpInteraction({ runtime, scenarios, forecast }) {
     id: 'gear-powerups',
     title: 'Gear + Power-Up Interaction',
     rows,
-    summaries: summaries.map((summary) => ({
-      ...summary,
-      ...(summary.variantId === 'combined'
-        ? {
-            interactionLift:
-              summary.targetWinRate -
-              (ratesByRoleAndVariant.get(`${summary.targetBuild}:gear`) ?? 0) -
-              (ratesByRoleAndVariant.get(`${summary.targetBuild}:skills`) ??
-                0) +
-              (ratesByRoleAndVariant.get(`${summary.targetBuild}:baseline`) ??
-                0),
+    summaries: summaries.map((summary) => {
+      const baselineRate =
+        summary.variantId === 'combined'
+          ? (ratesByProfileAndVariant.get(`${summary.profileId}:skills`) ?? 0.5)
+          : (ratesByProfileAndVariant.get(`${summary.profileId}:baseline`) ??
+            0.5);
+      const swingFromBaseline = summary.targetWinRate - baselineRate;
+      const interactionLift =
+        summary.variantId === 'combined'
+          ? swingFromBaseline -
+            ((ratesByProfileAndVariant.get(`${summary.profileId}:gear`) ??
+              0.5) -
+              (ratesByProfileAndVariant.get(`${summary.profileId}:baseline`) ??
+                0.5))
+          : undefined;
+      const verdicts = [];
+      if (
+        summary.variantId === 'gear' &&
+        (summary.targetWinRate < 0.3 || summary.targetWinRate > 0.8)
+      ) {
+        verdicts.push('FLAG_GEAR_FIELD');
+      }
+      if (
+        (summary.variantId === 'skills' ||
+          summary.variantId === 'equal-combined') &&
+        (summary.targetWinRate < 0.3 || summary.targetWinRate > 0.7)
+      ) {
+        verdicts.push('FLAG_GEAR_META');
+      }
+      if (
+        summary.variantId === 'combined' &&
+        (summary.targetWinRate < 0.3 ||
+          summary.targetWinRate > 0.7 ||
+          swingFromBaseline < -0.15)
+      ) {
+        verdicts.push('FLAG_HARMFUL_GEAR_INTERACTION');
+      }
+      if (summary.variantId === 'combined' && swingFromBaseline > 0.3) {
+        verdicts.push('FLAG_OVERPOWERED_GEAR_INTERACTION');
+      }
+      return {
+        ...summary,
+        opponentLabel:
+          summary.variantId === 'baseline' || summary.variantId === 'gear'
+            ? 'Fixed no-Gear field'
+            : summary.variantId === 'equal-combined'
+              ? 'Equal Gear + Skills field'
+              : 'Equal-Skills field',
+        baselineWinRate: baselineRate,
+        swingFromBaseline,
+        ...(interactionLift === undefined ? {} : { interactionLift }),
+        verdict: verdicts.length > 0 ? verdicts.join('+') : 'OK',
+      };
+    }),
+  };
+}
+
+const EQUIPMENT_META_CATEGORIES = Object.freeze([
+  'weapon',
+  'armor',
+  'shoes',
+  'accessory',
+]);
+
+function generateEquipmentMetaLoadout(runtime, sampleIndex, namespace) {
+  const gearCatalog = runtime.COSMETIC_CATALOG.filter(
+    (entry) => entry.kind === 'accessory' && entry.category
+  );
+  const entries = [];
+  for (const category of EQUIPMENT_META_CATEGORIES) {
+    const candidates = gearCatalog.filter((entry) => entry.category === category);
+    if (candidates.length < 2) {
+      throw new Error(`Equipment meta requires two ${category} Gear items.`);
+    }
+    const firstIndex =
+      runtime.hashStringToUint32(
+        `${namespace}:${sampleIndex}:${category}:first`
+      ) % candidates.length;
+    const secondOffset =
+      1 +
+      (runtime.hashStringToUint32(
+        `${namespace}:${sampleIndex}:${category}:second`
+      ) %
+        (candidates.length - 1));
+    const candidateIndices = [
+      firstIndex,
+      (firstIndex + secondOffset) % candidates.length,
+    ];
+    candidateIndices.forEach((candidateIndex, slotIndex) => {
+      const gear = candidates[candidateIndex];
+      entries.push({
+        id: gear.id,
+        rank:
+          1 +
+          (runtime.hashStringToUint32(
+            `${namespace}:${sampleIndex}:${category}:${gear.id}:rank`
+          ) %
+            runtime.MAX_GEAR_RANK),
+        slotIndex,
+      });
+    });
+  }
+  return entries;
+}
+
+function equipmentMetaSnapshot(runtime, gear) {
+  const resolved = runtime.resolveGearCombatLoadout({
+    gearRanks: Object.fromEntries(gear.map((entry) => [entry.id, entry.rank])),
+    equipmentLoadout: makeGearLoadout(runtime, gear),
+  });
+  return {
+    modifierKey: JSON.stringify(resolved.modifiers),
+    families: [
+      ...new Set(
+        resolved.techniques.flatMap((technique) => [
+          technique.effectFamily,
+          ...(technique.supportEffectFamily
+            ? [technique.supportEffectFamily]
+            : []),
+        ])
+      ),
+    ],
+  };
+}
+
+function equipmentMetaPairKey(row) {
+  return [
+    row.powerUpCount,
+    row.sampleIndex,
+    row.targetBuild,
+    row.opponentBuild,
+    row.orientation,
+    row.seedIndex,
+  ].join('\u001f');
+}
+
+function runEquipmentMeta({ runtime, scenarios, forecast }) {
+  const config = scenarios.suites.equipmentMeta;
+  const samples = config.samples ?? 256;
+  const seeds = config.seedsPerPairing ?? 8;
+  const powerUpCounts = config.powerUpCounts ?? [0, 3, 5];
+  const minimumFieldWinRate = config.minimumFieldWinRate ?? 0.44;
+  const maximumFieldWinRate = config.maximumFieldWinRate ?? 0.58;
+  const minimumLegalWinRate = config.minimumLegalWinRate ?? 0.3;
+  const maximumLegalWinRate = config.maximumLegalWinRate ?? 0.7;
+  const minimumCounterWinRate = config.minimumCounterWinRate ?? 0.5;
+  const minimumMatureCounterWinRate =
+    config.minimumMatureCounterWinRate ?? 0.35;
+  const maximumCounterWinRate = config.maximumCounterWinRate ?? 0.7;
+  const minimumGearMarginal = config.minimumGearMarginal ?? -0.1;
+  const maximumGearMarginal = config.maximumGearMarginal ?? 0.05;
+  const maximumInteractionLift = config.maximumInteractionLift ?? 0.1;
+  const builds = baseBuilds(scenarios);
+  const rows = [];
+  const usedGearIds = new Set();
+  const usedRanks = new Set();
+  const usedModifierKeys = new Set();
+  const equipmentSamples = Array.from({ length: samples }, (_, sampleIndex) =>
+    generateEquipmentMetaLoadout(
+      runtime,
+      sampleIndex,
+      'equipment-meta:canonical'
+    )
+  );
+
+  for (const powerUpCount of powerUpCounts) {
+    for (let sampleIndex = 0; sampleIndex < samples; sampleIndex += 1) {
+      // Pair every loadout with an involutive partner so the full sample also
+      // contains the exact Gear assignment in reverse. A merely bijective
+      // permutation can correlate stronger loadouts with one combat role.
+      const opponentSampleIndex = samples - 1 - sampleIndex;
+      const targetGear = equipmentSamples[sampleIndex];
+      const opponentGear = equipmentSamples[opponentSampleIndex];
+      [...targetGear, ...opponentGear].forEach((entry) => {
+        usedGearIds.add(entry.id);
+        usedRanks.add(entry.rank);
+      });
+      const targetSnapshot = equipmentMetaSnapshot(runtime, targetGear);
+      const opponentSnapshot = equipmentMetaSnapshot(runtime, opponentGear);
+      usedModifierKeys.add(targetSnapshot.modifierKey);
+      usedModifierKeys.add(opponentSnapshot.modifierKey);
+
+      for (const targetBuild of builds) {
+        const targetRole = runtime.selectCombatRole(targetBuild.stats);
+        const targetPowerUpIds = buildPowerUpHistory({
+          runtime,
+          build: targetBuild,
+          historyIndex: sampleIndex,
+          powerUpCount,
+          maximumPowerUps: runtime.MAXIMUM_POWER_UPS,
+          seedNamespace: `equipment-meta:history:${powerUpCount}`,
+          gearFamilies: targetSnapshot.families,
+        });
+        for (const opponentBuild of builds) {
+          const opponentRole = runtime.selectCombatRole(opponentBuild.stats);
+          const opponentPowerUpIds = buildPowerUpHistory({
+            runtime,
+            build: opponentBuild,
+            historyIndex: opponentSampleIndex,
+            powerUpCount,
+            maximumPowerUps: runtime.MAXIMUM_POWER_UPS,
+            seedNamespace: `equipment-meta:history:${powerUpCount}`,
+            gearFamilies: opponentSnapshot.families,
+          });
+          for (const variant of ['baseline', 'target-gear', 'combined']) {
+            rows.push(
+              ...simulateTargetVsOpponent({
+                runtime,
+                forecast,
+                battleKind: scenarios.battleKind,
+                targetBuild,
+                opponentBuild,
+                targetOverrides: {
+                  label: `${targetBuild.label} · ${powerUpCount} PU · ${variant}`,
+                  powerUpIds: targetPowerUpIds,
+                  gear: variant === 'baseline' ? [] : targetGear,
+                },
+                opponentOverrides: {
+                  label: `${opponentBuild.label} · equal equipment field`,
+                  powerUpIds: opponentPowerUpIds,
+                  gear: variant === 'combined' ? opponentGear : [],
+                },
+                seeds,
+                seedPrefix: `balancer:equipment-meta:v1:${powerUpCount}:${sampleIndex}`,
+              }).map((row) => ({
+                ...row,
+                powerUpCount,
+                sampleIndex,
+                targetRole,
+                opponentRole,
+                variant,
+                targetModifierKey: targetSnapshot.modifierKey,
+              }))
+            );
           }
-        : {}),
-    })),
+        }
+      }
+    }
+  }
+
+  const combinedRows = rows.filter((row) => row.variant === 'combined');
+  const fieldSummaries = summarizeMatrix(combinedRows, [
+    'powerUpCount',
+    'targetRole',
+  ]).map((summary) => ({
+    ...summary,
+    targetLabel: `${summary.targetRole} · ${summary.powerUpCount} Power-Ups`,
+    opponentLabel: 'Equal equipment + progression field',
+    verdict:
+      summary.targetWinRate < minimumFieldWinRate ||
+      summary.targetWinRate > maximumFieldWinRate
+        ? 'FLAG_EQUIPMENT_FIELD'
+        : 'OK',
+  }));
+  const directedSummaries = summarizeMatrix(combinedRows, [
+    'powerUpCount',
+    'targetRole',
+    'opponentRole',
+  ]).map((summary) => {
+    const isMirror = summary.targetRole === summary.opponentRole;
+    const isCounter =
+      EFFECTIVE_ROLE_MATCHUPS[summary.targetRole] === summary.opponentRole;
+    const verdicts = [];
+    if (
+      summary.targetWinRate < minimumLegalWinRate ||
+      summary.targetWinRate > maximumLegalWinRate
+    ) {
+      verdicts.push('FLAG_EQUIPMENT_MATCHUP');
+    }
+    if (
+      isMirror &&
+      (summary.targetWinRate < 0.45 || summary.targetWinRate > 0.55)
+    ) {
+      verdicts.push('FLAG_EQUIPMENT_MIRROR');
+    }
+    if (
+      isCounter &&
+      (summary.targetWinRate <
+        (summary.powerUpCount >= runtime.MAXIMUM_POWER_UPS
+          ? minimumMatureCounterWinRate
+          : minimumCounterWinRate) ||
+        summary.targetWinRate > maximumCounterWinRate)
+    ) {
+      verdicts.push('FLAG_EQUIPMENT_COUNTER');
+    }
+    return {
+      ...summary,
+      targetLabel: `${summary.targetRole} · ${summary.powerUpCount} Power-Ups`,
+      opponentLabel: `${summary.opponentRole} · equal equipment`,
+      verdict: verdicts.length > 0 ? verdicts.join('+') : 'OK',
+    };
+  });
+
+  const baselineRowsByKey = new Map(
+    rows
+      .filter((row) => row.variant === 'baseline')
+      .map((row) => [equipmentMetaPairKey(row), row])
+  );
+  const targetGearRows = rows.filter((row) => row.variant === 'target-gear');
+  const marginalGroups = new Map();
+  for (const row of targetGearRows) {
+    const baseline = baselineRowsByKey.get(equipmentMetaPairKey(row));
+    if (!baseline) throw new Error('Missing paired equipment baseline.');
+    const key = `${row.powerUpCount}:${row.targetRole}`;
+    const group = marginalGroups.get(key) ?? [];
+    group.push({ row, baseline });
+    marginalGroups.set(key, group);
+  }
+  const marginalSummaries = [...marginalGroups.entries()].map(
+    ([key, pairs]) => {
+      const [powerUpCountText, targetRole] = key.split(':');
+      const powerUpCount = Number(powerUpCountText);
+      const swingFromBaseline =
+        pairs.reduce(
+          (sum, pair) =>
+            sum + Number(pair.row.targetWon) - Number(pair.baseline.targetWon),
+          0
+        ) / pairs.length;
+      const summary = summarizeRows(pairs.map((pair) => pair.row));
+      return {
+        targetLabel: `${targetRole} · ${powerUpCount} Power-Ups · Gear marginal`,
+        opponentLabel: 'Paired no-Gear baseline',
+        powerUpCount,
+        targetRole,
+        baselineWinRate: summarizeRows(
+          pairs.map((pair) => pair.baseline)
+        ).targetWinRate,
+        swingFromBaseline,
+        ...summary,
+        verdict:
+          swingFromBaseline < minimumGearMarginal ||
+          swingFromBaseline > maximumGearMarginal
+            ? 'FLAG_EQUIPMENT_MARGINAL'
+            : 'OK',
+      };
+    }
+  );
+  const zeroPowerMarginalByRole = new Map(
+    marginalSummaries
+      .filter((summary) => summary.powerUpCount === 0)
+      .map((summary) => [summary.targetRole, summary.swingFromBaseline])
+  );
+  marginalSummaries.forEach((summary) => {
+    if (summary.powerUpCount === 0) return;
+    const interactionLift =
+      summary.swingFromBaseline -
+      (zeroPowerMarginalByRole.get(summary.targetRole) ?? 0);
+    summary.interactionLift = interactionLift;
+    if (Math.abs(interactionLift) > maximumInteractionLift) {
+      summary.verdict =
+        summary.verdict === 'OK'
+          ? 'FLAG_EQUIPMENT_POWERUP_INTERACTION'
+          : `${summary.verdict}+FLAG_EQUIPMENT_POWERUP_INTERACTION`;
+    }
+  });
+
+  const canonicalGearCount = runtime.COSMETIC_CATALOG.filter(
+    (entry) => entry.kind === 'accessory' && entry.category
+  ).length;
+  const coverageVerdicts = [];
+  if (usedGearIds.size !== canonicalGearCount) {
+    coverageVerdicts.push('FLAG_EQUIPMENT_CATALOG_COVERAGE');
+  }
+  if (usedRanks.size !== runtime.MAX_GEAR_RANK) {
+    coverageVerdicts.push('FLAG_EQUIPMENT_RANK_COVERAGE');
+  }
+  const coverageSummary = {
+    targetLabel: 'Equipment sampling coverage',
+    opponentLabel: `${usedModifierKeys.size} unique modifier vectors`,
+    total: samples * powerUpCounts.length,
+    targetWins: samples * powerUpCounts.length,
+    timeouts: 0,
+    targetWinRate: 0.5,
+    timeoutRate: 0,
+    closeFightRate: 0,
+    blowoutRate: 0,
+    averageSeconds: 0,
+    averagePowerUpTriggers: 0,
+    averageTargetPowerUpTriggers: 0,
+    gearCatalogCoverage: `${usedGearIds.size}/${canonicalGearCount}`,
+    gearRankCoverage: `${usedRanks.size}/${runtime.MAX_GEAR_RANK}`,
+    verdict:
+      coverageVerdicts.length > 0 ? coverageVerdicts.join('+') : 'OK',
+  };
+
+  return {
+    id: 'equipment-meta',
+    title: 'Equipment + Power-Up Meta',
+    rows,
+    summaries: [
+      coverageSummary,
+      ...fieldSummaries,
+      ...directedSummaries,
+      ...marginalSummaries,
+    ],
   };
 }
 
@@ -1219,54 +1878,1021 @@ function runFightFeel({ runtime, scenarios, forecast }) {
 
 function runRewardPath({ runtime, scenarios, forecast }) {
   const rows = [];
-  const targetBuild = buildById(
-    scenarios,
-    scenarios.suites.rewardPath.targetBuildId
-  );
-  const opponentBuild = buildById(
-    scenarios,
-    scenarios.suites.rewardPath.opponentBuildId
-  );
+  const builds = baseBuilds(scenarios);
+  const offersPerRole = scenarios.suites.rewardPath.offersPerRole ?? 8;
+  const offerValidity = new Map();
   for (const source of scenarios.rewardSources) {
-    const fighter = makeFighter(runtime, targetBuild, `reward-${source}`, {
-      powerUpIds: [],
-    });
-    const choices = runtime.createDeterministicPowerUpOffer({
-      seed: `reward-path:${source}:${fighter.id}`,
-      source,
-      ownedPowerUpIds: [],
-      combatRole: runtime.selectCombatRole(fighter.stats),
-    });
-    const selectedId = choices?.[0];
-    const nextPowerUpIds = selectedId ? [selectedId] : [];
-    const validation = runtime.validatePowerUpBuild(nextPowerUpIds);
-    rows.push(
-      ...simulateTargetVsOpponent({
-        runtime,
-        forecast,
-        battleKind: scenarios.battleKind,
-        targetBuild,
-        opponentBuild,
-        targetOverrides: {
-          label: `${source} → ${selectedId ?? 'none'}`,
-          powerUpIds: nextPowerUpIds,
-        },
-        seeds: scenarios.suites.rewardPath.seedsPerSource,
-        seedPrefix: `balancer:reward:${source}`,
-      }).map((row) => ({
-        ...row,
-        source,
-        selectedPowerUpId: selectedId ?? '',
-        offerChoices: choices?.join('|') ?? '',
-        offerValid: Boolean(choices && validation.valid),
-      }))
-    );
+    for (let offerIndex = 0; offerIndex < offersPerRole; offerIndex += 1) {
+      const offers = new Map(
+        builds.map((build) => {
+          const combatRole = runtime.selectCombatRole(build.stats);
+          const choices = runtime.createDeterministicPowerUpOffer({
+            seed: `reward-path:v3:${source}:${build.id}:${offerIndex}`,
+            source,
+            ownedPowerUpIds: [],
+            combatRole,
+          });
+          const valid = Boolean(
+            choices?.length === 3 &&
+            new Set(choices).size === 3 &&
+            choices.every(
+              (powerUpId) =>
+                runtime.powerUpIsOfferableForRole(powerUpId, combatRole) &&
+                runtime.validatePowerUpBuild([powerUpId]).valid
+            )
+          );
+          const key = `${source}:${combatRole}`;
+          offerValidity.set(key, (offerValidity.get(key) ?? true) && valid);
+          return [build.id, choices ?? []];
+        })
+      );
+      for (const targetBuild of builds) {
+        const targetRole = runtime.selectCombatRole(targetBuild.stats);
+        const targetChoices = offers.get(targetBuild.id) ?? [];
+        for (const opponentBuild of builds) {
+          const opponentRole = runtime.selectCombatRole(opponentBuild.stats);
+          const opponentChoices = offers.get(opponentBuild.id) ?? [];
+          const shared = {
+            runtime,
+            forecast,
+            battleKind: scenarios.battleKind,
+            targetBuild,
+            opponentBuild,
+            seeds: 1,
+            seedPrefix: `balancer:reward:v3:${offerIndex}`,
+          };
+          rows.push(
+            ...simulateTargetVsOpponent({
+              ...shared,
+              targetOverrides: {
+                label: `${targetBuild.label} · reward baseline`,
+                powerUpIds: [],
+              },
+              opponentOverrides: { powerUpIds: [] },
+            }).map((row) => ({
+              ...row,
+              source,
+              offerIndex,
+              targetRole,
+              opponentRole,
+              variantId: 'baseline',
+              selectedPowerUpId: '',
+            }))
+          );
+          targetChoices.forEach((selectedPowerUpId, targetChoiceIndex) => {
+            rows.push(
+              ...simulateTargetVsOpponent({
+                ...shared,
+                targetOverrides: {
+                  label: `${targetBuild.label} · immediate reward`,
+                  powerUpIds: [selectedPowerUpId],
+                },
+                opponentOverrides: { powerUpIds: [] },
+              }).map((row) => ({
+                ...row,
+                source,
+                offerIndex,
+                targetRole,
+                opponentRole,
+                variantId: 'immediate',
+                targetChoiceIndex,
+                selectedPowerUpId,
+              }))
+            );
+            opponentChoices.forEach(
+              (opponentPowerUpId, opponentChoiceIndex) => {
+                rows.push(
+                  ...simulateTargetVsOpponent({
+                    ...shared,
+                    targetOverrides: {
+                      label: `${targetBuild.label} · equal reward`,
+                      powerUpIds: [selectedPowerUpId],
+                    },
+                    opponentOverrides: { powerUpIds: [opponentPowerUpId] },
+                  }).map((row) => ({
+                    ...row,
+                    source,
+                    offerIndex,
+                    targetRole,
+                    opponentRole,
+                    variantId: 'equal',
+                    targetChoiceIndex,
+                    opponentChoiceIndex,
+                    selectedPowerUpId,
+                    opponentPowerUpId,
+                  }))
+                );
+              }
+            );
+          });
+        }
+      }
+    }
   }
+  const summaries = summarizeMatrix(rows, [
+    'source',
+    'targetRole',
+    'variantId',
+    'targetLabel',
+  ]);
+  const baselineBySourceAndRole = new Map(
+    summaries
+      .filter((summary) => summary.variantId === 'baseline')
+      .map((summary) => [
+        `${summary.source}:${summary.targetRole}`,
+        summary.targetWinRate,
+      ])
+  );
+  const cardRates = summarizeMatrix(
+    rows.filter((row) => row.variantId === 'equal'),
+    ['source', 'targetRole', 'selectedPowerUpId']
+  ).filter((summary) => summary.total >= offersPerRole * 9);
+  const baselineRowsByComparison = new Map(
+    rows
+      .filter((row) => row.variantId === 'baseline')
+      .map((row) => [
+        [
+          row.source,
+          row.offerIndex,
+          row.targetBuild,
+          row.opponentBuild,
+          row.orientation,
+          row.seedIndex,
+        ].join('\u001f'),
+        row,
+      ])
+  );
+  const marginalGroups = new Map();
+  for (const row of rows.filter((candidate) => candidate.variantId === 'immediate')) {
+    const comparisonKey = [
+      row.source,
+      row.offerIndex,
+      row.targetBuild,
+      row.opponentBuild,
+      row.orientation,
+      row.seedIndex,
+    ].join('\u001f');
+    const baselineRow = baselineRowsByComparison.get(comparisonKey);
+    if (!baselineRow) {
+      throw new Error(`Missing paired reward baseline for ${comparisonKey}.`);
+    }
+    const marginalKey = `${row.targetRole}:${row.selectedPowerUpId}`;
+    const group = marginalGroups.get(marginalKey) ?? [];
+    group.push({ row, baselineRow });
+    marginalGroups.set(marginalKey, group);
+  }
+  const marginalSummaries = [...marginalGroups.entries()].map(
+    ([marginalKey, pairs]) => {
+      const [targetRole, powerUpId] = marginalKey.split(':');
+      const definition = runtime.POWER_UP_CATALOG[powerUpId];
+      const immediateSummary = summarizeRows(pairs.map((pair) => pair.row));
+      const baselineSummary = summarizeRows(
+        pairs.map((pair) => pair.baselineRow)
+      );
+      const swingFromBaseline =
+        pairs.reduce(
+          (sum, pair) =>
+            sum + Number(pair.row.targetWon) - Number(pair.baselineRow.targetWon),
+          0
+        ) / pairs.length;
+      const verdicts = [];
+      const comboOnly =
+        definition.trigger === 'distinct-power-ups' ||
+        definition.trigger === 'common-power-up';
+      const band = POWER_UP_MARGINAL_BAND_BY_RARITY[definition.rarity];
+      if (band && swingFromBaseline < band.minimum) {
+        verdicts.push('FLAG_HARMFUL_OFFER');
+      }
+      if (!comboOnly && band && swingFromBaseline > band.maximum) {
+        verdicts.push('FLAG_RARITY_OVERPOWERED');
+      }
+      if (
+        !comboOnly &&
+        swingFromBaseline >= (band?.minimum ?? -0.02) &&
+        swingFromBaseline < 0.01
+      ) {
+        verdicts.push('WATCH_LOW_IMPACT_OFFER');
+      }
+      if (comboOnly) verdicts.push('INFO_COMBO_ONLY');
+      return {
+        targetLabel: `${targetRole} · ${definition.shortName}`,
+        opponentLabel: 'Paired no-Power-Up field',
+        targetRole,
+        powerUpId,
+        rarity: definition.rarity,
+        baselineWinRate: baselineSummary.targetWinRate,
+        swingFromBaseline,
+        ...immediateSummary,
+        verdict: verdicts.length > 0 ? verdicts.join('+') : 'OK',
+      };
+    }
+  );
+  const choiceSpreadBySourceAndRole = new Map(
+    scenarios.rewardSources.flatMap((source) =>
+      builds.map((build) => {
+        const targetRole = runtime.selectCombatRole(build.stats);
+        const offeredPowerUpIds = new Set(
+          cardRates
+          .filter(
+            (summary) =>
+              summary.source === source && summary.targetRole === targetRole
+          )
+            .map((summary) => summary.selectedPowerUpId)
+        );
+        const rates = marginalSummaries
+          .filter(
+            (summary) =>
+              summary.targetRole === targetRole &&
+              offeredPowerUpIds.has(summary.powerUpId)
+          )
+          .map((summary) => summary.swingFromBaseline);
+        return [
+          `${source}:${targetRole}`,
+          rates.length > 0 ? Math.max(...rates) - Math.min(...rates) : 1,
+        ];
+      })
+    )
+  );
   return {
     id: 'reward-path',
     title: 'Reward Path',
     rows,
-    summaries: summarizeMatrix(rows, ['targetLabel', 'source']),
+    summaries: [...summaries.map((summary) => {
+      const key = `${summary.source}:${summary.targetRole}`;
+      const baselineWinRate = baselineBySourceAndRole.get(key) ?? 0.5;
+      const swingFromBaseline = summary.targetWinRate - baselineWinRate;
+      const choiceSpread = choiceSpreadBySourceAndRole.get(key) ?? 0;
+      const verdicts = [];
+      if (!offerValidity.get(key)) verdicts.push('FLAG_INVALID_REWARD_OFFER');
+      if (
+        summary.variantId === 'immediate' &&
+        (swingFromBaseline < -0.1 || swingFromBaseline > 0.35)
+      ) {
+        verdicts.push('FLAG_REWARD_LIFT');
+      }
+      if (
+        summary.variantId === 'equal' &&
+        (summary.targetWinRate < 0.45 || summary.targetWinRate > 0.55)
+      ) {
+        verdicts.push('FLAG_REWARD_FIELD');
+      }
+      if (summary.variantId === 'equal' && choiceSpread > 0.2) {
+        verdicts.push('FLAG_REWARD_CHOICE_SPREAD');
+      }
+      return {
+        ...summary,
+        opponentLabel:
+          summary.variantId === 'equal'
+            ? `${summary.source} equal-progression field`
+            : `${summary.source} fixed field`,
+        baselineWinRate,
+        swingFromBaseline,
+        choiceSpread,
+        verdict: verdicts.length > 0 ? verdicts.join('+') : 'OK',
+      };
+    }), ...marginalSummaries],
+  };
+}
+
+const ROLE_GEAR_FAMILY_PRIORITY = Object.freeze({
+  brawler: Object.freeze(['guard', 'rush', 'ready', 'aim', 'fortune', 'focus']),
+  longshot: Object.freeze(['aim', 'focus', 'guard', 'ready', 'fortune', 'rush']),
+  mage: Object.freeze(['fortune', 'focus', 'aim', 'ready', 'guard', 'rush']),
+});
+
+function cadenceRewardCount(day, cadenceDays) {
+  return Number.isSafeInteger(cadenceDays) && cadenceDays > 0 && day % cadenceDays === 0
+    ? 1
+    : 0;
+}
+
+function activityForThirtyDayProfile(profile, day) {
+  return {
+    dailyDraws: Math.max(0, Math.floor(profile.dailyDraws ?? 0)),
+    sparWins:
+      Math.max(0, Math.floor(profile.sparWinsPerDay ?? 0)) +
+      cadenceRewardCount(day, profile.sparWinCadenceDays),
+    rumbleWins: Math.max(0, Math.floor(profile.rumbleWinsPerDay ?? 0)),
+    championWins: cadenceRewardCount(day, profile.championWinCadenceDays),
+    backedChampionWins: cadenceRewardCount(
+      day,
+      profile.backedChampionCadenceDays
+    ),
+  };
+}
+
+function mergeAvailableGear(runtime, inventory, gearId) {
+  let nextInventory = inventory;
+  while (true) {
+    const projection = runtime.projectGearMerge(nextInventory, gearId);
+    if (projection.status !== 'merged') return nextInventory;
+    nextInventory = projection.response.inventory;
+  }
+}
+
+function grantGearToThirtyDayInventory(runtime, inventory, gearId) {
+  const gear = runtime.findGearCosmetic(gearId);
+  if (!gear) throw new Error(`Thirty-day reward uses unknown Gear ${gearId}.`);
+  const granted = runtime.projectCapsuleInventoryGrant(inventory, gear);
+  return mergeAvailableGear(runtime, granted.inventory, gearId);
+}
+
+function selectThirtyDayGear(runtime, inventory, combatRole, accountSeed) {
+  const familyPriority = ROLE_GEAR_FAMILY_PRIORITY[combatRole] ?? [];
+  const discoveredGear = Object.entries(inventory.gear ?? {})
+    .map(([gearId, gearState]) => ({
+      definition: runtime.findGearCosmetic(gearId),
+      rank: gearState.rank,
+    }))
+    .filter((entry) => entry.definition);
+  const selected = [];
+  for (const category of ['weapon', 'armor', 'shoes', 'accessory']) {
+    const candidates = discoveredGear
+      .filter((entry) => entry.definition.category === category)
+      .sort((left, right) => {
+        const leftRoleAffinity = Number(
+          left.definition.roleAffinity === combatRole
+        );
+        const rightRoleAffinity = Number(
+          right.definition.roleAffinity === combatRole
+        );
+        const leftFamilyScore = Math.max(
+          0,
+          familyPriority.length -
+            familyPriority.indexOf(left.definition.effectFamily)
+        );
+        const rightFamilyScore = Math.max(
+          0,
+          familyPriority.length -
+            familyPriority.indexOf(right.definition.effectFamily)
+        );
+        const leftScore =
+          left.rank * 100 + leftRoleAffinity * 25 + leftFamilyScore;
+        const rightScore =
+          right.rank * 100 + rightRoleAffinity * 25 + rightFamilyScore;
+        if (leftScore !== rightScore) return rightScore - leftScore;
+        const leftTie = runtime.hashStringToUint32(
+          `${accountSeed}:${combatRole}:${category}:${left.definition.id}`
+        );
+        const rightTie = runtime.hashStringToUint32(
+          `${accountSeed}:${combatRole}:${category}:${right.definition.id}`
+        );
+        return leftTie === rightTie
+          ? left.definition.id.localeCompare(right.definition.id)
+          : leftTie - rightTie;
+      })
+      .slice(0, 2);
+    candidates.forEach((entry, slotIndex) => {
+      selected.push({
+        id: entry.definition.id,
+        rank: entry.rank,
+        slotIndex,
+      });
+    });
+  }
+  return selected;
+}
+
+function addThirtyDayPowerUp({
+  runtime,
+  build,
+  powerUpIds,
+  source,
+  gear,
+  seed,
+  maximumPowerUps,
+}) {
+  if (powerUpIds.length >= maximumPowerUps) return powerUpIds;
+  const combatRole = runtime.selectCombatRole(build.stats);
+  const gearFamilies = [
+    ...new Set(
+      gear
+        .map((entry) => runtime.findGearCosmetic(entry.id)?.effectFamily)
+        .filter(Boolean)
+    ),
+  ];
+  const choices = runtime.createDeterministicPowerUpOffer({
+    seed,
+    source,
+    ownedPowerUpIds: powerUpIds,
+    combatRole,
+    gearFamilies,
+    maxPowerUps: maximumPowerUps,
+  });
+  const validChoices = (choices ?? []).filter(
+    (powerUpId) =>
+      runtime.powerUpIsOfferableForRole(
+        powerUpId,
+        combatRole,
+        powerUpIds.length
+      ) &&
+      runtime.validatePowerUpBuild([...powerUpIds, powerUpId]).valid
+  );
+  if (validChoices.length === 0) return powerUpIds;
+  const scoredChoices = validChoices.map((powerUpId) => ({
+    powerUpId,
+    score: runtime.scorePowerUpFit(
+      powerUpId,
+      combatRole,
+      gearFamilies,
+      powerUpIds
+    ),
+  }));
+  const bestScore = Math.max(...scoredChoices.map((choice) => choice.score));
+  const bestChoices = scoredChoices.filter(
+    (choice) => choice.score === bestScore
+  );
+  const selected =
+    bestChoices[
+      runtime.hashStringToUint32(`${seed}:player-choice`) % bestChoices.length
+    ];
+  return selected ? [...powerUpIds, selected.powerUpId] : powerUpIds;
+}
+
+function simulateThirtyDayAccount({
+  runtime,
+  scenarios,
+  config,
+  profile,
+  runIndex,
+  side,
+}) {
+  const accountSeed = `thirty-day:${runIndex}:${side}`;
+  const builds = baseBuilds(scenarios);
+  let inventory = {
+    items: {},
+    gear: {},
+    pens: [],
+    titles: [],
+    equippedTitle: null,
+    discovered: [],
+  };
+  let ink = 0;
+  let inkEarned = 0;
+  let inkSpent = 0;
+  let pullCount = 0;
+  let pullsSinceEpic = 0;
+  let maximumPullsSinceEpic = 0;
+  let claimedTrackDays = 0;
+  let xp = 0;
+  const rarityCounts = {};
+  const powerUpsByBuild = new Map(builds.map((build) => [build.id, []]));
+  const firstMaximumPowerUpDayByBuild = new Map();
+  const snapshots = new Map();
+
+  for (let day = 1; day <= config.days; day += 1) {
+    const loginReward = runtime.dailyLoginRewardAfterClaims(claimedTrackDays);
+    claimedTrackDays = Math.min(7, claimedTrackDays + 1);
+    ink += loginReward.ink;
+    inkEarned += loginReward.ink;
+    if (loginReward.gearId) {
+      inventory = grantGearToThirtyDayInventory(
+        runtime,
+        inventory,
+        loginReward.gearId
+      );
+    }
+
+    const activity = activityForThirtyDayProfile(profile, day);
+    const activityInk =
+      activity.dailyDraws * runtime.INK_REWARDS.dailyDraw +
+      activity.sparWins * runtime.INK_REWARDS.sparWin +
+      activity.rumbleWins * runtime.INK_REWARDS.rumbleWin +
+      activity.backedChampionWins * runtime.INK_REWARDS.backedChampion;
+    ink += activityInk;
+    inkEarned += activityInk;
+    xp +=
+      activity.sparWins * runtime.XP_REWARDS.sparWin +
+      activity.rumbleWins * runtime.XP_REWARDS.rumbleWin +
+      activity.championWins * runtime.XP_REWARDS.championWin;
+
+    while (ink >= runtime.CAPSULE_COST) {
+      const nextPullCount = pullCount + 1;
+      const entry = runtime.selectCapsuleDrop(
+        {
+          userId: accountSeed,
+          day,
+          pullCount: nextPullCount,
+          pullsSinceEpic,
+          entropy: `${accountSeed}:day:${day}:pull:${nextPullCount}`,
+        },
+        new Set(inventory.discovered)
+      );
+      const grant = runtime.projectCapsuleInventoryGrant(inventory, entry);
+      inventory = grant.inventory;
+      if (entry.kind === 'accessory') {
+        inventory = mergeAvailableGear(runtime, inventory, entry.id);
+      }
+      ink -= runtime.CAPSULE_COST;
+      inkSpent += runtime.CAPSULE_COST;
+      pullCount = nextPullCount;
+      pullsSinceEpic = runtime.advanceCapsulePity(
+        pullsSinceEpic,
+        entry.rarity
+      );
+      maximumPullsSinceEpic = Math.max(
+        maximumPullsSinceEpic,
+        pullsSinceEpic
+      );
+      rarityCounts[entry.rarity] = (rarityCounts[entry.rarity] ?? 0) + 1;
+    }
+
+    const offerSources = [
+      ...(day === 1 ? ['birth'] : []),
+      ...Array.from({ length: activity.sparWins }, () => 'exhibition-win'),
+      ...(activity.rumbleWins > 0 ? ['rumble-day-win'] : []),
+      ...Array.from({ length: activity.championWins }, () => 'champion-win'),
+    ];
+    const roles = {};
+    const maximumPowerUps =
+      day <= 3
+        ? Math.min(
+            runtime.MAXIMUM_POWER_UPS,
+            scenarios.growingMaturityMaxPowerUps
+          )
+        : runtime.MAXIMUM_POWER_UPS;
+    for (const build of builds) {
+      const combatRole = runtime.selectCombatRole(build.stats);
+      const gear = selectThirtyDayGear(
+        runtime,
+        inventory,
+        combatRole,
+        accountSeed
+      );
+      let powerUpIds = powerUpsByBuild.get(build.id) ?? [];
+      offerSources.forEach((source, sourceIndex) => {
+        powerUpIds = addThirtyDayPowerUp({
+          runtime,
+          build,
+          powerUpIds,
+          source,
+          gear,
+          seed: `${accountSeed}:${build.id}:day:${day}:offer:${sourceIndex}:${source}`,
+          maximumPowerUps,
+        });
+      });
+      powerUpsByBuild.set(build.id, powerUpIds);
+      if (
+        powerUpIds.length === runtime.MAXIMUM_POWER_UPS &&
+        !firstMaximumPowerUpDayByBuild.has(build.id)
+      ) {
+        firstMaximumPowerUpDayByBuild.set(build.id, day);
+      }
+      roles[build.id] = {
+        combatRole,
+        gear,
+        powerUpIds: [...powerUpIds],
+        level: runtime.getLevelForXp(xp),
+      };
+    }
+
+    if (config.checkpointDays.includes(day)) {
+      const gearRanks = Object.values(inventory.gear ?? {}).map(
+        (gearState) => gearState.rank
+      );
+      snapshots.set(day, {
+        day,
+        ink,
+        inkEarned,
+        inkSpent,
+        pullCount,
+        pullsSinceEpic,
+        maximumPullsSinceEpic,
+        rarityCounts: { ...rarityCounts },
+        discoveredCount: inventory.discovered.length,
+        collectionTotal: runtime.COSMETIC_CATALOG.length,
+        maxGearRank: gearRanks.length > 0 ? Math.max(...gearRanks) : 0,
+        level: runtime.getLevelForXp(xp),
+        roles,
+      });
+    }
+  }
+
+  return {
+    accountSeed,
+    snapshots,
+    firstMaximumPowerUpDayByBuild,
+  };
+}
+
+function thirtyDayContentScheduleSummary(runtime, config) {
+  const themeValidation = runtime.validateCommunityDrawThemeSeasons();
+  const gearWeekErrors = runtime.validateGearWeek();
+  const days = Array.from({ length: config.days }, (_, index) => index + 1);
+  const dailyContent = days.map((day) => {
+    const themes = runtime.selectCommunityDoodleDarePool(day);
+    return {
+      day,
+      arena: runtime.getBattleArenaForDay(day),
+      themes,
+      gearWeek: runtime.selectGearWeekDay(day),
+      loginReward: runtime.dailyLoginRewardAfterClaims(Math.min(day - 1, 7)),
+    };
+  });
+  const consecutiveArenaRepeats = dailyContent.filter(
+    (entry, index) =>
+      index > 1 && entry.arena.id === dailyContent[index - 1]?.arena.id
+  ).length;
+  const invalidThemePools = dailyContent.filter((entry) => {
+    const categories = new Set(entry.themes.map((theme) => theme.category));
+    const animalCount = entry.themes.filter(
+      (theme) => theme.category === 'animal'
+    ).length;
+    return entry.themes.length !== 5 || categories.size < 4 || animalCount > 2;
+  }).length;
+  const missingDailyRewards = dailyContent.filter(
+    (entry) => entry.loginReward.ink <= 0
+  ).length;
+  const uniqueThemeCycles = new Set(
+    dailyContent
+      .filter((entry) => (entry.day - 1) % 3 === 0)
+      .map((entry) => entry.themes.map((theme) => theme.id).join('|'))
+  ).size;
+  const uniqueArenas = new Set(
+    dailyContent.map((entry) => entry.arena.id)
+  ).size;
+  const uniqueGearWeekDays = new Set(
+    dailyContent.map((entry) => entry.gearWeek.day)
+  ).size;
+  const verdicts = [];
+  if (config.days !== 30) verdicts.push('FLAG_NOT_30_DAYS');
+  if (!themeValidation.valid) verdicts.push('FLAG_THEME_CATALOG');
+  if (gearWeekErrors.length > 0) verdicts.push('FLAG_GEAR_WEEK');
+  if (invalidThemePools > 0) verdicts.push('FLAG_THEME_VARIETY');
+  if (consecutiveArenaRepeats > 0) verdicts.push('FLAG_ARENA_REPEAT');
+  if (missingDailyRewards > 0) verdicts.push('FLAG_DAILY_REWARD_GAP');
+  if (uniqueThemeCycles !== Math.ceil(config.days / 3)) {
+    verdicts.push('FLAG_THEME_CYCLE_REPEAT');
+  }
+  if (uniqueArenas < 10) verdicts.push('FLAG_ARENA_CONTENT_GAP');
+  if (uniqueGearWeekDays !== 7) verdicts.push('FLAG_GEAR_WEEK_GAP');
+  return {
+    targetLabel: '30-day content schedule',
+    opponentLabel: 'production catalogs',
+    total: config.days,
+    targetWins: config.days,
+    timeouts: 0,
+    targetWinRate: 0.5,
+    timeoutRate: 0,
+    closeFightRate: 0,
+    blowoutRate: 0,
+    averageSeconds: 0,
+    averagePowerUpTriggers: 0,
+    contentDays: config.days,
+    uniqueThemeCycles,
+    uniqueArenas,
+    uniqueGearWeekDays,
+    verdict: verdicts.length > 0 ? verdicts.join('+') : 'OK',
+  };
+}
+
+function runThirtyDayContent({ runtime, scenarios }) {
+  const config = scenarios.suites.thirtyDayContent;
+  if (!config || config.days !== 30) {
+    throw new Error('Thirty-day balance requires an explicit 30-day config.');
+  }
+  const rows = [];
+  const accountsByProfile = new Map();
+  for (const profile of config.profiles) {
+    const accounts = [];
+    for (let runIndex = 0; runIndex < config.runsPerProfile; runIndex += 1) {
+      accounts.push({
+        target: simulateThirtyDayAccount({
+          runtime,
+          scenarios,
+          config,
+          profile,
+          runIndex,
+          side: 'target',
+        }),
+        opponent: simulateThirtyDayAccount({
+          runtime,
+          scenarios,
+          config,
+          profile,
+          runIndex,
+          side: 'opponent',
+        }),
+      });
+    }
+    accountsByProfile.set(profile.id, accounts);
+  }
+
+  const builds = baseBuilds(scenarios);
+  for (const profile of config.profiles) {
+    const accounts = accountsByProfile.get(profile.id) ?? [];
+    accounts.forEach((account, runIndex) => {
+      for (const checkpointDay of config.checkpointDays) {
+        const targetSnapshot = account.target.snapshots.get(checkpointDay);
+        const opponentSnapshot = account.opponent.snapshots.get(checkpointDay);
+        if (!targetSnapshot || !opponentSnapshot) {
+          throw new Error(
+            `Missing ${profile.id} day ${checkpointDay} account snapshot.`
+          );
+        }
+        const checkpointForecast = runtime.generateForecastForDay(checkpointDay);
+        for (const targetBuild of builds) {
+          const targetState = targetSnapshot.roles[targetBuild.id];
+          for (const opponentBuild of builds) {
+            const opponentState = opponentSnapshot.roles[opponentBuild.id];
+            const shared = {
+              runtime,
+              forecast: checkpointForecast,
+              battleKind: 'exhibition',
+              targetBuild,
+              opponentBuild,
+              seeds: 1,
+              seedPrefix: `balancer:30-day:v1:${profile.id}:${runIndex}:${checkpointDay}`,
+              targetOverrides: {
+                label: `${profile.label} · Day ${checkpointDay} · ${targetState.combatRole}`,
+                powerUpIds: targetState.powerUpIds,
+                gear: opponentState.gear,
+                level: targetState.level,
+              },
+            };
+            rows.push(
+              ...simulateTargetVsOpponent({
+                ...shared,
+                opponentOverrides: {
+                  powerUpIds: opponentState.powerUpIds,
+                  gear: opponentState.gear,
+                  level: opponentState.level,
+                },
+              }).map((row) => ({
+                ...row,
+                profileId: profile.id,
+                profileLabel: profile.label,
+                checkpointDay,
+                targetRole: targetState.combatRole,
+                opponentField: 'equal-progression',
+                pullCount: targetSnapshot.pullCount,
+                discoveredCount: targetSnapshot.discoveredCount,
+                maxGearRank: targetSnapshot.maxGearRank,
+                level: targetState.level,
+                finalPowerUps: targetState.powerUpIds.length,
+                progressionPowerUpIds: targetState.powerUpIds.join('|'),
+                progressionGear: targetState.gear
+                  .map((entry) => `${entry.id}@${entry.rank}`)
+                  .join('|'),
+              }))
+            );
+            rows.push(
+              ...simulateTargetVsOpponent({
+                ...shared,
+                opponentOverrides: { powerUpIds: [], gear: [], level: 1 },
+              }).map((row) => ({
+                ...row,
+                profileId: profile.id,
+                profileLabel: profile.label,
+                checkpointDay,
+                targetRole: targetState.combatRole,
+                opponentField: 'fresh-baseline',
+                pullCount: targetSnapshot.pullCount,
+                discoveredCount: targetSnapshot.discoveredCount,
+                maxGearRank: targetSnapshot.maxGearRank,
+                level: targetState.level,
+                finalPowerUps: targetState.powerUpIds.length,
+                progressionPowerUpIds: targetState.powerUpIds.join('|'),
+                progressionGear: targetState.gear
+                  .map((entry) => `${entry.id}@${entry.rank}`)
+                  .join('|'),
+              }))
+            );
+          }
+        }
+      }
+    });
+  }
+
+  const crossProfilePairs = [
+    ['regular', 'casual'],
+    ['competitive', 'regular'],
+  ];
+  for (const [targetProfileId, opponentProfileId] of crossProfilePairs) {
+    const targetProfile = config.profiles.find(
+      (profile) => profile.id === targetProfileId
+    );
+    const opponentProfile = config.profiles.find(
+      (profile) => profile.id === opponentProfileId
+    );
+    const targetAccounts = accountsByProfile.get(targetProfileId) ?? [];
+    const opponentAccounts = accountsByProfile.get(opponentProfileId) ?? [];
+    if (!targetProfile || !opponentProfile) continue;
+    targetAccounts.forEach((targetAccount, runIndex) => {
+      const opponentAccount = opponentAccounts[runIndex];
+      const targetSnapshot = targetAccount.target.snapshots.get(30);
+      const opponentSnapshot = opponentAccount.target.snapshots.get(30);
+      if (!targetSnapshot || !opponentSnapshot) return;
+      const checkpointForecast = runtime.generateForecastForDay(30);
+      for (const targetBuild of builds) {
+        const targetState = targetSnapshot.roles[targetBuild.id];
+        for (const opponentBuild of builds) {
+          if (opponentBuild.id !== targetBuild.id) continue;
+          const opponentState = opponentSnapshot.roles[opponentBuild.id];
+          rows.push(
+            ...simulateTargetVsOpponent({
+              runtime,
+              forecast: checkpointForecast,
+              battleKind: 'exhibition',
+              targetBuild,
+              opponentBuild,
+              seeds: 1,
+              seedPrefix: `balancer:30-day-cross:v1:${targetProfileId}:${opponentProfileId}:${runIndex}`,
+              targetOverrides: {
+                label: `${targetProfile.label} · Day 30 · ${targetState.combatRole}`,
+                powerUpIds: targetState.powerUpIds,
+                gear: targetState.gear,
+                level: targetState.level,
+              },
+              opponentOverrides: {
+                label: `${opponentProfile.label} · Day 30 · ${opponentState.combatRole}`,
+                powerUpIds: targetState.powerUpIds,
+                gear: opponentState.gear,
+                level: opponentState.level,
+              },
+            }).map((row) => ({
+              ...row,
+              profileId: `${targetProfileId}-vs-${opponentProfileId}`,
+              profileLabel: `${targetProfile.label} vs ${opponentProfile.label}`,
+              checkpointDay: 30,
+              targetRole: targetState.combatRole,
+              opponentField: 'cross-profile',
+              pullCount: targetSnapshot.pullCount,
+              discoveredCount: targetSnapshot.discoveredCount,
+              maxGearRank: targetSnapshot.maxGearRank,
+              level: targetState.level,
+              finalPowerUps: targetState.powerUpIds.length,
+              progressionPowerUpIds: targetState.powerUpIds.join('|'),
+              progressionGear: targetState.gear
+                .map((entry) => `${entry.id}@${entry.rank}`)
+                .join('|'),
+            }))
+          );
+        }
+      }
+    });
+  }
+
+  const combatSummaries = summarizeMatrix(rows, [
+    'profileId',
+    'profileLabel',
+    'checkpointDay',
+    'targetRole',
+    'opponentField',
+    'targetLabel',
+  ]).map((summary) => {
+    const verdicts = [];
+    const baseVerdict = removeVerdictToken(
+      summary.verdict,
+      'FLAG_WIN_RATE'
+    );
+    if (baseVerdict !== 'OK') verdicts.push(baseVerdict);
+    if (
+      summary.opponentField === 'equal-progression' &&
+      (summary.targetWinRate < config.minimumEqualProgressionWinRate ||
+        summary.targetWinRate > config.maximumEqualProgressionWinRate)
+    ) {
+      verdicts.push('FLAG_30_DAY_EQUAL_FIELD');
+    }
+    if (
+      summary.opponentField === 'fresh-baseline' &&
+      summary.checkpointDay === 30 &&
+      summary.targetWinRate < 0.52
+    ) {
+      verdicts.push('FLAG_NO_LONG_TERM_PROGRESS');
+    }
+    if (
+      summary.opponentField === 'fresh-baseline' &&
+      summary.checkpointDay === 30 &&
+      summary.targetWinRate > 0.95
+    ) {
+      verdicts.push('WATCH_FRESH_PLAYER_GAP');
+    }
+    if (
+      summary.opponentField === 'cross-profile' &&
+      summary.targetWinRate > config.maximumCrossProfileWinRate
+    ) {
+      verdicts.push('FLAG_ACTIVITY_RUNAWAY');
+    } else if (
+      summary.opponentField === 'cross-profile' &&
+      summary.targetWinRate > 0.65
+    ) {
+      verdicts.push('WATCH_ACTIVITY_GAP');
+    }
+    if (
+      summary.opponentField === 'cross-profile' &&
+      summary.targetWinRate < 1 - config.maximumCrossProfileWinRate
+    ) {
+      verdicts.push('FLAG_ACTIVITY_REVERSAL');
+    } else if (
+      summary.opponentField === 'cross-profile' &&
+      summary.targetWinRate < 0.35
+    ) {
+      verdicts.push('WATCH_ACTIVITY_GAP');
+    }
+    return {
+      ...summary,
+      opponentLabel:
+        summary.opponentField === 'equal-progression'
+          ? 'equal 30-day field'
+          : summary.opponentField === 'fresh-baseline'
+            ? 'fresh day-one field'
+            : 'lower-activity day-30 field',
+      verdict: verdicts.length > 0 ? [...new Set(verdicts)].join('+') : 'OK',
+    };
+  });
+
+  const economySummaries = config.profiles.map((profile) => {
+    const finalSnapshots = (accountsByProfile.get(profile.id) ?? []).map(
+      (account) => account.target.snapshots.get(30)
+    );
+    if (finalSnapshots.some((snapshot) => !snapshot)) {
+      throw new Error(`Missing ${profile.id} day-30 economy snapshot.`);
+    }
+    const average = (field) =>
+      finalSnapshots.reduce((sum, snapshot) => sum + snapshot[field], 0) /
+      finalSnapshots.length;
+    const collectionRatios = finalSnapshots.map(
+      (snapshot) => snapshot.discoveredCount / snapshot.collectionTotal
+    );
+    const gearRanks = finalSnapshots.map((snapshot) => snapshot.maxGearRank);
+    const medianGearRank = percentile(gearRanks, 0.5);
+    const ninetyFifthGearRank = percentile(gearRanks, 0.95);
+    const minimumCapsules = Math.min(
+      ...finalSnapshots.map((snapshot) => snapshot.pullCount)
+    );
+    const maximumCapsules = Math.max(
+      ...finalSnapshots.map((snapshot) => snapshot.pullCount)
+    );
+    const verdicts = [];
+    if (
+      minimumCapsules < profile.minimumDayThirtyCapsules ||
+      maximumCapsules > profile.maximumDayThirtyCapsules
+    ) {
+      verdicts.push('FLAG_CAPSULE_PACING');
+    }
+    if (medianGearRank < config.minimumDayThirtyGearRank) {
+      verdicts.push('FLAG_GEAR_PROGRESSION_STALL');
+    }
+    if (ninetyFifthGearRank > config.maximumDayThirtyGearRank) {
+      verdicts.push('FLAG_GEAR_PROGRESSION_RUSH');
+    }
+    if (
+      percentile(collectionRatios, 0.9) >
+      config.maximumDayThirtyCollectionRatio
+    ) {
+      verdicts.push('FLAG_COLLECTION_BURNOUT');
+    }
+    if (
+      finalSnapshots.some(
+        (snapshot) =>
+          snapshot.ink < 0 || snapshot.ink >= runtime.CAPSULE_COST
+      )
+    ) {
+      verdicts.push('FLAG_INK_SETTLEMENT');
+    }
+    if (
+      finalSnapshots.some(
+        (snapshot) => snapshot.maximumPullsSinceEpic >= runtime.CAPSULE_PITY
+      )
+    ) {
+      verdicts.push('FLAG_PITY_GAP');
+    }
+    return {
+      targetLabel: `${profile.label} · 30-day economy`,
+      opponentLabel: 'earned progression budget',
+      total: finalSnapshots.length,
+      targetWins: finalSnapshots.length,
+      timeouts: 0,
+      targetWinRate: 0.5,
+      timeoutRate: 0,
+      closeFightRate: 0,
+      blowoutRate: 0,
+      averageSeconds: 0,
+      averagePowerUpTriggers: 0,
+      checkpointDay: 30,
+      pullCount: average('pullCount'),
+      discoveredCount: average('discoveredCount'),
+      maxGearRank: average('maxGearRank'),
+      level: average('level'),
+      inkEarned: average('inkEarned'),
+      inkSpent: average('inkSpent'),
+      collectionRatio:
+        collectionRatios.reduce((sum, ratio) => sum + ratio, 0) /
+        collectionRatios.length,
+      verdict: verdicts.length > 0 ? verdicts.join('+') : 'OK',
+    };
+  });
+
+  return {
+    id: 'thirty-day-content',
+    title: 'Thirty-Day Content + Progression',
+    rows,
+    summaries: [
+      thirtyDayContentScheduleSummary(runtime, config),
+      ...economySummaries,
+      ...combatSummaries,
+    ],
   };
 }
 
@@ -1299,13 +2925,33 @@ function runThreeDayLoop({ runtime, scenarios, forecast }) {
           const opponentBuild =
             opponents[
               runtime.hashStringToUint32(
-                `balancer:three-day-opponent:v2:${startingBuild.id}:${loopIndex}:${day}:${bout}:${wins}:${losses}`
+                `balancer:three-day-opponent:v3:${loopIndex}:${day}:${bout}`
               ) % opponents.length
             ];
           const powerUpsBeforeFight = powerUpIds.length;
+          const opponentPowerUpIds = [];
+          while (opponentPowerUpIds.length < powerUpsBeforeFight) {
+            const choices = runtime.createDeterministicPowerUpOffer({
+              seed: `three-day-opponent-offer-v1:${loopIndex}:${day}:${bout}:${opponentBuild.id}:${opponentPowerUpIds.length}`,
+              source:
+                opponentPowerUpIds.length === powerUpsBeforeFight - 1 &&
+                powerUpsBeforeFight >= 3
+                  ? 'rival-run-final-win'
+                  : 'rival-run-win',
+              ownedPowerUpIds: opponentPowerUpIds,
+              maxPowerUps: growingMaturityMaxPowerUps,
+              combatRole: runtime.selectCombatRole(opponentBuild.stats),
+            });
+            const selected = choices?.find(
+              (id) =>
+                runtime.validatePowerUpBuild([...opponentPowerUpIds, id]).valid
+            );
+            if (!selected) break;
+            opponentPowerUpIds.push(selected);
+          }
           const sampledOrientation =
             runtime.hashStringToUint32(
-              `balancer:three-day-orientation:v1:${startingBuild.id}:${loopIndex}:${day}:${bout}`
+              `balancer:three-day-orientation:v2:${loopIndex}:${day}:${bout}`
             ) %
               2 ===
             0
@@ -1320,6 +2966,9 @@ function runThreeDayLoop({ runtime, scenarios, forecast }) {
             targetOverrides: {
               label: `${startingBuild.label} · 3-day loop`,
               powerUpIds,
+            },
+            opponentOverrides: {
+              powerUpIds: opponentPowerUpIds,
             },
             seeds: 1,
             seedPrefix: `balancer:three-day:v2:${startingBuild.id}:${loopIndex}:${day}:${bout}`,
@@ -1629,6 +3278,18 @@ function reportForSuite(suite) {
           },
         ]
       : []),
+    ...(rows.some((row) => row.choiceSpread !== undefined)
+      ? [
+          {
+            label: 'Choice spread',
+            align: '---:',
+            value: (row) =>
+              row.choiceSpread === undefined
+                ? '—'
+                : `${(row.choiceSpread * 100).toFixed(1)}pp`,
+          },
+        ]
+      : []),
     ...(rows.some((row) => row.rarity !== undefined)
       ? [
           {
@@ -1745,6 +3406,98 @@ function reportForSuite(suite) {
           },
         ]
       : []),
+    ...(rows.some((row) => row.checkpointDay !== undefined)
+      ? [
+          {
+            label: 'Day',
+            align: '---:',
+            value: (row) => row.checkpointDay ?? '',
+          },
+        ]
+      : []),
+    ...(rows.some((row) => row.pullCount !== undefined)
+      ? [
+          {
+            label: 'Capsules',
+            align: '---:',
+            value: (row) =>
+              row.pullCount === undefined
+                ? ''
+                : Number(row.pullCount).toFixed(1),
+          },
+        ]
+      : []),
+    ...(rows.some((row) => row.discoveredCount !== undefined)
+      ? [
+          {
+            label: 'Discoveries',
+            align: '---:',
+            value: (row) =>
+              row.discoveredCount === undefined
+                ? ''
+                : Number(row.discoveredCount).toFixed(1),
+          },
+        ]
+      : []),
+    ...(rows.some((row) => row.collectionRatio !== undefined)
+      ? [
+          {
+            label: 'Collection',
+            align: '---:',
+            value: (row) =>
+              row.collectionRatio === undefined
+                ? ''
+                : formatPercent(row.collectionRatio),
+          },
+        ]
+      : []),
+    ...(rows.some((row) => row.maxGearRank !== undefined)
+      ? [
+          {
+            label: 'Gear rank',
+            align: '---:',
+            value: (row) =>
+              row.maxGearRank === undefined
+                ? ''
+                : Number(row.maxGearRank).toFixed(1),
+          },
+        ]
+      : []),
+    ...(rows.some((row) => row.level !== undefined)
+      ? [
+          {
+            label: 'Level',
+            align: '---:',
+            value: (row) =>
+              row.level === undefined ? '' : Number(row.level).toFixed(1),
+          },
+        ]
+      : []),
+    ...(rows.some((row) => row.inkEarned !== undefined)
+      ? [
+          {
+            label: 'Ink earned/spent',
+            align: '---:',
+            value: (row) =>
+              row.inkEarned === undefined
+                ? ''
+                : `${Number(row.inkEarned).toFixed(1)}/${Number(
+                    row.inkSpent ?? 0
+                  ).toFixed(1)}`,
+          },
+        ]
+      : []),
+    ...(rows.some((row) => row.contentDays !== undefined)
+      ? [
+          {
+            label: 'Content',
+            value: (row) =>
+              row.contentDays === undefined
+                ? ''
+                : `${row.contentDays}d · ${row.uniqueThemeCycles} themes · ${row.uniqueArenas} arenas · ${row.uniqueGearWeekDays} Gear days`,
+          },
+        ]
+      : []),
     ...(rows.some((row) => row.score !== undefined)
       ? [
           {
@@ -1850,7 +3603,9 @@ async function writeSuiteArtifacts(suites) {
       resolve(artifactRoot, `${timestamp}-${suite.id}.md`),
       markdown
     );
-    allRows.push(...suite.rows.map((row) => ({ suite: suite.id, ...row })));
+    for (const row of suite.rows) {
+      allRows.push({ suite: suite.id, ...row });
+    }
   }
   const overview = overviewReport(suites);
   const csv = rawCsv(allRows);
@@ -1869,23 +3624,39 @@ async function main() {
   const runtime = await import(pathToFileURL(bundlePath).href);
   const forecast = runtime.generateForecastForDay(scenarios.forecastDay);
   const context = { runtime, scenarios, forecast };
-  const suites = [
-    runRoleMatrix(context),
-    runRoleCycle(context),
-    runGrowthProgression(context),
-    runPowerUpCombos(context),
-    runPowerUpUsefulness(context),
-    runRivalRunRisk(context),
-    runThreeDayLoop(context),
-    runRewardPath(context),
-    runRivalRunFlow(context),
-    runGeneratedPool(context),
-    runDamageSourceBreakdown(context),
-    runGearPowerUpInteraction(context),
-    runRoleEdges(context),
-    runFightFeel(context),
+  const suiteRunners = [
+    ['role-matrix', runRoleMatrix],
+    ['role-cycle', runRoleCycle],
+    ['growth-progression', runGrowthProgression],
+    ['powerup-combos', runPowerUpCombos],
+    ['powerup-usefulness', runPowerUpUsefulness],
+    ['rival-run-risk', runRivalRunRisk],
+    ['three-day-loop', runThreeDayLoop],
+    ['reward-path', runRewardPath],
+    ['thirty-day-content', runThirtyDayContent],
+    ['rival-run-flow', runRivalRunFlow],
+    ['generated-pool', runGeneratedPool],
+    ['damage-source-breakdown', runDamageSourceBreakdown],
+    ['gear-powerups', runGearPowerUpInteraction],
+    ['equipment-meta', runEquipmentMeta],
+    ['role-edges', runRoleEdges],
+    ['fight-feel', runFightFeel],
   ];
-  await writeSuiteArtifacts(suites);
+  const unknownSuiteIds = [...requestedSuiteIds].filter(
+    (requestedId) => !suiteRunners.some(([suiteId]) => suiteId === requestedId)
+  );
+  if (unknownSuiteIds.length > 0) {
+    throw new Error(`Unknown balance suite(s): ${unknownSuiteIds.join(', ')}`);
+  }
+  const suites = suiteRunners
+    .filter(
+      ([suiteId]) =>
+        requestedSuiteIds.size === 0 || requestedSuiteIds.has(suiteId)
+    )
+    .map(([, runSuite]) => runSuite(context));
+  if (!checkOnly) {
+    await writeSuiteArtifacts(suites);
+  }
   const fightCount = suites.reduce((sum, suite) => sum + suite.rows.length, 0);
   const flagCount = suites.reduce(
     (sum, suite) => sum + suite.summaries.filter(isBalanceFlag).length,
@@ -1899,9 +3670,35 @@ async function main() {
   console.log(
     `Suites: ${suites.length}; hard flags: ${flagCount}; watches: ${watchCount}.`
   );
-  console.log(`Summary: ${resolve(artifactRoot, 'latest-summary.md')}`);
-  for (const suite of suites) {
-    console.log(`${suite.title}: ${resolve(artifactRoot, `${suite.id}.md`)}`);
+  if (checkOnly) {
+    console.log('Check mode: no balance artifacts were written.');
+  } else {
+    console.log(`Summary: ${resolve(artifactRoot, 'latest-summary.md')}`);
+    for (const suite of suites) {
+      console.log(`${suite.title}: ${resolve(artifactRoot, `${suite.id}.md`)}`);
+    }
+  }
+  const balanceGateSuites = new Set([
+    'role-matrix',
+    'role-cycle',
+    'growth-progression',
+    'powerup-combos',
+    'generated-pool',
+    'powerup-usefulness',
+    'three-day-loop',
+    'reward-path',
+    'thirty-day-content',
+    'gear-powerups',
+    'equipment-meta',
+  ]);
+  const balanceGateFlags = suites.flatMap((suite) =>
+    balanceGateSuites.has(suite.id) ? suite.summaries.filter(isBalanceFlag) : []
+  );
+  if (balanceGateFlags.length > 0) {
+    console.error(
+      `Competitive balance gate failed with ${balanceGateFlags.length} flagged result(s).`
+    );
+    process.exitCode = 1;
   }
 }
 

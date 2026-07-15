@@ -20,6 +20,7 @@ import {
   normalizeScribbitRecord,
 } from './scribbit';
 import { jsonValuesMatch } from './jsonValues';
+import { recordVenueStampAttempt } from './venueStamp';
 
 export const battleReportTtlSeconds = 30 * 24 * 60 * 60;
 // One score bucket per arena day. A million report positions is far above the
@@ -449,6 +450,15 @@ export const saveBattleReport = async (
 
   if (ownerB) {
     ownerIds.add(ownerB);
+  }
+
+  if (ownerA) {
+    await recordVenueStampAttempt(
+      storage,
+      ownerA,
+      battleReport.a.artist,
+      storedBattleReport
+    );
   }
 
   for (const ownerId of ownerIds) {

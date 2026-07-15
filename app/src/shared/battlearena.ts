@@ -4,7 +4,6 @@ import type {
   CombatRules,
   DamageSource,
 } from './combat/types';
-import { hashStringToUint32 } from './stablehash';
 
 export const BATTLE_ARENA_IDS = Object.freeze([
   'v1-sticker-stadium',
@@ -55,6 +54,13 @@ export type BattleArenaChallengeProgress = Readonly<{
   completed: boolean;
 }>;
 
+export type NextBattleArenaUnlock = Readonly<{
+  arenaId: BattleArenaId;
+  name: string;
+  unlockDay: number;
+  daysAway: number;
+}>;
+
 const definition = (value: BattleArenaDefinition): BattleArenaDefinition =>
   Object.freeze({
     ...value,
@@ -68,7 +74,7 @@ export const BATTLE_ARENA_CATALOG: Readonly<
   'v1-sticker-stadium': definition({
     id: 'v1-sticker-stadium',
     name: 'Sticker Stadium',
-    shortRule: 'Even ground',
+    shortRule: 'Balanced field · standard rules',
     challengeLabel: 'Finish the fight',
     unlockOrdinal: 1,
     modifier: {},
@@ -77,7 +83,7 @@ export const BATTLE_ARENA_CATALOG: Readonly<
   'v1-ink-playground': definition({
     id: 'v1-ink-playground',
     name: 'Ink Playground',
-    shortRule: 'Powers 5% faster',
+    shortRule: 'Powers recharge 5% faster',
     challengeLabel: 'Cast 8 powers',
     unlockOrdinal: 2,
     modifier: { cooldownPermille: 950 },
@@ -95,7 +101,7 @@ export const BATTLE_ARENA_CATALOG: Readonly<
   'v1-chalkboard-court': definition({
     id: 'v1-chalkboard-court',
     name: 'Chalkboard Court',
-    shortRule: 'Tighter opening',
+    shortRule: 'Walls 8% closer',
     challengeLabel: 'Bounce twice',
     unlockOrdinal: 4,
     modifier: { startingExtentPermille: 920 },
@@ -104,7 +110,7 @@ export const BATTLE_ARENA_CATALOG: Readonly<
   'v1-garden-patch': definition({
     id: 'v1-garden-patch',
     name: 'Garden Patch',
-    shortRule: 'Movement 5% slower',
+    shortRule: 'Sticky soil · movement 5% slower',
     challengeLabel: 'Collide twice',
     unlockOrdinal: 5,
     modifier: { movementPermille: 950 },
@@ -175,7 +181,7 @@ export const getUnlockedBattleArenaDefinitions = (
   const normalizedDay = Number.isFinite(day) ? Math.max(1, Math.floor(day)) : 1;
   const unlockedCount = Math.min(
     BATTLE_ARENA_IDS.length,
-    1 + Math.floor((normalizedDay - 1) / 2)
+    normalizedDay
   );
   return Object.freeze(
     BATTLE_ARENA_IDS.slice(0, unlockedCount).map(
@@ -184,21 +190,33 @@ export const getUnlockedBattleArenaDefinitions = (
   );
 };
 
-const rawBattleArenaForDay = (day: number): BattleArenaDefinition => {
-  const unlocked = getUnlockedBattleArenaDefinitions(day);
-  const index = hashStringToUint32(`battle-arena:v1:${day}`) % unlocked.length;
-  return unlocked[index] ?? BATTLE_ARENA_CATALOG[DEFAULT_BATTLE_ARENA_ID];
+export const getNextBattleArenaUnlock = (
+  day: number
+): NextBattleArenaUnlock | null => {
+  const normalizedDay = Number.isFinite(day) ? Math.max(1, Math.floor(day)) : 1;
+  const unlockedCount = getUnlockedBattleArenaDefinitions(normalizedDay).length;
+  const nextArenaId = BATTLE_ARENA_IDS[unlockedCount];
+  if (!nextArenaId) return null;
+  const nextArena = BATTLE_ARENA_CATALOG[nextArenaId];
+  const unlockDay = nextArena.unlockOrdinal;
+  return Object.freeze({
+    arenaId: nextArena.id,
+    name: nextArena.name,
+    unlockDay,
+    daysAway: Math.max(0, unlockDay - normalizedDay),
+  });
 };
 
 export const getBattleArenaForDay = (day: number): BattleArenaDefinition => {
   const normalizedDay = Number.isFinite(day) ? Math.max(1, Math.floor(day)) : 1;
-  const selected = rawBattleArenaForDay(normalizedDay);
   const unlocked = getUnlockedBattleArenaDefinitions(normalizedDay);
-  if (normalizedDay <= 1 || unlocked.length <= 1) return selected;
-  const previous = rawBattleArenaForDay(normalizedDay - 1);
-  if (previous.id !== selected.id) return selected;
-  const selectedIndex = unlocked.findIndex((arena) => arena.id === selected.id);
-  return unlocked[(selectedIndex + 1) % unlocked.length] ?? selected;
+  // Introduce one new field on each of the first ten days, then repeat the
+  // complete catalog in order. This makes every day visibly different while
+  // distributing a 60-day season evenly across all ten authored fields.
+  return (
+    unlocked[(normalizedDay - 1) % unlocked.length] ??
+    BATTLE_ARENA_CATALOG[DEFAULT_BATTLE_ARENA_ID]
+  );
 };
 
 const scaleInteger = (value: number, permille: number): number => {

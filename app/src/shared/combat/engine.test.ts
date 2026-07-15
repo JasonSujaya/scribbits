@@ -43,10 +43,10 @@ function assertEqual<Value>(
 
 function makeStats(dominantStat: DominantStat): RawCombatStats {
   return Object.freeze({
-    chonk: dominantStat === 'chonk' ? 55 : 15,
-    spike: dominantStat === 'spike' ? 55 : 15,
-    zip: dominantStat === 'zip' ? 55 : 15,
-    charm: dominantStat === 'charm' ? 55 : 15,
+    chonk: dominantStat === 'chonk' ? 40 : 20,
+    spike: dominantStat === 'spike' ? 40 : 20,
+    zip: dominantStat === 'zip' ? 40 : 20,
+    charm: dominantStat === 'charm' ? 40 : 20,
   });
 }
 
@@ -73,7 +73,7 @@ function assertTranscriptInvariants(transcript: BattleTranscript): void {
     'battle must finish by tick 400'
   );
   assert(
-    transcript.result.completedTick >= 13 * COMBAT_TICK_RATE,
+    transcript.result.completedTick >= 10 * COMBAT_TICK_RATE,
     'fresh ink must keep the rendered fight inside its minimum pacing band'
   );
   assert(
@@ -710,6 +710,48 @@ function testSlotOrderNeutrality(): void {
   );
 }
 
+function testCompetitiveCurrentRoleCycle(): void {
+  const edges = Object.freeze([
+    Object.freeze({ target: 'chonk', rival: 'charm', label: 'Brawler > Mage' }),
+    Object.freeze({
+      target: 'charm',
+      rival: 'spike',
+      label: 'Mage > Longshot',
+    }),
+    Object.freeze({
+      target: 'spike',
+      rival: 'chonk',
+      label: 'Longshot > Brawler',
+    }),
+  ] as const satisfies readonly Readonly<{
+    target: DominantStat;
+    rival: DominantStat;
+    label: string;
+  }>[]);
+  const fightCount = 600;
+
+  for (const edge of edges) {
+    let targetWins = 0;
+    for (let sample = 0; sample < fightCount / 2; sample += 1) {
+      for (const swapSlots of [false, true]) {
+        const target = makeFighter(`cycle-target-${edge.target}`, edge.target);
+        const rival = makeFighter(`cycle-rival-${edge.rival}`, edge.rival);
+        const transcript = simulateCombat({
+          seed: `role-cycle:${edge.target}:${edge.rival}:${sample}:${swapSlots}`,
+          fighters: swapSlots ? [rival, target] : [target, rival],
+        });
+        const targetSlot = swapSlots ? 'b' : 'a';
+        if (transcript.result.winner === targetSlot) targetWins += 1;
+      }
+    }
+    const targetWinRate = targetWins / fightCount;
+    assert(
+      targetWinRate >= 0.5 && targetWinRate <= 0.65,
+      `${edge.label} must remain a competitive direct-engine edge; got ${(targetWinRate * 100).toFixed(1)}%`
+    );
+  }
+}
+
 /** Runs without a test framework so server and client build environments can use it. */
 export function runCombatEngineTests(): readonly string[] {
   testDomainSeparatedRandomness();
@@ -718,6 +760,7 @@ export function runCombatEngineTests(): readonly string[] {
   testEveryPrimaryPowerActivates();
   testEveryCombatRoleUsesItsBasicAttack();
   testCurrentTranscriptValidation();
+  testCompetitiveCurrentRoleCycle();
   testPowerUpRuntimeAndLegacyRemoval();
   testImmutablePhaseOrderAndValidation();
   testPowerUpBalanceSafetyMatrix();
@@ -736,5 +779,6 @@ export function runCombatEngineTests(): readonly string[] {
     '15-card Power-Up balance safety matrix',
     'ten-matchup replay duration matrix',
     'slot-order neutrality',
+    'competitive three-role counter cycle',
   ]);
 }

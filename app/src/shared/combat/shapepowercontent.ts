@@ -39,20 +39,21 @@ export const SHAPE_POWER_CONTENT_BY_POWER: Readonly<
 > = Object.freeze({
   inkquake: Object.freeze({
     displayName: 'Inkquake',
-    drawingCue: 'Coral + orange ink',
+    drawingCue: 'Brown + coral + orange ink',
     fieldGuideCue: 'More HP',
     revealLine: 'Shockwave + knockback',
     receiptEffect: 'Expanding shockwave',
-    playerHint: 'Mostly coral or orange ink launches an expanding shockwave.',
+    playerHint:
+      'Mostly brown, coral, or orange ink launches an expanding shockwave.',
     noCleanHitCallout: 'RING ENDS',
   }),
   nib_halo: Object.freeze({
     displayName: 'Nib Halo',
-    drawingCue: 'Aqua + blue ink',
+    drawingCue: 'Gold + green + blue ink',
     fieldGuideCue: 'Sharp edge',
     revealLine: '3 quills + dead zone',
     receiptEffect: '3 rotating quills',
-    playerHint: 'Mostly aqua or blue ink summons three rotating quills.',
+    playerHint: 'Mostly gold, green, or blue ink summons three rotating quills.',
     noCleanHitCallout: 'NIBS SETTLE',
   }),
   smearstep: Object.freeze({
@@ -66,11 +67,12 @@ export const SHAPE_POWER_CONTENT_BY_POWER: Readonly<
   }),
   colorburst: Object.freeze({
     displayName: 'Colorburst',
-    drawingCue: 'Purple + pink ink',
+    drawingCue: 'Aqua + purple + pink ink',
     fieldGuideCue: 'More crit',
     revealLine: 'Cone + delayed echo',
     receiptEffect: 'Cone + delayed echo',
-    playerHint: 'Mostly purple or pink ink fires a cone and delayed echo.',
+    playerHint:
+      'Mostly aqua, purple, or pink ink fires a cone and delayed echo.',
     noCleanHitCallout: 'CONE FADES',
   }),
 });

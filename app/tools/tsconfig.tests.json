@@ -34,6 +34,7 @@
     "../src/client/lib/fittext.ts",
     "../src/client/lib/localization.ts",
     "../src/client/lib/legacyreturnpresentation.ts",
+    "../src/client/lib/maturearena.ts",
     "../src/client/lib/maturitycountdown.ts",
     "../src/client/lib/paintreservoir.ts",
     "../src/client/lib/registry.ts",

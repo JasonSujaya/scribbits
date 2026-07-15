@@ -26,7 +26,7 @@ test('Draw drains independent paint levels inside the color swatches', () => {
   );
   assert.doesNotMatch(drawSource, /private paintReservoirRing:/);
   assert.doesNotMatch(drawSource, /private paintReservoirLabel:/);
-  assert.match(drawSource, /requestPaint: \(amount, kind\) =>/);
+  assert.match(drawSource, /requestPaint: \(amount, kind, replacedColor\) =>/);
   assert.match(drawSource, /this\.automationMode \|\| this\.requestPaint/);
 });
 
@@ -35,7 +35,10 @@ test('one empty base color does not disable other colors or premium paint', () =
     drawSource,
     /return this\.paintReservoirs\[this\.selectedColorIndex\] \?\? null/
   );
-  assert.match(drawSource, /if \(colorIndex < 0 \|\| !reservoir\) return true/);
+  assert.match(
+    drawSource,
+    /if \(colorIndex < 0 \|\| !reservoir\) \{[\s\S]{0,100}this\.returnReplacedPaint\(amount, replacedColor\);[\s\S]{0,40}return true;/
+  );
   assert.match(drawSource, /const hasPaint = this\.hasActivePaint\(\)/);
 });
 
@@ -49,7 +52,12 @@ test('paint accounting counts changed pixels and undo restores the matching well
     drawCanvasSource,
     /this\.requestPaint\(changedPixels, 'stroke'\)/
   );
-  assert.match(drawCanvasSource, /this\.requestPaint\(changedPixels, 'fill'\)/);
+  assert.match(
+    drawCanvasSource,
+    /this\.requestPaint\([\s\S]{0,120}changedPixels,[\s\S]{0,60}'fill',[\s\S]{0,100}replacedColor/
+  );
+  assert.match(drawSource, /private returnReplacedPaint\(/);
+  assert.match(drawSource, /returnPaint\(reservoir, amount\)/);
   assert.doesNotMatch(drawCanvasSource, /newlyPaintedPixels/);
   assert.match(drawCanvasSource, /if \(this\.mode === 'erase'\)/);
   assert.match(drawCanvasSource, /onEditStart\?: \(\) => void/);
