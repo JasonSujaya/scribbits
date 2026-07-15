@@ -1483,18 +1483,13 @@ for (const routeSource of [menuRouteSource]) {
   }
 }
 const triggerInspection = inspectTypeScriptModule(installTriggerSource);
-assert.deepEqual(triggerInspection.imports.get('../core/arenaMaintenance'), [
-  {
-    imported: 'maintainArena',
-    local: 'maintainArena',
-  },
-]);
+assert.equal(triggerInspection.imports.has('../core/arenaMaintenance'), false);
 assert.equal(triggerInspection.imports.has('../core/post'), false);
 assert.equal(triggerInspection.imports.has('../core/arenaStore'), false);
 assert.equal(
   triggerInspection.calledIdentifiers.filter((name) => name === 'maintainArena')
     .length,
-  1
+  0
 );
 assert.equal(
   triggerInspection.calledIdentifiers.filter(
@@ -1584,7 +1579,7 @@ assert.equal(installPostResponse.status, 200);
 assert.deepEqual(await installPostResponse.json(), {
   status: 'success',
   message:
-    'Arena ready in subreddit scribbits_test with post api-contract-post-1 (trigger: install)',
+    'Arena recovery job api-contract-job-1 scheduled for subreddit scribbits_test.',
 });
 const canonicalInstallDay = Number(
   productionApiContract.getApiContractString('arena:currentDay')
@@ -1593,7 +1588,7 @@ assert.ok(Number.isSafeInteger(canonicalInstallDay));
 assert.equal(
   productionApiContract.apiContractRuntimeState.submittedPosts,
   1,
-  'menu and install paths must converge on one idempotent current Arena post'
+  'menu creates the current post while install schedules maintenance'
 );
 
 productionApiContract.resetApiContractRuntime();
@@ -1618,6 +1613,18 @@ const catchUpUpgradeResponse = await productionApiContract.app.request(
   }
 );
 assert.equal(catchUpUpgradeResponse.status, 200);
+const scheduledCatchUpResponse = await productionApiContract.app.request(
+  '/internal/scheduler/nightly-arena',
+  {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      name: 'nightly-arena',
+      data: { attempt: 0, reason: 'app-stale-upgrade' },
+    }),
+  }
+);
+assert.equal(scheduledCatchUpResponse.status, 200);
 assert.equal(
   productionApiContract.getApiContractString('arena:currentDay'),
   String(canonicalInstallDay)
@@ -1628,39 +1635,6 @@ assert.equal(
   'upgrade catch-up must publish the missed Rumble result'
 );
 pass('app upgrades catch up a stale Arena day before players return');
-
-productionApiContract.resetApiContractRuntime();
-productionApiContract.setApiContractString(
-  dataDeletionCore.getNightlyPlayerMutationLockKey(),
-  'active-nightly-worker'
-);
-const busyUpgradeResponse = await productionApiContract.app.request(
-  '/internal/triggers/on-app-upgrade',
-  {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ type: 'busy-upgrade' }),
-  }
-);
-assert.equal(busyUpgradeResponse.status, 200);
-assert.equal(
-  productionApiContract.apiContractRuntimeState.scheduledJobs.length,
-  1
-);
-assert.equal(
-  productionApiContract.apiContractRuntimeState.scheduledJobs[0].name,
-  'nightly-arena'
-);
-assert.equal(
-  productionApiContract.apiContractRuntimeState.scheduledJobs[0].data.reason,
-  'app-setup-busy'
-);
-assert.ok(
-  productionApiContract.apiContractRuntimeState.scheduledJobs[0].runAt >
-    new Date(Date.now() + 15 * 60 * 1000),
-  'deferred recovery must outlive an abandoned nightly lease'
-);
-pass('app upgrade defers recovery when a nightly worker owns the lease');
 
 productionApiContract.resetApiContractRuntime();
 const reversedInstallResponse = await productionApiContract.app.request(

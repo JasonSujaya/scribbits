@@ -5,55 +5,26 @@ import type {
   OnAppUpgradeRequest,
   TriggerResponse,
 } from '@devvit/web/shared';
-import { context, redis, scheduler } from '@devvit/web/server';
-import { maintainArena } from '../core/arenaMaintenance';
+import { context, scheduler } from '@devvit/web/server';
 
 export const triggers = new Hono();
-const arenaMaintenanceRetryDelayMilliseconds = 16 * 60 * 1000;
+const arenaMaintenanceStartDelayMilliseconds = 1_000;
 
 const handleAppSetup = async (c: HonoContext) => {
   try {
     const input = await c.req.json<OnAppInstallRequest | OnAppUpgradeRequest>();
-    const maintenance = await maintainArena(redis, {
-      actor: {
-        userId: context.userId ?? 'system',
-        username: context.username ?? 'Scribbits',
-      },
+    const runAt = new Date(Date.now() + arenaMaintenanceStartDelayMilliseconds);
+    const jobId = await scheduler.runJob({
+      name: 'nightly-arena',
+      data: { attempt: 0, reason: `app-${input.type}` },
+      runAt,
     });
-    if (maintenance.status === 'busy') {
-      const retryAt = new Date(
-        Date.now() + arenaMaintenanceRetryDelayMilliseconds
-      );
-      const retryJobId = await scheduler.runJob({
-        name: 'nightly-arena',
-        data: { reason: 'app-setup-busy' },
-        runAt: retryAt,
-      });
-      console.log(
-        JSON.stringify({
-          appVersion: context.appVersion,
-          event: 'scribbits.app_setup.deferred',
-          retryAt: retryAt.toISOString(),
-          retryJobId,
-          subreddit: context.subredditName,
-          trigger: input.type,
-        })
-      );
-      return c.json<TriggerResponse>(
-        {
-          status: 'success',
-          message: `Arena maintenance is active; recovery job ${retryJobId} is scheduled.`,
-        },
-        200
-      );
-    }
-    const { currentPostId, result } = maintenance.result;
     console.log(
       JSON.stringify({
         appVersion: context.appVersion,
-        arenaDay: result.newDay,
-        event: 'scribbits.app_setup.ready',
-        postId: currentPostId,
+        event: 'scribbits.app_setup.scheduled',
+        jobId,
+        runAt: runAt.toISOString(),
         subreddit: context.subredditName,
         trigger: input.type,
       })
@@ -62,7 +33,7 @@ const handleAppSetup = async (c: HonoContext) => {
     return c.json<TriggerResponse>(
       {
         status: 'success',
-        message: `Arena ready in subreddit ${context.subredditName} with post ${currentPostId} (trigger: ${input.type})`,
+        message: `Arena recovery job ${jobId} scheduled for subreddit ${context.subredditName}.`,
       },
       200
     );

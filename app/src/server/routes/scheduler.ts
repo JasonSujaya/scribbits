@@ -1,15 +1,24 @@
 import { Hono } from 'hono';
 import { randomUUID } from 'node:crypto';
 import type { TaskRequest, TaskResponse } from '@devvit/web/server';
-import { redis } from '@devvit/web/server';
+import { redis, scheduler } from '@devvit/web/server';
 import { maintainArena } from '../core/arenaMaintenance';
 
 export const scheduledTasks = new Hono();
+const arenaMaintenanceRetryDelayMilliseconds = 30_000;
+const maximumArenaMaintenanceRetries = 3;
+
+type ArenaMaintenanceTaskData = {
+  attempt?: number;
+  reason?: string;
+};
 
 scheduledTasks.post('/nightly-arena', async (c) => {
-  const taskRequest: TaskRequest | undefined = await c.req
-    .json<TaskRequest>()
-    .catch(() => undefined);
+  const taskRequest: TaskRequest<ArenaMaintenanceTaskData> | undefined =
+    await c.req
+      .json<TaskRequest<ArenaMaintenanceTaskData>>()
+      .catch(() => undefined);
+  const attempt = Math.max(0, Math.trunc(taskRequest?.data?.attempt ?? 0));
 
   try {
     const nightlyOperationId = randomUUID();
@@ -17,9 +26,7 @@ scheduledTasks.post('/nightly-arena', async (c) => {
       operationId: nightlyOperationId,
     });
     if (nightlyRun.status === 'busy') {
-      throw new Error(
-        'Player data deletion is active; retry nightly resolution.'
-      );
+      throw new Error('Arena maintenance lease is busy.');
     }
     const { result, currentPostId } = nightlyRun.result;
 
@@ -36,6 +43,17 @@ scheduledTasks.post('/nightly-arena', async (c) => {
     return c.json<TaskResponse>({}, 200);
   } catch (error) {
     console.error('Nightly Arena scheduler failed:', error);
+    if (attempt < maximumArenaMaintenanceRetries) {
+      await scheduler.runJob({
+        name: 'nightly-arena',
+        data: {
+          attempt: attempt + 1,
+          reason: taskRequest?.data?.reason ?? 'nightly-retry',
+        },
+        runAt: new Date(Date.now() + arenaMaintenanceRetryDelayMilliseconds),
+      });
+      return c.json<TaskResponse>({}, 200);
+    }
     return c.json<TaskResponse>({}, 500);
   }
 });
