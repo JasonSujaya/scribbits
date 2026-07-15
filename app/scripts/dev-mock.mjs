@@ -18,10 +18,6 @@ const trailerHeroBytes =
   configuredTrailerHeroPath && existsSync(configuredTrailerHeroPath)
     ? readFileSync(configuredTrailerHeroPath)
     : null;
-const trailerHeroScribbitIds = new Set([
-  'mine-paper-spark',
-  'debug-nib-halo-needle-star',
-]);
 const configuredMockCombatBundleUrl =
   process.env.MOCK_COMBAT_BUNDLE_URL?.trim();
 const mockCombatBundleUrl = configuredMockCombatBundleUrl
@@ -286,7 +282,7 @@ const archivedNapCloud = makeScribbit({
 const seededOwnedScribbits = [
   makeScribbit({
     id: 'mine-paper-spark',
-    name: 'Paper Spark',
+    name: trailerHeroBytes ? 'Wobble Bean' : 'Paper Spark',
     artist: 'mock_player',
     element: 'ember',
     stats: { chonk: 22, spike: 36, zip: 28, charm: 14 },
@@ -493,7 +489,7 @@ const debugPowerFighters = Object.freeze({
   }),
   nib_halo: makeScribbit({
     id: 'debug-nib-halo-needle-star',
-    name: trailerHeroBytes ? 'Paper Spark' : 'Needle Star',
+    name: 'Needle Star',
     artist: 'debug_fixture',
     element: 'tide',
     stats: debugPowerStats.nib_halo,
@@ -754,6 +750,10 @@ const createPreviewEconomy = (options = {}) => {
     pendingPowerUpOffers: new Map(),
     dailyLogin: {
       claimedTrackDays: options.dailyLoginClaimedTrackDays ?? 0,
+      totalClaimedDays:
+        options.dailyLoginTotalClaimedDays ??
+        options.dailyLoginClaimedTrackDays ??
+        0,
       lastClaimDateKey: null,
       lastReward: null,
     },
@@ -825,6 +825,7 @@ const memory = {
     fresh: null,
   },
   playStreakDays: 4,
+  activePlayDays: 8,
   myClout: 14,
   economyByPreviewMode: {
     returning: createPreviewEconomy({
@@ -1480,7 +1481,7 @@ const dominantStatFor = (stats) => {
 };
 
 const drawingBytesFor = (scribbitId) => {
-  if (trailerHeroBytes && trailerHeroScribbitIds.has(scribbitId)) {
+  if (trailerHeroBytes && scribbitId === 'mine-paper-spark') {
     return trailerHeroBytes;
   }
   const submittedDrawing = submittedDrawingBytes.get(scribbitId);
@@ -1617,9 +1618,10 @@ const currentUtcDateKey = () => {
 const dailyLoginState = (economy) => {
   return {
     claimedTrackDays: economy.dailyLogin.claimedTrackDays,
+    totalClaimedDays: economy.dailyLogin.totalClaimedDays,
     claimedToday: economy.dailyLogin.lastClaimDateKey === currentUtcDateKey(),
     nextReward: dailyLoginRewardAfterClaims(
-      economy.dailyLogin.claimedTrackDays
+      economy.dailyLogin.totalClaimedDays
     ),
   };
 };
@@ -1712,6 +1714,7 @@ const arenaState = (economy, previewMode = 'returning') => {
     pendingPowerUpOffers: [...economy.pendingPowerUpOffers.values()].filter(
       (offer) => livingScribbitIds.has(offer.scribbitId)
     ),
+    pendingMaturityScribbitIds: [],
     drawCharges: memory.drawChargesByPreviewMode[previewMode] ?? {
       available: 0,
       capacity: 3,
@@ -1737,12 +1740,19 @@ const arenaState = (economy, previewMode = 'returning') => {
       dailyRank: venueCleared ? 4 : null,
       clearCount: 18,
       nextUnlock: getNextBattleArenaUnlock(memory.dayNumber),
+      tourClearedArenaIds: venueCleared ? [battleArena.id] : [],
+      tourClearedCount: venueCleared ? 1 : 0,
+      tourTotal: 30,
+      tourComplete: false,
+      tourEffort: 1,
+      tourEffortTarget: 3,
     },
     todayEntrants: memory.todayEntrants
       .filter((scribbit) => !memory.hiddenScribbitIds.has(scribbit.id))
       .map(cloneScribbit),
     myBackedScribbitId: getBackedScribbitIdForPreview(previewMode),
     playStreakDays: memory.playStreakDays,
+    activePlayDays: memory.activePlayDays,
     dailyLogin: dailyLoginState(economy),
     myClout: memory.myClout,
     myInk: economy.ink,
@@ -1773,6 +1783,7 @@ const freshPlayerArenaState = (economy) => {
     enteredToday,
     myBackedScribbitId: getBackedScribbitIdForPreview('fresh'),
     playStreakDays: 1,
+    activePlayDays: 1,
     myClout: 0,
     lastRumbleReceipt: null,
     legacyReturnReceipt: null,
@@ -1792,6 +1803,7 @@ const loggedOutArenaState = () => {
     enteredToday: false,
     myBackedScribbitId: null,
     playStreakDays: 0,
+    activePlayDays: 0,
     myClout: 0,
     lastRumbleReceipt: null,
     legacyReturnReceipt: null,
@@ -2227,10 +2239,11 @@ const handleApi = async (request, response, url) => {
     }
 
     const rewardPlan = dailyLoginRewardAfterClaims(
-      economy.dailyLogin.claimedTrackDays
+      economy.dailyLogin.totalClaimedDays
     );
     const reward = {
       trackDay: rewardPlan.trackDay,
+      cycleDay: rewardPlan.cycleDay,
       inkAwarded: rewardPlan.ink,
       gearId: rewardPlan.gearId,
       claimedAtMs: Date.now(),
@@ -2250,6 +2263,7 @@ const handleApi = async (request, response, url) => {
         economy.dailyLogin.claimedTrackDays + 1
       );
     }
+    economy.dailyLogin.totalClaimedDays += 1;
     economy.dailyLogin.lastClaimDateKey = dateKey;
     economy.dailyLogin.lastReward = reward;
     sendJson(response, 200, {
@@ -2257,6 +2271,17 @@ const handleApi = async (request, response, url) => {
       reward,
       ink: economy.ink,
     });
+    return;
+  }
+
+  if (method === 'POST' && path === '/api/maturity/acknowledge') {
+    const body = await readJsonBody(request);
+    sendJson(response, 200, { scribbitId: body?.scribbitId ?? '' });
+    return;
+  }
+
+  if (method === 'POST' && path === '/api/progression-event') {
+    sendJson(response, 200, { accepted: true, duplicate: false });
     return;
   }
 

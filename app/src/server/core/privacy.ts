@@ -40,6 +40,8 @@ import {
 import { removeScribbitCompletely } from './removal';
 import { getUserPlayStreakKey } from './streak';
 import { getDailyLoginKey } from './dailyLogin';
+import { getMaturityAcknowledgementsKey } from './maturity';
+import { getUserProgressionEventsKey } from './progressionAnalytics';
 import { getUserCommunityThemeCompletionsKey } from './communityDrawTheme';
 import { getLegacyIndexVersionKey, getLegacySeenDayKey } from './legacy';
 import {
@@ -245,6 +247,8 @@ const deletePlayerDataRecords = async (
     getUserDailySparWinRewardsKey(userId),
     getUserPlayStreakKey(userId),
     getDailyLoginKey(userId),
+    getMaturityAcknowledgementsKey(userId),
+    getUserProgressionEventsKey(userId),
     getUserHiddenScribbitsKey(userId),
     getUserReportedScribbitsKey(userId),
     getUserBeliefTargetsKey(userId),

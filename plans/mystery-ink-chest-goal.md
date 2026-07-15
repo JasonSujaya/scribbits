@@ -9,8 +9,8 @@ Create a polished, chest-led Shop that feels exciting without predatory gacha me
 - Shop acquires, Bag equips, and Gallery remembers.
 - Shop is a primary dock destination; Gallery opens directly from Home.
 - Current earned currency remains Ink; battles are the main source while daily play can award small bridge amounts.
-- Common/Rare/Epic odds remain 70%/25%/5%, with Epic guaranteed by open ten.
-- One chest costs 5 Ink. Ten is the maximum batch and costs 50 Ink.
+- Common/Rare/Epic/Legendary odds are 70%/25%/4%/1%, with Epic-or-better guaranteed by open ten.
+- One chest costs 7 Ink. Ten is the maximum batch and costs 70 Ink.
 - Every open remains server-authored and individually idempotent; a failed ten-open resumes the exact unfinished operation instead of charging twice.
 - Gear keeps the canonical two Weapon, two Armor, two Shoes, and two Accessory slots.
 - Reddit Gold Styles is a disabled coming-soon card. No payment or entitlement flow is in scope.

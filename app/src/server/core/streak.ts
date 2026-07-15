@@ -3,6 +3,7 @@ import { addUtcDays, formatUtcDateKey, parseUtcDateKey } from './day';
 export type PlayStreak = {
   lastPlayedDateKey: string | undefined;
   days: number;
+  totalDays: number;
 };
 
 export type PlayStreakStorage = {
@@ -29,9 +30,14 @@ export const parsePlayStreak = (
     ? storedRecord.lastPlayedDateKey
     : undefined;
 
+  const days = parseStoredWholeNumber(storedRecord.streakDays);
   return {
     lastPlayedDateKey,
-    days: parseStoredWholeNumber(storedRecord.streakDays),
+    days,
+    totalDays: Math.max(
+      days,
+      parseStoredWholeNumber(storedRecord.totalDays)
+    ),
   };
 };
 
@@ -57,10 +63,15 @@ export const advancePlayStreak = (
     return {
       lastPlayedDateKey: currentDateKey,
       days: previousStreak.days + 1,
+      totalDays: previousStreak.totalDays + 1,
     };
   }
 
-  return { lastPlayedDateKey: currentDateKey, days: 1 };
+  return {
+    lastPlayedDateKey: currentDateKey,
+    days: 1,
+    totalDays: previousStreak.totalDays + 1,
+  };
 };
 
 export const loadPlayStreak = async (
@@ -84,6 +95,7 @@ export const recordDailyPlay = async (
     await storage.hSet(streakKey, {
       lastPlayedDateKey: currentDateKey,
       streakDays: nextStreak.days.toString(),
+      totalDays: nextStreak.totalDays.toString(),
     });
   }
 

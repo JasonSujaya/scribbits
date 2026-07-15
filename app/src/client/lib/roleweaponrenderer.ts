@@ -73,16 +73,18 @@ export class RoleWeaponRenderer {
     const localTargetX = targetX - runtime.action.x;
     const localTargetY = targetY - runtime.action.y;
     this.drawAction(runtime, attack, localTargetX, localTargetY, hit);
-    runtime.action.setAlpha(1);
+    runtime.action.setAlpha(1).setScale(1);
+    this.scene.game.canvas.dataset.lastRoleAttack = `${side}:${runtime.role}:${attack}`;
     if (this.reduceMotion) {
-      this.scene.time.delayedCall(120, () => runtime.action.clear());
+      this.scene.time.delayedCall(600, () => runtime.action.clear());
       return;
     }
     this.scene.tweens.killTweensOf(runtime.action);
     this.scene.tweens.add({
       targets: runtime.action,
       alpha: 0,
-      duration: 260,
+      scale: attack === 'body_slam' ? 1.16 : 1.04,
+      duration: 420,
       ease: 'Quad.easeOut',
       onComplete: () => {
         runtime.action.clear().setAlpha(1);
@@ -173,13 +175,30 @@ export class RoleWeaponRenderer {
     const alpha = hit ? 1 : 0.48;
     graphics.clear().lineStyle(7, color, alpha);
     if (attack === 'body_slam') {
+      graphics.fillStyle(color, alpha * 0.28).fillCircle(0, 8, 48);
       graphics.strokeCircle(0, 8, 52);
       graphics.strokeCircle(0, 8, 72);
+      graphics.lineStyle(11, color, alpha);
+      graphics.beginPath();
+      graphics.arc(0, 8, 86, -0.72, 0.72, false);
+      graphics.strokePath();
       return;
     }
     if (attack === 'color_bolt') {
-      graphics.fillStyle(color, alpha).fillCircle(targetX, targetY, 14);
-      graphics.lineBetween(38 * runtime.facing, -18, targetX, targetY);
+      const startX = 38 * runtime.facing;
+      const startY = -18;
+      graphics.lineStyle(3, color, alpha * 0.45);
+      graphics.lineBetween(startX, startY, targetX, targetY);
+      for (const progress of [0.25, 0.5, 0.75]) {
+        graphics.fillStyle(color, alpha * progress).fillCircle(
+          startX + (targetX - startX) * progress,
+          startY + (targetY - startY) * progress,
+          4 + progress * 5
+        );
+      }
+      graphics.fillStyle(0xffffff, alpha * 0.9).fillCircle(targetX, targetY, 8);
+      graphics.fillStyle(color, alpha * 0.38).fillCircle(targetX, targetY, 24);
+      graphics.lineStyle(6, color, alpha).strokeCircle(targetX, targetY, 18);
       return;
     }
     if (attack === 'smearstep_barrage') {
@@ -195,16 +214,22 @@ export class RoleWeaponRenderer {
     }
     graphics.lineBetween(34 * runtime.facing, 4, targetX, targetY);
     if (attack === 'piercing_quill' || attack === 'nib_volley') {
-      graphics
-        .fillStyle(color, alpha)
-        .fillTriangle(
-          targetX,
-          targetY,
-          targetX - 22 * runtime.facing,
-          targetY - 10,
-          targetX - 22 * runtime.facing,
-          targetY + 10
-        );
+      const startX = 34 * runtime.facing;
+      for (const progress of [0.35, 0.62, 0.88]) {
+        const quillX = startX + (targetX - startX) * progress;
+        const quillY = 4 + (targetY - 4) * progress;
+        const length = 12 + progress * 16;
+        graphics
+          .fillStyle(color, alpha * progress)
+          .fillTriangle(
+            quillX + length * runtime.facing,
+            quillY,
+            quillX - length * 0.45 * runtime.facing,
+            quillY - 9,
+            quillX - length * 0.45 * runtime.facing,
+            quillY + 9
+          );
+      }
     } else {
       graphics.fillStyle(color, alpha).fillCircle(targetX, targetY, 8);
     }

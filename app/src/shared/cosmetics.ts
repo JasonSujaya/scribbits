@@ -559,6 +559,16 @@ export const DRAWING_INK_CATALOG_ENTRIES: readonly CosmeticDrawingInkCatalogEntr
       ],
       effect: 'rainbow',
     },
+    {
+      id: 'starlight-ink',
+      kind: 'drawing-ink',
+      rarity: 'legendary',
+      name: 'Starlight Ink',
+      description:
+        'A midnight paint charge dusted with stars for one finished Scribbit.',
+      colors: ['#13102b', '#fff4a8'],
+      effect: 'midnight',
+    },
   ];
 
 export const BRUSH_CATALOG_ENTRIES: readonly CosmeticBrushCatalogEntry[] = [

@@ -85,10 +85,7 @@ import {
   openArenaContenderPicker,
   type ArenaContenderPicker,
 } from '../lib/arenacontenderpicker';
-import {
-  BATTLE_ARENA_IDS,
-  getBattleArenaForDay,
-} from '../../shared/battlearena';
+import { getBattleArenaForDay } from '../../shared/battlearena';
 import { battleArenaPreview } from '../lib/battlearenapresentation';
 import { selectCommunityDoodleDare } from '../../shared/content/communitydrawthemes';
 import { openRivalRun, type RivalRunFlow } from '../lib/rivalrunflow';
@@ -750,7 +747,7 @@ export class ArenaHome extends Scene {
           : `ENTER WITH ${matureScribbit.name.toUpperCase()}`;
 
     competitionHub.add(
-      label(this, 0, -298, "TODAY'S FIELD CHALLENGE", 30, UI.ink, true)
+      label(this, 0, -298, 'ARENA TOUR', 30, UI.ink, true)
     );
 
     const venueCard = this.add.container(0, -4);
@@ -764,9 +761,7 @@ export class ArenaHome extends Scene {
         ? formatVenueClearTime(venueStamp.bestClearMilliseconds)
         : `${venueStamp.progress}/${venueStamp.target}`;
     const rankLabel = venueStamp.dailyRank ? `#${venueStamp.dailyRank}` : '—';
-    const nextUnlockLabel = venueStamp.nextUnlock
-      ? `${venueStamp.nextUnlock.daysAway}D`
-      : `${BATTLE_ARENA_IDS.length}`;
+    const tourLabel = `${venueStamp.tourClearedCount}/${venueStamp.tourTotal}`;
     const stampLabel = venueStamp.cleared
       ? 'CLEARED'
       : venueStamp.progress > 0
@@ -893,12 +888,20 @@ export class ArenaHome extends Scene {
         true
       ),
       label(this, tileCenters[1], 198, 'DAILY RANK ›', 13, UI.inkSoft, true),
-      label(this, tileCenters[2], 160, nextUnlockLabel, 28, UI.ink, true),
+      label(
+        this,
+        tileCenters[2],
+        160,
+        venueStamp.tourComplete ? '✓' : tourLabel,
+        28,
+        venueStamp.tourComplete ? UI.goldText : UI.ink,
+        true
+      ),
       label(
         this,
         tileCenters[2],
         198,
-        venueStamp.nextUnlock ? 'NEW FIELD' : 'FIELDS',
+        'TOUR NODES',
         13,
         UI.inkSoft,
         true
@@ -911,7 +914,9 @@ export class ArenaHome extends Scene {
         this,
         0,
         238,
-        'NEW FIELD DAILY • ONE ATTEMPT • FASTEST RANKS',
+        venueStamp.tourComplete
+          ? 'TOUR COMPLETE • EVERY FIELD STAMPED'
+          : `NEXT NODE ${venueStamp.tourEffort}/${venueStamp.tourEffortTarget} • CLEAR NOW OR BUILD EFFORT`,
         13,
         UI.inkSoft,
         true
@@ -935,7 +940,7 @@ export class ArenaHome extends Scene {
     ]);
     competitionHub.add(venueCard);
     this.rosterActionOverlay?.add({
-      label: `${battleArena.name}. ${battleArena.shortRule}. A mature Scribbit is required. ${hasMatureScribbit ? 'You have an eligible Scribbit.' : 'You do not have an eligible Scribbit yet.'} Arena challenge: ${battleArena.challengeLabel}. Best ${bestLabel}.`,
+      label: `${battleArena.name}. ${battleArena.shortRule}. A mature Scribbit is required. ${hasMatureScribbit ? 'You have an eligible Scribbit.' : 'You do not have an eligible Scribbit yet.'} Arena challenge: ${battleArena.challengeLabel}. Best ${bestLabel}. Arena Tour ${tourLabel} nodes complete.`,
       rect: {
         x: x + cardWidth / 2 - 82,
         y: centerY - 256,

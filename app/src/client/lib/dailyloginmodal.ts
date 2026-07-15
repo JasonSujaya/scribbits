@@ -1,6 +1,7 @@
 import * as Phaser from 'phaser';
 import { Scene } from 'phaser';
 import {
+  DAILY_LOGIN_REPEAT_TRACK,
   DAILY_LOGIN_TRACK,
   type DailyLoginClaimResponse,
   type DailyLoginState,
@@ -37,6 +38,17 @@ const rewardVisualState = (
     return 'ready';
   }
   return 'locked';
+};
+
+const repeatClaimedDays = (state: DailyLoginState): number => {
+  const progress = Math.max(
+    0,
+    (state.totalClaimedDays - DAILY_LOGIN_TRACK.length) %
+      DAILY_LOGIN_REPEAT_TRACK.length
+  );
+  return state.claimedToday && progress === 0 && state.totalClaimedDays > 7
+    ? 7
+    : progress;
 };
 
 export function openDailyLoginModal(
@@ -87,7 +99,7 @@ export function openDailyLoginModal(
     scene,
     title: 'Daily login rewards',
     description:
-      'Claim Ink once per UTC day. Your seven-day bonus never resets, and login seven unlocks Epic Golden Crown Gear.',
+      'Claim Ink once per UTC day. The Golden Crown starter track never resets, then Studio Week repeats forever.',
     onRequestClose: close,
     trigger,
     depth: 3400,
@@ -139,6 +151,126 @@ export function openDailyLoginModal(
     stopAnimationTweens();
     claimableEmphasis = null;
     content.removeAll(true);
+    if (state.claimedTrackDays >= DAILY_LOGIN_TRACK.length) {
+      const completedDays = repeatClaimedDays(state);
+      const nextCycleDay = state.nextReward.cycleDay;
+      content.add(
+        scene.add.rectangle(7, -457, 620, 164, UI.inkHex, 0.14).setAngle(0.7)
+      );
+      content.add(
+        scene.add
+          .rectangle(0, -465, 620, 164, UI.coral, 1)
+          .setStrokeStyle(4, UI.inkHex, 0.9)
+          .setAngle(-0.7)
+      );
+      content.add(label(scene, 0, -493, 'STUDIO WEEK', 47, UI.cream, true));
+      content.add(
+        label(scene, 0, -428, '• 18 INK EVERY 7 LOGINS •', 23, UI.ink, true)
+      );
+
+      DAILY_LOGIN_REPEAT_TRACK.forEach((reward, index) => {
+        const cycleDay = reward.cycleDay!;
+        const row = Math.floor(index / 3);
+        const column = index % 3;
+        const x = index === 6 ? 0 : -200 + column * 200;
+        const y = index === 6 ? 330 : -215 + row * 250;
+        const claimed = cycleDay <= completedDays;
+        const ready = !state.claimedToday && cycleDay === nextCycleDay;
+        const fill = claimed
+          ? CLAIMED_REWARD_FILL
+          : ready || cycleDay === 7
+            ? UI.gold
+            : LOCKED_REWARD_FILL;
+        if (ready) {
+          claimableEmphasis = scene.add
+            .circle(x, y, cycleDay === 7 ? 104 : 90, UI.goldHex, 0.22)
+            .setStrokeStyle(6, UI.coral, 0.72);
+          content.add(claimableEmphasis);
+        }
+        content.add(scene.add.circle(x + 6, y + 9, 80, UI.inkHex, 0.13));
+        content.add(
+          scene.add
+            .circle(x, y, cycleDay === 7 ? 94 : 80, fill, 1)
+            .setStrokeStyle(
+              ready ? 7 : 4,
+              claimed
+                ? CLAIMED_REWARD_STROKE
+                : ready
+                  ? UI.coral
+                  : LOCKED_REWARD_STROKE,
+              0.95
+            )
+        );
+        content.add(
+          label(
+            scene,
+            x,
+            y - 38,
+            cycleDay === 7 ? 'WEEK BONUS' : `DAY ${cycleDay}`,
+            cycleDay === 7 ? 21 : 20,
+            claimed ? UI.cream : UI.ink,
+            true
+          )
+        );
+        content.add(
+          paperIcon(scene, claimed ? 'trophy' : ready ? 'ink' : 'lock', x, y + 2, {
+            size: 42,
+            fill: claimed ? UI.creamHex : ready ? UI.coral : LOCKED_REWARD_STROKE,
+          })
+        );
+        content.add(
+          label(
+            scene,
+            x,
+            y + 47,
+            `+${reward.ink} INK`,
+            cycleDay === 7 ? 28 : 23,
+            claimed ? UI.cream : UI.ink,
+            true
+          )
+        );
+        if (ready) {
+          content.add(
+            label(
+              scene,
+              x,
+              y + (cycleDay === 7 ? 89 : 78),
+              busy ? 'CLAIMING…' : 'CLAIM NOW',
+              18,
+              UI.coralText,
+              true
+            )
+          );
+        }
+      });
+      content.add(
+        label(
+          scene,
+          0,
+          510,
+          state.claimedToday
+            ? 'TODAY CLAIMED • COME BACK TOMORROW'
+            : `NEXT: DAY ${nextCycleDay ?? 1}`,
+          20,
+          state.claimedToday ? UI.inkSoft : UI.coralText,
+          true
+        )
+      );
+      if (errorMessage) {
+        content.add(
+          label(scene, 0, 550, errorMessage, 17, UI.coralText, true)
+            .setWordWrapWidth(width - 160)
+            .setLineSpacing(2)
+        );
+      }
+      if (!modalOpened && !reducedMotion) {
+        content.setAlpha(0).setY(16);
+      } else {
+        content.setAlpha(1).setY(0);
+        startClaimablePulse();
+      }
+      return;
+    }
     const daySevenReward = DAILY_LOGIN_TRACK[DAILY_LOGIN_TRACK.length - 1]!;
     const daySevenGear = daySevenReward.gearId
       ? COSMETIC_BY_ID.get(daySevenReward.gearId)
@@ -522,7 +654,14 @@ export function openDailyLoginModal(
   const initialActionColumn = (initialActionDay - 1) % 3;
   const initialActionRow = Math.floor((initialActionDay - 1) / 3);
   const primaryRect =
-    initialActionDay === 7
+    initialState.claimedTrackDays >= DAILY_LOGIN_TRACK.length
+      ? {
+          x: width / 2 - 310,
+          y: cardCenterY - 390,
+          width: 620,
+          height: 920,
+        }
+      : initialActionDay === 7
       ? {
           x: width / 2 - 300,
           y: cardCenterY + 185,

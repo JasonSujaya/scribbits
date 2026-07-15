@@ -152,13 +152,18 @@ const page = (id, name, duration, elements, transition = 'fade') => ({
 
 const hasManualDrawing = await fileExists(path.join(gameplayDirectory, 'draw-manual.mp4'));
 const hasManualHome = await fileExists(path.join(gameplayDirectory, 'home-manual.mp4'));
-const drawClipName = hasManualDrawing ? 'draw-manual' : 'draw-paper-spark';
-const homeClipName = hasManualHome ? 'home-manual' : 'home-paper-spark';
+if (!hasManualDrawing || !hasManualHome) {
+  throw new Error(
+    'Record the real drawing first: node app/scripts/capture-trailer-real-drawing.mjs'
+  );
+}
+const drawClipName = 'draw-manual';
+const homeClipName = 'home-manual';
 
 const [
   splashBackground,
   logo,
-  humanHero,
+  wobbleHero,
   drawVideo,
   homeVideo,
   battleVideo,
@@ -173,11 +178,11 @@ const [
 ] = await Promise.all([
   imageAsset('splash-background', 'Scribbits paper stage', 'app/src/client/assets/scribbits-splash-stage.webp', 'image/webp'),
   imageAsset('scribbits-logo', 'Scribbits logo', 'app/src/client/assets/scribbits-logo.png', 'image/png'),
-  imageAsset('human-drawn-hero', 'Human-drawn Scribbit hero', 'artifacts/trailer/assets/human-drawn-hero.png', 'image/png'),
+  imageAsset('wobble-bean-hero', 'Wobble Bean', 'artifacts/trailer/gameplay/wobble-bean.png', 'image/png'),
   videoAsset('gameplay-draw', drawClipName),
   videoAsset('gameplay-home', homeClipName),
-  videoAsset('gameplay-battle', 'battle-paper-spark'),
-  videoAsset('gameplay-gallery', 'gallery-roster'),
+  videoAsset('gameplay-battle', 'battle-wobble-bean'),
+  videoAsset('gameplay-gallery', 'gallery-wobble-bean'),
   audioAsset('music-battle', 'Scribbits Battle', 'app/src/client/assets/scribbits-battle.mp3'),
   audioAsset('sfx-paper-open', 'Paper Open', 'app/src/client/assets/sfx/paper-open.mp3'),
   audioAsset('sfx-scratch', 'Pencil Scratch', 'app/src/client/assets/sfx/ui-scratch.mp3'),
@@ -201,7 +206,7 @@ const project = {
   fps: FPS,
   background: '#f7eedc',
   assets: {
-    images: [splashBackground, logo, humanHero],
+    images: [splashBackground, logo, wobbleHero],
     videos: [drawVideo, homeVideo, battleVideo, galleryVideo],
     audio: [music, paperOpen, scratch, whistle, impactHeavy, impactBell, confirm],
     fonts: [
@@ -230,14 +235,12 @@ const project = {
   pages: [
     page('hook', 'Hook', 2, [
       imageElement('hook-background', 'splash-background', { fit: 'cover' }),
-      imageElement('hook-hero', 'human-drawn-hero', { x: 290, y: 1_195, width: 500, height: 500, rotation: -3, animation: 'orbit-in', animationFrames: 38 }),
+      imageElement('hook-hero', 'wobble-bean-hero', { x: 290, y: 1_195, width: 500, height: 500, rotation: -3, animation: 'orbit-in', animationFrames: 38 }),
       imageElement('hook-logo', 'scribbits-logo', { x: 105, y: 210, width: 870, height: 420, animation: 'pop', animationFrames: 24 }),
       textElement('hook-copy', 'YOUR DOODLE IS\nREADY TO FIGHT.', { x: 70, y: 760, width: 940, height: 300, fontSize: 91, lineHeight: 1.03, animation: 'slam-left', animationFrames: 18 }),
     ]),
     page('draw', 'Draw it', 5, [
       videoElement('draw-gameplay', 'gameplay-draw'),
-      shapeElement('draw-hero-canvas', { x: 72, y: 215, width: 936, height: 895, radius: 20, fill: '#fbf4df', stroke: '#00000000', strokeWidth: 0, shadowColor: '#00000000', shadowBlur: 0, shadowOffsetY: 0, durationFrames: 150 }),
-      imageElement('draw-hero', 'human-drawn-hero', { x: 250, y: 330, width: 580, height: 650, durationFrames: 150, animation: 'pop', animationFrames: 20 }),
       ...captionElements('draw-caption-one', 'DRAW IT.', { durationFrames: 72, y: 95 }),
       ...captionElements('draw-caption-two', 'COLOR PICKS THE ROLE.', { startFrame: 84, durationFrames: 66, y: 95, fontSize: 58, fill: '#ffd447' }),
     ], 'zoom'),
@@ -255,7 +258,7 @@ const project = {
     ], 'slide'),
     page('cta', 'Play on Reddit', 5, [
       imageElement('cta-background', 'splash-background', { fit: 'cover' }),
-      imageElement('cta-hero', 'human-drawn-hero', { x: 325, y: 1_175, width: 430, height: 430, rotation: 3, animation: 'drift', animationFrames: 28 }),
+      imageElement('cta-hero', 'wobble-bean-hero', { x: 325, y: 1_175, width: 430, height: 430, rotation: 3, animation: 'drift', animationFrames: 28 }),
       imageElement('cta-logo', 'scribbits-logo', { x: 90, y: 180, width: 900, height: 430, animation: 'pop', animationFrames: 26 }),
       textElement('cta-headline', 'DRAW YOUR CHAMPION.', { x: 60, y: 760, width: 960, height: 160, fontSize: 82, animation: 'slam-left', animationFrames: 18 }),
       shapeElement('cta-button', { x: 130, y: 1_005, width: 820, height: 190, fill: '#ff745d', radius: 42, animation: 'elastic', animationFrames: 32 }),
@@ -267,7 +270,7 @@ const project = {
     generatedBy: 'ImageForce Remotion',
     source: 'Scribbits live local game capture',
     durationSeconds: 30,
-    drawingCapture: hasManualDrawing ? 'manual' : 'automated fallback',
+    drawingCapture: 'manual',
   },
 };
 

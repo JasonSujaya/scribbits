@@ -75,6 +75,40 @@ function interpolateVector(
   };
 }
 
+function interpolatePosition(
+  start: FighterCheckpoint,
+  end: FighterCheckpoint,
+  progress: number,
+  tickDistance: number
+): ReplayVector {
+  if (tickDistance === 0 || progress === 0) return { ...start.position };
+  if (progress === 1) return { ...end.position };
+
+  // Combat velocity is measured in fixed-point units per simulation tick.
+  // Cubic Hermite interpolation uses those authoritative endpoint velocities
+  // as tangents, keeping motion continuous across sparse checkpoints while
+  // still landing exactly on every recorded position.
+  const progressSquared = progress * progress;
+  const progressCubed = progressSquared * progress;
+  const startPositionWeight = 2 * progressCubed - 3 * progressSquared + 1;
+  const startVelocityWeight = progressCubed - 2 * progressSquared + progress;
+  const endPositionWeight = -2 * progressCubed + 3 * progressSquared;
+  const endVelocityWeight = progressCubed - progressSquared;
+
+  return {
+    x:
+      startPositionWeight * start.position.x +
+      startVelocityWeight * tickDistance * start.velocity.x +
+      endPositionWeight * end.position.x +
+      endVelocityWeight * tickDistance * end.velocity.x,
+    y:
+      startPositionWeight * start.position.y +
+      startVelocityWeight * tickDistance * start.velocity.y +
+      endPositionWeight * end.position.y +
+      endVelocityWeight * tickDistance * end.velocity.y,
+  };
+}
+
 type MutableFighterReplayState = {
   hitPoints: number;
   abilityPhase: AbilityPhase;
@@ -233,13 +267,14 @@ function calculateFighterFrame(
   earlier: FighterCheckpoint,
   later: FighterCheckpoint,
   progress: number,
+  tickDistance: number,
   eventDrivenState: MutableFighterReplayState
 ): ReplayFighterFrame {
   return {
     slot: earlier.slot,
     hitPoints: eventDrivenState.hitPoints,
     maxHitPoints: earlier.maxHitPoints,
-    position: interpolateVector(earlier.position, later.position, progress),
+    position: interpolatePosition(earlier, later, progress, tickDistance),
     velocity: interpolateVector(earlier.velocity, later.velocity, progress),
     ...(earlier.combatRole ? { combatRole: earlier.combatRole } : {}),
     primaryPower: earlier.primaryPower,
@@ -292,12 +327,14 @@ export function calculateReplayFrame(
         earlier.fighters[0],
         later.fighters[0],
         progress,
+        tickDistance,
         fighterStates[0]
       ),
       calculateFighterFrame(
         earlier.fighters[1],
         later.fighters[1],
         progress,
+        tickDistance,
         fighterStates[1]
       ),
     ],

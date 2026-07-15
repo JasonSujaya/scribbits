@@ -101,7 +101,7 @@
           "championWinCadenceDays": 0,
           "backedChampionCadenceDays": 0,
           "minimumDayThirtyCapsules": 35,
-          "maximumDayThirtyCapsules": 50
+          "maximumDayThirtyCapsules": 45
         },
         {
           "id": "regular",
@@ -112,8 +112,8 @@
           "rumbleWinsPerDay": 1,
           "championWinCadenceDays": 0,
           "backedChampionCadenceDays": 0,
-          "minimumDayThirtyCapsules": 60,
-          "maximumDayThirtyCapsules": 85
+          "minimumDayThirtyCapsules": 55,
+          "maximumDayThirtyCapsules": 75
         },
         {
           "id": "competitive",
@@ -124,16 +124,26 @@
           "rumbleWinsPerDay": 2,
           "championWinCadenceDays": 3,
           "backedChampionCadenceDays": 3,
-          "minimumDayThirtyCapsules": 90,
-          "maximumDayThirtyCapsules": 120
+          "minimumDayThirtyCapsules": 80,
+          "maximumDayThirtyCapsules": 105
         }
       ],
       "minimumDayThirtyGearRank": 2,
       "maximumDayThirtyGearRank": 4,
       "maximumDayThirtyCollectionRatio": 0.9,
-      "maximumEqualProgressionWinRate": 0.7,
-      "minimumEqualProgressionWinRate": 0.3,
+      "maximumEqualProgressionWinRate": 0.55,
+      "minimumEqualProgressionWinRate": 0.45,
       "maximumCrossProfileWinRate": 0.72
+    },
+    "progressionJourney": {
+      "runsPerProfile": 10000,
+      "days": 30,
+      "totalNodes": 30,
+      "profiles": [
+        { "id": "casual", "label": "Casual", "attendance": 0.4, "clearChance": 0.45, "minimumMedianDayThirtyNode": 3 },
+        { "id": "regular", "label": "Regular", "attendance": 0.7, "clearChance": 0.6, "minimumMedianDayThirtyNode": 8 },
+        { "id": "competitive", "label": "Competitive", "attendance": 0.9, "clearChance": 0.72, "minimumMedianDayThirtyNode": 12 }
+      ]
     }
   },
   "rewardSources": [

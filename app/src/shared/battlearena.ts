@@ -17,6 +17,7 @@ export const BATTLE_ARENA_IDS = Object.freeze([
   'v1-tournament-ring',
   'v1-scribble-lab',
 ] as const);
+export const ARENA_TOUR_NODE_COUNT = BATTLE_ARENA_IDS.length * 3;
 
 export type BattleArenaId = (typeof BATTLE_ARENA_IDS)[number];
 

@@ -26,11 +26,13 @@ const progressionState = ({
   hasCreatedScribbit = false,
   hasCompletedBattle = false,
   pullCount = 0,
+  activePlayDays = 1,
 } = {}) => ({
   hasCreatedScribbit,
   hasCompletedBattle,
   myScribbits: hasScribbit ? [{}] : [],
   capsuleProgress: { pullCount },
+  activePlayDays,
 });
 
 test('only Home is available before the first Scribbit is drawn', () => {
@@ -67,6 +69,15 @@ test('the first completed battle reveals Shop', () => {
   );
 });
 
-test('the first Mystery Ink pull reveals Bag and Arena', () => {
-  assert.deepEqual(unlockedTabs(progressionState({ pullCount: 1 })), tabs);
+test('the first Mystery Ink pull reveals Bag while Arena opens on active day two', () => {
+  assert.deepEqual(unlockedTabs(progressionState({ pullCount: 1 })), [
+    'bag',
+    'home',
+    'battles',
+    'shop',
+  ]);
+  assert.deepEqual(
+    unlockedTabs(progressionState({ pullCount: 1, activePlayDays: 2 })),
+    tabs
+  );
 });

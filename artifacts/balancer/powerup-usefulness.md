@@ -1,6 +1,6 @@
 # Power-Up Usefulness Monte Carlo
 
-Generated: 2026-07-15T11:55:11.214Z
+Generated: 2026-07-15T14:54:48.608Z
 
 Runner: `app/tools/balancer/run.mjs`
 

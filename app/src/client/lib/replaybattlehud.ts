@@ -584,11 +584,7 @@ export function createReplayBattleHud(
   };
 
   const battleTitle = scene.add
-    .image(
-      layout.viewportWidth / 2,
-      layout.battleTitleY,
-      BATTLE_TITLE_TEXTURE
-    )
+    .image(layout.viewportWidth / 2, layout.battleTitleY, BATTLE_TITLE_TEXTURE)
     .setOrigin(0.5)
     .setDisplaySize(240, 63)
     .setDepth(27);
@@ -617,9 +613,7 @@ export function createReplayBattleHud(
     .setOrigin(0.5)
     .setDepth(26);
   fitTextToWidth(arenaEffectCaption, layout.viewportWidth - 96);
-  arenaCaption.setName(
-    `${input.arenaName}. Field effect: ${input.arenaRule}.`
-  );
+  arenaCaption.setName(`${input.arenaName}. Field effect: ${input.arenaRule}.`);
   const clock = createBattleClockView(
     scene,
     layout,
@@ -713,7 +707,9 @@ export function createReplayBattleHud(
   let playbackSpeed = input.initialPlaybackSpeed;
   let heartsVisible = true;
   let battleChromeVisible = true;
-  let floatingVitalsVisible = true;
+  // The top hearts and exact HP already carry combat truth. Keep the moving
+  // labels opt-in so the default fight has one health read instead of two.
+  let floatingVitalsVisible = false;
 
   const floatingVitalsToggle = scene.add
     .container(layout.viewportWidth / 2 + 142, layout.battleTitleY)

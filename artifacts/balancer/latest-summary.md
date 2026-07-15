@@ -1,6 +1,6 @@
 # Scribbits Balance Overview
 
-Generated: 2026-07-15T11:58:17.137Z
+Generated: 2026-07-15T14:57:31.303Z
 
 This is local simulation evidence from the current combat constants.
 
@@ -15,7 +15,8 @@ This is local simulation evidence from the current combat constants.
 | Rival Run Risk | 1152 | 9 | 0 | 1 |
 | Three-Day Growing Loop | 2160 | 3 | 0 | 0 |
 | Reward Path | 149760 | 77 | 0 | 2 |
-| Thirty-Day Content + Progression | 31680 | 118 | 0 | 2 |
+| Thirty-Day Content + Progression | 31680 | 136 | 0 | 2 |
+| Permanent Progression Journey | 0 | 3 | 0 | 0 |
 | Rival Run Advancement Flow | 18 | 3 | 0 | 0 |
 | Generated Opponent Pool | 11520 | 3 | 0 | 0 |
 | Damage Source Breakdown | 6048 | 12 | 0 | 0 |
@@ -36,6 +37,7 @@ Reports:
 - three-day-loop.md
 - reward-path.md
 - thirty-day-content.md
+- progression-journey.md
 - rival-run-flow.md
 - generated-pool.md
 - damage-source-breakdown.md

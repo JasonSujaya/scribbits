@@ -649,6 +649,7 @@ const chooseEntryForRarity = (
   rarity: CapsuleRarity,
   roll: number,
   discoveredCatalogIds: ReadonlySet<string>,
+  unusableCatalogIds: ReadonlySet<string>,
   gearOnly = false
 ): InkCatalogEntry => {
   const catalog = gearOnly ? INK_ACCESSORY_CATALOG : INK_CATALOG;
@@ -666,13 +667,15 @@ const chooseEntryForRarity = (
   // title would be a paid no-op, so redirect only those permanent kinds.
   // This keeps rarity odds and pity unchanged while removing dead pulls.
   if (
-    isPermanentCatalogEntry(selectedEntry) &&
-    discoveredCatalogIds.has(selectedEntry.id)
+    (isPermanentCatalogEntry(selectedEntry) &&
+      discoveredCatalogIds.has(selectedEntry.id)) ||
+    unusableCatalogIds.has(selectedEntry.id)
   ) {
     const protectedEntries = matchingEntries.filter((entry) => {
-      return (
-        isConsumableCatalogEntry(entry) || !discoveredCatalogIds.has(entry.id)
-      );
+      if (unusableCatalogIds.has(entry.id)) return false;
+      return isConsumableCatalogEntry(entry)
+        ? true
+        : !discoveredCatalogIds.has(entry.id);
     });
     const protectedEntry =
       protectedEntries[Math.floor(roll * protectedEntries.length)];
@@ -684,7 +687,8 @@ const chooseEntryForRarity = (
 
 export const selectCapsuleDrop = (
   options: CapsuleSelectionOptions,
-  discoveredCatalogIds: ReadonlySet<string> = new Set()
+  discoveredCatalogIds: ReadonlySet<string> = new Set(),
+  unusableCatalogIds: ReadonlySet<string> = new Set()
 ): InkCatalogEntry => {
   const deterministicSeedInput = `capsule:${options.userId}:${options.day}:${options.pullCount}`;
   const seedInput =
@@ -703,6 +707,7 @@ export const selectCapsuleDrop = (
     rarity,
     randomNumber(),
     discoveredCatalogIds,
+    unusableCatalogIds,
     options.pullCount === 1
   );
 };
@@ -1386,6 +1391,12 @@ export const pullCapsuleForUser = async (
       const discoveredCatalogIds = new Set(
         getDiscoveredCatalogIds(inventoryEntries)
       );
+      const currentInventory = inventoryFromStoredEntries(inventoryEntries);
+      const maxedGearIds = new Set(
+        Object.entries(currentInventory.gear)
+          .filter(([, gear]) => gear.rank >= MAX_GEAR_RANK)
+          .map(([gearId]) => gearId)
+      );
       const selectedEntry = selectCapsuleDrop(
         {
           userId,
@@ -1394,10 +1405,11 @@ export const pullCapsuleForUser = async (
           pullsSinceEpic,
           entropy: operation?.selectionEntropy,
         },
-        discoveredCatalogIds
+        discoveredCatalogIds,
+        maxedGearIds
       );
       const inventoryGrant = projectCapsuleInventoryGrant(
-        inventoryFromStoredEntries(inventoryEntries),
+        currentInventory,
         selectedEntry
       );
       const { isNew, ownedCount } = inventoryGrant;

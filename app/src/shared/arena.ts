@@ -310,6 +310,7 @@ export type ArenaState = {
   forecast: Forecast;
   champion: Scribbit | null; // frozen snapshot, today's boss
   myScribbits: Scribbit[]; // growing + mature, newest first, max 12
+  pendingMaturityScribbitIds: string[]; // mature transitions not yet presented
   discoveredPowerUpIds?: PowerUpId[]; // permanent player-wide Power-Up discoveries
   pendingPowerUpOffers?: PowerUpOffer[]; // server-persisted choices recoverable after reload
   drawCharges: DrawChargeState; // server-owned birth energy, lazily refilled
@@ -326,6 +327,7 @@ export type ArenaState = {
   todayEntrants: Scribbit[]; // tonight's Rumble field (gallery + Back targets)
   myBackedScribbitId: string | null; // today's Back, null if unused
   playStreakDays: number; // consecutive UTC days with an expanded game session
+  activePlayDays: number; // lifetime distinct UTC play days; never resets
   dailyLogin: DailyLoginState; // server-owned seven-login starter track + daily reward
   myClout: number; // lifetime talent-scout score
   myInk: number; // Mystery Ink balance
@@ -349,6 +351,12 @@ export type VenueStampState = Readonly<{
   dailyRank: number | null;
   clearCount: number;
   nextUnlock: NextBattleArenaUnlock | null;
+  tourClearedArenaIds: readonly BattleArenaId[];
+  tourClearedCount: number;
+  tourTotal: number;
+  tourComplete: boolean;
+  tourEffort: number;
+  tourEffortTarget: number;
 }>;
 
 export type VenueBoardEntry = Readonly<{
@@ -382,6 +390,8 @@ export type SplashState = {
 };
 
 export type BackRequest = { scribbitId: string }; // one per user per day, final
+export type AcknowledgeMaturityRequest = Readonly<{ scribbitId: string }>;
+export type AcknowledgeMaturityResponse = Readonly<{ scribbitId: string }>;
 export type RetireScribbitRequest = { scribbitId: string };
 export type RetireScribbitResponse = { retired: Scribbit };
 export type ReportScribbitResponse = {

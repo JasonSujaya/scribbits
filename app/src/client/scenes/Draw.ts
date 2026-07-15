@@ -92,6 +92,7 @@ import {
   type DrawChargeState,
 } from '../../shared/arena';
 import { bindPressInteractionEvents } from '../lib/pressinteraction';
+import { trackProgressionEvent } from '../lib/progressionanalytics';
 import type {
   ArenaState,
   BattleReport,
@@ -679,6 +680,11 @@ export class Draw extends Scene {
       this.communityThemeUnavailableMessage = communityEligibility.message;
     }
     this.isFirstScribbit = !this.practiceMode && arena.myScribbits.length === 0;
+    if (!this.practiceMode && this.playerDrawMode !== 'free') {
+      trackProgressionEvent('draw_started', {
+        source: this.isFirstScribbit ? 'first-scribbit' : 'daily-draw',
+      });
+    }
     const practiceSession = this.practiceMode ? getPracticeSession(this) : null;
     this.practiceRoles = practiceSession ? [...practiceSession.triedRoles] : [];
     this.practiceAttemptCount = practiceSession?.attemptCount ?? 0;
@@ -4909,6 +4915,16 @@ export class Draw extends Scene {
         ...(powerUpOffer ? [powerUpOffer] : []),
       ],
     });
+    if (!alreadyTracked) {
+      trackProgressionEvent('draw_submitted', {
+        scribbitId: scribbit.id,
+        source: this.isFirstScribbit ? 'first-scribbit' : 'daily-draw',
+      });
+      trackProgressionEvent('permanent_reward_earned', {
+        scribbitId: scribbit.id,
+        source: 'scribbit-created',
+      });
+    }
     return true;
   }
 
@@ -5331,12 +5347,20 @@ export class Draw extends Scene {
   private openBirthPowerUpDraft(scribbit: Scribbit): void {
     const offer = this.pendingBirthPowerUpOffer;
     if (!offer || this.powerUpDraft) return;
+    trackProgressionEvent('power_up_offer_shown', {
+      scribbitId: scribbit.id,
+      source: 'birth',
+    });
     const ownedPowerUpCount = scribbit.powerUpIds?.length ?? 0;
     this.powerUpDraft = openPowerUpDraft(
       this,
       offer,
       ownedPowerUpCount,
       (selectedId) => {
+        trackProgressionEvent('power_up_chosen', {
+          scribbitId: scribbit.id,
+          source: 'birth',
+        });
         const nextPowerUpIds = [...(scribbit.powerUpIds ?? []), selectedId];
         scribbit.powerUpIds = nextPowerUpIds;
         const arena = getArena(this);

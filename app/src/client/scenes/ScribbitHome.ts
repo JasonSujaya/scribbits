@@ -1,7 +1,11 @@
 import * as Phaser from 'phaser';
 import { Scene } from 'phaser';
 import { showLoginPrompt } from '@devvit/web/client';
-import { claimDailyLogin, fetchArena } from '../lib/api';
+import {
+  acknowledgeMaturity,
+  claimDailyLogin,
+  fetchArena,
+} from '../lib/api';
 import { appDock } from '../lib/appdock';
 import { appMenu, type AppMenu } from '../lib/appmenu';
 import {
@@ -18,6 +22,7 @@ import { translate } from '../lib/localization';
 import { CanvasActionOverlay, CanvasModalOverlay } from '../lib/overlay';
 import { paperDockIcon, paperIcon, type PaperIconKey } from '../lib/papericons';
 import { bindPressInteractionEvents } from '../lib/pressinteraction';
+import { trackProgressionEvent } from '../lib/progressionanalytics';
 import {
   levelOf,
   loadDrawing,
@@ -269,7 +274,35 @@ export class ScribbitHome extends Scene {
     appDock(this, 'home', { home: () => undefined });
     this.menu?.destroy();
     this.menu = appMenu(this);
-    this.time.delayedCall(0, () => this.openPendingPowerUpOffer());
+    this.time.delayedCall(0, () => this.openPendingProgressionMoment());
+  }
+
+  private openPendingProgressionMoment(): void {
+    if ((this.state.pendingPowerUpOffers?.length ?? 0) > 0) {
+      this.openPendingPowerUpOffer();
+      return;
+    }
+    const scribbitId = this.state.pendingMaturityScribbitIds?.[0];
+    const scribbit = this.state.myScribbits.find(
+      (candidate) => candidate.id === scribbitId
+    );
+    if (!scribbit || this.maturityModal) return;
+    this.openMaturityInfo(null, scribbit);
+    trackProgressionEvent('maturity_shown', { scribbitId: scribbit.id });
+    void acknowledgeMaturity(scribbit.id).then((result) => {
+      if (!result.ok || !this.scene.isActive()) return;
+      this.state = {
+        ...this.state,
+        pendingMaturityScribbitIds:
+          (this.state.pendingMaturityScribbitIds ?? []).filter(
+            (pendingId) => pendingId !== scribbit.id
+          ),
+      };
+      setArena(this, this.state);
+      trackProgressionEvent('maturity_acknowledged', {
+        scribbitId: scribbit.id,
+      });
+    });
   }
 
   private openPendingPowerUpOffer(): void {
@@ -283,11 +316,19 @@ export class ScribbitHome extends Scene {
       (candidate) => candidate.id === pendingOffer.scribbitId
     );
     if (!scribbit) return;
+    trackProgressionEvent('power_up_offer_shown', {
+      scribbitId: scribbit.id,
+      source: pendingOffer.source,
+    });
     this.powerUpDraft = openPowerUpDraft(
       this,
       pendingOffer,
       scribbit.powerUpIds?.length ?? 0,
       (selectedId) => {
+        trackProgressionEvent('power_up_chosen', {
+          scribbitId: scribbit.id,
+          source: pendingOffer.source,
+        });
         const nextPowerUpIds = [...(scribbit.powerUpIds ?? []), selectedId];
         this.state = {
           ...this.state,
@@ -308,6 +349,7 @@ export class ScribbitHome extends Scene {
         };
         setArena(this, this.state);
         this.powerUpDraft = null;
+        this.time.delayedCall(0, () => this.openPendingProgressionMoment());
       }
     );
   }
@@ -377,7 +419,9 @@ export class ScribbitHome extends Scene {
       this.state.dailyLogin.claimedToday ? UI.gold : UI.coral,
       80
     ).setDepth(2200);
-    const nextDay = this.state.dailyLogin.nextReward.trackDay;
+    const nextDay =
+      this.state.dailyLogin.nextReward.trackDay ??
+      this.state.dailyLogin.nextReward.cycleDay;
     loginButton.add(
       label(
         this,
@@ -385,9 +429,7 @@ export class ScribbitHome extends Scene {
         57,
         this.state.dailyLogin.claimedToday
           ? 'LOGIN ✓'
-          : nextDay === null
-            ? 'DAILY'
-            : `DAY ${nextDay}`,
+          : `DAY ${nextDay ?? 1}`,
         17,
         UI.ink,
         true
@@ -727,7 +769,10 @@ export class ScribbitHome extends Scene {
     this.maturityCountdownTimer = null;
   }
 
-  private openMaturityInfo(trigger: HTMLElement | null = null): void {
+  private openMaturityInfo(
+    trigger: HTMLElement | null = null,
+    graduatedScribbit: Scribbit | null = null
+  ): void {
     this.closeMaturityInfo();
     const { width, height } = this.scale;
     const cardWidth = width - 80;
@@ -740,11 +785,20 @@ export class ScribbitHome extends Scene {
       .setDepth(2400)
       .setScrollFactor(0);
     const closeMaturityInfo = (): void => this.closeMaturityInfo();
+    const enterTour = (): void => {
+      this.closeMaturityInfo();
+      startScene(this, 'ArenaHome');
+    };
+    const modalTitle = graduatedScribbit
+      ? `${graduatedScribbit.name} matured`
+      : 'How Scribbit maturity works';
     const actions = new CanvasModalOverlay(
       this,
-      'How Scribbit maturity works',
+      modalTitle,
       closeMaturityInfo,
-      MATURITY_DESCRIPTION,
+      graduatedScribbit
+        ? 'Base stats are locked, the Scribbit remains usable, Gear remains reusable, and the permanent Arena Tour is now open.'
+        : MATURITY_DESCRIPTION,
       trigger
     );
     container.once('destroy', () => actions.destroy());
@@ -789,7 +843,9 @@ export class ScribbitHome extends Scene {
         this,
         width / 2,
         cardTop + 142,
-        'HOW MATURITY WORKS',
+        graduatedScribbit
+          ? `${graduatedScribbit.name.toUpperCase()} GRADUATED`
+          : 'HOW MATURITY WORKS',
         34,
         UI.ink,
         true
@@ -798,7 +854,9 @@ export class ScribbitHome extends Scene {
         this,
         width / 2,
         cardTop + 181,
-        'EVERY BATTLE ADDS A RANDOM STAT MODIFIER',
+        graduatedScribbit
+          ? 'STATS LOCKED • ARENA TOUR UNLOCKED'
+          : 'EVERY BATTLE ADDS A RANDOM STAT MODIFIER',
         20,
         UI.coralText,
         true
@@ -806,7 +864,26 @@ export class ScribbitHome extends Scene {
     ]);
 
     const rowStartY = cardTop + 255;
-    MATURITY_STEPS.forEach((step, index) => {
+    const maturitySteps = graduatedScribbit
+      ? [
+          {
+            icon: 'lock' as const,
+            title: 'BASE STATS LOCKED',
+            body: 'This Scribbit remains usable. Its drawing stats and earned Power-Ups are preserved.',
+          },
+          {
+            icon: 'spark' as const,
+            title: 'GEAR STAYS REUSABLE',
+            body: 'Equip and Forge reusable Gear to keep building battle strength.',
+          },
+          {
+            icon: 'trophy' as const,
+            title: 'ARENA TOUR OPEN',
+            body: 'Clear rotating fields to stamp a permanent 10-field journey.',
+          },
+        ]
+      : MATURITY_STEPS;
+    maturitySteps.forEach((step, index) => {
       const rowY = rowStartY + index * 125;
       const contentY = rowY - (index === 2 ? 20 : 0);
       const textX = 172;
@@ -841,8 +918,8 @@ export class ScribbitHome extends Scene {
         this,
         width / 2,
         gotItY,
-        'GOT IT',
-        closeMaturityInfo,
+        graduatedScribbit ? 'ENTER TOUR' : 'GOT IT',
+        graduatedScribbit ? enterTour : closeMaturityInfo,
         280,
         UI.coral,
         UI.ink,
@@ -867,9 +944,11 @@ export class ScribbitHome extends Scene {
       onActivate: closeMaturityInfo,
     });
     actions.add({
-      label: 'Got it, close maturity information',
+      label: graduatedScribbit
+        ? 'Enter the Arena Tour'
+        : 'Got it, close maturity information',
       rect: { x: width / 2 - 140, y: gotItY - 42, width: 280, height: 84 },
-      onActivate: closeMaturityInfo,
+      onActivate: graduatedScribbit ? enterTour : closeMaturityInfo,
     });
 
     this.maturityModal = { container, actions };

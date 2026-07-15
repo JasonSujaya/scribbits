@@ -110,8 +110,8 @@ const makeReport = ({
   completed,
   clearMilliseconds,
   kind = 'exhibition',
+  day = 11,
 }) => {
-  const day = 11;
   const challenger = makeChallenger(`${userId}-scribbit`, username);
   const opponent = species.chooseFoundingSparOpponent(challenger, 71);
   const base = battle.simulate(
@@ -216,6 +216,18 @@ test('Venue Stamp keeps best progress, ranks clears by fastest time, and ignores
   assert.equal(state.bestClearMilliseconds, 12_000);
   assert.equal(state.dailyRank, 2);
   assert.equal(state.clearCount, 2);
+  assert.equal(state.tourClearedCount, 1);
+  assert.deepEqual(state.tourClearedArenaIds, [arena.id]);
+  assert.equal(state.tourComplete, false);
+
+  const laterTourState = await venueStamp.loadVenueStampState(
+    memory.storage,
+    71,
+    'player-a'
+  );
+  assert.equal(laterTourState.progress, 0);
+  assert.equal(laterTourState.tourClearedCount, 1);
+  assert.deepEqual(laterTourState.tourClearedArenaIds, [arena.id]);
 
   const board = await venueStamp.loadVenueBoard(memory.storage, 11, {
     userId: 'player-a',
@@ -233,6 +245,63 @@ test('Venue Stamp keeps best progress, ranks clears by fastest time, and ignores
     ]
   );
   assert.equal(board.me?.rank, 2);
+});
+
+test('three active field attempts advance one permanent Tour node even without a clear', async () => {
+  const memory = createMemoryStorage();
+
+  for (const day of [11, 12]) {
+    const arena = battleArena.getBattleArenaForDay(day);
+    await venueStamp.recordVenueStampAttempt(
+      memory.storage,
+      'player-effort',
+      'paper_effort',
+      makeReport({
+        id: `effort-${day}`,
+        userId: 'player-effort',
+        username: 'paper_effort',
+        progress: Math.max(0, arena.challenge.target - 1),
+        completed: false,
+        clearMilliseconds: 20_000,
+        day,
+      })
+    );
+  }
+
+  let state = await venueStamp.loadVenueStampState(
+    memory.storage,
+    12,
+    'player-effort'
+  );
+  assert.equal(state.tourClearedCount, 0);
+  assert.equal(state.tourEffort, 2);
+  assert.equal(state.tourEffortTarget, 3);
+
+  const day = 13;
+  const arena = battleArena.getBattleArenaForDay(day);
+  await venueStamp.recordVenueStampAttempt(
+    memory.storage,
+    'player-effort',
+    'paper_effort',
+    makeReport({
+      id: `effort-${day}`,
+      userId: 'player-effort',
+      username: 'paper_effort',
+      progress: Math.max(0, arena.challenge.target - 1),
+      completed: false,
+      clearMilliseconds: 20_000,
+      day,
+    })
+  );
+
+  state = await venueStamp.loadVenueStampState(
+    memory.storage,
+    day,
+    'player-effort'
+  );
+  assert.equal(state.tourClearedCount, 1);
+  assert.equal(state.tourEffort, 0);
+  assert.equal(state.tourComplete, false);
 });
 
 test('Venue Stamp ignores growing-Scribbit battles', async () => {
@@ -294,6 +363,7 @@ test('Rumble reports never grant a player Venue Stamp', async () => {
   assert.equal(state.progress, 0);
   assert.equal(state.dailyRank, null);
   assert.equal(state.clearCount, 0);
+  assert.equal(state.tourClearedCount, 0);
 });
 
 test('Venue Stamp privacy removal clears attempts and ranking membership', async () => {

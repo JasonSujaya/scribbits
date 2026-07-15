@@ -122,7 +122,7 @@ on one exercise.
   Reddit media and opens Reddit's share sheet.
 - **Hook-y:** one daily drawing, a locked prediction, overnight anticipation,
   a visible daily streak, permanent Scout Clout, a three-day life-or-Legend arc,
-  and an earned-only 5-Ink chest collection with collector rank,
+  and an earned-only 7-Ink chest collection with collector rank,
   permanent discovery, transparent Epic pity, wearable titles, and a permanent
   Legacy Book. The daily-paced Founder Rival Thread adds a relationship without
   stats or another reward track. The newest 20 stored fights remain watchable
@@ -230,9 +230,9 @@ on one exercise.
 - Separated authoritative base drawings from decorated display PNGs so equipped
   accessories stay cosmetic and cannot alter combat analysis.
 - Promoted Mystery Ink into a visible return loop: daily action progress toward
-  a 5-Ink chest, permanent collection discovery, collector ranks, and a
+  a 7-Ink chest, permanent collection discovery, collector ranks, and a
   tangible item-art reveal with a direct Collection handoff. Capsules disclose
-  70/25/5 rarity odds and guarantee an Epic by pull 10; permanent pen/title
+  70/25/4/1 rarity odds and guarantee an Epic-or-better by pull 10; permanent pen/title
   duplicates redirect within rarity while useful accessory copies stack.
   Accessories and titles are cosmetic; pens add expression without raising the
   fixed 100-point stat budget.

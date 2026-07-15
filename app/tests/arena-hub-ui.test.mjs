@@ -108,7 +108,7 @@ test('Arena is a seasonal challenge board instead of a versus screen', () => {
   assert.match(arenaSource, /translate\('screen\.arena'\)/);
   assert.match(arenaSource, /paperIcon\(this, 'clock'/);
   assert.match(arenaSource, /private buildCompetitionHub\(/);
-  assert.match(arenaSource, /"TODAY'S FIELD CHALLENGE"/);
+  assert.match(arenaSource, /'ARENA TOUR'/);
   assert.doesNotMatch(arenaSource, /'COMPETE TODAY'/);
   assert.doesNotMatch(arenaSource, /'SEASON RUMBLE'/);
   assert.doesNotMatch(arenaSource, /'CHAMPION CONTRACT'/);
@@ -147,8 +147,12 @@ test('Arena gives the rotating venue challenge a dedicated card', () => {
   assert.match(arenaSource, /'MATURE SCRIBBIT REQUIRED • READY'/);
   assert.match(arenaSource, /'MATURE SCRIBBIT REQUIRED • NOT READY'/);
   assert.match(arenaSource, /getScribbitLifecycleStage\(/);
-  assert.match(arenaSource, /'NEW FIELD DAILY • ONE ATTEMPT • FASTEST RANKS'/);
-  assert.match(arenaSource, /BATTLE_ARENA_IDS\.length/);
+  assert.match(
+    arenaSource,
+    /`NEXT NODE \$\{venueStamp\.tourEffort\}\/\$\{venueStamp\.tourEffortTarget\} • CLEAR NOW OR BUILD EFFORT`/
+  );
+  assert.match(arenaSource, /venueStamp\.tourClearedCount/);
+  assert.match(arenaSource, /venueStamp\.tourTotal/);
   assert.match(
     arenaSource,
     /`ENTER WITH \$\{matureScribbit\.name\.toUpperCase\(\)\}`/

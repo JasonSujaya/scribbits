@@ -158,6 +158,38 @@ test('the first chest always starts with equippable Gear without changing rarity
   );
 });
 
+test('max-rank Gear and saturated permanent rewards redirect to useful consumables', () => {
+  const permanentIds = new Set(
+    sharedCosmetics.COSMETIC_CATALOG.filter((entry) =>
+      ['pen', 'title'].includes(entry.kind)
+    ).map((entry) => entry.id)
+  );
+  const maxRankGearIds = new Set(
+    sharedCosmetics.GEAR_CATALOG_ENTRIES.map((entry) => entry.id)
+  );
+  const drops = Array.from({ length: 2_000 }, (_, index) =>
+    inkStore.selectCapsuleDrop(
+      {
+        userId: `saturated-player-${index}`,
+        day: 30,
+        pullCount: 100 + index,
+        pullsSinceEpic: index % 10,
+      },
+      permanentIds,
+      maxRankGearIds
+    )
+  );
+
+  assert.ok(
+    drops.every((drop) => ['drawing-ink', 'brush'].includes(drop.kind)),
+    'every saturated result must still add a usable drawing charge'
+  );
+  assert.ok(
+    drops.some((drop) => drop.id === 'starlight-ink'),
+    'Legendary overflow must have a same-rarity useful redirect'
+  );
+});
+
 test('catalog cardinality/indexing', () => {
   assert.equal(
     sharedCosmetics.ACCESSORY_CATALOG_ENTRIES.length,
@@ -176,8 +208,8 @@ test('catalog cardinality/indexing', () => {
   );
   assert.equal(
     sharedCosmetics.DRAWING_INK_CATALOG_ENTRIES.length,
-    3,
-    'shared cosmetic metadata should contain all 3 drawing inks'
+    4,
+    'shared cosmetic metadata should contain all 4 drawing inks'
   );
   assert.equal(
     sharedCosmetics.BRUSH_CATALOG_ENTRIES.length,
@@ -186,8 +218,8 @@ test('catalog cardinality/indexing', () => {
   );
   assert.equal(
     sharedCosmetics.COSMETIC_CATALOG.length,
-    52,
-    'shared cosmetic metadata should contain exactly 52 entries'
+    53,
+    'shared cosmetic metadata should contain exactly 53 entries'
   );
   assert.equal(
     sharedCosmetics.COSMETIC_BY_ID.size,

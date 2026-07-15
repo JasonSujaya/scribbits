@@ -1,6 +1,6 @@
 # Rival Run Advancement Flow
 
-Generated: 2026-07-15T11:56:06.382Z
+Generated: 2026-07-15T14:55:36.951Z
 
 Runner: `app/tools/balancer/run.mjs`
 

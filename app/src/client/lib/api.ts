@@ -4,6 +4,8 @@
 // retry) is the caller's job.
 
 import type {
+  AcknowledgeMaturityRequest,
+  AcknowledgeMaturityResponse,
   ArenaErrorCode,
   ArenaErrorResponse,
   ArenaState,
@@ -160,6 +162,15 @@ export function claimDailyLogin(): Promise<ApiResult<DailyLoginClaimResponse>> {
   return postJson<Record<string, never>, DailyLoginClaimResponse>(
     '/api/daily-login/claim',
     {}
+  );
+}
+
+export function acknowledgeMaturity(
+  scribbitId: string
+): Promise<ApiResult<AcknowledgeMaturityResponse>> {
+  return postJson<AcknowledgeMaturityRequest, AcknowledgeMaturityResponse>(
+    '/api/maturity/acknowledge',
+    { scribbitId }
   );
 }
 

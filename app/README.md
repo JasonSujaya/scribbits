@@ -217,7 +217,7 @@ in [`docs/ranking-seasons.md`](docs/ranking-seasons.md).
 3. **Collect:** drawing and battle wins drive progression and earned Ink. The five
    dock tabs mirror native labels and active-page state without covering their
    canvas artwork.
-   Shop opens earned-only Mystery Ink Chests for a flat 5 Ink each, with
+   Shop opens earned-only Mystery Ink Chests for a flat 7 Ink each, with
    one-open and maximum ten-open actions, permanent discovery, and visible Epic
    pity by open ten. The first completed Rival Run replaces the repeat action
    with one `FIRST GEAR` trail: Shop removes batch and collector clutter, and the

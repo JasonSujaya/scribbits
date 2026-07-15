@@ -79,6 +79,14 @@ export type ReplayFighterLayout = Readonly<{
   panelLeft: number;
 }>;
 
+export type FighterScreenPosition = Readonly<{ x: number; y: number }>;
+
+export type SeparatedFighterPositions = Readonly<{
+  a: FighterScreenPosition;
+  b: FighterScreenPosition;
+  distance: number;
+}>;
+
 export type ReplayBattleLayout = Readonly<{
   viewportWidth: number;
   viewportHeight: number;
@@ -157,6 +165,7 @@ export type ReplayArenaChallengeResultPlan = Readonly<{
 
 export type ReplayPostFightActionKind =
   | 'rivals'
+  | 'powerUp'
   | 'firstChest'
   | 'backContender'
   | 'share'
@@ -250,25 +259,25 @@ export function planReplayBattleLayout(input: {
     battleClockY: heartRowY,
     arenaTop,
     arenaBottom,
-    arenaHorizontalPadding: Math.round(clamp(viewportWidth * 0.23, 140, 160)),
+    arenaHorizontalPadding: Math.round(clamp(viewportWidth * 0.18, 104, 120)),
     arenaVerticalPadding: 140,
     tickerX: viewportWidth / 2,
     tickerY,
     tickerWidth: Math.min(viewportWidth - 64, 632),
     tickerHeight,
     tickerTagWidth: 0,
-    fighterDisplaySize: 232,
-    fighterGhostDisplaySize: 204,
+    fighterDisplaySize: 208,
+    fighterGhostDisplaySize: 184,
     fighters: {
       a: {
-        homeX: Math.round(viewportWidth * 0.27),
+        homeX: Math.round(viewportWidth * 0.24),
         homeY,
         facing: 1,
         chipCenterX: horizontalMargin + heartRowWidth / 2,
         panelLeft: leftPanelLeft,
       },
       b: {
-        homeX: Math.round(viewportWidth * 0.73),
+        homeX: Math.round(viewportWidth * 0.76),
         homeY,
         facing: -1,
         chipCenterX: viewportWidth - horizontalMargin - heartRowWidth / 2,
@@ -470,10 +479,10 @@ export function planReplayHeartDamageReaction(input: {
 
   const speed = clamp(input.playbackSpeed, 1, 4);
   const tierPlan = {
-    light: { distance: 3, rotation: 0.8, duration: 140, repeats: 0 },
-    solid: { distance: 5, rotation: 1.2, duration: 170, repeats: 1 },
-    heavy: { distance: 7, rotation: 1.7, duration: 210, repeats: 1 },
-    critical: { distance: 10, rotation: 2.3, duration: 250, repeats: 2 },
+    light: { distance: 0, rotation: 0, duration: 0, repeats: 0 },
+    solid: { distance: 3, rotation: 0.7, duration: 100, repeats: 0 },
+    heavy: { distance: 6, rotation: 1.4, duration: 160, repeats: 1 },
+    critical: { distance: 9, rotation: 2.1, duration: 210, repeats: 1 },
   }[input.tier];
   return {
     shakeDistance: tierPlan.distance,
@@ -529,10 +538,10 @@ export function planBattleImpact(input: BattleImpactInput): BattleImpactPlan {
         ? 'solid'
         : 'light';
   const baseHitStop = {
-    light: 28,
-    solid: 46,
-    heavy: 70,
-    critical: 96,
+    light: 0,
+    solid: 0,
+    heavy: 38,
+    critical: 54,
   }[tier];
   const speed = clamp(input.playbackSpeed, 1, 4);
   const damage = Math.max(0, Math.round(input.damage));
@@ -540,18 +549,18 @@ export function planBattleImpact(input: BattleImpactInput): BattleImpactPlan {
   return {
     tier,
     damageRatio,
-    hitStopMilliseconds: input.reduceMotion
-      ? 0
-      : Math.round(baseHitStop / Math.sqrt(speed)),
+    // Routine contact keeps flowing. Only the two strongest tiers briefly hold
+    // the entire presentation so hit-stop reads as emphasis instead of jitter.
+    hitStopMilliseconds: input.reduceMotion ? 0 : baseHitStop,
     cameraShake: input.reduceMotion
       ? 0
-      : { light: 0.005, solid: 0.009, heavy: 0.014, critical: 0.019 }[tier],
+      : { light: 0, solid: 0, heavy: 0.01, critical: 0.016 }[tier],
     particleCount: input.reduceMotion
       ? 0
-      : { light: 8, solid: 14, heavy: 20, critical: 28 }[tier],
+      : { light: 2, solid: 6, heavy: 14, critical: 22 }[tier],
     ringCount: input.reduceMotion
       ? 0
-      : { light: 1, solid: 1, heavy: 2, critical: 3 }[tier],
+      : { light: 0, solid: 0, heavy: 1, critical: 2 }[tier],
     damageText: `-${damage}${input.critical ? '!' : ''}`,
     // Replay accelerates Phaser's TweenManager at 2x and 4x. Compensating the
     // authored duration keeps exact damage readable at every playback speed.
@@ -616,6 +625,47 @@ export function projectCombatPosition(
       arena.centerY +
       (position.y / arena.startingCombatHalfHeight) * arena.maximumHalfHeight,
   };
+}
+
+// Combat bodies are intentionally much smaller than player drawings. Preserve
+// authoritative simulation coordinates while keeping the two drawings
+// visually readable in presentation space.
+export function separateFighterScreenPositions(input: {
+  a: FighterScreenPosition;
+  b: FighterScreenPosition;
+  minimumDistance: number;
+  minimumX: number;
+  maximumX: number;
+}): SeparatedFighterPositions {
+  const deltaY = input.b.y - input.a.y;
+  const deltaX = input.b.x - input.a.x;
+  const currentDistance = Math.hypot(deltaX, deltaY);
+  const boundedMinimumDistance = Math.max(0, input.minimumDistance);
+  if (currentDistance >= boundedMinimumDistance) {
+    return { a: input.a, b: input.b, distance: currentDistance };
+  }
+
+  const requiredHorizontalDistance = Math.min(
+    Math.max(0, input.maximumX - input.minimumX),
+    Math.sqrt(Math.max(0, boundedMinimumDistance ** 2 - deltaY ** 2))
+  );
+  const midpointX = (input.a.x + input.b.x) / 2;
+  const aIsLeft = deltaX <= 0;
+  let leftX = midpointX - requiredHorizontalDistance / 2;
+  let rightX = midpointX + requiredHorizontalDistance / 2;
+  if (leftX < input.minimumX) {
+    rightX += input.minimumX - leftX;
+    leftX = input.minimumX;
+  }
+  if (rightX > input.maximumX) {
+    leftX -= rightX - input.maximumX;
+    rightX = input.maximumX;
+  }
+  leftX = Math.max(input.minimumX, leftX);
+  rightX = Math.min(input.maximumX, rightX);
+  const a = { x: aIsLeft ? leftX : rightX, y: input.a.y };
+  const b = { x: aIsLeft ? rightX : leftX, y: input.b.y };
+  return { a, b, distance: Math.hypot(b.x - a.x, b.y - a.y) };
 }
 
 export function getMasteryPresentation(level: number): MasteryPresentation {

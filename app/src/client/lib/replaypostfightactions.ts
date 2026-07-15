@@ -37,6 +37,7 @@ export function createPostFightActions(
       accessibleLabel: string;
     }>;
     onRivals: () => void;
+    onPowerUp?: () => void;
     onFirstChest?: () => void;
     onBackContender: () => void;
     onReplay: () => void;
@@ -49,6 +50,7 @@ export function createPostFightActions(
   const accessibleOverlay = new CanvasActionOverlay(scene);
   const callbacks: Readonly<Record<ReplayPostFightActionKind, () => void>> = {
     rivals: input.onRivals,
+    powerUp: input.onPowerUp ?? (() => undefined),
     firstChest: input.onFirstChest ?? (() => undefined),
     backContender: input.onBackContender,
     replay: input.onReplay,
@@ -114,6 +116,7 @@ export function createPostFightActions(
     }
     if (
       action.kind === 'rivals' ||
+      action.kind === 'powerUp' ||
       action.kind === 'firstChest' ||
       action.kind === 'backContender'
     ) {
@@ -123,9 +126,11 @@ export function createPostFightActions(
         y,
         action.kind === 'rivals'
           ? 'sword'
-          : action.kind === 'firstChest'
-            ? 'ink'
-            : 'trophy',
+          : action.kind === 'powerUp'
+            ? 'spark'
+            : action.kind === 'firstChest'
+              ? 'ink'
+              : 'trophy',
         action.label,
         () => activateAction(action.kind),
         width,

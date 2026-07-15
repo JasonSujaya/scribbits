@@ -38,6 +38,62 @@ const rivalDraftSource = readFileSync(
   new URL('../src/client/lib/replaysparrivaldraft.ts', import.meta.url),
   'utf8'
 );
+const roleWeaponSource = readFileSync(
+  new URL('../src/client/lib/roleweaponrenderer.ts', import.meta.url),
+  'utf8'
+);
+
+test('presentation-space fighter separation preserves readable drawings', () => {
+  for (const viewportWidth of [480, 720]) {
+    const displaySize = 208;
+    const minimumDistance = displaySize * 0.82;
+    const separated = battlePresentation.separateFighterScreenPositions({
+      a: { x: viewportWidth / 2 - 6, y: 520 },
+      b: { x: viewportWidth / 2 + 6, y: 524 },
+      minimumDistance,
+      minimumX: 24,
+      maximumX: viewportWidth - 24,
+    });
+    assert.ok(separated.distance >= minimumDistance - 0.01);
+    assert.ok(separated.a.x >= 24 && separated.b.x <= viewportWidth - 24);
+  }
+});
+
+test('battle reads identify Power-Ups, Gear, and class advantage', () => {
+  assert.match(replaySource, /lastPowerUpRead/);
+  assert.match(replaySource, /lastGearRead/);
+  assert.match(replaySource, /'ADVANTAGE \+10%'/);
+  assert.match(replaySource, /lastAdvantageCue/);
+  assert.match(replaySource, /minimumFighterSeparation/);
+  assert.match(replaySource, /combatCalloutCollisions = '0'/);
+  assert.match(roleWeaponSource, /lastRoleAttack/);
+  assert.match(roleWeaponSource, /delayedCall\(600/);
+  assert.match(roleWeaponSource, /attack === 'body_slam'/);
+  assert.match(roleWeaponSource, /attack === 'color_bolt'/);
+  assert.match(roleWeaponSource, /attack === 'piercing_quill'/);
+  assert.match(replaySource, /label: 'CHOOSE POWER-UP'/);
+  assert.match(replaySource, /onPowerUp:/);
+  assert.match(
+    replaySource,
+    /weaponFxRenderer\?\.update\(\s*presentationDeltaMilliseconds,\s*presentationSpeed/
+  );
+  assert.match(
+    replaySource,
+    /advanceInkcastEditorialQueue\(presentationDeltaMilliseconds\)/
+  );
+  assert.match(replaySource, /this\.tweens\.timeScale = presentationSpeed/);
+  assert.match(replaySource, /this\.time\.timeScale = impactPaused \? 0 : 1/);
+  assert.match(
+    replaySource,
+    /const deservesCommentary =[\s\S]*impactPlan\.tier === 'heavy'[\s\S]*impactPlan\.tier === 'critical'/,
+    'routine hits should stay visual while important beats earn ticker copy'
+  );
+  assert.doesNotMatch(
+    replaySource,
+    /delayedCall\(this\.reduceMotion \? 0 : 360,[\s\S]{0,120}openPowerUpDraft/,
+    'the result should invite the Power-Up choice instead of covering itself'
+  );
+});
 
 test('rival choices use calm role cards with one compact fight action', () => {
   assert.match(rivalDraftSource, /ROLE_STYLES\[plan\.role\]/);
@@ -89,6 +145,10 @@ test('battle impact, arena shrink, and mastery plans preserve presentation truth
   );
   assert.equal(lightImpact.damageText, '-8');
   assert.equal(criticalImpact.damageText, '-24!');
+  assert.equal(lightImpact.hitStopMilliseconds, 0);
+  assert.equal(lightImpact.cameraShake, 0);
+  assert.equal(lightImpact.ringCount, 0);
+  assert.equal(criticalImpact.hitStopMilliseconds, 54);
   assert.equal(lightImpact.damageTextDurationMilliseconds, 900);
   assert.equal(
     battlePresentation.planBattleImpact({
@@ -186,25 +246,25 @@ test('portrait replay layout keeps controls, HUD, and fighters inside safe bound
       battleClockY: 122,
       arenaTop: 295,
       arenaBottom: 1078,
-      arenaHorizontalPadding: 160,
+      arenaHorizontalPadding: 120,
       arenaVerticalPadding: 140,
       tickerX: 360,
       tickerY: 255,
       tickerWidth: 632,
       tickerHeight: 56,
       tickerTagWidth: 0,
-      fighterDisplaySize: 232,
-      fighterGhostDisplaySize: 204,
+      fighterDisplaySize: 208,
+      fighterGhostDisplaySize: 184,
       fighters: {
         a: {
-          homeX: 194,
+          homeX: 173,
           homeY: 686.5,
           facing: 1,
           chipCenterX: 171,
           panelLeft: 24,
         },
         b: {
-          homeX: 526,
+          homeX: 547,
           homeY: 686.5,
           facing: -1,
           chipCenterX: 549,
@@ -367,6 +427,37 @@ test('post-fight actions expose only valid rival, pick, replay, and return paths
     },
     buttonHeight: 100,
   });
+  assert.deepEqual(
+    battlePresentation.planReplayPostFightActions({
+      canChooseRival: true,
+      canBackContender: true,
+      canReplay: false,
+      returnLabel: 'ARENA ›',
+      primaryAction: {
+        kind: 'powerUp',
+        label: 'CHOOSE POWER-UP',
+        accessibleLabel: 'Choose a new Power-Up for this Scribbit',
+        tone: 'gold',
+      },
+    }),
+    {
+      primary: {
+        kind: 'powerUp',
+        label: 'CHOOSE POWER-UP',
+        accessibleLabel: 'Choose a new Power-Up for this Scribbit',
+        tone: 'gold',
+      },
+      replayAction: null,
+      returnAction: {
+        kind: 'return',
+        label: 'ARENA ›',
+        accessibleLabel: 'ARENA',
+        tone: 'ghost',
+      },
+      buttonHeight: 100,
+    },
+    'a new Power-Up should be the deliberate result action'
+  );
   assert.deepEqual(
     battlePresentation.planReplayPostFightActions({
       canChooseRival: true,
@@ -841,6 +932,11 @@ test('healthy battle hearts use one readable coral health color', () => {
     replayBattleHudSource,
     /const labelsVisible =[\s\S]*heartsVisible[\s\S]*battleChromeVisible[\s\S]*floatingVitalsVisible;[\s\S]*vitals\.floatingVitals\.setVisible\(labelsVisible\)/,
     'floating vitals should share the battle health visibility lifecycle'
+  );
+  assert.match(
+    replayBattleHudSource,
+    /let floatingVitalsVisible = false/,
+    'moving fighter labels should be opt-in so health is not duplicated by default'
   );
 });
 

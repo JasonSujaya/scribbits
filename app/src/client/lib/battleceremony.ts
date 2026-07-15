@@ -35,6 +35,21 @@ export type VsCeremonyOptions = Readonly<{
 const FIGHTER_ART_SIZE = 304;
 const FIGHTER_COLUMN_WIDTH = 292;
 
+// The ceremony is a single readable beat before the replay, not a second
+// loading screen. Keep the story version under 1.5 seconds including its fade.
+export const VS_CEREMONY_TIMING = Object.freeze({
+  fighterEntranceMs: 360,
+  badgeDelayMs: 220,
+  badgePopMs: 180,
+  clashDelayMs: 380,
+  clashLifespanMs: 520,
+  clashCleanupMs: 600,
+  standardDwellMs: 1_200,
+  storyDwellMs: 1_320,
+  fadeMs: 160,
+  reducedMotionTweenMs: 1,
+});
+
 type FighterSideOptions = Readonly<{
   fighter: Scribbit;
   startsOnLeft: boolean;
@@ -376,49 +391,70 @@ export function showVsCeremony(scene: Scene, options: VsCeremonyOptions): void {
   scene.tweens.add({
     targets: sideA,
     x: width * 0.24,
-    duration: reduceMotion ? 1 : 600,
+    duration: reduceMotion
+      ? VS_CEREMONY_TIMING.reducedMotionTweenMs
+      : VS_CEREMONY_TIMING.fighterEntranceMs,
     ease: 'Back.easeOut',
   });
 
   scene.tweens.add({
     targets: sideB,
     x: width * 0.76,
-    duration: reduceMotion ? 1 : 600,
+    duration: reduceMotion
+      ? VS_CEREMONY_TIMING.reducedMotionTweenMs
+      : VS_CEREMONY_TIMING.fighterEntranceMs,
     ease: 'Back.easeOut',
   });
 
   // VS badge pops in after fighters arrive
-  scene.time.delayedCall(reduceMotion ? 1 : 400, () => {
-    scene.tweens.add({
-      targets: matchupBadge,
-      scale: 1,
-      duration: reduceMotion ? 1 : 300,
-      ease: 'Back.easeOut',
-    });
-    if (!reduceMotion) scene.cameras.main.shake(200, 0.008);
-  });
+  scene.time.delayedCall(
+    reduceMotion
+      ? VS_CEREMONY_TIMING.reducedMotionTweenMs
+      : VS_CEREMONY_TIMING.badgeDelayMs,
+    () => {
+      scene.tweens.add({
+        targets: matchupBadge,
+        scale: 1,
+        duration: reduceMotion
+          ? VS_CEREMONY_TIMING.reducedMotionTweenMs
+          : VS_CEREMONY_TIMING.badgePopMs,
+        ease: 'Back.easeOut',
+      });
+      if (!reduceMotion) scene.cameras.main.shake(200, 0.008);
+    }
+  );
 
   // Element clash effect
   if (!reduceMotion)
-    scene.time.delayedCall(600, () => {
+    scene.time.delayedCall(VS_CEREMONY_TIMING.clashDelayMs, () => {
       const clash = scene.add.particles(width / 2, fighterCenterY, 'spark', {
         speed: { min: 150, max: 350 },
         scale: { start: 0.8, end: 0 },
-        lifespan: 800,
+        lifespan: VS_CEREMONY_TIMING.clashLifespanMs,
         quantity: 20,
         tint: [roleAStyle.color, roleBStyle.color],
         emitting: false,
       });
       clash.setDepth(2001);
       clash.explode(25);
-      scene.time.delayedCall(1000, () => clash.destroy());
+      scene.time.delayedCall(VS_CEREMONY_TIMING.clashCleanupMs, () =>
+        clash.destroy()
+      );
     });
 
   // Fade out and transition
-  // Reduced motion removes the entrance motion, not the reading time. The old
-  // 180ms reduced-motion dwell made the matchup card effectively invisible.
-  scene.time.delayedCall(rivalryStakes ? 3000 : 2800, () => {
-    fadeSceneOut(scene, 200);
+  // Reduced motion removes the entrance motion, not the reading time.
+  const dwellMs =
+    rivalryStakes || rivalRun
+      ? VS_CEREMONY_TIMING.storyDwellMs
+      : VS_CEREMONY_TIMING.standardDwellMs;
+  scene.time.delayedCall(dwellMs, () => {
+    fadeSceneOut(
+      scene,
+      reduceMotion
+        ? VS_CEREMONY_TIMING.reducedMotionTweenMs
+        : VS_CEREMONY_TIMING.fadeMs
+    );
     scene.cameras.main.once('camerafadeoutcomplete', () => {
       layer.destroy(true);
       onComplete();

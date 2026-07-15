@@ -19,11 +19,13 @@ import {
 } from './storage';
 
 const claimedTrackDaysField = 'claimed-track-days';
+const totalClaimedDaysField = 'total-claimed-days';
 const lastClaimDateField = 'last-claim-date';
 const lastRewardField = 'last-reward';
 
 type StoredDailyLogin = Readonly<{
   claimedTrackDays: number;
+  totalClaimedDays: number;
   lastClaimDateKey: string | null;
   lastReward: DailyLoginReward | null;
 }>;
@@ -54,11 +56,17 @@ const parseStoredReward = (
   }
   const reward = value as Record<string, unknown>;
   const trackDay = reward.trackDay;
+  const cycleDay = reward.cycleDay ?? null;
   if (
     (trackDay !== null &&
       (!Number.isSafeInteger(trackDay) ||
         Number(trackDay) < 1 ||
         Number(trackDay) > DAILY_LOGIN_TRACK_LENGTH)) ||
+    (cycleDay !== null &&
+      (!Number.isSafeInteger(cycleDay) ||
+        Number(cycleDay) < 1 ||
+        Number(cycleDay) > DAILY_LOGIN_TRACK_LENGTH)) ||
+    (trackDay !== null && cycleDay !== null) ||
     !Number.isSafeInteger(reward.inkAwarded) ||
     Number(reward.inkAwarded) < 1 ||
     (reward.gearId !== null && typeof reward.gearId !== 'string') ||
@@ -69,6 +77,7 @@ const parseStoredReward = (
   }
   return {
     trackDay: trackDay as DailyLoginReward['trackDay'],
+    cycleDay: cycleDay as DailyLoginReward['cycleDay'],
     inkAwarded: Number(reward.inkAwarded),
     gearId: reward.gearId as string | null,
     claimedAtMs: Number(reward.claimedAtMs),
@@ -81,25 +90,32 @@ const parseStoredDailyLogin = (
   if (Object.keys(stored).length === 0) {
     return {
       claimedTrackDays: 0,
+      totalClaimedDays: 0,
       lastClaimDateKey: null,
       lastReward: null,
     };
   }
 
   const claimedTrackDays = Number(stored[claimedTrackDaysField]);
+  const totalClaimedDays =
+    stored[totalClaimedDaysField] === undefined
+      ? claimedTrackDays
+      : Number(stored[totalClaimedDaysField]);
   const lastClaimDateKey = stored[lastClaimDateField] ?? null;
   const lastReward = parseStoredReward(stored[lastRewardField]);
   if (
     !Number.isSafeInteger(claimedTrackDays) ||
     claimedTrackDays < 0 ||
     claimedTrackDays > DAILY_LOGIN_TRACK_LENGTH ||
+    !Number.isSafeInteger(totalClaimedDays) ||
+    totalClaimedDays < claimedTrackDays ||
     !lastClaimDateKey ||
     !parseUtcDateKey(lastClaimDateKey) ||
     !lastReward
   ) {
     throw new Error('Stored daily login state is invalid.');
   }
-  return { claimedTrackDays, lastClaimDateKey, lastReward };
+  return { claimedTrackDays, totalClaimedDays, lastClaimDateKey, lastReward };
 };
 
 const projectDailyLoginState = (
@@ -108,8 +124,9 @@ const projectDailyLoginState = (
 ): DailyLoginState => {
   return {
     claimedTrackDays: stored.claimedTrackDays,
+    totalClaimedDays: stored.totalClaimedDays,
     claimedToday: stored.lastClaimDateKey === currentDateKey,
-    nextReward: dailyLoginRewardAfterClaims(stored.claimedTrackDays),
+    nextReward: dailyLoginRewardAfterClaims(stored.totalClaimedDays),
   };
 };
 
@@ -190,9 +207,10 @@ export const claimDailyLoginReward = async (
         };
       }
 
-      const rewardPlan = dailyLoginRewardAfterClaims(stored.claimedTrackDays);
+      const rewardPlan = dailyLoginRewardAfterClaims(stored.totalClaimedDays);
       const reward: DailyLoginReward = {
         trackDay: rewardPlan.trackDay,
+        cycleDay: rewardPlan.cycleDay,
         inkAwarded: rewardPlan.ink,
         gearId: rewardPlan.gearId,
         claimedAtMs: input.claimedAtMs,
@@ -201,6 +219,7 @@ export const claimDailyLoginReward = async (
         rewardPlan.trackDay === null
           ? stored.claimedTrackDays
           : Math.min(DAILY_LOGIN_TRACK_LENGTH, stored.claimedTrackDays + 1);
+      const nextTotalClaimedDays = stored.totalClaimedDays + 1;
       const rankField = reward.gearId
         ? getInventoryGearRankField(reward.gearId)
         : null;
@@ -211,6 +230,7 @@ export const claimDailyLoginReward = async (
       await transaction.multi();
       await transaction.hSet(loginKey, {
         [claimedTrackDaysField]: nextClaimedTrackDays.toString(),
+        [totalClaimedDaysField]: nextTotalClaimedDays.toString(),
         [lastClaimDateField]: input.currentDateKey,
         [lastRewardField]: JSON.stringify(reward),
       });
@@ -228,6 +248,7 @@ export const claimDailyLoginReward = async (
       if (Array.isArray(result) && result.length > 0) {
         const committed: StoredDailyLogin = {
           claimedTrackDays: nextClaimedTrackDays,
+          totalClaimedDays: nextTotalClaimedDays,
           lastClaimDateKey: input.currentDateKey,
           lastReward: reward,
         };

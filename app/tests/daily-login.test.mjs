@@ -30,6 +30,7 @@ test('daily login claims distinct UTC days without resetting missed progress', a
     await dailyLogin.loadDailyLoginState(memory.storage, userId, '20260701'),
     {
       claimedTrackDays: 0,
+      totalClaimedDays: 0,
       claimedToday: false,
       nextReward: dailyLoginContract.DAILY_LOGIN_TRACK[0],
     }
@@ -39,6 +40,7 @@ test('daily login claims distinct UTC days without resetting missed progress', a
   assert.equal(dayOne.status, 'claimed');
   assert.equal(dayOne.reward.inkAwarded, 1);
   assert.equal(dayOne.dailyLogin.claimedTrackDays, 1);
+  assert.equal(dayOne.dailyLogin.totalClaimedDays, 1);
   assert.equal(await inkStore.getInkBalance(memory.storage, userId), 1);
 
   const repeatedDayOne = await claim(memory.storage, userId, '20260701', 2_000);
@@ -49,6 +51,43 @@ test('daily login claims distinct UTC days without resetting missed progress', a
   assert.equal(dayTwoAfterGap.reward.trackDay, 2);
   assert.equal(dayTwoAfterGap.dailyLogin.claimedTrackDays, 2);
   assert.equal(await inkStore.getInkBalance(memory.storage, userId), 2);
+});
+
+test('daily login continues with a visible repeating Studio Week after day seven', async () => {
+  const memory = createMemoryStorage();
+  const userId = 'repeat-login-player';
+
+  for (let day = 1; day <= 14; day += 1) {
+    const dateKey = `202607${String(day).padStart(2, '0')}`;
+    await claim(memory.storage, userId, dateKey, day * 1_000);
+  }
+
+  const state = await dailyLogin.loadDailyLoginState(
+    memory.storage,
+    userId,
+    '20260715'
+  );
+  assert.equal(state.claimedTrackDays, 7);
+  assert.equal(state.totalClaimedDays, 14);
+  assert.deepEqual(
+    state.nextReward,
+    dailyLoginContract.DAILY_LOGIN_REPEAT_TRACK[0]
+  );
+  assert.equal(
+    await inkStore.getInkBalance(memory.storage, userId),
+    35,
+    'starter week awards 17 Ink and each repeating Studio Week awards 18'
+  );
+
+  const nextWeek = await claim(
+    memory.storage,
+    userId,
+    '20260720',
+    20_000
+  );
+  assert.equal(nextWeek.reward.cycleDay, 1);
+  assert.equal(nextWeek.dailyLogin.nextReward.cycleDay, 2);
+  assert.equal(nextWeek.dailyLogin.totalClaimedDays, 15);
 });
 
 test('the seventh login grants one Epic Golden Crown and five Ink', async () => {

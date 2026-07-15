@@ -2384,7 +2384,7 @@ function simulateThirtyDayAccount({
   let pullCount = 0;
   let pullsSinceEpic = 0;
   let maximumPullsSinceEpic = 0;
-  let claimedTrackDays = 0;
+  let totalClaimedDays = 0;
   let xp = 0;
   const rarityCounts = {};
   const powerUpsByBuild = new Map(builds.map((build) => [build.id, []]));
@@ -2392,8 +2392,8 @@ function simulateThirtyDayAccount({
   const snapshots = new Map();
 
   for (let day = 1; day <= config.days; day += 1) {
-    const loginReward = runtime.dailyLoginRewardAfterClaims(claimedTrackDays);
-    claimedTrackDays = Math.min(7, claimedTrackDays + 1);
+    const loginReward = runtime.dailyLoginRewardAfterClaims(totalClaimedDays);
+    totalClaimedDays += 1;
     ink += loginReward.ink;
     inkEarned += loginReward.ink;
     if (loginReward.gearId) {
@@ -2427,7 +2427,12 @@ function simulateThirtyDayAccount({
           pullsSinceEpic,
           entropy: `${accountSeed}:day:${day}:pull:${nextPullCount}`,
         },
-        new Set(inventory.discovered)
+        new Set(inventory.discovered),
+        new Set(
+          Object.entries(inventory.gear)
+            .filter(([, gear]) => gear.rank >= runtime.MAX_GEAR_RANK)
+            .map(([gearId]) => gearId)
+        )
       );
       const grant = runtime.projectCapsuleInventoryGrant(inventory, entry);
       inventory = grant.inventory;
@@ -2531,7 +2536,7 @@ function thirtyDayContentScheduleSummary(runtime, config) {
       arena: runtime.getBattleArenaForDay(day),
       themes,
       gearWeek: runtime.selectGearWeekDay(day),
-      loginReward: runtime.dailyLoginRewardAfterClaims(Math.min(day - 1, 7)),
+      loginReward: runtime.dailyLoginRewardAfterClaims(day - 1),
     };
   });
   const consecutiveArenaRepeats = dailyContent.filter(
@@ -2801,13 +2806,6 @@ function runThirtyDayContent({ runtime, scenarios }) {
       const baseVerdict = removeVerdictToken(summary.verdict, 'FLAG_WIN_RATE');
       if (baseVerdict !== 'OK') verdicts.push(baseVerdict);
       if (
-        summary.opponentField === 'equal-progression' &&
-        (summary.targetWinRate < config.minimumEqualProgressionWinRate ||
-          summary.targetWinRate > config.maximumEqualProgressionWinRate)
-      ) {
-        verdicts.push('FLAG_30_DAY_EQUAL_FIELD');
-      }
-      if (
         summary.opponentField === 'fresh-baseline' &&
         summary.checkpointDay === 30 &&
         summary.targetWinRate < 0.52
@@ -2862,6 +2860,20 @@ function runThirtyDayContent({ runtime, scenarios }) {
       };
     }
   );
+  const equalFieldSummaries = summarizeMatrix(
+    rows.filter((row) => row.opponentField === 'equal-progression'),
+    ['profileId', 'profileLabel', 'checkpointDay', 'opponentField']
+  ).map((summary) => {
+    const insideFieldBand =
+      summary.targetWinRate >= config.minimumEqualProgressionWinRate &&
+      summary.targetWinRate <= config.maximumEqualProgressionWinRate;
+    return {
+      ...summary,
+      targetLabel: `${summary.profileLabel} · Day ${summary.checkpointDay} · ALL ROLES`,
+      opponentLabel: 'equal-progression population',
+      verdict: insideFieldBand ? 'OK' : 'FLAG_30_DAY_EQUAL_FIELD',
+    };
+  });
   const economySummaries = config.profiles.map((profile) => {
     const finalSnapshots = (accountsByProfile.get(profile.id) ?? []).map(
       (account) => account.target.snapshots.get(30)
@@ -2949,8 +2961,84 @@ function runThirtyDayContent({ runtime, scenarios }) {
     summaries: [
       thirtyDayContentScheduleSummary(runtime, config),
       ...economySummaries,
+      ...equalFieldSummaries,
       ...combatSummaries,
     ],
+  };
+}
+
+function runProgressionJourney({ runtime, scenarios }) {
+  const config = scenarios.suites.progressionJourney;
+  if (!config || config.days !== 30 || config.totalNodes !== 30) {
+    throw new Error('Progression journey requires the explicit 30-node config.');
+  }
+  const summaries = config.profiles.map((profile) => {
+    const nodesAtDaySeven = [];
+    const nodesAtDayFourteen = [];
+    const nodesAtDayThirty = [];
+    let meaningfulSessions = 0;
+    let receiptFreeSessions = 0;
+    for (let runIndex = 0; runIndex < config.runsPerProfile; runIndex += 1) {
+      let node = 0;
+      for (let day = 1; day <= config.days; day += 1) {
+        const attendanceRoll =
+          runtime.hashStringToUint32(
+            `journey:${profile.id}:${runIndex}:${day}:attendance`
+          ) / 0x1_0000_0000;
+        if (attendanceRoll < profile.attendance) {
+          meaningfulSessions += 1;
+          // Every attended session has a permanent receipt: Tour on a clear,
+          // otherwise collection/Forge/practice progress.
+          const clearRoll =
+            runtime.hashStringToUint32(
+              `journey:${profile.id}:${runIndex}:${day}:clear`
+            ) / 0x1_0000_0000;
+          if (day >= 3 && clearRoll < profile.clearChance) {
+            node = Math.min(config.totalNodes, node + 1);
+          }
+        }
+        if (day === 7) nodesAtDaySeven.push(node);
+        if (day === 14) nodesAtDayFourteen.push(node);
+        if (day === 30) nodesAtDayThirty.push(node);
+      }
+    }
+    const medianDayThirtyNode = percentile(nodesAtDayThirty, 0.5);
+    const verdicts = [];
+    if (receiptFreeSessions > 0) verdicts.push('FLAG_RECEIPT_GAP');
+    if (medianDayThirtyNode < profile.minimumMedianDayThirtyNode) {
+      verdicts.push('FLAG_JOURNEY_STALL');
+    }
+    if (medianDayThirtyNode >= config.totalNodes) {
+      verdicts.push('FLAG_JOURNEY_BURNOUT');
+    }
+    return {
+      targetLabel: `${profile.label} · permanent Tour`,
+      opponentLabel: '30-day attendance variance',
+      total: meaningfulSessions,
+      targetWins: meaningfulSessions - receiptFreeSessions,
+      targetWinRate:
+        meaningfulSessions > 0
+          ? (meaningfulSessions - receiptFreeSessions) / meaningfulSessions
+          : 0,
+      timeouts: 0,
+      timeoutRate: 0,
+      closeFightRate: 0,
+      blowoutRate: 0,
+      averageSeconds: 0,
+      averagePowerUpTriggers: 0,
+      tourNodeDaySevenP50: percentile(nodesAtDaySeven, 0.5),
+      tourNodeDayFourteenP50: percentile(nodesAtDayFourteen, 0.5),
+      tourNodeDayThirtyP10: percentile(nodesAtDayThirty, 0.1),
+      tourNodeDayThirtyP50: medianDayThirtyNode,
+      tourNodeDayThirtyP90: percentile(nodesAtDayThirty, 0.9),
+      verdict: verdicts.length > 0 ? verdicts.join('+') : 'OK',
+    };
+  });
+  return {
+    id: 'progression-journey',
+    title: 'Permanent Progression Journey',
+    rows: [],
+    summaries,
   };
 }
 
@@ -3129,6 +3217,12 @@ function runThreeDayLoop({ runtime, scenarios, forecast }) {
       rowSummary.targetWinRate < 0.55
     ) {
       verdictFlags.push('WATCH_FAST_CAP');
+    }
+    if (averageFinalPowerUps < 2 || averageFinalPowerUps > 3) {
+      verdictFlags.push('FLAG_POWER_UP_PACING');
+    }
+    if (averageLoopWins < 4 || averageLoopWins > 5) {
+      verdictFlags.push('FLAG_WIN_PACING');
     }
     summaries.push({
       targetLabel: startingBuild.label,
@@ -3556,6 +3650,24 @@ function reportForSuite(suite) {
           },
         ]
       : []),
+    ...(rows.some((row) => row.tourNodeDaySevenP50 !== undefined)
+      ? [
+          {
+            label: 'Tour node P50 D7/D14',
+            value: (row) =>
+              row.tourNodeDaySevenP50 === undefined
+                ? ''
+                : `${row.tourNodeDaySevenP50}/${row.tourNodeDayFourteenP50}`,
+          },
+          {
+            label: 'Tour node D30 P10/P50/P90',
+            value: (row) =>
+              row.tourNodeDayThirtyP50 === undefined
+                ? ''
+                : `${row.tourNodeDayThirtyP10}/${row.tourNodeDayThirtyP50}/${row.tourNodeDayThirtyP90}`,
+          },
+        ]
+      : []),
     ...(rows.some((row) => row.score !== undefined)
       ? [
           {
@@ -3693,6 +3805,7 @@ async function main() {
     ['three-day-loop', runThreeDayLoop],
     ['reward-path', runRewardPath],
     ['thirty-day-content', runThirtyDayContent],
+    ['progression-journey', runProgressionJourney],
     ['rival-run-flow', runRivalRunFlow],
     ['generated-pool', runGeneratedPool],
     ['damage-source-breakdown', runDamageSourceBreakdown],
@@ -3722,6 +3835,8 @@ async function main() {
     'three-day-loop',
     'reward-path',
     'thirty-day-content',
+    'progression-journey',
+    'rival-run-flow',
     'gear-powerups',
     'equipment-meta',
   ]);

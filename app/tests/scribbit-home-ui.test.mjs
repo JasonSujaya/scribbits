@@ -225,7 +225,9 @@ test('Home is the living Scribbit screen with one big Draw action', () => {
     paperIconsSource,
     /if \(key === 'gift'\)[\s\S]*fillRoundedRect[\s\S]*strokeRoundedRect/
   );
-  assert.doesNotMatch(homeSource, /openCarePicker|ArenaHome/);
+  assert.doesNotMatch(homeSource, /openCarePicker/);
+  assert.match(homeSource, /graduatedScribbit \? enterTour/);
+  assert.match(homeSource, /startScene\(this, 'ArenaHome'\)/);
   assert.doesNotMatch(appDockSource, /key: 'draw'|route: 'dailyDraw'/);
   assert.match(
     visualAssetsSource,

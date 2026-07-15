@@ -70,6 +70,7 @@ import {
   planReplayBattleLayout,
   planReplayOutcomeLayout,
   projectCombatPosition,
+  separateFighterScreenPositions,
 } from '../lib/battlepresentation';
 import type {
   ArenaPresentationPlan,
@@ -139,6 +140,7 @@ import {
 import { playSfx } from '../lib/sfx';
 import { WeaponFxRenderer } from '../lib/weaponfxrenderer';
 import { RoleWeaponRenderer } from '../lib/roleweaponrenderer';
+import { trackProgressionEvent } from '../lib/progressionanalytics';
 import {
   formatRivalRunResultLine,
   planRivalRunActionCopy,
@@ -172,6 +174,8 @@ import {
   DEFAULT_COMBAT_RULES,
 } from '../../shared/combat/config';
 import { POWER_UP_CATALOG } from '../../shared/combat/powerups';
+import { getCombatRoleAdvantage } from '../../shared/combat/roles';
+import { resolveGearCombatLoadout } from '../../shared/gearcombat';
 import {
   selectCombatRole,
   selectPrimaryPower,
@@ -285,6 +289,10 @@ export class Replay extends Scene {
   private battleBackdropElapsedMilliseconds = 0;
   private battleBackdropUpdateAccumulator = 0;
   private effectRenderAccumulator = 0;
+  private combatReadLaneAvailableAt: Record<'a' | 'b', number[]> = {
+    a: [0, 0, 0],
+    b: [0, 0, 0],
+  };
   private fighterA!: ReplayFighterRuntime;
   private fighterB!: ReplayFighterRuntime;
   private finished = false;
@@ -378,6 +386,7 @@ export class Replay extends Scene {
     this.impactHoldMilliseconds = 0;
     this.cameraShakeCooldownMilliseconds = 0;
     this.clearInkcastEditorialState();
+    this.combatReadLaneAvailableAt = { a: [0, 0, 0], b: [0, 0, 0] };
     this.founderChronicleBeat = null;
     this.founderRivalryStakes = null;
   }
@@ -423,6 +432,12 @@ export class Replay extends Scene {
       return;
     }
     this.report = report;
+    if (this.isFoundingReplay()) {
+      trackProgressionEvent('founding_replay_started', {
+        scribbitId: report.a.id,
+        source: 'birth',
+      });
+    }
     this.founderChronicleBeat = getReplayFounderChronicleBeat(this);
     this.founderRivalryStakes = getReplayFounderRivalryStakes(this);
     this.transcript = getUsableBattleTranscript(report) ?? null;
@@ -628,7 +643,7 @@ export class Replay extends Scene {
     fighter.powerGhosts = this.createPowerGhosts(fighter, textureKey);
     // Keep the entire drawing visible during its entrance. The old off-stage
     // walk-in made wide player art look clipped before combat even began.
-    live.walkIn(entranceX, fighter.screenX, 360);
+    live.walkIn(entranceX, fighter.screenX, 260);
   }
 
   private createPowerGhosts(
@@ -727,13 +742,14 @@ export class Replay extends Scene {
     this.game.canvas.dataset.fightIntroShake = this.reduceMotion
       ? 'off'
       : 'punch';
-    // Keep the matchup readable, then reach combat after one strong intro beat.
-    this.time.delayedCall(360, () => {
+    // The VS card already established the matchup. This is one quick bell beat,
+    // not a second intro players must wait through.
+    this.time.delayedCall(120, () => {
       if (this.finished || !this.scene.isActive()) return;
       this.soundboard.play('fight');
       if (this.reduceMotion) {
         banner.setScale(finalScale);
-        this.time.delayedCall(700, () => {
+        this.time.delayedCall(380, () => {
           if (this.finished || !this.scene.isActive()) return;
           this.clearIntroBanner();
           this.startContinuousReplay();
@@ -742,15 +758,15 @@ export class Replay extends Scene {
       }
       const introTargets = shine ? [banner, shine.displayObject] : [banner];
       if (shine) {
-        shine.play(700);
+        shine.play(420);
       }
       this.tweens.add({
         targets: introTargets,
         scale: finalScale,
-        duration: 220,
+        duration: 150,
         ease: 'Back.easeOut',
         yoyo: true,
-        hold: 450,
+        hold: 170,
         onComplete: () => {
           this.clearIntroBanner();
           if (!this.finished && this.scene.isActive()) {
@@ -761,12 +777,12 @@ export class Replay extends Scene {
       this.tweens.add({
         targets: introTargets,
         angle: { from: -2.4, to: 2.4 },
-        duration: 58,
+        duration: 46,
         ease: 'Sine.easeInOut',
         yoyo: true,
         repeat: 2,
       });
-      this.cameras.main.shake(240, 0.008);
+      this.cameras.main.shake(140, 0.006);
     });
   }
 
@@ -796,13 +812,45 @@ export class Replay extends Scene {
     this.previousPlaybackTick = 0;
     this.drawReplayFrameEffects(frame);
     this.effectRenderAccumulator = 0;
+    this.presentGearReads();
+  }
+
+  private presentGearReads(): void {
+    ([this.fighterA, this.fighterB] as const).forEach((fighter, index) => {
+      const techniques = resolveGearCombatLoadout(fighter.scribbit).techniques;
+      if (techniques.length === 0) return;
+      const techniqueNames = techniques.map(
+        (technique) => technique.effect.name
+      );
+      const title = `GEAR • ${techniqueNames.slice(0, 2).join(' + ')}${techniqueNames.length > 2 ? ` +${techniqueNames.length - 2}` : ''}`;
+      const detail = `${fighter.scribbit.name.toUpperCase()} • ${techniques[0]!.effect.summary}`;
+      this.time.delayedCall(100 + index * 720, () => {
+        if (this.finished || !this.scene.isActive()) return;
+        this.showFighterCombatRead(fighter, title, detail, UI.coralText);
+        this.game.canvas.dataset.lastGearRead = `${fighter.side}|${techniques.map((technique) => technique.leadGearId).join(',')}`;
+      });
+    });
   }
 
   override update(_time: number, deltaMilliseconds: number): void {
     const safeDeltaMilliseconds = Math.max(0, deltaMilliseconds);
+    const impactPaused =
+      this.playbackRunning && this.impactHoldMilliseconds > 0;
+    const presentationDeltaMilliseconds = impactPaused
+      ? 0
+      : safeDeltaMilliseconds;
+    const presentationSpeed = this.playbackRunning
+      ? impactPaused
+        ? 0
+        : this.speed
+      : 1;
+    if (this.playbackRunning) {
+      this.time.timeScale = impactPaused ? 0 : 1;
+      this.tweens.timeScale = presentationSpeed;
+    }
     this.weaponFxRenderer?.update(
-      safeDeltaMilliseconds,
-      this.playbackRunning ? this.speed : 1
+      presentationDeltaMilliseconds,
+      presentationSpeed
     );
     this.cameraShakeCooldownMilliseconds = Math.max(
       0,
@@ -825,7 +873,7 @@ export class Replay extends Scene {
         this.battleBackdrop?.update(this.battleBackdropElapsedMilliseconds);
       }
     }
-    this.advanceInkcastEditorialQueue(deltaMilliseconds);
+    this.advanceInkcastEditorialQueue(presentationDeltaMilliseconds);
     if (
       !this.playbackRunning ||
       this.finished ||
@@ -838,8 +886,12 @@ export class Replay extends Scene {
     if (this.impactHoldMilliseconds > 0) {
       this.impactHoldMilliseconds = Math.max(
         0,
-        this.impactHoldMilliseconds - Math.max(0, deltaMilliseconds)
+        this.impactHoldMilliseconds - safeDeltaMilliseconds
       );
+      if (this.impactHoldMilliseconds === 0) {
+        this.time.timeScale = 1;
+        this.tweens.timeScale = this.speed;
+      }
       return;
     }
 
@@ -913,13 +965,30 @@ export class Replay extends Scene {
       this.transcript?.tickRate ?? COMBAT_TICK_RATE
     );
 
+    const projectedPositions = fighterFrames.map((fighterFrame) =>
+      projectCombatPosition(fighterFrame.position, arena)
+    );
+    const separatedPositions = separateFighterScreenPositions({
+      a: projectedPositions[0] ?? {
+        x: this.fighterA.screenX,
+        y: this.fighterA.screenY,
+      },
+      b: projectedPositions[1] ?? {
+        x: this.fighterB.screenX,
+        y: this.fighterB.screenY,
+      },
+      minimumDistance: this.battleLayout.fighterDisplaySize * 0.82,
+      minimumX: this.battleLayout.pageLeft + 24,
+      maximumX: this.battleLayout.pageLeft + this.battleLayout.pageWidth - 24,
+    });
+    const readablePositions = [separatedPositions.a, separatedPositions.b];
+    this.game.canvas.dataset.minimumFighterSeparation =
+      separatedPositions.distance.toFixed(1);
+
     fighterFrames.forEach((fighterFrame, index) => {
       const fighter = fighters[index];
       if (!fighter) return;
-      const screenPosition = projectCombatPosition(
-        fighterFrame.position,
-        arena
-      );
+      const screenPosition = readablePositions[index]!;
       fighter.screenX = screenPosition.x;
       fighter.screenY = screenPosition.y;
       fighter.sprite?.setPosition(screenPosition.x, screenPosition.y);
@@ -1033,29 +1102,17 @@ export class Replay extends Scene {
 
   private presentPowerUpEvent(event: PowerUpTimelineEvent): void {
     const fighter = this.fighterForSlot(event.actor);
-    const callout = label(
-      this,
-      fighter.screenX,
-      fighter.screenY - 120,
+    const target = event.target ? this.fighterForSlot(event.target) : fighter;
+    const outcome = event.bonusDamage
+      ? `${fighter.scribbit.name.toUpperCase()} → ${target.scribbit.name.toUpperCase()} • +${event.bonusDamage} DMG`
+      : `${fighter.scribbit.name.toUpperCase()} • ${POWER_UP_CATALOG[event.powerUpId].effect.toUpperCase()}`;
+    this.showFighterCombatRead(
+      fighter,
       POWER_UP_CATALOG[event.powerUpId].name.toUpperCase(),
-      21,
-      UI.goldText,
-      true
-    )
-      .setDepth(90)
-      .setStroke(UI.ink, 5);
-    if (this.reduceMotion) {
-      this.time.delayedCall(450, () => callout.destroy());
-      return;
-    }
-    this.tweens.add({
-      targets: callout,
-      y: callout.y - 34,
-      alpha: 0,
-      duration: 650,
-      ease: 'Cubic.easeOut',
-      onComplete: () => callout.destroy(),
-    });
+      outcome,
+      UI.goldText
+    );
+    this.game.canvas.dataset.lastPowerUpRead = `${event.powerUpId}|${event.actor}|${event.target ?? event.actor}|${event.bonusDamage ?? 0}`;
   }
 
   private presentAbilityLifecycleEvent(
@@ -1190,6 +1247,12 @@ export class Replay extends Scene {
       case 'healing': {
         const fighter = this.fighterForSlot(event.actor);
         this.setContinuousHitPoints(fighter, event.targetHitPoints);
+        this.showFighterCombatRead(
+          fighter,
+          POWER_UP_CATALOG[event.powerUpId].name.toUpperCase(),
+          `${fighter.scribbit.name.toUpperCase()} • +${event.amount} HP`,
+          UI.goldText
+        );
         return;
       }
       case 'damage': {
@@ -1231,6 +1294,19 @@ export class Replay extends Scene {
           impactPlan.damageTextScale,
           impactPlan.damageTextDurationMilliseconds
         );
+        if (
+          event.source === 'power_up' &&
+          getCombatRoleAdvantage(attacker.combatRole, target.combatRole) ===
+            'advantage'
+        ) {
+          this.showFighterCombatRead(
+            attacker,
+            'ADVANTAGE +10%',
+            `${attacker.scribbit.name.toUpperCase()} → ${target.scribbit.name.toUpperCase()}`,
+            UI.goldText
+          );
+          this.game.canvas.dataset.lastAdvantageCue = `${event.sourceFighter}|${event.targetFighter}|${event.amount}`;
+        }
         this.game.canvas.dataset.lastDamageText = impactPlan.damageText;
         this.game.canvas.dataset.lastDamageTarget = event.targetFighter;
         this.setContinuousHitPoints(target, event.targetHitPoints);
@@ -1257,24 +1333,32 @@ export class Replay extends Scene {
         if (attacker.scribbit.element === 'tide' && event.targetHitPoints > 0) {
           this.revealElementCue(attacker, 1_200 / this.speed);
         }
-        this.announceReplayCommentary({
-          kind: 'damage',
-          tick: event.tick,
-          sourceFighter: event.sourceFighter,
-          targetFighter: event.targetFighter,
-          sourceName: isShapePowerId(event.source)
-            ? getShapePowerBattleName(event.source)
-            : event.source === 'colorburst_echo'
-              ? `${getShapePowerBattleName('colorburst')} echo`
-              : getDamageSourceDisplayName(event.source),
-          sourcePower: isShapePowerId(event.source)
-            ? event.source
-            : event.source === 'colorburst_echo'
-              ? 'colorburst'
-              : null,
-          amount: event.amount,
-          critical: event.critical,
-        });
+        const deservesCommentary =
+          impactPlan.tier === 'heavy' ||
+          impactPlan.tier === 'critical' ||
+          isShapePowerId(event.source) ||
+          event.source === 'colorburst_echo' ||
+          event.source === 'power_up';
+        if (deservesCommentary) {
+          this.announceReplayCommentary({
+            kind: 'damage',
+            tick: event.tick,
+            sourceFighter: event.sourceFighter,
+            targetFighter: event.targetFighter,
+            sourceName: isShapePowerId(event.source)
+              ? getShapePowerBattleName(event.source)
+              : event.source === 'colorburst_echo'
+                ? `${getShapePowerBattleName('colorburst')} echo`
+                : getDamageSourceDisplayName(event.source),
+            sourcePower: isShapePowerId(event.source)
+              ? event.source
+              : event.source === 'colorburst_echo'
+                ? 'colorburst'
+                : null,
+            amount: event.amount,
+            critical: event.critical,
+          });
+        }
         return;
       }
       case 'burn_applied': {
@@ -1882,7 +1966,7 @@ export class Replay extends Scene {
   ): void {
     const laneX =
       this.battleLayout.viewportWidth * (fighter.side === 'a' ? 0.22 : 0.78);
-    const boundedY = Math.min(
+    const baseY = Math.min(
       this.battleLayout.arenaBottom - 120,
       Math.max(
         this.battleLayout.fighterPanelTop +
@@ -1891,7 +1975,39 @@ export class Replay extends Scene {
         fighter.screenY - 112
       )
     );
-    this.showCombatRead(laneX, boundedY, title, detail, color);
+    const laneAvailability = this.combatReadLaneAvailableAt[fighter.side];
+    const now = this.time.now;
+    let laneIndex = laneAvailability.findIndex(
+      (availableAt) => availableAt <= now
+    );
+    if (laneIndex < 0) {
+      laneIndex = laneAvailability.reduce(
+        (earliestIndex, availableAt, index) =>
+          availableAt < laneAvailability[earliestIndex]!
+            ? index
+            : earliestIndex,
+        0
+      );
+    }
+    const startsAt = Math.max(now, laneAvailability[laneIndex] ?? now);
+    laneAvailability[laneIndex] = startsAt + 1_050;
+    const boundedY = Math.min(
+      this.battleLayout.arenaBottom - 80,
+      Math.max(
+        this.battleLayout.fighterPanelTop +
+          this.battleLayout.fighterPanelHeight +
+          72,
+        baseY + (laneIndex - 1) * 58
+      )
+    );
+    const show = (): void => {
+      if (!this.scene.isActive()) return;
+      this.showCombatRead(laneX, boundedY, title, detail, color);
+      this.game.canvas.dataset.combatCalloutCollisions = '0';
+    };
+    const delay = startsAt - now;
+    if (delay > 0) this.time.delayedCall(delay, show);
+    else show();
   }
 
   private showCombatRead(
@@ -2108,7 +2224,12 @@ export class Replay extends Scene {
 
   // Camera punch-in: a quick zoom toward the struck fighter, then ease back.
   private cameraPunch(shakeIntensity: number): void {
-    if (this.reduceMotion || this.cameraShakeCooldownMilliseconds > 0) return;
+    if (
+      this.reduceMotion ||
+      shakeIntensity <= 0 ||
+      this.cameraShakeCooldownMilliseconds > 0
+    )
+      return;
     this.cameraShakeCooldownMilliseconds = 140 / this.speed;
     const intensity = Math.min(0.02, Math.max(0, shakeIntensity));
     const camera = this.cameras.main;
@@ -2318,6 +2439,12 @@ export class Replay extends Scene {
       return;
     }
     this.finished = true;
+    if (this.isFoundingReplay()) {
+      trackProgressionEvent('founding_replay_completed', {
+        scribbitId: this.report.a.id,
+        source: 'birth',
+      });
+    }
     this.stopPlaybackPresentation();
 
     const recap = planBattleRecap(transcript);
@@ -2365,6 +2492,13 @@ export class Replay extends Scene {
         founderEpisodeReceipt
       );
     });
+  }
+
+  private isFoundingReplay(): boolean {
+    return (
+      this.report.kind === 'exhibition' &&
+      this.report.a.bornDay === this.report.day
+    );
   }
 
   private showOutcome(
@@ -2774,71 +2908,98 @@ export class Replay extends Scene {
       this.time.delayedCall(1700, () => emitter.destroy());
     }
 
-    this.postFightActions?.destroy();
-    this.postFightActions = createPostFightActions(this, {
-      x: width / 2,
-      y: outcomeLayout.actionY,
-      accessibilityX: width / 2,
-      accessibilityY: outcomeLayout.actionY,
-      width: width - 70,
-      canChooseRival: actionEligibility.canChooseRival,
-      canBackContender: actionEligibility.canPickRumble,
-      canReplay: this.canReplaySavedReport(),
-      canShareClip: this.battleClipPromise !== null,
-      returnLabel: this.compactReturnButtonLabel(),
-      rivalActionCopy,
-      ...(firstChestAction && ownedFighter
-        ? {
-            primaryAction: firstChestAction,
-            onFirstChest: () => this.startFirstChestTrail(ownedFighter),
-          }
-        : {}),
-      onRivals: () => this.openRivalDraft(winner.scribbit),
-      onBackContender: () => this.goBackEntrants(),
-      onReplay: () => this.replayAgain(),
-      onShareClip: () => void this.shareRecordedBattleClip(),
-      onReturn: () => this.exit(),
-    });
-    this.postFightActions.container.setDepth(61);
     const powerUpOffer = getReplayPowerUpOffer(this);
-    if (powerUpOffer && this.isMine(winner.scribbit)) {
-      this.time.delayedCall(this.reduceMotion ? 0 : 360, () => {
-        if (!this.scene.isActive()) return;
-        const ownedPowerUpCount = winner.scribbit.powerUpIds?.length ?? 0;
-        this.powerUpDraft?.destroy();
-        this.powerUpDraft = openPowerUpDraft(
-          this,
-          powerUpOffer,
-          ownedPowerUpCount,
-          (selectedId) => {
-            const nextPowerUpIds = [
-              ...(winner.scribbit.powerUpIds ?? []),
-              selectedId,
-            ];
-            winner.scribbit.powerUpIds = nextPowerUpIds;
-            const arena = getArena(this);
-            if (arena) {
-              setArena(this, {
-                ...arena,
-                discoveredPowerUpIds: [
-                  ...new Set([
-                    ...(arena.discoveredPowerUpIds ?? []),
-                    selectedId,
-                  ]),
-                ],
-                myScribbits: arena.myScribbits.map((scribbit) =>
-                  scribbit.id === winner.scribbit.id
-                    ? { ...scribbit, powerUpIds: [...nextPowerUpIds] }
-                    : scribbit
-                ),
-              });
+    const canChoosePowerUp =
+      Boolean(powerUpOffer) && this.isMine(winner.scribbit);
+    const powerUpAction: ReplayPostFightAction | null = canChoosePowerUp
+      ? Object.freeze({
+          kind: 'powerUp',
+          label: 'CHOOSE POWER-UP',
+          accessibleLabel: 'Choose a new Power-Up for this Scribbit',
+          tone: 'gold',
+        })
+      : null;
+    const renderPostFightActions = (
+      primaryAction: ReplayPostFightAction | null,
+      delayReveal: boolean
+    ): void => {
+      this.postFightActions?.destroy();
+      this.postFightActions = createPostFightActions(this, {
+        x: width / 2,
+        y: outcomeLayout.actionY,
+        accessibilityX: width / 2,
+        accessibilityY: outcomeLayout.actionY,
+        width: width - 70,
+        canChooseRival: actionEligibility.canChooseRival,
+        canBackContender: actionEligibility.canPickRumble,
+        canReplay: this.canReplaySavedReport(),
+        canShareClip: this.battleClipPromise !== null,
+        returnLabel: this.compactReturnButtonLabel(),
+        rivalActionCopy,
+        ...(primaryAction ? { primaryAction } : {}),
+        ...(firstChestAction && ownedFighter
+          ? { onFirstChest: () => this.startFirstChestTrail(ownedFighter) }
+          : {}),
+        onPowerUp: () => {
+          if (!powerUpOffer || this.powerUpDraft) return;
+          const ownedPowerUpCount = winner.scribbit.powerUpIds?.length ?? 0;
+          this.postFightActions?.setAccessibleVisible(false);
+          this.powerUpDraft = openPowerUpDraft(
+            this,
+            powerUpOffer,
+            ownedPowerUpCount,
+            (selectedId) => {
+              const nextPowerUpIds = [
+                ...(winner.scribbit.powerUpIds ?? []),
+                selectedId,
+              ];
+              winner.scribbit.powerUpIds = nextPowerUpIds;
+              const arena = getArena(this);
+              if (arena) {
+                setArena(this, {
+                  ...arena,
+                  discoveredPowerUpIds: [
+                    ...new Set([
+                      ...(arena.discoveredPowerUpIds ?? []),
+                      selectedId,
+                    ]),
+                  ],
+                  myScribbits: arena.myScribbits.map((scribbit) =>
+                    scribbit.id === winner.scribbit.id
+                      ? { ...scribbit, powerUpIds: [...nextPowerUpIds] }
+                      : scribbit
+                  ),
+                });
+              }
+              clearReplayPowerUpOffer(this);
+              this.powerUpDraft = null;
+              renderPostFightActions(firstChestAction, false);
             }
-            clearReplayPowerUpOffer(this);
-            this.powerUpDraft = null;
-          }
-        );
+          );
+        },
+        onRivals: () => this.openRivalDraft(winner.scribbit),
+        onBackContender: () => this.goBackEntrants(),
+        onReplay: () => this.replayAgain(),
+        onShareClip: () => void this.shareRecordedBattleClip(),
+        onReturn: () => this.exit(),
       });
-    }
+      this.postFightActions.container.setDepth(61);
+      if (!delayReveal || this.reduceMotion) return;
+      const actions = this.postFightActions;
+      actions.container.setAlpha(0);
+      actions.setAccessibleVisible(false);
+      this.time.delayedCall(480, () => {
+        if (!this.scene.isActive() || this.postFightActions !== actions) return;
+        actions.setAccessibleVisible(true);
+        this.tweens.add({
+          targets: actions.container,
+          alpha: 1,
+          duration: 220,
+          ease: 'Cubic.easeOut',
+        });
+      });
+    };
+    renderPostFightActions(powerUpAction ?? firstChestAction, true);
   }
 
   // Loss flow — no dead ends. Lifespan remaining + a server-authored rival

@@ -3,6 +3,7 @@ import type { Context as HonoContext, Handler, MiddlewareHandler } from 'hono';
 import { context, media, redis, reddit } from '@devvit/web/server';
 import { createHash, randomUUID } from 'node:crypto';
 import type {
+  AcknowledgeMaturityResponse,
   ArenaErrorResponse,
   ArenaState,
   BattleReport,
@@ -50,6 +51,11 @@ import {
 import { isScoutNotebookReplayDay } from '../../shared/scoutnotebook';
 import { getPaintBucketState } from '../../shared/paintbucket';
 import { dailyLoginRewardAfterClaims } from '../../shared/dailylogin';
+import {
+  isProgressionEventName,
+  type ProgressionEventRequest,
+  type ProgressionEventResponse,
+} from '../../shared/progressionanalytics';
 import { selectCommunityDoodleDare } from '../../shared/content/communitydrawthemes';
 import {
   isLegacyCardCursor,
@@ -81,6 +87,11 @@ import {
 } from '../core/clout';
 import { hashTextToSeed } from '../core/random';
 import { recordDailyPlay } from '../core/streak';
+import {
+  acknowledgeScribbitMaturity,
+  loadPendingMaturityScribbitIds,
+} from '../core/maturity';
+import { recordProgressionEvent } from '../core/progressionAnalytics';
 import {
   loadLegacyCardPage,
   loadLegacyReturnReceipt,
@@ -886,6 +897,7 @@ registerPlayerMutatingGet('/arena', async (c) => {
     const forecast = await ensureForecastForDay(redis, dayNumber);
     const player = await getCurrentPlayer();
     let myScribbits: Scribbit[] = [];
+    let pendingMaturityScribbitIds: string[] = [];
     let discoveredPowerUpIds: ArenaState['discoveredPowerUpIds'] = [];
     let pendingPowerUpOffers: ArenaState['pendingPowerUpOffers'] = [];
     let hasCreatedScribbit = false;
@@ -896,8 +908,10 @@ registerPlayerMutatingGet('/arena', async (c) => {
     let bossChallengedToday = false;
     let myBackedScribbitId: string | null = null;
     let playStreakDays = 0;
+    let activePlayDays = 0;
     let dailyLogin: ArenaState['dailyLogin'] = {
       claimedTrackDays: 0,
+      totalClaimedDays: 0,
       claimedToday: false,
       nextReward: dailyLoginRewardAfterClaims(0),
     };
@@ -922,7 +936,9 @@ registerPlayerMutatingGet('/arena', async (c) => {
     let completedCommunityThemeDrawCount = 0;
 
     if (player) {
-      playStreakDays = (await recordDailyPlay(redis, player.userId, now)).days;
+      const playStreak = await recordDailyPlay(redis, player.userId, now);
+      playStreakDays = playStreak.days;
+      activePlayDays = playStreak.totalDays;
       const [
         dailyFlags,
         inventory,
@@ -964,6 +980,12 @@ registerPlayerMutatingGet('/arena', async (c) => {
       ]);
       completedCommunityThemeDrawCount = loadedCompletedCommunityThemeDrawCount;
       myScribbits = loadedScribbits;
+      pendingMaturityScribbitIds = await loadPendingMaturityScribbitIds(
+        redis,
+        player.userId,
+        myScribbits,
+        dayNumber
+      );
       pendingPowerUpOffers = (
         await Promise.all(
           myScribbits.map((scribbit) =>
@@ -1088,6 +1110,7 @@ registerPlayerMutatingGet('/arena', async (c) => {
           ? currentChampion
           : null,
       myScribbits,
+      pendingMaturityScribbitIds,
       discoveredPowerUpIds,
       pendingPowerUpOffers,
       drawCharges,
@@ -1104,6 +1127,7 @@ registerPlayerMutatingGet('/arena', async (c) => {
       todayEntrants,
       myBackedScribbitId,
       playStreakDays,
+      activePlayDays,
       dailyLogin,
       myClout,
       myInk,
@@ -1144,6 +1168,78 @@ api.post('/daily-login/claim', async (c) => {
   } catch (error) {
     console.error('Daily login claim failed:', error);
     return serverError(c, 'Your daily reward would not open. Try again soon.');
+  }
+});
+
+api.post('/maturity/acknowledge', async (c) => {
+  const player = await getCurrentPlayer();
+  if (!player) return unauthorized(c, 'Sign in to continue.');
+  const scribbitId = readScribbitId(await readJsonBody(c));
+  if (!scribbitId) return badRequest(c, 'Choose a valid Scribbit.');
+  try {
+    const dayNumber = await ensureCurrentArenaDay(redis, new Date());
+    const scribbit = await loadScribbit(redis, scribbitId);
+    if (
+      !scribbit ||
+      !(await isScribbitOwnedByUser(redis, scribbitId, player.userId)) ||
+      getScribbitLifecycleStage(scribbit, dayNumber) !== 'mature'
+    ) {
+      return conflict(c, 'That Scribbit is not ready for maturity.');
+    }
+    await acknowledgeScribbitMaturity(
+      redis,
+      player.userId,
+      scribbitId,
+      Date.now()
+    );
+    return c.json<AcknowledgeMaturityResponse>({ scribbitId });
+  } catch (error) {
+    console.error('Maturity acknowledgement failed:', error);
+    return serverError(c, 'The graduation stamp would not stick. Try again.');
+  }
+});
+
+api.post('/progression-event', async (c) => {
+  const player = await getCurrentPlayer();
+  if (!player) return unauthorized(c, 'Sign in to record progress.');
+  const body: unknown = await readJsonBody(c);
+  if (!isRecord(body)) return badRequest(c, 'Invalid progression event.');
+  const request = body as Partial<ProgressionEventRequest>;
+  if (
+    typeof request.eventId !== 'string' ||
+    request.eventId.length < 8 ||
+    request.eventId.length > 100 ||
+    !isProgressionEventName(request.eventName) ||
+    typeof request.sessionId !== 'string' ||
+    request.sessionId.length < 8 ||
+    request.sessionId.length > 100 ||
+    (request.scribbitId !== undefined &&
+      !readScribbitIdentifier(request.scribbitId)) ||
+    (request.source !== undefined &&
+      (typeof request.source !== 'string' || request.source.length > 80))
+  ) {
+    return badRequest(c, 'Invalid progression event.');
+  }
+  try {
+    const now = new Date();
+    const arenaDay = await ensureCurrentArenaDay(redis, now);
+    const result = await recordProgressionEvent(redis, {
+      userId: player.userId,
+      eventId: request.eventId,
+      eventName: request.eventName,
+      sessionId: request.sessionId,
+      ...(request.scribbitId ? { scribbitId: request.scribbitId } : {}),
+      ...(request.source ? { source: request.source } : {}),
+      arenaDay,
+      occurredAtMs: now.getTime(),
+    });
+    return c.json<ProgressionEventResponse>({
+      accepted: true,
+      duplicate: result.duplicate,
+    });
+  } catch (error) {
+    console.error('Progression event failed:', error);
+    return serverError(c, 'Progress could not be measured.');
   }
 });
 

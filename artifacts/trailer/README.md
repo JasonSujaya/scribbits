@@ -5,34 +5,29 @@ Remotion renderer from fresh captures of the live local game.
 
 ## Outputs
 
-- `scribbits-trailer.mp4` — final 1080x1920 trailer with AAC audio
-- `scribbits-trailer-contact-sheet.png` — visual review sheet
+- `scribbits-trailer-first-cut-proper-drawing.mp4` — final 1080x1920 trailer with AAC audio
+- `scribbits-trailer-first-cut-proper-drawing-contact-sheet.png` — visual review sheet
 - `scribbits-trailer.imageforce.json` — editable ImageForce composition
-- `assets/human-drawn-hero.png` — final hand-drawn hero used by the master
 - `gameplay/` — captured and trimmed real-game clips
 
 ## Rebuild
 
-Start the seeded Scribbits mock app:
+Start Scribbits and record Wobble Bean with real mouse strokes on the real game
+canvas:
+
+```sh
+MOCK_SEEDED_SCRIBBITS=1 ./mock.command
+node app/scripts/capture-trailer-real-drawing.mjs
+```
+
+Restart the mock with that exact exported drawing replacing the seeded trailer
+fighter, then capture battle and Gallery:
 
 ```sh
 MOCK_SEEDED_SCRIBBITS=1 \
-MOCK_TRAILER_HERO_PATH="$PWD/artifacts/trailer/assets/human-drawn-hero.png" \
+MOCK_TRAILER_HERO_PATH=/Users/jasons/Github/Hackathon/scribbits/artifacts/trailer/gameplay/wobble-bean.png \
 ./mock.command
-```
-
-Capture the supporting gameplay:
-
-```sh
 node app/scripts/capture-trailer-gameplay.mjs
-```
-
-For the final master, record the creator drawing by hand. The script opens a
-real browser, records the final five seconds of drawing, waits for the saved
-Scribbit to reach Home, and creates both trailer-ready clips automatically:
-
-```sh
-node app/scripts/capture-trailer-manual-drawing.mjs
 ```
 
 Rebuild the composition:
@@ -41,10 +36,10 @@ Rebuild the composition:
 node app/scripts/build-scribbits-trailer-project.mjs
 ```
 
-The builder prefers `draw-manual.mp4` and `home-manual.mp4` when present. Until
-then it uses the automated Paper Spark clips as a preview fallback. The trailer
-also includes the live Growing and Retired gallery so older Scribbits remain
-part of the story.
+The builder requires `draw-manual.mp4`, `home-manual.mp4`, and
+`battle-wobble-bean.mp4`, and `gallery-wobble-bean.mp4`; there is no
+old-character fallback. The final structure matches the first cut: hook, real
+drawing, Home, battle, Gallery, and CTA.
 
 Render through ImageForce:
 
@@ -52,6 +47,6 @@ Render through ImageForce:
 cd /Users/jasons/Github/Components/ImageForce
 node frontend/scripts/render-remotion-composition.mjs \
   /Users/jasons/Github/Hackathon/scribbits/artifacts/trailer/scribbits-trailer.imageforce.json \
-  /Users/jasons/Github/Hackathon/scribbits/artifacts/trailer/scribbits-trailer.mp4 \
-  /Users/jasons/Github/Hackathon/scribbits/artifacts/trailer/scribbits-trailer.render.json
+  /Users/jasons/Github/Hackathon/scribbits/artifacts/trailer/scribbits-trailer-first-cut-proper-drawing.mp4 \
+  /Users/jasons/Github/Hackathon/scribbits/artifacts/trailer/scribbits-trailer-first-cut-proper-drawing.render.json
 ```

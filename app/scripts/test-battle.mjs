@@ -1371,9 +1371,11 @@ assert.deepEqual(publicRouteInventory, [
   'POST /api/equip-title',
   'POST /api/free-drawing',
   'POST /api/legacy-cards/seen',
+  'POST /api/maturity/acknowledge',
   'POST /api/merge-gear',
   'POST /api/power-up/choose',
   'POST /api/practice-battle',
+  'POST /api/progression-event',
   'POST /api/remove-scribbit',
   'POST /api/report-scribbit',
   'POST /api/retire-scribbit',
@@ -3007,7 +3009,7 @@ assert.match(
   /angle: \{ from: -2\.4, to: 2\.4 \}[\s\S]{0,140}repeat: 2/,
   'the fight sticker should receive a short tactile wobble'
 );
-assert.match(replaySceneSource, /cameras\.main\.shake\(240, 0\.008\)/);
+assert.match(replaySceneSource, /cameras\.main\.shake\(140, 0\.006\)/);
 assert.doesNotMatch(
   replaySceneSource,
   /strokePaperArenaBoundary|floorGraphics\.fillRect/,
@@ -3464,9 +3466,11 @@ try {
     freshArena.body.dailyLogin,
     {
       claimedTrackDays: 0,
+      totalClaimedDays: 0,
       claimedToday: false,
       nextReward: {
         trackDay: 1,
+        cycleDay: null,
         ink: 1,
         gearId: null,
       },
@@ -4013,12 +4017,12 @@ assert.match(
 pass('Scout Notebook content stays complete, safe, and nonrepeating');
 
 const firstPlayStreak = streakCore.advancePlayStreak(
-  { lastPlayedDateKey: undefined, days: 0 },
+  { lastPlayedDateKey: undefined, days: 0, totalDays: 0 },
   '20260708'
 );
 assert.deepEqual(
   firstPlayStreak,
-  { lastPlayedDateKey: '20260708', days: 1 },
+  { lastPlayedDateKey: '20260708', days: 1, totalDays: 1 },
   'first expanded session should begin a one-day streak'
 );
 assert.deepEqual(

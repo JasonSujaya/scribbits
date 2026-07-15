@@ -13,6 +13,7 @@ type AppDockProgressionState = Pick<
   | 'hasCompletedBattle'
   | 'myScribbits'
   | 'capsuleProgress'
+  | 'activePlayDays'
 >;
 
 export function isAppDockTabUnlocked(
@@ -28,5 +29,6 @@ export function isAppDockTabUnlocked(
 
   if (tab === 'battles') return hasCreatedScribbit;
   if (tab === 'shop') return hasCompletedBattle;
-  return hasOpenedMysteryInk;
+  if (tab === 'bag') return hasOpenedMysteryInk;
+  return hasOpenedMysteryInk && state.activePlayDays >= 2;
 }

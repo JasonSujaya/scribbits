@@ -1,6 +1,6 @@
 # Growing Progression
 
-Generated: 2026-07-15T11:54:30.877Z
+Generated: 2026-07-15T14:54:06.429Z
 
 Runner: `app/tools/balancer/run.mjs`
 

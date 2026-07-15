@@ -7,6 +7,9 @@
 
 _Last verified: 2026-07-15 against commit 499d07a and the current uncommitted worktree. Update with the app-overview skill._
 
+Progression release decisions and measurable acceptance gates live in
+[`plans/progression-success-criteria.md`](plans/progression-success-criteria.md).
+
 ## What this app is
 
 Scribbits Arena is a portrait Reddit game where each player draws one creature, called a Scribbit, and the drawing's shape becomes its combat build. The server analyzes submissions, owns progression and outcomes, and returns deterministic battle reports; the client presents those reports as lively real-time-looking replays. A Scribbit grows for three days, remains playable with locked base stats when Mature, and becomes a permanent Archived card when its owner retires it or the three-slot Mature roster overflows. (`app/src/shared/arena.ts`, `app/src/server/core/scribbit.ts`)

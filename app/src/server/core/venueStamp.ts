@@ -6,8 +6,10 @@ import {
   type VenueStampState,
 } from '../../shared/arena';
 import {
+  BATTLE_ARENA_IDS,
   getBattleArenaForDay,
   getNextBattleArenaUnlock,
+  ARENA_TOUR_NODE_COUNT,
 } from '../../shared/battlearena';
 import type { BattleArenaId } from '../../shared/battlearena';
 import type { ArenaStorage, ArenaTransaction } from './storage';
@@ -43,8 +45,16 @@ export const getVenueAttemptsKey = (
 export const getUserVenueBoardsKey = (userId: string): string =>
   `venue:user:${userId}:boards`;
 
+export const getUserVenueTourKey = (userId: string): string =>
+  `venue:user:${userId}:tour`;
+
 const userBoardMember = (day: number, arenaId: BattleArenaId): string =>
   `${day}|${arenaId}`;
+const tourArenaField = (arenaId: BattleArenaId): string => `arena:${arenaId}`;
+const tourDayField = (day: number): string => `day:${day}`;
+const tourNodeCountField = 'node-count';
+const tourEffortField = 'effort';
+const tourEffortTarget = 3;
 
 const parseUserBoardMember = (
   value: string
@@ -160,6 +170,7 @@ export const recordVenueStampAttempt = async (
   const attemptsKey = getVenueAttemptsKey(report.day, report.battleArenaId);
   const rankingKey = getVenueRankingKey(report.day, report.battleArenaId);
   const userBoardsKey = getUserVenueBoardsKey(userId);
+  const userTourKey = getUserVenueTourKey(userId);
 
   for (
     let attemptNumber = 0;
@@ -168,26 +179,67 @@ export const recordVenueStampAttempt = async (
   ) {
     let transaction: ArenaTransaction | undefined;
     try {
-      transaction = await storage.watch(attemptsKey);
-      const existing = parseAttempt(await storage.hGet(attemptsKey, userId));
-      if (!attemptIsBetter(incoming, existing)) {
+      transaction = await storage.watch(attemptsKey, userTourKey);
+      const [existing, existingTourDayStamp, storedNodeCount, storedEffort] =
+        await Promise.all([
+          storage.hGet(attemptsKey, userId).then(parseAttempt),
+          storage.hGet(userTourKey, tourDayField(report.day)),
+          storage.hGet(userTourKey, tourNodeCountField),
+          storage.hGet(userTourKey, tourEffortField),
+        ]);
+      const currentNodeCount = Number.isSafeInteger(Number(storedNodeCount))
+        ? Math.max(0, Number(storedNodeCount))
+        : 0;
+      const shouldUpdateAttempt = attemptIsBetter(incoming, existing);
+      const upgradesEffortToClear =
+        incoming.cleared && existingTourDayStamp?.startsWith('effort|');
+      const shouldAddTourProgress =
+        (!existingTourDayStamp || upgradesEffortToClear) &&
+        currentNodeCount < ARENA_TOUR_NODE_COUNT;
+      if (!shouldUpdateAttempt && !shouldAddTourProgress) {
         await transaction.unwatch();
         return;
       }
       await transaction.multi();
-      await transaction.hSet(attemptsKey, {
-        [userId]: JSON.stringify(incoming),
-      });
-      if (incoming.clearMilliseconds !== null) {
+      if (shouldUpdateAttempt) {
+        await transaction.hSet(attemptsKey, {
+          [userId]: JSON.stringify(incoming),
+        });
+      }
+      if (shouldUpdateAttempt && incoming.clearMilliseconds !== null) {
         await transaction.zAdd(rankingKey, {
           member: userId,
           score: -incoming.clearMilliseconds,
         });
       }
-      await transaction.zAdd(userBoardsKey, {
-        member: userBoardMember(report.day, report.battleArenaId),
-        score: report.day,
-      });
+      if (shouldUpdateAttempt) {
+        await transaction.zAdd(userBoardsKey, {
+          member: userBoardMember(report.day, report.battleArenaId),
+          score: report.day,
+        });
+      }
+      if (shouldAddTourProgress) {
+        const currentEffort = Number.isSafeInteger(Number(storedEffort))
+          ? Math.max(0, Math.min(tourEffortTarget - 1, Number(storedEffort)))
+          : 0;
+        const nextEffortBeforeAdvance =
+          currentEffort + (upgradesEffortToClear ? 0 : 1);
+        const advancesNode =
+          incoming.cleared || nextEffortBeforeAdvance >= tourEffortTarget;
+        const nextNodeCount = advancesNode
+          ? Math.min(ARENA_TOUR_NODE_COUNT, currentNodeCount + 1)
+          : currentNodeCount;
+        await transaction.hSet(userTourKey, {
+          ...(incoming.cleared
+            ? { [tourArenaField(report.battleArenaId)]: '1' }
+            : {}),
+          [tourDayField(report.day)]: `${incoming.cleared ? 'clear' : 'effort'}|${report.id}`,
+          [tourNodeCountField]: nextNodeCount.toString(),
+          [tourEffortField]: advancesNode
+            ? '0'
+            : nextEffortBeforeAdvance.toString(),
+        });
+      }
       await transaction.expire(attemptsKey, venueStampTtlSeconds);
       await transaction.expire(rankingKey, venueStampTtlSeconds);
       await transaction.expire(userBoardsKey, venueStampTtlSeconds);
@@ -196,7 +248,21 @@ export const recordVenueStampAttempt = async (
     } catch (error) {
       await discardWatchedTransaction(transaction, 'Venue Stamp update');
       const stored = parseAttempt(await storage.hGet(attemptsKey, userId));
-      if (stored && !attemptIsBetter(incoming, stored)) return;
+      const storedTourStamp = await storage.hGet(
+        userTourKey,
+        tourDayField(report.day)
+      );
+      const recoveredNodeCount = Number(
+        await storage.hGet(userTourKey, tourNodeCountField)
+      );
+      if (
+        stored &&
+        !attemptIsBetter(incoming, stored) &&
+        (storedTourStamp ||
+          recoveredNodeCount >= ARENA_TOUR_NODE_COUNT)
+      ) {
+        return;
+      }
       throw error;
     }
   }
@@ -221,7 +287,7 @@ export const loadVenueStampState = async (
   const arena = getBattleArenaForDay(day);
   const attemptsKey = getVenueAttemptsKey(day, arena.id);
   const rankingKey = getVenueRankingKey(day, arena.id);
-  const [attempt, dailyRank, clearCount] = await Promise.all([
+  const [attempt, dailyRank, clearCount, storedTour] = await Promise.all([
     userId
       ? storage.hGet(attemptsKey, userId).then(parseAttempt)
       : Promise.resolve(null),
@@ -229,7 +295,23 @@ export const loadVenueStampState = async (
       ? getReverseRank(storage, rankingKey, userId)
       : Promise.resolve(null),
     storage.zCard(rankingKey),
+    userId
+      ? storage.hGetAll(getUserVenueTourKey(userId))
+      : Promise.resolve({} as Record<string, string>),
   ]);
+  const tourClearedArenaIds = BATTLE_ARENA_IDS.filter(
+    (arenaId) =>
+      storedTour[tourArenaField(arenaId)] !== undefined ||
+      storedTour[arenaId] !== undefined
+  );
+  const storedTourNodeCount = Number(storedTour[tourNodeCountField]);
+  const storedTourEffort = Number(storedTour[tourEffortField]);
+  const tourClearedCount = Number.isSafeInteger(storedTourNodeCount)
+    ? Math.max(
+        0,
+        Math.min(ARENA_TOUR_NODE_COUNT, storedTourNodeCount)
+      )
+    : tourClearedArenaIds.length;
   return {
     arenaId: arena.id,
     arenaName: arena.name,
@@ -241,6 +323,14 @@ export const loadVenueStampState = async (
     dailyRank: attempt?.cleared ? dailyRank : null,
     clearCount,
     nextUnlock: getNextBattleArenaUnlock(day),
+    tourClearedArenaIds,
+    tourClearedCount,
+    tourTotal: ARENA_TOUR_NODE_COUNT,
+    tourComplete: tourClearedCount >= ARENA_TOUR_NODE_COUNT,
+    tourEffort: Number.isSafeInteger(storedTourEffort)
+      ? Math.max(0, Math.min(tourEffortTarget - 1, storedTourEffort))
+      : 0,
+    tourEffortTarget,
   };
 };
 
@@ -314,4 +404,5 @@ export const removeVenueStampDataForUser = async (
     await storage.hDel(getVenueAttemptsKey(board.day, board.arenaId), [userId]);
   }
   await storage.del(userBoardsKey);
+  await storage.del(getUserVenueTourKey(userId));
 };

@@ -290,7 +290,7 @@ and personal Legacy Cards outside the primary dock.
       collection/rank/pity overlay, server-confirmed pull ceremony, and persisted
       post-pull progress with no runtime errors on `localhost:8902` (July 10).
 - [x] Mystery Ink now presents clickable generated hand-drawn chest states, a Loot
-      banner with real Gear art, visible 70/25/5 odds, and Epic pity by open ten.
+      banner with real Gear art, now-current 70/25/4/1 odds, and Epic-or-better pity by open ten.
       Generated Ink tokens label the wallet and exact `OPEN ×1` / `OPEN ×10`
       costs. Ten rewards reveal in paid order before the complete grid appears;
       server-safe retries resume the unfinished open, and there is no 100-open
@@ -317,7 +317,7 @@ and personal Legacy Cards outside the primary dock.
       out-of-order same-activation refreshes are ignored. Deterministic runtime
       cases cover all four outcomes (July 13).
 - [x] Fresh-browser proof verifies the complete earned loop from 0 Ink through
-      submission, first spar win, care, a 5-Ink pull, tangible reward-art reveal,
+      the original submission, first spar win, Care, and 5-Ink pull loop, tangible reward-art reveal,
       and persisted 1/28 Collection progress in the original 28-item catalog on
       `localhost:8902` (July 11).
 - [x] Deterministic replay coverage verifies four transcript-driven power

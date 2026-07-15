@@ -310,11 +310,11 @@ account, and are rejected above 8 MB. Accepted clips leave the app boundary and
 are hosted by Reddit media.
 
 Mystery Ink is earned only through play. Shop owns the chest ceremony rather
-than competing with the Arena fight or Bag equipment. Chests cost 5 Ink each, use visible 70/25/5
+than competing with the Arena fight or Bag equipment. Chests cost 7 Ink each, use visible 70/25/4/1
 rarity odds, guarantee an Epic by open 10, and reveal the actual reward art in
 place. Players can open one or ten at a time; there is no 100-open or auto-repeat
-action. A completed first Rival Run now leads through only the Care still needed
-for 5 Ink, then opens a simplified first-chest Shop. That first pull preserves
+action. A completed first Rival Run leads to a simplified first-chest Shop once
+the player has the required 7 Ink. That first pull preserves
 the published rarity odds while guaranteeing equippable Gear, and its reveal
 opens Bag on the matching equipment category. The Reddit Gold Styles card is a
 disabled cosmetic-only preview. Shop's stage, two chest states, and Ink token
