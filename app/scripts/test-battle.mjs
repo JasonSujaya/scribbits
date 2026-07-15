@@ -1412,6 +1412,10 @@ const schedulerRouteSource = readFileSync(
   join(repoRoot, 'src', 'server', 'routes', 'scheduler.ts'),
   'utf8'
 );
+const arenaMaintenanceSource = readFileSync(
+  join(repoRoot, 'src', 'server', 'core', 'arenaMaintenance.ts'),
+  'utf8'
+);
 const inspectTypeScriptModule = (source) => {
   const sourceFile = typescript.createSourceFile(
     'inspection.ts',
@@ -1479,38 +1483,47 @@ for (const routeSource of [menuRouteSource]) {
   }
 }
 const triggerInspection = inspectTypeScriptModule(installTriggerSource);
-assert.deepEqual(triggerInspection.imports.get('../core/post'), [
+assert.deepEqual(triggerInspection.imports.get('../core/arenaMaintenance'), [
   {
-    imported: 'ensureCurrentArenaPost',
-    local: 'ensureCurrentArenaPost',
+    imported: 'maintainArena',
+    local: 'maintainArena',
   },
 ]);
-assert.deepEqual(triggerInspection.imports.get('../core/arenaStore'), [
-  {
-    imported: 'ensureCurrentArenaDay',
-    local: 'ensureCurrentArenaDay',
-  },
-]);
+assert.equal(triggerInspection.imports.has('../core/post'), false);
+assert.equal(triggerInspection.imports.has('../core/arenaStore'), false);
 assert.equal(
-  triggerInspection.calledIdentifiers.filter(
-    (name) => name === 'ensureCurrentArenaPost'
-  ).length,
+  triggerInspection.calledIdentifiers.filter((name) => name === 'maintainArena')
+    .length,
   1
 );
 assert.equal(
   triggerInspection.calledIdentifiers.filter(
-    (name) => name === 'ensureCurrentArenaDay'
+    (name) => name === 'ensureCurrentArenaPost'
   ).length,
-  1
+  0
 );
 assert.equal(
   triggerInspection.calledIdentifiers.filter(
     (name) => name === 'ensureInitialSeason'
   ).length,
-  1
+  0
 );
 const schedulerInspection = inspectTypeScriptModule(schedulerRouteSource);
-assert.deepEqual(schedulerInspection.imports.get('../core/post'), [
+assert.deepEqual(schedulerInspection.imports.get('../core/arenaMaintenance'), [
+  {
+    imported: 'maintainArena',
+    local: 'maintainArena',
+  },
+]);
+assert.equal(schedulerInspection.imports.has('../core/post'), false);
+assert.equal(
+  schedulerInspection.calledIdentifiers.filter(
+    (name) => name === 'maintainArena'
+  ).length,
+  1
+);
+const maintenanceInspection = inspectTypeScriptModule(arenaMaintenanceSource);
+assert.deepEqual(maintenanceInspection.imports.get('./post'), [
   {
     imported: 'getOrCreateArenaPost',
     local: 'getOrCreateArenaPost',
@@ -1521,14 +1534,14 @@ assert.deepEqual(schedulerInspection.imports.get('../core/post'), [
   },
 ]);
 assert.equal(
-  schedulerInspection.calledIdentifiers.filter(
+  maintenanceInspection.calledIdentifiers.filter(
     (name) => name === 'getOrCreateArenaPost'
   ).length,
   2,
   'nightly publication must retain its two explicit-day post calls'
 );
 assert.equal(
-  schedulerInspection.calledIdentifiers.includes('ensureCurrentArenaPost'),
+  maintenanceInspection.calledIdentifiers.includes('ensureCurrentArenaPost'),
   false
 );
 const aliasedSchedulerImport = inspectTypeScriptModule(
@@ -1571,13 +1584,50 @@ assert.equal(installPostResponse.status, 200);
 assert.deepEqual(await installPostResponse.json(), {
   status: 'success',
   message:
-    'Arena post created in subreddit scribbits_test with id api-contract-post-1 (trigger: install)',
+    'Arena ready in subreddit scribbits_test with post api-contract-post-1 (trigger: install)',
 });
+const canonicalInstallDay = Number(
+  productionApiContract.getApiContractString('arena:currentDay')
+);
+assert.ok(Number.isSafeInteger(canonicalInstallDay));
 assert.equal(
   productionApiContract.apiContractRuntimeState.submittedPosts,
   1,
   'menu and install paths must converge on one idempotent current Arena post'
 );
+
+productionApiContract.resetApiContractRuntime();
+productionApiContract.setApiContractString(
+  'arena:currentDay',
+  String(canonicalInstallDay - 1)
+);
+productionApiContract.setApiContractString(
+  `arena:post:${canonicalInstallDay - 1}`,
+  't3_api-contract-missed-day'
+);
+productionApiContract.setApiContractString(
+  `arena:post:${canonicalInstallDay}`,
+  't3_api-contract-current-day'
+);
+const catchUpUpgradeResponse = await productionApiContract.app.request(
+  '/internal/triggers/on-app-upgrade',
+  {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ type: 'stale-upgrade' }),
+  }
+);
+assert.equal(catchUpUpgradeResponse.status, 200);
+assert.equal(
+  productionApiContract.getApiContractString('arena:currentDay'),
+  String(canonicalInstallDay)
+);
+assert.equal(
+  productionApiContract.apiContractRuntimeState.submittedComments,
+  1,
+  'upgrade catch-up must publish the missed Rumble result'
+);
+pass('app upgrades catch up a stale Arena day before players return');
 
 productionApiContract.resetApiContractRuntime();
 const reversedInstallResponse = await productionApiContract.app.request(
@@ -8486,16 +8536,16 @@ const colorburstTimeline =
   debugFixtureReportByPower.colorburst.simulation.timeline;
 assert.ok(
   colorburstTimeline.some(
+    (event) =>
+      event.kind === 'damage' &&
+      event.sourceFighter === 'a' &&
+      event.source === 'colorburst'
+  ) &&
+    colorburstTimeline.some(
       (event) =>
         event.kind === 'damage' &&
         event.sourceFighter === 'a' &&
-        event.source === 'colorburst'
-  ) &&
-    colorburstTimeline.some(
-        (event) =>
-          event.kind === 'damage' &&
-          event.sourceFighter === 'a' &&
-          event.source === 'colorburst_echo'
+        event.source === 'colorburst_echo'
     ),
   'Colorburst showcase should prove its cone and echo'
 );

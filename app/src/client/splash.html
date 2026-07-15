@@ -7,10 +7,10 @@
     <title data-i18n="app.name">Scribbits</title>
   </head>
   <body class="app">
-    <!-- Static fallback markup keeps the Reddit inline card useful before JS. -->
+    <!-- A complete static-first hook keeps the feed card useful before JS. -->
     <main class="page">
-      <div class="tape tape-left" aria-hidden="true"></div>
-      <div class="tape tape-right" aria-hidden="true"></div>
+      <span class="tape tape-left" aria-hidden="true"></span>
+      <span class="tape tape-right" aria-hidden="true"></span>
 
       <header class="splash-header">
         <h1 class="logo">
@@ -20,102 +20,65 @@
             alt="Scribbits"
           />
         </h1>
-        <p class="tagline" data-i18n="splash.tagline">
-          Draw a Scribbit. Watch it fight.
-        </p>
+        <span class="hook-stamp" data-i18n="splash.hook.drawnByYou">
+          DRAWN BY YOU
+        </span>
       </header>
 
-      <section class="creation-story" aria-label="Draw, then battle">
-        <article class="story-panel draw-panel">
-          <div class="step-heading">
-            <span class="step-number">1</span>
-            <strong data-i18n="splash.story.draw">DRAW IT</strong>
-          </div>
-          <div class="creation-card">
-            <span
-              class="creation-source"
-              id="creation-source"
-              data-i18n="splash.showcase.sketchbook"
-            >
-              FROM OUR SKETCHBOOK
-            </span>
-            <img
-              class="hero-creation-image"
-              id="hero-creation-image"
-              src="./assets/splash-doodle-mossmop.webp"
-              alt="Mossmop, drawn in Scribbits"
-              decoding="async"
-            />
-            <strong class="creation-name" id="hero-creation-name">
-              MOSSMOP
-            </strong>
-            <span class="creation-artist" id="hero-creation-artist">
-              BY SCRIBBITS
-            </span>
-          </div>
-        </article>
+      <section class="hook-copy" aria-labelledby="hook-title">
+        <p data-i18n="splash.hook.doodle">YOUR DOODLE.</p>
+        <h2 id="hook-title" data-i18n="splash.hook.fighter">YOUR FIGHTER.</h2>
+      </section>
 
-        <div class="story-arrow" aria-hidden="true">
-          <span data-i18n="splash.story.becomes">BECOMES</span>
-          <strong>&rarr;</strong>
-        </div>
-
-        <article class="story-panel battle-panel">
-          <div class="step-heading">
-            <span class="step-number">2</span>
-            <strong data-i18n="splash.story.battle">BATTLE</strong>
-          </div>
-          <div class="battle-frame">
-            <div
-              class="battle-stage"
-              id="battle-poster"
-              role="img"
-              aria-label="Two hand-drawn Scribbits facing off in the arena"
-            >
-              <span class="battle-health battle-health-left"></span>
-              <span class="battle-health battle-health-right"></span>
+      <section class="battle-card" aria-label="A hand-drawn Scribbits battle">
+        <span
+          class="battle-kicker"
+          id="battle-proof-stamp"
+          data-i18n="splash.hook.shapeStats"
+        >
+          SHAPE BECOMES STATS
+        </span>
+        <div class="battle-stage">
+          <div class="battle-poster" id="battle-poster">
+            <span class="battle-health battle-health-left"></span>
+            <span class="battle-health battle-health-right"></span>
+            <figure class="fighter fighter-left">
               <img
-                class="battle-fighter battle-fighter-left"
                 id="battle-hero-image"
                 src="./assets/splash-doodle-mossmop.webp"
-                alt=""
+                alt="Mossmop, drawn in Scribbits"
+                decoding="async"
               />
-              <strong class="battle-versus">VS</strong>
+              <figcaption id="hero-creation-name">MOSSMOP</figcaption>
+            </figure>
+            <strong class="battle-versus">VS</strong>
+            <figure class="fighter fighter-right">
               <img
-                class="battle-fighter battle-fighter-right"
                 id="battle-rival-image"
                 src="./assets/splash-doodle-stormpuff.webp"
-                alt=""
+                alt="Stormpuff, drawn in Scribbits"
+                decoding="async"
               />
-            </div>
-            <video
-              class="shared-battle-video"
-              id="shared-battle-video"
-              muted
-              loop
-              playsinline
-              controls
-              preload="metadata"
-              hidden
-            ></video>
-            <span
-              class="battle-proof-stamp"
-              id="battle-proof-stamp"
-              data-i18n="splash.battle.real"
-            >
-              REAL BATTLE
-            </span>
+              <figcaption id="rival-creation-name">STORMPUFF</figcaption>
+            </figure>
           </div>
-          <p class="battle-caption" data-i18n="splash.battle.detail">
-            Your drawing becomes the fighter.
-          </p>
-        </article>
+          <video
+            class="shared-battle-video"
+            id="shared-battle-video"
+            muted
+            loop
+            playsinline
+            controls
+            preload="metadata"
+            hidden
+          ></video>
+        </div>
       </section>
 
       <footer class="splash-footer">
-        <span class="matchup-note" data-i18n="splash.story.matchup">
-          A fresh matchup every visit.
-        </span>
+        <p class="proof-line" data-i18n="splash.tagline">
+          <span aria-hidden="true">✦</span> DRAW IT. WATCH IT FIGHT.
+        </p>
         <button
           class="start-button"
           id="start-button"

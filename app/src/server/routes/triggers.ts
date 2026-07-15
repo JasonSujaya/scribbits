@@ -6,29 +6,29 @@ import type {
   TriggerResponse,
 } from '@devvit/web/shared';
 import { context, redis } from '@devvit/web/server';
-import { ensureCurrentArenaPost } from '../core/post';
-import { ensureCurrentArenaDay } from '../core/arenaStore';
-import { ensureInitialSeason } from '../core/season';
+import { maintainArena } from '../core/arenaMaintenance';
 
 export const triggers = new Hono();
 
 const handleAppSetup = async (c: HonoContext) => {
   try {
-    const input = await c.req.json<
-      OnAppInstallRequest | OnAppUpgradeRequest
-    >();
-    const now = new Date();
-    const arenaDay = await ensureCurrentArenaDay(redis, now);
-    await ensureInitialSeason(redis, arenaDay, now.getTime(), {
-      userId: context.userId ?? 'system',
-      username: context.username ?? 'Scribbits',
+    const input = await c.req.json<OnAppInstallRequest | OnAppUpgradeRequest>();
+    const maintenance = await maintainArena(redis, {
+      actor: {
+        userId: context.userId ?? 'system',
+        username: context.username ?? 'Scribbits',
+      },
     });
-    const post = await ensureCurrentArenaPost(redis, now);
+    if (maintenance.status === 'busy') {
+      throw new Error('Arena maintenance is already running.');
+    }
+    const { currentPostId, result } = maintenance.result;
     console.log(
       JSON.stringify({
         appVersion: context.appVersion,
+        arenaDay: result.newDay,
         event: 'scribbits.app_setup.ready',
-        postId: post.id,
+        postId: currentPostId,
         subreddit: context.subredditName,
         trigger: input.type,
       })
@@ -37,7 +37,7 @@ const handleAppSetup = async (c: HonoContext) => {
     return c.json<TriggerResponse>(
       {
         status: 'success',
-        message: `Arena post created in subreddit ${context.subredditName} with id ${post.id} (trigger: ${input.type})`,
+        message: `Arena ready in subreddit ${context.subredditName} with post ${currentPostId} (trigger: ${input.type})`,
       },
       200
     );

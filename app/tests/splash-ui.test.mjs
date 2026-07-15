@@ -28,50 +28,35 @@ const [
   readFile(new URL('../src/client/locales/en.ts', import.meta.url), 'utf8'),
 ]);
 
-test('splash tells one large creation-to-battle story without live API data', () => {
-  assert.match(splashHtml, /class="creation-story"/);
-  assert.match(splashHtml, /id="hero-creation-image"/);
+test('splash is a square feed hook instead of the expanded game flow', () => {
+  assert.match(splashHtml, /YOUR DOODLE\./);
+  assert.match(splashHtml, /YOUR FIGHTER\./);
+  assert.match(splashHtml, /SHAPE BECOMES STATS/);
+  assert.match(splashHtml, /DRAW IT\. WATCH IT FIGHT\./);
   assert.match(splashHtml, /id="battle-hero-image"/);
   assert.match(splashHtml, /id="battle-rival-image"/);
-  assert.match(splashHtml, /splash-doodle-mossmop\.webp/);
-  assert.match(splashHtml, /splash-doodle-stormpuff\.webp/);
-  assert.doesNotMatch(splashHtml, /data-showcase-slot|showcase-grid/);
-  assert.doesNotMatch(
-    splashHtml + splashCss + splashScript,
-    /streak-stat|streak-stamp|DAY STREAK/
-  );
+  assert.match(splashHtml, /id="start-button"/);
+  assert.doesNotMatch(splashHtml, /creation-story/);
+  assert.match(splashCss, /aspect-ratio: 1/);
+  assert.match(splashCss, /html,[\s\S]*body[\s\S]*overflow: hidden/);
+  assert.match(splashCss, /\.page[\s\S]*overflow: hidden/);
+  assert.doesNotMatch(splashCss, /@media \(max-width: 620px\)/);
+});
+
+test('splash stays light while rotating in real community fighters', () => {
   assert.match(splashScript, /renderFeaturedCreationPair/);
-  assert.match(splashScript, /renderCreationStory/);
+  assert.match(splashScript, /renderFighterPair/);
   assert.match(splashScript, /shuffledCreations/);
   assert.match(splashScript, /crypto\.getRandomValues/);
-  assert.match(splashScript, /battleHeroImage\.src = hero\.imageUrl/);
-  assert.match(splashCss, /max-width: 760px/);
-  assert.match(splashCss, /\.hero-creation-image[\s\S]*height: clamp/);
+  assert.match(splashScript, /getShareData/);
+  assert.match(splashScript, /parseBattleShareData/);
   assert.match(splashScript, /!state\.hasCreatedScribbit/);
   assert.match(splashScript, /translate\('splash\.action\.drawToday'\)/);
-  assert.match(splashScript, /translate\('splash\.action\.continue'\)/);
+  assert.match(splashScript, /translate\('splash\.action\.keepFighting'\)/);
   assert.match(englishCatalog, /'splash\.action\.drawToday': 'DRAW TODAY'/);
-  assert.match(englishCatalog, /'splash\.action\.continue': 'CONTINUE'/);
-  assert.doesNotMatch(
-    splashScript,
-    /PICK A CONTENDER|OPEN ARENA|CHECK RESULTS/
-  );
-  assert.doesNotMatch(splashHtml, /TONIGHT'S RUMBLE/);
-  assert.doesNotMatch(
-    splashHtml + splashScript + splashCss,
-    /ARENA NOTE|forecast-line|forecast-label/
-  );
-  assert.doesNotMatch(splashHtml + splashScript, /WINNER|WINNING SCRIBBITS/);
-  assert.doesNotMatch(splashScript, /rumbleCountdown|formatCountdown/);
-  assert.match(splashHtml, /class="battle-frame"/);
-  assert.match(splashHtml, /id="shared-battle-video"/);
-  assert.match(splashHtml, />DRAW IT</);
-  assert.match(splashHtml, />BATTLE</);
-  assert.match(splashScript, /renderSharedBattleClip/);
-  assert.match(splashScript, /getShareData/);
   assert.match(
     englishCatalog,
-    /'splash\.battle\.shared': 'SHARED BATTLE CLIP'/
+    /'splash\.action\.keepFighting': 'KEEP FIGHTING'/
   );
 });
 

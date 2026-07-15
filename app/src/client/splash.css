@@ -1,5 +1,5 @@
-/* Reddit inline view: a wide, compact sketchbook story that never relies on
-   viewport height. Static HTML remains visible if the Devvit script is delayed. */
+/* Reddit gives inline games a square viewport. This card is a strict 1:1 hook:
+   no document scroll, no expanded-game UI, and one trusted launch action. */
 
 * {
   box-sizing: border-box;
@@ -17,272 +17,199 @@
 html,
 body {
   width: 100%;
-  max-width: 100%;
-  overflow-x: hidden;
+  height: 100%;
+  overflow: hidden;
 }
 
 .app {
+  display: grid;
   min-height: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 18px;
-  background: #2a2118;
-  background-image:
+  place-items: center;
+  padding: clamp(8px, 2.4vmin, 16px);
+  color: #2b2016;
+  background:
     radial-gradient(
-      circle at 28% 18%,
-      rgba(255, 176, 74, 0.14) 0%,
-      rgba(255, 176, 74, 0) 52%
+      circle at 18% 20%,
+      rgba(255, 177, 70, 0.2),
+      transparent 43%
     ),
     repeating-linear-gradient(
-      115deg,
-      rgba(0, 0, 0, 0.05) 0 2px,
-      rgba(255, 255, 255, 0.02) 2px 4px
-    );
+      118deg,
+      rgba(0, 0, 0, 0.07) 0 2px,
+      rgba(255, 255, 255, 0.025) 2px 4px
+    ),
+    #2a2118;
 }
 
 .page {
   position: relative;
   isolation: isolate;
-  width: 100%;
-  max-width: 760px;
-  min-width: 0;
-  padding: 20px 24px 18px;
-  color: #2b2016;
-  background: #fdf3df;
-  background-image: radial-gradient(
-    rgba(122, 106, 86, 0.065) 1px,
-    transparent 1px
-  );
-  background-size: 14px 14px;
-  border: 3px solid #2b2016;
-  border-radius: 22px 18px 24px 20px;
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  gap: clamp(5px, 1.3vmin, 9px);
+  width: min(100%, calc(100vh - clamp(16px, 4.8vmin, 32px)));
+  height: min(100%, calc(100vw - clamp(16px, 4.8vmin, 32px)));
+  max-width: 720px;
+  max-height: 720px;
+  aspect-ratio: 1;
+  padding: clamp(13px, 3.4vmin, 24px);
+  overflow: hidden;
+  background:
+    radial-gradient(rgba(122, 106, 86, 0.07) 1px, transparent 1px), #fff7e8;
+  background-size: 13px 13px;
+  border: clamp(2px, 0.65vmin, 4px) solid #2b2016;
+  border-radius: clamp(17px, 4vmin, 28px);
   box-shadow:
-    0 10px 0 rgba(0, 0, 0, 0.34),
-    0 18px 42px rgba(0, 0, 0, 0.38);
+    0 clamp(5px, 1.5vmin, 10px) 0 rgba(0, 0, 0, 0.36),
+    0 18px 38px rgba(0, 0, 0, 0.34);
 }
 
 .page::before {
   position: absolute;
   z-index: -1;
-  inset: 8px;
+  inset: clamp(6px, 1.5vmin, 10px);
   content: '';
   pointer-events: none;
   border: 1.5px dashed rgba(90, 74, 54, 0.18);
-  border-radius: 15px 19px 16px 21px;
+  border-radius: clamp(12px, 3vmin, 21px);
 }
 
 .tape {
   position: absolute;
-  top: -12px;
-  width: 78px;
-  height: 30px;
-  background: rgba(247, 230, 176, 0.88);
+  z-index: 3;
+  top: -7px;
+  width: clamp(48px, 14vmin, 90px);
+  height: clamp(17px, 4.5vmin, 30px);
+  background: rgba(247, 230, 176, 0.9);
   border: 1px solid rgba(0, 0, 0, 0.08);
 }
 
 .tape-left {
-  left: 24px;
+  left: 8%;
   transform: rotate(-7deg);
 }
 
 .tape-right {
-  right: 24px;
+  right: 8%;
   transform: rotate(6deg);
 }
 
 .splash-header {
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 24px;
-  min-width: 0;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 0;
 }
 
 .logo {
-  flex: 0 1 300px;
-  min-width: 0;
+  width: clamp(112px, 33vmin, 226px);
   line-height: 0;
 }
 
 .logo-image {
   display: block;
   width: 100%;
-  max-width: 286px;
   height: auto;
-  margin: 0 auto;
   transform-origin: 28% 58%;
-  animation: logo-settle 620ms cubic-bezier(0.2, 0.9, 0.25, 1.15) both;
+  animation: logo-settle 560ms cubic-bezier(0.2, 0.9, 0.25, 1.15) both;
 }
 
-.tagline {
-  flex: 0 1 270px;
-  color: #5a4a36;
-  font-size: clamp(0.9rem, 2.25vw, 1.12rem);
-  font-weight: 700;
-  line-height: 1.35;
-  text-align: left;
-}
-
-.creation-story {
-  display: grid;
-  grid-template-columns: minmax(210px, 0.82fr) 54px minmax(300px, 1.18fr);
-  gap: 12px;
-  align-items: stretch;
-  margin-top: 12px;
-}
-
-.story-panel {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-}
-
-.step-heading {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 30px;
-  margin: 0 0 7px 4px;
-  color: #7f432f;
-  font-size: clamp(0.76rem, 2vw, 0.9rem);
-  letter-spacing: 0.06em;
-}
-
-.step-number {
-  display: inline-grid;
-  place-items: center;
-  width: 25px;
-  height: 25px;
+.hook-stamp {
+  padding: clamp(4px, 1vmin, 7px) clamp(7px, 1.7vmin, 12px);
   color: #fff7e8;
-  background: #ef654c;
+  background: #87472f;
   border: 2px solid #2b2016;
-  border-radius: 50%;
-  box-shadow: 1px 2px 0 rgba(43, 32, 22, 0.18);
-  font-size: 0.72rem;
-}
-
-.creation-card {
-  display: grid;
-  flex: 1;
-  grid-template-rows: auto minmax(0, 1fr) auto auto;
-  min-height: 232px;
-  padding: 10px 14px 11px;
-  overflow: hidden;
-  text-align: center;
-  background: #f1d38b;
-  border: 3px solid #2b2016;
-  border-radius: 16px 13px 18px 14px;
-  box-shadow: 3px 4px 0 rgba(43, 32, 22, 0.16);
-  transform: rotate(-0.45deg);
-}
-
-.creation-source {
-  display: block;
-  color: #74503a;
-  font-size: 0.56rem;
+  border-radius: 7px 5px 8px 6px;
+  box-shadow: 2px 3px 0 rgba(43, 32, 22, 0.18);
+  font-size: clamp(0.48rem, 1.65vmin, 0.78rem);
   font-weight: 700;
-  letter-spacing: 0.11em;
-  line-height: 1.2;
-}
-
-.hero-creation-image {
-  display: block;
-  align-self: center;
-  width: 100%;
-  height: clamp(138px, 21vw, 178px);
-  margin: 1px auto;
-  object-fit: contain;
-  filter: drop-shadow(3px 5px 0 rgba(43, 32, 22, 0.15));
-  animation: hero-bob 3.2s ease-in-out infinite;
-}
-
-.creation-name {
-  display: block;
-  overflow: hidden;
-  font-size: clamp(0.84rem, 2.3vw, 1.05rem);
-  line-height: 1.1;
-  text-overflow: ellipsis;
+  letter-spacing: 0.08em;
   white-space: nowrap;
+  transform: rotate(2deg);
 }
 
-.creation-artist {
-  display: block;
-  margin-top: 4px;
-  overflow: hidden;
-  color: #8b4c31;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  font-size: 0.64rem;
-  font-weight: 800;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.story-arrow {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-direction: column;
-  gap: 0;
-  padding-top: 30px;
-  color: #8b4c31;
+.hook-copy {
   text-align: center;
-  transform: rotate(-2deg);
+  text-wrap: balance;
+  transform: rotate(-0.4deg);
 }
 
-.story-arrow span {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  font-size: 0.55rem;
-  font-weight: 900;
-  letter-spacing: 0.06em;
+.hook-copy p,
+.hook-copy h2 {
+  line-height: 0.92;
+  letter-spacing: -0.035em;
 }
 
-.story-arrow strong {
-  margin-top: -3px;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  font-size: 2.6rem;
-  line-height: 1;
+.hook-copy p {
+  color: #74503a;
+  font-size: clamp(0.78rem, 2.8vmin, 1.24rem);
+  font-weight: 700;
 }
 
-.battle-frame {
+.hook-copy h2 {
+  margin-top: 2px;
+  color: #2b2016;
+  font-size: clamp(1.42rem, 6.2vmin, 2.75rem);
+}
+
+.battle-card {
   position: relative;
-  flex: 1;
-  min-height: 232px;
+  min-height: 0;
+  padding: clamp(15px, 4vmin, 25px) clamp(7px, 1.7vmin, 12px)
+    clamp(7px, 1.7vmin, 12px);
   overflow: hidden;
-  background: #2d2520;
-  border: 3px solid #2b2016;
-  border-radius: 13px 10px 16px 12px;
+  background: #eed28f;
+  border: clamp(2px, 0.65vmin, 4px) solid #2b2016;
+  border-radius: clamp(13px, 3.2vmin, 22px);
   box-shadow: 3px 4px 0 rgba(43, 32, 22, 0.18);
-  transform: rotate(0.4deg);
+  transform: rotate(0.25deg);
 }
 
-.battle-stage,
-.shared-battle-video {
-  display: block;
-  width: 100%;
-  height: 100%;
-  min-height: 232px;
+.battle-kicker {
+  position: absolute;
+  z-index: 4;
+  top: clamp(5px, 1.2vmin, 9px);
+  left: 50%;
+  color: #74452f;
+  font-size: clamp(0.48rem, 1.75vmin, 0.78rem);
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  white-space: nowrap;
+  transform: translateX(-50%);
 }
 
 .battle-stage {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  border: 2px solid #2b2016;
+  border-radius: clamp(9px, 2.2vmin, 15px);
+}
+
+.battle-poster {
   position: absolute;
   inset: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: end;
   overflow: hidden;
-  background: #e7c98b url('./assets/scribbits-splash-stage.webp') center 47% /
-    cover
-    no-repeat;
+  background: #e7c98b url('./assets/scribbits-splash-stage.webp') center 46% /
+    cover no-repeat;
 }
 
-.battle-stage::after {
+.battle-poster::after {
   position: absolute;
   inset: auto 0 0;
-  height: 42%;
+  height: 35%;
   content: '';
   pointer-events: none;
-  background: linear-gradient(transparent, rgba(68, 45, 29, 0.15));
+  background: linear-gradient(transparent, rgba(68, 45, 29, 0.12));
 }
 
-.battle-stage[hidden],
+.battle-poster[hidden],
 .shared-battle-video[hidden] {
   display: none;
 }
@@ -290,114 +217,114 @@ body {
 .shared-battle-video {
   position: absolute;
   inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
   object-fit: cover;
-  background: #2d2520;
+  background: #2a2118;
 }
 
-.battle-fighter {
-  position: absolute;
-  z-index: 1;
-  bottom: 18px;
-  width: clamp(112px, 16vw, 144px);
-  height: clamp(132px, 19vw, 168px);
+.fighter {
+  position: relative;
+  z-index: 2;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  align-self: stretch;
+  min-width: 0;
+  padding: clamp(9px, 2.1vmin, 14px) clamp(3px, 0.8vmin, 6px)
+    clamp(5px, 1.1vmin, 8px);
+}
+
+.fighter img {
+  display: block;
+  align-self: center;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
   object-fit: contain;
   filter: drop-shadow(3px 5px 0 rgba(43, 32, 22, 0.2));
 }
 
-.battle-fighter-left {
-  left: 16px;
+.fighter-left img {
   transform: rotate(-4deg);
 }
 
-.battle-fighter-right {
-  right: 14px;
+.fighter-right img {
   transform: rotate(4deg) scaleX(-1);
 }
 
-.battle-versus {
-  position: absolute;
-  z-index: 2;
-  top: 43%;
-  left: 50%;
+.fighter figcaption {
+  overflow: hidden;
   color: #fff7e8;
-  font-size: clamp(1.05rem, 3vw, 1.45rem);
+  font-size: clamp(0.46rem, 1.75vmin, 0.8rem);
+  line-height: 1.15;
+  text-align: center;
+  text-overflow: ellipsis;
+  text-shadow: 1.5px 2px 0 #2b2016;
+  white-space: nowrap;
+}
+
+.battle-versus {
+  position: relative;
+  z-index: 3;
+  align-self: center;
+  color: #fff7e8;
+  font-size: clamp(1rem, 4.6vmin, 2rem);
   text-shadow: 2px 3px 0 #2b2016;
-  transform: translate(-50%, -50%) rotate(-5deg);
+  transform: rotate(-6deg);
 }
 
 .battle-health {
   position: absolute;
-  z-index: 2;
-  top: 13px;
-  width: 39%;
-  max-width: 120px;
-  height: 11px;
+  z-index: 3;
+  top: clamp(5px, 1.25vmin, 9px);
+  width: 36%;
+  height: clamp(6px, 1.6vmin, 11px);
   background: linear-gradient(90deg, #ef5b42 0 82%, #e5d7ba 82%);
-  border: 2px solid #2b2016;
+  border: clamp(1px, 0.4vmin, 2px) solid #2b2016;
   border-radius: 999px;
 }
 
 .battle-health-left {
-  left: 12px;
+  left: 4%;
 }
 
 .battle-health-right {
-  right: 12px;
+  right: 4%;
   transform: scaleX(-1);
 }
 
-.battle-proof-stamp {
-  position: absolute;
-  z-index: 3;
-  right: 8px;
-  bottom: 7px;
-  padding: 4px 7px;
-  color: #fff7e8;
-  background: #8b4c31;
-  border: 1.5px solid #2b2016;
-  border-radius: 5px;
-  font-size: 0.5rem;
-  font-weight: 700;
-  letter-spacing: 0.07em;
+.splash-footer {
+  display: grid;
+  grid-template-columns: minmax(0, 0.7fr) minmax(155px, 1.3fr);
+  align-items: center;
+  gap: clamp(6px, 1.6vmin, 12px);
 }
 
-.battle-caption {
-  margin-top: 8px;
-  color: #5a4a36;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  font-size: 0.72rem;
-  font-weight: 800;
+.proof-line {
+  color: #74503a;
+  font-size: clamp(0.5rem, 1.75vmin, 0.78rem);
+  font-weight: 700;
   line-height: 1.25;
   text-align: center;
 }
 
-.splash-footer {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 18px;
-  margin-top: 10px;
-}
-
-.matchup-note {
-  color: #74503a;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  font-size: 0.68rem;
-  font-weight: 800;
+.proof-line span {
+  color: #ef654c;
 }
 
 .start-button {
-  width: min(330px, 52%);
-  min-height: 58px;
-  padding: 15px 28px 19px;
+  width: 100%;
+  min-height: clamp(44px, 11vmin, 68px);
+  padding: clamp(10px, 2.2vmin, 15px) clamp(12px, 3vmin, 22px)
+    clamp(13px, 3vmin, 19px);
   color: #2b2016;
   background: transparent url('./assets/ui-button-primary.webp') center / 100%
     100% no-repeat;
   border: 0;
-  border-radius: 0;
   cursor: pointer;
-  filter: drop-shadow(0 4px 0 rgba(43, 32, 22, 0.18));
-  font-size: clamp(1rem, 3vw, 1.3rem);
+  filter: drop-shadow(0 3px 0 rgba(43, 32, 22, 0.2));
+  font-size: clamp(0.85rem, 3.2vmin, 1.35rem);
   font-weight: 700;
   letter-spacing: 0.02em;
   transition:
@@ -406,23 +333,28 @@ body {
 }
 
 .start-button:hover {
-  filter: brightness(1.05) drop-shadow(0 4px 0 rgba(43, 32, 22, 0.18));
+  filter: brightness(1.06) drop-shadow(0 3px 0 rgba(43, 32, 22, 0.2));
 }
 
 .start-button:active {
-  transform: translateY(4px);
+  transform: translateY(3px);
   filter: brightness(0.98);
+}
+
+.start-button:disabled {
+  cursor: wait;
+  filter: saturate(0.75);
 }
 
 .start-button:focus-visible {
   outline: 4px solid #2f9fd8;
-  outline-offset: 4px;
+  outline-offset: 2px;
 }
 
 @keyframes logo-settle {
   0% {
     opacity: 0;
-    transform: translateY(10px) rotate(-1.8deg) scale(0.95);
+    transform: translateY(8px) rotate(-1.8deg) scale(0.95);
   }
   58% {
     opacity: 1;
@@ -434,124 +366,27 @@ body {
   }
 }
 
-@keyframes hero-bob {
-  0%,
-  100% {
-    transform: translateY(0) rotate(-1deg);
-  }
-  50% {
-    transform: translateY(-5px) rotate(1deg);
-  }
-}
-
-@media (max-width: 620px) {
+@media (max-width: 370px), (max-height: 370px) {
   .page {
-    max-width: 460px;
-    padding-inline: 20px;
+    gap: 4px;
+    padding: 11px;
   }
 
-  .splash-header {
-    gap: 12px;
-  }
-
-  .logo {
-    flex-basis: 235px;
-  }
-
-  .creation-story {
-    grid-template-columns: 1fr;
-    gap: 6px;
-  }
-
-  .creation-card,
-  .battle-frame,
-  .battle-stage,
-  .shared-battle-video {
-    min-height: 208px;
-  }
-
-  .hero-creation-image {
-    height: 154px;
-  }
-
-  .story-arrow {
-    height: 32px;
-    padding: 0;
-    transform: rotate(90deg);
-  }
-
-  .story-arrow span {
-    display: none;
-  }
-
-  .battle-fighter {
-    width: 138px;
-    height: 152px;
+  .hook-stamp {
+    border-width: 1.5px;
   }
 
   .splash-footer {
-    flex-direction: column-reverse;
-    gap: 2px;
+    grid-template-columns: 1fr;
   }
 
-  .start-button {
-    width: min(330px, 100%);
-  }
-}
-
-@media (max-width: 380px) {
-  .app {
-    padding: 10px;
-  }
-
-  .page {
-    width: calc(100vw - 20px);
-    padding: 18px 14px 15px;
-  }
-
-  .splash-header {
-    display: block;
-  }
-
-  .logo-image {
-    max-width: 230px;
-  }
-
-  .tagline {
-    margin-top: 2px;
-    font-size: 0.83rem;
-    text-align: center;
-  }
-
-  .creation-card,
-  .battle-frame,
-  .battle-stage,
-  .shared-battle-video {
-    min-height: 190px;
-  }
-
-  .hero-creation-image {
-    height: 138px;
-  }
-
-  .battle-fighter {
-    bottom: 14px;
-    width: 116px;
-    height: 136px;
-  }
-
-  .battle-fighter-left {
-    left: 8px;
-  }
-
-  .battle-fighter-right {
-    right: 8px;
+  .proof-line {
+    display: none;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .logo-image,
-  .hero-creation-image,
   .start-button {
     animation: none;
     transition: none;

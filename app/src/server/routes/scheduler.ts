@@ -2,16 +2,7 @@ import { Hono } from 'hono';
 import { randomUUID } from 'node:crypto';
 import type { TaskRequest, TaskResponse } from '@devvit/web/server';
 import { redis } from '@devvit/web/server';
-import {
-  acknowledgeArenaResolution,
-  loadPendingArenaResolutions,
-  runNightlyArenaJob,
-} from '../core/dailyJob';
-import { ensureForecastForDay, getCurrentChampion } from '../core/arenaStore';
-import { getOrCreateArenaPost, publishRumbleResultComment } from '../core/post';
-import { runWithNightlyFence } from '../core/nightlyStorageFence';
-import { getArenaDayNumber } from '../core/day';
-import { ensureInitialSeason } from '../core/season';
+import { maintainArena } from '../core/arenaMaintenance';
 
 export const scheduledTasks = new Hono();
 
@@ -22,57 +13,9 @@ scheduledTasks.post('/nightly-arena', async (c) => {
 
   try {
     const nightlyOperationId = randomUUID();
-    const nightlyRun = await runWithNightlyFence(
-      redis,
-      nightlyOperationId,
-      async (fencedStorage) => {
-        const now = new Date();
-        await ensureInitialSeason(
-          fencedStorage,
-          getArenaDayNumber(now),
-          now.getTime()
-        );
-        const result = await runNightlyArenaJob(fencedStorage, {
-          claimId: nightlyOperationId,
-          now,
-        });
-        const currentForecast = await ensureForecastForDay(
-          fencedStorage,
-          result.newDay
-        );
-        const currentChampion = await getCurrentChampion(fencedStorage);
-        const currentPost = await getOrCreateArenaPost(fencedStorage, {
-          day: result.newDay,
-          forecast: currentForecast,
-          champion: currentChampion,
-        });
-
-        const pendingResolutions =
-          await loadPendingArenaResolutions(fencedStorage);
-        for (const resolution of pendingResolutions) {
-          await getOrCreateArenaPost(fencedStorage, {
-            day: resolution.resolvedDay,
-            forecast: resolution.resolvedForecast,
-            champion: resolution.champion,
-          });
-          const commentId = await publishRumbleResultComment(
-            fencedStorage,
-            resolution
-          );
-          if (!commentId) {
-            throw new Error(
-              `Rumble #${resolution.resolvedDay} result is still pending publication.`
-            );
-          }
-          await acknowledgeArenaResolution(
-            fencedStorage,
-            resolution.resolvedDay
-          );
-        }
-
-        return { result, currentPostId: currentPost.id };
-      }
-    );
+    const nightlyRun = await maintainArena(redis, {
+      operationId: nightlyOperationId,
+    });
     if (nightlyRun.status === 'busy') {
       throw new Error(
         'Player data deletion is active; retry nightly resolution.'

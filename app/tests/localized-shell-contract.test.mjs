@@ -119,7 +119,10 @@ test('HTML entrypoints keep English fallback copy annotated for localization', (
       [
         'app.name',
         'splash.tagline',
-        'splash.showcase.sketchbook',
+        'splash.hook.drawnByYou',
+        'splash.hook.doodle',
+        'splash.hook.fighter',
+        'splash.hook.shapeStats',
         'splash.action.enterArena',
       ],
     ],
