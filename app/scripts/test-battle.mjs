@@ -14377,7 +14377,7 @@ assert.equal(
   nightlyDeletionBoundaryStorage.getExpirationSeconds(
     dataDeletionCore.getNightlyPlayerMutationLockKey()
   ),
-  15 * 60,
+  5 * 60,
   'an abandoned nightly barrier must recover after its bounded lease'
 );
 assert.equal(
@@ -14508,6 +14508,65 @@ assert.equal(
   'nightly release must recover when delete commits but its reply is lost'
 );
 
+const fallbackNightlyReleaseStorage = createMemoryStorage();
+const fallbackNightlyReleaseWatch = fallbackNightlyReleaseStorage.watch.bind(
+  fallbackNightlyReleaseStorage
+);
+let forcedNightlyReleaseConflicts = 0;
+fallbackNightlyReleaseStorage.watch = async (...keys) => {
+  const transaction = await fallbackNightlyReleaseWatch(...keys);
+  const discard = transaction.discard.bind(transaction);
+  const del = transaction.del.bind(transaction);
+  const exec = transaction.exec.bind(transaction);
+  let queuesNightlyLockDelete = false;
+  transaction.del = async (...deletedKeys) => {
+    if (
+      deletedKeys.includes(dataDeletionCore.getNightlyPlayerMutationLockKey())
+    ) {
+      queuesNightlyLockDelete = true;
+    }
+    return del(...deletedKeys);
+  };
+  transaction.exec = async () => {
+    if (!queuesNightlyLockDelete) return exec();
+    forcedNightlyReleaseConflicts += 1;
+    await discard();
+    return [];
+  };
+  return transaction;
+};
+const fallbackNightlyReleaseLease =
+  await dataDeletionCore.acquireNightlyPlayerMutation(
+    fallbackNightlyReleaseStorage,
+    'fallback-nightly-release-token'
+  );
+assert.equal(fallbackNightlyReleaseLease.status, 'acquired');
+const fallbackNightlyReleaseWarnings = [];
+const originalFallbackConsoleWarn = console.warn;
+console.warn = (...values) => fallbackNightlyReleaseWarnings.push(values);
+try {
+  assert.equal(
+    await dataDeletionCore.releaseNightlyPlayerMutation(
+      fallbackNightlyReleaseStorage,
+      fallbackNightlyReleaseLease.lease
+    ),
+    'released'
+  );
+} finally {
+  console.warn = originalFallbackConsoleWarn;
+}
+assert.equal(
+  forcedNightlyReleaseConflicts,
+  storageCore.MAX_WATCH_TRANSACTION_ATTEMPTS
+);
+assert.equal(fallbackNightlyReleaseWarnings.length, 1);
+assert.equal(
+  await fallbackNightlyReleaseStorage.get(
+    dataDeletionCore.getNightlyPlayerMutationLockKey()
+  ),
+  undefined
+);
+
 const lostNightlyLeaseStorage = createMemoryStorage();
 const lostNightlyLease = await dataDeletionCore.acquireNightlyPlayerMutation(
   lostNightlyLeaseStorage,
@@ -14626,7 +14685,7 @@ await interruptedByHeartbeat.multi();
 await interruptedByHeartbeat.set('nightly-heartbeat-retry', 'first-attempt');
 await renewedNightlyFenceStorage.expire(
   dataDeletionCore.getNightlyPlayerMutationLockKey(),
-  15 * 60
+  5 * 60
 );
 assert.deepEqual(
   await interruptedByHeartbeat.exec(),

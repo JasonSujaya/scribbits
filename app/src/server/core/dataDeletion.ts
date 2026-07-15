@@ -8,7 +8,7 @@ const deletionLockTtlSeconds = 5 * 60;
 const deletionHeartbeatMilliseconds = 30 * 1000;
 const playerMutationLockTtlSeconds = 5 * 60;
 const playerMutationHeartbeatMilliseconds = 30 * 1000;
-const nightlyPlayerMutationLockTtlSeconds = 15 * 60;
+const nightlyPlayerMutationLockTtlSeconds = 5 * 60;
 const nightlyPlayerMutationHeartbeatMilliseconds = 30 * 1000;
 const globalDataDeletionLockKey = 'arena:data-deletion:lock';
 const nightlyPlayerMutationLockKey = 'arena:nightly-player-mutation:lock';
@@ -720,9 +720,26 @@ export const releaseNightlyPlayerMutation = async (
     }
   }
 
-  throw new Error(
-    'Nightly player mutation changed too often to release safely.'
-  );
+  const [activeToken, epoch] = await Promise.all([
+    storage.get(nightlyPlayerMutationLockKey),
+    readNightlyPlayerMutationEpoch(storage),
+  ]);
+  if (activeToken === undefined) return 'released';
+  if (activeToken !== lease.token || epoch !== lease.epoch) return 'not-owner';
+
+  // Devvit Redis can report repeated WATCH conflicts here even after the
+  // owner's heartbeat has stopped. The lease was just renewed, so no valid
+  // takeover can occur during this bounded owner-checked cleanup fallback.
+  await storage.del(nightlyPlayerMutationLockKey);
+  const remainingToken = await storage.get(nightlyPlayerMutationLockKey);
+  if (remainingToken === undefined) {
+    console.warn(
+      'Nightly player mutation used owner-checked fallback lock cleanup.'
+    );
+    return 'released';
+  }
+  if (remainingToken !== lease.token) return 'not-owner';
+  throw new Error('Nightly player mutation could not release its safety lock.');
 };
 
 export const withNightlyPlayerMutationHeartbeat = async <Result>(
