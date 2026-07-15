@@ -131,6 +131,11 @@ import {
 } from '../lib/inkcastqueue';
 import type { InkcastEditorialCandidate } from '../lib/inkcastqueue';
 import { BattleSoundboard } from '../lib/battlesound';
+import {
+  setBattleSoundtrackEnabled,
+  startBattleSoundtrack,
+  stopBattleSoundtrack,
+} from '../lib/soundtrack';
 import { playSfx } from '../lib/sfx';
 import { WeaponFxRenderer } from '../lib/weaponfxrenderer';
 import { RoleWeaponRenderer } from '../lib/roleweaponrenderer';
@@ -420,6 +425,7 @@ export class Replay extends Scene {
     this.founderChronicleBeat = getReplayFounderChronicleBeat(this);
     this.founderRivalryStakes = getReplayFounderRivalryStakes(this);
     this.transcript = getUsableBattleTranscript(report) ?? null;
+    startBattleSoundtrack(this.soundboard.isEnabled());
     this.cameras.main.setBackgroundColor(UI.desk);
     this.weaponFxRenderer = new WeaponFxRenderer(this, this.reduceMotion);
     this.roleWeaponRenderer = new RoleWeaponRenderer(this, this.reduceMotion);
@@ -428,6 +434,7 @@ export class Replay extends Scene {
     this.recordDebugPlaybackState('live');
 
     this.events.once('shutdown', () => {
+      stopBattleSoundtrack();
       this.rivalRunFlow?.destroy();
       this.rivalRunFlow = null;
       this.postFightActions?.destroy();
@@ -535,6 +542,7 @@ export class Replay extends Scene {
       onCycleSpeed: () => this.cycleSpeed(),
       onToggleSound: () => {
         const enabled = this.soundboard.toggle();
+        setBattleSoundtrackEnabled(enabled);
         this.battleHud?.setSoundEnabled(enabled);
       },
     });

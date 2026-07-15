@@ -416,6 +416,13 @@ export const SFX_CATALOG = {
 export type SfxCue = keyof typeof SFX_CATALOG;
 
 export const MUSIC_CATALOG = {
+  battle: [
+    {
+      id: 'scribbits-battle',
+      url: new URL('../assets/scribbits-battle.mp3', import.meta.url).href,
+      volume: 0.24,
+    },
+  ],
   drawing: [
     {
       id: 'ready-set-scribble',

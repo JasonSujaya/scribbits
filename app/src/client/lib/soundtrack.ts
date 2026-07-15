@@ -2,8 +2,9 @@ import { MUSIC_CATALOG } from './audiocatalog';
 
 const READY_SET_SCRIBBLE_TRACK = MUSIC_CATALOG.drawing[0];
 const HOME_SOUNDTRACKS = MUSIC_CATALOG.home;
+const BATTLE_SOUNDTRACK = MUSIC_CATALOG.battle[0];
 
-type SoundtrackMode = 'drawing' | 'home';
+type SoundtrackMode = 'battle' | 'drawing' | 'home';
 
 let currentAudio: HTMLAudioElement | null = null;
 let currentMode: SoundtrackMode | null = null;
@@ -12,10 +13,6 @@ let playbackRequested = false;
 let retryListenersInstalled = false;
 let pendingHomeStop: number | null = null;
 let visibilityHandlerInstalled = false;
-
-const hasTrustedAudioGesture = (): boolean => {
-  return navigator.userActivation?.hasBeenActive === true;
-};
 
 export const chooseHomeTrackIndex = (
   hasPlayedHomeTrack: boolean,
@@ -34,23 +31,30 @@ const removeRetryListeners = (): void => {
   retryListenersInstalled = false;
 };
 
-const requestPlayback = (): void => {
-  const audio = currentAudio;
-  if (!audio) return;
-  playbackRequested = true;
-  if (document.hidden || !hasTrustedAudioGesture()) {
-    installRetryListeners();
-    return;
-  }
+const attemptPlayback = (audio: HTMLAudioElement): void => {
   void audio.play().then(
     () => removeRetryListeners(),
     () => installRetryListeners()
   );
 };
 
+const requestPlayback = (): void => {
+  const audio = currentAudio;
+  if (!audio) return;
+  playbackRequested = true;
+  if (document.hidden) {
+    installRetryListeners();
+    return;
+  }
+  // Try immediately. Browsers that allow startup audio begin the Home track
+  // without making the player tap an arbitrary control first. If autoplay is
+  // blocked, attemptPlayback installs the first-interaction retry listeners.
+  attemptPlayback(audio);
+};
+
 function retryPlayback(): void {
-  if (!playbackRequested || !currentAudio) return;
-  requestPlayback();
+  if (!playbackRequested || !currentAudio || document.hidden) return;
+  attemptPlayback(currentAudio);
 }
 
 function installRetryListeners(): void {
@@ -81,7 +85,7 @@ const cancelPendingHomeStop = (): void => {
 const replaceSoundtrack = (
   mode: SoundtrackMode,
   source: string,
-  onEnded?: () => void
+  startPlaying = true
 ): void => {
   installVisibilityHandler();
   stopSoundtrack();
@@ -89,34 +93,37 @@ const replaceSoundtrack = (
 
   const audio = new Audio();
   audio.dataset.scribbitsSoundtrack = mode;
-  // Each MP3 is fetched only when it becomes the active track. In particular,
-  // opening Home never downloads the drawing song or both idle songs.
-  audio.preload = 'none';
+  audio.preload = 'auto';
   audio.src = source;
+  audio.autoplay = startPlaying;
+  audio.loop = true;
   audio.volume =
     mode === 'drawing'
       ? READY_SET_SCRIBBLE_TRACK.volume
-      : (HOME_SOUNDTRACKS.find((track) => track.url === source)?.volume ??
-        0.32);
-  audio.onended = onEnded ?? null;
+      : mode === 'battle'
+        ? BATTLE_SOUNDTRACK.volume
+        : (HOME_SOUNDTRACKS.find((track) => track.url === source)?.volume ??
+          0.32);
   audio.style.display = 'none';
   document.body.append(audio);
   currentMode = mode;
   currentAudio = audio;
-  requestPlayback();
+  if (startPlaying) requestPlayback();
 };
 
-const startNextHomeSoundtrack = (): void => {
+const chooseNextHomeSoundtrack = (): string => {
   const nextTrackIndex = chooseHomeTrackIndex(
     hasPlayedHomeSoundtrack,
     Math.random()
   );
   hasPlayedHomeSoundtrack = true;
-  const source =
-    HOME_SOUNDTRACKS[nextTrackIndex]?.url ?? HOME_SOUNDTRACKS[0].url;
-  replaceSoundtrack('home', source, () => {
-    if (currentMode === 'home') startNextHomeSoundtrack();
-  });
+  return (
+    HOME_SOUNDTRACKS[nextTrackIndex]?.url ?? HOME_SOUNDTRACKS[0].url
+  );
+};
+
+const startNextHomeSoundtrack = (): void => {
+  replaceSoundtrack('home', chooseNextHomeSoundtrack());
 };
 
 export const playHomeSoundtrack = (): void => {
@@ -149,6 +156,24 @@ export const startDrawingSoundtrack = (): void => {
   replaceSoundtrack('drawing', READY_SET_SCRIBBLE_TRACK.url);
 };
 
+export const startBattleSoundtrack = (enabled: boolean): void => {
+  replaceSoundtrack('battle', BATTLE_SOUNDTRACK.url, enabled);
+};
+
+export const setBattleSoundtrackEnabled = (enabled: boolean): void => {
+  if (currentMode !== 'battle' || !currentAudio) return;
+  if (enabled) {
+    requestPlayback();
+    return;
+  }
+  playbackRequested = false;
+  currentAudio.pause();
+};
+
+export const stopBattleSoundtrack = (): void => {
+  if (currentMode === 'battle') stopSoundtrack();
+};
+
 export const resumeDrawingSoundtrack = (): void => {
   if (currentMode !== 'drawing' || !currentAudio) {
     startDrawingSoundtrack();
@@ -169,7 +194,6 @@ export const stopSoundtrack = (): void => {
   removeRetryListeners();
   currentMode = null;
   if (!currentAudio) return;
-  currentAudio.onended = null;
   currentAudio.pause();
   currentAudio.remove();
   currentAudio = null;
