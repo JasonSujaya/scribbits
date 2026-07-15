@@ -1630,6 +1630,39 @@ assert.equal(
 pass('app upgrades catch up a stale Arena day before players return');
 
 productionApiContract.resetApiContractRuntime();
+productionApiContract.setApiContractString(
+  dataDeletionCore.getNightlyPlayerMutationLockKey(),
+  'active-nightly-worker'
+);
+const busyUpgradeResponse = await productionApiContract.app.request(
+  '/internal/triggers/on-app-upgrade',
+  {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ type: 'busy-upgrade' }),
+  }
+);
+assert.equal(busyUpgradeResponse.status, 200);
+assert.equal(
+  productionApiContract.apiContractRuntimeState.scheduledJobs.length,
+  1
+);
+assert.equal(
+  productionApiContract.apiContractRuntimeState.scheduledJobs[0].name,
+  'nightly-arena'
+);
+assert.equal(
+  productionApiContract.apiContractRuntimeState.scheduledJobs[0].data.reason,
+  'app-setup-busy'
+);
+assert.ok(
+  productionApiContract.apiContractRuntimeState.scheduledJobs[0].runAt >
+    new Date(Date.now() + 15 * 60 * 1000),
+  'deferred recovery must outlive an abandoned nightly lease'
+);
+pass('app upgrade defers recovery when a nightly worker owns the lease');
+
+productionApiContract.resetApiContractRuntime();
 const reversedInstallResponse = await productionApiContract.app.request(
   '/internal/triggers/on-app-install',
   {

@@ -5,10 +5,11 @@ import type {
   OnAppUpgradeRequest,
   TriggerResponse,
 } from '@devvit/web/shared';
-import { context, redis } from '@devvit/web/server';
+import { context, redis, scheduler } from '@devvit/web/server';
 import { maintainArena } from '../core/arenaMaintenance';
 
 export const triggers = new Hono();
+const arenaMaintenanceRetryDelayMilliseconds = 16 * 60 * 1000;
 
 const handleAppSetup = async (c: HonoContext) => {
   try {
@@ -20,7 +21,31 @@ const handleAppSetup = async (c: HonoContext) => {
       },
     });
     if (maintenance.status === 'busy') {
-      throw new Error('Arena maintenance is already running.');
+      const retryAt = new Date(
+        Date.now() + arenaMaintenanceRetryDelayMilliseconds
+      );
+      const retryJobId = await scheduler.runJob({
+        name: 'nightly-arena',
+        data: { reason: 'app-setup-busy' },
+        runAt: retryAt,
+      });
+      console.log(
+        JSON.stringify({
+          appVersion: context.appVersion,
+          event: 'scribbits.app_setup.deferred',
+          retryAt: retryAt.toISOString(),
+          retryJobId,
+          subreddit: context.subredditName,
+          trigger: input.type,
+        })
+      );
+      return c.json<TriggerResponse>(
+        {
+          status: 'success',
+          message: `Arena maintenance is active; recovery job ${retryJobId} is scheduled.`,
+        },
+        200
+      );
     }
     const { currentPostId, result } = maintenance.result;
     console.log(

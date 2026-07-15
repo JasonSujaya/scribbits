@@ -32,6 +32,14 @@ export const apiContractRuntimeState = {
   failNextCommentLookup: false,
   failNextCommentSubmissionAfterCommit: false,
   failNextResultCommentReceipt: false,
+  scheduledJobs: [],
+};
+
+export const scheduler = {
+  async runJob(job) {
+    apiContractRuntimeState.scheduledJobs.push(job);
+    return `api-contract-job-${apiContractRuntimeState.scheduledJobs.length}`;
+  },
 };
 
 const getHash = (key) => {
@@ -446,6 +454,7 @@ export function resetApiContractRuntime({
   apiContractRuntimeState.failNextCommentLookup = false;
   apiContractRuntimeState.failNextCommentSubmissionAfterCommit = false;
   apiContractRuntimeState.failNextResultCommentReceipt = false;
+  apiContractRuntimeState.scheduledJobs.length = 0;
   stringSwapAfterRead = null;
 }
 

@@ -20,6 +20,8 @@ const [maintenanceSource, schedulerSource, triggerSource] = await Promise.all([
 test('scheduler and app upgrades share one catch-up maintenance path', () => {
   assert.match(schedulerSource, /maintainArena\(redis/);
   assert.match(triggerSource, /maintainArena\(redis/);
+  assert.match(triggerSource, /scheduler\.runJob/);
+  assert.match(triggerSource, /status: 'success'/);
   assert.doesNotMatch(triggerSource, /ensureCurrentArenaPost/);
   assert.match(maintenanceSource, /runNightlyArenaJob/);
   assert.match(maintenanceSource, /loadPendingArenaResolutions/);
