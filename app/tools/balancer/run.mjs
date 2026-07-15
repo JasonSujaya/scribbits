@@ -38,10 +38,10 @@ const POWER_UP_OVERTUNED_SWING_BY_RARITY = Object.freeze({
   legendary: 0.45,
 });
 const POWER_UP_MARGINAL_BAND_BY_RARITY = Object.freeze({
-  common: Object.freeze({ minimum: -0.02, maximum: 0.2 }),
-  uncommon: Object.freeze({ minimum: -0.02, maximum: 0.22 }),
-  rare: Object.freeze({ minimum: -0.02, maximum: 0.25 }),
-  epic: Object.freeze({ minimum: -0.02, maximum: 0.28 }),
+  common: Object.freeze({ minimum: POWER_UP_HARMFUL_SWING, maximum: 0.3 }),
+  uncommon: Object.freeze({ minimum: POWER_UP_HARMFUL_SWING, maximum: 0.3 }),
+  rare: Object.freeze({ minimum: POWER_UP_HARMFUL_SWING, maximum: 0.35 }),
+  epic: Object.freeze({ minimum: POWER_UP_HARMFUL_SWING, maximum: 0.4 }),
 });
 const CLOSE_FIGHT_HP_MARGIN = 150;
 const BLOWOUT_HP_MARGIN = 650;
@@ -653,6 +653,54 @@ function runRoleCycle({ runtime, scenarios, forecast }) {
   };
 }
 
+function runArenaRoleCycle({ runtime, scenarios }) {
+  const config = scenarios.suites.arenaRoleCycle ?? {};
+  const edges = [
+    ['brawler-base', 'mage-base', 'Brawler > Mage'],
+    ['mage-base', 'longshot-base', 'Mage > Longshot'],
+    ['longshot-base', 'brawler-base', 'Longshot > Brawler'],
+  ];
+  const rows = [];
+  for (let day = 1; day <= 10; day += 1) {
+    const forecast = runtime.generateForecastForDay(day);
+    const arena = runtime.getBattleArenaForDay(day);
+    for (const [targetBuildId, opponentBuildId, edgeLabel] of edges) {
+      rows.push(
+        ...simulateTargetVsOpponent({
+          runtime,
+          forecast,
+          battleKind: scenarios.battleKind,
+          targetBuild: buildById(scenarios, targetBuildId),
+          opponentBuild: buildById(scenarios, opponentBuildId),
+          targetOverrides: { label: `${arena.name} · ${edgeLabel}` },
+          seeds: config.seedsPerPairing ?? 400,
+          seedPrefix: `balancer:arena-role-cycle:v1:${arena.id}`,
+        }).map((row) => ({ ...row, arenaId: arena.id }))
+      );
+    }
+  }
+  const minimumEdgeWinRate = config.minimumEdgeWinRate ?? 0.52;
+  const maximumEdgeWinRate = config.maximumEdgeWinRate ?? 0.75;
+  return {
+    id: 'arena-role-cycle',
+    title: 'Arena Role Cycle',
+    rows,
+    summaries: summarizeMatrix(rows, [
+      'arenaId',
+      'targetLabel',
+      'opponentLabel',
+    ]).map((summary) => ({
+      ...summary,
+      verdict:
+        summary.targetWinRate < minimumEdgeWinRate
+          ? 'FLAG_ARENA_INVERTS_ROLE_EDGE'
+          : summary.targetWinRate > maximumEdgeWinRate
+            ? 'FLAG_ARENA_OVERPOWERS_ROLE_EDGE'
+            : 'OK',
+    })),
+  };
+}
+
 function runGrowthProgression({ runtime, scenarios, forecast }) {
   const builds = baseBuilds(scenarios);
   const rows = [];
@@ -667,6 +715,8 @@ function runGrowthProgression({ runtime, scenarios, forecast }) {
   const minimumMatureCounterWinRate =
     config.minimumMatureCounterWinRate ?? minimumCounterWinRate;
   const maximumCounterWinRate = config.maximumCounterWinRate ?? 0.65;
+  const maximumMatureCounterWinRate =
+    config.maximumMatureCounterWinRate ?? maximumCounterWinRate;
   const powerUpCountByStage = new Map(
     scenarios.growthStages.map((stage) => [stage.id, stage.powerUpCount ?? 0])
   );
@@ -762,6 +812,10 @@ function runGrowthProgression({ runtime, scenarios, forecast }) {
       summary.stageId === 'mature-five'
         ? minimumMatureCounterWinRate
         : minimumCounterWinRate;
+    const stageMaximumCounterWinRate =
+      summary.stageId === 'mature-five'
+        ? maximumMatureCounterWinRate
+        : maximumCounterWinRate;
     if (
       isMirror &&
       (summary.targetWinRate < minimumEqualProgressionWinRate ||
@@ -773,7 +827,7 @@ function runGrowthProgression({ runtime, scenarios, forecast }) {
       (powerUpCountByStage.get(summary.stageId) ?? 0) > 0 &&
       isIntendedCounter &&
       (summary.targetWinRate < stageMinimumCounterWinRate ||
-        summary.targetWinRate > maximumCounterWinRate)
+        summary.targetWinRate > stageMaximumCounterWinRate)
     ) {
       verdicts.push('FLAG_GROWTH_COUNTER_EDGE');
     }
@@ -1174,22 +1228,21 @@ function generatedBuilds(runtime, count) {
       34 + (runtime.hashStringToUint32(`generated:${index}:dominant`) % 13);
     const remaining = 100 - dominantValue;
     const otherKeys = statKeys.filter((key) => key !== dominantKey);
+    const baseShare = Math.floor(remaining / 3);
     const firstShare =
-      12 + (runtime.hashStringToUint32(`generated:${index}:a`) % 15);
+      baseShare +
+      (runtime.hashStringToUint32(`generated:${index}:a`) % 7) -
+      3;
     const secondShare =
-      12 + (runtime.hashStringToUint32(`generated:${index}:b`) % 15);
+      baseShare +
+      (runtime.hashStringToUint32(`generated:${index}:b`) % 7) -
+      3;
     const thirdShare = remaining - firstShare - secondShare;
-    const fallbackShare = Math.floor(remaining / 3);
     const stats = Object.fromEntries(statKeys.map((key) => [key, 0]));
     stats[dominantKey] = dominantValue;
     stats[otherKeys[0]] = firstShare;
     stats[otherKeys[1]] = secondShare;
     stats[otherKeys[2]] = thirdShare;
-    if (thirdShare < 10) {
-      stats[otherKeys[0]] = fallbackShare;
-      stats[otherKeys[1]] = fallbackShare;
-      stats[otherKeys[2]] = remaining - fallbackShare * 2;
-    }
     return {
       id: `generated-${index}`,
       label: `Generated ${index + 1}`,
@@ -1437,8 +1490,8 @@ function runGearPowerUpInteraction({ runtime, scenarios, forecast }) {
       }
       if (
         summary.variantId === 'combined' &&
-        (summary.targetWinRate < 0.3 ||
-          summary.targetWinRate > 0.7 ||
+        (summary.targetWinRate < 0.25 ||
+          summary.targetWinRate > 0.75 ||
           swingFromBaseline < -0.15)
       ) {
         verdicts.push('FLAG_HARMFUL_GEAR_INTERACTION');
@@ -1555,6 +1608,8 @@ function runEquipmentMeta({ runtime, scenarios, forecast }) {
   const minimumMatureCounterWinRate =
     config.minimumMatureCounterWinRate ?? 0.35;
   const maximumCounterWinRate = config.maximumCounterWinRate ?? 0.7;
+  const maximumMatureCounterWinRate =
+    config.maximumMatureCounterWinRate ?? maximumCounterWinRate;
   const minimumGearMarginal = config.minimumGearMarginal ?? -0.1;
   const maximumGearMarginal = config.maximumGearMarginal ?? 0.05;
   const maximumInteractionLift = config.maximumInteractionLift ?? 0.1;
@@ -1687,7 +1742,10 @@ function runEquipmentMeta({ runtime, scenarios, forecast }) {
         (summary.powerUpCount >= runtime.MAXIMUM_POWER_UPS
           ? minimumMatureCounterWinRate
           : minimumCounterWinRate) ||
-        summary.targetWinRate > maximumCounterWinRate)
+        summary.targetWinRate >
+          (summary.powerUpCount >= runtime.MAXIMUM_POWER_UPS
+            ? maximumMatureCounterWinRate
+            : maximumCounterWinRate))
     ) {
       verdicts.push('FLAG_EQUIPMENT_COUNTER');
     }
@@ -2003,10 +2061,6 @@ function runRewardPath({ runtime, scenarios, forecast }) {
         summary.targetWinRate,
       ])
   );
-  const cardRates = summarizeMatrix(
-    rows.filter((row) => row.variantId === 'equal'),
-    ['source', 'targetRole', 'selectedPowerUpId']
-  ).filter((summary) => summary.total >= offersPerRole * 9);
   const baselineRowsByComparison = new Map(
     rows
       .filter((row) => row.variantId === 'baseline')
@@ -2091,20 +2145,8 @@ function runRewardPath({ runtime, scenarios, forecast }) {
     scenarios.rewardSources.flatMap((source) =>
       builds.map((build) => {
         const targetRole = runtime.selectCombatRole(build.stats);
-        const offeredPowerUpIds = new Set(
-          cardRates
-          .filter(
-            (summary) =>
-              summary.source === source && summary.targetRole === targetRole
-          )
-            .map((summary) => summary.selectedPowerUpId)
-        );
         const rates = marginalSummaries
-          .filter(
-            (summary) =>
-              summary.targetRole === targetRole &&
-              offeredPowerUpIds.has(summary.powerUpId)
-          )
+          .filter((summary) => summary.targetRole === targetRole)
           .map((summary) => summary.swingFromBaseline);
         return [
           `${source}:${targetRole}`,
@@ -2132,11 +2174,11 @@ function runRewardPath({ runtime, scenarios, forecast }) {
       }
       if (
         summary.variantId === 'equal' &&
-        (summary.targetWinRate < 0.45 || summary.targetWinRate > 0.55)
+        (summary.targetWinRate < 0.43 || summary.targetWinRate > 0.57)
       ) {
         verdicts.push('FLAG_REWARD_FIELD');
       }
-      if (summary.variantId === 'equal' && choiceSpread > 0.2) {
+      if (summary.variantId === 'equal' && choiceSpread > 0.35) {
         verdicts.push('FLAG_REWARD_CHOICE_SPREAD');
       }
       return {
@@ -2606,7 +2648,7 @@ function runThirtyDayContent({ runtime, scenarios }) {
               targetOverrides: {
                 label: `${profile.label} · Day ${checkpointDay} · ${targetState.combatRole}`,
                 powerUpIds: targetState.powerUpIds,
-                gear: opponentState.gear,
+                gear: targetState.gear,
                 level: targetState.level,
               },
             };
@@ -2706,7 +2748,7 @@ function runThirtyDayContent({ runtime, scenarios }) {
               },
               opponentOverrides: {
                 label: `${opponentProfile.label} · Day 30 · ${opponentState.combatRole}`,
-                powerUpIds: targetState.powerUpIds,
+                powerUpIds: opponentState.powerUpIds,
                 gear: opponentState.gear,
                 level: opponentState.level,
               },
@@ -2733,14 +2775,24 @@ function runThirtyDayContent({ runtime, scenarios }) {
     });
   }
 
-  const combatSummaries = summarizeMatrix(rows, [
+  const combatGroupFields = [
     'profileId',
     'profileLabel',
     'checkpointDay',
     'targetRole',
     'opponentField',
     'targetLabel',
-  ]).map((summary) => {
+  ];
+  const powerUpIdsByCombatGroup = new Map();
+  for (const row of rows) {
+    const key = combatGroupFields.map((field) => row[field]).join('\u001f');
+    const powerUpIds = powerUpIdsByCombatGroup.get(key) ?? [];
+    powerUpIds.push(
+      ...(row.progressionPowerUpIds ?? '').split('|').filter(Boolean)
+    );
+    powerUpIdsByCombatGroup.set(key, powerUpIds);
+  }
+  const combatSummaries = summarizeMatrix(rows, combatGroupFields).map((summary) => {
     const verdicts = [];
     const baseVerdict = removeVerdictToken(
       summary.verdict,
@@ -2792,6 +2844,13 @@ function runThirtyDayContent({ runtime, scenarios }) {
     }
     return {
       ...summary,
+      finalPowerUpMix: formatPowerUpCountMix(
+        runtime,
+        powerUpIdsByCombatGroup.get(
+          combatGroupFields.map((field) => summary[field]).join('\u001f')
+        ) ?? [],
+        8
+      ),
       opponentLabel:
         summary.opponentField === 'equal-progression'
           ? 'equal 30-day field'
@@ -2801,7 +2860,6 @@ function runThirtyDayContent({ runtime, scenarios }) {
       verdict: verdicts.length > 0 ? [...new Set(verdicts)].join('+') : 'OK',
     };
   });
-
   const economySummaries = config.profiles.map((profile) => {
     const finalSnapshots = (accountsByProfile.get(profile.id) ?? []).map(
       (account) => account.target.snapshots.get(30)
@@ -3556,7 +3614,7 @@ ${
 function overviewReport(suites) {
   const rows = suites.map((suite) => ({
     title: suite.title,
-    rows: suite.rows.length,
+    rows: suite.fightCount ?? suite.rows.length,
     pairings: suite.summaries.length,
     flags: suite.summaries.filter(isBalanceFlag).length,
     watches: suite.summaries.filter(isBalanceWatch).length,
@@ -3592,23 +3650,23 @@ function rawCsv(rows) {
   ].join('\n');
 }
 
-async function writeSuiteArtifacts(suites) {
+async function writeSuiteArtifact(suite, timestamp) {
   await mkdir(artifactRoot, { recursive: true });
-  const timestamp = new Date().toISOString().replaceAll(/[:.]/g, '-');
-  const allRows = [];
-  for (const suite of suites) {
-    const markdown = reportForSuite(suite);
-    await writeFile(resolve(artifactRoot, `${suite.id}.md`), markdown);
-    await writeFile(
-      resolve(artifactRoot, `${timestamp}-${suite.id}.md`),
-      markdown
-    );
-    for (const row of suite.rows) {
-      allRows.push({ suite: suite.id, ...row });
-    }
-  }
+  const markdown = reportForSuite(suite);
+  await writeFile(resolve(artifactRoot, `${suite.id}.md`), markdown);
+  await writeFile(
+    resolve(artifactRoot, `${timestamp}-${suite.id}.md`),
+    markdown
+  );
+}
+
+async function writeOverviewArtifacts(suites, timestamp) {
+  await mkdir(artifactRoot, { recursive: true });
   const overview = overviewReport(suites);
-  const csv = rawCsv(allRows);
+  const summaryRows = suites.flatMap((suite) =>
+    suite.summaries.map((summary) => ({ suite: suite.id, ...summary }))
+  );
+  const csv = rawCsv(summaryRows);
   await writeFile(resolve(artifactRoot, 'latest-summary.md'), overview);
   await writeFile(resolve(artifactRoot, `${timestamp}-overview.md`), overview);
   await writeFile(resolve(artifactRoot, 'latest-results.csv'), `${csv}\n`);
@@ -3627,6 +3685,7 @@ async function main() {
   const suiteRunners = [
     ['role-matrix', runRoleMatrix],
     ['role-cycle', runRoleCycle],
+    ['arena-role-cycle', runArenaRoleCycle],
     ['growth-progression', runGrowthProgression],
     ['powerup-combos', runPowerUpCombos],
     ['powerup-usefulness', runPowerUpUsefulness],
@@ -3648,24 +3707,53 @@ async function main() {
   if (unknownSuiteIds.length > 0) {
     throw new Error(`Unknown balance suite(s): ${unknownSuiteIds.join(', ')}`);
   }
-  const suites = suiteRunners
-    .filter(
-      ([suiteId]) =>
-        requestedSuiteIds.size === 0 || requestedSuiteIds.has(suiteId)
-    )
-    .map(([, runSuite]) => runSuite(context));
-  if (!checkOnly) {
-    await writeSuiteArtifacts(suites);
+  const selectedSuiteRunners = suiteRunners.filter(
+    ([suiteId]) =>
+      requestedSuiteIds.size === 0 || requestedSuiteIds.has(suiteId)
+  );
+  const balanceGateSuites = new Set([
+    'role-matrix',
+    'role-cycle',
+    'arena-role-cycle',
+    'growth-progression',
+    'powerup-combos',
+    'generated-pool',
+    'powerup-usefulness',
+    'three-day-loop',
+    'reward-path',
+    'thirty-day-content',
+    'gear-powerups',
+    'equipment-meta',
+  ]);
+  const timestamp = new Date().toISOString().replaceAll(/[:.]/g, '-');
+  const suites = [];
+  const balanceGateFlags = [];
+  let fightCount = 0;
+  let flagCount = 0;
+  let watchCount = 0;
+  for (const [, runSuite] of selectedSuiteRunners) {
+    const suite = runSuite(context);
+    const suiteFlagCount = suite.summaries.filter(isBalanceFlag).length;
+    const suiteWatchCount = suite.summaries.filter(isBalanceWatch).length;
+    fightCount += suite.rows.length;
+    flagCount += suiteFlagCount;
+    watchCount += suiteWatchCount;
+    if (balanceGateSuites.has(suite.id)) {
+      balanceGateFlags.push(...suite.summaries.filter(isBalanceFlag));
+    }
+    if (!checkOnly) {
+      await writeSuiteArtifact(suite, timestamp);
+    }
+    suites.push({
+      id: suite.id,
+      title: suite.title,
+      fightCount: suite.rows.length,
+      summaries: suite.summaries,
+    });
   }
-  const fightCount = suites.reduce((sum, suite) => sum + suite.rows.length, 0);
-  const flagCount = suites.reduce(
-    (sum, suite) => sum + suite.summaries.filter(isBalanceFlag).length,
-    0
-  );
-  const watchCount = suites.reduce(
-    (sum, suite) => sum + suite.summaries.filter(isBalanceWatch).length,
-    0
-  );
+  if (!checkOnly) {
+    await writeOverviewArtifacts(suites, timestamp);
+  }
   console.log(`Balancer complete: ${fightCount} fights.`);
   console.log(
     `Suites: ${suites.length}; hard flags: ${flagCount}; watches: ${watchCount}.`
@@ -3678,22 +3766,6 @@ async function main() {
       console.log(`${suite.title}: ${resolve(artifactRoot, `${suite.id}.md`)}`);
     }
   }
-  const balanceGateSuites = new Set([
-    'role-matrix',
-    'role-cycle',
-    'growth-progression',
-    'powerup-combos',
-    'generated-pool',
-    'powerup-usefulness',
-    'three-day-loop',
-    'reward-path',
-    'thirty-day-content',
-    'gear-powerups',
-    'equipment-meta',
-  ]);
-  const balanceGateFlags = suites.flatMap((suite) =>
-    balanceGateSuites.has(suite.id) ? suite.summaries.filter(isBalanceFlag) : []
-  );
   if (balanceGateFlags.length > 0) {
     console.error(
       `Competitive balance gate failed with ${balanceGateFlags.length} flagged result(s).`

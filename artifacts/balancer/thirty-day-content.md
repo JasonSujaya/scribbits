@@ -1,131 +1,131 @@
 # Thirty-Day Content + Progression
 
-Generated: 2026-07-15T08:58:40.647Z
+Generated: 2026-07-15T11:56:06.266Z
 
 Runner: `app/tools/balancer/run.mjs`
 
 This report bypasses API/routes/storage and calls the production combat mock bundle directly.
 
-| Target | Opponent | Win rate | Avg duration | Power-Up triggers | Target PU | Timeouts | Close | Blowouts | Day | Capsules | Discoveries | Collection | Gear rank | Level | Ink earned/spent | Content | Verdict |
-| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- | --- |
-| 30-day content schedule | production catalogs | 50.0% | 0.0s | 0.00 | 0.00 | 0.0% | 0.0% | 0.0% |  |  |  |  |  |  |  | 30d · 10 themes · 10 arenas · 7 Gear days | OK |
-| Casual · 30-day economy | earned progression budget | 50.0% | 0.0s | 0.00 | 0.00 | 0.0% | 0.0% | 0.0% | 30 | 38.0 | 28.5 | 54.7% | 1.9 | 3.0 | 270.0/266.0 |  | OK |
-| Regular · 30-day economy | earned progression budget | 50.0% | 0.0s | 0.00 | 0.00 | 0.0% | 0.0% | 0.0% | 30 | 65.0 | 37.4 | 72.0% | 2.3 | 5.0 | 460.0/455.0 |  | OK |
-| Competitive · 30-day economy | earned progression budget | 50.0% | 0.0s | 0.00 | 0.00 | 0.0% | 0.0% | 0.0% | 30 | 94.0 | 42.9 | 82.4% | 3.1 | 5.0 | 660.0/658.0 |  | OK |
-| Casual · Day 1 · brawler | equal 30-day field | 48.6% | 14.3s | 2.81 | 1.37 | 0.0% | 75.0% | 0.0% | 1 |  |  |  |  |  |  |  | OK |
-| Casual · Day 1 · brawler | fresh day-one field | 54.2% | 14.2s | 1.40 | 1.40 | 0.0% | 71.5% | 0.0% | 1 |  |  |  |  |  |  |  | OK |
-| Casual · Day 1 · longshot | equal 30-day field | 54.9% | 18.7s | 2.89 | 1.38 | 0.0% | 88.2% | 0.0% | 1 |  |  |  |  |  |  |  | OK |
-| Casual · Day 1 · longshot | fresh day-one field | 64.9% | 18.5s | 1.38 | 1.38 | 0.0% | 78.8% | 0.0% | 1 |  |  |  |  |  |  |  | OK |
-| Casual · Day 1 · mage | equal 30-day field | 42.4% | 18.2s | 2.64 | 1.21 | 0.0% | 82.6% | 0.0% | 1 |  |  |  |  |  |  |  | OK |
-| Casual · Day 1 · mage | fresh day-one field | 67.0% | 18.3s | 1.19 | 1.19 | 0.0% | 92.0% | 0.0% | 1 |  |  |  |  |  |  |  | OK |
-| Casual · Day 3 · brawler | equal 30-day field | 55.9% | 14.4s | 5.61 | 2.90 | 0.0% | 71.5% | 0.0% | 3 |  |  |  |  |  |  |  | OK |
-| Casual · Day 3 · brawler | fresh day-one field | 57.3% | 14.2s | 2.90 | 2.90 | 0.0% | 71.9% | 0.0% | 3 |  |  |  |  |  |  |  | OK |
-| Casual · Day 3 · longshot | equal 30-day field | 55.9% | 18.8s | 5.65 | 2.83 | 0.0% | 89.6% | 0.0% | 3 |  |  |  |  |  |  |  | OK |
-| Casual · Day 3 · longshot | fresh day-one field | 84.7% | 18.4s | 2.84 | 2.84 | 0.0% | 74.0% | 0.0% | 3 |  |  |  |  |  |  |  | OK |
-| Casual · Day 3 · mage | equal 30-day field | 40.3% | 18.2s | 5.29 | 2.52 | 0.0% | 81.9% | 0.0% | 3 |  |  |  |  |  |  |  | OK |
-| Casual · Day 3 · mage | fresh day-one field | 77.4% | 18.4s | 2.47 | 2.47 | 0.0% | 91.7% | 0.0% | 3 |  |  |  |  |  |  |  | OK |
-| Casual · Day 7 · brawler | equal 30-day field | 53.8% | 14.8s | 8.23 | 4.18 | 0.0% | 72.9% | 0.0% | 7 |  |  |  |  |  |  |  | OK |
-| Casual · Day 7 · brawler | fresh day-one field | 67.0% | 14.1s | 4.22 | 4.22 | 0.0% | 70.5% | 0.0% | 7 |  |  |  |  |  |  |  | OK |
-| Casual · Day 7 · longshot | equal 30-day field | 56.3% | 19.0s | 8.22 | 4.10 | 0.0% | 90.6% | 0.0% | 7 |  |  |  |  |  |  |  | OK |
-| Casual · Day 7 · longshot | fresh day-one field | 93.1% | 18.2s | 4.11 | 4.11 | 0.0% | 69.8% | 0.0% | 7 |  |  |  |  |  |  |  | OK |
-| Casual · Day 7 · mage | equal 30-day field | 39.6% | 18.4s | 7.90 | 3.84 | 0.0% | 78.5% | 0.0% | 7 |  |  |  |  |  |  |  | OK |
-| Casual · Day 7 · mage | fresh day-one field | 82.3% | 18.3s | 3.80 | 3.80 | 0.0% | 91.0% | 0.0% | 7 |  |  |  |  |  |  |  | OK |
-| Casual · Day 14 · brawler | equal 30-day field | 58.0% | 15.2s | 13.53 | 6.90 | 0.0% | 73.6% | 0.0% | 14 |  |  |  |  |  |  |  | OK |
-| Casual · Day 14 · brawler | fresh day-one field | 78.5% | 14.3s | 6.98 | 6.98 | 0.0% | 66.7% | 0.0% | 14 |  |  |  |  |  |  |  | OK |
-| Casual · Day 14 · longshot | equal 30-day field | 46.5% | 19.2s | 13.91 | 7.13 | 0.0% | 91.0% | 0.0% | 14 |  |  |  |  |  |  |  | OK |
-| Casual · Day 14 · longshot | fresh day-one field | 96.9% | 17.9s | 7.15 | 7.15 | 0.0% | 59.4% | 0.0% | 14 |  |  |  |  |  |  |  | OK |
-| Casual · Day 14 · mage | equal 30-day field | 39.2% | 18.5s | 13.24 | 6.32 | 0.0% | 78.5% | 0.0% | 14 |  |  |  |  |  |  |  | OK |
-| Casual · Day 14 · mage | fresh day-one field | 83.7% | 18.2s | 6.18 | 6.18 | 0.0% | 82.3% | 0.0% | 14 |  |  |  |  |  |  |  | OK |
-| Casual · Day 21 · brawler | equal 30-day field | 59.7% | 15.2s | 13.54 | 6.90 | 0.0% | 73.6% | 0.0% | 21 |  |  |  |  |  |  |  | OK |
-| Casual · Day 21 · brawler | fresh day-one field | 76.4% | 14.3s | 7.00 | 7.00 | 0.0% | 68.1% | 0.0% | 21 |  |  |  |  |  |  |  | OK |
-| Casual · Day 21 · longshot | equal 30-day field | 44.4% | 19.1s | 13.91 | 7.14 | 0.0% | 90.6% | 0.0% | 21 |  |  |  |  |  |  |  | OK |
-| Casual · Day 21 · longshot | fresh day-one field | 93.4% | 17.9s | 7.14 | 7.14 | 0.0% | 58.3% | 0.0% | 21 |  |  |  |  |  |  |  | OK |
-| Casual · Day 21 · mage | equal 30-day field | 39.6% | 18.5s | 13.24 | 6.32 | 0.0% | 76.7% | 0.0% | 21 |  |  |  |  |  |  |  | OK |
-| Casual · Day 21 · mage | fresh day-one field | 82.6% | 18.1s | 6.16 | 6.16 | 0.0% | 78.8% | 0.0% | 21 |  |  |  |  |  |  |  | OK |
-| Casual · Day 30 · brawler | equal 30-day field | 58.7% | 15.2s | 13.56 | 6.92 | 0.0% | 67.7% | 0.0% | 30 |  |  |  |  |  |  |  | OK |
-| Casual · Day 30 · brawler | fresh day-one field | 74.3% | 14.4s | 7.01 | 7.01 | 0.0% | 65.6% | 0.0% | 30 |  |  |  |  |  |  |  | OK |
-| Casual · Day 30 · longshot | equal 30-day field | 45.1% | 18.9s | 13.88 | 7.11 | 0.0% | 83.7% | 0.0% | 30 |  |  |  |  |  |  |  | OK |
-| Casual · Day 30 · longshot | fresh day-one field | 89.2% | 17.7s | 7.13 | 7.13 | 0.0% | 58.7% | 0.0% | 30 |  |  |  |  |  |  |  | OK |
-| Casual · Day 30 · mage | equal 30-day field | 39.9% | 18.6s | 13.22 | 6.30 | 0.0% | 76.7% | 0.0% | 30 |  |  |  |  |  |  |  | OK |
-| Casual · Day 30 · mage | fresh day-one field | 72.9% | 18.1s | 6.20 | 6.20 | 0.0% | 85.8% | 0.0% | 30 |  |  |  |  |  |  |  | OK |
-| Regular · Day 1 · brawler | equal 30-day field | 50.3% | 14.4s | 8.52 | 4.45 | 0.0% | 76.4% | 0.0% | 1 |  |  |  |  |  |  |  | OK |
-| Regular · Day 1 · brawler | fresh day-one field | 65.3% | 13.9s | 4.41 | 4.41 | 0.0% | 67.7% | 0.0% | 1 |  |  |  |  |  |  |  | OK |
-| Regular · Day 1 · longshot | equal 30-day field | 61.5% | 18.9s | 8.21 | 4.00 | 0.0% | 90.3% | 0.0% | 1 |  |  |  |  |  |  |  | OK |
-| Regular · Day 1 · longshot | fresh day-one field | 93.1% | 18.2s | 4.00 | 4.00 | 0.0% | 69.8% | 0.0% | 1 |  |  |  |  |  |  |  | OK |
-| Regular · Day 1 · mage | equal 30-day field | 41.0% | 18.1s | 8.06 | 3.78 | 0.0% | 79.2% | 0.0% | 1 |  |  |  |  |  |  |  | OK |
-| Regular · Day 1 · mage | fresh day-one field | 81.9% | 18.3s | 3.64 | 3.64 | 0.0% | 90.3% | 0.0% | 1 |  |  |  |  |  |  |  | OK |
-| Regular · Day 3 · brawler | equal 30-day field | 51.0% | 14.4s | 8.50 | 4.45 | 0.0% | 77.1% | 0.0% | 3 |  |  |  |  |  |  |  | OK |
-| Regular · Day 3 · brawler | fresh day-one field | 68.1% | 13.8s | 4.42 | 4.42 | 0.0% | 66.7% | 0.0% | 3 |  |  |  |  |  |  |  | OK |
-| Regular · Day 3 · longshot | equal 30-day field | 62.2% | 18.9s | 8.20 | 4.01 | 0.0% | 88.5% | 0.0% | 3 |  |  |  |  |  |  |  | OK |
-| Regular · Day 3 · longshot | fresh day-one field | 95.1% | 18.3s | 4.00 | 4.00 | 0.0% | 67.7% | 0.0% | 3 |  |  |  |  |  |  |  | OK |
-| Regular · Day 3 · mage | equal 30-day field | 39.9% | 18.2s | 8.05 | 3.80 | 0.0% | 80.2% | 0.0% | 3 |  |  |  |  |  |  |  | OK |
-| Regular · Day 3 · mage | fresh day-one field | 83.3% | 18.3s | 3.67 | 3.67 | 0.0% | 92.0% | 0.0% | 3 |  |  |  |  |  |  |  | OK |
-| Regular · Day 7 · brawler | equal 30-day field | 58.3% | 14.7s | 13.72 | 7.00 | 0.0% | 74.3% | 0.0% | 7 |  |  |  |  |  |  |  | OK |
-| Regular · Day 7 · brawler | fresh day-one field | 78.8% | 13.8s | 6.99 | 6.99 | 0.0% | 62.5% | 0.0% | 7 |  |  |  |  |  |  |  | OK |
-| Regular · Day 7 · longshot | equal 30-day field | 54.9% | 19.0s | 13.56 | 6.72 | 0.0% | 91.0% | 0.0% | 7 |  |  |  |  |  |  |  | OK |
-| Regular · Day 7 · longshot | fresh day-one field | 96.9% | 17.9s | 6.68 | 6.68 | 0.0% | 59.4% | 0.0% | 7 |  |  |  |  |  |  |  | OK |
-| Regular · Day 7 · mage | equal 30-day field | 44.1% | 18.4s | 13.42 | 6.31 | 0.0% | 78.5% | 0.0% | 7 |  |  |  |  |  |  |  | OK |
-| Regular · Day 7 · mage | fresh day-one field | 84.7% | 18.1s | 6.09 | 6.09 | 0.0% | 78.8% | 0.0% | 7 |  |  |  |  |  |  |  | OK |
-| Regular · Day 14 · brawler | equal 30-day field | 61.1% | 14.6s | 13.66 | 7.00 | 0.0% | 67.0% | 0.0% | 14 |  |  |  |  |  |  |  | OK |
-| Regular · Day 14 · brawler | fresh day-one field | 76.7% | 14.0s | 6.99 | 6.99 | 0.0% | 60.8% | 0.0% | 14 |  |  |  |  |  |  |  | OK |
-| Regular · Day 14 · longshot | equal 30-day field | 49.3% | 18.8s | 13.57 | 6.71 | 0.0% | 84.7% | 0.0% | 14 |  |  |  |  |  |  |  | OK |
-| Regular · Day 14 · longshot | fresh day-one field | 90.6% | 17.8s | 6.66 | 6.66 | 0.0% | 54.9% | 0.0% | 14 |  |  |  |  |  |  |  | OK |
-| Regular · Day 14 · mage | equal 30-day field | 44.1% | 18.6s | 13.32 | 6.28 | 0.0% | 80.6% | 0.0% | 14 |  |  |  |  |  |  |  | OK |
-| Regular · Day 14 · mage | fresh day-one field | 74.3% | 18.0s | 6.10 | 6.10 | 0.0% | 82.6% | 0.0% | 14 |  |  |  |  |  |  |  | OK |
-| Regular · Day 21 · brawler | equal 30-day field | 66.3% | 14.3s | 13.63 | 6.95 | 0.0% | 61.1% | 0.0% | 21 |  |  |  |  |  |  |  | OK |
-| Regular · Day 21 · brawler | fresh day-one field | 72.6% | 14.2s | 6.97 | 6.97 | 0.0% | 59.4% | 0.0% | 21 |  |  |  |  |  |  |  | OK |
-| Regular · Day 21 · longshot | equal 30-day field | 52.1% | 18.8s | 13.55 | 6.71 | 0.0% | 86.1% | 0.0% | 21 |  |  |  |  |  |  |  | OK |
-| Regular · Day 21 · longshot | fresh day-one field | 90.3% | 17.9s | 6.66 | 6.66 | 0.0% | 56.6% | 0.0% | 21 |  |  |  |  |  |  |  | OK |
-| Regular · Day 21 · mage | equal 30-day field | 45.1% | 18.5s | 13.33 | 6.27 | 0.0% | 81.3% | 0.0% | 21 |  |  |  |  |  |  |  | OK |
-| Regular · Day 21 · mage | fresh day-one field | 69.4% | 18.1s | 6.11 | 6.11 | 0.0% | 85.4% | 0.0% | 21 |  |  |  |  |  |  |  | OK |
-| Regular · Day 30 · brawler | equal 30-day field | 67.7% | 14.2s | 13.56 | 6.91 | 0.0% | 59.0% | 0.0% | 30 |  |  |  |  |  |  |  | OK |
-| Regular · Day 30 · brawler | fresh day-one field | 70.8% | 14.1s | 6.98 | 6.98 | 0.0% | 56.6% | 0.0% | 30 |  |  |  |  |  |  |  | OK |
-| Regular · Day 30 · longshot | equal 30-day field | 50.7% | 18.9s | 13.55 | 6.73 | 0.0% | 87.8% | 0.0% | 30 |  |  |  |  |  |  |  | OK |
-| Regular · Day 30 · longshot | fresh day-one field | 93.4% | 17.8s | 6.68 | 6.68 | 0.0% | 53.1% | 0.0% | 30 |  |  |  |  |  |  |  | OK |
-| Regular · Day 30 · mage | equal 30-day field | 44.1% | 18.5s | 13.34 | 6.29 | 0.0% | 80.9% | 0.0% | 30 |  |  |  |  |  |  |  | OK |
-| Regular · Day 30 · mage | fresh day-one field | 71.9% | 18.2s | 6.14 | 6.14 | 0.0% | 86.8% | 0.0% | 30 |  |  |  |  |  |  |  | OK |
-| Competitive · Day 1 · brawler | equal 30-day field | 49.3% | 14.4s | 8.53 | 4.46 | 0.0% | 76.7% | 0.0% | 1 |  |  |  |  |  |  |  | OK |
-| Competitive · Day 1 · brawler | fresh day-one field | 64.9% | 13.8s | 4.40 | 4.40 | 0.0% | 68.8% | 0.0% | 1 |  |  |  |  |  |  |  | OK |
-| Competitive · Day 1 · longshot | equal 30-day field | 58.3% | 18.9s | 8.20 | 4.01 | 0.0% | 88.5% | 0.0% | 1 |  |  |  |  |  |  |  | OK |
-| Competitive · Day 1 · longshot | fresh day-one field | 94.4% | 18.3s | 4.00 | 4.00 | 0.0% | 70.1% | 0.0% | 1 |  |  |  |  |  |  |  | OK |
-| Competitive · Day 1 · mage | equal 30-day field | 41.3% | 18.1s | 8.04 | 3.76 | 0.0% | 77.1% | 0.0% | 1 |  |  |  |  |  |  |  | OK |
-| Competitive · Day 1 · mage | fresh day-one field | 83.3% | 18.4s | 3.66 | 3.66 | 0.0% | 90.6% | 0.0% | 1 |  |  |  |  |  |  |  | OK |
-| Competitive · Day 3 · brawler | equal 30-day field | 55.6% | 14.4s | 8.52 | 4.46 | 0.0% | 76.0% | 0.0% | 3 |  |  |  |  |  |  |  | OK |
-| Competitive · Day 3 · brawler | fresh day-one field | 64.6% | 13.9s | 4.41 | 4.41 | 0.0% | 67.0% | 0.0% | 3 |  |  |  |  |  |  |  | OK |
-| Competitive · Day 3 · longshot | equal 30-day field | 61.5% | 18.9s | 8.22 | 4.01 | 0.0% | 87.8% | 0.0% | 3 |  |  |  |  |  |  |  | OK |
-| Competitive · Day 3 · longshot | fresh day-one field | 93.1% | 18.2s | 4.00 | 4.00 | 0.0% | 70.8% | 0.0% | 3 |  |  |  |  |  |  |  | OK |
-| Competitive · Day 3 · mage | equal 30-day field | 39.6% | 18.2s | 8.08 | 3.80 | 0.0% | 83.0% | 0.0% | 3 |  |  |  |  |  |  |  | OK |
-| Competitive · Day 3 · mage | fresh day-one field | 84.0% | 18.3s | 3.67 | 3.67 | 0.0% | 89.2% | 0.0% | 3 |  |  |  |  |  |  |  | OK |
-| Competitive · Day 7 · brawler | equal 30-day field | 57.3% | 14.6s | 13.81 | 7.20 | 0.0% | 73.6% | 0.0% | 7 |  |  |  |  |  |  |  | OK |
-| Competitive · Day 7 · brawler | fresh day-one field | 78.1% | 13.9s | 7.15 | 7.15 | 0.0% | 60.4% | 0.0% | 7 |  |  |  |  |  |  |  | OK |
-| Competitive · Day 7 · longshot | equal 30-day field | 50.7% | 18.9s | 13.41 | 6.61 | 0.0% | 92.0% | 0.0% | 7 |  |  |  |  |  |  |  | OK |
-| Competitive · Day 7 · longshot | fresh day-one field | 97.9% | 18.0s | 6.55 | 6.55 | 0.0% | 59.4% | 0.0% | 7 |  |  |  |  |  |  |  | OK |
-| Competitive · Day 7 · mage | equal 30-day field | 36.1% | 18.4s | 13.19 | 6.20 | 0.0% | 77.4% | 0.0% | 7 |  |  |  |  |  |  |  | OK |
-| Competitive · Day 7 · mage | fresh day-one field | 82.6% | 18.2s | 6.04 | 6.04 | 0.0% | 82.6% | 0.0% | 7 |  |  |  |  |  |  |  | OK |
-| Competitive · Day 14 · brawler | equal 30-day field | 58.7% | 14.6s | 13.78 | 7.21 | 0.0% | 69.4% | 0.0% | 14 |  |  |  |  |  |  |  | OK |
-| Competitive · Day 14 · brawler | fresh day-one field | 75.7% | 14.0s | 7.13 | 7.13 | 0.0% | 61.1% | 0.0% | 14 |  |  |  |  |  |  |  | OK |
-| Competitive · Day 14 · longshot | equal 30-day field | 48.3% | 19.0s | 13.40 | 6.61 | 0.0% | 91.7% | 0.0% | 14 |  |  |  |  |  |  |  | OK |
-| Competitive · Day 14 · longshot | fresh day-one field | 97.2% | 18.0s | 6.53 | 6.53 | 0.0% | 57.6% | 0.0% | 14 |  |  |  |  |  |  |  | OK |
-| Competitive · Day 14 · mage | equal 30-day field | 39.6% | 18.4s | 13.19 | 6.21 | 0.0% | 76.0% | 0.0% | 14 |  |  |  |  |  |  |  | OK |
-| Competitive · Day 14 · mage | fresh day-one field | 78.5% | 18.1s | 6.01 | 6.01 | 0.0% | 83.0% | 0.0% | 14 |  |  |  |  |  |  |  | OK |
-| Competitive · Day 21 · brawler | equal 30-day field | 61.5% | 14.3s | 13.71 | 7.17 | 0.0% | 66.7% | 0.0% | 21 |  |  |  |  |  |  |  | OK |
-| Competitive · Day 21 · brawler | fresh day-one field | 74.0% | 14.0s | 7.12 | 7.12 | 0.0% | 60.4% | 0.0% | 21 |  |  |  |  |  |  |  | OK |
-| Competitive · Day 21 · longshot | equal 30-day field | 54.2% | 19.0s | 13.40 | 6.60 | 0.0% | 90.6% | 0.0% | 21 |  |  |  |  |  |  |  | OK |
-| Competitive · Day 21 · longshot | fresh day-one field | 99.0% | 18.0s | 6.55 | 6.55 | 0.0% | 55.2% | 0.0% | 21 |  |  |  |  |  |  |  | OK |
-| Competitive · Day 21 · mage | equal 30-day field | 35.8% | 18.3s | 13.14 | 6.16 | 0.0% | 76.4% | 0.0% | 21 |  |  |  |  |  |  |  | OK |
-| Competitive · Day 21 · mage | fresh day-one field | 80.2% | 18.1s | 6.01 | 6.01 | 0.0% | 87.5% | 0.0% | 21 |  |  |  |  |  |  |  | OK |
-| Competitive · Day 30 · brawler | equal 30-day field | 59.0% | 14.4s | 13.79 | 7.23 | 0.0% | 66.7% | 0.0% | 30 |  |  |  |  |  |  |  | OK |
-| Competitive · Day 30 · brawler | fresh day-one field | 73.3% | 14.0s | 7.12 | 7.12 | 0.0% | 56.9% | 0.0% | 30 |  |  |  |  |  |  |  | OK |
-| Competitive · Day 30 · longshot | equal 30-day field | 51.7% | 18.9s | 13.40 | 6.60 | 0.0% | 89.9% | 0.0% | 30 |  |  |  |  |  |  |  | OK |
-| Competitive · Day 30 · longshot | fresh day-one field | 96.9% | 17.9s | 6.53 | 6.53 | 0.0% | 55.9% | 0.0% | 30 |  |  |  |  |  |  |  | WATCH_FRESH_PLAYER_GAP |
-| Competitive · Day 30 · mage | equal 30-day field | 36.8% | 18.4s | 13.17 | 6.21 | 0.0% | 76.7% | 0.0% | 30 |  |  |  |  |  |  |  | OK |
-| Competitive · Day 30 · mage | fresh day-one field | 80.2% | 18.1s | 6.04 | 6.04 | 0.0% | 80.6% | 0.0% | 30 |  |  |  |  |  |  |  | OK |
-| Regular · Day 30 · brawler | lower-activity day-30 field | 57.3% | 11.3s | 12.90 | 6.45 | 0.0% | 100.0% | 0.0% | 30 |  |  |  |  |  |  |  | WATCH_DURATION |
-| Regular · Day 30 · longshot | lower-activity day-30 field | 56.3% | 19.7s | 13.35 | 6.67 | 0.0% | 100.0% | 0.0% | 30 |  |  |  |  |  |  |  | OK |
-| Regular · Day 30 · mage | lower-activity day-30 field | 47.9% | 19.2s | 12.56 | 6.24 | 0.0% | 96.9% | 0.0% | 30 |  |  |  |  |  |  |  | OK |
-| Competitive · Day 30 · brawler | lower-activity day-30 field | 43.8% | 11.2s | 13.42 | 6.70 | 0.0% | 100.0% | 0.0% | 30 |  |  |  |  |  |  |  | WATCH_DURATION |
-| Competitive · Day 30 · longshot | lower-activity day-30 field | 45.8% | 19.8s | 13.25 | 6.64 | 0.0% | 100.0% | 0.0% | 30 |  |  |  |  |  |  |  | OK |
-| Competitive · Day 30 · mage | lower-activity day-30 field | 56.3% | 19.2s | 12.27 | 6.21 | 0.0% | 91.7% | 0.0% | 30 |  |  |  |  |  |  |  | OK |
+| Target | Opponent | Win rate | Avg duration | Power-Up triggers | Target PU | Timeouts | Close | Blowouts | Top final sets | Day | Capsules | Discoveries | Collection | Gear rank | Level | Ink earned/spent | Content | Verdict |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- | --- |
+| 30-day content schedule | production catalogs | 50.0% | 0.0s | 0.00 | 0.00 | 0.0% | 0.0% | 0.0% |  |  |  |  |  |  |  |  | 30d · 10 themes · 10 arenas · 7 Gear days | OK |
+| Casual · 30-day economy | earned progression budget | 50.0% | 0.0s | 0.00 | 0.00 | 0.0% | 0.0% | 0.0% |  | 30 | 38.0 | 28.5 | 54.7% | 1.9 | 3.0 | 270.0/266.0 |  | OK |
+| Regular · 30-day economy | earned progression budget | 50.0% | 0.0s | 0.00 | 0.00 | 0.0% | 0.0% | 0.0% |  | 30 | 65.0 | 37.4 | 72.0% | 2.3 | 5.0 | 460.0/455.0 |  | OK |
+| Competitive · 30-day economy | earned progression budget | 50.0% | 0.0s | 0.00 | 0.00 | 0.0% | 0.0% | 0.0% |  | 30 | 94.0 | 42.9 | 82.4% | 3.1 | 5.0 | 660.0/658.0 |  | OK |
+| Casual · Day 1 · brawler | equal 30-day field | 51.7% | 14.1s | 1.97 | 1.00 | 0.0% | 75.7% | 0.0% | PAPER SHIELD (120); DOUBLE DOODLE (72); SMUDGE STEP (48); COUNTER SKETCH (30); ECHO MARK (12); INK RAGE (6) | 1 |  |  |  |  |  |  |  | OK |
+| Casual · Day 1 · brawler | fresh day-one field | 52.1% | 14.2s | 1.00 | 1.00 | 0.0% | 80.9% | 0.0% | PAPER SHIELD (120); DOUBLE DOODLE (72); SMUDGE STEP (48); COUNTER SKETCH (30); ECHO MARK (12); INK RAGE (6) | 1 |  |  |  |  |  |  |  | OK |
+| Casual · Day 1 · longshot | equal 30-day field | 49.0% | 18.8s | 2.01 | 1.00 | 0.0% | 90.6% | 0.0% | SMUDGE STEP (84); COUNTER SKETCH (48); ECHO MARK (48); PAPER SHIELD (42); DOUBLE DOODLE (36); COMBO SPARK (30) | 1 |  |  |  |  |  |  |  | OK |
+| Casual · Day 1 · longshot | fresh day-one field | 58.3% | 18.8s | 1.00 | 1.00 | 0.0% | 85.8% | 0.0% | SMUDGE STEP (84); COUNTER SKETCH (48); ECHO MARK (48); PAPER SHIELD (42); DOUBLE DOODLE (36); COMBO SPARK (30) | 1 |  |  |  |  |  |  |  | OK |
+| Casual · Day 1 · mage | equal 30-day field | 42.0% | 18.2s | 1.91 | 0.90 | 0.0% | 90.3% | 0.0% | COMBO SPARK (72); CENTER FOLD (66); HEART INK (36); ECHO MARK (30); COUNTER SKETCH (30); DOUBLE DOODLE (30); EDGE SPRING (18); PAPER SHIELD (6) | 1 |  |  |  |  |  |  |  | OK |
+| Casual · Day 1 · mage | fresh day-one field | 62.5% | 18.2s | 0.91 | 0.91 | 0.0% | 92.0% | 0.0% | COMBO SPARK (72); CENTER FOLD (66); HEART INK (36); ECHO MARK (30); COUNTER SKETCH (30); DOUBLE DOODLE (30); EDGE SPRING (18); PAPER SHIELD (6) | 1 |  |  |  |  |  |  |  | OK |
+| Casual · Day 3 · brawler | equal 30-day field | 45.1% | 14.2s | 3.93 | 2.01 | 0.0% | 78.8% | 0.0% | PAPER SHIELD (204); SMUDGE STEP (144); COUNTER SKETCH (96); DOUBLE DOODLE (84); INK RAGE (24); ECHO MARK (18); WALLOP (6) | 3 |  |  |  |  |  |  |  | OK |
+| Casual · Day 3 · brawler | fresh day-one field | 50.0% | 14.2s | 2.01 | 2.01 | 0.0% | 82.3% | 0.0% | PAPER SHIELD (204); SMUDGE STEP (144); COUNTER SKETCH (96); DOUBLE DOODLE (84); INK RAGE (24); ECHO MARK (18); WALLOP (6) | 3 |  |  |  |  |  |  |  | OK |
+| Casual · Day 3 · longshot | equal 30-day field | 43.8% | 18.8s | 3.98 | 2.00 | 0.0% | 89.6% | 0.0% | SMUDGE STEP (150); PAPER SHIELD (102); COUNTER SKETCH (96); DOUBLE DOODLE (90); ECHO MARK (78); COMBO SPARK (36); HEART INK (18); LAST SCRIBBLE (6) | 3 |  |  |  |  |  |  |  | OK |
+| Casual · Day 3 · longshot | fresh day-one field | 68.1% | 18.7s | 2.01 | 2.01 | 0.0% | 81.9% | 0.0% | SMUDGE STEP (150); PAPER SHIELD (102); COUNTER SKETCH (96); DOUBLE DOODLE (90); ECHO MARK (78); COMBO SPARK (36); HEART INK (18); LAST SCRIBBLE (6) | 3 |  |  |  |  |  |  |  | OK |
+| Casual · Day 3 · mage | equal 30-day field | 53.8% | 18.2s | 3.90 | 1.86 | 0.0% | 86.8% | 0.0% | COMBO SPARK (102); HEART INK (102); CENTER FOLD (96); COUNTER SKETCH (78); DOUBLE DOODLE (60); EDGE SPRING (54); ECHO MARK (42); PAPER SHIELD (36) | 3 |  |  |  |  |  |  |  | OK |
+| Casual · Day 3 · mage | fresh day-one field | 64.9% | 18.1s | 1.85 | 1.85 | 0.0% | 87.5% | 0.0% | COMBO SPARK (102); HEART INK (102); CENTER FOLD (96); COUNTER SKETCH (78); DOUBLE DOODLE (60); EDGE SPRING (54); ECHO MARK (42); PAPER SHIELD (36) | 3 |  |  |  |  |  |  |  | OK |
+| Casual · Day 7 · brawler | equal 30-day field | 37.8% | 14.2s | 5.90 | 3.04 | 0.0% | 75.7% | 0.0% | PAPER SHIELD (246); COUNTER SKETCH (186); SMUDGE STEP (186); INK RAGE (90); DOUBLE DOODLE (84); WALLOP (36); ECHO MARK (36) | 7 |  |  |  |  |  |  |  | OK |
+| Casual · Day 7 · brawler | fresh day-one field | 49.3% | 14.0s | 3.04 | 3.04 | 0.0% | 75.7% | 0.0% | PAPER SHIELD (246); COUNTER SKETCH (186); SMUDGE STEP (186); INK RAGE (90); DOUBLE DOODLE (84); WALLOP (36); ECHO MARK (36) | 7 |  |  |  |  |  |  |  | OK |
+| Casual · Day 7 · longshot | equal 30-day field | 47.9% | 18.9s | 5.95 | 2.97 | 0.0% | 93.1% | 0.0% | SMUDGE STEP (204); COUNTER SKETCH (186); PAPER SHIELD (150); DOUBLE DOODLE (126); ECHO MARK (84); COMBO SPARK (48); HEART INK (48); LAST SCRIBBLE (18) | 7 |  |  |  |  |  |  |  | OK |
+| Casual · Day 7 · longshot | fresh day-one field | 72.2% | 18.8s | 2.98 | 2.98 | 0.0% | 83.7% | 0.0% | SMUDGE STEP (204); COUNTER SKETCH (186); PAPER SHIELD (150); DOUBLE DOODLE (126); ECHO MARK (84); COMBO SPARK (48); HEART INK (48); LAST SCRIBBLE (18) | 7 |  |  |  |  |  |  |  | OK |
+| Casual · Day 7 · mage | equal 30-day field | 53.5% | 18.1s | 5.84 | 2.83 | 0.0% | 84.4% | 0.0% | COMBO SPARK (156); COUNTER SKETCH (138); CENTER FOLD (120); HEART INK (120); EDGE SPRING (102); DOUBLE DOODLE (96); PAPER SHIELD (66); ECHO MARK (60) | 7 |  |  |  |  |  |  |  | OK |
+| Casual · Day 7 · mage | fresh day-one field | 71.9% | 18.1s | 2.77 | 2.77 | 0.0% | 83.3% | 0.0% | COMBO SPARK (156); COUNTER SKETCH (138); CENTER FOLD (120); HEART INK (120); EDGE SPRING (102); DOUBLE DOODLE (96); PAPER SHIELD (66); ECHO MARK (60) | 7 |  |  |  |  |  |  |  | OK |
+| Casual · Day 14 · brawler | equal 30-day field | 46.9% | 14.5s | 9.97 | 5.22 | 0.0% | 80.6% | 0.0% | PAPER SHIELD (288); INK RAGE (288); COUNTER SKETCH (246); SMUDGE STEP (240); WALLOP (192); DOUBLE DOODLE (96); ECHO MARK (90) | 14 |  |  |  |  |  |  |  | OK |
+| Casual · Day 14 · brawler | fresh day-one field | 56.3% | 13.6s | 5.22 | 5.22 | 0.0% | 64.9% | 0.0% | PAPER SHIELD (288); INK RAGE (288); COUNTER SKETCH (246); SMUDGE STEP (240); WALLOP (192); DOUBLE DOODLE (96); ECHO MARK (90) | 14 |  |  |  |  |  |  |  | OK |
+| Casual · Day 14 · longshot | equal 30-day field | 42.4% | 18.9s | 9.96 | 4.89 | 0.0% | 88.5% | 0.0% | SMUDGE STEP (282); COUNTER SKETCH (264); DOUBLE DOODLE (264); PAPER SHIELD (240); ECHO MARK (192); COMBO SPARK (66); HEART INK (66); LAST SCRIBBLE (66) | 14 |  |  |  |  |  |  |  | OK |
+| Casual · Day 14 · longshot | fresh day-one field | 91.7% | 18.7s | 4.83 | 4.83 | 0.0% | 75.0% | 0.0% | SMUDGE STEP (282); COUNTER SKETCH (264); DOUBLE DOODLE (264); PAPER SHIELD (240); ECHO MARK (192); COMBO SPARK (66); HEART INK (66); LAST SCRIBBLE (66) | 14 |  |  |  |  |  |  |  | OK |
+| Casual · Day 14 · mage | equal 30-day field | 61.8% | 18.4s | 9.90 | 4.83 | 0.0% | 91.3% | 0.0% | CENTER FOLD (258); COUNTER SKETCH (216); COMBO SPARK (216); HEART INK (216); DOUBLE DOODLE (168); PAPER SHIELD (132); EDGE SPRING (126); ECHO MARK (90) | 14 |  |  |  |  |  |  |  | OK |
+| Casual · Day 14 · mage | fresh day-one field | 78.8% | 18.1s | 4.62 | 4.62 | 0.0% | 81.9% | 0.0% | CENTER FOLD (258); COUNTER SKETCH (216); COMBO SPARK (216); HEART INK (216); DOUBLE DOODLE (168); PAPER SHIELD (132); EDGE SPRING (126); ECHO MARK (90) | 14 |  |  |  |  |  |  |  | OK |
+| Casual · Day 21 · brawler | equal 30-day field | 41.7% | 14.4s | 9.97 | 5.22 | 0.0% | 81.6% | 0.0% | PAPER SHIELD (288); INK RAGE (288); COUNTER SKETCH (246); SMUDGE STEP (240); WALLOP (192); DOUBLE DOODLE (96); ECHO MARK (90) | 21 |  |  |  |  |  |  |  | OK |
+| Casual · Day 21 · brawler | fresh day-one field | 61.1% | 13.5s | 5.21 | 5.21 | 0.0% | 65.3% | 0.0% | PAPER SHIELD (288); INK RAGE (288); COUNTER SKETCH (246); SMUDGE STEP (240); WALLOP (192); DOUBLE DOODLE (96); ECHO MARK (90) | 21 |  |  |  |  |  |  |  | OK |
+| Casual · Day 21 · longshot | equal 30-day field | 43.1% | 18.9s | 9.93 | 4.88 | 0.0% | 87.8% | 0.0% | SMUDGE STEP (282); COUNTER SKETCH (264); DOUBLE DOODLE (264); PAPER SHIELD (240); ECHO MARK (192); COMBO SPARK (66); HEART INK (66); LAST SCRIBBLE (66) | 21 |  |  |  |  |  |  |  | OK |
+| Casual · Day 21 · longshot | fresh day-one field | 90.3% | 18.7s | 4.82 | 4.82 | 0.0% | 75.7% | 0.0% | SMUDGE STEP (282); COUNTER SKETCH (264); DOUBLE DOODLE (264); PAPER SHIELD (240); ECHO MARK (192); COMBO SPARK (66); HEART INK (66); LAST SCRIBBLE (66) | 21 |  |  |  |  |  |  |  | OK |
+| Casual · Day 21 · mage | equal 30-day field | 60.1% | 18.4s | 9.92 | 4.83 | 0.0% | 92.7% | 0.0% | CENTER FOLD (258); COUNTER SKETCH (216); COMBO SPARK (216); HEART INK (216); DOUBLE DOODLE (168); PAPER SHIELD (132); EDGE SPRING (126); ECHO MARK (90) | 21 |  |  |  |  |  |  |  | OK |
+| Casual · Day 21 · mage | fresh day-one field | 77.8% | 18.0s | 4.62 | 4.62 | 0.0% | 80.9% | 0.0% | CENTER FOLD (258); COUNTER SKETCH (216); COMBO SPARK (216); HEART INK (216); DOUBLE DOODLE (168); PAPER SHIELD (132); EDGE SPRING (126); ECHO MARK (90) | 21 |  |  |  |  |  |  |  | OK |
+| Casual · Day 30 · brawler | equal 30-day field | 41.7% | 14.5s | 9.96 | 5.22 | 0.0% | 79.5% | 0.0% | PAPER SHIELD (288); INK RAGE (288); COUNTER SKETCH (246); SMUDGE STEP (240); WALLOP (192); DOUBLE DOODLE (96); ECHO MARK (90) | 30 |  |  |  |  |  |  |  | OK |
+| Casual · Day 30 · brawler | fresh day-one field | 58.3% | 13.6s | 5.21 | 5.21 | 0.0% | 62.2% | 0.0% | PAPER SHIELD (288); INK RAGE (288); COUNTER SKETCH (246); SMUDGE STEP (240); WALLOP (192); DOUBLE DOODLE (96); ECHO MARK (90) | 30 |  |  |  |  |  |  |  | OK |
+| Casual · Day 30 · longshot | equal 30-day field | 35.8% | 18.9s | 9.91 | 4.89 | 0.0% | 85.4% | 0.0% | SMUDGE STEP (282); COUNTER SKETCH (264); DOUBLE DOODLE (264); PAPER SHIELD (240); ECHO MARK (192); COMBO SPARK (66); HEART INK (66); LAST SCRIBBLE (66) | 30 |  |  |  |  |  |  |  | OK |
+| Casual · Day 30 · longshot | fresh day-one field | 87.8% | 18.7s | 4.83 | 4.83 | 0.0% | 76.7% | 0.0% | SMUDGE STEP (282); COUNTER SKETCH (264); DOUBLE DOODLE (264); PAPER SHIELD (240); ECHO MARK (192); COMBO SPARK (66); HEART INK (66); LAST SCRIBBLE (66) | 30 |  |  |  |  |  |  |  | OK |
+| Casual · Day 30 · mage | equal 30-day field | 63.2% | 18.4s | 9.90 | 4.81 | 0.0% | 92.0% | 0.0% | CENTER FOLD (258); COUNTER SKETCH (216); COMBO SPARK (216); HEART INK (216); DOUBLE DOODLE (168); PAPER SHIELD (132); EDGE SPRING (126); ECHO MARK (90) | 30 |  |  |  |  |  |  |  | OK |
+| Casual · Day 30 · mage | fresh day-one field | 77.4% | 18.1s | 4.61 | 4.61 | 0.0% | 81.6% | 0.0% | CENTER FOLD (258); COUNTER SKETCH (216); COMBO SPARK (216); HEART INK (216); DOUBLE DOODLE (168); PAPER SHIELD (132); EDGE SPRING (126); ECHO MARK (90) | 30 |  |  |  |  |  |  |  | OK |
+| Regular · Day 1 · brawler | equal 30-day field | 43.8% | 14.2s | 5.78 | 3.04 | 0.0% | 75.7% | 0.0% | PAPER SHIELD (252); COUNTER SKETCH (150); SMUDGE STEP (144); DOUBLE DOODLE (108); INK RAGE (108); ECHO MARK (66); WALLOP (36) | 1 |  |  |  |  |  |  |  | OK |
+| Regular · Day 1 · brawler | fresh day-one field | 50.7% | 13.9s | 3.04 | 3.04 | 0.0% | 75.0% | 0.0% | PAPER SHIELD (252); COUNTER SKETCH (150); SMUDGE STEP (144); DOUBLE DOODLE (108); INK RAGE (108); ECHO MARK (66); WALLOP (36) | 1 |  |  |  |  |  |  |  | OK |
+| Regular · Day 1 · longshot | equal 30-day field | 50.0% | 18.8s | 5.92 | 2.91 | 0.0% | 88.9% | 0.0% | DOUBLE DOODLE (186); SMUDGE STEP (180); COUNTER SKETCH (168); ECHO MARK (102); PAPER SHIELD (90); COMBO SPARK (72); LAST SCRIBBLE (42); HEART INK (24) | 1 |  |  |  |  |  |  |  | OK |
+| Regular · Day 1 · longshot | fresh day-one field | 79.2% | 18.7s | 2.91 | 2.91 | 0.0% | 79.9% | 0.0% | DOUBLE DOODLE (186); SMUDGE STEP (180); COUNTER SKETCH (168); ECHO MARK (102); PAPER SHIELD (90); COMBO SPARK (72); LAST SCRIBBLE (42); HEART INK (24) | 1 |  |  |  |  |  |  |  | OK |
+| Regular · Day 1 · mage | equal 30-day field | 50.0% | 18.2s | 5.95 | 2.83 | 0.0% | 86.5% | 0.0% | CENTER FOLD (150); COMBO SPARK (144); HEART INK (138); DOUBLE DOODLE (102); COUNTER SKETCH (90); PAPER SHIELD (72); ECHO MARK (66); EDGE SPRING (54) | 1 |  |  |  |  |  |  |  | OK |
+| Regular · Day 1 · mage | fresh day-one field | 79.5% | 18.1s | 2.78 | 2.78 | 0.0% | 87.8% | 0.0% | CENTER FOLD (150); COMBO SPARK (144); HEART INK (138); DOUBLE DOODLE (102); COUNTER SKETCH (90); PAPER SHIELD (72); ECHO MARK (66); EDGE SPRING (54) | 1 |  |  |  |  |  |  |  | OK |
+| Regular · Day 3 · brawler | equal 30-day field | 47.2% | 14.2s | 5.77 | 3.04 | 0.0% | 74.0% | 0.0% | PAPER SHIELD (252); COUNTER SKETCH (150); SMUDGE STEP (144); DOUBLE DOODLE (108); INK RAGE (108); ECHO MARK (66); WALLOP (36) | 3 |  |  |  |  |  |  |  | OK |
+| Regular · Day 3 · brawler | fresh day-one field | 51.0% | 14.0s | 3.04 | 3.04 | 0.0% | 76.0% | 0.0% | PAPER SHIELD (252); COUNTER SKETCH (150); SMUDGE STEP (144); DOUBLE DOODLE (108); INK RAGE (108); ECHO MARK (66); WALLOP (36) | 3 |  |  |  |  |  |  |  | OK |
+| Regular · Day 3 · longshot | equal 30-day field | 50.0% | 18.8s | 5.91 | 2.92 | 0.0% | 87.5% | 0.0% | DOUBLE DOODLE (186); SMUDGE STEP (180); COUNTER SKETCH (168); ECHO MARK (102); PAPER SHIELD (90); COMBO SPARK (72); LAST SCRIBBLE (42); HEART INK (24) | 3 |  |  |  |  |  |  |  | OK |
+| Regular · Day 3 · longshot | fresh day-one field | 75.7% | 18.7s | 2.91 | 2.91 | 0.0% | 78.5% | 0.0% | DOUBLE DOODLE (186); SMUDGE STEP (180); COUNTER SKETCH (168); ECHO MARK (102); PAPER SHIELD (90); COMBO SPARK (72); LAST SCRIBBLE (42); HEART INK (24) | 3 |  |  |  |  |  |  |  | OK |
+| Regular · Day 3 · mage | equal 30-day field | 51.7% | 18.2s | 5.94 | 2.84 | 0.0% | 87.2% | 0.0% | CENTER FOLD (150); COMBO SPARK (144); HEART INK (138); DOUBLE DOODLE (102); COUNTER SKETCH (90); PAPER SHIELD (72); ECHO MARK (66); EDGE SPRING (54) | 3 |  |  |  |  |  |  |  | OK |
+| Regular · Day 3 · mage | fresh day-one field | 78.1% | 18.1s | 2.83 | 2.83 | 0.0% | 87.2% | 0.0% | CENTER FOLD (150); COMBO SPARK (144); HEART INK (138); DOUBLE DOODLE (102); COUNTER SKETCH (90); PAPER SHIELD (72); ECHO MARK (66); EDGE SPRING (54) | 3 |  |  |  |  |  |  |  | OK |
+| Regular · Day 7 · brawler | equal 30-day field | 42.7% | 14.4s | 9.82 | 5.20 | 0.0% | 80.6% | 0.0% | PAPER SHIELD (276); INK RAGE (276); SMUDGE STEP (252); COUNTER SKETCH (222); WALLOP (180); DOUBLE DOODLE (120); ECHO MARK (114) | 7 |  |  |  |  |  |  |  | OK |
+| Regular · Day 7 · brawler | fresh day-one field | 68.8% | 13.5s | 5.19 | 5.19 | 0.0% | 66.3% | 0.0% | PAPER SHIELD (276); INK RAGE (276); SMUDGE STEP (252); COUNTER SKETCH (222); WALLOP (180); DOUBLE DOODLE (120); ECHO MARK (114) | 7 |  |  |  |  |  |  |  | OK |
+| Regular · Day 7 · longshot | equal 30-day field | 43.1% | 18.9s | 9.76 | 4.74 | 0.0% | 86.8% | 0.0% | SMUDGE STEP (264); COUNTER SKETCH (252); DOUBLE DOODLE (252); PAPER SHIELD (186); ECHO MARK (186); LAST SCRIBBLE (132); COMBO SPARK (90); HEART INK (78) | 7 |  |  |  |  |  |  |  | OK |
+| Regular · Day 7 · longshot | fresh day-one field | 89.9% | 18.7s | 4.65 | 4.65 | 0.0% | 75.3% | 0.0% | SMUDGE STEP (264); COUNTER SKETCH (252); DOUBLE DOODLE (252); PAPER SHIELD (186); ECHO MARK (186); LAST SCRIBBLE (132); COMBO SPARK (90); HEART INK (78) | 7 |  |  |  |  |  |  |  | OK |
+| Regular · Day 7 · mage | equal 30-day field | 63.5% | 18.4s | 9.79 | 4.70 | 0.0% | 97.9% | 0.0% | CENTER FOLD (234); HEART INK (210); COMBO SPARK (198); COUNTER SKETCH (174); DOUBLE DOODLE (174); PAPER SHIELD (132); ECHO MARK (102); EDGE SPRING (84) | 7 |  |  |  |  |  |  |  | OK |
+| Regular · Day 7 · mage | fresh day-one field | 81.9% | 18.1s | 4.57 | 4.57 | 0.0% | 85.8% | 0.0% | CENTER FOLD (234); HEART INK (210); COMBO SPARK (198); COUNTER SKETCH (174); DOUBLE DOODLE (174); PAPER SHIELD (132); ECHO MARK (102); EDGE SPRING (84) | 7 |  |  |  |  |  |  |  | OK |
+| Regular · Day 14 · brawler | equal 30-day field | 41.3% | 14.4s | 9.81 | 5.20 | 0.0% | 83.3% | 0.0% | PAPER SHIELD (276); INK RAGE (276); SMUDGE STEP (252); COUNTER SKETCH (222); WALLOP (180); DOUBLE DOODLE (120); ECHO MARK (114) | 14 |  |  |  |  |  |  |  | OK |
+| Regular · Day 14 · brawler | fresh day-one field | 67.7% | 13.5s | 5.20 | 5.20 | 0.0% | 65.6% | 0.0% | PAPER SHIELD (276); INK RAGE (276); SMUDGE STEP (252); COUNTER SKETCH (222); WALLOP (180); DOUBLE DOODLE (120); ECHO MARK (114) | 14 |  |  |  |  |  |  |  | OK |
+| Regular · Day 14 · longshot | equal 30-day field | 43.8% | 18.9s | 9.74 | 4.73 | 0.0% | 86.5% | 0.0% | SMUDGE STEP (264); COUNTER SKETCH (252); DOUBLE DOODLE (252); PAPER SHIELD (186); ECHO MARK (186); LAST SCRIBBLE (132); COMBO SPARK (90); HEART INK (78) | 14 |  |  |  |  |  |  |  | OK |
+| Regular · Day 14 · longshot | fresh day-one field | 89.9% | 18.7s | 4.64 | 4.64 | 0.0% | 75.7% | 0.0% | SMUDGE STEP (264); COUNTER SKETCH (252); DOUBLE DOODLE (252); PAPER SHIELD (186); ECHO MARK (186); LAST SCRIBBLE (132); COMBO SPARK (90); HEART INK (78) | 14 |  |  |  |  |  |  |  | OK |
+| Regular · Day 14 · mage | equal 30-day field | 65.3% | 18.4s | 9.83 | 4.73 | 0.0% | 94.4% | 0.0% | CENTER FOLD (234); HEART INK (210); COMBO SPARK (198); COUNTER SKETCH (174); DOUBLE DOODLE (174); PAPER SHIELD (132); ECHO MARK (102); EDGE SPRING (84) | 14 |  |  |  |  |  |  |  | OK |
+| Regular · Day 14 · mage | fresh day-one field | 83.3% | 18.1s | 4.59 | 4.59 | 0.0% | 84.7% | 0.0% | CENTER FOLD (234); HEART INK (210); COMBO SPARK (198); COUNTER SKETCH (174); DOUBLE DOODLE (174); PAPER SHIELD (132); ECHO MARK (102); EDGE SPRING (84) | 14 |  |  |  |  |  |  |  | OK |
+| Regular · Day 21 · brawler | equal 30-day field | 42.0% | 14.4s | 9.80 | 5.20 | 0.0% | 79.9% | 0.0% | PAPER SHIELD (276); INK RAGE (276); SMUDGE STEP (252); COUNTER SKETCH (222); WALLOP (180); DOUBLE DOODLE (120); ECHO MARK (114) | 21 |  |  |  |  |  |  |  | OK |
+| Regular · Day 21 · brawler | fresh day-one field | 72.2% | 13.5s | 5.20 | 5.20 | 0.0% | 64.2% | 0.0% | PAPER SHIELD (276); INK RAGE (276); SMUDGE STEP (252); COUNTER SKETCH (222); WALLOP (180); DOUBLE DOODLE (120); ECHO MARK (114) | 21 |  |  |  |  |  |  |  | OK |
+| Regular · Day 21 · longshot | equal 30-day field | 39.9% | 18.9s | 9.74 | 4.73 | 0.0% | 87.2% | 0.0% | SMUDGE STEP (264); COUNTER SKETCH (252); DOUBLE DOODLE (252); PAPER SHIELD (186); ECHO MARK (186); LAST SCRIBBLE (132); COMBO SPARK (90); HEART INK (78) | 21 |  |  |  |  |  |  |  | OK |
+| Regular · Day 21 · longshot | fresh day-one field | 90.6% | 18.7s | 4.60 | 4.60 | 0.0% | 76.4% | 0.0% | SMUDGE STEP (264); COUNTER SKETCH (252); DOUBLE DOODLE (252); PAPER SHIELD (186); ECHO MARK (186); LAST SCRIBBLE (132); COMBO SPARK (90); HEART INK (78) | 21 |  |  |  |  |  |  |  | OK |
+| Regular · Day 21 · mage | equal 30-day field | 64.6% | 18.5s | 9.81 | 4.73 | 0.0% | 94.4% | 0.0% | CENTER FOLD (234); HEART INK (210); COMBO SPARK (198); COUNTER SKETCH (174); DOUBLE DOODLE (174); PAPER SHIELD (132); ECHO MARK (102); EDGE SPRING (84) | 21 |  |  |  |  |  |  |  | OK |
+| Regular · Day 21 · mage | fresh day-one field | 83.7% | 18.0s | 4.58 | 4.58 | 0.0% | 82.3% | 0.0% | CENTER FOLD (234); HEART INK (210); COMBO SPARK (198); COUNTER SKETCH (174); DOUBLE DOODLE (174); PAPER SHIELD (132); ECHO MARK (102); EDGE SPRING (84) | 21 |  |  |  |  |  |  |  | OK |
+| Regular · Day 30 · brawler | equal 30-day field | 42.7% | 14.3s | 9.82 | 5.21 | 0.0% | 81.3% | 0.0% | PAPER SHIELD (276); INK RAGE (276); SMUDGE STEP (252); COUNTER SKETCH (222); WALLOP (180); DOUBLE DOODLE (120); ECHO MARK (114) | 30 |  |  |  |  |  |  |  | OK |
+| Regular · Day 30 · brawler | fresh day-one field | 70.8% | 13.5s | 5.20 | 5.20 | 0.0% | 66.0% | 0.0% | PAPER SHIELD (276); INK RAGE (276); SMUDGE STEP (252); COUNTER SKETCH (222); WALLOP (180); DOUBLE DOODLE (120); ECHO MARK (114) | 30 |  |  |  |  |  |  |  | OK |
+| Regular · Day 30 · longshot | equal 30-day field | 40.3% | 18.9s | 9.73 | 4.73 | 0.0% | 86.5% | 0.0% | SMUDGE STEP (264); COUNTER SKETCH (252); DOUBLE DOODLE (252); PAPER SHIELD (186); ECHO MARK (186); LAST SCRIBBLE (132); COMBO SPARK (90); HEART INK (78) | 30 |  |  |  |  |  |  |  | OK |
+| Regular · Day 30 · longshot | fresh day-one field | 90.6% | 18.7s | 4.62 | 4.62 | 0.0% | 75.3% | 0.0% | SMUDGE STEP (264); COUNTER SKETCH (252); DOUBLE DOODLE (252); PAPER SHIELD (186); ECHO MARK (186); LAST SCRIBBLE (132); COMBO SPARK (90); HEART INK (78) | 30 |  |  |  |  |  |  |  | OK |
+| Regular · Day 30 · mage | equal 30-day field | 65.6% | 18.5s | 9.80 | 4.73 | 0.0% | 94.1% | 0.0% | CENTER FOLD (234); HEART INK (210); COMBO SPARK (198); COUNTER SKETCH (174); DOUBLE DOODLE (174); PAPER SHIELD (132); ECHO MARK (102); EDGE SPRING (84) | 30 |  |  |  |  |  |  |  | OK |
+| Regular · Day 30 · mage | fresh day-one field | 82.6% | 18.1s | 4.58 | 4.58 | 0.0% | 84.0% | 0.0% | CENTER FOLD (234); HEART INK (210); COMBO SPARK (198); COUNTER SKETCH (174); DOUBLE DOODLE (174); PAPER SHIELD (132); ECHO MARK (102); EDGE SPRING (84) | 30 |  |  |  |  |  |  |  | OK |
+| Competitive · Day 1 · brawler | equal 30-day field | 43.4% | 14.2s | 5.77 | 3.04 | 0.0% | 74.3% | 0.0% | PAPER SHIELD (252); COUNTER SKETCH (150); SMUDGE STEP (144); DOUBLE DOODLE (108); INK RAGE (108); ECHO MARK (66); WALLOP (36) | 1 |  |  |  |  |  |  |  | OK |
+| Competitive · Day 1 · brawler | fresh day-one field | 49.3% | 13.9s | 3.04 | 3.04 | 0.0% | 75.0% | 0.0% | PAPER SHIELD (252); COUNTER SKETCH (150); SMUDGE STEP (144); DOUBLE DOODLE (108); INK RAGE (108); ECHO MARK (66); WALLOP (36) | 1 |  |  |  |  |  |  |  | OK |
+| Competitive · Day 1 · longshot | equal 30-day field | 53.1% | 18.8s | 5.91 | 2.92 | 0.0% | 89.6% | 0.0% | DOUBLE DOODLE (186); SMUDGE STEP (180); COUNTER SKETCH (168); ECHO MARK (102); PAPER SHIELD (90); COMBO SPARK (72); LAST SCRIBBLE (42); HEART INK (24) | 1 |  |  |  |  |  |  |  | OK |
+| Competitive · Day 1 · longshot | fresh day-one field | 79.2% | 18.7s | 2.91 | 2.91 | 0.0% | 76.4% | 0.0% | DOUBLE DOODLE (186); SMUDGE STEP (180); COUNTER SKETCH (168); ECHO MARK (102); PAPER SHIELD (90); COMBO SPARK (72); LAST SCRIBBLE (42); HEART INK (24) | 1 |  |  |  |  |  |  |  | OK |
+| Competitive · Day 1 · mage | equal 30-day field | 56.9% | 18.2s | 5.94 | 2.82 | 0.0% | 86.5% | 0.0% | CENTER FOLD (150); COMBO SPARK (144); HEART INK (138); DOUBLE DOODLE (102); COUNTER SKETCH (90); PAPER SHIELD (72); ECHO MARK (66); EDGE SPRING (54) | 1 |  |  |  |  |  |  |  | OK |
+| Competitive · Day 1 · mage | fresh day-one field | 80.2% | 18.1s | 2.81 | 2.81 | 0.0% | 87.2% | 0.0% | CENTER FOLD (150); COMBO SPARK (144); HEART INK (138); DOUBLE DOODLE (102); COUNTER SKETCH (90); PAPER SHIELD (72); ECHO MARK (66); EDGE SPRING (54) | 1 |  |  |  |  |  |  |  | OK |
+| Competitive · Day 3 · brawler | equal 30-day field | 39.6% | 14.2s | 5.77 | 3.04 | 0.0% | 75.3% | 0.0% | PAPER SHIELD (252); COUNTER SKETCH (150); SMUDGE STEP (144); DOUBLE DOODLE (108); INK RAGE (108); ECHO MARK (66); WALLOP (36) | 3 |  |  |  |  |  |  |  | OK |
+| Competitive · Day 3 · brawler | fresh day-one field | 49.7% | 14.0s | 3.04 | 3.04 | 0.0% | 75.3% | 0.0% | PAPER SHIELD (252); COUNTER SKETCH (150); SMUDGE STEP (144); DOUBLE DOODLE (108); INK RAGE (108); ECHO MARK (66); WALLOP (36) | 3 |  |  |  |  |  |  |  | OK |
+| Competitive · Day 3 · longshot | equal 30-day field | 53.1% | 18.8s | 5.90 | 2.92 | 0.0% | 87.8% | 0.0% | DOUBLE DOODLE (186); SMUDGE STEP (180); COUNTER SKETCH (168); ECHO MARK (102); PAPER SHIELD (90); COMBO SPARK (72); LAST SCRIBBLE (42); HEART INK (24) | 3 |  |  |  |  |  |  |  | OK |
+| Competitive · Day 3 · longshot | fresh day-one field | 77.4% | 18.7s | 2.91 | 2.91 | 0.0% | 80.2% | 0.0% | DOUBLE DOODLE (186); SMUDGE STEP (180); COUNTER SKETCH (168); ECHO MARK (102); PAPER SHIELD (90); COMBO SPARK (72); LAST SCRIBBLE (42); HEART INK (24) | 3 |  |  |  |  |  |  |  | OK |
+| Competitive · Day 3 · mage | equal 30-day field | 54.2% | 18.2s | 5.98 | 2.86 | 0.0% | 87.8% | 0.0% | CENTER FOLD (150); COMBO SPARK (144); HEART INK (138); DOUBLE DOODLE (102); COUNTER SKETCH (90); PAPER SHIELD (72); ECHO MARK (66); EDGE SPRING (54) | 3 |  |  |  |  |  |  |  | OK |
+| Competitive · Day 3 · mage | fresh day-one field | 76.4% | 18.1s | 2.81 | 2.81 | 0.0% | 87.8% | 0.0% | CENTER FOLD (150); COMBO SPARK (144); HEART INK (138); DOUBLE DOODLE (102); COUNTER SKETCH (90); PAPER SHIELD (72); ECHO MARK (66); EDGE SPRING (54) | 3 |  |  |  |  |  |  |  | OK |
+| Competitive · Day 7 · brawler | equal 30-day field | 44.4% | 14.3s | 9.80 | 5.18 | 0.0% | 83.3% | 0.0% | PAPER SHIELD (282); INK RAGE (276); COUNTER SKETCH (234); SMUDGE STEP (234); WALLOP (162); DOUBLE DOODLE (138); ECHO MARK (114) | 7 |  |  |  |  |  |  |  | OK |
+| Competitive · Day 7 · brawler | fresh day-one field | 72.2% | 13.5s | 5.18 | 5.18 | 0.0% | 64.6% | 0.0% | PAPER SHIELD (282); INK RAGE (276); COUNTER SKETCH (234); SMUDGE STEP (234); WALLOP (162); DOUBLE DOODLE (138); ECHO MARK (114) | 7 |  |  |  |  |  |  |  | OK |
+| Competitive · Day 7 · longshot | equal 30-day field | 38.2% | 18.9s | 9.70 | 4.70 | 0.0% | 87.2% | 0.0% | SMUDGE STEP (270); DOUBLE DOODLE (258); COUNTER SKETCH (246); ECHO MARK (198); PAPER SHIELD (192); LAST SCRIBBLE (132); COMBO SPARK (90); HEART INK (54) | 7 |  |  |  |  |  |  |  | OK |
+| Competitive · Day 7 · longshot | fresh day-one field | 91.0% | 18.7s | 4.59 | 4.59 | 0.0% | 77.4% | 0.0% | SMUDGE STEP (270); DOUBLE DOODLE (258); COUNTER SKETCH (246); ECHO MARK (198); PAPER SHIELD (192); LAST SCRIBBLE (132); COMBO SPARK (90); HEART INK (54) | 7 |  |  |  |  |  |  |  | OK |
+| Competitive · Day 7 · mage | equal 30-day field | 64.9% | 18.4s | 9.83 | 4.75 | 0.0% | 95.1% | 0.0% | CENTER FOLD (228); HEART INK (204); COMBO SPARK (192); DOUBLE DOODLE (186); COUNTER SKETCH (168); PAPER SHIELD (138); ECHO MARK (108); EDGE SPRING (90) | 7 |  |  |  |  |  |  |  | OK |
+| Competitive · Day 7 · mage | fresh day-one field | 82.6% | 18.1s | 4.64 | 4.64 | 0.0% | 84.0% | 0.0% | CENTER FOLD (228); HEART INK (204); COMBO SPARK (192); DOUBLE DOODLE (186); COUNTER SKETCH (168); PAPER SHIELD (138); ECHO MARK (108); EDGE SPRING (90) | 7 |  |  |  |  |  |  |  | OK |
+| Competitive · Day 14 · brawler | equal 30-day field | 46.2% | 14.4s | 9.80 | 5.18 | 0.0% | 81.3% | 0.0% | PAPER SHIELD (282); INK RAGE (276); COUNTER SKETCH (234); SMUDGE STEP (234); WALLOP (162); DOUBLE DOODLE (138); ECHO MARK (114) | 14 |  |  |  |  |  |  |  | OK |
+| Competitive · Day 14 · brawler | fresh day-one field | 69.1% | 13.5s | 5.19 | 5.19 | 0.0% | 66.0% | 0.0% | PAPER SHIELD (282); INK RAGE (276); COUNTER SKETCH (234); SMUDGE STEP (234); WALLOP (162); DOUBLE DOODLE (138); ECHO MARK (114) | 14 |  |  |  |  |  |  |  | OK |
+| Competitive · Day 14 · longshot | equal 30-day field | 35.8% | 18.9s | 9.73 | 4.70 | 0.0% | 87.5% | 0.0% | SMUDGE STEP (270); DOUBLE DOODLE (258); COUNTER SKETCH (246); ECHO MARK (198); PAPER SHIELD (192); LAST SCRIBBLE (132); COMBO SPARK (90); HEART INK (54) | 14 |  |  |  |  |  |  |  | OK |
+| Competitive · Day 14 · longshot | fresh day-one field | 91.7% | 18.7s | 4.62 | 4.62 | 0.0% | 74.7% | 0.0% | SMUDGE STEP (270); DOUBLE DOODLE (258); COUNTER SKETCH (246); ECHO MARK (198); PAPER SHIELD (192); LAST SCRIBBLE (132); COMBO SPARK (90); HEART INK (54) | 14 |  |  |  |  |  |  |  | OK |
+| Competitive · Day 14 · mage | equal 30-day field | 64.6% | 18.4s | 9.82 | 4.76 | 0.0% | 93.4% | 0.0% | CENTER FOLD (228); HEART INK (204); COMBO SPARK (192); DOUBLE DOODLE (186); COUNTER SKETCH (168); PAPER SHIELD (138); ECHO MARK (108); EDGE SPRING (90) | 14 |  |  |  |  |  |  |  | OK |
+| Competitive · Day 14 · mage | fresh day-one field | 80.9% | 18.0s | 4.65 | 4.65 | 0.0% | 81.6% | 0.0% | CENTER FOLD (228); HEART INK (204); COMBO SPARK (192); DOUBLE DOODLE (186); COUNTER SKETCH (168); PAPER SHIELD (138); ECHO MARK (108); EDGE SPRING (90) | 14 |  |  |  |  |  |  |  | OK |
+| Competitive · Day 21 · brawler | equal 30-day field | 45.5% | 14.4s | 9.80 | 5.18 | 0.0% | 80.9% | 0.0% | PAPER SHIELD (282); INK RAGE (276); COUNTER SKETCH (234); SMUDGE STEP (234); WALLOP (162); DOUBLE DOODLE (138); ECHO MARK (114) | 21 |  |  |  |  |  |  |  | OK |
+| Competitive · Day 21 · brawler | fresh day-one field | 67.4% | 13.5s | 5.18 | 5.18 | 0.0% | 63.5% | 0.0% | PAPER SHIELD (282); INK RAGE (276); COUNTER SKETCH (234); SMUDGE STEP (234); WALLOP (162); DOUBLE DOODLE (138); ECHO MARK (114) | 21 |  |  |  |  |  |  |  | OK |
+| Competitive · Day 21 · longshot | equal 30-day field | 39.2% | 18.9s | 9.72 | 4.69 | 0.0% | 86.8% | 0.0% | SMUDGE STEP (270); DOUBLE DOODLE (258); COUNTER SKETCH (246); ECHO MARK (198); PAPER SHIELD (192); LAST SCRIBBLE (132); COMBO SPARK (90); HEART INK (54) | 21 |  |  |  |  |  |  |  | OK |
+| Competitive · Day 21 · longshot | fresh day-one field | 91.0% | 18.7s | 4.62 | 4.62 | 0.0% | 76.4% | 0.0% | SMUDGE STEP (270); DOUBLE DOODLE (258); COUNTER SKETCH (246); ECHO MARK (198); PAPER SHIELD (192); LAST SCRIBBLE (132); COMBO SPARK (90); HEART INK (54) | 21 |  |  |  |  |  |  |  | OK |
+| Competitive · Day 21 · mage | equal 30-day field | 67.0% | 18.4s | 9.85 | 4.77 | 0.0% | 91.7% | 0.0% | CENTER FOLD (228); HEART INK (204); COMBO SPARK (192); DOUBLE DOODLE (186); COUNTER SKETCH (168); PAPER SHIELD (138); ECHO MARK (108); EDGE SPRING (90) | 21 |  |  |  |  |  |  |  | OK |
+| Competitive · Day 21 · mage | fresh day-one field | 81.6% | 18.0s | 4.64 | 4.64 | 0.0% | 82.3% | 0.0% | CENTER FOLD (228); HEART INK (204); COMBO SPARK (192); DOUBLE DOODLE (186); COUNTER SKETCH (168); PAPER SHIELD (138); ECHO MARK (108); EDGE SPRING (90) | 21 |  |  |  |  |  |  |  | OK |
+| Competitive · Day 30 · brawler | equal 30-day field | 48.6% | 14.4s | 9.79 | 5.19 | 0.0% | 80.6% | 0.0% | PAPER SHIELD (282); INK RAGE (276); COUNTER SKETCH (234); SMUDGE STEP (234); WALLOP (162); DOUBLE DOODLE (138); ECHO MARK (114) | 30 |  |  |  |  |  |  |  | OK |
+| Competitive · Day 30 · brawler | fresh day-one field | 69.4% | 13.5s | 5.18 | 5.18 | 0.0% | 63.9% | 0.0% | PAPER SHIELD (282); INK RAGE (276); COUNTER SKETCH (234); SMUDGE STEP (234); WALLOP (162); DOUBLE DOODLE (138); ECHO MARK (114) | 30 |  |  |  |  |  |  |  | OK |
+| Competitive · Day 30 · longshot | equal 30-day field | 42.7% | 18.9s | 9.71 | 4.69 | 0.0% | 86.5% | 0.0% | SMUDGE STEP (270); DOUBLE DOODLE (258); COUNTER SKETCH (246); ECHO MARK (198); PAPER SHIELD (192); LAST SCRIBBLE (132); COMBO SPARK (90); HEART INK (54) | 30 |  |  |  |  |  |  |  | OK |
+| Competitive · Day 30 · longshot | fresh day-one field | 91.7% | 18.7s | 4.59 | 4.59 | 0.0% | 73.6% | 0.0% | SMUDGE STEP (270); DOUBLE DOODLE (258); COUNTER SKETCH (246); ECHO MARK (198); PAPER SHIELD (192); LAST SCRIBBLE (132); COMBO SPARK (90); HEART INK (54) | 30 |  |  |  |  |  |  |  | OK |
+| Competitive · Day 30 · mage | equal 30-day field | 62.5% | 18.4s | 9.89 | 4.80 | 0.0% | 88.9% | 0.0% | CENTER FOLD (228); HEART INK (204); COMBO SPARK (192); DOUBLE DOODLE (186); COUNTER SKETCH (168); PAPER SHIELD (138); ECHO MARK (108); EDGE SPRING (90) | 30 |  |  |  |  |  |  |  | OK |
+| Competitive · Day 30 · mage | fresh day-one field | 80.6% | 17.9s | 4.65 | 4.65 | 0.0% | 79.5% | 0.0% | CENTER FOLD (228); HEART INK (204); COMBO SPARK (192); DOUBLE DOODLE (186); COUNTER SKETCH (168); PAPER SHIELD (138); ECHO MARK (108); EDGE SPRING (90) | 30 |  |  |  |  |  |  |  | OK |
+| Regular · Day 30 · brawler | lower-activity day-30 field | 37.5% | 10.5s | 8.71 | 4.38 | 0.0% | 100.0% | 0.0% | PAPER SHIELD (92); INK RAGE (92); SMUDGE STEP (84); COUNTER SKETCH (74); WALLOP (60); DOUBLE DOODLE (40); ECHO MARK (38) | 30 |  |  |  |  |  |  |  | WATCH_DURATION |
+| Regular · Day 30 · longshot | lower-activity day-30 field | 49.0% | 19.7s | 9.90 | 4.93 | 0.0% | 100.0% | 0.0% | SMUDGE STEP (88); COUNTER SKETCH (84); DOUBLE DOODLE (84); PAPER SHIELD (62); ECHO MARK (62); LAST SCRIBBLE (44); COMBO SPARK (30); HEART INK (26) | 30 |  |  |  |  |  |  |  | OK |
+| Regular · Day 30 · mage | lower-activity day-30 field | 50.0% | 19.7s | 9.46 | 4.65 | 0.0% | 97.9% | 0.0% | CENTER FOLD (78); HEART INK (70); COMBO SPARK (66); COUNTER SKETCH (58); DOUBLE DOODLE (58); PAPER SHIELD (44); ECHO MARK (34); EDGE SPRING (28) | 30 |  |  |  |  |  |  |  | OK |
+| Competitive · Day 30 · brawler | lower-activity day-30 field | 44.8% | 10.5s | 8.81 | 4.44 | 0.0% | 100.0% | 0.0% | PAPER SHIELD (94); INK RAGE (92); COUNTER SKETCH (78); SMUDGE STEP (78); WALLOP (54); DOUBLE DOODLE (46); ECHO MARK (38) | 30 |  |  |  |  |  |  |  | WATCH_DURATION |
+| Competitive · Day 30 · longshot | lower-activity day-30 field | 40.6% | 19.8s | 9.74 | 4.84 | 0.0% | 100.0% | 0.0% | SMUDGE STEP (90); DOUBLE DOODLE (86); COUNTER SKETCH (82); ECHO MARK (66); PAPER SHIELD (64); LAST SCRIBBLE (44); COMBO SPARK (30); HEART INK (18) | 30 |  |  |  |  |  |  |  | OK |
+| Competitive · Day 30 · mage | lower-activity day-30 field | 42.7% | 19.5s | 9.65 | 4.81 | 0.0% | 92.7% | 0.0% | CENTER FOLD (76); HEART INK (68); COMBO SPARK (64); DOUBLE DOODLE (62); COUNTER SKETCH (56); PAPER SHIELD (46); ECHO MARK (36); EDGE SPRING (30) | 30 |  |  |  |  |  |  |  | OK |
 
 ## Hard flags
 
@@ -133,6 +133,5 @@ No balance flags from current thresholds.
 
 ## Watches
 
-- Competitive · Day 30 · longshot vs fresh day-one field: WATCH_FRESH_PLAYER_GAP (96.9%, 17.9s avg)
-- Regular · Day 30 · brawler vs lower-activity day-30 field: WATCH_DURATION (57.3%, 11.3s avg)
-- Competitive · Day 30 · brawler vs lower-activity day-30 field: WATCH_DURATION (43.8%, 11.2s avg)
+- Regular · Day 30 · brawler vs lower-activity day-30 field: WATCH_DURATION (37.5%, 10.5s avg)
+- Competitive · Day 30 · brawler vs lower-activity day-30 field: WATCH_DURATION (44.8%, 10.5s avg)

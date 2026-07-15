@@ -142,6 +142,8 @@ export const DEFAULT_COMBAT_RULES: CombatRules = Object.freeze({
   maximumCheckpointCount: MAXIMUM_CHECKPOINTS,
   checkpointIntervalTicks: 10,
   arena: Object.freeze({
+    // One stable opening size keeps the class triangle and roguelite builds
+    // consistent across every visual arena.
     startingHalfWidth: 8_000,
     startingHalfHeight: 5_000,
     finalHalfWidth: 5_000,

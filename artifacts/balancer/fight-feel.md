@@ -1,6 +1,6 @@
 # Fight Feel Metrics
 
-Generated: 2026-07-15T08:58:40.872Z
+Generated: 2026-07-15T11:54:18.980Z
 
 Runner: `app/tools/balancer/run.mjs`
 
@@ -8,42 +8,42 @@ This report bypasses API/routes/storage and calls the production combat mock bun
 
 | Target | Opponent | Win rate | Avg duration | Power-Up triggers | Target PU | Timeouts | Close | Blowouts | Verdict |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
-| Brawler base | Brawler base | 50.0% | 10.6s | 0.00 | 0.00 | 0.0% | 100.0% | 0.0% | WATCH_DURATION |
-| Brawler base | Longshot base | 35.8% | 17.0s | 0.00 | 0.00 | 0.0% | 78.3% | 0.0% | OK |
-| Brawler base | Mage base | 62.5% | 15.2s | 0.00 | 0.00 | 0.0% | 60.0% | 0.0% | OK |
-| Brawler base | Brawler common Power-Ups | 77.5% | 11.2s | 5.00 | 0.00 | 0.0% | 100.0% | 0.0% | WATCH_DURATION |
-| Brawler base | Longshot rush Power-Ups | 6.7% | 16.6s | 6.00 | 0.00 | 0.0% | 45.8% | 0.0% | OK |
-| Brawler base | Mage rare Power-Ups | 10.8% | 15.6s | 3.48 | 0.00 | 0.0% | 91.7% | 0.0% | OK |
-| Longshot base | Brawler base | 57.5% | 17.0s | 0.00 | 0.00 | 0.0% | 76.7% | 0.0% | OK |
-| Longshot base | Longshot base | 49.2% | 19.2s | 0.00 | 0.00 | 0.0% | 100.0% | 0.0% | OK |
-| Longshot base | Mage base | 45.0% | 19.7s | 0.00 | 0.00 | 0.0% | 85.8% | 0.0% | OK |
-| Longshot base | Brawler common Power-Ups | 0.8% | 17.2s | 5.00 | 0.00 | 0.0% | 100.0% | 0.0% | OK |
-| Longshot base | Longshot rush Power-Ups | 4.2% | 17.9s | 6.00 | 0.00 | 0.0% | 100.0% | 0.0% | OK |
-| Longshot base | Mage rare Power-Ups | 1.7% | 19.9s | 3.00 | 0.00 | 0.0% | 100.0% | 0.0% | OK |
-| Mage base | Brawler base | 42.5% | 15.2s | 0.00 | 0.00 | 0.0% | 66.7% | 0.0% | OK |
-| Mage base | Longshot base | 62.5% | 19.8s | 0.00 | 0.00 | 0.0% | 94.2% | 0.0% | OK |
-| Mage base | Mage base | 45.0% | 19.3s | 0.00 | 0.00 | 0.0% | 96.7% | 0.0% | OK |
-| Mage base | Brawler common Power-Ups | 0.0% | 14.6s | 5.00 | 0.00 | 0.0% | 17.5% | 0.0% | OK |
-| Mage base | Longshot rush Power-Ups | 0.0% | 19.9s | 6.00 | 0.00 | 0.0% | 88.3% | 0.0% | OK |
-| Mage base | Mage rare Power-Ups | 7.5% | 18.7s | 3.00 | 0.00 | 0.0% | 76.7% | 0.0% | OK |
-| Brawler common Power-Ups | Brawler base | 20.8% | 11.2s | 5.00 | 5.00 | 0.0% | 100.0% | 0.0% | WATCH_DURATION |
-| Brawler common Power-Ups | Longshot base | 99.2% | 17.3s | 5.00 | 5.00 | 0.0% | 100.0% | 0.0% | OK |
-| Brawler common Power-Ups | Mage base | 100.0% | 14.6s | 5.00 | 5.00 | 0.0% | 15.8% | 0.0% | OK |
-| Brawler common Power-Ups | Brawler common Power-Ups | 48.3% | 11.7s | 10.00 | 5.00 | 0.0% | 100.0% | 0.0% | WATCH_DURATION |
-| Brawler common Power-Ups | Longshot rush Power-Ups | 85.8% | 17.3s | 11.00 | 5.00 | 0.0% | 100.0% | 0.0% | OK |
-| Brawler common Power-Ups | Mage rare Power-Ups | 94.2% | 16.1s | 8.67 | 5.00 | 0.0% | 86.7% | 0.0% | OK |
-| Longshot rush Power-Ups | Brawler base | 98.3% | 16.6s | 6.00 | 6.00 | 0.0% | 39.2% | 0.0% | OK |
-| Longshot rush Power-Ups | Longshot base | 98.3% | 17.7s | 6.00 | 6.00 | 0.0% | 100.0% | 0.0% | OK |
-| Longshot rush Power-Ups | Mage base | 100.0% | 19.8s | 6.00 | 6.00 | 0.0% | 85.0% | 0.0% | OK |
-| Longshot rush Power-Ups | Brawler common Power-Ups | 11.7% | 17.3s | 11.00 | 6.00 | 0.0% | 100.0% | 0.0% | OK |
-| Longshot rush Power-Ups | Longshot rush Power-Ups | 51.7% | 19.5s | 12.00 | 6.00 | 0.0% | 100.0% | 0.0% | OK |
-| Longshot rush Power-Ups | Mage rare Power-Ups | 96.7% | 20.0s | 9.23 | 6.00 | 0.0% | 71.7% | 0.0% | OK |
-| Mage rare Power-Ups | Brawler base | 95.0% | 15.8s | 3.48 | 3.48 | 0.0% | 96.7% | 0.0% | OK |
-| Mage rare Power-Ups | Longshot base | 96.7% | 19.9s | 3.00 | 3.00 | 0.0% | 100.0% | 0.0% | OK |
-| Mage rare Power-Ups | Mage base | 90.0% | 18.6s | 3.00 | 3.00 | 0.0% | 72.5% | 0.0% | OK |
-| Mage rare Power-Ups | Brawler common Power-Ups | 5.8% | 15.9s | 8.78 | 3.78 | 0.0% | 80.0% | 0.0% | OK |
-| Mage rare Power-Ups | Longshot rush Power-Ups | 1.7% | 20.0s | 9.21 | 3.21 | 0.0% | 78.3% | 0.0% | OK |
-| Mage rare Power-Ups | Mage rare Power-Ups | 51.7% | 20.0s | 6.04 | 3.02 | 0.0% | 100.0% | 0.0% | OK |
+| Brawler base | Brawler base | 48.3% | 10.6s | 0.00 | 0.00 | 0.0% | 100.0% | 0.0% | WATCH_DURATION |
+| Brawler base | Longshot base | 38.3% | 17.0s | 0.00 | 0.00 | 0.0% | 72.5% | 0.0% | OK |
+| Brawler base | Mage base | 56.7% | 15.5s | 0.00 | 0.00 | 0.0% | 88.3% | 0.0% | OK |
+| Brawler base | Brawler common Power-Ups | 97.5% | 10.6s | 3.00 | 0.00 | 0.0% | 100.0% | 0.0% | WATCH_DURATION |
+| Brawler base | Longshot rush Power-Ups | 15.0% | 16.7s | 3.00 | 0.00 | 0.0% | 34.2% | 0.0% | OK |
+| Brawler base | Mage rare Power-Ups | 14.2% | 15.7s | 2.60 | 0.00 | 0.0% | 86.7% | 0.0% | OK |
+| Longshot base | Brawler base | 64.2% | 17.0s | 0.00 | 0.00 | 0.0% | 80.8% | 0.0% | OK |
+| Longshot base | Longshot base | 45.0% | 19.6s | 0.00 | 0.00 | 0.0% | 100.0% | 0.0% | OK |
+| Longshot base | Mage base | 40.0% | 19.9s | 0.00 | 0.00 | 0.0% | 97.5% | 0.0% | OK |
+| Longshot base | Brawler common Power-Ups | 40.0% | 17.3s | 3.00 | 0.00 | 0.0% | 100.0% | 0.0% | OK |
+| Longshot base | Longshot rush Power-Ups | 16.7% | 19.6s | 3.00 | 0.00 | 0.0% | 100.0% | 0.0% | OK |
+| Longshot base | Mage rare Power-Ups | 10.8% | 19.9s | 2.00 | 0.00 | 0.0% | 100.0% | 0.0% | OK |
+| Mage base | Brawler base | 44.2% | 15.4s | 0.00 | 0.00 | 0.0% | 82.5% | 0.0% | OK |
+| Mage base | Longshot base | 64.2% | 19.8s | 0.00 | 0.00 | 0.0% | 95.8% | 0.0% | OK |
+| Mage base | Mage base | 55.0% | 19.1s | 0.00 | 0.00 | 0.0% | 96.7% | 0.0% | OK |
+| Mage base | Brawler common Power-Ups | 28.3% | 14.7s | 3.00 | 0.00 | 0.0% | 34.2% | 0.0% | OK |
+| Mage base | Longshot rush Power-Ups | 4.2% | 19.8s | 3.00 | 0.00 | 0.0% | 88.3% | 0.0% | OK |
+| Mage base | Mage rare Power-Ups | 28.3% | 19.3s | 2.03 | 0.00 | 0.0% | 91.7% | 0.0% | OK |
+| Brawler common Power-Ups | Brawler base | 2.5% | 10.6s | 3.00 | 3.00 | 0.0% | 100.0% | 0.0% | WATCH_DURATION |
+| Brawler common Power-Ups | Longshot base | 58.3% | 17.3s | 3.00 | 3.00 | 0.0% | 100.0% | 0.0% | OK |
+| Brawler common Power-Ups | Mage base | 70.0% | 14.6s | 3.00 | 3.00 | 0.0% | 32.5% | 0.0% | OK |
+| Brawler common Power-Ups | Brawler common Power-Ups | 53.3% | 10.6s | 6.00 | 3.00 | 0.0% | 100.0% | 0.0% | WATCH_DURATION |
+| Brawler common Power-Ups | Longshot rush Power-Ups | 85.0% | 17.2s | 6.00 | 3.00 | 0.0% | 97.5% | 0.0% | OK |
+| Brawler common Power-Ups | Mage rare Power-Ups | 2.5% | 16.2s | 5.12 | 3.00 | 0.0% | 97.5% | 0.0% | OK |
+| Longshot rush Power-Ups | Brawler base | 83.3% | 16.7s | 3.00 | 3.00 | 0.0% | 41.7% | 0.0% | OK |
+| Longshot rush Power-Ups | Longshot base | 78.3% | 19.6s | 3.00 | 3.00 | 0.0% | 100.0% | 0.0% | OK |
+| Longshot rush Power-Ups | Mage base | 96.7% | 19.8s | 3.00 | 3.00 | 0.0% | 87.5% | 0.0% | OK |
+| Longshot rush Power-Ups | Brawler common Power-Ups | 17.5% | 17.2s | 6.00 | 3.00 | 0.0% | 100.0% | 0.0% | OK |
+| Longshot rush Power-Ups | Longshot rush Power-Ups | 53.3% | 19.6s | 6.00 | 3.00 | 0.0% | 100.0% | 0.0% | OK |
+| Longshot rush Power-Ups | Mage rare Power-Ups | 75.8% | 20.0s | 5.02 | 3.00 | 0.0% | 100.0% | 0.0% | OK |
+| Mage rare Power-Ups | Brawler base | 77.5% | 15.4s | 2.73 | 2.73 | 0.0% | 82.5% | 0.0% | OK |
+| Mage rare Power-Ups | Longshot base | 84.2% | 19.9s | 2.00 | 2.00 | 0.0% | 100.0% | 0.0% | OK |
+| Mage rare Power-Ups | Mage base | 70.8% | 19.3s | 2.03 | 2.03 | 0.0% | 91.7% | 0.0% | OK |
+| Mage rare Power-Ups | Brawler common Power-Ups | 94.2% | 16.1s | 5.21 | 2.21 | 0.0% | 94.2% | 0.0% | OK |
+| Mage rare Power-Ups | Longshot rush Power-Ups | 20.8% | 20.0s | 5.02 | 2.02 | 0.0% | 100.0% | 0.0% | OK |
+| Mage rare Power-Ups | Mage rare Power-Ups | 52.5% | 19.8s | 4.03 | 2.01 | 0.0% | 100.0% | 0.0% | OK |
 
 ## Hard flags
 
@@ -51,7 +51,7 @@ No balance flags from current thresholds.
 
 ## Watches
 
-- Brawler base vs Brawler base: WATCH_DURATION (50.0%, 10.6s avg)
-- Brawler base vs Brawler common Power-Ups: WATCH_DURATION (77.5%, 11.2s avg)
-- Brawler common Power-Ups vs Brawler base: WATCH_DURATION (20.8%, 11.2s avg)
-- Brawler common Power-Ups vs Brawler common Power-Ups: WATCH_DURATION (48.3%, 11.7s avg)
+- Brawler base vs Brawler base: WATCH_DURATION (48.3%, 10.6s avg)
+- Brawler base vs Brawler common Power-Ups: WATCH_DURATION (97.5%, 10.6s avg)
+- Brawler common Power-Ups vs Brawler base: WATCH_DURATION (2.5%, 10.6s avg)
+- Brawler common Power-Ups vs Brawler common Power-Ups: WATCH_DURATION (53.3%, 10.6s avg)

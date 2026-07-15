@@ -584,7 +584,7 @@ test('full Red Star builds cover all families and remain bounded against one-sta
   }
 });
 
-test('Gear identity changes report ids and malformed snapshots fail closed', () => {
+test('Gear ids stay unique while combat randomness remains paired', () => {
   const stats = builds.inkquake;
   const rankOne = fighterWithGear('identity-gear', stats, 'beanie', 1);
   const red = fighterWithGear('identity-gear', stats, 'beanie', 6);
@@ -602,7 +602,7 @@ test('Gear identity changes report ids and malformed snapshots fail closed', () 
   );
   const second = battle.simulate(red, plain, 9, balancedForecast, 'exhibition');
   assert.notEqual(first.id, second.id);
-  assert.notEqual(first.simulation.seed, second.simulation.seed);
+  assert.equal(first.simulation.seed, second.simulation.seed);
 
   const invalidGear = {
     ...first.simulation.fighters[0].gear,

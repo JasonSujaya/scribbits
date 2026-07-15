@@ -35,6 +35,7 @@ import { applyBattleArenaModifier } from '../battlearena';
 import {
   MAXIMUM_POWER_UP_BONUS_DAMAGE,
   MAXIMUM_POWER_UP_HEALING_PERMILLE,
+  MAXIMUM_POWER_UPS,
   MAXIMUM_POWER_UP_TRIGGER_EVENTS,
   POWER_UP_CATALOG,
   parsePowerUpBuild,
@@ -53,6 +54,7 @@ import type {
   CombatRole,
   CombatRules,
   CombatSimulationInput,
+  CurrentCombatRole,
   DamageSource,
   FighterCheckpoint,
   FighterResult,
@@ -1382,18 +1384,6 @@ function applyResolvedDamage(
       target.incomingNormalAttackCount % 4 === 0 &&
       triggerPowerUp(context, target, 'v1-smudge-step', source)
     ) {
-      const strafeSign = target.slot === 'a' ? 1 : -1;
-      target.velocity = copyVector(
-        normalizeVector(
-          {
-            x: -target.velocity.y * strafeSign,
-            y: target.velocity.x * strafeSign,
-          },
-          target.baseMovementPerTick * 2,
-          target.aimDirection
-        )
-      );
-      target.movementOverrideUntilTick = context.tick + 3;
       damageAfterSmudgeStep = Math.max(
         0,
         damageAfterSmudgeStep -
@@ -1569,10 +1559,6 @@ function applyResolvedDamage(
   ) {
     if (triggerPowerUp(context, target, 'v1-center-fold')) {
       healFighterFromPowerUp(context, target, 'v1-center-fold');
-      target.defenseUntilTick = Math.max(
-        target.defenseUntilTick,
-        context.tick + (POWER_UP_CATALOG['v1-center-fold'].durationTicks ?? 0)
-      );
     }
     if (triggerPowerUp(context, target, 'v1-second-draft')) {
       target.inkRageAttacksRemaining =
@@ -1594,10 +1580,10 @@ const ROLE_MATCHUP_DAMAGE_MULTIPLIERS: Readonly<
   brawler: Object.freeze({
     brawler: 1_000,
     longshot: 1_005,
-    mage: 760,
+    mage: 769,
   }),
   longshot: Object.freeze({
-    brawler: 1_400,
+    brawler: 1_200,
     longshot: 1_000,
     mage: 1_100,
   }),
@@ -1608,13 +1594,52 @@ const ROLE_MATCHUP_DAMAGE_MULTIPLIERS: Readonly<
   }),
 });
 
+const BRAWLER_VS_MAGE_POWER_UP_COUNTERWEIGHT = Object.freeze([
+  0, 0, -5, -11, -55, -100,
+]);
+const MAGE_VS_LONGSHOT_POWER_UP_COUNTERWEIGHT = Object.freeze([
+  0, 0, 6, 9, 12, 15,
+]);
+
+function getPowerUpRoleCounterweightPermille(
+  attacker: CurrentCombatRole,
+  defender: CurrentCombatRole,
+  sharedPowerUpDepth: number
+): number {
+  const buildDepth = Math.max(
+    0,
+    Math.min(MAXIMUM_POWER_UPS, Math.floor(sharedPowerUpDepth))
+  );
+  if (attacker === 'brawler' && defender === 'mage') {
+    return BRAWLER_VS_MAGE_POWER_UP_COUNTERWEIGHT[buildDepth] ?? -100;
+  }
+  if (attacker === 'mage' && defender === 'longshot') {
+    return MAGE_VS_LONGSHOT_POWER_UP_COUNTERWEIGHT[buildDepth] ?? 15;
+  }
+  return 0;
+}
+
 function getRoleMatchupDamageMultiplierPermille(
   attacker: CombatRole,
-  defender: CombatRole
+  defender: CombatRole,
+  sharedPowerUpDepth = 0
 ): number {
-  return ROLE_MATCHUP_DAMAGE_MULTIPLIERS[toCurrentCombatRole(attacker)][
-    toCurrentCombatRole(defender)
-  ];
+  const currentAttacker = toCurrentCombatRole(attacker);
+  const currentDefender = toCurrentCombatRole(defender);
+  const baseMultiplier =
+    ROLE_MATCHUP_DAMAGE_MULTIPLIERS[currentAttacker][currentDefender];
+  // Small card effects cross role-specific knockout thresholds differently as
+  // a build fills up. Counterweight only the intended class edge so 3- and
+  // 5-card roguelite builds preserve the same readable triangle as a new pet.
+  const powerUpCounterweight = getPowerUpRoleCounterweightPermille(
+    currentAttacker,
+    currentDefender,
+    sharedPowerUpDepth
+  );
+  return Math.max(
+    500,
+    Math.min(1_500, baseMultiplier + powerUpCounterweight)
+  );
 }
 
 function rollAndApplyDamage(
@@ -1643,7 +1668,8 @@ function rollAndApplyDamage(
       ? 1_000
       : getRoleMatchupDamageMultiplierPermille(
           source.combatRole,
-          target.combatRole
+          target.combatRole,
+          Math.min(source.powerUpIds.length, target.powerUpIds.length)
         );
   const scaledRoleDamage =
     baseDamage * roleMultiplierPermille +

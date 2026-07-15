@@ -41,30 +41,25 @@ test('60-day Arena rotation changes daily and uses every field evenly', () => {
   }
 });
 
-test('all ten Arena fields have distinct effects and challenges', () => {
+test('all ten Arena fields keep standard combat rules and distinct field identity', () => {
   const definitions = battleArena.BATTLE_ARENA_IDS.map((arenaId) =>
     battleArena.getBattleArenaDefinition(arenaId)
   );
+  assert.ok(definitions.every((definition) => definition.shortRule.includes('rules')));
+  assert.equal(new Set(definitions.map((definition) => definition.name)).size, definitions.length);
   assert.equal(
-    new Set(definitions.map((definition) => definition.shortRule)).size,
+    new Set(definitions.map((definition) => definition.challengeLabel)).size,
     definitions.length
   );
-  assert.equal(
-    new Set(definitions.map((definition) => JSON.stringify(definition.modifier))).size,
-    definitions.length
-  );
-  assert.equal(
-    new Set(definitions.map((definition) => JSON.stringify(definition.challenge))).size,
-    definitions.length
-  );
-  for (const definition of definitions.slice(1)) {
-    assert.notDeepEqual(
+  for (const definition of definitions) {
+    assert.deepEqual(definition.modifier, {});
+    assert.deepEqual(
       battleArena.applyBattleArenaModifier(
         combatConfig.DEFAULT_COMBAT_RULES,
         definition.id
       ),
       combatConfig.DEFAULT_COMBAT_RULES,
-      `${definition.name} must change the actual combat rules`
+      `${definition.name} must preserve the standard combat rules`
     );
   }
 });

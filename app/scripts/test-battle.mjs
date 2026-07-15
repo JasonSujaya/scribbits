@@ -3868,14 +3868,26 @@ const bounceArenaRules = battleArenas.applyBattleArenaModifier(
   combatConfig.DEFAULT_COMBAT_RULES,
   'v1-chalkboard-court'
 );
-assert.equal(bounceArenaRules.arena.startingHalfWidth, 7_360);
-assert.equal(bounceArenaRules.arena.startingHalfHeight, 4_600);
-assert.equal(bounceArenaRules.arena.finalHalfWidth, 5_000);
+assert.equal(
+  bounceArenaRules.arena.startingHalfWidth,
+  combatConfig.DEFAULT_COMBAT_RULES.arena.startingHalfWidth
+);
+assert.equal(
+  bounceArenaRules.arena.startingHalfHeight,
+  combatConfig.DEFAULT_COMBAT_RULES.arena.startingHalfHeight
+);
+assert.equal(
+  bounceArenaRules.arena.finalHalfWidth,
+  combatConfig.DEFAULT_COMBAT_RULES.arena.finalHalfWidth
+);
 const earlyFoldRules = battleArenas.applyBattleArenaModifier(
   combatConfig.DEFAULT_COMBAT_RULES,
   'v1-scribble-lab'
 );
-assert.equal(earlyFoldRules.arena.shrinkStartsAtTick, 260);
+assert.equal(
+  earlyFoldRules.arena.shrinkStartsAtTick,
+  combatConfig.DEFAULT_COMBAT_RULES.arena.shrinkStartsAtTick
+);
 assert.deepEqual(
   battleArenas.evaluateBattleArenaChallenge('v1-scribble-lab', {
     timeline: [
@@ -3886,7 +3898,7 @@ assert.deepEqual(
   { progress: 1, target: 1, completed: true }
 );
 pass(
-  'ten battle arenas rotate, modify combat symmetrically, and score challenges'
+  'ten battle arenas rotate with standard rules and score distinct challenges'
 );
 
 for (const combatCheck of combatEngineTests.runCombatEngineTests()) {
@@ -9509,7 +9521,7 @@ const goldenCombatCases = [
     }),
     seed: 7001,
     expectedHash:
-      '793ba598abd173b98a44e82c69315b246845da6cf3b90d7b9a0437ff9f7d9a2d',
+      '08b4430a13dc4badd874b1b8a0df06db5062de4e47f42ed3813fcb98af405eb2',
   },
   {
     name: 'boundary archetypes',
@@ -9527,7 +9539,7 @@ const goldenCombatCases = [
     }),
     seed: 7002,
     expectedHash:
-      'ff5d6be427ffba272cabba6fcd727fdd5f68e11ea850dd3faa1f502cdcf4b0ea',
+      '97b892584ce4bd392194764ea1aedfa43266d61f867ca2aab93ab7ffd17f6bdf',
   },
   {
     name: 'legacy Zip to Longshot schedule',
@@ -9545,7 +9557,7 @@ const goldenCombatCases = [
     }),
     seed: 7003,
     expectedHash:
-      'd1af557b00168fac7291622c4b3c9e58e0e67156a0571e2de24a04834ec9f022',
+      '7e07474c12366fe75ef166c93a8df2a7e36fd59d9fa6c3feda28dfa865f22174',
   },
 ];
 const transcriptHash = (transcript) =>
@@ -11211,12 +11223,12 @@ assert.deepEqual(
   },
   {
     headline: 'KO • Heavy Page WINS',
-    verdictLine: '14.6s • INK LEFT 28/275 vs 0/235',
+    verdictLine: '14.6s • INK LEFT 29/275 vs 0/235',
     tapeLine: '235 TOTAL DAMAGE • SHOCKWAVE',
     highlight: {
       label: 'FINAL SPLAT',
-      text: 'Body Slam • 12 to Needle Star',
-      compactText: 'Body Slam · 12 DAMAGE',
+      text: 'Body Slam • 18 to Needle Star',
+      compactText: 'Body Slam · 18 DAMAGE',
     },
     finishPresentation: 'knockout',
     finishSound: 'knockout',
@@ -11243,33 +11255,59 @@ assert.equal(doubleKnockoutRecap.finishPresentation, 'double-knockout');
 assert.equal(doubleKnockoutRecap.finishSound, 'knockout');
 assert.ok(doubleKnockoutRecap.headline.startsWith('DOUBLE KO •'));
 
-const timeoutSustainPowerUps = [
-  'v1-paper-shield',
-  'v1-center-fold',
-  'v1-last-scribble',
-  'v1-counter-sketch',
-  'v1-masterpiece',
+const timeoutDecisionSourceTranscript = structuredClone(
+  timeoutRecapReport.simulation
+);
+timeoutDecisionSourceTranscript.result.reason = 'timeout_damage_dealt';
+timeoutDecisionSourceTranscript.result.winner = 'a';
+timeoutDecisionSourceTranscript.result.loser = 'b';
+timeoutDecisionSourceTranscript.result.completedTick = 400;
+timeoutDecisionSourceTranscript.result.completedMilliseconds = 20_000;
+timeoutDecisionSourceTranscript.result.fighters[0].finalHitPoints =
+  timeoutDecisionSourceTranscript.result.fighters[0].maxHitPoints;
+timeoutDecisionSourceTranscript.result.fighters[0].hitPointPermille = 1_000;
+timeoutDecisionSourceTranscript.result.fighters[0].damageDealt = 101;
+timeoutDecisionSourceTranscript.result.fighters[1].finalHitPoints =
+  timeoutDecisionSourceTranscript.result.fighters[1].maxHitPoints;
+timeoutDecisionSourceTranscript.result.fighters[1].hitPointPermille = 1_000;
+timeoutDecisionSourceTranscript.result.fighters[1].damageDealt = 100;
+const timeoutStartingCheckpoint =
+  timeoutDecisionSourceTranscript.checkpoints[0];
+timeoutDecisionSourceTranscript.checkpoints = Array.from(
+  { length: 41 },
+  (_, checkpointIndex) => {
+    const checkpoint = structuredClone(timeoutStartingCheckpoint);
+    checkpoint.tick = checkpointIndex * 10;
+    checkpoint.fighters[0].hitPoints =
+      timeoutDecisionSourceTranscript.result.fighters[0].maxHitPoints;
+    checkpoint.fighters[1].hitPoints =
+      timeoutDecisionSourceTranscript.result.fighters[1].maxHitPoints;
+    return checkpoint;
+  }
+);
+timeoutDecisionSourceTranscript.timeline = [
+  timeoutDecisionSourceTranscript.timeline[0],
+  {
+    tick: 100,
+    kind: 'damage',
+    sourceFighter: 'a',
+    targetFighter: 'b',
+    source: 'contact',
+    amount: 1,
+    targetHitPoints:
+      timeoutDecisionSourceTranscript.result.fighters[1].maxHitPoints,
+    critical: false,
+    position: { x: 0, y: 0 },
+  },
+  {
+    tick: 400,
+    kind: 'battle_ended',
+    winner: 'a',
+    reason: 'timeout_damage_dealt',
+  },
 ];
-const timeoutMageStats = powerStatsForMockProof.colorburst;
-const timeoutDecisionSourceReport = mockCombatBundle.simulate(
-  {
-    ...makeGoldenScribbit('timeout-a-colorburst', 'tide', timeoutMageStats),
-    powerUpIds: timeoutSustainPowerUps,
-  },
-  {
-    ...makeGoldenScribbit('timeout-b-colorburst', 'tide', timeoutMageStats),
-    powerUpIds: timeoutSustainPowerUps,
-  },
-  2,
-  goldenForecast,
-  'exhibition'
-);
-assert.ok(
-  timeoutDecisionSourceReport.simulation.result.completedTick === 400,
-  'timeout fixture should reach the clock'
-);
 const falseDoubleKnockoutTranscript = structuredClone(
-  timeoutDecisionSourceReport.simulation
+  timeoutDecisionSourceTranscript
 );
 falseDoubleKnockoutTranscript.result.reason = 'double_knockout';
 falseDoubleKnockoutTranscript.timeline.at(-1).reason = 'double_knockout';
@@ -11280,7 +11318,7 @@ assert.equal(
 );
 
 const damageDecisionTranscript = structuredClone(
-  timeoutDecisionSourceReport.simulation
+  timeoutDecisionSourceTranscript
 );
 damageDecisionTranscript.result.reason = 'timeout_damage_dealt';
 damageDecisionTranscript.result.winner = 'a';
@@ -11413,7 +11451,7 @@ assert.equal(
 );
 pass('authoritative Inkcast recap copy and finish semantics');
 
-const journalDecisionWin = structuredClone(timeoutDecisionSourceReport);
+const journalDecisionWin = structuredClone(timeoutRecapReport);
 journalDecisionWin.simulation = structuredClone(damageDecisionTranscript);
 journalDecisionWin.winner = 'a';
 journalDecisionWin.id = 'journal-day-9-exhibition';

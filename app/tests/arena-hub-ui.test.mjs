@@ -80,7 +80,7 @@ test('Arena leads with the authoritative season and ranking action', () => {
   assert.match(arenaSource, /'SEASON PTS'/);
   assert.match(arenaSource, /'VIEW STANDINGS'/);
   assert.match(arenaSource, /const seasonControlsShiftY = 36/);
-  assert.match(arenaSource, /FIELD_CHALLENGE_TOP_OFFSET = -30/);
+  assert.match(arenaSource, /FIELD_CHALLENGE_TOP_OFFSET = -50/);
   assert.doesNotMatch(arenaSource, /'VIEW TOP 10 STANDINGS  ›'/);
   assert.match(arenaSource, /private seasonHeaderText\(/);
   assert.match(arenaSource, /DAYS LEFT  •  \$\{rank\} RANK/);
@@ -173,10 +173,10 @@ test('Arena gives the rotating venue challenge a dedicated card', () => {
   );
 });
 
-test('Garden Patch applies and displays a real sticky-soil field effect', () => {
+test('Garden Patch displays its neutral bump challenge', () => {
   assert.match(
     battleArenaSource,
-    /'v1-garden-patch':[\s\S]*shortRule: 'Sticky soil · movement 5% slower'[\s\S]*modifier: \{ movementPermille: 950 \}/
+    /'v1-garden-patch':[\s\S]*shortRule: 'Standard rules · bump challenge'[\s\S]*modifier: \{\}/
   );
   assert.match(replaySource, /arenaRule: battleArena\.shortRule/);
   assert.match(

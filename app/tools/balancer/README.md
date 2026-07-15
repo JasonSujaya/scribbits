@@ -24,6 +24,12 @@ From `app/`:
 node tools/balancer/run.mjs
 ```
 
+Run one or more suites while tuning:
+
+```bash
+node tools/balancer/run.mjs --suite=role-cycle,growth-progression
+```
+
 Release verification uses the non-mutating gate:
 
 ```bash
@@ -45,8 +51,11 @@ the balancer runtime during a Monte Carlo pass.
 Outputs:
 
 - `../artifacts/balancer/latest-summary.md`
-- `../artifacts/balancer/latest-results.csv`
+- `../artifacts/balancer/latest-results.csv` (one compact row per reported matchup)
 - timestamped copies of both files
+
+Suites run and write their reports sequentially so the full balance gate does
+not retain every simulated fight in memory at once.
 
 ## What it answers
 
@@ -65,13 +74,18 @@ The first pass uses conservative flags:
 - `FLAG` if player A win rate is below `35%` or above `65%`.
 - `FLAG` if timeout rate is above `8%`.
 - `WATCH` if average fight duration is below `12s` or above `45s`.
-- The intended counter edge must land between `52.5%` and `63%` across 4,000
-  fights per edge.
+- The naked intended counter edge must land between `57%` and `65%` across
+  4,000 fights per edge.
+- Every intended counter is also tested in all ten battle arenas and must stay
+  between `52%` and `75%`; arena art and challenges do not change combat stats.
+- Equal-progression class fields stay within `45%` and `55%` at 0, 1, 3, and
+  5 Power-Ups. One- and three-card counter edges cap at `69%`; mature five-card
+  counter builds cap at `75%` while the full field remains even.
 - Canonical Brawler, Longshot, and Mage builds must each stay between `30%`
   and `70%` after randomized Power-Ups and Gear against an evenly distributed
   matched-progression field; the naked role matrix keeps its tighter band.
 - The mandatory 30-day suite runs 48 deterministic accounts per activity
-  profile, checks six combat checkpoints, all ten Arenas, ten Theme cycles,
+  profile, checks six combat checkpoints, all ten arena unlocks, ten Theme cycles,
   seven Gear Week days, capsule pacing, collection saturation, Gear ranks,
   Power-Up caps, pity, and matched progression.
 
@@ -82,10 +96,16 @@ Power-Up profiles break the competitive gate. Progression opponents use the same
 Power-Up count as the challenger. Combined-loadout rows
 compare two rank-6 Gear pieces and three role-offerable Power-Ups against an
 equally progressed field, so progression is never judged against a naked foe.
-Matched-loadout win rates only hard-fail when their 95% Wilson interval sits
-fully outside the 35–65% band; point estimates on the boundary remain watches.
-Gear/skill interaction above 15 percentage points is watched and above 20 is a
-hard failure.
+The focused Gear + Power-Up profiles allow deliberate sidegrades, but flag a
+combined build outside `25–75%` or a Gear addition that costs more than 15
+percentage points. The broader equipment-meta suite keeps random-loadout
+interaction within 10 percentage points.
+
+The equipment-meta gate is the broad Gear proof: 256 deterministic full
+loadouts cover all 34 Gear items and all six ranks at 0, 3, and 5 Power-Ups.
+Each loadout is paired with its exact reverse assignment, and no-Gear versus
+Gear comparisons reuse the same production combat seed so equipment changes
+stats without silently rerolling the fight.
 
 These thresholds live in `run.mjs` and are deliberately easy to change.
 

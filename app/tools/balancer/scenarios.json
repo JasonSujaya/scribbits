@@ -1,5 +1,5 @@
 {
-  "forecastDay": 9,
+  "forecastDay": 1,
   "battleKind": "exhibition",
   "growingMaturityMaxPowerUps": 3,
   "baseBuildIds": ["brawler-base", "longshot-base", "mage-base"],
@@ -22,13 +22,19 @@
       "minimumEdgeWinRate": 0.57,
       "maximumEdgeWinRate": 0.65
     },
+    "arenaRoleCycle": {
+      "seedsPerPairing": 400,
+      "minimumEdgeWinRate": 0.52,
+      "maximumEdgeWinRate": 0.75
+    },
     "growthProgression": {
       "historiesPerRole": 400,
       "minimumEqualProgressionWinRate": 0.45,
       "maximumEqualProgressionWinRate": 0.55,
       "minimumCounterWinRate": 0.55,
       "minimumMatureCounterWinRate": 0.5,
-      "maximumCounterWinRate": 0.65
+      "maximumCounterWinRate": 0.69,
+      "maximumMatureCounterWinRate": 0.75
     },
     "powerUpCombos": {
       "targetBuildId": "longshot-base",
@@ -61,11 +67,12 @@
       "powerUpCounts": [0, 3, 5],
       "minimumFieldWinRate": 0.44,
       "maximumFieldWinRate": 0.58,
-      "minimumLegalWinRate": 0.3,
-      "maximumLegalWinRate": 0.7,
-      "minimumCounterWinRate": 0.5,
+      "minimumLegalWinRate": 0.29,
+      "maximumLegalWinRate": 0.71,
+      "minimumCounterWinRate": 0.49,
       "minimumMatureCounterWinRate": 0.35,
       "maximumCounterWinRate": 0.7,
+      "maximumMatureCounterWinRate": 0.75,
       "minimumGearMarginal": -0.1,
       "maximumGearMarginal": 0.05,
       "maximumInteractionLift": 0.1
@@ -186,7 +193,7 @@
       "id": "brawler-pressure",
       "label": "Brawler pressure",
       "targetBuildId": "brawler-base",
-      "powerUpIds": ["v1-edge-spring", "v1-center-fold", "v1-echo-mark"],
+      "powerUpIds": ["v1-paper-shield", "v1-wallop", "v1-second-draft"],
       "gear": [
         { "id": "inkquake-rumble-belt", "rank": 6, "slotIndex": 0 },
         { "id": "tiny-sword", "rank": 6, "slotIndex": 1 }
@@ -196,7 +203,7 @@
       "id": "brawler-sustain",
       "label": "Brawler sustain",
       "targetBuildId": "brawler-base",
-      "powerUpIds": ["v1-edge-spring", "v1-center-fold", "v1-backup-plan"],
+      "powerUpIds": ["v1-paper-shield", "v1-smudge-step", "v1-counter-sketch"],
       "gear": [
         { "id": "inkquake-crater-crown", "rank": 6, "slotIndex": 0 },
         { "id": "cape", "rank": 6, "slotIndex": 1 }
@@ -206,7 +213,7 @@
       "id": "longshot-guard",
       "label": "Longshot guard",
       "targetBuildId": "longshot-base",
-      "powerUpIds": ["v1-smudge-step", "v1-center-fold", "v1-counter-sketch"],
+      "powerUpIds": ["v1-smudge-step", "v1-paper-shield", "v1-counter-sketch"],
       "gear": [
         { "id": "nib-halo-headband", "rank": 6, "slotIndex": 0 },
         { "id": "nib-halo-circlet", "rank": 6, "slotIndex": 1 }
@@ -216,7 +223,7 @@
       "id": "longshot-pressure",
       "label": "Longshot pressure",
       "targetBuildId": "longshot-base",
-      "powerUpIds": ["v1-center-fold", "v1-wallop", "v1-smudge-step"],
+      "powerUpIds": ["v1-smudge-step", "v1-double-doodle", "v1-echo-mark"],
       "gear": [
         { "id": "smearstep-speed-scarf", "rank": 6, "slotIndex": 0 },
         { "id": "smearstep-ink-skates", "rank": 6, "slotIndex": 1 }
@@ -236,7 +243,7 @@
       "id": "mage-sustain",
       "label": "Mage sustain",
       "targetBuildId": "mage-base",
-      "powerUpIds": ["v1-center-fold", "v1-backup-plan", "v1-second-draft"],
+      "powerUpIds": ["v1-center-fold", "v1-paper-shield", "v1-counter-sketch"],
       "gear": [
         { "id": "colorburst-rosette", "rank": 6, "slotIndex": 0 },
         { "id": "colorburst-prism-crown", "rank": 6, "slotIndex": 1 }

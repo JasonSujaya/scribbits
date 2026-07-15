@@ -6,7 +6,7 @@ import { toCurrentCombatRole } from './roles';
 export const MAXIMUM_POWER_UPS = 5;
 export const MAXIMUM_GROWING_POWER_UPS = 3;
 export const MAXIMUM_LEGENDARY_POWER_UPS = 1;
-export const MAXIMUM_POWER_UP_BONUS_DAMAGE = 36;
+export const MAXIMUM_POWER_UP_BONUS_DAMAGE = 10;
 export const MAXIMUM_POWER_UP_HEALING_PERMILLE = 200;
 // This is a safety ceiling, not a balance lever. Individual cards own their
 // activation caps so a full build cannot starve later cards by trigger order.
@@ -129,7 +129,7 @@ export const POWER_UP_CATALOG: Readonly<Record<PowerUpId, PowerUpDefinition>> =
       rarity: 'common',
       buildPath: 'survival',
       when: 'Every fourth normal attack would hit you',
-      effect: 'Sidestep up to 1 damage once per fight',
+      effect: 'Deflect up to 1 damage once per fight',
       trigger: 'incoming-basic',
       maximumActivations: 1,
       preventedDamage: 1,
@@ -168,10 +168,9 @@ export const POWER_UP_CATALOG: Readonly<Record<PowerUpId, PowerUpDefinition>> =
       rarity: 'common',
       buildPath: 'survival',
       when: 'You fall below half health',
-      effect: 'Restore 1% max health and briefly block incoming damage',
+      effect: 'Restore 1% max health',
       trigger: 'below-half-hearts',
       maximumActivations: 1,
-      durationTicks: 2,
       maximumHitPointHealingPermille: 10,
     }),
     'v1-double-doodle': definePowerUp({
@@ -261,11 +260,11 @@ export const POWER_UP_CATALOG: Readonly<Record<PowerUpId, PowerUpDefinition>> =
       buildPath: 'survival',
       when: 'You fall below half health',
       effect:
-        'Your next 3 normal hits deal 2 extra damage and restore 0.5% max health',
+        'Your next 3 normal hits deal 1 extra damage and restore 0.5% max health',
       trigger: 'below-half-hearts',
       maximumActivations: 1,
       repeatedAttacks: 3,
-      bonusDamage: 2,
+      bonusDamage: 1,
       maximumHitPointHealingPermille: 5,
     }),
     'v1-paper-twin': definePowerUp({
@@ -342,7 +341,8 @@ export const POWER_UP_PLAYSTYLE_PROFILES: Readonly<
   ),
   'v1-combo-spark': definePlaystyleProfile(
     ['mage'],
-    ['rush', 'ready', 'aim']
+    ['rush', 'ready', 'aim'],
+    ['brawler']
   ),
   'v1-center-fold': definePlaystyleProfile(
     ['mage'],
@@ -360,8 +360,7 @@ export const POWER_UP_PLAYSTYLE_PROFILES: Readonly<
   ),
   'v1-counter-sketch': definePlaystyleProfile(
     ['longshot', 'mage'],
-    ['guard', 'ready'],
-    ['brawler']
+    ['guard', 'ready']
   ),
   'v1-wallop': definePlaystyleProfile(
     ['brawler'],

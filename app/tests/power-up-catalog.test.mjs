@@ -25,7 +25,7 @@ test('launch catalog contains the balanced 15 behavioral Power-Ups', () => {
     ),
     { common: 5, uncommon: 3, rare: 2, epic: 3, legendary: 2 }
   );
-  assert.equal(powerUps.MAXIMUM_POWER_UP_BONUS_DAMAGE, 36);
+  assert.equal(powerUps.MAXIMUM_POWER_UP_BONUS_DAMAGE, 10);
   assert.equal(powerUps.MAXIMUM_POWER_UP_HEALING_PERMILLE, 200);
   assert.equal(powerUps.MAXIMUM_POWER_UP_TRIGGER_EVENTS, 32);
   Object.values(powerUps.POWER_UP_CATALOG).forEach((entry) => {
@@ -88,18 +88,18 @@ test('every Power-Up has one centralized playstyle profile', () => {
   });
   assert.equal(
     powerUps.powerUpIsOfferableForRole('v1-counter-sketch', 'brawler'),
-    false
+    true
   );
   const excludedRoleOffers = {
     brawler: [
       'v1-edge-spring',
+      'v1-combo-spark',
       'v1-center-fold',
       'v1-backup-plan',
-      'v1-counter-sketch',
+      'v1-last-scribble',
     ],
     longshot: [
       'v1-edge-spring',
-      'v1-paper-shield',
       'v1-wallop',
       'v1-second-draft',
       'v1-paper-twin',
@@ -129,7 +129,7 @@ test('every Power-Up has one centralized playstyle profile', () => {
   );
   assert.equal(
     powerUps.powerUpIsOfferableForRole('v1-backup-plan', 'brawler', 3),
-    true
+    false
   );
   assert.ok(
     powerUps.scorePowerUpFit('v1-combo-spark', 'mage', [], ['v1-backup-plan']) >

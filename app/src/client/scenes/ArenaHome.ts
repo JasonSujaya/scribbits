@@ -99,7 +99,7 @@ import { translate } from '../lib/localization';
 // The competitive home for each season: standings first, then today's venue.
 export class ArenaHome extends Scene {
   private static readonly COMPETITION_HUB_HEIGHT = 740;
-  private static readonly FIELD_CHALLENGE_TOP_OFFSET = -30;
+  private static readonly FIELD_CHALLENGE_TOP_OFFSET = -50;
   private static readonly PINNED_HEADER_HEIGHT = 128;
   private state!: ArenaState;
   private errorPanelRef: ErrorPanel | null = null;
