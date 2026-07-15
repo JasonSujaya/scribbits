@@ -29,13 +29,14 @@ const [
 ]);
 
 test('splash is a square feed hook instead of the expanded game flow', () => {
-  assert.match(splashHtml, /YOUR DOODLE\./);
-  assert.match(splashHtml, /YOUR FIGHTER\./);
-  assert.match(splashHtml, /SHAPE BECOMES STATS/);
-  assert.match(splashHtml, /DRAW IT\. WATCH IT FIGHT\./);
-  assert.match(splashHtml, /id="battle-hero-image"/);
-  assert.match(splashHtml, /id="battle-rival-image"/);
+  assert.match(splashHtml, /A REDDIT DRAWING GAME/);
+  assert.match(splashHtml, /DRAW IT\. IT FIGHTS FOR YOU\./);
+  assert.match(splashHtml, /YOURS IS MISSING\./);
+  assert.match(splashHtml, /id="featured-creation-image"/);
   assert.match(splashHtml, /id="start-button"/);
+  assert.doesNotMatch(splashHtml, /\bVS\b/);
+  assert.doesNotMatch(splashHtml, /battle-health/);
+  assert.doesNotMatch(splashHtml, /battle-rival-image/);
   assert.doesNotMatch(splashHtml, /creation-story/);
   assert.match(splashCss, /aspect-ratio: 1/);
   assert.match(splashCss, /html,[\s\S]*body[\s\S]*overflow: hidden/);
@@ -45,18 +46,18 @@ test('splash is a square feed hook instead of the expanded game flow', () => {
 
 test('splash stays light while rotating in real community fighters', () => {
   assert.match(splashScript, /renderFeaturedCreationPair/);
-  assert.match(splashScript, /renderFighterPair/);
+  assert.match(splashScript, /renderFeaturedCreation/);
   assert.match(splashScript, /shuffledCreations/);
   assert.match(splashScript, /crypto\.getRandomValues/);
   assert.match(splashScript, /getShareData/);
   assert.match(splashScript, /parseBattleShareData/);
-  assert.match(splashScript, /!state\.hasCreatedScribbit/);
-  assert.match(splashScript, /translate\('splash\.action\.drawToday'\)/);
-  assert.match(splashScript, /translate\('splash\.action\.keepFighting'\)/);
-  assert.match(englishCatalog, /'splash\.action\.drawToday': 'DRAW TODAY'/);
+  assert.match(splashScript, /state\.hasCreatedScribbit/);
+  assert.match(splashScript, /splash\.action\.drawYours/);
+  assert.match(splashScript, /splash\.action\.backToYours/);
+  assert.match(englishCatalog, /'splash\.action\.drawYours': 'DRAW YOURS'/);
   assert.match(
     englishCatalog,
-    /'splash\.action\.keepFighting': 'KEEP FIGHTING'/
+    /'splash\.action\.backToYours': 'BACK TO YOUR GUY'/
   );
 });
 
@@ -78,6 +79,6 @@ test('splash logo settles once and respects reduced motion', () => {
   assert.doesNotMatch(splashCss, /logo-settle[^;]*infinite/);
   assert.match(
     splashCss,
-    /@media \(prefers-reduced-motion: reduce\)[\s\S]*\.logo-image[\s\S]*animation: none/
+    /@media \(prefers-reduced-motion: reduce\)[\s\S]*\.logo-image,[\s\S]*\.featured-creation img,[\s\S]*\.start-button[\s\S]*animation: none/
   );
 });

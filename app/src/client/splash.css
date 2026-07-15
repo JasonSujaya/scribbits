@@ -1,5 +1,5 @@
-/* Reddit gives inline games a square viewport. This card is a strict 1:1 hook:
-   no document scroll, no expanded-game UI, and one trusted launch action. */
+/* Reddit gives inline games a square viewport. This card is a strict 1:1
+   invitation: one community drawing, one promise, and one launch action. */
 
 * {
   box-sizing: border-box;
@@ -29,9 +29,14 @@ body {
   color: #2b2016;
   background:
     radial-gradient(
-      circle at 18% 20%,
-      rgba(255, 177, 70, 0.2),
-      transparent 43%
+      circle at 16% 18%,
+      rgba(239, 101, 76, 0.24),
+      transparent 38%
+    ),
+    radial-gradient(
+      circle at 84% 82%,
+      rgba(58, 164, 187, 0.18),
+      transparent 34%
     ),
     repeating-linear-gradient(
       118deg,
@@ -45,14 +50,14 @@ body {
   position: relative;
   isolation: isolate;
   display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr) auto;
-  gap: clamp(5px, 1.3vmin, 9px);
+  grid-template-rows: auto minmax(0, 1fr) auto auto;
+  gap: clamp(6px, 1.5vmin, 11px);
   width: min(100%, calc(100vh - clamp(16px, 4.8vmin, 32px)));
   height: min(100%, calc(100vw - clamp(16px, 4.8vmin, 32px)));
   max-width: 720px;
   max-height: 720px;
   aspect-ratio: 1;
-  padding: clamp(13px, 3.4vmin, 24px);
+  padding: clamp(13px, 3.3vmin, 24px);
   overflow: hidden;
   background:
     radial-gradient(rgba(122, 106, 86, 0.07) 1px, transparent 1px), #fff7e8;
@@ -76,7 +81,7 @@ body {
 
 .tape {
   position: absolute;
-  z-index: 3;
+  z-index: 4;
   top: -7px;
   width: clamp(48px, 14vmin, 90px);
   height: clamp(17px, 4.5vmin, 30px);
@@ -103,7 +108,7 @@ body {
 }
 
 .logo {
-  width: clamp(112px, 33vmin, 226px);
+  width: clamp(118px, 34vmin, 230px);
   line-height: 0;
 }
 
@@ -115,103 +120,150 @@ body {
   animation: logo-settle 560ms cubic-bezier(0.2, 0.9, 0.25, 1.15) both;
 }
 
-.hook-stamp {
-  padding: clamp(4px, 1vmin, 7px) clamp(7px, 1.7vmin, 12px);
-  color: #fff7e8;
-  background: #87472f;
-  border: 2px solid #2b2016;
-  border-radius: 7px 5px 8px 6px;
-  box-shadow: 2px 3px 0 rgba(43, 32, 22, 0.18);
-  font-size: clamp(0.48rem, 1.65vmin, 0.78rem);
+.game-type {
+  color: #87472f;
+  font-size: clamp(0.48rem, 1.55vmin, 0.75rem);
   font-weight: 700;
   letter-spacing: 0.08em;
+  text-align: right;
   white-space: nowrap;
-  transform: rotate(2deg);
+  transform: rotate(1.5deg);
 }
 
-.hook-copy {
-  text-align: center;
-  text-wrap: balance;
-  transform: rotate(-0.4deg);
-}
-
-.hook-copy p,
-.hook-copy h2 {
-  line-height: 0.92;
-  letter-spacing: -0.035em;
-}
-
-.hook-copy p {
-  color: #74503a;
-  font-size: clamp(0.78rem, 2.8vmin, 1.24rem);
-  font-weight: 700;
-}
-
-.hook-copy h2 {
-  margin-top: 2px;
-  color: #2b2016;
-  font-size: clamp(1.42rem, 6.2vmin, 2.75rem);
-}
-
-.battle-card {
+.creation-card {
   position: relative;
   min-height: 0;
-  padding: clamp(15px, 4vmin, 25px) clamp(7px, 1.7vmin, 12px)
-    clamp(7px, 1.7vmin, 12px);
+  padding: clamp(22px, 5.4vmin, 36px) clamp(8px, 2vmin, 14px)
+    clamp(8px, 2vmin, 14px);
   overflow: hidden;
-  background: #eed28f;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.26), transparent 42%), #ef654c;
   border: clamp(2px, 0.65vmin, 4px) solid #2b2016;
-  border-radius: clamp(13px, 3.2vmin, 22px);
-  box-shadow: 3px 4px 0 rgba(43, 32, 22, 0.18);
-  transform: rotate(0.25deg);
+  border-radius: clamp(14px, 3.3vmin, 23px);
+  box-shadow: 3px 5px 0 rgba(43, 32, 22, 0.2);
+  transform: rotate(-0.2deg);
 }
 
-.battle-kicker {
+.creation-label {
   position: absolute;
-  z-index: 4;
-  top: clamp(5px, 1.2vmin, 9px);
+  z-index: 3;
+  top: clamp(6px, 1.5vmin, 10px);
   left: 50%;
-  color: #74452f;
-  font-size: clamp(0.48rem, 1.75vmin, 0.78rem);
+  color: #fff7e8;
+  font-size: clamp(0.52rem, 1.8vmin, 0.82rem);
   font-weight: 700;
   letter-spacing: 0.09em;
   white-space: nowrap;
+  text-shadow: 1.5px 2px 0 rgba(43, 32, 22, 0.35);
   transform: translateX(-50%);
 }
 
-.battle-stage {
+.creation-stage {
   position: relative;
   width: 100%;
   height: 100%;
   min-height: 0;
   overflow: hidden;
-  border: 2px solid #2b2016;
-  border-radius: clamp(9px, 2.2vmin, 15px);
+  background: #f6dfad;
+  border: clamp(2px, 0.55vmin, 3px) solid #2b2016;
+  border-radius: clamp(10px, 2.4vmin, 16px);
+  box-shadow: inset 0 0 0 2px rgba(255, 247, 232, 0.42);
 }
 
-.battle-poster {
+.creation-poster {
   position: absolute;
   inset: 0;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
-  align-items: end;
   overflow: hidden;
-  background: #e7c98b url('./assets/scribbits-splash-stage.webp') center 46% /
-    cover no-repeat;
+  background:
+    radial-gradient(
+      circle at 18% 28%,
+      rgba(239, 101, 76, 0.14),
+      transparent 25%
+    ),
+    radial-gradient(
+      circle at 84% 74%,
+      rgba(58, 164, 187, 0.15),
+      transparent 27%
+    ),
+    radial-gradient(rgba(122, 106, 86, 0.08) 1px, transparent 1px), #fff3d7;
+  background-size:
+    auto,
+    auto,
+    14px 14px,
+    auto;
 }
 
-.battle-poster::after {
-  position: absolute;
-  inset: auto 0 0;
-  height: 35%;
-  content: '';
-  pointer-events: none;
-  background: linear-gradient(transparent, rgba(68, 45, 29, 0.12));
-}
-
-.battle-poster[hidden],
+.creation-poster[hidden],
 .shared-battle-video[hidden] {
   display: none;
+}
+
+.featured-creation {
+  position: absolute;
+  inset: clamp(10px, 2.5vmin, 18px) clamp(22px, 5vmin, 36px)
+    clamp(8px, 2vmin, 14px);
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  min-height: 0;
+}
+
+.featured-creation img {
+  display: block;
+  align-self: center;
+  justify-self: center;
+  width: 92%;
+  height: 100%;
+  min-height: 0;
+  object-fit: contain;
+  filter: drop-shadow(5px 8px 0 rgba(43, 32, 22, 0.18));
+  animation: doodle-arrive 620ms cubic-bezier(0.2, 0.9, 0.25, 1.1) both;
+}
+
+.featured-creation figcaption {
+  display: grid;
+  gap: 1px;
+  text-align: center;
+  transform: rotate(-0.5deg);
+}
+
+.featured-creation strong {
+  overflow: hidden;
+  color: #2b2016;
+  font-size: clamp(0.85rem, 3.1vmin, 1.38rem);
+  line-height: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.featured-creation figcaption span {
+  overflow: hidden;
+  color: #87472f;
+  font-size: clamp(0.48rem, 1.55vmin, 0.72rem);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.doodle-spark {
+  position: absolute;
+  z-index: 2;
+  color: #ef654c;
+  font-size: clamp(0.9rem, 3.2vmin, 1.45rem);
+  opacity: 0.78;
+}
+
+.doodle-spark-left {
+  top: 22%;
+  left: 10%;
+  transform: rotate(-12deg);
+}
+
+.doodle-spark-right {
+  right: 10%;
+  bottom: 24%;
+  color: #36a3ba;
+  transform: rotate(10deg);
 }
 
 .shared-battle-video {
@@ -224,112 +276,57 @@ body {
   background: #2a2118;
 }
 
-.fighter {
-  position: relative;
-  z-index: 2;
+.invite-copy {
   display: grid;
-  grid-template-rows: minmax(0, 1fr) auto;
-  align-self: stretch;
-  min-width: 0;
-  padding: clamp(9px, 2.1vmin, 14px) clamp(3px, 0.8vmin, 6px)
-    clamp(5px, 1.1vmin, 8px);
-}
-
-.fighter img {
-  display: block;
-  align-self: center;
-  width: 100%;
-  height: 100%;
-  min-height: 0;
-  object-fit: contain;
-  filter: drop-shadow(3px 5px 0 rgba(43, 32, 22, 0.2));
-}
-
-.fighter-left img {
-  transform: rotate(-4deg);
-}
-
-.fighter-right img {
-  transform: rotate(4deg) scaleX(-1);
-}
-
-.fighter figcaption {
-  overflow: hidden;
-  color: #fff7e8;
-  font-size: clamp(0.46rem, 1.75vmin, 0.8rem);
-  line-height: 1.15;
+  gap: clamp(2px, 0.5vmin, 4px);
   text-align: center;
-  text-overflow: ellipsis;
-  text-shadow: 1.5px 2px 0 #2b2016;
-  white-space: nowrap;
+  text-wrap: balance;
 }
 
-.battle-versus {
-  position: relative;
-  z-index: 3;
-  align-self: center;
-  color: #fff7e8;
-  font-size: clamp(1rem, 4.6vmin, 2rem);
-  text-shadow: 2px 3px 0 #2b2016;
-  transform: rotate(-6deg);
+.invite-copy p {
+  color: #ef654c;
+  font-size: clamp(0.52rem, 1.8vmin, 0.82rem);
+  font-weight: 700;
+  letter-spacing: 0.08em;
 }
 
-.battle-health {
-  position: absolute;
-  z-index: 3;
-  top: clamp(5px, 1.25vmin, 9px);
-  width: 36%;
-  height: clamp(6px, 1.6vmin, 11px);
-  background: linear-gradient(90deg, #ef5b42 0 82%, #e5d7ba 82%);
-  border: clamp(1px, 0.4vmin, 2px) solid #2b2016;
-  border-radius: 999px;
-}
-
-.battle-health-left {
-  left: 4%;
-}
-
-.battle-health-right {
-  right: 4%;
-  transform: scaleX(-1);
+.invite-copy h2 {
+  color: #2b2016;
+  font-size: clamp(0.88rem, 3.15vmin, 1.4rem);
+  line-height: 1.05;
+  letter-spacing: -0.025em;
 }
 
 .splash-footer {
   display: grid;
-  grid-template-columns: minmax(0, 0.7fr) minmax(155px, 1.3fr);
-  align-items: center;
-  gap: clamp(6px, 1.6vmin, 12px);
-}
-
-.proof-line {
-  color: #74503a;
-  font-size: clamp(0.5rem, 1.75vmin, 0.78rem);
-  font-weight: 700;
-  line-height: 1.25;
-  text-align: center;
-}
-
-.proof-line span {
-  color: #ef654c;
+  gap: clamp(2px, 0.5vmin, 4px);
 }
 
 .start-button {
   width: 100%;
-  min-height: clamp(44px, 11vmin, 68px);
-  padding: clamp(10px, 2.2vmin, 15px) clamp(12px, 3vmin, 22px)
-    clamp(13px, 3vmin, 19px);
+  min-height: clamp(43px, 10.5vmin, 66px);
+  padding: clamp(9px, 2.2vmin, 14px) clamp(12px, 3vmin, 22px)
+    clamp(12px, 2.8vmin, 18px);
   color: #2b2016;
   background: transparent url('./assets/ui-button-primary.webp') center / 100%
     100% no-repeat;
   border: 0;
   cursor: pointer;
   filter: drop-shadow(0 3px 0 rgba(43, 32, 22, 0.2));
-  font-size: clamp(0.85rem, 3.2vmin, 1.35rem);
+  font-size: clamp(0.9rem, 3.3vmin, 1.42rem);
   font-weight: 700;
-  letter-spacing: 0.02em;
+  letter-spacing: 0.025em;
   transition:
     transform 0.12s ease,
     filter 0.12s ease;
+}
+
+.fresh-note {
+  color: #74503a;
+  font-size: clamp(0.43rem, 1.35vmin, 0.64rem);
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-align: center;
 }
 
 .start-button:hover {
@@ -366,27 +363,39 @@ body {
   }
 }
 
+@keyframes doodle-arrive {
+  0% {
+    opacity: 0;
+    transform: translateY(9px) rotate(-3deg) scale(0.92);
+  }
+  62% {
+    opacity: 1;
+    transform: translateY(-2px) rotate(1.2deg) scale(1.03);
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+
 @media (max-width: 370px), (max-height: 370px) {
   .page {
     gap: 4px;
     padding: 11px;
   }
 
-  .hook-stamp {
-    border-width: 1.5px;
+  .game-type {
+    white-space: normal;
   }
 
-  .splash-footer {
-    grid-template-columns: 1fr;
-  }
-
-  .proof-line {
+  .fresh-note {
     display: none;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .logo-image,
+  .featured-creation img,
   .start-button {
     animation: none;
     transition: none;

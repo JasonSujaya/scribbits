@@ -81,7 +81,6 @@ const inlineImageBytes = assertImageBudget(
   'Inline splash',
   [
     'scribbits-logo.webp',
-    'scribbits-splash-stage.webp',
     'splash-doodle-looplet.webp',
     'splash-doodle-mossmop.webp',
     'splash-doodle-stormpuff.webp',

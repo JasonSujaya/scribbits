@@ -21,19 +21,26 @@ localizeDocument();
 const startButton = document.getElementById(
   'start-button'
 ) as HTMLButtonElement | null;
-const heroImage = document.getElementById(
-  'battle-hero-image'
+const featuredCreationImage = document.getElementById(
+  'featured-creation-image'
 ) as HTMLImageElement | null;
-const rivalImage = document.getElementById(
-  'battle-rival-image'
-) as HTMLImageElement | null;
-const heroName = document.getElementById('hero-creation-name');
-const rivalName = document.getElementById('rival-creation-name');
-const battlePoster = document.getElementById('battle-poster');
+const featuredCreationName = document.getElementById('featured-creation-name');
+const featuredCreationCredit = document.getElementById(
+  'featured-creation-credit'
+);
+const creationLabel = document.getElementById('creation-label');
+const creationPoster = document.getElementById('creation-poster');
 const battleVideo = document.getElementById(
   'shared-battle-video'
 ) as HTMLVideoElement | null;
-const battleProofStamp = document.getElementById('battle-proof-stamp');
+
+let startButtonLabelKey:
+  | 'splash.action.drawYours'
+  | 'splash.action.backToYours' = 'splash.action.drawYours';
+let featuredCreationLabelKey:
+  | 'splash.showcase.sketchbook'
+  | 'splash.showcase.community' = 'splash.showcase.sketchbook';
+let sharedBattleActive = false;
 
 type DisplayCreation = SplashCreation &
   Readonly<{
@@ -67,7 +74,7 @@ const bundledCreations: readonly DisplayCreation[] = [
   },
 ];
 
-renderFighterPair(shuffledCreations(bundledCreations));
+renderFeaturedCreation(shuffledCreations(bundledCreations)[0]);
 renderSharedBattleClip();
 
 startButton?.addEventListener('click', async (event) => {
@@ -80,7 +87,7 @@ startButton?.addEventListener('click', async (event) => {
     console.error('Could not open the Scribbits expanded view:', error);
     startButton.disabled = false;
     startButton.dataset.expansionState = 'error';
-    startButton.textContent = translate('splash.action.enterArena');
+    startButton.textContent = translate(startButtonLabelKey);
     showToast(translate('splash.error.expand'));
   }
 });
@@ -95,13 +102,10 @@ async function loadSplashState(): Promise<void> {
     await renderFeaturedCreationPair(state.featuredCreations ?? []);
     if (!startButton) return;
 
-    if (!state.loggedIn) {
-      startButton.textContent = translate('splash.action.enterArena');
-    } else if (!state.hasCreatedScribbit) {
-      startButton.textContent = translate('splash.action.drawToday');
-    } else {
-      startButton.textContent = translate('splash.action.keepFighting');
-    }
+    startButtonLabelKey = state.hasCreatedScribbit
+      ? 'splash.action.backToYours'
+      : 'splash.action.drawYours';
+    startButton.textContent = translate(startButtonLabelKey);
   } catch {
     // Bundled fighters and the primary CTA remain complete without the API.
   }
@@ -110,48 +114,51 @@ async function loadSplashState(): Promise<void> {
 async function renderFeaturedCreationPair(
   featuredCreations: readonly SplashCreation[]
 ): Promise<void> {
-  const loadedCommunityCreations: DisplayCreation[] = [];
+  let loadedCommunityCreation: DisplayCreation | undefined;
   for (const creation of shuffledCreations(featuredCreations).slice(0, 3)) {
     if (await canLoadImage(creation.imageUrl)) {
-      loadedCommunityCreations.push({
+      loadedCommunityCreation = {
         ...creation,
         isCommunityCreation: true,
-      });
+      };
+      break;
     }
-    if (loadedCommunityCreations.length === 2) break;
   }
 
-  const usedIds = new Set(loadedCommunityCreations.map(({ id }) => id));
-  const bundledFallbacks = shuffledCreations(bundledCreations).filter(
-    ({ id }) => !usedIds.has(id)
+  renderFeaturedCreation(
+    loadedCommunityCreation ?? shuffledCreations(bundledCreations)[0]
   );
-  renderFighterPair([...loadedCommunityCreations, ...bundledFallbacks]);
 }
 
-function renderFighterPair(creations: readonly DisplayCreation[]): void {
-  const hero = creations[0];
-  const rival = creations[1];
-  if (!hero || !rival) return;
+function renderFeaturedCreation(creation: DisplayCreation | undefined): void {
+  if (!creation) return;
 
-  renderFighter(heroImage, heroName, hero);
-  renderFighter(rivalImage, rivalName, rival);
-}
-
-function renderFighter(
-  image: HTMLImageElement | null,
-  name: HTMLElement | null,
-  creation: DisplayCreation
-): void {
-  if (image) {
-    image.src = creation.imageUrl;
-    image.alt = creation.isCommunityCreation
+  if (featuredCreationImage) {
+    featuredCreationImage.src = creation.imageUrl;
+    featuredCreationImage.alt = creation.isCommunityCreation
       ? translate('splash.creation.communityAlt', {
           name: creation.name,
           artist: creation.artist,
         })
       : translate('splash.creation.fallbackAlt', { name: creation.name });
   }
-  if (name) name.textContent = creation.name.toUpperCase();
+  if (featuredCreationName) {
+    featuredCreationName.textContent = creation.name.toUpperCase();
+  }
+  if (featuredCreationCredit) {
+    featuredCreationCredit.textContent = translate(
+      creation.isCommunityCreation
+        ? 'splash.creation.communityArtist'
+        : 'splash.creation.fallbackArtist',
+      { artist: creation.artist }
+    );
+  }
+  featuredCreationLabelKey = creation.isCommunityCreation
+    ? 'splash.showcase.community'
+    : 'splash.showcase.sketchbook';
+  if (creationLabel && !sharedBattleActive) {
+    creationLabel.textContent = translate(featuredCreationLabelKey);
+  }
 }
 
 function shuffledCreations<T>(creations: readonly T[]): T[] {
@@ -192,7 +199,7 @@ function canLoadImage(source: string): Promise<boolean> {
 }
 
 function renderSharedBattleClip(): void {
-  if (!battleVideo || !battlePoster) return;
+  if (!battleVideo || !creationPoster) return;
   let sharedData: string | undefined;
   try {
     sharedData = getShareData();
@@ -202,20 +209,22 @@ function renderSharedBattleClip(): void {
   const sharedBattle = parseBattleShareData(sharedData);
   if (!sharedBattle) return;
 
+  sharedBattleActive = true;
   battleVideo.src = sharedBattle.clipUrl;
   battleVideo.hidden = false;
-  battlePoster.hidden = true;
-  if (battleProofStamp) {
-    battleProofStamp.textContent = translate('splash.battle.shared');
+  creationPoster.hidden = true;
+  if (creationLabel) {
+    creationLabel.textContent = translate('splash.showcase.shared');
   }
   battleVideo.addEventListener(
     'error',
     () => {
+      sharedBattleActive = false;
       battleVideo.hidden = true;
       battleVideo.removeAttribute('src');
-      battlePoster.hidden = false;
-      if (battleProofStamp) {
-        battleProofStamp.textContent = translate('splash.hook.shapeStats');
+      creationPoster.hidden = false;
+      if (creationLabel) {
+        creationLabel.textContent = translate(featuredCreationLabelKey);
       }
     },
     { once: true }

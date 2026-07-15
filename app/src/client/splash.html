@@ -20,46 +20,38 @@
             alt="Scribbits"
           />
         </h1>
-        <span class="hook-stamp" data-i18n="splash.hook.drawnByYou">
-          DRAWN BY YOU
+        <span class="game-type" data-i18n="splash.invite.gameType">
+          A REDDIT DRAWING GAME
         </span>
       </header>
 
-      <section class="hook-copy" aria-labelledby="hook-title">
-        <p data-i18n="splash.hook.doodle">YOUR DOODLE.</p>
-        <h2 id="hook-title" data-i18n="splash.hook.fighter">YOUR FIGHTER.</h2>
-      </section>
-
-      <section class="battle-card" aria-label="A hand-drawn Scribbits battle">
+      <section class="creation-card" aria-labelledby="creation-label">
         <span
-          class="battle-kicker"
-          id="battle-proof-stamp"
-          data-i18n="splash.hook.shapeStats"
+          class="creation-label"
+          id="creation-label"
+          data-i18n="splash.showcase.sketchbook"
         >
-          SHAPE BECOMES STATS
+          FROM OUR SKETCHBOOK
         </span>
-        <div class="battle-stage">
-          <div class="battle-poster" id="battle-poster">
-            <span class="battle-health battle-health-left"></span>
-            <span class="battle-health battle-health-right"></span>
-            <figure class="fighter fighter-left">
+        <div class="creation-stage">
+          <div class="creation-poster" id="creation-poster">
+            <span class="doodle-spark doodle-spark-left" aria-hidden="true"
+              >✦</span
+            >
+            <span class="doodle-spark doodle-spark-right" aria-hidden="true"
+              >✦</span
+            >
+            <figure class="featured-creation">
               <img
-                id="battle-hero-image"
+                id="featured-creation-image"
                 src="./assets/splash-doodle-mossmop.webp"
                 alt="Mossmop, drawn in Scribbits"
                 decoding="async"
               />
-              <figcaption id="hero-creation-name">MOSSMOP</figcaption>
-            </figure>
-            <strong class="battle-versus">VS</strong>
-            <figure class="fighter fighter-right">
-              <img
-                id="battle-rival-image"
-                src="./assets/splash-doodle-stormpuff.webp"
-                alt="Stormpuff, drawn in Scribbits"
-                decoding="async"
-              />
-              <figcaption id="rival-creation-name">STORMPUFF</figcaption>
+              <figcaption>
+                <strong id="featured-creation-name">MOSSMOP</strong>
+                <span id="featured-creation-credit">BY SCRIBBITS</span>
+              </figcaption>
             </figure>
           </div>
           <video
@@ -75,18 +67,25 @@
         </div>
       </section>
 
+      <section class="invite-copy" aria-labelledby="invite-title">
+        <p data-i18n="splash.invite.promise">DRAW IT. IT FIGHTS FOR YOU.</p>
+        <h2 id="invite-title" data-i18n="splash.invite.hook">
+          EVERYONE’S DRAWING LITTLE GUYS. YOURS IS MISSING.
+        </h2>
+      </section>
+
       <footer class="splash-footer">
-        <p class="proof-line" data-i18n="splash.tagline">
-          <span aria-hidden="true">✦</span> DRAW IT. WATCH IT FIGHT.
-        </p>
         <button
           class="start-button"
           id="start-button"
           type="button"
-          data-i18n="splash.action.enterArena"
+          data-i18n="splash.action.drawYours"
         >
-          ENTER ARENA
+          DRAW YOURS
         </button>
+        <p class="fresh-note" data-i18n="splash.invite.fresh">
+          A FRESH ONE EVERY TIME YOU LOOK.
+        </p>
       </footer>
     </main>
     <script type="module" src="splash.ts" defer></script>

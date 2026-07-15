@@ -21,6 +21,8 @@ export type CreateArenaPostOptions = {
   champion?: Scribbit | null;
 };
 
+const arenaPostTitle = 'Scribbits — draw a little guy, watch it come alive';
+
 const getChampionCopy = (champion: Scribbit | null | undefined): string => {
   if (!champion) {
     return 'No reigning Champion yet. The founding Scribbits are warming up.';
@@ -35,7 +37,7 @@ const createPost = async (options: CreateArenaPostOptions) => {
   const dayNumber = options.day ?? getArenaDayNumber(date);
 
   return await reddit.submitCustomPost({
-    title: `Rumble #${dayNumber} — ${options.forecast.blurb}`,
+    title: arenaPostTitle,
     entry: 'default',
     postData: {
       dateKey,
@@ -50,7 +52,7 @@ const createPost = async (options: CreateArenaPostOptions) => {
         : null,
     },
     textFallback: {
-      text: `Scribbits Arena Rumble #${dayNumber}. ${options.forecast.blurb}. ${getChampionCopy(options.champion)}`,
+      text: `Draw a little guy and watch it come alive in Scribbits. Today: ${options.forecast.blurb}. ${getChampionCopy(options.champion)}`,
     },
   });
 };
@@ -74,9 +76,8 @@ export const getOrCreateArenaPost = async (
         pageSize: 100,
       })
       .all();
-    const titlePrefix = `Rumble #${day} —`;
     for (const recentPost of recentPosts) {
-      if (!recentPost.title.startsWith(titlePrefix)) continue;
+      if (recentPost.title !== arenaPostTitle) continue;
       const postData = await recentPost.getPostData();
       if (postData?.dayNumber === day) return { id: recentPost.id };
     }

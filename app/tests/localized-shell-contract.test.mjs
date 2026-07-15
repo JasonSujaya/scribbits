@@ -118,12 +118,12 @@ test('HTML entrypoints keep English fallback copy annotated for localization', (
       splashHtml,
       [
         'app.name',
-        'splash.tagline',
-        'splash.hook.drawnByYou',
-        'splash.hook.doodle',
-        'splash.hook.fighter',
-        'splash.hook.shapeStats',
-        'splash.action.enterArena',
+        'splash.invite.gameType',
+        'splash.invite.promise',
+        'splash.invite.hook',
+        'splash.invite.fresh',
+        'splash.showcase.sketchbook',
+        'splash.action.drawYours',
       ],
     ],
   ]) {
