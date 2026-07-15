@@ -101,7 +101,9 @@ const withLeaseHeartbeat = async <Result>(
 ): Promise<Result> => {
   let renewalInFlight: Promise<void> = Promise.resolve();
   let renewalError: unknown;
+  let heartbeatStopped = false;
   const heartbeat = setInterval(() => {
+    if (heartbeatStopped) return;
     renewalInFlight = renewalInFlight.then(async () => {
       if (renewalError !== undefined) return;
       try {
@@ -122,6 +124,7 @@ const withLeaseHeartbeat = async <Result>(
     operationError = error;
   }
 
+  heartbeatStopped = true;
   clearInterval(heartbeat);
   await renewalInFlight;
   if (renewalError !== undefined) throw renewalError;

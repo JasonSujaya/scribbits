@@ -14687,6 +14687,66 @@ assert.equal(
   undefined,
   'nightly fence lifecycle must release its lease after operation failure'
 );
+
+const queuedHeartbeatStorage = createMemoryStorage();
+const queuedHeartbeatWatch = queuedHeartbeatStorage.watch.bind(
+  queuedHeartbeatStorage
+);
+let queuedHeartbeatRenewals = 0;
+queuedHeartbeatStorage.watch = async (...keys) => {
+  const transaction = await queuedHeartbeatWatch(...keys);
+  const expire = transaction.expire.bind(transaction);
+  transaction.expire = async (key, seconds) => {
+    if (key === dataDeletionCore.getNightlyPlayerMutationLockKey()) {
+      queuedHeartbeatRenewals += 1;
+    }
+    return expire(key, seconds);
+  };
+  return transaction;
+};
+const queuedHeartbeatLease =
+  await dataDeletionCore.acquireNightlyPlayerMutation(
+    queuedHeartbeatStorage,
+    'queued-heartbeat-token'
+  );
+assert.equal(queuedHeartbeatLease.status, 'acquired');
+queuedHeartbeatRenewals = 0;
+const originalSetInterval = globalThis.setInterval;
+const originalClearInterval = globalThis.clearInterval;
+let queuedHeartbeatCallback;
+globalThis.setInterval = (callback) => {
+  queuedHeartbeatCallback = callback;
+  return 1;
+};
+globalThis.clearInterval = () => {
+  queueMicrotask(() => queuedHeartbeatCallback());
+};
+try {
+  assert.equal(
+    await dataDeletionCore.withNightlyPlayerMutationHeartbeat(
+      queuedHeartbeatStorage,
+      queuedHeartbeatLease.lease,
+      async () => 'finished'
+    ),
+    'finished'
+  );
+  await new Promise((resolve) => setImmediate(resolve));
+} finally {
+  globalThis.setInterval = originalSetInterval;
+  globalThis.clearInterval = originalClearInterval;
+}
+assert.equal(
+  queuedHeartbeatRenewals,
+  1,
+  'a heartbeat callback queued during shutdown must not append a late renewal'
+);
+assert.equal(
+  await dataDeletionCore.releaseNightlyPlayerMutation(
+    queuedHeartbeatStorage,
+    queuedHeartbeatLease.lease
+  ),
+  'released'
+);
 pass('nightly fence rejects expiry and covers every storage mutator');
 
 const staleNightlyWorkerStorage = createMemoryStorage();
