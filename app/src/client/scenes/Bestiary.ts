@@ -1,17 +1,9 @@
 import * as Phaser from 'phaser';
 import { Scene } from 'phaser';
-import { showToast } from '@devvit/web/client';
-import { deleteMyData } from '../lib/api';
 import { navigateToDailyDraw } from '../lib/draweligibility';
-import { EDGE, TYPE, UI } from '../lib/theme';
+import { EDGE, UI } from '../lib/theme';
 import { LivingPaper } from '../lib/livingpaper';
-import {
-  ghostButton,
-  handLettered,
-  iconButton,
-  label,
-  stickerCard,
-} from '../lib/ui';
+import { ghostButton, iconButton, label, stickerCard } from '../lib/ui';
 import { paperIcon, type PaperIconKey } from '../lib/papericons';
 import {
   MAXIMUM_POWER_UPS,
@@ -30,13 +22,9 @@ import { CanvasActionOverlay, CanvasModalOverlay } from '../lib/overlay';
 import { screenTitle } from '../lib/screentitle';
 import { translate } from '../lib/localization';
 
-type GuideSection = 'shape' | 'powerups' | 'ritual' | 'legends' | 'privacy';
+type GuideSection = 'shape' | 'powerups' | 'ritual' | 'legends';
 type GuideModal = Readonly<{
   container: Phaser.GameObjects.Container;
-  section: GuideSection;
-  closeControl: HTMLButtonElement;
-  deleteControl: HTMLButtonElement | null;
-  status: HTMLElement;
 }>;
 const FIGHTER_STYLE_GUIDE_ENTRIES = COMBAT_ROLE_IDS.map((role) => {
   const content = getCombatRoleContent(role);
@@ -57,8 +45,6 @@ const FIGHTER_STYLE_GUIDE_ENTRIES = COMBAT_ROLE_IDS.map((role) => {
 // catalog: every Scribbit is player-drawn, so the useful discovery is how the
 // shared systems work and how to control community content.
 export class Bestiary extends Scene {
-  private deleteDataArmed = false;
-  private deletingData = false;
   private livingPaper: LivingPaper | null = null;
   private guideModal: GuideModal | null = null;
   private quickGuideActions: CanvasActionOverlay | null = null;
@@ -68,8 +54,6 @@ export class Bestiary extends Scene {
   }
 
   init(): void {
-    this.deleteDataArmed = false;
-    this.deletingData = false;
     this.livingPaper = null;
     this.guideModal = null;
     this.quickGuideActions = null;
@@ -122,7 +106,6 @@ export class Bestiary extends Scene {
       ['powerups', 'spark', 'POWER-UPS', 'Birth + wins · choose 1 of 3'],
       ['ritual', 'clock', 'RITUAL', 'Draw · Watch · Pick · Return'],
       ['legends', 'trophy', 'LEGENDS', 'Three days to matter'],
-      ['privacy', 'shield', 'PRIVACY', 'Report · Delete'],
     ];
 
     rows.forEach(([section, icon, title, summary], index) => {
@@ -231,15 +214,8 @@ export class Bestiary extends Scene {
         true
       )
     );
-    const deleteControl = this.renderGuideSection(modal, modalActions, section);
-    const status = modalActions.addStatus();
-    this.guideModal = {
-      container: modal,
-      section,
-      closeControl,
-      deleteControl,
-      status,
-    };
+    this.renderGuideSection(modal, section);
+    this.guideModal = { container: modal };
     modalActions.focusInitial(closeControl);
   }
 
@@ -253,8 +229,6 @@ export class Bestiary extends Scene {
         return 'Draw one Scribbit. Watch its power immediately. Pick one community contender. Return after midnight for the Champion and Clout result.';
       case 'legends':
         return 'A Scribbit lives for three days. Battle wins build its level and record. A Champion crown or twenty-five Belief makes it permanent.';
-      case 'privacy':
-        return 'Scribbits stores your Reddit identity, drawings, battles, inventory, streak, and scores only to run the game. You can report player cards, remove your Scribbits, or permanently delete all stored game data.';
     }
   }
 
@@ -268,16 +242,13 @@ export class Bestiary extends Scene {
         return 'DAILY RITUAL';
       case 'legends':
         return 'LEGENDS';
-      case 'privacy':
-        return 'PRIVACY & DATA';
     }
   }
 
   private renderGuideSection(
     modal: Phaser.GameObjects.Container,
-    modalActions: CanvasModalOverlay,
     section: GuideSection
-  ): HTMLButtonElement | null {
+  ): void {
     switch (section) {
       case 'shape':
         this.renderTextRows(
@@ -288,7 +259,7 @@ export class Bestiary extends Scene {
             entry.detail,
           ])
         );
-        return null;
+        return;
       case 'powerups': {
         const rarities: readonly PowerUpRarity[] = [
           'common',
@@ -359,7 +330,7 @@ export class Bestiary extends Scene {
             true
           )
         );
-        return null;
+        return;
       }
       case 'ritual':
         this.renderTextRows(modal, [
@@ -368,7 +339,7 @@ export class Bestiary extends Scene {
           ['heart', 'PICK', 'Lock one community pick'],
           ['clock', 'RETURN', 'Champion + Clout after midnight'],
         ]);
-        return null;
+        return;
       case 'legends':
         modal.add(
           paperIcon(this, 'trophy', this.scale.width / 2, 430, {
@@ -400,61 +371,7 @@ export class Bestiary extends Scene {
             .setWordWrapWidth(this.scale.width - 170)
             .setLineSpacing(8)
         );
-        return null;
-      case 'privacy': {
-        modal.add(
-          paperIcon(this, 'shield', this.scale.width / 2, 382, {
-            size: 72,
-            fill: UI.tapeAlt,
-          })
-        );
-        modal.add(
-          label(
-            this,
-            this.scale.width / 2,
-            520,
-            'Scribbits stores your Reddit identity, drawings, battles, inventory, streak, and scores only to run the game. Report any player card; delete your own from its card.',
-            21,
-            UI.ink,
-            false
-          )
-            .setWordWrapWidth(this.scale.width - 170)
-            .setLineSpacing(6)
-        );
-        modal.add(
-          iconButton(
-            this,
-            this.scale.width / 2,
-            770,
-            'trash',
-            'DELETE MY DATA',
-            () => this.deleteStoredPlayerData(),
-            this.scale.width - 180
-          )
-        );
-        const deleteControl = modalActions.add({
-          label: 'Delete all my stored game data',
-          rect: {
-            x: 90,
-            y: 720,
-            width: this.scale.width - 180,
-            height: 100,
-          },
-          onActivate: () => this.deleteStoredPlayerData(),
-        });
-        modal.add(
-          label(
-            this,
-            this.scale.width / 2,
-            842,
-            'Two taps · permanent',
-            17,
-            UI.coralText,
-            true
-          )
-        );
-        return deleteControl;
-      }
+        return;
     }
   }
 
@@ -480,94 +397,8 @@ export class Bestiary extends Scene {
   }
 
   private closeGuideSection(): void {
-    if (this.deletingData) return;
-    if (this.guideModal?.section === 'privacy') this.deleteDataArmed = false;
     this.guideModal?.container.destroy(true);
     this.guideModal = null;
-  }
-
-  private deleteStoredPlayerData(): void {
-    if (this.deletingData) return;
-    if (!this.deleteDataArmed) {
-      this.deleteDataArmed = true;
-      if (this.guideModal?.section === 'privacy') {
-        this.guideModal.status.textContent =
-          'Deletion is permanent. Activate Delete again to confirm.';
-      }
-      showToast('Tap Delete all my stored game data again to confirm.');
-      return;
-    }
-
-    this.deletingData = true;
-    const activeModal = this.guideModal;
-    if (activeModal?.section === 'privacy') {
-      activeModal.closeControl.focus();
-      if (activeModal.deleteControl) activeModal.deleteControl.disabled = true;
-      activeModal.closeControl.setAttribute('aria-disabled', 'true');
-      activeModal.status.textContent = 'Deleting all stored game data.';
-    }
-    void deleteMyData()
-      .then((result) => {
-        if (!this.scene.isActive()) return;
-        this.deletingData = false;
-        if (!result.ok) {
-          this.deleteDataArmed = false;
-          if (activeModal && activeModal === this.guideModal) {
-            activeModal.closeControl.removeAttribute('aria-disabled');
-            if (activeModal.deleteControl) {
-              activeModal.deleteControl.disabled = false;
-            }
-            activeModal.status.textContent = result.error;
-          }
-          showToast(result.error);
-          return;
-        }
-        this.renderDeletedState(result.data.removedScribbits);
-      })
-      .catch(() => {
-        if (!this.scene.isActive()) return;
-        this.deletingData = false;
-        this.deleteDataArmed = false;
-        if (activeModal && activeModal === this.guideModal) {
-          activeModal.closeControl.removeAttribute('aria-disabled');
-          if (activeModal.deleteControl) {
-            activeModal.deleteControl.disabled = false;
-          }
-          activeModal.status.textContent =
-            'Could not delete stored game data. Try again.';
-        }
-        showToast('Could not delete stored game data. Try again.');
-      });
-  }
-
-  private renderDeletedState(removedScribbits: number): void {
-    this.children.removeAll(true);
-    this.guideModal = null;
-    this.quickGuideActions?.destroy();
-    this.quickGuideActions = null;
-    this.livingPaper?.destroy();
-    this.livingPaper = new LivingPaper(this, { edgeCreatures: false });
-    const { width, height } = this.scale;
-    handLettered(
-      this,
-      width / 2,
-      height * 0.34,
-      'DATA DELETED',
-      56,
-      UI.ink,
-      true
-    );
-    label(
-      this,
-      width / 2,
-      height * 0.49,
-      `${removedScribbits} Scribbit${removedScribbits === 1 ? '' : 's'} and your stored game profile were removed. You can close the game now. Playing again starts a new profile.`,
-      TYPE.body,
-      UI.ink,
-      true
-    )
-      .setWordWrapWidth(width - 120)
-      .setLineSpacing(7);
   }
 
   private buildAppTabs(): void {

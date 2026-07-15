@@ -1536,7 +1536,9 @@ assert.equal(
   'nightly maintenance must not create daily Reddit posts'
 );
 assert.equal(
-  maintenanceInspection.calledIdentifiers.includes('publishRumbleResultComment'),
+  maintenanceInspection.calledIdentifiers.includes(
+    'publishRumbleResultComment'
+  ),
   false
 );
 assert.doesNotMatch(schedulerRouteSource, /submitCustomPost|submitComment/);
@@ -14069,6 +14071,50 @@ assert.equal(
   'released'
 );
 
+const singleKeyDeletionReleaseStorage = createMemoryStorage();
+const singleKeyDeletion = await dataDeletionCore.acquirePlayerDataDeletion(
+  singleKeyDeletionReleaseStorage,
+  'single-key-release-player',
+  'single-key-release-token'
+);
+assert.equal(singleKeyDeletion.status, 'acquired');
+const baseSingleKeyReleaseWatch = singleKeyDeletionReleaseStorage.watch.bind(
+  singleKeyDeletionReleaseStorage
+);
+singleKeyDeletionReleaseStorage.watch = async (...keys) => {
+  const transaction = await baseSingleKeyReleaseWatch(...keys);
+  const deleteKeys = transaction.del.bind(transaction);
+  transaction.del = async (...deletedKeys) => {
+    assert.equal(
+      deletedKeys.length,
+      1,
+      'Devvit-compatible lease release must queue one key per DEL command'
+    );
+    return deleteKeys(...deletedKeys);
+  };
+  return transaction;
+};
+assert.equal(
+  await dataDeletionCore.releasePlayerDataDeletion(
+    singleKeyDeletionReleaseStorage,
+    singleKeyDeletion.lease
+  ),
+  'released'
+);
+assert.equal(
+  await singleKeyDeletionReleaseStorage.get(
+    dataDeletionCore.getPlayerDataDeletionLockKey('single-key-release-player')
+  ),
+  undefined
+);
+assert.equal(
+  await singleKeyDeletionReleaseStorage.get(
+    dataDeletionCore.getGlobalDataDeletionLockKey()
+  ),
+  undefined
+);
+pass('player data deletion releases Devvit locks one key at a time');
+
 const concurrentBoundaryStorage = createMemoryStorage();
 const [concurrentMutation, concurrentDeletion] = await Promise.all([
   dataDeletionCore.acquirePlayerMutation(
@@ -14551,8 +14597,9 @@ const ambiguousNightlyFence = nightlyStorageFence.createNightlyFencedStorage(
   ambiguousNightlyMutationStorage,
   ambiguousNightlyMutationLease.lease
 );
-const ambiguousNightlyIncrement =
-  ambiguousNightlyMutationStorage.incrBy.bind(ambiguousNightlyMutationStorage);
+const ambiguousNightlyIncrement = ambiguousNightlyMutationStorage.incrBy.bind(
+  ambiguousNightlyMutationStorage
+);
 let ambiguousNightlyIncrementCalls = 0;
 ambiguousNightlyMutationStorage.incrBy = async (...arguments_) => {
   ambiguousNightlyIncrementCalls += 1;

@@ -2,7 +2,7 @@
 
 import { createServer } from 'node:http';
 import { randomUUID } from 'node:crypto';
-import { existsSync, watch } from 'node:fs';
+import { existsSync, readFileSync, watch } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { dirname, extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -12,6 +12,11 @@ const port = Number(process.env.PORT ?? 8902);
 const autoReload = process.env.MOCK_AUTO_RELOAD !== '0';
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
 const clientRoot = join(repoRoot, 'dist', 'client');
+const configuredTrailerHeroPath = process.env.MOCK_TRAILER_HERO_PATH?.trim();
+const trailerHeroBytes =
+  configuredTrailerHeroPath && existsSync(configuredTrailerHeroPath)
+    ? readFileSync(configuredTrailerHeroPath)
+    : null;
 const configuredMockCombatBundleUrl =
   process.env.MOCK_COMBAT_BUNDLE_URL?.trim();
 const mockCombatBundleUrl = configuredMockCombatBundleUrl
@@ -1439,6 +1444,9 @@ const findVisibleScribbit = (scribbitId) => {
 };
 
 const drawingBytesFor = (scribbitId) => {
+  if (trailerHeroBytes && scribbitId === 'mine-paper-spark') {
+    return trailerHeroBytes;
+  }
   const submittedDrawing = submittedDrawingBytes.get(scribbitId);
   return submittedDrawing ?? transparentPng;
 };

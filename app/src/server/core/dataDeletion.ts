@@ -266,9 +266,12 @@ export const releasePlayerDataDeletion = async (
         return 'not-owner';
       }
       await transaction.multi();
-      await transaction.del(lockKey, globalDataDeletionLockKey);
+      // Devvit Redis 0.13.7 rejects a variadic DEL during EXEC. Queue each key
+      // separately while keeping both removals in this one atomic transaction.
+      await transaction.del(lockKey);
+      await transaction.del(globalDataDeletionLockKey);
       const result = await transaction.exec();
-      if (Array.isArray(result) && result.length >= 1) return 'released';
+      if (Array.isArray(result) && result.length >= 2) return 'released';
     } catch (error) {
       await discardWatchedTransaction(transaction, 'Player data deletion');
       const [activeToken, activeGlobalToken] = await Promise.all([

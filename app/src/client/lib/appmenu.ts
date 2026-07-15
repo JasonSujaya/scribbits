@@ -5,6 +5,7 @@ import {
   openFighterGuidePopup,
   type FighterGuidePopup,
 } from './fighterguidepopup';
+import { openPrivacyPopup, type PrivacyPopup } from './privacypopup';
 import { paperIconButton } from './ui';
 import { ghostButton, iconButton, label, startScene, stickerCard } from './ui';
 import { UI } from './theme';
@@ -33,6 +34,7 @@ export function appMenu(scene: Scene, options: AppMenuOptions = {}): AppMenu {
   let modalOverlay: CanvasModalOverlay | null = null;
   let menuLayer: Phaser.GameObjects.Container | null = null;
   let fieldGuidePopup: FighterGuidePopup | null = null;
+  let privacyPopup: PrivacyPopup | null = null;
 
   const closeMenu = (): void => {
     modalOverlay?.destroy();
@@ -50,14 +52,14 @@ export function appMenu(scene: Scene, options: AppMenuOptions = {}): AppMenu {
       .rectangle(width / 2, height / 2, width, height, 0x1a1320, 0.62)
       .setInteractive();
     setSfxCue(scrim, 'ui.close');
-    const card = stickerCard(scene, width / 2, centerY, width - 120, 360, {
+    const card = stickerCard(scene, width / 2, centerY, width - 120, 480, {
       tapeColor: UI.tapeAlt,
       tilt: -0.4,
     });
     const title = label(
       scene,
       width / 2,
-      centerY - 104,
+      centerY - 164,
       translate('appMenu.title'),
       40,
       UI.ink,
@@ -66,22 +68,39 @@ export function appMenu(scene: Scene, options: AppMenuOptions = {}): AppMenu {
     const guideButton = iconButton(
       scene,
       width / 2,
-      centerY,
+      centerY - 55,
       'info',
       translate('appMenu.fieldGuide'),
       () => openFieldGuide(),
       width - 220,
       UI.tapeAlt
     );
+    const privacyButton = iconButton(
+      scene,
+      width / 2,
+      centerY + 65,
+      'shield',
+      translate('appMenu.privacy'),
+      () => openPrivacy(),
+      width - 220,
+      UI.tapeAlt
+    );
     const closeButton = ghostButton(
       scene,
       width / 2,
-      centerY + 114,
+      centerY + 178,
       translate('appMenu.close'),
       closeMenu,
       220
     );
-    menuLayer.add([scrim, card, title, guideButton, closeButton]);
+    menuLayer.add([
+      scrim,
+      card,
+      title,
+      guideButton,
+      privacyButton,
+      closeButton,
+    ]);
     scrim.on('pointerup', closeMenu);
 
     modalOverlay = new CanvasModalOverlay(
@@ -95,17 +114,27 @@ export function appMenu(scene: Scene, options: AppMenuOptions = {}): AppMenu {
       label: translate('appMenu.openFieldGuide'),
       rect: {
         x: 110,
-        y: centerY - 50,
+        y: centerY - 105,
         width: width - 220,
         height: 100,
       },
       onActivate: openFieldGuide,
     });
     modalOverlay.add({
+      label: translate('appMenu.openPrivacy'),
+      rect: {
+        x: 110,
+        y: centerY + 15,
+        width: width - 220,
+        height: 100,
+      },
+      onActivate: openPrivacy,
+    });
+    modalOverlay.add({
       label: translate('appMenu.closeSettings'),
       rect: {
         x: width / 2 - 110,
-        y: centerY + 64,
+        y: centerY + 128,
         width: 220,
         height: 100,
       },
@@ -128,6 +157,18 @@ export function appMenu(scene: Scene, options: AppMenuOptions = {}): AppMenu {
         fieldGuidePopup = null;
       }
     );
+  };
+
+  const openPrivacy = (): void => {
+    if (options.canNavigate?.() === false) {
+      closeMenu();
+      return;
+    }
+    closeMenu();
+    if (privacyPopup) return;
+    privacyPopup = openPrivacyPopup(scene, () => {
+      privacyPopup = null;
+    });
   };
 
   const settingsButton = paperIconButton(
@@ -204,6 +245,7 @@ export function appMenu(scene: Scene, options: AppMenuOptions = {}): AppMenu {
     scene.events.off('postupdate', followCamera);
     closeMenu();
     fieldGuidePopup?.destroy();
+    privacyPopup?.destroy();
     actionOverlay.destroy();
     settingsButton.destroy(true);
     backButton?.destroy(true);

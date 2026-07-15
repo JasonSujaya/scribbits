@@ -39,17 +39,20 @@ export const englishMessages = {
 
   'appMenu.title': 'SETTINGS',
   'appMenu.fieldGuide': 'FIGHTER STYLES',
+  'appMenu.privacy': 'PRIVACY & DATA',
   'appMenu.close': 'Close',
   'appMenu.modalTitle': 'Settings',
-  'appMenu.modalDescription': 'Open the Who Beats Who fighter guide.',
+  'appMenu.modalDescription':
+    'Open fighter rules or manage your stored game data.',
   'appMenu.openFieldGuide': 'Open Who Beats Who guide',
+  'appMenu.openPrivacy': 'Open Privacy & Data',
   'appMenu.fieldGuideTitle': 'WHO BEATS WHO',
   'appMenu.fieldGuideSubtitle': 'Each style beats one and loses to one',
   'appMenu.fieldGuideDescription':
     'Brawler beats Mage. Mage beats Longshot. Longshot beats Brawler.',
   'appMenu.closeFieldGuide': 'Close Who Beats Who guide',
   'appMenu.moreRules': 'More rules',
-  'appMenu.openMoreRules': 'Open the full rules and privacy guide',
+  'appMenu.openMoreRules': 'Open the full fighter rules guide',
   'appMenu.closeSettings': 'Close settings',
   'appMenu.openSettings': 'Open settings',
 
