@@ -52,6 +52,7 @@ export const maintainArena = async (
     );
     const result = await runNightlyArenaJob(fencedStorage, {
       claimId: operationId,
+      claimRecoveryStorage: storage,
       now,
     });
     const currentForecast = await ensureForecastForDay(

@@ -15487,6 +15487,76 @@ assert.ok(
 );
 pass('nightly recovers its exact claim after an EXEC reply is lost');
 
+const fallbackNightlyClaimStorage = createMemoryStorage();
+await arenaStore.setCurrentArenaDay(fallbackNightlyClaimStorage, 2);
+const fallbackNightlyClaimEntrant = makeScribbit({
+  id: 'fallback-nightly-claim-entry',
+  expiresDay: 8,
+});
+await scribbitCore.storeScribbit(
+  fallbackNightlyClaimStorage,
+  'fallback-nightly-claim-owner',
+  fallbackNightlyClaimEntrant
+);
+await scribbitCore.addRumbleEntrant(
+  fallbackNightlyClaimStorage,
+  2,
+  fallbackNightlyClaimEntrant.id
+);
+const fallbackNightlyClaimWatch = fallbackNightlyClaimStorage.watch.bind(
+  fallbackNightlyClaimStorage
+);
+let forcedNightlyClaimReleaseConflicts = 0;
+fallbackNightlyClaimStorage.watch = async (...keys) => {
+  const transaction = await fallbackNightlyClaimWatch(...keys);
+  const discard = transaction.discard.bind(transaction);
+  const exec = transaction.exec.bind(transaction);
+  const hDel = transaction.hDel.bind(transaction);
+  let queuesClaimRelease = false;
+  transaction.hDel = async (key, fields) => {
+    if (
+      key === arenaStore.getNightlyResolutionClaimsKey() &&
+      fields.includes('2')
+    ) {
+      queuesClaimRelease = true;
+    }
+    return hDel(key, fields);
+  };
+  transaction.exec = async () => {
+    if (!queuesClaimRelease) return exec();
+    forcedNightlyClaimReleaseConflicts += 1;
+    await discard();
+    return [];
+  };
+  return transaction;
+};
+const fallbackNightlyClaimWarnings = [];
+const originalNightlyClaimConsoleWarn = console.warn;
+console.warn = (...values) => fallbackNightlyClaimWarnings.push(values);
+let fallbackNightlyClaimJob;
+try {
+  fallbackNightlyClaimJob = await dailyJob.runNightlyArenaJobForTesting(
+    fallbackNightlyClaimStorage,
+    { now: dayTwoUtc, force: true }
+  );
+} finally {
+  console.warn = originalNightlyClaimConsoleWarn;
+}
+assert.equal(fallbackNightlyClaimJob.resolvedDay, 2);
+assert.equal(
+  forcedNightlyClaimReleaseConflicts,
+  storageCore.MAX_WATCH_TRANSACTION_ATTEMPTS
+);
+assert.equal(fallbackNightlyClaimWarnings.length, 1);
+assert.equal(
+  await fallbackNightlyClaimStorage.hGet(
+    arenaStore.getNightlyResolutionClaimsKey(),
+    '2'
+  ),
+  undefined
+);
+pass('nightly owner fallback clears a claim after repeated release conflicts');
+
 const forcedJob = await dailyJob.runNightlyArenaJobForTesting(dayMathStorage, {
   now: dayTwoUtc,
   force: true,

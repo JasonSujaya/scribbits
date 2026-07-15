@@ -31,10 +31,7 @@ import {
   MAX_WATCH_TRANSACTION_ATTEMPTS,
 } from './storage';
 import type { NightlyFencedStorage } from './nightlyStorageFence';
-import {
-  finalizeDueSeasons,
-  loadSeasonScoringContext,
-} from './season';
+import { finalizeDueSeasons, loadSeasonScoringContext } from './season';
 import {
   crownScribbit,
   expireDueScribbits,
@@ -107,7 +104,7 @@ export type ResolvedArenaDay = {
 };
 
 const resolutionOutboxKey = 'arena:resolution-outbox';
-const nightlyClaimTimeoutMs = 10 * 60 * 1000;
+const nightlyClaimTimeoutMs = 2 * 60 * 1000;
 
 export const getArenaResolutionOutboxKey = (): string => resolutionOutboxKey;
 
@@ -215,6 +212,7 @@ const claimArenaDayResolution = async (
 
 const releaseArenaDayResolution = async (
   storage: ArenaStorage,
+  recoveryStorage: ArenaStorage,
   day: number,
   claimValue: string
 ): Promise<void> => {
@@ -258,10 +256,22 @@ const releaseArenaDayResolution = async (
         'Nightly resolution claim release'
       );
       if ((await storage.hGet(nightlyClaimKey, field)) !== claimValue) return;
-      throw error;
+      continue;
     }
   }
-  throw new Error('Nightly resolution claim changed too often to release.');
+
+  if ((await recoveryStorage.hGet(nightlyClaimKey, field)) !== claimValue)
+    return;
+  // The global nightly lease is still held, so another resolver cannot safely
+  // replace this exact claim while Devvit recovers from transaction pressure.
+  await recoveryStorage.hDel(nightlyClaimKey, [field]);
+  if ((await recoveryStorage.hGet(nightlyClaimKey, field)) === undefined) {
+    console.warn(
+      'Nightly resolution used owner-checked fallback claim cleanup.'
+    );
+    return;
+  }
+  throw new Error('Nightly resolution claim could not be released.');
 };
 
 const isRecord = (value: unknown): value is Record<string, unknown> => {
@@ -579,6 +589,7 @@ export type NightlyArenaJobOptions = {
 
 type NightlyArenaJobCoreOptions = NightlyArenaJobOptions & {
   claimId: string;
+  claimRecoveryStorage?: ArenaStorage;
 };
 
 const runNightlyArenaJobCore = async (
@@ -651,10 +662,20 @@ const runNightlyArenaJobCore = async (
       try {
         resolution = await resolveArenaDay(storage, resolvedDay, now.getTime());
       } catch (error) {
-        await releaseArenaDayResolution(storage, resolvedDay, claimValue);
+        await releaseArenaDayResolution(
+          storage,
+          options.claimRecoveryStorage ?? storage,
+          resolvedDay,
+          claimValue
+        );
         throw error;
       }
-      await releaseArenaDayResolution(storage, resolvedDay, claimValue);
+      await releaseArenaDayResolution(
+        storage,
+        options.claimRecoveryStorage ?? storage,
+        resolvedDay,
+        claimValue
+      );
     }
     if (pendingResolution) {
       await setCurrentArenaDay(storage, resolvedDay + 1);
