@@ -378,7 +378,7 @@ export function openLegacyCardDetail(
     `${formatLegacyFinishLabel(legacyCard)} Legacy card for ${legacyCard.name}.`,
     `${creatorSignature(legacyCard)}.`,
     `Level ${legacyCard.legacy.level}, ${legacyCard.legacy.wins} wins and ${legacyCard.legacy.losses} losses, ${legacyCard.legacy.belief} belief.`,
-    `Born day ${legacyCard.bornDay}, archived day ${legacyCard.legacy.archivedDay}.`,
+    `Born day ${legacyCard.bornDay}, retired day ${legacyCard.legacy.archivedDay}.`,
     legacyEulogy(legacyCard),
   ].join(' ');
   const overlay = scene.add.container(0, 0).setDepth(3200).setScrollFactor(0);
@@ -523,7 +523,7 @@ export function openLegacyCardDetail(
       scene,
       0,
       180,
-      `Born Day ${legacyCard.bornDay} · Archived Day ${legacyCard.legacy.archivedDay}`,
+      `Born Day ${legacyCard.bornDay} · Retired Day ${legacyCard.legacy.archivedDay}`,
       20,
       UI.inkSoft,
       true
@@ -795,7 +795,7 @@ export function openLegacyReturnCeremony(
         busy = false;
         modalActions.setVisible(true);
         status
-          .setText('The archive stamp slipped. Try again.')
+          .setText('The Retired stamp slipped. Try again.')
           .setColor(UI.coralText);
       });
   };

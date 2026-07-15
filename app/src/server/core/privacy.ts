@@ -10,7 +10,11 @@ import {
   loadScribbits,
   removeUserBeliefReceipts,
 } from './scribbit';
-import { getBattleReportKey, getUserBattlesKey } from './battleStore';
+import {
+  getBattleReportKey,
+  getUserBattlesKey,
+  getUserHasCompletedBattleKey,
+} from './battleStore';
 import {
   getBackKey,
   getCloutKey,
@@ -224,6 +228,7 @@ const deletePlayerDataRecords = async (
     getLegacyIndexVersionKey(userId),
     getLegacySeenDayKey(userId),
     getUserBattlesKey(userId),
+    getUserHasCompletedBattleKey(userId),
     getInkKey(userId),
     getInventoryKey(userId),
     getDrawChargeKey(userId),

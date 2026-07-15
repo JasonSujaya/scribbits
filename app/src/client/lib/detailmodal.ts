@@ -185,10 +185,12 @@ export function openDetailModal(
   const stageValue =
     lifecycleStage === 'growing'
       ? `GROWING · DAY ${growingDay}/3`
-      : lifecycleStage.toUpperCase();
+      : lifecycleStage === 'archived'
+        ? 'RETIRED'
+        : lifecycleStage.toUpperCase();
   const lifecycleTiming = (): string => {
     if (lifecycleStage !== 'growing') {
-      return lifecycleStage === 'mature' ? 'STATS LOCKED' : 'ARCHIVED RECORD';
+      return lifecycleStage === 'mature' ? 'STATS LOCKED' : 'RETIRED RECORD';
     }
     if (opts.nextArenaDayStartsAt !== undefined) {
       return maturityCountdownHeadline(
@@ -211,7 +213,7 @@ export function openDetailModal(
       ? `Growing, day ${growingDay} of 3. ${lifecycleTiming()}.`
       : lifecycleStage === 'mature'
         ? 'Mature. Base stats are locked.'
-        : `${scribbit.status} archived record.`,
+        : `${scribbit.status} retired record.`,
   ].join(' ');
   // scrollFactor(0) keeps the modal pinned to the viewport even if the caller
   // scene is scrolled (ArenaHome scrolls vertically).
@@ -875,7 +877,7 @@ export function openDetailModal(
             })
             .join(' ')}`
       ),
-      `Page ${POWER_UP_GUIDE_PAGE_COUNT} of ${POWER_UP_GUIDE_PAGE_COUNT}. Wins offer three Power-Ups and you choose one. Standard wins offer Common, Common, Rare. Big wins offer Common, Rare, Epic. Champion wins offer Rare, Epic, Legendary. Losses offer no Power-Up.`,
+      `Page ${POWER_UP_GUIDE_PAGE_COUNT} of ${POWER_UP_GUIDE_PAGE_COUNT}. Birth immediately offers three randomized Power-Ups and you choose one. Standard wins offer Common, Common, Rare. Big wins offer Common, Rare, Epic. Champion wins offer Rare, Epic, Legendary. Losses offer no Power-Up.`,
     ];
     const closeGuide = (): void => {
       if (!guideLayer.active) return;
@@ -1806,7 +1808,7 @@ export function openDetailModal(
     if (!destructiveActionArmed) {
       destructiveActionArmed = true;
       showToast(
-        `Retire ${scribbit.name}? The drawing and record stay in Archived. Tap Retire again to confirm.`
+        `Retire ${scribbit.name}? The drawing and record stay in Retired. Tap Retire again to confirm.`
       );
       return;
     }
@@ -1819,7 +1821,7 @@ export function openDetailModal(
         showToast(result.error);
         return;
       }
-      showToast(`${scribbit.name} moved to Archived.`);
+      showToast(`${scribbit.name} moved to Retired.`);
       close();
       opts.onRetired?.(result.data.retired);
     });

@@ -171,7 +171,7 @@ function assertTranscriptInvariants(transcript: BattleTranscript): void {
     { a: 0, b: 0 }
   );
   assert(
-    powerUpDamageBySource.a <= 36 && powerUpDamageBySource.b <= 36,
+    powerUpDamageBySource.a <= 60 && powerUpDamageBySource.b <= 60,
     'Power-Up damage must obey its per-fighter fight cap'
   );
   for (const slot of ['a', 'b'] as const) {
@@ -180,6 +180,15 @@ function assertTranscriptInvariants(transcript: BattleTranscript): void {
         (event) => event.kind === 'power_up_triggered' && event.actor === slot
       ).length <= 32,
       'Power-Up triggers must obey their per-fighter fight cap'
+    );
+  }
+  for (const event of transcript.timeline) {
+    if (event.kind !== 'healing') continue;
+    const fighter = transcript.result.fighters[event.actor === 'a' ? 0 : 1];
+    assert(event.amount > 0, 'healing events must restore positive health');
+    assert(
+      event.targetHitPoints <= fighter.maxHitPoints,
+      'Power-Up healing must not exceed maximum health'
     );
   }
 }
@@ -221,7 +230,7 @@ function testAbilitySelectionAndGeometry(): void {
     'nib_halo',
     'spike power'
   );
-  assertEqual(selectPrimaryPower(makeStats('zip')), 'smearstep', 'zip power');
+  assertEqual(selectPrimaryPower(makeStats('zip')), 'nib_halo', 'zip power');
   assertEqual(
     selectPrimaryPower(makeStats('charm')),
     'colorburst',
@@ -334,9 +343,9 @@ function testEveryCombatRoleUsesItsBasicAttack(): void {
     }),
     Object.freeze({
       stat: 'zip',
-      role: 'gunner',
-      attack: 'ink_shot',
-      damageSource: 'gunner_shot',
+      role: 'longshot',
+      attack: 'piercing_quill',
+      damageSource: 'longshot_quill',
     }),
     Object.freeze({
       stat: 'charm',
@@ -380,53 +389,20 @@ function testEveryCombatRoleUsesItsBasicAttack(): void {
     );
     assertTranscriptInvariants(transcript);
   }
-
-  const gunnerTranscript = simulateCombat({
-    seed: 'role-attack-gunner-burst',
-    fighters: [
-      makeFighter('burst-gunner', 'zip', 'tide'),
-      makeFighter('burst-target', 'chonk', 'tide'),
-    ],
-  });
-  const firstBurst = gunnerTranscript.timeline.filter(
-    (event): event is Extract<BattleTimelineEvent, { kind: 'role_attack' }> =>
-      event.kind === 'role_attack' &&
-      event.actor === 'a' &&
-      event.attack === 'ink_shot' &&
-      event.attackNumber === 1
-  );
-  assertEqual(
-    firstBurst.length,
-    3,
-    'Gunner basic attack must fire three shots'
-  );
-  assertEqual(firstBurst[0]?.shotNumber, 1, 'Gunner burst first shot');
-  assertEqual(firstBurst[1]?.shotNumber, 2, 'Gunner burst second shot');
-  assertEqual(firstBurst[2]?.shotNumber, 3, 'Gunner burst third shot');
-  assertEqual(
-    (firstBurst[1]?.tick ?? 0) - (firstBurst[0]?.tick ?? 0),
-    4,
-    'Gunner burst shot interval'
-  );
-  assertEqual(
-    (firstBurst[2]?.tick ?? 0) - (firstBurst[1]?.tick ?? 0),
-    4,
-    'Gunner burst shot interval remains stable'
-  );
 }
 
 function testCurrentTranscriptValidation(): void {
   const transcript = simulateCombat({
-    seed: 'v6-parser',
+    seed: 'v7-parser',
     fighters: [
       makeFighter('parser-brawler', 'chonk', 'tide'),
       makeFighter('parser-mage', 'charm', 'moss'),
     ],
   });
-  assertEqual(transcript.version, 6, 'new simulations must use transcript v6');
+  assertEqual(transcript.version, 7, 'new simulations must use transcript v7');
   assert(
     parseBattleTranscript(transcript) === transcript,
-    'v6 parser must accept a valid Gear-free transcript'
+    'v7 parser must accept a valid Gear-free transcript'
   );
   const firstCheckpoint = transcript.checkpoints[0];
   if (!firstCheckpoint) {
@@ -497,13 +473,14 @@ function testCurrentTranscriptValidation(): void {
 
 function testPowerUpRuntimeAndLegacyRemoval(): void {
   const build = Object.freeze([
-    'v1-smudge-step',
-    'v1-paper-shield',
+    'v1-combo-spark',
+    'v1-center-fold',
     'v1-double-doodle',
     'v1-last-scribble',
     'v1-masterpiece',
   ] as const);
   let triggerObserved = false;
+  let healingObserved = false;
   for (let seed = 0; seed < 24; seed += 1) {
     const transcript = simulateCombat({
       seed: `power-up-runtime-${seed}`,
@@ -523,8 +500,15 @@ function testPowerUpRuntimeAndLegacyRemoval(): void {
     triggerObserved ||= transcript.timeline.some(
       (event) => event.kind === 'power_up_triggered'
     );
+    healingObserved ||= transcript.timeline.some(
+      (event) => event.kind === 'healing'
+    );
   }
   assert(triggerObserved, 'a launch Power-Up must trigger in the fight matrix');
+  assert(
+    healingObserved,
+    'a sustain Power-Up must restore health in the fight matrix'
+  );
 
   const triggerCoverageBuilds = [
     [
@@ -744,9 +728,9 @@ export function runCombatEngineTests(): readonly string[] {
     'domain-separated randomness',
     'fixed-point ability geometry',
     `deterministic transcript (${deterministicTranscript.result.reason})`,
-    'all four primary powers',
-    'all four role basic attacks and Gunner burst cadence',
-    'v5 parser and derived-role validation',
+    'all three current primary powers across four stored stats',
+    'all three role basic attacks plus Zip-to-Longshot compatibility',
+    'v7 parser and derived-role validation',
     'behavioral Power-Up runtime and legacy removal',
     'immutable phases, caps, and validation',
     '15-card Power-Up balance safety matrix',

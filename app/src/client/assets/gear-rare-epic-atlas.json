@@ -103,9 +103,9 @@
     "inkquake-crater-crown": {
       "frame": {
         "x": 280,
-        "y": 314,
+        "y": 305,
         "w": 208,
-        "h": 140
+        "h": 157
       },
       "rotated": false,
       "trimmed": false,
@@ -113,11 +113,11 @@
         "x": 0,
         "y": 0,
         "w": 208,
-        "h": 140
+        "h": 157
       },
       "sourceSize": {
         "w": 208,
-        "h": 140
+        "h": 157
       }
     },
     "smearstep-ink-skates": {
@@ -163,9 +163,9 @@
     "dragon-wings": {
       "frame": {
         "x": 24,
-        "y": 582,
+        "y": 566,
         "w": 208,
-        "h": 116
+        "h": 148
       },
       "rotated": false,
       "trimmed": false,
@@ -173,19 +173,19 @@
         "x": 0,
         "y": 0,
         "w": 208,
-        "h": 116
+        "h": 148
       },
       "sourceSize": {
         "w": 208,
-        "h": 116
+        "h": 148
       }
     },
     "nib-halo-circlet": {
       "frame": {
         "x": 280,
-        "y": 551,
+        "y": 565,
         "w": 208,
-        "h": 177
+        "h": 149
       },
       "rotated": false,
       "trimmed": false,
@@ -193,38 +193,38 @@
         "x": 0,
         "y": 0,
         "w": 208,
-        "h": 177
+        "h": 149
       },
       "sourceSize": {
         "w": 208,
-        "h": 177
+        "h": 149
       }
     },
     "colorburst-prism-crown": {
       "frame": {
-        "x": 536,
-        "y": 547,
-        "w": 208,
-        "h": 186
+        "x": 575,
+        "y": 536,
+        "w": 129,
+        "h": 208
       },
       "rotated": false,
       "trimmed": false,
       "spriteSourceSize": {
         "x": 0,
         "y": 0,
-        "w": 208,
-        "h": 186
+        "w": 129,
+        "h": 208
       },
       "sourceSize": {
-        "w": 208,
-        "h": 186
+        "w": 129,
+        "h": 208
       }
     },
     "comet-crayon-blade": {
       "frame": {
-        "x": 813,
+        "x": 801,
         "y": 536,
-        "w": 165,
+        "w": 189,
         "h": 208
       },
       "rotated": false,
@@ -232,20 +232,20 @@
       "spriteSourceSize": {
         "x": 0,
         "y": 0,
-        "w": 165,
+        "w": 189,
         "h": 208
       },
       "sourceSize": {
-        "w": 165,
+        "w": 189,
         "h": 208
       }
     },
     "rocket-eraser-boots": {
       "frame": {
         "x": 24,
-        "y": 802,
+        "y": 815,
         "w": 208,
-        "h": 187
+        "h": 161
       },
       "rotated": false,
       "trimmed": false,
@@ -253,11 +253,11 @@
         "x": 0,
         "y": 0,
         "w": 208,
-        "h": 187
+        "h": 161
       },
       "sourceSize": {
         "w": 208,
-        "h": 187
+        "h": 161
       }
     }
   },

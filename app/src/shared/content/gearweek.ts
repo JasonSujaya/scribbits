@@ -21,6 +21,8 @@ export const GEAR_WEEK: readonly GearWeekDay[] = Object.freeze([
       'eyepatch-scar',
       'nib-halo-circlet',
       'comet-crayon-blade',
+      'wooden-spoon',
+      'void-nib-lance',
     ]),
   }),
   Object.freeze({
@@ -33,6 +35,8 @@ export const GEAR_WEEK: readonly GearWeekDay[] = Object.freeze([
       'snail-shell-backpack',
       'cape',
       'inkquake-crater-crown',
+      'cardboard-shield',
+      'moon-moth-mantle',
     ]),
   }),
   Object.freeze({
@@ -57,19 +61,22 @@ export const GEAR_WEEK: readonly GearWeekDay[] = Object.freeze([
       'round-glasses',
       'mustache',
       'headphones',
+      'star-eye-mask',
     ]),
   }),
   Object.freeze({
     day: 5,
     title: 'Quickstep',
     family: 'rush',
-    challenge: 'Trigger four role signatures with Quickstep.',
+    challenge: 'Trigger three role signatures with Quickstep.',
     featuredGearIds: Object.freeze([
       'smearstep-speed-scarf',
       'propeller-cap',
       'smearstep-ink-skates',
       'dragon-wings',
       'rocket-eraser-boots',
+      'canvas-sneakers',
+      'thundercloud-sneakers',
     ]),
   }),
   Object.freeze({
@@ -82,13 +89,14 @@ export const GEAR_WEEK: readonly GearWeekDay[] = Object.freeze([
       'colorburst-rosette',
       'golden-crown',
       'colorburst-prism-crown',
+      'button-badge',
     ]),
   }),
   Object.freeze({
     day: 7,
     title: 'Red Star Showcase',
     family: 'red-star',
-    challenge: 'Win with four techniques and one Red Star Gear.',
+    challenge: 'Win with three techniques and one Red Star Gear.',
     featuredGearIds: Object.freeze([
       'tiny-sword',
       'beanie',

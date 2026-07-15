@@ -1,6 +1,6 @@
 # Generated Opponent Pool
 
-Generated: 2026-07-15T00:45:15.562Z
+Generated: 2026-07-15T05:54:35.360Z
 
 Runner: `app/tools/balancer/run.mjs`
 
@@ -8,12 +8,14 @@ This report bypasses API/routes/storage and calls the production combat mock bun
 
 | Target | Opponent | Win rate | Avg duration | Power-Up triggers | Target PU | Timeouts | Close | Blowouts | Verdict |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
-| Brawler base | FIELD | 55.5% | 14.1s | 0.00 | 0.00 | 0.0% | 67.4% | 0.0% | OK |
-| Longshot base | FIELD | 74.2% | 14.9s | 0.00 | 0.00 | 0.0% | 64.5% | 0.0% | FLAG_WIN_RATE |
-| Gunner base | FIELD | 65.9% | 18.0s | 0.00 | 0.00 | 0.0% | 62.5% | 0.0% | FLAG_WIN_RATE |
-| Mage base | FIELD | 41.5% | 16.0s | 0.00 | 0.00 | 0.0% | 74.5% | 0.0% | OK |
+| Brawler base | FIELD | 25.8% | 13.9s | 0.00 | 0.00 | 0.0% | 56.0% | 0.0% | FLAG_GENERATED_FIELD_WIN_RATE |
+| Longshot base | FIELD | 47.4% | 13.9s | 0.00 | 0.00 | 0.0% | 75.1% | 0.0% | OK |
+| Mage base | FIELD | 60.4% | 14.6s | 0.00 | 0.00 | 0.0% | 59.2% | 0.0% | OK |
 
-## Flags
+## Hard flags
 
-- Longshot base: FLAG_WIN_RATE (74.2%, 14.9s avg)
-- Gunner base: FLAG_WIN_RATE (65.9%, 18.0s avg)
+- Brawler base: FLAG_GENERATED_FIELD_WIN_RATE (25.8%, 13.9s avg)
+
+## Watches
+
+No watch-only rows from current thresholds.

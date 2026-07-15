@@ -1,0 +1,13 @@
+Freesound CC0 audio provenance
+================================
+
+Local file: draw-start-whistle.mp3
+Original: Referee whistle sound.wav
+Creator: Rosa-Orenes256
+Source: https://freesound.org/people/Rosa-Orenes256/sounds/538422/
+License: Creative Commons Zero 1.0 Universal (CC0-1.0)
+License URL: https://creativecommons.org/publicdomain/zero/1.0/
+
+The local MP3 is the Freesound high-quality preview of the original mono WAV.
+The source page identifies the sound as CC0 and permits copying, modification,
+distribution, performance, and commercial use without attribution.

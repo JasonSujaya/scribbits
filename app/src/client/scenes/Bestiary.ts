@@ -20,6 +20,7 @@ import {
   type PowerUpRarity,
 } from '../../shared/combat/powerups';
 import {
+  COMBAT_ROLE_ADVANTAGE,
   COMBAT_ROLE_IDS,
   getCombatRoleContent,
 } from '../../shared/combat/roles';
@@ -39,11 +40,16 @@ type GuideModal = Readonly<{
 }>;
 const FIGHTER_STYLE_GUIDE_ENTRIES = COMBAT_ROLE_IDS.map((role) => {
   const content = getCombatRoleContent(role);
+  const beatenRole = getCombatRoleContent(COMBAT_ROLE_ADVANTAGE[role]);
+  const counterRole = COMBAT_ROLE_IDS.find(
+    (candidate) => COMBAT_ROLE_ADVANTAGE[candidate] === role
+  );
+  const counter = getCombatRoleContent(counterRole ?? role);
   return Object.freeze({
     icon: content.icon,
     statLabel: `${content.displayName.toUpperCase()} · ${content.rangeLabel}`,
-    detail: `${content.weaponName} · ${content.basicAttackName} → ${content.signatureName}`,
-    description: `${content.drawingCue} selects ${content.displayName}. ${content.behavior}`,
+    detail: `BEATS ${beatenRole.displayName.toUpperCase()} · WEAK TO ${counter.displayName.toUpperCase()}`,
+    description: `${content.drawingCue} selects ${content.displayName}. ${content.weaponName}: ${content.basicAttackName} into ${content.signatureName}. ${content.behavior}`,
   });
 });
 
@@ -82,7 +88,7 @@ export class Bestiary extends Scene {
       this,
       width / 2,
       104,
-      '4 systems · no hidden triangle',
+      '3 roles · one clear counter loop',
       21,
       UI.inkSoft,
       true
@@ -112,8 +118,8 @@ export class Bestiary extends Scene {
     const rows: ReadonlyArray<
       readonly [GuideSection, PaperIconKey, string, string]
     > = [
-      ['shape', 'pencil', 'STYLE', 'Most-used color = role'],
-      ['powerups', 'spark', 'POWER-UPS', 'Win · choose 1 of 3'],
+      ['shape', 'pencil', 'STYLE', 'Each role beats one · loses to one'],
+      ['powerups', 'spark', 'POWER-UPS', 'Birth + wins · choose 1 of 3'],
       ['ritual', 'clock', 'RITUAL', 'Draw · Watch · Pick · Return'],
       ['legends', 'trophy', 'LEGENDS', 'Three days to matter'],
       ['privacy', 'shield', 'PRIVACY', 'Report · Delete'],
@@ -242,7 +248,7 @@ export class Bestiary extends Scene {
       case 'shape':
         return `The color group covering the most drawing area sets the role. Black and white are neutral; neutral-only art becomes Brawler. ${FIGHTER_STYLE_GUIDE_ENTRIES.map((entry) => entry.description).join(' ')}`;
       case 'powerups':
-        return 'Wins offer three behavioral Power-Ups. Choose one. A Scribbit can hold five and at most one Legendary. Gear remains the only source of raw stat bonuses.';
+        return 'A new Scribbit immediately gets three randomized Power-Ups and chooses one. Later wins can offer more. A Scribbit can hold five and at most one Legendary. Gear remains the only source of raw stat bonuses.';
       case 'ritual':
         return 'Draw one Scribbit. Watch its power immediately. Pick one community contender. Return after midnight for the Champion and Clout result.';
       case 'legends':

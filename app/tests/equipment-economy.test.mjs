@@ -37,22 +37,22 @@ test('published capsule odds/Ink pacing', () => {
     'published capsule rarity percentages should cover the full roll'
   );
   assert.equal(
-    Object.hasOwn(arena.INK_REWARDS, 'care'),
-    false,
-    'Care should never be a source of Ink'
+    arena.CAPSULE_COST,
+    2,
+    'one chest should stay cheaper than the major battle rewards'
   );
   assert.equal(
-    arena.INK_REWARDS.rumbleWin,
+    arena.INK_REWARDS.dailyDraw,
     arena.CAPSULE_COST,
-    'one Rumble win should fund one earned-Ink chest'
+    'one Daily Draw should fund one earned-Ink chest'
   );
   assert.equal(
     capsulePresentation.capsuleOpenCost(
       arena.CAPSULE_MAX_BATCH_SIZE,
       arena.CAPSULE_COST
     ),
-    arena.INK_REWARDS.rumbleWin * arena.CAPSULE_MAX_BATCH_SIZE,
-    'ten Rumble wins should fund the maximum ten-open batch'
+    arena.CAPSULE_COST * arena.CAPSULE_MAX_BATCH_SIZE,
+    'the maximum batch should use the same honest per-chest price'
   );
   assert.equal(
     inkStore.chooseCapsuleRarity(0.7),
@@ -68,6 +68,22 @@ test('published capsule odds/Ink pacing', () => {
     inkStore.chooseCapsuleRarity(0.95),
     'epic',
     'capsule roll at 95% should be epic'
+  );
+  assert.equal(
+    inkStore.chooseCapsuleRarity(0.989),
+    'epic',
+    'capsule roll below 99% should remain epic'
+  );
+  assert.equal(
+    inkStore.chooseCapsuleRarity(0.99),
+    'legendary',
+    'capsule roll at 99% should be legendary'
+  );
+  assert.equal(inkStore.advanceCapsulePity(7, 'epic'), 0);
+  assert.equal(
+    inkStore.advanceCapsulePity(7, 'legendary'),
+    0,
+    'Legendary is epic-or-better and must reset pity'
   );
 });
 
@@ -145,8 +161,8 @@ test('the first chest always starts with equippable Gear without changing rarity
 test('catalog cardinality/indexing', () => {
   assert.equal(
     sharedCosmetics.ACCESSORY_CATALOG_ENTRIES.length,
-    26,
-    'shared cosmetic metadata should contain all 26 Gear items'
+    34,
+    'shared cosmetic metadata should contain all 34 Gear items'
   );
   assert.equal(
     sharedCosmetics.PEN_CATALOG_ENTRIES.length,
@@ -170,13 +186,42 @@ test('catalog cardinality/indexing', () => {
   );
   assert.equal(
     sharedCosmetics.COSMETIC_CATALOG.length,
-    44,
-    'shared cosmetic metadata should contain exactly 44 entries'
+    52,
+    'shared cosmetic metadata should contain exactly 52 entries'
   );
   assert.equal(
     sharedCosmetics.COSMETIC_BY_ID.size,
     sharedCosmetics.COSMETIC_CATALOG.length,
     'every shared cosmetic id should be unique and indexed'
+  );
+});
+
+test('Gear catalog has grounded Commons, four true Legendaries, and stable relic IDs', () => {
+  const gearById = new Map(
+    sharedCosmetics.GEAR_CATALOG_ENTRIES.map((entry) => [entry.id, entry])
+  );
+  assert.deepEqual(
+    ['cardboard-shield', 'wooden-spoon', 'canvas-sneakers', 'button-badge'].map(
+      (id) => gearById.get(id)?.rarity
+    ),
+    ['common', 'common', 'common', 'common']
+  );
+  assert.deepEqual(
+    [
+      'void-nib-lance',
+      'moon-moth-mantle',
+      'thundercloud-sneakers',
+      'star-eye-mask',
+    ].map((id) => gearById.get(id)?.rarity),
+    ['legendary', 'legendary', 'legendary', 'legendary']
+  );
+  assert.equal(
+    gearById.get('inkquake-crater-crown')?.name,
+    'Inkquake Stone Guard'
+  );
+  assert.equal(
+    gearById.get('colorburst-prism-crown')?.name,
+    'COLORBURST PRISM AMULET'
   );
 });
 

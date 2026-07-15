@@ -1014,6 +1014,7 @@ export type AppTabItem = {
   /** Visible copy may stay stable while the accessible label reports state. */
   visibleLabel?: string;
   label: string;
+  locked?: boolean;
   onClick: () => void;
 };
 
@@ -1085,30 +1086,21 @@ function tornDockPoints(width: number, height: number): Phaser.Math.Vector2[] {
   return points;
 }
 
-function waxSeal(
+function activeDockTabChip(
   scene: Scene,
-  x: number,
-  y: number
+  width: number,
+  height: number
 ): Phaser.GameObjects.Graphics {
-  const seal = scene.add.graphics().setPosition(x, y);
-  const points: Phaser.Math.Vector2[] = [];
-  for (let point = 0; point < 20; point += 1) {
-    const radius = point % 2 === 0 ? 31 : 27;
-    const angle = -Math.PI / 2 + (point * Math.PI) / 10;
-    points.push(
-      new Phaser.Math.Vector2(
-        Math.cos(angle) * radius,
-        Math.sin(angle) * radius
-      )
-    );
-  }
-  seal.fillStyle(UI.coralDeep, 1);
-  seal.fillPoints(points, true);
-  seal.lineStyle(2.5, UI.inkHex, 0.9);
-  seal.strokePoints(points, true);
-  seal.lineStyle(2, UI.gold, 0.9);
-  seal.strokeCircle(0, 0, 21);
-  return seal;
+  const chip = scene.add.graphics();
+  const left = -width / 2;
+  const top = -height / 2;
+  chip.fillStyle(UI.inkHex, 0.18);
+  chip.fillRoundedRect(left + 3, top + 5, width, height, 20);
+  chip.fillStyle(UI.coral, 1);
+  chip.fillRoundedRect(left, top, width, height, 20);
+  chip.lineStyle(3, UI.inkHex, 1);
+  chip.strokeRoundedRect(left, top, width, height, 20);
+  return chip;
 }
 
 export function appTabBar(
@@ -1133,15 +1125,17 @@ export function appTabBar(
     appDockOverlays.delete(scene);
     actionOverlay.destroy();
   });
-  const camera = scene.cameras.main;
   const followCamera = (): void => {
     if (!container.active) return;
+    const camera = scene.cameras.main;
     // Keep the dock at a stable viewport position using ordinary world
     // coordinates. Phaser then uses the same transform for rendering and input
-    // hit testing, unlike nested scroll-factor-zero children.
+    // hit testing, unlike nested scroll-factor-zero children. Scene rebuilds can
+    // briefly run before the replacement camera becomes active, so the dock
+    // stays at its viewport anchor for that frame.
     container.setPosition(
-      viewportX + camera.scrollX,
-      viewportY + camera.scrollY
+      viewportX + (camera?.scrollX ?? 0),
+      viewportY + (camera?.scrollY ?? 0)
     );
   };
   let listenerRemoved = false;
@@ -1181,32 +1175,43 @@ export function appTabBar(
   tabs.forEach((tab, index) => {
     const x = -barWidth / 2 + slotWidth * (index + 0.5);
     const isActive = tab.key === active;
+    const isLocked = tab.locked === true;
     const slot = scene.add.container(x, 0);
     if (isActive) {
-      slot.add(waxSeal(scene, 0, -24));
+      slot.add(activeDockTabChip(scene, slotWidth - 14, barHeight - 26));
     }
 
-    const icon = paperDockIcon(
-      scene,
-      tab.key,
-      0,
-      compactDock ? -26 : -24,
-      dockIconSize,
-      UI.inkHex,
-      true
-    );
+    const iconY = compactDock ? -26 : -24;
+    const icon = isLocked
+      ? paperIcon(scene, 'lock', 0, iconY, {
+          size: dockIconSize * 0.76,
+          fill: UI.inkSoftHex,
+        })
+      : paperDockIcon(
+          scene,
+          tab.key,
+          0,
+          iconY,
+          dockIconSize,
+          isActive ? UI.creamHex : UI.inkHex,
+          !isActive
+        );
     const text = label(
       scene,
       0,
       compactDock ? 27 : 32,
       tab.visibleLabel ?? tab.label,
       dockLabelSize,
-      isActive ? UI.coralText : UI.ink,
+      isActive ? UI.cream : isLocked ? UI.inkSoft : UI.ink,
       true
     );
     const maximumLabelWidth = slotWidth - 8;
     if (text.width > maximumLabelWidth) {
       text.setScale(maximumLabelWidth / text.width);
+    }
+    if (isLocked) {
+      icon.setAlpha(0.62);
+      text.setAlpha(0.72);
     }
     slot.add([icon, text]);
 
@@ -1218,9 +1223,9 @@ export function appTabBar(
       0xffffff,
       0.001
     );
-    hit.setInteractive({ useHandCursor: !isActive });
+    if (!isLocked) hit.setInteractive({ useHandCursor: !isActive });
     container.add([slot, hit]);
-    if (!isActive) wireTab(hit, slot, tab.onClick, scene);
+    if (!isActive && !isLocked) wireTab(hit, slot, tab.onClick, scene);
     const nativeTab = actionOverlay.add({
       label: tab.label,
       rect: {
@@ -1229,7 +1234,12 @@ export function appTabBar(
         width: slotWidth,
         height: barHeight,
       },
+      attributes: {
+        'data-app-tab': tab.key,
+        'data-app-tab-locked': String(isLocked),
+      },
       pointerPassthrough: true,
+      enabled: !isLocked,
       onActivate: isActive ? () => undefined : tab.onClick,
     });
     if (isActive) nativeTab.setAttribute('aria-current', 'page');

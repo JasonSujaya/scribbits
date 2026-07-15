@@ -12,8 +12,8 @@ import {
 import { battleResultFinishIsConsistent } from './resultvalidation';
 import { isGearCombatSnapshot } from './gearsnapshot';
 import { isShapePowerId } from './shapepowercontent';
-import { isCombatRole } from './roles';
-import { selectCombatRole } from './selection';
+import { isCombatRole, isCurrentCombatRole } from './roles';
+import { selectCombatRole, selectLegacyCombatRole } from './selection';
 import { isCombatUpgradeId, MAXIMUM_COMBAT_UPGRADES } from './upgrades';
 import { isPowerUpId, validatePowerUpBuild } from './powerups';
 import type {
@@ -31,7 +31,7 @@ import type {
 
 const MAXIMUM_TRANSCRIPT_VALUE = 1_000_000;
 type LegacyTranscriptVersion = 1 | 2 | 3 | 4;
-type TranscriptVersion = LegacyTranscriptVersion | 5 | 6;
+type TranscriptVersion = LegacyTranscriptVersion | 5 | 6 | 7;
 const MAXIMUM_CHECKPOINT_GAP = COMBAT_TICK_RATE / 2;
 // A battle may end while an authored telegraph, active phase, burn, or echo
 // still points a short distance beyond the final simulation tick.
@@ -96,6 +96,17 @@ const isDamageSource = (value: unknown): value is DamageSource => {
     value === 'power_up' ||
     value === 'nib_wall_recoil'
   );
+};
+
+const isCurrentPrimaryPower = (value: unknown): boolean => {
+  return value === 'inkquake' || value === 'nib_halo' || value === 'colorburst';
+};
+
+const combatRoleIsUsable = (
+  value: unknown,
+  version: TranscriptVersion
+): boolean => {
+  return version >= 7 ? isCurrentCombatRole(value) : isCombatRole(value);
 };
 
 const isVector = (value: unknown): value is FixedVector => {
@@ -213,6 +224,12 @@ const TIMELINE_EVENT_FIELD_VALIDATORS = {
     isBoundedInteger(value.targetHitPoints, 0, MAXIMUM_TRANSCRIPT_VALUE) &&
     typeof value.critical === 'boolean' &&
     isVector(value.position),
+  healing: (value) =>
+    isFighterSlot(value.actor) &&
+    value.source === 'power_up' &&
+    isPowerUpId(value.powerUpId) &&
+    isBoundedInteger(value.amount, 1, MAXIMUM_TRANSCRIPT_VALUE) &&
+    isBoundedInteger(value.targetHitPoints, 1, MAXIMUM_TRANSCRIPT_VALUE),
   burn_applied: (value) =>
     isFighterSlot(value.sourceFighter) &&
     isFighterSlot(value.targetFighter) &&
@@ -356,12 +373,13 @@ const isFighterCheckpoint = (
   return (
     isRecord(value) &&
     value.slot === expectedSlot &&
-    (version < 4 || isCombatRole(value.combatRole)) &&
+    (version < 4 || combatRoleIsUsable(value.combatRole, version)) &&
     isBoundedInteger(value.maxHitPoints, 1, MAXIMUM_TRANSCRIPT_VALUE) &&
     isBoundedInteger(value.hitPoints, 0, value.maxHitPoints) &&
     isVector(value.position) &&
     isVector(value.velocity) &&
     isShapePowerId(value.primaryPower) &&
+    (version < 7 || isCurrentPrimaryPower(value.primaryPower)) &&
     isAbilityPhase(value.abilityPhase) &&
     isBoundedInteger(value.barrierHitPoints, 0, MAXIMUM_TRANSCRIPT_VALUE) &&
     (value.echoPosition === null || isVector(value.echoPosition))
@@ -399,7 +417,8 @@ const isResultFighter = (
     isBoundedInteger(value.hitPointPermille, 0, 1_000) &&
     isBoundedInteger(value.damageDealt, 0, MAXIMUM_TRANSCRIPT_VALUE) &&
     isShapePowerId(value.primaryPower) &&
-    (version < 4 || isCombatRole(value.combatRole)) &&
+    (version < 7 || isCurrentPrimaryPower(value.primaryPower)) &&
+    (version < 4 || combatRoleIsUsable(value.combatRole, version)) &&
     typeof value.inkPressureUsed === 'boolean'
   );
 };
@@ -505,6 +524,23 @@ const timelineIsUsable = (
   let previousTick = -1;
   for (const value of values) {
     if (!isTimelineEvent(value, result.completedTick)) return false;
+    if (
+      version >= 7 &&
+      isRecord(value) &&
+      ((value.kind === 'role_attack' &&
+        (!isCurrentCombatRole(value.role) ||
+          value.attack === 'ink_shot' ||
+          value.attack === 'smearstep_barrage')) ||
+        ((value.kind === 'ability_telegraphed' ||
+          value.kind === 'ability_activated' ||
+          value.kind === 'ability_finished' ||
+          value.kind === 'ability_interrupted') &&
+          !isCurrentPrimaryPower(value.power)) ||
+        (value.kind === 'damage' &&
+          (value.source === 'smearstep' || value.source === 'gunner_shot')))
+    ) {
+      return false;
+    }
     if (value.tick < previousTick) return false;
     if (
       (version >= 5 &&
@@ -512,6 +548,7 @@ const timelineIsUsable = (
           (value.kind === 'damage' && value.source === 'ember_burn'))) ||
       (version < 5 &&
         (value.kind === 'power_up_triggered' ||
+          value.kind === 'healing' ||
           (value.kind === 'damage' && value.source === 'power_up')))
     ) {
       return false;
@@ -523,6 +560,13 @@ const timelineIsUsable = (
       value.kind === 'damage' &&
       value.targetHitPoints >
         result.fighters[value.targetFighter === 'a' ? 0 : 1].maxHitPoints
+    ) {
+      return false;
+    }
+    if (
+      value.kind === 'healing' &&
+      value.targetHitPoints >
+        result.fighters[value.actor === 'a' ? 0 : 1].maxHitPoints
     ) {
       return false;
     }
@@ -561,7 +605,8 @@ export function parseBattleTranscript(
       value.version !== 3 &&
       value.version !== 4 &&
       value.version !== 5 &&
-      value.version !== 6) ||
+      value.version !== 6 &&
+      value.version !== 7) ||
     value.tickRate !== COMBAT_TICK_RATE ||
     value.fixedPointScale !== FIXED_POINT_SCALE ||
     value.maxTicks !== COMBAT_MAXIMUM_TICKS ||
@@ -615,13 +660,15 @@ export function parseBattleTranscript(
     if (!isRecord(fighterA.stats) || !isRecord(fighterB.stats)) {
       return undefined;
     }
-    const roleA = selectCombatRole({
+    const selectRoleForVersion =
+      version >= 7 ? selectCombatRole : selectLegacyCombatRole;
+    const roleA = selectRoleForVersion({
       chonk: Number(fighterA.stats.chonk),
       spike: Number(fighterA.stats.spike),
       zip: Number(fighterA.stats.zip),
       charm: Number(fighterA.stats.charm),
     });
-    const roleB = selectCombatRole({
+    const roleB = selectRoleForVersion({
       chonk: Number(fighterB.stats.chonk),
       spike: Number(fighterB.stats.spike),
       zip: Number(fighterB.stats.zip),

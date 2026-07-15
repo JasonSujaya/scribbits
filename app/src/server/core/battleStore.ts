@@ -34,6 +34,21 @@ export const getUserBattlesKey = (userId: string): string => {
   return `battles:user:${userId}`;
 };
 
+export const getUserHasCompletedBattleKey = (userId: string): string => {
+  return `user:${userId}:has-completed-battle`;
+};
+
+export const hasUserCompletedBattle = async (
+  storage: ArenaStorage,
+  userId: string
+): Promise<boolean> => {
+  const completionKey = getUserHasCompletedBattleKey(userId);
+  if ((await storage.get(completionKey)) === '1') return true;
+  if ((await storage.zCard(getUserBattlesKey(userId))) === 0) return false;
+  await storage.set(completionKey, '1');
+  return true;
+};
+
 const getScribbitBattlesKey = (scribbitId: string): string => {
   return `battles:scribbit:${scribbitId}`;
 };
@@ -173,7 +188,8 @@ export const isBattleReport = (value: unknown): value is BattleReport => {
       (simulation.version === 3 && value.kind !== 'exhibition') ||
       ((simulation.version === 4 ||
         simulation.version === 5 ||
-        simulation.version === 6) &&
+        simulation.version === 6 ||
+        simulation.version === 7) &&
         value.kind !== 'exhibition' &&
         (simulation.fighters[0].gear !== undefined ||
           simulation.fighters[1].gear !== undefined)) ||
@@ -188,7 +204,8 @@ export const isBattleReport = (value: unknown): value is BattleReport => {
           ))) ||
       ((simulation.version === 4 ||
         simulation.version === 5 ||
-        simulation.version === 6) &&
+        simulation.version === 6 ||
+        simulation.version === 7) &&
         (simulation.fighters[0].gear !== undefined ||
           simulation.fighters[1].gear !== undefined) &&
         (!gearCombatSnapshotMatchesScribbit(
@@ -436,6 +453,7 @@ export const saveBattleReport = async (
 
   for (const ownerId of ownerIds) {
     const userBattlesKey = getUserBattlesKey(ownerId);
+    await storage.set(getUserHasCompletedBattleKey(ownerId), '1');
     await storage.zAdd(userBattlesKey, {
       member: battleReport.id,
       score,

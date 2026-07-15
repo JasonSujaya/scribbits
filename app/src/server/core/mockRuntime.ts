@@ -11,8 +11,6 @@ export {
   createScribbit,
   createScribbitLegacy,
   getLevelForXp,
-  isCareAction,
-  planCareProgression,
   resolveExpiredScribbitStatus,
   validateAndAnalyzeScribbitSubmission,
 } from './scribbit';
@@ -57,8 +55,12 @@ export {
   MAXIMUM_POWER_UPS,
   POWER_UP_CATALOG,
   POWER_UP_IDS,
+  POWER_UP_PLAYSTYLE_PROFILES,
+  powerUpIsOfferableForRole,
+  scorePowerUpFit,
   validatePowerUpBuild,
 } from '../../shared/combat/powerups';
+export { selectCombatRole } from '../../shared/combat/selection';
 export {
   CAPSULE_COST,
   GEAR_MERGE_COPY_COST,

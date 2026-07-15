@@ -21,6 +21,12 @@ export const AUDIO_SOURCE_PACKS = {
     url: 'https://kenney.nl/assets/rpg-audio',
     license: 'CC0-1.0',
   },
+  'freesound-referee-whistle': {
+    name: 'Referee whistle sound.wav',
+    creator: 'Rosa-Orenes256',
+    url: 'https://freesound.org/people/Rosa-Orenes256/sounds/538422/',
+    license: 'CC0-1.0',
+  },
 } as const;
 
 export type AudioSourcePackId = keyof typeof AUDIO_SOURCE_PACKS;
@@ -95,6 +101,11 @@ const AUDIO_ASSETS = {
     url: new URL('../assets/sfx/ui-pluck.mp3', import.meta.url).href,
     sourcePack: 'kenney-interface',
     sourceFile: 'pluck_001.ogg',
+  },
+  'draw-start-whistle': {
+    url: new URL('../assets/sfx/draw-start-whistle.mp3', import.meta.url).href,
+    sourcePack: 'freesound-referee-whistle',
+    sourceFile: 'Referee whistle sound.wav',
   },
   'paper-flip-1': {
     url: new URL('../assets/sfx/paper-flip-1.mp3', import.meta.url).href,
@@ -278,11 +289,31 @@ export const SFX_CATALOG = {
     cooldownMilliseconds: 55,
     maximumVoices: 2,
   },
+  'draw.countdown': {
+    samples: ['ui-tick'],
+    volume: 0.5,
+    cooldownMilliseconds: 80,
+    maximumVoices: 3,
+    tones: [tone(330, 360, 0.08, 0.01, 'sine')],
+  },
+  'draw.start': {
+    samples: ['draw-start-whistle'],
+    volume: 0.34,
+    cooldownMilliseconds: 500,
+    maximumVoices: 1,
+  },
+  'draw.timer': {
+    samples: ['ui-tick'],
+    volume: 0.16,
+    cooldownMilliseconds: 80,
+    maximumVoices: 2,
+  },
   'draw.tick': {
     samples: ['ui-tick'],
-    volume: 0.22,
+    volume: 0.4,
     cooldownMilliseconds: 80,
-    maximumVoices: 1,
+    maximumVoices: 2,
+    tones: [tone(440, 520, 0.07, 0.01, 'sine')],
   },
   'draw.submit': {
     samples: ['paper-open', 'ui-confirm-2'],

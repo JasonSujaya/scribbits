@@ -61,11 +61,10 @@ const getHistoricalStatus = (cloutEarned: number): ScoutNotebookStatus => {
 const loadCurrentPick = async (
   storage: ArenaStorage,
   backedScribbitId: string,
-  utcDateKey: string,
   isHidden: HiddenScribbitLookup
 ): Promise<ScoutNotebookPick | null> => {
   if (await isHidden(backedScribbitId)) return null;
-  const scribbit = await loadScribbit(storage, backedScribbitId, utcDateKey);
+  const scribbit = await loadScribbit(storage, backedScribbitId);
   return scribbit ? projectScoutNotebookPick(scribbit) : null;
 };
 
@@ -92,12 +91,7 @@ const loadHistoricalEntry = async (
     ? null
     : reportPick
       ? projectScoutNotebookPick(reportPick)
-      : await loadCurrentPick(
-          storage,
-          backedScribbitId,
-          options.utcDateKey,
-          isHidden
-        );
+      : await loadCurrentPick(storage, backedScribbitId, isHidden);
   const status = getHistoricalStatus(cloutEarned);
 
   return {
@@ -166,12 +160,7 @@ export const loadScoutNotebook = async (
           day,
           forecast,
           picked: true,
-          pick: await loadCurrentPick(
-            storage,
-            backedScribbitId,
-            options.utcDateKey,
-            isHidden
-          ),
+          pick: await loadCurrentPick(storage, backedScribbitId, isHidden),
           status: 'pending',
           cloutEarned: 0,
           inkAwarded: 0,

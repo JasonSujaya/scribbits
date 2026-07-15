@@ -1,6 +1,6 @@
 # Reward Path
 
-Generated: 2026-07-15T00:45:15.561Z
+Generated: 2026-07-15T05:54:35.360Z
 
 Runner: `app/tools/balancer/run.mjs`
 
@@ -8,14 +8,18 @@ This report bypasses API/routes/storage and calls the production combat mock bun
 
 | Target | Opponent | Win rate | Avg duration | Power-Up triggers | Target PU | Timeouts | Close | Blowouts | Verdict |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
-| exhibition-win → v1-center-fold | FIELD | 61.3% | 15.3s | 1.00 | 1.00 | 0.0% | 61.3% | 0.0% | OK |
-| rival-run-win → v1-combo-spark | FIELD | 61.3% | 15.3s | 1.00 | 1.00 | 0.0% | 63.7% | 0.0% | OK |
-| rival-run-final-win → v1-paper-shield | FIELD | 92.5% | 14.7s | 1.00 | 1.00 | 0.0% | 90.0% | 0.0% | FLAG_WIN_RATE |
-| rumble-day-win → v1-paper-shield | FIELD | 83.8% | 14.9s | 1.00 | 1.00 | 0.0% | 82.5% | 0.0% | FLAG_WIN_RATE |
-| champion-win → v1-backup-plan | FIELD | 66.3% | 15.0s | 0.50 | 0.50 | 0.0% | 95.0% | 0.0% | FLAG_WIN_RATE |
+| exhibition-win → v1-paper-shield | FIELD | 0.0% | 14.2s | 3.00 | 3.00 | 0.0% | 50.0% | 0.0% | FLAG_WIN_RATE |
+| rival-run-win → v1-paper-shield | FIELD | 0.0% | 14.2s | 3.00 | 3.00 | 0.0% | 43.8% | 0.0% | FLAG_WIN_RATE |
+| rival-run-final-win → v1-paper-shield | FIELD | 0.0% | 14.2s | 3.00 | 3.00 | 0.0% | 46.3% | 0.0% | FLAG_WIN_RATE |
+| rumble-day-win → v1-center-fold | FIELD | 48.8% | 13.7s | 1.00 | 1.00 | 0.0% | 50.0% | 0.0% | OK |
+| champion-win → v1-wallop | FIELD | 42.5% | 13.7s | 2.00 | 2.00 | 0.0% | 50.0% | 0.0% | OK |
 
-## Flags
+## Hard flags
 
-- rival-run-final-win → v1-paper-shield: FLAG_WIN_RATE (92.5%, 14.7s avg)
-- rumble-day-win → v1-paper-shield: FLAG_WIN_RATE (83.8%, 14.9s avg)
-- champion-win → v1-backup-plan: FLAG_WIN_RATE (66.3%, 15.0s avg)
+- exhibition-win → v1-paper-shield: FLAG_WIN_RATE (0.0%, 14.2s avg)
+- rival-run-win → v1-paper-shield: FLAG_WIN_RATE (0.0%, 14.2s avg)
+- rival-run-final-win → v1-paper-shield: FLAG_WIN_RATE (0.0%, 14.2s avg)
+
+## Watches
+
+No watch-only rows from current thresholds.

@@ -40,9 +40,28 @@ function createPaintedPngDataUrl([red, green, blue]) {
 const roleColors = {
   brawler: [255, 90, 61],
   longshot: [59, 160, 224],
-  gunner: [79, 170, 79],
   mage: [138, 92, 216],
 };
+
+test('legacy gold and green drawing colors now join Longshot', () => {
+  for (const rgb of [
+    [79, 170, 79],
+    [242, 207, 61],
+  ]) {
+    const result = createPracticeBattle({
+      request: {
+        name: 'Merged Longshot Drawing',
+        baseImageDataUrl: createPaintedPngDataUrl(rgb),
+      },
+      artist: 'style-test',
+      playerId: 'style-test-player',
+      canonicalDay: 1,
+      nonce: rgb.join('-'),
+    });
+    assert.equal(result.status, 'created');
+    assert.equal(selectCombatRole(result.report.a.stats), 'longshot');
+  }
+});
 
 for (const [fighterStyle, rgb] of Object.entries(roleColors)) {
   test(`server derives ${fighterStyle} from drawing color`, () => {

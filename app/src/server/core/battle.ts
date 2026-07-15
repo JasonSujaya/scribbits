@@ -9,6 +9,7 @@ import { ELEMENT_PREY } from '../../shared/arena';
 import { cloneScribbit } from '../../shared/arena';
 import { getLevelDamageMultiplier } from '../../shared/battle';
 import { simulateCombat } from '../../shared/combat';
+import { projectStatsForCurrentCombat } from '../../shared/combat/selection';
 import {
   gearCombatFingerprint,
   resolveGearCombatLoadout,
@@ -124,7 +125,7 @@ export const simulate = (
       {
         id: fighterA.id,
         name: fighterA.name,
-        stats: fighterA.stats,
+        stats: projectStatsForCurrentCombat(fighterA.stats),
         powerUpIds: [...(fighterA.powerUpIds ?? [])],
         damageModifierPermille: getCombatDamageModifierPermille(fighterA),
         ...(gearEnabled && fighterAGear.snapshot
@@ -134,7 +135,7 @@ export const simulate = (
       {
         id: fighterB.id,
         name: fighterB.name,
-        stats: fighterB.stats,
+        stats: projectStatsForCurrentCombat(fighterB.stats),
         powerUpIds: [...(fighterB.powerUpIds ?? [])],
         damageModifierPermille: getCombatDamageModifierPermille(fighterB),
         ...(gearEnabled && fighterBGear.snapshot

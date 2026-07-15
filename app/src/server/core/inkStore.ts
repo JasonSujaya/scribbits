@@ -16,6 +16,8 @@ import {
   CAPSULE_RARITY_PERCENTAGES,
   GEAR_MERGE_COPY_COST,
   getGearMergeCopyCost,
+  isCapsuleRarity,
+  isEpicOrBetterCapsuleRarity,
   isGearRank,
   MAX_GEAR_RANK,
 } from '../../shared/arena';
@@ -615,6 +617,11 @@ export const chooseCapsuleRarity = (roll: number): CapsuleRarity => {
   const commonThreshold = CAPSULE_RARITY_PERCENTAGES.common / 100;
   const rareThreshold =
     (CAPSULE_RARITY_PERCENTAGES.common + CAPSULE_RARITY_PERCENTAGES.rare) / 100;
+  const epicThreshold =
+    (CAPSULE_RARITY_PERCENTAGES.common +
+      CAPSULE_RARITY_PERCENTAGES.rare +
+      CAPSULE_RARITY_PERCENTAGES.epic) /
+    100;
 
   if (roll < commonThreshold) {
     return 'common';
@@ -624,7 +631,7 @@ export const chooseCapsuleRarity = (roll: number): CapsuleRarity => {
     return 'rare';
   }
 
-  return 'epic';
+  return roll < epicThreshold ? 'epic' : 'legendary';
 };
 
 export const isCapsulePityPull = (pullsSinceEpic: number): boolean => {
@@ -635,7 +642,7 @@ export const advanceCapsulePity = (
   pullsSinceEpic: number,
   pulledRarity: CapsuleRarity
 ): number => {
-  return pulledRarity === 'epic' ? 0 : pullsSinceEpic + 1;
+  return isEpicOrBetterCapsuleRarity(pulledRarity) ? 0 : pullsSinceEpic + 1;
 };
 
 const chooseEntryForRarity = (
@@ -1014,7 +1021,7 @@ const parseCapsuleOperationResponse = (
       return undefined;
     }
     if (
-      !['common', 'rare', 'epic'].includes(String(pullRecord.rarity)) ||
+      !isCapsuleRarity(pullRecord.rarity) ||
       !['accessory', 'pen', 'title', 'drawing-ink', 'brush'].includes(
         String(pullRecord.kind)
       ) ||

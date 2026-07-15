@@ -49,6 +49,10 @@ test('drawing music follows the timed round lifecycle', () => {
   assert.match(drawSource, /if \(wasStarted\) resumeDrawingSoundtrack\(\)/);
   assert.match(
     drawSource,
+    /private finishDrawCountdown\(\): void[\s\S]{0,1200}this\.startDrawingRound\(\)/
+  );
+  assert.match(
+    drawSource,
     /private pauseDrawingRound\(\): void \{[\s\S]{0,140}pauseDrawingSoundtrack\(\)/
   );
   assert.match(

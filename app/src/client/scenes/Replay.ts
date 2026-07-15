@@ -230,6 +230,7 @@ type DamageAndStatusTimelineEvent = Extract<
   {
     kind:
       | 'damage'
+      | 'healing'
       | 'burn_applied'
       | 'barrier_created'
       | 'barrier_hit'
@@ -520,7 +521,7 @@ export class Replay extends Scene {
       fighterB: this.report.b,
       fighterAPrimaryPower: this.fighterA.primaryPower,
       fighterBPrimaryPower: this.fighterB.primaryPower,
-      ...(this.transcript?.version === 4
+      ...(this.transcript && this.transcript.version >= 4
         ? {
             fighterARole: this.fighterA.combatRole,
             fighterBRole: this.fighterB.combatRole,
@@ -579,7 +580,8 @@ export class Replay extends Scene {
       screenX: fighterLayout.homeX,
       screenY: fighterLayout.homeY,
       hpMax: transcriptFighter?.maxHitPoints ?? getBattleMaxHp(scribbit.stats),
-      combatRole: selectCombatRole(scribbit.stats),
+      combatRole:
+        transcriptFighter?.combatRole ?? selectCombatRole(scribbit.stats),
       primaryPower:
         transcriptFighter?.primaryPower ?? selectPrimaryPower(scribbit.stats),
       facing: fighterLayout.facing,
@@ -612,7 +614,7 @@ export class Replay extends Scene {
       fighter.facing,
       this.battleLayout.fighterDisplaySize
     );
-    if (this.transcript?.version === 4) {
+    if (this.transcript && this.transcript.version >= 4) {
       this.roleWeaponRenderer?.attach(
         side,
         fighter.combatRole,
@@ -1006,6 +1008,7 @@ export class Replay extends Scene {
         this.presentRoleAttackEvent(event);
         return;
       case 'damage':
+      case 'healing':
       case 'burn_applied':
       case 'barrier_created':
       case 'barrier_hit':
@@ -1183,6 +1186,11 @@ export class Replay extends Scene {
     event: DamageAndStatusTimelineEvent
   ): void {
     switch (event.kind) {
+      case 'healing': {
+        const fighter = this.fighterForSlot(event.actor);
+        this.setContinuousHitPoints(fighter, event.targetHitPoints);
+        return;
+      }
       case 'damage': {
         const attacker = this.fighterForSlot(event.sourceFighter);
         const target = this.fighterForSlot(event.targetFighter);

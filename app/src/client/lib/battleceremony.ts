@@ -18,7 +18,10 @@ import { BATTLE_MATCHUP_TITLE_BY_KIND } from './matchupbrief';
 import type { FounderRivalryStakesPlan } from './founderchronicle';
 import { formatRivalRunBattleLabel } from './rivalrunpresentation';
 import { selectCombatRole } from '../../shared/combat/selection';
-import { getCombatRoleContent } from '../../shared/combat/roles';
+import {
+  createCombatRoleMatchupRead,
+  getCombatRoleContent,
+} from '../../shared/combat/roles';
 
 export type VsCeremonyOptions = Readonly<{
   fighterA: Scribbit;
@@ -151,6 +154,7 @@ export function showVsCeremony(scene: Scene, options: VsCeremonyOptions): void {
   const reduceMotion = prefersReducedMotion();
   const roleA = getCombatRoleContent(selectCombatRole(fighterA.stats));
   const roleB = getCombatRoleContent(selectCombatRole(fighterB.stats));
+  const roleMatchup = createCombatRoleMatchupRead(roleA.id, roleB.id);
   const roleAStyle = ROLE_STYLES[roleA.id];
   const roleBStyle = ROLE_STYLES[roleB.id];
   const fighterCenterY = rivalryStakes || rivalRun ? 490 : 450;
@@ -264,6 +268,32 @@ export function showVsCeremony(scene: Scene, options: VsCeremonyOptions): void {
   }
 
   const mechanicsY = height - 300;
+  const matchupY = mechanicsY - 118;
+  const roleMatchupStrip = scene.add
+    .rectangle(width / 2, matchupY, width - 120, 76, UI.tapeAlt, 0.94)
+    .setStrokeStyle(3, UI.inkHex, 0.45)
+    .setAngle(-0.4);
+  const roleMatchupLabel = label(
+    scene,
+    width / 2,
+    matchupY - 13,
+    roleMatchup.label,
+    23,
+    UI.ink,
+    true
+  );
+  const roleMatchupDetail = label(
+    scene,
+    width / 2,
+    matchupY + 18,
+    roleMatchup.detail,
+    15,
+    UI.inkSoft,
+    true
+  );
+  if (roleMatchupDetail.width > width - 154) {
+    roleMatchupDetail.setScale((width - 154) / roleMatchupDetail.width);
+  }
   const mechanicsCard = scene.add
     .rectangle(width / 2, mechanicsY, width - 88, 152, UI.creamHex, 0.96)
     .setStrokeStyle(3, UI.inkHex, 0.3);
@@ -309,6 +339,9 @@ export function showVsCeremony(scene: Scene, options: VsCeremonyOptions): void {
     receiptBView.setScale(receiptWidth / receiptBView.width);
   }
   layer.add([
+    roleMatchupStrip,
+    roleMatchupLabel,
+    roleMatchupDetail,
     mechanicsCard,
     leftMechanicsAccent,
     rightMechanicsAccent,
@@ -373,10 +406,7 @@ export function showVsCeremony(scene: Scene, options: VsCeremonyOptions): void {
         scale: { start: 0.8, end: 0 },
         lifespan: 800,
         quantity: 20,
-        tint: [
-          roleAStyle.color,
-          roleBStyle.color,
-        ],
+        tint: [roleAStyle.color, roleBStyle.color],
         emitting: false,
       });
       clash.setDepth(2001);
@@ -387,7 +417,7 @@ export function showVsCeremony(scene: Scene, options: VsCeremonyOptions): void {
   // Fade out and transition
   // Reduced motion removes the entrance motion, not the reading time. The old
   // 180ms reduced-motion dwell made the matchup card effectively invisible.
-  scene.time.delayedCall(rivalryStakes ? 2600 : 2300, () => {
+  scene.time.delayedCall(rivalryStakes ? 3000 : 2800, () => {
     fadeSceneOut(scene, 200);
     scene.cameras.main.once('camerafadeoutcomplete', () => {
       layer.destroy(true);

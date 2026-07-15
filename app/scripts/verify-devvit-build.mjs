@@ -93,6 +93,7 @@ const initialHomeImageBytes = assertImageBudget(
   'Initial Home',
   [
     'gear-common-atlas.webp',
+    'gear-legendary-atlas.webp',
     'gear-rare-epic-atlas.webp',
     'maturity-gear-icons.webp',
     'scribbits-home-shelf.webp',
@@ -108,7 +109,38 @@ const initialHomeImageBytes = assertImageBudget(
     'ui-button-primary.webp',
     'ui-button-secondary.webp',
   ],
-  1024 * 1024
+  768 * 1024
+);
+const galleryImageBytes = assertImageBudget(
+  'Gallery and Bag',
+  ['bag-binder-base-shell-v7.webp'],
+  64 * 1024
+);
+const replayImageBytes = assertImageBudget(
+  'Replay',
+  [
+    'ui-button-battle-skip.webp',
+    'ui-button-battle-sound.webp',
+    'ui-button-battle-speed.webp',
+    'ui-fight-start.webp',
+  ],
+  128 * 1024
+);
+const shopImageBytes = assertImageBudget(
+  'Shop',
+  [
+    'scribbits-ink-token.webp',
+    'scribbits-shop-chest-closed.webp',
+    'scribbits-shop-chest-open.webp',
+    'scribbits-shop-claw-machine-shell.webp',
+    'scribbits-shop-stage.webp',
+  ],
+  512 * 1024
+);
+const drawImageBytes = assertImageBudget(
+  'Draw',
+  ['draw-start-challenge-card.jpg'],
+  320 * 1024
 );
 const totalImageBytes = [...imageSizes.values()].reduce(
   (total, fileSize) => total + fileSize,
@@ -131,5 +163,5 @@ if (oversizedImages.length > 0) {
 }
 
 console.log(
-  `Devvit bundle verified (${requiredFiles.length} entry files, ${clientFiles.length} client files; images ${kibibytes(totalImageBytes)}, inline ${kibibytes(inlineImageBytes)}, initial Home ${kibibytes(initialHomeImageBytes)}).`
+  `Devvit bundle verified (${requiredFiles.length} entry files, ${clientFiles.length} client files; images ${kibibytes(totalImageBytes)}, inline ${kibibytes(inlineImageBytes)}, initial Home ${kibibytes(initialHomeImageBytes)}, Gallery/Bag ${kibibytes(galleryImageBytes)}, Replay ${kibibytes(replayImageBytes)}, Shop ${kibibytes(shopImageBytes)}, Draw ${kibibytes(drawImageBytes)}).`
 );

@@ -1,4 +1,9 @@
-import type { CombatRole, DominantStat, PrimaryPower } from './types';
+import type {
+  CombatRole,
+  CurrentCombatRole,
+  DominantStat,
+  PrimaryPower,
+} from './types';
 
 export type CombatRange = 'close' | 'long' | 'medium' | 'medium-long';
 export type CombatRoleIcon = 'sword' | 'target' | 'gun' | 'spark';
@@ -38,15 +43,23 @@ export type CombatRoleMatchupRead = Readonly<{
   detail: string;
 }>;
 
-export const COMBAT_ROLE_IDS: readonly CombatRole[] = Object.freeze([
+export const COMBAT_ROLE_IDS: readonly CurrentCombatRole[] = Object.freeze([
   'brawler',
   'longshot',
-  'gunner',
   'mage',
 ]);
 
+const KNOWN_COMBAT_ROLE_IDS: readonly CombatRole[] = Object.freeze([
+  ...COMBAT_ROLE_IDS,
+  'gunner',
+]);
+
+export function toCurrentCombatRole(role: CombatRole): CurrentCombatRole {
+  return role === 'gunner' ? 'longshot' : role;
+}
+
 export const COMBAT_ROLE_CONTENT: Readonly<
-  Record<CombatRole, CombatRoleContent>
+  Record<CurrentCombatRole, CombatRoleContent>
 > = Object.freeze({
   brawler: Object.freeze({
     id: 'brawler',
@@ -71,30 +84,14 @@ export const COMBAT_ROLE_CONTENT: Readonly<
     signaturePower: 'nib_halo',
     range: 'long',
     rangeLabel: 'LONG RANGE',
-    drawingCue: 'Aqua or blue ink',
+    drawingCue: 'Gold, green, aqua, or blue ink',
     weaponName: 'Quill Launcher',
     basicAttackName: 'Piercing Quill',
     signatureName: 'Nib Volley',
     behavior: 'Keeps its distance and lines up heavy quill shots.',
     strength: 'Lines up Brawler during its approach.',
-    weakness: 'Gunner pressure interrupts its slow aim.',
+    weakness: 'Mage shields and color zones spoil its clean shot.',
     icon: 'target',
-  }),
-  gunner: Object.freeze({
-    id: 'gunner',
-    displayName: 'Gunner',
-    dominantStat: 'zip',
-    signaturePower: 'smearstep',
-    range: 'medium',
-    rangeLabel: 'MID RANGE',
-    drawingCue: 'Gold or green ink',
-    weaponName: 'Ink Blaster',
-    basicAttackName: 'Ink Burst',
-    signatureName: 'Smearstep Barrage',
-    behavior: 'Strafes, fires short bursts, and reloads in the open.',
-    strength: 'Suppresses Longshot before the quill is ready.',
-    weakness: 'Mage barriers and area attacks trap its firing lane.',
-    icon: 'gun',
   }),
   mage: Object.freeze({
     id: 'mage',
@@ -108,61 +105,82 @@ export const COMBAT_ROLE_CONTENT: Readonly<
     basicAttackName: 'Color Bolt',
     signatureName: 'Colorburst',
     behavior: 'Channels a visible cast, releases it, then retreats.',
-    strength: 'Controls Gunner firing lanes with barriers and color.',
+    strength: 'Blocks Longshot sightlines with barriers and color.',
     weakness: 'Brawler can interrupt its channel at close range.',
     icon: 'spark',
   }),
 });
 
-export const COMBAT_ROLE_ADVANTAGE: Readonly<Record<CombatRole, CombatRole>> =
-  Object.freeze({
-    brawler: 'mage',
-    mage: 'gunner',
-    gunner: 'longshot',
-    longshot: 'brawler',
-  });
+// Frozen presentation for archived v4-v6 Gunner reports. New Scribbits never
+// select this role, but old replays keep the weapon and move they originally
+// fought with instead of rewriting history.
+const LEGACY_GUNNER_CONTENT: CombatRoleContent = Object.freeze({
+  id: 'gunner',
+  displayName: 'Gunner',
+  dominantStat: 'zip',
+  signaturePower: 'smearstep',
+  range: 'medium',
+  rangeLabel: 'MID RANGE',
+  drawingCue: 'Legacy gold or green ink',
+  weaponName: 'Ink Blaster',
+  basicAttackName: 'Ink Burst',
+  signatureName: 'Smearstep Barrage',
+  behavior: 'Strafes, fires short bursts, and reloads in the open.',
+  strength: 'Archived role from the four-class ruleset.',
+  weakness: 'Archived role from the four-class ruleset.',
+  icon: 'gun',
+});
 
-export const COMBAT_ROLE_RULES: Readonly<Record<CombatRole, CombatRoleRules>> =
-  Object.freeze({
-    brawler: Object.freeze({
-      preferredRangeMinimum: 0,
-      preferredRangeMaximum: 1_400,
-      basicAttackCooldownTicks: 16,
-      basicAttackBaseDamage: 14,
-      basicAttackStatDivisor: 6,
-      burstShotCount: 1,
-      burstShotIntervalTicks: 0,
-    }),
-    longshot: Object.freeze({
-      preferredRangeMinimum: 4_500,
-      preferredRangeMaximum: 6_500,
-      basicAttackCooldownTicks: 44,
-      basicAttackBaseDamage: 12,
-      basicAttackStatDivisor: 11,
-      burstShotCount: 1,
-      burstShotIntervalTicks: 0,
-    }),
-    gunner: Object.freeze({
-      preferredRangeMinimum: 2_800,
-      preferredRangeMaximum: 4_200,
-      basicAttackCooldownTicks: 48,
-      basicAttackBaseDamage: 6,
-      basicAttackStatDivisor: 18,
-      burstShotCount: 3,
-      burstShotIntervalTicks: 4,
-    }),
-    mage: Object.freeze({
-      preferredRangeMinimum: 3_400,
-      preferredRangeMaximum: 5_400,
-      basicAttackCooldownTicks: 50,
-      basicAttackBaseDamage: 8,
-      basicAttackStatDivisor: 10,
-      burstShotCount: 1,
-      burstShotIntervalTicks: 0,
-    }),
-  });
+export const COMBAT_ROLE_ADVANTAGE: Readonly<
+  Record<CurrentCombatRole, CurrentCombatRole>
+> = Object.freeze({
+  brawler: 'mage',
+  mage: 'longshot',
+  longshot: 'brawler',
+});
+
+export const COMBAT_ROLE_RULES: Readonly<
+  Record<CurrentCombatRole, CombatRoleRules>
+> = Object.freeze({
+  brawler: Object.freeze({
+    preferredRangeMinimum: 0,
+    preferredRangeMaximum: 1_400,
+    basicAttackCooldownTicks: 16,
+    basicAttackBaseDamage: 14,
+    basicAttackStatDivisor: 6,
+    burstShotCount: 1,
+    burstShotIntervalTicks: 0,
+  }),
+  longshot: Object.freeze({
+    preferredRangeMinimum: 4_500,
+    preferredRangeMaximum: 6_500,
+    basicAttackCooldownTicks: 44,
+    basicAttackBaseDamage: 12,
+    basicAttackStatDivisor: 11,
+    burstShotCount: 1,
+    burstShotIntervalTicks: 0,
+  }),
+  mage: Object.freeze({
+    preferredRangeMinimum: 3_400,
+    preferredRangeMaximum: 5_400,
+    basicAttackCooldownTicks: 50,
+    basicAttackBaseDamage: 8,
+    basicAttackStatDivisor: 10,
+    burstShotCount: 1,
+    burstShotIntervalTicks: 0,
+  }),
+});
 
 export function isCombatRole(value: unknown): value is CombatRole {
+  return (
+    typeof value === 'string' &&
+    (KNOWN_COMBAT_ROLE_IDS as readonly string[]).includes(value)
+  );
+}
+
+export function isCurrentCombatRole(
+  value: unknown
+): value is CurrentCombatRole {
   return (
     typeof value === 'string' &&
     (COMBAT_ROLE_IDS as readonly string[]).includes(value)
@@ -170,19 +188,25 @@ export function isCombatRole(value: unknown): value is CombatRole {
 }
 
 export function getCombatRoleContent(role: CombatRole): CombatRoleContent {
-  return COMBAT_ROLE_CONTENT[role];
+  return role === 'gunner' ? LEGACY_GUNNER_CONTENT : COMBAT_ROLE_CONTENT[role];
 }
 
 export function getCombatRoleRules(role: CombatRole): CombatRoleRules {
-  return COMBAT_ROLE_RULES[role];
+  return COMBAT_ROLE_RULES[toCurrentCombatRole(role)];
 }
 
 export function getCombatRoleAdvantage(
   attacker: CombatRole,
   defender: CombatRole
 ): 'advantage' | 'disadvantage' | 'neutral' {
-  if (COMBAT_ROLE_ADVANTAGE[attacker] === defender) return 'advantage';
-  if (COMBAT_ROLE_ADVANTAGE[defender] === attacker) return 'disadvantage';
+  const currentAttacker = toCurrentCombatRole(attacker);
+  const currentDefender = toCurrentCombatRole(defender);
+  if (COMBAT_ROLE_ADVANTAGE[currentAttacker] === currentDefender) {
+    return 'advantage';
+  }
+  if (COMBAT_ROLE_ADVANTAGE[currentDefender] === currentAttacker) {
+    return 'disadvantage';
+  }
   return 'neutral';
 }
 
@@ -190,13 +214,15 @@ export function createCombatRoleMatchupRead(
   challengerRole: CombatRole,
   rivalRole: CombatRole
 ): CombatRoleMatchupRead {
-  const challenger = getCombatRoleContent(challengerRole);
-  const rival = getCombatRoleContent(rivalRole);
-  const edge = getCombatRoleAdvantage(challengerRole, rivalRole);
-  if (challengerRole === rivalRole) {
+  const currentChallengerRole = toCurrentCombatRole(challengerRole);
+  const currentRivalRole = toCurrentCombatRole(rivalRole);
+  const challenger = getCombatRoleContent(currentChallengerRole);
+  const rival = getCombatRoleContent(currentRivalRole);
+  const edge = getCombatRoleAdvantage(currentChallengerRole, currentRivalRole);
+  if (currentChallengerRole === currentRivalRole) {
     return Object.freeze({
-      challengerRole,
-      rivalRole,
+      challengerRole: currentChallengerRole,
+      rivalRole: currentRivalRole,
       pressure: 'mirror',
       label: `${challenger.displayName.toUpperCase()} MIRROR`,
       detail: `${challenger.rangeLabel} · TIMING DECIDES IT`,
@@ -204,25 +230,25 @@ export function createCombatRoleMatchupRead(
   }
   if (edge === 'advantage') {
     return Object.freeze({
-      challengerRole,
-      rivalRole,
+      challengerRole: currentChallengerRole,
+      rivalRole: currentRivalRole,
       pressure: 'challenger',
-      label: `${challenger.displayName.toUpperCase()} PRESSURE`,
+      label: `${challenger.displayName.toUpperCase()} BEATS ${rival.displayName.toUpperCase()}`,
       detail: challenger.strength.toUpperCase(),
     });
   }
   if (edge === 'disadvantage') {
     return Object.freeze({
-      challengerRole,
-      rivalRole,
+      challengerRole: currentChallengerRole,
+      rivalRole: currentRivalRole,
       pressure: 'rival',
-      label: `${rival.displayName.toUpperCase()} PRESSURE`,
+      label: `${rival.displayName.toUpperCase()} BEATS ${challenger.displayName.toUpperCase()}`,
       detail: rival.strength.toUpperCase(),
     });
   }
   return Object.freeze({
-    challengerRole,
-    rivalRole,
+    challengerRole: currentChallengerRole,
+    rivalRole: currentRivalRole,
     pressure: 'neutral',
     label: `${challenger.displayName.toUpperCase()} vs ${rival.displayName.toUpperCase()}`,
     detail: `${challenger.rangeLabel} · ${rival.rangeLabel} · POSITIONING DECIDES IT`,

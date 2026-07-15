@@ -15,16 +15,15 @@ const firstChestTrail = require(
   join(compiledClientRoot, 'lib', 'firstchesttrail.js')
 );
 
-const makeScribbit = (careDoneToday = []) => ({
+const makeScribbit = () => ({
   id: 'first-scribbit',
   name: 'Crater Pal',
   status: 'alive',
-  careDoneToday,
 });
 
 const completedRun = { status: 'complete' };
 
-test('a fresh completed run never invents Care Ink for the first chest', () => {
+test('a fresh completed run never invents Ink for the first chest', () => {
   assert.equal(
     firstChestTrail.planFirstChestTrailEntry({
       isFreshResult: true,
@@ -49,7 +48,7 @@ test('the trail opens Shop only when the committed balance covers the chest', ()
 
   assert.deepEqual(
     firstChestTrail.planFirstChestTrailStep({
-      scribbit: makeScribbit(['feed']),
+      scribbit: makeScribbit(),
       ink: 5,
       chestCost: 5,
       capsulePullCount: 0,
@@ -69,7 +68,7 @@ test('the trail opens Shop only when the committed balance covers the chest', ()
 test('the trail never invents unreachable Ink or repeats after a chest', () => {
   assert.equal(
     firstChestTrail.planFirstChestTrailStep({
-      scribbit: makeScribbit(['feed', 'pat', 'train']),
+      scribbit: makeScribbit(),
       ink: 2,
       chestCost: 5,
       capsulePullCount: 0,

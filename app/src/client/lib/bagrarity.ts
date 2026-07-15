@@ -25,4 +25,9 @@ export const BAG_RARITY_FRAME_STYLE: Readonly<
     fillAlpha: 0.16,
     strokeWidth: 8,
   }),
+  legendary: Object.freeze({
+    color: 0xb52e5d,
+    fillAlpha: 0.19,
+    strokeWidth: 9,
+  }),
 });

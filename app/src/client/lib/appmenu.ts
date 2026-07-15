@@ -122,12 +122,12 @@ export function appMenu(scene: Scene, options: AppMenuOptions = {}): AppMenu {
     UI.gold,
     SETTINGS_BUTTON_SIZE
   ).setDepth(2200);
-  const camera = scene.cameras.main;
   const followCamera = (): void => {
     if (!settingsButton.active) return;
+    const camera = scene.cameras.main;
     settingsButton.setPosition(
-      width - SETTINGS_BUTTON_RIGHT_OFFSET + camera.scrollX,
-      SETTINGS_BUTTON_Y + camera.scrollY
+      width - SETTINGS_BUTTON_RIGHT_OFFSET + (camera?.scrollX ?? 0),
+      SETTINGS_BUTTON_Y + (camera?.scrollY ?? 0)
     );
   };
   scene.events.on('postupdate', followCamera);

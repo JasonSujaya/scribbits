@@ -1,6 +1,6 @@
 # Rival Run Advancement Flow
 
-Generated: 2026-07-15T00:45:15.561Z
+Generated: 2026-07-15T05:54:35.360Z
 
 Runner: `app/tools/balancer/run.mjs`
 
@@ -8,12 +8,14 @@ This report bypasses API/routes/storage and calls the production combat mock bun
 
 | Target | Opponent | Win rate | Avg duration | Power-Up triggers | Timeouts | Close | Blowouts | Score | Verdict |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
-| Brawler base | Rival Run flow | 66.7% | 14.9s | 0.00 | 0.0% | 0.0% | 0.0% | 1 | FLAG_RUN_NOT_COMPLETE |
-| Longshot base | Rival Run flow | 100.0% | 14.1s | 0.00 | 0.0% | 0.0% | 0.0% | 4 | FLAG_RUN_NOT_COMPLETE |
-| Gunner base | Rival Run flow | 100.0% | 17.4s | 0.00 | 0.0% | 0.0% | 0.0% | 6 | OK |
-| Mage base | Rival Run flow | 66.7% | 14.7s | 0.00 | 0.0% | 0.0% | 0.0% | 3 | OK |
+| Brawler base | Rival Run flow | 66.7% | 13.7s | 0.00 | 0.0% | 0.0% | 0.0% | 3 | OK |
+| Longshot base | Rival Run flow | 66.7% | 13.7s | 0.00 | 0.0% | 0.0% | 0.0% | 3 | OK |
+| Mage base | Rival Run flow | 66.7% | 14.8s | 0.00 | 0.0% | 0.0% | 0.0% | 3 | OK |
 
-## Flags
+## Hard flags
 
-- Brawler base vs Rival Run flow: FLAG_RUN_NOT_COMPLETE (66.7%, 14.9s avg)
-- Longshot base vs Rival Run flow: FLAG_RUN_NOT_COMPLETE (100.0%, 14.1s avg)
+No balance flags from current thresholds.
+
+## Watches
+
+No watch-only rows from current thresholds.

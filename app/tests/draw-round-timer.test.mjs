@@ -95,6 +95,32 @@ test('official Draw requires an explicit start and locks at time', () => {
     /this\.practiceMode \|\| this\.automationMode \|\| this\.playerDrawMode === 'free'/
   );
   assert.match(drawSource, /private beginDrawingRound\(\): void/);
+  assert.match(drawSource, /private startDrawCountdown\(\): void/);
+  assert.match(drawSource, /private finishDrawCountdown\(\): void/);
+  assert.match(
+    drawSource,
+    /const DRAW_START_COUNTDOWN_STEPS = \['3', '2', '1', 'DRAW!'\] as const/
+  );
+  assert.match(
+    drawSource,
+    /private beginDrawingRound\(\): void[\s\S]{0,1200}this\.startDrawCountdown\(\)/
+  );
+  assert.match(
+    drawSource,
+    /private finishDrawCountdown\(\): void[\s\S]{0,1200}this\.startDrawingRound\(\)/
+  );
+  assert.match(
+    drawSource,
+    /private renderDrawCountdownStep[\s\S]{0,900}playSfx\(isDrawStep \? 'draw\.start' : 'draw\.countdown'\)[\s\S]{0,120}if \(prefersReducedMotion\(\)\) return/
+  );
+  assert.match(
+    drawSource,
+    /playSfx\(snapshot\.remainingSeconds <= 10 \? 'draw\.tick' : 'draw\.timer'\)/
+  );
+  assert.match(drawSource, /preloadSfx\('draw\.countdown'\)/);
+  assert.match(drawSource, /preloadSfx\('draw\.timer'\)/);
+  assert.match(drawSource, /preloadSfx\('draw\.tick'\)/);
+  assert.match(drawSource, /startButton\.dataset\.sfxCue = 'none'/);
   assert.match(drawSource, /private beginFreeDrawing\(\): void/);
   assert.match(drawSource, /private async submitFree\(/);
   assert.match(drawSource, /submitFreeDrawing\(\{/);
@@ -149,6 +175,8 @@ test('official Draw requires an explicit start and locks at time', () => {
   assert.match(gameStyles, /@keyframes draw-theme-crayon-rock/);
   assert.match(gameStyles, /@keyframes draw-theme-star-float/);
   assert.match(gameStyles, /@keyframes draw-theme-number-pulse/);
+  assert.match(gameStyles, /\.draw-start-countdown/);
+  assert.match(gameStyles, /\.draw-start-countdown\.is-draw/);
   assert.match(
     gameStyles,
     /\.draw-theme-reduced-motion \.draw-theme-start-button/
@@ -162,7 +190,7 @@ test('official Draw requires an explicit start and locks at time', () => {
   assert.match(drawSource, /height: this\.scale\.height/);
   assert.match(
     drawSource,
-    /style\.visibility = visible \? 'visible' : 'hidden'/
+    /style\.visibility = overlayVisible[\s\S]{0,40}\? 'visible'[\s\S]{0,20}: 'hidden'/
   );
   assert.match(drawSource, /private isWaitingToStart\(\): boolean/);
   assert.match(drawSource, /this\.canvas\?\.setEnabled\(inputEnabled\)/);

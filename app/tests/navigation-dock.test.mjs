@@ -6,6 +6,10 @@ const appDockSource = await readFile(
   new URL('../src/client/lib/appdock.ts', import.meta.url),
   'utf8'
 );
+const appDockProgressionSource = await readFile(
+  new URL('../src/client/lib/appdockprogression.ts', import.meta.url),
+  'utf8'
+);
 const uiSource = await readFile(
   new URL('../src/client/lib/ui.ts', import.meta.url),
   'utf8'
@@ -40,6 +44,10 @@ const appMenuSource = await readFile(
 );
 const homeSource = await readFile(
   new URL('../src/client/scenes/ScribbitHome.ts', import.meta.url),
+  'utf8'
+);
+const drawEligibilitySource = await readFile(
+  new URL('../src/client/lib/draweligibility.ts', import.meta.url),
   'utf8'
 );
 const dockSceneSources = await Promise.all(
@@ -78,6 +86,59 @@ test('the primary dock is Arena, Bag, Home, Battles, Shop', () => {
   assert.match(gameSource, /Gallery,\s*Shop,\s*ScoutNotebook/);
 });
 
+test('the dock reveals Battles, Shop, then Bag and Arena through durable progression', () => {
+  assert.match(appDockProgressionSource, /function isAppDockTabUnlocked\(/);
+  assert.match(appDockProgressionSource, /if \(tab === 'home'\) return true/);
+  assert.match(
+    appDockProgressionSource,
+    /!state \|\| state\.myScribbits\.length === 0\) return false/
+  );
+  assert.match(
+    appDockProgressionSource,
+    /hasOpenedMysteryInk \|\| state\.hasCompletedBattle/
+  );
+  assert.match(
+    appDockProgressionSource,
+    /state\.capsuleProgress\.pullCount > 0/
+  );
+  assert.match(
+    appDockProgressionSource,
+    /if \(tab === 'battles'\) return hasCreatedScribbit/
+  );
+  assert.match(
+    appDockProgressionSource,
+    /if \(tab === 'shop'\) return hasCompletedBattle/
+  );
+  assert.match(
+    appDockSource,
+    /const locked = !isAppDockTabUnlocked\(arena, definition\.key\)/
+  );
+  assert.match(appDockSource, /locked \? translate\('nav\.mystery'\)/);
+  assert.match(appDockSource, /nav\.lockedUntilProgress/);
+  assert.doesNotMatch(appDockSource, /nav\.lockedMystery/);
+  assert.match(appDockSource, /onClick: locked[\s\S]*\? \(\) => undefined/);
+  assert.match(uiSource, /locked\?: boolean/);
+  assert.match(uiSource, /const isLocked = tab\.locked === true/);
+  assert.match(
+    uiSource,
+    /const icon = isLocked[\s\S]*\? paperIcon\(scene, 'lock'[\s\S]*: paperDockIcon\(/
+  );
+  assert.match(uiSource, /'data-app-tab-locked': String\(isLocked\)/);
+  assert.match(uiSource, /enabled: !isLocked/);
+  assert.match(
+    homeSource,
+    /if \(this\.state\.myScribbits\.length > 0\) this\.renderGalleryButton\(\)/
+  );
+  assert.match(
+    drawEligibilitySource,
+    /if \(\(state\?\.myScribbits\.length \?\? 0\) === 0\)[\s\S]*startScene\(scene, 'ScribbitHome'\)/
+  );
+  assert.match(
+    drawEligibilitySource,
+    /if \(route === 'login'\)[\s\S]*showLoginPrompt\(\);[\s\S]*return;/
+  );
+});
+
 test('Shop acquires, Bag equips, and Home opens Gallery', () => {
   assert.match(appDockSource, /setGalleryTab\(scene, 'collection'\)/);
   assert.doesNotMatch(appDockSource, /route === 'gallery'/);
@@ -90,7 +151,7 @@ test('Shop acquires, Bag equips, and Home opens Gallery', () => {
   );
   assert.match(
     gallerySource,
-    /appDock\(this, this\.tab === 'collection' \? 'bag' : null/
+    /appDock\(this, this\.tab === 'collection' \? 'bag' : 'home'/
   );
   assert.match(gallerySource, /bag: \(\) => this\.switchTab\('collection'\)/);
   assert.doesNotMatch(
@@ -101,6 +162,20 @@ test('Shop acquires, Bag equips, and Home opens Gallery', () => {
   assert.match(homeSource, /startScene\(this, 'Gallery'\)/);
   assert.doesNotMatch(gallerySource, /renderDrawChargeInventory/);
   assert.doesNotMatch(gallerySource, /DRAW CHARGES|PAINT BUCKET/);
+});
+
+test('the active dock destination is a full high-contrast paper chip', () => {
+  assert.match(uiSource, /function activeDockTabChip\(/);
+  assert.match(
+    uiSource,
+    /activeDockTabChip\(scene, slotWidth - 14, barHeight - 26\)/
+  );
+  assert.match(uiSource, /isActive \? UI\.creamHex : UI\.inkHex/);
+  assert.match(
+    uiSource,
+    /isActive \? UI\.cream : isLocked \? UI\.inkSoft : UI\.ink/
+  );
+  assert.doesNotMatch(uiSource, /function waxSeal\(/);
 });
 
 test('Paper icons are optically centered without moving their hit targets', () => {
@@ -150,7 +225,7 @@ test('Gallery opens the owned lifecycle collection with bounded sections', () =>
   assert.match(gallerySource, /this\.buildTabs\(GALLERY_TABS_Y\)/);
   assert.match(gallerySource, /visibleLabel: 'GROWING'/);
   assert.match(gallerySource, /visibleLabel: 'MATURE'/);
-  assert.match(gallerySource, /visibleLabel: 'ARCHIVED'/);
+  assert.match(gallerySource, /visibleLabel: 'RETIRED'/);
   assert.match(gallerySource, /MAX_GROWING_PER_USER/);
   assert.match(gallerySource, /MAX_MATURE_PER_USER/);
   assert.match(gallerySource, /LEGACY_BOOK_PAGE_SIZE/);
@@ -160,7 +235,7 @@ test('Gallery opens the owned lifecycle collection with bounded sections', () =>
 test('Scout is hidden from navigation without hiding the compact Rumble action', () => {
   assert.doesNotMatch(scoutSource, /appDock\(this, 'scout'/);
   assert.doesNotMatch(bestiarySource, /appDock\(this, 'scout'/);
-  assert.match(arenaSource, /rumblePickLocked \? 'PICKED' : 'RUMBLE PICK'/);
+  assert.match(arenaSource, /rumblePickLocked \? 'PICKED' : 'MAKE PICK'/);
   assert.match(arenaSource, /this\.openContenderPicker\(\)/);
 });
 

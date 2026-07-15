@@ -109,12 +109,9 @@ test('Home is the living Scribbit screen with one big Draw action', () => {
   );
   assert.match(
     homeSource,
-    /Every completed battle gives it a random stat modifier — win or lose\./
+    /Choose one of three randomized Power-Ups before the first fight\./
   );
-  assert.match(
-    homeSource,
-    /random stat modifiers stop and its final stats lock forever\./
-  );
+  assert.match(homeSource, /After 3 days, its final base stats lock forever\./);
   assert.match(homeSource, /MATURE ARENA: UPGRADE GEAR/);
   assert.match(
     homeSource,
@@ -142,7 +139,7 @@ test('Home is the living Scribbit screen with one big Draw action', () => {
   assert.match(homeSource, /MATURITY_GEAR_TEXTURE/);
   assert.match(
     visualAssetsSource,
-    /MATURITY_GEAR_TEXTURE[\s\S]*?maturity-gear-icons\.webp[\s\S]*?frameWidth: 256, frameHeight: 256/
+    /MATURITY_GEAR_TEXTURE[\s\S]*?maturity-gear-icons\.webp[\s\S]*?frameWidth: 128, frameHeight: 128/
   );
   assert.match(homeSource, /angle: \{ from: -5, to: 5 \}/);
   assert.match(homeSource, /repeatDelay: 650/);

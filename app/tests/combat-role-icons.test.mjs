@@ -26,8 +26,8 @@ const rivalDraftSource = await readFile(
 test('combat role content owns the canonical fighter-style icons', () => {
   assert.match(roleSource, /brawler:[\s\S]*?icon: 'sword'/);
   assert.match(roleSource, /longshot:[\s\S]*?icon: 'target'/);
-  assert.match(roleSource, /gunner:[\s\S]*?icon: 'gun'/);
   assert.match(roleSource, /mage:[\s\S]*?icon: 'spark'/);
+  assert.match(roleSource, /LEGACY_GUNNER_CONTENT[\s\S]*?icon: 'gun'/);
 
   for (const source of [
     drawSource,

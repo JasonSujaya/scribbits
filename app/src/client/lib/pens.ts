@@ -44,4 +44,5 @@ export const RARITY_STYLE: Record<
   common: { color: 0xb6a894, label: 'COMMON' },
   rare: { color: 0x4fb0d8, label: 'RARE' },
   epic: { color: 0xffd447, label: 'EPIC' },
+  legendary: { color: 0xc13c70, label: 'LEGENDARY' },
 };

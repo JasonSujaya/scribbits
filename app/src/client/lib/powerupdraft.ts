@@ -34,6 +34,7 @@ export const openPowerUpDraft = (
   const reduceMotion = prefersReducedMotion();
   let busy = false;
   let destroyed = false;
+  const isBirthOffer = offer.source === 'birth';
   const backdrop = scene.add
     .rectangle(width / 2, height / 2, width, height, UI.deskHex, 0.94)
     .setDepth(4_000)
@@ -45,7 +46,15 @@ export const openPowerUpDraft = (
   sheet.setDepth(4_001).setScale(reduceMotion ? 1 : 0.86);
   const status = label(scene, 0, 374, '', 18, UI.coralText, true);
   sheet.add([
-    label(scene, 0, -374, 'POWER-UP! · CHOOSE 1', 36, UI.ink, true),
+    label(
+      scene,
+      0,
+      -374,
+      isBirthOffer ? 'FIRST POWER-UP · CHOOSE 1' : 'POWER-UP! · CHOOSE 1',
+      36,
+      UI.ink,
+      true
+    ),
     label(
       scene,
       0,
@@ -62,7 +71,7 @@ export const openPowerUpDraft = (
     scene,
     'Choose one Power-Up',
     () => undefined,
-    `Victory reward. Choose one of three behavioral Power-Ups. ${ownedPowerUpCount} of 5 slots are filled.`
+    `${isBirthOffer ? 'New Scribbit bonus.' : 'Victory reward.'} Choose one of three behavioral Power-Ups. ${ownedPowerUpCount} of 5 slots are filled.`
   );
   const controls: HTMLButtonElement[] = [];
   const resetCardVisuals: Array<() => void> = [];
@@ -193,8 +202,8 @@ export const openPowerUpDraft = (
       scene,
       cardWidth / 2 - 22,
       -48,
-      definition.rarity.toUpperCase(),
-      16,
+      `${definition.rarity.toUpperCase()} · ${definition.buildPath === 'wildcard' ? 'ANY BUILD' : definition.buildPath.toUpperCase()}`,
+      14,
       rarityTextColor,
       true
     ).setOrigin(1, 0.5);
@@ -225,7 +234,7 @@ export const openPowerUpDraft = (
     ]);
     sheet.add(card);
     const control = modal.add({
-      label: `Choose ${definition.name}, ${definition.rarity}. ${definition.description}`,
+      label: `Choose ${definition.name}, ${definition.rarity}, ${definition.buildPath} build. ${definition.description}`,
       rect: {
         x: width / 2 - cardWidth / 2,
         y: height / 2 + y - cardHeight / 2,
@@ -244,9 +253,7 @@ export const openPowerUpDraft = (
       frame.setFillStyle(active ? UI.paper : UI.creamHex, 1);
       rareRail.setAlpha(isRare ? (active ? 0.9 : 0.72) : 0);
       rareIconBacking.setAlpha(isRare ? (active ? 0.17 : 0.11) : 0);
-      legendaryIconHalo.setAlpha(
-        isLegendary ? (active ? 0.32 : 0.22) : 0
-      );
+      legendaryIconHalo.setAlpha(isLegendary ? (active ? 0.32 : 0.22) : 0);
       legendaryGlint.setAlpha(isLegendary ? (active ? 1 : 0.9) : 0);
       drawRarityChip(active);
 

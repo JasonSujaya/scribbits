@@ -6,8 +6,6 @@ import type {
   ArenaErrorResponse,
   ArenaState,
   BattleReport,
-  CareAction,
-  CareResponse,
   DailyLoginClaimResponse,
   CapsulePullResponse,
   CloutBoard,
@@ -36,7 +34,7 @@ import type {
   ChoosePowerUpRequest,
   ChoosePowerUpResponse,
 } from '../../shared/arena';
-import { isPowerUpId } from '../../shared/combat/powerups';
+import { isPowerUpId, MAXIMUM_POWER_UPS } from '../../shared/combat/powerups';
 import {
   createSparRewardReceipt,
   type SparRewardReceipt,
@@ -61,6 +59,7 @@ import {
 } from '../../shared/equipment';
 import { simulate } from '../core/battle';
 import {
+  hasUserCompletedBattle,
   loadBattleReport,
   loadBattleReportsForUser,
   loadFeaturedRumbleReport,
@@ -100,10 +99,7 @@ import {
   setEquippedTitle,
 } from '../core/inkStore';
 import { findInkCatalogEntry } from '../core/ink';
-import {
-  commitDailyCareAction,
-  commitDailyChampionOutcome,
-} from '../core/dailyActions';
+import { commitDailyChampionOutcome } from '../core/dailyActions';
 import { commitScribbitSubmission } from '../core/submission';
 import { loadDrawCharges } from '../core/drawCharges';
 import { loadPaintBucket } from '../core/paintBucket';
@@ -199,7 +195,6 @@ import {
   getRumbleEntrantCount,
   getRumbleKey,
   getScribbitOwner,
-  isCareAction,
   isScribbitOwnedByUser,
   loadScribbit,
   loadScribbits,
@@ -507,21 +502,6 @@ const readSparRequest = (value: unknown): SparRequest | undefined => {
   };
 };
 
-const readCareRequest = (
-  value: unknown
-): { scribbitId: string; action: CareAction } | undefined => {
-  const scribbitId = readScribbitId(value);
-
-  if (!scribbitId || !isRecord(value) || !isCareAction(value.action)) {
-    return undefined;
-  }
-
-  return {
-    scribbitId,
-    action: value.action,
-  };
-};
-
 const readChoosePowerUpRequest = (
   value: unknown
 ): ChoosePowerUpRequest | undefined => {
@@ -534,7 +514,7 @@ const readChoosePowerUpRequest = (
     !isPowerUpId(value.selectedId) ||
     !Number.isSafeInteger(value.expectedPowerUpCount) ||
     Number(value.expectedPowerUpCount) < 0 ||
-    Number(value.expectedPowerUpCount) >= 5
+    Number(value.expectedPowerUpCount) >= MAXIMUM_POWER_UPS
   ) {
     return undefined;
   }
@@ -824,6 +804,43 @@ const finalizeSparBattle = async (
   return { ...directBattleResponse, rewardReceipt, powerUpOffer };
 };
 
+const getOrCreateBirthPowerUpOffer = async (
+  userId: string,
+  scribbit: Scribbit,
+  createdAtMs: number
+) => {
+  const pendingOffer = await loadPendingPowerUpOffer(
+    redis,
+    userId,
+    scribbit.id
+  );
+  if (pendingOffer)
+    return pendingOffer.source === 'birth' ? pendingOffer : null;
+  if ((scribbit.powerUpIds?.length ?? 0) > 0) return null;
+  return getOrCreatePowerUpOffer(redis, {
+    userId,
+    scribbit,
+    reportId: `birth:${scribbit.id}`,
+    source: 'birth',
+    createdAtMs,
+  });
+};
+
+const loadOrRepairPendingPowerUpOffer = async (
+  userId: string,
+  scribbit: Scribbit,
+  createdAtMs: number
+) => {
+  const pendingOffer = await loadPendingPowerUpOffer(
+    redis,
+    userId,
+    scribbit.id
+  );
+  return (
+    pendingOffer ?? getOrCreateBirthPowerUpOffer(userId, scribbit, createdAtMs)
+  );
+};
+
 const loadTodayRumbleEntrants = async (
   day: number,
   utcDateKey: string,
@@ -863,7 +880,9 @@ registerPlayerMutatingGet('/arena', async (c) => {
     const player = await getCurrentPlayer();
     let myScribbits: Scribbit[] = [];
     let discoveredPowerUpIds: ArenaState['discoveredPowerUpIds'] = [];
+    let pendingPowerUpOffers: ArenaState['pendingPowerUpOffers'] = [];
     let hasCreatedScribbit = false;
+    let hasCompletedBattle = false;
     let drawnToday = false;
     let todayFreeDrawing: FreeDrawing | null = null;
     let enteredToday = false;
@@ -901,6 +920,7 @@ registerPlayerMutatingGet('/arena', async (c) => {
         inventory,
         loadedScribbits,
         loadedHasCreatedScribbit,
+        loadedHasCompletedBattle,
         freeDrawingLocked,
         loadedFreeDrawing,
         loadedBackedScribbitId,
@@ -918,6 +938,7 @@ registerPlayerMutatingGet('/arena', async (c) => {
         loadInventory(redis, player.userId),
         getAliveScribbitsForUser(redis, player.userId),
         hasUserCreatedScribbit(redis, player.userId),
+        hasUserCompletedBattle(redis, player.userId),
         hasFreeDrawingForDay(redis, player.userId, dayNumber),
         loadFreeDrawingForDay(redis, player.userId, dayNumber),
         getBackedScribbitId(redis, dayNumber, player.userId),
@@ -932,8 +953,20 @@ registerPlayerMutatingGet('/arena', async (c) => {
         loadPowerUpDiscoveries(redis, player.userId),
       ]);
       myScribbits = loadedScribbits;
+      pendingPowerUpOffers = (
+        await Promise.all(
+          myScribbits.map((scribbit) =>
+            loadOrRepairPendingPowerUpOffer(
+              player.userId,
+              scribbit,
+              now.getTime()
+            )
+          )
+        )
+      ).filter((offer) => offer !== null);
       discoveredPowerUpIds = [...loadedPowerUpDiscoveries];
       hasCreatedScribbit = loadedHasCreatedScribbit;
+      hasCompletedBattle = loadedHasCompletedBattle;
       todayFreeDrawing = loadedFreeDrawing ?? null;
       drawnToday =
         dailyFlags.drawnToday || freeDrawingLocked || todayFreeDrawing !== null;
@@ -1003,6 +1036,7 @@ registerPlayerMutatingGet('/arena', async (c) => {
       dayNumber,
       loggedIn: Boolean(player),
       hasCreatedScribbit,
+      hasCompletedBattle,
       myUsername: player?.username ?? null,
       forecast,
       champion:
@@ -1011,6 +1045,7 @@ registerPlayerMutatingGet('/arena', async (c) => {
           : null,
       myScribbits,
       discoveredPowerUpIds,
+      pendingPowerUpOffers,
       drawCharges,
       paintBucket,
       drawnToday,
@@ -1346,14 +1381,21 @@ api.post('/scribbit', async (c) => {
       getScribbitOwner(redis, scribbitId),
     ]);
     if (existingScribbit && existingOwner === player.userId) {
-      const [drawChargeProjection, rumbleScore] = await Promise.all([
-        loadDrawCharges(redis, player.userId, now.getTime()),
-        redis.zScore(getRumbleKey(existingScribbit.bornDay), scribbitId),
-      ]);
+      const [drawChargeProjection, rumbleScore, powerUpOffer] =
+        await Promise.all([
+          loadDrawCharges(redis, player.userId, now.getTime()),
+          redis.zScore(getRumbleKey(existingScribbit.bornDay), scribbitId),
+          getOrCreateBirthPowerUpOffer(
+            player.userId,
+            existingScribbit,
+            now.getTime()
+          ),
+        ]);
       return c.json<SubmitScribbitResponse>({
         scribbit: existingScribbit,
         drawCharges: drawChargeProjection.state,
         enteredRumble: rumbleScore !== undefined,
+        powerUpOffer,
       });
     }
     if (existingScribbit || existingOwner) {
@@ -1456,14 +1498,21 @@ api.post('/scribbit', async (c) => {
         retriedScribbit &&
         (await getScribbitOwner(redis, scribbit.id)) === player.userId
       ) {
-        const [drawChargeProjection, rumbleScore] = await Promise.all([
-          loadDrawCharges(redis, player.userId, now.getTime()),
-          redis.zScore(getRumbleKey(retriedScribbit.bornDay), scribbit.id),
-        ]);
+        const [drawChargeProjection, rumbleScore, powerUpOffer] =
+          await Promise.all([
+            loadDrawCharges(redis, player.userId, now.getTime()),
+            redis.zScore(getRumbleKey(retriedScribbit.bornDay), scribbit.id),
+            getOrCreateBirthPowerUpOffer(
+              player.userId,
+              retriedScribbit,
+              now.getTime()
+            ),
+          ]);
         return c.json<SubmitScribbitResponse>({
           scribbit: retriedScribbit,
           drawCharges: drawChargeProjection.state,
           enteredRumble: rumbleScore !== undefined,
+          powerUpOffer,
         });
       }
       return conflict(
@@ -1476,87 +1525,23 @@ api.post('/scribbit', async (c) => {
     if (!committedScribbit) {
       throw new Error('Committed Scribbit could not be loaded.');
     }
+    const powerUpOffer = await getOrCreateBirthPowerUpOffer(
+      player.userId,
+      committedScribbit,
+      now.getTime()
+    );
     return c.json<SubmitScribbitResponse>(
       {
         scribbit: committedScribbit,
         drawCharges: commitResult.drawCharges,
         enteredRumble: commitResult.enteredRumble,
+        powerUpOffer,
       },
       201
     );
   } catch (error) {
     console.error('Submit Scribbit route failed:', error);
     return serverError(c, 'The ink would not dry. Try again soon.');
-  }
-});
-
-api.post('/care', async (c) => {
-  const player = await getCurrentPlayer();
-
-  if (!player) {
-    return unauthorized(c, 'Sign in to care for a Scribbit.');
-  }
-
-  const careRequest = readCareRequest(await readJsonBody(c));
-
-  if (!careRequest) {
-    return badRequest(c, 'Choose a valid Scribbit and care action.');
-  }
-
-  try {
-    const now = new Date();
-    const utcDateKey = formatUtcDateKey(now);
-    const dayNumber = await getWritableArenaDay(now);
-    if (!dayNumber) return arenaRolloverConflict(c);
-    const scribbit = await loadScribbit(
-      redis,
-      careRequest.scribbitId,
-      utcDateKey
-    );
-
-    if (!scribbit) {
-      return notFound(c, 'That Scribbit is not in the arena.');
-    }
-
-    if (scribbit.isFounding) {
-      return badRequest(
-        c,
-        'Founding Scribbits are already looked after by the arena.'
-      );
-    }
-
-    if (scribbit.status !== 'alive' || scribbit.expiresDay <= dayNumber) {
-      return notFound(c, 'That living Scribbit is not ready for care.');
-    }
-
-    if (!(await isScribbitOwnedByUser(redis, player.userId, scribbit.id))) {
-      return notFound(c, 'That Scribbit is not in your active roster.');
-    }
-
-    const careCommit = await commitDailyCareAction(redis, {
-      scribbitId: scribbit.id,
-      action: careRequest.action,
-      utcDateKey,
-      operationId: randomUUID(),
-      claimedAtMilliseconds: now.getTime(),
-    });
-
-    if (careCommit.status === 'already-claimed') {
-      return conflict(c, 'You already used that care action today.');
-    }
-    if (careCommit.status === 'target-unavailable') {
-      return notFound(c, 'That Scribbit slipped out of the arena.');
-    }
-
-    await runNonCriticalSideEffect('Daily play record', () =>
-      recordDailyPlay(redis, player.userId, now)
-    );
-    return c.json<CareResponse>({
-      scribbit: careCommit.scribbit,
-    });
-  } catch (error) {
-    console.error('Care route failed:', error);
-    return serverError(c, 'The snack bowl tipped over. Try again soon.');
   }
 });
 
@@ -1587,10 +1572,6 @@ registerPlayerMutatingGet('/spar-rivals', async (c) => {
     if (!challenger) {
       return notFound(c, 'That living Scribbit is not ready to spar.');
     }
-    if (await loadPendingPowerUpOffer(redis, player.userId, challenger.id)) {
-      return conflict(c, 'Choose the pending Power-Up before the next fight.');
-    }
-
     const founderChronicle = await loadPlayerFounderChronicle(player.userId);
     const forecast = await ensureForecastForDay(redis, dayNumber);
     const rivalRun = await getOrCreateRivalRun(redis, {
@@ -1774,6 +1755,9 @@ api.post('/spar', async (c) => {
           })
         );
       }
+    }
+    if (await loadPendingPowerUpOffer(redis, player.userId, challenger.id)) {
+      return conflict(c, 'Choose the pending Power-Up before the next fight.');
     }
     const authoritativeRivalRun = sparRequest.rivalRun
       ? await loadRivalRun(redis, player.userId)

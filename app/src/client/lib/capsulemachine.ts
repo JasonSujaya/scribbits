@@ -5,6 +5,7 @@
 //   common → a soft puff
 //   rare   → a gold burst
 //   epic   → a full-screen rainbow moment + hand-lettered banner
+//   legendary → the longest reveal with a crimson rarity frame
 // One or ten opens are supported; there is deliberately no 100-open action,
 // auto-repeat, near-miss reel, or paid banner. Duplicate Gear feeds Forge.
 
@@ -13,6 +14,7 @@ import { Scene } from 'phaser';
 import {
   CAPSULE_MAX_BATCH_SIZE,
   CAPSULE_RARITY_PERCENTAGES,
+  capsuleRarityRank,
 } from '../../shared/arena';
 import type {
   CapsuleProgress,
@@ -28,6 +30,7 @@ import {
   ghostButton,
   paperButtonPlate,
   paperIconButton,
+  stickerCard,
 } from './ui';
 import { RARITY_STYLE } from './pens';
 import { COSMETIC_BY_ID } from '../../shared/cosmetics';
@@ -42,7 +45,11 @@ import { CanvasActionOverlay, CanvasModalOverlay } from './overlay';
 import type { CanvasActionOverlayInput } from './overlay';
 import { bindPressInteractionEvents } from './pressinteraction';
 import { createStickerShine } from './stickerfxshader';
-import { INK_TOKEN_TEXTURE, SHOP_CHEST_TEXTURES } from './visualassets';
+import {
+  INK_TOKEN_TEXTURE,
+  SHOP_CHEST_TEXTURES,
+  SHOP_CLAW_MACHINE_SHELL_TEXTURE,
+} from './visualassets';
 import {
   capsuleOpenCost,
   planCapsuleOpenAffordance,
@@ -57,6 +64,10 @@ import {
 } from './capsulereveal';
 import { playSfx, setSfxCue } from './sfx';
 import { openInkEarningGuide, type InkEarningGuide } from './inkearningguide';
+import {
+  openCapsulePrizeGuide,
+  type CapsulePrizeGuide,
+} from './capsuleprizeguide';
 
 const DEPTH = 2500;
 const COLLECTION_BAR_WIDTH = 480;
@@ -64,12 +75,23 @@ const COLLECTION_BAR_HEIGHT = 22;
 const CAPSULE_ODDS_ACCESSIBLE_COPY =
   `Odds are ${CAPSULE_RARITY_PERCENTAGES.common} percent common, ` +
   `${CAPSULE_RARITY_PERCENTAGES.rare} percent rare, and ` +
-  `${CAPSULE_RARITY_PERCENTAGES.epic} percent epic.`;
+  `${CAPSULE_RARITY_PERCENTAGES.epic} percent epic, and ` +
+  `${CAPSULE_RARITY_PERCENTAGES.legendary} percent legendary.`;
 
 const FEATURED_GEAR_ID = 'comet-crayon-blade';
+const CLAW_MACHINE_SAMPLE_IDS = [
+  'tiny-sword',
+  'top-hat',
+  'comet-crayon-blade',
+  'star-eye-mask',
+  'party-hat',
+  'round-glasses',
+  'cardboard-shield',
+] as const;
 const CHEST_DISPLAY_WIDTH = 410;
 const CHEST_DISPLAY_HEIGHT = 430;
 const OPEN_CHEST_HORIZONTAL_SCALE = 1.086;
+const CLAW_MACHINE_SCALE = 1.1;
 const OPEN_CHEST_Y_OFFSET = -47;
 
 type ChestOpenCount = 1 | typeof CAPSULE_MAX_BATCH_SIZE;
@@ -93,6 +115,7 @@ export type CapsuleMachineOpts = {
   ink: number; // current ink balance
   nextCost: number; // server-authoritative current price
   progress: CapsuleProgress; // server-authoritative collection and pity snapshot
+  seasonName?: string | undefined; // current authoritative season shown by the prize guide
   // Perform the pull. The server owns price, inventory, and the final reward; the
   // machine only mirrors the returned presentation snapshot.
   onPull: (
@@ -131,6 +154,22 @@ type InkOpenButton = Readonly<{
   setEnabled: (enabled: boolean) => void;
 }>;
 
+type ClawMachine = Readonly<{
+  pullControl: InkOpenButton;
+  message: Phaser.GameObjects.Text;
+  actionButton: Phaser.GameObjects.Container;
+  actionRect: Readonly<{ x: number; y: number; width: number; height: number }>;
+  clawRig: Phaser.GameObjects.Container;
+  cable: Phaser.GameObjects.Rectangle;
+  clawHead: Phaser.GameObjects.Container;
+  leftArm: Phaser.GameObjects.Container;
+  rightArm: Phaser.GameObjects.Container;
+  windowContent: Phaser.GameObjects.Container;
+  controlGlow: Phaser.GameObjects.Arc;
+  homeX: number;
+  chuteX: number;
+}>;
+
 type CapsuleActionSurface = Readonly<{
   add: (input: CanvasActionOverlayInput) => HTMLButtonElement;
   addStatus: (initialMessage?: string) => HTMLElement;
@@ -147,12 +186,14 @@ function createEmbeddedCapsuleActions(
   overlay.addDescription(
     descriptionId,
     firstChestVisit
-      ? `Open your first earned-Ink chest. Its reward is equippable Gear and the server owns the price and reward. ${CAPSULE_ODDS_ACCESSIBLE_COPY}`
-      : `Spend battle-earned Ink to open one or ten reward chests containing Gear and styles. Tap the featured Loot Gear to preview its battle effect. Ten is the largest batch. The server owns every price, reward, and pity step. Reddit Gold Styles is disabled, cosmetic only, and coming soon. ${CAPSULE_ODDS_ACCESSIBLE_COPY}`
+      ? `Play the First Gear claw machine for your first earned-Ink reward. The visible Gear are possible examples, not a prediction. The first reward is equippable Gear and the server owns the price and reward. ${CAPSULE_ODDS_ACCESSIBLE_COPY}`
+      : `Spend battle-earned Ink at the Mystery Gear claw machine for one reward or a batch of ten. Ten is the largest batch. The server owns every price, reward, and pity step. ${CAPSULE_ODDS_ACCESSIBLE_COPY}`
   );
   overlay.setRootAttributes({
     role: 'region',
-    'aria-label': 'Mystery Ink chest',
+    'aria-label': firstChestVisit
+      ? 'First Gear claw machine'
+      : 'Mystery Gear claw machine',
     'aria-describedby': descriptionId,
   });
   return {
@@ -206,15 +247,31 @@ function createInkOpenButton(
   onActivate: () => void
 ): InkOpenButton {
   const container = scene.add.container(x, y);
+  const isPrimary = variant === 'primary';
   const plate = paperButtonPlate(scene, variant, width, height);
-  const actionText = label(scene, 0, -1, actionLabel, 25, UI.ink, true);
-  const token = scene.add.image(0, 0, INK_TOKEN_TEXTURE).setDisplaySize(31, 31);
-  const costText = label(scene, 0, -1, String(cost), 25, UI.ink, true);
+  const actionText = label(scene, 0, -20, actionLabel, 29, UI.ink, true);
+  const token = scene.add
+    .image(0, 22, INK_TOKEN_TEXTURE)
+    .setDisplaySize(29, 29);
+  const costText = label(scene, 0, 21, `${cost} INK`, 22, UI.ink, true);
   const content = scene.add.container(0, 0, [actionText, token, costText]);
+  const accents = isPrimary
+    ? [
+        scene.add.star(
+          -width / 2 + 35,
+          -height / 2 + 26,
+          4,
+          3,
+          10,
+          UI.creamHex
+        ),
+        scene.add.star(width / 2 - 35, -height / 2 + 26, 4, 3, 10, UI.creamHex),
+      ]
+    : [];
   const hitTarget = scene.add
     .rectangle(0, 0, width, height, 0xffffff, 0.001)
     .setInteractive({ useHandCursor: true });
-  container.add([plate, content, hitTarget]);
+  container.add([plate, ...accents, content, hitTarget]);
 
   const setContent = (
     nextActionLabel: string,
@@ -224,23 +281,18 @@ function createInkOpenButton(
     token.setVisible(nextCost !== null);
     costText.setVisible(nextCost !== null);
     if (nextCost === null) {
-      actionText.setPosition(0, -1);
+      actionText.setPosition(0, 0);
       return;
     }
-    costText.setText(String(nextCost));
-    const actionPriceGap = 12;
+    actionText.setPosition(0, -20);
+    costText.setText(`${nextCost} INK`);
     const tokenPriceGap = 7;
     const priceWidth = token.displayWidth + tokenPriceGap + costText.width;
-    const contentWidth = actionText.width + actionPriceGap + priceWidth;
-    const contentLeft = -contentWidth / 2;
-    actionText.setPosition(contentLeft + actionText.width / 2, -1);
-    token.setPosition(
-      contentLeft + actionText.width + actionPriceGap + token.displayWidth / 2,
-      0
-    );
+    const priceLeft = -priceWidth / 2;
+    token.setPosition(priceLeft + token.displayWidth / 2, 22);
     costText.setPosition(
       token.x + token.displayWidth / 2 + tokenPriceGap + costText.width / 2,
-      -1
+      21
     );
   };
   const setEnabled = (enabled: boolean): void => {
@@ -260,6 +312,232 @@ function createInkOpenButton(
   return { container, setContent, setEnabled };
 }
 
+function createClawMachine(
+  scene: Scene,
+  x: number,
+  y: number,
+  cost: number,
+  firstChestVisit: boolean,
+  onActivate: () => void
+): ClawMachine {
+  const container = scene.add.container(x, y).setScale(CLAW_MACHINE_SCALE);
+  const windowContent = scene.add.container(0, 0);
+  const pileShadow = scene.add.ellipse(0, 74, 350, 68, 0x160d16, 0.28);
+  windowContent.add(pileShadow);
+  const samplePositions = [
+    { x: -150, y: 58, angle: -14, scale: 0.76 },
+    { x: -100, y: 70, angle: 12, scale: 0.72 },
+    { x: -50, y: 54, angle: -8, scale: 0.78 },
+    { x: 0, y: 72, angle: 14, scale: 0.72 },
+    { x: 50, y: 55, angle: -13, scale: 0.76 },
+    { x: 100, y: 70, angle: 10, scale: 0.73 },
+    { x: 150, y: 57, angle: -7, scale: 0.76 },
+  ] as const;
+  CLAW_MACHINE_SAMPLE_IDS.forEach((id, index) => {
+    const entry = COSMETIC_BY_ID.get(id);
+    if (entry?.kind !== 'accessory') return;
+    const position = samplePositions[index];
+    if (!position) return;
+    const preview = scene.add
+      .container(position.x, position.y)
+      .setAngle(position.angle)
+      .setScale(position.scale);
+    preview.add(
+      scene.add
+        .circle(0, 0, 36, UI.creamHex, 0.98)
+        .setStrokeStyle(5, RARITY_STYLE[entry.rarity].color, 0.98)
+    );
+    renderCosmeticPreview({
+      scene,
+      parent: preview,
+      entry,
+      y: 0,
+      size: 58,
+      width: 58,
+      height: 58,
+      maxScale: 0.86,
+    });
+    windowContent.add(preview);
+  });
+  container.add(windowContent);
+
+  const rail = scene.add
+    .rectangle(0, -198, 350, 12, UI.creamHex, 1)
+    .setStrokeStyle(5, UI.inkHex, 0.94);
+  container.add(rail);
+
+  const homeX = -132;
+  const clawRig = scene.add.container(homeX, -204);
+  const carriage = scene.add
+    .rectangle(0, 0, 62, 30, UI.gold, 1)
+    .setStrokeStyle(5, UI.inkHex, 0.96);
+  const cable = scene.add
+    .rectangle(0, 14, 8, 50, UI.creamHex, 1)
+    .setOrigin(0.5, 0)
+    .setStrokeStyle(3, UI.inkHex, 0.92);
+  const clawHead = scene.add.container(0, 62);
+  const hubPaper = scene.add
+    .circle(0, 0, 23, UI.creamHex, 1)
+    .setStrokeStyle(5, UI.inkHex, 0.98);
+  const hub = scene.add
+    .circle(0, 0, 10, UI.gold, 1)
+    .setStrokeStyle(3, UI.inkHex, 0.88);
+  const leftArm = scene.add.container(-7, 10).setAngle(36);
+  const leftProng = scene.add
+    .rectangle(0, 0, 13, 64, UI.creamHex, 1)
+    .setOrigin(0.5, 0)
+    .setStrokeStyle(4, UI.inkHex, 0.96);
+  const leftTip = scene.add
+    .circle(0, 62, 7, UI.gold, 1)
+    .setStrokeStyle(3, UI.inkHex, 0.92);
+  leftArm.add([leftProng, leftTip]);
+  const rightArm = scene.add.container(7, 10).setAngle(-36);
+  const rightProng = scene.add
+    .rectangle(0, 0, 13, 64, UI.creamHex, 1)
+    .setOrigin(0.5, 0)
+    .setStrokeStyle(4, UI.inkHex, 0.96);
+  const rightTip = scene.add
+    .circle(0, 62, 7, UI.gold, 1)
+    .setStrokeStyle(3, UI.inkHex, 0.92);
+  rightArm.add([rightProng, rightTip]);
+  clawHead.add([leftArm, rightArm, hubPaper, hub]);
+  clawRig.add([carriage, cable, clawHead]);
+  container.add(clawRig);
+
+  const shell = scene.add
+    .image(0, 0, SHOP_CLAW_MACHINE_SHELL_TEXTURE)
+    .setDisplaySize(620, 930);
+  container.add(shell);
+
+  const heading = label(
+    scene,
+    0,
+    -350,
+    firstChestVisit ? 'FIRST GEAR CLAW' : 'MYSTERY GEAR CLAW',
+    29,
+    UI.cream,
+    true
+  );
+  const message = label(
+    scene,
+    0,
+    -312,
+    firstChestVisit ? 'FIRST PLAY GUARANTEED GEAR' : 'DROP CLAW FOR 1 REWARD',
+    17,
+    UI.goldText,
+    true
+  ).setWordWrapWidth(350);
+  container.add([heading, message]);
+
+  const actionButton = scene.add.container(0, 128);
+  const controlGlow = scene.add
+    .circle(0, 0, 56, UI.gold, 0.06)
+    .setStrokeStyle(5, UI.creamHex, 0.72);
+  const buttonLabel = label(scene, 0, 1, 'GO!', 18, UI.cream, true);
+  actionButton.add([controlGlow, buttonLabel]);
+  container.add(actionButton);
+
+  const actionCenterX = 0;
+  const actionText = label(
+    scene,
+    actionCenterX,
+    213,
+    'DROP CLAW',
+    27,
+    UI.cream,
+    true
+  );
+  actionText.setWordWrapWidth(260);
+  const token = scene.add
+    .image(-48, 254, INK_TOKEN_TEXTURE)
+    .setDisplaySize(28, 28);
+  const costText = label(scene, 0, 254, `${cost} INK`, 21, UI.cream, true);
+  container.add([actionText, token, costText]);
+
+  const placePrice = (): void => {
+    const gap = 7;
+    const priceWidth = token.displayWidth + gap + costText.width;
+    const priceLeft = actionCenterX - priceWidth / 2;
+    token.setX(priceLeft + token.displayWidth / 2);
+    costText.setX(token.x + token.displayWidth / 2 + gap + costText.width / 2);
+  };
+  const setContent = (
+    nextActionLabel: string,
+    nextCost: number | null
+  ): void => {
+    token.setVisible(nextCost !== null);
+    costText.setVisible(nextCost !== null);
+    if (nextCost !== null) {
+      actionText.setText(nextActionLabel.replace('OPEN CHEST', 'DROP CLAW'));
+      actionText.setPosition(actionCenterX, 213);
+      costText.setText(`${nextCost} INK`);
+      placePrice();
+    } else {
+      actionText.setText(
+        nextActionLabel.startsWith('DRAW ONCE') ? 'DRAW ONCE' : nextActionLabel
+      );
+      actionText.setPosition(actionCenterX, 237);
+    }
+  };
+  const setEnabled = (enabled: boolean): void => {
+    actionButton.setAlpha(enabled ? 1 : 0.46);
+    actionText.setAlpha(enabled ? 1 : 0.88);
+    token.setAlpha(enabled ? 1 : 0.72);
+    costText.setAlpha(enabled ? 1 : 0.84);
+    scene.tweens.killTweensOf(controlGlow);
+    controlGlow.setAlpha(enabled ? 0.16 : 0.04).setScale(1);
+    if (enabled && !prefersReducedMotion()) {
+      scene.tweens.add({
+        targets: controlGlow,
+        alpha: 0.38,
+        scaleX: 1.14,
+        scaleY: 1.14,
+        duration: 720,
+        yoyo: true,
+        repeat: -1,
+        ease: 'Sine.easeInOut',
+      });
+    }
+  };
+  setContent('DROP CLAW', cost);
+
+  const controlHitTarget = scene.add
+    .rectangle(0, 128, 150, 120, 0xffffff, 0.001)
+    .setInteractive({ useHandCursor: true });
+  container.add(controlHitTarget);
+  bindPressInteractionEvents(
+    controlHitTarget,
+    {
+      press: () => actionButton.setScale(0.9),
+      release: () => actionButton.setScale(1),
+      activate: onActivate,
+      pressOnHover: false,
+    },
+    { gameTarget: scene.input, shutdownTarget: scene.events }
+  );
+
+  return {
+    pullControl: { container, setContent, setEnabled },
+    message,
+    actionButton,
+    actionRect: {
+      x: x - 75 * CLAW_MACHINE_SCALE,
+      y: y + 68 * CLAW_MACHINE_SCALE,
+      width: 150 * CLAW_MACHINE_SCALE,
+      height: 120 * CLAW_MACHINE_SCALE,
+    },
+    clawRig,
+    cable,
+    clawHead,
+    leftArm,
+    rightArm,
+    windowContent,
+    controlGlow,
+    homeX,
+    chuteX: 0,
+  };
+}
+
 export function openCapsuleMachine(
   scene: Scene,
   opts: CapsuleMachineOpts
@@ -269,6 +547,7 @@ export function openCapsuleMachine(
   let nextCost = opts.nextCost;
   let progress = opts.progress;
   const firstChestVisit = progress.pullCount === 0;
+  const useClawMachine = opts.embedded === true;
   let pulling = false;
   let prizeOpen = false;
   let pendingOperationId: string | null = null;
@@ -279,6 +558,7 @@ export function openCapsuleMachine(
   let dismissPrizeAction: (() => void) | null = null;
   let featuredGearDetail: FeaturedGearDetail | null = null;
   let inkEarningGuide: InkEarningGuide | null = null;
+  let capsulePrizeGuide: CapsulePrizeGuide | null = null;
 
   const layer = scene.add
     .container(0, 0)
@@ -358,22 +638,56 @@ export function openCapsuleMachine(
     onActivate: openInkInfo,
   });
 
-  const featuredGearControl = drawBannerDeck(
+  let prizeGuideControl: HTMLButtonElement | null = null;
+  const openPrizeGuide = (): void => {
+    if (destroyed || pulling || prizeOpen || !prizeGuideControl) return;
+    capsulePrizeGuide?.destroy();
+    capsulePrizeGuide = openCapsulePrizeGuide(
+      scene,
+      opts.seasonName,
+      prizeGuideControl,
+      () => (capsulePrizeGuide = null)
+    );
+  };
+  const prizeGuideButtonX = width / 2 - 138;
+  const prizeGuideButton = paperIconButton(
     scene,
-    layer,
-    modalActions,
-    width,
-    242,
-    firstChestVisit,
-    openFeaturedGearDetail
-  );
+    prizeGuideButtonX,
+    140,
+    'gift',
+    openPrizeGuide,
+    58,
+    UI.creamHex,
+    UI.gold,
+    58
+  )
+    .setScrollFactor(0)
+    .setDepth(DEPTH + 2);
+  layer.add(prizeGuideButton);
+  prizeGuideControl = modalActions.add({
+    label: `View ${opts.seasonName ?? 'current season'} claw-machine prizes and odds`,
+    rect: { x: prizeGuideButtonX - 29, y: 111, width: 58, height: 58 },
+    onActivate: openPrizeGuide,
+  });
+
+  const featuredGearControl = useClawMachine
+    ? null
+    : drawBannerDeck(
+        scene,
+        layer,
+        modalActions,
+        width,
+        242,
+        openFeaturedGearDetail
+      );
 
   // Permanent collection progress lives above the chest so it remains
   // readable while prize cards animate over the lower half of the portrait UI.
   const progressCard = scene.add
     .container(width / 2, 410)
     .setScrollFactor(0)
-    .setDepth(DEPTH + 2);
+    .setDepth(DEPTH + 2)
+    .setVisible(!useClawMachine);
   const progressPaper = scene.add
     .rectangle(0, 0, width - 150, 92, UI.creamHex, 0.96)
     .setStrokeStyle(3, UI.inkHex, 0.85);
@@ -424,9 +738,7 @@ export function openCapsuleMachine(
       `${discoveredCount}/${collectionTotal} STYLES FOUND`
     );
     pityText.setText(
-      firstChestVisit
-        ? 'FIRST CHEST STARTS YOUR COLLECTION'
-        : `EPIC IN ${pityRemaining} OR SOONER`
+      firstChestVisit ? '' : `EPIC IN ${pityRemaining} OR SOONER`
     );
     collectionFill.setVisible(collectionRatio > 0);
     scene.tweens.killTweensOf(collectionFill);
@@ -453,28 +765,55 @@ export function openCapsuleMachine(
 
   refreshProgress(false);
 
+  let primaryActionEnabled = ink >= nextCost;
+  let secondaryActionEnabled =
+    ink >= capsuleOpenCost(CAPSULE_MAX_BATCH_SIZE, nextCost);
+  const clawMachineY = Math.min(620, height - NAV_SAFE - 520);
+  const clawMachine = useClawMachine
+    ? createClawMachine(
+        scene,
+        width / 2,
+        clawMachineY,
+        nextCost,
+        firstChestVisit,
+        () => {
+          if (primaryActionEnabled) void openChests(1);
+        }
+      )
+    : null;
+
   // --- The hand-drawn chest -------------------------------------------------
   const chestY = Math.min(
     height - NAV_SAFE - 360,
-    Math.max(720, height * 0.52)
+    useClawMachine ? clawMachineY : Math.max(720, height * 0.52)
   );
   const chest = createChestArt(scene, width / 2, chestY);
-  chest.container.setDepth(DEPTH + 1).setScrollFactor(0);
+  const chestRestingScale = 1;
+  chest.container
+    .setDepth(DEPTH + 1)
+    .setScrollFactor(0)
+    .setScale(chestRestingScale)
+    .setVisible(!useClawMachine);
   layer.add(chest.container);
-  chest.container.setSize(380, 310).setInteractive({ useHandCursor: true });
-  bindPressInteractionEvents(
-    chest.container,
-    {
-      press: () => chest.container.setScale(0.96),
-      release: () => chest.container.setScale(1),
-      activate: () => void openChests(1),
-      pressOnHover: false,
-    },
-    { gameTarget: scene.input, shutdownTarget: scene.events }
-  );
+  if (!useClawMachine) {
+    chest.container.setSize(380, 310).setInteractive({ useHandCursor: true });
+    bindPressInteractionEvents(
+      chest.container,
+      {
+        press: () => chest.container.setScale(chestRestingScale * 0.96),
+        release: () => chest.container.setScale(chestRestingScale),
+        activate: () => void openChests(1),
+        pressOnHover: false,
+      },
+      { gameTarget: scene.input, shutdownTarget: scene.events }
+    );
+  }
 
   // --- Open buttons + copy --------------------------------------------------
-  const actionY = Math.min(height - NAV_SAFE - 84, chestY + 345);
+  const actionY = Math.min(
+    height - NAV_SAFE - 84,
+    chestY + (useClawMachine ? 315 * CLAW_MACHINE_SCALE : 345)
+  );
   const helper = label(
     scene,
     width / 2,
@@ -488,33 +827,41 @@ export function openCapsuleMachine(
     .setDepth(DEPTH + 2);
   helper.setStroke(UI.ink, 4);
   helper.setWordWrapWidth(width - 190);
+  helper.setVisible(!useClawMachine);
   layer.add(helper);
+
+  const setActionMessage = (text: string, color: string): void => {
+    if (clawMachine) {
+      clawMachine.message.setText(text).setColor(color);
+      return;
+    }
+    helper.setText(text).setColor(color);
+  };
 
   const actionGap = 18;
   const availableActionWidth = width - 160;
-  const actionWidth = firstChestVisit
-    ? availableActionWidth
+  const actionWidth = useClawMachine
+    ? Math.min(320, availableActionWidth)
     : (width - 178 - actionGap) / 2;
-  const actionHeight = firstChestVisit ? 112 : 100;
-  const oneButtonX = firstChestVisit ? width / 2 : 80 + actionWidth / 2;
+  const actionHeight = 100;
+  const oneButtonX = useClawMachine ? width / 2 : 80 + actionWidth / 2;
   const oneButtonLeft = oneButtonX - actionWidth / 2;
-  const tenButtonX = width - 80 - actionWidth / 2;
-  let primaryActionEnabled = ink >= nextCost;
-  let secondaryActionEnabled =
-    ink >= capsuleOpenCost(CAPSULE_MAX_BATCH_SIZE, nextCost);
-  const openOneButton = createInkOpenButton(
-    scene,
-    oneButtonX,
-    actionY,
-    actionWidth,
-    actionHeight,
-    'primary',
-    'OPEN ×1',
-    nextCost,
-    () => {
-      if (primaryActionEnabled) void openChests(1);
-    }
-  );
+  const tenButtonX = useClawMachine ? width / 2 : width - 80 - actionWidth / 2;
+  const openOneButton =
+    clawMachine?.pullControl ??
+    createInkOpenButton(
+      scene,
+      oneButtonX,
+      actionY,
+      actionWidth,
+      actionHeight,
+      'primary',
+      'OPEN CHEST',
+      nextCost,
+      () => {
+        if (primaryActionEnabled) void openChests(1);
+      }
+    );
   openOneButton.container.setScrollFactor(0).setDepth(DEPTH + 2);
   const openTenButton = createInkOpenButton(
     scene,
@@ -523,7 +870,7 @@ export function openCapsuleMachine(
     actionWidth,
     actionHeight,
     'secondary',
-    'OPEN ×10',
+    'OPEN 10',
     capsuleOpenCost(CAPSULE_MAX_BATCH_SIZE, nextCost),
     () => {
       if (secondaryActionEnabled) void openChests(CAPSULE_MAX_BATCH_SIZE);
@@ -536,8 +883,10 @@ export function openCapsuleMachine(
   layer.add([openOneButton.container, openTenButton.container]);
 
   const openOneControl = modalActions.add({
-    label: `Open one Mystery Ink chest for ${nextCost} Ink`,
-    rect: {
+    label: useClawMachine
+      ? `${firstChestVisit ? 'Play the First Gear' : 'Play the Mystery Gear'} claw machine for ${nextCost} Ink`
+      : `Open one Mystery Ink chest for ${nextCost} Ink`,
+    rect: clawMachine?.actionRect ?? {
       x: oneButtonLeft,
       y: actionY - actionHeight / 2,
       width: actionWidth,
@@ -639,14 +988,20 @@ export function openCapsuleMachine(
       pendingBatchTarget,
       completedBatchPulls.length
     );
+    const firstVisitNeedsInk =
+      firstChestVisit && !affordance.retrying && !affordance.primaryEnabled;
     openOneButton.setContent(
-      affordance.retrying ? `RETRY ×${affordance.remainingCount}` : 'OPEN ×1',
-      affordance.requiredInk
+      firstVisitNeedsInk
+        ? `DRAW ONCE TO EARN ${nextCost} INK`
+        : affordance.retrying
+          ? `RETRY ${affordance.remainingCount}`
+          : 'OPEN CHEST',
+      firstVisitNeedsInk ? null : affordance.requiredInk
     );
     openTenButton.setContent(
       affordance.retrying
         ? `SAVED ${completedBatchPulls.length}/${pendingBatchTarget}`
-        : 'OPEN ×10',
+        : 'OPEN 10',
       affordance.retrying
         ? null
         : capsuleOpenCost(CAPSULE_MAX_BATCH_SIZE, nextCost)
@@ -664,31 +1019,35 @@ export function openCapsuleMachine(
     }
     openOneControl.setAttribute(
       'aria-label',
-      affordance.primaryAccessibleLabel
+      useClawMachine
+        ? `${firstChestVisit ? 'Play the First Gear' : 'Play the Mystery Gear'} claw machine for ${affordance.requiredInk ?? nextCost} Ink`
+        : affordance.primaryAccessibleLabel
     );
     openTenControl.setAttribute(
       'aria-label',
       affordance.secondaryAccessibleLabel
     );
     if (!affordance.primaryEnabled && !pulling) {
-      helper.setText(
-        firstChestVisit
-          ? `EARN ${Math.max(0, affordance.requiredInk - ink)} MORE INK BY PLAYING`
-          : `EARN ${Math.max(0, affordance.requiredInk - ink)} MORE INK`
+      setActionMessage(
+        useClawMachine
+          ? `EARN ${nextCost} INK · THEN PLAY`
+          : 'PLAY TO EARN MORE INK',
+        useClawMachine ? UI.cream : UI.coralText
       );
-      helper.setColor(UI.coralText);
     } else if (affordance.retrying && !pulling) {
-      helper.setText(
-        `RETRY ${affordance.remainingCount} · SAFE PROGRESS ${completedBatchPulls.length}/${pendingBatchTarget}`
+      setActionMessage(
+        `RETRY ${affordance.remainingCount} · SAFE PROGRESS ${completedBatchPulls.length}/${pendingBatchTarget}`,
+        UI.cream
       );
-      helper.setColor(UI.cream);
     } else if (!pulling) {
-      helper.setText(
+      setActionMessage(
         firstChestVisit
-          ? 'FIRST CHEST GUARANTEES EQUIPPABLE GEAR'
-          : '10× MAX · EARN INK BY PLAYING'
+          ? 'FIRST PLAY GUARANTEED GEAR'
+          : useClawMachine
+            ? 'DROP CLAW · OR PLAY 10 BELOW'
+            : '10× MAX · EARN INK BY PLAYING',
+        UI.cream
       );
-      helper.setColor(UI.cream);
     }
   }
 
@@ -708,8 +1067,12 @@ export function openCapsuleMachine(
 
   refreshAffordance();
   modalActions.focusInitial(
-    ink >= nextCost ? openOneControl : (closeControl ?? openOneControl)
+    ink >= nextCost
+      ? openOneControl
+      : (inkInfoControl ?? closeControl ?? openOneControl)
   );
+
+  const actionTarget = clawMachine?.pullControl.container ?? chest.container;
 
   async function openChests(requestedCount: ChestOpenCount): Promise<void> {
     if (pulling || prizeOpen) return;
@@ -717,7 +1080,7 @@ export function openCapsuleMachine(
     const remainingCount = targetCount - completedBatchPulls.length;
     const requiredInk = capsuleOpenCost(remainingCount, nextCost);
     if (ink < requiredInk) {
-      await nudgeChest(scene, chest.container);
+      await nudgeChest(scene, actionTarget);
       return;
     }
     pendingBatchTarget = targetCount;
@@ -726,11 +1089,24 @@ export function openCapsuleMachine(
     openOneControl.disabled = true;
     openTenControl.disabled = true;
     if (featuredGearControl) featuredGearControl.disabled = true;
-    helper.setText(targetCount === 1 ? 'SHAKE THE CHEST…' : 'CHARGING ×10…');
-    helper.setColor(UI.cream);
-    statusAnnouncement.textContent = `Opening ${targetCount} Mystery Ink ${targetCount === 1 ? 'chest' : 'chests'}.`;
+    setActionMessage(
+      useClawMachine
+        ? 'CLAW SEARCHING…'
+        : targetCount === 1
+          ? 'SHAKE THE CHEST…'
+          : 'CHARGING ×10…',
+      UI.cream
+    );
+    statusAnnouncement.textContent = useClawMachine
+      ? 'Claw searching. Opening one Mystery Ink chest.'
+      : `Opening ${targetCount} Mystery Ink ${targetCount === 1 ? 'chest' : 'chests'}.`;
 
-    await shakeChest(scene, chest.container, targetCount);
+    const stopClawSearch = clawMachine
+      ? startClawSearch(scene, clawMachine)
+      : null;
+    if (!clawMachine) {
+      await shakeChest(scene, chest.container, targetCount);
+    }
     if (destroyed || !scene.sys.isActive()) return;
 
     while (completedBatchPulls.length < targetCount) {
@@ -743,15 +1119,18 @@ export function openCapsuleMachine(
       }
       if (destroyed || !scene.sys.isActive()) return;
       if ('error' in result) {
+        stopClawSearch?.();
+        if (clawMachine) resetClawMachine(scene, clawMachine);
         pulling = false;
         refreshAffordance();
-        helper.setText(
-          `${completedBatchPulls.length}/${targetCount} OPENED · RETRY ${targetCount - completedBatchPulls.length}`
+        setActionMessage(
+          `${completedBatchPulls.length}/${targetCount} OPENED · RETRY ${targetCount - completedBatchPulls.length}`,
+          UI.coralText
         );
-        helper.setColor(UI.coralText);
         statusAnnouncement.textContent = `${result.error} ${completedBatchPulls.length} of ${targetCount} opens are safely recorded. Retry resumes the same open.`;
         return;
       }
+      stopClawSearch?.();
       ink = result.ink;
       nextCost = result.nextCost;
       progress = result.progress;
@@ -761,12 +1140,19 @@ export function openCapsuleMachine(
         scene,
         layer,
         inkWallet.container,
-        chest.container,
+        actionTarget,
         completedBatchPulls.length
       );
+      if (clawMachine) {
+        await animateClawCatch(scene, clawMachine, result.pull);
+        if (destroyed || !scene.sys.isActive()) return;
+      }
       completedBatchPulls.push(result.pull);
       pendingOperationId = null;
-      helper.setText(`${completedBatchPulls.length}/${targetCount} OPENED`);
+      setActionMessage(
+        `${completedBatchPulls.length}/${targetCount} OPENED`,
+        UI.cream
+      );
       statusAnnouncement.textContent = `Opened ${completedBatchPulls.length} of ${targetCount}.`;
     }
     refreshProgress(true);
@@ -774,7 +1160,12 @@ export function openCapsuleMachine(
     completedBatchPulls = [];
     pendingBatchTarget = null;
     opts.onTransactionLockChange?.(false);
-    await openChest(scene, chest, highestRarity(revealedPulls));
+    const revealRarity = highestRarity(revealedPulls);
+    if (clawMachine) {
+      await celebrateClawMachine(scene, clawMachine, revealRarity);
+    } else {
+      await openChest(scene, chest, revealRarity);
+    }
     if (destroyed || !scene.sys.isActive()) return;
     pulling = false;
     refreshAffordance();
@@ -786,7 +1177,7 @@ export function openCapsuleMachine(
     const onPrizeDismissed = (): void => {
       dismissPrizeAction = null;
       prizeOpen = false;
-      resetChest(chest);
+      if (!useClawMachine) resetChest(chest);
       if (!opts.onViewCollection) {
         close();
         return;
@@ -829,7 +1220,8 @@ export function openCapsuleMachine(
       const summary = summarizeCapsuleBatch(revealedPulls);
       statusAnnouncement.textContent =
         `Ten chests opened: ${summary.common} common, ${summary.rare} rare, ` +
-        `${summary.epic} epic, and ${summary.newItems} new styles. ` +
+        `${summary.epic} epic, ${summary.legendary} legendary, and ` +
+        `${summary.newItems} new styles. ` +
         `Your Bag now has ${progress.discoveredCount} found styles.`;
     }
     acknowledgementControl.setAttribute(
@@ -855,7 +1247,8 @@ export function openCapsuleMachine(
           const summary = summarizeCapsuleBatch(revealedPulls);
           statusAnnouncement.textContent =
             `All ten rewards revealed. ${summary.common} common, ` +
-            `${summary.rare} rare, ${summary.epic} epic, and ` +
+            `${summary.rare} rare, ${summary.epic} epic, ` +
+            `${summary.legendary} legendary, and ` +
             `${summary.newItems} new styles.`;
           setPrizeControlsVisible(true, true);
           modalActions.focusInitial(
@@ -886,12 +1279,12 @@ export function openCapsuleMachine(
     if (prizeOpen && destination === 'machine') return;
     if (pulling || pendingOperationId || pendingBatchTarget) {
       closeRequested = true;
-      helper.setText(
+      setActionMessage(
         pulling
           ? 'Finishing the paid chest before closing…'
-          : 'Tap RETRY once to safely reconcile this chest.'
+          : 'Tap RETRY once to safely reconcile this chest.',
+        UI.coralText
       );
-      helper.setColor(UI.coralText);
       statusAnnouncement.textContent = pulling
         ? 'Finishing the paid chest before closing.'
         : 'Retry the same open to reconcile it before closing.';
@@ -915,6 +1308,9 @@ export function openCapsuleMachine(
     const guide = inkEarningGuide;
     inkEarningGuide = null;
     guide?.destroy();
+    const prizeGuide = capsulePrizeGuide;
+    capsulePrizeGuide = null;
+    prizeGuide?.destroy();
     modalActions.destroy();
     opts.onTransactionLockChange?.(false);
     if (layer.active) layer.destroy(true);
@@ -931,7 +1327,6 @@ function drawBannerDeck(
   actions: CapsuleActionSurface,
   width: number,
   y: number,
-  firstChestVisit: boolean,
   onInspect: (
     entry: CosmeticGearCatalogEntry,
     trigger: HTMLButtonElement
@@ -939,48 +1334,46 @@ function drawBannerDeck(
 ): HTMLButtonElement | null {
   const margin = 42;
   const activeWidth = width - margin * 2;
-  const active = scene.add
-    .container(margin + activeWidth / 2, y)
+  const activeHeight = 148;
+  const active = stickerCard(
+    scene,
+    margin + activeWidth / 2,
+    y,
+    activeWidth,
+    activeHeight,
+    { gold: true, tapeWidth: 62, tilt: -0.35 }
+  )
     .setScrollFactor(0)
     .setDepth(DEPTH + 2);
-  const activePaper = scene.add
-    .rectangle(0, 0, activeWidth, 126, UI.creamHex, 0.98)
-    .setStrokeStyle(4, UI.goldHex, 1);
-  const activeTitle = label(
-    scene,
-    -activeWidth / 2 + 104,
-    -31,
-    firstChestVisit ? 'FIRST CHEST' : 'LOOT',
-    34,
-    UI.ink,
-    true
-  );
+  const contentLeft = -activeWidth / 2 + 42;
+  const activeTitle = label(scene, contentLeft, -40, 'LOOT', 32, UI.ink, true);
+  activeTitle.setOrigin(0, 0.5);
   const activeSubhead = label(
     scene,
-    -activeWidth / 2 + 180,
-    5,
-    firstChestVisit
-      ? 'GUARANTEED EQUIPPABLE GEAR'
-      : 'TAP GLOWING GEAR FOR EFFECT',
+    contentLeft,
+    0,
+    'TAP GLOWING GEAR FOR EFFECT',
     18,
     UI.coralText,
     true
   );
+  activeSubhead.setOrigin(0, 0.5);
   const odds = label(
     scene,
-    0,
-    45,
-    `${CAPSULE_RARITY_PERCENTAGES.common}% COMMON · ${CAPSULE_RARITY_PERCENTAGES.rare}% RARE · ${CAPSULE_RARITY_PERCENTAGES.epic}% EPIC`,
-    17,
+    contentLeft,
+    39,
+    `${CAPSULE_RARITY_PERCENTAGES.common}% COMMON · ${CAPSULE_RARITY_PERCENTAGES.rare}% RARE · ${CAPSULE_RARITY_PERCENTAGES.epic}% EPIC · ${CAPSULE_RARITY_PERCENTAGES.legendary}% LEGENDARY`,
+    15,
     UI.inkSoft,
     true
   );
-  active.add([activePaper, activeTitle, activeSubhead, odds]);
+  odds.setOrigin(0, 0.5);
+  active.add([activeTitle, activeSubhead, odds]);
   const featuredEntry = COSMETIC_BY_ID.get(FEATURED_GEAR_ID);
   let featuredControl: HTMLButtonElement | null = null;
   if (featuredEntry?.kind === 'accessory') {
-    const featuredX = activeWidth / 2 - 78;
-    const featuredY = -15;
+    const featuredX = activeWidth / 2 - 76;
+    const featuredY = -8;
     const featured = scene.add.container(featuredX, featuredY);
     const aura = scene.add
       .circle(0, 0, 54, UI.gold, 0.15)
@@ -1055,7 +1448,7 @@ function drawBannerDeck(
 
   const futureWidth = width - 190;
   const future = scene.add
-    .container(width / 2, y + 94)
+    .container(width / 2, y + 106)
     .setScrollFactor(0)
     .setDepth(DEPTH + 2);
   const futurePaper = scene.add
@@ -1067,9 +1460,7 @@ function drawBannerDeck(
       scene,
       0,
       0,
-      firstChestVisit
-        ? 'EQUIP YOUR REWARD IN BAG'
-        : 'REDDIT GOLD STYLES · COSMETIC ONLY · COMING SOON',
+      'REDDIT GOLD STYLES · COSMETIC ONLY · COMING SOON',
       16,
       '#fff2d8',
       true
@@ -1094,9 +1485,11 @@ function createChestArt(scene: Scene, x: number, y: number): ChestArt {
 }
 
 function highestRarity(pulls: readonly CapsulePull[]): CapsuleRarity {
-  if (pulls.some((pull) => pull.rarity === 'epic')) return 'epic';
-  if (pulls.some((pull) => pull.rarity === 'rare')) return 'rare';
-  return 'common';
+  return pulls.reduce<CapsuleRarity>((highest, pull) => {
+    return capsuleRarityRank(pull.rarity) > capsuleRarityRank(highest)
+      ? pull.rarity
+      : highest;
+  }, 'common');
 }
 
 function nudgeChest(
@@ -1112,6 +1505,225 @@ function nudgeChest(
       yoyo: true,
       repeat: 2,
       onComplete: () => resolve(),
+    });
+  });
+}
+
+function playClawTween(
+  scene: Scene,
+  config: Phaser.Types.Tweens.TweenBuilderConfig
+): Promise<void> {
+  return new Promise((resolve) => {
+    scene.tweens.add({
+      ...config,
+      onComplete: () => resolve(),
+    });
+  });
+}
+
+function resetClawMachine(scene: Scene, machine: ClawMachine): void {
+  scene.tweens.killTweensOf(machine.clawRig);
+  scene.tweens.killTweensOf(machine.cable);
+  scene.tweens.killTweensOf(machine.clawHead);
+  scene.tweens.killTweensOf(machine.leftArm);
+  scene.tweens.killTweensOf(machine.rightArm);
+  machine.clawRig.setX(machine.homeX);
+  machine.cable.setScale(1);
+  machine.clawHead.setY(62);
+  machine.leftArm.setAngle(36);
+  machine.rightArm.setAngle(-36);
+}
+
+function startClawSearch(scene: Scene, machine: ClawMachine): () => void {
+  resetClawMachine(scene, machine);
+  if (prefersReducedMotion()) return () => undefined;
+  scene.tweens.add({
+    targets: machine.clawRig,
+    x: 132,
+    duration: 620,
+    yoyo: true,
+    repeat: -1,
+    ease: 'Sine.easeInOut',
+  });
+  return () => scene.tweens.killTweensOf(machine.clawRig);
+}
+
+function clawTargetX(rewardId: string): number {
+  const hash = [...rewardId].reduce(
+    (value, character) => (value * 31 + character.charCodeAt(0)) >>> 0,
+    7
+  );
+  return -146 + (hash % 293);
+}
+
+async function animateClawCatch(
+  scene: Scene,
+  machine: ClawMachine,
+  pull: CapsulePull
+): Promise<void> {
+  if (prefersReducedMotion()) {
+    resetClawMachine(scene, machine);
+    return;
+  }
+
+  const targetX = clawTargetX(pull.id);
+  await playClawTween(scene, {
+    targets: machine.clawRig,
+    x: targetX,
+    duration: 300,
+    ease: 'Cubic.easeOut',
+  });
+  await Promise.all([
+    playClawTween(scene, {
+      targets: machine.cable,
+      scaleY: 4.35,
+      duration: 430,
+      ease: 'Sine.easeInOut',
+    }),
+    playClawTween(scene, {
+      targets: machine.clawHead,
+      y: 229,
+      duration: 430,
+      ease: 'Sine.easeInOut',
+    }),
+    playClawTween(scene, {
+      targets: machine.leftArm,
+      angle: 48,
+      duration: 210,
+      ease: 'Sine.easeOut',
+    }),
+    playClawTween(scene, {
+      targets: machine.rightArm,
+      angle: -48,
+      duration: 210,
+      ease: 'Sine.easeOut',
+    }),
+  ]);
+  playSfx('reward.reveal');
+  await Promise.all([
+    playClawTween(scene, {
+      targets: machine.leftArm,
+      angle: 13,
+      duration: 170,
+      ease: 'Back.easeOut',
+    }),
+    playClawTween(scene, {
+      targets: machine.rightArm,
+      angle: -13,
+      duration: 170,
+      ease: 'Back.easeOut',
+    }),
+  ]);
+
+  const caughtReward = scene.add.container(0, 55).setScale(0.18).setAlpha(0);
+  const entry = COSMETIC_BY_ID.get(pull.id);
+  const rarityColor = RARITY_STYLE[pull.rarity].color;
+  caughtReward.add(
+    scene.add.circle(0, 0, 40, UI.creamHex, 1).setStrokeStyle(6, rarityColor, 1)
+  );
+  if (entry?.kind === 'accessory') {
+    renderCosmeticPreview({
+      scene,
+      parent: caughtReward,
+      entry,
+      y: 0,
+      size: 62,
+      width: 62,
+      height: 62,
+      maxScale: 0.9,
+    });
+  } else {
+    caughtReward.add(
+      scene.add
+        .star(0, 0, 5, 12, 29, rarityColor, 1)
+        .setStrokeStyle(4, UI.inkHex)
+    );
+  }
+  machine.clawHead.add(caughtReward);
+  await playClawTween(scene, {
+    targets: caughtReward,
+    scaleX: 0.78,
+    scaleY: 0.78,
+    alpha: 1,
+    duration: 170,
+    ease: 'Back.easeOut',
+  });
+  await Promise.all([
+    playClawTween(scene, {
+      targets: machine.cable,
+      scaleY: 1,
+      duration: 390,
+      ease: 'Sine.easeInOut',
+    }),
+    playClawTween(scene, {
+      targets: machine.clawHead,
+      y: 62,
+      duration: 390,
+      ease: 'Sine.easeInOut',
+    }),
+  ]);
+  await playClawTween(scene, {
+    targets: machine.clawRig,
+    x: machine.chuteX,
+    duration: 360,
+    ease: 'Cubic.easeInOut',
+  });
+  await Promise.all([
+    playClawTween(scene, {
+      targets: machine.leftArm,
+      angle: 42,
+      duration: 180,
+      ease: 'Sine.easeOut',
+    }),
+    playClawTween(scene, {
+      targets: machine.rightArm,
+      angle: -42,
+      duration: 180,
+      ease: 'Sine.easeOut',
+    }),
+    playClawTween(scene, {
+      targets: caughtReward,
+      y: 205,
+      scaleX: 0.48,
+      scaleY: 0.48,
+      alpha: 0,
+      duration: 300,
+      ease: 'Cubic.easeIn',
+    }),
+  ]);
+  caughtReward.destroy();
+  resetClawMachine(scene, machine);
+}
+
+function celebrateClawMachine(
+  scene: Scene,
+  machine: ClawMachine,
+  rarity: CapsuleRarity
+): Promise<void> {
+  playSfx('reward.reveal');
+  const container = machine.pullControl.container;
+  const flash = scene.add
+    .circle(0, -42, 276, RARITY_STYLE[rarity].color, 0.24)
+    .setStrokeStyle(8, RARITY_STYLE[rarity].color, 0.72);
+  container.addAt(flash, 0);
+  if (prefersReducedMotion()) {
+    flash.setAlpha(0.52);
+    return Promise.resolve();
+  }
+  flash.setScale(0.72).setAlpha(0);
+  return new Promise((resolve) => {
+    scene.tweens.add({
+      targets: flash,
+      scaleX: 1.18,
+      scaleY: 1.18,
+      alpha: 0.62,
+      duration: 280,
+      yoyo: true,
+      ease: 'Sine.easeOut',
+      onComplete: () => {
+        flash.destroy();
+        resolve();
+      },
     });
   });
 }
@@ -1151,6 +1763,8 @@ function shakeChest(
 ): Promise<void> {
   if (prefersReducedMotion()) return Promise.resolve();
   const startY = chest.y;
+  const startScaleX = chest.scaleX;
+  const startScaleY = chest.scaleY;
   const isTenOpen = openCount === CAPSULE_MAX_BATCH_SIZE;
   return new Promise((resolve) => {
     scene.tweens.add({
@@ -1164,7 +1778,7 @@ function shakeChest(
       repeat: isTenOpen ? 7 : 4,
       ease: 'Sine.easeInOut',
       onComplete: () => {
-        chest.setAngle(0).setY(startY).setScale(1);
+        chest.setAngle(0).setY(startY).setScale(startScaleX, startScaleY);
         resolve();
       },
     });
@@ -1388,7 +2002,7 @@ function revealPrize(
       0,
       -35,
       pull.name,
-      pull.rarity === 'epic' ? 40 : 34,
+      pull.rarity === 'legendary' ? 42 : pull.rarity === 'epic' ? 40 : 34,
       UI.ink,
       true
     ).setWordWrapWidth(cardWidth - 72)
@@ -1621,7 +2235,7 @@ function revealBatchPrizes(
   let closingPrize = false;
   let revealComplete = false;
   let revealedCount = 0;
-  let epicCelebrated = false;
+  let highRarityCelebrated = false;
   let actionsShown = false;
   const scheduledEvents: Phaser.Time.TimerEvent[] = [];
 
@@ -1715,13 +2329,21 @@ function revealBatchPrizes(
         scaleY: 1,
         alpha: 1,
         angle: 0,
-        duration: pull.rarity === 'epic' ? 520 : 360,
+        duration:
+          pull.rarity === 'legendary'
+            ? 640
+            : pull.rarity === 'epic'
+              ? 520
+              : 360,
         ease: 'Back.easeOut',
       });
       const burstX = width / 2 + tile.x;
       const burstY = cardCenterY + tile.y;
-      if (pull.rarity === 'epic' && !epicCelebrated) {
-        epicCelebrated = true;
+      if (
+        (pull.rarity === 'legendary' || pull.rarity === 'epic') &&
+        !highRarityCelebrated
+      ) {
+        highRarityCelebrated = true;
         rainbowMoment(scene, revealLayer);
       } else if (pull.rarity === 'rare') {
         goldBurst(scene, revealLayer, burstX, burstY);
@@ -1739,7 +2361,7 @@ function revealBatchPrizes(
     tiles.forEach((_tile, index) => revealTile(index));
     revealComplete = true;
     revealProgress.setText(
-      `${summary.epic} EPIC · ${summary.rare} RARE · ${summary.newItems} NEW`
+      `${summary.legendary} LEGENDARY · ${summary.epic} EPIC · ${summary.rare} RARE · ${summary.newItems} NEW`
     );
     showPrizeActions();
     options.onBatchRevealComplete?.();

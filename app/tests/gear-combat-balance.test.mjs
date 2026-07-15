@@ -56,8 +56,6 @@ const makeFighter = (id, stats, loadout, gearRanks = {}) => ({
   upgrades: [],
   level: 1,
   xp: 0,
-  mood: 'happy',
-  careDoneToday: [],
   legacy: null,
 });
 
@@ -99,7 +97,7 @@ test('Gear resolution keeps the 100-point drawing identity in current transcript
     100
   );
   assert.equal(combatSelection.selectPrimaryPower(geared.stats), 'nib_halo');
-  assert.equal(report.simulation.version, 6);
+  assert.equal(report.simulation.version, 7);
   assert.equal(
     report.simulation.fighters[0].gear.techniques[0].leadGearId,
     'tiny-sword'
@@ -113,7 +111,7 @@ test('Gear resolution keeps the 100-point drawing identity in current transcript
   assert.equal(battleStore.isBattleReport({ ...report, kind: 'boss' }), false);
 
   const rumble = battle.simulate(geared, plain, 41, balancedForecast, 'rumble');
-  assert.equal(rumble.simulation.version, 6);
+  assert.equal(rumble.simulation.version, 7);
   assert.equal(rumble.simulation.fighters[0].gear, undefined);
   assert.equal(battleStore.isBattleReport(rumble), true);
 });
@@ -133,11 +131,11 @@ test('Gear summaries expose every applied benefit and tradeoff', () => {
   );
 
   assert.match(rush.summary, /DASH IMPACT/);
-  assert.match(rush.summary, /HEARTS/);
-  assert.match(rush.summary, /COOLDOWN/);
+  assert.doesNotMatch(rush.summary, /HEARTS/);
+  assert.doesNotMatch(rush.summary, /COOLDOWN/);
   assert.match(aim.summary, /IMPACT/);
-  assert.match(aim.summary, /HEARTS/);
-  assert.match(aim.summary, /COOLDOWN/);
+  assert.doesNotMatch(aim.summary, /HEARTS/);
+  assert.doesNotMatch(aim.summary, /COOLDOWN/);
   assert.match(focus.summary, /FOCUS/);
   assert.match(focus.summary, /RECOVERY/);
   assert.doesNotMatch(focus.summary, /OPENING/);
@@ -168,12 +166,12 @@ test('loadout summary presents all six authoritative combat modifiers', () => {
       .summarizeGearCombatModifiers(rush.modifiers)
       .map((item) => [item.key, item])
   );
-  assert.equal(rushSummary.impact.value, '+2.0%');
-  assert.equal(rushSummary.hearts.value, '-2.0%');
-  assert.equal(rushSummary.cooldown.value, '2.0% SLOWER');
-  assert.equal(rushSummary.start.value, '1T FASTER');
-  assert.equal(rushSummary.cooldown.tone, 'tradeoff');
-  assert.equal(rushSummary.start.tone, 'benefit');
+  assert.equal(rushSummary.impact.value, '+0.7%');
+  assert.equal(rushSummary.hearts.value, '0.0%');
+  assert.equal(rushSummary.cooldown.value, 'NORMAL');
+  assert.equal(rushSummary.start.value, 'NORMAL');
+  assert.equal(rushSummary.cooldown.tone, 'neutral');
+  assert.equal(rushSummary.start.tone, 'neutral');
 });
 
 test('one strongest lead and one support resolve into a bounded category technique', () => {
@@ -191,9 +189,41 @@ test('one strongest lead and one support resolve into a bounded category techniq
   assert.equal(resolved.techniques[0].leadGearId, 'inkquake-rumble-belt');
   assert.equal(resolved.techniques[0].supportGearId, 'tiny-sword');
   assert.equal(resolved.techniques[0].effectFamily, 'ready');
+  assert.equal(resolved.techniques[0].supportEffectFamily, 'aim');
+  assert.match(resolved.techniques[0].effect.summary, /TRUE AIM SUPPORT/);
   assert.equal(resolved.snapshot.techniques.length, 1);
   assert.ok(resolved.modifiers.damagePermille >= 970);
   assert.ok(resolved.modifiers.initialDelayTicksDelta >= -2);
+});
+
+test('mixed-family support contributes its own bounded technique identity', () => {
+  const sameFamilyLoadout = {
+    ...equipment.createEmptyEquipmentLoadout(),
+    weapon: ['tiny-sword', 'wooden-spoon'],
+  };
+  const mixedFamilyLoadout = {
+    ...equipment.createEmptyEquipmentLoadout(),
+    weapon: ['tiny-sword', 'inkquake-rumble-belt'],
+  };
+  const sameFamily = gearCombat.resolveGearCombatLoadout(
+    makeFighter('same-family-support', builds.nib_halo, sameFamilyLoadout, {
+      'tiny-sword': 6,
+      'wooden-spoon': 3,
+    })
+  );
+  const mixedFamily = gearCombat.resolveGearCombatLoadout(
+    makeFighter('mixed-family-support', builds.nib_halo, mixedFamilyLoadout, {
+      'tiny-sword': 6,
+      'inkquake-rumble-belt': 3,
+    })
+  );
+
+  assert.equal(sameFamily.techniques[0].supportEffectFamily, 'aim');
+  assert.equal(mixedFamily.techniques[0].supportEffectFamily, 'ready');
+  assert.notDeepEqual(sameFamily.modifiers, mixedFamily.modifiers);
+  assert.match(mixedFamily.techniques[0].effect.summary, /QUICK DRAW SUPPORT/);
+  assertBoundedModifiers(sameFamily.modifiers);
+  assertBoundedModifiers(mixedFamily.modifiers);
 });
 
 const assertBoundedModifiers = (modifiers) => {
@@ -265,7 +295,10 @@ test('all six Gear families stay bounded and combat stays deterministic per seed
           repeated.simulation.durationMs,
           repeatedAgain.simulation.durationMs
         );
-        assert.deepEqual(repeated.simulation.events, repeatedAgain.simulation.events);
+        assert.deepEqual(
+          repeated.simulation.events,
+          repeatedAgain.simulation.events
+        );
         assert.ok(combatTranscript.parseBattleTranscript(first.simulation));
         assert.ok(combatTranscript.parseBattleTranscript(repeated.simulation));
         checkedLoadouts += 1;

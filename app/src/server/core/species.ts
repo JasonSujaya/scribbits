@@ -34,8 +34,6 @@ const createFoundingScribbit = (
     powerUpIds: [],
     level: definition.level,
     xp: LEVEL_XP_THRESHOLDS[definition.level - 1] ?? 0,
-    mood: definition.mood,
-    careDoneToday: [],
     legacy: null,
   };
 };

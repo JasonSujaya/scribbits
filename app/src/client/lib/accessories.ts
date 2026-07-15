@@ -654,6 +654,216 @@ const ACCESSORY_PAINT_BY_ID: Record<string, AccessoryPaintDefinition> = {
       pen.line(60, 80, 65, 92);
     },
   },
+  'cardboard-shield': {
+    paint: (pen) => {
+      pen.fill('#a66f35');
+      outline(pen);
+      pen.poly(
+        [
+          [50, 12],
+          [78, 24],
+          [74, 62],
+          [50, 88],
+          [26, 62],
+          [22, 24],
+        ],
+        true,
+        true
+      );
+      pen.stroke(3, '#5a371e');
+      pen.line(50, 17, 50, 82);
+      pen.stroke(5, '#8f9498');
+      pen.line(24, 35, 39, 40);
+      pen.line(61, 64, 75, 59);
+    },
+  },
+  'wooden-spoon': {
+    paint: (pen) => {
+      pen.fill('#a66f35');
+      outline(pen);
+      pen.circle(62, 30, 20, true);
+      pen.stroke(13, '#7d4e2a');
+      pen.line(51, 46, 24, 81);
+      pen.stroke(4, INK);
+      pen.line(51, 46, 24, 81);
+      pen.stroke(3, '#5a371e');
+      pen.arc(62, 30, 12, 0, Math.PI * 2);
+    },
+  },
+  'canvas-sneakers': {
+    paint: (pen) => {
+      const shoe = (offsetX: number, offsetY: number): void => {
+        pen.fill('#f4ead7');
+        outline(pen, 4);
+        pen.poly(
+          [
+            [offsetX, offsetY],
+            [offsetX + 18, offsetY - 14],
+            [offsetX + 36, offsetY + 5],
+            [offsetX + 43, offsetY + 16],
+            [offsetX + 3, offsetY + 16],
+          ],
+          true,
+          true
+        );
+        pen.stroke(3, '#4f9fcb');
+        pen.line(offsetX + 18, offsetY - 8, offsetX + 31, offsetY + 7);
+      };
+      shoe(12, 48);
+      shoe(43, 40);
+    },
+  },
+  'button-badge': {
+    paint: (pen) => {
+      pen.fill('#4f9fcb');
+      outline(pen);
+      pen.circle(50, 50, 31, true);
+      pen.stroke(4, '#f4ead7');
+      pen.circle(50, 50, 24, false);
+      pen.fill(INK);
+      const buttonHoles: readonly (readonly [number, number])[] = [
+        [43, 43],
+        [57, 43],
+        [43, 57],
+        [57, 57],
+      ];
+      buttonHoles.forEach(([x, y]) => pen.circle(x, y, 3, true));
+    },
+  },
+  'void-nib-lance': {
+    paint: (pen) => {
+      pen.fill('#111b3d');
+      outline(pen);
+      pen.poly(
+        [
+          [22, 82],
+          [34, 88],
+          [72, 35],
+          [63, 27],
+        ],
+        true,
+        true
+      );
+      pen.fill('#f4ead7');
+      pen.poly(
+        [
+          [72, 35],
+          [64, 22],
+          [87, 9],
+          [82, 32],
+        ],
+        true,
+        true
+      );
+      pen.fill('#e83b73');
+      pen.poly(
+        [
+          [24, 68],
+          [13, 60],
+          [29, 51],
+          [39, 61],
+        ],
+        true,
+        true
+      );
+    },
+  },
+  'moon-moth-mantle': {
+    paint: (pen) => {
+      pen.fill('#25235a');
+      outline(pen);
+      pen.poly(
+        [
+          [50, 20],
+          [15, 34],
+          [23, 77],
+          [50, 88],
+          [77, 77],
+          [85, 34],
+        ],
+        true,
+        true
+      );
+      pen.fill('#e83b73');
+      pen.circle(30, 58, 8, true);
+      pen.circle(70, 58, 8, true);
+      pen.fill('#7b62d9');
+      pen.circle(50, 40, 5, true);
+    },
+  },
+  'thundercloud-sneakers': {
+    paint: (pen) => {
+      const boot = (offsetX: number): void => {
+        pen.fill('#132743');
+        outline(pen, 4);
+        pen.poly(
+          [
+            [offsetX, 31],
+            [offsetX + 24, 31],
+            [offsetX + 30, 69],
+            [offsetX - 5, 69],
+          ],
+          true,
+          true
+        );
+        pen.fill('#23c6e8');
+        pen.poly(
+          [
+            [offsetX, 69],
+            [offsetX + 8, 83],
+            [offsetX + 15, 69],
+            [offsetX + 22, 83],
+            [offsetX + 30, 69],
+          ],
+          true,
+          true
+        );
+      };
+      boot(20);
+      boot(55);
+    },
+  },
+  'star-eye-mask': {
+    paint: (pen) => {
+      pen.fill('#30235d');
+      outline(pen);
+      pen.poly(
+        [
+          [12, 37],
+          [35, 27],
+          [50, 38],
+          [65, 27],
+          [88, 37],
+          [77, 68],
+          [50, 61],
+          [23, 68],
+        ],
+        true,
+        true
+      );
+      pen.fill('#ed4b5f');
+      pen.poly(
+        [
+          [27, 46],
+          [36, 40],
+          [43, 49],
+          [35, 57],
+        ],
+        true,
+        true
+      );
+      pen.poly(
+        [
+          [57, 49],
+          [64, 40],
+          [73, 46],
+          [65, 57],
+        ],
+        true,
+        true
+      );
+    },
+  },
   ...SHAPE_POWER_RELIC_PAINT_BY_ID,
 };
 

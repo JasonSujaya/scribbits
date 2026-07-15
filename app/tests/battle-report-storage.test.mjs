@@ -18,6 +18,7 @@ const equipment = require(join(compiledSharedRoot, 'equipment.js'));
 const battle = require(join(compiledServerRoot, 'core', 'battle.js'));
 const battleStore = require(join(compiledServerRoot, 'core', 'battleStore.js'));
 const forecast = require(join(compiledServerRoot, 'core', 'forecast.js'));
+const scribbitStore = require(join(compiledServerRoot, 'core', 'scribbit.js'));
 const species = require(join(compiledServerRoot, 'core', 'species.js'));
 
 const makeChallenger = () => ({
@@ -42,8 +43,6 @@ const makeChallenger = () => ({
   upgrades: [],
   level: 1,
   xp: 0,
-  mood: 'happy',
-  careDoneToday: [],
   legacy: null,
 });
 
@@ -58,8 +57,21 @@ test('reward enrichment accepts a normalized report with reordered object keys',
     forecast.generateForecastForDay(11),
     'exhibition'
   );
+  await storage.storage.set(
+    scribbitStore.getScribbitOwnerKey(challenger.id),
+    'storage-user'
+  );
+
+  assert.equal(
+    await battleStore.hasUserCompletedBattle(storage.storage, 'storage-user'),
+    false
+  );
 
   await battleStore.saveBattleReport(storage.storage, report, 1);
+  assert.equal(
+    await battleStore.hasUserCompletedBattle(storage.storage, 'storage-user'),
+    true
+  );
   await battleStore.saveBattleReport(
     storage.storage,
     { ...report, inkAwarded: 2 },
@@ -70,5 +82,23 @@ test('reward enrichment accepts a normalized report with reordered object keys',
     (await battleStore.loadBattleReport(storage.storage, report.id))
       ?.inkAwarded,
     2
+  );
+});
+
+test('existing battle history backfills the permanent completion marker', async () => {
+  const storage = createMemoryStorage();
+  const userId = 'legacy-battle-user';
+  await storage.storage.zAdd(battleStore.getUserBattlesKey(userId), {
+    member: 'legacy-report',
+    score: 1,
+  });
+
+  assert.equal(
+    await battleStore.hasUserCompletedBattle(storage.storage, userId),
+    true
+  );
+  assert.equal(
+    await storage.storage.get(battleStore.getUserHasCompletedBattleKey(userId)),
+    '1'
   );
 });

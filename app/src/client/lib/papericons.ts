@@ -13,6 +13,7 @@ export type PaperIconKey =
   | 'boots'
   | 'clock'
   | 'defeat'
+  | 'eye'
   | 'forge'
   | 'gift'
   | 'gun'
@@ -1238,6 +1239,17 @@ function drawIcon(
     graphics.strokeCircle(0, 0, 13 * scale);
     graphics.lineBetween(0, 0, 0, -7 * scale);
     graphics.lineBetween(0, 0, 6 * scale, 3 * scale);
+    return;
+  }
+
+  if (key === 'eye') {
+    graphics.fillEllipse(0, 0, 28 * scale, 18 * scale);
+    graphics.strokeEllipse(0, 0, 28 * scale, 18 * scale);
+    graphics.fillStyle(UI.creamHex, 1);
+    graphics.fillCircle(0, 0, 6 * scale);
+    graphics.strokeCircle(0, 0, 6 * scale);
+    graphics.fillStyle(stroke, 1);
+    graphics.fillCircle(0, 0, 2.5 * scale);
     return;
   }
 

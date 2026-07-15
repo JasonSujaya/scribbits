@@ -1,0 +1,95 @@
+{
+  "frames": {
+    "void-nib-lance": {
+      "frame": {
+        "x": 30,
+        "y": 24,
+        "w": 196,
+        "h": 208
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 196,
+        "h": 208
+      },
+      "sourceSize": {
+        "w": 196,
+        "h": 208
+      }
+    },
+    "moon-moth-mantle": {
+      "frame": {
+        "x": 280,
+        "y": 37,
+        "w": 208,
+        "h": 181
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 208,
+        "h": 181
+      },
+      "sourceSize": {
+        "w": 208,
+        "h": 181
+      }
+    },
+    "thundercloud-sneakers": {
+      "frame": {
+        "x": 24,
+        "y": 289,
+        "w": 208,
+        "h": 189
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 208,
+        "h": 189
+      },
+      "sourceSize": {
+        "w": 208,
+        "h": 189
+      }
+    },
+    "star-eye-mask": {
+      "frame": {
+        "x": 280,
+        "y": 301,
+        "w": 208,
+        "h": 165
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 208,
+        "h": 165
+      },
+      "sourceSize": {
+        "w": 208,
+        "h": 165
+      }
+    }
+  },
+  "meta": {
+    "app": "Scribbits Gear atlas builder",
+    "version": "1",
+    "image": "gear-legendary-atlas.png",
+    "format": "RGBA8888",
+    "size": {
+      "w": 512,
+      "h": 512
+    },
+    "scale": "1"
+  }
+}

@@ -25,7 +25,7 @@ test('launch catalog contains the balanced 15 behavioral Power-Ups', () => {
     ),
     { common: 5, rare: 5, epic: 3, legendary: 2 }
   );
-  assert.equal(powerUps.MAXIMUM_POWER_UP_BONUS_DAMAGE, 36);
+  assert.equal(powerUps.MAXIMUM_POWER_UP_BONUS_DAMAGE, 60);
   assert.equal(powerUps.MAXIMUM_POWER_UP_TRIGGER_EVENTS, 32);
   Object.values(powerUps.POWER_UP_CATALOG).forEach((entry) => {
     assert.ok(entry.when.length >= 10);
@@ -34,7 +34,54 @@ test('launch catalog contains the balanced 15 behavioral Power-Ups', () => {
   });
 });
 
-test('build validation enforces unique five-card, one-Legendary, and exclusivity caps', () => {
+test('player-facing Power-Up descriptions avoid combat-engine jargon', () => {
+  Object.values(powerUps.POWER_UP_CATALOG).forEach((entry) => {
+    assert.doesNotMatch(entry.description, /\bticks?\b|\bpermille\b/i);
+    assert.doesNotMatch(entry.description, /\bsignature\b|\bbasic attack\b/i);
+    assert.match(entry.description, /^[A-Z].+\. [A-Z].+\.$/);
+  });
+  assert.equal(powerUps.POWER_UP_CATALOG['v1-combo-spark'].healingAmount, 4);
+  assert.equal(powerUps.POWER_UP_CATALOG['v1-center-fold'].healingAmount, 12);
+  assert.equal(
+    powerUps.POWER_UP_CATALOG['v1-last-scribble'].survivingHitPointPermille,
+    300
+  );
+});
+
+test('every Power-Up has one centralized playstyle profile', () => {
+  assert.deepEqual(
+    Object.keys(powerUps.POWER_UP_PLAYSTYLE_PROFILES).sort(),
+    [...powerUps.POWER_UP_IDS].sort()
+  );
+  Object.values(powerUps.POWER_UP_PLAYSTYLE_PROFILES).forEach((profile) => {
+    assert.ok(profile.recommendedRoles.length >= 1);
+    assert.ok(profile.gearFamilies.length >= 1);
+    assert.equal(Object.isFrozen(profile), true);
+    assert.equal(Object.isFrozen(profile.recommendedRoles), true);
+    assert.equal(Object.isFrozen(profile.avoidedRoles), true);
+    assert.equal(Object.isFrozen(profile.gearFamilies), true);
+  });
+  assert.ok(
+    powerUps.scorePowerUpFit('v1-wallop', 'brawler', ['guard']) >
+      powerUps.scorePowerUpFit('v1-wallop', 'longshot', ['aim'])
+  );
+  assert.ok(
+    powerUps.scorePowerUpFit('v1-combo-spark', 'longshot', ['rush']) >
+      powerUps.scorePowerUpFit('v1-combo-spark', 'mage', ['guard'])
+  );
+  powerUps.POWER_UP_IDS.forEach((id) => {
+    assert.equal(powerUps.powerUpIsOfferableForRole(id, 'brawler'), true);
+    assert.equal(powerUps.powerUpIsOfferableForRole(id, 'longshot'), true);
+    assert.equal(powerUps.powerUpIsOfferableForRole(id, 'mage'), true);
+    assert.ok(powerUps.POWER_UP_CATALOG[id].buildPath);
+  });
+  assert.ok(
+    powerUps.scorePowerUpFit('v1-combo-spark', 'mage', [], ['v1-backup-plan']) >
+      powerUps.scorePowerUpFit('v1-combo-spark', 'mage')
+  );
+});
+
+test('build validation enforces unique five-card and one-Legendary caps', () => {
   const legal = [
     'v1-edge-spring',
     'v1-paper-shield',
@@ -57,8 +104,8 @@ test('build validation enforces unique five-card, one-Legendary, and exclusivity
     'too-many-legendary'
   );
   assert.equal(
-    powerUps.validatePowerUpBuild(['v1-backup-plan', 'v1-second-draft']).reason,
-    'exclusive-conflict'
+    powerUps.validatePowerUpBuild(['v1-backup-plan', 'v1-second-draft']).valid,
+    true
   );
   assert.equal(powerUps.parsePowerUpBuild(['not-real']), undefined);
 });
@@ -81,6 +128,50 @@ test('offer generation is deterministic, unowned, distinct, and follows exact so
   }
 });
 
+test('role-aware offers guarantee a highest-fit first choice without changing rarity', () => {
+  const cases = [
+    ['brawler', ['guard', 'ready']],
+    ['longshot', ['aim']],
+    ['mage', ['fortune']],
+  ];
+  for (const [combatRole, gearFamilies] of cases) {
+    const input = {
+      seed: `fit-${combatRole}`,
+      source: 'exhibition-win',
+      ownedPowerUpIds: [],
+      combatRole,
+      gearFamilies,
+    };
+    const first = powerUps.createDeterministicPowerUpOffer(input);
+    const repeated = powerUps.createDeterministicPowerUpOffer(input);
+    assert.deepEqual(repeated, first);
+    assert.deepEqual(raritiesFor(first), ['common', 'common', 'rare']);
+    const eligibleCommonScores = powerUps.POWER_UP_IDS.filter(
+      (id) => powerUps.POWER_UP_CATALOG[id].rarity === 'common'
+    ).map((id) => powerUps.scorePowerUpFit(id, combatRole, gearFamilies));
+    assert.equal(
+      powerUps.scorePowerUpFit(first[0], combatRole, gearFamilies),
+      Math.max(...eligibleCommonScores)
+    );
+  }
+});
+
+test('role-aware offers keep every skill universally usable', () => {
+  for (let seed = 0; seed < 24; seed += 1) {
+    const mageOffer = powerUps.createDeterministicPowerUpOffer({
+      seed: `mage-trap-filter-${seed}`,
+      source: 'exhibition-win',
+      ownedPowerUpIds: [],
+      combatRole: 'mage',
+      gearFamilies: ['rush', 'focus'],
+    });
+    assert.ok(mageOffer);
+    assert.ok(
+      mageOffer.every((id) => powerUps.powerUpIsOfferableForRole(id, 'mage'))
+    );
+  }
+});
+
 test('offers exclude owned and incompatible cards and respect full and Legendary caps', () => {
   const owned = ['v1-backup-plan', 'v1-masterpiece'];
   const championOffer = powerUps.createDeterministicPowerUpOffer({
@@ -89,7 +180,6 @@ test('offers exclude owned and incompatible cards and respect full and Legendary
     ownedPowerUpIds: owned,
   });
   assert.ok(championOffer.every((id) => !owned.includes(id)));
-  assert.ok(!championOffer.includes('v1-second-draft'));
   assert.deepEqual(raritiesFor(championOffer), ['rare', 'epic', 'epic']);
 
   assert.equal(

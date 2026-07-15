@@ -94,9 +94,6 @@ export type ScribbitLegacy = {
   upgrades: ScribbitUpgrade[];
 };
 
-export type Mood = 'happy' | 'hungry' | 'sleepy' | 'pumped';
-export type CareAction = 'feed' | 'pat' | 'train';
-
 export type Scribbit = {
   id: string;
   name: string; // player-given, 2-24 chars
@@ -120,11 +117,8 @@ export type Scribbit = {
   // readable. New fights and player-facing progression use Power-Ups.
   upgrades: ScribbitUpgrade[];
   powerUpIds?: PowerUpId[]; // up to five behavioral rewards; Gear owns raw stats
-  // Tamagotchi layer — levels die with the scribbit; bonuses are small + capped
   level: number; // 1..MAX_LEVEL
   xp: number;
-  mood: Mood; // derived from care state; cosmetic + tiny xp multiplier
-  careDoneToday: CareAction[]; // each action once per scribbit per day
   legacy: ScribbitLegacy | null; // null while alive, immutable snapshot afterward
 };
 
@@ -149,7 +143,6 @@ export const cloneScribbit = (scribbit: Scribbit): Scribbit => {
     // battle facade's finite read compatibility by projecting no mods.
     upgrades: (scribbit.upgrades ?? []).map((upgrade) => ({ ...upgrade })),
     powerUpIds: [...(scribbit.powerUpIds ?? [])],
-    careDoneToday: [...scribbit.careDoneToday],
     legacy: scribbit.legacy
       ? {
           ...scribbit.legacy,
@@ -309,11 +302,13 @@ export type ArenaState = {
   dayNumber: number;
   loggedIn: boolean;
   hasCreatedScribbit: boolean;
+  hasCompletedBattle: boolean;
   myUsername: string | null;
   forecast: Forecast;
   champion: Scribbit | null; // frozen snapshot, today's boss
   myScribbits: Scribbit[]; // growing + mature, newest first, max 12
   discoveredPowerUpIds?: PowerUpId[]; // permanent player-wide Power-Up discoveries
+  pendingPowerUpOffers?: PowerUpOffer[]; // server-persisted choices recoverable after reload
   drawCharges: DrawChargeState; // server-owned birth energy, lazily refilled
   paintBucket: PaintBucketState; // persistent capacity; each drawing starts full
   drawnToday: boolean;
@@ -366,7 +361,22 @@ export type ReportScribbitResponse = {
 // lost with it). Duplicates simply stack in inventory. Pens are consumable
 // palette boosts too? No — pens remain permanent unlocks (small part of pool);
 // accessories are the stars and are per-copy consumables.
-export type CapsuleRarity = 'common' | 'rare' | 'epic';
+export const CAPSULE_RARITIES = Object.freeze([
+  'common',
+  'rare',
+  'epic',
+  'legendary',
+] as const);
+export type CapsuleRarity = (typeof CAPSULE_RARITIES)[number];
+export const isCapsuleRarity = (value: unknown): value is CapsuleRarity => {
+  return CAPSULE_RARITIES.includes(value as CapsuleRarity);
+};
+export const capsuleRarityRank = (rarity: CapsuleRarity): number => {
+  return CAPSULE_RARITIES.indexOf(rarity);
+};
+export const isEpicOrBetterCapsuleRarity = (rarity: CapsuleRarity): boolean => {
+  return capsuleRarityRank(rarity) >= capsuleRarityRank('epic');
+};
 export type CapsuleItemKind =
   | 'accessory'
   | 'pen'
@@ -465,22 +475,23 @@ export const INK_REWARDS = {
   dailyDraw: 2,
 } as const;
 export const XP_REWARDS = {
-  care: 1,
-  carePumped: 2,
   sparWin: 1,
   rumbleWin: 2,
   championWin: 2,
 } as const;
-export const CAPSULE_COST = 5;
+// The core Daily Draw loop should immediately fund one chest. Battle rewards
+// remain valuable because they can fund additional opens.
+export const CAPSULE_COST = 2;
 // Kept as a separate transport constant while older daily-pull records age out.
 // The earned-Ink chest now has one honest price instead of urgency pricing.
 export const CAPSULE_FIRST_DAILY_COST = CAPSULE_COST;
 export const CAPSULE_MAX_BATCH_SIZE = 10;
-export const CAPSULE_PITY = 10; // epic guaranteed within N pulls
+export const CAPSULE_PITY = 10; // epic-or-better guaranteed within N pulls
 export const CAPSULE_RARITY_PERCENTAGES = {
   common: 70,
   rare: 25,
-  epic: 5,
+  epic: 4,
+  legendary: 1,
 } as const;
 export type CloutEntry = { username: string; clout: number };
 export type CloutBoard = {
@@ -626,6 +637,7 @@ export type SubmitScribbitResponse = {
   scribbit: Scribbit;
   drawCharges: DrawChargeState;
   enteredRumble: boolean;
+  powerUpOffer: PowerUpOffer | null;
 };
 
 // Free Draws are private, untimed creations. They deliberately do not carry
@@ -648,10 +660,6 @@ export type SubmitFreeDrawingRequest = {
   drawingSupplies?: DrawingSupplySelection;
 };
 
-export type CareRequest = { scribbitId: string; action: CareAction };
-export type CareResponse = {
-  scribbit: Scribbit;
-};
 export type SparRivalSlate = {
   challenger: Scribbit; // current server snapshot after any just-earned XP
   choices: RivalRunChoice[]; // one safe/even/risky server-ranked choice
@@ -744,7 +752,6 @@ export const getScribbitLifecycleStage = (
 // GET  /api/rumble-replay?day -> BattleReport (server-selected bout for caller's Back)
 // POST /api/believe        -> { scribbitId: string } -> { belief: number } (one per user per scribbit per day)
 // POST /api/boss-challenge -> BossChallengeRequest -> DirectBattleResponse (instant resolve vs champion; one per user per day)
-// POST /api/care           -> CareRequest -> CareResponse               (each action once per scribbit per UTC day)
 // POST /api/practice-battle -> PracticeBattleRequest -> BattleReport    (ephemeral, server-analyzed, no rewards or persistence)
 // GET  /api/spar-rivals?scribbitId -> SparRivalSlate                    (owned living challenger; stable server slate per UTC day)
 // POST /api/spar           -> SparRequest -> DirectBattleResponse       (chosen opponentId must be in that exact slate; omitted stays server-random)

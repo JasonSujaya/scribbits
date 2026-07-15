@@ -22,7 +22,11 @@ import { UI } from './theme';
 import { bindPressInteractionEvents } from './pressinteraction';
 import { translate } from './localization';
 import { label } from './ui';
-import { BATTLE_CONTROL_BUTTON_TEXTURES } from './visualassets';
+import {
+  BATTLE_CONTROL_BUTTON_TEXTURES,
+  BATTLE_TITLE_TEXTURE,
+} from './visualassets';
+import { paperIcon } from './papericons';
 
 export type ReplayShapePowerState = 'ready' | 'telegraph' | 'active';
 
@@ -578,17 +582,14 @@ export function createReplayBattleHud(
     applyFighterShapePowerState(side, state, true);
   };
 
-  const battleTitle = label(
-    scene,
-    layout.viewportWidth / 2,
-    layout.battleTitleY,
-    'BATTLE',
-    30,
-    UI.ink,
-    true
-  )
+  const battleTitle = scene.add
+    .image(
+      layout.viewportWidth / 2,
+      layout.battleTitleY,
+      BATTLE_TITLE_TEXTURE
+    )
     .setOrigin(0.5)
-    .setAngle(-1)
+    .setDisplaySize(240, 63)
     .setDepth(27);
   const arenaCaption = label(
     scene,
@@ -695,6 +696,62 @@ export function createReplayBattleHud(
   let displayedClockUrgent: boolean | null = null;
   let playbackSpeed = input.initialPlaybackSpeed;
   let heartsVisible = true;
+  let battleChromeVisible = true;
+  let floatingVitalsVisible = true;
+
+  const floatingVitalsToggle = scene.add
+    .container(layout.viewportWidth / 2 + 142, layout.battleTitleY)
+    .setDepth(80);
+  const floatingVitalsEye = paperIcon(scene, 'eye', 0, 0, {
+    size: 26,
+    fill: UI.coral,
+  });
+  const floatingVitalsHiddenSlash = scene.add.graphics();
+  floatingVitalsHiddenSlash.lineStyle(4, UI.inkHex, 1);
+  floatingVitalsHiddenSlash.lineBetween(-12, -12, 12, 12);
+  const floatingVitalsHitTarget = scene.add
+    .rectangle(0, 0, 52, 52, 0xffffff, 0.001)
+    .setInteractive({ useHandCursor: true });
+  floatingVitalsToggle.add([
+    floatingVitalsEye,
+    floatingVitalsHiddenSlash,
+    floatingVitalsHitTarget,
+  ]);
+
+  const updateFloatingVitalsVisibility = (): void => {
+    const labelsVisible =
+      heartsVisible && battleChromeVisible && floatingVitalsVisible;
+    Object.values(fighterVitals).forEach((vitals) => {
+      vitals.floatingVitals.setVisible(labelsVisible);
+    });
+    floatingVitalsToggle
+      .setVisible(heartsVisible && battleChromeVisible)
+      .setName(
+        floatingVitalsVisible ? 'Hide fighter labels' : 'Show fighter labels'
+      )
+      .setData(
+        'accessibilityLabel',
+        floatingVitalsVisible ? 'Hide fighter labels' : 'Show fighter labels'
+      );
+    floatingVitalsHiddenSlash.setVisible(!floatingVitalsVisible);
+    scene.game.canvas.dataset.floatingVitals = labelsVisible
+      ? 'visible'
+      : 'hidden';
+  };
+  bindPressInteractionEvents(
+    floatingVitalsHitTarget,
+    {
+      press: () => floatingVitalsToggle.setScale(0.9),
+      release: () => floatingVitalsToggle.setScale(1),
+      activate: () => {
+        floatingVitalsVisible = !floatingVitalsVisible;
+        updateFloatingVitalsVisibility();
+      },
+      pressOnHover: false,
+    },
+    { gameTarget: scene.game.events, shutdownTarget: scene.events }
+  );
+  updateFloatingVitalsVisibility();
 
   const showBattleAnnouncement = (text: string): void => {
     const announcement = text.trim();
@@ -1021,8 +1078,8 @@ export function createReplayBattleHud(
       Object.values(fighterVitals).forEach((vitals) => {
         vitals.heartMeter.setVisible(visible);
         vitals.healthLabel.setVisible(visible);
-        vitals.floatingVitals.setVisible(visible);
       });
+      updateFloatingVitalsVisibility();
       if (!visible) {
         stopHeartAnimations();
       } else {
@@ -1034,11 +1091,13 @@ export function createReplayBattleHud(
       }
     },
     setBattleChromeVisible: (visible: boolean): void => {
+      battleChromeVisible = visible;
       battleTitle.setVisible(visible);
       arenaCaption.setVisible(visible);
       Object.values(fighterVitals).forEach((vitals) => {
         vitals.container.setVisible(visible);
       });
+      updateFloatingVitalsVisibility();
       if (!visible && shapePowerLiveRegion) {
         shapePowerLiveRegion.textContent = '';
       }

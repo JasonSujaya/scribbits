@@ -19,6 +19,7 @@ const REVEAL_GAP_MS: Readonly<Record<CapsuleRarity, number>> = {
   common: 90,
   rare: 170,
   epic: 280,
+  legendary: 420,
 };
 
 export function planCapsuleBatchReveal(

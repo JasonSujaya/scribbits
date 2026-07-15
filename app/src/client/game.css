@@ -262,6 +262,15 @@ body {
   }
 }
 
+@keyframes draw-start-countdown-enter {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
 .draw-theme-overlay {
   animation: draw-theme-overlay-enter 220ms ease-out both;
 }
@@ -363,6 +372,64 @@ body {
   transform-origin: left center;
 }
 
+.draw-start-countdown {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+  color: #fff7e8;
+  background:
+    radial-gradient(
+      circle at center,
+      rgba(255, 107, 74, 0.42),
+      transparent 38%
+    ),
+    rgba(31, 24, 18, 0.93);
+  backdrop-filter: blur(7px) saturate(0.72);
+  pointer-events: auto;
+  animation: draw-start-countdown-enter 160ms ease-out both;
+}
+
+.draw-start-countdown-label {
+  font-size: 30px;
+  font-weight: 800;
+  letter-spacing: 4px;
+  text-shadow: 0 4px 0 rgba(13, 9, 6, 0.68);
+}
+
+.draw-start-countdown-value {
+  min-width: 320px;
+  color: #ffd447;
+  font-size: 190px;
+  font-weight: 900;
+  line-height: 0.9;
+  letter-spacing: -8px;
+  text-align: center;
+  text-shadow:
+    0 10px 0 #b7351d,
+    0 16px 28px rgba(13, 9, 6, 0.72);
+  -webkit-text-stroke: 5px #2b2016;
+  transform-origin: center;
+}
+
+.draw-start-countdown.is-draw .draw-start-countdown-label {
+  opacity: 0;
+}
+
+.draw-start-countdown.is-draw .draw-start-countdown-value {
+  min-width: 600px;
+  color: #fff7e8;
+  font-size: 126px;
+  letter-spacing: 1px;
+  text-shadow:
+    0 9px 0 #e0512f,
+    0 15px 28px rgba(13, 9, 6, 0.72);
+}
+
 .draw-theme-reduced-motion .draw-theme-card,
 .draw-theme-reduced-motion .draw-theme-copy,
 .draw-theme-reduced-motion .draw-theme-tape-label,
@@ -392,7 +459,8 @@ body {
   .draw-theme-journey-connector,
   .draw-theme-start-button,
   .draw-theme-timer-notice,
-  .draw-theme-timer-icon .draw-clock-minute-hand {
+  .draw-theme-timer-icon .draw-clock-minute-hand,
+  .draw-start-countdown {
     animation: none !important;
   }
 }

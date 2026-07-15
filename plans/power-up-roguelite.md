@@ -5,7 +5,8 @@
 Replace Element and numeric Ink Mods with one readable roguelite layer:
 
 - the drawing chooses the permanent combat Role;
-- wins offer three behavioral Power-Ups;
+- birth immediately offers three randomized behavioral Power-Ups and the player chooses one;
+- later wins offer three more behavioral Power-Ups;
 - a Scribbit may own five unique Power-Ups and at most one Legendary;
 - Gear remains the only swappable system that changes damage, hearts,
   cooldown, focus, wind-up, or starting timing.
@@ -15,14 +16,15 @@ archived, and never enter the reusable Gear inventory.
 
 ## Reward rules
 
-| Source | Three-card offer |
-| --- | --- |
-| Exhibition or Rival Run win | Common, Common, Rare |
-| Rival Run final win or a Rumble day with a win | Common, Rare, Epic |
-| Champion win | Rare, Epic, Legendary |
+| Source                                         | Three-card offer      |
+| ---------------------------------------------- | --------------------- |
+| Birth, before the first fight                  | Common, Common, Rare  |
+| Exhibition or Rival Run win                    | Common, Common, Rare  |
+| Rival Run final win or a Rumble day with a win | Common, Rare, Epic    |
+| Champion win                                   | Rare, Epic, Legendary |
 
 - Losses do not create an offer.
-- Offers are generated and persisted by the server from the battle report.
+- Birth offers are generated from the committed Scribbit; later offers are generated from the battle report.
 - Closing or reloading cannot reroll or lose an offer.
 - Choices must be distinct, unowned, compatible, and outside any exclusive
   group already owned.
@@ -32,47 +34,67 @@ archived, and never enter the reusable Gear inventory.
 
 ## Launch catalog
 
+The redesign follows the useful part of Archero's ability model: every pick
+works by itself, repeated triggers make a build feel active throughout a fight,
+and matching build paths amplify one another. The five paths are **Bounce**,
+**Combo**, **Survival**, **Special**, and **Any Build**. Serialized v1 IDs stay
+stable, including the IDs behind the renamed Heart Ink and Ink Rage cards.
+
 ### Common
 
-- **Edge Spring** — first wall bounce redirects toward center for three ticks.
-- **Smudge Step** — first fully missed basic attack triggers a short side dash.
-- **Paper Shield** — first incoming signature hit prevents up to 10 damage.
-- **Combo Spark** — third consecutive landed basic adds 6 damage.
-- **Center Fold** — first crossing below half hearts turns toward center and
-  gains four defense ticks.
+- **Edge Spring · Bounce** — up to three wall touches restore 3 health, turn
+  the Scribbit back toward the fight, and empower its next two normal hits.
+- **Smudge Step · Survival** — completely dodges every fourth incoming normal
+  attack, up to three times.
+- **Paper Shield · Survival** — blocks up to 5 damage from each of the first
+  three incoming special hits.
+- **Combo Spark · Combo** — every third consecutive normal hit, up to three
+  times, deals 50% extra damage and restores 4 health.
+- **Center Fold · Survival** — first crossing below half health restores 12
+  health and briefly blocks incoming damage.
 
 ### Rare
 
-- **Double Doodle** — first landed signature echoes after six ticks for 35% of
-  the actual hit, capped at 12 damage.
-- **Backup Plan** — first missed signature retries after twelve ticks at 50%
-  power.
-- **Counter Sketch** — first enemy signature schedules a half-power basic
-  counter, capped at 10 damage.
-- **Wallop** — first opponent wall bounce immediately after the owner's
-  knockback adds 8 damage.
-- **Echo Mark** — first signature hit marks the target; the next landed basic
-  consumes it for 8 damage.
+- **Double Doodle · Special** — the first three special hits repeat for 40% of
+  their damage, capped at 6 damage each.
+- **Heart Ink · Combo** — every fourth landed normal attack restores 8 health,
+  up to three times.
+- **Counter Sketch · Survival** — the first three incoming special hits schedule
+  a counter for up to 6 damage and restore 3 health.
+- **Wallop · Bounce** — the first three knockbacks into a wall add 6 damage.
+- **Echo Mark · Special** — special hits empower the next two normal hits for 35%
+  extra damage, up to four empowered hits.
 
 ### Epic
 
-- **Last Scribble** — first lethal enemy hit leaves one heart and grants six
-  defense ticks.
-- **Second Draft** — first missed signature retries after ten ticks at 65%
-  power. It is mutually exclusive with Backup Plan.
-- **Paper Twin** — after first crossing below half hearts, the next two landed
-  basic attacks echo at 35%, capped at 6 damage each.
+- **Last Scribble · Survival** — once per fight, survives a knockout with 30%
+  health and briefly blocks damage.
+- **Ink Rage · Survival** — below half health, the next four normal hits add 5
+  damage and restore 2 health each.
+- **Paper Twin · Combo** — the first four normal hits repeat for 35% damage,
+  capped at 4 damage each.
 
 ### Legendary
 
-- **Masterpiece** — after three distinct owned non-Legendary Power-Ups trigger,
-  release an 18-damage ink burst.
-- **Endless Draft** — the first consumed Common Power-Up receives one extra
-  activation.
+- **Masterpiece · Any Build** — after three different non-Legendary Power-Ups
+  activate, deals 12 damage and restores 10 health.
+- **Endless Draft · Any Build** — every Common and Rare Power-Up receives one
+  additional activation.
+
+## Build paths
+
+- **Combo:** Combo Spark → Heart Ink → Echo Mark → Paper Twin.
+- **Survival:** Paper Shield → Center Fold → Counter Sketch → Last Scribble →
+  Ink Rage.
+- **Bounce:** Edge Spring → Wallop.
+- **Special:** Double Doodle → Echo Mark, with Combo cards converting the
+  repeated pressure into healing and follow-up damage.
+- **Any Build:** Masterpiece rewards variety; Endless Draft strengthens the
+  build already taking shape.
 
 ## Combat balance ceilings
 
-- Every fighter has a 36-damage Power-Up bonus budget per fight.
+- Every fighter has a 60-damage Power-Up bonus budget per fight.
 - Bonus hits use normal barriers and never critical-hit.
 - Power-Ups never apply a removed Element payload.
 - Maximum five unique Power-Ups and one Legendary.

@@ -26,8 +26,8 @@ export const SIGNATURE_POWER: Record<
     playerHint: getShapePowerContent('nib_halo').playerHint,
   },
   zip: {
-    name: getShapePowerContent('smearstep').displayName.toUpperCase(),
-    playerHint: getShapePowerContent('smearstep').playerHint,
+    name: getShapePowerContent('nib_halo').displayName.toUpperCase(),
+    playerHint: getShapePowerContent('nib_halo').playerHint,
   },
   charm: {
     name: getShapePowerContent('colorburst').displayName.toUpperCase(),

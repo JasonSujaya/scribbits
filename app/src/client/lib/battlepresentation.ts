@@ -210,7 +210,7 @@ export function planReplayBattleLayout(input: {
   );
   const fighterPanelTop = 88;
   const fighterPanelHeight = 96;
-  const battleTitleY = 42;
+  const battleTitleY = 48;
   const heartRowY = 122;
   const fighterNameOffsetY = -36;
   const fighterHealthOffsetY = 38;

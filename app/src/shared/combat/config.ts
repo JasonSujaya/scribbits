@@ -1,8 +1,8 @@
 import type {
   AbilityConfigByPower,
-  CombatRole,
   CombatPhase,
   CombatRules,
+  CurrentCombatRole,
   DominantStat,
   PrimaryPower,
 } from './types';
@@ -44,16 +44,18 @@ export const PRIMARY_POWER_BY_DOMINANT_STAT: Readonly<
 > = Object.freeze({
   chonk: 'inkquake',
   spike: 'nib_halo',
-  zip: 'smearstep',
+  // Zip-heavy archived drawings now join Longshot instead of exposing a
+  // fourth class. Smearstep remains readable in archived reports only.
+  zip: 'nib_halo',
   charm: 'colorburst',
 });
 
 export const COMBAT_ROLE_BY_DOMINANT_STAT: Readonly<
-  Record<DominantStat, CombatRole>
+  Record<DominantStat, CurrentCombatRole>
 > = Object.freeze({
   chonk: 'brawler',
   spike: 'longshot',
-  zip: 'gunner',
+  zip: 'longshot',
   charm: 'mage',
 });
 
@@ -85,7 +87,7 @@ const abilityConfigByPower: AbilityConfigByPower = Object.freeze({
     innerDeadZoneRadius: 850,
     orbitTableStepsPerTick: 1,
     targetRehitLockTicks: 8,
-    baseDamage: 19,
+    baseDamage: 17,
     spikeDamageDivisor: 5,
     targetMaxHitPointDamageDivisor: 12,
     areaDamageReductionPermille: 350,
@@ -130,7 +132,7 @@ const abilityConfigByPower: AbilityConfigByPower = Object.freeze({
 });
 
 export const DEFAULT_COMBAT_RULES: CombatRules = Object.freeze({
-  version: 6,
+  version: 7,
   tickRate: COMBAT_TICK_RATE,
   maximumSeconds: COMBAT_MAXIMUM_SECONDS,
   maximumTicks: COMBAT_MAXIMUM_TICKS,

@@ -1,8 +1,12 @@
 import { deterministicInteger, normalizeCombatSeed } from './random';
+import type { AccessoryEffectFamily } from '../accessoryeffects';
+import type { CombatRole } from './types';
+import { toCurrentCombatRole } from './roles';
 
 export const MAXIMUM_POWER_UPS = 5;
+export const MAXIMUM_GROWING_POWER_UPS = 3;
 export const MAXIMUM_LEGENDARY_POWER_UPS = 1;
-export const MAXIMUM_POWER_UP_BONUS_DAMAGE = 36;
+export const MAXIMUM_POWER_UP_BONUS_DAMAGE = 60;
 export const MAXIMUM_POWER_UP_TRIGGER_EVENTS = 32;
 
 export const POWER_UP_IDS = Object.freeze([
@@ -25,21 +29,34 @@ export const POWER_UP_IDS = Object.freeze([
 
 export type PowerUpId = (typeof POWER_UP_IDS)[number];
 export type PowerUpRarity = 'common' | 'rare' | 'epic' | 'legendary';
-export type PowerUpExclusiveGroup = 'signature-retry';
+export type PowerUpBuildPath =
+  | 'bounce'
+  | 'combo'
+  | 'survival'
+  | 'special'
+  | 'wildcard';
+
+export type PowerUpPlaystyleProfile = Readonly<{
+  recommendedRoles: readonly CombatRole[];
+  avoidedRoles: readonly CombatRole[];
+  gearFamilies: readonly AccessoryEffectFamily[];
+}>;
 
 export type PowerUpDefinition = Readonly<{
   id: PowerUpId;
   name: string;
   shortName: string;
   rarity: PowerUpRarity;
+  buildPath: PowerUpBuildPath;
   when: string;
   effect: string;
   description: string;
   trigger:
     | 'wall-bounce'
-    | 'missed-basic'
+    | 'incoming-basic'
     | 'incoming-signature'
     | 'basic-hit-streak'
+    | 'basic-hit-count'
     | 'below-half-hearts'
     | 'landed-signature'
     | 'missed-signature'
@@ -47,21 +64,24 @@ export type PowerUpDefinition = Readonly<{
     | 'knockback-wall-bounce'
     | 'marked-target-basic'
     | 'lethal-hit'
+    | 'first-basic-hit'
     | 'distinct-power-ups'
     | 'common-power-up';
   maximumActivations: number;
-  exclusiveGroup?: PowerUpExclusiveGroup;
   delayTicks?: number;
   durationTicks?: number;
   powerPermille?: number;
   bonusDamage?: number;
   bonusDamageCap?: number;
+  healingAmount?: number;
   preventedDamage?: number;
   lethalDamageCap?: number;
   requiredConsecutiveHits?: number;
   requiredDistinctPowerUps?: number;
   repeatedAttacks?: number;
+  extraActivations?: number;
   survivingHitPoints?: number;
+  survivingHitPointPermille?: number;
 }>;
 
 type PowerUpDefinitionInput = Omit<PowerUpDefinition, 'description'>;
@@ -81,181 +101,304 @@ export const POWER_UP_CATALOG: Readonly<Record<PowerUpId, PowerUpDefinition>> =
       name: 'Edge Spring',
       shortName: 'EDGE SPRING',
       rarity: 'common',
-      when: 'Your first wall bounce',
-      effect: 'Turn toward the center briefly',
+      buildPath: 'bounce',
+      when: 'You touch a wall, up to 3 times',
+      effect: 'Restore 3 health and empower your next 2 normal hits',
       trigger: 'wall-bounce',
-      maximumActivations: 1,
+      maximumActivations: 3,
       durationTicks: 3,
+      healingAmount: 3,
+      repeatedAttacks: 2,
+      bonusDamage: 2,
     }),
     'v1-smudge-step': definePowerUp({
       id: 'v1-smudge-step',
       name: 'Smudge Step',
       shortName: 'SMUDGE STEP',
       rarity: 'common',
-      when: 'Your first basic attack misses',
-      effect: 'Dash sideways',
-      trigger: 'missed-basic',
-      maximumActivations: 1,
+      buildPath: 'survival',
+      when: 'Every fourth normal attack would hit you',
+      effect: 'Dodge it completely, up to 3 times',
+      trigger: 'incoming-basic',
+      maximumActivations: 3,
     }),
     'v1-paper-shield': definePowerUp({
       id: 'v1-paper-shield',
       name: 'Paper Shield',
       shortName: 'PAPER SHIELD',
       rarity: 'common',
-      when: 'The first signature hits you',
-      effect: 'Block up to 2 damage',
+      buildPath: 'survival',
+      when: "The enemy's special move hits you, up to 3 times",
+      effect: 'Block up to 5 damage from each hit',
       trigger: 'incoming-signature',
-      maximumActivations: 1,
-      preventedDamage: 2,
+      maximumActivations: 3,
+      preventedDamage: 5,
     }),
     'v1-combo-spark': definePowerUp({
       id: 'v1-combo-spark',
       name: 'Combo Spark',
       shortName: 'COMBO SPARK',
       rarity: 'common',
-      when: '3 basic attacks hit in a row',
-      effect: 'Deal +4 damage',
+      buildPath: 'combo',
+      when: 'Every third normal hit, up to 3 times',
+      effect: 'Deal 50% extra damage and restore 4 health',
       trigger: 'basic-hit-streak',
-      maximumActivations: 1,
+      maximumActivations: 3,
       requiredConsecutiveHits: 3,
-      bonusDamage: 4,
+      powerPermille: 500,
+      bonusDamageCap: 8,
+      healingAmount: 4,
     }),
     'v1-center-fold': definePowerUp({
       id: 'v1-center-fold',
       name: 'Center Fold',
       shortName: 'CENTER FOLD',
       rarity: 'common',
-      when: 'You drop below half hearts',
-      effect: 'Brace for 4 ticks',
+      buildPath: 'survival',
+      when: 'You fall below half health',
+      effect: 'Restore 12 health and briefly block incoming damage',
       trigger: 'below-half-hearts',
       maximumActivations: 1,
-      durationTicks: 4,
+      durationTicks: 10,
+      healingAmount: 12,
     }),
     'v1-double-doodle': definePowerUp({
       id: 'v1-double-doodle',
       name: 'Double Doodle',
       shortName: 'DOUBLE DOODLE',
       rarity: 'rare',
-      when: 'Your first signature lands',
-      effect: 'Repeat it after 6 ticks at 20% power (max 6 damage)',
+      buildPath: 'special',
+      when: 'A special move hits, up to 3 times',
+      effect: 'Repeat part of that hit for up to 6 damage',
       trigger: 'landed-signature',
-      maximumActivations: 1,
+      maximumActivations: 3,
       delayTicks: 6,
-      powerPermille: 200,
+      powerPermille: 400,
       bonusDamageCap: 6,
     }),
     'v1-backup-plan': definePowerUp({
       id: 'v1-backup-plan',
-      name: 'Backup Plan',
-      shortName: 'BACKUP PLAN',
+      name: 'Heart Ink',
+      shortName: 'HEART INK',
       rarity: 'rare',
-      when: 'Your first signature misses',
-      effect: 'Retry after 12 ticks at 35% power',
-      trigger: 'missed-signature',
-      maximumActivations: 1,
-      exclusiveGroup: 'signature-retry',
-      delayTicks: 12,
-      powerPermille: 350,
+      buildPath: 'combo',
+      when: 'Every fourth normal hit, up to 3 times',
+      effect: 'Restore 8 health',
+      trigger: 'basic-hit-count',
+      maximumActivations: 3,
+      requiredConsecutiveHits: 4,
+      healingAmount: 8,
     }),
     'v1-counter-sketch': definePowerUp({
       id: 'v1-counter-sketch',
       name: 'Counter Sketch',
       shortName: 'COUNTER SKETCH',
       rarity: 'rare',
-      when: 'The enemy uses their first signature',
-      effect: 'Counter with a 25% basic attack (max 5 damage)',
+      buildPath: 'survival',
+      when: "The enemy's special move hits you, up to 3 times",
+      effect: 'Strike back for up to 6 damage and restore 3 health',
       trigger: 'enemy-signature',
-      maximumActivations: 1,
+      maximumActivations: 3,
       powerPermille: 250,
-      bonusDamageCap: 5,
+      bonusDamageCap: 6,
+      healingAmount: 3,
     }),
     'v1-wallop': definePowerUp({
       id: 'v1-wallop',
       name: 'Wallop',
       shortName: 'WALLOP',
       rarity: 'rare',
-      when: 'Your knockback bounces them off a wall',
-      effect: 'Deal +8 damage',
+      buildPath: 'bounce',
+      when: 'You knock the enemy into a wall, up to 3 times',
+      effect: 'Deal 6 extra damage each time',
       trigger: 'knockback-wall-bounce',
-      maximumActivations: 1,
-      bonusDamage: 8,
+      maximumActivations: 3,
+      bonusDamage: 6,
     }),
     'v1-echo-mark': definePowerUp({
       id: 'v1-echo-mark',
       name: 'Echo Mark',
       shortName: 'ECHO MARK',
       rarity: 'rare',
-      when: 'Your first signature lands',
-      effect: 'Mark them; your next basic hit deals +4 damage',
+      buildPath: 'special',
+      when: 'A special move hits',
+      effect: 'Your next 2 normal hits deal 35% extra damage',
       trigger: 'marked-target-basic',
-      maximumActivations: 1,
-      bonusDamage: 4,
+      maximumActivations: 4,
+      repeatedAttacks: 2,
+      powerPermille: 350,
+      bonusDamageCap: 6,
     }),
     'v1-last-scribble': definePowerUp({
       id: 'v1-last-scribble',
       name: 'Last Scribble',
       shortName: 'LAST SCRIBBLE',
       rarity: 'epic',
+      buildPath: 'survival',
       when: 'A hit would knock you out',
-      effect: 'Stay at 1 heart',
+      effect: 'Survive with 30% health and briefly block damage',
       trigger: 'lethal-hit',
       maximumActivations: 1,
-      survivingHitPoints: 1,
-      lethalDamageCap: 12,
-      durationTicks: 0,
+      survivingHitPointPermille: 300,
+      durationTicks: 10,
     }),
     'v1-second-draft': definePowerUp({
       id: 'v1-second-draft',
-      name: 'Second Draft',
-      shortName: 'SECOND DRAFT',
+      name: 'Ink Rage',
+      shortName: 'INK RAGE',
       rarity: 'epic',
-      when: 'Your first signature misses',
-      effect: 'Retry after 10 ticks at 50% power',
-      trigger: 'missed-signature',
+      buildPath: 'survival',
+      when: 'You fall below half health',
+      effect:
+        'Your next 4 normal hits deal 5 extra damage and restore 2 health',
+      trigger: 'below-half-hearts',
       maximumActivations: 1,
-      exclusiveGroup: 'signature-retry',
-      delayTicks: 10,
-      powerPermille: 500,
+      repeatedAttacks: 4,
+      bonusDamage: 5,
+      healingAmount: 2,
     }),
     'v1-paper-twin': definePowerUp({
       id: 'v1-paper-twin',
       name: 'Paper Twin',
       shortName: 'PAPER TWIN',
       rarity: 'epic',
-      when: 'You drop below half hearts',
-      effect: 'Your next 2 basic hits echo at 25% (max 3 each)',
-      trigger: 'below-half-hearts',
+      buildPath: 'combo',
+      when: 'Your first normal attack hits',
+      effect: 'Your first 4 normal hits repeat for up to 4 damage each',
+      trigger: 'first-basic-hit',
       maximumActivations: 1,
-      repeatedAttacks: 2,
-      powerPermille: 250,
-      bonusDamageCap: 3,
+      repeatedAttacks: 4,
+      powerPermille: 350,
+      bonusDamageCap: 4,
     }),
     'v1-masterpiece': definePowerUp({
       id: 'v1-masterpiece',
       name: 'Masterpiece',
       shortName: 'MASTERPIECE',
       rarity: 'legendary',
-      when: '3 different non-Legendary Power-Ups trigger',
-      effect: 'Burst for 10 damage',
+      buildPath: 'wildcard',
+      when: 'Three different non-Legendary Power-Ups activate',
+      effect: 'Deal 12 damage and restore 10 health',
       trigger: 'distinct-power-ups',
       maximumActivations: 1,
       requiredDistinctPowerUps: 3,
-      bonusDamage: 10,
+      bonusDamage: 12,
+      healingAmount: 10,
     }),
     'v1-endless-draft': definePowerUp({
       id: 'v1-endless-draft',
       name: 'Endless Draft',
       shortName: 'ENDLESS DRAFT',
       rarity: 'legendary',
-      when: 'Your first Common Power-Up is used',
-      effect: 'It triggers 1 extra time',
+      buildPath: 'wildcard',
+      when: 'A Common or Rare Power-Up activates',
+      effect: 'Let every Common and Rare activate 1 extra time',
       trigger: 'common-power-up',
       maximumActivations: 1,
+      extraActivations: 1,
     }),
   });
 
+const definePlaystyleProfile = (
+  recommendedRoles: readonly CombatRole[],
+  gearFamilies: readonly AccessoryEffectFamily[],
+  avoidedRoles: readonly CombatRole[] = []
+): PowerUpPlaystyleProfile =>
+  Object.freeze({
+    recommendedRoles: Object.freeze([...recommendedRoles]),
+    avoidedRoles: Object.freeze([...avoidedRoles]),
+    gearFamilies: Object.freeze([...gearFamilies]),
+  });
+
+export const POWER_UP_PLAYSTYLE_PROFILES: Readonly<
+  Record<PowerUpId, PowerUpPlaystyleProfile>
+> = Object.freeze({
+  'v1-edge-spring': definePlaystyleProfile(['mage'], ['rush', 'ready']),
+  'v1-smudge-step': definePlaystyleProfile(['longshot'], ['rush', 'focus']),
+  'v1-paper-shield': definePlaystyleProfile(
+    ['brawler', 'mage'],
+    ['guard', 'fortune']
+  ),
+  'v1-combo-spark': definePlaystyleProfile(
+    ['longshot'],
+    ['rush', 'ready', 'aim']
+  ),
+  'v1-center-fold': definePlaystyleProfile(
+    ['brawler', 'mage'],
+    ['guard', 'fortune']
+  ),
+  'v1-double-doodle': definePlaystyleProfile(
+    ['longshot', 'mage'],
+    ['focus', 'aim', 'fortune']
+  ),
+  'v1-backup-plan': definePlaystyleProfile(
+    ['longshot', 'mage'],
+    ['rush', 'focus', 'ready']
+  ),
+  'v1-counter-sketch': definePlaystyleProfile(
+    ['longshot', 'mage'],
+    ['guard', 'ready']
+  ),
+  'v1-wallop': definePlaystyleProfile(['brawler'], ['guard', 'rush', 'ready']),
+  'v1-echo-mark': definePlaystyleProfile(
+    ['longshot', 'mage'],
+    ['focus', 'aim', 'fortune']
+  ),
+  'v1-last-scribble': definePlaystyleProfile(['brawler'], ['guard']),
+  'v1-second-draft': definePlaystyleProfile(
+    ['longshot', 'mage'],
+    ['focus', 'ready', 'fortune']
+  ),
+  'v1-paper-twin': definePlaystyleProfile(
+    ['longshot'],
+    ['guard', 'rush', 'fortune']
+  ),
+  'v1-masterpiece': definePlaystyleProfile(
+    ['brawler', 'longshot', 'mage'],
+    ['ready', 'fortune']
+  ),
+  'v1-endless-draft': definePlaystyleProfile(
+    ['brawler', 'longshot', 'mage'],
+    ['ready', 'fortune']
+  ),
+});
+
+export function scorePowerUpFit(
+  powerUpId: PowerUpId,
+  combatRole: CombatRole,
+  gearFamilies: readonly AccessoryEffectFamily[] = [],
+  ownedPowerUpIds: readonly PowerUpId[] = []
+): number {
+  const profile = POWER_UP_PLAYSTYLE_PROFILES[powerUpId];
+  const currentRole = toCurrentCombatRole(combatRole);
+  if (profile.avoidedRoles.includes(currentRole)) return -100;
+  const roleScore = profile.recommendedRoles.includes(currentRole) ? 4 : 0;
+  const gearScore = profile.gearFamilies.some((family) =>
+    gearFamilies.includes(family)
+  )
+    ? 2
+    : 0;
+  const buildPath = POWER_UP_CATALOG[powerUpId].buildPath;
+  const buildPathScore =
+    buildPath !== 'wildcard' &&
+    ownedPowerUpIds.some(
+      (ownedPowerUpId) =>
+        POWER_UP_CATALOG[ownedPowerUpId].buildPath === buildPath
+    )
+      ? 3
+      : 0;
+  return roleScore + gearScore + buildPathScore;
+}
+
 export const isPowerUpId = (value: unknown): value is PowerUpId =>
   typeof value === 'string' && POWER_UP_IDS.includes(value as PowerUpId);
+
+export const powerUpIsOfferableForRole = (
+  powerUpId: PowerUpId,
+  combatRole?: CombatRole
+): boolean =>
+  !combatRole ||
+  !POWER_UP_PLAYSTYLE_PROFILES[powerUpId].avoidedRoles.includes(combatRole);
 
 export type PowerUpBuildValidation =
   | Readonly<{ valid: true; powerUpIds: readonly PowerUpId[] }>
@@ -266,8 +409,7 @@ export type PowerUpBuildValidation =
         | 'unknown-id'
         | 'duplicate'
         | 'too-many'
-        | 'too-many-legendary'
-        | 'exclusive-conflict';
+        | 'too-many-legendary';
     }>;
 
 export const validatePowerUpBuild = (
@@ -279,7 +421,6 @@ export const validatePowerUpBuild = (
     return Object.freeze({ valid: false, reason: 'too-many' });
   const powerUpIds: PowerUpId[] = [];
   const seenIds = new Set<PowerUpId>();
-  const seenExclusiveGroups = new Set<PowerUpExclusiveGroup>();
   let legendaryCount = 0;
   for (const valueId of value) {
     if (!isPowerUpId(valueId))
@@ -290,12 +431,6 @@ export const validatePowerUpBuild = (
     if (definition.rarity === 'legendary') legendaryCount += 1;
     if (legendaryCount > MAXIMUM_LEGENDARY_POWER_UPS) {
       return Object.freeze({ valid: false, reason: 'too-many-legendary' });
-    }
-    if (definition.exclusiveGroup) {
-      if (seenExclusiveGroups.has(definition.exclusiveGroup)) {
-        return Object.freeze({ valid: false, reason: 'exclusive-conflict' });
-      }
-      seenExclusiveGroups.add(definition.exclusiveGroup);
     }
     seenIds.add(valueId);
     powerUpIds.push(valueId);
@@ -311,6 +446,7 @@ export const parsePowerUpBuild = (
 };
 
 export const POWER_UP_OFFER_SOURCES = Object.freeze([
+  'birth',
   'exhibition-win',
   'rival-run-win',
   'rival-run-final-win',
@@ -350,6 +486,7 @@ const defineRarityPattern = (
 export const POWER_UP_OFFER_RARITIES: Readonly<
   Record<PowerUpOfferSource, readonly PowerUpRarity[]>
 > = Object.freeze({
+  birth: defineRarityPattern('common', 'common', 'rare'),
   'exhibition-win': defineRarityPattern('common', 'common', 'rare'),
   'rival-run-win': defineRarityPattern('common', 'common', 'rare'),
   'rival-run-final-win': defineRarityPattern('common', 'rare', 'epic'),
@@ -361,6 +498,9 @@ export type CreatePowerUpOfferInput = Readonly<{
   seed: string | number;
   source: PowerUpOfferSource;
   ownedPowerUpIds: unknown;
+  combatRole?: CombatRole;
+  gearFamilies?: readonly AccessoryEffectFamily[];
+  maxPowerUps?: number;
 }>;
 
 export const createDeterministicPowerUpOffer = (
@@ -369,15 +509,18 @@ export const createDeterministicPowerUpOffer = (
   const ownedValidation = validatePowerUpBuild(input.ownedPowerUpIds);
   if (!ownedValidation.valid)
     throw new Error(`Invalid owned Power-Up build: ${ownedValidation.reason}.`);
-  if (ownedValidation.powerUpIds.length >= MAXIMUM_POWER_UPS) return undefined;
+  const maxPowerUps = Math.max(
+    0,
+    Math.min(
+      MAXIMUM_POWER_UPS,
+      Number.isSafeInteger(input.maxPowerUps)
+        ? Math.floor(input.maxPowerUps as number)
+        : MAXIMUM_POWER_UPS
+    )
+  );
+  if (ownedValidation.powerUpIds.length >= maxPowerUps) return undefined;
 
   const ownedIds = new Set(ownedValidation.powerUpIds);
-  const ownedExclusiveGroups = new Set(
-    ownedValidation.powerUpIds.flatMap((id) => {
-      const group = POWER_UP_CATALOG[id].exclusiveGroup;
-      return group ? [group] : [];
-    })
-  );
   const ownsLegendary = ownedValidation.powerUpIds.some(
     (id) => POWER_UP_CATALOG[id].rarity === 'legendary'
   );
@@ -395,20 +538,53 @@ export const createDeterministicPowerUpOffer = (
         definition.rarity === rarity &&
         !ownedIds.has(id) &&
         !selectedIds.includes(id) &&
-        (!definition.exclusiveGroup ||
-          !ownedExclusiveGroups.has(definition.exclusiveGroup))
+        powerUpIsOfferableForRole(id, input.combatRole)
       );
     });
     if (candidates.length === 0) return undefined;
-    const candidateIndex = deterministicInteger(
-      normalizedSeed,
-      'power-up-offer:v1',
-      candidates.length,
-      input.source,
-      slotIndex,
-      ownedValidation.powerUpIds.join(',')
-    );
-    const selectedId = candidates[candidateIndex];
+    const fittedCandidates = input.combatRole
+      ? (() => {
+          const highestScore = Math.max(
+            ...candidates.map((id) =>
+              scorePowerUpFit(
+                id,
+                input.combatRole as CombatRole,
+                input.gearFamilies ?? [],
+                ownedValidation.powerUpIds
+              )
+            )
+          );
+          return candidates.filter(
+            (id) =>
+              scorePowerUpFit(
+                id,
+                input.combatRole as CombatRole,
+                input.gearFamilies ?? [],
+                ownedValidation.powerUpIds
+              ) === highestScore
+          );
+        })()
+      : candidates;
+    const candidateIndex = input.combatRole
+      ? deterministicInteger(
+          normalizedSeed,
+          'power-up-offer:v2:playstyle',
+          fittedCandidates.length,
+          input.source,
+          slotIndex,
+          input.combatRole,
+          (input.gearFamilies ?? []).join(','),
+          ownedValidation.powerUpIds.join(',')
+        )
+      : deterministicInteger(
+          normalizedSeed,
+          'power-up-offer:v1',
+          fittedCandidates.length,
+          input.source,
+          slotIndex,
+          ownedValidation.powerUpIds.join(',')
+        );
+    const selectedId = fittedCandidates[candidateIndex];
     if (!selectedId) return undefined;
     selectedIds.push(selectedId);
   }

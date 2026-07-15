@@ -55,8 +55,6 @@ const createScribbit = (overrides = {}) => ({
   upgrades: [],
   level: 1,
   xp: 0,
-  mood: 'hungry',
-  careDoneToday: [],
   legacy: null,
 });
 

@@ -5,6 +5,7 @@ import type {
   BattleCheckpoint,
   BattleTimelineEvent,
   BattleTranscript,
+  CombatRole,
   FighterCheckpoint,
   FighterSlot,
   FixedVector,
@@ -19,6 +20,7 @@ export type ReplayFighterFrame = Readonly<{
   maxHitPoints: number;
   position: ReplayVector;
   velocity: ReplayVector;
+  combatRole?: CombatRole;
   primaryPower: PrimaryPower;
   abilityPhase: AbilityPhase;
   barrierHitPoints: number;
@@ -130,6 +132,9 @@ function calculateEventDrivenFighterStates(
     if (event.kind === 'damage') {
       getFighterReplayState(states, event.targetFighter).hitPoints =
         event.targetHitPoints;
+    } else if (event.kind === 'healing') {
+      getFighterReplayState(states, event.actor).hitPoints =
+        event.targetHitPoints;
     } else if (event.kind === 'ability_telegraphed') {
       getFighterReplayState(states, event.actor).abilityPhase = 'telegraph';
     } else if (event.kind === 'ability_activated') {
@@ -236,6 +241,7 @@ function calculateFighterFrame(
     maxHitPoints: earlier.maxHitPoints,
     position: interpolateVector(earlier.position, later.position, progress),
     velocity: interpolateVector(earlier.velocity, later.velocity, progress),
+    ...(earlier.combatRole ? { combatRole: earlier.combatRole } : {}),
     primaryPower: earlier.primaryPower,
     abilityPhase: eventDrivenState.abilityPhase,
     barrierHitPoints: eventDrivenState.barrierHitPoints,

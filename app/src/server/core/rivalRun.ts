@@ -296,56 +296,66 @@ export const createRivalRunChoices = (
   rivals: readonly Scribbit[],
   forecast: Forecast
 ): RivalRunChoice[] => {
-  const rankedRivals = rivals
+  const rankingSamples = 5;
+  const projectedRivals = rivals
     .map((rival) => {
-      const report = simulate(
-        challenger,
-        rival,
-        hashTextToSeed(
-          `rival-risk:v4:${forecast.day}:${challenger.id}:${rival.id}`
-        ),
-        forecast,
-        'exhibition'
-      );
-      const result = report.simulation?.result;
-      const challengerResult = result?.fighters.find(
-        (fighter) => fighter.slot === 'a'
-      );
-      const rivalResult = result?.fighters.find(
-        (fighter) => fighter.slot === 'b'
-      );
+      let challengerWins = 0;
+      let hitPointMarginTotal = 0;
+      for (let sampleIndex = 0; sampleIndex < rankingSamples; sampleIndex += 1) {
+        for (const challengerSlot of ['a', 'b'] as const) {
+          const challengerIsA = challengerSlot === 'a';
+          const report = simulate(
+            challengerIsA ? challenger : rival,
+            challengerIsA ? rival : challenger,
+            hashTextToSeed(
+              `rival-risk:v6:${forecast.day}:${challenger.id}:${rival.id}:${sampleIndex}:${challengerSlot}`
+            ),
+            forecast,
+            'exhibition'
+          );
+          const result = report.simulation?.result;
+          const challengerResult = result?.fighters.find(
+            (fighter) => fighter.slot === challengerSlot
+          );
+          const rivalResult = result?.fighters.find(
+            (fighter) => fighter.slot === (challengerIsA ? 'b' : 'a')
+          );
+          if (result?.winner === challengerSlot) challengerWins += 1;
+          hitPointMarginTotal +=
+            challengerResult && rivalResult
+              ? challengerResult.hitPointPermille - rivalResult.hitPointPermille
+              : 0;
+        }
+      }
+      const totalSamples = rankingSamples * 2;
       return {
         rival,
-        challengerWon: result?.winner === 'a',
-        hitPointMargin:
-          challengerResult && rivalResult
-            ? challengerResult.hitPointPermille - rivalResult.hitPointPermille
-            : 0,
+        challengerWinRate: challengerWins / totalSamples,
+        averageHitPointMargin: hitPointMarginTotal / totalSamples,
       };
     })
     .sort((left, right) => {
       return (
-        Number(right.challengerWon) - Number(left.challengerWon) ||
-        right.hitPointMargin - left.hitPointMargin ||
+        right.challengerWinRate - left.challengerWinRate ||
+        right.averageHitPointMargin - left.averageHitPointMargin ||
         left.rival.id.localeCompare(right.rival.id)
       );
-    })
-    .map((projection) => projection.rival);
+    });
   const tiers = [
     { tier: 'safe', winPoints: 1 },
     { tier: 'even', winPoints: 2 },
     { tier: 'risky', winPoints: 3 },
   ] as const;
-  return rankedRivals.slice(0, tiers.length).flatMap((rival, index) => {
+  return projectedRivals.slice(0, tiers.length).flatMap((projection, index) => {
     const tier = tiers[index];
     return tier
       ? [
           {
-            rival,
+            rival: projection.rival,
             ...tier,
             matchup: createCombatRoleMatchupRead(
               selectCombatRole(challenger.stats),
-              selectCombatRole(rival.stats)
+              selectCombatRole(projection.rival.stats)
             ),
           },
         ]

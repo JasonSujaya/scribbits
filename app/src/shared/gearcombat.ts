@@ -35,6 +35,7 @@ export type GearTechniqueEffect = Readonly<{
 export type ResolvedGearTechnique = Readonly<{
   category: EquipmentCategory;
   effectFamily: AccessoryEffectFamily;
+  supportEffectFamily: AccessoryEffectFamily | null;
   leadGearId: string;
   leadRank: GearRank;
   supportGearId: string | null;
@@ -189,18 +190,11 @@ const effectForStrength = (
       break;
     }
     case 'rush': {
-      const rushStartDelta = leadRank >= 5 ? -1 : 0;
       modifiers = {
         ...EMPTY_GEAR_COMBAT_MODIFIERS,
-        damagePermille: 1_000 + strengthPermille,
-        maximumHitPointsPermille: 1_000 - strengthPermille,
-        cooldownPermille: 1_000 + strengthPermille,
-        initialDelayTicksDelta: rushStartDelta,
+        damagePermille: 1_000 + lightTradeoff,
       };
-      summary =
-        rushStartDelta === 0
-          ? `${signedPercent(strengthPermille)} DASH IMPACT · ${signedPercent(-strengthPermille)} HEARTS · ${signedPercent(strengthPermille)} COOLDOWN`
-          : `${Math.abs(rushStartDelta)}T QUICK START · ${signedPercent(strengthPermille)} DASH IMPACT · ${signedPercent(-strengthPermille)} HEARTS · ${signedPercent(strengthPermille)} COOLDOWN`;
+      summary = `${signedPercent(lightTradeoff)} DASH IMPACT`;
       break;
     }
     case 'focus':
@@ -230,19 +224,16 @@ const effectForStrength = (
     case 'fortune':
       modifiers = {
         ...EMPTY_GEAR_COMBAT_MODIFIERS,
-        damagePermille: 1_000 - lightTradeoff,
-        criticalChanceBonusPermille: strengthPermille,
+        criticalChanceBonusPermille: Math.max(1, Math.round(lightTradeoff / 4)),
       };
-      summary = `${percentagePoint(strengthPermille)} FOCUS · ${signedPercent(-lightTradeoff)} IMPACT`;
+      summary = `${percentagePoint(Math.max(1, Math.round(lightTradeoff / 4)))} FOCUS`;
       break;
     case 'aim':
       modifiers = {
         ...EMPTY_GEAR_COMBAT_MODIFIERS,
-        damagePermille: 1_000 + strengthPermille,
-        maximumHitPointsPermille: 1_000 - tradeoff,
-        cooldownPermille: 1_000 + tradeoff,
+        damagePermille: 1_000 + lightTradeoff,
       };
-      summary = `${signedPercent(strengthPermille)} IMPACT · ${signedPercent(-tradeoff)} HEARTS · ${signedPercent(tradeoff)} COOLDOWN`;
+      summary = `${signedPercent(lightTradeoff)} IMPACT`;
       break;
   }
 
@@ -294,8 +285,8 @@ const clampTiming = (value: number): number => {
   );
 };
 
-const combineTechniqueEffects = (
-  techniques: readonly ResolvedGearTechnique[]
+const combineModifiers = (
+  modifierSets: readonly GearCombatModifiers[]
 ): GearCombatModifiers => {
   let damagePermille = 1_000;
   let maximumHitPointsPermille = 1_000;
@@ -304,8 +295,7 @@ const combineTechniqueEffects = (
   let telegraphTicksDelta = 0;
   let initialDelayTicksDelta = 0;
 
-  for (const technique of techniques) {
-    const modifiers = technique.effect.modifiers;
+  for (const modifiers of modifierSets) {
     damagePermille += modifiers.damagePermille - 1_000;
     maximumHitPointsPermille += modifiers.maximumHitPointsPermille - 1_000;
     cooldownPermille += modifiers.cooldownPermille - 1_000;
@@ -324,6 +314,50 @@ const combineTechniqueEffects = (
     ),
     telegraphTicksDelta: clampTiming(telegraphTicksDelta),
     initialDelayTicksDelta: clampTiming(initialDelayTicksDelta),
+  });
+};
+
+const combineTechniqueEffects = (
+  techniques: readonly ResolvedGearTechnique[]
+): GearCombatModifiers =>
+  combineModifiers(techniques.map((technique) => technique.effect.modifiers));
+
+const getCombinedGearTechniqueEffect = (
+  leadGear: Pick<CosmeticGearCatalogEntry, 'effectFamily'>,
+  leadRank: GearRank,
+  supportGear: Pick<CosmeticGearCatalogEntry, 'effectFamily'> | null,
+  supportRank: GearRank | null
+): GearTechniqueEffect => {
+  if (!supportGear || !supportRank) {
+    return getGearTechniqueEffect(leadGear, leadRank);
+  }
+  if (supportGear.effectFamily === leadGear.effectFamily) {
+    return getGearTechniqueEffect(leadGear, leadRank, supportRank);
+  }
+
+  const leadEffect = getGearTechniqueEffect(leadGear, leadRank);
+  const supportStrength = Math.max(
+    1,
+    Math.floor(
+      GEAR_RANK_STRENGTH_PERMILLE[supportRank] / SUPPORT_STRENGTH_DIVISOR
+    )
+  );
+  // Mixed-family support contributes its scalar identity without importing
+  // another family's rank-gated one-tick timing proc into the lead technique.
+  const supportEffect = effectForStrength(
+    supportGear.effectFamily,
+    supportStrength,
+    1
+  );
+  return Object.freeze({
+    family: leadEffect.family,
+    name: `${leadEffect.name} + ${supportEffect.name}`,
+    battleCue: `${leadEffect.battleCue} ${supportEffect.battleCue}`,
+    modifiers: combineModifiers([
+      leadEffect.modifiers,
+      supportEffect.modifiers,
+    ]),
+    summary: `${leadEffect.summary} · ${supportEffect.name.toUpperCase()} SUPPORT`,
   });
 };
 
@@ -364,13 +398,15 @@ export function resolveGearCombatLoadout(
       Object.freeze({
         category,
         effectFamily: lead.gear.effectFamily,
+        supportEffectFamily: support?.gear.effectFamily ?? null,
         leadGearId: lead.gear.id,
         leadRank: lead.rank,
         supportGearId: support?.gear.id ?? null,
         supportRank: support?.rank ?? null,
-        effect: getGearTechniqueEffect(
+        effect: getCombinedGearTechniqueEffect(
           lead.gear,
           lead.rank,
+          support?.gear ?? null,
           support?.rank ?? null
         ),
       })

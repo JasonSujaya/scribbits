@@ -48,6 +48,7 @@ import {
 import { navigateToDailyDraw } from '../lib/draweligibility';
 import {
   renderCollectionBook,
+  type EquipmentSlotSelection,
   type InkKitSection,
 } from '../lib/collectionbook';
 import { LEGACY_BOOK_PAGE_SIZE, renderLegacyBook } from '../lib/legacycards';
@@ -111,17 +112,17 @@ const GALLERY_TABS: ReadonlyArray<{
   },
   {
     tab: 'archived',
-    label: 'Archived Scribbits',
-    visibleLabel: 'ARCHIVED',
+    label: 'Retired Scribbits',
+    visibleLabel: 'RETIRED',
     icon: 'book',
     panelSummary:
-      'Archived Scribbits. Completed runs are kept as immutable cards.',
+      'Retired Scribbits. Completed runs are kept as immutable cards.',
   },
 ]);
 
 // One scene hosts two explicit dock destinations without duplicating data
 // orchestration: Bag owns inventory/equipment, while Gallery owns the player's
-// Growing, Mature, and Archived Scribbits.
+// Growing, Mature, and Retired Scribbits.
 export class Gallery extends Scene {
   private tab: GalleryTab = 'growing';
   private inventory: Inventory | null = null;
@@ -138,6 +139,7 @@ export class Gallery extends Scene {
   private collectionError: string | null = null;
   private equipmentError: string | null = null;
   private selectedEquipmentScribbitId: string | null = null;
+  private selectedEquipmentSlot: EquipmentSlotSelection | null = null;
   private savingEquipment = false;
   private legacyError: string | null = null;
   private collectionRequestEpoch = 0;
@@ -165,7 +167,9 @@ export class Gallery extends Scene {
   }
 
   preload(): void {
-    preloadGalleryVisualAssets(this);
+    if (getGalleryTab(this) === 'collection') {
+      preloadGalleryVisualAssets(this);
+    }
   }
 
   init(): void {
@@ -190,6 +194,7 @@ export class Gallery extends Scene {
     this.collectionError = null;
     this.equipmentError = null;
     this.selectedEquipmentScribbitId = null;
+    this.selectedEquipmentSlot = null;
     this.savingEquipment = false;
     this.legacyError = null;
     this.inventory = null;
@@ -407,6 +412,7 @@ export class Gallery extends Scene {
         errorMessage: this.collectionError,
         scribbits: myScribbits,
         selectedScribbitId: selectedScribbit?.id ?? null,
+        selectedEquipmentSlot: this.selectedEquipmentSlot,
         equipmentBusy: this.savingEquipment,
         equipmentError: this.equipmentError,
         onScrollOffsetChange: (offset) => {
@@ -423,12 +429,22 @@ export class Gallery extends Scene {
             ) !== EQUIPMENT_CATEGORIES.includes(section as EquipmentCategory);
           this.collectionSection = section;
           this.collectionScrollOffset = 0;
+          this.selectedEquipmentSlot = null;
           if (changingBagMode) this.collectionInventoryExpanded = false;
           this.equipmentError = null;
           this.build();
         },
         onSelectScribbit: (scribbitId) => {
           this.selectedEquipmentScribbitId = scribbitId;
+          this.selectedEquipmentSlot = null;
+          this.equipmentError = null;
+          this.build();
+        },
+        onEquipmentSlotSelect: (category, slotIndex) => {
+          this.collectionSection = category;
+          this.selectedEquipmentSlot = { category, slotIndex };
+          this.collectionInventoryExpanded = true;
+          this.collectionScrollOffset = 0;
           this.equipmentError = null;
           this.build();
         },
@@ -450,7 +466,7 @@ export class Gallery extends Scene {
         this,
         width / 2,
         GALLERY_CONTENT_TOP - 18,
-        `${LEGACY_BOOK_PAGE_SIZE} ARCHIVED CARDS PER PAGE`,
+        `${LEGACY_BOOK_PAGE_SIZE} RETIRED CARDS PER PAGE`,
         18,
         UI.inkSoft,
         true
@@ -542,7 +558,7 @@ export class Gallery extends Scene {
   }
 
   private buildAppTabs(): void {
-    appDock(this, this.tab === 'collection' ? 'bag' : null, {
+    appDock(this, this.tab === 'collection' ? 'bag' : 'home', {
       bag: () => this.switchTab('collection'),
     });
     this.menu = appMenu(this);
@@ -983,6 +999,7 @@ export class Gallery extends Scene {
 
     this.applyEquipmentResult(result.data);
     this.selectedEquipmentScribbitId = result.data.id;
+    this.selectedEquipmentSlot = null;
     if (this.scene.isActive() && this.tab === 'collection') this.build();
     return result.data;
   }

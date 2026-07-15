@@ -1,6 +1,6 @@
 # Rival Run Risk
 
-Generated: 2026-07-15T00:45:15.558Z
+Generated: 2026-07-15T05:54:35.358Z
 
 Runner: `app/tools/balancer/run.mjs`
 
@@ -8,20 +8,20 @@ This report bypasses API/routes/storage and calls the production combat mock bun
 
 | Target | Opponent | Win rate | Avg duration | Power-Up triggers | Target PU | Timeouts | Close | Blowouts | Verdict |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
-| Brawler base · SAFE | Gunner base | 62.5% | 15.2s | 0.00 | 0.00 | 0.0% | 62.5% | 0.0% | OK |
-| Brawler base · EVEN | Longshot base | 50.0% | 14.0s | 0.00 | 0.00 | 0.0% | 50.0% | 0.0% | OK |
-| Brawler base · RISKY | Brawler common Power-Ups | 100.0% | 13.5s | 1.00 | 0.00 | 0.0% | 100.0% | 0.0% | FLAG_WIN_RATE |
-| Longshot base · SAFE | Brawler base | 50.0% | 14.0s | 0.00 | 0.00 | 0.0% | 50.0% | 0.0% | OK |
-| Longshot base · EVEN | Brawler common Power-Ups | 50.0% | 14.0s | 2.50 | 0.00 | 0.0% | 50.0% | 0.0% | OK |
-| Longshot base · RISKY | Gunner base | 55.5% | 17.2s | 0.00 | 0.00 | 0.0% | 88.3% | 0.0% | OK |
-| Gunner base · SAFE | Gunner common Power-Ups | 40.6% | 20.0s | 2.00 | 0.00 | 0.0% | 100.0% | 0.0% | OK |
-| Gunner base · EVEN | Mage rare Power-Ups | 50.0% | 19.4s | 2.00 | 0.00 | 0.0% | 100.0% | 0.0% | OK |
-| Gunner base · RISKY | Longshot base | 43.0% | 17.1s | 0.00 | 0.00 | 0.0% | 83.6% | 0.0% | OK |
-| Mage base · SAFE | Brawler common Power-Ups | 42.2% | 13.3s | 2.91 | 0.00 | 0.0% | 100.0% | 0.0% | OK |
-| Mage base · EVEN | Mage base | 53.9% | 17.1s | 0.00 | 0.00 | 0.0% | 100.0% | 0.0% | OK |
-| Mage base · RISKY | Longshot base | 1.6% | 14.2s | 0.00 | 0.00 | 0.0% | 34.4% | 0.0% | FLAG_WIN_RATE |
+| Brawler base · SAFE | Brawler common Power-Ups | 100.0% | 13.5s | 6.00 | 0.00 | 0.0% | 100.0% | 0.0% | OK |
+| Brawler base · EVEN | Mage base | 56.3% | 13.4s | 0.00 | 0.00 | 0.0% | 100.0% | 0.0% | OK |
+| Brawler base · RISKY | Mage rare Power-Ups | 50.0% | 13.9s | 6.00 | 0.00 | 0.0% | 50.0% | 0.0% | OK |
+| Longshot base · SAFE | Brawler common Power-Ups | 100.0% | 14.5s | 4.00 | 0.00 | 0.0% | 47.7% | 0.0% | OK |
+| Longshot base · EVEN | Brawler base | 53.1% | 13.7s | 0.00 | 0.00 | 0.0% | 50.0% | 0.0% | OK |
+| Longshot base · RISKY | Mage base | 40.6% | 13.9s | 0.00 | 0.00 | 0.0% | 75.0% | 0.0% | OK |
+| Mage base · SAFE | Longshot base | 58.6% | 13.9s | 0.00 | 0.00 | 0.0% | 82.8% | 0.0% | OK |
+| Mage base · EVEN | Brawler base | 43.8% | 13.4s | 0.00 | 0.00 | 0.0% | 100.0% | 0.0% | OK |
+| Mage base · RISKY | Mage base | 55.5% | 17.1s | 0.00 | 0.00 | 0.0% | 100.0% | 0.0% | OK |
 
-## Flags
+## Hard flags
 
-- Brawler base · RISKY vs Brawler common Power-Ups: FLAG_WIN_RATE (100.0%, 13.5s avg)
-- Mage base · RISKY vs Longshot base: FLAG_WIN_RATE (1.6%, 14.2s avg)
+No balance flags from current thresholds.
+
+## Watches
+
+No watch-only rows from current thresholds.

@@ -33,6 +33,7 @@ export type CapsuleBatchSummary = Readonly<{
   common: number;
   rare: number;
   epic: number;
+  legendary: number;
   newItems: number;
 }>;
 
@@ -120,7 +121,7 @@ export function summarizeCapsuleBatch(
       [pull.rarity]: summary[pull.rarity] + 1,
       newItems: summary.newItems + (pull.isNew ? 1 : 0),
     }),
-    { common: 0, rare: 0, epic: 0, newItems: 0 }
+    { common: 0, rare: 0, epic: 0, legendary: 0, newItems: 0 }
   );
 }
 

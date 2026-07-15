@@ -22,11 +22,20 @@ export {
   MAXIMUM_POWER_UPS,
   POWER_UP_CATALOG,
   POWER_UP_IDS,
+  POWER_UP_PLAYSTYLE_PROFILES,
+  createDeterministicPowerUpOffer,
   isPowerUpId,
   parsePowerUpBuild,
+  powerUpIsOfferableForRole,
+  scorePowerUpFit,
   validatePowerUpBuild,
 } from './powerups';
-export type { PowerUpDefinition, PowerUpId, PowerUpRarity } from './powerups';
+export type {
+  PowerUpDefinition,
+  PowerUpId,
+  PowerUpPlaystyleProfile,
+  PowerUpRarity,
+} from './powerups';
 export {
   freezeGearCombatSnapshot,
   isGearCombatModifiers,

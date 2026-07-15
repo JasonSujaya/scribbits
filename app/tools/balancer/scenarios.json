@@ -1,38 +1,41 @@
 {
   "forecastDay": 9,
   "battleKind": "exhibition",
-  "baseBuildIds": ["brawler-base", "longshot-base", "gunner-base", "mage-base"],
+  "growingMaturityMaxPowerUps": 3,
+  "baseBuildIds": ["brawler-base", "longshot-base", "mage-base"],
   "rivalPoolBuildIds": [
     "brawler-base",
     "longshot-base",
-    "gunner-base",
     "mage-base",
     "brawler-common-build",
-    "gunner-common-build",
+    "longshot-rush-build",
     "mage-rare-build"
   ],
   "suites": {
     "roleMatrix": {
       "seedsPerPairing": 80
     },
+    "roleCycle": {
+      "seedsPerPairing": 120,
+      "minimumEdgeWinRate": 0.53,
+      "maximumEdgeWinRate": 0.62
+    },
     "growthProgression": {
       "seedsPerPairing": 48
     },
     "powerUpCombos": {
-      "targetBuildId": "gunner-base",
+      "targetBuildId": "longshot-base",
       "seedsPerPairing": 40
     },
     "powerUpUsefulness": {
       "seedsPerPairing": 36
     },
     "rivalRunRisk": {
-      "challengerBuildIds": [
-        "brawler-base",
-        "longshot-base",
-        "gunner-base",
-        "mage-base"
-      ],
+      "challengerBuildIds": ["brawler-base", "longshot-base", "mage-base"],
       "seedsPerChoice": 64
+    },
+    "threeDayLoop": {
+      "runsPerRole": 80
     },
     "generatedPool": {
       "opponentCount": 32,
@@ -43,7 +46,6 @@
       "generatedSeedsPerOpponent": 8
     },
     "gearPowerUps": {
-      "targetBuildId": "gunner-base",
       "seedsPerPairing": 40
     },
     "roleEdges": {
@@ -54,7 +56,7 @@
     },
     "rewardPath": {
       "targetBuildId": "brawler-base",
-      "opponentBuildId": "gunner-base",
+      "opponentBuildId": "longshot-base",
       "seedsPerSource": 40
     }
   },
@@ -69,28 +71,22 @@
     {
       "id": "day-1-zero",
       "label": "Day 1 · 0 PU",
-      "powerUpIds": []
+      "powerUpCount": 0
     },
     {
       "id": "day-1-one",
       "label": "Day 1 · 1 PU",
-      "powerUpIds": ["v1-edge-spring"]
+      "powerUpCount": 1
     },
     {
       "id": "day-2-three",
       "label": "Day 2 · 3 PU",
-      "powerUpIds": ["v1-edge-spring", "v1-paper-shield", "v1-wallop"]
+      "powerUpCount": 3
     },
     {
-      "id": "day-3-five",
-      "label": "Day 3 · 5 PU",
-      "powerUpIds": [
-        "v1-edge-spring",
-        "v1-paper-shield",
-        "v1-wallop",
-        "v1-double-doodle",
-        "v1-masterpiece"
-      ]
+      "id": "day-3-three",
+      "label": "Day 3 · 3 PU",
+      "powerUpCount": 3
     }
   ],
   "powerUpCombos": [
@@ -115,44 +111,37 @@
       "powerUpIds": ["v1-endless-draft"]
     }
   ],
-  "gearPowerUpLoadouts": [
+  "gearPowerUpProfiles": [
     {
-      "id": "no-gear-no-powerups",
-      "label": "No Gear · 0 PU",
-      "powerUpIds": [],
-      "gear": []
-    },
-    {
-      "id": "rank-one-gear",
-      "label": "Rank 1 Gear · 0 PU",
-      "powerUpIds": [],
-      "gear": [{ "id": "tiny-sword", "rank": 1 }]
-    },
-    {
-      "id": "red-gear",
-      "label": "Red Gear · 0 PU",
-      "powerUpIds": [],
-      "gear": [{ "id": "tiny-sword", "rank": 6 }]
-    },
-    {
-      "id": "red-gear-three-pu",
-      "label": "Red Gear · 3 PU",
-      "powerUpIds": ["v1-smudge-step", "v1-combo-spark", "v1-echo-mark"],
-      "gear": [{ "id": "tiny-sword", "rank": 6 }]
-    },
-    {
-      "id": "two-red-gear-five-pu",
-      "label": "2 Red Gear · 5 PU",
-      "powerUpIds": [
-        "v1-smudge-step",
-        "v1-combo-spark",
-        "v1-echo-mark",
-        "v1-paper-shield",
-        "v1-masterpiece"
-      ],
+      "targetBuildId": "brawler-base",
+      "powerUpIds": ["v1-edge-spring", "v1-center-fold", "v1-wallop"],
       "gear": [
-        { "id": "tiny-sword", "rank": 6, "slotIndex": 0 },
-        { "id": "smearstep-speed-scarf", "rank": 6, "slotIndex": 0 }
+        { "id": "inkquake-rumble-belt", "rank": 6, "slotIndex": 0 },
+        { "id": "inkquake-crater-crown", "rank": 6, "slotIndex": 0 }
+      ]
+    },
+    {
+      "targetBuildId": "longshot-base",
+      "powerUpIds": ["v1-smudge-step", "v1-double-doodle", "v1-echo-mark"],
+      "gear": [
+        { "id": "nib-halo-headband", "rank": 6, "slotIndex": 0 },
+        { "id": "nib-halo-circlet", "rank": 6, "slotIndex": 1 }
+      ]
+    },
+    {
+      "targetBuildId": "longshot-base",
+      "powerUpIds": ["v1-combo-spark", "v1-paper-shield", "v1-echo-mark"],
+      "gear": [
+        { "id": "smearstep-speed-scarf", "rank": 6, "slotIndex": 0 },
+        { "id": "smearstep-ink-skates", "rank": 6, "slotIndex": 1 }
+      ]
+    },
+    {
+      "targetBuildId": "mage-base",
+      "powerUpIds": ["v1-edge-spring", "v1-center-fold", "v1-paper-shield"],
+      "gear": [
+        { "id": "colorburst-rosette", "rank": 6, "slotIndex": 0 },
+        { "id": "colorburst-prism-crown", "rank": 6, "slotIndex": 1 }
       ]
     }
   ],
@@ -176,12 +165,6 @@
       "powerUpIds": []
     },
     {
-      "id": "edge-slight-gunner",
-      "label": "Edge · 28 Zip",
-      "stats": { "chonk": 24, "spike": 24, "zip": 28, "charm": 24 },
-      "powerUpIds": []
-    },
-    {
       "id": "edge-slight-mage",
       "label": "Edge · 28 Charm",
       "stats": { "chonk": 24, "spike": 24, "zip": 24, "charm": 28 },
@@ -191,10 +174,9 @@
   "fightFeelBuildIds": [
     "brawler-base",
     "longshot-base",
-    "gunner-base",
     "mage-base",
     "brawler-common-build",
-    "gunner-common-build",
+    "longshot-rush-build",
     "mage-rare-build"
   ],
   "builds": [
@@ -211,12 +193,6 @@
       "powerUpIds": []
     },
     {
-      "id": "gunner-base",
-      "label": "Gunner base",
-      "stats": { "chonk": 15, "spike": 15, "zip": 55, "charm": 15 },
-      "powerUpIds": []
-    },
-    {
       "id": "mage-base",
       "label": "Mage base",
       "stats": { "chonk": 15, "spike": 15, "zip": 15, "charm": 55 },
@@ -226,13 +202,13 @@
       "id": "brawler-common-build",
       "label": "Brawler common Power-Ups",
       "stats": { "chonk": 55, "spike": 15, "zip": 15, "charm": 15 },
-      "powerUpIds": ["v1-edge-spring", "v1-paper-shield", "v1-wallop"]
+      "powerUpIds": ["v1-paper-shield", "v1-center-fold", "v1-combo-spark"]
     },
     {
-      "id": "gunner-common-build",
-      "label": "Gunner common Power-Ups",
-      "stats": { "chonk": 15, "spike": 15, "zip": 55, "charm": 15 },
-      "powerUpIds": ["v1-smudge-step", "v1-combo-spark", "v1-echo-mark"]
+      "id": "longshot-rush-build",
+      "label": "Longshot rush Power-Ups",
+      "stats": { "chonk": 15, "spike": 55, "zip": 15, "charm": 15 },
+      "powerUpIds": ["v1-combo-spark", "v1-paper-shield", "v1-echo-mark"]
     },
     {
       "id": "mage-rare-build",

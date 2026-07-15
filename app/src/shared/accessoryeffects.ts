@@ -30,8 +30,8 @@ export const ACCESSORY_EFFECTS: Readonly<
     id: 'rush',
     name: 'Rush',
     techniqueName: 'Quickstep',
-    battleCue: 'Fast ink helps the role weapon recover between actions.',
-    shortCopy: 'Faster handling with a lighter guard.',
+    battleCue: 'Fast ink sharpens dash impact.',
+    shortCopy: 'Stronger movement pressure with a lighter guard.',
   },
   focus: {
     id: 'focus',

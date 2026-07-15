@@ -61,7 +61,7 @@ const loadBackedRumbleReturnReceipt = async (
   input: RumbleReturnReceiptInput & Readonly<{ backedScribbitId: string }>
 ): Promise<BackedRumbleReceipt> => {
   const [backedScribbit, cloutEarned, featuredReport] = await Promise.all([
-    loadScribbit(storage, input.backedScribbitId, input.utcDateKey),
+    loadScribbit(storage, input.backedScribbitId),
     getUserCloutPayout(storage, input.resolvedDay, input.userId),
     loadFeaturedRumbleReport(
       storage,
@@ -135,7 +135,7 @@ export const loadOwnedRumbleReturnReceipt = async (
   if (!entered?.standing) return null;
 
   const [entrant, inkAwarded, featuredReport] = await Promise.all([
-    loadScribbit(storage, entered.scribbitId, input.utcDateKey),
+    loadScribbit(storage, entered.scribbitId),
     loadClaimedInkRewardAmount(storage, {
       payoutKey: getRumbleWinInkPayoutKey(input.resolvedDay),
       payoutField: entered.scribbitId,

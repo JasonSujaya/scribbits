@@ -14,13 +14,11 @@ const require = createRequire(import.meta.url);
 const { getStatsForFighterStyle, selectCombatRole } = require(
   join(compiledSharedRoot, 'combat', 'selection.js')
 );
-const {
-  dominantFighterStyle,
-  hueToFighterStyle,
-  rgbToFighterStyle,
-} = require(join(compiledSharedRoot, 'analyzer-core.js'));
+const { dominantFighterStyle, hueToFighterStyle, rgbToFighterStyle } = require(
+  join(compiledSharedRoot, 'analyzer-core.js')
+);
 
-const styleRoles = ['brawler', 'longshot', 'gunner', 'mage'];
+const styleRoles = ['brawler', 'longshot', 'mage'];
 
 for (const role of styleRoles) {
   test(`${role} color choice creates the matching fixed fighter build`, () => {
@@ -42,11 +40,11 @@ test('fighter-style builds are symmetric and do not reward one color', () => {
   });
 });
 
-test('color-wheel boundaries map to four deterministic fighter sectors', () => {
+test('color-wheel boundaries map to three deterministic fighter sectors', () => {
   assert.equal(hueToFighterStyle(0), 'brawler');
   assert.equal(hueToFighterStyle(37.999), 'brawler');
-  assert.equal(hueToFighterStyle(38), 'gunner');
-  assert.equal(hueToFighterStyle(153.999), 'gunner');
+  assert.equal(hueToFighterStyle(38), 'longshot');
+  assert.equal(hueToFighterStyle(153.999), 'longshot');
   assert.equal(hueToFighterStyle(154), 'longshot');
   assert.equal(hueToFighterStyle(232.999), 'longshot');
   assert.equal(hueToFighterStyle(233), 'mage');
@@ -61,9 +59,9 @@ test('every base palette color has the advertised fighter result', () => {
     [[255, 154, 61], 'brawler'],
     [[59, 160, 224], 'longshot'],
     [[127, 216, 230], 'longshot'],
-    [[79, 170, 79], 'gunner'],
+    [[79, 170, 79], 'longshot'],
     [[138, 92, 216], 'mage'],
-    [[242, 207, 61], 'gunner'],
+    [[242, 207, 61], 'longshot'],
     [[255, 255, 255], 'brawler'],
     [[255, 127, 176], 'mage'],
   ];
@@ -74,15 +72,19 @@ test('every base palette color has the advertised fighter result', () => {
 
 test('mixed colors use largest coverage with a stable neutral fallback', () => {
   assert.equal(
-    dominantFighterStyle({ brawler: 10, longshot: 40, gunner: 20, mage: 30 }),
+    dominantFighterStyle({ brawler: 10, longshot: 40, mage: 30 }),
     'longshot'
   );
   assert.equal(
-    dominantFighterStyle({ brawler: 0, longshot: 0, gunner: 0, mage: 0 }),
+    dominantFighterStyle({ brawler: 0, longshot: 0, mage: 0 }),
     'brawler'
   );
   assert.equal(
-    dominantFighterStyle({ brawler: 12, longshot: 12, gunner: 12, mage: 12 }),
+    dominantFighterStyle({ brawler: 12, longshot: 12, mage: 12 }),
     'brawler'
   );
+});
+
+test('legacy Gunner input normalizes to the current Longshot build', () => {
+  assert.equal(selectCombatRole(getStatsForFighterStyle('gunner')), 'longshot');
 });

@@ -25,7 +25,7 @@ import {
   selectCombatRole,
   selectPrimaryPower as selectPrimaryPowerForStats,
 } from './selection';
-import { getCombatRoleRules } from './roles';
+import { getCombatRoleRules, toCurrentCombatRole } from './roles';
 import { freezeGearCombatSnapshot, isGearCombatSnapshot } from './gearsnapshot';
 import { applyBattleArenaModifier } from '../battlearena';
 import {
@@ -95,11 +95,15 @@ type MutableFighterState = {
   endlessDraftExtraPowerUpId: PowerUpId | null;
   scheduledPowerUpEffects: ScheduledPowerUpEffect[];
   basicHitStreak: number;
+  successfulNormalHitCount: number;
+  incomingNormalAttackCount: number;
   currentBasicAttackHit: boolean;
   currentBasicAttackDamage: number;
   movementOverrideUntilTick: number;
   paperTwinAttacksRemaining: number;
-  echoMarkArmed: boolean;
+  echoMarkAttacksRemaining: number;
+  edgeSpringAttacksRemaining: number;
+  inkRageAttacksRemaining: number;
   lastKnockbackBy: FighterSlot | null;
   lastKnockbackTick: number;
   combatRole: CombatRole;
@@ -111,6 +115,7 @@ type MutableFighterState = {
   hitPoints: number;
   maxHitPoints: number;
   damageDealt: number;
+  roleDamageRemainderPermille: number;
   basicAttackReadyAtTick: number;
   basicAttackNumber: number;
   burstShotsRemaining: number;
@@ -366,7 +371,10 @@ function triggerPowerUp(
   const activations = fighter.powerUpActivations.get(powerUpId) ?? 0;
   const activationLimit =
     definition.maximumActivations +
-    (fighter.endlessDraftExtraPowerUpId === powerUpId ? 1 : 0);
+    (fighterOwnsPowerUp(fighter, 'v1-endless-draft') &&
+    (definition.rarity === 'common' || definition.rarity === 'rare')
+      ? (POWER_UP_CATALOG['v1-endless-draft'].extraActivations ?? 0)
+      : 0);
   if (
     activations >= activationLimit ||
     fighter.powerUpTriggerCount >= MAXIMUM_POWER_UP_TRIGGER_EVENTS
@@ -389,7 +397,7 @@ function triggerPowerUp(
     fighter.triggeredNonLegendaryPowerUps.add(powerUpId);
   }
   if (
-    definition.rarity === 'common' &&
+    (definition.rarity === 'common' || definition.rarity === 'rare') &&
     fighter.endlessDraftExtraPowerUpId === null &&
     triggerPowerUp(context, fighter, 'v1-endless-draft')
   ) {
@@ -421,7 +429,38 @@ function dealPowerUpDamage(
   if (!triggerPowerUp(context, fighter, powerUpId, target, requestedDamage)) {
     return 0;
   }
-  return applyBudgetedPowerUpDamage(context, fighter, target, requestedDamage);
+  const actualDamage = applyBudgetedPowerUpDamage(
+    context,
+    fighter,
+    target,
+    requestedDamage
+  );
+  healFighterFromPowerUp(context, fighter, powerUpId);
+  return actualDamage;
+}
+
+function healFighterFromPowerUp(
+  context: SimulationContext,
+  fighter: MutableFighterState,
+  powerUpId: PowerUpId
+): number {
+  const requestedHealing = POWER_UP_CATALOG[powerUpId].healingAmount ?? 0;
+  const actualHealing = Math.min(
+    requestedHealing,
+    fighter.maxHitPoints - fighter.hitPoints
+  );
+  if (actualHealing <= 0) return 0;
+  fighter.hitPoints += actualHealing;
+  appendEvent(context, {
+    tick: context.tick,
+    kind: 'healing',
+    actor: fighter.slot,
+    source: 'power_up',
+    powerUpId,
+    amount: actualHealing,
+    targetHitPoints: fighter.hitPoints,
+  });
+  return actualHealing;
 }
 
 function applyBudgetedPowerUpDamage(
@@ -536,11 +575,15 @@ function createFighterState(
     endlessDraftExtraPowerUpId: null,
     scheduledPowerUpEffects: [],
     basicHitStreak: 0,
+    successfulNormalHitCount: 0,
+    incomingNormalAttackCount: 0,
     currentBasicAttackHit: false,
     currentBasicAttackDamage: 0,
     movementOverrideUntilTick: 0,
     paperTwinAttacksRemaining: 0,
-    echoMarkArmed: false,
+    echoMarkAttacksRemaining: 0,
+    edgeSpringAttacksRemaining: 0,
+    inkRageAttacksRemaining: 0,
     lastKnockbackBy: null,
     lastKnockbackTick: -1,
     combatRole,
@@ -557,6 +600,7 @@ function createFighterState(
     hitPoints: maxHitPoints,
     maxHitPoints,
     damageDealt: 0,
+    roleDamageRemainderPermille: 0,
     basicAttackReadyAtTick: initialBasicAttackDelayByRole[combatRole],
     basicAttackNumber: 0,
     burstShotsRemaining: 0,
@@ -873,34 +917,6 @@ function finishAbility(
   context: SimulationContext,
   fighter: MutableFighterState
 ): void {
-  if (!fighter.abilityHitOpponent) {
-    const retryPowerUpId: PowerUpId | null = fighterOwnsPowerUp(
-      fighter,
-      'v1-second-draft'
-    )
-      ? 'v1-second-draft'
-      : fighterOwnsPowerUp(fighter, 'v1-backup-plan')
-        ? 'v1-backup-plan'
-        : null;
-    if (retryPowerUpId) {
-      const definition = POWER_UP_CATALOG[retryPowerUpId];
-      schedulePowerUpDamage(
-        context,
-        fighter,
-        retryPowerUpId,
-        getOpponent(context, fighter),
-        definition.delayTicks ?? 0,
-        Math.max(
-          1,
-          divideRounded(
-            getSignatureBaseDamage(fighter, context.rules) *
-              (definition.powerPermille ?? 0),
-            1_000
-          )
-        )
-      );
-    }
-  }
   appendEvent(context, {
     tick: context.tick,
     kind: 'ability_finished',
@@ -925,42 +941,6 @@ function finishAbility(
   } else {
     fighter.abilityReadyAtTick =
       context.tick + getEffectiveCooldownTicks(context, fighter);
-  }
-}
-
-function getSignatureBaseDamage(
-  fighter: MutableFighterState,
-  rules: CombatRules
-): number {
-  switch (fighter.primaryPower) {
-    case 'inkquake': {
-      const config = rules.abilities.inkquake;
-      return (
-        config.baseDamage +
-        Math.floor(fighter.input.stats.chonk / config.chonkDamageDivisor)
-      );
-    }
-    case 'nib_halo': {
-      const config = rules.abilities.nib_halo;
-      return (
-        Math.max(1, Math.floor(config.baseDamage / 2)) +
-        Math.floor(fighter.input.stats.spike / 12)
-      );
-    }
-    case 'smearstep': {
-      const config = rules.abilities.smearstep;
-      return (
-        Math.max(1, config.baseDamage - 6) +
-        Math.floor(fighter.input.stats.zip / 6)
-      );
-    }
-    case 'colorburst': {
-      const config = rules.abilities.colorburst;
-      return (
-        Math.max(1, config.baseDamage - 6) +
-        Math.floor(fighter.input.stats.charm / 4)
-      );
-    }
   }
 }
 
@@ -1087,10 +1067,7 @@ function updateMovementIntent(
         y: towardOpponent.x * strafeSign,
       };
     }
-    const movementSpeed =
-      fighter.combatRole === 'brawler' && opponent.combatRole === 'gunner'
-        ? divideRounded(fighter.baseMovementPerTick * 1_375, 1_000)
-        : fighter.baseMovementPerTick;
+    const movementSpeed = fighter.baseMovementPerTick;
     fighter.velocity = copyVector(
       normalizeVector(movementIntent, movementSpeed, fighter.aimDirection)
     );
@@ -1144,6 +1121,11 @@ function constrainFighterToArena(
       position: freezeVector(fighter.position),
     });
     if (triggerPowerUp(context, fighter, 'v1-edge-spring')) {
+      healFighterFromPowerUp(context, fighter, 'v1-edge-spring');
+      fighter.edgeSpringAttacksRemaining = Math.max(
+        fighter.edgeSpringAttacksRemaining,
+        POWER_UP_CATALOG['v1-edge-spring'].repeatedAttacks ?? 0
+      );
       fighter.velocity = copyVector(
         normalizeVector(
           { x: -fighter.position.x, y: -fighter.position.y },
@@ -1310,6 +1292,15 @@ function isSignatureDamageSource(
   );
 }
 
+function isNormalAttackDamageSource(damageSource: DamageSource): boolean {
+  return (
+    damageSource === 'brawler_slam' ||
+    damageSource === 'longshot_quill' ||
+    damageSource === 'gunner_shot' ||
+    damageSource === 'mage_bolt'
+  );
+}
+
 function getBasicAttackDamage(fighter: MutableFighterState): number {
   const roleRules = getCombatRoleRules(fighter.combatRole);
   return (
@@ -1332,18 +1323,37 @@ function applyResolvedDamage(
   const incomingSignature =
     source.slot !== target.slot &&
     isSignatureDamageSource(source, damageSource);
+  if (source.slot !== target.slot && isNormalAttackDamageSource(damageSource)) {
+    target.incomingNormalAttackCount += 1;
+    if (
+      target.incomingNormalAttackCount % 4 === 0 &&
+      triggerPowerUp(context, target, 'v1-smudge-step', source)
+    ) {
+      const strafeSign = target.slot === 'a' ? 1 : -1;
+      target.velocity = copyVector(
+        normalizeVector(
+          {
+            x: -target.velocity.y * strafeSign,
+            y: target.velocity.x * strafeSign,
+          },
+          target.baseMovementPerTick * 2,
+          target.aimDirection
+        )
+      );
+      target.movementOverrideUntilTick = context.tick + 3;
+      return 0;
+    }
+  }
   let damageAfterPowerUpDefense = requestedDamage;
-  if (
-    incomingSignature &&
-    fighterOwnsPowerUp(target, 'v1-paper-shield') &&
-    (target.powerUpActivations.get('v1-paper-shield') ?? 0) === 0
-  ) {
+  if (incomingSignature && fighterOwnsPowerUp(target, 'v1-paper-shield')) {
     const preventedDamage = Math.min(
       requestedDamage,
       POWER_UP_CATALOG['v1-paper-shield'].preventedDamage ?? 0
     );
-    if (preventedDamage > 0) {
-      triggerPowerUp(context, target, 'v1-paper-shield', source);
+    if (
+      preventedDamage > 0 &&
+      triggerPowerUp(context, target, 'v1-paper-shield', source)
+    ) {
       damageAfterPowerUpDefense -= preventedDamage;
     }
   }
@@ -1407,7 +1417,18 @@ function applyResolvedDamage(
         Number.MAX_SAFE_INTEGER) &&
     triggerPowerUp(context, target, 'v1-last-scribble', source)
   ) {
-    actualDamage = Math.max(0, target.hitPoints - 1);
+    const survivingHitPoints = Math.max(
+      1,
+      POWER_UP_CATALOG['v1-last-scribble'].survivingHitPointPermille ===
+        undefined
+        ? (POWER_UP_CATALOG['v1-last-scribble'].survivingHitPoints ?? 1)
+        : divideRounded(
+            target.maxHitPoints *
+              POWER_UP_CATALOG['v1-last-scribble'].survivingHitPointPermille,
+            1_000
+          )
+    );
+    actualDamage = Math.max(0, target.hitPoints - survivingHitPoints);
     target.defenseUntilTick = Math.max(
       target.defenseUntilTick,
       context.tick + (POWER_UP_CATALOG['v1-last-scribble'].durationTicks ?? 0)
@@ -1458,9 +1479,13 @@ function applyResolvedDamage(
     );
     if (
       fighterOwnsPowerUp(source, 'v1-echo-mark') &&
-      (source.powerUpActivations.get('v1-echo-mark') ?? 0) === 0
+      (source.powerUpActivations.get('v1-echo-mark') ?? 0) <
+        POWER_UP_CATALOG['v1-echo-mark'].maximumActivations
     ) {
-      source.echoMarkArmed = true;
+      source.echoMarkAttacksRemaining = Math.max(
+        source.echoMarkAttacksRemaining,
+        POWER_UP_CATALOG['v1-echo-mark'].repeatedAttacks ?? 0
+      );
     }
     const counterSketch = POWER_UP_CATALOG['v1-counter-sketch'];
     schedulePowerUpDamage(
@@ -1486,44 +1511,42 @@ function applyResolvedDamage(
     target.hitPoints * 2 <= target.maxHitPoints
   ) {
     if (triggerPowerUp(context, target, 'v1-center-fold')) {
+      healFighterFromPowerUp(context, target, 'v1-center-fold');
       target.defenseUntilTick = Math.max(
         target.defenseUntilTick,
         context.tick + (POWER_UP_CATALOG['v1-center-fold'].durationTicks ?? 0)
       );
     }
-    if (triggerPowerUp(context, target, 'v1-paper-twin')) {
-      target.paperTwinAttacksRemaining =
-        POWER_UP_CATALOG['v1-paper-twin'].repeatedAttacks ?? 0;
+    if (triggerPowerUp(context, target, 'v1-second-draft')) {
+      target.inkRageAttacksRemaining =
+        POWER_UP_CATALOG['v1-second-draft'].repeatedAttacks ?? 0;
     }
   }
   return actualDamage;
 }
 
 const ROLE_MATCHUP_DAMAGE_MULTIPLIERS: Readonly<
-  Record<CombatRole, Readonly<Record<CombatRole, number>>>
+  Record<
+    Exclude<CombatRole, 'gunner'>,
+    Readonly<Record<Exclude<CombatRole, 'gunner'>, number>>
+  >
 > = Object.freeze({
+  // These are small counterweights for each role's native range, cadence, and
+  // shielding—not the player-facing edge by themselves. The complete engine
+  // is gated at 53–62% for Brawler > Mage > Longshot > Brawler.
   brawler: Object.freeze({
     brawler: 1_000,
-    longshot: 960,
-    gunner: 950,
-    mage: 1_060,
+    longshot: 750,
+    mage: 1_080,
   }),
   longshot: Object.freeze({
-    brawler: 1_060,
+    brawler: 1_255,
     longshot: 1_000,
-    gunner: 1_080,
-    mage: 1_000,
-  }),
-  gunner: Object.freeze({
-    brawler: 1_000,
-    longshot: 1_060,
-    gunner: 1_000,
-    mage: 960,
+    mage: 1_015,
   }),
   mage: Object.freeze({
-    brawler: 960,
-    longshot: 1_060,
-    gunner: 1_060,
+    brawler: 940,
+    longshot: 985,
     mage: 1_000,
   }),
 });
@@ -1532,7 +1555,9 @@ function getRoleMatchupDamageMultiplierPermille(
   attacker: CombatRole,
   defender: CombatRole
 ): number {
-  return ROLE_MATCHUP_DAMAGE_MULTIPLIERS[attacker][defender];
+  return ROLE_MATCHUP_DAMAGE_MULTIPLIERS[toCurrentCombatRole(attacker)][
+    toCurrentCombatRole(defender)
+  ];
 }
 
 function rollAndApplyDamage(
@@ -1563,10 +1588,13 @@ function rollAndApplyDamage(
           source.combatRole,
           target.combatRole
         );
-  let damage = Math.max(
-    1,
-    divideRounded(baseDamage * roleMultiplierPermille, 1_000)
-  );
+  const scaledRoleDamage =
+    baseDamage * roleMultiplierPermille +
+    (source.slot === target.slot ? 0 : source.roleDamageRemainderPermille);
+  let damage = Math.max(1, Math.floor(scaledRoleDamage / 1_000));
+  if (source.slot !== target.slot) {
+    source.roleDamageRemainderPermille = scaledRoleDamage % 1_000;
+  }
   damage = Math.max(
     1,
     divideRounded(
@@ -1669,7 +1697,7 @@ function getRoleStat(fighter: MutableFighterState): number {
     case 'brawler':
       return fighter.input.stats.chonk;
     case 'longshot':
-      return fighter.input.stats.spike;
+      return Math.max(fighter.input.stats.spike, fighter.input.stats.zip);
     case 'gunner':
       return fighter.input.stats.zip;
     case 'mage':
@@ -1709,45 +1737,91 @@ function finalizeBasicAttack(
 ): void {
   if (!hit) {
     fighter.basicHitStreak = 0;
-    if (triggerPowerUp(context, fighter, 'v1-smudge-step')) {
-      const strafeSign = fighter.slot === 'a' ? 1 : -1;
-      fighter.velocity = copyVector(
-        normalizeVector(
-          {
-            x: -fighter.velocity.y * strafeSign,
-            y: fighter.velocity.x * strafeSign,
-          },
-          fighter.baseMovementPerTick * 2,
-          fighter.aimDirection
-        )
-      );
-      fighter.movementOverrideUntilTick = context.tick + 3;
-    }
     return;
   }
 
   fighter.basicHitStreak += 1;
+  fighter.successfulNormalHitCount += 1;
+  if (fighter.edgeSpringAttacksRemaining > 0) {
+    fighter.edgeSpringAttacksRemaining -= 1;
+    applyBudgetedPowerUpDamage(
+      context,
+      fighter,
+      target,
+      POWER_UP_CATALOG['v1-edge-spring'].bonusDamage ?? 0
+    );
+  }
+  const comboSparkRequiredHits =
+    POWER_UP_CATALOG['v1-combo-spark'].requiredConsecutiveHits ?? 3;
   if (
-    fighter.basicHitStreak ===
-    (POWER_UP_CATALOG['v1-combo-spark'].requiredConsecutiveHits ?? 3)
+    comboSparkRequiredHits > 0 &&
+    fighter.basicHitStreak % comboSparkRequiredHits === 0
   ) {
     dealPowerUpDamage(
       context,
       fighter,
       target,
       'v1-combo-spark',
-      POWER_UP_CATALOG['v1-combo-spark'].bonusDamage ?? 0
+      Math.min(
+        POWER_UP_CATALOG['v1-combo-spark'].bonusDamageCap ??
+          Number.MAX_SAFE_INTEGER,
+        Math.max(
+          1,
+          divideRounded(
+            landedDamage *
+              (POWER_UP_CATALOG['v1-combo-spark'].powerPermille ?? 0),
+            1_000
+          )
+        )
+      )
     );
   }
-  if (fighter.echoMarkArmed) {
-    fighter.echoMarkArmed = false;
+  const heartInkRequiredHits =
+    POWER_UP_CATALOG['v1-backup-plan'].requiredConsecutiveHits ?? 4;
+  if (
+    heartInkRequiredHits > 0 &&
+    fighter.successfulNormalHitCount % heartInkRequiredHits === 0 &&
+    triggerPowerUp(context, fighter, 'v1-backup-plan')
+  ) {
+    healFighterFromPowerUp(context, fighter, 'v1-backup-plan');
+  }
+  if (fighter.echoMarkAttacksRemaining > 0) {
+    fighter.echoMarkAttacksRemaining -= 1;
     dealPowerUpDamage(
       context,
       fighter,
       target,
       'v1-echo-mark',
-      POWER_UP_CATALOG['v1-echo-mark'].bonusDamage ?? 0
+      Math.min(
+        POWER_UP_CATALOG['v1-echo-mark'].bonusDamageCap ??
+          Number.MAX_SAFE_INTEGER,
+        Math.max(
+          1,
+          divideRounded(
+            landedDamage *
+              (POWER_UP_CATALOG['v1-echo-mark'].powerPermille ?? 0),
+            1_000
+          )
+        )
+      )
     );
+  }
+  if (fighter.inkRageAttacksRemaining > 0) {
+    fighter.inkRageAttacksRemaining -= 1;
+    applyBudgetedPowerUpDamage(
+      context,
+      fighter,
+      target,
+      POWER_UP_CATALOG['v1-second-draft'].bonusDamage ?? 0
+    );
+    healFighterFromPowerUp(context, fighter, 'v1-second-draft');
+  }
+  if (
+    fighter.paperTwinAttacksRemaining === 0 &&
+    triggerPowerUp(context, fighter, 'v1-paper-twin')
+  ) {
+    fighter.paperTwinAttacksRemaining =
+      POWER_UP_CATALOG['v1-paper-twin'].repeatedAttacks ?? 0;
   }
   if (fighter.paperTwinAttacksRemaining > 0) {
     fighter.paperTwinAttacksRemaining -= 1;
@@ -1783,8 +1857,10 @@ function executeSingleRoleAttack(
     (fighter.combatRole === 'gunner'
       ? 1_200
       : fighter.combatRole === 'mage'
-        ? 400
-        : 1_000);
+        ? 1_600
+        : fighter.combatRole === 'longshot'
+          ? 700
+          : 1_000);
   const damage =
     roleRules.basicAttackBaseDamage +
     Math.floor(getRoleStat(fighter) / roleRules.basicAttackStatDivisor);
@@ -2002,7 +2078,7 @@ function resolveNibHalo(
         opponent,
         'nib_halo',
         Math.max(1, Math.floor(config.baseDamage / 2)) +
-          Math.floor(fighter.input.stats.spike / 12),
+          Math.floor(getRoleStat(fighter) / 12),
         `${fighter.activationNumber}:${shotIndex}`,
         true
       )
@@ -2285,6 +2361,7 @@ function executeStatusEffects(context: SimulationContext): void {
       const target = getFighter(context, effect.target);
       if (fighter.hitPoints > 0 && target.hitPoints > 0) {
         applyBudgetedPowerUpDamage(context, fighter, target, effect.damage);
+        healFighterFromPowerUp(context, fighter, effect.powerUpId);
       }
     }
     fighter.scheduledPowerUpEffects = pendingEffects;

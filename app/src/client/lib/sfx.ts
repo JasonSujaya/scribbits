@@ -216,6 +216,13 @@ export function playSfx(cue: SfxCue): boolean {
   return true;
 }
 
+export function preloadSfx(cue: SfxCue): void {
+  if (!sfxEnabled) return;
+  SFX_CATALOG[cue].samples.forEach((assetId) => {
+    void loadSampleBuffer(assetId);
+  });
+}
+
 export function isSfxEnabled(): boolean {
   return sfxEnabled;
 }

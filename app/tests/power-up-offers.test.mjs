@@ -5,13 +5,15 @@ import test from 'node:test';
 import { createMemoryStorage } from './support/memory-storage.mjs';
 
 const compiledServerRoot = process.env.SCRIBBITS_COMPILED_SERVER_ROOT;
-if (!compiledServerRoot) {
+const compiledSharedRoot = process.env.SCRIBBITS_COMPILED_SHARED_ROOT;
+if (!compiledServerRoot || !compiledSharedRoot) {
   throw new Error('Run Power-Up offer tests through run-test-suites.mjs.');
 }
 
 const require = createRequire(import.meta.url);
 const offers = require(join(compiledServerRoot, 'core', 'powerUpOffers.js'));
 const scribbits = require(join(compiledServerRoot, 'core', 'scribbit.js'));
+const powerUps = require(join(compiledSharedRoot, 'combat', 'powerups.js'));
 
 const fighter = (id = 'power-up-fighter') => ({
   id,
@@ -34,8 +36,6 @@ const fighter = (id = 'power-up-fighter') => ({
   powerUpIds: [],
   level: 1,
   xp: 0,
-  mood: 'happy',
-  careDoneToday: [],
   legacy: null,
 });
 
@@ -122,4 +122,40 @@ test('Power-Up discoveries parse safely and stay player-wide', async () => {
     ['v1-wallop', 'v1-paper-twin']
   );
   assert.deepEqual(offers.parsePowerUpDiscoveries('{broken'), []);
+});
+
+test('persisted offers derive a role-aligned first choice from Scribbit stats', async () => {
+  const memory = createMemoryStorage();
+  const roles = [
+    ['brawler', 'brawler', { chonk: 55, spike: 15, zip: 15, charm: 15 }],
+    [
+      'longshot',
+      'spike-longshot',
+      { chonk: 15, spike: 55, zip: 15, charm: 15 },
+    ],
+    ['longshot', 'zip-longshot', { chonk: 15, spike: 15, zip: 55, charm: 15 }],
+    ['mage', 'mage', { chonk: 15, spike: 15, zip: 15, charm: 55 }],
+  ];
+  for (const [combatRole, fixtureId, stats] of roles) {
+    const scribbit = { ...fighter(`offer-${fixtureId}`), stats };
+    const offer = await offers.getOrCreatePowerUpOffer(memory.storage, {
+      userId: `user-${fixtureId}`,
+      scribbit,
+      reportId: `report-${fixtureId}`,
+      source: 'exhibition-win',
+      createdAtMs: 1_000,
+    });
+    assert.ok(offer);
+    const offeredScore = powerUps.scorePowerUpFit(
+      offer.choices[0],
+      combatRole,
+      []
+    );
+    const maximumCommonScore = Math.max(
+      ...powerUps.POWER_UP_IDS.filter(
+        (id) => powerUps.POWER_UP_CATALOG[id].rarity === 'common'
+      ).map((id) => powerUps.scorePowerUpFit(id, combatRole, []))
+    );
+    assert.equal(offeredScore, maximumCommonScore);
+  }
 });

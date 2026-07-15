@@ -293,6 +293,7 @@ export function stageDirectBattle(
   const nextArena = currentArena
     ? {
         ...currentArena,
+        hasCompletedBattle: true,
         founderChronicle: response.founderChronicle,
       }
     : undefined;

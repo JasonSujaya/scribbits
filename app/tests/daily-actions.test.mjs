@@ -35,55 +35,7 @@ const createScribbit = (overrides = {}) => ({
   upgrades: [],
   level: 1,
   xp: overrides.xp ?? 0,
-  mood: 'hungry',
-  careDoneToday: [],
   legacy: null,
-});
-
-test('Care recovers an EXEC reply loss without duplicate XP', async () => {
-  const memory = createMemoryStorage({ loseNextCommitReply: true });
-  const scribbit = createScribbit({ id: 'care-scribbit' });
-  const scribbitKey = scribbitStore.getScribbitKey(scribbit.id);
-  const input = {
-    scribbitId: scribbit.id,
-    action: 'feed',
-    utcDateKey: '20260713',
-    operationId: 'care-operation-1',
-    claimedAtMilliseconds: 1_000,
-  };
-
-  await memory.storage.set(scribbitKey, JSON.stringify(scribbit));
-
-  const firstResult = await dailyActions.commitDailyCareAction(
-    memory.storage,
-    input
-  );
-  assert.equal(firstResult.status, 'committed');
-  assert.equal(firstResult.recovered, true);
-  const committedScribbit = JSON.parse(await memory.storage.get(scribbitKey));
-  const committedXp = committedScribbit.xp;
-  assert.ok(committedXp > 0);
-
-  const sameOperationRetry = await dailyActions.commitDailyCareAction(
-    memory.storage,
-    input
-  );
-  assert.equal(sameOperationRetry.status, 'committed');
-  assert.equal(sameOperationRetry.recovered, true);
-  assert.equal(
-    JSON.parse(await memory.storage.get(scribbitKey)).xp,
-    committedXp
-  );
-
-  const newOperationRetry = await dailyActions.commitDailyCareAction(
-    memory.storage,
-    { ...input, operationId: 'care-operation-2' }
-  );
-  assert.deepEqual(newOperationRetry, { status: 'already-claimed' });
-  assert.equal(
-    JSON.parse(await memory.storage.get(scribbitKey)).xp,
-    committedXp
-  );
 });
 
 test('Champion retries resume one deterministic report and one outcome', async () => {

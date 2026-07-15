@@ -178,7 +178,7 @@ test("a Scribbit entered in today's Rumble cannot be retired", async () => {
   );
 });
 
-test('Gallery exposes Retire for active owned Scribbits and moves success to Archived', () => {
+test('Gallery exposes Retire for active owned Scribbits and uses Retired player-facing copy', () => {
   const detailSource = readFileSync(
     join(process.cwd(), 'src', 'client', 'lib', 'detailmodal.ts'),
     'utf8'
@@ -194,7 +194,8 @@ test('Gallery exposes Retire for active owned Scribbits and moves success to Arc
 
   assert.match(detailSource, /label: 'Retire'/);
   assert.match(detailSource, /icon: 'archive'/);
-  assert.match(detailSource, /The drawing and record stay in Archived/);
+  assert.match(detailSource, /The drawing and record stay in Retired/);
+  assert.match(detailSource, /moved to Retired/);
   assert.doesNotMatch(detailSource, /label: 'Believe'|'BELIEF'/);
   assert.match(detailSource, /maturityCountdownHeadline/);
   assert.match(detailSource, /Open .* Power-Up build and catalog/);

@@ -1,4 +1,4 @@
-import type { Element, Mood, ScribbitStats } from './arena';
+import type { Element, ScribbitStats } from './arena';
 import { ELEMENTS } from './elements';
 
 export type FoundingScribbitPersonality = Readonly<{
@@ -18,7 +18,6 @@ export type FoundingScribbitDefinition = Readonly<{
   element: Element;
   stats: Readonly<ScribbitStats>;
   level: 1 | 2 | 3;
-  mood: Mood;
   imageUrl: `/creatures/creature-${string}.png`;
   personality: FoundingScribbitPersonality;
 }>;
@@ -71,7 +70,6 @@ export const FOUNDING_SCRIBBIT_DEFINITIONS: readonly FoundingScribbitDefinition[
       element: 'moss',
       stats: { chonk: 34, spike: 18, zip: 28, charm: 20 },
       level: 1,
-      mood: 'happy',
       imageUrl: '/creatures/creature-mosswhisk.png',
       personality: {
         epithet: 'The Rootline Rumbler',
@@ -93,7 +91,6 @@ export const FOUNDING_SCRIBBIT_DEFINITIONS: readonly FoundingScribbitDefinition[
       element: 'moss',
       stats: { chonk: 22, spike: 30, zip: 34, charm: 14 },
       level: 2,
-      mood: 'sleepy',
       imageUrl: '/creatures/creature-fernibble.png',
       personality: {
         epithet: 'The Fernside Flier',
@@ -102,7 +99,8 @@ export const FOUNDING_SCRIBBIT_DEFINITIONS: readonly FoundingScribbitDefinition[
           'Tiny bite, quick stride, fern cape ready.',
           'Mind the page corner; it tastes surprisingly crisp.',
         ],
-        signatureReaction: 'Vine Skip! Two green streaks, no wasted scribble.',
+        signatureReaction:
+          'Nib Volley! Three green quills, no wasted scribble.',
         victoryLine: 'Shortcut found, fern fronds still perfectly folded.',
         defeatLine: 'Lovely lap! I took the scenic edge this time.',
         rumbleLine: 'Fernibble zips through the Rumble on leafy feet.',
@@ -115,7 +113,6 @@ export const FOUNDING_SCRIBBIT_DEFINITIONS: readonly FoundingScribbitDefinition[
       element: 'moss',
       stats: { chonk: 48, spike: 16, zip: 12, charm: 24 },
       level: 3,
-      mood: 'hungry',
       imageUrl: '/creatures/creature-barkbloom.png',
       personality: {
         epithet: 'The Bloomwood Anchor',
@@ -137,7 +134,6 @@ export const FOUNDING_SCRIBBIT_DEFINITIONS: readonly FoundingScribbitDefinition[
       element: 'moss',
       stats: { chonk: 20, spike: 14, zip: 30, charm: 36 },
       level: 1,
-      mood: 'pumped',
       imageUrl: '/creatures/creature-gladepuff.png',
       personality: {
         epithet: 'The Meadow Confetti',
@@ -159,7 +155,6 @@ export const FOUNDING_SCRIBBIT_DEFINITIONS: readonly FoundingScribbitDefinition[
       element: 'moss',
       stats: { chonk: 42, spike: 26, zip: 10, charm: 22 },
       level: 2,
-      mood: 'happy',
       imageUrl: '/creatures/creature-elderglen.png',
       personality: {
         epithet: 'The Ancient Baseline',
@@ -181,7 +176,6 @@ export const FOUNDING_SCRIBBIT_DEFINITIONS: readonly FoundingScribbitDefinition[
       element: 'ember',
       stats: { chonk: 18, spike: 38, zip: 28, charm: 16 },
       level: 1,
-      mood: 'sleepy',
       imageUrl: '/creatures/creature-coalimp.png',
       personality: {
         epithet: 'The Drowsy Firetip',
@@ -203,7 +197,6 @@ export const FOUNDING_SCRIBBIT_DEFINITIONS: readonly FoundingScribbitDefinition[
       element: 'ember',
       stats: { chonk: 26, spike: 34, zip: 30, charm: 10 },
       level: 2,
-      mood: 'happy',
       imageUrl: '/creatures/creature-cindercoil.png',
       personality: {
         epithet: 'The Spiral Spark',
@@ -225,7 +218,6 @@ export const FOUNDING_SCRIBBIT_DEFINITIONS: readonly FoundingScribbitDefinition[
       element: 'ember',
       stats: { chonk: 44, spike: 28, zip: 10, charm: 18 },
       level: 3,
-      mood: 'pumped',
       imageUrl: '/creatures/creature-ashwaddle.png',
       personality: {
         epithet: 'The Cinder Stomper',
@@ -247,7 +239,6 @@ export const FOUNDING_SCRIBBIT_DEFINITIONS: readonly FoundingScribbitDefinition[
       element: 'ember',
       stats: { chonk: 30, spike: 32, zip: 24, charm: 14 },
       level: 1,
-      mood: 'hungry',
       imageUrl: '/creatures/creature-flintstag.png',
       personality: {
         epithet: 'The Antlered Fireline',
@@ -269,7 +260,6 @@ export const FOUNDING_SCRIBBIT_DEFINITIONS: readonly FoundingScribbitDefinition[
       element: 'ember',
       stats: { chonk: 36, spike: 40, zip: 10, charm: 14 },
       level: 2,
-      mood: 'happy',
       imageUrl: '/creatures/creature-solarkiln.png',
       personality: {
         epithet: 'The Sunbaked Sharpener',
@@ -291,7 +281,6 @@ export const FOUNDING_SCRIBBIT_DEFINITIONS: readonly FoundingScribbitDefinition[
       element: 'tide',
       stats: { chonk: 28, spike: 20, zip: 36, charm: 16 },
       level: 1,
-      mood: 'sleepy',
       imageUrl: '/creatures/creature-brinebutton.png',
       personality: {
         epithet: 'The Buttoned Slipstream',
@@ -300,7 +289,7 @@ export const FOUNDING_SCRIBBIT_DEFINITIONS: readonly FoundingScribbitDefinition[
           'Button snug, salt trail sparkling.',
           'Small coat, enormous pocketful of sea breeze.',
         ],
-        signatureReaction: 'Slipstream! Two salty skips stitch up the page.',
+        signatureReaction: 'Nib Volley! Three salty quills stitch up the page.',
         victoryLine: 'Neat passage; every button stayed shipshape.',
         defeatLine: "Smooth sailing; I'll resew that wandering dash.",
         rumbleLine: 'Brinebutton skims the Rumble on a silver wake.',
@@ -313,7 +302,6 @@ export const FOUNDING_SCRIBBIT_DEFINITIONS: readonly FoundingScribbitDefinition[
       element: 'tide',
       stats: { chonk: 24, spike: 18, zip: 32, charm: 26 },
       level: 2,
-      mood: 'pumped',
       imageUrl: '/creatures/creature-kelpkit.png',
       personality: {
         epithet: 'The Kelp-Cape Dasher',
@@ -322,7 +310,7 @@ export const FOUNDING_SCRIBBIT_DEFINITIONS: readonly FoundingScribbitDefinition[
           'Whiskers forward, sea ribbons untangled.',
           'The tidepool gave me permission to zoom.',
         ],
-        signatureReaction: 'Slipstream! Kelp ribbons mark the double dash.',
+        signatureReaction: 'Nib Volley! Kelp-tipped quills cross the page.',
         victoryLine: 'Quick paws, clean wake, cape splendidly swishy.',
         defeatLine: 'Great run; my sea legs took the long curl.',
         rumbleLine: 'Kelpkit darts through the rumble on ribboned wakes.',
@@ -335,7 +323,6 @@ export const FOUNDING_SCRIBBIT_DEFINITIONS: readonly FoundingScribbitDefinition[
       element: 'tide',
       stats: { chonk: 20, spike: 12, zip: 24, charm: 44 },
       level: 3,
-      mood: 'happy',
       imageUrl: '/creatures/creature-pearlmote.png',
       personality: {
         epithet: 'The Pocket Pearlburst',
@@ -358,7 +345,6 @@ export const FOUNDING_SCRIBBIT_DEFINITIONS: readonly FoundingScribbitDefinition[
       element: 'tide',
       stats: { chonk: 40, spike: 22, zip: 16, charm: 22 },
       level: 1,
-      mood: 'hungry',
       imageUrl: '/creatures/creature-coraloom.png',
       personality: {
         epithet: 'The Reefwoven Anchor',
@@ -380,7 +366,6 @@ export const FOUNDING_SCRIBBIT_DEFINITIONS: readonly FoundingScribbitDefinition[
       element: 'tide',
       stats: { chonk: 34, spike: 36, zip: 10, charm: 20 },
       level: 2,
-      mood: 'sleepy',
       imageUrl: '/creatures/creature-moonurchin.png',
       personality: {
         epithet: 'The Lunar Quillkeeper',
@@ -402,7 +387,6 @@ export const FOUNDING_SCRIBBIT_DEFINITIONS: readonly FoundingScribbitDefinition[
       element: 'storm',
       stats: { chonk: 18, spike: 18, zip: 46, charm: 18 },
       level: 1,
-      mood: 'happy',
       imageUrl: '/creatures/creature-cloudpip.png',
       personality: {
         epithet: 'The Pocket Bolt',
@@ -411,7 +395,7 @@ export const FOUNDING_SCRIBBIT_DEFINITIONS: readonly FoundingScribbitDefinition[
           'Pip charged, cloudlaces double-knotted.',
           'I travel light: one puff and several zigzags.',
         ],
-        signatureReaction: 'Bolt Scribble! Two cloudstreaks cross the page.',
+        signatureReaction: 'Nib Volley! Three cloud-quills cross the page.',
         victoryLine: 'Quick lap logged, thunder kept neatly pocket-sized.',
         defeatLine: 'Good breeze; my second zig landed off the margin.',
         rumbleLine: 'Cloudpip flashes through the rumble in tiny thunder.',
@@ -424,7 +408,6 @@ export const FOUNDING_SCRIBBIT_DEFINITIONS: readonly FoundingScribbitDefinition[
       element: 'storm',
       stats: { chonk: 20, spike: 24, zip: 42, charm: 14 },
       level: 2,
-      mood: 'pumped',
       imageUrl: '/creatures/creature-gustling.png',
       personality: {
         epithet: 'The Margin Tailwind',
@@ -433,7 +416,7 @@ export const FOUNDING_SCRIBBIT_DEFINITIONS: readonly FoundingScribbitDefinition[
           'Tailwind ready, loose pages respectfully pinned.',
           'I whistle only when the crosshatch agrees.',
         ],
-        signatureReaction: 'Bolt Scribble! The tailwind doubles back on cue.',
+        signatureReaction: 'Nib Volley! The tailwind lines up every quill.',
         victoryLine: 'Lane traced, breeze bowed, pencils still airborne.',
         defeatLine: "Clever current; I'll study that curl in the wind.",
         rumbleLine: 'Gustling drafts a fast lane through the rumble.',
@@ -446,7 +429,6 @@ export const FOUNDING_SCRIBBIT_DEFINITIONS: readonly FoundingScribbitDefinition[
       element: 'storm',
       stats: { chonk: 24, spike: 16, zip: 34, charm: 26 },
       level: 3,
-      mood: 'sleepy',
       imageUrl: '/creatures/creature-ribbonrook.png',
       personality: {
         epithet: 'The Sky-Ribbon Rook',
@@ -455,7 +437,7 @@ export const FOUNDING_SCRIBBIT_DEFINITIONS: readonly FoundingScribbitDefinition[
           'Wings squared, streamers combed, rook ready.',
           'Corners are invitations with sharper stationery.',
         ],
-        signatureReaction: 'Bolt Scribble! Twin ribbons sweep the open file.',
+        signatureReaction: 'Nib Volley! Bright quills sweep the open file.',
         victoryLine: 'File crossed, ribbons crisp, corner signed.',
         defeatLine: 'Fine route; I folded one turn a square too soon.',
         rumbleLine: 'Ribbonrook sweeps the Rumble in checked streamers.',
@@ -468,7 +450,6 @@ export const FOUNDING_SCRIBBIT_DEFINITIONS: readonly FoundingScribbitDefinition[
       element: 'storm',
       stats: { chonk: 26, spike: 38, zip: 20, charm: 16 },
       level: 1,
-      mood: 'hungry',
       imageUrl: '/creatures/creature-thunderbud.png',
       personality: {
         epithet: 'The Crackling Bud',
@@ -491,7 +472,6 @@ export const FOUNDING_SCRIBBIT_DEFINITIONS: readonly FoundingScribbitDefinition[
       element: 'storm',
       stats: { chonk: 22, spike: 26, zip: 28, charm: 24 },
       level: 2,
-      mood: 'happy',
       imageUrl: '/creatures/creature-aurorawing.png',
       personality: {
         epithet: 'The Prism Glider',
@@ -500,7 +480,7 @@ export const FOUNDING_SCRIBBIT_DEFINITIONS: readonly FoundingScribbitDefinition[
           'Wings inked, prism trail tuned.',
           'Dawn left me a fresh ribbon across the clouds.',
         ],
-        signatureReaction: 'Bolt Scribble! Aurora trails cross twice in color.',
+        signatureReaction: 'Nib Volley! Aurora quills cross in color.',
         victoryLine: 'Skyline signed in color, wings folded with flair.',
         defeatLine: 'Beautiful turn; my prism trail needs a softer bend.',
         rumbleLine: 'Aurorawing paints the rumble with twin sky ribbons.',

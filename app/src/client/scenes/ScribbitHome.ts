@@ -50,6 +50,7 @@ import {
 import { playHomeSoundtrack, releaseHomeSoundtrack } from '../lib/soundtrack';
 import { EDGE, NAV_SAFE, TYPE, UI, prefersReducedMotion } from '../lib/theme';
 import { setSfxCue } from '../lib/sfx';
+import { openPowerUpDraft, type PowerUpDraftHandle } from '../lib/powerupdraft';
 import {
   drawChargeCountLabel,
   drawChargeRefreshLabel,
@@ -71,7 +72,7 @@ const HOME_SCRIBBIT_DISPLAY_SIZE = 380;
 const EMPTY_HOME_CARD_MAX_Y = 670;
 const MATURITY_CARD_SUMMARY = 'STATS LOCK • GEAR UP FOR MATURE ARENA';
 const MATURITY_DESCRIPTION =
-  'For its first 3 days, every completed battle gives this Scribbit a random stat modifier, whether it wins or loses. At maturity, battle modifiers stop and its base stats lock forever. Afterward, upgrade Gear to add bonuses and increase its battle stats in the Mature Arena.';
+  'Right after birth, this Scribbit chooses one of three randomized Power-Ups. Wins can offer more while it grows. At maturity, its base stats lock forever. Afterward, upgrade Gear to add bonuses and increase its battle stats in the Mature Arena.';
 
 const MATURITY_STEPS: readonly Readonly<{
   icon: PaperIconKey;
@@ -80,13 +81,13 @@ const MATURITY_STEPS: readonly Readonly<{
 }>[] = [
   {
     icon: 'clock',
-    title: 'DAYS 1–3: BATTLE MODIFIERS',
-    body: 'Every completed battle gives it a random stat modifier — win or lose.',
+    title: 'BIRTH: CHOOSE A POWER-UP',
+    body: 'Choose one of three randomized Power-Ups before the first fight.',
   },
   {
     icon: 'lock',
     title: 'AT MATURITY: STATS LOCK',
-    body: 'After 3 days, random stat modifiers stop and its final stats lock forever.',
+    body: 'After 3 days, its final base stats lock forever.',
   },
   {
     icon: 'spark',
@@ -198,6 +199,7 @@ export class ScribbitHome extends Scene {
   private readonly drawButtonTimers: Phaser.Time.TimerEvent[] = [];
   private maturityCountdownTimer: Phaser.Time.TimerEvent | null = null;
   private drawButtonShine: StickerShineHandle | null = null;
+  private powerUpDraft: PowerUpDraftHandle | null = null;
 
   constructor() {
     super('ScribbitHome');
@@ -217,6 +219,7 @@ export class ScribbitHome extends Scene {
     this.rosterFullModal = null;
     this.dailyLoginModal = null;
     this.maturityCountdownTimer = null;
+    this.powerUpDraft = null;
   }
 
   create(): void {
@@ -249,7 +252,7 @@ export class ScribbitHome extends Scene {
     const stage = homeStage(this);
     this.renderHomeTitle();
     this.renderHomeProps(stage);
-    this.renderGalleryButton();
+    if (this.state.myScribbits.length > 0) this.renderGalleryButton();
     this.renderDailyLoginButton();
     if (this.state.myScribbits.length === 0) {
       this.renderEmptyHome();
@@ -266,6 +269,47 @@ export class ScribbitHome extends Scene {
     appDock(this, 'home', { home: () => undefined });
     this.menu?.destroy();
     this.menu = appMenu(this);
+    this.time.delayedCall(0, () => this.openPendingPowerUpOffer());
+  }
+
+  private openPendingPowerUpOffer(): void {
+    if (this.powerUpDraft || !this.scene.isActive()) return;
+    const pendingOffer =
+      this.state.pendingPowerUpOffers?.find(
+        (offer) => offer.source === 'birth'
+      ) ?? this.state.pendingPowerUpOffers?.[0];
+    if (!pendingOffer) return;
+    const scribbit = this.state.myScribbits.find(
+      (candidate) => candidate.id === pendingOffer.scribbitId
+    );
+    if (!scribbit) return;
+    this.powerUpDraft = openPowerUpDraft(
+      this,
+      pendingOffer,
+      scribbit.powerUpIds?.length ?? 0,
+      (selectedId) => {
+        const nextPowerUpIds = [...(scribbit.powerUpIds ?? []), selectedId];
+        this.state = {
+          ...this.state,
+          discoveredPowerUpIds: [
+            ...new Set([
+              ...(this.state.discoveredPowerUpIds ?? []),
+              selectedId,
+            ]),
+          ],
+          pendingPowerUpOffers: (this.state.pendingPowerUpOffers ?? []).filter(
+            (offer) => offer.id !== pendingOffer.id
+          ),
+          myScribbits: this.state.myScribbits.map((ownedScribbit) =>
+            ownedScribbit.id === scribbit.id
+              ? { ...ownedScribbit, powerUpIds: [...nextPowerUpIds] }
+              : ownedScribbit
+          ),
+        };
+        setArena(this, this.state);
+        this.powerUpDraft = null;
+      }
+    );
   }
 
   private renderGalleryButton(): void {
@@ -381,6 +425,8 @@ export class ScribbitHome extends Scene {
     this.dailyLoginModal = null;
     this.actionOverlay?.destroy();
     this.actionOverlay = null;
+    this.powerUpDraft?.destroy();
+    this.powerUpDraft = null;
     this.menu?.destroy();
     this.menu = null;
     releaseRenderedDrawingTextures(this);
@@ -956,7 +1002,7 @@ export class ScribbitHome extends Scene {
       this,
       0,
       -cardHeight / 2 + 92,
-      `You can keep ${MAX_GROWING_PER_USER} growing Scribbits. Retire one to Archived before drawing.`,
+      `You can keep ${MAX_GROWING_PER_USER} growing Scribbits. Retire one to Retired before drawing.`,
       18,
       UI.inkSoft,
       true

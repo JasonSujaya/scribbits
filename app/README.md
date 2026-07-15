@@ -60,7 +60,7 @@ in [`docs/ranking-seasons.md`](docs/ranking-seasons.md).
    exact Scribbit immediately fights one simple server-selected founding NPC so
    the core promise is visible before Arena choices. On WebGL, Phaser 4.2 maps the submitted PNG to
    a 25-vertex **Inkbody** mesh. Its dominant drawing stat selects a permanent
-   Combat Role: Chonk → BRAWLER, Spike → LONGSHOT, Zip → GUNNER, or Charm → MAGE.
+   Combat Role: Chonk → BRAWLER, Spike or Zip → LONGSHOT, or Charm → MAGE.
    Each role owns a visible weapon, range behavior, basic attack, signature move,
    and counter relationship. The server runs a
    deterministic 20 Hz simulation and stores its winner, bounded timeline, and
@@ -193,14 +193,14 @@ in [`docs/ranking-seasons.md`](docs/ranking-seasons.md).
    browser records a silent clip of the rendered Phaser canvas, uploads it to
    Reddit media, and opens Reddit's share sheet. The clip is presentation only;
    the stored report and transcript remain authoritative.
-   After today's official Scribbit locks, the Arena also exposes a Four-Role
+   After today's official Scribbit locks, the Arena also exposes a Three-Role
    Practice Lab. It reuses the analyzer and continuous replay, but not the birth,
    roster, reward, Rumble, history, or Legacy paths. The server alone derives
    the temporary fighter and transcript; the browser keeps only a session
-   checklist and clears it when Practice ends. The first fourth-role discovery
-   receives a gold 4/4 completion beat; later repeats do not retrigger it. Once
+   checklist and clears it when Practice ends. The first third-role discovery
+   receives a gold 3/3 completion beat; later repeats do not retrigger it. Once
    the checklist is complete, target roles and prompt cards rotate through all
-   four drawing identities instead of repeating one encore.
+   three drawing identities instead of repeating one encore.
    The current Champion also owns one daily Champion Contract. The Arena projects
    the server's existing daily challenge flag, displays founder or combat-role
    identity, and replaces the live CTA with a noninteractive completion stamp
@@ -210,20 +210,14 @@ in [`docs/ranking-seasons.md`](docs/ranking-seasons.md).
    canvas and supplies, saves through `/api/free-drawing`, and stays outside
    Scribbit birth, Rumble entry, rewards, battles, and Legacy. Returning to Draw
    on the same Arena day shows the saved image, name, and one Practice action.
-3. **Collect:** drawing, care, and the first spar win fill the Daily Ink Trail.
-   Care uses a validated 72-line deck across four legacy signatures, three actions,
-   three life days, and two variants. Every Scribbit receives nine distinct
-   lifetime care moments, rendered as a mobile paper receipt with its drawing,
-   mood, checklist, exact XP delta, and only server-confirmed Ink. Roster cards
-   keep only `CARE` and `SPAR`; CARE opens one icon-led Feed/Pat/Train sheet with
-   honest DONE states, full mobile targets, drag-safe activation, and a receipt
-   that stays focused until keyboard dismissal. The five dock tabs mirror native
-   labels and active-page state without covering their canvas artwork.
+3. **Collect:** drawing and battle wins drive progression and earned Ink. The five
+   dock tabs mirror native labels and active-page state without covering their
+   canvas artwork.
    Shop opens earned-only Mystery Ink Chests for a flat 5 Ink each, with
    one-open and maximum ten-open actions, permanent discovery, and visible Epic
    pity by open ten. The first completed Rival Run replaces the repeat action
-   with one `FIRST GEAR` trail: Arena asks only for the remaining daily Care,
-   Shop removes batch and collector clutter, and the first pull is guaranteed
+   with one `FIRST GEAR` trail: Shop removes batch and collector clutter, and the
+   first pull is guaranteed
    to be equippable Gear without changing rarity odds. Its reveal opens Bag on
    the exact equipment category. There is no 100-open or auto-repeat action. Birth
    stickers and status rewards are cosmetic; pens are expressive sidegrades that can
@@ -345,8 +339,6 @@ boundary during browser iteration—it is not the production game server.
   the existing `founding-*` ID without adding report or Redis fields.
 - `src/shared/content/deterministic.ts`: one stable content hash used by authored
   schedules without consuming or perturbing combat randomness.
-- `src/shared/content/carereactions.ts`: validated 72-line care deck covering
-  signature, action, three-day lifespan, and two stable per-Scribbit variants.
 - `src/shared/content/communitydrawthemes.ts`: append-only official Draw seasons
   with 122 unique themes covering 366 Arena days in stable three-day blocks.
 - `src/shared/content/doodledares.ts`: separate validated 32-prompt/eight-twist
@@ -433,11 +425,6 @@ boundary during browser iteration—it is not the production game server.
   runtime Scribbits and owns fair opponent/slate selection and safe cloning.
 - `src/client/game.ts`: Phaser bootstrapping.
 - `src/client/scenes`: game screens.
-- `src/client/lib/caremoment.ts`: pure server-snapshot-to-receipt planning;
-  `caremomentoverlay.ts` renders the short paper celebration without owning
-  rewards or persistence.
-- `src/client/lib/carepicker.ts`: focused paper Feed/Pat/Train choice sheet with
-  shared icon buttons, completion states, native controls, and bounded cleanup.
 - `src/client/lib/inkmesh.ts`: deterministic Mesh2D geometry and stat-driven
   motion rules, kept pure for regression testing.
 - `src/client/lib/continuousreplay.ts`: report-to-transcript identity binding and
@@ -495,8 +482,8 @@ boundary during browser iteration—it is not the production game server.
 - `src/client/lib/founderchronicle.ts`: pure active-thread, daily availability,
   score, beat, pre-fight stakes, and transcript-winner-bound result receipt
   planning; `founderchroniclemargin.ts` renders the compact paper overlay.
-- `src/client/lib/practicelab.ts`: pure four-role session reducer,
-  attempt-aware target/prompt rotation, Practice copy, and one-time 4/4
+- `src/client/lib/practicelab.ts`: pure three-role session reducer,
+  attempt-aware target/prompt rotation, Practice copy, and one-time 3/3
   completion plan; `registry.ts` owns the session lifetime.
 - `src/client/lib/replaypracticeoutcome.ts`: reward-free Practice outcome actions
   and repeat-safe completion rendering; ephemeral fighter cards never expose
@@ -509,8 +496,8 @@ boundary during browser iteration—it is not the production game server.
 - `src/client/lib/sfx.ts`: shared Web Audio playback, sample caching, cue
   variation, voice limits, cooldowns, persistent mute, and browser-safe failure.
   `battlesound.ts` is the compatibility adapter for replay cue names.
-- `src/client/lib/roleweaponrenderer.ts`: permanent Brawler, Longshot, Gunner,
-  and Mage weapon silhouettes plus role-attack presentation for v4 reports.
+- `src/client/lib/roleweaponrenderer.ts`: permanent Brawler, Longshot, and Mage
+  weapon silhouettes plus archived Gunner presentation for v4-v6 reports.
 - `src/client/lib/shapepowerpresentation.ts`: compatibility presentation for
   Inkquake, Nib Halo, Smearstep, and Colorburst in stored v1-v3 reports.
 - `src/client/lib/shapepowerrelicart.ts`: vector painters for the eight cosmetic
@@ -536,7 +523,7 @@ boundary during browser iteration—it is not the production game server.
   removal/full-category feedback, and separate Styles inventory.
 - `src/client/lib/cosmeticpreviewfit.ts`: pure bounds-fitting plan that centers
   differently shaped Gear art inside the Bag's fixed item and slot safe boxes.
-- `src/client/lib/bagrarity.ts`: one high-contrast common/Rare/Epic border
+- `src/client/lib/bagrarity.ts`: one high-contrast Common/Rare/Epic/Legendary border
   system shared by Bag inventory tiles and equipped slots.
 - `src/client/lib/baginventorygrid.ts`: one masked, bounded inventory tray whose
   native scroll surface provides touch inertia, wheel and keyboard access while
@@ -609,8 +596,8 @@ replaces its previous instance. Open `http://localhost:8902/` for the
 brand-new-player route with an empty roster and no unlocked metagame items. Use
 `http://localhost:8902/?fixtures` only when the seeded QA roster is needed.
 For deterministic combat proof, use
-`/?debug&spar&power=inkquake&element=storm&seed=2`; swap in `nib_halo`,
-`smearstep`, or `colorburst`, and add `&canvas` or `&reduce-motion` for those
+`/?debug&spar&power=inkquake&element=storm&seed=2`; swap in `nib_halo` or
+`colorburst`, and add `&canvas` or `&reduce-motion` for those
 fallbacks. Debug builds expose `replayPhase`, `replaySpeed`, and
 `replayTweenScale` on the game canvas so 4× playback and the result reset can be
 verified without touching combat state.
@@ -650,9 +637,8 @@ balance, catalog safety, concise causal receipts, the shared minimum-body gate,
 and the valid zero-recoil wall-ejection edge case. Forecast coverage locks 32
 nonrepeating public blurbs, reward-safe copy, selection independence from
 combat-element randomness, and mock parity.
-Care coverage locks all 72 unique lifespan reactions, exact matrix completeness,
-claim safety, deterministic selection, nine distinct lifetime moments, truthful
-server-confirmed Ink, and the fixed-tick element guide with no hidden triangle.
+Progression coverage locks battle-earned XP, versioned Scribbit migration, and
+the fixed-tick element guide with no hidden triangle.
 Rival Draft coverage locks slate stability, clone safety, level bounds, combat
 role variety, truthful level/role/signature/forecast card planning, prior-bout
 highlight continuity, and canonical founder identity. Founder coverage locks the
@@ -675,8 +661,8 @@ plans. The running 320x568 flow additionally proves drawing load, Day 8 replay,
 Skip, and return to the same selected page with no runtime or console errors.
 Practice coverage locks strict request fields, PNG validation, server-derived
 stats, required transcripts, mock/production parity, art-bound transient IDs,
-session de-duplication, truthful one-time 4/4 completion, post-completion
-four-role encore rotation, and rejection before the first battle-storage call.
+session de-duplication, truthful one-time 3/3 completion, post-completion
+three-role encore rotation, and rejection before the first battle-storage call.
 Inkcast coverage locks the exact 25-bank/104-line v1 pack, deep immutability,
 globally unique stable IDs and copy, strict per-bank tokens, malformed-brace and
 rendered-length rejection, reward/outcome/miss claim safety, deterministic

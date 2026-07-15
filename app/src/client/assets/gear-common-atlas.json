@@ -82,8 +82,8 @@
     },
     "round-glasses": {
       "frame": {
-        "x": 24,
-        "y": 338,
+        "x": 1048,
+        "y": 82,
         "w": 208,
         "h": 91
       },
@@ -102,7 +102,7 @@
     },
     "tiny-sword": {
       "frame": {
-        "x": 304,
+        "x": 48,
         "y": 280,
         "w": 160,
         "h": 208
@@ -122,7 +122,7 @@
     },
     "snail-shell-backpack": {
       "frame": {
-        "x": 539,
+        "x": 283,
         "y": 280,
         "w": 201,
         "h": 208
@@ -142,7 +142,7 @@
     },
     "party-hat": {
       "frame": {
-        "x": 826,
+        "x": 570,
         "y": 280,
         "w": 140,
         "h": 208
@@ -162,8 +162,8 @@
     },
     "mustache": {
       "frame": {
-        "x": 24,
-        "y": 603,
+        "x": 792,
+        "y": 347,
         "w": 208,
         "h": 74
       },
@@ -182,8 +182,8 @@
     },
     "inkquake-rumble-belt": {
       "frame": {
-        "x": 280,
-        "y": 570,
+        "x": 1048,
+        "y": 314,
         "w": 208,
         "h": 140
       },
@@ -202,7 +202,7 @@
     },
     "nib-halo-headband": {
       "frame": {
-        "x": 536,
+        "x": 24,
         "y": 546,
         "w": 208,
         "h": 187
@@ -222,7 +222,7 @@
     },
     "smearstep-speed-scarf": {
       "frame": {
-        "x": 792,
+        "x": 280,
         "y": 555,
         "w": 208,
         "h": 170
@@ -242,8 +242,8 @@
     },
     "colorburst-rosette": {
       "frame": {
-        "x": 45,
-        "y": 792,
+        "x": 557,
+        "y": 536,
         "w": 165,
         "h": 208
       },
@@ -259,6 +259,86 @@
         "w": 165,
         "h": 208
       }
+    },
+    "cardboard-shield": {
+      "frame": {
+        "x": 813,
+        "y": 536,
+        "w": 166,
+        "h": 208
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 166,
+        "h": 208
+      },
+      "sourceSize": {
+        "w": 166,
+        "h": 208
+      }
+    },
+    "wooden-spoon": {
+      "frame": {
+        "x": 1063,
+        "y": 536,
+        "w": 178,
+        "h": 208
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 178,
+        "h": 208
+      },
+      "sourceSize": {
+        "w": 178,
+        "h": 208
+      }
+    },
+    "canvas-sneakers": {
+      "frame": {
+        "x": 24,
+        "y": 819,
+        "w": 208,
+        "h": 153
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 208,
+        "h": 153
+      },
+      "sourceSize": {
+        "w": 208,
+        "h": 153
+      }
+    },
+    "button-badge": {
+      "frame": {
+        "x": 280,
+        "y": 814,
+        "w": 208,
+        "h": 163
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 208,
+        "h": 163
+      },
+      "sourceSize": {
+        "w": 208,
+        "h": 163
+      }
     }
   },
   "meta": {
@@ -267,7 +347,7 @@
     "image": "gear-common-atlas.png",
     "format": "RGBA8888",
     "size": {
-      "w": 1024,
+      "w": 1280,
       "h": 1024
     },
     "scale": "1"

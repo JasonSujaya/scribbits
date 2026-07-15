@@ -50,7 +50,11 @@ export type DominantStat = keyof RawCombatStats;
 
 export type PrimaryPower = 'inkquake' | 'nib_halo' | 'smearstep' | 'colorburst';
 
+// Gunner is retained only so archived v4-v6 reports can still be parsed.
+// Every newly analyzed or simulated Scribbit resolves to one of the three
+// current roles below.
 export type CombatRole = 'brawler' | 'longshot' | 'gunner' | 'mage';
+export type CurrentCombatRole = Exclude<CombatRole, 'gunner'>;
 
 export type FixedVector = Readonly<{
   x: number;
@@ -196,6 +200,15 @@ export type BattleTimelineEvent =
       targetHitPoints: number;
       critical: boolean;
       position: FixedVector;
+    }>
+  | Readonly<{
+      tick: number;
+      kind: 'healing';
+      actor: FighterSlot;
+      source: 'power_up';
+      powerUpId: PowerUpId;
+      amount: number;
+      targetHitPoints: number;
     }>
   | Readonly<{
       tick: number;

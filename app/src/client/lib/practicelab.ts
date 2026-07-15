@@ -5,6 +5,7 @@ import {
   COMBAT_ROLE_IDS,
   getCombatRoleContent,
   isCombatRole,
+  toCurrentCombatRole,
 } from '../../shared/combat/roles';
 import type { CombatRole, PrimaryPower } from '../../shared/combat/types';
 import { hashContentKey } from '../../shared/content/deterministic';
@@ -43,12 +44,12 @@ export type PracticeRevealPlan = Readonly<{
 const LEGACY_POWER_ROLE: Readonly<Record<PrimaryPower, CombatRole>> = {
   inkquake: 'brawler',
   nib_halo: 'longshot',
-  smearstep: 'gunner',
+  smearstep: 'longshot',
   colorburst: 'mage',
 };
 
 function normalizeRole(value: unknown): CombatRole | null {
-  if (isCombatRole(value)) return value;
+  if (isCombatRole(value)) return toCurrentCombatRole(value);
   switch (value) {
     case 'inkquake':
     case 'nib_halo':

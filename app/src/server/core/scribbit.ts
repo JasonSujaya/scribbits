@@ -1,11 +1,9 @@
 import type {
   ArenaState,
   AttachedAccessory,
-  CareAction,
   DrawingSupplySelection,
   Element,
   LegacyCosmeticSnapshot,
-  Mood,
   GearRank,
   Scribbit,
   ScribbitLegacy,
@@ -26,6 +24,7 @@ import {
   MAX_ACCESSORY_SCALE,
   MIN_ACCESSORY_ROTATION,
   MIN_ACCESSORY_SCALE,
+  isCapsuleRarity,
   isGearRank,
   XP_REWARDS,
   SCRIBBIT_STAT_KEYS,
@@ -157,7 +156,6 @@ const visiblePixelTolerance = 1;
 const accessoryAntialiasPaddingPixels = 1;
 export const DAILY_FLAG_TTL_SECONDS = 8 * 24 * 60 * 60;
 const dailyProgressTtlSeconds = 8 * 24 * 60 * 60;
-const careActionOrder: CareAction[] = ['feed', 'pat', 'train'];
 const lightProfanityFragments = [
   'fuck',
   'shit',
@@ -204,13 +202,6 @@ export const getRumbleKey = (day: number): string => {
 
 export const getRumbleStandingReceiptKey = (scribbitId: string): string => {
   return `scribbit:${scribbitId}:rumble-standings`;
-};
-
-export const getScribbitCareKey = (
-  scribbitId: string,
-  utcDateKey: string
-): string => {
-  return `scribbit:${scribbitId}:care:${utcDateKey}`;
 };
 
 export const getUserDailySparWinRewardsKey = (userId: string): string => {
@@ -307,62 +298,6 @@ const normalizeNonNegativeInteger = (value: unknown): number => {
   return Math.floor(value);
 };
 
-export const isCareAction = (value: unknown): value is CareAction => {
-  return value === 'feed' || value === 'pat' || value === 'train';
-};
-
-const isMood = (value: unknown): value is Mood => {
-  return (
-    value === 'happy' ||
-    value === 'hungry' ||
-    value === 'sleepy' ||
-    value === 'pumped'
-  );
-};
-
-const normalizeCareDoneToday = (value: unknown): CareAction[] => {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-
-  return careActionOrder.filter((careAction) => {
-    return value.includes(careAction);
-  });
-};
-
-export const deriveMoodFromCareActions = (
-  careDoneToday: CareAction[]
-): Mood => {
-  if (careDoneToday.length <= 0) {
-    return 'hungry';
-  }
-
-  if (careDoneToday.length === 1) {
-    return 'sleepy';
-  }
-
-  if (careDoneToday.length === 2) {
-    return 'happy';
-  }
-
-  return 'pumped';
-};
-
-export type CareProgressionPlan = Readonly<{
-  mood: Mood;
-  xpGain: number;
-}>;
-
-export const planCareProgression = (
-  careDoneToday: CareAction[]
-): CareProgressionPlan => {
-  const mood = deriveMoodFromCareActions(careDoneToday);
-  return {
-    mood,
-    xpGain: mood === 'pumped' ? XP_REWARDS.carePumped : XP_REWARDS.care,
-  };
-};
-
 export const addXpToScribbit = (
   scribbit: Scribbit,
   xpGain: number
@@ -378,7 +313,6 @@ export const addXpToScribbit = (
     xp: nextXp,
     level: nextLevel,
     powerUpIds: [...(scribbit.powerUpIds ?? [])],
-    careDoneToday: [...scribbit.careDoneToday],
   };
 };
 
@@ -969,7 +903,7 @@ const normalizeLegacyCosmetic = (
     !/^[a-z0-9-]{2,64}$/.test(value.id) ||
     typeof value.name !== 'string' ||
     value.name.trim().length === 0 ||
-    !['common', 'rare', 'epic'].includes(String(value.rarity))
+    !isCapsuleRarity(value.rarity)
   ) {
     return undefined;
   }
@@ -1132,7 +1066,6 @@ const normalizeScribbitV1Value = (
   ) {
     const xp = normalizeNonNegativeInteger(value.xp);
     const level = getLevelForXp(xp);
-    const careDoneToday = normalizeCareDoneToday(value.careDoneToday);
     const status = value.status;
     let upgrades: Scribbit['upgrades'];
     if (status === 'alive') {
@@ -1219,10 +1152,6 @@ const normalizeScribbitV1Value = (
       upgrades,
       level,
       xp,
-      mood: isMood(value.mood)
-        ? value.mood
-        : deriveMoodFromCareActions(careDoneToday),
-      careDoneToday,
       legacy: null,
     };
 
@@ -1252,7 +1181,7 @@ export const normalizeScribbitRecord = (
   return normalizeScribbitV2Value(value, true, true);
 };
 
-export const SCRIBBIT_SCHEMA_VERSION = 2;
+export const SCRIBBIT_SCHEMA_VERSION = 3;
 
 // This explicit key list is the immutable v1 storage shape. Keeping it separate
 // from cloneScribbit prevents a future runtime field from silently changing old
@@ -1282,8 +1211,6 @@ const encodeScribbitV1 = (scribbit: Scribbit): Record<string, unknown> => {
     upgrades: clonedScribbit.upgrades,
     level: clonedScribbit.level,
     xp: clonedScribbit.xp,
-    mood: clonedScribbit.mood,
-    careDoneToday: clonedScribbit.careDoneToday,
     legacy: clonedScribbit.legacy,
   };
 };
@@ -1356,6 +1283,11 @@ const encodeScribbitV2 = (scribbit: Scribbit): Record<string, unknown> => {
   };
 };
 
+const encodeScribbitV3 = (scribbit: Scribbit): Record<string, unknown> => ({
+  ...encodeScribbitV2(scribbit),
+  schemaVersion: 3,
+});
+
 export const migrateScribbitV1ToV2 = (storedValue: unknown): unknown => {
   if (!isRecord(storedValue)) return storedValue;
   const scribbitValue = { ...storedValue };
@@ -1373,10 +1305,29 @@ export const migrateScribbitV1ToV2 = (storedValue: unknown): unknown => {
   });
 };
 
+export const migrateScribbitV2ToV3 = (storedValue: unknown): unknown => {
+  if (!isRecord(storedValue)) return storedValue;
+  const scribbitValue = { ...storedValue };
+  delete scribbitValue.schemaVersion;
+  delete scribbitValue.mood;
+  delete scribbitValue.careDoneToday;
+  const normalizedV2 = normalizeScribbitV2Value(scribbitValue, false, true);
+  if (!normalizedV2) return storedValue;
+  const canonicalV2 = encodeScribbitV2(normalizedV2);
+  delete canonicalV2.schemaVersion;
+  return jsonValuesMatch(scribbitValue, canonicalV2)
+    ? encodeScribbitV3(normalizedV2)
+    : storedValue;
+};
+
 const scribbitJsonCodec = createVersionedJsonCodec<Scribbit>({
   currentVersion: SCRIBBIT_SCHEMA_VERSION,
   legacyVersion: 0,
-  migrations: { 0: migrateScribbitV0ToV1, 1: migrateScribbitV1ToV2 },
+  migrations: {
+    0: migrateScribbitV0ToV1,
+    1: migrateScribbitV1ToV2,
+    2: migrateScribbitV2ToV3,
+  },
   decodeCurrent: (storedValue) => {
     if (
       !isRecord(storedValue) ||
@@ -1388,13 +1339,13 @@ const scribbitJsonCodec = createVersionedJsonCodec<Scribbit>({
     delete scribbitValue.schemaVersion;
     const scribbit = normalizeScribbitV2Value(scribbitValue, false, true);
     if (!scribbit) return undefined;
-    const canonicalValue = encodeScribbitV2(scribbit);
+    const canonicalValue = encodeScribbitV3(scribbit);
     delete canonicalValue.schemaVersion;
     return jsonValuesMatch(scribbitValue, canonicalValue)
       ? scribbit
       : undefined;
   },
-  encodeCurrent: encodeScribbitV2,
+  encodeCurrent: encodeScribbitV3,
 });
 
 export const parseStoredScribbit = (storedScribbit: string | undefined) =>
@@ -1454,40 +1405,18 @@ export const createScribbit = (options: {
     powerUpIds: [],
     level: 1,
     xp: 0,
-    mood: 'hungry',
-    careDoneToday: [],
     legacy: null,
   };
 };
 
-export const readCareDoneToday = async (
+const hydrateScribbit = async (
   storage: ArenaStorage,
-  scribbitId: string,
-  utcDateKey: string
-): Promise<CareAction[]> => {
-  const storedCare = await storage.hGetAll(
-    getScribbitCareKey(scribbitId, utcDateKey)
-  );
-
-  return careActionOrder.filter((careAction) => {
-    return storedCare[careAction] !== undefined;
-  });
-};
-
-const hydrateScribbitForUtcDay = async (
-  storage: ArenaStorage,
-  scribbit: Scribbit,
-  utcDateKey: string
+  scribbit: Scribbit
 ): Promise<Scribbit> => {
   if (scribbit.isFounding) {
     return cloneScribbit(scribbit);
   }
 
-  const careDoneToday = await readCareDoneToday(
-    storage,
-    scribbit.id,
-    utcDateKey
-  );
   const storedBelief = await storage.hGet(getCommunityBeliefKey(), scribbit.id);
   const belief =
     storedBelief === undefined ? scribbit.belief : Number(storedBelief);
@@ -1498,8 +1427,6 @@ const hydrateScribbitForUtcDay = async (
       Number.isFinite(belief) && belief >= 0
         ? Math.floor(belief)
         : scribbit.belief,
-    mood: deriveMoodFromCareActions(careDoneToday),
-    careDoneToday,
   };
 };
 
@@ -1520,7 +1447,7 @@ const hydrateFoundingScribbit = async (
 export const loadScribbit = async (
   storage: ArenaStorage,
   scribbitId: string,
-  utcDateKey = formatUtcDateKey(new Date())
+  _utcDateKey?: string
 ): Promise<Scribbit | undefined> => {
   const foundingScribbit = findFoundingScribbit(scribbitId);
 
@@ -1534,13 +1461,13 @@ export const loadScribbit = async (
     return undefined;
   }
 
-  return await hydrateScribbitForUtcDay(storage, scribbit, utcDateKey);
+  return await hydrateScribbit(storage, scribbit);
 };
 
 export const loadScribbits = async (
   storage: ArenaStorage,
   scribbitIds: string[],
-  utcDateKey = formatUtcDateKey(new Date())
+  _utcDateKey?: string
 ): Promise<Scribbit[]> => {
   const scribbits: Scribbit[] = [];
 
@@ -1551,7 +1478,7 @@ export const loadScribbits = async (
     const batch = await Promise.all(
       scribbitIds
         .slice(start, start + batchSize)
-        .map((scribbitId) => loadScribbit(storage, scribbitId, utcDateKey))
+        .map((scribbitId) => loadScribbit(storage, scribbitId))
     );
     for (const scribbit of batch) {
       if (scribbit) scribbits.push(scribbit);
@@ -1771,11 +1698,7 @@ const mutateAliveScribbit = async (
         scribbitKey,
         ...(options.additionalWatchedKeys ?? [])
       );
-      const scribbit = await loadScribbit(
-        storage,
-        scribbitId,
-        options.utcDateKey
-      );
+      const scribbit = await loadScribbit(storage, scribbitId);
       if (!scribbit || scribbit.isFounding || scribbit.status !== 'alive') {
         await transaction.unwatch();
         return { scribbit, changed: false };
@@ -2020,53 +1943,6 @@ export const refreshEquippedGearRankForUser = async (
       );
     }
   }
-};
-
-export type DailyCareClaim = {
-  claimed: boolean;
-  careDoneToday: CareAction[];
-  mood: Mood;
-  xpGain: number;
-};
-
-export const claimDailyCareAction = async (
-  storage: ArenaStorage,
-  scribbitId: string,
-  action: CareAction,
-  utcDateKey: string,
-  claimedAtMs: number
-): Promise<DailyCareClaim> => {
-  const careKey = getScribbitCareKey(scribbitId, utcDateKey);
-  const createdCare = await storage.hSetNX(
-    careKey,
-    action,
-    claimedAtMs.toString()
-  );
-  await storage.expire(careKey, dailyProgressTtlSeconds);
-  const careDoneToday = await readCareDoneToday(
-    storage,
-    scribbitId,
-    utcDateKey
-  );
-  const progression = planCareProgression(careDoneToday);
-
-  return {
-    claimed: createdCare === 1,
-    careDoneToday,
-    mood: progression.mood,
-    xpGain: createdCare === 1 ? progression.xpGain : 0,
-  };
-};
-
-export const releaseDailyCareAction = async (
-  storage: ArenaStorage,
-  scribbitId: string,
-  action: CareAction,
-  utcDateKey: string
-): Promise<void> => {
-  const careKey = getScribbitCareKey(scribbitId, utcDateKey);
-  await storage.hDel(careKey, [action]);
-  await storage.expire(careKey, dailyProgressTtlSeconds);
 };
 
 export const claimUserDailySparWinReward = async (
@@ -3087,10 +2963,9 @@ export const expireDueScribbits = async (
 
 const readCommittedBelief = async (
   storage: ArenaStorage,
-  scribbitId: string,
-  utcDateKey: string
+  scribbitId: string
 ): Promise<number> => {
-  return (await loadScribbit(storage, scribbitId, utcDateKey))?.belief ?? 0;
+  return (await loadScribbit(storage, scribbitId))?.belief ?? 0;
 };
 
 export const applyDailyBelief = async (
@@ -3184,7 +3059,7 @@ export const applyDailyBelief = async (
           ? storage.hGet(legacyReceiptKey, legacyReceiptField)
           : Promise.resolve(undefined),
         storage.get(ownerKey),
-        loadScribbit(storage, input.scribbitId, input.utcDateKey),
+        loadScribbit(storage, input.scribbitId),
         storage.get(deletionLockKey),
         readPlayerDataGeneration(storage, input.userId),
       ]);
@@ -3271,11 +3146,7 @@ export const applyDailyBelief = async (
       if (storedOperationId === input.operationId) {
         return {
           status: 'applied',
-          belief: await readCommittedBelief(
-            storage,
-            input.scribbitId,
-            input.utcDateKey
-          ),
+          belief: await readCommittedBelief(storage, input.scribbitId),
         };
       }
       if (storedOperationId !== undefined) {

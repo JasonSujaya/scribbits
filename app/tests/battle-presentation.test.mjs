@@ -26,6 +26,10 @@ const replayBattleHudSource = readFileSync(
   new URL('../src/client/lib/replaybattlehud.ts', import.meta.url),
   'utf8'
 );
+const visualAssetsSource = readFileSync(
+  new URL('../src/client/lib/visualassets.ts', import.meta.url),
+  'utf8'
+);
 const liveSpriteSource = readFileSync(
   new URL('../src/client/lib/livesprite.ts', import.meta.url),
   'utf8'
@@ -43,7 +47,11 @@ test('rival choices use calm role cards with one compact fight action', () => {
   assert.match(rivalDraftSource, /LOW RISK/);
   assert.match(rivalDraftSource, /MEDIUM RISK/);
   assert.match(rivalDraftSource, /HIGH RISK/);
-  assert.match(rivalDraftSource, /`WIN \$\{choice\.winPoints\}/);
+  assert.match(rivalDraftSource, /choice\.matchup\.label/);
+  assert.match(
+    rivalDraftSource,
+    /`\$\{choice\.matchup\.label\} · WIN \+\$\{choice\.winPoints\}`/
+  );
   assert.doesNotMatch(rivalDraftSource, /rangeIconKey/);
   assert.match(
     rivalDraftSource,
@@ -167,7 +175,7 @@ test('portrait replay layout keeps controls, HUD, and fighters inside safe bound
       skipButtonWidth: 112,
       fighterPanelTop: 88,
       fighterPanelHeight: 96,
-      battleTitleY: 42,
+      battleTitleY: 48,
       heartRowY: 122,
       heartRowWidth: 294,
       heartRowHeight: 40,
@@ -259,11 +267,11 @@ test('portrait replay layout keeps controls, HUD, and fighters inside safe bound
     'live combat should retain a tall stage below the fixed battle header'
   );
   assert.ok(
-    replayBattleLayout.battleTitleY + 30 / 2 <=
+    replayBattleLayout.battleTitleY + 63 / 2 <=
       replayBattleLayout.heartRowY +
         replayBattleLayout.fighterNameOffsetY -
-        18 / 2 -
-        12,
+        18 / 2 +
+        3,
     'the Battle title and fighter names should retain separate top rows'
   );
   assert.ok(
@@ -367,16 +375,16 @@ test('post-fight actions expose only valid rival, pick, replay, and return paths
       returnLabel: 'ARENA ›',
       primaryAction: {
         kind: 'firstChest',
-        label: 'CARE FOR CRATER PAL',
-        accessibleLabel: 'Care for Crater Pal toward a first chest',
+        label: 'OPEN FIRST CHEST',
+        accessibleLabel: 'Open the first chest',
         tone: 'coral',
       },
     }),
     {
       primary: {
         kind: 'firstChest',
-        label: 'CARE FOR CRATER PAL',
-        accessibleLabel: 'Care for Crater Pal toward a first chest',
+        label: 'OPEN FIRST CHEST',
+        accessibleLabel: 'Open the first chest',
         tone: 'coral',
       },
       replayAction: null,
@@ -629,8 +637,18 @@ test('heart meter plans clamp health while preserving danger and accessibility s
 test('every damage event shows exact HP loss and a red target flash', () => {
   assert.match(
     replayBattleHudSource,
-    /const battleTitle = label\([\s\S]*layout\.battleTitleY,[\s\S]*'BATTLE',[\s\S]*30,[\s\S]*UI\.ink,[\s\S]*true/,
-    'the replay should render a clear Battle title in the upper paper header'
+    /const battleTitle = scene\.add[\s\S]*\.image\([\s\S]*layout\.battleTitleY,[\s\S]*BATTLE_TITLE_TEXTURE[\s\S]*\.setDisplaySize\(240, 63\)/,
+    'the replay should render the illustrated Battle title in the upper paper header'
+  );
+  assert.match(
+    visualAssetsSource,
+    /BATTLE_TITLE_TEXTURE = 'scribbits-battle-title'/,
+    'the rendered Battle title should have a dedicated texture'
+  );
+  assert.match(
+    visualAssetsSource,
+    /preloadReplayVisualAssets[\s\S]*BATTLE_TITLE_TEXTURE,[\s\S]*assetUrl\('scribbits-battle-title\.webp'\)/,
+    'the replay should preload its rendered Battle title asset'
   );
   assert.match(
     replayBattleHudSource,
@@ -699,6 +717,21 @@ test('fighter names and HP bars follow their moving battle characters', () => {
     replayBattleHudSource,
     /const floatingHealthTrack[\s\S]{0,300}setStrokeStyle/,
     'the borderless card should retain a readable health track'
+  );
+  assert.match(
+    replayBattleHudSource,
+    /paperIcon\(scene, 'eye',[\s\S]*size: 26/,
+    'a small eye icon should control the floating fighter labels'
+  );
+  assert.match(
+    replayBattleHudSource,
+    /floatingVitalsVisible = !floatingVitalsVisible;[\s\S]*updateFloatingVitalsVisibility\(\)/,
+    'the eye control should toggle the floating fighter labels'
+  );
+  assert.match(
+    replayBattleHudSource,
+    /dataset\.floatingVitals = labelsVisible[\s\S]*'visible'[\s\S]*'hidden'/,
+    'the floating-label state should be exposed for browser verification'
   );
   assert.match(
     replayBattleHudSource,
@@ -806,7 +839,7 @@ test('healthy battle hearts use one readable coral health color', () => {
   );
   assert.match(
     replayBattleHudSource,
-    /vitals\.floatingVitals\.setVisible\(visible\)/,
+    /const labelsVisible =[\s\S]*heartsVisible[\s\S]*battleChromeVisible[\s\S]*floatingVitalsVisible;[\s\S]*vitals\.floatingVitals\.setVisible\(labelsVisible\)/,
     'floating vitals should share the battle health visibility lifecycle'
   );
 });

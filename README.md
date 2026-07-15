@@ -5,10 +5,10 @@ three days to become a Legend.**
 
 Scribbits Arena is a portrait-first Reddit mini game built with Devvit Web and
 Phaser. Every player can draw one Scribbit per day. The submitted PNG is both
-the art and the combat identity: filled bodies become Inkquake bruisers,
-jagged outlines summon a three-quill Nib Halo, compact shapes Smearstep, and
-colorful drawings fire Colorburst. Every drawing still receives the same
-100-point stat budget.
+the art and the combat identity: coral/orange ink creates a Brawler,
+gold/green/aqua/blue creates a Longshot, and purple/pink creates a Mage. The
+counter loop is always Brawler > Mage > Longshot > Brawler. Every drawing still
+receives the same 100-point stat budget.
 
 The portrait UI uses progressive disclosure: each default card leads with one
 headline, one current status, and one obvious action. Exact rules, telemetry,
@@ -213,10 +213,10 @@ submission locks. Its endpoint accepts only a name and base PNG, re-analyzes the
 image on the server, authors a founding rival and complete transcript, and
 returns one ephemeral `practice` report. Practice has no Ink, XP, roster slot,
 Rumble entry, battle history, media upload, or Legacy card. The client keeps only
-a four-power checklist for the current browser session and clears it on exit.
-Finding the fourth unique power earns one gold 4/4 completion beat; repeated
+a three-role checklist for the current browser session and clears it on exit.
+Finding the third unique role earns one gold 3/3 completion beat; repeated
 drawings keep the checklist truthful and do not replay that first-completion cue.
-After 4/4, Practice rotates through all four target powers and fresh prompt cards
+After 3/3, Practice rotates through all three roles and fresh prompt cards
 instead of pinning the player to one encore.
 
 Care is also authored content rather than three repeating toasts. A validated

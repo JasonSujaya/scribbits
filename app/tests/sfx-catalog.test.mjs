@@ -21,7 +21,7 @@ const catalogFiles = [
   .sort();
 
 test('every curated SFX file is cataloged exactly once', () => {
-  assert.equal(catalogFiles.length, 27);
+  assert.equal(catalogFiles.length, 28);
   assert.equal(new Set(catalogFiles).size, catalogFiles.length);
   assert.deepEqual(catalogFiles, shippedFiles);
 });
@@ -68,6 +68,7 @@ test('catalog owns semantic cues, tuning, and CC0 provenance', async () => {
   assert.match(catalogSource, /sourcePack: 'kenney-interface'/);
   assert.match(catalogSource, /sourcePack: 'kenney-impact'/);
   assert.match(catalogSource, /sourcePack: 'kenney-rpg'/);
+  assert.match(catalogSource, /sourcePack: 'freesound-referee-whistle'/);
 
   const license = await readFile(
     path.join(sfxDirectory, 'LICENSE-KENNEY-CC0.txt'),
@@ -77,6 +78,14 @@ test('catalog owns semantic cues, tuning, and CC0 provenance', async () => {
   assert.match(license, /kenney\.nl\/assets\/interface-sounds/);
   assert.match(license, /kenney\.nl\/assets\/impact-sounds/);
   assert.match(license, /kenney\.nl\/assets\/rpg-audio/);
+
+  const whistleLicense = await readFile(
+    path.join(sfxDirectory, 'LICENSE-FREESOUND-CC0.txt'),
+    'utf8'
+  );
+  assert.match(whistleLicense, /Creative Commons Zero 1\.0 Universal/);
+  assert.match(whistleLicense, /Rosa-Orenes256/);
+  assert.match(whistleLicense, /sounds\/538422/);
 });
 
 test('runtime routes all battle and shared UI sound through the catalog', async () => {
@@ -127,7 +136,24 @@ test('runtime routes all battle and shared UI sound through the catalog', async 
   assert.match(capsuleMachine, /playSfx\('reward\.reveal'\)/);
   assert.match(draw, /playSfx\('draw\.ink'\)/);
   assert.match(draw, /playSfx\('draw\.tool'\)/);
-  assert.match(draw, /playSfx\('draw\.tick'\)/);
+  assert.match(
+    draw,
+    /playSfx\(snapshot\.remainingSeconds <= 10 \? 'draw\.tick' : 'draw\.timer'\)/
+  );
+  assert.match(
+    draw,
+    /playSfx\(isDrawStep \? 'draw\.start' : 'draw\.countdown'\)/
+  );
+  assert.match(
+    catalogSource,
+    /'draw\.countdown': \{[\s\S]{0,240}maximumVoices: 3/
+  );
+  assert.match(catalogSource, /'draw\.timer': \{[\s\S]{0,200}maximumVoices: 2/);
+  assert.match(catalogSource, /'draw\.tick': \{[\s\S]{0,220}maximumVoices: 2/);
+  assert.match(draw, /preloadSfx\('draw\.countdown'\)/);
+  assert.match(draw, /preloadSfx\('draw\.start'\)/);
+  assert.match(draw, /preloadSfx\('draw\.timer'\)/);
+  assert.match(draw, /preloadSfx\('draw\.tick'\)/);
   assert.match(draw, /playSfx\('draw\.finish'\)/);
   assert.match(draw, /playSfx\('draw\.submit'\)/);
   assert.match(draw, /playSfx\('scribbit\.birth'\)/);

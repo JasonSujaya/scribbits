@@ -44,40 +44,41 @@ test('Mystery Ink prize actions and red-star ownership use tested presentation p
     compactCapsulePrizeLayout.overlayY + 100 < 1280,
     'prize action overlays must remain inside the portrait canvas'
   );
-  assert.equal(capsulePresentation.capsuleOpenCost(1, 5), 5);
-  assert.equal(capsulePresentation.capsuleOpenCost(10, 5), 50);
-  assert.throws(() => capsulePresentation.capsuleOpenCost(100, 5));
+  assert.equal(capsulePresentation.capsuleOpenCost(1, 2), 2);
+  assert.equal(capsulePresentation.capsuleOpenCost(10, 2), 20);
+  assert.throws(() => capsulePresentation.capsuleOpenCost(100, 2));
   assert.deepEqual(
-    capsulePresentation.planCapsuleOpenAffordance(45, 5, 10, 1),
+    capsulePresentation.planCapsuleOpenAffordance(18, 2, 10, 1),
     {
-      primaryLabel: 'RETRY 9 · 45',
+      primaryLabel: 'RETRY 9 · 18',
       primaryAccessibleLabel:
-        'Retry the remaining 9 Mystery Ink chests for 45 Ink',
+        'Retry the remaining 9 Mystery Ink chests for 18 Ink',
       primaryEnabled: true,
       secondaryLabel: 'SAFE 1/10',
       secondaryAccessibleLabel:
         '1 of 10 Mystery Ink chests are safely recorded',
       secondaryEnabled: false,
-      requiredInk: 45,
+      requiredInk: 18,
       remainingCount: 9,
       retrying: true,
     }
   );
   assert.equal(
-    capsulePresentation.planCapsuleOpenAffordance(40, 5, 10, 1).primaryEnabled,
+    capsulePresentation.planCapsuleOpenAffordance(17, 2, 10, 1).primaryEnabled,
     false,
     'a partial ten-open retry must require enough Ink for only the remaining opens'
   );
   assert.throws(() =>
-    capsulePresentation.planCapsuleOpenAffordance(50, 5, 10, 10)
+    capsulePresentation.planCapsuleOpenAffordance(20, 2, 10, 10)
   );
   assert.deepEqual(
     capsulePresentation.summarizeCapsuleBatch([
       { rarity: 'common', isNew: true },
       { rarity: 'rare', isNew: false },
       { rarity: 'epic', isNew: true },
+      { rarity: 'legendary', isNew: false },
     ]),
-    { common: 1, rare: 1, epic: 1, newItems: 2 }
+    { common: 1, rare: 1, epic: 1, legendary: 1, newItems: 2 }
   );
   assert.equal(
     capsulePresentation.collectorRankNameForPullCount(24),
@@ -159,6 +160,7 @@ test('Shop visual assets load lazily and are checked before rendering', () => {
 
   for (const shopAsset of [
     'scribbits-shop-stage.webp',
+    'scribbits-shop-claw-machine-shell.webp',
     'scribbits-shop-chest-closed.webp',
     'scribbits-shop-chest-open.webp',
     'scribbits-ink-token.webp',
@@ -195,7 +197,7 @@ test('Shop visual assets load lazily and are checked before rendering', () => {
   );
 });
 
-test('Mystery Ink uses generated closed and open chest art with honest compact controls', () => {
+test('Mystery Ink uses generated reward art and a transparent animated claw machine', () => {
   const visualAssetsSource = readFileSync(
     join(appRoot, 'src', 'client', 'lib', 'visualassets.ts'),
     'utf8'
@@ -217,6 +219,8 @@ test('Mystery Ink uses generated closed and open chest art with honest compact c
   assert.match(capsuleMachineSource, /function openChest\(/);
   assert.match(visualAssetsSource, /scribbits-shop-chest-closed\.webp/);
   assert.match(visualAssetsSource, /scribbits-shop-chest-open\.webp/);
+  assert.match(visualAssetsSource, /scribbits-shop-claw-machine-shell\.webp/);
+  assert.doesNotMatch(visualAssetsSource, /scribbits-shop-lottery-machine/);
   assert.match(visualAssetsSource, /scribbits-ink-token\.webp/);
   assert.match(capsuleMachineSource, /SHOP_CHEST_TEXTURES\.open/);
   assert.match(capsuleMachineSource, /SHOP_CHEST_TEXTURES\.closed/);
@@ -277,8 +281,61 @@ test('Mystery Ink uses generated closed and open chest art with honest compact c
     /scene\.add\.graphics|fillRoundedRect|lidGraphics/,
     'the generated chest states must replace the old procedural chest geometry'
   );
-  assert.match(capsuleMachineSource, /OPEN ×10/);
-  assert.match(capsuleMachineSource, /OPEN ×1/);
+  assert.match(capsuleMachineSource, /OPEN 10/);
+  assert.match(capsuleMachineSource, /OPEN CHEST/);
+  assert.match(capsuleMachineSource, /function createClawMachine\(/);
+  assert.match(capsuleMachineSource, /SHOP_CLAW_MACHINE_SHELL_TEXTURE/);
+  assert.match(
+    capsuleMachineSource,
+    /image\(0, 0, SHOP_CLAW_MACHINE_SHELL_TEXTURE\)[\s\S]{0,60}setDisplaySize\(620, 930\)/,
+    'the generated shell must frame the live claw content without baking it in'
+  );
+  assert.match(
+    capsuleMachineSource,
+    /const CLAW_MACHINE_SCALE = 1\.1;/,
+    'the claw machine must fill the Shop hero area without touching the dock'
+  );
+  const clawMachineSource = capsuleMachineSource.slice(
+    capsuleMachineSource.indexOf('function createClawMachine('),
+    capsuleMachineSource.indexOf('export function openCapsuleMachine(')
+  );
+  assert.doesNotMatch(
+    clawMachineSource,
+    /cabinetBack|cabinetFront|fillRoundedRect/,
+    'the generated cabinet shell must replace the old procedural box geometry'
+  );
+  assert.match(
+    capsuleMachineSource,
+    /const useClawMachine = opts\.embedded === true;/,
+    'the embedded Shop must keep the claw machine after the first pull'
+  );
+  assert.match(
+    capsuleMachineSource,
+    /const clawMachine = useClawMachine[\s\S]{0,120}createClawMachine\(/,
+    'returning to Shop must not fall back to the chest presentation'
+  );
+  assert.match(capsuleMachineSource, /FIRST GEAR CLAW/);
+  assert.match(capsuleMachineSource, /MYSTERY GEAR CLAW/);
+  assert.match(capsuleMachineSource, /-350,/);
+  assert.match(capsuleMachineSource, /-312,/);
+  assert.match(capsuleMachineSource, /DROP CLAW/);
+  assert.match(capsuleMachineSource, /CLAW_MACHINE_SAMPLE_IDS/);
+  assert.match(capsuleMachineSource, /renderCosmeticPreview\(\{/);
+  assert.match(capsuleMachineSource, /Play the First Gear claw machine/);
+  assert.match(
+    capsuleMachineSource,
+    /visible Gear are possible examples, not a prediction/
+  );
+  assert.match(capsuleMachineSource, /function startClawSearch\(/);
+  assert.match(capsuleMachineSource, /function animateClawCatch\(/);
+  assert.match(capsuleMachineSource, /COSMETIC_BY_ID\.get\(pull\.id\)/);
+  assert.match(capsuleMachineSource, /function resetClawMachine\(/);
+  assert.ok(
+    capsuleMachineSource.indexOf(
+      'await animateClawCatch(scene, clawMachine, result.pull)'
+    ) > capsuleMachineSource.indexOf("if ('error' in result)"),
+    'the claw must catch only the authoritative reward after success'
+  );
   assert.match(capsuleMachineSource, /INK_TOKEN_TEXTURE/);
   assert.match(capsuleMachineSource, /10 REWARDS/);
   assert.match(capsuleMachineSource, /planCapsuleBatchReveal\(/);

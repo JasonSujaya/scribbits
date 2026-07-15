@@ -1,6 +1,6 @@
 # Role Matrix
 
-Generated: 2026-07-15T00:45:15.525Z
+Generated: 2026-07-15T05:54:35.343Z
 
 Runner: `app/tools/balancer/run.mjs`
 
@@ -9,24 +9,19 @@ This report bypasses API/routes/storage and calls the production combat mock bun
 | Target | Opponent | Win rate | Avg duration | Power-Up triggers | Target PU | Timeouts | Close | Blowouts | Verdict |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
 | Brawler base | Brawler base | 50.0% | 13.5s | 0.00 | 0.00 | 0.0% | 100.0% | 0.0% | OK |
-| Brawler base | Longshot base | 50.0% | 14.0s | 0.00 | 0.00 | 0.0% | 50.0% | 0.0% | OK |
-| Brawler base | Gunner base | 66.9% | 15.2s | 0.00 | 0.00 | 0.0% | 65.6% | 0.0% | FLAG_WIN_RATE |
-| Brawler base | Mage base | 50.0% | 13.4s | 0.00 | 0.00 | 0.0% | 100.0% | 0.0% | OK |
-| Longshot base | Brawler base | 50.0% | 14.0s | 0.00 | 0.00 | 0.0% | 50.0% | 0.0% | OK |
+| Brawler base | Longshot base | 45.0% | 13.7s | 0.00 | 0.00 | 0.0% | 50.0% | 0.0% | OK |
+| Brawler base | Mage base | 56.9% | 13.4s | 0.00 | 0.00 | 0.0% | 100.0% | 0.0% | OK |
+| Longshot base | Brawler base | 53.8% | 13.7s | 0.00 | 0.00 | 0.0% | 50.0% | 0.0% | OK |
 | Longshot base | Longshot base | 50.0% | 13.0s | 0.00 | 0.00 | 0.0% | 100.0% | 0.0% | OK |
-| Longshot base | Gunner base | 54.4% | 17.1s | 0.00 | 0.00 | 0.0% | 86.3% | 0.0% | OK |
-| Longshot base | Mage base | 96.3% | 14.2s | 0.00 | 0.00 | 0.0% | 38.8% | 0.0% | FLAG_WIN_RATE |
-| Gunner base | Brawler base | 35.6% | 15.2s | 0.00 | 0.00 | 0.0% | 64.4% | 0.0% | OK |
-| Gunner base | Longshot base | 43.1% | 17.1s | 0.00 | 0.00 | 0.0% | 88.1% | 0.0% | OK |
-| Gunner base | Gunner base | 47.5% | 20.0s | 0.00 | 0.00 | 0.0% | 100.0% | 0.0% | OK |
-| Gunner base | Mage base | 50.0% | 17.8s | 0.00 | 0.00 | 0.0% | 18.1% | 0.0% | OK |
-| Mage base | Brawler base | 48.8% | 13.4s | 0.00 | 0.00 | 0.0% | 100.0% | 0.0% | OK |
-| Mage base | Longshot base | 4.4% | 14.2s | 0.00 | 0.00 | 0.0% | 35.0% | 0.0% | FLAG_WIN_RATE |
-| Mage base | Gunner base | 50.6% | 17.7s | 0.00 | 0.00 | 0.0% | 13.8% | 0.0% | OK |
-| Mage base | Mage base | 47.5% | 17.1s | 0.00 | 0.00 | 0.0% | 100.0% | 0.0% | OK |
+| Longshot base | Mage base | 38.1% | 13.9s | 0.00 | 0.00 | 0.0% | 85.0% | 0.0% | OK |
+| Mage base | Brawler base | 42.5% | 13.4s | 0.00 | 0.00 | 0.0% | 100.0% | 0.0% | OK |
+| Mage base | Longshot base | 64.4% | 13.9s | 0.00 | 0.00 | 0.0% | 78.1% | 0.0% | OK |
+| Mage base | Mage base | 51.2% | 17.1s | 0.00 | 0.00 | 0.0% | 100.0% | 0.0% | OK |
 
-## Flags
+## Hard flags
 
-- Brawler base vs Gunner base: FLAG_WIN_RATE (66.9%, 15.2s avg)
-- Longshot base vs Mage base: FLAG_WIN_RATE (96.3%, 14.2s avg)
-- Mage base vs Longshot base: FLAG_WIN_RATE (4.4%, 14.2s avg)
+No balance flags from current thresholds.
+
+## Watches
+
+No watch-only rows from current thresholds.

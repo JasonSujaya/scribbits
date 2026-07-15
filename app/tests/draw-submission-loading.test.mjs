@@ -44,7 +44,7 @@ test('slow replies become an honest reconciliation state and every terminal path
   );
   assert.match(
     drawSource,
-    /private cleanup[\s\S]{0,900}this\.hideSubmissionLoading\(\)/
+    /private cleanup[\s\S]{0,1200}this\.hideSubmissionLoading\(\)/
   );
   assert.match(
     drawSource,

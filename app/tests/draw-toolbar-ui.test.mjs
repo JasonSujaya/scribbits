@@ -21,21 +21,22 @@ test('Draw keeps the everyday rail compact and puts optional tools one tap away'
   assert.match(drawSource, /this\.captureToolPage\('advanced'/);
   assert.match(drawSource, /'Open pens and brushes'/);
   assert.match(drawSource, /'Back to basic drawing tools'/);
-  assert.match(drawSource, /'PENS \+ BRUSHES'/);
-  assert.match(drawSource, /'BACK TO TOOLS'/);
+  assert.match(drawSource, /this\.moreToolsText = label\(this, 18, 0, 'TOOLS'/);
+  assert.match(drawSource, /this\.advancedToolsOpen \? 'BASIC' : 'TOOLS'/);
+  assert.doesNotMatch(drawSource, /moreToolsLabel/);
+  assert.doesNotMatch(drawSource, /'BACK TO TOOLS'/);
   assert.match(drawSource, /private buildDrawingSettingsControl\(\): void/);
   assert.match(
     drawSource,
-    /this\.moreToolsButton = this\.toolIconButton\(\s*196,\s*50,\s*'tools'/
+    /const x = 170;[\s\S]*const y = 50;[\s\S]*const width = 96;[\s\S]*const height = 58;/
   );
-  assert.match(
-    drawSource,
-    /\(\) => this\.setAdvancedToolsOpen\(!this\.advancedToolsOpen\),\s*84,\s*96/
-  );
+  assert.match(drawSource, /paperToolIcon\(this, 'tools', -22, 0, 28\)/);
   assert.doesNotMatch(
     drawSource,
     /this\.moreToolsButton = this\.toolIconButton\(\s*640,\s*toolY/
   );
+  assert.match(drawSource, /\{ maxWidth: 280, maxHeight: 76 \}/);
+  assert.match(drawSource, /fillRoundedRect\(-48, -29, 96, 58, 24\)/);
   assert.match(drawSource, /Math\.min\(46, width \* 0\.55\)/);
   assert.doesNotMatch(drawSource, /private addToolModeLabel/);
   assert.match(drawSource, /background\.setFillStyle\(UI\.creamHex, 1\)/);
@@ -47,10 +48,12 @@ test('Draw keeps the everyday rail compact and puts optional tools one tap away'
     /const inputEnabled = this\.isDrawingInputActive\(\)/
   );
   assert.match(drawSource, /String\(!visible \|\| !inputEnabled\)/);
-  assert.match(drawSource, /const columns = 5/);
+  assert.match(drawSource, /const columns = PALETTE_GROUPS\.length/);
   assert.match(drawSource, /'#ffffff'/);
   assert.match(drawSource, /'white'/);
-  assert.match(drawSource, /const rowLeft =/);
+  assert.match(drawSource, /const PALETTE_COLOR_POSITIONS/);
+  assert.match(drawSource, /xOffset: -36/);
+  assert.match(drawSource, /xOffset: 36/);
   assert.match(drawSource, /const rowHeight = MIN_TOUCH/);
   assert.match(drawSource, /private refreshAdvancedToolIndicator\(\): void/);
   assert.match(
@@ -85,7 +88,7 @@ test('Draw keeps the everyday rail compact and puts optional tools one tap away'
   assert.match(drawSource, /private setDetectedFighterStyleIndicator/);
   assert.match(
     drawSource,
-    /private detectedFighterStyle: CombatRole \| null = null/
+    /private detectedFighterStyle: CurrentCombatRole \| null = null/
   );
   assert.match(drawSource, /this\.detectedFighterStyle = null/);
   assert.match(
@@ -113,13 +116,12 @@ test('Draw keeps the everyday rail compact and puts optional tools one tap away'
   assert.match(drawSource, /const PALETTE_GROUPS/);
   assert.match(drawSource, /\{ label: 'NEUTRAL', role: null \}/);
   assert.match(drawSource, /\{ label: 'BRAWLER', role: 'brawler' \}/);
-  assert.match(drawSource, /\{ label: 'GUNNER', role: 'gunner' \}/);
   assert.match(drawSource, /\{ label: 'LONGSHOT', role: 'longshot' \}/);
   assert.match(drawSource, /\{ label: 'MAGE', role: 'mage' \}/);
   assert.match(drawSource, /const groupIconY = y - 70/);
   assert.match(drawSource, /const groupLabelY = y - 44/);
   assert.match(drawSource, /const groupCardTop = y - rowHeight \+ 10/);
-  assert.match(drawSource, /const groupCardHeight = rowHeight \* 2 - 12/);
+  assert.match(drawSource, /const groupCardHeight = 206/);
   assert.match(drawSource, /const panelInset = 14/);
   assert.match(
     drawSource,
@@ -143,9 +145,11 @@ test('Draw keeps the everyday rail compact and puts optional tools one tap away'
   assert.match(drawSource, /COLOR DECIDES YOUR ROLE/);
   assert.match(drawSource, /THE BIGGEST COLOR AREA WINS/);
   assert.match(drawSource, /Coral and orange make Brawler/);
-  assert.match(drawSource, /Aqua and blue make Longshot/);
-  assert.match(drawSource, /Gold and green make Gunner/);
+  assert.match(drawSource, /Gold, green, aqua, and blue make Longshot/);
   assert.match(drawSource, /Purple and pink make Mage/);
+  assert.match(drawSource, /Brawler beats Mage/);
+  assert.match(drawSource, /Mage beats Longshot/);
+  assert.match(drawSource, /Longshot beats Brawler/);
   assert.match(drawSource, /BLACK \+ WHITE ARE NEUTRAL/);
   assert.doesNotMatch(drawSource, /fighterStyle: draft\.fighterStyle/);
   assert.doesNotMatch(drawSource, /STYLE FORMING…/);
@@ -182,24 +186,32 @@ test('Draw always offers a clear route back to Home', () => {
   assert.doesNotMatch(drawSource, /private closeDrawStartPopup/);
 });
 
-test('Draw routes saveable ink into naming and warns before discarding a partial drawing', () => {
+test('Draw asks before discarding any drawing and leaves an empty canvas directly', () => {
   const exitSource = drawSource.slice(
     drawSource.indexOf('private exitDraw()'),
     drawSource.indexOf('// --- Layout budget')
   );
   assert.match(
     exitSource,
-    /this\.submitting \|\| this\.drawConfirmation \|\| this\.unsavedDrawingModal/
+    /this\.submitting \|\| this\.drawConfirmation \|\| this\.leaveDrawingModal/
   );
   assert.match(exitSource, /this\.refreshPreview\(\)/);
   assert.match(exitSource, /this\.lastResult\?\.inkedPixels/);
-  assert.match(exitSource, /hasMinimumDrawingInk/);
-  assert.match(exitSource, /this\.continueFromDrawing\(\)/);
-  assert.match(exitSource, /this\.openUnsavedDrawingModal\(\)/);
-  assert.match(exitSource, /'NOT SAVED YET'/);
-  assert.match(exitSource, /'ADD MORE INK TO SAVE IT'/);
-  assert.match(exitSource, /'KEEP DRAWING'/);
-  assert.match(exitSource, /'LEAVE & DISCARD'/);
+  assert.doesNotMatch(exitSource, /hasMinimumDrawingInk/);
+  assert.doesNotMatch(exitSource, /this\.continueFromDrawing\(\)/);
+  assert.match(exitSource, /this\.openLeaveDrawingModal\(\)/);
+  assert.match(exitSource, /'LEAVE YOUR DOODLE\?'/);
+  assert.match(exitSource, /"IT WON'T BE SAVED"/);
+  assert.match(
+    exitSource,
+    /this\.createSubmissionDraft\(currentResult\)\.imageDataUrl/
+  );
+  assert.match(exitSource, /fitDrawing\(/);
+  assert.match(exitSource, /previewTextureLoaded/);
+  assert.match(exitSource, /'CONTINUE DRAWING'/);
+  assert.match(exitSource, /'DISCARD DRAWING'/);
+  assert.match(exitSource, /'trash'/);
+  assert.match(exitSource, /this\.discardDrawingAndExit\(\)/);
   assert.match(exitSource, /this\.pauseDrawingRound\(\)/);
   assert.match(exitSource, /this\.startDrawingRound\(\)/);
   assert.match(exitSource, /if \(!modal\) return/);
@@ -220,7 +232,9 @@ test('Draw offers a quiet visual-only dark canvas preview', () => {
   assert.match(drawSource, /'CANVAS'/);
   assert.match(drawSource, /`Use \$\{nextMode\} canvas preview`/);
   assert.match(drawSource, /this\.canvas\.setPreviewMode\(/);
-  assert.match(drawSource, /saveDarkCanvasPreview\(this\.darkCanvasPreview\)/);
+  assert.match(drawSource, /this\.darkCanvasPreview = false/);
+  assert.doesNotMatch(drawSource, /DRAW_CANVAS_PREVIEW_STORAGE_KEY/);
+  assert.doesNotMatch(drawSource, /saveDarkCanvasPreview/);
   assert.match(drawSource, /control === this\.contrastToolControl/);
   assert.doesNotMatch(drawSource, /canvasLeft \+ square \+ 2/);
   assert.match(paperIconSource, /\| 'contrast'/);

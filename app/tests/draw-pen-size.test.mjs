@@ -13,5 +13,6 @@ test('Draw starts with a balanced mobile pen and complete two-row palette', () =
   assert.match(drawSource, /this\.setLineWidth\(DEFAULT_LINE_WIDTH\)/);
   assert.match(drawSource, /'#ff7fb0'/);
   assert.match(drawSource, /'pink'/);
-  assert.match(drawSource, /const columns = 5/);
+  assert.match(drawSource, /const columns = PALETTE_GROUPS\.length/);
+  assert.match(drawSource, /const PALETTE_COLOR_POSITIONS/);
 });

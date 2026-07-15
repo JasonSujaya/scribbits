@@ -28,7 +28,12 @@ const atlasSpecs = [
   {
     image: 'gear-rare-epic-atlas.png',
     json: 'gear-rare-epic-atlas.json',
-    accepts: (entry) => entry.rarity !== 'common',
+    accepts: (entry) => ['rare', 'epic'].includes(entry.rarity),
+  },
+  {
+    image: 'gear-legendary-atlas.png',
+    json: 'gear-legendary-atlas.json',
+    accepts: (entry) => entry.rarity === 'legendary',
   },
 ];
 

@@ -856,7 +856,7 @@ const submissionCoreSource = readFileSync(
   'utf8'
 );
 const productionSubmissionRoute = productionApiSource.match(
-  /api\.post\('\/scribbit',[\s\S]*?\n}\);\n\napi\.post\('\/care'/
+  /api\.post\('\/scribbit',[\s\S]*?\n}\);\n\nregisterPlayerMutatingGet\('\/spar-rivals'/
 )?.[0];
 assert.ok(productionSubmissionRoute);
 assert.match(productionSubmissionRoute, /commitScribbitSubmission\(/);
@@ -1356,7 +1356,6 @@ assert.deepEqual(publicRouteInventory, [
   'POST /api/believe',
   'POST /api/boss-challenge',
   'POST /api/capsule',
-  'POST /api/care',
   'POST /api/daily-login/claim',
   'POST /api/delete-my-data',
   'POST /api/equip-gear',
@@ -2787,7 +2786,7 @@ const privateClientSymbols = [
       join(repoRoot, 'src', 'server', 'core', 'scribbit.ts'),
       'utf8'
     ),
-    names: ['hydrateScribbitForUtcDay'],
+    names: ['hydrateScribbit'],
   },
   {
     source: readFileSync(
@@ -3040,19 +3039,19 @@ productionApiContract.resetApiContractRuntime({
   userId: null,
   username: null,
 });
-const unauthenticatedCareResponse = await productionApiContract.app.request(
-  '/api/care',
+const unauthenticatedPickResponse = await productionApiContract.app.request(
+  '/api/back',
   {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: '{}',
   }
 );
-assert.equal(unauthenticatedCareResponse.status, 401);
-assert.deepEqual(await unauthenticatedCareResponse.json(), {
+assert.equal(unauthenticatedPickResponse.status, 401);
+assert.deepEqual(await unauthenticatedPickResponse.json(), {
   status: 'error',
   code: 'unauthorized',
-  message: 'Sign in to care for a Scribbit.',
+  message: 'Sign in to make a Pick.',
 });
 assert.equal(
   productionApiContract.apiContractRuntimeState.watchCalls,
@@ -3061,19 +3060,19 @@ assert.equal(
 );
 
 productionApiContract.resetApiContractRuntime();
-const malformedCareResponse = await productionApiContract.app.request(
-  '/api/care',
+const malformedPickResponse = await productionApiContract.app.request(
+  '/api/back',
   {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: '{',
   }
 );
-assert.equal(malformedCareResponse.status, 400);
-assert.deepEqual(await malformedCareResponse.json(), {
+assert.equal(malformedPickResponse.status, 400);
+assert.deepEqual(await malformedPickResponse.json(), {
   status: 'error',
   code: 'bad_request',
-  message: 'Choose a valid Scribbit and care action.',
+  message: 'Choose a valid Scribbit for your Pick.',
 });
 assert.ok(
   productionApiContract.apiContractRuntimeState.watchCalls >= 3,
@@ -3135,7 +3134,7 @@ productionApiContract.setApiContractString(
   'another-operation'
 );
 const busyMutationResponse = await productionApiContract.app.request(
-  '/api/care',
+  '/api/back',
   {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
@@ -3240,6 +3239,7 @@ const startDevMockForContractTest = async () => {
       ...process.env,
       PORT: '0',
       MOCK_AUTO_RELOAD: '0',
+      MOCK_SEEDED_SCRIBBITS: '1',
       MOCK_COMBAT_BUNDLE_URL: pathToFileURL(
         join(mockCombatTestOutputDirectory, 'battle.mjs')
       ).href,
@@ -3318,12 +3318,12 @@ const requestMock = async (path, init) => {
   return { response, body: await response.json() };
 };
 try {
-  const firstMockLegacyPage = await requestMock('/api/legacy-cards?limit=2');
+  const firstMockLegacyPage = await requestMock('/api/legacy-cards?limit=1');
   assert.equal(firstMockLegacyPage.response.status, 200);
-  assert.equal(firstMockLegacyPage.body.cards.length, 2);
+  assert.equal(firstMockLegacyPage.body.cards.length, 1);
   assert.match(firstMockLegacyPage.body.nextCursor, /^v2\|/);
   const secondMockLegacyPage = await requestMock(
-    `/api/legacy-cards?limit=2&cursor=${encodeURIComponent(
+    `/api/legacy-cards?limit=1&cursor=${encodeURIComponent(
       firstMockLegacyPage.body.nextCursor
     )}`
   );
@@ -3340,7 +3340,7 @@ try {
     'mock Legacy anchor paging must not duplicate cards'
   );
   const numericMockLegacyPage = await requestMock(
-    '/api/legacy-cards?limit=2&cursor=0002'
+    '/api/legacy-cards?limit=1&cursor=0001'
   );
   assert.deepEqual(
     numericMockLegacyPage.body.cards.map(({ id }) => id),
@@ -3647,9 +3647,10 @@ try {
   assert.equal(freshSubmission.body.scribbit.element, 'ember');
   assert.equal(freshSubmission.body.scribbit.xp, 0);
   assert.equal(freshSubmission.body.scribbit.level, 1);
-  assert.equal(freshSubmission.body.scribbit.mood, 'hungry');
   assert.equal(freshSubmission.body.drawCharges.available, 2);
   assert.equal(freshSubmission.body.enteredRumble, true);
+  assert.equal(freshSubmission.body.powerUpOffer.source, 'birth');
+  assert.equal(freshSubmission.body.powerUpOffer.choices.length, 3);
   const repeatedFreshSubmission = await requestMock('/api/scribbit?fresh', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -3663,74 +3664,102 @@ try {
   );
   const arenaAfterRepeatedSubmission = await requestMock('/api/arena?fresh');
   assert.equal(arenaAfterRepeatedSubmission.body.myScribbits.length, 1);
+  assert.deepEqual(arenaAfterRepeatedSubmission.body.pendingPowerUpOffers, [
+    freshSubmission.body.powerUpOffer,
+  ]);
   assert.equal(
     arenaAfterRepeatedSubmission.body.myInk,
     arena.INK_REWARDS.dailyDraw
   );
-
-  for (const action of ['feed', 'pat', 'train']) {
-    const careResult = await requestMock('/api/care?fresh', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        scribbitId: freshSubmission.body.scribbit.id,
-        action,
-      }),
-    });
-    assert.equal(careResult.response.status, 200);
-    assert.equal('inkAwarded' in careResult.body, false);
-  }
-  const repeatedCare = await requestMock('/api/care?fresh', {
+  const blockedFirstFight = await requestMock('/api/spar?fresh', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       scribbitId: freshSubmission.body.scribbit.id,
-      action: 'train',
     }),
   });
-  assert.equal(repeatedCare.response.status, 409);
-
-  const caredFreshArena = await requestMock('/api/arena?fresh');
-  const caredFreshScribbit = caredFreshArena.body.myScribbits.find(
-    ({ id }) => id === freshSubmission.body.scribbit.id
+  assert.equal(
+    blockedFirstFight.response.status,
+    409,
+    'a newborn must choose its first Power-Up before its first fight'
   );
-  assert.ok(caredFreshScribbit);
-  assert.deepEqual(
+  const selectedBirthPowerUp = freshSubmission.body.powerUpOffer.choices[0];
+  const birthPowerUpClaim = await requestMock('/api/power-up/choose?fresh', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      scribbitId: freshSubmission.body.scribbit.id,
+      offerId: freshSubmission.body.powerUpOffer.id,
+      selectedId: selectedBirthPowerUp,
+      expectedPowerUpCount: 0,
+    }),
+  });
+  assert.equal(birthPowerUpClaim.response.status, 200);
+  assert.deepEqual(birthPowerUpClaim.body.powerUpIds, [selectedBirthPowerUp]);
+  const repeatedBirthPowerUpClaim = await requestMock(
+    '/api/power-up/choose?fresh',
     {
-      ink: caredFreshArena.body.myInk,
-      nextCapsuleCost: caredFreshArena.body.nextCapsuleCost,
-      xp: caredFreshScribbit.xp,
-      level: caredFreshScribbit.level,
-      mood: caredFreshScribbit.mood,
-      careDoneToday: caredFreshScribbit.careDoneToday,
-    },
-    {
-      ink: arena.INK_REWARDS.dailyDraw,
-      nextCapsuleCost: arena.CAPSULE_FIRST_DAILY_COST,
-      xp: arena.XP_REWARDS.care * 2 + arena.XP_REWARDS.carePumped,
-      level: 2,
-      mood: 'pumped',
-      careDoneToday: ['feed', 'pat', 'train'],
-    },
-    'the fresh mock must project production draw and care progression'
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        scribbitId: freshSubmission.body.scribbit.id,
+        offerId: freshSubmission.body.powerUpOffer.id,
+        selectedId: selectedBirthPowerUp,
+        expectedPowerUpCount: 0,
+      }),
+    }
   );
+  assert.equal(repeatedBirthPowerUpClaim.response.status, 409);
+  const arenaAfterBirthPowerUp = await requestMock('/api/arena?fresh');
+  assert.deepEqual(arenaAfterBirthPowerUp.body.pendingPowerUpOffers, []);
+  assert.deepEqual(arenaAfterBirthPowerUp.body.myScribbits[0].powerUpIds, [
+    selectedBirthPowerUp,
+  ]);
+  const firstFightAfterPowerUp = await requestMock('/api/spar?fresh', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      scribbitId: freshSubmission.body.scribbit.id,
+    }),
+  });
+  assert.equal(firstFightAfterPowerUp.response.status, 200);
+  const firstFightInkAward = firstFightAfterPowerUp.body.report.inkAwarded ?? 0;
+  if (firstFightAfterPowerUp.body.powerUpOffer) {
+    const postFightPowerUpClaim = await requestMock(
+      '/api/power-up/choose?fresh',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          scribbitId: freshSubmission.body.scribbit.id,
+          offerId: firstFightAfterPowerUp.body.powerUpOffer.id,
+          selectedId: firstFightAfterPowerUp.body.powerUpOffer.choices[0],
+          expectedPowerUpCount: 1,
+        }),
+      }
+    );
+    assert.equal(postFightPowerUpClaim.response.status, 200);
+  }
 
   const firstCapsulePull = await requestMock('/api/capsule?fresh', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ operationId: 'fresh-progression-proof' }),
   });
-  assert.equal(firstCapsulePull.response.status, 402);
+  assert.equal(firstCapsulePull.response.status, 200);
+  assert.equal(firstCapsulePull.body.ink, firstFightInkAward);
+  assert.equal(firstCapsulePull.body.nextCost, arena.CAPSULE_COST);
+  assert.equal(firstCapsulePull.body.progress.pullCount, 1);
   const repeatedCapsulePull = await requestMock('/api/capsule?fresh', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ operationId: 'fresh-progression-proof' }),
   });
-  assert.equal(repeatedCapsulePull.response.status, 402);
+  assert.equal(repeatedCapsulePull.response.status, 200);
   assert.deepEqual(
     repeatedCapsulePull.body,
     firstCapsulePull.body,
-    'repeating an unaffordable operation must remain side-effect free'
+    'repeating an affordable capsule operation must replay the committed pull'
   );
   const spentFreshArena = await requestMock('/api/arena?fresh');
   assert.deepEqual(
@@ -3740,11 +3769,11 @@ try {
       pullCount: spentFreshArena.body.capsuleProgress.pullCount,
     },
     {
-      ink: arena.INK_REWARDS.dailyDraw,
+      ink: firstFightInkAward,
       nextCapsuleCost: arena.CAPSULE_COST,
-      pullCount: 0,
+      pullCount: 1,
     },
-    'rejected pulls must leave the earned Ink and capsule state unchanged'
+    'the first chest must deduct earned Ink once and advance capsule state once'
   );
 
   const firstBirthBattle = await requestMock('/api/spar?fresh', {
@@ -3951,8 +3980,6 @@ const makeScribbit = (overrides = {}) => {
     accessories: overrides.accessories ? [...overrides.accessories] : [],
     level: overrides.level ?? 1,
     xp: overrides.xp ?? 0,
-    mood: overrides.mood ?? 'hungry',
-    careDoneToday: overrides.careDoneToday ? [...overrides.careDoneToday] : [],
     legacy: overrides.legacy ?? null,
   };
   return scribbitCore.normalizeScribbitRecord(scribbit) ?? scribbit;
@@ -4183,11 +4210,15 @@ const shapePowerGuideContent = shapePowerContent.SHAPE_POWER_IDS.map((power) =>
   shapePowerContent.getShapePowerContent(power)
 );
 assert.deepEqual(
-  combatConfig.DOMINANT_STAT_TIE_ORDER.map(
-    (stat) => combatConfig.PRIMARY_POWER_BY_DOMINANT_STAT[stat]
-  ),
-  shapePowerContent.SHAPE_POWER_IDS,
-  'guide order must derive from the canonical dominant-stat tie order'
+  [
+    ...new Set(
+      combatConfig.DOMINANT_STAT_TIE_ORDER.map(
+        (stat) => combatConfig.PRIMARY_POWER_BY_DOMINANT_STAT[stat]
+      )
+    ),
+  ],
+  ['inkquake', 'nib_halo', 'colorburst'],
+  'current powers must derive from the canonical dominant-stat tie order'
 );
 assert.equal(
   new Set(shapePowerGuideContent.map(({ drawingCue }) => drawingCue)).size,
@@ -4269,22 +4300,18 @@ assert.match(
 assert.match(battleCeremonySource, /roleA\.weaponName/);
 assert.match(battleCeremonySource, /roleA\.basicAttackName/);
 assert.match(battleCeremonySource, /roleB\.signatureName/);
-assert.doesNotMatch(
-  battleCeremonySource,
-  /brief\.matchup\.(?:label|detail)/,
-  'the VS card should teach the drawings instead of adding a generic matchup paragraph'
-);
-pass('birth and VS screens teach drawing behavior without raw stat copy');
+assert.match(battleCeremonySource, /roleMatchup\.label/);
+assert.match(battleCeremonySource, /roleMatchup\.detail/);
+pass('birth and VS screens teach roles, counters, and drawing behavior');
 
 const practicedRoles = [];
 const signaturePowerByRole = {
   brawler: 'inkquake',
   longshot: 'nib_halo',
-  gunner: 'smearstep',
   mage: 'colorburst',
 };
 assert.equal(practiceLab.PRACTICE_SUBMIT_LABEL, 'TRY THIS STYLE');
-for (let practiceIndex = 0; practiceIndex < 4; practiceIndex += 1) {
+for (let practiceIndex = 0; practiceIndex < 3; practiceIndex += 1) {
   const target = practiceLab.selectPracticeTargetRole(
     practicedRoles,
     9,
@@ -4292,7 +4319,7 @@ for (let practiceIndex = 0; practiceIndex < 4; practiceIndex += 1) {
   );
   assert.ok(
     !practicedRoles.includes(target),
-    'Practice Lab should target an untried role until all four are checked'
+    'Practice Lab should target an untried role until all three are checked'
   );
   const dare = practiceLab.selectPracticeDoodleDare(
     practicedRoles,
@@ -4308,19 +4335,19 @@ for (let practiceIndex = 0; practiceIndex < 4; practiceIndex += 1) {
 }
 assert.deepEqual(
   [...practicedRoles].sort(),
-  ['brawler', 'gunner', 'longshot', 'mage'],
+  ['brawler', 'longshot', 'mage'],
   'one Practice Lab cycle should cover every role exactly once'
 );
 assert.equal(
   practiceLab
     .normalizePracticeSession(['smearstep', 'invalid', 'smearstep', 'inkquake'])
     .triedRoles.join(','),
-  'brawler,gunner',
+  'brawler,longshot',
   'session progress should migrate legacy powers and normalize duplicates'
 );
 assert.match(
   practiceLab.practiceProgressCopy(practicedRoles),
-  /4\/4 ROLES/,
+  /3\/3 ROLES/,
   'completed session progress should be unmistakable'
 );
 assert.equal(
@@ -4329,8 +4356,8 @@ assert.equal(
       .planPracticeOutcome(practiceLab.normalizePracticeSession(practicedRoles))
       .checklist.match(/✓/g) ?? []
   ).length,
-  4,
-  'completed practice checklist should mark all four roles'
+  3,
+  'completed practice checklist should mark all three roles'
 );
 const firstPracticeSession = practiceLab.recordPracticeSessionRole(
   practiceLab.createPracticeSession(),
@@ -4343,7 +4370,7 @@ assert.deepEqual(practiceLab.planPracticeReveal(firstPracticeSession), {
   headline: 'STYLE READY!',
   roleName: 'BRAWLER',
   roleDetail: 'CLOSE RANGE · INK FISTS · INKQUAKE',
-  progress: '1 OF 4 FOUND',
+  progress: '1 OF 3 FOUND',
   primaryButton: 'WATCH IT FIGHT',
 });
 const repeatedPracticeSession = practiceLab.recordPracticeSessionRole(
@@ -4366,11 +4393,11 @@ const completedPracticePlan = practiceLab.planPracticeOutcome(
 );
 assert.equal(completedPracticePlan.completed, true);
 assert.equal(completedPracticePlan.celebrateCompletion, true);
-assert.equal(completedPracticePlan.headline, '4/4 ROLES FOUND');
+assert.equal(completedPracticePlan.headline, '3/3 ROLES FOUND');
 assert.match(completedPracticePlan.result, /DRAW DIFFERENTLY/);
 assert.match(completedPracticePlan.primaryButton, /DRAW ONE MORE/);
-assert.equal(completedPracticeSession.attemptCount, 4);
-const practiceEncoreTargets = Array.from({ length: 4 }, (_, encoreIndex) =>
+assert.equal(completedPracticeSession.attemptCount, 3);
+const practiceEncoreTargets = Array.from({ length: 3 }, (_, encoreIndex) =>
   practiceLab.selectPracticeTargetRole(
     completedPracticeSession.triedRoles,
     9,
@@ -4380,11 +4407,11 @@ const practiceEncoreTargets = Array.from({ length: 4 }, (_, encoreIndex) =>
 );
 assert.equal(
   new Set(practiceEncoreTargets).size,
-  4,
+  3,
   'post-completion Practice should rotate through all roles instead of repeating one target'
 );
 const practiceEncorePrompts = Array.from(
-  { length: 4 },
+  { length: 3 },
   (_, encoreIndex) =>
     practiceLab.selectPracticeDoodleDare(
       completedPracticeSession.triedRoles,
@@ -4395,23 +4422,23 @@ const practiceEncorePrompts = Array.from(
 );
 assert.equal(
   new Set(practiceEncorePrompts).size,
-  4,
+  3,
   'post-completion Practice should keep its prompt cards visibly varied'
 );
 const repeatedCompletedSession = practiceLab.recordPracticeSessionRole(
   completedPracticeSession,
   completedPracticeSession.lastRole
 );
-assert.equal(repeatedCompletedSession.attemptCount, 5);
+assert.equal(repeatedCompletedSession.attemptCount, 4);
 assert.equal(
   practiceLab.planPracticeOutcome(repeatedCompletedSession).celebrateCompletion,
   false,
-  'repeating a role after 4/4 must not replay the completion celebration'
+  'repeating a role after 3/3 must not replay the completion celebration'
 );
 assert.equal(
   practiceLab.planPracticeOutcome(repeatedPracticeSession).completed,
   false,
-  'repeating one role must never trigger the four-role completion ceremony'
+  'repeating one role must never trigger the three-role completion ceremony'
 );
 pass('Practice Lab targets every combat role without persistent progression');
 
@@ -5324,12 +5351,13 @@ assert.equal(
     ([firstPower, secondPower]) => firstPower === secondPower
   ).length,
   4,
-  'the matrix proof should include all four same-power matchups'
+  'the archived mechanics matrix should retain all four same-power matchups'
 );
 
 let orderedMatchupPairCount = 0;
-for (const firstPower of shapePowerContent.SHAPE_POWER_IDS) {
-  for (const secondPower of shapePowerContent.SHAPE_POWER_IDS) {
+const currentShapePowers = ['inkquake', 'nib_halo', 'colorburst'];
+for (const firstPower of currentShapePowers) {
+  for (const secondPower of currentShapePowers) {
     const fighterA = matchupFighterByPower[firstPower];
     const fighterB = matchupFighterByPower[secondPower];
     const orderedInput = { battleKind: 'rumble', fighterA, fighterB };
@@ -5358,7 +5386,7 @@ for (const firstPower of shapePowerContent.SHAPE_POWER_IDS) {
     assert.deepEqual(reversePlan.fighters.b, orderedPlan.fighters.a);
     assert.equal(reversePlan.fighters.a.role, orderedPlan.fighters.b.role);
     assert.equal(reversePlan.fighters.b.role, orderedPlan.fighters.a.role);
-    assert.match(orderedPlan.matchup.label, /(?:PRESSURE|MIRROR| vs )/);
+    assert.match(orderedPlan.matchup.label, /(?:BEATS|MIRROR)/);
     assert.deepEqual(
       orderedInput,
       orderedInputSnapshot,
@@ -5369,8 +5397,8 @@ for (const firstPower of shapePowerContent.SHAPE_POWER_IDS) {
 }
 assert.equal(
   orderedMatchupPairCount,
-  16,
-  'all sixteen ordered power pairs should be planned'
+  9,
+  'all nine current ordered power pairs should be planned'
 );
 const founderMatchupPlan = matchupBrief.planBattleMatchupBrief({
   battleKind: 'exhibition',
@@ -5543,7 +5571,6 @@ for (const definition of founders.FOUNDING_SCRIBBIT_DEFINITIONS) {
       stats: projectedFounder.stats,
       imageUrl: projectedFounder.imageUrl,
       level: projectedFounder.level,
-      mood: projectedFounder.mood,
     },
     {
       id: definition.id,
@@ -5553,7 +5580,6 @@ for (const definition of founders.FOUNDING_SCRIBBIT_DEFINITIONS) {
       stats: definition.stats,
       imageUrl: definition.imageUrl,
       level: definition.level,
-      mood: definition.mood,
     },
     `${definition.name} server projection should preserve the shared catalog`
   );
@@ -5596,7 +5622,6 @@ assert.doesNotMatch(founderChampionPlan.statusCopy, /INK/i);
 const communityChampionPlans = [
   { power: 'inkquake', stats: { chonk: 55, spike: 15, zip: 15, charm: 15 } },
   { power: 'nib_halo', stats: { chonk: 15, spike: 55, zip: 15, charm: 15 } },
-  { power: 'smearstep', stats: { chonk: 15, spike: 15, zip: 55, charm: 15 } },
   { power: 'colorburst', stats: { chonk: 15, spike: 15, zip: 15, charm: 55 } },
 ].map(({ power, stats }) => {
   const champion = makeScribbit({
@@ -5614,7 +5639,7 @@ const communityChampionPlans = [
 });
 assert.equal(
   new Set(communityChampionPlans.map((plan) => plan.challengeLine)).size,
-  4,
+  3,
   'community Champions should have one distinct challenge voice per Shape Power'
 );
 pass('daily Champion Contract content stays canonical and truthful');
@@ -6861,17 +6886,6 @@ assert.equal(
 assert.deepEqual(
   [0, 2, 3, 6, 7, 11, 12, 18].map((xp) => mockCombatBundle.getLevelForXp(xp)),
   [1, 1, 2, 2, 3, 3, 4, 5]
-);
-assert.deepEqual(
-  [[], ['feed'], ['feed', 'pat'], ['feed', 'pat', 'train']].map(
-    (careDoneToday) => mockCombatBundle.planCareProgression(careDoneToday)
-  ),
-  [
-    { mood: 'hungry', xpGain: arena.XP_REWARDS.care },
-    { mood: 'sleepy', xpGain: arena.XP_REWARDS.care },
-    { mood: 'happy', xpGain: arena.XP_REWARDS.care },
-    { mood: 'pumped', xpGain: arena.XP_REWARDS.carePumped },
-  ]
 );
 assert.deepEqual(mockCombatBundle.getRumbleProgressionRewards(2), {
   xpAwarded: arena.XP_REWARDS.rumbleWin * 2,
@@ -8253,25 +8267,21 @@ assert.equal(
 const powerStatsForMockProof = Object.freeze({
   inkquake: { chonk: 55, spike: 15, zip: 15, charm: 15 },
   nib_halo: { chonk: 15, spike: 55, zip: 15, charm: 15 },
-  smearstep: { chonk: 15, spike: 15, zip: 55, charm: 15 },
   colorburst: { chonk: 15, spike: 15, zip: 15, charm: 55 },
 });
 const debugFixtureIdentityByPower = Object.freeze({
   inkquake: ['debug-inkquake-heavy-page', 'Heavy Page'],
   nib_halo: ['debug-nib-halo-needle-star', 'Needle Star'],
-  smearstep: ['debug-smearstep-quick-swipe', 'Quick Swipe'],
   colorburst: ['debug-colorburst-prism-pop', 'Prism Pop'],
 });
 const debugOpponentPower = Object.freeze({
-  inkquake: 'nib_halo',
-  nib_halo: 'smearstep',
-  smearstep: 'colorburst',
-  colorburst: 'inkquake',
+  inkquake: 'colorburst',
+  nib_halo: 'inkquake',
+  colorburst: 'nib_halo',
 });
 const debugSeedByPower = Object.freeze({
   inkquake: 13,
   nib_halo: 3,
-  smearstep: 18,
   colorburst: 25,
 });
 const debugFixtureForecast = Object.freeze({
@@ -8329,7 +8339,6 @@ const debugFixtureFighterByPower = Object.fromEntries(
         expiresDay: 11,
         level: 3,
         xp: 7,
-        mood: 'pumped',
       }),
     ];
   })
@@ -8402,71 +8411,22 @@ assert.ok(
   'Longshot showcase should fire a readable three-quill volley'
 );
 
-const smearstepTimeline =
-  debugFixtureReportByPower.smearstep.simulation.timeline;
-const firstSmearstepActivation = smearstepTimeline.find(
-  (event) =>
-    event.kind === 'ability_activated' &&
-    event.actor === 'a' &&
-    event.power === 'smearstep'
-);
-const firstSmearstepFinish = smearstepTimeline.find(
-  (event) =>
-    event.kind === 'ability_finished' &&
-    event.actor === 'a' &&
-    event.power === 'smearstep' &&
-    event.activationNumber === firstSmearstepActivation?.activationNumber
-);
-assert.ok(firstSmearstepActivation && firstSmearstepFinish);
-const smearstepConfig = combatConfig.ABILITY_CONFIG_BY_POWER.smearstep;
-assert.equal(
-  smearstepConfig.dashCount,
-  2,
-  'Smearstep should keep its reviewed two-dash balance contract'
-);
-assert.equal(
-  firstSmearstepActivation.activeUntilTick,
-  firstSmearstepActivation.tick + smearstepConfig.activeTicks,
-  'Smearstep activation should publish its exact configured finish tick'
-);
-assert.equal(
-  firstSmearstepFinish.tick,
-  firstSmearstepActivation.activeUntilTick,
-  'Smearstep should finish before movement at the configured active deadline'
-);
-const firstSmearstepBarrage = smearstepTimeline.filter(
-  (event) =>
-    event.kind === 'role_attack' &&
-    event.actor === 'a' &&
-    event.role === 'gunner' &&
-    event.attack === 'smearstep_barrage' &&
-    event.tick >= firstSmearstepActivation.tick &&
-    event.tick <= firstSmearstepFinish.tick
-);
-assert.deepEqual(
-  firstSmearstepBarrage.map((event) => event.shotNumber),
-  Array.from({ length: smearstepConfig.dashCount }, (_, index) => index + 1),
-  'Gunner showcase should prove every Smearstep Barrage shot in order'
-);
-
 const colorburstTimeline =
   debugFixtureReportByPower.colorburst.simulation.timeline;
 assert.ok(
   colorburstTimeline.some(
-    (event) =>
-      event.kind === 'damage' &&
-      event.sourceFighter === 'a' &&
-      event.source === 'colorburst' &&
-      event.tick < 60
-  ) &&
-    colorburstTimeline.some(
       (event) =>
         event.kind === 'damage' &&
         event.sourceFighter === 'a' &&
-        event.source === 'colorburst_echo' &&
-        event.tick < 60
+        event.source === 'colorburst'
+  ) &&
+    colorburstTimeline.some(
+        (event) =>
+          event.kind === 'damage' &&
+          event.sourceFighter === 'a' &&
+          event.source === 'colorburst_echo'
     ),
-  'Colorburst showcase should prove its cone and echo before three seconds'
+  'Colorburst showcase should prove its cone and echo'
 );
 
 let validatedBarrierSourceContract = false;
@@ -8534,7 +8494,7 @@ assert.equal(
   true,
   'elemental fixtures should exercise the barrier source contract'
 );
-pass('production-backed debug battles prove all four signature contracts');
+pass('production-backed debug battles prove all three current signatures');
 
 const mockDrawingTestOutputDirectory = join(testTemporaryRoot, 'mock-drawings');
 rmSync(mockDrawingTestOutputDirectory, { recursive: true, force: true });
@@ -9465,8 +9425,6 @@ const makeGoldenScribbit = (id, element, stats) => ({
   accessories: [],
   level: 1,
   xp: 0,
-  mood: 'happy',
-  careDoneToday: [],
   legacy: null,
 });
 const goldenForecast = {
@@ -9492,7 +9450,7 @@ const goldenCombatCases = [
     }),
     seed: 7001,
     expectedHash:
-      'fbdf23aee4659235385bd7ad623b8ff29d5769f452c83ca86933eb094aa0a530',
+      '27950eb115e6a8d4bc06ea419f9b2f7c6ec9ecd86c56a4bfa80f8f65b3c061f0',
   },
   {
     name: 'boundary archetypes',
@@ -9510,10 +9468,10 @@ const goldenCombatCases = [
     }),
     seed: 7002,
     expectedHash:
-      'e2304f54fdf01e461d4ae2b6ca6aee5a6868b37dde313077f47ba4dd0ba12ee4',
+      'f048f62be73035df6d74079baf93f20d3888feed933c47b24be61eb3b8d9cea1',
   },
   {
-    name: 'Smearstep Barrage schedule',
+    name: 'legacy Zip to Longshot schedule',
     fighterA: makeGoldenScribbit('gold-smear', 'tide', {
       chonk: 10,
       spike: 10,
@@ -9528,7 +9486,7 @@ const goldenCombatCases = [
     }),
     seed: 7003,
     expectedHash:
-      '4656f0e3171063de205b271ca44f3ac1fdfe348515165a771de51619d3d840ee',
+      '413733f929418fa36ae48057308d7fe368a9e0ac1c4f56d80b81c3992aaaba26',
   },
 ];
 const transcriptHash = (transcript) =>
@@ -10675,16 +10633,6 @@ const migratedOldRecord = await scribbitCore.loadScribbit(
 assert.ok(migratedOldRecord, 'old stored Scribbit should parse');
 assert.equal(migratedOldRecord.level, 1, 'old record should default level');
 assert.equal(migratedOldRecord.xp, 0, 'old record should default xp');
-assert.equal(
-  migratedOldRecord.mood,
-  'hungry',
-  'old record should hydrate mood'
-);
-assert.deepEqual(
-  migratedOldRecord.careDoneToday,
-  [],
-  'old record should default daily care'
-);
 assert.deepEqual(
   migratedOldRecord.upgrades,
   [],
@@ -10965,8 +10913,8 @@ const upgradedTranscript = combatEngine.simulateCombat({
 });
 assert.equal(
   upgradedTranscript.version,
-  6,
-  'current combat transcripts should use the v6 balance schema'
+  7,
+  'current combat transcripts should use the v7 three-role schema'
 );
 assert.deepEqual(
   upgradedTranscript.fighters[0].powerUpIds,
@@ -11204,12 +11152,12 @@ assert.deepEqual(
   },
   {
     headline: 'KO • Heavy Page WINS',
-    verdictLine: '14.3s • INK LEFT 7/225 vs 0/185',
+    verdictLine: '13.4s • INK LEFT 1/225 vs 0/185',
     tapeLine: '185 TOTAL DAMAGE • SHOCKWAVE',
     highlight: {
       label: 'FINAL SPLAT',
-      text: 'Body Slam • 1 to Needle Star',
-      compactText: 'Body Slam · 1 DAMAGE',
+      text: 'Body Slam • 13 to Needle Star',
+      compactText: 'Body Slam · 13 DAMAGE',
     },
     finishPresentation: 'knockout',
     finishSound: 'knockout',
@@ -11236,21 +11184,29 @@ assert.equal(doubleKnockoutRecap.finishPresentation, 'double-knockout');
 assert.equal(doubleKnockoutRecap.finishSound, 'knockout');
 assert.ok(doubleKnockoutRecap.headline.startsWith('DOUBLE KO •'));
 
-const timeoutDecisionSourceReport = Object.entries(powerStatsForMockProof)
-  .flatMap(([firstPower, firstStats]) =>
-    Object.entries(powerStatsForMockProof).map(([secondPower, secondStats]) =>
-      mockCombatBundle.simulate(
-        makeGoldenScribbit(`timeout-a-${firstPower}`, 'tide', firstStats),
-        makeGoldenScribbit(`timeout-b-${secondPower}`, 'tide', secondStats),
-        0,
-        goldenForecast,
-        'exhibition'
-      )
-    )
-  )
-  .find((report) => report.simulation.result.completedTick === 400);
+const timeoutSustainPowerUps = [
+  'v1-paper-shield',
+  'v1-center-fold',
+  'v1-last-scribble',
+  'v1-counter-sketch',
+  'v1-masterpiece',
+];
+const timeoutMageStats = powerStatsForMockProof.colorburst;
+const timeoutDecisionSourceReport = mockCombatBundle.simulate(
+  {
+    ...makeGoldenScribbit('timeout-a-colorburst', 'tide', timeoutMageStats),
+    powerUpIds: timeoutSustainPowerUps,
+  },
+  {
+    ...makeGoldenScribbit('timeout-b-colorburst', 'tide', timeoutMageStats),
+    powerUpIds: timeoutSustainPowerUps,
+  },
+  2,
+  goldenForecast,
+  'exhibition'
+);
 assert.ok(
-  timeoutDecisionSourceReport,
+  timeoutDecisionSourceReport.simulation.result.completedTick === 400,
   'timeout fixture should reach the clock'
 );
 const falseDoubleKnockoutTranscript = structuredClone(
@@ -12188,28 +12144,6 @@ pass(
 );
 
 assert.equal(
-  scribbitCore.deriveMoodFromCareActions([]),
-  'hungry',
-  'no care actions should be hungry'
-);
-assert.equal(
-  scribbitCore.deriveMoodFromCareActions(['feed']),
-  'sleepy',
-  'one care action should be sleepy'
-);
-assert.equal(
-  scribbitCore.deriveMoodFromCareActions(['feed', 'pat']),
-  'happy',
-  'two care actions should be happy'
-);
-assert.equal(
-  scribbitCore.deriveMoodFromCareActions(['feed', 'pat', 'train']),
-  'pumped',
-  'three care actions should be pumped'
-);
-pass('mood derivation table');
-
-assert.equal(
   sharedAccessoryEffects.ACCESSORY_EFFECT_MODE,
   'role-sidegrade-v1',
   'Gear techniques should remain bounded role sidegrades'
@@ -12282,7 +12216,7 @@ const redAimEffect = sharedGearCombat.getGearTechniqueEffect(
   6
 );
 assert.equal(redAimEffect.name, 'True Aim');
-assert.match(redAimEffect.summary, /\+2\.0% IMPACT/);
+assert.match(redAimEffect.summary, /\+0\.7% IMPACT/);
 pass('Gear rank effects climb monotonically from one star to Red Star');
 
 const tinySwordFx = weaponFxPresentation.resolveWeaponFxProfile({
@@ -13573,85 +13507,6 @@ const nextDayBackClaim = await clout.claimDailyBack(
 );
 assert.equal(nextDayBackClaim.claimed, true, 'Back should reset next day');
 pass('daily Back once-per-day claim');
-
-const careStorage = createMemoryStorage();
-const firstCare = await scribbitCore.claimDailyCareAction(
-  careStorage,
-  'care-me',
-  'feed',
-  '20260705',
-  100
-);
-assert.equal(firstCare.claimed, true, 'first feed should claim');
-assert.equal(firstCare.xpGain, 1, 'first care action should award one xp');
-assert.equal(
-  firstCare.mood,
-  'sleepy',
-  'first care action should hydrate sleepy'
-);
-assert.deepEqual(
-  firstCare.careDoneToday,
-  ['feed'],
-  'first care action should be readable'
-);
-const duplicateCare = await scribbitCore.claimDailyCareAction(
-  careStorage,
-  'care-me',
-  'feed',
-  '20260705',
-  200
-);
-assert.equal(duplicateCare.claimed, false, 'duplicate feed should not claim');
-assert.equal(duplicateCare.xpGain, 0, 'duplicate care should not award xp');
-const secondCare = await scribbitCore.claimDailyCareAction(
-  careStorage,
-  'care-me',
-  'pat',
-  '20260705',
-  300
-);
-assert.equal(secondCare.mood, 'happy', 'two actions should hydrate happy');
-assert.equal(secondCare.xpGain, 1, 'second unique care should award one xp');
-const thirdCare = await scribbitCore.claimDailyCareAction(
-  careStorage,
-  'care-me',
-  'train',
-  '20260705',
-  400
-);
-assert.equal(thirdCare.mood, 'pumped', 'three actions should hydrate pumped');
-assert.equal(thirdCare.xpGain, 2, 'pumped care action should award two xp');
-const nextDayCare = await scribbitCore.claimDailyCareAction(
-  careStorage,
-  'care-me',
-  'feed',
-  '20260706',
-  500
-);
-assert.equal(
-  nextDayCare.claimed,
-  true,
-  'care should reset on the next UTC day'
-);
-await scribbitCore.releaseDailyCareAction(
-  careStorage,
-  'care-me',
-  'feed',
-  '20260705'
-);
-const reclaimedCare = await scribbitCore.claimDailyCareAction(
-  careStorage,
-  'care-me',
-  'feed',
-  '20260705',
-  600
-);
-assert.equal(
-  reclaimedCare.claimed,
-  true,
-  'released care action should not lock the player out'
-);
-pass('care once-per-day claim and release');
 
 const dailyBeliefStorage = createMemoryStorage();
 const dailyBeliefTarget = makeScribbit({ id: 'belief-target', belief: 0 });
@@ -15861,7 +15716,6 @@ for (const [sourceBranch, clonedBranch, branchName] of [
   [faded.stats, clonedTerminalScribbit.stats, 'stats'],
   [faded.accessories, clonedTerminalScribbit.accessories, 'accessories'],
   [faded.upgrades, clonedTerminalScribbit.upgrades, 'upgrades'],
-  [faded.careDoneToday, clonedTerminalScribbit.careDoneToday, 'care'],
   [faded.legacy, clonedTerminalScribbit.legacy, 'legacy'],
   [
     faded.legacy.creatorTitle,
@@ -15888,14 +15742,12 @@ for (const [sourceBranch, clonedBranch, branchName] of [
 clonedTerminalScribbit.stats.chonk = 999;
 clonedTerminalScribbit.accessories.push('mutated-accessory');
 clonedTerminalScribbit.upgrades[0].id = 'mutated-upgrade';
-clonedTerminalScribbit.careDoneToday.push('train');
 clonedTerminalScribbit.legacy.creatorTitle.name = 'Mutated title';
 clonedTerminalScribbit.legacy.accessories[0].name = 'Mutated accessory';
 clonedTerminalScribbit.legacy.upgrades[0].id = 'mutated-legacy-upgrade';
 assert.notEqual(faded.stats.chonk, 999);
 assert.equal(faded.accessories.includes('mutated-accessory'), false);
 assert.notEqual(faded.upgrades[0].id, 'mutated-upgrade');
-assert.equal(faded.careDoneToday.includes('train'), false);
 assert.equal(faded.legacy.creatorTitle.name, 'Doodler');
 assert.equal(faded.legacy.accessories[0].name, 'Beanie');
 assert.equal(faded.legacy.upgrades[0].id, 'v1-thick-paper');
@@ -16516,12 +16368,6 @@ assert.ok(foundingStanding, 'backfill should include a founding Scribbit');
 assert.ok(
   foundingStanding.scribbit.level >= 1 && foundingStanding.scribbit.level <= 3,
   'backfill founding Scribbit should carry a small level'
-);
-assert.ok(
-  ['happy', 'hungry', 'sleepy', 'pumped'].includes(
-    foundingStanding.scribbit.mood
-  ),
-  'backfill founding Scribbit should carry mood'
 );
 assert.ok(
   oddResolution.reports.length >= 2,

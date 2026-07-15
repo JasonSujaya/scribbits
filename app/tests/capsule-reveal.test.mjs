@@ -17,7 +17,7 @@ const capsuleReveal = require(
 
 const pulls = [
   'common',
-  'common',
+  'legendary',
   'rare',
   'common',
   'epic',
@@ -31,7 +31,7 @@ const pulls = [
   name: `Reward ${index + 1}`,
 }));
 
-test('ten rewards reveal in paid order with stronger rare and epic pauses', () => {
+test('ten rewards reveal in paid order with rarity-scaled pauses', () => {
   const plan = capsuleReveal.planCapsuleBatchReveal(pulls, false);
   assert.equal(plan.steps.length, 10);
   assert.deepEqual(
@@ -44,6 +44,7 @@ test('ten rewards reveal in paid order with stronger rare and epic pauses', () =
       : step.delayMs - plan.steps[index - 1].delayMs
   );
   assert.equal(gaps[0], 90);
+  assert.equal(gaps[1], 420);
   assert.equal(gaps[2], 170);
   assert.equal(gaps[4], 280);
   assert.ok(plan.completionDelayMs > plan.steps.at(-1).delayMs);

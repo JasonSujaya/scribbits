@@ -139,9 +139,8 @@ test('Legacy Card migration preserves frozen metadata and validates versions', (
   delete legacylessRecord.legacy;
   delete legacylessRecord.upgrades;
 
-  const migratedLegacyRecord = scribbitCore.normalizeScribbitRecord(
-    legacylessRecord
-  );
+  const migratedLegacyRecord =
+    scribbitCore.normalizeScribbitRecord(legacylessRecord);
   assert.ok(migratedLegacyRecord?.legacy);
   assert.equal(migratedLegacyRecord.legacy.schemaVersion, 1);
   assert.deepEqual(migratedLegacyRecord.legacy.upgrades, []);
@@ -251,8 +250,6 @@ test('Legends preserve raw offset pagination when stale IDs are skipped', async 
       accessories: [],
       level: 1,
       xp: 0,
-      mood: 'hungry',
-      careDoneToday: [],
       legacy: null,
     });
     assert.ok(legend, `pagination Legend ${rank} must normalize`);
@@ -407,7 +404,10 @@ test('Legacy Cards share cursor, paging, projection, and mock contracts', () => 
   );
 
   const receiptProjection = legacyCards.projectLegacyReturnReceipt(
-    [...legacyCardsNewestFirst, { ...believedLegacyCard, id: 'another-memory' }],
+    [
+      ...legacyCardsNewestFirst,
+      { ...believedLegacyCard, id: 'another-memory' },
+    ],
     0
   );
   assert.equal(receiptProjection?.cards.length, 3);

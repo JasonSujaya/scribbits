@@ -19,6 +19,27 @@ const mockSource = readFileSync(
   join(process.cwd(), 'scripts', 'dev-mock.mjs'),
   'utf8'
 );
+const drawSource = readFileSync(
+  join(process.cwd(), 'src', 'client', 'scenes', 'Draw.ts'),
+  'utf8'
+);
+const homeSource = readFileSync(
+  join(process.cwd(), 'src', 'client', 'scenes', 'ScribbitHome.ts'),
+  'utf8'
+);
+
+test('birth offers must be chosen before the first fight and recover on Home', () => {
+  assert.match(powerUpDraftSource, /offer\.source === 'birth'/);
+  assert.match(powerUpDraftSource, /FIRST POWER-UP · CHOOSE 1/);
+  assert.match(drawSource, /pendingBirthPowerUpOffer/);
+  assert.match(
+    drawSource,
+    /if \(this\.pendingBirthPowerUpOffer\) \{[\s\S]*?this\.openBirthPowerUpDraft\(scribbit\);[\s\S]*?return;/
+  );
+  assert.match(homeSource, /pendingPowerUpOffers/);
+  assert.match(homeSource, /private openPendingPowerUpOffer\(\)/);
+  assert.match(mockSource, /getOrCreateMockBirthPowerUpOffer/);
+});
 
 test('Scribbit details show a five-slot icon-first Power-Up build', () => {
   assert.match(
@@ -70,8 +91,14 @@ test('Power-Up choices react to hover and press without forcing motion', () => {
   assert.match(powerUpDraftSource, /canvasFocusIsKeyboardDriven/);
   assert.match(powerUpDraftSource, /hoverShadow\.setFillStyle/);
   assert.match(powerUpDraftSource, /const rareRail = scene\.add\.rectangle/);
-  assert.match(powerUpDraftSource, /const rareIconBacking = scene\.add\.circle/);
-  assert.match(powerUpDraftSource, /const legendaryIconHalo = scene\.add\.star/);
+  assert.match(
+    powerUpDraftSource,
+    /const rareIconBacking = scene\.add\.circle/
+  );
+  assert.match(
+    powerUpDraftSource,
+    /const legendaryIconHalo = scene\.add\.star/
+  );
   assert.match(powerUpDraftSource, /const legendaryGlint = scene\.add\.star/);
   assert.match(powerUpDraftSource, /drawRarityChip/);
   assert.doesNotMatch(powerUpDraftSource, /name\.setColor/);

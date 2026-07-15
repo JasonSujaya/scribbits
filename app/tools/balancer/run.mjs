@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 
-import { existsSync } from 'node:fs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -22,11 +21,11 @@ const POWER_UP_SWING_WATCH = 0.18;
 const POWER_UP_DEAD_TRIGGER_RATE = 0.15;
 const POWER_UP_LOW_IMPACT_SWING = 0.03;
 const POWER_UP_HARMFUL_SWING = -0.12;
+const POWER_UP_CLUTCH_SWING = 0.08;
 const CLOSE_FIGHT_HP_MARGIN = 150;
 const BLOWOUT_HP_MARGIN = 650;
 
 function ensureMockCombatBundle() {
-  if (existsSync(bundlePath)) return;
   execFileSync(process.execPath, ['scripts/build-mock-combat.mjs'], {
     cwd: appRoot,
     stdio: 'inherit',
@@ -81,8 +80,6 @@ function makeFighter(runtime, build, suffix, overrides = {}) {
     powerUpIds,
     level: overrides.level ?? build.level ?? 1,
     xp: 0,
-    mood: 'happy',
-    careDoneToday: [],
     legacy: null,
   };
 }
@@ -183,8 +180,10 @@ function simulateTargetVsOpponent({
         `${orientation}-b-${seedIndex}`,
         targetIsA ? opponentOverrides : targetOverrides
       );
+      const fighterABuildId = targetIsA ? targetBuild.id : opponentBuild.id;
+      const fighterBBuildId = targetIsA ? opponentBuild.id : targetBuild.id;
       const seed = runtime.hashStringToUint32(
-        `${seedPrefix}:${targetBuild.id}:${opponentBuild.id}:${orientation}:${seedIndex}`
+        `${seedPrefix}:slot-pair:${fighterABuildId}:${fighterBBuildId}:${seedIndex}`
       );
       const report = runtime.simulate(
         fighterA,
@@ -298,6 +297,23 @@ function formatHitRates(map) {
     .join(', ');
 }
 
+function formatPowerUpCountMix(runtime, powerUpIds, limit = 5) {
+  const counts = new Map();
+  for (const powerUpId of powerUpIds) {
+    counts.set(powerUpId, (counts.get(powerUpId) ?? 0) + 1);
+  }
+  const entries = [...counts.entries()]
+    .sort((left, right) => right[1] - left[1])
+    .slice(0, limit);
+  if (entries.length === 0) return '—';
+  return entries
+    .map(([powerUpId, count]) => {
+      const label = runtime.POWER_UP_CATALOG[powerUpId]?.shortName ?? powerUpId;
+      return `${label} (${count})`;
+    })
+    .join('; ');
+}
+
 function summarizeRows(rows) {
   const total = rows.length;
   const targetWins = rows.filter((row) => row.targetWon).length;
@@ -366,7 +382,9 @@ function formatPercent(value) {
 
 function csvEscape(value) {
   const text =
-    value && typeof value === 'object' ? JSON.stringify(value) : String(value ?? '');
+    value && typeof value === 'object'
+      ? JSON.stringify(value)
+      : String(value ?? '');
   return /[",\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
 }
 
@@ -459,7 +477,65 @@ function runRoleMatrix({ runtime, scenarios, forecast }) {
     id: 'role-matrix',
     title: 'Role Matrix',
     rows,
-    summaries: summarizeMatrix(rows, ['targetLabel', 'opponentLabel']),
+    summaries: summarizeMatrix(rows, ['targetLabel', 'opponentLabel']).map(
+      (summary) => {
+        const flags = removeVerdictToken(summary.verdict, 'FLAG_WIN_RATE')
+          .split('+')
+          .filter((token) => token !== 'OK');
+        if (summary.targetWinRate < 0.32 || summary.targetWinRate > 0.68) {
+          flags.push('FLAG_ROLE_MATRIX_EDGE');
+        }
+        return {
+          ...summary,
+          verdict: flags.length > 0 ? flags.join('+') : 'OK',
+        };
+      }
+    ),
+  };
+}
+
+function runRoleCycle({ runtime, scenarios, forecast }) {
+  const edges = [
+    ['brawler-base', 'mage-base', 'Brawler > Mage'],
+    ['mage-base', 'longshot-base', 'Mage > Longshot'],
+    ['longshot-base', 'brawler-base', 'Longshot > Brawler'],
+  ];
+  const rows = [];
+  const minimumEdgeWinRate =
+    scenarios.suites.roleCycle?.minimumEdgeWinRate ?? 0.52;
+  const maximumEdgeWinRate =
+    scenarios.suites.roleCycle?.maximumEdgeWinRate ?? 0.65;
+  for (const [targetBuildId, opponentBuildId, label] of edges) {
+    const targetBuild = buildById(scenarios, targetBuildId);
+    const opponentBuild = buildById(scenarios, opponentBuildId);
+    rows.push(
+      ...simulateTargetVsOpponent({
+        runtime,
+        forecast,
+        battleKind: scenarios.battleKind,
+        targetBuild,
+        opponentBuild,
+        targetOverrides: { label },
+        seeds: scenarios.suites.roleCycle?.seedsPerPairing ?? 120,
+        seedPrefix: 'balancer:role-cycle:v1',
+      })
+    );
+  }
+  return {
+    id: 'role-cycle',
+    title: 'Role Cycle',
+    rows,
+    summaries: summarizeMatrix(rows, ['targetLabel', 'opponentLabel']).map(
+      (summary) => ({
+        ...summary,
+        verdict:
+          summary.targetWinRate < minimumEdgeWinRate
+            ? 'FLAG_WEAK_EDGE'
+            : summary.targetWinRate > maximumEdgeWinRate
+              ? 'FLAG_OVERPOWERED_EDGE'
+              : 'OK',
+      })
+    ),
   };
 }
 
@@ -467,8 +543,48 @@ function runGrowthProgression({ runtime, scenarios, forecast }) {
   const builds = baseBuilds(scenarios);
   const opponentBuilds = builds;
   const rows = [];
+  const growingMaturityMaxPowerUps = Number.isSafeInteger(
+    scenarios.growingMaturityMaxPowerUps
+  )
+    ? Math.max(
+        0,
+        Math.min(
+          runtime.MAXIMUM_POWER_UPS,
+          Math.floor(scenarios.growingMaturityMaxPowerUps)
+        )
+      )
+    : runtime.MAXIMUM_POWER_UPS;
   for (const targetBuild of builds) {
+    const combatRole = runtime.selectCombatRole(targetBuild.stats);
     for (const stage of scenarios.growthStages) {
+      let powerUpIds = Array.isArray(stage.powerUpIds)
+        ? [...stage.powerUpIds]
+        : [];
+      const requestedPowerUpCount = Number.isSafeInteger(stage.powerUpCount)
+        ? Math.max(
+            0,
+            Math.min(growingMaturityMaxPowerUps, Math.floor(stage.powerUpCount))
+          )
+        : powerUpIds.length;
+      while (powerUpIds.length < requestedPowerUpCount) {
+        const source =
+          powerUpIds.length === requestedPowerUpCount - 1 &&
+          requestedPowerUpCount >= 3
+            ? 'rival-run-final-win'
+            : 'rival-run-win';
+        const choices = runtime.createDeterministicPowerUpOffer({
+          seed: `growth-progression-v2:${targetBuild.id}:${stage.id}:${powerUpIds.length}`,
+          source,
+          ownedPowerUpIds: powerUpIds,
+          maxPowerUps: growingMaturityMaxPowerUps,
+          combatRole,
+        });
+        const selected = choices?.find(
+          (id) => runtime.validatePowerUpBuild([...powerUpIds, id]).valid
+        );
+        if (!selected) break;
+        powerUpIds = [...powerUpIds, selected];
+      }
       for (const opponentBuild of opponentBuilds) {
         rows.push(
           ...simulateTargetVsOpponent({
@@ -479,10 +595,10 @@ function runGrowthProgression({ runtime, scenarios, forecast }) {
             opponentBuild,
             targetOverrides: {
               label: `${targetBuild.label} · ${stage.label}`,
-              powerUpIds: stage.powerUpIds,
+              powerUpIds,
             },
             seeds: scenarios.suites.growthProgression.seedsPerPairing,
-            seedPrefix: `balancer:growth:${stage.id}`,
+            seedPrefix: 'balancer:growth:v2',
           })
         );
       }
@@ -492,77 +608,121 @@ function runGrowthProgression({ runtime, scenarios, forecast }) {
     id: 'growth-progression',
     title: 'Growing Progression',
     rows,
-    summaries: summarizeMatrix(rows, ['targetLabel', 'opponentLabel']),
+    summaries: summarizeMatrix(rows, ['targetLabel', 'opponentLabel']).map(
+      (summary) => {
+        const isThreePowerUpStage = summary.targetLabel.includes('· 3 PU');
+        const low = isThreePowerUpStage ? 0.25 : 0.28;
+        const high = isThreePowerUpStage ? 0.8 : 0.72;
+        return {
+          ...summary,
+          verdict:
+            summary.targetWinRate < low || summary.targetWinRate > high
+              ? 'FLAG_GROWTH_STRESS_WIN_RATE'
+              : removeVerdictToken(summary.verdict, 'FLAG_WIN_RATE'),
+        };
+      }
+    ),
   };
 }
 
 function runPowerUpCombos({ runtime, scenarios, forecast }) {
-  const baseTarget = buildById(
-    scenarios,
-    scenarios.suites.powerUpCombos.targetBuildId
-  );
   const opponents = baseBuilds(scenarios);
   const combos = comboDefinitions(runtime, scenarios);
-  const baselineRows = [];
-  for (const opponentBuild of opponents) {
-    baselineRows.push(
-      ...simulateTargetVsOpponent({
-        runtime,
-        forecast,
-        battleKind: scenarios.battleKind,
-        targetBuild: baseTarget,
-        opponentBuild,
-        targetOverrides: { label: '0 Power-Ups', powerUpIds: [] },
-        seeds: scenarios.suites.powerUpCombos.seedsPerPairing,
-        seedPrefix: 'balancer:powerup-baseline:v1',
-      })
-    );
-  }
-  const baseline = summarizeRows(baselineRows).targetWinRate;
   const rows = [];
-  for (const combo of combos) {
+  const baselineByBuild = new Map();
+  const comboOfferableByBuild = new Map();
+  for (const targetBuild of baseBuilds(scenarios)) {
+    const combatRole = runtime.selectCombatRole(targetBuild.stats);
+    const baselineRows = [];
     for (const opponentBuild of opponents) {
-      rows.push(
+      baselineRows.push(
         ...simulateTargetVsOpponent({
           runtime,
           forecast,
           battleKind: scenarios.battleKind,
-          targetBuild: baseTarget,
+          targetBuild,
           opponentBuild,
           targetOverrides: {
-            label: combo.label,
-            powerUpIds: combo.powerUpIds,
+            label: `${targetBuild.label} · 0 Power-Ups`,
+            powerUpIds: [],
           },
           seeds: scenarios.suites.powerUpCombos.seedsPerPairing,
-          seedPrefix: `balancer:powerup:${combo.id}`,
+          seedPrefix: 'balancer:powerup-comparison:v2',
         })
       );
     }
+    baselineByBuild.set(
+      targetBuild.id,
+      summarizeRows(baselineRows).targetWinRate
+    );
+    for (const combo of combos) {
+      comboOfferableByBuild.set(
+        `${targetBuild.id}:${targetBuild.label} · ${combo.label}`,
+        combo.powerUpIds.every((id) =>
+          runtime.powerUpIsOfferableForRole(id, combatRole)
+        )
+      );
+      for (const opponentBuild of opponents) {
+        rows.push(
+          ...simulateTargetVsOpponent({
+            runtime,
+            forecast,
+            battleKind: scenarios.battleKind,
+            targetBuild,
+            opponentBuild,
+            targetOverrides: {
+              label: `${targetBuild.label} · ${combo.label}`,
+              powerUpIds: combo.powerUpIds,
+            },
+            seeds: scenarios.suites.powerUpCombos.seedsPerPairing,
+            seedPrefix: 'balancer:powerup-comparison:v2',
+          })
+        );
+      }
+    }
   }
-  const summaries = summarizeMatrix(rows, ['targetLabel']);
+  const summaries = summarizeMatrix(rows, ['targetBuild', 'targetLabel']);
   return {
     id: 'powerup-combos',
     title: 'Power-Up Combos',
     rows,
     summaries: summaries.map((summary) => ({
       ...summary,
-      swingFromBaseline: summary.targetWinRate - baseline,
-      verdict:
-        Math.abs(summary.targetWinRate - baseline) > POWER_UP_SWING_WATCH
+      swingFromBaseline:
+        summary.targetWinRate - (baselineByBuild.get(summary.targetBuild) ?? 0),
+      verdict: (() => {
+        const offerable = comboOfferableByBuild.get(
+          `${summary.targetBuild}:${summary.targetLabel}`
+        );
+        if (offerable === false) return 'INFO_FORCED_NON_OFFERED_COMBO';
+        return Math.abs(
+          summary.targetWinRate -
+            (baselineByBuild.get(summary.targetBuild) ?? 0)
+        ) > POWER_UP_SWING_WATCH
           ? `${summary.verdict === 'OK' ? '' : `${summary.verdict}+`}WATCH_SWING`
-          : summary.verdict,
+          : summary.verdict;
+      })(),
     })),
   };
 }
 
 function appendPowerUpUsefulnessVerdict(summary) {
+  if (summary.offerableForRole === false) return 'INFO_NOT_OFFERED_ROLE';
+
   const flags = [];
   const comboOnlyTrigger =
     summary.trigger === 'distinct-power-ups' ||
     summary.trigger === 'common-power-up';
+  const rareButImpactfulClutch =
+    summary.trigger === 'lethal-hit' &&
+    summary.triggerRate < POWER_UP_DEAD_TRIGGER_RATE &&
+    summary.swingFromBaseline >= POWER_UP_CLUTCH_SWING;
   if (comboOnlyTrigger && summary.triggerRate < POWER_UP_DEAD_TRIGGER_RATE) {
     flags.push('INFO_COMBO_ONLY');
-  } else if (summary.triggerRate < POWER_UP_DEAD_TRIGGER_RATE) {
+  } else if (
+    summary.triggerRate < POWER_UP_DEAD_TRIGGER_RATE &&
+    !rareButImpactfulClutch
+  ) {
     flags.push('FLAG_DEAD_CARD');
   }
   if (
@@ -581,7 +741,25 @@ function appendPowerUpUsefulnessVerdict(summary) {
 }
 
 function isBalanceFlag(row) {
-  return row.verdict !== 'OK' && !String(row.verdict).startsWith('INFO_');
+  return String(row.verdict)
+    .split('+')
+    .some((part) => part.startsWith('FLAG_'));
+}
+
+function isBalanceWatch(row) {
+  return (
+    !isBalanceFlag(row) &&
+    String(row.verdict)
+      .split('+')
+      .some((part) => part.startsWith('WATCH_'))
+  );
+}
+
+function removeVerdictToken(verdict, tokenToRemove) {
+  const remaining = String(verdict)
+    .split('+')
+    .filter((token) => token !== tokenToRemove);
+  return remaining.length > 0 ? remaining.join('+') : 'OK';
 }
 
 function runPowerUpUsefulness({ runtime, scenarios, forecast }) {
@@ -590,6 +768,7 @@ function runPowerUpUsefulness({ runtime, scenarios, forecast }) {
   const summaries = [];
   const seeds = scenarios.suites.powerUpUsefulness?.seedsPerPairing ?? 36;
   for (const targetBuild of baseBuilds(scenarios)) {
+    const combatRole = runtime.selectCombatRole(targetBuild.stats);
     const baselineRows = [];
     for (const opponentBuild of opponents) {
       baselineRows.push(
@@ -604,13 +783,17 @@ function runPowerUpUsefulness({ runtime, scenarios, forecast }) {
             powerUpIds: [],
           },
           seeds,
-          seedPrefix: `balancer:powerup-usefulness:baseline:${targetBuild.id}`,
+          seedPrefix: 'balancer:powerup-usefulness:v2',
         })
       );
     }
     const baselineWinRate = summarizeRows(baselineRows).targetWinRate;
     for (const powerUpId of runtime.POWER_UP_IDS) {
       const definition = runtime.POWER_UP_CATALOG[powerUpId];
+      const offerableForRole = runtime.powerUpIsOfferableForRole(
+        powerUpId,
+        combatRole
+      );
       const powerUpRows = [];
       for (const opponentBuild of opponents) {
         powerUpRows.push(
@@ -625,7 +808,7 @@ function runPowerUpUsefulness({ runtime, scenarios, forecast }) {
               powerUpIds: [powerUpId],
             },
             seeds,
-            seedPrefix: `balancer:powerup-usefulness:${targetBuild.id}:${powerUpId}`,
+            seedPrefix: 'balancer:powerup-usefulness:v2',
           }).map((row) => ({
             ...row,
             roleLabel: targetBuild.label,
@@ -642,7 +825,8 @@ function runPowerUpUsefulness({ runtime, scenarios, forecast }) {
         ).length / Math.max(1, powerUpRows.length);
       const averageSpecificTriggers =
         powerUpRows.reduce(
-          (sum, row) => sum + (row.targetPowerUpTriggerCounts?.[powerUpId] ?? 0),
+          (sum, row) =>
+            sum + (row.targetPowerUpTriggerCounts?.[powerUpId] ?? 0),
           0
         ) / Math.max(1, powerUpRows.length);
       const enriched = {
@@ -650,6 +834,8 @@ function runPowerUpUsefulness({ runtime, scenarios, forecast }) {
         opponentLabel: definition.shortName,
         powerUpId,
         powerUpLabel: definition.shortName,
+        combatRole,
+        offerableForRole,
         rarity: definition.rarity,
         trigger: definition.trigger,
         baselineWinRate,
@@ -724,7 +910,15 @@ function runRivalRunRisk({ runtime, scenarios, forecast }) {
       'opponentLabel',
       'tier',
       'winPoints',
-    ]),
+    ]).map((summary) => {
+      if (summary.tier !== 'safe') return summary;
+      const flags = [];
+      if (summary.targetWinRate < 0.35) flags.push('FLAG_UNSAFE_SAFE_PICK');
+      if (summary.timeoutRate > TIMEOUT_RATE_FLAG_HIGH)
+        flags.push('FLAG_TIMEOUTS');
+      const verdict = flags.length > 0 ? flags.join('+') : 'OK';
+      return { ...summary, verdict };
+    }),
   };
 }
 
@@ -786,18 +980,23 @@ function runGeneratedPool({ runtime, scenarios, forecast }) {
     id: 'generated-pool',
     title: 'Generated Opponent Pool',
     rows,
-    summaries: summarizeMatrix(rows, ['targetLabel']),
+    summaries: summarizeMatrix(rows, ['targetLabel']).map((summary) => {
+      const flags = removeVerdictToken(summary.verdict, 'FLAG_WIN_RATE')
+        .split('+')
+        .filter((token) => token !== 'OK');
+      if (summary.targetWinRate < 0.3 || summary.targetWinRate > 0.7) {
+        flags.push('FLAG_GENERATED_FIELD_WIN_RATE');
+      }
+      return {
+        ...summary,
+        verdict: flags.length > 0 ? flags.join('+') : 'OK',
+      };
+    }),
   };
 }
 
 function appendDamageBreakdownVerdict(summary) {
   const flags = [];
-  if (
-    summary.targetWinRate < WIN_RATE_FLAG_LOW ||
-    summary.targetWinRate > WIN_RATE_FLAG_HIGH
-  ) {
-    flags.push('FLAG_WIN_RATE');
-  }
   const dominantDealt = topEntries(summary.averageDamageDealtBySource, 1)[0];
   if (dominantDealt && dominantDealt[1] > 650) {
     flags.push('WATCH_SOURCE_SPIKE');
@@ -869,36 +1068,80 @@ function runDamageSourceBreakdown({ runtime, scenarios, forecast }) {
 
 function runGearPowerUpInteraction({ runtime, scenarios, forecast }) {
   const rows = [];
-  const targetBuild = buildById(
-    scenarios,
-    scenarios.suites.gearPowerUps.targetBuildId
-  );
   const opponents = baseBuilds(scenarios);
-  for (const loadout of scenarios.gearPowerUpLoadouts) {
-    for (const opponentBuild of opponents) {
-      rows.push(
-        ...simulateTargetVsOpponent({
-          runtime,
-          forecast,
-          battleKind: scenarios.battleKind,
-          targetBuild,
-          opponentBuild,
-          targetOverrides: {
-            label: loadout.label,
-            powerUpIds: loadout.powerUpIds,
-            gear: loadout.gear,
-          },
-          seeds: scenarios.suites.gearPowerUps.seedsPerPairing,
-          seedPrefix: `balancer:gear-power:${loadout.id}`,
-        })
-      );
+  for (const profile of scenarios.gearPowerUpProfiles) {
+    const targetBuild = buildById(scenarios, profile.targetBuildId);
+    const variants = [
+      { id: 'baseline', label: 'Baseline', powerUpIds: [], gear: [] },
+      { id: 'gear', label: 'Gear only', powerUpIds: [], gear: profile.gear },
+      {
+        id: 'skills',
+        label: 'Skills only',
+        powerUpIds: profile.powerUpIds,
+        gear: [],
+      },
+      {
+        id: 'combined',
+        label: 'Gear + Skills',
+        powerUpIds: profile.powerUpIds,
+        gear: profile.gear,
+      },
+    ];
+    for (const variant of variants) {
+      for (const opponentBuild of opponents) {
+        rows.push(
+          ...simulateTargetVsOpponent({
+            runtime,
+            forecast,
+            battleKind: scenarios.battleKind,
+            targetBuild,
+            opponentBuild,
+            targetOverrides: {
+              label: `${targetBuild.label} · ${variant.label}`,
+              powerUpIds: variant.powerUpIds,
+              gear: variant.gear,
+            },
+            seeds: scenarios.suites.gearPowerUps.seedsPerPairing,
+            seedPrefix: 'balancer:gear-power:v2',
+          }).map((row) => ({
+            ...row,
+            roleLabel: targetBuild.label,
+            variantId: variant.id,
+          }))
+        );
+      }
     }
   }
+  const summaries = summarizeMatrix(rows, [
+    'targetBuild',
+    'roleLabel',
+    'variantId',
+    'targetLabel',
+  ]);
+  const ratesByRoleAndVariant = new Map(
+    summaries.map((summary) => [
+      `${summary.targetBuild}:${summary.variantId}`,
+      summary.targetWinRate,
+    ])
+  );
   return {
     id: 'gear-powerups',
     title: 'Gear + Power-Up Interaction',
     rows,
-    summaries: summarizeMatrix(rows, ['targetLabel']),
+    summaries: summaries.map((summary) => ({
+      ...summary,
+      ...(summary.variantId === 'combined'
+        ? {
+            interactionLift:
+              summary.targetWinRate -
+              (ratesByRoleAndVariant.get(`${summary.targetBuild}:gear`) ?? 0) -
+              (ratesByRoleAndVariant.get(`${summary.targetBuild}:skills`) ??
+                0) +
+              (ratesByRoleAndVariant.get(`${summary.targetBuild}:baseline`) ??
+                0),
+          }
+        : {}),
+    })),
   };
 }
 
@@ -924,7 +1167,12 @@ function runRoleEdges({ runtime, scenarios, forecast }) {
     id: 'role-edges',
     title: 'Role Classification Edge Cases',
     rows,
-    summaries: summarizeMatrix(rows, ['targetLabel', 'opponentLabel']),
+    summaries: summarizeMatrix(rows, ['targetLabel', 'opponentLabel']).map(
+      (summary) => ({
+        ...summary,
+        verdict: 'INFO_ROLE_EDGE_DIAGNOSTIC',
+      })
+    ),
   };
 }
 
@@ -950,13 +1198,16 @@ function runFightFeel({ runtime, scenarios, forecast }) {
     }
   }
   const summaries = summarizeMatrix(rows, ['targetLabel', 'opponentLabel']).map(
-    (summary) => ({
-      ...summary,
-      verdict:
-        summary.blowoutRate > 0.65
-          ? `${summary.verdict === 'OK' ? '' : `${summary.verdict}+`}WATCH_BLOWOUTS`
-          : summary.verdict,
-    })
+    (summary) => {
+      const feelVerdict = removeVerdictToken(summary.verdict, 'FLAG_WIN_RATE');
+      return {
+        ...summary,
+        verdict:
+          summary.blowoutRate > 0.65
+            ? `${feelVerdict === 'OK' ? '' : `${feelVerdict}+`}WATCH_BLOWOUTS`
+            : feelVerdict,
+      };
+    }
   );
   return {
     id: 'fight-feel',
@@ -984,6 +1235,7 @@ function runRewardPath({ runtime, scenarios, forecast }) {
       seed: `reward-path:${source}:${fighter.id}`,
       source,
       ownedPowerUpIds: [],
+      combatRole: runtime.selectCombatRole(fighter.stats),
     });
     const selectedId = choices?.[0];
     const nextPowerUpIds = selectedId ? [selectedId] : [];
@@ -1022,88 +1274,165 @@ function runThreeDayLoop({ runtime, scenarios, forecast }) {
   const rows = [];
   const summaries = [];
   const opponents = baseBuilds(scenarios);
+  const runsPerRole = scenarios.suites.threeDayLoop?.runsPerRole ?? 80;
+  const growingMaturityMaxPowerUps = Number.isSafeInteger(
+    scenarios.growingMaturityMaxPowerUps
+  )
+    ? Math.max(
+        0,
+        Math.min(
+          runtime.MAXIMUM_POWER_UPS,
+          Math.floor(scenarios.growingMaturityMaxPowerUps)
+        )
+      )
+    : runtime.MAXIMUM_POWER_UPS;
   for (const startingBuild of baseBuilds(scenarios)) {
-    let powerUpIds = [];
-    let wins = 0;
-    let losses = 0;
-    for (let day = 1; day <= 3; day += 1) {
-      for (let bout = 1; bout <= 3; bout += 1) {
-        const opponentBuild =
-          opponents[(day + bout + wins + losses) % opponents.length];
-        const fightRows = simulateTargetVsOpponent({
-          runtime,
-          forecast,
-          battleKind: scenarios.battleKind,
-          targetBuild: startingBuild,
-          opponentBuild,
-          targetOverrides: {
-            label: `${startingBuild.label} · Day ${day} Bout ${bout}`,
-            powerUpIds,
-          },
-          seeds: 1,
-          seedPrefix: `balancer:three-day:${startingBuild.id}:${day}:${bout}`,
-        });
-        const targetWon =
-          fightRows.filter((row) => row.targetWon).length >=
-          fightRows.length / 2;
-        if (targetWon) {
-          wins += 1;
-          if (powerUpIds.length < runtime.MAXIMUM_POWER_UPS) {
-            const source = bout === 3 ? 'rival-run-final-win' : 'rival-run-win';
-            const choices = runtime.createDeterministicPowerUpOffer({
-              seed: `three-day-offer-${startingBuild.id}-${day}-${bout}`,
-              source,
-              ownedPowerUpIds: powerUpIds,
-            });
-            const selected = choices?.find(
-              (id) => runtime.validatePowerUpBuild([...powerUpIds, id]).valid
-            );
-            if (selected) powerUpIds = [...powerUpIds, selected];
+    const startingRows = [];
+    const loopOutcomes = [];
+    for (let loopIndex = 0; loopIndex < runsPerRole; loopIndex += 1) {
+      let powerUpIds = [];
+      const pickedPowerUpIds = [];
+      let wins = 0;
+      let losses = 0;
+      for (let day = 1; day <= 3; day += 1) {
+        for (let bout = 1; bout <= 3; bout += 1) {
+          const opponentBuild =
+            opponents[
+              runtime.hashStringToUint32(
+                `balancer:three-day-opponent:v2:${startingBuild.id}:${loopIndex}:${day}:${bout}:${wins}:${losses}`
+              ) % opponents.length
+            ];
+          const powerUpsBeforeFight = powerUpIds.length;
+          const sampledOrientation =
+            runtime.hashStringToUint32(
+              `balancer:three-day-orientation:v1:${startingBuild.id}:${loopIndex}:${day}:${bout}`
+            ) %
+              2 ===
+            0
+              ? 'target-a'
+              : 'target-b';
+          const fightRows = simulateTargetVsOpponent({
+            runtime,
+            forecast,
+            battleKind: scenarios.battleKind,
+            targetBuild: startingBuild,
+            opponentBuild,
+            targetOverrides: {
+              label: `${startingBuild.label} · 3-day loop`,
+              powerUpIds,
+            },
+            seeds: 1,
+            seedPrefix: `balancer:three-day:v2:${startingBuild.id}:${loopIndex}:${day}:${bout}`,
+          })
+            .filter((row) => row.orientation === sampledOrientation)
+            .map((row) => ({
+              ...row,
+              loopIndex,
+              day,
+              bout,
+              powerUpsBeforeFight,
+              loopWinsBeforeFight: wins,
+              loopLossesBeforeFight: losses,
+            }));
+          const targetWon = fightRows.some((row) => row.targetWon);
+          if (targetWon) {
+            wins += 1;
+            if (powerUpIds.length < growingMaturityMaxPowerUps) {
+              const source =
+                bout === 3 ? 'rival-run-final-win' : 'rival-run-win';
+              const choices = runtime.createDeterministicPowerUpOffer({
+                seed: `three-day-offer-v2-${startingBuild.id}-${loopIndex}-${day}-${bout}`,
+                source,
+                ownedPowerUpIds: powerUpIds,
+                maxPowerUps: growingMaturityMaxPowerUps,
+                combatRole: runtime.selectCombatRole(startingBuild.stats),
+              });
+              const selected = choices?.find(
+                (id) => runtime.validatePowerUpBuild([...powerUpIds, id]).valid
+              );
+              if (selected) {
+                powerUpIds = [...powerUpIds, selected];
+                pickedPowerUpIds.push(selected);
+              }
+            }
+          } else {
+            losses += 1;
           }
-        } else {
-          losses += 1;
+          startingRows.push(
+            ...fightRows.map((row) => ({
+              ...row,
+              loopWinsAfterFight: wins,
+              loopLossesAfterFight: losses,
+            }))
+          );
         }
-        rows.push(
-          ...fightRows.map((row) => ({
-            ...row,
-            day,
-            bout,
-            powerUpsBeforeFight: powerUpIds.length,
-            loopWins: wins,
-            loopLosses: losses,
-          }))
-        );
       }
+      loopOutcomes.push({
+        wins,
+        losses,
+        finalPowerUps: powerUpIds.length,
+        finalPowerUpIds: powerUpIds,
+        pickedPowerUpIds,
+      });
+    }
+    rows.push(...startingRows);
+    const rowSummary = summarizeRows(startingRows);
+    const averageLoopWins =
+      loopOutcomes.reduce((sum, outcome) => sum + outcome.wins, 0) /
+      Math.max(1, loopOutcomes.length);
+    const averageFinalPowerUps =
+      loopOutcomes.reduce((sum, outcome) => sum + outcome.finalPowerUps, 0) /
+      Math.max(1, loopOutcomes.length);
+    const finalPowerUpMix = [
+      ...loopOutcomes
+        .reduce((counts, outcome) => {
+          const label =
+            outcome.finalPowerUpIds.length > 0
+              ? outcome.finalPowerUpIds
+                  .map((id) => runtime.POWER_UP_CATALOG[id]?.shortName ?? id)
+                  .join(' + ')
+              : 'NONE';
+          counts.set(label, (counts.get(label) ?? 0) + 1);
+          return counts;
+        }, new Map())
+        .entries(),
+    ]
+      .sort((left, right) => right[1] - left[1])
+      .slice(0, 3)
+      .map(([label, count]) => `${label} (${count})`)
+      .join('; ');
+    const pickedPowerUpMix = formatPowerUpCountMix(
+      runtime,
+      loopOutcomes.flatMap((outcome) => outcome.pickedPowerUpIds),
+      5
+    );
+    const triggeredPowerUpMix = formatPowerUpCountMix(
+      runtime,
+      startingRows.flatMap((row) =>
+        Object.entries(row.targetPowerUpTriggerCounts ?? {}).flatMap(
+          ([powerUpId, count]) => Array.from({ length: count }, () => powerUpId)
+        )
+      ),
+      5
+    );
+    const verdictFlags =
+      rowSummary.verdict === 'OK' ? [] : [rowSummary.verdict];
+    if (
+      averageFinalPowerUps >= growingMaturityMaxPowerUps &&
+      rowSummary.targetWinRate < 0.55
+    ) {
+      verdictFlags.push('WATCH_FAST_CAP');
     }
     summaries.push({
       targetLabel: startingBuild.label,
       opponentLabel: '3-day loop',
-      total: wins + losses,
-      targetWins: wins,
-      timeouts: 0,
-      targetWinRate: wins / Math.max(1, wins + losses),
-      timeoutRate: 0,
-      closeFightRate: 0,
-      blowoutRate: 0,
-      averageSeconds: rows
-        .filter((row) => row.targetBuild === startingBuild.id)
-        .reduce(
-          (sum, row, _index, group) => sum + row.durationSeconds / group.length,
-          0
-        ),
-      averagePowerUpTriggers: rows
-        .filter((row) => row.targetBuild === startingBuild.id)
-        .reduce(
-          (sum, row, _index, group) => sum + row.powerUpTriggers / group.length,
-          0
-        ),
-      finalPowerUps: powerUpIds.length,
-      verdict:
-        powerUpIds.length >= runtime.MAXIMUM_POWER_UPS && wins < 5
-          ? 'WATCH_FAST_CAP'
-          : wins <= 1 || wins >= 8
-            ? 'FLAG_LOOP_WIN_RATE'
-            : 'OK',
+      ...rowSummary,
+      averageLoopWins,
+      finalPowerUps: averageFinalPowerUps,
+      finalPowerUpMix,
+      pickedPowerUpMix,
+      triggeredPowerUpMix,
+      verdict: verdictFlags.length > 0 ? verdictFlags.join('+') : 'OK',
     });
   }
   return {
@@ -1123,8 +1452,8 @@ function runRivalRunFlow({ runtime, scenarios, forecast }) {
       scenarios.forecastDay,
       challengerBuild.id
     );
-    const rivals = scenarios.rivalPoolBuildIds.map((id, index) =>
-      makeFighter(runtime, buildById(scenarios, id), `flow-rival-${index}`)
+    const rivalBuilds = scenarios.rivalPoolBuildIds.map((id) =>
+      buildById(scenarios, id)
     );
     let wins = 0;
     let losses = 0;
@@ -1134,6 +1463,15 @@ function runRivalRunFlow({ runtime, scenarios, forecast }) {
         challengerBuild,
         `flow-challenger-${bout}`
       );
+      const rivals = rivalBuilds
+        .filter((build) =>
+          run.opponentIds.every(
+            (opponentId) => !opponentId.startsWith(build.id)
+          )
+        )
+        .map((build, index) =>
+          makeFighter(runtime, build, `flow-rival-${bout}-${index}`)
+        );
       const choices = runtime.createRivalRunChoices(
         challenger,
         rivals,
@@ -1238,8 +1576,7 @@ function reportForSuite(suite) {
           {
             label: 'Target PU',
             align: '---:',
-            value: (row) =>
-              (row.averageTargetPowerUpTriggers ?? 0).toFixed(2),
+            value: (row) => (row.averageTargetPowerUpTriggers ?? 0).toFixed(2),
           },
         ]
       : []),
@@ -1280,11 +1617,36 @@ function reportForSuite(suite) {
           },
         ]
       : []),
+    ...(rows.some((row) => row.interactionLift !== undefined)
+      ? [
+          {
+            label: 'Interaction',
+            align: '---:',
+            value: (row) =>
+              row.interactionLift === undefined
+                ? '—'
+                : `${(row.interactionLift * 100).toFixed(1)}pp`,
+          },
+        ]
+      : []),
     ...(rows.some((row) => row.rarity !== undefined)
       ? [
           {
             label: 'Rarity',
             value: (row) => row.rarity ?? '',
+          },
+        ]
+      : []),
+    ...(rows.some((row) => row.offerableForRole !== undefined)
+      ? [
+          {
+            label: 'Offered?',
+            value: (row) =>
+              row.offerableForRole === undefined
+                ? ''
+                : row.offerableForRole
+                  ? 'yes'
+                  : 'no',
           },
         ]
       : []),
@@ -1340,7 +1702,46 @@ function reportForSuite(suite) {
           {
             label: 'Final PU',
             align: '---:',
-            value: (row) => row.finalPowerUps ?? '',
+            value: (row) =>
+              row.finalPowerUps === undefined
+                ? ''
+                : Number(row.finalPowerUps).toFixed(2),
+          },
+        ]
+      : []),
+    ...(rows.some((row) => row.finalPowerUpMix !== undefined)
+      ? [
+          {
+            label: 'Top final sets',
+            value: (row) => row.finalPowerUpMix ?? '',
+          },
+        ]
+      : []),
+    ...(rows.some((row) => row.pickedPowerUpMix !== undefined)
+      ? [
+          {
+            label: 'Picked cards',
+            value: (row) => row.pickedPowerUpMix ?? '',
+          },
+        ]
+      : []),
+    ...(rows.some((row) => row.triggeredPowerUpMix !== undefined)
+      ? [
+          {
+            label: 'Triggered cards',
+            value: (row) => row.triggeredPowerUpMix ?? '',
+          },
+        ]
+      : []),
+    ...(rows.some((row) => row.averageLoopWins !== undefined)
+      ? [
+          {
+            label: 'Loop wins',
+            align: '---:',
+            value: (row) =>
+              row.averageLoopWins === undefined
+                ? ''
+                : Number(row.averageLoopWins).toFixed(2),
           },
         ]
       : []),
@@ -1365,13 +1766,29 @@ This report bypasses API/routes/storage and calls the production combat mock bun
 
 ${markdownTable(headers, rows)}
 
-## Flags
+## Hard flags
 
 ${
   rows.filter(isBalanceFlag).length === 0
     ? 'No balance flags from current thresholds.'
     : rows
         .filter(isBalanceFlag)
+        .map(
+          (row) =>
+            `- ${row.targetLabel}${row.opponentLabel ? ` vs ${row.opponentLabel}` : ''}: ${row.verdict} (${formatPercent(
+              row.targetWinRate
+            )}, ${row.averageSeconds.toFixed(1)}s avg)`
+        )
+        .join('\n')
+}
+
+## Watches
+
+${
+  rows.filter(isBalanceWatch).length === 0
+    ? 'No watch-only rows from current thresholds.'
+    : rows
+        .filter(isBalanceWatch)
         .map(
           (row) =>
             `- ${row.targetLabel}${row.opponentLabel ? ` vs ${row.opponentLabel}` : ''}: ${row.verdict} (${formatPercent(
@@ -1389,6 +1806,7 @@ function overviewReport(suites) {
     rows: suite.rows.length,
     pairings: suite.summaries.length,
     flags: suite.summaries.filter(isBalanceFlag).length,
+    watches: suite.summaries.filter(isBalanceWatch).length,
   }));
   return `# Scribbits Balance Overview
 
@@ -1401,7 +1819,8 @@ ${markdownTable(
     { label: 'Suite', value: (row) => row.title },
     { label: 'Fights', align: '---:', value: (row) => row.rows },
     { label: 'Rows', align: '---:', value: (row) => row.pairings },
-    { label: 'Flags', align: '---:', value: (row) => row.flags },
+    { label: 'Hard flags', align: '---:', value: (row) => row.flags },
+    { label: 'Watches', align: '---:', value: (row) => row.watches },
   ],
   rows
 )}
@@ -1452,6 +1871,7 @@ async function main() {
   const context = { runtime, scenarios, forecast };
   const suites = [
     runRoleMatrix(context),
+    runRoleCycle(context),
     runGrowthProgression(context),
     runPowerUpCombos(context),
     runPowerUpUsefulness(context),
@@ -1468,12 +1888,17 @@ async function main() {
   await writeSuiteArtifacts(suites);
   const fightCount = suites.reduce((sum, suite) => sum + suite.rows.length, 0);
   const flagCount = suites.reduce(
-    (sum, suite) =>
-      sum + suite.summaries.filter(isBalanceFlag).length,
+    (sum, suite) => sum + suite.summaries.filter(isBalanceFlag).length,
+    0
+  );
+  const watchCount = suites.reduce(
+    (sum, suite) => sum + suite.summaries.filter(isBalanceWatch).length,
     0
   );
   console.log(`Balancer complete: ${fightCount} fights.`);
-  console.log(`Suites: ${suites.length}; flagged rows: ${flagCount}.`);
+  console.log(
+    `Suites: ${suites.length}; hard flags: ${flagCount}; watches: ${watchCount}.`
+  );
   console.log(`Summary: ${resolve(artifactRoot, 'latest-summary.md')}`);
   for (const suite of suites) {
     console.log(`${suite.title}: ${resolve(artifactRoot, `${suite.id}.md`)}`);

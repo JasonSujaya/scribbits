@@ -1,15 +1,11 @@
-import type { BattleReport, CareAction, Scribbit } from '../../shared/arena';
+import type { BattleReport } from '../../shared/arena';
 import { cloneScribbit } from '../../shared/arena';
 import {
-  addXpToScribbit,
   applyBattleOutcomeToScribbit,
   DAILY_FLAG_TTL_SECONDS,
   getDailyFlagsKey,
-  getScribbitCareKey,
   getScribbitKey,
   parseScribbit,
-  planCareProgression,
-  readCareDoneToday,
   serializeScribbit,
 } from './scribbit';
 import type { ArenaStorage, ArenaTransaction } from './storage';
@@ -18,7 +14,6 @@ import {
   MAX_WATCH_TRANSACTION_ATTEMPTS,
 } from './storage';
 
-const careActionOrder: readonly CareAction[] = ['feed', 'pat', 'train'];
 const bossChallengeFlag = 'bossChallenge';
 const bossChallengeReportField = 'bossChallengeReport';
 
@@ -26,154 +21,6 @@ class DailyActionInvariantError extends Error {}
 
 const isRecord = (value: unknown): value is Record<string, unknown> => {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
-};
-
-export type DailyCareCommitResult =
-  | {
-      status: 'committed';
-      scribbit: Scribbit;
-      recovered: boolean;
-    }
-  | { status: 'already-claimed' }
-  | { status: 'target-unavailable' };
-
-export type DailyCareProjection = Readonly<{
-  scribbit: Scribbit;
-  xpGain: number;
-}>;
-
-export const projectDailyCareAction = (
-  scribbit: Scribbit,
-  completedActions: readonly CareAction[],
-  action: CareAction
-): DailyCareProjection => {
-  const completedActionSet = new Set([...completedActions, action]);
-  const careDoneToday = careActionOrder.filter((candidate) =>
-    completedActionSet.has(candidate)
-  );
-  const progression = planCareProgression(careDoneToday);
-  const rewardedScribbit = addXpToScribbit(scribbit, progression.xpGain);
-  return {
-    scribbit: {
-      ...rewardedScribbit,
-      mood: progression.mood,
-      careDoneToday,
-    },
-    xpGain: progression.xpGain,
-  };
-};
-
-export const getDailyCareReceiptValue = (
-  operationId: string,
-  claimedAtMilliseconds: number
-): string => {
-  return `operation:${operationId}:${claimedAtMilliseconds}`;
-};
-
-const loadCommittedCareResult = async (
-  storage: ArenaStorage,
-  scribbitKey: string
-): Promise<DailyCareCommitResult> => {
-  const scribbit = parseScribbit(await storage.get(scribbitKey));
-  return scribbit
-    ? {
-        status: 'committed',
-        scribbit,
-        recovered: true,
-      }
-    : { status: 'target-unavailable' };
-};
-
-export const commitDailyCareAction = async (
-  storage: ArenaStorage,
-  input: Readonly<{
-    scribbitId: string;
-    action: CareAction;
-    utcDateKey: string;
-    operationId: string;
-    claimedAtMilliseconds: number;
-  }>
-): Promise<DailyCareCommitResult> => {
-  if (!storage.watch) {
-    throw new Error('Atomic daily care requires transaction support.');
-  }
-  if (
-    !input.operationId ||
-    input.operationId.length > 128 ||
-    !Number.isSafeInteger(input.claimedAtMilliseconds) ||
-    input.claimedAtMilliseconds < 0
-  ) {
-    throw new Error('Daily care input is invalid.');
-  }
-
-  const careKey = getScribbitCareKey(input.scribbitId, input.utcDateKey);
-  const scribbitKey = getScribbitKey(input.scribbitId);
-  const receiptValue = getDailyCareReceiptValue(
-    input.operationId,
-    input.claimedAtMilliseconds
-  );
-
-  for (
-    let attempt = 0;
-    attempt < MAX_WATCH_TRANSACTION_ATTEMPTS;
-    attempt += 1
-  ) {
-    let transaction: ArenaTransaction | undefined;
-    try {
-      transaction = await storage.watch(careKey, scribbitKey);
-      const [existingReceipt, storedScribbit, completedActions] =
-        await Promise.all([
-          storage.hGet(careKey, input.action),
-          storage.get(scribbitKey),
-          readCareDoneToday(storage, input.scribbitId, input.utcDateKey),
-        ]);
-      if (existingReceipt !== undefined) {
-        await transaction.unwatch();
-        return existingReceipt === receiptValue
-          ? await loadCommittedCareResult(storage, scribbitKey)
-          : { status: 'already-claimed' };
-      }
-
-      const scribbit = parseScribbit(storedScribbit);
-      if (!scribbit || scribbit.isFounding || scribbit.status !== 'alive') {
-        await transaction.unwatch();
-        return { status: 'target-unavailable' };
-      }
-
-      const projection = projectDailyCareAction(
-        scribbit,
-        completedActions,
-        input.action
-      );
-      await transaction.multi();
-      await transaction.hSet(careKey, { [input.action]: receiptValue });
-      await transaction.expire(careKey, DAILY_FLAG_TTL_SECONDS);
-      await transaction.set(
-        scribbitKey,
-        serializeScribbit(projection.scribbit)
-      );
-      const result = await transaction.exec();
-      if (Array.isArray(result) && result.length > 0) {
-        return {
-          status: 'committed',
-          scribbit: projection.scribbit,
-          recovered: false,
-        };
-      }
-    } catch (error) {
-      await discardWatchedTransaction(transaction, 'Daily care');
-      const recoveredReceipt = await storage.hGet(careKey, input.action);
-      if (recoveredReceipt === receiptValue) {
-        return await loadCommittedCareResult(storage, scribbitKey);
-      }
-      if (recoveredReceipt !== undefined) {
-        return { status: 'already-claimed' };
-      }
-      throw error;
-    }
-  }
-
-  throw new Error('Daily care changed too often to commit safely.');
 };
 
 export type DailyChampionCommitResult =

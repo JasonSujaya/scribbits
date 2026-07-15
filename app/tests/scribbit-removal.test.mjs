@@ -83,8 +83,6 @@ const createScribbit = (id, artist) => ({
   upgrades: [],
   level: 1,
   xp: 0,
-  mood: 'hungry',
-  careDoneToday: [],
   legacy: null,
 });
 

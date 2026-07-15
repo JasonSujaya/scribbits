@@ -119,8 +119,18 @@ export const navigateToDailyDraw = (scene: Scene): void => {
     return;
   }
   if (route === 'draw') return startScene(scene, 'Draw');
-  if (route === 'login') showLoginPrompt();
-  else if (state) showToast(getDrawEligibility(state).message);
+  if (route === 'login') {
+    showLoginPrompt();
+    return;
+  }
+  if (state) showToast(getDrawEligibility(state).message);
+
+  if ((state?.myScribbits.length ?? 0) === 0) {
+    if (scene.scene.key !== 'ScribbitHome') {
+      startScene(scene, 'ScribbitHome');
+    }
+    return;
+  }
 
   if (scene.scene.key !== 'ArenaHome') {
     startScene(scene, 'ArenaHome');

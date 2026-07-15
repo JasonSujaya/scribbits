@@ -10,6 +10,8 @@ import {
   type PowerUpOfferSource,
 } from '../../shared/combat/powerups';
 import type { Scribbit } from '../../shared/arena';
+import { selectCombatRole } from '../../shared/combat/selection';
+import { resolveGearCombatLoadout } from '../../shared/gearcombat';
 import { getScribbitKey, parseScribbit, serializeScribbit } from './scribbit';
 import {
   discardWatchedTransaction,
@@ -130,10 +132,23 @@ export const getOrCreatePowerUpOffer = async (
         await transaction.unwatch();
         return parsePowerUpOffer(storedOffer);
       }
+      const resolvedGear = resolveGearCombatLoadout(input.scribbit);
+      const gearFamilies = [
+        ...new Set(
+          resolvedGear.techniques.flatMap((technique) => [
+            technique.effectFamily,
+            ...(technique.supportEffectFamily
+              ? [technique.supportEffectFamily]
+              : []),
+          ])
+        ),
+      ];
       const choices = createDeterministicPowerUpOffer({
         seed: `power-up-offer:v1:${input.reportId}:${input.scribbit.id}`,
         source: input.source,
         ownedPowerUpIds: input.scribbit.powerUpIds ?? [],
+        combatRole: selectCombatRole(input.scribbit.stats),
+        gearFamilies,
       });
       if (!choices || choices.length !== 3) {
         await transaction.unwatch();

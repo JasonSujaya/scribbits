@@ -73,15 +73,12 @@ test('versioned JSON runs every migration in order and skips them for current da
   assert.deepEqual(migrationCalls, ['0-to-1', '1-to-2']);
 
   migrationCalls.length = 0;
-  assert.deepEqual(
-    codec.parse('{"schemaVersion":2,"name":"Nib","score":4}'),
-    {
-      status: 'valid',
-      value: { name: 'Nib', score: 4 },
-      sourceVersion: 2,
-      migrated: false,
-    }
-  );
+  assert.deepEqual(codec.parse('{"schemaVersion":2,"name":"Nib","score":4}'), {
+    status: 'valid',
+    value: { name: 'Nib', score: 4 },
+    sourceVersion: 2,
+    migrated: false,
+  });
   assert.deepEqual(migrationCalls, []);
   assert.equal(
     codec.serialize({ name: 'Nib', score: 4 }),
@@ -115,10 +112,10 @@ test('versioned JSON rejects malformed, future, incomplete, and failed migration
     reason: 'invalid-value',
   });
   for (const invalidVersion of ['"1"', '-1', '1.5']) {
-    assert.deepEqual(
-      codec.parse(`{"schemaVersion":${invalidVersion}}`),
-      { status: 'invalid', reason: 'invalid-version' }
-    );
+    assert.deepEqual(codec.parse(`{"schemaVersion":${invalidVersion}}`), {
+      status: 'invalid',
+      reason: 'invalid-version',
+    });
   }
   assert.deepEqual(codec.parse('{"schemaVersion":9}'), {
     status: 'invalid',
@@ -207,6 +204,35 @@ test('Scribbit v0 migration and canonical v1 round trip are deterministic', () =
   assert.equal(current.migrated, false);
   assert.deepEqual(current.value, migrated.value);
   assert.equal(scribbitStore.serializeScribbit(current.value), currentJson);
+});
+
+test('Scribbit v2 records drop retired pet fields during migration', () => {
+  const scribbit = createExampleScribbit('retired-pet-fields');
+  const versionTwoRecord = {
+    ...JSON.parse(scribbitStore.serializeScribbit(scribbit)),
+    schemaVersion: 2,
+    mood: 'hungry',
+    careDoneToday: ['feed'],
+  };
+
+  const migrated = scribbitStore.parseStoredScribbit(
+    JSON.stringify(versionTwoRecord)
+  );
+  assert.equal(migrated.status, 'valid');
+  assert.equal(migrated.sourceVersion, 2);
+  assert.equal(migrated.migrated, true);
+  assert.equal(Object.hasOwn(migrated.value, 'mood'), false);
+  assert.equal(Object.hasOwn(migrated.value, 'careDoneToday'), false);
+
+  const currentRecord = JSON.parse(
+    scribbitStore.serializeScribbit(migrated.value)
+  );
+  assert.equal(
+    currentRecord.schemaVersion,
+    scribbitStore.SCRIBBIT_SCHEMA_VERSION
+  );
+  assert.equal(Object.hasOwn(currentRecord, 'mood'), false);
+  assert.equal(Object.hasOwn(currentRecord, 'careDoneToday'), false);
 });
 
 test('the frozen Scribbit v0 migration composes through a simulated v2 update', () => {

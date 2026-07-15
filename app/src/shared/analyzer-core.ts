@@ -1,6 +1,6 @@
 import type { Element, ScribbitStats } from './arena';
 import { SCRIBBIT_STAT_KEYS, STAT_BUDGET, STAT_MAX, STAT_MIN } from './arena';
-import type { CombatRole } from './combat/types';
+import type { CurrentCombatRole } from './combat/types';
 
 export type RgbaPixelData = Uint8Array | Uint8ClampedArray | readonly number[];
 
@@ -13,7 +13,7 @@ export type PixelField = {
 export type AnalyzerResult = {
   stats: ScribbitStats;
   element: Element;
-  fighterStyle: CombatRole;
+  fighterStyle: CurrentCombatRole;
   inkRatio: number;
   inkedPixels: number;
 };
@@ -48,7 +48,7 @@ export type ScanResult = {
   maxX: number;
   maxY: number;
   hueBuckets: number[];
-  fighterStyleCounts: Record<CombatRole, number>;
+  fighterStyleCounts: Record<CurrentCombatRole, number>;
   inked: Uint8Array;
 };
 
@@ -71,12 +71,12 @@ export function hueToElement(hueDegrees: number): Element {
 
 /**
  * The visible color wheel is split at the midpoints between the base palette
- * groups. That gives every role exactly two chromatic base colors.
+ * groups. Coral/orange ink makes Brawler, gold/cool ink makes Longshot, and
+ * purple/pink ink makes Mage. This is intentionally one visible three-role choice.
  */
-export function hueToFighterStyle(hueDegrees: number): CombatRole {
+export function hueToFighterStyle(hueDegrees: number): CurrentCombatRole {
   const hue = ((hueDegrees % 360) + 360) % 360;
   if (hue >= 353 || hue < 38) return 'brawler';
-  if (hue < 154) return 'gunner';
   if (hue < 233) return 'longshot';
   return 'mage';
 }
@@ -113,7 +113,11 @@ export function rgbToHsv(
 }
 
 /** Low-saturation black/white ink has no hue, so it uses the Brawler fallback. */
-export function rgbToFighterStyle(r: number, g: number, b: number): CombatRole {
+export function rgbToFighterStyle(
+  r: number,
+  g: number,
+  b: number
+): CurrentCombatRole {
   const { hue, sat, val } = rgbToHsv(r, g, b);
   return sat >= 0.25 && val >= 0.2 ? hueToFighterStyle(hue) : 'brawler';
 }
@@ -131,10 +135,9 @@ export function scanPixels(field: PixelField): ScanResult {
   const totalPixels = width * height;
   const inked = new Uint8Array(totalPixels);
   const hueBuckets = new Array<number>(bucketCount).fill(0);
-  const fighterStyleCounts: Record<CombatRole, number> = {
+  const fighterStyleCounts: Record<CurrentCombatRole, number> = {
     brawler: 0,
     longshot: 0,
-    gunner: 0,
     mage: 0,
   };
 
@@ -285,15 +288,14 @@ export function dominantElement(hueBuckets: number[]): Element {
  * The stable role order resolves exact ties; neutral-only art is Brawler.
  */
 export function dominantFighterStyle(
-  counts: Readonly<Record<CombatRole, number>>
-): CombatRole {
+  counts: Readonly<Record<CurrentCombatRole, number>>
+): CurrentCombatRole {
   const roles = [
     'brawler',
     'longshot',
-    'gunner',
     'mage',
-  ] as const satisfies readonly CombatRole[];
-  let dominantRole: CombatRole = 'brawler';
+  ] as const satisfies readonly CurrentCombatRole[];
+  let dominantRole: CurrentCombatRole = 'brawler';
   for (const role of roles.slice(1)) {
     if (counts[role] > counts[dominantRole]) dominantRole = role;
   }

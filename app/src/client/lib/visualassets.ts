@@ -3,7 +3,11 @@ import type { Scene } from 'phaser';
 import { UI } from './theme';
 import { screenTitle } from './screentitle';
 import { translate } from './localization';
-import { COMMON_GEAR_ART_TEXTURE, RARE_EPIC_GEAR_ART_TEXTURE } from './gearart';
+import {
+  COMMON_GEAR_ART_TEXTURE,
+  LEGENDARY_GEAR_ART_TEXTURE,
+  RARE_EPIC_GEAR_ART_TEXTURE,
+} from './gearart';
 export const SCRIBBITS_STAGE_TEXTURE = 'scribbits-stage';
 export const PAPER_STAGE_TEXTURE = SCRIBBITS_STAGE_TEXTURE;
 export const BATTLE_STAGE_TEXTURE = SCRIBBITS_STAGE_TEXTURE;
@@ -11,13 +15,16 @@ export const FIGHT_START_TEXTURE = 'ui-fight-start';
 export const BRAND_LOGO_TEXTURE = 'scribbits-logo';
 export const HOME_STAGE_TEXTURE = 'scribbits-home-stage';
 export const HOME_TITLE_TEXTURE = 'scribbits-home-title';
+export const BATTLE_TITLE_TEXTURE = 'scribbits-battle-title';
 export const MATURITY_GEAR_TEXTURE = 'scribbits-maturity-gear-icons';
-export const BAG_BINDER_SHELL_TEXTURE = 'scribbits-bag-binder-base-shell-v5';
+export const BAG_BINDER_SHELL_TEXTURE = 'scribbits-bag-binder-base-shell-v7';
 export const HOME_PROP_TEXTURES = {
   window: 'scribbits-home-window',
   shelf: 'scribbits-home-shelf',
 } as const;
 export const SHOP_STAGE_TEXTURE = 'scribbits-shop-stage';
+export const SHOP_CLAW_MACHINE_SHELL_TEXTURE =
+  'scribbits-shop-claw-machine-shell';
 export const SHOP_CHEST_TEXTURES = {
   closed: 'scribbits-shop-chest-closed',
   open: 'scribbits-shop-chest-open',
@@ -25,6 +32,7 @@ export const SHOP_CHEST_TEXTURES = {
 export const INK_TOKEN_TEXTURE = 'scribbits-ink-token';
 const SHOP_VISUAL_TEXTURES = [
   SHOP_STAGE_TEXTURE,
+  SHOP_CLAW_MACHINE_SHELL_TEXTURE,
   SHOP_CHEST_TEXTURES.closed,
   SHOP_CHEST_TEXTURES.open,
   INK_TOKEN_TEXTURE,
@@ -46,8 +54,8 @@ export const UI_BUTTON_TEXTURES = {
 } as const;
 
 const VISUAL_ASSET_URLS: Readonly<Record<string, string>> = Object.freeze({
-  'bag-binder-base-shell-v5.webp': new URL(
-    '../assets/bag-binder-base-shell-v5.webp',
+  'bag-binder-base-shell-v7.webp': new URL(
+    '../assets/bag-binder-base-shell-v7.webp',
     import.meta.url
   ).href,
   'gear-common-atlas.json': new URL(
@@ -66,6 +74,14 @@ const VISUAL_ASSET_URLS: Readonly<Record<string, string>> = Object.freeze({
     '../assets/gear-rare-epic-atlas.webp',
     import.meta.url
   ).href,
+  'gear-legendary-atlas.json': new URL(
+    '../assets/gear-legendary-atlas.json',
+    import.meta.url
+  ).href,
+  'gear-legendary-atlas.webp': new URL(
+    '../assets/gear-legendary-atlas.webp',
+    import.meta.url
+  ).href,
   'maturity-gear-icons.webp': new URL(
     '../assets/maturity-gear-icons.webp',
     import.meta.url
@@ -80,6 +96,10 @@ const VISUAL_ASSET_URLS: Readonly<Record<string, string>> = Object.freeze({
   ).href,
   'scribbits-home-title.webp': new URL(
     '../assets/scribbits-home-title.webp',
+    import.meta.url
+  ).href,
+  'scribbits-battle-title.webp': new URL(
+    '../assets/scribbits-battle-title.webp',
     import.meta.url
   ).href,
   'scribbits-home-window.webp': new URL(
@@ -100,6 +120,10 @@ const VISUAL_ASSET_URLS: Readonly<Record<string, string>> = Object.freeze({
   ).href,
   'scribbits-shop-chest-open.webp': new URL(
     '../assets/scribbits-shop-chest-open.webp',
+    import.meta.url
+  ).href,
+  'scribbits-shop-claw-machine-shell.webp': new URL(
+    '../assets/scribbits-shop-claw-machine-shell.webp',
     import.meta.url
   ).href,
   'scribbits-shop-stage.webp': new URL(
@@ -171,6 +195,11 @@ export function preloadVisualAssets(scene: Scene): void {
     assetUrl('gear-rare-epic-atlas.webp'),
     assetUrl('gear-rare-epic-atlas.json')
   );
+  scene.load.atlas(
+    LEGENDARY_GEAR_ART_TEXTURE,
+    assetUrl('gear-legendary-atlas.webp'),
+    assetUrl('gear-legendary-atlas.json')
+  );
   Object.entries(UI_BUTTON_TEXTURES).forEach(([kind, texture]) => {
     scene.load.image(texture, assetUrl(`ui-button-${kind}.webp`));
   });
@@ -179,12 +208,16 @@ export function preloadVisualAssets(scene: Scene): void {
 export function preloadGalleryVisualAssets(scene: Scene): void {
   scene.load.image(
     BAG_BINDER_SHELL_TEXTURE,
-    assetUrl('bag-binder-base-shell-v5.webp')
+    assetUrl('bag-binder-base-shell-v7.webp')
   );
 }
 
 export function preloadReplayVisualAssets(scene: Scene): void {
   scene.load.image(FIGHT_START_TEXTURE, assetUrl('ui-fight-start.webp'));
+  scene.load.image(
+    BATTLE_TITLE_TEXTURE,
+    assetUrl('scribbits-battle-title.webp')
+  );
   Object.entries(BATTLE_CONTROL_BUTTON_TEXTURES).forEach(([kind, texture]) => {
     scene.load.image(texture, assetUrl(`ui-button-battle-${kind}.webp`));
   });
@@ -199,7 +232,7 @@ export function preloadHomeVisualAssets(scene: Scene): void {
   scene.load.spritesheet(
     MATURITY_GEAR_TEXTURE,
     assetUrl('maturity-gear-icons.webp'),
-    { frameWidth: 256, frameHeight: 256 }
+    { frameWidth: 128, frameHeight: 128 }
   );
 }
 
@@ -211,6 +244,12 @@ export function preloadShopVisualAssets(scene: Scene): void {
     scene.load.image(
       SHOP_CHEST_TEXTURES.closed,
       assetUrl('scribbits-shop-chest-closed.webp')
+    );
+  }
+  if (!scene.textures.exists(SHOP_CLAW_MACHINE_SHELL_TEXTURE)) {
+    scene.load.image(
+      SHOP_CLAW_MACHINE_SHELL_TEXTURE,
+      assetUrl('scribbits-shop-claw-machine-shell.webp')
     );
   }
   if (!scene.textures.exists(SHOP_CHEST_TEXTURES.open)) {

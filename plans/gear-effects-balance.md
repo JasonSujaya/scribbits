@@ -37,7 +37,7 @@ CHARM-like critical choices without changing the birth stats.
 | Family  | Battle cue    | Benefit                                  | Tradeoff                      |
 | ------- | ------------- | ---------------------------------------- | ----------------------------- |
 | Guard   | Paper Guard   | More maximum hearts                      | Slightly less impact          |
-| Rush    | Dash Blades   | More dash impact; quick start at 5★/Red★ | Fewer hearts; slower recovery |
+| Rush    | Dash Blades   | More dash impact                         | Fewer hearts                   |
 | Focus   | Orbiting Nibs | Rank-1 crit; faster wind-up from 2★      | Slightly slower recovery      |
 | Ready   | First Strike  | Rank-1 crit; faster first power from 2★  | Slightly less impact          |
 | Fortune | Lucky Echo    | Higher critical chance                   | Slightly less impact          |

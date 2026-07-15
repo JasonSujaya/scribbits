@@ -94,9 +94,10 @@ import type {
   ArenaState,
   BattleReport,
   FreeDrawing,
+  PowerUpOffer,
   Scribbit,
 } from '../../shared/arena';
-import type { CombatRole } from '../../shared/combat/types';
+import type { CombatRole, CurrentCombatRole } from '../../shared/combat/types';
 import {
   getCommunityThemeEligibility,
   getDrawEligibility,
@@ -107,6 +108,7 @@ import { fitDrawing, loadDrawing } from '../lib/scribbits';
 import { showVsCeremony } from '../lib/battleceremony';
 import { LiveSprite } from '../lib/livesprite';
 import { playBirthCeremony, playBirthFinishVfx } from '../lib/birthceremony';
+import { openPowerUpDraft, type PowerUpDraftHandle } from '../lib/powerupdraft';
 import { screenTitle } from '../lib/screentitle';
 import {
   openDrawConfirmationModal,
@@ -140,7 +142,7 @@ import {
   startDrawingSoundtrack,
   stopSoundtrack,
 } from '../lib/soundtrack';
-import { markSfxManaged, playSfx } from '../lib/sfx';
+import { markSfxManaged, playSfx, preloadSfx } from '../lib/sfx';
 import AnalyzerWorker from '../workers/analyzer.worker?worker&inline';
 import {
   createDrawSubmissionLoadingOverlay,
@@ -162,40 +164,26 @@ const DRAW_CLOSE_BUTTON_ART_URL = new URL(
   '../assets/ui-button-close.webp',
   import.meta.url
 ).href;
-const DRAW_CANVAS_PREVIEW_STORAGE_KEY = 'scribbits.draw.canvas-preview';
-const FIGHTER_STYLE_ROLES: readonly CombatRole[] = [
+let nextLeaveDrawingPreviewTextureId = 1;
+const DRAW_START_COUNTDOWN_STEPS = ['3', '2', '1', 'DRAW!'] as const;
+const DRAW_START_COUNTDOWN_STEP_MILLISECONDS = 700;
+const FIGHTER_STYLE_ROLES: readonly CurrentCombatRole[] = [
   'brawler',
   'longshot',
-  'gunner',
   'mage',
 ];
-const FIGHTER_STYLE_COLOR_NAMES: Readonly<Record<CombatRole, string>> = {
+const FIGHTER_STYLE_COLOR_NAMES: Readonly<Record<CurrentCombatRole, string>> = {
   brawler: 'coral + orange',
-  longshot: 'aqua + blue',
-  gunner: 'gold + green',
+  longshot: 'gold + green + aqua + blue',
   mage: 'purple + pink',
 };
-
-function loadDarkCanvasPreview(): boolean {
-  if (typeof localStorage === 'undefined') return false;
-  try {
-    return localStorage.getItem(DRAW_CANVAS_PREVIEW_STORAGE_KEY) === 'dark';
-  } catch {
-    return false;
-  }
-}
-
-function saveDarkCanvasPreview(enabled: boolean): void {
-  if (typeof localStorage === 'undefined') return;
-  try {
-    localStorage.setItem(
-      DRAW_CANVAS_PREVIEW_STORAGE_KEY,
-      enabled ? 'dark' : 'paper'
-    );
-  } catch {
-    // Sandboxed previews may block storage; the current Draw visit still works.
-  }
-}
+const FIGHTER_STYLE_COUNTERS: Readonly<
+  Record<CurrentCombatRole, Readonly<{ beats: string; weakTo: string }>>
+> = Object.freeze({
+  brawler: Object.freeze({ beats: 'MAGE', weakTo: 'LONGSHOT' }),
+  longshot: Object.freeze({ beats: 'BRAWLER', weakTo: 'MAGE' }),
+  mage: Object.freeze({ beats: 'LONGSHOT', weakTo: 'BRAWLER' }),
+});
 
 // Every base color is visible at once and grouped by its color-derived role.
 const PALETTE_COLORS = [
@@ -224,29 +212,43 @@ const PALETTE_COLOR_NAMES = [
 ] as const;
 
 const PALETTE_GROUPS: ReadonlyArray<
-  Readonly<{ label: string; role: CombatRole | null }>
+  Readonly<{ label: string; role: CurrentCombatRole | null }>
 > = [
   { label: 'NEUTRAL', role: null },
   { label: 'BRAWLER', role: 'brawler' },
-  { label: 'GUNNER', role: 'gunner' },
   { label: 'LONGSHOT', role: 'longshot' },
   { label: 'MAGE', role: 'mage' },
 ];
 
-const PALETTE_COLOR_ROLES: ReadonlyArray<CombatRole | null> = [
+const PALETTE_COLOR_ROLES: ReadonlyArray<CurrentCombatRole | null> = [
   null,
   'brawler',
-  'gunner',
+  'longshot',
   'longshot',
   'mage',
   null,
   'brawler',
-  'gunner',
+  'longshot',
   'longshot',
   'mage',
 ];
 
-const fighterStyleForPaletteColor = (colorIndex: number): CombatRole | null => {
+const PALETTE_COLOR_POSITIONS = Object.freeze([
+  { column: 0, row: 0, xOffset: 0 },
+  { column: 1, row: 0, xOffset: 0 },
+  { column: 2, row: 0, xOffset: -36 },
+  { column: 2, row: 1, xOffset: -36 },
+  { column: 3, row: 0, xOffset: 0 },
+  { column: 0, row: 1, xOffset: 0 },
+  { column: 1, row: 1, xOffset: 0 },
+  { column: 2, row: 0, xOffset: 36 },
+  { column: 2, row: 1, xOffset: 36 },
+  { column: 3, row: 1, xOffset: 0 },
+] as const);
+
+const fighterStyleForPaletteColor = (
+  colorIndex: number
+): CurrentCombatRole | null => {
   return PALETTE_COLOR_ROLES[colorIndex] ?? null;
 };
 
@@ -293,7 +295,7 @@ type DrawingEditState = Readonly<{
   brushId: string | null;
   paintReservoirs: readonly PaintReservoir[];
 }>;
-type UnsavedDrawingModal = Readonly<{
+type LeaveDrawingModal = Readonly<{
   layer: Phaser.GameObjects.Container;
   actions: CanvasModalOverlay;
 }>;
@@ -327,7 +329,7 @@ export class Draw extends Scene {
   private revealControlOverlay: CanvasActionOverlay | null = null;
   private submitControl: HTMLButtonElement | null = null;
   private drawConfirmation: DrawConfirmationModal | null = null;
-  private unsavedDrawingModal: UnsavedDrawingModal | null = null;
+  private leaveDrawingModal: LeaveDrawingModal | null = null;
   private submissionLoading: DrawSubmissionLoadingOverlay | null = null;
   private draftName = '';
 
@@ -386,7 +388,7 @@ export class Draw extends Scene {
   private livePromptLabel: Phaser.GameObjects.Text | null = null;
   private liveRoleIndicatorY = 0;
   private liveRoleInfoControl: HTMLButtonElement | null = null;
-  private detectedFighterStyle: CombatRole | null = null;
+  private detectedFighterStyle: CurrentCombatRole | null = null;
   private liveRoleIcon: Phaser.GameObjects.Container | null = null;
   private liveRoleLabel: Phaser.GameObjects.Text | null = null;
   private roleStyleInfoLayer: Phaser.GameObjects.Container | null = null;
@@ -400,12 +402,16 @@ export class Draw extends Scene {
   private advancedToolNativeControls: HTMLButtonElement[] = [];
   private moreToolsButton: Phaser.GameObjects.Container | null = null;
   private moreToolsControl: HTMLButtonElement | null = null;
-  private moreToolsLabel: Phaser.GameObjects.Text | null = null;
+  private moreToolsBackground: Phaser.GameObjects.Graphics | null = null;
+  private moreToolsText: Phaser.GameObjects.Text | null = null;
   private advancedToolBadge: Phaser.GameObjects.Arc | null = null;
   private advancedToolsOpen = false;
   private drawingLocked = false;
   private drawRoundClock: DrawRoundClock = createDrawRoundClock();
   private drawRoundTimerEvent: Phaser.Time.TimerEvent | null = null;
+  private drawStartCountdownTimerEvent: Phaser.Time.TimerEvent | null = null;
+  private drawStartCountdownOverlay: HTMLDivElement | null = null;
+  private drawStartCountdownValue: HTMLSpanElement | null = null;
   private drawTimerContainer: HTMLDivElement | null = null;
   private drawTimerFace: HTMLDivElement | null = null;
   private drawTimerValue: HTMLSpanElement | null = null;
@@ -453,6 +459,8 @@ export class Draw extends Scene {
   private practiceRoles: CombatRole[] = [];
   private practiceAttemptCount = 0;
   private pendingPracticeReport: BattleReport | null = null;
+  private pendingBirthPowerUpOffer: PowerUpOffer | null = null;
+  private powerUpDraft: PowerUpDraftHandle | null = null;
   private localAutomationBridge: HTMLDivElement | null = null;
   private sceneVisitEpoch = 0;
   private arenaReconciliationEpoch = 0;
@@ -554,17 +562,21 @@ export class Draw extends Scene {
     this.advancedToolNativeControls = [];
     this.moreToolsButton = null;
     this.moreToolsControl = null;
-    this.moreToolsLabel = null;
+    this.moreToolsBackground = null;
+    this.moreToolsText = null;
     this.advancedToolBadge = null;
     this.advancedToolsOpen = false;
     this.drawingLocked = false;
     this.drawRoundClock = createDrawRoundClock();
     this.drawRoundTimerEvent = null;
+    this.drawStartCountdownTimerEvent = null;
+    this.drawStartCountdownOverlay = null;
+    this.drawStartCountdownValue = null;
     this.drawTimerContainer = null;
     this.drawTimerFace = null;
     this.drawTimerValue = null;
     this.drawTimerStatus = null;
-    this.darkCanvasPreview = loadDarkCanvasPreview();
+    this.darkCanvasPreview = false;
     this.displayedDrawSeconds = null;
     this.lastDrawTimerShakeMilliseconds = 0;
     this.drawTimerShakeDirection = 1;
@@ -599,9 +611,11 @@ export class Draw extends Scene {
     this.practiceRoles = [];
     this.practiceAttemptCount = 0;
     this.pendingPracticeReport = null;
+    this.pendingBirthPowerUpOffer = null;
+    this.powerUpDraft = null;
     this.localAutomationBridge = null;
     this.drawConfirmation = null;
-    this.unsavedDrawingModal = null;
+    this.leaveDrawingModal = null;
     this.submissionLoading = null;
     this.draftName = '';
     this.headerControlOverlay = null;
@@ -713,14 +727,19 @@ export class Draw extends Scene {
     this.previewTimer = null;
     this.drawRoundTimerEvent?.remove();
     this.drawRoundTimerEvent = null;
+    this.drawStartCountdownTimerEvent?.remove();
+    this.drawStartCountdownTimerEvent = null;
+    this.drawStartCountdownOverlay?.remove();
+    this.drawStartCountdownOverlay = null;
+    this.drawStartCountdownValue = null;
     this.analysisWorker?.terminate();
     this.analysisWorker = null;
     this.canvas?.destroy();
     this.overlay?.destroy();
     this.drawConfirmation?.destroy();
     this.drawConfirmation = null;
-    this.unsavedDrawingModal?.layer.destroy(true);
-    this.unsavedDrawingModal = null;
+    this.leaveDrawingModal?.layer.destroy(true);
+    this.leaveDrawingModal = null;
     this.hideSubmissionLoading();
     this.headerControlOverlay?.destroy();
     this.headerControlOverlay = null;
@@ -730,6 +749,8 @@ export class Draw extends Scene {
     this.submitOverlay = null;
     this.revealControlOverlay?.destroy();
     this.revealControlOverlay = null;
+    this.powerUpDraft?.destroy();
+    this.powerUpDraft = null;
     this.liveRoleInfoControl = null;
     this.liveRoleIcon = null;
     this.liveRoleLabel = null;
@@ -855,33 +876,39 @@ export class Draw extends Scene {
   }
 
   private exitDraw(): void {
-    if (this.submitting || this.drawConfirmation || this.unsavedDrawingModal) {
+    if (this.submitting || this.drawConfirmation || this.leaveDrawingModal) {
       return;
     }
-    if (this.practiceMode) endPracticeSession(this);
-    if (!this.practiceMode) {
-      this.previewTimer?.remove();
-      this.previewTimer = null;
-      this.refreshPreview();
-      if ((this.lastResult?.inkedPixels ?? 0) > 0) {
-        if (hasMinimumDrawingInk(this.lastResult ?? { inkedPixels: 0 })) {
-          this.continueFromDrawing();
-          return;
-        }
-        this.openUnsavedDrawingModal();
-        return;
-      }
+    this.previewTimer?.remove();
+    this.previewTimer = null;
+    this.refreshPreview();
+    if ((this.lastResult?.inkedPixels ?? 0) > 0) {
+      this.openLeaveDrawingModal();
+      return;
     }
+    this.discardDrawingAndExit();
+  }
+
+  private discardDrawingAndExit(): void {
+    if (this.practiceMode) endPracticeSession(this);
     this.exitTo('ScribbitHome');
   }
 
-  private openUnsavedDrawingModal(): void {
-    if (this.unsavedDrawingModal) return;
+  private openLeaveDrawingModal(): void {
+    if (this.leaveDrawingModal) return;
     const { width, height } = this.scale;
     const cardWidth = width - 100;
-    const cardHeight = 470;
+    const cardHeight = 850;
     const cardCenterY = height / 2;
     const cardTop = cardCenterY - cardHeight / 2;
+    const previewSize = 320;
+    const previewTextureKey = `leave-drawing-preview-${nextLeaveDrawingPreviewTextureId}`;
+    nextLeaveDrawingPreviewTextureId += 1;
+    let previewTextureLoaded = false;
+    const currentResult = this.lastResult;
+    const previewDataUrl = currentResult
+      ? this.createSubmissionDraft(currentResult).imageDataUrl
+      : this.canvas.exportSubmissionImages().imageDataUrl;
     const wasTimedRoundRunning =
       this.playerDrawMode === 'community' &&
       this.drawRoundClock.started &&
@@ -890,16 +917,21 @@ export class Draw extends Scene {
     this.overlay.setVisible(false);
 
     const keepDrawing = (): void =>
-      this.closeUnsavedDrawingModal(wasTimedRoundRunning);
+      this.closeLeaveDrawingModal(wasTimedRoundRunning);
     const actions = new CanvasModalOverlay(
       this,
-      'Drawing not saved yet',
+      'Leave your doodle?',
       keepDrawing,
-      'This drawing only becomes a Scribbit after you name and save it.'
+      "Leave now and this doodle won't be saved."
     );
     const layer = this.add.container(0, 0).setDepth(2800).setScrollFactor(0);
-    this.unsavedDrawingModal = { layer, actions };
-    layer.once('destroy', () => actions.destroy());
+    this.leaveDrawingModal = { layer, actions };
+    layer.once('destroy', () => {
+      actions.destroy();
+      if (previewTextureLoaded && this.textures.exists(previewTextureKey)) {
+        this.textures.remove(previewTextureKey);
+      }
+    });
 
     const shade = this.add
       .rectangle(width / 2, height / 2, width, height, UI.inkHex, 0.76)
@@ -933,8 +965,8 @@ export class Draw extends Scene {
       label(
         this,
         width / 2,
-        cardTop + 142,
-        'NOT SAVED YET',
+        cardTop + 132,
+        'LEAVE YOUR DOODLE?',
         34,
         UI.ink,
         true
@@ -942,19 +974,67 @@ export class Draw extends Scene {
       label(
         this,
         width / 2,
-        cardTop + 198,
-        'ADD MORE INK TO SAVE IT',
+        cardTop + 178,
+        "IT WON'T BE SAVED",
         20,
         UI.coralText,
         true
       ).setScrollFactor(0),
     ]);
 
-    const primaryLabel = 'KEEP DRAWING';
-    const primaryAction = (): void => {
-      this.closeUnsavedDrawingModal(wasTimedRoundRunning);
+    const previewY = cardTop + 380;
+    const previewCard = this.add
+      .container(width / 2, previewY)
+      .setAngle(-1.5)
+      .setScrollFactor(0);
+    const previewFrame = this.add.graphics();
+    previewFrame.fillStyle(UI.creamHex, 1);
+    previewFrame.fillRoundedRect(
+      -previewSize / 2,
+      -previewSize / 2,
+      previewSize,
+      previewSize,
+      14
+    );
+    previewFrame.lineStyle(4, UI.inkHex, 0.9);
+    previewFrame.strokeRoundedRect(
+      -previewSize / 2,
+      -previewSize / 2,
+      previewSize,
+      previewSize,
+      14
+    );
+    previewCard.add(previewFrame);
+    layer.add(previewCard);
+
+    const previewSource = new Image();
+    previewSource.onload = () => {
+      if (
+        !layer.active ||
+        !this.scene.isActive() ||
+        this.leaveDrawingModal?.layer !== layer
+      ) {
+        return;
+      }
+      this.textures.addImage(previewTextureKey, previewSource);
+      previewTextureLoaded = true;
+      previewCard.add(
+        fitDrawing(this.add.image(0, 0, previewTextureKey), previewSize - 24)
+      );
     };
-    const primaryY = cardTop + 288;
+    previewSource.onerror = () => {
+      if (!layer.active || this.leaveDrawingModal?.layer !== layer) return;
+      previewCard.add(
+        label(this, 0, 0, 'PREVIEW UNAVAILABLE', 18, UI.inkSoft, true)
+      );
+    };
+    previewSource.src = previewDataUrl;
+
+    const primaryLabel = 'CONTINUE DRAWING';
+    const primaryAction = (): void => {
+      this.closeLeaveDrawingModal(wasTimedRoundRunning);
+    };
+    const primaryY = cardTop + 625;
     layer.add(
       button(
         this,
@@ -979,17 +1059,21 @@ export class Draw extends Scene {
       onActivate: primaryAction,
     });
 
-    const discardY = cardTop + 390;
-    const discardDrawing = (): void => this.exitTo('ScribbitHome');
+    const discardY = cardTop + 742;
+    const discardDrawing = (): void => this.discardDrawingAndExit();
     layer.add(
-      ghostButton(
+      iconButton(
         this,
         width / 2,
         discardY,
-        'LEAVE & DISCARD',
+        'trash',
+        'DISCARD DRAWING',
         discardDrawing,
         cardWidth - 140,
-        72
+        UI.creamHex,
+        UI.ink,
+        72,
+        UI.coralDeep
       ).setScrollFactor(0)
     );
     actions.add({
@@ -1005,10 +1089,10 @@ export class Draw extends Scene {
     actions.focusInitial(primaryControl);
   }
 
-  private closeUnsavedDrawingModal(resumeTimedRound: boolean): void {
-    const modal = this.unsavedDrawingModal;
+  private closeLeaveDrawingModal(resumeTimedRound: boolean): void {
+    const modal = this.leaveDrawingModal;
     if (!modal) return;
-    this.unsavedDrawingModal = null;
+    this.leaveDrawingModal = null;
     modal.layer.destroy(true);
     if (!this.scene.isActive()) return;
     this.overlay.setVisible(true);
@@ -1243,7 +1327,7 @@ export class Draw extends Scene {
       width / 2,
       6,
       translate(this.practiceMode ? 'screen.practice' : 'screen.draw'),
-      { maxWidth: 320, maxHeight: 76 }
+      { maxWidth: 280, maxHeight: 76 }
     );
     this.buildDrawingSettingsControl();
     this.buildDrawTimer();
@@ -1276,31 +1360,74 @@ export class Draw extends Scene {
   }
 
   private buildDrawingSettingsControl(): void {
-    this.moreToolsButton = this.toolIconButton(
-      196,
-      50,
-      'tools',
-      () => this.setAdvancedToolsOpen(!this.advancedToolsOpen),
-      84,
-      96,
-      'Open pens and brushes'
-    );
-    this.moreToolsControl =
-      this.drawingNativeControls[this.drawingNativeControls.length - 1] ?? null;
+    const x = 170;
+    const y = 50;
+    const width = 96;
+    const height = 58;
+    const toolsButton = this.add.container(x, y);
+    const activate = (): void => {
+      this.playControlFeedback(toolsButton, 'pop');
+      this.setAdvancedToolsOpen(!this.advancedToolsOpen);
+    };
+
+    this.moreToolsButton = toolsButton;
+    this.drawingControlContainers.push(toolsButton);
+    this.moreToolsBackground = this.add.graphics();
+    const glyph = paperToolIcon(this, 'tools', -22, 0, 28);
+    this.moreToolsText = label(this, 18, 0, 'TOOLS', 13, UI.ink, true);
+    const hit = this.add
+      .rectangle(0, 0, width, Math.max(height, MIN_TOUCH), 0xffffff, 0.001)
+      .setInteractive({ useHandCursor: true });
+    markSfxManaged(hit);
     this.advancedToolBadge = this.add
-      .circle(30, -30, 11, UI.gold, 1)
-      .setStrokeStyle(3, UI.inkHex, 1)
+      .circle(38, -22, 8, UI.gold, 1)
+      .setStrokeStyle(2, UI.inkHex, 1)
       .setVisible(false);
-    this.moreToolsLabel = label(
-      this,
-      0,
-      43,
-      'PENS + BRUSHES',
-      11,
-      UI.ink,
-      true
+    toolsButton.add([
+      this.moreToolsBackground,
+      glyph,
+      this.moreToolsText,
+      this.advancedToolBadge,
+      hit,
+    ]);
+
+    const press = (): void => {
+      this.tweens.add({
+        targets: toolsButton,
+        scaleX: 0.94,
+        scaleY: 0.9,
+        duration: 60,
+        ease: 'Quad.easeOut',
+      });
+    };
+    const release = (): void => {
+      this.tweens.add({
+        targets: toolsButton,
+        scaleX: 1,
+        scaleY: 1,
+        duration: 100,
+        ease: 'Back.easeOut',
+      });
+    };
+    bindPressInteractionEvents(
+      hit,
+      { press, release, activate, pressOnHover: false },
+      { gameTarget: this.input, shutdownTarget: this.events }
     );
-    this.moreToolsButton.add([this.advancedToolBadge, this.moreToolsLabel]);
+    this.moreToolsControl = this.addNativeControl(
+      'Open pens and brushes',
+      x - width / 2,
+      y - MIN_TOUCH / 2,
+      width,
+      MIN_TOUCH,
+      activate,
+      true,
+      this.headerControlOverlay
+    );
+    if (this.moreToolsControl) {
+      this.drawingNativeControls.push(this.moreToolsControl);
+    }
+    this.refreshAdvancedToolIndicator();
   }
 
   private isUntimedDrawingMode(): boolean {
@@ -1406,7 +1533,12 @@ export class Draw extends Scene {
   }
 
   private beginDrawingRound(): void {
-    if (!this.isWaitingToStart() || this.submitting || this.drawConfirmation) {
+    if (
+      !this.isWaitingToStart() ||
+      this.drawStartCountdownOverlay ||
+      this.submitting ||
+      this.drawConfirmation
+    ) {
       return;
     }
     if (!this.communityThemeAvailable) {
@@ -1416,14 +1548,18 @@ export class Draw extends Scene {
     this.playerDrawMode = 'community';
     this.canvas.element.setAttribute(
       'aria-label',
-      `Draw your Scribbit. The 60 second round is running. The color covering the most area decides how it fights.${this.isFirstScribbit ? ' First run: draw, watch it fight, and earn Ink.' : ''}`
+      'Get ready. The Community Theme drawing round starts after 3, 2, 1.'
     );
-    this.setCanvasDareVisible(false);
-    this.startDrawingRound();
+    this.startDrawCountdown();
   }
 
   private beginFreeDrawing(): void {
-    if (!this.isWaitingToStart() || this.submitting || this.drawConfirmation) {
+    if (
+      !this.isWaitingToStart() ||
+      this.drawStartCountdownOverlay ||
+      this.submitting ||
+      this.drawConfirmation
+    ) {
       return;
     }
     if (this.isFirstScribbit) {
@@ -1444,6 +1580,93 @@ export class Draw extends Scene {
         'Free Draw selected. There is no timer and no Rumble entry.'
       )
     );
+    requestAnimationFrame(() => this.canvas.element.focus());
+  }
+
+  private startDrawCountdown(): void {
+    if (this.drawStartCountdownOverlay || !this.canvasDareOverlay) return;
+
+    const countdownOverlay = document.createElement('div');
+    countdownOverlay.className = 'draw-start-countdown';
+    countdownOverlay.setAttribute('role', 'status');
+    countdownOverlay.setAttribute('aria-live', 'assertive');
+    countdownOverlay.setAttribute('aria-atomic', 'true');
+
+    const readyLabel = document.createElement('span');
+    readyLabel.className = 'draw-start-countdown-label';
+    readyLabel.textContent = 'GET READY';
+
+    const countdownValue = document.createElement('span');
+    countdownValue.className = 'draw-start-countdown-value';
+    countdownOverlay.append(readyLabel, countdownValue);
+    this.canvasDareOverlay.append(countdownOverlay);
+    this.drawStartCountdownOverlay = countdownOverlay;
+    this.drawStartCountdownValue = countdownValue;
+    preloadSfx('draw.countdown');
+    preloadSfx('draw.start');
+    preloadSfx('draw.timer');
+    preloadSfx('draw.tick');
+    this.renderDrawCountdownStep(DRAW_START_COUNTDOWN_STEPS[0]);
+    this.setCanvasDareVisible(true);
+
+    let nextStepIndex = 1;
+    this.drawStartCountdownTimerEvent = this.time.addEvent({
+      delay: DRAW_START_COUNTDOWN_STEP_MILLISECONDS,
+      repeat: DRAW_START_COUNTDOWN_STEPS.length - 1,
+      callback: () => {
+        const step = DRAW_START_COUNTDOWN_STEPS[nextStepIndex];
+        if (step) {
+          this.renderDrawCountdownStep(step);
+          nextStepIndex += 1;
+          return;
+        }
+        this.finishDrawCountdown();
+      },
+    });
+  }
+
+  private renderDrawCountdownStep(
+    step: (typeof DRAW_START_COUNTDOWN_STEPS)[number]
+  ): void {
+    if (!this.drawStartCountdownOverlay || !this.drawStartCountdownValue) {
+      return;
+    }
+    const isDrawStep = step === 'DRAW!';
+    this.drawStartCountdownOverlay.setAttribute(
+      'aria-label',
+      isDrawStep ? 'Draw!' : `Drawing starts in ${step}`
+    );
+    this.drawStartCountdownOverlay.classList.toggle('is-draw', isDrawStep);
+    this.drawStartCountdownValue.textContent = step;
+    playSfx(isDrawStep ? 'draw.start' : 'draw.countdown');
+    if (prefersReducedMotion()) return;
+    this.drawStartCountdownValue
+      .getAnimations()
+      .forEach((animation) => animation.cancel());
+    this.drawStartCountdownValue.animate(
+      [
+        { opacity: 0.25, transform: 'scale(1.55) rotate(-3deg)' },
+        { opacity: 1, transform: 'scale(0.92) rotate(1deg)', offset: 0.72 },
+        { opacity: 1, transform: 'scale(1) rotate(0deg)' },
+      ],
+      { duration: 420, easing: 'cubic-bezier(0.2, 0.85, 0.28, 1.12)' }
+    );
+  }
+
+  private finishDrawCountdown(): void {
+    this.drawStartCountdownTimerEvent?.remove();
+    this.drawStartCountdownTimerEvent = null;
+    this.drawStartCountdownOverlay?.remove();
+    this.drawStartCountdownOverlay = null;
+    this.drawStartCountdownValue = null;
+    if (!this.scene.isActive() || this.submitting || this.drawingLocked) return;
+
+    this.setCanvasDareVisible(false);
+    this.canvas.element.setAttribute(
+      'aria-label',
+      `Draw your Scribbit. The 60 second round is running. The color covering the most area decides how it fights.${this.isFirstScribbit ? ' First run: draw, watch it fight, and earn Ink.' : ''}`
+    );
+    this.startDrawingRound();
     requestAnimationFrame(() => this.canvas.element.focus());
   }
 
@@ -1533,7 +1756,7 @@ export class Draw extends Scene {
     this.drawTimerValue.style.opacity = snapshot.started ? '1' : '0.76';
 
     if (snapshot.running && secondChanged) {
-      if (snapshot.remainingSeconds <= 10) playSfx('draw.tick');
+      playSfx(snapshot.remainingSeconds <= 10 ? 'draw.tick' : 'draw.timer');
       if (snapshot.remainingSeconds === 10 || snapshot.remainingSeconds === 5) {
         this.drawTimerStatus?.replaceChildren(
           document.createTextNode(
@@ -1818,7 +2041,7 @@ export class Draw extends Scene {
       if (this.scene.isActive()) this.overlay.setVisible(true);
     };
     const semanticDescription =
-      'The color group covering the most drawing area determines fighter style. Coral and orange make Brawler. Aqua and blue make Longshot. Gold and green make Gunner. Purple and pink make Mage. Black and white do not compete; neutral-only drawings default to Brawler.';
+      'The color group covering the most drawing area determines fighter style. Coral and orange make Brawler. Gold, green, aqua, and blue make Longshot. Purple and pink make Mage. Brawler beats Mage, Mage beats Longshot, and Longshot beats Brawler. Black and white do not compete; neutral-only drawings default to Brawler.';
     const actions = new CanvasModalOverlay(
       this,
       'Fighter styles',
@@ -1896,14 +2119,15 @@ export class Draw extends Scene {
     const rowStartY = cardTop + 265;
     FIGHTER_STYLE_ROLES.forEach((role, index) => {
       const roleContent = getCombatRoleContent(role);
+      const counters = FIGHTER_STYLE_COUNTERS[role];
       const rowY = rowStartY + index * 132;
       const roleStyle = ROLE_STYLES[role];
       const roleColor = roleStyle.color;
       const rowCard = this.add.graphics().setScrollFactor(0);
       rowCard.fillStyle(roleColor, 0.1);
-      rowCard.fillRoundedRect(76, rowY - 48, width - 152, 96, 18);
+      rowCard.fillRoundedRect(76, rowY - 56, width - 152, 112, 18);
       rowCard.lineStyle(2, roleColor, 0.42);
-      rowCard.strokeRoundedRect(76, rowY - 48, width - 152, 96, 18);
+      rowCard.strokeRoundedRect(76, rowY - 56, width - 152, 112, 18);
       layer.add(rowCard);
       layer.add(
         paperIcon(this, roleContent.icon, 122, rowY, {
@@ -1916,7 +2140,7 @@ export class Draw extends Scene {
         label(
           this,
           168,
-          rowY - 17,
+          rowY - 27,
           roleContent.displayName.toUpperCase(),
           23,
           UI.ink,
@@ -1929,10 +2153,23 @@ export class Draw extends Scene {
         label(
           this,
           168,
-          rowY + 20,
+          rowY + 5,
           `${FIGHTER_STYLE_COLOR_NAMES[role].toUpperCase()} · ${roleContent.rangeLabel}`,
           17,
           UI.inkSoft,
+          true
+        )
+          .setOrigin(0, 0.5)
+          .setScrollFactor(0)
+      );
+      layer.add(
+        label(
+          this,
+          168,
+          rowY + 35,
+          `BEATS ${counters.beats} · WEAK TO ${counters.weakTo}`,
+          16,
+          roleStyle.colorText,
           true
         )
           .setOrigin(0, 0.5)
@@ -2300,14 +2537,14 @@ export class Draw extends Scene {
   }
 
   private buildPaletteRow(y: number, panelWidth: number): void {
-    const columns = 5;
+    const columns = PALETTE_GROUPS.length;
     const rowHeight = MIN_TOUCH;
     const swatchTouchHeight = 70;
     const spacing = panelWidth / columns;
     const groupIconY = y - 70;
     const groupLabelY = y - 44;
     const groupCardTop = y - rowHeight + 10;
-    const groupCardHeight = rowHeight * 2 - 12;
+    const groupCardHeight = 206;
 
     PALETTE_GROUPS.forEach((group, column) => {
       const x = EDGE + spacing * (column + 0.5);
@@ -2349,15 +2586,10 @@ export class Draw extends Scene {
     });
 
     PALETTE_COLORS.forEach((color, colorIndex) => {
-      const column = colorIndex % columns;
-      const row = Math.floor(colorIndex / columns);
-      const colorsInRow = Math.min(
-        columns,
-        PALETTE_COLORS.length - row * columns
-      );
-      const rowLeft = EDGE + (panelWidth - colorsInRow * spacing) / 2;
-      const x = rowLeft + spacing * (column + 0.5);
-      const swatchY = row === 0 ? y - 5 : y + 62;
+      const position = PALETTE_COLOR_POSITIONS[colorIndex];
+      if (!position) return;
+      const x = EDGE + spacing * (position.column + 0.5) + position.xOffset;
+      const swatchY = y - 5 + position.row * 52;
       const container = this.add.container(x, swatchY);
       const swatch = this.add
         .circle(
@@ -2377,7 +2609,14 @@ export class Draw extends Scene {
       const paintFill = this.add.graphics();
       const paletteRole = fighterStyleForPaletteColor(colorIndex);
       const hit = this.add
-        .rectangle(0, 0, spacing, swatchTouchHeight, 0xffffff, 0.001)
+        .rectangle(
+          0,
+          0,
+          position.xOffset === 0 ? spacing : 70,
+          swatchTouchHeight,
+          0xffffff,
+          0.001
+        )
         .setInteractive({ useHandCursor: true });
       markSfxManaged(hit);
       container.add([swatch, paintFill, hit]);
@@ -3011,7 +3250,6 @@ export class Draw extends Scene {
     if (!this.isDrawingInputActive()) return;
     this.darkCanvasPreview = !this.darkCanvasPreview;
     this.canvas.setPreviewMode(this.darkCanvasPreview ? 'dark' : 'paper');
-    saveDarkCanvasPreview(this.darkCanvasPreview);
     this.refreshCanvasContrastControl();
   }
 
@@ -3263,9 +3501,19 @@ export class Draw extends Scene {
     const navigationLabel = this.advancedToolsOpen
       ? 'Back to basic drawing tools'
       : 'Open pens and brushes';
-    this.moreToolsLabel?.setText(
-      this.advancedToolsOpen ? 'BACK TO TOOLS' : 'PENS + BRUSHES'
+    this.moreToolsBackground?.clear();
+    this.moreToolsBackground?.fillStyle(
+      this.advancedToolsOpen ? UI.goldHex : UI.creamHex,
+      1
     );
+    this.moreToolsBackground?.fillRoundedRect(-48, -29, 96, 58, 24);
+    this.moreToolsBackground?.lineStyle(
+      this.advancedToolsOpen ? 3 : 2,
+      UI.inkHex,
+      this.advancedToolsOpen ? 1 : 0.72
+    );
+    this.moreToolsBackground?.strokeRoundedRect(-48, -29, 96, 58, 24);
+    this.moreToolsText?.setText(this.advancedToolsOpen ? 'BASIC' : 'TOOLS');
     this.moreToolsControl?.setAttribute(
       'aria-label',
       activeParts.length > 0
@@ -3846,6 +4094,7 @@ export class Draw extends Scene {
       const startButton = document.createElement('button');
       startButton.className = 'draw-theme-start-button';
       startButton.type = 'button';
+      startButton.dataset.sfxCue = 'none';
       startButton.textContent = 'START THEME';
       startButton.setAttribute(
         'aria-label',
@@ -4098,12 +4347,20 @@ export class Draw extends Scene {
 
   private setCanvasDareVisible(visible: boolean): void {
     if (!this.canvasDareOverlay) return;
-    this.canvasDareOverlay.style.opacity = visible ? '1' : '0';
-    this.canvasDareOverlay.style.visibility = visible ? 'visible' : 'hidden';
-    this.canvasDareOverlay.setAttribute('aria-hidden', String(!visible));
+    const countdownActive = this.drawStartCountdownOverlay !== null;
+    const overlayVisible = visible || countdownActive;
+    this.canvasDareOverlay.style.opacity = overlayVisible ? '1' : '0';
+    this.canvasDareOverlay.style.visibility = overlayVisible
+      ? 'visible'
+      : 'hidden';
+    this.canvasDareOverlay.setAttribute('aria-hidden', String(!overlayVisible));
     const startIsAvailable =
-      visible && this.drawStartControl !== null && this.communityThemeAvailable;
-    const freeDrawIsAvailable = visible && this.freeDrawControl !== null;
+      visible &&
+      !countdownActive &&
+      this.drawStartControl !== null &&
+      this.communityThemeAvailable;
+    const freeDrawIsAvailable =
+      visible && !countdownActive && this.freeDrawControl !== null;
     this.canvasDareOverlay.style.pointerEvents = 'none';
     if (this.drawStartControl) {
       this.drawStartControl.disabled = !startIsAvailable;
@@ -4510,7 +4767,8 @@ export class Draw extends Scene {
           response.data.scribbit,
           draft,
           response.data.drawCharges,
-          response.data.enteredRumble
+          response.data.enteredRumble,
+          response.data.powerUpOffer
         )
       ) {
         void this.reconcileArenaSnapshot();
@@ -4541,7 +4799,8 @@ export class Draw extends Scene {
         response.data.scribbit,
         draft,
         response.data.drawCharges,
-        response.data.enteredRumble
+        response.data.enteredRumble,
+        response.data.powerUpOffer
       )
     ) {
       this.submissionLoading?.showReconciliationStatus();
@@ -4551,6 +4810,7 @@ export class Draw extends Scene {
       this.exitTo('ScribbitHome');
       return;
     }
+    this.pendingBirthPowerUpOffer = response.data.powerUpOffer;
     this.playCeremony(response.data.scribbit, draft.imageDataUrl);
   }
 
@@ -4558,7 +4818,8 @@ export class Draw extends Scene {
     scribbit: Scribbit,
     draft: SubmissionDraft,
     drawCharges: DrawChargeState,
-    enteredRumble: boolean
+    enteredRumble: boolean,
+    powerUpOffer: PowerUpOffer | null
   ): boolean {
     const arena = getArena(this);
     if (!arena || scribbit.bornDay !== arena.dayNumber) return false;
@@ -4600,6 +4861,12 @@ export class Draw extends Scene {
       myInk: (arena.myInk ?? 0) + (alreadyTracked ? 0 : INK_REWARDS.dailyDraw),
       myDrawingSupplies,
       myScribbits,
+      pendingPowerUpOffers: [
+        ...(arena.pendingPowerUpOffers ?? []).filter(
+          (offer) => offer.scribbitId !== scribbit.id
+        ),
+        ...(powerUpOffer ? [powerUpOffer] : []),
+      ],
     });
     return true;
   }
@@ -4937,7 +5204,9 @@ export class Draw extends Scene {
       duration: 350,
     });
 
-    const actionLabel = 'START FIRST FIGHT';
+    const actionLabel = this.pendingBirthPowerUpOffer
+      ? 'CHOOSE FIRST POWER-UP'
+      : 'START FIRST FIGHT';
     const actionButton = iconButton(
       this,
       width / 2,
@@ -4969,6 +5238,11 @@ export class Draw extends Scene {
       this.revealControlOverlay
     );
     this.firstFightStatus = this.revealControlOverlay?.addStatus() ?? null;
+    if (this.pendingBirthPowerUpOffer) {
+      this.time.delayedCall(prefersReducedMotion() ? 0 : 900, () => {
+        if (this.scene.isActive()) this.openBirthPowerUpDraft(scribbit);
+      });
+    }
   }
 
   private continueAfterBirth(scribbit: Scribbit): void {
@@ -4994,7 +5268,60 @@ export class Draw extends Scene {
       return;
     }
 
+    if (this.pendingBirthPowerUpOffer) {
+      this.birthContinuationStarted = false;
+      this.openBirthPowerUpDraft(scribbit);
+      return;
+    }
+
     void this.startFirstBattle(scribbit);
+  }
+
+  private openBirthPowerUpDraft(scribbit: Scribbit): void {
+    const offer = this.pendingBirthPowerUpOffer;
+    if (!offer || this.powerUpDraft) return;
+    const ownedPowerUpCount = scribbit.powerUpIds?.length ?? 0;
+    this.powerUpDraft = openPowerUpDraft(
+      this,
+      offer,
+      ownedPowerUpCount,
+      (selectedId) => {
+        const nextPowerUpIds = [...(scribbit.powerUpIds ?? []), selectedId];
+        scribbit.powerUpIds = nextPowerUpIds;
+        const arena = getArena(this);
+        if (arena) {
+          setArena(this, {
+            ...arena,
+            discoveredPowerUpIds: [
+              ...new Set([...(arena.discoveredPowerUpIds ?? []), selectedId]),
+            ],
+            pendingPowerUpOffers: (arena.pendingPowerUpOffers ?? []).filter(
+              (pendingOffer) => pendingOffer.id !== offer.id
+            ),
+            myScribbits: arena.myScribbits.map((ownedScribbit) =>
+              ownedScribbit.id === scribbit.id
+                ? { ...ownedScribbit, powerUpIds: [...nextPowerUpIds] }
+                : ownedScribbit
+            ),
+          });
+        }
+        this.pendingBirthPowerUpOffer = null;
+        this.powerUpDraft = null;
+        this.updateFirstFightAction(scribbit);
+      }
+    );
+  }
+
+  private updateFirstFightAction(scribbit: Scribbit): void {
+    this.firstFightButtonLabel?.setText('START FIRST FIGHT');
+    if (this.firstFightControl) {
+      this.firstFightControl.disabled = false;
+      this.firstFightControl.textContent = 'Start first fight';
+      this.firstFightControl.setAttribute('aria-label', 'Start first fight');
+    }
+    if (this.firstFightStatus) {
+      this.firstFightStatus.textContent = `${scribbit.name} chose a first Power-Up.`;
+    }
   }
 
   private async startFirstBattle(scribbit: Scribbit): Promise<void> {

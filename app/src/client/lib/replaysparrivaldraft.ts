@@ -374,9 +374,9 @@ export function createSparRivalDraft(
         scene,
         -132,
         40,
-        `WIN ${choice.winPoints} ${choice.winPoints === 1 ? 'POINT' : 'POINTS'}`,
-        19,
-        UI.inkSoft,
+        `${choice.matchup.label} · WIN +${choice.winPoints}`,
+        16,
+        roleStyle.colorText,
         220,
         true
       )
@@ -429,7 +429,7 @@ export function createSparRivalDraft(
     });
 
     const nativeFight = draftModalActions.add({
-      label: `Fight ${plan.name}: ${riskLabel(choice.tier).toLowerCase()}, win ${choice.winPoints} ${choice.winPoints === 1 ? 'point' : 'points'}. Challenge: ${challengeCopy.name}, ${challengeCopy.goal}, ${challengeCopy.progress}.`,
+      label: `Fight ${plan.name}: ${choice.matchup.label}. ${choice.matchup.detail}. ${riskLabel(choice.tier).toLowerCase()}, win ${choice.winPoints} ${choice.winPoints === 1 ? 'point' : 'points'}. Challenge: ${challengeCopy.name}, ${challengeCopy.goal}, ${challengeCopy.progress}.`,
       rect: {
         x: width / 2 + 104,
         y: height / 2 + rowY + 19,

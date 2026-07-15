@@ -24,6 +24,9 @@ export const englishMessages = {
   'nav.drawRefilling': 'Refilling',
   'nav.battles': 'Battles',
   'nav.shop': 'Shop',
+  'nav.mystery': '???',
+  'nav.lockedUntilProgress':
+    '{destination}, locked. Keep playing to reveal it.',
 
   'drawEligibility.loading': 'Loading the arena…',
   'drawEligibility.signIn': 'Sign in to draw a Scribbit.',

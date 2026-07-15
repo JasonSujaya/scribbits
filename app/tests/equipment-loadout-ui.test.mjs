@@ -29,6 +29,7 @@ test('client posts the canonical eight-slot equipment mutation', () => {
 
 test('Bag presents the mobile Binder, character details, eight slots, and separate Gear and Draw Kit trays', () => {
   const collectionSource = readClientFile('lib', 'collectionbook.ts');
+  const gallerySource = readClientFile('scenes', 'Gallery.ts');
   const cosmeticPreviewSource = readClientFile('lib', 'cosmeticpreview.ts');
   const inventoryGridSource = readClientFile('lib', 'baginventorygrid.ts');
   const raritySource = readClientFile('lib', 'bagrarity.ts');
@@ -57,7 +58,8 @@ test('Bag presents the mobile Binder, character details, eight slots, and separa
     inventoryIndex > filterIndex,
     'the scrollable inventory renders below the filters'
   );
-  assert.match(collectionSource, /drawScribbitPlatform/);
+  assert.match(collectionSource, /drawScribbitNamePlate/);
+  assert.match(collectionSource, /createEquipmentPanelHeader/);
   assert.match(collectionSource, /const BAG_GEAR_TILE_SIZE = 120/);
   assert.match(collectionSource, /const BAG_EQUIPMENT_SLOT_SIZE = 84/);
   assert.match(collectionSource, /const BAG_EQUIPMENT_SLOT_HIT_WIDTH = 90/);
@@ -88,7 +90,7 @@ test('Bag presents the mobile Binder, character details, eight slots, and separa
   assert.doesNotMatch(collectionSource, /gearWeekDay\.challenge/);
   assert.match(
     collectionSource,
-    /fitDrawing\(scene\.add\.image\(0, 0, textureKey\), 205\)/
+    /fitDrawing\(scene\.add\.image\(0, 0, textureKey\), 280\)/
   );
   assert.match(
     collectionSource,
@@ -120,7 +122,11 @@ test('Bag presents the mobile Binder, character details, eight slots, and separa
     characterStageSource,
     /image\(0, 0, BAG_BINDER_SHELL_TEXTURE\)[\s\S]*setDisplaySize\(BAG_BINDER_WIDTH, BAG_BINDER_HEIGHT\)/
   );
-  assert.match(visualAssetsSource, /bag-binder-base-shell-v5\.webp/);
+  assert.match(visualAssetsSource, /bag-binder-base-shell-v7\.webp/);
+  assert.match(
+    characterStageSource,
+    /emptyBinderPrompt[\s\S]*DRAW A\\nSCRIBBIT\\nTO START\\nYOUR BINDER/
+  );
   assert.doesNotMatch(characterStageSource, /binder\.fillRoundedRect/);
   assert.match(collectionSource, /function addReusableBinderPanel\(/);
   assert.match(collectionSource, /function addReusableBinderRing\(/);
@@ -129,14 +135,20 @@ test('Bag presents the mobile Binder, character details, eight slots, and separa
   assert.match(collectionSource, /sideTabs: true/);
   assert.match(collectionSource, /data-ink-kit-section/);
   assert.match(characterStageSource, /CHANGE SCRIBBIT/);
-  assert.match(characterStageSource, /ELEMENT · \$\{selectedScribbit\.element/);
-  assert.match(characterStageSource, /ROLE ·/);
-  assert.match(characterStageSource, /MATERIAL ·/);
-  assert.match(characterStageSource, /MATURE · STATS LOCKED/);
-  assert.match(characterStageSource, /CHONK/);
-  assert.match(characterStageSource, /SPIKE/);
-  assert.match(characterStageSource, /ZIP/);
-  assert.match(characterStageSource, /CHARM/);
+  assert.match(characterStageSource, /const portraitY = binderOffsetY\(-320\)/);
+  assert.match(characterStageSource, /const selectorArrowX = 200/);
+  assert.match(
+    characterStageSource,
+    /paperArrowButton\([\s\S]*?'previous'[\s\S]*?paperArrowButton\([\s\S]*?'next'/
+  );
+  assert.doesNotMatch(characterStageSource, /ELEMENT ·/);
+  assert.doesNotMatch(characterStageSource, /ROLE ·/);
+  assert.doesNotMatch(characterStageSource, /MATERIAL ·/);
+  assert.doesNotMatch(characterStageSource, /MATURITY ·/);
+  assert.doesNotMatch(characterStageSource, /CHONK/);
+  assert.doesNotMatch(characterStageSource, /SPIKE/);
+  assert.doesNotMatch(characterStageSource, /ZIP/);
+  assert.doesNotMatch(characterStageSource, /CHARM/);
   assert.match(characterStageSource, /data-selected-scribbit-name/);
   assert.match(characterStageSource, /data-selected-scribbit-element/);
   assert.match(characterStageSource, /data-selected-scribbit-maturity/);
@@ -159,6 +171,16 @@ test('Bag presents the mobile Binder, character details, eight slots, and separa
   assert.match(collectionSource, /data-equipment-slot/);
   assert.match(collectionSource, /data-equipped-gear-id/);
   assert.match(collectionSource, /data-equipped-gear-rarity/);
+  assert.match(collectionSource, /addEmptyEquipmentSlotPrompt/);
+  assert.match(
+    characterStageSource,
+    /selectedEquipmentSlot\?\.category === category[\s\S]*selectedEquipmentSlot\.slotIndex === slotIndex/
+  );
+  assert.match(collectionSource, /const selectedOpenGearSlotIndex/);
+  assert.match(
+    gallerySource,
+    /onEquipmentSlotSelect:[\s\S]*this\.selectedEquipmentSlot = \{ category, slotIndex \};[\s\S]*this\.collectionInventoryExpanded = true/
+  );
   assert.doesNotMatch(collectionSource, /× REMOVE/);
   assert.doesNotMatch(collectionSource, /paperPagination/);
   assert.match(collectionSource, /inventory\.gear\[entry\.id\] !== undefined/);
@@ -196,12 +218,13 @@ test('Bag presents the mobile Binder, character details, eight slots, and separa
   assert.match(raritySource, /common:[\s\S]*color: 0xa56724/);
   assert.match(raritySource, /rare:[\s\S]*color: 0x0f88bc/);
   assert.match(raritySource, /epic:[\s\S]*color: 0x8340bd/);
+  assert.match(raritySource, /legendary:[\s\S]*color: 0xb52e5d/);
   assert.match(raritySource, /strokeWidth: 7/);
   assert.match(raritySource, /strokeWidth: 8/);
   assert.doesNotMatch(collectionSource, /\.setAngle\(index % 2/);
   assert.match(
     collectionSource,
-    /GEAR_SECTION_PRESENTATION\[category\]\.icon[\s\S]*size: 24,[\s\S]*fill: UI\.paper/
+    /function addEmptyEquipmentSlotPrompt[\s\S]*available \? '\+' : '—'[\s\S]*'EMPTY'/
   );
   assert.match(inventoryGridSource, /Math\.round\(x \+ cardWidth \/ 2\)/);
   assert.match(inventoryGridSource, /data-scrollable/);
@@ -219,7 +242,7 @@ test('Bag presents the mobile Binder, character details, eight slots, and separa
   );
   assert.match(
     collectionSource,
-    /emptyBackground[\s\S]*\? UI\.inkHex[\s\S]*UNEQUIPPED_GEAR_TILE_COLOR/
+    /emptyBackground[\s\S]*\? UI\.paper[\s\S]*UNEQUIPPED_GEAR_TILE_COLOR/
   );
   assert.match(
     overlaySource,

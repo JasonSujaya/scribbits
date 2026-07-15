@@ -5,16 +5,16 @@ import {
 } from './config';
 import type {
   CombatRole,
+  CurrentCombatRole,
   DominantStat,
   PrimaryPower,
   RawCombatStats,
 } from './types';
 
-const FIGHTER_STYLE_STATS: Readonly<Record<CombatRole, RawCombatStats>> =
+const FIGHTER_STYLE_STATS: Readonly<Record<CurrentCombatRole, RawCombatStats>> =
   Object.freeze({
     brawler: Object.freeze({ chonk: 40, spike: 20, zip: 20, charm: 20 }),
     longshot: Object.freeze({ chonk: 20, spike: 40, zip: 20, charm: 20 }),
-    gunner: Object.freeze({ chonk: 20, spike: 20, zip: 40, charm: 20 }),
     mage: Object.freeze({ chonk: 20, spike: 20, zip: 20, charm: 40 }),
   });
 
@@ -35,8 +35,31 @@ export function selectPrimaryPower(stats: RawCombatStats): PrimaryPower {
   return PRIMARY_POWER_BY_DOMINANT_STAT[selectDominantStat(stats)];
 }
 
-export function selectCombatRole(stats: RawCombatStats): CombatRole {
+export function selectCombatRole(stats: RawCombatStats): CurrentCombatRole {
   return COMBAT_ROLE_BY_DOMINANT_STAT[selectDominantStat(stats)];
+}
+
+/** Archived v4-v6 reports used Zip as a separate Gunner role. */
+export function selectLegacyCombatRole(stats: RawCombatStats): CombatRole {
+  const dominantStat = selectDominantStat(stats);
+  if (dominantStat === 'zip') return 'gunner';
+  return COMBAT_ROLE_BY_DOMINANT_STAT[dominantStat];
+}
+
+/**
+ * Existing Zip-dominant Scribbits keep their stored stats, but enter new v7
+ * fights as the equivalent Longshot build. The projection is battle-local and
+ * never rewrites Redis records or archived report snapshots.
+ */
+export function projectStatsForCurrentCombat(
+  stats: RawCombatStats
+): RawCombatStats {
+  if (selectDominantStat(stats) !== 'zip') return stats;
+  return Object.freeze({
+    ...stats,
+    spike: stats.zip,
+    zip: stats.spike,
+  });
 }
 
 /**
@@ -45,5 +68,5 @@ export function selectCombatRole(stats: RawCombatStats): CombatRole {
  * total combat power.
  */
 export function getStatsForFighterStyle(role: CombatRole): RawCombatStats {
-  return FIGHTER_STYLE_STATS[role];
+  return FIGHTER_STYLE_STATS[role === 'gunner' ? 'longshot' : role];
 }

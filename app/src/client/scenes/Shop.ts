@@ -21,6 +21,7 @@ import type { CapsulePull } from '../../shared/arena';
 
 /** Earned rewards live here; Bag remains the one place that equips them. */
 export class Shop extends Scene {
+  private dock: ReturnType<typeof appDock> | null = null;
   private capsuleMachine: CapsuleMachine | null = null;
   private menu: AppMenu | null = null;
   private assetErrorPanel: ErrorPanel | null = null;
@@ -35,6 +36,7 @@ export class Shop extends Scene {
   }
 
   init(): void {
+    this.dock = null;
     this.capsuleMachine = null;
     this.menu = null;
     this.assetErrorPanel = null;
@@ -53,16 +55,7 @@ export class Shop extends Scene {
   private createLoadedShop(): void {
     shopStage(this, -1000);
 
-    appDock(this, 'shop', {
-      arena: () => this.navigateWhenSafe(() => startScene(this, 'ArenaHome')),
-      bag: () =>
-        this.navigateWhenSafe(() => {
-          setGalleryTab(this, 'collection');
-          startScene(this, 'Gallery');
-        }),
-      battles: () => this.navigateWhenSafe(() => startScene(this, 'MyBattles')),
-      shop: () => undefined,
-    });
+    this.rebuildDock();
     this.menu = appMenu(this, {
       canNavigate: () => !this.transactionLocked,
     });
@@ -79,6 +72,8 @@ export class Shop extends Scene {
       ink: arena.myInk,
       nextCost: arena.nextCapsuleCost,
       progress: arena.capsuleProgress,
+      seasonName:
+        arena.season.current?.name ?? arena.season.latestFinalized?.name,
       embedded: true,
       onTransactionLockChange: (locked) => {
         this.transactionLocked = locked;
@@ -96,6 +91,7 @@ export class Shop extends Scene {
             nextCapsuleCost: result.data.nextCost,
             capsuleProgress: result.data.progress,
           });
+          this.rebuildDock();
         }
         return result.data;
       },
@@ -113,12 +109,28 @@ export class Shop extends Scene {
     });
 
     this.events.once('shutdown', () => {
+      this.dock?.destroy(true);
+      this.dock = null;
       this.capsuleMachine?.destroy();
       this.capsuleMachine = null;
       this.menu?.destroy();
       this.menu = null;
       this.assetErrorPanel?.destroy();
       this.assetErrorPanel = null;
+    });
+  }
+
+  private rebuildDock(): void {
+    this.dock?.destroy(true);
+    this.dock = appDock(this, 'shop', {
+      arena: () => this.navigateWhenSafe(() => startScene(this, 'ArenaHome')),
+      bag: () =>
+        this.navigateWhenSafe(() => {
+          setGalleryTab(this, 'collection');
+          startScene(this, 'Gallery');
+        }),
+      battles: () => this.navigateWhenSafe(() => startScene(this, 'MyBattles')),
+      shop: () => undefined,
     });
   }
 

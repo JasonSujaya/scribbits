@@ -8,9 +8,9 @@ import { ELEMENT_STYLES, prefersReducedMotion, TYPE, UI } from './theme';
 import { label, stickerCard, versusBadge } from './ui';
 
 const INTRO_DEPTH = 2_550;
-const INTRO_VISIBLE_MILLISECONDS = 700;
+const INTRO_VISIBLE_MILLISECONDS = 1_200;
 const INTRO_EXIT_MILLISECONDS = 160;
-const REDUCED_MOTION_VISIBLE_MILLISECONDS = 620;
+const REDUCED_MOTION_VISIBLE_MILLISECONDS = 1_050;
 
 export type SavedReplayIntroInput = Readonly<{
   fighterA: Scribbit;
@@ -65,7 +65,7 @@ export function showSavedReplayIntro(
   const reduceMotion = prefersReducedMotion();
   const matchup = planBattleMatchupBrief(input);
   const ticketWidth = Math.min(624, width - 48);
-  const ticketHeight = 340;
+  const ticketHeight = 400;
   const ticketCenterY = height / 2;
   let destroyed = false;
   let completed = false;
@@ -119,6 +119,28 @@ export function showSavedReplayIntro(
 
   const versus = versusBadge(scene, 0, -2, { size: 86 });
   ticket.add(versus);
+
+  const roleMatchup = label(
+    scene,
+    0,
+    132,
+    matchup.matchup.label,
+    20,
+    UI.ink,
+    true
+  );
+  fitName(roleMatchup, ticketWidth - 76);
+  const roleMatchupDetail = label(
+    scene,
+    0,
+    164,
+    matchup.matchup.detail,
+    15,
+    UI.inkSoft,
+    true
+  );
+  fitName(roleMatchupDetail, ticketWidth - 76);
+  ticket.add([roleMatchup, roleMatchupDetail]);
 
   if (input.replayPass > 0) {
     const marker = scene.add.container(0, -169).setAngle(1.2);

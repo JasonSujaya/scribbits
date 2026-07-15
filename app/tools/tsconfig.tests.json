@@ -18,6 +18,7 @@
     "../src/shared/**/*.ts",
     "../src/server/core/**/*.ts",
     "../src/client/lib/arenaasynclifecycle.ts",
+    "../src/client/lib/appdockprogression.ts",
     "../src/client/lib/battlejournal.ts",
     "../src/client/lib/battleboard.ts",
     "../src/client/lib/battlepresentation.ts",

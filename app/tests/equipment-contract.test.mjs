@@ -42,8 +42,8 @@ test('role relics preserve stored IDs while declaring clear affinities', () => {
     'inkquake-crater-crown': ['brawler', 'armor'],
     'nib-halo-headband': ['longshot', 'accessory'],
     'nib-halo-circlet': ['longshot', 'accessory'],
-    'smearstep-speed-scarf': ['gunner', 'shoes'],
-    'smearstep-ink-skates': ['gunner', 'shoes'],
+    'smearstep-speed-scarf': ['longshot', 'shoes'],
+    'smearstep-ink-skates': ['longshot', 'shoes'],
     'colorburst-rosette': ['mage', 'accessory'],
     'colorburst-prism-crown': ['mage', 'accessory'],
   };
