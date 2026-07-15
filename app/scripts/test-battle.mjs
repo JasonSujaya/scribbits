@@ -14684,9 +14684,7 @@ assert.equal(
   'released'
 );
 
-const ambiguousNightlyMutationStorage = createMemoryStorage({
-  throwAfterCommitNumber: 2,
-});
+const ambiguousNightlyMutationStorage = createMemoryStorage();
 const ambiguousNightlyMutationLease =
   await dataDeletionCore.acquireNightlyPlayerMutation(
     ambiguousNightlyMutationStorage,
@@ -14697,6 +14695,14 @@ const ambiguousNightlyFence = nightlyStorageFence.createNightlyFencedStorage(
   ambiguousNightlyMutationStorage,
   ambiguousNightlyMutationLease.lease
 );
+const ambiguousNightlyIncrement =
+  ambiguousNightlyMutationStorage.incrBy.bind(ambiguousNightlyMutationStorage);
+let ambiguousNightlyIncrementCalls = 0;
+ambiguousNightlyMutationStorage.incrBy = async (...arguments_) => {
+  ambiguousNightlyIncrementCalls += 1;
+  const result = await ambiguousNightlyIncrement(...arguments_);
+  throw new Error('Simulated direct mutation reply loss after commit.');
+};
 await assert.rejects(
   () => ambiguousNightlyFence.incrBy('ambiguous-nightly-counter', 1),
   /reply loss/,
@@ -14706,6 +14712,11 @@ assert.equal(
   await ambiguousNightlyMutationStorage.get('ambiguous-nightly-counter'),
   '1',
   'ambiguous non-idempotent mutation must commit at most once'
+);
+assert.equal(
+  ambiguousNightlyIncrementCalls,
+  1,
+  'a direct mutation reply loss must not replay the write'
 );
 assert.equal(
   await dataDeletionCore.releaseNightlyPlayerMutation(

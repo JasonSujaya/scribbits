@@ -1,8 +1,5 @@
 import type { ArenaStorage, ArenaTransaction, SortedSetEntry } from './storage';
-import {
-  discardWatchedTransaction,
-  MAX_WATCH_TRANSACTION_ATTEMPTS,
-} from './storage';
+import { discardWatchedTransaction } from './storage';
 import {
   acquireNightlyPlayerMutation,
   getNightlyPlayerMutationEpochKey,
@@ -71,40 +68,20 @@ const wrapTransaction = (
   zIncrBy: (key, member, value) => transaction.zIncrBy(key, member, value),
 });
 
-const executeFencedMutation = async <Result>(
+const executeLeaseCheckedMutation = async <Result>(
   storage: ArenaStorage,
   lease: NightlyPlayerMutationLease,
-  queueMutation: (transaction: ArenaTransaction) => Promise<unknown>
+  mutate: () => Promise<Result>
 ): Promise<Result> => {
-  if (!storage.watch) {
-    throw new Error('Nightly mutation fencing requires transaction support.');
-  }
-  const epochKey = getNightlyPlayerMutationEpochKey();
-  const lockKey = getNightlyPlayerMutationLockKey();
-
-  for (
-    let attempt = 0;
-    attempt < MAX_WATCH_TRANSACTION_ATTEMPTS;
-    attempt += 1
-  ) {
-    let transaction: ArenaTransaction | undefined;
-    try {
-      transaction = await storage.watch(epochKey, lockKey);
-      await requireCurrentFence(storage, lease);
-      await transaction.multi();
-      await queueMutation(transaction);
-      const result = await transaction.exec();
-      if (Array.isArray(result) && result.length > 0) {
-        return result[0] as Result;
-      }
-      await requireCurrentFence(storage, lease);
-    } catch (error) {
-      await discardWatchedTransaction(transaction, 'Nightly storage fence');
-      throw error;
-    }
-  }
-
-  throw new Error('Nightly fenced mutation changed too often to commit.');
+  // The global lease prevents deletion and another nightly worker from running
+  // concurrently. Check it at both operation boundaries so direct Redis writes
+  // do not consume a WATCH transaction apiece; Devvit limits transaction
+  // concurrency and the resolver legitimately performs many small writes.
+  // Domain operations that need atomicity still use the fenced watch() below.
+  await requireCurrentFence(storage, lease);
+  const result = await mutate();
+  await requireCurrentFence(storage, lease);
+  return result;
 };
 
 export const createNightlyFencedStorage = (
@@ -134,56 +111,54 @@ export const createNightlyFencedStorage = (
     type: storage.type ? (key) => storage.type!(key) : undefined,
     get: (key) => storage.get(key),
     set: (key, value) =>
-      executeFencedMutation(storage, lease, (transaction) =>
-        transaction.set(key, value)
+      executeLeaseCheckedMutation(storage, lease, () =>
+        storage.set(key, value)
       ),
     del: (...keys) =>
-      executeFencedMutation(storage, lease, (transaction) =>
-        transaction.del(...keys)
-      ),
+      executeLeaseCheckedMutation(storage, lease, () => storage.del(...keys)),
     incrBy: (key, value) =>
-      executeFencedMutation<number>(storage, lease, (transaction) =>
-        transaction.incrBy(key, value)
+      executeLeaseCheckedMutation(storage, lease, () =>
+        storage.incrBy(key, value)
       ),
     expire: (key, seconds) =>
-      executeFencedMutation(storage, lease, (transaction) =>
-        transaction.expire(key, seconds)
+      executeLeaseCheckedMutation(storage, lease, () =>
+        storage.expire(key, seconds)
       ),
     hGet: (key, field) => storage.hGet(key, field),
     hGetAll: (key) => storage.hGetAll(key),
     hKeys: (key) => storage.hKeys(key),
     hSet: (key, fieldValues) =>
-      executeFencedMutation(storage, lease, (transaction) =>
-        transaction.hSet(key, fieldValues)
+      executeLeaseCheckedMutation(storage, lease, () =>
+        storage.hSet(key, fieldValues)
       ),
     hSetNX: (key, field, value) =>
-      executeFencedMutation<number>(storage, lease, (transaction) =>
-        transaction.hSetNX(key, field, value)
+      executeLeaseCheckedMutation(storage, lease, () =>
+        storage.hSetNX(key, field, value)
       ),
     hDel: (key, fields) =>
-      executeFencedMutation<number>(storage, lease, (transaction) =>
-        transaction.hDel(key, fields)
+      executeLeaseCheckedMutation(storage, lease, () =>
+        storage.hDel(key, fields)
       ),
     hIncrBy: (key, field, value) =>
-      executeFencedMutation<number>(storage, lease, (transaction) =>
-        transaction.hIncrBy(key, field, value)
+      executeLeaseCheckedMutation(storage, lease, () =>
+        storage.hIncrBy(key, field, value)
       ),
     zAdd: (key, ...members: SortedSetEntry[]) =>
-      executeFencedMutation(storage, lease, (transaction) =>
-        transaction.zAdd(key, ...members)
+      executeLeaseCheckedMutation(storage, lease, () =>
+        storage.zAdd(key, ...members)
       ),
     zCard: (key) => storage.zCard(key),
     zRange: (key, start, stop, options) =>
       storage.zRange(key, start, stop, options),
     zRem: (key, members) =>
-      executeFencedMutation(storage, lease, (transaction) =>
-        transaction.zRem(key, members)
+      executeLeaseCheckedMutation(storage, lease, () =>
+        storage.zRem(key, members)
       ),
     zScore: (key, member) => storage.zScore(key, member),
     zRank: (key, member) => storage.zRank(key, member),
     zIncrBy: (key, member, value) =>
-      executeFencedMutation<number>(storage, lease, (transaction) =>
-        transaction.zIncrBy(key, member, value)
+      executeLeaseCheckedMutation(storage, lease, () =>
+        storage.zIncrBy(key, member, value)
       ),
   };
 };
