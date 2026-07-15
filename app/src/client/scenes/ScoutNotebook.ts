@@ -49,6 +49,7 @@ import { SemanticTabController } from '../lib/semantictabs';
 import { bindPressInteractionEvents } from '../lib/pressinteraction';
 import { screenTitle } from '../lib/screentitle';
 import { translate } from '../lib/localization';
+import { primeBattleSoundtrack } from '../lib/soundtrack';
 
 const NOTEBOOK_ENTRY_COUNT = 7;
 const PAGE_CENTER_Y = 678;
@@ -814,6 +815,7 @@ export class ScoutNotebook extends Scene {
     pageGeneration: number
   ): Promise<void> {
     if (this.replayLoading || !entry.replayAvailable) return;
+    primeBattleSoundtrack();
     this.replayLoading = true;
     if (this.pageActionControl) {
       this.pageActionControl.disabled = true;

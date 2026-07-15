@@ -26,6 +26,17 @@ const replaySource = await readFile(
   new URL('../src/client/scenes/Replay.ts', import.meta.url),
   'utf8'
 );
+const battleCeremonySource = await readFile(
+  new URL('../src/client/lib/battleceremony.ts', import.meta.url),
+  'utf8'
+);
+const myBattlesSource = await readFile(
+  new URL('../src/client/scenes/MyBattles.ts', import.meta.url),
+  'utf8'
+);
+const battleMusic = await readFile(
+  new URL('../src/client/assets/scribbits-battle.mp3', import.meta.url)
+);
 
 test('home music tries Pocketful first, then randomizes later visits', () => {
   assert.match(soundtrackSource, /if \(!hasPlayedHomeTrack\) return 0/);
@@ -90,6 +101,35 @@ test('battle music follows Replay and the battle sound toggle', () => {
   assert.match(
     replaySource,
     /const enabled = this\.soundboard\.toggle\(\);[\s\S]{0,100}setBattleSoundtrackEnabled\(enabled\)/
+  );
+});
+
+test('battle music is prepared during fight intent and reused by Replay', () => {
+  assert.ok(
+    battleMusic.byteLength <= 1_600_000,
+    `battle soundtrack is ${battleMusic.byteLength} bytes`
+  );
+  assert.match(
+    soundtrackSource,
+    /export const preloadBattleSoundtrack = \(\): void =>/
+  );
+  assert.match(
+    soundtrackSource,
+    /preparedBattleAudio = createPreparedBattleAudio\(\)/
+  );
+  assert.match(soundtrackSource, /audio\.load\(\)/);
+  assert.match(
+    soundtrackSource,
+    /export const primeBattleSoundtrack = \(\): void =>[\s\S]{0,300}audio\.play\(\)/
+  );
+  assert.match(
+    soundtrackSource,
+    /export const startBattleSoundtrack[\s\S]{0,220}const audio = preparedBattleAudio/
+  );
+  assert.match(battleCeremonySource, /preloadBattleSoundtrack\(\)/);
+  assert.match(
+    myBattlesSource,
+    /private async startFight[\s\S]{0,220}primeBattleSoundtrack\(\)[\s\S]{0,500}await spar\(/
   );
 });
 

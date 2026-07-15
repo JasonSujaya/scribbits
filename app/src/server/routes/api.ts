@@ -214,6 +214,7 @@ import {
   loadScribbit,
   loadScribbits,
   hasUserCreatedScribbit,
+  recordBattleOutcomeForReport,
   refreshEquippedGearRankForUser,
   retireOwnedScribbit,
   validateAndAnalyzeScribbitSubmission,
@@ -753,6 +754,12 @@ const finalizeSparBattle = async (
       completedAtMilliseconds
     );
   }
+
+  await recordBattleOutcomeForReport(redis, {
+    scribbitId: input.challengerId,
+    reportId: input.report.id,
+    outcome: input.report.winner === 'a' ? 'win' : 'loss',
+  });
 
   let inkAwarded = input.report.inkAwarded ?? 0;
   let rewardReceipt: SparRewardReceipt | null = createSparRewardReceipt({

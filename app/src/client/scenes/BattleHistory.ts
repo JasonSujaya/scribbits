@@ -39,6 +39,7 @@ import type {
 import { screenTitle } from '../lib/screentitle';
 import { translate } from '../lib/localization';
 import { fitText } from '../lib/fittext';
+import { primeBattleSoundtrack } from '../lib/soundtrack';
 
 const ROW_INNER_HEIGHT = 118;
 const ROW_STEP = 128;
@@ -512,6 +513,7 @@ export class BattleHistory extends Scene {
 
     const openReport = (): void => {
       if (this.openingReportId) return;
+      primeBattleSoundtrack();
       this.openingReportId = report.id;
       setBattleHistoryPage(this, this.page);
       setBattleHistoryCharacter(this, this.characterId);

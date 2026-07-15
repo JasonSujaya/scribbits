@@ -28,8 +28,8 @@
   "menu": {
     "items": [
       {
-        "label": "Create Rumble post",
-        "description": "Create today's Scribbits Arena post",
+        "label": "Open Scribbits",
+        "description": "Open or restore the single Scribbits app post",
         "location": "subreddit",
         "forUserType": "moderator",
         "endpoint": "/internal/menu/post-create"

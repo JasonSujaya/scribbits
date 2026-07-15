@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import type { MenuItemRequest, UiResponse } from '@devvit/web/shared';
 import { context, redis } from '@devvit/web/server';
 import { getCurrentSubredditModerator } from '../core/moderatorAuthorization';
-import { ensureCurrentArenaPost } from '../core/post';
+import { ensureMainAppPost } from '../core/post';
 import { seasonAdmin } from './seasonAdmin';
 
 export const menu = new Hono();
@@ -18,19 +18,18 @@ menu.post('/post-create', async (c) => {
       request.targetId !== context.subredditId
     ) {
       return c.json<UiResponse>(
-        { showToast: 'Invalid Create Rumble request.' },
+        { showToast: 'Invalid Open Scribbits request.' },
         200
       );
     }
     if (!(await getCurrentSubredditModerator())) {
       return c.json<UiResponse>(
-        { showToast: 'Create Rumble is restricted to moderators.' },
+        { showToast: 'Opening Scribbits is restricted to moderators.' },
         200
       );
     }
 
-    const now = new Date();
-    const post = await ensureCurrentArenaPost(redis, now);
+    const post = await ensureMainAppPost(redis);
 
     return c.json<UiResponse>(
       {
@@ -39,10 +38,10 @@ menu.post('/post-create', async (c) => {
       200
     );
   } catch (error) {
-    console.error(`Error creating arena post: ${error}`);
+    console.error(`Error opening the Scribbits app post: ${error}`);
     return c.json<UiResponse>(
       {
-        showToast: 'Failed to create arena post',
+        showToast: 'Failed to open the Scribbits app post',
       },
       400
     );

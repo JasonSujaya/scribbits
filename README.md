@@ -64,8 +64,8 @@ arena effects and Inkbody deformation update at a bounded 30 Hz.
    draw throwaway shapes and immediately watch more server-authored fights.
 7. Use the compact Rumble Pick action in Arena to choose another player’s
    contender. Champion picks earn 3 Clout; finalist backers earn 1.
-8. Return after the UTC rollover to see the Champion, watch your picked
-   Scribbit's last Rumble bout, and see the result comment on the real post.
+8. Return after the UTC rollover to see the Champion and watch your picked
+   Scribbit's last Rumble bout inside the app.
 9. Open Shop for Mystery Ink Chests and Bag to manage equipment, pens, and
    titles. Gallery remains available for community Legends and personal Legacy
    Cards without occupying a primary dock slot.
@@ -283,8 +283,8 @@ deleting `dist/client`. Mock backend changes publish only after a successful
 build and restart automatically; a failed rebuild keeps the last-good server
 running. Running the command again cleanly replaces its previous instance.
 Public forecast flavor follows its own validated 32-day no-repeat rotation. It
-appears consistently in the app, Reddit post title, and result comment without
-sharing randomness with boosted/nerfed combat elements.
+appears consistently in the app and browser mock without sharing randomness
+with boosted/nerfed combat elements.
 
 The verification gate covers TypeScript, ESLint, every discoverable Node test
 suite, the deterministic simulation harness, and the production build.

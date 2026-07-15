@@ -85,6 +85,7 @@ test(
         ...process.env,
         PORT: '0',
         MOCK_AUTO_RELOAD: '0',
+        SCRIBBITS_CONTRACT_FIXTURES: '1',
         MOCK_COMBAT_BUNDLE_URL: pathToFileURL(
           join(runtimeDirectory, 'battle.mjs')
         ).href,

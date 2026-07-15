@@ -5,7 +5,8 @@ import type {
   OnAppUpgradeRequest,
   TriggerResponse,
 } from '@devvit/web/shared';
-import { context, scheduler } from '@devvit/web/server';
+import { context, redis, scheduler } from '@devvit/web/server';
+import { deleteObsoleteAppPosts, ensureMainAppPost } from '../core/post';
 
 export const triggers = new Hono();
 const arenaMaintenanceStartDelayMilliseconds = 1_000;
@@ -13,6 +14,8 @@ const arenaMaintenanceStartDelayMilliseconds = 1_000;
 const handleAppSetup = async (c: HonoContext) => {
   try {
     const input = await c.req.json<OnAppInstallRequest | OnAppUpgradeRequest>();
+    const post = await ensureMainAppPost(redis);
+    const deletedObsoletePostCount = await deleteObsoleteAppPosts(post.id);
     const runAt = new Date(Date.now() + arenaMaintenanceStartDelayMilliseconds);
     const jobId = await scheduler.runJob({
       name: 'nightly-arena',
@@ -22,8 +25,10 @@ const handleAppSetup = async (c: HonoContext) => {
     console.log(
       JSON.stringify({
         appVersion: context.appVersion,
-        event: 'scribbits.app_setup.scheduled',
+        event: 'scribbits.app_setup.ready',
+        deletedObsoletePostCount,
         jobId,
+        postId: post.id,
         runAt: runAt.toISOString(),
         subreddit: context.subredditName,
         trigger: input.type,
@@ -33,16 +38,16 @@ const handleAppSetup = async (c: HonoContext) => {
     return c.json<TriggerResponse>(
       {
         status: 'success',
-        message: `Arena recovery job ${jobId} scheduled for subreddit ${context.subredditName}.`,
+        message: `Scribbits is ready in ${context.subredditName} with one app post (${post.id}); removed ${deletedObsoletePostCount} obsolete app posts and scheduled recovery job ${jobId} (trigger: ${input.type})`,
       },
       200
     );
   } catch (error) {
-    console.error(`Error creating install arena post: ${error}`);
+    console.error(`Error preparing the Scribbits app post: ${error}`);
     return c.json<TriggerResponse>(
       {
         status: 'error',
-        message: 'Failed to create arena post',
+        message: 'Failed to prepare the Scribbits app post',
       },
       400
     );

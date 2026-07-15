@@ -57,7 +57,6 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-node scripts/make-test-drawing.mjs
 node scripts/build-mock-combat.mjs
 
 printf "\nStarting Scribbits at http://localhost:%s\n" "$port"

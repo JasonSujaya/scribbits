@@ -1,0 +1,52 @@
+{
+  "file": "artifacts/trailer/scribbits-trailer-first-cut-real-battle.mp4",
+  "contentType": "video/mp4",
+  "slowestFrames": [
+    {
+      "frame": 0,
+      "time": 2592
+    },
+    {
+      "frame": 5,
+      "time": 81
+    },
+    {
+      "frame": 3,
+      "time": 11
+    },
+    {
+      "frame": 8,
+      "time": 11
+    },
+    {
+      "frame": 2,
+      "time": 10
+    },
+    {
+      "frame": 9,
+      "time": 4
+    },
+    {
+      "frame": 7,
+      "time": 2
+    },
+    {
+      "frame": 1,
+      "time": 1
+    },
+    {
+      "frame": 4,
+      "time": 1
+    },
+    {
+      "frame": 6,
+      "time": 1
+    }
+  ],
+  "width": 1080,
+  "height": 1920,
+  "fps": 30,
+  "durationInFrames": 900,
+  "bundleFingerprint": "3105da75453cc6228736ae75a17a2b38586592e2402bf1f61266a1c01246ac19",
+  "bundleCacheHit": false
+}

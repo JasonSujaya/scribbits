@@ -2,7 +2,7 @@
 
 import { createServer } from 'node:http';
 import { randomUUID } from 'node:crypto';
-import { existsSync, readFileSync, watch } from 'node:fs';
+import { existsSync, watch } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { dirname, extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -12,12 +12,6 @@ const port = Number(process.env.PORT ?? 8902);
 const autoReload = process.env.MOCK_AUTO_RELOAD !== '0';
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
 const clientRoot = join(repoRoot, 'dist', 'client');
-const mockAssetRoot = join(repoRoot, 'dist', 'mock-assets');
-const configuredTrailerHeroPath = process.env.MOCK_TRAILER_HERO_PATH?.trim();
-const trailerHeroBytes =
-  configuredTrailerHeroPath && existsSync(configuredTrailerHeroPath)
-    ? readFileSync(configuredTrailerHeroPath)
-    : null;
 const configuredMockCombatBundleUrl =
   process.env.MOCK_COMBAT_BUNDLE_URL?.trim();
 const mockCombatBundleUrl = configuredMockCombatBundleUrl
@@ -39,7 +33,6 @@ const {
   MAX_GROWING_PER_USER,
   MAXIMUM_POWER_UPS,
   POWER_UP_CATALOG,
-  SCRIBBIT_STAT_KEYS,
   SCOUT_NOTEBOOK_MAXIMUM_ENTRIES,
   XP_REWARDS,
   addXpToScribbit,
@@ -103,14 +96,6 @@ const transparentPng = Buffer.from(
   'base64'
 );
 
-// Transparent, non-square drawings whose silhouette matches each Scribbit's
-// dominant stat and therefore its primary combat power.
-const mockDrawingFileByDominantStat = Object.freeze({
-  chonk: 'drawing-chonk-inkquake.png',
-  spike: 'drawing-spike-nib-halo.png',
-  zip: 'drawing-zip-smearstep.png',
-  charm: 'drawing-charm-colorburst.png',
-});
 const submittedDrawingBytes = new Map();
 const submittedScribbitPreviewModes = new Map();
 const freeDrawingsById = new Map();
@@ -282,7 +267,7 @@ const archivedNapCloud = makeScribbit({
 const seededOwnedScribbits = [
   makeScribbit({
     id: 'mine-paper-spark',
-    name: trailerHeroBytes ? 'Wobble Bean' : 'Paper Spark',
+    name: 'Wobble Bean',
     artist: 'mock_player',
     element: 'ember',
     stats: { chonk: 22, spike: 36, zip: 28, charm: 14 },
@@ -325,10 +310,10 @@ const seededOwnedScribbits = [
   }),
 ];
 
-const seedOwnedScribbits =
-  process.env.MOCK_SEEDED_SCRIBBITS === '1' ||
-  (process.env.MOCK_SEEDED_SCRIBBITS === undefined &&
-    Boolean(process.env.SCRIBBITS_TEST_TEMP_ROOT));
+// These records exist only for the automated API contract suite. The normal
+// local app starts with no invented players, entrants, champions, or legends.
+const useContractFixtures =
+  process.env.SCRIBBITS_CONTRACT_FIXTURES === '1';
 
 const todayEntrants = [
   makeScribbit({
@@ -470,43 +455,10 @@ const getOrCreateMockRivalRun = (challenger, previewMode) => {
   return next;
 };
 
-const debugPowerStats = Object.freeze({
-  inkquake: { chonk: 55, spike: 15, zip: 15, charm: 15 },
-  nib_halo: { chonk: 15, spike: 55, zip: 15, charm: 15 },
-  colorburst: { chonk: 15, spike: 15, zip: 15, charm: 55 },
-});
-
 const debugPowerFighters = Object.freeze({
-  inkquake: makeScribbit({
-    id: 'debug-inkquake-heavy-page',
-    name: 'Heavy Page',
-    artist: 'debug_fixture',
-    element: 'tide',
-    stats: debugPowerStats.inkquake,
-    xp: 7,
-    accessories: ['inkquake-rumble-belt'],
-    gearRanks: { 'inkquake-rumble-belt': 6 },
-  }),
-  nib_halo: makeScribbit({
-    id: 'debug-nib-halo-needle-star',
-    name: 'Needle Star',
-    artist: 'debug_fixture',
-    element: 'tide',
-    stats: debugPowerStats.nib_halo,
-    xp: 7,
-    accessories: ['tiny-sword'],
-    gearRanks: { 'tiny-sword': 3 },
-  }),
-  colorburst: makeScribbit({
-    id: 'debug-colorburst-prism-pop',
-    name: 'Prism Pop',
-    artist: 'debug_fixture',
-    element: 'tide',
-    stats: debugPowerStats.colorburst,
-    xp: 7,
-    accessories: ['inkquake-rumble-belt'],
-    gearRanks: { 'inkquake-rumble-belt': 5 },
-  }),
+  inkquake: makeFoundingScribbit('founding-barkbloom', 0),
+  nib_halo: makeFoundingScribbit('founding-solarkiln', 0),
+  colorburst: makeFoundingScribbit('founding-pearlmote', 0),
 });
 
 const debugOpponentPower = Object.freeze({
@@ -747,6 +699,7 @@ const createPreviewEconomy = (options = {}) => {
     gearMergeOperations: new Map(),
     sparWinRewardUtcDates: new Set(),
     sparRewardReceipts: new Map(),
+    sparOutcomeReportIds: new Set(),
     pendingPowerUpOffers: new Map(),
     dailyLogin: {
       claimedTrackDays: options.dailyLoginClaimedTrackDays ?? 0,
@@ -798,11 +751,13 @@ const returningFounderChronicle = buildMockFounderChronicle([
 const memory = {
   dayNumber: 9,
   forecast: makeForecast(9),
-  champion,
-  myScribbits: seedOwnedScribbits ? [...seededOwnedScribbits] : [],
-  todayEntrants,
-  legends,
-  archivedOwnedScribbits: seedOwnedScribbits ? [...archivedOwnedScribbits] : [],
+  champion: useContractFixtures ? champion : null,
+  myScribbits: useContractFixtures ? [...seededOwnedScribbits] : [],
+  todayEntrants: useContractFixtures ? [...todayEntrants] : [],
+  legends: useContractFixtures ? [...legends] : [],
+  archivedOwnedScribbits: useContractFixtures
+    ? [...archivedOwnedScribbits]
+    : [],
   drawnToday: false,
   communityThemeDrawCountByPreviewMode: {
     returning: 0,
@@ -818,8 +773,12 @@ const memory = {
     fresh: null,
   },
   bossChallengedToday: false,
-  createdScribbitPreviewModes: new Set(seedOwnedScribbits ? ['returning'] : []),
-  completedBattlePreviewModes: new Set(seedOwnedScribbits ? ['returning'] : []),
+  createdScribbitPreviewModes: new Set(
+    useContractFixtures ? ['returning'] : []
+  ),
+  completedBattlePreviewModes: new Set(
+    useContractFixtures ? ['returning'] : []
+  ),
   backedScribbitIdByPreviewMode: {
     returning: null,
     fresh: null,
@@ -952,62 +911,67 @@ const memory = {
   rumbleReplaysByDay: new Map(),
 };
 
-if (seedOwnedScribbits) {
+let inkyMoon = null;
+let olderScoutReplay = null;
+let ownedRumbleReplay = null;
+if (useContractFixtures) {
   for (let index = 0; index < 10; index += 1) {
     const fighterA = seededOwnedScribbits[index % seededOwnedScribbits.length];
     const fighterB = todayEntrants[index % todayEntrants.length];
     memory.myBattles.push(createBattleReport('exhibition', fighterA, fighterB));
   }
-}
-const inkyMoon = legends.find((scribbit) => scribbit.name === 'Inky Moon');
-if (!inkyMoon) throw new Error('Mock Rumble replay needs Inky Moon.');
-memory.previousRumbleReplay = createBattleReport('rumble', inkyMoon, champion, {
-  forecast: makeForecast(memory.dayNumber - 1),
-});
-const ownedRumbleReplay = createBattleReport(
-  'rumble',
-  seededOwnedScribbits[0],
-  todayEntrants[1],
-  { forecast: makeForecast(memory.dayNumber - 1), seed: 73 }
-);
-memory.rumbleReplaysByDay.set(
-  memory.previousRumbleReplay.day,
-  memory.previousRumbleReplay
-);
-let olderScoutReplay = null;
-const championPick = todayEntrants[0];
-for (const opponent of todayEntrants.slice(1)) {
-  for (let seed = 0; seed < 100 && !olderScoutReplay; seed += 1) {
-    for (const [fighterA, fighterB] of [
-      [championPick, opponent],
-      [opponent, championPick],
-    ]) {
-      const candidateReplay = createBattleReport('rumble', fighterA, fighterB, {
-        seed,
-        forecast: makeForecast(memory.dayNumber - 2),
-      });
-      const winner =
-        candidateReplay.winner === 'a' ? candidateReplay.a : candidateReplay.b;
-      if (winner.id === championPick.id) {
-        olderScoutReplay = candidateReplay;
-        break;
+
+  inkyMoon = legends.find((scribbit) => scribbit.name === 'Inky Moon');
+  if (!inkyMoon) throw new Error('Mock Rumble replay needs Inky Moon.');
+  memory.previousRumbleReplay = createBattleReport(
+    'rumble',
+    inkyMoon,
+    champion,
+    { forecast: makeForecast(memory.dayNumber - 1) }
+  );
+  memory.rumbleReplaysByDay.set(
+    memory.previousRumbleReplay.day,
+    memory.previousRumbleReplay
+  );
+  ownedRumbleReplay = createBattleReport(
+    'rumble',
+    seededOwnedScribbits[0],
+    todayEntrants[1],
+    { forecast: makeForecast(memory.dayNumber - 1), seed: 73 }
+  );
+  const championPick = todayEntrants[0];
+  for (const opponent of todayEntrants.slice(1)) {
+    for (let seed = 0; seed < 100 && !olderScoutReplay; seed += 1) {
+      for (const [fighterA, fighterB] of [
+        [championPick, opponent],
+        [opponent, championPick],
+      ]) {
+        const candidateReplay = createBattleReport(
+          'rumble',
+          fighterA,
+          fighterB,
+          { seed, forecast: makeForecast(memory.dayNumber - 2) }
+        );
+        const winner =
+          candidateReplay.winner === 'a'
+            ? candidateReplay.a
+            : candidateReplay.b;
+        if (winner.id === championPick.id) {
+          olderScoutReplay = candidateReplay;
+          break;
+        }
       }
     }
+    if (olderScoutReplay) break;
   }
-  if (olderScoutReplay) break;
-}
-if (!olderScoutReplay) {
-  olderScoutReplay = createBattleReport(
-    'rumble',
-    championPick,
-    todayEntrants[1],
-    {
+  if (!olderScoutReplay) {
+    olderScoutReplay = createBattleReport('rumble', championPick, todayEntrants[1], {
       seed: 0,
       forecast: makeForecast(memory.dayNumber - 2),
-    }
-  );
+    });
+  }
+  memory.rumbleReplaysByDay.set(olderScoutReplay.day, olderScoutReplay);
 }
-memory.rumbleReplaysByDay.set(olderScoutReplay.day, olderScoutReplay);
 
 const scoutNotebookPick = (scribbit) => projectScoutNotebookPick(scribbit);
 
@@ -1061,7 +1025,7 @@ const scoutNotebookStateForPreview = (previewMode, previewHasPinnedPick) => {
     replayAvailable: false,
   };
 
-  if (previewMode === 'fresh') {
+  if (previewMode === 'fresh' || !useContractFixtures) {
     return createScoutNotebookState({
       currentDay,
       lifetimeClout: 0,
@@ -1290,6 +1254,7 @@ const resetPreviewEconomy = (economy) => {
   economy.gearMergeOperations.clear();
   economy.sparWinRewardUtcDates.clear();
   economy.sparRewardReceipts.clear();
+  economy.sparOutcomeReportIds.clear();
   economy.pendingPowerUpOffers.clear();
 };
 
@@ -1406,18 +1371,21 @@ const legacyReturnReceiptState = () => {
   );
 };
 
-const backedReturnReceiptState = () => ({
-  kind: 'backed',
-  resolvedDay: memory.dayNumber - 1,
-  backedName: 'Inky Moon',
-  championName: memory.champion.name,
-  pick: cloneScribbit(inkyMoon),
-  opponent: cloneScribbit(memory.champion),
-  opponentIsChampion: true,
-  cloutEarned: 0,
-  inkAwarded: 0,
-  replayAvailable: memory.previousRumbleReplay !== null,
-});
+const backedReturnReceiptState = () => {
+  if (!inkyMoon || !memory.champion) return null;
+  return {
+    kind: 'backed',
+    resolvedDay: memory.dayNumber - 1,
+    backedName: inkyMoon.name,
+    championName: memory.champion.name,
+    pick: cloneScribbit(inkyMoon),
+    opponent: cloneScribbit(memory.champion),
+    opponentIsChampion: true,
+    cloutEarned: 0,
+    inkAwarded: 0,
+    replayAvailable: memory.previousRumbleReplay !== null,
+  };
+};
 
 const removeScribbitFromList = (list, scribbitId) => {
   for (let index = list.length - 1; index >= 0; index -= 1) {
@@ -1458,7 +1426,7 @@ const visibleLists = () => [
   memory.todayEntrants,
   memory.legends,
   memory.archivedOwnedScribbits,
-  [memory.champion],
+  memory.champion ? [memory.champion] : [],
   Object.values(debugPowerFighters),
 ];
 
@@ -1470,30 +1438,9 @@ const findVisibleScribbit = (scribbitId) => {
   return undefined;
 };
 
-const dominantStatFor = (stats) => {
-  let dominantStat = SCRIBBIT_STAT_KEYS[0];
-  for (const stat of SCRIBBIT_STAT_KEYS.slice(1)) {
-    if ((stats?.[stat] ?? 0) > (stats?.[dominantStat] ?? 0)) {
-      dominantStat = stat;
-    }
-  }
-  return dominantStat;
-};
-
 const drawingBytesFor = (scribbitId) => {
-  if (trailerHeroBytes && scribbitId === 'mine-paper-spark') {
-    return trailerHeroBytes;
-  }
   const submittedDrawing = submittedDrawingBytes.get(scribbitId);
-  if (submittedDrawing) return submittedDrawing;
-
-  const scribbit = findVisibleScribbit(scribbitId);
-  if (!scribbit) return transparentPng;
-
-  const dominantStat = dominantStatFor(scribbit.stats);
-  const filename = mockDrawingFileByDominantStat[dominantStat];
-  const filePath = join(mockAssetRoot, filename);
-  return existsSync(filePath) ? readFileSync(filePath) : transparentPng;
+  return submittedDrawing ?? transparentPng;
 };
 
 const mutateVisibleScribbit = (scribbitId, mutate) => {
@@ -1702,7 +1649,7 @@ const arenaState = (economy, previewMode = 'returning') => {
       memory.communityThemeDrawCountByPreviewMode[previewMode] ?? 0
     ),
     forecast: memory.forecast,
-    champion: memory.hiddenScribbitIds.has(memory.champion.id)
+    champion: !memory.champion || memory.hiddenScribbitIds.has(memory.champion.id)
       ? null
       : cloneScribbit(memory.champion),
     myScribbits: getLivingScribbitsForPreview(previewMode).map(cloneScribbit),
@@ -1909,6 +1856,7 @@ const handleApi = async (request, response, url) => {
   if (method === 'GET' && path === '/api/arena') {
     const state = arenaStateForPreview(previewMode);
     if (
+      useContractFixtures &&
       previewMode === 'returning' &&
       (requestHasPreviewFlag(request, url, 'backed-return') ||
         requestHasPreviewFlag(request, url, 'legacy-return'))
@@ -1929,6 +1877,7 @@ const handleApi = async (request, response, url) => {
       return;
     }
     if (
+      useContractFixtures &&
       previewMode === 'returning' &&
       requestHasPreviewFlag(request, url, 'owned-return')
     ) {
@@ -2911,6 +2860,17 @@ const handleApi = async (request, response, url) => {
       });
     }
     let rewardedReport = report;
+    if (!economy.sparOutcomeReportIds.has(report.id)) {
+      economy.sparOutcomeReportIds.add(report.id);
+      Object.assign(
+        challenger,
+        applyBattleOutcomeToScribbit(
+          challenger,
+          report.winner === 'a' ? 'win' : 'loss',
+          0
+        )
+      );
+    }
     let rewardReceipt = createSparRewardReceipt({
       reportId: report.id,
       scribbitId: challenger.id,
@@ -3034,7 +2994,11 @@ const handleApi = async (request, response, url) => {
       (entry) => entry.id === scribbitId
     );
 
-    if (!challenger || challenger.expiresDay > memory.dayNumber) {
+    if (
+      !challenger ||
+      challenger.expiresDay > memory.dayNumber ||
+      !memory.champion
+    ) {
       sendError(
         response,
         404,

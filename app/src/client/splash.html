@@ -7,7 +7,7 @@
     <title data-i18n="app.name">Scribbits</title>
   </head>
   <body class="app">
-    <!-- A complete static-first hook keeps the feed card useful before JS. -->
+    <!-- Canvas art is injected from real submissions or the authored founding cast. -->
     <main class="page">
       <span class="tape tape-left" aria-hidden="true"></span>
       <span class="tape tape-right" aria-hidden="true"></span>
@@ -24,6 +24,29 @@
           A REDDIT DRAWING GAME
         </span>
       </header>
+
+      <section class="invite-copy" aria-labelledby="invite-title">
+        <p data-i18n="splash.invite.promise">
+          YOUR DRAWING BECOMES THE FIGHTER.
+        </p>
+        <h2 id="invite-title" data-i18n="splash.invite.hook">
+          DRAW A SCRIBBIT. WATCH IT FIGHT.
+        </h2>
+      </section>
+
+      <footer class="splash-footer">
+        <button
+          class="start-button"
+          id="start-button"
+          type="button"
+          data-i18n="splash.action.drawYours"
+        >
+          DRAW YOURS
+        </button>
+        <p class="fresh-note" data-i18n="splash.invite.fresh">
+          A FRESH ONE EVERY TIME YOU LOOK.
+        </p>
+      </footer>
 
       <section class="creation-card" aria-labelledby="creation-label">
         <span
@@ -44,13 +67,13 @@
             <figure class="featured-creation">
               <img
                 id="featured-creation-image"
-                src="./assets/splash-doodle-mossmop.webp"
-                alt="Mossmop, drawn in Scribbits"
+                alt=""
                 decoding="async"
+                hidden
               />
               <figcaption>
-                <strong id="featured-creation-name">MOSSMOP</strong>
-                <span id="featured-creation-credit">BY SCRIBBITS</span>
+                <strong id="featured-creation-name">DRAW YOURS</strong>
+                <span id="featured-creation-credit">REAL CANVAS ART</span>
               </figcaption>
             </figure>
           </div>
@@ -67,26 +90,6 @@
         </div>
       </section>
 
-      <section class="invite-copy" aria-labelledby="invite-title">
-        <p data-i18n="splash.invite.promise">DRAW IT. IT FIGHTS FOR YOU.</p>
-        <h2 id="invite-title" data-i18n="splash.invite.hook">
-          EVERYONE’S DRAWING LITTLE GUYS. YOURS IS MISSING.
-        </h2>
-      </section>
-
-      <footer class="splash-footer">
-        <button
-          class="start-button"
-          id="start-button"
-          type="button"
-          data-i18n="splash.action.drawYours"
-        >
-          DRAW YOURS
-        </button>
-        <p class="fresh-note" data-i18n="splash.invite.fresh">
-          A FRESH ONE EVERY TIME YOU LOOK.
-        </p>
-      </footer>
     </main>
     <script type="module" src="splash.ts" defer></script>
   </body>

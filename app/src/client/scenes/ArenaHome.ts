@@ -92,6 +92,7 @@ import { openRivalRun, type RivalRunFlow } from '../lib/rivalrunflow';
 import { fitText } from '../lib/fittext';
 import { screenTitle } from '../lib/screentitle';
 import { translate } from '../lib/localization';
+import { primeBattleSoundtrack } from '../lib/soundtrack';
 
 // The competitive home for each season: standings first, then today's venue.
 export class ArenaHome extends Scene {
@@ -1012,6 +1013,7 @@ export class ArenaHome extends Scene {
 
   private async launchFieldChallenge(scribbit: Scribbit): Promise<void> {
     if (this.busy) return;
+    primeBattleSoundtrack();
     this.busy = true;
     this.spinner?.show(this.scale.width / 2, this.scale.height / 2);
     showToast(`${scribbit.name} enters today's field challenge…`);
@@ -1367,6 +1369,7 @@ export class ArenaHome extends Scene {
       let loadingReplay = false;
       const watchReplay = (): void => {
         if (loadingReplay) return;
+        primeBattleSoundtrack();
         loadingReplay = true;
         void fetchRumbleReplay(receipt.resolvedDay)
           .then((result) => {

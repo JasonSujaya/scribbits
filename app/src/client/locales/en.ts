@@ -57,8 +57,8 @@ export const englishMessages = {
   'home.openGallery': 'Open Gallery',
 
   'splash.invite.gameType': 'A REDDIT DRAWING GAME',
-  'splash.invite.promise': 'DRAW IT. IT FIGHTS FOR YOU.',
-  'splash.invite.hook': 'EVERYONE’S DRAWING LITTLE GUYS. YOURS IS MISSING.',
+  'splash.invite.promise': 'YOUR DRAWING BECOMES THE FIGHTER.',
+  'splash.invite.hook': 'DRAW A SCRIBBIT. WATCH IT FIGHT.',
   'splash.invite.fresh': 'A FRESH ONE EVERY TIME YOU LOOK.',
   'splash.showcase.sketchbook': 'FROM OUR SKETCHBOOK',
   'splash.showcase.community': 'DRAWN BY THE COMMUNITY',

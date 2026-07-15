@@ -290,59 +290,90 @@ const createInkquakeDrawing = () => {
 };
 
 const createNibHaloDrawing = () => {
-  const image = createTransparentImage(420, 540);
-  const centerX = 210;
-  const centerY = 272;
-  const quillPoints = [];
-  // Eight baked silhouette points leave the three runtime pen nibs readable.
-  const pointCount = 16;
+  const image = createTransparentImage(500, 500);
+  const quills = [
+    [
+      { x: 160, y: 181 },
+      { x: 92, y: 91 },
+      { x: 191, y: 145 },
+    ],
+    [
+      { x: 142, y: 231 },
+      { x: 48, y: 185 },
+      { x: 151, y: 280 },
+    ],
+    [
+      { x: 151, y: 307 },
+      { x: 61, y: 348 },
+      { x: 184, y: 352 },
+    ],
+    [
+      { x: 196, y: 369 },
+      { x: 137, y: 441 },
+      { x: 239, y: 394 },
+    ],
+  ];
+  for (const quill of quills) drawOutlinedPolygon(image, quill, violet, 10);
 
-  for (let index = 0; index < pointCount; index += 1) {
-    const angle = -Math.PI / 2 + (index * Math.PI * 2) / pointCount;
-    const isQuillTip = index % 2 === 0;
-    const radiusX = isQuillTip ? 181 + (index % 6) * 2 : 105;
-    const radiusY = isQuillTip ? 238 - (index % 5) * 3 : 132;
-    quillPoints.push({
-      x: centerX + Math.cos(angle) * radiusX,
-      y: centerY + Math.sin(angle) * radiusY,
-    });
-  }
+  const bodyPoints = [
+    { x: 173, y: 154 },
+    { x: 232, y: 111 },
+    { x: 309, y: 116 },
+    { x: 370, y: 163 },
+    { x: 397, y: 238 },
+    { x: 382, y: 327 },
+    { x: 330, y: 390 },
+    { x: 246, y: 407 },
+    { x: 179, y: 366 },
+    { x: 143, y: 291 },
+    { x: 146, y: 218 },
+  ];
 
-  drawOutlinedPolygon(image, quillPoints, violet, 11);
-  for (let index = 0; index < quillPoints.length; index += 2) {
-    const quillTip = quillPoints[index];
-    const angle = Math.atan2(quillTip.y - centerY, quillTip.x - centerX);
-    drawHandDrawnLine(
-      image,
-      {
-        x: centerX + Math.cos(angle) * 92,
-        y: centerY + Math.sin(angle) * 116,
-      },
-      {
-        x: centerX + Math.cos(angle) * 158,
-        y: centerY + Math.sin(angle) * 205,
-      },
-      5,
-      ink,
-      0.8
-    );
-  }
-
-  drawOutlinedEllipse(image, centerX, centerY + 8, 116, 137, tide, 11);
-  fillEllipse(image, 170, 340, 38, 24, [48, 139, 195]);
-  fillEllipse(image, 258, 207, 31, 40, [98, 184, 221]);
-  drawEye(image, 171, 253, -2, 1);
-  drawEye(image, 251, 251, 2, 1);
   drawPolyline(
     image,
     [
-      { x: 181, y: 315 },
-      { x: 210, y: 327 },
-      { x: 241, y: 312 },
+      { x: 221, y: 375 },
+      { x: 202, y: 445 },
+      { x: 169, y: 460 },
+    ],
+    13,
+    ink
+  );
+  drawPolyline(
+    image,
+    [
+      { x: 318, y: 373 },
+      { x: 337, y: 444 },
+      { x: 372, y: 458 },
+    ],
+    13,
+    ink
+  );
+  drawOutlinedPolygon(image, bodyPoints, tide, 12);
+  drawOutlinedPolygon(
+    image,
+    [
+      { x: 205, y: 143 },
+      { x: 219, y: 65 },
+      { x: 268, y: 123 },
+    ],
+    violet,
+    9
+  );
+  drawOutlinedEllipse(image, 364, 270, 62, 44, [75, 177, 216], 8);
+  drawEye(image, 225, 230, -1, 2);
+  drawEye(image, 298, 220, 3, 2);
+  drawPolyline(
+    image,
+    [
+      { x: 239, y: 291 },
+      { x: 271, y: 305 },
+      { x: 305, y: 284 },
     ],
     7,
     ink
   );
+  fillCircle(image, 342, 255, 7, coral);
   return image;
 };
 

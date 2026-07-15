@@ -116,9 +116,8 @@ on one exercise.
   undo canvases, 256px display art, a 12-texture inactive cache, compact-screen
   ambient suppression, cached HUD labels, and 30 Hz presentation effects keep
   the live 320x568 battle near 59 FPS without changing server authority.
-- **Reddit-y:** real Reddit identity, player drawings, daily custom posts,
-  Belief, Back/Clout competition, app-authored result comments using actual
-  Rumble data, and an explicit Share action that hosts a silent replay clip on
+- **Reddit-y:** real Reddit identity, player drawings, one stable custom app post,
+  Belief, Back/Clout competition, and an explicit Share action that hosts a silent replay clip on
   Reddit media and opens Reddit's share sheet.
 - **Hook-y:** one daily drawing, a locked prediction, overnight anticipation,
   a visible daily streak, permanent Scout Clout, a three-day life-or-Legend arc,
@@ -167,7 +166,7 @@ on one exercise.
    Practice Lab's four checked powers and
    land on its gold 4/4 completion card.
 8. **55–60s:** Montage the earned capsule reveal, Collection,
-   gold Legacy Card, and real Reddit result comment.
+   gold Legacy Card, and the in-app overnight Rumble result.
 
 ## Required links and proof
 
@@ -177,7 +176,7 @@ on one exercise.
 - [ ] Public demo video under one minute: `<add URL>`
 - [ ] Current revision uploaded and installed.
 - [ ] Mobile and desktop Reddit playtest completed with a fresh account.
-- [ ] Draw → submit → first fight → Back → nightly result comment proven.
+- [ ] Draw → submit → first fight → Back → in-app nightly result proven.
 - [ ] Significant June 17–July 15 updates summarized in the Devpost entry.
 
 ## Significant hackathon-period work
@@ -196,7 +195,7 @@ on one exercise.
   beneath the theme name. Progressive blank/forming/ready feedback and a shared
   client/server minimum-body gate reject tap-sized submissions.
 - Added 32 validated public forecast blurbs on an independent no-repeat rotation.
-  App, Reddit post, result comment, and browser mock share that copy without
+  App and browser mock share that copy without
   changing boosted/nerfed element randomness.
 - Added 72 validated care reactions across Shape Power, action, life day, and
   stable variant. The paper receipt shows the exact XP delta and only committed
@@ -385,7 +384,9 @@ on one exercise.
 - Bound both visible Halo `35%` matchup explanations and Smearstep's `TWICE`
   label to the configuration the combat engine consumes, while retaining exact
   snapshots for all ten cards and an unchanged Smearstep golden transcript.
-- Added real Reddit post scheduling and idempotent result comments.
+- Replaced daily Reddit post/comment publication with one stable
+  `Draw a Scribbit. Watch it fight.` app post and upgrade cleanup for obsolete
+  Scribbits posts.
 - Made transparent and legacy paper-backed PNGs produce identical
   server-authoritative stats, with automated parity coverage.
 - Added report/hide, owner removal, full player-data deletion, Reddit-only

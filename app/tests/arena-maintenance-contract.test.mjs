@@ -25,6 +25,6 @@ test('scheduler and app upgrades share one catch-up maintenance path', () => {
   assert.doesNotMatch(triggerSource, /ensureCurrentArenaPost/);
   assert.match(maintenanceSource, /runNightlyArenaJob/);
   assert.match(maintenanceSource, /loadPendingArenaResolutions/);
-  assert.match(maintenanceSource, /publishRumbleResultComment/);
+  assert.doesNotMatch(maintenanceSource, /publishRumbleResultComment/);
   assert.match(maintenanceSource, /acknowledgeArenaResolution/);
 });

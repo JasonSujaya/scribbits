@@ -32,6 +32,7 @@
     "../src/client/lib/drawroundclock.ts",
     "../src/client/lib/firstchesttrail.ts",
     "../src/client/lib/fittext.ts",
+    "../src/client/lib/foundercharacterart.ts",
     "../src/client/lib/localization.ts",
     "../src/client/lib/legacyreturnpresentation.ts",
     "../src/client/lib/maturearena.ts",

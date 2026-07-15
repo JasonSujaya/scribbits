@@ -1,6 +1,6 @@
-// Pure geometry for deterministic fallback creatures. Phaser owns rendering in
-// proceduraldoodleart.ts; this module owns the visible relationship between a
-// Scribbit's server stats and its silhouette so that relationship is testable.
+// Pure geometry for deterministic community-art fallbacks. Named founders use
+// authored canvas characters; this keeps unknown/missing player art readable
+// without inventing nondeterministic shapes.
 
 import type { ScribbitStats } from '../../shared/arena';
 import { hashStringToUint32 } from '../../shared/stablehash';
@@ -92,7 +92,7 @@ export function doodleStatsSignature(stats?: ScribbitStats): string {
   ].join('-');
 }
 
-// Mulberry32 keeps every named founder visually stable across sessions.
+// Mulberry32 keeps every fallback identity visually stable across sessions.
 const seededRandom = (seed: number): (() => number) => {
   let state = seed >>> 0;
   return () => {

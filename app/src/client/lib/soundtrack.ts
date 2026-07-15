@@ -8,6 +8,7 @@ type SoundtrackMode = 'battle' | 'drawing' | 'home';
 
 let currentAudio: HTMLAudioElement | null = null;
 let currentMode: SoundtrackMode | null = null;
+let preparedBattleAudio: HTMLAudioElement | null = null;
 let hasPlayedHomeSoundtrack = false;
 let playbackRequested = false;
 let retryListenersInstalled = false;
@@ -111,15 +112,59 @@ const replaceSoundtrack = (
   if (startPlaying) requestPlayback();
 };
 
+const createPreparedBattleAudio = (): HTMLAudioElement | null => {
+  if (typeof Audio === 'undefined' || typeof document === 'undefined') {
+    return null;
+  }
+  const audio = new Audio();
+  audio.dataset.scribbitsSoundtrack = 'battle-preload';
+  audio.preload = 'auto';
+  audio.src = BATTLE_SOUNDTRACK.url;
+  audio.loop = true;
+  audio.volume = BATTLE_SOUNDTRACK.volume;
+  audio.style.display = 'none';
+  document.body.append(audio);
+  audio.load();
+  return audio;
+};
+
+/** Begin the battle-track request before Replay takes over the screen. */
+export const preloadBattleSoundtrack = (): void => {
+  if (currentMode === 'battle' || preparedBattleAudio) return;
+  preparedBattleAudio = createPreparedBattleAudio();
+};
+
+/**
+ * Warm the prepared element during the player's Fight tap. Starting and then
+ * pausing the same element keeps strict embedded browsers from treating the
+ * later Replay playback as unrelated autoplay.
+ */
+export const primeBattleSoundtrack = (): void => {
+  preloadBattleSoundtrack();
+  const audio = preparedBattleAudio;
+  if (!audio) return;
+  const targetVolume = audio.volume;
+  audio.volume = 0;
+  void audio.play().then(
+    () => {
+      if (preparedBattleAudio !== audio) return;
+      audio.pause();
+      audio.currentTime = 0;
+      audio.volume = targetVolume;
+    },
+    () => {
+      if (preparedBattleAudio === audio) audio.volume = targetVolume;
+    }
+  );
+};
+
 const chooseNextHomeSoundtrack = (): string => {
   const nextTrackIndex = chooseHomeTrackIndex(
     hasPlayedHomeSoundtrack,
     Math.random()
   );
   hasPlayedHomeSoundtrack = true;
-  return (
-    HOME_SOUNDTRACKS[nextTrackIndex]?.url ?? HOME_SOUNDTRACKS[0].url
-  );
+  return HOME_SOUNDTRACKS[nextTrackIndex]?.url ?? HOME_SOUNDTRACKS[0].url;
 };
 
 const startNextHomeSoundtrack = (): void => {
@@ -157,7 +202,22 @@ export const startDrawingSoundtrack = (): void => {
 };
 
 export const startBattleSoundtrack = (enabled: boolean): void => {
-  replaceSoundtrack('battle', BATTLE_SOUNDTRACK.url, enabled);
+  installVisibilityHandler();
+  stopSoundtrack();
+  const audio = preparedBattleAudio;
+  preparedBattleAudio = null;
+  if (!audio) {
+    replaceSoundtrack('battle', BATTLE_SOUNDTRACK.url, enabled);
+    return;
+  }
+  audio.dataset.scribbitsSoundtrack = 'battle';
+  audio.autoplay = enabled;
+  audio.volume = BATTLE_SOUNDTRACK.volume;
+  audio.currentTime = 0;
+  currentMode = 'battle';
+  currentAudio = audio;
+  if (enabled) requestPlayback();
+  else audio.pause();
 };
 
 export const setBattleSoundtrackEnabled = (enabled: boolean): void => {

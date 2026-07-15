@@ -34,10 +34,6 @@ export const getForecastKey = (day: number): string => {
   return `forecast:${day}`;
 };
 
-export const getArenaPostKey = (day: number): string => {
-  return `arena:post:${day}`;
-};
-
 export const ensureCurrentArenaDay = async (
   storage: ArenaStorage,
   now: Date

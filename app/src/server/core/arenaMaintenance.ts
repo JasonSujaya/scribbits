@@ -4,13 +4,11 @@ import {
   loadPendingArenaResolutions,
   runNightlyArenaJob,
 } from './dailyJob';
-import { ensureForecastForDay, getCurrentChampion } from './arenaStore';
 import { getArenaDayNumber } from './day';
 import {
   runWithNightlyFence,
   type RunWithNightlyFenceResult,
 } from './nightlyStorageFence';
-import { getOrCreateArenaPost, publishRumbleResultComment } from './post';
 import { ensureInitialSeason } from './season';
 import type { ArenaStorage } from './storage';
 
@@ -20,7 +18,6 @@ type MaintenanceActor = Readonly<{
 }>;
 
 type MaintenanceSummary = Readonly<{
-  currentPostId: string;
   result: Awaited<ReturnType<typeof runNightlyArenaJob>>;
 }>;
 
@@ -28,9 +25,9 @@ export type ArenaMaintenanceResult =
   RunWithNightlyFenceResult<MaintenanceSummary>;
 
 /**
- * Advances stale arena state and publishes every pending result before player
- * traffic is accepted. Scheduler runs use this daily; install and upgrade
- * triggers use the same path so a missed cron cannot strand the game.
+ * Advances stale arena state and acknowledges pending results without creating
+ * daily Reddit posts. Scheduler runs use this daily; install and upgrade
+ * triggers schedule the same path so a missed cron cannot strand the game.
  */
 export const maintainArena = async (
   storage: ArenaStorage,
@@ -55,36 +52,11 @@ export const maintainArena = async (
       claimRecoveryStorage: storage,
       now,
     });
-    const currentForecast = await ensureForecastForDay(
-      fencedStorage,
-      result.newDay
-    );
-    const currentChampion = await getCurrentChampion(fencedStorage);
-    const currentPost = await getOrCreateArenaPost(fencedStorage, {
-      day: result.newDay,
-      forecast: currentForecast,
-      champion: currentChampion,
-    });
-
     const pendingResolutions = await loadPendingArenaResolutions(fencedStorage);
     for (const resolution of pendingResolutions) {
-      await getOrCreateArenaPost(fencedStorage, {
-        day: resolution.resolvedDay,
-        forecast: resolution.resolvedForecast,
-        champion: resolution.champion,
-      });
-      const commentId = await publishRumbleResultComment(
-        fencedStorage,
-        resolution
-      );
-      if (!commentId) {
-        throw new Error(
-          `Rumble #${resolution.resolvedDay} result is still pending publication.`
-        );
-      }
       await acknowledgeArenaResolution(fencedStorage, resolution.resolvedDay);
     }
 
-    return { result, currentPostId: currentPost.id };
+    return { result };
   });
 };

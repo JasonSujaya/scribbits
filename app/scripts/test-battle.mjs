@@ -102,7 +102,6 @@ execFileSync(
     'src/server/core/scribbit.ts',
     'src/server/core/submission.ts',
     'src/server/core/dailyJob.ts',
-    'src/server/core/resultComment.ts',
     'src/server/core/founderChronicle.ts',
     'src/server/core/rivalRun.ts',
     'src/server/core/streak.ts',
@@ -112,6 +111,7 @@ execFileSync(
     'src/server/core/practice.ts',
     'src/server/core/scoutNotebook.ts',
     'src/client/lib/inkmesh.ts',
+    'src/client/lib/foundercharacterart.ts',
     'src/client/lib/proceduraldoodleplan.ts',
     'src/client/lib/practicelab.ts',
     'src/client/lib/matchupbrief.ts',
@@ -261,9 +261,6 @@ const inkStore = require(join(outDir, 'server', 'core', 'inkStore.js'));
 const legacyCore = require(join(outDir, 'server', 'core', 'legacy.js'));
 const rumble = require(join(outDir, 'server', 'core', 'rumble.js'));
 const speciesCore = require(join(outDir, 'server', 'core', 'species.js'));
-const resultComment = require(
-  join(outDir, 'server', 'core', 'resultComment.js')
-);
 const founderChronicleCore = require(
   join(outDir, 'server', 'core', 'founderChronicle.js')
 );
@@ -288,6 +285,9 @@ const scoutNotebookCore = require(
 const inkMeshCore = require(join(outDir, 'client', 'lib', 'inkmesh.js'));
 const proceduralDoodlePlan = require(
   join(outDir, 'client', 'lib', 'proceduraldoodleplan.js')
+);
+const founderCharacterArt = require(
+  join(outDir, 'client', 'lib', 'foundercharacterart.js')
 );
 const practiceLab = require(join(outDir, 'client', 'lib', 'practicelab.js'));
 const matchupBrief = require(join(outDir, 'client', 'lib', 'matchupbrief.js'));
@@ -611,7 +611,6 @@ for (const relativePath of [
   'src/shared/combat/config.ts',
   'src/client/lib/ui.ts',
   'src/server/core/scribbit.ts',
-  'scripts/dev-mock.mjs',
 ]) {
   const consumerSource = readFileSync(join(repoRoot, relativePath), 'utf8');
   assert.match(consumerSource, /\bSCRIBBIT_STAT_KEYS\b/);
@@ -903,11 +902,11 @@ assert.match(
 );
 assert.match(
   founderArtPlanSource,
-  /deterministic Inkbody\/procedural-doodle renderer/
+  /deterministic authored Canvas character roster/
 );
 assert.match(founderArtPlanSource, /Do not add a parallel `public\/creatures`/);
 assert.doesNotMatch(founderArtPlanSource, /Save as app\/public\/creatures/);
-pass('founder art plan matches the procedural runtime source of truth');
+pass('founder art plan matches the authored canvas runtime source of truth');
 
 for (const relativePath of [
   'src/client/lib/api.ts',
@@ -1464,15 +1463,14 @@ for (const routeSource of [menuRouteSource]) {
   const inspection = inspectTypeScriptModule(routeSource);
   assert.deepEqual(inspection.imports.get('../core/post'), [
     {
-      imported: 'ensureCurrentArenaPost',
-      local: 'ensureCurrentArenaPost',
+      imported: 'ensureMainAppPost',
+      local: 'ensureMainAppPost',
     },
   ]);
   assert.equal(inspection.imports.has('../core/arenaStore'), false);
   assert.equal(
-    inspection.calledIdentifiers.filter(
-      (name) => name === 'ensureCurrentArenaPost'
-    ).length,
+    inspection.calledIdentifiers.filter((name) => name === 'ensureMainAppPost')
+      .length,
     1
   );
   for (const forbiddenCall of [
@@ -1486,7 +1484,16 @@ for (const routeSource of [menuRouteSource]) {
 }
 const triggerInspection = inspectTypeScriptModule(installTriggerSource);
 assert.equal(triggerInspection.imports.has('../core/arenaMaintenance'), false);
-assert.equal(triggerInspection.imports.has('../core/post'), false);
+assert.deepEqual(triggerInspection.imports.get('../core/post'), [
+  {
+    imported: 'deleteObsoleteAppPosts',
+    local: 'deleteObsoleteAppPosts',
+  },
+  {
+    imported: 'ensureMainAppPost',
+    local: 'ensureMainAppPost',
+  },
+]);
 assert.equal(triggerInspection.imports.has('../core/arenaStore'), false);
 assert.equal(
   triggerInspection.calledIdentifiers.filter((name) => name === 'maintainArena')
@@ -1495,9 +1502,9 @@ assert.equal(
 );
 assert.equal(
   triggerInspection.calledIdentifiers.filter(
-    (name) => name === 'ensureCurrentArenaPost'
+    (name) => name === 'ensureMainAppPost'
   ).length,
-  0
+  1
 );
 assert.equal(
   triggerInspection.calledIdentifiers.filter(
@@ -1520,37 +1527,22 @@ assert.equal(
   1
 );
 const maintenanceInspection = inspectTypeScriptModule(arenaMaintenanceSource);
-assert.deepEqual(maintenanceInspection.imports.get('./post'), [
-  {
-    imported: 'getOrCreateArenaPost',
-    local: 'getOrCreateArenaPost',
-  },
-  {
-    imported: 'publishRumbleResultComment',
-    local: 'publishRumbleResultComment',
-  },
-]);
+assert.equal(maintenanceInspection.imports.has('./post'), false);
 assert.equal(
   maintenanceInspection.calledIdentifiers.filter(
     (name) => name === 'getOrCreateArenaPost'
   ).length,
-  2,
-  'nightly publication must retain its two explicit-day post calls'
+  0,
+  'nightly maintenance must not create daily Reddit posts'
 );
 assert.equal(
-  maintenanceInspection.calledIdentifiers.includes('ensureCurrentArenaPost'),
+  maintenanceInspection.calledIdentifiers.includes('publishRumbleResultComment'),
   false
 );
-const aliasedSchedulerImport = inspectTypeScriptModule(
-  "import { ensureCurrentArenaPost as getOrCreateArenaPost } from '../core/post';"
-);
-assert.deepEqual(aliasedSchedulerImport.imports.get('../core/post'), [
-  {
-    imported: 'ensureCurrentArenaPost',
-    local: 'getOrCreateArenaPost',
-  },
-]);
-assert.match(arenaPostSource, /export const ensureCurrentArenaPost/);
+assert.doesNotMatch(schedulerRouteSource, /submitCustomPost|submitComment/);
+assert.match(arenaPostSource, /export const ensureMainAppPost/);
+assert.match(arenaPostSource, /export const deleteObsoleteAppPosts/);
+assert.match(arenaPostSource, /Draw a Scribbit\. Watch it fight\./);
 const requestArenaPostMenu = (
   request = {
     location: 'subreddit',
@@ -1581,8 +1573,20 @@ assert.equal(installPostResponse.status, 200);
 assert.deepEqual(await installPostResponse.json(), {
   status: 'success',
   message:
-    'Arena recovery job api-contract-job-1 scheduled for subreddit scribbits_test.',
+    'Scribbits is ready in scribbits_test with one app post (api-contract-post-1); removed 0 obsolete app posts and scheduled recovery job api-contract-job-1 (trigger: install)',
 });
+const initialMaintenanceResponse = await productionApiContract.app.request(
+  '/internal/scheduler/nightly-arena',
+  {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      name: 'nightly-arena',
+      data: { attempt: 0, reason: 'app-install' },
+    }),
+  }
+);
+assert.equal(initialMaintenanceResponse.status, 200);
 const canonicalInstallDay = Number(
   productionApiContract.getApiContractString('arena:currentDay')
 );
@@ -1633,10 +1637,10 @@ assert.equal(
 );
 assert.equal(
   productionApiContract.apiContractRuntimeState.submittedComments,
-  1,
-  'upgrade catch-up must publish the missed Rumble result'
+  0,
+  'upgrade catch-up must not publish Reddit comments'
 );
-pass('app upgrades catch up a stale Arena day before players return');
+pass('app upgrades schedule a stale Arena catch-up without publishing content');
 
 productionApiContract.resetApiContractRuntime();
 const reversedInstallResponse = await productionApiContract.app.request(
@@ -1667,7 +1671,7 @@ productionApiContract.resetApiContractRuntime({ moderatorIds: [] });
 const nonModeratorMenuResponse = await requestArenaPostMenu();
 assert.equal(nonModeratorMenuResponse.status, 200);
 assert.deepEqual(await nonModeratorMenuResponse.json(), {
-  showToast: 'Create Rumble is restricted to moderators.',
+  showToast: 'Opening Scribbits is restricted to moderators.',
 });
 assert.equal(productionApiContract.apiContractRuntimeState.submittedPosts, 0);
 assert.equal(
@@ -1683,7 +1687,7 @@ productionApiContract.resetApiContractRuntime({
 const anonymousMenuResponse = await requestArenaPostMenu();
 assert.equal(anonymousMenuResponse.status, 200);
 assert.deepEqual(await anonymousMenuResponse.json(), {
-  showToast: 'Create Rumble is restricted to moderators.',
+  showToast: 'Opening Scribbits is restricted to moderators.',
 });
 assert.equal(productionApiContract.apiContractRuntimeState.submittedPosts, 0);
 assert.equal(
@@ -1698,7 +1702,7 @@ const invalidTargetMenuResponse = await requestArenaPostMenu({
 });
 assert.equal(invalidTargetMenuResponse.status, 200);
 assert.deepEqual(await invalidTargetMenuResponse.json(), {
-  showToast: 'Invalid Create Rumble request.',
+  showToast: 'Invalid Open Scribbits request.',
 });
 assert.equal(productionApiContract.apiContractRuntimeState.submittedPosts, 0);
 assert.equal(
@@ -1711,7 +1715,7 @@ const wrongLocationMenuResponse = await requestArenaPostMenu({
   targetId: 't5_scribbits_test',
 });
 assert.deepEqual(await wrongLocationMenuResponse.json(), {
-  showToast: 'Invalid Create Rumble request.',
+  showToast: 'Invalid Open Scribbits request.',
 });
 
 const malformedMenuResponse = await productionApiContract.app.request(
@@ -1723,14 +1727,14 @@ const malformedMenuResponse = await productionApiContract.app.request(
   }
 );
 assert.deepEqual(await malformedMenuResponse.json(), {
-  showToast: 'Invalid Create Rumble request.',
+  showToast: 'Invalid Open Scribbits request.',
 });
 const missingBodyMenuResponse = await productionApiContract.app.request(
   '/internal/menu/post-create',
   { method: 'POST' }
 );
 assert.deepEqual(await missingBodyMenuResponse.json(), {
-  showToast: 'Invalid Create Rumble request.',
+  showToast: 'Invalid Open Scribbits request.',
 });
 assert.equal(productionApiContract.apiContractRuntimeState.submittedPosts, 0);
 assert.equal(
@@ -1746,7 +1750,7 @@ const failedModeratorLookupAttempt = await captureRouteErrors(() =>
 assert.equal(failedModeratorLookupAttempt.result.status, 400);
 assert.equal(failedModeratorLookupAttempt.errors.length, 1);
 assert.deepEqual(await failedModeratorLookupAttempt.result.json(), {
-  showToast: 'Failed to create arena post',
+  showToast: 'Failed to open the Scribbits app post',
 });
 assert.equal(productionApiContract.apiContractRuntimeState.submittedPosts, 0);
 assert.equal(
@@ -1828,13 +1832,10 @@ const failedReceiptResponse = failedReceiptAttempt.result;
 assert.equal(failedReceiptResponse.status, 400);
 assert.equal(failedReceiptAttempt.errors.length, 1);
 assert.equal(productionApiContract.apiContractRuntimeState.submittedPosts, 1);
-const failedReceiptDay =
-  productionApiContract.getApiContractString('arena:currentDay');
-assert.ok(failedReceiptDay);
 assert.equal(
   productionApiContract.getApiContractHashField(
-    'arena:post-publishing-claims',
-    failedReceiptDay
+    'app:main-post-publishing-claims',
+    'main-v2'
   ),
   'published:api-contract-post-1'
 );
@@ -1842,7 +1843,7 @@ const recoveredReceiptResponse = await requestArenaPostMenu();
 assert.equal(recoveredReceiptResponse.status, 200);
 assert.equal(productionApiContract.apiContractRuntimeState.submittedPosts, 1);
 assert.equal(
-  productionApiContract.getApiContractString(`arena:post:${failedReceiptDay}`),
+  productionApiContract.getApiContractString('app:main-post:v2'),
   'api-contract-post-1'
 );
 
@@ -1854,12 +1855,10 @@ const failedMarkerAttempt = await captureRouteErrors(() =>
 assert.equal(failedMarkerAttempt.result.status, 400);
 assert.equal(failedMarkerAttempt.errors.length, 1);
 assert.equal(productionApiContract.apiContractRuntimeState.submittedPosts, 1);
-const failedMarkerDay =
-  productionApiContract.getApiContractString('arena:currentDay');
 assert.match(
   productionApiContract.getApiContractHashField(
-    'arena:post-publishing-claims',
-    failedMarkerDay
+    'app:main-post-publishing-claims',
+    'main-v2'
   ) ?? '',
   /^\d+$/
 );
@@ -1875,12 +1874,10 @@ const failedLookupAttempt = await captureRouteErrors(() =>
 assert.equal(failedLookupAttempt.result.status, 400);
 assert.equal(failedLookupAttempt.errors.length, 1);
 assert.equal(productionApiContract.apiContractRuntimeState.submittedPosts, 0);
-const failedLookupDay =
-  productionApiContract.getApiContractString('arena:currentDay');
 assert.equal(
   productionApiContract.getApiContractHashField(
-    'arena:post-publishing-claims',
-    failedLookupDay
+    'app:main-post-publishing-claims',
+    'main-v2'
   ),
   undefined,
   'lookup failure must stop before claiming or publishing'
@@ -1895,12 +1892,10 @@ const failedSubmissionResponse = failedSubmissionAttempt.result;
 assert.equal(failedSubmissionResponse.status, 400);
 assert.equal(failedSubmissionAttempt.errors.length, 1);
 assert.equal(productionApiContract.apiContractRuntimeState.submittedPosts, 0);
-const failedSubmissionDay =
-  productionApiContract.getApiContractString('arena:currentDay');
 assert.match(
   productionApiContract.getApiContractHashField(
-    'arena:post-publishing-claims',
-    failedSubmissionDay
+    'app:main-post-publishing-claims',
+    'main-v2'
   ) ?? '',
   /^\d+$/,
   'ambiguous submission failure must retain its claim and fail closed'
@@ -1927,137 +1922,39 @@ assert.ok(
 assert.equal(productionApiContract.apiContractRuntimeState.submittedPosts, 1);
 pass('menu and install routes share current Arena post orchestration');
 
-const resultCommentSummary = {
-  resolvedDay: 41,
-  champion: {
-    id: 'result-comment-champion',
-    name: 'Result Comet',
-    isFounding: false,
-  },
-  runnerUp: null,
-  reportCount: 3,
-  resolvedForecast: { blurb: 'Ink falls sideways.' },
-  nextForecast: { blurb: 'Paper sparks at dusk.' },
-  cloutPayout: {
-    paidBackers: 0,
-    championBackers: 0,
-    runnerUpBackers: 0,
-  },
-};
-const resultCommentClaimKey = 'arena:result-comments';
-const resultCommentDayField = String(resultCommentSummary.resolvedDay);
-const seedResultCommentPost = () => {
-  productionApiContract.setApiContractString(
-    `arena:post:${resultCommentSummary.resolvedDay}`,
-    't3_api_contract_result_post'
-  );
-};
-
 productionApiContract.resetApiContractRuntime();
-seedResultCommentPost();
-productionApiContract.failNextApiContractCommentSubmissionAfterCommit();
-await assert.rejects(
-  () =>
-    productionApiContract.publishRumbleResultComment(
-      productionApiContract.apiContractRedis,
-      resultCommentSummary
-    ),
-  /committed Reddit comment reply loss/
+productionApiContract.seedApiContractPost({
+  id: 'legacy-main-post',
+  title: 'Scribbits — Draw. Raise. Battle.',
+  postData: { surface: 'main' },
+});
+productionApiContract.seedApiContractPost({
+  id: 'legacy-rumble-post',
+  title: 'Rumble #11 — Moonlit drizzle',
+  postData: { dayNumber: 11 },
+});
+productionApiContract.seedApiContractPost({
+  id: 'community-lookalike-post',
+  title: 'Rumble #11 — Community recap',
+  postData: undefined,
+  authorName: 'community_member',
+});
+const upgradeCleanupResponse = await productionApiContract.app.request(
+  '/internal/triggers/on-app-upgrade',
+  {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ type: 'upgrade' }),
+  }
 );
-assert.equal(
-  productionApiContract.apiContractRuntimeState.submittedComments,
-  1
-);
+assert.equal(upgradeCleanupResponse.status, 200);
+assert.equal(productionApiContract.apiContractRuntimeState.submittedPosts, 1);
+assert.equal(productionApiContract.apiContractRuntimeState.deletedPosts, 2);
 assert.match(
-  productionApiContract.getApiContractHashField(
-    resultCommentClaimKey,
-    resultCommentDayField
-  ) ?? '',
-  /^submitting:/,
-  'ambiguous comment submission must retain its publication claim'
+  (await upgradeCleanupResponse.json()).message,
+  /removed 2 obsolete app posts/
 );
-productionApiContract.failNextApiContractCommentLookup();
-await assert.rejects(
-  () =>
-    productionApiContract.publishRumbleResultComment(
-      productionApiContract.apiContractRedis,
-      resultCommentSummary
-    ),
-  /comment lookup failure/
-);
-assert.equal(
-  productionApiContract.apiContractRuntimeState.submittedComments,
-  1,
-  'lookup failure must not publish another result comment'
-);
-const recoveredAmbiguousComment =
-  await productionApiContract.publishRumbleResultComment(
-    productionApiContract.apiContractRedis,
-    resultCommentSummary
-  );
-assert.equal(recoveredAmbiguousComment, 'api-contract-comment-1');
-assert.equal(
-  productionApiContract.apiContractRuntimeState.submittedComments,
-  1
-);
-
-productionApiContract.resetApiContractRuntime();
-seedResultCommentPost();
-productionApiContract.failNextApiContractCommentSubmissionAfterCommit();
-await assert.rejects(() =>
-  productionApiContract.publishRumbleResultComment(
-    productionApiContract.apiContractRedis,
-    resultCommentSummary
-  )
-);
-for (let fillerIndex = 0; fillerIndex < 1000; fillerIndex += 1) {
-  productionApiContract.seedApiContractComment(
-    't3_api_contract_result_post',
-    `t1_filler_${fillerIndex}`,
-    `unrelated community comment ${fillerIndex}`
-  );
-}
-assert.equal(
-  await productionApiContract.publishRumbleResultComment(
-    productionApiContract.apiContractRedis,
-    resultCommentSummary
-  ),
-  null,
-  'an unreconciled submitting marker must fail closed outside the listing window'
-);
-assert.equal(
-  productionApiContract.apiContractRuntimeState.submittedComments,
-  1,
-  'listing limits must never turn ambiguous publication into a duplicate'
-);
-
-productionApiContract.resetApiContractRuntime();
-seedResultCommentPost();
-productionApiContract.failNextApiContractResultCommentReceipt();
-await assert.rejects(
-  () =>
-    productionApiContract.publishRumbleResultComment(
-      productionApiContract.apiContractRedis,
-      resultCommentSummary
-    ),
-  /result comment receipt failure/
-);
-assert.equal(
-  productionApiContract.apiContractRuntimeState.submittedComments,
-  1
-);
-const recoveredReceiptComment =
-  await productionApiContract.publishRumbleResultComment(
-    productionApiContract.apiContractRedis,
-    resultCommentSummary
-  );
-assert.equal(recoveredReceiptComment, 'api-contract-comment-1');
-assert.equal(
-  productionApiContract.apiContractRuntimeState.submittedComments,
-  1,
-  'receipt recovery must reconcile the existing exact result body'
-);
-pass('Rumble result comments recover ambiguous publication exactly once');
+pass('upgrade replaces obsolete Scribbits posts with one hooked app post');
 
 const paginationOwnerSource = readFileSync(
   join(repoRoot, 'src', 'client', 'lib', 'ui.ts'),
@@ -2837,13 +2734,6 @@ const privateClientSymbols = [
   { source: legacyCardsClientSource, names: ['legacyEulogy'] },
   {
     source: readFileSync(
-      join(repoRoot, 'src', 'server', 'core', 'post.ts'),
-      'utf8'
-    ),
-    names: ['createPost'],
-  },
-  {
-    source: readFileSync(
       join(repoRoot, 'src', 'server', 'core', 'battleStore.ts'),
       'utf8'
     ),
@@ -3307,7 +3197,7 @@ const startDevMockForContractTest = async () => {
       ...process.env,
       PORT: '0',
       MOCK_AUTO_RELOAD: '0',
-      MOCK_SEEDED_SCRIBBITS: '1',
+      SCRIBBITS_CONTRACT_FIXTURES: '1',
       MOCK_COMBAT_BUNDLE_URL: pathToFileURL(
         join(mockCombatTestOutputDirectory, 'battle.mjs')
       ).href,
@@ -5606,7 +5496,7 @@ assert.deepEqual(
     'founding-deterministic',
     dominantDoodleFixtures[0].stats
   ),
-  'the same founder identity and stats should always reproduce the same art plan'
+  'the same fallback identity and stats should always reproduce the same art plan'
 );
 
 const firstMixedChonk = proceduralDoodlePlan.createProceduralDoodlePlan(
@@ -5622,31 +5512,8 @@ assert.equal(secondMixedChonk.trait, 'chonk');
 assert.notDeepEqual(
   firstMixedChonk.bodyPoints,
   secondMixedChonk.bodyPoints,
-  'all four stats should continuously vary founders inside one dominant archetype'
+  'all four stats should continuously vary fallbacks inside one dominant archetype'
 );
-
-const collectDoodlePoints = (plan) => {
-  const points = [
-    ...plan.bodyPoints,
-    ...plan.legs.map((leg) => leg.center),
-    ...plan.eyes.flatMap((eye) => [eye.white.center, eye.pupil.center]),
-    ...plan.mouth,
-  ];
-  const anatomy = plan.anatomy;
-  if (anatomy.kind === 'grounded-belly') {
-    points.push(...anatomy.bellyBands.flat());
-  } else if (anatomy.kind === 'quill-crest') {
-    points.push(...anatomy.quills.flat());
-  } else if (anatomy.kind === 'streamer-tail') {
-    points.push(...anatomy.tailPoints);
-  } else if (anatomy.kind === 'patchwork-crest') {
-    points.push(
-      ...anatomy.crest.map((circle) => circle.center),
-      ...anatomy.patches.map((circle) => circle.center)
-    );
-  }
-  return points;
-};
 
 assert.equal(
   speciesCore.foundingScribbits.length,
@@ -5776,45 +5643,30 @@ assert.equal(
 );
 pass('daily Champion Contract content stays canonical and truthful');
 
-const foundingDoodleFingerprints = new Set();
-for (const founder of speciesCore.foundingScribbits) {
-  const plan = proceduralDoodlePlan.createProceduralDoodlePlan(
-    founder.id,
-    founder.stats
-  );
-  assert.equal(
-    plan.trait,
-    combatSelection.selectDominantStat(founder.stats),
-    `${founder.name} art and combat should agree on Shape Power`
-  );
-  assert.ok(
-    collectDoodlePoints(plan).every((point) => {
-      return (
-        Number.isFinite(point.x) &&
-        Number.isFinite(point.y) &&
-        point.x >= 0 &&
-        point.x <= proceduralDoodlePlan.PROCEDURAL_DOODLE_SIZE &&
-        point.y >= 0 &&
-        point.y <= proceduralDoodlePlan.PROCEDURAL_DOODLE_SIZE
-      );
-    }),
-    `${founder.name} procedural geometry should stay inside the texture`
-  );
-  foundingDoodleFingerprints.add(
-    JSON.stringify({
-      trait: plan.trait,
-      facing: plan.facing,
-      body: plan.bodyPoints.slice(0, 8),
-      anatomy: plan.anatomy,
-    })
-  );
-}
-assert.equal(
-  foundingDoodleFingerprints.size,
-  speciesCore.foundingScribbits.length,
-  'all twenty named founders should retain a distinct deterministic silhouette'
+assert.deepEqual(
+  founderCharacterArt.FOUNDING_CHARACTER_DESIGNS.map((design) => design.id),
+  speciesCore.foundingScribbits.map((founder) => founder.id),
+  'every battle-ready founder should resolve to authored canvas art'
 );
-pass('stat-shaped founding doodles stay truthful, distinct, and bounded');
+assert.equal(
+  new Set(
+    founderCharacterArt.FOUNDING_CHARACTER_DESIGNS.map(
+      (design) => design.silhouette
+    )
+  ).size,
+  speciesCore.foundingScribbits.length,
+  'all twenty founders should have a unique readable silhouette'
+);
+assert.equal(
+  new Set(
+    founderCharacterArt.FOUNDING_CHARACTER_DESIGNS.map(
+      (design) => `${design.body}:${design.accent}:${design.detail}`
+    )
+  ).size,
+  speciesCore.foundingScribbits.length,
+  'all twenty founders should have a unique authored palette'
+);
+pass('authored founder canvas characters cover the complete battle roster');
 
 const createMemoryStorage = (options = {}) => {
   const values = new Map();
@@ -8402,9 +8254,9 @@ const powerStatsForMockProof = Object.freeze({
   colorburst: { chonk: 15, spike: 15, zip: 15, charm: 55 },
 });
 const debugFixtureIdentityByPower = Object.freeze({
-  inkquake: ['debug-inkquake-heavy-page', 'Heavy Page'],
-  nib_halo: ['debug-nib-halo-needle-star', 'Needle Star'],
-  colorburst: ['debug-colorburst-prism-pop', 'Prism Pop'],
+  inkquake: ['founding-barkbloom', 'Barkbloom'],
+  nib_halo: ['founding-solarkiln', 'Solarkiln'],
+  colorburst: ['founding-pearlmote', 'Pearlmote'],
 });
 const debugOpponentPower = Object.freeze({
   inkquake: 'colorburst',
@@ -11283,13 +11135,13 @@ assert.deepEqual(
     finishSound: knockoutRecap.finishSound,
   },
   {
-    headline: 'KO • Heavy Page WINS',
-    verdictLine: '14.6s • INK LEFT 29/275 vs 0/235',
+    headline: 'KO • Barkbloom WINS',
+    verdictLine: '14.6s • INK LEFT 35/275 vs 0/235',
     tapeLine: '235 TOTAL DAMAGE • SHOCKWAVE',
     highlight: {
       label: 'FINAL SPLAT',
-      text: 'Body Slam • 18 to Needle Star',
-      compactText: 'Body Slam · 18 DAMAGE',
+      text: 'Body Slam • 22 to Solarkiln',
+      compactText: 'Body Slam · 22 DAMAGE',
     },
     finishPresentation: 'knockout',
     finishSound: 'knockout',
@@ -11501,13 +11353,13 @@ assert.equal(
 );
 assert.equal(
   battleRecap.planBattleRecap(tieHighlightTranscript).highlight?.text,
-  'body check • 30 to Heavy Page',
+  'body check • 30 to Barkbloom',
   'equal winner hits should resolve to the earliest authoritative event'
 );
 tieHighlightTranscript.timeline[2].amount = 29;
 assert.equal(
   battleRecap.planBattleRecap(tieHighlightTranscript).highlight?.text,
-  'Color burst echo • 30 to Heavy Page',
+  'Color burst echo • 30 to Barkbloom',
   'Colorburst echo attribution requires an actual echo damage event'
 );
 pass('authoritative Inkcast recap copy and finish semantics');
@@ -15999,57 +15851,6 @@ assert.equal(
   'Back Ink recovery must remain exactly once'
 );
 pass('Rumble Ink and Back payouts recover atomically after reply loss');
-
-const resultSummary = cloutPayoutJob.resolutions[0];
-assert.ok(resultSummary, 'result-comment fixture should resolve one arena day');
-const resultCommentText =
-  resultComment.formatRumbleResultComment(resultSummary);
-assert.match(
-  resultCommentText,
-  /Rumble #2 results/,
-  'result comment should name the resolved day'
-);
-assert.match(
-  resultCommentText,
-  new RegExp(resultSummary.champion.name),
-  'result comment should name the champion'
-);
-assert.match(
-  resultCommentText,
-  /1 champion backers earned \+3 Clout/,
-  'result comment should report real Clout payouts'
-);
-assert.match(
-  resultCommentText,
-  /Who are you backing/,
-  'result comment should invite community discussion'
-);
-const foundingResultComment = resultComment.formatRumbleResultComment({
-  ...resultSummary,
-  champion: makeScribbit({
-    id: 'founding-comment-champion',
-    name: 'Arena Smudge',
-    artist: 'not-a-player',
-    isFounding: true,
-  }),
-});
-assert.doesNotMatch(
-  foundingResultComment,
-  /u\/not-a-player/,
-  'founding champions must not be presented as real Reddit users'
-);
-const rumbleFounder = speciesCore.findFoundingScribbit('founding-mosswhisk');
-assert.ok(rumbleFounder);
-const founderStoryResultComment = resultComment.formatRumbleResultComment({
-  ...resultSummary,
-  champion: rumbleFounder,
-});
-assert.match(
-  founderStoryResultComment,
-  new RegExp(mosswhiskDefinition.personality.rumbleLine),
-  'a founding champion should carry its canonical voice into the Reddit result'
-);
-pass('Reddit Rumble result comment uses real resolution data');
 
 const faded = scribbitCore.resolveExpiredScribbitStatus(
   makeScribbit({

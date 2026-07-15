@@ -16,6 +16,7 @@ import type {
   DoodleTriangle,
   ProceduralDoodlePlan,
 } from './proceduraldoodleplan';
+import { drawFoundingCharacter } from './foundercharacterart';
 
 const INK = 0x2b2016;
 const PAPER = 0xfff7e8;
@@ -219,8 +220,22 @@ export function doodleKey(
   return `doodle-${element}-${doodleStatsSignature(stats)}-${spriteKey}`;
 }
 
-// Bake one transparent 512px mascot texture. The dominant stat controls its
-// anatomical archetype while all four stats continuously tune the proportions.
+export function generateBlankDrawingTexture(
+  scene: Scene,
+  spriteKey: string
+): string {
+  const key = `drawing-pending-${spriteKey}`;
+  if (scene.textures.exists(key)) return key;
+
+  const canvas = document.createElement('canvas');
+  canvas.width = PROCEDURAL_DOODLE_SIZE;
+  canvas.height = PROCEDURAL_DOODLE_SIZE;
+  scene.textures.addCanvas(key, canvas);
+  return key;
+}
+
+// Bake one transparent 512px mascot texture. Named founders use their authored
+// canvas character; unknown drawings retain the deterministic stat fallback.
 export function generateDoodleTexture(
   scene: Scene,
   spriteKey: string,
@@ -238,10 +253,13 @@ export function generateDoodleTexture(
   const context = canvas.getContext('2d');
   if (!context) throw new Error('Procedural doodle canvas is unavailable.');
 
-  drawAnatomyBehindBody(context, plan, style.primary);
-  drawBody(context, plan, style.soft);
-  drawAnatomyOnBody(context, plan, style.primary);
-  drawFace(context, plan);
+  const drewFounder = drawFoundingCharacter(context, spriteKey, element);
+  if (!drewFounder) {
+    drawAnatomyBehindBody(context, plan, style.primary);
+    drawBody(context, plan, style.soft);
+    drawAnatomyOnBody(context, plan, style.primary);
+    drawFace(context, plan);
+  }
 
   scene.textures.addCanvas(key, canvas);
   return key;

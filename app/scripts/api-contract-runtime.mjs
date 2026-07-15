@@ -7,13 +7,14 @@ const hashes = new Map();
 const sortedSets = new Map();
 const settingValues = new Map();
 const submittedPosts = [];
-const submittedComments = [];
 const moderatorUserIds = new Set();
 let stringSwapAfterRead = null;
 
 export const context = {
   userId: 'api-contract-user',
   username: 'api_contract_user',
+  appName: 'scribbits',
+  appVersion: '0.0.0-test',
   subredditName: 'scribbits_test',
   subredditId: 't5_scribbits_test',
 };
@@ -33,6 +34,7 @@ export const apiContractRuntimeState = {
   failNextCommentSubmissionAfterCommit: false,
   failNextResultCommentReceipt: false,
   scheduledJobs: [],
+  deletedPosts: 0,
 };
 
 export const scheduler = {
@@ -63,7 +65,7 @@ const getSortedSet = (key) => {
 const setString = (key, value) => {
   if (
     apiContractRuntimeState.failNextArenaPostReceipt &&
-    key.startsWith('arena:post:')
+    key === 'app:main-post:v2'
   ) {
     apiContractRuntimeState.failNextArenaPostReceipt = false;
     throw new Error('simulated Arena post receipt failure');
@@ -91,23 +93,13 @@ const incrementString = (key, amount) => {
 const setHashFields = (key, fieldValues) => {
   if (
     apiContractRuntimeState.failNextArenaPostMarker &&
-    key === 'arena:post-publishing-claims' &&
+    key === 'app:main-post-publishing-claims' &&
     Object.values(fieldValues).some((value) =>
       String(value).startsWith('published:')
     )
   ) {
     apiContractRuntimeState.failNextArenaPostMarker = false;
     throw new Error('simulated Arena post marker failure');
-  }
-  if (
-    apiContractRuntimeState.failNextResultCommentReceipt &&
-    key === 'arena:result-comments' &&
-    Object.values(fieldValues).some((value) =>
-      String(value).startsWith('api-contract-comment-')
-    )
-  ) {
-    apiContractRuntimeState.failNextResultCommentReceipt = false;
-    throw new Error('simulated Rumble result comment receipt failure');
   }
   const hash = getHash(key);
   for (const [field, value] of Object.entries(fieldValues)) {
@@ -360,8 +352,14 @@ export const reddit = {
     const post = {
       id: `api-contract-post-${apiContractRuntimeState.submittedPosts}`,
       title: options.title,
+      authorName: context.appName,
       async getPostData() {
         return options.postData;
+      },
+      async delete() {
+        const index = submittedPosts.findIndex(({ id }) => id === post.id);
+        if (index >= 0) submittedPosts.splice(index, 1);
+        apiContractRuntimeState.deletedPosts += 1;
       },
     };
     submittedPosts.unshift(post);
@@ -377,34 +375,6 @@ export const reddit = {
         return [...submittedPosts];
       },
     };
-  },
-  getComments(options) {
-    return {
-      async all() {
-        if (apiContractRuntimeState.failNextCommentLookup) {
-          apiContractRuntimeState.failNextCommentLookup = false;
-          throw new Error('simulated Reddit comment lookup failure');
-        }
-        return submittedComments
-          .filter((comment) => comment.postId === options.postId)
-          .slice(0, options.limit ?? 100);
-      },
-    };
-  },
-  async submitComment(options) {
-    apiContractRuntimeState.submittedComments += 1;
-    const comment = {
-      id: `api-contract-comment-${apiContractRuntimeState.submittedComments}`,
-      postId: options.id,
-      body: options.text,
-      async distinguish() {},
-    };
-    submittedComments.unshift(comment);
-    if (apiContractRuntimeState.failNextCommentSubmissionAfterCommit) {
-      apiContractRuntimeState.failNextCommentSubmissionAfterCommit = false;
-      throw new Error('simulated committed Reddit comment reply loss');
-    }
-    return comment;
   },
 };
 
@@ -434,7 +404,6 @@ export function resetApiContractRuntime({
   sortedSets.clear();
   settingValues.clear();
   submittedPosts.length = 0;
-  submittedComments.length = 0;
   moderatorUserIds.clear();
   for (const moderatorUserId of moderatorIds) {
     moderatorUserIds.add(moderatorUserId);
@@ -455,6 +424,7 @@ export function resetApiContractRuntime({
   apiContractRuntimeState.failNextCommentSubmissionAfterCommit = false;
   apiContractRuntimeState.failNextResultCommentReceipt = false;
   apiContractRuntimeState.scheduledJobs.length = 0;
+  apiContractRuntimeState.deletedPosts = 0;
   stringSwapAfterRead = null;
 }
 
@@ -482,18 +452,6 @@ export function failNextApiContractModeratorLookup() {
   apiContractRuntimeState.failNextModeratorLookup = true;
 }
 
-export function failNextApiContractCommentLookup() {
-  apiContractRuntimeState.failNextCommentLookup = true;
-}
-
-export function failNextApiContractCommentSubmissionAfterCommit() {
-  apiContractRuntimeState.failNextCommentSubmissionAfterCommit = true;
-}
-
-export function failNextApiContractResultCommentReceipt() {
-  apiContractRuntimeState.failNextResultCommentReceipt = true;
-}
-
 export function setApiContractString(key, value) {
   strings.set(key, String(value));
 }
@@ -518,13 +476,28 @@ export function swapApiContractStringAfterReads(key, value, reads) {
   };
 }
 
-export function seedApiContractComment(postId, id, body) {
-  submittedComments.unshift({
+export function seedApiContractPost({
+  id,
+  title,
+  postData,
+  authorName = context.appName,
+}) {
+  const post = {
     id,
-    postId,
-    body,
-    async distinguish() {},
-  });
+    title,
+    authorName,
+    async getPostData() {
+      return postData;
+    },
+    async delete() {
+      const index = submittedPosts.findIndex(
+        ({ id: existingId }) => existingId === id
+      );
+      if (index >= 0) submittedPosts.splice(index, 1);
+      apiContractRuntimeState.deletedPosts += 1;
+    },
+  };
+  submittedPosts.unshift(post);
 }
 
 export function getApiContractString(key) {

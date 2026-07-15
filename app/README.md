@@ -127,8 +127,7 @@ in [`docs/ranking-seasons.md`](docs/ranking-seasons.md).
    A frozen shared catalog gives all twenty founders eight unique, bounded story
    strings. Their epithet appears in the compact Rival margin, their opening owns
    the existing pre-`FIGHT!` ticker beat, and their first power and result receive a
-   fact-safe reaction, and a founding Rumble champion carries its voice into the
-   Reddit result comment. None of this content enters the transcript or combat math.
+   fact-safe reaction. None of this content enters the transcript or combat math.
    Before every Arena Spar—and again after each Rival Run bout—a compact paper
    board offers three server-selected founders. Arena and Replay share that
    controller; birth deliberately uses the server's opponent-less quick spar
@@ -257,9 +256,8 @@ in [`docs/ranking-seasons.md`](docs/ranking-seasons.md).
    outside the primary dock and opens directly from Home. The Scout Notebook is also outside the primary
    dock; its scene remains temporarily for older saved-replay returns.
 6. **Return:** keep the visible UTC-day streak alive. The scheduler resolves
-   the Rumble, crowns the Champion, stores the picked Scribbit's last played
-   bout, creates the next Rumble post, and comments the real result on the
-   resolved post. New archived pages lead into the scouting receipt, its
+   the Rumble, crowns the Champion, and stores the picked Scribbit's last played
+   bout without creating Reddit posts or comments. New archived pages lead into the scouting receipt, its
    server-selected replay, and then the Legacy Book.
 7. **Become a Legend:** Scribbits live for three days. Winning a crown or
    reaching the Belief threshold preserves one in the public Gallery. Every
@@ -391,7 +389,7 @@ boundary during browser iteration—it is not the production game server.
 - `src/server/index.ts`: Hono server entry point.
 - `src/server/routes/api.ts`: REST API mounted at `/api`.
 - `src/server/core`: Redis-backed domain logic for arena days, Scribbits, ink,
-  clout, battles, forecasts, daily jobs, and Reddit result comments.
+  clout, battles, forecasts, daily jobs, and the single app-post lifecycle.
 - `src/server/core/legacy.ts`: personal Legacy Redis indexing, migration, bounded
   index scans, and one-time receipt persistence over immutable retired snapshots.
 - `src/server/core/scribbit.ts`: Scribbit lifecycle and ownership plus the atomic

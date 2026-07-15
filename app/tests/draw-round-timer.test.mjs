@@ -85,6 +85,10 @@ test('official Draw requires an explicit start and locks at time', () => {
     join(process.cwd(), 'src', 'client', 'lib', 'drawcanvas.ts'),
     'utf8'
   );
+  const visualAssetsSource = readFileSync(
+    join(process.cwd(), 'src', 'client', 'lib', 'visualassets.ts'),
+    'utf8'
+  );
   const gameStyles = readFileSync(
     join(process.cwd(), 'src', 'client', 'game.css'),
     'utf8'
@@ -124,7 +128,20 @@ test('official Draw requires an explicit start and locks at time', () => {
   assert.match(drawSource, /private beginFreeDrawing\(\): void/);
   assert.match(drawSource, /private async submitFree\(/);
   assert.match(drawSource, /submitFreeDrawing\(\{/);
-  assert.match(drawSource, /draw-start-challenge-card\.jpg/);
+  assert.match(drawSource, /DRAW_START_CARD_ART_URL,[\s\S]{0,80}preloadDrawVisualAssets/);
+  assert.match(
+    drawSource,
+    /preload\(\): void \{[\s\S]{0,80}preloadDrawVisualAssets\(this\)/
+  );
+  assert.match(
+    visualAssetsSource,
+    /DRAW_START_CARD_TEXTURE[\s\S]{0,250}draw-start-challenge-card\.webp/
+  );
+  assert.match(
+    visualAssetsSource,
+    /preloadDrawVisualAssets[\s\S]{0,260}scene\.load\.image\([\s\S]{0,80}DRAW_START_CARD_TEXTURE[\s\S]{0,120}draw-start-challenge-card\.webp/
+  );
+  assert.match(drawSource, /backgroundColor: UI\.cream/);
   assert.match(drawSource, /timerLabel\.textContent = '60 SEC TO DRAW'/);
   assert.match(drawSource, /startButton\.textContent = 'START THEME'/);
   assert.match(drawSource, /const formatThemePrompt = \(prompt: string\)/);

@@ -12,6 +12,7 @@ import {
   localizeDocument,
   translate,
 } from './lib/localization';
+import { drawFoundingCharacter } from './lib/foundercharacterart';
 
 initializeLocalization();
 localizeDocument();
@@ -47,31 +48,31 @@ type DisplayCreation = SplashCreation &
     isCommunityCreation: boolean;
   }>;
 
+const foundingCreation = (
+  id: `founding-${string}`,
+  name: string,
+  element: 'moss' | 'ember' | 'tide' | 'storm'
+): DisplayCreation => {
+  const canvas = document.createElement('canvas');
+  canvas.width = 512;
+  canvas.height = 512;
+  const context = canvas.getContext('2d');
+  if (!context || !drawFoundingCharacter(context, id, element)) {
+    throw new Error(`Founding character art is missing for ${id}.`);
+  }
+  return {
+    id,
+    name,
+    artist: 'Founding Cast',
+    imageUrl: canvas.toDataURL('image/png'),
+    isCommunityCreation: false,
+  };
+};
+
 const bundledCreations: readonly DisplayCreation[] = [
-  {
-    id: 'mossmop',
-    name: 'Mossmop',
-    artist: 'Scribbits',
-    imageUrl: new URL('./assets/splash-doodle-mossmop.webp', import.meta.url)
-      .href,
-    isCommunityCreation: false,
-  },
-  {
-    id: 'looplet',
-    name: 'Looplet',
-    artist: 'Scribbits',
-    imageUrl: new URL('./assets/splash-doodle-looplet.webp', import.meta.url)
-      .href,
-    isCommunityCreation: false,
-  },
-  {
-    id: 'stormpuff',
-    name: 'Stormpuff',
-    artist: 'Scribbits',
-    imageUrl: new URL('./assets/splash-doodle-stormpuff.webp', import.meta.url)
-      .href,
-    isCommunityCreation: false,
-  },
+  foundingCreation('founding-gladepuff', 'Gladepuff', 'moss'),
+  foundingCreation('founding-coraloom', 'Coraloom', 'tide'),
+  foundingCreation('founding-ribbonrook', 'Ribbonrook', 'storm'),
 ];
 
 renderFeaturedCreation(shuffledCreations(bundledCreations)[0]);
@@ -107,7 +108,7 @@ async function loadSplashState(): Promise<void> {
       : 'splash.action.drawYours';
     startButton.textContent = translate(startButtonLabelKey);
   } catch {
-    // Bundled fighters and the primary CTA remain complete without the API.
+    // The authored founding cast and primary CTA remain complete without the API.
   }
 }
 
@@ -134,6 +135,7 @@ function renderFeaturedCreation(creation: DisplayCreation | undefined): void {
   if (!creation) return;
 
   if (featuredCreationImage) {
+    featuredCreationImage.hidden = false;
     featuredCreationImage.src = creation.imageUrl;
     featuredCreationImage.alt = creation.isCommunityCreation
       ? translate('splash.creation.communityAlt', {

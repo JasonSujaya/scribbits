@@ -142,6 +142,7 @@ import { translate } from '../lib/localization';
 import {
   pauseDrawingSoundtrack,
   playHomeSoundtrack,
+  primeBattleSoundtrack,
   releaseHomeSoundtrack,
   resumeDrawingSoundtrack,
   startDrawingSoundtrack,
@@ -155,6 +156,10 @@ import {
 } from '../lib/drawsubmissionloading';
 import { getPaintBucketState } from '../../shared/paintbucket';
 import {
+  DRAW_START_CARD_ART_URL,
+  preloadDrawVisualAssets,
+} from '../lib/visualassets';
+import {
   createPaintReservoir,
   paintRemainingPercent,
   returnPaint,
@@ -162,10 +167,6 @@ import {
   type PaintReservoir,
 } from '../lib/paintreservoir';
 
-const DRAW_START_CARD_ART_URL = new URL(
-  '../assets/draw-start-challenge-card.jpg',
-  import.meta.url
-).href;
 const DRAW_CLOSE_BUTTON_ART_URL = new URL(
   '../assets/ui-button-close.webp',
   import.meta.url
@@ -482,6 +483,10 @@ export class Draw extends Scene {
 
   constructor() {
     super('Draw');
+  }
+
+  preload(): void {
+    preloadDrawVisualAssets(this);
   }
 
   init(data?: unknown): void {
@@ -3984,6 +3989,7 @@ export class Draw extends Scene {
             width: 'min(88%, 635px)',
             maxHeight: 'calc(100% - 190px)',
             aspectRatio: '719 / 1200',
+            backgroundColor: UI.cream,
             backgroundImage: `url(${DRAW_START_CARD_ART_URL})`,
             backgroundPosition: 'center',
             backgroundRepeat: 'no-repeat',
@@ -5314,6 +5320,7 @@ export class Draw extends Scene {
 
   private continueAfterBirth(scribbit: Scribbit): void {
     if (this.birthContinuationStarted) return;
+    primeBattleSoundtrack();
     this.birthContinuationStarted = true;
 
     if (this.practiceMode) {

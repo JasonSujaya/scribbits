@@ -28,7 +28,7 @@ scheduledTasks.post('/nightly-arena', async (c) => {
     if (nightlyRun.status === 'busy') {
       throw new Error('Arena maintenance lease is busy.');
     }
-    const { result, currentPostId } = nightlyRun.result;
+    const result = nightlyRun.result.result;
 
     if (result.skipped) {
       console.log(
@@ -36,7 +36,7 @@ scheduledTasks.post('/nightly-arena', async (c) => {
       );
     } else {
       console.log(
-        `Advanced arena from day ${result.previousDay} to ${result.newDay}; task ${taskRequest?.name ?? 'nightly-arena'} ensured post ${currentPostId}`
+        `Advanced arena from day ${result.previousDay} to ${result.newDay}; task ${taskRequest?.name ?? 'nightly-arena'} completed without publishing Reddit content`
       );
     }
 

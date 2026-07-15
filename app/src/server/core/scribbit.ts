@@ -204,6 +204,10 @@ export const getRumbleStandingReceiptKey = (scribbitId: string): string => {
   return `scribbit:${scribbitId}:rumble-standings`;
 };
 
+export const getBattleOutcomeReceiptKey = (scribbitId: string): string => {
+  return `scribbit:${scribbitId}:battle-outcomes`;
+};
+
 export const getUserDailySparWinRewardsKey = (userId: string): string => {
   return `user:${userId}:daily-spar-win-rewards`;
 };
@@ -2389,6 +2393,79 @@ export const recordBattleOutcomeOnScribbit = async (
     applyBattleOutcomeToScribbit(scribbit, outcome, winnerXpGain)
   );
   return result.scribbit;
+};
+
+export const recordBattleOutcomeForReport = async (
+  storage: ArenaStorage,
+  input: Readonly<{
+    scribbitId: string;
+    reportId: string;
+    outcome: 'win' | 'loss';
+  }>
+): Promise<Scribbit | undefined> => {
+  if (!storage.watch) {
+    throw new Error('Atomic battle outcomes require transaction support.');
+  }
+  if (!input.reportId || input.reportId.length > 160) {
+    throw new Error('Battle outcome report ID is invalid.');
+  }
+
+  const scribbitKey = getScribbitKey(input.scribbitId);
+  const receiptKey = getBattleOutcomeReceiptKey(input.scribbitId);
+  for (
+    let attempt = 0;
+    attempt < MAX_WATCH_TRANSACTION_ATTEMPTS;
+    attempt += 1
+  ) {
+    let transaction: ArenaTransaction | undefined;
+    try {
+      transaction = await storage.watch(scribbitKey, receiptKey);
+      const [storedOutcome, scribbit] = await Promise.all([
+        storage.hGet(receiptKey, input.reportId),
+        loadScribbit(storage, input.scribbitId),
+      ]);
+      if (storedOutcome !== undefined) {
+        await transaction.unwatch();
+        if (storedOutcome !== input.outcome) {
+          throw new Error(
+            `Battle ${input.reportId} already recorded a different outcome.`
+          );
+        }
+        return scribbit;
+      }
+      if (!scribbit || scribbit.isFounding || scribbit.status !== 'alive') {
+        await transaction.unwatch();
+        return scribbit;
+      }
+
+      const updatedScribbit = applyBattleOutcomeToScribbit(
+        scribbit,
+        input.outcome,
+        0
+      );
+      await transaction.multi();
+      await transaction.set(scribbitKey, serializeScribbit(updatedScribbit));
+      await transaction.hSet(receiptKey, {
+        [input.reportId]: input.outcome,
+      });
+      await transaction.expire(receiptKey, dailyProgressTtlSeconds);
+      const result = await transaction.exec();
+      if (Array.isArray(result) && result.length > 0) {
+        return updatedScribbit;
+      }
+    } catch (error) {
+      await discardWatchedTransaction(transaction, 'Battle outcome');
+      const storedOutcome = await storage.hGet(receiptKey, input.reportId);
+      if (storedOutcome === input.outcome) {
+        return loadScribbit(storage, input.scribbitId);
+      }
+      throw error;
+    }
+  }
+
+  throw new Error(
+    `Battle outcome for ${input.scribbitId} changed too often to record safely.`
+  );
 };
 
 export const recordRumbleStandingOnScribbit = async (

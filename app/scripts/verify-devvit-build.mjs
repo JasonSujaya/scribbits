@@ -81,9 +81,6 @@ const inlineImageBytes = assertImageBudget(
   'Inline splash',
   [
     'scribbits-logo.webp',
-    'splash-doodle-looplet.webp',
-    'splash-doodle-mossmop.webp',
-    'splash-doodle-stormpuff.webp',
     'ui-button-primary.webp',
   ],
   128 * 1024
@@ -138,7 +135,7 @@ const shopImageBytes = assertImageBudget(
 );
 const drawImageBytes = assertImageBudget(
   'Draw',
-  ['draw-start-challenge-card.jpg'],
+  ['draw-start-challenge-card.webp'],
   320 * 1024
 );
 const totalImageBytes = [...imageSizes.values()].reduce(

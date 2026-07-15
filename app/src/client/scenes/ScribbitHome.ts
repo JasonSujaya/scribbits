@@ -28,7 +28,7 @@ import {
   loadDrawing,
   releaseRenderedDrawingTextures,
 } from '../lib/scribbits';
-import { generateDoodleTexture } from '../lib/proceduraldoodleart';
+import { generateBlankDrawingTexture } from '../lib/proceduraldoodleart';
 import { maturityCountdownHeadline } from '../lib/maturitycountdown';
 import {
   button,
@@ -1393,12 +1393,7 @@ export class ScribbitHome extends Scene {
   private renderCreature(scribbit: Scribbit, x: number, y: number): void {
     const generation = this.renderGeneration;
     const reduceMotion = prefersReducedMotion();
-    const fallbackTexture = generateDoodleTexture(
-      this,
-      scribbit.id,
-      scribbit.element,
-      scribbit.stats
-    );
+    const fallbackTexture = generateBlankDrawingTexture(this, scribbit.id);
     this.setLiveSprite(scribbit, fallbackTexture, x, y, reduceMotion);
     void loadDrawing(this, scribbit).then((textureKey) => {
       if (!this.scene.isActive() || generation !== this.renderGeneration)

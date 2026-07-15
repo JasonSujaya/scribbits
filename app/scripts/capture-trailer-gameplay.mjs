@@ -37,6 +37,11 @@ const captureClip = async ({ name, url, action, holdMilliseconds }) => {
   const page = await context.newPage();
   const browserErrors = [];
   page.on('pageerror', (error) => browserErrors.push(error.message));
+  await page.route('**/api/**', async (route) => {
+    const requestUrl = new URL(route.request().url());
+    requestUrl.searchParams.set('returning', '1');
+    await route.continue({ url: requestUrl.toString() });
+  });
   await page.goto(`${baseUrl}${url}`, { waitUntil: 'domcontentloaded' });
   await waitForGame(page);
   await page.waitForTimeout(900);
@@ -70,14 +75,18 @@ try {
   if (shouldCapture('battle-wobble-bean')) await captureClip({
     name: 'battle-wobble-bean',
     url: '/game.html?debug&returning',
-    holdMilliseconds: 12_000,
+    holdMilliseconds: 8_000,
     action: async (page) => {
       const pendingPowerChoice = page.locator('button[aria-label^="Choose "]').first();
       if (await pendingPowerChoice.count()) {
         await pendingPowerChoice.click();
         await page.waitForTimeout(700);
       }
-      const result = await page.evaluate(() => window.debugSpar());
+      let result = 'no scribbit';
+      for (let attempt = 0; attempt < 20 && result === 'no scribbit'; attempt += 1) {
+        result = await page.evaluate(() => window.debugSpar());
+        if (result === 'no scribbit') await page.waitForTimeout(300);
+      }
       if (!result.startsWith('spar id=')) {
         throw new Error(`Could not start trailer battle: ${result}`);
       }
@@ -87,9 +96,62 @@ try {
         { timeout: 15_000 }
       );
       await page.waitForTimeout(700);
-      await page.evaluate(() => window.debugTap(360, 1_140));
-      await page.waitForTimeout(260);
-      await page.evaluate(() => window.debugTap(360, 1_140));
+      await page.mouse.click(360, 1_140);
+      await page.waitForFunction(
+        () => document.querySelector('#game-container canvas')?.dataset.replaySpeed === '2'
+      );
+      await page.mouse.click(360, 1_140);
+      await page.waitForFunction(
+        () => document.querySelector('#game-container canvas')?.dataset.replaySpeed === '4'
+      );
+    },
+  });
+
+  if (shouldCapture('gacha-reward')) await captureClip({
+    name: 'gacha-reward',
+    url: '/game.html?debug&returning&shop',
+    holdMilliseconds: 6_000,
+    action: async (page) => {
+      const takeOne = page.getByRole('button', {
+        name: /Take 1 Mystery Gear capsule for 7 Ink/i,
+      });
+      await takeOne.waitFor({ state: 'visible', timeout: 10_000 });
+      await page.waitForTimeout(700);
+      await takeOne.evaluate((button) => button.click());
+    },
+  });
+
+  if (shouldCapture('bag-items')) await captureClip({
+    name: 'bag-items',
+    url: '/game.html?debug&returning&collection&gearSection=weapon',
+    holdMilliseconds: 2_200,
+    action: async (page) => {
+      const expandInventory = page.getByRole('button', {
+        name: 'Expand WEAPON inventory',
+        exact: true,
+      });
+      await expandInventory.waitFor({ state: 'visible', timeout: 10_000 });
+      await expandInventory.evaluate((button) => button.click());
+      await page.waitForTimeout(1_600);
+      const drawKit = page.getByRole('button', { name: 'DRAW KIT', exact: true });
+      await drawKit.evaluate((button) => button.click());
+    },
+  });
+
+  if (shouldCapture('arena-tour')) await captureClip({
+    name: 'arena-tour',
+    url: '/game.html?debug&returning',
+    holdMilliseconds: 4_000,
+    action: async (page) => {
+      await page.waitForFunction(
+        () => window.game?.scene?.getScenes(true)?.some((scene) => scene.scene.key === 'ScribbitHome'),
+        null,
+        { timeout: 10_000 }
+      );
+      await page.evaluate(() => window.debugScene('ArenaHome'));
+      await page.waitForFunction(
+        () => window.game?.scene?.getScenes(true)?.some((scene) => scene.scene.key === 'ArenaHome')
+      );
     },
   });
 

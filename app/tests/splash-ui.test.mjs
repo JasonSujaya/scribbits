@@ -30,10 +30,15 @@ const [
 
 test('splash is a square feed hook instead of the expanded game flow', () => {
   assert.match(splashHtml, /A REDDIT DRAWING GAME/);
-  assert.match(splashHtml, /DRAW IT\. IT FIGHTS FOR YOU\./);
-  assert.match(splashHtml, /YOURS IS MISSING\./);
+  assert.match(splashHtml, /YOUR DRAWING BECOMES THE FIGHTER\./);
+  assert.match(splashHtml, /DRAW A SCRIBBIT\. WATCH IT FIGHT\./);
   assert.match(splashHtml, /id="featured-creation-image"/);
   assert.match(splashHtml, /id="start-button"/);
+  assert.ok(
+    splashHtml.indexOf('id="start-button"') <
+      splashHtml.indexOf('class="creation-card"'),
+    'the Reddit CTA must appear before the optional showcase'
+  );
   assert.doesNotMatch(splashHtml, /\bVS\b/);
   assert.doesNotMatch(splashHtml, /battle-health/);
   assert.doesNotMatch(splashHtml, /battle-rival-image/);
@@ -41,10 +46,20 @@ test('splash is a square feed hook instead of the expanded game flow', () => {
   assert.match(splashCss, /aspect-ratio: 1/);
   assert.match(splashCss, /html,[\s\S]*body[\s\S]*overflow: hidden/);
   assert.match(splashCss, /\.page[\s\S]*overflow: hidden/);
+  assert.match(
+    splashCss,
+    /grid-template-rows: auto auto auto minmax\(0, 1fr\)/
+  );
   assert.doesNotMatch(splashCss, /@media \(max-width: 620px\)/);
 });
 
 test('splash stays light while rotating in real community fighters', () => {
+  assert.match(splashScript, /drawFoundingCharacter/);
+  assert.match(splashScript, /founding-gladepuff/);
+  assert.match(splashScript, /founding-coraloom/);
+  assert.match(splashScript, /founding-ribbonrook/);
+  assert.doesNotMatch(splashScript, /splash-doodle-/);
+  assert.doesNotMatch(splashHtml, /splash-doodle-/);
   assert.match(splashScript, /renderFeaturedCreationPair/);
   assert.match(splashScript, /renderFeaturedCreation/);
   assert.match(splashScript, /shuffledCreations/);

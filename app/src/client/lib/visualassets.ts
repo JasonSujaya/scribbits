@@ -13,6 +13,11 @@ export const PAPER_STAGE_TEXTURE = SCRIBBITS_STAGE_TEXTURE;
 export const BATTLE_STAGE_TEXTURE = SCRIBBITS_STAGE_TEXTURE;
 export const FIGHT_START_TEXTURE = 'ui-fight-start';
 export const BRAND_LOGO_TEXTURE = 'scribbits-logo';
+export const DRAW_START_CARD_TEXTURE = 'draw-start-challenge-card';
+export const DRAW_START_CARD_ART_URL = new URL(
+  '../assets/draw-start-challenge-card.webp',
+  import.meta.url
+).href;
 export const HOME_STAGE_TEXTURE = 'scribbits-home-stage';
 export const HOME_TITLE_TEXTURE = 'scribbits-home-title';
 export const BATTLE_TITLE_TEXTURE = 'scribbits-battle-title';
@@ -56,6 +61,7 @@ export const UI_BUTTON_TEXTURES = {
 } as const;
 
 const VISUAL_ASSET_URLS: Readonly<Record<string, string>> = Object.freeze({
+  'draw-start-challenge-card.webp': DRAW_START_CARD_ART_URL,
   'bag-binder-base-shell-v7.webp': new URL(
     '../assets/bag-binder-base-shell-v7.webp',
     import.meta.url
@@ -209,6 +215,16 @@ export function preloadVisualAssets(scene: Scene): void {
   Object.entries(UI_BUTTON_TEXTURES).forEach(([kind, texture]) => {
     scene.load.image(texture, assetUrl(`ui-button-${kind}.webp`));
   });
+}
+
+export function preloadDrawVisualAssets(scene: Scene): void {
+  if (scene.textures.exists(DRAW_START_CARD_TEXTURE)) return;
+  // The intro is a DOM overlay, so decode its background before Draw.create()
+  // reveals the card instead of leaving a separate Reddit request in flight.
+  scene.load.image(
+    DRAW_START_CARD_TEXTURE,
+    assetUrl('draw-start-challenge-card.webp')
+  );
 }
 
 export function preloadGalleryVisualAssets(scene: Scene): void {

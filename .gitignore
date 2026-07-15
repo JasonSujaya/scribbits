@@ -1,8 +1,10 @@
 .DS_Store
 .gstack/
 .pnpm-store/
+.remotion/
 *.log
 codex-*.txt
 playtest.log
 artifacts/devvit-smoke/
 artifacts/balancer/2026-*
+artifacts/trailer/gameplay/raw/page@*.webm
