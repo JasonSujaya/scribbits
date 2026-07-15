@@ -147,12 +147,12 @@ test('Arena gives the rotating venue challenge a dedicated card', () => {
   assert.match(arenaSource, /'MATURE SCRIBBIT REQUIRED • READY'/);
   assert.match(arenaSource, /'MATURE SCRIBBIT REQUIRED • NOT READY'/);
   assert.match(arenaSource, /getScribbitLifecycleStage\(/);
+  assert.match(arenaSource, /'NEW FIELD DAILY • ONE ATTEMPT • FASTEST RANKS'/);
+  assert.match(arenaSource, /BATTLE_ARENA_IDS\.length/);
   assert.match(
     arenaSource,
-    /'NEW FIELD DAILY • ONE ATTEMPT • FASTEST RANKS'/
+    /`ENTER WITH \$\{matureScribbit\.name\.toUpperCase\(\)\}`/
   );
-  assert.match(arenaSource, /BATTLE_ARENA_IDS\.length/);
-  assert.match(arenaSource, /`ENTER WITH \$\{matureScribbit\.name\.toUpperCase\(\)\}`/);
   assert.match(arenaSource, /private startFieldChallenge\(/);
   assert.match(arenaSource, /private async launchFieldChallenge\(/);
   assert.match(arenaSource, /bossChallenge\(scribbit\.id\)/);

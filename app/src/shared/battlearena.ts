@@ -179,10 +179,7 @@ export const getUnlockedBattleArenaDefinitions = (
   day: number
 ): readonly BattleArenaDefinition[] => {
   const normalizedDay = Number.isFinite(day) ? Math.max(1, Math.floor(day)) : 1;
-  const unlockedCount = Math.min(
-    BATTLE_ARENA_IDS.length,
-    normalizedDay
-  );
+  const unlockedCount = Math.min(BATTLE_ARENA_IDS.length, normalizedDay);
   return Object.freeze(
     BATTLE_ARENA_IDS.slice(0, unlockedCount).map(
       (id) => BATTLE_ARENA_CATALOG[id]

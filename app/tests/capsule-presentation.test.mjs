@@ -196,6 +196,15 @@ test('Shop visual assets load lazily and are checked before rendering', () => {
     /preloadShopVisualAssets\(this\);[\s\S]{0,80}this\.load\.start\(\)/,
     'Shop must retry a stale or failed lazy asset load'
   );
+  assert.match(visualAssetsSource, /const SHOP_ARCADE_COLORS = \{/);
+  assert.match(visualAssetsSource, /function drawShopArcadeCabinet\(/);
+  assert.match(visualAssetsSource, /function drawShopArcadeTicket\(/);
+  assert.match(visualAssetsSource, /const checkerSize = 72;/);
+  assert.match(
+    visualAssetsSource,
+    /export function shopStage\([\s\S]*Phaser\.GameObjects\.Container/,
+    'Shop must compose its responsive arcade backdrop at runtime'
+  );
 });
 
 test('Mystery Ink uses generated reward art and a transparent animated claw machine', () => {
@@ -294,8 +303,8 @@ test('Mystery Ink uses generated reward art and a transparent animated claw mach
   );
   assert.match(
     capsuleMachineSource,
-    /const CLAW_MACHINE_SCALE = 1\.1;/,
-    'the claw machine must fill the Shop hero area without touching the dock'
+    /const CLAW_MACHINE_SCALE = 0\.96;/,
+    'the claw machine must leave a quiet margin around the Shop hero'
   );
   const clawMachineSource = capsuleMachineSource.slice(
     capsuleMachineSource.indexOf('function createClawMachine('),
@@ -320,21 +329,21 @@ test('Mystery Ink uses generated reward art and a transparent animated claw mach
   assert.match(capsuleMachineSource, /MYSTERY GEAR CLAW/);
   assert.match(
     capsuleMachineSource,
-    /const heading = label\([\s\S]{0,180}\.setStroke\(UI\.ink, 8\)/,
-    'the claw heading must stay readable over the illustrated marquee'
+    /const heading = label\([\s\S]{0,180}\.setStroke\(UI\.ink, 6\)/,
+    'the claw heading must stay readable without overpowering the marquee'
   );
   assert.match(
     capsuleMachineSource,
-    /const message = label\([\s\S]{0,180}\.setStroke\(UI\.ink, 6\)/,
-    'the changing claw status must stay readable over the awning'
+    /const message = label\([\s\S]{0,180}\.setStroke\(UI\.ink, 4\)/,
+    'the changing claw status must stay readable without crowding the awning'
   );
   assert.match(capsuleMachineSource, /-350,/);
   assert.match(capsuleMachineSource, /-312,/);
   assert.match(capsuleMachineSource, /TAKE 1 OR TAKE 10/);
   assert.match(capsuleMachineSource, /'TAKE 1'/);
   assert.match(capsuleMachineSource, /Take 10 Mystery Gear capsules/);
-  assert.match(capsuleMachineSource, /const CLAW_CHOICE_WIDTH = 170/);
-  assert.match(capsuleMachineSource, /const CLAW_CHOICE_X_OFFSET = 92/);
+  assert.match(capsuleMachineSource, /const CLAW_CHOICE_WIDTH = 180/);
+  assert.match(capsuleMachineSource, /const CLAW_CHOICE_X_OFFSET = 100/);
   assert.match(capsuleMachineSource, /const CLAW_CHOICE_HEIGHT = 92/);
   assert.match(
     capsuleMachineSource,

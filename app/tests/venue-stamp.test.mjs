@@ -21,14 +21,22 @@ const species = require(join(compiledServerRoot, 'core', 'species.js'));
 const venueStamp = require(join(compiledServerRoot, 'core', 'venueStamp.js'));
 
 test('60-day Arena rotation changes daily and uses every field evenly', () => {
-  const arenaIds = Array.from({ length: 60 }, (_, index) =>
-    battleArena.getBattleArenaForDay(index + 1).id
+  const arenaIds = Array.from(
+    { length: 60 },
+    (_, index) => battleArena.getBattleArenaForDay(index + 1).id
   );
 
   assert.equal(new Set(arenaIds).size, battleArena.BATTLE_ARENA_IDS.length);
-  for (let unlockIndex = 0; unlockIndex < battleArena.BATTLE_ARENA_IDS.length; unlockIndex += 1) {
+  for (
+    let unlockIndex = 0;
+    unlockIndex < battleArena.BATTLE_ARENA_IDS.length;
+    unlockIndex += 1
+  ) {
     const unlockDay = unlockIndex + 1;
-    assert.equal(arenaIds[unlockDay - 1], battleArena.BATTLE_ARENA_IDS[unlockIndex]);
+    assert.equal(
+      arenaIds[unlockDay - 1],
+      battleArena.BATTLE_ARENA_IDS[unlockIndex]
+    );
   }
   for (let dayIndex = 1; dayIndex < arenaIds.length; dayIndex += 1) {
     assert.notEqual(arenaIds[dayIndex], arenaIds[dayIndex - 1]);
@@ -45,8 +53,13 @@ test('all ten Arena fields keep standard combat rules and distinct field identit
   const definitions = battleArena.BATTLE_ARENA_IDS.map((arenaId) =>
     battleArena.getBattleArenaDefinition(arenaId)
   );
-  assert.ok(definitions.every((definition) => definition.shortRule.includes('rules')));
-  assert.equal(new Set(definitions.map((definition) => definition.name)).size, definitions.length);
+  assert.ok(
+    definitions.every((definition) => definition.shortRule.includes('rules'))
+  );
+  assert.equal(
+    new Set(definitions.map((definition) => definition.name)).size,
+    definitions.length
+  );
   assert.equal(
     new Set(definitions.map((definition) => definition.challengeLabel)).size,
     definitions.length

@@ -522,8 +522,7 @@ function applyBudgetedPowerUpDamage(
     1,
     Math.floor(scaledPowerUpDamage / 1_000)
   );
-  fighter.powerUpAdvantageDamageRemainderPermille =
-    scaledPowerUpDamage % 1_000;
+  fighter.powerUpAdvantageDamageRemainderPermille = scaledPowerUpDamage % 1_000;
   return applyResolvedDamage(
     context,
     fighter,
@@ -1636,10 +1635,7 @@ function getRoleMatchupDamageMultiplierPermille(
     currentDefender,
     sharedPowerUpDepth
   );
-  return Math.max(
-    500,
-    Math.min(1_500, baseMultiplier + powerUpCounterweight)
-  );
+  return Math.max(500, Math.min(1_500, baseMultiplier + powerUpCounterweight));
 }
 
 function rollAndApplyDamage(

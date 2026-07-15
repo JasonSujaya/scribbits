@@ -1,6 +1,6 @@
 # Scribbits Balance Overview
 
-Generated: 2026-07-15T11:54:18.982Z
+Generated: 2026-07-15T11:58:17.137Z
 
 This is local simulation evidence from the current combat constants.
 
@@ -11,10 +11,10 @@ This is local simulation evidence from the current combat constants.
 | Arena Role Cycle | 24000 | 30 | 0 | 0 |
 | Growing Progression | 28800 | 276 | 0 | 4 |
 | Power-Up Combos | 17280 | 72 | 0 | 3 |
-| Power-Up Usefulness Monte Carlo | 108000 | 45 | 0 | 6 |
+| Power-Up Usefulness Monte Carlo | 108000 | 45 | 0 | 5 |
 | Rival Run Risk | 1152 | 9 | 0 | 1 |
 | Three-Day Growing Loop | 2160 | 3 | 0 | 0 |
-| Reward Path | 149760 | 77 | 0 | 3 |
+| Reward Path | 149760 | 77 | 0 | 2 |
 | Thirty-Day Content + Progression | 31680 | 118 | 0 | 2 |
 | Rival Run Advancement Flow | 18 | 3 | 0 | 0 |
 | Generated Opponent Pool | 11520 | 3 | 0 | 0 |

@@ -13,6 +13,15 @@ const autoReload = process.env.MOCK_AUTO_RELOAD !== '0';
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
 const clientRoot = join(repoRoot, 'dist', 'client');
 const mockAssetRoot = join(repoRoot, 'dist', 'mock-assets');
+const configuredTrailerHeroPath = process.env.MOCK_TRAILER_HERO_PATH?.trim();
+const trailerHeroBytes =
+  configuredTrailerHeroPath && existsSync(configuredTrailerHeroPath)
+    ? readFileSync(configuredTrailerHeroPath)
+    : null;
+const trailerHeroScribbitIds = new Set([
+  'mine-paper-spark',
+  'debug-nib-halo-needle-star',
+]);
 const configuredMockCombatBundleUrl =
   process.env.MOCK_COMBAT_BUNDLE_URL?.trim();
 const mockCombatBundleUrl = configuredMockCombatBundleUrl
@@ -484,7 +493,7 @@ const debugPowerFighters = Object.freeze({
   }),
   nib_halo: makeScribbit({
     id: 'debug-nib-halo-needle-star',
-    name: 'Needle Star',
+    name: trailerHeroBytes ? 'Paper Spark' : 'Needle Star',
     artist: 'debug_fixture',
     element: 'tide',
     stats: debugPowerStats.nib_halo,
@@ -1471,6 +1480,9 @@ const dominantStatFor = (stats) => {
 };
 
 const drawingBytesFor = (scribbitId) => {
+  if (trailerHeroBytes && trailerHeroScribbitIds.has(scribbitId)) {
+    return trailerHeroBytes;
+  }
   const submittedDrawing = submittedDrawingBytes.get(scribbitId);
   if (submittedDrawing) return submittedDrawing;
 

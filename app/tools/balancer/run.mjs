@@ -125,7 +125,7 @@ function makeGearLoadout(runtime, gearEntries) {
       throw new Error(`Duplicate Gear ${entry.id} in balance loadout.`);
     }
     const slotIndex =
-      entry.slotIndex ?? (nextSlotByCategory.get(gear.category) ?? 0);
+      entry.slotIndex ?? nextSlotByCategory.get(gear.category) ?? 0;
     if (slotIndex < 0 || slotIndex > 1) {
       throw new Error(`Invalid ${gear.category} slot ${slotIndex}.`);
     }
@@ -453,8 +453,7 @@ function buildPowerUpHistory({
           powerUpId,
           combatRole,
           powerUpIds.length
-        ) &&
-        runtime.validatePowerUpBuild([...powerUpIds, powerUpId]).valid
+        ) && runtime.validatePowerUpBuild([...powerUpIds, powerUpId]).valid
     );
     if (validChoices.length === 0) {
       throw new Error(
@@ -705,8 +704,7 @@ function runGrowthProgression({ runtime, scenarios, forecast }) {
   const builds = baseBuilds(scenarios);
   const rows = [];
   const config = scenarios.suites.growthProgression;
-  const historiesPerRole =
-    config.historiesPerRole ?? 64;
+  const historiesPerRole = config.historiesPerRole ?? 64;
   const minimumEqualProgressionWinRate =
     config.minimumEqualProgressionWinRate ?? 0.45;
   const maximumEqualProgressionWinRate =
@@ -1230,13 +1228,9 @@ function generatedBuilds(runtime, count) {
     const otherKeys = statKeys.filter((key) => key !== dominantKey);
     const baseShare = Math.floor(remaining / 3);
     const firstShare =
-      baseShare +
-      (runtime.hashStringToUint32(`generated:${index}:a`) % 7) -
-      3;
+      baseShare + (runtime.hashStringToUint32(`generated:${index}:a`) % 7) - 3;
     const secondShare =
-      baseShare +
-      (runtime.hashStringToUint32(`generated:${index}:b`) % 7) -
-      3;
+      baseShare + (runtime.hashStringToUint32(`generated:${index}:b`) % 7) - 3;
     const thirdShare = remaining - firstShare - secondShare;
     const stats = Object.fromEntries(statKeys.map((key) => [key, 0]));
     stats[dominantKey] = dominantValue;
@@ -1529,7 +1523,9 @@ function generateEquipmentMetaLoadout(runtime, sampleIndex, namespace) {
   );
   const entries = [];
   for (const category of EQUIPMENT_META_CATEGORIES) {
-    const candidates = gearCatalog.filter((entry) => entry.category === category);
+    const candidates = gearCatalog.filter(
+      (entry) => entry.category === category
+    );
     if (candidates.length < 2) {
       throw new Error(`Equipment meta requires two ${category} Gear items.`);
     }
@@ -1788,9 +1784,8 @@ function runEquipmentMeta({ runtime, scenarios, forecast }) {
         opponentLabel: 'Paired no-Gear baseline',
         powerUpCount,
         targetRole,
-        baselineWinRate: summarizeRows(
-          pairs.map((pair) => pair.baseline)
-        ).targetWinRate,
+        baselineWinRate: summarizeRows(pairs.map((pair) => pair.baseline))
+          .targetWinRate,
         swingFromBaseline,
         ...summary,
         verdict:
@@ -1845,8 +1840,7 @@ function runEquipmentMeta({ runtime, scenarios, forecast }) {
     averageTargetPowerUpTriggers: 0,
     gearCatalogCoverage: `${usedGearIds.size}/${canonicalGearCount}`,
     gearRankCoverage: `${usedRanks.size}/${runtime.MAX_GEAR_RANK}`,
-    verdict:
-      coverageVerdicts.length > 0 ? coverageVerdicts.join('+') : 'OK',
+    verdict: coverageVerdicts.length > 0 ? coverageVerdicts.join('+') : 'OK',
   };
 
   return {
@@ -2077,7 +2071,9 @@ function runRewardPath({ runtime, scenarios, forecast }) {
       ])
   );
   const marginalGroups = new Map();
-  for (const row of rows.filter((candidate) => candidate.variantId === 'immediate')) {
+  for (const row of rows.filter(
+    (candidate) => candidate.variantId === 'immediate'
+  )) {
     const comparisonKey = [
       row.source,
       row.offerIndex,
@@ -2106,7 +2102,9 @@ function runRewardPath({ runtime, scenarios, forecast }) {
       const swingFromBaseline =
         pairs.reduce(
           (sum, pair) =>
-            sum + Number(pair.row.targetWon) - Number(pair.baselineRow.targetWon),
+            sum +
+            Number(pair.row.targetWon) -
+            Number(pair.baselineRow.targetWon),
           0
         ) / pairs.length;
       const verdicts = [];
@@ -2159,51 +2157,63 @@ function runRewardPath({ runtime, scenarios, forecast }) {
     id: 'reward-path',
     title: 'Reward Path',
     rows,
-    summaries: [...summaries.map((summary) => {
-      const key = `${summary.source}:${summary.targetRole}`;
-      const baselineWinRate = baselineBySourceAndRole.get(key) ?? 0.5;
-      const swingFromBaseline = summary.targetWinRate - baselineWinRate;
-      const choiceSpread = choiceSpreadBySourceAndRole.get(key) ?? 0;
-      const verdicts = [];
-      if (!offerValidity.get(key)) verdicts.push('FLAG_INVALID_REWARD_OFFER');
-      if (
-        summary.variantId === 'immediate' &&
-        (swingFromBaseline < -0.1 || swingFromBaseline > 0.35)
-      ) {
-        verdicts.push('FLAG_REWARD_LIFT');
-      }
-      if (
-        summary.variantId === 'equal' &&
-        (summary.targetWinRate < 0.43 || summary.targetWinRate > 0.57)
-      ) {
-        verdicts.push('FLAG_REWARD_FIELD');
-      }
-      if (summary.variantId === 'equal' && choiceSpread > 0.35) {
-        verdicts.push('FLAG_REWARD_CHOICE_SPREAD');
-      }
-      return {
-        ...summary,
-        opponentLabel:
-          summary.variantId === 'equal'
-            ? `${summary.source} equal-progression field`
-            : `${summary.source} fixed field`,
-        baselineWinRate,
-        swingFromBaseline,
-        choiceSpread,
-        verdict: verdicts.length > 0 ? verdicts.join('+') : 'OK',
-      };
-    }), ...marginalSummaries],
+    summaries: [
+      ...summaries.map((summary) => {
+        const key = `${summary.source}:${summary.targetRole}`;
+        const baselineWinRate = baselineBySourceAndRole.get(key) ?? 0.5;
+        const swingFromBaseline = summary.targetWinRate - baselineWinRate;
+        const choiceSpread = choiceSpreadBySourceAndRole.get(key) ?? 0;
+        const verdicts = [];
+        if (!offerValidity.get(key)) verdicts.push('FLAG_INVALID_REWARD_OFFER');
+        if (
+          summary.variantId === 'immediate' &&
+          (swingFromBaseline < -0.1 || swingFromBaseline > 0.35)
+        ) {
+          verdicts.push('FLAG_REWARD_LIFT');
+        }
+        if (
+          summary.variantId === 'equal' &&
+          (summary.targetWinRate < 0.43 || summary.targetWinRate > 0.57)
+        ) {
+          verdicts.push('FLAG_REWARD_FIELD');
+        }
+        if (summary.variantId === 'equal' && choiceSpread > 0.35) {
+          verdicts.push('FLAG_REWARD_CHOICE_SPREAD');
+        }
+        return {
+          ...summary,
+          opponentLabel:
+            summary.variantId === 'equal'
+              ? `${summary.source} equal-progression field`
+              : `${summary.source} fixed field`,
+          baselineWinRate,
+          swingFromBaseline,
+          choiceSpread,
+          verdict: verdicts.length > 0 ? verdicts.join('+') : 'OK',
+        };
+      }),
+      ...marginalSummaries,
+    ],
   };
 }
 
 const ROLE_GEAR_FAMILY_PRIORITY = Object.freeze({
   brawler: Object.freeze(['guard', 'rush', 'ready', 'aim', 'fortune', 'focus']),
-  longshot: Object.freeze(['aim', 'focus', 'guard', 'ready', 'fortune', 'rush']),
+  longshot: Object.freeze([
+    'aim',
+    'focus',
+    'guard',
+    'ready',
+    'fortune',
+    'rush',
+  ]),
   mage: Object.freeze(['fortune', 'focus', 'aim', 'ready', 'guard', 'rush']),
 });
 
 function cadenceRewardCount(day, cadenceDays) {
-  return Number.isSafeInteger(cadenceDays) && cadenceDays > 0 && day % cadenceDays === 0
+  return Number.isSafeInteger(cadenceDays) &&
+    cadenceDays > 0 &&
+    day % cadenceDays === 0
     ? 1
     : 0;
 }
@@ -2327,8 +2337,7 @@ function addThirtyDayPowerUp({
         powerUpId,
         combatRole,
         powerUpIds.length
-      ) &&
-      runtime.validatePowerUpBuild([...powerUpIds, powerUpId]).valid
+      ) && runtime.validatePowerUpBuild([...powerUpIds, powerUpId]).valid
   );
   if (validChoices.length === 0) return powerUpIds;
   const scoredChoices = validChoices.map((powerUpId) => ({
@@ -2428,14 +2437,8 @@ function simulateThirtyDayAccount({
       ink -= runtime.CAPSULE_COST;
       inkSpent += runtime.CAPSULE_COST;
       pullCount = nextPullCount;
-      pullsSinceEpic = runtime.advanceCapsulePity(
-        pullsSinceEpic,
-        entry.rarity
-      );
-      maximumPullsSinceEpic = Math.max(
-        maximumPullsSinceEpic,
-        pullsSinceEpic
-      );
+      pullsSinceEpic = runtime.advanceCapsulePity(pullsSinceEpic, entry.rarity);
+      maximumPullsSinceEpic = Math.max(maximumPullsSinceEpic, pullsSinceEpic);
       rarityCounts[entry.rarity] = (rarityCounts[entry.rarity] ?? 0) + 1;
     }
 
@@ -2550,9 +2553,8 @@ function thirtyDayContentScheduleSummary(runtime, config) {
       .filter((entry) => (entry.day - 1) % 3 === 0)
       .map((entry) => entry.themes.map((theme) => theme.id).join('|'))
   ).size;
-  const uniqueArenas = new Set(
-    dailyContent.map((entry) => entry.arena.id)
-  ).size;
+  const uniqueArenas = new Set(dailyContent.map((entry) => entry.arena.id))
+    .size;
   const uniqueGearWeekDays = new Set(
     dailyContent.map((entry) => entry.gearWeek.day)
   ).size;
@@ -2632,7 +2634,8 @@ function runThirtyDayContent({ runtime, scenarios }) {
             `Missing ${profile.id} day ${checkpointDay} account snapshot.`
           );
         }
-        const checkpointForecast = runtime.generateForecastForDay(checkpointDay);
+        const checkpointForecast =
+          runtime.generateForecastForDay(checkpointDay);
         for (const targetBuild of builds) {
           const targetState = targetSnapshot.roles[targetBuild.id];
           for (const opponentBuild of builds) {
@@ -2792,74 +2795,73 @@ function runThirtyDayContent({ runtime, scenarios }) {
     );
     powerUpIdsByCombatGroup.set(key, powerUpIds);
   }
-  const combatSummaries = summarizeMatrix(rows, combatGroupFields).map((summary) => {
-    const verdicts = [];
-    const baseVerdict = removeVerdictToken(
-      summary.verdict,
-      'FLAG_WIN_RATE'
-    );
-    if (baseVerdict !== 'OK') verdicts.push(baseVerdict);
-    if (
-      summary.opponentField === 'equal-progression' &&
-      (summary.targetWinRate < config.minimumEqualProgressionWinRate ||
-        summary.targetWinRate > config.maximumEqualProgressionWinRate)
-    ) {
-      verdicts.push('FLAG_30_DAY_EQUAL_FIELD');
+  const combatSummaries = summarizeMatrix(rows, combatGroupFields).map(
+    (summary) => {
+      const verdicts = [];
+      const baseVerdict = removeVerdictToken(summary.verdict, 'FLAG_WIN_RATE');
+      if (baseVerdict !== 'OK') verdicts.push(baseVerdict);
+      if (
+        summary.opponentField === 'equal-progression' &&
+        (summary.targetWinRate < config.minimumEqualProgressionWinRate ||
+          summary.targetWinRate > config.maximumEqualProgressionWinRate)
+      ) {
+        verdicts.push('FLAG_30_DAY_EQUAL_FIELD');
+      }
+      if (
+        summary.opponentField === 'fresh-baseline' &&
+        summary.checkpointDay === 30 &&
+        summary.targetWinRate < 0.52
+      ) {
+        verdicts.push('FLAG_NO_LONG_TERM_PROGRESS');
+      }
+      if (
+        summary.opponentField === 'fresh-baseline' &&
+        summary.checkpointDay === 30 &&
+        summary.targetWinRate > 0.95
+      ) {
+        verdicts.push('WATCH_FRESH_PLAYER_GAP');
+      }
+      if (
+        summary.opponentField === 'cross-profile' &&
+        summary.targetWinRate > config.maximumCrossProfileWinRate
+      ) {
+        verdicts.push('FLAG_ACTIVITY_RUNAWAY');
+      } else if (
+        summary.opponentField === 'cross-profile' &&
+        summary.targetWinRate > 0.65
+      ) {
+        verdicts.push('WATCH_ACTIVITY_GAP');
+      }
+      if (
+        summary.opponentField === 'cross-profile' &&
+        summary.targetWinRate < 1 - config.maximumCrossProfileWinRate
+      ) {
+        verdicts.push('FLAG_ACTIVITY_REVERSAL');
+      } else if (
+        summary.opponentField === 'cross-profile' &&
+        summary.targetWinRate < 0.35
+      ) {
+        verdicts.push('WATCH_ACTIVITY_GAP');
+      }
+      return {
+        ...summary,
+        finalPowerUpMix: formatPowerUpCountMix(
+          runtime,
+          powerUpIdsByCombatGroup.get(
+            combatGroupFields.map((field) => summary[field]).join('\u001f')
+          ) ?? [],
+          8
+        ),
+        opponentLabel:
+          summary.opponentField === 'equal-progression'
+            ? 'equal 30-day field'
+            : summary.opponentField === 'fresh-baseline'
+              ? 'fresh day-one field'
+              : 'lower-activity day-30 field',
+        verdict: verdicts.length > 0 ? [...new Set(verdicts)].join('+') : 'OK',
+      };
     }
-    if (
-      summary.opponentField === 'fresh-baseline' &&
-      summary.checkpointDay === 30 &&
-      summary.targetWinRate < 0.52
-    ) {
-      verdicts.push('FLAG_NO_LONG_TERM_PROGRESS');
-    }
-    if (
-      summary.opponentField === 'fresh-baseline' &&
-      summary.checkpointDay === 30 &&
-      summary.targetWinRate > 0.95
-    ) {
-      verdicts.push('WATCH_FRESH_PLAYER_GAP');
-    }
-    if (
-      summary.opponentField === 'cross-profile' &&
-      summary.targetWinRate > config.maximumCrossProfileWinRate
-    ) {
-      verdicts.push('FLAG_ACTIVITY_RUNAWAY');
-    } else if (
-      summary.opponentField === 'cross-profile' &&
-      summary.targetWinRate > 0.65
-    ) {
-      verdicts.push('WATCH_ACTIVITY_GAP');
-    }
-    if (
-      summary.opponentField === 'cross-profile' &&
-      summary.targetWinRate < 1 - config.maximumCrossProfileWinRate
-    ) {
-      verdicts.push('FLAG_ACTIVITY_REVERSAL');
-    } else if (
-      summary.opponentField === 'cross-profile' &&
-      summary.targetWinRate < 0.35
-    ) {
-      verdicts.push('WATCH_ACTIVITY_GAP');
-    }
-    return {
-      ...summary,
-      finalPowerUpMix: formatPowerUpCountMix(
-        runtime,
-        powerUpIdsByCombatGroup.get(
-          combatGroupFields.map((field) => summary[field]).join('\u001f')
-        ) ?? [],
-        8
-      ),
-      opponentLabel:
-        summary.opponentField === 'equal-progression'
-          ? 'equal 30-day field'
-          : summary.opponentField === 'fresh-baseline'
-            ? 'fresh day-one field'
-            : 'lower-activity day-30 field',
-      verdict: verdicts.length > 0 ? [...new Set(verdicts)].join('+') : 'OK',
-    };
-  });
+  );
   const economySummaries = config.profiles.map((profile) => {
     const finalSnapshots = (accountsByProfile.get(profile.id) ?? []).map(
       (account) => account.target.snapshots.get(30)
@@ -2896,15 +2898,13 @@ function runThirtyDayContent({ runtime, scenarios }) {
       verdicts.push('FLAG_GEAR_PROGRESSION_RUSH');
     }
     if (
-      percentile(collectionRatios, 0.9) >
-      config.maximumDayThirtyCollectionRatio
+      percentile(collectionRatios, 0.9) > config.maximumDayThirtyCollectionRatio
     ) {
       verdicts.push('FLAG_COLLECTION_BURNOUT');
     }
     if (
       finalSnapshots.some(
-        (snapshot) =>
-          snapshot.ink < 0 || snapshot.ink >= runtime.CAPSULE_COST
+        (snapshot) => snapshot.ink < 0 || snapshot.ink >= runtime.CAPSULE_COST
       )
     ) {
       verdicts.push('FLAG_INK_SETTLEMENT');

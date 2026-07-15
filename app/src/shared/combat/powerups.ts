@@ -335,10 +335,7 @@ export const POWER_UP_PLAYSTYLE_PROFILES: Readonly<
     ['rush', 'focus'],
     ['mage']
   ),
-  'v1-paper-shield': definePlaystyleProfile(
-    ['brawler'],
-    ['guard', 'fortune']
-  ),
+  'v1-paper-shield': definePlaystyleProfile(['brawler'], ['guard', 'fortune']),
   'v1-combo-spark': definePlaystyleProfile(
     ['mage'],
     ['rush', 'ready', 'aim'],

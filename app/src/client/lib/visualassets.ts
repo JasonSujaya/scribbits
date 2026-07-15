@@ -425,16 +425,279 @@ export function battleStage(
   return fixedStage(scene, BATTLE_STAGE_TEXTURE, depth);
 }
 
+const SHOP_ARCADE_COLORS = {
+  wall: 0x35243f,
+  wallSoft: 0x543b61,
+  plum: 0x654875,
+  coral: 0xef6a4d,
+  gold: 0xf6c64d,
+  paper: 0xf8e9ca,
+  ink: 0x251a24,
+  floorDark: 0x5e456d,
+  floorLight: 0xc9a886,
+} as const;
+
+function drawShopArcadeCabinet(
+  scene: Scene,
+  x: number,
+  y: number,
+  accent: number,
+  icon: 'car' | 'planet'
+): Phaser.GameObjects.Container {
+  const cabinet = scene.add.container(x, y);
+  const body = scene.add.graphics();
+  body.fillStyle(SHOP_ARCADE_COLORS.ink, 0.98);
+  body.fillRoundedRect(-78, -246, 156, 492, 20);
+  body.fillStyle(accent, 0.94);
+  body.fillRoundedRect(-68, -236, 136, 472, 16);
+  body.fillStyle(SHOP_ARCADE_COLORS.ink, 0.92);
+  body.fillRoundedRect(-61, -181, 122, 188, 12);
+  body.fillStyle(0xb7c8c6, 0.92);
+  body.fillRoundedRect(-52, -164, 104, 145, 8);
+  body.lineStyle(4, SHOP_ARCADE_COLORS.ink, 0.9);
+  body.strokeRoundedRect(-52, -164, 104, 145, 8);
+  body.fillStyle(SHOP_ARCADE_COLORS.paper, 0.96);
+  body.fillRoundedRect(-53, 32, 106, 76, 12);
+  body.lineStyle(4, SHOP_ARCADE_COLORS.ink, 0.88);
+  body.strokeRoundedRect(-53, 32, 106, 76, 12);
+  body.fillStyle(SHOP_ARCADE_COLORS.ink, 0.96);
+  body.fillRect(-5, 47, 10, 30);
+  body.fillStyle(SHOP_ARCADE_COLORS.coral, 1);
+  body.fillCircle(0, 44, 14);
+  body.fillStyle(SHOP_ARCADE_COLORS.gold, 1);
+  body.fillCircle(-27, 78, 8);
+  body.fillCircle(28, 78, 8);
+  body.fillStyle(SHOP_ARCADE_COLORS.ink, 0.82);
+  body.fillRoundedRect(-22, 148, 44, 72, 5);
+
+  const screenIcon = scene.add.graphics().setPosition(0, -90);
+  screenIcon.lineStyle(4, SHOP_ARCADE_COLORS.ink, 0.9);
+  if (icon === 'car') {
+    screenIcon.fillStyle(SHOP_ARCADE_COLORS.coral, 1);
+    screenIcon.fillRoundedRect(-34, -9, 68, 27, 9);
+    screenIcon.fillTriangle(-20, -9, -7, -28, 16, -9);
+    screenIcon.fillStyle(SHOP_ARCADE_COLORS.ink, 1);
+    screenIcon.fillCircle(-22, 19, 9);
+    screenIcon.fillCircle(23, 19, 9);
+  } else {
+    screenIcon.fillStyle(SHOP_ARCADE_COLORS.plum, 1);
+    screenIcon.fillCircle(0, 0, 27);
+    screenIcon.strokeEllipse(0, 0, 76, 24);
+    screenIcon.fillStyle(SHOP_ARCADE_COLORS.gold, 1);
+    screenIcon.fillCircle(-26, -30, 5);
+    screenIcon.fillCircle(30, 24, 4);
+  }
+  cabinet.add([body, screenIcon]);
+  return cabinet;
+}
+
+function drawShopArcadeTicket(
+  scene: Scene,
+  x: number,
+  y: number,
+  angle: number,
+  fill: number
+): Phaser.GameObjects.Container {
+  const ticket = scene.add.container(x, y).setAngle(angle);
+  const paper = scene.add.graphics();
+  paper.fillStyle(SHOP_ARCADE_COLORS.ink, 0.32);
+  paper.fillRoundedRect(-55, -25, 116, 56, 8);
+  paper.fillStyle(fill, 0.96);
+  paper.fillRoundedRect(-59, -29, 116, 56, 8);
+  paper.lineStyle(3, SHOP_ARCADE_COLORS.ink, 0.88);
+  paper.strokeRoundedRect(-59, -29, 116, 56, 8);
+  paper.lineBetween(-38, -16, -38, 14);
+  paper.lineBetween(36, -16, 36, 14);
+  paper.lineBetween(-25, 0, 24, 0);
+  ticket.add(paper);
+  return ticket;
+}
+
 export function shopStage(
   scene: Scene,
   depth = -100
-): Phaser.GameObjects.Image {
-  const stage = fixedStage(scene, SHOP_STAGE_TEXTURE, depth);
-  const verticalOverflow = Math.max(
-    0,
-    stage.displayHeight - scene.scale.height
+): Phaser.GameObjects.Container {
+  const { width, height } = scene.scale;
+  const stage = scene.add.container(0, 0).setScrollFactor(0).setDepth(depth);
+  const paperTexture = fixedStage(scene, SHOP_STAGE_TEXTURE, 0)
+    .setTint(0x806a86)
+    .setAlpha(0.62);
+  const wall = scene.add
+    .rectangle(0, 0, width, height, SHOP_ARCADE_COLORS.wall, 0.9)
+    .setOrigin(0);
+
+  const grain = scene.add.graphics();
+  for (let mark = 0; mark < 64; mark += 1) {
+    const x = (mark * 113 + 19) % width;
+    const y = (mark * 79 + 37) % Math.max(1, height - 120);
+    grain.fillStyle(
+      mark % 3 === 0 ? SHOP_ARCADE_COLORS.paper : SHOP_ARCADE_COLORS.wallSoft,
+      mark % 3 === 0 ? 0.05 : 0.12
+    );
+    grain.fillCircle(x, y, 2 + (mark % 3));
+  }
+
+  const titleBacking = scene.add.graphics();
+  titleBacking.fillStyle(SHOP_ARCADE_COLORS.ink, 0.34);
+  titleBacking.fillPoints(
+    [
+      [205, 17],
+      [505, 12],
+      [527, 74],
+      [494, 127],
+      [226, 123],
+      [188, 73],
+    ].map(([x, y]) => new Phaser.Math.Vector2(x ?? 0, (y ?? 0) + 7)),
+    true
   );
-  stage.y += Math.min(30, verticalOverflow / 2);
+  titleBacking.fillStyle(SHOP_ARCADE_COLORS.plum, 1);
+  titleBacking.fillPoints(
+    [
+      [205, 17],
+      [505, 12],
+      [527, 74],
+      [494, 127],
+      [226, 123],
+      [188, 73],
+    ].map(([x, y]) => new Phaser.Math.Vector2(x ?? 0, y ?? 0)),
+    true
+  );
+  titleBacking.lineStyle(4, SHOP_ARCADE_COLORS.paper, 0.82);
+  titleBacking.strokePoints(
+    [
+      [205, 17],
+      [505, 12],
+      [527, 74],
+      [494, 127],
+      [226, 123],
+      [188, 73],
+    ].map(([x, y]) => new Phaser.Math.Vector2(x ?? 0, y ?? 0)),
+    true
+  );
+
+  const marquee = scene.add.graphics();
+  marquee.fillStyle(SHOP_ARCADE_COLORS.coral, 0.92);
+  marquee.lineStyle(5, SHOP_ARCADE_COLORS.gold, 0.9);
+  marquee.fillTriangle(0, 246, 118, 298, 0, 352);
+  marquee.strokeTriangle(0, 246, 118, 298, 0, 352);
+  marquee.fillTriangle(width, 244, width - 118, 298, width, 354);
+  marquee.strokeTriangle(width, 244, width - 118, 298, width, 354);
+  for (let bulb = 0; bulb < 4; bulb += 1) {
+    marquee.fillStyle(SHOP_ARCADE_COLORS.paper, 0.92);
+    marquee.fillCircle(20 + bulb * 28, 298, 6);
+    marquee.fillCircle(width - 20 - bulb * 28, 298, 6);
+  }
+
+  const lightCord = scene.add.graphics();
+  lightCord.lineStyle(4, 0xb98a4f, 0.9);
+  lightCord.lineBetween(0, 24, 128, 58);
+  lightCord.lineBetween(128, 58, 208, 38);
+  lightCord.lineBetween(width - 208, 38, width - 128, 58);
+  lightCord.lineBetween(width - 128, 58, width, 24);
+  const stringLights = [
+    { x: 26, y: 36, size: 16 },
+    { x: 104, y: 58, size: 12 },
+    { x: 164, y: 45, size: 18 },
+    { x: width - 164, y: 45, size: 18 },
+    { x: width - 104, y: 58, size: 12 },
+    { x: width - 26, y: 36, size: 16 },
+  ].map(({ x, y, size }, index) =>
+    scene.add
+      .star(
+        x,
+        y,
+        5,
+        size * 0.45,
+        size,
+        index % 2 === 0 ? SHOP_ARCADE_COLORS.gold : SHOP_ARCADE_COLORS.coral,
+        1
+      )
+      .setStrokeStyle(3, SHOP_ARCADE_COLORS.ink, 0.75)
+  );
+
+  const floorTop = height - 250;
+  const floor = scene.add.graphics();
+  floor.fillStyle(SHOP_ARCADE_COLORS.floorDark, 1);
+  floor.fillRect(0, floorTop, width, 250);
+  const checkerSize = 72;
+  for (let row = 0; row < 4; row += 1) {
+    for (let column = 0; column < 11; column += 1) {
+      if ((row + column) % 2 === 0) {
+        floor.fillStyle(SHOP_ARCADE_COLORS.floorLight, 0.88);
+        floor.fillRect(
+          column * checkerSize - 36,
+          floorTop + row * checkerSize,
+          checkerSize,
+          checkerSize
+        );
+      }
+    }
+  }
+  floor.fillStyle(SHOP_ARCADE_COLORS.paper, 0.08);
+  floor.fillEllipse(width / 2, 720, 650, 900);
+
+  const leftCabinet = drawShopArcadeCabinet(
+    scene,
+    -34,
+    Math.min(720, height - 470),
+    SHOP_ARCADE_COLORS.coral,
+    'car'
+  );
+  const rightCabinet = drawShopArcadeCabinet(
+    scene,
+    width + 34,
+    Math.min(720, height - 470),
+    SHOP_ARCADE_COLORS.plum,
+    'planet'
+  );
+  const leftTicket = drawShopArcadeTicket(
+    scene,
+    42,
+    330,
+    -10,
+    SHOP_ARCADE_COLORS.coral
+  );
+  const rightTicket = drawShopArcadeTicket(
+    scene,
+    width - 36,
+    382,
+    12,
+    SHOP_ARCADE_COLORS.plum
+  );
+
+  const confetti = scene.add.graphics();
+  for (let piece = 0; piece < 22; piece += 1) {
+    const leftSide = piece % 2 === 0;
+    const x = leftSide
+      ? 18 + ((piece * 31) % 68)
+      : width - 18 - ((piece * 31) % 68);
+    const y = 390 + ((piece * 67) % Math.max(1, height - 520));
+    confetti.fillStyle(
+      piece % 3 === 0
+        ? SHOP_ARCADE_COLORS.gold
+        : piece % 3 === 1
+          ? SHOP_ARCADE_COLORS.coral
+          : SHOP_ARCADE_COLORS.paper,
+      0.46
+    );
+    confetti.fillRect(x, y, 8 + (piece % 3) * 3, 5);
+  }
+
+  stage.add([
+    paperTexture,
+    wall,
+    grain,
+    floor,
+    marquee,
+    leftCabinet,
+    rightCabinet,
+    leftTicket,
+    rightTicket,
+    lightCord,
+    ...stringLights,
+    titleBacking,
+    confetti,
+  ]);
   return stage;
 }
 

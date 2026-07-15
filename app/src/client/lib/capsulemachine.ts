@@ -96,36 +96,27 @@ const CLAW_MACHINE_SAMPLE_IDS = [
   'cardboard-shield',
 ] as const;
 const EMPTY_CAPSULE_POSITIONS = [
-  { x: -150, y: 42, angle: -12, scale: 0.58 },
-  { x: -105, y: 24, angle: 8, scale: 0.6 },
-  { x: -58, y: 16, angle: -5, scale: 0.58 },
-  { x: -10, y: 12, angle: 6, scale: 0.62 },
-  { x: 38, y: 17, angle: -7, scale: 0.6 },
-  { x: 84, y: 25, angle: 10, scale: 0.58 },
-  { x: 130, y: 39, angle: -8, scale: 0.6 },
-  { x: -160, y: 68, angle: 8, scale: 0.68 },
-  { x: -120, y: 55, angle: -9, scale: 0.66 },
-  { x: -75, y: 48, angle: 6, scale: 0.64 },
-  { x: -28, y: 50, angle: -4, scale: 0.68 },
-  { x: 20, y: 46, angle: 8, scale: 0.66 },
-  { x: 65, y: 50, angle: -7, scale: 0.65 },
-  { x: 110, y: 56, angle: 6, scale: 0.68 },
-  { x: 155, y: 68, angle: -8, scale: 0.64 },
-  { x: -140, y: 82, angle: -6, scale: 0.72 },
-  { x: -92, y: 78, angle: 7, scale: 0.7 },
-  { x: -45, y: 84, angle: -8, scale: 0.72 },
-  { x: 5, y: 80, angle: 5, scale: 0.7 },
-  { x: 53, y: 84, angle: -7, scale: 0.72 },
-  { x: 100, y: 79, angle: 8, scale: 0.7 },
-  { x: 143, y: 83, angle: -5, scale: 0.72 },
+  { x: -148, y: 26, angle: -12, scale: 0.72 },
+  { x: -92, y: 13, angle: 8, scale: 0.74 },
+  { x: -35, y: 9, angle: -5, scale: 0.72 },
+  { x: 24, y: 11, angle: 6, scale: 0.76 },
+  { x: 82, y: 15, angle: -7, scale: 0.74 },
+  { x: 140, y: 28, angle: 10, scale: 0.72 },
+  { x: -154, y: 67, angle: 8, scale: 0.82 },
+  { x: -96, y: 55, angle: -9, scale: 0.8 },
+  { x: -37, y: 58, angle: 6, scale: 0.82 },
+  { x: 23, y: 54, angle: -4, scale: 0.8 },
+  { x: 82, y: 57, angle: 8, scale: 0.82 },
+  { x: 141, y: 67, angle: -7, scale: 0.8 },
 ] as const;
 const CHEST_DISPLAY_WIDTH = 410;
 const CHEST_DISPLAY_HEIGHT = 430;
 const OPEN_CHEST_HORIZONTAL_SCALE = 1.086;
-const CLAW_MACHINE_SCALE = 1.1;
-const CLAW_CHOICE_WIDTH = 170;
+const CLAW_MACHINE_SCALE = 0.96;
+const CLAW_RIG_Y = -148;
+const CLAW_CHOICE_WIDTH = 180;
 const CLAW_CHOICE_HEIGHT = 92;
-const CLAW_CHOICE_X_OFFSET = 92;
+const CLAW_CHOICE_X_OFFSET = 100;
 const CLAW_CHOICE_Y = 253;
 const OPEN_CHEST_Y_OFFSET = -47;
 
@@ -264,15 +255,15 @@ function createInkWallet(
 ): InkWallet {
   const container = scene.add.container(x, y);
   const shadow = scene.add
-    .rectangle(3, 4, 196, 58, 0x1b1020, 0.42)
+    .rectangle(3, 4, 184, 54, 0x1b1020, 0.26)
     .setStrokeStyle(0);
   const paper = scene.add
-    .rectangle(0, 0, 196, 58, 0x3b263c, 0.96)
-    .setStrokeStyle(4, UI.goldHex, 0.96);
+    .rectangle(0, 0, 184, 54, UI.creamHex, 0.98)
+    .setStrokeStyle(4, UI.inkHex, 0.88);
   const token = scene.add
     .image(-66, 0, INK_TOKEN_TEXTURE)
     .setDisplaySize(48, 48);
-  const balance = label(scene, 24, -1, `${ink} INK`, 26, UI.cream, true);
+  const balance = label(scene, 22, -1, `${ink} INK`, 26, UI.ink, true);
   container.add([shadow, paper, token, balance]);
   return { container, balance };
 }
@@ -400,7 +391,7 @@ function createClawMachine(
     restingY: number;
     restingAngle: number;
   }> = [];
-  const pileShadow = scene.add.ellipse(0, 74, 350, 68, 0x160d16, 0.28);
+  const pileShadow = scene.add.ellipse(0, 58, 350, 72, 0x160d16, 0.24);
   windowContent.add(pileShadow);
   EMPTY_CAPSULE_POSITIONS.forEach((position, index) => {
     const emptyCapsule = scene.add
@@ -421,13 +412,13 @@ function createClawMachine(
     windowContent.add(emptyCapsule);
   });
   const samplePositions = [
-    { x: -120, y: 48, angle: -10, scale: 0.72 },
-    { x: -40, y: 37, angle: 7, scale: 0.76 },
-    { x: 40, y: 37, angle: -6, scale: 0.76 },
-    { x: 120, y: 48, angle: 10, scale: 0.72 },
-    { x: -80, y: 76, angle: -7, scale: 0.82 },
-    { x: 0, y: 72, angle: 5, scale: 0.86 },
-    { x: 80, y: 76, angle: 8, scale: 0.82 },
+    { x: -124, y: 16, angle: -10, scale: 0.88 },
+    { x: -42, y: 7, angle: 7, scale: 0.92 },
+    { x: 42, y: 8, angle: -6, scale: 0.92 },
+    { x: 124, y: 18, angle: 10, scale: 0.88 },
+    { x: -82, y: 62, angle: -7, scale: 0.98 },
+    { x: 0, y: 58, angle: 5, scale: 1.02 },
+    { x: 82, y: 62, angle: 8, scale: 0.98 },
   ] as const;
   CLAW_MACHINE_SAMPLE_IDS.forEach((id, index) => {
     const entry = COSMETIC_BY_ID.get(id);
@@ -468,7 +459,7 @@ function createClawMachine(
   container.add(rail);
 
   const homeX = -132;
-  const clawRig = scene.add.container(homeX, -204);
+  const clawRig = scene.add.container(homeX, CLAW_RIG_Y);
   const carriage = scene.add
     .rectangle(0, 0, 62, 30, UI.gold, 1)
     .setStrokeStyle(5, UI.inkHex, 0.96);
@@ -484,19 +475,41 @@ function createClawMachine(
     .circle(0, 0, 10, UI.gold, 1)
     .setStrokeStyle(3, UI.inkHex, 0.88);
   const leftArm = scene.add.container(-7, 10).setAngle(36);
-  const leftProng = scene.add
-    .rectangle(0, 0, 13, 64, UI.creamHex, 1)
-    .setOrigin(0.5, 0)
-    .setStrokeStyle(4, UI.inkHex, 0.96);
+  const leftProng = scene.add.graphics();
+  leftProng.lineStyle(14, UI.inkHex, 0.96);
+  leftProng.beginPath();
+  leftProng.moveTo(0, 0);
+  leftProng.lineTo(-4, 20);
+  leftProng.lineTo(-6, 40);
+  leftProng.lineTo(0, 60);
+  leftProng.strokePath();
+  leftProng.lineStyle(7, UI.creamHex, 1);
+  leftProng.beginPath();
+  leftProng.moveTo(0, 0);
+  leftProng.lineTo(-4, 20);
+  leftProng.lineTo(-6, 40);
+  leftProng.lineTo(0, 60);
+  leftProng.strokePath();
   const leftTip = scene.add
     .circle(0, 62, 7, UI.gold, 1)
     .setStrokeStyle(3, UI.inkHex, 0.92);
   leftArm.add([leftProng, leftTip]);
   const rightArm = scene.add.container(7, 10).setAngle(-36);
-  const rightProng = scene.add
-    .rectangle(0, 0, 13, 64, UI.creamHex, 1)
-    .setOrigin(0.5, 0)
-    .setStrokeStyle(4, UI.inkHex, 0.96);
+  const rightProng = scene.add.graphics();
+  rightProng.lineStyle(14, UI.inkHex, 0.96);
+  rightProng.beginPath();
+  rightProng.moveTo(0, 0);
+  rightProng.lineTo(4, 20);
+  rightProng.lineTo(6, 40);
+  rightProng.lineTo(0, 60);
+  rightProng.strokePath();
+  rightProng.lineStyle(7, UI.creamHex, 1);
+  rightProng.beginPath();
+  rightProng.moveTo(0, 0);
+  rightProng.lineTo(4, 20);
+  rightProng.lineTo(6, 40);
+  rightProng.lineTo(0, 60);
+  rightProng.strokePath();
   const rightTip = scene.add
     .circle(0, 62, 7, UI.gold, 1)
     .setStrokeStyle(3, UI.inkHex, 0.92);
@@ -515,32 +528,35 @@ function createClawMachine(
     0,
     -350,
     firstChestVisit ? 'FIRST GEAR CLAW' : 'MYSTERY GEAR CLAW',
-    29,
+    26,
     UI.cream,
     true
   )
-    .setStroke(UI.ink, 8)
+    .setStroke(UI.ink, 6)
     .setShadow(0, 3, UI.ink, 2, true, true);
   const message = label(
     scene,
     0,
     -312,
     firstChestVisit ? 'TAKE 1 · GUARANTEED GEAR' : 'TAKE 1 OR TAKE 10',
-    17,
+    15,
     UI.goldText,
     true
   )
     .setWordWrapWidth(350)
-    .setStroke(UI.ink, 6)
+    .setStroke(UI.ink, 4)
     .setShadow(0, 2, UI.ink, 1, true, true);
   container.add([heading, message]);
 
   const actionButton = scene.add.container(0, 128);
   const controlGlow = scene.add
-    .circle(0, 0, 56, UI.gold, 0.06)
-    .setStrokeStyle(5, UI.creamHex, 0.72);
-  const buttonLabel = label(scene, 0, 1, 'GO!', 18, UI.cream, true);
-  actionButton.add([controlGlow, buttonLabel]);
+    .circle(0, 0, 48, UI.gold, 0.04)
+    .setStrokeStyle(4, UI.creamHex, 0.46);
+  const machineAccent = scene.add
+    .star(0, 0, 5, 10, 23, UI.creamHex, 0.96)
+    .setStrokeStyle(3, UI.inkHex, 0.82)
+    .setAngle(-8);
+  actionButton.add([controlGlow, machineAccent]);
   container.add(actionButton);
 
   const takeOneX = firstChestVisit ? 0 : -CLAW_CHOICE_X_OFFSET;
@@ -567,40 +583,14 @@ function createClawMachine(
     takeOneButton.setContent(visibleActionLabel, nextCost);
   };
   const setEnabled = (enabled: boolean): void => {
-    actionButton.setAlpha(enabled ? 1 : 0.46);
+    actionButton.setAlpha(enabled ? 0.92 : 0.42);
     takeOneButton.setEnabled(enabled);
     takeOneButton.container.setAlpha(enabled ? 1 : 0.62);
     scene.tweens.killTweensOf(controlGlow);
-    controlGlow.setAlpha(enabled ? 0.16 : 0.04).setScale(1);
-    if (enabled && !prefersReducedMotion()) {
-      scene.tweens.add({
-        targets: controlGlow,
-        alpha: 0.38,
-        scaleX: 1.14,
-        scaleY: 1.14,
-        duration: 720,
-        yoyo: true,
-        repeat: -1,
-        ease: 'Sine.easeInOut',
-      });
-    }
+    controlGlow.setAlpha(enabled ? 0.12 : 0.04).setScale(1);
   };
   setContent('TAKE 1', cost);
 
-  const controlHitTarget = scene.add
-    .rectangle(0, 128, 150, 120, 0xffffff, 0.001)
-    .setInteractive({ useHandCursor: true });
-  container.add(controlHitTarget);
-  bindPressInteractionEvents(
-    controlHitTarget,
-    {
-      press: () => actionButton.setScale(0.9),
-      release: () => actionButton.setScale(1),
-      activate: onActivate,
-      pressOnHover: false,
-    },
-    { gameTarget: scene.input, shutdownTarget: scene.events }
-  );
   return {
     pullControl: { container, setContent, setEnabled },
     message,
@@ -689,7 +679,8 @@ export function openCapsuleMachine(
     .setDepth(DEPTH + 1);
   layer.add(title);
 
-  const inkWallet = createInkWallet(scene, width / 2, 140, ink);
+  const headerControlsY = 148;
+  const inkWallet = createInkWallet(scene, width / 2, headerControlsY, ink);
   inkWallet.container.setScrollFactor(0).setDepth(DEPTH + 2);
   layer.add(inkWallet.container);
 
@@ -703,24 +694,24 @@ export function openCapsuleMachine(
       () => (inkEarningGuide = null)
     );
   };
-  const inkInfoButtonX = width / 2 + 138;
+  const inkInfoButtonX = width / 2 + 122;
   const inkInfoButton = paperIconButton(
     scene,
     inkInfoButtonX,
-    140,
+    headerControlsY,
     'info',
     openInkInfo,
-    58,
+    50,
     UI.creamHex,
     UI.coral,
-    58
+    50
   )
     .setScrollFactor(0)
     .setDepth(DEPTH + 2);
   layer.add(inkInfoButton);
   inkInfoControl = modalActions.add({
     label: 'How to earn Ink',
-    rect: { x: inkInfoButtonX - 29, y: 111, width: 58, height: 58 },
+    rect: { x: inkInfoButtonX - 25, y: 123, width: 50, height: 50 },
     onActivate: openInkInfo,
   });
 
@@ -735,24 +726,24 @@ export function openCapsuleMachine(
       () => (capsulePrizeGuide = null)
     );
   };
-  const prizeGuideButtonX = width / 2 - 138;
+  const prizeGuideButtonX = width / 2 - 122;
   const prizeGuideButton = paperIconButton(
     scene,
     prizeGuideButtonX,
-    140,
+    headerControlsY,
     'gift',
     openPrizeGuide,
-    58,
+    50,
     UI.creamHex,
     UI.gold,
-    58
+    50
   )
     .setScrollFactor(0)
     .setDepth(DEPTH + 2);
   layer.add(prizeGuideButton);
   prizeGuideControl = modalActions.add({
     label: `View ${opts.seasonName ?? 'current season'} claw-machine prizes and odds`,
-    rect: { x: prizeGuideButtonX - 29, y: 111, width: 58, height: 58 },
+    rect: { x: prizeGuideButtonX - 25, y: 123, width: 50, height: 50 },
     onActivate: openPrizeGuide,
   });
 
@@ -854,7 +845,7 @@ export function openCapsuleMachine(
   let primaryActionEnabled = ink >= nextCost;
   let secondaryActionEnabled =
     ink >= capsuleOpenCost(CAPSULE_MAX_BATCH_SIZE, nextCost);
-  const clawMachineY = Math.min(620, height - NAV_SAFE - 520);
+  const clawMachineY = Math.min(690, height - NAV_SAFE - 470);
   const clawMachine = useClawMachine
     ? createClawMachine(
         scene,
@@ -1757,7 +1748,7 @@ function burstClawGrabSparks(
 ): void {
   if (prefersReducedMotion()) return;
   const originX = machine.clawRig.x;
-  const originY = -204 + machine.clawHead.y + 24;
+  const originY = CLAW_RIG_Y + machine.clawHead.y + 24;
   for (let index = 0; index < 8; index += 1) {
     const angle = (Math.PI * 2 * index) / 8 - Math.PI / 2;
     const distance = 42 + (index % 2) * 18;
