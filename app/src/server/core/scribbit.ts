@@ -561,7 +561,7 @@ export const validateSubmitScribbitRequest = (
     baseImageDataUrl: value.baseImageDataUrl,
     imageDataUrl: value.imageDataUrl,
     // Deprecated client-provided values are kept for request compatibility.
-    // The submit route replaces stats from the style choice and element from art.
+    // The submit route derives both fighter style and element from base pixels.
     stats: normalizeStats(value.stats),
     element: isElement(value.element) ? value.element : 'ember',
     fighterStyle,
@@ -841,11 +841,9 @@ export const validateAndAnalyzeScribbitSubmission = (
     status: 'valid',
     draft: {
       ...draft,
-      // New clients choose a clear color-coded fighter style. Analyzer stats
-      // remain only as a short compatibility fallback for already-open clients.
-      stats: draft.fighterStyle
-        ? getStatsForFighterStyle(draft.fighterStyle)
-        : analysis.stats,
+      // The most-used chromatic ink group is authoritative. A claimed style
+      // from an already-open client can never override the submitted pixels.
+      stats: getStatsForFighterStyle(analysis.fighterStyle),
       element: analysis.element,
     },
   };

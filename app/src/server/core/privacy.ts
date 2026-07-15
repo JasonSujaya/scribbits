@@ -52,6 +52,7 @@ import {
 import { getRivalRunKey } from './rivalRun';
 import { getDrawChargeKey } from './drawCharges';
 import { getPaintBucketKey } from './paintBucket';
+import { getPowerUpDiscoveriesKey } from './powerUpOffers';
 import {
   deleteFreeDrawingsForUser,
   getUserFreeDrawingDayKey,
@@ -227,6 +228,7 @@ const deletePlayerDataRecords = async (
     getInventoryKey(userId),
     getDrawChargeKey(userId),
     getPaintBucketKey(userId),
+    getPowerUpDiscoveriesKey(userId),
     getPullsSinceEpicKey(userId),
     getCapsulePullCountKey(userId),
     getUserDailySparWinRewardsKey(userId),

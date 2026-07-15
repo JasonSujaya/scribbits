@@ -22,6 +22,9 @@
       "targetBuildId": "gunner-base",
       "seedsPerPairing": 40
     },
+    "powerUpUsefulness": {
+      "seedsPerPairing": 36
+    },
     "rivalRunRisk": {
       "challengerBuildIds": [
         "brawler-base",
@@ -34,6 +37,10 @@
     "generatedPool": {
       "opponentCount": 32,
       "seedsPerOpponent": 12
+    },
+    "damageSourceBreakdown": {
+      "seedsPerPairing": 80,
+      "generatedSeedsPerOpponent": 8
     },
     "gearPowerUps": {
       "targetBuildId": "gunner-base",

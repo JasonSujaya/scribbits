@@ -78,23 +78,6 @@ export const UI = {
   progressCommunity: 0x5b9dff,
 } as const;
 
-// Mood layer (Tamagotchi). Mood stays a concise word + color; semantic artwork
-// belongs to the shared paper-icon family rather than platform emoji.
-export type MoodStyle = { label: string; color: string };
-export const MOOD_STYLES = {
-  happy: { label: 'happy', color: '#4faa4f' },
-  hungry: { label: 'hungry', color: '#ff8a3d' },
-  sleepy: { label: 'sleepy', color: '#8a5cd8' },
-  pumped: { label: 'pumped', color: '#ff5a3d' },
-} as const;
-
-// Care actions — the three buttons on every roster card.
-export const CARE_STYLES = {
-  feed: { label: 'Feed', color: 0xff6b4a },
-  pat: { label: 'Pat', color: 0x4faa4f },
-  train: { label: 'Train', color: 0x5b9dff },
-} as const;
-
 // Each element gets a signature hue family used for badges, FX, and stat bars.
 export type ElementStyle = {
   label: string;

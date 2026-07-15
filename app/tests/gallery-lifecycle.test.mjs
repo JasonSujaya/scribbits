@@ -198,22 +198,27 @@ test('Gallery exposes Retire for active owned Scribbits and moves success to Arc
   assert.doesNotMatch(detailSource, /label: 'Believe'|'BELIEF'/);
   assert.match(detailSource, /maturityCountdownHeadline/);
   assert.match(detailSource, /Open .* Power-Up build and catalog/);
-  assert.match(detailSource, /POWER_UP_IDS\.forEach/);
-  assert.match(detailSource, /POWER GUIDE · \$\{pageNumber\} OF 3/);
+  assert.match(detailSource, /section\.ids\.forEach/);
+  assert.match(
+    detailSource,
+    /POWER GUIDE · \$\{pageNumber\} OF \$\{POWER_UP_GUIDE_PAGE_COUNT\}/
+  );
   assert.match(detailSource, /'YOUR BUILD'/);
-  assert.match(detailSource, /'POWER-UP CATALOG'/);
+  assert.match(detailSource, /'COMMON POWER-UPS'/);
+  assert.match(detailSource, /'RARE POWER-UPS'/);
+  assert.match(detailSource, /'EPIC \+ LEGENDARY'/);
   assert.match(detailSource, /'WIN → CHOOSE 1'/);
   assert.match(
     detailSource,
-    /const guidePages = \[buildPage, catalogPage, earnPage\]/
+    /const guidePages = \[buildPage, \.\.\.catalogPages, earnPage\]/
   );
-  assert.match(detailSource, /POWER_UP_ICONS\[powerUpId\]/);
+  assert.match(detailSource, /powerUpPaperIcon\(scene, powerUpId/);
   assert.match(detailSource, /STANDARD WIN/);
   assert.match(detailSource, /CHAMPION WIN/);
   assert.match(detailSource, /LOSS = NO POWER-UP/);
   assert.doesNotMatch(detailSource, /Ink Mods|INK MODS|YOUR ELEMENT/);
   assert.match(uiSource, /'ELEMENT'/);
-  assert.match(uiSource, /'MOOD'/);
+  assert.doesNotMatch(uiSource, /'MOOD'|moodChip/);
   assert.match(uiSource, /paperStatIcon\(\s*scene,\s*key/);
   assert.match(uiSource, /dominant \? UI\.goldHex : STAT_STYLES\[key\]\.color/);
   assert.match(

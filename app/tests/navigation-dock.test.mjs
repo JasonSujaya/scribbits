@@ -125,6 +125,26 @@ test('Paper icons are optically centered without moving their hit targets', () =
   );
 });
 
+test('narrow icon buttons wrap labels before centering their content', () => {
+  const wrapIndex = uiSource.indexOf(
+    'textLabel.setWordWrapWidth(maximumTextWidth)'
+  );
+  const measureIndex = uiSource.indexOf(
+    'const textWidth = Math.min(maximumTextWidth, textLabel.width)'
+  );
+  const positionIndex = uiSource.indexOf('iconGap + textWidth / 2');
+
+  assert.ok(wrapIndex >= 0, 'icon button labels should have a bounded width');
+  assert.ok(
+    measureIndex > wrapIndex,
+    'wrapped text should be measured before positioning the icon and label'
+  );
+  assert.ok(
+    positionIndex > measureIndex,
+    'the centered content row should use the wrapped label width'
+  );
+});
+
 test('Gallery opens the owned lifecycle collection with bounded sections', () => {
   assert.match(gallerySource, /const GALLERY_CONTENT_TOP = 240;/);
   assert.match(gallerySource, /this\.buildTabs\(GALLERY_TABS_Y\)/);

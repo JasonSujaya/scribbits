@@ -337,65 +337,6 @@ export function stickerCard(
   return container;
 }
 
-// A labeled mood card. The category eyebrow prevents values such as "Pumped"
-// from reading like an unexplained button beside the element card.
-export function moodChip(
-  scene: Scene,
-  x: number,
-  y: number,
-  moodLabel: string,
-  color: string,
-  scale = 1
-): Phaser.GameObjects.Container {
-  const container = scene.add.container(x, y);
-  const width = 180 * scale;
-  const height = 62 * scale;
-  const accent = Number.parseInt(color.replace('#', ''), 16);
-  const shadow = scene.add.rectangle(
-    3 * scale,
-    4 * scale,
-    width,
-    height,
-    UI.inkHex,
-    0.15
-  );
-  const face = scene.add
-    .rectangle(0, 0, width, height, UI.creamHex, 1)
-    .setStrokeStyle(3 * scale, accent, 0.9);
-  const accentStrip = scene.add.rectangle(
-    -width / 2 + 8 * scale,
-    0,
-    8 * scale,
-    height - 14 * scale,
-    accent,
-    1
-  );
-  const icon = paperIcon(scene, 'spark', -width / 2 + 34 * scale, 0, {
-    size: 29 * scale,
-    fill: accent,
-  });
-  const category = label(
-    scene,
-    -width / 2 + 58 * scale,
-    -12 * scale,
-    'MOOD',
-    13 * scale,
-    UI.inkSoft,
-    true
-  ).setOrigin(0, 0.5);
-  const value = label(
-    scene,
-    -width / 2 + 58 * scale,
-    10 * scale,
-    moodLabel.toUpperCase(),
-    22 * scale,
-    color,
-    true
-  ).setOrigin(0, 0.5);
-  container.add([shadow, face, accentStrip, icon, category, value]);
-  return container;
-}
-
 // A round level badge "Lv3" — gold coin with ink outline. The coin runs a touch
 // bigger and the numeral heavier so it stays readable at the small scales the
 // roster/champion/modal callers use (~0.55x design → tiny once letterboxed).
@@ -444,7 +385,7 @@ export function lifespanPips(
 }
 
 // A compact action button using the shared paper icon family.
-export function careButton(
+export function paperActionButton(
   scene: Scene,
   x: number,
   y: number,
@@ -494,7 +435,7 @@ export function careButton(
       scaleY: 0.9,
       duration: 60,
     },
-    'care.action'
+    'ui.tap'
   );
   return container;
 }
@@ -762,15 +703,24 @@ export function iconButton(
   if (enabled) hitTarget.setInteractive({ useHandCursor: true });
   const textLabel = label(scene, 0, -3, text, 30, textColor, true);
   const iconSize = 38;
-  const contentWidth = iconSize + 12 + textLabel.width;
+  const iconGap = 12;
+  const horizontalPadding = 18;
+  const maximumTextWidth = Math.max(
+    1,
+    width - iconSize - iconGap - horizontalPadding * 2
+  );
+  // Wrap before measuring. Narrow utility buttons such as SHARE CLIP use two
+  // lines; measuring the unwrapped label pushed the icon into the left border.
+  textLabel.setWordWrapWidth(maximumTextWidth);
+  const textWidth = Math.min(maximumTextWidth, textLabel.width);
+  const contentWidth = iconSize + iconGap + textWidth;
   const iconX = -contentWidth / 2 + iconSize / 2;
   const actionIcon = paperIcon(scene, iconKey, iconX, -2, {
     size: iconSize,
     fill: iconFill,
     stroke: UI.inkHex,
   });
-  textLabel.setX(iconX + iconSize / 2 + 12 + textLabel.width / 2);
-  textLabel.setWordWrapWidth(width - 56);
+  textLabel.setX(iconX + iconSize / 2 + iconGap + textWidth / 2);
   container.add([background, actionIcon, textLabel, hitTarget]);
 
   if (enabled) {
@@ -1417,7 +1367,7 @@ function drawWobblyRect(
 }
 
 // A labeled element card using the canonical element mark. Category + value
-// makes the pair self-explanatory when placed beside the mood card.
+// keeps the combat role readable anywhere the badge is shown.
 export function elementBadge(
   scene: Scene,
   x: number,

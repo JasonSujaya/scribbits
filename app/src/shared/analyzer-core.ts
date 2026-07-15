@@ -1,5 +1,6 @@
 import type { Element, ScribbitStats } from './arena';
 import { SCRIBBIT_STAT_KEYS, STAT_BUDGET, STAT_MAX, STAT_MIN } from './arena';
+import type { CombatRole } from './combat/types';
 
 export type RgbaPixelData = Uint8Array | Uint8ClampedArray | readonly number[];
 
@@ -12,6 +13,7 @@ export type PixelField = {
 export type AnalyzerResult = {
   stats: ScribbitStats;
   element: Element;
+  fighterStyle: CombatRole;
   inkRatio: number;
   inkedPixels: number;
 };
@@ -46,6 +48,7 @@ export type ScanResult = {
   maxX: number;
   maxY: number;
   hueBuckets: number[];
+  fighterStyleCounts: Record<CombatRole, number>;
   inked: Uint8Array;
 };
 
@@ -64,6 +67,18 @@ export function hueToElement(hueDegrees: number): Element {
     return 'tide';
   }
   return 'storm';
+}
+
+/**
+ * The visible color wheel is split at the midpoints between the base palette
+ * groups. That gives every role exactly two chromatic base colors.
+ */
+export function hueToFighterStyle(hueDegrees: number): CombatRole {
+  const hue = ((hueDegrees % 360) + 360) % 360;
+  if (hue >= 353 || hue < 38) return 'brawler';
+  if (hue < 154) return 'gunner';
+  if (hue < 233) return 'longshot';
+  return 'mage';
 }
 
 export function rgbToHsv(
@@ -97,6 +112,12 @@ export function rgbToHsv(
   return { hue, sat, val: max };
 }
 
+/** Low-saturation black/white ink has no hue, so it uses the Brawler fallback. */
+export function rgbToFighterStyle(r: number, g: number, b: number): CombatRole {
+  const { hue, sat, val } = rgbToHsv(r, g, b);
+  return sat >= 0.25 && val >= 0.2 ? hueToFighterStyle(hue) : 'brawler';
+}
+
 export function isPaperBackground(r: number, g: number, b: number): boolean {
   return (
     Math.abs(r - paperRed) <= paperColorTolerance &&
@@ -110,6 +131,12 @@ export function scanPixels(field: PixelField): ScanResult {
   const totalPixels = width * height;
   const inked = new Uint8Array(totalPixels);
   const hueBuckets = new Array<number>(bucketCount).fill(0);
+  const fighterStyleCounts: Record<CombatRole, number> = {
+    brawler: 0,
+    longshot: 0,
+    gunner: 0,
+    mage: 0,
+  };
 
   let inkedPixels = 0;
   let minX = width;
@@ -159,6 +186,7 @@ export function scanPixels(field: PixelField): ScanResult {
           Math.floor(hue / hueBucketDegrees)
         );
         hueBuckets[bucket] = (hueBuckets[bucket] ?? 0) + 1;
+        fighterStyleCounts[hueToFighterStyle(hue)] += alpha / 255;
       }
     }
   }
@@ -171,6 +199,7 @@ export function scanPixels(field: PixelField): ScanResult {
     maxX,
     maxY,
     hueBuckets,
+    fighterStyleCounts,
     inked,
   };
 }
@@ -251,6 +280,26 @@ export function dominantElement(hueBuckets: number[]): Element {
   return hueToElement(hueDegrees);
 }
 
+/**
+ * Mixed drawings use the fighter sector containing the most colored pixels.
+ * The stable role order resolves exact ties; neutral-only art is Brawler.
+ */
+export function dominantFighterStyle(
+  counts: Readonly<Record<CombatRole, number>>
+): CombatRole {
+  const roles = [
+    'brawler',
+    'longshot',
+    'gunner',
+    'mage',
+  ] as const satisfies readonly CombatRole[];
+  let dominantRole: CombatRole = 'brawler';
+  for (const role of roles.slice(1)) {
+    if (counts[role] > counts[dominantRole]) dominantRole = role;
+  }
+  return dominantRole;
+}
+
 function readRawStat(rawStats: unknown, statName: keyof ScribbitStats): number {
   if (typeof rawStats !== 'object' || rawStats === null) {
     return 0;
@@ -296,12 +345,14 @@ export function normalizeStats(rawStats: unknown): ScribbitStats {
 
 export function analyze(field: PixelField): AnalyzerResult {
   const scan = scanPixels(field);
-  const { inkedPixels, totalPixels, hueBuckets, inked } = scan;
+  const { inkedPixels, totalPixels, hueBuckets, fighterStyleCounts, inked } =
+    scan;
 
   if (inkedPixels < MIN_INK_PIXELS) {
     return {
       stats: normalizeStats({ chonk: 1, spike: 1, zip: 1, charm: 1 }),
       element: 'ember',
+      fighterStyle: dominantFighterStyle(fighterStyleCounts),
       inkRatio: totalPixels > 0 ? inkedPixels / totalPixels : 0,
       inkedPixels,
     };
@@ -339,6 +390,7 @@ export function analyze(field: PixelField): AnalyzerResult {
   return {
     stats: normalizeStats(raw),
     element: dominantElement(hueBuckets),
+    fighterStyle: dominantFighterStyle(fighterStyleCounts),
     inkRatio,
     inkedPixels,
   };

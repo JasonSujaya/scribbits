@@ -23,29 +23,34 @@ const { selectCombatRole } = require(
   join(compiledSharedRoot, 'combat', 'selection.js')
 );
 
-function createPaintedPngDataUrl() {
+function createPaintedPngDataUrl([red, green, blue]) {
   const png = new PNG({ width: 512, height: 512 });
   for (let y = 160; y < 352; y += 1) {
     for (let x = 160; x < 352; x += 1) {
       const offset = (y * png.width + x) * 4;
-      png.data[offset] = 40;
-      png.data[offset + 1] = 32;
-      png.data[offset + 2] = 24;
+      png.data[offset] = red;
+      png.data[offset + 1] = green;
+      png.data[offset + 2] = blue;
       png.data[offset + 3] = 255;
     }
   }
   return `data:image/png;base64,${PNG.sync.write(png).toString('base64')}`;
 }
 
-const identicalDrawing = createPaintedPngDataUrl();
+const roleColors = {
+  brawler: [255, 90, 61],
+  longshot: [59, 160, 224],
+  gunner: [79, 170, 79],
+  mage: [138, 92, 216],
+};
 
-for (const fighterStyle of ['brawler', 'longshot', 'gunner', 'mage']) {
-  test(`server honors explicit ${fighterStyle} style for identical pixels`, () => {
+for (const [fighterStyle, rgb] of Object.entries(roleColors)) {
+  test(`server derives ${fighterStyle} from drawing color`, () => {
+    const drawing = createPaintedPngDataUrl(rgb);
     const result = createPracticeBattle({
       request: {
-        name: 'Same Drawing',
-        baseImageDataUrl: identicalDrawing,
-        fighterStyle,
+        name: 'Color Drawing',
+        baseImageDataUrl: drawing,
       },
       artist: 'style-test',
       playerId: 'style-test-player',
@@ -57,10 +62,9 @@ for (const fighterStyle of ['brawler', 'longshot', 'gunner', 'mage']) {
     assert.equal(selectCombatRole(result.report.a.stats), fighterStyle);
 
     const submission = validateAndAnalyzeScribbitSubmission({
-      name: 'Same Drawing',
-      baseImageDataUrl: identicalDrawing,
-      imageDataUrl: identicalDrawing,
-      fighterStyle,
+      name: 'Color Drawing',
+      baseImageDataUrl: drawing,
+      imageDataUrl: drawing,
       stats: { chonk: 55, spike: 15, zip: 15, charm: 15 },
       element: 'ember',
     });
@@ -69,11 +73,40 @@ for (const fighterStyle of ['brawler', 'longshot', 'gunner', 'mage']) {
   });
 }
 
-test('server rejects an unknown fighter style', () => {
+test('server ignores a spoofed fighter style in both submission paths', () => {
+  const coralDrawing = createPaintedPngDataUrl(roleColors.brawler);
+  const practice = createPracticeBattle({
+    request: {
+      name: 'Spoofed Drawing',
+      baseImageDataUrl: coralDrawing,
+      fighterStyle: 'mage',
+    },
+    artist: 'style-test',
+    playerId: 'style-test-player',
+    canonicalDay: 1,
+    nonce: 'spoofed-style',
+  });
+  assert.equal(practice.status, 'created');
+  assert.equal(selectCombatRole(practice.report.a.stats), 'brawler');
+
+  const submission = validateAndAnalyzeScribbitSubmission({
+    name: 'Spoofed Drawing',
+    baseImageDataUrl: coralDrawing,
+    imageDataUrl: coralDrawing,
+    fighterStyle: 'mage',
+    stats: { chonk: 20, spike: 20, zip: 20, charm: 40 },
+    element: 'storm',
+  });
+  assert.equal(submission.status, 'valid');
+  assert.equal(selectCombatRole(submission.draft.stats), 'brawler');
+});
+
+test('server rejects an unknown legacy fighter style', () => {
+  const coralDrawing = createPaintedPngDataUrl(roleColors.brawler);
   const result = createPracticeBattle({
     request: {
       name: 'Invalid Style',
-      baseImageDataUrl: identicalDrawing,
+      baseImageDataUrl: coralDrawing,
       fighterStyle: 'sniper',
     },
     artist: 'style-test',
@@ -85,8 +118,8 @@ test('server rejects an unknown fighter style', () => {
 
   const submission = validateAndAnalyzeScribbitSubmission({
     name: 'Invalid Style',
-    baseImageDataUrl: identicalDrawing,
-    imageDataUrl: identicalDrawing,
+    baseImageDataUrl: coralDrawing,
+    imageDataUrl: coralDrawing,
     fighterStyle: 'sniper',
     stats: { chonk: 55, spike: 15, zip: 15, charm: 15 },
     element: 'ember',

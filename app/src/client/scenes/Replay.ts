@@ -25,11 +25,15 @@ import {
   daysLeftFor,
   ghostButton,
   label,
+  paperWordmark,
   startScene,
   stickerCard,
 } from '../lib/ui';
 import { CanvasActionOverlay } from '../lib/overlay';
-import { openDetailModal } from '../lib/detailmodal';
+import {
+  collectDiscoveredPowerUpIds,
+  openDetailModal,
+} from '../lib/detailmodal';
 import { LiveSprite } from '../lib/livesprite';
 import {
   barrierHitConnectsShapePowerActivation,
@@ -86,7 +90,10 @@ import type {
 import { isScribbitOwnedByViewer } from '../lib/battlejournal';
 import { drawReplayBattleBackground } from '../lib/replaybattlebackground';
 import type { ReplayBattleBackdrop } from '../lib/replaybattlebackground';
-import { FIGHT_START_TEXTURE } from '../lib/visualassets';
+import {
+  FIGHT_START_TEXTURE,
+  preloadReplayVisualAssets,
+} from '../lib/visualassets';
 import {
   createStickerShine,
   type StickerShineHandle,
@@ -98,10 +105,7 @@ import { createPostFightActions } from '../lib/replaypostfightactions';
 import type { PostFightActions } from '../lib/replaypostfightactions';
 import { planReplayPostFightEligibility } from '../lib/replaypostfighteligibility';
 import { planReplayReward } from '../lib/replayreward';
-import {
-  openPowerUpDraft,
-  type PowerUpDraftHandle,
-} from '../lib/powerupdraft';
+import { openPowerUpDraft, type PowerUpDraftHandle } from '../lib/powerupdraft';
 import { createPracticeOutcomeControls } from '../lib/replaypracticeoutcome';
 import {
   showSavedReplayIntro,
@@ -325,6 +329,10 @@ export class Replay extends Scene {
 
   constructor() {
     super('Replay');
+  }
+
+  preload(): void {
+    preloadReplayVisualAssets(this);
   }
 
   init(): void {
@@ -636,6 +644,9 @@ export class Replay extends Scene {
     const returnScene = getReplayReturn(this);
     openDetailModal(this, scribbit, {
       currentDay: arena?.dayNumber ?? scribbit.expiresDay,
+      discoveredPowerUpIds:
+        arena?.discoveredPowerUpIds ??
+        collectDiscoveredPowerUpIds(arena?.myScribbits ?? []),
       ...(arena?.rumbleResolvesAt === undefined
         ? {}
         : { nextArenaDayStartsAt: arena.rumbleResolvesAt }),
@@ -2519,6 +2530,96 @@ export class Replay extends Scene {
     });
   }
 
+  private createPersistentVictoryAura(
+    element: Scribbit['element'],
+    x: number,
+    y: number
+  ): void {
+    const elementStyle = ELEMENT_STYLES[element];
+    const aura = this.add.container(x, y).setDepth(55);
+    const glow = this.add
+      .circle(0, 0, 146, elementStyle.soft, 0.18)
+      .setStrokeStyle(7, UI.goldHex, 0.82);
+    const rays = this.add.graphics();
+    const rayCount = 12;
+    for (let index = 0; index < rayCount; index += 1) {
+      const angle = (index / rayCount) * Math.PI * 2;
+      const innerRadius = 154;
+      const outerRadius = 174 + (index % 2) * 12;
+      rays.lineStyle(
+        index % 2 === 0 ? 7 : 5,
+        index % 3 === 0 ? elementStyle.particle : UI.goldHex,
+        0.72
+      );
+      rays.lineBetween(
+        Math.cos(angle) * innerRadius,
+        Math.sin(angle) * innerRadius,
+        Math.cos(angle) * outerRadius,
+        Math.sin(angle) * outerRadius
+      );
+    }
+
+    const sparkPlacements = [
+      { x: -150, y: -88, size: 34, angle: -12 },
+      { x: 158, y: -72, size: 30, angle: 16 },
+      { x: -170, y: 68, size: 28, angle: 10 },
+      { x: 164, y: 82, size: 36, angle: -14 },
+    ] as const;
+    const sparks = sparkPlacements.map((placement, index) =>
+      this.add
+        .image(placement.x, placement.y, 'spark')
+        .setDisplaySize(placement.size, placement.size)
+        .setAngle(placement.angle)
+        .setTint(index % 2 === 0 ? UI.goldHex : elementStyle.particle)
+    );
+    aura.add([glow, rays, ...sparks]);
+
+    if (this.reduceMotion) return;
+    this.tweens.add({
+      targets: glow,
+      alpha: { from: 0.72, to: 1 },
+      scale: { from: 0.98, to: 1.05 },
+      duration: 1_100,
+      yoyo: true,
+      repeat: -1,
+      ease: 'Sine.easeInOut',
+    });
+    sparks.forEach((spark, index) => {
+      const baseScaleX = spark.scaleX;
+      const baseScaleY = spark.scaleY;
+      this.tweens.add({
+        targets: spark,
+        alpha: { from: 0.62, to: 1 },
+        scaleX: { from: baseScaleX * 0.9, to: baseScaleX * 1.12 },
+        scaleY: { from: baseScaleY * 0.9, to: baseScaleY * 1.12 },
+        duration: 720 + index * 110,
+        delay: index * 90,
+        yoyo: true,
+        repeat: -1,
+        ease: 'Sine.easeInOut',
+      });
+    });
+  }
+
+  private createOutcomeBanner(outcome: 'victory' | 'defeat'): void {
+    const victory = outcome === 'victory';
+    paperWordmark(
+      this,
+      this.scale.width / 2,
+      150,
+      victory ? 'VICTORY! INK-CREDIBLE!' : 'DEFEAT! PAPER JAM!',
+      {
+        icon: victory ? 'trophy' : 'defeat',
+        fontSize: 44,
+        maxWidth: 460,
+        fill: victory ? UI.gold : UI.coral,
+        accent: UI.creamHex,
+        textColor: victory ? UI.ink : UI.cream,
+        angle: victory ? -1.4 : 1.2,
+      }
+    ).setDepth(63);
+  }
+
   private showWinCeremony(
     winner: ReplayFighterRuntime,
     recap: BattleRecapPlan,
@@ -2538,10 +2639,16 @@ export class Replay extends Scene {
     const firstChestAction = this.firstChestAction(ownedFighter);
     const outcomeLayout = planReplayOutcomeLayout({ viewportHeight: height });
     const victoryY = outcomeLayout.heroY;
+    this.createOutcomeBanner('victory');
     this.time.delayedCall(260, () => {
       if (this.scene.isActive()) this.soundboard.play('win');
     });
     if (winner.sprite && !usesVerdictCeremony) {
+      this.createPersistentVictoryAura(
+        winner.scribbit.element,
+        width / 2,
+        victoryY
+      );
       winner.sprite.setDepth(56);
       losingFighter.sprite?.container.setAlpha(0.34);
       this.tweens.add({
@@ -2696,6 +2803,12 @@ export class Replay extends Scene {
             if (arena) {
               setArena(this, {
                 ...arena,
+                discoveredPowerUpIds: [
+                  ...new Set([
+                    ...(arena.discoveredPowerUpIds ?? []),
+                    selectedId,
+                  ]),
+                ],
                 myScribbits: arena.myScribbits.map((scribbit) =>
                   scribbit.id === winner.scribbit.id
                     ? { ...scribbit, powerUpIds: [...nextPowerUpIds] }
@@ -2728,6 +2841,7 @@ export class Replay extends Scene {
     const loser = this.fighterForSlot(recap.loserSlot);
     const rivalRunFinish = planRivalRunFinishStamp(this.report.rivalRun);
     const outcomeLayout = planReplayOutcomeLayout({ viewportHeight: height });
+    this.createOutcomeBanner('defeat');
     this.time.delayedCall(260, () => {
       if (this.scene.isActive()) this.soundboard.play('loss');
     });

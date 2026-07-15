@@ -10,11 +10,7 @@ import {
   type PowerUpOfferSource,
 } from '../../shared/combat/powerups';
 import type { Scribbit } from '../../shared/arena';
-import {
-  getScribbitKey,
-  parseScribbit,
-  serializeScribbit,
-} from './scribbit';
+import { getScribbitKey, parseScribbit, serializeScribbit } from './scribbit';
 import {
   discardWatchedTransaction,
   MAX_WATCH_TRANSACTION_ATTEMPTS,
@@ -29,8 +25,36 @@ export const getPowerUpOfferKey = (
   scribbitId: string
 ): string => `user:${userId}:scribbit:${scribbitId}:power-up-offer`;
 
+export const getPowerUpDiscoveriesKey = (userId: string): string =>
+  `user:${userId}:power-up-discoveries`;
+
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
+
+export const parsePowerUpDiscoveries = (
+  storedValue: string | undefined
+): readonly PowerUpId[] => {
+  if (storedValue === undefined) return [];
+  try {
+    const value: unknown = JSON.parse(storedValue);
+    if (!Array.isArray(value)) return [];
+    const discoveries: PowerUpId[] = [];
+    value.forEach((candidate) => {
+      if (isPowerUpId(candidate) && !discoveries.includes(candidate)) {
+        discoveries.push(candidate);
+      }
+    });
+    return Object.freeze(discoveries);
+  } catch {
+    return [];
+  }
+};
+
+export const loadPowerUpDiscoveries = async (
+  storage: ArenaStorage,
+  userId: string
+): Promise<readonly PowerUpId[]> =>
+  parsePowerUpDiscoveries(await storage.get(getPowerUpDiscoveriesKey(userId)));
 
 const isPowerUpOfferSource = (value: unknown): value is PowerUpOfferSource =>
   typeof value === 'string' &&
@@ -159,6 +183,7 @@ export const claimPowerUpOffer = async (
   if (!storage.watch) throw new Error('Power-Up claims require transactions.');
   const offerKey = getPowerUpOfferKey(input.userId, input.scribbitId);
   const scribbitKey = getScribbitKey(input.scribbitId);
+  const discoveriesKey = getPowerUpDiscoveriesKey(input.userId);
   for (
     let attempt = 0;
     attempt < MAX_WATCH_TRANSACTION_ATTEMPTS;
@@ -166,11 +191,13 @@ export const claimPowerUpOffer = async (
   ) {
     let transaction: ArenaTransaction | undefined;
     try {
-      transaction = await storage.watch(offerKey, scribbitKey);
-      const [storedOffer, storedScribbit] = await Promise.all([
-        storage.get(offerKey),
-        storage.get(scribbitKey),
-      ]);
+      transaction = await storage.watch(offerKey, scribbitKey, discoveriesKey);
+      const [storedOffer, storedScribbit, storedDiscoveries] =
+        await Promise.all([
+          storage.get(offerKey),
+          storage.get(scribbitKey),
+          storage.get(discoveriesKey),
+        ]);
       const offer = parsePowerUpOffer(storedOffer);
       const scribbit = parseScribbit(storedScribbit);
       const ownedPowerUpIds = scribbit?.powerUpIds ?? [];
@@ -195,15 +222,26 @@ export const claimPowerUpOffer = async (
         ...scribbit,
         powerUpIds: nextPowerUpIds,
       };
+      const discoveredPowerUpIds = [
+        ...new Set([
+          ...parsePowerUpDiscoveries(storedDiscoveries),
+          input.request.selectedId,
+        ]),
+      ];
       await transaction.multi();
       await transaction.set(scribbitKey, serializeScribbit(nextScribbit));
       await transaction.del(offerKey);
+      await transaction.set(
+        discoveriesKey,
+        JSON.stringify(discoveredPowerUpIds)
+      );
       const result = await transaction.exec();
-      if (Array.isArray(result) && result.length === 2) {
+      if (Array.isArray(result) && result.length === 3) {
         return Object.freeze({
           scribbitId: scribbit.id,
           selectedId: input.request.selectedId,
           powerUpIds: Object.freeze(nextPowerUpIds),
+          discoveredPowerUpIds: Object.freeze(discoveredPowerUpIds),
         });
       }
     } catch (error) {

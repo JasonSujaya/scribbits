@@ -307,12 +307,6 @@ export const SFX_CATALOG = {
       tone(440, 660, 0.2, 0.014, 'triangle', 0.12),
     ],
   },
-  'care.action': {
-    samples: ['cloth-rustle'],
-    volume: 0.22,
-    cooldownMilliseconds: 120,
-    maximumVoices: 2,
-  },
   'reward.ink': {
     samples: ['coin-rattle'],
     volume: 0.24,

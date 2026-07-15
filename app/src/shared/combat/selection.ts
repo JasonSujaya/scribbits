@@ -40,10 +40,9 @@ export function selectCombatRole(stats: RawCombatStats): CombatRole {
 }
 
 /**
- * One explicit fighter-style choice becomes one stable 100-point build.
- * Drawing pixels still prove that art was made, but never secretly choose the
- * role. Keeping the build symmetric also prevents color preference from
- * granting more total combat power.
+ * One server-derived drawing color group becomes one stable 100-point build.
+ * Keeping the builds symmetric prevents color preference from granting more
+ * total combat power.
  */
 export function getStatsForFighterStyle(role: CombatRole): RawCombatStats {
   return FIGHTER_STYLE_STATS[role];

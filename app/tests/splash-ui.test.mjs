@@ -33,8 +33,8 @@ test('splash tells one large creation-to-battle story without live API data', ()
   assert.match(splashHtml, /id="hero-creation-image"/);
   assert.match(splashHtml, /id="battle-hero-image"/);
   assert.match(splashHtml, /id="battle-rival-image"/);
-  assert.match(splashHtml, /splash-doodle-mossmop\.png/);
-  assert.match(splashHtml, /splash-doodle-stormpuff\.png/);
+  assert.match(splashHtml, /splash-doodle-mossmop\.webp/);
+  assert.match(splashHtml, /splash-doodle-stormpuff\.webp/);
   assert.doesNotMatch(splashHtml, /data-showcase-slot|showcase-grid/);
   assert.doesNotMatch(
     splashHtml + splashCss + splashScript,

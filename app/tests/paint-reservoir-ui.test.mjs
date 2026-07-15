@@ -39,7 +39,7 @@ test('one empty base color does not disable other colors or premium paint', () =
   assert.match(drawSource, /const hasPaint = this\.hasActivePaint\(\)/);
 });
 
-test('paint accounting counts every changed pixel while preserving editing tools', () => {
+test('paint accounting counts changed pixels and undo restores the matching wells', () => {
   assert.match(drawCanvasSource, /let changedPixels = 0/);
   assert.match(
     drawCanvasSource,
@@ -52,7 +52,23 @@ test('paint accounting counts every changed pixel while preserving editing tools
   assert.match(drawCanvasSource, /this\.requestPaint\(changedPixels, 'fill'\)/);
   assert.doesNotMatch(drawCanvasSource, /newlyPaintedPixels/);
   assert.match(drawCanvasSource, /if \(this\.mode === 'erase'\)/);
-  assert.doesNotMatch(drawSource, /paintReservoir[\s\S]{0,80}supplyHistory/);
+  assert.match(drawCanvasSource, /onEditStart\?: \(\) => void/);
+  assert.match(drawCanvasSource, /onEditCancel\?: \(\) => void/);
+  assert.match(
+    drawSource,
+    /type DrawingEditState = Readonly<[\s\S]*paintReservoirs: readonly PaintReservoir\[\]/
+  );
+  assert.match(drawSource, /private beginDrawingEdit\(\): void/);
+  assert.match(drawSource, /private cancelDrawingEdit\(\): void/);
+  assert.match(drawSource, /private commitDrawingEdit\(\): void/);
+  assert.match(
+    drawSource,
+    /this\.editRedoHistory\.push\(this\.currentDrawingEditState\(\)\)/
+  );
+  assert.match(drawSource, /this\.restoreDrawingEditState\(previous\)/);
+  assert.match(drawSource, /this\.restoreDrawingEditState\(next\)/);
+  assert.match(drawSource, /this\.renderPalettePaintLevels\(false\)/);
+  assert.doesNotMatch(drawSource, /supplyHistory|supplyRedoHistory/);
 });
 
 test('fresh timed attempts refill paint and empty paint only disables painting', () => {
@@ -62,6 +78,7 @@ test('fresh timed attempts refill paint and empty paint only disables painting',
   );
   assert.match(drawSource, /editable && hasPaint/);
   assert.match(drawSource, /private selectEraser\(\): void/);
+  assert.match(drawSource, /private selectDrawTool\(\): void/);
   assert.match(drawSource, /private undoDrawing\(\): void/);
 });
 
@@ -75,5 +92,6 @@ test('privacy deletion removes persisted Paint Bucket progression', () => {
 });
 
 test('local browser fixtures expose the same Paint Bucket contract', () => {
-  assert.match(mockSource, /paintBucket: \{ level: 1, capacity: 350_000 \}/);
+  assert.match(mockSource, /getPaintBucketState,/);
+  assert.match(mockSource, /paintBucket: getPaintBucketState\(\)/);
 });

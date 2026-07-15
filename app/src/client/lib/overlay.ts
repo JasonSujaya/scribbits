@@ -31,6 +31,9 @@ export type OverlayOrderAnchor = Readonly<{
 let canvasFocusUsesKeyboard = false;
 let canvasFocusModalityTrackingInstalled = false;
 
+export const canvasFocusIsKeyboardDriven = (): boolean =>
+  canvasFocusUsesKeyboard;
+
 function installCanvasFocusModalityTracking(): void {
   if (canvasFocusModalityTrackingInstalled) return;
   canvasFocusModalityTrackingInstalled = true;

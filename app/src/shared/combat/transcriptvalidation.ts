@@ -31,7 +31,7 @@ import type {
 
 const MAXIMUM_TRANSCRIPT_VALUE = 1_000_000;
 type LegacyTranscriptVersion = 1 | 2 | 3 | 4;
-type TranscriptVersion = LegacyTranscriptVersion | 5;
+type TranscriptVersion = LegacyTranscriptVersion | 5 | 6;
 const MAXIMUM_CHECKPOINT_GAP = COMBAT_TICK_RATE / 2;
 // A battle may end while an authored telegraph, active phase, burn, or echo
 // still points a short distance beyond the final simulation tick.
@@ -322,14 +322,19 @@ const isTranscriptFighter = (
   version: TranscriptVersion
 ): boolean => {
   if (!isRecord(value) || !isRecord(value.stats)) return false;
-  const versionedBuildIsUsable =
-    version === 5
-      ? value.element === undefined &&
-        value.upgrades === undefined &&
-        validatePowerUpBuild(value.powerUpIds).valid
-      : value.powerUpIds === undefined &&
-        isElement(value.element) &&
-        transcriptUpgradesAreUsable(value.upgrades, version);
+  let versionedBuildIsUsable: boolean;
+  if (version >= 5) {
+    versionedBuildIsUsable =
+      value.element === undefined &&
+      value.upgrades === undefined &&
+      validatePowerUpBuild(value.powerUpIds).valid;
+  } else {
+    const legacyVersion = version as LegacyTranscriptVersion;
+    versionedBuildIsUsable =
+      value.powerUpIds === undefined &&
+      isElement(value.element) &&
+      transcriptUpgradesAreUsable(value.upgrades, legacyVersion);
+  }
   return (
     isNonEmptyText(value.id, 120) &&
     isNonEmptyText(value.name, 80) &&
@@ -502,7 +507,7 @@ const timelineIsUsable = (
     if (!isTimelineEvent(value, result.completedTick)) return false;
     if (value.tick < previousTick) return false;
     if (
-      (version === 5 &&
+      (version >= 5 &&
         (value.kind === 'burn_applied' ||
           (value.kind === 'damage' && value.source === 'ember_burn'))) ||
       (version < 5 &&
@@ -555,7 +560,8 @@ export function parseBattleTranscript(
       value.version !== 2 &&
       value.version !== 3 &&
       value.version !== 4 &&
-      value.version !== 5) ||
+      value.version !== 5 &&
+      value.version !== 6) ||
     value.tickRate !== COMBAT_TICK_RATE ||
     value.fixedPointScale !== FIXED_POINT_SCALE ||
     value.maxTicks !== COMBAT_MAXIMUM_TICKS ||
@@ -570,7 +576,7 @@ export function parseBattleTranscript(
     return undefined;
   }
 
-  const version = value.version;
+  const version = value.version as TranscriptVersion;
   const fighterA = value.fighters[0];
   const fighterB = value.fighters[1];
   if (

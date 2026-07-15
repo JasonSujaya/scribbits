@@ -11,9 +11,6 @@ import type {
   BattleReport,
   BossChallengeRequest,
   CapsulePullResponse,
-  CareAction,
-  CareRequest,
-  CareResponse,
   CapsulePullRequest,
   CloutBoard,
   DirectBattleResponse,
@@ -250,18 +247,6 @@ export function fetchLegends(
   return getJson<LegendsState>(
     `/api/legends${queryString ? `?${queryString}` : ''}`
   );
-}
-
-// Tamagotchi care: feed/pat/train a Scribbit once each per UTC day for mood and
-// XP progression. Care is deliberately not an Ink source. 409 when done.
-export function careForScribbit(
-  scribbitId: string,
-  action: CareAction
-): Promise<ApiResult<CareResponse>> {
-  return postJson<CareRequest, CareResponse>('/api/care', {
-    scribbitId,
-    action,
-  });
 }
 
 // The server authors a stable daily rival slate for this living Scribbit. The

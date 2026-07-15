@@ -158,10 +158,10 @@ test('Shop visual assets load lazily and are checked before rendering', () => {
   );
 
   for (const shopAsset of [
-    'scribbits-shop-stage.png',
-    'scribbits-shop-chest-closed.png',
-    'scribbits-shop-chest-open.png',
-    'scribbits-ink-token.png',
+    'scribbits-shop-stage.webp',
+    'scribbits-shop-chest-closed.webp',
+    'scribbits-shop-chest-open.webp',
+    'scribbits-ink-token.webp',
   ]) {
     assert.doesNotMatch(
       corePreloadSource,
@@ -215,9 +215,9 @@ test('Mystery Ink uses generated closed and open chest art with honest compact c
   assert.match(capsuleMachineSource, /function createChestArt\(/);
   assert.match(capsuleMachineSource, /function shakeChest\(/);
   assert.match(capsuleMachineSource, /function openChest\(/);
-  assert.match(visualAssetsSource, /scribbits-shop-chest-closed\.png/);
-  assert.match(visualAssetsSource, /scribbits-shop-chest-open\.png/);
-  assert.match(visualAssetsSource, /scribbits-ink-token\.png/);
+  assert.match(visualAssetsSource, /scribbits-shop-chest-closed\.webp/);
+  assert.match(visualAssetsSource, /scribbits-shop-chest-open\.webp/);
+  assert.match(visualAssetsSource, /scribbits-ink-token\.webp/);
   assert.match(capsuleMachineSource, /SHOP_CHEST_TEXTURES\.open/);
   assert.match(capsuleMachineSource, /SHOP_CHEST_TEXTURES\.closed/);
 

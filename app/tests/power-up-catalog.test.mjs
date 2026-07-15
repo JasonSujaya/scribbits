@@ -27,6 +27,11 @@ test('launch catalog contains the balanced 15 behavioral Power-Ups', () => {
   );
   assert.equal(powerUps.MAXIMUM_POWER_UP_BONUS_DAMAGE, 36);
   assert.equal(powerUps.MAXIMUM_POWER_UP_TRIGGER_EVENTS, 32);
+  Object.values(powerUps.POWER_UP_CATALOG).forEach((entry) => {
+    assert.ok(entry.when.length >= 10);
+    assert.ok(entry.effect.length >= 10);
+    assert.equal(entry.description, `${entry.when}. ${entry.effect}.`);
+  });
 });
 
 test('build validation enforces unique five-card, one-Legendary, and exclusivity caps', () => {

@@ -590,19 +590,18 @@ command instead:
 For local browser iteration without Reddit:
 
 ```bash
-pnpm run build
 pnpm run mock
 ```
 
 Then open the mock server URL printed by the command.
 
-Agent-safe shortcut:
+The same canonical launcher is available from the repository root:
 
 ```bash
 ../mock.command
 ```
 
-That shortcut runs a dedicated Vite development server for immediate client
+The launcher runs a dedicated Vite development server for immediate client
 updates and proxies API requests to the local mock backend. Backend bundles are
 rebuilt in staging and published only when successful, so the running game keeps
 the last-good server code during an invalid save. Running the shortcut again

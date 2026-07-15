@@ -7,7 +7,6 @@ import type {
   FounderChronicle,
   FounderChronicleBeat,
   FounderRivalryOutcome,
-  Mood,
 } from '../../shared/arena';
 import {
   FOUNDING_SCRIBBIT_DEFINITIONS,
@@ -51,7 +50,6 @@ export type FounderChronicleRivalPlan = Readonly<{
   artist: string;
   element: Element;
   level: 1 | 2 | 3;
-  mood: Mood;
   imageUrl: `/creatures/creature-${string}.png`;
   epithet: string;
   startedDay: number;
@@ -489,7 +487,6 @@ function planActiveRivalry(
     artist: founder.artist,
     element: founder.element,
     level: founder.level,
-    mood: founder.mood,
     imageUrl: founder.imageUrl,
     epithet: founder.personality.epithet,
     startedDay: rivalry.startedDay,

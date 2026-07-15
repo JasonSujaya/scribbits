@@ -182,6 +182,7 @@ import { runWithPlayerMutationLease } from '../core/dataDeletion';
 import {
   claimPowerUpOffer,
   getOrCreatePowerUpOffer,
+  loadPowerUpDiscoveries,
   loadPendingPowerUpOffer,
 } from '../core/powerUpOffers';
 import {
@@ -861,6 +862,7 @@ registerPlayerMutatingGet('/arena', async (c) => {
     const forecast = await ensureForecastForDay(redis, dayNumber);
     const player = await getCurrentPlayer();
     let myScribbits: Scribbit[] = [];
+    let discoveredPowerUpIds: ArenaState['discoveredPowerUpIds'] = [];
     let hasCreatedScribbit = false;
     let drawnToday = false;
     let todayFreeDrawing: FreeDrawing | null = null;
@@ -910,6 +912,7 @@ registerPlayerMutatingGet('/arena', async (c) => {
         loadedDrawCharges,
         loadedPaintBucket,
         loadedDailyLogin,
+        loadedPowerUpDiscoveries,
       ] = await Promise.all([
         getDailyFlags(redis, player.userId, dayNumber),
         loadInventory(redis, player.userId),
@@ -926,8 +929,10 @@ registerPlayerMutatingGet('/arena', async (c) => {
         loadDrawCharges(redis, player.userId, now.getTime()),
         loadPaintBucket(redis, player.userId),
         loadDailyLoginState(redis, player.userId, utcDateKey),
+        loadPowerUpDiscoveries(redis, player.userId),
       ]);
       myScribbits = loadedScribbits;
+      discoveredPowerUpIds = [...loadedPowerUpDiscoveries];
       hasCreatedScribbit = loadedHasCreatedScribbit;
       todayFreeDrawing = loadedFreeDrawing ?? null;
       drawnToday =
@@ -1005,6 +1010,7 @@ registerPlayerMutatingGet('/arena', async (c) => {
           ? currentChampion
           : null,
       myScribbits,
+      discoveredPowerUpIds,
       drawCharges,
       paintBucket,
       drawnToday,

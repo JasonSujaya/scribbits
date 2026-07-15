@@ -165,21 +165,23 @@ test('portrait replay layout keeps controls, HUD, and fighters inside safe bound
       soundButtonWidth: 112,
       speedButtonWidth: 112,
       skipButtonWidth: 112,
-      fighterPanelTop: 145,
-      fighterPanelHeight: 128,
-      heartRowY: 208,
+      fighterPanelTop: 88,
+      fighterPanelHeight: 96,
+      battleTitleY: 42,
+      heartRowY: 122,
       heartRowWidth: 294,
       heartRowHeight: 40,
-      fighterNameY: 166,
-      arenaCaptionY: 252,
+      fighterNameOffsetY: -36,
+      fighterHealthOffsetY: 38,
+      arenaCaptionY: 194,
       battleClockX: 360,
-      battleClockY: 208,
-      arenaTop: 355,
+      battleClockY: 122,
+      arenaTop: 295,
       arenaBottom: 1078,
       arenaHorizontalPadding: 160,
       arenaVerticalPadding: 140,
       tickerX: 360,
-      tickerY: 310,
+      tickerY: 255,
       tickerWidth: 632,
       tickerHeight: 56,
       tickerTagWidth: 0,
@@ -188,19 +190,15 @@ test('portrait replay layout keeps controls, HUD, and fighters inside safe bound
       fighters: {
         a: {
           homeX: 194,
-          homeY: 716.5,
+          homeY: 686.5,
           facing: 1,
-          nameX: 36,
-          nameOriginX: 0,
           chipCenterX: 171,
           panelLeft: 24,
         },
         b: {
           homeX: 526,
-          homeY: 716.5,
+          homeY: 686.5,
           facing: -1,
-          nameX: 684,
-          nameOriginX: 1,
           chipCenterX: 549,
           panelLeft: 402,
         },
@@ -261,8 +259,23 @@ test('portrait replay layout keeps controls, HUD, and fighters inside safe bound
     'live combat should retain a tall stage below the fixed battle header'
   );
   assert.ok(
-    replayBattleLayout.heartRowY - replayBattleLayout.fighterNameY >= 40,
-    'fighter names and hearts should retain a visible breathing gap'
+    replayBattleLayout.battleTitleY + 30 / 2 <=
+      replayBattleLayout.heartRowY +
+        replayBattleLayout.fighterNameOffsetY -
+        18 / 2 -
+        12,
+    'the Battle title and fighter names should retain separate top rows'
+  );
+  assert.ok(
+    replayBattleLayout.fighterNameOffsetY + 18 / 2 <=
+      -replayBattleLayout.heartRowHeight / 2 &&
+      replayBattleLayout.heartRowHeight / 2 <=
+        replayBattleLayout.fighterHealthOffsetY - 20 / 2 &&
+      replayBattleLayout.heartRowY +
+        replayBattleLayout.fighterHealthOffsetY +
+        20 / 2 <=
+        replayBattleLayout.arenaCaptionY - 17 / 2 - 12,
+    'fighter name, hearts, HP, and arena caption should retain separate rows'
   );
   assert.ok(
     replayBattleLayout.arenaCaptionY -
@@ -616,18 +629,33 @@ test('heart meter plans clamp health while preserving danger and accessibility s
 test('every damage event shows exact HP loss and a red target flash', () => {
   assert.match(
     replayBattleHudSource,
+    /const battleTitle = label\([\s\S]*layout\.battleTitleY,[\s\S]*'BATTLE',[\s\S]*30,[\s\S]*UI\.ink,[\s\S]*true/,
+    'the replay should render a clear Battle title in the upper paper header'
+  );
+  assert.match(
+    replayBattleHudSource,
+    /setBattleChromeVisible:[\s\S]*battleTitle\.setVisible\(visible\)/,
+    'the Battle title should follow the replay chrome lifecycle'
+  );
+  assert.match(
+    replayBattleHudSource,
     /healthLabel[\s\S]*translate\('battle\.health',[\s\S]*current: safeHitPoints,[\s\S]*maximum: safeMaximumHitPoints/,
     'the heart row should expose exact current and maximum HP'
   );
   assert.match(
     replayBattleHudSource,
-    /translate\('battle\.health',[\s\S]*24,[\s\S]*UI\.ink,[\s\S]*true/,
-    'exact HP should use strong, caption-sized battle typography'
+    /const fighterNameLabel = label\([\s\S]*layout\.fighterNameOffsetY,[\s\S]*scribbit\.name\.toUpperCase\(\),[\s\S]*18,[\s\S]*UI\.ink,[\s\S]*true/,
+    'the fighter name should have its own clear row above the hearts'
   );
   assert.match(
     replayBattleHudSource,
-    /\.container\(fighterLayout\.chipCenterX, layout\.heartRowY, \[[\s\S]*heartWarning,[\s\S]*healthLabel,[\s\S]*\]\)/,
-    'the hearts and exact HP should share one hit-reaction container'
+    /fitTextFontSizeToWidth\(fighterNameLabel,[\s\S]*layout\.heartRowWidth,[\s\S]*18,[\s\S]*14/,
+    'long fighter names should remain inside their side of the HUD'
+  );
+  assert.match(
+    replayBattleHudSource,
+    /\.container\(fighterLayout\.chipCenterX, layout\.heartRowY, \[[\s\S]*fighterNameLabel,[\s\S]*heartWarning,[\s\S]*healthLabel,[\s\S]*\]\)/,
+    'the name, hearts, and exact HP should share one top HUD container'
   );
   assert.match(
     replaySource,
@@ -661,6 +689,16 @@ test('fighter names and HP bars follow their moving battle characters', () => {
     replayBattleHudSource,
     /floatingHealthFill[\s\S]*floatingHealthBarWidth/,
     'the floating tag should carry one proportional HP bar'
+  );
+  assert.doesNotMatch(
+    replayBattleHudSource,
+    /floatingVitalsBackground/,
+    'the moving fighter vitals should not draw a white backing card'
+  );
+  assert.match(
+    replayBattleHudSource,
+    /const floatingHealthTrack[\s\S]{0,300}setStrokeStyle/,
+    'the borderless card should retain a readable health track'
   );
   assert.match(
     replayBattleHudSource,

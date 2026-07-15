@@ -12,11 +12,10 @@ export const BRAND_LOGO_TEXTURE = 'scribbits-logo';
 export const HOME_STAGE_TEXTURE = 'scribbits-home-stage';
 export const HOME_TITLE_TEXTURE = 'scribbits-home-title';
 export const MATURITY_GEAR_TEXTURE = 'scribbits-maturity-gear-icons';
+export const BAG_BINDER_SHELL_TEXTURE = 'scribbits-bag-binder-base-shell-v5';
 export const HOME_PROP_TEXTURES = {
   window: 'scribbits-home-window',
   shelf: 'scribbits-home-shelf',
-  bowl: 'scribbits-home-bowl',
-  bed: 'scribbits-home-bed',
 } as const;
 export const SHOP_STAGE_TEXTURE = 'scribbits-shop-stage';
 export const SHOP_CHEST_TEXTURES = {
@@ -46,63 +45,182 @@ export const UI_BUTTON_TEXTURES = {
   secondary: 'ui-button-secondary',
 } as const;
 
+const VISUAL_ASSET_URLS: Readonly<Record<string, string>> = Object.freeze({
+  'bag-binder-base-shell-v5.webp': new URL(
+    '../assets/bag-binder-base-shell-v5.webp',
+    import.meta.url
+  ).href,
+  'gear-common-atlas.json': new URL(
+    '../assets/gear-common-atlas.json',
+    import.meta.url
+  ).href,
+  'gear-common-atlas.webp': new URL(
+    '../assets/gear-common-atlas.webp',
+    import.meta.url
+  ).href,
+  'gear-rare-epic-atlas.json': new URL(
+    '../assets/gear-rare-epic-atlas.json',
+    import.meta.url
+  ).href,
+  'gear-rare-epic-atlas.webp': new URL(
+    '../assets/gear-rare-epic-atlas.webp',
+    import.meta.url
+  ).href,
+  'maturity-gear-icons.webp': new URL(
+    '../assets/maturity-gear-icons.webp',
+    import.meta.url
+  ).href,
+  'scribbits-home-shelf.webp': new URL(
+    '../assets/scribbits-home-shelf.webp',
+    import.meta.url
+  ).href,
+  'scribbits-home-stage.webp': new URL(
+    '../assets/scribbits-home-stage.webp',
+    import.meta.url
+  ).href,
+  'scribbits-home-title.webp': new URL(
+    '../assets/scribbits-home-title.webp',
+    import.meta.url
+  ).href,
+  'scribbits-home-window.webp': new URL(
+    '../assets/scribbits-home-window.webp',
+    import.meta.url
+  ).href,
+  'scribbits-ink-token.webp': new URL(
+    '../assets/scribbits-ink-token.webp',
+    import.meta.url
+  ).href,
+  'scribbits-logo.webp': new URL(
+    '../assets/scribbits-logo.webp',
+    import.meta.url
+  ).href,
+  'scribbits-shop-chest-closed.webp': new URL(
+    '../assets/scribbits-shop-chest-closed.webp',
+    import.meta.url
+  ).href,
+  'scribbits-shop-chest-open.webp': new URL(
+    '../assets/scribbits-shop-chest-open.webp',
+    import.meta.url
+  ).href,
+  'scribbits-shop-stage.webp': new URL(
+    '../assets/scribbits-shop-stage.webp',
+    import.meta.url
+  ).href,
+  'scribbits-stage.webp': new URL(
+    '../assets/scribbits-stage.webp',
+    import.meta.url
+  ).href,
+  'ui-button-back.webp': new URL(
+    '../assets/ui-button-back.webp',
+    import.meta.url
+  ).href,
+  'ui-button-battle-skip.webp': new URL(
+    '../assets/ui-button-battle-skip.webp',
+    import.meta.url
+  ).href,
+  'ui-button-battle-sound.webp': new URL(
+    '../assets/ui-button-battle-sound.webp',
+    import.meta.url
+  ).href,
+  'ui-button-battle-speed.webp': new URL(
+    '../assets/ui-button-battle-speed.webp',
+    import.meta.url
+  ).href,
+  'ui-button-close.webp': new URL(
+    '../assets/ui-button-close.webp',
+    import.meta.url
+  ).href,
+  'ui-button-next.webp': new URL(
+    '../assets/ui-button-next.webp',
+    import.meta.url
+  ).href,
+  'ui-button-previous.webp': new URL(
+    '../assets/ui-button-previous.webp',
+    import.meta.url
+  ).href,
+  'ui-button-primary.webp': new URL(
+    '../assets/ui-button-primary.webp',
+    import.meta.url
+  ).href,
+  'ui-button-secondary.webp': new URL(
+    '../assets/ui-button-secondary.webp',
+    import.meta.url
+  ).href,
+  'ui-fight-start.webp': new URL(
+    '../assets/ui-fight-start.webp',
+    import.meta.url
+  ).href,
+});
+
 const assetUrl = (fileName: string): string => {
-  return new URL(`../assets/${fileName}`, import.meta.url).href;
+  const url = VISUAL_ASSET_URLS[fileName];
+  if (!url) throw new Error(`Unknown visual asset: ${fileName}`);
+  return url;
 };
 
 export function preloadVisualAssets(scene: Scene): void {
-  scene.load.image(SCRIBBITS_STAGE_TEXTURE, assetUrl('scribbits-stage.png'));
-  scene.load.image(FIGHT_START_TEXTURE, assetUrl('ui-fight-start.png'));
-  scene.load.image(BRAND_LOGO_TEXTURE, assetUrl('scribbits-logo.png'));
+  scene.load.image(SCRIBBITS_STAGE_TEXTURE, assetUrl('scribbits-stage.webp'));
+  scene.load.image(BRAND_LOGO_TEXTURE, assetUrl('scribbits-logo.webp'));
   scene.load.atlas(
     COMMON_GEAR_ART_TEXTURE,
-    assetUrl('gear-common-atlas.png'),
+    assetUrl('gear-common-atlas.webp'),
     assetUrl('gear-common-atlas.json')
   );
   scene.load.atlas(
     RARE_EPIC_GEAR_ART_TEXTURE,
-    assetUrl('gear-rare-epic-atlas.png'),
+    assetUrl('gear-rare-epic-atlas.webp'),
     assetUrl('gear-rare-epic-atlas.json')
   );
-  Object.entries(BATTLE_CONTROL_BUTTON_TEXTURES).forEach(([kind, texture]) => {
-    scene.load.image(texture, assetUrl(`ui-button-battle-${kind}.png`));
-  });
   Object.entries(UI_BUTTON_TEXTURES).forEach(([kind, texture]) => {
-    scene.load.image(texture, assetUrl(`ui-button-${kind}.png`));
+    scene.load.image(texture, assetUrl(`ui-button-${kind}.webp`));
+  });
+}
+
+export function preloadGalleryVisualAssets(scene: Scene): void {
+  scene.load.image(
+    BAG_BINDER_SHELL_TEXTURE,
+    assetUrl('bag-binder-base-shell-v5.webp')
+  );
+}
+
+export function preloadReplayVisualAssets(scene: Scene): void {
+  scene.load.image(FIGHT_START_TEXTURE, assetUrl('ui-fight-start.webp'));
+  Object.entries(BATTLE_CONTROL_BUTTON_TEXTURES).forEach(([kind, texture]) => {
+    scene.load.image(texture, assetUrl(`ui-button-battle-${kind}.webp`));
   });
 }
 
 export function preloadHomeVisualAssets(scene: Scene): void {
-  scene.load.image(HOME_STAGE_TEXTURE, assetUrl('scribbits-home-stage.png'));
-  scene.load.image(HOME_TITLE_TEXTURE, assetUrl('scribbits-home-title.png'));
+  scene.load.image(HOME_STAGE_TEXTURE, assetUrl('scribbits-home-stage.webp'));
+  scene.load.image(HOME_TITLE_TEXTURE, assetUrl('scribbits-home-title.webp'));
   Object.values(HOME_PROP_TEXTURES).forEach((texture) => {
-    scene.load.image(texture, assetUrl(`${texture}.png`));
+    scene.load.image(texture, assetUrl(`${texture}.webp`));
   });
   scene.load.spritesheet(
     MATURITY_GEAR_TEXTURE,
-    assetUrl('maturity-gear-icons.png'),
+    assetUrl('maturity-gear-icons.webp'),
     { frameWidth: 256, frameHeight: 256 }
   );
 }
 
 export function preloadShopVisualAssets(scene: Scene): void {
   if (!scene.textures.exists(SHOP_STAGE_TEXTURE)) {
-    scene.load.image(SHOP_STAGE_TEXTURE, assetUrl('scribbits-shop-stage.png'));
+    scene.load.image(SHOP_STAGE_TEXTURE, assetUrl('scribbits-shop-stage.webp'));
   }
   if (!scene.textures.exists(SHOP_CHEST_TEXTURES.closed)) {
     scene.load.image(
       SHOP_CHEST_TEXTURES.closed,
-      assetUrl('scribbits-shop-chest-closed.png')
+      assetUrl('scribbits-shop-chest-closed.webp')
     );
   }
   if (!scene.textures.exists(SHOP_CHEST_TEXTURES.open)) {
     scene.load.image(
       SHOP_CHEST_TEXTURES.open,
-      assetUrl('scribbits-shop-chest-open.png')
+      assetUrl('scribbits-shop-chest-open.webp')
     );
   }
   if (!scene.textures.exists(INK_TOKEN_TEXTURE)) {
-    scene.load.image(INK_TOKEN_TEXTURE, assetUrl('scribbits-ink-token.png'));
+    scene.load.image(INK_TOKEN_TEXTURE, assetUrl('scribbits-ink-token.webp'));
   }
 }
 

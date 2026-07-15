@@ -44,7 +44,7 @@ import {
   UI,
 } from '../lib/theme';
 import { paperIcon, paperToolIcon } from '../lib/papericons';
-import type { PaperToolIconKey } from '../lib/papericons';
+import type { PaperIconKey, PaperToolIconKey } from '../lib/papericons';
 import { paperBackdrop } from '../lib/art';
 import { LivingPaper } from '../lib/livingpaper';
 import { StickerAttach } from '../lib/stickerdrawer';
@@ -159,7 +159,7 @@ const DRAW_START_CARD_ART_URL = new URL(
   import.meta.url
 ).href;
 const DRAW_CLOSE_BUTTON_ART_URL = new URL(
-  '../assets/ui-button-close.png',
+  '../assets/ui-button-close.webp',
   import.meta.url
 ).href;
 const DRAW_CANVAS_PREVIEW_STORAGE_KEY = 'scribbits.draw.canvas-preview';
@@ -170,10 +170,10 @@ const FIGHTER_STYLE_ROLES: readonly CombatRole[] = [
   'mage',
 ];
 const FIGHTER_STYLE_COLOR_NAMES: Readonly<Record<CombatRole, string>> = {
-  brawler: 'coral',
-  longshot: 'blue',
-  gunner: 'green',
-  mage: 'purple',
+  brawler: 'coral + orange',
+  longshot: 'aqua + blue',
+  gunner: 'gold + green',
+  mage: 'purple + pink',
 };
 
 function loadDarkCanvasPreview(): boolean {
@@ -197,38 +197,65 @@ function saveDarkCanvasPreview(enabled: boolean): void {
   }
 }
 
-// Every base color is visible at once; premium pens remain a separate unlock.
+// Every base color is visible at once and grouped by its color-derived role.
 const PALETTE_COLORS = [
   '#2b2016',
   '#ff5a3d',
-  '#ff9a3d',
-  '#3ba0e0',
-  '#7fd8e6',
-  '#4faa4f',
-  '#8a5cd8',
   '#f2cf3d',
+  '#7fd8e6',
+  '#8a5cd8',
   '#ffffff',
+  '#ff9a3d',
+  '#4faa4f',
+  '#3ba0e0',
   '#ff7fb0',
 ] as const;
 const PALETTE_COLOR_NAMES = [
   'black',
   'coral',
-  'orange',
-  'blue',
-  'aqua',
-  'green',
-  'purple',
   'gold',
+  'aqua',
+  'purple',
   'white',
+  'orange',
+  'green',
+  'blue',
   'pink',
 ] as const;
+
+const PALETTE_GROUPS: ReadonlyArray<
+  Readonly<{ label: string; role: CombatRole | null }>
+> = [
+  { label: 'NEUTRAL', role: null },
+  { label: 'BRAWLER', role: 'brawler' },
+  { label: 'GUNNER', role: 'gunner' },
+  { label: 'LONGSHOT', role: 'longshot' },
+  { label: 'MAGE', role: 'mage' },
+];
+
+const PALETTE_COLOR_ROLES: ReadonlyArray<CombatRole | null> = [
+  null,
+  'brawler',
+  'gunner',
+  'longshot',
+  'mage',
+  null,
+  'brawler',
+  'gunner',
+  'longshot',
+  'mage',
+];
+
+const fighterStyleForPaletteColor = (colorIndex: number): CombatRole | null => {
+  return PALETTE_COLOR_ROLES[colorIndex] ?? null;
+};
 
 const MIN_LINE_WIDTH = 8;
 const MAX_LINE_WIDTH = 56;
 const LINE_WIDTH_STEP = 4;
 const DEFAULT_LINE_WIDTH = MIN_LINE_WIDTH;
-const SELECTED_SWATCH_RADIUS = 30;
-const SWATCH_RADIUS = 21;
+const SELECTED_SWATCH_RADIUS = 31;
+const SWATCH_RADIUS = 22;
 const EMPTY_PAINT_WELL_COLOR = UI.creamHex;
 
 const createPalettePaintReservoirs = (capacity: number): PaintReservoir[] => {
@@ -261,9 +288,14 @@ type SubmissionDraft = Readonly<{
     brushId: string | null;
   };
 }>;
-type SupplyUsage = Readonly<{
+type DrawingEditState = Readonly<{
   drawingInkId: string | null;
   brushId: string | null;
+  paintReservoirs: readonly PaintReservoir[];
+}>;
+type UnsavedDrawingModal = Readonly<{
+  layer: Phaser.GameObjects.Container;
+  actions: CanvasModalOverlay;
 }>;
 type PlayerDrawMode = 'unselected' | 'community' | 'free';
 type PaintChoice =
@@ -273,15 +305,6 @@ type PaintChoice =
       entry: CosmeticDrawingInkCatalogEntry;
       charges: number;
     }>;
-
-type FighterStyleControl = Readonly<{
-  role: CombatRole;
-  width: number;
-  container: Phaser.GameObjects.Container;
-  background: Phaser.GameObjects.Graphics;
-  selectedDot: Phaser.GameObjects.Arc;
-  nativeControl: HTMLButtonElement | null;
-}>;
 
 type LocalDrawAutomationApi = Readonly<{
   reset: () => boolean;
@@ -299,12 +322,12 @@ export class Draw extends Scene {
   private overlay!: DomOverlay;
   private canvas!: DrawCanvas;
   private headerControlOverlay: CanvasActionOverlay | null = null;
-  private fighterStyleOverlay: CanvasActionOverlay | null = null;
   private toolControlOverlay: CanvasActionOverlay | null = null;
   private submitOverlay: CanvasActionOverlay | null = null;
   private revealControlOverlay: CanvasActionOverlay | null = null;
   private submitControl: HTMLButtonElement | null = null;
   private drawConfirmation: DrawConfirmationModal | null = null;
+  private unsavedDrawingModal: UnsavedDrawingModal | null = null;
   private submissionLoading: DrawSubmissionLoadingOverlay | null = null;
   private draftName = '';
 
@@ -329,8 +352,9 @@ export class Draw extends Scene {
   private brushSupplyCount: Phaser.GameObjects.Text | null = null;
   private usedDrawingInkId: string | null = null;
   private usedBrushId: string | null = null;
-  private supplyHistory: SupplyUsage[] = [];
-  private supplyRedoHistory: SupplyUsage[] = [];
+  private editHistory: DrawingEditState[] = [];
+  private editRedoHistory: DrawingEditState[] = [];
+  private pendingEditState: DrawingEditState | null = null;
   private activeStrokeColor: string = PALETTE_COLORS[0];
   private lineWidth = DEFAULT_LINE_WIDTH;
   private lineWidthPreviewStroke: Phaser.GameObjects.Graphics | null = null;
@@ -339,27 +363,32 @@ export class Draw extends Scene {
   private decreaseBrushSizeControl: HTMLButtonElement | null = null;
   private increaseBrushSizeControl: HTMLButtonElement | null = null;
   private fillToolButton: Phaser.GameObjects.Container | null = null;
-  private fillTargetSwatch: Phaser.GameObjects.Arc | null = null;
+  private drawToolButton: Phaser.GameObjects.Container | null = null;
+  private fillTargetSwatch: Phaser.GameObjects.Rectangle | null = null;
   private paintReservoirs: PaintReservoir[] = createPalettePaintReservoirs(
     getPaintBucketState().capacity
   );
   private paintBlockedMessage = 'That color is empty.';
   private lastPaintBlockedAt = 0;
   private eraserToolButton: Phaser.GameObjects.Container | null = null;
-  private eraserTargetSwatch: Phaser.GameObjects.Arc | null = null;
+  private eraserTargetSwatch: Phaser.GameObjects.Rectangle | null = null;
   private clearToolButton: Phaser.GameObjects.Container | null = null;
+  private contrastToolButton: Phaser.GameObjects.Container | null = null;
   private undoToolButton: Phaser.GameObjects.Container | null = null;
   private redoToolButton: Phaser.GameObjects.Container | null = null;
   private fillToolControl: HTMLButtonElement | null = null;
+  private drawToolControl: HTMLButtonElement | null = null;
   private eraserToolControl: HTMLButtonElement | null = null;
   private clearToolControl: HTMLButtonElement | null = null;
+  private contrastToolControl: HTMLButtonElement | null = null;
   private undoToolControl: HTMLButtonElement | null = null;
   private redoToolControl: HTMLButtonElement | null = null;
   private livePromptLabel: Phaser.GameObjects.Text | null = null;
   private liveRoleIndicatorY = 0;
   private liveRoleInfoControl: HTMLButtonElement | null = null;
-  private selectedFighterStyle: CombatRole = 'brawler';
-  private fighterStyleControls: FighterStyleControl[] = [];
+  private detectedFighterStyle: CombatRole | null = null;
+  private liveRoleIcon: Phaser.GameObjects.Container | null = null;
+  private liveRoleLabel: Phaser.GameObjects.Text | null = null;
   private roleStyleInfoLayer: Phaser.GameObjects.Container | null = null;
   private submitButton: Phaser.GameObjects.Container | null = null;
   private creationControlsReady: boolean | null = null;
@@ -371,6 +400,7 @@ export class Draw extends Scene {
   private advancedToolNativeControls: HTMLButtonElement[] = [];
   private moreToolsButton: Phaser.GameObjects.Container | null = null;
   private moreToolsControl: HTMLButtonElement | null = null;
+  private moreToolsLabel: Phaser.GameObjects.Text | null = null;
   private advancedToolBadge: Phaser.GameObjects.Arc | null = null;
   private advancedToolsOpen = false;
   private drawingLocked = false;
@@ -476,8 +506,9 @@ export class Draw extends Scene {
     this.brushSupplyCount = null;
     this.usedDrawingInkId = null;
     this.usedBrushId = null;
-    this.supplyHistory = [];
-    this.supplyRedoHistory = [];
+    this.editHistory = [];
+    this.editRedoHistory = [];
+    this.pendingEditState = null;
     this.activeStrokeColor = PALETTE_COLORS[0];
     this.lineWidth = DEFAULT_LINE_WIDTH;
     this.lineWidthPreviewStroke = null;
@@ -486,6 +517,7 @@ export class Draw extends Scene {
     this.decreaseBrushSizeControl = null;
     this.increaseBrushSizeControl = null;
     this.fillToolButton = null;
+    this.drawToolButton = null;
     this.fillTargetSwatch = null;
     this.paintReservoirs = createPalettePaintReservoirs(
       getPaintBucketState().capacity
@@ -495,18 +527,22 @@ export class Draw extends Scene {
     this.eraserToolButton = null;
     this.eraserTargetSwatch = null;
     this.clearToolButton = null;
+    this.contrastToolButton = null;
     this.undoToolButton = null;
     this.redoToolButton = null;
     this.fillToolControl = null;
+    this.drawToolControl = null;
     this.eraserToolControl = null;
     this.clearToolControl = null;
+    this.contrastToolControl = null;
     this.undoToolControl = null;
     this.redoToolControl = null;
     this.livePromptLabel = null;
     this.liveRoleIndicatorY = 0;
     this.liveRoleInfoControl = null;
-    this.selectedFighterStyle = 'brawler';
-    this.fighterStyleControls = [];
+    this.detectedFighterStyle = null;
+    this.liveRoleIcon = null;
+    this.liveRoleLabel = null;
     this.roleStyleInfoLayer = null;
     this.submitButton = null;
     this.creationControlsReady = null;
@@ -518,6 +554,7 @@ export class Draw extends Scene {
     this.advancedToolNativeControls = [];
     this.moreToolsButton = null;
     this.moreToolsControl = null;
+    this.moreToolsLabel = null;
     this.advancedToolBadge = null;
     this.advancedToolsOpen = false;
     this.drawingLocked = false;
@@ -564,6 +601,7 @@ export class Draw extends Scene {
     this.pendingPracticeReport = null;
     this.localAutomationBridge = null;
     this.drawConfirmation = null;
+    this.unsavedDrawingModal = null;
     this.submissionLoading = null;
     this.draftName = '';
     this.headerControlOverlay = null;
@@ -636,11 +674,6 @@ export class Draw extends Scene {
     this.headerControlOverlay.setRootAttributes({
       'aria-label': 'Drawing navigation',
     });
-    this.fighterStyleOverlay = new CanvasActionOverlay(this, 'fighter-style');
-    this.fighterStyleOverlay.setRootAttributes({
-      'aria-label': 'Fighter style',
-      role: 'radiogroup',
-    });
     this.toolControlOverlay = new CanvasActionOverlay(this);
     this.toolControlOverlay.setRootAttributes({
       'aria-label': this.practiceMode
@@ -686,11 +719,11 @@ export class Draw extends Scene {
     this.overlay?.destroy();
     this.drawConfirmation?.destroy();
     this.drawConfirmation = null;
+    this.unsavedDrawingModal?.layer.destroy(true);
+    this.unsavedDrawingModal = null;
     this.hideSubmissionLoading();
     this.headerControlOverlay?.destroy();
     this.headerControlOverlay = null;
-    this.fighterStyleOverlay?.destroy();
-    this.fighterStyleOverlay = null;
     this.toolControlOverlay?.destroy();
     this.toolControlOverlay = null;
     this.submitOverlay?.destroy();
@@ -698,7 +731,8 @@ export class Draw extends Scene {
     this.revealControlOverlay?.destroy();
     this.revealControlOverlay = null;
     this.liveRoleInfoControl = null;
-    this.fighterStyleControls = [];
+    this.liveRoleIcon = null;
+    this.liveRoleLabel = null;
     this.firstFightLoadingTween?.stop();
     this.firstFightLoadingTween = null;
     this.firstFightButton = null;
@@ -821,8 +855,164 @@ export class Draw extends Scene {
   }
 
   private exitDraw(): void {
+    if (this.submitting || this.drawConfirmation || this.unsavedDrawingModal) {
+      return;
+    }
     if (this.practiceMode) endPracticeSession(this);
+    if (!this.practiceMode) {
+      this.previewTimer?.remove();
+      this.previewTimer = null;
+      this.refreshPreview();
+      if ((this.lastResult?.inkedPixels ?? 0) > 0) {
+        if (hasMinimumDrawingInk(this.lastResult ?? { inkedPixels: 0 })) {
+          this.continueFromDrawing();
+          return;
+        }
+        this.openUnsavedDrawingModal();
+        return;
+      }
+    }
     this.exitTo('ScribbitHome');
+  }
+
+  private openUnsavedDrawingModal(): void {
+    if (this.unsavedDrawingModal) return;
+    const { width, height } = this.scale;
+    const cardWidth = width - 100;
+    const cardHeight = 470;
+    const cardCenterY = height / 2;
+    const cardTop = cardCenterY - cardHeight / 2;
+    const wasTimedRoundRunning =
+      this.playerDrawMode === 'community' &&
+      this.drawRoundClock.started &&
+      !this.drawingLocked;
+    this.pauseDrawingRound();
+    this.overlay.setVisible(false);
+
+    const keepDrawing = (): void =>
+      this.closeUnsavedDrawingModal(wasTimedRoundRunning);
+    const actions = new CanvasModalOverlay(
+      this,
+      'Drawing not saved yet',
+      keepDrawing,
+      'This drawing only becomes a Scribbit after you name and save it.'
+    );
+    const layer = this.add.container(0, 0).setDepth(2800).setScrollFactor(0);
+    this.unsavedDrawingModal = { layer, actions };
+    layer.once('destroy', () => actions.destroy());
+
+    const shade = this.add
+      .rectangle(width / 2, height / 2, width, height, UI.inkHex, 0.76)
+      .setScrollFactor(0)
+      .setInteractive({ useHandCursor: true });
+    markSfxManaged(shade);
+    shade.on('pointerup', () => {
+      playSfx('ui.close');
+      keepDrawing();
+    });
+    const card = stickerCard(
+      this,
+      width / 2,
+      cardCenterY,
+      cardWidth,
+      cardHeight,
+      { tapeColor: UI.tapeAlt, tapeWidth: 96 }
+    ).setScrollFactor(0);
+    const cardInputBlocker = this.add
+      .rectangle(width / 2, cardCenterY, cardWidth, cardHeight, 0xffffff, 0.001)
+      .setScrollFactor(0)
+      .setInteractive();
+    layer.add([shade, card, cardInputBlocker]);
+
+    layer.add([
+      paperIcon(this, 'pencil', width / 2, cardTop + 76, {
+        size: 58,
+        fill: UI.gold,
+        stroke: UI.inkHex,
+      }).setScrollFactor(0),
+      label(
+        this,
+        width / 2,
+        cardTop + 142,
+        'NOT SAVED YET',
+        34,
+        UI.ink,
+        true
+      ).setScrollFactor(0),
+      label(
+        this,
+        width / 2,
+        cardTop + 198,
+        'ADD MORE INK TO SAVE IT',
+        20,
+        UI.coralText,
+        true
+      ).setScrollFactor(0),
+    ]);
+
+    const primaryLabel = 'KEEP DRAWING';
+    const primaryAction = (): void => {
+      this.closeUnsavedDrawingModal(wasTimedRoundRunning);
+    };
+    const primaryY = cardTop + 288;
+    layer.add(
+      button(
+        this,
+        width / 2,
+        primaryY,
+        primaryLabel,
+        primaryAction,
+        cardWidth - 100,
+        UI.gold,
+        UI.ink,
+        84
+      ).setScrollFactor(0)
+    );
+    const primaryControl = actions.add({
+      label: primaryLabel,
+      rect: {
+        x: 100,
+        y: primaryY - 44,
+        width: width - 200,
+        height: 88,
+      },
+      onActivate: primaryAction,
+    });
+
+    const discardY = cardTop + 390;
+    const discardDrawing = (): void => this.exitTo('ScribbitHome');
+    layer.add(
+      ghostButton(
+        this,
+        width / 2,
+        discardY,
+        'LEAVE & DISCARD',
+        discardDrawing,
+        cardWidth - 140,
+        72
+      ).setScrollFactor(0)
+    );
+    actions.add({
+      label: 'Leave and discard drawing',
+      rect: {
+        x: 120,
+        y: discardY - 38,
+        width: width - 240,
+        height: 76,
+      },
+      onActivate: discardDrawing,
+    });
+    actions.focusInitial(primaryControl);
+  }
+
+  private closeUnsavedDrawingModal(resumeTimedRound: boolean): void {
+    const modal = this.unsavedDrawingModal;
+    if (!modal) return;
+    this.unsavedDrawingModal = null;
+    modal.layer.destroy(true);
+    if (!this.scene.isActive()) return;
+    this.overlay.setVisible(true);
+    if (resumeTimedRound) this.startDrawingRound();
   }
 
   // --- Layout budget (720x1280 design space) --------------------------------
@@ -831,7 +1021,7 @@ export class Draw extends Scene {
   private static readonly CANVAS_CENTER_Y = 426;
   private static readonly CANVAS_SQUARE = 620;
   private static readonly LIVE_STATS_Y = 792;
-  private static readonly TOOLS_Y = 986;
+  private static readonly TOOLS_Y = 996;
   private static readonly SUBMIT_Y = 1222;
 
   private verticalLayoutSlack(): number {
@@ -1093,7 +1283,7 @@ export class Draw extends Scene {
       () => this.setAdvancedToolsOpen(!this.advancedToolsOpen),
       84,
       96,
-      'More drawing tools'
+      'Open pens and brushes'
     );
     this.moreToolsControl =
       this.drawingNativeControls[this.drawingNativeControls.length - 1] ?? null;
@@ -1101,7 +1291,16 @@ export class Draw extends Scene {
       .circle(30, -30, 11, UI.gold, 1)
       .setStrokeStyle(3, UI.inkHex, 1)
       .setVisible(false);
-    this.moreToolsButton.add(this.advancedToolBadge);
+    this.moreToolsLabel = label(
+      this,
+      0,
+      43,
+      'PENS + BRUSHES',
+      11,
+      UI.ink,
+      true
+    );
+    this.moreToolsButton.add([this.advancedToolBadge, this.moreToolsLabel]);
   }
 
   private isUntimedDrawingMode(): boolean {
@@ -1164,19 +1363,19 @@ export class Draw extends Scene {
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
-      gap: '18px',
+      gap: '10px',
       boxSizing: 'border-box',
       borderRadius: '28px',
       boxShadow: '0 5px 0 rgba(43, 32, 22, 0.2)',
       transformOrigin: 'center',
     });
-    const clockIcon = this.createDrawClockIcon(38);
+    const clockIcon = this.createDrawClockIcon(36);
     const timerValue = document.createElement('span');
     Object.assign(timerValue.style, {
-      minWidth: '82px',
+      minWidth: '56px',
       color: UI.ink,
       fontFamily: FONT_STACK,
-      fontSize: '38px',
+      fontSize: '32px',
       fontWeight: '800',
       lineHeight: '1',
       textAlign: 'center',
@@ -1217,7 +1416,7 @@ export class Draw extends Scene {
     this.playerDrawMode = 'community';
     this.canvas.element.setAttribute(
       'aria-label',
-      `Draw your Scribbit. The 60 second round is running. Your selected fighter style decides how it fights; pen colors are just for the art.${this.isFirstScribbit ? ' First run: draw, watch it fight, and earn Ink.' : ''}`
+      `Draw your Scribbit. The 60 second round is running. The color covering the most area decides how it fights.${this.isFirstScribbit ? ' First run: draw, watch it fight, and earn Ink.' : ''}`
     );
     this.setCanvasDareVisible(false);
     this.startDrawingRound();
@@ -1423,7 +1622,7 @@ export class Draw extends Scene {
     this.displayedDrawSeconds = null;
     this.setDrawingLocked(false);
     this.resetPaintReservoir();
-    this.canvas.reset();
+    this.resetDrawingCanvas();
     this.previewTimer?.remove();
     this.previewTimer = null;
     this.refreshPreview();
@@ -1483,40 +1682,38 @@ export class Draw extends Scene {
     this.syncToolPageVisibility();
   }
 
-  // The challenge stays visible, and fighter style is an explicit color-coded
-  // choice. Paint colors remain creative tools and never secretly change role.
+  // Keep one calm row: the prompt stays left and the live role stays visible on
+  // the right. The grouped palette and info guide explain how color changes it.
   private buildLiveStatsStrip(centerY: number): void {
     const panelWidth = this.scale.width - EDGE * 2;
     const card = this.add.graphics();
-    card.fillStyle(UI.inkHex, 0.24);
-    card.fillRoundedRect(EDGE + 4, centerY - 34, panelWidth, 72, 16);
-    card.fillStyle(UI.creamHex, 1);
-    card.fillRoundedRect(EDGE, centerY - 38, panelWidth, 72, 16);
-    card.lineStyle(4, UI.goldHex, 1);
-    card.strokeRoundedRect(EDGE, centerY - 38, panelWidth, 72, 16);
+    card.fillStyle(UI.creamHex, 0.96);
+    card.fillRoundedRect(EDGE, centerY - 30, panelWidth, 60, 16);
+    card.lineStyle(2, UI.inkHex, 0.32);
+    card.strokeRoundedRect(EDGE, centerY - 30, panelWidth, 60, 16);
     this.livePromptLabel = label(
       this,
-      this.scale.width / 2 - 8,
-      centerY - 13,
+      EDGE + 16,
+      centerY,
       this.getPersistentDrawingPrompt(),
-      22,
+      20,
       UI.ink,
       true
-    );
+    ).setOrigin(0, 0.5);
     this.fitLivePromptLabel();
-    this.liveRoleIndicatorY = centerY + 18;
-    this.buildFighterStyleControls(panelWidth);
+    this.liveRoleIndicatorY = centerY;
+    this.buildDetectedFighterStyleIndicator();
 
-    const infoX = this.scale.width - EDGE - 25;
-    const infoY = centerY - 13;
+    const infoX = this.scale.width - EDGE - 20;
+    const infoY = centerY;
     const infoButton = this.add.container(infoX, infoY);
     const infoMark = paperIcon(this, 'info', 0, 0, {
-      size: 28,
+      size: 24,
       fill: UI.gold,
       stroke: UI.inkHex,
     });
     const infoHit = this.add
-      .rectangle(0, 0, 50, 50, 0xffffff, 0.001)
+      .rectangle(0, 0, 44, 44, 0xffffff, 0.001)
       .setInteractive({ useHandCursor: true });
     markSfxManaged(infoHit);
     bindPressInteractionEvents(
@@ -1534,124 +1731,72 @@ export class Draw extends Scene {
     infoButton.add([infoMark, infoHit]);
     this.liveRoleInfoControl = this.addNativeControl(
       'About fighter styles',
-      infoX - 25,
-      infoY - 25,
-      50,
-      50,
+      infoX - 22,
+      infoY - 22,
+      44,
+      44,
       () => this.openRoleStyleInfo(this.liveRoleInfoControl),
       true,
       this.headerControlOverlay
     );
   }
 
-  private buildFighterStyleControls(panelWidth: number): void {
-    const gap = 6;
-    const horizontalPadding = 12;
-    const segmentWidth =
-      (panelWidth - horizontalPadding * 2 - gap * 3) /
-      FIGHTER_STYLE_ROLES.length;
-    const startX = EDGE + horizontalPadding + segmentWidth / 2;
-
-    this.fighterStyleControls = FIGHTER_STYLE_ROLES.map((role, index) => {
-      const content = getCombatRoleContent(role);
-      const style = ROLE_STYLES[role];
-      const x = startX + index * (segmentWidth + gap);
-      const container = this.add.container(x, this.liveRoleIndicatorY);
-      const background = this.add.graphics();
-      const icon = paperIcon(this, content.icon, -segmentWidth / 2 + 22, 0, {
-        size: 24,
-        fill: style.color,
-        stroke: UI.inkHex,
-      });
-      const roleLabel = label(
-        this,
-        8,
-        0,
-        content.displayName.toUpperCase(),
-        13,
-        UI.ink,
-        true
-      );
-      const selectedDot = this.add
-        .circle(segmentWidth / 2 - 12, 0, 5, style.color, 1)
-        .setStrokeStyle(2, UI.inkHex, 0.72);
-      const hit = this.add
-        .rectangle(0, 0, segmentWidth, 44, 0xffffff, 0.001)
-        .setInteractive({ useHandCursor: true });
-      markSfxManaged(hit);
-      bindPressInteractionEvents(
-        hit,
-        {
-          press: () => container.setScale(0.96),
-          release: () => this.refreshFighterStyleControls(),
-          activate: () => {
-            playSfx('ui.tap');
-            this.selectFighterStyle(role);
-          },
-        },
-        { gameTarget: this.input, shutdownTarget: this.events }
-      );
-      container.add([background, icon, roleLabel, selectedDot, hit]);
-      const nativeControl = this.addNativeControl(
-        `Choose ${content.displayName} fighter style, ${FIGHTER_STYLE_COLOR_NAMES[role]}`,
-        x - segmentWidth / 2,
-        this.liveRoleIndicatorY - 23,
-        segmentWidth,
-        46,
-        () => this.selectFighterStyle(role),
-        true,
-        this.fighterStyleOverlay
-      );
-      nativeControl?.setAttribute('role', 'radio');
-      return {
-        role,
-        width: segmentWidth,
-        container,
-        background,
-        selectedDot,
-        nativeControl,
-      };
-    });
-    this.refreshFighterStyleControls();
+  private buildDetectedFighterStyleIndicator(): void {
+    const roleRight = this.scale.width - EDGE - 50;
+    this.liveRoleLabel = label(
+      this,
+      roleRight,
+      this.liveRoleIndicatorY,
+      '',
+      19,
+      UI.ink,
+      true
+    ).setOrigin(1, 0.5);
+    this.refreshDetectedFighterStyleIndicator();
   }
 
-  private selectFighterStyle(role: CombatRole): void {
-    this.selectedFighterStyle = role;
-    this.refreshFighterStyleControls();
-    const result = this.lastResult;
-    if (result) this.updateLiveStats(hasMinimumDrawingInk(result));
+  private refreshDetectedFighterStyleIndicator(): void {
+    if (!this.liveRoleLabel) return;
+    const role = this.detectedFighterStyle;
+    this.liveRoleIcon?.destroy();
+
+    if (!role) {
+      this.setDetectedFighterStyleIndicator(
+        'DRAW TO SET',
+        'pencil',
+        UI.creamHex
+      );
+      return;
+    }
+
+    const content = getCombatRoleContent(role);
+    const style = ROLE_STYLES[role];
+    this.setDetectedFighterStyleIndicator(
+      content.displayName.toUpperCase(),
+      content.icon,
+      style.color
+    );
   }
 
-  private refreshFighterStyleControls(): void {
-    this.fighterStyleControls.forEach((control) => {
-      const selected = control.role === this.selectedFighterStyle;
-      const style = ROLE_STYLES[control.role];
-      const segmentWidth = control.width;
-      control.background.clear();
-      control.background.fillStyle(style.soft, selected ? 0.92 : 0.34);
-      control.background.fillRoundedRect(
-        -segmentWidth / 2,
-        -16,
-        segmentWidth,
-        32,
-        12
-      );
-      control.background.lineStyle(
-        selected ? 3 : 2,
-        selected ? style.color : UI.inkHex,
-        selected ? 1 : 0.18
-      );
-      control.background.strokeRoundedRect(
-        -segmentWidth / 2,
-        -16,
-        segmentWidth,
-        32,
-        12
-      );
-      control.selectedDot.setVisible(selected);
-      control.container.setScale(selected ? 1.025 : 1);
-      control.nativeControl?.setAttribute('aria-checked', String(selected));
-    });
+  private setDetectedFighterStyleIndicator(
+    text: string,
+    icon: PaperIconKey,
+    fill: number
+  ): void {
+    if (!this.liveRoleLabel) return;
+    const roleRight = this.scale.width - EDGE - 50;
+    const roleIconSize = 28;
+    const roleIconGap = 10;
+    this.liveRoleLabel.setText(text);
+    const roleIconX =
+      roleRight - this.liveRoleLabel.width - roleIconGap - roleIconSize / 2;
+    this.liveRoleIcon = paperIcon(
+      this,
+      icon,
+      roleIconX,
+      this.liveRoleIndicatorY,
+      { size: roleIconSize, fill, stroke: UI.inkHex }
+    );
   }
 
   private openRoleStyleInfo(trigger: HTMLElement | null = null): void {
@@ -1673,7 +1818,7 @@ export class Draw extends Scene {
       if (this.scene.isActive()) this.overlay.setVisible(true);
     };
     const semanticDescription =
-      'Choose one fighter style before submitting. Coral is Brawler, blue is Longshot, green is Gunner, and purple is Mage. Pen colors are only for your artwork and never change the selected style.';
+      'The color group covering the most drawing area determines fighter style. Coral and orange make Brawler. Aqua and blue make Longshot. Gold and green make Gunner. Purple and pink make Mage. Black and white do not compete; neutral-only drawings default to Brawler.';
     const actions = new CanvasModalOverlay(
       this,
       'Fighter styles',
@@ -1732,7 +1877,7 @@ export class Draw extends Scene {
         this,
         width / 2,
         cardTop + 126,
-        'CHOOSE FIGHTER STYLE',
+        'COLOR DECIDES YOUR ROLE',
         32,
         UI.ink,
         true
@@ -1741,7 +1886,7 @@ export class Draw extends Scene {
         this,
         width / 2,
         cardTop + 168,
-        'COLOR PICKS THE POWER · DRAW FREELY',
+        'THE BIGGEST COLOR AREA WINS',
         19,
         UI.coralText,
         true
@@ -1785,7 +1930,7 @@ export class Draw extends Scene {
           this,
           168,
           rowY + 20,
-          `${FIGHTER_STYLE_COLOR_NAMES[role].toUpperCase()} STYLE · ${roleContent.rangeLabel}`,
+          `${FIGHTER_STYLE_COLOR_NAMES[role].toUpperCase()} · ${roleContent.rangeLabel}`,
           17,
           UI.inkSoft,
           true
@@ -1800,7 +1945,7 @@ export class Draw extends Scene {
         this,
         width / 2,
         cardBottom - 154,
-        'PEN COLORS ARE FOR YOUR ART. THEY NEVER CHANGE THE STYLE YOU PICK.',
+        'MIX COLORS FREELY — THE MOST-USED GROUP WINS. BLACK + WHITE ARE NEUTRAL; NEUTRAL-ONLY ART BECOMES BRAWLER.',
         17,
         UI.inkSoft,
         true
@@ -1840,14 +1985,14 @@ export class Draw extends Scene {
     const dare =
       this.dailyDare ??
       selectCommunityDoodleDare(this.getArenaState()?.dayNumber ?? 1);
-    return `DRAW: ${formatThemePrompt(dare.prompt).toUpperCase()}`;
+    return formatThemePrompt(dare.prompt).toUpperCase();
   }
 
   private fitLivePromptLabel(): void {
     const promptLabel = this.livePromptLabel;
     if (!promptLabel) return;
     promptLabel.setScale(1);
-    const maximumWidth = this.scale.width - EDGE * 2 - 92;
+    const maximumWidth = this.scale.width - EDGE * 2 - 230;
     if (promptLabel.width > maximumWidth) {
       promptLabel.setScale(maximumWidth / promptLabel.width);
     }
@@ -1866,19 +2011,38 @@ export class Draw extends Scene {
     panel.lineStyle(2, UI.inkHex, 0.32);
     panel.strokeRoundedRect(EDGE, panelTop, panelW, panelH, 22);
 
-    const paletteY = centerY - 50;
-    const toolY = centerY + 100;
-    this.buildPaletteRow(paletteY, panelW);
-
     const canUseStickers =
       !this.practiceMode && (this.getArenaState()?.myScribbits.length ?? 0) > 0;
-    const roundControlWidth = 72;
-    const roundInteractionWidth = 88;
+    const panelInset = 14;
+    const lineWidthControlWidth = Math.min(160, panelW * 0.24);
+    const toolSlotWidth = (panelW - lineWidthControlWidth) / 5;
+    const toolX = (index: number): number =>
+      EDGE + lineWidthControlWidth + toolSlotWidth * (index + 0.5);
+    const roundControlWidth = Math.min(72, toolSlotWidth - 12);
+    const roundInteractionWidth = toolSlotWidth;
+    const paletteY = panelTop + panelInset + MIN_TOUCH - 10;
+    const toolY = panelTop + panelH - panelInset - roundControlWidth / 2;
+    this.buildPaletteRow(paletteY, panelW);
+
     this.captureToolPage('basic', () => {
-      this.buildLineWidthControl(120, toolY, 160, 168);
+      this.buildLineWidthControl(
+        EDGE + lineWidthControlWidth / 2,
+        toolY,
+        lineWidthControlWidth - 8,
+        lineWidthControlWidth
+      );
       this.setLineWidth(DEFAULT_LINE_WIDTH);
+      this.drawToolButton = this.toolIconButton(
+        toolX(0),
+        toolY,
+        'pencil',
+        () => this.selectDrawTool(),
+        roundControlWidth,
+        roundInteractionWidth,
+        'Draw with the selected pen and brush'
+      );
       this.fillToolButton = this.toolIconButton(
-        290,
+        toolX(1),
         toolY,
         'bucket',
         () => this.selectFill(),
@@ -1886,17 +2050,18 @@ export class Draw extends Scene {
         roundInteractionWidth
       );
       this.fillTargetSwatch = this.add
-        .circle(
-          23,
-          -23,
-          9,
+        .rectangle(
+          0,
+          24,
+          22,
+          8,
           Phaser.Display.Color.HexStringToColor(this.activeStrokeColor).color,
           1
         )
-        .setStrokeStyle(2, UI.inkHex, 1);
+        .setStrokeStyle(2, UI.inkHex, 0.9);
       this.fillToolButton.add(this.fillTargetSwatch);
       this.eraserToolButton = this.toolIconButton(
-        400,
+        toolX(2),
         toolY,
         'eraser',
         () => this.selectEraser(),
@@ -1904,17 +2069,18 @@ export class Draw extends Scene {
         roundInteractionWidth
       );
       this.eraserTargetSwatch = this.add
-        .circle(
-          25,
-          -24,
-          10,
+        .rectangle(
+          0,
+          24,
+          22,
+          8,
           Phaser.Display.Color.HexStringToColor(this.activeStrokeColor).color,
           1
         )
-        .setStrokeStyle(2, UI.inkHex, 1);
+        .setStrokeStyle(2, UI.inkHex, 0.9);
       this.eraserToolButton.add(this.eraserTargetSwatch);
       this.undoToolButton = this.toolIconButton(
-        510,
+        toolX(3),
         toolY,
         'undo',
         () => this.undoDrawing(),
@@ -1922,7 +2088,7 @@ export class Draw extends Scene {
         roundInteractionWidth
       );
       this.redoToolButton = this.toolIconButton(
-        620,
+        toolX(4),
         toolY,
         'redo',
         () => this.redoDrawing(),
@@ -1974,6 +2140,13 @@ export class Draw extends Scene {
         toolY,
         'clear',
         () => this.clearDrawing(),
+        roundControlWidth,
+        roundInteractionWidth
+      );
+      nextAction += 1;
+      this.buildCanvasContrastControl(
+        advancedX[nextAction] ?? 480,
+        toolY,
         roundControlWidth,
         roundInteractionWidth
       );
@@ -2129,7 +2302,52 @@ export class Draw extends Scene {
   private buildPaletteRow(y: number, panelWidth: number): void {
     const columns = 5;
     const rowHeight = MIN_TOUCH;
+    const swatchTouchHeight = 70;
     const spacing = panelWidth / columns;
+    const groupIconY = y - 70;
+    const groupLabelY = y - 44;
+    const groupCardTop = y - rowHeight + 10;
+    const groupCardHeight = rowHeight * 2 - 12;
+
+    PALETTE_GROUPS.forEach((group, column) => {
+      const x = EDGE + spacing * (column + 0.5);
+      const groupStyle = group.role ? ROLE_STYLES[group.role] : null;
+      const groupIcon = group.role
+        ? getCombatRoleContent(group.role).icon
+        : 'ink';
+      const groupCard = this.add.graphics();
+      groupCard.fillStyle(
+        groupStyle?.soft ?? UI.inkHex,
+        group.role ? 0.14 : 0.04
+      );
+      groupCard.fillRoundedRect(
+        x - spacing / 2 + 5,
+        groupCardTop,
+        spacing - 10,
+        groupCardHeight,
+        16
+      );
+      groupCard.lineStyle(
+        2,
+        groupStyle?.color ?? UI.inkHex,
+        group.role ? 0.26 : 0.14
+      );
+      groupCard.strokeRoundedRect(
+        x - spacing / 2 + 5,
+        groupCardTop,
+        spacing - 10,
+        groupCardHeight,
+        16
+      );
+
+      paperIcon(this, groupIcon, x, groupIconY, {
+        size: 28,
+        fill: groupStyle?.color ?? UI.creamHex,
+        stroke: UI.inkHex,
+      });
+      label(this, x, groupLabelY, group.label, 14, UI.ink, true);
+    });
+
     PALETTE_COLORS.forEach((color, colorIndex) => {
       const column = colorIndex % columns;
       const row = Math.floor(colorIndex / columns);
@@ -2139,7 +2357,7 @@ export class Draw extends Scene {
       );
       const rowLeft = EDGE + (panelWidth - colorsInRow * spacing) / 2;
       const x = rowLeft + spacing * (column + 0.5);
-      const swatchY = y + (row - 0.5) * rowHeight;
+      const swatchY = row === 0 ? y - 5 : y + 62;
       const container = this.add.container(x, swatchY);
       const swatch = this.add
         .circle(
@@ -2152,13 +2370,14 @@ export class Draw extends Scene {
           1
         )
         .setStrokeStyle(
-          colorIndex === this.selectedColorIndex ? 6 : 2,
-          colorIndex === this.selectedColorIndex ? UI.goldHex : UI.inkHex,
+          colorIndex === this.selectedColorIndex ? 5 : 2,
+          UI.inkHex,
           colorIndex === this.selectedColorIndex ? 1 : 0.82
         );
       const paintFill = this.add.graphics();
+      const paletteRole = fighterStyleForPaletteColor(colorIndex);
       const hit = this.add
-        .rectangle(0, 0, spacing, rowHeight, 0xffffff, 0.001)
+        .rectangle(0, 0, spacing, swatchTouchHeight, 0xffffff, 0.001)
         .setInteractive({ useHandCursor: true });
       markSfxManaged(hit);
       container.add([swatch, paintFill, hit]);
@@ -2183,11 +2402,15 @@ export class Draw extends Scene {
         { gameTarget: this.input, shutdownTarget: this.events }
       );
       const nativeControl = this.addNativeControl(
-        `Use ${PALETTE_COLOR_NAMES[colorIndex] ?? color} paint, 100 percent remaining`,
+        `Use ${PALETTE_COLOR_NAMES[colorIndex] ?? color} paint, ${
+          paletteRole
+            ? `counts toward ${getCombatRoleContent(paletteRole).displayName}`
+            : 'neutral for fighter role'
+        }, 100 percent remaining`,
         x - spacing / 2,
-        swatchY - rowHeight / 2,
+        swatchY - swatchTouchHeight / 2,
         spacing,
-        rowHeight,
+        swatchTouchHeight,
         activate
       );
       if (nativeControl) this.drawingNativeControls.push(nativeControl);
@@ -2226,8 +2449,8 @@ export class Draw extends Scene {
       const selected = colorIndex === this.selectedColorIndex;
       swatch.setRadius(selected ? SELECTED_SWATCH_RADIUS : SWATCH_RADIUS);
       swatch.setStrokeStyle(
-        selected ? 6 : 2,
-        selected ? (erasing ? UI.coralDeep : UI.goldHex) : UI.inkHex,
+        selected ? 5 : 2,
+        selected && erasing ? UI.coralDeep : UI.inkHex,
         selected ? 1 : 0.82
       );
     });
@@ -2356,9 +2579,14 @@ export class Draw extends Scene {
       fill.lineBetween(-halfChord, liquidTop, halfChord, liquidTop);
     }
 
+    const paletteRole = fighterStyleForPaletteColor(colorIndex);
     this.paletteNativeControls[colorIndex]?.setAttribute(
       'aria-label',
-      `Use ${PALETTE_COLOR_NAMES[colorIndex] ?? color} paint, ${percent} percent remaining`
+      `Use ${PALETTE_COLOR_NAMES[colorIndex] ?? color} paint, ${
+        paletteRole
+          ? `counts toward ${getCombatRoleContent(paletteRole).displayName}`
+          : 'neutral for fighter role'
+      }, ${percent} percent remaining`
     );
     if (animate && !prefersReducedMotion()) {
       this.tweens.add({
@@ -2749,6 +2977,7 @@ export class Draw extends Scene {
       activate
     );
     if (nativeControl) this.drawingNativeControls.push(nativeControl);
+    if (icon === 'pencil') this.drawToolControl = nativeControl;
     if (icon === 'bucket') this.fillToolControl = nativeControl;
     if (icon === 'eraser') this.eraserToolControl = nativeControl;
     if (icon === 'clear') this.clearToolControl = nativeControl;
@@ -2757,22 +2986,99 @@ export class Draw extends Scene {
     return container;
   }
 
-  private currentSupplyUsage(): SupplyUsage {
+  private buildCanvasContrastControl(
+    x: number,
+    y: number,
+    width: number,
+    interactionWidth: number
+  ): void {
+    this.contrastToolButton = this.toolIconButton(
+      x,
+      y,
+      'contrast',
+      () => this.toggleCanvasContrast(),
+      width,
+      interactionWidth,
+      'Use dark canvas preview'
+    );
+    this.contrastToolButton.add(label(this, 0, 34, 'CANVAS', 11, UI.ink, true));
+    this.contrastToolControl =
+      this.drawingNativeControls[this.drawingNativeControls.length - 1] ?? null;
+    this.refreshCanvasContrastControl();
+  }
+
+  private toggleCanvasContrast(): void {
+    if (!this.isDrawingInputActive()) return;
+    this.darkCanvasPreview = !this.darkCanvasPreview;
+    this.canvas.setPreviewMode(this.darkCanvasPreview ? 'dark' : 'paper');
+    saveDarkCanvasPreview(this.darkCanvasPreview);
+    this.refreshCanvasContrastControl();
+  }
+
+  private refreshCanvasContrastControl(): void {
+    const nextMode = this.darkCanvasPreview ? 'light' : 'dark';
+    this.setToolButtonState(
+      this.contrastToolButton,
+      this.isDrawingInputActive(),
+      this.darkCanvasPreview
+    );
+    this.setNativeToolControlState(
+      this.contrastToolControl,
+      this.isDrawingInputActive(),
+      this.darkCanvasPreview
+    );
+    this.contrastToolControl?.setAttribute(
+      'aria-label',
+      `Use ${nextMode} canvas preview`
+    );
+  }
+
+  private currentDrawingEditState(): DrawingEditState {
     return {
       drawingInkId: this.usedDrawingInkId,
       brushId: this.usedBrushId,
+      paintReservoirs: this.paintReservoirs.map((reservoir) => ({
+        capacity: reservoir.capacity,
+        remaining: reservoir.remaining,
+      })),
     };
   }
 
-  private restoreSupplyUsage(usage: SupplyUsage): void {
-    this.usedDrawingInkId = usage.drawingInkId;
-    this.usedBrushId = usage.brushId;
+  private restoreDrawingEditState(state: DrawingEditState): void {
+    this.usedDrawingInkId = state.drawingInkId;
+    this.usedBrushId = state.brushId;
+    this.paintReservoirs = state.paintReservoirs.map((reservoir) => ({
+      capacity: reservoir.capacity,
+      remaining: reservoir.remaining,
+    }));
+    this.renderPalettePaintLevels(false);
   }
 
-  private pushSupplyUsageHistory(): void {
-    this.supplyRedoHistory = [];
-    this.supplyHistory.push(this.currentSupplyUsage());
-    if (this.supplyHistory.length > 10) this.supplyHistory.shift();
+  private beginDrawingEdit(): void {
+    this.pendingEditState ??= this.currentDrawingEditState();
+  }
+
+  private cancelDrawingEdit(): void {
+    if (this.pendingEditState) {
+      this.restoreDrawingEditState(this.pendingEditState);
+    }
+    this.pendingEditState = null;
+    this.updateDrawingToolStates();
+  }
+
+  private commitDrawingEdit(): void {
+    const previousState =
+      this.pendingEditState ?? this.currentDrawingEditState();
+    this.pendingEditState = null;
+    this.editRedoHistory = [];
+    this.editHistory.push(previousState);
+    if (this.editHistory.length > 10) this.editHistory.shift();
+  }
+
+  private clearDrawingEditHistory(): void {
+    this.editHistory = [];
+    this.editRedoHistory = [];
+    this.pendingEditState = null;
   }
 
   private playActiveDrawingToolFeedback(change: DrawCanvasChange): void {
@@ -2809,19 +3115,19 @@ export class Draw extends Scene {
       playSfx('draw.ink');
     }
     if (change === 'undo') {
-      const previous = this.supplyHistory.pop();
+      const previous = this.editHistory.pop();
       if (previous) {
-        this.supplyRedoHistory.push(this.currentSupplyUsage());
-        this.restoreSupplyUsage(previous);
+        this.editRedoHistory.push(this.currentDrawingEditState());
+        this.restoreDrawingEditState(previous);
       }
     } else if (change === 'redo') {
-      const next = this.supplyRedoHistory.pop();
+      const next = this.editRedoHistory.pop();
       if (next) {
-        this.supplyHistory.push(this.currentSupplyUsage());
-        this.restoreSupplyUsage(next);
+        this.editHistory.push(this.currentDrawingEditState());
+        this.restoreDrawingEditState(next);
       }
     } else {
-      this.pushSupplyUsageHistory();
+      this.commitDrawingEdit();
       if (change === 'clear') {
         this.usedDrawingInkId = null;
         this.usedBrushId = null;
@@ -2835,6 +3141,15 @@ export class Draw extends Scene {
     this.playActiveDrawingToolFeedback(change);
     this.updateDrawingToolStates();
     this.schedulePreview();
+  }
+
+  private selectDrawTool(): void {
+    if (!this.isDrawingInputActive()) return;
+    this.canvas?.setDrawMode();
+    this.updatePaintTargetIndicators();
+    this.refreshPaletteSelection();
+    this.renderBrushSizePreview();
+    this.updateDrawingToolStates();
   }
 
   private selectEraser(): void {
@@ -2868,6 +3183,11 @@ export class Draw extends Scene {
     this.canvas?.clear();
   }
 
+  private resetDrawingCanvas(): void {
+    this.canvas.reset();
+    this.clearDrawingEditHistory();
+  }
+
   private undoDrawing(): void {
     if (!this.isDrawingInputActive()) return;
     if (!this.canvas?.canUndo()) return;
@@ -2885,14 +3205,17 @@ export class Draw extends Scene {
     const hasPaint = this.hasActivePaint();
     const filling = this.canvas?.isFilling() ?? false;
     const erasing = this.canvas?.isErasing() ?? false;
+    const drawing = this.canvas?.isDrawing() ?? false;
     const hasInk = (this.lastResult?.inkedPixels ?? 0) > 0;
     const canUndo = this.canvas?.canUndo() ?? false;
     const canRedo = this.canvas?.canRedo() ?? false;
+    this.setToolButtonState(this.drawToolButton, editable, drawing);
     this.setToolButtonState(this.fillToolButton, editable && hasPaint, filling);
     this.setToolButtonState(this.eraserToolButton, editable, erasing);
     this.setToolButtonState(this.clearToolButton, editable && hasInk, false);
     this.setToolButtonState(this.undoToolButton, editable && canUndo, false);
     this.setToolButtonState(this.redoToolButton, editable && canRedo, false);
+    this.setNativeToolControlState(this.drawToolControl, editable, drawing);
     this.setNativeToolControlState(
       this.fillToolControl,
       editable && hasPaint,
@@ -2912,6 +3235,7 @@ export class Draw extends Scene {
       editable,
       this.advancedToolsOpen
     );
+    this.refreshCanvasContrastControl();
     this.refreshAdvancedToolIndicator();
   }
 
@@ -2938,7 +3262,10 @@ export class Draw extends Scene {
     ].filter((part): part is string => part !== null);
     const navigationLabel = this.advancedToolsOpen
       ? 'Back to basic drawing tools'
-      : 'More drawing tools';
+      : 'Open pens and brushes';
+    this.moreToolsLabel?.setText(
+      this.advancedToolsOpen ? 'BACK TO TOOLS' : 'PENS + BRUSHES'
+    );
     this.moreToolsControl?.setAttribute(
       'aria-label',
       activeParts.length > 0
@@ -2964,9 +3291,9 @@ export class Draw extends Scene {
     ) {
       return;
     }
-    background.setFillStyle(selected ? UI.tapeAlt : UI.creamHex, 1);
+    background.setFillStyle(UI.creamHex, 1);
     background.setStrokeStyle(
-      selected ? 4 : 2,
+      selected ? 5 : 2,
       selected ? UI.coralDeep : UI.inkHex,
       selected ? 1 : 0.72
     );
@@ -2983,7 +3310,9 @@ export class Draw extends Scene {
     control.setAttribute('aria-disabled', String(!enabled));
     if (
       control === this.fillToolControl ||
+      control === this.drawToolControl ||
       control === this.eraserToolControl ||
+      control === this.contrastToolControl ||
       control === this.moreToolsControl
     ) {
       control.setAttribute('aria-pressed', String(selected));
@@ -3171,6 +3500,8 @@ export class Draw extends Scene {
 
     this.canvas = new DrawCanvas({
       onStrokeEnd: (change) => this.handleDrawingChanged(change),
+      onEditStart: () => this.beginDrawingEdit(),
+      onEditCancel: () => this.cancelDrawingEdit(),
       hasPaint: () => this.automationMode || this.hasActivePaint(),
       requestPaint: (amount, kind) =>
         this.automationMode || this.requestPaint(amount, kind),
@@ -3196,16 +3527,16 @@ export class Draw extends Scene {
       width: square,
       height: square,
     });
-    this.buildCanvasContrastToggle(square);
     this.buildCanvasDareOverlay(square);
     if (this.drawTimerContainer) {
       // This timer must share the DOM layer with the live drawing surface.
       // Phaser depth cannot render above an HTML canvas overlay.
       this.overlay.place(this.drawTimerContainer, {
-        x: this.scale.width - 224,
-        y: 40,
-        width: 208,
-        height: 80,
+        // Inset from the screen edge and sized so the clock face never clips.
+        x: this.scale.width - EDGE - 160,
+        y: 20,
+        width: 160,
+        height: 68,
       });
     }
     this.syncDrawingInteractionState();
@@ -3218,63 +3549,6 @@ export class Draw extends Scene {
     this.setCreationControlsReady(false);
   }
 
-  private buildCanvasContrastToggle(square: number): void {
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.setAttribute('aria-pressed', 'false');
-    Object.assign(button.style, {
-      appearance: 'none',
-      alignItems: 'center',
-      background: 'rgba(253, 243, 223, 0.9)',
-      border: `3px solid ${UI.ink}`,
-      borderRadius: '999px',
-      boxShadow: '0 3px 0 rgba(43, 32, 22, 0.28)',
-      color: UI.ink,
-      cursor: 'pointer',
-      display: 'flex',
-      fontFamily: FONT_STACK,
-      fontSize: '24px',
-      fontWeight: '900',
-      justifyContent: 'center',
-      lineHeight: '1',
-      padding: '0',
-      zIndex: '2',
-    });
-
-    const syncToggle = (): void => {
-      const nextMode = this.darkCanvasPreview ? 'paper' : 'dark';
-      button.textContent = this.darkCanvasPreview ? '☀' : '☾';
-      button.setAttribute(
-        'aria-label',
-        `Use ${nextMode === 'dark' ? 'dark' : 'light'} canvas preview`
-      );
-      button.setAttribute('aria-pressed', String(this.darkCanvasPreview));
-      button.title = `Use ${nextMode === 'dark' ? 'dark' : 'light'} canvas preview`;
-      button.style.background = this.darkCanvasPreview
-        ? 'rgba(87, 80, 74, 0.94)'
-        : 'rgba(253, 243, 223, 0.9)';
-      button.style.color = this.darkCanvasPreview ? '#ffffff' : UI.ink;
-    };
-    button.addEventListener('click', () => {
-      this.darkCanvasPreview = !this.darkCanvasPreview;
-      this.canvas.setPreviewMode(this.darkCanvasPreview ? 'dark' : 'paper');
-      saveDarkCanvasPreview(this.darkCanvasPreview);
-      syncToggle();
-    });
-    syncToggle();
-
-    const canvasLeft = this.scale.width / 2 - square / 2;
-    const canvasTop = this.canvasCenterY() - square / 2;
-    this.overlay.place(button, {
-      // Keep the complete control outside the 620px drawing surface so every
-      // canvas pixel remains paintable, including the top-right corner.
-      x: canvasLeft + square + 2,
-      y: canvasTop + 12,
-      width: 46,
-      height: 46,
-    });
-  }
-
   private installLocalDrawAutomationApi(): void {
     if (!this.automationMode) return;
     const automationWindow = window as LocalDrawAutomationWindow;
@@ -3282,7 +3556,7 @@ export class Draw extends Scene {
     automationWindow.scribbitsDrawAutomation = {
       reset: () => {
         if (!this.scene.isActive() || this.submitting) return false;
-        this.canvas.reset();
+        this.resetDrawingCanvas();
         return true;
       },
       draw: (strokes) => {
@@ -3315,7 +3589,7 @@ export class Draw extends Scene {
       output.textContent =
         this.canvas.exportSubmissionImages().baseImageDataUrl;
     });
-    resetButton.addEventListener('click', () => this.canvas.reset());
+    resetButton.addEventListener('click', () => this.resetDrawingCanvas());
     bridge.append(exportButton, resetButton, output);
     document.body.append(bridge);
     this.localAutomationBridge = bridge;
@@ -3900,6 +4174,9 @@ export class Draw extends Scene {
 
   private applyAnalysisResult(result: AnalyzerResult): void {
     this.lastResult = result;
+    this.detectedFighterStyle =
+      result.inkedPixels > 0 ? result.fighterStyle : null;
+    this.refreshDetectedFighterStyleIndicator();
     this.updateReaction(result);
   }
 
@@ -3922,14 +4199,22 @@ export class Draw extends Scene {
   private updateLiveStats(ready: boolean): void {
     this.livePromptLabel?.setText(this.getPersistentDrawingPrompt());
     this.fitLivePromptLabel();
+    this.refreshDetectedFighterStyleIndicator();
 
     if (this.canvas?.element) {
-      const style = getCombatRoleContent(this.selectedFighterStyle);
+      if (!this.detectedFighterStyle) {
+        this.canvas.element.setAttribute(
+          'aria-description',
+          'No fighter role yet. Draw first; the color covering the most area sets the role.'
+        );
+        return;
+      }
+      const style = getCombatRoleContent(this.detectedFighterStyle);
       this.canvas.element.setAttribute(
         'aria-description',
         ready
-          ? `${style.displayName} fighter style selected. ${style.behavior} Pen colors are artistic and do not change fighter style.`
-          : `${style.displayName} fighter style selected. Draw a little more before continuing.`
+          ? `${style.displayName} from your most-used color. ${style.behavior}`
+          : `${style.displayName} color power preview. Draw a little more; the color covering the most area sets the final role.`
       );
     }
   }
@@ -4013,7 +4298,7 @@ export class Draw extends Scene {
               closeLabel: 'Close Free Draw preview',
             }
           : {
-              description: `${getCombatRoleContent(draft.fighterStyle).displayName} style selected. Name your drawing, then bring it to life.`,
+              description: `${getCombatRoleContent(draft.fighterStyle).displayName} comes from your most-used color. Name your drawing, then bring it to life.`,
             }),
       onNameChange: (name) => {
         this.draftName = name;
@@ -4052,7 +4337,7 @@ export class Draw extends Scene {
       });
     return {
       result,
-      fighterStyle: this.selectedFighterStyle,
+      fighterStyle: result.fighterStyle,
       accessories,
       baseImageDataUrl,
       imageDataUrl,
@@ -4170,7 +4455,6 @@ export class Draw extends Scene {
     const response = await practiceBattle({
       name,
       baseImageDataUrl: draft.baseImageDataUrl,
-      fighterStyle: draft.fighterStyle,
     });
     if (!this.isCurrentSceneVisit(sceneVisitEpoch)) return;
     if (!response.ok) {
@@ -4205,7 +4489,6 @@ export class Draw extends Scene {
       imageDataUrl: draft.imageDataUrl,
       stats: getStatsForFighterStyle(draft.fighterStyle),
       element: draft.result.element,
-      fighterStyle: draft.fighterStyle,
       ...(draft.accessories.length > 0
         ? { accessories: draft.accessories }
         : {}),

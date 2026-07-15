@@ -4,9 +4,8 @@
 
 import * as Phaser from 'phaser';
 import { Scene } from 'phaser';
-import type { CareAction, Element, Mood, Scribbit } from '../../shared/arena';
+import type { Element, Scribbit } from '../../shared/arena';
 import { LEVEL_XP_THRESHOLDS, MAX_LEVEL } from '../../shared/arena';
-import { MOOD_STYLES, type MoodStyle } from './theme';
 import { generateDoodleTexture } from './proceduraldoodleart';
 
 // Rendering only needs identity + art. Keeping this narrower than Scribbit lets
@@ -370,37 +369,8 @@ export function recordText(
   return `${scribbit.wins}W · ${scribbit.losses}L`;
 }
 
-// --- Tamagotchi field access (defensive) ------------------------------------
-// The server owns level/xp/mood/careDoneToday, but founding NPCs and older
-// cached snapshots may predate them. These readers give safe defaults so the UI
-// never crashes on a partial scribbit.
-
-function moodOf(scribbit: Partial<Pick<Scribbit, 'mood'>>): Mood {
-  return scribbit.mood ?? 'happy';
-}
-
-export function moodStyleOf(
-  scribbit: Partial<Pick<Scribbit, 'mood'>>
-): MoodStyle {
-  return MOOD_STYLES[moodOf(scribbit)];
-}
-
 export function levelOf(scribbit: Partial<Pick<Scribbit, 'level'>>): number {
   return Math.max(1, scribbit.level ?? 1);
-}
-
-function careDoneToday(
-  scribbit: Partial<Pick<Scribbit, 'careDoneToday'>>
-): CareAction[] {
-  return scribbit.careDoneToday ?? [];
-}
-
-// True when this care action is still available today for this scribbit.
-export function canCare(
-  scribbit: Partial<Pick<Scribbit, 'careDoneToday'>>,
-  action: CareAction
-): boolean {
-  return !careDoneToday(scribbit).includes(action);
 }
 
 // XP progress toward the NEXT level as a 0..1 ratio, for the detail modal's

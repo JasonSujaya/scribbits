@@ -26,6 +26,9 @@ const paintBucket = require(join(compiledServerRoot, 'core', 'paintBucket.js'));
 const payoutReceipt = require(
   join(compiledServerRoot, 'core', 'payoutReceipt.js')
 );
+const powerUpOffers = require(
+  join(compiledServerRoot, 'core', 'powerUpOffers.js')
+);
 const removal = require(join(compiledServerRoot, 'core', 'removal.js'));
 const rivalRun = require(join(compiledServerRoot, 'core', 'rivalRun.js'));
 const scribbits = require(join(compiledServerRoot, 'core', 'scribbit.js'));
@@ -332,11 +335,18 @@ test('privacy deletion reuses canonical removal for owned Scribbits', async () =
   );
   const paintBucketKey = paintBucket.getPaintBucketKey(scenario.ownerUserId);
   const dailyLoginKey = dailyLogin.getDailyLoginKey(scenario.ownerUserId);
+  const powerUpDiscoveriesKey = powerUpOffers.getPowerUpDiscoveriesKey(
+    scenario.ownerUserId
+  );
   await memory.storage.set(rivalRunKey, '{"id":"private-run"}');
   await memory.storage.set(capsuleOperationKey, '{"pull":"private"}');
   await memory.storage.set(gearMergeOperationKey, '{"gear":"private"}');
   await memory.storage.set(unrelatedGlobalKey, 'must-survive');
   await memory.storage.set(paintBucketKey, '3');
+  await memory.storage.set(
+    powerUpDiscoveriesKey,
+    JSON.stringify(['v1-edge-spring'])
+  );
   await memory.storage.hSet(dailyLoginKey, {
     'claimed-track-days': '4',
     'last-claim-date': '20260712',
@@ -441,6 +451,7 @@ test('privacy deletion reuses canonical removal for owned Scribbits', async () =
   assert.equal(await memory.storage.zCard(operationIndexKey), 0);
   assert.equal(await memory.storage.get(unrelatedGlobalKey), 'must-survive');
   assert.equal(await memory.storage.get(paintBucketKey), undefined);
+  assert.equal(await memory.storage.get(powerUpDiscoveriesKey), undefined);
   assert.deepEqual(await memory.storage.hGetAll(dailyLoginKey), {});
   assert.equal(
     await memory.storage.hGet(legacyCloutPayoutKey, scenario.ownerUserId),

@@ -18,178 +18,137 @@ export type CommunityDrawThemeValidation = Readonly<{
 }>;
 
 export const COMMUNITY_DRAW_THEME_DAYS = 3;
-export const COMMUNITY_DRAW_THEME_MINIMUM_COVERAGE_DAYS = 365;
+export const COMMUNITY_DRAW_THEME_MINIMUM_COVERAGE_DAYS = 360;
 const THEME_ID_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const THEME_PROMPT_MAXIMUM_LENGTH = 52;
+const THEME_PROMPT_MAXIMUM_WORDS = 4;
 
 const defineTheme = (id: string, prompt: string): CommunityDrawTheme =>
   Object.freeze({ id, prompt });
 
-// This launch block is owned here so Practice edits cannot move or rewrite an
-// already-published community day.
-const launchCommunityThemes = Object.freeze([
-  defineTheme('moon-dumpling', 'a moon dumpling with stompy feet'),
-  defineTheme('volcano-frog', 'a round volcano frog'),
-  defineTheme('cloud-bear', 'a giant sleepy cloud bear'),
-  defineTheme('pebble-ogre', 'a chunky pebble ogre'),
-  defineTheme('pillow-golem', 'a pillow golem with tiny boots'),
-  defineTheme('planet-crab', 'a sleepy planet crab'),
-  defineTheme('bread-troll', 'a bread loaf troll with heavy feet'),
-  defineTheme('boulder-penguin', 'a boulder penguin wearing mittens'),
-  defineTheme('thunder-porcupine', 'a thunder porcupine'),
-  defineTheme('cactus-dragon', 'a cactus dragon with too many spikes'),
-  defineTheme('crown-moth', 'a moth wearing a thorn crown'),
-  defineTheme('toothy-star', 'a star monster made of teeth'),
-  defineTheme('lantern-bat', 'a lantern bat with needle wings'),
-  defineTheme('crystal-hedgehog', 'a crystal hedgehog knight'),
-  defineTheme('royal-urchin', 'a sea urchin in a royal cape'),
-  defineTheme('lightning-flower', 'a lightning flower with sharp petals'),
-  defineTheme('comet-mouse', 'a tiny comet mouse'),
-  defineTheme('paper-fox', 'a folded-paper fox'),
-  defineTheme('pocket-ufo', 'a pocket-sized UFO with legs'),
-  defineTheme('racing-snail', "the world's fastest tiny snail"),
-  defineTheme('roller-flea', 'a wind-up flea on roller skates'),
-  defineTheme('rocket-tadpole', 'a tiny rocket tadpole'),
-  defineTheme('stamp-cheetah', 'a postage-stamp cheetah'),
-  defineTheme('runaway-teacup', 'a runaway teacup with sneakers'),
-  defineTheme('disco-jellyfish', 'a disco jellyfish'),
-  defineTheme('candy-volcano', 'a candy volcano in four colors'),
-  defineTheme('patchwork-ghost', 'a patchwork rainbow ghost'),
-  defineTheme('paint-squid', 'a colorful squid'),
-  defineTheme('glass-axolotl', 'a stained-glass axolotl'),
-  defineTheme('confetti-phoenix', 'a confetti phoenix chick'),
-  defineTheme('neon-slug', 'a neon garden slug'),
-  defineTheme('crayon-coral', 'a crayon coral castle'),
-]);
-
-// Extend the published calendar by appending here. Never reorder, delete, or
-// reuse ids from a shipped season; add a new season below for the next year.
-const YEAR_ONE_THEME_EXTENSION = Object.freeze([
-  defineTheme('acorn-yak', 'an acorn yak with muddy boots'),
-  defineTheme('thorny-owl', 'a thorny owl with a moon-shaped mask'),
-  defineTheme('scooter-sparrow', 'a scooter sparrow delivering a letter'),
-  defineTheme('watercolor-tiger', 'a watercolor tiger with drippy stripes'),
-  defineTheme('marshmallow-rhino', 'a marshmallow rhino in rain boots'),
-  defineTheme('needle-lizard', 'a needle lizard guarding a button'),
-  defineTheme('zipper-lizard', 'a zipper lizard racing its own tail'),
-  defineTheme('mosaic-whale', 'a mosaic whale floating over rooftops'),
-  defineTheme('teapot-hippo', 'a teapot hippo pouring a tiny river'),
-  defineTheme('crown-scorpion', 'a crown scorpion with jeweled claws'),
-  defineTheme('jetpack-bunny', 'a jetpack bunny chasing a paper plane'),
-  defineTheme('rainbow-raccoon', 'a rainbow raccoon painting the night'),
-  defineTheme('mountain-hamster', 'a mountain hamster carrying a cabin'),
-  defineTheme('crystal-rooster', 'a crystal rooster with a jagged crown'),
-  defineTheme('skating-gecko', 'a skating gecko crossing a frozen puddle'),
-  defineTheme('polka-dot-kraken', 'a polka-dot kraken having a tea party'),
-  defineTheme('pumpkin-bison', 'a pumpkin bison with leafy horns'),
-  defineTheme('spear-narwhal', 'a spear narwhal sailing through clouds'),
-  defineTheme('comet-beetle', 'a comet beetle leaving a curly trail'),
-  defineTheme('sunset-zebra', 'a sunset zebra with glowing hooves'),
-  defineTheme('castle-turtle', 'a sleepy castle turtle carrying three towers'),
-  defineTheme('pinecone-wolf', 'a pinecone wolf with a prickly mane'),
-  defineTheme('sprinting-mushroom', 'a sprinting mushroom late for breakfast'),
-  defineTheme('paint-splash-panda', 'a paint-splash panda juggling colors'),
-  defineTheme('dumpling-elephant', 'a dumpling elephant with a heavy backpack'),
-  defineTheme('star-antelope', 'a star antelope with sparkling antlers'),
-  defineTheme('windmill-weasel', 'a windmill weasel spinning through town'),
-  defineTheme('confetti-crocodile', 'a confetti crocodile at a quiet picnic'),
-  defineTheme('mossy-mammoth', 'a mossy mammoth with mushroom slippers'),
-  defineTheme('cactus-knight', 'a cactus knight holding a tiny shield'),
-  defineTheme('yo-yo-falcon', 'a yo-yo falcon looping around a tower'),
-  defineTheme('kaleidoscope-koala', 'a kaleidoscope koala in a bright tree'),
-  defineTheme('barrel-badger', 'a barrel badger rolling up a hill'),
-  defineTheme('coral-lion', 'a coral lion with a spiky sea mane'),
-  defineTheme('racing-raindrop', 'a racing raindrop wearing goggles'),
-  defineTheme(
-    'striped-moon-rabbit',
-    'a striped moon rabbit hopping through stars'
-  ),
-  defineTheme('cookie-gorilla', 'a cookie gorilla guarding a crumb castle'),
-  defineTheme('icicle-rabbit', 'an icicle rabbit with crystal ears'),
-  defineTheme('rocket-skunk', 'a rocket skunk zooming past the moon'),
-  defineTheme(
-    'glowing-garden-golem',
-    'a glowing garden golem covered in flowers'
-  ),
-  defineTheme('snowball-buffalo', 'a snowball buffalo with woolly boots'),
-  defineTheme('porcupine-prince', 'a porcupine prince with a needle cape'),
-  defineTheme('origami-crane', 'a bouncing origami crane on one foot'),
-  defineTheme('pastel-sea-serpent', 'a pastel sea serpent wearing ribbons'),
-  defineTheme('coconut-boar', 'a coconut boar building a sand fort'),
-  defineTheme('jagged-koi', 'a jagged koi swimming through the sky'),
-  defineTheme('turbo-tortoise', 'a turbo tortoise with checkered shoes'),
-  defineTheme(
-    'checkerboard-chameleon',
-    'a checkerboard chameleon changing colors'
-  ),
-  defineTheme('brick-toad', 'a brick toad sitting on a sturdy throne'),
-  defineTheme('shard-gecko', 'a shard gecko with a glassy tail'),
-  defineTheme('kite-kangaroo', 'a kite kangaroo bouncing above the trees'),
-  defineTheme('tie-dye-toucan', 'a tie-dye toucan with a rainbow beak'),
-  defineTheme('pancake-bear', 'a pancake bear carrying a syrup jar'),
-  defineTheme(
-    'compass-spider',
-    'a compass spider pointing in eight directions'
-  ),
-  defineTheme('skipping-shark', 'a skipping shark crossing a puddle'),
-  defineTheme('stained-glass-fawn', 'a stained-glass fawn in a sunny forest'),
-  defineTheme('potato-minotaur', 'a potato minotaur lost in a tiny maze'),
-  defineTheme('bramble-swan', 'a bramble swan with thorny feathers'),
-  defineTheme('runaway-sock', 'a runaway sock escaping the laundry'),
-  defineTheme('flower-firework-fox', 'a flower-firework fox under the stars'),
-  defineTheme('anvil-duck', 'an anvil duck with surprisingly tiny wings'),
-  defineTheme('arrowhead-fox', 'an arrowhead fox with a pointed tail'),
-  defineTheme('pinwheel-puma', 'a pinwheel puma chasing a gust of wind'),
-  defineTheme('bubblegum-dragon', 'a bubblegum dragon blowing square bubbles'),
-  defineTheme('suitcase-walrus', 'a suitcase walrus packed for a long trip'),
-  defineTheme('sunburst-goat', 'a sunburst goat with radiant horns'),
-  defineTheme(
-    'roller-centipede',
-    'a roller-coaster centipede with a tiny helmet'
-  ),
-  defineTheme('lantern-koi', 'a lantern koi glowing beneath lily pads'),
-  defineTheme('pudding-dinosaur', 'a pudding dinosaur wobbling through town'),
-  defineTheme('thistle-griffin', 'a thistle griffin with prickly wings'),
-  defineTheme('whirlwind-chicken', 'a whirlwind chicken late for school'),
-  defineTheme(
-    'rainbow-capybara',
-    'a rainbow capybara relaxing in bright water'
-  ),
-  defineTheme('fortress-beetle', 'a fortress beetle carrying a drawbridge'),
-  defineTheme('sawtooth-seal', 'a sawtooth seal balancing an icicle'),
-  defineTheme(
-    'spring-loaded-otter',
-    'a spring-loaded otter bouncing over rocks'
-  ),
-  defineTheme(
-    'patchwork-peacock',
-    'a patchwork peacock opening a colorful fan'
-  ),
-  defineTheme('turnip-titan', 'a turnip titan lifting a garden shed'),
-  defineTheme('prism-mantis', 'a prism mantis with shining blade arms'),
-  defineTheme('speedy-scarecrow', 'a speedy scarecrow chasing runaway hats'),
-  defineTheme('neon-noodle-worm', 'a neon noodle worm in a glowing garden'),
-  defineTheme('woolly-whale', 'a woolly whale with four sturdy legs'),
-  defineTheme('spire-cat', 'a spire cat perched on a needle tower'),
-  defineTheme('flying-toaster', 'a flying toaster flapping past breakfast'),
-  defineTheme('candy-cloud-kitten', 'a candy-cloud kitten in a pastel storm'),
-  defineTheme('chunky-chimera', 'a chunky chimera sharing one small chair'),
-  defineTheme(
-    'spike-shell-snail',
-    'a spike-shell snail climbing a castle wall'
-  ),
-  defineTheme(
-    'tiny-train-dragon',
-    'a tiny train dragon speeding around a cake'
-  ),
-  defineTheme('crayon-jungle-king', 'a crayon jungle king with scribbly fur'),
-  defineTheme('meteor-mole', 'a meteor mole digging through a mountain'),
-  defineTheme('lightning-kiwi', 'a lightning kiwi with a crown of sparks'),
-]);
-
-const yearOneThemes = Object.freeze([
-  ...launchCommunityThemes,
-  ...YEAR_ONE_THEME_EXTENSION,
+// One easy subject plus at most one playful detail lasts for three days. These
+// 120 themes cover 360 days without requiring a crowded scene.
+const YEAR_ONE_THEMES = Object.freeze([
+  defineTheme('bear', 'a bear with honey'),
+  defineTheme('cloud', 'a smiling cloud'),
+  defineTheme('cat', 'a cat in boots'),
+  defineTheme('dog', 'a dog with balloon'),
+  defineTheme('rabbit', 'a rabbit with scarf'),
+  defineTheme('fox', 'a fox with flower'),
+  defineTheme('frog', 'a frog on leaves'),
+  defineTheme('fish', 'a fish with crown'),
+  defineTheme('whale', 'a whale under stars'),
+  defineTheme('shark', 'a shark brushing teeth'),
+  defineTheme('turtle', 'a turtle with backpack'),
+  defineTheme('snail', 'a racing snail'),
+  defineTheme('butterfly', 'a butterfly with spots'),
+  defineTheme('bee', 'a bee with glasses'),
+  defineTheme('ladybug', 'a ladybug on mushroom'),
+  defineTheme('spider', 'a spider knitting'),
+  defineTheme('octopus', 'an octopus waving'),
+  defineTheme('jellyfish', 'a glowing jellyfish'),
+  defineTheme('crab', 'a crab with hat'),
+  defineTheme('penguin', 'a penguin with cocoa'),
+  defineTheme('owl', 'an owl with book'),
+  defineTheme('duck', 'a duck in boots'),
+  defineTheme('chicken', 'a chicken with umbrella'),
+  defineTheme('cow', 'a cow jumping'),
+  defineTheme('pig', 'a pig with wings'),
+  defineTheme('sheep', 'a sheep in sweater'),
+  defineTheme('goat', 'a goat with bell'),
+  defineTheme('horse', 'a horse with ribbons'),
+  defineTheme('elephant', 'an elephant with flower'),
+  defineTheme('giraffe', 'a giraffe with bowtie'),
+  defineTheme('lion', 'a lion with crown'),
+  defineTheme('tiger', 'a tiger in pajamas'),
+  defineTheme('monkey', 'a monkey with banana'),
+  defineTheme('panda', 'a panda with kite'),
+  defineTheme('koala', 'a koala with teacup'),
+  defineTheme('kangaroo', 'a kangaroo with parcel'),
+  defineTheme('crocodile', 'a crocodile wearing sunglasses'),
+  defineTheme('dinosaur', 'a dinosaur with cupcake'),
+  defineTheme('dragon', 'a dragon blowing bubbles'),
+  defineTheme('unicorn', 'a unicorn on skates'),
+  defineTheme('robot', 'a dancing robot'),
+  defineTheme('alien', 'an alien waving'),
+  defineTheme('ghost', 'a shy ghost'),
+  defineTheme('monster', 'a tiny monster'),
+  defineTheme('wizard', 'a wizard with toast'),
+  defineTheme('pirate', 'a pirate with balloon'),
+  defineTheme('astronaut', 'an astronaut with flower'),
+  defineTheme('knight', 'a sleepy knight'),
+  defineTheme('mermaid', 'a mermaid with sunglasses'),
+  defineTheme('fairy', 'a fairy on skates'),
+  defineTheme('castle', 'a castle with flag'),
+  defineTheme('house', 'a house with legs'),
+  defineTheme('tree', 'a tree with face'),
+  defineTheme('flower', 'a flower wearing glasses'),
+  defineTheme('mushroom', 'a mushroom with door'),
+  defineTheme('cactus', 'a cactus with hat'),
+  defineTheme('mountain', 'a mountain with face'),
+  defineTheme('volcano', 'a volcano with snow'),
+  defineTheme('island', 'an island with palm'),
+  defineTheme('moon', 'a sleepy moon'),
+  defineTheme('sun', 'a smiling sun'),
+  defineTheme('star', 'a star with face'),
+  defineTheme('rainbow', 'a rainbow with cloud'),
+  defineTheme('raindrop', 'a happy raindrop'),
+  defineTheme('snowman', 'a snowman with umbrella'),
+  defineTheme('rocket', 'a rocket with window'),
+  defineTheme('airplane', 'an airplane with face'),
+  defineTheme('train', 'a train with flowers'),
+  defineTheme('car', 'a car with wings'),
+  defineTheme('boat', 'a boat under stars'),
+  defineTheme('bicycle', 'a bicycle with basket'),
+  defineTheme('balloon', 'a balloon with face'),
+  defineTheme('kite', 'a kite with tail'),
+  defineTheme('umbrella', 'an umbrella with eyes'),
+  defineTheme('hat', 'a hat with feather'),
+  defineTheme('shoe', 'a shoe with wings'),
+  defineTheme('sock', 'a sock with face'),
+  defineTheme('cup', 'a cup with steam'),
+  defineTheme('teapot', 'a teapot with legs'),
+  defineTheme('cake', 'a cake with candles'),
+  defineTheme('donut', 'a donut with sprinkles'),
+  defineTheme('pizza', 'a pizza with face'),
+  defineTheme('apple', 'an apple with worm'),
+  defineTheme('banana', 'a banana in pajamas'),
+  defineTheme('strawberry', 'a strawberry with crown'),
+  defineTheme('watermelon', 'a watermelon with sunglasses'),
+  defineTheme('ice-cream', 'a melting ice cream'),
+  defineTheme('sandwich', 'a sandwich with flag'),
+  defineTheme('cookie', 'a cookie with face'),
+  defineTheme('lollipop', 'a lollipop with bow'),
+  defineTheme('gift', 'a gift with legs'),
+  defineTheme('crown', 'a crown with flowers'),
+  defineTheme('key', 'a key with wings'),
+  defineTheme('clock', 'a sleepy clock'),
+  defineTheme('lamp', 'a lamp with face'),
+  defineTheme('chair', 'a chair with slippers'),
+  defineTheme('bed', 'a bed under stars'),
+  defineTheme('book', 'a book with eyes'),
+  defineTheme('pencil', 'a dancing pencil'),
+  defineTheme('paintbrush', 'a paintbrush with rainbow'),
+  defineTheme('camera', 'a camera with legs'),
+  defineTheme('guitar', 'a guitar with wings'),
+  defineTheme('drum', 'a drum with face'),
+  defineTheme('bell', 'a bell with ribbon'),
+  defineTheme('candle', 'a candle with smile'),
+  defineTheme('lantern', 'a lantern with stars'),
+  defineTheme('backpack', 'a backpack with ears'),
+  defineTheme('suitcase', 'a suitcase with stickers'),
+  defineTheme('treasure-chest', 'a tiny treasure chest'),
+  defineTheme('magic-wand', 'a sparkling magic wand'),
+  defineTheme('sword', 'a sword with ribbon'),
+  defineTheme('shield', 'a shield with moon'),
+  defineTheme('seashell', 'a seashell with pearl'),
+  defineTheme('snowflake', 'a smiling snowflake'),
+  defineTheme('leaf', 'a leaf with face'),
+  defineTheme('acorn', 'an acorn with hat'),
+  defineTheme('pinecone', 'a pinecone with scarf'),
+  defineTheme('pebble', 'a pebble with eyes'),
+  defineTheme('waterfall', 'a waterfall with rainbow'),
+  defineTheme('cave', 'a cave with lantern'),
 ]);
 
 export const COMMUNITY_DRAW_THEME_SEASONS: readonly CommunityDrawThemeSeason[] =
@@ -197,7 +156,7 @@ export const COMMUNITY_DRAW_THEME_SEASONS: readonly CommunityDrawThemeSeason[] =
     Object.freeze({
       version: 1,
       startsOnArenaDay: 1,
-      themes: yearOneThemes,
+      themes: YEAR_ONE_THEMES,
     }),
   ]);
 
@@ -254,6 +213,12 @@ export function validateCommunityDrawThemeSeasons(
       if (theme.prompt.length > THEME_PROMPT_MAXIMUM_LENGTH) {
         errors.push(
           `${label} prompt is ${theme.prompt.length} characters; maximum is ${THEME_PROMPT_MAXIMUM_LENGTH}.`
+        );
+      }
+      const promptWordCount = normalizedPrompt.split(/\s+/).length;
+      if (promptWordCount > THEME_PROMPT_MAXIMUM_WORDS) {
+        errors.push(
+          `${label} prompt has ${promptWordCount} words; maximum is ${THEME_PROMPT_MAXIMUM_WORDS}.`
         );
       }
       if (seenPrompts.has(normalizedPrompt)) {

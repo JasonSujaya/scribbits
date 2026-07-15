@@ -20,13 +20,13 @@ const themes = require(
 );
 const scribbits = require(join(compiledServerRoot, 'core', 'scribbit.js'));
 
-test('one year of community themes rotates in consistent three-day blocks', () => {
+test('360 days of simple community themes rotate in three-day blocks', () => {
   const firstTheme = themes.selectCommunityDoodleDare(1);
   const blockStartIds = [];
 
   assert.equal(themes.COMMUNITY_DRAW_THEME_DAYS, 3);
-  assert.equal(themes.COMMUNITY_DRAW_THEME_COUNT, 122);
-  assert.equal(themes.COMMUNITY_DRAW_THEME_COVERAGE_DAYS, 366);
+  assert.equal(themes.COMMUNITY_DRAW_THEME_COUNT, 120);
+  assert.equal(themes.COMMUNITY_DRAW_THEME_COVERAGE_DAYS, 360);
   assert.equal(themes.selectCommunityDoodleDare(2).id, firstTheme.id);
   assert.equal(themes.selectCommunityDoodleDare(3).id, firstTheme.id);
   assert.notEqual(themes.selectCommunityDoodleDare(4).id, firstTheme.id);
@@ -37,37 +37,42 @@ test('one year of community themes rotates in consistent three-day blocks', () =
   assert.notEqual(themes.selectCommunityDoodleDare(96).id, firstTheme.id);
   assert.notEqual(themes.selectCommunityDoodleDare(97).id, firstTheme.id);
   assert.equal(
-    themes.selectCommunityDoodleDare(361).id,
-    themes.selectCommunityDoodleDare(363).id
-  );
-  assert.notEqual(
-    themes.selectCommunityDoodleDare(363).id,
-    themes.selectCommunityDoodleDare(364).id
+    themes.selectCommunityDoodleDare(355).id,
+    themes.selectCommunityDoodleDare(357).id
   );
   assert.equal(
-    themes.selectCommunityDoodleDare(364).id,
-    themes.selectCommunityDoodleDare(366).id
+    themes.selectCommunityDoodleDare(358).id,
+    themes.selectCommunityDoodleDare(360).id
+  );
+  assert.notEqual(
+    themes.selectCommunityDoodleDare(357).id,
+    themes.selectCommunityDoodleDare(358).id
   );
 
-  for (let blockStart = 1; blockStart <= 364; blockStart += 3) {
+  for (let blockStart = 1; blockStart <= 358; blockStart += 3) {
     const themeId = themes.selectCommunityDoodleDare(blockStart).id;
     blockStartIds.push(themeId);
-    for (let day = blockStart; day <= Math.min(blockStart + 2, 365); day += 1) {
+    for (let day = blockStart; day <= blockStart + 2; day += 1) {
       assert.equal(themes.selectCommunityDoodleDare(day).id, themeId);
     }
   }
-  assert.equal(new Set(blockStartIds).size, 122);
+  assert.equal(new Set(blockStartIds).size, 120);
   assert.throws(
-    () => themes.selectCommunityDoodleDare(367),
+    () => themes.selectCommunityDoodleDare(361),
     /append the next season/
   );
   const allThemes = themes.COMMUNITY_DRAW_THEME_SEASONS.flatMap(
     (season) => season.themes
   );
   assert.equal(
-    allThemes.find((theme) => theme.id === 'paint-squid').prompt,
-    'a colorful squid'
+    allThemes.find((theme) => theme.id === 'bear').prompt,
+    'a bear with honey'
   );
+  assert.equal(
+    allThemes.find((theme) => theme.id === 'cat').prompt,
+    'a cat in boots'
+  );
+  assert.ok(allThemes.every((theme) => theme.prompt.split(/\s+/).length <= 4));
 });
 
 test('community theme seasons validate coverage and append-only boundaries', () => {
@@ -75,19 +80,19 @@ test('community theme seasons validate coverage and append-only boundaries', () 
   const shortSchedule = [
     {
       ...firstSeason,
-      themes: firstSeason.themes.slice(0, 121),
+      themes: firstSeason.themes.slice(0, 119),
     },
   ];
   const shortValidation =
     themes.validateCommunityDrawThemeSeasons(shortSchedule);
   assert.equal(shortValidation.valid, false);
-  assert.match(shortValidation.errors.join('\n'), /minimum is 365/);
+  assert.match(shortValidation.errors.join('\n'), /minimum is 360/);
 
   const duplicateValidation = themes.validateCommunityDrawThemeSeasons([
     {
       version: 1,
       startsOnArenaDay: 1,
-      themes: Array.from({ length: 122 }, () => firstSeason.themes[0]),
+      themes: Array.from({ length: 120 }, () => firstSeason.themes[0]),
     },
   ]);
   assert.equal(duplicateValidation.valid, false);
@@ -95,7 +100,7 @@ test('community theme seasons validate coverage and append-only boundaries', () 
 
   const futureSeason = {
     version: 2,
-    startsOnArenaDay: 367,
+    startsOnArenaDay: 361,
     themes: [
       {
         id: 'future-theme',
@@ -117,16 +122,29 @@ test('community theme seasons validate coverage and append-only boundaries', () 
     },
     {
       ...futureSeason,
-      startsOnArenaDay: 368,
+      startsOnArenaDay: 362,
     },
   ]);
   assert.equal(boundaryValidation.valid, false);
-  assert.match(boundaryValidation.errors.join('\n'), /expected day 367/);
+  assert.match(boundaryValidation.errors.join('\n'), /expected day 361/);
   assert.match(boundaryValidation.errors.join('\n'), /theme boundary/);
+
+  const complicatedPromptValidation = themes.validateCommunityDrawThemeSeasons([
+    {
+      ...firstSeason,
+      themes: firstSeason.themes.map((theme, index) =>
+        index === 0
+          ? { ...theme, prompt: 'a bear juggling three giant cupcakes' }
+          : theme
+      ),
+    },
+  ]);
+  assert.equal(complicatedPromptValidation.valid, false);
+  assert.match(complicatedPromptValidation.errors.join('\n'), /maximum is 4/);
 });
 
 test('new Scribbits keep an immutable theme category and old records migrate', () => {
-  const theme = themes.selectCommunityDoodleDare(365);
+  const theme = themes.selectCommunityDoodleDare(360);
   const scribbit = scribbits.createScribbit({
     id: 'theme-test',
     draft: {
@@ -137,7 +155,7 @@ test('new Scribbits keep an immutable theme category and old records migrate', (
     },
     artist: 'artist',
     imageUrl: '/drawing.png',
-    day: 365,
+    day: 360,
     drawingThemeId: theme.id,
   });
 

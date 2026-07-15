@@ -19,8 +19,10 @@ test('Draw keeps the everyday rail compact and puts optional tools one tap away'
   assert.match(drawSource, /const panelH = 300/);
   assert.match(drawSource, /this\.captureToolPage\('basic'/);
   assert.match(drawSource, /this\.captureToolPage\('advanced'/);
-  assert.match(drawSource, /'More drawing tools'/);
+  assert.match(drawSource, /'Open pens and brushes'/);
   assert.match(drawSource, /'Back to basic drawing tools'/);
+  assert.match(drawSource, /'PENS \+ BRUSHES'/);
+  assert.match(drawSource, /'BACK TO TOOLS'/);
   assert.match(drawSource, /private buildDrawingSettingsControl\(\): void/);
   assert.match(
     drawSource,
@@ -35,6 +37,10 @@ test('Draw keeps the everyday rail compact and puts optional tools one tap away'
     /this\.moreToolsButton = this\.toolIconButton\(\s*640,\s*toolY/
   );
   assert.match(drawSource, /Math\.min\(46, width \* 0\.55\)/);
+  assert.doesNotMatch(drawSource, /private addToolModeLabel/);
+  assert.match(drawSource, /background\.setFillStyle\(UI\.creamHex, 1\)/);
+  assert.match(drawSource, /selected \? 5 : 2/);
+  assert.match(drawSource, /\.rectangle\(\s*0,\s*24,\s*22,\s*8,/);
   assert.match(drawSource, /private syncToolPageVisibility\(\): void/);
   assert.match(
     drawSource,
@@ -52,6 +58,13 @@ test('Draw keeps the everyday rail compact and puts optional tools one tap away'
     /requestAnimationFrame\(\(\) => focusTarget\?\.focus/
   );
   assert.match(drawSource, /'bucket'/);
+  assert.match(drawSource, /'pencil'/);
+  assert.match(drawSource, /private selectDrawTool\(\): void/);
+  assert.match(drawSource, /this\.canvas\?\.setDrawMode\(\)/);
+  assert.match(drawCanvasSource, /setDrawMode\(\): void/);
+  assert.match(drawCanvasSource, /isDrawing\(\): boolean/);
+  assert.match(paperIconSource, /\| 'pencil'/);
+  assert.match(paperIconSource, /if \(key === 'pencil'\)/);
   assert.match(drawSource, /private selectFill\(\): void/);
   assert.match(
     drawSource,
@@ -63,24 +76,78 @@ test('Draw keeps the everyday rail compact and puts optional tools one tap away'
   assert.match(drawSource, /private getPersistentDrawingPrompt\(\): string/);
   assert.match(
     drawSource,
-    /`DRAW: \$\{formatThemePrompt\(dare\.prompt\)\.toUpperCase\(\)\}`/
+    /return formatThemePrompt\(dare\.prompt\)\.toUpperCase\(\)/
   );
+  assert.doesNotMatch(drawSource, /`DRAW: \$\{/);
   assert.match(drawSource, /FREE DRAW • DRAW ANYTHING/);
-  assert.match(drawSource, /private buildFighterStyleControls/);
-  assert.match(drawSource, /private selectFighterStyle\(role: CombatRole\)/);
-  assert.match(drawSource, /const content = getCombatRoleContent\(role\)/);
-  assert.match(drawSource, /content\.icon/);
-  assert.match(drawSource, /ROLE_STYLES\[role\]/);
-  assert.match(drawSource, /role: 'radiogroup'/);
-  assert.match(drawSource, /setAttribute\('aria-checked'/);
-  assert.match(drawSource, /CHOOSE FIGHTER STYLE/);
-  assert.match(drawSource, /COLOR PICKS THE POWER · DRAW FREELY/);
-  assert.match(drawSource, /Coral is Brawler/);
-  assert.match(drawSource, /blue is Longshot/);
-  assert.match(drawSource, /green is Gunner/);
-  assert.match(drawSource, /purple is Mage/);
-  assert.match(drawSource, /PEN COLORS ARE FOR YOUR ART/);
-  assert.match(drawSource, /fighterStyle: draft\.fighterStyle/);
+  assert.match(drawSource, /private buildDetectedFighterStyleIndicator/);
+  assert.match(drawSource, /private refreshDetectedFighterStyleIndicator/);
+  assert.match(drawSource, /private setDetectedFighterStyleIndicator/);
+  assert.match(
+    drawSource,
+    /private detectedFighterStyle: CombatRole \| null = null/
+  );
+  assert.match(drawSource, /this\.detectedFighterStyle = null/);
+  assert.match(
+    drawSource,
+    /this\.setDetectedFighterStyleIndicator\(\s*'DRAW TO SET'/
+  );
+  assert.match(drawSource, /const roleIconGap = 10/);
+  assert.match(
+    drawSource,
+    /roleRight -\s*this\.liveRoleLabel\.width -\s*roleIconGap -\s*roleIconSize \/ 2/
+  );
+  assert.doesNotMatch(drawSource, /roleRight - 112/);
+  assert.match(
+    drawSource,
+    /result\.inkedPixels > 0 \? result\.fighterStyle : null/
+  );
+  assert.doesNotMatch(
+    drawSource,
+    /this\.detectedFighterStyle =\s*fighterStyleForPaletteColor/
+  );
+  assert.match(drawSource, /const roleRight = this\.scale\.width - EDGE - 50/);
+  assert.doesNotMatch(drawSource, /liveRoleBackground/);
+  assert.doesNotMatch(drawSource, /SELECTED COLOR PREVIEW/);
+  assert.doesNotMatch(drawSource, /MOST-USED COLOR SETS ROLE/);
+  assert.match(drawSource, /const PALETTE_GROUPS/);
+  assert.match(drawSource, /\{ label: 'NEUTRAL', role: null \}/);
+  assert.match(drawSource, /\{ label: 'BRAWLER', role: 'brawler' \}/);
+  assert.match(drawSource, /\{ label: 'GUNNER', role: 'gunner' \}/);
+  assert.match(drawSource, /\{ label: 'LONGSHOT', role: 'longshot' \}/);
+  assert.match(drawSource, /\{ label: 'MAGE', role: 'mage' \}/);
+  assert.match(drawSource, /const groupIconY = y - 70/);
+  assert.match(drawSource, /const groupLabelY = y - 44/);
+  assert.match(drawSource, /const groupCardTop = y - rowHeight \+ 10/);
+  assert.match(drawSource, /const groupCardHeight = rowHeight \* 2 - 12/);
+  assert.match(drawSource, /const panelInset = 14/);
+  assert.match(
+    drawSource,
+    /const paletteY = panelTop \+ panelInset \+ MIN_TOUCH - 10/
+  );
+  assert.match(
+    drawSource,
+    /panelTop \+ panelH - panelInset - roundControlWidth \/ 2/
+  );
+  assert.doesNotMatch(drawSource, /const paletteY = centerY - 60/);
+  assert.match(drawSource, /private static readonly TOOLS_Y = 996/);
+  assert.doesNotMatch(drawSource, /rowHeight \* 2 \+ 12/);
+  assert.match(drawSource, /paperIcon\(this, groupIcon, x, groupIconY/);
+  assert.match(drawSource, /x,\s*groupLabelY,\s*group\.label,\s*14/);
+  assert.doesNotMatch(drawSource, /PALETTE_ROLE_BADGE/);
+  assert.match(drawSource, /fighterStyleForPaletteColor/);
+  assert.match(drawSource, /getCombatRoleContent\(group\.role\)\.icon/);
+  assert.match(drawSource, /counts toward/);
+  assert.doesNotMatch(drawSource, /role: 'radiogroup'/);
+  assert.doesNotMatch(drawSource, /setAttribute\('aria-checked'/);
+  assert.match(drawSource, /COLOR DECIDES YOUR ROLE/);
+  assert.match(drawSource, /THE BIGGEST COLOR AREA WINS/);
+  assert.match(drawSource, /Coral and orange make Brawler/);
+  assert.match(drawSource, /Aqua and blue make Longshot/);
+  assert.match(drawSource, /Gold and green make Gunner/);
+  assert.match(drawSource, /Purple and pink make Mage/);
+  assert.match(drawSource, /BLACK \+ WHITE ARE NEUTRAL/);
+  assert.doesNotMatch(drawSource, /fighterStyle: draft\.fighterStyle/);
   assert.doesNotMatch(drawSource, /STYLE FORMING…/);
   assert.doesNotMatch(drawSource, /Your drawing decides it/i);
   assert.doesNotMatch(drawSource, /Big filled shapes make Brawler/);
@@ -115,23 +182,49 @@ test('Draw always offers a clear route back to Home', () => {
   assert.doesNotMatch(drawSource, /private closeDrawStartPopup/);
 });
 
+test('Draw routes saveable ink into naming and warns before discarding a partial drawing', () => {
+  const exitSource = drawSource.slice(
+    drawSource.indexOf('private exitDraw()'),
+    drawSource.indexOf('// --- Layout budget')
+  );
+  assert.match(
+    exitSource,
+    /this\.submitting \|\| this\.drawConfirmation \|\| this\.unsavedDrawingModal/
+  );
+  assert.match(exitSource, /this\.refreshPreview\(\)/);
+  assert.match(exitSource, /this\.lastResult\?\.inkedPixels/);
+  assert.match(exitSource, /hasMinimumDrawingInk/);
+  assert.match(exitSource, /this\.continueFromDrawing\(\)/);
+  assert.match(exitSource, /this\.openUnsavedDrawingModal\(\)/);
+  assert.match(exitSource, /'NOT SAVED YET'/);
+  assert.match(exitSource, /'ADD MORE INK TO SAVE IT'/);
+  assert.match(exitSource, /'KEEP DRAWING'/);
+  assert.match(exitSource, /'LEAVE & DISCARD'/);
+  assert.match(exitSource, /this\.pauseDrawingRound\(\)/);
+  assert.match(exitSource, /this\.startDrawingRound\(\)/);
+  assert.match(exitSource, /if \(!modal\) return/);
+});
+
 test('Draw offers a quiet visual-only dark canvas preview', () => {
   assert.match(
     drawSource,
-    /private buildCanvasContrastToggle\(square: number\)/
+    /private buildCanvasContrastControl\(\s*x: number,\s*y: number,\s*width: number,\s*interactionWidth: number\s*\)/
   );
-  assert.match(
-    drawSource,
-    /Use \$\{nextMode === 'dark' \? 'dark' : 'light'\} canvas preview/
+  const advancedToolbarSource = drawSource.slice(
+    drawSource.indexOf("this.captureToolPage('advanced'"),
+    drawSource.indexOf('this.setAdvancedToolsOpen(false)')
   );
+  assert.match(advancedToolbarSource, /this\.buildCanvasContrastControl\(/);
+  assert.match(advancedToolbarSource, /advancedX\[nextAction\] \?\? 480/);
+  assert.match(drawSource, /'contrast'/);
+  assert.match(drawSource, /'CANVAS'/);
+  assert.match(drawSource, /`Use \$\{nextMode\} canvas preview`/);
   assert.match(drawSource, /this\.canvas\.setPreviewMode\(/);
   assert.match(drawSource, /saveDarkCanvasPreview\(this\.darkCanvasPreview\)/);
-  assert.match(drawSource, /button\.setAttribute\('aria-pressed'/);
-  assert.match(
-    drawSource,
-    /button\.textContent = this\.darkCanvasPreview \? '☀' : '☾'/
-  );
-  assert.match(drawSource, /x: canvasLeft \+ square \+ 2/);
+  assert.match(drawSource, /control === this\.contrastToolControl/);
+  assert.doesNotMatch(drawSource, /canvasLeft \+ square \+ 2/);
+  assert.match(paperIconSource, /\| 'contrast'/);
+  assert.match(paperIconSource, /if \(key === 'contrast'\)/);
   assert.match(
     drawCanvasSource,
     /export type CanvasPreviewMode = 'paper' \| 'dark'/

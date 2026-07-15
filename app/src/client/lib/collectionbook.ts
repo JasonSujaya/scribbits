@@ -47,16 +47,68 @@ import {
 } from '../../shared/gearcombat';
 import { selectGearWeekDay } from '../../shared/content/gearweek';
 import { getCombatRoleContent, selectCombatRole } from '../../shared/combat';
+import { BAG_BINDER_SHELL_TEXTURE } from './visualassets';
 
 const BAG_GEAR_TILE_SIZE = 120;
-const BAG_EQUIPMENT_SLOT_SIZE = 76;
+const BAG_EQUIPMENT_SLOT_SIZE = 84;
 const BAG_EQUIPMENT_SLOT_HIT_WIDTH = 90;
-const BAG_BINDER_WIDTH = 640;
-const BAG_BINDER_HEIGHT = 540;
+const BAG_BINDER_WIDTH = 680;
+const BAG_BINDER_HEIGHT = 1250;
+const BAG_BINDER_SOURCE_HEIGHT = 1085;
+const BAG_COMPACT_CARD_SCALE = 0.54;
+const BAG_COMPACT_SLOT_SIZE = 65;
+const BAG_COMPACT_SLOT_X = [117, 191, 267, 342, 417, 493, 568, 630] as const;
+const BAG_EQUIPMENT_PANEL_WIDTH = 260;
+const BAG_EQUIPMENT_PANEL_HEIGHT = 205;
+const BAG_EFFECTS_PANEL_WIDTH = 520;
+const BAG_EFFECTS_PANEL_HEIGHT = 84;
+const binderOffsetY = (offset: number): number =>
+  Math.round((offset * BAG_BINDER_HEIGHT) / BAG_BINDER_SOURCE_HEIGHT);
+const afterBagPress = (action: () => void): void => {
+  // The transparent native control must survive the complete mobile click.
+  // Rebuild on the next frame so pointerup cannot fall through to the canvas.
+  requestAnimationFrame(action);
+};
+
+function addReusableBinderPanel(
+  scene: Scene,
+  parent: Phaser.GameObjects.Container,
+  x: number,
+  y: number,
+  width: number,
+  height: number
+): void {
+  const panel = scene.add.graphics();
+  const left = x - width / 2;
+  const top = y - height / 2;
+  const radius = 18;
+  panel.fillStyle(UI.inkHex, 0.12);
+  panel.fillRoundedRect(left + 5, top + 6, width, height, radius);
+  panel.fillStyle(UI.paper, 0.98);
+  panel.fillRoundedRect(left, top, width, height, radius);
+  panel.lineStyle(4, UI.inkHex, 0.9);
+  panel.strokeRoundedRect(left, top, width, height, radius);
+  parent.add(panel);
+}
+
+function addReusableBinderRing(
+  scene: Scene,
+  parent: Phaser.GameObjects.Container,
+  y: number
+): void {
+  const ring = scene.add.graphics();
+  ring.fillStyle(UI.inkHex, 0.2);
+  ring.fillRoundedRect(-16, y - 7, 36, 20, 8);
+  ring.fillStyle(UI.paper, 1);
+  ring.fillRoundedRect(-18, y - 10, 36, 20, 8);
+  ring.lineStyle(4, UI.inkHex, 0.95);
+  ring.strokeRoundedRect(-18, y - 10, 36, 20, 8);
+  parent.add(ring);
+}
 
 const BAG_LAYOUT = Object.freeze({
   modeOffset: 50,
-  binderTopOffset: 110,
+  binderTopOffset: 16,
   filterGap: 50,
   expandedFilterOffset: 165,
   inventoryGap: 78,
@@ -77,6 +129,7 @@ function planBagLayout(
   mode: BagMode
 ): {
   modeY: number;
+  binderTop: number;
   binderCenterY: number;
   showBinder: boolean;
   filterY: number;
@@ -91,6 +144,7 @@ function planBagLayout(
     : binderBottom + BAG_LAYOUT.filterGap;
   return {
     modeY: top + BAG_LAYOUT.modeOffset,
+    binderTop,
     binderCenterY: binderTop + BAG_BINDER_HEIGHT / 2,
     showBinder,
     filterY,
@@ -285,14 +339,12 @@ export function renderCollectionBook(options: CollectionBookOptions): void {
     options.scribbits.find(
       (scribbit) => scribbit.id === options.selectedScribbitId
     ) ?? options.scribbits[0];
-  buildBagModeTabs({
-    scene,
-    actionOverlay: options.actionOverlay,
-    selectedMode: mode,
-    y: layout.modeY,
-    onModeChange: (nextMode) =>
-      options.onSectionChange(nextMode === 'equipment' ? 'weapon' : 'colors'),
-  });
+  const featuredGearIds = new Set(gearWeekDay.featuredGearIds);
+  const ownedItems = buildOwnedItems(inventory, options.section).sort(
+    (left, right) =>
+      Number(featuredGearIds.has(right.entry.id)) -
+      Number(featuredGearIds.has(left.entry.id))
+  );
   if (layout.showBinder) {
     buildBagCharacterStage({
       scene,
@@ -308,7 +360,45 @@ export function renderCollectionBook(options: CollectionBookOptions): void {
       onSelectScribbit: options.onSelectScribbit,
       onEquipGear: options.onEquipGear,
     });
+    buildBagModeTabs({
+      scene,
+      actionOverlay: options.actionOverlay,
+      selectedMode: mode,
+      y: layout.modeY,
+      sideTabs: true,
+      binderTop: layout.binderTop,
+      onModeChange: (nextMode) =>
+        options.onSectionChange(nextMode === 'equipment' ? 'weapon' : 'colors'),
+    });
+    buildCompactBagInventory({
+      scene,
+      actionOverlay: options.actionOverlay,
+      binderTop: layout.binderTop,
+      section: options.section as EquipmentCategory,
+      items: ownedItems,
+      inventory,
+      loggedIn,
+      selectedScribbit,
+      equipmentBusy: options.equipmentBusy,
+      featuredGearIds,
+      onEquipTitle: options.onEquipTitle,
+      onMergeGear: options.onMergeGear,
+      onEquipGear: options.onEquipGear,
+      onInventoryChanged: options.onInventoryChanged,
+      onExpand: () => options.onInventoryExpandedChange(true),
+    });
+    return;
   }
+  buildBagModeTabs({
+    scene,
+    actionOverlay: options.actionOverlay,
+    selectedMode: mode,
+    y: layout.modeY,
+    sideTabs: false,
+    binderTop: layout.binderTop,
+    onModeChange: (nextMode) =>
+      options.onSectionChange(nextMode === 'equipment' ? 'weapon' : 'colors'),
+  });
   buildBagFilters(
     scene,
     options.actionOverlay,
@@ -317,12 +407,6 @@ export function renderCollectionBook(options: CollectionBookOptions): void {
     options.onSectionChange
   );
 
-  const featuredGearIds = new Set(gearWeekDay.featuredGearIds);
-  const ownedItems = buildOwnedItems(inventory, options.section).sort(
-    (left, right) =>
-      Number(featuredGearIds.has(right.entry.id)) -
-      Number(featuredGearIds.has(left.entry.id))
-  );
   const inventoryTop = layout.inventoryTop;
   const inventoryBottom = layout.inventoryBottom;
   const inventoryPanelHeight = Math.max(0, inventoryBottom - inventoryTop);
@@ -381,7 +465,9 @@ export function renderCollectionBook(options: CollectionBookOptions): void {
         'data-bag-inventory-expanded': String(options.inventoryExpanded),
       },
       onActivate: () =>
-        options.onInventoryExpandedChange(!options.inventoryExpanded),
+        afterBagPress(() =>
+          options.onInventoryExpandedChange(!options.inventoryExpanded)
+        ),
     });
   } else {
     label(
@@ -459,14 +545,142 @@ export function renderCollectionBook(options: CollectionBookOptions): void {
   });
 }
 
+function buildCompactBagInventory(options: {
+  scene: Scene;
+  actionOverlay: CanvasActionOverlay;
+  binderTop: number;
+  section: EquipmentCategory;
+  items: readonly CollectionItem[];
+  inventory: Inventory;
+  loggedIn: boolean;
+  selectedScribbit: Scribbit | undefined;
+  equipmentBusy: boolean;
+  featuredGearIds: ReadonlySet<string>;
+  onEquipTitle: CollectionBookOptions['onEquipTitle'];
+  onMergeGear: CollectionBookOptions['onMergeGear'];
+  onEquipGear: CollectionBookOptions['onEquipGear'];
+  onInventoryChanged: CollectionBookOptions['onInventoryChanged'];
+  onExpand: () => void;
+}): void {
+  const {
+    scene,
+    actionOverlay,
+    binderTop,
+    section,
+    items,
+    inventory,
+    loggedIn,
+    selectedScribbit,
+    equipmentBusy,
+    featuredGearIds,
+    onEquipTitle,
+    onMergeGear,
+    onEquipGear,
+    onInventoryChanged,
+    onExpand,
+  } = options;
+  label(
+    scene,
+    78,
+    binderTop + binderOffsetY(913),
+    `${GEAR_SECTION_PRESENTATION[section].label} INVENTORY · ${items.length} OWNED`,
+    18,
+    UI.coralText,
+    true
+  ).setOrigin(0, 0.5);
+
+  const expandX = scene.scale.width - 112;
+  const expandY = binderTop + binderOffsetY(913);
+  ghostButton(scene, expandX, expandY, 'EXPAND ↑', onExpand, 138, 46);
+  actionOverlay.add({
+    label: `Expand ${GEAR_SECTION_PRESENTATION[section].label} inventory`,
+    rect: {
+      x: expandX - 69,
+      y: expandY - 23,
+      width: 138,
+      height: 46,
+    },
+    attributes: {
+      'aria-expanded': 'false',
+      'data-bag-inventory-expanded': 'false',
+    },
+    onActivate: () => afterBagPress(onExpand),
+  });
+
+  const compactY = binderTop + binderOffsetY(980);
+  items.slice(0, BAG_COMPACT_SLOT_X.length).forEach((item, index) => {
+    const card = buildCosmeticCard({
+      scene,
+      ...item,
+      inventory,
+      loggedIn,
+      onEquipTitle,
+      onMergeGear,
+      selectedScribbit,
+      equipmentBusy,
+      onEquipGear,
+      onInventoryChanged,
+      featured: featuredGearIds.has(item.entry.id),
+    });
+    const x = BAG_COMPACT_SLOT_X[index] ?? BAG_COMPACT_SLOT_X[0];
+    card.view.setPosition(x, compactY).setScale(BAG_COMPACT_CARD_SCALE);
+    actionOverlay.add({
+      label: card.primaryAction.label,
+      rect: {
+        x: x - BAG_COMPACT_SLOT_SIZE / 2,
+        y: compactY - BAG_COMPACT_SLOT_SIZE / 2,
+        width: BAG_COMPACT_SLOT_SIZE,
+        height: BAG_COMPACT_SLOT_SIZE,
+      },
+      ...(card.primaryAction.attributes === undefined
+        ? {}
+        : { attributes: card.primaryAction.attributes }),
+      enabled: card.primaryAction.disabled !== true,
+      onActivate: card.primaryAction.onActivate,
+    });
+  });
+
+  for (
+    let index = Math.min(items.length, BAG_COMPACT_SLOT_X.length);
+    index < BAG_COMPACT_SLOT_X.length;
+    index += 1
+  ) {
+    const x = BAG_COMPACT_SLOT_X[index] ?? BAG_COMPACT_SLOT_X[0];
+    const emptySlot = createBagGearTile(
+      scene,
+      null,
+      false,
+      false,
+      BAG_COMPACT_SLOT_SIZE,
+      true
+    ).setPosition(x, compactY);
+    emptySlot.add(
+      paperIcon(scene, 'lock', 0, 0, {
+        size: 24,
+        fill: UI.paper,
+      })
+    );
+  }
+}
+
 function buildBagModeTabs(options: {
   scene: Scene;
   actionOverlay: CanvasActionOverlay;
   selectedMode: BagMode;
   y: number;
+  sideTabs: boolean;
+  binderTop: number;
   onModeChange: (mode: BagMode) => void;
 }): void {
-  const { scene, actionOverlay, selectedMode, y, onModeChange } = options;
+  const {
+    scene,
+    actionOverlay,
+    selectedMode,
+    y,
+    sideTabs,
+    binderTop,
+    onModeChange,
+  } = options;
   const modes: readonly Readonly<{
     id: BagMode;
     label: string;
@@ -474,6 +688,43 @@ function buildBagModeTabs(options: {
     { id: 'equipment', label: 'EQUIPMENT' },
     { id: 'draw-kit', label: 'DRAW KIT' },
   ];
+  if (sideTabs) {
+    const { width } = scene.scale;
+    const sideTabX = width - 50;
+    modes.forEach((mode, index) => {
+      const selected = mode.id === selectedMode;
+      const tabY = binderTop + binderOffsetY(index === 0 ? 222 : 440);
+      const tabLabel = label(
+        scene,
+        sideTabX,
+        tabY,
+        mode.label,
+        19,
+        UI.paperText,
+        true
+      ).setAngle(90);
+      tabLabel.setAlpha(selected ? 1 : 0.76);
+      actionOverlay.add({
+        label: `${mode.label}${selected ? ', selected' : ''}`,
+        rect: {
+          x: width - 72,
+          y: tabY - 104,
+          width: 72,
+          height: 208,
+        },
+        attributes: {
+          'aria-pressed': String(selected),
+          'data-bag-mode': mode.id,
+        },
+        onActivate: () => {
+          if (!selected) {
+            afterBagPress(() => onModeChange(mode.id));
+          }
+        },
+      });
+    });
+    return;
+  }
   const buttonWidth = 320;
   const buttonHeight = 100;
   modes.forEach((mode, index) => {
@@ -507,7 +758,7 @@ function buildBagModeTabs(options: {
         'data-bag-mode': mode.id,
       },
       onActivate: () => {
-        if (!selected) onModeChange(mode.id);
+        if (!selected) afterBagPress(() => onModeChange(mode.id));
       },
     });
   });
@@ -569,7 +820,7 @@ function buildBagFilters(
         'data-ink-kit-section': section.id,
       },
       onActivate: () => {
-        if (!selected) onSectionChange(section.id);
+        if (!selected) afterBagPress(() => onSectionChange(section.id));
       },
     });
   });
@@ -605,76 +856,61 @@ function buildBagCharacterStage(options: {
   } = options;
   const { width } = scene.scale;
   const stage = scene.add.container(width / 2, centerY);
-  const binder = scene.add.graphics();
-  const binderLeft = -BAG_BINDER_WIDTH / 2;
-  const binderTop = -BAG_BINDER_HEIGHT / 2;
-  binder.fillStyle(UI.inkHex, 0.2);
-  binder.fillRoundedRect(
-    binderLeft + 9,
-    binderTop + 13,
-    BAG_BINDER_WIDTH,
-    BAG_BINDER_HEIGHT,
-    38
+  stage.add(
+    scene.add
+      .image(0, 0, BAG_BINDER_SHELL_TEXTURE)
+      .setDisplaySize(BAG_BINDER_WIDTH, BAG_BINDER_HEIGHT)
   );
-  binder.fillStyle(UI.coral, 1);
-  binder.fillRoundedRect(
-    binderLeft,
-    binderTop,
-    BAG_BINDER_WIDTH,
-    BAG_BINDER_HEIGHT,
-    38
-  );
-  binder.lineStyle(6, UI.inkHex, 1);
-  binder.strokeRoundedRect(
-    binderLeft,
-    binderTop,
-    BAG_BINDER_WIDTH,
-    BAG_BINDER_HEIGHT,
-    38
-  );
-  binder.fillStyle(UI.paper, 1);
-  binder.fillRoundedRect(binderLeft + 20, binderTop + 20, 600, 428, 26);
-  binder.lineStyle(4, UI.inkHex, 0.92);
-  binder.strokeRoundedRect(binderLeft + 20, binderTop + 20, 600, 428, 26);
-  binder.fillStyle(UI.creamHex, 1);
-  binder.fillRoundedRect(binderLeft + 20, binderTop + 458, 600, 62, 20);
-  binder.strokeRoundedRect(binderLeft + 20, binderTop + 458, 600, 62, 20);
-  binder.lineStyle(3, UI.inkHex, 0.46);
-  binder.lineBetween(-296, -105, 296, -105);
-  binder.lineBetween(-296, 38, 296, 38);
-  binder.lineBetween(0, -105, 0, 178);
-  stage.add(binder);
-
-  [-64, 40, 144].forEach((ringY) => {
-    const ring = scene.add.graphics();
-    ring.fillStyle(UI.paper, 1);
-    ring.fillRoundedRect(-12, ringY - 17, 24, 34, 10);
-    ring.lineStyle(4, UI.inkHex, 1);
-    ring.strokeRoundedRect(-12, ringY - 17, 24, 34, 10);
-    stage.add(ring);
-  });
 
   const equipmentPanelCenter: Readonly<
     Record<EquipmentCategory, Readonly<{ x: number; y: number }>>
   > = {
-    weapon: { x: -155, y: -46 },
-    armor: { x: 155, y: -46 },
-    shoes: { x: -155, y: 106 },
-    accessory: { x: 155, y: 106 },
+    weapon: { x: -140, y: binderOffsetY(-20) },
+    armor: { x: 120, y: binderOffsetY(-20) },
+    shoes: { x: -140, y: binderOffsetY(165) },
+    accessory: { x: 120, y: binderOffsetY(165) },
   };
+  EQUIPMENT_CATEGORIES.forEach((category) => {
+    const panel = equipmentPanelCenter[category];
+    addReusableBinderPanel(
+      scene,
+      stage,
+      panel.x,
+      panel.y,
+      BAG_EQUIPMENT_PANEL_WIDTH,
+      BAG_EQUIPMENT_PANEL_HEIGHT
+    );
+  });
+  addReusableBinderPanel(
+    scene,
+    stage,
+    0,
+    binderOffsetY(285),
+    BAG_EFFECTS_PANEL_WIDTH,
+    BAG_EFFECTS_PANEL_HEIGHT
+  );
+  [-100, 15, 120, 225].forEach((ringY) => {
+    addReusableBinderRing(scene, stage, binderOffsetY(ringY));
+  });
   EQUIPMENT_CATEGORIES.forEach((category) => {
     const panel = equipmentPanelCenter[category];
     const presentation = GEAR_SECTION_PRESENTATION[category];
     stage.add(
-      paperIcon(scene, presentation.icon, panel.x - 104, panel.y - 46, {
-        size: 28,
-        fill: selectedSection === category ? UI.coral : UI.inkHex,
-      })
+      paperIcon(
+        scene,
+        presentation.icon,
+        panel.x - 106,
+        panel.y + binderOffsetY(-84),
+        {
+          size: 28,
+          fill: selectedSection === category ? UI.coral : UI.inkHex,
+        }
+      )
     );
     const categoryLabel = label(
       scene,
-      panel.x - 83,
-      panel.y - 46,
+      panel.x - 84,
+      panel.y + binderOffsetY(-84),
       presentation.label,
       20,
       selectedSection === category ? UI.coralText : UI.ink,
@@ -684,18 +920,32 @@ function buildBagCharacterStage(options: {
       categoryLabel.setScale(122 / categoryLabel.width);
     }
     stage.add(categoryLabel);
+    actionOverlay.add({
+      label: `${presentation.label} Gear${selectedSection === category ? ', selected' : ''}`,
+      rect: {
+        x: width / 2 + panel.x - 126,
+        y: centerY + panel.y + binderOffsetY(-106),
+        width: 252,
+        height: 180,
+      },
+      attributes: {
+        'aria-pressed': String(selectedSection === category),
+        'data-ink-kit-section': category,
+      },
+      onActivate: () => afterBagPress(() => onSectionChange(category)),
+    });
   });
 
   if (!selectedScribbit) {
     stage.add([
-      paperIcon(scene, 'paw', -210, -192, {
-        size: 62,
+      paperIcon(scene, 'paw', -140, binderOffsetY(-284), {
+        size: 82,
         fill: UI.inkSoftHex,
       }),
       label(
         scene,
-        -30,
-        -192,
+        92,
+        binderOffsetY(-300),
         'DRAW A LIVING SCRIBBIT\nTO START ITS BINDER',
         TYPE.caption,
         UI.inkSoft,
@@ -713,7 +963,7 @@ function buildBagCharacterStage(options: {
           true
         ).setPosition(
           equipmentPanelCenter[category].x - 58 + slotIndex * 116,
-          equipmentPanelCenter[category].y + 24
+          equipmentPanelCenter[category].y + binderOffsetY(5)
         );
         slot.add(
           paperIcon(scene, GEAR_SECTION_PRESENTATION[category].icon, 0, 0, {
@@ -728,7 +978,7 @@ function buildBagCharacterStage(options: {
       label(
         scene,
         0,
-        226,
+        binderOffsetY(292),
         'EQUIPMENT SLOTS · DRAW A SCRIBBIT TO START',
         20,
         UI.inkSoft,
@@ -742,25 +992,36 @@ function buildBagCharacterStage(options: {
     0,
     scribbits.findIndex((scribbit) => scribbit.id === selectedScribbit.id)
   );
-  const portrait = scene.add.container(-220, -194);
-  stage.add(portrait);
+  const portrait = scene.add.container(-140, binderOffsetY(-280));
+  const selectorPortrait = scene.add.container(130, binderOffsetY(-310));
+  stage.add([portrait, selectorPortrait]);
   void loadDrawing(scene, selectedScribbit).then((textureKey) => {
-    if (!portrait.active || !stage.active || !scene.scene.isActive()) return;
+    if (
+      !portrait.active ||
+      !selectorPortrait.active ||
+      !stage.active ||
+      !scene.scene.isActive()
+    ) {
+      return;
+    }
     portrait.add(
-      fitDrawing(scene.add.image(0, 0, textureKey), 112).setOrigin(0.5)
+      fitDrawing(scene.add.image(0, 0, textureKey), 205).setOrigin(0.5)
+    );
+    selectorPortrait.add(
+      fitDrawing(scene.add.image(0, 0, textureKey), 82).setOrigin(0.5)
     );
   });
-  drawScribbitPlatform(scene, stage, -220, -137);
+  drawScribbitPlatform(scene, stage, -140, binderOffsetY(-170), 230);
   const nameText = label(
     scene,
-    -70,
-    -232,
+    -140,
+    binderOffsetY(-142),
     `${selectedScribbit.name.toUpperCase()} · LV ${selectedScribbit.level}`,
-    22,
+    24,
     UI.ink,
     true
-  ).setOrigin(0, 0.5);
-  if (nameText.width > 220) nameText.setScale(220 / nameText.width);
+  );
+  if (nameText.width > 230) nameText.setScale(230 / nameText.width);
   stage.add(nameText);
 
   const lifecycle = getScribbitLifecycleStage(selectedScribbit, dayNumber);
@@ -772,26 +1033,27 @@ function buildBagCharacterStage(options: {
     ? selectedScribbit.drawingThemeId.replaceAll('-', ' ').toUpperCase()
     : 'ORIGINAL DRAWING';
   const metadataLines = [
-    `${selectedScribbit.element.toUpperCase()} ELEMENT · ${getCombatRoleContent(selectCombatRole(selectedScribbit.stats)).displayName.toUpperCase()}`,
-    `DRAWING STYLE · ${themeName}`,
+    `ELEMENT · ${selectedScribbit.element.toUpperCase()}`,
+    `ROLE · ${getCombatRoleContent(selectCombatRole(selectedScribbit.stats)).displayName.toUpperCase()}`,
+    `MATERIAL · ${themeName}`,
     lifecycle === 'mature'
-      ? 'MATURE · STATS LOCKED'
-      : `GROWING · DAY ${growthDay}/3`,
+      ? 'MATURITY · MATURE · STATS LOCKED'
+      : `MATURITY · GROWING ${growthDay}/3`,
     `CHONK ${selectedScribbit.stats.chonk} · SPIKE ${selectedScribbit.stats.spike}`,
     `ZIP ${selectedScribbit.stats.zip} · CHARM ${selectedScribbit.stats.charm}`,
   ];
   metadataLines.forEach((metadata, index) => {
     const metadataText = label(
       scene,
-      -70,
-      -204 + index * 21,
+      12,
+      binderOffsetY(-222 + index * 18),
       metadata,
-      index < 3 ? 17 : 16,
-      index === 2 && lifecycle === 'mature' ? UI.goldText : UI.inkSoft,
+      16,
+      index === 3 && lifecycle === 'mature' ? UI.goldText : UI.inkSoft,
       true
     ).setOrigin(0, 0.5);
-    if (metadataText.width > 230) {
-      metadataText.setScale(230 / metadataText.width);
+    if (metadataText.width > 252) {
+      metadataText.setScale(252 / metadataText.width);
     }
     stage.add(metadataText);
   });
@@ -806,8 +1068,8 @@ function buildBagCharacterStage(options: {
     };
     const previous = ghostButton(
       scene,
-      190,
-      -180,
+      35,
+      binderOffsetY(-310),
       '‹',
       () => selectRelativeScribbit(-1),
       58,
@@ -815,8 +1077,8 @@ function buildBagCharacterStage(options: {
     );
     const next = ghostButton(
       scene,
-      282,
-      -180,
+      225,
+      binderOffsetY(-310),
       '‹',
       () => selectRelativeScribbit(1),
       58,
@@ -825,12 +1087,22 @@ function buildBagCharacterStage(options: {
     previous.setAlpha(equipmentBusy ? 0.42 : 1);
     next.setAlpha(equipmentBusy ? 0.42 : 1);
     stage.add([previous, next]);
-    stage.add(label(scene, 236, -232, 'CHANGE SCRIBBIT', 17, UI.ink, true));
     stage.add(
       label(
         scene,
-        236,
-        -180,
+        130,
+        binderOffsetY(-390),
+        'CHANGE SCRIBBIT',
+        20,
+        UI.ink,
+        true
+      )
+    );
+    stage.add(
+      label(
+        scene,
+        130,
+        binderOffsetY(-250),
         `${selectedIndex + 1} / ${scribbits.length}`,
         18,
         UI.inkSoft,
@@ -838,10 +1110,10 @@ function buildBagCharacterStage(options: {
       )
     );
     actionOverlay.add({
-      label: `Previous Scribbit. ${selectedScribbit.name} selected. ${metadataLines[1]}. ${metadataLines[2]}. ${selectedIndex + 1} of ${scribbits.length}.`,
+      label: `Previous Scribbit. ${selectedScribbit.name} selected. ${metadataLines[2]}. ${metadataLines[3]}. ${selectedIndex + 1} of ${scribbits.length}.`,
       rect: {
-        x: width / 2 + 150,
-        y: centerY - 230,
+        x: width / 2 - 5,
+        y: centerY + binderOffsetY(-360),
         width: 80,
         height: 100,
       },
@@ -853,13 +1125,13 @@ function buildBagCharacterStage(options: {
         'data-selected-scribbit-theme': themeName,
       },
       enabled: !equipmentBusy,
-      onActivate: () => selectRelativeScribbit(-1),
+      onActivate: () => afterBagPress(() => selectRelativeScribbit(-1)),
     });
     actionOverlay.add({
-      label: `Next Scribbit. ${selectedScribbit.name} selected. ${metadataLines[1]}. ${metadataLines[2]}. ${selectedIndex + 1} of ${scribbits.length}.`,
+      label: `Next Scribbit. ${selectedScribbit.name} selected. ${metadataLines[2]}. ${metadataLines[3]}. ${selectedIndex + 1} of ${scribbits.length}.`,
       rect: {
-        x: width / 2 + 242,
-        y: centerY - 230,
+        x: width / 2 + 185,
+        y: centerY + binderOffsetY(-360),
         width: 80,
         height: 100,
       },
@@ -871,7 +1143,7 @@ function buildBagCharacterStage(options: {
         'data-selected-scribbit-theme': themeName,
       },
       enabled: !equipmentBusy,
-      onActivate: () => selectRelativeScribbit(1),
+      onActivate: () => afterBagPress(() => selectRelativeScribbit(1)),
     });
   }
 
@@ -885,7 +1157,7 @@ function buildBagCharacterStage(options: {
         category,
         slotIndex,
         x: width / 2 + panel.x - 58 + slotIndex * 116,
-        y: centerY + panel.y + 24,
+        y: centerY + panel.y + binderOffsetY(5),
         selectedCategory: selectedSection === category,
         equipmentBusy,
         onBrowseCategory: () => onSectionChange(category),
@@ -906,7 +1178,7 @@ function buildBagCharacterStage(options: {
     label(
       scene,
       width / 2,
-      centerY + 184,
+      centerY + binderOffsetY(350),
       visibleEquipmentStatus,
       20,
       equipmentError ? UI.coralText : UI.goldText,
@@ -919,7 +1191,7 @@ function buildBagCharacterStage(options: {
     scribbit: selectedScribbit,
     equippedCount,
     x: width / 2,
-    y: centerY + 230,
+    y: centerY + binderOffsetY(285),
   });
   if (equipmentError || equipmentBusy) {
     actionOverlay.addStatus(
@@ -961,15 +1233,15 @@ function buildLoadoutEffectsSummary(options: {
   const resolvedLoadout = resolveGearCombatLoadout(scribbit);
   const summaries = summarizeGearCombatModifiers(resolvedLoadout.modifiers);
   const summary = scene.add.container(x, y);
-  const width = 604;
+  const width = 520;
   const height = 62;
   summary.add(
     label(
       scene,
       0,
-      -20,
+      -18,
       `LOADOUT EFFECTS · ${equippedCount}/8 · TAP FOR INFO`,
-      20,
+      18,
       UI.ink,
       true
     )
@@ -977,17 +1249,15 @@ function buildLoadoutEffectsSummary(options: {
   const visibleSummaries = [
     ...summaries.filter((item) => item.tone !== 'neutral'),
     ...summaries.filter((item) => item.tone === 'neutral'),
-  ].slice(0, 4);
-  const columnWidth = width / 2;
+  ].slice(0, 3);
+  const columnWidth = width / 3;
   visibleSummaries.forEach((item, index) => {
-    const column = index % 2;
-    const row = Math.floor(index / 2);
     const itemLabel = label(
       scene,
-      -width / 2 + columnWidth * (column + 0.5),
-      row === 0 ? 3 : 23,
+      -width / 2 + columnWidth * (index + 0.5),
+      10,
       `${item.label} ${item.value}`,
-      18,
+      15,
       summaryToneColor(item),
       true
     );

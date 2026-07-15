@@ -112,7 +112,7 @@ export class Bestiary extends Scene {
     const rows: ReadonlyArray<
       readonly [GuideSection, PaperIconKey, string, string]
     > = [
-      ['shape', 'pencil', 'STYLE', 'Pick color · get role'],
+      ['shape', 'pencil', 'STYLE', 'Most-used color = role'],
       ['powerups', 'spark', 'POWER-UPS', 'Win · choose 1 of 3'],
       ['ritual', 'clock', 'RITUAL', 'Draw · Watch · Pick · Return'],
       ['legends', 'trophy', 'LEGENDS', 'Three days to matter'],
@@ -240,13 +240,13 @@ export class Bestiary extends Scene {
   private guideSectionDescription(section: GuideSection): string {
     switch (section) {
       case 'shape':
-        return `Pick one fighter-style color before submitting. Pen colors remain artistic. ${FIGHTER_STYLE_GUIDE_ENTRIES.map((entry) => entry.description).join(' ')}`;
+        return `The color group covering the most drawing area sets the role. Black and white are neutral; neutral-only art becomes Brawler. ${FIGHTER_STYLE_GUIDE_ENTRIES.map((entry) => entry.description).join(' ')}`;
       case 'powerups':
         return 'Wins offer three behavioral Power-Ups. Choose one. A Scribbit can hold five and at most one Legendary. Gear remains the only source of raw stat bonuses.';
       case 'ritual':
         return 'Draw one Scribbit. Watch its power immediately. Pick one community contender. Return after midnight for the Champion and Clout result.';
       case 'legends':
-        return 'A Scribbit lives for three days. Care builds levels and wins build its record. A Champion crown or twenty-five Belief makes it permanent.';
+        return 'A Scribbit lives for three days. Battle wins build its level and record. A Champion crown or twenty-five Belief makes it permanent.';
       case 'privacy':
         return 'Scribbits stores your Reddit identity, drawings, battles, inventory, streak, and scores only to run the game. You can report player cards, remove your Scribbits, or permanently delete all stored game data.';
     }
@@ -304,11 +304,9 @@ export class Bestiary extends Scene {
               }
             )
           );
-          const names = POWER_UP_IDS.filter(
+          const mysteryCount = POWER_UP_IDS.filter(
             (id) => POWER_UP_CATALOG[id].rarity === rarity
-          )
-            .map((id) => POWER_UP_CATALOG[id].name)
-            .join(' · ');
+          ).length;
           modal.add(
             label(
               this,
@@ -321,7 +319,14 @@ export class Bestiary extends Scene {
             ).setOrigin(0, 0.5)
           );
           modal.add(
-            label(this, 190, y + 20, names, 18, UI.inkSoft)
+            label(
+              this,
+              190,
+              y + 20,
+              `${mysteryCount} MYSTERY POWER-UPS · WIN TO DISCOVER`,
+              18,
+              UI.inkSoft
+            )
               .setOrigin(0, 0.5)
               .setWordWrapWidth(this.scale.width - 300)
           );
@@ -370,7 +375,7 @@ export class Bestiary extends Scene {
             this,
             this.scale.width / 2,
             680,
-            'Care builds levels. Wins build a record. A Champion crown or 25 Belief makes a Scribbit permanent.',
+            'Battle wins build levels and a record. A Champion crown or 25 Belief makes a Scribbit permanent.',
             24,
             UI.ink,
             true

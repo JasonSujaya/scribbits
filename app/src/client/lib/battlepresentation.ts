@@ -75,8 +75,6 @@ export type ReplayFighterLayout = Readonly<{
   homeX: number;
   homeY: number;
   facing: -1 | 1;
-  nameX: number;
-  nameOriginX: 0 | 1;
   chipCenterX: number;
   panelLeft: number;
 }>;
@@ -97,10 +95,12 @@ export type ReplayBattleLayout = Readonly<{
   skipButtonWidth: number;
   fighterPanelTop: number;
   fighterPanelHeight: number;
+  battleTitleY: number;
   heartRowY: number;
   heartRowWidth: number;
   heartRowHeight: number;
-  fighterNameY: number;
+  fighterNameOffsetY: number;
+  fighterHealthOffsetY: number;
   arenaCaptionY: number;
   battleClockX: number;
   battleClockY: number;
@@ -208,14 +208,16 @@ export function planReplayBattleLayout(input: {
   const heartRowWidth = Math.round(
     (viewportWidth - horizontalMargin * 2 - fighterCenterGap) / 2
   );
-  const fighterPanelTop = 145;
-  const fighterPanelHeight = 128;
-  const fighterNameY = 166;
-  const heartRowY = 208;
-  const arenaCaptionY = 252;
+  const fighterPanelTop = 88;
+  const fighterPanelHeight = 96;
+  const battleTitleY = 42;
+  const heartRowY = 122;
+  const fighterNameOffsetY = -36;
+  const fighterHealthOffsetY = 38;
+  const arenaCaptionY = 194;
   const tickerHeight = 56;
-  const tickerY = 310;
-  const arenaTop = 355;
+  const tickerY = 255;
+  const arenaTop = 295;
   const arenaBottom = toolbarY - 62;
   const homeY = (arenaTop + arenaBottom) / 2;
   const leftPanelLeft = horizontalMargin;
@@ -237,10 +239,12 @@ export function planReplayBattleLayout(input: {
     skipButtonWidth,
     fighterPanelTop,
     fighterPanelHeight,
+    battleTitleY,
     heartRowY,
     heartRowWidth,
     heartRowHeight: 40,
-    fighterNameY,
+    fighterNameOffsetY,
+    fighterHealthOffsetY,
     arenaCaptionY,
     battleClockX: viewportWidth / 2,
     battleClockY: heartRowY,
@@ -260,8 +264,6 @@ export function planReplayBattleLayout(input: {
         homeX: Math.round(viewportWidth * 0.27),
         homeY,
         facing: 1,
-        nameX: horizontalMargin + 12,
-        nameOriginX: 0,
         chipCenterX: horizontalMargin + heartRowWidth / 2,
         panelLeft: leftPanelLeft,
       },
@@ -269,8 +271,6 @@ export function planReplayBattleLayout(input: {
         homeX: Math.round(viewportWidth * 0.73),
         homeY,
         facing: -1,
-        nameX: viewportWidth - horizontalMargin - 12,
-        nameOriginX: 1,
         chipCenterX: viewportWidth - horizontalMargin - heartRowWidth / 2,
         panelLeft: rightPanelLeft,
       },

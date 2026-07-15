@@ -160,8 +160,5 @@ test('dismiss surfaces and direct canvas actions declare semantic sounds', async
     [...combined.matchAll(/setSfxCue\([^,]+, 'ui\.close'\)/g)].length >= 8
   );
   assert.match(combined, /setSfxCue\(hitTarget, 'ui\.open'\)/);
-  assert.match(
-    combined,
-    /setSfxCue\(this\.liveSprite\.container, 'care\.action'\)/
-  );
+  assert.doesNotMatch(combined, /care\.action/);
 });

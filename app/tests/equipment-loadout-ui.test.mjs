@@ -33,6 +33,7 @@ test('Bag presents the mobile Binder, character details, eight slots, and separa
   const inventoryGridSource = readClientFile('lib', 'baginventorygrid.ts');
   const raritySource = readClientFile('lib', 'bagrarity.ts');
   const overlaySource = readClientFile('lib', 'overlay.ts');
+  const visualAssetsSource = readClientFile('lib', 'visualassets.ts');
   const cardSource = collectionSource.slice(
     collectionSource.indexOf('function buildCosmeticCard('),
     collectionSource.indexOf('function openCosmeticDetail(')
@@ -58,10 +59,15 @@ test('Bag presents the mobile Binder, character details, eight slots, and separa
   );
   assert.match(collectionSource, /drawScribbitPlatform/);
   assert.match(collectionSource, /const BAG_GEAR_TILE_SIZE = 120/);
-  assert.match(collectionSource, /const BAG_EQUIPMENT_SLOT_SIZE = 76/);
+  assert.match(collectionSource, /const BAG_EQUIPMENT_SLOT_SIZE = 84/);
   assert.match(collectionSource, /const BAG_EQUIPMENT_SLOT_HIT_WIDTH = 90/);
-  assert.match(collectionSource, /const BAG_BINDER_WIDTH = 640/);
-  assert.match(collectionSource, /const BAG_BINDER_HEIGHT = 540/);
+  assert.match(collectionSource, /const BAG_BINDER_WIDTH = 680/);
+  assert.match(collectionSource, /const BAG_BINDER_HEIGHT = 1250/);
+  assert.match(collectionSource, /const BAG_BINDER_SOURCE_HEIGHT = 1085/);
+  assert.match(collectionSource, /binderOffsetY/);
+  assert.match(collectionSource, /const afterBagPress/);
+  assert.match(collectionSource, /const BAG_COMPACT_CARD_SCALE = 0\.54/);
+  assert.match(collectionSource, /const BAG_COMPACT_SLOT_SIZE = 65/);
   assert.match(collectionSource, /cardColumns: 4/);
   assert.match(collectionSource, /inventoryPanelMargin: 18/);
   assert.match(collectionSource, /inventoryContentMargin: 42/);
@@ -82,7 +88,7 @@ test('Bag presents the mobile Binder, character details, eight slots, and separa
   assert.doesNotMatch(collectionSource, /gearWeekDay\.challenge/);
   assert.match(
     collectionSource,
-    /fitDrawing\(scene\.add\.image\(0, 0, textureKey\), 112\)/
+    /fitDrawing\(scene\.add\.image\(0, 0, textureKey\), 205\)/
   );
   assert.match(
     collectionSource,
@@ -112,11 +118,20 @@ test('Bag presents the mobile Binder, character details, eight slots, and separa
   );
   assert.match(
     characterStageSource,
-    /binder\.fillRoundedRect\([\s\S]*binder\.strokeRoundedRect\(/
+    /image\(0, 0, BAG_BINDER_SHELL_TEXTURE\)[\s\S]*setDisplaySize\(BAG_BINDER_WIDTH, BAG_BINDER_HEIGHT\)/
   );
+  assert.match(visualAssetsSource, /bag-binder-base-shell-v5\.webp/);
+  assert.doesNotMatch(characterStageSource, /binder\.fillRoundedRect/);
+  assert.match(collectionSource, /function addReusableBinderPanel\(/);
+  assert.match(collectionSource, /function addReusableBinderRing\(/);
+  assert.match(collectionSource, /function buildCompactBagInventory\(/);
+  assert.match(collectionSource, /BAG_COMPACT_SLOT_X/);
+  assert.match(collectionSource, /sideTabs: true/);
+  assert.match(collectionSource, /data-ink-kit-section/);
   assert.match(characterStageSource, /CHANGE SCRIBBIT/);
-  assert.match(characterStageSource, /\.element\.toUpperCase\(\).*ELEMENT/);
-  assert.match(characterStageSource, /DRAWING STYLE/);
+  assert.match(characterStageSource, /ELEMENT · \$\{selectedScribbit\.element/);
+  assert.match(characterStageSource, /ROLE ·/);
+  assert.match(characterStageSource, /MATERIAL ·/);
   assert.match(characterStageSource, /MATURE · STATS LOCKED/);
   assert.match(characterStageSource, /CHONK/);
   assert.match(characterStageSource, /SPIKE/);
@@ -161,7 +176,7 @@ test('Bag presents the mobile Binder, character details, eight slots, and separa
   assert.match(cardSource, /createBagGearTile\(/);
   assert.equal(
     (collectionSource.match(/createBagGearTile\(/g) ?? []).length,
-    4,
+    5,
     'one shared renderer must define and draw empty, equipped, and inventory outer squares'
   );
   assert.match(cardSource, /renderCosmeticPreview\(/);

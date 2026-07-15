@@ -79,6 +79,11 @@ test('a persisted three-card win offer claims exactly one Power-Up atomically', 
     },
   });
   assert.deepEqual(claim.powerUpIds, [selectedId]);
+  assert.deepEqual(claim.discoveredPowerUpIds, [selectedId]);
+  assert.deepEqual(
+    await offers.loadPowerUpDiscoveries(memory.storage, userId),
+    [selectedId]
+  );
   assert.equal(
     await memory.storage.get(offers.getPowerUpOfferKey(userId, scribbit.id)),
     undefined
@@ -103,4 +108,18 @@ test('a persisted three-card win offer claims exactly one Power-Up atomically', 
     }),
     null
   );
+});
+
+test('Power-Up discoveries parse safely and stay player-wide', async () => {
+  const memory = createMemoryStorage();
+  const userId = 'discovery-player';
+  await memory.storage.set(
+    offers.getPowerUpDiscoveriesKey(userId),
+    JSON.stringify(['v1-wallop', 'not-real', 'v1-wallop', 'v1-paper-twin'])
+  );
+  assert.deepEqual(
+    await offers.loadPowerUpDiscoveries(memory.storage, userId),
+    ['v1-wallop', 'v1-paper-twin']
+  );
+  assert.deepEqual(offers.parsePowerUpDiscoveries('{broken'), []);
 });

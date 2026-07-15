@@ -1,10 +1,10 @@
 export const DEFAULT_PAINT_BUCKET_LEVEL = 1 as const;
 
 export const PAINT_BUCKET_LEVELS = Object.freeze([
-  Object.freeze({ level: 1, capacity: 350_000 }),
-  Object.freeze({ level: 2, capacity: 450_000 }),
-  Object.freeze({ level: 3, capacity: 575_000 }),
-  Object.freeze({ level: 4, capacity: 750_000 }),
+  Object.freeze({ level: 1, capacity: 60_000 }),
+  Object.freeze({ level: 2, capacity: 85_000 }),
+  Object.freeze({ level: 3, capacity: 120_000 }),
+  Object.freeze({ level: 4, capacity: 170_000 }),
 ] as const);
 
 export type PaintBucketLevel =

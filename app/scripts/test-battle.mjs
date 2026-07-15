@@ -64,7 +64,6 @@ execFileSync(
     'src/shared/progression.ts',
     'src/shared/content/deterministic.ts',
     'src/shared/content/replaycommentary.ts',
-    'src/shared/content/carereactions.ts',
     'src/shared/content/communitydrawthemes.ts',
     'src/shared/content/doodledares.ts',
     'src/shared/content/gearweek.ts',
@@ -114,7 +113,6 @@ execFileSync(
     'src/server/core/scoutNotebook.ts',
     'src/client/lib/inkmesh.ts',
     'src/client/lib/proceduraldoodleplan.ts',
-    'src/client/lib/caremoment.ts',
     'src/client/lib/practicelab.ts',
     'src/client/lib/matchupbrief.ts',
     'src/client/lib/replaycommentary.ts',
@@ -233,9 +231,6 @@ const deterministicContent = require(
   join(outDir, 'shared', 'content', 'deterministic.js')
 );
 const serverRandom = require(join(outDir, 'server', 'core', 'random.js'));
-const careReactionContent = require(
-  join(outDir, 'shared', 'content', 'carereactions.js')
-);
 const replayCommentaryContent = require(
   join(outDir, 'shared', 'content', 'replaycommentary.js')
 );
@@ -294,7 +289,6 @@ const inkMeshCore = require(join(outDir, 'client', 'lib', 'inkmesh.js'));
 const proceduralDoodlePlan = require(
   join(outDir, 'client', 'lib', 'proceduraldoodleplan.js')
 );
-const careMoment = require(join(outDir, 'client', 'lib', 'caremoment.js'));
 const practiceLab = require(join(outDir, 'client', 'lib', 'practicelab.js'));
 const matchupBrief = require(join(outDir, 'client', 'lib', 'matchupbrief.js'));
 const replayCommentary = require(
@@ -955,7 +949,7 @@ assert.match(
 );
 assert.match(
   visualAssetsSource,
-  /FIGHT_START_TEXTURE[\s\S]*assetUrl\('ui-fight-start\.png'\)/,
+  /FIGHT_START_TEXTURE[\s\S]*assetUrl\('ui-fight-start\.webp'\)/,
   'the reusable visual asset loader should preload the illustrated fight stamp'
 );
 assert.doesNotMatch(
@@ -2531,14 +2525,14 @@ assert.doesNotMatch(
 );
 assert.match(drawSceneSource, /private buildLiveStatsStrip\(/);
 assert.match(drawSceneSource, /this\.updateLiveStats\(ready\)/);
-assert.match(drawSceneSource, /this\.buildFighterStyleControls\(panelWidth\)/);
+assert.match(drawSceneSource, /this\.buildDetectedFighterStyleIndicator\(\)/);
 assert.match(
   drawSceneSource,
-  /getCombatRoleContent\(this\.selectedFighterStyle\)/
+  /getCombatRoleContent\(this\.detectedFighterStyle\)/
 );
 assert.match(
   drawSceneSource,
-  /Pen colors are artistic and do not change fighter style\./
+  /the color covering the most area sets the final role\./
 );
 const paperIconsSource = readFileSync(
   join(repoRoot, 'src', 'client', 'lib', 'papericons.ts'),
@@ -2750,7 +2744,7 @@ const privateClientSymbols = [
   },
   {
     source: scribbitsClientSource,
-    names: ['DrawingSource', 'drawingKey', 'moodOf', 'careDoneToday'],
+    names: ['DrawingSource', 'drawingKey'],
   },
   {
     source: paginationOwnerSource,
@@ -4125,34 +4119,35 @@ assert.equal(
   3,
   'one shared theme should last for three Arena days'
 );
-assert.deepEqual(
-  [1, 2, 3].map(
-    (dayNumber) => communityThemeContent.selectCommunityDoodleDare(dayNumber).id
-  ),
-  Array(3).fill(doodleDareContent.DOODLE_DARES[0].id),
+const firstThreeCommunityThemeIds = [1, 2, 3].map(
+  (dayNumber) => communityThemeContent.selectCommunityDoodleDare(dayNumber).id
+);
+assert.equal(
+  new Set(firstThreeCommunityThemeIds).size,
+  1,
   'the community should draw from one comparable brief for three days'
 );
 assert.equal(
   communityThemeContent.selectCommunityDoodleDare(4).id,
-  doodleDareContent.DOODLE_DARES[1].id,
+  'cloud',
   'the next authored community theme should begin on day four'
 );
 const firstCommunityThemeRotation = Array.from(
-  { length: 122 },
+  { length: 120 },
   (_, themeIndex) =>
     communityThemeContent.selectCommunityDoodleDare(themeIndex * 3 + 1)
 );
 assert.equal(
   new Set(firstCommunityThemeRotation.map((dare) => dare.id)).size,
-  122,
-  'the community rotation should stay unique for the complete first year'
+  120,
+  'the community rotation should stay unique for the complete 360 days'
 );
 assert.throws(
-  () => communityThemeContent.selectCommunityDoodleDare(367),
+  () => communityThemeContent.selectCommunityDoodleDare(361),
   /append the next season/,
   'unsupported days must fail before they can silently remap published themes'
 );
-assert.equal(communityThemeContent.COMMUNITY_DRAW_THEME_COVERAGE_DAYS, 366);
+assert.equal(communityThemeContent.COMMUNITY_DRAW_THEME_COVERAGE_DAYS, 360);
 assert.equal(
   doodleDareContent.selectDoodleDareForPower('smearstep', 'practice-proof')
     .suggestedPower,
@@ -4184,116 +4179,6 @@ assert.match(
 );
 pass('community and Practice prompt calendars stay complete and nonrepeating');
 
-const careReactionValidation =
-  careReactionContent.validateCareReactionCatalog();
-assert.equal(careReactionValidation.valid, true);
-assert.deepEqual(careReactionValidation.errors, []);
-assert.equal(careReactionValidation.entryCount, 72);
-assert.equal(careReactionValidation.coveredMatrixSlotCount, 72);
-assert.ok(Object.isFrozen(careReactionContent.CARE_REACTION_DECK));
-assert.ok(
-  careReactionContent.CARE_REACTION_DECK.every((reaction) =>
-    Object.isFrozen(reaction)
-  )
-);
-assert.equal(
-  new Set(
-    careReactionContent.CARE_REACTION_DECK.map((reaction) => reaction.line)
-  ).size,
-  72,
-  'every authored care reaction should remain globally unique'
-);
-const lifetimeCareReactions = [];
-for (const lifeDay of [1, 2, 3]) {
-  for (const action of ['feed', 'pat', 'train']) {
-    lifetimeCareReactions.push(
-      careReactionContent.selectCareReaction(
-        'inkquake',
-        action,
-        lifeDay,
-        'care-lifetime-proof'
-      ).line
-    );
-  }
-}
-assert.equal(
-  new Set(lifetimeCareReactions).size,
-  9,
-  'one Scribbit should receive nine distinct care moments across its life'
-);
-assert.equal(
-  careReactionContent.selectCareReaction('nib_halo', 'pat', -20, 'clamp-proof')
-    .lifeDay,
-  1
-);
-assert.equal(
-  careReactionContent.selectCareReaction('nib_halo', 'pat', 20, 'clamp-proof')
-    .lifeDay,
-  3
-);
-const unsafeCareReactions = careReactionContent.CARE_REACTION_DECK.map(
-  (reaction, index) =>
-    index === 0
-      ? {
-          ...reaction,
-          line: 'A guaranteed XP reward jumps straight into the wallet.',
-        }
-      : reaction
-);
-const unsafeCareReactionValidation =
-  careReactionContent.validateCareReactionCatalog(unsafeCareReactions);
-assert.equal(unsafeCareReactionValidation.valid, false);
-assert.match(
-  unsafeCareReactionValidation.errors.join('\n'),
-  /progression or outcome claim/,
-  'care flavor must never invent progression or battle truth'
-);
-const beforeCareMoment = makeScribbit({
-  id: 'care-moment-proof',
-  name: '  Crater   Pal  ',
-  bornDay: 9,
-  expiresDay: 12,
-  xp: 2,
-  stats: { chonk: 55, spike: 15, zip: 15, charm: 15 },
-});
-const afterCareMoment = makeScribbit({
-  ...beforeCareMoment,
-  name: 'Crater Pal',
-  xp: 3,
-  mood: 'sleepy',
-  careDoneToday: ['feed'],
-});
-const firstCareMomentPlan = careMoment.planCareMoment(
-  beforeCareMoment,
-  afterCareMoment,
-  'feed',
-  9
-);
-assert.equal(firstCareMomentPlan.lifeDay, 1);
-assert.equal(firstCareMomentPlan.power, 'inkquake');
-assert.equal(firstCareMomentPlan.experienceGained, 1);
-assert.equal(firstCareMomentPlan.careMarkCount, 1);
-assert.match(firstCareMomentPlan.headline, /SNACK BREAK: CRATER PAL/);
-assert.match(firstCareMomentPlan.rewardLine, /SERVER CHECKED.*\+1 XP/);
-assert.doesNotMatch(firstCareMomentPlan.rewardLine, /INK/);
-assert.match(firstCareMomentPlan.progressLine, /SLEEPY.*1\/3 CARE MARKS/);
-const finalCareMomentPlan = careMoment.planCareMoment(
-  makeScribbit({ ...beforeCareMoment, xp: 4, careDoneToday: ['feed', 'pat'] }),
-  makeScribbit({
-    ...beforeCareMoment,
-    xp: 6,
-    mood: 'pumped',
-    careDoneToday: ['feed', 'pat', 'train'],
-  }),
-  'train',
-  11
-);
-assert.equal(finalCareMomentPlan.lifeDay, 3);
-assert.equal(finalCareMomentPlan.experienceGained, 2);
-assert.match(finalCareMomentPlan.rewardLine, /SERVER CHECKED.*\+2 XP/);
-assert.doesNotMatch(finalCareMomentPlan.rewardLine, /INK/);
-pass('Care Reaction Deck stays complete, varied, safe, and server-truthful');
-
 const shapePowerGuideContent = shapePowerContent.SHAPE_POWER_IDS.map((power) =>
   shapePowerContent.getShapePowerContent(power)
 );
@@ -4314,10 +4199,10 @@ assert.deepEqual(
     shapePowerContent.getShapePowerDrawingCue(power)
   ),
   [
-    'Coral style wake Inkquake.',
-    'Blue style wake Nib Halo.',
-    'Green style wake Smearstep.',
-    'Purple style wake Colorburst.',
+    'Coral + orange ink wake Inkquake.',
+    'Aqua + blue ink wake Nib Halo.',
+    'Gold + green ink wake Smearstep.',
+    'Purple + pink ink wake Colorburst.',
   ]
 );
 assert.deepEqual(
@@ -4334,11 +4219,11 @@ assert.deepEqual(
 assert.deepEqual(
   shapePowerContent.planShapeReceipt('ember', 'nib_halo'),
   {
-    cause: 'BLUE STYLE',
+    cause: 'AQUA + BLUE INK',
     move: 'FIRETIP HALO',
     effect: '3 ROTATING QUILLS',
-    birthLine: 'BLUE STYLE → FIRETIP HALO',
-    battleLine: 'BLUE STYLE → 3 ROTATING QUILLS',
+    birthLine: 'AQUA + BLUE INK → FIRETIP HALO',
+    battleLine: 'AQUA + BLUE INK → 3 ROTATING QUILLS',
   },
   'birth and battle should share one plain-language drawing receipt'
 );
@@ -4455,7 +4340,7 @@ assert.equal(firstPracticeSession.lastRoleWasNew, true);
 assert.deepEqual(firstPracticeSession.triedRoles, ['brawler']);
 assert.equal(firstPracticeSession.attemptCount, 1);
 assert.deepEqual(practiceLab.planPracticeReveal(firstPracticeSession), {
-    headline: 'STYLE READY!',
+  headline: 'STYLE READY!',
   roleName: 'BRAWLER',
   roleDetail: 'CLOSE RANGE · INK FISTS · INKQUAKE',
   progress: '1 OF 4 FOUND',
@@ -9158,8 +9043,10 @@ const expectedPracticeAnalysis = analyzerCore.analyze({
 });
 assert.deepEqual(
   practiceResult.report.a.stats,
-  expectedPracticeAnalysis.stats,
-  'practice fighter stats must come from the server-decoded PNG'
+  combatSelection.getStatsForFighterStyle(
+    expectedPracticeAnalysis.fighterStyle
+  ),
+  'practice fighter role must come from the server-decoded drawing color'
 );
 assert.equal(
   practiceResult.report.a.element,
@@ -9605,7 +9492,7 @@ const goldenCombatCases = [
     }),
     seed: 7001,
     expectedHash:
-      '76115bf893b4fbbd65cc16e346902177f0051f720f0d5cf83eacb52e1278107e',
+      'fbdf23aee4659235385bd7ad623b8ff29d5769f452c83ca86933eb094aa0a530',
   },
   {
     name: 'boundary archetypes',
@@ -9623,7 +9510,7 @@ const goldenCombatCases = [
     }),
     seed: 7002,
     expectedHash:
-      '6c41daa299247c66f8c4a4c49612073bde41597f8bca1c2815e9adaec4e04d38',
+      'e2304f54fdf01e461d4ae2b6ca6aee5a6868b37dde313077f47ba4dd0ba12ee4',
   },
   {
     name: 'Smearstep Barrage schedule',
@@ -9641,7 +9528,7 @@ const goldenCombatCases = [
     }),
     seed: 7003,
     expectedHash:
-      '4256a33a316d4dac40c3b29d2ada7f537eafa550c6fc52ee2f94d84fffac48a6',
+      '4656f0e3171063de205b271ca44f3ac1fdfe348515165a771de51619d3d840ee',
   },
 ];
 const transcriptHash = (transcript) =>
@@ -10871,10 +10758,7 @@ const validLevelThreeRecord = {
 };
 assert.deepEqual(
   scribbitCore.normalizeScribbitRecord(validLevelThreeRecord)?.upgrades,
-  combatUpgrades.createScribbitUpgradesForLevel(
-    validLevelThreeRecord.id,
-    3
-  ),
+  combatUpgrades.createScribbitUpgradesForLevel(validLevelThreeRecord.id, 3),
   'v2 migration must replace retired authored Ink Mods deterministically'
 );
 
@@ -11081,8 +10965,8 @@ const upgradedTranscript = combatEngine.simulateCombat({
 });
 assert.equal(
   upgradedTranscript.version,
-  5,
-  'current combat transcripts should use the Power-Up schema v5'
+  6,
+  'current combat transcripts should use the v6 balance schema'
 );
 assert.deepEqual(
   upgradedTranscript.fighters[0].powerUpIds,
@@ -11320,12 +11204,12 @@ assert.deepEqual(
   },
   {
     headline: 'KO • Heavy Page WINS',
-    verdictLine: '14.3s • INK LEFT 9/225 vs 0/185',
+    verdictLine: '14.3s • INK LEFT 7/225 vs 0/185',
     tapeLine: '185 TOTAL DAMAGE • SHOCKWAVE',
     highlight: {
       label: 'FINAL SPLAT',
-      text: 'Body Slam • 3 to Needle Star',
-      compactText: 'Body Slam · 3 DAMAGE',
+      text: 'Body Slam • 1 to Needle Star',
+      compactText: 'Body Slam · 1 DAMAGE',
     },
     finishPresentation: 'knockout',
     finishSound: 'knockout',

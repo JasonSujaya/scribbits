@@ -44,15 +44,15 @@ test('paint reservoir rejects overdraw and malformed usage without underflow', (
 test('paint bucket levels resolve to stable server-owned capacities', () => {
   assert.deepEqual(paintBucket.getPaintBucketState(), {
     level: 1,
-    capacity: 350_000,
+    capacity: 60_000,
   });
   assert.deepEqual(paintBucket.getPaintBucketState(3), {
     level: 3,
-    capacity: 575_000,
+    capacity: 120_000,
   });
   assert.deepEqual(paintBucket.getPaintBucketState(999), {
     level: 1,
-    capacity: 350_000,
+    capacity: 60_000,
   });
 });
 

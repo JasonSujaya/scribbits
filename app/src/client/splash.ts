@@ -49,7 +49,7 @@ const bundledCreations: readonly DisplayCreation[] = [
     id: 'mossmop',
     name: 'Mossmop',
     artist: 'Scribbits',
-    imageUrl: new URL('./assets/splash-doodle-mossmop.png', import.meta.url)
+    imageUrl: new URL('./assets/splash-doodle-mossmop.webp', import.meta.url)
       .href,
     isCommunityCreation: false,
   },
@@ -57,7 +57,7 @@ const bundledCreations: readonly DisplayCreation[] = [
     id: 'looplet',
     name: 'Looplet',
     artist: 'Scribbits',
-    imageUrl: new URL('./assets/splash-doodle-looplet.png', import.meta.url)
+    imageUrl: new URL('./assets/splash-doodle-looplet.webp', import.meta.url)
       .href,
     isCommunityCreation: false,
   },
@@ -65,7 +65,7 @@ const bundledCreations: readonly DisplayCreation[] = [
     id: 'stormpuff',
     name: 'Stormpuff',
     artist: 'Scribbits',
-    imageUrl: new URL('./assets/splash-doodle-stormpuff.png', import.meta.url)
+    imageUrl: new URL('./assets/splash-doodle-stormpuff.webp', import.meta.url)
       .href,
     isCommunityCreation: false,
   },
@@ -114,17 +114,16 @@ async function renderFeaturedCreationPair(
   featuredCreations: readonly SplashCreation[]
 ): Promise<void> {
   const randomizedCommunityCreations = shuffledCreations(featuredCreations);
-  const loadedCommunityCreations = (
-    await Promise.all(
-      randomizedCommunityCreations
-        .slice(0, 3)
-        .map(async (creation) =>
-          (await canLoadImage(creation.imageUrl))
-            ? { ...creation, isCommunityCreation: true }
-            : null
-        )
-    )
-  ).filter((creation): creation is DisplayCreation => creation !== null);
+  const loadedCommunityCreations: DisplayCreation[] = [];
+  for (const creation of randomizedCommunityCreations.slice(0, 3)) {
+    if (await canLoadImage(creation.imageUrl)) {
+      loadedCommunityCreations.push({
+        ...creation,
+        isCommunityCreation: true,
+      });
+    }
+    if (loadedCommunityCreations.length === 2) break;
+  }
 
   const usedIds = new Set(loadedCommunityCreations.map(({ id }) => id));
   const unusedBundledCreations = shuffledCreations(bundledCreations).filter(

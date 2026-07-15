@@ -110,7 +110,7 @@ test('official Draw requires an explicit start and locks at time', () => {
   assert.match(drawSource, /fontSize: '40px',[\s\S]{0,100}textWrap: 'balance'/);
   assert.match(drawSource, /marginTop: '14px'/);
   assert.match(drawSource, /: 'DRAWING TIME!'/);
-  assert.match(drawSource, /'\.\.\/assets\/ui-button-close\.png'/);
+  assert.match(drawSource, /'\.\.\/assets\/ui-button-close\.webp'/);
   assert.match(drawSource, /'Close drawing theme'/);
   assert.match(
     drawSource,
@@ -179,6 +179,9 @@ test('official Draw requires an explicit start and locks at time', () => {
   assert.match(drawSource, /Time! Name your Scribbit\./);
   assert.match(drawSource, /fresh 60-second round/);
   assert.match(drawSource, /this\.overlay\.place\(this\.drawTimerContainer/);
+  assert.match(drawSource, /x: this\.scale\.width - EDGE - 160/);
+  assert.match(drawSource, /width: 160/);
+  assert.match(drawSource, /height: 68/);
   assert.match(drawSource, /zIndex: '6'/);
   assert.match(
     drawSource,

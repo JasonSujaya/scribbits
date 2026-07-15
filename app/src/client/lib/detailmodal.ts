@@ -1,6 +1,6 @@
 // The one sticker-card detail modal for a scribbit, opened by tapping any
 // scribbit anywhere (roster, entrants, champion, legends, battle intros).
-// Big art, name/artist, level + XP, mood, 2x2 stats, W/L, lifecycle timing,
+// Big art, name/artist, level + XP, 2x2 stats, W/L, lifecycle timing,
 // and CONTEXTUAL actions. One component, many callers — each
 // caller passes the handlers it can honour; the modal renders only those.
 
@@ -9,7 +9,6 @@ import { getScribbitLifecycleStage, type Scribbit } from '../../shared/arena';
 import {
   MAXIMUM_POWER_UPS,
   POWER_UP_CATALOG,
-  POWER_UP_IDS,
   isPowerUpId,
   type PowerUpId,
   type PowerUpRarity,
@@ -26,45 +25,30 @@ import {
   loadDrawing,
   fitDrawing,
   recordText,
-  moodStyleOf,
   levelOf,
   xpProgress,
 } from './scribbits';
 import { prefersReducedMotion, STAT_STYLES, TYPE, UI } from './theme';
-import { paperIcon, paperStatIcon, type PaperIconKey } from './papericons';
+import {
+  paperIcon,
+  paperStatIcon,
+  powerUpPaperIcon,
+  type PaperIconKey,
+} from './papericons';
 import { CanvasModalOverlay } from './overlay';
 import { setSfxCue } from './sfx';
 import { maturityCountdownHeadline } from './maturitycountdown';
 import {
   label,
   ghostButton,
-  careButton,
+  paperActionButton,
   levelBadge,
-  moodChip,
   statGrid,
   stickerCard,
   progressBar,
 } from './ui';
 
 const DEPTH = 2000;
-
-const POWER_UP_ICONS: Readonly<Record<PowerUpId, PaperIconKey>> = {
-  'v1-edge-spring': 'resize',
-  'v1-smudge-step': 'boots',
-  'v1-paper-shield': 'shield',
-  'v1-combo-spark': 'spark',
-  'v1-center-fold': 'target',
-  'v1-double-doodle': 'pencil',
-  'v1-backup-plan': 'clock',
-  'v1-counter-sketch': 'sword',
-  'v1-wallop': 'gun',
-  'v1-echo-mark': 'target',
-  'v1-last-scribble': 'heart',
-  'v1-second-draft': 'replay',
-  'v1-paper-twin': 'paw',
-  'v1-masterpiece': 'trophy',
-  'v1-endless-draft': 'ink',
-};
 
 const POWER_UP_RARITY_STYLE: Readonly<
   Record<
@@ -77,6 +61,49 @@ const POWER_UP_RARITY_STYLE: Readonly<
   epic: { label: 'EPIC', color: 0x8a5cd8, textColor: '#6540a8' },
   legendary: { label: 'LEGENDARY', color: UI.gold, textColor: UI.goldText },
 };
+
+const POWER_UP_GUIDE_PAGE_COUNT = 5;
+const LOCKED_POWER_UP_FILL = 0xd4c7ae;
+
+const POWER_UP_CATALOG_SECTIONS = [
+  {
+    title: 'COMMON POWER-UPS',
+    subtitle: 'SIMPLE TRIGGERS · CHARCOAL CARDS',
+    ids: [
+      'v1-edge-spring',
+      'v1-smudge-step',
+      'v1-paper-shield',
+      'v1-combo-spark',
+      'v1-center-fold',
+    ],
+  },
+  {
+    title: 'RARE POWER-UPS',
+    subtitle: 'STRONGER COMBOS · BLUE CARDS',
+    ids: [
+      'v1-double-doodle',
+      'v1-backup-plan',
+      'v1-counter-sketch',
+      'v1-wallop',
+      'v1-echo-mark',
+    ],
+  },
+  {
+    title: 'EPIC + LEGENDARY',
+    subtitle: 'PURPLE = EPIC · GOLD = LEGENDARY',
+    ids: [
+      'v1-last-scribble',
+      'v1-second-draft',
+      'v1-paper-twin',
+      'v1-masterpiece',
+      'v1-endless-draft',
+    ],
+  },
+] as const satisfies readonly Readonly<{
+  title: string;
+  subtitle: string;
+  ids: readonly PowerUpId[];
+}>[];
 
 type PowerUpBearingScribbit = Scribbit & {
   powerUps?: readonly unknown[];
@@ -99,10 +126,21 @@ const getOwnedPowerUpIds = (scribbit: Scribbit): readonly PowerUpId[] => {
   return ids.slice(0, MAXIMUM_POWER_UPS);
 };
 
+export const collectDiscoveredPowerUpIds = (
+  scribbits: readonly Scribbit[]
+): readonly PowerUpId[] => {
+  const discoveredIds = new Set<PowerUpId>();
+  scribbits.forEach((scribbit) => {
+    getOwnedPowerUpIds(scribbit).forEach((powerUpId) =>
+      discoveredIds.add(powerUpId)
+    );
+  });
+  return [...discoveredIds];
+};
+
 // Which actions this caller wants offered. Only provided handlers render.
 export type DetailModalActions = {
   // Mine:
-  onCare?: (scribbit: Scribbit) => void;
   canRetire?: boolean;
   // Others':
   onPick?: (scribbit: Scribbit) => void;
@@ -113,6 +151,7 @@ export type DetailModalActions = {
 export type DetailModalOpts = {
   currentDay: number;
   nextArenaDayStartsAt?: number;
+  discoveredPowerUpIds?: readonly PowerUpId[];
   mine: boolean;
   actions: DetailModalActions;
   onRemoved?: (scribbitId: string) => void;
@@ -132,9 +171,12 @@ export function openDetailModal(
 ): DetailModal {
   const { width, height } = scene.scale;
   const reduceMotion = prefersReducedMotion();
-  const mood = moodStyleOf(scribbit);
   const combatRole = getCombatRoleContent(selectCombatRole(scribbit.stats));
   const ownedPowerUpIds = getOwnedPowerUpIds(scribbit);
+  const discoveredPowerUpIds = new Set([
+    ...(opts.discoveredPowerUpIds ?? []),
+    ...ownedPowerUpIds,
+  ]);
   const lifecycleStage = getScribbitLifecycleStage(scribbit, opts.currentDay);
   const growingDay = Math.min(
     3,
@@ -162,7 +204,7 @@ export function openDetailModal(
   );
   const semanticDescription = [
     `${scribbit.name} by u/${scribbit.artist}.`,
-    `${combatRole.displayName}, level ${levelOf(scribbit)}, ${mood.label.toLowerCase()}.`,
+    `${combatRole.displayName}, level ${levelOf(scribbit)}.`,
     `${recordText(scribbit)}.`,
     `Power-Ups: ${ownedPowerUpNames.length > 0 ? ownedPowerUpNames.join(', ') : 'none yet'}, ${ownedPowerUpIds.length} of ${MAXIMUM_POWER_UPS} slots filled.`,
     lifecycleStage === 'growing'
@@ -295,13 +337,12 @@ export function openDetailModal(
     )
   );
 
-  // --- Power-Up guide + mood chip row --------------------------------------
+  // --- Power-Up guide -------------------------------------------------------
   cursor += 44;
   const identityCardScale = 0.84;
   const identityCardWidth = 180 * identityCardScale;
   const identityCardHeight = 62 * identityCardScale;
-  const powerUpCardX = -cardW / 4;
-  const moodCardX = cardW / 4;
+  const powerUpCardX = 0;
   const powerUpChip = scene.add.container(powerUpCardX, cursor);
   const powerUpChipPlate = scene.add.graphics();
   powerUpChipPlate.fillStyle(UI.creamHex, 1);
@@ -346,16 +387,6 @@ export function openDetailModal(
     ).setOrigin(0, 0.5),
   ]);
   card.add(powerUpChip);
-  card.add(
-    moodChip(
-      scene,
-      moodCardX,
-      cursor,
-      mood.label,
-      mood.color,
-      identityCardScale
-    )
-  );
   const addIdentityGuideAction = (
     localX: number,
     accessibleLabel: string
@@ -400,10 +431,6 @@ export function openDetailModal(
   addIdentityGuideAction(
     powerUpCardX,
     `Open ${scribbit.name} Power-Up build and catalog`
-  );
-  addIdentityGuideAction(
-    moodCardX,
-    `Explain ${mood.label} mood and how Scribbits earn Power-Ups`
   );
 
   // --- Level XP bar ---------------------------------------------------------
@@ -592,16 +619,10 @@ export function openDetailModal(
     }
     const definition = POWER_UP_CATALOG[powerUpId];
     card.add([
-      paperIcon(
-        scene,
-        POWER_UP_ICONS[powerUpId],
-        slotCenterX,
-        powerUpSlotY - 10,
-        {
-          size: 40,
-          fill: rarityStyle?.color ?? UI.coral,
-        }
-      ),
+      powerUpPaperIcon(scene, powerUpId, slotCenterX, powerUpSlotY - 10, {
+        size: 40,
+        fill: rarityStyle?.color ?? UI.coral,
+      }),
       label(
         scene,
         slotCenterX,
@@ -733,16 +754,6 @@ export function openDetailModal(
     const a = opts.actions;
     if (opts.mine) {
       const slots: ActionSlot[] = [];
-      if (a.onCare) {
-        // A single "Care" shortcut that returns to home roster for the 3 actions.
-        slots.push({
-          icon: 'paw',
-          label: 'Care',
-          fill: 0x4faa4f,
-          enabled: true,
-          run: () => runAndClose(() => a.onCare?.(scribbit)),
-        });
-      }
       if (
         !scribbit.isFounding &&
         scribbit.status === 'alive' &&
@@ -809,7 +820,7 @@ export function openDetailModal(
     const w = (cardW - 80 - gap * (slots.length - 1)) / slots.length;
     slots.forEach((slot, index) => {
       const x = -cardW / 2 + 40 + w / 2 + index * (w + gap);
-      const btn = careButton(
+      const btn = paperActionButton(
         scene,
         x,
         y,
@@ -851,13 +862,21 @@ export function openDetailModal(
     const guideTop = height / 2 - guideCardHeight / 2;
     const guideBottom = guideTop + guideCardHeight;
     const pageDescriptions = [
-      `Page 1 of 3. ${scribbit.name} owns ${ownedPowerUpNames.length > 0 ? ownedPowerUpNames.join(', ') : 'no Power-Ups yet'}. A Scribbit can own five unique Power-Ups, including at most one Legendary. Role comes from the drawing. Gear owns reusable stat boosts.`,
-      `Page 2 of 3. Fifteen Power-Ups. ${POWER_UP_IDS.map((id) => {
-        const definition = POWER_UP_CATALOG[id];
-        return `${definition.name}, ${definition.rarity}: ${definition.description}`;
-      }).join(' ')}`,
-      'Page 3 of 3. Wins offer three Power-Ups and you choose one. Standard wins offer Common, Common, Rare. Big wins offer Common, Rare, Epic. Champion wins offer Rare, Epic, Legendary. Losses offer no Power-Up.',
-    ] as const;
+      `Page 1 of ${POWER_UP_GUIDE_PAGE_COUNT}. ${scribbit.name} owns ${ownedPowerUpNames.length > 0 ? ownedPowerUpNames.join(', ') : 'no Power-Ups yet'}. A Scribbit can own five unique Power-Ups, including at most one Legendary. Role comes from the drawing. Gear owns reusable stat boosts.`,
+      ...POWER_UP_CATALOG_SECTIONS.map(
+        (section, sectionIndex) =>
+          `Page ${sectionIndex + 2} of ${POWER_UP_GUIDE_PAGE_COUNT}. ${section.title}. ${section.ids
+            .map((id) => {
+              if (!discoveredPowerUpIds.has(id)) {
+                return `One undiscovered ${POWER_UP_CATALOG[id].rarity} Power-Up.`;
+              }
+              const definition = POWER_UP_CATALOG[id];
+              return `${definition.name}. When ${definition.when.toLowerCase()}; then ${definition.effect.toLowerCase()}.`;
+            })
+            .join(' ')}`
+      ),
+      `Page ${POWER_UP_GUIDE_PAGE_COUNT} of ${POWER_UP_GUIDE_PAGE_COUNT}. Wins offer three Power-Ups and you choose one. Standard wins offer Common, Common, Rare. Big wins offer Common, Rare, Epic. Champion wins offer Rare, Epic, Legendary. Losses offer no Power-Up.`,
+    ];
     const closeGuide = (): void => {
       if (!guideLayer.active) return;
       guideLayer.destroy(true);
@@ -866,7 +885,7 @@ export function openDetailModal(
       scene,
       'How Scribbit powers and progression work',
       closeGuide,
-      'A three-page icon guide to your build, every Power-Up, and win rewards.',
+      'A five-page color-coded guide to your build, every Power-Up, and win rewards.',
       trigger
     );
     guideLayer.once('destroy', () => guideOverlay.destroy());
@@ -918,7 +937,7 @@ export function openDetailModal(
           scene,
           width / 2,
           guideTop + 38,
-          `POWER GUIDE · ${pageNumber} OF 3`,
+          `POWER GUIDE · ${pageNumber} OF ${POWER_UP_GUIDE_PAGE_COUNT}`,
           16,
           UI.coralText,
           true
@@ -942,10 +961,14 @@ export function openDetailModal(
           true
         ).setScrollFactor(0),
       ]);
-      for (let dotIndex = 0; dotIndex < 3; dotIndex += 1) {
+      for (
+        let dotIndex = 0;
+        dotIndex < POWER_UP_GUIDE_PAGE_COUNT;
+        dotIndex += 1
+      ) {
         const dot = scene.add
           .circle(
-            width / 2 + (dotIndex - 1) * 30,
+            width / 2 + (dotIndex - (POWER_UP_GUIDE_PAGE_COUNT - 1) / 2) * 28,
             guideBottom - 148,
             dotIndex === pageNumber - 1 ? 10 : 7,
             dotIndex === pageNumber - 1 ? UI.coral : UI.tape,
@@ -1026,7 +1049,7 @@ export function openDetailModal(
         continue;
       }
       buildPage.add([
-        paperIcon(scene, POWER_UP_ICONS[powerUpId], slotX, buildSlotY - 25, {
+        powerUpPaperIcon(scene, powerUpId, slotX, buildSlotY - 25, {
           size: 54,
           fill: rarity?.color ?? UI.coral,
         }).setScrollFactor(0),
@@ -1124,110 +1147,368 @@ export function openDetailModal(
       ]);
     });
 
-    const catalogPage = createPage(
-      2,
-      'POWER-UP CATALOG',
-      'TAP ANY ICON TO READ ITS EFFECT'
-    );
-    const catalogCardGap = 9;
-    const catalogCardWidth = (guideCardWidth - 88 - catalogCardGap * 2) / 3;
-    const catalogCardHeight = 112;
-    const catalogControls: HTMLButtonElement[] = [];
-    const selectedPowerUpName = label(
-      scene,
-      width / 2 - (guideCardWidth - 92) / 2 + 18,
-      guideTop + 824,
-      POWER_UP_CATALOG[POWER_UP_IDS[0]].name.toUpperCase(),
-      17,
-      UI.ink,
-      true
-    )
-      .setOrigin(0, 0.5)
-      .setScrollFactor(0);
-    const selectedPowerUpDescription = label(
-      scene,
-      width / 2 - (guideCardWidth - 92) / 2 + 18,
-      guideTop + 862,
-      POWER_UP_CATALOG[POWER_UP_IDS[0]].description,
-      14,
-      UI.inkSoft,
-      false
-    )
-      .setOrigin(0, 0.5)
-      .setWordWrapWidth(guideCardWidth - 128)
-      .setScrollFactor(0);
-    POWER_UP_IDS.forEach((powerUpId, index) => {
-      const definition = POWER_UP_CATALOG[powerUpId];
-      const rarity = POWER_UP_RARITY_STYLE[definition.rarity];
-      const column = index % 3;
-      const row = Math.floor(index / 3);
-      const cardX =
-        width / 2 -
-        (catalogCardWidth * 3 + catalogCardGap * 2) / 2 +
-        catalogCardWidth / 2 +
-        column * (catalogCardWidth + catalogCardGap);
-      const cardY = guideTop + 205 + row * (catalogCardHeight + 10);
-      addCardPlate(
-        catalogPage,
-        cardX,
-        cardY,
-        catalogCardWidth,
-        catalogCardHeight,
-        UI.creamHex,
-        rarity.color,
-        ownedPowerUpIds.includes(powerUpId)
-      );
-      catalogPage.add([
-        paperIcon(scene, POWER_UP_ICONS[powerUpId], cardX, cardY - 24, {
-          size: 44,
-          fill: rarity.color,
-        }).setScrollFactor(0),
-        label(scene, cardX, cardY + 18, definition.shortName, 12, UI.ink, true)
-          .setWordWrapWidth(catalogCardWidth - 10)
-          .setAlign('center')
-          .setScrollFactor(0),
-        label(
-          scene,
-          cardX,
-          cardY + 42,
-          rarity.label,
-          9,
-          rarity.textColor,
-          true
-        ).setScrollFactor(0),
-      ]);
-      catalogControls.push(
-        guideOverlay.add({
-          label: `${definition.name}, ${rarity.label}. ${definition.description}${ownedPowerUpIds.includes(powerUpId) ? ' Owned.' : ''}`,
-          rect: {
-            x: cardX - catalogCardWidth / 2,
-            y: cardY - catalogCardHeight / 2,
-            width: catalogCardWidth,
-            height: catalogCardHeight,
-          },
-          onActivate: () => {
-            selectedPowerUpName.setText(
-              `${definition.name.toUpperCase()} · ${rarity.label}`
+    const featuredCardWidth = guideCardWidth - 104;
+    const featuredCardHeight = 570;
+    const featuredCardX = width / 2;
+    const featuredCardY = guideTop + 450;
+    const selectorGap = 10;
+    const selectorWidth =
+      (featuredCardWidth - selectorGap * (MAXIMUM_POWER_UPS - 1)) /
+      MAXIMUM_POWER_UPS;
+    const selectorHeight = 86;
+    const selectorY = guideTop + 800;
+    const catalogControlsByPage: HTMLButtonElement[][] = [];
+    const catalogPages = POWER_UP_CATALOG_SECTIONS.map(
+      (section, sectionIndex) => {
+        const page = createPage(
+          sectionIndex + 2,
+          section.title,
+          section.subtitle
+        );
+        const pageControls: HTMLButtonElement[] = [];
+        const featuredLayer = scene.add.container(0, 0).setScrollFactor(0);
+        const selectorLayer = scene.add.container(0, 0).setScrollFactor(0);
+        page.add([featuredLayer, selectorLayer]);
+        let selectedPowerUpId =
+          section.ids.find((powerUpId) =>
+            discoveredPowerUpIds.has(powerUpId)
+          ) ?? section.ids[0];
+
+        const renderSelectors = (): void => {
+          selectorLayer.removeAll(true);
+          section.ids.forEach((powerUpId, index) => {
+            const definition = POWER_UP_CATALOG[powerUpId];
+            const rarity = POWER_UP_RARITY_STYLE[definition.rarity];
+            const isSelected = selectedPowerUpId === powerUpId;
+            const isDiscovered = discoveredPowerUpIds.has(powerUpId);
+            const selectorX =
+              featuredCardX -
+              featuredCardWidth / 2 +
+              selectorWidth / 2 +
+              index * (selectorWidth + selectorGap);
+            const tile = scene.add.graphics().setScrollFactor(0);
+            tile.fillStyle(
+              isDiscovered ? UI.creamHex : LOCKED_POWER_UP_FILL,
+              1
             );
-            selectedPowerUpDescription.setText(definition.description);
-            pageStatus.textContent = `${definition.name}. ${definition.description}`;
-          },
-        })
-      );
-    });
-    addCardPlate(
-      catalogPage,
-      width / 2,
-      guideTop + 850,
-      guideCardWidth - 92,
-      112,
-      UI.tape,
-      UI.coral
+            tile.fillRoundedRect(
+              selectorX - selectorWidth / 2,
+              selectorY - selectorHeight / 2,
+              selectorWidth,
+              selectorHeight,
+              15
+            );
+            tile.lineStyle(
+              isSelected ? 6 : 3,
+              isSelected
+                ? rarity.color
+                : isDiscovered
+                  ? UI.inkSoftHex
+                  : 0x8c7b66,
+              1
+            );
+            tile.strokeRoundedRect(
+              selectorX - selectorWidth / 2,
+              selectorY - selectorHeight / 2,
+              selectorWidth,
+              selectorHeight,
+              15
+            );
+            selectorLayer.add(tile);
+            selectorLayer.add(
+              isDiscovered
+                ? powerUpPaperIcon(scene, powerUpId, selectorX, selectorY, {
+                    size: 48,
+                    fill: rarity.color,
+                  }).setScrollFactor(0)
+                : paperIcon(scene, 'lock', selectorX, selectorY, {
+                    size: 42,
+                    fill: UI.inkSoftHex,
+                  }).setScrollFactor(0)
+            );
+          });
+        };
+
+        const renderFeaturedPowerUp = (
+          powerUpId: PowerUpId,
+          announce: boolean
+        ): void => {
+          selectedPowerUpId = powerUpId;
+          featuredLayer.removeAll(true);
+          const definition = POWER_UP_CATALOG[powerUpId];
+          const rarity = POWER_UP_RARITY_STYLE[definition.rarity];
+          const isOwned = ownedPowerUpIds.includes(powerUpId);
+          const isDiscovered = discoveredPowerUpIds.has(powerUpId);
+          const cardLeft = featuredCardX - featuredCardWidth / 2;
+          const cardTop = featuredCardY - featuredCardHeight / 2;
+          const cardRight = featuredCardX + featuredCardWidth / 2;
+
+          const shadow = scene.add.graphics().setScrollFactor(0);
+          shadow.fillStyle(UI.inkHex, 0.18);
+          shadow.fillRoundedRect(
+            cardLeft + 10,
+            cardTop + 13,
+            featuredCardWidth,
+            featuredCardHeight,
+            28
+          );
+          const cardFace = scene.add.graphics().setScrollFactor(0);
+          cardFace.fillStyle(
+            isDiscovered ? UI.creamHex : LOCKED_POWER_UP_FILL,
+            1
+          );
+          cardFace.fillRoundedRect(
+            cardLeft,
+            cardTop,
+            featuredCardWidth,
+            featuredCardHeight,
+            28
+          );
+          cardFace.lineStyle(8, isDiscovered ? rarity.color : 0x8c7b66, 1);
+          cardFace.strokeRoundedRect(
+            cardLeft,
+            cardTop,
+            featuredCardWidth,
+            featuredCardHeight,
+            28
+          );
+          cardFace.lineStyle(2, UI.inkHex, 0.32);
+          cardFace.strokeRoundedRect(
+            cardLeft + 14,
+            cardTop + 14,
+            featuredCardWidth - 28,
+            featuredCardHeight - 28,
+            20
+          );
+          const leftTape = scene.add
+            .rectangle(cardLeft + 52, cardTop + 15, 82, 27, UI.tapeAlt, 0.88)
+            .setAngle(-7)
+            .setScrollFactor(0);
+          const rightTape = scene.add
+            .rectangle(cardRight - 52, cardTop + 15, 82, 27, UI.tapeAlt, 0.88)
+            .setAngle(7)
+            .setScrollFactor(0);
+          featuredLayer.add([shadow, cardFace, leftTape, rightTape]);
+
+          if (!isDiscovered) {
+            featuredLayer.add([
+              scene.add
+                .circle(featuredCardX, cardTop + 205, 92, 0x8c7b66, 0.34)
+                .setStrokeStyle(5, UI.inkSoftHex, 0.58)
+                .setScrollFactor(0),
+              paperIcon(scene, 'lock', featuredCardX, cardTop + 202, {
+                size: 122,
+                fill: UI.inkSoftHex,
+              }).setScrollFactor(0),
+              label(
+                scene,
+                featuredCardX,
+                cardTop + 350,
+                'UNDISCOVERED',
+                34,
+                UI.ink,
+                true
+              ).setScrollFactor(0),
+              label(
+                scene,
+                featuredCardX,
+                cardTop + 398,
+                `${rarity.label} POWER-UP`,
+                18,
+                UI.inkSoft,
+                true
+              ).setScrollFactor(0),
+              label(
+                scene,
+                featuredCardX,
+                cardTop + 468,
+                'WIN · CHOOSE · REVEAL',
+                17,
+                UI.inkSoft,
+                true
+              ).setScrollFactor(0),
+            ]);
+          } else {
+            const ribbonWidth = definition.rarity === 'legendary' ? 152 : 116;
+            const ribbon = scene.add.graphics().setScrollFactor(0);
+            ribbon.fillStyle(rarity.color, 1);
+            ribbon.fillRoundedRect(
+              featuredCardX - ribbonWidth / 2,
+              cardTop + 30,
+              ribbonWidth,
+              38,
+              13
+            );
+            const whenPanel = scene.add.graphics().setScrollFactor(0);
+            whenPanel.fillStyle(rarity.color, 0.12);
+            whenPanel.fillRoundedRect(
+              cardLeft + 34,
+              cardTop + 308,
+              featuredCardWidth - 68,
+              88,
+              18
+            );
+            whenPanel.lineStyle(3, rarity.color, 0.7);
+            whenPanel.strokeRoundedRect(
+              cardLeft + 34,
+              cardTop + 308,
+              featuredCardWidth - 68,
+              88,
+              18
+            );
+            const thenPanel = scene.add.graphics().setScrollFactor(0);
+            thenPanel.fillStyle(UI.paper, 1);
+            thenPanel.fillRoundedRect(
+              cardLeft + 34,
+              cardTop + 414,
+              featuredCardWidth - 68,
+              112,
+              18
+            );
+            thenPanel.lineStyle(3, UI.inkHex, 0.5);
+            thenPanel.strokeRoundedRect(
+              cardLeft + 34,
+              cardTop + 414,
+              featuredCardWidth - 68,
+              112,
+              18
+            );
+            featuredLayer.add([
+              ribbon,
+              label(
+                scene,
+                featuredCardX,
+                cardTop + 49,
+                rarity.label,
+                14,
+                UI.cream,
+                true
+              ).setScrollFactor(0),
+              scene.add
+                .circle(featuredCardX, cardTop + 156, 82, UI.paper, 1)
+                .setStrokeStyle(6, rarity.color, 1)
+                .setScrollFactor(0),
+              powerUpPaperIcon(scene, powerUpId, featuredCardX, cardTop + 154, {
+                size: 112,
+                fill: rarity.color,
+              }).setScrollFactor(0),
+              label(
+                scene,
+                featuredCardX,
+                cardTop + 270,
+                definition.shortName,
+                30,
+                UI.ink,
+                true
+              ).setScrollFactor(0),
+              whenPanel,
+              label(
+                scene,
+                cardLeft + 56,
+                cardTop + 330,
+                'WHEN',
+                14,
+                rarity.textColor,
+                true
+              )
+                .setOrigin(0, 0.5)
+                .setScrollFactor(0),
+              label(
+                scene,
+                cardLeft + 56,
+                cardTop + 368,
+                definition.when,
+                21,
+                UI.ink,
+                true
+              )
+                .setOrigin(0, 0.5)
+                .setWordWrapWidth(featuredCardWidth - 112)
+                .setScrollFactor(0),
+              thenPanel,
+              label(
+                scene,
+                cardLeft + 56,
+                cardTop + 438,
+                'THEN',
+                14,
+                rarity.textColor,
+                true
+              )
+                .setOrigin(0, 0.5)
+                .setScrollFactor(0),
+              label(
+                scene,
+                cardLeft + 56,
+                cardTop + 484,
+                definition.effect,
+                23,
+                UI.ink,
+                true
+              )
+                .setOrigin(0, 0.5)
+                .setWordWrapWidth(featuredCardWidth - 112)
+                .setScrollFactor(0),
+            ]);
+            if (isOwned) {
+              const ownedStamp = label(
+                scene,
+                cardRight - 35,
+                cardTop + 278,
+                'OWNED',
+                13,
+                rarity.textColor,
+                true
+              )
+                .setOrigin(1, 0.5)
+                .setAngle(-6)
+                .setScrollFactor(0);
+              ownedStamp.setPadding(9, 5, 9, 5).setBackgroundColor('#fff8e7');
+              featuredLayer.add(ownedStamp);
+            }
+          }
+
+          renderSelectors();
+          if (announce) {
+            pageStatus.textContent = isDiscovered
+              ? `${definition.name}. When ${definition.when}; then ${definition.effect}.`
+              : `Undiscovered ${rarity.label} Power-Up. Win battles and choose it to reveal its effect.`;
+          }
+        };
+
+        section.ids.forEach((powerUpId, index) => {
+          const definition = POWER_UP_CATALOG[powerUpId];
+          const rarity = POWER_UP_RARITY_STYLE[definition.rarity];
+          const isOwned = ownedPowerUpIds.includes(powerUpId);
+          const isDiscovered = discoveredPowerUpIds.has(powerUpId);
+          const selectorX =
+            featuredCardX -
+            featuredCardWidth / 2 +
+            selectorWidth / 2 +
+            index * (selectorWidth + selectorGap);
+          pageControls.push(
+            guideOverlay.add({
+              label: isDiscovered
+                ? `${definition.name}, ${rarity.label}. When ${definition.when}; then ${definition.effect}.${isOwned ? ' Owned.' : ''}`
+                : `Undiscovered ${rarity.label} Power-Up. Win battles and choose it to reveal its effect.`,
+              rect: {
+                x: selectorX - selectorWidth / 2,
+                y: selectorY - selectorHeight / 2,
+                width: selectorWidth,
+                height: selectorHeight,
+              },
+              onActivate: () => renderFeaturedPowerUp(powerUpId, true),
+            })
+          );
+        });
+        renderFeaturedPowerUp(selectedPowerUpId, false);
+        catalogControlsByPage.push(pageControls);
+        return page;
+      }
     );
-    catalogPage.add([selectedPowerUpName, selectedPowerUpDescription]);
 
     const earnPage = createPage(
-      3,
+      5,
       'WIN → CHOOSE 1',
       'EVERY WIN OFFERS 3 DISTINCT POWER-UPS'
     );
@@ -1339,46 +1620,56 @@ export function openDetailModal(
     ]);
 
     const buttonY = guideBottom - 68;
-    const guidePages = [buildPage, catalogPage, earnPage];
+    const guidePages = [buildPage, ...catalogPages, earnPage];
+    const lastPageIndex = guidePages.length - 1;
+    const navigationPageNames = [
+      'your build',
+      'Common Power-Ups',
+      'Rare Power-Ups',
+      'Epic and Legendary Power-Ups',
+      'win rewards',
+    ] as const;
     const navigationVisual = scene.add.container(0, 0).setScrollFactor(0);
     guideLayer.add(navigationVisual);
     const pageStatus = guideOverlay.addStatus(pageDescriptions[0]);
-    const pageOneNextControl = guideOverlay.add({
-      label: 'Next, Power-Up catalog, page 2 of 3',
-      rect: { x: width / 2 - 140, y: buttonY - 41, width: 280, height: 82 },
-      onActivate: () => showPage(1),
+    const pageControls = guidePages.map((_page, pageIndex) => {
+      if (pageIndex === 0) {
+        return [
+          guideOverlay.add({
+            label: `Next, ${navigationPageNames[1]}, page 2 of ${POWER_UP_GUIDE_PAGE_COUNT}`,
+            rect: {
+              x: width / 2 - 140,
+              y: buttonY - 41,
+              width: 280,
+              height: 82,
+            },
+            onActivate: () => showPage(1),
+          }),
+        ];
+      }
+      const backControl = guideOverlay.add({
+        label: `Back, ${navigationPageNames[pageIndex - 1]}, page ${pageIndex} of ${POWER_UP_GUIDE_PAGE_COUNT}`,
+        rect: { x: width / 2 - 242, y: buttonY - 41, width: 220, height: 82 },
+        onActivate: () => showPage(pageIndex - 1),
+      });
+      const forwardControl = guideOverlay.add({
+        label:
+          pageIndex === lastPageIndex
+            ? 'Got it, close powers and progression guide'
+            : `Next, ${navigationPageNames[pageIndex + 1]}, page ${pageIndex + 2} of ${POWER_UP_GUIDE_PAGE_COUNT}`,
+        rect: { x: width / 2 + 22, y: buttonY - 41, width: 220, height: 82 },
+        onActivate:
+          pageIndex === lastPageIndex
+            ? closeGuide
+            : () => showPage(pageIndex + 1),
+      });
+      return [backControl, forwardControl];
     });
-    const pageTwoBackControl = guideOverlay.add({
-      label: 'Back, your build, page 1 of 3',
-      rect: { x: width / 2 - 242, y: buttonY - 41, width: 220, height: 82 },
-      onActivate: () => showPage(0),
-    });
-    const pageTwoNextControl = guideOverlay.add({
-      label: 'Next, How to earn, page 3 of 3',
-      rect: { x: width / 2 + 22, y: buttonY - 41, width: 220, height: 82 },
-      onActivate: () => showPage(2),
-    });
-    const pageThreeBackControl = guideOverlay.add({
-      label: 'Back, Power-Up catalog, page 2 of 3',
-      rect: { x: width / 2 - 242, y: buttonY - 41, width: 220, height: 82 },
-      onActivate: () => showPage(1),
-    });
-    const gotItControl = guideOverlay.add({
-      label: 'Got it, close powers and progression guide',
-      rect: { x: width / 2 + 22, y: buttonY - 41, width: 220, height: 82 },
-      onActivate: closeGuide,
-    });
-
-    const pageControls = [
-      [pageOneNextControl],
-      [pageTwoBackControl, pageTwoNextControl],
-      [pageThreeBackControl, gotItControl],
-    ];
     function renderNavigation(pageIndex: number): void {
       navigationVisual.removeAll(true);
       if (pageIndex === 0) {
         navigationVisual.add(
-          careButton(
+          paperActionButton(
             scene,
             width / 2,
             buttonY,
@@ -1394,7 +1685,7 @@ export function openDetailModal(
         return;
       }
       navigationVisual.add(
-        careButton(
+        paperActionButton(
           scene,
           width / 2 - 132,
           buttonY,
@@ -1408,14 +1699,16 @@ export function openDetailModal(
         ).setScrollFactor(0)
       );
       navigationVisual.add(
-        careButton(
+        paperActionButton(
           scene,
           width / 2 + 132,
           buttonY,
-          pageIndex === 2 ? 'info' : 'spark',
-          pageIndex === 2 ? 'GOT IT' : 'NEXT',
+          pageIndex === lastPageIndex ? 'info' : 'spark',
+          pageIndex === lastPageIndex ? 'GOT IT' : 'NEXT',
           UI.tapeAlt,
-          pageIndex === 2 ? closeGuide : () => showPage(2),
+          pageIndex === lastPageIndex
+            ? closeGuide
+            : () => showPage(pageIndex + 1),
           220,
           82,
           'inline'
@@ -1437,17 +1730,19 @@ export function openDetailModal(
           control.disabled = !visible;
         });
       });
-      catalogControls.forEach((control) => {
-        const visible = safePageIndex === 1;
-        control.hidden = !visible;
-        control.disabled = !visible;
+      catalogControlsByPage.forEach((controls, sectionIndex) => {
+        controls.forEach((control) => {
+          const visible = safePageIndex === sectionIndex + 1;
+          control.hidden = !visible;
+          control.disabled = !visible;
+        });
       });
       renderNavigation(safePageIndex);
       const activePageDescription =
-        pageDescriptions[safePageIndex] ?? pageDescriptions[0];
+        pageDescriptions[safePageIndex] ?? pageDescriptions[0] ?? '';
       pageStatus.textContent = activePageDescription;
-      if (safePageIndex === 1) {
-        catalogControls[0]?.focus();
+      if (safePageIndex >= 1 && safePageIndex <= catalogPages.length) {
+        catalogControlsByPage[safePageIndex - 1]?.[0]?.focus();
       } else {
         pageControls[safePageIndex]?.[0]?.focus();
       }

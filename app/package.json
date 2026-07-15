@@ -13,7 +13,7 @@
     "launch": "pnpm run release:check && NODE_OPTIONS=--max-old-space-size=4096 devvit publish --bump patch",
     "lint": "eslint 'src/**/*.{ts,tsx}'",
     "login": "devvit login",
-    "mock": "node scripts/make-test-drawing.mjs && pnpm run build && node scripts/build-mock-combat.mjs && node scripts/dev-mock.mjs",
+    "mock": "../mock.command",
     "prettier": "prettier --write .",
     "release:check": "pnpm run verify && devvit whoami",
     "test": "node scripts/run-test-suites.mjs",

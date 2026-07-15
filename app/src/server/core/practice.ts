@@ -312,7 +312,7 @@ export const createPracticeBattle = (
     day: input.canonicalDay,
     nonce: input.nonce,
     name: request.name,
-    fighterStyle: request.fighterStyle ?? null,
+    fighterStyle: drawingAnalysis.fighterStyle,
     drawingFingerprint: hashTextToSeed(request.baseImageDataUrl),
   });
   const practiceScribbitIdSeed = hashTextToSeed(
@@ -325,9 +325,7 @@ export const createPracticeBattle = (
     id: `practice-${input.canonicalDay}-${practiceScribbitIdSeed.toString(36)}`,
     draft: {
       name: request.name,
-      stats: request.fighterStyle
-        ? getStatsForFighterStyle(request.fighterStyle)
-        : drawingAnalysis.stats,
+      stats: getStatsForFighterStyle(drawingAnalysis.fighterStyle),
       element: drawingAnalysis.element,
       accessories: [],
     },

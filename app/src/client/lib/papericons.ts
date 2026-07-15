@@ -1,6 +1,7 @@
 import * as Phaser from 'phaser';
 import { Scene } from 'phaser';
 import type { Element } from '../../shared/arena';
+import type { PowerUpId } from '../../shared/combat/powerups';
 import { ELEMENT_STYLES, UI } from './theme';
 
 export type PaperIconKey =
@@ -33,6 +34,8 @@ export type PaperIconKey =
   | 'trophy';
 export type PaperToolIconKey =
   | 'sticker'
+  | 'pencil'
+  | 'contrast'
   | 'bucket'
   | 'eraser'
   | 'clear'
@@ -70,8 +73,105 @@ export function paperIcon(
   const shadow = scene.add.graphics().setPosition(2 * scale, 3 * scale);
   const face = scene.add.graphics();
 
-  drawIcon(shadow, key, scale, 0x9b754d, 0x9b754d);
-  drawIcon(face, key, scale, fill, stroke);
+  if (key === 'ink') {
+    drawInkBottle(shadow, scale, 0x9b754d, 0x9b754d, true);
+    drawInkBottle(face, scale, fill, stroke, false);
+  } else {
+    drawIcon(shadow, key, scale, 0x9b754d, 0x9b754d);
+    drawIcon(face, key, scale, fill, stroke);
+  }
+  container.add([shadow, face]);
+  return container;
+}
+
+function drawInkBottle(
+  graphics: Phaser.GameObjects.Graphics,
+  scale: number,
+  liquidFill: number,
+  stroke: number,
+  shadowOnly: boolean
+): void {
+  graphics.lineStyle(3 * scale, stroke, 1);
+  if (shadowOnly) {
+    graphics.fillStyle(liquidFill, 1);
+    graphics.fillRoundedRect(
+      -12 * scale,
+      -7 * scale,
+      24 * scale,
+      21 * scale,
+      7 * scale
+    );
+    graphics.fillRoundedRect(
+      -8 * scale,
+      -15 * scale,
+      16 * scale,
+      9 * scale,
+      2 * scale
+    );
+    return;
+  }
+
+  graphics.fillStyle(UI.creamHex, 1);
+  graphics.fillRoundedRect(
+    -12 * scale,
+    -7 * scale,
+    24 * scale,
+    21 * scale,
+    7 * scale
+  );
+  graphics.fillRect(-7 * scale, -11 * scale, 14 * scale, 7 * scale);
+
+  graphics.fillStyle(liquidFill, 1);
+  graphics.fillRoundedRect(-9 * scale, 0, 18 * scale, 11 * scale, 4 * scale);
+  graphics.fillRect(-9 * scale, 0, 18 * scale, 4 * scale);
+
+  graphics.lineStyle(3 * scale, stroke, 1);
+  graphics.strokeRoundedRect(
+    -12 * scale,
+    -7 * scale,
+    24 * scale,
+    21 * scale,
+    7 * scale
+  );
+  graphics.strokeRect(-7 * scale, -11 * scale, 14 * scale, 7 * scale);
+
+  graphics.fillStyle(stroke, 1);
+  graphics.fillRoundedRect(
+    -9 * scale,
+    -16 * scale,
+    18 * scale,
+    6 * scale,
+    2 * scale
+  );
+  graphics.fillStyle(UI.creamHex, 0.92);
+  graphics.fillRoundedRect(
+    -6 * scale,
+    -3 * scale,
+    4 * scale,
+    9 * scale,
+    2 * scale
+  );
+  graphics.fillCircle(4 * scale, 7 * scale, 1.8 * scale);
+}
+
+/** Distinct combat marks for the roguelite catalog and reward draft. */
+export function powerUpPaperIcon(
+  scene: Scene,
+  key: PowerUpId,
+  x: number,
+  y: number,
+  options: PaperIconOptions = {}
+): Phaser.GameObjects.Container {
+  const size = options.size ?? 32;
+  const fill = options.fill ?? UI.coral;
+  const stroke = options.stroke ?? UI.inkHex;
+  const scale = size / 32;
+  const container = scene.add.container(x, y).setData('power-up-id', key);
+  const shadow = scene.add.graphics().setPosition(2 * scale, 3 * scale);
+  const face = scene.add.graphics();
+
+  drawPowerUpIcon(shadow, key, scale, 0x9b754d, 0x9b754d);
+  drawPowerUpIcon(face, key, scale, fill, stroke);
   container.add([shadow, face]);
   return container;
 }
@@ -427,17 +527,21 @@ export function paperToolIcon(
   const container = scene.add.container(x, y);
   const backing = scene.add.graphics().setPosition(2 * scale, 3 * scale);
   const face = scene.add.graphics();
-  if (key !== 'undo' && key !== 'redo') {
+  if (key !== 'undo' && key !== 'redo' && key !== 'contrast') {
     drawTool(backing, key, scale, 0x9b754d, 0x9b754d);
   }
   const faceFill =
-    key === 'eraser'
-      ? UI.coral
-      : key === 'bucket'
-        ? UI.gold
-        : key === 'clear'
-          ? UI.tapeAlt
-          : UI.creamHex;
+    key === 'contrast'
+      ? UI.tapeAlt
+      : key === 'pencil'
+        ? 0x7fd8e6
+        : key === 'eraser'
+          ? UI.coral
+          : key === 'bucket'
+            ? UI.gold
+            : key === 'clear'
+              ? UI.tapeAlt
+              : UI.creamHex;
   drawTool(face, key, scale, faceFill, UI.inkHex);
   if (key === 'redo') face.setScale(-1, 1);
   container.add(key === 'undo' || key === 'redo' ? [face] : [backing, face]);
@@ -565,6 +669,29 @@ function drawTool(
     return;
   }
 
+  if (key === 'pencil') {
+    const body = [
+      new Phaser.Math.Vector2(-14 * scale, 8 * scale),
+      new Phaser.Math.Vector2(7 * scale, -13 * scale),
+      new Phaser.Math.Vector2(14 * scale, -6 * scale),
+      new Phaser.Math.Vector2(-7 * scale, 15 * scale),
+    ];
+    graphics.fillPoints(body, true);
+    graphics.strokePoints(body, true);
+    graphics.lineBetween(7 * scale, -13 * scale, 14 * scale, -6 * scale);
+    graphics.lineBetween(-14 * scale, 8 * scale, -17 * scale, 17 * scale);
+    graphics.lineBetween(-17 * scale, 17 * scale, -7 * scale, 15 * scale);
+    return;
+  }
+
+  if (key === 'contrast') {
+    graphics.fillCircle(-2 * scale, 0, 13 * scale);
+    graphics.strokeCircle(-2 * scale, 0, 13 * scale);
+    graphics.fillStyle(UI.creamHex, 1);
+    graphics.fillCircle(5 * scale, -5 * scale, 11 * scale);
+    return;
+  }
+
   if (key === 'eraser') {
     const points = [
       new Phaser.Math.Vector2(-15 * scale, 4 * scale),
@@ -654,6 +781,438 @@ function drawTool(
     );
     return;
   }
+}
+
+function drawPowerUpIcon(
+  graphics: Phaser.GameObjects.Graphics,
+  key: PowerUpId,
+  scale: number,
+  fill: number,
+  stroke: number
+): void {
+  graphics.fillStyle(fill, 1);
+  graphics.lineStyle(3 * scale, stroke, 1);
+
+  if (key === 'v1-edge-spring') {
+    graphics.lineStyle(4 * scale, stroke, 1);
+    graphics.lineBetween(-13 * scale, -14 * scale, -13 * scale, 14 * scale);
+    [-10, 0, 10].forEach((offsetY) => {
+      graphics.lineBetween(
+        -16 * scale,
+        offsetY * scale,
+        -11 * scale,
+        offsetY * scale
+      );
+    });
+    graphics.beginPath();
+    graphics.moveTo(-8 * scale, 8 * scale);
+    graphics.lineTo(-3 * scale, 2 * scale);
+    graphics.lineTo(2 * scale, 8 * scale);
+    graphics.lineTo(7 * scale, 2 * scale);
+    graphics.strokePath();
+    graphics.fillTriangle(
+      6 * scale,
+      -5 * scale,
+      15 * scale,
+      2 * scale,
+      6 * scale,
+      9 * scale
+    );
+    return;
+  }
+
+  if (key === 'v1-smudge-step') {
+    [-9, -2, 5].forEach((offsetY, index) => {
+      graphics.lineBetween(
+        (-15 + index * 2) * scale,
+        offsetY * scale,
+        (-7 + index * 2) * scale,
+        offsetY * scale
+      );
+    });
+    const boot = [
+      new Phaser.Math.Vector2(-3 * scale, -13 * scale),
+      new Phaser.Math.Vector2(8 * scale, -13 * scale),
+      new Phaser.Math.Vector2(8 * scale, 3 * scale),
+      new Phaser.Math.Vector2(15 * scale, 7 * scale),
+      new Phaser.Math.Vector2(13 * scale, 13 * scale),
+      new Phaser.Math.Vector2(-5 * scale, 13 * scale),
+      new Phaser.Math.Vector2(-8 * scale, 7 * scale),
+      new Phaser.Math.Vector2(-3 * scale, 3 * scale),
+    ];
+    graphics.fillPoints(boot, true);
+    graphics.strokePoints(boot, true);
+    graphics.lineBetween(-4 * scale, 7 * scale, 12 * scale, 7 * scale);
+    return;
+  }
+
+  if (key === 'v1-paper-shield') {
+    const shield = [
+      new Phaser.Math.Vector2(0, -15 * scale),
+      new Phaser.Math.Vector2(13 * scale, -10 * scale),
+      new Phaser.Math.Vector2(11 * scale, 5 * scale),
+      new Phaser.Math.Vector2(0, 15 * scale),
+      new Phaser.Math.Vector2(-11 * scale, 5 * scale),
+      new Phaser.Math.Vector2(-13 * scale, -10 * scale),
+    ];
+    graphics.fillPoints(shield, true);
+    graphics.strokePoints(shield, true);
+    graphics.fillStyle(UI.creamHex, 1);
+    drawFivePointStar(graphics, 0, 0, 7 * scale, 3 * scale, true);
+    graphics.lineStyle(2 * scale, stroke, 1);
+    drawFivePointStar(graphics, 0, 0, 7 * scale, 3 * scale, false);
+    return;
+  }
+
+  if (key === 'v1-combo-spark') {
+    [-11, -1].forEach((offsetX, index) => {
+      graphics.fillCircle(offsetX * scale, (7 - index * 6) * scale, 4 * scale);
+      graphics.strokeCircle(
+        offsetX * scale,
+        (7 - index * 6) * scale,
+        4 * scale
+      );
+    });
+    graphics.lineBetween(-7 * scale, 5 * scale, -4 * scale, 3 * scale);
+    graphics.lineBetween(3 * scale, -1 * scale, 6 * scale, -5 * scale);
+    drawFivePointStar(
+      graphics,
+      10 * scale,
+      -8 * scale,
+      8 * scale,
+      3.5 * scale,
+      true
+    );
+    graphics.lineStyle(2 * scale, stroke, 1);
+    drawFivePointStar(
+      graphics,
+      10 * scale,
+      -8 * scale,
+      8 * scale,
+      3.5 * scale,
+      false
+    );
+    return;
+  }
+
+  if (key === 'v1-center-fold') {
+    graphics.fillRoundedRect(
+      -14 * scale,
+      -12 * scale,
+      28 * scale,
+      24 * scale,
+      2 * scale
+    );
+    graphics.strokeRoundedRect(
+      -14 * scale,
+      -12 * scale,
+      28 * scale,
+      24 * scale,
+      2 * scale
+    );
+    graphics.lineBetween(0, -12 * scale, 0, 12 * scale);
+    graphics.lineBetween(-11 * scale, -8 * scale, 0, 0);
+    graphics.lineBetween(-11 * scale, 8 * scale, 0, 0);
+    graphics.lineBetween(11 * scale, -8 * scale, 0, 0);
+    graphics.lineBetween(11 * scale, 8 * scale, 0, 0);
+    graphics.fillStyle(stroke, 1);
+    graphics.fillCircle(0, 0, 3 * scale);
+    return;
+  }
+
+  if (key === 'v1-double-doodle') {
+    [-5, 6].forEach((offsetX) => {
+      const pencil = [
+        new Phaser.Math.Vector2((offsetX - 4) * scale, 10 * scale),
+        new Phaser.Math.Vector2((offsetX + 4) * scale, 10 * scale),
+        new Phaser.Math.Vector2((offsetX + 4) * scale, -9 * scale),
+        new Phaser.Math.Vector2(offsetX * scale, -15 * scale),
+        new Phaser.Math.Vector2((offsetX - 4) * scale, -9 * scale),
+      ];
+      graphics.fillPoints(pencil, true);
+      graphics.strokePoints(pencil, true);
+      graphics.lineBetween(
+        (offsetX - 4) * scale,
+        5 * scale,
+        (offsetX + 4) * scale,
+        5 * scale
+      );
+    });
+    graphics.fillStyle(stroke, 1);
+    graphics.fillCircle(-11 * scale, 14 * scale, 2 * scale);
+    graphics.fillCircle(13 * scale, 13 * scale, 2 * scale);
+    return;
+  }
+
+  if (key === 'v1-backup-plan') {
+    graphics.fillRoundedRect(
+      -10 * scale,
+      -13 * scale,
+      20 * scale,
+      26 * scale,
+      2 * scale
+    );
+    graphics.strokeRoundedRect(
+      -10 * scale,
+      -13 * scale,
+      20 * scale,
+      26 * scale,
+      2 * scale
+    );
+    graphics.lineBetween(-6 * scale, -7 * scale, 6 * scale, -7 * scale);
+    graphics.beginPath();
+    graphics.arc(1 * scale, 4 * scale, 8 * scale, -0.4, Math.PI * 1.35, false);
+    graphics.strokePath();
+    graphics.fillStyle(stroke, 1);
+    graphics.fillTriangle(
+      -9 * scale,
+      0,
+      -2 * scale,
+      -2 * scale,
+      -5 * scale,
+      6 * scale
+    );
+    return;
+  }
+
+  if (key === 'v1-counter-sketch') {
+    graphics.lineStyle(4 * scale, stroke, 1);
+    graphics.lineBetween(-13 * scale, 10 * scale, 8 * scale, -11 * scale);
+    graphics.fillTriangle(
+      8 * scale,
+      -11 * scale,
+      15 * scale,
+      -15 * scale,
+      12 * scale,
+      -7 * scale
+    );
+    graphics.beginPath();
+    graphics.moveTo(13 * scale, 9 * scale);
+    graphics.lineTo(-5 * scale, 9 * scale);
+    graphics.arc(
+      -5 * scale,
+      2 * scale,
+      7 * scale,
+      Math.PI / 2,
+      Math.PI * 1.5,
+      false
+    );
+    graphics.strokePath();
+    graphics.fillTriangle(
+      11 * scale,
+      3 * scale,
+      16 * scale,
+      9 * scale,
+      11 * scale,
+      15 * scale
+    );
+    return;
+  }
+
+  if (key === 'v1-wallop') {
+    graphics.lineStyle(4 * scale, stroke, 1);
+    graphics.lineBetween(13 * scale, -15 * scale, 13 * scale, 15 * scale);
+    [-10, 0, 10].forEach((offsetY) => {
+      graphics.lineBetween(
+        10 * scale,
+        offsetY * scale,
+        16 * scale,
+        offsetY * scale
+      );
+    });
+    const impact = [
+      new Phaser.Math.Vector2(7 * scale, -10 * scale),
+      new Phaser.Math.Vector2(3 * scale, -4 * scale),
+      new Phaser.Math.Vector2(-3 * scale, -8 * scale),
+      new Phaser.Math.Vector2(-2 * scale, -1 * scale),
+      new Phaser.Math.Vector2(-11 * scale, 1 * scale),
+      new Phaser.Math.Vector2(-3 * scale, 5 * scale),
+      new Phaser.Math.Vector2(-6 * scale, 13 * scale),
+      new Phaser.Math.Vector2(2 * scale, 8 * scale),
+      new Phaser.Math.Vector2(7 * scale, 12 * scale),
+    ];
+    graphics.fillPoints(impact, true);
+    graphics.strokePoints(impact, true);
+    return;
+  }
+
+  if (key === 'v1-echo-mark') {
+    graphics.fillCircle(-2 * scale, 0, 5 * scale);
+    graphics.strokeCircle(-2 * scale, 0, 5 * scale);
+    graphics.beginPath();
+    graphics.arc(-2 * scale, 0, 10 * scale, -1.15, 1.15, false);
+    graphics.strokePath();
+    graphics.beginPath();
+    graphics.arc(-2 * scale, 0, 15 * scale, -1.05, 1.05, false);
+    graphics.strokePath();
+    graphics.fillTriangle(
+      10 * scale,
+      -4 * scale,
+      16 * scale,
+      0,
+      10 * scale,
+      4 * scale
+    );
+    return;
+  }
+
+  if (key === 'v1-last-scribble') {
+    const heart = [
+      new Phaser.Math.Vector2(0, 15 * scale),
+      new Phaser.Math.Vector2(-13 * scale, 3 * scale),
+      new Phaser.Math.Vector2(-13 * scale, -5 * scale),
+      new Phaser.Math.Vector2(-7 * scale, -12 * scale),
+      new Phaser.Math.Vector2(0, -7 * scale),
+      new Phaser.Math.Vector2(7 * scale, -12 * scale),
+      new Phaser.Math.Vector2(13 * scale, -5 * scale),
+      new Phaser.Math.Vector2(13 * scale, 3 * scale),
+    ];
+    graphics.fillPoints(heart, true);
+    graphics.strokePoints(heart, true);
+    graphics.lineStyle(3 * scale, UI.creamHex, 1);
+    graphics.lineBetween(-3 * scale, -4 * scale, 2 * scale, 0);
+    graphics.lineBetween(2 * scale, 0, -1 * scale, 5 * scale);
+    graphics.lineStyle(2 * scale, stroke, 1);
+    graphics.strokeRoundedRect(
+      -8 * scale,
+      8 * scale,
+      16 * scale,
+      6 * scale,
+      2 * scale
+    );
+    return;
+  }
+
+  if (key === 'v1-second-draft') {
+    graphics.fillRoundedRect(
+      -13 * scale,
+      -10 * scale,
+      19 * scale,
+      22 * scale,
+      2 * scale
+    );
+    graphics.strokeRoundedRect(
+      -13 * scale,
+      -10 * scale,
+      19 * scale,
+      22 * scale,
+      2 * scale
+    );
+    graphics.fillRoundedRect(
+      -5 * scale,
+      -14 * scale,
+      18 * scale,
+      22 * scale,
+      2 * scale
+    );
+    graphics.strokeRoundedRect(
+      -5 * scale,
+      -14 * scale,
+      18 * scale,
+      22 * scale,
+      2 * scale
+    );
+    graphics.beginPath();
+    graphics.arc(5 * scale, 5 * scale, 9 * scale, 0.1, Math.PI * 1.45, false);
+    graphics.strokePath();
+    graphics.fillStyle(stroke, 1);
+    graphics.fillTriangle(
+      -6 * scale,
+      3 * scale,
+      1 * scale,
+      1 * scale,
+      -2 * scale,
+      9 * scale
+    );
+    return;
+  }
+
+  if (key === 'v1-paper-twin') {
+    [-7, 7].forEach((offsetX) => {
+      graphics.fillRoundedRect(
+        (offsetX - 7) * scale,
+        -11 * scale,
+        14 * scale,
+        23 * scale,
+        3 * scale
+      );
+      graphics.strokeRoundedRect(
+        (offsetX - 7) * scale,
+        -11 * scale,
+        14 * scale,
+        23 * scale,
+        3 * scale
+      );
+      graphics.fillStyle(stroke, 1);
+      graphics.fillCircle((offsetX - 3) * scale, -3 * scale, 1.5 * scale);
+      graphics.fillCircle((offsetX + 3) * scale, -3 * scale, 1.5 * scale);
+      graphics.lineBetween(
+        (offsetX - 3) * scale,
+        4 * scale,
+        (offsetX + 3) * scale,
+        4 * scale
+      );
+      graphics.fillStyle(fill, 1);
+    });
+    return;
+  }
+
+  if (key === 'v1-masterpiece') {
+    graphics.fillRoundedRect(
+      -15 * scale,
+      -14 * scale,
+      30 * scale,
+      28 * scale,
+      3 * scale
+    );
+    graphics.strokeRoundedRect(
+      -15 * scale,
+      -14 * scale,
+      30 * scale,
+      28 * scale,
+      3 * scale
+    );
+    graphics.fillStyle(UI.creamHex, 1);
+    graphics.fillRoundedRect(
+      -10 * scale,
+      -9 * scale,
+      20 * scale,
+      18 * scale,
+      2 * scale
+    );
+    graphics.strokeRoundedRect(
+      -10 * scale,
+      -9 * scale,
+      20 * scale,
+      18 * scale,
+      2 * scale
+    );
+    graphics.fillStyle(fill, 1);
+    drawFivePointStar(graphics, 0, 0, 8 * scale, 3.5 * scale, true);
+    graphics.lineStyle(2 * scale, stroke, 1);
+    drawFivePointStar(graphics, 0, 0, 8 * scale, 3.5 * scale, false);
+    return;
+  }
+
+  graphics.lineStyle(4 * scale, stroke, 1);
+  graphics.beginPath();
+  graphics.moveTo(-14 * scale, 0);
+  graphics.arc(-7 * scale, 0, 7 * scale, Math.PI, 0, false);
+  graphics.lineTo(7 * scale, 7 * scale);
+  graphics.arc(7 * scale, 0, 7 * scale, Math.PI / 2, Math.PI * 1.5, true);
+  graphics.lineTo(-7 * scale, -7 * scale);
+  graphics.arc(-7 * scale, 0, 7 * scale, -Math.PI / 2, Math.PI / 2, false);
+  graphics.lineTo(14 * scale, 0);
+  graphics.strokePath();
+  graphics.fillStyle(fill, 1);
+  graphics.fillTriangle(
+    12 * scale,
+    -4 * scale,
+    17 * scale,
+    0,
+    12 * scale,
+    4 * scale
+  );
 }
 
 function drawIcon(
@@ -828,26 +1387,6 @@ function drawIcon(
     graphics.strokeCircle(-4 * scale, 0, 1.3 * scale);
     graphics.strokeCircle(4 * scale, 1 * scale, 1.3 * scale);
     graphics.strokeCircle(0, 7 * scale, 1.3 * scale);
-    return;
-  }
-
-  if (key === 'ink') {
-    graphics.fillRoundedRect(
-      -10 * scale,
-      -9 * scale,
-      20 * scale,
-      20 * scale,
-      5 * scale
-    );
-    graphics.strokeRoundedRect(
-      -10 * scale,
-      -9 * scale,
-      20 * scale,
-      20 * scale,
-      5 * scale
-    );
-    graphics.fillRect(-7 * scale, -14 * scale, 14 * scale, 5 * scale);
-    graphics.strokeRect(-7 * scale, -14 * scale, 14 * scale, 5 * scale);
     return;
   }
 

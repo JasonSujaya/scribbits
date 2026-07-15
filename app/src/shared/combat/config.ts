@@ -107,8 +107,8 @@ const abilityConfigByPower: AbilityConfigByPower = Object.freeze({
     overshootDistance: 1_100,
     dashSpeed: 760,
     collisionRadiusBonus: 220,
-    baseDamage: 21,
-    zipDamageDivisor: 4,
+    baseDamage: 16,
+    zipDamageDivisor: 8,
   }),
   colorburst: Object.freeze({
     power: 'colorburst',
@@ -130,7 +130,7 @@ const abilityConfigByPower: AbilityConfigByPower = Object.freeze({
 });
 
 export const DEFAULT_COMBAT_RULES: CombatRules = Object.freeze({
-  version: 5,
+  version: 6,
   tickRate: COMBAT_TICK_RATE,
   maximumSeconds: COMBAT_MAXIMUM_SECONDS,
   maximumTicks: COMBAT_MAXIMUM_TICKS,
@@ -176,8 +176,8 @@ export const DEFAULT_COMBAT_RULES: CombatRules = Object.freeze({
     criticalChancePermillePerCharm: 2,
     maximumCriticalChancePermille: 180,
     criticalDamageMultiplierPermille: 1_500,
-    minimumDamageVariancePermille: 1_000,
-    maximumDamageVariancePermille: 1_000,
+    minimumDamageVariancePermille: 950,
+    maximumDamageVariancePermille: 1_050,
     initialAbilityDelayMinimumTicks: 18,
     initialAbilityDelayRangeTicks: 13,
   }),

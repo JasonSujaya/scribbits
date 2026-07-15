@@ -84,6 +84,22 @@ const fitTextToWidth = (
   }
 };
 
+const fitTextFontSizeToWidth = (
+  text: Phaser.GameObjects.Text,
+  maximumWidth: number,
+  preferredFontSize: number,
+  minimumFontSize: number
+): void => {
+  text.setFontSize(preferredFontSize);
+  if (text.width <= maximumWidth) return;
+  text.setFontSize(
+    Math.max(
+      minimumFontSize,
+      Math.floor((preferredFontSize * maximumWidth) / text.width)
+    )
+  );
+};
+
 const HEART_COUNT = 6;
 const MIN_HEART_SIZE = 26;
 const MAX_HEART_SIZE = 40;
@@ -274,16 +290,6 @@ const createFighterVitalsView = (
     fighterLayout.homeX,
     fighterLayout.homeY + layout.fighterDisplaySize / 2 + 22
   );
-  const floatingVitalsBackground = scene.add
-    .rectangle(
-      0,
-      0,
-      floatingVitalsWidth,
-      FLOATING_VITALS_HEIGHT,
-      UI.paper,
-      0.94
-    )
-    .setStrokeStyle(2, UI.inkHex, 0.92);
   const floatingName = label(
     scene,
     0,
@@ -327,7 +333,6 @@ const createFighterVitalsView = (
     )
     .setOrigin(0, 0.5);
   const floatingVitalsFeedback = scene.add.container(0, 0, [
-    floatingVitalsBackground,
     floatingName,
     ...(floatingRole ? [floatingRole] : []),
     floatingHealthTrack,
@@ -359,19 +364,31 @@ const createFighterVitalsView = (
   const heartGraphics = scene.add.graphics();
   renderHeartMeter(heartGraphics, initialHeartPlan, side, layout.heartRowWidth);
   const heartWarning = scene.add.container(0, 0, [heartGraphics]);
+  const fighterNameLabel = label(
+    scene,
+    0,
+    layout.fighterNameOffsetY,
+    scribbit.name.toUpperCase(),
+    18,
+    UI.ink,
+    true
+  ).setOrigin(0.5);
+  fitTextFontSizeToWidth(fighterNameLabel, layout.heartRowWidth, 18, 14);
   const healthLabel = label(
     scene,
     0,
-    38,
+    layout.fighterHealthOffsetY,
     translate('battle.health', { current: 1, maximum: 1 }),
-    24,
+    20,
     UI.ink,
     true
   )
     .setOrigin(0.5)
     .setDepth(25);
+  fitTextFontSizeToWidth(healthLabel, layout.heartRowWidth, 20, 14);
   const heartMeter = scene.add
     .container(fighterLayout.chipCenterX, layout.heartRowY, [
+      fighterNameLabel,
       heartWarning,
       healthLabel,
     ])
@@ -561,6 +578,18 @@ export function createReplayBattleHud(
     applyFighterShapePowerState(side, state, true);
   };
 
+  const battleTitle = label(
+    scene,
+    layout.viewportWidth / 2,
+    layout.battleTitleY,
+    'BATTLE',
+    30,
+    UI.ink,
+    true
+  )
+    .setOrigin(0.5)
+    .setAngle(-1)
+    .setDepth(27);
   const arenaCaption = label(
     scene,
     layout.viewportWidth / 2,
@@ -895,6 +924,7 @@ export function createReplayBattleHud(
         })
       )
       .setColor(plan.useDangerColor ? UI.coralText : UI.ink);
+    fitTextFontSizeToWidth(vitals.healthLabel, layout.heartRowWidth, 20, 14);
     const floatingHealthRatio = plan.ratio;
     vitals.floatingHealthFill
       .setDisplaySize(
@@ -1004,6 +1034,7 @@ export function createReplayBattleHud(
       }
     },
     setBattleChromeVisible: (visible: boolean): void => {
+      battleTitle.setVisible(visible);
       arenaCaption.setVisible(visible);
       Object.values(fighterVitals).forEach((vitals) => {
         vitals.container.setVisible(visible);

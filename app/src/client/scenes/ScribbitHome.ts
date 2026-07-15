@@ -9,7 +9,10 @@ import {
   isGrowingRosterFull,
   navigateToDailyDraw,
 } from '../lib/draweligibility';
-import { openDetailModal } from '../lib/detailmodal';
+import {
+  collectDiscoveredPowerUpIds,
+  openDetailModal,
+} from '../lib/detailmodal';
 import { LiveSprite } from '../lib/livesprite';
 import { translate } from '../lib/localization';
 import { CanvasActionOverlay, CanvasModalOverlay } from '../lib/overlay';
@@ -18,7 +21,6 @@ import { bindPressInteractionEvents } from '../lib/pressinteraction';
 import {
   levelOf,
   loadDrawing,
-  moodStyleOf,
   releaseRenderedDrawingTextures,
 } from '../lib/scribbits';
 import { generateDoodleTexture } from '../lib/proceduraldoodleart';
@@ -46,14 +48,7 @@ import {
   type DailyLoginModal,
 } from '../lib/dailyloginmodal';
 import { playHomeSoundtrack, releaseHomeSoundtrack } from '../lib/soundtrack';
-import {
-  EDGE,
-  ELEMENT_STYLES,
-  NAV_SAFE,
-  TYPE,
-  UI,
-  prefersReducedMotion,
-} from '../lib/theme';
+import { EDGE, NAV_SAFE, TYPE, UI, prefersReducedMotion } from '../lib/theme';
 import { setSfxCue } from '../lib/sfx';
 import {
   drawChargeCountLabel,
@@ -73,7 +68,6 @@ import {
 const SCRIBBIT_DEPTH = 120;
 const HOME_PROP_DEPTH = 10;
 const HOME_SCRIBBIT_DISPLAY_SIZE = 380;
-const HOME_SCRIBBIT_HIT_SIZE = 400;
 const EMPTY_HOME_CARD_MAX_Y = 670;
 const MATURITY_CARD_SUMMARY = 'STATS LOCK • GEAR UP FOR MATURE ARENA';
 const MATURITY_DESCRIPTION =
@@ -183,32 +177,6 @@ const HOME_PROPS: readonly HomePropConfig[] = [
     idleDriftY: -3.5,
     idleDurationMs: 3300,
     idleDelayMs: 180,
-  },
-  {
-    texture: HOME_PROP_TEXTURES.bowl,
-    label: 'Food bowl',
-    sourceX: 145,
-    sourceY: 1208,
-    sourceWidth: 220,
-    sourceHeight: 142,
-    shakeAngle: 8,
-    idleAngle: 2.1,
-    idleDriftY: -5,
-    idleDurationMs: 2300,
-    idleDelayMs: 520,
-  },
-  {
-    texture: HOME_PROP_TEXTURES.bed,
-    label: 'Pet bed',
-    sourceX: 732,
-    sourceY: 1202,
-    sourceWidth: 375,
-    sourceHeight: 285,
-    shakeAngle: 6,
-    idleAngle: 1.7,
-    idleDriftY: -4.5,
-    idleDurationMs: 2700,
-    idleDelayMs: 900,
   },
 ];
 
@@ -607,7 +575,6 @@ export class ScribbitHome extends Scene {
     const centerX = width / 2;
     const creatureY = Math.min(height - NAV_SAFE - 380, 680);
     const buttonY = Math.min(height - NAV_SAFE - 96, creatureY + 360);
-    const mood = moodStyleOf(scribbit);
 
     const maturityCard = this.add
       .container(centerX, creatureY - 262)
@@ -696,7 +663,7 @@ export class ScribbitHome extends Scene {
       this,
       centerX,
       creatureY + 234,
-      `LV ${levelOf(scribbit)}  •  ${mood.label.toUpperCase()}`,
+      `LV ${levelOf(scribbit)}`,
       TYPE.caption,
       UI.ink,
       true
@@ -707,18 +674,6 @@ export class ScribbitHome extends Scene {
     this.renderCreature(scribbit, centerX, creatureY);
     this.renderRosterControls(scribbit, creatureY);
     this.renderDrawButton(centerX, buttonY, 520, 124);
-
-    this.actionOverlay?.add({
-      label: `${scribbit.name}, tap to pet`,
-      attributes: { 'data-sfx-cue': 'care.action' },
-      rect: {
-        x: centerX - HOME_SCRIBBIT_HIT_SIZE / 2,
-        y: creatureY - HOME_SCRIBBIT_HIT_SIZE / 2,
-        width: HOME_SCRIBBIT_HIT_SIZE,
-        height: HOME_SCRIBBIT_HIT_SIZE,
-      },
-      onActivate: () => this.reactToCreature(scribbit, centerX, creatureY),
-    });
   }
 
   private clearMaturityCountdown(): void {
@@ -1068,6 +1023,9 @@ export class ScribbitHome extends Scene {
   private openRetireDetail(scribbit: Scribbit): void {
     openDetailModal(this, scribbit, {
       currentDay: this.state.dayNumber,
+      discoveredPowerUpIds:
+        this.state.discoveredPowerUpIds ??
+        collectDiscoveredPowerUpIds(this.state.myScribbits),
       ...(this.state.rumbleResolvesAt === undefined
         ? {}
         : { nextArenaDayStartsAt: this.state.rumbleResolvesAt }),
@@ -1119,10 +1077,10 @@ export class ScribbitHome extends Scene {
         label(
           this,
           0,
-          35,
+          24,
           drawChargeRefreshLabel(drawCharges),
-          16,
-          UI.inkSoft,
+          17,
+          UI.ink,
           true
         )
       );
@@ -1272,17 +1230,6 @@ export class ScribbitHome extends Scene {
     this.drawButtonShine = null;
   }
 
-  private reactToCreature(scribbit: Scribbit, x: number, y: number): void {
-    this.liveSprite?.jiggle();
-    this.burstPaperSparks(
-      x,
-      y - 24,
-      ELEMENT_STYLES[scribbit.element].particle,
-      7,
-      SCRIBBIT_DEPTH + 4
-    );
-  }
-
   private burstPaperSparks(
     x: number,
     y: number,
@@ -1350,19 +1297,6 @@ export class ScribbitHome extends Scene {
       depth: SCRIBBIT_DEPTH,
       stats: scribbit.stats,
       reduceMotion,
-    });
-    this.liveSprite.container.setInteractive(
-      new Phaser.Geom.Rectangle(
-        -HOME_SCRIBBIT_HIT_SIZE / 2,
-        -HOME_SCRIBBIT_HIT_SIZE / 2,
-        HOME_SCRIBBIT_HIT_SIZE,
-        HOME_SCRIBBIT_HIT_SIZE
-      ),
-      Phaser.Geom.Rectangle.Contains
-    );
-    setSfxCue(this.liveSprite.container, 'care.action');
-    this.liveSprite.container.on('pointerup', () => {
-      this.reactToCreature(scribbit, x, y);
     });
     this.liveSprite.breathe();
   }

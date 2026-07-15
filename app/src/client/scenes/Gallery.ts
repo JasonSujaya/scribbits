@@ -28,7 +28,10 @@ import {
 import { UI } from '../lib/theme';
 import { LivingPaper } from '../lib/livingpaper';
 import { label, stickerCard } from '../lib/ui';
-import { openDetailModal } from '../lib/detailmodal';
+import {
+  collectDiscoveredPowerUpIds,
+  openDetailModal,
+} from '../lib/detailmodal';
 import type {
   GearRank,
   Inventory,
@@ -63,6 +66,7 @@ import { translate } from '../lib/localization';
 import { fitText } from '../lib/fittext';
 import { planSceneMutationResponse } from '../lib/arenaasynclifecycle';
 import { playHomeSoundtrack, releaseHomeSoundtrack } from '../lib/soundtrack';
+import { preloadGalleryVisualAssets } from '../lib/visualassets';
 
 const LEGEND_CARD_HEIGHT = 272;
 const LEGEND_CARD_ROW_GAP = 18;
@@ -158,6 +162,10 @@ export class Gallery extends Scene {
 
   constructor() {
     super('Gallery');
+  }
+
+  preload(): void {
+    preloadGalleryVisualAssets(this);
   }
 
   init(): void {
@@ -902,6 +910,9 @@ export class Gallery extends Scene {
     const mine = arena?.myUsername === scribbit.artist;
     openDetailModal(this, scribbit, {
       currentDay: arena?.dayNumber ?? scribbit.expiresDay,
+      discoveredPowerUpIds:
+        arena?.discoveredPowerUpIds ??
+        collectDiscoveredPowerUpIds(arena?.myScribbits ?? []),
       ...(arena?.rumbleResolvesAt === undefined
         ? {}
         : { nextArenaDayStartsAt: arena.rumbleResolvesAt }),

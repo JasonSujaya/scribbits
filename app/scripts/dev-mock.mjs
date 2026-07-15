@@ -62,6 +62,7 @@ const {
   getCapsuleCostForDailyState,
   getLevelForXp,
   getNextLegacySeenThroughDay,
+  getPaintBucketState,
   getRumbleProgressionRewards,
   hashStringToUint32,
   isCareAction,
@@ -290,6 +291,7 @@ const myScribbits = [
     level: 4,
     xp: 13,
     mood: 'pumped',
+    powerUpIds: ['v1-edge-spring'],
     careDoneToday: ['feed', 'pat', 'train'],
     accessories: ['bowtie', 'tiny-sword'],
     gearRanks: {
@@ -1619,12 +1621,17 @@ const arenaState = (economy, previewMode = 'returning') => {
       ? null
       : cloneScribbit(memory.champion),
     myScribbits: getLivingScribbitsForPreview(previewMode).map(cloneScribbit),
+    discoveredPowerUpIds: [
+      ...new Set(
+        memory.myScribbits.flatMap((scribbit) => scribbit.powerUpIds ?? [])
+      ),
+    ],
     drawCharges: memory.drawChargesByPreviewMode[previewMode] ?? {
       available: 0,
       capacity: 3,
       nextRefreshAt: null,
     },
-    paintBucket: { level: 1, capacity: 350_000 },
+    paintBucket: getPaintBucketState(),
     drawnToday: hasDrawnTodayForPreview(previewMode),
     todayFreeDrawing: getTodayFreeDrawingForPreview(previewMode),
     enteredToday: memory.enteredToday,
@@ -2829,7 +2836,10 @@ const handleApi = async (request, response, url) => {
     }
 
     let powerUpOffer = null;
-    if (report.winner === 'a' && challenger.powerUpIds.length < MAXIMUM_POWER_UPS) {
+    if (
+      report.winner === 'a' &&
+      challenger.powerUpIds.length < MAXIMUM_POWER_UPS
+    ) {
       const source = rivalRunReceipt
         ? rivalRunReceipt.status === 'complete'
           ? 'rival-run-final-win'
@@ -2889,7 +2899,11 @@ const handleApi = async (request, response, url) => {
       !offer.choices.includes(body.selectedId) ||
       body?.expectedPowerUpCount !== scribbit.powerUpIds.length
     ) {
-      sendError(response, 409, 'That Power-Up offer changed. Reopen the reward.');
+      sendError(
+        response,
+        409,
+        'That Power-Up offer changed. Reopen the reward.'
+      );
       return;
     }
     scribbit.powerUpIds = [...scribbit.powerUpIds, body.selectedId];

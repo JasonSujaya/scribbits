@@ -39,6 +39,8 @@ export type DrawCanvasOptions = {
   // Called after every completed stroke (pointer-up) so the scene can re-run the
   // live analyzer and animate the stat preview.
   onStrokeEnd: (change: DrawCanvasChange) => void;
+  onEditStart?: () => void;
+  onEditCancel?: () => void;
   hasPaint?: () => boolean;
   requestPaint?: (amount: number, kind: PaintUseKind) => boolean;
   onPaintBlocked?: () => void;
@@ -55,6 +57,8 @@ export class DrawCanvas {
   readonly element: HTMLCanvasElement;
   private readonly ctx: CanvasRenderingContext2D;
   private readonly onStrokeEnd: (change: DrawCanvasChange) => void;
+  private readonly onEditStart: () => void;
+  private readonly onEditCancel: () => void;
   private readonly hasPaint: () => boolean;
   private readonly requestPaint: (
     amount: number,
@@ -96,6 +100,8 @@ export class DrawCanvas {
 
   constructor(options: DrawCanvasOptions) {
     this.onStrokeEnd = options.onStrokeEnd;
+    this.onEditStart = options.onEditStart ?? (() => undefined);
+    this.onEditCancel = options.onEditCancel ?? (() => undefined);
     this.hasPaint = options.hasPaint ?? (() => true);
     this.requestPaint = options.requestPaint ?? (() => true);
     this.onPaintBlocked = options.onPaintBlocked ?? (() => undefined);
@@ -154,6 +160,10 @@ export class DrawCanvas {
     this.mode = 'draw';
   }
 
+  setDrawMode(): void {
+    this.mode = 'draw';
+  }
+
   setEraser(targetColor = this.color): void {
     this.eraserTargetColor =
       parseHexColor(targetColor) ?? this.eraserTargetColor;
@@ -171,6 +181,10 @@ export class DrawCanvas {
 
   isFilling(): boolean {
     return this.mode === 'fill';
+  }
+
+  isDrawing(): boolean {
+    return this.mode === 'draw';
   }
 
   setEnabled(enabled: boolean): void {
@@ -193,6 +207,7 @@ export class DrawCanvas {
   }
 
   clear(): void {
+    this.onEditStart();
     this.pushHistory();
     this.paintPaper();
     this.onStrokeEnd('clear');
@@ -298,6 +313,7 @@ export class DrawCanvas {
     );
     if (validStrokes.length === 0) return 0;
 
+    this.onEditStart();
     this.pushHistory();
     for (const stroke of validStrokes) {
       const firstPoint = stroke.points[0];
@@ -410,6 +426,7 @@ export class DrawCanvas {
       return;
     }
 
+    this.onEditStart();
     this.pushHistory();
     this.drawing = true;
     this.strokeChanged = false;
@@ -471,13 +488,7 @@ export class DrawCanvas {
       this.applyBrush();
       if (dot) {
         this.ctx.beginPath();
-        this.ctx.arc(
-          endX,
-          endY,
-          this.activeBrushWidth() / 2,
-          0,
-          Math.PI * 2
-        );
+        this.ctx.arc(endX, endY, this.activeBrushWidth() / 2, 0, Math.PI * 2);
         this.ctx.fillStyle = this.currentStrokeColor();
         this.ctx.fill();
       } else {
@@ -581,6 +592,7 @@ export class DrawCanvas {
     if (!this.strokeChanged) {
       const unusedSnapshot = this.history.pop();
       if (unusedSnapshot) this.snapshotPool.push(unusedSnapshot);
+      this.onEditCancel();
       return;
     }
     this.onStrokeEnd(this.mode === 'erase' ? 'erase' : 'draw');
@@ -642,7 +654,9 @@ export class DrawCanvas {
     );
     if (changedPixels === 0) return;
 
+    this.onEditStart();
     if (!this.requestPaint(changedPixels, 'fill')) {
+      this.onEditCancel();
       this.onPaintBlocked();
       return;
     }

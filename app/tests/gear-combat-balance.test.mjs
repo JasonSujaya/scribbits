@@ -78,7 +78,7 @@ const fighterWithGear = (id, stats, gearId, rank) => {
 
 const balancedForecast = forecast.generateForecastForDay(9);
 
-test('Gear resolution keeps the 100-point drawing identity in v5 transcripts', () => {
+test('Gear resolution keeps the 100-point drawing identity in current transcripts', () => {
   const stats = builds.nib_halo;
   const geared = fighterWithGear('gear-v3', stats, 'tiny-sword', 6);
   const plain = makeFighter(
@@ -99,7 +99,7 @@ test('Gear resolution keeps the 100-point drawing identity in v5 transcripts', (
     100
   );
   assert.equal(combatSelection.selectPrimaryPower(geared.stats), 'nib_halo');
-  assert.equal(report.simulation.version, 5);
+  assert.equal(report.simulation.version, 6);
   assert.equal(
     report.simulation.fighters[0].gear.techniques[0].leadGearId,
     'tiny-sword'
@@ -113,7 +113,7 @@ test('Gear resolution keeps the 100-point drawing identity in v5 transcripts', (
   assert.equal(battleStore.isBattleReport({ ...report, kind: 'boss' }), false);
 
   const rumble = battle.simulate(geared, plain, 41, balancedForecast, 'rumble');
-  assert.equal(rumble.simulation.version, 5);
+  assert.equal(rumble.simulation.version, 6);
   assert.equal(rumble.simulation.fighters[0].gear, undefined);
   assert.equal(battleStore.isBattleReport(rumble), true);
 });
@@ -211,7 +211,7 @@ const assertBoundedModifiers = (modifiers) => {
   assert.ok(modifiers.initialDelayTicksDelta <= 1);
 };
 
-test('all six Gear families stay bounded and combat is seed invariant', () => {
+test('all six Gear families stay bounded and combat stays deterministic per seed', () => {
   const representativeGearIds = [
     'beanie',
     'smearstep-speed-scarf',
@@ -246,16 +246,28 @@ test('all six Gear families stay bounded and combat is seed invariant', () => {
           balancedForecast,
           'exhibition'
         );
-        const second = battle.simulate(
+        const repeated = battle.simulate(
           geared,
           plain,
           600,
           balancedForecast,
           'exhibition'
         );
-        assert.equal(first.winner, second.winner);
-        assert.equal(first.simulation.durationMs, second.simulation.durationMs);
-        assert.deepEqual(first.simulation.events, second.simulation.events);
+        const repeatedAgain = battle.simulate(
+          geared,
+          plain,
+          600,
+          balancedForecast,
+          'exhibition'
+        );
+        assert.equal(repeated.winner, repeatedAgain.winner);
+        assert.equal(
+          repeated.simulation.durationMs,
+          repeatedAgain.simulation.durationMs
+        );
+        assert.deepEqual(repeated.simulation.events, repeatedAgain.simulation.events);
+        assert.ok(combatTranscript.parseBattleTranscript(first.simulation));
+        assert.ok(combatTranscript.parseBattleTranscript(repeated.simulation));
         checkedLoadouts += 1;
       }
     }

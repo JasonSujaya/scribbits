@@ -169,8 +169,8 @@ test('Mystery Ink lives in Shop while Bag remains equipment-only', () => {
   assert.match(capsuleMachineSource, /Inspect featured Gear:/);
   assert.match(capsuleMachineSource, /width: 110,[\s\S]{0,40}height: 110/);
   assert.match(capsuleMachineSource, /featuredGearControl\.hidden = visible/);
-  assert.match(visualAssetsSource, /scribbits-shop-chest-closed\.png/);
-  assert.match(visualAssetsSource, /scribbits-shop-chest-open\.png/);
+  assert.match(visualAssetsSource, /scribbits-shop-chest-closed\.webp/);
+  assert.match(visualAssetsSource, /scribbits-shop-chest-open\.webp/);
   assert.match(capsuleMachineSource, /SHOP_CHEST_TEXTURES\.open/);
   assert.match(capsuleMachineSource, /SHOP_CHEST_TEXTURES\.closed/);
   const chestArtSource = capsuleMachineSource.slice(
@@ -231,7 +231,7 @@ test('the first completed Rival Run opens first Gear only from committed Ink', (
     'first Gear may open Shop only after refreshed server state confirms the balance'
   );
   assert.match(replaySource, /label: 'FIRST GEAR'/);
-  assert.match(arenaSource, /careForScribbit\(scribbit\.id, action\)/);
+  assert.doesNotMatch(arenaSource, /careForScribbit|openCarePicker|doCare/);
   assert.match(
     capsuleMachineSource,
     /firstChestVisit = progress\.pullCount === 0/
@@ -313,7 +313,7 @@ test('Champion keeps its focused lifecycle-safe launcher', () => {
   );
   assert.ok(
     (arenaSource.match(/acceptMutationResponse\(sceneEpoch\)/g) ?? []).length >=
-      7,
+      6,
     'every Arena mutation continuation must pass through the shared lifecycle guard'
   );
   assert.match(

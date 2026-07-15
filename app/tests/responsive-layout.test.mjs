@@ -71,7 +71,7 @@ test('all gameplay scenes share one clean image-generated paper stage', () => {
     visualAssetSource,
     /BATTLE_STAGE_TEXTURE = SCRIBBITS_STAGE_TEXTURE/
   );
-  assert.match(visualAssetSource, /assetUrl\('scribbits-stage\.png'\)/);
+  assert.match(visualAssetSource, /assetUrl\('scribbits-stage\.webp'\)/);
   assert.doesNotMatch(
     visualAssetSource,
     /scribbits-(?:arena|battle|paper)-stage\.jpg/

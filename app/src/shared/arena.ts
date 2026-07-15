@@ -313,6 +313,7 @@ export type ArenaState = {
   forecast: Forecast;
   champion: Scribbit | null; // frozen snapshot, today's boss
   myScribbits: Scribbit[]; // growing + mature, newest first, max 12
+  discoveredPowerUpIds?: PowerUpId[]; // permanent player-wide Power-Up discoveries
   drawCharges: DrawChargeState; // server-owned birth energy, lazily refilled
   paintBucket: PaintBucketState; // persistent capacity; each drawing starts full
   drawnToday: boolean;
@@ -592,7 +593,7 @@ export type SparBattleResponse = DirectBattleResponse & {
 export type PracticeBattleRequest = {
   name: string;
   baseImageDataUrl: string;
-  /** Explicit style chosen in Draw. Optional only for one legacy-client window. */
+  /** @deprecated Server derives style from the submitted drawing colors. */
   fighterStyle?: CombatRole;
 };
 
@@ -611,9 +612,9 @@ export type SubmitScribbitRequest = {
   name: string;
   baseImageDataUrl: string; // undecorated PNG checked for real drawing ink, 512x512, <=400KB
   imageDataUrl: string; // rendered PNG uploaded/displayed, 512x512, <=400KB
-  stats: ScribbitStats; // deprecated: client preview only; server derives canonical style stats
+  stats: ScribbitStats; // deprecated: client preview only; server derives canonical color stats
   element: Element; // deprecated: client preview only; server recomputes from PNG
-  /** Explicit role choice. The server converts it into canonical stats. */
+  /** @deprecated Server derives role from the submitted drawing colors. */
   fighterStyle?: CombatRole;
   accessories?: AttachedAccessory[]; // max 2; server validates ownership + consumes copies
   // Server validates both ids and spends one charge from each selected supply

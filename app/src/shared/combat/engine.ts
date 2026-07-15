@@ -16,7 +16,11 @@ import {
   normalizeVector,
   squaredDistance,
 } from './fixed-math';
-import { createStableBattleId, normalizeCombatSeed } from './random';
+import {
+  createStableBattleId,
+  deterministicInteger,
+  normalizeCombatSeed,
+} from './random';
 import {
   selectCombatRole,
   selectPrimaryPower as selectPrimaryPowerForStats,
@@ -442,7 +446,7 @@ function applyBudgetedPowerUpDamage(
     budgetedDamage,
     {
       applyElementPayload: false,
-      bypassDefense: false,
+      bypassDefense: true,
       bypassBarrier: false,
       critical: false,
     }
@@ -1143,7 +1147,7 @@ function constrainFighterToArena(
       fighter.velocity = copyVector(
         normalizeVector(
           { x: -fighter.position.x, y: -fighter.position.y },
-          fighter.baseMovementPerTick * 2,
+          divideRounded(fighter.baseMovementPerTick * 3, 2),
           fighter.velocity
         )
       );
@@ -1398,6 +1402,9 @@ function applyResolvedDamage(
   if (
     context.tick >= context.rules.fighter.knockoutsEnabledAtTick &&
     actualDamage >= target.hitPoints &&
+    remainingDamage <=
+      (POWER_UP_CATALOG['v1-last-scribble'].lethalDamageCap ??
+        Number.MAX_SAFE_INTEGER) &&
     triggerPowerUp(context, target, 'v1-last-scribble', source)
   ) {
     actualDamage = Math.max(0, target.hitPoints - 1);
@@ -1479,13 +1486,6 @@ function applyResolvedDamage(
     target.hitPoints * 2 <= target.maxHitPoints
   ) {
     if (triggerPowerUp(context, target, 'v1-center-fold')) {
-      target.velocity = copyVector(
-        normalizeVector(
-          { x: -target.position.x, y: -target.position.y },
-          target.baseMovementPerTick,
-          target.velocity
-        )
-      );
       target.defenseUntilTick = Math.max(
         target.defenseUntilTick,
         context.tick + (POWER_UP_CATALOG['v1-center-fold'].durationTicks ?? 0)
@@ -1504,26 +1504,26 @@ const ROLE_MATCHUP_DAMAGE_MULTIPLIERS: Readonly<
 > = Object.freeze({
   brawler: Object.freeze({
     brawler: 1_000,
-    longshot: 965,
-    gunner: 1_000,
-    mage: 800,
+    longshot: 960,
+    gunner: 950,
+    mage: 1_060,
   }),
   longshot: Object.freeze({
-    brawler: 1_075,
+    brawler: 1_060,
     longshot: 1_000,
-    gunner: 965,
-    mage: 900,
+    gunner: 1_080,
+    mage: 1_000,
   }),
   gunner: Object.freeze({
     brawler: 1_000,
-    longshot: 1_070,
+    longshot: 1_060,
     gunner: 1_000,
-    mage: 950,
+    mage: 960,
   }),
   mage: Object.freeze({
-    brawler: 1_200,
-    longshot: 1_100,
-    gunner: 1_100,
+    brawler: 960,
+    longshot: 1_060,
+    gunner: 1_060,
     mage: 1_000,
   }),
 });
@@ -1578,6 +1578,24 @@ function rollAndApplyDamage(
     1,
     divideRounded(damage * source.combatModifiers.damagePermille, 1_000)
   );
+  const minimumVariance = context.rules.fighter.minimumDamageVariancePermille;
+  const maximumVariance = context.rules.fighter.maximumDamageVariancePermille;
+  if (minimumVariance !== 1_000 || maximumVariance !== 1_000) {
+    const varianceRange = maximumVariance - minimumVariance + 1;
+    const variancePermille =
+      minimumVariance +
+      deterministicInteger(
+        context.seed,
+        'combat-damage-variance',
+        varianceRange,
+        source.slot,
+        target.slot,
+        context.tick,
+        damageSource,
+        _rollCoordinate
+      );
+    damage = Math.max(1, divideRounded(damage * variancePermille, 1_000));
+  }
   if (critical) {
     damage = Math.max(
       1,
@@ -1763,7 +1781,7 @@ function executeSingleRoleAttack(
   const maximumRange =
     roleRules.preferredRangeMaximum +
     (fighter.combatRole === 'gunner'
-      ? 2_400
+      ? 1_200
       : fighter.combatRole === 'mage'
         ? 400
         : 1_000);

@@ -4,7 +4,6 @@ import { showLoginPrompt, showToast } from '@devvit/web/client';
 import {
   fetchArena,
   bossChallenge,
-  careForScribbit,
   backScribbit,
   fetchRumbleReplay,
   markLegacyCardsSeen,
@@ -26,7 +25,6 @@ import {
 import {
   loadDrawing,
   fitDrawing,
-  canCare,
   releaseRenderedDrawingTextures,
 } from '../lib/scribbits';
 import { NAV_SAFE, TYPE, UI, prefersReducedMotion } from '../lib/theme';
@@ -42,13 +40,15 @@ import {
   versusBadge,
 } from '../lib/ui';
 import type { ErrorPanel, Spinner } from '../lib/ui';
-import { openDetailModal } from '../lib/detailmodal';
+import {
+  collectDiscoveredPowerUpIds,
+  openDetailModal,
+} from '../lib/detailmodal';
 import type { DetailModalActions } from '../lib/detailmodal';
 import { formatCountdown } from '../lib/cloutboard';
 import { openSeasonBoard, type SeasonBoardModal } from '../lib/seasonboard';
 import type {
   ArenaState,
-  CareAction,
   FounderChronicleBeat,
   Scribbit,
 } from '../../shared/arena';
@@ -62,10 +62,6 @@ import { planChampionChallenge } from '../lib/championchallenge';
 import { planFounderChronicle } from '../lib/founderchronicle';
 import { openFounderChronicleMargin } from '../lib/founderchroniclemargin';
 import type { FounderChronicleMargin } from '../lib/founderchroniclemargin';
-import { planCareMoment } from '../lib/caremoment';
-import { openCareMomentOverlay } from '../lib/caremomentoverlay';
-import type { CareMomentOverlay } from '../lib/caremomentoverlay';
-import { openCarePicker, type CarePicker } from '../lib/carepicker';
 import { paperDockIcon, paperIcon } from '../lib/papericons';
 import { arenaStage, UI_BUTTON_TEXTURES } from '../lib/visualassets';
 import { appDock } from '../lib/appdock';
@@ -102,8 +98,6 @@ export class ArenaHome extends Scene {
   private busy = false;
   private spinner: Spinner | null = null;
   private founderChronicleMargin: FounderChronicleMargin | null = null;
-  private careMomentOverlay: CareMomentOverlay | null = null;
-  private carePicker: CarePicker | null = null;
   private contenderPicker: ArenaContenderPicker | null = null;
   private rivalRunFlow: RivalRunFlow | null = null;
   private menu: AppMenu | null = null;
@@ -172,8 +166,6 @@ export class ArenaHome extends Scene {
     this.dragDistance = 0;
     this.buildGeneration = 0;
     this.founderChronicleMargin = null;
-    this.careMomentOverlay = null;
-    this.carePicker = null;
     this.contenderPicker = null;
     this.rivalRunFlow = null;
     this.rosterActionOverlay = null;
@@ -219,10 +211,6 @@ export class ArenaHome extends Scene {
     this.spinner = null;
     this.founderChronicleMargin?.destroy();
     this.founderChronicleMargin = null;
-    this.careMomentOverlay?.destroy();
-    this.careMomentOverlay = null;
-    this.carePicker?.destroy();
-    this.carePicker = null;
     this.contenderPicker?.destroy();
     this.contenderPicker = null;
     this.rivalRunFlow?.destroy();
@@ -242,10 +230,6 @@ export class ArenaHome extends Scene {
     this.dragging = false;
     this.dragDistance = 0;
     this.scrollVelocity = 0;
-    this.careMomentOverlay?.destroy();
-    this.careMomentOverlay = null;
-    this.carePicker?.destroy();
-    this.carePicker = null;
     this.contenderPicker?.destroy();
     this.contenderPicker = null;
     this.rivalRunFlow?.destroy();
@@ -1621,9 +1605,7 @@ export class ArenaHome extends Scene {
       (one) => one.id === scribbit.id
     );
     const actions: DetailModalActions = {};
-    if (mine) {
-      actions.onCare = () => this.openCarePickerFor(scribbit);
-    } else {
+    if (!mine) {
       if (isEntrant) {
         const { pickLabel, pickEnabled } =
           this.pickButtonPresentation(scribbit);
@@ -1635,6 +1617,9 @@ export class ArenaHome extends Scene {
     openDetailModal(this, scribbit, {
       currentDay: this.state.dayNumber,
       nextArenaDayStartsAt: this.state.rumbleResolvesAt,
+      discoveredPowerUpIds:
+        this.state.discoveredPowerUpIds ??
+        collectDiscoveredPowerUpIds(this.state.myScribbits),
       mine,
       onRemoved: () => {
         if (this.acceptMutationResponse(sceneEpoch)) void this.refresh();
@@ -1646,66 +1631,7 @@ export class ArenaHome extends Scene {
     });
   }
 
-  private openCarePickerFor(scribbit: Scribbit): void {
-    if (this.busy || this.carePicker) return;
-    const returnFocus =
-      document.activeElement instanceof HTMLButtonElement
-        ? document.activeElement
-        : null;
-    this.carePicker = openCarePicker(this, {
-      scribbit,
-      onChoose: (action) => {
-        this.carePicker = null;
-        this.doCare(scribbit, action, returnFocus !== null);
-      },
-      onClose: () => {
-        this.carePicker = null;
-      },
-    });
-  }
-
   // --- Actions ---------------------------------------------------------------
-  private doCare(
-    scribbit: Scribbit,
-    action: CareAction,
-    focusReceipt = false
-  ): void {
-    if (!this.requireLogin()) return;
-    if (this.busy) return;
-    if (!canCare(scribbit, action)) {
-      showToast(`${scribbit.name} already had their ${action} today.`);
-      return;
-    }
-    this.busy = true;
-    this.spinner?.show(this.scale.width / 2, this.scale.height / 2);
-    const sceneEpoch = this.sceneEpoch;
-    void careForScribbit(scribbit.id, action).then((result) => {
-      if (!this.acceptMutationResponse(sceneEpoch)) return;
-      this.busy = false;
-      this.spinner?.hide();
-      if (!result.ok) {
-        this.showError(result.error);
-        return;
-      }
-      const updatedScribbit = result.data.scribbit;
-      const careMoment = planCareMoment(
-        scribbit,
-        updatedScribbit,
-        action,
-        this.state.dayNumber
-      );
-      this.applyScribbitUpdate(updatedScribbit);
-      this.careMomentOverlay = openCareMomentOverlay(
-        this,
-        updatedScribbit,
-        careMoment,
-        {
-          focusOnOpen: focusReceipt,
-        }
-      );
-    });
-  }
-
   private doSpar(scribbit: Scribbit): void {
     if (!this.requireLogin()) return;
     if (this.busy || this.rivalRunFlow) return;
@@ -1789,16 +1715,6 @@ export class ArenaHome extends Scene {
       void this.refresh();
     });
     // Re-render immediately for the optimistic picked state.
-    this.build();
-  }
-
-  private applyScribbitUpdate(updated: Scribbit): void {
-    const nextRoster = this.state.myScribbits.map((one) =>
-      one.id === updated.id ? updated : one
-    );
-    const nextState = { ...this.state, myScribbits: nextRoster };
-    this.state = nextState;
-    setArena(this, nextState);
     this.build();
   }
 

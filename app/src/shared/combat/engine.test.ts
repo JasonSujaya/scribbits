@@ -415,18 +415,18 @@ function testEveryCombatRoleUsesItsBasicAttack(): void {
   );
 }
 
-function testVersionFiveTranscriptValidation(): void {
+function testCurrentTranscriptValidation(): void {
   const transcript = simulateCombat({
-    seed: 'v5-parser',
+    seed: 'v6-parser',
     fighters: [
       makeFighter('parser-brawler', 'chonk', 'tide'),
       makeFighter('parser-mage', 'charm', 'moss'),
     ],
   });
-  assertEqual(transcript.version, 5, 'new simulations must use transcript v5');
+  assertEqual(transcript.version, 6, 'new simulations must use transcript v6');
   assert(
     parseBattleTranscript(transcript) === transcript,
-    'v5 parser must accept a valid Gear-free transcript'
+    'v6 parser must accept a valid Gear-free transcript'
   );
   const firstCheckpoint = transcript.checkpoints[0];
   if (!firstCheckpoint) {
@@ -733,7 +733,7 @@ export function runCombatEngineTests(): readonly string[] {
   const deterministicTranscript = testDeterministicTranscript();
   testEveryPrimaryPowerActivates();
   testEveryCombatRoleUsesItsBasicAttack();
-  testVersionFiveTranscriptValidation();
+  testCurrentTranscriptValidation();
   testPowerUpRuntimeAndLegacyRemoval();
   testImmutablePhaseOrderAndValidation();
   testPowerUpBalanceSafetyMatrix();

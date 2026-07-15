@@ -19,6 +19,9 @@ const TIMEOUT_RATE_FLAG_HIGH = 0.08;
 const AVERAGE_SECONDS_WATCH_LOW = 12;
 const AVERAGE_SECONDS_WATCH_HIGH = 45;
 const POWER_UP_SWING_WATCH = 0.18;
+const POWER_UP_DEAD_TRIGGER_RATE = 0.15;
+const POWER_UP_LOW_IMPACT_SWING = 0.03;
+const POWER_UP_HARMFUL_SWING = -0.12;
 const CLOSE_FIGHT_HP_MARGIN = 150;
 const BLOWOUT_HP_MARGIN = 650;
 
@@ -104,6 +107,9 @@ function resultFromReport(report) {
   const fighterA = result.fighters.find((fighter) => fighter.slot === 'a');
   const fighterB = result.fighters.find((fighter) => fighter.slot === 'b');
   const timeline = report.simulation?.timeline ?? [];
+  const powerUpTriggerEvents = timeline.filter(
+    (event) => event.kind === 'power_up_triggered'
+  );
   return {
     winner: result.winner,
     durationSeconds: result.completedTick / 20,
@@ -113,9 +119,40 @@ function resultFromReport(report) {
     hpMargin: Math.abs(
       (fighterA?.hitPointPermille ?? 0) - (fighterB?.hitPointPermille ?? 0)
     ),
-    powerUpTriggers: timeline.filter(
-      (event) => event.kind === 'power_up_triggered'
-    ).length,
+    powerUpTriggers: powerUpTriggerEvents.length,
+    powerUpTriggerEvents,
+    timeline,
+  };
+}
+
+function addToMap(map, key, amount) {
+  map[key] = (map[key] ?? 0) + amount;
+}
+
+function combatAttributionForTarget(timeline, targetSlot) {
+  const damageDealtBySource = {};
+  const damageTakenBySource = {};
+  const attacksByName = {};
+  const hitsByName = {};
+  for (const event of timeline) {
+    if (event.kind === 'damage') {
+      if (event.sourceFighter === targetSlot) {
+        addToMap(damageDealtBySource, event.source, event.amount);
+      }
+      if (event.targetFighter === targetSlot) {
+        addToMap(damageTakenBySource, event.source, event.amount);
+      }
+    }
+    if (event.kind === 'role_attack' && event.actor === targetSlot) {
+      addToMap(attacksByName, event.attack, 1);
+      if (event.hit) addToMap(hitsByName, event.attack, 1);
+    }
+  }
+  return {
+    damageDealtBySource,
+    damageTakenBySource,
+    attacksByName,
+    hitsByName,
   };
 }
 
@@ -157,6 +194,22 @@ function simulateTargetVsOpponent({
         battleKind
       );
       const result = resultFromReport(report);
+      const targetSlot = targetIsA ? 'a' : 'b';
+      const targetPowerUpTriggerEvents = result.powerUpTriggerEvents.filter(
+        (event) => event.actor === targetSlot
+      );
+      const targetPowerUpTriggerCounts = Object.fromEntries(
+        targetPowerUpTriggerEvents.map((event) => [
+          event.powerUpId,
+          targetPowerUpTriggerEvents.filter(
+            (candidate) => candidate.powerUpId === event.powerUpId
+          ).length,
+        ])
+      );
+      const attribution = combatAttributionForTarget(
+        result.timeline,
+        targetSlot
+      );
       rows.push({
         targetBuild: targetBuild.id,
         opponentBuild: opponentBuild.id,
@@ -170,11 +223,79 @@ function simulateTargetVsOpponent({
         targetWon:
           (targetIsA && result.winner === 'a') ||
           (!targetIsA && result.winner === 'b'),
-        ...result,
+        winner: result.winner,
+        durationSeconds: result.durationSeconds,
+        timeout: result.timeout,
+        hpA: result.hpA,
+        hpB: result.hpB,
+        hpMargin: result.hpMargin,
+        powerUpTriggers: result.powerUpTriggers,
+        targetPowerUpTriggers: targetPowerUpTriggerEvents.length,
+        targetPowerUpTriggerIds: targetPowerUpTriggerEvents
+          .map((event) => event.powerUpId)
+          .join('|'),
+        targetPowerUpTriggerCounts,
+        damageDealtBySource: attribution.damageDealtBySource,
+        damageTakenBySource: attribution.damageTakenBySource,
+        attacksByName: attribution.attacksByName,
+        hitsByName: attribution.hitsByName,
       });
     }
   }
   return rows;
+}
+
+function averageMap(rows, field) {
+  const totals = {};
+  for (const row of rows) {
+    for (const [key, value] of Object.entries(row[field] ?? {})) {
+      addToMap(totals, key, value);
+    }
+  }
+  return Object.fromEntries(
+    Object.entries(totals).map(([key, value]) => [key, value / rows.length])
+  );
+}
+
+function hitRateMap(rows) {
+  const attempts = {};
+  const hits = {};
+  for (const row of rows) {
+    for (const [key, value] of Object.entries(row.attacksByName ?? {})) {
+      addToMap(attempts, key, value);
+    }
+    for (const [key, value] of Object.entries(row.hitsByName ?? {})) {
+      addToMap(hits, key, value);
+    }
+  }
+  return Object.fromEntries(
+    Object.entries(attempts).map(([key, value]) => [
+      key,
+      value > 0 ? (hits[key] ?? 0) / value : 0,
+    ])
+  );
+}
+
+function topEntries(map, limit = 3) {
+  return Object.entries(map ?? {})
+    .sort((left, right) => right[1] - left[1])
+    .slice(0, limit);
+}
+
+function formatBreakdown(map, unit = '') {
+  const entries = topEntries(map);
+  if (entries.length === 0) return '—';
+  return entries
+    .map(([key, value]) => `${key} ${value.toFixed(1)}${unit}`)
+    .join(', ');
+}
+
+function formatHitRates(map) {
+  const entries = topEntries(map);
+  if (entries.length === 0) return '—';
+  return entries
+    .map(([key, value]) => `${key} ${formatPercent(value)}`)
+    .join(', ');
 }
 
 function summarizeRows(rows) {
@@ -191,6 +312,9 @@ function summarizeRows(rows) {
     rows.reduce((sum, row) => sum + row.durationSeconds, 0) / total;
   const averagePowerUpTriggers =
     rows.reduce((sum, row) => sum + row.powerUpTriggers, 0) / total;
+  const averageTargetPowerUpTriggers =
+    rows.reduce((sum, row) => sum + (row.targetPowerUpTriggers ?? 0), 0) /
+    total;
   const targetWinRate = targetWins / total;
   const timeoutRate = timeouts / total;
   const flags = [];
@@ -214,6 +338,10 @@ function summarizeRows(rows) {
     blowoutRate: blowouts / total,
     averageSeconds,
     averagePowerUpTriggers,
+    averageTargetPowerUpTriggers,
+    averageDamageDealtBySource: averageMap(rows, 'damageDealtBySource'),
+    averageDamageTakenBySource: averageMap(rows, 'damageTakenBySource'),
+    targetAttackHitRates: hitRateMap(rows),
     verdict: flags.length > 0 ? flags.join('+') : 'OK',
   };
 }
@@ -237,7 +365,8 @@ function formatPercent(value) {
 }
 
 function csvEscape(value) {
-  const text = String(value ?? '');
+  const text =
+    value && typeof value === 'object' ? JSON.stringify(value) : String(value ?? '');
   return /[",\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
 }
 
@@ -426,6 +555,123 @@ function runPowerUpCombos({ runtime, scenarios, forecast }) {
   };
 }
 
+function appendPowerUpUsefulnessVerdict(summary) {
+  const flags = [];
+  const comboOnlyTrigger =
+    summary.trigger === 'distinct-power-ups' ||
+    summary.trigger === 'common-power-up';
+  if (comboOnlyTrigger && summary.triggerRate < POWER_UP_DEAD_TRIGGER_RATE) {
+    flags.push('INFO_COMBO_ONLY');
+  } else if (summary.triggerRate < POWER_UP_DEAD_TRIGGER_RATE) {
+    flags.push('FLAG_DEAD_CARD');
+  }
+  if (
+    summary.triggerRate >= POWER_UP_DEAD_TRIGGER_RATE &&
+    Math.abs(summary.swingFromBaseline) < POWER_UP_LOW_IMPACT_SWING
+  ) {
+    flags.push('WATCH_LOW_IMPACT');
+  }
+  if (summary.swingFromBaseline > POWER_UP_SWING_WATCH) {
+    flags.push('FLAG_OVERTUNED');
+  }
+  if (summary.swingFromBaseline < POWER_UP_HARMFUL_SWING) {
+    flags.push('FLAG_HARMFUL');
+  }
+  return flags.length > 0 ? flags.join('+') : 'OK';
+}
+
+function isBalanceFlag(row) {
+  return row.verdict !== 'OK' && !String(row.verdict).startsWith('INFO_');
+}
+
+function runPowerUpUsefulness({ runtime, scenarios, forecast }) {
+  const opponents = baseBuilds(scenarios);
+  const rows = [];
+  const summaries = [];
+  const seeds = scenarios.suites.powerUpUsefulness?.seedsPerPairing ?? 36;
+  for (const targetBuild of baseBuilds(scenarios)) {
+    const baselineRows = [];
+    for (const opponentBuild of opponents) {
+      baselineRows.push(
+        ...simulateTargetVsOpponent({
+          runtime,
+          forecast,
+          battleKind: scenarios.battleKind,
+          targetBuild,
+          opponentBuild,
+          targetOverrides: {
+            label: `${targetBuild.label} · Baseline`,
+            powerUpIds: [],
+          },
+          seeds,
+          seedPrefix: `balancer:powerup-usefulness:baseline:${targetBuild.id}`,
+        })
+      );
+    }
+    const baselineWinRate = summarizeRows(baselineRows).targetWinRate;
+    for (const powerUpId of runtime.POWER_UP_IDS) {
+      const definition = runtime.POWER_UP_CATALOG[powerUpId];
+      const powerUpRows = [];
+      for (const opponentBuild of opponents) {
+        powerUpRows.push(
+          ...simulateTargetVsOpponent({
+            runtime,
+            forecast,
+            battleKind: scenarios.battleKind,
+            targetBuild,
+            opponentBuild,
+            targetOverrides: {
+              label: `${targetBuild.label} · ${definition.shortName}`,
+              powerUpIds: [powerUpId],
+            },
+            seeds,
+            seedPrefix: `balancer:powerup-usefulness:${targetBuild.id}:${powerUpId}`,
+          }).map((row) => ({
+            ...row,
+            roleLabel: targetBuild.label,
+            powerUpId,
+            powerUpLabel: definition.shortName,
+          }))
+        );
+      }
+      rows.push(...powerUpRows);
+      const summary = summarizeRows(powerUpRows);
+      const triggerRate =
+        powerUpRows.filter(
+          (row) => (row.targetPowerUpTriggerCounts?.[powerUpId] ?? 0) > 0
+        ).length / Math.max(1, powerUpRows.length);
+      const averageSpecificTriggers =
+        powerUpRows.reduce(
+          (sum, row) => sum + (row.targetPowerUpTriggerCounts?.[powerUpId] ?? 0),
+          0
+        ) / Math.max(1, powerUpRows.length);
+      const enriched = {
+        targetLabel: targetBuild.label,
+        opponentLabel: definition.shortName,
+        powerUpId,
+        powerUpLabel: definition.shortName,
+        rarity: definition.rarity,
+        trigger: definition.trigger,
+        baselineWinRate,
+        swingFromBaseline: summary.targetWinRate - baselineWinRate,
+        triggerRate,
+        averageSpecificTriggers,
+        ...summary,
+      };
+      summaries.push({
+        ...enriched,
+        verdict: appendPowerUpUsefulnessVerdict(enriched),
+      });
+    }
+  }
+  return {
+    id: 'powerup-usefulness',
+    title: 'Power-Up Usefulness Monte Carlo',
+    rows,
+    summaries,
+  };
+}
+
 function runRivalRunRisk({ runtime, scenarios, forecast }) {
   const challengers = scenarios.suites.rivalRunRisk.challengerBuildIds.map(
     (id) => buildById(scenarios, id)
@@ -483,23 +729,28 @@ function runRivalRunRisk({ runtime, scenarios, forecast }) {
 }
 
 function generatedBuilds(runtime, count) {
+  const statKeys = ['chonk', 'spike', 'zip', 'charm'];
   return Array.from({ length: count }, (_, index) => {
-    const first = runtime.hashStringToUint32(`generated:${index}:a`) % 46;
-    const second = runtime.hashStringToUint32(`generated:${index}:b`) % 46;
-    const third = runtime.hashStringToUint32(`generated:${index}:c`) % 46;
-    const stats = {
-      chonk: 10 + first,
-      spike: 10 + second,
-      zip: 10 + third,
-      charm: 0,
-    };
-    stats.charm = 100 - stats.chonk - stats.spike - stats.zip;
-    if (stats.charm < 10) {
-      const deficit = 10 - stats.charm;
-      stats.charm = 10;
-      stats.chonk -= Math.ceil(deficit / 3);
-      stats.spike -= Math.floor(deficit / 3);
-      stats.zip = 100 - stats.chonk - stats.spike - stats.charm;
+    const dominantKey = statKeys[index % statKeys.length];
+    const dominantValue =
+      42 + (runtime.hashStringToUint32(`generated:${index}:dominant`) % 12);
+    const remaining = 100 - dominantValue;
+    const otherKeys = statKeys.filter((key) => key !== dominantKey);
+    const firstShare =
+      12 + (runtime.hashStringToUint32(`generated:${index}:a`) % 15);
+    const secondShare =
+      12 + (runtime.hashStringToUint32(`generated:${index}:b`) % 15);
+    const thirdShare = remaining - firstShare - secondShare;
+    const fallbackShare = Math.floor(remaining / 3);
+    const stats = Object.fromEntries(statKeys.map((key) => [key, 0]));
+    stats[dominantKey] = dominantValue;
+    stats[otherKeys[0]] = firstShare;
+    stats[otherKeys[1]] = secondShare;
+    stats[otherKeys[2]] = thirdShare;
+    if (thirdShare < 10) {
+      stats[otherKeys[0]] = fallbackShare;
+      stats[otherKeys[1]] = fallbackShare;
+      stats[otherKeys[2]] = remaining - fallbackShare * 2;
     }
     return {
       id: `generated-${index}`,
@@ -536,6 +787,83 @@ function runGeneratedPool({ runtime, scenarios, forecast }) {
     title: 'Generated Opponent Pool',
     rows,
     summaries: summarizeMatrix(rows, ['targetLabel']),
+  };
+}
+
+function appendDamageBreakdownVerdict(summary) {
+  const flags = [];
+  if (
+    summary.targetWinRate < WIN_RATE_FLAG_LOW ||
+    summary.targetWinRate > WIN_RATE_FLAG_HIGH
+  ) {
+    flags.push('FLAG_WIN_RATE');
+  }
+  const dominantDealt = topEntries(summary.averageDamageDealtBySource, 1)[0];
+  if (dominantDealt && dominantDealt[1] > 650) {
+    flags.push('WATCH_SOURCE_SPIKE');
+  }
+  const roleHitRate = topEntries(summary.targetAttackHitRates, 1)[0];
+  if (roleHitRate && roleHitRate[1] < 0.2) {
+    flags.push('WATCH_LOW_HIT_RATE');
+  }
+  return flags.length > 0 ? flags.join('+') : 'OK';
+}
+
+function runDamageSourceBreakdown({ runtime, scenarios, forecast }) {
+  const rows = [];
+  for (const targetBuild of baseBuilds(scenarios)) {
+    for (const opponentBuild of baseBuilds(scenarios)) {
+      rows.push(
+        ...simulateTargetVsOpponent({
+          runtime,
+          forecast,
+          battleKind: scenarios.battleKind,
+          targetBuild,
+          opponentBuild,
+          seeds: scenarios.suites.damageSourceBreakdown?.seedsPerPairing ?? 80,
+          seedPrefix: 'balancer:damage-source:role:v1',
+        })
+      );
+    }
+  }
+  const generated = generatedBuilds(
+    runtime,
+    scenarios.suites.generatedPool.opponentCount
+  );
+  for (const targetBuild of baseBuilds(scenarios)) {
+    for (const opponentBuild of generated) {
+      rows.push(
+        ...simulateTargetVsOpponent({
+          runtime,
+          forecast,
+          battleKind: scenarios.battleKind,
+          targetBuild,
+          opponentBuild,
+          seeds:
+            scenarios.suites.damageSourceBreakdown?.generatedSeedsPerOpponent ??
+            8,
+          seedPrefix: 'balancer:damage-source:generated:v1',
+          opponentOverrides: {
+            label: 'Generated field',
+          },
+        })
+      );
+    }
+  }
+  const summaries = summarizeMatrix(rows, ['targetLabel', 'opponentLabel']).map(
+    (summary) => ({
+      ...summary,
+      dealtBreakdown: formatBreakdown(summary.averageDamageDealtBySource),
+      takenBreakdown: formatBreakdown(summary.averageDamageTakenBySource),
+      hitRateBreakdown: formatHitRates(summary.targetAttackHitRates),
+      verdict: appendDamageBreakdownVerdict(summary),
+    })
+  );
+  return {
+    id: 'damage-source-breakdown',
+    title: 'Damage Source Breakdown',
+    rows,
+    summaries,
   };
 }
 
@@ -905,6 +1233,85 @@ function reportForSuite(suite) {
       align: '---:',
       value: (row) => row.averagePowerUpTriggers.toFixed(2),
     },
+    ...(rows.some((row) => row.averageTargetPowerUpTriggers !== undefined)
+      ? [
+          {
+            label: 'Target PU',
+            align: '---:',
+            value: (row) =>
+              (row.averageTargetPowerUpTriggers ?? 0).toFixed(2),
+          },
+        ]
+      : []),
+    ...(rows.some((row) => row.triggerRate !== undefined)
+      ? [
+          {
+            label: 'Trigger rate',
+            align: '---:',
+            value: (row) => formatPercent(row.triggerRate ?? 0),
+          },
+        ]
+      : []),
+    ...(rows.some((row) => row.averageSpecificTriggers !== undefined)
+      ? [
+          {
+            label: 'Card triggers',
+            align: '---:',
+            value: (row) => (row.averageSpecificTriggers ?? 0).toFixed(2),
+          },
+        ]
+      : []),
+    ...(rows.some((row) => row.baselineWinRate !== undefined)
+      ? [
+          {
+            label: 'Baseline',
+            align: '---:',
+            value: (row) => formatPercent(row.baselineWinRate ?? 0),
+          },
+        ]
+      : []),
+    ...(rows.some((row) => row.swingFromBaseline !== undefined)
+      ? [
+          {
+            label: 'Swing',
+            align: '---:',
+            value: (row) =>
+              `${((row.swingFromBaseline ?? 0) * 100).toFixed(1)}pp`,
+          },
+        ]
+      : []),
+    ...(rows.some((row) => row.rarity !== undefined)
+      ? [
+          {
+            label: 'Rarity',
+            value: (row) => row.rarity ?? '',
+          },
+        ]
+      : []),
+    ...(rows.some((row) => row.dealtBreakdown !== undefined)
+      ? [
+          {
+            label: 'Target dmg/source',
+            value: (row) => row.dealtBreakdown ?? '—',
+          },
+        ]
+      : []),
+    ...(rows.some((row) => row.takenBreakdown !== undefined)
+      ? [
+          {
+            label: 'Taken dmg/source',
+            value: (row) => row.takenBreakdown ?? '—',
+          },
+        ]
+      : []),
+    ...(rows.some((row) => row.hitRateBreakdown !== undefined)
+      ? [
+          {
+            label: 'Target hit rate',
+            value: (row) => row.hitRateBreakdown ?? '—',
+          },
+        ]
+      : []),
     {
       label: 'Timeouts',
       align: '---:',
@@ -961,10 +1368,10 @@ ${markdownTable(headers, rows)}
 ## Flags
 
 ${
-  rows.filter((row) => row.verdict !== 'OK').length === 0
+  rows.filter(isBalanceFlag).length === 0
     ? 'No balance flags from current thresholds.'
     : rows
-        .filter((row) => row.verdict !== 'OK')
+        .filter(isBalanceFlag)
         .map(
           (row) =>
             `- ${row.targetLabel}${row.opponentLabel ? ` vs ${row.opponentLabel}` : ''}: ${row.verdict} (${formatPercent(
@@ -981,13 +1388,13 @@ function overviewReport(suites) {
     title: suite.title,
     rows: suite.rows.length,
     pairings: suite.summaries.length,
-    flags: suite.summaries.filter((row) => row.verdict !== 'OK').length,
+    flags: suite.summaries.filter(isBalanceFlag).length,
   }));
   return `# Scribbits Balance Overview
 
 Generated: ${new Date().toISOString()}
 
-No live tuning was changed. This is simulation evidence only.
+This is local simulation evidence from the current combat constants.
 
 ${markdownTable(
   [
@@ -1047,11 +1454,13 @@ async function main() {
     runRoleMatrix(context),
     runGrowthProgression(context),
     runPowerUpCombos(context),
+    runPowerUpUsefulness(context),
     runRivalRunRisk(context),
     runThreeDayLoop(context),
     runRewardPath(context),
     runRivalRunFlow(context),
     runGeneratedPool(context),
+    runDamageSourceBreakdown(context),
     runGearPowerUpInteraction(context),
     runRoleEdges(context),
     runFightFeel(context),
@@ -1060,7 +1469,7 @@ async function main() {
   const fightCount = suites.reduce((sum, suite) => sum + suite.rows.length, 0);
   const flagCount = suites.reduce(
     (sum, suite) =>
-      sum + suite.summaries.filter((row) => row.verdict !== 'OK').length,
+      sum + suite.summaries.filter(isBalanceFlag).length,
     0
   );
   console.log(`Balancer complete: ${fightCount} fights.`);
