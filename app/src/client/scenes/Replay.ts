@@ -438,7 +438,7 @@ export class Replay extends Scene {
   create(): void {
     const report = getReplay(this);
     if (!report) {
-      this.scene.start('ArenaHome');
+      startScene(this, 'ArenaHome');
       return;
     }
     this.cameras.main.setBackgroundColor(UI.desk);
@@ -737,8 +737,8 @@ export class Replay extends Scene {
         : { nextArenaDayStartsAt: arena.rumbleResolvesAt }),
       mine,
       actions: {},
-      onRemoved: () => this.scene.start(returnScene),
-      onReported: () => this.scene.start(returnScene),
+      onRemoved: () => startScene(this, returnScene),
+      onReported: () => startScene(this, returnScene),
     });
   }
 

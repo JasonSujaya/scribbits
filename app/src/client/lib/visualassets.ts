@@ -217,11 +217,68 @@ const VISUAL_ASSET_URLS: Readonly<Record<string, string>> = Object.freeze({
   ).href,
 });
 
+export type VisualAssetGroup = 'Draw' | 'Replay' | 'Gallery' | 'Shop';
+
+const GEAR_VISUAL_ASSET_FILES = [
+  'gear-common-atlas.json',
+  'gear-common-atlas.webp',
+  'gear-rare-epic-atlas.json',
+  'gear-rare-epic-atlas.webp',
+  'gear-legendary-atlas.json',
+  'gear-legendary-atlas.webp',
+] as const;
+
+const VISUAL_ASSET_GROUP_FILES: Readonly<
+  Record<VisualAssetGroup, readonly string[]>
+> = {
+  Draw: ['draw-start-challenge-card.webp'],
+  Replay: [
+    'ui-fight-start.webp',
+    'scribbits-battle-title.webp',
+    'ui-button-battle-skip.webp',
+    'ui-button-battle-sound.webp',
+    'ui-button-battle-speed.webp',
+  ],
+  Gallery: ['bag-binder-base-shell-v7.webp', ...GEAR_VISUAL_ASSET_FILES],
+  Shop: [
+    ...GEAR_VISUAL_ASSET_FILES,
+    'scribbits-shop-stage.webp',
+    'scribbits-shop-chest-closed.webp',
+    'scribbits-shop-chest-open.webp',
+    'scribbits-shop-claw-machine-shell.webp',
+    'scribbits-shop-capsule-shell.png',
+    'scribbits-ink-token.webp',
+  ],
+};
+
+const prefetchedVisualAssetUrls = new Set<string>();
+
 const assetUrl = (fileName: string): string => {
   const url = VISUAL_ASSET_URLS[fileName];
   if (!url) throw new Error(`Unknown visual asset: ${fileName}`);
   return url;
 };
+
+/**
+ * Warm the browser cache without decoding images into Phaser textures. This
+ * keeps first navigation responsive while avoiding the memory cost of keeping
+ * every screen's artwork alive from startup.
+ */
+export function prefetchVisualAssetGroups(
+  groups: readonly VisualAssetGroup[]
+): void {
+  if (typeof document === 'undefined') return;
+  groups.flatMap((group) => VISUAL_ASSET_GROUP_FILES[group]).forEach((file) => {
+    const url = assetUrl(file);
+    if (prefetchedVisualAssetUrls.has(url)) return;
+    prefetchedVisualAssetUrls.add(url);
+    const link = document.createElement('link');
+    link.rel = 'prefetch';
+    link.href = url;
+    if (/\.(?:png|webp)$/u.test(file)) link.as = 'image';
+    document.head.append(link);
+  });
+}
 
 export function preloadVisualAssets(scene: Scene): void {
   if (!scene.textures.exists(SCRIBBITS_STAGE_TEXTURE)) {

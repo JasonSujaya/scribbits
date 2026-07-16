@@ -77,7 +77,7 @@ test('splash stays light while rotating in real community fighters', () => {
 });
 
 test('splash and expanded game share one durable new-player flow', () => {
-  assert.match(preloaderScript, /this\.scene\.start\('ScribbitHome'\)/);
+  assert.match(preloaderScript, /startScene\(this, 'ScribbitHome'\)/);
   assert.match(drawScript, /hasCreatedScribbit: true/);
   assert.doesNotMatch(drawEligibilityScript, /needsScribbitCreation/);
   assert.match(drawScript, /START FIRST FIGHT/);

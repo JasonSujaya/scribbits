@@ -241,7 +241,7 @@ export class ScribbitHome extends Scene {
   private createLoadedHome(): void {
     const state = getArena(this);
     if (!state) {
-      this.scene.start('Preloader');
+      startScene(this, 'Preloader');
       return;
     }
     this.state = state;

@@ -12,8 +12,8 @@ const historySource = readFileSync(
   join(repoRoot, 'src', 'client', 'scenes', 'BattleHistory.ts'),
   'utf8'
 );
-const gameSource = readFileSync(
-  join(repoRoot, 'src', 'client', 'game.ts'),
+const sceneRoutesSource = readFileSync(
+  join(repoRoot, 'src', 'client', 'lib', 'sceneroutes.ts'),
   'utf8'
 );
 
@@ -37,10 +37,10 @@ test('the board uses real drawings and a native character dropdown', () => {
 });
 
 test('past battle history remains secondary and replayable', () => {
-  assert.match(boardSource, /scene\.start\('BattleHistory'\)/);
+  assert.match(boardSource, /startScene\(this, 'BattleHistory'\)/);
   assert.match(
     historySource,
     /setSavedReplay\(this, report, 'BattleHistory'\)/
   );
-  assert.match(gameSource, /BattleHistory/);
+  assert.match(sceneRoutesSource, /BattleHistory/);
 });

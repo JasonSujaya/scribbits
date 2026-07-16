@@ -193,6 +193,10 @@ import {
 } from '../core/season';
 import { runWithPlayerMutationLease } from '../core/dataDeletion';
 import {
+  createArenaLoadRunner,
+  startArenaStartupLoads,
+} from '../core/arenaStartup';
+import {
   claimPowerUpOffer,
   getOrCreatePowerUpOffer,
   loadPowerUpDiscoveries,
@@ -235,6 +239,7 @@ const scribbitSubmissionIdPattern = /^[A-Za-z0-9_-]{16,80}$/;
 const practiceRequestMaximumBodyBytes = 560 * 1024;
 const battleClipMaximumBodyBytes =
   Math.ceil((BATTLE_CLIP_MAXIMUM_BYTES * 4) / 3) + 1024;
+const arenaLoadMaximumConcurrency = 6;
 
 const isRecord = (value: unknown): value is Record<string, unknown> => {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -378,8 +383,21 @@ const getCurrentPlayer = async (): Promise<CurrentPlayer | undefined> => {
   };
 };
 
+// Player-mutating GET middleware already resolves the current player before it
+// enters the handler. Reuse that result so a missing username does not trigger
+// the same Reddit request twice on the startup-critical Arena route.
+const currentPlayerByRequest = new WeakMap<object, CurrentPlayer | undefined>();
+
+const getCurrentRequestPlayer = async (
+  c: HonoContext
+): Promise<CurrentPlayer | undefined> => {
+  if (currentPlayerByRequest.has(c)) return currentPlayerByRequest.get(c);
+  return getCurrentPlayer();
+};
+
 const withPlayerMutationLease: MiddlewareHandler = async (c, next) => {
   const player = await getCurrentPlayer();
+  currentPlayerByRequest.set(c, player);
   if (!player) return next();
   const mutation = await runWithPlayerMutationLease(
     redis,
@@ -910,9 +928,24 @@ registerPlayerMutatingGet('/arena', async (c) => {
     const utcDateKey = formatUtcDateKey(now);
     const dayNumber = await getWritableArenaDay(now);
     if (!dayNumber) return arenaRolloverConflict(c);
-    await ensureInitialSeason(redis, dayNumber, now.getTime());
-    const forecast = await ensureForecastForDay(redis, dayNumber);
-    const player = await getCurrentPlayer();
+    const runArenaLoad = createArenaLoadRunner(arenaLoadMaximumConcurrency);
+    const startupLoads = startArenaStartupLoads({
+      loadPlayer: () => getCurrentRequestPlayer(c),
+      ensureSeason: () => ensureInitialSeason(redis, dayNumber, now.getTime()),
+      ensureForecast: () => ensureForecastForDay(redis, dayNumber),
+    });
+    const seasonPromise = Promise.all([
+      startupLoads.season,
+      startupLoads.player,
+    ]).then(([, loadedPlayer]) =>
+      runArenaLoad(() =>
+        loadSeasonPublicState(redis, dayNumber, loadedPlayer?.userId)
+      )
+    );
+    // These consumers attach before the player await so an early season or
+    // forecast failure is handled while the route continues independent work.
+    void Promise.allSettled([seasonPromise, startupLoads.forecast]);
+    const player = await startupLoads.player;
     let myScribbits: Scribbit[] = [];
     let pendingMaturityScribbitIds: string[] = [];
     let discoveredPowerUpIds: ArenaState['discoveredPowerUpIds'] = [];
@@ -951,12 +984,96 @@ registerPlayerMutatingGet('/arena', async (c) => {
     };
     let legacyReturnReceipt: ArenaState['legacyReturnReceipt'] = null;
     let completedCommunityThemeDrawCount = 0;
+    let playerFollowupsPromise: Promise<void> = Promise.resolve();
 
-    if (player) {
-      const playStreak = await recordDailyPlay(redis, player.userId, now);
-      playStreakDays = playStreak.days;
-      activePlayDays = playStreak.totalDays;
+    const playerStatePromise = player
+      ? Promise.all([
+          runArenaLoad(() => recordDailyPlay(redis, player.userId, now)),
+          runArenaLoad(() => getDailyFlags(redis, player.userId, dayNumber)),
+          runArenaLoad(() => loadInventory(redis, player.userId)),
+          runArenaLoad(() => getAliveScribbitsForUser(redis, player.userId)),
+          runArenaLoad(() => hasUserCreatedScribbit(redis, player.userId)),
+          runArenaLoad(() => hasUserCompletedBattle(redis, player.userId)),
+          runArenaLoad(() =>
+            hasFreeDrawingForDay(redis, player.userId, dayNumber)
+          ),
+          runArenaLoad(() =>
+            loadFreeDrawingForDay(redis, player.userId, dayNumber)
+          ),
+          runArenaLoad(() =>
+            getBackedScribbitId(redis, dayNumber, player.userId)
+          ),
+          runArenaLoad(() => getUserClout(redis, player.userId)),
+          runArenaLoad(() => getInkBalance(redis, player.userId)),
+          runArenaLoad(() =>
+            getNextCapsuleCost(redis, player.userId, dayNumber)
+          ),
+          runArenaLoad(() => loadPlayerFounderChronicle(player.userId)),
+          runArenaLoad(() => loadLegacyReturnReceipt(redis, player.userId)),
+          runArenaLoad(() =>
+            loadDrawCharges(redis, player.userId, now.getTime())
+          ),
+          runArenaLoad(() => loadPaintBucket(redis, player.userId)),
+          runArenaLoad(() =>
+            loadDailyLoginState(redis, player.userId, utcDateKey)
+          ),
+          runArenaLoad(() => loadPowerUpDiscoveries(redis, player.userId)),
+          runArenaLoad(() =>
+            loadCompletedCommunityThemeDrawCount(
+              redis,
+              player.userId,
+              dayNumber
+            )
+          ),
+        ])
+      : Promise.resolve(null);
+    const currentChampionPromise = runArenaLoad(() =>
+      getCurrentChampion(redis)
+    );
+    const hiddenScribbitIdsPromise = player
+      ? runArenaLoad(() => getHiddenScribbitIds(redis, player.userId))
+      : Promise.resolve(new Set<string>());
+    let lastRumbleReceipt: ArenaState['lastRumbleReceipt'] = null;
+    const lastRumbleReceiptPromise =
+      player && dayNumber > 1
+        ? Promise.all([currentChampionPromise, hiddenScribbitIdsPromise]).then(
+            ([currentChampion, hiddenScribbitIds]) =>
+              runArenaLoad(() =>
+                loadRumbleReturnReceipt(redis, {
+                  userId: player.userId,
+                  resolvedDay: dayNumber - 1,
+                  utcDateKey,
+                  champion: currentChampion,
+                  hiddenScribbitIds,
+                })
+              )
+          )
+        : Promise.resolve(null);
+    const [
+      playerState,
+      hiddenScribbitIds,
+      storedRumbleEntrantCount,
+      currentChampion,
+      season,
+      communityLegendCount,
+      venueStamp,
+      loadedLastRumbleReceipt,
+      forecast,
+    ] = await Promise.all([
+      playerStatePromise,
+      hiddenScribbitIdsPromise,
+      runArenaLoad(() => getRumbleEntrantCount(redis, dayNumber)),
+      currentChampionPromise,
+      seasonPromise,
+      runArenaLoad(() => getCommunityLegendCount(redis)),
+      runArenaLoad(() => loadVenueStampState(redis, dayNumber, player?.userId)),
+      lastRumbleReceiptPromise,
+      startupLoads.forecast,
+    ]);
+
+    if (player && playerState) {
       const [
+        playStreak,
         dailyFlags,
         inventory,
         loadedScribbits,
@@ -975,45 +1092,45 @@ registerPlayerMutatingGet('/arena', async (c) => {
         loadedDailyLogin,
         loadedPowerUpDiscoveries,
         loadedCompletedCommunityThemeDrawCount,
-      ] = await Promise.all([
-        getDailyFlags(redis, player.userId, dayNumber),
-        loadInventory(redis, player.userId),
-        getAliveScribbitsForUser(redis, player.userId),
-        hasUserCreatedScribbit(redis, player.userId),
-        hasUserCompletedBattle(redis, player.userId),
-        hasFreeDrawingForDay(redis, player.userId, dayNumber),
-        loadFreeDrawingForDay(redis, player.userId, dayNumber),
-        getBackedScribbitId(redis, dayNumber, player.userId),
-        getUserClout(redis, player.userId),
-        getInkBalance(redis, player.userId),
-        getNextCapsuleCost(redis, player.userId, dayNumber),
-        loadPlayerFounderChronicle(player.userId),
-        loadLegacyReturnReceipt(redis, player.userId),
-        loadDrawCharges(redis, player.userId, now.getTime()),
-        loadPaintBucket(redis, player.userId),
-        loadDailyLoginState(redis, player.userId, utcDateKey),
-        loadPowerUpDiscoveries(redis, player.userId),
-        loadCompletedCommunityThemeDrawCount(redis, player.userId, dayNumber),
-      ]);
+      ] = playerState;
+      playStreakDays = playStreak.days;
+      activePlayDays = playStreak.totalDays;
       completedCommunityThemeDrawCount = loadedCompletedCommunityThemeDrawCount;
       myScribbits = loadedScribbits;
-      pendingMaturityScribbitIds = await loadPendingMaturityScribbitIds(
-        redis,
-        player.userId,
-        myScribbits,
-        dayNumber
-      );
-      pendingPowerUpOffers = (
-        await Promise.all(
+      playerFollowupsPromise = Promise.all([
+        runArenaLoad(() =>
+          loadPendingMaturityScribbitIds(
+            redis,
+            player.userId,
+            myScribbits,
+            dayNumber
+          )
+        ),
+        Promise.all(
           myScribbits.map((scribbit) =>
-            loadOrRepairPendingPowerUpOffer(
-              player.userId,
-              scribbit,
-              now.getTime()
+            runArenaLoad(() =>
+              loadOrRepairPendingPowerUpOffer(
+                player.userId,
+                scribbit,
+                now.getTime()
+              )
             )
           )
-        )
-      ).filter((offer) => offer !== null);
+        ).then((offers) => offers.filter((offer) => offer !== null)),
+        runArenaLoad(() =>
+          loadCapsuleProgress(redis, player.userId, inventory)
+        ),
+      ]).then(
+        ([
+          loadedPendingMaturityScribbitIds,
+          loadedPendingPowerUpOffers,
+          loadedCapsuleProgress,
+        ]) => {
+          pendingMaturityScribbitIds = loadedPendingMaturityScribbitIds;
+          pendingPowerUpOffers = loadedPendingPowerUpOffers;
+          capsuleProgress = loadedCapsuleProgress;
+        }
+      );
       discoveredPowerUpIds = [...loadedPowerUpDiscoveries];
       hasCreatedScribbit = loadedHasCreatedScribbit;
       hasCompletedBattle = loadedHasCompletedBattle;
@@ -1027,11 +1144,6 @@ registerPlayerMutatingGet('/arena', async (c) => {
       myInk = loadedInk;
       myPens = inventory.pens;
       myDrawingSupplies = { ...inventory.items };
-      capsuleProgress = await loadCapsuleProgress(
-        redis,
-        player.userId,
-        inventory
-      );
       nextCapsuleCost = loadedNextCapsuleCost;
       founderChronicle = loadedFounderChronicle;
       legacyReturnReceipt = loadedLegacyReturnReceipt;
@@ -1040,48 +1152,25 @@ registerPlayerMutatingGet('/arena', async (c) => {
       dailyLogin = loadedDailyLogin;
     }
 
-    const [
-      allTodayEntrants,
-      hiddenScribbitIds,
-      storedRumbleEntrantCount,
-      currentChampion,
-      season,
-      communityLegendCount,
-      venueStamp,
-    ] = await Promise.all([
-      loadTodayRumbleEntrants(
-        dayNumber,
-        utcDateKey,
-        [
-          myBackedScribbitId,
-          ...myScribbits.map((scribbit) => scribbit.id),
-        ].filter((scribbitId): scribbitId is string => scribbitId !== null)
-      ),
-      player
-        ? getHiddenScribbitIds(redis, player.userId)
-        : Promise.resolve(new Set<string>()),
-      getRumbleEntrantCount(redis, dayNumber),
-      getCurrentChampion(redis),
-      loadSeasonPublicState(redis, dayNumber, player?.userId),
-      getCommunityLegendCount(redis),
-      loadVenueStampState(redis, dayNumber, player?.userId),
-    ]);
+    const pinnedScribbitIds = [
+      myBackedScribbitId,
+      ...myScribbits.map((scribbit) => scribbit.id),
+    ].filter((scribbitId): scribbitId is string => scribbitId !== null);
+    await playerFollowupsPromise;
+    // loadTodayRumbleEntrants owns its own bounded batch (up to 24 Scribbits).
+    // Run that nested fan-out after the smaller player repairs have drained.
+    const allTodayEntrants = await runArenaLoad(() =>
+      loadTodayRumbleEntrants(dayNumber, utcDateKey, pinnedScribbitIds)
+    );
     const todayEntrants = allTodayEntrants.filter(
       (entrant) => !hiddenScribbitIds.has(entrant.id)
     );
     const rumbleEntrantCount = getProjectedRumbleEntrantCount(
       storedRumbleEntrantCount
     );
-    let lastRumbleReceipt: ArenaState['lastRumbleReceipt'] = null;
-    if (player && dayNumber > 1) {
+    lastRumbleReceipt = loadedLastRumbleReceipt;
+    if (player && loadedLastRumbleReceipt) {
       const resolvedDay = dayNumber - 1;
-      lastRumbleReceipt = await loadRumbleReturnReceipt(redis, {
-        userId: player.userId,
-        resolvedDay,
-        utcDateKey,
-        champion: currentChampion,
-        hiddenScribbitIds,
-      });
       if (lastRumbleReceipt?.kind === 'owned' && lastRumbleReceipt.wins > 0) {
         const rumblePowerUpOffer = await getOrCreatePowerUpOffer(redis, {
           userId: player.userId,

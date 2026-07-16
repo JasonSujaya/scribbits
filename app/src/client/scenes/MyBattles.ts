@@ -37,6 +37,7 @@ import {
   ghostButton,
   iconButton,
   label,
+  startScene,
   stickerCard,
 } from '../lib/ui';
 import type { ErrorPanel } from '../lib/ui';
@@ -391,7 +392,7 @@ export class MyBattles extends Scene {
       this.scale.width / 2,
       pastY,
       translate('battles.board.past'),
-      () => this.scene.start('BattleHistory'),
+      () => startScene(this, 'BattleHistory'),
       270,
       76
     );
@@ -404,7 +405,7 @@ export class MyBattles extends Scene {
         height: 76,
       },
       pointerPassthrough: true,
-      onActivate: () => this.scene.start('BattleHistory'),
+      onActivate: () => startScene(this, 'BattleHistory'),
     });
   }
 
@@ -595,7 +596,7 @@ export class MyBattles extends Scene {
       ...(result.data.report.rivalRun
         ? { rivalRun: result.data.report.rivalRun }
         : {}),
-      onComplete: () => this.scene.start('Replay'),
+      onComplete: () => startScene(this, 'Replay'),
     });
   }
 

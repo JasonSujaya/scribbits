@@ -115,7 +115,7 @@ export const navigateToDailyDraw = (scene: Scene): void => {
   const state = getArena(scene);
   const route = getDailyDrawRoute(state);
   if (route === 'preloader') {
-    scene.scene.start('Preloader');
+    startScene(scene, 'Preloader');
     return;
   }
   if (route === 'draw') return startScene(scene, 'Draw');

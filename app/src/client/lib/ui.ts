@@ -30,20 +30,13 @@ import { bindPressInteractionEvents } from './pressinteraction';
 import { translate } from './localization';
 import { markSfxManaged, playSfx } from './sfx';
 import type { SfxCue } from './audiocatalog';
+export { startScene } from './scenenavigation';
 
 const TRANSITION_COLOR = { red: 42, green: 33, blue: 24 } as const;
 // Some scenes rebuild their entire canvas tree after async data arrives. Keep
 // one semantic dock mirror per scene so those rebuilds cannot leave duplicate
 // native tab controls above the new canvas dock.
 const appDockOverlays = new WeakMap<Scene, CanvasActionOverlay>();
-
-export function startScene(
-  scene: Scene,
-  key: string,
-  data?: Record<string, unknown>
-): void {
-  scene.scene.start(key, data);
-}
 
 export function fadeSceneOut(scene: Scene, duration: number): void {
   const { red, green, blue } = TRANSITION_COLOR;

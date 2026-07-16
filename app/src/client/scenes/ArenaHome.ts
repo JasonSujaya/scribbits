@@ -172,7 +172,7 @@ export class ArenaHome extends Scene {
     this.refreshOnNextActivation = false;
     const state = getArena(this);
     if (!state) {
-      this.scene.start('Preloader');
+      startScene(this, 'Preloader');
       return;
     }
     this.state = state;
@@ -1041,7 +1041,7 @@ export class ArenaHome extends Scene {
         fighterB: result.data.report.b,
         battleKind: result.data.report.kind,
         rivalryStakes: stagedBattle.rivalryStakes,
-        onComplete: () => this.scene.start('Replay'),
+        onComplete: () => startScene(this, 'Replay'),
       });
     } catch {
       if (this.acceptMutationResponse(sceneEpoch)) {
@@ -1390,7 +1390,7 @@ export class ArenaHome extends Scene {
               result.data,
               afterContinue ? 'Gallery' : 'ArenaHome'
             );
-            this.scene.start('Replay');
+            startScene(this, 'Replay');
           })
           .catch(() => {
             if (!this.scene.isActive() || !layer.active) return;
@@ -1660,7 +1660,7 @@ export class ArenaHome extends Scene {
       onResolved: () => {
         this.rivalRunFlow = null;
       },
-      onCeremonyComplete: () => this.scene.start('Replay'),
+      onCeremonyComplete: () => startScene(this, 'Replay'),
     });
   }
 

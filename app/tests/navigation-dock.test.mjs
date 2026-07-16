@@ -14,6 +14,26 @@ const uiSource = await readFile(
   new URL('../src/client/lib/ui.ts', import.meta.url),
   'utf8'
 );
+const sceneNavigationSource = await readFile(
+  new URL('../src/client/lib/scenenavigation.ts', import.meta.url),
+  'utf8'
+);
+const sceneRoutesSource = await readFile(
+  new URL('../src/client/lib/sceneroutes.ts', import.meta.url),
+  'utf8'
+);
+const gameHtmlSource = await readFile(
+  new URL('../src/client/game.html', import.meta.url),
+  'utf8'
+);
+const gameCssSource = await readFile(
+  new URL('../src/client/game.css', import.meta.url),
+  'utf8'
+);
+const preloaderSource = await readFile(
+  new URL('../src/client/scenes/Preloader.ts', import.meta.url),
+  'utf8'
+);
 const gallerySource = await readFile(
   new URL('../src/client/scenes/Gallery.ts', import.meta.url),
   'utf8'
@@ -86,8 +106,9 @@ test('the primary dock is Arena, Bag, Home, Battles, Shop', () => {
   assert.doesNotMatch(appDockSource, /key: 'draw'|route: 'dailyDraw'/);
   assert.doesNotMatch(appDockSource, /key: 'gallery'|label: 'Gallery'/);
   assert.doesNotMatch(uiSource, /'scout'/);
-  assert.match(gameSource, /import \{ Shop \} from '\.\/scenes\/Shop';/);
-  assert.match(gameSource, /Gallery,\s*Shop,\s*ScoutNotebook/);
+  assert.doesNotMatch(gameSource, /from '\.\/scenes\/(?:Shop|Gallery|Draw)'/);
+  assert.match(sceneRoutesSource, /import\('\.\.\/scenes\/Shop'\)/);
+  assert.match(sceneRoutesSource, /import\('\.\.\/scenes\/Gallery'\)/);
 });
 
 test('the dock reveals Battles, Shop, then Bag and Arena through durable progression', () => {
@@ -278,10 +299,26 @@ test('Scout and the retired compact Rumble action stay out of navigation', () =>
   assert.match(arenaSource, /this\.openContenderPicker\(\)/);
 });
 
-test('dock scene transitions switch immediately without a flash effect', () => {
-  assert.match(uiSource, /export function startScene\(/);
-  assert.match(uiSource, /scene\.scene\.start\(key, data\)/);
-  assert.doesNotMatch(uiSource, /fadeToScene|fadeSceneIn/);
+test('lazy scene transitions preserve the current page then cover asset loading', () => {
+  assert.match(uiSource, /export \{ startScene \} from '\.\/scenenavigation'/);
+  assert.match(sceneNavigationSource, /showTransition\(game, 'code'/);
+  assert.match(sceneNavigationSource, /await loadScene\(game, key\)/);
+  assert.match(sceneNavigationSource, /showTransition\(game, 'assets'/);
+  assert.match(sceneNavigationSource, /destination\.events\.once\('create'/);
+  assert.match(sceneNavigationSource, /game\.events\.once\('postrender'/);
+  assert.match(sceneNavigationSource, /scheduleCommonScenePrefetches\(game\)/);
+  assert.match(sceneNavigationSource, /window\.requestIdleCallback\(prefetch/);
+  assert.match(sceneNavigationSource, /prefetchVisualAssetGroups\(assetGroups\)/);
+  assert.match(sceneNavigationSource, /isAppDockTabUnlocked\(arena, 'shop'\)/);
+  assert.match(preloaderSource, /Promise\.all\(\[\s*fetchArena\(\),\s*this\.prepareHome\(\)/);
+  assert.match(preloaderSource, /prepareScene\(this\.sys\.game, 'ScribbitHome'\)/);
+  assert.match(preloaderSource, /preloadHomeVisualAssets\(this\)/);
+  assert.match(sceneNavigationSource, /game\.scene\.start\(key, data\)/);
+  assert.match(gameHtmlSource, /id="scene-transition-status"/);
+  assert.match(
+    gameCssSource,
+    /\.scene-transition-status\[data-stage='assets'\][\s\S]*background:/
+  );
 
   for (const sceneSource of dockSceneSources) {
     assert.doesNotMatch(sceneSource, /fadeIn\(/);

@@ -4,16 +4,6 @@ import '@fontsource/dynapuff/latin-400.css';
 import '@fontsource/dynapuff/latin-700.css';
 import { Boot } from './scenes/Boot';
 import { Preloader } from './scenes/Preloader';
-import { ScribbitHome } from './scenes/ScribbitHome';
-import { ArenaHome } from './scenes/ArenaHome';
-import { Draw } from './scenes/Draw';
-import { Replay } from './scenes/Replay';
-import { MyBattles } from './scenes/MyBattles';
-import { BattleHistory } from './scenes/BattleHistory';
-import { Gallery } from './scenes/Gallery';
-import { Shop } from './scenes/Shop';
-import { Bestiary } from './scenes/Bestiary';
-import { ScoutNotebook } from './scenes/ScoutNotebook';
 import { DESIGN_WIDTH, responsiveDesignHeight } from './lib/theme';
 import { isShapePowerId } from '../shared/combat';
 import type { PrimaryPower } from '../shared/combat';
@@ -26,11 +16,11 @@ import {
   setGalleryTab,
   stageDirectBattle,
 } from './lib/registry';
-import { showVsCeremony } from './lib/battleceremony';
 import { isLocalDrawAutomationRequest } from './lib/drawautomation';
 import { initializeLocalization, localizeDocument } from './lib/localization';
 import { installSfx } from './lib/sfx';
 import { markGameBootPhase, reportGameBootError } from './lib/gameboot';
+import { startGameScene } from './lib/scenenavigation';
 
 initializeLocalization();
 localizeDocument();
@@ -65,20 +55,7 @@ const config: Phaser.Types.Core.GameConfig = {
     maxRetries: 2,
     timeout: 5_000,
   },
-  scene: [
-    Boot,
-    Preloader,
-    ScribbitHome,
-    ArenaHome,
-    Draw,
-    Replay,
-    MyBattles,
-    BattleHistory,
-    Gallery,
-    Shop,
-    ScoutNotebook,
-    Bestiary,
-  ],
+  scene: [Boot, Preloader],
 };
 
 const StartGame = (
@@ -134,7 +111,7 @@ const StartGame = (
         element?: Element,
         seed?: number
       ) => Promise<string>;
-      debugScene?: (key: string) => string;
+      debugScene?: (key: string) => Promise<string>;
     };
     win.game = game;
     let debugRuntimeErrorCount = 0;
@@ -168,7 +145,13 @@ const StartGame = (
           0
         )
       );
+      game.canvas.dataset.activeSceneCount = String(activeScenes.length);
+      game.canvas.dataset.activeSceneKeys = activeScenes
+        .map((scene) => scene.scene.key)
+        .join(',');
     };
+    const getActiveArenaScene = (): Phaser.Scene | undefined =>
+      game.scene.getScenes(true).find((scene) => getArena(scene) !== undefined);
     const debugPerformanceTimer = window.setInterval(
       updateDebugPerformance,
       500
@@ -185,12 +168,9 @@ const StartGame = (
       );
     });
     // Jump straight to any scene (Draw, Gallery, Shop, MyBattles...) for screenshots.
-    win.debugScene = (key: string): string => {
-      game.scene
-        .getScenes(true)
-        .forEach((scene) => game.scene.stop(scene.scene.key));
-      game.scene.start(key);
-      return `started ${key}`;
+    win.debugScene = async (key: string): Promise<string> => {
+      const started = await startGameScene(game, key);
+      return started ? `started ${key}` : `failed ${key}`;
     };
     // Synthesize a Phaser pointer tap at design-space (x, y). Phaser's input
     // manager reads native pointer events; a bare canvas dispatch can miss, so
@@ -227,9 +207,9 @@ const StartGame = (
       element?: Element,
       seed?: number
     ): Promise<string> => {
-      const home = game.scene.getScene('ArenaHome') as Phaser.Scene | null;
-      const arena = home ? getArena(home) : undefined;
-      if (!home || !arena) return 'no scribbit';
+      const stateScene = getActiveArenaScene();
+      const arena = stateScene ? getArena(stateScene) : undefined;
+      if (!stateScene || !arena) return 'no scribbit';
       if (power) {
         const elementQuery = element
           ? `&element=${encodeURIComponent(element)}`
@@ -241,9 +221,8 @@ const StartGame = (
         if (!res.ok) return `debug battle failed ${res.status}`;
         const report = (await res.json()) as BattleReport;
         if (debugUsesArchivedReport) delete report.simulation;
-        setReplay(home, report, 'ArenaHome');
-        game.scene.stop('ArenaHome');
-        game.scene.start('Replay');
+        setReplay(stateScene, report, 'ArenaHome');
+        void startGameScene(game, 'Replay');
         return `spar power=${power} timeline=${report.simulation?.timeline?.length ?? 0} ticks=${report.simulation?.result?.completedTick ?? '?'} archived=${debugUsesArchivedReport} winner=${report.winner ?? '?'}`;
       }
       const id = arena?.myScribbits?.[0]?.id;
@@ -256,14 +235,14 @@ const StartGame = (
       if (!res.ok) return `spar failed ${res.status}`;
       const response = (await res.json()) as SparBattleResponse;
       const report = response.report;
-      const stagedBattle = stageDirectBattle(home, arena, response, id);
+      const stagedBattle = stageDirectBattle(stateScene, arena, response, id);
       if (!stagedBattle) return 'spar returned wrong scribbit';
       const startReplay = (): void => {
-        game.scene.stop('ArenaHome');
-        game.scene.start('Replay');
+        void startGameScene(game, 'Replay');
       };
       if (window.location.search.includes('ceremony')) {
-        showVsCeremony(home, {
+        const { showVsCeremony } = await import('./lib/battleceremony');
+        showVsCeremony(stateScene, {
           fighterA: report.a,
           fighterB: report.b,
           battleKind: report.kind,
@@ -321,42 +300,42 @@ const StartGame = (
         true
     ) {
       const startAutomationDrawWhenReady = (attempt = 0): void => {
-        const home = game.scene.getScene('ArenaHome') as Phaser.Scene;
-        if (!getArena(home) && attempt < 12) {
+        const stateScene = getActiveArenaScene();
+        if (!stateScene && attempt < 12) {
           window.setTimeout(
             () => startAutomationDrawWhenReady(attempt + 1),
             200
           );
           return;
         }
-        game.scene
-          .getScenes(true)
-          .forEach((scene) => game.scene.stop(scene.scene.key));
-        game.scene.start('Draw', { mode: 'automation' });
+        if (!stateScene) return;
+        void startGameScene(game, 'Draw', { mode: 'automation' });
       };
       window.setTimeout(() => startAutomationDrawWhenReady(), 300);
     } else if (window.location.search.includes('shop')) {
       const startDebugShopWhenReady = (attempt = 0): void => {
-        const home = game.scene.getScene('ArenaHome') as Phaser.Scene;
-        if (!getArena(home) && attempt < 12) {
+        const stateScene = getActiveArenaScene();
+        if (!stateScene && attempt < 12) {
           window.setTimeout(() => startDebugShopWhenReady(attempt + 1), 200);
           return;
         }
-        win.debugScene?.('Shop');
+        if (!stateScene) return;
+        void win.debugScene?.('Shop');
       };
       window.setTimeout(() => startDebugShopWhenReady(), 300);
     } else if (window.location.search.includes('collection')) {
       const startDebugCollectionWhenReady = (attempt = 0): void => {
-        const home = game.scene.getScene('ArenaHome') as Phaser.Scene;
-        if (!getArena(home) && attempt < 12) {
+        const stateScene = getActiveArenaScene();
+        if (!stateScene && attempt < 12) {
           window.setTimeout(
             () => startDebugCollectionWhenReady(attempt + 1),
             200
           );
           return;
         }
-        setGalleryTab(home, 'collection');
-        win.debugScene?.('Gallery');
+        if (!stateScene) return;
+        setGalleryTab(stateScene, 'collection');
+        void win.debugScene?.('Gallery');
       };
       window.setTimeout(() => startDebugCollectionWhenReady(), 300);
     }

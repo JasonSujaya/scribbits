@@ -18,6 +18,7 @@ import {
   label,
   paperArrowButton,
   paperPagination,
+  startScene,
   stickerCard,
 } from '../lib/ui';
 import type { ErrorPanel } from '../lib/ui';
@@ -107,14 +108,14 @@ export class BattleHistory extends Scene {
       58,
       58,
       'previous',
-      () => this.scene.start('MyBattles'),
+      () => startScene(this, 'MyBattles'),
       72
     );
     this.actionOverlay.add({
       label: translate('battles.history.back'),
       rect: { x: 22, y: 22, width: 72, height: 72 },
       pointerPassthrough: true,
-      onActivate: () => this.scene.start('MyBattles'),
+      onActivate: () => startScene(this, 'MyBattles'),
     });
     this.buildAppTabs();
     this.loadingCard = stickerCard(this, width / 2, 390, width - 120, 160, {
@@ -136,7 +137,7 @@ export class BattleHistory extends Scene {
 
   private buildAppTabs(): void {
     appDock(this, 'battles', {
-      battles: () => this.scene.start('MyBattles'),
+      battles: () => startScene(this, 'MyBattles'),
     });
     appMenu(this);
   }
@@ -518,7 +519,7 @@ export class BattleHistory extends Scene {
       setBattleHistoryPage(this, this.page);
       setBattleHistoryCharacter(this, this.characterId);
       setSavedReplay(this, report, 'BattleHistory');
-      this.scene.start('Replay');
+      startScene(this, 'Replay');
     };
     const release = (): void => {
       if (!card.active) return;

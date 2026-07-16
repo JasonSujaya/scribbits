@@ -24,6 +24,23 @@
         <span id="game-boot-message">Pinning up the arena.</span>
       </div>
       <div id="game-container"></div>
+      <div
+        class="scene-transition-status"
+        id="scene-transition-status"
+        data-stage="idle"
+        role="status"
+        aria-live="polite"
+        hidden
+      >
+        <div class="scene-transition-card">
+          <img src="./assets/scribbits-logo.webp" alt="" />
+          <span class="scene-transition-spinner" aria-hidden="true"></span>
+          <strong id="scene-transition-message">Opening page…</strong>
+          <button id="scene-transition-retry" type="button" hidden>
+            TRY AGAIN
+          </button>
+        </div>
+      </div>
       <div class="rotate-prompt" role="status">
         <strong data-i18n="shell.rotate.title">Turn your phone upright</strong>
         <small data-i18n="shell.rotate.detail">

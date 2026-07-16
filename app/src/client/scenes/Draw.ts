@@ -653,7 +653,7 @@ export class Draw extends Scene {
 
     const arena = getArena(this);
     if (!arena) {
-      this.scene.start('Preloader');
+      startScene(this, 'Preloader');
       return;
     }
     if (this.practiceMode || this.automationMode) stopSoundtrack();
@@ -673,14 +673,14 @@ export class Draw extends Scene {
     if (this.practiceMode) {
       if (!arena.loggedIn) {
         showToast('Log in to open the server-checked Practice Lab.');
-        this.scene.start('ScribbitHome');
+        startScene(this, 'ScribbitHome');
         return;
       }
     } else {
       const eligibility = getDrawEligibility(arena);
       if (!eligibility.canDraw) {
         showToast(eligibility.message);
-        this.scene.start('ScribbitHome');
+        startScene(this, 'ScribbitHome');
         return;
       }
       const communityEligibility = getCommunityThemeEligibility(arena);
@@ -5347,7 +5347,7 @@ export class Draw extends Scene {
         fighterA: report.a,
         fighterB: report.b,
         battleKind: report.kind,
-        onComplete: () => this.scene.start('Replay'),
+        onComplete: () => startScene(this, 'Replay'),
       });
       return;
     }
@@ -5452,7 +5452,7 @@ export class Draw extends Scene {
       fighterB: result.data.report.b,
       battleKind: result.data.report.kind,
       rivalryStakes: stagedBattle.rivalryStakes,
-      onComplete: () => this.scene.start('Replay'),
+      onComplete: () => startScene(this, 'Replay'),
     });
   }
 
