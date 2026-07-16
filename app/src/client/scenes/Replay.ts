@@ -494,8 +494,8 @@ export class Replay extends Scene {
     });
 
     void Promise.all([
-      loadDrawing(this, report.a),
-      loadDrawing(this, report.b),
+      loadDrawing(this, report.a, { waitForRemote: true }),
+      loadDrawing(this, report.b, { waitForRemote: true }),
     ]).then(([keyA, keyB]) => {
       if (!this.scene.isActive() || this.finished) return;
       this.placeFighter('a', keyA);

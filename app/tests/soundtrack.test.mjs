@@ -56,8 +56,10 @@ test('drawing music follows the timed round lifecycle', () => {
   assert.match(audioCatalogSource, /ready-set-scribble\.mp3/);
   assert.match(soundtrackSource, /audio\.loop = true/);
   assert.match(homeSource, /playHomeSoundtrack\(\)/);
-  assert.match(drawSource, /else startDrawingSoundtrack\(\)/);
-  assert.match(drawSource, /if \(wasStarted\) resumeDrawingSoundtrack\(\)/);
+  assert.match(
+    drawSource,
+    /private activateDrawingRound\(wasStarted: boolean\)[\s\S]{0,350}if \(wasStarted\) resumeDrawingSoundtrack\(\);[\s\S]{0,80}else startDrawingSoundtrack\(\)/
+  );
   assert.match(
     drawSource,
     /private finishDrawCountdown\(\): void[\s\S]{0,1200}this\.startDrawingRound\(\)/
@@ -69,6 +71,57 @@ test('drawing music follows the timed round lifecycle', () => {
   assert.match(
     drawSource,
     /private finishDrawingRound\(\): void \{[\s\S]{0,180}pauseDrawingSoundtrack\(\)/
+  );
+});
+
+test('drawing music is primed by Start Drawing and gets a bounded readiness wait', () => {
+  assert.match(
+    soundtrackSource,
+    /const DRAWING_SOUNDTRACK_READY_WAIT_MS = 450/
+  );
+  assert.match(
+    soundtrackSource,
+    /export const preloadDrawingSoundtrack = \(\): void =>[\s\S]{0,180}preparedDrawingAudio = createPreparedDrawingAudio\(\)/
+  );
+  assert.match(
+    soundtrackSource,
+    /export const primeDrawingSoundtrack = \(\): void =>[\s\S]{0,260}audio\.play\(\)/
+  );
+  assert.match(
+    soundtrackSource,
+    /export const waitForDrawingSoundtrackReadiness = \(\): Promise<void> =>[\s\S]{0,260}waitForAudioReadiness\(audio, DRAWING_SOUNDTRACK_READY_WAIT_MS\)/
+  );
+  assert.match(
+    soundtrackSource,
+    /waitForAudioReadiness[\s\S]{0,800}addEventListener\('canplay', finish[\s\S]{0,300}setTimeout\(finish, timeoutMilliseconds\)/
+  );
+  assert.match(
+    soundtrackSource,
+    /audio\.readyState >= HTMLMediaElement\.HAVE_FUTURE_DATA/
+  );
+  assert.match(
+    soundtrackSource,
+    /clearTimeout\(timeoutId\)[\s\S]{0,160}removeEventListener\('canplay', finish\)[\s\S]{0,100}removeEventListener\('error', finish\)/
+  );
+  assert.match(
+    drawSource,
+    /private beginDrawingRound\(\): void[\s\S]{0,700}primeDrawingSoundtrack\(\);[\s\S]{0,80}this\.startDrawCountdown\(\)/
+  );
+  assert.match(
+    drawSource,
+    /private startDrawCountdown\(\): void[\s\S]{0,150}preloadDrawingSoundtrack\(\)/
+  );
+  assert.match(
+    drawSource,
+    /waitForDrawingSoundtrackReadiness\(\)\.then\(\(\) => \{[\s\S]{0,500}this\.activateDrawingRound\(false\)/
+  );
+  assert.match(
+    soundtrackSource,
+    /export const startDrawingSoundtrack = \(\): void =>[\s\S]{0,260}const audio = preparedDrawingAudio[\s\S]{0,700}currentAudio = audio/
+  );
+  assert.match(
+    drawSource,
+    /private cleanup\(\): void[\s\S]{0,180}releaseDrawingSoundtrackPreparation\(\)/
   );
 });
 
@@ -153,16 +206,13 @@ test('Home and Gallery share one uninterrupted idle track', () => {
   assert.match(gallerySource, /releaseHomeSoundtrack\(\)/);
 });
 
-test('failed soundtrack nodes are discarded and recover only once', () => {
+test('soundtrack errors recover once without treating transient stalls as fatal', () => {
   assert.match(soundtrackSource, /const MAX_RECOVERY_ATTEMPTS = 1/);
   assert.match(
     soundtrackSource,
     /audio\.addEventListener\('error', recoverSoundtrack\)/
   );
-  assert.match(
-    soundtrackSource,
-    /audio\.addEventListener\('stalled', recoverSoundtrack\)/
-  );
+  assert.doesNotMatch(soundtrackSource, /addEventListener\('stalled'/);
   assert.match(
     soundtrackSource,
     /recoveryAttempts >= MAX_RECOVERY_ATTEMPTS[\s\S]{0,260}discardAudio\(failedAudio\)/

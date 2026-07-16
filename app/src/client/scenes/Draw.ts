@@ -143,10 +143,14 @@ import {
   pauseDrawingSoundtrack,
   playHomeSoundtrack,
   primeBattleSoundtrack,
+  primeDrawingSoundtrack,
+  preloadDrawingSoundtrack,
   releaseHomeSoundtrack,
+  releaseDrawingSoundtrackPreparation,
   resumeDrawingSoundtrack,
   startDrawingSoundtrack,
   stopSoundtrack,
+  waitForDrawingSoundtrackReadiness,
 } from '../lib/soundtrack';
 import { markSfxManaged, playSfx, preloadSfx } from '../lib/sfx';
 import AnalyzerWorker from '../workers/analyzer.worker?worker&inline';
@@ -426,6 +430,7 @@ export class Draw extends Scene {
   private drawingLocked = false;
   private drawRoundClock: DrawRoundClock = createDrawRoundClock();
   private drawRoundTimerEvent: Phaser.Time.TimerEvent | null = null;
+  private drawingRoundStartPending = false;
   private drawStartCountdownTimerEvent: Phaser.Time.TimerEvent | null = null;
   private drawStartCountdownOverlay: HTMLDivElement | null = null;
   private drawStartCountdownValue: HTMLSpanElement | null = null;
@@ -636,6 +641,7 @@ export class Draw extends Scene {
     this.drawConfirmation = null;
     this.leaveDrawingModal = null;
     this.submissionLoading = null;
+    this.drawingRoundStartPending = false;
     this.draftName = '';
     this.headerControlOverlay = null;
     this.toolControlOverlay = null;
@@ -740,6 +746,8 @@ export class Draw extends Scene {
 
   private cleanup(): void {
     this.sceneVisitEpoch += 1;
+    this.drawingRoundStartPending = false;
+    releaseDrawingSoundtrackPreparation();
     this.roleStyleInfoLayer?.destroy();
     this.roleStyleInfoLayer = null;
     if (
@@ -1583,6 +1591,7 @@ export class Draw extends Scene {
       'aria-label',
       'Get ready. The Community Theme drawing round starts after 3, 2, 1.'
     );
+    primeDrawingSoundtrack();
     this.startDrawCountdown();
   }
 
@@ -1618,6 +1627,7 @@ export class Draw extends Scene {
 
   private startDrawCountdown(): void {
     if (this.drawStartCountdownOverlay || !this.canvasDareOverlay) return;
+    preloadDrawingSoundtrack();
 
     const countdownOverlay = document.createElement('div');
     countdownOverlay.className = 'draw-start-countdown';
@@ -1695,12 +1705,7 @@ export class Draw extends Scene {
     if (!this.scene.isActive() || this.submitting || this.drawingLocked) return;
 
     this.setCanvasDareVisible(false);
-    this.canvas.element.setAttribute(
-      'aria-label',
-      `Draw your Scribbit. The 60 second round is running. The color covering the most area decides how it fights.${this.isFirstScribbit ? ' First run: draw, watch it fight, and earn Ink.' : ''}`
-    );
     this.startDrawingRound();
-    requestAnimationFrame(() => this.canvas.element.focus());
   }
 
   private startDrawingRound(): void {
@@ -1713,6 +1718,29 @@ export class Draw extends Scene {
       return;
     }
     const wasStarted = this.drawRoundClock.started;
+    if (!wasStarted) {
+      if (this.drawingRoundStartPending) return;
+      this.drawingRoundStartPending = true;
+      void waitForDrawingSoundtrackReadiness().then(() => {
+        this.drawingRoundStartPending = false;
+        if (
+          !this.scene.isActive() ||
+          this.isUntimedDrawingMode() ||
+          this.drawingLocked ||
+          this.submitting ||
+          this.drawConfirmation ||
+          this.drawRoundClock.started
+        ) {
+          return;
+        }
+        this.activateDrawingRound(false);
+      });
+      return;
+    }
+    this.activateDrawingRound(true);
+  }
+
+  private activateDrawingRound(wasStarted: boolean): void {
     this.drawRoundClock = startDrawRoundClock(this.drawRoundClock, Date.now());
     if (this.drawRoundClock.deadlineMilliseconds === null) return;
     if (wasStarted) resumeDrawingSoundtrack();
@@ -1724,6 +1752,11 @@ export class Draw extends Scene {
     });
     this.syncDrawingInteractionState();
     this.renderDrawTimer();
+    this.canvas.element.setAttribute(
+      'aria-label',
+      `Draw your Scribbit. The 60 second round is running. The color covering the most area decides how it fights.${this.isFirstScribbit ? ' First run: draw, watch it fight, and earn Ink.' : ''}`
+    );
+    requestAnimationFrame(() => this.canvas.element.focus());
     if (wasStarted || !this.drawTimerFace || prefersReducedMotion()) return;
     this.drawTimerStatus?.replaceChildren(
       document.createTextNode('Drawing timer started. 60 seconds remaining.')

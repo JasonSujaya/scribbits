@@ -9,6 +9,7 @@ type SoundtrackMode = 'battle' | 'drawing' | 'home';
 let currentAudio: HTMLAudioElement | null = null;
 let currentMode: SoundtrackMode | null = null;
 let preparedBattleAudio: HTMLAudioElement | null = null;
+let preparedDrawingAudio: HTMLAudioElement | null = null;
 let hasPlayedHomeSoundtrack = false;
 let playbackRequested = false;
 let retryListenersInstalled = false;
@@ -17,6 +18,7 @@ let visibilityHandlerInstalled = false;
 let recoveryAttempts = 0;
 
 const MAX_RECOVERY_ATTEMPTS = 1;
+const DRAWING_SOUNDTRACK_READY_WAIT_MS = 450;
 
 export const chooseHomeTrackIndex = (
   hasPlayedHomeTrack: boolean,
@@ -102,9 +104,8 @@ const cancelPendingHomeStop = (): void => {
 
 const discardAudio = (audio: HTMLAudioElement): void => {
   audio.removeEventListener('error', recoverSoundtrack);
-  audio.removeEventListener('stalled', recoverSoundtrack);
   audio.removeEventListener('error', discardPreparedBattleAudio);
-  audio.removeEventListener('stalled', discardPreparedBattleAudio);
+  audio.removeEventListener('error', discardPreparedDrawingAudio);
   audio.pause();
   audio.remove();
 };
@@ -158,6 +159,36 @@ function discardPreparedBattleAudio(event: Event): void {
   discardAudio(failedAudio);
 }
 
+function discardPreparedDrawingAudio(event: Event): void {
+  const failedAudio = event.currentTarget as HTMLAudioElement;
+  if (failedAudio !== preparedDrawingAudio) return;
+  preparedDrawingAudio = null;
+  discardAudio(failedAudio);
+}
+
+const waitForAudioReadiness = (
+  audio: HTMLAudioElement,
+  timeoutMilliseconds: number
+): Promise<void> => {
+  if (audio.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA) {
+    return Promise.resolve();
+  }
+  if (typeof window === 'undefined') return Promise.resolve();
+
+  return new Promise((resolve) => {
+    let timeoutId: number | null = null;
+    const finish = (): void => {
+      if (timeoutId !== null) window.clearTimeout(timeoutId);
+      audio.removeEventListener('canplay', finish);
+      audio.removeEventListener('error', finish);
+      resolve();
+    };
+    audio.addEventListener('canplay', finish, { once: true });
+    audio.addEventListener('error', finish, { once: true });
+    timeoutId = window.setTimeout(finish, timeoutMilliseconds);
+  });
+};
+
 const replaceSoundtrack = (
   mode: SoundtrackMode,
   source: string,
@@ -184,7 +215,6 @@ const replaceSoundtrack = (
           0.32);
   audio.style.display = 'none';
   audio.addEventListener('error', recoverSoundtrack);
-  audio.addEventListener('stalled', recoverSoundtrack);
   document.body.append(audio);
   currentMode = mode;
   currentAudio = audio;
@@ -204,10 +234,74 @@ const createPreparedBattleAudio = (): HTMLAudioElement | null => {
   audio.volume = BATTLE_SOUNDTRACK.volume;
   audio.style.display = 'none';
   audio.addEventListener('error', discardPreparedBattleAudio);
-  audio.addEventListener('stalled', discardPreparedBattleAudio);
   document.body.append(audio);
   audio.load();
   return audio;
+};
+
+const createPreparedDrawingAudio = (): HTMLAudioElement | null => {
+  if (typeof Audio === 'undefined' || typeof document === 'undefined') {
+    return null;
+  }
+  const audio = new Audio();
+  audio.dataset.scribbitsSoundtrack = 'drawing-preload';
+  audio.preload = 'auto';
+  audio.src = READY_SET_SCRIBBLE_TRACK.url;
+  audio.loop = true;
+  audio.volume = READY_SET_SCRIBBLE_TRACK.volume;
+  audio.style.display = 'none';
+  audio.addEventListener('error', discardPreparedDrawingAudio);
+  document.body.append(audio);
+  audio.load();
+  return audio;
+};
+
+/** Begin loading the drawing track while the visible countdown is running. */
+export const preloadDrawingSoundtrack = (): void => {
+  if (currentMode === 'drawing' || preparedDrawingAudio) return;
+  preparedDrawingAudio = createPreparedDrawingAudio();
+};
+
+/**
+ * Warm the prepared drawing element inside the player's Start Drawing gesture.
+ * Reusing this element after the countdown preserves embedded-browser autoplay
+ * permission without making the countdown wait on the full music download.
+ */
+export const primeDrawingSoundtrack = (): void => {
+  preloadDrawingSoundtrack();
+  const audio = preparedDrawingAudio;
+  if (!audio) return;
+  const targetVolume = audio.volume;
+  audio.volume = 0;
+  void audio.play().then(
+    () => {
+      if (preparedDrawingAudio !== audio) return;
+      audio.pause();
+      audio.currentTime = 0;
+      audio.volume = targetVolume;
+    },
+    () => {
+      if (preparedDrawingAudio === audio) audio.volume = targetVolume;
+    }
+  );
+};
+
+/**
+ * Give the countdown preload a short chance to reach a playable buffer. The
+ * caller owns cancellation and starts the timer after this bounded wait.
+ */
+export const waitForDrawingSoundtrackReadiness = (): Promise<void> => {
+  preloadDrawingSoundtrack();
+  const audio = preparedDrawingAudio;
+  if (!audio) return Promise.resolve();
+  return waitForAudioReadiness(audio, DRAWING_SOUNDTRACK_READY_WAIT_MS);
+};
+
+export const releaseDrawingSoundtrackPreparation = (): void => {
+  const audio = preparedDrawingAudio;
+  if (!audio) return;
+  preparedDrawingAudio = null;
+  discardAudio(audio);
 };
 
 /** Begin the battle-track request before Replay takes over the screen. */
@@ -280,7 +374,25 @@ export const releaseHomeSoundtrack = (): void => {
 };
 
 export const startDrawingSoundtrack = (): void => {
-  replaceSoundtrack('drawing', READY_SET_SCRIBBLE_TRACK.url);
+  installVisibilityHandler();
+  stopSoundtrack();
+  const audio = preparedDrawingAudio;
+  preparedDrawingAudio = null;
+  if (!audio) {
+    replaceSoundtrack('drawing', READY_SET_SCRIBBLE_TRACK.url);
+    return;
+  }
+  audio.removeEventListener('error', discardPreparedDrawingAudio);
+  audio.dataset.scribbitsSoundtrack = 'drawing';
+  audio.dataset.scribbitsSoundtrackSource = READY_SET_SCRIBBLE_TRACK.url;
+  audio.autoplay = true;
+  audio.volume = READY_SET_SCRIBBLE_TRACK.volume;
+  audio.currentTime = 0;
+  audio.addEventListener('error', recoverSoundtrack);
+  currentMode = 'drawing';
+  currentAudio = audio;
+  recoveryAttempts = 0;
+  requestPlayback();
 };
 
 export const startBattleSoundtrack = (enabled: boolean): void => {
@@ -293,14 +405,12 @@ export const startBattleSoundtrack = (enabled: boolean): void => {
     return;
   }
   audio.removeEventListener('error', discardPreparedBattleAudio);
-  audio.removeEventListener('stalled', discardPreparedBattleAudio);
   audio.dataset.scribbitsSoundtrack = 'battle';
   audio.dataset.scribbitsSoundtrackSource = BATTLE_SOUNDTRACK.url;
   audio.autoplay = enabled;
   audio.volume = BATTLE_SOUNDTRACK.volume;
   audio.currentTime = 0;
   audio.addEventListener('error', recoverSoundtrack);
-  audio.addEventListener('stalled', recoverSoundtrack);
   currentMode = 'battle';
   currentAudio = audio;
   if (enabled) requestPlayback();
