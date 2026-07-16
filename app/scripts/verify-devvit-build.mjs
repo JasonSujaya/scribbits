@@ -79,10 +79,7 @@ const assertImageBudget = (label, fileNames, maximumBytes) => {
 
 const inlineImageBytes = assertImageBudget(
   'Inline splash',
-  [
-    'scribbits-logo.webp',
-    'ui-button-primary.webp',
-  ],
+  ['scribbits-logo.webp', 'ui-button-primary.webp'],
   128 * 1024
 );
 const initialHomeImageBytes = assertImageBudget(

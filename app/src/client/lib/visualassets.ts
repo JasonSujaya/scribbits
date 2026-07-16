@@ -380,10 +380,7 @@ function preloadGearVisualAssets(
   }
 }
 
-function texturesReady(
-  scene: Scene,
-  textureKeys: readonly string[]
-): boolean {
+function texturesReady(scene: Scene, textureKeys: readonly string[]): boolean {
   return textureKeys.every((textureKey) => scene.textures.exists(textureKey));
 }
 

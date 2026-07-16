@@ -248,9 +248,13 @@ export class Gallery extends Scene {
     }
   }
 
-  private retryGalleryVisualAssets(): void {
+  private retryGalleryVisualAssets(
+    onReady: () => void = () => this.createLoadedGallery()
+  ): void {
     this.assetErrorPanel?.destroy();
     this.assetErrorPanel = null;
+    this.destroyBuildOverlays();
+    this.children.removeAll(true);
     const { width, height } = this.scale;
     const loadingText = label(
       this,
@@ -265,7 +269,7 @@ export class Gallery extends Scene {
       loadingText.destroy();
       if (!this.scene.isActive()) return;
       if (galleryVisualAssetsReady(this)) {
-        this.createLoadedGallery();
+        onReady();
         return;
       }
       this.assetErrorPanel = errorPanel(
@@ -273,7 +277,7 @@ export class Gallery extends Scene {
         width / 2,
         height / 2,
         'The Bag artwork did not load.',
-        () => this.retryGalleryVisualAssets()
+        () => this.retryGalleryVisualAssets(onReady)
       );
     };
     this.load.once('complete', onLoadComplete);
@@ -791,6 +795,13 @@ export class Gallery extends Scene {
       this.collectionInventoryExpanded = false;
     }
     setGalleryTab(this, tab);
+    if (tab === 'collection' && !galleryVisualAssetsReady(this)) {
+      this.retryGalleryVisualAssets(() => {
+        this.build();
+        if (this.loggedIn && !this.inventory) void this.loadCollection();
+      });
+      return;
+    }
     this.build();
     if (tab === 'collection') {
       if (this.loggedIn && !this.inventory) void this.loadCollection();

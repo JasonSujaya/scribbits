@@ -1,11 +1,7 @@
 import * as Phaser from 'phaser';
 import { Scene } from 'phaser';
 import { showLoginPrompt } from '@devvit/web/client';
-import {
-  acknowledgeMaturity,
-  claimDailyLogin,
-  fetchArena,
-} from '../lib/api';
+import { acknowledgeMaturity, claimDailyLogin, fetchArena } from '../lib/api';
 import { appDock } from '../lib/appdock';
 import { appMenu, type AppMenu } from '../lib/appmenu';
 import {
@@ -346,10 +342,9 @@ export class ScribbitHome extends Scene {
       if (!result.ok || !this.scene.isActive()) return;
       this.state = {
         ...this.state,
-        pendingMaturityScribbitIds:
-          (this.state.pendingMaturityScribbitIds ?? []).filter(
-            (pendingId) => pendingId !== scribbit.id
-          ),
+        pendingMaturityScribbitIds: (
+          this.state.pendingMaturityScribbitIds ?? []
+        ).filter((pendingId) => pendingId !== scribbit.id),
       };
       setArena(this, this.state);
       trackProgressionEvent('maturity_acknowledged', {
@@ -480,9 +475,7 @@ export class ScribbitHome extends Scene {
         this,
         0,
         57,
-        this.state.dailyLogin.claimedToday
-          ? 'LOGIN ✓'
-          : `DAY ${nextDay ?? 1}`,
+        this.state.dailyLogin.claimedToday ? 'LOGIN ✓' : `DAY ${nextDay ?? 1}`,
         17,
         UI.ink,
         true
