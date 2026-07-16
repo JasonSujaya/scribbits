@@ -178,9 +178,17 @@ export async function prepareScene(game: Game, key: string): Promise<void> {
   if (!hasScene(game, key)) game.scene.add(key, SceneClass, false);
 }
 
-export async function preparePrimaryScenes(game: Game): Promise<void> {
+export async function preparePrimaryScenes(
+  game: Game,
+  onProgress?: (progress: number) => void
+): Promise<void> {
+  let preparedSceneCount = 0;
   await Promise.all(
-    PRIMARY_PRELOAD_SCENE_KEYS.map((key) => prepareScene(game, key))
+    PRIMARY_PRELOAD_SCENE_KEYS.map(async (key) => {
+      await prepareScene(game, key);
+      preparedSceneCount += 1;
+      onProgress?.(preparedSceneCount / PRIMARY_PRELOAD_SCENE_KEYS.length);
+    })
   );
 }
 

@@ -17,13 +17,22 @@ import {
   stageDirectBattle,
 } from './lib/registry';
 import { isLocalDrawAutomationRequest } from './lib/drawautomation';
-import { initializeLocalization, localizeDocument } from './lib/localization';
+import {
+  initializeLocalization,
+  localizeDocument,
+  translate,
+} from './lib/localization';
 import { installSfx } from './lib/sfx';
-import { markGameBootPhase, reportGameBootError } from './lib/gameboot';
+import {
+  markGameBootPhase,
+  reportGameBootError,
+  startGameBootTips,
+} from './lib/gameboot';
 import { startGameScene } from './lib/scenenavigation';
 
 initializeLocalization();
 localizeDocument();
+startGameBootTips();
 
 // Scribbits Arena — Devvit Web + Phaser 4. Draw a creature; its shape is its
 // stat sheet; it fights async auto-battles and lives 3 days. Portrait-first:
@@ -345,7 +354,7 @@ const StartGame = (
 
 document.addEventListener('DOMContentLoaded', () => {
   const start = async (): Promise<void> => {
-    markGameBootPhase('starting', 'Preparing pages and artwork…');
+    markGameBootPhase('starting', translate('preloader.preparing'));
     if (isLocalDrawAutomationRequest(window.location)) {
       try {
         const response = await fetch('/__mock/draw-automation', {

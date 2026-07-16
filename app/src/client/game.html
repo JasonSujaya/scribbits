@@ -11,17 +11,68 @@
   </head>
 
   <body>
-    <div id="app">
+    <div id="app" aria-busy="true">
       <div
         class="game-boot-status"
         id="game-boot-status"
         data-phase="loading"
-        role="status"
-        aria-live="polite"
       >
-        <img src="./assets/scribbits-logo.webp" alt="Scribbits" />
-        <strong>OPENING SCRIBBITS…</strong>
-        <span id="game-boot-message">Preparing pages and artwork…</span>
+        <div class="game-boot-card">
+          <span class="game-boot-tape" aria-hidden="true"></span>
+          <img
+            class="game-boot-logo"
+            src="./assets/scribbits-logo.webp"
+            alt=""
+          />
+          <div class="game-boot-doodles" aria-hidden="true">
+            <img src="./assets/splash-doodle-mossmop.png" alt="" />
+            <img src="./assets/splash-doodle-looplet.png" alt="" />
+            <img src="./assets/splash-doodle-stormpuff.png" alt="" />
+          </div>
+          <p class="game-boot-tagline" data-i18n="preloader.tagline">
+            Draw it. Its shape becomes its stats.
+          </p>
+          <div class="game-boot-progress-row">
+            <div
+              class="game-boot-progress"
+              id="game-boot-progress"
+              role="progressbar"
+              aria-valuemin="0"
+              aria-valuemax="100"
+              aria-valuenow="0"
+              data-i18n-attr="aria-label:preloader.progressLabel"
+            >
+              <span class="game-boot-progress-fill"></span>
+            </div>
+            <span class="game-boot-percent" id="game-boot-percent" aria-hidden="true"
+              >0%</span
+            >
+          </div>
+          <strong
+            class="game-boot-message"
+            id="game-boot-message"
+            role="status"
+            aria-live="polite"
+            data-i18n="preloader.preparing"
+          >
+            Preparing pages and artwork…
+          </strong>
+          <div class="game-boot-tip">
+            <span data-i18n="preloader.tipLabel">SCRIBBIT TIP</span>
+            <p id="game-boot-tip" data-i18n="preloader.tipShape">
+              Your drawing’s shape decides how it fights.
+            </p>
+          </div>
+          <button
+            class="game-boot-retry"
+            id="game-boot-retry"
+            type="button"
+            data-i18n="preloader.retry"
+            hidden
+          >
+            TRY AGAIN
+          </button>
+        </div>
       </div>
       <div id="game-container"></div>
       <div

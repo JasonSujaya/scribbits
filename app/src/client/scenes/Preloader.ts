@@ -1,14 +1,8 @@
-import * as Phaser from 'phaser';
 import { Scene } from 'phaser';
 import { fetchArena } from '../lib/api';
 import { generateAllElementBadges, generateCoreArt } from '../lib/art';
-import { mountLivingPaper } from '../lib/livingpaper';
-import { FONT_STACK, UI } from '../lib/theme';
-import { errorPanel } from '../lib/ui';
-import type { ErrorPanel } from '../lib/ui';
 import { setArena } from '../lib/registry';
 import {
-  BRAND_LOGO_TEXTURE,
   preloadPrimaryNavigationVisualAssets,
   primaryNavigationVisualAssetsReady,
 } from '../lib/visualassets';
@@ -16,63 +10,35 @@ import type { ArenaState } from '../../shared/arena';
 import { translate } from '../lib/localization';
 import { preparePrimaryScenes, startScene } from '../lib/scenenavigation';
 import { PRIMARY_PRELOAD_SCENE_KEYS } from '../lib/sceneroutes';
+import {
+  markGameBootPhase,
+  setGameBootProgress,
+  setGameBootRetry,
+} from '../lib/gameboot';
 
 // Fetch the arena snapshot while the complete primary play loop and its artwork
 // load in parallel. Home is revealed only when normal navigation is ready.
 // Player drawings and optional reference pages still load on demand.
 export class Preloader extends Scene {
-  private statusText: Phaser.GameObjects.Text | null = null;
-  private errorPanelRef: ErrorPanel | null = null;
-
   constructor() {
     super('Preloader');
   }
 
-  init(): void {
-    this.statusText = null;
-    this.errorPanelRef = null;
-  }
-
   create(): void {
-    const { width, height } = this.scale;
-    this.cameras.main.setBackgroundColor(UI.desk);
-
     generateCoreArt(this);
     generateAllElementBadges(this);
-    mountLivingPaper(this, { edgeCreatures: false });
-
-    const brandLogo = this.add.image(
-      width / 2,
-      height * 0.34,
-      BRAND_LOGO_TEXTURE
-    );
-    const brandLogoScale = Math.min(
-      (width * 0.74) / brandLogo.width,
-      250 / brandLogo.height
-    );
-    brandLogo.setScale(brandLogoScale);
-    this.add
-      .text(width / 2, height * 0.47, translate('preloader.tagline'), {
-        fontFamily: FONT_STACK,
-        fontSize: '28px',
-        color: UI.inkSoft,
-      })
-      .setOrigin(0.5);
-
-    this.statusText = this.add
-      .text(width / 2, height * 0.56, translate('preloader.loading'), {
-        fontFamily: FONT_STACK,
-        fontSize: '26px',
-        color: UI.inkSoft,
-      })
-      .setOrigin(0.5);
-
     void this.loadArena();
   }
 
   private async loadArena(): Promise<void> {
+    setGameBootRetry(null);
+    markGameBootPhase('loading', translate('preloader.preparing'));
+    const arenaRequest = fetchArena().then((result) => {
+      setGameBootProgress('arena', 1);
+      return result;
+    });
     const [result, gamePreparation] = await Promise.all([
-      fetchArena(),
+      arenaRequest,
       this.preparePrimaryGame(),
     ]);
     if (!result.ok) {
@@ -90,7 +56,10 @@ export class Preloader extends Scene {
     { ok: true } | { ok: false; error: string }
   > {
     try {
-      const primarySceneCode = preparePrimaryScenes(this.sys.game);
+      const primarySceneCode = preparePrimaryScenes(
+        this.sys.game,
+        (progress) => setGameBootProgress('code', progress)
+      );
       const primaryArtwork = this.loadPrimaryArtwork();
       await Promise.all([primarySceneCode, primaryArtwork]);
       return { ok: true };
@@ -98,22 +67,29 @@ export class Preloader extends Scene {
       console.error('Failed to prepare the primary game', error);
       return {
         ok: false,
-        error: 'The game could not finish loading. Check your connection and retry.',
+        error: translate('preloader.error.load'),
       };
     }
   }
 
   private loadPrimaryArtwork(): Promise<void> {
     if (primaryNavigationVisualAssetsReady(this)) {
+      setGameBootProgress('artwork', 1);
       return Promise.resolve();
     }
     return new Promise((resolve, reject) => {
+      const reportProgress = (progress: number): void => {
+        setGameBootProgress('artwork', progress);
+      };
+      this.load.on('progress', reportProgress);
       this.load.once('complete', () => {
+        this.load.off('progress', reportProgress);
         if (primaryNavigationVisualAssetsReady(this)) {
+          setGameBootProgress('artwork', 1);
           resolve();
           return;
         }
-        reject(new Error('Primary game artwork did not finish loading.'));
+        reject(new Error(translate('preloader.error.artwork')));
       });
       preloadPrimaryNavigationVisualAssets(this);
       this.load.start();
@@ -129,20 +105,7 @@ export class Preloader extends Scene {
   }
 
   private showRetry(message: string): void {
-    this.statusText?.setText('');
-    if (this.errorPanelRef) return;
-    const { width, height } = this.scale;
-    this.errorPanelRef = errorPanel(
-      this,
-      width / 2,
-      height * 0.62,
-      message,
-      () => {
-        this.errorPanelRef?.destroy();
-        this.errorPanelRef = null;
-        this.statusText?.setText(translate('preloader.loading'));
-        void this.loadArena();
-      }
-    );
+    setGameBootRetry(() => void this.loadArena());
+    markGameBootPhase('error', message);
   }
 }

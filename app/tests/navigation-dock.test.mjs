@@ -34,6 +34,10 @@ const gameCssSource = await readFile(
   new URL('../src/client/game.css', import.meta.url),
   'utf8'
 );
+const gameBootSource = await readFile(
+  new URL('../src/client/lib/gameboot.ts', import.meta.url),
+  'utf8'
+);
 const preloaderSource = await readFile(
   new URL('../src/client/scenes/Preloader.ts', import.meta.url),
   'utf8'
@@ -325,9 +329,12 @@ test('the primary play loop is fully prepared before Home is revealed', () => {
   }
   assert.match(
     preloaderSource,
-    /Promise\.all\(\[\s*fetchArena\(\),\s*this\.preparePrimaryGame\(\)/
+    /const arenaRequest = fetchArena\(\)[\s\S]*Promise\.all\(\[\s*arenaRequest,\s*this\.preparePrimaryGame\(\)/
   );
-  assert.match(preloaderSource, /preparePrimaryScenes\(this\.sys\.game\)/);
+  assert.match(
+    preloaderSource,
+    /preparePrimaryScenes\([\s\S]{0,120}setGameBootProgress\('code', progress\)/
+  );
   assert.match(
     preloaderSource,
     /preloadPrimaryNavigationVisualAssets\(this\)/
@@ -337,6 +344,17 @@ test('the primary play loop is fully prepared before Home is revealed', () => {
     /primaryNavigationVisualAssetsReady\(this\)/
   );
   assert.match(preloaderSource, /dataset\.primaryPreload = 'ready'/);
+  assert.match(
+    preloaderSource,
+    /this\.load\.on\('progress', reportProgress\)/
+  );
+  assert.match(preloaderSource, /setGameBootProgress\('arena', 1\)/);
+  assert.match(gameHtmlSource, /id="game-boot-progress"/);
+  assert.match(gameHtmlSource, /id="game-boot-tip"/);
+  assert.match(gameHtmlSource, /id="game-boot-retry"/);
+  assert.match(gameBootSource, /BOOT_SEGMENT_WEIGHTS/);
+  assert.match(gameBootSource, /startGameBootTips/);
+  assert.match(gameBootSource, /retryHandler\?\.\(\)/);
   assert.match(
     visualAssetsSource,
     /preloadHomeVisualAssets\(scene\)[\s\S]*preloadDrawVisualAssets\(scene\)[\s\S]*preloadReplayVisualAssets\(scene\)[\s\S]*preloadShopVisualAssets\(scene\)/

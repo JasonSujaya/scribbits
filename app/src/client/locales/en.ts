@@ -78,6 +78,17 @@ export const englishMessages = {
 
   'preloader.tagline': 'Draw it. Its shape becomes its stats.',
   'preloader.loading': 'Reading the forecast…',
+  'preloader.preparing': 'Preparing pages and artwork…',
+  'preloader.progressLabel': 'Opening Scribbits',
+  'preloader.tipLabel': 'SCRIBBIT TIP',
+  'preloader.tipShape': 'Your drawing’s shape decides how it fights.',
+  'preloader.tipColor': 'Your colors help choose your fighter style.',
+  'preloader.tipGear': 'Battles earn Ink. Ink opens Mystery Gear.',
+  'preloader.tipLife': 'Every Scribbit grows up and leaves a story behind.',
+  'preloader.retry': 'TRY AGAIN',
+  'preloader.error.load':
+    'The game could not finish loading. Check your connection and retry.',
+  'preloader.error.artwork': 'The game artwork did not finish loading.',
 
   'screen.home': 'HOME',
   'screen.arena': 'ARENA',
