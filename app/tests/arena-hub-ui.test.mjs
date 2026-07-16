@@ -418,12 +418,15 @@ test('the first completed Rival Run opens first Gear only from committed Ink', (
   assert.doesNotMatch(capsuleMachineSource, /WIN A BATTLE/);
 });
 
-test('Arena rematches use Rival Run while birth uses one simple random fight', () => {
+test('Arena rematches use Rival Run while birth uses one simple first fight', () => {
   assert.match(arenaSource, /this\.rivalRunFlow = openRivalRun\(this/);
   assert.match(replaySource, /this\.rivalRunFlow = openRivalRun\(this/);
   assert.doesNotMatch(arenaSource, /\bspar\(/);
   assert.doesNotMatch(replaySource, /\bspar\(/);
-  assert.match(drawSource, /await spar\(scribbit\.id\)/);
+  assert.match(
+    drawSource,
+    /await spar\(scribbit\.id, undefined, undefined, true\)/
+  );
   assert.doesNotMatch(drawSource, /openRivalRun/);
   assert.match(
     rivalRunFlowSource,

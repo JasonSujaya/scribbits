@@ -279,7 +279,8 @@ export function fetchSparRivals(
 export function spar(
   scribbitId: string,
   opponentId?: string,
-  rivalRun?: RivalRunState
+  rivalRun?: RivalRunState,
+  firstBattle = false
 ): Promise<ApiResult<SparBattleResponse>> {
   return postJson<SparRequest, SparBattleResponse>('/api/spar', {
     scribbitId,
@@ -292,6 +293,7 @@ export function spar(
           },
         }
       : {}),
+    ...(firstBattle ? { firstBattle: true } : {}),
   });
 }
 

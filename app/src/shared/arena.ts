@@ -720,6 +720,7 @@ export type SparRequest = {
   scribbitId: string;
   opponentId?: string; // when present, must be in this challenger's current server-authored slate
   rivalRun?: SparRivalRunAttempt; // optional quick spars remain outside Rival Runs
+  firstBattle?: true; // newborn-only request; server verifies the player's first completed battle
 };
 export type BossChallengeRequest = { scribbitId: string };
 

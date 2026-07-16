@@ -16,6 +16,7 @@ import {
 } from '../../shared/gearcombat';
 import {
   evaluateBattleArenaChallenge,
+  getBattleArenaDefinition,
   getBattleArenaForDay,
   type BattleArenaId,
 } from '../../shared/battlearena';
@@ -94,9 +95,12 @@ export const simulate = (
   fighterB: Scribbit,
   seed: number,
   forecast: Forecast,
-  kind: BattleKind
+  kind: BattleKind,
+  options: Readonly<{ battleArenaId?: BattleArenaId }> = {}
 ): BattleReport => {
-  const battleArena = getBattleArenaForDay(forecast.day);
+  const battleArena = options.battleArenaId
+    ? getBattleArenaDefinition(options.battleArenaId)
+    : getBattleArenaForDay(forecast.day);
   // Active Gear starts in direct Exhibition/Spar fights. Rumble, Champion,
   // and Practice stay on the combat-neutral rules until the wider matrix ships.
   const gearEnabled = kind === 'exhibition';

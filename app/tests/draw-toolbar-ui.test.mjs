@@ -254,7 +254,7 @@ test('Draw offers a quiet visual-only dark canvas preview', () => {
   );
 });
 
-test('Draw sends the newborn straight into one guarded random first fight', () => {
+test('Draw sends the newborn straight into one guarded simple first fight', () => {
   assert.match(paperIconSource, /\| 'tools'/);
   assert.match(paperIconSource, /if \(key === 'tools'\)/);
   assert.match(drawSource, /ENTERED TONIGHT’S RUMBLE/);
@@ -269,7 +269,10 @@ test('Draw sends the newborn straight into one guarded random first fight', () =
     drawSource,
     /private async startFirstBattle\(scribbit: Scribbit\)/
   );
-  assert.match(drawSource, /await spar\(scribbit\.id\)/);
+  assert.match(
+    drawSource,
+    /await spar\(scribbit\.id, undefined, undefined, true\)/
+  );
   assert.match(drawSource, /FINDING A RIVAL…/);
   assert.match(drawSource, /FIRST FIGHT PAUSED/);
   assert.doesNotMatch(

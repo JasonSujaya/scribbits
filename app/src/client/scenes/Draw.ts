@@ -5411,7 +5411,7 @@ export class Draw extends Scene {
   private async startFirstBattle(scribbit: Scribbit): Promise<void> {
     const sceneVisitEpoch = this.sceneVisitEpoch;
     this.setFirstFightBusy(scribbit, true);
-    const result = await spar(scribbit.id);
+    const result = await spar(scribbit.id, undefined, undefined, true);
     if (!this.isCurrentSceneVisit(sceneVisitEpoch)) return;
     if (!result.ok) {
       console.error('First fight failed:', result.error);

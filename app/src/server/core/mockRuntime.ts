@@ -17,6 +17,7 @@ export {
 export { cloneScribbit } from '../../shared/arena';
 export { getPaintBucketState } from '../../shared/paintbucket';
 export {
+  DEFAULT_BATTLE_ARENA_ID,
   getBattleArenaForDay,
   getNextBattleArenaUnlock,
 } from '../../shared/battlearena';
@@ -107,6 +108,7 @@ export {
   toLegacyCard,
 } from '../../shared/legacycards';
 export {
+  chooseFoundingFirstBattleOpponent,
   chooseFoundingSparOpponent,
   findFoundingScribbit,
   selectFoundingSparRivalSlate,

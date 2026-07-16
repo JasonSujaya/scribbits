@@ -3662,6 +3662,7 @@ try {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       scribbitId: freshSubmission.body.scribbit.id,
+      firstBattle: true,
     }),
   });
   assert.equal(
@@ -3706,9 +3707,20 @@ try {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       scribbitId: freshSubmission.body.scribbit.id,
+      firstBattle: true,
     }),
   });
   assert.equal(firstFightAfterPowerUp.response.status, 200);
+  assert.equal(
+    firstFightAfterPowerUp.body.report.battleArenaId,
+    battleArenas.DEFAULT_BATTLE_ARENA_ID,
+    'the newborn debut must use Sticker Stadium instead of the rotating daily venue'
+  );
+  assert.equal(
+    firstFightAfterPowerUp.body.report.b.level,
+    1,
+    'the newborn debut must use a level-one founding rival'
+  );
   const firstFightInkAward = firstFightAfterPowerUp.body.report.inkAwarded ?? 0;
   if (firstFightAfterPowerUp.body.powerUpOffer) {
     const postFightPowerUpClaim = await requestMock(

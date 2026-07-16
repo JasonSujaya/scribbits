@@ -1,6 +1,8 @@
 import type { Scribbit } from '../../shared/arena';
 import { cloneScribbit, LEVEL_XP_THRESHOLDS } from '../../shared/arena';
+import { getCombatRoleAdvantage } from '../../shared/combat/roles';
 import { selectPrimaryPower } from '../../shared/combat/selection';
+import { selectCombatRole } from '../../shared/combat/selection';
 import { createScribbitUpgradesForLevel } from '../../shared/combat/upgrades';
 import {
   FOUNDING_SCRIBBIT_DEFINITIONS,
@@ -96,6 +98,34 @@ export const chooseFoundingSparOpponent = (
     throw new Error('Founding spar roster is empty');
   }
 
+  return cloneScribbit(opponent);
+};
+
+// A newborn's first fight teaches the core loop before daily venue difficulty.
+// Keep the rival real and truthful: level 1, no hidden stat nerf, and prefer a
+// role the player's Scribbit naturally counters.
+export const chooseFoundingFirstBattleOpponent = (
+  challenger: Pick<Scribbit, 'stats'>,
+  seed: number
+): Scribbit => {
+  const challengerRole = selectCombatRole(challenger.stats);
+  const levelOneFounders = foundingScribbits.filter(
+    (scribbit) => scribbit.level === 1
+  );
+  const rankedFounders = shuffleWithSeed(levelOneFounders, seed).sort(
+    (left, right) => {
+      const advantageScore = (founder: Scribbit): number => {
+        const advantage = getCombatRoleAdvantage(
+          challengerRole,
+          selectCombatRole(founder.stats)
+        );
+        return advantage === 'advantage' ? 2 : advantage === 'neutral' ? 1 : 0;
+      };
+      return advantageScore(right) - advantageScore(left);
+    }
+  );
+  const opponent = rankedFounders[0];
+  if (!opponent) throw new Error('Founding first-battle roster is empty');
   return cloneScribbit(opponent);
 };
 

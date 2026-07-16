@@ -15,7 +15,10 @@ export const createMockBattleReportFactory = ({ simulate, getForecast }) => {
       fighterB,
       explicitSeed ?? interactiveSeed,
       options.forecast ?? getForecast(),
-      kind
+      kind,
+      options.battleArenaId
+        ? { battleArenaId: options.battleArenaId }
+        : undefined
     );
   };
 };

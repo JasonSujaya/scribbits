@@ -29,6 +29,7 @@ if (!existsSync(fileURLToPath(mockCombatBundleUrl))) {
 }
 const {
   CAPSULE_COST,
+  DEFAULT_BATTLE_ARENA_ID,
   GEAR_MERGE_COPY_COST,
   MAX_GEAR_RANK,
   COSMETIC_CATALOG,
@@ -45,6 +46,7 @@ const {
   advanceCapsulePity,
   advanceFounderChronicle,
   advanceRivalRunState,
+  chooseFoundingFirstBattleOpponent,
   chooseFoundingSparOpponent,
   cloneScribbit,
   collectLegacyCards,
@@ -317,8 +319,7 @@ const seededOwnedScribbits = [
 
 // These records exist only for the automated API contract suite. The normal
 // local app starts with no invented players, entrants, champions, or legends.
-const useContractFixtures =
-  process.env.SCRIBBITS_CONTRACT_FIXTURES === '1';
+const useContractFixtures = process.env.SCRIBBITS_CONTRACT_FIXTURES === '1';
 
 const todayEntrants = [
   makeScribbit({
@@ -970,10 +971,15 @@ if (useContractFixtures) {
     if (olderScoutReplay) break;
   }
   if (!olderScoutReplay) {
-    olderScoutReplay = createBattleReport('rumble', championPick, todayEntrants[1], {
-      seed: 0,
-      forecast: makeForecast(memory.dayNumber - 2),
-    });
+    olderScoutReplay = createBattleReport(
+      'rumble',
+      championPick,
+      todayEntrants[1],
+      {
+        seed: 0,
+        forecast: makeForecast(memory.dayNumber - 2),
+      }
+    );
   }
   memory.rumbleReplaysByDay.set(olderScoutReplay.day, olderScoutReplay);
 }
@@ -1657,9 +1663,10 @@ const arenaState = (economy, previewMode = 'returning') => {
       memory.communityThemeDrawCountByPreviewMode[previewMode] ?? 0
     ),
     forecast: memory.forecast,
-    champion: !memory.champion || memory.hiddenScribbitIds.has(memory.champion.id)
-      ? null
-      : cloneScribbit(memory.champion),
+    champion:
+      !memory.champion || memory.hiddenScribbitIds.has(memory.champion.id)
+        ? null
+        : cloneScribbit(memory.champion),
     myScribbits: getLivingScribbitsForPreview(previewMode).map(cloneScribbit),
     discoveredPowerUpIds: [
       ...new Set(
@@ -2727,6 +2734,11 @@ const handleApi = async (request, response, url) => {
 
     const requestedOpponentId =
       typeof body?.opponentId === 'string' ? body.opponentId.trim() : '';
+    const firstBattleRequested = body?.firstBattle === true;
+    if (body?.firstBattle !== undefined && !firstBattleRequested) {
+      sendError(response, 400, 'Choose a valid first fight.');
+      return;
+    }
     const founderChronicle = getFounderChronicleForPreview(previewMode);
     const requestedRivalRun =
       body?.rivalRun &&
@@ -2736,9 +2748,25 @@ const handleApi = async (request, response, url) => {
         : null;
     if (
       (body?.rivalRun !== undefined && !requestedRivalRun) ||
-      (requestedRivalRun && !requestedOpponentId)
+      (requestedRivalRun && !requestedOpponentId) ||
+      (firstBattleRequested &&
+        (requestedOpponentId || requestedRivalRun !== null))
     ) {
       sendError(response, 400, 'Choose a valid Rival Run bout.');
+      return;
+    }
+    if (
+      firstBattleRequested &&
+      (memory.completedBattlePreviewModes.has(previewMode) ||
+        challenger.bornDay !== memory.dayNumber ||
+        challenger.wins !== 0 ||
+        challenger.losses !== 0)
+    ) {
+      sendError(
+        response,
+        409,
+        'The simple first fight is only for a newborn debut.'
+      );
       return;
     }
     const activeRivalRun = requestedRivalRun
@@ -2815,13 +2843,18 @@ const handleApi = async (request, response, url) => {
       : null;
     const opponent = requestedOpponentId
       ? chosenChoice?.rival
-      : chooseFoundingSparOpponent(
-          challenger,
-          hashStringToUint32(`quick-spar:${challenger.id}:${Date.now()}`),
-          {
-            preferredFounderId: founderChronicle.activeRivalry?.founderId,
-          }
-        );
+      : firstBattleRequested
+        ? chooseFoundingFirstBattleOpponent(
+            challenger,
+            hashStringToUint32(`first-battle:${challenger.id}`)
+          )
+        : chooseFoundingSparOpponent(
+            challenger,
+            hashStringToUint32(`quick-spar:${challenger.id}:${Date.now()}`),
+            {
+              preferredFounderId: founderChronicle.activeRivalry?.founderId,
+            }
+          );
     if (!opponent) {
       sendError(
         response,
@@ -2834,7 +2867,11 @@ const handleApi = async (request, response, url) => {
     }
     const report =
       precomputedRunReport ??
-      createBattleReport('exhibition', challenger, opponent);
+      createBattleReport('exhibition', challenger, opponent, {
+        ...(firstBattleRequested
+          ? { battleArenaId: DEFAULT_BATTLE_ARENA_ID }
+          : {}),
+      });
     const rivalRunReceipt = requestedRivalRun
       ? activeRivalRun && chosenChoice
         ? advanceRivalRunState(activeRivalRun, {

@@ -51,6 +51,7 @@ import {
 import { isScoutNotebookReplayDay } from '../../shared/scoutnotebook';
 import { getPaintBucketState } from '../../shared/paintbucket';
 import { dailyLoginRewardAfterClaims } from '../../shared/dailylogin';
+import { DEFAULT_BATTLE_ARENA_ID } from '../../shared/battlearena';
 import {
   isProgressionEventName,
   type ProgressionEventRequest,
@@ -163,6 +164,7 @@ import {
   repairPendingFounderChronicleBattles,
 } from '../core/founderChronicle';
 import {
+  chooseFoundingFirstBattleOpponent,
   chooseFoundingSparOpponent,
   findFoundingScribbit,
   selectFoundingSparRivalSlate,
@@ -477,7 +479,10 @@ const readSparRequest = (value: unknown): SparRequest | undefined => {
     !requestFields.includes('scribbitId') ||
     requestFields.some((field) => {
       return (
-        field !== 'scribbitId' && field !== 'opponentId' && field !== 'rivalRun'
+        field !== 'scribbitId' &&
+        field !== 'opponentId' &&
+        field !== 'rivalRun' &&
+        field !== 'firstBattle'
       );
     })
   ) {
@@ -486,9 +491,14 @@ const readSparRequest = (value: unknown): SparRequest | undefined => {
 
   const scribbitId = readScribbitIdentifier(value.scribbitId);
   if (!scribbitId) return undefined;
+  const firstBattle = value.firstBattle === true;
+  if (requestFields.includes('firstBattle') && !firstBattle) return undefined;
   if (!requestFields.includes('opponentId')) {
-    return requestFields.includes('rivalRun') ? undefined : { scribbitId };
+    if (requestFields.includes('rivalRun')) return undefined;
+    return firstBattle ? { scribbitId, firstBattle: true } : { scribbitId };
   }
+
+  if (firstBattle) return undefined;
 
   const opponentId = readScribbitIdentifier(value.opponentId);
   if (!opponentId) return undefined;
@@ -1072,10 +1082,7 @@ registerPlayerMutatingGet('/arena', async (c) => {
         champion: currentChampion,
         hiddenScribbitIds,
       });
-      if (
-        lastRumbleReceipt?.kind === 'owned' &&
-        lastRumbleReceipt.wins > 0
-      ) {
+      if (lastRumbleReceipt?.kind === 'owned' && lastRumbleReceipt.wins > 0) {
         const rumblePowerUpOffer = await getOrCreatePowerUpOffer(redis, {
           userId: player.userId,
           scribbit: lastRumbleReceipt.entrant,
@@ -1090,10 +1097,7 @@ registerPlayerMutatingGet('/arena', async (c) => {
             (offer) => offer.id === rumblePowerUpOffer.id
           )
         ) {
-          pendingPowerUpOffers = [
-            ...pendingPowerUpOffers,
-            rumblePowerUpOffer,
-          ];
+          pendingPowerUpOffers = [...pendingPowerUpOffers, rumblePowerUpOffer];
         }
       }
     }
@@ -1888,6 +1892,17 @@ api.post('/spar', async (c) => {
       return conflict(c, 'Choose the pending Power-Up before the next fight.');
     }
 
+    const firstBattleRequested = sparRequest.firstBattle === true;
+    if (
+      firstBattleRequested &&
+      ((await hasUserCompletedBattle(redis, player.userId)) ||
+        challenger.bornDay !== dayNumber ||
+        challenger.wins !== 0 ||
+        challenger.losses !== 0)
+    ) {
+      return conflict(c, 'The simple first fight is only for a newborn debut.');
+    }
+
     const randomSparSeed = hashTextToSeed(
       `spar:${utcDateKey}:${player.userId}:${challenger.id}:${Date.now()}:${randomUUID()}`
     );
@@ -1974,12 +1989,14 @@ api.post('/spar', async (c) => {
       opponent = chosenChoice.rival;
       rivalRunChoice = sparRequest.rivalRun ? chosenChoice : null;
     } else {
-      opponent = chooseFoundingSparOpponent(challenger, randomSparSeed, {
-        preferredFounderId: founderChronicle.activeRivalry?.founderId,
-        excludedFounderIds: founderChronicle.resolvedRivalries.map(
-          (rivalry) => rivalry.founderId
-        ),
-      });
+      opponent = firstBattleRequested
+        ? chooseFoundingFirstBattleOpponent(challenger, randomSparSeed)
+        : chooseFoundingSparOpponent(challenger, randomSparSeed, {
+            preferredFounderId: founderChronicle.activeRivalry?.founderId,
+            excludedFounderIds: founderChronicle.resolvedRivalries.map(
+              (rivalry) => rivalry.founderId
+            ),
+          });
     }
 
     const sparSeed = sparRequest.rivalRun
@@ -1990,7 +2007,16 @@ api.post('/spar', async (c) => {
 
     const simulatedReport =
       precomputedRunReport ??
-      simulate(challenger, opponent, sparSeed, forecast, 'exhibition');
+      simulate(
+        challenger,
+        opponent,
+        sparSeed,
+        forecast,
+        'exhibition',
+        firstBattleRequested
+          ? { battleArenaId: DEFAULT_BATTLE_ARENA_ID }
+          : undefined
+      );
     const rivalRunReceipt = sparRequest.rivalRun
       ? rivalRunChoice
         ? await advanceRivalRun(redis, {
