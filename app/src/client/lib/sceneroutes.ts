@@ -16,6 +16,11 @@ export const LAZY_SCENE_KEYS = [
   'Bestiary',
 ] as const;
 
+// These are the complete play loop, not optional reference pages. Their code
+// is split into chunks for cacheability, then fetched before Home is revealed
+// so ordinary navigation never waits on a dynamic import.
+export const PRIMARY_PRELOAD_SCENE_KEYS = LAZY_SCENE_KEYS;
+
 export type LazySceneKey = (typeof LAZY_SCENE_KEYS)[number];
 
 const sceneImports: Record<LazySceneKey, () => SceneModule> = {

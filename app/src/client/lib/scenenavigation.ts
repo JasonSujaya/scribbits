@@ -1,10 +1,16 @@
 import type { Game, Scene } from 'phaser';
-import { isAppDockTabUnlocked } from './appdockprogression';
-import { getArena } from './registry';
-import { hasScene, isLazySceneKey, loadScene } from './sceneroutes';
 import {
-  prefetchVisualAssetGroups,
-  type VisualAssetGroup,
+  PRIMARY_PRELOAD_SCENE_KEYS,
+  hasScene,
+  isLazySceneKey,
+  loadScene,
+} from './sceneroutes';
+import {
+  drawVisualAssetsReady,
+  galleryVisualAssetsReady,
+  homeVisualAssetsReady,
+  replayVisualAssetsReady,
+  shopVisualAssetsReady,
 } from './visualassets';
 
 type SceneData = Record<string, unknown>;
@@ -21,14 +27,6 @@ type TransitionState = {
 };
 
 const transitionStates = new WeakMap<Game, TransitionState>();
-const scheduledCommonPrefetches = new WeakSet<Game>();
-const COMMON_PREFETCH_SCENES = [
-  'ArenaHome',
-  'Draw',
-  'Gallery',
-  'MyBattles',
-  'Shop',
-] as const;
 
 const sceneLabels: Readonly<Record<string, string>> = {
   ScribbitHome: 'Home',
@@ -98,48 +96,24 @@ function sceneLabel(key: string): string {
 function hideAfterFirstRender(
   game: Game,
   destination: Scene,
-  requestId: number,
-  key: string
+  requestId: number
 ): void {
   destination.events.once('create', () => {
     game.events.once('postrender', () => {
       hideTransition(game, requestId);
-      if (key === 'ScribbitHome') scheduleCommonScenePrefetches(game);
     });
   });
 }
 
-function scheduleCommonScenePrefetches(game: Game): void {
-  if (scheduledCommonPrefetches.has(game)) return;
-  scheduledCommonPrefetches.add(game);
-
-  const prefetch = (): void => {
-    const home = game.scene.getScene('ScribbitHome');
-    const arena = getArena(home);
-    const unlockedScenes = COMMON_PREFETCH_SCENES.filter((key) => {
-      if (key === 'Draw') return true;
-      if (key === 'ArenaHome') return isAppDockTabUnlocked(arena, 'arena');
-      if (key === 'Gallery') return isAppDockTabUnlocked(arena, 'bag');
-      if (key === 'MyBattles') return isAppDockTabUnlocked(arena, 'battles');
-      return isAppDockTabUnlocked(arena, 'shop');
-    });
-    unlockedScenes.forEach((key) => {
-      if (hasScene(game, key)) return;
-      void loadScene(game, key).catch(() => {
-        // Navigation shows the visible retry state if a later tap still fails.
-      });
-    });
-    const assetGroups: VisualAssetGroup[] = ['Draw'];
-    if (isAppDockTabUnlocked(arena, 'bag')) assetGroups.push('Gallery');
-    if (isAppDockTabUnlocked(arena, 'battles')) assetGroups.push('Replay');
-    if (isAppDockTabUnlocked(arena, 'shop')) assetGroups.push('Shop');
-    prefetchVisualAssetGroups(assetGroups);
-  };
-  if (typeof window.requestIdleCallback === 'function') {
-    window.requestIdleCallback(prefetch, { timeout: 2_000 });
-  } else {
-    window.setTimeout(prefetch, 1_200);
-  }
+function sceneVisualAssetsReady(game: Game, key: string): boolean {
+  const scene = game.scene.keys[key];
+  if (!scene) return false;
+  if (key === 'ScribbitHome') return homeVisualAssetsReady(scene);
+  if (key === 'Draw') return drawVisualAssetsReady(scene);
+  if (key === 'Replay') return replayVisualAssetsReady(scene);
+  if (key === 'Gallery') return galleryVisualAssetsReady(scene);
+  if (key === 'Shop') return shopVisualAssetsReady(scene);
+  return true;
 }
 
 async function openScene(
@@ -150,21 +124,27 @@ async function openScene(
   sourceScene?: Scene
 ): Promise<boolean> {
   const label = sceneLabel(key);
+  let transitionVisible = false;
   try {
     if (!hasScene(game, key)) {
       if (!isLazySceneKey(key)) {
         throw new Error(`Unknown scene: ${key}`);
       }
       showTransition(game, 'code', `Opening ${label}…`);
+      transitionVisible = true;
       await prepareScene(game, key);
       if (transitionStates.get(game)?.requestId !== requestId) return false;
     }
 
     if (transitionStates.get(game)?.requestId !== requestId) return false;
-    showTransition(game, 'assets', `Setting up ${label}…`);
+    if (!sceneVisualAssetsReady(game, key)) {
+      showTransition(game, 'assets', `Setting up ${label}…`);
+      transitionVisible = true;
+    }
     const destination = game.scene.keys[key];
     if (!destination) throw new Error(`Scene was not registered: ${key}`);
-    hideAfterFirstRender(game, destination, requestId, key);
+    if (transitionVisible) hideAfterFirstRender(game, destination, requestId);
+    else hideTransition(game, requestId);
     if (sourceScene?.scene.isActive()) {
       sourceScene.scene.start(key, data);
     } else {
@@ -196,6 +176,12 @@ export async function prepareScene(game: Game, key: string): Promise<void> {
   if (!isLazySceneKey(key)) throw new Error(`Unknown scene: ${key}`);
   const SceneClass = await loadScene(game, key);
   if (!hasScene(game, key)) game.scene.add(key, SceneClass, false);
+}
+
+export async function preparePrimaryScenes(game: Game): Promise<void> {
+  await Promise.all(
+    PRIMARY_PRELOAD_SCENE_KEYS.map((key) => prepareScene(game, key))
+  );
 }
 
 export function startGameScene(

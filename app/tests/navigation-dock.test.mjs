@@ -22,6 +22,10 @@ const sceneRoutesSource = await readFile(
   new URL('../src/client/lib/sceneroutes.ts', import.meta.url),
   'utf8'
 );
+const visualAssetsSource = await readFile(
+  new URL('../src/client/lib/visualassets.ts', import.meta.url),
+  'utf8'
+);
 const gameHtmlSource = await readFile(
   new URL('../src/client/game.html', import.meta.url),
   'utf8'
@@ -299,20 +303,53 @@ test('Scout and the retired compact Rumble action stay out of navigation', () =>
   assert.match(arenaSource, /this\.openContenderPicker\(\)/);
 });
 
-test('lazy scene transitions preserve the current page then cover asset loading', () => {
+test('the primary play loop is fully prepared before Home is revealed', () => {
   assert.match(uiSource, /export \{ startScene \} from '\.\/scenenavigation'/);
-  assert.match(sceneNavigationSource, /showTransition\(game, 'code'/);
-  assert.match(sceneNavigationSource, /await loadScene\(game, key\)/);
-  assert.match(sceneNavigationSource, /showTransition\(game, 'assets'/);
-  assert.match(sceneNavigationSource, /destination\.events\.once\('create'/);
-  assert.match(sceneNavigationSource, /game\.events\.once\('postrender'/);
-  assert.match(sceneNavigationSource, /scheduleCommonScenePrefetches\(game\)/);
-  assert.match(sceneNavigationSource, /window\.requestIdleCallback\(prefetch/);
-  assert.match(sceneNavigationSource, /prefetchVisualAssetGroups\(assetGroups\)/);
-  assert.match(sceneNavigationSource, /isAppDockTabUnlocked\(arena, 'shop'\)/);
-  assert.match(preloaderSource, /Promise\.all\(\[\s*fetchArena\(\),\s*this\.prepareHome\(\)/);
-  assert.match(preloaderSource, /prepareScene\(this\.sys\.game, 'ScribbitHome'\)/);
-  assert.match(preloaderSource, /preloadHomeVisualAssets\(this\)/);
+  assert.match(
+    sceneRoutesSource,
+    /PRIMARY_PRELOAD_SCENE_KEYS = LAZY_SCENE_KEYS/
+  );
+  for (const sceneName of [
+    'ScribbitHome',
+    'ArenaHome',
+    'Draw',
+    'Replay',
+    'MyBattles',
+    'BattleHistory',
+    'Gallery',
+    'Shop',
+    'ScoutNotebook',
+    'Bestiary',
+  ]) {
+    assert.match(sceneRoutesSource, new RegExp(`'${sceneName}'`));
+  }
+  assert.match(
+    preloaderSource,
+    /Promise\.all\(\[\s*fetchArena\(\),\s*this\.preparePrimaryGame\(\)/
+  );
+  assert.match(preloaderSource, /preparePrimaryScenes\(this\.sys\.game\)/);
+  assert.match(
+    preloaderSource,
+    /preloadPrimaryNavigationVisualAssets\(this\)/
+  );
+  assert.match(
+    preloaderSource,
+    /primaryNavigationVisualAssetsReady\(this\)/
+  );
+  assert.match(preloaderSource, /dataset\.primaryPreload = 'ready'/);
+  assert.match(
+    visualAssetsSource,
+    /preloadHomeVisualAssets\(scene\)[\s\S]*preloadDrawVisualAssets\(scene\)[\s\S]*preloadReplayVisualAssets\(scene\)[\s\S]*preloadShopVisualAssets\(scene\)/
+  );
+  assert.doesNotMatch(sceneNavigationSource, /requestIdleCallback|prefetchVisual/);
+  assert.match(
+    sceneNavigationSource,
+    /if \(!sceneVisualAssetsReady\(game, key\)\)[\s\S]*transitionVisible = true/
+  );
+  assert.match(
+    sceneNavigationSource,
+    /if \(transitionVisible\) hideAfterFirstRender[\s\S]*else hideTransition/
+  );
   assert.match(sceneNavigationSource, /game\.scene\.start\(key, data\)/);
   assert.match(gameHtmlSource, /id="scene-transition-status"/);
   assert.match(

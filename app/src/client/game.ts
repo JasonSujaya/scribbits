@@ -345,7 +345,7 @@ const StartGame = (
 
 document.addEventListener('DOMContentLoaded', () => {
   const start = async (): Promise<void> => {
-    markGameBootPhase('starting', 'Loading the arena…');
+    markGameBootPhase('starting', 'Preparing pages and artwork…');
     if (isLocalDrawAutomationRequest(window.location)) {
       try {
         const response = await fetch('/__mock/draw-automation', {

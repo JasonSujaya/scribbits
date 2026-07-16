@@ -140,7 +140,7 @@ test('Mystery Ink prize actions and red-star ownership use tested presentation p
   );
 });
 
-test('Shop visual assets load lazily and are checked before rendering', () => {
+test('Shop owns its visual asset manifest and checks readiness before rendering', () => {
   const visualAssetsSource = readFileSync(
     join(appRoot, 'src', 'client', 'lib', 'visualassets.ts'),
     'utf8'
@@ -194,7 +194,7 @@ test('Shop visual assets load lazily and are checked before rendering', () => {
   assert.match(
     shopSceneSource,
     /preloadShopVisualAssets\(this\);[\s\S]{0,80}this\.load\.start\(\)/,
-    'Shop must retry a stale or failed lazy asset load'
+    'Shop must retry a stale or failed asset load'
   );
   assert.match(visualAssetsSource, /const SHOP_ARCADE_COLORS = \{/);
   assert.match(visualAssetsSource, /function drawShopArcadeCabinet\(/);

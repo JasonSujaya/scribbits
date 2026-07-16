@@ -89,6 +89,8 @@ const GALLERY_VISUAL_TEXTURES = [
   LEGENDARY_GEAR_ART_TEXTURE,
 ] as const;
 
+const DRAW_VISUAL_TEXTURES = [DRAW_START_CARD_TEXTURE] as const;
+
 const VISUAL_ASSET_URLS: Readonly<Record<string, string>> = Object.freeze({
   'draw-start-challenge-card.webp': DRAW_START_CARD_ART_URL,
   'bag-binder-base-shell-v7.webp': new URL(
@@ -217,68 +219,11 @@ const VISUAL_ASSET_URLS: Readonly<Record<string, string>> = Object.freeze({
   ).href,
 });
 
-export type VisualAssetGroup = 'Draw' | 'Replay' | 'Gallery' | 'Shop';
-
-const GEAR_VISUAL_ASSET_FILES = [
-  'gear-common-atlas.json',
-  'gear-common-atlas.webp',
-  'gear-rare-epic-atlas.json',
-  'gear-rare-epic-atlas.webp',
-  'gear-legendary-atlas.json',
-  'gear-legendary-atlas.webp',
-] as const;
-
-const VISUAL_ASSET_GROUP_FILES: Readonly<
-  Record<VisualAssetGroup, readonly string[]>
-> = {
-  Draw: ['draw-start-challenge-card.webp'],
-  Replay: [
-    'ui-fight-start.webp',
-    'scribbits-battle-title.webp',
-    'ui-button-battle-skip.webp',
-    'ui-button-battle-sound.webp',
-    'ui-button-battle-speed.webp',
-  ],
-  Gallery: ['bag-binder-base-shell-v7.webp', ...GEAR_VISUAL_ASSET_FILES],
-  Shop: [
-    ...GEAR_VISUAL_ASSET_FILES,
-    'scribbits-shop-stage.webp',
-    'scribbits-shop-chest-closed.webp',
-    'scribbits-shop-chest-open.webp',
-    'scribbits-shop-claw-machine-shell.webp',
-    'scribbits-shop-capsule-shell.png',
-    'scribbits-ink-token.webp',
-  ],
-};
-
-const prefetchedVisualAssetUrls = new Set<string>();
-
 const assetUrl = (fileName: string): string => {
   const url = VISUAL_ASSET_URLS[fileName];
   if (!url) throw new Error(`Unknown visual asset: ${fileName}`);
   return url;
 };
-
-/**
- * Warm the browser cache without decoding images into Phaser textures. This
- * keeps first navigation responsive while avoiding the memory cost of keeping
- * every screen's artwork alive from startup.
- */
-export function prefetchVisualAssetGroups(
-  groups: readonly VisualAssetGroup[]
-): void {
-  if (typeof document === 'undefined') return;
-  groups.flatMap((group) => VISUAL_ASSET_GROUP_FILES[group]).forEach((file) => {
-    const url = assetUrl(file);
-    if (prefetchedVisualAssetUrls.has(url)) return;
-    prefetchedVisualAssetUrls.add(url);
-    const link = document.createElement('link');
-    link.rel = 'prefetch';
-    link.href = url;
-    if (/\.(?:png|webp)$/u.test(file)) link.as = 'image';
-    document.head.append(link);
-  });
-}
 
 export function preloadVisualAssets(scene: Scene): void {
   if (!scene.textures.exists(SCRIBBITS_STAGE_TEXTURE)) {
@@ -306,6 +251,10 @@ export function preloadDrawVisualAssets(scene: Scene): void {
     DRAW_START_CARD_TEXTURE,
     assetUrl('draw-start-challenge-card.webp')
   );
+}
+
+export function drawVisualAssetsReady(scene: Scene): boolean {
+  return texturesReady(scene, DRAW_VISUAL_TEXTURES);
 }
 
 export function preloadGalleryVisualAssets(scene: Scene): void {
@@ -404,6 +353,37 @@ export function preloadShopVisualAssets(scene: Scene): void {
 
 export function shopVisualAssetsReady(scene: Scene): boolean {
   return texturesReady(scene, SHOP_VISUAL_TEXTURES);
+}
+
+/**
+ * Decode the artwork used by the complete primary play loop before Home opens.
+ * Shop owns the shared Gear atlas queue; Gallery adds only its binder shell so
+ * the same atlas keys are never queued twice in one loader pass.
+ */
+export function preloadPrimaryNavigationVisualAssets(
+  scene: Scene
+): void {
+  preloadHomeVisualAssets(scene);
+  preloadDrawVisualAssets(scene);
+  preloadReplayVisualAssets(scene);
+  // Shop owns the shared Gear atlas queue in this combined loader pass.
+  preloadShopVisualAssets(scene);
+  if (!scene.textures.exists(BAG_BINDER_SHELL_TEXTURE)) {
+    scene.load.image(
+      BAG_BINDER_SHELL_TEXTURE,
+      assetUrl('bag-binder-base-shell-v7.webp')
+    );
+  }
+}
+
+export function primaryNavigationVisualAssetsReady(scene: Scene): boolean {
+  return (
+    homeVisualAssetsReady(scene) &&
+    drawVisualAssetsReady(scene) &&
+    replayVisualAssetsReady(scene) &&
+    galleryVisualAssetsReady(scene) &&
+    shopVisualAssetsReady(scene)
+  );
 }
 
 function preloadGearVisualAssets(scene: Scene): void {

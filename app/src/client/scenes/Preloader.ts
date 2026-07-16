@@ -9,16 +9,17 @@ import type { ErrorPanel } from '../lib/ui';
 import { setArena } from '../lib/registry';
 import {
   BRAND_LOGO_TEXTURE,
-  homeVisualAssetsReady,
-  preloadHomeVisualAssets,
+  preloadPrimaryNavigationVisualAssets,
+  primaryNavigationVisualAssetsReady,
 } from '../lib/visualassets';
 import type { ArenaState } from '../../shared/arena';
 import { translate } from '../lib/localization';
-import { prepareScene, startScene } from '../lib/scenenavigation';
+import { preparePrimaryScenes, startScene } from '../lib/scenenavigation';
+import { PRIMARY_PRELOAD_SCENE_KEYS } from '../lib/sceneroutes';
 
-// Fetch the arena snapshot while Home code and artwork load in parallel, bake
-// baseline textures, then hand the complete startup state to ScribbitHome.
-// Player drawings still load on demand in the scenes that show them.
+// Fetch the arena snapshot while the complete primary play loop and its artwork
+// load in parallel. Home is revealed only when normal navigation is ready.
+// Player drawings and optional reference pages still load on demand.
 export class Preloader extends Scene {
   private statusText: Phaser.GameObjects.Text | null = null;
   private errorPanelRef: ErrorPanel | null = null;
@@ -70,54 +71,59 @@ export class Preloader extends Scene {
   }
 
   private async loadArena(): Promise<void> {
-    const [result, homePreparation] = await Promise.all([
+    const [result, gamePreparation] = await Promise.all([
       fetchArena(),
-      this.prepareHome(),
+      this.preparePrimaryGame(),
     ]);
     if (!result.ok) {
       this.showRetry(result.error);
       return;
     }
-    if (!homePreparation.ok) {
-      this.showRetry(homePreparation.error);
+    if (!gamePreparation.ok) {
+      this.showRetry(gamePreparation.error);
       return;
     }
     this.startArena(result.data);
   }
 
-  private async prepareHome(): Promise<
+  private async preparePrimaryGame(): Promise<
     { ok: true } | { ok: false; error: string }
   > {
     try {
-      const homeCode = prepareScene(this.sys.game, 'ScribbitHome');
-      const homeArtwork = this.loadHomeArtwork();
-      await Promise.all([homeCode, homeArtwork]);
+      const primarySceneCode = preparePrimaryScenes(this.sys.game);
+      const primaryArtwork = this.loadPrimaryArtwork();
+      await Promise.all([primarySceneCode, primaryArtwork]);
       return { ok: true };
     } catch (error) {
-      console.error('Failed to prepare Home', error);
+      console.error('Failed to prepare the primary game', error);
       return {
         ok: false,
-        error: 'Home could not finish loading. Check your connection and retry.',
+        error: 'The game could not finish loading. Check your connection and retry.',
       };
     }
   }
 
-  private loadHomeArtwork(): Promise<void> {
-    if (homeVisualAssetsReady(this)) return Promise.resolve();
+  private loadPrimaryArtwork(): Promise<void> {
+    if (primaryNavigationVisualAssetsReady(this)) {
+      return Promise.resolve();
+    }
     return new Promise((resolve, reject) => {
       this.load.once('complete', () => {
-        if (homeVisualAssetsReady(this)) {
+        if (primaryNavigationVisualAssetsReady(this)) {
           resolve();
           return;
         }
-        reject(new Error('Home artwork did not finish loading.'));
+        reject(new Error('Primary game artwork did not finish loading.'));
       });
-      preloadHomeVisualAssets(this);
+      preloadPrimaryNavigationVisualAssets(this);
       this.load.start();
     });
   }
 
   private startArena(state: ArenaState): void {
+    this.game.canvas.dataset.primaryPreload = 'ready';
+    this.game.canvas.dataset.preloadedSceneKeys =
+      PRIMARY_PRELOAD_SCENE_KEYS.join(',');
     setArena(this, state);
     startScene(this, 'ScribbitHome');
   }

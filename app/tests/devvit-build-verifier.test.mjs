@@ -28,7 +28,7 @@ test('production verifier requires shipped music and enforces audio budgets', ()
   assert.match(verifierSource, /4\.5 \* 1024 \* 1024/);
 });
 
-test('production verifier rejects an eager monolithic expanded-game bundle', () => {
+test('production verifier keeps startup code split into bounded cacheable chunks', () => {
   assert.match(verifierSource, /gzipSync/);
   assert.match(
     verifierSource,
