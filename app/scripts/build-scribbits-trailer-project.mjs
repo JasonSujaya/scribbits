@@ -167,13 +167,16 @@ const [
   drawVideo,
   homeVideo,
   battleVideo,
-  galleryVideo,
+  gachaVideo,
+  bagVideo,
+  arenaVideo,
   music,
   paperOpen,
   scratch,
   whistle,
   impactHeavy,
   impactBell,
+  coinRattle,
   confirm,
 ] = await Promise.all([
   imageAsset('splash-background', 'Scribbits paper stage', 'app/src/client/assets/scribbits-splash-stage.webp', 'image/webp'),
@@ -182,13 +185,16 @@ const [
   videoAsset('gameplay-draw', drawClipName),
   videoAsset('gameplay-home', homeClipName),
   videoAsset('gameplay-battle', 'battle-wobble-bean'),
-  videoAsset('gameplay-gallery', 'gallery-wobble-bean'),
+  videoAsset('gameplay-gacha', 'gacha-reward'),
+  videoAsset('gameplay-bag', 'bag-items'),
+  videoAsset('gameplay-arena', 'arena-tour'),
   audioAsset('music-battle', 'Scribbits Battle', 'app/src/client/assets/scribbits-battle.mp3'),
   audioAsset('sfx-paper-open', 'Paper Open', 'app/src/client/assets/sfx/paper-open.mp3'),
   audioAsset('sfx-scratch', 'Pencil Scratch', 'app/src/client/assets/sfx/ui-scratch.mp3'),
   audioAsset('sfx-whistle', 'Draw Whistle', 'app/src/client/assets/sfx/draw-start-whistle.mp3'),
   audioAsset('sfx-impact-heavy', 'Heavy Impact', 'app/src/client/assets/sfx/impact-heavy.mp3'),
   audioAsset('sfx-impact-bell', 'Impact Bell', 'app/src/client/assets/sfx/impact-bell.mp3'),
+  audioAsset('sfx-coin-rattle', 'Coin Rattle', 'app/src/client/assets/sfx/coin-rattle.mp3'),
   audioAsset('sfx-confirm', 'Confirm', 'app/src/client/assets/sfx/ui-confirm-2.mp3'),
 ]);
 
@@ -207,8 +213,8 @@ const project = {
   background: '#f7eedc',
   assets: {
     images: [splashBackground, logo, wobbleHero],
-    videos: [drawVideo, homeVideo, battleVideo, galleryVideo],
-    audio: [music, paperOpen, scratch, whistle, impactHeavy, impactBell, confirm],
+    videos: [drawVideo, homeVideo, battleVideo, gachaVideo, bagVideo, arenaVideo],
+    audio: [music, paperOpen, scratch, whistle, impactHeavy, impactBell, coinRattle, confirm],
     fonts: [
       {
         id: 'font-dynapuff-trailer',
@@ -226,11 +232,13 @@ const project = {
     { id: 'scratch-one', assetId: 'sfx-scratch', kind: 'sfx', name: 'Pencil Scratch 1', startFrame: 68, durationFrames: 12, trimBeforeFrames: 0, volume: 0.9, muted: false, loop: false, playbackRate: 1 },
     { id: 'scratch-two', assetId: 'sfx-scratch', kind: 'sfx', name: 'Pencil Scratch 2', startFrame: 105, durationFrames: 12, trimBeforeFrames: 0, volume: 0.82, muted: false, loop: false, playbackRate: 0.9 },
     { id: 'whistle', assetId: 'sfx-whistle', kind: 'sfx', name: 'Draw Whistle', startFrame: 198, durationFrames: 48, trimBeforeFrames: 0, volume: 0.82, muted: false, loop: false, playbackRate: 1 },
-    { id: 'impact-one', assetId: 'sfx-impact-heavy', kind: 'sfx', name: 'Heavy Impact 1', startFrame: 450, durationFrames: 30, trimBeforeFrames: 0, volume: 0.9, muted: false, loop: false, playbackRate: 1 },
-    { id: 'impact-two', assetId: 'sfx-impact-heavy', kind: 'sfx', name: 'Heavy Impact 2', startFrame: 540, durationFrames: 30, trimBeforeFrames: 0, volume: 0.95, muted: false, loop: false, playbackRate: 0.92 },
-    { id: 'battle-bell', assetId: 'sfx-impact-bell', kind: 'sfx', name: 'Battle Bell', startFrame: 585, durationFrames: 36, trimBeforeFrames: 0, volume: 0.8, muted: false, loop: false, playbackRate: 1 },
-    { id: 'gallery-page', assetId: 'sfx-paper-open', kind: 'sfx', name: 'Gallery Page', startFrame: 690, durationFrames: 36, trimBeforeFrames: 0, volume: 0.75, muted: false, loop: false, playbackRate: 1 },
-    { id: 'confirm', assetId: 'sfx-confirm', kind: 'sfx', name: 'Logo Confirm', startFrame: 780, durationFrames: 30, trimBeforeFrames: 0, volume: 0.9, muted: false, loop: false, playbackRate: 1 },
+    { id: 'impact-one', assetId: 'sfx-impact-heavy', kind: 'sfx', name: 'Heavy Impact 1', startFrame: 350, durationFrames: 30, trimBeforeFrames: 0, volume: 0.9, muted: false, loop: false, playbackRate: 1 },
+    { id: 'impact-two', assetId: 'sfx-impact-heavy', kind: 'sfx', name: 'Heavy Impact 2', startFrame: 420, durationFrames: 30, trimBeforeFrames: 0, volume: 0.95, muted: false, loop: false, playbackRate: 0.92 },
+    { id: 'battle-bell', assetId: 'sfx-impact-bell', kind: 'sfx', name: 'Battle Bell', startFrame: 465, durationFrames: 36, trimBeforeFrames: 0, volume: 0.8, muted: false, loop: false, playbackRate: 1 },
+    { id: 'gacha-coins', assetId: 'sfx-coin-rattle', kind: 'sfx', name: 'Mystery Gear Pull', startFrame: 505, durationFrames: 54, trimBeforeFrames: 0, volume: 0.9, muted: false, loop: false, playbackRate: 1 },
+    { id: 'bag-page', assetId: 'sfx-paper-open', kind: 'sfx', name: 'Gear Bag Page', startFrame: 600, durationFrames: 36, trimBeforeFrames: 0, volume: 0.75, muted: false, loop: false, playbackRate: 1 },
+    { id: 'arena-confirm', assetId: 'sfx-confirm', kind: 'sfx', name: 'Arena Confirm', startFrame: 720, durationFrames: 30, trimBeforeFrames: 0, volume: 0.8, muted: false, loop: false, playbackRate: 1 },
+    { id: 'confirm', assetId: 'sfx-confirm', kind: 'sfx', name: 'Logo Confirm', startFrame: 815, durationFrames: 30, trimBeforeFrames: 0, volume: 0.9, muted: false, loop: false, playbackRate: 1 },
   ],
   pages: [
     page('hook', 'Hook', 2, [
@@ -248,15 +256,23 @@ const project = {
       videoElement('home-gameplay', 'gameplay-home'),
       ...captionElements('home-caption', 'BRING IT HOME.', { durationFrames: 66, y: 105, fill: '#ffd447' }),
     ], 'slide'),
-    page('battle', 'Watch it fight', 10, [
+    page('battle', 'Watch it fight', 6, [
       videoElement('battle-gameplay', 'gameplay-battle'),
-      ...captionElements('battle-caption', 'WATCH IT FIGHT.', { durationFrames: 72, y: 1_470 }),
+      ...captionElements('battle-caption', 'WATCH IT FIGHT.', { durationFrames: 58, y: 1_470 }),
     ], 'zoom'),
-    page('gallery', 'Every draw leaves a legacy', 5, [
-      videoElement('gallery-gameplay', 'gameplay-gallery'),
-      ...captionElements('gallery-caption', 'EVERY DRAW LEAVES A LEGACY.', { durationFrames: 92, y: 110, fontSize: 48, fill: '#ffd447' }),
+    page('gacha', 'Pull mystery gear', 4, [
+      videoElement('gacha-gameplay', 'gameplay-gacha'),
+      ...captionElements('gacha-caption', 'PULL MYSTERY GEAR.', { durationFrames: 62, y: 110, fontSize: 55, fill: '#ffd447' }),
     ], 'slide'),
-    page('cta', 'Play on Reddit', 5, [
+    page('bag', 'Build your loadout', 4, [
+      videoElement('bag-gameplay', 'gameplay-bag'),
+      ...captionElements('bag-caption', 'COLLECT. EQUIP. CREATE.', { durationFrames: 62, y: 110, fontSize: 50 }),
+    ], 'slide'),
+    page('arena', 'Explore the arena', 3, [
+      videoElement('arena-gameplay', 'gameplay-arena'),
+      ...captionElements('arena-caption', 'EXPLORE THE ARENA.', { durationFrames: 58, y: 110, fontSize: 54, fill: '#ffd447' }),
+    ], 'zoom'),
+    page('cta', 'Play on Reddit', 3, [
       imageElement('cta-background', 'splash-background', { fit: 'cover' }),
       imageElement('cta-hero', 'wobble-bean-hero', { x: 325, y: 1_175, width: 430, height: 430, rotation: 3, animation: 'drift', animationFrames: 28 }),
       imageElement('cta-logo', 'scribbits-logo', { x: 90, y: 180, width: 900, height: 430, animation: 'pop', animationFrames: 26 }),
