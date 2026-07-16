@@ -1,4 +1,5 @@
 import { showToast } from '@devvit/web/client';
+import * as Phaser from 'phaser';
 import type { Scene } from 'phaser';
 import { deleteMyData } from './api';
 import { CanvasModalOverlay } from './overlay';
@@ -46,14 +47,25 @@ export function openPrivacyPopup(
       .rectangle(width / 2, height / 2, width, height, 0x1a1320, 0.72)
       .setInteractive();
     scrim.on('pointerup', destroy);
-    popupLayer.add([
-      scrim,
-      stickerCard(scene, width / 2, centerY, width - 80, 820, {
-        tapeColor: UI.tapeAlt,
-        tapeWidth: 94,
-        tilt: -0.2,
-      }),
-    ]);
+    const card = stickerCard(scene, width / 2, centerY, width - 80, 820, {
+      tapeColor: UI.tapeAlt,
+      tapeWidth: 94,
+      tilt: -0.2,
+    });
+    const cardBlocker = scene.add
+      .rectangle(0, 0, width - 80, 820, 0xffffff, 0.001)
+      .setInteractive();
+    cardBlocker.on(
+      'pointerup',
+      (
+        _pointer: unknown,
+        _localX: unknown,
+        _localY: unknown,
+        event: Phaser.Types.Input.EventData
+      ) => event.stopPropagation?.()
+    );
+    card.addAt(cardBlocker, 0);
+    popupLayer.add([scrim, card]);
   };
 
   const renderDeleted = (removedScribbits: number): void => {
@@ -199,6 +211,8 @@ export function openPrivacyPopup(
   });
   deleteControl = popupOverlay.add({
     label: 'Delete all my stored game data',
+    attributes: { 'data-sfx-cue': 'ui.primary' },
+    pointerPassthrough: true,
     rect: {
       x: 90,
       y: centerY + 140,

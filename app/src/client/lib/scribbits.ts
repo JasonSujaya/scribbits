@@ -6,10 +6,7 @@ import * as Phaser from 'phaser';
 import { Scene } from 'phaser';
 import type { Element, Scribbit } from '../../shared/arena';
 import { LEVEL_XP_THRESHOLDS, MAX_LEVEL } from '../../shared/arena';
-import {
-  generateBlankDrawingTexture,
-  generateDoodleTexture,
-} from './proceduraldoodleart';
+import { generateDoodleTexture } from './proceduraldoodleart';
 
 // Rendering only needs identity + art. Keeping this narrower than Scribbit lets
 // immutable LegacyCard DTOs reuse the drawing pipeline without making them
@@ -45,6 +42,8 @@ const sceneDrawingTextures = new WeakMap<
   { keys: Set<string>; release: () => void }
 >();
 let drawingTextureUseSequence = 0;
+let drawingSourceLoadSequence = 0;
+const loadedRemoteDrawingTextures = new Set<string>();
 
 // Texture key for a scribbit's drawing. Stable per id so we load each once.
 function drawingKey(scribbit: Pick<DrawingSource, 'id'>): string {
@@ -62,11 +61,12 @@ function elementOf(scribbit: Partial<Pick<DrawingSource, 'element'>>): Element {
 }
 
 // THE single art resolver. Every surface (roster, entrants, champion poster,
-// modal, replay, legends, Gallery) calls this. It resolves to a texture key
-// that ALWAYS exists and is never empty:
-//   1. Try imageUrl (Reddit-hosted in production; /api/drawing/{id} only in the local mock).
-//   2. On loaderror / timeout / a degenerate (empty) texture, fall back to a
-//      deterministic procedural doodle baked from the spriteKey + element.
+// modal, replay, legends, Gallery) calls this. It immediately resolves to a
+// stable canvas texture containing deterministic fallback art. The remote
+// imageUrl (Reddit-hosted in production; /api/drawing/{id} only in the local mock)
+// loads behind that canvas and upgrades it in place when ready. Existing Images,
+// meshes, and sliced LiveSprites therefore receive the player's art without
+// waiting on the network or changing texture keys.
 // Callers then render the key with fitDrawing() (aspect-preserving contain) so
 // non-square art is centered in its frame and never cropped or stretched.
 export function loadDrawing(
@@ -74,19 +74,21 @@ export function loadDrawing(
   scribbit: DrawingSource
 ): Promise<string> {
   const key = drawingKey(scribbit);
-  if (scene.textures.exists(key)) {
-    markDrawingTextureUsed(scene, key);
-    return Promise.resolve(key);
-  }
 
   // Founding /creatures routes resolve to authored canvas characters. Skip a
-  // doomed network round-trip so their cards fill immediately instead of
-  // flashing empty for nine seconds.
+  // doomed network round-trip entirely.
   if (isKnownMissingArt(scribbit.imageUrl)) {
     const fallbackKey = fallbackDoodle(scene, scribbit);
     markDrawingTextureUsed(scene, fallbackKey);
     return Promise.resolve(fallbackKey);
   }
+
+  if (!scene.textures.exists(key)) {
+    createFallbackDrawingTexture(scene, key, scribbit);
+  }
+  markDrawingTextureUsed(scene, key);
+
+  if (loadedRemoteDrawingTextures.has(key)) return Promise.resolve(key);
 
   let sceneLoads = pendingDrawingLoads.get(scene);
   if (!sceneLoads) {
@@ -102,59 +104,53 @@ export function loadDrawing(
 
   ensureSceneDrawingTextureLifecycle(scene);
 
-  let settleForSceneRelease = (): void => undefined;
+  let settleForSceneRelease: () => void;
   let claimedByActiveBuild = true;
-  const drawingLoad = new Promise<string>((resolve) => {
+  let resolveBackgroundLoad = (): void => undefined;
+  const backgroundLoad = new Promise<void>((resolve) => {
+    resolveBackgroundLoad = resolve;
+  });
+  const sourceKey = `${key}-source-${++drawingSourceLoadSequence}`;
+  const drawingLoad = Promise.resolve(key);
+
+  {
     let settled = false;
-    let timeout: Phaser.Time.TimerEvent | null = null;
     const onComplete = (): void => {
-      downsampleDrawingTexture(scene, key);
-      // A load can "succeed" with a degenerate 1x1/transparent texture; if the
-      // source is unusably small, treat it as a miss and use the doodle.
-      if (isDegenerateTexture(scene, key)) {
-        scene.textures.remove(key);
-        finish(fallbackDoodle(scene, scribbit));
-        return;
+      // A load can "succeed" with a degenerate 1x1 texture. Keep the fallback
+      // visible and leave the key retryable when that happens.
+      if (!isDegenerateTexture(scene, sourceKey)) {
+        const upgraded = upgradeDrawingTexture(scene, key, sourceKey);
+        if (upgraded) loadedRemoteDrawingTextures.add(key);
       }
-      finish(key);
+      finish();
     };
     // loaderror fires for every failed file; only react to our own key.
     const onError = (file: { key?: string }): void => {
-      if (file?.key !== key) return;
-      finish(fallbackDoodle(scene, scribbit));
+      if (file?.key !== sourceKey) return;
+      finish();
     };
-    const finish = (resolvedKey: string, trackTexture = true): void => {
+    const finish = (trackTexture = true): void => {
       if (settled) return;
       settled = true;
-      scene.load.off(`filecomplete-image-${key}`, onComplete);
+      scene.load.off(`filecomplete-image-${sourceKey}`, onComplete);
       scene.load.off('loaderror', onError);
-      timeout?.remove(false);
-      timeout = null;
+      if (scene.textures.exists(sourceKey)) scene.textures.remove(sourceKey);
       if (trackTexture) {
-        if (claimedByActiveBuild) markDrawingTextureUsed(scene, resolvedKey);
-        else markDrawingTextureInactive(scene, resolvedKey);
+        if (claimedByActiveBuild) markDrawingTextureUsed(scene, key);
+        else markDrawingTextureInactive(scene, key);
       }
-      resolve(resolvedKey);
+      resolveBackgroundLoad();
     };
 
-    // A shutdown makes the result unusable to this scene, but callers such as
-    // Promise.all still need a deterministic settlement. Do not manufacture a
-    // fallback texture while Phaser is tearing the scene down.
-    settleForSceneRelease = (): void => finish(key, false);
+    // The caller already owns the stable fallback key. Scene release only needs
+    // to stop this background upgrade and clean its temporary source texture.
+    settleForSceneRelease = (): void => finish(false);
 
-    scene.load.on(`filecomplete-image-${key}`, onComplete);
+    scene.load.on(`filecomplete-image-${sourceKey}`, onComplete);
     scene.load.on('loaderror', onError);
-    // Safety timeout so a stuck load never blocks a ceremony forever. Keep the
-    // event handle so normal completion and scene release both remove it.
-    timeout = scene.time.delayedCall(9000, () => {
-      if (settled) return;
-      finish(
-        scene.textures.exists(key) ? key : fallbackDoodle(scene, scribbit)
-      );
-    });
-    scene.load.image(key, scribbit.imageUrl);
+    scene.load.image(sourceKey, scribbit.imageUrl);
     scene.load.start();
-  });
+  }
 
   const loadRecord: PendingDrawingLoad = {
     promise: drawingLoad,
@@ -167,38 +163,88 @@ export function loadDrawing(
     },
   };
   sceneLoads.set(key, loadRecord);
-  void drawingLoad.then(() => {
+  void backgroundLoad.then(() => {
     if (sceneLoads?.get(key) === loadRecord) sceneLoads.delete(key);
   });
 
   return drawingLoad;
 }
 
-function downsampleDrawingTexture(scene: Scene, key: string): void {
-  if (!scene.textures.exists(key)) return;
-  const source = scene.textures
-    .get(key)
+function createFallbackDrawingTexture(
+  scene: Scene,
+  key: string,
+  scribbit: DrawingSource
+): void {
+  const fallbackKey = fallbackDoodle(scene, scribbit);
+  const fallbackSource = scene.textures
+    .get(fallbackKey)
     .getSourceImage() as CanvasImageSource & {
     width?: number;
     height?: number;
   };
-  const width = source?.width ?? 0;
-  const height = source?.height ?? 0;
-  const longestEdge = Math.max(width, height);
-  if (longestEdge <= MAX_DRAWING_TEXTURE_EDGE || width <= 0 || height <= 0) {
-    return;
-  }
-  const scale = MAX_DRAWING_TEXTURE_EDGE / longestEdge;
   const canvas = document.createElement('canvas');
-  canvas.width = Math.max(1, Math.round(width * scale));
-  canvas.height = Math.max(1, Math.round(height * scale));
+  canvas.width = MAX_DRAWING_TEXTURE_EDGE;
+  canvas.height = MAX_DRAWING_TEXTURE_EDGE;
+  drawContainedSource(canvas, fallbackSource);
+  scene.textures.addCanvas(key, canvas);
+  if (
+    (drawingTextureActiveScenes.get(fallbackKey) ?? 0) === 0 &&
+    scene.textures.exists(fallbackKey)
+  ) {
+    scene.textures.remove(fallbackKey);
+    drawingTextureLastUse.delete(fallbackKey);
+  }
+  loadedRemoteDrawingTextures.delete(key);
+}
+
+function upgradeDrawingTexture(
+  scene: Scene,
+  key: string,
+  sourceKey: string
+): boolean {
+  if (!scene.textures.exists(key) || !scene.textures.exists(sourceKey)) {
+    return false;
+  }
+  const texture = scene.textures.get(key);
+  if (!(texture instanceof Phaser.Textures.CanvasTexture)) return false;
+  const source = scene.textures
+    .get(sourceKey)
+    .getSourceImage() as CanvasImageSource & {
+    width?: number;
+    height?: number;
+  };
+  const canvas = texture.getSourceImage() as HTMLCanvasElement;
+  if (!drawContainedSource(canvas, source)) return false;
+  texture.refresh();
+  return true;
+}
+
+function drawContainedSource(
+  canvas: HTMLCanvasElement,
+  source: CanvasImageSource & { width?: number; height?: number }
+): boolean {
+  const sourceWidth = source?.width ?? 0;
+  const sourceHeight = source?.height ?? 0;
   const context = canvas.getContext('2d');
-  if (!context) return;
+  if (!context || sourceWidth <= 0 || sourceHeight <= 0) return false;
+
+  const scale = Math.min(
+    canvas.width / sourceWidth,
+    canvas.height / sourceHeight
+  );
+  const width = sourceWidth * scale;
+  const height = sourceHeight * scale;
+  context.clearRect(0, 0, canvas.width, canvas.height);
   context.imageSmoothingEnabled = true;
   context.imageSmoothingQuality = 'high';
-  context.drawImage(source, 0, 0, canvas.width, canvas.height);
-  scene.textures.remove(key);
-  scene.textures.addCanvas(key, canvas);
+  context.drawImage(
+    source,
+    (canvas.width - width) / 2,
+    (canvas.height - height) / 2,
+    width,
+    height
+  );
+  return true;
 }
 
 function ensureSceneDrawingTextureLifecycle(scene: Scene): {
@@ -307,6 +353,7 @@ function trimInactiveDrawingTextures(scene: Scene): void {
     if (drawingTextureLastUse.size <= MAX_CACHED_DRAWING_TEXTURES) break;
     if ((drawingTextureActiveScenes.get(textureKey) ?? 0) > 0) continue;
     if (scene.textures.exists(textureKey)) scene.textures.remove(textureKey);
+    loadedRemoteDrawingTextures.delete(textureKey);
     drawingTextureLastUse.delete(textureKey);
   }
 }
@@ -330,17 +377,19 @@ function isDegenerateTexture(scene: Scene, key: string): boolean {
   return width <= 2 || height <= 2;
 }
 
-// Bake (once) the authored founder or procedural fallback for this Scribbit.
+// Bake (once) the authored founder or neutral deterministic fallback for this
+// Scribbit. Player stats never shape missing community art.
 function fallbackDoodle(scene: Scene, scribbit: DrawingSource): string {
-  if (scribbit.isFounding || isKnownMissingArt(scribbit.imageUrl)) {
-    return generateDoodleTexture(
-      scene,
-      spriteKeyFor(scribbit),
-      elementOf(scribbit),
-      scribbit.stats
-    );
-  }
-  return generateBlankDrawingTexture(scene, spriteKeyFor(scribbit));
+  const founderStats =
+    scribbit.isFounding || isKnownMissingArt(scribbit.imageUrl)
+      ? scribbit.stats
+      : undefined;
+  return generateDoodleTexture(
+    scene,
+    spriteKeyFor(scribbit),
+    elementOf(scribbit),
+    founderStats
+  );
 }
 
 // Fit a drawing image inside a square box of `boxSize`, aspect-preserving

@@ -32,6 +32,7 @@ import { generateBlankDrawingTexture } from '../lib/proceduraldoodleart';
 import { maturityCountdownHeadline } from '../lib/maturitycountdown';
 import {
   button,
+  errorPanel,
   ghostButton,
   iconButton,
   label,
@@ -39,12 +40,14 @@ import {
   paperIconButton,
   startScene,
   stickerCard,
+  type ErrorPanel,
 } from '../lib/ui';
 import {
   HOME_PROP_TEXTURES,
   HOME_TITLE_TEXTURE,
   MATURITY_GEAR_TEXTURE,
   homeStage,
+  homeVisualAssetsReady,
   preloadHomeVisualAssets,
 } from '../lib/visualassets';
 import { getArena, setArena, setGalleryTab } from '../lib/registry';
@@ -205,6 +208,7 @@ export class ScribbitHome extends Scene {
   private maturityCountdownTimer: Phaser.Time.TimerEvent | null = null;
   private drawButtonShine: StickerShineHandle | null = null;
   private powerUpDraft: PowerUpDraftHandle | null = null;
+  private assetErrorPanel: ErrorPanel | null = null;
 
   constructor() {
     super('ScribbitHome');
@@ -225,9 +229,19 @@ export class ScribbitHome extends Scene {
     this.dailyLoginModal = null;
     this.maturityCountdownTimer = null;
     this.powerUpDraft = null;
+    this.assetErrorPanel = null;
   }
 
   create(): void {
+    this.cameras.main.setBackgroundColor(UI.desk);
+    if (!homeVisualAssetsReady(this)) {
+      this.retryHomeVisualAssets();
+      return;
+    }
+    this.createLoadedHome();
+  }
+
+  private createLoadedHome(): void {
     const state = getArena(this);
     if (!state) {
       this.scene.start('Preloader');
@@ -237,6 +251,45 @@ export class ScribbitHome extends Scene {
     playHomeSoundtrack();
     this.build();
     this.events.once('shutdown', () => this.cleanup());
+  }
+
+  private retryHomeVisualAssets(): void {
+    this.assetErrorPanel?.destroy();
+    this.assetErrorPanel = null;
+    const { width, height } = this.scale;
+    const loadingText = label(
+      this,
+      width / 2,
+      height / 2,
+      'OPENING HOME...',
+      30,
+      UI.cream,
+      true
+    );
+    const onLoadComplete = (): void => {
+      loadingText.destroy();
+      if (!this.scene.isActive()) return;
+      if (homeVisualAssetsReady(this)) {
+        this.createLoadedHome();
+        return;
+      }
+      this.assetErrorPanel = errorPanel(
+        this,
+        width / 2,
+        height / 2,
+        'The Home artwork did not load.',
+        () => this.retryHomeVisualAssets()
+      );
+    };
+    this.load.once('complete', onLoadComplete);
+    preloadHomeVisualAssets(this);
+    this.load.start();
+    this.events.once('shutdown', () => {
+      this.load.off('complete', onLoadComplete);
+      loadingText.destroy();
+      this.assetErrorPanel?.destroy();
+      this.assetErrorPanel = null;
+    });
   }
 
   private build(): void {
@@ -469,6 +522,8 @@ export class ScribbitHome extends Scene {
     this.actionOverlay = null;
     this.powerUpDraft?.destroy();
     this.powerUpDraft = null;
+    this.assetErrorPanel?.destroy();
+    this.assetErrorPanel = null;
     this.menu?.destroy();
     this.menu = null;
     releaseRenderedDrawingTextures(this);

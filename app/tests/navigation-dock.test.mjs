@@ -42,6 +42,10 @@ const appMenuSource = await readFile(
   new URL('../src/client/lib/appmenu.ts', import.meta.url),
   'utf8'
 );
+const privacyPopupSource = await readFile(
+  new URL('../src/client/lib/privacypopup.ts', import.meta.url),
+  'utf8'
+);
 const homeSource = await readFile(
   new URL('../src/client/scenes/ScribbitHome.ts', import.meta.url),
   'utf8'
@@ -164,6 +168,18 @@ test('Shop acquires, Bag equips, and Home opens Gallery', () => {
   assert.doesNotMatch(gallerySource, /DRAW CHARGES|PAINT BUCKET/);
 });
 
+test('Privacy and account deletion have one top-level Settings home', () => {
+  assert.match(appMenuSource, /openPrivacyPopup\(/);
+  assert.match(appMenuSource, /translate\('appMenu\.privacy'\)/);
+  assert.doesNotMatch(bestiarySource, /'privacy'|PRIVACY & DATA|deleteMyData/);
+  assert.match(privacyPopupSource, /export function openPrivacyPopup\(/);
+  assert.match(
+    privacyPopupSource,
+    /label: 'Delete all my stored game data',[\s\S]*?pointerPassthrough: true,[\s\S]*?onActivate: deleteStoredPlayerData/,
+    'pointer input must reach only the canvas action so one tap cannot bypass confirmation'
+  );
+});
+
 test('the active dock destination is a full high-contrast paper chip', () => {
   assert.match(uiSource, /function activeDockTabChip\(/);
   assert.match(
@@ -255,7 +271,10 @@ test('Gallery opens the owned lifecycle collection with bounded sections', () =>
 test('Scout and the retired compact Rumble action stay out of navigation', () => {
   assert.doesNotMatch(scoutSource, /appDock\(this, 'scout'/);
   assert.doesNotMatch(bestiarySource, /appDock\(this, 'scout'/);
-  assert.doesNotMatch(arenaSource, /rumblePickLocked \? 'PICKED' : 'MAKE PICK'/);
+  assert.doesNotMatch(
+    arenaSource,
+    /rumblePickLocked \? 'PICKED' : 'MAKE PICK'/
+  );
   assert.match(arenaSource, /this\.openContenderPicker\(\)/);
 });
 

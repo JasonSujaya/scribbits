@@ -27,7 +27,13 @@ import {
 } from '../lib/scribbits';
 import { UI } from '../lib/theme';
 import { LivingPaper } from '../lib/livingpaper';
-import { label, startScene, stickerCard } from '../lib/ui';
+import {
+  errorPanel,
+  label,
+  startScene,
+  stickerCard,
+  type ErrorPanel,
+} from '../lib/ui';
 import {
   collectDiscoveredPowerUpIds,
   openDetailModal,
@@ -67,7 +73,10 @@ import { translate } from '../lib/localization';
 import { fitText } from '../lib/fittext';
 import { planSceneMutationResponse } from '../lib/arenaasynclifecycle';
 import { playHomeSoundtrack, releaseHomeSoundtrack } from '../lib/soundtrack';
-import { preloadGalleryVisualAssets } from '../lib/visualassets';
+import {
+  galleryVisualAssetsReady,
+  preloadGalleryVisualAssets,
+} from '../lib/visualassets';
 
 const LEGEND_CARD_HEIGHT = 272;
 const LEGEND_CARD_ROW_GAP = 18;
@@ -161,6 +170,7 @@ export class Gallery extends Scene {
   private sectionTabController: SemanticTabController<GalleryTab> | null = null;
   private openingScribbitId: string | null = null;
   private menu: AppMenu | null = null;
+  private assetErrorPanel: ErrorPanel | null = null;
 
   constructor() {
     super('Gallery');
@@ -206,18 +216,29 @@ export class Gallery extends Scene {
     this.sectionTabController = null;
     this.openingScribbitId = null;
     this.menu = null;
+    this.assetErrorPanel = null;
     this.collectionRefreshRequested = false;
   }
 
   create(): void {
     this.cameras.main.setBackgroundColor(UI.desk);
-    playHomeSoundtrack();
     this.tab = getGalleryTab(this);
     this.loggedIn = getArena(this)?.loggedIn ?? false;
+    if (this.tab === 'collection' && !galleryVisualAssetsReady(this)) {
+      this.retryGalleryVisualAssets();
+      return;
+    }
+    this.createLoadedGallery();
+  }
+
+  private createLoadedGallery(): void {
+    playHomeSoundtrack();
     this.events.once('shutdown', () => {
       this.sceneVisitEpoch += 1;
       releaseHomeSoundtrack();
       this.destroyBuildOverlays();
+      this.assetErrorPanel?.destroy();
+      this.assetErrorPanel = null;
     });
     this.build();
     if (this.tab === 'collection') {
@@ -225,6 +246,45 @@ export class Gallery extends Scene {
     } else if (this.tab === 'archived') {
       if (this.loggedIn) void this.loadLegacyBook();
     }
+  }
+
+  private retryGalleryVisualAssets(): void {
+    this.assetErrorPanel?.destroy();
+    this.assetErrorPanel = null;
+    const { width, height } = this.scale;
+    const loadingText = label(
+      this,
+      width / 2,
+      height / 2,
+      'OPENING BAG...',
+      30,
+      UI.cream,
+      true
+    );
+    const onLoadComplete = (): void => {
+      loadingText.destroy();
+      if (!this.scene.isActive()) return;
+      if (galleryVisualAssetsReady(this)) {
+        this.createLoadedGallery();
+        return;
+      }
+      this.assetErrorPanel = errorPanel(
+        this,
+        width / 2,
+        height / 2,
+        'The Bag artwork did not load.',
+        () => this.retryGalleryVisualAssets()
+      );
+    };
+    this.load.once('complete', onLoadComplete);
+    preloadGalleryVisualAssets(this);
+    this.load.start();
+    this.events.once('shutdown', () => {
+      this.load.off('complete', onLoadComplete);
+      loadingText.destroy();
+      this.assetErrorPanel?.destroy();
+      this.assetErrorPanel = null;
+    });
   }
 
   private async loadLegacyBook(): Promise<void> {

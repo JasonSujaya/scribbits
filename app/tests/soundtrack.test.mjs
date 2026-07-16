@@ -152,3 +152,48 @@ test('Home and Gallery share one uninterrupted idle track', () => {
   assert.match(gallerySource, /playHomeSoundtrack\(\)/);
   assert.match(gallerySource, /releaseHomeSoundtrack\(\)/);
 });
+
+test('failed soundtrack nodes are discarded and recover only once', () => {
+  assert.match(soundtrackSource, /const MAX_RECOVERY_ATTEMPTS = 1/);
+  assert.match(
+    soundtrackSource,
+    /audio\.addEventListener\('error', recoverSoundtrack\)/
+  );
+  assert.match(
+    soundtrackSource,
+    /audio\.addEventListener\('stalled', recoverSoundtrack\)/
+  );
+  assert.match(
+    soundtrackSource,
+    /recoveryAttempts >= MAX_RECOVERY_ATTEMPTS[\s\S]{0,260}discardAudio\(failedAudio\)/
+  );
+  assert.match(
+    soundtrackSource,
+    /getRecoverySource\(failedMode, failedSource\)[\s\S]{0,100}recoveryAttempts \+ 1/
+  );
+  assert.match(
+    soundtrackSource,
+    /const getRecoverySource[\s\S]{0,500}\(failedTrackIndex \+ 1\) % HOME_SOUNDTRACKS\.length/
+  );
+  assert.match(
+    soundtrackSource,
+    /const shouldResumePlayback = playbackRequested[\s\S]{0,500}shouldResumePlayback/
+  );
+  assert.match(
+    soundtrackSource,
+    /audio\.removeEventListener\('error', recoverSoundtrack\)[\s\S]{0,320}audio\.remove\(\)/
+  );
+  assert.match(
+    soundtrackSource,
+    /audio\.addEventListener\('error', discardPreparedBattleAudio\)/
+  );
+  assert.match(
+    soundtrackSource,
+    /audio\.dataset\.scribbitsSoundtrackSource = BATTLE_SOUNDTRACK\.url[\s\S]{0,260}audio\.addEventListener\('error', recoverSoundtrack\)/
+  );
+  assert.match(
+    soundtrackSource,
+    /error\.name === 'NotAllowedError'[\s\S]{0,120}installRetryListeners\(\)/
+  );
+  assert.match(soundtrackSource, /recoverSoundtrackAudio\(audio\)/);
+});

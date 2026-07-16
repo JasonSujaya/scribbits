@@ -23,11 +23,13 @@ import { loadDrawing, levelOf } from '../lib/scribbits';
 import { ELEMENT_STYLES, prefersReducedMotion, UI } from '../lib/theme';
 import {
   daysLeftFor,
+  errorPanel,
   ghostButton,
   label,
   paperWordmark,
   startScene,
   stickerCard,
+  type ErrorPanel,
 } from '../lib/ui';
 import { CanvasActionOverlay } from '../lib/overlay';
 import {
@@ -94,6 +96,7 @@ import type { ReplayBattleBackdrop } from '../lib/replaybattlebackground';
 import {
   FIGHT_START_TEXTURE,
   preloadReplayVisualAssets,
+  replayVisualAssetsReady,
 } from '../lib/visualassets';
 import {
   createStickerShine,
@@ -340,6 +343,7 @@ export class Replay extends Scene {
   private replayCommentaryAuthor: ReplayCommentaryAuthor | null = null;
   private founderChronicleBeat: FounderChronicleBeat | null = null;
   private founderRivalryStakes: FounderRivalryStakesPlan | null = null;
+  private assetErrorPanel: ErrorPanel | null = null;
 
   constructor() {
     super('Replay');
@@ -389,6 +393,7 @@ export class Replay extends Scene {
     this.combatReadLaneAvailableAt = { a: [0, 0, 0], b: [0, 0, 0] };
     this.founderChronicleBeat = null;
     this.founderRivalryStakes = null;
+    this.assetErrorPanel = null;
   }
 
   // Current fast-forward multiplier.
@@ -431,6 +436,15 @@ export class Replay extends Scene {
       this.scene.start('ArenaHome');
       return;
     }
+    this.cameras.main.setBackgroundColor(UI.desk);
+    if (!replayVisualAssetsReady(this)) {
+      this.retryReplayVisualAssets(report);
+      return;
+    }
+    this.createLoadedReplay(report);
+  }
+
+  private createLoadedReplay(report: BattleReport): void {
     this.report = report;
     if (this.isFoundingReplay()) {
       trackProgressionEvent('founding_replay_started', {
@@ -442,7 +456,6 @@ export class Replay extends Scene {
     this.founderRivalryStakes = getReplayFounderRivalryStakes(this);
     this.transcript = getUsableBattleTranscript(report) ?? null;
     startBattleSoundtrack(this.soundboard.isEnabled());
-    this.cameras.main.setBackgroundColor(UI.desk);
     this.weaponFxRenderer = new WeaponFxRenderer(this, this.reduceMotion);
     this.roleWeaponRenderer = new RoleWeaponRenderer(this, this.reduceMotion);
     this.buildArena();
@@ -476,6 +489,8 @@ export class Replay extends Scene {
       this.tweens.timeScale = 1;
       this.impactHoldMilliseconds = 0;
       this.battleBackdrop = null;
+      this.assetErrorPanel?.destroy();
+      this.assetErrorPanel = null;
     });
 
     void Promise.all([
@@ -501,6 +516,45 @@ export class Replay extends Scene {
         ? 'recording'
         : 'unavailable';
       this.playIntro();
+    });
+  }
+
+  private retryReplayVisualAssets(report: BattleReport): void {
+    this.assetErrorPanel?.destroy();
+    this.assetErrorPanel = null;
+    const { width, height } = this.scale;
+    const loadingText = label(
+      this,
+      width / 2,
+      height / 2,
+      'OPENING BATTLE...',
+      30,
+      UI.cream,
+      true
+    );
+    const onLoadComplete = (): void => {
+      loadingText.destroy();
+      if (!this.scene.isActive()) return;
+      if (replayVisualAssetsReady(this)) {
+        this.createLoadedReplay(report);
+        return;
+      }
+      this.assetErrorPanel = errorPanel(
+        this,
+        width / 2,
+        height / 2,
+        'The Battle artwork did not load.',
+        () => this.retryReplayVisualAssets(report)
+      );
+    };
+    this.load.once('complete', onLoadComplete);
+    preloadReplayVisualAssets(this);
+    this.load.start();
+    this.events.once('shutdown', () => {
+      this.load.off('complete', onLoadComplete);
+      loadingText.destroy();
+      this.assetErrorPanel?.destroy();
+      this.assetErrorPanel = null;
     });
   }
 

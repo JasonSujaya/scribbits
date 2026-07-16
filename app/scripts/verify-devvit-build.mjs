@@ -88,9 +88,7 @@ const inlineImageBytes = assertImageBudget(
 const initialHomeImageBytes = assertImageBudget(
   'Initial Home',
   [
-    'gear-common-atlas.webp',
     'gear-legendary-atlas.webp',
-    'gear-rare-epic-atlas.webp',
     'maturity-gear-icons.webp',
     'scribbits-home-shelf.webp',
     'scribbits-home-stage.webp',
@@ -105,12 +103,17 @@ const initialHomeImageBytes = assertImageBudget(
     'ui-button-primary.webp',
     'ui-button-secondary.webp',
   ],
-  768 * 1024
+  512 * 1024
 );
 const galleryImageBytes = assertImageBudget(
   'Gallery and Bag',
-  ['bag-binder-base-shell-v7.webp'],
-  64 * 1024
+  [
+    'bag-binder-base-shell-v7.webp',
+    'gear-common-atlas.webp',
+    'gear-legendary-atlas.webp',
+    'gear-rare-epic-atlas.webp',
+  ],
+  384 * 1024
 );
 const replayImageBytes = assertImageBudget(
   'Replay',
@@ -130,8 +133,11 @@ const shopImageBytes = assertImageBudget(
     'scribbits-shop-chest-open.webp',
     'scribbits-shop-claw-machine-shell.webp',
     'scribbits-shop-stage.webp',
+    'gear-common-atlas.webp',
+    'gear-legendary-atlas.webp',
+    'gear-rare-epic-atlas.webp',
   ],
-  512 * 1024
+  832 * 1024
 );
 const drawImageBytes = assertImageBudget(
   'Draw',

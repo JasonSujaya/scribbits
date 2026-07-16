@@ -37,6 +37,9 @@ export const SHOP_CHEST_TEXTURES = {
 } as const;
 export const INK_TOKEN_TEXTURE = 'scribbits-ink-token';
 const SHOP_VISUAL_TEXTURES = [
+  COMMON_GEAR_ART_TEXTURE,
+  RARE_EPIC_GEAR_ART_TEXTURE,
+  LEGENDARY_GEAR_ART_TEXTURE,
   SHOP_STAGE_TEXTURE,
   SHOP_CLAW_MACHINE_SHELL_TEXTURE,
   SHOP_CAPSULE_SHELL_TEXTURE,
@@ -59,6 +62,33 @@ export const UI_BUTTON_TEXTURES = {
   primary: 'ui-button-primary',
   secondary: 'ui-button-secondary',
 } as const;
+
+const CORE_VISUAL_TEXTURES = [
+  SCRIBBITS_STAGE_TEXTURE,
+  BRAND_LOGO_TEXTURE,
+  ...Object.values(UI_BUTTON_TEXTURES),
+] as const;
+
+const HOME_VISUAL_TEXTURES = [
+  HOME_STAGE_TEXTURE,
+  HOME_TITLE_TEXTURE,
+  ...Object.values(HOME_PROP_TEXTURES),
+  MATURITY_GEAR_TEXTURE,
+  LEGENDARY_GEAR_ART_TEXTURE,
+] as const;
+
+const REPLAY_VISUAL_TEXTURES = [
+  FIGHT_START_TEXTURE,
+  BATTLE_TITLE_TEXTURE,
+  ...Object.values(BATTLE_CONTROL_BUTTON_TEXTURES),
+] as const;
+
+const GALLERY_VISUAL_TEXTURES = [
+  BAG_BINDER_SHELL_TEXTURE,
+  COMMON_GEAR_ART_TEXTURE,
+  RARE_EPIC_GEAR_ART_TEXTURE,
+  LEGENDARY_GEAR_ART_TEXTURE,
+] as const;
 
 const VISUAL_ASSET_URLS: Readonly<Record<string, string>> = Object.freeze({
   'draw-start-challenge-card.webp': DRAW_START_CARD_ART_URL,
@@ -195,26 +225,21 @@ const assetUrl = (fileName: string): string => {
 };
 
 export function preloadVisualAssets(scene: Scene): void {
-  scene.load.image(SCRIBBITS_STAGE_TEXTURE, assetUrl('scribbits-stage.webp'));
-  scene.load.image(BRAND_LOGO_TEXTURE, assetUrl('scribbits-logo.webp'));
-  scene.load.atlas(
-    COMMON_GEAR_ART_TEXTURE,
-    assetUrl('gear-common-atlas.webp'),
-    assetUrl('gear-common-atlas.json')
-  );
-  scene.load.atlas(
-    RARE_EPIC_GEAR_ART_TEXTURE,
-    assetUrl('gear-rare-epic-atlas.webp'),
-    assetUrl('gear-rare-epic-atlas.json')
-  );
-  scene.load.atlas(
-    LEGENDARY_GEAR_ART_TEXTURE,
-    assetUrl('gear-legendary-atlas.webp'),
-    assetUrl('gear-legendary-atlas.json')
-  );
+  if (!scene.textures.exists(SCRIBBITS_STAGE_TEXTURE)) {
+    scene.load.image(SCRIBBITS_STAGE_TEXTURE, assetUrl('scribbits-stage.webp'));
+  }
+  if (!scene.textures.exists(BRAND_LOGO_TEXTURE)) {
+    scene.load.image(BRAND_LOGO_TEXTURE, assetUrl('scribbits-logo.webp'));
+  }
   Object.entries(UI_BUTTON_TEXTURES).forEach(([kind, texture]) => {
-    scene.load.image(texture, assetUrl(`ui-button-${kind}.webp`));
+    if (!scene.textures.exists(texture)) {
+      scene.load.image(texture, assetUrl(`ui-button-${kind}.webp`));
+    }
   });
+}
+
+export function coreVisualAssetsReady(scene: Scene): boolean {
+  return texturesReady(scene, CORE_VISUAL_TEXTURES);
 }
 
 export function preloadDrawVisualAssets(scene: Scene): void {
@@ -228,37 +253,68 @@ export function preloadDrawVisualAssets(scene: Scene): void {
 }
 
 export function preloadGalleryVisualAssets(scene: Scene): void {
-  scene.load.image(
-    BAG_BINDER_SHELL_TEXTURE,
-    assetUrl('bag-binder-base-shell-v7.webp')
-  );
+  if (!scene.textures.exists(BAG_BINDER_SHELL_TEXTURE)) {
+    scene.load.image(
+      BAG_BINDER_SHELL_TEXTURE,
+      assetUrl('bag-binder-base-shell-v7.webp')
+    );
+  }
+  preloadGearVisualAssets(scene);
+}
+
+export function galleryVisualAssetsReady(scene: Scene): boolean {
+  return texturesReady(scene, GALLERY_VISUAL_TEXTURES);
 }
 
 export function preloadReplayVisualAssets(scene: Scene): void {
-  scene.load.image(FIGHT_START_TEXTURE, assetUrl('ui-fight-start.webp'));
-  scene.load.image(
-    BATTLE_TITLE_TEXTURE,
-    assetUrl('scribbits-battle-title.webp')
-  );
+  if (!scene.textures.exists(FIGHT_START_TEXTURE)) {
+    scene.load.image(FIGHT_START_TEXTURE, assetUrl('ui-fight-start.webp'));
+  }
+  if (!scene.textures.exists(BATTLE_TITLE_TEXTURE)) {
+    scene.load.image(
+      BATTLE_TITLE_TEXTURE,
+      assetUrl('scribbits-battle-title.webp')
+    );
+  }
   Object.entries(BATTLE_CONTROL_BUTTON_TEXTURES).forEach(([kind, texture]) => {
-    scene.load.image(texture, assetUrl(`ui-button-battle-${kind}.webp`));
+    if (!scene.textures.exists(texture)) {
+      scene.load.image(texture, assetUrl(`ui-button-battle-${kind}.webp`));
+    }
   });
+}
+
+export function replayVisualAssetsReady(scene: Scene): boolean {
+  return texturesReady(scene, REPLAY_VISUAL_TEXTURES);
 }
 
 export function preloadHomeVisualAssets(scene: Scene): void {
-  scene.load.image(HOME_STAGE_TEXTURE, assetUrl('scribbits-home-stage.webp'));
-  scene.load.image(HOME_TITLE_TEXTURE, assetUrl('scribbits-home-title.webp'));
+  if (!scene.textures.exists(HOME_STAGE_TEXTURE)) {
+    scene.load.image(HOME_STAGE_TEXTURE, assetUrl('scribbits-home-stage.webp'));
+  }
+  if (!scene.textures.exists(HOME_TITLE_TEXTURE)) {
+    scene.load.image(HOME_TITLE_TEXTURE, assetUrl('scribbits-home-title.webp'));
+  }
   Object.values(HOME_PROP_TEXTURES).forEach((texture) => {
-    scene.load.image(texture, assetUrl(`${texture}.webp`));
+    if (!scene.textures.exists(texture)) {
+      scene.load.image(texture, assetUrl(`${texture}.webp`));
+    }
   });
-  scene.load.spritesheet(
-    MATURITY_GEAR_TEXTURE,
-    assetUrl('maturity-gear-icons.webp'),
-    { frameWidth: 128, frameHeight: 128 }
-  );
+  if (!scene.textures.exists(MATURITY_GEAR_TEXTURE)) {
+    scene.load.spritesheet(
+      MATURITY_GEAR_TEXTURE,
+      assetUrl('maturity-gear-icons.webp'),
+      { frameWidth: 128, frameHeight: 128 }
+    );
+  }
+  preloadGearVisualAssets(scene, 'legendary');
+}
+
+export function homeVisualAssetsReady(scene: Scene): boolean {
+  return texturesReady(scene, HOME_VISUAL_TEXTURES);
 }
 
 export function preloadShopVisualAssets(scene: Scene): void {
+  preloadGearVisualAssets(scene);
   if (!scene.textures.exists(SHOP_STAGE_TEXTURE)) {
     scene.load.image(SHOP_STAGE_TEXTURE, assetUrl('scribbits-shop-stage.webp'));
   }
@@ -292,9 +348,43 @@ export function preloadShopVisualAssets(scene: Scene): void {
 }
 
 export function shopVisualAssetsReady(scene: Scene): boolean {
-  return SHOP_VISUAL_TEXTURES.every((texture) =>
-    scene.textures.exists(texture)
-  );
+  return texturesReady(scene, SHOP_VISUAL_TEXTURES);
+}
+
+type GearVisualScope = 'all' | 'legendary';
+
+function preloadGearVisualAssets(
+  scene: Scene,
+  scope: GearVisualScope = 'all'
+): void {
+  if (scope === 'all' && !scene.textures.exists(COMMON_GEAR_ART_TEXTURE)) {
+    scene.load.atlas(
+      COMMON_GEAR_ART_TEXTURE,
+      assetUrl('gear-common-atlas.webp'),
+      assetUrl('gear-common-atlas.json')
+    );
+  }
+  if (scope === 'all' && !scene.textures.exists(RARE_EPIC_GEAR_ART_TEXTURE)) {
+    scene.load.atlas(
+      RARE_EPIC_GEAR_ART_TEXTURE,
+      assetUrl('gear-rare-epic-atlas.webp'),
+      assetUrl('gear-rare-epic-atlas.json')
+    );
+  }
+  if (!scene.textures.exists(LEGENDARY_GEAR_ART_TEXTURE)) {
+    scene.load.atlas(
+      LEGENDARY_GEAR_ART_TEXTURE,
+      assetUrl('gear-legendary-atlas.webp'),
+      assetUrl('gear-legendary-atlas.json')
+    );
+  }
+}
+
+function texturesReady(
+  scene: Scene,
+  textureKeys: readonly string[]
+): boolean {
+  return textureKeys.every((textureKey) => scene.textures.exists(textureKey));
 }
 
 export function paperStage(

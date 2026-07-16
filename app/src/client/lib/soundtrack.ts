@@ -14,6 +14,9 @@ let playbackRequested = false;
 let retryListenersInstalled = false;
 let pendingHomeStop: number | null = null;
 let visibilityHandlerInstalled = false;
+let recoveryAttempts = 0;
+
+const MAX_RECOVERY_ATTEMPTS = 1;
 
 export const chooseHomeTrackIndex = (
   hasPlayedHomeTrack: boolean,
@@ -34,8 +37,22 @@ const removeRetryListeners = (): void => {
 
 const attemptPlayback = (audio: HTMLAudioElement): void => {
   void audio.play().then(
-    () => removeRetryListeners(),
-    () => installRetryListeners()
+    () => {
+      if (audio === currentAudio) removeRetryListeners();
+    },
+    (error: unknown) => {
+      if (audio !== currentAudio || !playbackRequested) return;
+      if (
+        typeof error === 'object' &&
+        error !== null &&
+        'name' in error &&
+        error.name === 'NotAllowedError'
+      ) {
+        installRetryListeners();
+        return;
+      }
+      recoverSoundtrackAudio(audio);
+    }
   );
 };
 
@@ -83,10 +100,69 @@ const cancelPendingHomeStop = (): void => {
   pendingHomeStop = null;
 };
 
+const discardAudio = (audio: HTMLAudioElement): void => {
+  audio.removeEventListener('error', recoverSoundtrack);
+  audio.removeEventListener('stalled', recoverSoundtrack);
+  audio.removeEventListener('error', discardPreparedBattleAudio);
+  audio.removeEventListener('stalled', discardPreparedBattleAudio);
+  audio.pause();
+  audio.remove();
+};
+
+const getRecoverySource = (mode: SoundtrackMode, source: string): string => {
+  if (mode !== 'home' || HOME_SOUNDTRACKS.length < 2) return source;
+  const failedTrackIndex = HOME_SOUNDTRACKS.findIndex(
+    (track) => track.url === source
+  );
+  const nextTrackIndex =
+    failedTrackIndex < 0 ? 0 : (failedTrackIndex + 1) % HOME_SOUNDTRACKS.length;
+  return HOME_SOUNDTRACKS[nextTrackIndex]?.url ?? source;
+};
+
+function recoverSoundtrack(event: Event): void {
+  const failedAudio = event.currentTarget as HTMLAudioElement;
+  recoverSoundtrackAudio(failedAudio);
+}
+
+function recoverSoundtrackAudio(failedAudio: HTMLAudioElement): void {
+  if (failedAudio !== currentAudio) return;
+
+  const failedMode = currentMode;
+  const failedSource = failedAudio.dataset.scribbitsSoundtrackSource;
+  const shouldResumePlayback = playbackRequested;
+  if (
+    !failedMode ||
+    !failedSource ||
+    recoveryAttempts >= MAX_RECOVERY_ATTEMPTS
+  ) {
+    playbackRequested = false;
+    removeRetryListeners();
+    currentMode = null;
+    currentAudio = null;
+    discardAudio(failedAudio);
+    return;
+  }
+
+  replaceSoundtrack(
+    failedMode,
+    getRecoverySource(failedMode, failedSource),
+    shouldResumePlayback,
+    recoveryAttempts + 1
+  );
+}
+
+function discardPreparedBattleAudio(event: Event): void {
+  const failedAudio = event.currentTarget as HTMLAudioElement;
+  if (failedAudio !== preparedBattleAudio) return;
+  preparedBattleAudio = null;
+  discardAudio(failedAudio);
+}
+
 const replaceSoundtrack = (
   mode: SoundtrackMode,
   source: string,
-  startPlaying = true
+  startPlaying = true,
+  nextRecoveryAttempts = 0
 ): void => {
   installVisibilityHandler();
   stopSoundtrack();
@@ -94,6 +170,7 @@ const replaceSoundtrack = (
 
   const audio = new Audio();
   audio.dataset.scribbitsSoundtrack = mode;
+  audio.dataset.scribbitsSoundtrackSource = source;
   audio.preload = 'auto';
   audio.src = source;
   audio.autoplay = startPlaying;
@@ -106,9 +183,12 @@ const replaceSoundtrack = (
         : (HOME_SOUNDTRACKS.find((track) => track.url === source)?.volume ??
           0.32);
   audio.style.display = 'none';
+  audio.addEventListener('error', recoverSoundtrack);
+  audio.addEventListener('stalled', recoverSoundtrack);
   document.body.append(audio);
   currentMode = mode;
   currentAudio = audio;
+  recoveryAttempts = nextRecoveryAttempts;
   if (startPlaying) requestPlayback();
 };
 
@@ -123,6 +203,8 @@ const createPreparedBattleAudio = (): HTMLAudioElement | null => {
   audio.loop = true;
   audio.volume = BATTLE_SOUNDTRACK.volume;
   audio.style.display = 'none';
+  audio.addEventListener('error', discardPreparedBattleAudio);
+  audio.addEventListener('stalled', discardPreparedBattleAudio);
   document.body.append(audio);
   audio.load();
   return audio;
@@ -210,10 +292,15 @@ export const startBattleSoundtrack = (enabled: boolean): void => {
     replaceSoundtrack('battle', BATTLE_SOUNDTRACK.url, enabled);
     return;
   }
+  audio.removeEventListener('error', discardPreparedBattleAudio);
+  audio.removeEventListener('stalled', discardPreparedBattleAudio);
   audio.dataset.scribbitsSoundtrack = 'battle';
+  audio.dataset.scribbitsSoundtrackSource = BATTLE_SOUNDTRACK.url;
   audio.autoplay = enabled;
   audio.volume = BATTLE_SOUNDTRACK.volume;
   audio.currentTime = 0;
+  audio.addEventListener('error', recoverSoundtrack);
+  audio.addEventListener('stalled', recoverSoundtrack);
   currentMode = 'battle';
   currentAudio = audio;
   if (enabled) requestPlayback();
@@ -250,11 +337,11 @@ export const pauseDrawingSoundtrack = (): void => {
 
 export const stopSoundtrack = (): void => {
   playbackRequested = false;
+  recoveryAttempts = 0;
   cancelPendingHomeStop();
   removeRetryListeners();
   currentMode = null;
   if (!currentAudio) return;
-  currentAudio.pause();
-  currentAudio.remove();
+  discardAudio(currentAudio);
   currentAudio = null;
 };
