@@ -304,7 +304,9 @@ test('report-threshold removal rechecks ownership and converges on canonical cle
 });
 
 test('privacy deletion reuses canonical removal for owned Scribbits', async () => {
-  const memory = createMemoryStorage();
+  const memory = createMemoryStorage({
+    rejectMultipleTransactionDeletes: true,
+  });
   const scenario = await seedRemovalScenario(memory, 'privacy-entry', [
     'outside-reporter-one',
     'outside-reporter-two',

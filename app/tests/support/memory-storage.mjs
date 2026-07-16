@@ -216,6 +216,14 @@ export function createMemoryStorage(options = {}) {
         }
         finished = true;
         if (
+          options.rejectMultipleTransactionDeletes === true &&
+          queuedCommands.filter(({ method }) => method === 'del').length > 1
+        ) {
+          throw new Error(
+            'Simulated Devvit Redis rejection of multiple DEL commands during EXEC.'
+          );
+        }
+        if (
           [...watchedVersions].some(
             ([key, version]) => versionOf(key) !== version
           )

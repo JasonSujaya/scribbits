@@ -249,6 +249,9 @@ export const releasePlayerDataDeletion = async (
   }
   const lockKey = getPlayerDataDeletionLockKey(lease.userId);
 
+  // Release the player lock first while the global lock still blocks every
+  // competing deletion. Devvit Redis accepts one DEL per transaction here but
+  // repeatedly rejects the previous transaction that queued both lock deletes.
   for (
     let attempt = 0;
     attempt < MAX_WATCH_TRANSACTION_ATTEMPTS;
@@ -261,17 +264,31 @@ export const releasePlayerDataDeletion = async (
         storage.get(lockKey),
         storage.get(globalDataDeletionLockKey),
       ]);
-      if (activeToken !== lease.token || activeGlobalToken !== lease.token) {
+      if (activeToken === undefined && activeGlobalToken === undefined) {
+        await transaction.unwatch();
+        return 'released';
+      }
+      if (activeGlobalToken !== lease.token) {
+        await transaction.unwatch();
+        return 'not-owner';
+      }
+      if (activeToken === undefined) {
+        await transaction.unwatch();
+        break;
+      }
+      if (activeToken !== lease.token) {
         await transaction.unwatch();
         return 'not-owner';
       }
       await transaction.multi();
-      // Devvit Redis 0.13.7 rejects a variadic DEL during EXEC. Queue each key
-      // separately while keeping both removals in this one atomic transaction.
       await transaction.del(lockKey);
-      await transaction.del(globalDataDeletionLockKey);
       const result = await transaction.exec();
-      if (Array.isArray(result) && result.length >= 2) return 'released';
+      if (
+        (Array.isArray(result) && result.length >= 1) ||
+        (await storage.get(lockKey)) === undefined
+      ) {
+        break;
+      }
     } catch (error) {
       await discardWatchedTransaction(transaction, 'Player data deletion');
       const [activeToken, activeGlobalToken] = await Promise.all([
@@ -281,10 +298,48 @@ export const releasePlayerDataDeletion = async (
       if (activeToken === undefined && activeGlobalToken === undefined) {
         return 'released';
       }
-      if (activeToken !== lease.token || activeGlobalToken !== lease.token) {
+      if (activeGlobalToken !== lease.token) {
         return 'not-owner';
       }
+      if (activeToken === undefined) break;
+      if (activeToken !== lease.token) return 'not-owner';
       continue;
+    }
+  }
+
+  // With the per-player lock gone, the still-owned global lock prevents a new
+  // deletion from entering until this second single-key transaction commits.
+  for (
+    let attempt = 0;
+    attempt < MAX_WATCH_TRANSACTION_ATTEMPTS;
+    attempt += 1
+  ) {
+    let transaction: ArenaTransaction | undefined;
+    try {
+      transaction = await storage.watch(globalDataDeletionLockKey);
+      const activeGlobalToken = await storage.get(globalDataDeletionLockKey);
+      if (activeGlobalToken === undefined) {
+        await transaction.unwatch();
+        return 'released';
+      }
+      if (activeGlobalToken !== lease.token) {
+        await transaction.unwatch();
+        return 'not-owner';
+      }
+      await transaction.multi();
+      await transaction.del(globalDataDeletionLockKey);
+      const result = await transaction.exec();
+      if (
+        (Array.isArray(result) && result.length >= 1) ||
+        (await storage.get(globalDataDeletionLockKey)) === undefined
+      ) {
+        return 'released';
+      }
+    } catch (error) {
+      await discardWatchedTransaction(transaction, 'Player data deletion');
+      const activeGlobalToken = await storage.get(globalDataDeletionLockKey);
+      if (activeGlobalToken === undefined) return 'released';
+      if (activeGlobalToken !== lease.token) return 'not-owner';
     }
   }
 
