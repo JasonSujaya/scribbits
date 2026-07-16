@@ -149,6 +149,8 @@ export type DailyFlagField = 'drawn' | 'entered' | 'bossChallenge';
 const pngDataUrlPrefix = 'data:image/png;base64,';
 const maximumDrawingBytes = 400 * 1024;
 const maximumDrawingBase64Characters = Math.ceil(maximumDrawingBytes / 3) * 4;
+export const MAXIMUM_DRAWING_SUBMISSION_BODY_BYTES =
+  2 * (pngDataUrlPrefix.length + maximumDrawingBase64Characters) + 64 * 1024;
 const drawingCanvasSize = 512;
 const minimumPngHeaderBytes = 33;
 const pngSignature = [137, 80, 78, 71, 13, 10, 26, 10] as const;

@@ -85,6 +85,10 @@ test('official Draw requires an explicit start and locks at time', () => {
     join(process.cwd(), 'src', 'client', 'lib', 'drawcanvas.ts'),
     'utf8'
   );
+  const drawStartOverlaySource = readFileSync(
+    join(process.cwd(), 'src', 'client', 'lib', 'drawstartoverlay.ts'),
+    'utf8'
+  );
   const visualAssetsSource = readFileSync(
     join(process.cwd(), 'src', 'client', 'lib', 'visualassets.ts'),
     'utf8'
@@ -131,14 +135,11 @@ test('official Draw requires an explicit start and locks at time', () => {
   assert.match(drawSource, /preloadSfx\('draw\.countdown'\)/);
   assert.match(drawSource, /preloadSfx\('draw\.timer'\)/);
   assert.match(drawSource, /preloadSfx\('draw\.tick'\)/);
-  assert.match(drawSource, /startButton\.dataset\.sfxCue = 'none'/);
+  assert.match(drawStartOverlaySource, /startButton\.dataset\.sfxCue = 'none'/);
   assert.match(drawSource, /private beginFreeDrawing\(\): void/);
   assert.match(drawSource, /private async submitFree\(/);
   assert.match(drawSource, /submitFreeDrawing\(\{/);
-  assert.match(
-    drawSource,
-    /DRAW_START_CARD_ART_URL,[\s\S]{0,80}preloadDrawVisualAssets/
-  );
+  assert.match(drawStartOverlaySource, /DRAW_START_CARD_ART_URL/);
   assert.match(
     drawSource,
     /preload\(\): void \{[\s\S]{0,80}preloadDrawVisualAssets\(this\)/
@@ -151,54 +152,68 @@ test('official Draw requires an explicit start and locks at time', () => {
     visualAssetsSource,
     /preloadDrawVisualAssets[\s\S]{0,260}scene\.load\.image\([\s\S]{0,80}DRAW_START_CARD_TEXTURE[\s\S]{0,120}draw-start-challenge-card\.webp/
   );
-  assert.match(drawSource, /backgroundColor: UI\.cream/);
-  assert.match(drawSource, /timerLabel\.textContent = '60 SEC TO DRAW'/);
-  assert.match(drawSource, /startButton\.textContent = 'START THEME'/);
+  assert.match(drawStartOverlaySource, /backgroundColor: UI\.cream/);
+  assert.match(
+    drawStartOverlaySource,
+    /timerLabel\.textContent = '60 SEC TO DRAW'/
+  );
+  assert.match(
+    drawStartOverlaySource,
+    /startButton\.textContent = 'START THEME'/
+  );
   assert.match(drawSource, /const formatThemePrompt = \(prompt: string\)/);
-  assert.match(
-    drawSource,
-    /prompt\.textContent = formatThemePrompt\(dare\.prompt\)/
+  assert.match(drawSource, /prompt: formatThemePrompt\(dare\.prompt\)/);
+  assert.doesNotMatch(
+    drawStartOverlaySource,
+    /prompt\.textContent[^\n]*toUpperCase/
   );
-  assert.doesNotMatch(drawSource, /prompt\.textContent[^\n]*toUpperCase/);
-  assert.match(drawSource, /fontSize: '40px',[\s\S]{0,100}textWrap: 'balance'/);
-  assert.match(drawSource, /marginTop: '14px'/);
+  assert.match(
+    drawStartOverlaySource,
+    /fontSize: '40px',[\s\S]{0,100}textWrap: 'balance'/
+  );
+  assert.match(drawStartOverlaySource, /marginTop: '14px'/);
   assert.match(drawSource, /: 'DRAWING TIME!'/);
-  assert.match(drawSource, /'\.\.\/assets\/ui-button-close\.webp'/);
-  assert.match(drawSource, /'Close drawing theme'/);
+  assert.match(drawStartOverlaySource, /'\.\.\/assets\/ui-button-close\.webp'/);
+  assert.match(drawStartOverlaySource, /'Close drawing theme'/);
   assert.match(
-    drawSource,
-    /closeButton\.addEventListener\('click', \(\) => this\.exitDraw\(\)\)/
+    drawStartOverlaySource,
+    /closeButton\.addEventListener\('click', options\.onClose\)/
   );
-  assert.match(drawSource, /freeDrawLabel\.textContent = 'FREE DRAW'/);
+  assert.match(drawSource, /onClose: \(\) => this\.exitDraw\(\)/);
   assert.match(
-    drawSource,
-    /if \(!this\.isFirstScribbit\) \{[\s\S]{0,180}const freeDrawButton/
+    drawStartOverlaySource,
+    /freeDrawLabel\.textContent = 'FREE DRAW'/
   );
+  assert.match(
+    drawStartOverlaySource,
+    /if \(options\.allowFreeDraw\) \{[\s\S]{0,180}freeDrawButton =/
+  );
+  assert.match(drawSource, /allowFreeDraw: !this\.isFirstScribbit/);
   assert.match(drawSource, /private exitDraw\(\): void/);
   assert.match(drawSource, /this\.exitTo\('ScribbitHome'\)/);
   assert.doesNotMatch(drawSource, /Draw your first Scribbit to unlock Home\./);
   assert.match(drawSource, /Draw your first Scribbit to unlock Free Draw\./);
-  assert.match(drawSource, /noTimerLabel\.textContent = 'NO TIMER'/);
   assert.match(
-    drawSource,
-    /private createThemeJourneyStrip\(\): HTMLDivElement/
+    drawStartOverlaySource,
+    /noTimerLabel\.textContent = 'NO TIMER'/
   );
   assert.match(
-    drawSource,
+    drawStartOverlaySource,
+    /const createThemeJourneyStrip = \(\): HTMLDivElement/
+  );
+  assert.match(
+    drawStartOverlaySource,
     /const steps = \['DRAW', 'NAME', 'RUMBLE'\] as const/
   );
-  assert.match(drawSource, /private createThemeArtMotionLayer\(/);
-  assert.match(drawSource, /'draw-theme-art-crayon'/);
-  assert.match(drawSource, /'draw-theme-art-star-top'/);
-  assert.match(drawSource, /'draw-theme-art-star-bottom'/);
-  assert.match(
-    drawSource,
-    /const reducedThemeMotion = timedStart && prefersReducedMotion\(\)/
-  );
-  assert.match(drawSource, /draw-theme-reduced-motion/);
-  assert.match(drawSource, /if \(!reducedThemeMotion\)/);
-  assert.match(drawSource, /draw-theme-journey-number/);
-  assert.match(drawSource, /draw-theme-journey-connector/);
+  assert.match(drawStartOverlaySource, /const createThemeArtMotionLayer = \(/);
+  assert.match(drawStartOverlaySource, /'draw-theme-art-crayon'/);
+  assert.match(drawStartOverlaySource, /'draw-theme-art-star-top'/);
+  assert.match(drawStartOverlaySource, /'draw-theme-art-star-bottom'/);
+  assert.match(drawSource, /const reducedMotion = prefersReducedMotion\(\)/);
+  assert.match(drawStartOverlaySource, /draw-theme-reduced-motion/);
+  assert.match(drawStartOverlaySource, /if \(!options\.reducedMotion\)/);
+  assert.match(drawStartOverlaySource, /draw-theme-journey-number/);
+  assert.match(drawStartOverlaySource, /draw-theme-journey-connector/);
   assert.match(gameStyles, /@keyframes draw-theme-crayon-rock/);
   assert.match(gameStyles, /@keyframes draw-theme-star-float/);
   assert.match(gameStyles, /@keyframes draw-theme-number-pulse/);
@@ -209,15 +224,41 @@ test('official Draw requires an explicit start and locks at time', () => {
     /\.draw-theme-reduced-motion \.draw-theme-start-button/
   );
   assert.match(gameStyles, /@media \(prefers-reduced-motion: reduce\)/);
-  assert.match(drawSource, /card\.append\(startButton\)/);
-  assert.match(drawSource, /timerNotice\.append\(timerIcon, timerLabel\)/);
-  assert.match(drawSource, /Start the 60 second Community Theme drawing round/);
-  assert.match(drawSource, /background: 'rgba\(31, 24, 18, 0\.82\)'/);
-  assert.match(drawSource, /width: this\.scale\.width/);
-  assert.match(drawSource, /height: this\.scale\.height/);
+  assert.match(drawStartOverlaySource, /card\.append\(startButton\)/);
   assert.match(
-    drawSource,
+    drawStartOverlaySource,
+    /timerNotice\.append\(timerIcon, timerLabel\)/
+  );
+  assert.match(
+    drawStartOverlaySource,
+    /Start the 60 second Community Theme drawing round/
+  );
+  assert.match(
+    drawStartOverlaySource,
+    /background: 'rgba\(31, 24, 18, 0\.82\)'/
+  );
+  assert.match(drawStartOverlaySource, /width: options\.viewport\.width/);
+  assert.match(drawStartOverlaySource, /height: options\.viewport\.height/);
+  assert.match(
+    drawStartOverlaySource,
     /style\.visibility = overlayVisible[\s\S]{0,40}\? 'visible'[\s\S]{0,20}: 'hidden'/
+  );
+  assert.match(
+    drawStartOverlaySource,
+    /requestedVisible &&[\s\S]{0,100}!countdownActive[\s\S]{0,100}options\.communityThemeAvailable/
+  );
+  assert.match(
+    drawStartOverlaySource,
+    /startButton\.disabled = !startIsAvailable[\s\S]{0,220}freeDrawButton\.disabled = !freeDrawIsAvailable/
+  );
+  assert.match(drawStartOverlaySource, /void options\.onStartTheme\(\)/);
+  assert.match(
+    drawStartOverlaySource,
+    /freeDrawButton\.addEventListener\('click', options\.onStartFreeDraw\)/
+  );
+  assert.match(
+    drawStartOverlaySource,
+    /destroy: \(\) => \{[\s\S]{0,100}if \(destroyed\) return;[\s\S]{0,100}overlay\.remove\(\)/
   );
   assert.match(drawSource, /private isWaitingToStart\(\): boolean/);
   assert.match(drawSource, /this\.canvas\?\.setEnabled\(inputEnabled\)/);

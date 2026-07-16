@@ -425,7 +425,11 @@ test('Arena rematches use Rival Run while birth uses one simple first fight', ()
   assert.doesNotMatch(replaySource, /\bspar\(/);
   assert.match(
     drawSource,
-    /await spar\(scribbit\.id, undefined, undefined, true\)/
+    /const isPlayersFirstBattle = getArena\(this\)\?\.hasCompletedBattle === false/
+  );
+  assert.match(
+    drawSource,
+    /await spar\([\s\S]{0,100}scribbit\.id[\s\S]{0,100}isPlayersFirstBattle[\s\S]{0,20}\)/
   );
   assert.doesNotMatch(drawSource, /openRivalRun/);
   assert.match(

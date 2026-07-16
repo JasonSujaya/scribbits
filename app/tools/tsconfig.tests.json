@@ -17,6 +17,7 @@
   "include": [
     "../src/shared/**/*.ts",
     "../src/server/core/**/*.ts",
+    "../src/server/routes/dailyLogin.ts",
     "../src/client/lib/arenaasynclifecycle.ts",
     "../src/client/lib/apiretry.ts",
     "../src/client/lib/api.ts",
@@ -32,6 +33,7 @@
     "../src/client/lib/drawautomation.ts",
     "../src/client/lib/drawcharges.ts",
     "../src/client/lib/drawroundclock.ts",
+    "../src/client/lib/drawsubmissionresult.ts",
     "../src/client/lib/firstchesttrail.ts",
     "../src/client/lib/fittext.ts",
     "../src/client/lib/foundercharacterart.ts",
@@ -42,6 +44,7 @@
     "../src/client/lib/paintreservoir.ts",
     "../src/client/lib/registry.ts",
     "../src/client/lib/replaycommentary.ts",
+    "../src/client/lib/replayarchivedresultplan.ts",
     "../src/client/lib/replaypostfighteligibility.ts",
     "../src/client/lib/replayreward.ts",
     "../src/client/lib/rumblereturnpresentation.ts",

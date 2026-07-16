@@ -18,6 +18,14 @@ const homeSource = await readFile(
   new URL('../src/client/scenes/ScribbitHome.ts', import.meta.url),
   'utf8'
 );
+const preloaderSource = await readFile(
+  new URL('../src/client/scenes/Preloader.ts', import.meta.url),
+  'utf8'
+);
+const gameHtml = await readFile(
+  new URL('../src/client/game.html', import.meta.url),
+  'utf8'
+);
 const gallerySource = await readFile(
   new URL('../src/client/scenes/Gallery.ts', import.meta.url),
   'utf8'
@@ -204,6 +212,23 @@ test('Home and Gallery share one uninterrupted idle track', () => {
   assert.match(homeSource, /releaseHomeSoundtrack\(\)/);
   assert.match(gallerySource, /playHomeSoundtrack\(\)/);
   assert.match(gallerySource, /releaseHomeSoundtrack\(\)/);
+});
+
+test('startup music retries on normal interaction without a blocking prompt', () => {
+  assert.match(
+    preloaderSource,
+    /create\(\): void \{[\s\S]{0,400}playHomeSoundtrack\(\)/
+  );
+  assert.match(
+    soundtrackSource,
+    /error\.name === 'NotAllowedError'[\s\S]{0,160}installRetryListeners\(\)/
+  );
+  assert.match(
+    soundtrackSource,
+    /addEventListener\('pointerdown', retryPlayback, true\)/
+  );
+  assert.doesNotMatch(gameHtml, /game-soundtrack-prompt/);
+  assert.doesNotMatch(gameHtml, /START MUSIC/);
 });
 
 test('soundtrack errors recover once without treating transient stalls as fatal', () => {

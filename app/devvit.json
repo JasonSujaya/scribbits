@@ -47,6 +47,13 @@
         "location": "subreddit",
         "forUserType": "moderator",
         "endpoint": "/internal/menu/seasons-manage"
+      },
+      {
+        "label": "View player feedback",
+        "description": "Open the private Scribbits player feedback inbox",
+        "location": "subreddit",
+        "forUserType": "moderator",
+        "endpoint": "/internal/menu/feedback-view"
       }
     ]
   },

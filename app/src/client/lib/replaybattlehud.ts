@@ -707,9 +707,7 @@ export function createReplayBattleHud(
   let playbackSpeed = input.initialPlaybackSpeed;
   let heartsVisible = true;
   let battleChromeVisible = true;
-  // The top hearts and exact HP already carry combat truth. Keep the moving
-  // labels opt-in so the default fight has one health read instead of two.
-  let floatingVitalsVisible = false;
+  let floatingVitalsVisible = true;
 
   const floatingVitalsToggle = scene.add
     .container(layout.viewportWidth / 2 + 142, layout.battleTitleY)

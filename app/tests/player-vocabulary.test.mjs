@@ -17,6 +17,10 @@ const apiSource = readFileSync(
   join(appRoot, 'src', 'server', 'routes', 'api.ts'),
   'utf8'
 );
+const inventoryRouteSource = readFileSync(
+  join(appRoot, 'src', 'server', 'routes', 'inventory.ts'),
+  'utf8'
+);
 const mockSource = readFileSync(
   join(appRoot, 'scripts', 'dev-mock.mjs'),
   'utf8'
@@ -95,9 +99,9 @@ test('Pick copy stays canonical while Back transport identifiers remain stable',
 
 test('Gear forging copy avoids accessory, loose, and merge vocabulary', () => {
   const apiForgeRoute = sliceSource(
-    apiSource,
-    "api.post('/merge-gear'",
-    "api.post('/capsule'"
+    inventoryRouteSource,
+    'const mergeGear:',
+    'const capsule:'
   );
   const mockForgeRoute = sliceSource(
     mockSource,
@@ -125,7 +129,10 @@ test('Gear forging copy avoids accessory, loose, and merge vocabulary', () => {
 
   assert.doesNotMatch(apiPlayerCopy.join('\n'), retiredGearTerms);
   assert.doesNotMatch(mockPlayerCopy.join('\n'), retiredGearTerms);
-  assert.match(apiForgeRoute, /api\.post\('\/merge-gear'/);
+  assert.match(
+    apiSource,
+    /api\.post\('\/merge-gear', inventoryRouteHandlers\.mergeGear\)/
+  );
   assert.match(apiForgeRoute, /mergeGearForUser\(/);
   assert.match(apiForgeRoute, /console\.error\('Merge gear route failed:'/);
   assert.match(mockForgeRoute, /path === '\/api\/merge-gear'/);

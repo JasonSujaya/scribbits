@@ -4,6 +4,13 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { execFileSync } from 'node:child_process';
+import {
+  adjacentLowerPowerUpRarity,
+  powerUpRarityComparisonBand,
+  powerUpRarityComparisonVerdict,
+  powerUpRarityRank,
+  powerUpTierAdvantageVerdict,
+} from './rarity-model.mjs';
 
 const appRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const workspaceRoot = resolve(appRoot, '..');
@@ -26,23 +33,6 @@ const TIMEOUT_RATE_FLAG_HIGH = 0.08;
 const AVERAGE_SECONDS_WATCH_LOW = 12;
 const AVERAGE_SECONDS_WATCH_HIGH = 45;
 const POWER_UP_SWING_WATCH = 0.18;
-const POWER_UP_DEAD_TRIGGER_RATE = 0.15;
-const POWER_UP_LOW_IMPACT_SWING = 0.03;
-const POWER_UP_HARMFUL_SWING = -0.12;
-const POWER_UP_CLUTCH_SWING = 0.08;
-const POWER_UP_OVERTUNED_SWING_BY_RARITY = Object.freeze({
-  common: 0.35,
-  uncommon: 0.35,
-  rare: 0.4,
-  epic: 0.4,
-  legendary: 0.45,
-});
-const POWER_UP_MARGINAL_BAND_BY_RARITY = Object.freeze({
-  common: Object.freeze({ minimum: POWER_UP_HARMFUL_SWING, maximum: 0.3 }),
-  uncommon: Object.freeze({ minimum: POWER_UP_HARMFUL_SWING, maximum: 0.3 }),
-  rare: Object.freeze({ minimum: POWER_UP_HARMFUL_SWING, maximum: 0.35 }),
-  epic: Object.freeze({ minimum: POWER_UP_HARMFUL_SWING, maximum: 0.4 }),
-});
 const CLOSE_FIGHT_HP_MARGIN = 150;
 const BLOWOUT_HP_MARGIN = 650;
 const EFFECTIVE_ROLE_MATCHUPS = Object.freeze({
@@ -404,6 +394,21 @@ function summarizeRows(rows) {
     averageDamageTakenBySource: averageMap(rows, 'damageTakenBySource'),
     targetAttackHitRates: hitRateMap(rows),
     verdict: flags.length > 0 ? flags.join('+') : 'OK',
+  };
+}
+
+function winRateConfidenceInterval95(targetWins, total) {
+  if (total <= 0) return { minimum: 0, maximum: 1 };
+  const z = 1.96;
+  const rate = targetWins / total;
+  const denominator = 1 + (z * z) / total;
+  const center = (rate + (z * z) / (2 * total)) / denominator;
+  const margin =
+    (z / denominator) *
+    Math.sqrt((rate * (1 - rate)) / total + (z * z) / (4 * total * total));
+  return {
+    minimum: Math.max(0, center - margin),
+    maximum: Math.min(1, center + margin),
   };
 }
 
@@ -991,43 +996,6 @@ function runPowerUpCombos({ runtime, scenarios, forecast }) {
   };
 }
 
-function appendPowerUpUsefulnessVerdict(summary) {
-  if (summary.offerableForRole === false) return 'INFO_NOT_OFFERED_ROLE';
-
-  const flags = [];
-  const comboOnlyTrigger =
-    summary.trigger === 'distinct-power-ups' ||
-    summary.trigger === 'common-power-up';
-  const rareButImpactfulClutch =
-    summary.trigger === 'lethal-hit' &&
-    summary.triggerRate < POWER_UP_DEAD_TRIGGER_RATE &&
-    summary.swingFromBaseline >= POWER_UP_CLUTCH_SWING;
-  if (comboOnlyTrigger && summary.triggerRate < POWER_UP_DEAD_TRIGGER_RATE) {
-    flags.push('INFO_COMBO_ONLY');
-  } else if (
-    summary.triggerRate < POWER_UP_DEAD_TRIGGER_RATE &&
-    !rareButImpactfulClutch
-  ) {
-    flags.push('FLAG_DEAD_CARD');
-  }
-  if (
-    summary.triggerRate >= POWER_UP_DEAD_TRIGGER_RATE &&
-    Math.abs(summary.swingFromBaseline) < POWER_UP_LOW_IMPACT_SWING
-  ) {
-    flags.push('WATCH_LOW_IMPACT');
-  }
-  if (
-    summary.swingFromBaseline >
-    POWER_UP_OVERTUNED_SWING_BY_RARITY[summary.rarity]
-  ) {
-    flags.push('FLAG_OVERTUNED');
-  }
-  if (summary.swingFromBaseline < POWER_UP_HARMFUL_SWING) {
-    flags.push('FLAG_HARMFUL');
-  }
-  return flags.length > 0 ? flags.join('+') : 'OK';
-}
-
 function isBalanceFlag(row) {
   return String(row.verdict)
     .split('+')
@@ -1050,97 +1018,387 @@ function removeVerdictToken(verdict, tokenToRemove) {
   return remaining.length > 0 ? remaining.join('+') : 'OK';
 }
 
-function runPowerUpUsefulness({ runtime, scenarios, forecast }) {
-  const opponents = baseBuilds(scenarios);
-  const rows = [];
-  const summaries = [];
-  const seeds = scenarios.suites.powerUpUsefulness?.seedsPerPairing ?? 36;
-  for (const targetBuild of baseBuilds(scenarios)) {
-    const combatRole = runtime.selectCombatRole(targetBuild.stats);
-    const baselineRows = [];
-    for (const opponentBuild of opponents) {
-      baselineRows.push(
-        ...simulateTargetVsOpponent({
-          runtime,
-          forecast,
-          battleKind: scenarios.battleKind,
-          targetBuild,
-          opponentBuild,
-          targetOverrides: {
-            label: `${targetBuild.label} · Baseline`,
-            powerUpIds: [],
-          },
-          seeds,
-          seedPrefix: 'balancer:powerup-usefulness:v2',
-        })
+function offerablePowerUpsOfRarity({
+  runtime,
+  build,
+  rarity,
+  ownedPowerUpIds = [],
+}) {
+  const combatRole = runtime.selectCombatRole(build.stats);
+  return powerUpsByRarity(runtime, rarity).filter(
+    (powerUpId) =>
+      !ownedPowerUpIds.includes(powerUpId) &&
+      runtime.powerUpIsOfferableForRole(
+        powerUpId,
+        combatRole,
+        ownedPowerUpIds.length
+      ) &&
+      runtime.validatePowerUpBuild([...ownedPowerUpIds, powerUpId]).valid
+  );
+}
+
+function buildLegendarySupport(runtime, build, historyIndex) {
+  const support = [];
+  for (const rarity of ['common', 'uncommon', 'rare']) {
+    const candidates = offerablePowerUpsOfRarity({
+      runtime,
+      build,
+      rarity,
+      ownedPowerUpIds: support,
+    });
+    if (candidates.length === 0) {
+      throw new Error(
+        `${build.id} has no legal ${rarity} support for Legendary testing.`
       );
     }
-    const baselineWinRate = summarizeRows(baselineRows).targetWinRate;
-    for (const powerUpId of runtime.POWER_UP_IDS) {
-      const definition = runtime.POWER_UP_CATALOG[powerUpId];
-      const offerableForRole = runtime.powerUpIsOfferableForRole(
-        powerUpId,
-        combatRole
-      );
-      const powerUpRows = [];
-      for (const opponentBuild of opponents) {
-        powerUpRows.push(
-          ...simulateTargetVsOpponent({
-            runtime,
-            forecast,
-            battleKind: scenarios.battleKind,
-            targetBuild,
-            opponentBuild,
-            targetOverrides: {
-              label: `${targetBuild.label} · ${definition.shortName}`,
-              powerUpIds: [powerUpId],
-            },
-            seeds,
-            seedPrefix: 'balancer:powerup-usefulness:v2',
-          }).map((row) => ({
-            ...row,
-            roleLabel: targetBuild.label,
-            powerUpId,
-            powerUpLabel: definition.shortName,
-          }))
-        );
-      }
-      rows.push(...powerUpRows);
-      const summary = summarizeRows(powerUpRows);
-      const triggerRate =
-        powerUpRows.filter(
-          (row) => (row.targetPowerUpTriggerCounts?.[powerUpId] ?? 0) > 0
-        ).length / Math.max(1, powerUpRows.length);
-      const averageSpecificTriggers =
-        powerUpRows.reduce(
-          (sum, row) =>
-            sum + (row.targetPowerUpTriggerCounts?.[powerUpId] ?? 0),
-          0
-        ) / Math.max(1, powerUpRows.length);
-      const enriched = {
-        targetLabel: targetBuild.label,
-        opponentLabel: definition.shortName,
-        powerUpId,
-        powerUpLabel: definition.shortName,
-        combatRole,
-        offerableForRole,
-        rarity: definition.rarity,
-        trigger: definition.trigger,
-        baselineWinRate,
-        swingFromBaseline: summary.targetWinRate - baselineWinRate,
+    const selectedIndex =
+      runtime.hashStringToUint32(
+        `balancer:legendary-support:v1:${build.id}:${historyIndex}:${rarity}`
+      ) % candidates.length;
+    support.push(candidates[selectedIndex]);
+  }
+  return support;
+}
+
+function summarizePowerUpRarityComparison({
+  runtime,
+  config,
+  rows,
+  targetBuild,
+  powerUpId,
+  comparisonKind,
+  opponentRarity,
+  targetUpgradeCount,
+  opponentUpgradeCount,
+  peerCount,
+}) {
+  const definition = runtime.POWER_UP_CATALOG[powerUpId];
+  const summary = summarizeRows(rows);
+  const triggerRate =
+    rows.filter((row) => (row.targetPowerUpTriggerCounts?.[powerUpId] ?? 0) > 0)
+      .length / Math.max(1, rows.length);
+  const averageSpecificTriggers =
+    rows.reduce(
+      (sum, row) => sum + (row.targetPowerUpTriggerCounts?.[powerUpId] ?? 0),
+      0
+    ) / Math.max(1, rows.length);
+  const band = powerUpRarityComparisonBand(
+    config,
+    comparisonKind,
+    definition.rarity
+  );
+  const comparisonVerdict = powerUpRarityComparisonVerdict({
+    config,
+    comparisonKind,
+    targetRarity: definition.rarity,
+    targetWinRate: summary.targetWinRate,
+    triggerRate,
+  });
+  const confidenceInterval = winRateConfidenceInterval95(
+    summary.targetWins,
+    summary.total
+  );
+  return {
+    targetLabel: `${targetBuild.label} · ${definition.shortName}`,
+    opponentLabel:
+      comparisonKind === 'equal-rarity'
+        ? `Same-role ${opponentRarity} peers`
+        : `Same-role adjacent ${opponentRarity} field`,
+    targetBuild: targetBuild.id,
+    combatRole: runtime.selectCombatRole(targetBuild.stats),
+    powerUpId,
+    powerUpLabel: definition.shortName,
+    rarity: definition.rarity,
+    opponentRarity,
+    rarityGap:
+      powerUpRarityRank(definition.rarity) - powerUpRarityRank(opponentRarity),
+    comparisonKind,
+    comparisonScope: 'mirror-role',
+    peerCount,
+    expectedBand: `${formatPercent(band.minimum)}–${formatPercent(
+      band.maximum
+    )}`,
+    winRateConfidence95: `${formatPercent(
+      confidenceInterval.minimum
+    )}–${formatPercent(confidenceInterval.maximum)}`,
+    targetUpgradeCount,
+    opponentUpgradeCount,
+    trigger: definition.trigger,
+    triggerRate,
+    averageSpecificTriggers,
+    ...summary,
+    verdict:
+      comparisonKind === 'equal-rarity' && peerCount === 0
+        ? `${comparisonVerdict === 'OK' ? '' : `${comparisonVerdict}+`}INFO_SELF_MIRROR_ONLY`
+        : comparisonVerdict,
+  };
+}
+
+function summarizePowerUpTierAdvantages(config, rows) {
+  return ['uncommon', 'rare', 'epic', 'legendary'].flatMap((targetRarity) => {
+    const tierRows = rows.filter(
+      (row) =>
+        row.comparisonKind === 'rarity-advantage' &&
+        row.targetRarity === targetRarity
+    );
+    if (tierRows.length === 0) return [];
+    const opponentRarity = adjacentLowerPowerUpRarity(targetRarity);
+    const summary = summarizeRows(tierRows);
+    const confidenceInterval = winRateConfidenceInterval95(
+      summary.targetWins,
+      summary.total
+    );
+    const band = config.tierAdvantageBand;
+    const triggerRate =
+      tierRows.filter(
+        (row) => (row.targetPowerUpTriggerCounts?.[row.powerUpId] ?? 0) > 0
+      ).length / tierRows.length;
+    const averageSpecificTriggers =
+      tierRows.reduce(
+        (sum, row) =>
+          sum + (row.targetPowerUpTriggerCounts?.[row.powerUpId] ?? 0),
+        0
+      ) / tierRows.length;
+    return [
+      {
+        targetLabel: `${targetRarity.toUpperCase()} tier aggregate`,
+        opponentLabel: `${opponentRarity.toUpperCase()} same-role tier`,
+        rarity: targetRarity,
+        opponentRarity,
+        rarityGap: 1,
+        comparisonKind: 'tier-aggregate',
+        comparisonScope: 'mirror-role',
+        peerCount: new Set(tierRows.map((row) => row.opponentPowerUpId)).size,
+        expectedBand: `${formatPercent(band.minimum)}–${formatPercent(
+          band.maximum
+        )}`,
+        winRateConfidence95: `${formatPercent(
+          confidenceInterval.minimum
+        )}–${formatPercent(confidenceInterval.maximum)}`,
+        targetUpgradeCount: targetRarity === 'legendary' ? 4 : 1,
+        opponentUpgradeCount: targetRarity === 'legendary' ? 4 : 1,
         triggerRate,
         averageSpecificTriggers,
         ...summary,
-      };
-      summaries.push({
-        ...enriched,
-        verdict: appendPowerUpUsefulnessVerdict(enriched),
-      });
+        verdict: powerUpTierAdvantageVerdict(config, summary.targetWinRate),
+      },
+    ];
+  });
+}
+
+function runPowerUpUsefulness({ runtime, scenarios, forecast }) {
+  const builds = baseBuilds(scenarios);
+  const config = scenarios.suites.powerUpUsefulness;
+  const rows = [];
+  const summaries = [];
+  const seeds = config.seedsPerPairing ?? 120;
+  for (const targetBuild of builds) {
+    for (const powerUpId of runtime.POWER_UP_IDS) {
+      const definition = runtime.POWER_UP_CATALOG[powerUpId];
+      if (definition.rarity === 'legendary') continue;
+      if (
+        !offerablePowerUpsOfRarity({
+          runtime,
+          build: targetBuild,
+          rarity: definition.rarity,
+        }).includes(powerUpId)
+      ) {
+        continue;
+      }
+      const comparisonRarities = [
+        {
+          comparisonKind: 'equal-rarity',
+          opponentRarity: definition.rarity,
+        },
+        ...(adjacentLowerPowerUpRarity(definition.rarity)
+          ? [
+              {
+                comparisonKind: 'rarity-advantage',
+                opponentRarity: adjacentLowerPowerUpRarity(definition.rarity),
+              },
+            ]
+          : []),
+      ];
+      for (const { comparisonKind, opponentRarity } of comparisonRarities) {
+        const comparisonRows = [];
+        const offerableOpponentPowerUpIds = offerablePowerUpsOfRarity({
+          runtime,
+          build: targetBuild,
+          rarity: opponentRarity,
+        });
+        const peerPowerUpIds =
+          comparisonKind === 'equal-rarity'
+            ? offerableOpponentPowerUpIds.filter(
+                (opponentPowerUpId) => opponentPowerUpId !== powerUpId
+              )
+            : offerableOpponentPowerUpIds;
+        // A role can legally have one card at a rarity. Its only honest peer
+        // check is then a self-mirror; rarity-advantage rows still use every
+        // adjacent-lower card available to that same role.
+        const testedOpponentPowerUpIds =
+          comparisonKind === 'equal-rarity' && peerPowerUpIds.length === 0
+            ? [powerUpId]
+            : peerPowerUpIds;
+        for (const opponentPowerUpId of testedOpponentPowerUpIds) {
+          const pairingKey =
+            comparisonKind === 'equal-rarity'
+              ? [powerUpId, opponentPowerUpId].sort().join(':')
+              : `${powerUpId}:${opponentPowerUpId}`;
+          comparisonRows.push(
+            ...simulateTargetVsOpponent({
+              runtime,
+              forecast,
+              battleKind: scenarios.battleKind,
+              targetBuild,
+              opponentBuild: targetBuild,
+              targetOverrides: {
+                label: `${targetBuild.label} · ${definition.shortName}`,
+                powerUpIds: [powerUpId],
+              },
+              opponentOverrides: { powerUpIds: [opponentPowerUpId] },
+              seeds,
+              seedPrefix: `balancer:powerup-rarity:v2:${comparisonKind}:${targetBuild.id}:${pairingKey}`,
+            }).map((row) => ({
+              ...row,
+              powerUpId,
+              opponentPowerUpId,
+              comparisonKind,
+              targetRarity: definition.rarity,
+              opponentRarity,
+            }))
+          );
+        }
+        if (comparisonRows.length === 0) {
+          throw new Error(
+            `${powerUpId} has no ${opponentRarity} upgraded opponents.`
+          );
+        }
+        rows.push(...comparisonRows);
+        summaries.push(
+          summarizePowerUpRarityComparison({
+            runtime,
+            config,
+            rows: comparisonRows,
+            targetBuild,
+            powerUpId,
+            comparisonKind,
+            opponentRarity,
+            targetUpgradeCount: 1,
+            opponentUpgradeCount: 1,
+            peerCount: peerPowerUpIds.length,
+          })
+        );
+      }
     }
   }
+
+  const legendaryHistoriesPerRole = config.legendaryHistoriesPerRole ?? 80;
+  for (const targetBuild of builds) {
+    for (const powerUpId of powerUpsByRarity(runtime, 'legendary')) {
+      const comparisonRowsByKind = new Map([
+        ['equal-rarity', []],
+        ['rarity-advantage', []],
+      ]);
+      for (
+        let historyIndex = 0;
+        historyIndex < legendaryHistoriesPerRole;
+        historyIndex += 1
+      ) {
+        const targetSupport = buildLegendarySupport(
+          runtime,
+          targetBuild,
+          historyIndex
+        );
+        if (
+          !offerablePowerUpsOfRarity({
+            runtime,
+            build: targetBuild,
+            rarity: 'legendary',
+            ownedPowerUpIds: targetSupport,
+          }).includes(powerUpId)
+        ) {
+          continue;
+        }
+        const legendaryPeers = powerUpsByRarity(runtime, 'legendary').filter(
+          (opponentPowerUpId) => opponentPowerUpId !== powerUpId
+        );
+        const epicOpponents = offerablePowerUpsOfRarity({
+          runtime,
+          build: targetBuild,
+          rarity: 'epic',
+          ownedPowerUpIds: targetSupport,
+        });
+        for (const [comparisonKind, opponentPowerUpIds] of [
+          ['equal-rarity', legendaryPeers],
+          ['rarity-advantage', epicOpponents],
+        ]) {
+          for (const opponentPowerUpId of opponentPowerUpIds) {
+            const pairingKey =
+              comparisonKind === 'equal-rarity'
+                ? [powerUpId, opponentPowerUpId].sort().join(':')
+                : `${powerUpId}:${opponentPowerUpId}`;
+            comparisonRowsByKind.get(comparisonKind).push(
+              ...simulateTargetVsOpponent({
+                runtime,
+                forecast,
+                battleKind: scenarios.battleKind,
+                targetBuild,
+                opponentBuild: targetBuild,
+                targetOverrides: {
+                  label: `${targetBuild.label} · ${runtime.POWER_UP_CATALOG[powerUpId].shortName}`,
+                  powerUpIds: [...targetSupport, powerUpId],
+                },
+                opponentOverrides: {
+                  powerUpIds: [...targetSupport, opponentPowerUpId],
+                },
+                seeds: 1,
+                seedPrefix: `balancer:powerup-rarity:v2:legendary:${comparisonKind}:${targetBuild.id}:${historyIndex}:${pairingKey}`,
+              }).map((row) => ({
+                ...row,
+                powerUpId,
+                opponentPowerUpId,
+                comparisonKind,
+                targetRarity: 'legendary',
+                opponentRarity:
+                  comparisonKind === 'equal-rarity' ? 'legendary' : 'epic',
+              }))
+            );
+          }
+        }
+      }
+      for (const [comparisonKind, comparisonRows] of comparisonRowsByKind) {
+        if (comparisonRows.length === 0) {
+          throw new Error(
+            `${powerUpId} has no legal four-card ${comparisonKind} comparison.`
+          );
+        }
+        rows.push(...comparisonRows);
+        summaries.push(
+          summarizePowerUpRarityComparison({
+            runtime,
+            config,
+            rows: comparisonRows,
+            targetBuild,
+            powerUpId,
+            comparisonKind,
+            opponentRarity:
+              comparisonKind === 'equal-rarity' ? 'legendary' : 'epic',
+            targetUpgradeCount: 4,
+            opponentUpgradeCount: 4,
+            peerCount: new Set(
+              comparisonRows.map((row) => row.opponentPowerUpId)
+            ).size,
+          })
+        );
+      }
+    }
+  }
+
+  summaries.unshift(...summarizePowerUpTierAdvantages(config, rows));
+
   return {
     id: 'powerup-usefulness',
-    title: 'Power-Up Usefulness Monte Carlo',
+    title: 'Power-Up Rarity Monte Carlo',
     rows,
     summaries,
   };
@@ -1992,25 +2250,6 @@ function runRewardPath({ runtime, scenarios, forecast }) {
             }))
           );
           targetChoices.forEach((selectedPowerUpId, targetChoiceIndex) => {
-            rows.push(
-              ...simulateTargetVsOpponent({
-                ...shared,
-                targetOverrides: {
-                  label: `${targetBuild.label} · immediate reward`,
-                  powerUpIds: [selectedPowerUpId],
-                },
-                opponentOverrides: { powerUpIds: [] },
-              }).map((row) => ({
-                ...row,
-                source,
-                offerIndex,
-                targetRole,
-                opponentRole,
-                variantId: 'immediate',
-                targetChoiceIndex,
-                selectedPowerUpId,
-              }))
-            );
             opponentChoices.forEach(
               (opponentPowerUpId, opponentChoiceIndex) => {
                 rows.push(
@@ -2055,87 +2294,30 @@ function runRewardPath({ runtime, scenarios, forecast }) {
         summary.targetWinRate,
       ])
   );
-  const baselineRowsByComparison = new Map(
-    rows
-      .filter((row) => row.variantId === 'baseline')
-      .map((row) => [
-        [
-          row.source,
-          row.offerIndex,
-          row.targetBuild,
-          row.opponentBuild,
-          row.orientation,
-          row.seedIndex,
-        ].join('\u001f'),
-        row,
-      ])
-  );
-  const marginalGroups = new Map();
+  const upgradedChoiceGroups = new Map();
   for (const row of rows.filter(
-    (candidate) => candidate.variantId === 'immediate'
+    (candidate) => candidate.variantId === 'equal'
   )) {
-    const comparisonKey = [
-      row.source,
-      row.offerIndex,
-      row.targetBuild,
-      row.opponentBuild,
-      row.orientation,
-      row.seedIndex,
-    ].join('\u001f');
-    const baselineRow = baselineRowsByComparison.get(comparisonKey);
-    if (!baselineRow) {
-      throw new Error(`Missing paired reward baseline for ${comparisonKey}.`);
-    }
-    const marginalKey = `${row.targetRole}:${row.selectedPowerUpId}`;
-    const group = marginalGroups.get(marginalKey) ?? [];
-    group.push({ row, baselineRow });
-    marginalGroups.set(marginalKey, group);
+    const groupKey = [row.source, row.targetRole, row.selectedPowerUpId].join(
+      '\u001f'
+    );
+    const group = upgradedChoiceGroups.get(groupKey) ?? [];
+    group.push(row);
+    upgradedChoiceGroups.set(groupKey, group);
   }
-  const marginalSummaries = [...marginalGroups.entries()].map(
-    ([marginalKey, pairs]) => {
-      const [targetRole, powerUpId] = marginalKey.split(':');
+  const upgradedChoiceSummaries = [...upgradedChoiceGroups.entries()].map(
+    ([groupKey, group]) => {
+      const [source, targetRole, powerUpId] = groupKey.split('\u001f');
       const definition = runtime.POWER_UP_CATALOG[powerUpId];
-      const immediateSummary = summarizeRows(pairs.map((pair) => pair.row));
-      const baselineSummary = summarizeRows(
-        pairs.map((pair) => pair.baselineRow)
-      );
-      const swingFromBaseline =
-        pairs.reduce(
-          (sum, pair) =>
-            sum +
-            Number(pair.row.targetWon) -
-            Number(pair.baselineRow.targetWon),
-          0
-        ) / pairs.length;
-      const verdicts = [];
-      const comboOnly =
-        definition.trigger === 'distinct-power-ups' ||
-        definition.trigger === 'common-power-up';
-      const band = POWER_UP_MARGINAL_BAND_BY_RARITY[definition.rarity];
-      if (band && swingFromBaseline < band.minimum) {
-        verdicts.push('FLAG_HARMFUL_OFFER');
-      }
-      if (!comboOnly && band && swingFromBaseline > band.maximum) {
-        verdicts.push('FLAG_RARITY_OVERPOWERED');
-      }
-      if (
-        !comboOnly &&
-        swingFromBaseline >= (band?.minimum ?? -0.02) &&
-        swingFromBaseline < 0.01
-      ) {
-        verdicts.push('WATCH_LOW_IMPACT_OFFER');
-      }
-      if (comboOnly) verdicts.push('INFO_COMBO_ONLY');
       return {
         targetLabel: `${targetRole} · ${definition.shortName}`,
-        opponentLabel: 'Paired no-Power-Up field',
+        opponentLabel: `${source} rarity-weighted upgraded field`,
+        source,
         targetRole,
         powerUpId,
         rarity: definition.rarity,
-        baselineWinRate: baselineSummary.targetWinRate,
-        swingFromBaseline,
-        ...immediateSummary,
-        verdict: verdicts.length > 0 ? verdicts.join('+') : 'OK',
+        ...summarizeRows(group),
+        verdict: 'INFO_REWARD_CARD_DIAGNOSTIC',
       };
     }
   );
@@ -2143,9 +2325,12 @@ function runRewardPath({ runtime, scenarios, forecast }) {
     scenarios.rewardSources.flatMap((source) =>
       builds.map((build) => {
         const targetRole = runtime.selectCombatRole(build.stats);
-        const rates = marginalSummaries
-          .filter((summary) => summary.targetRole === targetRole)
-          .map((summary) => summary.swingFromBaseline);
+        const rates = upgradedChoiceSummaries
+          .filter(
+            (summary) =>
+              summary.source === source && summary.targetRole === targetRole
+          )
+          .map((summary) => summary.targetWinRate);
         return [
           `${source}:${targetRole}`,
           rates.length > 0 ? Math.max(...rates) - Math.min(...rates) : 1,
@@ -2161,38 +2346,35 @@ function runRewardPath({ runtime, scenarios, forecast }) {
       ...summaries.map((summary) => {
         const key = `${summary.source}:${summary.targetRole}`;
         const baselineWinRate = baselineBySourceAndRole.get(key) ?? 0.5;
-        const swingFromBaseline = summary.targetWinRate - baselineWinRate;
+        const roleAdjustedFieldShift = summary.targetWinRate - baselineWinRate;
         const choiceSpread = choiceSpreadBySourceAndRole.get(key) ?? 0;
         const verdicts = [];
         if (!offerValidity.get(key)) verdicts.push('FLAG_INVALID_REWARD_OFFER');
-        if (
-          summary.variantId === 'immediate' &&
-          (swingFromBaseline < -0.1 || swingFromBaseline > 0.35)
-        ) {
-          verdicts.push('FLAG_REWARD_LIFT');
-        }
         if (
           summary.variantId === 'equal' &&
           (summary.targetWinRate < 0.43 || summary.targetWinRate > 0.57)
         ) {
           verdicts.push('FLAG_REWARD_FIELD');
         }
-        if (summary.variantId === 'equal' && choiceSpread > 0.35) {
+        if (summary.variantId === 'equal' && choiceSpread > 0.25) {
           verdicts.push('FLAG_REWARD_CHOICE_SPREAD');
+        }
+        if (summary.variantId === 'baseline') {
+          verdicts.push('INFO_ROLE_BASELINE');
         }
         return {
           ...summary,
           opponentLabel:
             summary.variantId === 'equal'
-              ? `${summary.source} equal-progression field`
-              : `${summary.source} fixed field`,
+              ? `${summary.source} rarity-weighted upgraded field`
+              : `${summary.source} role baseline`,
           baselineWinRate,
-          swingFromBaseline,
+          roleAdjustedFieldShift,
           choiceSpread,
           verdict: verdicts.length > 0 ? verdicts.join('+') : 'OK',
         };
       }),
-      ...marginalSummaries,
+      ...upgradedChoiceSummaries,
     ],
   };
 }
@@ -2970,7 +3152,9 @@ function runThirtyDayContent({ runtime, scenarios }) {
 function runProgressionJourney({ runtime, scenarios }) {
   const config = scenarios.suites.progressionJourney;
   if (!config || config.days !== 30 || config.totalNodes !== 30) {
-    throw new Error('Progression journey requires the explicit 30-node config.');
+    throw new Error(
+      'Progression journey requires the explicit 30-node config.'
+    );
   }
   const summaries = config.profiles.map((profile) => {
     const nodesAtDaySeven = [];
@@ -3418,6 +3602,16 @@ function reportForSuite(suite) {
           },
         ]
       : []),
+    ...(rows.some((row) => row.roleAdjustedFieldShift !== undefined)
+      ? [
+          {
+            label: 'Role-adjusted field',
+            align: '---:',
+            value: (row) =>
+              `${((row.roleAdjustedFieldShift ?? 0) * 100).toFixed(1)}pp`,
+          },
+        ]
+      : []),
     ...(rows.some((row) => row.interactionLift !== undefined)
       ? [
           {
@@ -3445,8 +3639,76 @@ function reportForSuite(suite) {
     ...(rows.some((row) => row.rarity !== undefined)
       ? [
           {
-            label: 'Rarity',
+            label: 'Target rarity',
             value: (row) => row.rarity ?? '',
+          },
+        ]
+      : []),
+    ...(rows.some((row) => row.opponentRarity !== undefined)
+      ? [
+          {
+            label: 'Opponent rarity',
+            value: (row) => row.opponentRarity ?? '',
+          },
+        ]
+      : []),
+    ...(rows.some((row) => row.comparisonKind !== undefined)
+      ? [
+          {
+            label: 'Comparison',
+            value: (row) =>
+              row.comparisonKind === 'equal-rarity'
+                ? 'Equal rarity'
+                : row.comparisonKind === 'tier-aggregate'
+                  ? 'Tier aggregate'
+                  : 'Rarity advantage',
+          },
+        ]
+      : []),
+    ...(rows.some((row) => row.comparisonScope !== undefined)
+      ? [
+          {
+            label: 'Scope',
+            value: (row) =>
+              row.comparisonScope === 'mirror-role'
+                ? 'Same-role mirror'
+                : (row.comparisonScope ?? ''),
+          },
+        ]
+      : []),
+    ...(rows.some((row) => row.peerCount !== undefined)
+      ? [
+          {
+            label: 'Peers',
+            align: '---:',
+            value: (row) => row.peerCount ?? '',
+          },
+        ]
+      : []),
+    ...(rows.some((row) => row.expectedBand !== undefined)
+      ? [
+          {
+            label: 'Expected',
+            value: (row) => row.expectedBand ?? '',
+          },
+        ]
+      : []),
+    ...(rows.some((row) => row.winRateConfidence95 !== undefined)
+      ? [
+          {
+            label: '95% interval',
+            value: (row) => row.winRateConfidence95 ?? '',
+          },
+        ]
+      : []),
+    ...(rows.some((row) => row.targetUpgradeCount !== undefined)
+      ? [
+          {
+            label: 'Upgrades',
+            value: (row) =>
+              `${row.targetUpgradeCount ?? 0} vs ${
+                row.opponentUpgradeCount ?? 0
+              }`,
           },
         ]
       : []),

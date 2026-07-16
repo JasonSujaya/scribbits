@@ -7,25 +7,15 @@ import type {
   ArenaErrorResponse,
   ArenaState,
   BattleReport,
-  DailyLoginClaimResponse,
-  CapsulePullResponse,
   CloutBoard,
   DirectBattleResponse,
-  EquipTitleRequest,
   Forecast,
   FreeDrawing,
-  Inventory,
-  LegacyCardsState,
-  LegendsState,
-  MarkLegacySeenRequest,
-  MergeGearResponse,
   PracticeBattleReport,
   RivalRunChoice,
   RivalRunState,
   RetireScribbitResponse,
   ScoutNotebookState,
-  SeasonBoard,
-  SeasonPublicState,
   Scribbit,
   SparBattleResponse,
   SparRequest,
@@ -58,6 +48,10 @@ import {
   type ProgressionEventRequest,
   type ProgressionEventResponse,
 } from '../../shared/progressionanalytics';
+import {
+  parseSubmitFeedbackRequest,
+  type SubmitFeedbackResponse,
+} from '../../shared/feedback';
 import { selectCommunityDoodleDare } from '../../shared/content/communitydrawthemes';
 import {
   createCommunityChallengePostData,
@@ -65,14 +59,6 @@ import {
   parseCommunityChallengePostData,
   type CommunityChallengeProgress,
 } from '../../shared/communitychallenge';
-import {
-  isLegacyCardCursor,
-  parseLegacyCardsPageSize,
-} from '../../shared/legacycards';
-import {
-  isEquipmentCategory,
-  type EquipGearRequest,
-} from '../../shared/equipment';
 import { simulate } from '../core/battle';
 import {
   hasUserCompletedBattle,
@@ -100,32 +86,22 @@ import {
   loadPendingMaturityScribbitIds,
 } from '../core/maturity';
 import { recordProgressionEvent } from '../core/progressionAnalytics';
-import {
-  loadLegacyCardPage,
-  loadLegacyReturnReceipt,
-  markLegacyCardsSeen,
-} from '../core/legacy';
+import { loadLegacyReturnReceipt } from '../core/legacy';
 import {
   checkSubmissionConsumablesForSubmit,
-  claimCapsuleOperation,
   createCapsuleProgress,
-  getCapsuleOperationKey,
   getNextCapsuleCost,
   getInkBalance,
   loadCapsuleProgress,
   loadInventory,
   getInventoryKey,
-  mergeGearForUser,
-  pullCapsuleForUser,
-  releaseCapsuleOperation,
-  setEquippedTitle,
 } from '../core/inkStore';
 import { findInkCatalogEntry } from '../core/ink';
 import { commitDailyChampionOutcome } from '../core/dailyActions';
 import { commitScribbitSubmission } from '../core/submission';
 import { loadDrawCharges } from '../core/drawCharges';
 import { loadPaintBucket } from '../core/paintBucket';
-import { claimDailyLoginReward, loadDailyLoginState } from '../core/dailyLogin';
+import { loadDailyLoginState } from '../core/dailyLogin';
 import {
   getFreeDrawingOwner,
   hasFreeDrawingForDay,
@@ -193,11 +169,7 @@ import {
   removeScribbitCompletely,
 } from '../core/removal';
 import { deletePlayerData } from '../core/privacy';
-import {
-  ensureInitialSeason,
-  loadSeasonBoard,
-  loadSeasonPublicState,
-} from '../core/season';
+import { ensureInitialSeason, loadSeasonPublicState } from '../core/season';
 import { runWithPlayerMutationLease } from '../core/dataDeletion';
 import {
   createArenaLoadRunner,
@@ -209,16 +181,19 @@ import {
   loadPowerUpDiscoveries,
   loadPendingPowerUpOffer,
 } from '../core/powerUpOffers';
+import { FeedbackRateLimitError, savePlayerFeedback } from '../core/feedback';
+import { createInventoryRouteHandlers } from './inventory';
+import { createLegacyRouteHandlers } from './legacy';
+import { createSeasonRouteHandlers } from './season';
+import { createDailyLoginRoute } from './dailyLogin';
 import {
   claimAndAwardDailySparWin,
   applyDailyBelief,
   createScribbit,
-  equipGearForScribbit,
   enforceAliveScribbitLimit,
   getAliveScribbitsForUser,
   getCommunityLegendCount,
   getDailyFlags,
-  getLegendIds,
   getRumbleEntrantIds,
   getRumbleEntrantCount,
   getRumbleKey,
@@ -226,10 +201,10 @@ import {
   isScribbitOwnedByUser,
   loadScribbit,
   loadScribbits,
+  MAXIMUM_DRAWING_SUBMISSION_BODY_BYTES,
   hasUserCreatedScribbit,
   readHasUserCreatedScribbit,
   recordBattleOutcomeForReport,
-  refreshEquippedGearRankForUser,
   retireOwnedScribbit,
   validateAndAnalyzeScribbitSubmission,
   type CurrentPlayer,
@@ -239,7 +214,6 @@ type ErrorResponse = ArenaErrorResponse;
 
 export const api = new Hono();
 
-const capsuleOperationPendingTimeoutMs = 15_000;
 const foundingSparRivalSlateLimit = 3;
 const scribbitIdPattern = /^[A-Za-z0-9:_-]{4,90}$/;
 const freeDrawingSubmissionIdPattern = /^[A-Za-z0-9_-]{16,80}$/;
@@ -247,6 +221,7 @@ const scribbitSubmissionIdPattern = /^[A-Za-z0-9_-]{16,80}$/;
 const practiceRequestMaximumBodyBytes = 560 * 1024;
 const battleClipMaximumBodyBytes =
   Math.ceil((BATTLE_CLIP_MAXIMUM_BYTES * 4) / 3) + 1024;
+const feedbackMaximumBodyBytes = 4 * 1024;
 const arenaLoadMaximumConcurrency = 6;
 
 const isRecord = (value: unknown): value is Record<string, unknown> => {
@@ -358,13 +333,6 @@ const payloadTooLarge = (c: HonoContext, message: string) => {
   );
 };
 
-const paymentRequired = (c: HonoContext, message: string) => {
-  return c.json<ErrorResponse>(
-    { status: 'error', code: 'payment_required', message },
-    402
-  );
-};
-
 const serverError = (c: HonoContext, message: string) => {
   return c.json<ErrorResponse>(
     { status: 'error', code: 'server_error', message },
@@ -444,6 +412,7 @@ api.use('*', async (c, next) => {
 const playerMutationLeaseExemptPostPathSuffixes = [
   '/battle-clip',
   '/practice-battle',
+  '/feedback',
   '/delete-my-data',
 ] as const;
 
@@ -474,43 +443,6 @@ const readScribbitIdentifier = (value: unknown): string | undefined => {
 
 const readScribbitId = (value: unknown): string | undefined => {
   return isRecord(value) ? readScribbitIdentifier(value.scribbitId) : undefined;
-};
-
-const readEquipGearRequest = (value: unknown): EquipGearRequest | undefined => {
-  if (!isRecord(value)) return undefined;
-  const fields = Object.keys(value);
-  if (
-    fields.length !== 4 ||
-    !fields.includes('scribbitId') ||
-    !fields.includes('category') ||
-    !fields.includes('slotIndex') ||
-    !fields.includes('gearId')
-  ) {
-    return undefined;
-  }
-
-  const scribbitId = readScribbitIdentifier(value.scribbitId);
-  if (
-    !scribbitId ||
-    !isEquipmentCategory(value.category) ||
-    (value.slotIndex !== 0 && value.slotIndex !== 1) ||
-    (value.gearId !== null && typeof value.gearId !== 'string')
-  ) {
-    return undefined;
-  }
-
-  const gearId =
-    typeof value.gearId === 'string' ? value.gearId.trim() : value.gearId;
-  if (gearId !== null && !/^[a-z0-9-]{2,64}$/.test(gearId)) {
-    return undefined;
-  }
-
-  return {
-    scribbitId,
-    category: value.category,
-    slotIndex: value.slotIndex,
-    gearId,
-  };
 };
 
 const readSparRequest = (value: unknown): SparRequest | undefined => {
@@ -1269,31 +1201,12 @@ registerPlayerMutatingGet('/arena', async (c) => {
   }
 });
 
-api.post('/daily-login/claim', async (c) => {
-  const player = await getCurrentPlayer();
-  if (!player) {
-    return unauthorized(c, 'Sign in to claim your daily login reward.');
-  }
-
-  try {
-    const now = new Date();
-    const dayNumber = await getWritableArenaDay(now);
-    if (!dayNumber) return arenaRolloverConflict(c);
-    const claim = await claimDailyLoginReward(redis, {
-      userId: player.userId,
-      currentDateKey: formatUtcDateKey(now),
-      claimedAtMs: now.getTime(),
-    });
-    return c.json<DailyLoginClaimResponse>({
-      dailyLogin: claim.dailyLogin,
-      reward: claim.reward,
-      ink: await getInkBalance(redis, player.userId),
-    });
-  } catch (error) {
-    console.error('Daily login claim failed:', error);
-    return serverError(c, 'Your daily reward would not open. Try again soon.');
-  }
+const dailyLoginRoute = createDailyLoginRoute({
+  storage: redis,
+  getCurrentPlayer,
+  getWritableArenaDay,
 });
+api.post('/daily-login/claim', dailyLoginRoute);
 
 api.post('/maturity/acknowledge', async (c) => {
   const player = await getCurrentPlayer();
@@ -1305,7 +1218,7 @@ api.post('/maturity/acknowledge', async (c) => {
     const scribbit = await loadScribbit(redis, scribbitId);
     if (
       !scribbit ||
-      !(await isScribbitOwnedByUser(redis, scribbitId, player.userId)) ||
+      !(await isScribbitOwnedByUser(redis, player.userId, scribbitId)) ||
       getScribbitLifecycleStage(scribbit, dayNumber) !== 'mature'
     ) {
       return conflict(c, 'That Scribbit is not ready for maturity.');
@@ -1367,35 +1280,60 @@ api.post('/progression-event', async (c) => {
   }
 });
 
-api.get('/season', async (c) => {
+api.post('/feedback', async (c) => {
+  const player = await getCurrentRequestPlayer(c);
+  if (!player) {
+    return unauthorized(c, 'Sign in to send feedback.');
+  }
+
+  const body = await readBoundedJsonBody(c, feedbackMaximumBodyBytes);
+  if (body.status === 'too-large') {
+    return payloadTooLarge(c, 'Feedback is too large.');
+  }
+  const request =
+    body.status === 'parsed'
+      ? parseSubmitFeedbackRequest(body.value)
+      : undefined;
+  if (!request) {
+    return badRequest(
+      c,
+      'Choose a feedback type and write between 3 and 500 characters.'
+    );
+  }
+
   try {
-    const now = new Date();
-    const dayNumber = await ensureCurrentArenaDay(redis, now);
-    await ensureInitialSeason(redis, dayNumber, now.getTime());
-    const player = await getCurrentPlayer();
-    return c.json<SeasonPublicState>(
-      await loadSeasonPublicState(redis, dayNumber, player?.userId)
+    const createdAtMs = Date.now();
+    const saved = await savePlayerFeedback(redis, {
+      ...request,
+      id: randomUUID(),
+      userId: player.userId,
+      username: player.username,
+      createdAtMs,
+    });
+    return c.json<SubmitFeedbackResponse>(
+      {
+        id: saved.feedback.id,
+        createdAtMs: saved.feedback.createdAtMs,
+        inkAwarded: saved.inkAwarded,
+        ink: saved.ink,
+      },
+      201
     );
   } catch (error) {
-    console.error('Season route failed:', error);
-    return serverError(c, 'The season board is unavailable. Try again soon.');
+    if (error instanceof FeedbackRateLimitError) {
+      return tooManyRequests(c, error.message);
+    }
+    console.error('Feedback submission failed:', error);
+    return serverError(c, 'Your note could not be sent. Try again.');
   }
 });
 
-api.get('/season-board', async (c) => {
-  try {
-    const now = new Date();
-    const dayNumber = await ensureCurrentArenaDay(redis, now);
-    await ensureInitialSeason(redis, dayNumber, now.getTime());
-    const player = await getCurrentPlayer();
-    const board = await loadSeasonBoard(redis, dayNumber, player);
-    if (!board) return notFound(c, 'No Scribbits season is available.');
-    return c.json<SeasonBoard>(board);
-  } catch (error) {
-    console.error('Season board route failed:', error);
-    return serverError(c, 'The season board is unavailable. Try again soon.');
-  }
+const seasonRouteHandlers = createSeasonRouteHandlers({
+  storage: redis,
+  getCurrentPlayer,
 });
+api.get('/season', seasonRouteHandlers.season);
+api.get('/season-board', seasonRouteHandlers.seasonBoard);
 
 api.get('/venue-board', async (c) => {
   try {
@@ -1543,7 +1481,15 @@ api.post('/free-drawing', async (c) => {
     return unauthorized(c, 'Sign in to save a Free Draw.');
   }
 
-  const rawSubmission = await readJsonBody(c);
+  const submissionBody = await readBoundedJsonBody(
+    c,
+    MAXIMUM_DRAWING_SUBMISSION_BODY_BYTES
+  );
+  if (submissionBody.status === 'too-large') {
+    return payloadTooLarge(c, 'That drawing submission is too large.');
+  }
+  const rawSubmission =
+    submissionBody.status === 'parsed' ? submissionBody.value : undefined;
   const submissionId =
     isRecord(rawSubmission) &&
     typeof rawSubmission.submissionId === 'string' &&
@@ -1645,7 +1591,15 @@ api.post('/scribbit', async (c) => {
     return unauthorized(c, 'Sign in to draw a Scribbit.');
   }
 
-  const rawSubmission = await readJsonBody(c);
+  const submissionBody = await readBoundedJsonBody(
+    c,
+    MAXIMUM_DRAWING_SUBMISSION_BODY_BYTES
+  );
+  if (submissionBody.status === 'too-large') {
+    return payloadTooLarge(c, 'That drawing submission is too large.');
+  }
+  const rawSubmission =
+    submissionBody.status === 'parsed' ? submissionBody.value : undefined;
   const submissionId =
     isRecord(rawSubmission) &&
     typeof rawSubmission.submissionId === 'string' &&
@@ -2605,216 +2559,15 @@ registerPlayerMutatingGet('/clout-board', async (c) => {
   }
 });
 
-registerPlayerMutatingGet('/inventory', async (c) => {
-  const player = await getCurrentPlayer();
-
-  if (!player) {
-    return c.json<Inventory>({
-      items: {},
-      gear: {},
-      pens: [],
-      titles: [],
-      equippedTitle: null,
-      discovered: [],
-    });
-  }
-
-  try {
-    return c.json<Inventory>(await loadInventory(redis, player.userId));
-  } catch (error) {
-    console.error('Inventory route failed:', error);
-    return serverError(c, 'The ink drawer is stuck. Try again soon.');
-  }
+const inventoryRouteHandlers = createInventoryRouteHandlers({
+  storage: redis,
+  getCurrentPlayer,
 });
-
-api.post('/equip-gear', async (c) => {
-  const player = await getCurrentPlayer();
-  if (!player) return unauthorized(c, 'Sign in to equip Gear.');
-
-  const request = readEquipGearRequest(await readJsonBody(c));
-  if (!request) {
-    return badRequest(c, 'Choose a valid living Scribbit and Gear slot.');
-  }
-
-  try {
-    const result = await equipGearForScribbit(redis, player.userId, request);
-    if (
-      result.status === 'scribbit-unavailable' ||
-      result.status === 'not-owned'
-    ) {
-      return notFound(c, 'That Scribbit is not in your active roster.');
-    }
-    if (result.status === 'invalid-gear') {
-      return badRequest(c, 'Choose Gear that matches that slot category.');
-    }
-    if (result.status === 'gear-undiscovered') {
-      return badRequest(c, 'Discover that Gear before equipping it.');
-    }
-    return c.json<Scribbit>(result.scribbit);
-  } catch (error) {
-    console.error('Equip Gear route failed:', error);
-    return serverError(c, 'The Gear rack jammed. Try again soon.');
-  }
-});
-
-api.post('/equip-title', async (c) => {
-  const player = await getCurrentPlayer();
-  if (!player) return unauthorized(c, 'Sign in to wear a creator title.');
-
-  const body = await readJsonBody(c);
-  if (
-    !isRecord(body) ||
-    (body.titleId !== null && typeof body.titleId !== 'string')
-  ) {
-    return badRequest(c, 'Choose an owned title or remove your current title.');
-  }
-  const request: EquipTitleRequest = {
-    titleId:
-      typeof body.titleId === 'string' ? body.titleId.trim() : body.titleId,
-  };
-  if (request.titleId !== null && !/^[a-z0-9-]{2,64}$/.test(request.titleId)) {
-    return badRequest(c, 'Choose a valid creator title.');
-  }
-
-  try {
-    const inventory = await setEquippedTitle(
-      redis,
-      player.userId,
-      request.titleId
-    );
-    if (!inventory) {
-      return badRequest(c, 'Discover that title before wearing it.');
-    }
-    return c.json<Inventory>(inventory);
-  } catch (error) {
-    console.error('Equip title route failed:', error);
-    return serverError(c, 'The title ribbon slipped. Try again soon.');
-  }
-});
-
-api.post('/merge-gear', async (c) => {
-  const player = await getCurrentPlayer();
-  if (!player) return unauthorized(c, 'Sign in to forge your Gear.');
-
-  const body = await readJsonBody(c);
-  const operationId =
-    isRecord(body) && typeof body.operationId === 'string'
-      ? body.operationId.trim()
-      : '';
-  const gearId =
-    isRecord(body) && typeof body.gearId === 'string' ? body.gearId.trim() : '';
-  if (!/^[A-Za-z0-9-]{16,80}$/.test(operationId)) {
-    return badRequest(c, 'Forge Gear with a valid operation id.');
-  }
-  if (!/^[a-z0-9-]{2,64}$/.test(gearId)) {
-    return badRequest(c, 'Choose valid Gear to forge.');
-  }
-
-  try {
-    const result = await mergeGearForUser(
-      redis,
-      player.userId,
-      gearId,
-      operationId
-    );
-    if (result.status === 'invalid') {
-      return badRequest(c, 'Discover that Gear before forging it.');
-    }
-    if (result.status === 'insufficientCopies') {
-      return conflict(c, 'You need three copies to forge this Gear.');
-    }
-    if (result.status === 'maxRank') {
-      return conflict(c, 'That Gear is already at max rank.');
-    }
-    if (result.status === 'operationConflict') {
-      return conflict(c, 'That forge operation was already used.');
-    }
-    await refreshEquippedGearRankForUser(
-      redis,
-      player.userId,
-      gearId,
-      result.response.toRank
-    );
-    return c.json<MergeGearResponse>(result.response);
-  } catch (error) {
-    console.error('Merge gear route failed:', error);
-    return serverError(c, 'The Gear forge jammed. Try again soon.');
-  }
-});
-
-api.post('/capsule', async (c) => {
-  const player = await getCurrentPlayer();
-
-  if (!player) {
-    return unauthorized(c, 'Sign in to open a Mystery Ink capsule.');
-  }
-
-  const request = await readJsonBody(c);
-  const operationId =
-    isRecord(request) && typeof request.operationId === 'string'
-      ? request.operationId.trim()
-      : '';
-  if (!/^[A-Za-z0-9-]{16,80}$/.test(operationId)) {
-    return badRequest(c, 'Open the capsule with a valid operation id.');
-  }
-  const operationKey = getCapsuleOperationKey(player.userId, operationId);
-
-  try {
-    const now = new Date();
-    const dayNumber = await getWritableArenaDay(now);
-    if (!dayNumber) return arenaRolloverConflict(c);
-    const operationClaim = await claimCapsuleOperation(
-      redis,
-      operationKey,
-      now.getTime(),
-      capsuleOperationPendingTimeoutMs
-    );
-    if (operationClaim.status === 'pending') {
-      return conflict(
-        c,
-        'That capsule is already opening. Try again in a moment.'
-      );
-    }
-    if (operationClaim.status === 'completed') {
-      return c.json<CapsulePullResponse>(operationClaim.response);
-    }
-
-    const result = await pullCapsuleForUser(redis, player.userId, dayNumber, {
-      operationKey,
-      expectedPendingValue: operationClaim.pendingValue,
-      selectionEntropy: randomUUID(),
-    });
-
-    if (result.status === 'insufficientInk') {
-      await releaseCapsuleOperation(
-        redis,
-        operationKey,
-        operationClaim.pendingValue
-      );
-      return paymentRequired(
-        c,
-        `You need ${result.cost} Mystery Ink to open a capsule.`
-      );
-    }
-
-    const response: CapsulePullResponse = {
-      pull: result.pull,
-      ink: result.ink,
-      inventory: result.inventory,
-      nextCost: result.nextCost,
-      progress: result.progress,
-    };
-    return c.json<CapsulePullResponse>(response);
-  } catch (error) {
-    // Do not clear an indeterminate claim here. The pull transaction stores its
-    // final response in the same atomic commit as Ink/inventory. If Redis fails
-    // before commit, the pending claim safely blocks retries until timeout; if
-    // the commit succeeded but the response was interrupted, the stored receipt
-    // makes the next request idempotent.
-    console.error('Capsule route failed:', error);
-    return serverError(c, 'The capsule machine jammed. Try again soon.');
-  }
-});
+registerPlayerMutatingGet('/inventory', inventoryRouteHandlers.inventory);
+api.post('/equip-gear', inventoryRouteHandlers.equipGear);
+api.post('/equip-title', inventoryRouteHandlers.equipTitle);
+api.post('/merge-gear', inventoryRouteHandlers.mergeGear);
+api.post('/capsule', inventoryRouteHandlers.capsule);
 
 api.post('/boss-challenge', async (c) => {
   const player = await getCurrentPlayer();
@@ -2928,167 +2681,11 @@ api.post('/boss-challenge', async (c) => {
   }
 });
 
-const maximumLegendsPageSize = 50;
-
-const readPageNumber = (
-  value: string | undefined,
-  fallback: number,
-  maximum?: number
-): number | undefined => {
-  if (value === undefined) return fallback;
-  if (!/^(0|[1-9][0-9]*)$/.test(value)) return undefined;
-
-  const parsedValue = Number(value);
-  if (!Number.isSafeInteger(parsedValue)) return undefined;
-  return maximum === undefined ? parsedValue : Math.min(parsedValue, maximum);
-};
-
-const loadVisibleLegendPage = async (
-  hiddenScribbitIds: Set<string>,
-  offset: number,
-  limit: number
-): Promise<LegendsState> => {
-  const legends: Scribbit[] = [];
-  const scanBatchSize = Math.min(
-    maximumLegendsPageSize,
-    Math.max(8, limit + 1)
-  );
-  let scanOffset = offset;
-
-  while (true) {
-    const batchStartOffset = scanOffset;
-    const legendIds = await getLegendIds(
-      redis,
-      scanBatchSize,
-      batchStartOffset
-    );
-    if (legendIds.length === 0) break;
-    const loadedLegends = new Map(
-      (await loadScribbits(redis, legendIds))
-        .filter((scribbit) => scribbit.status === 'legend')
-        .map((scribbit) => [scribbit.id, scribbit])
-    );
-
-    for (let index = 0; index < legendIds.length; index += 1) {
-      const scribbitOffset = batchStartOffset + index;
-      scanOffset = scribbitOffset + 1;
-      const scribbitId = legendIds[index];
-      if (!scribbitId) continue;
-      const scribbit = loadedLegends.get(scribbitId);
-      // Missing/non-Legend rows are stale zset members. Consume their raw rank
-      // without returning them so the next cursor never duplicates or skips a
-      // valid Scribbit around the stale entry.
-      if (!scribbit) continue;
-      if (hiddenScribbitIds.has(scribbit.id)) continue;
-
-      // The cursor points at (rather than past) the first visible item on the
-      // next page. Hidden rows between pages are consumed once and never leave
-      // a mysteriously short page for this player.
-      if (legends.length === limit) {
-        return {
-          legends,
-          nextCursor: String(scribbitOffset),
-        };
-      }
-      legends.push(scribbit);
-    }
-
-    if (legendIds.length < scanBatchSize) break;
-  }
-
-  return { legends, nextCursor: null };
-};
-
-registerPlayerMutatingGet('/legacy-cards', async (c) => {
-  const cursor = c.req.query('cursor') ?? null;
-  const requestedLimit = parseLegacyCardsPageSize(c.req.query('limit'));
-  if (
-    !isLegacyCardCursor(cursor) ||
-    requestedLimit === undefined ||
-    requestedLimit < 1
-  ) {
-    return badRequest(c, 'Use a valid Legacy Deck cursor and page size.');
-  }
-
-  try {
-    const player = await getCurrentPlayer();
-    if (!player) {
-      return c.json<LegacyCardsState>({ cards: [], nextCursor: null });
-    }
-    return c.json<LegacyCardsState>(
-      await loadLegacyCardPage(redis, player.userId, cursor, requestedLimit)
-    );
-  } catch (error) {
-    console.error('Legacy Cards route failed:', error);
-    return serverError(c, 'Your Legacy Deck is stuck between pages.');
-  }
+const legacyRouteHandlers = createLegacyRouteHandlers({
+  storage: redis,
+  getCurrentPlayer,
+  getWritableArenaDay,
 });
-
-api.post('/legacy-cards/seen', async (c) => {
-  const player = await getCurrentPlayer();
-  if (!player) return unauthorized(c, 'Sign in to file away Legacy Cards.');
-
-  const body = await readJsonBody(c);
-  if (
-    !isRecord(body) ||
-    !Number.isSafeInteger(body.throughArchivedDay) ||
-    Number(body.throughArchivedDay) < 0
-  ) {
-    return badRequest(c, 'Choose a valid archived day to file away.');
-  }
-  const request: MarkLegacySeenRequest = {
-    throughArchivedDay: Number(body.throughArchivedDay),
-  };
-
-  try {
-    const currentDay = await getWritableArenaDay(new Date());
-    if (!currentDay) return arenaRolloverConflict(c);
-    if (request.throughArchivedDay > currentDay) {
-      return badRequest(c, 'That Legacy Card has not been archived yet.');
-    }
-    const seenThroughDay = await markLegacyCardsSeen(
-      redis,
-      player.userId,
-      request.throughArchivedDay
-    );
-    return c.json({ seenThroughDay });
-  } catch (error) {
-    console.error('Mark Legacy Cards seen route failed:', error);
-    return serverError(c, 'The archive stamp missed the page. Try again.');
-  }
-});
-
-api.get('/legends', async (c) => {
-  const cursorOffset = readPageNumber(c.req.query('cursor'), 0);
-  const requestedLimit = readPageNumber(
-    c.req.query('limit'),
-    maximumLegendsPageSize,
-    maximumLegendsPageSize
-  );
-  if (
-    cursorOffset === undefined ||
-    requestedLimit === undefined ||
-    requestedLimit < 1
-  ) {
-    return badRequest(
-      c,
-      'Use a valid Legends cursor and a positive page size.'
-    );
-  }
-
-  try {
-    const player = await getCurrentPlayer();
-    const hiddenScribbitIds = player
-      ? await getHiddenScribbitIds(redis, player.userId)
-      : new Set<string>();
-    const legendPage = await loadVisibleLegendPage(
-      hiddenScribbitIds,
-      cursorOffset,
-      requestedLimit
-    );
-    return c.json<LegendsState>(legendPage);
-  } catch (error) {
-    console.error('Legends route failed:', error);
-    return serverError(c, 'The Hall of Legends is dusty right now.');
-  }
-});
+registerPlayerMutatingGet('/legacy-cards', legacyRouteHandlers.legacyCards);
+api.post('/legacy-cards/seen', legacyRouteHandlers.markLegacyCardsSeen);
+api.get('/legends', legacyRouteHandlers.legends);

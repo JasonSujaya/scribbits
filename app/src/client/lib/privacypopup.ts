@@ -170,7 +170,7 @@ export function openPrivacyPopup(
       scene,
       width / 2,
       centerY - 65,
-      'Scribbits stores your Reddit identity, drawings, battles, inventory, streak, and scores only to run the game. Report any player card; delete your own from its card.',
+      'Scribbits stores your Reddit identity, drawings, battles, inventory, streak, scores, and feedback notes only to run and improve the game. Report any player card; delete your own from its card.',
       21,
       UI.ink,
       false

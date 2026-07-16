@@ -85,6 +85,13 @@ The first pass uses conservative flags:
 - Equal-progression class fields stay within `45%` and `55%` at 0, 1, 3, and
   5 Power-Ups. One- and three-card counter edges cap at `69%`; mature five-card
   counter builds cap at `75%` while the full field remains even.
+- Card balance is never graded against a vanilla opponent. Equal-rarity cards
+  fight same-role peers and must stay within `42–58%` (`45–55%` target).
+  Each higher rarity fights the adjacent lower rarity on the same role: every
+  tier aggregate must win `52–62%`, while individual cards outside `48–66%`
+  are flagged. Reports include a Wilson 95% interval for every card and tier.
+  Legendary cards use identical legal Common + Uncommon + Rare support on both
+  fighters and must activate in at least `25%` of fights.
 - Canonical Brawler, Longshot, and Mage builds must each stay between `30%`
   and `70%` after randomized Power-Ups and Gear against an evenly distributed
   matched-progression field; the naked role matrix keeps its tighter band.
@@ -100,6 +107,9 @@ Power-Up profiles break the competitive gate. Progression opponents use the same
 Power-Up count as the challenger. Combined-loadout rows
 compare two rank-6 Gear pieces and three role-offerable Power-Ups against an
 equally progressed field, so progression is never judged against a naked foe.
+Reward choices are likewise compared against the opponent's real
+rarity-weighted reward choices; the naked row is informational role calibration
+only.
 The focused Gear + Power-Up profiles allow deliberate sidegrades, but flag a
 combined build outside `25–75%` or a Gear addition that costs more than 15
 percentage points. The broader equipment-meta suite keeps random-loadout

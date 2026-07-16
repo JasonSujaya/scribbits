@@ -22,11 +22,7 @@ import {
 } from '../lib/registry';
 import { analyze, hasMinimumDrawingInk } from '../lib/analyzer';
 import type { AnalyzerResult } from '../lib/analyzer';
-import {
-  CanvasActionOverlay,
-  CanvasModalOverlay,
-  DomOverlay,
-} from '../lib/overlay';
+import { CanvasActionOverlay, DomOverlay } from '../lib/overlay';
 import {
   DrawCanvas,
   type DrawCanvasChange,
@@ -88,9 +84,9 @@ import type { PenCatalogEntry } from '../lib/pens';
 import {
   ACCESSORY_BASE_SIZE,
   INK_REWARDS,
-  MAX_ALIVE_PER_USER,
   type DrawChargeState,
 } from '../../shared/arena';
+import { projectSubmittedScribbitArena } from '../lib/drawsubmissionresult';
 import { bindPressInteractionEvents } from '../lib/pressinteraction';
 import { trackProgressionEvent } from '../lib/progressionanalytics';
 import type {
@@ -117,6 +113,14 @@ import {
   openDrawConfirmationModal,
   type DrawConfirmationModal,
 } from '../lib/drawconfirmationmodal';
+import {
+  createLeaveDrawingModal,
+  type LeaveDrawingModal,
+} from '../lib/leavedrawingmodal';
+import {
+  createFighterStyleInfoModal,
+  type FighterStyleInfoModal,
+} from '../lib/role/styleinfomodal';
 import {
   BRUSH_CATALOG_ENTRIES,
   DRAWING_INK_CATALOG_ENTRIES,
@@ -163,10 +167,12 @@ import {
   type DrawSubmissionLoadingOverlay,
 } from '../lib/drawsubmissionloading';
 import { getPaintBucketState } from '../../shared/paintbucket';
+import { preloadDrawVisualAssets } from '../lib/visualassets';
 import {
-  DRAW_START_CARD_ART_URL,
-  preloadDrawVisualAssets,
-} from '../lib/visualassets';
+  createDrawClockIcon,
+  createDrawStartOverlay,
+  type DrawStartOverlay,
+} from '../lib/drawstartoverlay';
 import {
   createPaintReservoir,
   paintRemainingPercent,
@@ -175,31 +181,8 @@ import {
   type PaintReservoir,
 } from '../lib/paintreservoir';
 
-const DRAW_CLOSE_BUTTON_ART_URL = new URL(
-  '../assets/ui-button-close.webp',
-  import.meta.url
-).href;
-let nextLeaveDrawingPreviewTextureId = 1;
 const DRAW_START_COUNTDOWN_STEPS = ['3', '2', '1', 'DRAW!'] as const;
 const DRAW_START_COUNTDOWN_STEP_MILLISECONDS = 700;
-const FIGHTER_STYLE_ROLES: readonly CurrentCombatRole[] = [
-  'brawler',
-  'longshot',
-  'mage',
-];
-const FIGHTER_STYLE_COLOR_NAMES: Readonly<Record<CurrentCombatRole, string>> = {
-  brawler: 'brown + coral + orange',
-  longshot: 'gold + green + blue',
-  mage: 'aqua + purple + pink',
-};
-const FIGHTER_STYLE_COUNTERS: Readonly<
-  Record<CurrentCombatRole, Readonly<{ beats: string; weakTo: string }>>
-> = Object.freeze({
-  brawler: Object.freeze({ beats: 'MAGE', weakTo: 'LONGSHOT' }),
-  longshot: Object.freeze({ beats: 'BRAWLER', weakTo: 'MAGE' }),
-  mage: Object.freeze({ beats: 'LONGSHOT', weakTo: 'BRAWLER' }),
-});
-
 // Every base color is visible at once and grouped by its color-derived role.
 const PALETTE_COLORS = [
   '#2b2016',
@@ -320,10 +303,6 @@ type DrawingEditState = Readonly<{
   brushId: string | null;
   paintReservoirs: readonly PaintReservoir[];
 }>;
-type LeaveDrawingModal = Readonly<{
-  layer: Phaser.GameObjects.Container;
-  actions: CanvasModalOverlay;
-}>;
 type PlayerDrawMode = 'unselected' | 'community' | 'free';
 type PaintChoice =
   | Readonly<{ kind: 'pen'; entry: PenCatalogEntry }>
@@ -416,7 +395,7 @@ export class Draw extends Scene {
   private detectedFighterStyle: CurrentCombatRole | null = null;
   private liveRoleIcon: Phaser.GameObjects.Container | null = null;
   private liveRoleLabel: Phaser.GameObjects.Text | null = null;
-  private roleStyleInfoLayer: Phaser.GameObjects.Container | null = null;
+  private fighterStyleInfoModal: FighterStyleInfoModal | null = null;
   private submitButton: Phaser.GameObjects.Container | null = null;
   private creationControlsReady: boolean | null = null;
   private drawingControlContainers: Phaser.GameObjects.Container[] = [];
@@ -446,8 +425,7 @@ export class Draw extends Scene {
   private displayedDrawSeconds: number | null = null;
   private lastDrawTimerShakeMilliseconds = 0;
   private drawTimerShakeDirection = 1;
-  private drawStartControl: HTMLButtonElement | null = null;
-  private freeDrawControl: HTMLButtonElement | null = null;
+  private drawStartOverlay: DrawStartOverlay | null = null;
   private playerDrawMode: PlayerDrawMode = 'unselected';
   private communityThemeAvailable = true;
   private communityThemeUnavailableMessage = '';
@@ -475,7 +453,6 @@ export class Draw extends Scene {
   private firstFightPromiseCopy: Phaser.GameObjects.Text | null = null;
   private firstFightStatus: HTMLElement | null = null;
   private firstFightLoadingTween: Phaser.Tweens.Tween | null = null;
-  private canvasDareOverlay: HTMLDivElement | null = null;
   private dailyDare: DoodleDare | CommunityDrawTheme | null = null;
   private dailyDareTwist: string | null = null;
   private isFirstScribbit = false;
@@ -581,7 +558,7 @@ export class Draw extends Scene {
     this.detectedFighterStyle = null;
     this.liveRoleIcon = null;
     this.liveRoleLabel = null;
-    this.roleStyleInfoLayer = null;
+    this.fighterStyleInfoModal = null;
     this.submitButton = null;
     this.creationControlsReady = null;
     this.drawingControlContainers = [];
@@ -610,8 +587,7 @@ export class Draw extends Scene {
     this.displayedDrawSeconds = null;
     this.lastDrawTimerShakeMilliseconds = 0;
     this.drawTimerShakeDirection = 1;
-    this.drawStartControl = null;
-    this.freeDrawControl = null;
+    this.drawStartOverlay = null;
     this.playerDrawMode = 'unselected';
     this.communityThemeAvailable = true;
     this.communityThemeUnavailableMessage = '';
@@ -633,7 +609,6 @@ export class Draw extends Scene {
     this.firstFightPromiseCopy = null;
     this.firstFightStatus = null;
     this.firstFightLoadingTween = null;
-    this.canvasDareOverlay = null;
     this.dailyDare = null;
     this.dailyDareTwist = null;
     this.isFirstScribbit = false;
@@ -752,8 +727,8 @@ export class Draw extends Scene {
     this.sceneVisitEpoch += 1;
     this.drawStartPreparing = false;
     releaseDrawingSoundtrackPreparation();
-    this.roleStyleInfoLayer?.destroy();
-    this.roleStyleInfoLayer = null;
+    this.fighterStyleInfoModal?.destroy();
+    this.fighterStyleInfoModal = null;
     if (
       !this.practiceMode &&
       !this.automationMode &&
@@ -781,10 +756,12 @@ export class Draw extends Scene {
     this.analysisWorker?.terminate();
     this.analysisWorker = null;
     this.canvas?.destroy();
+    this.drawStartOverlay?.destroy();
+    this.drawStartOverlay = null;
     this.overlay?.destroy();
     this.drawConfirmation?.destroy();
     this.drawConfirmation = null;
-    this.leaveDrawingModal?.layer.destroy(true);
+    this.leaveDrawingModal?.destroy();
     this.leaveDrawingModal = null;
     this.hideSubmissionLoading();
     this.headerControlOverlay?.destroy();
@@ -928,7 +905,7 @@ export class Draw extends Scene {
     this.previewTimer = null;
     this.refreshPreview();
     if ((this.lastResult?.inkedPixels ?? 0) > 0) {
-      this.openLeaveDrawingModal();
+      this.showLeaveDrawingModal();
       return;
     }
     this.discardDrawingAndExit();
@@ -939,17 +916,8 @@ export class Draw extends Scene {
     this.exitTo('ScribbitHome');
   }
 
-  private openLeaveDrawingModal(): void {
+  private showLeaveDrawingModal(): void {
     if (this.leaveDrawingModal) return;
-    const { width, height } = this.scale;
-    const cardWidth = width - 100;
-    const cardHeight = 850;
-    const cardCenterY = height / 2;
-    const cardTop = cardCenterY - cardHeight / 2;
-    const previewSize = 320;
-    const previewTextureKey = `leave-drawing-preview-${nextLeaveDrawingPreviewTextureId}`;
-    nextLeaveDrawingPreviewTextureId += 1;
-    let previewTextureLoaded = false;
     const currentResult = this.lastResult;
     const previewDataUrl = currentResult
       ? this.createSubmissionDraft(currentResult).imageDataUrl
@@ -960,185 +928,18 @@ export class Draw extends Scene {
       !this.drawingLocked;
     this.pauseDrawingRound();
     this.overlay.setVisible(false);
-
-    const keepDrawing = (): void =>
-      this.closeLeaveDrawingModal(wasTimedRoundRunning);
-    const actions = new CanvasModalOverlay(
-      this,
-      'Leave your doodle?',
-      keepDrawing,
-      "Leave now and this doodle won't be saved."
-    );
-    const layer = this.add.container(0, 0).setDepth(2800).setScrollFactor(0);
-    this.leaveDrawingModal = { layer, actions };
-    layer.once('destroy', () => {
-      actions.destroy();
-      if (previewTextureLoaded && this.textures.exists(previewTextureKey)) {
-        this.textures.remove(previewTextureKey);
-      }
+    this.leaveDrawingModal = createLeaveDrawingModal(this, {
+      previewDataUrl,
+      onContinue: () => this.closeLeaveDrawingModal(wasTimedRoundRunning),
+      onDiscard: () => this.discardDrawingAndExit(),
     });
-
-    const shade = this.add
-      .rectangle(width / 2, height / 2, width, height, UI.inkHex, 0.76)
-      .setScrollFactor(0)
-      .setInteractive({ useHandCursor: true });
-    markSfxManaged(shade);
-    shade.on('pointerup', () => {
-      playSfx('ui.close');
-      keepDrawing();
-    });
-    const card = stickerCard(
-      this,
-      width / 2,
-      cardCenterY,
-      cardWidth,
-      cardHeight,
-      { tapeColor: UI.tapeAlt, tapeWidth: 96 }
-    ).setScrollFactor(0);
-    const cardInputBlocker = this.add
-      .rectangle(width / 2, cardCenterY, cardWidth, cardHeight, 0xffffff, 0.001)
-      .setScrollFactor(0)
-      .setInteractive();
-    layer.add([shade, card, cardInputBlocker]);
-
-    layer.add([
-      paperIcon(this, 'pencil', width / 2, cardTop + 76, {
-        size: 58,
-        fill: UI.gold,
-        stroke: UI.inkHex,
-      }).setScrollFactor(0),
-      label(
-        this,
-        width / 2,
-        cardTop + 132,
-        'LEAVE YOUR DOODLE?',
-        34,
-        UI.ink,
-        true
-      ).setScrollFactor(0),
-      label(
-        this,
-        width / 2,
-        cardTop + 178,
-        "IT WON'T BE SAVED",
-        20,
-        UI.coralText,
-        true
-      ).setScrollFactor(0),
-    ]);
-
-    const previewY = cardTop + 380;
-    const previewCard = this.add
-      .container(width / 2, previewY)
-      .setAngle(-1.5)
-      .setScrollFactor(0);
-    const previewFrame = this.add.graphics();
-    previewFrame.fillStyle(UI.creamHex, 1);
-    previewFrame.fillRoundedRect(
-      -previewSize / 2,
-      -previewSize / 2,
-      previewSize,
-      previewSize,
-      14
-    );
-    previewFrame.lineStyle(4, UI.inkHex, 0.9);
-    previewFrame.strokeRoundedRect(
-      -previewSize / 2,
-      -previewSize / 2,
-      previewSize,
-      previewSize,
-      14
-    );
-    previewCard.add(previewFrame);
-    layer.add(previewCard);
-
-    const previewSource = new Image();
-    previewSource.onload = () => {
-      if (
-        !layer.active ||
-        !this.scene.isActive() ||
-        this.leaveDrawingModal?.layer !== layer
-      ) {
-        return;
-      }
-      this.textures.addImage(previewTextureKey, previewSource);
-      previewTextureLoaded = true;
-      previewCard.add(
-        fitDrawing(this.add.image(0, 0, previewTextureKey), previewSize - 24)
-      );
-    };
-    previewSource.onerror = () => {
-      if (!layer.active || this.leaveDrawingModal?.layer !== layer) return;
-      previewCard.add(
-        label(this, 0, 0, 'PREVIEW UNAVAILABLE', 18, UI.inkSoft, true)
-      );
-    };
-    previewSource.src = previewDataUrl;
-
-    const primaryLabel = 'CONTINUE DRAWING';
-    const primaryAction = (): void => {
-      this.closeLeaveDrawingModal(wasTimedRoundRunning);
-    };
-    const primaryY = cardTop + 625;
-    layer.add(
-      button(
-        this,
-        width / 2,
-        primaryY,
-        primaryLabel,
-        primaryAction,
-        cardWidth - 100,
-        UI.gold,
-        UI.ink,
-        84
-      ).setScrollFactor(0)
-    );
-    const primaryControl = actions.add({
-      label: primaryLabel,
-      rect: {
-        x: 100,
-        y: primaryY - 44,
-        width: width - 200,
-        height: 88,
-      },
-      onActivate: primaryAction,
-    });
-
-    const discardY = cardTop + 742;
-    const discardDrawing = (): void => this.discardDrawingAndExit();
-    layer.add(
-      iconButton(
-        this,
-        width / 2,
-        discardY,
-        'trash',
-        'DISCARD DRAWING',
-        discardDrawing,
-        cardWidth - 140,
-        UI.creamHex,
-        UI.ink,
-        72,
-        UI.coralDeep
-      ).setScrollFactor(0)
-    );
-    actions.add({
-      label: 'Leave and discard drawing',
-      rect: {
-        x: 120,
-        y: discardY - 38,
-        width: width - 240,
-        height: 76,
-      },
-      onActivate: discardDrawing,
-    });
-    actions.focusInitial(primaryControl);
   }
 
   private closeLeaveDrawingModal(resumeTimedRound: boolean): void {
     const modal = this.leaveDrawingModal;
     if (!modal) return;
     this.leaveDrawingModal = null;
-    modal.layer.destroy(true);
+    modal.destroy();
     if (!this.scene.isActive()) return;
     this.overlay.setVisible(true);
     if (resumeTimedRound) this.startDrawingRound();
@@ -1481,45 +1282,6 @@ export class Draw extends Scene {
     );
   }
 
-  private createDrawClockIcon(size: number): HTMLSpanElement {
-    const icon = document.createElement('span');
-    Object.assign(icon.style, {
-      position: 'relative',
-      width: `${size}px`,
-      height: `${size}px`,
-      flex: `0 0 ${size}px`,
-      border: `${Math.max(3, Math.round(size * 0.1))}px solid ${UI.ink}`,
-      borderRadius: '50%',
-      background: '#ffd447',
-      boxSizing: 'border-box',
-    });
-    const hourHand = document.createElement('span');
-    Object.assign(hourHand.style, {
-      position: 'absolute',
-      left: 'calc(50% - 2px)',
-      top: '17%',
-      width: '4px',
-      height: '33%',
-      borderRadius: '2px',
-      background: UI.ink,
-    });
-    const minuteHand = document.createElement('span');
-    minuteHand.className = 'draw-clock-minute-hand';
-    Object.assign(minuteHand.style, {
-      position: 'absolute',
-      left: 'calc(50% - 2px)',
-      top: 'calc(50% - 2px)',
-      width: '29%',
-      height: '4px',
-      borderRadius: '2px',
-      background: UI.ink,
-      transform: 'rotate(24deg)',
-      transformOrigin: '2px 2px',
-    });
-    icon.append(hourHand, minuteHand);
-    return icon;
-  }
-
   private buildDrawTimer(): void {
     if (this.isUntimedDrawingMode()) return;
     const container = document.createElement('div');
@@ -1541,7 +1303,7 @@ export class Draw extends Scene {
       boxShadow: '0 5px 0 rgba(43, 32, 22, 0.2)',
       transformOrigin: 'center',
     });
-    const clockIcon = this.createDrawClockIcon(36);
+    const clockIcon = createDrawClockIcon(36);
     const timerValue = document.createElement('span');
     Object.assign(timerValue.style, {
       minWidth: '56px',
@@ -1635,7 +1397,7 @@ export class Draw extends Scene {
   }
 
   private startDrawCountdown(): void {
-    if (this.drawStartCountdownOverlay || !this.canvasDareOverlay) return;
+    if (this.drawStartCountdownOverlay || !this.drawStartOverlay) return;
     preloadDrawingSoundtrack();
 
     const countdownOverlay = document.createElement('div');
@@ -1651,7 +1413,7 @@ export class Draw extends Scene {
     const countdownValue = document.createElement('span');
     countdownValue.className = 'draw-start-countdown-value';
     countdownOverlay.append(readyLabel, countdownValue);
-    this.canvasDareOverlay.append(countdownOverlay);
+    this.drawStartOverlay.appendCountdown(countdownOverlay);
     this.drawStartCountdownOverlay = countdownOverlay;
     this.drawStartCountdownValue = countdownValue;
     preloadSfx('draw.countdown');
@@ -1916,7 +1678,7 @@ export class Draw extends Scene {
         'Fresh 60 second drawing round. Press Start when you are ready.'
       )
     );
-    requestAnimationFrame(() => this.drawStartControl?.focus());
+    requestAnimationFrame(() => this.drawStartOverlay?.focusStart());
   }
 
   private setDrawingLocked(locked: boolean): void {
@@ -2002,7 +1764,7 @@ export class Draw extends Scene {
         release: () => infoButton.setScale(1),
         activate: () => {
           playSfx('ui.tap');
-          this.openRoleStyleInfo(this.liveRoleInfoControl);
+          this.showFighterStyleInfoModal(this.liveRoleInfoControl);
         },
       },
       { gameTarget: this.input, shutdownTarget: this.events }
@@ -2014,7 +1776,7 @@ export class Draw extends Scene {
       infoY - 22,
       44,
       44,
-      () => this.openRoleStyleInfo(this.liveRoleInfoControl),
+      () => this.showFighterStyleInfoModal(this.liveRoleInfoControl),
       true,
       this.headerControlOverlay
     );
@@ -2078,199 +1840,22 @@ export class Draw extends Scene {
     );
   }
 
-  private openRoleStyleInfo(trigger: HTMLElement | null = null): void {
-    if (this.roleStyleInfoLayer) return;
+  private showFighterStyleInfoModal(trigger: HTMLElement | null = null): void {
+    if (this.fighterStyleInfoModal) return;
     // The paint surface and theme prompt are DOM layers above Phaser. Hide
     // them while this Phaser modal is open so they cannot cover the guide.
     this.overlay.setVisible(false);
-    const { width, height } = this.scale;
-    const cardWidth = width - 80;
-    const cardHeight = Math.min(980, height - 120);
-    const cardTop = (height - cardHeight) / 2;
-    const cardBottom = cardTop + cardHeight;
-    const layer = this.add.container(0, 0).setDepth(2600).setScrollFactor(0);
-    this.roleStyleInfoLayer = layer;
-    const closeInfo = (): void => {
-      const activeLayer = this.roleStyleInfoLayer;
-      this.roleStyleInfoLayer = null;
-      activeLayer?.destroy();
-      if (this.scene.isActive()) this.overlay.setVisible(true);
-    };
-    const semanticDescription =
-      'The color group covering the most drawing area determines fighter style. Brown, coral, and orange make Brawler. Gold, green, and blue make Longshot. Aqua, purple, and pink make Mage. Brawler beats Mage, Mage beats Longshot, and Longshot beats Brawler. Equal color groups are randomized. Black, grey, and white are neutral, so neutral-only drawings are randomized too.';
-    const actions = new CanvasModalOverlay(
-      this,
-      'Fighter styles',
-      closeInfo,
-      semanticDescription,
-      trigger
-    );
-    layer.once('destroy', () => actions.destroy());
-
-    const shade = this.add
-      .rectangle(width / 2, height / 2, width, height, UI.inkHex, 0.74)
-      .setScrollFactor(0)
-      .setInteractive({ useHandCursor: true });
-    markSfxManaged(shade);
-    shade.on('pointerup', () => {
-      playSfx('ui.close');
-      closeInfo();
+    this.fighterStyleInfoModal = createFighterStyleInfoModal(this, {
+      trigger,
+      onCloseRequest: () => this.closeFighterStyleInfoModal(),
     });
-    const card = stickerCard(
-      this,
-      width / 2,
-      cardTop + cardHeight / 2,
-      cardWidth,
-      cardHeight,
-      { tapeColor: UI.tapeAlt, tapeWidth: 94 }
-    ).setScrollFactor(0);
-    const cardInputBlocker = this.add
-      .rectangle(
-        width / 2,
-        cardTop + cardHeight / 2,
-        cardWidth,
-        cardHeight,
-        0xffffff,
-        0.001
-      )
-      .setScrollFactor(0)
-      .setInteractive();
-    cardInputBlocker.on(
-      'pointerup',
-      (
-        _pointer: unknown,
-        _localX: unknown,
-        _localY: unknown,
-        event: Phaser.Types.Input.EventData
-      ) => event.stopPropagation?.()
-    );
-    layer.add([shade, card, cardInputBlocker]);
+  }
 
-    layer.add([
-      paperIcon(this, 'info', width / 2, cardTop + 70, {
-        size: 54,
-        fill: UI.gold,
-        stroke: UI.inkHex,
-      }).setScrollFactor(0),
-      label(
-        this,
-        width / 2,
-        cardTop + 126,
-        'COLOR DECIDES YOUR ROLE',
-        32,
-        UI.ink,
-        true
-      ).setScrollFactor(0),
-      label(
-        this,
-        width / 2,
-        cardTop + 168,
-        'THE BIGGEST COLOR AREA WINS',
-        19,
-        UI.coralText,
-        true
-      ).setScrollFactor(0),
-    ]);
-
-    const rowStartY = cardTop + 265;
-    FIGHTER_STYLE_ROLES.forEach((role, index) => {
-      const roleContent = getCombatRoleContent(role);
-      const counters = FIGHTER_STYLE_COUNTERS[role];
-      const rowY = rowStartY + index * 132;
-      const roleStyle = ROLE_STYLES[role];
-      const roleColor = roleStyle.color;
-      const rowCard = this.add.graphics().setScrollFactor(0);
-      rowCard.fillStyle(roleColor, 0.1);
-      rowCard.fillRoundedRect(76, rowY - 56, width - 152, 112, 18);
-      rowCard.lineStyle(2, roleColor, 0.42);
-      rowCard.strokeRoundedRect(76, rowY - 56, width - 152, 112, 18);
-      layer.add(rowCard);
-      layer.add(
-        paperIcon(this, roleContent.icon, 122, rowY, {
-          size: 46,
-          fill: roleColor,
-          stroke: UI.inkHex,
-        }).setScrollFactor(0)
-      );
-      layer.add(
-        label(
-          this,
-          168,
-          rowY - 27,
-          roleContent.displayName.toUpperCase(),
-          23,
-          UI.ink,
-          true
-        )
-          .setOrigin(0, 0.5)
-          .setScrollFactor(0)
-      );
-      layer.add(
-        label(
-          this,
-          168,
-          rowY + 5,
-          `${FIGHTER_STYLE_COLOR_NAMES[role].toUpperCase()} · ${roleContent.rangeLabel}`,
-          17,
-          UI.inkSoft,
-          true
-        )
-          .setOrigin(0, 0.5)
-          .setScrollFactor(0)
-      );
-      layer.add(
-        label(
-          this,
-          168,
-          rowY + 35,
-          `BEATS ${counters.beats} · WEAK TO ${counters.weakTo}`,
-          16,
-          roleStyle.colorText,
-          true
-        )
-          .setOrigin(0, 0.5)
-          .setScrollFactor(0)
-      );
-    });
-
-    layer.add(
-      label(
-        this,
-        width / 2,
-        cardBottom - 154,
-        'MIX COLORS FREELY — THE MOST-USED GROUP WINS. A TIE PICKS ONE AT RANDOM. BLACK + GREY + WHITE ARE NEUTRAL.',
-        17,
-        UI.inkSoft,
-        true
-      )
-        .setWordWrapWidth(cardWidth - 110)
-        .setAlign('center')
-        .setScrollFactor(0)
-    );
-    layer.add(
-      button(
-        this,
-        width / 2,
-        cardBottom - 74,
-        'GOT IT',
-        closeInfo,
-        cardWidth - 120,
-        UI.coral,
-        UI.ink,
-        88
-      ).setScrollFactor(0)
-    );
-    const closeControl = actions.add({
-      label: 'Got it',
-      rect: {
-        x: 100,
-        y: cardBottom - 124,
-        width: width - 200,
-        height: 100,
-      },
-      onActivate: closeInfo,
-    });
-    actions.focusInitial(closeControl);
+  private closeFighterStyleInfoModal(): void {
+    const modal = this.fighterStyleInfoModal;
+    this.fighterStyleInfoModal = null;
+    modal?.destroy();
+    if (this.scene.isActive()) this.overlay.setVisible(true);
   }
 
   private getPersistentDrawingPrompt(): string {
@@ -3952,508 +3537,62 @@ export class Draw extends Scene {
   }
 
   private buildCanvasDareOverlay(square: number): void {
+    const arena = this.getArenaState();
     const dare =
       this.dailyDare ??
-      this.getArenaState()?.communityDrawTheme ??
-      selectCommunityDoodleDare(this.getArenaState()?.dayNumber ?? 1);
+      arena?.communityDrawTheme ??
+      selectCommunityDoodleDare(arena?.dayNumber ?? 1);
     const twist =
       this.dailyDareTwist ??
       selectDailyDoodleDareTwist(
-        this.getArenaState()?.dayNumber ?? 1,
-        this.getArenaState()?.myUsername ?? null
+        arena?.dayNumber ?? 1,
+        arena?.myUsername ?? null
       );
     const practicePower =
       this.practiceMode && isPracticeDoodleDare(dare)
         ? dare.suggestedPower
         : null;
-    const timedStart = !this.isUntimedDrawingMode();
-    const reducedThemeMotion = timedStart && prefersReducedMotion();
-    const overlay = document.createElement('div');
-    if (timedStart) {
-      overlay.className = reducedThemeMotion
-        ? 'draw-theme-overlay draw-theme-reduced-motion'
-        : 'draw-theme-overlay';
-    }
-    overlay.setAttribute('role', timedStart ? 'group' : 'note');
-    overlay.setAttribute(
-      'aria-label',
-      practicePower
+    const timed = !this.isUntimedDrawingMode();
+    const reducedMotion = prefersReducedMotion();
+    const drawStartOverlay = createDrawStartOverlay({
+      viewport: {
+        width: this.scale.width,
+        height: this.scale.height,
+      },
+      canvasRect: {
+        x: this.scale.width / 2 - square / 2,
+        y: this.canvasCenterY() - square / 2,
+        width: square,
+        height: square,
+      },
+      prompt: formatThemePrompt(dare.prompt),
+      accessibleDescription: practicePower
         ? `Practice idea: Draw ${dare.prompt}. ${getShapePowerDrawingCue(practicePower)} Twist: ${twist}.`
         : this.isFirstScribbit
           ? `Draw your first Scribbit: ${dare.prompt}. Start Theme gives you 60 seconds.`
-          : `Three-day community theme: Draw ${dare.prompt}. Draw, name, then enter the Rumble. Start Theme gives you 60 seconds. Free Draw has no timer and is saved separately.`
-    );
-    Object.assign(overlay.style, {
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      textAlign: 'center',
-      color: UI.ink,
-      transition: prefersReducedMotion() ? 'none' : 'opacity 180ms ease-out',
-      ...(timedStart
-        ? {
-            flexDirection: 'column',
-            gap: '12px',
-            padding: '24px 20px',
-            background: 'rgba(31, 24, 18, 0.82)',
-            backdropFilter: 'blur(4px) saturate(0.65)',
-            WebkitBackdropFilter: 'blur(4px) saturate(0.65)',
-          }
-        : {}),
+          : `Three-day community theme: Draw ${dare.prompt}. Draw, name, then enter the Rumble. Start Theme gives you 60 seconds. Free Draw has no timer and is saved separately.`,
+      contextLabel: this.practiceMode
+        ? 'PRACTICE IDEA'
+        : `${COMMUNITY_DRAW_THEME_DAYS}-DAY COMMUNITY THEME`,
+      tapeLabel: this.practiceMode ? 'PRACTICE TIME!' : 'DRAWING TIME!',
+      timed,
+      reducedMotion,
+      allowFreeDraw: !this.isFirstScribbit,
+      communityThemeAvailable: this.communityThemeAvailable,
+      communityThemeUnavailableMessage: this.communityThemeUnavailableMessage,
+      onClose: () => this.exitDraw(),
+      onStartTheme: () => this.beginDrawingRound(),
+      onStartFreeDraw: () => this.beginFreeDrawing(),
     });
-
-    const card = document.createElement('div');
-    if (timedStart) card.className = 'draw-theme-card';
-    Object.assign(
-      card.style,
-      timedStart
-        ? {
-            position: 'relative',
-            width: 'min(88%, 635px)',
-            maxHeight: 'calc(100% - 190px)',
-            aspectRatio: '719 / 1200',
-            backgroundColor: UI.cream,
-            backgroundImage: `url(${DRAW_START_CARD_ART_URL})`,
-            backgroundPosition: 'center',
-            backgroundRepeat: 'no-repeat',
-            backgroundSize: '100% 100%',
-            borderRadius: '28px',
-            boxShadow: '0 24px 54px rgba(13, 9, 6, 0.52)',
-            filter: 'drop-shadow(0 4px 0 rgba(43, 32, 22, 0.38))',
-            fontFamily: FONT_STACK,
-            overflow: 'hidden',
-          }
-        : {
-            width: '74%',
-            padding: '12px 14px',
-            background: 'rgba(255, 247, 232, 0.9)',
-            border: `2px solid ${UI.coralText}`,
-            borderRadius: '14px',
-            boxShadow: '0 5px 0 rgba(43, 32, 22, 0.12)',
-            fontFamily: FONT_STACK,
-          }
-    );
-    const copy = document.createElement('div');
-    if (timedStart) copy.className = 'draw-theme-copy';
-    Object.assign(
-      copy.style,
-      timedStart
-        ? {
-            position: 'absolute',
-            top: '40%',
-            right: '9%',
-            bottom: '24%',
-            left: '9%',
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            justifyContent: 'center',
-          }
-        : {}
-    );
-    if (timedStart) {
-      if (!reducedThemeMotion) {
-        card.append(
-          this.createThemeArtMotionLayer(
-            'draw-theme-art-crayon',
-            'polygon(10% 34%, 9% 30%, 13% 27%, 29% 21%, 34% 22%, 35% 25%, 29% 29%, 15% 34%)',
-            '22% 27%'
-          ),
-          this.createThemeArtMotionLayer(
-            'draw-theme-art-star-top',
-            'polygon(82% 30%, 84% 26%, 87% 25%, 89% 21%, 92% 25%, 96% 27%, 93% 30%, 91% 33%, 87% 31%)',
-            '89% 28%'
-          ),
-          this.createThemeArtMotionLayer(
-            'draw-theme-art-star-bottom',
-            'polygon(2% 93%, 4% 89%, 7% 88%, 9% 85%, 12% 89%, 15% 91%, 12% 94%, 9% 96%, 6% 94%)',
-            '8% 92%'
-          )
-        );
-      }
-
-      const tapeLabel = document.createElement('div');
-      tapeLabel.className = 'draw-theme-tape-label';
-      tapeLabel.setAttribute('aria-hidden', 'true');
-      tapeLabel.textContent = this.practiceMode
-        ? 'PRACTICE TIME!'
-        : 'DRAWING TIME!';
-      Object.assign(tapeLabel.style, {
-        position: 'absolute',
-        top: '2.1%',
-        right: '30%',
-        left: '30%',
-        height: '5.8%',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        color: UI.ink,
-        ...DOM_TYPE.caption,
-        fontSize: '24px',
-        letterSpacing: '0.8px',
-        textAlign: 'center',
-        textShadow: '0 2px 0 rgba(255, 247, 232, 0.32)',
-        transform: 'rotate(-0.5deg)',
-        pointerEvents: 'none',
-        zIndex: '2',
-      });
-      card.append(tapeLabel);
-
-      const closeButton = document.createElement('button');
-      closeButton.type = 'button';
-      closeButton.setAttribute('aria-label', 'Close drawing theme');
-      Object.assign(closeButton.style, {
-        position: 'absolute',
-        top: '1.8%',
-        right: '2.8%',
-        zIndex: '2',
-        width: '58px',
-        height: '58px',
-        padding: '0',
-        border: '0',
-        background: `transparent url(${DRAW_CLOSE_BUTTON_ART_URL}) center / 100% 100% no-repeat`,
-        cursor: 'pointer',
-        filter: 'drop-shadow(0 3px 0 rgba(43, 32, 22, 0.28))',
-        touchAction: 'manipulation',
-        pointerEvents: 'auto',
-      });
-      closeButton.addEventListener('pointerdown', () => {
-        closeButton.style.transform = 'translateY(2px) scale(0.94)';
-      });
-      const releaseCloseButton = (): void => {
-        closeButton.style.transform = 'translateY(0) scale(1)';
-      };
-      closeButton.addEventListener('pointerup', releaseCloseButton);
-      closeButton.addEventListener('pointercancel', releaseCloseButton);
-      closeButton.addEventListener('pointerleave', releaseCloseButton);
-      closeButton.addEventListener('click', () => this.exitDraw());
-      card.append(closeButton);
-    }
-    const context = document.createElement('div');
-    if (timedStart) context.className = 'draw-theme-context';
-    context.textContent = this.practiceMode
-      ? 'PRACTICE IDEA'
-      : `${COMMUNITY_DRAW_THEME_DAYS}-DAY COMMUNITY THEME`;
-    Object.assign(context.style, {
-      ...DOM_TYPE.caption,
-      color: UI.coralText,
-      marginBottom: timedStart ? '8px' : '5px',
-      ...(timedStart
-        ? {
-            padding: '7px 16px',
-            border: `2px solid ${UI.coralText}`,
-            borderRadius: '999px',
-            background: 'rgba(255, 107, 74, 0.09)',
-            fontSize: '22px',
-          }
-        : {}),
-    });
-    const prompt = document.createElement('div');
-    if (timedStart) prompt.className = 'draw-theme-prompt';
-    prompt.textContent = formatThemePrompt(dare.prompt);
-    Object.assign(prompt.style, {
-      ...DOM_TYPE.title,
-      ...(timedStart
-        ? {
-            maxWidth: '100%',
-            fontSize: '40px',
-            lineHeight: '1.05',
-            textWrap: 'balance',
-            textShadow: '0 3px 0 rgba(255, 247, 232, 0.82)',
-          }
-        : {}),
-    });
-    copy.append(context, prompt);
-    if (timedStart) copy.append(this.createThemeJourneyStrip());
-    card.append(copy);
-    if (timedStart) {
-      const startButton = document.createElement('button');
-      startButton.className = 'draw-theme-start-button';
-      startButton.type = 'button';
-      startButton.dataset.sfxCue = 'none';
-      startButton.textContent = 'START THEME';
-      startButton.setAttribute(
-        'aria-label',
-        this.communityThemeAvailable
-          ? 'Start the 60 second Community Theme drawing round'
-          : this.communityThemeUnavailableMessage
-      );
-      Object.assign(startButton.style, {
-        position: 'absolute',
-        right: '8%',
-        bottom: '6.5%',
-        left: '8%',
-        height: '15%',
-        padding: '0 18px',
-        border: '0',
-        borderRadius: '18px',
-        background: 'rgba(255, 255, 255, 0.01)',
-        color: UI.ink,
-        cursor: 'pointer',
-        ...DOM_TYPE.title,
-        fontSize: '36px',
-        letterSpacing: '1px',
-        textShadow: '0 2px 0 rgba(255, 247, 232, 0.34)',
-        touchAction: 'manipulation',
-        pointerEvents: 'auto',
-        zIndex: '2',
-      });
-      const releaseButton = (): void => {
-        startButton.classList.remove('is-pressed');
-      };
-      startButton.addEventListener('pointerdown', () => {
-        startButton.classList.add('is-pressed');
-      });
-      startButton.addEventListener('pointerup', releaseButton);
-      startButton.addEventListener('pointercancel', releaseButton);
-      startButton.addEventListener('pointerleave', releaseButton);
-      startButton.addEventListener('click', () => {
-        void this.beginDrawingRound();
-      });
-      if (!this.communityThemeAvailable) {
-        startButton.style.opacity = '0.48';
-        startButton.style.cursor = 'not-allowed';
-      }
-      card.append(startButton);
-      this.drawStartControl = startButton;
-    }
-    overlay.append(card);
-    if (timedStart) {
-      const timerNotice = document.createElement('div');
-      timerNotice.className = 'draw-theme-timer-notice';
-      timerNotice.setAttribute('aria-hidden', 'true');
-      Object.assign(timerNotice.style, {
-        width: 'min(88%, 635px)',
-        height: '58px',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        gap: '16px',
-        flex: '0 0 auto',
-        fontFamily: FONT_STACK,
-      });
-      const timerIcon = this.createDrawClockIcon(48);
-      timerIcon.classList.add('draw-theme-timer-icon');
-      const timerLabel = document.createElement('span');
-      timerLabel.className = 'draw-theme-timer-label';
-      timerLabel.textContent = '60 SEC TO DRAW';
-      Object.assign(timerLabel.style, {
-        color: UI.cream,
-        ...DOM_TYPE.title,
-        fontSize: '30px',
-        letterSpacing: '0.5px',
-        textShadow: '0 3px 0 rgba(43, 32, 22, 0.7)',
-      });
-      timerNotice.append(timerIcon, timerLabel);
-      overlay.append(timerNotice);
-
-      if (!this.isFirstScribbit) {
-        const freeDrawButton = document.createElement('button');
-        freeDrawButton.type = 'button';
-        freeDrawButton.setAttribute(
-          'aria-label',
-          'Start an untimed Free Draw saved outside the Community Rumble'
-        );
-        Object.assign(freeDrawButton.style, {
-          width: 'min(88%, 635px)',
-          minHeight: '58px',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          gap: '12px',
-          padding: '10px 18px',
-          border: `3px solid ${UI.cream}`,
-          borderRadius: '18px',
-          background: 'rgba(43, 32, 22, 0.72)',
-          color: UI.cream,
-          boxShadow: '0 5px 0 rgba(13, 9, 6, 0.42)',
-          cursor: 'pointer',
-          fontFamily: FONT_STACK,
-          touchAction: 'manipulation',
-          pointerEvents: 'auto',
-        });
-        const freeDrawLabel = document.createElement('span');
-        freeDrawLabel.textContent = 'FREE DRAW';
-        Object.assign(freeDrawLabel.style, {
-          ...DOM_TYPE.title,
-          fontSize: '28px',
-        });
-        const noTimerLabel = document.createElement('span');
-        noTimerLabel.textContent = 'NO TIMER';
-        Object.assign(noTimerLabel.style, {
-          ...DOM_TYPE.caption,
-          padding: '5px 9px',
-          borderRadius: '999px',
-          background: UI.cream,
-          color: UI.ink,
-        });
-        freeDrawButton.append(freeDrawLabel, noTimerLabel);
-        freeDrawButton.addEventListener('click', () => this.beginFreeDrawing());
-        overlay.append(freeDrawButton);
-        this.freeDrawControl = freeDrawButton;
-      }
-    }
-    this.overlay.place(
-      overlay,
-      timedStart
-        ? {
-            x: 0,
-            y: 0,
-            width: this.scale.width,
-            height: this.scale.height,
-          }
-        : {
-            x: this.scale.width / 2 - square / 2,
-            y: this.canvasCenterY() - square / 2,
-            width: square,
-            height: square,
-          }
-    );
-    this.canvasDareOverlay = overlay;
-    this.setCanvasDareVisible(true);
-  }
-
-  private createThemeArtMotionLayer(
-    motionClassName: string,
-    clipPath: string,
-    transformOrigin: string
-  ): HTMLDivElement {
-    const artLayer = document.createElement('div');
-    artLayer.className = `draw-theme-art-piece ${motionClassName}`;
-    artLayer.setAttribute('aria-hidden', 'true');
-    Object.assign(artLayer.style, {
-      backgroundImage: `url(${DRAW_START_CARD_ART_URL})`,
-      clipPath,
-      transformOrigin,
-    });
-    return artLayer;
-  }
-
-  private createThemeJourneyStrip(): HTMLDivElement {
-    const journey = document.createElement('div');
-    journey.className = 'draw-theme-journey';
-    journey.setAttribute('aria-hidden', 'true');
-    Object.assign(journey.style, {
-      width: '94%',
-      marginTop: '14px',
-      padding: '12px 10px 10px',
-      display: 'grid',
-      gridTemplateColumns: '1fr 34px 1fr 34px 1fr',
-      alignItems: 'start',
-      boxSizing: 'border-box',
-      borderTop: `2px dashed ${UI.coralText}`,
-      borderBottom: `2px dashed ${UI.coralText}`,
-      background: 'rgba(255, 247, 232, 0.34)',
-      transform: 'rotate(-0.35deg)',
-    });
-
-    const steps = ['DRAW', 'NAME', 'RUMBLE'] as const;
-    steps.forEach((step, index) => {
-      const stepContainer = document.createElement('div');
-      stepContainer.className = 'draw-theme-journey-step';
-      stepContainer.style.setProperty(
-        '--draw-theme-step-delay',
-        `${index * 0.58}s`
-      );
-      Object.assign(stepContainer.style, {
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        minWidth: '0',
-      });
-
-      const number = document.createElement('span');
-      number.className = 'draw-theme-journey-number';
-      number.textContent = String(index + 1);
-      number.style.setProperty(
-        '--draw-theme-step-rotation',
-        index === 1 ? '2deg' : '-2deg'
-      );
-      Object.assign(number.style, {
-        width: '38px',
-        height: '38px',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        border: `3px solid ${UI.coralText}`,
-        borderRadius: index === 1 ? '46% 54% 48% 52%' : '50%',
-        background: 'rgba(255, 247, 232, 0.88)',
-        color: UI.coralText,
-        boxShadow: '1px 2px 0 rgba(43, 32, 22, 0.2)',
-        ...DOM_TYPE.caption,
-        fontSize: '20px',
-      });
-
-      const stepLabel = document.createElement('span');
-      stepLabel.className = 'draw-theme-journey-label';
-      stepLabel.textContent = step;
-      Object.assign(stepLabel.style, {
-        marginTop: '5px',
-        color: UI.ink,
-        ...DOM_TYPE.caption,
-        fontSize: '18px',
-        letterSpacing: '0.5px',
-        whiteSpace: 'nowrap',
-      });
-      stepContainer.append(number, stepLabel);
-      journey.append(stepContainer);
-
-      if (index < steps.length - 1) {
-        const connector = document.createElement('span');
-        connector.className = 'draw-theme-journey-connector';
-        connector.style.setProperty(
-          '--draw-theme-connector-rotation',
-          index === 0 ? '-3deg' : '3deg'
-        );
-        connector.style.setProperty(
-          '--draw-theme-connector-delay',
-          `${0.34 + index * 0.58}s`
-        );
-        Object.assign(connector.style, {
-          width: '100%',
-          marginTop: '20px',
-          height: '3px',
-          backgroundImage: `repeating-linear-gradient(90deg, ${UI.ink} 0 8px, transparent 8px 14px)`,
-          backgroundSize: '28px 3px',
-          opacity: '0.52',
-        });
-        journey.append(connector);
-      }
-    });
-    return journey;
+    this.overlay.place(drawStartOverlay.element, drawStartOverlay.placement);
+    this.drawStartOverlay = drawStartOverlay;
   }
 
   private setCanvasDareVisible(visible: boolean): void {
-    if (!this.canvasDareOverlay) return;
-    const countdownActive = this.drawStartCountdownOverlay !== null;
-    const overlayVisible = visible || countdownActive;
-    this.canvasDareOverlay.style.opacity = overlayVisible ? '1' : '0';
-    this.canvasDareOverlay.style.visibility = overlayVisible
-      ? 'visible'
-      : 'hidden';
-    this.canvasDareOverlay.setAttribute('aria-hidden', String(!overlayVisible));
-    const startIsAvailable =
-      visible &&
-      !countdownActive &&
-      this.drawStartControl !== null &&
-      this.communityThemeAvailable;
-    const freeDrawIsAvailable =
-      visible && !countdownActive && this.freeDrawControl !== null;
-    this.canvasDareOverlay.style.pointerEvents = 'none';
-    if (this.drawStartControl) {
-      this.drawStartControl.disabled = !startIsAvailable;
-      this.drawStartControl.tabIndex = startIsAvailable ? 0 : -1;
-      this.drawStartControl.style.pointerEvents = startIsAvailable
-        ? 'auto'
-        : 'none';
-    }
-    if (this.freeDrawControl) {
-      this.freeDrawControl.disabled = !freeDrawIsAvailable;
-      this.freeDrawControl.tabIndex = freeDrawIsAvailable ? 0 : -1;
-      this.freeDrawControl.style.pointerEvents = freeDrawIsAvailable
-        ? 'auto'
-        : 'none';
-    }
+    this.drawStartOverlay?.setVisible(
+      visible,
+      this.drawStartCountdownOverlay !== null
+    );
   }
 
   // --- Live analyzer preview ------------------------------------------------
@@ -4900,53 +4039,19 @@ export class Draw extends Scene {
     powerUpOffer: PowerUpOffer | null
   ): boolean {
     const arena = getArena(this);
-    if (!arena || scribbit.bornDay !== arena.dayNumber) return false;
-    const alreadyTracked =
-      arena.todayEntrants.some((entrant) => entrant.id === scribbit.id) ||
-      arena.myScribbits.some(
-        (ownedScribbit) => ownedScribbit.id === scribbit.id
-      );
-    const myDrawingSupplies = { ...(arena.myDrawingSupplies ?? {}) };
-    if (!alreadyTracked) {
-      [
-        draft.drawingSupplies.drawingInkId,
-        draft.drawingSupplies.brushId,
-      ].forEach((supplyId) => {
-        if (!supplyId) return;
-        const nextCount = Math.max(0, (myDrawingSupplies[supplyId] ?? 0) - 1);
-        if (nextCount > 0) myDrawingSupplies[supplyId] = nextCount;
-        else delete myDrawingSupplies[supplyId];
-      });
-    }
-    const todayEntrants =
-      !enteredRumble ||
-      arena.todayEntrants.some((entrant) => entrant.id === scribbit.id)
-        ? arena.todayEntrants
-        : [scribbit, ...arena.todayEntrants];
-    const myScribbits = arena.myScribbits.some(
-      (ownedScribbit) => ownedScribbit.id === scribbit.id
-    )
-      ? arena.myScribbits
-      : [scribbit, ...arena.myScribbits].slice(0, MAX_ALIVE_PER_USER);
-    setArena(this, {
-      ...arena,
-      hasCreatedScribbit: true,
-      drawnToday: true,
-      enteredToday: arena.enteredToday || enteredRumble,
+    if (!arena) return false;
+    const result = projectSubmittedScribbitArena({
+      arena,
+      scribbit,
+      drawingSupplies: draft.drawingSupplies,
       drawCharges,
-      rumbleEntrants: todayEntrants.length,
-      todayEntrants,
-      myInk: (arena.myInk ?? 0) + (alreadyTracked ? 0 : INK_REWARDS.dailyDraw),
-      myDrawingSupplies,
-      myScribbits,
-      pendingPowerUpOffers: [
-        ...(arena.pendingPowerUpOffers ?? []).filter(
-          (offer) => offer.scribbitId !== scribbit.id
-        ),
-        ...(powerUpOffer ? [powerUpOffer] : []),
-      ],
+      enteredRumble,
+      powerUpOffer,
     });
-    if (!alreadyTracked) {
+    if (result.status === 'day-changed') return false;
+
+    setArena(this, result.arena);
+    if (!result.alreadyTracked) {
       trackProgressionEvent('draw_submitted', {
         scribbitId: scribbit.id,
         source: this.isFirstScribbit ? 'first-scribbit' : 'daily-draw',
@@ -5436,7 +4541,13 @@ export class Draw extends Scene {
   private async startFirstBattle(scribbit: Scribbit): Promise<void> {
     const sceneVisitEpoch = this.sceneVisitEpoch;
     this.setFirstFightBusy(scribbit, true);
-    const result = await spar(scribbit.id, undefined, undefined, true);
+    const isPlayersFirstBattle = getArena(this)?.hasCompletedBattle === false;
+    const result = await spar(
+      scribbit.id,
+      undefined,
+      undefined,
+      isPlayersFirstBattle
+    );
     if (!this.isCurrentSceneVisit(sceneVisitEpoch)) return;
     if (!result.ok) {
       console.error('First fight failed:', result.error);

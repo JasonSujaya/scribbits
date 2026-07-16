@@ -6,7 +6,11 @@ import { toCurrentCombatRole } from './roles';
 export const MAXIMUM_POWER_UPS = 5;
 export const MAXIMUM_GROWING_POWER_UPS = 3;
 export const MAXIMUM_LEGENDARY_POWER_UPS = 1;
-export const MAXIMUM_POWER_UP_BONUS_DAMAGE = 10;
+// System-wide safety budgets, not per-card balance levers. Both damage and
+// healing scale with maximum health so percentage cards stay honest at every
+// progression stage: a fighter's bonus Power-Up damage is capped at 15% of the
+// opponent's maximum health per fight, and Power-Up healing at 20% of its own.
+export const MAXIMUM_POWER_UP_BONUS_DAMAGE_PERMILLE = 150;
 export const MAXIMUM_POWER_UP_HEALING_PERMILLE = 200;
 // This is a safety ceiling, not a balance lever. Individual cards own their
 // activation caps so a full build cannot starve later cards by trigger order.
@@ -80,18 +84,14 @@ export type PowerUpDefinition = Readonly<{
     | 'common-power-up';
   maximumActivations: number;
   delayTicks?: number;
-  durationTicks?: number;
   powerPermille?: number;
-  bonusDamage?: number;
-  bonusDamageCap?: number;
   maximumHitPointHealingPermille?: number;
-  preventedDamage?: number;
-  lethalDamageCap?: number;
+  preventedDamagePermille?: number;
+  targetMaxHitPointDamagePermille?: number;
   requiredConsecutiveHits?: number;
   requiredDistinctPowerUps?: number;
   repeatedAttacks?: number;
   extraActivations?: number;
-  survivingHitPoints?: number;
   survivingHitPointPermille?: number;
 }>;
 
@@ -114,13 +114,13 @@ export const POWER_UP_CATALOG: Readonly<Record<PowerUpId, PowerUpDefinition>> =
       rarity: 'common',
       buildPath: 'bounce',
       when: 'The first time you touch a wall',
-      effect: 'Restore 1% max health and empower your next 2 normal hits',
+      effect:
+        'Restore 2% max health and your next 2 normal hits deal 25% extra damage',
       trigger: 'wall-bounce',
       maximumActivations: 1,
-      durationTicks: 3,
-      maximumHitPointHealingPermille: 10,
+      maximumHitPointHealingPermille: 20,
       repeatedAttacks: 2,
-      bonusDamage: 1,
+      powerPermille: 250,
     }),
     'v1-smudge-step': definePowerUp({
       id: 'v1-smudge-step',
@@ -129,10 +129,10 @@ export const POWER_UP_CATALOG: Readonly<Record<PowerUpId, PowerUpDefinition>> =
       rarity: 'common',
       buildPath: 'survival',
       when: 'Every fourth normal attack would hit you',
-      effect: 'Deflect up to 1 damage once per fight',
+      effect: 'Deflect 50% of that hit, up to 2 times',
       trigger: 'incoming-basic',
-      maximumActivations: 1,
-      preventedDamage: 1,
+      maximumActivations: 2,
+      preventedDamagePermille: 500,
     }),
     'v1-paper-shield': definePowerUp({
       id: 'v1-paper-shield',
@@ -141,10 +141,10 @@ export const POWER_UP_CATALOG: Readonly<Record<PowerUpId, PowerUpDefinition>> =
       rarity: 'common',
       buildPath: 'survival',
       when: "The enemy's special move hits you",
-      effect: 'Block up to 1 damage from that hit',
+      effect: 'Block 25% of that hit',
       trigger: 'incoming-signature',
       maximumActivations: 1,
-      preventedDamage: 1,
+      preventedDamagePermille: 250,
     }),
     'v1-combo-spark': definePowerUp({
       id: 'v1-combo-spark',
@@ -153,13 +153,12 @@ export const POWER_UP_CATALOG: Readonly<Record<PowerUpId, PowerUpDefinition>> =
       rarity: 'common',
       buildPath: 'combo',
       when: 'Your third consecutive normal hit lands',
-      effect: 'Deal 10% extra damage and restore 1% max health',
+      effect: 'Deal 25% extra damage and restore 2% max health',
       trigger: 'basic-hit-streak',
       maximumActivations: 1,
       requiredConsecutiveHits: 3,
-      powerPermille: 100,
-      bonusDamageCap: 1,
-      maximumHitPointHealingPermille: 10,
+      powerPermille: 250,
+      maximumHitPointHealingPermille: 20,
     }),
     'v1-center-fold': definePowerUp({
       id: 'v1-center-fold',
@@ -168,10 +167,10 @@ export const POWER_UP_CATALOG: Readonly<Record<PowerUpId, PowerUpDefinition>> =
       rarity: 'common',
       buildPath: 'survival',
       when: 'You fall below half health',
-      effect: 'Restore 1% max health',
+      effect: 'Restore 6% max health',
       trigger: 'below-half-hearts',
       maximumActivations: 1,
-      maximumHitPointHealingPermille: 10,
+      maximumHitPointHealingPermille: 60,
     }),
     'v1-double-doodle': definePowerUp({
       id: 'v1-double-doodle',
@@ -180,12 +179,11 @@ export const POWER_UP_CATALOG: Readonly<Record<PowerUpId, PowerUpDefinition>> =
       rarity: 'uncommon',
       buildPath: 'special',
       when: 'A special move hits',
-      effect: 'Repeat part of that hit for up to 1 damage',
+      effect: 'Repeat 25% of that hit',
       trigger: 'landed-signature',
       maximumActivations: 1,
       delayTicks: 6,
-      powerPermille: 100,
-      bonusDamageCap: 1,
+      powerPermille: 250,
     }),
     'v1-backup-plan': definePowerUp({
       id: 'v1-backup-plan',
@@ -194,11 +192,11 @@ export const POWER_UP_CATALOG: Readonly<Record<PowerUpId, PowerUpDefinition>> =
       rarity: 'uncommon',
       buildPath: 'combo',
       when: 'Every fourth normal hit, up to 2 times',
-      effect: 'Restore 1% max health',
+      effect: 'Restore 3% max health',
       trigger: 'basic-hit-count',
       maximumActivations: 2,
       requiredConsecutiveHits: 4,
-      maximumHitPointHealingPermille: 10,
+      maximumHitPointHealingPermille: 30,
     }),
     'v1-counter-sketch': definePowerUp({
       id: 'v1-counter-sketch',
@@ -207,11 +205,10 @@ export const POWER_UP_CATALOG: Readonly<Record<PowerUpId, PowerUpDefinition>> =
       rarity: 'uncommon',
       buildPath: 'survival',
       when: "The enemy's special move hits you",
-      effect: 'Strike back for up to 2 damage',
+      effect: 'Strike back for 50% of your normal attack damage',
       trigger: 'enemy-signature',
       maximumActivations: 1,
-      powerPermille: 50,
-      bonusDamageCap: 2,
+      powerPermille: 500,
     }),
     'v1-wallop': definePowerUp({
       id: 'v1-wallop',
@@ -220,10 +217,10 @@ export const POWER_UP_CATALOG: Readonly<Record<PowerUpId, PowerUpDefinition>> =
       rarity: 'rare',
       buildPath: 'bounce',
       when: 'You knock the enemy into a wall, up to 2 times',
-      effect: 'Deal 3 extra damage each time',
+      effect: 'Deal 50% of your normal attack damage each time',
       trigger: 'knockback-wall-bounce',
       maximumActivations: 2,
-      bonusDamage: 3,
+      powerPermille: 500,
     }),
     'v1-echo-mark': definePowerUp({
       id: 'v1-echo-mark',
@@ -232,12 +229,11 @@ export const POWER_UP_CATALOG: Readonly<Record<PowerUpId, PowerUpDefinition>> =
       rarity: 'rare',
       buildPath: 'special',
       when: 'A special move hits',
-      effect: 'Your next 2 normal hits deal 10% extra damage',
+      effect: 'Your next 2 normal hits deal 40% extra damage',
       trigger: 'marked-target-basic',
       maximumActivations: 1,
       repeatedAttacks: 2,
-      powerPermille: 100,
-      bonusDamageCap: 1,
+      powerPermille: 400,
     }),
     'v1-last-scribble': definePowerUp({
       id: 'v1-last-scribble',
@@ -246,11 +242,10 @@ export const POWER_UP_CATALOG: Readonly<Record<PowerUpId, PowerUpDefinition>> =
       rarity: 'epic',
       buildPath: 'survival',
       when: 'A hit would knock you out',
-      effect: 'Survive one knockout blow with 1 health',
+      effect: 'Survive one knockout blow with 10% max health',
       trigger: 'lethal-hit',
       maximumActivations: 1,
-      lethalDamageCap: 20,
-      survivingHitPoints: 1,
+      survivingHitPointPermille: 100,
     }),
     'v1-second-draft': definePowerUp({
       id: 'v1-second-draft',
@@ -260,12 +255,12 @@ export const POWER_UP_CATALOG: Readonly<Record<PowerUpId, PowerUpDefinition>> =
       buildPath: 'survival',
       when: 'You fall below half health',
       effect:
-        'Your next 3 normal hits deal 1 extra damage and restore 0.5% max health',
+        'Your next 3 normal hits deal 30% extra damage and restore 2% max health',
       trigger: 'below-half-hearts',
       maximumActivations: 1,
       repeatedAttacks: 3,
-      bonusDamage: 1,
-      maximumHitPointHealingPermille: 5,
+      powerPermille: 300,
+      maximumHitPointHealingPermille: 20,
     }),
     'v1-paper-twin': definePowerUp({
       id: 'v1-paper-twin',
@@ -274,12 +269,11 @@ export const POWER_UP_CATALOG: Readonly<Record<PowerUpId, PowerUpDefinition>> =
       rarity: 'epic',
       buildPath: 'combo',
       when: 'Your first normal attack hits',
-      effect: 'Your first 2 normal hits repeat for up to 1 damage each',
+      effect: 'Your first 2 normal hits repeat for 50% of their damage',
       trigger: 'first-basic-hit',
       maximumActivations: 1,
       repeatedAttacks: 2,
-      powerPermille: 100,
-      bonusDamageCap: 1,
+      powerPermille: 500,
     }),
     'v1-masterpiece': definePowerUp({
       id: 'v1-masterpiece',
@@ -288,12 +282,12 @@ export const POWER_UP_CATALOG: Readonly<Record<PowerUpId, PowerUpDefinition>> =
       rarity: 'legendary',
       buildPath: 'wildcard',
       when: 'Three different non-Legendary Power-Ups activate',
-      effect: 'Deal 8 damage and restore 3% max health',
+      effect: "Deal 10% of the enemy's max health and restore 10% max health",
       trigger: 'distinct-power-ups',
       maximumActivations: 1,
       requiredDistinctPowerUps: 3,
-      bonusDamage: 8,
-      maximumHitPointHealingPermille: 30,
+      targetMaxHitPointDamagePermille: 100,
+      maximumHitPointHealingPermille: 100,
     }),
     'v1-endless-draft': definePowerUp({
       id: 'v1-endless-draft',

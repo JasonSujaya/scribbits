@@ -31,6 +31,9 @@ const {
   analyticsAdminCss,
   analyticsAdminHtml,
   analyticsAdminJavaScript,
+  feedbackAdminCss,
+  feedbackAdminHtml,
+  feedbackAdminJavaScript,
   CAPSULE_COST,
   DEFAULT_BATTLE_ARENA_ID,
   GEAR_MERGE_COPY_COST,
@@ -40,6 +43,7 @@ const {
   INK_REWARDS,
   MAX_ALIVE_PER_USER,
   MAX_GROWING_PER_USER,
+  MAXIMUM_DRAWING_SUBMISSION_BODY_BYTES,
   MAXIMUM_POWER_UPS,
   POWER_UP_CATALOG,
   SCOUT_NOTEBOOK_MAXIMUM_ENTRIES,
@@ -71,6 +75,7 @@ const {
   getBattleArenaForDay,
   getLevelForXp,
   getNextBattleArenaUnlock,
+  getScribbitLifecycleStage,
   getNextLegacySeenThroughDay,
   getPaintBucketState,
   getRumbleProgressionRewards,
@@ -110,6 +115,8 @@ const submittedDrawingBytes = new Map();
 const submittedScribbitPreviewModes = new Map();
 const freeDrawingsById = new Map();
 const freeDrawingOwnerById = new Map();
+const mockFeedbackEntries = [];
+const mockFeedbackRewardedPreviewModes = new Set();
 
 const maximumLegendsPageSize = 50;
 const mockCapsuleCatalogIds = new Set(COSMETIC_CATALOG.map((drop) => drop.id));
@@ -1295,12 +1302,17 @@ const featuredCreationsForPreview = () => {
   const candidates = [...memory.todayEntrants].reverse();
 
   for (const scribbit of candidates) {
+    const normalizedArtist = scribbit.artist
+      ?.trim()
+      .replace(/^u\//i, '')
+      .toLowerCase();
     if (
       featuredCreations.length >= 3 ||
       selectedIds.has(scribbit.id) ||
       memory.hiddenScribbitIds.has(scribbit.id) ||
       scribbit.isFounding ||
-      !scribbit.artist?.trim() ||
+      !normalizedArtist ||
+      normalizedArtist === 'hushgame' ||
       !scribbit.imageUrl?.trim()
     ) {
       continue;
@@ -1510,6 +1522,34 @@ const readJsonBody = async (request) => {
     return JSON.parse(Buffer.concat(chunks).toString('utf8'));
   } catch {
     return undefined;
+  }
+};
+
+const readBoundedJsonBody = async (request, maximumBytes) => {
+  const contentLength = Number(request.headers['content-length']);
+  if (Number.isFinite(contentLength) && contentLength > maximumBytes) {
+    request.resume();
+    return { status: 'too-large' };
+  }
+
+  const chunks = [];
+  let totalBytes = 0;
+  for await (const chunk of request) {
+    totalBytes += chunk.byteLength;
+    if (totalBytes > maximumBytes) {
+      return { status: 'too-large' };
+    }
+    chunks.push(chunk);
+  }
+
+  if (chunks.length === 0) return { status: 'invalid' };
+  try {
+    return {
+      status: 'parsed',
+      value: JSON.parse(Buffer.concat(chunks).toString('utf8')),
+    };
+  } catch {
+    return { status: 'invalid' };
   }
 };
 
@@ -1851,6 +1891,33 @@ const handleApi = async (request, response, url) => {
     return;
   }
 
+  if (method === 'GET' && path === '/internal/feedback') {
+    response.writeHead(200, {
+      'Content-Type': 'text/html; charset=utf-8',
+      'Cache-Control': 'no-store',
+    });
+    response.end(feedbackAdminHtml);
+    return;
+  }
+
+  if (method === 'GET' && path === '/internal/feedback/assets/feedback.css') {
+    response.writeHead(200, {
+      'Content-Type': 'text/css; charset=utf-8',
+      'Cache-Control': 'no-store',
+    });
+    response.end(feedbackAdminCss);
+    return;
+  }
+
+  if (method === 'GET' && path === '/internal/feedback/assets/feedback.js') {
+    response.writeHead(200, {
+      'Content-Type': 'text/javascript; charset=utf-8',
+      'Cache-Control': 'no-store',
+    });
+    response.end(feedbackAdminJavaScript);
+    return;
+  }
+
   if (method === 'GET' && path === '/api/debug/battle') {
     const power = url.searchParams.get('power');
     if (!power || !Object.hasOwn(debugPowerFighters, power)) {
@@ -2064,6 +2131,20 @@ const handleApi = async (request, response, url) => {
       ),
       sessionDays: days.reduce((total, day) => total + day.sessions, 0),
       days,
+    });
+    return;
+  }
+
+  if (method === 'GET' && path === '/internal/feedback/query') {
+    const offset = Number(url.searchParams.get('cursor') ?? 0);
+    const safeOffset = Number.isSafeInteger(offset) && offset >= 0 ? offset : 0;
+    const entries = mockFeedbackEntries.slice(safeOffset, safeOffset + 50);
+    sendJson(response, 200, {
+      entries,
+      nextCursor:
+        mockFeedbackEntries.length > safeOffset + entries.length
+          ? String(safeOffset + entries.length)
+          : null,
     });
     return;
   }
@@ -2407,12 +2488,73 @@ const handleApi = async (request, response, url) => {
 
   if (method === 'POST' && path === '/api/maturity/acknowledge') {
     const body = await readJsonBody(request);
-    sendJson(response, 200, { scribbitId: body?.scribbitId ?? '' });
+    const scribbitId = readScribbitId(body);
+    if (!/^[A-Za-z0-9:_-]{4,90}$/.test(scribbitId)) {
+      sendError(response, 400, 'Choose a valid Scribbit.');
+      return;
+    }
+    const scribbit = memory.myScribbits.find(
+      (candidate) => candidate.id === scribbitId
+    );
+    if (
+      !scribbit ||
+      getScribbitLifecycleStage(scribbit, memory.dayNumber) !== 'mature'
+    ) {
+      sendError(response, 409, 'That Scribbit is not ready for maturity.');
+      return;
+    }
+    sendJson(response, 200, { scribbitId });
     return;
   }
 
   if (method === 'POST' && path === '/api/progression-event') {
     sendJson(response, 200, { accepted: true, duplicate: false });
+    return;
+  }
+
+  if (method === 'POST' && path === '/api/feedback') {
+    const body = await readJsonBody(request);
+    const message =
+      typeof body?.message === 'string' ? body.message.trim() : '';
+    const validCategories = new Set(['bug', 'idea', 'balance', 'other']);
+    if (
+      !validCategories.has(body?.category) ||
+      message.length < 3 ||
+      message.length > 500
+    ) {
+      sendError(
+        response,
+        400,
+        'Choose a feedback type and write between 3 and 500 characters.'
+      );
+      return;
+    }
+    const createdAtMs = Date.now();
+    const id = randomUUID();
+    mockFeedbackEntries.unshift({
+      version: 1,
+      id,
+      userId: 'mock-player',
+      username: 'mock_player',
+      category: body.category,
+      message,
+      sourceScene:
+        typeof body.sourceScene === 'string' ? body.sourceScene : null,
+      appVersion: typeof body.appVersion === 'string' ? body.appVersion : null,
+      createdAtMs,
+    });
+    const rewardKey = previewMode;
+    const inkAwarded = mockFeedbackRewardedPreviewModes.has(rewardKey) ? 0 : 5;
+    if (inkAwarded > 0) {
+      mockFeedbackRewardedPreviewModes.add(rewardKey);
+      economy.ink += inkAwarded;
+    }
+    sendJson(response, 201, {
+      id,
+      createdAtMs,
+      inkAwarded,
+      ink: economy.ink,
+    });
     return;
   }
 
@@ -3249,7 +3391,16 @@ const handleApi = async (request, response, url) => {
   }
 
   if (method === 'POST' && path === '/api/free-drawing') {
-    const body = await readJsonBody(request);
+    const submissionBody = await readBoundedJsonBody(
+      request,
+      MAXIMUM_DRAWING_SUBMISSION_BODY_BYTES
+    );
+    if (submissionBody.status === 'too-large') {
+      sendError(response, 413, 'That drawing submission is too large.');
+      return;
+    }
+    const body =
+      submissionBody.status === 'parsed' ? submissionBody.value : undefined;
     const submissionId =
       body &&
       typeof body === 'object' &&
@@ -3330,7 +3481,16 @@ const handleApi = async (request, response, url) => {
   }
 
   if (method === 'POST' && path === '/api/scribbit') {
-    const body = await readJsonBody(request);
+    const submissionBody = await readBoundedJsonBody(
+      request,
+      MAXIMUM_DRAWING_SUBMISSION_BODY_BYTES
+    );
+    if (submissionBody.status === 'too-large') {
+      sendError(response, 413, 'That drawing submission is too large.');
+      return;
+    }
+    const body =
+      submissionBody.status === 'parsed' ? submissionBody.value : undefined;
     const submission = validateAndAnalyzeScribbitSubmission(body);
     if (submission.status === 'invalid') {
       const messageByReason = {
@@ -3594,6 +3754,7 @@ const resetFreshPreview = () => {
   memory.hiddenScribbitIds.clear();
   memory.reportCounts.clear();
   memory.founderChronicleByPreviewMode.fresh = createEmptyFounderChronicle();
+  mockFeedbackRewardedPreviewModes.delete('fresh');
   resetPreviewEconomy(memory.economyByPreviewMode.fresh);
 };
 
@@ -3623,7 +3784,9 @@ const server = createServer(async (request, response) => {
     if (
       url.pathname.startsWith('/api/') ||
       url.pathname === '/internal/analytics' ||
-      url.pathname.startsWith('/internal/analytics/')
+      url.pathname.startsWith('/internal/analytics/') ||
+      url.pathname === '/internal/feedback' ||
+      url.pathname.startsWith('/internal/feedback/')
     ) {
       await handleApi(request, response, url);
       return;

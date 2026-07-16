@@ -121,7 +121,6 @@ test('HTML entrypoints keep English fallback copy annotated for localization', (
         'splash.invite.gameType',
         'splash.invite.promise',
         'splash.invite.hook',
-        'splash.invite.fresh',
         'splash.showcase.sketchbook',
         'splash.action.drawYours',
       ],

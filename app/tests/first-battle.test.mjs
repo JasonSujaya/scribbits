@@ -75,8 +75,15 @@ test('newborn debut uses the basic arena and an advantageous level-one rival', (
   });
 });
 
-test('first-battle mode is explicit, server-guarded, and mock-identical', () => {
-  assert.match(drawSource, /spar\(scribbit\.id, undefined, undefined, true\)/);
+test('beginner first-battle mode is player-scoped and mock-identical', () => {
+  assert.match(
+    drawSource,
+    /const isPlayersFirstBattle = getArena\(this\)\?\.hasCompletedBattle === false/
+  );
+  assert.match(
+    drawSource,
+    /spar\([\s\S]{0,100}scribbit\.id[\s\S]{0,100}isPlayersFirstBattle[\s\S]{0,20}\)/
+  );
   assert.match(
     apiSource,
     /const firstBattleRequested = sparRequest\.firstBattle === true/
@@ -91,5 +98,6 @@ test('first-battle mode is explicit, server-guarded, and mock-identical', () => 
     mockSource,
     /const firstBattleRequested = body\?\.firstBattle === true/
   );
+  assert.match(mockSource, /memory\.completedBattlePreviewModes\.has\(previewMode\)/);
   assert.match(mockSource, /battleArenaId: DEFAULT_BATTLE_ARENA_ID/);
 });

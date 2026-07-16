@@ -1,6 +1,6 @@
 # Scribbits Balance Overview
 
-Generated: 2026-07-15T14:57:31.303Z
+Generated: 2026-07-16T10:18:26.165Z
 
 This is local simulation evidence from the current combat constants.
 
@@ -9,19 +9,19 @@ This is local simulation evidence from the current combat constants.
 | Role Matrix | 14400 | 9 | 0 | 1 |
 | Role Cycle | 12000 | 3 | 0 | 0 |
 | Arena Role Cycle | 24000 | 30 | 0 | 0 |
-| Growing Progression | 28800 | 276 | 0 | 4 |
-| Power-Up Combos | 17280 | 72 | 0 | 3 |
-| Power-Up Usefulness Monte Carlo | 108000 | 45 | 0 | 5 |
+| Growing Progression | 28800 | 276 | 14 | 4 |
+| Power-Up Combos | 17280 | 72 | 0 | 15 |
+| Power-Up Rarity Monte Carlo | 37360 | 59 | 38 | 4 |
 | Rival Run Risk | 1152 | 9 | 0 | 1 |
-| Three-Day Growing Loop | 2160 | 3 | 0 | 0 |
-| Reward Path | 149760 | 77 | 0 | 2 |
-| Thirty-Day Content + Progression | 31680 | 136 | 0 | 2 |
+| Three-Day Growing Loop | 2160 | 3 | 1 | 0 |
+| Reward Path | 115200 | 165 | 15 | 0 |
+| Thirty-Day Content + Progression | 31680 | 136 | 0 | 5 |
 | Permanent Progression Journey | 0 | 3 | 0 | 0 |
 | Rival Run Advancement Flow | 18 | 3 | 0 | 0 |
 | Generated Opponent Pool | 11520 | 3 | 0 | 0 |
 | Damage Source Breakdown | 6048 | 12 | 0 | 0 |
-| Gear + Power-Up Interaction | 57600 | 30 | 0 | 0 |
-| Equipment + Power-Up Meta | 331776 | 46 | 0 | 0 |
+| Gear + Power-Up Interaction | 57600 | 30 | 6 | 0 |
+| Equipment + Power-Up Meta | 331776 | 46 | 8 | 0 |
 | Role Classification Edge Cases | 960 | 12 | 0 | 0 |
 | Fight Feel Metrics | 4320 | 36 | 0 | 4 |
 

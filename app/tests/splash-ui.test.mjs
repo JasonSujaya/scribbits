@@ -43,6 +43,9 @@ test('splash is a square feed hook instead of the expanded game flow', () => {
   assert.doesNotMatch(splashHtml, /battle-health/);
   assert.doesNotMatch(splashHtml, /battle-rival-image/);
   assert.doesNotMatch(splashHtml, /creation-story/);
+  assert.doesNotMatch(splashHtml, /fresh-note/);
+  assert.doesNotMatch(splashHtml, /A FRESH ONE EVERY TIME YOU LOOK/);
+  assert.doesNotMatch(englishCatalog, /splash\.invite\.fresh/);
   assert.match(splashCss, /aspect-ratio: 1/);
   assert.match(splashCss, /html,[\s\S]*body[\s\S]*overflow: hidden/);
   assert.match(splashCss, /\.page[\s\S]*overflow: hidden/);
@@ -62,6 +65,10 @@ test('splash stays light while rotating in real community fighters', () => {
   assert.doesNotMatch(splashHtml, /splash-doodle-/);
   assert.match(splashScript, /renderFeaturedCreationPair/);
   assert.match(splashScript, /renderFeaturedCreation/);
+  assert.match(splashScript, /setFeaturedCreationPool/);
+  assert.match(splashScript, /showNextFeaturedCreation/);
+  assert.match(splashScript, /FEATURED_CREATION_ROTATION_MILLISECONDS = 6_500/);
+  assert.match(splashScript, /window\.setInterval/);
   assert.match(splashScript, /shuffledCreations/);
   assert.match(splashScript, /crypto\.getRandomValues/);
   assert.match(splashScript, /getShareData/);
@@ -78,7 +85,6 @@ test('splash stays light while rotating in real community fighters', () => {
 
 test('splash and expanded game share one durable new-player flow', () => {
   assert.match(preloaderScript, /startScene\(this, 'ScribbitHome'\)/);
-  assert.match(drawScript, /hasCreatedScribbit: true/);
   assert.doesNotMatch(drawEligibilityScript, /needsScribbitCreation/);
   assert.match(drawScript, /START FIRST FIGHT/);
   assert.match(
@@ -98,6 +104,19 @@ test('splash logo settles once and respects reduced motion', () => {
   assert.doesNotMatch(splashCss, /logo-settle[^;]*infinite/);
   assert.match(
     splashCss,
-    /@media \(prefers-reduced-motion: reduce\)[\s\S]*\.logo-image,[\s\S]*\.featured-creation img,[\s\S]*\.start-button[\s\S]*animation: none/
+    /@media \(prefers-reduced-motion: reduce\)[\s\S]*\.logo-image,[\s\S]*\.featured-creation-art img,[\s\S]*\.start-button[\s\S]*animation: none/
   );
+  assert.match(splashScript, /prefers-reduced-motion: reduce/);
+  assert.match(splashScript, /reducedMotionQuery\.matches/);
+});
+
+test('each rotating splash character gets restrained independent motion', () => {
+  assert.match(splashHtml, /class="featured-creation-art"/);
+  assert.match(splashScript, /applyRandomFeaturedCreationMotion/);
+  assert.match(splashScript, /--doodle-duration/);
+  assert.match(splashScript, /--doodle-delay/);
+  assert.match(splashScript, /motionSequence/);
+  assert.match(splashCss, /@keyframes doodle-idle/);
+  assert.match(splashCss, /var\(--doodle-x-a/);
+  assert.match(splashCss, /var\(--doodle-x-b/);
 });

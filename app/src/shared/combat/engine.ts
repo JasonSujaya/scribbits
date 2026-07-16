@@ -33,7 +33,7 @@ import {
 import { freezeGearCombatSnapshot, isGearCombatSnapshot } from './gearsnapshot';
 import { applyBattleArenaModifier } from '../battlearena';
 import {
-  MAXIMUM_POWER_UP_BONUS_DAMAGE,
+  MAXIMUM_POWER_UP_BONUS_DAMAGE_PERMILLE,
   MAXIMUM_POWER_UP_HEALING_PERMILLE,
   MAXIMUM_POWER_UPS,
   MAXIMUM_POWER_UP_TRIGGER_EVENTS,
@@ -428,7 +428,15 @@ function triggerPowerUp(
       fighter,
       opponent,
       'v1-masterpiece',
-      POWER_UP_CATALOG['v1-masterpiece'].bonusDamage ?? 0
+      Math.max(
+        1,
+        divideRounded(
+          opponent.maxHitPoints *
+            (POWER_UP_CATALOG['v1-masterpiece'].targetMaxHitPointDamagePermille ??
+              0),
+          1_000
+        )
+      )
     );
   }
   return true;
@@ -502,8 +510,11 @@ function applyBudgetedPowerUpDamage(
   target: MutableFighterState,
   requestedDamage: number
 ): number {
-  const remainingBudget =
-    MAXIMUM_POWER_UP_BONUS_DAMAGE - fighter.powerUpBonusDamageSpent;
+  const maximumBonusDamage = divideRounded(
+    target.maxHitPoints * MAXIMUM_POWER_UP_BONUS_DAMAGE_PERMILLE,
+    1_000
+  );
+  const remainingBudget = maximumBonusDamage - fighter.powerUpBonusDamageSpent;
   const budgetedDamage = Math.max(
     0,
     Math.min(requestedDamage, remainingBudget)
@@ -1198,7 +1209,14 @@ function constrainFighterToArena(
         wallopOwner,
         fighter,
         'v1-wallop',
-        POWER_UP_CATALOG['v1-wallop'].bonusDamage ?? 0
+        Math.max(
+          1,
+          divideRounded(
+            getBasicAttackDamage(wallopOwner) *
+              (POWER_UP_CATALOG['v1-wallop'].powerPermille ?? 0),
+            1_000
+          )
+        )
       );
     }
   }
@@ -1381,20 +1399,36 @@ function applyResolvedDamage(
     target.incomingNormalAttackCount += 1;
     if (
       target.incomingNormalAttackCount % 4 === 0 &&
+      requestedDamage > 0 &&
       triggerPowerUp(context, target, 'v1-smudge-step', source)
     ) {
       damageAfterSmudgeStep = Math.max(
         0,
         damageAfterSmudgeStep -
-          (POWER_UP_CATALOG['v1-smudge-step'].preventedDamage ?? 0)
+          Math.max(
+            1,
+            divideRounded(
+              requestedDamage *
+                (POWER_UP_CATALOG['v1-smudge-step'].preventedDamagePermille ??
+                  0),
+              1_000
+            )
+          )
       );
     }
   }
   let damageAfterPowerUpDefense = damageAfterSmudgeStep;
   if (incomingSignature && fighterOwnsPowerUp(target, 'v1-paper-shield')) {
+    const paperShield = POWER_UP_CATALOG['v1-paper-shield'];
     const preventedDamage = Math.min(
       damageAfterSmudgeStep,
-      POWER_UP_CATALOG['v1-paper-shield'].preventedDamage ?? 0
+      Math.max(
+        1,
+        divideRounded(
+          damageAfterSmudgeStep * (paperShield.preventedDamagePermille ?? 0),
+          1_000
+        )
+      )
     );
     if (
       preventedDamage > 0 &&
@@ -1458,27 +1492,17 @@ function applyResolvedDamage(
   if (
     context.tick >= context.rules.fighter.knockoutsEnabledAtTick &&
     actualDamage >= target.hitPoints &&
-    remainingDamage <=
-      (POWER_UP_CATALOG['v1-last-scribble'].lethalDamageCap ??
-        Number.MAX_SAFE_INTEGER) &&
     triggerPowerUp(context, target, 'v1-last-scribble', source)
   ) {
     const survivingHitPoints = Math.max(
       1,
-      POWER_UP_CATALOG['v1-last-scribble'].survivingHitPointPermille ===
-        undefined
-        ? (POWER_UP_CATALOG['v1-last-scribble'].survivingHitPoints ?? 1)
-        : divideRounded(
-            target.maxHitPoints *
-              POWER_UP_CATALOG['v1-last-scribble'].survivingHitPointPermille,
-            1_000
-          )
+      divideRounded(
+        target.maxHitPoints *
+          (POWER_UP_CATALOG['v1-last-scribble'].survivingHitPointPermille ?? 0),
+        1_000
+      )
     );
     actualDamage = Math.max(0, target.hitPoints - survivingHitPoints);
-    target.defenseUntilTick = Math.max(
-      target.defenseUntilTick,
-      context.tick + (POWER_UP_CATALOG['v1-last-scribble'].durationTicks ?? 0)
-    );
   }
   if (actualDamage <= 0) {
     return 0;
@@ -1515,12 +1539,9 @@ function applyResolvedDamage(
       'v1-double-doodle',
       target,
       doubleDoodle.delayTicks ?? 0,
-      Math.min(
-        doubleDoodle.bonusDamageCap ?? Number.MAX_SAFE_INTEGER,
-        Math.max(
-          1,
-          divideRounded(actualDamage * (doubleDoodle.powerPermille ?? 0), 1_000)
-        )
+      Math.max(
+        1,
+        divideRounded(actualDamage * (doubleDoodle.powerPermille ?? 0), 1_000)
       )
     );
     if (
@@ -1540,14 +1561,11 @@ function applyResolvedDamage(
       'v1-counter-sketch',
       source,
       1,
-      Math.min(
-        counterSketch.bonusDamageCap ?? Number.MAX_SAFE_INTEGER,
-        Math.max(
-          1,
-          divideRounded(
-            getBasicAttackDamage(target) * (counterSketch.powerPermille ?? 0),
-            1_000
-          )
+      Math.max(
+        1,
+        divideRounded(
+          getBasicAttackDamage(target) * (counterSketch.powerPermille ?? 0),
+          1_000
         )
       )
     );
@@ -1827,7 +1845,14 @@ function finalizeBasicAttack(
       context,
       fighter,
       target,
-      POWER_UP_CATALOG['v1-edge-spring'].bonusDamage ?? 0
+      Math.max(
+        1,
+        divideRounded(
+          landedDamage *
+            (POWER_UP_CATALOG['v1-edge-spring'].powerPermille ?? 0),
+          1_000
+        )
+      )
     );
   }
   const comboSparkRequiredHits =
@@ -1841,16 +1866,12 @@ function finalizeBasicAttack(
       fighter,
       target,
       'v1-combo-spark',
-      Math.min(
-        POWER_UP_CATALOG['v1-combo-spark'].bonusDamageCap ??
-          Number.MAX_SAFE_INTEGER,
-        Math.max(
-          1,
-          divideRounded(
-            landedDamage *
-              (POWER_UP_CATALOG['v1-combo-spark'].powerPermille ?? 0),
-            1_000
-          )
+      Math.max(
+        1,
+        divideRounded(
+          landedDamage *
+            (POWER_UP_CATALOG['v1-combo-spark'].powerPermille ?? 0),
+          1_000
         )
       )
     );
@@ -1871,16 +1892,11 @@ function finalizeBasicAttack(
       fighter,
       target,
       'v1-echo-mark',
-      Math.min(
-        POWER_UP_CATALOG['v1-echo-mark'].bonusDamageCap ??
-          Number.MAX_SAFE_INTEGER,
-        Math.max(
-          1,
-          divideRounded(
-            landedDamage *
-              (POWER_UP_CATALOG['v1-echo-mark'].powerPermille ?? 0),
-            1_000
-          )
+      Math.max(
+        1,
+        divideRounded(
+          landedDamage * (POWER_UP_CATALOG['v1-echo-mark'].powerPermille ?? 0),
+          1_000
         )
       )
     );
@@ -1891,7 +1907,14 @@ function finalizeBasicAttack(
       context,
       fighter,
       target,
-      POWER_UP_CATALOG['v1-second-draft'].bonusDamage ?? 0
+      Math.max(
+        1,
+        divideRounded(
+          landedDamage *
+            (POWER_UP_CATALOG['v1-second-draft'].powerPermille ?? 0),
+          1_000
+        )
+      )
     );
     healFighterFromPowerUp(context, fighter, 'v1-second-draft');
   }
@@ -1909,12 +1932,9 @@ function finalizeBasicAttack(
       context,
       fighter,
       target,
-      Math.min(
-        paperTwin.bonusDamageCap ?? Number.MAX_SAFE_INTEGER,
-        Math.max(
-          1,
-          divideRounded(landedDamage * (paperTwin.powerPermille ?? 0), 1_000)
-        )
+      Math.max(
+        1,
+        divideRounded(landedDamage * (paperTwin.powerPermille ?? 0), 1_000)
       )
     );
   }

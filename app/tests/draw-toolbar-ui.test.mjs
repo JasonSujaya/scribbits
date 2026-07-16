@@ -14,6 +14,18 @@ const drawCanvasSource = await readFile(
   new URL('../src/client/lib/drawcanvas.ts', import.meta.url),
   'utf8'
 );
+const leaveDrawingModalSource = await readFile(
+  new URL('../src/client/lib/leavedrawingmodal.ts', import.meta.url),
+  'utf8'
+);
+const fighterStyleInfoModalSource = await readFile(
+  new URL('../src/client/lib/role/styleinfomodal.ts', import.meta.url),
+  'utf8'
+);
+const drawStartOverlaySource = await readFile(
+  new URL('../src/client/lib/drawstartoverlay.ts', import.meta.url),
+  'utf8'
+);
 
 test('Draw keeps the everyday rail compact and puts optional tools one tap away', () => {
   assert.match(drawSource, /const panelH = 300/);
@@ -142,18 +154,33 @@ test('Draw keeps the everyday rail compact and puts optional tools one tap away'
   assert.match(drawSource, /counts toward/);
   assert.doesNotMatch(drawSource, /role: 'radiogroup'/);
   assert.doesNotMatch(drawSource, /setAttribute\('aria-checked'/);
-  assert.match(drawSource, /COLOR DECIDES YOUR ROLE/);
-  assert.match(drawSource, /THE BIGGEST COLOR AREA WINS/);
-  assert.match(drawSource, /Brown, coral, and orange make Brawler/);
-  assert.match(drawSource, /Gold, green, and blue make Longshot/);
-  assert.match(drawSource, /Aqua, purple, and pink make Mage/);
-  assert.match(drawSource, /Brawler beats Mage/);
-  assert.match(drawSource, /Mage beats Longshot/);
-  assert.match(drawSource, /Longshot beats Brawler/);
-  assert.match(drawSource, /BLACK \+ GREY \+ WHITE ARE NEUTRAL/);
-  assert.match(drawSource, /A TIE PICKS ONE AT RANDOM/);
-  assert.match(drawSource, /Equal color groups are randomized/);
-  assert.doesNotMatch(drawSource, /NEUTRAL-ONLY ART BECOMES BRAWLER/);
+  assert.match(fighterStyleInfoModalSource, /COLOR DECIDES YOUR ROLE/);
+  assert.match(fighterStyleInfoModalSource, /THE BIGGEST COLOR AREA WINS/);
+  assert.match(
+    fighterStyleInfoModalSource,
+    /Brown, coral, and orange make Brawler/
+  );
+  assert.match(
+    fighterStyleInfoModalSource,
+    /Gold, green, and blue make Longshot/
+  );
+  assert.match(fighterStyleInfoModalSource, /Aqua, purple, and pink make Mage/);
+  assert.match(fighterStyleInfoModalSource, /Brawler beats Mage/);
+  assert.match(fighterStyleInfoModalSource, /Mage beats Longshot/);
+  assert.match(fighterStyleInfoModalSource, /Longshot beats Brawler/);
+  assert.match(
+    fighterStyleInfoModalSource,
+    /BLACK \+ GREY \+ WHITE ARE NEUTRAL/
+  );
+  assert.match(fighterStyleInfoModalSource, /A TIE PICKS ONE AT RANDOM/);
+  assert.match(
+    fighterStyleInfoModalSource,
+    /Equal color groups are randomized/
+  );
+  assert.doesNotMatch(
+    fighterStyleInfoModalSource,
+    /NEUTRAL-ONLY ART BECOMES BRAWLER/
+  );
   assert.doesNotMatch(drawSource, /fighterStyle: draft\.fighterStyle/);
   assert.doesNotMatch(drawSource, /STYLE FORMING…/);
   assert.doesNotMatch(drawSource, /Your drawing decides it/i);
@@ -161,7 +188,7 @@ test('Draw keeps the everyday rail compact and puts optional tools one tap away'
   assert.doesNotMatch(drawSource, /Sharp jagged edges make Longshot/);
   assert.match(
     drawSource,
-    /private openRoleStyleInfo[\s\S]*this\.overlay\.setVisible\(false\)/
+    /private showFighterStyleInfoModal[\s\S]*this\.overlay\.setVisible\(false\)/
   );
   assert.match(
     drawSource,
@@ -183,9 +210,10 @@ test('Draw always offers a clear route back to Home', () => {
   assert.match(chromeSource, /'Back to Home'/);
   assert.doesNotMatch(chromeSource, /if \(!this\.isFirstScribbit\)/);
   assert.match(
-    drawSource,
-    /closeButton\.addEventListener\('click', \(\) => this\.exitDraw\(\)\)/
+    drawStartOverlaySource,
+    /closeButton\.addEventListener\('click', options\.onClose\)/
   );
+  assert.match(drawSource, /onClose: \(\) => this\.exitDraw\(\)/);
   assert.doesNotMatch(drawSource, /private closeDrawStartPopup/);
 });
 
@@ -202,18 +230,18 @@ test('Draw asks before discarding any drawing and leaves an empty canvas directl
   assert.match(exitSource, /this\.lastResult\?\.inkedPixels/);
   assert.doesNotMatch(exitSource, /hasMinimumDrawingInk/);
   assert.doesNotMatch(exitSource, /this\.continueFromDrawing\(\)/);
-  assert.match(exitSource, /this\.openLeaveDrawingModal\(\)/);
-  assert.match(exitSource, /'LEAVE YOUR DOODLE\?'/);
-  assert.match(exitSource, /"IT WON'T BE SAVED"/);
+  assert.match(exitSource, /this\.showLeaveDrawingModal\(\)/);
+  assert.match(leaveDrawingModalSource, /'LEAVE YOUR DOODLE\?'/);
+  assert.match(leaveDrawingModalSource, /"IT WON'T BE SAVED"/);
   assert.match(
     exitSource,
     /this\.createSubmissionDraft\(currentResult\)\.imageDataUrl/
   );
-  assert.match(exitSource, /fitDrawing\(/);
-  assert.match(exitSource, /previewTextureLoaded/);
-  assert.match(exitSource, /'CONTINUE DRAWING'/);
-  assert.match(exitSource, /'DISCARD DRAWING'/);
-  assert.match(exitSource, /'trash'/);
+  assert.match(leaveDrawingModalSource, /fitDrawing\(/);
+  assert.match(leaveDrawingModalSource, /previewTextureLoaded/);
+  assert.match(leaveDrawingModalSource, /'CONTINUE DRAWING'/);
+  assert.match(leaveDrawingModalSource, /'DISCARD DRAWING'/);
+  assert.match(leaveDrawingModalSource, /'trash'/);
   assert.match(exitSource, /this\.discardDrawingAndExit\(\)/);
   assert.match(exitSource, /this\.pauseDrawingRound\(\)/);
   assert.match(exitSource, /this\.startDrawingRound\(\)/);
@@ -271,7 +299,11 @@ test('Draw sends the newborn straight into one guarded simple first fight', () =
   );
   assert.match(
     drawSource,
-    /await spar\(scribbit\.id, undefined, undefined, true\)/
+    /const isPlayersFirstBattle = getArena\(this\)\?\.hasCompletedBattle === false/
+  );
+  assert.match(
+    drawSource,
+    /await spar\([\s\S]{0,100}scribbit\.id[\s\S]{0,100}isPlayersFirstBattle[\s\S]{0,20}\)/
   );
   assert.match(drawSource, /FINDING A RIVAL…/);
   assert.match(drawSource, /FIRST FIGHT PAUSED/);

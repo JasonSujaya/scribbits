@@ -7,15 +7,18 @@ import {
   type FighterGuidePopup,
 } from './fighterguidepopup';
 import { openPrivacyPopup, type PrivacyPopup } from './privacypopup';
+import { openFeedbackPopup, type FeedbackPopup } from './feedbackpopup';
 import { paperIconButton } from './ui';
 import { ghostButton, iconButton, label, startScene, stickerCard } from './ui';
 import { UI } from './theme';
 import { translate } from './localization';
 import { setSfxCue } from './sfx';
+import type { SubmitFeedbackResponse } from '../../shared/feedback';
 
 export type AppMenu = Readonly<{ destroy: () => void }>;
 export type AppMenuOptions = Readonly<{
   canNavigate?: () => boolean;
+  onFeedbackSubmitted?: (response: SubmitFeedbackResponse) => void;
   back?: Readonly<{
     label: string;
     onActivate: () => void;
@@ -36,6 +39,7 @@ export function appMenu(scene: Scene, options: AppMenuOptions = {}): AppMenu {
   let menuLayer: Phaser.GameObjects.Container | null = null;
   let fieldGuidePopup: FighterGuidePopup | null = null;
   let privacyPopup: PrivacyPopup | null = null;
+  let feedbackPopup: FeedbackPopup | null = null;
 
   const closeMenu = (): void => {
     modalOverlay?.destroy();
@@ -54,14 +58,14 @@ export function appMenu(scene: Scene, options: AppMenuOptions = {}): AppMenu {
       .rectangle(width / 2, height / 2, width, height, 0x1a1320, 0.62)
       .setInteractive();
     setSfxCue(scrim, 'ui.close');
-    const card = stickerCard(scene, width / 2, centerY, width - 120, 480, {
+    const card = stickerCard(scene, width / 2, centerY, width - 120, 640, {
       tapeColor: UI.tapeAlt,
       tilt: -0.4,
     });
     const title = label(
       scene,
       width / 2,
-      centerY - 180,
+      centerY - 260,
       translate('appMenu.title'),
       40,
       UI.ink,
@@ -70,7 +74,7 @@ export function appMenu(scene: Scene, options: AppMenuOptions = {}): AppMenu {
     const guideButton = iconButton(
       scene,
       width / 2,
-      centerY - 55,
+      centerY - 125,
       'info',
       translate('appMenu.fieldGuide'),
       () => openFieldGuide(),
@@ -80,17 +84,27 @@ export function appMenu(scene: Scene, options: AppMenuOptions = {}): AppMenu {
     const accountButton = iconButton(
       scene,
       width / 2,
-      centerY + 65,
+      centerY - 5,
       'shield',
       translate('appMenu.account'),
       () => openPrivacy(),
       width - 220,
       UI.tapeAlt
     );
+    const feedbackButton = iconButton(
+      scene,
+      width / 2,
+      centerY + 115,
+      'pencil',
+      translate('appMenu.feedback'),
+      () => openFeedback(),
+      width - 220,
+      UI.tapeAlt
+    );
     const closeButton = ghostButton(
       scene,
       width / 2,
-      centerY + 178,
+      centerY + 255,
       translate('appMenu.close'),
       closeMenu,
       220
@@ -98,7 +112,7 @@ export function appMenu(scene: Scene, options: AppMenuOptions = {}): AppMenu {
     const versionLabel = label(
       scene,
       width / 2,
-      centerY - 132,
+      centerY - 212,
       translate('appMenu.version', { version: appVersion }),
       20,
       UI.inkSoft
@@ -109,6 +123,7 @@ export function appMenu(scene: Scene, options: AppMenuOptions = {}): AppMenu {
       title,
       guideButton,
       accountButton,
+      feedbackButton,
       closeButton,
       versionLabel,
     ]);
@@ -125,7 +140,7 @@ export function appMenu(scene: Scene, options: AppMenuOptions = {}): AppMenu {
       label: translate('appMenu.openFieldGuide'),
       rect: {
         x: 110,
-        y: centerY - 105,
+        y: centerY - 175,
         width: width - 220,
         height: 100,
       },
@@ -135,17 +150,27 @@ export function appMenu(scene: Scene, options: AppMenuOptions = {}): AppMenu {
       label: translate('appMenu.openAccount'),
       rect: {
         x: 110,
-        y: centerY + 15,
+        y: centerY - 55,
         width: width - 220,
         height: 100,
       },
       onActivate: openPrivacy,
     });
     modalOverlay.add({
+      label: translate('appMenu.openFeedback'),
+      rect: {
+        x: 110,
+        y: centerY + 65,
+        width: width - 220,
+        height: 100,
+      },
+      onActivate: openFeedback,
+    });
+    modalOverlay.add({
       label: translate('appMenu.closeSettings'),
       rect: {
         x: width / 2 - 110,
-        y: centerY + 128,
+        y: centerY + 205,
         width: 220,
         height: 100,
       },
@@ -180,6 +205,23 @@ export function appMenu(scene: Scene, options: AppMenuOptions = {}): AppMenu {
     privacyPopup = openPrivacyPopup(scene, () => {
       privacyPopup = null;
     });
+  };
+
+  const openFeedback = (): void => {
+    if (options.canNavigate?.() === false) {
+      closeMenu();
+      return;
+    }
+    closeMenu();
+    if (feedbackPopup) return;
+    feedbackPopup = openFeedbackPopup(
+      scene,
+      () => {
+        feedbackPopup = null;
+      },
+      settingsControl,
+      options.onFeedbackSubmitted
+    );
   };
 
   const settingsButton = paperIconButton(
@@ -257,6 +299,7 @@ export function appMenu(scene: Scene, options: AppMenuOptions = {}): AppMenu {
     closeMenu();
     fieldGuidePopup?.destroy();
     privacyPopup?.destroy();
+    feedbackPopup?.destroy();
     actionOverlay.destroy();
     settingsButton.destroy(true);
     backButton?.destroy(true);

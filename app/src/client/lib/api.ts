@@ -45,6 +45,10 @@ import type {
   ChoosePowerUpRequest,
   ChoosePowerUpResponse,
 } from '../../shared/arena';
+import type {
+  SubmitFeedbackRequest,
+  SubmitFeedbackResponse,
+} from '../../shared/feedback';
 import { PLAYER_MUTATION_BUSY_MESSAGE } from '../../shared/arena';
 import type { EquipmentCategory } from '../../shared/equipment';
 import type {
@@ -383,6 +387,15 @@ export function deleteMyData(): Promise<
     Record<string, never>,
     { deleted: true; removedScribbits: number }
   >('/api/delete-my-data', {});
+}
+
+export function submitFeedback(
+  feedback: SubmitFeedbackRequest
+): Promise<ApiResult<SubmitFeedbackResponse>> {
+  return postJson<SubmitFeedbackRequest, SubmitFeedbackResponse>(
+    '/api/feedback',
+    feedback
+  );
 }
 
 // The talent-scout leaderboard: top 20 by lifetime clout plus the caller's rank.

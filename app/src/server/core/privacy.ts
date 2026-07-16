@@ -76,6 +76,8 @@ import {
   pruneExpiredPayoutReceipts,
   type IndexedPayoutReceipt,
 } from './payoutReceipt';
+import { deleteFeedbackForUser, getFeedbackDailyLimitKey } from './feedback';
+import { addUtcDays } from './day';
 
 const cloutPayoutKeyPattern = /^clout:payout:[1-9]\d*$/;
 const rumbleInkPayoutKeyPattern = /^ink:payout:rumbleWin:[1-9]\d*$/;
@@ -225,6 +227,15 @@ const deletePlayerDataRecords = async (
 
   await requireDeletionOwnership(storage, deletionLease);
   await removeUserFromProgressionAnalytics(storage, userId);
+
+  await requireDeletionOwnership(storage, deletionLease);
+  await deleteFeedbackForUser(storage, userId);
+
+  const deletionDate = new Date(operationStartedAtMs);
+  await storage.del(
+    getFeedbackDailyLimitKey(userId, deletionDate),
+    getFeedbackDailyLimitKey(userId, addUtcDays(deletionDate, -1))
+  );
 
   await requireDeletionOwnership(storage, deletionLease);
   const operationReceiptKeys = await loadUserOperationReceiptKeys(

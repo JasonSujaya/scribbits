@@ -405,11 +405,21 @@ test('the production API exposes the exact equip Gear route contract', async () 
     join(appRoot, 'src', 'server', 'routes', 'api.ts'),
     'utf8'
   );
-  assert.match(apiSource, /api\.post\('\/equip-gear'/);
-  assert.match(apiSource, /const readEquipGearRequest/);
-  assert.match(apiSource, /return c\.json<Scribbit>\(result\.scribbit\)/);
+  const inventoryRouteSource = await readFile(
+    join(appRoot, 'src', 'server', 'routes', 'inventory.ts'),
+    'utf8'
+  );
   assert.match(
     apiSource,
+    /api\.post\('\/equip-gear', inventoryRouteHandlers\.equipGear\)/
+  );
+  assert.match(inventoryRouteSource, /const readEquipGearRequest/);
+  assert.match(
+    inventoryRouteSource,
+    /return c\.json<Scribbit>\(result\.scribbit\)/
+  );
+  assert.match(
+    inventoryRouteSource,
     /await refreshEquippedGearRankForUser\([\s\S]*?result\.response\.toRank[\s\S]*?\);/,
     'the forge route must durably refresh every equipped Scribbit before replying'
   );

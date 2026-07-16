@@ -56,6 +56,7 @@ import { markGameBootPhase } from '../lib/gameboot';
 import { EDGE, NAV_SAFE, TYPE, UI, prefersReducedMotion } from '../lib/theme';
 import { setSfxCue } from '../lib/sfx';
 import { openPowerUpDraft, type PowerUpDraftHandle } from '../lib/powerupdraft';
+import { openFeedbackPopup, type FeedbackPopup } from '../lib/feedbackpopup';
 import {
   drawChargeCountLabel,
   drawChargeRefreshLabel,
@@ -70,6 +71,10 @@ import {
   type ArenaState,
   type Scribbit,
 } from '../../shared/arena';
+import {
+  FEEDBACK_FIRST_REWARD_INK,
+  type SubmitFeedbackResponse,
+} from '../../shared/feedback';
 
 const SCRIBBIT_DEPTH = 120;
 const HOME_PROP_DEPTH = 10;
@@ -196,6 +201,7 @@ export class ScribbitHome extends Scene {
   private maturityModal: MaturityModal | null = null;
   private rosterFullModal: RosterFullModal | null = null;
   private dailyLoginModal: DailyLoginModal | null = null;
+  private feedbackPopup: FeedbackPopup | null = null;
   private readonly homePropIdleTweens = new Map<
     Phaser.GameObjects.Image,
     Phaser.Tweens.Tween
@@ -224,6 +230,7 @@ export class ScribbitHome extends Scene {
     this.maturityModal = null;
     this.rosterFullModal = null;
     this.dailyLoginModal = null;
+    this.feedbackPopup = null;
     this.maturityCountdownTimer = null;
     this.powerUpDraft = null;
     this.assetErrorPanel = null;
@@ -311,6 +318,7 @@ export class ScribbitHome extends Scene {
     this.renderHomeTitle();
     this.renderHomeProps(stage);
     if (this.state.myScribbits.length > 0) this.renderGalleryButton();
+    this.renderFeedbackButton();
     this.renderDailyLoginButton();
     if (this.state.myScribbits.length === 0) {
       this.renderEmptyHome();
@@ -326,7 +334,9 @@ export class ScribbitHome extends Scene {
 
     appDock(this, 'home', { home: () => undefined });
     this.menu?.destroy();
-    this.menu = appMenu(this);
+    this.menu = appMenu(this, {
+      onFeedbackSubmitted: (response) => this.handleFeedbackSubmitted(response),
+    });
     this.time.delayedCall(0, () => this.openPendingProgressionMoment());
   }
 
@@ -433,6 +443,52 @@ export class ScribbitHome extends Scene {
     });
   }
 
+  private renderFeedbackButton(): void {
+    const buttonX = this.state.myScribbits.length > 0 ? 150 : 60;
+    let trigger: HTMLButtonElement | null = null;
+    const openFeedback = (): void => {
+      if (!this.state.loggedIn) {
+        showLoginPrompt();
+        return;
+      }
+      if (!trigger || this.feedbackPopup) return;
+      this.feedbackPopup = openFeedbackPopup(
+        this,
+        () => {
+          this.feedbackPopup = null;
+        },
+        trigger,
+        (response) => this.handleFeedbackSubmitted(response)
+      );
+    };
+    const feedbackButton = paperIconButton(
+      this,
+      buttonX,
+      58,
+      'pencil',
+      openFeedback,
+      80,
+      UI.creamHex,
+      UI.tapeAlt,
+      80
+    ).setDepth(2200);
+    feedbackButton.add(label(this, 0, 57, 'FEEDBACK', 17, UI.ink, true));
+    trigger =
+      this.actionOverlay?.add({
+        label: this.state.loggedIn
+          ? `Send player feedback. Earn ${FEEDBACK_FIRST_REWARD_INK} Mystery Ink for your first note.`
+          : 'Sign in to send player feedback',
+        rect: { x: buttonX - 40, y: 18, width: 80, height: 116 },
+        pointerPassthrough: true,
+        onActivate: openFeedback,
+      }) ?? null;
+  }
+
+  private handleFeedbackSubmitted(response: SubmitFeedbackResponse): void {
+    this.state = { ...this.state, myInk: response.ink };
+    setArena(this, this.state);
+  }
+
   private renderDailyLoginButton(): void {
     const { width } = this.scale;
     let trigger: HTMLButtonElement | null = null;
@@ -515,6 +571,8 @@ export class ScribbitHome extends Scene {
     this.closeMaturityInfo();
     this.dailyLoginModal?.destroy();
     this.dailyLoginModal = null;
+    this.feedbackPopup?.destroy();
+    this.feedbackPopup = null;
     this.actionOverlay?.destroy();
     this.actionOverlay = null;
     this.powerUpDraft?.destroy();

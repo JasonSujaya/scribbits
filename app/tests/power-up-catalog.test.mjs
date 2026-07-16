@@ -25,7 +25,7 @@ test('launch catalog contains the balanced 15 behavioral Power-Ups', () => {
     ),
     { common: 5, uncommon: 3, rare: 2, epic: 3, legendary: 2 }
   );
-  assert.equal(powerUps.MAXIMUM_POWER_UP_BONUS_DAMAGE, 10);
+  assert.equal(powerUps.MAXIMUM_POWER_UP_BONUS_DAMAGE_PERMILLE, 150);
   assert.equal(powerUps.MAXIMUM_POWER_UP_HEALING_PERMILLE, 200);
   assert.equal(powerUps.MAXIMUM_POWER_UP_TRIGGER_EVENTS, 32);
   Object.values(powerUps.POWER_UP_CATALOG).forEach((entry) => {
@@ -41,25 +41,52 @@ test('player-facing Power-Up descriptions avoid combat-engine jargon', () => {
     assert.doesNotMatch(entry.description, /\bsignature\b|\bbasic attack\b/i);
     assert.match(entry.description, /^[A-Z].+\. [A-Z].+\.$/);
   });
-  assert.equal(
-    powerUps.POWER_UP_CATALOG['v1-combo-spark'].maximumHitPointHealingPermille,
-    10
-  );
-  assert.equal(
-    powerUps.POWER_UP_CATALOG['v1-center-fold'].maximumHitPointHealingPermille,
-    10
-  );
   Object.values(powerUps.POWER_UP_CATALOG).forEach((entry) => {
     assert.equal('healingAmount' in entry, false);
     if (entry.maximumHitPointHealingPermille === undefined) return;
-    assert.ok(entry.maximumHitPointHealingPermille >= 5);
-    assert.ok(entry.maximumHitPointHealingPermille <= 30);
+    assert.ok(entry.maximumHitPointHealingPermille >= 20);
+    assert.ok(entry.maximumHitPointHealingPermille <= 100);
     assert.match(entry.effect, /% max health/);
   });
   assert.equal(
-    powerUps.POWER_UP_CATALOG['v1-last-scribble'].survivingHitPoints,
-    1
+    powerUps.POWER_UP_CATALOG['v1-last-scribble'].survivingHitPointPermille,
+    100
   );
+  const expectedEffects = {
+    'v1-edge-spring':
+      'Restore 2% max health and your next 2 normal hits deal 25% extra damage',
+    'v1-smudge-step': 'Deflect 50% of that hit, up to 2 times',
+    'v1-paper-shield': 'Block 25% of that hit',
+    'v1-combo-spark': 'Deal 25% extra damage and restore 2% max health',
+    'v1-center-fold': 'Restore 6% max health',
+    'v1-double-doodle': 'Repeat 25% of that hit',
+    'v1-backup-plan': 'Restore 3% max health',
+    'v1-counter-sketch':
+      'Strike back for 50% of your normal attack damage',
+    'v1-wallop': 'Deal 50% of your normal attack damage each time',
+    'v1-echo-mark': 'Your next 2 normal hits deal 40% extra damage',
+    'v1-last-scribble': 'Survive one knockout blow with 10% max health',
+    'v1-second-draft':
+      'Your next 3 normal hits deal 30% extra damage and restore 2% max health',
+    'v1-paper-twin': 'Your first 2 normal hits repeat for 50% of their damage',
+    'v1-masterpiece':
+      "Deal 10% of the enemy's max health and restore 10% max health",
+    'v1-endless-draft':
+      'Let every Common, Uncommon, and Rare activate 1 extra time',
+  };
+  for (const [id, effect] of Object.entries(expectedEffects)) {
+    const entry = powerUps.POWER_UP_CATALOG[id];
+    assert.equal(entry.effect, effect);
+    for (const retiredField of [
+      'bonusDamage',
+      'bonusDamageCap',
+      'preventedDamage',
+      'lethalDamageCap',
+      'survivingHitPoints',
+    ]) {
+      assert.equal(retiredField in entry, false, `${id} still has ${retiredField}`);
+    }
+  }
 });
 
 test('every Power-Up has one centralized playstyle profile', () => {

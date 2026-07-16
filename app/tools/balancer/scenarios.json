@@ -41,7 +41,20 @@
       "seedsPerPairing": 40
     },
     "powerUpUsefulness": {
-      "seedsPerPairing": 400
+      "seedsPerPairing": 200,
+      "legendaryHistoriesPerRole": 80,
+      "minimumTriggerRate": 0.15,
+      "minimumLegendaryTriggerRate": 0.25,
+      "equalRarityBand": { "minimum": 0.42, "maximum": 0.58 },
+      "equalRarityTargetBand": { "minimum": 0.45, "maximum": 0.55 },
+      "rarityAdvantageBands": {
+        "uncommon": { "minimum": 0.48, "maximum": 0.66 },
+        "rare": { "minimum": 0.48, "maximum": 0.66 },
+        "epic": { "minimum": 0.48, "maximum": 0.66 },
+        "legendary": { "minimum": 0.48, "maximum": 0.7 }
+      },
+      "rarityAdvantageTargetBand": { "minimum": 0.5, "maximum": 0.62 },
+      "tierAdvantageBand": { "minimum": 0.52, "maximum": 0.62 }
     },
     "rivalRunRisk": {
       "challengerBuildIds": ["brawler-base", "longshot-base", "mage-base"],
@@ -140,9 +153,27 @@
       "days": 30,
       "totalNodes": 30,
       "profiles": [
-        { "id": "casual", "label": "Casual", "attendance": 0.4, "clearChance": 0.45, "minimumMedianDayThirtyNode": 3 },
-        { "id": "regular", "label": "Regular", "attendance": 0.7, "clearChance": 0.6, "minimumMedianDayThirtyNode": 8 },
-        { "id": "competitive", "label": "Competitive", "attendance": 0.9, "clearChance": 0.72, "minimumMedianDayThirtyNode": 12 }
+        {
+          "id": "casual",
+          "label": "Casual",
+          "attendance": 0.4,
+          "clearChance": 0.45,
+          "minimumMedianDayThirtyNode": 3
+        },
+        {
+          "id": "regular",
+          "label": "Regular",
+          "attendance": 0.7,
+          "clearChance": 0.6,
+          "minimumMedianDayThirtyNode": 8
+        },
+        {
+          "id": "competitive",
+          "label": "Competitive",
+          "attendance": 0.9,
+          "clearChance": 0.72,
+          "minimumMedianDayThirtyNode": 12
+        }
       ]
     }
   },

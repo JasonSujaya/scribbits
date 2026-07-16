@@ -41,12 +41,14 @@ export const englishMessages = {
   'appMenu.version': 'VERSION {version}',
   'appMenu.fieldGuide': 'FIGHTER STYLES',
   'appMenu.account': 'ACCOUNT',
+  'appMenu.feedback': 'SEND A NOTE',
   'appMenu.close': 'Close',
   'appMenu.modalTitle': 'Settings',
   'appMenu.modalDescription':
-    'Scribbits {version}. Open fighter rules or manage your stored game data.',
+    'Scribbits {version}. Open fighter rules, manage your data, or send feedback.',
   'appMenu.openFieldGuide': 'Open Who Beats Who guide',
   'appMenu.openAccount': 'Open Account',
+  'appMenu.openFeedback': 'Open player feedback form',
   'appMenu.fieldGuideTitle': 'WHO BEATS WHO',
   'appMenu.fieldGuideSubtitle': 'Each style beats one and loses to one',
   'appMenu.fieldGuideDescription':
@@ -63,7 +65,6 @@ export const englishMessages = {
   'splash.invite.gameType': 'A REDDIT DRAWING GAME',
   'splash.invite.promise': 'YOUR DRAWING BECOMES THE FIGHTER.',
   'splash.invite.hook': 'DRAW A SCRIBBIT. WATCH IT FIGHT.',
-  'splash.invite.fresh': 'A FRESH ONE EVERY TIME YOU LOOK.',
   'splash.showcase.sketchbook': 'FROM OUR SKETCHBOOK',
   'splash.showcase.community': 'DRAWN BY THE COMMUNITY',
   'splash.showcase.shared': 'WATCH THIS ONE FIGHT',

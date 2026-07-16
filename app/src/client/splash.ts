@@ -25,6 +25,9 @@ const startButton = document.getElementById(
 const featuredCreationImage = document.getElementById(
   'featured-creation-image'
 ) as HTMLImageElement | null;
+const featuredCreationArt = document.querySelector<HTMLElement>(
+  '.featured-creation-art'
+);
 const featuredCreationName = document.getElementById('featured-creation-name');
 const featuredCreationCredit = document.getElementById(
   'featured-creation-credit'
@@ -42,6 +45,15 @@ let featuredCreationLabelKey:
   | 'splash.showcase.sketchbook'
   | 'splash.showcase.community' = 'splash.showcase.sketchbook';
 let sharedBattleActive = false;
+const reducedMotionQuery = window.matchMedia(
+  '(prefers-reduced-motion: reduce)'
+);
+const FEATURED_CREATION_ROTATION_MILLISECONDS = 6_500;
+let featuredCreationPool: DisplayCreation[] = [];
+let featuredCreationIndex = -1;
+let featuredCreationRotationTimer: number | undefined;
+let currentFeaturedCreationId: string | undefined;
+let featuredCreationMotionSequence = 0;
 
 type DisplayCreation = SplashCreation &
   Readonly<{
@@ -75,8 +87,11 @@ const bundledCreations: readonly DisplayCreation[] = [
   foundingCreation('founding-ribbonrook', 'Ribbonrook', 'storm'),
 ];
 
-renderFeaturedCreation(shuffledCreations(bundledCreations)[0]);
+setFeaturedCreationPool(bundledCreations);
 renderSharedBattleClip();
+
+reducedMotionQuery.addEventListener('change', syncFeaturedCreationRotation);
+document.addEventListener('visibilitychange', syncFeaturedCreationRotation);
 
 startButton?.addEventListener('click', async (event) => {
   startButton.disabled = true;
@@ -115,26 +130,76 @@ async function loadSplashState(): Promise<void> {
 async function renderFeaturedCreationPair(
   featuredCreations: readonly SplashCreation[]
 ): Promise<void> {
-  let loadedCommunityCreation: DisplayCreation | undefined;
+  const loadedCommunityCreations: DisplayCreation[] = [];
   for (const creation of shuffledCreations(featuredCreations).slice(0, 3)) {
     if (await canLoadImage(creation.imageUrl)) {
-      loadedCommunityCreation = {
+      loadedCommunityCreations.push({
         ...creation,
         isCommunityCreation: true,
-      };
-      break;
+      });
     }
   }
 
-  renderFeaturedCreation(
-    loadedCommunityCreation ?? shuffledCreations(bundledCreations)[0]
+  setFeaturedCreationPool(
+    [...loadedCommunityCreations, ...bundledCreations],
+    loadedCommunityCreations[0]?.id ?? currentFeaturedCreationId
   );
+}
+
+function setFeaturedCreationPool(
+  creations: readonly DisplayCreation[],
+  preferredCreationId?: string
+): void {
+  const creationById = new Map(
+    creations.map((creation) => [creation.id, creation])
+  );
+  featuredCreationPool = shuffledCreations([...creationById.values()]);
+  featuredCreationIndex = preferredCreationId
+    ? featuredCreationPool.findIndex(
+        (creation) => creation.id === preferredCreationId
+      )
+    : 0;
+  if (featuredCreationIndex < 0) featuredCreationIndex = 0;
+
+  renderFeaturedCreation(featuredCreationPool[featuredCreationIndex]);
+  syncFeaturedCreationRotation();
+}
+
+function showNextFeaturedCreation(): void {
+  if (sharedBattleActive || featuredCreationPool.length < 2) return;
+  featuredCreationIndex =
+    (featuredCreationIndex + 1) % featuredCreationPool.length;
+  renderFeaturedCreation(featuredCreationPool[featuredCreationIndex]);
+}
+
+function syncFeaturedCreationRotation(): void {
+  stopFeaturedCreationRotation();
+  if (
+    sharedBattleActive ||
+    reducedMotionQuery.matches ||
+    document.hidden ||
+    featuredCreationPool.length < 2
+  ) {
+    return;
+  }
+
+  featuredCreationRotationTimer = window.setInterval(
+    showNextFeaturedCreation,
+    FEATURED_CREATION_ROTATION_MILLISECONDS
+  );
+}
+
+function stopFeaturedCreationRotation(): void {
+  if (featuredCreationRotationTimer === undefined) return;
+  window.clearInterval(featuredCreationRotationTimer);
+  featuredCreationRotationTimer = undefined;
 }
 
 function renderFeaturedCreation(creation: DisplayCreation | undefined): void {
   if (!creation) return;
 
   if (featuredCreationImage) {
+    applyRandomFeaturedCreationMotion(featuredCreationImage);
     featuredCreationImage.hidden = false;
     featuredCreationImage.src = creation.imageUrl;
     featuredCreationImage.alt = creation.isCommunityCreation
@@ -143,6 +208,13 @@ function renderFeaturedCreation(creation: DisplayCreation | undefined): void {
           artist: creation.artist,
         })
       : translate('splash.creation.fallbackAlt', { name: creation.name });
+  }
+  currentFeaturedCreationId = creation.id;
+  if (featuredCreationArt && !reducedMotionQuery.matches) {
+    featuredCreationArt.animate([{ opacity: 0.58 }, { opacity: 1 }], {
+      duration: 320,
+      easing: 'ease-out',
+    });
   }
   if (featuredCreationName) {
     featuredCreationName.textContent = creation.name.toUpperCase();
@@ -161,6 +233,37 @@ function renderFeaturedCreation(creation: DisplayCreation | undefined): void {
   if (creationLabel && !sharedBattleActive) {
     creationLabel.textContent = translate(featuredCreationLabelKey);
   }
+}
+
+function applyRandomFeaturedCreationMotion(image: HTMLImageElement): void {
+  const direction = randomUnit() < 0.5 ? -1 : 1;
+  const horizontalDrift = direction * (1.2 + randomUnit() * 1.8);
+  const verticalDrift = -(2 + randomUnit() * 2);
+  const rotation = direction * (0.35 + randomUnit() * 0.55);
+  const duration = 4.8 + randomUnit() * 2.2;
+
+  image.style.setProperty(
+    '--doodle-x-a',
+    `${(-horizontalDrift * 0.4).toFixed(2)}px`
+  );
+  image.style.setProperty(
+    '--doodle-y-a',
+    `${(randomUnit() * 0.8).toFixed(2)}px`
+  );
+  image.style.setProperty(
+    '--doodle-rotation-a',
+    `${(-rotation * 0.45).toFixed(2)}deg`
+  );
+  image.style.setProperty('--doodle-x-b', `${horizontalDrift.toFixed(2)}px`);
+  image.style.setProperty('--doodle-y-b', `${verticalDrift.toFixed(2)}px`);
+  image.style.setProperty('--doodle-rotation-b', `${rotation.toFixed(2)}deg`);
+  image.style.setProperty('--doodle-duration', `${duration.toFixed(2)}s`);
+  image.style.setProperty(
+    '--doodle-delay',
+    `${(-randomUnit() * duration).toFixed(2)}s`
+  );
+  featuredCreationMotionSequence += 1;
+  image.dataset.motionSequence = String(featuredCreationMotionSequence);
 }
 
 function shuffledCreations<T>(creations: readonly T[]): T[] {
@@ -212,6 +315,7 @@ function renderSharedBattleClip(): void {
   if (!sharedBattle) return;
 
   sharedBattleActive = true;
+  stopFeaturedCreationRotation();
   battleVideo.src = sharedBattle.clipUrl;
   battleVideo.hidden = false;
   creationPoster.hidden = true;
@@ -228,6 +332,7 @@ function renderSharedBattleClip(): void {
       if (creationLabel) {
         creationLabel.textContent = translate(featuredCreationLabelKey);
       }
+      syncFeaturedCreationRotation();
     },
     { once: true }
   );

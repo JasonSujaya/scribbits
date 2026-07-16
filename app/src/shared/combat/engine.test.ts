@@ -4,6 +4,7 @@ import {
   COMBAT_TICK_RATE,
   MAXIMUM_CHECKPOINTS,
   MAXIMUM_COMBAT_ENTITIES,
+  MAXIMUM_POWER_UP_BONUS_DAMAGE_PERMILLE,
   MAXIMUM_TIMELINE_EVENTS,
   POWER_UP_IDS,
   circleCenterIsInsideCone,
@@ -170,10 +171,20 @@ function assertTranscriptInvariants(transcript: BattleTranscript): void {
     },
     { a: 0, b: 0 }
   );
-  assert(
-    powerUpDamageBySource.a <= 60 && powerUpDamageBySource.b <= 60,
-    'Power-Up damage must obey its per-fighter fight cap'
-  );
+  for (const slot of ['a', 'b'] as const) {
+    const opponent = transcript.result.fighters[slot === 'a' ? 1 : 0];
+    // The budget is spent pre-advantage; the resolved damage may add the 10%
+    // class-advantage multiplier plus one point of integer rounding.
+    const maximumPowerUpDamage =
+      Math.ceil(
+        (opponent.maxHitPoints * MAXIMUM_POWER_UP_BONUS_DAMAGE_PERMILLE * 1.1) /
+          1_000
+      ) + 1;
+    assert(
+      powerUpDamageBySource[slot] <= maximumPowerUpDamage,
+      'Power-Up damage must obey its percentage-based per-fighter fight cap'
+    );
+  }
   for (const slot of ['a', 'b'] as const) {
     assert(
       transcript.timeline.filter(

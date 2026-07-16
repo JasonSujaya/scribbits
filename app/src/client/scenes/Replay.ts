@@ -28,7 +28,6 @@ import {
   label,
   paperWordmark,
   startScene,
-  stickerCard,
   type ErrorPanel,
 } from '../lib/ui';
 import { CanvasActionOverlay } from '../lib/overlay';
@@ -84,7 +83,6 @@ import type {
 } from '../lib/battlepresentation';
 import {
   formatBattleRecapAnnouncement,
-  formatBattleRecapLead,
   planBattleRecap,
 } from '../lib/battlerecap';
 import type {
@@ -112,6 +110,10 @@ import { planReplayPostFightEligibility } from '../lib/replaypostfighteligibilit
 import { planReplayReward } from '../lib/replayreward';
 import { openPowerUpDraft, type PowerUpDraftHandle } from '../lib/powerupdraft';
 import { createPracticeOutcomeControls } from '../lib/replaypracticeoutcome';
+import {
+  createArchivedReplayResult,
+  type ArchivedReplayResult,
+} from '../lib/replayarchivedresult';
 import {
   showSavedReplayIntro,
   type SavedReplayIntro,
@@ -319,6 +321,7 @@ export class Replay extends Scene {
   private arenaRefreshLoading = false;
   private rivalRunFlow: RivalRunFlow | null = null;
   private postFightActions: PostFightActions | null = null;
+  private archivedReplayResult: ArchivedReplayResult | null = null;
   private powerUpDraft: PowerUpDraftHandle | null = null;
   private savedReplayIntro: SavedReplayIntro | null = null;
   private savedReplayExitOverlay: CanvasActionOverlay | null = null;
@@ -374,6 +377,7 @@ export class Replay extends Scene {
     this.arenaRefreshLoading = false;
     this.rivalRunFlow = null;
     this.postFightActions = null;
+    this.archivedReplayResult = null;
     this.powerUpDraft = null;
     this.savedReplayIntro = null;
     this.savedReplayExitOverlay = null;
@@ -474,6 +478,8 @@ export class Replay extends Scene {
       this.rivalRunFlow = null;
       this.postFightActions?.destroy();
       this.postFightActions = null;
+      this.archivedReplayResult?.destroy();
+      this.archivedReplayResult = null;
       this.powerUpDraft?.destroy();
       this.powerUpDraft = null;
       this.savedReplayIntro?.destroy();
@@ -2461,68 +2467,15 @@ export class Replay extends Scene {
     if (perspective === 'viewer_win') this.soundboard.play('win');
     else if (perspective === 'viewer_loss') this.soundboard.play('loss');
 
-    const { width, height } = this.scale;
-    const card = stickerCard(this, width / 2, height / 2, width - 70, 286, {
-      gold: true,
-      tapeColor: UI.tape,
-    });
-    card.setDepth(60).setScale(0.8);
-    this.tweens.add({
-      targets: card,
-      scale: 1,
-      duration: this.reduceMotion ? 0 : 260,
-      ease: 'Back.easeOut',
-    });
-    const top = -143;
-    card.add(
-      label(
-        this,
-        0,
-        top + 48,
-        formatBattleRecapLead(
-          { winnerName: winner.scribbit.name },
-          perspective
-        ),
-        34,
-        UI.goldText,
-        true
-      ).setWordWrapWidth(width - 110)
-    );
-    card.add(
-      label(
-        this,
-        0,
-        top + 96,
-        this.report.rivalRun
-          ? `${formatRivalRunResultLine(this.report.rivalRun)} • ARCHIVED`
-          : 'ARCHIVED • SERVER RESULT SAVED',
-        18,
-        UI.ink,
-        true
-      ).setWordWrapWidth(width - 90)
-    );
-    const returnLabel = this.returnButtonLabel();
-    const returnY = top + 205;
-    const returnWidth = width - 150;
-    this.postFightActions?.destroy();
-    this.postFightActions = createPostFightActions(this, {
-      x: 0,
-      y: returnY,
-      accessibilityX: width / 2,
-      accessibilityY: height / 2 + returnY,
-      width: returnWidth,
-      canChooseRival: false,
-      canBackContender: false,
-      canReplay: false,
-      canShareClip: false,
-      returnLabel,
-      onRivals: () => {},
-      onBackContender: () => {},
-      onReplay: () => {},
-      onShareClip: () => {},
+    this.archivedReplayResult?.destroy();
+    this.archivedReplayResult = createArchivedReplayResult(this, {
+      winnerName: winner.scribbit.name,
+      perspective,
+      rivalRun: this.report.rivalRun,
+      reduceMotion: this.reduceMotion,
+      returnLabel: this.returnButtonLabel(),
       onReturn: () => this.exit(),
     });
-    card.add(this.postFightActions.container);
   }
 
   private finish(): void {

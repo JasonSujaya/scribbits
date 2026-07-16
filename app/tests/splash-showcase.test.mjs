@@ -66,6 +66,23 @@ test('splash excludes founding placeholders and malformed community art', () => 
   assert.deepEqual(selected, []);
 });
 
+test('splash filters every creation by hushgame regardless of username formatting', () => {
+  const selected = selectSplashCreations({
+    recentCreations: [
+      createScribbit({ id: 'plain-hushgame', artist: 'hushgame' }),
+      createScribbit({ id: 'mixed-case-hushgame', artist: ' HushGame ' }),
+      createScribbit({ id: 'prefixed-hushgame', artist: 'u/HUSHGAME' }),
+      createScribbit({ id: 'visible-creation', artist: 'doodle_maker' }),
+    ],
+    hiddenScribbitIds: new Set(),
+  });
+
+  assert.deepEqual(
+    selected.map(({ id }) => id),
+    ['visible-creation']
+  );
+});
+
 test('splash selector never depends on winner or Legend state', () => {
   const selected = selectSplashCreations({
     recentCreations: [

@@ -49,45 +49,43 @@ stable, including the IDs behind the renamed Heart Ink and Ink Rage cards.
 
 ### Common
 
-- **Edge Spring · Bounce** — the first wall touch restores 1% max health and
-  empowers the next two normal hits for 1 extra damage each.
-- **Smudge Step · Survival** — deflects up to 1 damage from the fourth incoming
-  normal attack once per fight.
-- **Paper Shield · Survival** — blocks up to 1 damage from the first incoming
-  special hit.
-- **Combo Spark · Combo** — the third consecutive normal hit deals 10% extra
-  damage, capped at 1, and restores 1% max health.
-- **Center Fold · Survival** — the first crossing below half health restores 1%
+- **Edge Spring · Bounce** — the first wall touch restores 2% max health and
+  makes the next two normal hits deal 25% extra damage.
+- **Smudge Step · Survival** — deflects 50% of every fourth incoming normal
+  attack, up to two times.
+- **Paper Shield · Survival** — blocks 25% of the first incoming special hit.
+- **Combo Spark · Combo** — the third consecutive normal hit deals 25% extra
+  damage and restores 2% max health.
+- **Center Fold · Survival** — the first crossing below half health restores 6%
   max health.
 
 ### Uncommon
 
-- **Double Doodle · Special** — the first special hit repeats for up to 1
-  damage.
-- **Heart Ink · Combo** — every fourth landed normal attack restores 1% max
+- **Double Doodle · Special** — repeats 25% of the first special hit.
+- **Heart Ink · Combo** — every fourth landed normal attack restores 3% max
   health, up to two times.
 - **Counter Sketch · Survival** — the first incoming special hit schedules a
-  counter for up to 2 damage.
+  counter for 50% of the owner's normal attack damage.
 
 ### Rare
 
-- **Wallop · Bounce** — the first two knockbacks into a wall add 3 damage.
+- **Wallop · Bounce** — the first two knockbacks into a wall deal 50% of normal
+  attack damage each.
 - **Echo Mark · Special** — the first special hit empowers the next two normal
-  hits for 10% extra damage, capped at 1 per hit.
+  hits for 40% extra damage.
 
 ### Epic
 
 - **Last Scribble · Survival** — once per fight, survives a knockout blow with
-  1 health.
-- **Ink Rage · Survival** — below half health, the next three normal hits add 3
-  damage and restore 0.5% max health each.
-- **Paper Twin · Combo** — the first two normal hits repeat for up to 1 damage
-  each.
+  10% max health.
+- **Ink Rage · Survival** — below half health, the next three normal hits deal
+  30% extra damage and restore 2% max health each.
+- **Paper Twin · Combo** — the first two normal hits repeat for 50% damage each.
 
 ### Legendary
 
 - **Masterpiece · Any Build** — after three different non-Legendary Power-Ups
-  activate, deals 8 damage and restores 3% max health.
+  activate, deals 10% of enemy max health and restores 10% max health.
 - **Endless Draft · Any Build** — every Common, Uncommon, and Rare Power-Up
   receives one additional activation.
 
@@ -104,7 +102,8 @@ stable, including the IDs behind the renamed Heart Ink and Ink Rage cards.
 
 ## Combat balance ceilings
 
-- Every fighter has a 10-damage Power-Up bonus budget per fight.
+- Every fighter has a Power-Up bonus damage budget equal to 15% of the
+  opponent's maximum health per fight.
 - Power-Up damage follows the same readable class matchup multiplier as every
   other damage source.
 - When both fighters have progressed to the same Power-Up depth, a small
@@ -132,7 +131,7 @@ stable, including the IDs behind the renamed Heart Ink and Ink Rage cards.
 
 - Every Power-Up primitive has a deterministic trigger and cap test.
 - Every legal five-card build remains byte-identical for identical inputs.
-- Every legal build respects the 10-damage bonus ceiling.
+- Every legal build respects the 15%-of-opponent-max-health bonus ceiling.
 - The naked class cycle is gated to 57–65% for each intended edge.
 - Arena visuals and challenges remain distinct, but their combat modifiers are
   neutral. A separate 24,000-fight gate verifies that all ten arenas preserve
@@ -140,6 +139,13 @@ stable, including the IDs behind the renamed Heart Ink and Ink Rage cards.
 - Equal-progression population fields stay within 45–55% through 0, 1, 3,
   and 5 Power-Ups. Five-card counter builds may reach 75% while the overall
   three-class field remains even.
+- Power-Up value is graded upgraded-versus-upgraded on the same combat role,
+  never against vanilla. Equal-rarity peers target 45–55% and hard-fail outside
+  42–58%. Each rarity step must beat the adjacent lower tier by 52–62% in
+  aggregate without exceeding 66% for an individual non-Legendary card.
+- Legendary tests use mirrored legal Common + Uncommon + Rare support, compare
+  both Legendary peers and Legendary-versus-Epic, and require the Legendary to
+  activate in at least 25% of sampled fights.
 - The equipment meta samples every Gear item and rank. One technique keeps its
   full rank identity; multi-technique loadouts average their effects and cap
   each resolved combat axis at 0.5%, preventing eight-slot stacking.

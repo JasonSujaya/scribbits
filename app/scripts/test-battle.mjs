@@ -770,7 +770,7 @@ assert.doesNotMatch(mockServerSource, /const encodeLegacyCursor\b/);
 assert.doesNotMatch(mockServerSource, /const getLegacyCursorOffset\b/);
 assert.doesNotMatch(productionApiSource, /maximumLegacyCardsPageSize/);
 assert.match(mockServerSource, /paginateLegacyCards\(/);
-assert.match(productionApiSource, /parseLegacyCardsPageSize\(/);
+assert.match(productionServerSource, /parseLegacyCardsPageSize\(/);
 const architecturePlanSource = readFileSync(
   join(repoRoot, '..', 'plans', 'v3-scribbits-arena.md'),
   'utf8'
@@ -1369,6 +1369,7 @@ assert.deepEqual(publicRouteInventory, [
   'POST /api/delete-my-data',
   'POST /api/equip-gear',
   'POST /api/equip-title',
+  'POST /api/feedback',
   'POST /api/free-drawing',
   'POST /api/legacy-cards/seen',
   'POST /api/maturity/acknowledge',
@@ -1392,6 +1393,11 @@ assert.deepEqual(
     'GET /internal/analytics/assets/analytics.css',
     'GET /internal/analytics/assets/analytics.js',
     'GET /internal/analytics/query',
+    'GET /internal/feedback',
+    'GET /internal/feedback/assets/feedback.css',
+    'GET /internal/feedback/assets/feedback.js',
+    'GET /internal/feedback/query',
+    'POST /internal/menu/feedback-view',
     'POST /internal/menu/post-create',
     'POST /internal/menu/season-admin-user-ids-validate',
     'POST /internal/menu/seasons-manage',
@@ -3046,6 +3052,254 @@ assert.equal(
   'unauthenticated requests must not acquire a player mutation lease'
 );
 
+const unauthenticatedDailyLoginResponse =
+  await productionApiContract.app.request('/api/daily-login/claim', {
+    method: 'POST',
+  });
+assert.equal(unauthenticatedDailyLoginResponse.status, 401);
+assert.deepEqual(await unauthenticatedDailyLoginResponse.json(), {
+  status: 'error',
+  code: 'unauthorized',
+  message: 'Sign in to claim your daily login reward.',
+});
+assert.equal(
+  productionApiContract.apiContractRuntimeState.watchCalls,
+  0,
+  'anonymous daily login must not acquire a mutation lease'
+);
+
+const unauthenticatedInventoryResponse =
+  await productionApiContract.app.request('/api/inventory');
+assert.equal(unauthenticatedInventoryResponse.status, 200);
+assert.deepEqual(await unauthenticatedInventoryResponse.json(), {
+  items: {},
+  gear: {},
+  pens: [],
+  titles: [],
+  equippedTitle: null,
+  discovered: [],
+});
+const unauthenticatedInventoryMutations = [
+  ['/api/equip-gear', 'Sign in to equip Gear.'],
+  ['/api/equip-title', 'Sign in to wear a creator title.'],
+  ['/api/merge-gear', 'Sign in to forge your Gear.'],
+  ['/api/capsule', 'Sign in to open a Mystery Ink capsule.'],
+];
+for (const [route, message] of unauthenticatedInventoryMutations) {
+  const response = await productionApiContract.app.request(route, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: '{}',
+  });
+  assert.equal(response.status, 401);
+  assert.deepEqual(await response.json(), {
+    status: 'error',
+    code: 'unauthorized',
+    message,
+  });
+}
+assert.equal(
+  productionApiContract.apiContractRuntimeState.watchCalls,
+  0,
+  'anonymous inventory routes must not acquire a mutation lease'
+);
+
+const unauthenticatedLegacyCardsResponse =
+  await productionApiContract.app.request('/api/legacy-cards?limit=1');
+assert.equal(unauthenticatedLegacyCardsResponse.status, 200);
+assert.deepEqual(await unauthenticatedLegacyCardsResponse.json(), {
+  cards: [],
+  nextCursor: null,
+});
+const unauthenticatedLegendsResponse =
+  await productionApiContract.app.request('/api/legends');
+assert.equal(unauthenticatedLegendsResponse.status, 200);
+assert.deepEqual(await unauthenticatedLegendsResponse.json(), {
+  legends: [],
+  nextCursor: null,
+});
+const unauthenticatedLegacySeenResponse =
+  await productionApiContract.app.request('/api/legacy-cards/seen', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ throughArchivedDay: 1 }),
+  });
+assert.equal(unauthenticatedLegacySeenResponse.status, 401);
+assert.deepEqual(await unauthenticatedLegacySeenResponse.json(), {
+  status: 'error',
+  code: 'unauthorized',
+  message: 'Sign in to file away Legacy Cards.',
+});
+assert.equal(
+  productionApiContract.apiContractRuntimeState.watchCalls,
+  0,
+  'anonymous Legacy and Legends routes must not acquire a mutation lease'
+);
+
+productionApiContract.resetApiContractRuntime();
+const dailyLoginResponse = await productionApiContract.app.request(
+  '/api/daily-login/claim',
+  { method: 'POST' }
+);
+assert.equal(dailyLoginResponse.status, 200);
+const dailyLoginBody = await dailyLoginResponse.json();
+assert.equal(dailyLoginBody.dailyLogin.claimedTrackDays, 1);
+assert.equal(dailyLoginBody.dailyLogin.totalClaimedDays, 1);
+assert.equal(dailyLoginBody.dailyLogin.claimedToday, true);
+assert.deepEqual(
+  {
+    trackDay: dailyLoginBody.reward.trackDay,
+    cycleDay: dailyLoginBody.reward.cycleDay,
+    inkAwarded: dailyLoginBody.reward.inkAwarded,
+    gearId: dailyLoginBody.reward.gearId,
+  },
+  { trackDay: 1, cycleDay: null, inkAwarded: 1, gearId: null }
+);
+assert.ok(Number.isSafeInteger(dailyLoginBody.reward.claimedAtMs));
+assert.equal(dailyLoginBody.ink, 1);
+assert.ok(
+  productionApiContract.apiContractRuntimeState.watchCalls >= 2,
+  'daily login must run under the player lease and its atomic claim transaction'
+);
+assert.equal(
+  productionApiContract.getApiContractString(playerMutationLockKey),
+  undefined,
+  'successful daily login must release the player mutation lease'
+);
+
+const repeatedDailyLoginResponse = await productionApiContract.app.request(
+  '/api/daily-login/claim',
+  { method: 'POST' }
+);
+assert.equal(repeatedDailyLoginResponse.status, 200);
+assert.deepEqual(await repeatedDailyLoginResponse.json(), dailyLoginBody);
+assert.equal(
+  productionApiContract.getApiContractString(
+    inkStore.getInkKey('api-contract-user')
+  ),
+  '1',
+  'same-day daily login retries must not duplicate Ink'
+);
+assert.equal(
+  productionApiContract.getApiContractString(playerMutationLockKey),
+  undefined,
+  'same-day daily login retries must release the player mutation lease'
+);
+
+productionApiContract.resetApiContractRuntime();
+productionApiContract.setApiContractString('arena:currentDay', 1);
+const rolloverDailyLoginResponse = await productionApiContract.app.request(
+  '/api/daily-login/claim',
+  { method: 'POST' }
+);
+assert.equal(rolloverDailyLoginResponse.status, 409);
+assert.deepEqual(await rolloverDailyLoginResponse.json(), {
+  status: 'error',
+  code: 'conflict',
+  message: 'The Rumble is resolving. Try again in a moment.',
+});
+assert.equal(
+  productionApiContract.getApiContractString(
+    inkStore.getInkKey('api-contract-user')
+  ),
+  undefined,
+  'rollover conflicts must not mutate daily rewards'
+);
+assert.equal(
+  productionApiContract.getApiContractString(playerMutationLockKey),
+  undefined,
+  'rollover conflicts must release the player mutation lease'
+);
+
+productionApiContract.resetApiContractRuntime();
+productionApiContract.failNextApiContractHashRead();
+const dailyLoginRouteErrors = [];
+const originalDailyLoginConsoleError = console.error;
+console.error = (...values) => dailyLoginRouteErrors.push(values);
+let failedDailyLoginResponse;
+try {
+  failedDailyLoginResponse = await productionApiContract.app.request(
+    '/api/daily-login/claim',
+    { method: 'POST' }
+  );
+} finally {
+  console.error = originalDailyLoginConsoleError;
+}
+assert.equal(failedDailyLoginResponse.status, 500);
+assert.deepEqual(await failedDailyLoginResponse.json(), {
+  status: 'error',
+  code: 'server_error',
+  message: 'Your daily reward would not open. Try again soon.',
+});
+assert.equal(dailyLoginRouteErrors.length, 1);
+assert.equal(
+  productionApiContract.getApiContractString(
+    inkStore.getInkKey('api-contract-user')
+  ),
+  undefined,
+  'failed daily login claims must not mutate Ink'
+);
+assert.equal(
+  productionApiContract.getApiContractString(playerMutationLockKey),
+  undefined,
+  'failed daily login claims must release the player mutation lease'
+);
+
+const invalidInventoryMutations = [
+  ['/api/equip-gear', 'Choose a valid living Scribbit and Gear slot.'],
+  ['/api/equip-title', 'Choose an owned title or remove your current title.'],
+  ['/api/merge-gear', 'Forge Gear with a valid operation id.'],
+  ['/api/capsule', 'Open the capsule with a valid operation id.'],
+];
+for (const [route, message] of invalidInventoryMutations) {
+  productionApiContract.resetApiContractRuntime();
+  const response = await productionApiContract.app.request(route, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: '{}',
+  });
+  assert.equal(response.status, 400);
+  assert.deepEqual(await response.json(), {
+    status: 'error',
+    code: 'bad_request',
+    message,
+  });
+  assert.ok(productionApiContract.apiContractRuntimeState.watchCalls >= 3);
+  assert.equal(
+    productionApiContract.getApiContractString(playerMutationLockKey),
+    undefined
+  );
+}
+
+productionApiContract.resetApiContractRuntime();
+productionApiContract.setApiContractString('arena:currentDay', 25);
+const pendingCapsuleOperationId = 'pending-capsule-0001';
+productionApiContract.setApiContractString(
+  inkStore.getCapsuleOperationKey(
+    'api-contract-user',
+    pendingCapsuleOperationId
+  ),
+  `pending:${Date.now()}`
+);
+const pendingCapsuleResponse = await productionApiContract.app.request(
+  '/api/capsule',
+  {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ operationId: pendingCapsuleOperationId }),
+  }
+);
+assert.equal(pendingCapsuleResponse.status, 409);
+assert.deepEqual(await pendingCapsuleResponse.json(), {
+  status: 'error',
+  code: 'conflict',
+  message: 'That capsule is already opening. Try again in a moment.',
+});
+assert.equal(
+  productionApiContract.getApiContractString(playerMutationLockKey),
+  undefined
+);
+
 productionApiContract.resetApiContractRuntime();
 const malformedPickResponse = await productionApiContract.app.request(
   '/api/back',
@@ -3071,6 +3325,145 @@ assert.equal(
   'validation failures must still release the player mutation lease'
 );
 
+const invalidDrawingSubmissionBody = JSON.stringify({
+  padding: 'x'.repeat(
+    scribbitCore.MAXIMUM_DRAWING_SUBMISSION_BODY_BYTES - 1_024
+  ),
+});
+const oversizedDrawingSubmissionBody = JSON.stringify({
+  padding: 'x'.repeat(scribbitCore.MAXIMUM_DRAWING_SUBMISSION_BODY_BYTES + 1),
+});
+for (const route of ['/api/free-drawing', '/api/scribbit']) {
+  productionApiContract.resetApiContractRuntime();
+  const invalidDrawingResponse = await productionApiContract.app.request(
+    route,
+    {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: invalidDrawingSubmissionBody,
+    }
+  );
+  assert.equal(
+    invalidDrawingResponse.status,
+    400,
+    `${route} must allow a body below the submission boundary to reach validation`
+  );
+  assert.ok(
+    productionApiContract.apiContractRuntimeState.watchCalls >= 3,
+    `${route} validation must run inside the player mutation lease`
+  );
+  assert.equal(
+    productionApiContract.getApiContractString(playerMutationLockKey),
+    undefined,
+    `${route} validation must release the player mutation lease`
+  );
+
+  productionApiContract.resetApiContractRuntime();
+  const oversizedDrawingResponse = await productionApiContract.app.request(
+    route,
+    {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: oversizedDrawingSubmissionBody,
+    }
+  );
+  assert.equal(oversizedDrawingResponse.status, 413);
+  assert.deepEqual(await oversizedDrawingResponse.json(), {
+    status: 'error',
+    code: 'payload_too_large',
+    message: 'That drawing submission is too large.',
+  });
+  assert.ok(
+    productionApiContract.apiContractRuntimeState.watchCalls >= 3,
+    `${route} payload rejection must run inside the player mutation lease`
+  );
+  assert.equal(
+    productionApiContract.getApiContractString(playerMutationLockKey),
+    undefined,
+    `${route} payload rejection must release the player mutation lease`
+  );
+}
+
+const maturityDay = 25;
+const matureScribbit = scribbitCore.createScribbit({
+  id: 'maturity-api-contract',
+  draft: {
+    name: 'Graduate',
+    stats: { chonk: 25, spike: 25, zip: 25, charm: 25 },
+    element: 'storm',
+    accessories: [],
+  },
+  artist: 'api_contract_user',
+  imageUrl: '/maturity-api-contract.png',
+  day: maturityDay - arena.LIFESPAN_DAYS,
+});
+productionApiContract.resetApiContractRuntime();
+productionApiContract.setApiContractString('arena:currentDay', maturityDay);
+productionApiContract.setApiContractString(
+  scribbitCore.getScribbitKey(matureScribbit.id),
+  scribbitCore.serializeScribbit(matureScribbit)
+);
+productionApiContract.setApiContractString(
+  scribbitCore.getScribbitOwnerKey(matureScribbit.id),
+  'api-contract-user'
+);
+const maturityResponse = await productionApiContract.app.request(
+  '/api/maturity/acknowledge',
+  {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ scribbitId: matureScribbit.id }),
+  }
+);
+assert.equal(maturityResponse.status, 200);
+assert.deepEqual(await maturityResponse.json(), {
+  scribbitId: matureScribbit.id,
+});
+assert.ok(
+  Number(
+    productionApiContract.getApiContractHashField(
+      'user:api-contract-user:maturity-acknowledgements',
+      matureScribbit.id
+    )
+  ) > 0,
+  'maturity acknowledgement must persist for the authenticated owner'
+);
+assert.equal(
+  productionApiContract.getApiContractString(playerMutationLockKey),
+  undefined
+);
+
+productionApiContract.resetApiContractRuntime();
+productionApiContract.setApiContractString('arena:currentDay', maturityDay);
+productionApiContract.setApiContractString(
+  scribbitCore.getScribbitKey(matureScribbit.id),
+  scribbitCore.serializeScribbit(matureScribbit)
+);
+productionApiContract.setApiContractString(
+  scribbitCore.getScribbitOwnerKey(matureScribbit.id),
+  'another-user'
+);
+const foreignMaturityResponse = await productionApiContract.app.request(
+  '/api/maturity/acknowledge',
+  {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ scribbitId: matureScribbit.id }),
+  }
+);
+assert.equal(foreignMaturityResponse.status, 409);
+assert.equal(
+  productionApiContract.getApiContractHashField(
+    'user:api-contract-user:maturity-acknowledgements',
+    matureScribbit.id
+  ),
+  undefined
+);
+assert.equal(
+  productionApiContract.getApiContractString(playerMutationLockKey),
+  undefined
+);
+
 productionApiContract.resetApiContractRuntime();
 const inventoryResponse =
   await productionApiContract.app.request('/api/inventory');
@@ -3087,6 +3480,366 @@ assert.ok(
   productionApiContract.apiContractRuntimeState.watchCalls >= 3,
   'a compatibility GET that may migrate inventory must use the lease middleware'
 );
+assert.equal(
+  productionApiContract.getApiContractString(playerMutationLockKey),
+  undefined
+);
+
+productionApiContract.resetApiContractRuntime();
+const legacyCardsResponse = await productionApiContract.app.request(
+  '/api/legacy-cards?limit=1'
+);
+assert.equal(legacyCardsResponse.status, 200);
+assert.deepEqual(await legacyCardsResponse.json(), {
+  cards: [],
+  nextCursor: null,
+});
+assert.ok(
+  productionApiContract.apiContractRuntimeState.watchCalls >= 3,
+  'Legacy Deck reads that may rebuild the index must use the mutation lease'
+);
+assert.equal(
+  productionApiContract.getApiContractString(playerMutationLockKey),
+  undefined
+);
+
+productionApiContract.resetApiContractRuntime();
+const invalidLegacyCardsResponse = await productionApiContract.app.request(
+  '/api/legacy-cards?cursor=not-a-cursor&limit=1'
+);
+assert.equal(invalidLegacyCardsResponse.status, 400);
+assert.deepEqual(await invalidLegacyCardsResponse.json(), {
+  status: 'error',
+  code: 'bad_request',
+  message: 'Use a valid Legacy Deck cursor and page size.',
+});
+assert.equal(
+  productionApiContract.getApiContractString(playerMutationLockKey),
+  undefined,
+  'Legacy Deck validation failures must release the mutation lease'
+);
+
+productionApiContract.resetApiContractRuntime();
+const invalidLegacySeenResponse = await productionApiContract.app.request(
+  '/api/legacy-cards/seen',
+  {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: '{}',
+  }
+);
+assert.equal(invalidLegacySeenResponse.status, 400);
+assert.deepEqual(await invalidLegacySeenResponse.json(), {
+  status: 'error',
+  code: 'bad_request',
+  message: 'Choose a valid archived day to file away.',
+});
+assert.equal(
+  productionApiContract.getApiContractString(playerMutationLockKey),
+  undefined,
+  'Legacy seen validation failures must release the mutation lease'
+);
+
+productionApiContract.resetApiContractRuntime();
+const createApiRouteTerminalScribbit = ({ id, bornDay, legend = false }) => {
+  const scribbit = scribbitCore.createScribbit({
+    id,
+    draft: {
+      name: id,
+      stats: { chonk: 25, spike: 25, zip: 25, charm: 25 },
+      element: 'storm',
+      accessories: [],
+    },
+    artist: 'api_contract_user',
+    imageUrl: `/${id}.png`,
+    day: bornDay,
+  });
+  return scribbitCore.resolveExpiredScribbitStatus({
+    ...scribbit,
+    belief: legend ? arena.BELIEF_LEGEND_THRESHOLD : 0,
+  });
+};
+const routeLegacyCards = [];
+for (let index = 0; index < 3; index += 1) {
+  const archived = createApiRouteTerminalScribbit({
+    id: `api-route-legacy-${index + 1}`,
+    bornDay: index + 1,
+  });
+  routeLegacyCards.push(archived);
+  await scribbitCore.storeScribbit(
+    productionApiContract.apiContractRedis,
+    'api-contract-user',
+    archived
+  );
+}
+productionApiContract.deleteApiContractKeys(
+  scribbitCore.getUserLegacyCardsKey('api-contract-user'),
+  legacyCore.getLegacyIndexVersionKey('api-contract-user')
+);
+const firstRouteLegacyPage = await productionApiContract.app.request(
+  '/api/legacy-cards?limit=2'
+);
+assert.equal(firstRouteLegacyPage.status, 200);
+const firstRouteLegacyState = await firstRouteLegacyPage.json();
+assert.equal(firstRouteLegacyState.cards.length, 2);
+assert.match(firstRouteLegacyState.nextCursor, /^v2\|/);
+assert.equal(
+  productionApiContract.getApiContractString(
+    legacyCore.getLegacyIndexVersionKey('api-contract-user')
+  ),
+  '1',
+  'the production Legacy route must rebuild a missing index'
+);
+const secondRouteLegacyPage = await productionApiContract.app.request(
+  `/api/legacy-cards?limit=2&cursor=${encodeURIComponent(
+    firstRouteLegacyState.nextCursor
+  )}`
+);
+assert.equal(secondRouteLegacyPage.status, 200);
+const secondRouteLegacyState = await secondRouteLegacyPage.json();
+assert.equal(secondRouteLegacyState.cards.length, 1);
+assert.equal(secondRouteLegacyState.nextCursor, null);
+assert.equal(
+  new Set([
+    ...firstRouteLegacyState.cards.map(({ id }) => id),
+    ...secondRouteLegacyState.cards.map(({ id }) => id),
+  ]).size,
+  routeLegacyCards.length,
+  'production Legacy cursor paging must neither duplicate nor skip cards'
+);
+
+productionApiContract.resetApiContractRuntime();
+productionApiContract.setApiContractString('arena:currentDay', 25);
+const successfulLegacySeenResponse = await productionApiContract.app.request(
+  '/api/legacy-cards/seen',
+  {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ throughArchivedDay: 20 }),
+  }
+);
+assert.equal(successfulLegacySeenResponse.status, 200);
+assert.deepEqual(await successfulLegacySeenResponse.json(), {
+  seenThroughDay: 20,
+});
+assert.equal(
+  productionApiContract.getApiContractString(
+    legacyCore.getLegacySeenDayKey('api-contract-user')
+  ),
+  '20'
+);
+const futureLegacySeenResponse = await productionApiContract.app.request(
+  '/api/legacy-cards/seen',
+  {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ throughArchivedDay: 26 }),
+  }
+);
+assert.equal(futureLegacySeenResponse.status, 400);
+assert.deepEqual(await futureLegacySeenResponse.json(), {
+  status: 'error',
+  code: 'bad_request',
+  message: 'That Legacy Card has not been archived yet.',
+});
+assert.equal(
+  productionApiContract.getApiContractString(
+    legacyCore.getLegacySeenDayKey('api-contract-user')
+  ),
+  '20',
+  'a future seen-day request must not alter the stored receipt'
+);
+
+productionApiContract.resetApiContractRuntime();
+const legendsResponse = await productionApiContract.app.request('/api/legends');
+assert.equal(legendsResponse.status, 200);
+assert.deepEqual(await legendsResponse.json(), {
+  legends: [],
+  nextCursor: null,
+});
+assert.equal(
+  productionApiContract.apiContractRuntimeState.watchCalls,
+  0,
+  'Legends is a read-only GET and must remain outside mutation leasing'
+);
+
+productionApiContract.resetApiContractRuntime();
+const routeLegends = [];
+for (let index = 0; index < 3; index += 1) {
+  const legend = createApiRouteTerminalScribbit({
+    id: `api-route-legend-${index + 1}`,
+    bornDay: index + 1,
+    legend: true,
+  });
+  routeLegends.push(legend);
+  await scribbitCore.storeScribbit(
+    productionApiContract.apiContractRedis,
+    'legend-owner',
+    legend
+  );
+  await scribbitCore.addLegend(
+    productionApiContract.apiContractRedis,
+    legend,
+    10 - index
+  );
+}
+await productionApiContract.apiContractRedis.zAdd(
+  scribbitCore.getLegendsKey(),
+  { member: 'api-route-stale-legend', score: 11 }
+);
+await moderationCore.reportAndHideScribbit(
+  productionApiContract.apiContractRedis,
+  'api-contract-user',
+  routeLegends[0].id,
+  Date.now()
+);
+const legendSeedWatchCalls =
+  productionApiContract.apiContractRuntimeState.watchCalls;
+const firstVisibleLegendResponse = await productionApiContract.app.request(
+  '/api/legends?limit=1'
+);
+assert.equal(firstVisibleLegendResponse.status, 200);
+const firstVisibleLegendPage = await firstVisibleLegendResponse.json();
+assert.deepEqual(
+  firstVisibleLegendPage.legends.map(({ id }) => id),
+  [routeLegends[1].id]
+);
+assert.equal(
+  firstVisibleLegendPage.nextCursor,
+  '3',
+  'Legends cursor must consume stale and player-hidden raw ranks'
+);
+const secondVisibleLegendResponse = await productionApiContract.app.request(
+  `/api/legends?limit=1&cursor=${firstVisibleLegendPage.nextCursor}`
+);
+assert.equal(secondVisibleLegendResponse.status, 200);
+assert.deepEqual(
+  (await secondVisibleLegendResponse.json()).legends.map(({ id }) => id),
+  [routeLegends[2].id]
+);
+assert.equal(
+  productionApiContract.apiContractRuntimeState.watchCalls,
+  legendSeedWatchCalls,
+  'nonempty Legends paging must remain outside mutation leasing'
+);
+
+productionApiContract.resetApiContractRuntime();
+productionApiContract.setApiContractString('arena:currentDay', 25);
+const seasonResponse = await productionApiContract.app.request('/api/season');
+assert.equal(seasonResponse.status, 200);
+assert.deepEqual(await seasonResponse.json(), {
+  current: {
+    id: 'season-1',
+    number: 1,
+    name: 'Season 1',
+    campaignName: 'First Ink',
+    status: 'active',
+    startArenaDay: 25,
+    endArenaDay: 84,
+    daysRemaining: 60,
+    scoringRuleSetId: 'rumble-clout-v1',
+    activeEvent: {
+      id: 'opening-rumble',
+      name: 'Opening Rumble',
+      startArenaDay: 25,
+      endArenaDay: 31,
+      ruleSetId: 'double-clout',
+      daysRemaining: 7,
+      scoreMultiplier: 2,
+    },
+    me: { score: 0, rank: 0 },
+  },
+  next: null,
+  latestFinalized: null,
+  latestReward: null,
+});
+const seasonInitializationWatchCalls =
+  productionApiContract.apiContractRuntimeState.watchCalls;
+assert.ok(seasonInitializationWatchCalls >= 1);
+const repeatedSeasonResponse =
+  await productionApiContract.app.request('/api/season');
+assert.equal(repeatedSeasonResponse.status, 200);
+assert.equal(
+  productionApiContract.apiContractRuntimeState.watchCalls,
+  seasonInitializationWatchCalls,
+  'an initialized public season read must not acquire another transaction'
+);
+const seasonBoardResponse =
+  await productionApiContract.app.request('/api/season-board');
+assert.equal(seasonBoardResponse.status, 200);
+const seasonBoardState = await seasonBoardResponse.json();
+assert.equal(seasonBoardState.season.id, 'season-1');
+assert.deepEqual(seasonBoardState.top, []);
+assert.deepEqual(seasonBoardState.me, {
+  username: 'api_contract_user',
+  score: 0,
+  rank: 0,
+  rewardTier: null,
+});
+assert.equal(seasonBoardState.finalized, false);
+assert.equal(
+  productionApiContract.apiContractRuntimeState.watchCalls,
+  seasonInitializationWatchCalls,
+  'an initialized season-board read must not acquire another transaction'
+);
+assert.equal(
+  productionApiContract.getApiContractString(playerMutationLockKey),
+  undefined
+);
+
+productionApiContract.resetApiContractRuntime({
+  userId: null,
+  username: null,
+});
+productionApiContract.setApiContractString('arena:currentDay', 25);
+const anonymousSeasonBoardResponse =
+  await productionApiContract.app.request('/api/season-board');
+assert.equal(anonymousSeasonBoardResponse.status, 200);
+assert.equal((await anonymousSeasonBoardResponse.json()).me, null);
+assert.equal(
+  productionApiContract.getApiContractString(playerMutationLockKey),
+  undefined,
+  'public season-board initialization must not use a player mutation lease'
+);
+
+productionApiContract.resetApiContractRuntime();
+productionApiContract.setApiContractString('arena:currentDay', 25);
+productionApiContract.setApiContractString('season:initialized', 'season-1');
+productionApiContract.setApiContractHashField(
+  'season:catalog',
+  'season-1',
+  '{'
+);
+const originalSeasonConsoleError = console.error;
+console.error = () => undefined;
+let corruptSeasonResponse;
+try {
+  corruptSeasonResponse =
+    await productionApiContract.app.request('/api/season');
+} finally {
+  console.error = originalSeasonConsoleError;
+}
+assert.equal(corruptSeasonResponse.status, 500);
+assert.deepEqual(await corruptSeasonResponse.json(), {
+  status: 'error',
+  code: 'server_error',
+  message: 'The season board is unavailable. Try again soon.',
+});
+const originalSeasonBoardConsoleError = console.error;
+console.error = () => undefined;
+let corruptSeasonBoardResponse;
+try {
+  corruptSeasonBoardResponse =
+    await productionApiContract.app.request('/api/season-board');
+} finally {
+  console.error = originalSeasonBoardConsoleError;
+}
+assert.equal(corruptSeasonBoardResponse.status, 500);
+assert.deepEqual(await corruptSeasonBoardResponse.json(), {
+  status: 'error',
+  code: 'server_error',
+  message: 'The season board is unavailable. Try again soon.',
+});
 assert.equal(
   productionApiContract.getApiContractString(playerMutationLockKey),
   undefined
@@ -3305,6 +4058,55 @@ const requestMock = async (path, init) => {
   return { response, body: await response.json() };
 };
 try {
+  const matureMockAcknowledgement = await requestMock(
+    '/api/maturity/acknowledge',
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ scribbitId: 'mine-moss-bun' }),
+    }
+  );
+  assert.equal(matureMockAcknowledgement.response.status, 200);
+  assert.deepEqual(matureMockAcknowledgement.body, {
+    scribbitId: 'mine-moss-bun',
+  });
+  assert.equal(
+    (
+      await requestMock('/api/maturity/acknowledge', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ scribbitId: 'mine-paper-spark' }),
+      })
+    ).response.status,
+    409,
+    'the mock must reject a Scribbit that has not matured'
+  );
+  assert.equal(
+    (
+      await requestMock('/api/maturity/acknowledge', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ scribbitId: '?' }),
+      })
+    ).response.status,
+    400,
+    'the mock must reject malformed maturity IDs like production'
+  );
+
+  for (const route of ['/api/free-drawing', '/api/scribbit']) {
+    const oversizedMockSubmission = await requestMock(route, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: oversizedDrawingSubmissionBody,
+    });
+    assert.equal(oversizedMockSubmission.response.status, 413);
+    assert.deepEqual(oversizedMockSubmission.body, {
+      status: 'error',
+      code: 'payload_too_large',
+      message: 'That drawing submission is too large.',
+    });
+  }
+
   const firstMockLegacyPage = await requestMock('/api/legacy-cards?limit=1');
   assert.equal(firstMockLegacyPage.response.status, 200);
   assert.equal(firstMockLegacyPage.body.cards.length, 1);

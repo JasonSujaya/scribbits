@@ -977,8 +977,8 @@ test('healthy battle hearts use one readable coral health color', () => {
   );
   assert.match(
     replayBattleHudSource,
-    /let floatingVitalsVisible = false/,
-    'moving fighter labels should be opt-in so health is not duplicated by default'
+    /let floatingVitalsVisible = true/,
+    'moving fighter labels should be visible by default so each character stays identifiable'
   );
 });
 

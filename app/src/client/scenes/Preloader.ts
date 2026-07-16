@@ -15,6 +15,7 @@ import {
   setGameBootProgress,
   setGameBootRetry,
 } from '../lib/gameboot';
+import { playHomeSoundtrack } from '../lib/soundtrack';
 
 // Fetch the arena snapshot while the complete primary play loop and its artwork
 // load in parallel. Home is revealed only when normal navigation is ready.
@@ -25,6 +26,10 @@ export class Preloader extends Scene {
   }
 
   create(): void {
+    // Expanded mode is opened by the player's explicit splash/challenge tap.
+    // Request music immediately while that launch gesture is still fresh;
+    // strict WebViews retry silently on the player's first in-game interaction.
+    playHomeSoundtrack();
     generateCoreArt(this);
     generateAllElementBadges(this);
     void this.loadArena();

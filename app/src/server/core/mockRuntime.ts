@@ -7,6 +7,11 @@ export {
   analyticsAdminHtml,
   analyticsAdminJavaScript,
 } from '../admin/analyticsPage';
+export {
+  feedbackAdminCss,
+  feedbackAdminHtml,
+  feedbackAdminJavaScript,
+} from '../admin/feedbackPage';
 export { generateForecastForDay } from './forecast';
 export { createPracticeBattle } from './practice';
 export { getRumbleProgressionRewards } from './dailyJob';
@@ -16,6 +21,7 @@ export {
   createScribbit,
   createScribbitLegacy,
   getLevelForXp,
+  MAXIMUM_DRAWING_SUBMISSION_BODY_BYTES,
   resolveExpiredScribbitStatus,
   validateAndAnalyzeScribbitSubmission,
 } from './scribbit';
@@ -87,6 +93,7 @@ export {
   CAPSULE_COST,
   CAPSULE_PITY,
   GEAR_MERGE_COPY_COST,
+  getScribbitLifecycleStage,
   INK_REWARDS,
   MAX_ALIVE_PER_USER,
   MAX_GROWING_PER_USER,
