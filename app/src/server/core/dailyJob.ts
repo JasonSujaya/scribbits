@@ -5,6 +5,7 @@ import type {
 } from '../../shared/arena';
 import { INK_REWARDS, XP_REWARDS, isElement } from '../../shared/arena';
 import { saveBattleReport, setFeaturedRumbleReport } from './battleStore';
+import { recordDailyStrongestFight } from './communityPostCandidates';
 import {
   ensureCurrentArenaDay,
   ensureForecastForDay,
@@ -528,6 +529,7 @@ const resolveArenaDay = async (
       await setFeaturedRumbleReport(storage, report, index);
     }
   }
+  await recordDailyStrongestFight(storage, resolvedDay, resolution.reports);
 
   const champion = await crownChampionSnapshot(
     storage,

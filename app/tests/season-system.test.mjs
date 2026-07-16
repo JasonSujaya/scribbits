@@ -210,6 +210,23 @@ test('Rollover freezes standings, awards receipts once, and drafts the next seas
     await seasons.finalizeDueSeasons(memory.storage, 60, 61_000),
     []
   );
+  assert.deepEqual(
+    await seasons.loadSeasonFinalBoardEntries(memory.storage, 'season-1'),
+    [
+      {
+        username: 'InkWinner',
+        score: 42,
+        rank: 1,
+        rewardTier: 'champion',
+      },
+      {
+        username: 'InkSecond',
+        score: 21,
+        rank: 2,
+        rewardTier: 'top-ten',
+      },
+    ]
+  );
 
   const catalog = await seasons.loadSeasonCatalog(memory.storage);
   assert.deepEqual(

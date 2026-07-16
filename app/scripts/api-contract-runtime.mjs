@@ -314,6 +314,29 @@ export const redis = {
   },
 };
 
+const submitRedditPost = async (options) => {
+  if (apiContractRuntimeState.failNextPostSubmission) {
+    apiContractRuntimeState.failNextPostSubmission = false;
+    throw new Error('simulated Reddit post submission failure');
+  }
+  apiContractRuntimeState.submittedPosts += 1;
+  const post = {
+    id: `api-contract-post-${apiContractRuntimeState.submittedPosts}`,
+    title: options.title,
+    authorName: context.appName,
+    async getPostData() {
+      return options.postData;
+    },
+    async delete() {
+      const index = submittedPosts.findIndex(({ id }) => id === post.id);
+      if (index >= 0) submittedPosts.splice(index, 1);
+      apiContractRuntimeState.deletedPosts += 1;
+    },
+  };
+  submittedPosts.unshift(post);
+  return post;
+};
+
 export const reddit = {
   async getCurrentUsername() {
     return context.username;
@@ -344,26 +367,10 @@ export const reddit = {
     };
   },
   async submitCustomPost(options) {
-    if (apiContractRuntimeState.failNextPostSubmission) {
-      apiContractRuntimeState.failNextPostSubmission = false;
-      throw new Error('simulated Reddit post submission failure');
-    }
-    apiContractRuntimeState.submittedPosts += 1;
-    const post = {
-      id: `api-contract-post-${apiContractRuntimeState.submittedPosts}`,
-      title: options.title,
-      authorName: context.appName,
-      async getPostData() {
-        return options.postData;
-      },
-      async delete() {
-        const index = submittedPosts.findIndex(({ id }) => id === post.id);
-        if (index >= 0) submittedPosts.splice(index, 1);
-        apiContractRuntimeState.deletedPosts += 1;
-      },
-    };
-    submittedPosts.unshift(post);
-    return post;
+    return submitRedditPost(options);
+  },
+  async submitPost(options) {
+    return submitRedditPost(options);
   },
   getNewPosts() {
     return {

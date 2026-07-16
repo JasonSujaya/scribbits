@@ -1250,6 +1250,16 @@ const finalSnapshotToBoardEntries = (
   }));
 };
 
+export const loadSeasonFinalBoardEntries = async (
+  storage: ArenaStorage,
+  seasonId: string
+): Promise<readonly SeasonBoardEntry[] | null> => {
+  const snapshot = parseFinalSnapshot(
+    await storage.hGet(seasonFinalsKey, seasonId)
+  );
+  return snapshot ? finalSnapshotToBoardEntries(snapshot) : null;
+};
+
 export const loadSeasonBoard = async (
   storage: ArenaStorage,
   currentArenaDay: number,

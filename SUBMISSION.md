@@ -384,9 +384,10 @@ on one exercise.
 - Bound both visible Halo `35%` matchup explanations and Smearstep's `TWICE`
   label to the configuration the combat engine consumes, while retaining exact
   snapshots for all ten cards and an unchanged Smearstep golden transcript.
-- Replaced daily Reddit post/comment publication with one stable
-  `Draw a Scribbit. Watch it fight.` app post and upgrade cleanup for obsolete
-  Scribbits posts.
+- Kept one stable playable `Draw a Scribbit. Watch it fight.` app post while
+  adding idempotent community text posts for each three-day Doodle Dare pool,
+  season and scoring-event transitions, final standings, and the strongest
+  Rumble fight from every seven-day Arena week.
 - Made transparent and legacy paper-backed PNGs produce identical
   server-authoritative stats, with automated parity coverage.
 - Added report/hide, owner removal, full player-data deletion, Reddit-only

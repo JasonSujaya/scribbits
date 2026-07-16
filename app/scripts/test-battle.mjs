@@ -505,7 +505,7 @@ assert.doesNotMatch(
   nightlyJobSource,
   /\bcreatePost\b|\bCreateArenaPost\b|\bCreatedArenaPost\b|\bpostId\b|getArenaPostKey/
 );
-pass('nightly resolution has no parallel post-publication path');
+pass('nightly resolution keeps post publication in the maintenance path');
 
 const dataLeaseSource = readFileSync(
   join(repoRoot, 'src', 'server', 'core', 'dataDeletion.ts'),
@@ -1595,8 +1595,25 @@ const canonicalInstallDay = Number(
 assert.ok(Number.isSafeInteger(canonicalInstallDay));
 assert.equal(
   productionApiContract.apiContractRuntimeState.submittedPosts,
-  1,
-  'menu creates the current post while install schedules maintenance'
+  2,
+  'maintenance keeps the playable post and publishes the opening Arena update'
+);
+const repeatedMaintenanceResponse = await productionApiContract.app.request(
+  '/internal/scheduler/nightly-arena',
+  {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      name: 'nightly-arena',
+      data: { attempt: 0, reason: 'idempotency-check' },
+    }),
+  }
+);
+assert.equal(repeatedMaintenanceResponse.status, 200);
+assert.equal(
+  productionApiContract.apiContractRuntimeState.submittedPosts,
+  2,
+  'repeated maintenance must not duplicate the opening Arena update'
 );
 
 productionApiContract.resetApiContractRuntime();
@@ -1642,7 +1659,12 @@ assert.equal(
   0,
   'upgrade catch-up must not publish Reddit comments'
 );
-pass('app upgrades schedule a stale Arena catch-up without publishing content');
+assert.equal(
+  productionApiContract.apiContractRuntimeState.submittedPosts,
+  2,
+  'upgrade catch-up publishes one idempotent Arena update beside the playable post'
+);
+pass('app upgrades schedule a stale Arena catch-up with community updates');
 
 productionApiContract.resetApiContractRuntime();
 const reversedInstallResponse = await productionApiContract.app.request(

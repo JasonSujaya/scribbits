@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import type { TaskRequest, TaskResponse } from '@devvit/web/server';
 import { redis, scheduler } from '@devvit/web/server';
 import { maintainArena } from '../core/arenaMaintenance';
+import { publishArenaCommunityPosts } from '../core/communityPosts';
 
 export const scheduledTasks = new Hono();
 const arenaMaintenanceRetryDelayMilliseconds = 30_000;
@@ -24,6 +25,13 @@ scheduledTasks.post('/nightly-arena', async (c) => {
     const nightlyOperationId = randomUUID();
     const nightlyRun = await maintainArena(redis, {
       operationId: nightlyOperationId,
+      publishCommunityPosts: ({ currentArenaDay, resolutions }) =>
+        publishArenaCommunityPosts(redis, {
+          currentArenaDay,
+          resolvedArenaDays: resolutions.map(
+            (resolution) => resolution.resolvedDay
+          ),
+        }),
     });
     if (nightlyRun.status === 'busy') {
       throw new Error('Arena maintenance lease is busy.');
@@ -36,7 +44,7 @@ scheduledTasks.post('/nightly-arena', async (c) => {
       );
     } else {
       console.log(
-        `Advanced arena from day ${result.previousDay} to ${result.newDay}; task ${taskRequest?.name ?? 'nightly-arena'} completed without publishing Reddit content`
+        `Advanced arena from day ${result.previousDay} to ${result.newDay}; task ${taskRequest?.name ?? 'nightly-arena'} published due community updates`
       );
     }
 
