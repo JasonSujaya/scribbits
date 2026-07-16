@@ -213,10 +213,20 @@ export function openDailyLoginModal(
           )
         );
         content.add(
-          paperIcon(scene, claimed ? 'trophy' : ready ? 'ink' : 'lock', x, y + 2, {
-            size: 42,
-            fill: claimed ? UI.creamHex : ready ? UI.coral : LOCKED_REWARD_STROKE,
-          })
+          paperIcon(
+            scene,
+            claimed ? 'trophy' : ready ? 'ink' : 'lock',
+            x,
+            y + 2,
+            {
+              size: 42,
+              fill: claimed
+                ? UI.creamHex
+                : ready
+                  ? UI.coral
+                  : LOCKED_REWARD_STROKE,
+            }
+          )
         );
         content.add(
           label(
@@ -488,15 +498,16 @@ export function openDailyLoginModal(
       })
     );
     if (daySevenGear) {
-      const crown = scene.add
-        .image(
-          -166,
-          heroY + 20,
-          gearArtTextureForRarity(daySevenGear.rarity),
-          daySevenGear.id
-        )
-        .setDisplaySize(230, 180)
-        .setAlpha(daySevenClaimed ? 0.66 : daySevenReady ? 1 : 0.48);
+      const gearTexture = gearArtTextureForRarity(daySevenGear.rarity);
+      const crown = scene.textures.exists(gearTexture)
+        ? scene.add
+            .image(-166, heroY + 20, gearTexture, daySevenGear.id)
+            .setDisplaySize(230, 180)
+        : paperIcon(scene, 'trophy', -166, heroY + 20, {
+            size: 150,
+            fill: UI.gold,
+          });
+      crown.setAlpha(daySevenClaimed ? 0.66 : daySevenReady ? 1 : 0.48);
       content.add(crown);
     }
     content.add(
@@ -662,18 +673,18 @@ export function openDailyLoginModal(
           height: 920,
         }
       : initialActionDay === 7
-      ? {
-          x: width / 2 - 300,
-          y: cardCenterY + 185,
-          width: 600,
-          height: 330,
-        }
-      : {
-          x: width / 2 - 200 + initialActionColumn * 200 - 82,
-          y: cardCenterY - 235 + initialActionRow * 245 - 88,
-          width: 164,
-          height: 176,
-        };
+        ? {
+            x: width / 2 - 300,
+            y: cardCenterY + 185,
+            width: 600,
+            height: 330,
+          }
+        : {
+            x: width / 2 - 200 + initialActionColumn * 200 - 82,
+            y: cardCenterY - 235 + initialActionRow * 245 - 88,
+            width: 164,
+            height: 176,
+          };
   const primaryControl = shell.actions.add({
     label: 'Claim daily login reward or close the reward calendar',
     rect: primaryRect,

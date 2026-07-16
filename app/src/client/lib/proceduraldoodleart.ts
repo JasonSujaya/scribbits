@@ -230,6 +230,27 @@ export function generateBlankDrawingTexture(
   const canvas = document.createElement('canvas');
   canvas.width = PROCEDURAL_DOODLE_SIZE;
   canvas.height = PROCEDURAL_DOODLE_SIZE;
+  const context = canvas.getContext('2d');
+  if (!context) throw new Error('Drawing placeholder canvas is unavailable.');
+
+  // This intentionally has no creature identity. A temporary network failure
+  // must never make generated art look like the player's submitted drawing.
+  context.save();
+  context.translate(256, 256);
+  context.rotate(-0.14);
+  context.fillStyle = colorHex(PAPER);
+  context.strokeStyle = colorHex(INK);
+  context.lineWidth = 14;
+  context.beginPath();
+  context.roundRect(-126, -156, 252, 312, 24);
+  context.fill();
+  context.stroke();
+  context.fillStyle = colorHex(INK);
+  context.font = '900 92px sans-serif';
+  context.textAlign = 'center';
+  context.textBaseline = 'middle';
+  context.fillText('?', 0, 0);
+  context.restore();
   scene.textures.addCanvas(key, canvas);
   return key;
 }

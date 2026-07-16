@@ -59,10 +59,11 @@ test('Gear atlases load with the scenes that use them instead of core Boot', () 
   );
   assert.doesNotMatch(corePreload, /gear-(?:common|rare-epic|legendary)-atlas/);
 
-  assert.match(
-    visualAssetsSource,
-    /preloadHomeVisualAssets[\s\S]*preloadGearVisualAssets\(scene, 'legendary'\)/
+  const homePreload = visualAssetsSource.slice(
+    visualAssetsSource.indexOf('export function preloadHomeVisualAssets'),
+    visualAssetsSource.indexOf('export function homeVisualAssetsReady')
   );
+  assert.doesNotMatch(homePreload, /preloadGearVisualAssets/);
   assert.match(
     visualAssetsSource,
     /preloadGalleryVisualAssets[\s\S]*preloadGearVisualAssets\(scene\)/

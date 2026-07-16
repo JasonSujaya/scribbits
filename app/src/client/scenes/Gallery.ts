@@ -254,6 +254,10 @@ export class Gallery extends Scene {
     this.assetErrorPanel?.destroy();
     this.assetErrorPanel = null;
     this.destroyBuildOverlays();
+    this.buildGeneration += 1;
+    releaseRenderedDrawingTextures(this);
+    this.livingPaper?.destroy();
+    this.livingPaper = null;
     this.children.removeAll(true);
     const { width, height } = this.scale;
     const loadingText = label(

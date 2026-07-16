@@ -6,7 +6,10 @@ import * as Phaser from 'phaser';
 import { Scene } from 'phaser';
 import type { Element, Scribbit } from '../../shared/arena';
 import { LEVEL_XP_THRESHOLDS, MAX_LEVEL } from '../../shared/arena';
-import { generateDoodleTexture } from './proceduraldoodleart';
+import {
+  generateBlankDrawingTexture,
+  generateDoodleTexture,
+} from './proceduraldoodleart';
 
 // Rendering only needs identity + art. Keeping this narrower than Scribbit lets
 // immutable LegacyCard DTOs reuse the drawing pipeline without making them
@@ -43,15 +46,18 @@ const sceneDrawingTextures = new WeakMap<
 >();
 let drawingTextureUseSequence = 0;
 let drawingSourceLoadSequence = 0;
-const loadedRemoteDrawingTextures = new Set<string>();
+const loadedRemoteDrawingTextures = new WeakMap<
+  Phaser.Textures.TextureManager,
+  Map<string, string>
+>();
 
 // Texture key for a scribbit's drawing. Stable per id so we load each once.
 function drawingKey(scribbit: Pick<DrawingSource, 'id'>): string {
   return `drawing-${scribbit.id}`;
 }
 
-// A stable sprite key for the procedural doodle fallback: the scribbit's id (or
-// name when id is missing) drives the deterministic creature shape.
+// A stable sprite key for authored founders: the scribbit's id (or name when id
+// is missing) selects its canvas character.
 function spriteKeyFor(scribbit: Pick<DrawingSource, 'id' | 'name'>): string {
   return scribbit.id || scribbit.name || 'scribbit';
 }
@@ -62,7 +68,7 @@ function elementOf(scribbit: Partial<Pick<DrawingSource, 'element'>>): Element {
 
 // THE single art resolver. Every surface (roster, entrants, champion poster,
 // modal, replay, legends, Gallery) calls this. It immediately resolves to a
-// stable canvas texture containing deterministic fallback art. The remote
+// stable canvas texture containing a generic unavailable-art mark. The remote
 // imageUrl (Reddit-hosted in production; /api/drawing/{id} only in the local mock)
 // loads behind that canvas and upgrades it in place when ready. Existing Images,
 // meshes, and sliced LiveSprites therefore receive the player's art without
@@ -84,11 +90,13 @@ export function loadDrawing(
   }
 
   if (!scene.textures.exists(key)) {
-    createFallbackDrawingTexture(scene, key, scribbit);
+    createFallbackDrawingTexture(scene, key);
   }
   markDrawingTextureUsed(scene, key);
 
-  if (loadedRemoteDrawingTextures.has(key)) return Promise.resolve(key);
+  if (remoteDrawingTextureIsCurrent(scene, key, scribbit.imageUrl)) {
+    return Promise.resolve(key);
+  }
 
   let sceneLoads = pendingDrawingLoads.get(scene);
   if (!sceneLoads) {
@@ -120,7 +128,9 @@ export function loadDrawing(
       // visible and leave the key retryable when that happens.
       if (!isDegenerateTexture(scene, sourceKey)) {
         const upgraded = upgradeDrawingTexture(scene, key, sourceKey);
-        if (upgraded) loadedRemoteDrawingTextures.add(key);
+        if (upgraded) {
+          markRemoteDrawingTextureCurrent(scene, key, scribbit.imageUrl);
+        }
       }
       finish();
     };
@@ -170,12 +180,8 @@ export function loadDrawing(
   return drawingLoad;
 }
 
-function createFallbackDrawingTexture(
-  scene: Scene,
-  key: string,
-  scribbit: DrawingSource
-): void {
-  const fallbackKey = fallbackDoodle(scene, scribbit);
+function createFallbackDrawingTexture(scene: Scene, key: string): void {
+  const fallbackKey = generateBlankDrawingTexture(scene, 'shared');
   const fallbackSource = scene.textures
     .get(fallbackKey)
     .getSourceImage() as CanvasImageSource & {
@@ -194,7 +200,35 @@ function createFallbackDrawingTexture(
     scene.textures.remove(fallbackKey);
     drawingTextureLastUse.delete(fallbackKey);
   }
-  loadedRemoteDrawingTextures.delete(key);
+  clearRemoteDrawingTextureRecord(scene, key);
+}
+
+function remoteDrawingTextureIsCurrent(
+  scene: Scene,
+  key: string,
+  imageUrl: string
+): boolean {
+  return loadedRemoteDrawingTextures.get(scene.textures)?.get(key) === imageUrl;
+}
+
+function markRemoteDrawingTextureCurrent(
+  scene: Scene,
+  key: string,
+  imageUrl: string
+): void {
+  let textureUrls = loadedRemoteDrawingTextures.get(scene.textures);
+  if (!textureUrls) {
+    textureUrls = new Map<string, string>();
+    loadedRemoteDrawingTextures.set(scene.textures, textureUrls);
+  }
+  textureUrls.set(key, imageUrl);
+}
+
+function clearRemoteDrawingTextureRecord(scene: Scene, key: string): void {
+  const textureUrls = loadedRemoteDrawingTextures.get(scene.textures);
+  textureUrls?.delete(key);
+  if (textureUrls?.size === 0)
+    loadedRemoteDrawingTextures.delete(scene.textures);
 }
 
 function upgradeDrawingTexture(
@@ -353,7 +387,7 @@ function trimInactiveDrawingTextures(scene: Scene): void {
     if (drawingTextureLastUse.size <= MAX_CACHED_DRAWING_TEXTURES) break;
     if ((drawingTextureActiveScenes.get(textureKey) ?? 0) > 0) continue;
     if (scene.textures.exists(textureKey)) scene.textures.remove(textureKey);
-    loadedRemoteDrawingTextures.delete(textureKey);
+    clearRemoteDrawingTextureRecord(scene, textureKey);
     drawingTextureLastUse.delete(textureKey);
   }
 }

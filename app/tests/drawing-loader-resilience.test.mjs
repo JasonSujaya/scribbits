@@ -20,11 +20,9 @@ const upgradeSource = drawingLoaderSource.slice(
   drawingLoaderSource.indexOf('function drawContainedSource')
 );
 
-test('drawing presentation resolves a deterministic fallback before network art', () => {
+test('drawing presentation resolves a generic placeholder before network art', () => {
   assert.ok(
-    loadDrawingSource.indexOf(
-      'createFallbackDrawingTexture(scene, key, scribbit)'
-    ) <
+    loadDrawingSource.indexOf('createFallbackDrawingTexture(scene, key)') <
       loadDrawingSource.indexOf(
         'scene.load.image(sourceKey, scribbit.imageUrl)'
       ),
@@ -35,7 +33,11 @@ test('drawing presentation resolves a deterministic fallback before network art'
     /const drawingLoad = Promise\.resolve\(key\)/
   );
   assert.doesNotMatch(loadDrawingSource, /delayedCall\(9_?000/);
-  assert.doesNotMatch(loadDrawingSource, /generateBlankDrawingTexture/);
+  assert.match(
+    createFallbackSource,
+    /generateBlankDrawingTexture\(scene, 'shared'\)/
+  );
+  assert.doesNotMatch(createFallbackSource, /fallbackDoodle/);
 });
 
 test('late remote art upgrades the stable canvas without changing caller keys', () => {
@@ -58,9 +60,24 @@ test('failed remote art stays on fallback and can retry on a later request', () 
     loadDrawingSource.indexOf('const finish')
   );
   assert.match(errorHandlerSource, /finish\(\)/);
-  assert.doesNotMatch(errorHandlerSource, /loadedRemoteDrawingTextures\.add/);
+  assert.doesNotMatch(errorHandlerSource, /markRemoteDrawingTextureCurrent/);
   assert.match(
     loadDrawingSource,
     /backgroundLoad\.then\(\(\) => \{[\s\S]*sceneLoads\.delete\(key\)/
+  );
+});
+
+test('remote cache records are scoped by texture manager and image URL', () => {
+  assert.match(
+    drawingLoaderSource,
+    /WeakMap<[\s\S]*Phaser\.Textures\.TextureManager,[\s\S]*Map<string, string>/
+  );
+  assert.match(
+    loadDrawingSource,
+    /remoteDrawingTextureIsCurrent\(scene, key, scribbit\.imageUrl\)/
+  );
+  assert.match(
+    loadDrawingSource,
+    /markRemoteDrawingTextureCurrent\(scene, key, scribbit\.imageUrl\)/
   );
 });

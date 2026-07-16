@@ -74,7 +74,6 @@ const HOME_VISUAL_TEXTURES = [
   HOME_TITLE_TEXTURE,
   ...Object.values(HOME_PROP_TEXTURES),
   MATURITY_GEAR_TEXTURE,
-  LEGENDARY_GEAR_ART_TEXTURE,
 ] as const;
 
 const REPLAY_VISUAL_TEXTURES = [
@@ -306,7 +305,6 @@ export function preloadHomeVisualAssets(scene: Scene): void {
       { frameWidth: 128, frameHeight: 128 }
     );
   }
-  preloadGearVisualAssets(scene, 'legendary');
 }
 
 export function homeVisualAssetsReady(scene: Scene): boolean {
@@ -351,20 +349,15 @@ export function shopVisualAssetsReady(scene: Scene): boolean {
   return texturesReady(scene, SHOP_VISUAL_TEXTURES);
 }
 
-type GearVisualScope = 'all' | 'legendary';
-
-function preloadGearVisualAssets(
-  scene: Scene,
-  scope: GearVisualScope = 'all'
-): void {
-  if (scope === 'all' && !scene.textures.exists(COMMON_GEAR_ART_TEXTURE)) {
+function preloadGearVisualAssets(scene: Scene): void {
+  if (!scene.textures.exists(COMMON_GEAR_ART_TEXTURE)) {
     scene.load.atlas(
       COMMON_GEAR_ART_TEXTURE,
       assetUrl('gear-common-atlas.webp'),
       assetUrl('gear-common-atlas.json')
     );
   }
-  if (scope === 'all' && !scene.textures.exists(RARE_EPIC_GEAR_ART_TEXTURE)) {
+  if (!scene.textures.exists(RARE_EPIC_GEAR_ART_TEXTURE)) {
     scene.load.atlas(
       RARE_EPIC_GEAR_ART_TEXTURE,
       assetUrl('gear-rare-epic-atlas.webp'),
