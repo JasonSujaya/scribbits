@@ -68,6 +68,7 @@ import {
   buildMasteryAuraSegments,
   planArenaPresentation,
   planBattleImpact,
+  planFighterPresentationMinimumDistance,
   planReplayArenaChallengeResult,
   planReplayBattleLayout,
   planReplayOutcomeLayout,
@@ -1027,6 +1028,15 @@ export class Replay extends Scene {
     const projectedPositions = fighterFrames.map((fighterFrame) =>
       projectCombatPosition(fighterFrame.position, arena)
     );
+    const combatDistance = Math.hypot(
+      fighterFrames[1]!.position.x - fighterFrames[0]!.position.x,
+      fighterFrames[1]!.position.y - fighterFrames[0]!.position.y
+    );
+    const minimumPresentationDistance = planFighterPresentationMinimumDistance({
+      fighterDisplaySize: this.battleLayout.fighterDisplaySize,
+      combatDistance,
+      fighterRoles: [this.fighterA.combatRole, this.fighterB.combatRole],
+    });
     const separatedPositions = separateFighterScreenPositions({
       a: projectedPositions[0] ?? {
         x: this.fighterA.screenX,
@@ -1036,7 +1046,7 @@ export class Replay extends Scene {
         x: this.fighterB.screenX,
         y: this.fighterB.screenY,
       },
-      minimumDistance: this.battleLayout.fighterDisplaySize * 0.82,
+      minimumDistance: minimumPresentationDistance,
       minimumX: this.battleLayout.pageLeft + 24,
       maximumX: this.battleLayout.pageLeft + this.battleLayout.pageWidth - 24,
     });
@@ -1066,6 +1076,8 @@ export class Replay extends Scene {
     );
     this.game.canvas.dataset.minimumFighterSeparation =
       separatedPositions.distance.toFixed(1);
+    this.game.canvas.dataset.minimumPlannedFighterSeparation =
+      minimumPresentationDistance.toFixed(1);
 
     fighterFrames.forEach((fighterFrame, index) => {
       const fighter = fighters[index];

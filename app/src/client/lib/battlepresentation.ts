@@ -9,7 +9,12 @@ import {
   type BattleArenaChallengeProgress,
   type BattleArenaId,
 } from '../../shared/battlearena';
-import type { FighterSlot, FixedVector } from '../../shared/combat';
+import {
+  getCombatRoleRules,
+  type CombatRole,
+  type FighterSlot,
+  type FixedVector,
+} from '../../shared/combat';
 
 export type BattleImpactTier = 'light' | 'solid' | 'heavy' | 'critical';
 
@@ -85,6 +90,12 @@ export type SeparatedFighterPositions = Readonly<{
   a: FighterScreenPosition;
   b: FighterScreenPosition;
   distance: number;
+}>;
+
+export type FighterPresentationSeparationInput = Readonly<{
+  fighterDisplaySize: number;
+  combatDistance: number;
+  fighterRoles: readonly [CombatRole, CombatRole];
 }>;
 
 export type ReplayBattleLayout = Readonly<{
@@ -625,6 +636,32 @@ export function projectCombatPosition(
       arena.centerY +
       (position.y / arena.startingCombatHalfHeight) * arena.maximumHalfHeight,
   };
+}
+
+/**
+ * Submitted drawings are intentionally much larger than their combat bodies.
+ * Preserve normal close combat, but open a smooth visible projectile lane while
+ * a Longshot is still fighting at its authoritative preferred distance.
+ */
+export function planFighterPresentationMinimumDistance(
+  input: FighterPresentationSeparationInput
+): number {
+  const displaySize = Math.max(0, input.fighterDisplaySize);
+  const closeCombatMinimum = displaySize * 0.82;
+  if (!input.fighterRoles.includes('longshot')) return closeCombatMinimum;
+
+  const preferredMinimum = getCombatRoleRules('longshot').preferredRangeMinimum;
+  const blendStart = preferredMinimum * 0.75;
+  const blendProgress = clamp(
+    (Math.max(0, input.combatDistance) - blendStart) /
+      (preferredMinimum - blendStart),
+    0,
+    1
+  );
+  const rangedMinimum = displaySize * 1.35;
+  return (
+    closeCombatMinimum + (rangedMinimum - closeCombatMinimum) * blendProgress
+  );
 }
 
 // Combat bodies are intentionally much smaller than player drawings. Preserve

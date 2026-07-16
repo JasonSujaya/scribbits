@@ -59,6 +59,48 @@ test('presentation-space fighter separation preserves readable drawings', () => 
   }
 });
 
+test('Longshot keeps a smooth visible projectile lane while fighting at range', () => {
+  const fighterDisplaySize = 208;
+  const closeDistance =
+    battlePresentation.planFighterPresentationMinimumDistance({
+      fighterDisplaySize,
+      combatDistance: 3_375,
+      fighterRoles: ['longshot', 'brawler'],
+    });
+  const transitionDistance =
+    battlePresentation.planFighterPresentationMinimumDistance({
+      fighterDisplaySize,
+      combatDistance: 3_937.5,
+      fighterRoles: ['brawler', 'longshot'],
+    });
+  const rangedDistance =
+    battlePresentation.planFighterPresentationMinimumDistance({
+      fighterDisplaySize,
+      combatDistance: 4_500,
+      fighterRoles: ['longshot', 'mage'],
+    });
+  const ordinaryDistance =
+    battlePresentation.planFighterPresentationMinimumDistance({
+      fighterDisplaySize,
+      combatDistance: 6_400,
+      fighterRoles: ['brawler', 'mage'],
+    });
+
+  assert.equal(closeDistance, fighterDisplaySize * 0.82);
+  assert.ok(transitionDistance > closeDistance);
+  assert.ok(transitionDistance < rangedDistance);
+  assert.equal(rangedDistance, fighterDisplaySize * 1.35);
+  assert.equal(ordinaryDistance, fighterDisplaySize * 0.82);
+  assert.equal(
+    battlePresentation.planFighterPresentationMinimumDistance({
+      fighterDisplaySize,
+      combatDistance: 4_500,
+      fighterRoles: ['longshot', 'mage'],
+    }),
+    rangedDistance
+  );
+});
+
 test('battle reads identify Power-Ups, Gear, and class advantage', () => {
   assert.match(replaySource, /lastPowerUpRead/);
   assert.match(replaySource, /lastGearRead/);
