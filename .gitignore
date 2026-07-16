@@ -8,3 +8,10 @@ playtest.log
 artifacts/devvit-smoke/
 artifacts/balancer/2026-*
 artifacts/trailer/gameplay/raw/page@*.webm
+# Local visual QA output. Curated release media belongs in the named
+# community, devpost-gallery, proof, or trailer folders.
+artifacts/screenshots/*
+artifacts/*.png
+artifacts/*.jpg
+/scribbits-*.png
+/scribbits-*.jpg

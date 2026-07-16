@@ -36,8 +36,8 @@ Release verification uses the non-mutating gate:
 pnpm run balance:check
 ```
 
-Check mode runs the same simulations and thresholds without rewriting tracked
-reports or timestamped artifacts.
+Check mode runs the same simulations and thresholds without rewriting the
+tracked current reports.
 
 The runner rebuilds that isolated bundle first with:
 
@@ -52,7 +52,11 @@ Outputs:
 
 - `../artifacts/balancer/latest-summary.md`
 - `../artifacts/balancer/latest-results.csv` (one compact row per reported matchup)
-- timestamped copies of both files
+- one current `<suite>.md` report per balance suite
+
+Each run replaces these current reports. The balancer intentionally does not
+retain timestamped copies in the repository; Git history is the archive for
+reports that are deliberately committed.
 
 Suites run and write their reports sequentially so the full balance gate does
 not retain every simulated fight in memory at once.

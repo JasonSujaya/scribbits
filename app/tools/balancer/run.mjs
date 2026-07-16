@@ -3762,17 +3762,13 @@ function rawCsv(rows) {
   ].join('\n');
 }
 
-async function writeSuiteArtifact(suite, timestamp) {
+async function writeSuiteArtifact(suite) {
   await mkdir(artifactRoot, { recursive: true });
   const markdown = reportForSuite(suite);
   await writeFile(resolve(artifactRoot, `${suite.id}.md`), markdown);
-  await writeFile(
-    resolve(artifactRoot, `${timestamp}-${suite.id}.md`),
-    markdown
-  );
 }
 
-async function writeOverviewArtifacts(suites, timestamp) {
+async function writeOverviewArtifacts(suites) {
   await mkdir(artifactRoot, { recursive: true });
   const overview = overviewReport(suites);
   const summaryRows = suites.flatMap((suite) =>
@@ -3780,12 +3776,7 @@ async function writeOverviewArtifacts(suites, timestamp) {
   );
   const csv = rawCsv(summaryRows);
   await writeFile(resolve(artifactRoot, 'latest-summary.md'), overview);
-  await writeFile(resolve(artifactRoot, `${timestamp}-overview.md`), overview);
   await writeFile(resolve(artifactRoot, 'latest-results.csv'), `${csv}\n`);
-  await writeFile(
-    resolve(artifactRoot, `${timestamp}-results.csv`),
-    `${csv}\n`
-  );
 }
 
 async function main() {
@@ -3840,7 +3831,6 @@ async function main() {
     'gear-powerups',
     'equipment-meta',
   ]);
-  const timestamp = new Date().toISOString().replaceAll(/[:.]/g, '-');
   const suites = [];
   const balanceGateFlags = [];
   let fightCount = 0;
@@ -3857,7 +3847,7 @@ async function main() {
       balanceGateFlags.push(...suite.summaries.filter(isBalanceFlag));
     }
     if (!checkOnly) {
-      await writeSuiteArtifact(suite, timestamp);
+      await writeSuiteArtifact(suite);
     }
     suites.push({
       id: suite.id,
@@ -3867,7 +3857,7 @@ async function main() {
     });
   }
   if (!checkOnly) {
-    await writeOverviewArtifacts(suites, timestamp);
+    await writeOverviewArtifacts(suites);
   }
   console.log(`Balancer complete: ${fightCount} fights.`);
   console.log(

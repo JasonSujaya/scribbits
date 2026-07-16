@@ -1,14 +1,38 @@
 # Slop Audit — Scribbits Arena
 
-_Last verified: 2026-07-14 against the current dirty worktree._
+_Last verified: 2026-07-16 against commit d3d4879 and the current dirty worktree._
 
 ## Summary
 
-The cleanup closed the previously verified P0 and P1 findings and five of the six P2 findings. Current verified open totals: **0 P0, 1 P1, 1 P2**. The new P1 is bounded to hardening the newly added battle-clip upload boundary. Migration of the legacy deterministic harness now has focused battle-presentation, capsule-presentation, equipment-economy, Founder Rival Episode, semantic-tab, Element Payload Guide, Arena UI, async-lifecycle, public Legend pagination, Legacy Card, Rumble-return, and Legacy-return-presentation ownership. The focused capsule suite also owns the generated Mystery Ink chest asset, compact-control contract, and lazy Shop preload boundary.
+The cleanup closed the previously verified P0 and P1 findings and seven of the eight P2 findings. Current verified open totals: **0 P0, 1 P1, 1 P2**. The new P1 is bounded to hardening the newly added battle-clip upload boundary. Migration of the legacy deterministic harness now has focused battle-presentation, capsule-presentation, equipment-economy, Founder Rival Episode, semantic-tab, Element Payload Guide, Arena UI, async-lifecycle, public Legend pagination, Legacy Card, Rumble-return, and Legacy-return-presentation ownership. The focused capsule suite also owns the generated Mystery Ink chest asset, compact-control contract, and lazy Shop preload boundary.
+
+The repository artifact pass removed 971 obsolete generated files from the
+current tree: timestamped balance reports, unreferenced visual QA captures,
+loose root proof images, and superseded client bitmaps. The live app and trailer
+inputs remain referenced, while future local screenshots and loose proof images
+are ignored instead of silently becoming repository history.
 
 The player-facing cleanup is also complete: the Ink Kit now has the four canonical Gear categories plus a separate Styles section, each Gear style renders once with aggregate Forge progress, the retired Impact and Edge effect families are gone, and Replay health is presented as full/half/empty hearts.
 
 ## Closed in this pass
+
+### P2-8 — bounded generated reports and visual QA artifacts
+
+- The balancer now overwrites 20 current reports instead of writing a complete
+  timestamped report family on every run. The 402 tracked timestamped reports
+  are removed, and 1,481 ignored timestamped reports were deleted locally.
+- `artifacts/screenshots/` keeps only the 13 files referenced by current docs or
+  trailer tooling; 410 unreferenced captures are removed. Another 135 loose
+  root/artifact proof images with no source, config, test, or doc reference are
+  removed.
+- Twenty-four client images with no repository reference are removed. Runtime
+  WebP assets, test-read source atlases, the logo, and explicit trailer inputs
+  remain.
+- `.gitignore` now keeps local screenshot and loose proof output out of future
+  commits. Curated community, Devpost, proof, ImageGen, and trailer directories
+  remain explicit release/media homes.
+- The working directory fell from 8.2 GiB to 1.5 GiB; the current tracked-tree
+  deletion is 359.15 MiB. This does not rewrite Git history.
 
 ### P0-1 and P1-2 — one equipment taxonomy and one card per Gear style
 
@@ -93,8 +117,8 @@ The player-facing cleanup is also complete: the Ink Kit now has the four canonic
 
 - The unreferenced Arena, battle, and paper JPG stages are removed from the
   current worktree.
-- Gameplay now preloads one shared `scribbits-stage.png`; Shop deliberately owns
-  the separate `scribbits-shop-stage.png` because its reward-machine composition
+- Gameplay now preloads one shared `scribbits-stage.webp`; Shop deliberately owns
+  the separate `scribbits-shop-stage.webp` because its reward-machine composition
   is a different surface.
 - No runtime or test reference to the deleted JPG names remains.
 
@@ -152,12 +176,14 @@ The player-facing cleanup is also complete: the Ink Kit now has the four canonic
 
 ## Verification snapshot
 
-- Complete `./verify.command` stages: pass after the final fixes.
+- Complete `./verify.command` stages: pass on 2026-07-16 after the artifact
+  cleanup.
 - Type-check: pass.
 - ESLint: pass.
-- Discoverable suites: **214/214 tests pass** across 52 files.
+- Discoverable suites: **414/414 tests pass** across 95 suites.
 - Legacy deterministic harness: **168/168 groups pass**.
-- Production build: pass in **21,098 ms**.
+- Production build: pass in **4,928 ms**; Devvit bundle verification reports
+  55 client files and 1,527.5 KiB of shipped images.
 - Live browser proof: Arena opens the chooser before the first Spar; the selected rival reaches the VS and replay; all three server-scored bouts complete; `NEW RIVAL RUN` rolls to a fresh bout 1/3 slate; the compact modal clears and dims the dock.
 - Shop proof: the fifth dock tab opens its dedicated scene, completes a
   server-backed single chest, and routes the confirmed reward into Bag.
