@@ -74,7 +74,7 @@ const shouldCapture = (name) => requestedClip === '' || requestedClip === name;
 try {
   if (shouldCapture('battle-wobble-bean')) await captureClip({
     name: 'battle-wobble-bean',
-    url: '/game.html?debug&returning',
+    url: '/game.html?debug&returning&stableReplayLanes',
     holdMilliseconds: 8_000,
     action: async (page) => {
       const pendingPowerChoice = page.locator('button[aria-label^="Choose "]').first();
@@ -124,15 +124,26 @@ try {
   if (shouldCapture('bag-items')) await captureClip({
     name: 'bag-items',
     url: '/game.html?debug&returning&collection&gearSection=weapon',
-    holdMilliseconds: 2_200,
+    holdMilliseconds: 1_200,
     action: async (page) => {
+      const loadoutEffects = page.locator(
+        'button[data-loadout-effects-summary]'
+      );
+      await loadoutEffects.waitFor({ state: 'visible', timeout: 10_000 });
+      await loadoutEffects.evaluate((button) => button.click());
+      await page.waitForTimeout(2_000);
+      const closeLoadoutEffects = page.getByRole('button', {
+        name: /Close .* loadout effects/i,
+      });
+      await closeLoadoutEffects.evaluate((button) => button.click());
+      await page.waitForTimeout(500);
       const expandInventory = page.getByRole('button', {
         name: 'Expand WEAPON inventory',
         exact: true,
       });
       await expandInventory.waitFor({ state: 'visible', timeout: 10_000 });
       await expandInventory.evaluate((button) => button.click());
-      await page.waitForTimeout(1_600);
+      await page.waitForTimeout(1_300);
       const drawKit = page.getByRole('button', { name: 'DRAW KIT', exact: true });
       await drawKit.evaluate((button) => button.click());
     },

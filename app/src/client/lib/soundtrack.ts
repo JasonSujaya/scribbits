@@ -16,9 +16,10 @@ let retryListenersInstalled = false;
 let pendingHomeStop: number | null = null;
 let visibilityHandlerInstalled = false;
 let recoveryAttempts = 0;
+let waitingForInitialGesture = false;
+let hasUnlockedSoundtrackPlayback = false;
 
 const MAX_RECOVERY_ATTEMPTS = 1;
-const DRAWING_SOUNDTRACK_READY_WAIT_MS = 450;
 
 export const chooseHomeTrackIndex = (
   hasPlayedHomeTrack: boolean,
@@ -38,9 +39,14 @@ const removeRetryListeners = (): void => {
 };
 
 const attemptPlayback = (audio: HTMLAudioElement): void => {
+  const source = audio.dataset.scribbitsSoundtrackSource;
+  if (!audio.getAttribute('src') && source) audio.src = source;
   void audio.play().then(
     () => {
-      if (audio === currentAudio) removeRetryListeners();
+      if (audio !== currentAudio) return;
+      waitingForInitialGesture = false;
+      hasUnlockedSoundtrackPlayback = true;
+      removeRetryListeners();
     },
     (error: unknown) => {
       if (audio !== currentAudio || !playbackRequested) return;
@@ -62,18 +68,16 @@ const requestPlayback = (): void => {
   const audio = currentAudio;
   if (!audio) return;
   playbackRequested = true;
-  if (document.hidden) {
+  if (document.hidden || waitingForInitialGesture) {
     installRetryListeners();
     return;
   }
-  // Try immediately. Browsers that allow startup audio begin the Home track
-  // without making the player tap an arbitrary control first. If autoplay is
-  // blocked, attemptPlayback installs the first-interaction retry listeners.
   attemptPlayback(audio);
 };
 
 function retryPlayback(): void {
   if (!playbackRequested || !currentAudio || document.hidden) return;
+  waitingForInitialGesture = false;
   attemptPlayback(currentAudio);
 }
 
@@ -166,29 +170,6 @@ function discardPreparedDrawingAudio(event: Event): void {
   discardAudio(failedAudio);
 }
 
-const waitForAudioReadiness = (
-  audio: HTMLAudioElement,
-  timeoutMilliseconds: number
-): Promise<void> => {
-  if (audio.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA) {
-    return Promise.resolve();
-  }
-  if (typeof window === 'undefined') return Promise.resolve();
-
-  return new Promise((resolve) => {
-    let timeoutId: number | null = null;
-    const finish = (): void => {
-      if (timeoutId !== null) window.clearTimeout(timeoutId);
-      audio.removeEventListener('canplay', finish);
-      audio.removeEventListener('error', finish);
-      resolve();
-    };
-    audio.addEventListener('canplay', finish, { once: true });
-    audio.addEventListener('error', finish, { once: true });
-    timeoutId = window.setTimeout(finish, timeoutMilliseconds);
-  });
-};
-
 const replaceSoundtrack = (
   mode: SoundtrackMode,
   source: string,
@@ -200,11 +181,17 @@ const replaceSoundtrack = (
   if (typeof Audio === 'undefined') return;
 
   const audio = new Audio();
+  const shouldDeferPlayback =
+    mode === 'home' && startPlaying && !hasUnlockedSoundtrackPlayback;
   audio.dataset.scribbitsSoundtrack = mode;
   audio.dataset.scribbitsSoundtrackSource = source;
-  audio.preload = 'auto';
-  audio.src = source;
-  audio.autoplay = startPlaying;
+  // Home opens while the game is still settling inside Reddit's WebView. Keep
+  // its MP3 completely off the startup network/decode path, then attach it in
+  // the player's first trusted interaction. Drawing and battle music are
+  // explicitly prepared from their own player actions.
+  audio.preload = mode === 'home' ? 'none' : 'auto';
+  if (!shouldDeferPlayback) audio.src = source;
+  audio.autoplay = startPlaying && !shouldDeferPlayback;
   audio.loop = true;
   audio.volume =
     mode === 'drawing'
@@ -219,6 +206,7 @@ const replaceSoundtrack = (
   currentMode = mode;
   currentAudio = audio;
   recoveryAttempts = nextRecoveryAttempts;
+  waitingForInitialGesture = shouldDeferPlayback;
   if (startPlaying) requestPlayback();
 };
 
@@ -284,17 +272,6 @@ export const primeDrawingSoundtrack = (): void => {
       if (preparedDrawingAudio === audio) audio.volume = targetVolume;
     }
   );
-};
-
-/**
- * Give the countdown preload a short chance to reach a playable buffer. The
- * caller owns cancellation and starts the timer after this bounded wait.
- */
-export const waitForDrawingSoundtrackReadiness = (): Promise<void> => {
-  preloadDrawingSoundtrack();
-  const audio = preparedDrawingAudio;
-  if (!audio) return Promise.resolve();
-  return waitForAudioReadiness(audio, DRAWING_SOUNDTRACK_READY_WAIT_MS);
 };
 
 export const releaseDrawingSoundtrackPreparation = (): void => {
@@ -448,6 +425,7 @@ export const pauseDrawingSoundtrack = (): void => {
 export const stopSoundtrack = (): void => {
   playbackRequested = false;
   recoveryAttempts = 0;
+  waitingForInitialGesture = false;
   cancelPendingHomeStop();
   removeRetryListeners();
   currentMode = null;

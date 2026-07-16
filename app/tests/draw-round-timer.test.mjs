@@ -115,7 +115,7 @@ test('official Draw requires an explicit start and locks at time', () => {
   );
   assert.match(
     drawSource,
-    /private startDrawingRound\(\): void[\s\S]{0,900}waitForDrawingSoundtrackReadiness\(\)[\s\S]{0,600}this\.activateDrawingRound\(false\)/
+    /private startDrawingRound\(\): void[\s\S]{0,500}const wasStarted = this\.drawRoundClock\.started;[\s\S]{0,100}this\.activateDrawingRound\(wasStarted\)/
   );
   assert.match(
     drawSource,

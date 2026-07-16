@@ -344,6 +344,7 @@ export class Replay extends Scene {
   private founderChronicleBeat: FounderChronicleBeat | null = null;
   private founderRivalryStakes: FounderRivalryStakesPlan | null = null;
   private assetErrorPanel: ErrorPanel | null = null;
+  private stableCaptureLanes = false;
 
   constructor() {
     super('Replay');
@@ -394,6 +395,10 @@ export class Replay extends Scene {
     this.founderChronicleBeat = null;
     this.founderRivalryStakes = null;
     this.assetErrorPanel = null;
+    this.stableCaptureLanes =
+      typeof window !== 'undefined' &&
+      window.location.search.includes('debug') &&
+      new URLSearchParams(window.location.search).has('stableReplayLanes');
   }
 
   // Current fast-forward multiplier.
@@ -1035,7 +1040,30 @@ export class Replay extends Scene {
       minimumX: this.battleLayout.pageLeft + 24,
       maximumX: this.battleLayout.pageLeft + this.battleLayout.pageWidth - 24,
     });
-    const readablePositions = [separatedPositions.a, separatedPositions.b];
+    const arenaCenterX =
+      this.battleLayout.pageLeft + this.battleLayout.pageWidth / 2;
+    const stableLaneOffset = this.battleLayout.fighterDisplaySize * 0.41;
+    const readablePositions = this.stableCaptureLanes
+      ? [
+          {
+            ...separatedPositions.a,
+            x: Math.min(
+              separatedPositions.a.x,
+              arenaCenterX - stableLaneOffset
+            ),
+          },
+          {
+            ...separatedPositions.b,
+            x: Math.max(
+              separatedPositions.b.x,
+              arenaCenterX + stableLaneOffset
+            ),
+          },
+        ]
+      : [separatedPositions.a, separatedPositions.b];
+    this.game.canvas.dataset.stableReplayLanes = String(
+      this.stableCaptureLanes
+    );
     this.game.canvas.dataset.minimumFighterSeparation =
       separatedPositions.distance.toFixed(1);
 

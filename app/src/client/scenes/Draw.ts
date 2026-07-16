@@ -150,7 +150,6 @@ import {
   resumeDrawingSoundtrack,
   startDrawingSoundtrack,
   stopSoundtrack,
-  waitForDrawingSoundtrackReadiness,
 } from '../lib/soundtrack';
 import { markSfxManaged, playSfx, preloadSfx } from '../lib/sfx';
 import AnalyzerWorker from '../workers/analyzer.worker?worker&inline';
@@ -430,7 +429,6 @@ export class Draw extends Scene {
   private drawingLocked = false;
   private drawRoundClock: DrawRoundClock = createDrawRoundClock();
   private drawRoundTimerEvent: Phaser.Time.TimerEvent | null = null;
-  private drawingRoundStartPending = false;
   private drawStartCountdownTimerEvent: Phaser.Time.TimerEvent | null = null;
   private drawStartCountdownOverlay: HTMLDivElement | null = null;
   private drawStartCountdownValue: HTMLSpanElement | null = null;
@@ -641,7 +639,6 @@ export class Draw extends Scene {
     this.drawConfirmation = null;
     this.leaveDrawingModal = null;
     this.submissionLoading = null;
-    this.drawingRoundStartPending = false;
     this.draftName = '';
     this.headerControlOverlay = null;
     this.toolControlOverlay = null;
@@ -746,7 +743,6 @@ export class Draw extends Scene {
 
   private cleanup(): void {
     this.sceneVisitEpoch += 1;
-    this.drawingRoundStartPending = false;
     releaseDrawingSoundtrackPreparation();
     this.roleStyleInfoLayer?.destroy();
     this.roleStyleInfoLayer = null;
@@ -1718,26 +1714,7 @@ export class Draw extends Scene {
       return;
     }
     const wasStarted = this.drawRoundClock.started;
-    if (!wasStarted) {
-      if (this.drawingRoundStartPending) return;
-      this.drawingRoundStartPending = true;
-      void waitForDrawingSoundtrackReadiness().then(() => {
-        this.drawingRoundStartPending = false;
-        if (
-          !this.scene.isActive() ||
-          this.isUntimedDrawingMode() ||
-          this.drawingLocked ||
-          this.submitting ||
-          this.drawConfirmation ||
-          this.drawRoundClock.started
-        ) {
-          return;
-        }
-        this.activateDrawingRound(false);
-      });
-      return;
-    }
-    this.activateDrawingRound(true);
+    this.activateDrawingRound(wasStarted);
   }
 
   private activateDrawingRound(wasStarted: boolean): void {

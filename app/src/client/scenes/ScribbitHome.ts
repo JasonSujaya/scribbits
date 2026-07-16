@@ -52,6 +52,7 @@ import {
   type DailyLoginModal,
 } from '../lib/dailyloginmodal';
 import { playHomeSoundtrack, releaseHomeSoundtrack } from '../lib/soundtrack';
+import { markGameBootPhase } from '../lib/gameboot';
 import { EDGE, NAV_SAFE, TYPE, UI, prefersReducedMotion } from '../lib/theme';
 import { setSfxCue } from '../lib/sfx';
 import { openPowerUpDraft, type PowerUpDraftHandle } from '../lib/powerupdraft';
@@ -244,8 +245,11 @@ export class ScribbitHome extends Scene {
       return;
     }
     this.state = state;
-    playHomeSoundtrack();
     this.build();
+    playHomeSoundtrack();
+    this.game.events.once(Phaser.Core.Events.POST_RENDER, () => {
+      if (this.scene.isActive()) markGameBootPhase('ready');
+    });
     this.events.once('shutdown', () => this.cleanup());
   }
 

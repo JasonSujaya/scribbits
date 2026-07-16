@@ -1,351 +1,307 @@
 # Scribbits Arena
 
-**Draw a creature. Its shape becomes its combat build. Tonight it fights. It has
-three days to become a Legend.**
+> Draw a creature. Its shape becomes its combat build. Tonight it fights.
 
-Scribbits Arena is a portrait-first Reddit mini game built with Devvit Web and
-Phaser. Every player can draw one Scribbit per day. The submitted PNG is both
-the art and the combat identity: brown/coral/orange creates a Brawler,
-gold/green/blue creates a Longshot, and
-aqua/purple/pink creates a Mage. Black, grey, and white remain neutral. The
-counter loop is always Brawler > Mage > Longshot > Brawler. Every drawing still
-receives the same 100-point stat budget.
+Scribbits Arena is a portrait-first drawing and auto-battler game built for
+Reddit with Devvit Web and Phaser. Players draw creatures called **Scribbits**
+inside the Reddit post, watch those exact drawings come alive in short arena
+fights, and return each day for community Rumbles, rival stories, rewards, and
+new drawing themes.
 
-The portrait UI uses progressive disclosure: each default card leads with one
-headline, one current status, and one obvious action. Exact rules, telemetry,
-privacy controls, and card history remain available behind the relevant tap
-instead of competing with the drawing or fight.
-Arena home is intentionally not a bracket dashboard: it shows the selected
-Scribbit versus the Champion or a Rival placeholder. Champion gets one direct
-fight action; Spar gets one `CHOOSE A RIVAL` action that opens three
-server-ranked risk choices before any fight. Rumble remains one compact
-secondary control.
+![A live Scribbits Arena battle](artifacts/devpost-gallery/03-live-battle.png)
 
-The shared Craftbox shell uses a generated torn-paper stage, bundled DynaPuff,
-one die-cut icon family, and GPT-generated hand-cut paper buttons across Arena,
-Bag, Draw, Battles, and Shop.
-The active tab is the only coral ticket; hearts, clocks, Ink, and Shape Powers
-use shared paper icons instead of emoji or text pretending to be controls.
-Compact or detected low-power devices keep that paper art but skip ambient
-particles and decorative infinite loops. Drawing analysis runs in a worker,
-undo snapshots reuse pooled canvases, and display art is capped at 256px with a
-12-texture inactive cache. Battle positions remain continuous while decorative
-arena effects and Inkbody deformation update at a bounded 30 Hz.
+## The game
 
-## Daily loop
+Every official drawing receives the same 100-point stat budget. The server
+analyzes the submitted PNG, chooses its permanent Combat Role, and resolves each
+fight. The client then turns the stored result into a lively battle replay using
+the player's actual art. Drawing choices create identity and matchups without
+letting one player submit more raw stat power than another.
 
-1. Draw your assigned three-day community theme. Each cycle deals five clear
-   briefs from the authored catalog, then gives every player one random
-   assignment from that pool. The assignment stays locked until submitted, then
-   the player's next Draw advances to another randomized theme in the same pool.
-   Each new Scribbit keeps that theme id as its category, and the Rumble picker
-   gathers matching community creations under the theme name. The versioned
-   calendar covers 360 Arena days. The next season must append before day 361,
-   so published cycles never remap.
-   The screen keeps the theme inside the canvas,
-   keeps all eight base colors visible, shows only size, eraser, undo, and Tools
-   by default, and keeps collectible paint, brushes, stickers, Clear, and Redo
-   one tap away. One visible `NEXT` action enables when the body is valid. Naming follows
-   in a focused preview; birth and VS receipts explain the resulting Shape Power
-   without restoring the former four-stat panel.
-   Players who only want to sketch can choose untimed `FREE DRAW` instead. It
-   uses the same large canvas and tools, saves once per Arena day in a separate
-   versioned store, and never creates a Rumble entrant or battle reward. The
-   Draw destination then shows that day’s saved image with one Practice action.
-2. Care for the Scribbit across its three-day life, then open Shop to spend
-   earned Ink on one Mystery Ink Chest or a maximum batch of ten.
-3. Grow a permanent cosmetic collection with visible collector rank, wearable
-   titles, and an honest countdown to the guaranteed Epic pull.
-4. The Scribbit enters the nightly asynchronous Rumble automatically.
-5. Continue one Founder Rival Thread through its founder-specific three-page
-   episode—first to two, with at most one story beat per Arena day—or take the
-   daily Champion Contract for +2 XP on a win.
-6. Once today's Scribbit locks, use the reward-free Four-Power Practice Lab to
-   draw throwaway shapes and immediately watch more server-authored fights.
-7. Use the compact Rumble Pick action in Arena to choose another player’s
-   contender. Champion picks earn 3 Clout; finalist backers earn 1.
-8. Return after the UTC rollover to see the Champion and watch your picked
-   Scribbit's last Rumble bout inside the app.
-9. Open Shop for Mystery Ink Chests and Bag to manage equipment, pens, and
-   titles. Gallery remains available for community Legends and personal Legacy
-   Cards without occupying a primary dock slot.
-10. Keep a visible daily play streak and permanent Clout.
-11. Keep a Scribbit alive for three days. Every finished run becomes an immutable
-    personal Legacy Card; a crown or enough community Belief gives it a gold
-    finish and preserves it in the public Hall of Legends.
+The main loop is:
 
-The first session proves the whole promise—open Home, draw, watch that exact Scribbit fight
-one simple random founding rival, then return Home with Arena ready for chosen battles. The birth
-fight skips the three-choice Rival Run board so the core hook lands before the
-deeper decision layer. The birth receipt says what caused the build and what it does,
-for example `SHARP EDGES → FIRETIP HALO` and `3 ROTATING QUILLS`, instead of
-showing raw stat totals. Phaser 4.2 turns the submitted PNG into a deforming Inkbody:
-its dominant drawing stat controls its breathing and named Shape Power, while
-its element gives that power one of sixteen authored signature identities. The
-server resolves each 20 Hz fight ahead of time and stores a compact transcript;
-the client replays that immutable result as a continuous arena battle capped at
-20 seconds. A final Sudden Scribble at 15 seconds halves Shape Power cooldowns
-and folds the arena inward for a short, legible finish. A full-height paper
-arena now separates combat from the quieter Gallery screens: a torn page,
-localized element stains, rough truthful bounds, and transcript-triggered ink
-surges keep the center readable. A compact paper rail keeps the battle kind,
-server lock, icon controls, fighter names, numeric HP, and Shape Power state
-visible as READY → WINDUP → ACTIVE without returning to turn cards.
-Transcript facts appear only as a transient paper margin, turning them into
-power-specific play-by-play without adding events or changing their order. A
-versioned shared Inkcast pack contains 104 globally unique lines across 25 strict
-fact banks. For each authored fact, the replay-scoped author walks a deterministic
-bank-local rotation and never reuses a line before that bank is exhausted;
-founder signature reactions do not consume the normal rotation. Per-bank token contracts, rendered-length checks,
-and claim-safety rules reject copy that invents rewards, outcomes, unsupported
-miss causes, Ink Pressure timing, or future arena events. The typed authoring
-layer excludes Colorburst misses because its delayed echo may still connect. A
-bounded editorial queue chooses at most one headline per simulation tick, holds
-it for 900ms of wall-clock time, and keeps only two pending beats, so criticals
-and signature moments remain readable even at 4× while every visual event still
-plays; the queue may omit lower-priority authored candidates for readability.
-Transcript-derived
-hitstop, lagging HP chunks, impact rings, mastery
-auras, folding arena walls, and optional procedural sound add spectacle without
-changing a single result. At the bell, a winner-first Inkcast Recap keeps the
-exact finish reason, duration, and final HP readable, while
-playback-only 2×/4× speed is reset before result controls animate. Only a
-knockout folds the loser; a double knockout folds both fighters, while time
-decisions leave both standing. The compact payoff immediately says `YOU WON`,
-`YOU LOST`, or names the spectator winner, then names the transcript-proven
-`FINAL SPLAT` or `WINNER'S SPLAT` with its Shape Power and damage before giving
-one primary next move;
-Rival, Practice, tonight's pick, and the real return destination no longer read
-as four equal actions. Those canvas actions, Practice exits, archived returns,
-and Rival Draft choices are mirrored by focusable native buttons; critical
-targets remain at least 44 CSS pixels in the 320x568 fit and support visible
-focus plus Enter/Space without changing battle authority.
-The first Spar win each UTC day commits one versioned reward receipt in the
-same Redis transaction as its XP and Ink. Fresh Replay can therefore celebrate
-`+1 XP • +2 INK` or an exact level-up without deriving progression on the
-client. Level gains apply one bounded shared damage curve, while randomized
-Power-Up offers and equipped Gear techniques are validated separately and
-together by the local combat balancer. Saved pages keep only Replay plus their truthful return action; they
-cannot reopen a live Rival or tonight's pick flow.
-Before the bell, a mode-specific VS card keeps one title, optional story stakes,
-large fighter art, and two plain causal lines such as
-`MORE COLORS → CONE + DELAYED ECHO`. They come from the same immutable Shape
-Power content used by birth and replay and never claim win odds. During replay,
-neutral no-clean-hit stamps avoid inventing a
-dodge or counter; shield and element cues appear only for explicit transcript
-events. The twenty founding opponents use deterministic stat-shaped mascot art,
-so their silhouette previews the same Shape Power the server runs. One frozen
-shared catalog also gives each founder an epithet and seven purpose-specific
-voice lines: rival challenge, two openings, first-signature reaction, victory,
-defeat, and Rumble copy. Those lines replace existing presentation beats; they
-cannot schedule events or affect a result. There is no turn-based player path or
-outcome-changing cheer input. No WebSocket or client combat authority is
-required.
+1. Draw one official Scribbit for the current Community Theme.
+2. Name it, choose one of three offered Power-Ups, and bring it to life.
+3. Watch that exact drawing enter its first fight immediately.
+4. Use Arena to Spar with rivals, pursue a Champion Contract, and make one
+   nightly Rumble Pick.
+5. Earn Ink, open Mystery Ink Chests, equip Gear, and care for growing
+   Scribbits.
+6. Return after the 00:00 UTC rollover for the Rumble result and continue the
+   Scribbit's three-day growth story.
 
-Signed-in players can explicitly share a completed, unskipped replay. The
-browser records a silent clip of the already-rendering Phaser canvas, uploads
-that clip to Reddit media, and opens Reddit's share sheet; a shared link can
-show the hosted clip on the Scribbits splash. The stored transcript remains the
-authoritative result—the client-rendered video is presentation, not proof.
+## How to play
 
-Before every player-facing Spar—and again after each bout—the player picks from
-three server-authored founding rivals instead of receiving a blind random fight.
-The daily slate is stable, level-bounded, and power-varied; its cards disclose
-each rival's real level, element, Shape Power, signature move, forecast status,
-canonical epithet, and challenge line. The draft also carries the previous
-transcript's exact FINAL/BIGGEST SPLAT into the next choice. The server validates
-the chosen rival against the current slate before authoring a fresh transcript,
-so matchup choice adds agency and story continuity without combat authority or
-fake win odds.
+### 1. Open the game
 
-Each Rival Run lasts exactly three bouts. Every slate offers `SAFE +1`,
-`EVEN +2`, and `BOLD +3`; only wins add the displayed points, while losses still
-advance the run. Bout and score follow through the chooser, VS receipt, battle,
-and result. The third result offers one explicit new-run action and the server
-rolls a fresh bout 1/3 slate. The new `SIGNATURE INK` Technique Trial asks for
-three Shape Power activations across the run. Progress comes only from the
-player fighter's immutable server-authored battle events, so it adds a reason
-to watch each drawing's signature without adding power, rewards, or another screen.
+Open the Scribbits custom post on Reddit and enter the expanded game. The Home
+screen shows the selected Scribbit and one large **DRAW!** action. The persistent
+dock contains **Arena**, **Bag**, **Home**, **Battles**, and **Shop**.
 
-One founder can become the player's active Rival Thread. It is a server-owned
-best-of-three capped at three qualifying battles, and only one score beat can be
-written per Arena day. The active founder is pinned into tomorrow's draft and
-future slates; unrelated fights remain exhibitions and cannot replace the thread.
-Before a qualifying bout, the paper ceremony names the stakes—new thread, match
-point, or deciding bout—and the live rail becomes RIVAL BOUT or RIVAL DECIDER
-without revealing the already-authored winner.
-Every founder now owns a validated three-page episode with a unique title and
-founder-specific scene cue. Page 1 opens the relationship, Page 2 reframes the
-rematch, and Page 3 names the decider. The next episode appears consistently in
-the Rival Draft, Next Goal, compact Rival margin, and VS ceremony. Page selection is
-derived from the authoritative series score, so these 60 authored pages add no
-Redis schema, client-owned progression, predicted outcome, or reward promise.
-After the fight, the same page closes with one of 120 unique founder-authored
-result lines selected from the validated transcript winner. The result receipt
-leads with the new server score and whether the thread continues or the margin
-is signed; its page title remains visible in the VS ceremony and Rival Draft.
-The score and return day persist on the Arena Next Goal card without adding a
-new rule panel. None of these surfaces invent Ink, XP, Clout, or another reward.
-Every finished series becomes a permanent signed margin note, not currency,
-combat power, or a twenty-character checklist. A pending projection receipt lets
-Arena reads repair an ambiguous write after the battle report is safely stored;
-an immediate response restores the exact episode beat only after the reloaded
-Chronicle matches the projection and the current report is its latest durable
-source. Delayed receipts replay in Arena-day order and older checklist encounters
-migrate as archive-only history.
+### 2. Choose a drawing mode
 
-The Battles tab is a Battle Scrapbook for the newest 20 server-stored reports,
-not a permanent career archive. Its compact rows preserve the player's win/loss
-perspective even after a Scribbit fades, pin Rumble and Champion pages before
-same-day exhibitions, and lead with matchup, finish, and day. Opening a usable
-page reveals the exact server verdict, duration, and final HP in Replay. Reports
-without a usable transcript are clearly marked as saved results with no motion
-replay. Opening a page returns to the same
-Scrapbook page and never grants a reward or writes progression.
+The Draw screen offers two paths:
 
-The persistent dock is Arena, Bag, Home, Battles, and Shop, with Home centered.
-Draw opens from Home's large Draw button instead of occupying a dock tab. Shop
-is the one home for earned-Ink Mystery Chests; Bag is the one home for inventory
-and equipment; Gallery is the one home for Legends and Legacy Cards and opens
-directly from Home. Scout and Gallery are not primary
-destinations. The compatibility Notebook scene can still resolve older
-saved-replay returns while that legacy path is retired, but the daily Rumble
-Pick remains directly reachable from Arena.
+- **Community Theme** creates the official daily Scribbit. It can earn rewards,
+  join the Rumble, appear in battle history, and eventually become a permanent
+  Archived card.
+- **Free Draw** is an untimed, once-per-Arena-day sketch. It uses the same canvas
+  and tools but does not create a fighter, reward, Rumble entry, or battle
+  record.
 
-The Practice Lab makes the drawing-to-combat hook replayable after the daily
-submission locks. Its endpoint accepts only a name and base PNG, re-analyzes the
-image on the server, authors a founding rival and complete transcript, and
-returns one ephemeral `practice` report. Practice has no Ink, XP, roster slot,
-Rumble entry, battle history, media upload, or Legacy card. The client keeps only
-a three-role checklist for the current browser session and clears it on exit.
-Finding the third unique role earns one gold 3/3 completion beat; repeated
-drawings keep the checklist truthful and do not replay that first-completion cue.
-After 3/3, Practice rotates through all three roles and fresh prompt cards
-instead of pinning the player to one encore.
+Community assignments come from an append-only calendar of shared three-day
+themes. The current assignment remains locked until it is submitted, so every
+Scribbit keeps an honest category for that cycle's community Rumble.
 
-Care is also authored content rather than three repeating toasts. A validated
-72-line deck covers every Shape Power, care action, life day, and variant, so one
-Scribbit receives nine distinct lifetime moments. The paper receipt shows its
-drawing, new mood, care progress, exact XP delta, and only the Ink award confirmed
-by the server. The Field Guide now teaches the live fixed-tick payloads—Ember
-afterburn, Tide shove, Moss barrier, and Storm windup—instead of the retired
-element triangle.
+### 3. Draw a Scribbit
 
-## Server authority
+Draw with touch, mouse, or pen. The canvas provides twelve base colors, brush
+size, eraser, undo, and an optional Tools drawer for unlocked paints, brushes,
+stickers, clear, and redo. **NEXT** becomes available only after the shared
+analyzer confirms that the drawing contains a real body rather than a tap-sized
+mark.
 
-The production server is real and is hosted by Reddit through Devvit Web. The
-Reddit WebView calls typed `/api/*` routes running in Devvit's Node environment;
-installation state lives in managed Redis. The server analyzes submitted PNGs,
-selects opponents, simulates the complete fixed-tick fight, stores the winner and
-transcript, and only then returns the replay. Phaser streams that precomputed data
-locally, so the battle looks real-time without WebSockets, latency-sensitive
-inputs, or a client that can change the result. `app/scripts/dev-mock.mjs` is only
-the local development stand-in for this hosted boundary.
+The most-used role color determines the current Combat Role:
 
-Each report also records one of ten rotating Battle Arenas. Their small symmetric
-modifiers and challenges are selected and scored with the fight on the server;
-the replay only renders the stored arena, timeline, and result.
+| Drawing colors          | Combat Role  | Battle style                             | Strong against |
+| ----------------------- | ------------ | ---------------------------------------- | -------------- |
+| Brown, coral, or orange | **Brawler**  | Close-range Ink Fists and Inkquake       | Mage           |
+| Gold, green, or blue    | **Longshot** | Long-range Quill Launcher and Nib Volley | Brawler        |
+| Aqua, purple, or pink   | **Mage**     | Ranged Palette Orb and Colorburst        | Longshot       |
 
-## Repository
+Black, grey, and white are neutral. The counter loop is
+**Brawler → Mage → Longshot → Brawler**. Size, outline, footprint, and color
+variety still shape the normalized Chonk, Spike, Zip, and Charm values inside
+the fixed 100-point build.
 
-- [`app/`](./app): the Devvit application and detailed developer README.
-- [`plans/v3-scribbits-arena.md`](./plans/v3-scribbits-arena.md): gameplay plan
-  of record.
-- [`SUBMISSION.md`](./SUBMISSION.md): Devpost copy, proof checklist, and demo
-  video shot list.
-- [`GOAL.md`](./GOAL.md): current ship gates and external blockers.
-- [`app/docs/ranking-seasons.md`](./app/docs/ranking-seasons.md): season
-  lifecycle, ranking policy, administration, and recovery contract.
+After drawing, name the Scribbit, confirm its preview, and choose one of three
+server-offered Power-Ups. The birth reveal uses the submitted PNG itself—there
+is no placeholder creature.
 
-## Verify locally
+### 4. Watch the first fight
 
-From the repository root:
+A new Scribbit immediately faces a server-selected founding rival. Scribbits is
+not a turn-based or reflex PvP game: the server resolves the complete fight at a
+fixed 20 Hz, stores the winner and transcript, and sends that immutable report
+to Phaser for playback.
 
-```bash
-./verify.command
+During the replay you can:
+
+- mute or enable battle sound;
+- watch at normal, 2×, or 4× speed;
+- skip to the authoritative result; and
+- share a completed, unskipped replay through Reddit's share flow.
+
+Fights end within 20 seconds. At 15 seconds, **Sudden Scribble** shortens
+Signature Move cooldowns for a fast finish. Replay effects, commentary, and
+animation never alter the stored result.
+
+### 5. Compete in Arena
+
+Arena is the home for competition. Select a living Scribbit, review the current
+season and venue challenge, then choose an activity:
+
+- **Rival Run:** fight a three-bout run against founding rivals. Each slate
+  offers **SAFE +1**, **EVEN +2**, and **BOLD +3** choices. A win adds the shown
+  points; a loss still advances the run.
+- **Founder Rival Thread:** build one best-of-three rivalry. At most one story
+  beat advances per Arena day, while other fights remain replayable exhibitions.
+- **Champion Contract:** challenge the current Champion once per day. A win
+  awards +2 XP.
+- **Practice Lab:** after the official drawing locks, make throwaway drawings
+  to discover all three roles and immediately watch reward-free fights. Practice
+  creates no Ink, XP, roster entry, Rumble entry, battle history, or Archived
+  card.
+
+The first Spar win of a UTC day awards +1 XP and +2 Ink. Gear can add bounded
+techniques to direct exhibition fights, but Rumble, Champion, and Practice
+remain Gear-neutral.
+
+### 6. Make a nightly Rumble Pick
+
+Every official Scribbit enters the asynchronous nightly Rumble automatically.
+Before resolution, choose one other community contender as your daily Pick. The
+choice locks on the server.
+
+The nightly Devvit scheduler resolves the field at 00:00 UTC. Return afterward
+to see the Champion, your Scribbit's result, and the last bout of your Pick when
+available. Picking the Champion awards 3 permanent Clout; picking a finalist
+awards 1.
+
+### 7. Grow and collect
+
+- **Ink:** the official daily draw awards 7 Ink, enough for one Mystery Ink
+  Chest. Wins and daily returns can award more.
+- **Shop:** each chest costs 7 Ink. Pulls use visible 70% Common, 25% Rare, 4%
+  Epic, and 1% Legendary odds, with Epic-or-better guaranteed by pull 10. Open
+  one chest or a maximum batch of ten.
+- **Bag:** manage reusable Gear, permanent pens, titles, and discovered items.
+  Each living Scribbit has two slots in each Gear category: weapon, armor,
+  shoes, and accessory. Duplicate Gear can be forged into higher ranks.
+- **Care:** inspect a Scribbit and use its daily care actions during growth.
+  Receipts show the exact server-confirmed mood, XP, and Ink changes.
+- **Battles:** replay the newest 20 server-stored reports. Older result-only
+  records remain readable even when motion replay is unavailable.
+- **Gallery:** open Gallery from Home to browse Growing, Mature, and Archived
+  Scribbits plus community Legends.
+
+### 8. Mature and archive Scribbits
+
+A Scribbit grows for three Arena days. It then becomes **Mature**: its base stats
+lock, but it remains playable and can still use Gear. Each player has three
+Growing slots and three Mature slots.
+
+Retiring a Scribbit creates an immutable Archived card. If a fourth Scribbit
+matures, the oldest Mature Scribbit is archived automatically. Archived cards
+preserve the drawing, final level and record, Belief, equipment appearance, and
+creator title. A crown or at least 25 community Belief gives the card a gold
+Legend finish.
+
+## Fairness and server authority
+
+- All official drawings normalize to the same 100-point stat budget.
+- Submitted images are revalidated by the Devvit server; the browser is never
+  trusted as combat authority.
+- Fight results, rewards, daily limits, Rumble Picks, progression, and inventory
+  are server-owned and persisted in Redis.
+- Battle replays render stored transcripts and cannot recalculate a winner.
+- There is no paid currency. Mystery Ink is earned through play.
+- Players can report Scribbits, delete owned Scribbits with confirmation, or
+  delete all of their stored game data from the Field Guide.
+
+## Technology
+
+- **Platform:** Reddit Devvit Web
+- **Client:** Phaser 4.2, TypeScript, Vite
+- **Server:** Devvit Node.js runtime, Hono, managed Redis
+- **Communication:** typed `/api/*` REST contracts
+- **Rendering:** the submitted PNG becomes a deforming Phaser Inkbody during
+  replay, with a Canvas-safe fallback
+
+Production runs as a Devvit custom post. The inline `splash.html` entry stays
+lightweight for the Reddit feed, while `game.html` contains the expanded Phaser
+game. The server analyzes submissions, persists player state, schedules nightly
+resolution, and returns deterministic reports.
+
+## Repository layout
+
+```text
+scribbits/
+├── app/                       Devvit application
+│   ├── devvit.json            Devvit entrypoints, permissions, menus, scheduler
+│   ├── src/client/            Phaser scenes and browser presentation
+│   ├── src/server/            Hono routes and Redis-backed game logic
+│   ├── src/shared/            Shared contracts, combat, analysis, and content
+│   └── tests/                 Focused integration and regression suites
+├── artifacts/                 Screenshots, submission media, and QA evidence
+├── plans/                     Gameplay and implementation plans
+├── DEPLOY.md                  Full deployment and troubleshooting guide
+├── OVERVIEW.md                Product vocabulary and architecture source of truth
+└── verify.command             Complete local verification entrypoint
 ```
 
-This resolves Node 22.2.0+ and pnpm 11.7.0 (including the Codex bundled runtime), installs
-from `app/pnpm-lock.yaml` when needed, and runs the complete gate. With Node and
-pnpm already configured, the equivalent command is `cd app && pnpm verify`.
+## Local development
 
-For browser-only iteration without Reddit login:
+### Requirements
+
+- Node.js 22.2.0 or newer
+- pnpm 11.7.0
+- A Reddit account and Devvit authentication for Reddit playtests or uploads
+
+The root command files can locate common Homebrew, nvm, mise, asdf, and bundled
+Codex runtimes, then install the locked dependencies when necessary.
+
+### Browser-only preview
+
+No Reddit login is required for the local mock:
 
 ```bash
 ./mock.command
 ```
 
-Open `http://localhost:8902/`. The default preview starts with an empty roster so
-the only Scribbits shown are drawings submitted during that preview. Add
-`?fixtures` to opt into the seeded QA roster. The command runs a dedicated Vite
-development server, so client saves update immediately without rebuilding or
-deleting `dist/client`. Mock backend changes publish only after a successful
-build and restart automatically; a failed rebuild keeps the last-good server
-running. Running the command again cleanly replaces its previous instance.
-Public forecast flavor follows its own validated 32-day no-repeat rotation. It
-appears consistently in the app and browser mock without sharing randomness
-with boosted/nerfed combat elements.
+Open <http://localhost:8902/>. The default preview starts with an empty roster;
+add `?fixtures` to use seeded QA data. Client changes update through Vite, while
+the mock backend keeps its last good build during a failed rebuild.
 
-The verification gate covers TypeScript, ESLint, every discoverable Node test
-suite, the deterministic simulation harness, and the production build.
+### Devvit playtest
 
-## Data and safety
+Authenticate once from the app directory:
 
-Scribbits stores the Reddit identity needed for attribution plus drawings,
-battles, inventory, streak, and scores needed to run the game. New drawings are
-uploaded through Reddit media hosting. Player cards provide **Report** and
-owner-only, two-step **Delete** controls. The Field Guide also provides a
-two-step **Delete all my stored game data** action. The server analyzes the
-authoritative base PNG, rejects tap-sized marks that do not form a body, and
-accepts a decorated PNG only when its changed pixels stay inside the declared
-rotated accessory regions and no base pixels are erased. Cosmetics cannot
-secretly change combat stats or drawing identity.
+```bash
+cd app
+pnpm exec devvit login
+cd ..
+```
 
-Practice drawings cross the response boundary only for their replay. They are
-not uploaded or stored, and practice reports are rejected before the battle
-store's first Redis operation. The route also enforces a bounded request body,
-one in-flight request per user, and a short Redis-backed request-rate guard.
-Battle clips upload only after the player taps Share, require a signed-in Reddit
-account, and are rejected above 8 MB. Accepted clips leave the app boundary and
-are hosted by Reddit media.
+Then start a playtest in the configured `scribbits_dev` subreddit:
 
-Mystery Ink is earned only through play. Shop owns the chest ceremony rather
-than competing with the Arena fight or Bag equipment. Chests cost 7 Ink each, use visible 70/25/4/1
-rarity odds, guarantee an Epic by open 10, and reveal the actual reward art in
-place. Players can open one or ten at a time; there is no 100-open or auto-repeat
-action. A completed first Rival Run leads to a simplified first-chest Shop once
-the player has the required 7 Ink. That first pull preserves
-the published rarity odds while guaranteeing equippable Gear, and its reveal
-opens Bag on the matching equipment category. The Reddit Gold Styles card is a
-disabled cosmetic-only preview. Shop's stage, two chest states, and Ink token
-load only when Shop opens, deferring 7,526,466 image bytes from initial game boot.
-Discovery, collector progress, pens, and titles
-persist across Scribbits; permanent pen/title duplicates redirect within their
-rarity while useful accessory copies stack. Mystery Pens are expressive
-sidegrades that can change the build split through color, but every drawing
-still has exactly the same 100-point stat budget. Bag anchors the selected
-Scribbit on a visible equipment platform, keeps filters below that stage, and
-shows owned rewards in a bounded scrollable tray of icon-only tiles. Strong
-common, Rare, and Epic borders carry rarity at a glance; tapping a tile opens
-its name, stars, copies, Forge progress, exact Gear technique, and Equip action.
-Earned reusable Gear adds bounded Exhibition sidegrades without adding to the
-100-point drawing build or changing analysis; Rumble and Champion remain
-Gear-neutral by design. Exhaustive mirrored matchup tests cover all six Gear
-effect families and both equipment slots.
+```bash
+./playtest.command
+```
 
-Scribbits grow from level 1 to 5, but the complete journey adds only 1.5%
-damage. Regression simulations keep a max-level fighter at or below a 60%
-equal-build win rate. Rumble matchmaking uses Swiss record first, closest level
-second, gives every entrant one fight per round, and avoids repeat opponents
-when another match exists. It never matches on element or drawing archetype.
+You can target another subreddit with `./playtest.command subreddit_name`.
 
-The Gallery's Legacy Book keeps a private, paginated card for every completed
-Scribbit with its submitted art, final level and record, Belief, lifespan,
-accessories, and the creator title worn at archive time. Returning players see
-new pages before the normal Rumble scouting receipt, and can open the frozen
-record without turning retired Scribbits back into combat entities.
+### Verify
 
-The scouting receipt can play the server-selected last bout for the Scribbit a
-player picked; the client cannot choose or alter that report. After today's
-drawing, one Next Goal card progressively reveals the next useful action and
-only the XP, Belief, lifespan, Ink, and collection evidence needed for it.
+Run the complete clean-shell gate from the repository root:
+
+```bash
+./verify.command
+```
+
+It runs TypeScript checks, ESLint, all discoverable Node test suites, the
+deterministic combat simulation harness, and the production build. With Node and
+pnpm already configured, the equivalent command is:
+
+```bash
+cd app
+pnpm run verify
+```
+
+Useful focused commands from `app/` include:
+
+```bash
+pnpm run type-check
+pnpm run lint
+pnpm test
+pnpm run test:sim
+pnpm run build
+pnpm run balance:check
+```
+
+## Deploying with Devvit
+
+For a private patch upload, use the guarded root command:
+
+```bash
+./deploy.command
+```
+
+The command requires a clean worktree, runs the full verification and combat
+balance gates, checks Devvit authentication, and then executes a patch upload.
+It does not commit or push changes.
+
+To request public review instead, run:
+
+```bash
+cd app
+pnpm run launch
+```
+
+That performs the same release checks before `devvit publish --bump patch`.
+See [DEPLOY.md](DEPLOY.md) for registration, GitHub auto-deploy, token setup, and
+troubleshooting.
+
+## More documentation
+
+- [Product and architecture overview](OVERVIEW.md)
+- [Devvit application notes](app/README.md)
+- [Ranking season operations](app/docs/ranking-seasons.md)
+- [Deployment guide](DEPLOY.md)
+- [Submission package](SUBMISSION.md)
+- [Devvit app configuration](app/devvit.json)
+
+## License
+
+The Devvit application is available under the BSD 3-Clause License. See
+[app/LICENSE](app/LICENSE).

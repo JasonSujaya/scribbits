@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
-const [configSource, splashSource, gameHtml, gameSource, drawSource, serverSource] =
+const [configSource, splashSource, gameHtml, gameSource, drawSource, serverSource, preloaderSource, homeSource] =
   await Promise.all([
     readFile(new URL('../devvit.json', import.meta.url), 'utf8'),
     readFile(new URL('../src/client/splash.ts', import.meta.url), 'utf8'),
@@ -10,6 +10,8 @@ const [configSource, splashSource, gameHtml, gameSource, drawSource, serverSourc
     readFile(new URL('../src/client/game.ts', import.meta.url), 'utf8'),
     readFile(new URL('../src/client/scenes/Draw.ts', import.meta.url), 'utf8'),
     readFile(new URL('../src/server/index.ts', import.meta.url), 'utf8'),
+    readFile(new URL('../src/client/scenes/Preloader.ts', import.meta.url), 'utf8'),
+    readFile(new URL('../src/client/scenes/ScribbitHome.ts', import.meta.url), 'utf8'),
   ]);
 
 const config = JSON.parse(configSource);
@@ -33,6 +35,11 @@ test('expanded boot remains visible through startup and can fall back to Canvas'
   assert.match(gameHtml, /id="game-boot-status"/);
   assert.match(gameSource, /StartGame\('game-container', CANVAS\)/);
   assert.match(gameSource, /reportGameBootError/);
+  assert.doesNotMatch(preloaderSource, /markGameBootPhase\('ready'\)/);
+  assert.match(
+    homeSource,
+    /this\.build\(\);[\s\S]{0,220}Phaser\.Core\.Events\.POST_RENDER[\s\S]{0,140}markGameBootPhase\('ready'\)/
+  );
 });
 
 test('hosted Draw inlines its analyzer worker and the server exposes health', () => {

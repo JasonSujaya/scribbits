@@ -232,11 +232,11 @@ const project = {
     { id: 'scratch-one', assetId: 'sfx-scratch', kind: 'sfx', name: 'Pencil Scratch 1', startFrame: 68, durationFrames: 12, trimBeforeFrames: 0, volume: 0.9, muted: false, loop: false, playbackRate: 1 },
     { id: 'scratch-two', assetId: 'sfx-scratch', kind: 'sfx', name: 'Pencil Scratch 2', startFrame: 105, durationFrames: 12, trimBeforeFrames: 0, volume: 0.82, muted: false, loop: false, playbackRate: 0.9 },
     { id: 'whistle', assetId: 'sfx-whistle', kind: 'sfx', name: 'Draw Whistle', startFrame: 198, durationFrames: 48, trimBeforeFrames: 0, volume: 0.82, muted: false, loop: false, playbackRate: 1 },
-    { id: 'impact-one', assetId: 'sfx-impact-heavy', kind: 'sfx', name: 'Heavy Impact 1', startFrame: 350, durationFrames: 30, trimBeforeFrames: 0, volume: 0.9, muted: false, loop: false, playbackRate: 1 },
-    { id: 'impact-two', assetId: 'sfx-impact-heavy', kind: 'sfx', name: 'Heavy Impact 2', startFrame: 420, durationFrames: 30, trimBeforeFrames: 0, volume: 0.95, muted: false, loop: false, playbackRate: 0.92 },
-    { id: 'battle-bell', assetId: 'sfx-impact-bell', kind: 'sfx', name: 'Battle Bell', startFrame: 465, durationFrames: 36, trimBeforeFrames: 0, volume: 0.8, muted: false, loop: false, playbackRate: 1 },
-    { id: 'gacha-coins', assetId: 'sfx-coin-rattle', kind: 'sfx', name: 'Mystery Gear Pull', startFrame: 505, durationFrames: 54, trimBeforeFrames: 0, volume: 0.9, muted: false, loop: false, playbackRate: 1 },
-    { id: 'bag-page', assetId: 'sfx-paper-open', kind: 'sfx', name: 'Gear Bag Page', startFrame: 600, durationFrames: 36, trimBeforeFrames: 0, volume: 0.75, muted: false, loop: false, playbackRate: 1 },
+    { id: 'impact-one', assetId: 'sfx-impact-heavy', kind: 'sfx', name: 'Heavy Impact 1', startFrame: 340, durationFrames: 30, trimBeforeFrames: 0, volume: 0.9, muted: false, loop: false, playbackRate: 1 },
+    { id: 'impact-two', assetId: 'sfx-impact-heavy', kind: 'sfx', name: 'Heavy Impact 2', startFrame: 405, durationFrames: 30, trimBeforeFrames: 0, volume: 0.95, muted: false, loop: false, playbackRate: 0.92 },
+    { id: 'battle-bell', assetId: 'sfx-impact-bell', kind: 'sfx', name: 'Battle Bell', startFrame: 435, durationFrames: 36, trimBeforeFrames: 0, volume: 0.8, muted: false, loop: false, playbackRate: 1 },
+    { id: 'gacha-coins', assetId: 'sfx-coin-rattle', kind: 'sfx', name: 'Mystery Gear Pull', startFrame: 475, durationFrames: 54, trimBeforeFrames: 0, volume: 0.9, muted: false, loop: false, playbackRate: 1 },
+    { id: 'bag-page', assetId: 'sfx-paper-open', kind: 'sfx', name: 'Gear Bag Page', startFrame: 570, durationFrames: 36, trimBeforeFrames: 0, volume: 0.75, muted: false, loop: false, playbackRate: 1 },
     { id: 'arena-confirm', assetId: 'sfx-confirm', kind: 'sfx', name: 'Arena Confirm', startFrame: 720, durationFrames: 30, trimBeforeFrames: 0, volume: 0.8, muted: false, loop: false, playbackRate: 1 },
     { id: 'confirm', assetId: 'sfx-confirm', kind: 'sfx', name: 'Logo Confirm', startFrame: 815, durationFrames: 30, trimBeforeFrames: 0, volume: 0.9, muted: false, loop: false, playbackRate: 1 },
   ],
@@ -256,17 +256,17 @@ const project = {
       videoElement('home-gameplay', 'gameplay-home'),
       ...captionElements('home-caption', 'BRING IT HOME.', { durationFrames: 66, y: 105, fill: '#ffd447' }),
     ], 'slide'),
-    page('battle', 'Watch it fight', 6, [
+    page('battle', 'Watch it fight', 5, [
       videoElement('battle-gameplay', 'gameplay-battle'),
-      ...captionElements('battle-caption', 'WATCH IT FIGHT.', { durationFrames: 58, y: 1_470 }),
+      ...captionElements('battle-caption', 'WATCH IT FIGHT.', { durationFrames: 50, y: 1_470 }),
     ], 'zoom'),
     page('gacha', 'Pull mystery gear', 4, [
       videoElement('gacha-gameplay', 'gameplay-gacha'),
       ...captionElements('gacha-caption', 'PULL MYSTERY GEAR.', { durationFrames: 62, y: 110, fontSize: 55, fill: '#ffd447' }),
     ], 'slide'),
-    page('bag', 'Build your loadout', 4, [
+    page('bag', 'Build your loadout', 5, [
       videoElement('bag-gameplay', 'gameplay-bag'),
-      ...captionElements('bag-caption', 'COLLECT. EQUIP. CREATE.', { durationFrames: 62, y: 110, fontSize: 50 }),
+      ...captionElements('bag-caption', 'BUILD YOUR LOADOUT.', { startFrame: 70, durationFrames: 58, y: 110, fontSize: 54 }),
     ], 'slide'),
     page('arena', 'Explore the arena', 3, [
       videoElement('arena-gameplay', 'gameplay-arena'),

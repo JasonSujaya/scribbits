@@ -74,11 +74,7 @@ test('drawing music follows the timed round lifecycle', () => {
   );
 });
 
-test('drawing music is primed by Start Drawing and gets a bounded readiness wait', () => {
-  assert.match(
-    soundtrackSource,
-    /const DRAWING_SOUNDTRACK_READY_WAIT_MS = 450/
-  );
+test('drawing music is primed by Start Drawing without delaying the timer', () => {
   assert.match(
     soundtrackSource,
     /export const preloadDrawingSoundtrack = \(\): void =>[\s\S]{0,180}preparedDrawingAudio = createPreparedDrawingAudio\(\)/
@@ -86,22 +82,6 @@ test('drawing music is primed by Start Drawing and gets a bounded readiness wait
   assert.match(
     soundtrackSource,
     /export const primeDrawingSoundtrack = \(\): void =>[\s\S]{0,260}audio\.play\(\)/
-  );
-  assert.match(
-    soundtrackSource,
-    /export const waitForDrawingSoundtrackReadiness = \(\): Promise<void> =>[\s\S]{0,260}waitForAudioReadiness\(audio, DRAWING_SOUNDTRACK_READY_WAIT_MS\)/
-  );
-  assert.match(
-    soundtrackSource,
-    /waitForAudioReadiness[\s\S]{0,800}addEventListener\('canplay', finish[\s\S]{0,300}setTimeout\(finish, timeoutMilliseconds\)/
-  );
-  assert.match(
-    soundtrackSource,
-    /audio\.readyState >= HTMLMediaElement\.HAVE_FUTURE_DATA/
-  );
-  assert.match(
-    soundtrackSource,
-    /clearTimeout\(timeoutId\)[\s\S]{0,160}removeEventListener\('canplay', finish\)[\s\S]{0,100}removeEventListener\('error', finish\)/
   );
   assert.match(
     drawSource,
@@ -113,8 +93,9 @@ test('drawing music is primed by Start Drawing and gets a bounded readiness wait
   );
   assert.match(
     drawSource,
-    /waitForDrawingSoundtrackReadiness\(\)\.then\(\(\) => \{[\s\S]{0,500}this\.activateDrawingRound\(false\)/
+    /private startDrawingRound\(\): void[\s\S]{0,500}const wasStarted = this\.drawRoundClock\.started;[\s\S]{0,100}this\.activateDrawingRound\(wasStarted\)/
   );
+  assert.doesNotMatch(drawSource, /waitForDrawingSoundtrackReadiness/);
   assert.match(
     soundtrackSource,
     /export const startDrawingSoundtrack = \(\): void =>[\s\S]{0,260}const audio = preparedDrawingAudio[\s\S]{0,700}currentAudio = audio/
@@ -188,8 +169,30 @@ test('battle music is prepared during fight intent and reused by Replay', () => 
 
 test('Home and Gallery share one uninterrupted idle track', () => {
   assert.match(soundtrackSource, /const audio = new Audio\(\)/);
-  assert.match(soundtrackSource, /audio\.preload = 'auto'/);
-  assert.match(soundtrackSource, /audio\.autoplay = startPlaying/);
+  assert.match(
+    soundtrackSource,
+    /audio\.preload = mode === 'home' \? 'none' : 'auto'/
+  );
+  assert.match(
+    soundtrackSource,
+    /mode === 'home' && startPlaying && !hasUnlockedSoundtrackPlayback/
+  );
+  assert.match(
+    soundtrackSource,
+    /if \(!shouldDeferPlayback\) audio\.src = source/
+  );
+  assert.match(
+    soundtrackSource,
+    /if \(!audio\.getAttribute\('src'\) && source\) audio\.src = source/
+  );
+  assert.match(
+    soundtrackSource,
+    /document\.hidden \|\| waitingForInitialGesture[\s\S]{0,120}installRetryListeners\(\)/
+  );
+  assert.match(
+    soundtrackSource,
+    /audio\.autoplay = startPlaying && !shouldDeferPlayback/
+  );
   assert.match(
     soundtrackSource,
     /currentMode === 'home' && currentAudio\)[\s\S]{0,100}requestPlayback\(\)/
