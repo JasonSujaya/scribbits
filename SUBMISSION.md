@@ -184,7 +184,7 @@ on one exercise.
 - Replaced the earlier catch/collection direction with the current daily
   draw-to-stats Rumble loop.
 - Added deterministic server-side PNG analysis and fair stat normalization.
-- Added 120 authored community drawing themes covering 360 Arena days.
+- Added 125 authored community drawing themes covering 375 Arena days.
   Every three-day cycle rotates to five themes and each player receives one
   random assignment from a category-balanced pool spanning at least four of
   animals, characters/fantasy, places/nature, vehicles, food, and objects, with
@@ -385,9 +385,11 @@ on one exercise.
   label to the configuration the combat engine consumes, while retaining exact
   snapshots for all ten cards and an unchanged Smearstep golden transcript.
 - Kept one stable playable `Draw a Scribbit. Watch it fight.` app post while
-  adding idempotent community text posts for each three-day Doodle Dare pool,
-  season and scoring-event transitions, final standings, and the strongest
-  Rumble fight from every seven-day Arena week.
+  adding idempotent interactive `Draw Them All` posts for each three-day
+  five-Dare pool. Each post owns its prompt and season/event snapshot, shows
+  personal unlock progress, and opens the existing drawing canvas. Season and
+  scoring-event transitions, final standings, and the strongest Rumble fight
+  from every seven-day Arena week are also announced automatically.
 - Made transparent and legacy paper-backed PNGs produce identical
   server-authoritative stats, with automated parity coverage.
 - Added report/hide, owner removal, full player-data deletion, Reddit-only

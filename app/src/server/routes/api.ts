@@ -45,6 +45,7 @@ import {
   CAPSULE_FIRST_DAILY_COST,
   getScribbitLifecycleStage,
   INK_REWARDS,
+  PLAYER_MUTATION_BUSY_MESSAGE,
   RIVAL_RUN_LENGTH,
   XP_REWARDS,
 } from '../../shared/arena';
@@ -58,6 +59,12 @@ import {
   type ProgressionEventResponse,
 } from '../../shared/progressionanalytics';
 import { selectCommunityDoodleDare } from '../../shared/content/communitydrawthemes';
+import {
+  createCommunityChallengePostData,
+  createCommunityChallengeProgress,
+  parseCommunityChallengePostData,
+  type CommunityChallengeProgress,
+} from '../../shared/communitychallenge';
 import {
   isLegacyCardCursor,
   parseLegacyCardsPageSize,
@@ -220,6 +227,7 @@ import {
   loadScribbit,
   loadScribbits,
   hasUserCreatedScribbit,
+  readHasUserCreatedScribbit,
   recordBattleOutcomeForReport,
   refreshEquippedGearRankForUser,
   retireOwnedScribbit,
@@ -332,6 +340,10 @@ const conflict = (c: HonoContext, message: string) => {
   );
 };
 
+const busyConflict = (c: HonoContext, message: string) => {
+  return c.json<ErrorResponse>({ status: 'error', code: 'busy', message }, 409);
+};
+
 const tooManyRequests = (c: HonoContext, message: string) => {
   return c.json<ErrorResponse>(
     { status: 'error', code: 'too_many_requests', message },
@@ -406,7 +418,7 @@ const withPlayerMutationLease: MiddlewareHandler = async (c, next) => {
     next
   );
   if (mutation.status === 'busy') {
-    return conflict(c, 'Another game action is finishing. Try again.');
+    return busyConflict(c, PLAYER_MUTATION_BUSY_MESSAGE);
   }
   if (mutation.status === 'lost') {
     return serverError(c, 'Your game action lost its safety lock. Try again.');
@@ -425,11 +437,23 @@ api.use('*', async (c, next) => {
   }
 });
 
-// Every non-GET game action mutates or may repair player state. The deletion
-// endpoint owns the inverse side of this lease and therefore must not acquire
-// it here.
+// Media upload and Practice are authenticated POSTs, but they do not mutate
+// gameplay state. They own their external/ephemeral guards and must not block
+// a refresh behind the player gameplay lease. Data deletion owns the inverse
+// side of the lease and likewise must not acquire it here.
+const playerMutationLeaseExemptPostPathSuffixes = [
+  '/battle-clip',
+  '/practice-battle',
+  '/delete-my-data',
+] as const;
+
 api.use('*', async (c, next) => {
-  if (c.req.method === 'GET' || c.req.path.endsWith('/delete-my-data')) {
+  if (
+    c.req.method === 'GET' ||
+    playerMutationLeaseExemptPostPathSuffixes.some((pathSuffix) =>
+      c.req.path.endsWith(pathSuffix)
+    )
+  ) {
     return next();
   }
   return withPlayerMutationLease(c, next);
@@ -1389,7 +1413,7 @@ api.get('/venue-board', async (c) => {
   }
 });
 
-registerPlayerMutatingGet('/splash', async (c) => {
+api.get('/splash', async (c) => {
   try {
     const now = new Date();
     const dayNumber = await ensureCurrentArenaDay(redis, now);
@@ -1401,7 +1425,7 @@ registerPlayerMutatingGet('/splash', async (c) => {
           ? getHiddenScribbitIds(redis, player.userId)
           : Promise.resolve(new Set<string>()),
         player
-          ? hasUserCreatedScribbit(redis, player.userId)
+          ? readHasUserCreatedScribbit(redis, player.userId)
           : Promise.resolve(false),
       ]);
     const recentCreations = await loadScribbits(
@@ -1421,6 +1445,46 @@ registerPlayerMutatingGet('/splash', async (c) => {
   } catch (error) {
     console.error('Splash route failed:', error);
     return serverError(c, 'The arena preview is still being sketched.');
+  }
+});
+
+registerPlayerMutatingGet('/community-challenge', async (c) => {
+  try {
+    const postChallenge = parseCommunityChallengePostData(context.postData);
+    const requestedArenaDay = Number(c.req.query('day'));
+    let challenge = postChallenge;
+    if (!challenge && Number.isSafeInteger(requestedArenaDay)) {
+      try {
+        challenge = createCommunityChallengePostData(requestedArenaDay);
+      } catch {
+        return badRequest(c, 'That Doodle Dare drop is not available.');
+      }
+    }
+    if (!challenge) {
+      return badRequest(c, 'This post does not contain a Doodle Dare drop.');
+    }
+
+    const currentArenaDay = await ensureCurrentArenaDay(redis, new Date());
+    const player = await getCurrentRequestPlayer(c);
+    const completedDrawCount =
+      player && currentArenaDay >= challenge.arenaDay
+        ? await loadCompletedCommunityThemeDrawCount(
+            redis,
+            player.userId,
+            Math.min(currentArenaDay, challenge.endsArenaDay)
+          )
+        : 0;
+    return c.json<CommunityChallengeProgress>(
+      createCommunityChallengeProgress({
+        arenaDay: challenge.arenaDay,
+        currentArenaDay,
+        playerKey: player?.userId ?? null,
+        completedDrawCount,
+      })
+    );
+  } catch (error) {
+    console.error('Community challenge route failed:', error);
+    return serverError(c, 'This Doodle Dare drop could not be opened.');
   }
 });
 

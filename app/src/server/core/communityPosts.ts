@@ -46,7 +46,7 @@ const eventAnnouncement = (
 });
 
 const recoverPublishedPost = async (
-  title: string
+  draft: CommunityPostDraft
 ): Promise<{ id: string } | null> => {
   const recentPosts = await reddit
     .getNewPosts({
@@ -55,8 +55,20 @@ const recoverPublishedPost = async (
       pageSize: 100,
     })
     .all();
-  const matchingPost = recentPosts.find((post) => post.title === title);
-  return matchingPost ? { id: matchingPost.id } : null;
+  for (const post of recentPosts) {
+    if (post.title !== draft.title) continue;
+    if (draft.kind === 'custom') {
+      const postData = await post.getPostData();
+      if (
+        postData?.surface !== draft.postData.surface ||
+        postData?.arenaDay !== draft.postData.arenaDay
+      ) {
+        continue;
+      }
+    }
+    return { id: post.id };
+  }
+  return null;
 };
 
 const publishCommunityPost = async (
@@ -67,7 +79,7 @@ const publishCommunityPost = async (
   if (existingState?.startsWith(publishedMarkerPrefix)) return;
 
   if (existingState !== undefined) {
-    const recoveredPost = await recoverPublishedPost(draft.title);
+    const recoveredPost = await recoverPublishedPost(draft);
     if (recoveredPost) {
       await storage.hSet(publicationStateKey, {
         [draft.id]: `${publishedMarkerPrefix}${recoveredPost.id}`,
@@ -98,14 +110,34 @@ const publishCommunityPost = async (
     throw new Error(`Community post ${draft.id} could not claim publication.`);
   }
 
-  let post: Awaited<ReturnType<typeof reddit.submitPost>>;
+  let post: { id: string };
   try {
-    post = await reddit.submitPost({
-      subredditName: context.subredditName,
-      title: draft.title,
-      text: draft.body,
-      sendreplies: false,
-    });
+    post =
+      draft.kind === 'custom'
+        ? await reddit.submitCustomPost({
+            subredditName: context.subredditName,
+            title: draft.title,
+            entry: draft.entry,
+            postData: {
+              ...draft.postData,
+              themes: draft.postData.themes.map((theme) => ({ ...theme })),
+              announcements: [...draft.postData.announcements],
+            },
+            textFallback: { text: draft.body },
+            sendreplies: false,
+            styles: {
+              backgroundColor: '#2A2118FF',
+              backgroundColorDark: '#2A2118FF',
+              heightPixels: 512,
+              supportsChromeless: true,
+            },
+          })
+        : await reddit.submitPost({
+            subredditName: context.subredditName,
+            title: draft.title,
+            text: draft.body,
+            sendreplies: false,
+          });
   } catch (error) {
     // A retry first scans Reddit by exact title, so this is safe whether the
     // request failed before submission or its successful reply was lost.

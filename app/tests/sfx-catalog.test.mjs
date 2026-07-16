@@ -154,6 +154,18 @@ test('runtime routes all battle and shared UI sound through the catalog', async 
   assert.match(draw, /preloadSfx\('draw\.start'\)/);
   assert.match(draw, /preloadSfx\('draw\.timer'\)/);
   assert.match(draw, /preloadSfx\('draw\.tick'\)/);
+  assert.match(
+    draw,
+    /await prepareSfxPlayback\('draw\.countdown', 'draw\.start'\)/
+  );
+  assert.match(
+    sfx,
+    /document\.addEventListener\('pointerdown', unlockSfx, true\)/
+  );
+  assert.doesNotMatch(
+    sfx,
+    /document\.addEventListener\('pointerdown', unlockSfx, \{[\s\S]{0,80}once: true/
+  );
   assert.match(draw, /playSfx\('draw\.finish'\)/);
   assert.match(draw, /playSfx\('draw\.submit'\)/);
   assert.match(draw, /playSfx\('scribbit\.birth'\)/);

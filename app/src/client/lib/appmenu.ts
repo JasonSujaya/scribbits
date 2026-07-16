@@ -1,5 +1,6 @@
 import * as Phaser from 'phaser';
 import type { Scene } from 'phaser';
+import { context as devvitContext } from '@devvit/web/client';
 import { CanvasActionOverlay, CanvasModalOverlay } from './overlay';
 import {
   openFighterGuidePopup,
@@ -47,6 +48,7 @@ export function appMenu(scene: Scene, options: AppMenuOptions = {}): AppMenu {
   const openMenu = (): void => {
     if (menuLayer) return;
     const centerY = Math.min(height / 2, 560);
+    const appVersion = devvitContext?.appVersion?.trim() || 'LOCAL';
     menuLayer = scene.add.container(0, 0).setDepth(3200).setScrollFactor(0);
     const scrim = scene.add
       .rectangle(width / 2, height / 2, width, height, 0x1a1320, 0.62)
@@ -59,7 +61,7 @@ export function appMenu(scene: Scene, options: AppMenuOptions = {}): AppMenu {
     const title = label(
       scene,
       width / 2,
-      centerY - 164,
+      centerY - 180,
       translate('appMenu.title'),
       40,
       UI.ink,
@@ -75,12 +77,12 @@ export function appMenu(scene: Scene, options: AppMenuOptions = {}): AppMenu {
       width - 220,
       UI.tapeAlt
     );
-    const privacyButton = iconButton(
+    const accountButton = iconButton(
       scene,
       width / 2,
       centerY + 65,
       'shield',
-      translate('appMenu.privacy'),
+      translate('appMenu.account'),
       () => openPrivacy(),
       width - 220,
       UI.tapeAlt
@@ -93,13 +95,22 @@ export function appMenu(scene: Scene, options: AppMenuOptions = {}): AppMenu {
       closeMenu,
       220
     );
+    const versionLabel = label(
+      scene,
+      width / 2,
+      centerY - 132,
+      translate('appMenu.version', { version: appVersion }),
+      20,
+      UI.inkSoft
+    );
     menuLayer.add([
       scrim,
       card,
       title,
       guideButton,
-      privacyButton,
+      accountButton,
       closeButton,
+      versionLabel,
     ]);
     scrim.on('pointerup', closeMenu);
 
@@ -107,7 +118,7 @@ export function appMenu(scene: Scene, options: AppMenuOptions = {}): AppMenu {
       scene,
       translate('appMenu.modalTitle'),
       closeMenu,
-      translate('appMenu.modalDescription'),
+      translate('appMenu.modalDescription', { version: appVersion }),
       settingsControl
     );
     const guideControl = modalOverlay.add({
@@ -121,7 +132,7 @@ export function appMenu(scene: Scene, options: AppMenuOptions = {}): AppMenu {
       onActivate: openFieldGuide,
     });
     modalOverlay.add({
-      label: translate('appMenu.openPrivacy'),
+      label: translate('appMenu.openAccount'),
       rect: {
         x: 110,
         y: centerY + 15,

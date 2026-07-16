@@ -1,11 +1,25 @@
 import type { BattleReport } from './arena';
 import type { CommunityDrawTheme } from './content/communitydrawthemes';
+import {
+  createCommunityChallengePostData,
+  type CommunityChallengePostData,
+} from './communitychallenge';
 
-export type CommunityPostDraft = Readonly<{
-  id: string;
-  title: string;
-  body: string;
-}>;
+export type CommunityPostDraft =
+  | Readonly<{
+      id: string;
+      title: string;
+      body: string;
+      kind: 'text';
+    }>
+  | Readonly<{
+      id: string;
+      title: string;
+      body: string;
+      kind: 'custom';
+      entry: 'challenge';
+      postData: CommunityChallengePostData;
+    }>;
 
 export type ArenaSeasonAnnouncement = Readonly<{
   name: string;
@@ -101,6 +115,7 @@ export const buildArenaUpdateDraft = (
   }
 
   for (const event of input.endedEvents) {
+    titleDetails.push(`${event.name} ended`);
     sections.push(
       `## ${event.name} has ended`,
       `${event.seasonName}'s scoring event is now closed.`
@@ -108,6 +123,7 @@ export const buildArenaUpdateDraft = (
   }
 
   for (const event of input.startingEvents) {
+    titleDetails.push(`${event.name} live`);
     sections.push(
       `## ${event.name} is live`,
       `${event.seasonName} standings now earn ${event.scoreMultiplier}\u00d7 points during this event.`
@@ -126,10 +142,25 @@ export const buildArenaUpdateDraft = (
 
   if (sections.length === 0) return null;
   sections.push(`[Open Scribbits and join in](${input.appUrl})`);
+  if (input.themePool) {
+    const finalThemeDay = input.arenaDay + 2;
+    return Object.freeze({
+      id: `arena-update:${input.arenaDay}`,
+      title: `Draw Them All \u00b7 Days ${input.arenaDay}\u2013${finalThemeDay}`,
+      body: sections.join('\n\n'),
+      kind: 'custom',
+      entry: 'challenge',
+      postData: createCommunityChallengePostData(
+        input.arenaDay,
+        titleDetails.filter((detail) => detail !== 'new Doodle Dares')
+      ),
+    });
+  }
   return Object.freeze({
     id: `arena-update:${input.arenaDay}`,
     title: `Arena Update \u00b7 Day ${input.arenaDay} \u00b7 ${titleDetails.join(' + ') || 'season event'}`,
     body: sections.join('\n\n'),
+    kind: 'text',
   });
 };
 
@@ -152,5 +183,6 @@ export const buildWeeklyFightDraft = (
       `**${winner.name}** won by ${finishLabel(report)}.`,
       `[Open Scribbits to watch battles and enter the next Rumble](${appUrl})`,
     ].join('\n\n'),
+    kind: 'text',
   });
 };

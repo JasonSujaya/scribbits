@@ -197,9 +197,10 @@ test('Shop acquires, Bag equips, and Home opens Gallery', () => {
   assert.doesNotMatch(gallerySource, /DRAW CHARGES|PAINT BUCKET/);
 });
 
-test('Privacy and account deletion have one top-level Settings home', () => {
+test('Account and data deletion have one top-level Settings home', () => {
   assert.match(appMenuSource, /openPrivacyPopup\(/);
-  assert.match(appMenuSource, /translate\('appMenu\.privacy'\)/);
+  assert.match(appMenuSource, /translate\('appMenu\.account'\)/);
+  assert.match(privacyPopupSource, /'ACCOUNT'/);
   assert.doesNotMatch(bestiarySource, /'privacy'|PRIVACY & DATA|deleteMyData/);
   assert.match(privacyPopupSource, /export function openPrivacyPopup\(/);
   assert.match(

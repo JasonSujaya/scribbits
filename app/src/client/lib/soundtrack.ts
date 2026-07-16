@@ -16,8 +16,6 @@ let retryListenersInstalled = false;
 let pendingHomeStop: number | null = null;
 let visibilityHandlerInstalled = false;
 let recoveryAttempts = 0;
-let waitingForInitialGesture = false;
-let hasUnlockedSoundtrackPlayback = false;
 
 const MAX_RECOVERY_ATTEMPTS = 1;
 
@@ -44,8 +42,6 @@ const attemptPlayback = (audio: HTMLAudioElement): void => {
   void audio.play().then(
     () => {
       if (audio !== currentAudio) return;
-      waitingForInitialGesture = false;
-      hasUnlockedSoundtrackPlayback = true;
       removeRetryListeners();
     },
     (error: unknown) => {
@@ -68,7 +64,7 @@ const requestPlayback = (): void => {
   const audio = currentAudio;
   if (!audio) return;
   playbackRequested = true;
-  if (document.hidden || waitingForInitialGesture) {
+  if (document.hidden) {
     installRetryListeners();
     return;
   }
@@ -77,7 +73,6 @@ const requestPlayback = (): void => {
 
 function retryPlayback(): void {
   if (!playbackRequested || !currentAudio || document.hidden) return;
-  waitingForInitialGesture = false;
   attemptPlayback(currentAudio);
 }
 
@@ -181,17 +176,14 @@ const replaceSoundtrack = (
   if (typeof Audio === 'undefined') return;
 
   const audio = new Audio();
-  const shouldDeferPlayback =
-    mode === 'home' && startPlaying && !hasUnlockedSoundtrackPlayback;
   audio.dataset.scribbitsSoundtrack = mode;
   audio.dataset.scribbitsSoundtrackSource = source;
-  // Home opens while the game is still settling inside Reddit's WebView. Keep
-  // its MP3 completely off the startup network/decode path, then attach it in
-  // the player's first trusted interaction. Drawing and battle music are
-  // explicitly prepared from their own player actions.
+  // Home music starts optimistically because Reddit's expanded-view gesture
+  // happens outside this iframe. Browsers that block autoplay fall back to the
+  // first in-game pointer or keyboard interaction through requestPlayback().
   audio.preload = mode === 'home' ? 'none' : 'auto';
-  if (!shouldDeferPlayback) audio.src = source;
-  audio.autoplay = startPlaying && !shouldDeferPlayback;
+  audio.src = source;
+  audio.autoplay = startPlaying;
   audio.loop = true;
   audio.volume =
     mode === 'drawing'
@@ -206,7 +198,6 @@ const replaceSoundtrack = (
   currentMode = mode;
   currentAudio = audio;
   recoveryAttempts = nextRecoveryAttempts;
-  waitingForInitialGesture = shouldDeferPlayback;
   if (startPlaying) requestPlayback();
 };
 
@@ -425,7 +416,6 @@ export const pauseDrawingSoundtrack = (): void => {
 export const stopSoundtrack = (): void => {
   playbackRequested = false;
   recoveryAttempts = 0;
-  waitingForInitialGesture = false;
   cancelPendingHomeStop();
   removeRetryListeners();
   currentMode = null;

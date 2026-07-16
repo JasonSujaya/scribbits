@@ -2,6 +2,11 @@
 // and spar matchmaking through this adapter instead of maintaining lookalikes.
 
 export { simulate } from './battle';
+export {
+  analyticsAdminCss,
+  analyticsAdminHtml,
+  analyticsAdminJavaScript,
+} from '../admin/analyticsPage';
 export { generateForecastForDay } from './forecast';
 export { createPracticeBattle } from './practice';
 export { getRumbleProgressionRewards } from './dailyJob';

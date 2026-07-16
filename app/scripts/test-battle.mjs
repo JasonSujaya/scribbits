@@ -512,7 +512,7 @@ const dataLeaseSource = readFileSync(
   'utf8'
 );
 for (const [operationName, expectedCount] of [
-  ['Player data deletion', 3],
+  ['Player data deletion', 4],
   ['Player mutation', 3],
   ['Nightly player mutation', 3],
 ]) {
@@ -525,7 +525,7 @@ for (const [operationName, expectedCount] of [
       )
     )?.length,
     expectedCount,
-    `${operationName} must own its three acquire/renew/release cleanup labels`
+    `${operationName} must own its acquire/renew/release cleanup labels`
   );
 }
 pass('transaction cleanup diagnostics name their actual lease lifecycle');
@@ -1347,6 +1347,7 @@ assert.equal(
 assert.deepEqual(publicRouteInventory, [
   'GET /api/arena',
   'GET /api/clout-board',
+  'GET /api/community-challenge',
   'GET /api/health',
   'GET /api/inventory',
   'GET /api/legacy-cards',
@@ -1387,6 +1388,10 @@ assert.deepEqual(
     .map((route) => `${route.method} ${route.path}`)
     .sort(),
   [
+    'GET /internal/analytics',
+    'GET /internal/analytics/assets/analytics.css',
+    'GET /internal/analytics/assets/analytics.js',
+    'GET /internal/analytics/query',
     'POST /internal/menu/post-create',
     'POST /internal/menu/season-admin-user-ids-validate',
     'POST /internal/menu/seasons-manage',
@@ -3126,7 +3131,7 @@ const busyMutationResponse = await productionApiContract.app.request(
 assert.equal(busyMutationResponse.status, 409);
 assert.deepEqual(await busyMutationResponse.json(), {
   status: 'error',
-  code: 'conflict',
+  code: 'busy',
   message: 'Another game action is finishing. Try again.',
 });
 assert.equal(productionApiContract.apiContractRuntimeState.watchCalls, 1);
@@ -4204,20 +4209,20 @@ assert.notDeepEqual(
   'the five-theme pool should rotate after three days'
 );
 const completeCommunityThemeRotation = Array.from(
-  { length: 120 },
+  { length: 125 },
   (_, blockIndex) =>
     communityThemeContent.selectCommunityDoodleDarePool(blockIndex * 3 + 1)
 ).flat();
 assert.equal(
   new Set(completeCommunityThemeRotation.map((dare) => dare.id)).size,
-  120,
-  'all authored themes should appear across the complete 360-day rotation'
+  125,
+  'all authored themes should appear across the complete Year One rotation'
 );
 assert.ok(
-  Array.from({ length: 120 }, (_, themeIndex) => {
-    const themeId =
-      communityThemeContent.COMMUNITY_DRAW_THEME_SEASONS[0].themes[themeIndex]
-        .id;
+  Array.from({ length: 125 }, (_, themeIndex) => {
+    const themeId = communityThemeContent.COMMUNITY_DRAW_THEME_SEASONS.flatMap(
+      (season) => season.themes
+    )[themeIndex].id;
     return completeCommunityThemeRotation.filter(
       (theme) => theme.id === themeId
     ).length;
@@ -4225,11 +4230,11 @@ assert.ok(
   'the complete rotation should deal every authored theme exactly five times'
 );
 assert.throws(
-  () => communityThemeContent.selectCommunityDoodleDarePool(361),
+  () => communityThemeContent.selectCommunityDoodleDarePool(376),
   /append the next season/,
   'unsupported days must fail before they can silently remap published themes'
 );
-assert.equal(communityThemeContent.COMMUNITY_DRAW_THEME_COVERAGE_DAYS, 360);
+assert.equal(communityThemeContent.COMMUNITY_DRAW_THEME_COVERAGE_DAYS, 375);
 assert.equal(
   doodleDareContent.selectDoodleDareForPower('smearstep', 'practice-proof')
     .suggestedPower,
@@ -14115,16 +14120,34 @@ assert.equal(singleKeyDeletion.status, 'acquired');
 const baseSingleKeyReleaseWatch = singleKeyDeletionReleaseStorage.watch.bind(
   singleKeyDeletionReleaseStorage
 );
+let maximumQueuedDeletionLockDeletes = 0;
+let deletionReleaseTransactionCount = 0;
 singleKeyDeletionReleaseStorage.watch = async (...keys) => {
   const transaction = await baseSingleKeyReleaseWatch(...keys);
   const deleteKeys = transaction.del.bind(transaction);
+  let queuedDeletionLockDeletes = 0;
   transaction.del = async (...deletedKeys) => {
     assert.equal(
       deletedKeys.length,
       1,
       'Devvit-compatible lease release must queue one key per DEL command'
     );
+    queuedDeletionLockDeletes += 1;
+    maximumQueuedDeletionLockDeletes = Math.max(
+      maximumQueuedDeletionLockDeletes,
+      queuedDeletionLockDeletes
+    );
+    assert.equal(
+      queuedDeletionLockDeletes,
+      1,
+      'Devvit-compatible lease release must queue only one DEL per transaction'
+    );
     return deleteKeys(...deletedKeys);
+  };
+  const execute = transaction.exec.bind(transaction);
+  transaction.exec = async () => {
+    if (queuedDeletionLockDeletes > 0) deletionReleaseTransactionCount += 1;
+    return execute();
   };
   return transaction;
 };
@@ -14147,6 +14170,8 @@ assert.equal(
   ),
   undefined
 );
+assert.equal(maximumQueuedDeletionLockDeletes, 1);
+assert.equal(deletionReleaseTransactionCount, 2);
 pass('player data deletion releases Devvit locks one key at a time');
 
 const concurrentBoundaryStorage = createMemoryStorage();

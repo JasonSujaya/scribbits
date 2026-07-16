@@ -50,8 +50,10 @@ const activeCueVoices = new Map<SfxCue, number>();
 const nextSampleVariant = new Map<SfxCue, number>();
 
 let sharedAudioContext: AudioContext | null = null;
+let audioContextResume: Promise<AudioContext | null> | null = null;
 let sfxEnabled = readStoredEnabledState();
 let domSfxInstalled = false;
+let activationListenersInstalled = false;
 let visibilityHandlerInstalled = false;
 let debugCanvas: HTMLCanvasElement | null = null;
 let playCount = 0;
@@ -187,10 +189,42 @@ function beginCuePlayback(cue: SfxCue, context: AudioContext): void {
 
 export function unlockSfx(): void {
   if (!sfxEnabled) return;
+  void resumeSfxAudioContext();
+}
+
+function removeActivationListeners(): void {
+  if (!activationListenersInstalled || typeof document === 'undefined') return;
+  activationListenersInstalled = false;
+  document.removeEventListener('pointerdown', unlockSfx, true);
+  document.removeEventListener('keydown', unlockSfx, true);
+}
+
+async function resumeSfxAudioContext(): Promise<AudioContext | null> {
   const context = getAudioContext();
-  if (context?.state === 'suspended') {
-    void context.resume().catch(() => undefined);
+  if (!context || context.state === 'closed') return null;
+  if (context.state === 'running') {
+    removeActivationListeners();
+    return context;
   }
+  audioContextResume ??= context
+    .resume()
+    .then(() => (context.state === 'running' ? context : null))
+    .catch(() => null)
+    .finally(() => {
+      audioContextResume = null;
+    });
+  const resumedContext = await audioContextResume;
+  if (resumedContext) removeActivationListeners();
+  return resumedContext;
+}
+
+/** Resume Web Audio inside the trusted Start Drawing gesture before 3-2-1. */
+export async function prepareSfxPlayback(
+  ...cues: readonly SfxCue[]
+): Promise<boolean> {
+  if (!sfxEnabled) return false;
+  cues.forEach(preloadSfx);
+  return (await resumeSfxAudioContext()) !== null;
 }
 
 export function playSfx(cue: SfxCue): boolean {
@@ -204,13 +238,14 @@ export function playSfx(cue: SfxCue): boolean {
 
   const context = getAudioContext();
   if (!context) return false;
-  recordDebugCue(cue);
   if (context.state === 'suspended') {
-    void context
-      .resume()
-      .then(() => beginCuePlayback(cue, context))
-      .catch(() => undefined);
+    void resumeSfxAudioContext().then((resumedContext) => {
+      if (!resumedContext) return;
+      recordDebugCue(cue);
+      beginCuePlayback(cue, resumedContext);
+    });
   } else if (context.state === 'running') {
+    recordDebugCue(cue);
     beginCuePlayback(cue, context);
   }
   return true;
@@ -261,14 +296,12 @@ export function setSfxCue(
 function installDomActivationSounds(): void {
   if (domSfxInstalled || typeof document === 'undefined') return;
   domSfxInstalled = true;
-  document.addEventListener('pointerdown', unlockSfx, {
-    capture: true,
-    once: true,
-  });
-  document.addEventListener('keydown', unlockSfx, {
-    capture: true,
-    once: true,
-  });
+  activationListenersInstalled = true;
+  // Keep retrying trusted interactions until Reddit's WebView actually moves
+  // the AudioContext to running. A rejected first resume must not mute SFX for
+  // the rest of the session.
+  document.addEventListener('pointerdown', unlockSfx, true);
+  document.addEventListener('keydown', unlockSfx, true);
   if (!visibilityHandlerInstalled) {
     visibilityHandlerInstalled = true;
     document.addEventListener('visibilitychange', () => {

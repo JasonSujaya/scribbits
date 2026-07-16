@@ -45,12 +45,14 @@ import type {
   ChoosePowerUpRequest,
   ChoosePowerUpResponse,
 } from '../../shared/arena';
+import { PLAYER_MUTATION_BUSY_MESSAGE } from '../../shared/arena';
 import type { EquipmentCategory } from '../../shared/equipment';
 import type {
   BattleClipUploadRequest,
   BattleClipUploadResponse,
 } from '../../shared/battleshare';
 import { DEFAULT_LOCALE } from '../locales/catalogs';
+import { getBusyGetRetryDelay, waitForBusyGetRetryDelay } from './apiretry';
 import { getLocale, translate } from './localization';
 
 export type ApiResult<T> = { ok: true; data: T } | { ok: false; error: string };
@@ -91,17 +93,30 @@ async function request<T>(
 ): Promise<ApiResult<T>> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
+  let busyRetryIndex = 0;
   try {
-    const response = await fetch(url, {
-      ...init,
-      signal: controller.signal,
-      headers: { Accept: 'application/json', ...(init.headers ?? {}) },
-    });
-    if (!response.ok) {
-      return { ok: false, error: await serverErrorMessage(response) };
+    while (true) {
+      const response = await fetch(url, {
+        ...init,
+        signal: controller.signal,
+        headers: { Accept: 'application/json', ...(init.headers ?? {}) },
+      });
+      if (!response.ok) {
+        const serverError = await readServerError(response);
+        const retryDelay =
+          init.method === 'GET' && serverError.code === 'busy'
+            ? getBusyGetRetryDelay(busyRetryIndex)
+            : undefined;
+        if (retryDelay !== undefined) {
+          busyRetryIndex += 1;
+          await waitForBusyGetRetryDelay(retryDelay, controller.signal);
+          continue;
+        }
+        return { ok: false, error: serverError.message };
+      }
+      const data = (await response.json()) as T;
+      return { ok: true, data };
     }
-    const data = (await response.json()) as T;
-    return { ok: true, data };
   } catch (error) {
     return { ok: false, error: friendlyError(error) };
   } finally {
@@ -114,35 +129,55 @@ const ERROR_MESSAGE_KEY_BY_CODE = {
   unauthorized: 'error.unauthorized',
   not_found: 'error.notFound',
   conflict: 'error.conflict',
+  busy: 'error.busy',
   too_many_requests: 'error.tooManyRequests',
   payload_too_large: 'error.payloadTooLarge',
   payment_required: 'error.paymentRequired',
   server_error: 'error.serverError',
 } as const satisfies Record<ArenaErrorCode, Parameters<typeof translate>[0]>;
 
+type ServerErrorDetails = Readonly<{
+  message: string;
+  code?: ArenaErrorCode;
+}>;
+
 // New servers return a stable code for client-side localization. English keeps
 // the detailed compatibility message; translated locales use the stable code.
-async function serverErrorMessage(response: Response): Promise<string> {
+async function readServerError(
+  response: Response
+): Promise<ServerErrorDetails> {
   try {
     const body = (await response.json()) as Partial<ArenaErrorResponse>;
-    const code = body.code;
+    // During a staged deploy, a cached server may still label this one
+    // transient lease response as a generic conflict. Preserve compatibility
+    // without retrying any other conflict.
+    const code =
+      response.status === 409 &&
+      body.code === 'conflict' &&
+      body.message === PLAYER_MUTATION_BUSY_MESSAGE
+        ? 'busy'
+        : body.code;
     if (
       getLocale() !== DEFAULT_LOCALE &&
       code &&
       code in ERROR_MESSAGE_KEY_BY_CODE
     ) {
-      return translate(ERROR_MESSAGE_KEY_BY_CODE[code]);
+      return { message: translate(ERROR_MESSAGE_KEY_BY_CODE[code]), code };
     }
     if (typeof body.message === 'string' && body.message.length > 0) {
-      return body.message;
+      return code && code in ERROR_MESSAGE_KEY_BY_CODE
+        ? { message: body.message, code }
+        : { message: body.message };
     }
     if (code && code in ERROR_MESSAGE_KEY_BY_CODE) {
-      return translate(ERROR_MESSAGE_KEY_BY_CODE[code]);
+      return { message: translate(ERROR_MESSAGE_KEY_BY_CODE[code]), code };
     }
   } catch {
     // fall through to the generic message
   }
-  return translate('error.requestFailed', { status: response.status });
+  return {
+    message: translate('error.requestFailed', { status: response.status }),
+  };
 }
 
 function friendlyError(error: unknown): string {

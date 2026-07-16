@@ -1,12 +1,19 @@
 {
   "$schema": "https://developers.reddit.com/schema/config-file.v1.json",
   "name": "scribbits",
+  "marketingAssets": {
+    "icon": "src/client/assets/scribbits-app-icon.png"
+  },
   "post": {
     "dir": "dist/client",
     "entrypoints": {
       "default": {
         "inline": true,
         "entry": "splash.html"
+      },
+      "challenge": {
+        "inline": true,
+        "entry": "challenge.html"
       },
       "game": {
         "entry": "game.html"

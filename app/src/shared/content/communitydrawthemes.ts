@@ -38,7 +38,7 @@ export type CommunityDrawThemeValidation = Readonly<{
 
 export const COMMUNITY_DRAW_THEME_DAYS = 3;
 export const COMMUNITY_DRAW_THEME_POOL_SIZE = 5;
-export const COMMUNITY_DRAW_THEME_MINIMUM_COVERAGE_DAYS = 360;
+export const COMMUNITY_DRAW_THEME_MINIMUM_COVERAGE_DAYS = 365;
 const THEME_ID_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const THEME_PROMPT_MAXIMUM_LENGTH = 52;
 const THEME_PROMPT_MAXIMUM_WORDS = 4;
@@ -180,12 +180,27 @@ const YEAR_ONE_THEMES = Object.freeze([
   defineTheme('shield', 'a shield with moon', 'object'),
 ]);
 
+// A separate append-only season preserves every already-published Year One
+// pool while carrying the authored schedule past a full 365 days.
+const YEAR_ONE_OVERTIME_THEMES = Object.freeze([
+  defineTheme('raccoon', 'a raccoon with camera', 'animal'),
+  defineTheme('superhero', 'a superhero baking', 'character'),
+  defineTheme('comet', 'a comet with smile', 'place-nature'),
+  defineTheme('scooter', 'a scooter with basket', 'vehicle'),
+  defineTheme('donut-detective', 'a donut detective', 'food'),
+]);
+
 export const COMMUNITY_DRAW_THEME_SEASONS: readonly CommunityDrawThemeSeason[] =
   Object.freeze([
     Object.freeze({
       version: 1,
       startsOnArenaDay: 1,
       themes: YEAR_ONE_THEMES,
+    }),
+    Object.freeze({
+      version: 2,
+      startsOnArenaDay: 361,
+      themes: YEAR_ONE_OVERTIME_THEMES,
     }),
   ]);
 

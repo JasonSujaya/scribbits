@@ -98,7 +98,10 @@ test('official Draw requires an explicit start and locks at time', () => {
     drawSource,
     /this\.practiceMode \|\| this\.automationMode \|\| this\.playerDrawMode === 'free'/
   );
-  assert.match(drawSource, /private beginDrawingRound\(\): void/);
+  assert.match(
+    drawSource,
+    /private async beginDrawingRound\(\): Promise<void>/
+  );
   assert.match(drawSource, /private startDrawCountdown\(\): void/);
   assert.match(drawSource, /private finishDrawCountdown\(\): void/);
   assert.match(
@@ -107,7 +110,7 @@ test('official Draw requires an explicit start and locks at time', () => {
   );
   assert.match(
     drawSource,
-    /private beginDrawingRound\(\): void[\s\S]{0,1200}this\.startDrawCountdown\(\)/
+    /private async beginDrawingRound\(\): Promise<void>[\s\S]{0,1200}await prepareSfxPlayback\('draw\.countdown', 'draw\.start'\)[\s\S]{0,260}this\.startDrawCountdown\(\)/
   );
   assert.match(
     drawSource,

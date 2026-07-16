@@ -28,6 +28,24 @@ export type ProgressionEventResponse = Readonly<{
   duplicate: boolean;
 }>;
 
+export type ProgressionAnalyticsDay = Readonly<{
+  date: string;
+  uniquePlayers: number;
+  sessions: number;
+  eventCounts: Readonly<Record<ProgressionEventName, number>>;
+}>;
+
+export type ProgressionAnalyticsResponse = Readonly<{
+  generatedAt: string;
+  from: string;
+  to: string;
+  lifetimeEventCounts: Readonly<Record<ProgressionEventName, number>>;
+  rangeEventCounts: Readonly<Record<ProgressionEventName, number>>;
+  activePlayerDays: number;
+  sessionDays: number;
+  days: readonly ProgressionAnalyticsDay[];
+}>;
+
 export const isProgressionEventName = (
   value: unknown
 ): value is ProgressionEventName =>

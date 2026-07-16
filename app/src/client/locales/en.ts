@@ -38,14 +38,15 @@ export const englishMessages = {
     'Your {capacity} growing Scribbit slots are full. Remove one or wait for one to mature.',
 
   'appMenu.title': 'SETTINGS',
+  'appMenu.version': 'VERSION {version}',
   'appMenu.fieldGuide': 'FIGHTER STYLES',
-  'appMenu.privacy': 'PRIVACY & DATA',
+  'appMenu.account': 'ACCOUNT',
   'appMenu.close': 'Close',
   'appMenu.modalTitle': 'Settings',
   'appMenu.modalDescription':
-    'Open fighter rules or manage your stored game data.',
+    'Scribbits {version}. Open fighter rules or manage your stored game data.',
   'appMenu.openFieldGuide': 'Open Who Beats Who guide',
-  'appMenu.openPrivacy': 'Open Privacy & Data',
+  'appMenu.openAccount': 'Open Account',
   'appMenu.fieldGuideTitle': 'WHO BEATS WHO',
   'appMenu.fieldGuideSubtitle': 'Each style beats one and loses to one',
   'appMenu.fieldGuideDescription':
@@ -167,6 +168,7 @@ export const englishMessages = {
   'error.unauthorized': 'Sign in to continue.',
   'error.notFound': 'That item is no longer available.',
   'error.conflict': 'The arena changed. Try again.',
+  'error.busy': 'Another game action is finishing. Try again.',
   'error.tooManyRequests': 'Too many attempts. Wait a moment and try again.',
   'error.payloadTooLarge': 'That drawing is too large to send.',
   'error.paymentRequired': 'You do not have enough Ink for that.',

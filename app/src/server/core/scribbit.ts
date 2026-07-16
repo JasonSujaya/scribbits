@@ -2671,6 +2671,18 @@ export const hasUserCreatedScribbit = async (
   return true;
 };
 
+// Read-only entry surfaces must not acquire the player mutation lease merely
+// to answer this compatibility question. Arena owns the durable backfill.
+export const readHasUserCreatedScribbit = async (
+  storage: ArenaStorage,
+  userId: string
+): Promise<boolean> => {
+  if ((await storage.get(getUserHasCreatedScribbitKey(userId))) === '1') {
+    return true;
+  }
+  return (await getUserScribbitIds(storage, userId, 1)).length > 0;
+};
+
 export const getDailyFlags = async (
   storage: ArenaStorage,
   userId: string,

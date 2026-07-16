@@ -739,12 +739,15 @@ export const ARENA_ERROR_CODES = [
   'unauthorized',
   'not_found',
   'conflict',
+  'busy',
   'too_many_requests',
   'payload_too_large',
   'payment_required',
   'server_error',
 ] as const;
 export type ArenaErrorCode = (typeof ARENA_ERROR_CODES)[number];
+export const PLAYER_MUTATION_BUSY_MESSAGE =
+  'Another game action is finishing. Try again.';
 export type ArenaErrorResponse = {
   status: 'error';
   code: ArenaErrorCode;

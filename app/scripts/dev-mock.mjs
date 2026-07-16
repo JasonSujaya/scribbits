@@ -28,6 +28,9 @@ if (!existsSync(fileURLToPath(mockCombatBundleUrl))) {
   );
 }
 const {
+  analyticsAdminCss,
+  analyticsAdminHtml,
+  analyticsAdminJavaScript,
   CAPSULE_COST,
   DEFAULT_BATTLE_ARENA_ID,
   GEAR_MERGE_COPY_COST,
@@ -1821,6 +1824,33 @@ const handleApi = async (request, response, url) => {
   const previewMode = requestPreviewMode(request, url);
   const economy = getPreviewEconomy(previewMode);
 
+  if (method === 'GET' && path === '/internal/analytics') {
+    response.writeHead(200, {
+      'Content-Type': 'text/html; charset=utf-8',
+      'Cache-Control': 'no-store',
+    });
+    response.end(analyticsAdminHtml);
+    return;
+  }
+
+  if (method === 'GET' && path === '/internal/analytics/assets/analytics.css') {
+    response.writeHead(200, {
+      'Content-Type': 'text/css; charset=utf-8',
+      'Cache-Control': 'no-store',
+    });
+    response.end(analyticsAdminCss);
+    return;
+  }
+
+  if (method === 'GET' && path === '/internal/analytics/assets/analytics.js') {
+    response.writeHead(200, {
+      'Content-Type': 'text/javascript; charset=utf-8',
+      'Cache-Control': 'no-store',
+    });
+    response.end(analyticsAdminJavaScript);
+    return;
+  }
+
   if (method === 'GET' && path === '/api/debug/battle') {
     const power = url.searchParams.get('power');
     if (!power || !Object.hasOwn(debugPowerFighters, power)) {
@@ -1941,6 +1971,143 @@ const handleApi = async (request, response, url) => {
       hasCreatedScribbit: state.hasCreatedScribbit,
       featuredCreations: featuredCreationsForPreview(),
     });
+    return;
+  }
+
+  if (method === 'GET' && path === '/internal/analytics/query') {
+    const progressionEventNames = [
+      'draw_started',
+      'draw_submitted',
+      'power_up_offer_shown',
+      'power_up_chosen',
+      'founding_replay_started',
+      'founding_replay_completed',
+      'permanent_reward_earned',
+      'maturity_shown',
+      'maturity_acknowledged',
+      'mature_competition_entered',
+      'progress_receipt',
+      'screen_exit_without_next_action',
+    ];
+    const today = new Date();
+    const defaultTo = today.toISOString().slice(0, 10);
+    const defaultFromDate = new Date(today);
+    defaultFromDate.setUTCDate(defaultFromDate.getUTCDate() - 13);
+    const from =
+      url.searchParams.get('from') ??
+      defaultFromDate.toISOString().slice(0, 10);
+    const to = url.searchParams.get('to') ?? defaultTo;
+    const fromTime = Date.parse(`${from}T00:00:00.000Z`);
+    const toTime = Date.parse(`${to}T00:00:00.000Z`);
+    const dayCount = Math.floor((toTime - fromTime) / 86_400_000) + 1;
+    if (
+      !/^\d{4}-\d{2}-\d{2}$/.test(from) ||
+      !/^\d{4}-\d{2}-\d{2}$/.test(to) ||
+      !Number.isFinite(fromTime) ||
+      !Number.isFinite(toTime) ||
+      dayCount < 1 ||
+      dayCount > 31
+    ) {
+      sendError(
+        response,
+        400,
+        'Analytics date range must be 1 to 31 UTC days.'
+      );
+      return;
+    }
+    const emptyCounts = () =>
+      Object.fromEntries(
+        progressionEventNames.map((eventName) => [eventName, 0])
+      );
+    const days = Array.from({ length: dayCount }, (_, index) => {
+      const date = new Date(fromTime + index * 86_400_000);
+      const activity = 8 + ((index * 7 + dayCount) % 13);
+      return {
+        date: date.toISOString().slice(0, 10),
+        uniquePlayers: 4 + ((index * 3) % 8),
+        sessions: 6 + ((index * 5) % 11),
+        eventCounts: {
+          ...emptyCounts(),
+          draw_started: activity,
+          draw_submitted: Math.max(0, activity - 2 - (index % 3)),
+          power_up_offer_shown: Math.max(0, activity - 3),
+          power_up_chosen: Math.max(0, activity - 5),
+          founding_replay_started: Math.max(0, activity - 4),
+          founding_replay_completed: Math.max(0, activity - 6),
+          permanent_reward_earned: Math.max(0, activity - 7),
+          maturity_shown: index % 3,
+          maturity_acknowledged: index % 4 === 0 ? 1 : 0,
+        },
+      };
+    });
+    const rangeEventCounts = emptyCounts();
+    for (const day of days) {
+      for (const eventName of progressionEventNames) {
+        rangeEventCounts[eventName] += day.eventCounts[eventName];
+      }
+    }
+    const lifetimeEventCounts = Object.fromEntries(
+      progressionEventNames.map((eventName, index) => [
+        eventName,
+        rangeEventCounts[eventName] + 40 + index * 3,
+      ])
+    );
+    sendJson(response, 200, {
+      generatedAt: new Date().toISOString(),
+      from,
+      to,
+      lifetimeEventCounts,
+      rangeEventCounts,
+      activePlayerDays: days.reduce(
+        (total, day) => total + day.uniquePlayers,
+        0
+      ),
+      sessionDays: days.reduce((total, day) => total + day.sessions, 0),
+      days,
+    });
+    return;
+  }
+
+  if (method === 'GET' && path === '/api/community-challenge') {
+    const challengeDay = Number(url.searchParams.get('day'));
+    if (!Number.isSafeInteger(challengeDay) || challengeDay < 1) {
+      sendError(response, 400, 'That Doodle Dare drop is not available.');
+      return;
+    }
+    try {
+      const endsArenaDay = challengeDay + 2;
+      const completedDrawCount = Math.min(
+        5,
+        memory.communityThemeDrawCountByPreviewMode[previewMode] ?? 0
+      );
+      const playerKey = `mock-player:${previewMode}`;
+      const orderedThemeIds = Array.from(
+        { length: 5 },
+        (_, index) =>
+          selectCommunityDoodleDare(challengeDay, playerKey, index).id
+      );
+      const status =
+        memory.dayNumber < challengeDay
+          ? 'upcoming'
+          : memory.dayNumber > endsArenaDay
+            ? 'ended'
+            : 'active';
+      sendJson(response, 200, {
+        arenaDay: challengeDay,
+        endsArenaDay,
+        currentArenaDay: memory.dayNumber,
+        loggedIn: previewMode !== 'logged-out',
+        status,
+        orderedThemeIds,
+        completedThemeIds: orderedThemeIds.slice(0, completedDrawCount),
+        nextThemeId:
+          status === 'active'
+            ? (orderedThemeIds[completedDrawCount] ?? null)
+            : null,
+      });
+    } catch {
+      sendError(response, 400, 'That Doodle Dare drop is not available.');
+    }
     return;
   }
 
@@ -3453,7 +3620,11 @@ const server = createServer(async (request, response) => {
       resetFreshPreview();
     }
 
-    if (url.pathname.startsWith('/api/')) {
+    if (
+      url.pathname.startsWith('/api/') ||
+      url.pathname === '/internal/analytics' ||
+      url.pathname.startsWith('/internal/analytics/')
+    ) {
       await handleApi(request, response, url);
       return;
     }

@@ -41,7 +41,10 @@ import { removeScribbitCompletely } from './removal';
 import { getUserPlayStreakKey } from './streak';
 import { getDailyLoginKey } from './dailyLogin';
 import { getMaturityAcknowledgementsKey } from './maturity';
-import { getUserProgressionEventsKey } from './progressionAnalytics';
+import {
+  getUserProgressionEventsKey,
+  removeUserFromProgressionAnalytics,
+} from './progressionAnalytics';
 import { getUserCommunityThemeCompletionsKey } from './communityDrawTheme';
 import { getLegacyIndexVersionKey, getLegacySeenDayKey } from './legacy';
 import {
@@ -219,6 +222,9 @@ const deletePlayerDataRecords = async (
 
   await requireDeletionOwnership(storage, deletionLease);
   await removeVenueStampDataForUser(storage, userId);
+
+  await requireDeletionOwnership(storage, deletionLease);
+  await removeUserFromProgressionAnalytics(storage, userId);
 
   await requireDeletionOwnership(storage, deletionLease);
   const operationReceiptKeys = await loadUserOperationReceiptKeys(

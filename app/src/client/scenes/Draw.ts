@@ -151,7 +151,12 @@ import {
   startDrawingSoundtrack,
   stopSoundtrack,
 } from '../lib/soundtrack';
-import { markSfxManaged, playSfx, preloadSfx } from '../lib/sfx';
+import {
+  markSfxManaged,
+  playSfx,
+  preloadSfx,
+  prepareSfxPlayback,
+} from '../lib/sfx';
 import AnalyzerWorker from '../workers/analyzer.worker?worker&inline';
 import {
   createDrawSubmissionLoadingOverlay,
@@ -432,6 +437,7 @@ export class Draw extends Scene {
   private drawStartCountdownTimerEvent: Phaser.Time.TimerEvent | null = null;
   private drawStartCountdownOverlay: HTMLDivElement | null = null;
   private drawStartCountdownValue: HTMLSpanElement | null = null;
+  private drawStartPreparing = false;
   private drawTimerContainer: HTMLDivElement | null = null;
   private drawTimerFace: HTMLDivElement | null = null;
   private drawTimerValue: HTMLSpanElement | null = null;
@@ -514,6 +520,7 @@ export class Draw extends Scene {
     this.playerDrawMode = 'unselected';
     this.communityThemeAvailable = true;
     this.communityThemeUnavailableMessage = '';
+    this.drawStartPreparing = false;
     this.freeSubmissionId = null;
     this.scribbitSubmissionId = null;
     this.lastResult = null;
@@ -743,6 +750,7 @@ export class Draw extends Scene {
 
   private cleanup(): void {
     this.sceneVisitEpoch += 1;
+    this.drawStartPreparing = false;
     releaseDrawingSoundtrackPreparation();
     this.roleStyleInfoLayer?.destroy();
     this.roleStyleInfoLayer = null;
@@ -1569,9 +1577,10 @@ export class Draw extends Scene {
     return !this.drawingLocked && !this.isWaitingToStart();
   }
 
-  private beginDrawingRound(): void {
+  private async beginDrawingRound(): Promise<void> {
     if (
       !this.isWaitingToStart() ||
+      this.drawStartPreparing ||
       this.drawStartCountdownOverlay ||
       this.submitting ||
       this.drawConfirmation
@@ -1587,7 +1596,11 @@ export class Draw extends Scene {
       'aria-label',
       'Get ready. The Community Theme drawing round starts after 3, 2, 1.'
     );
+    this.drawStartPreparing = true;
     primeDrawingSoundtrack();
+    await prepareSfxPlayback('draw.countdown', 'draw.start');
+    this.drawStartPreparing = false;
+    if (!this.scene.isActive() || !this.isWaitingToStart()) return;
     this.startDrawCountdown();
   }
 
@@ -4194,7 +4207,9 @@ export class Draw extends Scene {
       startButton.addEventListener('pointerup', releaseButton);
       startButton.addEventListener('pointercancel', releaseButton);
       startButton.addEventListener('pointerleave', releaseButton);
-      startButton.addEventListener('click', () => this.beginDrawingRound());
+      startButton.addEventListener('click', () => {
+        void this.beginDrawingRound();
+      });
       if (!this.communityThemeAvailable) {
         startButton.style.opacity = '0.48';
         startButton.style.cursor = 'not-allowed';

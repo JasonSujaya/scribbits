@@ -74,7 +74,7 @@ test('drawing music follows the timed round lifecycle', () => {
   );
 });
 
-test('drawing music is primed by Start Drawing without delaying the timer', () => {
+test('drawing music and SFX are primed before the countdown starts', () => {
   assert.match(
     soundtrackSource,
     /export const preloadDrawingSoundtrack = \(\): void =>[\s\S]{0,180}preparedDrawingAudio = createPreparedDrawingAudio\(\)/
@@ -85,7 +85,7 @@ test('drawing music is primed by Start Drawing without delaying the timer', () =
   );
   assert.match(
     drawSource,
-    /private beginDrawingRound\(\): void[\s\S]{0,700}primeDrawingSoundtrack\(\);[\s\S]{0,80}this\.startDrawCountdown\(\)/
+    /private async beginDrawingRound\(\): Promise<void>[\s\S]{0,800}primeDrawingSoundtrack\(\);[\s\S]{0,120}await prepareSfxPlayback\('draw\.countdown', 'draw\.start'\);[\s\S]{0,180}this\.startDrawCountdown\(\)/
   );
   assert.match(
     drawSource,
@@ -173,25 +173,18 @@ test('Home and Gallery share one uninterrupted idle track', () => {
     soundtrackSource,
     /audio\.preload = mode === 'home' \? 'none' : 'auto'/
   );
-  assert.match(
-    soundtrackSource,
-    /mode === 'home' && startPlaying && !hasUnlockedSoundtrackPlayback/
-  );
-  assert.match(
-    soundtrackSource,
-    /if \(!shouldDeferPlayback\) audio\.src = source/
-  );
+  assert.match(soundtrackSource, /audio\.src = source/);
   assert.match(
     soundtrackSource,
     /if \(!audio\.getAttribute\('src'\) && source\) audio\.src = source/
   );
   assert.match(
     soundtrackSource,
-    /document\.hidden \|\| waitingForInitialGesture[\s\S]{0,120}installRetryListeners\(\)/
+    /if \(document\.hidden\)[\s\S]{0,120}installRetryListeners\(\)/
   );
   assert.match(
     soundtrackSource,
-    /audio\.autoplay = startPlaying && !shouldDeferPlayback/
+    /audio\.autoplay = startPlaying/
   );
   assert.match(
     soundtrackSource,
@@ -201,6 +194,10 @@ test('Home and Gallery share one uninterrupted idle track', () => {
   assert.match(
     soundtrackSource,
     /addEventListener\('pointerdown', retryPlayback, true\)/
+  );
+  assert.match(
+    soundtrackSource,
+    /audio\.src = source;[\s\S]{0,700}if \(startPlaying\) requestPlayback\(\)/
   );
   assert.match(soundtrackSource, /attemptPlayback\(currentAudio\)/);
   assert.doesNotMatch(soundtrackSource, /navigator\.userActivation/);

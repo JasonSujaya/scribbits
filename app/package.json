@@ -6,6 +6,7 @@
   "license": "BSD-3-Clause",
   "type": "module",
   "scripts": {
+    "asset:app-icon": "node scripts/render-app-icon.mjs",
     "balance": "node tools/balancer/run.mjs",
     "balance:check": "node tools/balancer/run.mjs --check",
     "build": "NODE_OPTIONS=--max-old-space-size=4096 vite build && node scripts/verify-devvit-build.mjs",
@@ -28,11 +29,11 @@
     "node": ">=22.2.0"
   },
   "dependencies": {
-    "@devvit/start": "0.13.7",
-    "@devvit/web": "0.13.7",
+    "@devvit/start": "0.13.8",
+    "@devvit/web": "0.13.8",
     "@fontsource/dynapuff": "5.2.8",
     "@hono/node-server": "2.0.6",
-    "devvit": "0.13.7",
+    "devvit": "0.13.8",
     "hono": "4.12.27",
     "phaser": "4.2.0",
     "pngjs": "^7.0.0"

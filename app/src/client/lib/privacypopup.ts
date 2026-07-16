@@ -161,7 +161,7 @@ export function openPrivacyPopup(
 
   addScrimAndCard();
   popupLayer.add([
-    label(scene, width / 2, centerY - 330, 'PRIVACY & DATA', 36, UI.ink, true),
+    label(scene, width / 2, centerY - 330, 'ACCOUNT', 36, UI.ink, true),
     paperIcon(scene, 'shield', width / 2, centerY - 205, {
       size: 72,
       fill: UI.tapeAlt,
@@ -200,12 +200,12 @@ export function openPrivacyPopup(
 
   popupOverlay = new CanvasModalOverlay(
     scene,
-    'Privacy & Data',
+    'Account',
     destroy,
     'Review stored game data or permanently delete your Scribbits profile.'
   );
   closeControl = popupOverlay.add({
-    label: 'Close Privacy & Data',
+    label: 'Close Account',
     rect: { x: width - 136, y: centerY - 394, width: 88, height: 88 },
     onActivate: destroy,
   });

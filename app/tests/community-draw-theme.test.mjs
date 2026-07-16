@@ -32,14 +32,14 @@ test('five-theme pools rotate every three days with stable player assignments', 
 
   assert.equal(themes.COMMUNITY_DRAW_THEME_DAYS, 3);
   assert.equal(themes.COMMUNITY_DRAW_THEME_POOL_SIZE, 5);
-  assert.equal(themes.COMMUNITY_DRAW_THEME_COUNT, 120);
-  assert.equal(themes.COMMUNITY_DRAW_THEME_COVERAGE_DAYS, 360);
+  assert.equal(themes.COMMUNITY_DRAW_THEME_COUNT, 125);
+  assert.equal(themes.COMMUNITY_DRAW_THEME_COVERAGE_DAYS, 375);
   assert.deepEqual(themes.COMMUNITY_DRAW_THEME_CATEGORY_COUNTS, {
-    animal: 36,
-    character: 13,
-    'place-nature': 24,
-    vehicle: 7,
-    food: 11,
+    animal: 37,
+    character: 14,
+    'place-nature': 25,
+    vehicle: 8,
+    food: 12,
     object: 29,
   });
   assert.equal(firstPool.length, 5);
@@ -86,7 +86,7 @@ test('five-theme pools rotate every three days with stable player assignments', 
     5
   );
 
-  for (let blockStart = 1; blockStart <= 358; blockStart += 3) {
+  for (let blockStart = 1; blockStart <= 373; blockStart += 3) {
     const pool = themes.selectCommunityDoodleDarePool(blockStart);
     assert.equal(pool.length, 5);
     assert.equal(new Set(pool.map((theme) => theme.id)).size, 5);
@@ -109,10 +109,10 @@ test('five-theme pools rotate every three days with stable player assignments', 
       themeAppearances.set(theme.id, (themeAppearances.get(theme.id) ?? 0) + 1);
     }
   }
-  assert.equal(themeAppearances.size, 120);
+  assert.equal(themeAppearances.size, 125);
   assert.ok([...themeAppearances.values()].every((count) => count === 5));
   assert.throws(
-    () => themes.selectCommunityDoodleDarePool(361),
+    () => themes.selectCommunityDoodleDarePool(376),
     /append the next season/
   );
   assert.equal(
@@ -215,7 +215,7 @@ test('community theme seasons validate coverage and append-only boundaries', () 
   const shortValidation =
     themes.validateCommunityDrawThemeSeasons(shortSchedule);
   assert.equal(shortValidation.valid, false);
-  assert.match(shortValidation.errors.join('\n'), /minimum is 360/);
+  assert.match(shortValidation.errors.join('\n'), /minimum is 365/);
 
   const duplicateValidation = themes.validateCommunityDrawThemeSeasons([
     {
@@ -227,9 +227,17 @@ test('community theme seasons validate coverage and append-only boundaries', () 
   assert.equal(duplicateValidation.valid, false);
   assert.match(duplicateValidation.errors.join('\n'), /id is duplicated/);
 
+  const overtimeSeason = themes.COMMUNITY_DRAW_THEME_SEASONS[1];
+  assert.equal(overtimeSeason.startsOnArenaDay, 361);
+  assert.equal(
+    themes.validateCommunityDrawThemeSeasons([firstSeason, overtimeSeason])
+      .valid,
+    true
+  );
+
   const futureSeason = {
-    version: 2,
-    startsOnArenaDay: 361,
+    version: 3,
+    startsOnArenaDay: 376,
     themes: Array.from({ length: 5 }, (_, index) => ({
       id: `future-theme-${index + 1}`,
       prompt: `future creature ${index + 1}`,
@@ -238,6 +246,7 @@ test('community theme seasons validate coverage and append-only boundaries', () 
   };
   const appendedValidation = themes.validateCommunityDrawThemeSeasons([
     firstSeason,
+    overtimeSeason,
     futureSeason,
   ]);
   assert.equal(appendedValidation.valid, true);
@@ -249,12 +258,15 @@ test('community theme seasons validate coverage and append-only boundaries', () 
       themes: firstSeason.themes,
     },
     {
+      ...overtimeSeason,
+    },
+    {
       ...futureSeason,
-      startsOnArenaDay: 362,
+      startsOnArenaDay: 377,
     },
   ]);
   assert.equal(boundaryValidation.valid, false);
-  assert.match(boundaryValidation.errors.join('\n'), /expected day 361/);
+  assert.match(boundaryValidation.errors.join('\n'), /expected day 376/);
   assert.match(boundaryValidation.errors.join('\n'), /theme boundary/);
 
   const complicatedPromptValidation = themes.validateCommunityDrawThemeSeasons([

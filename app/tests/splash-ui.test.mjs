@@ -85,8 +85,12 @@ test('splash and expanded game share one durable new-player flow', () => {
     drawScript,
     /private async startFirstBattle\(scribbit: Scribbit\)/
   );
-  assert.match(apiScript, /hasUserCreatedScribbit\(redis, player\.userId\)/);
-  assert.match(apiScript, /registerPlayerMutatingGet\('\/splash'/);
+  assert.match(
+    apiScript,
+    /readHasUserCreatedScribbit\(redis, player\.userId\)/
+  );
+  assert.match(apiScript, /api\.get\('\/splash'/);
+  assert.doesNotMatch(apiScript, /registerPlayerMutatingGet\('\/splash'/);
 });
 
 test('splash logo settles once and respects reduced motion', () => {

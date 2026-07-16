@@ -12,6 +12,9 @@ if (!compiledSharedRoot || !compiledServerRoot) {
 
 const require = createRequire(import.meta.url);
 const communityFeed = require(join(compiledSharedRoot, 'communityfeed.js'));
+const communityThemes = require(
+  join(compiledSharedRoot, 'content', 'communitydrawthemes.js')
+);
 const communityPostCandidates = require(
   join(compiledServerRoot, 'core', 'communityPostCandidates.js')
 );
@@ -126,10 +129,7 @@ test('one arena update combines theme, season, event, and final changes', () => 
   const draft = communityFeed.buildArenaUpdateDraft({
     arenaDay: 61,
     appUrl: 'https://reddit.com/r/scribbits/comments/main',
-    themePool: [
-      { id: 'bear', prompt: 'a bear with honey', category: 'animal' },
-      { id: 'robot', prompt: 'a dancing robot', category: 'character' },
-    ],
+    themePool: communityThemes.selectCommunityDoodleDarePool(61),
     startingSeason: {
       name: 'Season 2',
       campaignName: 'Ink Rising',
@@ -148,11 +148,21 @@ test('one arena update combines theme, season, event, and final changes', () => 
   });
 
   assert.equal(draft.id, 'arena-update:61');
-  assert.match(draft.title, /Season 2 begins/);
+  assert.equal(draft.kind, 'custom');
+  assert.equal(draft.title, 'Draw Them All · Days 61–63');
   assert.match(draft.body, /u\/champion takes the crown with 42 points/);
-  assert.match(draft.body, /a bear with honey/);
+  assert.match(draft.body, new RegExp(draft.postData.themes[0].prompt));
   assert.match(draft.body, /2\u00d7 points/);
   assert.match(draft.body, /Open Scribbits and join in/);
+  assert.equal(draft.entry, 'challenge');
+  assert.equal(draft.postData.surface, 'community-challenge');
+  assert.equal(draft.postData.arenaDay, 61);
+  assert.equal(draft.postData.endsArenaDay, 63);
+  assert.deepEqual(draft.postData.announcements, [
+    'Season 2 begins',
+    'Season 1 final',
+    'Opening Rumble live',
+  ]);
 });
 
 test('weekly fight post reports the selected fight truthfully', () => {
