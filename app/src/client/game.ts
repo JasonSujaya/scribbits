@@ -56,6 +56,15 @@ const isDebugShapePower = (value: string | null): value is DebugShapePower => {
 const config: Phaser.Types.Core.GameConfig = {
   type: debugForcesCanvas ? CANVAS : AUTO,
   backgroundColor: '#6f4a2f',
+  loader: {
+    // Player drawings are served by Reddit's media CDN in production. Anonymous
+    // CORS keeps those images safe to copy into the bounded canvas texture used
+    // by LiveSprite and battle recording. Keep retry and timeout ownership here
+    // so every scene uses the same finite remote-media policy.
+    crossOrigin: 'anonymous',
+    maxRetries: 2,
+    timeout: 5_000,
+  },
   scene: [
     Boot,
     Preloader,

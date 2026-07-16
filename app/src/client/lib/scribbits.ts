@@ -17,16 +17,29 @@ import {
 type DrawingSource = Pick<Scribbit, 'id' | 'name' | 'element' | 'imageUrl'> &
   Partial<Pick<Scribbit, 'isFounding' | 'stats'>>;
 
+type DrawingLoadOptions = Readonly<{
+  waitForRemote?: boolean;
+}>;
+
+const CRITICAL_DRAWING_READY_WAIT_MILLISECONDS = 2_000;
+
 // Several surfaces can request the same drawing during one render (for example,
 // a battle list containing the same fighter more than once). Phaser's loader
 // does not safely queue the same texture key multiple times, so share one
 // request per scene/key until it settles.
 type PendingDrawingLoad = {
-  promise: Promise<string>;
+  readiness: Promise<string>;
   settleForSceneRelease: () => void;
   claimForActiveBuild: () => void;
   releaseFromActiveBuild: () => void;
 };
+
+type DrawingLoadFailureReason =
+  | 'invalid-image'
+  | 'load-error'
+  | 'upgrade-failed';
+
+export const DRAWING_LOAD_FAILURE_EVENT = 'scribbits-drawing-load-failed';
 
 const pendingDrawingLoads = new WeakMap<
   Scene,
@@ -67,17 +80,19 @@ function elementOf(scribbit: Partial<Pick<DrawingSource, 'element'>>): Element {
 }
 
 // THE single art resolver. Every surface (roster, entrants, champion poster,
-// modal, replay, legends, Gallery) calls this. It immediately resolves to a
-// stable canvas texture containing a generic unavailable-art mark. The remote
+// modal, replay, legends, Gallery) calls this. It creates a stable canvas
+// texture containing a generic unavailable-art mark before requesting remote
 // imageUrl (Reddit-hosted in production; /api/drawing/{id} only in the local mock)
-// loads behind that canvas and upgrades it in place when ready. Existing Images,
-// meshes, and sliced LiveSprites therefore receive the player's art without
-// waiting on the network or changing texture keys.
+// loads behind that canvas and upgrades it in place when ready. Ordinary callers
+// receive the fallback immediately. Critical callers can wait for the bounded
+// remote attempt so they never mistake a queued request for ready art. Existing
+// Images, meshes, and sliced LiveSprites keep one stable key.
 // Callers then render the key with fitDrawing() (aspect-preserving contain) so
 // non-square art is centered in its frame and never cropped or stretched.
 export function loadDrawing(
   scene: Scene,
-  scribbit: DrawingSource
+  scribbit: DrawingSource,
+  options: DrawingLoadOptions = {}
 ): Promise<string> {
   const key = drawingKey(scribbit);
 
@@ -107,39 +122,50 @@ export function loadDrawing(
   const pendingLoad = sceneLoads.get(key);
   if (pendingLoad) {
     pendingLoad.claimForActiveBuild();
-    return pendingLoad.promise;
+    return options.waitForRemote
+      ? waitForBoundedDrawingReadiness(pendingLoad.readiness, key)
+      : Promise.resolve(key);
   }
 
   ensureSceneDrawingTextureLifecycle(scene);
 
   let settleForSceneRelease: () => void;
   let claimedByActiveBuild = true;
-  let resolveBackgroundLoad = (): void => undefined;
-  const backgroundLoad = new Promise<void>((resolve) => {
-    resolveBackgroundLoad = resolve;
+  let resolveDrawingLoad = (_key: string): void => undefined;
+  const drawingLoad = new Promise<string>((resolve) => {
+    resolveDrawingLoad = resolve;
   });
   const sourceKey = `${key}-source-${++drawingSourceLoadSequence}`;
-  const drawingLoad = Promise.resolve(key);
 
   {
     let settled = false;
     const onComplete = (): void => {
-      // A load can "succeed" with a degenerate 1x1 texture. Keep the fallback
-      // visible and leave the key retryable when that happens.
-      if (!isDegenerateTexture(scene, sourceKey)) {
-        const upgraded = upgradeDrawingTexture(scene, key, sourceKey);
-        if (upgraded) {
+      let failureReason: DrawingLoadFailureReason | undefined;
+      try {
+        // A load can "succeed" with a degenerate 1x1 texture. Keep the fallback
+        // visible and leave the key retryable when that happens.
+        if (isDegenerateTexture(scene, sourceKey)) {
+          failureReason = 'invalid-image';
+        } else if (upgradeDrawingTexture(scene, key, sourceKey)) {
           markRemoteDrawingTextureCurrent(scene, key, scribbit.imageUrl);
+        } else {
+          failureReason = 'upgrade-failed';
         }
+      } catch (error) {
+        failureReason = 'upgrade-failed';
+        console.warn('Scribbits could not prepare remote drawing art.', error);
       }
-      finish();
+      finish(failureReason);
     };
     // loaderror fires for every failed file; only react to our own key.
     const onError = (file: { key?: string }): void => {
       if (file?.key !== sourceKey) return;
-      finish();
+      finish('load-error');
     };
-    const finish = (trackTexture = true): void => {
+    const finish = (
+      failureReason?: DrawingLoadFailureReason,
+      trackTexture = true
+    ): void => {
       if (settled) return;
       settled = true;
       scene.load.off(`filecomplete-image-${sourceKey}`, onComplete);
@@ -149,12 +175,15 @@ export function loadDrawing(
         if (claimedByActiveBuild) markDrawingTextureUsed(scene, key);
         else markDrawingTextureInactive(scene, key);
       }
-      resolveBackgroundLoad();
+      if (failureReason && scene.scene.isActive()) {
+        reportDrawingLoadFailure(scene, key, scribbit.imageUrl, failureReason);
+      }
+      resolveDrawingLoad(key);
     };
 
     // The caller already owns the stable fallback key. Scene release only needs
     // to stop this background upgrade and clean its temporary source texture.
-    settleForSceneRelease = (): void => finish(false);
+    settleForSceneRelease = (): void => finish(undefined, false);
 
     scene.load.on(`filecomplete-image-${sourceKey}`, onComplete);
     scene.load.on('loaderror', onError);
@@ -163,7 +192,7 @@ export function loadDrawing(
   }
 
   const loadRecord: PendingDrawingLoad = {
-    promise: drawingLoad,
+    readiness: drawingLoad,
     settleForSceneRelease,
     claimForActiveBuild: () => {
       claimedByActiveBuild = true;
@@ -173,11 +202,53 @@ export function loadDrawing(
     },
   };
   sceneLoads.set(key, loadRecord);
-  void backgroundLoad.then(() => {
+  void drawingLoad.then(() => {
     if (sceneLoads?.get(key) === loadRecord) sceneLoads.delete(key);
   });
 
-  return drawingLoad;
+  return options.waitForRemote
+    ? waitForBoundedDrawingReadiness(drawingLoad, key)
+    : Promise.resolve(key);
+}
+
+function waitForBoundedDrawingReadiness(
+  readiness: Promise<string>,
+  fallbackKey: string
+): Promise<string> {
+  if (typeof window === 'undefined') return readiness;
+
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (textureKey: string): void => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(timeoutId);
+      resolve(textureKey);
+    };
+    const timeoutId = window.setTimeout(
+      () => finish(fallbackKey),
+      CRITICAL_DRAWING_READY_WAIT_MILLISECONDS
+    );
+    void readiness.then(finish);
+  });
+}
+
+function reportDrawingLoadFailure(
+  scene: Scene,
+  textureKey: string,
+  imageUrl: string,
+  reason: DrawingLoadFailureReason
+): void {
+  const canvas = scene.game.canvas;
+  const failureCount = Number(canvas.dataset.drawingLoadFailures ?? '0');
+  canvas.dataset.drawingLoadFailures = String(
+    Number.isFinite(failureCount) ? failureCount + 1 : 1
+  );
+  canvas.dataset.lastDrawingLoadFailure = reason;
+  scene.events.emit(
+    DRAWING_LOAD_FAILURE_EVENT,
+    Object.freeze({ textureKey, imageUrl, reason })
+  );
 }
 
 function createFallbackDrawingTexture(scene: Scene, key: string): void {

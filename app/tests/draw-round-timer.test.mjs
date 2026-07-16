@@ -111,7 +111,11 @@ test('official Draw requires an explicit start and locks at time', () => {
   );
   assert.match(
     drawSource,
-    /private finishDrawCountdown\(\): void[\s\S]{0,1200}this\.startDrawingRound\(\)/
+    /private finishDrawCountdown\(\): void[\s\S]{0,600}this\.startDrawingRound\(\)/
+  );
+  assert.match(
+    drawSource,
+    /private startDrawingRound\(\): void[\s\S]{0,900}waitForDrawingSoundtrackReadiness\(\)[\s\S]{0,600}this\.activateDrawingRound\(false\)/
   );
   assert.match(
     drawSource,
@@ -128,7 +132,10 @@ test('official Draw requires an explicit start and locks at time', () => {
   assert.match(drawSource, /private beginFreeDrawing\(\): void/);
   assert.match(drawSource, /private async submitFree\(/);
   assert.match(drawSource, /submitFreeDrawing\(\{/);
-  assert.match(drawSource, /DRAW_START_CARD_ART_URL,[\s\S]{0,80}preloadDrawVisualAssets/);
+  assert.match(
+    drawSource,
+    /DRAW_START_CARD_ART_URL,[\s\S]{0,80}preloadDrawVisualAssets/
+  );
   assert.match(
     drawSource,
     /preload\(\): void \{[\s\S]{0,80}preloadDrawVisualAssets\(this\)/
