@@ -1,686 +1,290 @@
-## Scribbits Arena
+# Scribbits Arena
 
-Scribbits Arena is a Devvit Web + Phaser game for Reddit. Players draw a
-512x512 creature, the server derives stats from the PNG, and living Scribbits
-enter daily community rumbles. The app identity is `scribbits` in
-`package.json` and `devvit.json`.
+> Draw a creature. Its shape becomes its combat build. Tonight it fights.
 
-All main scenes share `lib/appdock.ts`, the generated Craftbox paper stage, the
-same five optical-weight code-native navigation icons, and one GPT-generated
-hand-cut button family for primary, secondary, Pick, close, and pagination
-actions. The dock is Arena, Bag, Home, Battles, and Shop, with Home centered;
-Draw opens from Home's large Draw button. It uses a flat
-contained active tile, readable labels, and no
-micro-badges or protruding cutout. DynaPuff 400/700 is
-bundled locally through Fontsource and loaded before Phaser renders text. Shared
-heart, clock, Ink, sparkle, and element marks live in `lib/papericons.ts`; scene
-copy should keep the default view to one headline, one status, and one action.
+Scribbits Arena is a portrait-first drawing and auto-battler game built for
+Reddit with **Devvit Web** and **Phaser 4.2**. Players draw creatures called
+**Scribbits** inside the Reddit post, watch those exact drawings come alive in
+short arena fights, and return each day for community Rumbles, rival stories,
+rewards, and new drawing themes.
 
-Player-facing copy uses the typed catalog and locale runtime documented in
-[`docs/localization.md`](docs/localization.md). New UI copy belongs in the
-English source catalog and renders through `translate`; `?locale=en-XA` enables
-the clipping-focused pseudo-locale.
-Ranking-season lifecycle, scoring, administration, and recovery are documented
-in [`docs/ranking-seasons.md`](docs/ranking-seasons.md).
+## The game
 
-## Mobile performance
+Every official drawing receives the same 100-point stat budget. The server
+analyzes the submitted PNG, chooses its permanent Combat Role, and resolves each
+fight. The client then turns the stored result into a lively Phaser battle
+replay using the player's actual art. Drawing choices create identity and
+matchups without letting one player submit more raw stat power than another.
 
-- `lib/theme.ts` disables ambient-only loops on compact, reduced-motion, or
-  detected low-power devices; combat motion and authoritative replay timing stay
-  enabled.
-- `workers/analyzer.worker.ts` runs exact shared analyzer math off the UI thread.
-  `drawcanvas.ts` caches pointer bounds for each stroke and pools canvas-based
-  undo snapshots instead of allocating 1 MiB pixel arrays per stroke.
-- `lib/scribbits.ts` downsamples display textures to a 256px longest edge and
-  keeps at most 12 inactive drawing textures. Submitted PNGs remain unchanged.
-- Replay caches unchanged HP/clock labels and bounds presentation-only arena
-  redraws plus Inkbody deformation to 30 Hz; fighter movement and transcript
-  progression remain continuous and server-authored.
+The main loop is:
+
+1. Draw one official Scribbit for the current Community Theme.
+2. Name it, choose one of three offered Power-Ups, and bring it to life.
+3. Watch that exact drawing enter its first fight immediately.
+4. Use Arena to Spar with rivals, pursue a Champion Contract, and make one
+   nightly Rumble Pick.
+5. Earn Ink, open Mystery Ink Chests, equip Gear, and care for growing
+   Scribbits.
+6. Return after the 00:00 UTC rollover for the Rumble result and continue the
+   Scribbit's three-day growth story.
 
 ## How to play
 
-1. **Draw:** one Scribbit per UTC day. A validated, versioned calendar supplies
-   120 shared community themes covering 360 Arena days, dealt as five-theme
-   pools that span at least four subject categories and contain at most two
-   animals. The catalog has 36 animals, 13 characters/fantasy subjects, 24
-   places/nature subjects, 7 vehicles, 11 foods, and 29 objects. Each assignment
-   stays consistent for its three-day block. New seasons append without moving
-   published days, while Practice keeps its separate Combat Role prompts. The
-   Draw screen gives the hero canvas most of the page, keeps all eight base
-   colors visible, and puts brush, eraser, undo, optional stickers, and unlocked
-   premium pens in one compact tool row. One visible `NEXT` action stays disabled
-   until the shared analyzer says the drawing is ready; optional paints, brushes,
-   stickers, Clear, and Redo sit behind one Tools icon, with a persistent badge
-   when a special supply is
-   active. Only then does a focused preview ask for its name and
-   confirmation. Exact shape rules stay out of a visible four-stat dashboard. The four analyzed traits still
-   normalize to the same 100-point budget, and dominant color still chooses the
-   element. After acceptance, `lib/birthceremony.ts` loads that exact submitted
-   PNG and unfolds it through `LiveSprite.awaken()`—there is no placeholder egg.
-   The final card replaces raw stat totals with one Combat Role receipt such as
-   `LONGSHOT · LONG RANGE` / `QUILL LAUNCHER → NIB VOLLEY`, shows one Ink receipt,
-   and leads directly to `START FIRST FIGHT`.
-2. **Fight:** submission automatically enters tonight's Rumble. A new player's
-   exact Scribbit immediately fights one simple server-selected founding NPC so
-   the core promise is visible before Arena choices. On WebGL, Phaser 4.2 maps the submitted PNG to
-   a 25-vertex **Inkbody** mesh. Its dominant drawing stat selects a permanent
-   Combat Role: Chonk → BRAWLER, Spike or Zip → LONGSHOT, or Charm → MAGE.
-   Each role owns a visible weapon, range behavior, basic attack, signature move,
-   and counter relationship. The server runs a
-   deterministic 20 Hz simulation and stores its winner, bounded timeline, and
-   half-second motion checkpoints. Phaser interpolates that immutable transcript
-   into a continuous arena fight without WebSockets or client-side authority. A
-   fight always ends by 20 seconds; at 15 seconds, Sudden Scribble halves power
-   cooldowns while the page completes its inward fold.
-   There is no turn-based player path or outcome-changing cheer input;
-   transcript-less records render as archived-result summaries.
-   The real-time paper arena uses one clipping-safe movement field and 280px
-   drawings across ten server-selected stage skins. Local element washes, a
-   truthful closing boundary, and transcript-triggered color surges leave the
-   combat center readable. The compact HUD keeps one arena label, names, visual
-   health bars, a small fixed-tick clock, and large sound/speed/Skip icons; role
-   and permanent weapon identity remain visible while charged state appears only
-   when it changes. Real transcript moments stay in a
-   compact paper strip between the fighter HUD and arena instead of a broadcast
-   lower third. A
-   presentation-only editorial queue chooses the
-   strongest candidate per simulation tick, keeps the latest line visible, and
-   holds each queue slot for 900ms of wall-clock time with at most two pending
-   beats. It never delays HP,
-   Skip, finish, or any other authoritative state.
-   The copy itself lives in a versioned shared pack: 104 globally unique lines
-   across 25 fact-specific banks. A replay-scoped author deterministically
-   exhausts each authored bank before reuse, while strict token, rendered-length,
-   global uniqueness, and fact-specific truth validators fail fast on unsafe
-   content. The typed authoring layer gives Colorburst no finish-time miss bank
-   because its delayed echo may still connect.
-   Presentation-only hitstop, HP trails, impact tiers, arena folds, mastery auras,
-   and optional procedural sound make authored events land harder.
-   Legacy Element × Shape Power combinations retain sixteen concise signature
-   names for stored reports; new fights identify the four combat roles first.
-   Before every current fight, a mode-specific paper VS card keeps one match or
-   Rival-page title, optional story stakes, large fighter art, and two concise
-   role receipts such as `MAGE · PALETTE ORB · COLOR BOLT → COLORBURST`. The
-   shared matchup plan is derived only from each server-returned fighter and
-   explains range and counter pressure without inventing an outcome. During
-   replay, a power with no proven connection gets neutral no-clean-hit copy;
-   shield and element cues appear only when the transcript explicitly proves them.
-   Colorburst does not claim a miss at `ability_finished`, because its delayed
-   echo can still connect after that event.
-   The finish is equally transcript-driven: a compact Inkcast Recap says
-   `YOU WON`, `YOU LOST`, or names the spectator winner before the exact verdict,
-   duration, final HP, and one role-attack lesson such as
-   `FINAL SPLAT · PIERCING QUILL · 25 DAMAGE`. Each server-selected arena also has
-   one small transcript-scored goal; Replay shows its exact cleared or progress
-   state in a dedicated target stamp above the recap without granting a second
-   reward or recalculating it in the client. Arena reveals the canonical venue
-   name and daily goal before fighter and rival selection, while one info icon
-   owns the short venue rule. This replaces the generic `CHOOSE FIGHTER` box
-   instead of adding another dashboard. Owned exhibitions promote `CHOOSE A RIVAL` to one
-   primary action beside one compact return. When no Rival draft is available,
-   tonight's pick becomes the primary; Practice remains reachable from Arena
-   instead of competing with the result. Knockouts fold only
-   the loser, double knockouts fold both fighters, and time decisions leave both
-   standing behind the result card.
-   Founding NPCs use deterministic stat-shaped mascot art rather than missing
-   bitmap assets; ordinary player-image failures still receive a neutral fallback.
-   A frozen shared catalog gives all twenty founders eight unique, bounded story
-   strings. Their epithet appears in the compact Rival margin, their opening owns
-   the existing pre-`FIGHT!` ticker beat, and their first power and result receive a
-   fact-safe reaction. None of this content enters the transcript or combat math.
-   Before every Arena Spar—and again after each Rival Run bout—a compact paper
-   board offers three server-selected founders. Arena and Replay share that
-   controller; birth deliberately uses the server's opponent-less quick spar
-   for one simple random first fight. The slate is stable for the UTC day and prioritizes
-   close levels and distinct Combat Roles. Each compact card shows drawing,
-   role, range, risk, points, a paper info control, and an icon-led SPAR action;
-   weapon, signature, authoritative role matchup, level comparison, and forecast
-   move behind the info tap. The slate
-   response carries its authoritative day
-   and forecast so a Replay left open across UTC rollover cannot advertise stale
-   matchup or Rival-page rules. A
-   chosen `opponentId` is accepted only when it still belongs to that exact
-   server-authored slate. An omitted opponent is reserved for the immediate
-   post-birth fight.
-   Every card remains immediately sparable after today's story beat: the card
-   says when its next Rival page unlocks while starting a reward-capped
-   exhibition now. This keeps combat replayable without bypassing the server's
-   one-story-beat-per-day or one-spar-reward-per-day rules.
-   Chosen-rival fights form a server-authored three-bout Rival Run. Each fresh
-   bout receives one relative `SAFE +1`, `EVEN +2`, and `BOLD +3` option ranked
-   from one authoritative deterministic projection per rival through the real
-   combat engine, so level, forecast, stats, elements, Gear, and Combat Roles all
-   affect risk. Repeating cosmetic seeds cannot change the outcome. Wins add the displayed run points;
-   losses add zero but still advance the bout, and fought opponents leave later
-   slates so each run changes shape. The committed score and record
-   carry through Draft, VS, live HUD, result, and archived replay receipts. A
-   completed run explicitly offers `NEW RIVAL RUN`; run score grants no Ink, XP,
-   combat power, or extra Founder Chronicle beat. New Signature Trials ask for
-   role signature activations and advance only
-   from the player fighter's immutable `ability_activated` report events. It
-   reuses the challenge strip and result stamp instead of adding another screen.
-   Each player can have exactly one active Founder Rival Thread: first to two,
-   maximum three qualifying battles, and no more than one authoritative story
-   beat per Arena day. The active founder remains pinned across future drafts; a
-   Champion Contract advances the same thread only when that founder
-   is the Champion. Unrelated founders are exhibitions. A completed series
-   becomes a permanent signed margin note with no Ink, stat, or checklist reward.
-   Qualifying ceremonies expose only truthful pre-fight stakes—new thread, match
-   point, or deciding bout—and the live rail labels the replay RIVAL BOUT or RIVAL
-   DECIDER without leaking the stored winner. Pending report receipts repair in
-   Arena-day order; retired checklist encounters migrate as archive-only history.
-   All twenty founders also have a repo-authored three-page episode: 60 unique
-   page titles, 60 founder-specific pre-fight cues, and 120 unique post-bout
-   result lines. The current page is derived from the server score and reused by
-   Next Goal, Rival Draft, the compact Rival margin, and the VS ceremony. Replay binds
-   its result line to the validated transcript winner and server-confirmed
-   Chronicle beat.
-   Validation bans pre-fight outcome claims and any invented economy reward. No
-   episode data is written to Redis.
-   The Battles tab is a recent Battle Scrapbook over the newest 20 stored reports,
-   not lifetime history. It keeps expired Scribbits in the correct MY WIN/MY LOSS
-   perspective through their normalized Reddit artist identity, pins Rumble and
-   Champion pages within each day, and keeps matchup, finish, and day on each
-   compact row. Each visual row contains only two portraits, one matchup, one
-   result line, and a planner-owned code-native `REPLAY` or `VIEW RESULT` action;
-   native row and pagination controls retain full labels outside the canvas.
-   Replay exposes the exact verdict, duration, and final HP. Old
-   result-only records say that motion is unavailable instead of rebuilding it.
-   Replay returns to the same Scrapbook page; this view adds no storage, reward,
-   or combat authority. Saved motion from the Scrapbook, Scout, or overnight
-   receipt opens with one compact portrait matchup ticket. Its result exposes an
-   icon-led `REPLAY` utility that restarts the same registry-held transcript with
-   no fetch or reward path; only a session watch pass changes, rotating safe
-   Inkcast variants while authoritative facts and founder lines stay fixed.
-   A signed-in player can explicitly Share a completed, unskipped replay. The
-   browser records a silent clip of the rendered Phaser canvas, uploads it to
-   Reddit media, and opens Reddit's share sheet. The clip is presentation only;
-   the stored report and transcript remain authoritative.
-   After today's official Scribbit locks, the Arena also exposes a Three-Role
-   Practice Lab. It reuses the analyzer and continuous replay, but not the birth,
-   roster, reward, Rumble, history, or Legacy paths. The server alone derives
-   the temporary fighter and transcript; the browser keeps only a session
-   checklist and clears it when Practice ends. The first third-role discovery
-   receives a gold 3/3 completion beat; later repeats do not retrigger it. Once
-   the checklist is complete, target roles and prompt cards rotate through all
-   three drawing identities instead of repeating one encore.
-   The current Champion also owns one daily Champion Contract. The Arena projects
-   the server's existing daily challenge flag, displays founder or combat-role
-   identity, and replaces the live CTA with a noninteractive completion stamp
-   after use. Its paper-native challenger picker exposes every candidate's level,
-   element, and signature; a win grants +2 XP, while a loss grants no XP or Ink.
-   Draw also offers an explicit untimed Free Draw path. It reuses the full
-   canvas and supplies, saves through `/api/free-drawing`, and stays outside
-   Scribbit birth, Rumble entry, rewards, battles, and Legacy. Returning to Draw
-   on the same Arena day shows the saved image, name, and one Practice action.
-3. **Collect:** drawing and battle wins drive progression and earned Ink. The five
-   dock tabs mirror native labels and active-page state without covering their
-   canvas artwork.
-   Shop opens earned-only Mystery Ink Chests for a flat 7 Ink each, with
-   one-open and maximum ten-open actions, permanent discovery, and visible Epic
-   pity by open ten. The first completed Rival Run replaces the repeat action
-   with one `FIRST GEAR` trail: Shop removes batch and collector clutter, and the
-   first pull is guaranteed
-   to be equippable Gear without changing rarity odds. Its reveal opens Bag on
-   the exact equipment category. There is no 100-open or auto-repeat action. Birth
-   stickers and status rewards are cosmetic; pens are expressive sidegrades that can
-   change the normalized build split without adding stat points. Bag
-   centers one selected living Scribbit inside eight persistent equipment
-   slots: two each for weapon, armor, shoes, and accessory. Tapping discovered
-   Gear fills an open matching slot; a full category requires an explicit remove
-   before replacement. Gear discovery is reusable across living Scribbits,
-   while duplicate copies remain Forge material. Earned reusable Gear resolves
-   into at most one bounded Exhibition technique per category, with its exact
-   forged-rank sidegrade snapshotted into the deterministic report; permanent pens
-   and titles stay in a separate Styles section.
-   The 36-item catalog includes eight wearable Role Relics—two per role—with
-   explicit affinities but no replacement for the permanent role weapon.
-   Living Scribbits also grow from level 1 to 5, but the full arc adds only 1.5%
-   damage and is statistically capped at a 60% equal-build win rate.
-4. **Pick:** choose another player’s contender before the nightly resolution.
-   Champion backers earn 3 Clout; runner-up backers earn 1.
-   Pick entry is the compact `RUMBLE` action in Arena, below the visible
-   Scribbit-versus-Champion/Spar matchup and its single `CHOOSE A RIVAL` action.
-   It opens the focused eight-contender picker without
-   adding a prediction panel to the default stack. Each contender keeps one
-   inspect target and one server-planned heart or lock state, and the selected
-   card turns gold.
-   If the player skipped their Pick but entered an owned Scribbit, the next visit leads
-   with that drawing's exact Rumble W/L, committed XP, committed Ink, and a
-   server-selected last-bout replay. The client never reconstructs those rewards
-   from cumulative totals.
-5. **Navigate:** the persistent dock is Arena, Bag, Home, Battles, and Shop.
-   Home owns the large Draw entry instead of giving Draw a second dock home.
-   Shop owns earned-Ink Mystery Ink Chests. Bag owns inventory, equipment,
-   pens, and titles. Gallery owns community Legends and personal Legacy Cards
-   outside the primary dock and opens directly from Home. The Scout Notebook is also outside the primary
-   dock; its scene remains temporarily for older saved-replay returns.
-6. **Return:** keep the visible UTC-day streak alive. The scheduler resolves
-   the Rumble, crowns the Champion, and stores the picked Scribbit's last played
-   bout without creating Reddit posts or comments. New archived pages lead into the scouting receipt, its
-   server-selected replay, and then the Legacy Book.
-7. **Become a Legend:** Scribbits live for three days. Winning a crown or
-   reaching the Belief threshold preserves one in the public Gallery. Every
-   completed Scribbit also becomes an immutable card in its creator's private,
-   paginated Legacy Book. Gallery keeps Legends and Legacy behind two full-size
-   trophy/book tabs with native keyboard navigation. The
-   six-card Hall uses drawing-first cards, generated trophy/heart status, and one
-   info-led `VIEW`. Every Gallery card and page control has a native keyboard
-   target; described detail dialogs trap focus, isolate background actions, and
-   return focus to the opening card.
+### 1. Open the game
 
-The game is designed for a short Reddit-feed visit: a lightweight inline card
-shows today's forecast and the player's next action, while Phaser loads only in
-expanded mode.
+Open the Scribbits custom post on Reddit and enter the expanded game. The Home
+screen shows the selected Scribbit and one large **DRAW!** action. The persistent
+dock contains **Arena**, **Bag**, **Home**, **Battles**, and **Shop**.
 
-## Data and safety
+### 2. Choose a drawing mode
 
-Scribbits stores Reddit identity for attribution and the drawings, battle
-history, inventory, streak, and scores required by the game. Drawings are
-uploaded through Reddit media hosting; submissions fail closed if that upload
-fails. The server analyzes an authoritative base PNG, rejects drawings below the
-shared minimum-body threshold, and rejects decorated PNGs that change pixels
-outside declared accessory regions or erase base pixels.
-After media upload, every Redis/player-state effect of Scribbit birth commits in
-one transaction. A failed Redis transaction leaves no partial player state; an
-ambiguous commit is recovered from the exact Scribbit and index identity. Media
-hosting remains external, so a failed post-upload transaction may leave an
-unreferenced hosted asset but cannot spend inventory or award progression.
-Nightly resolution watches the per-day active-submission registry and cannot
-snapshot a Rumble while a committed birth is still being verified or repaired.
-Its distributed day claim carries the scheduler's unique operation ID, recovers
-an EXEC reply loss by exact readback, fails closed on command errors, and can be
-released only by that exact owner.
-Practice drawings are returned only inside one ephemeral replay. They are not
-uploaded or stored, and the battle store rejects a practice report before its
-first Redis operation. The route caps request bytes and uses short-lived Redis
-guards for per-user concurrency and request rate; those guards contain no game
-progression data.
-Every community Scribbit card has a **Report** action. Owners have a
-two-step **Delete** action, and the Field Guide includes a two-step option to
-delete all stored game data.
-Battle clips are created and uploaded only after the player taps Share. The
-upload requires a signed-in Reddit account, is capped at 8 MB, and leaves the
-app boundary for Reddit media hosting.
+The Draw screen offers two paths:
 
-## Architecture
+- **Community Theme** creates the official daily Scribbit. It can earn rewards,
+  join the Rumble, appear in battle history, and eventually become a permanent
+  Archived card.
+- **Free Draw** is an untimed, once-per-Arena-day sketch. It uses the same canvas
+  and tools but does not create a fighter, reward, Rumble entry, or battle
+  record.
 
-In production, the Reddit WebView calls `/api/*` on Reddit's hosted Devvit Node
-server. Those stateless requests run the authoritative domain code and persist
-installation-scoped state in managed Redis. A battle request computes and
-stores the complete result before returning its transcript; Phaser only replays
-it. Practice is the explicit exception: `/api/practice-battle` computes the same
-authoritative transcript but returns it without media upload, rewards, or battle
-persistence. The local `dev-mock.mjs` process substitutes for that hosted
-boundary during browser iteration—it is not the production game server.
+Community assignments come from an append-only calendar of shared three-day
+themes. The current assignment remains locked until it is submitted, so every
+Scribbit keeps an honest category for that cycle's community Rumble.
 
-- `src/shared/arena.ts`: client/server contract and gameplay constants.
-- `src/client/scenes/ScribbitHome.ts`: centered Home destination and the single
-  primary entry into the official daily Draw flow.
-- `src/server/core/season.ts` and `src/server/routes/seasonAdmin.ts`: one
-  authoritative ranking-season lifecycle and its moderator administration
-  boundary.
-- `src/server/core/moderatorAuthorization.ts`: shared live Reddit moderator
-  verification for privileged menu actions.
-- `src/server/core/payoutReceipt.ts`: bounded Clout/Rumble Ink receipt TTLs and
-  the per-user cleanup index consumed by privacy deletion.
-- `src/client/lib/battleclip.ts`: bounded client-canvas recording, Reddit media
-  upload, and share-sheet handoff for completed replays.
-- `src/shared/battleshare.ts`: shared clip-size, data-URL, and Reddit-hosted
-  share-payload validation used by `/api/battle-clip` and the shared-link splash.
-- `src/shared/sparreward.ts`: versioned, runtime-validated Spar payout receipt;
-  its exact XP/level/Ink transition is persisted inside the existing atomic
-  daily-win claim and remains separate from the immutable battle report.
-- `src/shared/analyzer-core.ts`: deterministic PNG analyzer used by both sides.
-- `src/shared/cosmetics.ts`: authoritative 36-item reward catalog shared by the
-  server, client inventory tools, and Gallery Collection.
-- `src/shared/equipment.ts`: four equipment categories, two-slot capacity, empty
-  loadouts, cloning, validation, and the shared equip/move/unequip projection.
-- `src/shared/founders.ts`: one immutable source for all twenty founding Scribbit
-  definitions and 160 validated story strings; clients look up presentation by
-  the existing `founding-*` ID without adding report or Redis fields.
-- `src/shared/content/deterministic.ts`: one stable content hash used by authored
-  schedules without consuming or perturbing combat randomness.
-- `src/shared/content/communitydrawthemes.ts`: append-only official Draw seasons
-  with 122 unique themes covering 366 Arena days in stable three-day blocks.
-- `src/shared/content/doodledares.ts`: separate validated 32-prompt/eight-twist
-  Practice catalog; deterministic selection stores no player state.
-- `src/shared/content/forecastblurbs.ts`: validated 32-day public-copy rotation
-  used by production forecast generation and the browser mock without consuming
-  combat-element randomness.
-- `src/shared/content/founderrivalepisodes.ts`: immutable three-page arcs for all
-  twenty founders, with fail-fast completeness, order, uniqueness, length,
-  founder-name, pre-fight fact-safety, and post-bout reward-safety validation.
-  Runtime page/result selection is a pure lookup from founder ID, authoritative
-  bout number, and proven latest winner.
-- `src/shared/content/scoutnotes.ts`: 48 immutable, validated status-specific
-  Scout Notebook notes with deterministic seven-day no-repeat selection.
-- `src/shared/scoutnotebook.ts`: strict immutable projection for the bounded
-  seven-page DTO, including contiguous days, exact payout/status invariants,
-  valid forecasts/builds, and replay privacy requirements.
-- `src/shared/combat`: deterministic fixed-tick combat domain, balance tuning,
-  transcript contract, and regression tests.
-- `src/shared/progression.ts`: dependency-leaf level thresholds, level lookup,
-  and bounded level damage policy shared by client, server, and combat.
-- `src/shared/arena.ts`: shared API and stored-state shapes plus the single
-  full-record Scribbit deep-copy policy used by storage, combat, Rumble,
-  founders, and the localhost mock.
-- `src/shared/combat/upgrades.ts`: compatibility parsing for versioned Ink Mod
-  records already stored on Scribbits and archived reports. Current combat
-  progression is owned by levels, Power-Ups, and equipped Gear.
-- `src/shared/combat/selection.ts`: the single dominant-stat, Combat Role, and
-  legacy signature selector shared by server simulation, birth, Inkbody, and founder art.
-- `src/shared/combat/roles.ts`: canonical role names, drawing cues, ranges,
-  permanent weapons, basic attacks, signatures, counter loop, and tuning.
-- `src/shared/combat/shapepowercontent.ts`: shared names, reveal copy, neutral
-  no-clean-hit cues, and the sixteen element-specific signature identities;
-  combat numbers remain isolated in `config.ts`.
-- `src/shared/combat/elementcontent.ts`: canonical player-facing descriptions of
-  Ember afterburn, Tide shove, Moss barrier, and Storm windup. The Field Guide
-  consumes this instead of maintaining the retired element triangle.
-- `src/shared/combat/resultvalidation.ts`: one KO/double-KO/timeout
-  terminal-state gate consumed by the full transcript parser.
-- `src/shared/combat/transcriptvalidation.ts`: the one browser-safe, version-aware
-  runtime parser for transcript fighters, events, checkpoints, and results. Both
-  storage and Replay fail closed through it.
-- `src/shared/legacycards.ts`: the browser-safe Legacy Card projection, cursor,
-  ordering, page-limit, return-preview, and seen-day policy shared by production
-  and the localhost mock.
-- `src/server/index.ts`: Hono server entry point.
-- `src/server/routes/api.ts`: REST API mounted at `/api`.
-- `src/server/core`: Redis-backed domain logic for arena days, Scribbits, ink,
-  clout, battles, forecasts, daily jobs, and the single app-post lifecycle.
-- `src/server/core/legacy.ts`: personal Legacy Redis indexing, migration, bounded
-  index scans, and one-time receipt persistence over immutable retired snapshots.
-- `src/server/core/scribbit.ts`: Scribbit lifecycle and ownership plus the atomic
-  per-Scribbit Gear equip mutation. It accepts permanent discovery—including
-  zero-copy forged unlocks—rejects retired/founding targets, and recovers an
-  ambiguous transaction reply by exact readback.
-- `src/server/core/battleStore.ts`: battle reports, per-Scribbit history, and
-  the ordered featured Rumble report index used by overnight receipts.
-- `src/server/core/submission.ts`: the single Redis transaction owner for
-  Scribbit birth. It validates watched daily, roster, inventory, and streak
-  state, then atomically commits the Scribbit and indexes, Rumble entry, daily
-  flags, Ink, streak, and accessory spend. Exact readback reconciles an
-  ambiguous transaction reply or per-command error without duplicate rewards
-  or consumption. A short per-day active-submission lease makes nightly
-  resolution wait until any exact repair finishes; concurrent births keep
-  separate lease members instead of sharing a global mutex.
-- `src/server/core/founderChronicle.ts`: versioned player-level Rival Thread
-  state, the one-beat-per-day reducer, pending projection receipts, transaction
-  recovery, v1 checklist migration, and the bounded public Chronicle projection.
-  After an ambiguous commit, an immediate episode beat is recovered only when
-  the reloaded public state exactly matches its projection and the current report
-  is the latest durable report in that thread.
-- `src/server/core/practice.ts`: strict PNG-to-ephemeral-replay domain with no
-  durable gameplay/replay persistence, media, reward, Rumble, or lifecycle
-  dependency. Redis request leases, migration guards, and rate keys protect the
-  endpoint without turning Practice into progression state.
-- `src/server/core/scoutNotebook.ts`: bounded best-effort assembly over existing
-  eight-day Pick records, payout receipts, forecasts, lifetime Clout, and
-  30-day featured reports. It never reads `champion:current` for historical
-  identity; it may ensure the existing deterministic forecast records but adds
-  no Scout-specific persistence.
-- `src/server/core/species.ts`: projects the shared founder definitions into
-  runtime Scribbits and owns fair opponent/slate selection and safe cloning.
-- `src/client/game.ts`: Phaser bootstrapping.
-- `src/client/scenes`: game screens.
-- `src/client/lib/inkmesh.ts`: deterministic Mesh2D geometry and stat-driven
-  motion rules, kept pure for regression testing.
-- `src/client/lib/continuousreplay.ts`: report-to-transcript identity binding and
-  checkpoint interpolation used by the live-looking replay.
-- `src/client/lib/battlepresentation.ts`: pure impact, real-time paper-arena
-  layout, non-overlapping outcome stack, HP, clock, shrinking-arena, and visible
-  mastery plans derived from authoritative data.
-- `src/client/lib/overlay.ts`: design-space DOM alignment plus the shared native
-  action adapter; `replaypostfightactions.ts`, `replaypracticeoutcome.ts`, and
-  `replaysparrivaldraft.ts` keep canvas presentation while exposing matching
-  focusable controls and restoring the correct layer after Rival Run errors or
-  close.
-- `src/client/lib/battlerecap.ts`: pure transcript-to-recap copy and finish
-  semantics; `replaybattlerecap.ts` renders that plan without inferring results.
-- `src/client/lib/battlejournal.ts`: pure recent-report ordering, historical
-  ownership, win/loss/watch perspective, finish, highlight, and summary planning
-  for the Battle Scrapbook. It reuses transcript validation and never reconstructs
-  archived motion or owns persistence.
-- `src/client/lib/savedreplayintro.ts`: sub-second, reduced-motion-safe matchup
-  ticket for saved reports; `registry.ts` owns the local saved/fresh mode and
-  watch pass, while `replaypostfightactions.ts` owns the replay-again utility.
-- `src/client/lib/scoutnotebook.ts`: pure page/summary planning from server
-  statuses and payouts; `scenes/ScoutNotebook.ts` renders the paper notebook,
-  day tabs, drawing snapshots, and same-day Replay return without deriving wins.
-- `src/client/lib/replaybattlebackground.ts`: ten deterministic stage skins,
-  including the dedicated Sticker Stadium art, with reduced-motion-safe ambience
-  and transcript-triggered power surges; `replaybattlehud.ts` owns names, visual
-  health bars, the arena caption, clock, icon controls, and persistent top commentary.
-- `src/client/lib/matchupbrief.ts`: pure mode-title, exact-signature, and
-  role matchup planning from the shared authoritative counter read;
-  `battleceremony.ts` renders the plan before every current battle path.
-- `src/shared/content/replaycommentary.ts`: v2 Inkcast presentation pack with
-  short player-facing sentences and stable v1 line IDs for continuity, 25
-  per-fact token contracts, strict shared parser/renderer,
-  truth validation, and deterministic bank permutations for all 104 lines.
-  The v2 selection seed explicitly accepts presentation-copy drift while battle
-  facts and stored outcomes remain unchanged.
-- `src/client/lib/replaycommentary.ts`: replay-scoped transcript-fact-to-copy
-  authoring with bank-local occurrence state plus founder voice projection into
-  existing replay beats; it cannot schedule events or change combat state.
-- `src/client/lib/inkcastqueue.ts`: pure priority, same-tick selection, dwell, and
-  two-item pending rules for readable Inkcast cadence at every playback speed.
-- `src/client/lib/championchallenge.ts`: pure founder/community Champion
-  Contract identity and truthful open/completed copy; the server still owns daily
-  use and XP.
-- `src/client/lib/sparrivals.ts`: pure rival-card truth planning from server
-  Scribbits, forecast, prior-bout recap, and Founder Chronicle state;
-  `replaysparrivaldraft.ts` owns the Phaser draft layout.
-- `src/client/lib/rivalrunflow.ts`: the one player-facing controller for slate
-  fetch, day rollover, chooser lifecycle, selected-rival Spar, report staging,
-  and VS ceremony. Arena, Draw, and Replay provide only their return/focus hooks.
-- `src/client/lib/replayreward.ts`: compact XP/Ink and level-up copy from the
-  fresh server receipt; `replaypostfighteligibility.ts` keeps saved history from
-  offering live Rival or Rumble-pick actions.
-- `src/client/lib/founderchronicle.ts`: pure active-thread, daily availability,
-  score, beat, pre-fight stakes, and transcript-winner-bound result receipt
-  planning; `founderchroniclemargin.ts` renders the compact paper overlay.
-- `src/client/lib/practicelab.ts`: pure three-role session reducer,
-  attempt-aware target/prompt rotation, Practice copy, and one-time 3/3
-  completion plan; `registry.ts` owns the session lifetime.
-- `src/client/lib/replaypracticeoutcome.ts`: reward-free Practice outcome actions
-  and repeat-safe completion rendering; ephemeral fighter cards never expose
-  profile or Belief mutations.
-- `src/client/lib/proceduraldoodleplan.ts`: pure deterministic stat-to-silhouette
-  geometry for founding mascots, rendered by `proceduraldoodleart.ts`.
-- `src/client/lib/audiocatalog.ts`: the single source of truth for music, semantic
-  SFX cues, mix levels, local samples, and source/license provenance. UI and
-  scenes call cue names through `sfx.ts`; they never import sound filenames.
-- `src/client/lib/sfx.ts`: shared Web Audio playback, sample caching, cue
-  variation, voice limits, cooldowns, persistent mute, and browser-safe failure.
-  `battlesound.ts` is the compatibility adapter for replay cue names.
-- `src/client/lib/roleweaponrenderer.ts`: permanent Brawler, Longshot, and Mage
-  weapon silhouettes plus archived Gunner presentation for v4-v6 reports.
-- `src/client/lib/shapepowerpresentation.ts`: compatibility presentation for
-  Inkquake, Nib Halo, Smearstep, and Colorburst in stored v1-v3 reports.
-- `src/client/lib/shapepowerrelicart.ts`: vector painters for the eight cosmetic
-  Shape Power Relics, joined into the normal accessory renderer.
-- `src/client/lib/cosmeticpreview.ts`: shared reward-art preview used by the
-  chest ceremony and Bag.
-- `src/client/lib/capsulepresentation.ts`: pure collector-rank, ownership-copy,
-  batch-price, batch-summary, and portrait-safe prize-action plans. The Mystery
-  Ink Shop shows honest odds, matched generated closed/open chest art, a generated
-  Ink token on the wallet and exact `×1`/`×10` costs, a paid-order ten-reward
-  reveal grid, one compact progress card, and a disabled Reddit Gold Styles preview over a generated
-  scrapbook stage; its one player-facing entry lives in `src/client/scenes/Shop.ts`.
-  Those four Shop-only textures preload with the Shop scene rather than consuming
-  initial game-load decode and texture memory.
-- `src/client/lib/appmenu.ts`: shared top-right Settings menu for the Field Guide;
-  Gallery has its own compact book button on Home.
-- `src/client/lib/arenaasynclifecycle.ts`: pure latest-response policy for Arena
-  mutations and refreshes. Responses from a stopped or replaced scene can only
-  apply to the current activation or schedule a current/next-entry refresh.
-- `src/client/lib/collectionbook.ts`: Archero-inspired Bag with a large staged
-  living Scribbit, eight persistent equipment slots, filters below the stage,
-  icon-only inventory tiles, tap-for-details Equip/Forge actions, explicit
-  removal/full-category feedback, and separate Styles inventory.
-- `src/client/lib/cosmeticpreviewfit.ts`: pure bounds-fitting plan that centers
-  differently shaped Gear art inside the Bag's fixed item and slot safe boxes.
-- `src/client/lib/bagrarity.ts`: one high-contrast Common/Rare/Epic/Legendary border
-  system shared by Bag inventory tiles and equipped slots.
-- `src/client/lib/baginventorygrid.ts`: one masked, bounded inventory tray whose
-  native scroll surface provides touch inertia, wheel and keyboard access while
-  keeping the Phaser item grid and scrollbar synchronized.
-- `src/client/lib/legacycards.ts`: paper-native Legacy deck, archival detail,
-  finish treatments, pagination controls, and return ceremony.
-- `src/client/lib/legacyreturnpresentation.ts`: pure hero priority and bounded
-  copy for the compact one-time Legacy return.
-- `src/client/lib/livesprite.ts`: Phaser Mesh2D Inkbody renderer with a 3x3
-  Canvas fallback.
-- `src/client/lib`: Phaser UI, API wrapper, drawing canvas, modals, and effects.
-- `scripts/build-mock-combat.mjs`: bundles the production battle facade for the
-  local browser server without maintaining a second simulator or spar selector.
-- `src/server/core/mockRuntime.ts`: explicit bundle boundary exposing production
-  combat and founding-rival selection to the local mock.
-- `scripts/mock-battle-factory.mjs`: isolates interactive and deterministic
-  browser-fixture seeds around that production facade.
-- `scripts/dev-mock.mjs`: local Devvit/Redis stand-in for browser UI iteration.
-- `scripts/make-test-drawing.mjs`: four trimmed, dominant-stat fixture drawings
-  used to prove each production combat role in both renderers.
-- `tests/**/*.test.mjs`: discoverable Node test suites for focused domain and
-  architecture contracts. Each run compiles production sources into an isolated
-  temporary directory and removes it afterward.
-- `scripts/test-battle.mjs`: legacy deterministic simulation/core regression
-  harness retained while its domains move into focused suites.
+### 3. Draw a Scribbit
 
-## Setup
+Draw with touch, mouse, or pen. The canvas provides twelve base colors, brush
+size, eraser, undo, and an optional Tools drawer for unlocked paints, brushes,
+stickers, clear, and redo. **NEXT** becomes available only after the shared
+analyzer confirms that the drawing contains a real body rather than a tap-sized
+mark.
 
-Use Node 22.2.0 or newer with pnpm 11.7.0.
+The most-used role color determines the current Combat Role:
+
+| Drawing colors          | Combat Role  | Battle style                             | Strong against |
+| ----------------------- | ------------ | ---------------------------------------- | -------------- |
+| Brown, coral, or orange | **Brawler**  | Close-range Ink Fists and Inkquake       | Mage           |
+| Gold, green, or blue    | **Longshot** | Long-range Quill Launcher and Nib Volley | Brawler        |
+| Aqua, purple, or pink   | **Mage**     | Ranged Palette Orb and Colorburst        | Longshot       |
+
+Black, grey, and white are neutral. The counter loop is
+**Brawler → Mage → Longshot → Brawler**. Size, outline, footprint, and color
+variety still shape the normalized Chonk, Spike, Zip, and Charm values inside
+the fixed 100-point build.
+
+After drawing, name the Scribbit, confirm its preview, and choose one of three
+server-offered Power-Ups. The birth reveal uses the submitted PNG itself—there
+is no placeholder creature.
+
+### 4. Watch the first fight
+
+A new Scribbit immediately faces a server-selected founding rival. Scribbits is
+not a turn-based or reflex PvP game: the server resolves the complete fight at a
+fixed 20 Hz, stores the winner and transcript, and sends that immutable report
+to Phaser for playback.
+
+During the replay you can:
+
+- mute or enable battle sound;
+- watch at normal, 2×, or 4× speed;
+- skip to the authoritative result; and
+- share a completed, unskipped replay through Reddit's share flow.
+
+Fights end within 20 seconds. At 15 seconds, **Sudden Scribble** shortens
+Signature Move cooldowns for a fast finish. Replay effects, commentary, and
+animation never alter the stored result.
+
+### 5. Compete in Arena
+
+Arena is the home for competition. Select a living Scribbit, review the current
+season and venue challenge, then choose an activity:
+
+- **Rival Run:** fight a three-bout run against founding rivals. Each slate
+  offers **SAFE +1**, **EVEN +2**, and **BOLD +3** choices. A win adds the shown
+  points; a loss still advances the run.
+- **Founder Rival Thread:** build one best-of-three rivalry. At most one story
+  beat advances per Arena day, while other fights remain replayable exhibitions.
+- **Champion Contract:** challenge the current Champion once per day. A win
+  awards +2 XP.
+- **Practice Lab:** after the official drawing locks, make throwaway drawings
+  to discover all three roles and immediately watch reward-free fights. Practice
+  creates no Ink, XP, roster entry, Rumble entry, battle history, or Archived
+  card.
+
+The first Spar win of a UTC day awards +1 XP and +2 Ink. Gear can add bounded
+techniques to direct exhibition fights, but Rumble, Champion, and Practice
+remain Gear-neutral.
+
+### 6. Make a nightly Rumble Pick
+
+Every official Scribbit enters the asynchronous nightly Rumble automatically.
+Before resolution, choose one other community contender as your daily Pick. The
+choice locks on the server.
+
+The nightly Devvit scheduler resolves the field at 00:00 UTC. Return afterward
+to see the Champion, your Scribbit's result, and the last bout of your Pick when
+available. Picking the Champion awards 3 permanent Clout; picking a finalist
+awards 1.
+
+### 7. Grow and collect
+
+- **Ink:** the official daily draw awards 7 Ink, enough for one Mystery Ink
+  Chest. Wins and daily returns can award more.
+- **Shop:** each chest costs 7 Ink. Pulls use visible 70% Common, 25% Rare, 4%
+  Epic, and 1% Legendary odds, with Epic-or-better guaranteed by pull 10. Open
+  one chest or a maximum batch of ten.
+- **Bag:** manage reusable Gear, permanent pens, titles, and discovered items.
+  Each living Scribbit has two slots in each Gear category: weapon, armor,
+  shoes, and accessory. Duplicate Gear can be forged into higher ranks.
+- **Care:** inspect a Scribbit and use its daily care actions during growth.
+  Receipts show the exact server-confirmed mood, XP, and Ink changes.
+- **Battles:** replay the newest 20 server-stored reports. Older result-only
+  records remain readable even when motion replay is unavailable.
+- **Gallery:** open Gallery from Home to browse Growing, Mature, and Archived
+  Scribbits plus community Legends.
+
+### 8. Mature and archive Scribbits
+
+A Scribbit grows for three Arena days. It then becomes **Mature**: its base stats
+lock, but it remains playable and can still use Gear. Each player has three
+Growing slots and three Mature slots.
+
+Retiring a Scribbit creates an immutable Archived card. If a fourth Scribbit
+matures, the oldest Mature Scribbit is archived automatically. Archived cards
+preserve the drawing, final level and record, Belief, equipment appearance, and
+creator title. A crown or at least 25 community Belief gives the card a gold
+Legend finish.
+
+## Fairness and server authority
+
+- All official drawings normalize to the same 100-point stat budget.
+- Submitted images are revalidated by the Devvit server; the browser is never
+  trusted as combat authority.
+- Fight results, rewards, daily limits, Rumble Picks, progression, and inventory
+  are server-owned and persisted in Redis.
+- Battle replays render stored transcripts and cannot recalculate a winner.
+- There is no paid currency. Mystery Ink is earned through play.
+- Players can report Scribbits, delete owned Scribbits with confirmation, or
+  delete all of their stored game data from the Field Guide.
+
+## Built with Devvit and Phaser
+
+- **Platform:** Reddit Devvit Web
+- **Client:** Phaser 4.2, TypeScript, Vite
+- **Server:** Devvit Node.js runtime, Hono, managed Redis
+- **Communication:** typed `/api/*` REST contracts
+- **Rendering:** the submitted PNG becomes a deforming Phaser Inkbody during
+  replay, with a Canvas-safe fallback
+
+Production runs as a Devvit custom post. The inline `splash.html` entry stays
+lightweight for the Reddit feed, while `game.html` contains the expanded Phaser
+game. The server analyzes submissions, persists player state, schedules nightly
+resolution, and returns deterministic reports.
+
+## Project structure
+
+```text
+app/
+├── devvit.json             Devvit entrypoints, permissions, menus, and scheduler
+├── src/client/             Phaser scenes and browser presentation
+├── src/server/             Hono routes and Redis-backed game logic
+├── src/shared/             Shared contracts, combat, analysis, and content
+├── tests/                  Focused integration and regression suites
+├── scripts/                Build, mock, verification, and release helpers
+├── docs/                   Localization and ranking-season operations
+└── package.json            Supported development and release commands
+```
+
+## Local development
+
+### Requirements
+
+- Node.js 22.2.0 or newer
+- pnpm 11.7.0
+- A Reddit account and Devvit authentication for Reddit playtests or uploads
+
+Install the locked dependencies:
 
 ```bash
 pnpm install --frozen-lockfile
 ```
 
-## Development
+### Browser-only preview
 
-```bash
-pnpm run dev
-```
-
-`pnpm run dev` runs Devvit playtest against the subreddit configured in
-`devvit.json`. It requires `devvit login`.
-
-If your agent shell cannot see `node` or `pnpm`, use the repo-level
-command instead:
-
-```bash
-../playtest.command
-```
-
-For local browser iteration without Reddit:
+No Reddit login is required for the local mock:
 
 ```bash
 pnpm run mock
 ```
 
-Then open the mock server URL printed by the command.
+Open <http://localhost:8902/>. The default preview starts with an empty roster;
+add `?fixtures` to use seeded QA data. Client changes update through Vite, while
+the mock backend keeps its last good build during a failed rebuild.
 
-The same canonical launcher is available from the repository root:
+### Devvit playtest
 
-```bash
-../mock.command
-```
-
-The launcher runs a dedicated Vite development server for immediate client
-updates and proxies API requests to the local mock backend. Backend bundles are
-rebuilt in staging and published only when successful, so the running game keeps
-the last-good server code during an invalid save. Running the shortcut again
-replaces its previous instance. Open `http://localhost:8902/` for the
-brand-new-player route with an empty roster and no unlocked metagame items. Use
-`http://localhost:8902/?fixtures` only when the seeded QA roster is needed.
-For deterministic combat proof, use
-`/?debug&spar&power=inkquake&element=storm&seed=2`; swap in `nib_halo` or
-`colorburst`, and add `&canvas` or `&reduce-motion` for those
-fallbacks. Debug builds expose `replayPhase`, `replaySpeed`, and
-`replayTweenScale` on the game canvas so 4× playback and the result reset can be
-verified without touching combat state.
-Use `/?debug&spar&rival-thread&reduce-motion&ceremony` for the deterministic Day
-9 deciding-bout ceremony, RIVAL DECIDER rail, and signed 2–1 result margin.
-
-## Verification
-
-Run these before handing off changes:
+Authenticate once, then run the configured `scribbits_dev` playtest:
 
 ```bash
-pnpm verify
+pnpm exec devvit login
+pnpm run dev
 ```
 
-`pnpm verify` runs type-check, lint, all discoverable Node suites, the legacy
-deterministic harness, and the production build.
+The equivalent clean-shell launcher from the repository root is
+`./playtest.command`.
 
-`pnpm run release:check` additionally runs the non-mutating competitive balance
-gate and verifies the active Devvit login before any upload or publish command.
+### Verify
 
-Use `pnpm run test:suites` for the focused discoverable suites only, or
-`pnpm run test:sim` for the legacy harness only. `pnpm test` runs both and is
-the default test gate.
+Run the complete gate:
 
-`pnpm run test:sim` covers deterministic analyzer, Inkbody mesh geometry, combat
-determinism, payload caps, archetype balance, slot neutrality, battle,
-storage, daily job, ink, title equip, immutable Legacy snapshots, personal
-Legacy paging/receipts, privacy deletion, expiry repair, and Swiss rumble
-behavior. It also covers featured Rumble report selection/purge, Next Goal
-priority/evidence, production-backed browser battle contracts, mock seed
-isolation, four readable fixture silhouettes, shared dominant-stat parity,
-stat-shaped founders, Founder Rival Thread pacing/recovery/migration/mock parity,
-the ten-power-matchup duration matrix, and the live paper-arena HUD/clock/outcome
-layout. It does not
-replace route or browser testing. Recap coverage fixes timeout, knockout,
-double-knockout, truncated-timeline, tie-break, decisive-hit copy, and report
-fighter binding to the validated server transcript. First-draw coverage locks
-the 32-day prompt calendar, 256 unique prompt/twist cards, four-day combat-role
-balance, catalog safety, concise causal receipts, the shared minimum-body gate,
-and the valid zero-recoil wall-ejection edge case. Forecast coverage locks 32
-nonrepeating public blurbs, reward-safe copy, selection independence from
-combat-element randomness, and mock parity.
-Progression coverage locks battle-earned XP, versioned Scribbit migration, and
-the fixed-tick element guide with no hidden triangle.
-Rival Draft coverage locks slate stability, clone safety, level bounds, combat
-role variety, truthful level/role/signature/forecast card planning, prior-bout
-highlight continuity, and canonical founder identity. Founder coverage locks the
-exact twenty-entry server projection, 160 globally unique bounded story strings,
-60 unique three-page episode titles, 60 founder-naming episode cues, 120 unique
-outcome-bound result lines, deep-frozen content, production/mock parity,
-deterministic voice, one active best-of-three, daily anti-farming, report
-provenance, pending-receipt repair, pinned matchmaking, derived page continuity
-across client surfaces, and signed resolution margins.
-Battle Scrapbook coverage locks recent-day ordering, Rumble/Champion priority,
-historical ownership after roster expiry, exact transcript facts, honest archived
-fallbacks, immutable plans, and bounded copy. Chronicle coverage also rejects a
-projected post-bout beat until durable state and the exact latest report prove the
-ambiguous commit completed.
-Scout Notebook coverage locks all 48 authored lines, six complete frozen banks,
-seven-day no-repeat selection, promise/reward-claim rejection, contiguous
-immutable pages, exact champion/finalist payouts, historical report identity,
-hidden-fighter privacy, existing mock/production boundaries, and pure client
-plans. The running 320x568 flow additionally proves drawing load, Day 8 replay,
-Skip, and return to the same selected page with no runtime or console errors.
-Practice coverage locks strict request fields, PNG validation, server-derived
-stats, required transcripts, mock/production parity, art-bound transient IDs,
-session de-duplication, truthful one-time 3/3 completion, post-completion
-three-role encore rotation, and rejection before the first battle-storage call.
-Inkcast coverage locks the exact 25-bank/104-line v1 pack, deep immutability,
-globally unique stable IDs and copy, strict per-bank tokens, malformed-brace and
-rendered-length rejection, reward/outcome/miss claim safety, deterministic
-bank-local exhaustion before reuse, founder-signature bypass, every template's
-maximum-input render, fact-bound damage/critical copy, and Colorburst miss
-exclusion. Matchup brief
-coverage locks all sixteen ordered role combinations to one shared counter read
-with exact ranges, weapons, signatures, and no predicted outcome words.
-Inkcast queue coverage locks one strongest candidate per tick, first-signature and
-critical priority, 900ms wall-clock dwell, immutable candidates, and a two-item
-pending bound. Champion Contract coverage locks founder reuse, four distinct
-community challenge voices, truthful conditional +2 XP copy, frozen plans, and no
-Ink promise.
+```bash
+pnpm run verify
+```
 
-## Deployment
+It runs TypeScript checks, ESLint, all discoverable Node test suites, the
+deterministic combat simulation harness, and the production build. Useful
+focused commands include:
 
-See `../DEPLOY.md`. First upload/login is interactive; subsequent patch uploads
-can use `../deploy.command`.
+```bash
+pnpm run type-check
+pnpm run lint
+pnpm test
+pnpm run test:sim
+pnpm run build
+pnpm run balance:check
+```
+
+The repository-root `./verify.command` is the supported clean-shell equivalent.
+
+## Deploying with Devvit
+
+From the repository root, a private patch upload uses:
+
+```bash
+./deploy.command
+```
+
+The command requires a clean worktree, runs the full verification and combat
+balance gates, checks Devvit authentication, and then uploads a patch. To request
+public review after the same gates, run this from `app/`:
+
+```bash
+pnpm run launch
+```
+
+See [`../DEPLOY.md`](../DEPLOY.md) for registration, GitHub auto-deploy, token
+setup, and troubleshooting.
+
+## More documentation
+
+- [Product and architecture overview](../OVERVIEW.md)
+- [Repository README](../README.md)
+- [Ranking season operations](docs/ranking-seasons.md)
+- [Deployment guide](../DEPLOY.md)
+- [Submission package](../SUBMISSION.md)
+- [Devvit app configuration](devvit.json)
+
+## License
+
+Scribbits Arena is available under the BSD 3-Clause License. See
+[LICENSE](LICENSE).
