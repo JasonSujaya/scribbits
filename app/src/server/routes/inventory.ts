@@ -8,6 +8,10 @@ import type {
   MergeGearResponse,
   Scribbit,
 } from '../../shared/arena';
+import type {
+  DrawingInkRefillRequest,
+  DrawingInkRefillResponse,
+} from '../../shared/drawingink';
 import {
   isEquipmentCategory,
   type EquipGearRequest,
@@ -20,6 +24,7 @@ import {
   loadInventory,
   mergeGearForUser,
   pullCapsuleForUser,
+  refillDrawingInkForUser,
   releaseCapsuleOperation,
   setEquippedTitle,
 } from '../core/inkStore';
@@ -41,6 +46,7 @@ export type InventoryRouteHandlers = Readonly<{
   equipGear: Handler;
   equipTitle: Handler;
   mergeGear: Handler;
+  refillDrawingInk: Handler;
   capsule: Handler;
 }>;
 
@@ -255,6 +261,51 @@ export const createInventoryRouteHandlers = ({
     }
   };
 
+  const refillDrawingInk: Handler = async (c) => {
+    const player = await getCurrentPlayer();
+    if (!player) return unauthorized(c, 'Sign in to refill special colors.');
+    const body = await readJsonBody(c);
+    const itemId =
+      isRecord(body) && typeof body.itemId === 'string'
+        ? body.itemId.trim()
+        : '';
+    const operationId =
+      isRecord(body) && typeof body.operationId === 'string'
+        ? body.operationId.trim()
+        : '';
+    if (
+      !/^[a-z0-9-]{3,80}$/.test(itemId) ||
+      !/^[A-Za-z0-9-]{16,80}$/.test(operationId)
+    ) {
+      return badRequest(c, 'Refill a valid special color.');
+    }
+    const request: DrawingInkRefillRequest = { itemId, operationId };
+    try {
+      const result = await refillDrawingInkForUser(
+        storage,
+        player.userId,
+        request.itemId,
+        request.operationId
+      );
+      if (result.status === 'invalid') {
+        return badRequest(c, 'Discover that special color before refilling it.');
+      }
+      if (result.status === 'operationConflict') {
+        return conflict(c, 'That refill operation was already used.');
+      }
+      if (result.status === 'insufficientInk') {
+        return paymentRequired(
+          c,
+          `You need ${result.cost} Ink to add one use.`
+        );
+      }
+      return c.json<DrawingInkRefillResponse>(result.response);
+    } catch (error) {
+      console.error('Drawing Ink refill route failed:', error);
+      return serverError(c, 'The color refill jammed. Try again soon.');
+    }
+  };
+
   const capsule: Handler = async (c) => {
     const player = await getCurrentPlayer();
     if (!player) {
@@ -333,6 +384,7 @@ export const createInventoryRouteHandlers = ({
     equipGear,
     equipTitle,
     mergeGear,
+    refillDrawingInk,
     capsule,
   });
 };

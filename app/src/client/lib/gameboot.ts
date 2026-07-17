@@ -1,3 +1,4 @@
+import { context as devvitContext } from '@devvit/web/client';
 import { translate } from './localization';
 
 const bootStatus = document.getElementById('game-boot-status');
@@ -5,6 +6,7 @@ const bootMessage = document.getElementById('game-boot-message');
 const bootProgress = document.getElementById('game-boot-progress');
 const bootPercent = document.getElementById('game-boot-percent');
 const bootTip = document.getElementById('game-boot-tip');
+const bootVersion = document.getElementById('game-boot-version');
 const bootStart = document.getElementById('game-boot-start');
 const bootRetry = document.getElementById('game-boot-retry');
 
@@ -35,6 +37,13 @@ let reportedProgress = 0;
 let startHandler: (() => void) | null = null;
 let retryHandler: (() => void) | null = null;
 let tipTimer: number | null = null;
+
+if (bootVersion) {
+  const appVersion = devvitContext?.appVersion?.trim() || 'LOCAL';
+  bootVersion.textContent = translate('appMenu.version', {
+    version: appVersion,
+  });
+}
 
 const renderProgress = (progress: number): void => {
   const clampedProgress = Math.min(1, Math.max(0, progress));
@@ -114,10 +123,9 @@ export const markGameBootPhase = (
   message?: string
 ): void => {
   document.documentElement.dataset.scribbitsBoot = phase;
-  document.getElementById('app')?.setAttribute(
-    'aria-busy',
-    phase === 'ready' ? 'false' : 'true'
-  );
+  document
+    .getElementById('app')
+    ?.setAttribute('aria-busy', phase === 'ready' ? 'false' : 'true');
   if (bootStatus) {
     bootStatus.dataset.phase = phase;
     bootStatus.hidden = phase === 'ready';

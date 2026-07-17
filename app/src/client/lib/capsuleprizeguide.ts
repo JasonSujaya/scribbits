@@ -12,15 +12,23 @@ import { prefersReducedMotion, UI } from './theme';
 import { button, label } from './ui';
 
 const LEGENDARY_SEASON_GEAR = GEAR_CATALOG_ENTRIES.filter(
-  (entry) => entry.rarity === 'legendary'
+  (entry) => entry.rarity === 'legendary' && entry.capsuleEligible !== false
+);
+
+const CAPSULE_PRIZE_CATALOG = COSMETIC_CATALOG.filter(
+  (entry) => entry.capsuleEligible !== false
 );
 
 const PRIZE_KIND_COUNTS = Object.freeze({
-  gear: COSMETIC_CATALOG.filter((entry) => entry.kind === 'accessory').length,
-  pens: COSMETIC_CATALOG.filter((entry) => entry.kind === 'pen').length,
-  ink: COSMETIC_CATALOG.filter((entry) => entry.kind === 'drawing-ink').length,
-  brushes: COSMETIC_CATALOG.filter((entry) => entry.kind === 'brush').length,
-  titles: COSMETIC_CATALOG.filter((entry) => entry.kind === 'title').length,
+  gear: CAPSULE_PRIZE_CATALOG.filter((entry) => entry.kind === 'accessory')
+    .length,
+  pens: CAPSULE_PRIZE_CATALOG.filter((entry) => entry.kind === 'pen').length,
+  ink: CAPSULE_PRIZE_CATALOG.filter((entry) => entry.kind === 'drawing-ink')
+    .length,
+  brushes: CAPSULE_PRIZE_CATALOG.filter((entry) => entry.kind === 'brush')
+    .length,
+  titles: CAPSULE_PRIZE_CATALOG.filter((entry) => entry.kind === 'title')
+    .length,
 });
 
 export type CapsulePrizeGuide = Readonly<{ destroy: () => void }>;
@@ -38,7 +46,7 @@ export function openCapsulePrizeGuide(
     ', '
   );
   const description =
-    `${seasonLabel} has ${COSMETIC_CATALOG.length} possible claw-machine prizes. ` +
+    `${seasonLabel} has ${CAPSULE_PRIZE_CATALOG.length} possible claw-machine prizes. ` +
     `The legendary top wins are ${jackpotNames}. ` +
     `${CAPSULE_RARITY_PERCENTAGES.common} percent are common, ` +
     `${CAPSULE_RARITY_PERCENTAGES.rare} percent rare, ` +
@@ -113,7 +121,7 @@ export function openCapsulePrizeGuide(
       scene,
       0,
       166,
-      `${COSMETIC_CATALOG.length} TOTAL PRIZES`,
+      `${CAPSULE_PRIZE_CATALOG.length} TOTAL PRIZES`,
       23,
       UI.ink,
       true

@@ -83,13 +83,12 @@ test('Pick copy stays canonical while Back transport identifiers remain stable',
   assert.doesNotMatch(apiPlayerCopy.join('\n'), /\bback(?:ed)?\b/i);
   assert.doesNotMatch(mockPlayerCopy.join('\n'), /\bback(?:ed)?\b/i);
   assert.match(apiPickRoute, /api\.post\('\/back'/);
-  assert.match(apiPickRoute, /c\.json<\{ backed: string \}>\(\{ backed:/);
+  assert.match(apiPickRoute, /seasonPicksMade: number;/);
+  assert.match(apiPickRoute, /unlockedMilestoneId: string \| null;/);
+  assert.match(apiPickRoute, /backed: backClaim\.backedScribbitId/);
   assert.match(apiPickRoute, /console\.error\('Back route failed:'/);
   assert.match(mockPickRoute, /path === '\/api\/back'/);
-  assert.match(
-    mockPickRoute,
-    /sendJson\(response, 200, \{ backed: scribbitId \}\)/
-  );
+  assert.match(mockPickRoute, /backed: scribbitId,/);
   assert.match(
     apiSource,
     /Neither your Pick nor an owned Rumble entrant has a replay for that day\./

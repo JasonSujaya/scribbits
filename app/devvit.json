@@ -54,6 +54,13 @@
         "location": "subreddit",
         "forUserType": "moderator",
         "endpoint": "/internal/menu/feedback-view"
+      },
+      {
+        "label": "Moderate Scribbits",
+        "description": "Review reports, remove Scribbits, and ban players",
+        "location": "subreddit",
+        "forUserType": "moderator",
+        "endpoint": "/internal/menu/moderation-view"
       }
     ]
   },

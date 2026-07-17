@@ -343,8 +343,11 @@ test('the primary play loop is fully prepared before Home is revealed', () => {
   assert.match(preloaderSource, /setGameBootProgress\('arena', 1\)/);
   assert.match(gameHtmlSource, /id="game-boot-progress"/);
   assert.match(gameHtmlSource, /id="game-boot-tip"/);
+  assert.match(gameHtmlSource, /id="game-boot-version"/);
   assert.match(gameHtmlSource, /id="game-boot-retry"/);
   assert.match(gameBootSource, /BOOT_SEGMENT_WEIGHTS/);
+  assert.match(gameBootSource, /context as devvitContext/);
+  assert.match(gameBootSource, /translate\('appMenu\.version'/);
   assert.match(gameBootSource, /startGameBootTips/);
   assert.match(gameBootSource, /retryHandler\?\.\(\)/);
   assert.match(

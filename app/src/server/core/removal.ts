@@ -1,12 +1,10 @@
 import { removeCurrentChampionIfMatches } from './arenaStore';
 import { purgeBattleReportsForScribbit } from './battleStore';
-import {
-  getScribbitReportsKey,
-  purgeScribbitModerationRecords,
-} from './moderation';
+import { purgeScribbitModerationRecords } from './moderation';
 import {
   deleteStoredScribbit,
   getScribbitOwner,
+  getUserScribbitsKey,
 } from './scribbit';
 import {
   getPowerUpClaimReceiptsKey,
@@ -39,36 +37,26 @@ export const removeScribbitCompletely = async (
   );
 };
 
-export const removeReportedScribbitIfEligible = async (
+export const removeAllPlayerScribbits = async (
   storage: ArenaStorage,
-  input: Readonly<{
-    expectedOwnerUserId: string;
-    scribbitId: string;
-    currentDay: number;
-    minimumReportCount: number;
-  }>
-): Promise<boolean> => {
-  if (
-    !Number.isSafeInteger(input.minimumReportCount) ||
-    input.minimumReportCount < 1
-  ) {
-    throw new Error('Scribbit report threshold is invalid.');
+  ownerUserId: string,
+  currentDay: number
+): Promise<number> => {
+  const indexedScribbits = await storage.zRange(
+    getUserScribbitsKey(ownerUserId),
+    0,
+    -1,
+    { by: 'rank' }
+  );
+  let removedScribbits = 0;
+  for (const { member: scribbitId } of indexedScribbits) {
+    if ((await getScribbitOwner(storage, scribbitId)) !== ownerUserId) continue;
+    await removeScribbitCompletely(storage, {
+      ownerUserId,
+      scribbitId,
+      currentDay,
+    });
+    removedScribbits += 1;
   }
-  const [ownerUserId, reporterUserIds] = await Promise.all([
-    getScribbitOwner(storage, input.scribbitId),
-    storage.hKeys(getScribbitReportsKey(input.scribbitId)),
-  ]);
-  if (
-    ownerUserId !== input.expectedOwnerUserId ||
-    reporterUserIds.length < input.minimumReportCount
-  ) {
-    return false;
-  }
-
-  await removeScribbitCompletely(storage, {
-    ownerUserId,
-    scribbitId: input.scribbitId,
-    currentDay: input.currentDay,
-  });
-  return true;
+  return removedScribbits;
 };

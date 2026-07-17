@@ -19,6 +19,7 @@ import {
   loadSeasonCatalog,
   pauseSeason,
   removeSeasonEvent,
+  resetSeasonOne,
   resumeSeason,
   scheduleSeason,
   SeasonStateError,
@@ -52,6 +53,7 @@ type ManageSeasonsFormData = {
   eventRuleSetId: string[];
   reason: string;
   confirm: boolean;
+  resetConfirmation: string;
 };
 
 type SeasonAdminCommandContext = Readonly<{
@@ -115,6 +117,7 @@ const buildManageSeasonsForm = (
         { label: 'Resume ranking', value: 'resume' },
         { label: 'Finalize ended season', value: 'finalize' },
         { label: 'Cancel future season', value: 'cancel' },
+        { label: 'Reset Season 1', value: 'reset-season-one' },
       ],
     },
     {
@@ -194,6 +197,14 @@ const buildManageSeasonsForm = (
       label: 'Confirm this administrative action',
       defaultValue: false,
     },
+    {
+      type: 'string',
+      name: 'resetConfirmation',
+      label: 'Reset confirmation',
+      defaultValue: defaults.resetConfirmation,
+      placeholder: 'RESET SEASON 1',
+      helpText: 'Required only for Reset Season 1.',
+    },
   ],
 });
 
@@ -229,6 +240,22 @@ const runSeasonAdminCommand = async (
       reason,
     });
     return `${season.id} draft created.`;
+  }
+
+  if (action === 'reset-season-one') {
+    requireConfirmation(request);
+    if (
+      typeof request.resetConfirmation !== 'string' ||
+      request.resetConfirmation.trim() !== 'RESET SEASON 1'
+    ) {
+      throw new SeasonStateError('Type RESET SEASON 1 to confirm the reset.');
+    }
+    const season = await resetSeasonOne(redis, {
+      ...common,
+      currentArenaDay: commandContext.arenaDay,
+      reason,
+    });
+    return `${season.name} reset. It starts on Arena day ${season.startArenaDay}.`;
   }
 
   const seasonId = cleanText(request.seasonId, 32);
@@ -402,6 +429,7 @@ const openSeasonManagement = async (c: HonoContext): Promise<Response> => {
       eventRuleSetId: ['standard'],
       reason: '',
       confirm: false,
+      resetConfirmation: '',
     };
     return c.json<UiResponse<ManageSeasonsFormData>>(
       {

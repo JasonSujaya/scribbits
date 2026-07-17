@@ -5,11 +5,18 @@ import test from 'node:test';
 const readSource = (path) =>
   readFile(new URL(`../src/${path}`, import.meta.url), 'utf8');
 
-const [drawSource, drawCanvasSource, gallerySource, privacySource, mockSource] =
-  await Promise.all([
+const [
+  drawSource,
+  drawCanvasSource,
+  gallerySource,
+  collectionSource,
+  privacySource,
+  mockSource,
+] = await Promise.all([
     readSource('client/scenes/Draw.ts'),
     readSource('client/lib/drawcanvas.ts'),
     readSource('client/scenes/Gallery.ts'),
+    readSource('client/lib/collectionbook.ts'),
     readSource('server/core/privacy.ts'),
     readFile(new URL('../scripts/dev-mock.mjs', import.meta.url), 'utf8'),
   ]);
@@ -92,7 +99,11 @@ test('fresh timed attempts refill paint and empty paint only disables painting',
 
 test('Bag keeps Draw resources on their owning screen', () => {
   assert.doesNotMatch(gallerySource, /renderDrawChargeInventory/);
-  assert.doesNotMatch(gallerySource, /DRAW CHARGES|PAINT BUCKET/);
+  assert.doesNotMatch(gallerySource, /DRAW CHARGES/);
+  assert.match(gallerySource, /refillDrawingInkUse/);
+  assert.match(collectionSource, /ADD 1 USE/);
+  assert.match(collectionSource, /TAP COLOR FOR USES/);
+  assert.doesNotMatch(collectionSource, /PAINT SUPPLY · LV/);
 });
 
 test('privacy deletion removes persisted Paint Bucket progression', () => {
@@ -101,5 +112,9 @@ test('privacy deletion removes persisted Paint Bucket progression', () => {
 
 test('local browser fixtures expose the same Paint Bucket contract', () => {
   assert.match(mockSource, /getPaintBucketState,/);
-  assert.match(mockSource, /paintBucket: getPaintBucketState\(\)/);
+  assert.match(
+    mockSource,
+    /paintBucket: getPaintBucketState\(economy\.paintBucketLevel\)/
+  );
+  assert.match(mockSource, /\/api\/drawing-ink\/refill/);
 });

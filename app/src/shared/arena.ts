@@ -399,6 +399,7 @@ export type RetireScribbitResponse = { retired: Scribbit };
 export type ReportScribbitResponse = {
   hidden: string;
   removedForEveryone: boolean;
+  created: boolean;
 };
 
 // Mystery Ink gacha — earned currency only. Pulls grant ONE-TIME-USE items:
@@ -745,6 +746,7 @@ export type LegacyCardsState = {
 export const ARENA_ERROR_CODES = [
   'bad_request',
   'unauthorized',
+  'forbidden',
   'not_found',
   'conflict',
   'busy',
@@ -815,7 +817,7 @@ export const getScribbitLifecycleStage = (
 // POST /api/back           -> BackRequest -> { backed: string }         (one per user per day, locks at rumble resolve)
 // POST /api/retire-scribbit -> RetireScribbitRequest -> RetireScribbitResponse (owner moves an active Scribbit to Archived)
 // POST /api/remove-scribbit -> { scribbitId: string } -> { removed: string } (owner removal)
-// POST /api/report-scribbit -> { scribbitId: string } -> ReportScribbitResponse (hide + safety report)
+// POST /api/report-scribbit -> ReportScribbitRequest -> ReportScribbitResponse (hide + moderator queue)
 // GET  /api/clout-board    -> CloutBoard
 // POST /api/capsule        -> CapsulePullResponse                       (spends ink; seeded random + pity; duplicate accessories stack)
 // GET  /api/inventory      -> Inventory

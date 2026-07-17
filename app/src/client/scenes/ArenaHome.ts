@@ -92,7 +92,11 @@ import { openRivalRun, type RivalRunFlow } from '../lib/rivalrunflow';
 import { fitText } from '../lib/fittext';
 import { screenTitle } from '../lib/screentitle';
 import { translate } from '../lib/localization';
-import { primeGameSoundtrack } from '../lib/soundtrack';
+import { primeBattleSoundtrack } from '../lib/soundtrack';
+import {
+  SEASON_ONE_PARTICIPATION_MILESTONES,
+  SEASON_RANK_REWARD_MINIMUM_PICKS,
+} from '../../shared/season';
 
 // The competitive home for each season: standings first, then today's venue.
 export class ArenaHome extends Scene {
@@ -456,7 +460,7 @@ export class ArenaHome extends Scene {
       this.state.season.latestFinalized;
     if (season) {
       const cardWidth = Math.min(width - 92, 548);
-      const cardHeight = 230;
+      const cardHeight = 286;
       const cardY = y + 205;
       const seasonCard = this.add.container(width / 2, cardY);
       const cardShadow = this.add.graphics().setPosition(7, 9);
@@ -482,7 +486,7 @@ export class ArenaHome extends Scene {
       const seasonName = label(
         this,
         -cardWidth / 2 + 34,
-        -86,
+        -112,
         this.seasonHeaderText(season.number, season.name),
         16,
         UI.coralText,
@@ -491,7 +495,7 @@ export class ArenaHome extends Scene {
       const campaignName = label(
         this,
         -cardWidth / 2 + 34,
-        -55,
+        -81,
         fitText(season.campaignName.toUpperCase(), 22),
         30,
         UI.ink,
@@ -508,7 +512,7 @@ export class ArenaHome extends Scene {
       const eventBanner = this.add
         .rectangle(
           0,
-          -16,
+          -43,
           cardWidth - 58,
           36,
           event ? UI.gold : UI.creamHex,
@@ -518,7 +522,7 @@ export class ArenaHome extends Scene {
       const eventLabel = label(
         this,
         0,
-        -16,
+        -43,
         eventText,
         16,
         UI.ink,
@@ -526,7 +530,7 @@ export class ArenaHome extends Scene {
       ).setWordWrapWidth(cardWidth - 86);
       const rank = season.me && season.me.rank > 0 ? `#${season.me.rank}` : '—';
       const statWidth = (cardWidth - 84) / 3;
-      const statY = 61;
+      const statY = 34;
       const rankX = -cardWidth / 3;
       const pointsX = 0;
       const daysX = cardWidth / 3;
@@ -535,11 +539,11 @@ export class ArenaHome extends Scene {
           .rectangle(statX, statY, statWidth, 72, UI.creamHex, 0.82)
           .setStrokeStyle(2, UI.inkHex, 0.2)
       );
-      const rankValue = label(this, rankX, 48, rank, 30, UI.ink, true);
+      const rankValue = label(this, rankX, 21, rank, 30, UI.ink, true);
       const rankCaption = label(
         this,
         rankX,
-        80,
+        53,
         'YOUR RANK',
         14,
         UI.inkSoft,
@@ -548,7 +552,7 @@ export class ArenaHome extends Scene {
       const pointsValue = label(
         this,
         pointsX,
-        48,
+        21,
         `${season.me?.score ?? 0}`,
         30,
         UI.ink,
@@ -557,7 +561,7 @@ export class ArenaHome extends Scene {
       const pointsCaption = label(
         this,
         pointsX,
-        80,
+        53,
         'SEASON PTS',
         14,
         UI.inkSoft,
@@ -566,7 +570,7 @@ export class ArenaHome extends Scene {
       const daysValue = label(
         this,
         daysX,
-        48,
+        21,
         `${season.daysRemaining}`,
         30,
         UI.ink,
@@ -575,13 +579,25 @@ export class ArenaHome extends Scene {
       const daysCaption = label(
         this,
         daysX,
-        80,
+        53,
         season.status === 'upcoming' ? 'DAYS TO START' : 'DAYS LEFT',
         14,
         UI.inkSoft,
         true
       );
-      const trophy = paperIcon(this, 'trophy', cardWidth / 2 - 48, -72, {
+      const prizeStrip = this.add
+        .rectangle(0, 105, cardWidth - 58, 42, UI.gold, 0.28)
+        .setStrokeStyle(2, 0x8a5700, 0.55);
+      const prizeLabel = label(
+        this,
+        0,
+        105,
+        this.seasonPrizeText(),
+        15,
+        UI.ink,
+        true
+      ).setWordWrapWidth(cardWidth - 80);
+      const trophy = paperIcon(this, 'trophy', cardWidth / 2 - 48, -98, {
         size: 46,
         fill: UI.gold,
       });
@@ -600,16 +616,17 @@ export class ArenaHome extends Scene {
         pointsCaption,
         daysValue,
         daysCaption,
+        prizeStrip,
+        prizeLabel,
         trophy,
       ]);
-      const standingsY =
-        cardY + cardHeight / 2 + 50 + seasonControlsShiftY;
+      const standingsY = cardY + cardHeight / 2 + 50 + seasonControlsShiftY;
       iconButton(
         this,
         width / 2,
         standingsY,
         'trophy',
-        'VIEW STANDINGS',
+        'REWARDS & STANDINGS',
         () => {
           if (!this.didDrag()) this.openSeasonRanking();
         },
@@ -633,7 +650,7 @@ export class ArenaHome extends Scene {
         onActivate: () => this.openSeasonRanking(),
       });
     }
-    const statusY = season ? y + 442 + seasonControlsShiftY : y + 120;
+    const statusY = season ? y + 514 + seasonControlsShiftY : y + 120;
     this.countdownLabel = label(
       this,
       width / 2 + 20,
@@ -674,6 +691,28 @@ export class ArenaHome extends Scene {
     const rank =
       standing && standing.rank > 0 ? `#${standing.rank}` : 'UNRANKED';
     return `${season.daysRemaining} DAYS LEFT  •  ${rank} RANK  •  ${standing?.score ?? 0} PTS`;
+  }
+
+  private seasonPrizeText(): string {
+    const season =
+      this.state.season.current ??
+      this.state.season.next ??
+      this.state.season.latestFinalized;
+    const standing = season?.me;
+    if (!standing) return 'MAKE A RUMBLE PICK TO START';
+    if (standing.picksMade < SEASON_RANK_REWARD_MINIMUM_PICKS) {
+      return `CURRENT PRIZE · ${SEASON_RANK_REWARD_MINIMUM_PICKS - standing.picksMade} PICKS TO QUALIFY`;
+    }
+    if (standing.projectedRewardTier === 'champion') {
+      return 'CURRENT PRIZE · CHAMPION TITLE + 35 INK';
+    }
+    if (standing.projectedRewardTier === 'top-ten') {
+      return 'CURRENT PRIZE · FINALIST TITLE + 21 INK';
+    }
+    if (standing.projectedRewardTier === 'top-hundred') {
+      return 'CURRENT PRIZE · CONTENDER TITLE + 7 INK';
+    }
+    return 'CURRENT PRIZE · KEEP CLIMBING';
   }
 
   private seasonHeaderText(seasonNumber: number, seasonName: string): string {
@@ -735,9 +774,7 @@ export class ArenaHome extends Scene {
       ? 'MATURE SCRIBBIT REQUIRED • READY'
       : 'MATURE SCRIBBIT REQUIRED • NOT READY';
     const canEnterField = Boolean(
-      matureScribbit &&
-        this.state.champion &&
-        !this.state.bossChallengedToday
+      matureScribbit && this.state.champion && !this.state.bossChallengedToday
     );
     const fieldActionLabel = this.state.bossChallengedToday
       ? "TODAY'S ATTEMPT COMPLETE"
@@ -747,9 +784,7 @@ export class ArenaHome extends Scene {
           ? 'FIELD CLOSED TODAY'
           : `ENTER WITH ${matureScribbit.name.toUpperCase()}`;
 
-    competitionHub.add(
-      label(this, 0, -298, 'ARENA TOUR', 30, UI.ink, true)
-    );
+    competitionHub.add(label(this, 0, -298, 'ARENA TOUR', 30, UI.ink, true));
 
     const venueCard = this.add.container(0, -4);
     const venueStamp = this.state.venueStamp;
@@ -775,14 +810,7 @@ export class ArenaHome extends Scene {
     );
     venueCard.add([
       paperCard(this, 0, 50, cardWidth, 600),
-      battleArenaPreview(
-        this,
-        battleArena.id,
-        0,
-        -72,
-        cardWidth - 48,
-        188
-      ),
+      battleArenaPreview(this, battleArena.id, 0, -72, cardWidth - 48, 188),
       this.add
         .rectangle(
           0,
@@ -797,24 +825,8 @@ export class ArenaHome extends Scene {
         size: 22,
         fill: hasMatureScribbit ? UI.gold : UI.tapeAlt,
       }),
-      label(
-        this,
-        10,
-        -136,
-        matureRequirementLabel,
-        15,
-        UI.ink,
-        true
-      ),
-      label(
-        this,
-        0,
-        -214,
-        battleArena.name.toUpperCase(),
-        30,
-        UI.ink,
-        true
-      )
+      label(this, 10, -136, matureRequirementLabel, 15, UI.ink, true),
+      label(this, 0, -214, battleArena.name.toUpperCase(), 30, UI.ink, true)
         .setOrigin(0.5, 0.5)
         .setWordWrapWidth(venueCopyWidth),
       label(
@@ -898,15 +910,7 @@ export class ArenaHome extends Scene {
         venueStamp.tourComplete ? UI.goldText : UI.ink,
         true
       ),
-      label(
-        this,
-        tileCenters[2],
-        198,
-        'TOUR NODES',
-        13,
-        UI.inkSoft,
-        true
-      ),
+      label(this, tileCenters[2], 198, 'TOUR NODES', 13, UI.inkSoft, true),
       paperIcon(this, 'info', cardWidth / 2 - 40, -214, {
         size: 30,
         fill: UI.creamHex,
@@ -1013,7 +1017,7 @@ export class ArenaHome extends Scene {
 
   private async launchFieldChallenge(scribbit: Scribbit): Promise<void> {
     if (this.busy) return;
-    primeGameSoundtrack();
+    primeBattleSoundtrack();
     this.busy = true;
     this.spinner?.show(this.scale.width / 2, this.scale.height / 2);
     showToast(`${scribbit.name} enters today's field challenge…`);
@@ -1369,7 +1373,7 @@ export class ArenaHome extends Scene {
       let loadingReplay = false;
       const watchReplay = (): void => {
         if (loadingReplay) return;
-        primeGameSoundtrack();
+        primeBattleSoundtrack();
         loadingReplay = true;
         void fetchRumbleReplay(receipt.resolvedDay)
           .then((result) => {
@@ -1698,7 +1702,14 @@ export class ArenaHome extends Scene {
         this.showError(result.error);
         return;
       }
-      showToast(`${scribbit.name} was pinned in your Scout Notebook.`);
+      const unlockedMilestone = SEASON_ONE_PARTICIPATION_MILESTONES.find(
+        (milestone) => milestone.id === result.data.unlockedMilestoneId
+      );
+      showToast(
+        unlockedMilestone
+          ? `Season reward unlocked: ${unlockedMilestone.label}.`
+          : `${scribbit.name} was pinned in your Scout Notebook.`
+      );
       void this.refresh();
     });
     // Re-render immediately for the optimistic picked state.

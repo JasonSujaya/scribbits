@@ -290,7 +290,7 @@ test('Bag presents the mobile Binder, character details, eight slots, and separa
   assert.doesNotMatch(collectionSource, /Math\.max\(260,/);
   assert.match(
     collectionSource,
-    /inventoryPanelHeight - BAG_LAYOUT\.inventoryViewportHeaderHeight/
+    /inventoryPanelHeight - BAG_LAYOUT\.inventoryViewportHeaderHeight - 18/
   );
   assert.match(collectionSource, /function buildLoadoutEffectsSummary\(/);
   assert.match(collectionSource, /data-loadout-effects-summary/);

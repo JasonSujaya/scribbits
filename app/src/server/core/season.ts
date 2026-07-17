@@ -1,5 +1,7 @@
 import {
   getActiveSeasonEvent,
+  getSeasonRankRewardBundle,
+  getSeasonRewardTierForStanding,
   getSeasonEventScoreMultiplier,
   getSeasonPublicStatus,
   isSeasonConfig,
@@ -8,6 +10,7 @@ import {
   isSeasonRankedArenaDay,
   SEASON_DURATION_DAYS,
   SEASON_FINAL_LEADERBOARD_SIZE,
+  SEASON_ONE_PARTICIPATION_MILESTONES,
   validateSeasonConfig,
   type SeasonBoard,
   type SeasonBoardEntry,
@@ -23,6 +26,7 @@ import {
   discardWatchedTransaction,
   MAX_WATCH_TRANSACTION_ATTEMPTS,
 } from './storage';
+import { claimRewardBundle } from './inkStore';
 
 const seasonCatalogKey = 'season:catalog';
 const seasonScheduleKey = 'season:schedule';
@@ -30,6 +34,7 @@ const seasonInitializedKey = 'season:initialized';
 const seasonFinalsKey = 'season:finals';
 const seasonAuditRecordsKey = 'season:admin-audit:records';
 const seasonAuditIndexKey = 'season:admin-audit:index';
+const seasonResetAuditKey = 'season:reset-audit';
 const cloutUsernameKey = 'clout:usernames';
 
 export type SeasonActor = Readonly<{
@@ -58,6 +63,7 @@ type StoredSeasonFinalStanding = Readonly<{
   username: string;
   score: number;
   rank: number;
+  picksMade: number;
   rewardTier: SeasonRewardTier | null;
 }>;
 
@@ -87,10 +93,19 @@ export const getSeasonInitializedKey = (): string => seasonInitializedKey;
 export const getSeasonFinalsKey = (): string => seasonFinalsKey;
 export const getSeasonAuditRecordsKey = (): string => seasonAuditRecordsKey;
 export const getSeasonAuditIndexKey = (): string => seasonAuditIndexKey;
+export const getSeasonResetAuditKey = (): string => seasonResetAuditKey;
 export const getSeasonRankingKey = (seasonId: string): string =>
   `season:${seasonId}:ranking`;
 export const getSeasonRewardsKey = (seasonId: string): string =>
   `season:${seasonId}:rewards`;
+export const getSeasonParticipationKey = (seasonId: string): string =>
+  `season:${seasonId}:participation`;
+export const getSeasonMilestoneEntitlementsKey = (seasonId: string): string =>
+  `season:${seasonId}:milestone-entitlements`;
+export const getSeasonMilestoneGrantsKey = (seasonId: string): string =>
+  `season:${seasonId}:milestone-grants`;
+export const getSeasonFinalRewardGrantsKey = (seasonId: string): string =>
+  `season:${seasonId}:final-reward-grants`;
 
 const parseStoredSeason = (
   storedValue: string,
@@ -144,6 +159,9 @@ const isStoredFinalStanding = (
     'rank' in standing &&
     Number.isSafeInteger(standing.rank) &&
     Number(standing.rank) > 0 &&
+    (!('picksMade' in standing) ||
+      (Number.isSafeInteger(standing.picksMade) &&
+        Number(standing.picksMade) >= 0)) &&
     'rewardTier' in standing &&
     (standing.rewardTier === null ||
       standing.rewardTier === 'champion' ||
@@ -179,7 +197,13 @@ const parseFinalSnapshot = (
   return {
     seasonId: parsed.seasonId,
     finalizedAtMs: parsed.finalizedAtMs,
-    standings: parsed.standings,
+    standings: parsed.standings.map((standing) => ({
+      ...standing,
+      picksMade:
+        'picksMade' in standing && Number.isSafeInteger(standing.picksMade)
+          ? Number(standing.picksMade)
+          : 0,
+    })),
   };
 };
 
@@ -395,6 +419,37 @@ const assertNoPublishedOverlap = (
   }
 };
 
+const createFirstSeasonConfig = (
+  startArenaDay: number,
+  recordedAtMs: number,
+  actor: SeasonActor
+): SeasonConfig =>
+  Object.freeze({
+    id: 'season-1',
+    number: 1,
+    name: 'Season 1',
+    campaignName: 'First Ink',
+    startArenaDay,
+    endArenaDay: startArenaDay + SEASON_DURATION_DAYS - 1,
+    lifecycle: 'scheduled',
+    scoringRuleSetId: 'rumble-clout-v1',
+    events: Object.freeze([
+      Object.freeze({
+        id: 'opening-rumble',
+        name: 'Opening Rumble',
+        startArenaDay,
+        endArenaDay: startArenaDay + 6,
+        ruleSetId: 'double-clout',
+      }),
+    ]),
+    pauses: Object.freeze([]),
+    createdByUserId: actor.userId,
+    createdAtMs: recordedAtMs,
+    updatedByUserId: actor.userId,
+    updatedAtMs: recordedAtMs,
+    finalizedAtMs: null,
+  });
+
 export const ensureInitialSeason = async (
   storage: ArenaStorage,
   currentArenaDay: number,
@@ -447,31 +502,7 @@ export const ensureInitialSeason = async (
       const existingSeason = catalog[0];
       const season: SeasonConfig =
         existingSeason ??
-        Object.freeze({
-          id: 'season-1',
-          number: 1,
-          name: 'Season 1',
-          campaignName: 'First Ink',
-          startArenaDay: currentArenaDay,
-          endArenaDay: currentArenaDay + SEASON_DURATION_DAYS - 1,
-          lifecycle: 'scheduled',
-          scoringRuleSetId: 'rumble-clout-v1',
-          events: Object.freeze([
-            Object.freeze({
-              id: 'opening-rumble',
-              name: 'Opening Rumble',
-              startArenaDay: currentArenaDay,
-              endArenaDay: currentArenaDay + 6,
-              ruleSetId: 'double-clout',
-            }),
-          ]),
-          pauses: Object.freeze([]),
-          createdByUserId: actor.userId,
-          createdAtMs: recordedAtMs,
-          updatedByUserId: actor.userId,
-          updatedAtMs: recordedAtMs,
-          finalizedAtMs: null,
-        });
+        createFirstSeasonConfig(currentArenaDay, recordedAtMs, actor);
       const plan: CatalogMutationPlan = {
         season,
         schedule: existingSeason ? 'unchanged' : 'add',
@@ -514,6 +545,129 @@ export const ensureInitialSeason = async (
   }
 
   throw new SeasonStateError('Season initialization changed too often.');
+};
+
+export const resetSeasonOne = async (
+  storage: ArenaStorage,
+  input: Readonly<{
+    currentArenaDay: number;
+    actor: SeasonActor;
+    operationId: string;
+    recordedAtMs: number;
+    reason: string;
+  }>
+): Promise<SeasonConfig> => {
+  if (!storage.watch) {
+    throw new SeasonStateError('Season reset requires transactions.');
+  }
+  for (
+    let attempt = 0;
+    attempt < MAX_WATCH_TRANSACTION_ATTEMPTS;
+    attempt += 1
+  ) {
+    let transaction: ArenaTransaction | undefined;
+    try {
+      const catalogBeforeWatch = await loadSeasonCatalog(storage);
+      const seasonKeys = catalogBeforeWatch.flatMap((season) => [
+        getSeasonRankingKey(season.id),
+        getSeasonRewardsKey(season.id),
+        getSeasonParticipationKey(season.id),
+        getSeasonMilestoneEntitlementsKey(season.id),
+        getSeasonMilestoneGrantsKey(season.id),
+        getSeasonFinalRewardGrantsKey(season.id),
+      ]);
+      const resetKeys = [
+        seasonCatalogKey,
+        seasonScheduleKey,
+        seasonInitializedKey,
+        seasonFinalsKey,
+        seasonAuditRecordsKey,
+        seasonAuditIndexKey,
+        ...seasonKeys,
+      ];
+      transaction = await storage.watch(seasonResetAuditKey, ...resetKeys);
+      const existingReset = await storage.hGet(
+        seasonResetAuditKey,
+        input.operationId
+      );
+      if (existingReset !== undefined) {
+        await transaction.unwatch();
+        const existingSeason = (await loadSeasonCatalog(storage)).find(
+          (season) => season.id === 'season-1'
+        );
+        if (existingSeason) return existingSeason;
+        throw new SeasonStateError('Season reset audit has no Season 1.');
+      }
+      const catalog = await loadSeasonCatalog(storage);
+      if (JSON.stringify(catalog) !== JSON.stringify(catalogBeforeWatch)) {
+        await transaction.unwatch();
+        continue;
+      }
+      for (const season of catalog) {
+        const [milestoneGrants, finalGrants] = await Promise.all([
+          storage.hKeys(getSeasonMilestoneGrantsKey(season.id)),
+          storage.hKeys(getSeasonFinalRewardGrantsKey(season.id)),
+        ]);
+        if (milestoneGrants.length > 0 || finalGrants.length > 0) {
+          throw new SeasonStateError(
+            'Season rewards were already granted; reset would duplicate player inventory.'
+          );
+        }
+      }
+
+      const startArenaDay = input.currentArenaDay + 1;
+      const season = createFirstSeasonConfig(
+        startArenaDay,
+        input.recordedAtMs,
+        input.actor
+      );
+      const audit: SeasonAdminAuditEntry = {
+        operationId: input.operationId,
+        action: 'reset-season-one',
+        seasonId: season.id,
+        actorUserId: input.actor.userId,
+        actorUsername: input.actor.username,
+        detail: `Reset Season 1 to Arena days ${season.startArenaDay}-${season.endArenaDay}. ${input.reason}`,
+        recordedAtMs: input.recordedAtMs,
+      };
+
+      await transaction.multi();
+      await transaction.del(...resetKeys);
+      await transaction.hSet(seasonCatalogKey, {
+        [season.id]: serializeSeason(season),
+      });
+      await transaction.zAdd(seasonScheduleKey, {
+        member: season.id,
+        score: season.startArenaDay,
+      });
+      await transaction.set(seasonInitializedKey, season.id);
+      await transaction.hSet(seasonAuditRecordsKey, {
+        [input.operationId]: JSON.stringify(audit),
+      });
+      await transaction.zAdd(seasonAuditIndexKey, {
+        member: input.operationId,
+        score: input.recordedAtMs,
+      });
+      await transaction.hSet(seasonResetAuditKey, {
+        [input.operationId]: JSON.stringify(audit),
+      });
+      const result = await transaction.exec();
+      if (Array.isArray(result) && result.length >= 7) return season;
+    } catch (error) {
+      await discardWatchedTransaction(transaction, 'Season reset');
+      if (
+        (await storage.hGet(seasonResetAuditKey, input.operationId)) !==
+        undefined
+      ) {
+        const recovered = (await loadSeasonCatalog(storage)).find(
+          (season) => season.id === 'season-1'
+        );
+        if (recovered) return recovered;
+      }
+      throw error;
+    }
+  }
+  throw new SeasonStateError('Season reset changed too often.');
 };
 
 export const createSeasonDraft = async (
@@ -917,9 +1071,25 @@ const getReverseRank = async (
   rankingKey: string,
   userId: string
 ): Promise<number> => {
-  const ascendingRank = await storage.zRank(rankingKey, userId);
-  if (ascendingRank === undefined) return 0;
-  return (await storage.zCard(rankingKey)) - ascendingRank;
+  const score = await storage.zScore(rankingKey, userId);
+  if (score === undefined) return 0;
+  const tiedAndHigher = await storage.zRange(
+    rankingKey,
+    score,
+    Number.POSITIVE_INFINITY,
+    { by: 'score', reverse: true }
+  );
+  return tiedAndHigher.filter((entry) => entry.score > score).length + 1;
+};
+
+export const getSeasonParticipationCount = async (
+  storage: ArenaStorage,
+  seasonId: string,
+  userId: string
+): Promise<number> => {
+  return Math.floor(
+    (await storage.zScore(getSeasonParticipationKey(seasonId), userId)) ?? 0
+  );
 };
 
 const createSeasonSummary = async (
@@ -935,6 +1105,9 @@ const createSeasonSummary = async (
     ? Math.floor((await storage.zScore(rankingKey, userId)) ?? 0)
     : 0;
   const rank = userId ? await getReverseRank(storage, rankingKey, userId) : 0;
+  const picksMade = userId
+    ? await getSeasonParticipationCount(storage, season.id, userId)
+    : 0;
   return {
     id: season.id,
     number: season.number,
@@ -955,8 +1128,57 @@ const createSeasonSummary = async (
           scoreMultiplier: getSeasonEventScoreMultiplier(event.ruleSetId),
         }
       : null,
-    me: userId ? { score, rank } : null,
+    me: userId
+      ? {
+          score,
+          rank,
+          picksMade,
+          projectedRewardTier: getSeasonRewardTierForStanding(rank, picksMade),
+        }
+      : null,
   };
+};
+
+export const settleSeasonMilestoneRewards = async (
+  storage: ArenaStorage,
+  seasonId: string,
+  userId: string,
+  awardedAtMs: number
+): Promise<readonly string[]> => {
+  const entitlementKey = getSeasonMilestoneEntitlementsKey(seasonId);
+  const grantKey = getSeasonMilestoneGrantsKey(seasonId);
+  const claimedMilestoneIds: string[] = [];
+  for (const milestone of SEASON_ONE_PARTICIPATION_MILESTONES) {
+    const receiptField = `${userId}:${milestone.id}`;
+    if ((await storage.hGet(entitlementKey, receiptField)) === undefined) {
+      continue;
+    }
+    const claimed = await claimRewardBundle(storage, {
+      receiptKey: grantKey,
+      receiptField,
+      userId,
+      reward: milestone.reward,
+      awardedAtMs,
+    });
+    if (claimed) claimedMilestoneIds.push(milestone.id);
+  }
+  return claimedMilestoneIds;
+};
+
+const settleSeasonFinalReward = async (
+  storage: ArenaStorage,
+  userId: string,
+  reward: SeasonRewardReceipt
+): Promise<SeasonRewardReceipt> => {
+  const bundle = reward.reward ?? getSeasonRankRewardBundle(reward.tier);
+  await claimRewardBundle(storage, {
+    receiptKey: getSeasonFinalRewardGrantsKey(reward.seasonId),
+    receiptField: userId,
+    userId,
+    reward: bundle,
+    awardedAtMs: reward.awardedAtMs,
+  });
+  return { ...reward, reward: bundle, claimed: true };
 };
 
 const loadLatestReward = async (
@@ -964,15 +1186,22 @@ const loadLatestReward = async (
   finalizedSeasons: readonly SeasonConfig[],
   userId: string
 ): Promise<SeasonRewardReceipt | null> => {
+  let latestReward: SeasonRewardReceipt | null = null;
   for (const season of [...finalizedSeasons].sort(
     (left, right) => right.number - left.number
   )) {
     const reward = parseStoredReward(
       await storage.hGet(getSeasonRewardsKey(season.id), userId)
     );
-    if (reward) return reward;
+    if (!reward) continue;
+    const settledReward = await settleSeasonFinalReward(
+      storage,
+      userId,
+      reward
+    );
+    latestReward ??= settledReward;
   }
-  return null;
+  return latestReward;
 };
 
 export const loadSeasonPublicState = async (
@@ -1006,6 +1235,17 @@ export const loadSeasonPublicState = async (
   const latestFinalized = [...finalized].sort(
     (left, right) => right.number - left.number
   )[0];
+  if (userId) {
+    const awardedAtMs = Date.now();
+    for (const season of catalog) {
+      await settleSeasonMilestoneRewards(
+        storage,
+        season.id,
+        userId,
+        awardedAtMs
+      );
+    }
+  }
   return {
     current: current
       ? await createSeasonSummary(storage, current, currentArenaDay, userId)
@@ -1025,13 +1265,6 @@ export const loadSeasonPublicState = async (
       ? await loadLatestReward(storage, finalized, userId)
       : null,
   };
-};
-
-const rewardTierForRank = (rank: number): SeasonRewardTier | null => {
-  if (rank === 1) return 'champion';
-  if (rank <= 10) return 'top-ten';
-  if (rank <= SEASON_FINAL_LEADERBOARD_SIZE) return 'top-hundred';
-  return null;
 };
 
 const badgeLabelForReward = (
@@ -1059,6 +1292,7 @@ export const finalizeSeason = async (
   }
   const rankingKey = getSeasonRankingKey(input.seasonId);
   const rewardsKey = getSeasonRewardsKey(input.seasonId);
+  const participationKey = getSeasonParticipationKey(input.seasonId);
 
   for (
     let attempt = 0;
@@ -1073,6 +1307,7 @@ export const finalizeSeason = async (
         seasonFinalsKey,
         rankingKey,
         rewardsKey,
+        participationKey,
         seasonAuditRecordsKey,
         seasonAuditIndexKey
       );
@@ -1095,26 +1330,49 @@ export const finalizeSeason = async (
         throw new SeasonStateError('A season cannot finalize before it ends.');
       }
 
-      const rankingEntries = await storage.zRange(
+      const leadingRankingEntries = await storage.zRange(
         rankingKey,
         0,
         SEASON_FINAL_LEADERBOARD_SIZE - 1,
         { by: 'rank', reverse: true }
       );
+      const cutoffScore = leadingRankingEntries.at(-1)?.score;
+      const rankingEntries =
+        cutoffScore === undefined
+          ? leadingRankingEntries
+          : await storage.zRange(
+              rankingKey,
+              cutoffScore,
+              Number.POSITIVE_INFINITY,
+              { by: 'score', reverse: true }
+            );
       const standings: StoredSeasonFinalStanding[] = [];
       const rewardFields: Record<string, string> = {};
+      let competitionRank = 0;
+      let previousScore: number | undefined;
       for (let index = 0; index < rankingEntries.length; index += 1) {
         const entry = rankingEntries[index];
         if (!entry) continue;
-        const rank = index + 1;
-        const rewardTier = rewardTierForRank(rank);
+        const score = Math.floor(entry.score);
+        if (previousScore === undefined || entry.score !== previousScore) {
+          competitionRank = index + 1;
+          previousScore = entry.score;
+        }
+        const rank = competitionRank;
+        const picksMade = await getSeasonParticipationCount(
+          storage,
+          current.id,
+          entry.member
+        );
+        const rewardTier = getSeasonRewardTierForStanding(rank, picksMade);
         const username =
           (await storage.hGet(cloutUsernameKey, entry.member)) ?? entry.member;
         standings.push({
           userId: entry.member,
           username,
-          score: Math.floor(entry.score),
+          score,
           rank,
+          picksMade,
           rewardTier,
         });
         if (rewardTier) {
@@ -1123,9 +1381,10 @@ export const finalizeSeason = async (
             seasonNumber: current.number,
             seasonName: current.name,
             rank,
-            score: Math.floor(entry.score),
+            score,
             tier: rewardTier,
             badgeLabel: badgeLabelForReward(current, rewardTier),
+            reward: getSeasonRankRewardBundle(rewardTier),
             awardedAtMs: input.recordedAtMs,
           };
           rewardFields[entry.member] = JSON.stringify(reward);
@@ -1246,6 +1505,8 @@ const finalSnapshotToBoardEntries = (
     username: standing.username,
     score: standing.score,
     rank: standing.rank,
+    picksMade: standing.picksMade,
+    projectedRewardTier: standing.rewardTier,
     rewardTier: standing.rewardTier,
   }));
 };
@@ -1300,6 +1561,8 @@ export const loadSeasonBoard = async (
                 username: standing.username,
                 score: standing.score,
                 rank: standing.rank,
+                picksMade: standing.picksMade,
+                projectedRewardTier: standing.rewardTier,
                 rewardTier: standing.rewardTier,
               }
             : null;
@@ -1314,24 +1577,53 @@ export const loadSeasonBoard = async (
     reverse: true,
   });
   const top: SeasonBoardEntry[] = [];
+  let competitionRank = 0;
+  let previousScore: number | undefined;
   for (let index = 0; index < rankingEntries.length; index += 1) {
     const entry = rankingEntries[index];
     if (!entry) continue;
+    if (previousScore === undefined || entry.score !== previousScore) {
+      competitionRank = index + 1;
+      previousScore = entry.score;
+    }
+    const picksMade = await getSeasonParticipationCount(
+      storage,
+      season.id,
+      entry.member
+    );
     top.push({
       username:
         (await storage.hGet(cloutUsernameKey, entry.member)) ?? entry.member,
       score: Math.floor(entry.score),
-      rank: index + 1,
+      rank: competitionRank,
+      picksMade,
+      projectedRewardTier: getSeasonRewardTierForStanding(
+        competitionRank,
+        picksMade
+      ),
       rewardTier: null,
     });
   }
   const me = user
-    ? {
-        username: user.username,
-        score: Math.floor((await storage.zScore(rankingKey, user.userId)) ?? 0),
-        rank: await getReverseRank(storage, rankingKey, user.userId),
-        rewardTier: null,
-      }
+    ? await (async () => {
+        const score = Math.floor(
+          (await storage.zScore(rankingKey, user.userId)) ?? 0
+        );
+        const rank = await getReverseRank(storage, rankingKey, user.userId);
+        const picksMade = await getSeasonParticipationCount(
+          storage,
+          season.id,
+          user.userId
+        );
+        return {
+          username: user.username,
+          score,
+          rank,
+          picksMade,
+          projectedRewardTier: getSeasonRewardTierForStanding(rank, picksMade),
+          rewardTier: null,
+        };
+      })()
     : null;
   return { season: summary, top, me, finalized: false };
 };
@@ -1407,7 +1699,17 @@ export const deleteSeasonPlayerData = async (
   const catalog = await loadSeasonCatalog(storage);
   for (const season of catalog) {
     await storage.zRem(getSeasonRankingKey(season.id), [userId]);
+    await storage.zRem(getSeasonParticipationKey(season.id), [userId]);
     await storage.hDel(getSeasonRewardsKey(season.id), [userId]);
+    await storage.hDel(getSeasonFinalRewardGrantsKey(season.id), [userId]);
+    const milestoneFields = SEASON_ONE_PARTICIPATION_MILESTONES.map(
+      (milestone) => `${userId}:${milestone.id}`
+    );
+    await storage.hDel(
+      getSeasonMilestoneEntitlementsKey(season.id),
+      milestoneFields
+    );
+    await storage.hDel(getSeasonMilestoneGrantsKey(season.id), milestoneFields);
     await removePlayerFromFinalSnapshot(storage, season.id, userId);
   }
 };

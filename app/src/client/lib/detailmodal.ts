@@ -286,6 +286,7 @@ export function openDetailModal(
   const top = -cardH / 2;
   let safetyActionBusy = false;
   let destructiveActionArmed = false;
+  let reportActionArmed = false;
 
   // Close button (top-right of the card).
   const closeBtn = ghostButton(
@@ -1972,14 +1973,22 @@ export function openDetailModal(
 
   function doReport(): void {
     if (safetyActionBusy) return;
+    if (!reportActionArmed) {
+      reportActionArmed = true;
+      showToast(
+        `Report ${scribbit.name}? It will disappear from your arena. Tap Report again to confirm.`
+      );
+      return;
+    }
     safetyActionBusy = true;
-    void reportScribbitApi(scribbit.id).then((result) => {
+    void reportScribbitApi(scribbit.id, 'other').then((result) => {
       safetyActionBusy = false;
       if (!result.ok) {
+        reportActionArmed = false;
         showToast(result.error);
         return;
       }
-      showToast('Reported and hidden. Thanks for helping keep the arena safe.');
+      showToast('Reported for moderator review and hidden from your arena.');
       close();
       opts.onReported?.(scribbit.id, result.data.removedForEveryone);
     });

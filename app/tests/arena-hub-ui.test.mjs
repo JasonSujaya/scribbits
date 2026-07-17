@@ -78,7 +78,7 @@ test('Arena leads with the authoritative season and ranking action', () => {
   assert.match(arenaSource, /paperCard\(this, 0, 0, cardWidth, cardHeight\)/);
   assert.match(arenaSource, /'YOUR RANK'/);
   assert.match(arenaSource, /'SEASON PTS'/);
-  assert.match(arenaSource, /'VIEW STANDINGS'/);
+  assert.match(arenaSource, /'REWARDS & STANDINGS'/);
   assert.match(arenaSource, /const seasonControlsShiftY = 36/);
   assert.match(arenaSource, /FIELD_CHALLENGE_TOP_OFFSET = -50/);
   assert.doesNotMatch(arenaSource, /'VIEW TOP 10 STANDINGS  ›'/);
@@ -88,6 +88,9 @@ test('Arena leads with the authoritative season and ranking action', () => {
   assert.match(arenaSource, /event\.scoreMultiplier\}× SEASON POINTS/);
   assert.match(arenaSource, /RUMBLE PICKS SET THE SEASON RANKING/);
   assert.match(seasonBoardSource, /fetchSeasonBoard\(\)/);
+  assert.match(seasonBoardSource, /'rewards' \| 'standings' = 'rewards'/);
+  assert.match(seasonBoardSource, /SEASON_ONE_PARTICIPATION_MILESTONES/);
+  assert.match(seasonBoardSource, /PICKS TO QUALIFY/);
   assert.match(seasonBoardSource, /board\.top\.slice\(0, 10\)/);
   assert.match(seasonBoardSource, /YOU #\$\{standing\.rank\}/);
 });
@@ -335,7 +338,7 @@ test('Shop shows the current season prize pool and its top wins', () => {
   assert.match(capsulePrizeGuideSource, /TOP WINS THIS SEASON/);
   assert.match(capsulePrizeGuideSource, /GEAR_CATALOG_ENTRIES\.filter/);
   assert.match(capsulePrizeGuideSource, /entry\.rarity === 'legendary'/);
-  assert.match(capsulePrizeGuideSource, /COSMETIC_CATALOG\.length/);
+  assert.match(capsulePrizeGuideSource, /CAPSULE_PRIZE_CATALOG\.length/);
   assert.match(capsulePrizeGuideSource, /renderCosmeticPreview\(/);
   assert.match(capsulePrizeGuideSource, /CAPSULE_RARITY_PERCENTAGES/);
   assert.match(capsulePrizeGuideSource, /CAPSULE_PITY/);
