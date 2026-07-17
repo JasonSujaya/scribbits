@@ -3819,6 +3819,8 @@ assert.deepEqual(seasonBoardState.me, {
   username: 'api_contract_user',
   score: 0,
   rank: 0,
+  picksMade: 0,
+  projectedRewardTier: null,
   rewardTier: null,
 });
 assert.equal(seasonBoardState.finalized, false);
@@ -13709,7 +13711,7 @@ assert.deepEqual(
     pullCount: 17,
     pityRemaining: 1,
     discoveredCount: 0,
-    collectionTotal: inkCatalog.INK_CATALOG.length,
+    collectionTotal: inkCatalog.INK_CAPSULE_CATALOG.length,
   },
   'progress should report one pull remaining immediately before hard pity'
 );
@@ -13735,7 +13737,7 @@ assert.deepEqual(
     pullCount: 18,
     pityRemaining: arena.CAPSULE_PITY,
     discoveredCount: 1,
-    collectionTotal: inkCatalog.INK_CATALOG.length,
+    collectionTotal: inkCatalog.INK_CAPSULE_CATALOG.length,
   },
   'forced epic should atomically advance progress and reset the pity distance'
 );
@@ -14059,7 +14061,7 @@ const normalizedCompletedOperationResponse = {
     pullCount: 4,
     pityRemaining: arena.CAPSULE_PITY - 3,
     discoveredCount: legacyDiscoveries.length,
-    collectionTotal: inkCatalog.INK_CATALOG.length,
+    collectionTotal: inkCatalog.INK_CAPSULE_CATALOG.length,
   },
 };
 await operationClaimStorage.set(
