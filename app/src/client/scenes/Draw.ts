@@ -148,18 +148,7 @@ import {
 } from '../lib/drawautomation';
 import { planSceneMutationResponse } from '../lib/arenaasynclifecycle';
 import { translate } from '../lib/localization';
-import {
-  pauseDrawingSoundtrack,
-  playHomeSoundtrack,
-  primeBattleSoundtrack,
-  primeDrawingSoundtrack,
-  preloadDrawingSoundtrack,
-  releaseHomeSoundtrack,
-  releaseDrawingSoundtrackPreparation,
-  resumeDrawingSoundtrack,
-  startDrawingSoundtrack,
-  stopSoundtrack,
-} from '../lib/soundtrack';
+import { playGameSoundtrack, primeGameSoundtrack } from '../lib/soundtrack';
 import {
   markSfxManaged,
   playSfx,
@@ -424,7 +413,6 @@ export class Draw extends Scene {
   private drawStartCountdownTimerEvent: Phaser.Time.TimerEvent | null = null;
   private drawStartCountdownOverlay: HTMLDivElement | null = null;
   private drawStartCountdownValue: HTMLSpanElement | null = null;
-  private drawStartPreparing = false;
   private drawTimerContainer: HTMLDivElement | null = null;
   private drawTimerFace: HTMLDivElement | null = null;
   private drawTimerValue: HTMLSpanElement | null = null;
@@ -505,7 +493,6 @@ export class Draw extends Scene {
     this.playerDrawMode = 'unselected';
     this.communityThemeAvailable = true;
     this.communityThemeUnavailableMessage = '';
-    this.drawStartPreparing = false;
     this.freeSubmissionId = null;
     this.scribbitSubmissionId = null;
     this.lastResult = null;
@@ -646,8 +633,7 @@ export class Draw extends Scene {
       startScene(this, 'Preloader');
       return;
     }
-    if (this.practiceMode || this.automationMode) stopSoundtrack();
-    else playHomeSoundtrack();
+    playGameSoundtrack();
     this.paintReservoirs = createPalettePaintReservoirs(
       arena.paintBucket?.capacity ?? getPaintBucketState().capacity
     );
@@ -733,19 +719,8 @@ export class Draw extends Scene {
 
   private cleanup(): void {
     this.sceneVisitEpoch += 1;
-    this.drawStartPreparing = false;
-    releaseDrawingSoundtrackPreparation();
     this.fighterStyleInfoModal?.destroy();
     this.fighterStyleInfoModal = null;
-    if (
-      !this.practiceMode &&
-      !this.automationMode &&
-      !this.drawRoundClock.started
-    ) {
-      releaseHomeSoundtrack();
-    } else {
-      stopSoundtrack();
-    }
     this.removeLocalDrawAutomationApi();
     window.removeEventListener('resize', this.resizeHandler);
     window.visualViewport?.removeEventListener(
@@ -1347,10 +1322,9 @@ export class Draw extends Scene {
     return !this.drawingLocked && !this.isWaitingToStart();
   }
 
-  private async beginDrawingRound(): Promise<void> {
+  private beginDrawingRound(): void {
     if (
       !this.isWaitingToStart() ||
-      this.drawStartPreparing ||
       this.drawStartCountdownOverlay ||
       this.submitting ||
       this.drawConfirmation
@@ -1366,11 +1340,10 @@ export class Draw extends Scene {
       'aria-label',
       'Get ready. The Community Theme drawing round starts after 3, 2, 1.'
     );
-    this.drawStartPreparing = true;
-    primeDrawingSoundtrack();
-    await prepareSfxPlayback('draw.countdown', 'draw.start');
-    this.drawStartPreparing = false;
-    if (!this.scene.isActive() || !this.isWaitingToStart()) return;
+    primeGameSoundtrack();
+    // AudioContext.resume() can remain pending in embedded browsers. Trigger
+    // it inside the trusted click, but never let audio readiness block play.
+    void prepareSfxPlayback('draw.countdown', 'draw.start');
     this.startDrawCountdown();
   }
 
@@ -1406,7 +1379,6 @@ export class Draw extends Scene {
 
   private startDrawCountdown(): void {
     if (this.drawStartCountdownOverlay || !this.drawStartOverlay) return;
-    preloadDrawingSoundtrack();
 
     const countdownOverlay = document.createElement('div');
     countdownOverlay.className = 'draw-start-countdown';
@@ -1503,8 +1475,7 @@ export class Draw extends Scene {
   private activateDrawingRound(wasStarted: boolean): void {
     this.drawRoundClock = startDrawRoundClock(this.drawRoundClock, Date.now());
     if (this.drawRoundClock.deadlineMilliseconds === null) return;
-    if (wasStarted) resumeDrawingSoundtrack();
-    else startDrawingSoundtrack();
+    playGameSoundtrack();
     this.drawRoundTimerEvent ??= this.time.addEvent({
       delay: 200,
       loop: true,
@@ -1533,7 +1504,6 @@ export class Draw extends Scene {
 
   private pauseDrawingRound(): void {
     if (this.isUntimedDrawingMode()) return;
-    pauseDrawingSoundtrack();
     this.drawRoundClock = pauseDrawRoundClock(this.drawRoundClock, Date.now());
     this.drawRoundTimerEvent?.remove();
     this.drawRoundTimerEvent = null;
@@ -1632,7 +1602,6 @@ export class Draw extends Scene {
 
   private finishDrawingRound(): void {
     if (this.isUntimedDrawingMode() || this.drawingLocked) return;
-    pauseDrawingSoundtrack();
     this.drawRoundClock = expireDrawRoundClock(this.drawRoundClock);
     this.drawRoundTimerEvent?.remove();
     this.drawRoundTimerEvent = null;
@@ -4455,7 +4424,7 @@ export class Draw extends Scene {
 
   private continueAfterBirth(scribbit: Scribbit): void {
     if (this.birthContinuationStarted) return;
-    primeBattleSoundtrack();
+    primeGameSoundtrack();
     this.birthContinuationStarted = true;
 
     if (this.practiceMode) {

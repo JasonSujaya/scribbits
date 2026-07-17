@@ -18,6 +18,7 @@ import {
 import { UI } from '../lib/theme';
 import { COSMETIC_BY_ID } from '../../shared/cosmetics';
 import type { CapsulePull } from '../../shared/arena';
+import { playGameSoundtrack } from '../lib/soundtrack';
 
 /** Earned rewards live here; Bag remains the one place that equips them. */
 export class Shop extends Scene {
@@ -53,6 +54,7 @@ export class Shop extends Scene {
   }
 
   private createLoadedShop(): void {
+    playGameSoundtrack();
     shopStage(this, -1000);
 
     this.rebuildDock();

@@ -1,5 +1,10 @@
 import type { Scene } from 'phaser';
-import { CAPSULE_PITY, CAPSULE_RARITY_PERCENTAGES } from '../../shared/arena';
+import {
+  CAPSULE_EPIC_WEAPON_GUARANTEE_PULL,
+  CAPSULE_LEGENDARY_WEAPON_GUARANTEE_PULL,
+  CAPSULE_PITY,
+  CAPSULE_RARITY_PERCENTAGES,
+} from '../../shared/arena';
 import { COSMETIC_CATALOG, GEAR_CATALOG_ENTRIES } from '../../shared/cosmetics';
 import { renderCosmeticPreview } from './cosmeticpreview';
 import { createStickerModalShell } from './stickermodalshell';
@@ -38,8 +43,9 @@ export function openCapsulePrizeGuide(
     `${CAPSULE_RARITY_PERCENTAGES.common} percent are common, ` +
     `${CAPSULE_RARITY_PERCENTAGES.rare} percent rare, ` +
     `${CAPSULE_RARITY_PERCENTAGES.epic} percent epic, and ` +
-    `${CAPSULE_RARITY_PERCENTAGES.legendary} percent legendary. ` +
-    `An epic or legendary prize is guaranteed within ${CAPSULE_PITY} pulls.`;
+    `${CAPSULE_RARITY_PERCENTAGES.legendary} percent legendary on standard pulls. ` +
+    `An epic or legendary prize is guaranteed within ${CAPSULE_PITY} pulls. ` +
+    `Your starter weapon is guaranteed, with an Epic weapon by pull ${CAPSULE_EPIC_WEAPON_GUARANTEE_PULL} and a Legendary weapon by pull ${CAPSULE_LEGENDARY_WEAPON_GUARANTEE_PULL} unless that tier arrives sooner.`;
   const close = (): void => {
     shell.finish(() => undefined);
   };
@@ -140,11 +146,11 @@ export function openCapsulePrizeGuide(
       scene,
       0,
       286,
-      `EPIC OR LEGENDARY WITHIN ${CAPSULE_PITY} PULLS`,
-      17,
+      `EPIC PRIZE ≤ ${CAPSULE_PITY} • STARTER WEAPON\nEPIC WEAPON ≤ ${CAPSULE_EPIC_WEAPON_GUARANTEE_PULL} • LEGENDARY ≤ ${CAPSULE_LEGENDARY_WEAPON_GUARANTEE_PULL}`,
+      15,
       UI.goldText,
       true
-    )
+    ).setLineSpacing(3)
   );
   card.add(button(scene, 0, 352, 'GOT IT', close, 220, UI.coral, UI.ink, 72));
 

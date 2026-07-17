@@ -82,7 +82,16 @@ test('Bag presents the mobile Binder, character details, eight slots, and separa
   assert.match(collectionSource, /inventoryViewportHeaderHeight: 100/);
   assert.match(collectionSource, /function planBagLayout\(/);
   assert.match(collectionSource, /if \(layout\.showBinder\)/);
-  assert.match(collectionSource, /SHOW BINDER ↓/);
+  assert.match(collectionSource, /← BACK/);
+  assert.match(collectionSource, /Back to Scribbit Binder/);
+  assert.match(collectionSource, /const inventoryToggleX = 112/);
+  assert.match(collectionSource, /const inventoryToggleY = inventoryTop \+ 32/);
+  assert.match(collectionSource, /const inventoryToggleWidth = 172/);
+  assert.match(collectionSource, /const inventoryToggleHeight = 64/);
+  assert.match(
+    collectionSource,
+    /const sectionLabelX =[\s\S]*mode === 'equipment' && options\.inventoryExpanded[\s\S]*\? 220/
+  );
   assert.match(collectionSource, /EXPAND ↑/);
   assert.match(collectionSource, /data-bag-inventory-expanded/);
   assert.match(collectionSource, /'aria-expanded'/);
@@ -182,6 +191,11 @@ test('Bag presents the mobile Binder, character details, eight slots, and separa
   assert.match(
     gallerySource,
     /onEquipmentSlotSelect:[\s\S]*this\.selectedEquipmentSlot = \{ category, slotIndex \};[\s\S]*this\.collectionInventoryExpanded = true/
+  );
+  assert.match(
+    gallerySource,
+    /const equippedFromSelectedSlot = this\.selectedEquipmentSlot !== null;[\s\S]*if \(equippedFromSelectedSlot && gearId !== null\) \{[\s\S]*this\.collectionInventoryExpanded = false;/,
+    'equipping from a selected Binder slot returns to the Binder after save'
   );
   assert.doesNotMatch(collectionSource, /× REMOVE/);
   assert.doesNotMatch(collectionSource, /paperPagination/);

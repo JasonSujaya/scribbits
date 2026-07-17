@@ -77,7 +77,7 @@ export {
 export {
   createDeterministicPowerUpOffer,
   isPowerUpId,
-  MAXIMUM_GROWING_POWER_UPS,
+  maximumPowerUpsForLevel,
   MAXIMUM_POWER_UPS,
   MAXIMUM_POWER_UP_HEALING_PERMILLE,
   POWER_UP_CATALOG,
@@ -85,6 +85,7 @@ export {
   POWER_UP_OFFER_RARITY_WEIGHTS,
   POWER_UP_PLAYSTYLE_PROFILES,
   POWER_UP_RARITIES,
+  powerUpOfferWasEarned,
   powerUpIsOfferableForRole,
   scorePowerUpFit,
   validatePowerUpBuild,
@@ -92,6 +93,8 @@ export {
 export { selectCombatRole } from '../../shared/combat/selection';
 export {
   CAPSULE_COST,
+  CAPSULE_EPIC_WEAPON_GUARANTEE_PULL,
+  CAPSULE_LEGENDARY_WEAPON_GUARANTEE_PULL,
   CAPSULE_PITY,
   DRAW_CHARGE_CAPACITY,
   GEAR_MERGE_COPY_COST,

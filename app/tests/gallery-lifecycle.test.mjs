@@ -266,7 +266,7 @@ test('Gallery exposes Retire for active owned Scribbits and uses Retired player-
   assert.match(detailSource, /'UNCOMMON POWER-UPS'/);
   assert.match(detailSource, /'RARE POWER-UPS'/);
   assert.match(detailSource, /'EPIC \+ LEGENDARY'/);
-  assert.match(detailSource, /'WIN → CHOOSE 1'/);
+  assert.match(detailSource, /'WIN \+ EARN XP → CHOOSE 1'/);
   assert.match(
     detailSource,
     /const guidePages = \[buildPage, \.\.\.catalogPages, earnPage\]/
@@ -274,7 +274,7 @@ test('Gallery exposes Retire for active owned Scribbits and uses Retired player-
   assert.match(detailSource, /powerUpPaperIcon\(scene, powerUpId/);
   assert.match(detailSource, /STANDARD WIN/);
   assert.match(detailSource, /CHAMPION WIN/);
-  assert.match(detailSource, /LOSS = NO POWER-UP/);
+  assert.match(detailSource, /LOSS OR \+0 XP = NO POWER-UP/);
   assert.doesNotMatch(detailSource, /Ink Mods|INK MODS|YOUR ELEMENT/);
   assert.match(uiSource, /'ELEMENT'/);
   assert.doesNotMatch(uiSource, /'MOOD'|moodChip/);

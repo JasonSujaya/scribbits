@@ -72,7 +72,7 @@ import { screenTitle } from '../lib/screentitle';
 import { translate } from '../lib/localization';
 import { fitText } from '../lib/fittext';
 import { planSceneMutationResponse } from '../lib/arenaasynclifecycle';
-import { playHomeSoundtrack, releaseHomeSoundtrack } from '../lib/soundtrack';
+import { playGameSoundtrack } from '../lib/soundtrack';
 import {
   galleryVisualAssetsReady,
   preloadGalleryVisualAssets,
@@ -232,10 +232,9 @@ export class Gallery extends Scene {
   }
 
   private createLoadedGallery(): void {
-    playHomeSoundtrack();
+    playGameSoundtrack();
     this.events.once('shutdown', () => {
       this.sceneVisitEpoch += 1;
-      releaseHomeSoundtrack();
       this.destroyBuildOverlays();
       this.assetErrorPanel?.destroy();
       this.assetErrorPanel = null;
@@ -1083,8 +1082,12 @@ export class Gallery extends Scene {
     }
 
     this.applyEquipmentResult(result.data);
+    const equippedFromSelectedSlot = this.selectedEquipmentSlot !== null;
     this.selectedEquipmentScribbitId = result.data.id;
     this.selectedEquipmentSlot = null;
+    if (equippedFromSelectedSlot && gearId !== null) {
+      this.collectionInventoryExpanded = false;
+    }
     if (this.scene.isActive() && this.tab === 'collection') this.build();
     return result.data;
   }

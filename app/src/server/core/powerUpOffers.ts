@@ -1,9 +1,9 @@
 import {
   createDeterministicPowerUpOffer,
   isPowerUpId,
-  MAXIMUM_GROWING_POWER_UPS,
-  MAXIMUM_POWER_UPS,
+  maximumPowerUpsForLevel,
   POWER_UP_OFFER_SOURCES,
+  powerUpOfferWasEarned,
   validatePowerUpBuild,
   type ChoosePowerUpRequest,
   type ChoosePowerUpResponse,
@@ -24,6 +24,8 @@ import {
 
 const offerTtlSeconds = 8 * 24 * 60 * 60;
 const claimReceiptTtlSeconds = offerTtlSeconds;
+const earnedDayField = (arenaDay: number): string =>
+  `earned-day:v1:${arenaDay}`;
 
 export const getPowerUpOfferKey = (
   userId: string,
@@ -246,6 +248,7 @@ export const getOrCreatePowerUpOffer = async (
     scribbit: Scribbit;
     reportId: string;
     source: PowerUpOfferSource;
+    xpAwarded: number;
     createdAtMs: number;
     currentArenaDay: number;
   }>
@@ -253,12 +256,25 @@ export const getOrCreatePowerUpOffer = async (
   if (
     !storage.watch ||
     input.scribbit.status !== 'alive' ||
+    !powerUpOfferWasEarned({
+      source: input.source,
+      xpAwarded: input.xpAwarded,
+      level: input.scribbit.level,
+      ownedPowerUpCount: input.scribbit.powerUpIds?.length ?? 0,
+    }) ||
     !Number.isSafeInteger(input.currentArenaDay) ||
     input.currentArenaDay < input.scribbit.bornDay
   ) {
     return null;
   }
   const offerKey = getPowerUpOfferKey(input.userId, input.scribbit.id);
+  const receiptsKey = getPowerUpClaimReceiptsKey(
+    input.userId,
+    input.scribbit.id
+  );
+  const offerId = `power-up-offer:v1:${input.reportId}:${input.scribbit.id}`;
+  const dailyRewardField =
+    input.source === 'birth' ? null : earnedDayField(input.currentArenaDay);
   for (
     let attempt = 0;
     attempt < MAX_WATCH_TRANSACTION_ATTEMPTS;
@@ -266,11 +282,28 @@ export const getOrCreatePowerUpOffer = async (
   ) {
     let transaction: ArenaTransaction | undefined;
     try {
-      transaction = await storage.watch(offerKey);
-      const storedOffer = await storage.get(offerKey);
+      transaction = await storage.watch(offerKey, receiptsKey);
+      const [storedOffer, storedReceipt, storedDailyReward] = await Promise.all([
+        storage.get(offerKey),
+        storage.hGet(receiptsKey, offerId),
+        dailyRewardField
+          ? storage.hGet(receiptsKey, dailyRewardField)
+          : Promise.resolve(undefined),
+      ]);
       if (storedOffer !== undefined) {
         await transaction.unwatch();
         return parsePowerUpOffer(storedOffer);
+      }
+      if (storedReceipt !== undefined) {
+        await transaction.unwatch();
+        if (!parsePowerUpClaimReceipt(storedReceipt)) {
+          throw new Error('Stored Power-Up claim receipt is invalid.');
+        }
+        return null;
+      }
+      if (storedDailyReward !== undefined) {
+        await transaction.unwatch();
+        return null;
       }
       const resolvedGear = resolveGearCombatLoadout(input.scribbit);
       const gearFamilies = [
@@ -289,10 +322,7 @@ export const getOrCreatePowerUpOffer = async (
         ownedPowerUpIds: input.scribbit.powerUpIds ?? [],
         combatRole: selectCombatRole(input.scribbit.stats),
         gearFamilies,
-        maxPowerUps:
-          input.currentArenaDay < input.scribbit.expiresDay
-            ? MAXIMUM_GROWING_POWER_UPS
-            : MAXIMUM_POWER_UPS,
+        maxPowerUps: maximumPowerUpsForLevel(input.scribbit.level),
       });
       if (!choices || choices.length !== 3) {
         await transaction.unwatch();
@@ -305,7 +335,7 @@ export const getOrCreatePowerUpOffer = async (
       }
       const offer: PowerUpOffer = Object.freeze({
         version: 1,
-        id: `power-up-offer:v1:${input.reportId}:${input.scribbit.id}`,
+        id: offerId,
         scribbitId: input.scribbit.id,
         sourceReportId: input.reportId,
         source: input.source,
@@ -314,9 +344,20 @@ export const getOrCreatePowerUpOffer = async (
       });
       await transaction.multi();
       await transaction.set(offerKey, JSON.stringify(offer));
+      if (dailyRewardField) {
+        await transaction.hSet(receiptsKey, {
+          [dailyRewardField]: offer.id,
+        });
+      }
       await transaction.expire(offerKey, offerTtlSeconds);
+      if (dailyRewardField) {
+        await transaction.expire(receiptsKey, claimReceiptTtlSeconds);
+      }
       const result = await transaction.exec();
-      if (Array.isArray(result) && result.length === 2) return offer;
+      const expectedResultCount = dailyRewardField ? 4 : 2;
+      if (Array.isArray(result) && result.length === expectedResultCount) {
+        return offer;
+      }
     } catch (error) {
       await discardWatchedTransaction(transaction, 'Power-Up offer creation');
       const committed = await loadPendingPowerUpOffer(

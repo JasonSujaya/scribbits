@@ -103,7 +103,7 @@ export class Bestiary extends Scene {
       readonly [GuideSection, PaperIconKey, string, string]
     > = [
       ['shape', 'pencil', 'STYLE', 'Each role beats one · loses to one'],
-      ['powerups', 'spark', 'POWER-UPS', 'Birth + wins · choose 1 of 3'],
+      ['powerups', 'spark', 'POWER-UPS', 'Birth + levels · max 1/day'],
       ['ritual', 'clock', 'RITUAL', 'Draw · Watch · Pick · Return'],
       ['legends', 'trophy', 'LEGENDS', 'Three days to matter'],
     ];
@@ -224,7 +224,7 @@ export class Bestiary extends Scene {
       case 'shape':
         return `The color group covering the most drawing area sets the role. Equal groups pick a role at random. Black, grey, and white are neutral, so neutral-only art is randomized too. ${FIGHTER_STYLE_GUIDE_ENTRIES.map((entry) => entry.description).join(' ')}`;
       case 'powerups':
-        return 'A new Scribbit immediately gets three randomized Power-Ups and chooses one. Later wins can offer more. A Scribbit can hold five and at most one Legendary. Gear remains the only source of raw stat bonuses.';
+        return 'A new Scribbit immediately chooses its first Power-Up. Each new level unlocks one more slot, up to five at level five. A win that awards XP can deliver one unlocked choice per Scribbit each Arena day. Pending choices stay fixed after refresh, with at most one Legendary. Gear remains the only source of raw stat bonuses.';
       case 'ritual':
         return 'Draw one Scribbit. Watch its power immediately. Pick one community contender. Return after midnight for the Champion and Clout result.';
       case 'legends':
@@ -311,7 +311,7 @@ export class Bestiary extends Scene {
               this,
               190,
               y + 20,
-              `${mysteryCount} MYSTERY POWER-UPS · WIN TO DISCOVER`,
+              `${mysteryCount} MYSTERY POWER-UPS · LEVEL UP TO DISCOVER`,
               18,
               UI.inkSoft
             )
@@ -324,8 +324,8 @@ export class Bestiary extends Scene {
             this,
             this.scale.width / 2,
             890,
-            `${MAXIMUM_POWER_UPS} MAX · 1 LEGENDARY · GEAR OWNS STATS`,
-            19,
+            `LEVEL 1-${MAXIMUM_POWER_UPS} · 1 POWER-UP SLOT PER LEVEL\nMAX 1 NEW POWER-UP EACH DAY · 1 LEGENDARY`,
+            17,
             UI.coralText,
             true
           )

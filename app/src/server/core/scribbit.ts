@@ -971,6 +971,50 @@ const createScribbitLegacySnapshot = (
   };
 };
 
+const LEGACY_RUMBLE_BELT_ID = 'inkquake-rumble-belt';
+
+const migrateLegacyRumbleBeltLoadout = (value: unknown): unknown => {
+  if (!isRecord(value)) return value;
+  const weaponSlots = value.weapon;
+  const accessorySlots = value.accessory;
+  if (
+    !Array.isArray(weaponSlots) ||
+    weaponSlots.length !== 2 ||
+    !Array.isArray(accessorySlots) ||
+    accessorySlots.length !== 2 ||
+    !weaponSlots.includes(LEGACY_RUMBLE_BELT_ID)
+  ) {
+    return value;
+  }
+
+  const nextWeaponSlots = weaponSlots.map((gearId) =>
+    gearId === LEGACY_RUMBLE_BELT_ID ? null : gearId
+  );
+  const nextAccessorySlots = [...accessorySlots];
+  if (!nextAccessorySlots.includes(LEGACY_RUMBLE_BELT_ID)) {
+    const openSlotIndex = nextAccessorySlots.indexOf(null);
+    if (openSlotIndex >= 0) {
+      nextAccessorySlots[openSlotIndex] = LEGACY_RUMBLE_BELT_ID;
+    }
+  }
+
+  return {
+    ...value,
+    weapon: nextWeaponSlots,
+    accessory: nextAccessorySlots,
+  };
+};
+
+const migrateLegacyRumbleBeltRecord = (value: unknown): unknown => {
+  if (!isRecord(value) || value.equipmentLoadout === undefined) return value;
+  const equipmentLoadout = migrateLegacyRumbleBeltLoadout(
+    value.equipmentLoadout
+  );
+  return equipmentLoadout === value.equipmentLoadout
+    ? value
+    : { ...value, equipmentLoadout };
+};
+
 export const createScribbitLegacy = (
   scribbit: Scribbit,
   options: {
@@ -1129,7 +1173,9 @@ const normalizeScribbitV1Value = (
     const equipmentLoadout =
       value.equipmentLoadout === undefined
         ? createEmptyEquipmentLoadout()
-        : validateCatalogEquipmentLoadout(value.equipmentLoadout);
+        : validateCatalogEquipmentLoadout(
+            migrateLegacyRumbleBeltLoadout(value.equipmentLoadout)
+          );
     if (!equipmentLoadout) return undefined;
     const rankedGearIds = [
       ...accessories,
@@ -1193,7 +1239,7 @@ export const normalizeScribbitRecord = (
   return normalizeScribbitV2Value(value, true, true);
 };
 
-export const SCRIBBIT_SCHEMA_VERSION = 4;
+export const SCRIBBIT_SCHEMA_VERSION = 5;
 
 const getPersistedScribbitGearRanks = (
   scribbit: Scribbit
@@ -1327,6 +1373,11 @@ const encodeScribbitV4 = (scribbit: Scribbit): Record<string, unknown> => ({
   gearRanks: getPersistedScribbitGearRanks(scribbit),
 });
 
+const encodeScribbitV5 = (scribbit: Scribbit): Record<string, unknown> => ({
+  ...encodeScribbitV4(scribbit),
+  schemaVersion: 5,
+});
+
 export const migrateScribbitV1ToV2 = (storedValue: unknown): unknown => {
   if (!isRecord(storedValue)) return storedValue;
   const scribbitValue = { ...storedValue };
@@ -1346,7 +1397,9 @@ export const migrateScribbitV1ToV2 = (storedValue: unknown): unknown => {
 
 export const migrateScribbitV2ToV3 = (storedValue: unknown): unknown => {
   if (!isRecord(storedValue)) return storedValue;
-  const scribbitValue = { ...storedValue };
+  const migratedStoredValue = migrateLegacyRumbleBeltRecord(storedValue);
+  if (!isRecord(migratedStoredValue)) return storedValue;
+  const scribbitValue = { ...migratedStoredValue };
   delete scribbitValue.schemaVersion;
   delete scribbitValue.mood;
   delete scribbitValue.careDoneToday;
@@ -1375,7 +1428,9 @@ export const migrateScribbitV2ToV3 = (storedValue: unknown): unknown => {
 
 export const migrateScribbitV3ToV4 = (storedValue: unknown): unknown => {
   if (!isRecord(storedValue)) return storedValue;
-  const scribbitValue = { ...storedValue };
+  const migratedStoredValue = migrateLegacyRumbleBeltRecord(storedValue);
+  if (!isRecord(migratedStoredValue)) return storedValue;
+  const scribbitValue = { ...migratedStoredValue };
   delete scribbitValue.schemaVersion;
   const normalizedV3 = normalizeScribbitV2Value(scribbitValue, false, true);
   if (!normalizedV3) return storedValue;
@@ -1383,6 +1438,21 @@ export const migrateScribbitV3ToV4 = (storedValue: unknown): unknown => {
   delete canonicalV3.schemaVersion;
   return jsonValuesMatch(scribbitValue, canonicalV3)
     ? encodeScribbitV4(normalizedV3)
+    : storedValue;
+};
+
+export const migrateScribbitV4ToV5 = (storedValue: unknown): unknown => {
+  if (!isRecord(storedValue)) return storedValue;
+  const migratedStoredValue = migrateLegacyRumbleBeltRecord(storedValue);
+  if (!isRecord(migratedStoredValue)) return storedValue;
+  const scribbitValue = { ...migratedStoredValue };
+  delete scribbitValue.schemaVersion;
+  const normalizedV4 = normalizeScribbitV2Value(scribbitValue, false, true);
+  if (!normalizedV4) return storedValue;
+  const canonicalV4 = encodeScribbitV4(normalizedV4);
+  delete canonicalV4.schemaVersion;
+  return jsonValuesMatch(scribbitValue, canonicalV4)
+    ? encodeScribbitV5(normalizedV4)
     : storedValue;
 };
 
@@ -1394,6 +1464,7 @@ const scribbitJsonCodec = createVersionedJsonCodec<Scribbit>({
     1: migrateScribbitV1ToV2,
     2: migrateScribbitV2ToV3,
     3: migrateScribbitV3ToV4,
+    4: migrateScribbitV4ToV5,
   },
   decodeCurrent: (storedValue) => {
     if (
@@ -1406,13 +1477,13 @@ const scribbitJsonCodec = createVersionedJsonCodec<Scribbit>({
     delete scribbitValue.schemaVersion;
     const scribbit = normalizeScribbitV2Value(scribbitValue, false, true);
     if (!scribbit) return undefined;
-    const canonicalValue = encodeScribbitV4(scribbit);
+    const canonicalValue = encodeScribbitV5(scribbit);
     delete canonicalValue.schemaVersion;
     return jsonValuesMatch(scribbitValue, canonicalValue)
       ? scribbit
       : undefined;
   },
-  encodeCurrent: encodeScribbitV4,
+  encodeCurrent: encodeScribbitV5,
 });
 
 export const parseStoredScribbit = (storedScribbit: string | undefined) =>

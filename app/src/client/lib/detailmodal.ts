@@ -36,11 +36,16 @@ import {
   label,
   ghostButton,
   paperActionButton,
+  paperIconButton,
   levelBadge,
   statGrid,
   stickerCard,
   progressBar,
 } from './ui';
+import {
+  openPowerUpEffectPreview,
+  type PowerUpEffectPreview,
+} from './powerupeffectpreview';
 
 // Detail views must sit above persistent scene chrome such as the Home menu.
 const DEPTH = 4000;
@@ -931,12 +936,13 @@ export function openDetailModal(
       .setName('progression-guide')
       .setScrollFactor(0);
     layer.add(guideLayer);
+    let activePowerUpPreview: PowerUpEffectPreview | null = null;
     const guideCardWidth = Math.min(width - 56, 664);
     const guideCardHeight = Math.min(height - 96, 1080);
     const guideTop = height / 2 - guideCardHeight / 2;
     const guideBottom = guideTop + guideCardHeight;
     const pageDescriptions = [
-      `Page 1 of ${POWER_UP_GUIDE_PAGE_COUNT}. ${scribbit.name} owns ${ownedPowerUpNames.length > 0 ? ownedPowerUpNames.join(', ') : 'no Power-Ups yet'}. A Scribbit can own five unique Power-Ups, including at most one Legendary. Role comes from the drawing. Gear owns reusable stat boosts.`,
+      `Page 1 of ${POWER_UP_GUIDE_PAGE_COUNT}. ${scribbit.name} owns ${ownedPowerUpNames.length > 0 ? ownedPowerUpNames.join(', ') : 'no Power-Ups yet'}. Birth grants the first slot, then each new level unlocks one more, for five total at level five and at most one Legendary. Role comes from the drawing. Gear owns reusable stat boosts.`,
       ...POWER_UP_CATALOG_SECTIONS.map(
         (section, sectionIndex) =>
           `Page ${sectionIndex + 2} of ${POWER_UP_GUIDE_PAGE_COUNT}. ${section.title}. ${section.ids
@@ -949,10 +955,12 @@ export function openDetailModal(
             })
             .join(' ')}`
       ),
-      `Page ${POWER_UP_GUIDE_PAGE_COUNT} of ${POWER_UP_GUIDE_PAGE_COUNT}. Every offer rolls rarity separately for three distinct Power-Ups, then shuffles their order. Birth and standard win odds are ${formatPowerUpRarityOdds('birth')}. Big win odds are ${formatPowerUpRarityOdds('rival-run-final-win')}. Champion win odds are ${formatPowerUpRarityOdds('champion-win')}. Losses offer no Power-Up.`,
+      `Page ${POWER_UP_GUIDE_PAGE_COUNT} of ${POWER_UP_GUIDE_PAGE_COUNT}. Every offer rolls rarity separately for three distinct Power-Ups, then shuffles their order. Birth and standard win odds are ${formatPowerUpRarityOdds('birth')}. Big win odds are ${formatPowerUpRarityOdds('rival-run-final-win')}. Champion win odds are ${formatPowerUpRarityOdds('champion-win')}. After birth, reach a new level and win XP to earn one choice per Arena day. Losses, zero-XP repeats, and refreshes never create another offer.`,
     ];
     const closeGuide = (): void => {
       if (!guideLayer.active) return;
+      activePowerUpPreview?.destroy();
+      activePowerUpPreview = null;
       guideLayer.destroy(true);
     };
     const guideOverlay = new CanvasModalOverlay(
@@ -1232,6 +1240,7 @@ export function openDetailModal(
     const selectorHeight = 86;
     const selectorY = guideTop + 800;
     const catalogControlsByPage: HTMLButtonElement[][] = [];
+    const catalogPreviewControlsByPage: HTMLButtonElement[] = [];
     const catalogPages = POWER_UP_CATALOG_SECTIONS.map(
       (section, sectionIndex) => {
         const page = createPage(
@@ -1247,6 +1256,23 @@ export function openDetailModal(
           section.ids.find((powerUpId) =>
             discoveredPowerUpIds.has(powerUpId)
           ) ?? section.ids[0];
+        let previewControl: HTMLButtonElement | null = null;
+
+        const openSelectedPowerUpPreview = (): void => {
+          if (!discoveredPowerUpIds.has(selectedPowerUpId) || !previewControl) {
+            return;
+          }
+          activePowerUpPreview?.destroy();
+          activePowerUpPreview = openPowerUpEffectPreview(
+            scene,
+            selectedPowerUpId,
+            scribbit,
+            previewControl,
+            () => {
+              activePowerUpPreview = null;
+            }
+          );
+        };
 
         const renderSelectors = (): void => {
           selectorLayer.removeAll(true);
@@ -1316,6 +1342,20 @@ export function openDetailModal(
           const cardLeft = featuredCardX - featuredCardWidth / 2;
           const cardTop = featuredCardY - featuredCardHeight / 2;
           const cardRight = featuredCardX + featuredCardWidth / 2;
+
+          if (previewControl) {
+            previewControl.disabled = !isDiscovered;
+            previewControl.setAttribute(
+              'aria-label',
+              isDiscovered
+                ? `Preview ${definition.name} Power-Up effect`
+                : `Preview unavailable for undiscovered ${rarity.label} Power-Up`
+            );
+            previewControl.setAttribute(
+              'data-power-up-effect-preview',
+              isDiscovered ? powerUpId : ''
+            );
+          }
 
           const shadow = scene.add.graphics().setScrollFactor(0);
           shadow.fillStyle(UI.inkHex, 0.18);
@@ -1402,6 +1442,19 @@ export function openDetailModal(
                 true
               ).setScrollFactor(0),
             ]);
+            featuredLayer.add(
+              paperIconButton(
+                scene,
+                cardRight - 58,
+                cardTop + 60,
+                'eye',
+                openSelectedPowerUpPreview,
+                68,
+                UI.creamHex,
+                rarity.color,
+                64
+              ).setScrollFactor(0)
+            );
           } else {
             const ribbonWidth = definition.rarity === 'legendary' ? 152 : 116;
             const ribbon = scene.add.graphics().setScrollFactor(0);
@@ -1575,15 +1628,30 @@ export function openDetailModal(
             })
           );
         });
+        previewControl = guideOverlay.add({
+          label: `Preview ${POWER_UP_CATALOG[selectedPowerUpId].name} Power-Up effect`,
+          rect: {
+            x: featuredCardX + featuredCardWidth / 2 - 92,
+            y: featuredCardY - featuredCardHeight / 2 + 28,
+            width: 68,
+            height: 64,
+          },
+          attributes: {
+            'data-power-up-effect-preview': selectedPowerUpId,
+          },
+          enabled: discoveredPowerUpIds.has(selectedPowerUpId),
+          onActivate: openSelectedPowerUpPreview,
+        });
         renderFeaturedPowerUp(selectedPowerUpId, false);
         catalogControlsByPage.push(pageControls);
+        catalogPreviewControlsByPage.push(previewControl);
         return page;
       }
     );
 
     const earnPage = createPage(
       POWER_UP_GUIDE_PAGE_COUNT,
-      'WIN → CHOOSE 1',
+      'WIN + EARN XP → CHOOSE 1',
       '3 DISTINCT ROLLS · CARD ORDER SHUFFLED'
     );
     const rewardCardWidth = guideCardWidth - 92;
@@ -1664,7 +1732,7 @@ export function openDetailModal(
         scene,
         width / 2 - 92,
         guideTop + 848,
-        'LOSS = NO POWER-UP',
+        'LOSS OR +0 XP = NO POWER-UP',
         17,
         UI.inkSoft,
         true
@@ -1675,7 +1743,7 @@ export function openDetailModal(
         scene,
         width / 2 - 92,
         guideTop + 878,
-        'Choose one after a win. Your build stops at 5/5.',
+        'Birth starts slot 1. Levels 2-5 unlock the next four slots.',
         14,
         UI.inkSoft,
         false
@@ -1802,6 +1870,17 @@ export function openDetailModal(
           control.hidden = !visible;
           control.disabled = !visible;
         });
+      });
+      catalogPreviewControlsByPage.forEach((control, sectionIndex) => {
+        const visible = safePageIndex === sectionIndex + 1;
+        const selectedPowerUpId = control.getAttribute(
+          'data-power-up-effect-preview'
+        );
+        control.hidden = !visible;
+        control.disabled =
+          !visible ||
+          !selectedPowerUpId ||
+          !discoveredPowerUpIds.has(selectedPowerUpId as PowerUpId);
       });
       renderNavigation(safePageIndex);
       const activePageDescription =

@@ -178,7 +178,7 @@ test('runtime routes all battle and shared UI sound through the catalog', async 
   assert.match(draw, /preloadSfx\('draw\.tick'\)/);
   assert.match(
     draw,
-    /await prepareSfxPlayback\('draw\.countdown', 'draw\.start'\)/
+    /void prepareSfxPlayback\('draw\.countdown', 'draw\.start'\)/
   );
   assert.match(
     sfx,

@@ -38,7 +38,7 @@ test('equipment has one canonical four-category contract', () => {
 
 test('role relics preserve stored IDs while declaring clear affinities', () => {
   const expectedRelics = {
-    'inkquake-rumble-belt': ['brawler', 'weapon'],
+    'inkquake-rumble-belt': ['brawler', 'accessory'],
     'inkquake-crater-crown': ['brawler', 'armor'],
     'nib-halo-headband': ['longshot', 'accessory'],
     'nib-halo-circlet': ['longshot', 'accessory'],

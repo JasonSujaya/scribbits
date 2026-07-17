@@ -10320,7 +10320,7 @@ const goldenCombatCases = [
     }),
     seed: 7003,
     expectedHash:
-      'f70ee9be57e61b7f0347ba901e955fc838bd86209e128d109ae7a4cf4ad38a8f',
+      'e7a3af6f850de72479fd562e46281553b5bb00a7a291d4b52d72249777a12d30',
   },
 ];
 const transcriptHash = (transcript) =>
@@ -13097,9 +13097,11 @@ const rumbleBeltFx = weaponFxPresentation.resolveWeaponFxProfile({
   accessories: ['inkquake-rumble-belt'],
   gearRanks: { 'inkquake-rumble-belt': 6 },
 });
-assert.equal(rumbleBeltFx?.family, 'ready');
-assert.equal(rumbleBeltFx?.shaderMode, 7);
-assert.equal(rumbleBeltFx?.rankTier, 'red-star');
+assert.equal(
+  rumbleBeltFx,
+  null,
+  'accessory Gear must not trigger weapon VFX'
+);
 assert.equal(
   weaponFxPresentation.resolveWeaponFxProfile({ accessories: ['bowtie'] }),
   null,
@@ -13142,27 +13144,27 @@ assert.equal(
 assert.deepEqual(
   weaponFxPresentation.resolveWeaponFxProfile({
     accessories: ['tiny-sword'],
-    gearRanks: { 'tiny-sword': 2, 'inkquake-rumble-belt': 6 },
+    gearRanks: { 'tiny-sword': 2, 'comet-crayon-blade': 6 },
     equipmentLoadout: {
       ...sharedEquipment.createEmptyEquipmentLoadout(),
-      weapon: ['inkquake-rumble-belt', null],
+      weapon: ['comet-crayon-blade', null],
     },
-  }),
-  rumbleBeltFx,
+  })?.weaponId,
+  'comet-crayon-blade',
   'an equipped weapon should drive the reusable VFX before a legacy welded weapon'
 );
 assert.deepEqual(
   weaponFxPresentation
     .resolveWeaponFxProfiles({
       accessories: [],
-      gearRanks: { 'tiny-sword': 3, 'inkquake-rumble-belt': 6 },
+      gearRanks: { 'tiny-sword': 3, 'wooden-spoon': 6 },
       equipmentLoadout: {
         ...sharedEquipment.createEmptyEquipmentLoadout(),
-        weapon: ['tiny-sword', 'inkquake-rumble-belt'],
+        weapon: ['tiny-sword', 'wooden-spoon'],
       },
     })
     .map((profile) => [profile.weaponId, profile.rank]),
-  [['inkquake-rumble-belt', 6]],
+  [['wooden-spoon', 6]],
   'the strongest weapon should lead while the second slot supports one readable technique'
 );
 const rankedWeaponOwner = {
@@ -13388,6 +13390,72 @@ for (const sharedPen of sharedCosmetics.PEN_CATALOG_ENTRIES) {
   );
 }
 pass('shared, server, and client pen catalog parity');
+
+for (let fixtureIndex = 0; fixtureIndex < 1_000; fixtureIndex += 1) {
+  const starterWeapon = inkStore.selectCapsuleDrop({
+    userId: `starter-weapon-${fixtureIndex}`,
+    day: 1,
+    pullCount: 1,
+    pullsSinceEpic: 0,
+  });
+  assert.equal(starterWeapon.rarity, 'common');
+  assert.equal(
+    sharedCosmetics.findGearCosmetic(starterWeapon.id)?.category,
+    'weapon',
+    'every new player should receive a combat weapon before category luck begins'
+  );
+}
+const legacyStarterWeapon = inkStore.selectCapsuleDrop(
+  {
+    userId: 'legacy-starter-weapon',
+    day: 20,
+    pullCount: 12,
+    pullsSinceEpic: 0,
+  },
+  new Set(['cape', 'round-glasses'])
+);
+assert.equal(legacyStarterWeapon.rarity, 'common');
+assert.equal(
+  sharedCosmetics.findGearCosmetic(legacyStarterWeapon.id)?.category,
+  'weapon',
+  'an existing inventory without a weapon should catch up on its next pull'
+);
+const epicWeaponMilestone = inkStore.selectCapsuleDrop(
+  {
+    userId: 'epic-weapon-milestone',
+    day: 30,
+    pullCount: arena.CAPSULE_EPIC_WEAPON_GUARANTEE_PULL,
+    pullsSinceEpic: 0,
+  },
+  new Set(['tiny-sword'])
+);
+assert.equal(epicWeaponMilestone.id, 'comet-crayon-blade');
+const legendaryWeaponMilestone = inkStore.selectCapsuleDrop(
+  {
+    userId: 'legendary-weapon-milestone',
+    day: 100,
+    pullCount: arena.CAPSULE_LEGENDARY_WEAPON_GUARANTEE_PULL,
+    pullsSinceEpic: 0,
+  },
+  new Set(['tiny-sword', 'comet-crayon-blade'])
+);
+assert.equal(legendaryWeaponMilestone.id, 'void-nib-lance');
+const weaponPity = inkStore.selectCapsuleDrop(
+  {
+    userId: 'weapon-pity',
+    day: 8,
+    pullCount: 10,
+    pullsSinceEpic: arena.CAPSULE_PITY - 1,
+  },
+  new Set(['tiny-sword'])
+);
+assert.equal(
+  weaponPity.id,
+  'comet-crayon-blade',
+  'hard pity should advance weapon progression when its Epic weapon is still missing'
+);
+pass('capsule weapon progression has starter, pity, and rarity milestones');
+
 let protectedPermanentFixture = null;
 for (let fixtureIndex = 0; fixtureIndex < 500; fixtureIndex += 1) {
   const selection = {
@@ -13396,7 +13464,10 @@ for (let fixtureIndex = 0; fixtureIndex < 500; fixtureIndex += 1) {
     pullCount: 2,
     pullsSinceEpic: 0,
   };
-  const selectedEntry = inkStore.selectCapsuleDrop(selection);
+  const selectedEntry = inkStore.selectCapsuleDrop(
+    selection,
+    new Set(['tiny-sword'])
+  );
   if (selectedEntry.kind !== 'accessory') {
     protectedPermanentFixture = { selection, selectedEntry };
     break;
@@ -13421,6 +13492,7 @@ await permanentProtectionStorage.hSet(
   {
     [protectedPermanentFixture.selectedEntry.id]:
       protectedPermanentFixture.selectedEntry.kind,
+    [inkStore.getInventoryDiscoveryField('tiny-sword')]: '1',
   }
 );
 const protectedPermanentResult = await inkStore.pullCapsuleForUser(
@@ -13685,12 +13757,15 @@ for (let fixtureIndex = 0; fixtureIndex < 5_000; fixtureIndex += 1) {
     pullCount: 1,
     pullsSinceEpic: 0,
   });
-  const secondDrop = inkStore.selectCapsuleDrop({
-    userId,
-    day: duplicateDay,
-    pullCount: 2,
-    pullsSinceEpic: firstDrop.rarity === 'epic' ? 0 : 1,
-  });
+  const secondDrop = inkStore.selectCapsuleDrop(
+    {
+      userId,
+      day: duplicateDay,
+      pullCount: 2,
+      pullsSinceEpic: firstDrop.rarity === 'epic' ? 0 : 1,
+    },
+    new Set([firstDrop.id])
+  );
   if (firstDrop.kind === 'accessory' && secondDrop.id === firstDrop.id) {
     duplicateAccessoryFixture = { userId, firstDrop, secondDrop };
     break;
@@ -13827,6 +13902,14 @@ const legacyDuplicateStorage = createMemoryStorage();
 await legacyDuplicateStorage.set(
   inkStore.getInkKey(duplicateUserId),
   String(arena.CAPSULE_FIRST_DAILY_COST)
+);
+await legacyDuplicateStorage.set(
+  inkStore.getCapsulePullCountKey(duplicateUserId),
+  '1'
+);
+await legacyDuplicateStorage.set(
+  inkStore.getPullsSinceEpicKey(duplicateUserId),
+  '1'
 );
 await legacyDuplicateStorage.hSet(inkStore.getInventoryKey(duplicateUserId), {
   [firstDuplicateDrop.id]: '1',

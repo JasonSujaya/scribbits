@@ -170,7 +170,7 @@ export const GEAR_CATALOG_ENTRIES: readonly CosmeticGearCatalogEntry[] = [
     rarity: 'common',
     name: 'Inkquake Rumble Belt',
     label: 'Rumble Belt',
-    category: 'weapon',
+    category: 'accessory',
     effectFamily: 'ready',
     roleAffinity: 'brawler',
     roleEffect: 'Tightens the opening Body Slam and reinforces Inkquake.',

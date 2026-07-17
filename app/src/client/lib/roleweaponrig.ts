@@ -46,16 +46,6 @@ const STARTER_MOUNTS: Readonly<
   mage: { x: 48, y: -8, angle: -12, maximumWidth: 120 },
 });
 
-const EQUIPPED_WEAPON_MOUNTS: Readonly<Record<string, WeaponMount>> =
-  Object.freeze({
-    'inkquake-rumble-belt': {
-      x: 0,
-      y: 32,
-      angle: 0,
-      maximumWidth: 94,
-    },
-  });
-
 const DEFAULT_EQUIPPED_WEAPON_MOUNT: WeaponMount = Object.freeze({
   x: 43,
   y: 4,
@@ -110,7 +100,7 @@ export function createAttachedRoleWeapon(
     addImage(
       heldWeapon.textureKey,
       heldWeapon.frame,
-      EQUIPPED_WEAPON_MOUNTS[heldWeapon.gearId] ?? DEFAULT_EQUIPPED_WEAPON_MOUNT
+      DEFAULT_EQUIPPED_WEAPON_MOUNT
     );
   } else {
     const starterTexture = starterWeaponTextureForRole(role);

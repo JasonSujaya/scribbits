@@ -644,14 +644,22 @@ function createFighterState(
   input: CombatFighterInput,
   slot: FighterSlot,
   _seed: string,
-  rules: CombatRules
+  rules: CombatRules,
+  opponentGearRarityStrengthPermille: number
 ): MutableFighterState {
   const combatModifiers = getGearCombatModifiers(input);
-  const gearRarityStrengthPermille = getGearRarityStrengthPermille(input);
   const powerUpIds = parsePowerUpBuild(input.powerUpIds ?? []) ?? [];
   const powerUpRarityStrengthPermille =
     getPowerUpBuildRarityStrengthPermille(powerUpIds);
   const combatRole = selectCombatRole(input.stats);
+  const rawGearRarityStrengthPermille = getGearRarityStrengthPermille(input);
+  // Rarity is a matchup advantage, not a global health inflation source.
+  // Matched rarity therefore cancels while mismatched loadouts retain their
+  // independently tuned rarity strengths.
+  const gearRarityStrengthPermille =
+    rawGearRarityStrengthPermille === opponentGearRarityStrengthPermille
+      ? 0
+      : rawGearRarityStrengthPermille;
   const horizontalDirection = slot === 'a' ? 1 : -1;
   const initialMovementDirection = {
     x: horizontalDirection * DIRECTION_SCALE,
@@ -739,7 +747,7 @@ function createFighterState(
     hitPoints: maxHitPoints,
     maxHitPoints,
     inkPressureLostHitPointThreshold: divideRounded(
-      baseMaxHitPoints * rules.inkPressure.lostHitPointPercentage,
+      maxHitPoints * rules.inkPressure.lostHitPointPercentage,
       100
     ),
     inkPressureThresholdReachedBeforePowerUpHealing: false,
@@ -1828,7 +1836,9 @@ const ROLE_MATCHUP_DAMAGE_MULTIPLIERS: Readonly<
   }),
   longshot: Object.freeze({
     brawler: 1_257,
-    longshot: 1_000,
+    // Ranged mirrors otherwise spend the full replay trading too little
+    // damage even when their physical quills connect consistently.
+    longshot: 1_290,
     mage: 1_550,
   }),
   mage: Object.freeze({
@@ -1839,12 +1849,20 @@ const ROLE_MATCHUP_DAMAGE_MULTIPLIERS: Readonly<
 });
 
 const BRAWLER_VS_MAGE_POWER_UP_COUNTERWEIGHT = Object.freeze([
-  0, 0, -5, -11, -55, -100,
+  0, 15, 10, 0, -5, -12,
+]);
+const BRAWLER_VS_LONGSHOT_POWER_UP_COUNTERWEIGHT = Object.freeze([
+  0, -50, -50, -50, -75, -100,
+]);
+const LONGSHOT_VS_BRAWLER_POWER_UP_COUNTERWEIGHT = Object.freeze([
+  0, 140, 180, 260, 290, 320,
 ]);
 const MAGE_VS_LONGSHOT_POWER_UP_COUNTERWEIGHT = Object.freeze([
-  0, 0, 6, 9, 12, 15,
+  0, 0, 90, 100, 125, 140,
 ]);
-
+const LONGSHOT_MIRROR_POWER_UP_PACING = Object.freeze([
+  0, 140, 180, 220, 260, 300,
+]);
 function getPowerUpRoleCounterweightPermille(
   attacker: CurrentCombatRole,
   defender: CurrentCombatRole,
@@ -1855,10 +1873,19 @@ function getPowerUpRoleCounterweightPermille(
     Math.min(MAXIMUM_POWER_UPS, Math.floor(sharedPowerUpDepth))
   );
   if (attacker === 'brawler' && defender === 'mage') {
-    return BRAWLER_VS_MAGE_POWER_UP_COUNTERWEIGHT[buildDepth] ?? -100;
+    return BRAWLER_VS_MAGE_POWER_UP_COUNTERWEIGHT[buildDepth] ?? -12;
+  }
+  if (attacker === 'brawler' && defender === 'longshot') {
+    return BRAWLER_VS_LONGSHOT_POWER_UP_COUNTERWEIGHT[buildDepth] ?? -100;
+  }
+  if (attacker === 'longshot' && defender === 'brawler') {
+    return LONGSHOT_VS_BRAWLER_POWER_UP_COUNTERWEIGHT[buildDepth] ?? 320;
   }
   if (attacker === 'mage' && defender === 'longshot') {
-    return MAGE_VS_LONGSHOT_POWER_UP_COUNTERWEIGHT[buildDepth] ?? 15;
+    return MAGE_VS_LONGSHOT_POWER_UP_COUNTERWEIGHT[buildDepth] ?? 140;
+  }
+  if (attacker === 'longshot' && defender === 'longshot') {
+    return LONGSHOT_MIRROR_POWER_UP_PACING[buildDepth] ?? 300;
   }
   return 0;
 }
@@ -1880,7 +1907,10 @@ function getRoleMatchupDamageMultiplierPermille(
     currentDefender,
     sharedPowerUpDepth
   );
-  return Math.max(300, Math.min(1_800, baseMultiplier + powerUpCounterweight));
+  return Math.max(
+    300,
+    Math.min(1_800, baseMultiplier + powerUpCounterweight)
+  );
 }
 
 function rollAndApplyDamage(
@@ -2288,6 +2318,12 @@ function spawnBasicProjectile(
         : 0,
   };
   context.projectiles.push(state);
+  if (
+    projectile === 'quill' &&
+    fighterOwnsPowerUp(fighter, 'v2-returning-stroke')
+  ) {
+    triggerPowerUp(context, fighter, 'v2-returning-stroke', target);
+  }
   appendEvent(context, {
     tick: context.tick,
     kind: 'projectile_spawned',
@@ -2523,11 +2559,10 @@ function returnProjectile(
   );
   projectile.expiresAtTick = context.tick + 8;
   const target = getFighter(context, projectile.target);
-  dealPowerUpDamage(
+  applyBudgetedPowerUpDamage(
     context,
     fighter,
     target,
-    'v2-returning-stroke',
     divideRounded(
       target.maxHitPoints *
         (POWER_UP_CATALOG['v2-returning-stroke']
@@ -2579,6 +2614,7 @@ function constrainProjectileToArena(
   projectile.bouncesRemaining -= 1;
   const fighter = getFighter(context, projectile.actor);
   const bounceReason = projectile.bounceReason ?? 'natural_ricochet';
+  const hitTargetBeforeBounce = projectile.targetHit;
   if (bounceReason === 'bank_shot') {
     triggerPowerUp(context, fighter, 'v2-bank-shot');
   }
@@ -2609,6 +2645,7 @@ function constrainProjectileToArena(
   );
   if (hitX) projectile.velocity.x = -projectile.velocity.x;
   if (hitY) projectile.velocity.y = -projectile.velocity.y;
+  projectile.targetHit = false;
   appendEvent(context, {
     tick: context.tick,
     kind: 'projectile_bounced',
@@ -2619,6 +2656,37 @@ function constrainProjectileToArena(
     position: freezeVector(projectile.position),
     velocity: freezeVector(projectile.velocity),
   });
+  if (bounceReason === 'bank_shot' && hitTargetBeforeBounce) {
+    const target = getFighter(context, projectile.target);
+    if (target.hitPoints > 0) {
+      rollAndApplyDamage(
+        context,
+        fighter,
+        target,
+        projectile.source,
+        projectile.damage,
+        `${projectile.attackNumber}:${projectile.shotNumber}:bank`,
+        true
+      );
+      appendEvent(context, {
+        tick: context.tick,
+        kind: 'projectile_hit',
+        projectileId: projectile.projectileId,
+        actor: projectile.actor,
+        target: projectile.target,
+        projectile: projectile.projectile,
+        position: freezeVector(projectile.position),
+      });
+    }
+    appendEvent(context, {
+      tick: context.tick,
+      kind: 'projectile_expired',
+      projectileId: projectile.projectileId,
+      actor: projectile.actor,
+      position: freezeVector(projectile.position),
+    });
+    return 'expired';
+  }
   return 'active';
 }
 
@@ -2724,10 +2792,7 @@ function executeProjectiles(context: SimulationContext): void {
       if (actualDamage > 0 && fighter.combatRole === 'longshot') {
         pushAwayFrom(context, fighter, projectile.position, target, 180);
       }
-      if (
-        projectile.bounceReason === 'natural_ricochet' &&
-        projectile.bouncesRemaining > 0
-      ) {
+      if (projectile.bouncesRemaining > 0) {
         projectile.targetHit = true;
         projectile.expiresAtTick = Math.max(
           projectile.expiresAtTick,
@@ -3694,6 +3759,10 @@ export function simulateCombat(input: CombatSimulationInput): BattleTranscript {
     throw new Error('Combat fighter ids must be unique.');
   }
   const transcriptVersion = rules.version;
+  const fighterAGearRarityStrengthPermille =
+    getGearRarityStrengthPermille(fighterAInput);
+  const fighterBGearRarityStrengthPermille =
+    getGearRarityStrengthPermille(fighterBInput);
   const battleId = createStableBattleId(
     seed,
     fighterAInput.id,
@@ -3708,8 +3777,20 @@ export function simulateCombat(input: CombatSimulationInput): BattleTranscript {
     arenaHalfWidth: rules.arena.startingHalfWidth,
     arenaHalfHeight: rules.arena.startingHalfHeight,
     fighters: [
-      createFighterState(fighterAInput, 'a', seed, rules),
-      createFighterState(fighterBInput, 'b', seed, rules),
+      createFighterState(
+        fighterAInput,
+        'a',
+        seed,
+        rules,
+        fighterBGearRarityStrengthPermille
+      ),
+      createFighterState(
+        fighterBInput,
+        'b',
+        seed,
+        rules,
+        fighterAGearRarityStrengthPermille
+      ),
     ],
     projectiles: [],
     paintZones: [],

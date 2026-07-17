@@ -114,7 +114,7 @@ test('Home is the living Scribbit screen with one big Draw action', () => {
   );
   assert.match(
     homeSource,
-    /Choose one of three randomized Power-Ups before the first fight\./
+    /Choose the first Power-Up\. Each new level unlocks one more slot\./
   );
   assert.match(homeSource, /After 3 days, its final base stats lock forever\./);
   assert.match(homeSource, /MATURE ARENA: UPGRADE GEAR/);

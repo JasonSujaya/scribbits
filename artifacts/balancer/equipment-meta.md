@@ -1,85 +1,63 @@
 # Equipment + Power-Up Meta
 
-Generated: 2026-07-17T00:55:06.548Z
+Generated: 2026-07-17T04:25:29.228Z
 
 Runner: `app/tools/balancer/run.mjs`
 
 This report bypasses API/routes/storage and calls the production combat mock bundle directly.
 
-| Target | Opponent | Win rate | Avg duration | Power-Up triggers | Target PU | Baseline | Swing | Interaction | Timeouts | Close | Blowouts | Verdict |
-| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
-| Equipment sampling coverage | 59 unique modifier vectors | 50.0% | 0.0s | 0.00 | 0.00 | 0.0% | 0.0pp | — | 0.0% | 0.0% | 0.0% | OK |
-| brawler · 0 Power-Ups | Equal equipment + progression field | 62.2% | 15.9s | 0.00 | 0.00 | 0.0% | 0.0pp | — | 0.0% | 83.0% | 0.0% | FLAG_EQUIPMENT_FIELD |
-| longshot · 0 Power-Ups | Equal equipment + progression field | 35.6% | 19.6s | 0.00 | 0.00 | 0.0% | 0.0pp | — | 0.0% | 83.1% | 0.0% | FLAG_EQUIPMENT_FIELD |
-| mage · 0 Power-Ups | Equal equipment + progression field | 52.6% | 19.5s | 0.00 | 0.00 | 0.0% | 0.0pp | — | 0.0% | 99.9% | 0.0% | OK |
-| brawler · 3 Power-Ups | Equal equipment + progression field | 60.4% | 14.6s | 6.56 | 3.40 | 0.0% | 0.0pp | — | 0.0% | 56.9% | 0.0% | FLAG_EQUIPMENT_FIELD |
-| longshot · 3 Power-Ups | Equal equipment + progression field | 37.8% | 18.8s | 5.71 | 2.78 | 0.0% | 0.0pp | — | 0.0% | 71.8% | 0.4% | FLAG_EQUIPMENT_FIELD |
-| mage · 3 Power-Ups | Equal equipment + progression field | 51.8% | 18.8s | 5.61 | 2.76 | 0.0% | 0.0pp | — | 0.0% | 57.4% | 0.5% | OK |
-| brawler · 5 Power-Ups | Equal equipment + progression field | 56.3% | 14.3s | 10.70 | 5.65 | 0.0% | 0.0pp | — | 0.0% | 53.6% | 0.0% | OK |
-| longshot · 5 Power-Ups | Equal equipment + progression field | 33.5% | 18.5s | 9.01 | 4.32 | 0.0% | 0.0pp | — | 0.0% | 61.5% | 0.1% | FLAG_EQUIPMENT_FIELD |
-| mage · 5 Power-Ups | Equal equipment + progression field | 60.6% | 19.0s | 9.39 | 4.58 | 0.0% | 0.0pp | — | 0.0% | 57.3% | 0.1% | FLAG_EQUIPMENT_FIELD |
-| brawler · 0 Power-Ups | brawler · equal equipment | 50.0% | 10.5s | 0.00 | 0.00 | 0.0% | 0.0pp | — | 0.0% | 100.0% | 0.0% | OK |
-| brawler · 0 Power-Ups | longshot · equal equipment | 48.9% | 18.8s | 0.00 | 0.00 | 0.0% | 0.0pp | — | 0.0% | 49.3% | 0.0% | OK |
-| brawler · 0 Power-Ups | mage · equal equipment | 87.8% | 18.4s | 0.00 | 0.00 | 0.0% | 0.0pp | — | 0.0% | 99.7% | 0.0% | FLAG_EQUIPMENT_MATCHUP+FLAG_EQUIPMENT_COUNTER |
-| longshot · 0 Power-Ups | brawler · equal equipment | 51.1% | 18.8s | 0.00 | 0.00 | 0.0% | 0.0pp | — | 0.0% | 49.3% | 0.0% | OK |
-| longshot · 0 Power-Ups | longshot · equal equipment | 49.5% | 20.0s | 0.00 | 0.00 | 0.0% | 0.0pp | — | 0.0% | 100.0% | 0.0% | OK |
-| longshot · 0 Power-Ups | mage · equal equipment | 6.1% | 20.0s | 0.00 | 0.00 | 0.0% | 0.0pp | — | 0.0% | 100.0% | 0.0% | FLAG_EQUIPMENT_MATCHUP |
-| mage · 0 Power-Ups | brawler · equal equipment | 12.0% | 18.4s | 0.00 | 0.00 | 0.0% | 0.0pp | — | 0.0% | 99.7% | 0.0% | FLAG_EQUIPMENT_MATCHUP |
-| mage · 0 Power-Ups | longshot · equal equipment | 94.2% | 20.0s | 0.00 | 0.00 | 0.0% | 0.0pp | — | 0.0% | 100.0% | 0.0% | FLAG_EQUIPMENT_MATCHUP+FLAG_EQUIPMENT_COUNTER |
-| mage · 0 Power-Ups | mage · equal equipment | 51.7% | 20.0s | 0.00 | 0.00 | 0.0% | 0.0pp | — | 0.0% | 100.0% | 0.0% | OK |
-| brawler · 3 Power-Ups | brawler · equal equipment | 49.6% | 10.4s | 7.34 | 3.67 | 0.0% | 0.0pp | — | 0.0% | 85.7% | 0.0% | OK |
-| brawler · 3 Power-Ups | longshot · equal equipment | 74.6% | 16.4s | 6.16 | 3.27 | 0.0% | 0.0pp | — | 0.0% | 54.8% | 0.0% | FLAG_EQUIPMENT_MATCHUP |
-| brawler · 3 Power-Ups | mage · equal equipment | 57.1% | 16.9s | 6.19 | 3.28 | 0.0% | 0.0pp | — | 0.0% | 30.3% | 0.0% | OK |
-| longshot · 3 Power-Ups | brawler · equal equipment | 25.3% | 16.4s | 6.17 | 2.91 | 0.0% | 0.0pp | — | 0.0% | 55.3% | 0.0% | FLAG_EQUIPMENT_MATCHUP+FLAG_EQUIPMENT_COUNTER |
-| longshot · 3 Power-Ups | longshot · equal equipment | 50.0% | 20.0s | 5.80 | 2.90 | 0.0% | 0.0pp | — | 0.0% | 100.0% | 0.0% | OK |
-| longshot · 3 Power-Ups | mage · equal equipment | 38.0% | 19.9s | 5.14 | 2.52 | 0.0% | 0.0pp | — | 0.0% | 60.0% | 1.3% | OK |
-| mage · 3 Power-Ups | brawler · equal equipment | 42.9% | 16.9s | 6.19 | 2.91 | 0.0% | 0.0pp | — | 0.0% | 30.9% | 0.0% | OK |
-| mage · 3 Power-Ups | longshot · equal equipment | 62.2% | 19.9s | 5.15 | 2.62 | 0.0% | 0.0pp | — | 0.0% | 60.0% | 1.5% | OK |
-| mage · 3 Power-Ups | mage · equal equipment | 50.4% | 19.6s | 5.51 | 2.76 | 0.0% | 0.0pp | — | 0.0% | 81.4% | 0.0% | OK |
-| brawler · 5 Power-Ups | brawler · equal equipment | 50.9% | 9.8s | 11.49 | 5.74 | 0.0% | 0.0pp | — | 0.0% | 84.2% | 0.0% | OK |
-| brawler · 5 Power-Ups | longshot · equal equipment | 89.5% | 15.6s | 10.16 | 5.57 | 0.0% | 0.0pp | — | 0.0% | 31.4% | 0.0% | FLAG_EQUIPMENT_MATCHUP |
-| brawler · 5 Power-Ups | mage · equal equipment | 28.3% | 17.6s | 10.45 | 5.64 | 0.0% | 0.0pp | — | 0.0% | 45.0% | 0.0% | FLAG_EQUIPMENT_MATCHUP+FLAG_EQUIPMENT_COUNTER |
-| longshot · 5 Power-Ups | brawler · equal equipment | 10.8% | 15.6s | 10.16 | 4.59 | 0.0% | 0.0pp | — | 0.0% | 31.4% | 0.0% | FLAG_EQUIPMENT_MATCHUP+FLAG_EQUIPMENT_COUNTER |
-| longshot · 5 Power-Ups | longshot · equal equipment | 50.0% | 20.0s | 8.41 | 4.20 | 0.0% | 0.0pp | — | 0.0% | 100.0% | 0.0% | OK |
-| longshot · 5 Power-Ups | mage · equal equipment | 39.9% | 19.9s | 8.46 | 4.16 | 0.0% | 0.0pp | — | 0.0% | 53.1% | 0.4% | OK |
-| mage · 5 Power-Ups | brawler · equal equipment | 71.7% | 17.6s | 10.45 | 4.81 | 0.0% | 0.0pp | — | 0.0% | 45.1% | 0.0% | FLAG_EQUIPMENT_MATCHUP |
-| mage · 5 Power-Ups | longshot · equal equipment | 59.6% | 19.9s | 8.46 | 4.30 | 0.0% | 0.0pp | — | 0.0% | 53.2% | 0.4% | OK |
-| mage · 5 Power-Ups | mage · equal equipment | 50.4% | 19.6s | 9.25 | 4.63 | 0.0% | 0.0pp | — | 0.0% | 73.5% | 0.0% | OK |
-| brawler · 0 Power-Ups · Gear marginal | Paired no-Gear baseline | 64.2% | 15.9s | 0.00 | 0.00 | 49.9% | 14.3pp | — | 0.0% | 83.5% | 0.0% | FLAG_EQUIPMENT_MARGINAL |
-| longshot · 0 Power-Ups · Gear marginal | Paired no-Gear baseline | 59.5% | 19.6s | 0.00 | 0.00 | 48.3% | 11.1pp | — | 0.0% | 80.5% | 0.0% | FLAG_EQUIPMENT_MARGINAL |
-| mage · 0 Power-Ups · Gear marginal | Paired no-Gear baseline | 65.0% | 19.5s | 0.00 | 0.00 | 51.2% | 13.8pp | — | 0.0% | 100.0% | 0.0% | FLAG_EQUIPMENT_MARGINAL |
-| brawler · 3 Power-Ups · Gear marginal | Paired no-Gear baseline | 65.4% | 14.5s | 6.58 | 3.42 | 55.5% | 9.9pp | -4.4pp | 0.0% | 57.7% | 0.0% | FLAG_EQUIPMENT_MARGINAL |
-| longshot · 3 Power-Ups · Gear marginal | Paired no-Gear baseline | 44.2% | 18.8s | 5.72 | 2.78 | 41.1% | 3.2pp | -8.0pp | 0.0% | 73.9% | 0.4% | OK |
-| mage · 3 Power-Ups · Gear marginal | Paired no-Gear baseline | 56.6% | 18.9s | 5.61 | 2.76 | 53.7% | 2.9pp | -10.9pp | 0.0% | 60.6% | 0.5% | FLAG_EQUIPMENT_POWERUP_INTERACTION |
-| brawler · 5 Power-Ups · Gear marginal | Paired no-Gear baseline | 61.4% | 14.3s | 10.71 | 5.67 | 53.2% | 8.2pp | -6.0pp | 0.0% | 53.8% | 0.0% | FLAG_EQUIPMENT_MARGINAL |
-| longshot · 5 Power-Ups · Gear marginal | Paired no-Gear baseline | 36.8% | 18.6s | 9.05 | 4.34 | 34.3% | 2.5pp | -8.7pp | 0.0% | 64.0% | 0.1% | OK |
-| mage · 5 Power-Ups · Gear marginal | Paired no-Gear baseline | 64.3% | 19.0s | 9.40 | 4.58 | 62.7% | 1.6pp | -12.2pp | 0.0% | 56.5% | 0.1% | FLAG_EQUIPMENT_POWERUP_INTERACTION |
+| Target | Opponent | Win rate | Avg duration | Power-Up triggers | Target PU | Baseline | Swing | Interaction | Timeouts | Stalled | Close | Blowouts | Verdict |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| Equipment sampling coverage | 9 unique modifier vectors | 50.0% | 0.0s | 0.00 | 0.00 | 0.0% | 0.0pp | — | 0.0% | 0.0% | 0.0% | 0.0% | OK |
+| brawler · 0 Power-Ups | Equal equipment + progression field | 51.1% | 16.0s | 0.00 | 0.00 | 0.0% | 0.0pp | — | 0.0% | 0.0% | 82.0% | 0.0% | OK |
+| longshot · 0 Power-Ups | Equal equipment + progression field | 46.8% | 19.6s | 0.00 | 0.00 | 0.0% | 0.0pp | — | 66.7% | 0.8% | 81.9% | 0.0% | OK |
+| mage · 0 Power-Ups | Equal equipment + progression field | 51.5% | 19.4s | 0.00 | 0.00 | 0.0% | 0.0pp | — | 38.4% | 0.0% | 99.9% | 0.0% | OK |
+| brawler · 3 Power-Ups | Equal equipment + progression field | 48.0% | 14.2s | 6.85 | 3.52 | 0.0% | 0.0pp | — | 0.0% | 0.0% | 66.6% | 0.0% | OK |
+| longshot · 3 Power-Ups | Equal equipment + progression field | 48.3% | 18.3s | 6.25 | 3.15 | 0.0% | 0.0pp | — | 65.7% | 3.0% | 70.2% | 0.0% | OK |
+| mage · 3 Power-Ups | Equal equipment + progression field | 53.8% | 18.9s | 5.72 | 2.74 | 0.0% | 0.0pp | — | 54.0% | 0.0% | 62.6% | 0.0% | OK |
+| brawler · 5 Power-Ups | Equal equipment + progression field | 49.4% | 13.9s | 11.16 | 5.83 | 0.0% | 0.0pp | — | 0.0% | 0.0% | 68.5% | 0.0% | OK |
+| longshot · 5 Power-Ups | Equal equipment + progression field | 47.7% | 18.1s | 10.21 | 5.04 | 0.0% | 0.0pp | — | 66.2% | 0.4% | 72.7% | 0.0% | OK |
+| mage · 5 Power-Ups | Equal equipment + progression field | 52.7% | 18.8s | 9.64 | 4.63 | 0.0% | 0.0pp | — | 53.6% | 0.0% | 62.3% | 0.0% | OK |
+| brawler · 0 Power-Ups | brawler · equal equipment | 50.0% | 10.6s | 0.00 | 0.00 | 50.0% | 0.0pp | — | 0.0% | 0.0% | 100.0% | 0.0% | OK |
+| brawler · 0 Power-Ups | longshot · equal equipment | 45.9% | 18.8s | 0.00 | 0.00 | 42.4% | 3.5pp | — | 0.0% | 0.0% | 46.0% | 0.0% | OK |
+| brawler · 0 Power-Ups | mage · equal equipment | 57.3% | 18.6s | 0.00 | 0.00 | 57.3% | 0.0pp | — | 0.0% | 0.0% | 100.0% | 0.0% | OK |
+| longshot · 0 Power-Ups | brawler · equal equipment | 54.2% | 18.8s | 0.00 | 0.00 | 58.2% | -3.9pp | — | 0.0% | 0.0% | 45.7% | 0.0% | OK |
+| longshot · 0 Power-Ups | longshot · equal equipment | 49.3% | 20.0s | 0.00 | 0.00 | 49.3% | 0.0pp | — | 100.0% | 2.5% | 100.0% | 0.0% | OK |
+| longshot · 0 Power-Ups | mage · equal equipment | 36.7% | 20.0s | 0.00 | 0.00 | 36.7% | 0.0pp | — | 100.0% | 0.0% | 100.0% | 0.0% | OK |
+| mage · 0 Power-Ups | brawler · equal equipment | 41.0% | 18.6s | 0.00 | 0.00 | 41.0% | 0.0pp | — | 0.0% | 0.0% | 100.0% | 0.0% | OK |
+| mage · 0 Power-Ups | longshot · equal equipment | 64.3% | 20.0s | 0.00 | 0.00 | 64.3% | 0.0pp | — | 100.0% | 0.0% | 100.0% | 0.0% | OK |
+| mage · 0 Power-Ups | mage · equal equipment | 49.3% | 19.6s | 0.00 | 0.00 | 49.3% | 0.0pp | — | 15.2% | 0.0% | 99.6% | 0.0% | OK |
+| brawler · 3 Power-Ups | brawler · equal equipment | 49.4% | 10.7s | 7.66 | 3.83 | 49.6% | -0.2pp | — | 0.0% | 0.0% | 96.6% | 0.0% | OK |
+| brawler · 3 Power-Ups | longshot · equal equipment | 40.4% | 14.9s | 6.70 | 3.47 | 39.7% | 0.7pp | — | 0.0% | 0.0% | 62.2% | 0.0% | OK |
+| brawler · 3 Power-Ups | mage · equal equipment | 54.3% | 17.1s | 6.20 | 3.27 | 54.2% | 0.1pp | — | 0.0% | 0.0% | 41.0% | 0.0% | OK |
+| longshot · 3 Power-Ups | brawler · equal equipment | 59.7% | 14.9s | 6.70 | 3.24 | 60.3% | -0.5pp | — | 0.0% | 0.0% | 61.9% | 0.0% | OK |
+| longshot · 3 Power-Ups | longshot · equal equipment | 50.6% | 20.0s | 6.44 | 3.22 | 50.6% | 0.0pp | — | 100.0% | 9.1% | 100.0% | 0.0% | OK |
+| longshot · 3 Power-Ups | mage · equal equipment | 34.5% | 19.9s | 5.62 | 3.01 | 34.5% | 0.0pp | — | 97.2% | 0.0% | 48.6% | 0.0% | OK |
+| mage · 3 Power-Ups | brawler · equal equipment | 46.1% | 17.1s | 6.20 | 2.93 | 46.3% | -0.1pp | — | 0.1% | 0.0% | 41.6% | 0.0% | OK |
+| mage · 3 Power-Ups | longshot · equal equipment | 65.1% | 19.9s | 5.62 | 2.62 | 65.1% | 0.0pp | — | 97.3% | 0.0% | 49.0% | 0.0% | OK |
+| mage · 3 Power-Ups | mage · equal equipment | 50.2% | 19.6s | 5.33 | 2.66 | 50.2% | 0.0pp | — | 64.5% | 0.0% | 97.1% | 0.0% | OK |
+| brawler · 5 Power-Ups | brawler · equal equipment | 50.2% | 10.2s | 12.01 | 6.00 | 49.7% | 0.5pp | — | 0.0% | 0.0% | 98.6% | 0.0% | OK |
+| brawler · 5 Power-Ups | longshot · equal equipment | 39.1% | 14.5s | 11.14 | 5.93 | 37.5% | 1.5pp | — | 0.0% | 0.0% | 65.8% | 0.0% | OK |
+| brawler · 5 Power-Ups | mage · equal equipment | 59.0% | 16.8s | 10.32 | 5.56 | 58.5% | 0.5pp | — | 0.0% | 0.0% | 41.2% | 0.0% | OK |
+| longshot · 5 Power-Ups | brawler · equal equipment | 61.2% | 14.5s | 11.13 | 5.20 | 63.2% | -2.0pp | — | 0.0% | 0.0% | 66.2% | 0.0% | OK |
+| longshot · 5 Power-Ups | longshot · equal equipment | 48.7% | 20.0s | 9.82 | 4.91 | 48.7% | 0.0pp | — | 100.0% | 1.2% | 100.0% | 0.0% | OK |
+| longshot · 5 Power-Ups | mage · equal equipment | 33.2% | 19.9s | 9.67 | 5.01 | 33.2% | 0.0pp | — | 98.6% | 0.0% | 51.8% | 0.0% | OK |
+| mage · 5 Power-Ups | brawler · equal equipment | 41.2% | 16.9s | 10.33 | 4.77 | 41.7% | -0.6pp | — | 0.0% | 0.0% | 40.1% | 0.0% | OK |
+| mage · 5 Power-Ups | longshot · equal equipment | 66.7% | 19.9s | 9.65 | 4.65 | 66.7% | 0.0pp | — | 98.7% | 0.0% | 52.0% | 0.0% | OK |
+| mage · 5 Power-Ups | mage · equal equipment | 50.1% | 19.6s | 8.93 | 4.46 | 50.1% | 0.0pp | — | 62.1% | 0.0% | 94.8% | 0.0% | OK |
+| brawler · 0 Power-Ups · Gear marginal | Paired no-Gear baseline | 63.6% | 15.9s | 0.00 | 0.00 | 49.9% | 13.7pp | — | 0.0% | 0.0% | 83.5% | 0.0% | OK |
+| longshot · 0 Power-Ups · Gear marginal | Paired no-Gear baseline | 55.6% | 19.6s | 0.00 | 0.00 | 48.1% | 7.5pp | — | 66.7% | 1.7% | 80.6% | 0.0% | OK |
+| mage · 0 Power-Ups · Gear marginal | Paired no-Gear baseline | 66.1% | 19.5s | 0.00 | 0.00 | 51.5% | 14.6pp | — | 40.3% | 0.0% | 99.9% | 0.0% | OK |
+| brawler · 3 Power-Ups · Gear marginal | Paired no-Gear baseline | 55.6% | 14.1s | 6.82 | 3.52 | 47.8% | 7.8pp | -5.9pp | 0.0% | 0.0% | 65.4% | 0.0% | OK |
+| longshot · 3 Power-Ups · Gear marginal | Paired no-Gear baseline | 52.8% | 18.3s | 6.26 | 3.15 | 48.5% | 4.4pp | -3.1pp | 65.7% | 3.0% | 69.6% | 0.0% | OK |
+| mage · 3 Power-Ups · Gear marginal | Paired no-Gear baseline | 60.3% | 18.9s | 5.71 | 2.73 | 53.9% | 6.4pp | -8.2pp | 54.3% | 0.0% | 62.9% | 0.0% | OK |
+| brawler · 5 Power-Ups · Gear marginal | Paired no-Gear baseline | 61.4% | 13.7s | 11.11 | 5.83 | 48.6% | 12.9pp | -0.8pp | 0.1% | 0.0% | 67.9% | 0.0% | OK |
+| longshot · 5 Power-Ups · Gear marginal | Paired no-Gear baseline | 52.1% | 18.1s | 10.20 | 5.04 | 48.3% | 3.8pp | -3.8pp | 66.2% | 0.5% | 71.8% | 0.0% | OK |
+| mage · 5 Power-Ups · Gear marginal | Paired no-Gear baseline | 59.2% | 18.8s | 9.63 | 4.62 | 52.9% | 6.3pp | -8.2pp | 53.2% | 0.0% | 62.5% | 0.0% | OK |
 
 ## Hard flags
 
-- brawler · 0 Power-Ups vs Equal equipment + progression field: FLAG_EQUIPMENT_FIELD (62.2%, 15.9s avg)
-- longshot · 0 Power-Ups vs Equal equipment + progression field: FLAG_EQUIPMENT_FIELD (35.6%, 19.6s avg)
-- brawler · 3 Power-Ups vs Equal equipment + progression field: FLAG_EQUIPMENT_FIELD (60.4%, 14.6s avg)
-- longshot · 3 Power-Ups vs Equal equipment + progression field: FLAG_EQUIPMENT_FIELD (37.8%, 18.8s avg)
-- longshot · 5 Power-Ups vs Equal equipment + progression field: FLAG_EQUIPMENT_FIELD (33.5%, 18.5s avg)
-- mage · 5 Power-Ups vs Equal equipment + progression field: FLAG_EQUIPMENT_FIELD (60.6%, 19.0s avg)
-- brawler · 0 Power-Ups vs mage · equal equipment: FLAG_EQUIPMENT_MATCHUP+FLAG_EQUIPMENT_COUNTER (87.8%, 18.4s avg)
-- longshot · 0 Power-Ups vs mage · equal equipment: FLAG_EQUIPMENT_MATCHUP (6.1%, 20.0s avg)
-- mage · 0 Power-Ups vs brawler · equal equipment: FLAG_EQUIPMENT_MATCHUP (12.0%, 18.4s avg)
-- mage · 0 Power-Ups vs longshot · equal equipment: FLAG_EQUIPMENT_MATCHUP+FLAG_EQUIPMENT_COUNTER (94.2%, 20.0s avg)
-- brawler · 3 Power-Ups vs longshot · equal equipment: FLAG_EQUIPMENT_MATCHUP (74.6%, 16.4s avg)
-- longshot · 3 Power-Ups vs brawler · equal equipment: FLAG_EQUIPMENT_MATCHUP+FLAG_EQUIPMENT_COUNTER (25.3%, 16.4s avg)
-- brawler · 5 Power-Ups vs longshot · equal equipment: FLAG_EQUIPMENT_MATCHUP (89.5%, 15.6s avg)
-- brawler · 5 Power-Ups vs mage · equal equipment: FLAG_EQUIPMENT_MATCHUP+FLAG_EQUIPMENT_COUNTER (28.3%, 17.6s avg)
-- longshot · 5 Power-Ups vs brawler · equal equipment: FLAG_EQUIPMENT_MATCHUP+FLAG_EQUIPMENT_COUNTER (10.8%, 15.6s avg)
-- mage · 5 Power-Ups vs brawler · equal equipment: FLAG_EQUIPMENT_MATCHUP (71.7%, 17.6s avg)
-- brawler · 0 Power-Ups · Gear marginal vs Paired no-Gear baseline: FLAG_EQUIPMENT_MARGINAL (64.2%, 15.9s avg)
-- longshot · 0 Power-Ups · Gear marginal vs Paired no-Gear baseline: FLAG_EQUIPMENT_MARGINAL (59.5%, 19.6s avg)
-- mage · 0 Power-Ups · Gear marginal vs Paired no-Gear baseline: FLAG_EQUIPMENT_MARGINAL (65.0%, 19.5s avg)
-- brawler · 3 Power-Ups · Gear marginal vs Paired no-Gear baseline: FLAG_EQUIPMENT_MARGINAL (65.4%, 14.5s avg)
-- mage · 3 Power-Ups · Gear marginal vs Paired no-Gear baseline: FLAG_EQUIPMENT_POWERUP_INTERACTION (56.6%, 18.9s avg)
-- brawler · 5 Power-Ups · Gear marginal vs Paired no-Gear baseline: FLAG_EQUIPMENT_MARGINAL (61.4%, 14.3s avg)
-- mage · 5 Power-Ups · Gear marginal vs Paired no-Gear baseline: FLAG_EQUIPMENT_POWERUP_INTERACTION (64.3%, 19.0s avg)
+No balance flags from current thresholds.
 
 ## Watches
 

@@ -290,6 +290,10 @@ test('the shipped Scribbit v1 to v2 migration has frozen byte output', () => {
     '"schemaVersion":3',
     '"schemaVersion":4'
   );
+  const expectedV5Bytes = expectedV4Bytes.replace(
+    '"schemaVersion":4',
+    '"schemaVersion":5'
+  );
 
   assert.equal(
     JSON.stringify(
@@ -309,6 +313,12 @@ test('the shipped Scribbit v1 to v2 migration has frozen byte output', () => {
     ),
     expectedV4Bytes
   );
+  assert.equal(
+    JSON.stringify(
+      scribbitStore.migrateScribbitV4ToV5(JSON.parse(expectedV4Bytes))
+    ),
+    expectedV5Bytes
+  );
   const fullyMigrated = scribbitStore.parseStoredScribbit(deployedV1Bytes);
   assert.equal(fullyMigrated.status, 'valid');
   assert.equal(fullyMigrated.sourceVersion, 1);
@@ -320,7 +330,7 @@ test('the shipped Scribbit v1 to v2 migration has frozen byte output', () => {
   ]);
   assert.equal(
     scribbitStore.serializeScribbit(fullyMigrated.value),
-    expectedV4Bytes
+    expectedV5Bytes
   );
 });
 
@@ -379,9 +389,35 @@ test('Scribbit v3 migration removes copied reusable Gear ranks', () => {
   const currentRecord = JSON.parse(
     scribbitStore.serializeScribbit(migrated.value)
   );
-  assert.equal(currentRecord.schemaVersion, 4);
+  assert.equal(currentRecord.schemaVersion, 5);
   assert.deepEqual(currentRecord.gearRanks, {});
   assert.deepEqual(currentRecord.equipmentLoadout.weapon, ['tiny-sword', null]);
+});
+
+test('Scribbit v4 migration moves the Rumble Belt out of weapon slots', () => {
+  const scribbit = createExampleScribbit('rumble-belt-v4-scribbit');
+  const versionFourRecord = {
+    ...JSON.parse(scribbitStore.serializeScribbit(scribbit)),
+    schemaVersion: 4,
+    equipmentLoadout: {
+      weapon: ['inkquake-rumble-belt', null],
+      armor: [null, null],
+      shoes: [null, null],
+      accessory: [null, null],
+    },
+  };
+
+  const migrated = scribbitStore.parseStoredScribbit(
+    JSON.stringify(versionFourRecord)
+  );
+  assert.equal(migrated.status, 'valid');
+  assert.equal(migrated.sourceVersion, 4);
+  assert.equal(migrated.migrated, true);
+  assert.deepEqual(migrated.value.equipmentLoadout.weapon, [null, null]);
+  assert.deepEqual(migrated.value.equipmentLoadout.accessory, [
+    'inkquake-rumble-belt',
+    null,
+  ]);
 });
 
 test('the frozen Scribbit v0 migration composes through a simulated v2 update', () => {

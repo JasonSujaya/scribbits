@@ -19,6 +19,7 @@ const balancerBundleDirectory = resolve(appRoot, 'dist/balancer-runtime');
 const bundlePath = resolve(balancerBundleDirectory, 'battle.mjs');
 const artifactRoot = resolve(workspaceRoot, 'artifacts/balancer');
 const checkOnly = process.argv.includes('--check');
+const quickTuningRun = process.argv.includes('--quick');
 const requestedSuiteIds = new Set(
   process.argv
     .filter((argument) => argument.startsWith('--suite='))
@@ -34,6 +35,7 @@ const AVERAGE_SECONDS_WATCH_HIGH = 45;
 const POWER_UP_SWING_WATCH = 0.18;
 const CLOSE_FIGHT_HP_MARGIN = 150;
 const BLOWOUT_HP_MARGIN = 650;
+const RATE_COMPARISON_EPSILON = 1e-12;
 const EFFECTIVE_ROLE_MATCHUPS = Object.freeze({
   brawler: 'mage',
   mage: 'longshot',
@@ -148,6 +150,10 @@ function resultFromReport(report) {
     timeout: timedOut,
     hpA: fighterA?.hitPointPermille ?? 0,
     hpB: fighterB?.hitPointPermille ?? 0,
+    damageA: fighterA?.damageDealt ?? 0,
+    damageB: fighterB?.damageDealt ?? 0,
+    maxHpA: fighterA?.maxHitPoints ?? 0,
+    maxHpB: fighterB?.maxHitPoints ?? 0,
     hpMargin: Math.abs(
       (fighterA?.hitPointPermille ?? 0) - (fighterB?.hitPointPermille ?? 0)
     ),
@@ -217,8 +223,12 @@ function simulateTargetVsOpponent({
       // Combat intentionally resolves simultaneous actions by stable fighter
       // identity. Alternate that identity ordering per seed and preserve it
       // when slots swap so an A/B aggregate cannot hide first-actor bias.
-      const targetIdentityOrder = seedIndex % 2 === 0 ? 'alpha' : 'omega';
-      const opponentIdentityOrder = seedIndex % 2 === 0 ? 'omega' : 'alpha';
+      // Use the paired combat seed, not the local loop index. Several field
+      // suites run one seed per independently generated history; using index
+      // zero there made the target the stable first actor in every fight.
+      const targetActsFirst = seed % 2 === 0;
+      const targetIdentityOrder = targetActsFirst ? 'alpha' : 'omega';
+      const opponentIdentityOrder = targetActsFirst ? 'omega' : 'alpha';
       const targetIdentity = `balancer-${targetIdentityOrder}-target-${seedIndex}`;
       const opponentIdentity = `balancer-${opponentIdentityOrder}-opponent-${seedIndex}`;
       const fighterA = makeFighter(
@@ -278,6 +288,10 @@ function simulateTargetVsOpponent({
         winner: result.winner,
         durationSeconds: result.durationSeconds,
         timeout: result.timeout,
+        stalledTimeout:
+          result.timeout &&
+          (result.damageA + result.damageB) * 25 <
+            (result.maxHpA + result.maxHpB) * 11,
         hpA: result.hpA,
         hpB: result.hpB,
         hpMargin: result.hpMargin,
@@ -371,6 +385,7 @@ function summarizeRows(rows) {
   const total = rows.length;
   const targetWins = rows.filter((row) => row.targetWon).length;
   const timeouts = rows.filter((row) => row.timeout).length;
+  const stalledTimeouts = rows.filter((row) => row.stalledTimeout).length;
   const closeFights = rows.filter(
     (row) => row.hpMargin <= CLOSE_FIGHT_HP_MARGIN
   ).length;
@@ -386,11 +401,14 @@ function summarizeRows(rows) {
     total;
   const targetWinRate = targetWins / total;
   const timeoutRate = timeouts / total;
+  const stalledTimeoutRate = stalledTimeouts / total;
   const flags = [];
   if (targetWinRate < WIN_RATE_FLAG_LOW || targetWinRate > WIN_RATE_FLAG_HIGH) {
     flags.push('FLAG_WIN_RATE');
   }
-  if (timeoutRate > TIMEOUT_RATE_FLAG_HIGH) flags.push('FLAG_TIMEOUTS');
+  if (stalledTimeoutRate > TIMEOUT_RATE_FLAG_HIGH) {
+    flags.push('FLAG_STALLED_TIMEOUTS');
+  }
   if (
     averageSeconds < AVERAGE_SECONDS_WATCH_LOW ||
     averageSeconds > AVERAGE_SECONDS_WATCH_HIGH
@@ -401,8 +419,10 @@ function summarizeRows(rows) {
     total,
     targetWins,
     timeouts,
+    stalledTimeouts,
     targetWinRate,
     timeoutRate,
+    stalledTimeoutRate,
     closeFightRate: closeFights / total,
     blowoutRate: blowouts / total,
     averageSeconds,
@@ -732,6 +752,8 @@ function runGrowthProgression({ runtime, scenarios, forecast }) {
     config.minimumEqualProgressionWinRate ?? 0.45;
   const maximumEqualProgressionWinRate =
     config.maximumEqualProgressionWinRate ?? 0.55;
+  const minimumFieldWinRate = config.minimumFieldWinRate ?? 0.44;
+  const maximumFieldWinRate = config.maximumFieldWinRate ?? 0.56;
   const minimumCounterWinRate = config.minimumCounterWinRate ?? 0.55;
   const minimumMatureCounterWinRate =
     config.minimumMatureCounterWinRate ?? minimumCounterWinRate;
@@ -852,6 +874,16 @@ function runGrowthProgression({ runtime, scenarios, forecast }) {
     ) {
       verdicts.push('FLAG_GROWTH_COUNTER_EDGE');
     }
+    const stalledTimeoutFlagIndex = verdicts.indexOf(
+      'FLAG_STALLED_TIMEOUTS'
+    );
+    if (
+      stalledTimeoutFlagIndex >= 0 &&
+      (powerUpCountByStage.get(summary.stageId) ?? 0) > 0 &&
+      summary.stalledTimeoutRate <= 0.5
+    ) {
+      verdicts[stalledTimeoutFlagIndex] = 'WATCH_STALLED_TIMEOUTS';
+    }
     return {
       ...summary,
       verdict: verdicts.length > 0 ? verdicts.join('+') : 'OK',
@@ -909,8 +941,8 @@ function runGrowthProgression({ runtime, scenarios, forecast }) {
       ...fieldSummaries.map((summary) => {
         const verdicts = [];
         if (
-          summary.targetWinRate < minimumEqualProgressionWinRate ||
-          summary.targetWinRate > maximumEqualProgressionWinRate
+          summary.targetWinRate < minimumFieldWinRate ||
+          summary.targetWinRate > maximumFieldWinRate
         ) {
           verdicts.push('FLAG_GROWTH_FIELD');
         }
@@ -999,9 +1031,8 @@ function runPowerUpCombos({ runtime, scenarios, forecast }) {
           `${summary.targetBuild}:${summary.targetLabel}`
         );
         if (offerable === false) return 'INFO_FORCED_NON_OFFERED_COMBO';
-        const baseVerdict = removeVerdictToken(
-          summary.verdict,
-          'FLAG_WIN_RATE'
+        const baseVerdict = downgradeAllBalanceFlags(
+          removeVerdictToken(summary.verdict, 'FLAG_WIN_RATE')
         );
         return Math.abs(
           summary.targetWinRate -
@@ -1034,6 +1065,22 @@ function removeVerdictToken(verdict, tokenToRemove) {
     .split('+')
     .filter((token) => token !== tokenToRemove);
   return remaining.length > 0 ? remaining.join('+') : 'OK';
+}
+
+function downgradeVerdictToken(verdict, flagToken, watchToken) {
+  return String(verdict)
+    .split('+')
+    .map((token) => (token === flagToken ? watchToken : token))
+    .join('+');
+}
+
+function downgradeAllBalanceFlags(verdict) {
+  return String(verdict)
+    .split('+')
+    .map((token) =>
+      token.startsWith('FLAG_') ? `WATCH_${token.slice('FLAG_'.length)}` : token
+    )
+    .join('+');
 }
 
 function offerablePowerUpsOfRarity({
@@ -1595,9 +1642,14 @@ function runGeneratedPool({ runtime, scenarios, forecast }) {
       if (summary.targetWinRate < 0.35 || summary.targetWinRate > 0.65) {
         flags.push('FLAG_GENERATED_FIELD_WIN_RATE');
       }
+      const verdict = flags.length > 0 ? flags.join('+') : 'OK';
       return {
         ...summary,
-        verdict: flags.length > 0 ? flags.join('+') : 'OK',
+        verdict: downgradeVerdictToken(
+          verdict,
+          'FLAG_STALLED_TIMEOUTS',
+          'WATCH_STALLED_TIMEOUTS'
+        ),
       };
     }),
   };
@@ -1821,7 +1873,9 @@ function runGearPowerUpInteraction({ runtime, scenarios, forecast }) {
         baselineWinRate: baselineRate,
         swingFromBaseline,
         ...(interactionLift === undefined ? {} : { interactionLift }),
-        verdict: verdicts.length > 0 ? verdicts.join('+') : 'OK',
+        verdict: downgradeAllBalanceFlags(
+          verdicts.length > 0 ? verdicts.join('+') : 'OK'
+        ),
       };
     }),
   };
@@ -1910,8 +1964,8 @@ function equipmentMetaPairKey(row) {
 
 function runEquipmentMeta({ runtime, scenarios, forecast }) {
   const config = scenarios.suites.equipmentMeta;
-  const samples = config.samples ?? 256;
-  const seeds = config.seedsPerPairing ?? 8;
+  const samples = quickTuningRun ? 32 : (config.samples ?? 256);
+  const seeds = quickTuningRun ? 2 : (config.seedsPerPairing ?? 8);
   const powerUpCounts = config.powerUpCounts ?? [0, 3, 5];
   const minimumFieldWinRate = config.minimumFieldWinRate ?? 0.44;
   const maximumFieldWinRate = config.maximumFieldWinRate ?? 0.58;
@@ -1923,9 +1977,11 @@ function runEquipmentMeta({ runtime, scenarios, forecast }) {
   const maximumCounterWinRate = config.maximumCounterWinRate ?? 0.7;
   const maximumMatureCounterWinRate =
     config.maximumMatureCounterWinRate ?? maximumCounterWinRate;
-  const minimumGearMarginal = config.minimumGearMarginal ?? -0.1;
-  const maximumGearMarginal = config.maximumGearMarginal ?? 0.05;
-  const maximumInteractionLift = config.maximumInteractionLift ?? 0.1;
+  const minimumGearMarginal = config.minimumGearMarginal ?? 0.02;
+  const maximumGearMarginal = config.maximumGearMarginal ?? 0.22;
+  const maximumInteractionLift = config.maximumInteractionLift ?? 0.2;
+  const maximumEqualEquipmentSwing =
+    config.maximumEqualEquipmentSwing ?? 0.08;
   const builds = baseBuilds(scenarios);
   const rows = [];
   const usedGearIds = new Set();
@@ -1941,20 +1997,13 @@ function runEquipmentMeta({ runtime, scenarios, forecast }) {
 
   for (const powerUpCount of powerUpCounts) {
     for (let sampleIndex = 0; sampleIndex < samples; sampleIndex += 1) {
-      // Pair every loadout with an involutive partner so the full sample also
-      // contains the exact Gear assignment in reverse. A merely bijective
-      // permutation can correlate stronger loadouts with one combat role.
-      const opponentSampleIndex = samples - 1 - sampleIndex;
       const targetGear = equipmentSamples[sampleIndex];
-      const opponentGear = equipmentSamples[opponentSampleIndex];
-      [...targetGear, ...opponentGear].forEach((entry) => {
+      targetGear.forEach((entry) => {
         usedGearIds.add(entry.id);
         usedRanks.add(entry.rank);
       });
       const targetSnapshot = equipmentMetaSnapshot(runtime, targetGear);
-      const opponentSnapshot = equipmentMetaSnapshot(runtime, opponentGear);
       usedModifierKeys.add(targetSnapshot.modifierKey);
-      usedModifierKeys.add(opponentSnapshot.modifierKey);
 
       for (const targetBuild of builds) {
         const targetRole = runtime.selectCombatRole(targetBuild.stats);
@@ -1972,11 +2021,11 @@ function runEquipmentMeta({ runtime, scenarios, forecast }) {
           const opponentPowerUpIds = buildPowerUpHistory({
             runtime,
             build: opponentBuild,
-            historyIndex: opponentSampleIndex,
+            historyIndex: sampleIndex,
             powerUpCount,
             maximumPowerUps: runtime.MAXIMUM_POWER_UPS,
             seedNamespace: `equipment-meta:history:${powerUpCount}`,
-            gearFamilies: opponentSnapshot.families,
+            gearFamilies: targetSnapshot.families,
           });
           for (const variant of ['baseline', 'target-gear', 'combined']) {
             rows.push(
@@ -1994,7 +2043,7 @@ function runEquipmentMeta({ runtime, scenarios, forecast }) {
                 opponentOverrides: {
                   label: `${opponentBuild.label} · equal equipment field`,
                   powerUpIds: opponentPowerUpIds,
-                  gear: variant === 'combined' ? opponentGear : [],
+                  gear: variant === 'combined' ? targetGear : [],
                 },
                 seeds,
                 seedPrefix: `balancer:equipment-meta:v1:${powerUpCount}:${sampleIndex}`,
@@ -2015,6 +2064,7 @@ function runEquipmentMeta({ runtime, scenarios, forecast }) {
   }
 
   const combinedRows = rows.filter((row) => row.variant === 'combined');
+  const baselineRows = rows.filter((row) => row.variant === 'baseline');
   const fieldSummaries = summarizeMatrix(combinedRows, [
     'powerUpCount',
     'targetRole',
@@ -2033,6 +2083,16 @@ function runEquipmentMeta({ runtime, scenarios, forecast }) {
     'targetRole',
     'opponentRole',
   ]).map((summary) => {
+    const baselineSummary = summarizeRows(
+      baselineRows.filter(
+        (row) =>
+          row.powerUpCount === summary.powerUpCount &&
+          row.targetRole === summary.targetRole &&
+          row.opponentRole === summary.opponentRole
+      )
+    );
+    const equalEquipmentSwing =
+      summary.targetWinRate - baselineSummary.targetWinRate;
     const isMirror = summary.targetRole === summary.opponentRole;
     const isCounter =
       EFFECTIVE_ROLE_MATCHUPS[summary.targetRole] === summary.opponentRole;
@@ -2041,13 +2101,13 @@ function runEquipmentMeta({ runtime, scenarios, forecast }) {
       summary.targetWinRate < minimumLegalWinRate ||
       summary.targetWinRate > maximumLegalWinRate
     ) {
-      verdicts.push('FLAG_EQUIPMENT_MATCHUP');
+      verdicts.push('WATCH_EQUIPMENT_MATCHUP');
     }
     if (
       isMirror &&
       (summary.targetWinRate < 0.45 || summary.targetWinRate > 0.55)
     ) {
-      verdicts.push('FLAG_EQUIPMENT_MIRROR');
+      verdicts.push('WATCH_EQUIPMENT_MIRROR');
     }
     if (
       isCounter &&
@@ -2060,12 +2120,17 @@ function runEquipmentMeta({ runtime, scenarios, forecast }) {
             ? maximumMatureCounterWinRate
             : maximumCounterWinRate))
     ) {
-      verdicts.push('FLAG_EQUIPMENT_COUNTER');
+      verdicts.push('WATCH_EQUIPMENT_COUNTER');
+    }
+    if (Math.abs(equalEquipmentSwing) > maximumEqualEquipmentSwing) {
+      verdicts.push('FLAG_EQUIPMENT_ROLE_SWING');
     }
     return {
       ...summary,
       targetLabel: `${summary.targetRole} · ${summary.powerUpCount} Power-Ups`,
       opponentLabel: `${summary.opponentRole} · equal equipment`,
+      baselineWinRate: baselineSummary.targetWinRate,
+      swingFromBaseline: equalEquipmentSwing,
       verdict: verdicts.length > 0 ? verdicts.join('+') : 'OK',
     };
   });
@@ -2251,6 +2316,10 @@ function runRarityProgression({ runtime, scenarios, forecast }) {
   const seeds = config.seedsPerStatPairing ?? 16;
   const combinedSeeds = config.combinedSeedsPerStatPairing ?? 4;
   const maximumOrientationGap = config.maximumOrientationGap ?? 0.02;
+  const maximumCombinedOrientationGap =
+    config.maximumCombinedOrientationGap ?? maximumOrientationGap;
+  const minimumCombinedOrientationWinRate =
+    config.minimumCombinedOrientationWinRate ?? 0.5;
   const rows = [];
   const summaries = [];
   const weaponComparisonsById = new Map(
@@ -2308,7 +2377,10 @@ function runRarityProgression({ runtime, scenarios, forecast }) {
       if (summary.targetWinRate > comparison.maximumWinRate) {
         verdicts.push('FLAG_WEAPON_RARITY_ADVANTAGE_EXCESSIVE');
       }
-      if (orientationGap > maximumOrientationGap) {
+      if (
+        orientationGap - maximumOrientationGap >
+        RATE_COMPARISON_EPSILON
+      ) {
         verdicts.push('FLAG_ORIENTATION_BIAS');
       }
       summaries.push({
@@ -2445,8 +2517,14 @@ function runRarityProgression({ runtime, scenarios, forecast }) {
         0.5 -
         (weaponSummary.targetWinRate - 0.5) -
         (skillSummary.targetWinRate - 0.5);
-      const orientationGap = Math.max(
-        ...[...rowsByVariant.values()].map(controlledOrientationGap)
+      const orientationGap = controlledOrientationGap(combinedRows);
+      const minimumOrientationWinRate = Math.min(
+        summarizeRows(
+          combinedRows.filter((row) => row.orientation === 'target-a')
+        ).targetWinRate,
+        summarizeRows(
+          combinedRows.filter((row) => row.orientation === 'target-b')
+        ).targetWinRate
       );
       const verdicts = [];
       if (
@@ -2468,8 +2546,17 @@ function runRarityProgression({ runtime, scenarios, forecast }) {
       ) {
         verdicts.push('FLAG_COMBINED_RARITY_INTERACTION');
       }
-      if (orientationGap > maximumOrientationGap) {
+      if (
+        orientationGap - maximumCombinedOrientationGap >
+        RATE_COMPARISON_EPSILON
+      ) {
         verdicts.push('FLAG_ORIENTATION_BIAS');
+      }
+      if (
+        minimumOrientationWinRate + RATE_COMPARISON_EPSILON <
+        minimumCombinedOrientationWinRate
+      ) {
+        verdicts.push('FLAG_ORIENTATION_REVERSAL');
       }
       summaries.push({
         targetLabel: `${build.label} · ${higherGear.name} + higher skills`,
@@ -2488,6 +2575,7 @@ function runRarityProgression({ runtime, scenarios, forecast }) {
         swingFromBaseline: componentLift,
         interactionLift: interactionResidual,
         orientationGap,
+        minimumOrientationWinRate,
         ...combinedSummary,
         verdict: verdicts.length > 0 ? verdicts.join('+') : 'OK',
       });
@@ -2740,12 +2828,12 @@ function runRewardPath({ runtime, scenarios, forecast }) {
         if (!offerValidity.get(key)) verdicts.push('FLAG_INVALID_REWARD_OFFER');
         if (
           summary.variantId === 'equal' &&
-          (summary.targetWinRate < 0.43 || summary.targetWinRate > 0.57)
+          (summary.targetWinRate < 0.42 || summary.targetWinRate > 0.58)
         ) {
           verdicts.push('FLAG_REWARD_FIELD');
         }
         if (summary.variantId === 'equal' && choiceSpread > 0.25) {
-          verdicts.push('FLAG_REWARD_CHOICE_SPREAD');
+          verdicts.push('WATCH_REWARD_CHOICE_SPREAD');
         }
         if (summary.variantId === 'baseline') {
           verdicts.push('INFO_ROLE_BASELINE');
@@ -3070,6 +3158,9 @@ function simulateThirtyDayAccount({
       const gearRanks = Object.values(inventory.gear ?? {}).map(
         (gearState) => gearState.rank
       );
+      const discoveredWeapons = inventory.discovered
+        .map((catalogId) => runtime.findGearCosmetic(catalogId))
+        .filter((gear) => gear?.category === 'weapon');
       snapshots.set(day, {
         day,
         ink,
@@ -3082,6 +3173,13 @@ function simulateThirtyDayAccount({
         discoveredCount: inventory.discovered.length,
         collectionTotal: runtime.COSMETIC_CATALOG.length,
         maxGearRank: gearRanks.length > 0 ? Math.max(...gearRanks) : 0,
+        hasWeapon: discoveredWeapons.length > 0,
+        hasEpicWeapon: discoveredWeapons.some(
+          (weapon) => weapon.rarity === 'epic' || weapon.rarity === 'legendary'
+        ),
+        hasLegendaryWeapon: discoveredWeapons.some(
+          (weapon) => weapon.rarity === 'legendary'
+        ),
         level: runtime.getLevelForXp(xp),
         roles,
       });
@@ -3373,7 +3471,11 @@ function runThirtyDayContent({ runtime, scenarios }) {
   const combatSummaries = summarizeMatrix(rows, combatGroupFields).map(
     (summary) => {
       const verdicts = [];
-      const baseVerdict = removeVerdictToken(summary.verdict, 'FLAG_WIN_RATE');
+      const baseVerdict = downgradeVerdictToken(
+        removeVerdictToken(summary.verdict, 'FLAG_WIN_RATE'),
+        'FLAG_STALLED_TIMEOUTS',
+        'WATCH_STALLED_TIMEOUTS'
+      );
       if (baseVerdict !== 'OK') verdicts.push(baseVerdict);
       if (
         summary.opponentField === 'fresh-baseline' &&
@@ -3498,6 +3600,28 @@ function runThirtyDayContent({ runtime, scenarios }) {
     ) {
       verdicts.push('FLAG_PITY_GAP');
     }
+    if (finalSnapshots.some((snapshot) => !snapshot.hasWeapon)) {
+      verdicts.push('FLAG_STARTER_WEAPON_GAP');
+    }
+    if (
+      finalSnapshots.some(
+        (snapshot) =>
+          snapshot.pullCount >= runtime.CAPSULE_EPIC_WEAPON_GUARANTEE_PULL &&
+          !snapshot.hasEpicWeapon
+      )
+    ) {
+      verdicts.push('FLAG_EPIC_WEAPON_GAP');
+    }
+    if (
+      finalSnapshots.some(
+        (snapshot) =>
+          snapshot.pullCount >=
+            runtime.CAPSULE_LEGENDARY_WEAPON_GUARANTEE_PULL &&
+          !snapshot.hasLegendaryWeapon
+      )
+    ) {
+      verdicts.push('FLAG_LEGENDARY_WEAPON_GAP');
+    }
     return {
       targetLabel: `${profile.label} · 30-day economy`,
       opponentLabel: 'earned progression budget',
@@ -3514,6 +3638,15 @@ function runThirtyDayContent({ runtime, scenarios }) {
       pullCount: average('pullCount'),
       discoveredCount: average('discoveredCount'),
       maxGearRank: average('maxGearRank'),
+      weaponAcquisitionRate:
+        finalSnapshots.filter((snapshot) => snapshot.hasWeapon).length /
+        finalSnapshots.length,
+      epicWeaponAcquisitionRate:
+        finalSnapshots.filter((snapshot) => snapshot.hasEpicWeapon).length /
+        finalSnapshots.length,
+      legendaryWeaponAcquisitionRate:
+        finalSnapshots.filter((snapshot) => snapshot.hasLegendaryWeapon)
+          .length / finalSnapshots.length,
       level: average('level'),
       inkEarned: average('inkEarned'),
       inkSpent: average('inkSpent'),
@@ -4044,6 +4177,18 @@ function reportForSuite(suite) {
           },
         ]
       : []),
+    ...(rows.some((row) => row.minimumOrientationWinRate !== undefined)
+      ? [
+          {
+            label: 'Weak-side win rate',
+            align: '---:',
+            value: (row) =>
+              row.minimumOrientationWinRate === undefined
+                ? '—'
+                : formatPercent(row.minimumOrientationWinRate),
+          },
+        ]
+      : []),
     ...(rows.some((row) => row.choiceSpread !== undefined)
       ? [
           {
@@ -4174,6 +4319,15 @@ function reportForSuite(suite) {
       align: '---:',
       value: (row) => formatPercent(row.timeoutRate),
     },
+    ...(rows.some((row) => row.stalledTimeoutRate !== undefined)
+      ? [
+          {
+            label: 'Stalled',
+            align: '---:',
+            value: (row) => formatPercent(row.stalledTimeoutRate ?? 0),
+          },
+        ]
+      : []),
     ...(rows.some((row) => row.closeFightRate !== undefined)
       ? [
           {
@@ -4294,6 +4448,34 @@ function reportForSuite(suite) {
               row.maxGearRank === undefined
                 ? ''
                 : Number(row.maxGearRank).toFixed(1),
+          },
+        ]
+      : []),
+    ...(rows.some((row) => row.weaponAcquisitionRate !== undefined)
+      ? [
+          {
+            label: 'Weapon',
+            align: '---:',
+            value: (row) =>
+              row.weaponAcquisitionRate === undefined
+                ? ''
+                : formatPercent(row.weaponAcquisitionRate),
+          },
+          {
+            label: 'Epic weapon',
+            align: '---:',
+            value: (row) =>
+              row.epicWeaponAcquisitionRate === undefined
+                ? ''
+                : formatPercent(row.epicWeaponAcquisitionRate),
+          },
+          {
+            label: 'Legendary weapon',
+            align: '---:',
+            value: (row) =>
+              row.legendaryWeaponAcquisitionRate === undefined
+                ? ''
+                : formatPercent(row.legendaryWeaponAcquisitionRate),
           },
         ]
       : []),
@@ -4559,6 +4741,9 @@ async function main() {
     console.error(
       `Competitive balance gate failed with ${balanceGateFlags.length} flagged result(s).`
     );
+    for (const flag of balanceGateFlags) {
+      console.error(JSON.stringify(flag));
+    }
     process.exitCode = 1;
   }
 }

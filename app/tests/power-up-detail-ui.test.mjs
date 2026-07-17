@@ -69,7 +69,7 @@ test('birth offers wait for the only reveal action before opening and recover on
   assert.match(mockSource, /getOrCreateMockBirthPowerUpOffer/);
 });
 
-test('fresh battle offers are mandatory after wins and losses and recover on Home', () => {
+test('persisted battle offers stay mandatory across either result layout and recover on Home', () => {
   assert.match(
     replaySource,
     /private openRequiredPowerUpDraft\([\s\S]{0,1800}pendingPowerUpOffers:[\s\S]{0,240}pendingOffer\.id !== offer\.id/
@@ -80,7 +80,7 @@ test('fresh battle offers are mandatory after wins and losses and recover on Hom
   );
   assert.ok(
     replaySource.match(/openRequiredPowerUpDraft\(mine,/g)?.length >= 2,
-    'the loss result must open and claim the same required draft'
+    'both result layouts must honor the same persisted offer when one exists'
   );
   assert.match(
     postFightActionsSource,
@@ -220,7 +220,7 @@ test('Power-Up guide divides the full catalog across eight focused pages', () =>
   assert.match(detailSource, /'EPIC \+ LEGENDARY'/);
   assert.match(detailSource, /'LONGSHOT TECHNIQUES'/);
   assert.match(detailSource, /'MAGE TECHNIQUES'/);
-  assert.match(detailSource, /'WIN → CHOOSE 1'/);
+  assert.match(detailSource, /'WIN \+ EARN XP → CHOOSE 1'/);
   assert.match(
     detailSource,
     /const guidePages = \[buildPage, \.\.\.catalogPages, earnPage\]/
@@ -237,7 +237,7 @@ test('Power-Up guide divides the full catalog across eight focused pages', () =>
   assert.match(detailSource, /STANDARD WIN/);
   assert.match(detailSource, /CHAMPION WIN/);
   assert.match(detailSource, /3 DISTINCT ROLLS · CARD ORDER SHUFFLED/);
-  assert.match(detailSource, /LOSS = NO POWER-UP/);
+  assert.match(detailSource, /LOSS OR \+0 XP = NO POWER-UP/);
 });
 
 test('catalog renders collectible Power-Up cards and hides undiscovered effects', () => {

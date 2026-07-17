@@ -255,20 +255,20 @@ test('loadout summary presents all six authoritative combat modifiers', () => {
 test('one strongest lead and one support resolve into a bounded category technique', () => {
   const loadout = {
     ...equipment.createEmptyEquipmentLoadout(),
-    weapon: ['tiny-sword', 'inkquake-rumble-belt'],
+    accessory: ['monocle', 'inkquake-rumble-belt'],
   };
   const fighter = makeFighter('lead-support', builds.inkquake, loadout, {
-    'tiny-sword': 3,
+    monocle: 3,
     'inkquake-rumble-belt': 6,
   });
   const resolved = gearCombat.resolveGearCombatLoadout(fighter);
 
   assert.equal(resolved.techniques.length, 1);
   assert.equal(resolved.techniques[0].leadGearId, 'inkquake-rumble-belt');
-  assert.equal(resolved.techniques[0].supportGearId, 'tiny-sword');
+  assert.equal(resolved.techniques[0].supportGearId, 'monocle');
   assert.equal(resolved.techniques[0].effectFamily, 'ready');
-  assert.equal(resolved.techniques[0].supportEffectFamily, 'aim');
-  assert.match(resolved.techniques[0].effect.summary, /TRUE AIM SUPPORT/);
+  assert.equal(resolved.techniques[0].supportEffectFamily, 'focus');
+  assert.match(resolved.techniques[0].effect.summary, /STEADY HANDS SUPPORT/);
   assert.equal(resolved.snapshot.techniques.length, 1);
   assert.ok(resolved.modifiers.damagePermille >= 970);
   assert.ok(resolved.modifiers.initialDelayTicksDelta >= -2);
@@ -277,26 +277,26 @@ test('one strongest lead and one support resolve into a bounded category techniq
 test('mixed-family support contributes its own bounded technique identity', () => {
   const sameFamilyLoadout = {
     ...equipment.createEmptyEquipmentLoadout(),
-    weapon: ['tiny-sword', 'wooden-spoon'],
+    accessory: ['monocle', 'round-glasses'],
   };
   const mixedFamilyLoadout = {
     ...equipment.createEmptyEquipmentLoadout(),
-    weapon: ['tiny-sword', 'inkquake-rumble-belt'],
+    accessory: ['monocle', 'inkquake-rumble-belt'],
   };
   const sameFamily = gearCombat.resolveGearCombatLoadout(
     makeFighter('same-family-support', builds.nib_halo, sameFamilyLoadout, {
-      'tiny-sword': 6,
-      'wooden-spoon': 3,
+      monocle: 6,
+      'round-glasses': 3,
     })
   );
   const mixedFamily = gearCombat.resolveGearCombatLoadout(
     makeFighter('mixed-family-support', builds.nib_halo, mixedFamilyLoadout, {
-      'tiny-sword': 6,
+      monocle: 6,
       'inkquake-rumble-belt': 3,
     })
   );
 
-  assert.equal(sameFamily.techniques[0].supportEffectFamily, 'aim');
+  assert.equal(sameFamily.techniques[0].supportEffectFamily, 'focus');
   assert.equal(mixedFamily.techniques[0].supportEffectFamily, 'ready');
   assert.notDeepEqual(sameFamily.modifiers, mixedFamily.modifiers);
   assert.match(mixedFamily.techniques[0].effect.summary, /QUICK DRAW SUPPORT/);
@@ -534,8 +534,13 @@ test('all six Gear families stay bounded and combat stays deterministic per seed
 
 test('full Red Star builds cover all families and remain bounded against one-star', () => {
   const familyCoveringBuilds = [
-    ['tiny-sword', 'beanie', 'smearstep-speed-scarf', 'flower-crown'],
-    ['inkquake-rumble-belt', 'beanie', 'smearstep-speed-scarf', 'monocle'],
+    ['tiny-sword', 'beanie', 'smearstep-speed-scarf', 'monocle'],
+    [
+      'tiny-sword',
+      'golden-crown',
+      'smearstep-speed-scarf',
+      'inkquake-rumble-belt',
+    ],
   ];
   const makeFullBuild = (id, rank, gearIds) => {
     let loadout = equipment.createEmptyEquipmentLoadout();

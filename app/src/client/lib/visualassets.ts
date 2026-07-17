@@ -13,6 +13,7 @@ export const SCRIBBITS_STAGE_TEXTURE = 'scribbits-stage';
 export const PAPER_STAGE_TEXTURE = SCRIBBITS_STAGE_TEXTURE;
 export const BATTLE_STAGE_TEXTURE = SCRIBBITS_STAGE_TEXTURE;
 export const FIGHT_START_TEXTURE = 'ui-fight-start';
+export const BATTLE_DUMMY_TEXTURE = 'scribbits-battle-dummy';
 export const BRAND_LOGO_TEXTURE = 'scribbits-logo';
 export const DRAW_START_CARD_TEXTURE = 'draw-start-challenge-card';
 export const DRAW_START_CARD_ART_URL = new URL(
@@ -67,6 +68,7 @@ export const UI_BUTTON_TEXTURES = {
 const CORE_VISUAL_TEXTURES = [
   SCRIBBITS_STAGE_TEXTURE,
   BRAND_LOGO_TEXTURE,
+  BATTLE_DUMMY_TEXTURE,
   ...Object.values(UI_BUTTON_TEXTURES),
 ] as const;
 
@@ -97,6 +99,8 @@ const GALLERY_VISUAL_TEXTURES = [
 const DRAW_VISUAL_TEXTURES = [DRAW_START_CARD_TEXTURE] as const;
 
 const VISUAL_ASSET_URLS: Readonly<Record<string, string>> = Object.freeze({
+  'battle-dummy.webp': new URL('../assets/battle-dummy.webp', import.meta.url)
+    .href,
   'draw-start-challenge-card.webp': DRAW_START_CARD_ART_URL,
   'bag-binder-base-shell-v7.webp': new URL(
     '../assets/bag-binder-base-shell-v7.webp',
@@ -248,6 +252,9 @@ export function preloadVisualAssets(scene: Scene): void {
   }
   if (!scene.textures.exists(BRAND_LOGO_TEXTURE)) {
     scene.load.image(BRAND_LOGO_TEXTURE, assetUrl('scribbits-logo.webp'));
+  }
+  if (!scene.textures.exists(BATTLE_DUMMY_TEXTURE)) {
+    scene.load.image(BATTLE_DUMMY_TEXTURE, assetUrl('battle-dummy.webp'));
   }
   Object.entries(UI_BUTTON_TEXTURES).forEach(([kind, texture]) => {
     if (!scene.textures.exists(texture)) {

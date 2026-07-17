@@ -30,7 +30,7 @@ import {
 import { screenTitle } from '../lib/screentitle';
 import { fitDrawing, loadDrawing } from '../lib/scribbits';
 import { planSparRivalCard } from '../lib/sparrivals';
-import { primeBattleSoundtrack } from '../lib/soundtrack';
+import { primeGameSoundtrack } from '../lib/soundtrack';
 import { formatRedditUsername } from '../lib/redditusername';
 import { ROLE_STYLES, TYPE, UI } from '../lib/theme';
 import {
@@ -587,7 +587,7 @@ export class MyBattles extends Scene {
     choice: RivalRunChoice
   ): Promise<void> {
     if (this.busy) return;
-    primeBattleSoundtrack();
+    primeGameSoundtrack();
     this.busy = true;
     if (this.characterSelect) this.characterSelect.disabled = true;
     showToast(

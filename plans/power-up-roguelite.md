@@ -6,8 +6,11 @@ Replace Element and numeric Ink Mods with one readable roguelite layer:
 
 - the drawing chooses the permanent combat Role;
 - birth immediately offers three randomized behavioral Power-Ups and the player chooses one;
-- later wins offer three more behavioral Power-Ups;
-- a Scribbit may own five unique Power-Ups and at most one Legendary;
+- each new level unlocks one more Power-Up slot, for five total at level five;
+- after birth, a win that awards XP may fill one unlocked slot, capped at one
+  new Power-Up per Scribbit per Arena day;
+- a pending three-card choice is stable across refreshes, with at most one
+  Legendary in the finished build;
 - Gear remains the only swappable system that changes damage, hearts,
   cooldown, focus, wind-up, or starting timing.
 
@@ -24,13 +27,16 @@ archived, and never enter the reusable Gear inventory.
 | Champion win                                   |     5% |      20% |  40% |  30% |        5% |
 
 - Losses do not create an offer.
+- A repeat fight that awards zero XP does not create an offer. Spar, Rumble,
+  and Champion share the same one-earned-Power-Up-per-Scribbit daily limit.
 - Each of the three cards rolls its rarity from the source weights, selects a
   distinct role-fit Power-Up, then the completed offer is shuffled so rarity
   never owns a fixed card position.
 - Weights renormalize across available tiers when owned cards or the
   one-Legendary cap make a tier unavailable.
 - Birth offers are generated from the committed Scribbit; later offers are generated from the battle report.
-- Closing or reloading cannot reroll or lose an offer.
+- Closing or reloading cannot reroll, recreate, or lose an offer. A claimed
+  battle report can never mint the same offer again.
 - Choices must be distinct, unowned, compatible, and outside any exclusive
   group already owned.
 - A Scribbit with five Power-Ups receives no further offer in v1.

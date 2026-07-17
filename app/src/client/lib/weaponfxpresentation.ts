@@ -89,9 +89,9 @@ export function resolveWeaponFxProfiles(
   scribbit: Pick<Scribbit, 'accessories' | 'gearRanks'> &
     Partial<Pick<Scribbit, 'equipmentLoadout'>>
 ): readonly WeaponFxProfile[] {
-  const activeTechniqueIds = resolveGearCombatLoadout(scribbit).techniques.map(
-    (technique) => technique.leadGearId
-  );
+  const activeTechniqueIds = resolveGearCombatLoadout(scribbit).techniques
+    .filter((technique) => technique.category === 'weapon')
+    .map((technique) => technique.leadGearId);
   const legacyWeaponIds = scribbit.accessories.filter((gearId) => {
     return findGearCosmetic(gearId)?.category === 'weapon';
   });

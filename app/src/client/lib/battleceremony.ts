@@ -18,7 +18,7 @@ import { BATTLE_MATCHUP_TITLE_BY_KIND } from './matchupbrief';
 import type { FounderRivalryStakesPlan } from './founderchronicle';
 import { formatRivalRunBattleLabel } from './rivalrunpresentation';
 import { formatRedditUsername } from './redditusername';
-import { preloadBattleSoundtrack } from './soundtrack';
+import { preloadGameSoundtrack } from './soundtrack';
 import { selectCombatRole } from '../../shared/combat/selection';
 import {
   createCombatRoleMatchupRead,
@@ -173,7 +173,7 @@ function createFighterSide(
 // Show a dramatic VS screen before battle. Both fighters slide in from opposite
 // sides, element badges clash in the center, then transition to the replay.
 export function showVsCeremony(scene: Scene, options: VsCeremonyOptions): void {
-  preloadBattleSoundtrack();
+  preloadGameSoundtrack();
   const {
     fighterA,
     fighterB,

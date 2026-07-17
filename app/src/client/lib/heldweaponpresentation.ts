@@ -1,6 +1,9 @@
 import type { Scribbit } from '../../shared/arena';
 import type { CombatRole } from '../../shared/combat';
-import { findGearCosmetic } from '../../shared/cosmetics';
+import {
+  findGearCosmetic,
+  type CosmeticGearCatalogEntry,
+} from '../../shared/cosmetics';
 import { resolveGearCombatLoadout } from '../../shared/gearcombat';
 import { gearArtTextureForRarity } from './gearart';
 
@@ -15,6 +18,16 @@ export type HeldWeaponVisual = Readonly<{
   textureKey: string;
   frame: string;
 }>;
+
+export function heldWeaponVisualForGear(
+  entry: CosmeticGearCatalogEntry
+): HeldWeaponVisual {
+  return Object.freeze({
+    gearId: entry.id,
+    textureKey: gearArtTextureForRarity(entry.rarity),
+    frame: entry.id,
+  });
+}
 
 export function resolveHeldWeaponVisual(
   scribbit: Pick<Scribbit, 'gearRanks'> &

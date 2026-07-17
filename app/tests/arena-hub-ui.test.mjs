@@ -288,7 +288,10 @@ test('Mystery Ink lives in Shop while Bag remains equipment-only', () => {
     /scene\.add\.graphics|fillRoundedRect|lidGraphics/
   );
   assert.match(featuredGearDetailSource, /createStickerModalShell\(/);
-  assert.match(featuredGearDetailSource, /getGearTechniqueEffect\(entry, 1\)/);
+  assert.match(
+    featuredGearDetailSource,
+    /getGearTechniqueEffect\(entry, rank\)/
+  );
   assert.match(featuredGearDetailSource, /renderCosmeticPreview\(/);
   assert.match(featuredGearDetailSource, /createStickerShine\(/);
   assert.match(featuredGearDetailSource, /prefersReducedMotion\(\)/);

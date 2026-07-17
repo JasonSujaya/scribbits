@@ -19,6 +19,10 @@ const apiSource = readFileSync(
   new URL('../src/server/routes/api.ts', import.meta.url),
   'utf8'
 );
+const mockSource = readFileSync(
+  new URL('../scripts/dev-mock.mjs', import.meta.url),
+  'utf8'
+);
 
 const fighter = (id = 'power-up-fighter') => ({
   id,
@@ -44,23 +48,75 @@ const fighter = (id = 'power-up-fighter') => ({
   legacy: null,
 });
 
-test('battle completion and Rumble wins are wired to persisted Power-Up offers', () => {
+test('Power-Up offers require an unlocked level slot and an XP-paying win', () => {
   assert.match(apiSource, /lastRumbleReceipt\.wins > 0/);
   assert.match(apiSource, /source: 'rumble-day-win'/);
+  assert.match(apiSource, /xpAwarded: lastRumbleReceipt\.xpAwarded/);
   assert.match(
     apiSource,
-    /source: report\.winner === 'a' \? 'champion-win' : 'champion-loss'/
+    /offerChallenger && report\.winner === 'a'/
   );
-  assert.match(apiSource, /'exhibition-loss'/);
-  assert.match(apiSource, /'rival-run-loss'/);
-  assert.match(apiSource, /'rival-run-final-loss'/);
+  assert.match(apiSource, /source: 'champion-win'/);
+  assert.equal(powerUps.maximumPowerUpsForLevel(1), 1);
+  assert.equal(powerUps.maximumPowerUpsForLevel(3), 3);
+  assert.equal(powerUps.maximumPowerUpsForLevel(5), 5);
+  assert.equal(powerUps.maximumPowerUpsForLevel(99), 5);
+  assert.equal(
+    powerUps.powerUpOfferWasEarned({
+      source: 'birth',
+      xpAwarded: 0,
+      level: 1,
+      ownedPowerUpCount: 0,
+    }),
+    true
+  );
+  assert.equal(
+    powerUps.powerUpOfferWasEarned({
+      source: 'exhibition-win',
+      xpAwarded: 1,
+      level: 1,
+      ownedPowerUpCount: 1,
+    }),
+    false
+  );
+  assert.equal(
+    powerUps.powerUpOfferWasEarned({
+      source: 'exhibition-win',
+      xpAwarded: 1,
+      level: 2,
+      ownedPowerUpCount: 1,
+    }),
+    true
+  );
+  assert.equal(
+    powerUps.powerUpOfferWasEarned({
+      source: 'exhibition-win',
+      xpAwarded: 0,
+      level: 2,
+      ownedPowerUpCount: 1,
+    }),
+    false
+  );
+  assert.equal(
+    powerUps.powerUpOfferWasEarned({
+      source: 'exhibition-loss',
+      xpAwarded: 1,
+      level: 2,
+      ownedPowerUpCount: 1,
+    }),
+    false
+  );
   assert.match(apiSource, /currentArenaDay: dayNumber/);
+  assert.match(mockSource, /maximumPowerUpsForLevel\(challenger\.level\)/);
+  assert.match(mockSource, /powerUpRewardDays\.has\(powerUpRewardDay\)/);
+  assert.match(mockSource, /powerUpOfferWasEarned\(\{/);
+  assert.match(mockSource, /maxPowerUps: maximumPowerUps/);
 });
 
 test('a persisted three-card win offer claims exactly one Power-Up atomically', async () => {
   const memory = createMemoryStorage();
   const userId = 'power-up-user';
-  const scribbit = fighter();
+  const scribbit = { ...fighter(), level: 2, xp: 3 };
   await memory.storage.set(
     scribbits.getScribbitKey(scribbit.id),
     scribbits.serializeScribbit(scribbit)
@@ -75,6 +131,7 @@ test('a persisted three-card win offer claims exactly one Power-Up atomically', 
     scribbit,
     reportId: 'power-up-report-1',
     source: 'exhibition-win',
+    xpAwarded: 1,
     createdAtMs: 1_000,
     currentArenaDay: 10,
   });
@@ -86,6 +143,7 @@ test('a persisted three-card win offer claims exactly one Power-Up atomically', 
     scribbit,
     reportId: 'different-report-cannot-reroll',
     source: 'champion-win',
+    xpAwarded: 2,
     createdAtMs: 2_000,
     currentArenaDay: 10,
   });
@@ -140,6 +198,69 @@ test('a persisted three-card win offer claims exactly one Power-Up atomically', 
       },
     }),
     claim
+  );
+
+  const claimedScribbit = scribbits.parseScribbit(
+    await memory.storage.get(scribbits.getScribbitKey(scribbit.id))
+  );
+  assert.equal(
+    await offers.getOrCreatePowerUpOffer(memory.storage, {
+      userId,
+      scribbit: claimedScribbit,
+      reportId: 'power-up-report-1',
+      source: 'exhibition-win',
+      xpAwarded: 1,
+      createdAtMs: 3_000,
+      currentArenaDay: 10,
+    }),
+    null,
+    'refreshing a claimed reward report must not recreate its offer'
+  );
+  assert.equal(
+    await offers.getOrCreatePowerUpOffer(memory.storage, {
+      userId,
+      scribbit: claimedScribbit,
+      reportId: 'another-report-on-the-same-day',
+      source: 'champion-win',
+      xpAwarded: 2,
+      createdAtMs: 4_000,
+      currentArenaDay: 10,
+    }),
+    null,
+    'a second battle on the same day must not create another earned offer'
+  );
+});
+
+test('losses and wins without fresh XP cannot create a Power-Up offer', async () => {
+  const memory = createMemoryStorage();
+  const scribbit = {
+    ...fighter('unearned-power-up-fighter'),
+    level: 2,
+    xp: 3,
+  };
+  const baseInput = {
+    userId: 'unearned-power-up-user',
+    scribbit,
+    reportId: 'unearned-power-up-report',
+    createdAtMs: 1_000,
+    currentArenaDay: 10,
+  };
+
+  assert.equal(
+    await offers.getOrCreatePowerUpOffer(memory.storage, {
+      ...baseInput,
+      source: 'exhibition-loss',
+      xpAwarded: 1,
+    }),
+    null
+  );
+  assert.equal(
+    await offers.getOrCreatePowerUpOffer(memory.storage, {
+      ...baseInput,
+      source: 'exhibition-win',
+      xpAwarded: 0,
+    }),
+    null
   );
 });
 
@@ -260,6 +381,7 @@ test('invalid Power-Up discovery bytes block claims without mutation', async () 
     scribbit,
     reportId: 'invalid-discovery-report',
     source: 'exhibition-win',
+    xpAwarded: 1,
     createdAtMs: 1_000,
     currentArenaDay: 10,
   });
@@ -306,6 +428,7 @@ test('persisted offers derive role-aligned choices from Scribbit stats', async (
       scribbit,
       reportId: `report-${fixtureId}`,
       source: 'exhibition-win',
+      xpAwarded: 1,
       createdAtMs: 1_000,
       currentArenaDay: 10,
     });
@@ -385,23 +508,79 @@ test('every role keeps three valid choices through growing and mature caps', () 
   }
 });
 
-test('growing Scribbits stop at three Power-Ups and unlock five after maturity', async () => {
+test('birth and levels one through five unlock one Power-Up each, at most once per day', async () => {
   const memory = createMemoryStorage();
-  const userId = 'growing-cap-player';
-  let scribbit = fighter('growing-cap-fighter');
+  const userId = 'milestone-player';
+  let scribbit = fighter('milestone-fighter');
   await memory.storage.set(
     scribbits.getScribbitKey(scribbit.id),
     scribbits.serializeScribbit(scribbit)
   );
 
-  for (let rewardIndex = 0; rewardIndex < 3; rewardIndex += 1) {
+  const birthOffer = await offers.getOrCreatePowerUpOffer(memory.storage, {
+    userId,
+    scribbit,
+    reportId: `birth:${scribbit.id}`,
+    source: 'birth',
+    xpAwarded: 0,
+    createdAtMs: 1_000,
+    currentArenaDay: 10,
+  });
+  assert.ok(birthOffer);
+  await offers.claimPowerUpOffer(memory.storage, {
+    userId,
+    scribbitId: scribbit.id,
+    request: {
+      scribbitId: scribbit.id,
+      offerId: birthOffer.id,
+      selectedId: birthOffer.choices[0],
+      expectedPowerUpCount: 0,
+    },
+  });
+  scribbit = scribbits.parseScribbit(
+    await memory.storage.get(scribbits.getScribbitKey(scribbit.id))
+  );
+  assert.equal(scribbit.powerUpIds.length, 1);
+
+  assert.equal(
+    await offers.getOrCreatePowerUpOffer(memory.storage, {
+      userId,
+      scribbit,
+      reportId: 'level-one-win',
+      source: 'exhibition-win',
+      xpAwarded: 1,
+      createdAtMs: 1_100,
+      currentArenaDay: 10,
+    }),
+    null,
+    'level one has no second slot to fill'
+  );
+
+  const xpThresholds = new Map([
+    [2, 3],
+    [3, 7],
+    [4, 12],
+    [5, 18],
+  ]);
+  for (let level = 2; level <= 5; level += 1) {
+    scribbit = {
+      ...scribbit,
+      level,
+      xp: xpThresholds.get(level),
+    };
+    await memory.storage.set(
+      scribbits.getScribbitKey(scribbit.id),
+      scribbits.serializeScribbit(scribbit)
+    );
+    const arenaDay = 9 + level;
     const offer = await offers.getOrCreatePowerUpOffer(memory.storage, {
       userId,
       scribbit,
-      reportId: `growing-cap-report-${rewardIndex}`,
-      source: rewardIndex === 0 ? 'birth' : 'exhibition-win',
-      createdAtMs: 1_000 + rewardIndex,
-      currentArenaDay: 10,
+      reportId: `level-${level}-reward`,
+      source: 'exhibition-win',
+      xpAwarded: 1,
+      createdAtMs: 1_000 + level,
+      currentArenaDay: arenaDay,
     });
     assert.ok(offer);
     const selectedId = offer.choices[0];
@@ -412,34 +591,35 @@ test('growing Scribbits stop at three Power-Ups and unlock five after maturity',
         scribbitId: scribbit.id,
         offerId: offer.id,
         selectedId,
-        expectedPowerUpCount: rewardIndex,
+        expectedPowerUpCount: level - 1,
       },
     });
     scribbit = scribbits.parseScribbit(
       await memory.storage.get(scribbits.getScribbitKey(scribbit.id))
     );
+    assert.equal(scribbit.powerUpIds.length, level);
+
+    if (level < 5) {
+      const nextLevelScribbit = {
+        ...scribbit,
+        level: level + 1,
+        xp: xpThresholds.get(level + 1),
+      };
+      assert.equal(
+        await offers.getOrCreatePowerUpOffer(memory.storage, {
+          userId,
+          scribbit: nextLevelScribbit,
+          reportId: `level-${level + 1}-same-day-blocked`,
+          source: 'champion-win',
+          xpAwarded: 2,
+          createdAtMs: 2_000 + level,
+          currentArenaDay: arenaDay,
+        }),
+        null,
+        'only one earned Power-Up is allowed per Scribbit per Arena day'
+      );
+    }
   }
 
-  assert.equal(scribbit.powerUpIds.length, 3);
-  assert.equal(
-    await offers.getOrCreatePowerUpOffer(memory.storage, {
-      userId,
-      scribbit,
-      reportId: 'growing-cap-blocked',
-      source: 'exhibition-win',
-      createdAtMs: 2_000,
-      currentArenaDay: 12,
-    }),
-    null
-  );
-  assert.ok(
-    await offers.getOrCreatePowerUpOffer(memory.storage, {
-      userId,
-      scribbit,
-      reportId: 'mature-cap-open',
-      source: 'champion-win',
-      createdAtMs: 3_000,
-      currentArenaDay: 13,
-    })
-  );
+  assert.equal(scribbit.powerUpIds.length, 5);
 });

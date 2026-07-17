@@ -366,6 +366,21 @@ test('Mystery Ink uses generated reward art and a transparent animated claw mach
   );
   assert.match(capsuleMachineSource, /function startClawSearch\(/);
   assert.match(capsuleMachineSource, /function startClawIdle\(/);
+  assert.match(capsuleMachineSource, /const CLAW_RAIL_Y = -198/);
+  assert.match(
+    capsuleMachineSource,
+    /rectangle\(0, CLAW_RAIL_Y, 350, 12[\s\S]{0,220}container\(homeX, CLAW_RAIL_Y\)/,
+    'the moving carriage must stay centered on its visible rail'
+  );
+  const clawIdleSource = capsuleMachineSource.slice(
+    capsuleMachineSource.indexOf('function startClawIdle('),
+    capsuleMachineSource.indexOf('function startClawSearch(')
+  );
+  assert.doesNotMatch(
+    clawIdleSource,
+    /targets: machine\.(?:cable|clawHead)/,
+    'idle motion must not stretch or detach the cable from its rail'
+  );
   assert.match(capsuleMachineSource, /allowsAmbientMotion\(\)/);
   assert.match(capsuleMachineSource, /stopClawIdle\?\.\(\)/);
   assert.match(capsuleMachineSource, /burstClawGrabSparks\(/);

@@ -1,6 +1,7 @@
 import * as Phaser from 'phaser';
 import type { Scene } from 'phaser';
 import type { AccessoryEffectFamily } from '../../shared/accessoryeffects';
+import type { GearRank, Scribbit } from '../../shared/arena';
 import type { CosmeticGearCatalogEntry } from '../../shared/cosmetics';
 import { getGearTechniqueEffect } from '../../shared/gearcombat';
 import { getCombatRoleContent } from '../../shared/combat';
@@ -9,6 +10,12 @@ import { createStickerShine } from './stickerfxshader';
 import { createStickerModalShell } from './stickermodalshell';
 import { prefersReducedMotion, TYPE, UI } from './theme';
 import { ghostButton, label } from './ui';
+import {
+  createSandboxBattlePreview,
+  type SandboxEffectStyle,
+  type SandboxBattlePreview,
+} from './sandboxbattlepreview';
+import { heldWeaponVisualForGear } from './heldweaponpresentation';
 
 const EFFECT_COLORS: Readonly<Record<AccessoryEffectFamily, number>> =
   Object.freeze({
@@ -22,16 +29,28 @@ const EFFECT_COLORS: Readonly<Record<AccessoryEffectFamily, number>> =
 
 export type FeaturedGearDetail = Readonly<{ destroy: () => void }>;
 
-/** Read-only Shop preview for one featured Gear effect. */
+const WEAPON_EFFECT_STYLE: Readonly<Record<AccessoryEffectFamily, SandboxEffectStyle>> =
+  Object.freeze({
+    guard: 'survive',
+    rush: 'speed',
+    focus: 'critical',
+    ready: 'critical',
+    fortune: 'critical',
+    aim: 'critical',
+  });
+
+/** Read-only, looping preview for one Gear effect. */
 export function openFeaturedGearDetail(
   scene: Scene,
   entry: CosmeticGearCatalogEntry,
   trigger: HTMLElement,
-  onDestroy: () => void
+  onDestroy: () => void,
+  rank: GearRank = 1,
+  fighter?: Scribbit
 ): FeaturedGearDetail {
   const { width, height } = scene.scale;
   const centerY = Math.min(height / 2, 700);
-  const effect = getGearTechniqueEffect(entry, 1);
+  const effect = getGearTechniqueEffect(entry, rank);
   const roleRelicCopy = entry.roleAffinity
     ? `${getCombatRoleContent(entry.roleAffinity).displayName} relic. ${entry.roleEffect ?? ''}`
     : 'Works with every role weapon.';
@@ -39,6 +58,7 @@ export function openFeaturedGearDetail(
   const reducedMotion = prefersReducedMotion();
   let destroyed = false;
   let shine: ReturnType<typeof createStickerShine> = null;
+  let battlePreview: SandboxBattlePreview | null = null;
 
   const close = (): void => {
     shell.finish(() => undefined);
@@ -63,6 +83,14 @@ export function openFeaturedGearDetail(
     onDestroy: () => {
       if (destroyed) return;
       destroyed = true;
+      scene.tweens.killTweensOf([
+        effectAura,
+        goldRing,
+        orbit,
+        gearPreview,
+      ]);
+      battlePreview?.destroy();
+      battlePreview = null;
       shine?.destroy();
       shine = null;
       onDestroy();
@@ -97,7 +125,7 @@ export function openFeaturedGearDetail(
   }
   card.add([effectAura, goldRing, innerRing, orbit]);
 
-  renderCosmeticPreview({
+  const gearPreview = renderCosmeticPreview({
     scene,
     parent: card,
     entry,
@@ -107,6 +135,27 @@ export function openFeaturedGearDetail(
     width: 210,
     height: 210,
   });
+
+  if (fighter) {
+    battlePreview = createSandboxBattlePreview({
+      scene,
+      parent: card,
+      fighter,
+      x: 0,
+      y: -95,
+      width: width - 190,
+      height: 270,
+      accentColor: effectColor,
+      direction: 'fighter-attacks',
+      result: 'damage',
+      cue: effect.name.toUpperCase(),
+      effectLabel: effect.summary,
+      effectStyle: WEAPON_EFFECT_STYLE[entry.effectFamily],
+      mode: 'weapon',
+      heldWeapon: heldWeaponVisualForGear(entry),
+      resultIcon: 'target',
+    });
+  }
 
   const rarity = label(
     scene,
@@ -124,7 +173,7 @@ export function openFeaturedGearDetail(
     scene,
     0,
     104,
-    `1★ EFFECT · ${effect.name.toUpperCase()}`,
+    `${rank}★ EFFECT · ${effect.name.toUpperCase()}`,
     23,
     UI.goldText,
     true
@@ -153,7 +202,9 @@ export function openFeaturedGearDetail(
     scene,
     0,
     232,
-    'EQUIP IN BAG TO ACTIVATE',
+    fighter
+      ? 'LIVE TRAINING LOOP · 0 XP · NOTHING SAVED'
+      : 'LOOPING DEMO · EQUIP IN BAG TO ACTIVATE',
     18,
     UI.inkSoft,
     true
@@ -182,33 +233,62 @@ export function openFeaturedGearDetail(
   });
   shell.shade.on('pointerup', close);
 
-  shine = createStickerShine({
-    scene,
-    x: width / 2,
-    y: centerY - 95,
-    width: 292,
-    height: 292,
-    depth: 3302,
-    reduceMotion: reducedMotion,
-    tint: [1, 0.78, 0.24],
-    intensity: 0.86,
-  });
+  if (!fighter) {
+    shine = createStickerShine({
+      scene,
+      x: width / 2,
+      y: centerY - 95,
+      width: 292,
+      height: 292,
+      depth: 3302,
+      reduceMotion: reducedMotion,
+      tint: [1, 0.78, 0.24],
+      intensity: 0.86,
+    });
+  }
 
-  if (!reducedMotion) {
+  if (!reducedMotion && !fighter) {
     orbit.setAngle(-18).setScale(0.88);
     scene.tweens.add({
       targets: orbit,
-      angle: 32,
       scaleX: 1,
       scaleY: 1,
       duration: 880,
       ease: 'Sine.easeOut',
     });
     scene.tweens.add({
-      targets: [effectAura, goldRing],
+      targets: goldRing,
       alpha: { from: 0.45, to: 1 },
       duration: 620,
       ease: 'Sine.easeOut',
+    });
+    scene.tweens.add({
+      targets: gearPreview,
+      x: { from: -10, to: 10 },
+      angle: { from: -5, to: 5 },
+      scaleX: { from: 0.96, to: 1.06 },
+      scaleY: { from: 0.96, to: 1.06 },
+      duration: 760,
+      ease: 'Sine.easeInOut',
+      yoyo: true,
+      repeat: -1,
+    });
+    scene.tweens.add({
+      targets: effectAura,
+      scaleX: { from: 0.88, to: 1.16 },
+      scaleY: { from: 0.88, to: 1.16 },
+      alpha: { from: 0.45, to: 0.9 },
+      duration: 760,
+      ease: 'Sine.easeInOut',
+      yoyo: true,
+      repeat: -1,
+    });
+    scene.tweens.add({
+      targets: orbit,
+      angle: { from: -18, to: 342 },
+      duration: 5200,
+      ease: 'Linear',
+      repeat: -1,
     });
   }
 

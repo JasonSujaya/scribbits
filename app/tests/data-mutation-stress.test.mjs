@@ -155,6 +155,7 @@ const createIsolatedPowerUpClaim = async (seed, storedDiscoveries) => {
     scribbit,
     reportId: `power-up-stress-report-${seed}`,
     source: 'birth',
+    xpAwarded: 0,
     createdAtMs: seed,
     currentArenaDay: scribbit.bornDay,
   });

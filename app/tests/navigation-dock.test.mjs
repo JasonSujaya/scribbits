@@ -374,3 +374,19 @@ test('the primary play loop is fully prepared before Home is revealed', () => {
     assert.doesNotMatch(sceneSource, /fadeIn\(/);
   }
 });
+
+test('the game boot card stays usable in short landscape windows', () => {
+  assert.match(
+    gameCssSource,
+    /@media \(max-height: 480px\) and \(min-aspect-ratio: 4 \/ 3\)/
+  );
+  assert.match(gameCssSource, /\.game-boot-status \{[\s\S]*?overflow-y: auto;/);
+  assert.match(
+    gameCssSource,
+    /\.game-boot-card \{[\s\S]*?grid-template-columns:[\s\S]*?max-height: none;/
+  );
+  assert.match(
+    gameCssSource,
+    /data-phase='awaiting-start'[\s\S]*?\.game-boot-progress-row,[\s\S]*?\.game-boot-message \{[\s\S]*?display: none;/
+  );
+});

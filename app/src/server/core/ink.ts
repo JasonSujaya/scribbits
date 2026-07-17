@@ -1,4 +1,5 @@
 import type { CapsuleRarity } from '../../shared/arena';
+import type { EquipmentCategory } from '../../shared/equipment';
 import {
   ACCESSORY_CATALOG_ENTRIES,
   BRUSH_CATALOG_ENTRIES,
@@ -15,6 +16,7 @@ export type InkAccessoryCatalogEntry = {
   rarity: CapsuleRarity;
   name: string;
   description: string;
+  category: EquipmentCategory;
 };
 
 export type InkPenCatalogEntry = {

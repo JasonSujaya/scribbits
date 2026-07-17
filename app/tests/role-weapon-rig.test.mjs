@@ -36,8 +36,8 @@ test('equipped weapon art replaces the generated role starter prop', () => {
   assert.match(rigSource, /heldWeapon\.frame/);
   assert.match(rigSource, /starterWeaponTextureForRole/);
   assert.match(rigSource, /STARTER_MOUNTS/);
-  assert.match(rigSource, /EQUIPPED_WEAPON_MOUNTS/);
-  assert.match(rigSource, /inkquake-rumble-belt/);
+  assert.doesNotMatch(rigSource, /EQUIPPED_WEAPON_MOUNTS/);
+  assert.doesNotMatch(rigSource, /inkquake-rumble-belt/);
   assert.match(rigSource, /drawLegacyBlaster/);
   assert.doesNotMatch(rigSource, /drawInkFist/);
   assert.doesNotMatch(rigSource, /drawQuillLauncher/);

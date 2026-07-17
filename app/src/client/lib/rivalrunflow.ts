@@ -20,7 +20,7 @@ import {
   type SparRivalDraft,
 } from './replaysparrivaldraft';
 import { startScene } from './ui';
-import { primeBattleSoundtrack } from './soundtrack';
+import { primeGameSoundtrack } from './soundtrack';
 
 export type RivalRunFlow = Readonly<{
   destroy: () => void;
@@ -76,7 +76,7 @@ export function openRivalRun(
     rivalRun: Parameters<typeof spar>[2]
   ): Promise<void> => {
     if (!isActive() || busy || !rivalRun) return;
-    primeBattleSoundtrack();
+    primeGameSoundtrack();
     setBusy(true);
     showToast(
       challengeLine

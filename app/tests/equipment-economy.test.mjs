@@ -139,7 +139,7 @@ test('deterministic capsule selection/entropy', () => {
   );
 });
 
-test('the first chest always starts with equippable Gear without changing rarity odds', () => {
+test('the first chest always starts with a common equippable weapon', () => {
   const firstDrops = Array.from({ length: 96 }, (_, index) =>
     inkStore.selectCapsuleDrop({
       userId: `first-chest-player-${index}`,
@@ -150,12 +150,13 @@ test('the first chest always starts with equippable Gear without changing rarity
     })
   );
   assert.ok(
-    firstDrops.every((drop) => drop.kind === 'accessory'),
-    'every first chest reward should be immediately equippable'
-  );
-  assert.ok(
-    new Set(firstDrops.map((drop) => drop.rarity)).size > 1,
-    'the first chest should still roll across the published rarity tiers'
+    firstDrops.every(
+      (drop) =>
+        drop.kind === 'accessory' &&
+        drop.category === 'weapon' &&
+        drop.rarity === 'common'
+    ),
+    'every first chest reward should be an immediately equippable starter weapon'
   );
 });
 

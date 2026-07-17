@@ -776,22 +776,17 @@ const finalizeSparBattle = async (
 
   const offerScribbit = await loadScribbit(redis, input.challengerId);
   const playerWon = input.report.winner === 'a';
-  const powerUpOffer = offerScribbit
+  const powerUpOffer = offerScribbit && playerWon
     ? await getOrCreatePowerUpOffer(redis, {
         userId: input.userId,
         scribbit: offerScribbit,
         reportId: input.report.id,
         source: input.report.rivalRun
           ? input.report.rivalRun.status === 'complete'
-            ? playerWon
-              ? 'rival-run-final-win'
-              : 'rival-run-final-loss'
-            : playerWon
-              ? 'rival-run-win'
-              : 'rival-run-loss'
-          : playerWon
-            ? 'exhibition-win'
-            : 'exhibition-loss',
+            ? 'rival-run-final-win'
+            : 'rival-run-win'
+          : 'exhibition-win',
+        xpAwarded: rewardReceipt?.xpAwarded ?? 0,
         createdAtMs: completedAtMilliseconds,
         currentArenaDay: input.report.day,
       })
@@ -836,6 +831,7 @@ const getOrCreateBirthPowerUpOffer = async (
     scribbit,
     reportId: `birth:${scribbit.id}`,
     source: 'birth',
+    xpAwarded: 0,
     createdAtMs,
     currentArenaDay: scribbit.bornDay,
   });
@@ -1142,6 +1138,7 @@ registerPlayerMutatingGet('/arena', async (c) => {
           scribbit: lastRumbleReceipt.entrant,
           reportId: `rumble-day-win:v1:${resolvedDay}:${lastRumbleReceipt.entrant.id}`,
           source: 'rumble-day-win',
+          xpAwarded: lastRumbleReceipt.xpAwarded,
           createdAtMs: now.getTime(),
           currentArenaDay: dayNumber,
         });
@@ -2664,12 +2661,13 @@ api.post('/boss-challenge', async (c) => {
       founderChronicle
     );
     const offerChallenger = await loadScribbit(redis, challenger.id);
-    const powerUpOffer = offerChallenger
+    const powerUpOffer = offerChallenger && report.winner === 'a'
       ? await getOrCreatePowerUpOffer(redis, {
           userId: player.userId,
           scribbit: offerChallenger,
           reportId: report.id,
-          source: report.winner === 'a' ? 'champion-win' : 'champion-loss',
+          source: 'champion-win',
+          xpAwarded: XP_REWARDS.championWin,
           createdAtMs: now.getTime(),
           currentArenaDay: dayNumber,
         })

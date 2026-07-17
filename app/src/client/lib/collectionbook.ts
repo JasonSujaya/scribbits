@@ -49,6 +49,10 @@ import {
 import { selectGearWeekDay } from '../../shared/content/gearweek';
 import { getCombatRoleContent } from '../../shared/combat';
 import { BAG_BINDER_SHELL_TEXTURE } from './visualassets';
+import {
+  openFeaturedGearDetail,
+  type FeaturedGearDetail,
+} from './featuredgeardetail';
 
 const BAG_GEAR_TILE_SIZE = 120;
 const BAG_EQUIPMENT_SLOT_SIZE = 84;
@@ -493,9 +497,13 @@ export function renderCollectionBook(options: CollectionBookOptions): void {
     { tape: false, tilt: 0 }
   );
   const sectionLabel = presentationForSection(options.section).label;
+  const sectionLabelX =
+    mode === 'equipment' && options.inventoryExpanded
+      ? 220
+      : BAG_LAYOUT.inventoryContentMargin;
   label(
     scene,
-    BAG_LAYOUT.inventoryContentMargin,
+    sectionLabelX,
     inventoryTop + 30,
     `${sectionLabel} · ${ownedItems.length} OWNED`,
     TYPE.caption,
@@ -503,27 +511,28 @@ export function renderCollectionBook(options: CollectionBookOptions): void {
     true
   ).setOrigin(0, 0.5);
   if (mode === 'equipment') {
-    const inventoryToggleX = width - 142;
-    const inventoryToggleY = inventoryTop + 50;
-    const inventoryToggleWidth = 230;
+    const inventoryToggleX = 112;
+    const inventoryToggleY = inventoryTop + 32;
+    const inventoryToggleWidth = 172;
+    const inventoryToggleHeight = 64;
     ghostButton(
       scene,
       inventoryToggleX,
       inventoryToggleY,
-      options.inventoryExpanded ? 'SHOW BINDER ↓' : 'EXPAND ↑',
+      options.inventoryExpanded ? '← BACK' : 'EXPAND ↑',
       () => options.onInventoryExpandedChange(!options.inventoryExpanded),
       inventoryToggleWidth,
-      BAG_LAYOUT.inventoryViewportHeaderHeight
+      inventoryToggleHeight
     );
     options.actionOverlay.add({
       label: options.inventoryExpanded
-        ? 'Show Scribbit Binder and collapse Gear inventory'
+        ? 'Back to Scribbit Binder'
         : 'Expand Gear inventory',
       rect: {
         x: inventoryToggleX - inventoryToggleWidth / 2,
-        y: inventoryToggleY - BAG_LAYOUT.inventoryViewportHeaderHeight / 2,
+        y: inventoryToggleY - inventoryToggleHeight / 2,
         width: inventoryToggleWidth,
-        height: BAG_LAYOUT.inventoryViewportHeaderHeight,
+        height: inventoryToggleHeight,
       },
       attributes: {
         'aria-expanded': String(options.inventoryExpanded),
@@ -2270,6 +2279,7 @@ function openCosmeticDetail(options: {
   let forgingGear = false;
   let inventoryChanged = false;
   let modalOpen = true;
+  let gearEffectPreview: FeaturedGearDetail | null = null;
   let titleAction: Phaser.GameObjects.Container | null = null;
   let titleNativeAction: HTMLButtonElement | null = null;
   let mergeAction: Phaser.GameObjects.Container | null = null;
@@ -2288,6 +2298,8 @@ function openCosmeticDetail(options: {
       return;
     }
     modalOpen = false;
+    gearEffectPreview?.destroy();
+    gearEffectPreview = null;
     modalActions.destroy();
     destroyModalVisuals(overlay, detail, shade);
     onClose();
@@ -2318,6 +2330,48 @@ function openCosmeticDetail(options: {
     semanticDescription
   );
   overlay.once('destroy', () => modalActions.destroy());
+
+  if (entry.kind === 'accessory' && entry.category === 'weapon') {
+    const previewButtonX = 132;
+    const previewButtonY = hasRank ? -205 : -190;
+    const openEffectPreview = (): void => {
+      gearEffectPreview?.destroy();
+      gearEffectPreview = openFeaturedGearDetail(
+        scene,
+        entry,
+        nativePreview,
+        () => {
+          gearEffectPreview = null;
+        },
+        ownership.rank ?? 1,
+        selectedScribbit
+      );
+    };
+    detail.add(
+      paperIconButton(
+        scene,
+        previewButtonX,
+        previewButtonY,
+        'eye',
+        openEffectPreview,
+        76,
+        UI.creamHex,
+        rarityStyle.color,
+        72
+      )
+    );
+    const nativePreview = modalActions.add({
+      label: `Preview ${entry.name} weapon effect`,
+      rect: {
+        x: width / 2 + previewButtonX - 38,
+        y: height / 2 + previewButtonY - 36,
+        width: 76,
+        height: 72,
+      },
+      attributes: { 'data-gear-effect-preview': entry.id },
+      onActivate: openEffectPreview,
+    });
+  }
 
   const gearSlots =
     entry.kind === 'accessory' && selectedScribbit

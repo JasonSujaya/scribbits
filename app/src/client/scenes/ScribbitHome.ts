@@ -52,7 +52,7 @@ import {
   openDailyLoginModal,
   type DailyLoginModal,
 } from '../lib/dailyloginmodal';
-import { playHomeSoundtrack, releaseHomeSoundtrack } from '../lib/soundtrack';
+import { playGameSoundtrack } from '../lib/soundtrack';
 import { markGameBootPhase } from '../lib/gameboot';
 import { EDGE, NAV_SAFE, TYPE, UI, prefersReducedMotion } from '../lib/theme';
 import { setSfxCue } from '../lib/sfx';
@@ -83,7 +83,7 @@ const HOME_SCRIBBIT_DISPLAY_SIZE = 380;
 const EMPTY_HOME_CARD_MAX_Y = 670;
 const MATURITY_CARD_SUMMARY = 'STATS LOCK • GEAR UP FOR MATURE ARENA';
 const MATURITY_DESCRIPTION =
-  'Right after birth, this Scribbit chooses one of three randomized Power-Ups. Wins can offer more while it grows. At maturity, its base stats lock forever. Afterward, upgrade Gear to add bonuses and increase its battle stats in the Mature Arena.';
+  'Right after birth, this Scribbit chooses its first Power-Up. Each new level unlocks one more slot, and an XP-paying win can earn one choice per Arena day. At maturity, its base stats lock forever. Afterward, upgrade Gear to add bonuses and increase its battle stats in the Mature Arena.';
 
 const MATURITY_STEPS: readonly Readonly<{
   icon: PaperIconKey;
@@ -93,7 +93,7 @@ const MATURITY_STEPS: readonly Readonly<{
   {
     icon: 'clock',
     title: 'BIRTH: CHOOSE A POWER-UP',
-    body: 'Choose one of three randomized Power-Ups before the first fight.',
+    body: 'Choose the first Power-Up. Each new level unlocks one more slot.',
   },
   {
     icon: 'lock',
@@ -256,7 +256,7 @@ export class ScribbitHome extends Scene {
     }
     this.state = state;
     this.build();
-    playHomeSoundtrack();
+    playGameSoundtrack();
     this.game.events.once(Phaser.Core.Events.POST_RENDER, () => {
       if (this.scene.isActive()) markGameBootPhase('ready');
     });
@@ -567,7 +567,6 @@ export class ScribbitHome extends Scene {
   }
 
   private cleanup(): void {
-    releaseHomeSoundtrack();
     this.clearMaturityCountdown();
     this.clearHomePropIdleTweens();
     this.clearDrawButtonEffects();

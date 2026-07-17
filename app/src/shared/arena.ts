@@ -532,6 +532,12 @@ export const CAPSULE_COST = 7;
 export const CAPSULE_FIRST_DAILY_COST = CAPSULE_COST;
 export const CAPSULE_MAX_BATCH_SIZE = 10;
 export const CAPSULE_PITY = 10; // epic-or-better guaranteed within N pulls
+// Weapon milestones keep the combat progression lane from depending entirely
+// on category luck. Natural higher-rarity weapon pulls satisfy the milestone
+// early, and existing players receive the next missing milestone on their next
+// eligible pull.
+export const CAPSULE_EPIC_WEAPON_GUARANTEE_PULL = 30;
+export const CAPSULE_LEGENDARY_WEAPON_GUARANTEE_PULL = 100;
 export const CAPSULE_RARITY_PERCENTAGES = {
   common: 70,
   rare: 25,

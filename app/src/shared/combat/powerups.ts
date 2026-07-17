@@ -362,8 +362,8 @@ export const POWER_UP_CATALOG: Readonly<Record<PowerUpId, PowerUpDefinition>> =
       trigger: 'distinct-power-ups',
       maximumActivations: 1,
       requiredDistinctPowerUps: 2,
-      targetMaxHitPointDamagePermille: 20,
-      maximumHitPointHealingPermille: 20,
+      targetMaxHitPointDamagePermille: 32,
+      maximumHitPointHealingPermille: 25,
       brawlerTargetMaxHitPointDamagePermille: 65,
       brawlerMaximumHitPointHealingPermille: 65,
     }),
@@ -388,13 +388,13 @@ export const POWER_UP_CATALOG: Readonly<Record<PowerUpId, PowerUpDefinition>> =
       buildPath: 'bounce',
       when: 'Any piercing quill reaches an arena edge',
       effect:
-        'Every quill can bounce once; outbound hits deal 80% and banked hits deal 40% of original damage',
+        'Every quill can bounce once; outbound hits deal 85% and banked hits deal 15% of original damage',
       requiredCapabilities: Object.freeze(['longshot-projectile']),
       trigger: 'weapon-passive',
       maximumActivations: 1,
       projectileWallBounces: 1,
-      projectileBaseDamagePermille: 800,
-      projectileBounceDamagePermille: 400,
+      projectileBaseDamagePermille: 850,
+      projectileBounceDamagePermille: 150,
     }),
     'v2-returning-stroke': definePowerUp({
       id: 'v2-returning-stroke',
@@ -723,6 +723,42 @@ export const POWER_UP_OFFER_SOURCES = Object.freeze([
   'champion-loss',
 ] as const);
 export type PowerUpOfferSource = (typeof POWER_UP_OFFER_SOURCES)[number];
+
+export const POWER_UP_REWARD_SOURCES = Object.freeze([
+  'birth',
+  'exhibition-win',
+  'rival-run-win',
+  'rival-run-final-win',
+  'rumble-day-win',
+  'champion-win',
+] as const satisfies readonly PowerUpOfferSource[]);
+
+export const maximumPowerUpsForLevel = (level: number): number => {
+  if (!Number.isFinite(level)) return 1;
+  return Math.min(MAXIMUM_POWER_UPS, Math.max(1, Math.floor(level)));
+};
+
+export const powerUpOfferWasEarned = (input: {
+  source: PowerUpOfferSource;
+  xpAwarded: number;
+  level: number;
+  ownedPowerUpCount: number;
+}): boolean => {
+  const ownedPowerUpCount = Number.isSafeInteger(input.ownedPowerUpCount)
+    ? Math.max(0, input.ownedPowerUpCount)
+    : MAXIMUM_POWER_UPS;
+  if (input.source === 'birth') {
+    return input.xpAwarded === 0 && ownedPowerUpCount === 0;
+  }
+  return (
+    Number.isSafeInteger(input.xpAwarded) &&
+    input.xpAwarded > 0 &&
+    POWER_UP_REWARD_SOURCES.some(
+      (rewardSource) => rewardSource === input.source
+    ) &&
+    ownedPowerUpCount < maximumPowerUpsForLevel(input.level)
+  );
+};
 
 export type PowerUpOffer = Readonly<{
   version: 1;

@@ -11,9 +11,12 @@ import type {
 } from '../../shared/arena';
 import {
   CAPSULE_COST,
+  CAPSULE_EPIC_WEAPON_GUARANTEE_PULL,
   CAPSULE_FIRST_DAILY_COST,
+  CAPSULE_LEGENDARY_WEAPON_GUARANTEE_PULL,
   CAPSULE_PITY,
   CAPSULE_RARITY_PERCENTAGES,
+  capsuleRarityRank,
   GEAR_MERGE_COPY_COST,
   getGearMergeCopyCost,
   isCapsuleRarity,
@@ -717,6 +720,41 @@ const chooseEntryForRarity = (
   return selectedEntry;
 };
 
+const isWeaponCatalogEntry = (
+  entry: InkCatalogEntry | undefined
+): entry is (typeof INK_ACCESSORY_CATALOG)[number] => {
+  return isAccessoryCatalogEntry(entry) && entry.category === 'weapon';
+};
+
+const hasDiscoveredWeaponAtOrAboveRarity = (
+  discoveredCatalogIds: ReadonlySet<string>,
+  minimumRarity: CapsuleRarity
+): boolean => {
+  const minimumRank = capsuleRarityRank(minimumRarity);
+  return [...discoveredCatalogIds].some((catalogId) => {
+    const entry = findInkCatalogEntry(catalogId);
+    return (
+      isWeaponCatalogEntry(entry) &&
+      capsuleRarityRank(entry.rarity) >= minimumRank
+    );
+  });
+};
+
+const chooseWeaponForRarity = (
+  rarity: CapsuleRarity,
+  roll: number
+): InkCatalogEntry => {
+  const matchingWeapons = INK_ACCESSORY_CATALOG.filter(
+    (entry) => entry.category === 'weapon' && entry.rarity === rarity
+  );
+  const selectedWeapon =
+    matchingWeapons[Math.floor(roll * matchingWeapons.length)];
+  if (!selectedWeapon) {
+    throw new Error(`No Mystery Ink weapon entries for ${rarity}.`);
+  }
+  return selectedWeapon;
+};
+
 export const selectCapsuleDrop = (
   options: CapsuleSelectionOptions,
   discoveredCatalogIds: ReadonlySet<string> = new Set(),
@@ -729,12 +767,36 @@ export const selectCapsuleDrop = (
       : `${deterministicSeedInput}:entropy:${options.entropy}`;
   const seed = hashTextToSeed(seedInput);
   const randomNumber = createMulberry32(seed);
-  const rarity = isCapsulePityPull(options.pullsSinceEpic)
-    ? 'epic'
-    : chooseCapsuleRarity(randomNumber());
+  const pityPull = isCapsulePityPull(options.pullsSinceEpic);
+  const obtainedCatalogIds = new Set([
+    ...discoveredCatalogIds,
+    ...unusableCatalogIds,
+  ]);
 
-  // The first chest always starts progression with equippable Gear. Rarity
-  // odds remain unchanged; only the eligible item pool is narrowed.
+  if (
+    options.pullCount >= CAPSULE_LEGENDARY_WEAPON_GUARANTEE_PULL &&
+    !hasDiscoveredWeaponAtOrAboveRarity(obtainedCatalogIds, 'legendary')
+  ) {
+    return chooseWeaponForRarity('legendary', randomNumber());
+  }
+
+  if (
+    (options.pullCount >= CAPSULE_EPIC_WEAPON_GUARANTEE_PULL || pityPull) &&
+    !hasDiscoveredWeaponAtOrAboveRarity(obtainedCatalogIds, 'epic')
+  ) {
+    return chooseWeaponForRarity('epic', randomNumber());
+  }
+
+  // New and legacy inventories always enter combat Gear progression with a
+  // usable weapon instead of waiting on category luck.
+  if (!hasDiscoveredWeaponAtOrAboveRarity(obtainedCatalogIds, 'common')) {
+    return chooseWeaponForRarity('common', randomNumber());
+  }
+
+  const rarity = pityPull ? 'epic' : chooseCapsuleRarity(randomNumber());
+
+  // After the starter weapon, ordinary pulls keep their advertised rarity
+  // odds and the first-pull Gear narrowing remains for old operation replays.
   return chooseEntryForRarity(
     rarity,
     randomNumber(),

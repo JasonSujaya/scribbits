@@ -84,9 +84,11 @@ const {
   isElement,
   isPowerUpId,
   isScoutNotebookReplayDay,
+  maximumPowerUpsForLevel,
   paginateLegacyCards,
   parseLegacyCardsPageSize,
   parseCompleteScribbitUpgrades,
+  powerUpOfferWasEarned,
   projectFounderChronicle,
   projectLegacyReturnReceipt,
   resolveExpiredScribbitStatus,
@@ -718,6 +720,7 @@ const createPreviewEconomy = (options = {}) => {
     sparRewardReceipts: new Map(),
     sparOutcomeReportIds: new Set(),
     pendingPowerUpOffers: new Map(),
+    powerUpRewardDays: new Set(),
     dailyLogin: {
       claimedTrackDays: options.dailyLoginClaimedTrackDays ?? 0,
       totalClaimedDays:
@@ -3291,23 +3294,30 @@ const handleApi = async (request, response, url) => {
     }
 
     let powerUpOffer = null;
-    if (challenger.powerUpIds.length < MAXIMUM_POWER_UPS) {
-      const playerWon = report.winner === 'a';
-      const source = rivalRunReceipt
-        ? rivalRunReceipt.status === 'complete'
-          ? playerWon
-            ? 'rival-run-final-win'
-            : 'rival-run-final-loss'
-          : playerWon
-            ? 'rival-run-win'
-            : 'rival-run-loss'
-        : playerWon
-          ? 'exhibition-win'
-          : 'exhibition-loss';
+    const playerWon = report.winner === 'a';
+    const source = rivalRunReceipt
+      ? rivalRunReceipt.status === 'complete'
+        ? 'rival-run-final-win'
+        : 'rival-run-win'
+      : 'exhibition-win';
+    const maximumPowerUps = maximumPowerUpsForLevel(challenger.level);
+    const powerUpRewardDay = `${challenger.id}:${memory.dayNumber}`;
+    if (
+      playerWon &&
+      challenger.powerUpIds.length < maximumPowerUps &&
+      !economy.powerUpRewardDays.has(powerUpRewardDay) &&
+      powerUpOfferWasEarned({
+        source,
+        xpAwarded: rewardReceipt.xpAwarded,
+        level: challenger.level,
+        ownedPowerUpCount: challenger.powerUpIds.length,
+      })
+    ) {
       const choices = createDeterministicPowerUpOffer({
         seed: `power-up-offer:v1:${report.id}:${challenger.id}`,
         source,
         ownedPowerUpIds: challenger.powerUpIds,
+        maxPowerUps: maximumPowerUps,
       });
       if (choices?.length === 3) {
         powerUpOffer = {
@@ -3320,6 +3330,7 @@ const handleApi = async (request, response, url) => {
           createdAtMs: Date.now(),
         };
         economy.pendingPowerUpOffers.set(challenger.id, powerUpOffer);
+        economy.powerUpRewardDays.add(powerUpRewardDay);
       }
     }
 

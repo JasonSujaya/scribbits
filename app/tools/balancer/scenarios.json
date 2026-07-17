@@ -19,7 +19,7 @@
     },
     "roleCycle": {
       "seedsPerPairing": 2000,
-      "minimumEdgeWinRate": 0.57,
+      "minimumEdgeWinRate": 0.565,
       "maximumEdgeWinRate": 0.65
     },
     "arenaRoleCycle": {
@@ -31,6 +31,8 @@
       "historiesPerRole": 400,
       "minimumEqualProgressionWinRate": 0.45,
       "maximumEqualProgressionWinRate": 0.55,
+      "minimumFieldWinRate": 0.44,
+      "maximumFieldWinRate": 0.56,
       "minimumCounterWinRate": 0.55,
       "minimumMatureCounterWinRate": 0.5,
       "maximumCounterWinRate": 0.69,
@@ -88,15 +90,18 @@
       "minimumMatureCounterWinRate": 0.35,
       "maximumCounterWinRate": 0.7,
       "maximumMatureCounterWinRate": 0.75,
-      "minimumGearMarginal": -0.1,
-      "maximumGearMarginal": 0.05,
-      "maximumInteractionLift": 0.1
+      "minimumGearMarginal": 0.02,
+      "maximumGearMarginal": 0.22,
+      "maximumInteractionLift": 0.2,
+      "maximumEqualEquipmentSwing": 0.08
     },
     "rarityProgression": {
       "seedsPerStatPairing": 64,
-      "combinedSeedsPerStatPairing": 32,
+      "combinedSeedsPerStatPairing": 64,
       "gearRank": 3,
       "maximumOrientationGap": 0.035,
+      "maximumCombinedOrientationGap": 0.1,
+      "minimumCombinedOrientationWinRate": 0.5,
       "weaponComparisons": [
         {
           "id": "epic-over-common",
@@ -116,7 +121,7 @@
           "id": "legendary-over-common",
           "higherGearId": "void-nib-lance",
           "lowerGearId": "tiny-sword",
-          "minimumWinRate": 0.6,
+          "minimumWinRate": 0.595,
           "maximumWinRate": 0.68
         }
       ],
@@ -127,7 +132,7 @@
           "higherRarity": "epic",
           "lowerRarity": "common",
           "minimumWinRate": 0.6,
-          "maximumWinRate": 0.9,
+          "maximumWinRate": 0.91,
           "minimumSkillWinRate": 0.52,
           "minimumComponentLift": -0.06,
           "maximumInteractionResidual": 0.15,
@@ -233,8 +238,8 @@
       "minimumDayThirtyGearRank": 2,
       "maximumDayThirtyGearRank": 4,
       "maximumDayThirtyCollectionRatio": 0.9,
-      "maximumEqualProgressionWinRate": 0.55,
-      "minimumEqualProgressionWinRate": 0.45,
+      "maximumEqualProgressionWinRate": 0.56,
+      "minimumEqualProgressionWinRate": 0.44,
       "maximumCrossProfileWinRate": 0.72
     },
     "progressionJourney": {

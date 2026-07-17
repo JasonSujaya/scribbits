@@ -139,11 +139,7 @@ import {
 } from '../lib/inkcastqueue';
 import type { InkcastEditorialCandidate } from '../lib/inkcastqueue';
 import { BattleSoundboard } from '../lib/battlesound';
-import {
-  setBattleSoundtrackEnabled,
-  startBattleSoundtrack,
-  stopBattleSoundtrack,
-} from '../lib/soundtrack';
+import { playGameSoundtrack } from '../lib/soundtrack';
 import { playSfx } from '../lib/sfx';
 import { fitText } from '../lib/fittext';
 import { WeaponFxRenderer } from '../lib/weaponfxrenderer';
@@ -505,7 +501,7 @@ export class Replay extends Scene {
     this.founderChronicleBeat = getReplayFounderChronicleBeat(this);
     this.founderRivalryStakes = getReplayFounderRivalryStakes(this);
     this.transcript = getUsableBattleTranscript(report) ?? null;
-    startBattleSoundtrack(this.soundboard.isEnabled());
+    playGameSoundtrack();
     this.weaponFxRenderer = new WeaponFxRenderer(this, this.reduceMotion);
     this.roleWeaponRenderer = new RoleWeaponRenderer(this, this.reduceMotion);
     this.game.canvas.dataset.activeProjectileTypes = 'none';
@@ -515,7 +511,6 @@ export class Replay extends Scene {
     this.recordDebugPlaybackState('live');
 
     this.events.once('shutdown', () => {
-      stopBattleSoundtrack();
       this.rivalRunFlow?.destroy();
       this.rivalRunFlow = null;
       this.postFightActions?.destroy();
@@ -668,7 +663,6 @@ export class Replay extends Scene {
       onCycleSpeed: () => this.cycleSpeed(),
       onToggleSound: () => {
         const enabled = this.soundboard.toggle();
-        setBattleSoundtrackEnabled(enabled);
         this.battleHud?.setSoundEnabled(enabled);
       },
     });
@@ -2168,11 +2162,6 @@ export class Replay extends Scene {
       const fighter = this.fighterForSlot(slot);
       const style = ELEMENT_STYLES[fighter.scribbit.element];
       const center = this.projectReplayVector(fighterFrame.position, frame);
-
-      floorGraphics.fillStyle(UI.inkHex, 0.17);
-      floorGraphics.fillEllipse(center.x, center.y + 78, 142, 34);
-      floorGraphics.lineStyle(3, style.primary, 0.28);
-      floorGraphics.strokeEllipse(center.x, center.y + 78, 142, 34);
 
       for (const segment of buildMasteryAuraSegments({
         center,

@@ -226,7 +226,7 @@ test('equipment requires the living Scribbit owner and a durable Gear discovery'
     ownerUserId,
     {
       scribbitId: scribbit.id,
-      category: 'weapon',
+      category: 'accessory',
       slotIndex: 0,
       gearId: 'inkquake-rumble-belt',
     }
@@ -244,6 +244,18 @@ test('equipment requires the living Scribbit owner and a durable Gear discovery'
     }
   );
   assert.deepEqual(wrongCategory, { status: 'invalid-gear' });
+
+  const beltInWeaponSlot = await scribbitStore.equipGearForScribbit(
+    memory.storage,
+    ownerUserId,
+    {
+      scribbitId: scribbit.id,
+      category: 'weapon',
+      slotIndex: 0,
+      gearId: 'inkquake-rumble-belt',
+    }
+  );
+  assert.deepEqual(beltInWeaponSlot, { status: 'invalid-gear' });
 
   const storedInventory = await memory.storage.hGetAll(
     inkStore.getInventoryKey(ownerUserId)
@@ -438,7 +450,7 @@ test('returning-player migration rewrites living v3 records exactly once', async
   const migratedRecord = JSON.parse(
     await memory.storage.get(scribbitStore.getScribbitKey(scribbit.id))
   );
-  assert.equal(migratedRecord.schemaVersion, 4);
+  assert.equal(migratedRecord.schemaVersion, 5);
   assert.deepEqual(migratedRecord.gearRanks, {});
   assert.deepEqual(migratedRecord.equipmentLoadout.weapon, [
     'tiny-sword',
@@ -572,7 +584,7 @@ test('direct equip promotes v3 rank before rewriting the Scribbit', async () => 
   const stored = JSON.parse(
     await memory.storage.get(scribbitStore.getScribbitKey(scribbit.id))
   );
-  assert.equal(stored.schemaVersion, 4);
+  assert.equal(stored.schemaVersion, 5);
   assert.deepEqual(stored.gearRanks, {});
 });
 
@@ -620,7 +632,7 @@ test('v4 migration recovers a committed reply loss without spending copies', asy
     JSON.parse(
       await memory.storage.get(scribbitStore.getScribbitKey(scribbit.id))
     ).schemaVersion,
-    4
+    5
   );
 });
 
@@ -670,7 +682,8 @@ test('expiry retains the Scribbit embedded equipment loadout', () => {
     ...livingScribbit,
     equipmentLoadout: {
       ...equipment.createEmptyEquipmentLoadout(),
-      weapon: ['tiny-sword', 'inkquake-rumble-belt'],
+      weapon: ['tiny-sword', null],
+      accessory: ['inkquake-rumble-belt', null],
     },
   };
 

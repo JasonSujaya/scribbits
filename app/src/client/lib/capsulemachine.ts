@@ -12,6 +12,8 @@
 import * as Phaser from 'phaser';
 import { Scene } from 'phaser';
 import {
+  CAPSULE_EPIC_WEAPON_GUARANTEE_PULL,
+  CAPSULE_LEGENDARY_WEAPON_GUARANTEE_PULL,
   CAPSULE_MAX_BATCH_SIZE,
   CAPSULE_RARITY_PERCENTAGES,
   capsuleRarityRank,
@@ -80,10 +82,11 @@ const DEPTH = 2500;
 const COLLECTION_BAR_WIDTH = 480;
 const COLLECTION_BAR_HEIGHT = 22;
 const CAPSULE_ODDS_ACCESSIBLE_COPY =
-  `Odds are ${CAPSULE_RARITY_PERCENTAGES.common} percent common, ` +
+  `Standard pull odds are ${CAPSULE_RARITY_PERCENTAGES.common} percent common, ` +
   `${CAPSULE_RARITY_PERCENTAGES.rare} percent rare, and ` +
   `${CAPSULE_RARITY_PERCENTAGES.epic} percent epic, and ` +
-  `${CAPSULE_RARITY_PERCENTAGES.legendary} percent legendary.`;
+  `${CAPSULE_RARITY_PERCENTAGES.legendary} percent legendary. ` +
+  `Your starter weapon is guaranteed, with an Epic weapon by pull ${CAPSULE_EPIC_WEAPON_GUARANTEE_PULL} and a Legendary weapon by pull ${CAPSULE_LEGENDARY_WEAPON_GUARANTEE_PULL} unless a weapon of that tier arrives sooner.`;
 
 const FEATURED_GEAR_ID = 'comet-crayon-blade';
 const CLAW_MACHINE_SAMPLE_IDS = [
@@ -113,7 +116,7 @@ const CHEST_DISPLAY_WIDTH = 410;
 const CHEST_DISPLAY_HEIGHT = 430;
 const OPEN_CHEST_HORIZONTAL_SCALE = 1.086;
 const CLAW_MACHINE_SCALE = 0.96;
-const CLAW_RIG_Y = -148;
+const CLAW_RAIL_Y = -198;
 const CLAW_CHOICE_WIDTH = 180;
 const CLAW_CHOICE_HEIGHT = 92;
 const CLAW_CHOICE_X_OFFSET = 100;
@@ -219,7 +222,7 @@ function createEmbeddedCapsuleActions(
   overlay.addDescription(
     descriptionId,
     firstChestVisit
-      ? `Take one capsule from the First Gear claw machine for your first earned-Ink reward. The visible Gear are possible examples, not a prediction. The first reward is equippable Gear and the server owns the price and reward. ${CAPSULE_ODDS_ACCESSIBLE_COPY}`
+      ? `Take one capsule from the First Gear claw machine for your first earned-Ink reward. The visible Gear are possible examples, not a prediction. The first reward is an equippable weapon and the server owns the price and reward. ${CAPSULE_ODDS_ACCESSIBLE_COPY}`
       : `Spend battle-earned Ink to take one or ten capsules from the Mystery Gear claw machine. Ten is the largest batch. The server owns every price, reward, and pity step. ${CAPSULE_ODDS_ACCESSIBLE_COPY}`
   );
   overlay.setRootAttributes({
@@ -454,12 +457,12 @@ function createClawMachine(
   container.add(windowContent);
 
   const rail = scene.add
-    .rectangle(0, -198, 350, 12, UI.creamHex, 1)
+    .rectangle(0, CLAW_RAIL_Y, 350, 12, UI.creamHex, 1)
     .setStrokeStyle(5, UI.inkHex, 0.94);
   container.add(rail);
 
   const homeX = -132;
-  const clawRig = scene.add.container(homeX, CLAW_RIG_Y);
+  const clawRig = scene.add.container(homeX, CLAW_RAIL_Y);
   const carriage = scene.add
     .rectangle(0, 0, 62, 30, UI.gold, 1)
     .setStrokeStyle(5, UI.inkHex, 0.96);
@@ -538,7 +541,7 @@ function createClawMachine(
     scene,
     0,
     -312,
-    firstChestVisit ? 'TAKE 1 · GUARANTEED GEAR' : 'TAKE 1 OR TAKE 10',
+    firstChestVisit ? 'TAKE 1 · GUARANTEED WEAPON' : 'TAKE 1 OR TAKE 10',
     15,
     UI.goldText,
     true
@@ -1667,23 +1670,6 @@ function startClawIdle(scene: Scene, machine: ClawMachine): () => void {
     ease: 'Sine.easeInOut',
   });
   scene.tweens.add({
-    targets: machine.clawHead,
-    y: 67,
-    angle: 1.5,
-    duration: 980,
-    yoyo: true,
-    repeat: -1,
-    ease: 'Sine.easeInOut',
-  });
-  scene.tweens.add({
-    targets: machine.cable,
-    scaleY: 1.1,
-    duration: 980,
-    yoyo: true,
-    repeat: -1,
-    ease: 'Sine.easeInOut',
-  });
-  scene.tweens.add({
     targets: machine.leftArm,
     angle: 32,
     duration: 1180,
@@ -1761,7 +1747,7 @@ function burstClawGrabSparks(
 ): void {
   if (prefersReducedMotion()) return;
   const originX = machine.clawRig.x;
-  const originY = CLAW_RIG_Y + machine.clawHead.y + 24;
+  const originY = CLAW_RAIL_Y + machine.clawHead.y + 24;
   for (let index = 0; index < 8; index += 1) {
     const angle = (Math.PI * 2 * index) / 8 - Math.PI / 2;
     const distance = 42 + (index % 2) * 18;
