@@ -134,6 +134,7 @@ awards 1.
   Epic, and 1% Legendary odds, with Epic-or-better guaranteed by pull 10. Open
   one chest or a maximum batch of ten.
 - **Bag:** manage reusable Gear, permanent pens, titles, and discovered items.
+  Tap a discovered consumable color to spend three Ink and add one use.
   Each living Scribbit has two slots in each Gear category: weapon, armor,
   shoes, and accessory. Duplicate Gear can be forged into higher ranks.
 - **Care:** inspect a Scribbit and use its daily care actions during growth.
@@ -264,9 +265,10 @@ From the repository root, a private patch upload uses:
 ./deploy.command
 ```
 
-The command requires a clean worktree, runs the full verification and combat
-balance gates, checks Devvit authentication, and then uploads a patch. To request
-public review after the same gates, run this from `app/`:
+The command requires a clean worktree, runs the full verification gate, checks
+Devvit authentication, and then uploads a patch. Combat balance simulation is
+optional; run `pnpm run release:check:balance` when combat or balance changes
+need it. To request public review after the standard gate, run this from `app/`:
 
 ```bash
 pnpm run launch

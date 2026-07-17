@@ -49,6 +49,14 @@ import type {
   SubmitFeedbackRequest,
   SubmitFeedbackResponse,
 } from '../../shared/feedback';
+import type {
+  ModerationReportReason,
+  ReportScribbitRequest,
+} from '../../shared/moderation';
+import type {
+  DrawingInkRefillRequest,
+  DrawingInkRefillResponse,
+} from '../../shared/drawingink';
 import { PLAYER_MUTATION_BUSY_MESSAGE } from '../../shared/arena';
 import type { EquipmentCategory } from '../../shared/equipment';
 import type {
@@ -131,6 +139,7 @@ async function request<T>(
 const ERROR_MESSAGE_KEY_BY_CODE = {
   bad_request: 'error.badRequest',
   unauthorized: 'error.unauthorized',
+  forbidden: 'error.forbidden',
   not_found: 'error.notFound',
   conflict: 'error.conflict',
   busy: 'error.busy',
@@ -347,10 +356,21 @@ export function choosePowerUp(
 
 // Pick one of tonight's Rumble entrants. One per user per day, final; it
 // locks when the Rumble resolves. The legacy transport returns the picked id.
-export function backScribbit(
-  scribbitId: string
-): Promise<ApiResult<{ backed: string }>> {
-  return postJson<BackRequest, { backed: string }>('/api/back', { scribbitId });
+export function backScribbit(scribbitId: string): Promise<
+  ApiResult<{
+    backed: string;
+    seasonPicksMade: number;
+    unlockedMilestoneId: string | null;
+  }>
+> {
+  return postJson<
+    BackRequest,
+    {
+      backed: string;
+      seasonPicksMade: number;
+      unlockedMilestoneId: string | null;
+    }
+  >('/api/back', { scribbitId });
 }
 
 export function removeScribbit(
@@ -372,11 +392,12 @@ export function retireScribbit(
 }
 
 export function reportScribbit(
-  scribbitId: string
+  scribbitId: string,
+  reason: ModerationReportReason
 ): Promise<ApiResult<ReportScribbitResponse>> {
-  return postJson<{ scribbitId: string }, ReportScribbitResponse>(
+  return postJson<ReportScribbitRequest, ReportScribbitResponse>(
     '/api/report-scribbit',
-    { scribbitId }
+    { scribbitId, reason }
   );
 }
 
@@ -426,6 +447,16 @@ export function mergeGear(
     gearId,
     operationId,
   });
+}
+
+export function refillDrawingInk(
+  itemId: string,
+  operationId: string
+): Promise<ApiResult<DrawingInkRefillResponse>> {
+  return postJson<DrawingInkRefillRequest, DrawingInkRefillResponse>(
+    '/api/drawing-ink/refill',
+    { itemId, operationId }
+  );
 }
 
 export function equipGear(

@@ -1,5 +1,10 @@
 import { Scene } from 'phaser';
 import type { SeasonBoard, SeasonBoardEntry } from '../../shared/arena';
+import {
+  SEASON_ONE_PARTICIPATION_MILESTONES,
+  SEASON_RANK_REWARD_MINIMUM_PICKS,
+  type SeasonRewardTier,
+} from '../../shared/season';
 import { fetchSeasonBoard } from './api';
 import { CanvasModalOverlay } from './overlay';
 import { paperIcon } from './papericons';
@@ -16,10 +21,18 @@ export type SeasonBoardModalOptions = Readonly<{
 }>;
 
 const rewardLabel = (entry: SeasonBoardEntry): string => {
-  if (entry.rewardTier === 'champion') return 'CHAMPION';
-  if (entry.rewardTier === 'top-ten') return 'FINALIST';
-  if (entry.rewardTier === 'top-hundred') return 'CONTENDER';
+  const tier = entry.rewardTier ?? entry.projectedRewardTier;
+  if (tier === 'champion') return 'CHAMPION';
+  if (tier === 'top-ten') return 'FINALIST';
+  if (tier === 'top-hundred') return 'CONTENDER';
   return '';
+};
+
+const rankPrizeText = (tier: SeasonRewardTier | null): string => {
+  if (tier === 'champion') return 'CHAMPION TITLE + 35 INK';
+  if (tier === 'top-ten') return 'FINALIST TITLE + 21 INK';
+  if (tier === 'top-hundred') return 'CONTENDER TITLE + 7 INK';
+  return 'NO RANK PRIZE YET';
 };
 
 const standingSummary = (board: SeasonBoard): string => {
@@ -37,9 +50,9 @@ export function openSeasonBoard(
   let close = (): void => {};
   const modalActions = new CanvasModalOverlay(
     scene,
-    'Season ranking',
+    'Season rewards and standings',
     () => close(),
-    'The current sixty-day Scribbits campaign ranking.'
+    'The current sixty-day Scribbits campaign rewards and ranking.'
   );
   layer.once('destroy', () => modalActions.destroy());
 
@@ -74,13 +87,13 @@ export function openSeasonBoard(
 
   const cardTop = -cardHeight / 2;
   card.add(
-    handLettered(scene, 0, cardTop + 56, 'SEASON RANKING', 36, UI.ink, true)
+    handLettered(scene, 0, cardTop + 56, 'SEASON REWARDS', 36, UI.ink, true)
   );
   card.add(
     ghostButton(scene, cardWidth / 2 - 46, cardTop + 42, '✕', () => close(), 72)
   );
   const nativeClose = modalActions.add({
-    label: 'Close season ranking',
+    label: 'Close season rewards and standings',
     rect: {
       x: width / 2 + cardWidth / 2 - 82,
       y: height / 2 + cardTop + 6,
@@ -101,9 +114,44 @@ export function openSeasonBoard(
   );
   card.add(loading);
 
-  const renderBoard = (board: SeasonBoard): void => {
+  const content = scene.add.container(0, 0);
+  card.add(content);
+  let activeTab: 'rewards' | 'standings' = 'rewards';
+  let loadedBoard: SeasonBoard | null = null;
+
+  const activateTab = (tab: 'rewards' | 'standings'): void => {
+    activeTab = tab;
+    renderActiveTab();
+    liveStatus.textContent =
+      tab === 'rewards'
+        ? 'Season rewards shown.'
+        : `Season standings shown. ${loadedBoard ? standingSummary(loadedBoard) : ''}`;
+  };
+
+  modalActions.add({
+    label: 'Show season rewards',
+    rect: {
+      x: width / 2 - 212,
+      y: height / 2 + cardTop + 166,
+      width: 200,
+      height: 48,
+    },
+    onActivate: () => activateTab('rewards'),
+  });
+  modalActions.add({
+    label: 'Show season standings',
+    rect: {
+      x: width / 2 + 12,
+      y: height / 2 + cardTop + 166,
+      width: 200,
+      height: 48,
+    },
+    onActivate: () => activateTab('standings'),
+  });
+
+  const addHeaderAndTabs = (board: SeasonBoard): void => {
     const season = board.season;
-    card.add(
+    content.add(
       label(
         scene,
         0,
@@ -119,7 +167,7 @@ export function openSeasonBoard(
       : board.finalized
         ? 'FINAL STANDINGS'
         : `${season.daysRemaining} DAYS LEFT`;
-    card.add(
+    content.add(
       label(
         scene,
         0,
@@ -130,13 +178,166 @@ export function openSeasonBoard(
         true
       )
     );
+    content.add(
+      ghostButton(
+        scene,
+        -112,
+        cardTop + 190,
+        'REWARDS',
+        () => activateTab('rewards'),
+        200
+      )
+    );
+    content.add(
+      ghostButton(
+        scene,
+        112,
+        cardTop + 190,
+        'STANDINGS',
+        () => activateTab('standings'),
+        200
+      )
+    );
+  };
 
-    const listTop = cardTop + 205;
-    const availableListHeight = cardHeight - 330;
-    const rowHeight = Math.max(48, Math.min(64, availableListHeight / 10));
+  const renderRewards = (board: SeasonBoard): void => {
+    const standing = board.season.me;
+    const picksMade = standing?.picksMade ?? 0;
+    const projectedTier = standing?.projectedRewardTier ?? null;
+    const heroY = cardTop + 262;
+    content.add(
+      scene.add
+        .rectangle(0, heroY, cardWidth - 70, 86, UI.gold, 0.3)
+        .setStrokeStyle(2, 0x8a5700, 0.7)
+    );
+    content.add(
+      label(
+        scene,
+        0,
+        heroY - 18,
+        'YOUR CURRENT PRIZE',
+        TYPE.caption,
+        UI.inkSoft,
+        true
+      )
+    );
+    content.add(
+      label(
+        scene,
+        0,
+        heroY + 17,
+        picksMade < SEASON_RANK_REWARD_MINIMUM_PICKS
+          ? `${SEASON_RANK_REWARD_MINIMUM_PICKS - picksMade} PICKS TO QUALIFY`
+          : rankPrizeText(projectedTier),
+        TYPE.title,
+        UI.ink,
+        true
+      )
+    );
+
+    const milestoneTop = cardTop + 340;
+    const rowHeight = 58;
+    SEASON_ONE_PARTICIPATION_MILESTONES.forEach((milestone, index) => {
+      const rowY = milestoneTop + index * rowHeight;
+      const complete = picksMade >= milestone.picksRequired;
+      const next =
+        !complete &&
+        !SEASON_ONE_PARTICIPATION_MILESTONES.some(
+          (candidate) =>
+            candidate.picksRequired < milestone.picksRequired &&
+            picksMade < candidate.picksRequired
+        );
+      content.add(
+        scene.add
+          .rectangle(
+            0,
+            rowY,
+            cardWidth - 70,
+            rowHeight - 7,
+            complete ? UI.gold : UI.creamHex,
+            complete ? 0.42 : next ? 0.82 : 0.48
+          )
+          .setStrokeStyle(2, UI.inkHex, complete || next ? 0.65 : 0.22)
+      );
+      content.add(
+        paperIcon(
+          scene,
+          complete ? 'spark' : 'lock',
+          -cardWidth / 2 + 56,
+          rowY,
+          {
+            size: 23,
+            fill: complete ? UI.gold : UI.inkSoftHex,
+          }
+        )
+      );
+      content.add(
+        label(
+          scene,
+          -cardWidth / 2 + 88,
+          rowY,
+          `${milestone.picksRequired} PICKS`,
+          TYPE.caption,
+          UI.ink,
+          true
+        ).setOrigin(0, 0.5)
+      );
+      content.add(
+        label(
+          scene,
+          cardWidth / 2 - 42,
+          rowY,
+          milestone.label.toUpperCase(),
+          TYPE.caption,
+          complete ? UI.goldText : UI.inkSoft,
+          complete
+        )
+          .setOrigin(1, 0.5)
+          .setWordWrapWidth(cardWidth - 260)
+      );
+    });
+
+    const rankTop = milestoneTop + rowHeight * 5 + 38;
+    content.add(
+      label(scene, 0, rankTop, 'FINAL RANK PRIZES', TYPE.title, UI.ink, true)
+    );
+    [
+      '#1 · CHAMPION TITLE + 35 INK',
+      '#2–10 · FINALIST TITLE + 21 INK',
+      '#11–100 · CONTENDER TITLE + 7 INK',
+    ].forEach((text, index) => {
+      content.add(
+        label(
+          scene,
+          0,
+          rankTop + 42 + index * 34,
+          text,
+          TYPE.caption,
+          UI.inkSoft,
+          true
+        )
+      );
+    });
+    content.add(
+      label(
+        scene,
+        0,
+        rankTop + 152,
+        `${SEASON_RANK_REWARD_MINIMUM_PICKS} PICKS REQUIRED · EXACT TIES SHARE THE HIGHER TIER`,
+        TYPE.caption,
+        UI.coralText,
+        true
+      ).setWordWrapWidth(cardWidth - 100)
+    );
+  };
+
+  const renderStandings = (board: SeasonBoard): void => {
+    const listTop = cardTop + 260;
+    const availableListHeight = cardHeight - 390;
+    const rowHeight = Math.max(48, Math.min(62, availableListHeight / 10));
     const shownEntries = board.top.slice(0, 10);
     if (shownEntries.length === 0) {
-      card.add(
+      content.add(
         label(
           scene,
           0,
@@ -150,8 +351,8 @@ export function openSeasonBoard(
     }
     shownEntries.forEach((entry, index) => {
       const rowY = listTop + index * rowHeight;
-      const isMe = board.me?.rank === entry.rank;
-      card.add(
+      const isMe = board.me?.username === entry.username;
+      content.add(
         scene.add
           .rectangle(
             0,
@@ -163,7 +364,7 @@ export function openSeasonBoard(
           )
           .setStrokeStyle(2, UI.inkHex, isMe ? 1 : 0.35)
       );
-      card.add(
+      content.add(
         label(
           scene,
           -cardWidth / 2 + 50,
@@ -174,7 +375,7 @@ export function openSeasonBoard(
           true
         )
       );
-      card.add(
+      content.add(
         label(
           scene,
           -cardWidth / 2 + 100,
@@ -188,14 +389,14 @@ export function openSeasonBoard(
           .setWordWrapWidth(cardWidth - 285)
       );
       if (entry.rank <= 3) {
-        card.add(
+        content.add(
           paperIcon(scene, 'trophy', cardWidth / 2 - 126, rowY, {
             size: 25,
             fill: entry.rank === 1 ? UI.gold : UI.tapeAlt,
           })
         );
       }
-      card.add(
+      content.add(
         label(
           scene,
           cardWidth / 2 - 52,
@@ -207,19 +408,31 @@ export function openSeasonBoard(
         ).setOrigin(1, 0.5)
       );
     });
-
     const standing = board.me;
     const standingText =
       standing && standing.rank > 0
-        ? `YOU #${standing.rank} · ${standing.score} PTS${rewardLabel(standing) ? ` · ${rewardLabel(standing)}` : ''}`
+        ? `YOU #${standing.rank} · ${standing.score} PTS · ${standing.picksMade} PICKS${rewardLabel(standing) ? ` · ${rewardLabel(standing)}` : ''}`
         : 'YOU · UNRANKED';
     const standingY = cardHeight / 2 - 62;
-    card.add(
+    content.add(
       scene.add.rectangle(0, standingY - 34, cardWidth - 70, 2, UI.inkHex, 0.3)
     );
-    card.add(
+    content.add(
       label(scene, 0, standingY, standingText, TYPE.title, UI.ink, true)
     );
+  };
+
+  const renderActiveTab = (): void => {
+    if (!loadedBoard) return;
+    content.removeAll(true);
+    addHeaderAndTabs(loadedBoard);
+    if (activeTab === 'rewards') renderRewards(loadedBoard);
+    else renderStandings(loadedBoard);
+  };
+
+  const renderBoard = (board: SeasonBoard): void => {
+    loadedBoard = board;
+    renderActiveTab();
   };
 
   void fetchSeasonBoard().then((result) => {

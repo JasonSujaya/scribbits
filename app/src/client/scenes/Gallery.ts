@@ -6,6 +6,7 @@ import {
   fetchInventory,
   fetchLegacyCards,
   mergeGear,
+  refillDrawingInk,
 } from '../lib/api';
 import {
   getArena,
@@ -46,6 +47,7 @@ import type {
   MergeGearResponse,
   Scribbit,
 } from '../../shared/arena';
+import type { DrawingInkRefillResponse } from '../../shared/drawingink';
 import {
   getScribbitLifecycleStage,
   MAX_GROWING_PER_USER,
@@ -72,7 +74,7 @@ import { screenTitle } from '../lib/screentitle';
 import { translate } from '../lib/localization';
 import { fitText } from '../lib/fittext';
 import { planSceneMutationResponse } from '../lib/arenaasynclifecycle';
-import { playGameSoundtrack } from '../lib/soundtrack';
+import { playHomeSoundtrack, releaseHomeSoundtrack } from '../lib/soundtrack';
 import {
   galleryVisualAssetsReady,
   preloadGalleryVisualAssets,
@@ -157,8 +159,10 @@ export class Gallery extends Scene {
   private equipmentMutationEpoch = 0;
   private titleMutationEpoch = 0;
   private gearMergeMutationEpoch = 0;
+  private drawingInkRefillMutationEpoch = 0;
   private arenaReconciliationEpoch = 0;
   private collectionRefreshRequested = false;
+  private drawingInkRefillBusy = false;
   private sectionTabsOverlay: CanvasActionOverlay | null = null;
   private contentActionOverlay: CanvasActionOverlay | null = null;
   private sectionSemanticOverlay: DomOverlay | null = null;
@@ -218,6 +222,7 @@ export class Gallery extends Scene {
     this.menu = null;
     this.assetErrorPanel = null;
     this.collectionRefreshRequested = false;
+    this.drawingInkRefillBusy = false;
   }
 
   create(): void {
@@ -232,8 +237,9 @@ export class Gallery extends Scene {
   }
 
   private createLoadedGallery(): void {
-    playGameSoundtrack();
+    playHomeSoundtrack();
     this.events.once('shutdown', () => {
+      releaseHomeSoundtrack();
       this.sceneVisitEpoch += 1;
       this.destroyBuildOverlays();
       this.assetErrorPanel?.destroy();
@@ -521,6 +527,9 @@ export class Gallery extends Scene {
         onEquipTitle: (titleId) => this.updateEquippedTitle(titleId),
         onMergeGear: (gearId, operationId) =>
           this.mergeOwnedGear(gearId, operationId),
+        myInk: getArena(this)?.myInk ?? 0,
+        onRefillDrawingInk: (itemId, operationId) =>
+          this.refillDrawingInkUse(itemId, operationId),
         onInventoryChanged: () => this.build(),
       });
       this.restoreContentActionFocus(focusedContentActionLabel);
@@ -1025,6 +1034,7 @@ export class Gallery extends Scene {
           : {},
       onRemoved: () => void this.reconcileArenaSnapshot(),
       onRetired: () => void this.showRetiredScribbit(),
+      onReported: () => void this.reconcileArenaSnapshot(),
       onClose: () => {
         this.openingScribbitId = null;
         this.sectionTabsOverlay?.setVisible(true);
@@ -1147,6 +1157,48 @@ export class Gallery extends Scene {
     if (!result.ok) return { error: result.error };
     this.inventory = result.data.inventory;
     this.applyForgedGearRank(result.data.gearId, result.data.toRank);
+    return result.data;
+  }
+
+  private async refillDrawingInkUse(
+    itemId: string,
+    operationId: string
+  ): Promise<DrawingInkRefillResponse | { error: string }> {
+    if (!this.inventory) return { error: 'Your Bag is still syncing.' };
+    if (this.drawingInkRefillBusy) {
+      return { error: 'Finish adding the current color use first.' };
+    }
+    this.drawingInkRefillBusy = true;
+    const sceneVisitEpoch = this.sceneVisitEpoch;
+    const mutationEpoch = this.drawingInkRefillMutationEpoch + 1;
+    this.drawingInkRefillMutationEpoch = mutationEpoch;
+
+    const result = await refillDrawingInk(itemId, operationId);
+    if (
+      !this.isCurrentCollectionMutation(
+        sceneVisitEpoch,
+        mutationEpoch,
+        this.drawingInkRefillMutationEpoch
+      )
+    ) {
+      if (result.ok && this.scene.isActive()) {
+        void this.reconcileArenaSnapshot();
+      }
+      return result.ok ? result.data : { error: result.error };
+    }
+
+    this.drawingInkRefillBusy = false;
+    if (!result.ok) {
+      return { error: result.error };
+    }
+    this.inventory = result.data.inventory;
+    const arena = getArena(this);
+    if (arena) {
+      setArena(this, {
+        ...arena,
+        myInk: result.data.ink,
+      });
+    }
     return result.data;
   }
 

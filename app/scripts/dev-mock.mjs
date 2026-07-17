@@ -36,6 +36,7 @@ const {
   feedbackAdminJavaScript,
   CAPSULE_COST,
   DEFAULT_BATTLE_ARENA_ID,
+  DRAWING_INK_REFILL_COST,
   DRAW_CHARGE_CAPACITY,
   GEAR_MERGE_COPY_COST,
   MAX_GEAR_RANK,
@@ -48,6 +49,7 @@ const {
   MAXIMUM_POWER_UPS,
   POWER_UP_CATALOG,
   SCOUT_NOTEBOOK_MAXIMUM_ENTRIES,
+  SEASON_ONE_PARTICIPATION_MILESTONES,
   XP_REWARDS,
   addXpToScribbit,
   applyBattleOutcomeToScribbit,
@@ -716,6 +718,8 @@ const createPreviewEconomy = (options = {}) => {
     discountedCapsuleDay: null,
     capsuleOperations: new Map(),
     gearMergeOperations: new Map(),
+    paintBucketLevel: options.paintBucketLevel ?? 1,
+    drawingInkRefillOperations: new Map(),
     sparWinRewardUtcDates: new Set(),
     sparRewardReceipts: new Map(),
     sparOutcomeReportIds: new Set(),
@@ -810,6 +814,10 @@ const memory = {
   backedScribbitIdByPreviewMode: {
     returning: null,
     fresh: null,
+  },
+  seasonPicksByPreviewMode: {
+    returning: 32,
+    fresh: 0,
   },
   playStreakDays: 4,
   activePlayDays: 8,
@@ -1166,12 +1174,23 @@ const getFounderChronicleForPreview = (previewMode) => {
 };
 
 const seasonSummaryForPreview = (previewMode) => {
+  const picksMade = memory.seasonPicksByPreviewMode[previewMode] ?? 0;
   const standing =
     previewMode === 'logged-out'
       ? null
       : previewMode === 'fresh'
-        ? { score: 0, rank: 0 }
-        : { score: 84, rank: 3 };
+        ? {
+            score: 0,
+            rank: 0,
+            picksMade,
+            projectedRewardTier: null,
+          }
+        : {
+            score: 84,
+            rank: 3,
+            picksMade,
+            projectedRewardTier: 'top-ten',
+          };
   return {
     id: 'season-1',
     number: 1,
@@ -1205,14 +1224,70 @@ const seasonStateForPreview = (previewMode) => ({
 const seasonBoardForPreview = (previewMode) => {
   const season = seasonSummaryForPreview(previewMode);
   const top = [
-    { username: 'inkwell_kay', score: 126, rank: 1, rewardTier: null },
-    { username: 'marker_jules', score: 101, rank: 2, rewardTier: null },
-    { username: 'mock_player', score: 84, rank: 3, rewardTier: null },
-    { username: 'pixel_mara', score: 77, rank: 4, rewardTier: null },
-    { username: 'crayon_lia', score: 65, rank: 5, rewardTier: null },
-    { username: 'paper_ren', score: 53, rank: 6, rewardTier: null },
-    { username: 'washitape_kit', score: 41, rank: 7, rewardTier: null },
-    { username: 'smudge_sam', score: 28, rank: 8, rewardTier: null },
+    {
+      username: 'inkwell_kay',
+      score: 126,
+      rank: 1,
+      picksMade: 48,
+      projectedRewardTier: 'champion',
+      rewardTier: null,
+    },
+    {
+      username: 'marker_jules',
+      score: 101,
+      rank: 2,
+      picksMade: 44,
+      projectedRewardTier: 'top-ten',
+      rewardTier: null,
+    },
+    {
+      username: 'mock_player',
+      score: 84,
+      rank: 3,
+      picksMade: 32,
+      projectedRewardTier: 'top-ten',
+      rewardTier: null,
+    },
+    {
+      username: 'pixel_mara',
+      score: 77,
+      rank: 4,
+      picksMade: 31,
+      projectedRewardTier: 'top-ten',
+      rewardTier: null,
+    },
+    {
+      username: 'crayon_lia',
+      score: 65,
+      rank: 5,
+      picksMade: 28,
+      projectedRewardTier: 'top-ten',
+      rewardTier: null,
+    },
+    {
+      username: 'paper_ren',
+      score: 53,
+      rank: 6,
+      picksMade: 25,
+      projectedRewardTier: 'top-ten',
+      rewardTier: null,
+    },
+    {
+      username: 'washitape_kit',
+      score: 41,
+      rank: 7,
+      picksMade: 19,
+      projectedRewardTier: 'top-ten',
+      rewardTier: null,
+    },
+    {
+      username: 'smudge_sam',
+      score: 28,
+      rank: 8,
+      picksMade: 14,
+      projectedRewardTier: null,
+      rewardTier: null,
+    },
   ];
   return {
     season,
@@ -1221,7 +1296,14 @@ const seasonBoardForPreview = (previewMode) => {
       previewMode === 'logged-out'
         ? null
         : previewMode === 'fresh'
-          ? { username: 'mock_player', score: 0, rank: 0, rewardTier: null }
+          ? {
+              username: 'mock_player',
+              score: 0,
+              rank: 0,
+              picksMade: 0,
+              projectedRewardTier: null,
+              rewardTier: null,
+            }
           : top[2],
     finalized: false,
   };
@@ -1285,6 +1367,8 @@ const resetPreviewEconomy = (economy) => {
   economy.discountedCapsuleDay = null;
   economy.capsuleOperations.clear();
   economy.gearMergeOperations.clear();
+  economy.paintBucketLevel = 1;
+  economy.drawingInkRefillOperations.clear();
   economy.sparWinRewardUtcDates.clear();
   economy.sparRewardReceipts.clear();
   economy.sparOutcomeReportIds.clear();
@@ -1653,10 +1737,13 @@ const capsuleCostForCurrentPull = (economy) => {
 };
 
 const capsuleProgressState = (economy) => {
+  const capsuleDiscoveryCount = economy.inventory.discovered.filter(
+    (itemId) => productionCosmeticById.get(itemId)?.capsuleEligible !== false
+  ).length;
   return createCapsuleProgress(
     economy.capsulePullCount,
     economy.pullsSinceEpic,
-    economy.inventory.discovered.length
+    capsuleDiscoveryCount
   );
 };
 
@@ -1737,7 +1824,7 @@ const arenaState = (economy, previewMode = 'returning') => {
       capacity: DRAW_CHARGE_CAPACITY,
       nextRefreshAt: null,
     },
-    paintBucket: getPaintBucketState(),
+    paintBucket: getPaintBucketState(economy.paintBucketLevel),
     drawnToday: hasDrawnTodayForPreview(previewMode),
     todayFreeDrawing: getTodayFreeDrawingForPreview(previewMode),
     enteredToday: memory.enteredToday,
@@ -1868,6 +1955,38 @@ const inventoryState = (inventory) => {
 const inventoryStateForPreview = (previewMode) => {
   const economy = getPreviewEconomy(previewMode);
   return economy ? inventoryState(economy.inventory) : emptyInventoryState();
+};
+
+const grantPreviewSeasonReward = (economy, milestone) => {
+  if (!economy || !milestone) return;
+  economy.ink += milestone.reward.ink;
+  for (const item of milestone.reward.catalogItems) {
+    const cosmetic = productionCosmeticById.get(item.catalogId);
+    if (!cosmetic) continue;
+    if (!economy.inventory.discovered.includes(item.catalogId)) {
+      economy.inventory.discovered.push(item.catalogId);
+    }
+    if (
+      cosmetic.kind === 'brush' ||
+      cosmetic.kind === 'drawing-ink' ||
+      cosmetic.kind === 'accessory'
+    ) {
+      economy.inventory.items[item.catalogId] =
+        (economy.inventory.items[item.catalogId] ?? 0) + item.quantity;
+    }
+    if (
+      cosmetic.kind === 'pen' &&
+      !economy.inventory.pens.includes(item.catalogId)
+    ) {
+      economy.inventory.pens.push(item.catalogId);
+    }
+    if (
+      cosmetic.kind === 'title' &&
+      !economy.inventory.titles.includes(item.catalogId)
+    ) {
+      economy.inventory.titles.push(item.catalogId);
+    }
+  }
 };
 
 const handleApi = async (request, response, url) => {
@@ -2266,6 +2385,56 @@ const handleApi = async (request, response, url) => {
 
   if (method === 'GET' && path === '/api/inventory') {
     sendJson(response, 200, inventoryStateForPreview(previewMode));
+    return;
+  }
+
+  if (method === 'POST' && path === '/api/drawing-ink/refill') {
+    const body = await readJsonBody(request);
+    const itemId = typeof body?.itemId === 'string' ? body.itemId.trim() : '';
+    const operationId =
+      typeof body?.operationId === 'string' ? body.operationId.trim() : '';
+    const entry = productionCosmeticById.get(itemId);
+    if (
+      entry?.kind !== 'drawing-ink' ||
+      !economy.inventory.discovered.includes(itemId) ||
+      !/^[A-Za-z0-9-]{16,80}$/.test(operationId)
+    ) {
+      sendError(
+        response,
+        400,
+        'Discover that special color before refilling it.'
+      );
+      return;
+    }
+    const cachedRefill = economy.drawingInkRefillOperations.get(operationId);
+    if (cachedRefill) {
+      if (cachedRefill.itemId !== itemId) {
+        sendError(response, 409, 'That refill operation was already used.');
+        return;
+      }
+      sendJson(response, 200, cachedRefill);
+      return;
+    }
+    if (economy.ink < DRAWING_INK_REFILL_COST) {
+      sendError(
+        response,
+        402,
+        `You need ${DRAWING_INK_REFILL_COST} Ink to add one use.`
+      );
+      return;
+    }
+    economy.ink -= DRAWING_INK_REFILL_COST;
+    const quantity = (economy.inventory.items[itemId] ?? 0) + 1;
+    economy.inventory.items[itemId] = quantity;
+    const refillResponse = {
+      itemId,
+      quantity,
+      ink: economy.ink,
+      inkSpent: DRAWING_INK_REFILL_COST,
+      inventory: inventoryStateForPreview(previewMode),
+    };
+    economy.drawingInkRefillOperations.set(operationId, refillResponse);
+    sendJson(response, 200, refillResponse);
     return;
   }
 
@@ -2854,7 +3023,18 @@ const handleApi = async (request, response, url) => {
     }
 
     setBackedScribbitIdForPreview(previewMode, scribbitId);
-    sendJson(response, 200, { backed: scribbitId });
+    const nextSeasonPicks =
+      (memory.seasonPicksByPreviewMode[previewMode] ?? 0) + 1;
+    memory.seasonPicksByPreviewMode[previewMode] = nextSeasonPicks;
+    const milestone = SEASON_ONE_PARTICIPATION_MILESTONES.find(
+      (candidate) => candidate.picksRequired === nextSeasonPicks
+    );
+    grantPreviewSeasonReward(economy, milestone);
+    sendJson(response, 200, {
+      backed: scribbitId,
+      seasonPicksMade: nextSeasonPicks,
+      unlockedMilestoneId: milestone?.id ?? null,
+    });
     return;
   }
 
@@ -2920,7 +3100,20 @@ const handleApi = async (request, response, url) => {
   if (method === 'POST' && path === '/api/report-scribbit') {
     const body = await readJsonBody(request);
     const scribbitId = readScribbitId(body);
+    const reportReason =
+      body && typeof body === 'object' && !Array.isArray(body)
+        ? body.reason
+        : undefined;
     const scribbit = findVisibleScribbit(scribbitId);
+
+    if (
+      !['offensive-name', 'offensive-drawing', 'harassment', 'other'].includes(
+        reportReason
+      )
+    ) {
+      sendError(response, 400, 'Choose a report reason for this Scribbit.');
+      return;
+    }
 
     if (!scribbit || scribbit.isFounding) {
       sendError(
@@ -2940,11 +3133,14 @@ const handleApi = async (request, response, url) => {
     }
 
     memory.hiddenScribbitIds.add(scribbitId);
-    const reportCount = (memory.reportCounts.get(scribbitId) ?? 0) + 1;
-    memory.reportCounts.set(scribbitId, reportCount);
+    memory.reportCounts.set(
+      scribbitId,
+      (memory.reportCounts.get(scribbitId) ?? 0) + 1
+    );
     sendJson(response, 200, {
       hidden: scribbitId,
-      removedForEveryone: reportCount >= 3,
+      removedForEveryone: false,
+      created: true,
     });
     return;
   }
@@ -3801,6 +3997,7 @@ const resetFreshPreview = () => {
   memory.createdScribbitPreviewModes.delete('fresh');
   memory.completedBattlePreviewModes.delete('fresh');
   setBackedScribbitIdForPreview('fresh', null);
+  memory.seasonPicksByPreviewMode.fresh = 0;
   memory.freshLegacySeenThroughDay = 0;
   memory.hiddenScribbitIds.clear();
   memory.reportCounts.clear();

@@ -496,10 +496,30 @@ export const SFX_CATALOG = {
 export type SfxCue = keyof typeof SFX_CATALOG;
 
 export const MUSIC_CATALOG = {
-  game: [
+  battle: [
+    {
+      id: 'scribbits-battle',
+      url: new URL('../assets/scribbits-battle.mp3', import.meta.url).href,
+      volume: 0.24,
+    },
+  ],
+  drawing: [
+    {
+      id: 'ready-set-scribble',
+      url: new URL('../assets/ready-set-scribble.mp3', import.meta.url).href,
+      volume: 0.32,
+    },
+  ],
+  home: [
     {
       id: 'pocketful-of-ink',
       url: new URL('../assets/pocketful-of-ink.mp3', import.meta.url).href,
+      volume: 0.32,
+    },
+    {
+      id: 'legends-in-the-margins',
+      url: new URL('../assets/legends-in-the-margins.mp3', import.meta.url)
+        .href,
       volume: 0.32,
     },
   ],

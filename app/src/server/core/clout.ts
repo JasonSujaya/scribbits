@@ -1,5 +1,6 @@
 import type { CloutBoard, CloutEntry } from '../../shared/arena';
 import { INK_REWARDS } from '../../shared/arena';
+import { getSeasonParticipationMilestone } from '../../shared/season';
 import { getInkKey } from './inkStore';
 import type { CurrentPlayer } from './scribbit';
 import type { ArenaStorage, ArenaTransaction } from './storage';
@@ -7,7 +8,16 @@ import {
   discardWatchedTransaction,
   MAX_WATCH_TRANSACTION_ATTEMPTS,
 } from './storage';
-import { getSeasonRankingKey, type SeasonScoringContext } from './season';
+import {
+  getSeasonCatalogKey,
+  getSeasonMilestoneEntitlementsKey,
+  getSeasonParticipationCount,
+  getSeasonParticipationKey,
+  getSeasonRankingKey,
+  loadSeasonScoringContext,
+  settleSeasonMilestoneRewards,
+  type SeasonScoringContext,
+} from './season';
 import {
   pruneExpiredPayoutReceipts,
   trackPayoutReceipt,
@@ -34,6 +44,9 @@ export const getCloutPayoutKey = (day: number): string => {
 export type DailyBackClaim = {
   claimed: boolean;
   backedScribbitId: string;
+  seasonId: string | null;
+  seasonPicksMade: number;
+  unlockedMilestoneId: string | null;
 };
 
 export type CloutPayoutResult = {
@@ -59,21 +72,134 @@ export const claimDailyBack = async (
 ): Promise<DailyBackClaim> => {
   const backKey = getBackKey(day);
   await recordCloutUsername(storage, player);
-  const createdBack = await storage.hSetNX(backKey, player.userId, scribbitId);
-  await storage.expire(backKey, backTtlSeconds);
-
-  if (createdBack === 1) {
-    return {
-      claimed: true,
-      backedScribbitId: scribbitId,
-    };
+  if (!storage.watch) {
+    throw new Error('Atomic Rumble predictions require transactions.');
   }
 
-  return {
-    claimed: false,
-    backedScribbitId:
-      (await storage.hGet(backKey, player.userId)) ?? scribbitId,
+  const completeClaim = async (
+    claimed: boolean,
+    backedScribbitId: string,
+    scoring: SeasonScoringContext | null,
+    picksMade: number,
+    unlockedMilestoneId: string | null
+  ): Promise<DailyBackClaim> => {
+    if (scoring) {
+      await settleSeasonMilestoneRewards(
+        storage,
+        scoring.seasonId,
+        player.userId,
+        Date.now()
+      );
+    }
+    return {
+      claimed,
+      backedScribbitId,
+      seasonId: scoring?.seasonId ?? null,
+      seasonPicksMade: picksMade,
+      unlockedMilestoneId,
+    };
   };
+
+  for (
+    let attempt = 0;
+    attempt < MAX_WATCH_TRANSACTION_ATTEMPTS;
+    attempt += 1
+  ) {
+    let transaction: ArenaTransaction | undefined;
+    try {
+      const scoringBeforeWatch = await loadSeasonScoringContext(storage, day);
+      const participationKey = scoringBeforeWatch
+        ? getSeasonParticipationKey(scoringBeforeWatch.seasonId)
+        : null;
+      const entitlementKey = scoringBeforeWatch
+        ? getSeasonMilestoneEntitlementsKey(scoringBeforeWatch.seasonId)
+        : null;
+      transaction = await storage.watch(
+        backKey,
+        getSeasonCatalogKey(),
+        ...(participationKey ? [participationKey] : []),
+        ...(entitlementKey ? [entitlementKey] : [])
+      );
+      const scoring = await loadSeasonScoringContext(storage, day);
+      if (JSON.stringify(scoring) !== JSON.stringify(scoringBeforeWatch)) {
+        await transaction.unwatch();
+        continue;
+      }
+      const existingBack = await storage.hGet(backKey, player.userId);
+      const currentPicks = scoring
+        ? await getSeasonParticipationCount(
+            storage,
+            scoring.seasonId,
+            player.userId
+          )
+        : 0;
+      if (existingBack !== undefined) {
+        await transaction.unwatch();
+        return await completeClaim(
+          false,
+          existingBack,
+          scoring,
+          currentPicks,
+          null
+        );
+      }
+
+      const nextPicks = scoring ? currentPicks + 1 : 0;
+      const milestone = scoring
+        ? getSeasonParticipationMilestone(nextPicks)
+        : null;
+      await transaction.multi();
+      await transaction.hSet(backKey, { [player.userId]: scribbitId });
+      await transaction.expire(backKey, backTtlSeconds);
+      if (scoring && participationKey) {
+        await transaction.zIncrBy(participationKey, player.userId, 1);
+      }
+      if (scoring && entitlementKey && milestone) {
+        await transaction.hSet(entitlementKey, {
+          [`${player.userId}:${milestone.id}`]: JSON.stringify({
+            seasonId: scoring.seasonId,
+            userId: player.userId,
+            milestoneId: milestone.id,
+            picksMade: nextPicks,
+            reward: milestone.reward,
+          }),
+        });
+      }
+      const result = await transaction.exec();
+      if (Array.isArray(result) && result.length > 0) {
+        return await completeClaim(
+          true,
+          scribbitId,
+          scoring,
+          nextPicks,
+          milestone?.id ?? null
+        );
+      }
+    } catch (error) {
+      await discardWatchedTransaction(transaction, 'Rumble prediction');
+      const existingBack = await storage.hGet(backKey, player.userId);
+      if (existingBack !== undefined) {
+        const scoring = await loadSeasonScoringContext(storage, day);
+        const picksMade = scoring
+          ? await getSeasonParticipationCount(
+              storage,
+              scoring.seasonId,
+              player.userId
+            )
+          : 0;
+        return await completeClaim(
+          existingBack === scribbitId,
+          existingBack,
+          scoring,
+          picksMade,
+          null
+        );
+      }
+      throw error;
+    }
+  }
+
+  throw new Error('Rumble prediction changed too often.');
 };
 
 export const getBackedScribbitId = async (

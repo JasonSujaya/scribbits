@@ -27,6 +27,7 @@ export {
 } from './scribbit';
 export { cloneScribbit } from '../../shared/arena';
 export { getPaintBucketState } from '../../shared/paintbucket';
+export { DRAWING_INK_REFILL_COST } from '../../shared/drawingink';
 export {
   DEFAULT_BATTLE_ARENA_ID,
   getBattleArenaForDay,
@@ -54,6 +55,7 @@ export {
   selectCapsuleDrop,
 } from './inkStore';
 export { COSMETIC_CATALOG } from '../../shared/cosmetics';
+export { SEASON_ONE_PARTICIPATION_MILESTONES } from '../../shared/season';
 export {
   DAILY_LOGIN_TRACK,
   dailyLoginRewardAfterClaims,

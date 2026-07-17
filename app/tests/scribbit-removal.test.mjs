@@ -35,7 +35,7 @@ const scribbits = require(join(compiledServerRoot, 'core', 'scribbit.js'));
 
 const currentDay = 4;
 
-test('owner, report-threshold, and privacy entry paths share removal core', () => {
+test('owner, moderator, and privacy entry paths share removal core', () => {
   const apiSource = readFileSync(
     join(appRoot, 'src', 'server', 'routes', 'api.ts'),
     'utf8'
@@ -44,19 +44,29 @@ test('owner, report-threshold, and privacy entry paths share removal core', () =
     join(appRoot, 'src', 'server', 'core', 'privacy.ts'),
     'utf8'
   );
+  const moderationAdminSource = readFileSync(
+    join(appRoot, 'src', 'server', 'routes', 'moderationAdmin.ts'),
+    'utf8'
+  );
   const ownerRemovalRoute = apiSource.slice(
     apiSource.indexOf("api.post('/remove-scribbit'"),
     apiSource.indexOf("api.post('/report-scribbit'")
   );
-  const reportRemovalRoute = apiSource.slice(
+  const reportRoute = apiSource.slice(
     apiSource.indexOf("api.post('/report-scribbit'"),
     apiSource.indexOf("api.post('/delete-my-data'")
   );
 
   assert.match(ownerRemovalRoute, /removeScribbitCompletely/);
-  assert.match(reportRemovalRoute, /removeReportedScribbitIfEligible/);
+  assert.doesNotMatch(reportRoute, /removeScribbitCompletely/);
+  assert.match(moderationAdminSource, /removeScribbitCompletely/);
+  assert.match(moderationAdminSource, /removeAllPlayerScribbits/);
   assert.match(privacySource, /removeScribbitCompletely/);
-  for (const source of [ownerRemovalRoute, reportRemovalRoute, privacySource]) {
+  for (const source of [
+    ownerRemovalRoute,
+    moderationAdminSource,
+    privacySource,
+  ]) {
     assert.doesNotMatch(
       source,
       /purgeBattleReportsForScribbit|deleteStoredScribbit|removeCurrentChampionIfMatches|clearScribbitReports/
@@ -295,32 +305,33 @@ test('creation state survives a lost transaction reply', async () => {
   );
 });
 
-test('report-threshold removal rechecks ownership and converges on canonical cleanup', async () => {
+test('player ban removal deletes every owned Scribbit through canonical cleanup', async () => {
   const memory = createMemoryStorage();
-  const scenario = await seedRemovalScenario(memory, 'report-entry');
-
-  assert.equal(
-    await removal.removeReportedScribbitIfEligible(memory.storage, {
-      expectedOwnerUserId: 'stale-owner',
-      scribbitId: scenario.target.id,
-      currentDay,
-      minimumReportCount: 3,
-    }),
-    false
+  const scenario = await seedRemovalScenario(memory, 'ban-entry');
+  const secondOwnedScribbit = createScribbit(
+    'second-ban-target',
+    scenario.ownerUserId
   );
-  assert.ok(await scribbits.loadScribbit(memory.storage, scenario.target.id));
+  await scribbits.storeScribbit(
+    memory.storage,
+    scenario.ownerUserId,
+    secondOwnedScribbit
+  );
 
   assert.equal(
-    await removal.removeReportedScribbitIfEligible(memory.storage, {
-      expectedOwnerUserId: scenario.ownerUserId,
-      scribbitId: scenario.target.id,
-      currentDay,
-      minimumReportCount: 3,
-    }),
-    true
+    await removal.removeAllPlayerScribbits(
+      memory.storage,
+      scenario.ownerUserId,
+      currentDay
+    ),
+    2
   );
 
   await assertCompletelyRemoved(memory, scenario);
+  assert.equal(
+    await scribbits.loadScribbit(memory.storage, secondOwnedScribbit.id),
+    undefined
+  );
 });
 
 test('privacy deletion reuses canonical removal for owned Scribbits', async () => {

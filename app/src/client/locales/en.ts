@@ -169,6 +169,7 @@ export const englishMessages = {
 
   'error.badRequest': 'That request was not understood. Try again.',
   'error.unauthorized': 'Sign in to continue.',
+  'error.forbidden': 'This account cannot play Scribbits.',
   'error.notFound': 'That item is no longer available.',
   'error.conflict': 'The arena changed. Try again.',
   'error.busy': 'Another game action is finishing. Try again.',

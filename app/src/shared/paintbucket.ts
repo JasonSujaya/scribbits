@@ -7,8 +7,7 @@ export const PAINT_BUCKET_LEVELS = Object.freeze([
   Object.freeze({ level: 4, capacity: 170_000 }),
 ] as const);
 
-export type PaintBucketLevel =
-  (typeof PAINT_BUCKET_LEVELS)[number]['level'];
+export type PaintBucketLevel = (typeof PAINT_BUCKET_LEVELS)[number]['level'];
 
 export type PaintBucketState = Readonly<{
   level: PaintBucketLevel;

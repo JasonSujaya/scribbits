@@ -64,4 +64,10 @@ test('Season form submission reauthorizes exact owner IDs and current moderators
   );
   assert.match(routeSource, /Admin reason/);
   assert.match(routeSource, /Confirm this administrative action/);
+  assert.match(routeSource, /Reset Season 1/);
+  assert.match(routeSource, /resetSeasonOne\(redis/);
+  assert.match(
+    routeSource,
+    /request\.resetConfirmation\.trim\(\) !== 'RESET SEASON 1'/
+  );
 });

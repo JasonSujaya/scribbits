@@ -17,6 +17,7 @@ export type InkAccessoryCatalogEntry = {
   name: string;
   description: string;
   category: EquipmentCategory;
+  capsuleEligible?: boolean;
 };
 
 export type InkPenCatalogEntry = {
@@ -26,6 +27,7 @@ export type InkPenCatalogEntry = {
   name: string;
   description: string;
   colors: string[];
+  capsuleEligible?: boolean;
 };
 
 export type InkTitleCatalogEntry = {
@@ -34,6 +36,7 @@ export type InkTitleCatalogEntry = {
   rarity: CapsuleRarity;
   name: string;
   description: string;
+  capsuleEligible?: boolean;
 };
 
 export type InkDrawingInkCatalogEntry = {
@@ -44,6 +47,7 @@ export type InkDrawingInkCatalogEntry = {
   description: string;
   colors: string[];
   effect: CosmeticPenEffect;
+  capsuleEligible?: boolean;
 };
 
 export type InkBrushCatalogEntry = {
@@ -53,6 +57,7 @@ export type InkBrushCatalogEntry = {
   name: string;
   description: string;
   effect: CosmeticBrushEffect;
+  capsuleEligible?: boolean;
 };
 
 export type InkConsumableCatalogEntry =
@@ -98,6 +103,10 @@ export const INK_CATALOG: InkCatalogEntry[] = [
   ...INK_DRAWING_INK_CATALOG,
   ...INK_BRUSH_CATALOG,
 ];
+
+export const INK_CAPSULE_CATALOG: InkCatalogEntry[] = INK_CATALOG.filter(
+  (entry) => entry.capsuleEligible !== false
+);
 
 const inkCatalogById = new Map<string, InkCatalogEntry>(
   INK_CATALOG.map((entry) => [entry.id, entry])

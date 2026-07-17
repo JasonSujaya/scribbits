@@ -56,8 +56,7 @@ body {
   justify-content: center;
   box-sizing: border-box;
   padding: max(24px, env(safe-area-inset-top))
-    max(18px, env(safe-area-inset-right))
-    max(24px, env(safe-area-inset-bottom))
+    max(18px, env(safe-area-inset-right)) max(24px, env(safe-area-inset-bottom))
     max(18px, env(safe-area-inset-left));
   color: #2b2016;
   text-align: center;
@@ -103,7 +102,12 @@ body {
       rgba(43, 32, 22, 0.05) 0 1px,
       transparent 2px
     ),
-    linear-gradient(95deg, transparent 48%, rgba(43, 32, 22, 0.035) 50%, transparent 52%);
+    linear-gradient(
+      95deg,
+      transparent 48%,
+      rgba(43, 32, 22, 0.035) 50%,
+      transparent 52%
+    );
   background-size:
     34px 34px,
     100% 100%;
@@ -171,6 +175,16 @@ body {
   color: #5f4f3b;
   font-size: clamp(14px, 3.4vw, 18px);
   line-height: 1.25;
+}
+
+.game-boot-version {
+  width: 100%;
+  margin: -9px 2px 7px 0;
+  color: #7f6c55;
+  font-size: clamp(10px, 2.4vw, 12px);
+  line-height: 1;
+  letter-spacing: 0.08em;
+  text-align: right;
 }
 
 .game-boot-progress-row {
@@ -254,7 +268,9 @@ body {
   margin-top: 16px;
   padding: 10px 22px;
   color: #2b2016;
-  font: 700 18px/1 'DynaPuff', sans-serif;
+  font:
+    700 18px/1 'DynaPuff',
+    sans-serif;
   background: #ff6b4a;
   border: 3px solid #2b2016;
   border-radius: 14px;
@@ -306,8 +322,7 @@ body {
   justify-content: center;
   box-sizing: border-box;
   padding: 24px max(20px, env(safe-area-inset-right))
-    max(28px, env(safe-area-inset-bottom))
-    max(20px, env(safe-area-inset-left));
+    max(28px, env(safe-area-inset-bottom)) max(20px, env(safe-area-inset-left));
   pointer-events: auto;
   transition: background-color 140ms ease-out;
 }
@@ -388,7 +403,9 @@ body {
   min-height: 54px;
   padding: 10px 22px;
   color: #2b2016;
-  font: 700 18px/1 'DynaPuff', sans-serif;
+  font:
+    700 18px/1 'DynaPuff',
+    sans-serif;
   background: #ff6b4a;
   border: 3px solid #2b2016;
   border-radius: 14px;
@@ -486,6 +503,15 @@ body {
     margin: 1px 0 4px;
     font-size: 12px;
     line-height: 1.15;
+  }
+
+  .game-boot-version {
+    position: absolute;
+    top: 8px;
+    right: 12px;
+    width: auto;
+    margin: 0;
+    font-size: 9px;
   }
 
   .game-boot-progress-row {

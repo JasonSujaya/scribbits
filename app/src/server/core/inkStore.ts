@@ -10,6 +10,11 @@ import type {
   MergeGearResponse,
 } from '../../shared/arena';
 import {
+  DRAWING_INK_REFILL_COST,
+  type DrawingInkRefillResponse,
+} from '../../shared/drawingink';
+import type { SeasonRewardBundle } from '../../shared/season';
+import {
   CAPSULE_COST,
   CAPSULE_EPIC_WEAPON_GUARANTEE_PULL,
   CAPSULE_FIRST_DAILY_COST,
@@ -37,6 +42,7 @@ import {
 import {
   INK_ACCESSORY_CATALOG,
   INK_BRUSH_CATALOG,
+  INK_CAPSULE_CATALOG,
   INK_CATALOG,
   INK_DRAWING_INK_CATALOG,
   INK_PEN_CATALOG,
@@ -109,6 +115,8 @@ const inventoryGearRankFieldPrefix = 'gear-rank:';
 const inventoryEquippedTitleField = 'equipped-title';
 const gearMergeOperationKeyPrefix = 'gear:merge:operation:';
 const gearMergeReceiptSchemaVersion = 1;
+const drawingInkRefillOperationKeyPrefix = 'drawing-ink:refill:operation:';
+const drawingInkRefillReceiptSchemaVersion = 1;
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -134,6 +142,13 @@ export const getGearMergeOperationKey = (
   operationId: string
 ): string => {
   return `${gearMergeOperationKeyPrefix}${userId}:${operationId}`;
+};
+
+export const getDrawingInkRefillOperationKey = (
+  userId: string,
+  operationId: string
+): string => {
+  return `${drawingInkRefillOperationKeyPrefix}${userId}:${operationId}`;
 };
 
 export const getPullsSinceEpicKey = (userId: string): string => {
@@ -171,12 +186,14 @@ export const loadUserOperationReceiptKeys = async (
   );
   const capsulePrefix = `${capsuleOperationKeyPrefix}${userId}:`;
   const gearMergePrefix = `${gearMergeOperationKeyPrefix}${userId}:`;
+  const drawingInkRefillPrefix = `${drawingInkRefillOperationKeyPrefix}${userId}:`;
   return entries
     .map((entry) => entry.member)
     .filter(
       (operationKey) =>
         operationKey.startsWith(capsulePrefix) ||
-        operationKey.startsWith(gearMergePrefix)
+        operationKey.startsWith(gearMergePrefix) ||
+        operationKey.startsWith(drawingInkRefillPrefix)
     );
 };
 
@@ -264,10 +281,7 @@ const parseStoredInventoryCount = (
 ): number => {
   if (storedValue === undefined) return 0;
   const parsedValue = Number(storedValue);
-  if (
-    !Number.isSafeInteger(parsedValue) ||
-    parsedValue < 0
-  ) {
+  if (!Number.isSafeInteger(parsedValue) || parsedValue < 0) {
     throw new Error(
       `Stored inventory count for ${catalogId} is invalid and was preserved.`
     );
@@ -390,6 +404,104 @@ export const claimInkReward = async (
   }
 
   throw new Error('Ink reward claim did not settle.');
+};
+
+export type RewardBundleClaim = Readonly<{
+  receiptKey: string;
+  receiptField: string;
+  userId: string;
+  reward: SeasonRewardBundle;
+  awardedAtMs: number;
+}>;
+
+export const claimRewardBundle = async (
+  storage: ArenaStorage,
+  claim: RewardBundleClaim
+): Promise<boolean> => {
+  if (!storage.watch) {
+    throw new Error('Atomic reward bundles require transaction support.');
+  }
+  if (!Number.isSafeInteger(claim.reward.ink) || claim.reward.ink < 0) {
+    throw new Error('Reward bundle Ink must be a non-negative integer.');
+  }
+  const catalogItems = claim.reward.catalogItems.map((item) => {
+    if (!Number.isSafeInteger(item.quantity) || item.quantity <= 0) {
+      throw new Error('Reward bundle quantities must be positive integers.');
+    }
+    const entry = findInkCatalogEntry(item.catalogId);
+    if (!entry) {
+      throw new Error(`Reward catalog item ${item.catalogId} does not exist.`);
+    }
+    return { entry, quantity: item.quantity };
+  });
+  const receiptValue = JSON.stringify({
+    userId: claim.userId,
+    reward: claim.reward,
+    awardedAtMs: claim.awardedAtMs,
+  });
+  const inkKey = getInkKey(claim.userId);
+  const inventoryKey = getInventoryKey(claim.userId);
+
+  for (
+    let attempt = 0;
+    attempt < MAX_WATCH_TRANSACTION_ATTEMPTS;
+    attempt += 1
+  ) {
+    let transaction: ArenaTransaction | undefined;
+    try {
+      transaction = await storage.watch(claim.receiptKey, inkKey, inventoryKey);
+      const existingReceipt = await storage.hGet(
+        claim.receiptKey,
+        claim.receiptField
+      );
+      if (existingReceipt !== undefined) {
+        await transaction.unwatch();
+        return false;
+      }
+      await getInkBalance(storage, claim.userId);
+      const storedInventory = await storage.hGetAll(inventoryKey);
+      for (const { entry } of catalogItems) {
+        if (isConsumableCatalogEntry(entry)) {
+          parseStoredInventoryCount(storedInventory[entry.id], entry.id);
+        }
+      }
+
+      await transaction.multi();
+      await transaction.hSet(claim.receiptKey, {
+        [claim.receiptField]: receiptValue,
+      });
+      if (claim.reward.ink > 0) {
+        await transaction.incrBy(inkKey, claim.reward.ink);
+      }
+      for (const { entry, quantity } of catalogItems) {
+        await transaction.hSet(inventoryKey, {
+          [getInventoryDiscoveryField(entry.id)]: '1',
+          ...(isPermanentCatalogEntry(entry) ? { [entry.id]: entry.kind } : {}),
+          ...(entry.kind === 'accessory' &&
+          storedInventory[getInventoryGearRankField(entry.id)] === undefined
+            ? { [getInventoryGearRankField(entry.id)]: '1' }
+            : {}),
+        });
+        if (isConsumableCatalogEntry(entry)) {
+          await transaction.hIncrBy(inventoryKey, entry.id, quantity);
+        }
+      }
+      const result = await transaction.exec();
+      if (Array.isArray(result) && result.length > 0) return true;
+    } catch (error) {
+      await discardWatchedTransaction(transaction, 'Reward bundle');
+      const recoveredReceipt = await storage.hGet(
+        claim.receiptKey,
+        claim.receiptField
+      );
+      if (recoveredReceipt !== undefined) {
+        return recoveredReceipt === receiptValue;
+      }
+      throw error;
+    }
+  }
+
+  throw new Error('Reward bundle claim changed too often.');
 };
 
 const parseInkRewardReceipt = (
@@ -626,8 +738,14 @@ export const createCapsuleProgress = (
     pullCount,
     pityRemaining: Math.max(1, CAPSULE_PITY - pullsSinceEpic),
     discoveredCount,
-    collectionTotal: INK_CATALOG.length,
+    collectionTotal: INK_CAPSULE_CATALOG.length,
   };
+};
+
+const countCapsuleDiscoveries = (itemIds: readonly string[]): number => {
+  return itemIds.filter(
+    (itemId) => findInkCatalogEntry(itemId)?.capsuleEligible !== false
+  ).length;
 };
 
 export const loadCapsuleProgress = async (
@@ -644,7 +762,7 @@ export const loadCapsuleProgress = async (
   return createCapsuleProgress(
     pullCount,
     pullsSinceEpic,
-    inventory.discovered.length
+    countCapsuleDiscoveries(inventory.discovered)
   );
 };
 
@@ -687,7 +805,7 @@ const chooseEntryForRarity = (
   unusableCatalogIds: ReadonlySet<string>,
   gearOnly = false
 ): InkCatalogEntry => {
-  const catalog = gearOnly ? INK_ACCESSORY_CATALOG : INK_CATALOG;
+  const catalog = gearOnly ? INK_ACCESSORY_CATALOG : INK_CAPSULE_CATALOG;
   const matchingEntries = catalog.filter((entry) => {
     return entry.rarity === rarity;
   });
@@ -1084,7 +1202,7 @@ const parseStoredCapsuleProgress = (
     pullCount: progressRecord.pullCount,
     pityRemaining: Number(progressRecord.pityRemaining),
     discoveredCount,
-    collectionTotal: INK_CATALOG.length,
+    collectionTotal: INK_CAPSULE_CATALOG.length,
   };
 };
 
@@ -1155,8 +1273,11 @@ const parseCapsuleOperationResponse = (
     );
     const needsCurrentProgress = record.progress === undefined;
     const progress = needsCurrentProgress
-      ? createCapsuleProgress(0, 0, discovered.length)
-      : parseStoredCapsuleProgress(record.progress, discovered.length);
+      ? createCapsuleProgress(0, 0, countCapsuleDiscoveries(discovered))
+      : parseStoredCapsuleProgress(
+          record.progress,
+          countCapsuleDiscoveries(discovered)
+        );
     if (!progress) return undefined;
     const receiptTitles = inventoryRecord.titles as string[];
     const equippedTitle =
@@ -1255,8 +1376,8 @@ const normalizeLegacyCapsuleOperationResponse = async (
     },
     progress: {
       ...progress,
-      discoveredCount: discovered.length,
-      collectionTotal: INK_CATALOG.length,
+      discoveredCount: countCapsuleDiscoveries(discovered),
+      collectionTotal: INK_CAPSULE_CATALOG.length,
     },
   };
 };
@@ -1521,7 +1642,7 @@ export const pullCapsuleForUser = async (
       const progress = createCapsuleProgress(
         nextPullCount,
         nextPullsSinceEpic,
-        inventory.discovered.length
+        countCapsuleDiscoveries(inventory.discovered)
       );
       const success: CapsulePullSuccess = {
         status: 'pulled',
@@ -1884,6 +2005,196 @@ const parseReceiptInventory = (value: unknown): Inventory | undefined => {
     return undefined;
   }
   return { items, gear, pens, titles, equippedTitle, discovered };
+};
+
+type StoredDrawingInkRefillReceipt =
+  | { status: 'missing' }
+  | { status: 'valid'; response: DrawingInkRefillResponse }
+  | { status: 'invalid' }
+  | { status: 'unsupported'; schemaVersion: number };
+
+const parseDrawingInkRefillReceipt = (
+  storedValue: string | undefined
+): StoredDrawingInkRefillReceipt => {
+  if (storedValue === undefined) return { status: 'missing' };
+  try {
+    const stored: unknown = JSON.parse(storedValue);
+    if (!isRecord(stored) || !Number.isSafeInteger(stored.schemaVersion)) {
+      return { status: 'invalid' };
+    }
+    if (stored.schemaVersion !== drawingInkRefillReceiptSchemaVersion) {
+      return {
+        status: 'unsupported',
+        schemaVersion: Number(stored.schemaVersion),
+      };
+    }
+    const response = stored.response;
+    if (!isRecord(response)) return { status: 'invalid' };
+    if (typeof response.itemId !== 'string') return { status: 'invalid' };
+    const itemId = response.itemId;
+    const quantity = Number(response.quantity);
+    const ink = Number(response.ink);
+    const inkSpent = Number(response.inkSpent);
+    const inventory = parseReceiptInventory(response.inventory);
+    const entry = findInkCatalogEntry(itemId);
+    if (
+      !isDrawingInkCatalogEntry(entry) ||
+      !Number.isSafeInteger(quantity) ||
+      quantity <= 0 ||
+      !Number.isSafeInteger(ink) ||
+      ink < 0 ||
+      !Number.isSafeInteger(inkSpent) ||
+      inkSpent !== DRAWING_INK_REFILL_COST ||
+      !inventory ||
+      inventory.items[itemId] !== quantity
+    ) {
+      return { status: 'invalid' };
+    }
+    return {
+      status: 'valid',
+      response: {
+        itemId,
+        quantity,
+        ink,
+        inkSpent,
+        inventory,
+      },
+    };
+  } catch {
+    return { status: 'invalid' };
+  }
+};
+
+const serializeDrawingInkRefillReceipt = (
+  response: DrawingInkRefillResponse
+): string => {
+  return JSON.stringify({
+    schemaVersion: drawingInkRefillReceiptSchemaVersion,
+    response,
+  });
+};
+
+export type DrawingInkRefillResult =
+  | { status: 'refilled'; response: DrawingInkRefillResponse }
+  | { status: 'invalid' }
+  | { status: 'operationConflict' }
+  | { status: 'insufficientInk'; ink: number; cost: number };
+
+export const refillDrawingInkForUser = async (
+  storage: ArenaStorage,
+  userId: string,
+  itemId: string,
+  operationId: string
+): Promise<DrawingInkRefillResult> => {
+  if (!storage.watch) {
+    throw new Error('Atomic drawing Ink refills require transaction support.');
+  }
+  const entry = findInkCatalogEntry(itemId);
+  if (!isDrawingInkCatalogEntry(entry)) return { status: 'invalid' };
+  const inventoryKey = getInventoryKey(userId);
+  const inkKey = getInkKey(userId);
+  const operationKey = getDrawingInkRefillOperationKey(userId, operationId);
+  const nowMs = Date.now();
+  const operationExpiresAtMs = nowMs + capsuleOperationTtlSeconds * 1000;
+  await pruneExpiredOperationReceipts(storage, userId, nowMs);
+
+  for (
+    let attempt = 0;
+    attempt < MAX_WATCH_TRANSACTION_ATTEMPTS;
+    attempt += 1
+  ) {
+    let transaction: ArenaTransaction | undefined;
+    try {
+      transaction = await storage.watch(inventoryKey, inkKey, operationKey);
+      const storedReceipt = parseDrawingInkRefillReceipt(
+        await storage.get(operationKey)
+      );
+      if (
+        storedReceipt.status === 'invalid' ||
+        storedReceipt.status === 'unsupported'
+      ) {
+        await transaction.unwatch();
+        throw new Error(
+          'Stored drawing Ink refill receipt is unreadable and preserved.'
+        );
+      }
+      if (storedReceipt.status === 'valid') {
+        await transaction.unwatch();
+        if (storedReceipt.response.itemId !== itemId) {
+          return { status: 'operationConflict' };
+        }
+        await trackOperationReceipt(
+          storage,
+          userId,
+          operationKey,
+          operationExpiresAtMs
+        );
+        return { status: 'refilled', response: storedReceipt.response };
+      }
+
+      const inventory = inventoryFromStoredEntries(
+        await storage.hGetAll(inventoryKey)
+      );
+      if (!inventory.discovered.includes(itemId)) {
+        await transaction.unwatch();
+        return { status: 'invalid' };
+      }
+      const ink = await getInkBalance(storage, userId);
+      if (ink < DRAWING_INK_REFILL_COST) {
+        await transaction.unwatch();
+        return {
+          status: 'insufficientInk',
+          ink,
+          cost: DRAWING_INK_REFILL_COST,
+        };
+      }
+      const quantity = (inventory.items[itemId] ?? 0) + 1;
+      const nextInventory: Inventory = {
+        ...inventory,
+        items: { ...inventory.items, [itemId]: quantity },
+      };
+      const response: DrawingInkRefillResponse = {
+        itemId,
+        quantity,
+        ink: ink - DRAWING_INK_REFILL_COST,
+        inkSpent: DRAWING_INK_REFILL_COST,
+        inventory: nextInventory,
+      };
+
+      await transaction.multi();
+      await transaction.hIncrBy(inventoryKey, itemId, 1);
+      await transaction.incrBy(inkKey, -DRAWING_INK_REFILL_COST);
+      await transaction.set(
+        operationKey,
+        serializeDrawingInkRefillReceipt(response)
+      );
+      await transaction.expire(operationKey, capsuleOperationTtlSeconds);
+      await trackOperationReceipt(
+        transaction,
+        userId,
+        operationKey,
+        operationExpiresAtMs
+      );
+      const transactionResult = await transaction.exec();
+      if (Array.isArray(transactionResult) && transactionResult.length > 0) {
+        return { status: 'refilled', response };
+      }
+    } catch (error) {
+      await discardWatchedTransaction(transaction, 'drawing Ink refill');
+      const recoveredReceipt = parseDrawingInkRefillReceipt(
+        await storage.get(operationKey)
+      );
+      if (
+        recoveredReceipt.status === 'valid' &&
+        recoveredReceipt.response.itemId === itemId
+      ) {
+        return { status: 'refilled', response: recoveredReceipt.response };
+      }
+      throw error;
+    }
+  }
+
+  throw new Error('Drawing Ink refill did not settle.');
 };
 
 const parseGearMergeReceipt = (

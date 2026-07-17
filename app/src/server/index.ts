@@ -7,6 +7,7 @@ import { scheduledTasks } from './routes/scheduler';
 import { triggers } from './routes/triggers';
 import { analyticsAdmin } from './routes/analyticsAdmin';
 import { feedbackAdmin } from './routes/feedbackAdmin';
+import { moderationAdmin } from './routes/moderationAdmin';
 
 export const app = new Hono();
 const internal = new Hono();
@@ -16,6 +17,7 @@ internal.route('/triggers', triggers);
 internal.route('/scheduler', scheduledTasks);
 internal.route('/analytics', analyticsAdmin);
 internal.route('/feedback', feedbackAdmin);
+internal.route('/moderation', moderationAdmin);
 
 app.route('/api', api);
 app.route('/internal', internal);

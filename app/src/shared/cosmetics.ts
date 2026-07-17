@@ -21,6 +21,7 @@ type CosmeticCatalogEntryBase = {
   rarity: CapsuleRarity;
   name: string;
   description: string;
+  capsuleEligible?: boolean;
 };
 
 export type CosmeticGearCatalogEntry = CosmeticCatalogEntryBase & {
@@ -525,6 +526,16 @@ export const PEN_CATALOG_ENTRIES: readonly CosmeticPenCatalogEntry[] = [
     colors: ['#0b0a12'],
     effect: 'midnight',
   },
+  {
+    id: 'first-ink-palette',
+    kind: 'pen',
+    rarity: 'epic',
+    name: 'First Ink Palette',
+    description: 'Season One colors kept permanently in your Draw Kit.',
+    colors: ['#24180f', '#e9482b', '#f6c84a', '#62a85f', '#4c83c3'],
+    effect: 'solid',
+    capsuleEligible: false,
+  },
 ];
 
 export const DRAWING_INK_CATALOG_ENTRIES: readonly CosmeticDrawingInkCatalogEntry[] =
@@ -601,9 +612,51 @@ export const BRUSH_CATALOG_ENTRIES: readonly CosmeticBrushCatalogEntry[] = [
     description: 'A sparkling spray charge for one gloriously messy Scribbit.',
     effect: 'spray',
   },
+  {
+    id: 'sparkstroke-brush',
+    kind: 'brush',
+    rarity: 'epic',
+    name: 'Sparkstroke Brush',
+    description:
+      'A celebratory Season One spray charge for a finished Scribbit.',
+    effect: 'spray',
+    capsuleEligible: false,
+  },
 ];
 
 export const TITLE_CATALOG_ENTRIES: readonly CosmeticTitleCatalogEntry[] = [
+  {
+    id: 'season-one-entrant',
+    kind: 'title',
+    rarity: 'common',
+    name: 'Season One Entrant',
+    description: 'Made at least one Rumble prediction during First Ink.',
+    capsuleEligible: false,
+  },
+  {
+    id: 'first-ink-contender',
+    kind: 'title',
+    rarity: 'rare',
+    name: 'First Ink Contender',
+    description: 'Finished Season One inside the Top 100.',
+    capsuleEligible: false,
+  },
+  {
+    id: 'first-ink-finalist',
+    kind: 'title',
+    rarity: 'epic',
+    name: 'First Ink Finalist',
+    description: 'Finished Season One inside the Top 10.',
+    capsuleEligible: false,
+  },
+  {
+    id: 'first-ink-champion',
+    kind: 'title',
+    rarity: 'legendary',
+    name: 'First Ink Champion',
+    description: 'Took the top Season One rank in First Ink.',
+    capsuleEligible: false,
+  },
   {
     id: 'doodler',
     kind: 'title',

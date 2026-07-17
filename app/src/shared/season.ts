@@ -1,5 +1,74 @@
 export const SEASON_DURATION_DAYS = 60;
 export const SEASON_FINAL_LEADERBOARD_SIZE = 100;
+export const SEASON_RANK_REWARD_MINIMUM_PICKS = 15;
+
+export type SeasonRewardCatalogItem = Readonly<{
+  catalogId: string;
+  quantity: number;
+}>;
+
+export type SeasonRewardBundle = Readonly<{
+  ink: number;
+  catalogItems: readonly SeasonRewardCatalogItem[];
+}>;
+
+export type SeasonParticipationMilestone = Readonly<{
+  id: string;
+  picksRequired: number;
+  label: string;
+  reward: SeasonRewardBundle;
+}>;
+
+const rewardBundle = (
+  ink: number,
+  catalogItems: readonly SeasonRewardCatalogItem[] = []
+): SeasonRewardBundle =>
+  Object.freeze({
+    ink,
+    catalogItems: Object.freeze(
+      catalogItems.map((item) => Object.freeze({ ...item }))
+    ),
+  });
+
+export const SEASON_ONE_PARTICIPATION_MILESTONES: readonly SeasonParticipationMilestone[] =
+  Object.freeze([
+    Object.freeze({
+      id: 'entrant',
+      picksRequired: 1,
+      label: 'Season One Entrant badge',
+      reward: rewardBundle(0, [
+        { catalogId: 'season-one-entrant', quantity: 1 },
+      ]),
+    }),
+    Object.freeze({
+      id: 'first-week',
+      picksRequired: 7,
+      label: '7 Mystery Ink',
+      reward: rewardBundle(7),
+    }),
+    Object.freeze({
+      id: 'first-ink-palette',
+      picksRequired: 21,
+      label: 'First Ink palette',
+      reward: rewardBundle(0, [
+        { catalogId: 'first-ink-palette', quantity: 1 },
+      ]),
+    }),
+    Object.freeze({
+      id: 'forty-picks',
+      picksRequired: 40,
+      label: '14 Mystery Ink',
+      reward: rewardBundle(14),
+    }),
+    Object.freeze({
+      id: 'sparkstroke',
+      picksRequired: 55,
+      label: '5 Sparkstroke brushes',
+      reward: rewardBundle(0, [
+        { catalogId: 'sparkstroke-brush', quantity: 5 },
+      ]),
+    }),
+  ]);
 
 export const SEASON_SCORING_RULE_SET_IDS = ['rumble-clout-v1'] as const;
 export type SeasonScoringRuleSetId =
@@ -64,6 +133,8 @@ export type SeasonEventSummary = Readonly<{
 export type SeasonPlayerStanding = Readonly<{
   score: number;
   rank: number;
+  picksMade: number;
+  projectedRewardTier: SeasonRewardTier | null;
 }>;
 
 export type SeasonRewardTier = 'champion' | 'top-ten' | 'top-hundred';
@@ -76,6 +147,8 @@ export type SeasonRewardReceipt = Readonly<{
   score: number;
   tier: SeasonRewardTier;
   badgeLabel: string;
+  reward?: SeasonRewardBundle;
+  claimed?: boolean;
   awardedAtMs: number;
 }>;
 
@@ -104,6 +177,8 @@ export type SeasonBoardEntry = Readonly<{
   username: string;
   score: number;
   rank: number;
+  picksMade: number;
+  projectedRewardTier: SeasonRewardTier | null;
   rewardTier: SeasonRewardTier | null;
 }>;
 
@@ -153,6 +228,60 @@ const isSeasonLifecycle = (value: unknown): value is SeasonLifecycle => {
 
 const isSeasonRewardTier = (value: unknown): value is SeasonRewardTier => {
   return value === 'champion' || value === 'top-ten' || value === 'top-hundred';
+};
+
+export const getSeasonRewardTierForStanding = (
+  rank: number,
+  picksMade: number
+): SeasonRewardTier | null => {
+  if (
+    !Number.isSafeInteger(rank) ||
+    rank <= 0 ||
+    !Number.isSafeInteger(picksMade) ||
+    picksMade < SEASON_RANK_REWARD_MINIMUM_PICKS
+  ) {
+    return null;
+  }
+  if (rank === 1) return 'champion';
+  if (rank <= 10) return 'top-ten';
+  if (rank <= SEASON_FINAL_LEADERBOARD_SIZE) return 'top-hundred';
+  return null;
+};
+
+export const getSeasonRankRewardBundle = (
+  tier: SeasonRewardTier
+): SeasonRewardBundle => {
+  if (tier === 'champion') {
+    return rewardBundle(35, [{ catalogId: 'first-ink-champion', quantity: 1 }]);
+  }
+  if (tier === 'top-ten') {
+    return rewardBundle(21, [{ catalogId: 'first-ink-finalist', quantity: 1 }]);
+  }
+  return rewardBundle(7, [{ catalogId: 'first-ink-contender', quantity: 1 }]);
+};
+
+export const getSeasonParticipationMilestone = (
+  picksMade: number
+): SeasonParticipationMilestone | null => {
+  return (
+    SEASON_ONE_PARTICIPATION_MILESTONES.find(
+      (milestone) => milestone.picksRequired === picksMade
+    ) ?? null
+  );
+};
+
+const isSeasonRewardBundle = (value: unknown): value is SeasonRewardBundle => {
+  if (!isRecord(value)) return false;
+  return (
+    isNonNegativeInteger(value.ink) &&
+    Array.isArray(value.catalogItems) &&
+    value.catalogItems.every(
+      (item) =>
+        isRecord(item) &&
+        isBoundedText(item.catalogId, 1, 80) &&
+        isPositiveInteger(item.quantity)
+    )
+  );
 };
 
 export const isSeasonEventRuleSetId = (
@@ -347,6 +476,8 @@ export const isSeasonRewardReceipt = (
     isNonNegativeInteger(value.score) &&
     isSeasonRewardTier(value.tier) &&
     isBoundedText(value.badgeLabel, 1, 80) &&
+    (value.reward === undefined || isSeasonRewardBundle(value.reward)) &&
+    (value.claimed === undefined || typeof value.claimed === 'boolean') &&
     isNonNegativeInteger(value.awardedAtMs)
   );
 };

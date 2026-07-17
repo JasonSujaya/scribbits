@@ -465,6 +465,10 @@ assert.equal(
 );
 assert.equal(
   packageManifest.scripts['release:check'],
+  'pnpm run verify && devvit whoami'
+);
+assert.equal(
+  packageManifest.scripts['release:check:balance'],
   'pnpm run verify && pnpm run balance:check && devvit whoami'
 );
 assert.equal(
@@ -1367,6 +1371,7 @@ assert.deepEqual(publicRouteInventory, [
   'POST /api/capsule',
   'POST /api/daily-login/claim',
   'POST /api/delete-my-data',
+  'POST /api/drawing-ink/refill',
   'POST /api/equip-gear',
   'POST /api/equip-title',
   'POST /api/feedback',
@@ -1397,11 +1402,19 @@ assert.deepEqual(
     'GET /internal/feedback/assets/feedback.css',
     'GET /internal/feedback/assets/feedback.js',
     'GET /internal/feedback/query',
+    'GET /internal/moderation',
+    'GET /internal/moderation/assets/moderation.css',
+    'GET /internal/moderation/assets/moderation.js',
+    'GET /internal/moderation/bans',
+    'GET /internal/moderation/query',
     'POST /internal/menu/feedback-view',
+    'POST /internal/menu/moderation-view',
     'POST /internal/menu/post-create',
     'POST /internal/menu/season-admin-user-ids-validate',
     'POST /internal/menu/seasons-manage',
     'POST /internal/menu/seasons-submit',
+    'POST /internal/moderation/action',
+    'POST /internal/moderation/unban',
     'POST /internal/scheduler/nightly-arena',
     'POST /internal/triggers/on-app-install',
     'POST /internal/triggers/on-app-upgrade',
@@ -3774,7 +3787,12 @@ assert.deepEqual(await seasonResponse.json(), {
       daysRemaining: 7,
       scoreMultiplier: 2,
     },
-    me: { score: 0, rank: 0 },
+    me: {
+      score: 0,
+      rank: 0,
+      picksMade: 0,
+      projectedRewardTier: null,
+    },
   },
   next: null,
   latestFinalized: null,
@@ -4264,7 +4282,10 @@ try {
   const hideFreshPick = await requestMock('/api/report-scribbit?fresh', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ scribbitId: 'community-bristle' }),
+    body: JSON.stringify({
+      scribbitId: 'community-bristle',
+      reason: 'offensive-drawing',
+    }),
   });
   assert.equal(hideFreshPick.response.status, 200);
   const hiddenFreshNotebook = await requestMock('/api/scout-notebook?fresh');
@@ -4277,7 +4298,10 @@ try {
   const hideReplayOpponent = await requestMock('/api/report-scribbit', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ scribbitId: 'legend-solar-kiln' }),
+    body: JSON.stringify({
+      scribbitId: 'legend-solar-kiln',
+      reason: 'offensive-name',
+    }),
   });
   assert.equal(hideReplayOpponent.response.status, 200);
   const hiddenOpponentNotebook = await requestMock('/api/scout-notebook');
@@ -8624,7 +8648,6 @@ const moderationRouteTarget = makeScribbit({
   artist: 'moderation_owner',
 });
 const moderationOwnerUserId = 'moderation-owner-id';
-const moderationOwnerMutationKey = `user:${moderationOwnerUserId}:mutation:lock`;
 const moderationOwnerDeletionKey = `user:${moderationOwnerUserId}:data-deletion:lock`;
 const seedModerationRouteTarget = () => {
   productionApiContract.setApiContractString(
@@ -8653,110 +8676,64 @@ productionApiContract.setApiContractString(
   moderationOwnerDeletionKey,
   'owner-deletion'
 );
-const busyModerationRemoval = await productionApiContract.app.request(
+const queuedModerationReport = await productionApiContract.app.request(
   '/api/report-scribbit',
   {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ scribbitId: moderationRouteTarget.id }),
+    body: JSON.stringify({
+      scribbitId: moderationRouteTarget.id,
+      reason: 'offensive-drawing',
+    }),
   }
 );
-assert.equal(busyModerationRemoval.status, 409);
-assert.deepEqual(await busyModerationRemoval.json(), {
-  status: 'error',
-  code: 'conflict',
-  message: 'That Scribbit is changing. Your report was saved; try again.',
+assert.equal(queuedModerationReport.status, 200);
+assert.deepEqual(await queuedModerationReport.json(), {
+  hidden: moderationRouteTarget.id,
+  removedForEveryone: false,
+  created: true,
 });
 assert.ok(
   productionApiContract.getApiContractString(
     `scribbit:${moderationRouteTarget.id}`
   ),
-  'moderation must not remove content while its owner lease is busy'
+  'player reports must queue content for human review instead of deleting it'
 );
 assert.equal(
   productionApiContract.getApiContractString(moderationOwnerDeletionKey),
   'owner-deletion',
-  'moderation must not disturb an active owner deletion lease'
+  'reporting must not disturb the content owner deletion lease'
 );
 assert.ok(
   productionApiContract.getApiContractHashField(
     `moderation:scribbit:${moderationRouteTarget.id}:reports`,
     'api-contract-user'
   ),
-  'the reporter receipt must survive a deferred threshold removal'
+  'the moderation queue must retain the reporter receipt'
 );
 assert.equal(
   productionApiContract.getApiContractString(playerMutationLockKey),
   undefined,
-  'reporter lease must release when owner removal is deferred'
+  'reporter lease must release after queueing the report'
 );
-
-productionApiContract.deleteApiContractKeys(moderationOwnerDeletionKey);
-const completedModerationRemoval = await productionApiContract.app.request(
-  '/api/report-scribbit',
-  {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ scribbitId: moderationRouteTarget.id }),
-  }
-);
-assert.equal(completedModerationRemoval.status, 200);
-assert.deepEqual(await completedModerationRemoval.json(), {
-  hidden: moderationRouteTarget.id,
-  removedForEveryone: true,
-});
-assert.equal(
-  productionApiContract.getApiContractString(
-    `scribbit:${moderationRouteTarget.id}`
-  ),
-  undefined
-);
-assert.equal(
-  productionApiContract.getApiContractString(moderationOwnerMutationKey),
-  undefined,
-  'a busy report retry must complete removal and release the owner lease'
-);
-assert.equal(
-  productionApiContract.getApiContractString(playerMutationLockKey),
-  undefined,
-  'successful moderation removal must release the reporter lease'
-);
+pass('player reports queue content without crowd-sourced deletion');
 
 productionApiContract.resetApiContractRuntime();
-seedModerationRouteTarget();
-productionApiContract.swapApiContractStringAfterReads(
-  `scribbit:${moderationRouteTarget.id}:owner`,
-  'replacement-owner-id',
-  // Initial hydration and the self-report guard both read ownership before the
-  // route captures the lease owner. Swap after that capture so the fenced
-  // removal must observe and reject the changed owner.
-  3
+productionApiContract.setApiContractHashField(
+  'moderation:banned-players:v1',
+  'api-contract-user',
+  '{"version":1}'
 );
-const changedOwnerRemoval = await productionApiContract.app.request(
-  '/api/report-scribbit',
-  {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ scribbitId: moderationRouteTarget.id }),
-  }
-);
-assert.equal(changedOwnerRemoval.status, 200);
-assert.deepEqual(await changedOwnerRemoval.json(), {
-  hidden: moderationRouteTarget.id,
-  removedForEveryone: false,
+const bannedPlayerRequest =
+  await productionApiContract.app.request('/api/inventory');
+assert.equal(bannedPlayerRequest.status, 403);
+assert.deepEqual(await bannedPlayerRequest.json(), {
+  status: 'error',
+  code: 'forbidden',
+  message: 'This account is banned from Scribbits.',
 });
-assert.ok(
-  productionApiContract.getApiContractString(
-    `scribbit:${moderationRouteTarget.id}`
-  ),
-  'moderation must stop if ownership changes before fenced removal'
-);
-assert.equal(
-  productionApiContract.getApiContractString(moderationOwnerMutationKey),
-  undefined,
-  'owner-change revalidation must still release the former owner lease'
-);
-pass('cross-owner moderation composes the owner mutation lease');
+productionApiContract.deleteApiContractKeys('moderation:banned-players:v1');
+pass('app bans block authenticated gameplay before mutation');
 
 const moderationStorage = createMemoryStorage();
 const firstSafetyReport = await moderationCore.reportAndHideScribbit(
@@ -13124,11 +13101,7 @@ const rumbleBeltFx = weaponFxPresentation.resolveWeaponFxProfile({
   accessories: ['inkquake-rumble-belt'],
   gearRanks: { 'inkquake-rumble-belt': 6 },
 });
-assert.equal(
-  rumbleBeltFx,
-  null,
-  'accessory Gear must not trigger weapon VFX'
-);
+assert.equal(rumbleBeltFx, null, 'accessory Gear must not trigger weapon VFX');
 assert.equal(
   weaponFxPresentation.resolveWeaponFxProfile({ accessories: ['bowtie'] }),
   null,

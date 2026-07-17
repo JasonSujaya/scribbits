@@ -175,7 +175,12 @@ for (const fileName of deferredJavascriptFiles) {
   }
 }
 
-const musicFiles = ['pocketful-of-ink.mp3'];
+const musicFiles = [
+  'legends-in-the-margins.mp3',
+  'pocketful-of-ink.mp3',
+  'ready-set-scribble.mp3',
+  'scribbits-battle.mp3',
+];
 assertFilesPresent('Music bundle', musicFiles, audioSizes);
 const oversizedAudioFiles = [...audioSizes.entries()].filter(
   ([, fileSize]) => fileSize <= 0 || fileSize > 1.6 * 1024 * 1024

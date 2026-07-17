@@ -13,10 +13,12 @@ if (!compiledClientRoot || !compiledServerRoot || !compiledSharedRoot) {
 
 const require = createRequire(import.meta.url);
 const reservoir = require(join(compiledClientRoot, 'lib', 'paintreservoir.js'));
+const drawingInk = require(join(compiledSharedRoot, 'drawingink.js'));
 const paintBucket = require(join(compiledSharedRoot, 'paintbucket.js'));
 const paintBucketStore = require(
   join(compiledServerRoot, 'core', 'paintBucket.js')
 );
+const inkStore = require(join(compiledServerRoot, 'core', 'inkStore.js'));
 
 test('paint reservoir starts full and spends only accepted positive amounts', () => {
   const full = reservoir.createPaintReservoir(100);
@@ -96,5 +98,69 @@ test('paint bucket storage defaults legacy and malformed records safely', async 
   assert.deepEqual(
     await paintBucketStore.loadPaintBucket(memory.storage, userId),
     paintBucket.getPaintBucketState(1)
+  );
+});
+
+test('special color refills spend Ink atomically and recover idempotently', async () => {
+  const memory = createMemoryStorage();
+  const userId = 'drawing-ink-refill-player';
+  const itemId = 'berry-jam-ink';
+  const operationId = 'drawing-ink-refill-operation-0001';
+  await memory.storage.set(inkStore.getInkKey(userId), '10');
+  await memory.storage.hSet(inkStore.getInventoryKey(userId), {
+    [inkStore.getInventoryDiscoveryField(itemId)]: '1',
+    [itemId]: '2',
+  });
+
+  const refilled = await inkStore.refillDrawingInkForUser(
+    memory.storage,
+    userId,
+    itemId,
+    operationId
+  );
+  assert.equal(refilled.status, 'refilled');
+  assert.equal(refilled.response.itemId, itemId);
+  assert.equal(refilled.response.quantity, 3);
+  assert.equal(refilled.response.inventory.items[itemId], 3);
+  assert.equal(refilled.response.inkSpent, drawingInk.DRAWING_INK_REFILL_COST);
+  assert.equal(refilled.response.ink, 7);
+  assert.equal(await memory.storage.get(inkStore.getInkKey(userId)), '7');
+
+  const repeated = await inkStore.refillDrawingInkForUser(
+    memory.storage,
+    userId,
+    itemId,
+    operationId
+  );
+  assert.deepEqual(repeated, refilled);
+  assert.equal(await memory.storage.get(inkStore.getInkKey(userId)), '7');
+});
+
+test('special color refills require discovery and enough Ink', async () => {
+  const memory = createMemoryStorage();
+  const userId = 'drawing-ink-refill-limit-player';
+  const itemId = 'ghostlight-ink';
+  await memory.storage.set(inkStore.getInkKey(userId), '2');
+
+  assert.deepEqual(
+    await inkStore.refillDrawingInkForUser(
+      memory.storage,
+      userId,
+      itemId,
+      'drawing-ink-refill-operation-0002'
+    ),
+    { status: 'invalid' }
+  );
+  await memory.storage.hSet(inkStore.getInventoryKey(userId), {
+    [inkStore.getInventoryDiscoveryField(itemId)]: '1',
+  });
+  assert.deepEqual(
+    await inkStore.refillDrawingInkForUser(
+      memory.storage,
+      userId,
+      itemId,
+      'drawing-ink-refill-operation-0003'
+    ),
+    { status: 'insufficientInk', ink: 2, cost: 3 }
   );
 });

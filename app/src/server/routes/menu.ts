@@ -80,3 +80,35 @@ menu.post('/feedback-view', async (c) => {
     );
   }
 });
+
+menu.post('/moderation-view', async (c) => {
+  try {
+    const request = await c.req.json<MenuItemRequest>().catch(() => undefined);
+    if (
+      request?.location !== 'subreddit' ||
+      !context.subredditId ||
+      request.targetId !== context.subredditId
+    ) {
+      return c.json<UiResponse>(
+        { showToast: 'Invalid moderation desk request.' },
+        200
+      );
+    }
+    if (!(await getAuthorizedSeasonAdmin())) {
+      return c.json<UiResponse>(
+        { showToast: 'Moderation tools are restricted to Scribbits admins.' },
+        200
+      );
+    }
+    return c.json<UiResponse>(
+      { navigateTo: new URL('/internal/moderation', c.req.url).toString() },
+      200
+    );
+  } catch (error) {
+    console.error(`Error opening the moderation desk: ${error}`);
+    return c.json<UiResponse>(
+      { showToast: 'Failed to open the moderation desk.' },
+      400
+    );
+  }
+});

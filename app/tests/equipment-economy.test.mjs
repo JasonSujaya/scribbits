@@ -192,6 +192,26 @@ test('max-rank Gear and saturated permanent rewards redirect to useful consumabl
   );
 });
 
+test('Season-exclusive rewards never enter Mystery Ink drops', () => {
+  const seasonExclusiveIds = new Set(
+    sharedCosmetics.COSMETIC_CATALOG.filter(
+      (entry) => entry.capsuleEligible === false
+    ).map((entry) => entry.id)
+  );
+  const drops = Array.from({ length: 2_000 }, (_, index) =>
+    inkStore.selectCapsuleDrop({
+      userId: `season-exclusive-check-${index}`,
+      day: 20,
+      pullCount: index + 2,
+      pullsSinceEpic: index % 10,
+    })
+  );
+  assert.ok(
+    drops.every((drop) => !seasonExclusiveIds.has(drop.id)),
+    'participation and final-rank cosmetics must remain earned-only'
+  );
+});
+
 test('catalog cardinality/indexing', () => {
   assert.equal(
     sharedCosmetics.ACCESSORY_CATALOG_ENTRIES.length,
@@ -200,13 +220,13 @@ test('catalog cardinality/indexing', () => {
   );
   assert.equal(
     sharedCosmetics.PEN_CATALOG_ENTRIES.length,
-    8,
-    'shared cosmetic metadata should contain all 8 pens'
+    9,
+    'shared cosmetic metadata should contain the 8 capsule pens and First Ink palette'
   );
   assert.equal(
     sharedCosmetics.TITLE_CATALOG_ENTRIES.length,
-    4,
-    'shared cosmetic metadata should contain all 4 titles'
+    8,
+    'shared cosmetic metadata should contain four capsule and four season titles'
   );
   assert.equal(
     sharedCosmetics.DRAWING_INK_CATALOG_ENTRIES.length,
@@ -215,13 +235,20 @@ test('catalog cardinality/indexing', () => {
   );
   assert.equal(
     sharedCosmetics.BRUSH_CATALOG_ENTRIES.length,
-    3,
-    'shared cosmetic metadata should contain all 3 brushes'
+    4,
+    'shared cosmetic metadata should contain three capsule brushes and Sparkstroke'
   );
   assert.equal(
     sharedCosmetics.COSMETIC_CATALOG.length,
+    59,
+    'shared cosmetic metadata should contain 53 capsule and six season entries'
+  );
+  assert.equal(
+    sharedCosmetics.COSMETIC_CATALOG.filter(
+      (entry) => entry.capsuleEligible !== false
+    ).length,
     53,
-    'shared cosmetic metadata should contain exactly 53 entries'
+    'season-exclusive rewards must not dilute the capsule pool'
   );
   assert.equal(
     sharedCosmetics.COSMETIC_BY_ID.size,
@@ -457,7 +484,10 @@ test('malformed inventory authority fails closed without repair writes', async (
   for (const [label, fields, message] of [
     [
       'copies',
-      { bowtie: 'broken', [inkStore.getInventoryDiscoveryField('bowtie')]: '1' },
+      {
+        bowtie: 'broken',
+        [inkStore.getInventoryDiscoveryField('bowtie')]: '1',
+      },
       /inventory count for bowtie is invalid and was preserved/,
     ],
     [

@@ -41,6 +41,7 @@ import {
   XP_REWARDS,
 } from '../../shared/arena';
 import { isScoutNotebookReplayDay } from '../../shared/scoutnotebook';
+import { isModerationReportReason } from '../../shared/moderation';
 import { getPaintBucketState } from '../../shared/paintbucket';
 import { dailyLoginRewardAfterClaims } from '../../shared/dailylogin';
 import { DEFAULT_BATTLE_ARENA_ID } from '../../shared/battlearena';
@@ -162,13 +163,10 @@ import {
 import {
   getHiddenScribbitIds,
   isScribbitHidden,
+  isPlayerBanned,
   reportAndHideScribbit,
-  SCRIBBIT_REPORT_REMOVAL_THRESHOLD,
 } from '../core/moderation';
-import {
-  removeReportedScribbitIfEligible,
-  removeScribbitCompletely,
-} from '../core/removal';
+import { removeScribbitCompletely } from '../core/removal';
 import { deletePlayerData } from '../core/privacy';
 import { ensureInitialSeason, loadSeasonPublicState } from '../core/season';
 import { runWithPlayerMutationLease } from '../core/dataDeletion';
@@ -303,6 +301,13 @@ const unauthorized = (c: HonoContext, message: string) => {
   );
 };
 
+const forbidden = (c: HonoContext, message: string) => {
+  return c.json<ErrorResponse>(
+    { status: 'error', code: 'forbidden', message },
+    403
+  );
+};
+
 const notFound = (c: HonoContext, message: string) => {
   return c.json<ErrorResponse>(
     { status: 'error', code: 'not_found', message },
@@ -374,12 +379,13 @@ const getCurrentRequestPlayer = async (
   c: HonoContext
 ): Promise<CurrentPlayer | undefined> => {
   if (currentPlayerByRequest.has(c)) return currentPlayerByRequest.get(c);
-  return getCurrentPlayer();
+  const player = await getCurrentPlayer();
+  currentPlayerByRequest.set(c, player);
+  return player;
 };
 
 const withPlayerMutationLease: MiddlewareHandler = async (c, next) => {
-  const player = await getCurrentPlayer();
-  currentPlayerByRequest.set(c, player);
+  const player = await getCurrentRequestPlayer(c);
   if (!player) return next();
   const mutation = await runWithPlayerMutationLease(
     redis,
@@ -405,6 +411,27 @@ api.use('*', async (c, next) => {
       `Slow API request: ${c.req.method} ${c.req.path} returned ${c.res.status} in ${elapsedMilliseconds}ms`
     );
   }
+});
+
+const playerBanExemptPathSuffixes = [
+  '/delete-my-data',
+  '/health',
+  '/splash',
+] as const;
+
+api.use('*', async (c, next) => {
+  if (
+    playerBanExemptPathSuffixes.some((pathSuffix) =>
+      c.req.path.endsWith(pathSuffix)
+    )
+  ) {
+    return next();
+  }
+  const player = await getCurrentRequestPlayer(c);
+  if (player && (await isPlayerBanned(redis, player.userId))) {
+    return forbidden(c, 'This account is banned from Scribbits.');
+  }
+  return next();
 });
 
 // Media upload and Practice are authenticated POSTs, but they do not mutate
@@ -776,21 +803,22 @@ const finalizeSparBattle = async (
 
   const offerScribbit = await loadScribbit(redis, input.challengerId);
   const playerWon = input.report.winner === 'a';
-  const powerUpOffer = offerScribbit && playerWon
-    ? await getOrCreatePowerUpOffer(redis, {
-        userId: input.userId,
-        scribbit: offerScribbit,
-        reportId: input.report.id,
-        source: input.report.rivalRun
-          ? input.report.rivalRun.status === 'complete'
-            ? 'rival-run-final-win'
-            : 'rival-run-win'
-          : 'exhibition-win',
-        xpAwarded: rewardReceipt?.xpAwarded ?? 0,
-        createdAtMs: completedAtMilliseconds,
-        currentArenaDay: input.report.day,
-      })
-    : null;
+  const powerUpOffer =
+    offerScribbit && playerWon
+      ? await getOrCreatePowerUpOffer(redis, {
+          userId: input.userId,
+          scribbit: offerScribbit,
+          reportId: input.report.id,
+          source: input.report.rivalRun
+            ? input.report.rivalRun.status === 'complete'
+              ? 'rival-run-final-win'
+              : 'rival-run-win'
+            : 'exhibition-win',
+          xpAwarded: rewardReceipt?.xpAwarded ?? 0,
+          createdAtMs: completedAtMilliseconds,
+          currentArenaDay: input.report.day,
+        })
+      : null;
 
   const rewardedReport: BattleReport = {
     ...input.report,
@@ -907,6 +935,9 @@ registerPlayerMutatingGet('/arena', async (c) => {
     if (player) {
       await migrateLivingScribbitsForUser(redis, player.userId);
     }
+    // Season reward settlement can mutate Ink and inventory. Resolve it before
+    // loading the player snapshot so the Arena response includes new rewards.
+    const season = await seasonPromise;
     let myScribbits: Scribbit[] = [];
     let pendingMaturityScribbitIds: string[] = [];
     let discoveredPowerUpIds: ArenaState['discoveredPowerUpIds'] = [];
@@ -1015,7 +1046,6 @@ registerPlayerMutatingGet('/arena', async (c) => {
       hiddenScribbitIds,
       storedRumbleEntrantCount,
       currentChampion,
-      season,
       communityLegendCount,
       venueStamp,
       loadedLastRumbleReceipt,
@@ -1025,7 +1055,6 @@ registerPlayerMutatingGet('/arena', async (c) => {
       hiddenScribbitIdsPromise,
       runArenaLoad(() => getRumbleEntrantCount(redis, dayNumber)),
       currentChampionPromise,
-      seasonPromise,
       runArenaLoad(() => getCommunityLegendCount(redis)),
       runArenaLoad(() => loadVenueStampState(redis, dayNumber, player?.userId)),
       lastRumbleReceiptPromise,
@@ -2374,7 +2403,15 @@ api.post('/back', async (c) => {
     }
 
     await recordDailyPlay(redis, player.userId, now);
-    return c.json<{ backed: string }>({ backed: backClaim.backedScribbitId });
+    return c.json<{
+      backed: string;
+      seasonPicksMade: number;
+      unlockedMilestoneId: string | null;
+    }>({
+      backed: backClaim.backedScribbitId,
+      seasonPicksMade: backClaim.seasonPicksMade,
+      unlockedMilestoneId: backClaim.unlockedMilestoneId,
+    });
   } catch (error) {
     console.error('Back route failed:', error);
     return serverError(c, 'The Pick slip blew away. Try again soon.');
@@ -2467,12 +2504,15 @@ api.post('/report-scribbit', async (c) => {
   const player = await getCurrentPlayer();
   if (!player) return unauthorized(c, 'Sign in to report a Scribbit.');
 
-  const scribbitId = readScribbitId(await readJsonBody(c));
-  if (!scribbitId) return badRequest(c, 'Choose a valid Scribbit to report.');
+  const request = await readJsonBody(c);
+  const scribbitId = readScribbitId(request);
+  const reason = isRecord(request) ? request.reason : undefined;
+  if (!scribbitId || !isModerationReportReason(reason)) {
+    return badRequest(c, 'Choose a report reason for this Scribbit.');
+  }
 
   try {
     const now = new Date();
-    const dayNumber = await ensureCurrentArenaDay(redis, now);
     const scribbit = await loadScribbit(redis, scribbitId);
 
     if (!scribbit || scribbit.isFounding) {
@@ -2486,42 +2526,14 @@ api.post('/report-scribbit', async (c) => {
       redis,
       player.userId,
       scribbitId,
-      now.getTime()
+      now.getTime(),
+      reason
     );
-    let removedForEveryone = false;
-
-    if (report.reportCount >= SCRIBBIT_REPORT_REMOVAL_THRESHOLD) {
-      const ownerUserId = await getScribbitOwner(redis, scribbitId);
-      if (ownerUserId) {
-        const removal = await runWithPlayerMutationLease(
-          redis,
-          ownerUserId,
-          randomUUID(),
-          async () => {
-            return await removeReportedScribbitIfEligible(redis, {
-              expectedOwnerUserId: ownerUserId,
-              scribbitId,
-              currentDay: dayNumber,
-              minimumReportCount: SCRIBBIT_REPORT_REMOVAL_THRESHOLD,
-            });
-          }
-        );
-        if (removal.status === 'busy') {
-          return conflict(
-            c,
-            'That Scribbit is changing. Your report was saved; try again.'
-          );
-        }
-        if (removal.status === 'lost') {
-          return serverError(c, 'The safety removal lost its lock. Try again.');
-        }
-        removedForEveryone = removal.value;
-      }
-    }
 
     return c.json({
       hidden: scribbitId,
-      removedForEveryone,
+      removedForEveryone: false,
+      created: report.created,
     });
   } catch (error) {
     console.error('Report Scribbit route failed:', error);
@@ -2573,6 +2585,7 @@ registerPlayerMutatingGet('/inventory', inventoryRouteHandlers.inventory);
 api.post('/equip-gear', inventoryRouteHandlers.equipGear);
 api.post('/equip-title', inventoryRouteHandlers.equipTitle);
 api.post('/merge-gear', inventoryRouteHandlers.mergeGear);
+api.post('/drawing-ink/refill', inventoryRouteHandlers.refillDrawingInk);
 api.post('/capsule', inventoryRouteHandlers.capsule);
 
 api.post('/boss-challenge', async (c) => {
@@ -2661,17 +2674,18 @@ api.post('/boss-challenge', async (c) => {
       founderChronicle
     );
     const offerChallenger = await loadScribbit(redis, challenger.id);
-    const powerUpOffer = offerChallenger && report.winner === 'a'
-      ? await getOrCreatePowerUpOffer(redis, {
-          userId: player.userId,
-          scribbit: offerChallenger,
-          reportId: report.id,
-          source: 'champion-win',
-          xpAwarded: XP_REWARDS.championWin,
-          createdAtMs: now.getTime(),
-          currentArenaDay: dayNumber,
-        })
-      : null;
+    const powerUpOffer =
+      offerChallenger && report.winner === 'a'
+        ? await getOrCreatePowerUpOffer(redis, {
+            userId: player.userId,
+            scribbit: offerChallenger,
+            reportId: report.id,
+            source: 'champion-win',
+            xpAwarded: XP_REWARDS.championWin,
+            createdAtMs: now.getTime(),
+            currentArenaDay: dayNumber,
+          })
+        : null;
     return c.json<DirectBattleResponse>({
       ...directResponse,
       powerUpOffer,

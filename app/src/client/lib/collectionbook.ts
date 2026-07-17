@@ -12,6 +12,10 @@ import {
   type Scribbit,
 } from '../../shared/arena';
 import {
+  DRAWING_INK_REFILL_COST,
+  type DrawingInkRefillResponse,
+} from '../../shared/drawingink';
+import {
   COSMETIC_CATALOG,
   GEAR_CATALOG_ENTRIES,
   type CosmeticCatalogEntry,
@@ -314,6 +318,11 @@ export type CollectionBookOptions = {
     gearId: string,
     operationId: string
   ) => Promise<MergeGearResponse | { error: string }>;
+  myInk: number;
+  onRefillDrawingInk: (
+    itemId: string,
+    operationId: string
+  ) => Promise<DrawingInkRefillResponse | { error: string }>;
   onInventoryChanged: () => void;
 };
 
@@ -343,6 +352,10 @@ const GEAR_BY_ID = new Map(
 const createMergeOperationId = (): string =>
   globalThis.crypto?.randomUUID?.() ??
   `merge-${Date.now()}-${Math.random().toString(36).slice(2, 14)}`;
+
+const createDrawingInkRefillOperationId = (): string =>
+  globalThis.crypto?.randomUUID?.() ??
+  `refill-${Date.now()}-${Math.random().toString(36).slice(2, 14)}`;
 
 export function renderCollectionBook(options: CollectionBookOptions): void {
   const { scene, top, inventory, loggedIn, loading, errorMessage, onRetry } =
@@ -452,6 +465,8 @@ export function renderCollectionBook(options: CollectionBookOptions): void {
       featuredGearIds,
       onEquipTitle: options.onEquipTitle,
       onMergeGear: options.onMergeGear,
+      myInk: options.myInk,
+      onRefillDrawingInk: options.onRefillDrawingInk,
       onEquipGear: options.onEquipGear,
       onInventoryChanged: options.onInventoryChanged,
       onExpand: () => options.onInventoryExpandedChange(true),
@@ -548,8 +563,10 @@ export function renderCollectionBook(options: CollectionBookOptions): void {
       scene,
       width - BAG_LAYOUT.inventoryContentMargin,
       inventoryTop + 30,
-      'SELECT WHILE DRAWING',
-      18,
+      options.section === 'colors'
+        ? `${options.myInk} INK · TAP COLOR FOR USES`
+        : 'SELECT WHILE DRAWING',
+      options.section === 'colors' ? 15 : 18,
       UI.inkSoft,
       true
     ).setOrigin(1, 0.5);
@@ -598,6 +615,8 @@ export function renderCollectionBook(options: CollectionBookOptions): void {
       loggedIn,
       onEquipTitle: options.onEquipTitle,
       onMergeGear: options.onMergeGear,
+      myInk: options.myInk,
+      onRefillDrawingInk: options.onRefillDrawingInk,
       selectedScribbit,
       selectedEquipmentSlot: options.selectedEquipmentSlot,
       equipmentBusy: options.equipmentBusy,
@@ -634,6 +653,8 @@ function buildCompactBagInventory(options: {
   featuredGearIds: ReadonlySet<string>;
   onEquipTitle: CollectionBookOptions['onEquipTitle'];
   onMergeGear: CollectionBookOptions['onMergeGear'];
+  myInk: number;
+  onRefillDrawingInk: CollectionBookOptions['onRefillDrawingInk'];
   onEquipGear: CollectionBookOptions['onEquipGear'];
   onInventoryChanged: CollectionBookOptions['onInventoryChanged'];
   onExpand: () => void;
@@ -652,14 +673,15 @@ function buildCompactBagInventory(options: {
     featuredGearIds,
     onEquipTitle,
     onMergeGear,
+    myInk,
+    onRefillDrawingInk,
     onEquipGear,
     onInventoryChanged,
     onExpand,
   } = options;
   const compactY = binderTop + binderOffsetY(980);
   const compactInventoryFits =
-    compactY + BAG_COMPACT_SLOT_SIZE / 2 <=
-    scene.scale.height - NAV_SAFE - 8;
+    compactY + BAG_COMPACT_SLOT_SIZE / 2 <= scene.scale.height - NAV_SAFE - 8;
   const expandX = compactInventoryFits
     ? scene.scale.width - 112
     : scene.scale.width - 180;
@@ -711,6 +733,8 @@ function buildCompactBagInventory(options: {
       loggedIn,
       onEquipTitle,
       onMergeGear,
+      myInk,
+      onRefillDrawingInk,
       selectedScribbit,
       selectedEquipmentSlot,
       equipmentBusy,
@@ -1080,11 +1104,7 @@ function buildBagCharacterStage(options: {
   const portrait = scene.add.container(0, portraitY);
   stage.add(portrait);
   void loadDrawing(scene, selectedScribbit).then((textureKey) => {
-    if (
-      !portrait.active ||
-      !stage.active ||
-      !scene.scene.isActive()
-    ) {
+    if (!portrait.active || !stage.active || !scene.scene.isActive()) {
       return;
     }
     portrait.add(
@@ -1581,15 +1601,7 @@ function addEmptyEquipmentSlotPrompt(
     available ? UI.coralText : UI.inkSoft,
     true
   );
-  const emptyLabel = label(
-    scene,
-    0,
-    20,
-    'EMPTY',
-    12,
-    UI.inkSoft,
-    true
-  );
+  const emptyLabel = label(scene, 0, 20, 'EMPTY', 12, UI.inkSoft, true);
   slot.add([symbol, emptyLabel]);
 }
 
@@ -1783,9 +1795,13 @@ function cosmeticOwnership(
     const charges = Math.max(0, inventory.items[entry.id] ?? 0);
     return {
       summary:
-        charges > 0
-          ? `×${charges} · 1 USE EACH`
-          : 'EMPTY · FIND MORE IN MYSTERY INK',
+        entry.kind === 'drawing-ink'
+          ? charges > 0
+            ? `${charges} ${charges === 1 ? 'USE' : 'USES'} LEFT · EACH FINISHED DRAW USES 1`
+            : 'EMPTY · ADD A USE WITH INK'
+          : charges > 0
+            ? `×${charges} · 1 USE EACH`
+            : 'EMPTY · FIND MORE IN MYSTERY INK',
       rank: null,
       copies: charges,
       mergeReady: false,
@@ -1915,6 +1931,8 @@ function buildCosmeticCard(options: {
   loggedIn: boolean;
   onEquipTitle: (titleId: string | null) => Promise<string | null>;
   onMergeGear: CollectionBookOptions['onMergeGear'];
+  myInk: number;
+  onRefillDrawingInk: CollectionBookOptions['onRefillDrawingInk'];
   selectedScribbit: Scribbit | undefined;
   selectedEquipmentSlot: EquipmentSlotSelection | null;
   equipmentBusy: boolean;
@@ -1931,6 +1949,8 @@ function buildCosmeticCard(options: {
     loggedIn,
     onEquipTitle,
     onMergeGear,
+    myInk,
+    onRefillDrawingInk,
     selectedScribbit,
     selectedEquipmentSlot,
     equipmentBusy,
@@ -2073,6 +2093,8 @@ function buildCosmeticCard(options: {
       loggedIn,
       onEquipTitle,
       onMergeGear,
+      myInk,
+      onRefillDrawingInk,
       onInventoryChanged,
       viewKey,
       selectedScribbit,
@@ -2122,6 +2144,8 @@ function openCosmeticDetail(options: {
   loggedIn: boolean;
   onEquipTitle: (titleId: string | null) => Promise<string | null>;
   onMergeGear: CollectionBookOptions['onMergeGear'];
+  myInk: number;
+  onRefillDrawingInk: CollectionBookOptions['onRefillDrawingInk'];
   onInventoryChanged: () => void;
   viewKey: string;
   selectedScribbit: Scribbit | undefined;
@@ -2138,6 +2162,8 @@ function openCosmeticDetail(options: {
     loggedIn,
     onEquipTitle,
     onMergeGear,
+    myInk,
+    onRefillDrawingInk,
     onInventoryChanged,
     viewKey,
     selectedScribbit,
@@ -2277,6 +2303,9 @@ function openCosmeticDetail(options: {
   let wearingTitle = inventory?.equippedTitle === entry.id;
   let savingTitle = false;
   let forgingGear = false;
+  let refillingDrawingInk = false;
+  let availableDrawingInkUses = ownership.copies;
+  let availableInk = myInk;
   let inventoryChanged = false;
   let modalOpen = true;
   let gearEffectPreview: FeaturedGearDetail | null = null;
@@ -2284,14 +2313,18 @@ function openCosmeticDetail(options: {
   let titleNativeAction: HTMLButtonElement | null = null;
   let mergeAction: Phaser.GameObjects.Container | null = null;
   let mergeNativeAction: HTMLButtonElement | null = null;
+  let refillAction: Phaser.GameObjects.Container | null = null;
+  let refillNativeAction: HTMLButtonElement | null = null;
 
   const closeDetail = (): void => {
     if (!modalOpen) return;
-    if (savingTitle || forgingGear) {
+    if (savingTitle || forgingGear || refillingDrawingInk) {
       status
         .setText(
           forgingGear
             ? 'Finish forging this gear first…'
+            : refillingDrawingInk
+              ? 'Finish adding this color use first…'
             : 'Finish saving this title first…'
         )
         .setColor(UI.inkSoft);
@@ -2370,6 +2403,110 @@ function openCosmeticDetail(options: {
       },
       attributes: { 'data-gear-effect-preview': entry.id },
       onActivate: openEffectPreview,
+    });
+  }
+
+  const refillCurrentDrawingInk = (): void => {
+    if (
+      entry.kind !== 'drawing-ink' ||
+      refillingDrawingInk ||
+      availableInk < DRAWING_INK_REFILL_COST
+    ) {
+      return;
+    }
+    refillingDrawingInk = true;
+    status.setText('Adding one color use…').setColor(UI.goldText);
+    renderRefillAction();
+    void onRefillDrawingInk(
+      entry.id,
+      createDrawingInkRefillOperationId()
+    ).then((result) => {
+      refillingDrawingInk = false;
+      if (!modalOpen || !overlay.active || !scene.scene.isActive()) return;
+      if ('error' in result) {
+        status.setText(result.error).setColor(UI.coralText);
+        renderRefillAction();
+        return;
+      }
+      inventoryChanged = true;
+      availableDrawingInkUses = result.quantity;
+      availableInk = result.ink;
+      status
+        .setText(
+          `${availableDrawingInkUses} ${availableDrawingInkUses === 1 ? 'USE' : 'USES'} LEFT · EACH FINISHED DRAW USES 1`
+        )
+        .setColor(UI.coralText);
+      renderRefillAction();
+    });
+  };
+
+  const renderRefillAction = (): void => {
+    refillAction?.destroy(true);
+    refillAction = null;
+    if (entry.kind !== 'drawing-ink') return;
+    const canRefill =
+      loggedIn &&
+      !refillingDrawingInk &&
+      availableInk >= DRAWING_INK_REFILL_COST;
+    const actionText = refillingDrawingInk
+      ? 'ADDING USE…'
+      : availableInk < DRAWING_INK_REFILL_COST
+        ? `NEED ${DRAWING_INK_REFILL_COST} INK`
+        : `ADD 1 USE · ${DRAWING_INK_REFILL_COST} INK`;
+    refillAction = iconButton(
+      scene,
+      0,
+      255,
+      'ink',
+      actionText,
+      refillCurrentDrawingInk,
+      390,
+      canRefill ? UI.coral : UI.creamHex,
+      UI.ink,
+      90,
+      canRefill ? UI.gold : UI.inkSoftHex,
+      canRefill
+    );
+    const balance = label(
+      scene,
+      0,
+      65,
+      `${availableInk} INK AVAILABLE`,
+      15,
+      canRefill ? UI.inkSoft : UI.coralText,
+      true
+    );
+    refillAction.add(balance);
+    detail.add(refillAction);
+    if (refillNativeAction) {
+      refillNativeAction.disabled = !canRefill;
+      refillNativeAction.setAttribute(
+        'aria-busy',
+        String(refillingDrawingInk)
+      );
+      refillNativeAction.setAttribute(
+        'aria-label',
+        `${actionText} for ${entry.name}. ${availableDrawingInkUses} uses left. ${availableInk} Ink available.`
+      );
+    }
+  };
+  renderRefillAction();
+  if (entry.kind === 'drawing-ink') {
+    refillNativeAction = modalActions.add({
+      label: `Add one ${entry.name} use for ${DRAWING_INK_REFILL_COST} Ink. ${availableDrawingInkUses} uses left. ${availableInk} Ink available.`,
+      rect: {
+        x: width / 2 - 195,
+        y: height / 2 + 210,
+        width: 390,
+        height: 130,
+      },
+      enabled: loggedIn && availableInk >= DRAWING_INK_REFILL_COST,
+      attributes: {
+        'data-drawing-ink-refill': entry.id,
+        'data-drawing-ink-refill-cost': String(DRAWING_INK_REFILL_COST),
+        'aria-busy': 'false',
+      },
+      onActivate: refillCurrentDrawingInk,
     });
   }
 
