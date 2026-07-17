@@ -17,6 +17,7 @@ import { loadDrawing, fitDrawing, levelOf } from './scribbits';
 import { BATTLE_MATCHUP_TITLE_BY_KIND } from './matchupbrief';
 import type { FounderRivalryStakesPlan } from './founderchronicle';
 import { formatRivalRunBattleLabel } from './rivalrunpresentation';
+import { formatRedditUsername } from './redditusername';
 import { preloadBattleSoundtrack } from './soundtrack';
 import { selectCombatRole } from '../../shared/combat/selection';
 import {
@@ -132,7 +133,7 @@ function createFighterSide(
   const fighterName = label(
     scene,
     0,
-    FIGHTER_ART_SIZE / 2 + 49,
+    FIGHTER_ART_SIZE / 2 + 45,
     fighter.name,
     30,
     UI.ink,
@@ -142,11 +143,25 @@ function createFighterSide(
     fighterName.setScale(FIGHTER_COLUMN_WIDTH / fighterName.width);
   }
   side.add(fighterName);
+  const fighterUsername = formatRedditUsername(fighter.artist);
+  if (fighterUsername) {
+    side.add(
+      label(
+        scene,
+        0,
+        FIGHTER_ART_SIZE / 2 + 76,
+        fighterUsername,
+        16,
+        UI.inkSoft,
+        true
+      )
+    );
+  }
   side.add(
     paperRoleTag(
       scene,
       0,
-      FIGHTER_ART_SIZE / 2 + 98,
+      FIGHTER_ART_SIZE / 2 + (fighterUsername ? 112 : 98),
       `POWER-UPS ${fighter.powerUpIds?.length ?? 0}/5`,
       { width: 190, fill: UI.tapeAlt }
     )

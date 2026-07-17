@@ -125,6 +125,14 @@ const seedRemovalScenario = async (
       2_000 + index
     );
   }
+  await memory.storage.set(
+    powerUpOffers.getPowerUpOfferKey(ownerUserId, target.id),
+    '{"version":1}'
+  );
+  await memory.storage.hSet(
+    powerUpOffers.getPowerUpClaimReceiptsKey(ownerUserId, target.id),
+    { 'offer-before-removal': '{"schemaVersion":1}' }
+  );
 
   return {
     battleReport,
@@ -197,6 +205,18 @@ const assertCompletelyRemoved = async (memory, scenario) => {
   );
   assert.deepEqual(
     await memory.storage.hGetAll(moderation.getScribbitReportsKey(target.id)),
+    {}
+  );
+  assert.equal(
+    await memory.storage.get(
+      powerUpOffers.getPowerUpOfferKey(ownerUserId, target.id)
+    ),
+    undefined
+  );
+  assert.deepEqual(
+    await memory.storage.hGetAll(
+      powerUpOffers.getPowerUpClaimReceiptsKey(ownerUserId, target.id)
+    ),
     {}
   );
   for (const reporterUserId of reporterUserIds) {

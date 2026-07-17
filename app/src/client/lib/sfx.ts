@@ -40,7 +40,6 @@ type SfxGame = Readonly<{
   }>;
 }>;
 
-const SFX_ENABLED_STORAGE_KEY = 'scribbits.sfx.enabled';
 const SFX_MANAGED_DATA_KEY = 'scribbitsSfxManaged';
 const SFX_CUE_DATA_KEY = 'scribbitsSfxCue';
 const attachedScenes = new WeakSet<object>();
@@ -51,30 +50,11 @@ const nextSampleVariant = new Map<SfxCue, number>();
 
 let sharedAudioContext: AudioContext | null = null;
 let audioContextResume: Promise<AudioContext | null> | null = null;
-let sfxEnabled = readStoredEnabledState();
 let domSfxInstalled = false;
 let activationListenersInstalled = false;
 let visibilityHandlerInstalled = false;
 let debugCanvas: HTMLCanvasElement | null = null;
 let playCount = 0;
-
-function readStoredEnabledState(): boolean {
-  if (typeof localStorage === 'undefined') return true;
-  try {
-    return localStorage.getItem(SFX_ENABLED_STORAGE_KEY) !== 'false';
-  } catch {
-    return true;
-  }
-}
-
-function storeEnabledState(): void {
-  if (typeof localStorage === 'undefined') return;
-  try {
-    localStorage.setItem(SFX_ENABLED_STORAGE_KEY, String(sfxEnabled));
-  } catch {
-    // Storage is an enhancement; audio remains session-local if blocked.
-  }
-}
 
 function getAudioContext(): AudioContext | null {
   if (typeof window === 'undefined') return null;
@@ -144,12 +124,12 @@ function recordDebugCue(cue: SfxCue): void {
   if (typeof document !== 'undefined') {
     document.documentElement.dataset.lastSfxCue = cue;
     document.documentElement.dataset.sfxPlayCount = String(playCount);
-    document.documentElement.dataset.sfxEnabled = String(sfxEnabled);
+    document.documentElement.dataset.sfxEnabled = 'true';
   }
   if (debugCanvas) {
     debugCanvas.dataset.lastSfxCue = cue;
     debugCanvas.dataset.sfxPlayCount = String(playCount);
-    debugCanvas.dataset.sfxEnabled = String(sfxEnabled);
+    debugCanvas.dataset.sfxEnabled = 'true';
   }
 }
 
@@ -177,7 +157,7 @@ function beginCuePlayback(cue: SfxCue, context: AudioContext): void {
   const sample = chooseSample(cue);
   if (!sample) return;
   void loadSampleBuffer(sample).then((buffer) => {
-    if (!buffer || !sfxEnabled || context.state === 'closed') return;
+    if (!buffer || context.state === 'closed') return;
     const source = context.createBufferSource();
     const gain = context.createGain();
     source.buffer = buffer;
@@ -188,7 +168,6 @@ function beginCuePlayback(cue: SfxCue, context: AudioContext): void {
 }
 
 export function unlockSfx(): void {
-  if (!sfxEnabled) return;
   void resumeSfxAudioContext();
 }
 
@@ -222,13 +201,11 @@ async function resumeSfxAudioContext(): Promise<AudioContext | null> {
 export async function prepareSfxPlayback(
   ...cues: readonly SfxCue[]
 ): Promise<boolean> {
-  if (!sfxEnabled) return false;
   cues.forEach(preloadSfx);
   return (await resumeSfxAudioContext()) !== null;
 }
 
 export function playSfx(cue: SfxCue): boolean {
-  if (!sfxEnabled) return false;
   const definition = SFX_CATALOG[cue];
   const now =
     typeof performance === 'undefined' ? Date.now() : performance.now();
@@ -252,33 +229,16 @@ export function playSfx(cue: SfxCue): boolean {
 }
 
 export function preloadSfx(cue: SfxCue): void {
-  if (!sfxEnabled) return;
   SFX_CATALOG[cue].samples.forEach((assetId) => {
     void loadSampleBuffer(assetId);
   });
 }
 
-export function isSfxEnabled(): boolean {
-  return sfxEnabled;
-}
-
-export function setSfxEnabled(enabled: boolean): boolean {
-  sfxEnabled = enabled;
-  storeEnabledState();
-  recordEnabledDebugState();
-  if (enabled) unlockSfx();
-  return sfxEnabled;
-}
-
-export function toggleSfxEnabled(): boolean {
-  return setSfxEnabled(!sfxEnabled);
-}
-
 function recordEnabledDebugState(): void {
   if (typeof document !== 'undefined') {
-    document.documentElement.dataset.sfxEnabled = String(sfxEnabled);
+    document.documentElement.dataset.sfxEnabled = 'true';
   }
-  if (debugCanvas) debugCanvas.dataset.sfxEnabled = String(sfxEnabled);
+  if (debugCanvas) debugCanvas.dataset.sfxEnabled = 'true';
 }
 
 export function markSfxManaged(gameObject: InteractiveGameObject): void {
@@ -357,6 +317,9 @@ function attachScene(scene: SfxScene): void {
 
 export function installSfx(game?: SfxGame): void {
   installDomActivationSounds();
+  // Navigation is often the player's first in-game action. Decode its cue
+  // during boot so the tab transition cannot outrun the first sound request.
+  preloadSfx('ui.tab');
   if (!game) return;
   debugCanvas = game.canvas;
   const attachScenes = (): void => game.scene.scenes.forEach(attachScene);

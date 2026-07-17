@@ -45,16 +45,18 @@
       "legendaryHistoriesPerRole": 80,
       "minimumTriggerRate": 0.15,
       "minimumLegendaryTriggerRate": 0.25,
-      "equalRarityBand": { "minimum": 0.42, "maximum": 0.58 },
+      "tierAdvantagesAreDiagnostic": true,
+      "equalRarityBand": { "minimum": 0, "maximum": 1 },
       "equalRarityTargetBand": { "minimum": 0.45, "maximum": 0.55 },
       "rarityAdvantageBands": {
-        "uncommon": { "minimum": 0.48, "maximum": 0.66 },
-        "rare": { "minimum": 0.48, "maximum": 0.66 },
-        "epic": { "minimum": 0.48, "maximum": 0.66 },
-        "legendary": { "minimum": 0.48, "maximum": 0.7 }
+        "uncommon": { "minimum": 0, "maximum": 1 },
+        "rare": { "minimum": 0, "maximum": 1 },
+        "epic": { "minimum": 0, "maximum": 1 },
+        "legendary": { "minimum": 0, "maximum": 1 }
       },
       "rarityAdvantageTargetBand": { "minimum": 0.5, "maximum": 0.62 },
-      "tierAdvantageBand": { "minimum": 0.52, "maximum": 0.62 }
+      "tierAdvantageBand": { "minimum": 0.54, "maximum": 0.62 },
+      "roleTierAdvantageBand": { "minimum": 0.52, "maximum": 0.68 }
     },
     "rivalRunRisk": {
       "challengerBuildIds": ["brawler-base", "longshot-base", "mage-base"],
@@ -89,6 +91,93 @@
       "minimumGearMarginal": -0.1,
       "maximumGearMarginal": 0.05,
       "maximumInteractionLift": 0.1
+    },
+    "rarityProgression": {
+      "seedsPerStatPairing": 64,
+      "combinedSeedsPerStatPairing": 32,
+      "gearRank": 3,
+      "maximumOrientationGap": 0.035,
+      "weaponComparisons": [
+        {
+          "id": "epic-over-common",
+          "higherGearId": "comet-crayon-blade",
+          "lowerGearId": "tiny-sword",
+          "minimumWinRate": 0.56,
+          "maximumWinRate": 0.64
+        },
+        {
+          "id": "legendary-over-epic",
+          "higherGearId": "void-nib-lance",
+          "lowerGearId": "comet-crayon-blade",
+          "minimumWinRate": 0.53,
+          "maximumWinRate": 0.6
+        },
+        {
+          "id": "legendary-over-common",
+          "higherGearId": "void-nib-lance",
+          "lowerGearId": "tiny-sword",
+          "minimumWinRate": 0.6,
+          "maximumWinRate": 0.68
+        }
+      ],
+      "combinedComparisons": [
+        {
+          "id": "epic-over-common",
+          "weaponComparisonId": "epic-over-common",
+          "higherRarity": "epic",
+          "lowerRarity": "common",
+          "minimumWinRate": 0.6,
+          "maximumWinRate": 0.9,
+          "minimumSkillWinRate": 0.52,
+          "minimumComponentLift": -0.06,
+          "maximumInteractionResidual": 0.15,
+          "supportByRole": {
+            "brawler": [],
+            "longshot": [],
+            "mage": []
+          },
+          "higherPowerUpsByRole": {
+            "brawler": ["v1-second-draft"],
+            "longshot": ["v1-paper-twin"],
+            "mage": ["v1-last-scribble"]
+          },
+          "lowerPowerUpsByRole": {
+            "brawler": ["v1-smudge-step"],
+            "longshot": ["v2-wider-halo"],
+            "mage": ["v1-paper-shield"]
+          }
+        },
+        {
+          "id": "legendary-over-epic",
+          "weaponComparisonId": "legendary-over-epic",
+          "higherRarity": "legendary",
+          "lowerRarity": "epic",
+          "minimumWinRate": 0.54,
+          "maximumWinRate": 0.88,
+          "minimumSkillWinRate": 0.5,
+          "minimumComponentLift": -0.15,
+          "maximumInteractionResidual": 0.35,
+          "supportByRole": {
+            "brawler": ["v1-smudge-step", "v1-double-doodle", "v1-echo-mark"],
+            "longshot": [
+              "v2-bank-shot",
+              "v2-orbiting-nib",
+              "v2-returning-stroke"
+            ],
+            "mage": ["v1-center-fold", "v1-counter-sketch", "v1-echo-mark"]
+          },
+          "higherPowerUpsByRole": {
+            "brawler": ["v1-masterpiece"],
+            "longshot": ["v1-masterpiece"],
+            "mage": ["v1-masterpiece"]
+          },
+          "lowerPowerUpsByRole": {
+            "brawler": ["v1-second-draft"],
+            "longshot": ["v1-paper-twin"],
+            "mage": ["v1-second-draft"]
+          }
+        }
+      ]
     },
     "roleEdges": {
       "seedsPerPairing": 40

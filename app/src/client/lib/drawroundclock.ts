@@ -1,5 +1,7 @@
 export const DRAW_ROUND_SECONDS = 60;
 export const DRAW_ROUND_WARNING_SECONDS = 10;
+export const DRAW_TIMER_SOUND_INTERVAL_SECONDS = 5;
+export const DRAW_TIMER_CRITICAL_SOUND_SECONDS = 5;
 
 const DRAW_ROUND_DURATION_MILLISECONDS = DRAW_ROUND_SECONDS * 1_000;
 
@@ -23,6 +25,19 @@ export type DrawRoundUrgencyMotion = Readonly<{
   angleDegrees: number;
   scale: number;
 }>;
+
+export type DrawTimerSfxCue = 'draw.timer' | 'draw.tick';
+
+export function getDrawTimerSfxCue(
+  remainingSeconds: number
+): DrawTimerSfxCue | null {
+  const wholeSeconds = Math.floor(remainingSeconds);
+  if (wholeSeconds <= 0) return null;
+  if (wholeSeconds <= DRAW_TIMER_CRITICAL_SOUND_SECONDS) return 'draw.tick';
+  return wholeSeconds % DRAW_TIMER_SOUND_INTERVAL_SECONDS === 0
+    ? 'draw.timer'
+    : null;
+}
 
 export function createDrawRoundClock(): DrawRoundClock {
   return {

@@ -12,6 +12,7 @@ import {
 import {
   collectDiscoveredPowerUpIds,
   openDetailModal,
+  type DetailModal,
 } from '../lib/detailmodal';
 import { LiveSprite } from '../lib/livesprite';
 import { translate } from '../lib/localization';
@@ -195,6 +196,7 @@ export class ScribbitHome extends Scene {
   private state!: ArenaState;
   private selectedIndex = 0;
   private liveSprite: LiveSprite | null = null;
+  private scribbitDetailModal: DetailModal | null = null;
   private renderGeneration = 0;
   private menu: AppMenu | null = null;
   private actionOverlay: CanvasActionOverlay | null = null;
@@ -224,6 +226,7 @@ export class ScribbitHome extends Scene {
   init(): void {
     this.selectedIndex = 0;
     this.liveSprite = null;
+    this.scribbitDetailModal = null;
     this.renderGeneration = 0;
     this.menu = null;
     this.actionOverlay = null;
@@ -301,6 +304,8 @@ export class ScribbitHome extends Scene {
 
   private build(): void {
     this.renderGeneration += 1;
+    this.scribbitDetailModal?.destroy();
+    this.scribbitDetailModal = null;
     this.dailyLoginModal?.destroy();
     this.dailyLoginModal = null;
     this.closeMaturityInfo();
@@ -568,6 +573,8 @@ export class ScribbitHome extends Scene {
     this.clearDrawButtonEffects();
     this.liveSprite?.destroy();
     this.liveSprite = null;
+    this.scribbitDetailModal?.destroy();
+    this.scribbitDetailModal = null;
     this.closeMaturityInfo();
     this.dailyLoginModal?.destroy();
     this.dailyLoginModal = null;
@@ -861,7 +868,7 @@ export class ScribbitHome extends Scene {
       this,
       centerX,
       creatureY + 234,
-      `LV ${levelOf(scribbit)}`,
+      `LV ${levelOf(scribbit)}  •  TAP TO MEET`,
       TYPE.caption,
       UI.ink,
       true
@@ -870,6 +877,7 @@ export class ScribbitHome extends Scene {
       summary.setScale((width - 80) / summary.width);
 
     this.renderCreature(scribbit, centerX, creatureY);
+    this.renderCreatureInteraction(scribbit, centerX, creatureY);
     this.renderRosterControls(scribbit, creatureY);
     this.renderDrawButton(centerX, buttonY, 520, 124);
   }
@@ -1208,7 +1216,7 @@ export class ScribbitHome extends Scene {
         `${scribbit.name.toUpperCase()}  •  RETIRE`,
         () => {
           this.closeRosterFullModal();
-          this.openRetireDetail(scribbit);
+          this.openScribbitDetail(scribbit);
         },
         cardWidth - 96,
         UI.creamHex,
@@ -1227,7 +1235,7 @@ export class ScribbitHome extends Scene {
         },
         onActivate: () => {
           this.closeRosterFullModal();
-          this.openRetireDetail(scribbit);
+          this.openScribbitDetail(scribbit);
         },
       });
     });
@@ -1255,8 +1263,9 @@ export class ScribbitHome extends Scene {
     actions.focusInitial();
   }
 
-  private openRetireDetail(scribbit: Scribbit): void {
-    openDetailModal(this, scribbit, {
+  private openScribbitDetail(scribbit: Scribbit): void {
+    this.scribbitDetailModal?.destroy();
+    this.scribbitDetailModal = openDetailModal(this, scribbit, {
       currentDay: this.state.dayNumber,
       discoveredPowerUpIds:
         this.state.discoveredPowerUpIds ??
@@ -1268,6 +1277,9 @@ export class ScribbitHome extends Scene {
       actions: { canRetire: scribbit.status === 'alive' },
       onRetired: () => void this.refreshArenaAfterRosterChange(),
       onRemoved: () => void this.refreshArenaAfterRosterChange(),
+      onClose: () => {
+        this.scribbitDetailModal = null;
+      },
     });
   }
 
@@ -1511,6 +1523,48 @@ export class ScribbitHome extends Scene {
       if (textureKey !== fallbackTexture) {
         this.setLiveSprite(scribbit, textureKey, x, y, reduceMotion);
       }
+    });
+  }
+
+  private renderCreatureInteraction(
+    scribbit: Scribbit,
+    x: number,
+    y: number
+  ): void {
+    const hitTarget = this.add
+      .rectangle(
+        x,
+        y,
+        HOME_SCRIBBIT_DISPLAY_SIZE,
+        HOME_SCRIBBIT_DISPLAY_SIZE,
+        0xffffff,
+        0.001
+      )
+      .setDepth(SCRIBBIT_DEPTH + 1)
+      .setInteractive({ useHandCursor: true });
+    const openScribbit = (): void => this.openScribbitDetail(scribbit);
+    bindPressInteractionEvents(
+      hitTarget,
+      {
+        press: () => this.liveSprite?.jiggle(),
+        release: () => undefined,
+        activate: openScribbit,
+        pressOnHover: false,
+      },
+      { gameTarget: this.input, shutdownTarget: this.events }
+    );
+    setSfxCue(hitTarget, 'ui.open');
+    this.actionOverlay?.add({
+      label: `Meet ${scribbit.name}. Open animated character details.`,
+      rect: {
+        x: x - HOME_SCRIBBIT_DISPLAY_SIZE / 2,
+        y: y - HOME_SCRIBBIT_DISPLAY_SIZE / 2,
+        width: HOME_SCRIBBIT_DISPLAY_SIZE,
+        height: HOME_SCRIBBIT_DISPLAY_SIZE,
+      },
+      attributes: { 'data-sfx-cue': 'ui.open' },
+      pointerPassthrough: true,
+      onActivate: openScribbit,
     });
   }
 

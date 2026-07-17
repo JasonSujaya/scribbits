@@ -25,7 +25,7 @@ test('archived Replay copy preserves viewer perspective and server status', () =
     }),
     {
       lead: 'YOU WON',
-      status: 'ARCHIVED • SERVER RESULT SAVED',
+      status: 'REPLAY UNAVAILABLE • OLDER BATTLE\nRESULT SAVED',
     }
   );
   assert.equal(
@@ -64,7 +64,8 @@ test('archived Rival Run copy retains the exact resolved score line', () => {
     }),
     {
       lead: 'YOU WON',
-      status: 'INK CONNECT • CONNECTED • 30 PTS • ARCHIVED',
+      status:
+        'INK CONNECT • CONNECTED • 30 PTS\nREPLAY UNAVAILABLE • RESULT SAVED',
     }
   );
 });
@@ -89,7 +90,7 @@ test('archived active Rival Run copy retains progress and score', () => {
       perspective: 'viewer_win',
       rivalRun,
     }).status,
-    'SIGNATURE INK • 2/3 • 4 PTS • ARCHIVED'
+    'SIGNATURE INK • 2/3 • 4 PTS\nREPLAY UNAVAILABLE • RESULT SAVED'
   );
 });
 
@@ -108,6 +109,11 @@ test('archived result renderer remains return-only and owns its cleanup', async 
     assert.match(rendererSource, new RegExp(disabledAction));
   }
   assert.match(rendererSource, /onReturn: options\.onReturn/);
+  assert.match(
+    rendererSource,
+    /options\.perspective === 'viewer_loss' \? 'defeat' : 'trophy'/
+  );
+  assert.match(rendererSource, /paperIcon\(scene, outcomeIcon/);
   assert.match(rendererSource, /let destroyed = false/);
   assert.match(rendererSource, /if \(destroyed\) return/);
   assert.match(rendererSource, /scene\.tweens\.killTweensOf\(card\)/);

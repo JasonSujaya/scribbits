@@ -3,6 +3,7 @@ import type { BattleReport } from '../../shared/arena';
 import type { BattleRecapPerspective } from './battlerecap';
 import { createPostFightActions } from './replaypostfightactions';
 import { planArchivedReplayResultCopy } from './replayarchivedresultplan';
+import { paperIcon } from './papericons';
 import { UI } from './theme';
 import { label, stickerCard } from './ui';
 
@@ -23,10 +24,18 @@ export const createArchivedReplayResult = (
 ): ArchivedReplayResult => {
   const { width, height } = scene.scale;
   const copy = planArchivedReplayResultCopy(options);
-  const card = stickerCard(scene, width / 2, height / 2, width - 70, 286, {
-    gold: true,
-    tapeColor: UI.tape,
-  });
+  const cardHeight = 330;
+  const card = stickerCard(
+    scene,
+    width / 2,
+    height / 2,
+    width - 70,
+    cardHeight,
+    {
+      gold: true,
+      tapeColor: UI.tape,
+    }
+  );
   card.setDepth(60).setScale(0.8);
   scene.tweens.add({
     targets: card,
@@ -35,12 +44,20 @@ export const createArchivedReplayResult = (
     ease: 'Back.easeOut',
   });
 
-  const top = -143;
+  const top = -cardHeight / 2;
+  const outcomeIcon =
+    options.perspective === 'viewer_loss' ? 'defeat' : 'trophy';
+  card.add(
+    paperIcon(scene, outcomeIcon, 0, top + 53, {
+      size: 54,
+      fill: outcomeIcon === 'defeat' ? UI.coral : UI.gold,
+    })
+  );
   card.add(
     label(
       scene,
       0,
-      top + 48,
+      top + 101,
       copy.lead,
       34,
       UI.goldText,
@@ -48,12 +65,12 @@ export const createArchivedReplayResult = (
     ).setWordWrapWidth(width - 110)
   );
   card.add(
-    label(scene, 0, top + 96, copy.status, 18, UI.ink, true).setWordWrapWidth(
+    label(scene, 0, top + 147, copy.status, 18, UI.ink, true).setWordWrapWidth(
       width - 90
     )
   );
 
-  const returnY = top + 205;
+  const returnY = top + 258;
   const actions = createPostFightActions(scene, {
     x: 0,
     y: returnY,

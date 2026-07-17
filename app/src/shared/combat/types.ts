@@ -4,6 +4,7 @@
  */
 
 import type { Element } from '../elements';
+import type { SupportedBattleTranscriptVersion } from './transcriptversion';
 import type { BattleArenaId } from '../battlearena';
 import type { AccessoryEffectFamily } from '../accessoryeffects';
 import type { GearRank } from '../arena';
@@ -95,6 +96,7 @@ export type DamageSource =
   | 'longshot_quill'
   | 'gunner_shot'
   | 'mage_bolt'
+  | 'paint_zone'
   | 'colorburst_echo'
   | 'contact'
   | 'ember_burn'
@@ -115,6 +117,7 @@ export type CombatPhase =
   | 'wall_constraints'
   | 'fighter_collision'
   | 'role_attacks'
+  | 'projectiles'
   | 'ability_collisions'
   | 'status_effects'
   | 'ink_pressure'
@@ -189,6 +192,70 @@ export type BattleTimelineEvent =
       origin: FixedVector;
       target: FixedVector;
       hit: boolean;
+    }>
+  | Readonly<{
+      tick: number;
+      kind: 'projectile_spawned';
+      projectileId: string;
+      actor: FighterSlot;
+      projectile: 'quill' | 'color_bolt';
+      attackNumber: number;
+      shotNumber: number;
+      position: FixedVector;
+      velocity: FixedVector;
+      radius: number;
+      expiresAtTick: number;
+    }>
+  | Readonly<{
+      tick: number;
+      kind: 'projectile_bounced';
+      projectileId: string;
+      actor: FighterSlot;
+      axis: 'x' | 'y' | 'both';
+      reason?: 'natural_ricochet' | 'bank_shot' | 'returning_stroke';
+      position: FixedVector;
+      velocity: FixedVector;
+    }>
+  | Readonly<{
+      tick: number;
+      kind: 'projectile_hit';
+      projectileId: string;
+      actor: FighterSlot;
+      target: FighterSlot;
+      projectile: 'quill' | 'color_bolt';
+      position: FixedVector;
+    }>
+  | Readonly<{
+      tick: number;
+      kind: 'projectile_expired';
+      projectileId: string;
+      actor: FighterSlot;
+      position: FixedVector;
+    }>
+  | Readonly<{
+      tick: number;
+      kind: 'paint_zone_created';
+      zoneId: string;
+      actor: FighterSlot;
+      position: FixedVector;
+      radius: number;
+      expiresAtTick: number;
+    }>
+  | Readonly<{
+      tick: number;
+      kind: 'paint_zone_pulsed';
+      zoneId: string;
+      actor: FighterSlot;
+      target: FighterSlot;
+      position: FixedVector;
+      damage: number;
+    }>
+  | Readonly<{
+      tick: number;
+      kind: 'paint_zone_expired';
+      zoneId: string;
+      actor: FighterSlot;
+      position: FixedVector;
     }>
   | Readonly<{
       tick: number;
@@ -319,11 +386,31 @@ export type FighterCheckpoint = Readonly<{
   echoPosition: FixedVector | null;
 }>;
 
+export type ProjectileCheckpoint = Readonly<{
+  projectileId: string;
+  actor: FighterSlot;
+  projectile: 'quill' | 'color_bolt';
+  position: FixedVector;
+  velocity: FixedVector;
+  radius: number;
+  expiresAtTick: number;
+}>;
+
+export type PaintZoneCheckpoint = Readonly<{
+  zoneId: string;
+  actor: FighterSlot;
+  position: FixedVector;
+  radius: number;
+  expiresAtTick: number;
+}>;
+
 export type BattleCheckpoint = Readonly<{
   tick: number;
   arenaHalfWidth: number;
   arenaHalfHeight: number;
   fighters: readonly [FighterCheckpoint, FighterCheckpoint];
+  projectiles?: readonly ProjectileCheckpoint[];
+  paintZones?: readonly PaintZoneCheckpoint[];
 }>;
 
 export type FighterResult = Readonly<{
@@ -348,7 +435,7 @@ export type AuthoritativeBattleResult = Readonly<{
 }>;
 
 export type BattleTranscript = Readonly<{
-  version: number;
+  version: SupportedBattleTranscriptVersion;
   battleId: string;
   seed: string;
   tickRate: number;
@@ -425,6 +512,12 @@ export type ColorburstAbilityConfig = AbilityConfigBase &
     echoDamagePermille: number;
     echoRadius: number;
     echoOffsetDistance: number;
+    zoneRadius: number;
+    zoneLifetimeTicks: number;
+    zonePulseIntervalTicks: number;
+    zoneBaseDamage: number;
+    zoneCharmDamageDivisor: number;
+    zoneRepelSpeed: number;
   }>;
 
 export type AbilityConfigByPower = Readonly<{
@@ -453,7 +546,7 @@ export type ElementPayloadConfig = Readonly<{
 }>;
 
 export type CombatRules = Readonly<{
-  version: number;
+  version: SupportedBattleTranscriptVersion;
   tickRate: number;
   maximumSeconds: number;
   maximumTicks: number;

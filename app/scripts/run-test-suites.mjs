@@ -9,7 +9,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const appDirectory = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -19,7 +19,21 @@ const compiledSourceDirectory = join(testTemporaryRoot, 'compiled-source');
 const compiledSharedDirectory = join(compiledSourceDirectory, 'shared');
 const compiledServerDirectory = join(compiledSourceDirectory, 'server');
 const compiledClientDirectory = join(compiledSourceDirectory, 'client');
-const suitesOnly = process.argv.slice(2).includes('--suites-only');
+const scriptArguments = process.argv.slice(2);
+const suitesOnly = scriptArguments.includes('--suites-only');
+const dataOnly = scriptArguments.includes('--data-only');
+const dataTestFileNames = new Set([
+  'data-mutation-stress.test.mjs',
+  'equipment-economy.test.mjs',
+  'equipment-loadout.test.mjs',
+  'gallery-lifecycle.test.mjs',
+  'power-up-catalog.test.mjs',
+  'power-up-offers.test.mjs',
+  'scribbit-removal.test.mjs',
+  'storage-contract-manifest.test.mjs',
+  'stored-state-corruption.test.mjs',
+  'versioned-save.test.mjs',
+]);
 let failed = false;
 
 const cleanTemporaryRoot = () => {
@@ -78,7 +92,12 @@ try {
       join(compiledSourceDirectory, 'package.json'),
       `${JSON.stringify({ type: 'commonjs' })}\n`
     );
-    const testFiles = discoverTestFiles(testsDirectory);
+    const discoveredTestFiles = discoverTestFiles(testsDirectory);
+    const testFiles = dataOnly
+      ? discoveredTestFiles.filter((testFile) =>
+          dataTestFileNames.has(basename(testFile))
+        )
+      : discoveredTestFiles;
     if (testFiles.length === 0) {
       console.error('No Node test suites were discovered.');
       failed = true;
@@ -99,7 +118,7 @@ try {
     }
   }
 
-  if (!suitesOnly) {
+  if (!suitesOnly && !dataOnly) {
     runStep(
       'Running the legacy deterministic harness',
       process.execPath,

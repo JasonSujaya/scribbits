@@ -13,8 +13,8 @@ const powerUps = require(join(compiledSharedRoot, 'combat', 'powerups.js'));
 const raritiesFor = (ids) =>
   ids.map((id) => powerUps.POWER_UP_CATALOG[id].rarity);
 
-test('launch catalog contains the balanced 15 behavioral Power-Ups', () => {
-  assert.equal(powerUps.POWER_UP_IDS.length, 15);
+test('catalog contains legacy cards plus six capability-based weapon upgrades', () => {
+  assert.equal(powerUps.POWER_UP_IDS.length, 21);
   assert.deepEqual(
     Object.values(powerUps.POWER_UP_CATALOG).reduce(
       (counts, entry) => {
@@ -23,7 +23,7 @@ test('launch catalog contains the balanced 15 behavioral Power-Ups', () => {
       },
       { common: 0, uncommon: 0, rare: 0, epic: 0, legendary: 0 }
     ),
-    { common: 5, uncommon: 3, rare: 2, epic: 3, legendary: 2 }
+    { common: 8, uncommon: 5, rare: 3, epic: 3, legendary: 2 }
   );
   assert.equal(powerUps.MAXIMUM_POWER_UP_BONUS_DAMAGE_PERMILLE, 150);
   assert.equal(powerUps.MAXIMUM_POWER_UP_HEALING_PERMILLE, 200);
@@ -35,6 +35,27 @@ test('launch catalog contains the balanced 15 behavioral Power-Ups', () => {
   });
 });
 
+test('persisted Power-Up identities are separate from the current offer pool', () => {
+  assert.deepEqual(
+    powerUps.OFFERABLE_POWER_UP_IDS,
+    powerUps.PERSISTED_POWER_UP_IDS.filter(
+      (powerUpId) => !powerUps.RETIRED_POWER_UP_IDS.includes(powerUpId)
+    )
+  );
+  assert.equal(powerUps.POWER_UP_IDS, powerUps.PERSISTED_POWER_UP_IDS);
+  for (const powerUpId of powerUps.PERSISTED_POWER_UP_IDS) {
+    assert.equal(powerUps.POWER_UP_CATALOG[powerUpId].id, powerUpId);
+  }
+  for (const retiredPowerUpId of powerUps.RETIRED_POWER_UP_IDS) {
+    assert.equal(powerUps.isPowerUpId(retiredPowerUpId), true);
+    assert.equal(powerUps.isOfferablePowerUpId(retiredPowerUpId), false);
+    assert.equal(
+      powerUps.powerUpIsOfferableForRole(retiredPowerUpId, 'brawler'),
+      false
+    );
+  }
+});
+
 test('player-facing Power-Up descriptions avoid combat-engine jargon', () => {
   Object.values(powerUps.POWER_UP_CATALOG).forEach((entry) => {
     assert.doesNotMatch(entry.description, /\bticks?\b|\bpermille\b/i);
@@ -44,13 +65,13 @@ test('player-facing Power-Up descriptions avoid combat-engine jargon', () => {
   Object.values(powerUps.POWER_UP_CATALOG).forEach((entry) => {
     assert.equal('healingAmount' in entry, false);
     if (entry.maximumHitPointHealingPermille === undefined) return;
-    assert.ok(entry.maximumHitPointHealingPermille >= 20);
+    assert.ok(entry.maximumHitPointHealingPermille >= 5);
     assert.ok(entry.maximumHitPointHealingPermille <= 100);
     assert.match(entry.effect, /% max health/);
   });
   assert.equal(
     powerUps.POWER_UP_CATALOG['v1-last-scribble'].survivingHitPointPermille,
-    100
+    400
   );
   const expectedEffects = {
     'v1-edge-spring':
@@ -59,20 +80,20 @@ test('player-facing Power-Up descriptions avoid combat-engine jargon', () => {
     'v1-paper-shield': 'Block 25% of that hit',
     'v1-combo-spark': 'Deal 25% extra damage and restore 2% max health',
     'v1-center-fold': 'Restore 6% max health',
-    'v1-double-doodle': 'Repeat 25% of that hit',
-    'v1-backup-plan': 'Restore 3% max health',
-    'v1-counter-sketch':
-      'Strike back for 50% of your normal attack damage',
+    'v1-double-doodle': 'Repeat 20% of that hit',
+    'v1-backup-plan': 'Restore 2.5% max health',
+    'v1-counter-sketch': 'Strike back for 40% of your normal attack damage',
     'v1-wallop': 'Deal 50% of your normal attack damage each time',
-    'v1-echo-mark': 'Your next 2 normal hits deal 40% extra damage',
-    'v1-last-scribble': 'Survive one knockout blow with 10% max health',
+    'v1-echo-mark': 'Your next 2 normal hits deal 50% extra damage',
+    'v1-last-scribble':
+      "Survive one knockout blow with 40% max health and splash 10% of the enemy's max health back",
     'v1-second-draft':
-      'Your next 3 normal hits deal 30% extra damage and restore 2% max health',
-    'v1-paper-twin': 'Your first 2 normal hits repeat for 50% of their damage',
+      'Your next 3 normal hits deal 10% extra damage and restore 0.5% max health; Brawlers deal 15% and restore 1% instead',
+    'v1-paper-twin': 'Your first 2 normal hits repeat for 35% of their damage',
     'v1-masterpiece':
-      "Deal 10% of the enemy's max health and restore 10% max health",
+      "Deal 2% of the enemy's max health and restore 2% max health; Brawlers deal and restore 6.5% instead",
     'v1-endless-draft':
-      'Let every Common, Uncommon, and Rare activate 1 extra time',
+      'Let the first Common, Uncommon, or Rare that activates trigger 1 extra time',
   };
   for (const [id, effect] of Object.entries(expectedEffects)) {
     const entry = powerUps.POWER_UP_CATALOG[id];
@@ -84,7 +105,11 @@ test('player-facing Power-Up descriptions avoid combat-engine jargon', () => {
       'lethalDamageCap',
       'survivingHitPoints',
     ]) {
-      assert.equal(retiredField in entry, false, `${id} still has ${retiredField}`);
+      assert.equal(
+        retiredField in entry,
+        false,
+        `${id} still has ${retiredField}`
+      );
     }
   }
 });
@@ -123,14 +148,8 @@ test('every Power-Up has one centralized playstyle profile', () => {
       'v1-combo-spark',
       'v1-center-fold',
       'v1-backup-plan',
-      'v1-last-scribble',
     ],
-    longshot: [
-      'v1-edge-spring',
-      'v1-wallop',
-      'v1-second-draft',
-      'v1-paper-twin',
-    ],
+    longshot: ['v1-edge-spring', 'v1-wallop', 'v1-second-draft'],
     mage: ['v1-smudge-step', 'v1-wallop'],
   };
   for (const [combatRole, excludedIds] of Object.entries(excludedRoleOffers)) {
@@ -152,7 +171,7 @@ test('every Power-Up has one centralized playstyle profile', () => {
   );
   assert.equal(
     powerUps.powerUpIsOfferableForRole('v1-paper-shield', 'longshot', 3),
-    true
+    false
   );
   assert.equal(
     powerUps.powerUpIsOfferableForRole('v1-backup-plan', 'brawler', 3),
@@ -169,6 +188,34 @@ test('every Power-Up has one centralized playstyle profile', () => {
       ).length >= 8,
       `${combatRole} should keep a broad offer pool`
     );
+  }
+});
+
+test('weapon upgrades are offered only to roles with the required capability', () => {
+  const expectedRoles = {
+    'v2-bank-shot': ['longshot'],
+    'v2-returning-stroke': ['longshot'],
+    'v2-orbiting-nib': ['longshot'],
+    'v2-wider-halo': ['longshot'],
+    'v2-paint-splash': ['mage'],
+    'v2-wet-paint': ['mage'],
+  };
+  for (const [powerUpId, supportedRoles] of Object.entries(expectedRoles)) {
+    const definition = powerUps.POWER_UP_CATALOG[powerUpId];
+    assert.ok(definition.requiredCapabilities.length >= 1);
+    assert.equal(Object.isFrozen(definition.requiredCapabilities), true);
+    for (const combatRole of ['brawler', 'longshot', 'mage']) {
+      const expected = supportedRoles.includes(combatRole);
+      assert.equal(
+        powerUps.powerUpSupportsRole(powerUpId, combatRole),
+        expected
+      );
+      assert.equal(
+        powerUps.powerUpIsOfferableForRole(powerUpId, combatRole),
+        expected,
+        `${powerUpId} capability mismatch for ${combatRole}`
+      );
+    }
   }
 });
 
@@ -211,6 +258,13 @@ test('offer rarity weights are explicit percentages for every reward source', ()
       epic: 1,
       legendary: 0,
     },
+    'exhibition-loss': {
+      common: 65,
+      uncommon: 29,
+      rare: 5,
+      epic: 1,
+      legendary: 0,
+    },
     'rival-run-win': {
       common: 65,
       uncommon: 29,
@@ -218,7 +272,21 @@ test('offer rarity weights are explicit percentages for every reward source', ()
       epic: 1,
       legendary: 0,
     },
+    'rival-run-loss': {
+      common: 65,
+      uncommon: 29,
+      rare: 5,
+      epic: 1,
+      legendary: 0,
+    },
     'rival-run-final-win': {
+      common: 35,
+      uncommon: 42,
+      rare: 15,
+      epic: 8,
+      legendary: 0,
+    },
+    'rival-run-final-loss': {
       common: 35,
       uncommon: 42,
       rare: 15,
@@ -233,6 +301,13 @@ test('offer rarity weights are explicit percentages for every reward source', ()
       legendary: 0,
     },
     'champion-win': {
+      common: 5,
+      uncommon: 20,
+      rare: 40,
+      epic: 30,
+      legendary: 5,
+    },
+    'champion-loss': {
       common: 5,
       uncommon: 20,
       rare: 40,
@@ -328,18 +403,20 @@ test('role-aware offers prefer fitting cards without collapsing offer variety', 
 });
 
 test('role-aware offers exclude skills that cannot trigger for that role', () => {
-  for (let seed = 0; seed < 24; seed += 1) {
-    const mageOffer = powerUps.createDeterministicPowerUpOffer({
-      seed: `mage-trap-filter-${seed}`,
-      source: 'exhibition-win',
-      ownedPowerUpIds: [],
-      combatRole: 'mage',
-      gearFamilies: ['rush', 'focus'],
-    });
-    assert.ok(mageOffer);
-    assert.ok(
-      mageOffer.every((id) => powerUps.powerUpIsOfferableForRole(id, 'mage'))
-    );
+  for (const combatRole of ['brawler', 'longshot', 'mage']) {
+    for (let seed = 0; seed < 256; seed += 1) {
+      const offer = powerUps.createDeterministicPowerUpOffer({
+        seed: `${combatRole}-capability-filter-${seed}`,
+        source: 'exhibition-win',
+        ownedPowerUpIds: [],
+        combatRole,
+        gearFamilies: ['rush', 'focus'],
+      });
+      assert.ok(offer);
+      assert.ok(
+        offer.every((id) => powerUps.powerUpIsOfferableForRole(id, combatRole))
+      );
+    }
   }
 });
 

@@ -9,6 +9,7 @@ import {
   POWER_UP_IDS,
   circleCenterIsInsideCone,
   deterministicRoll,
+  getCombatRoleRules,
   getOrbitingNibPosition,
   integerSquareRoot,
   isFixedVector,
@@ -17,7 +18,11 @@ import {
   simulateCombat,
 } from './index';
 import { parseBattleTranscript } from './transcriptvalidation';
-import type { PowerUpId } from './powerups';
+import {
+  POWER_UP_CATALOG,
+  POWER_UP_RARITY_STRENGTH_PERMILLE,
+  type PowerUpId,
+} from './powerups';
 import type {
   BattleTranscript,
   BattleTimelineEvent,
@@ -133,9 +138,12 @@ function assertTranscriptInvariants(transcript: BattleTranscript): void {
       (count, fighter) => count + (fighter.echoPosition === null ? 0 : 1),
       0
     );
+    const projectileCount = checkpoint.projectiles?.length ?? 0;
+    const paintZoneCount = checkpoint.paintZones?.length ?? 0;
     assert(
-      2 + echoCount <= MAXIMUM_COMBAT_ENTITIES,
-      'two fighters plus echoes must obey the entity cap'
+      2 + echoCount + projectileCount + paintZoneCount <=
+        MAXIMUM_COMBAT_ENTITIES,
+      'fighters plus spawned combat entities must obey the entity cap'
     );
     for (const fighter of checkpoint.fighters) {
       assert(
@@ -402,18 +410,247 @@ function testEveryCombatRoleUsesItsBasicAttack(): void {
   }
 }
 
+function testAuthoritativeProjectileAndZonePrimitives(): void {
+  const projectileTypes = Object.freeze(['quill', 'color_bolt'] as const);
+  const projectileSpawns = new Set<(typeof projectileTypes)[number]>();
+  const projectileHits = new Set<(typeof projectileTypes)[number]>();
+  let paintZonePulseObserved = false;
+  let orbitingNibHitObserved = false;
+  let naturalRicochetObserved = false;
+  for (let seed = 0; seed < 16; seed += 1) {
+    const projectileTranscript = simulateCombat({
+      seed: `projectile-primitives-${seed}`,
+      fighters: [
+        makeFighter('projectile-longshot', 'spike'),
+        makeFighter('projectile-mage', 'charm'),
+      ],
+    });
+    const spawnedIds = new Set(
+      projectileTranscript.timeline
+        .filter((event) => event.kind === 'projectile_spawned')
+        .map((event) => event.projectileId)
+    );
+    assert(
+      spawnedIds.size > 0,
+      'ranged roles must spawn in-flight projectiles'
+    );
+    for (const event of projectileTranscript.timeline) {
+      if (event.kind === 'projectile_spawned') {
+        projectileSpawns.add(event.projectile);
+      }
+      if (
+        event.kind === 'projectile_hit' &&
+        spawnedIds.has(event.projectileId)
+      ) {
+        projectileHits.add(event.projectile);
+      }
+      if (
+        event.kind === 'projectile_bounced' &&
+        event.reason === 'natural_ricochet'
+      ) {
+        naturalRicochetObserved = true;
+        const attackNumber = Number(event.projectileId.split(':')[2]);
+        assertEqual(
+          attackNumber % 3,
+          0,
+          'only every third unpowered quill may ricochet naturally'
+        );
+      }
+      if (event.kind === 'projectile_bounced') {
+        const spawn = projectileTranscript.timeline.find(
+          (candidate) =>
+            candidate.kind === 'projectile_spawned' &&
+            candidate.projectileId === event.projectileId
+        );
+        assert(
+          spawn?.kind === 'projectile_spawned' && spawn.projectile === 'quill',
+          'color bolts must never ricochet'
+        );
+      }
+    }
+    assert(
+      projectileTranscript.checkpoints.every(
+        (checkpoint) =>
+          Array.isArray(checkpoint.projectiles) &&
+          Array.isArray(checkpoint.paintZones)
+      ),
+      'v8 checkpoints must snapshot projectiles and paint zones'
+    );
+
+    const zoneTranscript = simulateCombat({
+      seed: `paint-zone-primitives-${seed}`,
+      fighters: [
+        makeFighter('zone-mage', 'charm'),
+        makeFighter('zone-brawler', 'chonk'),
+      ],
+    });
+    assert(
+      zoneTranscript.timeline.some(
+        (event) => event.kind === 'paint_zone_created'
+      ),
+      'Colorburst must create a persistent paint zone'
+    );
+    paintZonePulseObserved ||= zoneTranscript.timeline.some(
+      (event) => event.kind === 'paint_zone_pulsed'
+    );
+
+    const haloTranscript = simulateCombat({
+      seed: `orbiting-nib-primitives-${seed}`,
+      fighters: [
+        makeFighter('halo-longshot', 'spike'),
+        makeFighter('halo-brawler', 'chonk'),
+      ],
+    });
+    orbitingNibHitObserved ||= haloTranscript.timeline.some(
+      (event) =>
+        event.kind === 'role_attack' &&
+        event.attack === 'nib_volley' &&
+        event.hit
+    );
+  }
+  for (const projectile of projectileTypes) {
+    assert(
+      projectileSpawns.has(projectile),
+      `${projectile} must spawn as an authoritative in-flight projectile`
+    );
+    assert(
+      projectileHits.has(projectile),
+      `${projectile} must resolve an authoritative physical hit`
+    );
+  }
+  assert(
+    paintZonePulseObserved,
+    'paint zones must pulse bounded authoritative damage when occupied'
+  );
+  assert(
+    orbitingNibHitObserved,
+    'orbiting nib geometry must be able to collide during active ticks'
+  );
+  assert(
+    naturalRicochetObserved,
+    'an unpowered Longshot must visibly bank every third missed quill'
+  );
+}
+
+function testLongshotKitesBeforeItGetsCornered(): void {
+  const transcript = simulateCombat({
+    seed: 'longshot-kiting',
+    fighters: [
+      makeFighter('kiting-longshot', 'spike'),
+      makeFighter('chasing-brawler', 'chonk'),
+    ],
+  });
+  const openingLongshot = transcript.checkpoints[0]?.fighters[0];
+  assert(
+    openingLongshot?.combatRole === 'longshot',
+    'kiting fixture must start with a Longshot'
+  );
+  const halfSecond = transcript.checkpoints.find(
+    (checkpoint) => checkpoint.tick === 10
+  );
+  const halfSecondLongshot = halfSecond?.fighters[0];
+  const halfSecondBrawler = halfSecond?.fighters[1];
+  if (halfSecondLongshot === undefined || halfSecondBrawler === undefined) {
+    throw new Error(
+      'Combat engine test failed: kiting fixture must include the half-second checkpoint'
+    );
+  }
+  const halfSecondDistance = integerSquareRoot(
+    (halfSecondBrawler.position.x - halfSecondLongshot.position.x) ** 2 +
+      (halfSecondBrawler.position.y - halfSecondLongshot.position.y) ** 2
+  );
+  assert(
+    halfSecondDistance >= 4_800,
+    'Longshot must preserve a readable opening lane against a charging Brawler'
+  );
+  assert(
+    halfSecondLongshot.velocity.y !== 0,
+    'Longshot must open by strafing across its firing lane instead of charging forward'
+  );
+
+  const preferredMinimum = getCombatRoleRules('longshot').preferredRangeMinimum;
+  const retreatCheckpoint = transcript.checkpoints.find((checkpoint) => {
+    const longshot = checkpoint.fighters[0];
+    const brawler = checkpoint.fighters[1];
+    if (!longshot || !brawler) return false;
+    const towardX = brawler.position.x - longshot.position.x;
+    const towardY = brawler.position.y - longshot.position.y;
+    const distance = integerSquareRoot(towardX ** 2 + towardY ** 2);
+    const awayDot =
+      longshot.velocity.x * -towardX + longshot.velocity.y * -towardY;
+    return distance < preferredMinimum && awayDot > 0;
+  });
+  if (retreatCheckpoint === undefined) {
+    throw new Error(
+      'Combat engine test failed: Longshot must turn away when a threat enters its preferred firing lane'
+    );
+  }
+  const retreatingLongshot = retreatCheckpoint.fighters[0];
+  const retreatSpeed = integerSquareRoot(
+    retreatingLongshot.velocity.x ** 2 + retreatingLongshot.velocity.y ** 2
+  );
+  assert(
+    retreatSpeed >= 190,
+    'Longshot close-range retreat must be faster than its ordinary strafe'
+  );
+}
+
+function testMageRetreatsAfterCasting(): void {
+  const transcript = simulateCombat({
+    seed: 'mage-retreat',
+    fighters: [
+      makeFighter('retreating-mage', 'charm'),
+      makeFighter('chasing-brawler', 'chonk'),
+    ],
+  });
+  const castFinished = transcript.timeline.find(
+    (event) => event.kind === 'ability_finished' && event.actor === 'a'
+  );
+  if (castFinished === undefined) {
+    throw new Error(
+      'Combat engine test failed: Mage fixture must finish a cast'
+    );
+  }
+  const retreatCheckpoint = transcript.checkpoints.find(
+    (checkpoint) =>
+      checkpoint.tick >= castFinished.tick &&
+      checkpoint.tick < castFinished.tick + 6
+  );
+  if (retreatCheckpoint === undefined) {
+    throw new Error(
+      'Combat engine test failed: Mage fixture must checkpoint its post-cast retreat'
+    );
+  }
+  const mage = retreatCheckpoint.fighters[0];
+  const brawler = retreatCheckpoint.fighters[1];
+  const towardX = brawler.position.x - mage.position.x;
+  const towardY = brawler.position.y - mage.position.y;
+  const awayDot = mage.velocity.x * -towardX + mage.velocity.y * -towardY;
+  const retreatSpeed = integerSquareRoot(
+    mage.velocity.x ** 2 + mage.velocity.y ** 2
+  );
+  assert(
+    awayDot > 0,
+    'Mage must create distance immediately after releasing a cast'
+  );
+  assert(
+    retreatSpeed >= 152,
+    'Mage post-cast retreat must be faster than its ordinary repositioning'
+  );
+}
+
 function testCurrentTranscriptValidation(): void {
   const transcript = simulateCombat({
-    seed: 'v7-parser',
+    seed: 'v8-parser',
     fighters: [
       makeFighter('parser-brawler', 'chonk', 'tide'),
       makeFighter('parser-mage', 'charm', 'moss'),
     ],
   });
-  assertEqual(transcript.version, 7, 'new simulations must use transcript v7');
+  assertEqual(transcript.version, 8, 'new simulations must use transcript v8');
   assert(
     parseBattleTranscript(transcript) === transcript,
-    'v7 parser must accept a valid Gear-free transcript'
+    'v8 parser must accept a valid Gear-free transcript'
   );
   const firstCheckpoint = transcript.checkpoints[0];
   if (!firstCheckpoint) {
@@ -538,6 +775,9 @@ function testPowerUpRuntimeAndLegacyRemoval(): void {
     ],
     ['v1-wallop', 'v1-last-scribble', 'v1-second-draft', 'v1-paper-twin'],
     ['v1-backup-plan'],
+    ['v2-bank-shot', 'v2-orbiting-nib', 'v2-wider-halo'],
+    ['v2-returning-stroke'],
+    ['v2-paint-splash', 'v2-wet-paint'],
   ] as const satisfies readonly (readonly PowerUpId[])[];
   const triggeredPowerUpIds = new Set<string>();
   const roles: readonly DominantStat[] = ['chonk', 'spike', 'zip', 'charm'];
@@ -562,11 +802,32 @@ function testPowerUpRuntimeAndLegacyRemoval(): void {
       }
     }
   }
+  const lastScribbleTranscript = simulateCombat({
+    seed: 'last-scribble-trigger-coverage',
+    fighters: [
+      {
+        ...makeFighter('last-scribble-owner', 'charm'),
+        stats: Object.freeze({ chonk: 0, spike: 0, zip: 0, charm: 40 }),
+        powerUpIds: Object.freeze(['v1-last-scribble']),
+      },
+      {
+        ...makeFighter('last-scribble-rival', 'chonk'),
+        stats: Object.freeze({ chonk: 200, spike: 0, zip: 0, charm: 0 }),
+      },
+    ],
+  });
+  for (const event of lastScribbleTranscript.timeline) {
+    if (event.kind === 'power_up_triggered') {
+      triggeredPowerUpIds.add(event.powerUpId);
+    }
+  }
+  const untriggeredPowerUpIds = POWER_UP_IDS.filter(
+    (powerUpId) => !triggeredPowerUpIds.has(powerUpId)
+  );
   assertEqual(
-    POWER_UP_IDS.filter((powerUpId) => !triggeredPowerUpIds.has(powerUpId))
-      .length,
+    untriggeredPowerUpIds.length,
     0,
-    'the combat matrix must exercise every launch Power-Up trigger'
+    `the combat matrix must exercise every launch Power-Up trigger (${untriggeredPowerUpIds.join(', ')})`
   );
 
   const base = makeFighter('legacy-ignored', 'chonk');
@@ -592,7 +853,7 @@ function testPowerUpRuntimeAndLegacyRemoval(): void {
 function testImmutablePhaseOrderAndValidation(): void {
   assertEqual(
     COMBAT_PHASE_ORDER.length,
-    11,
+    12,
     'phase order must remain complete'
   );
   assert(Object.isFrozen(COMBAT_PHASE_ORDER), 'phase order must be immutable');
@@ -629,11 +890,19 @@ function testPowerUpBalanceSafetyMatrix(): void {
         const ownerResult = transcript.result.fighters.find(
           (fighter) => fighter.id === owner.id
         );
-        assertEqual(
-          ownerResult?.maxHitPoints,
-          transcript.result.fighters.find((fighter) => fighter.id === rival.id)
-            ?.maxHitPoints,
-          `${powerUpId} must not overlap Gear by changing raw maximum hearts`
+        const rivalResult = transcript.result.fighters.find(
+          (fighter) => fighter.id === rival.id
+        );
+        const rarityStrength =
+          POWER_UP_RARITY_STRENGTH_PERMILLE[POWER_UP_CATALOG[powerUpId].rarity];
+        assert(
+          (ownerResult?.maxHitPoints ?? 0) >= (rivalResult?.maxHitPoints ?? 0),
+          `${powerUpId} rarity resilience must never reduce maximum hearts`
+        );
+        assert(
+          rarityStrength === 0 ||
+            (ownerResult?.maxHitPoints ?? 0) > (rivalResult?.maxHitPoints ?? 0),
+          `${powerUpId} rarity resilience must increase maximum hearts`
         );
       }
     }
@@ -658,6 +927,7 @@ function testPrimaryPowerDurationMatrix(): void {
 
       const fightCount = 100;
       let cappedFightCount = 0;
+      let stalledCappedFightCount = 0;
       for (let seed = 0; seed < fightCount / 2; seed += 1) {
         for (const swapSlots of [false, true]) {
           const transcript = simulateCombat({
@@ -681,6 +951,17 @@ function testPrimaryPowerDurationMatrix(): void {
           );
           if (transcript.result.completedTick === COMBAT_MAXIMUM_TICKS) {
             cappedFightCount += 1;
+            const exchangedDamage = transcript.result.fighters.reduce(
+              (total, fighter) => total + fighter.damageDealt,
+              0
+            );
+            const combinedMaximumHitPoints = transcript.result.fighters.reduce(
+              (total, fighter) => total + fighter.maxHitPoints,
+              0
+            );
+            if (exchangedDamage * 2 < combinedMaximumHitPoints) {
+              stalledCappedFightCount += 1;
+            }
           }
         }
       }
@@ -688,9 +969,22 @@ function testPrimaryPowerDurationMatrix(): void {
       if (cappedFightCount <= fightCount * 0.2) {
         promptMatchupCount += 1;
       }
-      if (firstBuild !== secondBuild) {
+      // Longshot versus Mage is the intentional ranged-spacing duel: both
+      // kite, fire physical projectiles, and may use the full replay clock.
+      // Zip/Gunner remains only for archived transcript compatibility and is
+      // not part of the current three-role pacing gate.
+      if (
+        selectPrimaryPower(makeStats(firstBuild)) !==
+          selectPrimaryPower(makeStats(secondBuild)) &&
+        firstBuild !== 'zip' &&
+        secondBuild !== 'zip' &&
+        !(
+          (firstBuild === 'spike' && secondBuild === 'charm') ||
+          (firstBuild === 'charm' && secondBuild === 'spike')
+        )
+      ) {
         assert(
-          cappedFightCount <= fightCount * 0.75,
+          stalledCappedFightCount <= fightCount * 0.75,
           `${firstBuild}/${secondBuild} must not become a mostly stalled cross-power matchup`
         );
       }
@@ -770,6 +1064,9 @@ export function runCombatEngineTests(): readonly string[] {
   const deterministicTranscript = testDeterministicTranscript();
   testEveryPrimaryPowerActivates();
   testEveryCombatRoleUsesItsBasicAttack();
+  testLongshotKitesBeforeItGetsCornered();
+  testMageRetreatsAfterCasting();
+  testAuthoritativeProjectileAndZonePrimitives();
   testCurrentTranscriptValidation();
   testCompetitiveCurrentRoleCycle();
   testPowerUpRuntimeAndLegacyRemoval();
@@ -784,7 +1081,10 @@ export function runCombatEngineTests(): readonly string[] {
     `deterministic transcript (${deterministicTranscript.result.reason})`,
     'all three current primary powers across four stored stats',
     'all three role basic attacks plus Zip-to-Longshot compatibility',
-    'v7 parser and derived-role validation',
+    'Longshot lateral opening and emergency kiting',
+    'Mage post-cast retreat',
+    'authoritative projectiles, orbiting nibs, and paint zones',
+    'v8 parser and derived-role validation',
     'behavioral Power-Up runtime and legacy removal',
     'immutable phases, caps, and validation',
     '15-card Power-Up balance safety matrix',

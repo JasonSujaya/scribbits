@@ -34,14 +34,14 @@ CHARM-like critical choices without changing the birth stats.
 
 ## Six techniques
 
-| Family  | Battle cue    | Benefit                                  | Tradeoff                      |
-| ------- | ------------- | ---------------------------------------- | ----------------------------- |
-| Guard   | Paper Guard   | More maximum hearts                      | Slightly less impact          |
-| Rush    | Dash Blades   | More dash impact                         | Fewer hearts                   |
-| Focus   | Orbiting Nibs | Rank-1 crit; faster wind-up from 2★      | Slightly slower recovery      |
-| Ready   | First Strike  | Rank-1 crit; faster first power from 2★  | Slightly less impact          |
-| Fortune | Lucky Echo    | Higher critical chance                   | Slightly less impact          |
-| Aim     | Blade Volley  | More impact with blade VFX               | Fewer hearts; slower recovery |
+| Family  | Battle cue   | Benefit                                 | Tradeoff                      |
+| ------- | ------------ | --------------------------------------- | ----------------------------- |
+| Guard   | Paper Guard  | More maximum hearts                     | Slightly less impact          |
+| Rush    | Quickstep    | More dash impact                        | Fewer hearts                  |
+| Focus   | Steady Hands | Rank-1 crit; faster wind-up from 2★     | Slightly slower recovery      |
+| Ready   | Quick Draw   | Rank-1 crit; faster first power from 2★ | Slightly less impact          |
+| Fortune | Focus Cycle  | Higher critical chance                  | Slightly less impact          |
+| Aim     | True Aim     | More impact with blade VFX              | Fewer hearts; slower recovery |
 
 All percentage axes are capped to ±3% after the four category techniques are
 combined. Timing changes are capped to one tick. Gear is snapshotted into v3
@@ -67,12 +67,12 @@ gear-free fights retain the historical v2 transcript.
 
 `app/src/shared/content/gearweek.ts` rotates a visible Bag headline through:
 
-1. Blade Basics — Aim Gear.
-2. Paper Fort — Guard Gear.
-3. First Strike — Ready Gear.
-4. Orbit School — Focus Gear.
-5. Dash Blades — Rush Gear.
-6. Lucky Echo — Fortune Gear.
+1. True Aim — Aim Gear.
+2. Paper Guard — Guard Gear.
+3. Quick Draw — Ready Gear.
+4. Steady Hands — Focus Gear.
+5. Quickstep — Rush Gear.
+6. Focus Cycle — Fortune Gear.
 7. Red Star Showcase — win an Exhibition with four active techniques and at
    least one Red★ item.
 

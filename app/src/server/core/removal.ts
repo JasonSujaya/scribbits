@@ -8,6 +8,10 @@ import {
   deleteStoredScribbit,
   getScribbitOwner,
 } from './scribbit';
+import {
+  getPowerUpClaimReceiptsKey,
+  getPowerUpOfferKey,
+} from './powerUpOffers';
 import type { ArenaStorage } from './storage';
 
 export const removeScribbitCompletely = async (
@@ -23,6 +27,10 @@ export const removeScribbitCompletely = async (
   await purgeBattleReportsForScribbit(storage, input.scribbitId);
   await purgeScribbitModerationRecords(storage, input.scribbitId);
   await removeCurrentChampionIfMatches(storage, input.scribbitId);
+  await storage.del(
+    getPowerUpOfferKey(input.ownerUserId, input.scribbitId),
+    getPowerUpClaimReceiptsKey(input.ownerUserId, input.scribbitId)
+  );
   await deleteStoredScribbit(
     storage,
     input.ownerUserId,

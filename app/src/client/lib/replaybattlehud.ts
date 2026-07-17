@@ -27,6 +27,7 @@ import {
   BATTLE_TITLE_TEXTURE,
 } from './visualassets';
 import { paperIcon } from './papericons';
+import { formatRedditUsername } from './redditusername';
 
 export type ReplayShapePowerState = 'ready' | 'telegraph' | 'active';
 
@@ -110,7 +111,7 @@ const MAX_HEART_SIZE = 40;
 const EMPTY_HEART_FILL = 0xd9ccb5;
 const HEALTHY_HEART_COLOR = UI.coral;
 const FLOATING_VITALS_WIDTH = 190;
-const FLOATING_VITALS_HEIGHT = 58;
+const FLOATING_VITALS_HEIGHT = 76;
 const FLOATING_HEALTH_BAR_HEIGHT = 10;
 
 type HeartFill = 'full' | 'left' | 'right';
@@ -295,10 +296,11 @@ const createFighterVitalsView = (
     fighterLayout.homeX,
     fighterLayout.homeY + layout.fighterDisplaySize / 2 + 22
   );
+  const fighterUsername = formatRedditUsername(scribbit.artist);
   const floatingName = label(
     scene,
     0,
-    combatRole ? -2 : -11,
+    fighterUsername ? -10 : combatRole ? -2 : -11,
     scribbit.name.toUpperCase(),
     18,
     UI.ink,
@@ -309,17 +311,24 @@ const createFighterVitalsView = (
     ? label(
         scene,
         0,
-        -19,
+        fighterUsername ? -28 : -19,
         getCombatRoleContent(combatRole).displayName.toUpperCase(),
         12,
         UI.coralText,
         true
       ).setOrigin(0.5)
     : null;
+  const floatingUsername = fighterUsername
+    ? label(scene, 0, 7, fighterUsername, 12, UI.inkSoft, true).setOrigin(0.5)
+    : null;
+  if (floatingUsername) {
+    fitTextToWidth(floatingUsername, floatingVitalsWidth - 24);
+  }
+  const floatingHealthY = fighterUsername ? 25 : 15;
   const floatingHealthTrack = scene.add
     .rectangle(
       -floatingHealthBarWidth / 2,
-      15,
+      floatingHealthY,
       floatingHealthBarWidth,
       FLOATING_HEALTH_BAR_HEIGHT,
       UI.progressTrack,
@@ -330,7 +339,7 @@ const createFighterVitalsView = (
   const floatingHealthFill = scene.add
     .rectangle(
       -floatingHealthBarWidth / 2,
-      15,
+      floatingHealthY,
       floatingHealthBarWidth,
       FLOATING_HEALTH_BAR_HEIGHT,
       HEALTHY_HEART_COLOR,
@@ -340,6 +349,7 @@ const createFighterVitalsView = (
   const floatingVitalsFeedback = scene.add.container(0, 0, [
     floatingName,
     ...(floatingRole ? [floatingRole] : []),
+    ...(floatingUsername ? [floatingUsername] : []),
     floatingHealthTrack,
     floatingHealthFill,
   ]);

@@ -64,7 +64,21 @@ test('direct battle staging rejects a report without the owned Scribbit', () => 
 test('birth finish adds edge paper flecks without animating reduced-motion players', () => {
   assert.match(birthCeremonySource, /export function playBirthFinishVfx/);
   assert.match(birthCeremonySource, /if \(prefersReducedMotion\(\)\) return/);
-  assert.match(birthCeremonySource, /createPaperFlecks\(input\.centerX - edgeOffset, -1\)/);
-  assert.match(birthCeremonySource, /createPaperFlecks\(input\.centerX \+ edgeOffset, 1\)/);
+  assert.match(
+    birthCeremonySource,
+    /createPaperFlecks\(input\.centerX - edgeOffset, -1\)/
+  );
+  assert.match(
+    birthCeremonySource,
+    /createPaperFlecks\(input\.centerX \+ edgeOffset, 1\)/
+  );
   assert.match(birthCeremonySource, /gravityY: 145/);
+});
+
+test('the newborn reveal uses a canvas-scale living drawing', () => {
+  assert.match(
+    birthCeremonySource,
+    /export const BIRTH_NEWBORN_DISPLAY_SIZE = 340/
+  );
+  assert.match(birthCeremonySource, /displaySize: BIRTH_NEWBORN_DISPLAY_SIZE/);
 });

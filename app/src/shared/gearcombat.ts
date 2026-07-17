@@ -2,7 +2,13 @@ import {
   ACCESSORY_EFFECTS,
   type AccessoryEffectFamily,
 } from './accessoryeffects';
-import { getAttachedGearRank, type GearRank, type Scribbit } from './arena';
+import {
+  capsuleRarityRank,
+  getAttachedGearRank,
+  type CapsuleRarity,
+  type GearRank,
+  type Scribbit,
+} from './arena';
 import { findGearCosmetic, type CosmeticGearCatalogEntry } from './cosmetics';
 import { EQUIPMENT_CATEGORIES, type EquipmentCategory } from './equipment';
 import type { GearCombatModifiers, GearCombatSnapshot } from './combat';
@@ -19,6 +25,15 @@ export const GEAR_RANK_STRENGTH_PERMILLE: Readonly<Record<GearRank, number>> =
     5: 20,
     6: 24,
   });
+
+export const GEAR_RARITY_STRENGTH_PERMILLE: Readonly<
+  Record<CapsuleRarity, number>
+> = Object.freeze({
+  common: 0,
+  rare: 6,
+  epic: 11,
+  legendary: 18,
+});
 
 const SUPPORT_STRENGTH_DIVISOR = 4;
 const MAXIMUM_AXIS_DELTA_PERMILLE = 30;
@@ -235,23 +250,23 @@ const effectForStrength = (
 };
 
 export function getGearTechniqueEffect(
-  gear: Pick<CosmeticGearCatalogEntry, 'effectFamily'>,
+  gear: Pick<CosmeticGearCatalogEntry, 'effectFamily'> &
+    Partial<Pick<CosmeticGearCatalogEntry, 'rarity'>>,
   rank: GearRank,
   supportRank: GearRank | null = null
 ): GearTechniqueEffect {
+  const leadStrength = GEAR_RANK_STRENGTH_PERMILLE[rank];
   const supportStrength = supportRank
     ? Math.floor(
         GEAR_RANK_STRENGTH_PERMILLE[supportRank] / SUPPORT_STRENGTH_DIVISOR
       )
     : 0;
-  return effectForStrength(
-    gear.effectFamily,
-    GEAR_RANK_STRENGTH_PERMILLE[rank] + supportStrength
-  );
+  return effectForStrength(gear.effectFamily, leadStrength + supportStrength);
 }
 
 export function formatGearTechnique(
-  gear: Pick<CosmeticGearCatalogEntry, 'effectFamily'>,
+  gear: Pick<CosmeticGearCatalogEntry, 'effectFamily'> &
+    Partial<Pick<CosmeticGearCatalogEntry, 'rarity'>>,
   rank: GearRank
 ): string {
   const effect = getGearTechniqueEffect(gear, rank);
@@ -334,9 +349,7 @@ const combineTechniqueEffects = (
     criticalChanceBonusPermille: Math.max(
       0,
       clampResolvedDelta(
-        Math.round(
-          combined.criticalChanceBonusPermille / techniques.length
-        )
+        Math.round(combined.criticalChanceBonusPermille / techniques.length)
       )
     ),
     telegraphTicksDelta: clampTiming(
@@ -349,9 +362,9 @@ const combineTechniqueEffects = (
 };
 
 const getCombinedGearTechniqueEffect = (
-  leadGear: Pick<CosmeticGearCatalogEntry, 'effectFamily'>,
+  leadGear: Pick<CosmeticGearCatalogEntry, 'effectFamily' | 'rarity'>,
   leadRank: GearRank,
-  supportGear: Pick<CosmeticGearCatalogEntry, 'effectFamily'> | null,
+  supportGear: Pick<CosmeticGearCatalogEntry, 'effectFamily' | 'rarity'> | null,
   supportRank: GearRank | null
 ): GearTechniqueEffect => {
   if (!supportGear || !supportRank) {
@@ -414,7 +427,12 @@ export function resolveGearCombatLoadout(
         } => value !== null
       )
       .sort((left, right) => {
-        return right.rank - left.rank || left.slotIndex - right.slotIndex;
+        return (
+          right.rank - left.rank ||
+          capsuleRarityRank(right.gear.rarity) -
+            capsuleRarityRank(left.gear.rarity) ||
+          left.slotIndex - right.slotIndex
+        );
       });
     const lead = rankedGear[0];
     if (!lead) continue;

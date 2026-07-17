@@ -5,6 +5,7 @@ const bootMessage = document.getElementById('game-boot-message');
 const bootProgress = document.getElementById('game-boot-progress');
 const bootPercent = document.getElementById('game-boot-percent');
 const bootTip = document.getElementById('game-boot-tip');
+const bootStart = document.getElementById('game-boot-start');
 const bootRetry = document.getElementById('game-boot-retry');
 
 export type GameBootSegment = 'shell' | 'code' | 'artwork' | 'arena';
@@ -31,6 +32,7 @@ const BOOT_TIP_KEYS = [
 ] as const;
 
 let reportedProgress = 0;
+let startHandler: (() => void) | null = null;
 let retryHandler: (() => void) | null = null;
 let tipTimer: number | null = null;
 
@@ -76,6 +78,11 @@ export const setGameBootRetry = (handler: (() => void) | null): void => {
   if (bootRetry) bootRetry.hidden = handler === null;
 };
 
+export const setGameBootStart = (handler: (() => void) | null): void => {
+  startHandler = handler;
+  if (bootStart) bootStart.hidden = handler === null;
+};
+
 export const startGameBootTips = (): void => {
   stopGameBootTips();
   if (!bootTip) return;
@@ -103,7 +110,7 @@ const errorMessage = (error: unknown): string => {
 };
 
 export const markGameBootPhase = (
-  phase: 'loading' | 'starting' | 'ready' | 'error',
+  phase: 'loading' | 'starting' | 'awaiting-start' | 'ready' | 'error',
   message?: string
 ): void => {
   document.documentElement.dataset.scribbitsBoot = phase;
@@ -117,12 +124,21 @@ export const markGameBootPhase = (
   }
   if (message && bootMessage) bootMessage.textContent = message;
   if (phase === 'starting') setGameBootProgress('shell', 1);
-  if (phase === 'ready') {
+  if (phase === 'awaiting-start') {
     renderProgress(1);
     stopGameBootTips();
     setGameBootRetry(null);
   }
-  if (phase === 'error') stopGameBootTips();
+  if (phase === 'ready') {
+    renderProgress(1);
+    stopGameBootTips();
+    setGameBootStart(null);
+    setGameBootRetry(null);
+  }
+  if (phase === 'error') {
+    stopGameBootTips();
+    setGameBootStart(null);
+  }
 };
 
 export const reportGameBootError = (error: unknown): void => {
@@ -135,6 +151,11 @@ export const reportGameBootError = (error: unknown): void => {
 };
 
 bootRetry?.addEventListener('click', () => retryHandler?.());
+bootStart?.addEventListener('click', () => {
+  const handler = startHandler;
+  setGameBootStart(null);
+  handler?.();
+});
 
 window.addEventListener('error', (event) => {
   reportGameBootError(event.error ?? event.message);

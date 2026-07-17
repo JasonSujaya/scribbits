@@ -1,10 +1,12 @@
 # Slop Audit — Scribbits Arena
 
-_Last verified: 2026-07-16 against commit d3d4879 and the current dirty worktree._
+_Last verified: 2026-07-17 against commit f36cb18 and the current dirty worktree._
 
 ## Summary
 
-The cleanup closed the previously verified P0 and P1 findings and seven of the eight P2 findings. Current verified open totals: **0 P0, 1 P1, 1 P2**. The new P1 is bounded to hardening the newly added battle-clip upload boundary. Migration of the legacy deterministic harness now has focused battle-presentation, capsule-presentation, equipment-economy, Founder Rival Episode, semantic-tab, Element Payload Guide, Arena UI, async-lifecycle, public Legend pagination, Legacy Card, Rumble-return, and Legacy-return-presentation ownership. The focused capsule suite also owns the generated Mystery Ink chest asset, compact-control contract, and lazy Shop preload boundary.
+The focused weapon and roguelite-data cleanup closed all **5 P0** findings and
+the Gear vocabulary drift. The remaining open work is **2 P1 and 1 P2**:
+Power-Up behavior typing, battle-clip upload hardening, and the legacy harness.
 
 The repository artifact pass removed 971 obsolete generated files from the
 current tree: timestamped balance reports, unreferenced visual QA captures,
@@ -152,6 +154,57 @@ The player-facing cleanup is also complete: the Ink Kit now has the four canonic
   events, preserves frozen v1 challenge snapshots, and reuses the existing strip.
 - `renderMysteryCosmeticPreview`, `removeRumbleEntrant`, and unused request/slot type aliases were deleted.
 
+## Closed weapon and roguelite data findings
+
+### P0-1 through P0-5 — persisted combat data is migration-safe
+
+- The shipped Scribbit v1 migration now owns a frozen literal Power-Up tuple;
+  an exact old-byte to new-byte fixture prevents catalog edits from changing it.
+- Power-Up discoveries and Gear merge receipts use versioned envelopes. Missing,
+  invalid, and unsupported data are distinct; invalid/future bytes block writes
+  and remain unchanged. Legacy valid values migrate without applying today's
+  balance policy to historical receipts.
+- Power-Up claims write an exact versioned TTL receipt in the same transaction
+  as the Scribbit and discovery update. Ambiguous replies replay that receipt,
+  while Scribbit removal clears both offers and claim receipts.
+- Scribbit schema v4 removes copied reusable Gear ranks from living records.
+  Inventory is now their sole durable authority, while birth-attached ranks stay
+  with the Scribbit. Returning players migrate once under the Arena player lease.
+- Persisted Gear identity now reads through the live catalog plus an explicit
+  retired-tombstone registry. Live drops exclude tombstones, so an ID can be
+  retired without making old Scribbits unreadable.
+- Existing IDs were deliberately not renamed or exposed to players. Stable
+  internal IDs are safer than a cosmetic ID swap, and no Ink compensation is
+  required because the migration removes no ownership or progress.
+
+### P1-1 — Power-Up behavior has two authorities and no valid-by-construction schema
+
+- `app/src/shared/combat/powerups.ts:98-149` combines 16 trigger names with 22
+  optional numeric fields. TypeScript permits meaningless and incomplete
+  trigger/parameter combinations.
+- `app/src/shared/combat/engine.ts:420-489`, 1372-1405, and 2155-2225 also branch
+  directly on persisted Power-Up IDs. The catalog describes behavior, but the
+  engine separately decides what each ID actually does.
+- **Fix:** keep existing persisted IDs, replace the optional-field bag with a
+  discriminated `behavior` union, and dispatch exhaustively by behavior kind.
+  Presentation metadata may stay in the catalog; engine behavior must have one
+  typed owner.
+
+### Closed P1-2 — Gear technique vocabulary has one source
+
+- Gear Week derives its labels from `ACCESSORY_EFFECTS`, and the balance plan
+  uses the same names: True Aim, Paper Guard, Quick Draw, Steady Hands,
+  Quickstep, and Focus Cycle.
+
+## Checked and not slop
+
+- Attached held-weapon art and world-space attack marks are intentionally
+  separate. `heldweaponpresentation.ts:19-35` consumes the canonical Gear
+  loadout, while `roleweaponrenderer.ts:21-25` owns transient battle marks.
+- Persisted `accessory` naming and the legacy `upgrades` field are compatibility
+  boundaries, not duplicate live systems. `arena.ts:115-121` documents their
+  retained role. Do not rename or delete either during this cleanup.
+
 ## Remaining P1 work
 
 ### P1-1 — bind and throttle battle-clip uploads
@@ -176,14 +229,18 @@ The player-facing cleanup is also complete: the Ink Kit now has the four canonic
 
 ## Verification snapshot
 
-- Complete `./verify.command` stages: pass on 2026-07-16 after the artifact
-  cleanup.
-- Type-check: pass.
-- ESLint: pass.
-- Discoverable suites: **414/414 tests pass** across 95 suites.
-- Legacy deterministic harness: **168/168 groups pass**.
-- Production build: pass in **4,928 ms**; Devvit bundle verification reports
-  55 client files and 1,527.5 KiB of shipped images.
+- The 2026-07-17 data cleanup added schema and compatibility code; it did not
+  deploy or mutate production storage.
+- `pnpm run verify`: pass on 2026-07-17.
+- Type-check and ESLint: pass.
+- Discoverable suites: **521/521 tests pass** across 116 source suites.
+- Focused data gate: **92/92 tests pass** across 10 suites, including 64 seeds
+  x 250 mutations (16,000 operations).
+- Legacy deterministic harness: **171/171 groups pass**.
+- Production build: pass in **3,882 ms**; Devvit bundle verification reports
+  106 client files and 1,655.4 KiB of shipped images.
+- `pnpm run balance:check`: still blocks release with 77 combat-balance flags;
+  this is separate from the now-green data compatibility lane.
 - Live browser proof: Arena opens the chooser before the first Spar; the selected rival reaches the VS and replay; all three server-scored bouts complete; `NEW RIVAL RUN` rolls to a fresh bout 1/3 slate; the compact modal clears and dims the dock.
 - Shop proof: the fifth dock tab opens its dedicated scene, completes a
   server-backed single chest, and routes the confirmed reward into Bag.
@@ -200,5 +257,7 @@ The player-facing cleanup is also complete: the Ink Kit now has the four canonic
 
 ## Next cleanup order
 
-1. Compare the versioned Legacy Card expiry/migration assertions with focused Legacy coverage.
-2. Migrate only uncovered behavior, delete the matching legacy block, and repeat until the broad harness can be deleted.
+1. Replace the Power-Up optional-field bag with a discriminated behavior model.
+2. Finish and rebalance the concurrent projectile/rarity combat work until the
+   deterministic role-cycle harness passes again.
+3. Resume the battle-clip boundary and legacy-harness cleanup.

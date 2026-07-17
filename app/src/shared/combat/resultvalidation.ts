@@ -41,7 +41,8 @@ function expectedWinnerFromComparison(
  */
 export function battleResultFinishIsConsistent(
   result: AuthoritativeBattleResult,
-  maximumTick: number
+  maximumTick: number,
+  sameRoleDoubleKnockoutUsesDamageShare = false
 ): boolean {
   const fighterA = result.fighters[0];
   const fighterB = result.fighters[1];
@@ -66,17 +67,22 @@ export function battleResultFinishIsConsistent(
   switch (result.reason) {
     case 'knockout':
       return winner.finalHitPoints > 0 && loser.finalHitPoints === 0;
-    case 'double_knockout':
+    case 'double_knockout': {
       if (fighterA.finalHitPoints !== 0 || fighterB.finalHitPoints !== 0) {
         return false;
       }
+      const doubleKnockoutComparison =
+        sameRoleDoubleKnockoutUsesDamageShare &&
+        fighterA.combatRole === fighterB.combatRole
+          ? fighterA.damageDealt * fighterA.maxHitPoints -
+            fighterB.damageDealt * fighterB.maxHitPoints
+          : fighterA.damageDealt - fighterB.damageDealt;
       return (
-        fighterA.damageDealt === fighterB.damageDealt ||
+        doubleKnockoutComparison === 0 ||
         result.winner ===
-          expectedWinnerFromComparison(
-            fighterA.damageDealt - fighterB.damageDealt
-          )
+          expectedWinnerFromComparison(doubleKnockoutComparison)
       );
+    }
     case 'timeout_hp_percentage':
       return (
         bothStanding &&

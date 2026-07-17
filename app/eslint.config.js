@@ -43,6 +43,18 @@ export default defineConfig([
     },
   },
   {
+    extends: [js.configs.recommended, ...tseslint.configs.recommended],
+    files: ['dev/combat-lab/**/*.{ts,tsx}'],
+    languageOptions: {
+      ecmaVersion: 2023,
+      globals: globals.browser,
+      parserOptions: {
+        project: ['./dev/combat-lab/tsconfig.json'],
+        tsconfigRootDir: import.meta.dirname,
+      },
+    },
+  },
+  {
     files: ['**/*.{js,mjs,cjs,ts,tsx}'],
     rules: {
       '@typescript-eslint/no-floating-promises': 'error',

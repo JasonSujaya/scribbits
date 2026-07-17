@@ -336,19 +336,10 @@ test('the primary play loop is fully prepared before Home is revealed', () => {
     preloaderSource,
     /preparePrimaryScenes\([\s\S]{0,120}setGameBootProgress\('code', progress\)/
   );
-  assert.match(
-    preloaderSource,
-    /preloadPrimaryNavigationVisualAssets\(this\)/
-  );
-  assert.match(
-    preloaderSource,
-    /primaryNavigationVisualAssetsReady\(this\)/
-  );
+  assert.match(preloaderSource, /preloadPrimaryNavigationVisualAssets\(this\)/);
+  assert.match(preloaderSource, /primaryNavigationVisualAssetsReady\(this\)/);
   assert.match(preloaderSource, /dataset\.primaryPreload = 'ready'/);
-  assert.match(
-    preloaderSource,
-    /this\.load\.on\('progress', reportProgress\)/
-  );
+  assert.match(preloaderSource, /this\.load\.on\('progress', reportProgress\)/);
   assert.match(preloaderSource, /setGameBootProgress\('arena', 1\)/);
   assert.match(gameHtmlSource, /id="game-boot-progress"/);
   assert.match(gameHtmlSource, /id="game-boot-tip"/);
@@ -358,9 +349,12 @@ test('the primary play loop is fully prepared before Home is revealed', () => {
   assert.match(gameBootSource, /retryHandler\?\.\(\)/);
   assert.match(
     visualAssetsSource,
-    /preloadHomeVisualAssets\(scene\)[\s\S]*preloadDrawVisualAssets\(scene\)[\s\S]*preloadReplayVisualAssets\(scene\)[\s\S]*preloadShopVisualAssets\(scene\)/
+    /preloadHomeVisualAssets\(scene\)[\s\S]*preloadDrawVisualAssets\(scene\)[\s\S]*preloadReplayVisualAssets\(scene, false\)[\s\S]*preloadShopVisualAssets\(scene\)/
   );
-  assert.doesNotMatch(sceneNavigationSource, /requestIdleCallback|prefetchVisual/);
+  assert.doesNotMatch(
+    sceneNavigationSource,
+    /requestIdleCallback|prefetchVisual/
+  );
   assert.match(
     sceneNavigationSource,
     /if \(!sceneVisualAssetsReady\(game, key\)\)[\s\S]*transitionVisible = true/

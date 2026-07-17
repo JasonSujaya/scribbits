@@ -21,16 +21,20 @@ export type VersionedJsonParseResult<Value> =
     }>;
 
 export type VersionedJsonCodec<Value> = Readonly<{
+  latestReadableVersion: number;
+  activeWriteVersion: number;
   parse: (storedJson: string | undefined) => VersionedJsonParseResult<Value>;
   serialize: (value: Value) => string;
 }>;
 
 type VersionedJsonCodecOptions<Value> = Readonly<{
   currentVersion: number;
+  activeWriteVersion?: number;
   legacyVersion?: number;
   migrations?: Readonly<Record<number, VersionedJsonMigration>>;
   decodeCurrent: (storedValue: unknown) => Value | undefined;
   encodeCurrent: (value: Value) => Record<string, unknown>;
+  encodeActiveWrite?: (value: Value) => Record<string, unknown>;
 }>;
 
 const isRecord = (value: unknown): value is Record<string, unknown> => {
@@ -56,6 +60,26 @@ const validateCodecOptions = <Value>(
       'Legacy JSON schema version must be older than the current version.'
     );
   }
+  const activeWriteVersion =
+    options.activeWriteVersion ?? options.currentVersion;
+  if (
+    !isSchemaVersion(activeWriteVersion) ||
+    activeWriteVersion > options.currentVersion ||
+    (options.legacyVersion !== undefined &&
+      activeWriteVersion < options.legacyVersion)
+  ) {
+    throw new Error(
+      'Active JSON write version must be readable by the current release.'
+    );
+  }
+  if (
+    activeWriteVersion !== options.currentVersion &&
+    options.encodeActiveWrite === undefined
+  ) {
+    throw new Error(
+      'Reader-first JSON codecs require an encoder for the active write version.'
+    );
+  }
 };
 
 /**
@@ -69,6 +93,8 @@ export const createVersionedJsonCodec = <Value>(
   options: VersionedJsonCodecOptions<Value>
 ): VersionedJsonCodec<Value> => {
   validateCodecOptions(options);
+  const activeWriteVersion =
+    options.activeWriteVersion ?? options.currentVersion;
 
   const parse = (
     storedJson: string | undefined
@@ -141,11 +167,21 @@ export const createVersionedJsonCodec = <Value>(
   };
 
   const serialize = (value: Value): string => {
-    const storedValue = options.encodeCurrent(value);
-    if (storedValue.schemaVersion !== options.currentVersion) {
+    const activeEncoder =
+      activeWriteVersion === options.currentVersion
+        ? options.encodeCurrent
+        : options.encodeActiveWrite;
+    if (!activeEncoder) {
+      throw new Error('Active JSON write encoder is unavailable.');
+    }
+    const storedValue = activeEncoder(value);
+    if (storedValue.schemaVersion !== activeWriteVersion) {
       throw new Error('JSON encoder emitted the wrong schema version.');
     }
-    if (options.decodeCurrent(storedValue) === undefined) {
+    if (
+      activeWriteVersion === options.currentVersion &&
+      options.decodeCurrent(storedValue) === undefined
+    ) {
       throw new Error('JSON encoder emitted an invalid current value.');
     }
     let serializedValue: string;
@@ -157,13 +193,19 @@ export const createVersionedJsonCodec = <Value>(
     const roundTrip = parse(serializedValue);
     if (
       roundTrip.status !== 'valid' ||
-      roundTrip.sourceVersion !== options.currentVersion ||
-      roundTrip.migrated
+      roundTrip.sourceVersion !== activeWriteVersion ||
+      roundTrip.migrated !==
+        (activeWriteVersion !== options.currentVersion)
     ) {
-      throw new Error('JSON serialization changed the encoded current value.');
+      throw new Error('JSON serialization changed the encoded write value.');
     }
     return serializedValue;
   };
 
-  return { parse, serialize };
+  return {
+    latestReadableVersion: options.currentVersion,
+    activeWriteVersion,
+    parse,
+    serialize,
+  };
 };

@@ -6,6 +6,7 @@ import type {
   DominantStat,
   PrimaryPower,
 } from './types';
+import { CURRENT_BATTLE_TRANSCRIPT_VERSION } from './transcriptversion';
 import { SHAPE_POWER_CONTENT_BY_POWER } from './shapepowercontent';
 import { SCRIBBIT_STAT_KEYS } from '../arena';
 
@@ -13,8 +14,8 @@ export const COMBAT_TICK_RATE = 20;
 export const COMBAT_MAXIMUM_SECONDS = 20;
 export const COMBAT_MAXIMUM_TICKS = COMBAT_TICK_RATE * COMBAT_MAXIMUM_SECONDS;
 export const FIXED_POINT_SCALE = 100;
-export const MAXIMUM_COMBAT_ENTITIES = 4;
-export const MAXIMUM_TIMELINE_EVENTS = 384;
+export const MAXIMUM_COMBAT_ENTITIES = 12;
+export const MAXIMUM_TIMELINE_EVENTS = 512;
 // Tick 0 plus every 10 ticks through tick 400 is exactly 41 checkpoints.
 export const MAXIMUM_CHECKPOINTS = 41;
 
@@ -29,6 +30,7 @@ export const COMBAT_PHASE_ORDER: readonly CombatPhase[] = Object.freeze([
   'wall_constraints',
   'fighter_collision',
   'role_attacks',
+  'projectiles',
   'ability_collisions',
   'status_effects',
   'ink_pressure',
@@ -128,11 +130,17 @@ const abilityConfigByPower: AbilityConfigByPower = Object.freeze({
     echoDamagePermille: 550,
     echoRadius: 360,
     echoOffsetDistance: 900,
+    zoneRadius: 1_100,
+    zoneLifetimeTicks: 42,
+    zonePulseIntervalTicks: 10,
+    zoneBaseDamage: 3,
+    zoneCharmDamageDivisor: 30,
+    zoneRepelSpeed: 120,
   }),
 });
 
 export const DEFAULT_COMBAT_RULES: CombatRules = Object.freeze({
-  version: 7,
+  version: CURRENT_BATTLE_TRANSCRIPT_VERSION,
   tickRate: COMBAT_TICK_RATE,
   maximumSeconds: COMBAT_MAXIMUM_SECONDS,
   maximumTicks: COMBAT_MAXIMUM_TICKS,

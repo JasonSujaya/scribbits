@@ -16,11 +16,20 @@ export {
 } from './config';
 export { getOrbitingNibPosition, simulateCombat } from './engine';
 export {
+  CURRENT_BATTLE_TRANSCRIPT_VERSION,
+  SUPPORTED_BATTLE_TRANSCRIPT_VERSIONS,
+  isSupportedBattleTranscriptVersion,
+} from './transcriptversion';
+export type { SupportedBattleTranscriptVersion } from './transcriptversion';
+export {
   MAXIMUM_LEGENDARY_POWER_UPS,
+  MAXIMUM_GROWING_POWER_UPS,
   MAXIMUM_POWER_UP_BONUS_DAMAGE_PERMILLE,
   MAXIMUM_POWER_UP_HEALING_PERMILLE,
   MAXIMUM_POWER_UP_TRIGGER_EVENTS,
   MAXIMUM_POWER_UPS,
+  COMBAT_CAPABILITIES,
+  COMBAT_CAPABILITIES_BY_ROLE,
   POWER_UP_CATALOG,
   POWER_UP_IDS,
   POWER_UP_OFFER_RARITY_WEIGHTS,
@@ -30,10 +39,12 @@ export {
   isPowerUpId,
   parsePowerUpBuild,
   powerUpIsOfferableForRole,
+  powerUpSupportsRole,
   scorePowerUpFit,
   validatePowerUpBuild,
 } from './powerups';
 export type {
+  CombatCapability,
   PowerUpDefinition,
   PowerUpId,
   PowerUpPlaystyleProfile,

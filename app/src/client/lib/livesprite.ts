@@ -9,7 +9,7 @@
 import * as Phaser from 'phaser';
 import { Scene } from 'phaser';
 import type { ScribbitStats } from '../../shared/arena';
-import type { PrimaryPower } from '../../shared/combat';
+import type { CombatRole, PrimaryPower } from '../../shared/combat';
 import {
   buildInkMeshGeometry,
   getSignatureTrait,
@@ -17,6 +17,12 @@ import {
   updateInkMeshVertices,
 } from './inkmesh';
 import type { InkMeshGeometry, InkMeshMotion, SignatureTrait } from './inkmesh';
+import {
+  createAttachedRoleWeapon,
+  type AttachedRoleWeapon,
+  type RoleWeaponAttack,
+} from './roleweaponrig';
+import type { HeldWeaponVisual } from './heldweaponpresentation';
 
 const FALLBACK_GRID = 3;
 const INK_MESH_FRAME_MILLISECONDS = 1000 / 30;
@@ -41,6 +47,8 @@ export type LiveSpriteOptions = {
   depth?: number;
   stats?: ScribbitStats;
   reduceMotion?: boolean;
+  combatRole?: CombatRole;
+  heldWeapon?: HeldWeaponVisual | null;
 };
 
 // A living drawing. Add it to the scene, then drive it with the semantic verbs
@@ -53,6 +61,8 @@ export class LiveSprite {
   readonly container: Phaser.GameObjects.Container;
   private readonly reactionContainer: Phaser.GameObjects.Container;
   private readonly poseContainer: Phaser.GameObjects.Container;
+  private readonly rearRoleWeaponLayer: Phaser.GameObjects.Container;
+  private readonly frontRoleWeaponLayer: Phaser.GameObjects.Container;
   private readonly scene: Scene;
   private readonly tiles: Tile[] = [];
   private readonly size: number;
@@ -71,6 +81,7 @@ export class LiveSprite {
   private idleTweens: Phaser.Tweens.Tween[] = [];
   private destroyed = false;
   private crumpled = false;
+  private attachedRoleWeapon: AttachedRoleWeapon | null = null;
   private readonly handleSceneShutdown = (): void => this.destroy();
 
   constructor(
@@ -89,8 +100,11 @@ export class LiveSprite {
     this.container = scene.add.container(x, y);
     this.reactionContainer = scene.add.container(0, 0);
     this.poseContainer = scene.add.container(0, 0);
+    this.rearRoleWeaponLayer = scene.add.container(0, 0);
+    this.frontRoleWeaponLayer = scene.add.container(0, 0);
     this.reactionContainer.add(this.poseContainer);
     this.container.add(this.reactionContainer);
+    this.poseContainer.add(this.rearRoleWeaponLayer);
     if (opts.depth !== undefined) this.container.setDepth(opts.depth);
 
     // Real dimensions of the source texture. Production textures are network
@@ -127,6 +141,10 @@ export class LiveSprite {
       );
     }
     this.createHitFlash(textureKey, drawW, drawH);
+    this.poseContainer.add(this.frontRoleWeaponLayer);
+    if (opts.combatRole) {
+      this.attachRoleWeapon(opts.combatRole, opts.heldWeapon ?? null);
+    }
 
     scene.events.on(Phaser.Scenes.Events.UPDATE, this.updateInkMesh, this);
     scene.events.once(Phaser.Scenes.Events.SHUTDOWN, this.handleSceneShutdown);
@@ -144,9 +162,7 @@ export class LiveSprite {
       hitFlashImage.scaleX * this.facing,
       hitFlashImage.scaleY
     );
-    hitFlashImage
-      .setTint(0xff3f36)
-      .setTintMode(Phaser.TintModes.FILL);
+    hitFlashImage.setTint(0xff3f36).setTintMode(Phaser.TintModes.FILL);
     hitFlashImage.setAlpha(0);
     this.poseContainer.add(hitFlashImage);
     this.hitFlashImage = hitFlashImage;
@@ -297,6 +313,38 @@ export class LiveSprite {
   setPosition(x: number, y: number): this {
     this.container.setPosition(x, y);
     return this;
+  }
+
+  /**
+   * Mounts a permanent role silhouette to the living pose. Both weapon layers
+   * sit inside reactionContainer/poseContainer, so every entrance, breath,
+   * lunge, hit, facing transform, depth change, and KO remains one body.
+   */
+  attachRoleWeapon(
+    role: CombatRole,
+    heldWeapon: HeldWeaponVisual | null = null
+  ): this {
+    this.attachedRoleWeapon?.destroy();
+    this.rearRoleWeaponLayer.removeAll(true);
+    this.frontRoleWeaponLayer.removeAll(true);
+    this.attachedRoleWeapon = createAttachedRoleWeapon(
+      this.scene,
+      {
+        rear: this.rearRoleWeaponLayer,
+        front: this.frontRoleWeaponLayer,
+      },
+      role,
+      heldWeapon,
+      this.size,
+      this.facing,
+      this.reduceMotion
+    );
+    return this;
+  }
+
+  triggerRoleWeaponAttack(attack: RoleWeaponAttack): void {
+    if (this.destroyed) return;
+    this.attachedRoleWeapon?.playAttack(attack);
   }
 
   // Gentle idle breathing: the whole body rises/falls a touch and the top row
@@ -747,6 +795,8 @@ export class LiveSprite {
     this.hitFlashTween = null;
     this.hitFlashClearEvent?.remove(false);
     this.hitFlashClearEvent = null;
+    this.attachedRoleWeapon?.destroy();
+    this.attachedRoleWeapon = null;
     this.scene.events.off(
       Phaser.Scenes.Events.UPDATE,
       this.updateInkMesh,

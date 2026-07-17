@@ -105,6 +105,10 @@ const inventoryDiscoveryFieldPrefix = 'discovered:';
 const inventoryGearRankFieldPrefix = 'gear-rank:';
 const inventoryEquippedTitleField = 'equipped-title';
 const gearMergeOperationKeyPrefix = 'gear:merge:operation:';
+const gearMergeReceiptSchemaVersion = 1;
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
 
 export const getInkKey = (userId: string): string => {
   return `ink:${userId}`;
@@ -251,9 +255,21 @@ const readStoredCounter = async (
   throw new Error(`Stored ${counterName} is invalid.`);
 };
 
-const parseStoredInventoryCount = (storedValue: string | undefined): number => {
+const parseStoredInventoryCount = (
+  storedValue: string | undefined,
+  catalogId: string
+): number => {
+  if (storedValue === undefined) return 0;
   const parsedValue = Number(storedValue);
-  return Number.isInteger(parsedValue) && parsedValue >= 0 ? parsedValue : 0;
+  if (
+    !Number.isSafeInteger(parsedValue) ||
+    parsedValue < 0
+  ) {
+    throw new Error(
+      `Stored inventory count for ${catalogId} is invalid and was preserved.`
+    );
+  }
+  return parsedValue;
 };
 
 export const getInkBalance = async (
@@ -421,7 +437,7 @@ const hasPermanentDiscovery = (
   }
 
   if (entry.kind === 'accessory') {
-    return parseStoredInventoryCount(storedInventory[entry.id]) > 0;
+    return parseStoredInventoryCount(storedInventory[entry.id], entry.id) > 0;
   }
 
   return storedInventory[entry.id] !== undefined;
@@ -435,9 +451,18 @@ const getDiscoveredCatalogIds = (
   }).map((entry) => entry.id);
 };
 
-const parseStoredGearRank = (storedValue: string | undefined): GearRank => {
+const parseStoredGearRank = (
+  storedValue: string | undefined,
+  gearId: string
+): GearRank => {
+  if (storedValue === undefined) return 1;
   const parsedRank = Number(storedValue);
-  return isGearRank(parsedRank) ? parsedRank : 1;
+  if (!isGearRank(parsedRank)) {
+    throw new Error(
+      `Stored Gear rank for ${gearId} is invalid and was preserved.`
+    );
+  }
+  return parsedRank;
 };
 
 const inventoryFromStoredEntries = (
@@ -447,7 +472,10 @@ const inventoryFromStoredEntries = (
   const gear: Record<string, GearInventoryEntry> = {};
 
   for (const entry of INK_ACCESSORY_CATALOG) {
-    const ownedCount = parseStoredInventoryCount(storedInventory[entry.id]);
+    const ownedCount = parseStoredInventoryCount(
+      storedInventory[entry.id],
+      entry.id
+    );
 
     if (ownedCount > 0) {
       items[entry.id] = ownedCount;
@@ -455,7 +483,8 @@ const inventoryFromStoredEntries = (
     if (hasPermanentDiscovery(entry, storedInventory)) {
       gear[entry.id] = {
         rank: parseStoredGearRank(
-          storedInventory[getInventoryGearRankField(entry.id)]
+          storedInventory[getInventoryGearRankField(entry.id)],
+          entry.id
         ),
         copies: ownedCount,
         rarity: entry.rarity,
@@ -464,7 +493,10 @@ const inventoryFromStoredEntries = (
   }
 
   for (const entry of [...INK_DRAWING_INK_CATALOG, ...INK_BRUSH_CATALOG]) {
-    const ownedCount = parseStoredInventoryCount(storedInventory[entry.id]);
+    const ownedCount = parseStoredInventoryCount(
+      storedInventory[entry.id],
+      entry.id
+    );
     if (ownedCount > 0) items[entry.id] = ownedCount;
   }
 
@@ -1711,30 +1743,145 @@ export type GearMergeResult =
   | { status: 'maxRank' }
   | { status: 'operationConflict' };
 
-const parseGearMergeReceipt = (
-  storedValue: string | undefined
-): MergeGearResponse | undefined => {
-  if (!storedValue) return undefined;
-  try {
-    const parsed = JSON.parse(storedValue) as Partial<MergeGearResponse>;
-    const fromRank = Number(parsed.fromRank);
-    const toRank = Number(parsed.toRank);
+type StoredGearMergeReceipt =
+  | { status: 'missing' }
+  | { status: 'valid'; response: MergeGearResponse; needsMigration: boolean }
+  | { status: 'invalid' }
+  | { status: 'unsupported'; schemaVersion: number };
+
+const parseReceiptStringArray = (value: unknown): string[] | undefined =>
+  Array.isArray(value) &&
+  value.every((candidate) => typeof candidate === 'string')
+    ? [...value]
+    : undefined;
+
+const parseReceiptCountRecord = (
+  value: unknown
+): Record<string, number> | undefined => {
+  if (!isRecord(value)) return undefined;
+  const entries = Object.entries(value);
+  if (
+    entries.some(
+      ([, count]) =>
+        typeof count !== 'number' || !Number.isSafeInteger(count) || count < 0
+    )
+  ) {
+    return undefined;
+  }
+  const parsedCounts: Record<string, number> = {};
+  for (const [itemId, count] of entries) {
+    if (typeof count === 'number') parsedCounts[itemId] = count;
+  }
+  return parsedCounts;
+};
+
+const parseReceiptGearRecord = (
+  value: unknown
+): Record<string, GearInventoryEntry> | undefined => {
+  if (!isRecord(value)) return undefined;
+  const parsedEntries: [string, GearInventoryEntry][] = [];
+  for (const [gearId, candidate] of Object.entries(value)) {
     if (
-      typeof parsed.gearId !== 'string' ||
-      !isGearRank(fromRank) ||
-      !isGearRank(toRank) ||
-      toRank !== fromRank + 1 ||
-      parsed.copiesSpent !== getGearMergeCopyCost(fromRank) ||
-      typeof parsed.inventory !== 'object' ||
-      parsed.inventory === null
+      !isRecord(candidate) ||
+      !isGearRank(candidate.rank) ||
+      typeof candidate.copies !== 'number' ||
+      !Number.isSafeInteger(candidate.copies) ||
+      candidate.copies < 0 ||
+      !isCapsuleRarity(candidate.rarity)
     ) {
       return undefined;
     }
-    return parsed as MergeGearResponse;
-  } catch {
+    parsedEntries.push([
+      gearId,
+      {
+        rank: candidate.rank,
+        copies: candidate.copies,
+        rarity: candidate.rarity,
+      },
+    ]);
+  }
+  return Object.fromEntries(parsedEntries);
+};
+
+const parseReceiptInventory = (value: unknown): Inventory | undefined => {
+  if (!isRecord(value)) return undefined;
+  const items = parseReceiptCountRecord(value.items);
+  const gear = parseReceiptGearRecord(value.gear);
+  const pens = parseReceiptStringArray(value.pens);
+  const titles = parseReceiptStringArray(value.titles);
+  const discovered = parseReceiptStringArray(value.discovered);
+  const equippedTitle = value.equippedTitle;
+  if (
+    !items ||
+    !gear ||
+    !pens ||
+    !titles ||
+    !discovered ||
+    (typeof equippedTitle !== 'string' && equippedTitle !== null)
+  ) {
     return undefined;
   }
+  return { items, gear, pens, titles, equippedTitle, discovered };
 };
+
+const parseGearMergeReceipt = (
+  storedValue: string | undefined
+): StoredGearMergeReceipt => {
+  if (storedValue === undefined) return { status: 'missing' };
+  try {
+    const stored: unknown = JSON.parse(storedValue);
+    if (!isRecord(stored)) return { status: 'invalid' };
+    const isVersioned = Object.hasOwn(stored, 'schemaVersion');
+    if (isVersioned) {
+      if (
+        typeof stored.schemaVersion !== 'number' ||
+        !Number.isSafeInteger(stored.schemaVersion)
+      ) {
+        return { status: 'invalid' };
+      }
+      if (stored.schemaVersion !== gearMergeReceiptSchemaVersion) {
+        return {
+          status: 'unsupported',
+          schemaVersion: stored.schemaVersion,
+        };
+      }
+    }
+    const responseValue = isVersioned ? stored.response : stored;
+    if (!isRecord(responseValue)) return { status: 'invalid' };
+    const inventory = parseReceiptInventory(responseValue.inventory);
+    if (
+      typeof responseValue.gearId !== 'string' ||
+      !isGearRank(responseValue.fromRank) ||
+      !isGearRank(responseValue.toRank) ||
+      responseValue.toRank !== responseValue.fromRank + 1 ||
+      typeof responseValue.copiesSpent !== 'number' ||
+      !Number.isSafeInteger(responseValue.copiesSpent) ||
+      responseValue.copiesSpent <= 0 ||
+      !inventory
+    ) {
+      return { status: 'invalid' };
+    }
+    return {
+      status: 'valid',
+      needsMigration: !isVersioned,
+      response: {
+        gearId: responseValue.gearId,
+        fromRank: responseValue.fromRank,
+        toRank: responseValue.toRank,
+        copiesSpent: responseValue.copiesSpent,
+        inventory,
+      },
+    };
+  } catch {
+    return { status: 'invalid' };
+  }
+};
+
+const serializeGearMergeReceipt = (response: MergeGearResponse): string =>
+  JSON.stringify({
+    schemaVersion: gearMergeReceiptSchemaVersion,
+    response,
+  });
 
 export const mergeGearForUser = async (
   storage: ArenaStorage,
@@ -1761,7 +1908,16 @@ export const mergeGearForUser = async (
       const storedReceipt = parseGearMergeReceipt(
         await storage.get(operationKey)
       );
-      if (storedReceipt) {
+      if (
+        storedReceipt.status === 'invalid' ||
+        storedReceipt.status === 'unsupported'
+      ) {
+        await transaction.unwatch();
+        throw new Error(
+          'Stored Gear merge receipt is unreadable and preserved.'
+        );
+      }
+      if (storedReceipt.status === 'valid') {
         await transaction.unwatch();
         await trackOperationReceipt(
           storage,
@@ -1769,8 +1925,8 @@ export const mergeGearForUser = async (
           operationKey,
           operationExpiresAtMs
         );
-        return storedReceipt.gearId === gearId
-          ? { status: 'merged', response: storedReceipt }
+        return storedReceipt.response.gearId === gearId
+          ? { status: 'merged', response: storedReceipt.response }
           : { status: 'operationConflict' };
       }
 
@@ -1793,7 +1949,10 @@ export const mergeGearForUser = async (
         gearId,
         -projection.response.copiesSpent
       );
-      await transaction.set(operationKey, JSON.stringify(projection.response));
+      await transaction.set(
+        operationKey,
+        serializeGearMergeReceipt(projection.response)
+      );
       await transaction.expire(operationKey, capsuleOperationTtlSeconds);
       await trackOperationReceipt(
         transaction,
@@ -1810,8 +1969,11 @@ export const mergeGearForUser = async (
       const recoveredReceipt = parseGearMergeReceipt(
         await storage.get(operationKey)
       );
-      if (recoveredReceipt?.gearId === gearId) {
-        return { status: 'merged', response: recoveredReceipt };
+      if (
+        recoveredReceipt.status === 'valid' &&
+        recoveredReceipt.response.gearId === gearId
+      ) {
+        return { status: 'merged', response: recoveredReceipt.response };
       }
       throw error;
     }
@@ -1833,7 +1995,8 @@ export const findUnavailableConsumable = (
 ): string | undefined => {
   for (const [consumableId, requiredCount] of requiredCounts.entries()) {
     const ownedCount = parseStoredInventoryCount(
-      inventoryEntries[consumableId]
+      inventoryEntries[consumableId],
+      consumableId
     );
 
     if (ownedCount < requiredCount) {

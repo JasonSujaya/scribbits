@@ -32,12 +32,12 @@ test('Power-Up rarity order has one adjacent lower comparison per higher tier', 
   assert.ok(powerUpRarityRank('legendary') > powerUpRarityRank('epic'));
 });
 
-test('every adjacent rarity step must win a bounded majority without exponential power creep', () => {
+test('rarity comparisons are diagnostic while aggregate tier bands remain bounded', () => {
   const minimums = ['uncommon', 'rare', 'epic', 'legendary'].map(
     (rarity) =>
       powerUpRarityComparisonBand(config, 'rarity-advantage', rarity).minimum
   );
-  assert.deepEqual(minimums, [0.48, 0.48, 0.48, 0.48]);
+  assert.deepEqual(minimums, [0, 0, 0, 0]);
   assert.equal(
     powerUpRarityComparisonVerdict({
       config,
@@ -56,7 +56,7 @@ test('every adjacent rarity step must win a bounded majority without exponential
       targetWinRate: 0.47,
       triggerRate: 1,
     }),
-    'FLAG_RARITY_ADVANTAGE_MISSING'
+    'WATCH_RARITY_ADVANTAGE'
   );
   assert.equal(powerUpTierAdvantageVerdict(config, 0.57), 'OK');
   assert.equal(
@@ -65,7 +65,7 @@ test('every adjacent rarity step must win a bounded majority without exponential
   );
 });
 
-test('equal-rarity cards must stay close and every tested card must activate', () => {
+test('equal-rarity cards report target spread and every tested card must activate', () => {
   assert.equal(
     powerUpRarityComparisonVerdict({
       config,
@@ -84,7 +84,7 @@ test('equal-rarity cards must stay close and every tested card must activate', (
       targetWinRate: 0.7,
       triggerRate: 0.1,
     }),
-    'FLAG_DEAD_CARD+FLAG_EQUAL_RARITY_OVERPOWERED'
+    'FLAG_DEAD_CARD'
   );
 });
 

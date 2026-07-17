@@ -158,6 +158,7 @@ test('completed community drawings persist after removal and backfill older reco
   const storage = {
     get: async (key) => storedValues.get(key),
     hGet: async () => undefined,
+    hGetAll: async () => ({}),
     zRange: async (key, start, stop) => {
       const source = key.endsWith(':community-theme-completions')
         ? completionEntries

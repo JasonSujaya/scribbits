@@ -1,5 +1,8 @@
 import { findGearCosmetic } from '../cosmetics';
-import type { AccessoryEffectFamily } from '../accessoryeffects';
+import {
+  ACCESSORY_EFFECTS,
+  type AccessoryEffectFamily,
+} from '../accessoryeffects';
 
 export type GearWeekDay = Readonly<{
   day: 1 | 2 | 3 | 4 | 5 | 6 | 7;
@@ -12,9 +15,9 @@ export type GearWeekDay = Readonly<{
 export const GEAR_WEEK: readonly GearWeekDay[] = Object.freeze([
   Object.freeze({
     day: 1,
-    title: 'Steady Hands',
+    title: ACCESSORY_EFFECTS.aim.techniqueName,
     family: 'aim',
-    challenge: 'Win once with Steady Hands equipped.',
+    challenge: `Win once with ${ACCESSORY_EFFECTS.aim.techniqueName} equipped.`,
     featuredGearIds: Object.freeze([
       'tiny-sword',
       'nib-halo-headband',
@@ -27,9 +30,9 @@ export const GEAR_WEEK: readonly GearWeekDay[] = Object.freeze([
   }),
   Object.freeze({
     day: 2,
-    title: 'Paper Fort',
+    title: ACCESSORY_EFFECTS.guard.techniqueName,
     family: 'guard',
-    challenge: 'Finish with 2+ hearts using Paper Guard.',
+    challenge: `Finish with 2+ hearts using ${ACCESSORY_EFFECTS.guard.techniqueName}.`,
     featuredGearIds: Object.freeze([
       'beanie',
       'snail-shell-backpack',
@@ -41,9 +44,9 @@ export const GEAR_WEEK: readonly GearWeekDay[] = Object.freeze([
   }),
   Object.freeze({
     day: 3,
-    title: 'First Strike',
+    title: ACCESSORY_EFFECTS.ready.techniqueName,
     family: 'ready',
-    challenge: 'Trigger First Strike and win.',
+    challenge: `Trigger ${ACCESSORY_EFFECTS.ready.techniqueName} and win.`,
     featuredGearIds: Object.freeze([
       'bowtie',
       'party-hat',
@@ -53,9 +56,9 @@ export const GEAR_WEEK: readonly GearWeekDay[] = Object.freeze([
   }),
   Object.freeze({
     day: 4,
-    title: 'Focus Cycle',
+    title: ACCESSORY_EFFECTS.focus.techniqueName,
     family: 'focus',
-    challenge: 'Land a focused signature hit with Focus Cycle.',
+    challenge: `Land a focused signature hit with ${ACCESSORY_EFFECTS.focus.techniqueName}.`,
     featuredGearIds: Object.freeze([
       'monocle',
       'round-glasses',
@@ -66,9 +69,9 @@ export const GEAR_WEEK: readonly GearWeekDay[] = Object.freeze([
   }),
   Object.freeze({
     day: 5,
-    title: 'Quickstep',
+    title: ACCESSORY_EFFECTS.rush.techniqueName,
     family: 'rush',
-    challenge: 'Trigger three role signatures with Quickstep.',
+    challenge: `Trigger three role signatures with ${ACCESSORY_EFFECTS.rush.techniqueName}.`,
     featuredGearIds: Object.freeze([
       'smearstep-speed-scarf',
       'propeller-cap',
@@ -81,9 +84,9 @@ export const GEAR_WEEK: readonly GearWeekDay[] = Object.freeze([
   }),
   Object.freeze({
     day: 6,
-    title: 'True Aim',
+    title: ACCESSORY_EFFECTS.fortune.techniqueName,
     family: 'fortune',
-    challenge: 'Land a focused signature hit with True Aim.',
+    challenge: `Land a focused signature hit with ${ACCESSORY_EFFECTS.fortune.techniqueName}.`,
     featuredGearIds: Object.freeze([
       'flower-crown',
       'colorburst-rosette',

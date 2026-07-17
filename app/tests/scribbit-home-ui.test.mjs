@@ -46,6 +46,11 @@ test('Home is the living Scribbit screen with one big Draw action', () => {
   );
   assert.match(homeSource, /new LiveSprite/);
   assert.match(homeSource, /this\.liveSprite\.breathe\(\)/);
+  assert.match(homeSource, /private renderCreatureInteraction\(/);
+  assert.match(homeSource, /this\.liveSprite\?\.jiggle\(\)/);
+  assert.match(homeSource, /TAP TO MEET/);
+  assert.match(homeSource, /Open animated character details/);
+  assert.match(homeSource, /setSfxCue\(hitTarget, 'ui\.open'\)/);
   assert.match(homeSource, /this\.renderHomeProps\(stage\)/);
   assert.match(homeSource, /HOME_SCRIBBIT_DISPLAY_SIZE = 380/);
   assert.match(homeSource, /displaySize: HOME_SCRIBBIT_DISPLAY_SIZE/);
@@ -75,7 +80,7 @@ test('Home is the living Scribbit screen with one big Draw action', () => {
   assert.doesNotMatch(homeSource, /'YOUR SCRIBBIT'/);
   assert.match(
     homeSource,
-    /creatureY \+ 198,[\s\S]{0,100}?scribbit\.name\.toUpperCase\(\)[\s\S]{0,420}?creatureY \+ 234,[\s\S]{0,120}?`LV \$\{levelOf\(scribbit\)\}`/,
+    /creatureY \+ 198,[\s\S]{0,100}?scribbit\.name\.toUpperCase\(\)[\s\S]{0,420}?creatureY \+ 234,[\s\S]{0,160}?`LV \$\{levelOf\(scribbit\)\}  •  TAP TO MEET`/,
     'the Scribbit name belongs directly above its level'
   );
   assert.match(
@@ -155,6 +160,7 @@ test('Home is the living Scribbit screen with one big Draw action', () => {
   assert.match(homeSource, /navigateToDailyDraw\(this\)/);
   assert.match(homeSource, /isGrowingRosterFull\(this\.state\)/);
   assert.match(homeSource, /openRosterFullModal\(drawControl\)/);
+  assert.match(homeSource, /private openScribbitDetail\(scribbit: Scribbit\)/);
   assert.match(homeSource, /openDetailModal\(this, scribbit/);
   assert.match(homeSource, /MAX_GROWING_PER_USER/);
   assert.match(homeSource, /drawChargeCountLabel\(drawCharges\)/);

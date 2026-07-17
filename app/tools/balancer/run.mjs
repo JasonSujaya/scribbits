@@ -9,7 +9,6 @@ import {
   powerUpRarityComparisonBand,
   powerUpRarityComparisonVerdict,
   powerUpRarityRank,
-  powerUpTierAdvantageVerdict,
 } from './rarity-model.mjs';
 
 const appRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -77,7 +76,7 @@ function makeFighter(runtime, build, suffix, overrides = {}) {
   }
   const gear = overrides.gear ?? build.gear ?? [];
   return {
-    id: `${build.id}-${suffix}`,
+    id: overrides.id ?? `${build.id}-${suffix}`,
     name: overrides.label ?? build.label ?? build.id,
     artist: 'balancer',
     element: overrides.element ?? build.element ?? 'tide',
@@ -142,10 +141,11 @@ function resultFromReport(report) {
   const powerUpTriggerEvents = timeline.filter(
     (event) => event.kind === 'power_up_triggered'
   );
+  const timedOut = result.reason.startsWith('timeout_');
   return {
     winner: result.winner,
     durationSeconds: result.completedTick / 20,
-    timeout: result.finish === 'timeout',
+    timeout: timedOut,
     hpA: fighterA?.hitPointPermille ?? 0,
     hpB: fighterB?.hitPointPermille ?? 0,
     hpMargin: Math.abs(
@@ -179,6 +179,13 @@ function combatAttributionForTarget(timeline, targetSlot) {
       addToMap(attacksByName, event.attack, 1);
       if (event.hit) addToMap(hitsByName, event.attack, 1);
     }
+    if (event.kind === 'projectile_hit' && event.actor === targetSlot) {
+      addToMap(
+        hitsByName,
+        event.projectile === 'quill' ? 'piercing_quill' : 'color_bolt',
+        1
+      );
+    }
   }
   return {
     damageDealtBySource,
@@ -207,17 +214,28 @@ function simulateTargetVsOpponent({
     );
     for (const orientation of ['target-a', 'target-b']) {
       const targetIsA = orientation === 'target-a';
+      // Combat intentionally resolves simultaneous actions by stable fighter
+      // identity. Alternate that identity ordering per seed and preserve it
+      // when slots swap so an A/B aggregate cannot hide first-actor bias.
+      const targetIdentityOrder = seedIndex % 2 === 0 ? 'alpha' : 'omega';
+      const opponentIdentityOrder = seedIndex % 2 === 0 ? 'omega' : 'alpha';
+      const targetIdentity = `balancer-${targetIdentityOrder}-target-${seedIndex}`;
+      const opponentIdentity = `balancer-${opponentIdentityOrder}-opponent-${seedIndex}`;
       const fighterA = makeFighter(
         runtime,
         targetIsA ? targetBuild : opponentBuild,
         `${orientation}-a-${seedIndex}`,
-        targetIsA ? targetOverrides : opponentOverrides
+        targetIsA
+          ? { ...targetOverrides, id: targetIdentity }
+          : { ...opponentOverrides, id: opponentIdentity }
       );
       const fighterB = makeFighter(
         runtime,
         targetIsA ? opponentBuild : targetBuild,
         `${orientation}-b-${seedIndex}`,
-        targetIsA ? opponentOverrides : targetOverrides
+        targetIsA
+          ? { ...opponentOverrides, id: opponentIdentity }
+          : { ...targetOverrides, id: targetIdentity }
       );
       const report = runtime.simulate(
         fighterA,
@@ -1135,55 +1153,76 @@ function summarizePowerUpRarityComparison({
 }
 
 function summarizePowerUpTierAdvantages(config, rows) {
-  return ['uncommon', 'rare', 'epic', 'legendary'].flatMap((targetRarity) => {
-    const tierRows = rows.filter(
-      (row) =>
-        row.comparisonKind === 'rarity-advantage' &&
-        row.targetRarity === targetRarity
-    );
-    if (tierRows.length === 0) return [];
-    const opponentRarity = adjacentLowerPowerUpRarity(targetRarity);
-    const summary = summarizeRows(tierRows);
-    const confidenceInterval = winRateConfidenceInterval95(
-      summary.targetWins,
-      summary.total
-    );
-    const band = config.tierAdvantageBand;
-    const triggerRate =
-      tierRows.filter(
-        (row) => (row.targetPowerUpTriggerCounts?.[row.powerUpId] ?? 0) > 0
-      ).length / tierRows.length;
-    const averageSpecificTriggers =
-      tierRows.reduce(
-        (sum, row) =>
-          sum + (row.targetPowerUpTriggerCounts?.[row.powerUpId] ?? 0),
-        0
-      ) / tierRows.length;
-    return [
-      {
-        targetLabel: `${targetRarity.toUpperCase()} tier aggregate`,
-        opponentLabel: `${opponentRarity.toUpperCase()} same-role tier`,
-        rarity: targetRarity,
-        opponentRarity,
-        rarityGap: 1,
-        comparisonKind: 'tier-aggregate',
-        comparisonScope: 'mirror-role',
-        peerCount: new Set(tierRows.map((row) => row.opponentPowerUpId)).size,
-        expectedBand: `${formatPercent(band.minimum)}–${formatPercent(
-          band.maximum
-        )}`,
-        winRateConfidence95: `${formatPercent(
-          confidenceInterval.minimum
-        )}–${formatPercent(confidenceInterval.maximum)}`,
-        targetUpgradeCount: targetRarity === 'legendary' ? 4 : 1,
-        opponentUpgradeCount: targetRarity === 'legendary' ? 4 : 1,
-        triggerRate,
-        averageSpecificTriggers,
-        ...summary,
-        verdict: powerUpTierAdvantageVerdict(config, summary.targetWinRate),
-      },
-    ];
-  });
+  const roles = [...new Set(rows.map((row) => row.targetRole).filter(Boolean))];
+  const scopes = [
+    { targetRole: null, rows, band: config.tierAdvantageBand },
+    ...roles.map((targetRole) => ({
+      targetRole,
+      rows: rows.filter((row) => row.targetRole === targetRole),
+      band: config.roleTierAdvantageBand,
+    })),
+  ];
+  return scopes.flatMap((scope) =>
+    ['uncommon', 'rare', 'epic', 'legendary'].flatMap((targetRarity) => {
+      const tierRows = scope.rows.filter(
+        (row) =>
+          row.comparisonKind === 'rarity-advantage' &&
+          row.targetRarity === targetRarity
+      );
+      if (tierRows.length === 0) return [];
+      const opponentRarity = adjacentLowerPowerUpRarity(targetRarity);
+      const summary = summarizeRows(tierRows);
+      const confidenceInterval = winRateConfidenceInterval95(
+        summary.targetWins,
+        summary.total
+      );
+      const triggerRate =
+        tierRows.filter(
+          (row) => (row.targetPowerUpTriggerCounts?.[row.powerUpId] ?? 0) > 0
+        ).length / tierRows.length;
+      const averageSpecificTriggers =
+        tierRows.reduce(
+          (sum, row) =>
+            sum + (row.targetPowerUpTriggerCounts?.[row.powerUpId] ?? 0),
+          0
+        ) / tierRows.length;
+      const verdict =
+        summary.targetWinRate < scope.band.minimum
+          ? config.tierAdvantagesAreDiagnostic
+            ? 'WATCH_TIER_ADVANTAGE_MISSING'
+            : 'FLAG_TIER_ADVANTAGE_MISSING'
+          : summary.targetWinRate > scope.band.maximum
+            ? config.tierAdvantagesAreDiagnostic
+              ? 'WATCH_TIER_ADVANTAGE_EXCESSIVE'
+              : 'FLAG_TIER_ADVANTAGE_EXCESSIVE'
+            : 'OK';
+      return [
+        {
+          targetLabel: `${scope.targetRole ? `${scope.targetRole.toUpperCase()} · ` : ''}${targetRarity.toUpperCase()} tier aggregate`,
+          opponentLabel: `${opponentRarity.toUpperCase()} same-role tier`,
+          targetRole: scope.targetRole ?? 'all',
+          rarity: targetRarity,
+          opponentRarity,
+          rarityGap: 1,
+          comparisonKind: 'tier-aggregate',
+          comparisonScope: 'mirror-role',
+          peerCount: new Set(tierRows.map((row) => row.opponentPowerUpId)).size,
+          expectedBand: `${formatPercent(scope.band.minimum)}–${formatPercent(
+            scope.band.maximum
+          )}`,
+          winRateConfidence95: `${formatPercent(
+            confidenceInterval.minimum
+          )}–${formatPercent(confidenceInterval.maximum)}`,
+          targetUpgradeCount: targetRarity === 'legendary' ? 4 : 1,
+          opponentUpgradeCount: targetRarity === 'legendary' ? 4 : 1,
+          triggerRate,
+          averageSpecificTriggers,
+          ...summary,
+          verdict,
+        },
+      ];
+    })
+  );
 }
 
 function runPowerUpUsefulness({ runtime, scenarios, forecast }) {
@@ -1265,6 +1304,7 @@ function runPowerUpUsefulness({ runtime, scenarios, forecast }) {
               comparisonKind,
               targetRarity: definition.rarity,
               opponentRarity,
+              targetRole: runtime.selectCombatRole(targetBuild.stats),
             }))
           );
         }
@@ -1294,7 +1334,17 @@ function runPowerUpUsefulness({ runtime, scenarios, forecast }) {
 
   const legendaryHistoriesPerRole = config.legendaryHistoriesPerRole ?? 80;
   for (const targetBuild of builds) {
+    const targetRole = runtime.selectCombatRole(targetBuild.stats);
     for (const powerUpId of powerUpsByRarity(runtime, 'legendary')) {
+      if (
+        !runtime.powerUpIsOfferableForRole(
+          powerUpId,
+          targetRole,
+          runtime.MAXIMUM_GROWING_POWER_UPS
+        )
+      ) {
+        continue;
+      }
       const comparisonRowsByKind = new Map([
         ['equal-rarity', []],
         ['rarity-advantage', []],
@@ -1319,9 +1369,17 @@ function runPowerUpUsefulness({ runtime, scenarios, forecast }) {
         ) {
           continue;
         }
-        const legendaryPeers = powerUpsByRarity(runtime, 'legendary').filter(
+        const offerableLegendaryPowerUpIds = offerablePowerUpsOfRarity({
+          runtime,
+          build: targetBuild,
+          rarity: 'legendary',
+          ownedPowerUpIds: targetSupport,
+        });
+        const legendaryPeers = offerableLegendaryPowerUpIds.filter(
           (opponentPowerUpId) => opponentPowerUpId !== powerUpId
         );
+        const testedLegendaryPeers =
+          legendaryPeers.length > 0 ? legendaryPeers : [powerUpId];
         const epicOpponents = offerablePowerUpsOfRarity({
           runtime,
           build: targetBuild,
@@ -1329,7 +1387,7 @@ function runPowerUpUsefulness({ runtime, scenarios, forecast }) {
           ownedPowerUpIds: targetSupport,
         });
         for (const [comparisonKind, opponentPowerUpIds] of [
-          ['equal-rarity', legendaryPeers],
+          ['equal-rarity', testedLegendaryPeers],
           ['rarity-advantage', epicOpponents],
         ]) {
           for (const opponentPowerUpId of opponentPowerUpIds) {
@@ -1361,6 +1419,7 @@ function runPowerUpUsefulness({ runtime, scenarios, forecast }) {
                 targetRarity: 'legendary',
                 opponentRarity:
                   comparisonKind === 'equal-rarity' ? 'legendary' : 'epic',
+                targetRole: runtime.selectCombatRole(targetBuild.stats),
               }))
             );
           }
@@ -2111,6 +2170,335 @@ function runEquipmentMeta({ runtime, scenarios, forecast }) {
       ...directedSummaries,
       ...marginalSummaries,
     ],
+  };
+}
+
+function controlledOrientationGap(rows) {
+  const targetARows = rows.filter((row) => row.orientation === 'target-a');
+  const targetBRows = rows.filter((row) => row.orientation === 'target-b');
+  return Math.abs(
+    summarizeRows(targetARows).targetWinRate -
+      summarizeRows(targetBRows).targetWinRate
+  );
+}
+
+function assertControlledPowerUpBuild(runtime, role, powerUpIds, label) {
+  const validation = runtime.validatePowerUpBuild(powerUpIds);
+  if (!validation.valid) {
+    throw new Error(`${label} is invalid: ${validation.reason}.`);
+  }
+  powerUpIds.forEach((powerUpId, index) => {
+    if (!runtime.powerUpIsOfferableForRole(powerUpId, role, index)) {
+      throw new Error(`${label} cannot offer ${powerUpId} to ${role}.`);
+    }
+  });
+}
+
+function controlledRoleStatVariants(build) {
+  const statKeys = ['chonk', 'spike', 'zip', 'charm'];
+  const dominantStat = statKeys.reduce((best, key) =>
+    build.stats[key] > build.stats[best] ? key : best
+  );
+  const secondaryStats = statKeys.filter((key) => key !== dominantStat);
+  const secondaryDistributions = [
+    [20, 20, 20],
+    [24, 18, 18],
+    [18, 24, 18],
+    [18, 18, 24],
+    [22, 22, 16],
+  ];
+  return secondaryDistributions.map((distribution, variantIndex) => ({
+    ...build,
+    id: `${build.id}-rarity-field-${variantIndex}`,
+    label: `${build.label} field ${variantIndex + 1}`,
+    stats: {
+      [dominantStat]: 40,
+      ...Object.fromEntries(
+        secondaryStats.map((key, index) => [key, distribution[index]])
+      ),
+    },
+  }));
+}
+
+function simulateControlledRarityField(options) {
+  const rows = [];
+  const targetVariants = controlledRoleStatVariants(options.targetBuild);
+  const opponentVariants = controlledRoleStatVariants(options.opponentBuild);
+  for (const targetVariant of targetVariants) {
+    for (const opponentVariant of opponentVariants) {
+      const statPairKey = [targetVariant.id, opponentVariant.id]
+        .sort()
+        .join(':');
+      rows.push(
+        ...simulateTargetVsOpponent({
+          ...options,
+          targetBuild: targetVariant,
+          opponentBuild: opponentVariant,
+          // Inverse stat pairings share the same randomness so the controlled
+          // field measures loadout strength instead of seed luck.
+          seedPrefix: `${options.seedPrefix}:${statPairKey}`,
+        })
+      );
+    }
+  }
+  return rows;
+}
+
+function runRarityProgression({ runtime, scenarios, forecast }) {
+  const config = scenarios.suites.rarityProgression;
+  const builds = baseBuilds(scenarios);
+  const gearRank = config.gearRank ?? 3;
+  const seeds = config.seedsPerStatPairing ?? 16;
+  const combinedSeeds = config.combinedSeedsPerStatPairing ?? 4;
+  const maximumOrientationGap = config.maximumOrientationGap ?? 0.02;
+  const rows = [];
+  const summaries = [];
+  const weaponComparisonsById = new Map(
+    config.weaponComparisons.map((comparison) => [comparison.id, comparison])
+  );
+
+  for (const comparison of config.weaponComparisons) {
+    const higherGear = runtime.findGearCosmetic(comparison.higherGearId);
+    const lowerGear = runtime.findGearCosmetic(comparison.lowerGearId);
+    if (!higherGear || !lowerGear) {
+      throw new Error(`Missing controlled weapon pair ${comparison.id}.`);
+    }
+    if (
+      higherGear.category !== 'weapon' ||
+      lowerGear.category !== 'weapon' ||
+      higherGear.effectFamily !== lowerGear.effectFamily
+    ) {
+      throw new Error(`${comparison.id} must compare same-family weapon Gear.`);
+    }
+    for (const build of builds) {
+      const role = runtime.selectCombatRole(build.stats);
+      const comparisonRows = simulateControlledRarityField({
+        runtime,
+        forecast,
+        battleKind: scenarios.battleKind,
+        targetBuild: build,
+        opponentBuild: build,
+        targetOverrides: {
+          label: `${build.label} · ${higherGear.name}`,
+          gear: [{ id: higherGear.id, rank: gearRank }],
+        },
+        opponentOverrides: {
+          label: `${lowerGear.name} · same rank`,
+          gear: [{ id: lowerGear.id, rank: gearRank }],
+        },
+        seeds,
+        seedPrefix: `balancer:rarity-progression:v1:weapon:${comparison.id}:${build.id}`,
+      }).map((row) => ({
+        ...row,
+        comparisonId: comparison.id,
+        comparisonKind: 'rarity-advantage',
+        comparisonScope: 'mirror-role',
+        targetRole: role,
+        targetRarity: higherGear.rarity,
+        opponentRarity: lowerGear.rarity,
+        variant: 'weapon-only',
+      }));
+      rows.push(...comparisonRows);
+      const summary = summarizeRows(comparisonRows);
+      const orientationGap = controlledOrientationGap(comparisonRows);
+      const verdicts = [];
+      if (summary.targetWinRate < comparison.minimumWinRate) {
+        verdicts.push('FLAG_WEAPON_RARITY_ADVANTAGE_MISSING');
+      }
+      if (summary.targetWinRate > comparison.maximumWinRate) {
+        verdicts.push('FLAG_WEAPON_RARITY_ADVANTAGE_EXCESSIVE');
+      }
+      if (orientationGap > maximumOrientationGap) {
+        verdicts.push('FLAG_ORIENTATION_BIAS');
+      }
+      summaries.push({
+        targetLabel: `${build.label} · ${higherGear.name}`,
+        opponentLabel: `${lowerGear.name} · Rank ${gearRank}`,
+        targetRole: role,
+        rarity: higherGear.rarity,
+        opponentRarity: lowerGear.rarity,
+        comparisonKind: 'rarity-advantage',
+        comparisonScope: 'mirror-role',
+        expectedBand: `${formatPercent(comparison.minimumWinRate)}–${formatPercent(
+          comparison.maximumWinRate
+        )}`,
+        orientationGap,
+        ...summary,
+        verdict: verdicts.length > 0 ? verdicts.join('+') : 'OK',
+      });
+    }
+  }
+
+  for (const comparison of config.combinedComparisons) {
+    const weaponComparison = weaponComparisonsById.get(
+      comparison.weaponComparisonId
+    );
+    if (!weaponComparison) {
+      throw new Error(
+        `Missing weapon comparison ${comparison.weaponComparisonId}.`
+      );
+    }
+    const higherGear = runtime.findGearCosmetic(weaponComparison.higherGearId);
+    const lowerGear = runtime.findGearCosmetic(weaponComparison.lowerGearId);
+    if (!higherGear || !lowerGear) {
+      throw new Error(`Missing combined weapon pair ${comparison.id}.`);
+    }
+    for (const build of builds) {
+      const role = runtime.selectCombatRole(build.stats);
+      const supportPowerUps = comparison.supportByRole[role] ?? [];
+      assertControlledPowerUpBuild(
+        runtime,
+        role,
+        supportPowerUps,
+        `${comparison.id} ${role} support build`
+      );
+      const higherPowerUpIds =
+        comparison.higherPowerUpsByRole?.[role] ??
+        offerablePowerUpsOfRarity({
+          runtime,
+          build,
+          rarity: comparison.higherRarity,
+          ownedPowerUpIds: supportPowerUps,
+        });
+      const lowerPowerUpIds =
+        comparison.lowerPowerUpsByRole?.[role] ??
+        offerablePowerUpsOfRarity({
+          runtime,
+          build,
+          rarity: comparison.lowerRarity,
+          ownedPowerUpIds: supportPowerUps,
+        });
+      if (higherPowerUpIds.length === 0 || lowerPowerUpIds.length === 0) {
+        throw new Error(`${comparison.id} has no legal ${role} rarity field.`);
+      }
+      const rowsByVariant = new Map(
+        ['weapon-only', 'skill-only', 'combined'].map((variant) => [
+          variant,
+          [],
+        ])
+      );
+      for (const higherPowerUpId of higherPowerUpIds) {
+        for (const lowerPowerUpId of lowerPowerUpIds) {
+          const higherBuild = [...supportPowerUps, higherPowerUpId];
+          const lowerBuild = [...supportPowerUps, lowerPowerUpId];
+          assertControlledPowerUpBuild(
+            runtime,
+            role,
+            higherBuild,
+            `${comparison.id} ${role} higher ${higherPowerUpId}`
+          );
+          assertControlledPowerUpBuild(
+            runtime,
+            role,
+            lowerBuild,
+            `${comparison.id} ${role} lower ${lowerPowerUpId}`
+          );
+          for (const variant of ['weapon-only', 'skill-only', 'combined']) {
+            const usesWeapon = variant !== 'skill-only';
+            const usesSkills = variant !== 'weapon-only';
+            const variantRows = simulateControlledRarityField({
+              runtime,
+              forecast,
+              battleKind: scenarios.battleKind,
+              targetBuild: build,
+              opponentBuild: build,
+              targetOverrides: {
+                label: `${build.label} · ${comparison.id} · ${variant}`,
+                gear: usesWeapon ? [{ id: higherGear.id, rank: gearRank }] : [],
+                powerUpIds: usesSkills ? higherBuild : [],
+              },
+              opponentOverrides: {
+                label: `${comparison.id} lower · ${variant}`,
+                gear: usesWeapon ? [{ id: lowerGear.id, rank: gearRank }] : [],
+                powerUpIds: usesSkills ? lowerBuild : [],
+              },
+              seeds: combinedSeeds,
+              seedPrefix: `balancer:rarity-progression:v1:combined:${comparison.id}:${build.id}:${higherPowerUpId}:${lowerPowerUpId}`,
+            }).map((row) => ({
+              ...row,
+              comparisonId: comparison.id,
+              comparisonKind: 'rarity-advantage',
+              comparisonScope: 'mirror-role',
+              targetRole: role,
+              targetRarity: higherGear.rarity,
+              opponentRarity: lowerGear.rarity,
+              higherPowerUpId,
+              lowerPowerUpId,
+              variant,
+            }));
+            rowsByVariant.get(variant).push(...variantRows);
+            rows.push(...variantRows);
+          }
+        }
+      }
+      const weaponSummary = summarizeRows(rowsByVariant.get('weapon-only'));
+      const skillSummary = summarizeRows(rowsByVariant.get('skill-only'));
+      const combinedRows = rowsByVariant.get('combined');
+      const combinedSummary = summarizeRows(combinedRows);
+      const strongestComponent = Math.max(
+        weaponSummary.targetWinRate,
+        skillSummary.targetWinRate
+      );
+      const componentLift = combinedSummary.targetWinRate - strongestComponent;
+      const interactionResidual =
+        combinedSummary.targetWinRate -
+        0.5 -
+        (weaponSummary.targetWinRate - 0.5) -
+        (skillSummary.targetWinRate - 0.5);
+      const orientationGap = Math.max(
+        ...[...rowsByVariant.values()].map(controlledOrientationGap)
+      );
+      const verdicts = [];
+      if (
+        skillSummary.targetWinRate < (comparison.minimumSkillWinRate ?? 0.52)
+      ) {
+        verdicts.push('FLAG_SKILL_RARITY_ADVANTAGE_MISSING');
+      }
+      if (combinedSummary.targetWinRate < comparison.minimumWinRate) {
+        verdicts.push('FLAG_COMBINED_RARITY_ADVANTAGE_MISSING');
+      }
+      if (combinedSummary.targetWinRate > comparison.maximumWinRate) {
+        verdicts.push('FLAG_COMBINED_RARITY_ADVANTAGE_EXCESSIVE');
+      }
+      if (componentLift < comparison.minimumComponentLift) {
+        verdicts.push('FLAG_COMBINED_RARITY_LIFT_MISSING');
+      }
+      if (
+        Math.abs(interactionResidual) > comparison.maximumInteractionResidual
+      ) {
+        verdicts.push('FLAG_COMBINED_RARITY_INTERACTION');
+      }
+      if (orientationGap > maximumOrientationGap) {
+        verdicts.push('FLAG_ORIENTATION_BIAS');
+      }
+      summaries.push({
+        targetLabel: `${build.label} · ${higherGear.name} + higher skills`,
+        opponentLabel: `${lowerGear.name} + lower skills`,
+        targetRole: role,
+        rarity: higherGear.rarity,
+        opponentRarity: lowerGear.rarity,
+        comparisonKind: 'rarity-advantage',
+        comparisonScope: 'mirror-role',
+        expectedBand: `${formatPercent(comparison.minimumWinRate)}–${formatPercent(
+          comparison.maximumWinRate
+        )}`,
+        baselineWinRate: strongestComponent,
+        weaponOnlyWinRate: weaponSummary.targetWinRate,
+        skillOnlyWinRate: skillSummary.targetWinRate,
+        swingFromBaseline: componentLift,
+        interactionLift: interactionResidual,
+        orientationGap,
+        ...combinedSummary,
+        verdict: verdicts.length > 0 ? verdicts.join('+') : 'OK',
+      });
+    }
+  }
+
+  return {
+    id: 'rarity-progression',
+    title: 'Weapon + Roguelite Rarity Progression',
+    rows,
+    summaries,
   };
 }
 
@@ -3624,6 +4012,38 @@ function reportForSuite(suite) {
           },
         ]
       : []),
+    ...(rows.some((row) => row.weaponOnlyWinRate !== undefined)
+      ? [
+          {
+            label: 'Weapon only',
+            align: '---:',
+            value: (row) =>
+              row.weaponOnlyWinRate === undefined
+                ? '—'
+                : formatPercent(row.weaponOnlyWinRate),
+          },
+          {
+            label: 'Skill only',
+            align: '---:',
+            value: (row) =>
+              row.skillOnlyWinRate === undefined
+                ? '—'
+                : formatPercent(row.skillOnlyWinRate),
+          },
+        ]
+      : []),
+    ...(rows.some((row) => row.orientationGap !== undefined)
+      ? [
+          {
+            label: 'A/B gap',
+            align: '---:',
+            value: (row) =>
+              row.orientationGap === undefined
+                ? '—'
+                : `${(row.orientationGap * 100).toFixed(1)}pp`,
+          },
+        ]
+      : []),
     ...(rows.some((row) => row.choiceSpread !== undefined)
       ? [
           {
@@ -4064,6 +4484,7 @@ async function main() {
     ['damage-source-breakdown', runDamageSourceBreakdown],
     ['gear-powerups', runGearPowerUpInteraction],
     ['equipment-meta', runEquipmentMeta],
+    ['rarity-progression', runRarityProgression],
     ['role-edges', runRoleEdges],
     ['fight-feel', runFightFeel],
   ];
@@ -4092,6 +4513,7 @@ async function main() {
     'rival-run-flow',
     'gear-powerups',
     'equipment-meta',
+    'rarity-progression',
   ]);
   const suites = [];
   const balanceGateFlags = [];

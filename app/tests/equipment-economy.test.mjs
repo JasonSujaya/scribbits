@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { join } from 'node:path';
 import test from 'node:test';
+import { createMemoryStorage } from './support/memory-storage.mjs';
 
 const compiledSharedRoot = process.env.SCRIBBITS_COMPILED_SHARED_ROOT;
 const compiledServerRoot = process.env.SCRIBBITS_COMPILED_SERVER_ROOT;
@@ -258,6 +259,24 @@ test('Gear catalog has grounded Commons, four true Legendaries, and stable relic
 });
 
 test('canonical equipment loadout validation', () => {
+  assert.deepEqual(
+    sharedCosmetics.PERSISTED_GEAR_CATALOG_ENTRIES.slice(
+      0,
+      sharedCosmetics.GEAR_CATALOG_ENTRIES.length
+    ),
+    sharedCosmetics.GEAR_CATALOG_ENTRIES,
+    'every obtainable Gear ID must remain in the persisted identity catalog'
+  );
+  for (const retiredGear of sharedCosmetics.RETIRED_GEAR_TOMBSTONES) {
+    assert.equal(
+      sharedCosmetics.GEAR_CATALOG_ENTRIES.some(
+        (entry) => entry.id === retiredGear.id
+      ),
+      false,
+      `${retiredGear.id} must stay readable without remaining obtainable`
+    );
+    assert.equal(sharedCosmetics.findGearCosmetic(retiredGear.id), retiredGear);
+  }
   assert.deepEqual(sharedEquipment.EQUIPMENT_CATEGORIES, [
     'weapon',
     'armor',
@@ -349,5 +368,118 @@ test('canonical equipment loadout validation', () => {
       ),
       `${category} should have at least one catalog item`
     );
+  }
+});
+
+test('Gear merge receipts are versioned and invalid present bytes fail closed', async () => {
+  const memory = createMemoryStorage();
+  const userId = 'versioned-merge-player';
+  const gearId = 'bowtie';
+  const inventoryKey = inkStore.getInventoryKey(userId);
+  const operationId = 'versioned-merge-operation';
+  const operationKey = inkStore.getGearMergeOperationKey(userId, operationId);
+  await memory.storage.hSet(inventoryKey, {
+    [gearId]: '4',
+    [inkStore.getInventoryDiscoveryField(gearId)]: '1',
+  });
+
+  const merged = await inkStore.mergeGearForUser(
+    memory.storage,
+    userId,
+    gearId,
+    operationId
+  );
+  assert.equal(merged.status, 'merged');
+  assert.deepEqual(JSON.parse(await memory.storage.get(operationKey)), {
+    schemaVersion: 1,
+    response: merged.response,
+  });
+
+  const invalidOperationId = 'invalid-merge-operation';
+  const invalidOperationKey = inkStore.getGearMergeOperationKey(
+    userId,
+    invalidOperationId
+  );
+  const invalidBytes = '{broken';
+  await memory.storage.set(invalidOperationKey, invalidBytes);
+  await assert.rejects(
+    inkStore.mergeGearForUser(
+      memory.storage,
+      userId,
+      gearId,
+      invalidOperationId
+    ),
+    /receipt is unreadable and preserved/
+  );
+  assert.equal(await memory.storage.get(invalidOperationKey), invalidBytes);
+  assert.equal(await memory.storage.hGet(inventoryKey, gearId), '1');
+});
+
+test('legacy Gear merge receipts remain readable without current balance policy', async () => {
+  const memory = createMemoryStorage();
+  const userId = 'legacy-merge-player';
+  const operationId = 'legacy-merge-operation';
+  const gearId = 'bowtie';
+  const legacyResponse = {
+    gearId,
+    fromRank: 1,
+    toRank: 2,
+    copiesSpent: 4,
+    inventory: {
+      items: {},
+      gear: {
+        [gearId]: { rank: 2, copies: 0, rarity: 'common' },
+      },
+      pens: [],
+      titles: [],
+      equippedTitle: null,
+      discovered: [gearId],
+    },
+  };
+  await memory.storage.set(
+    inkStore.getGearMergeOperationKey(userId, operationId),
+    JSON.stringify(legacyResponse)
+  );
+
+  assert.deepEqual(
+    await inkStore.mergeGearForUser(
+      memory.storage,
+      userId,
+      gearId,
+      operationId
+    ),
+    { status: 'merged', response: legacyResponse }
+  );
+});
+
+test('malformed inventory authority fails closed without repair writes', async () => {
+  for (const [label, fields, message] of [
+    [
+      'copies',
+      { bowtie: 'broken', [inkStore.getInventoryDiscoveryField('bowtie')]: '1' },
+      /inventory count for bowtie is invalid and was preserved/,
+    ],
+    [
+      'rank',
+      {
+        bowtie: '2',
+        [inkStore.getInventoryDiscoveryField('bowtie')]: '1',
+        [inkStore.getInventoryGearRankField('bowtie')]: '99',
+      },
+      /Gear rank for bowtie is invalid and was preserved/,
+    ],
+  ]) {
+    const userId = `corrupt-inventory-${label}`;
+    const inventoryKey = inkStore.getInventoryKey(userId);
+    const memory = createMemoryStorage({
+      hashes: { [inventoryKey]: fields },
+    });
+
+    await assert.rejects(
+      inkStore.loadInventory(memory.storage, userId),
+      message
+    );
+    assert.deepEqual(await memory.storage.hGetAll(inventoryKey), fields);
+    assert.deepEqual(memory.mutations, []);
   }
 });

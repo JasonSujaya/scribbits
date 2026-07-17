@@ -14,8 +14,12 @@ import {
   markGameBootPhase,
   setGameBootProgress,
   setGameBootRetry,
+  setGameBootStart,
 } from '../lib/gameboot';
-import { playHomeSoundtrack } from '../lib/soundtrack';
+import {
+  isHomeSoundtrackPlaying,
+  playHomeSoundtrack,
+} from '../lib/soundtrack';
 
 // Fetch the arena snapshot while the complete primary play loop and its artwork
 // load in parallel. Home is revealed only when normal navigation is ready.
@@ -102,6 +106,20 @@ export class Preloader extends Scene {
   }
 
   private startArena(state: ArenaState): void {
+    if (!isHomeSoundtrackPlaying()) {
+      setGameBootStart(() => {
+        // Calling play() from this loader button preserves the trusted gesture
+        // that strict iframe and WebView autoplay policies require.
+        playHomeSoundtrack();
+        this.openHome(state);
+      });
+      markGameBootPhase('awaiting-start', translate('preloader.ready'));
+      return;
+    }
+    this.openHome(state);
+  }
+
+  private openHome(state: ArenaState): void {
     this.game.canvas.dataset.primaryPreload = 'ready';
     this.game.canvas.dataset.preloadedSceneKeys =
       PRIMARY_PRELOAD_SCENE_KEYS.join(',');

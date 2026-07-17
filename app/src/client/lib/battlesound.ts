@@ -1,5 +1,5 @@
 import type { SfxCue } from './audiocatalog';
-import { isSfxEnabled, playSfx, toggleSfxEnabled, unlockSfx } from './sfx';
+import { playSfx, unlockSfx } from './sfx';
 
 export type BattleSoundCue =
   | 'fight'
@@ -28,16 +28,18 @@ const BATTLE_CUES: Readonly<Record<BattleSoundCue, SfxCue>> = {
   loss: 'battle.loss',
 };
 
-// Replay keeps this small compatibility-shaped adapter so the battle scene does
-// not own audio state. Samples, procedural layers, mixing, mute, and cooldowns
-// all live in the shared catalog/director.
+// Replay's sound button controls only Replay. It must never persistently mute
+// navigation, drawing, rewards, or the Shop after the player leaves a battle.
 export class BattleSoundboard {
+  private enabled = true;
+
   isEnabled(): boolean {
-    return isSfxEnabled();
+    return this.enabled;
   }
 
   toggle(): boolean {
-    return toggleSfxEnabled();
+    this.enabled = !this.enabled;
+    return this.enabled;
   }
 
   unlock(): void {
@@ -45,6 +47,7 @@ export class BattleSoundboard {
   }
 
   play(cue: BattleSoundCue): void {
+    if (!this.enabled) return;
     playSfx(BATTLE_CUES[cue]);
   }
 }

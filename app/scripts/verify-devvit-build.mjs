@@ -294,3 +294,5 @@ if (oversizedImages.length > 0) {
 console.log(
   `Devvit bundle verified (${requiredFiles.length} entry files, ${clientFiles.length} client files; game JS ${kibibytes(gameEntrySize.raw)} raw / ${kibibytes(gameEntrySize.gzip)} gzip, ${new Set(deferredSceneChunkNames).size} deferred scene chunks; images ${kibibytes(totalImageBytes)}, audio ${kibibytes(totalAudioBytes)}, inline ${kibibytes(inlineImageBytes)}, initial Home ${kibibytes(initialHomeImageBytes)}, Gallery/Bag ${kibibytes(galleryImageBytes)}, Replay ${kibibytes(replayImageBytes)}, Shop ${kibibytes(shopImageBytes)}, Draw ${kibibytes(drawImageBytes)}).`
 );
+
+await import('./verify-combat-lab-exclusion.mjs');

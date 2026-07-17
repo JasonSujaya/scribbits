@@ -259,6 +259,15 @@ type StagedDirectBattle = Readonly<{
   rivalryStakes: FounderRivalryStakesPlan | null;
 }>;
 
+const FIRST_BATTLE_SHOP_UNLOCK_PENDING_KEY = 'first-battle-shop-unlock-pending';
+
+export function takeFirstBattleShopUnlockPending(scene: Scene): boolean {
+  const pending =
+    scene.registry.get(FIRST_BATTLE_SHOP_UNLOCK_PENDING_KEY) === true;
+  if (pending) scene.registry.remove(FIRST_BATTLE_SHOP_UNLOCK_PENDING_KEY);
+  return pending;
+}
+
 // One home for cross-scene direct-battle staging. The response confirms that a
 // Chronicle beat exists; the pre-fight Arena snapshot supplies only the score
 // and bout number, so the ceremony never reads or spoils the server's winner.
@@ -290,13 +299,29 @@ export function stageDirectBattle(
     response.founderChronicleBeat?.founderId === plannedStakes.founderId
       ? plannedStakes
       : null;
+  const powerUpOffer =
+    'powerUpOffer' in response ? response.powerUpOffer : null;
   const nextArena = currentArena
     ? {
         ...currentArena,
         hasCompletedBattle: true,
         founderChronicle: response.founderChronicle,
+        ...(powerUpOffer
+          ? {
+              pendingPowerUpOffers: [
+                ...(currentArena.pendingPowerUpOffers ?? []).filter(
+                  (offer) => offer.scribbitId !== powerUpOffer.scribbitId
+                ),
+                powerUpOffer,
+              ],
+            }
+          : {}),
       }
     : undefined;
+
+  if (entryMode === 'birth' && currentArena?.hasCompletedBattle === false) {
+    scene.registry.set(FIRST_BATTLE_SHOP_UNLOCK_PENDING_KEY, true);
+  }
 
   if (nextArena) setArena(scene, nextArena);
   if (response.founderChronicleBeat) {
@@ -318,8 +343,8 @@ export function stageDirectBattle(
   if (rewardReceipt) {
     scene.registry.set(REPLAY_SPAR_REWARD_KEY, rewardReceipt);
   }
-  if ('powerUpOffer' in response && response.powerUpOffer) {
-    scene.registry.set(REPLAY_POWER_UP_OFFER_KEY, response.powerUpOffer);
+  if (powerUpOffer) {
+    scene.registry.set(REPLAY_POWER_UP_OFFER_KEY, powerUpOffer);
   }
   return Object.freeze({ arena: nextArena, rivalryStakes });
 }

@@ -16,6 +16,7 @@ if (!compiledSharedRoot || !compiledServerRoot) {
 
 const require = createRequire(import.meta.url);
 const arena = require(join(compiledSharedRoot, 'arena.js'));
+const inkStore = require(join(compiledServerRoot, 'core', 'inkStore.js'));
 const scribbits = require(join(compiledServerRoot, 'core', 'scribbit.js'));
 
 const createOwnedScribbit = (id, bornDay) =>
@@ -176,6 +177,62 @@ test("a Scribbit entered in today's Rumble cannot be retired", async () => {
     (await scribbits.loadScribbit(memory.storage, scribbit.id))?.status,
     'alive'
   );
+});
+
+test('retirement retries when Forge changes the rank being frozen', async () => {
+  const memory = createMemoryStorage();
+  const ownerUserId = 'retirement-rank-owner';
+  const scribbit = createOwnedScribbit('retirement-rank-scribbit', 10);
+  const inventoryKey = inkStore.getInventoryKey(ownerUserId);
+  const rankField = inkStore.getInventoryGearRankField('tiny-sword');
+  await scribbits.storeScribbit(memory.storage, ownerUserId, scribbit);
+  await memory.storage.hSet(inventoryKey, {
+    [inkStore.getInventoryDiscoveryField('tiny-sword')]: '1',
+    [rankField]: '2',
+  });
+  const equipped = await scribbits.equipGearForScribbit(
+    memory.storage,
+    ownerUserId,
+    {
+      scribbitId: scribbit.id,
+      category: 'weapon',
+      slotIndex: 0,
+      gearId: 'tiny-sword',
+    }
+  );
+  assert.equal(equipped.status, 'updated');
+
+  const originalWatch = memory.storage.watch.bind(memory.storage);
+  let concurrentForgeInjected = false;
+  memory.storage.watch = async (...keys) => {
+    const transaction = await originalWatch(...keys);
+    if (
+      !concurrentForgeInjected &&
+      keys.includes(inventoryKey) &&
+      keys.includes(scribbits.getScribbitKey(scribbit.id))
+    ) {
+      const executeTransaction = transaction.exec.bind(transaction);
+      transaction.exec = async () => {
+        concurrentForgeInjected = true;
+        await memory.storage.hSet(inventoryKey, { [rankField]: '3' });
+        return await executeTransaction();
+      };
+    }
+    return transaction;
+  };
+
+  const result = await scribbits.retireOwnedScribbit(
+    memory.storage,
+    ownerUserId,
+    scribbit.id,
+    12
+  );
+  assert.equal(result.status, 'retired');
+  assert.equal(concurrentForgeInjected, true);
+  assert.equal(result.scribbit.gearRanks['tiny-sword'], 3);
+  const stored = await scribbits.loadScribbit(memory.storage, scribbit.id);
+  assert.equal(stored?.status, 'faded');
+  assert.equal(stored?.gearRanks['tiny-sword'], 3);
 });
 
 test('Gallery exposes Retire for active owned Scribbits and uses Retired player-facing copy', () => {

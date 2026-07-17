@@ -120,8 +120,15 @@ test('runtime routes all battle and shared UI sound through the catalog', async 
 
   assert.doesNotMatch(battleSound, /createOscillator|AudioContext/);
   assert.match(battleSound, /playSfx\(BATTLE_CUES\[cue\]\)/);
+  assert.doesNotMatch(battleSound, /toggleSfxEnabled|isSfxEnabled/);
+  assert.doesNotMatch(sfx, /scribbits\.sfx\.enabled|localStorage/);
   assert.match(ui, /markSfxManaged\(hit\)/);
   assert.match(ui, /playSfx\(cue\)/);
+  assert.match(
+    ui,
+    /const activateTab = \(\): void => \{[\s\S]{0,100}playSfx\('ui\.tab'\)[\s\S]{0,80}tab\.onClick\(\)/
+  );
+  assert.match(ui, /onActivate: isActive \? \(\) => undefined : activateTab/);
   assert.match(ui, /playSfx\('ui\.error'\)/);
   assert.match(
     ui,
@@ -130,15 +137,28 @@ test('runtime routes all battle and shared UI sound through the catalog', async 
   assert.match(ui, /pointerPassthrough = true/);
   assert.match(ui, /attributes: \{ 'data-sfx-cue': 'ui\.page' \}/);
   assert.match(sfx, /gameObject\.getData\?\.\(SFX_CUE_DATA_KEY\)/);
+  assert.match(sfx, /preloadSfx\('ui\.tab'\)/);
   assert.match(overlay, /nativeButton\.click\(\)/);
   assert.match(overlay, /playSfx\('ui\.close'\)/);
   assert.match(capsuleMachine, /playSfx\('reward\.ink'\)/);
   assert.match(capsuleMachine, /playSfx\('reward\.reveal'\)/);
+  for (const cue of [
+    'claw.search',
+    'claw.descend',
+    'claw.grab',
+    'claw.lift',
+    'claw.drop',
+    'claw.win',
+  ]) {
+    assert.match(capsuleMachine, new RegExp(`playSfx\\('${cue}'\\)`));
+    assert.match(catalogSource, new RegExp(`'${cue}': \\{`));
+  }
+  assert.match(capsuleMachine, /\.forEach\(preloadSfx\)/);
   assert.match(draw, /playSfx\('draw\.ink'\)/);
   assert.match(draw, /playSfx\('draw\.tool'\)/);
   assert.match(
     draw,
-    /playSfx\(snapshot\.remainingSeconds <= 10 \? 'draw\.tick' : 'draw\.timer'\)/
+    /const timerSfxCue = getDrawTimerSfxCue\(snapshot\.remainingSeconds\)[\s\S]{0,80}if \(timerSfxCue\) playSfx\(timerSfxCue\)/
   );
   assert.match(
     draw,
@@ -150,6 +170,8 @@ test('runtime routes all battle and shared UI sound through the catalog', async 
   );
   assert.match(catalogSource, /'draw\.timer': \{[\s\S]{0,200}maximumVoices: 2/);
   assert.match(catalogSource, /'draw\.tick': \{[\s\S]{0,220}maximumVoices: 2/);
+  assert.match(catalogSource, /'draw\.timer': \{[\s\S]{0,100}volume: 0\.08/);
+  assert.match(catalogSource, /'draw\.tick': \{[\s\S]{0,100}volume: 0\.24/);
   assert.match(draw, /preloadSfx\('draw\.countdown'\)/);
   assert.match(draw, /preloadSfx\('draw\.start'\)/);
   assert.match(draw, /preloadSfx\('draw\.timer'\)/);

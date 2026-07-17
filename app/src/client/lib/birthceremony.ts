@@ -7,6 +7,8 @@ import { ELEMENT_STYLES, prefersReducedMotion, TYPE, UI } from './theme';
 import { label } from './ui';
 import { LiveSprite } from './livesprite';
 
+export const BIRTH_NEWBORN_DISPLAY_SIZE = 340;
+
 export type BirthCeremonyResult = Readonly<{
   textureKey: string;
   newborn: LiveSprite | null;
@@ -89,10 +91,10 @@ function awakenSubmittedDrawing(
 
   const halo = scene.add.container(width / 2, artY).setDepth(4);
   const paper = scene.add
-    .circle(0, 0, 178, UI.creamHex, 0.94)
+    .circle(0, 0, 210, UI.creamHex, 0.94)
     .setStrokeStyle(7, UI.goldHex, 0.9);
   const elementRing = scene.add
-    .circle(0, 0, 150, style.soft, 0.18)
+    .circle(0, 0, 184, style.soft, 0.18)
     .setStrokeStyle(5, style.primary, 0.7);
   halo.add([paper, elementRing]);
   halo.setScale(reducedMotion ? 1 : 0.3).setAlpha(reducedMotion ? 1 : 0);
@@ -110,7 +112,7 @@ function awakenSubmittedDrawing(
     .setAlpha(reducedMotion ? 1 : 0);
 
   const newborn = new LiveSprite(scene, width / 2, artY, textureKey, {
-    displaySize: 230,
+    displaySize: BIRTH_NEWBORN_DISPLAY_SIZE,
     stats: scribbit.stats,
     depth: 10,
     reduceMotion: reducedMotion,

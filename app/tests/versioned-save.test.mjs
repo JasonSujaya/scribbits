@@ -86,6 +86,64 @@ test('versioned JSON runs every migration in order and skips them for current da
   );
 });
 
+test('reader-first codec reads N+1 while its active writer remains on N', () => {
+  const codec = versionedJson.createVersionedJsonCodec({
+    currentVersion: 2,
+    activeWriteVersion: 1,
+    legacyVersion: 0,
+    migrations: {
+      0: (value) => ({
+        schemaVersion: 1,
+        name: value.name,
+        points: value.points,
+      }),
+      1: (value) => ({
+        schemaVersion: 2,
+        name: value.name,
+        score: value.points,
+      }),
+    },
+    decodeCurrent: (value) =>
+      isRecord(value) &&
+      value.schemaVersion === 2 &&
+      typeof value.name === 'string' &&
+      Number.isSafeInteger(value.score)
+        ? { name: value.name, score: value.score }
+        : undefined,
+    encodeCurrent: (value) => ({ schemaVersion: 2, ...value }),
+    encodeActiveWrite: (value) => ({
+      schemaVersion: 1,
+      name: value.name,
+      points: value.score,
+    }),
+  });
+
+  assert.equal(codec.latestReadableVersion, 2);
+  assert.equal(codec.activeWriteVersion, 1);
+  assert.equal(
+    codec.serialize({ name: 'Nib', score: 7 }),
+    '{"schemaVersion":1,"name":"Nib","points":7}'
+  );
+  assert.deepEqual(codec.parse('{"schemaVersion":2,"name":"Nib","score":8}'), {
+    status: 'valid',
+    value: { name: 'Nib', score: 8 },
+    sourceVersion: 2,
+    migrated: false,
+  });
+  assert.throws(
+    () =>
+      versionedJson.createVersionedJsonCodec({
+        currentVersion: 2,
+        activeWriteVersion: 1,
+        legacyVersion: 0,
+        migrations: { 0: (value) => value, 1: (value) => value },
+        decodeCurrent: () => ({ ok: true }),
+        encodeCurrent: () => ({ schemaVersion: 2, ok: true }),
+      }),
+    /require an encoder for the active write version/
+  );
+});
+
 test('versioned JSON rejects malformed, future, incomplete, and failed migrations', () => {
   let decoderCalled = false;
   const codec = versionedJson.createVersionedJsonCodec({
@@ -206,6 +264,66 @@ test('Scribbit v0 migration and canonical v1 round trip are deterministic', () =
   assert.equal(scribbitStore.serializeScribbit(current.value), currentJson);
 });
 
+test('XP writes advance the strict Ink Mod shape before serialization', () => {
+  const scribbit = createExampleScribbit('xp-upgrade-shape');
+  const leveled = scribbitStore.addXpToScribbit(scribbit, 3);
+
+  assert.equal(leveled.level, 2);
+  assert.equal(leveled.xp, 3);
+  assert.equal(leveled.upgrades.length, 1);
+  assert.equal(leveled.upgrades[0].acquiredAtLevel, 2);
+  assert.doesNotThrow(() => scribbitStore.serializeScribbit(leveled));
+});
+
+test('the shipped Scribbit v1 to v2 migration has frozen byte output', () => {
+  const deployedV1Bytes =
+    '{"schemaVersion":1,"id":"fixture-scribbit","name":"Archive Moth","artist":"versioned-save-player","element":"storm","stats":{"chonk":25,"spike":25,"zip":25,"charm":25},"imageUrl":"/api/drawing/fixture-scribbit","drawingThemeId":null,"bornDay":12,"expiresDay":15,"belief":0,"wins":2,"losses":1,"status":"alive","legendTitle":null,"isFounding":false,"accessories":[],"gearRanks":{},"equipmentLoadout":{"weapon":[null,null],"armor":[null,null],"shoes":[null,null],"accessory":[null,null]},"upgrades":[{"id":"v1-bold-tip","acquiredAtLevel":2},{"id":"v1-quick-dry","acquiredAtLevel":3},{"id":"v1-thick-paper","acquiredAtLevel":4}],"level":4,"xp":12,"legacy":null}';
+  const expectedV2Bytes =
+    '{"schemaVersion":2,"id":"fixture-scribbit","name":"Archive Moth","artist":"versioned-save-player","element":"storm","stats":{"chonk":25,"spike":25,"zip":25,"charm":25},"imageUrl":"/api/drawing/fixture-scribbit","drawingThemeId":null,"bornDay":12,"expiresDay":15,"belief":0,"wins":2,"losses":1,"status":"alive","legendTitle":null,"isFounding":false,"accessories":[],"gearRanks":{},"equipmentLoadout":{"weapon":[null,null],"armor":[null,null],"shoes":[null,null],"accessory":[null,null]},"upgrades":[{"id":"v1-bold-tip","acquiredAtLevel":2},{"id":"v1-quick-dry","acquiredAtLevel":3},{"id":"v1-thick-paper","acquiredAtLevel":4}],"level":4,"xp":12,"legacy":null,"powerUpIds":["v1-edge-spring","v1-smudge-step","v1-paper-shield"]}';
+  const expectedV3Bytes = expectedV2Bytes
+    .replace('"schemaVersion":2', '"schemaVersion":3')
+    .replace(
+      '"upgrades":[{"id":"v1-bold-tip","acquiredAtLevel":2},{"id":"v1-quick-dry","acquiredAtLevel":3},{"id":"v1-thick-paper","acquiredAtLevel":4}]',
+      '"upgrades":[{"id":"v1-first-mark","acquiredAtLevel":2},{"id":"v1-lucky-splash","acquiredAtLevel":3},{"id":"v1-quick-dry","acquiredAtLevel":4}]'
+    );
+  const expectedV4Bytes = expectedV3Bytes.replace(
+    '"schemaVersion":3',
+    '"schemaVersion":4'
+  );
+
+  assert.equal(
+    JSON.stringify(
+      scribbitStore.migrateScribbitV1ToV2(JSON.parse(deployedV1Bytes))
+    ),
+    expectedV2Bytes
+  );
+  assert.equal(
+    JSON.stringify(
+      scribbitStore.migrateScribbitV2ToV3(JSON.parse(expectedV2Bytes))
+    ),
+    expectedV3Bytes
+  );
+  assert.equal(
+    JSON.stringify(
+      scribbitStore.migrateScribbitV3ToV4(JSON.parse(expectedV3Bytes))
+    ),
+    expectedV4Bytes
+  );
+  const fullyMigrated = scribbitStore.parseStoredScribbit(deployedV1Bytes);
+  assert.equal(fullyMigrated.status, 'valid');
+  assert.equal(fullyMigrated.sourceVersion, 1);
+  assert.equal(fullyMigrated.migrated, true);
+  assert.deepEqual(fullyMigrated.value.powerUpIds, [
+    'v1-edge-spring',
+    'v1-smudge-step',
+    'v1-paper-shield',
+  ]);
+  assert.equal(
+    scribbitStore.serializeScribbit(fullyMigrated.value),
+    expectedV4Bytes
+  );
+});
+
 test('Scribbit v2 records drop retired pet fields during migration', () => {
   const scribbit = createExampleScribbit('retired-pet-fields');
   const versionTwoRecord = {
@@ -233,6 +351,37 @@ test('Scribbit v2 records drop retired pet fields during migration', () => {
   );
   assert.equal(Object.hasOwn(currentRecord, 'mood'), false);
   assert.equal(Object.hasOwn(currentRecord, 'careDoneToday'), false);
+});
+
+test('Scribbit v3 migration removes copied reusable Gear ranks', () => {
+  const scribbit = createExampleScribbit('gear-rank-v3-scribbit');
+  const v3Record = {
+    ...JSON.parse(
+      scribbitStore.serializeScribbit({
+        ...scribbit,
+        equipmentLoadout: {
+          weapon: ['tiny-sword', null],
+          armor: [null, null],
+          shoes: [null, null],
+          accessory: [null, null],
+        },
+        gearRanks: { 'tiny-sword': 4 },
+      })
+    ),
+    schemaVersion: 3,
+    gearRanks: { 'tiny-sword': 4 },
+  };
+
+  const migrated = scribbitStore.parseStoredScribbit(JSON.stringify(v3Record));
+  assert.equal(migrated.status, 'valid');
+  assert.equal(migrated.sourceVersion, 3);
+  assert.equal(migrated.migrated, true);
+  const currentRecord = JSON.parse(
+    scribbitStore.serializeScribbit(migrated.value)
+  );
+  assert.equal(currentRecord.schemaVersion, 4);
+  assert.deepEqual(currentRecord.gearRanks, {});
+  assert.deepEqual(currentRecord.equipmentLoadout.weapon, ['tiny-sword', null]);
 });
 
 test('the frozen Scribbit v0 migration composes through a simulated v2 update', () => {

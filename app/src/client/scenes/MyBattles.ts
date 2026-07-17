@@ -31,6 +31,7 @@ import { screenTitle } from '../lib/screentitle';
 import { fitDrawing, loadDrawing } from '../lib/scribbits';
 import { planSparRivalCard } from '../lib/sparrivals';
 import { primeBattleSoundtrack } from '../lib/soundtrack';
+import { formatRedditUsername } from '../lib/redditusername';
 import { ROLE_STYLES, TYPE, UI } from '../lib/theme';
 import {
   errorPanel,
@@ -239,22 +240,36 @@ export class MyBattles extends Scene {
       }
     });
     const textX = selectorLeft + 220;
+    const selectedUsername = formatRedditUsername(selected.artist);
     selector.add(
       label(
         this,
         textX,
-        -36,
+        selectedUsername ? -48 : -36,
         fitText(selected.name.toUpperCase(), 14),
         31,
         UI.coralText,
         true
       ).setOrigin(0, 0.5)
     );
+    if (selectedUsername) {
+      selector.add(
+        label(
+          this,
+          textX,
+          -17,
+          fitText(selectedUsername, 24),
+          15,
+          UI.inkSoft,
+          true
+        ).setOrigin(0, 0.5)
+      );
+    }
     selector.add(
       label(
         this,
         textX,
-        8,
+        selectedUsername ? 13 : 8,
         translate('battles.board.characterRecord', {
           wins: selected.wins,
           losses: selected.losses,
@@ -268,7 +283,7 @@ export class MyBattles extends Scene {
       label(
         this,
         textX,
-        44,
+        selectedUsername ? 47 : 44,
         translate('battles.board.tapToSwitch'),
         15,
         UI.inkSoft,
@@ -295,7 +310,13 @@ export class MyBattles extends Scene {
         ).setOrigin(1, 0.5)
       );
     } else {
-      const arrowBacking = this.add.circle(selectorMarkX, 0, 36, UI.tapeAlt, 0.5);
+      const arrowBacking = this.add.circle(
+        selectorMarkX,
+        0,
+        36,
+        UI.tapeAlt,
+        0.5
+      );
       const chevron = this.add.graphics();
       chevron.fillStyle(UI.inkHex, 1);
       chevron.fillTriangle(
@@ -450,19 +471,33 @@ export class MyBattles extends Scene {
     });
 
     const textX = -cardWidth / 2 + 184;
+    const opponentUsername = formatRedditUsername(opponent.artist);
     card.add(
       label(
         this,
         textX,
-        -55,
+        opponentUsername ? -64 : -55,
         fitText(opponent.name.toUpperCase(), 16),
         29,
         roleStyle.colorText,
         true
       ).setOrigin(0, 0.5)
     );
+    if (opponentUsername) {
+      card.add(
+        label(
+          this,
+          textX,
+          -37,
+          fitText(opponentUsername, 24),
+          14,
+          UI.inkSoft,
+          true
+        ).setOrigin(0, 0.5)
+      );
+    }
     card.add(
-      paperIcon(this, getCombatRoleContent(plan.role).icon, textX + 14, -10, {
+      paperIcon(this, getCombatRoleContent(plan.role).icon, textX + 14, -5, {
         size: 29,
         fill: roleStyle.color,
       })
@@ -471,7 +506,7 @@ export class MyBattles extends Scene {
       label(
         this,
         textX + 40,
-        -10,
+        -5,
         `${plan.roleName.toUpperCase()} · ${this.difficultyLabel(choice.tier)}`,
         20,
         UI.ink,
@@ -479,7 +514,7 @@ export class MyBattles extends Scene {
       ).setOrigin(0, 0.5)
     );
     card.add(
-      paperIcon(this, 'spark', textX + 14, 42, {
+      paperIcon(this, 'spark', textX + 14, 43, {
         size: 30,
         fill: UI.gold,
       })
@@ -493,7 +528,7 @@ export class MyBattles extends Scene {
       label(
         this,
         textX + 40,
-        42,
+        43,
         translate('battles.board.points', {
           points: choice.winPoints,
           unit: pointsUnit,

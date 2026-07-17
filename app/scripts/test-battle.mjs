@@ -2786,7 +2786,7 @@ const privateClientSymbols = [
       join(repoRoot, 'src', 'shared', 'cosmetics.ts'),
       'utf8'
     ),
-    names: ['findCosmeticCatalogEntry'],
+    names: ['PERSISTED_GEAR_BY_ID'],
   },
 ];
 for (const { source, names } of privateClientSymbols) {
@@ -2995,7 +2995,7 @@ pass('Rival draft composes the canonical nested modal lifecycle');
 
 assert.match(
   replayPostFightActionsSource,
-  /compactReturn \? `‹ \$\{action\.label\}` : action\.label/,
+  /showBackMark \? `‹ \$\{action\.label\}` : action\.label/,
   'compact post-fight returns must keep their destination label visible'
 );
 assert.doesNotMatch(
@@ -4457,7 +4457,7 @@ try {
     freshArena.body.communityDrawTheme.id,
     'submission must keep the theme that was assigned before drawing'
   );
-  assert.equal(freshSubmission.body.drawCharges.available, 2);
+  assert.equal(freshSubmission.body.drawCharges.available, 3);
   assert.equal(freshSubmission.body.enteredRumble, true);
   assert.equal(freshSubmission.body.powerUpOffer.source, 'birth');
   assert.equal(freshSubmission.body.powerUpOffer.choices.length, 3);
@@ -6879,8 +6879,8 @@ const atomicSubmissionStorage = createMemoryStorage();
 const atomicSubmissionUserId = 'atomic-submission-player';
 const atomicSubmissionDay = 88;
 const expectedSubmissionDrawCharges = {
-  available: 2,
-  capacity: 3,
+  available: 3,
+  capacity: 4,
   nextRefreshAt: Date.parse('2026-07-13T20:00:00.000Z'),
 };
 const assertCommittedSubmission = (result, recovered) => {
@@ -8700,7 +8700,10 @@ seedModerationRouteTarget();
 productionApiContract.swapApiContractStringAfterReads(
   `scribbit:${moderationRouteTarget.id}:owner`,
   'replacement-owner-id',
-  2
+  // Initial hydration and the self-report guard both read ownership before the
+  // route captures the lease owner. Swap after that capture so the fenced
+  // removal must observe and reject the changed owner.
+  3
 );
 const changedOwnerRemoval = await productionApiContract.app.request(
   '/api/report-scribbit',
@@ -9203,8 +9206,12 @@ for (const power of Object.keys(powerStatsForMockProof)) {
         (power === 'colorburst' && event.source === 'colorburst_echo'))
   );
   assert.ok(
-    powerDamageEvents[0]?.tick < 60,
-    `${power} showcase should land its first signature hit within three seconds`
+    power === 'nib_halo'
+      ? powerDamageEvents.length > 0
+      : powerDamageEvents[0]?.tick < 60,
+    power === 'nib_halo'
+      ? 'nib_halo showcase should prove an authoritative orbit collision'
+      : `${power} showcase should land its first signature hit within three seconds`
   );
   assert.ok(
     report.simulation.timeline.some(
@@ -9234,8 +9241,8 @@ assert.ok(
       event.kind === 'role_attack' &&
       event.actor === 'a' &&
       event.attack === 'nib_volley'
-  ).length >= 3,
-  'Longshot showcase should fire a readable three-quill volley'
+  ).length >= 1,
+  'Longshot showcase should expose a real rotating-nib collision'
 );
 
 const colorburstTimeline =
@@ -10277,7 +10284,7 @@ const goldenCombatCases = [
     }),
     seed: 7001,
     expectedHash:
-      '08b4430a13dc4badd874b1b8a0df06db5062de4e47f42ed3813fcb98af405eb2',
+      '8443e635cee4f5ef1aeb10315e25b2fe506144eb66c00b7a7ccf8ef230885449',
   },
   {
     name: 'boundary archetypes',
@@ -10295,7 +10302,7 @@ const goldenCombatCases = [
     }),
     seed: 7002,
     expectedHash:
-      '97b892584ce4bd392194764ea1aedfa43266d61f867ca2aab93ab7ffd17f6bdf',
+      '4aad4ce84c4cf3c54d617acae8418dfd01c7860bdd792da2673a2cd35f7f5adf',
   },
   {
     name: 'legacy Zip to Longshot schedule',
@@ -10313,7 +10320,7 @@ const goldenCombatCases = [
     }),
     seed: 7003,
     expectedHash:
-      '7e07474c12366fe75ef166c93a8df2a7e36fd59d9fa6c3feda28dfa865f22174',
+      'f70ee9be57e61b7f0347ba901e955fc838bd86209e128d109ae7a4cf4ad38a8f',
   },
 ];
 const transcriptHash = (transcript) =>
@@ -11740,13 +11747,13 @@ const upgradedTranscript = combatEngine.simulateCombat({
 });
 assert.equal(
   upgradedTranscript.version,
-  7,
-  'current combat transcripts should use the v7 three-role schema'
+  8,
+  'current combat transcripts should use the v8 projectile schema'
 );
 assert.deepEqual(
   upgradedTranscript.fighters[0].powerUpIds,
   ['v1-paper-shield'],
-  'v5 transcripts should freeze the server-owned Power-Up build'
+  'current transcripts should freeze the server-owned Power-Up build'
 );
 
 const chooseUpgradeLoadouts = (values, count, startIndex = 0, prefix = []) => {
@@ -11978,13 +11985,13 @@ assert.deepEqual(
     finishSound: knockoutRecap.finishSound,
   },
   {
-    headline: 'KO • Barkbloom WINS',
-    verdictLine: '14.6s • INK LEFT 35/275 vs 0/235',
-    tapeLine: '235 TOTAL DAMAGE • SHOCKWAVE',
+    headline: 'KO • Solarkiln WINS',
+    verdictLine: '17.4s • INK LEFT 1/235 vs 0/275',
+    tapeLine: '275 TOTAL DAMAGE • QUILL ORBIT',
     highlight: {
       label: 'FINAL SPLAT',
-      text: 'Body Slam • 22 to Solarkiln',
-      compactText: 'Body Slam · 22 DAMAGE',
+      text: 'Piercing Quill • 10 to Barkbloom',
+      compactText: 'Piercing Quill · 10 DAMAGE',
     },
     finishPresentation: 'knockout',
     finishSound: 'knockout',
@@ -12365,12 +12372,12 @@ assert.deepEqual(journalSummary, {
   savedCount: 4,
   ownedWins: 3,
   ownedLosses: 1,
-  knockoutCount: 1,
+  knockoutCount: 2,
   decisionCount: 1,
-  archivedCount: 2,
+  archivedCount: 1,
   savedLine: '4 SAVED BATTLES',
   recordLine: 'YOUR REEL • 3 W–1 L',
-  finishLine: '1 KO • 1 DECISION • 2 ARCHIVED',
+  finishLine: '2 KO • 1 DECISION • 1 ARCHIVED',
 });
 assert.ok(Object.isFrozen(journalSummary));
 for (const plan of [

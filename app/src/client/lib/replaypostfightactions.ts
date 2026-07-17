@@ -32,6 +32,7 @@ export function createPostFightActions(
     canShareClip?: boolean;
     returnLabel: string;
     primaryAction?: ReplayPostFightAction;
+    primaryRequired?: boolean;
     rivalActionCopy?: Readonly<{
       label: string;
       accessibleLabel: string;
@@ -141,11 +142,12 @@ export function createPostFightActions(
       );
     }
     if (action.tone === 'ghost') {
+      const showBackMark = compactReturn && action.label.length <= 12;
       return ghostButton(
         scene,
         x,
         y,
-        compactReturn ? `‹ ${action.label}` : action.label,
+        showBackMark ? `‹ ${action.label}` : action.label,
         () => activateAction(action.kind),
         width,
         plan.buttonHeight
@@ -166,13 +168,17 @@ export function createPostFightActions(
 
   const addUtilityActions = (y: number): void => {
     const gap = 12;
-    const returnWidth = Math.min(
-      180,
-      Math.max(136, 72 + plan.returnAction.label.length * 12)
-    );
     const optionalActions = [plan.replayAction, plan.shareAction].filter(
       (action): action is ReplayPostFightAction => Boolean(action)
     );
+    const desiredReturnWidth = Math.max(
+      136,
+      96 + plan.returnAction.label.length * 12
+    );
+    const returnWidth =
+      optionalActions.length === 0
+        ? Math.min(input.width, desiredReturnWidth)
+        : Math.min(180, desiredReturnWidth);
     const optionalWidth =
       optionalActions.length > 0
         ? Math.min(
@@ -198,11 +204,11 @@ export function createPostFightActions(
   };
 
   if (plan.primary) {
-    const primaryY = -58;
+    const primaryY = input.primaryRequired ? 0 : -58;
     const utilityY = 58;
     container.add(createAction(plan.primary, 0, primaryY, input.width));
     placeAccessibleAction(plan.primary, 0, primaryY, input.width);
-    addUtilityActions(utilityY);
+    if (!input.primaryRequired) addUtilityActions(utilityY);
   } else {
     addUtilityActions(0);
   }

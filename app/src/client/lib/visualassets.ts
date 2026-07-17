@@ -8,6 +8,7 @@ import {
   LEGENDARY_GEAR_ART_TEXTURE,
   RARE_EPIC_GEAR_ART_TEXTURE,
 } from './gearart';
+import { STARTER_WEAPON_TEXTURES } from './heldweaponpresentation';
 export const SCRIBBITS_STAGE_TEXTURE = 'scribbits-stage';
 export const PAPER_STAGE_TEXTURE = SCRIBBITS_STAGE_TEXTURE;
 export const BATTLE_STAGE_TEXTURE = SCRIBBITS_STAGE_TEXTURE;
@@ -80,6 +81,10 @@ const REPLAY_VISUAL_TEXTURES = [
   FIGHT_START_TEXTURE,
   BATTLE_TITLE_TEXTURE,
   ...Object.values(BATTLE_CONTROL_BUTTON_TEXTURES),
+  ...Object.values(STARTER_WEAPON_TEXTURES),
+  COMMON_GEAR_ART_TEXTURE,
+  RARE_EPIC_GEAR_ART_TEXTURE,
+  LEGENDARY_GEAR_ART_TEXTURE,
 ] as const;
 
 const GALLERY_VISUAL_TEXTURES = [
@@ -177,6 +182,18 @@ const VISUAL_ASSET_URLS: Readonly<Record<string, string>> = Object.freeze({
     '../assets/scribbits-stage.webp',
     import.meta.url
   ).href,
+  'starter-weapon-brawler.webp': new URL(
+    '../assets/starter-weapon-brawler.webp',
+    import.meta.url
+  ).href,
+  'starter-weapon-longshot.webp': new URL(
+    '../assets/starter-weapon-longshot.webp',
+    import.meta.url
+  ).href,
+  'starter-weapon-mage.webp': new URL(
+    '../assets/starter-weapon-mage.webp',
+    import.meta.url
+  ).href,
   'ui-button-back.webp': new URL(
     '../assets/ui-button-back.webp',
     import.meta.url
@@ -271,7 +288,10 @@ export function galleryVisualAssetsReady(scene: Scene): boolean {
   return texturesReady(scene, GALLERY_VISUAL_TEXTURES);
 }
 
-export function preloadReplayVisualAssets(scene: Scene): void {
+export function preloadReplayVisualAssets(
+  scene: Scene,
+  includeSharedGear = true
+): void {
   if (!scene.textures.exists(FIGHT_START_TEXTURE)) {
     scene.load.image(FIGHT_START_TEXTURE, assetUrl('ui-fight-start.webp'));
   }
@@ -286,6 +306,12 @@ export function preloadReplayVisualAssets(scene: Scene): void {
       scene.load.image(texture, assetUrl(`ui-button-battle-${kind}.webp`));
     }
   });
+  Object.entries(STARTER_WEAPON_TEXTURES).forEach(([role, texture]) => {
+    if (!scene.textures.exists(texture)) {
+      scene.load.image(texture, assetUrl(`starter-weapon-${role}.webp`));
+    }
+  });
+  if (includeSharedGear) preloadGearVisualAssets(scene);
 }
 
 export function replayVisualAssetsReady(scene: Scene): boolean {
@@ -360,12 +386,10 @@ export function shopVisualAssetsReady(scene: Scene): boolean {
  * Shop owns the shared Gear atlas queue; Gallery adds only its binder shell so
  * the same atlas keys are never queued twice in one loader pass.
  */
-export function preloadPrimaryNavigationVisualAssets(
-  scene: Scene
-): void {
+export function preloadPrimaryNavigationVisualAssets(scene: Scene): void {
   preloadHomeVisualAssets(scene);
   preloadDrawVisualAssets(scene);
-  preloadReplayVisualAssets(scene);
+  preloadReplayVisualAssets(scene, false);
   // Shop owns the shared Gear atlas queue in this combined loader pass.
   preloadShopVisualAssets(scene);
   if (!scene.textures.exists(BAG_BINDER_SHELL_TEXTURE)) {

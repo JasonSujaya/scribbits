@@ -16,7 +16,10 @@ export const MAXIMUM_POWER_UP_HEALING_PERMILLE = 200;
 // activation caps so a full build cannot starve later cards by trigger order.
 export const MAXIMUM_POWER_UP_TRIGGER_EVENTS = 32;
 
-export const POWER_UP_IDS = Object.freeze([
+// This is the permanent identity registry, not the current offer pool. IDs that
+// have reached production stay here so stored builds and historical battles
+// keep their original behavior definition after a card is retired.
+export const PERSISTED_POWER_UP_IDS = Object.freeze([
   'v1-edge-spring',
   'v1-smudge-step',
   'v1-paper-shield',
@@ -32,9 +35,27 @@ export const POWER_UP_IDS = Object.freeze([
   'v1-paper-twin',
   'v1-masterpiece',
   'v1-endless-draft',
+  'v2-bank-shot',
+  'v2-returning-stroke',
+  'v2-orbiting-nib',
+  'v2-wider-halo',
+  'v2-paint-splash',
+  'v2-wet-paint',
 ] as const);
 
-export type PowerUpId = (typeof POWER_UP_IDS)[number];
+export type PowerUpId = (typeof PERSISTED_POWER_UP_IDS)[number];
+// Compatibility name for callers that mean every recognized persisted ID.
+export const POWER_UP_IDS = PERSISTED_POWER_UP_IDS;
+
+// Move retired IDs here; never delete them from POWER_UP_IDS or POWER_UP_CATALOG.
+// Retired cards remain valid in persisted builds but cannot enter new offers.
+export const RETIRED_POWER_UP_IDS: readonly PowerUpId[] = Object.freeze([]);
+const retiredPowerUpIds = new Set<PowerUpId>(RETIRED_POWER_UP_IDS);
+export const OFFERABLE_POWER_UP_IDS: readonly PowerUpId[] = Object.freeze(
+  PERSISTED_POWER_UP_IDS.filter(
+    (powerUpId) => !retiredPowerUpIds.has(powerUpId)
+  )
+);
 export const POWER_UP_RARITIES = Object.freeze([
   'common',
   'uncommon',
@@ -43,12 +64,44 @@ export const POWER_UP_RARITIES = Object.freeze([
   'legendary',
 ] as const);
 export type PowerUpRarity = (typeof POWER_UP_RARITIES)[number];
+export const POWER_UP_RARITY_STRENGTH_PERMILLE: Readonly<
+  Record<PowerUpRarity, number>
+> = Object.freeze({
+  common: 0,
+  uncommon: 4,
+  rare: 9,
+  epic: 17,
+  legendary: 30,
+});
+export const MAXIMUM_POWER_UP_RARITY_STRENGTH_PERMILLE = 300;
 export type PowerUpBuildPath =
   | 'bounce'
   | 'combo'
   | 'survival'
   | 'special'
   | 'wildcard';
+
+export const COMBAT_CAPABILITIES = Object.freeze([
+  'longshot-projectile',
+  'orbiting-nibs',
+  'mage-projectile',
+  'paint-zone',
+] as const);
+export type CombatCapability = (typeof COMBAT_CAPABILITIES)[number];
+
+const defineCombatCapabilities = (
+  ...capabilities: CombatCapability[]
+): readonly CombatCapability[] => Object.freeze(capabilities);
+
+export const COMBAT_CAPABILITIES_BY_ROLE: Readonly<
+  Record<CombatRole, readonly CombatCapability[]>
+> = Object.freeze({
+  brawler: defineCombatCapabilities(),
+  longshot: defineCombatCapabilities('longshot-projectile', 'orbiting-nibs'),
+  // Gunner is archived and never receives new capability cards.
+  gunner: defineCombatCapabilities(),
+  mage: defineCombatCapabilities('mage-projectile', 'paint-zone'),
+});
 
 export type PowerUpPlaystyleProfile = Readonly<{
   recommendedRoles: readonly CombatRole[];
@@ -66,6 +119,7 @@ export type PowerUpDefinition = Readonly<{
   when: string;
   effect: string;
   description: string;
+  requiredCapabilities?: readonly CombatCapability[];
   trigger:
     | 'wall-bounce'
     | 'incoming-basic'
@@ -81,18 +135,35 @@ export type PowerUpDefinition = Readonly<{
     | 'lethal-hit'
     | 'first-basic-hit'
     | 'distinct-power-ups'
-    | 'common-power-up';
+    | 'common-power-up'
+    | 'weapon-passive';
   maximumActivations: number;
   delayTicks?: number;
   powerPermille?: number;
   maximumHitPointHealingPermille?: number;
   preventedDamagePermille?: number;
   targetMaxHitPointDamagePermille?: number;
+  brawlerTargetMaxHitPointDamagePermille?: number;
+  brawlerPowerPermille?: number;
+  brawlerMaximumHitPointHealingPermille?: number;
   requiredConsecutiveHits?: number;
   requiredDistinctPowerUps?: number;
   repeatedAttacks?: number;
   extraActivations?: number;
   survivingHitPointPermille?: number;
+  projectileWallBounces?: number;
+  projectileBaseDamagePermille?: number;
+  projectileBounceDamagePermille?: number;
+  projectileReturns?: number;
+  projectileReturnDamagePermille?: number;
+  additionalOrbiters?: number;
+  orbitRadiusPermille?: number;
+  orbiterCollisionRadiusPermille?: number;
+  impactZoneLifetimeTicks?: number;
+  impactZoneRadiusPermille?: number;
+  zoneLifetimePermille?: number;
+  zoneAvoidancePermille?: number;
+  zoneDamagePermille?: number;
 }>;
 
 type PowerUpDefinitionInput = Omit<PowerUpDefinition, 'description'>;
@@ -179,11 +250,11 @@ export const POWER_UP_CATALOG: Readonly<Record<PowerUpId, PowerUpDefinition>> =
       rarity: 'uncommon',
       buildPath: 'special',
       when: 'A special move hits',
-      effect: 'Repeat 25% of that hit',
+      effect: 'Repeat 20% of that hit',
       trigger: 'landed-signature',
       maximumActivations: 1,
       delayTicks: 6,
-      powerPermille: 250,
+      powerPermille: 200,
     }),
     'v1-backup-plan': definePowerUp({
       id: 'v1-backup-plan',
@@ -192,11 +263,11 @@ export const POWER_UP_CATALOG: Readonly<Record<PowerUpId, PowerUpDefinition>> =
       rarity: 'uncommon',
       buildPath: 'combo',
       when: 'Every fourth normal hit, up to 2 times',
-      effect: 'Restore 3% max health',
+      effect: 'Restore 2.5% max health',
       trigger: 'basic-hit-count',
       maximumActivations: 2,
       requiredConsecutiveHits: 4,
-      maximumHitPointHealingPermille: 30,
+      maximumHitPointHealingPermille: 25,
     }),
     'v1-counter-sketch': definePowerUp({
       id: 'v1-counter-sketch',
@@ -205,10 +276,10 @@ export const POWER_UP_CATALOG: Readonly<Record<PowerUpId, PowerUpDefinition>> =
       rarity: 'uncommon',
       buildPath: 'survival',
       when: "The enemy's special move hits you",
-      effect: 'Strike back for 50% of your normal attack damage',
+      effect: 'Strike back for 40% of your normal attack damage',
       trigger: 'enemy-signature',
       maximumActivations: 1,
-      powerPermille: 500,
+      powerPermille: 400,
     }),
     'v1-wallop': definePowerUp({
       id: 'v1-wallop',
@@ -216,7 +287,7 @@ export const POWER_UP_CATALOG: Readonly<Record<PowerUpId, PowerUpDefinition>> =
       shortName: 'WALLOP',
       rarity: 'rare',
       buildPath: 'bounce',
-      when: 'You knock the enemy into a wall, up to 2 times',
+      when: 'Either of your first 2 body slams lands or knocks the enemy into a wall',
       effect: 'Deal 50% of your normal attack damage each time',
       trigger: 'knockback-wall-bounce',
       maximumActivations: 2,
@@ -229,11 +300,11 @@ export const POWER_UP_CATALOG: Readonly<Record<PowerUpId, PowerUpDefinition>> =
       rarity: 'rare',
       buildPath: 'special',
       when: 'A special move hits',
-      effect: 'Your next 2 normal hits deal 40% extra damage',
+      effect: 'Your next 2 normal hits deal 50% extra damage',
       trigger: 'marked-target-basic',
       maximumActivations: 1,
       repeatedAttacks: 2,
-      powerPermille: 400,
+      powerPermille: 500,
     }),
     'v1-last-scribble': definePowerUp({
       id: 'v1-last-scribble',
@@ -242,10 +313,12 @@ export const POWER_UP_CATALOG: Readonly<Record<PowerUpId, PowerUpDefinition>> =
       rarity: 'epic',
       buildPath: 'survival',
       when: 'A hit would knock you out',
-      effect: 'Survive one knockout blow with 10% max health',
+      effect:
+        "Survive one knockout blow with 40% max health and splash 10% of the enemy's max health back",
       trigger: 'lethal-hit',
       maximumActivations: 1,
-      survivingHitPointPermille: 100,
+      survivingHitPointPermille: 400,
+      targetMaxHitPointDamagePermille: 100,
     }),
     'v1-second-draft': definePowerUp({
       id: 'v1-second-draft',
@@ -255,12 +328,14 @@ export const POWER_UP_CATALOG: Readonly<Record<PowerUpId, PowerUpDefinition>> =
       buildPath: 'survival',
       when: 'You fall below half health',
       effect:
-        'Your next 3 normal hits deal 30% extra damage and restore 2% max health',
+        'Your next 3 normal hits deal 10% extra damage and restore 0.5% max health; Brawlers deal 15% and restore 1% instead',
       trigger: 'below-half-hearts',
       maximumActivations: 1,
       repeatedAttacks: 3,
-      powerPermille: 300,
-      maximumHitPointHealingPermille: 20,
+      powerPermille: 100,
+      maximumHitPointHealingPermille: 5,
+      brawlerPowerPermille: 150,
+      brawlerMaximumHitPointHealingPermille: 10,
     }),
     'v1-paper-twin': definePowerUp({
       id: 'v1-paper-twin',
@@ -269,11 +344,11 @@ export const POWER_UP_CATALOG: Readonly<Record<PowerUpId, PowerUpDefinition>> =
       rarity: 'epic',
       buildPath: 'combo',
       when: 'Your first normal attack hits',
-      effect: 'Your first 2 normal hits repeat for 50% of their damage',
+      effect: 'Your first 2 normal hits repeat for 35% of their damage',
       trigger: 'first-basic-hit',
       maximumActivations: 1,
       repeatedAttacks: 2,
-      powerPermille: 500,
+      powerPermille: 350,
     }),
     'v1-masterpiece': definePowerUp({
       id: 'v1-masterpiece',
@@ -281,13 +356,16 @@ export const POWER_UP_CATALOG: Readonly<Record<PowerUpId, PowerUpDefinition>> =
       shortName: 'MASTERPIECE',
       rarity: 'legendary',
       buildPath: 'wildcard',
-      when: 'Three different non-Legendary Power-Ups activate',
-      effect: "Deal 10% of the enemy's max health and restore 10% max health",
+      when: 'Two different non-Legendary Power-Ups activate',
+      effect:
+        "Deal 2% of the enemy's max health and restore 2% max health; Brawlers deal and restore 6.5% instead",
       trigger: 'distinct-power-ups',
       maximumActivations: 1,
-      requiredDistinctPowerUps: 3,
-      targetMaxHitPointDamagePermille: 100,
-      maximumHitPointHealingPermille: 100,
+      requiredDistinctPowerUps: 2,
+      targetMaxHitPointDamagePermille: 20,
+      maximumHitPointHealingPermille: 20,
+      brawlerTargetMaxHitPointDamagePermille: 65,
+      brawlerMaximumHitPointHealingPermille: 65,
     }),
     'v1-endless-draft': definePowerUp({
       id: 'v1-endless-draft',
@@ -296,12 +374,124 @@ export const POWER_UP_CATALOG: Readonly<Record<PowerUpId, PowerUpDefinition>> =
       rarity: 'legendary',
       buildPath: 'wildcard',
       when: 'A Common, Uncommon, or Rare Power-Up activates',
-      effect: 'Let every Common, Uncommon, and Rare activate 1 extra time',
+      effect:
+        'Let the first Common, Uncommon, or Rare that activates trigger 1 extra time',
       trigger: 'common-power-up',
       maximumActivations: 1,
       extraActivations: 1,
     }),
+    'v2-bank-shot': definePowerUp({
+      id: 'v2-bank-shot',
+      name: 'Bank Shot',
+      shortName: 'BANK SHOT',
+      rarity: 'common',
+      buildPath: 'bounce',
+      when: 'Any piercing quill reaches an arena edge',
+      effect:
+        'Every quill can bounce once; outbound hits deal 80% and banked hits deal 40% of original damage',
+      requiredCapabilities: Object.freeze(['longshot-projectile']),
+      trigger: 'weapon-passive',
+      maximumActivations: 1,
+      projectileWallBounces: 1,
+      projectileBaseDamagePermille: 800,
+      projectileBounceDamagePermille: 400,
+    }),
+    'v2-returning-stroke': definePowerUp({
+      id: 'v2-returning-stroke',
+      name: 'Returning Stroke',
+      shortName: 'RETURNING STROKE',
+      rarity: 'rare',
+      buildPath: 'bounce',
+      when: 'A piercing quill misses its first pass',
+      effect:
+        "Quills deal 5% more damage, nick 0.2% of the enemy's max health, and turn around once at 117.5% damage after a miss",
+      requiredCapabilities: Object.freeze(['longshot-projectile']),
+      trigger: 'weapon-passive',
+      maximumActivations: 1,
+      projectileReturns: 1,
+      projectileBaseDamagePermille: 1_050,
+      projectileReturnDamagePermille: 1_175,
+      targetMaxHitPointDamagePermille: 2,
+    }),
+    'v2-orbiting-nib': definePowerUp({
+      id: 'v2-orbiting-nib',
+      name: 'Orbiting Nib',
+      shortName: 'ORBITING NIB',
+      rarity: 'uncommon',
+      buildPath: 'special',
+      when: 'Nib Halo begins spinning',
+      effect: 'Add one more rotating nib with a 10% larger hit area',
+      requiredCapabilities: Object.freeze(['orbiting-nibs']),
+      trigger: 'weapon-passive',
+      maximumActivations: 1,
+      additionalOrbiters: 1,
+      orbiterCollisionRadiusPermille: 1_100,
+      preventedDamagePermille: 50,
+      targetMaxHitPointDamagePermille: 0,
+    }),
+    'v2-wider-halo': definePowerUp({
+      id: 'v2-wider-halo',
+      name: 'Wider Halo',
+      shortName: 'WIDER HALO',
+      rarity: 'common',
+      buildPath: 'special',
+      when: 'Your rotating nibs take formation',
+      effect:
+        "Spin them 10% farther out with a 40% wider hit area and nick 1% of the enemy's max health",
+      requiredCapabilities: Object.freeze(['orbiting-nibs']),
+      trigger: 'weapon-passive',
+      maximumActivations: 1,
+      orbitRadiusPermille: 1_100,
+      orbiterCollisionRadiusPermille: 1_400,
+      preventedDamagePermille: 107,
+      targetMaxHitPointDamagePermille: 10,
+    }),
+    'v2-paint-splash': definePowerUp({
+      id: 'v2-paint-splash',
+      name: 'Paint Splash',
+      shortName: 'PAINT SPLASH',
+      rarity: 'uncommon',
+      buildPath: 'special',
+      when: 'A color bolt lands',
+      effect:
+        "Splash for 2.5% of the enemy's max health and leave a paint puddle for 1.5 seconds",
+      requiredCapabilities: Object.freeze(['mage-projectile', 'paint-zone']),
+      trigger: 'weapon-passive',
+      maximumActivations: 1,
+      targetMaxHitPointDamagePermille: 25,
+      impactZoneLifetimeTicks: 30,
+      impactZoneRadiusPermille: 1_000,
+    }),
+    'v2-wet-paint': definePowerUp({
+      id: 'v2-wet-paint',
+      name: 'Wet Paint',
+      shortName: 'WET PAINT',
+      rarity: 'common',
+      buildPath: 'special',
+      when: 'You cover the arena with a paintfield',
+      effect: 'Keep it wet 50% longer and deal 75% more zone damage',
+      requiredCapabilities: Object.freeze(['paint-zone']),
+      trigger: 'weapon-passive',
+      maximumActivations: 1,
+      zoneLifetimePermille: 1_500,
+      zoneAvoidancePermille: 1_000,
+      zoneDamagePermille: 1_750,
+    }),
   });
+
+export function getPowerUpBuildRarityStrengthPermille(
+  powerUpIds: readonly PowerUpId[]
+): number {
+  return Math.min(
+    MAXIMUM_POWER_UP_RARITY_STRENGTH_PERMILLE,
+    powerUpIds.reduce(
+      (total, powerUpId) =>
+        total +
+        POWER_UP_RARITY_STRENGTH_PERMILLE[POWER_UP_CATALOG[powerUpId].rarity],
+      0
+    )
+  );
+}
 
 const definePlaystyleProfile = (
   recommendedRoles: readonly CombatRole[],
@@ -329,7 +519,11 @@ export const POWER_UP_PLAYSTYLE_PROFILES: Readonly<
     ['rush', 'focus'],
     ['mage']
   ),
-  'v1-paper-shield': definePlaystyleProfile(['brawler'], ['guard', 'fortune']),
+  'v1-paper-shield': definePlaystyleProfile(
+    ['brawler'],
+    ['guard', 'fortune'],
+    ['longshot']
+  ),
   'v1-combo-spark': definePlaystyleProfile(
     ['mage'],
     ['rush', 'ready', 'aim'],
@@ -342,16 +536,21 @@ export const POWER_UP_PLAYSTYLE_PROFILES: Readonly<
   ),
   'v1-double-doodle': definePlaystyleProfile(
     ['longshot', 'mage'],
-    ['focus', 'aim', 'fortune']
+    ['focus', 'aim', 'fortune'],
+    ['longshot'],
+    ['longshot']
   ),
   'v1-backup-plan': definePlaystyleProfile(
     ['mage'],
     ['rush', 'focus', 'ready'],
-    ['brawler']
+    ['brawler', 'longshot'],
+    ['longshot']
   ),
   'v1-counter-sketch': definePlaystyleProfile(
     ['longshot', 'mage'],
-    ['guard', 'ready']
+    ['guard', 'ready'],
+    ['longshot'],
+    ['longshot']
   ),
   'v1-wallop': definePlaystyleProfile(
     ['brawler'],
@@ -360,12 +559,14 @@ export const POWER_UP_PLAYSTYLE_PROFILES: Readonly<
   ),
   'v1-echo-mark': definePlaystyleProfile(
     ['longshot', 'mage'],
-    ['focus', 'aim', 'fortune']
+    ['focus', 'aim', 'fortune'],
+    ['longshot'],
+    ['longshot']
   ),
   'v1-last-scribble': definePlaystyleProfile(
-    ['longshot', 'mage'],
+    ['mage'],
     ['guard'],
-    ['brawler']
+    ['brawler', 'longshot']
   ),
   'v1-second-draft': definePlaystyleProfile(
     ['brawler', 'mage'],
@@ -373,19 +574,38 @@ export const POWER_UP_PLAYSTYLE_PROFILES: Readonly<
     ['longshot']
   ),
   'v1-paper-twin': definePlaystyleProfile(
-    ['mage'],
+    ['longshot'],
     ['guard', 'rush', 'fortune'],
-    ['brawler', 'longshot']
+    ['brawler', 'mage']
   ),
   'v1-masterpiece': definePlaystyleProfile(
     ['brawler', 'longshot', 'mage'],
     ['ready', 'fortune']
   ),
   'v1-endless-draft': definePlaystyleProfile(
-    ['brawler', 'longshot', 'mage'],
-    ['ready', 'fortune']
+    ['brawler', 'mage'],
+    ['ready', 'fortune'],
+    ['longshot']
   ),
+  'v2-bank-shot': definePlaystyleProfile(['longshot'], ['aim', 'fortune']),
+  'v2-returning-stroke': definePlaystyleProfile(['longshot'], ['aim', 'focus']),
+  'v2-orbiting-nib': definePlaystyleProfile(['longshot'], ['ready', 'fortune']),
+  'v2-wider-halo': definePlaystyleProfile(['longshot'], ['ready', 'guard']),
+  'v2-paint-splash': definePlaystyleProfile(['mage'], ['focus', 'fortune']),
+  'v2-wet-paint': definePlaystyleProfile(['mage'], ['ready', 'guard']),
 });
+
+export function powerUpSupportsRole(
+  powerUpId: PowerUpId,
+  combatRole: CombatRole
+): boolean {
+  const requiredCapabilities =
+    POWER_UP_CATALOG[powerUpId].requiredCapabilities ?? [];
+  const roleCapabilities = COMBAT_CAPABILITIES_BY_ROLE[combatRole];
+  return requiredCapabilities.every((capability) =>
+    roleCapabilities.includes(capability)
+  );
+}
 
 export function scorePowerUpFit(
   powerUpId: PowerUpId,
@@ -395,6 +615,9 @@ export function scorePowerUpFit(
 ): number {
   const profile = POWER_UP_PLAYSTYLE_PROFILES[powerUpId];
   const currentRole = toCurrentCombatRole(combatRole);
+  if (!powerUpSupportsRole(powerUpId, currentRole)) {
+    return -100;
+  }
   const unlockedAtMaturity =
     ownedPowerUpIds.length >= MAXIMUM_GROWING_POWER_UPS &&
     profile.maturityUnlockedRoles.includes(currentRole);
@@ -420,19 +643,27 @@ export function scorePowerUpFit(
 }
 
 export const isPowerUpId = (value: unknown): value is PowerUpId =>
-  typeof value === 'string' && POWER_UP_IDS.includes(value as PowerUpId);
+  typeof value === 'string' &&
+  PERSISTED_POWER_UP_IDS.includes(value as PowerUpId);
+
+export const isOfferablePowerUpId = (value: unknown): value is PowerUpId =>
+  isPowerUpId(value) && !retiredPowerUpIds.has(value);
 
 export const powerUpIsOfferableForRole = (
   powerUpId: PowerUpId,
   combatRole?: CombatRole,
   ownedPowerUpCount = 0
 ): boolean =>
-  !combatRole ||
-  !POWER_UP_PLAYSTYLE_PROFILES[powerUpId].avoidedRoles.includes(combatRole) ||
-  (ownedPowerUpCount >= MAXIMUM_GROWING_POWER_UPS &&
-    POWER_UP_PLAYSTYLE_PROFILES[powerUpId].maturityUnlockedRoles.includes(
-      combatRole
-    ));
+  isOfferablePowerUpId(powerUpId) &&
+  (!combatRole ||
+    (powerUpSupportsRole(powerUpId, combatRole) &&
+      (!POWER_UP_PLAYSTYLE_PROFILES[powerUpId].avoidedRoles.includes(
+        combatRole
+      ) ||
+        (ownedPowerUpCount >= MAXIMUM_GROWING_POWER_UPS &&
+          POWER_UP_PLAYSTYLE_PROFILES[powerUpId].maturityUnlockedRoles.includes(
+            combatRole
+          )))));
 
 export type PowerUpBuildValidation =
   | Readonly<{ valid: true; powerUpIds: readonly PowerUpId[] }>
@@ -482,10 +713,14 @@ export const parsePowerUpBuild = (
 export const POWER_UP_OFFER_SOURCES = Object.freeze([
   'birth',
   'exhibition-win',
+  'exhibition-loss',
   'rival-run-win',
+  'rival-run-loss',
   'rival-run-final-win',
+  'rival-run-final-loss',
   'rumble-day-win',
   'champion-win',
+  'champion-loss',
 ] as const);
 export type PowerUpOfferSource = (typeof POWER_UP_OFFER_SOURCES)[number];
 
@@ -529,10 +764,14 @@ export const POWER_UP_OFFER_RARITY_WEIGHTS: Readonly<
 > = Object.freeze({
   birth: defineRarityWeights(65, 29, 5, 1, 0),
   'exhibition-win': defineRarityWeights(65, 29, 5, 1, 0),
+  'exhibition-loss': defineRarityWeights(65, 29, 5, 1, 0),
   'rival-run-win': defineRarityWeights(65, 29, 5, 1, 0),
+  'rival-run-loss': defineRarityWeights(65, 29, 5, 1, 0),
   'rival-run-final-win': defineRarityWeights(35, 42, 15, 8, 0),
+  'rival-run-final-loss': defineRarityWeights(35, 42, 15, 8, 0),
   'rumble-day-win': defineRarityWeights(35, 42, 15, 8, 0),
   'champion-win': defineRarityWeights(5, 20, 40, 30, 5),
+  'champion-loss': defineRarityWeights(5, 20, 40, 30, 5),
 });
 
 export type CreatePowerUpOfferInput = Readonly<{
@@ -571,7 +810,7 @@ export const createDeterministicPowerUpOffer = (
   const normalizedSeed = normalizeCombatSeed(input.seed);
 
   for (let slotIndex = 0; slotIndex < 3; slotIndex += 1) {
-    const remainingCandidates = POWER_UP_IDS.filter((id) => {
+    const remainingCandidates = OFFERABLE_POWER_UP_IDS.filter((id) => {
       const definition = POWER_UP_CATALOG[id];
       return (
         !ownedIds.has(id) &&

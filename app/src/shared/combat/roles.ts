@@ -28,6 +28,7 @@ export type CombatRoleContent = Readonly<{
 export type CombatRoleRules = Readonly<{
   preferredRangeMinimum: number;
   preferredRangeMaximum: number;
+  retreatSpeedPermille: number;
   basicAttackCooldownTicks: number;
   basicAttackBaseDamage: number;
   basicAttackStatDivisor: number;
@@ -88,7 +89,8 @@ export const COMBAT_ROLE_CONTENT: Readonly<
     weaponName: 'Quill Launcher',
     basicAttackName: 'Piercing Quill',
     signatureName: 'Nib Volley',
-    behavior: 'Keeps its distance and lines up heavy quill shots.',
+    behavior:
+      'Kites away from close threats, fires straight quills, and banks every third shot off an arena wall.',
     strength: 'Lines up Brawler during its approach.',
     weakness: 'Mage shields and color zones spoil its clean shot.',
     icon: 'target',
@@ -145,6 +147,7 @@ export const COMBAT_ROLE_RULES: Readonly<
   brawler: Object.freeze({
     preferredRangeMinimum: 0,
     preferredRangeMaximum: 1_400,
+    retreatSpeedPermille: 1_000,
     basicAttackCooldownTicks: 16,
     basicAttackBaseDamage: 14,
     basicAttackStatDivisor: 6,
@@ -152,8 +155,9 @@ export const COMBAT_ROLE_RULES: Readonly<
     burstShotIntervalTicks: 0,
   }),
   longshot: Object.freeze({
-    preferredRangeMinimum: 4_500,
+    preferredRangeMinimum: 5_000,
     preferredRangeMaximum: 6_500,
+    retreatSpeedPermille: 1_500,
     basicAttackCooldownTicks: 44,
     basicAttackBaseDamage: 11,
     basicAttackStatDivisor: 11,
@@ -163,6 +167,7 @@ export const COMBAT_ROLE_RULES: Readonly<
   mage: Object.freeze({
     preferredRangeMinimum: 3_400,
     preferredRangeMaximum: 5_400,
+    retreatSpeedPermille: 1_200,
     basicAttackCooldownTicks: 50,
     basicAttackBaseDamage: 8,
     basicAttackStatDivisor: 10,

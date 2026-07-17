@@ -1,6 +1,6 @@
 # Generated Opponent Pool
 
-Generated: 2026-07-16T10:15:59.258Z
+Generated: 2026-07-17T01:22:14.086Z
 
 Runner: `app/tools/balancer/run.mjs`
 
@@ -8,13 +8,14 @@ This report bypasses API/routes/storage and calls the production combat mock bun
 
 | Target | Opponent | Win rate | Avg duration | Power-Up triggers | Target PU | Timeouts | Close | Blowouts | Verdict |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
-| Brawler base | FIELD | 57.5% | 14.4s | 0.00 | 0.00 | 0.0% | 73.3% | 0.0% | OK |
-| Longshot base | FIELD | 51.7% | 18.7s | 0.00 | 0.00 | 0.0% | 71.0% | 0.0% | OK |
-| Mage base | FIELD | 59.9% | 18.0s | 0.00 | 0.00 | 0.0% | 76.5% | 0.0% | OK |
+| Brawler base | FIELD | 57.1% | 15.1s | 0.00 | 0.00 | 2.5% | 66.7% | 0.0% | OK |
+| Longshot base | FIELD | 48.5% | 19.2s | 0.00 | 0.00 | 67.1% | 85.7% | 0.0% | FLAG_TIMEOUTS |
+| Mage base | FIELD | 54.6% | 18.6s | 0.00 | 0.00 | 53.3% | 67.5% | 0.0% | FLAG_TIMEOUTS |
 
 ## Hard flags
 
-No balance flags from current thresholds.
+- Longshot base: FLAG_TIMEOUTS (48.5%, 19.2s avg)
+- Mage base: FLAG_TIMEOUTS (54.6%, 18.6s avg)
 
 ## Watches
 

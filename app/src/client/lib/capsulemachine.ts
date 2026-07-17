@@ -69,7 +69,7 @@ import {
   capsuleRevealAnnouncement,
   planCapsuleBatchReveal,
 } from './capsulereveal';
-import { playSfx, setSfxCue } from './sfx';
+import { playSfx, preloadSfx, setSfxCue } from './sfx';
 import { openInkEarningGuide, type InkEarningGuide } from './inkearningguide';
 import {
   openCapsulePrizeGuide,
@@ -624,6 +624,18 @@ export function openCapsuleMachine(
   let progress = opts.progress;
   const firstChestVisit = progress.pullCount === 0;
   const useClawMachine = opts.embedded === true;
+  if (useClawMachine) {
+    (
+      [
+        'claw.search',
+        'claw.descend',
+        'claw.grab',
+        'claw.lift',
+        'claw.drop',
+        'claw.win',
+      ] as const
+    ).forEach(preloadSfx);
+  }
   let pulling = false;
   let prizeOpen = false;
   let pendingOperationId: string | null = null;
@@ -1191,6 +1203,7 @@ export function openCapsuleMachine(
       ? 'Claw searching. Opening one Mystery Ink chest.'
       : `Opening ${targetCount} Mystery Ink ${targetCount === 1 ? 'chest' : 'chests'}.`;
 
+    if (clawMachine) playSfx('claw.search');
     stopClawIdle?.();
     stopClawIdle = null;
     let stopClawSearch = clawMachine
@@ -1786,7 +1799,10 @@ async function animateClawCatch(
   machine: ClawMachine,
   pull: CapsulePull
 ): Promise<void> {
+  playSfx('claw.search');
   if (prefersReducedMotion()) {
+    playSfx('claw.grab');
+    playSfx('claw.drop');
     resetClawMachine(scene, machine);
     return;
   }
@@ -1826,6 +1842,7 @@ async function animateClawCatch(
       ease: 'Back.easeOut',
     }),
   ]);
+  playSfx('claw.descend');
   await Promise.all([
     playClawTween(scene, {
       targets: machine.clawHead,
@@ -1869,7 +1886,7 @@ async function animateClawCatch(
       ease: 'Sine.easeOut',
     }),
   ]);
-  playSfx('reward.reveal');
+  playSfx('claw.grab');
   burstClawGrabSparks(scene, machine, RARITY_STYLE[pull.rarity].color);
   scene.tweens.add({
     targets: machine.windowContent,
@@ -1880,6 +1897,7 @@ async function animateClawCatch(
     yoyo: true,
     ease: 'Sine.easeOut',
   });
+  playSfx('claw.lift');
   await Promise.all([
     playClawTween(scene, {
       targets: machine.leftArm,
@@ -1965,6 +1983,7 @@ async function animateClawCatch(
       ease: 'Sine.easeInOut',
     }),
   ]);
+  playSfx('claw.drop');
   await Promise.all([
     playClawTween(scene, {
       targets: machine.leftArm,
@@ -1998,7 +2017,7 @@ function celebrateClawMachine(
   machine: ClawMachine,
   rarity: CapsuleRarity
 ): Promise<void> {
-  playSfx('reward.reveal');
+  playSfx('claw.win');
   const container = machine.pullControl.container;
   const flash = scene.add
     .circle(0, -42, 276, RARITY_STYLE[rarity].color, 0.24)

@@ -45,6 +45,10 @@ const myBattlesSource = await readFile(
 const battleMusic = await readFile(
   new URL('../src/client/assets/scribbits-battle.mp3', import.meta.url)
 );
+const requestPlaybackSource = soundtrackSource.slice(
+  soundtrackSource.indexOf('const requestPlayback'),
+  soundtrackSource.indexOf('function retryPlayback')
+);
 
 test('home music tries Pocketful first, then randomizes later visits', () => {
   assert.match(soundtrackSource, /if \(!hasPlayedHomeTrack\) return 0/);
@@ -186,10 +190,7 @@ test('Home and Gallery share one uninterrupted idle track', () => {
     soundtrackSource,
     /if \(!audio\.getAttribute\('src'\) && source\) audio\.src = source/
   );
-  assert.match(
-    soundtrackSource,
-    /if \(document\.hidden\)[\s\S]{0,120}installRetryListeners\(\)/
-  );
+  assert.match(requestPlaybackSource, /installRetryListeners\(\)/);
   assert.match(
     soundtrackSource,
     /audio\.autoplay = startPlaying/
@@ -205,6 +206,10 @@ test('Home and Gallery share one uninterrupted idle track', () => {
   );
   assert.match(
     soundtrackSource,
+    /addEventListener\('click', retryPlayback, true\)/
+  );
+  assert.match(
+    soundtrackSource,
     /audio\.src = source;[\s\S]{0,700}if \(startPlaying\) requestPlayback\(\)/
   );
   assert.match(soundtrackSource, /attemptPlayback\(currentAudio\)/);
@@ -214,7 +219,7 @@ test('Home and Gallery share one uninterrupted idle track', () => {
   assert.match(gallerySource, /releaseHomeSoundtrack\(\)/);
 });
 
-test('startup music retries on normal interaction without a blocking prompt', () => {
+test('blocked startup music uses the completed loader as its trusted start gesture', () => {
   assert.match(
     preloaderSource,
     /create\(\): void \{[\s\S]{0,400}playHomeSoundtrack\(\)/
@@ -227,8 +232,26 @@ test('startup music retries on normal interaction without a blocking prompt', ()
     soundtrackSource,
     /addEventListener\('pointerdown', retryPlayback, true\)/
   );
-  assert.doesNotMatch(gameHtml, /game-soundtrack-prompt/);
-  assert.doesNotMatch(gameHtml, /START MUSIC/);
+  assert.ok(
+    requestPlaybackSource.indexOf('installRetryListeners();') <
+      requestPlaybackSource.indexOf('attemptPlayback(audio);')
+  );
+  assert.match(
+    soundtrackSource,
+    /function retryPlayback[\s\S]{0,260}currentAudio\.preload = 'auto';[\s\S]{0,100}currentAudio\.load\(\);[\s\S]{0,100}attemptPlayback\(currentAudio\)/
+  );
+  assert.match(soundtrackSource, /export const isHomeSoundtrackPlaying/);
+  assert.match(
+    soundtrackSource,
+    /scribbitsSoundtrackState = 'blocked'[\s\S]{0,120}installRetryListeners\(\)/
+  );
+  assert.match(soundtrackSource, /scribbitsSoundtrackState = 'playing'/);
+  assert.match(
+    preloaderSource,
+    /if \(!isHomeSoundtrackPlaying\(\)\)[\s\S]{0,400}setGameBootStart\(\(\) => \{[\s\S]{0,220}playHomeSoundtrack\(\)[\s\S]{0,160}markGameBootPhase\('awaiting-start'/
+  );
+  assert.match(gameHtml, /id="game-boot-start"/);
+  assert.match(gameHtml, /data-i18n="preloader\.start"/);
 });
 
 test('soundtrack errors recover once without treating transient stalls as fatal', () => {
@@ -270,5 +293,6 @@ test('soundtrack errors recover once without treating transient stalls as fatal'
     soundtrackSource,
     /error\.name === 'NotAllowedError'[\s\S]{0,120}installRetryListeners\(\)/
   );
+  assert.match(soundtrackSource, /error\.name === 'AbortError'/);
   assert.match(soundtrackSource, /recoverSoundtrackAudio\(audio\)/);
 });

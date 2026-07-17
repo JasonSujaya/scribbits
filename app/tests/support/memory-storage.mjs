@@ -32,6 +32,8 @@ export function createMemoryStorage(options = {}) {
   const versions = new Map();
   const mutations = [];
   let loseNextCommitReply = options.loseNextCommitReply === true;
+  let rejectNextWatchedTransaction =
+    options.rejectNextWatchedTransaction === true;
 
   const versionOf = (key) => versions.get(key) ?? 0;
   const markChanged = (key) => versions.set(key, versionOf(key) + 1);
@@ -215,6 +217,10 @@ export function createMemoryStorage(options = {}) {
           throw new Error('Memory transaction cannot execute.');
         }
         finished = true;
+        if (rejectNextWatchedTransaction) {
+          rejectNextWatchedTransaction = false;
+          return [];
+        }
         if (
           options.rejectMultipleTransactionDeletes === true &&
           queuedCommands.filter(({ method }) => method === 'del').length > 1
@@ -270,6 +276,14 @@ export function createMemoryStorage(options = {}) {
 
   return {
     storage,
+    failures: {
+      loseNextCommitReply() {
+        loseNextCommitReply = true;
+      },
+      rejectNextWatchedTransaction() {
+        rejectNextWatchedTransaction = true;
+      },
+    },
     strings,
     hashes,
     sortedSets,

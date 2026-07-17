@@ -1195,6 +1195,120 @@ function drawPowerUpIcon(
     return;
   }
 
+  if (key === 'v2-bank-shot') {
+    graphics.lineStyle(4 * scale, stroke, 1);
+    graphics.lineBetween(13 * scale, -15 * scale, 13 * scale, 15 * scale);
+    graphics.beginPath();
+    graphics.moveTo(-15 * scale, 9 * scale);
+    graphics.lineTo(9 * scale, 0);
+    graphics.lineTo(-5 * scale, -12 * scale);
+    graphics.strokePath();
+    graphics.fillTriangle(
+      -5 * scale,
+      -12 * scale,
+      4 * scale,
+      -10 * scale,
+      -1 * scale,
+      -3 * scale
+    );
+    return;
+  }
+
+  if (key === 'v2-returning-stroke') {
+    graphics.lineStyle(4 * scale, stroke, 1);
+    graphics.beginPath();
+    graphics.arc(0, 1 * scale, 13 * scale, -0.25, Math.PI * 1.35, false);
+    graphics.strokePath();
+    graphics.fillTriangle(
+      -13 * scale,
+      -6 * scale,
+      -4 * scale,
+      -8 * scale,
+      -8 * scale,
+      0
+    );
+    graphics.fillStyle(fill, 1);
+    graphics.fillTriangle(
+      8 * scale,
+      2 * scale,
+      17 * scale,
+      7 * scale,
+      7 * scale,
+      12 * scale
+    );
+    graphics.strokeTriangle(
+      8 * scale,
+      2 * scale,
+      17 * scale,
+      7 * scale,
+      7 * scale,
+      12 * scale
+    );
+    return;
+  }
+
+  if (key === 'v2-orbiting-nib' || key === 'v2-wider-halo') {
+    const radius = (key === 'v2-wider-halo' ? 15 : 11) * scale;
+    graphics.lineStyle(2.5 * scale, stroke, 0.8);
+    graphics.strokeCircle(0, 0, radius);
+    if (key === 'v2-wider-halo') graphics.strokeCircle(0, 0, 8 * scale);
+    graphics.fillStyle(stroke, 1).fillCircle(0, 0, 3 * scale);
+    const nibCount = key === 'v2-orbiting-nib' ? 4 : 3;
+    for (let index = 0; index < nibCount; index += 1) {
+      const angle = (index / nibCount) * Math.PI * 2 - Math.PI / 2;
+      const x = Math.cos(angle) * radius;
+      const y = Math.sin(angle) * radius;
+      graphics.fillStyle(fill, 1);
+      graphics.fillTriangle(
+        x + Math.cos(angle) * 5 * scale,
+        y + Math.sin(angle) * 5 * scale,
+        x + Math.cos(angle + 2.25) * 4 * scale,
+        y + Math.sin(angle + 2.25) * 4 * scale,
+        x + Math.cos(angle - 2.25) * 4 * scale,
+        y + Math.sin(angle - 2.25) * 4 * scale
+      );
+    }
+    return;
+  }
+
+  if (key === 'v2-paint-splash') {
+    graphics.fillTriangle(
+      -14 * scale,
+      -12 * scale,
+      6 * scale,
+      -2 * scale,
+      -9 * scale,
+      4 * scale
+    );
+    graphics.strokeTriangle(
+      -14 * scale,
+      -12 * scale,
+      6 * scale,
+      -2 * scale,
+      -9 * scale,
+      4 * scale
+    );
+    graphics.fillEllipse(3 * scale, 9 * scale, 28 * scale, 10 * scale);
+    graphics.strokeEllipse(3 * scale, 9 * scale, 28 * scale, 10 * scale);
+    graphics.fillCircle(12 * scale, -8 * scale, 3 * scale);
+    return;
+  }
+
+  if (key === 'v2-wet-paint') {
+    graphics.fillEllipse(0, 8 * scale, 31 * scale, 12 * scale);
+    graphics.strokeEllipse(0, 8 * scale, 31 * scale, 12 * scale);
+    graphics.beginPath();
+    graphics.moveTo(0, -16 * scale);
+    graphics.lineTo(9 * scale, -3 * scale);
+    graphics.arc(0, -3 * scale, 9 * scale, 0, Math.PI, false);
+    graphics.closePath();
+    graphics.fillPath();
+    graphics.strokePath();
+    graphics.lineBetween(-9 * scale, 8 * scale, -3 * scale, 8 * scale);
+    graphics.lineBetween(3 * scale, 8 * scale, 10 * scale, 8 * scale);
+    return;
+  }
+
   graphics.lineStyle(4 * scale, stroke, 1);
   graphics.beginPath();
   graphics.moveTo(-14 * scale, 0);

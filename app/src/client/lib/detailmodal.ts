@@ -24,17 +24,13 @@ import {
   retireScribbit as retireScribbitApi,
 } from './api';
 import { showToast } from '@devvit/web/client';
-import {
-  loadDrawing,
-  fitDrawing,
-  recordText,
-  levelOf,
-  xpProgress,
-} from './scribbits';
+import { loadDrawing, recordText, levelOf, xpProgress } from './scribbits';
 import { prefersReducedMotion, STAT_STYLES, TYPE, UI } from './theme';
 import { paperIcon, powerUpPaperIcon, type PaperIconKey } from './papericons';
 import { CanvasModalOverlay } from './overlay';
+import { bindPressInteractionEvents } from './pressinteraction';
 import { setSfxCue } from './sfx';
+import { LiveSprite } from './livesprite';
 import { maturityCountdownHeadline } from './maturitycountdown';
 import {
   label,
@@ -46,7 +42,8 @@ import {
   progressBar,
 } from './ui';
 
-const DEPTH = 2000;
+// Detail views must sit above persistent scene chrome such as the Home menu.
+const DEPTH = 4000;
 
 const POWER_UP_RARITY_STYLE: Readonly<
   Record<
@@ -95,6 +92,21 @@ const POWER_UP_CATALOG_SECTIONS = [
       'v1-masterpiece',
       'v1-endless-draft',
     ],
+  },
+  {
+    title: 'LONGSHOT TECHNIQUES',
+    subtitle: 'PROJECTILES + ROTATING NIBS',
+    ids: [
+      'v2-bank-shot',
+      'v2-returning-stroke',
+      'v2-orbiting-nib',
+      'v2-wider-halo',
+    ],
+  },
+  {
+    title: 'MAGE TECHNIQUES',
+    subtitle: 'COLOR BOLTS + PAINTFIELDS',
+    ids: ['v2-paint-splash', 'v2-wet-paint'],
   },
 ] as const satisfies readonly Readonly<{
   title: string;
@@ -291,10 +303,9 @@ export function openDetailModal(
     onActivate: () => close(),
   });
 
-  // --- Big framed art -------------------------------------------------------
-  // The drawing is the identity of a Scribbit, so it gets the strongest visual
-  // weight. At phone scale this stays close to the size used on Home instead of
-  // shrinking into a thumbnail above the metadata.
+  // --- Living character showcase -------------------------------------------
+  // The drawing is the identity of a Scribbit. Use the same living rig as Home
+  // so opening a character feels like meeting it, not inspecting a thumbnail.
   const artSize = 330;
   const artY = top + 40 + artSize / 2;
   const frame = scene.add.graphics();
@@ -303,12 +314,68 @@ export function openDetailModal(
   frame.lineStyle(4, UI.inkHex, 1);
   frame.strokeRect(-artSize / 2, artY - artSize / 2, artSize, artSize);
   card.add(frame);
+  const showcaseLayer = scene.add.container(0, 0);
+  card.add(showcaseLayer);
+  let showcaseLiveSprite: LiveSprite | null = null;
+  layer.once('destroy', () => {
+    showcaseLiveSprite?.destroy();
+    showcaseLiveSprite = null;
+  });
   void loadDrawing(scene, scribbit).then((key) => {
     if (!scene.scene.isActive() || !card.active) return;
-    // Child of the card container: local coords, scales + scrolls with the card,
-    // so it stays perfectly framed regardless of viewport scroll.
-    const img = fitDrawing(scene.add.image(0, artY, key), artSize - 12);
-    card.add(img);
+    showcaseLiveSprite = new LiveSprite(scene, 0, artY, key, {
+      displaySize: artSize - 18,
+      stats: scribbit.stats,
+      reduceMotion,
+    });
+    showcaseLayer.add(showcaseLiveSprite.container);
+    showcaseLiveSprite.breathe();
+  });
+  const playWithScribbit = (): void => showcaseLiveSprite?.jiggle();
+  const showcaseHitTarget = scene.add
+    .rectangle(0, artY, artSize, artSize, 0xffffff, 0.001)
+    .setInteractive({ useHandCursor: true });
+  bindPressInteractionEvents(
+    showcaseHitTarget,
+    {
+      press: () => frame.setAlpha(0.78),
+      release: () => frame.setAlpha(1),
+      activate: playWithScribbit,
+      pressOnHover: false,
+    },
+    { gameTarget: scene.input, shutdownTarget: scene.events }
+  );
+  setSfxCue(showcaseHitTarget, 'ui.tap');
+  card.add(showcaseHitTarget);
+
+  const playHintY = artY + artSize / 2 - 8;
+  const playHint = scene.add
+    .rectangle(0, playHintY, 172, 36, UI.gold, 0.96)
+    .setStrokeStyle(3, UI.inkHex, 0.75)
+    .setAngle(-1);
+  card.add([
+    playHint,
+    label(
+      scene,
+      0,
+      playHintY,
+      'TAP TO PLAY',
+      TYPE.caption * 0.72,
+      UI.ink,
+      true
+    ),
+  ]);
+  modalActions.add({
+    label: `Play with ${scribbit.name}`,
+    rect: {
+      x: cardX - artSize / 2,
+      y: cardY + artY - artSize / 2,
+      width: artSize,
+      height: artSize,
+    },
+    attributes: { 'data-sfx-cue': 'ui.tap' },
+    pointerPassthrough: true,
+    onActivate: playWithScribbit,
   });
 
   // Level coin on the art's corner.

@@ -16,6 +16,10 @@ import { isCombatRole, isCurrentCombatRole } from './roles';
 import { selectCombatRole, selectLegacyCombatRole } from './selection';
 import { isCombatUpgradeId, MAXIMUM_COMBAT_UPGRADES } from './upgrades';
 import { isPowerUpId, validatePowerUpBuild } from './powerups';
+import {
+  isSupportedBattleTranscriptVersion,
+  type SupportedBattleTranscriptVersion,
+} from './transcriptversion';
 import type {
   AbilityPhase,
   BattleCheckpoint,
@@ -27,15 +31,19 @@ import type {
   FighterResult,
   FighterSlot,
   FixedVector,
+  PaintZoneCheckpoint,
+  ProjectileCheckpoint,
 } from './types';
 
 const MAXIMUM_TRANSCRIPT_VALUE = 1_000_000;
-type LegacyTranscriptVersion = 1 | 2 | 3 | 4;
-type TranscriptVersion = LegacyTranscriptVersion | 5 | 6 | 7;
+type TranscriptVersion = SupportedBattleTranscriptVersion;
+type LegacyTranscriptVersion = Extract<TranscriptVersion, 1 | 2 | 3 | 4>;
 const MAXIMUM_CHECKPOINT_GAP = COMBAT_TICK_RATE / 2;
-// A battle may end while an authored telegraph, active phase, burn, or echo
-// still points a short distance beyond the final simulation tick.
-const MAXIMUM_SCHEDULE_AHEAD_TICKS = COMBAT_TICK_RATE * 2;
+// A battle may end while a persistent projectile or paint zone still points a
+// short distance beyond the final simulation tick. Ability schedules remain
+// capped at two seconds so malformed replays cannot park combat indefinitely.
+const MAXIMUM_SCHEDULE_AHEAD_TICKS = COMBAT_TICK_RATE * 4;
+const MAXIMUM_ABILITY_SCHEDULE_AHEAD_TICKS = COMBAT_TICK_RATE * 2;
 
 const isRecord = (value: unknown): value is Record<string, unknown> => {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -91,6 +99,7 @@ const isDamageSource = (value: unknown): value is DamageSource => {
     value === 'longshot_quill' ||
     value === 'gunner_shot' ||
     value === 'mage_bolt' ||
+    value === 'paint_zone' ||
     value === 'contact' ||
     value === 'ember_burn' ||
     value === 'power_up' ||
@@ -127,17 +136,15 @@ const isVector = (value: unknown): value is FixedVector => {
 
 const isScheduledTick = (
   value: unknown,
-  eventTick: unknown
+  eventTick: unknown,
+  maximumAheadTicks = MAXIMUM_SCHEDULE_AHEAD_TICKS
 ): value is number => {
   return (
     isBoundedInteger(eventTick, 0, COMBAT_MAXIMUM_TICKS) &&
     isBoundedInteger(
       value,
       eventTick,
-      Math.min(
-        MAXIMUM_TRANSCRIPT_VALUE,
-        eventTick + MAXIMUM_SCHEDULE_AHEAD_TICKS
-      )
+      Math.min(MAXIMUM_TRANSCRIPT_VALUE, eventTick + maximumAheadTicks)
     )
   );
 };
@@ -184,12 +191,20 @@ const TIMELINE_EVENT_FIELD_VALIDATORS = {
     isBoundedInteger(value.activationNumber, 1, MAXIMUM_TRANSCRIPT_VALUE) &&
     isVector(value.origin) &&
     isVector(value.aimDirection) &&
-    isScheduledTick(value.activatesAtTick, value.tick),
+    isScheduledTick(
+      value.activatesAtTick,
+      value.tick,
+      MAXIMUM_ABILITY_SCHEDULE_AHEAD_TICKS
+    ),
   ability_activated: (value) =>
     isFighterSlot(value.actor) &&
     isShapePowerId(value.power) &&
     isBoundedInteger(value.activationNumber, 1, MAXIMUM_TRANSCRIPT_VALUE) &&
-    isScheduledTick(value.activeUntilTick, value.tick),
+    isScheduledTick(
+      value.activeUntilTick,
+      value.tick,
+      MAXIMUM_ABILITY_SCHEDULE_AHEAD_TICKS
+    ),
   ability_finished: (value) =>
     isFighterSlot(value.actor) &&
     isShapePowerId(value.power) &&
@@ -214,6 +229,54 @@ const TIMELINE_EVENT_FIELD_VALIDATORS = {
     isVector(value.origin) &&
     isVector(value.target) &&
     typeof value.hit === 'boolean',
+  projectile_spawned: (value) =>
+    isNonEmptyText(value.projectileId, 120) &&
+    isFighterSlot(value.actor) &&
+    (value.projectile === 'quill' || value.projectile === 'color_bolt') &&
+    isBoundedInteger(value.attackNumber, 1, MAXIMUM_TRANSCRIPT_VALUE) &&
+    isBoundedInteger(value.shotNumber, 1, MAXIMUM_TRANSCRIPT_VALUE) &&
+    isVector(value.position) &&
+    isVector(value.velocity) &&
+    isBoundedInteger(value.radius, 1, MAXIMUM_TRANSCRIPT_VALUE) &&
+    isScheduledTick(value.expiresAtTick, value.tick),
+  projectile_bounced: (value) =>
+    isNonEmptyText(value.projectileId, 120) &&
+    isFighterSlot(value.actor) &&
+    (value.axis === 'x' || value.axis === 'y' || value.axis === 'both') &&
+    (value.reason === undefined ||
+      value.reason === 'natural_ricochet' ||
+      value.reason === 'bank_shot' ||
+      value.reason === 'returning_stroke') &&
+    isVector(value.position) &&
+    isVector(value.velocity),
+  projectile_hit: (value) =>
+    isNonEmptyText(value.projectileId, 120) &&
+    isFighterSlot(value.actor) &&
+    isFighterSlot(value.target) &&
+    value.actor !== value.target &&
+    (value.projectile === 'quill' || value.projectile === 'color_bolt') &&
+    isVector(value.position),
+  projectile_expired: (value) =>
+    isNonEmptyText(value.projectileId, 120) &&
+    isFighterSlot(value.actor) &&
+    isVector(value.position),
+  paint_zone_created: (value) =>
+    isNonEmptyText(value.zoneId, 120) &&
+    isFighterSlot(value.actor) &&
+    isVector(value.position) &&
+    isBoundedInteger(value.radius, 1, MAXIMUM_TRANSCRIPT_VALUE) &&
+    isScheduledTick(value.expiresAtTick, value.tick),
+  paint_zone_pulsed: (value) =>
+    isNonEmptyText(value.zoneId, 120) &&
+    isFighterSlot(value.actor) &&
+    isFighterSlot(value.target) &&
+    value.actor !== value.target &&
+    isVector(value.position) &&
+    isBoundedInteger(value.damage, 1, MAXIMUM_TRANSCRIPT_VALUE),
+  paint_zone_expired: (value) =>
+    isNonEmptyText(value.zoneId, 120) &&
+    isFighterSlot(value.actor) &&
+    isVector(value.position),
   damage: (value) =>
     isFighterSlot(value.sourceFighter) &&
     isFighterSlot(value.targetFighter) &&
@@ -386,19 +449,68 @@ const isFighterCheckpoint = (
   );
 };
 
+const isProjectileCheckpoint = (
+  value: unknown,
+  checkpointTick: number
+): value is ProjectileCheckpoint => {
+  return (
+    isRecord(value) &&
+    isNonEmptyText(value.projectileId, 120) &&
+    isFighterSlot(value.actor) &&
+    (value.projectile === 'quill' || value.projectile === 'color_bolt') &&
+    isVector(value.position) &&
+    isVector(value.velocity) &&
+    isBoundedInteger(value.radius, 1, MAXIMUM_TRANSCRIPT_VALUE) &&
+    isScheduledTick(value.expiresAtTick, checkpointTick)
+  );
+};
+
+const isPaintZoneCheckpoint = (
+  value: unknown,
+  checkpointTick: number
+): value is PaintZoneCheckpoint => {
+  return (
+    isRecord(value) &&
+    isNonEmptyText(value.zoneId, 120) &&
+    isFighterSlot(value.actor) &&
+    isVector(value.position) &&
+    isBoundedInteger(value.radius, 1, MAXIMUM_TRANSCRIPT_VALUE) &&
+    isScheduledTick(value.expiresAtTick, checkpointTick)
+  );
+};
+
 const isCheckpoint = (
   value: unknown,
   version: TranscriptVersion
 ): value is BattleCheckpoint => {
+  if (!isRecord(value)) return false;
+  const v8StateIsUsable =
+    version < 8 ||
+    (Array.isArray(value.projectiles) &&
+      value.projectiles.length <= 8 &&
+      value.projectiles.every((projectile) =>
+        isProjectileCheckpoint(
+          projectile,
+          typeof value.tick === 'number' ? value.tick : -1
+        )
+      ) &&
+      Array.isArray(value.paintZones) &&
+      value.paintZones.length <= 4 &&
+      value.paintZones.every((zone) =>
+        isPaintZoneCheckpoint(
+          zone,
+          typeof value.tick === 'number' ? value.tick : -1
+        )
+      ));
   return (
-    isRecord(value) &&
     Array.isArray(value.fighters) &&
     isBoundedInteger(value.tick, 0, COMBAT_MAXIMUM_TICKS) &&
     isBoundedInteger(value.arenaHalfWidth, 1, MAXIMUM_TRANSCRIPT_VALUE) &&
     isBoundedInteger(value.arenaHalfHeight, 1, MAXIMUM_TRANSCRIPT_VALUE) &&
     value.fighters.length === 2 &&
     isFighterCheckpoint(value.fighters[0], 'a', version) &&
-    isFighterCheckpoint(value.fighters[1], 'b', version)
+    isFighterCheckpoint(value.fighters[1], 'b', version) &&
+    v8StateIsUsable
   );
 };
 
@@ -446,7 +558,8 @@ const transcriptResultIsUsable = (
   }
   return battleResultFinishIsConsistent(
     value as BattleTranscript['result'],
-    COMBAT_MAXIMUM_TICKS
+    COMBAT_MAXIMUM_TICKS,
+    version >= 8
   );
 };
 
@@ -600,13 +713,7 @@ export function parseBattleTranscript(
 ): BattleTranscript | undefined {
   if (
     !isRecord(value) ||
-    (value.version !== 1 &&
-      value.version !== 2 &&
-      value.version !== 3 &&
-      value.version !== 4 &&
-      value.version !== 5 &&
-      value.version !== 6 &&
-      value.version !== 7) ||
+    !isSupportedBattleTranscriptVersion(value.version) ||
     value.tickRate !== COMBAT_TICK_RATE ||
     value.fixedPointScale !== FIXED_POINT_SCALE ||
     value.maxTicks !== COMBAT_MAXIMUM_TICKS ||

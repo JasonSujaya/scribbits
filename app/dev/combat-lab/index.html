@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="robots" content="noindex,nofollow" />
+    <title>Scribbits Combat Lab</title>
+  </head>
+  <body data-dev-tool="SCRIBBITS_COMBAT_LAB_DEV_ONLY">
+    <header class="lab-header">
+      <div>
+        <p class="eyebrow">Developer tool · authoritative simulator</p>
+        <h1>Combat Lab</h1>
+        <p class="lede">
+          Tune deterministic matchups without adding this interface to Devvit.
+        </p>
+      </div>
+      <form class="run-controls" id="run-controls">
+        <label for="seed">Battle seed</label>
+        <div class="seed-row">
+          <input id="seed" name="seed" value="combat-lab-001" maxlength="120" />
+          <button type="submit">Run simulation</button>
+        </div>
+        <p class="status" id="status" aria-live="polite"></p>
+      </form>
+    </header>
+
+    <main>
+      <section class="fighters" aria-label="Fighter configuration">
+        <article class="fighter fighter-a" id="fighter-a"></article>
+        <article class="fighter fighter-b" id="fighter-b"></article>
+      </section>
+
+      <section class="output empty" id="output" aria-live="polite">
+        <p>Run a simulation to inspect the result and sparse transcript.</p>
+      </section>
+    </main>
+
+    <script type="module" src="/main.ts"></script>
+  </body>
+</html>

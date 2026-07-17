@@ -23,6 +23,7 @@ import {
 } from './storage';
 
 const offerTtlSeconds = 8 * 24 * 60 * 60;
+const claimReceiptTtlSeconds = offerTtlSeconds;
 
 export const getPowerUpOfferKey = (
   userId: string,
@@ -32,33 +33,162 @@ export const getPowerUpOfferKey = (
 export const getPowerUpDiscoveriesKey = (userId: string): string =>
   `user:${userId}:power-up-discoveries`;
 
+export const getPowerUpClaimReceiptsKey = (
+  userId: string,
+  scribbitId: string
+): string => `user:${userId}:scribbit:${scribbitId}:power-up-claim-receipts`;
+
+const POWER_UP_DISCOVERIES_SCHEMA_VERSION = 1;
+
+export type StoredPowerUpDiscoveries =
+  | Readonly<{ status: 'missing' }>
+  | Readonly<{
+      status: 'valid';
+      storedIds: readonly string[];
+      recognizedIds: readonly PowerUpId[];
+      needsMigration: boolean;
+    }>
+  | Readonly<{ status: 'invalid' }>
+  | Readonly<{ status: 'unsupported'; schemaVersion: number }>;
+
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
 export const parsePowerUpDiscoveries = (
   storedValue: string | undefined
-): readonly PowerUpId[] => {
-  if (storedValue === undefined) return [];
+): StoredPowerUpDiscoveries => {
+  if (storedValue === undefined) return Object.freeze({ status: 'missing' });
   try {
     const value: unknown = JSON.parse(storedValue);
-    if (!Array.isArray(value)) return [];
-    const discoveries: PowerUpId[] = [];
-    value.forEach((candidate) => {
-      if (isPowerUpId(candidate) && !discoveries.includes(candidate)) {
-        discoveries.push(candidate);
+    let candidateIds: unknown;
+    let needsMigration = false;
+    if (Array.isArray(value)) {
+      candidateIds = value;
+      needsMigration = true;
+    } else {
+      if (
+        !isRecord(value) ||
+        typeof value.schemaVersion !== 'number' ||
+        !Number.isSafeInteger(value.schemaVersion)
+      ) {
+        return Object.freeze({ status: 'invalid' });
       }
+      if (value.schemaVersion !== POWER_UP_DISCOVERIES_SCHEMA_VERSION) {
+        return Object.freeze({
+          status: 'unsupported',
+          schemaVersion: value.schemaVersion,
+        });
+      }
+      candidateIds = value.ids;
+    }
+    if (
+      !Array.isArray(candidateIds) ||
+      candidateIds.some((candidate) => typeof candidate !== 'string')
+    ) {
+      return Object.freeze({ status: 'invalid' });
+    }
+    const storedIds = Object.freeze([...new Set(candidateIds)]);
+    const recognizedIds = Object.freeze(storedIds.filter(isPowerUpId));
+    return Object.freeze({
+      status: 'valid',
+      storedIds,
+      recognizedIds,
+      needsMigration,
     });
-    return Object.freeze(discoveries);
   } catch {
-    return [];
+    return Object.freeze({ status: 'invalid' });
   }
 };
+
+const serializePowerUpDiscoveries = (storedIds: readonly string[]): string =>
+  JSON.stringify({
+    schemaVersion: POWER_UP_DISCOVERIES_SCHEMA_VERSION,
+    ids: [...new Set(storedIds)],
+  });
+
+type PowerUpClaimReceipt = Readonly<{
+  schemaVersion: 1;
+  offerId: string;
+  selectedId: PowerUpId;
+  expectedPowerUpCount: number;
+  response: ChoosePowerUpResponse;
+}>;
+
+const parsePowerUpClaimReceipt = (
+  storedValue: string | undefined
+): PowerUpClaimReceipt | null => {
+  if (storedValue === undefined) return null;
+  try {
+    const value: unknown = JSON.parse(storedValue);
+    if (
+      !isRecord(value) ||
+      value.schemaVersion !== 1 ||
+      typeof value.offerId !== 'string' ||
+      !isPowerUpId(value.selectedId) ||
+      !Number.isSafeInteger(value.expectedPowerUpCount) ||
+      Number(value.expectedPowerUpCount) < 0 ||
+      !isRecord(value.response) ||
+      typeof value.response.scribbitId !== 'string' ||
+      value.response.selectedId !== value.selectedId ||
+      !Array.isArray(value.response.powerUpIds) ||
+      !validatePowerUpBuild(value.response.powerUpIds).valid ||
+      !Array.isArray(value.response.discoveredPowerUpIds) ||
+      value.response.discoveredPowerUpIds.some(
+        (powerUpId) => !isPowerUpId(powerUpId)
+      ) ||
+      value.response.powerUpIds.length !==
+        Number(value.expectedPowerUpCount) + 1 ||
+      value.response.powerUpIds.at(-1) !== value.selectedId ||
+      !value.response.discoveredPowerUpIds.includes(value.selectedId) ||
+      new Set(value.response.discoveredPowerUpIds).size !==
+        value.response.discoveredPowerUpIds.length
+    ) {
+      return null;
+    }
+    const response: ChoosePowerUpResponse = Object.freeze({
+      scribbitId: value.response.scribbitId,
+      selectedId: value.selectedId,
+      powerUpIds: Object.freeze([...value.response.powerUpIds]),
+      discoveredPowerUpIds: Object.freeze([
+        ...value.response.discoveredPowerUpIds,
+      ]),
+    });
+    return Object.freeze({
+      schemaVersion: 1,
+      offerId: value.offerId,
+      selectedId: value.selectedId,
+      expectedPowerUpCount: Number(value.expectedPowerUpCount),
+      response,
+    });
+  } catch {
+    return null;
+  }
+};
+
+const receiptMatchesRequest = (
+  receipt: PowerUpClaimReceipt,
+  request: ChoosePowerUpRequest,
+  scribbitId: string
+): boolean =>
+  receipt.offerId === request.offerId &&
+  receipt.selectedId === request.selectedId &&
+  receipt.expectedPowerUpCount === request.expectedPowerUpCount &&
+  receipt.response.scribbitId === scribbitId;
 
 export const loadPowerUpDiscoveries = async (
   storage: ArenaStorage,
   userId: string
-): Promise<readonly PowerUpId[]> =>
-  parsePowerUpDiscoveries(await storage.get(getPowerUpDiscoveriesKey(userId)));
+): Promise<readonly PowerUpId[]> => {
+  const storedValue = await storage.get(getPowerUpDiscoveriesKey(userId));
+  const parsed = parsePowerUpDiscoveries(storedValue);
+  if (parsed.status === 'missing') return Object.freeze([]);
+  if (parsed.status === 'valid') return parsed.recognizedIds;
+  throw new Error(
+    parsed.status === 'unsupported'
+      ? `Power-Up discoveries use unsupported schema ${parsed.schemaVersion}.`
+      : 'Stored Power-Up discoveries are invalid and were preserved.'
+  );
+};
 
 const isPowerUpOfferSource = (value: unknown): value is PowerUpOfferSource =>
   typeof value === 'string' &&
@@ -213,6 +343,10 @@ export const claimPowerUpOffer = async (
   const offerKey = getPowerUpOfferKey(input.userId, input.scribbitId);
   const scribbitKey = getScribbitKey(input.scribbitId);
   const discoveriesKey = getPowerUpDiscoveriesKey(input.userId);
+  const receiptsKey = getPowerUpClaimReceiptsKey(
+    input.userId,
+    input.scribbitId
+  );
   for (
     let attempt = 0;
     attempt < MAX_WATCH_TRANSACTION_ATTEMPTS;
@@ -220,13 +354,29 @@ export const claimPowerUpOffer = async (
   ) {
     let transaction: ArenaTransaction | undefined;
     try {
-      transaction = await storage.watch(offerKey, scribbitKey, discoveriesKey);
-      const [storedOffer, storedScribbit, storedDiscoveries] =
+      transaction = await storage.watch(
+        offerKey,
+        scribbitKey,
+        discoveriesKey,
+        receiptsKey
+      );
+      const [storedOffer, storedScribbit, storedDiscoveries, storedReceipt] =
         await Promise.all([
           storage.get(offerKey),
           storage.get(scribbitKey),
           storage.get(discoveriesKey),
+          storage.hGet(receiptsKey, input.request.offerId),
         ]);
+      const receipt = parsePowerUpClaimReceipt(storedReceipt);
+      if (storedReceipt !== undefined) {
+        await transaction.unwatch();
+        if (!receipt) {
+          throw new Error('Stored Power-Up claim receipt is invalid.');
+        }
+        return receiptMatchesRequest(receipt, input.request, input.scribbitId)
+          ? receipt.response
+          : null;
+      }
       const offer = parsePowerUpOffer(storedOffer);
       const scribbit = parseScribbit(storedScribbit);
       const ownedPowerUpIds = scribbit?.powerUpIds ?? [];
@@ -251,30 +401,61 @@ export const claimPowerUpOffer = async (
         ...scribbit,
         powerUpIds: nextPowerUpIds,
       };
-      const discoveredPowerUpIds = [
-        ...new Set([
-          ...parsePowerUpDiscoveries(storedDiscoveries),
-          input.request.selectedId,
-        ]),
+      const parsedDiscoveries = parsePowerUpDiscoveries(storedDiscoveries);
+      if (
+        parsedDiscoveries.status === 'invalid' ||
+        parsedDiscoveries.status === 'unsupported'
+      ) {
+        await transaction.unwatch();
+        throw new Error(
+          'Stored Power-Up discoveries are unreadable and were preserved.'
+        );
+      }
+      const storedDiscoveryIds =
+        parsedDiscoveries.status === 'valid' ? parsedDiscoveries.storedIds : [];
+      const nextStoredDiscoveryIds = [
+        ...new Set([...storedDiscoveryIds, input.request.selectedId]),
       ];
+      const discoveredPowerUpIds = nextStoredDiscoveryIds.filter(isPowerUpId);
+      const response: ChoosePowerUpResponse = Object.freeze({
+        scribbitId: scribbit.id,
+        selectedId: input.request.selectedId,
+        powerUpIds: Object.freeze(nextPowerUpIds),
+        discoveredPowerUpIds: Object.freeze(discoveredPowerUpIds),
+      });
+      const claimReceipt: PowerUpClaimReceipt = Object.freeze({
+        schemaVersion: 1,
+        offerId: offer.id,
+        selectedId: input.request.selectedId,
+        expectedPowerUpCount: input.request.expectedPowerUpCount,
+        response,
+      });
       await transaction.multi();
       await transaction.set(scribbitKey, serializeScribbit(nextScribbit));
       await transaction.del(offerKey);
       await transaction.set(
         discoveriesKey,
-        JSON.stringify(discoveredPowerUpIds)
+        serializePowerUpDiscoveries(nextStoredDiscoveryIds)
       );
+      await transaction.hSet(receiptsKey, {
+        [offer.id]: JSON.stringify(claimReceipt),
+      });
+      await transaction.expire(receiptsKey, claimReceiptTtlSeconds);
       const result = await transaction.exec();
-      if (Array.isArray(result) && result.length === 3) {
-        return Object.freeze({
-          scribbitId: scribbit.id,
-          selectedId: input.request.selectedId,
-          powerUpIds: Object.freeze(nextPowerUpIds),
-          discoveredPowerUpIds: Object.freeze(discoveredPowerUpIds),
-        });
+      if (Array.isArray(result) && result.length === 5) {
+        return response;
       }
     } catch (error) {
       await discardWatchedTransaction(transaction, 'Power-Up claim');
+      const committedReceipt = parsePowerUpClaimReceipt(
+        await storage.hGet(receiptsKey, input.request.offerId)
+      );
+      if (
+        committedReceipt &&
+        receiptMatchesRequest(committedReceipt, input.request, input.scribbitId)
+      ) {
+        return committedReceipt.response;
+      }
       if (attempt === MAX_WATCH_TRANSACTION_ATTEMPTS - 1) throw error;
     }
   }

@@ -36,6 +36,7 @@ import {
   openDetailModal,
 } from '../lib/detailmodal';
 import { LiveSprite } from '../lib/livesprite';
+import { resolveHeldWeaponVisual } from '../lib/heldweaponpresentation';
 import {
   barrierHitConnectsShapePowerActivation,
   buildShapePowerDrawCommands,
@@ -144,6 +145,7 @@ import {
   stopBattleSoundtrack,
 } from '../lib/soundtrack';
 import { playSfx } from '../lib/sfx';
+import { fitText } from '../lib/fittext';
 import { WeaponFxRenderer } from '../lib/weaponfxrenderer';
 import { RoleWeaponRenderer } from '../lib/roleweaponrenderer';
 import { trackProgressionEvent } from '../lib/progressionanalytics';
@@ -279,6 +281,33 @@ type PowerUpTimelineEvent = Extract<
   { kind: 'power_up_triggered' }
 >;
 
+type ProjectileTimelineEvent = Extract<
+  BattleTimelineEvent,
+  {
+    kind:
+      | 'projectile_spawned'
+      | 'projectile_bounced'
+      | 'projectile_hit'
+      | 'projectile_expired';
+  }
+>;
+
+type PaintZoneTimelineEvent = Extract<
+  BattleTimelineEvent,
+  {
+    kind: 'paint_zone_created' | 'paint_zone_pulsed' | 'paint_zone_expired';
+  }
+>;
+
+type ReplayProjectileVisual = {
+  projectile: 'quill' | 'color_bolt';
+  graphics: Phaser.GameObjects.Graphics;
+  expiresAtTick: number;
+  launchAngle: number;
+  travelAngle: number;
+  lastBounceReason?: 'natural_ricochet' | 'bank_shot' | 'returning_stroke';
+};
+
 // Battle theater — the demo moment. On WebGL, each submitted PNG is a Phaser
 // 4.2 Mesh2D Inkbody: 25 vertices breathe, telegraph its shape-powered move,
 // ripple on impact, and fold on KO. Canvas retains the 3x3 slice fallback.
@@ -333,6 +362,16 @@ export class Replay extends Scene {
   private previousPlaybackTick = -1;
   private arenaFloorEffects: Phaser.GameObjects.Graphics | null = null;
   private combatEffects: Phaser.GameObjects.Graphics | null = null;
+  private readonly projectileVisuals = new Map<
+    string,
+    ReplayProjectileVisual
+  >();
+  private readonly projectileImpactVisuals =
+    new Set<Phaser.GameObjects.Graphics>();
+  private readonly paintZoneVisuals = new Map<
+    string,
+    Phaser.GameObjects.Graphics
+  >();
   private readonly shapeEffects = new Map<'a' | 'b', ShapeEffect>();
   private impactHoldMilliseconds = 0;
   private cameraShakeCooldownMilliseconds = 0;
@@ -392,6 +431,7 @@ export class Replay extends Scene {
     this.previousPlaybackTick = -1;
     this.arenaFloorEffects = null;
     this.combatEffects = null;
+    this.clearCombatPrimitiveVisuals();
     this.shapeEffects.clear();
     this.impactHoldMilliseconds = 0;
     this.cameraShakeCooldownMilliseconds = 0;
@@ -468,6 +508,8 @@ export class Replay extends Scene {
     startBattleSoundtrack(this.soundboard.isEnabled());
     this.weaponFxRenderer = new WeaponFxRenderer(this, this.reduceMotion);
     this.roleWeaponRenderer = new RoleWeaponRenderer(this, this.reduceMotion);
+    this.game.canvas.dataset.activeProjectileTypes = 'none';
+    this.game.canvas.dataset.observedProjectileTypes = 'none';
     this.buildArena();
     this.buildSavedReplayExit();
     this.recordDebugPlaybackState('live');
@@ -494,6 +536,7 @@ export class Replay extends Scene {
       this.weaponFxRenderer = null;
       this.roleWeaponRenderer?.destroy();
       this.roleWeaponRenderer = null;
+      this.clearCombatPrimitiveVisuals();
       this.playbackRunning = false;
       this.shapeEffects.clear();
       this.hidePowerGhosts();
@@ -685,6 +728,12 @@ export class Replay extends Scene {
         depth: 5,
         stats: fighter.scribbit.stats,
         reduceMotion: this.reduceMotion,
+        ...(this.transcript && this.transcript.version >= 4
+          ? {
+              combatRole: fighter.combatRole,
+              heldWeapon: resolveHeldWeaponVisual(fighter.scribbit),
+            }
+          : {}),
       }
     );
     fighter.sprite = live;
@@ -1177,6 +1226,17 @@ export class Replay extends Scene {
       case 'role_attack':
         this.presentRoleAttackEvent(event);
         return;
+      case 'projectile_spawned':
+      case 'projectile_bounced':
+      case 'projectile_hit':
+      case 'projectile_expired':
+        this.presentProjectileEvent(event);
+        return;
+      case 'paint_zone_created':
+      case 'paint_zone_pulsed':
+      case 'paint_zone_expired':
+        this.presentPaintZoneEvent(event);
+        return;
       case 'damage':
       case 'healing':
       case 'burn_applied':
@@ -1205,7 +1265,7 @@ export class Replay extends Scene {
     const target = event.target ? this.fighterForSlot(event.target) : fighter;
     const outcome = event.bonusDamage
       ? `${fighter.scribbit.name.toUpperCase()} → ${target.scribbit.name.toUpperCase()} • +${event.bonusDamage} DMG`
-      : `${fighter.scribbit.name.toUpperCase()} • ${POWER_UP_CATALOG[event.powerUpId].effect.toUpperCase()}`;
+      : `${fighter.scribbit.name.toUpperCase()} • ACTIVE`;
     this.showFighterCombatRead(
       fighter,
       POWER_UP_CATALOG[event.powerUpId].name.toUpperCase(),
@@ -1326,10 +1386,17 @@ export class Replay extends Scene {
   }
 
   private presentRoleAttackEvent(event: RoleAttackTimelineEvent): void {
+    this.fighterForSlot(event.actor).sprite?.triggerRoleWeaponAttack(
+      event.attack
+    );
     this.weaponFxRenderer?.trigger(
       event.actor,
       event.hit ? 'impact' : 'active'
     );
+    const usesAuthoritativeProjectile =
+      (this.transcript?.version ?? 0) >= 8 &&
+      (event.attack === 'piercing_quill' || event.attack === 'color_bolt');
+    if (usesAuthoritativeProjectile) return;
     const target = this.projectTimelinePosition(event.target);
     this.roleWeaponRenderer?.trigger(
       event.actor,
@@ -1338,6 +1405,333 @@ export class Replay extends Scene {
       target.y,
       event.hit
     );
+  }
+
+  private projectTimelinePositionAtTick(
+    position: FixedVector,
+    tick: number
+  ): { x: number; y: number } {
+    if (!this.transcript) return this.projectTimelinePosition(position);
+    const frame = calculateReplayFrame(this.transcript, tick);
+    return this.projectReplayVector(position, frame);
+  }
+
+  private tweenProjectile(
+    visual: ReplayProjectileVisual,
+    position: FixedVector,
+    velocity: FixedVector,
+    eventTick: number
+  ): void {
+    if (!this.transcript) return;
+    this.tweens.killTweensOf(visual.graphics);
+    const remainingTicks = Math.max(1, visual.expiresAtTick - eventTick);
+    const destination = this.projectTimelinePositionAtTick(
+      {
+        x: position.x + velocity.x * remainingTicks,
+        y: position.y + velocity.y * remainingTicks,
+      },
+      visual.expiresAtTick
+    );
+    this.tweens.add({
+      targets: visual.graphics,
+      x: destination.x,
+      y: destination.y,
+      duration: (remainingTicks / this.transcript.tickRate) * 1_000,
+      ease: 'Linear',
+    });
+  }
+
+  private presentProjectileEvent(event: ProjectileTimelineEvent): void {
+    if (event.kind === 'projectile_spawned') {
+      const fighterPosition = this.projectTimelinePositionAtTick(
+        event.position,
+        event.tick
+      );
+      const launchAngle = Math.atan2(event.velocity.y, event.velocity.x);
+      const launchDistance =
+        this.battleLayout.fighterDisplaySize *
+        (event.projectile === 'quill' ? 0.34 : 0.28);
+      const position = {
+        x: fighterPosition.x + Math.cos(launchAngle) * launchDistance,
+        y: fighterPosition.y + Math.sin(launchAngle) * launchDistance,
+      };
+      const graphics = this.add
+        .graphics()
+        .setPosition(position.x, position.y)
+        .setDepth(13);
+      if (event.projectile === 'quill') {
+        graphics
+          .lineStyle(10, 0x66a9d8, 0.2)
+          .lineBetween(-46, 0, -21, 0)
+          .lineStyle(6, 0x2d211a, 1)
+          .lineBetween(-23, 0, 14, 0)
+          .lineStyle(3, 0x9a6238, 1)
+          .lineBetween(-22, 0, 14, 0)
+          .fillStyle(0x66a9d8, 1)
+          .fillTriangle(-24, 0, -15, -8, -13, -1)
+          .fillTriangle(-24, 0, -15, 8, -13, 1)
+          .lineStyle(2, 0x2d211a, 1)
+          .strokeTriangle(-24, 0, -15, -8, -13, -1)
+          .strokeTriangle(-24, 0, -15, 8, -13, 1)
+          .fillStyle(0xffe6aa, 1)
+          .fillTriangle(13, -7, 25, 0, 13, 7)
+          .strokeTriangle(13, -7, 25, 0, 13, 7)
+          .setRotation(launchAngle)
+          .setScale(1.14);
+      } else {
+        graphics
+          .lineStyle(7, 0xd997ff, 0.16)
+          .lineBetween(-38, 0, -19, 0)
+          .fillStyle(0xc76cff, 0.34)
+          .fillCircle(0, 0, 22)
+          .fillStyle(0xfff5d6, 0.96)
+          .fillCircle(0, 0, 10)
+          .lineStyle(4, 0x8c3ee8, 0.92)
+          .strokeCircle(0, 0, 17)
+          .setRotation(launchAngle)
+          .setScale(1.12);
+      }
+      const visual: ReplayProjectileVisual = {
+        projectile: event.projectile,
+        graphics,
+        expiresAtTick: event.expiresAtTick,
+        launchAngle,
+        travelAngle: launchAngle,
+      };
+      this.projectileVisuals.set(event.projectileId, visual);
+      this.tweenProjectile(visual, event.position, event.velocity, event.tick);
+      this.updateProjectileDebugState();
+      const observedProjectileTypes = new Set(
+        this.game.canvas.dataset.observedProjectileTypes === 'none'
+          ? []
+          : this.game.canvas.dataset.observedProjectileTypes?.split(',')
+      );
+      observedProjectileTypes.add(event.projectile);
+      this.game.canvas.dataset.observedProjectileTypes = [
+        ...observedProjectileTypes,
+      ]
+        .sort()
+        .join(',');
+      return;
+    }
+
+    const visual = this.projectileVisuals.get(event.projectileId);
+    if (!visual) return;
+    const position = this.projectTimelinePositionAtTick(
+      event.position,
+      event.tick
+    );
+    visual.graphics.setPosition(position.x, position.y);
+    if (event.kind === 'projectile_bounced') {
+      visual.travelAngle = Math.atan2(event.velocity.y, event.velocity.x);
+      if (event.reason !== undefined) {
+        visual.lastBounceReason = event.reason;
+      }
+      if (visual.projectile === 'quill') {
+        visual.graphics.setRotation(visual.travelAngle);
+      }
+      this.presentProjectileRicochet(position.x, position.y, event.reason);
+      this.tweenProjectile(visual, event.position, event.velocity, event.tick);
+      return;
+    }
+    this.tweens.killTweensOf(visual.graphics);
+    this.projectileVisuals.delete(event.projectileId);
+    this.updateProjectileDebugState();
+    if (event.kind === 'projectile_hit') {
+      this.lingerProjectileImpact(visual);
+      return;
+    }
+    if (visual.lastBounceReason === 'natural_ricochet') {
+      this.lingerSpentRicochet(visual);
+      return;
+    }
+    visual.graphics.destroy();
+  }
+
+  private lingerSpentRicochet(visual: ReplayProjectileVisual): void {
+    const graphics = visual.graphics;
+    this.projectileImpactVisuals.add(graphics);
+    this.tweens.add({
+      targets: graphics,
+      x: graphics.x + Math.cos(visual.travelAngle) * 64,
+      y: graphics.y + Math.sin(visual.travelAngle) * 64,
+      alpha: 0,
+      duration: this.reduceMotion ? 100 : 280,
+      ease: 'Quad.easeOut',
+      onComplete: () => {
+        this.projectileImpactVisuals.delete(graphics);
+        graphics.destroy();
+      },
+    });
+  }
+
+  private presentProjectileRicochet(
+    x: number,
+    y: number,
+    reason: Extract<
+      ProjectileTimelineEvent,
+      { kind: 'projectile_bounced' }
+    >['reason']
+  ): void {
+    const graphics = this.add.graphics().setPosition(x, y).setDepth(14);
+    this.projectileImpactVisuals.add(graphics);
+    graphics
+      .lineStyle(5, 0xfff5d6, 0.95)
+      .strokeCircle(0, 0, 20)
+      .lineStyle(4, reason === 'returning_stroke' ? 0xd997ff : 0x66a9d8, 0.9);
+    for (const angle of [-1.05, -0.35, 0.35, 1.05]) {
+      graphics.lineBetween(
+        Math.cos(angle) * 18,
+        Math.sin(angle) * 18,
+        Math.cos(angle) * 40,
+        Math.sin(angle) * 40
+      );
+    }
+    this.game.canvas.dataset.lastProjectileBounce = reason ?? 'legacy';
+    this.tweens.add({
+      targets: graphics,
+      alpha: 0,
+      scaleX: 1.35,
+      scaleY: 1.35,
+      duration: this.reduceMotion ? 100 : 300,
+      ease: 'Quad.easeOut',
+      onComplete: () => {
+        this.projectileImpactVisuals.delete(graphics);
+        graphics.destroy();
+      },
+    });
+  }
+
+  private lingerProjectileImpact(visual: ReplayProjectileVisual): void {
+    const graphics = visual.graphics;
+    this.projectileImpactVisuals.add(graphics);
+    graphics.setRotation(visual.launchAngle).setAlpha(1);
+    if (visual.projectile === 'quill') {
+      graphics
+        .lineStyle(4, 0xfff5d6, 0.9)
+        .strokeCircle(24, 0, 13)
+        .lineStyle(3, 0x66a9d8, 0.8)
+        .strokeCircle(24, 0, 20);
+    } else {
+      graphics
+        .fillStyle(0xd997ff, 0.2)
+        .fillCircle(0, 0, 34)
+        .lineStyle(5, 0xfff5d6, 0.82)
+        .strokeCircle(0, 0, 28);
+    }
+    this.tweens.add({
+      targets: graphics,
+      alpha: 0,
+      scaleX: visual.projectile === 'quill' ? 1.2 : 1.55,
+      scaleY: visual.projectile === 'quill' ? 1.2 : 1.55,
+      duration: this.reduceMotion ? 100 : 260,
+      ease: 'Quad.easeOut',
+      onComplete: () => {
+        this.projectileImpactVisuals.delete(graphics);
+        graphics.destroy();
+      },
+    });
+  }
+
+  private updateProjectileDebugState(): void {
+    this.game.canvas.dataset.activeProjectiles = String(
+      this.projectileVisuals.size
+    );
+    this.game.canvas.dataset.activeProjectileTypes =
+      [...this.projectileVisuals.values()]
+        .map((projectileVisual) => projectileVisual.projectile)
+        .sort()
+        .join(',') || 'none';
+  }
+
+  private presentPaintZoneEvent(event: PaintZoneTimelineEvent): void {
+    if (event.kind === 'paint_zone_created') {
+      const frame = this.transcript
+        ? calculateReplayFrame(this.transcript, event.tick)
+        : null;
+      const center = frame
+        ? this.projectReplayVector(event.position, frame)
+        : this.projectTimelinePosition(event.position);
+      const edgeX = frame
+        ? this.projectReplayVector(
+            { x: event.position.x + event.radius, y: event.position.y },
+            frame
+          )
+        : this.projectTimelinePosition({
+            x: event.position.x + event.radius,
+            y: event.position.y,
+          });
+      const edgeY = frame
+        ? this.projectReplayVector(
+            { x: event.position.x, y: event.position.y + event.radius },
+            frame
+          )
+        : this.projectTimelinePosition({
+            x: event.position.x,
+            y: event.position.y + event.radius,
+          });
+      const radiusX = Math.max(10, Math.abs(edgeX.x - center.x));
+      const radiusY = Math.max(6, Math.abs(edgeY.y - center.y));
+      const graphics = this.add
+        .graphics()
+        .setPosition(center.x, center.y)
+        .setDepth(3);
+      graphics
+        .fillStyle(0x9d55e8, 0.2)
+        .fillEllipse(0, 0, radiusX * 2, radiusY * 2)
+        .lineStyle(4, 0xd997ff, 0.6)
+        .strokeEllipse(0, 0, radiusX * 2, radiusY * 2);
+      this.paintZoneVisuals.set(event.zoneId, graphics);
+      this.game.canvas.dataset.activePaintZones = String(
+        this.paintZoneVisuals.size
+      );
+      return;
+    }
+    const graphics = this.paintZoneVisuals.get(event.zoneId);
+    if (!graphics) return;
+    if (event.kind === 'paint_zone_pulsed') {
+      this.tweens.killTweensOf(graphics);
+      graphics.setAlpha(1).setScale(1);
+      this.tweens.add({
+        targets: graphics,
+        alpha: 0.68,
+        scaleX: 1.035,
+        scaleY: 1.035,
+        duration: this.reduceMotion ? 90 : 180,
+        yoyo: true,
+        ease: 'Sine.easeOut',
+      });
+      return;
+    }
+    this.tweens.killTweensOf(graphics);
+    graphics.destroy();
+    this.paintZoneVisuals.delete(event.zoneId);
+    this.game.canvas.dataset.activePaintZones = String(
+      this.paintZoneVisuals.size
+    );
+  }
+
+  private clearCombatPrimitiveVisuals(): void {
+    for (const visual of this.projectileVisuals.values()) {
+      this.tweens.killTweensOf(visual.graphics);
+      visual.graphics.destroy();
+    }
+    for (const graphics of this.projectileImpactVisuals) {
+      this.tweens.killTweensOf(graphics);
+      graphics.destroy();
+    }
+    for (const graphics of this.paintZoneVisuals.values()) {
+      this.tweens.killTweensOf(graphics);
+      graphics.destroy();
+    }
+    this.projectileVisuals.clear();
+    this.projectileImpactVisuals.clear();
+    this.paintZoneVisuals.clear();
+    if (this.game?.canvas) {
+      this.game.canvas.dataset.activeProjectiles = '0';
+      this.game.canvas.dataset.activeProjectileTypes = 'none';
+      this.game.canvas.dataset.activePaintZones = '0';
+    }
   }
 
   private presentDamageAndStatusEvent(
@@ -2097,7 +2491,7 @@ export class Replay extends Scene {
         this.battleLayout.fighterPanelTop +
           this.battleLayout.fighterPanelHeight +
           72,
-        baseY + (laneIndex - 1) * 58
+        baseY + (laneIndex - 1) * 72
       )
     );
     const show = (): void => {
@@ -2117,13 +2511,51 @@ export class Replay extends Scene {
     detail: string,
     color: string
   ): void {
-    const stamp = label(this, x, y, `${title}\n${detail}`, 27, color, true)
+    const cardWidth = 258;
+    const cardHeight = 64;
+    const contentWidth = cardWidth - 38;
+    const stamp = this.add
+      .container(x, y)
       .setDepth(57)
-      .setLineSpacing(-5)
-      .setScale(this.reduceMotion ? 1 : 0.42);
-    stamp.setStroke('#fff7e8', 8);
+      .setScale(this.reduceMotion ? 1 : 0.82);
+    const backing = this.add
+      .rectangle(0, 0, cardWidth, cardHeight, UI.creamHex, 0.94)
+      .setStrokeStyle(3, UI.inkHex, 0.86);
+    const accent = this.add.rectangle(
+      -cardWidth / 2 + 8,
+      0,
+      7,
+      cardHeight - 16,
+      Phaser.Display.Color.HexStringToColor(color).color,
+      1
+    );
+    const titleLabel = label(
+      this,
+      -cardWidth / 2 + 21,
+      -14,
+      fitText(title.toUpperCase(), 25),
+      18,
+      color,
+      true
+    ).setOrigin(0, 0.5);
+    const detailLabel = label(
+      this,
+      -cardWidth / 2 + 21,
+      14,
+      fitText(detail.toUpperCase(), 34),
+      13,
+      UI.ink,
+      true
+    ).setOrigin(0, 0.5);
+    if (titleLabel.width > contentWidth) {
+      titleLabel.setScale(contentWidth / titleLabel.width);
+    }
+    if (detailLabel.width > contentWidth) {
+      detailLabel.setScale(contentWidth / detailLabel.width);
+    }
+    stamp.add([backing, accent, titleLabel, detailLabel]);
     if (this.reduceMotion) {
-      this.time.delayedCall(640, () => stamp.destroy());
+      this.time.delayedCall(640, () => stamp.destroy(true));
       return;
     }
     this.tweens.add({
@@ -2140,7 +2572,7 @@ export class Replay extends Scene {
           delay: 460,
           duration: 320,
           ease: 'Quad.easeIn',
-          onComplete: () => stamp.destroy(),
+          onComplete: () => stamp.destroy(true),
         });
       },
     });
@@ -2421,6 +2853,7 @@ export class Replay extends Scene {
     this.hidePowerGhosts();
     this.arenaFloorEffects?.clear();
     this.combatEffects?.clear();
+    this.clearCombatPrimitiveVisuals();
     this.clearIntroBanner();
   }
 
@@ -2957,7 +3390,8 @@ export class Replay extends Scene {
 
     const powerUpOffer = getReplayPowerUpOffer(this);
     const canChoosePowerUp =
-      Boolean(powerUpOffer) && this.isMine(winner.scribbit);
+      powerUpOffer?.scribbitId === winner.scribbit.id &&
+      this.isMine(winner.scribbit);
     const powerUpAction: ReplayPostFightAction | null = canChoosePowerUp
       ? Object.freeze({
           kind: 'powerUp',
@@ -2984,46 +3418,14 @@ export class Replay extends Scene {
         returnLabel: this.compactReturnButtonLabel(),
         rivalActionCopy,
         ...(primaryAction ? { primaryAction } : {}),
+        primaryRequired: primaryAction?.kind === 'powerUp',
         ...(firstChestAction && ownedFighter
           ? { onFirstChest: () => this.startFirstChestTrail(ownedFighter) }
           : {}),
-        onPowerUp: () => {
-          if (!powerUpOffer || this.powerUpDraft) return;
-          const ownedPowerUpCount = winner.scribbit.powerUpIds?.length ?? 0;
-          this.postFightActions?.setAccessibleVisible(false);
-          this.powerUpDraft = openPowerUpDraft(
-            this,
-            powerUpOffer,
-            ownedPowerUpCount,
-            (selectedId) => {
-              const nextPowerUpIds = [
-                ...(winner.scribbit.powerUpIds ?? []),
-                selectedId,
-              ];
-              winner.scribbit.powerUpIds = nextPowerUpIds;
-              const arena = getArena(this);
-              if (arena) {
-                setArena(this, {
-                  ...arena,
-                  discoveredPowerUpIds: [
-                    ...new Set([
-                      ...(arena.discoveredPowerUpIds ?? []),
-                      selectedId,
-                    ]),
-                  ],
-                  myScribbits: arena.myScribbits.map((scribbit) =>
-                    scribbit.id === winner.scribbit.id
-                      ? { ...scribbit, powerUpIds: [...nextPowerUpIds] }
-                      : scribbit
-                  ),
-                });
-              }
-              clearReplayPowerUpOffer(this);
-              this.powerUpDraft = null;
-              renderPostFightActions(firstChestAction, false);
-            }
-          );
-        },
+        onPowerUp: () =>
+          this.openRequiredPowerUpDraft(winner.scribbit, () =>
+            renderPostFightActions(firstChestAction, false)
+          ),
         onRivals: () => this.openRivalDraft(winner.scribbit),
         onBackContender: () => this.goBackEntrants(),
         onReplay: () => this.replayAgain(),
@@ -3047,6 +3449,66 @@ export class Replay extends Scene {
       });
     };
     renderPostFightActions(powerUpAction ?? firstChestAction, true);
+    if (powerUpAction) {
+      this.time.delayedCall(this.reduceMotion ? 0 : 480, () =>
+        this.openRequiredPowerUpDraft(winner.scribbit, () =>
+          renderPostFightActions(firstChestAction, false)
+        )
+      );
+    }
+  }
+
+  private openRequiredPowerUpDraft(
+    scribbit: Scribbit,
+    onClaimed: () => void
+  ): void {
+    const offer = getReplayPowerUpOffer(this);
+    if (
+      !offer ||
+      offer.scribbitId !== scribbit.id ||
+      this.powerUpDraft ||
+      !this.scene.isActive()
+    ) {
+      return;
+    }
+    trackProgressionEvent('power_up_offer_shown', {
+      scribbitId: scribbit.id,
+      source: offer.source,
+    });
+    this.postFightActions?.setAccessibleVisible(false);
+    this.powerUpDraft = openPowerUpDraft(
+      this,
+      offer,
+      scribbit.powerUpIds?.length ?? 0,
+      (selectedId) => {
+        trackProgressionEvent('power_up_chosen', {
+          scribbitId: scribbit.id,
+          source: offer.source,
+        });
+        const nextPowerUpIds = [...(scribbit.powerUpIds ?? []), selectedId];
+        scribbit.powerUpIds = nextPowerUpIds;
+        const arena = getArena(this);
+        if (arena) {
+          setArena(this, {
+            ...arena,
+            discoveredPowerUpIds: [
+              ...new Set([...(arena.discoveredPowerUpIds ?? []), selectedId]),
+            ],
+            pendingPowerUpOffers: (arena.pendingPowerUpOffers ?? []).filter(
+              (pendingOffer) => pendingOffer.id !== offer.id
+            ),
+            myScribbits: arena.myScribbits.map((ownedScribbit) =>
+              ownedScribbit.id === scribbit.id
+                ? { ...ownedScribbit, powerUpIds: [...nextPowerUpIds] }
+                : ownedScribbit
+            ),
+          });
+        }
+        clearReplayPowerUpOffer(this);
+        this.powerUpDraft = null;
+        onClaimed();
+      }
+    );
   }
 
   // Loss flow — no dead ends. Lifespan remaining + a server-authored rival
@@ -3126,32 +3588,57 @@ export class Replay extends Scene {
     ).setDepth(61);
     lifeLabel.setStroke(UI.cream, 5);
 
-    this.postFightActions?.destroy();
-    this.postFightActions = createPostFightActions(this, {
-      x: width / 2,
-      y: outcomeLayout.actionY,
-      accessibilityX: width / 2,
-      accessibilityY: outcomeLayout.actionY,
-      width: width - 70,
-      canChooseRival: actionEligibility.canChooseRival,
-      canBackContender: actionEligibility.canPickRumble,
-      canReplay: this.canReplaySavedReport(),
-      canShareClip: this.battleClipPromise !== null,
-      returnLabel: this.compactReturnButtonLabel(),
-      rivalActionCopy,
-      ...(firstChestAction
-        ? {
-            primaryAction: firstChestAction,
-            onFirstChest: () => this.startFirstChestTrail(mine),
-          }
-        : {}),
-      onRivals: () => this.openRivalDraft(mine),
-      onBackContender: () => this.goBackEntrants(),
-      onReplay: () => this.replayAgain(),
-      onShareClip: () => void this.shareRecordedBattleClip(),
-      onReturn: () => this.exit(),
-    });
-    this.postFightActions.container.setDepth(61);
+    const powerUpOffer = getReplayPowerUpOffer(this);
+    const powerUpAction: ReplayPostFightAction | null =
+      powerUpOffer?.scribbitId === mine.id
+        ? Object.freeze({
+            kind: 'powerUp',
+            label: 'CHOOSE POWER-UP',
+            accessibleLabel: 'Choose a new Power-Up for this Scribbit',
+            tone: 'gold',
+          })
+        : null;
+    const renderPostFightActions = (
+      primaryAction: ReplayPostFightAction | null
+    ): void => {
+      this.postFightActions?.destroy();
+      this.postFightActions = createPostFightActions(this, {
+        x: width / 2,
+        y: outcomeLayout.actionY,
+        accessibilityX: width / 2,
+        accessibilityY: outcomeLayout.actionY,
+        width: width - 70,
+        canChooseRival: actionEligibility.canChooseRival,
+        canBackContender: actionEligibility.canPickRumble,
+        canReplay: this.canReplaySavedReport(),
+        canShareClip: this.battleClipPromise !== null,
+        returnLabel: this.compactReturnButtonLabel(),
+        rivalActionCopy,
+        ...(primaryAction ? { primaryAction } : {}),
+        primaryRequired: primaryAction?.kind === 'powerUp',
+        ...(firstChestAction
+          ? { onFirstChest: () => this.startFirstChestTrail(mine) }
+          : {}),
+        onPowerUp: () =>
+          this.openRequiredPowerUpDraft(mine, () =>
+            renderPostFightActions(firstChestAction)
+          ),
+        onRivals: () => this.openRivalDraft(mine),
+        onBackContender: () => this.goBackEntrants(),
+        onReplay: () => this.replayAgain(),
+        onShareClip: () => void this.shareRecordedBattleClip(),
+        onReturn: () => this.exit(),
+      });
+      this.postFightActions.container.setDepth(61);
+    };
+    renderPostFightActions(powerUpAction ?? firstChestAction);
+    if (powerUpAction) {
+      this.time.delayedCall(this.reduceMotion ? 0 : 480, () =>
+        this.openRequiredPowerUpDraft(mine, () =>
+          renderPostFightActions(firstChestAction)
+        )
+      );
+    }
   }
 
   private compactReturnButtonLabel(): string {

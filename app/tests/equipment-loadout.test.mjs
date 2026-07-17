@@ -56,6 +56,22 @@ const discoverGear = async (storage, userId, gearId) => {
   });
 };
 
+const serializeV3EquippedScribbit = (scribbit, gearId, rank) =>
+  JSON.stringify({
+    ...JSON.parse(
+      scribbitStore.serializeScribbit({
+        ...scribbit,
+        equipmentLoadout: {
+          ...equipment.createEmptyEquipmentLoadout(),
+          weapon: [gearId, null],
+        },
+        gearRanks: { [gearId]: rank },
+      })
+    ),
+    schemaVersion: 3,
+    gearRanks: { [gearId]: rank },
+  });
+
 test('old Scribbits migrate to an empty loadout and new births start empty', () => {
   const oldScribbit = createOldStoredScribbit();
   const migrated = scribbitStore.parseScribbit(JSON.stringify(oldScribbit));
@@ -327,7 +343,7 @@ test('equip recovers an EXEC reply loss and an exact retry stays idempotent', as
   );
 });
 
-test('a forged rank refreshes every living Scribbit wearing reusable Gear', async () => {
+test('living Scribbits derive reusable Gear rank from inventory', async () => {
   const memory = createMemoryStorage();
   const userId = 'forge-rank-player';
   await discoverGear(memory.storage, userId, 'tiny-sword');
@@ -360,18 +376,9 @@ test('a forged rank refreshes every living Scribbit wearing reusable Gear', asyn
   await createEquippedScribbit('forge-rank-one');
   await createEquippedScribbit('forge-rank-two');
 
-  await scribbitStore.refreshEquippedGearRankForUser(
-    memory.storage,
-    userId,
-    'tiny-sword',
-    3
-  );
-  await scribbitStore.refreshEquippedGearRankForUser(
-    memory.storage,
-    userId,
-    'tiny-sword',
-    3
-  );
+  await memory.storage.hSet(inkStore.getInventoryKey(userId), {
+    [inkStore.getInventoryGearRankField('tiny-sword')]: '3',
+  });
 
   for (const scribbitId of ['forge-rank-one', 'forge-rank-two']) {
     const refreshed = await scribbitStore.loadScribbit(
@@ -379,7 +386,279 @@ test('a forged rank refreshes every living Scribbit wearing reusable Gear', asyn
       scribbitId
     );
     assert.equal(refreshed?.gearRanks['tiny-sword'], 3);
+    const stored = JSON.parse(
+      await memory.storage.get(scribbitStore.getScribbitKey(scribbitId))
+    );
+    assert.equal(
+      stored?.gearRanks['tiny-sword'],
+      undefined,
+      'living records must not copy reusable rank out of inventory'
+    );
   }
+});
+
+test('returning-player migration rewrites living v3 records exactly once', async () => {
+  const memory = createMemoryStorage();
+  const userId = 'returning-v3-player';
+  const scribbit = scribbitStore.createScribbit({
+    id: 'returning-v3-scribbit',
+    draft: {
+      name: 'Old Gear Moth',
+      element: 'storm',
+      stats: { chonk: 25, spike: 25, zip: 25, charm: 25 },
+      accessories: [],
+    },
+    artist: userId,
+    imageUrl: '/api/drawing/returning-v3-scribbit',
+    day: 4,
+  });
+  const v3Bytes = serializeV3EquippedScribbit(scribbit, 'tiny-sword', 3);
+  await memory.storage.set(scribbitStore.getScribbitKey(scribbit.id), v3Bytes);
+  await memory.storage.set(
+    scribbitStore.getScribbitOwnerKey(scribbit.id),
+    userId
+  );
+  await memory.storage.zAdd(scribbitStore.getUserAliveScribbitsKey(userId), {
+    member: scribbit.id,
+    score: scribbit.bornDay,
+  });
+  await memory.storage.hSet(inkStore.getInventoryKey(userId), {
+    'tiny-sword': '7',
+    [inkStore.getInventoryDiscoveryField('tiny-sword')]: '1',
+  });
+
+  assert.equal(
+    await scribbitStore.migrateLivingScribbitsForUser(memory.storage, userId),
+    1
+  );
+  assert.equal(
+    await scribbitStore.migrateLivingScribbitsForUser(memory.storage, userId),
+    0
+  );
+  const migratedRecord = JSON.parse(
+    await memory.storage.get(scribbitStore.getScribbitKey(scribbit.id))
+  );
+  assert.equal(migratedRecord.schemaVersion, 4);
+  assert.deepEqual(migratedRecord.gearRanks, {});
+  assert.deepEqual(migratedRecord.equipmentLoadout.weapon, [
+    'tiny-sword',
+    null,
+  ]);
+  assert.equal(
+    await memory.storage.hGet(
+      inkStore.getInventoryKey(userId),
+      inkStore.getInventoryGearRankField('tiny-sword')
+    ),
+    '3',
+    'the v3 reusable rank must be promoted before its Scribbit copy is removed'
+  );
+  assert.equal(
+    await memory.storage.hGet(inkStore.getInventoryKey(userId), 'tiny-sword'),
+    '7',
+    'rank migration must not spend or mint Forge copies'
+  );
+  const hydrated = await scribbitStore.loadScribbit(
+    memory.storage,
+    scribbit.id
+  );
+  assert.equal(hydrated?.gearRanks['tiny-sword'], 3);
+});
+
+test('v4 migration preserves a higher concurrent inventory rank', async () => {
+  const memory = createMemoryStorage();
+  const userId = 'migration-rank-race-player';
+  const scribbit = scribbitStore.createScribbit({
+    id: 'migration-rank-race-scribbit',
+    draft: {
+      name: 'Rank Race',
+      element: 'storm',
+      stats: { chonk: 25, spike: 25, zip: 25, charm: 25 },
+      accessories: [],
+    },
+    artist: userId,
+    imageUrl: '/api/drawing/migration-rank-race-scribbit',
+    day: 4,
+  });
+  const scribbitKey = scribbitStore.getScribbitKey(scribbit.id);
+  const inventoryKey = inkStore.getInventoryKey(userId);
+  const rankField = inkStore.getInventoryGearRankField('tiny-sword');
+  await memory.storage.set(
+    scribbitKey,
+    serializeV3EquippedScribbit(scribbit, 'tiny-sword', 3)
+  );
+  await memory.storage.set(scribbitStore.getScribbitOwnerKey(scribbit.id), userId);
+  await memory.storage.zAdd(scribbitStore.getUserAliveScribbitsKey(userId), {
+    member: scribbit.id,
+    score: scribbit.bornDay,
+  });
+
+  const originalWatch = memory.storage.watch.bind(memory.storage);
+  let higherRankInjected = false;
+  memory.storage.watch = async (...keys) => {
+    const transaction = await originalWatch(...keys);
+    if (!higherRankInjected && keys.includes(scribbitKey)) {
+      const executeTransaction = transaction.exec.bind(transaction);
+      transaction.exec = async () => {
+        higherRankInjected = true;
+        await memory.storage.hSet(inventoryKey, { [rankField]: '4' });
+        return await executeTransaction();
+      };
+    }
+    return transaction;
+  };
+
+  assert.equal(
+    await scribbitStore.migrateLivingScribbitsForUser(memory.storage, userId),
+    1
+  );
+  assert.equal(higherRankInjected, true);
+  assert.equal(await memory.storage.hGet(inventoryKey, rankField), '4');
+  assert.equal(
+    (await scribbitStore.loadScribbit(memory.storage, scribbit.id))?.gearRanks[
+      'tiny-sword'
+    ],
+    4
+  );
+});
+
+test('direct equip promotes v3 rank before rewriting the Scribbit', async () => {
+  const memory = createMemoryStorage();
+  const userId = 'direct-equip-migration-player';
+  const scribbit = scribbitStore.createScribbit({
+    id: 'direct-equip-migration-scribbit',
+    draft: {
+      name: 'Direct Equip',
+      element: 'storm',
+      stats: { chonk: 25, spike: 25, zip: 25, charm: 25 },
+      accessories: [],
+    },
+    artist: userId,
+    imageUrl: '/api/drawing/direct-equip-migration-scribbit',
+    day: 4,
+  });
+  const inventoryKey = inkStore.getInventoryKey(userId);
+  await memory.storage.set(
+    scribbitStore.getScribbitKey(scribbit.id),
+    serializeV3EquippedScribbit(scribbit, 'tiny-sword', 3)
+  );
+  await memory.storage.set(scribbitStore.getScribbitOwnerKey(scribbit.id), userId);
+  await memory.storage.hSet(inventoryKey, {
+    [inkStore.getInventoryDiscoveryField('tiny-sword')]: '1',
+  });
+
+  const result = await scribbitStore.equipGearForScribbit(
+    memory.storage,
+    userId,
+    {
+      scribbitId: scribbit.id,
+      category: 'weapon',
+      slotIndex: 1,
+      gearId: 'tiny-sword',
+    }
+  );
+  assert.equal(result.status, 'updated');
+  assert.deepEqual(result.scribbit.equipmentLoadout.weapon, [
+    null,
+    'tiny-sword',
+  ]);
+  assert.equal(result.scribbit.gearRanks['tiny-sword'], 3);
+  assert.equal(
+    await memory.storage.hGet(
+      inventoryKey,
+      inkStore.getInventoryGearRankField('tiny-sword')
+    ),
+    '3'
+  );
+  const stored = JSON.parse(
+    await memory.storage.get(scribbitStore.getScribbitKey(scribbit.id))
+  );
+  assert.equal(stored.schemaVersion, 4);
+  assert.deepEqual(stored.gearRanks, {});
+});
+
+test('v4 migration recovers a committed reply loss without spending copies', async () => {
+  const memory = createMemoryStorage();
+  const userId = 'migration-reply-loss-player';
+  const scribbit = scribbitStore.createScribbit({
+    id: 'migration-reply-loss-scribbit',
+    draft: {
+      name: 'Reply Loss',
+      element: 'storm',
+      stats: { chonk: 25, spike: 25, zip: 25, charm: 25 },
+      accessories: [],
+    },
+    artist: userId,
+    imageUrl: '/api/drawing/migration-reply-loss-scribbit',
+    day: 4,
+  });
+  const inventoryKey = inkStore.getInventoryKey(userId);
+  await memory.storage.set(
+    scribbitStore.getScribbitKey(scribbit.id),
+    serializeV3EquippedScribbit(scribbit, 'tiny-sword', 3)
+  );
+  await memory.storage.set(scribbitStore.getScribbitOwnerKey(scribbit.id), userId);
+  await memory.storage.zAdd(scribbitStore.getUserAliveScribbitsKey(userId), {
+    member: scribbit.id,
+    score: scribbit.bornDay,
+  });
+  await memory.storage.hSet(inventoryKey, { 'tiny-sword': '8' });
+  memory.failures.loseNextCommitReply();
+
+  assert.equal(
+    await scribbitStore.migrateLivingScribbitsForUser(memory.storage, userId),
+    1
+  );
+  assert.equal(
+    await memory.storage.hGet(
+      inventoryKey,
+      inkStore.getInventoryGearRankField('tiny-sword')
+    ),
+    '3'
+  );
+  assert.equal(await memory.storage.hGet(inventoryKey, 'tiny-sword'), '8');
+  assert.equal(
+    JSON.parse(
+      await memory.storage.get(scribbitStore.getScribbitKey(scribbit.id))
+    ).schemaVersion,
+    4
+  );
+});
+
+test('v4 migration preserves malformed inventory and legacy bytes', async () => {
+  const memory = createMemoryStorage();
+  const userId = 'migration-corrupt-rank-player';
+  const scribbit = scribbitStore.createScribbit({
+    id: 'migration-corrupt-rank-scribbit',
+    draft: {
+      name: 'Corrupt Rank',
+      element: 'storm',
+      stats: { chonk: 25, spike: 25, zip: 25, charm: 25 },
+      accessories: [],
+    },
+    artist: userId,
+    imageUrl: '/api/drawing/migration-corrupt-rank-scribbit',
+    day: 4,
+  });
+  const scribbitKey = scribbitStore.getScribbitKey(scribbit.id);
+  const v3Bytes = serializeV3EquippedScribbit(scribbit, 'tiny-sword', 3);
+  const inventoryKey = inkStore.getInventoryKey(userId);
+  const rankField = inkStore.getInventoryGearRankField('tiny-sword');
+  await memory.storage.set(scribbitKey, v3Bytes);
+  await memory.storage.set(scribbitStore.getScribbitOwnerKey(scribbit.id), userId);
+  await memory.storage.zAdd(scribbitStore.getUserAliveScribbitsKey(userId), {
+    member: scribbit.id,
+    score: scribbit.bornDay,
+  });
+  await memory.storage.hSet(inventoryKey, { [rankField]: 'broken' });
+  const mutationCountBeforeMigration = memory.mutations.length;
+
+  await assert.rejects(
+    scribbitStore.migrateLivingScribbitsForUser(memory.storage, userId),
+    /invalid and was preserved/
+  );
+  assert.equal(await memory.storage.get(scribbitKey), v3Bytes);
+  assert.equal(await memory.storage.hGet(inventoryKey, rankField), 'broken');
+  assert.equal(memory.mutations.length, mutationCountBeforeMigration);
 });
 
 test('expiry retains the Scribbit embedded equipment loadout', () => {
@@ -418,9 +697,9 @@ test('the production API exposes the exact equip Gear route contract', async () 
     inventoryRouteSource,
     /return c\.json<Scribbit>\(result\.scribbit\)/
   );
-  assert.match(
+  assert.doesNotMatch(
     inventoryRouteSource,
-    /await refreshEquippedGearRankForUser\([\s\S]*?result\.response\.toRank[\s\S]*?\);/,
-    'the forge route must durably refresh every equipped Scribbit before replying'
+    /refreshEquippedGearRankForUser/,
+    'the forge route must leave reusable rank authority in inventory'
   );
 });

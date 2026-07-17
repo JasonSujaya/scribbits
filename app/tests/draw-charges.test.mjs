@@ -30,8 +30,12 @@ const privacySource = await readFile(
   new URL('../src/server/core/privacy.ts', import.meta.url),
   'utf8'
 );
+const mockSource = await readFile(
+  new URL('../scripts/dev-mock.mjs', import.meta.url),
+  'utf8'
+);
 
-test('a new player starts with three Draw Charges and no refill timer', async () => {
+test('a new player starts with four Draw Charges and no refill timer', async () => {
   const memory = createMemoryStorage();
   const projection = await drawCharges.loadDrawCharges(
     memory.storage,
@@ -52,6 +56,13 @@ test('a new player starts with three Draw Charges and no refill timer', async ()
   });
 });
 
+test('resetting the fresh mock restores a full Draw Charge meter', () => {
+  assert.match(
+    mockSource,
+    /const resetFreshPreview[\s\S]{0,1200}memory\.drawChargesByPreviewMode\.fresh = \{\s*available: DRAW_CHARGE_CAPACITY,\s*capacity: DRAW_CHARGE_CAPACITY,\s*nextRefreshAt: null,\s*\}/
+  );
+});
+
 test('consumption starts an eight-hour refill without banking full-meter time', () => {
   const oldFullRecord = {
     available: arena.DRAW_CHARGE_CAPACITY,
@@ -63,15 +74,15 @@ test('consumption starts an eight-hour refill without banking full-meter time', 
   assert.deepEqual(plan, {
     status: 'consumed',
     state: {
-      available: 2,
-      capacity: 3,
+      available: 3,
+      capacity: 4,
       nextRefreshAt: consumedAt + refillInterval,
     },
-    record: { available: 2, refillAnchorAt: consumedAt },
+    record: { available: 3, refillAnchorAt: consumedAt },
   });
 });
 
-test('charges refill one per interval, preserve partial progress, and cap at three', () => {
+test('charges refill one per interval, preserve partial progress, and cap at four', () => {
   const emptyRecord = { available: 0, refillAnchorAt: startTime };
 
   const beforeBoundary = drawCharges.projectDrawCharges(
@@ -88,7 +99,7 @@ test('charges refill one per interval, preserve partial progress, and cap at thr
   assert.deepEqual(afterOneAndAHalfIntervals, {
     state: {
       available: 1,
-      capacity: 3,
+      capacity: 4,
       nextRefreshAt: startTime + refillInterval * 2,
     },
     record: {
@@ -101,9 +112,9 @@ test('charges refill one per interval, preserve partial progress, and cap at thr
     emptyRecord,
     startTime + refillInterval * 10
   );
-  assert.equal(capped.state.available, 3);
+  assert.equal(capped.state.available, 4);
   assert.equal(capped.state.nextRefreshAt, null);
-  assert.equal(capped.record.refillAnchorAt, startTime + refillInterval * 3);
+  assert.equal(capped.record.refillAnchorAt, startTime + refillInterval * 4);
 });
 
 test('an empty meter cannot consume and keeps its existing refill progress', () => {
@@ -117,7 +128,7 @@ test('an empty meter cannot consume and keeps its existing refill progress', () 
     status: 'unavailable',
     state: {
       available: 0,
-      capacity: 3,
+      capacity: 4,
       nextRefreshAt: startTime + refillInterval,
     },
     record,
@@ -139,7 +150,10 @@ test('stored Draw Charges load through the same lazy projection', async () => {
     startTime + refillInterval * 2
   );
   assert.equal(projection.state.available, 3);
-  assert.equal(projection.state.nextRefreshAt, null);
+  assert.equal(
+    projection.state.nextRefreshAt,
+    startTime + refillInterval * 3
+  );
 });
 
 test('invalid persisted counts fail closed instead of granting charges', async () => {

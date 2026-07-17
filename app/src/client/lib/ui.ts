@@ -1085,10 +1085,7 @@ function wireTab(
     {
       press,
       release,
-      activate: () => {
-        playSfx('ui.tab');
-        onClick();
-      },
+      activate: onClick,
       pressOnHover: false,
     },
     {
@@ -1213,6 +1210,10 @@ export function appTabBar(
     const x = -barWidth / 2 + slotWidth * (index + 0.5);
     const isActive = tab.key === active;
     const isLocked = tab.locked === true;
+    const activateTab = (): void => {
+      playSfx('ui.tab');
+      tab.onClick();
+    };
     const slot = scene.add.container(x, 0);
     if (isActive) {
       slot.add(activeDockTabChip(scene, slotWidth - 14, barHeight - 26));
@@ -1262,7 +1263,7 @@ export function appTabBar(
     );
     if (!isLocked) hit.setInteractive({ useHandCursor: !isActive });
     container.add([slot, hit]);
-    if (!isActive && !isLocked) wireTab(hit, slot, tab.onClick, scene);
+    if (!isActive && !isLocked) wireTab(hit, slot, activateTab, scene);
     const nativeTab = actionOverlay.add({
       label: tab.label,
       rect: {
@@ -1277,7 +1278,7 @@ export function appTabBar(
       },
       pointerPassthrough: true,
       enabled: !isLocked,
-      onActivate: isActive ? () => undefined : tab.onClick,
+      onActivate: isActive ? () => undefined : activateTab,
     });
     if (isActive) nativeTab.setAttribute('aria-current', 'page');
   });

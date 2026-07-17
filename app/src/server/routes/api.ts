@@ -33,6 +33,7 @@ import {
 } from '../../shared/sparreward';
 import {
   CAPSULE_FIRST_DAILY_COST,
+  DRAW_CHARGE_CAPACITY,
   getScribbitLifecycleStage,
   INK_REWARDS,
   PLAYER_MUTATION_BUSY_MESSAGE,
@@ -201,6 +202,7 @@ import {
   isScribbitOwnedByUser,
   loadScribbit,
   loadScribbits,
+  migrateLivingScribbitsForUser,
   MAXIMUM_DRAWING_SUBMISSION_BODY_BYTES,
   hasUserCreatedScribbit,
   readHasUserCreatedScribbit,
@@ -772,20 +774,24 @@ const finalizeSparBattle = async (
     }
   }
 
-  const rewardedScribbit =
-    input.report.winner === 'a'
-      ? await loadScribbit(redis, input.challengerId)
-      : undefined;
-  const powerUpOffer = rewardedScribbit
+  const offerScribbit = await loadScribbit(redis, input.challengerId);
+  const playerWon = input.report.winner === 'a';
+  const powerUpOffer = offerScribbit
     ? await getOrCreatePowerUpOffer(redis, {
         userId: input.userId,
-        scribbit: rewardedScribbit,
+        scribbit: offerScribbit,
         reportId: input.report.id,
         source: input.report.rivalRun
           ? input.report.rivalRun.status === 'complete'
-            ? 'rival-run-final-win'
-            : 'rival-run-win'
-          : 'exhibition-win',
+            ? playerWon
+              ? 'rival-run-final-win'
+              : 'rival-run-final-loss'
+            : playerWon
+              ? 'rival-run-win'
+              : 'rival-run-loss'
+          : playerWon
+            ? 'exhibition-win'
+            : 'exhibition-loss',
         createdAtMs: completedAtMilliseconds,
         currentArenaDay: input.report.day,
       })
@@ -902,6 +908,9 @@ registerPlayerMutatingGet('/arena', async (c) => {
     // forecast failure is handled while the route continues independent work.
     void Promise.allSettled([seasonPromise, startupLoads.forecast]);
     const player = await startupLoads.player;
+    if (player) {
+      await migrateLivingScribbitsForUser(redis, player.userId);
+    }
     let myScribbits: Scribbit[] = [];
     let pendingMaturityScribbitIds: string[] = [];
     let discoveredPowerUpIds: ArenaState['discoveredPowerUpIds'] = [];
@@ -927,7 +936,7 @@ registerPlayerMutatingGet('/arena', async (c) => {
     let myDrawingSupplies: Record<string, number> = {};
     let drawCharges: ArenaState['drawCharges'] = {
       available: 0,
-      capacity: 3,
+      capacity: DRAW_CHARGE_CAPACITY,
       nextRefreshAt: null,
     };
     let paintBucket = getPaintBucketState();
@@ -2654,16 +2663,13 @@ api.post('/boss-challenge', async (c) => {
       challenger.id,
       founderChronicle
     );
-    const rewardedChallenger =
-      report.winner === 'a'
-        ? await loadScribbit(redis, challenger.id)
-        : undefined;
-    const powerUpOffer = rewardedChallenger
+    const offerChallenger = await loadScribbit(redis, challenger.id);
+    const powerUpOffer = offerChallenger
       ? await getOrCreatePowerUpOffer(redis, {
           userId: player.userId,
-          scribbit: rewardedChallenger,
+          scribbit: offerChallenger,
           reportId: report.id,
-          source: 'champion-win',
+          source: report.winner === 'a' ? 'champion-win' : 'champion-loss',
           createdAtMs: now.getTime(),
           currentArenaDay: dayNumber,
         })

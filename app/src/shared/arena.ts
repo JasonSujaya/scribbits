@@ -113,7 +113,9 @@ export type Scribbit = {
   legendTitle: string | null; // e.g. "Champion of Day 12"
   isFounding: boolean; // NPC founding roster
   accessories: string[]; // accessory catalog ids welded to this scribbit
-  gearRanks?: Record<string, GearRank>; // presentation snapshot for welded/equipped Gear; old records default to rank 1
+  // Runtime projection for equipped Gear plus the persisted immutable rank of
+  // birth-attached cosmetics. Living reusable ranks are owned by inventory.
+  gearRanks?: Record<string, GearRank>;
   equipmentLoadout: EquipmentLoadout; // two server-authoritative slots per Gear category
   // Legacy v1 progression retained only so archived reports/cards remain
   // readable. New fights and player-facing progression use Power-Ups.
@@ -291,7 +293,7 @@ export type CapsuleProgress = {
   collectionTotal: number;
 };
 
-export const DRAW_CHARGE_CAPACITY = 3;
+export const DRAW_CHARGE_CAPACITY = 4;
 export const DRAW_CHARGE_REFILL_INTERVAL_MS = 8 * 60 * 60 * 1_000;
 
 export type DrawChargeState = {

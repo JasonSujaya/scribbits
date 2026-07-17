@@ -311,7 +311,7 @@ export function planBattleJournalEntry(
       perspective,
       finishKind: archivedFinish,
       finishLabel: plannedFinishLabel,
-      metadataLine: `WINNER ${winnerName} • RESULT SAVED • NO MOTION REPLAY`,
+      metadataLine: `WINNER ${winnerName} • RESULT SAVED • REPLAY UNAVAILABLE`,
       highlightLine: null,
       replayMotionAvailable: false,
       ...planRowAction({

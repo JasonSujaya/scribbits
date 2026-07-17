@@ -21,7 +21,7 @@ export const planArchivedReplayResultCopy = (input: {
       input.perspective
     ),
     status: input.rivalRun
-      ? `${formatRivalRunResultLine(input.rivalRun)} • ARCHIVED`
-      : 'ARCHIVED • SERVER RESULT SAVED',
+      ? `${formatRivalRunResultLine(input.rivalRun)}\nREPLAY UNAVAILABLE • RESULT SAVED`
+      : 'REPLAY UNAVAILABLE • OLDER BATTLE\nRESULT SAVED',
   };
 };

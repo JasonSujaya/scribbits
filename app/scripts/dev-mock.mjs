@@ -36,6 +36,7 @@ const {
   feedbackAdminJavaScript,
   CAPSULE_COST,
   DEFAULT_BATTLE_ARENA_ID,
+  DRAW_CHARGE_CAPACITY,
   GEAR_MERGE_COPY_COST,
   MAX_GEAR_RANK,
   COSMETIC_CATALOG,
@@ -781,8 +782,16 @@ const memory = {
   },
   enteredToday: false,
   drawChargesByPreviewMode: {
-    returning: { available: 3, capacity: 3, nextRefreshAt: null },
-    fresh: { available: 3, capacity: 3, nextRefreshAt: null },
+    returning: {
+      available: DRAW_CHARGE_CAPACITY,
+      capacity: DRAW_CHARGE_CAPACITY,
+      nextRefreshAt: null,
+    },
+    fresh: {
+      available: DRAW_CHARGE_CAPACITY,
+      capacity: DRAW_CHARGE_CAPACITY,
+      nextRefreshAt: null,
+    },
   },
   freeDrawingIdByPreviewMode: {
     returning: null,
@@ -1722,7 +1731,7 @@ const arenaState = (economy, previewMode = 'returning') => {
     pendingMaturityScribbitIds: [],
     drawCharges: memory.drawChargesByPreviewMode[previewMode] ?? {
       available: 0,
-      capacity: 3,
+      capacity: DRAW_CHARGE_CAPACITY,
       nextRefreshAt: null,
     },
     paintBucket: getPaintBucketState(),
@@ -2624,17 +2633,39 @@ const handleApi = async (request, response, url) => {
   }
 
   if (method === 'GET' && path === '/api/my-battles') {
-    sendJson(
-      response,
-      200,
-      battleReportsForPreview(previewMode)
-        .filter(
-          (report) =>
-            !memory.hiddenScribbitIds.has(report.a.id) &&
-            !memory.hiddenScribbitIds.has(report.b.id)
-        )
-        .map((report) => ({ ...report }))
+    const reports = battleReportsForPreview(previewMode)
+      .filter(
+        (report) =>
+          !memory.hiddenScribbitIds.has(report.a.id) &&
+          !memory.hiddenScribbitIds.has(report.b.id)
+      )
+      .map((report) => ({ ...report }));
+    const showLegacyWin = requestHasPreviewFlag(
+      request,
+      url,
+      'legacy-history-win'
     );
+    if (
+      (showLegacyWin ||
+        requestHasPreviewFlag(request, url, 'legacy-history')) &&
+      reports[0]
+    ) {
+      const legacyReportIndex = showLegacyWin
+        ? Math.max(
+            0,
+            reports.findIndex((report) => {
+              const winner = report.winner === 'a' ? report.a : report.b;
+              return winner.artist === 'mock_player';
+            })
+          )
+        : 0;
+      const [legacyReport] = reports.splice(legacyReportIndex, 1);
+      if (legacyReport) {
+        const { simulation: _simulation, ...legacyResult } = legacyReport;
+        reports.unshift({ ...legacyResult, events: [] });
+      }
+    }
+    sendJson(response, 200, reports);
     return;
   }
 
@@ -3260,15 +3291,19 @@ const handleApi = async (request, response, url) => {
     }
 
     let powerUpOffer = null;
-    if (
-      report.winner === 'a' &&
-      challenger.powerUpIds.length < MAXIMUM_POWER_UPS
-    ) {
+    if (challenger.powerUpIds.length < MAXIMUM_POWER_UPS) {
+      const playerWon = report.winner === 'a';
       const source = rivalRunReceipt
         ? rivalRunReceipt.status === 'complete'
-          ? 'rival-run-final-win'
-          : 'rival-run-win'
-        : 'exhibition-win';
+          ? playerWon
+            ? 'rival-run-final-win'
+            : 'rival-run-final-loss'
+          : playerWon
+            ? 'rival-run-win'
+            : 'rival-run-loss'
+        : playerWon
+          ? 'exhibition-win'
+          : 'exhibition-loss';
       const choices = createDeterministicPowerUpOffer({
         seed: `power-up-offer:v1:${report.id}:${challenger.id}`,
         source,
@@ -3744,6 +3779,11 @@ const resetFreshPreview = () => {
     submittedScribbitPreviewModes.delete(scribbitId);
   memory.drawnToday = false;
   memory.communityThemeDrawCountByPreviewMode.fresh = 0;
+  memory.drawChargesByPreviewMode.fresh = {
+    available: DRAW_CHARGE_CAPACITY,
+    capacity: DRAW_CHARGE_CAPACITY,
+    nextRefreshAt: null,
+  };
   memory.enteredToday = false;
   clearFreeDrawingForPreview('fresh');
   memory.bossChallengedToday = false;

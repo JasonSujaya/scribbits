@@ -23,11 +23,7 @@ import {
   releaseCapsuleOperation,
   setEquippedTitle,
 } from '../core/inkStore';
-import {
-  equipGearForScribbit,
-  refreshEquippedGearRankForUser,
-  type CurrentPlayer,
-} from '../core/scribbit';
+import { equipGearForScribbit, type CurrentPlayer } from '../core/scribbit';
 import type { ArenaStorage } from '../core/storage';
 
 const capsuleOperationPendingTimeoutMs = 15_000;
@@ -252,12 +248,6 @@ export const createInventoryRouteHandlers = ({
       if (result.status === 'operationConflict') {
         return conflict(c, 'That forge operation was already used.');
       }
-      await refreshEquippedGearRankForUser(
-        storage,
-        player.userId,
-        gearId,
-        result.response.toRank
-      );
       return c.json<MergeGearResponse>(result.response);
     } catch (error) {
       console.error('Merge gear route failed:', error);

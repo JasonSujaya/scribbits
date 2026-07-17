@@ -27,18 +27,84 @@ const homeSource = readFileSync(
   join(process.cwd(), 'src', 'client', 'scenes', 'ScribbitHome.ts'),
   'utf8'
 );
+const replaySource = readFileSync(
+  join(process.cwd(), 'src', 'client', 'scenes', 'Replay.ts'),
+  'utf8'
+);
+const registrySource = readFileSync(
+  join(process.cwd(), 'src', 'client', 'lib', 'registry.ts'),
+  'utf8'
+);
+const postFightActionsSource = readFileSync(
+  join(process.cwd(), 'src', 'client', 'lib', 'replaypostfightactions.ts'),
+  'utf8'
+);
 
-test('birth offers must be chosen before the first fight and recover on Home', () => {
+test('birth offers wait for the only reveal action before opening and recover on Home', () => {
   assert.match(powerUpDraftSource, /offer\.source === 'birth'/);
   assert.match(powerUpDraftSource, /FIRST POWER-UP · CHOOSE 1/);
   assert.match(drawSource, /pendingBirthPowerUpOffer/);
   assert.match(
     drawSource,
-    /if \(this\.pendingBirthPowerUpOffer\) \{[\s\S]*?this\.openBirthPowerUpDraft\(scribbit\);[\s\S]*?return;/
+    /const actionLabel = this\.pendingBirthPowerUpOffer[\s\S]*?'CHOOSE FIRST POWER-UP'[\s\S]*?\(\) => this\.continueAfterBirth\(scribbit\)/
+  );
+  assert.match(
+    drawSource,
+    /private continueAfterBirth\(scribbit: Scribbit\): void \{[\s\S]*?if \(this\.pendingBirthPowerUpOffer\) \{[\s\S]*?this\.openBirthPowerUpDraft\(scribbit\);[\s\S]*?return;/
+  );
+  assert.match(
+    drawSource,
+    /this\.pendingBirthPowerUpOffer = null;[\s\S]*?this\.updateFirstFightAction\(scribbit\);/
+  );
+  assert.match(
+    drawSource,
+    /private updateFirstFightAction\(scribbit: Scribbit\): void \{[\s\S]*?setIconButtonLabel\(this\.firstFightButton, 'START FIRST FIGHT'\)/
+  );
+  assert.doesNotMatch(
+    drawSource,
+    /delayedCall\([^)]*[\s\S]{0,160}openBirthPowerUpDraft/
   );
   assert.match(homeSource, /pendingPowerUpOffers/);
   assert.match(homeSource, /private openPendingPowerUpOffer\(\)/);
   assert.match(mockSource, /getOrCreateMockBirthPowerUpOffer/);
+});
+
+test('fresh battle offers are mandatory after wins and losses and recover on Home', () => {
+  assert.match(
+    replaySource,
+    /private openRequiredPowerUpDraft\([\s\S]{0,1800}pendingPowerUpOffers:[\s\S]{0,240}pendingOffer\.id !== offer\.id/
+  );
+  assert.ok(
+    replaySource.match(/primaryRequired: primaryAction\?\.kind === 'powerUp'/g)
+      ?.length >= 2
+  );
+  assert.ok(
+    replaySource.match(/openRequiredPowerUpDraft\(mine,/g)?.length >= 2,
+    'the loss result must open and claim the same required draft'
+  );
+  assert.match(
+    postFightActionsSource,
+    /if \(!input\.primaryRequired\) addUtilityActions\(utilityY\)/
+  );
+  assert.match(
+    registrySource,
+    /pendingPowerUpOffers:[\s\S]{0,300}powerUpOffer/
+  );
+  assert.match(homeSource, /private openPendingPowerUpOffer\(\)/);
+});
+
+test('birth reveal gives the newborn a canvas-scale showcase', () => {
+  assert.match(drawSource, /const BIRTH_REVEAL_CARD_WIDTH = 620/);
+  assert.match(drawSource, /const BIRTH_REVEAL_CARD_HEIGHT = 640/);
+  assert.match(drawSource, /const BIRTH_REVEAL_CARD_LIFT = 32/);
+  assert.match(drawSource, /const cardY = contentY - BIRTH_REVEAL_CARD_LIFT/);
+  assert.match(drawSource, /const artY = contentY - cardH \/ 2 \+ 190/);
+  assert.match(drawSource, /displaySize: BIRTH_NEWBORN_DISPLAY_SIZE/);
+  assert.match(
+    drawSource,
+    /targets: \[mainLabel, roleIcon, detailLabel\]/
+  );
+  assert.doesNotMatch(drawSource, /BIRTH_REVEAL_HALO_RADIUS/);
 });
 
 test('Scribbit details show a five-slot icon-first Power-Up build', () => {
@@ -53,6 +119,16 @@ test('Scribbit details show a five-slot icon-first Power-Up build', () => {
     detailSource,
     /Ink Mods|INK MODS|'YOUR ELEMENT'|elementBadge|ELEMENT_PAYLOAD_GUIDE/
   );
+});
+
+test('Scribbit details open as a living, tappable character showcase', () => {
+  assert.match(detailSource, /const showcaseLayer = scene\.add\.container/);
+  assert.match(detailSource, /showcaseLiveSprite = new LiveSprite/);
+  assert.match(detailSource, /showcaseLiveSprite\.breathe\(\)/);
+  assert.match(detailSource, /showcaseLiveSprite\?\.jiggle\(\)/);
+  assert.match(detailSource, /TAP TO PLAY/);
+  assert.match(detailSource, /label: `Play with \$\{scribbit\.name\}`/);
+  assert.match(detailSource, /showcaseLiveSprite\?\.destroy\(\)/);
 });
 
 test('every Power-Up owns a distinct code-native paper icon', () => {
@@ -71,6 +147,12 @@ test('every Power-Up owns a distinct code-native paper icon', () => {
     'v1-second-draft',
     'v1-paper-twin',
     'v1-masterpiece',
+    'v2-bank-shot',
+    'v2-returning-stroke',
+    'v2-orbiting-nib',
+    'v2-wider-halo',
+    'v2-paint-splash',
+    'v2-wet-paint',
   ];
   assert.match(paperIconsSource, /export function powerUpPaperIcon\(/);
   powerUpIds.forEach((powerUpId) => {
@@ -130,12 +212,14 @@ test('Power-Up cards twitch at random while idle and clean up safely', () => {
   );
 });
 
-test('Power-Up guide divides the rarity catalog across six focused pages', () => {
+test('Power-Up guide divides the full catalog across eight focused pages', () => {
   assert.match(detailSource, /'YOUR BUILD'/);
   assert.match(detailSource, /'COMMON POWER-UPS'/);
   assert.match(detailSource, /'UNCOMMON POWER-UPS'/);
   assert.match(detailSource, /'RARE POWER-UPS'/);
   assert.match(detailSource, /'EPIC \+ LEGENDARY'/);
+  assert.match(detailSource, /'LONGSHOT TECHNIQUES'/);
+  assert.match(detailSource, /'MAGE TECHNIQUES'/);
   assert.match(detailSource, /'WIN → CHOOSE 1'/);
   assert.match(
     detailSource,

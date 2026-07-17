@@ -77,6 +77,7 @@ export {
 export {
   createDeterministicPowerUpOffer,
   isPowerUpId,
+  MAXIMUM_GROWING_POWER_UPS,
   MAXIMUM_POWER_UPS,
   MAXIMUM_POWER_UP_HEALING_PERMILLE,
   POWER_UP_CATALOG,
@@ -92,6 +93,7 @@ export { selectCombatRole } from '../../shared/combat/selection';
 export {
   CAPSULE_COST,
   CAPSULE_PITY,
+  DRAW_CHARGE_CAPACITY,
   GEAR_MERGE_COPY_COST,
   getScribbitLifecycleStage,
   INK_REWARDS,

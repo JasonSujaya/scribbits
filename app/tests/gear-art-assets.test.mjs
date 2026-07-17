@@ -37,6 +37,25 @@ const atlasSpecs = [
   },
 ];
 
+const starterWeaponFiles = [
+  'starter-weapon-brawler.webp',
+  'starter-weapon-longshot.webp',
+  'starter-weapon-mage.webp',
+];
+
+test('generated starter weapons are compact WebP assets with alpha', () => {
+  starterWeaponFiles.forEach((fileName) => {
+    const bytes = readFileSync(join(assetDirectory, fileName));
+    assert.equal(bytes.subarray(0, 4).toString('ascii'), 'RIFF');
+    assert.equal(bytes.subarray(8, 12).toString('ascii'), 'WEBP');
+    assert.ok(
+      bytes.includes(Buffer.from('ALPH')),
+      `${fileName} must keep alpha`
+    );
+    assert.ok(bytes.length < 64 * 1024, `${fileName} must stay under 64 KiB`);
+  });
+});
+
 test('generated Gear atlases cover the canonical catalog exactly once', () => {
   const expectedIds = GEAR_CATALOG_ENTRIES.map(({ id }) => id).sort();
   const actualIds = atlasSpecs

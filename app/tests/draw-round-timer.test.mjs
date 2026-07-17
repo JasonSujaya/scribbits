@@ -76,6 +76,17 @@ test('the final seconds shake faster and harder', () => {
   assert.ok(criticalMotion.scale > warningMotion.scale);
 });
 
+test('timer sounds stay sparse until the final five seconds', () => {
+  assert.equal(drawRoundClock.getDrawTimerSfxCue(25), 'draw.timer');
+  assert.equal(drawRoundClock.getDrawTimerSfxCue(24), null);
+  assert.equal(drawRoundClock.getDrawTimerSfxCue(10), 'draw.timer');
+  assert.equal(drawRoundClock.getDrawTimerSfxCue(6), null);
+  assert.equal(drawRoundClock.getDrawTimerSfxCue(5), 'draw.tick');
+  assert.equal(drawRoundClock.getDrawTimerSfxCue(4), 'draw.tick');
+  assert.equal(drawRoundClock.getDrawTimerSfxCue(1), 'draw.tick');
+  assert.equal(drawRoundClock.getDrawTimerSfxCue(0), null);
+});
+
 test('official Draw requires an explicit start and locks at time', () => {
   const drawSource = readFileSync(
     join(process.cwd(), 'src', 'client', 'scenes', 'Draw.ts'),
@@ -130,7 +141,7 @@ test('official Draw requires an explicit start and locks at time', () => {
   );
   assert.match(
     drawSource,
-    /playSfx\(snapshot\.remainingSeconds <= 10 \? 'draw\.tick' : 'draw\.timer'\)/
+    /const timerSfxCue = getDrawTimerSfxCue\(snapshot\.remainingSeconds\)[\s\S]{0,80}if \(timerSfxCue\) playSfx\(timerSfxCue\)/
   );
   assert.match(drawSource, /preloadSfx\('draw\.countdown'\)/);
   assert.match(drawSource, /preloadSfx\('draw\.timer'\)/);

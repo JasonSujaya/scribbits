@@ -1,9 +1,15 @@
 import type { Scene } from 'phaser';
-import { getArena, setGalleryTab } from './registry';
+import {
+  getArena,
+  setGalleryTab,
+  takeFirstBattleShopUnlockPending,
+} from './registry';
 import { appTabBar, startScene } from './ui';
 import type { AppTabItem, AppTabKey } from './ui';
 import { translate } from './localization';
 import { isAppDockTabUnlocked } from './appdockprogression';
+import { planFirstBattleShopOnboarding } from './firstbattleshoponboarding';
+import { showFirstBattleShopOnboarding } from './appdockonboarding';
 
 export { isAppDockTabUnlocked } from './appdockprogression';
 
@@ -59,5 +65,18 @@ export function appDock(
     };
   });
 
-  return appTabBar(scene, active, tabs);
+  const dock = appTabBar(scene, active, tabs);
+  const shopTab = tabs.find((tab) => tab.key === 'shop');
+  const shopOnboarding = planFirstBattleShopOnboarding(arena);
+  delete scene.game.canvas.dataset.firstBattleShopGuide;
+  if (active === 'home' && shopTab && shopOnboarding) {
+    showFirstBattleShopOnboarding(
+      scene,
+      dock,
+      shopOnboarding,
+      shopTab.onClick,
+      takeFirstBattleShopUnlockPending(scene)
+    );
+  }
+  return dock;
 }

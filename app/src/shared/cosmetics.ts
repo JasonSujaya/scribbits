@@ -36,6 +36,11 @@ export type CosmeticGearCatalogEntry = CosmeticCatalogEntryBase & {
 // New equipment code should use CosmeticGearCatalogEntry.
 export type CosmeticAccessoryCatalogEntry = CosmeticGearCatalogEntry;
 
+// Retired Gear moves here instead of disappearing. These complete tombstones
+// remain valid for stored loadouts and historical reports but are intentionally
+// excluded from the obtainable catalog and Mystery Ink drops.
+export const RETIRED_GEAR_TOMBSTONES: readonly CosmeticGearCatalogEntry[] = [];
+
 export type CosmeticPenEffect = 'solid' | 'rainbow' | 'midnight';
 
 export type CosmeticPenCatalogEntry = CosmeticCatalogEntryBase & {
@@ -640,17 +645,20 @@ export const COSMETIC_CATALOG: readonly CosmeticCatalogEntry[] = [
 export const COSMETIC_BY_ID: ReadonlyMap<string, CosmeticCatalogEntry> =
   new Map(COSMETIC_CATALOG.map((entry) => [entry.id, entry]));
 
-const findCosmeticCatalogEntry = (
-  cosmeticId: string
-): CosmeticCatalogEntry | undefined => {
-  return COSMETIC_BY_ID.get(cosmeticId);
-};
+export const PERSISTED_GEAR_CATALOG_ENTRIES: readonly CosmeticGearCatalogEntry[] =
+  Object.freeze([...GEAR_CATALOG_ENTRIES, ...RETIRED_GEAR_TOMBSTONES]);
+
+const PERSISTED_GEAR_BY_ID: ReadonlyMap<string, CosmeticGearCatalogEntry> =
+  new Map(PERSISTED_GEAR_CATALOG_ENTRIES.map((entry) => [entry.id, entry]));
+
+if (PERSISTED_GEAR_BY_ID.size !== PERSISTED_GEAR_CATALOG_ENTRIES.length) {
+  throw new Error('Persisted Gear IDs must remain unique.');
+}
 
 export const findAccessoryCosmetic = (
   accessoryId: string
 ): CosmeticAccessoryCatalogEntry | undefined => {
-  const entry = findCosmeticCatalogEntry(accessoryId);
-  return entry?.kind === 'accessory' ? entry : undefined;
+  return PERSISTED_GEAR_BY_ID.get(accessoryId);
 };
 
 export const findGearCosmetic = findAccessoryCosmetic;

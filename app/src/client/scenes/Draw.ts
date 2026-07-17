@@ -106,7 +106,11 @@ import {
 import { fitDrawing, loadDrawing } from '../lib/scribbits';
 import { showVsCeremony } from '../lib/battleceremony';
 import { LiveSprite } from '../lib/livesprite';
-import { playBirthCeremony, playBirthFinishVfx } from '../lib/birthceremony';
+import {
+  BIRTH_NEWBORN_DISPLAY_SIZE,
+  playBirthCeremony,
+  playBirthFinishVfx,
+} from '../lib/birthceremony';
 import { openPowerUpDraft, type PowerUpDraftHandle } from '../lib/powerupdraft';
 import { screenTitle } from '../lib/screentitle';
 import {
@@ -131,6 +135,7 @@ import {
 import {
   createDrawRoundClock,
   expireDrawRoundClock,
+  getDrawTimerSfxCue,
   getDrawRoundUrgencyMotion,
   pauseDrawRoundClock,
   readDrawRoundClock,
@@ -183,6 +188,9 @@ import {
 
 const DRAW_START_COUNTDOWN_STEPS = ['3', '2', '1', 'DRAW!'] as const;
 const DRAW_START_COUNTDOWN_STEP_MILLISECONDS = 700;
+const BIRTH_REVEAL_CARD_WIDTH = 620;
+const BIRTH_REVEAL_CARD_HEIGHT = 640;
+const BIRTH_REVEAL_CARD_LIFT = 32;
 // Every base color is visible at once and grouped by its color-derived role.
 const PALETTE_COLORS = [
   '#2b2016',
@@ -1574,7 +1582,8 @@ export class Draw extends Scene {
     this.drawTimerValue.style.opacity = snapshot.started ? '1' : '0.76';
 
     if (snapshot.running && secondChanged) {
-      playSfx(snapshot.remainingSeconds <= 10 ? 'draw.tick' : 'draw.timer');
+      const timerSfxCue = getDrawTimerSfxCue(snapshot.remainingSeconds);
+      if (timerSfxCue) playSfx(timerSfxCue);
       if (snapshot.remainingSeconds === 10 || snapshot.remainingSeconds === 5) {
         this.drawTimerStatus?.replaceChildren(
           document.createTextNode(
@@ -4298,33 +4307,34 @@ export class Draw extends Scene {
     awakenedNewborn: LiveSprite | null
   ): void {
     const { width, height } = this.scale;
-    const cardW = 500;
-    const cardH = 440;
-    const cardY = height / 2 + 10;
+    const cardW = BIRTH_REVEAL_CARD_WIDTH;
+    const cardH = BIRTH_REVEAL_CARD_HEIGHT;
+    const contentY = height / 2 - 10;
+    const cardY = contentY - BIRTH_REVEAL_CARD_LIFT;
     const card = stickerCard(this, width / 2, cardY, cardW, cardH, {
       gold: true,
       tapeColor: UI.tape,
     });
     card.setScale(0);
 
-    const artY = cardY - cardH / 2 + 130;
+    const combatRoleId = selectCombatRole(scribbit.stats);
+    const combatRole = getCombatRoleContent(combatRoleId);
+    const roleStyle = ROLE_STYLES[combatRoleId];
+    const elementStyle = ELEMENT_STYLES[scribbit.element];
+    const artY = contentY - cardH / 2 + 190;
     const newborn =
       awakenedNewborn ??
       new LiveSprite(this, width / 2, artY, textureKey, {
-        displaySize: 230,
+        displaySize: BIRTH_NEWBORN_DISPLAY_SIZE,
         stats: scribbit.stats,
         depth: 10,
         reduceMotion: prefersReducedMotion(),
       });
     newborn.setPosition(width / 2, artY).setDepth(10);
-    const combatRoleId = selectCombatRole(scribbit.stats);
-    const combatRole = getCombatRoleContent(combatRoleId);
-    const roleStyle = ROLE_STYLES[combatRoleId];
-    const elementStyle = ELEMENT_STYLES[scribbit.element];
     const mainLabel = label(
       this,
       width / 2,
-      cardY + 80,
+      contentY + 100,
       scribbit.name.toUpperCase(),
       34,
       UI.ink,
@@ -4340,7 +4350,7 @@ export class Draw extends Scene {
       this,
       combatRole.icon,
       width / 2 - cardW / 2 + 72,
-      cardY + 145,
+      contentY + 180,
       {
         size: 54,
         fill: roleStyle.color,
@@ -4352,7 +4362,7 @@ export class Draw extends Scene {
     const detailLabel = label(
       this,
       width / 2 + 28,
-      cardY + 145,
+      contentY + 180,
       `${combatRole.displayName.toUpperCase()} · ${combatRole.rangeLabel}\n${combatRole.basicAttackName} · ${combatRole.signatureName}`,
       20,
       elementStyle.primaryText,
@@ -4441,11 +4451,6 @@ export class Draw extends Scene {
       this.revealControlOverlay
     );
     this.firstFightStatus = this.revealControlOverlay?.addStatus() ?? null;
-    if (this.pendingBirthPowerUpOffer) {
-      this.time.delayedCall(prefersReducedMotion() ? 0 : 900, () => {
-        if (this.scene.isActive()) this.openBirthPowerUpDraft(scribbit);
-      });
-    }
   }
 
   private continueAfterBirth(scribbit: Scribbit): void {

@@ -32,12 +32,15 @@ import {
 } from './roles';
 import { freezeGearCombatSnapshot, isGearCombatSnapshot } from './gearsnapshot';
 import { applyBattleArenaModifier } from '../battlearena';
+import { findGearCosmetic } from '../cosmetics';
+import { GEAR_RARITY_STRENGTH_PERMILLE } from '../gearcombat';
 import {
   MAXIMUM_POWER_UP_BONUS_DAMAGE_PERMILLE,
   MAXIMUM_POWER_UP_HEALING_PERMILLE,
   MAXIMUM_POWER_UPS,
   MAXIMUM_POWER_UP_TRIGGER_EVENTS,
   POWER_UP_CATALOG,
+  getPowerUpBuildRarityStrengthPermille,
   parsePowerUpBuild,
   validatePowerUpBuild,
 } from './powerups';
@@ -62,7 +65,9 @@ import type {
   FixedVector,
   GearCombatModifiers,
   NibHaloAbilityConfig,
+  PaintZoneCheckpoint,
   PrimaryPower,
+  ProjectileCheckpoint,
   RawCombatStats,
   SmearstepAbilityConfig,
 } from './types';
@@ -90,15 +95,50 @@ type ScheduledPowerUpEffect = {
   damage: number;
 };
 
+type ProjectileState = {
+  projectileId: string;
+  actor: FighterSlot;
+  target: FighterSlot;
+  projectile: 'quill' | 'color_bolt';
+  source: 'longshot_quill' | 'mage_bolt';
+  attackNumber: number;
+  shotNumber: number;
+  position: MutableVector;
+  velocity: MutableVector;
+  radius: number;
+  baseDamage: number;
+  damage: number;
+  expiresAtTick: number;
+  bouncesRemaining: number;
+  bounceReason: 'natural_ricochet' | 'bank_shot' | null;
+  targetHit: boolean;
+  returnsRemaining: number;
+};
+
+const NATURAL_QUILL_RICOCHET_INTERVAL = 3;
+const MAGE_POST_CAST_RETREAT_TICKS = 6;
+
+type PaintZoneState = {
+  zoneId: string;
+  actor: FighterSlot;
+  position: MutableVector;
+  radius: number;
+  expiresAtTick: number;
+  nextPulseTick: number;
+};
+
 type MutableFighterState = {
   slot: FighterSlot;
   input: CombatFighterInput;
   combatModifiers: GearCombatModifiers;
+  gearRarityStrengthPermille: number;
   powerUpIds: readonly PowerUpId[];
+  powerUpRarityStrengthPermille: number;
   powerUpActivations: Map<PowerUpId, number>;
   powerUpTriggerCount: number;
   powerUpBonusDamageSpent: number;
   powerUpAdvantageDamageRemainderPermille: number;
+  progressionRarityDamageRemainderPermille: number;
   powerUpHealingSpent: number;
   triggeredNonLegendaryPowerUps: Set<PowerUpId>;
   endlessDraftExtraPowerUpId: PowerUpId | null;
@@ -109,6 +149,7 @@ type MutableFighterState = {
   currentBasicAttackHit: boolean;
   currentBasicAttackDamage: number;
   movementOverrideUntilTick: number;
+  mageRetreatUntilTick: number;
   paperTwinAttacksRemaining: number;
   echoMarkAttacksRemaining: number;
   edgeSpringAttacksRemaining: number;
@@ -163,6 +204,8 @@ type SimulationContext = {
   arenaHalfWidth: number;
   arenaHalfHeight: number;
   fighters: [MutableFighterState, MutableFighterState];
+  projectiles: ProjectileState[];
+  paintZones: PaintZoneState[];
   timeline: BattleTimelineEvent[];
   checkpoints: BattleCheckpoint[];
   eventsTruncated: boolean;
@@ -247,6 +290,14 @@ function getOpponent(
   return getFighter(context, otherSlot(fighter.slot));
 }
 
+function getFightersByStableIdentity(
+  context: SimulationContext
+): readonly MutableFighterState[] {
+  return [...context.fighters].sort((left, right) =>
+    left.input.id.localeCompare(right.input.id)
+  );
+}
+
 function validateText(
   value: string,
   label: string,
@@ -317,6 +368,20 @@ function getGearCombatModifiers(
   );
 }
 
+function getGearRarityStrengthPermille(input: CombatFighterInput): number {
+  const rarityStrengths = (input.gear?.techniques ?? []).flatMap(
+    (technique) => {
+      const gear = findGearCosmetic(technique.leadGearId);
+      return gear ? [GEAR_RARITY_STRENGTH_PERMILLE[gear.rarity]] : [];
+    }
+  );
+  if (rarityStrengths.length === 0) return 0;
+  return divideRounded(
+    rarityStrengths.reduce((sum, strength) => sum + strength, 0),
+    rarityStrengths.length
+  );
+}
+
 export function getOrbitingNibPosition(
   ownerPosition: FixedVector,
   activeAgeTicks: number,
@@ -383,6 +448,7 @@ function triggerPowerUp(
   const activationLimit =
     definition.maximumActivations +
     (fighterOwnsPowerUp(fighter, 'v1-endless-draft') &&
+    fighter.endlessDraftExtraPowerUpId === powerUpId &&
     (definition.rarity === 'common' ||
       definition.rarity === 'uncommon' ||
       definition.rarity === 'rare')
@@ -419,7 +485,8 @@ function triggerPowerUp(
     fighter.endlessDraftExtraPowerUpId = powerUpId;
   }
   if (
-    fighter.triggeredNonLegendaryPowerUps.size >= 3 &&
+    fighter.triggeredNonLegendaryPowerUps.size >=
+      (POWER_UP_CATALOG['v1-masterpiece'].requiredDistinctPowerUps ?? 2) &&
     fighterOwnsPowerUp(fighter, 'v1-masterpiece')
   ) {
     const opponent = getOpponent(context, fighter);
@@ -432,8 +499,11 @@ function triggerPowerUp(
         1,
         divideRounded(
           opponent.maxHitPoints *
-            (POWER_UP_CATALOG['v1-masterpiece'].targetMaxHitPointDamagePermille ??
-              0),
+            (fighter.combatRole === 'brawler'
+              ? (POWER_UP_CATALOG['v1-masterpiece']
+                  .brawlerTargetMaxHitPointDamagePermille ?? 0)
+              : (POWER_UP_CATALOG['v1-masterpiece']
+                  .targetMaxHitPointDamagePermille ?? 0)),
           1_000
         )
       )
@@ -468,7 +538,11 @@ function healFighterFromPowerUp(
   powerUpId: PowerUpId
 ): number {
   const healingPermille =
-    POWER_UP_CATALOG[powerUpId].maximumHitPointHealingPermille ?? 0;
+    fighter.combatRole === 'brawler' &&
+    POWER_UP_CATALOG[powerUpId].brawlerMaximumHitPointHealingPermille !==
+      undefined
+      ? (POWER_UP_CATALOG[powerUpId].brawlerMaximumHitPointHealingPermille ?? 0)
+      : (POWER_UP_CATALOG[powerUpId].maximumHitPointHealingPermille ?? 0);
   const requestedHealing = divideRounded(
     fighter.maxHitPoints * healingPermille,
     1_000
@@ -573,14 +647,15 @@ function createFighterState(
   rules: CombatRules
 ): MutableFighterState {
   const combatModifiers = getGearCombatModifiers(input);
+  const gearRarityStrengthPermille = getGearRarityStrengthPermille(input);
   const powerUpIds = parsePowerUpBuild(input.powerUpIds ?? []) ?? [];
+  const powerUpRarityStrengthPermille =
+    getPowerUpBuildRarityStrengthPermille(powerUpIds);
   const combatRole = selectCombatRole(input.stats);
   const horizontalDirection = slot === 'a' ? 1 : -1;
-  const verticalDirectionByRole: Readonly<Record<CombatRole, number>> = {
-    brawler: 0,
-    longshot: 0,
-    gunner: 0,
-    mage: 0,
+  const initialMovementDirection = {
+    x: horizontalDirection * DIRECTION_SCALE,
+    y: 0,
   };
   const baseMovementPerTick =
     rules.fighter.baseMovementPerTick +
@@ -589,14 +664,10 @@ function createFighterState(
     combatRole === 'brawler'
       ? divideRounded(baseMovementPerTick * 1_200, 1_000)
       : baseMovementPerTick;
-  const velocity = normalizeVector(
-    {
-      x: horizontalDirection * DIRECTION_SCALE,
-      y: verticalDirectionByRole[combatRole],
-    },
-    movementPerTick,
-    { x: horizontalDirection * DIRECTION_SCALE, y: 0 }
-  );
+  const velocity = normalizeVector(initialMovementDirection, movementPerTick, {
+    x: horizontalDirection * DIRECTION_SCALE,
+    y: 0,
+  });
   const initialAbilityDelayByRole: Readonly<Record<CombatRole, number>> = {
     brawler: 18,
     longshot: 28,
@@ -615,8 +686,13 @@ function createFighterState(
   const baseMaxHitPoints =
     rules.fighter.baseHitPoints +
     input.stats.chonk * rules.fighter.hitPointsPerChonk;
-  const maxHitPoints = divideRounded(
+  const gearAdjustedMaxHitPoints = divideRounded(
     baseMaxHitPoints * combatModifiers.maximumHitPointsPermille,
+    1_000
+  );
+  const maxHitPoints = divideRounded(
+    gearAdjustedMaxHitPoints *
+      (1_000 + gearRarityStrengthPermille + powerUpRarityStrengthPermille),
     1_000
   );
 
@@ -624,11 +700,14 @@ function createFighterState(
     slot,
     input,
     combatModifiers,
+    gearRarityStrengthPermille,
     powerUpIds,
+    powerUpRarityStrengthPermille,
     powerUpActivations: new Map(),
     powerUpTriggerCount: 0,
     powerUpBonusDamageSpent: 0,
     powerUpAdvantageDamageRemainderPermille: 0,
+    progressionRarityDamageRemainderPermille: 0,
     powerUpHealingSpent: 0,
     triggeredNonLegendaryPowerUps: new Set(),
     endlessDraftExtraPowerUpId: null,
@@ -639,6 +718,7 @@ function createFighterState(
     currentBasicAttackHit: false,
     currentBasicAttackDamage: 0,
     movementOverrideUntilTick: 0,
+    mageRetreatUntilTick: 0,
     paperTwinAttacksRemaining: 0,
     echoMarkAttacksRemaining: 0,
     edgeSpringAttacksRemaining: 0,
@@ -998,6 +1078,9 @@ function finishAbility(
     );
     fighter.smearstepCurrentDash = -1;
   }
+  if (fighter.combatRole === 'mage') {
+    fighter.mageRetreatUntilTick = context.tick + MAGE_POST_CAST_RETREAT_TICKS;
+  }
   fighter.abilityPhase = 'cooldown';
   if (fighter.inkPressureRefreshPending) {
     fighter.inkPressureRefreshPending = false;
@@ -1009,7 +1092,7 @@ function finishAbility(
 }
 
 function executeAbilityTransitions(context: SimulationContext): void {
-  for (const fighter of context.fighters) {
+  for (const fighter of getFightersByStableIdentity(context)) {
     if (fighter.hitPoints <= 0) {
       continue;
     }
@@ -1064,11 +1147,101 @@ function fighterIsDashing(
   return dashAge < config.dashTicks;
 }
 
+function planMagePostCastEscapeIntent(
+  context: SimulationContext,
+  fighter: MutableFighterState,
+  towardOpponent: FixedVector
+): FixedVector {
+  const awayFromOpponent = {
+    x: -towardOpponent.x,
+    y: -towardOpponent.y,
+  };
+  const edgeBuffer = 400;
+  const horizontalLimit = context.arenaHalfWidth - fighter.radius - edgeBuffer;
+  const verticalLimit = context.arenaHalfHeight - fighter.radius - edgeBuffer;
+  const blockedHorizontally =
+    Math.abs(fighter.position.x) >= horizontalLimit &&
+    fighter.position.x * awayFromOpponent.x > 0;
+  const blockedVertically =
+    Math.abs(fighter.position.y) >= verticalLimit &&
+    fighter.position.y * awayFromOpponent.y > 0;
+
+  if (blockedHorizontally && !blockedVertically) {
+    return {
+      x: 0,
+      y:
+        awayFromOpponent.y === 0
+          ? (fighter.slot === 'a' ? 1 : -1) * DIRECTION_SCALE
+          : awayFromOpponent.y,
+    };
+  }
+  if (blockedVertically && !blockedHorizontally) {
+    return {
+      x:
+        awayFromOpponent.x === 0
+          ? (fighter.slot === 'a' ? -1 : 1) * DIRECTION_SCALE
+          : awayFromOpponent.x,
+      y: 0,
+    };
+  }
+  if (blockedHorizontally && blockedVertically) {
+    return {
+      x: -fighter.position.x,
+      y: -fighter.position.y,
+    };
+  }
+  return awayFromOpponent;
+}
+
 function updateMovementIntent(
   context: SimulationContext,
   fighter: MutableFighterState
 ): void {
   if (context.tick < fighter.movementOverrideUntilTick) return;
+  const threateningZone = context.paintZones.find(
+    (zone) =>
+      zone.actor !== fighter.slot &&
+      context.tick < zone.expiresAtTick &&
+      circlesOverlap(
+        fighter.position,
+        fighter.radius,
+        zone.position,
+        zone.radius
+      )
+  );
+  if (threateningZone !== undefined && !fighterIsDashing(context, fighter)) {
+    const zoneConfig = context.rules.abilities.colorburst;
+    const zoneOwner = getFighter(context, threateningZone.actor);
+    const avoidancePermille = fighterOwnsPowerUp(zoneOwner, 'v2-wet-paint')
+      ? (POWER_UP_CATALOG['v2-wet-paint'].zoneAvoidancePermille ?? 1_000)
+      : 1_000;
+    const awayFromZone = {
+      x: fighter.position.x - threateningZone.position.x,
+      y: fighter.position.y - threateningZone.position.y,
+    };
+    const fallbackAway = {
+      x: fighter.slot === 'a' ? -DIRECTION_SCALE : DIRECTION_SCALE,
+      y: 0,
+    };
+    const usableAway =
+      awayFromZone.x === 0 && awayFromZone.y === 0
+        ? fallbackAway
+        : awayFromZone;
+    const strafeSign = fighter.slot === 'a' ? 1 : -1;
+    const avoidanceIntent = {
+      x: usableAway.x - usableAway.y * strafeSign * 2,
+      y: usableAway.y + usableAway.x * strafeSign * 2,
+    };
+    fighter.velocity = copyVector(
+      normalizeVector(
+        avoidanceIntent,
+        fighter.baseMovementPerTick +
+          divideRounded(zoneConfig.zoneRepelSpeed * avoidancePermille, 1_000),
+        fallbackAway
+      )
+    );
+    return;
+  }
   if (
     fighter.primaryPower === 'smearstep' &&
     fighter.abilityPhase === 'active'
@@ -1094,20 +1267,39 @@ function updateMovementIntent(
     }
   }
 
+  const opponent = getOpponent(context, fighter);
+  const towardOpponent = {
+    x: opponent.position.x - fighter.position.x,
+    y: opponent.position.y - fighter.position.y,
+  };
+  const distance = integerSquareRoot(
+    squaredDistance(fighter.position, opponent.position)
+  );
+  const roleRules = getCombatRoleRules(fighter.combatRole);
+  const longshotFacesCloseRangeThreat =
+    fighter.combatRole === 'longshot' && opponent.combatRole === 'brawler';
+  const emergencyLongshotRetreat =
+    longshotFacesCloseRangeThreat && distance < roleRules.preferredRangeMinimum;
+  const retreatMinimum =
+    fighter.combatRole === 'longshot' && !longshotFacesCloseRangeThreat
+      ? 4_500
+      : roleRules.preferredRangeMinimum;
+  const shouldRetreat = distance < retreatMinimum;
+  const magePostCastRetreat =
+    fighter.combatRole === 'mage' &&
+    opponent.combatRole === 'brawler' &&
+    context.tick < fighter.mageRetreatUntilTick &&
+    distance < roleRules.preferredRangeMinimum;
+
   if (
     !fighterIsDashing(context, fighter) &&
-    context.tick % context.rules.fighter.steeringIntervalTicks === 0
+    (emergencyLongshotRetreat ||
+      magePostCastRetreat ||
+      (longshotFacesCloseRangeThreat && context.tick === 1) ||
+      context.tick % context.rules.fighter.steeringIntervalTicks === 0)
   ) {
-    const opponent = getOpponent(context, fighter);
-    const towardOpponent = {
-      x: opponent.position.x - fighter.position.x,
-      y: opponent.position.y - fighter.position.y,
-    };
-    const distance = integerSquareRoot(
-      squaredDistance(fighter.position, opponent.position)
-    );
-    const roleRules = getCombatRoleRules(fighter.combatRole);
     let movementIntent: FixedVector;
+    let retreating = false;
     if (fighter.combatRole === 'brawler') {
       movementIntent = towardOpponent;
     } else if (
@@ -1117,7 +1309,15 @@ function updateMovementIntent(
     ) {
       fighter.velocity = { x: 0, y: 0 };
       return;
-    } else if (distance < roleRules.preferredRangeMinimum) {
+    } else if (magePostCastRetreat) {
+      retreating = true;
+      movementIntent = planMagePostCastEscapeIntent(
+        context,
+        fighter,
+        towardOpponent
+      );
+    } else if (shouldRetreat) {
+      retreating = true;
       movementIntent = {
         x: -towardOpponent.x,
         y: -towardOpponent.y,
@@ -1131,7 +1331,18 @@ function updateMovementIntent(
         y: towardOpponent.x * strafeSign,
       };
     }
-    const movementSpeed = fighter.baseMovementPerTick;
+    const retreatBurstActive =
+      magePostCastRetreat ||
+      (fighter.combatRole === 'longshot' &&
+        longshotFacesCloseRangeThreat &&
+        context.tick % context.rules.fighter.steeringIntervalTicks < 4);
+    const movementSpeed =
+      retreating && retreatBurstActive
+        ? divideRounded(
+            fighter.baseMovementPerTick * roleRules.retreatSpeedPermille,
+            1_000
+          )
+        : fighter.baseMovementPerTick;
     fighter.velocity = copyVector(
       normalizeVector(movementIntent, movementSpeed, fighter.aimDirection)
     );
@@ -1139,8 +1350,13 @@ function updateMovementIntent(
 }
 
 function executeMovement(context: SimulationContext): void {
-  for (const fighter of context.fighters) {
+  const fighters = getFightersByStableIdentity(context);
+  // Both fighters decide from the same start-of-phase positions. Moving one
+  // before the other can otherwise turn slot A into a hidden combat stat.
+  for (const fighter of fighters) {
     updateMovementIntent(context, fighter);
+  }
+  for (const fighter of fighters) {
     fighter.position.x += fighter.velocity.x;
     fighter.position.y += fighter.velocity.y;
   }
@@ -1201,7 +1417,7 @@ function constrainFighterToArena(
     }
     if (
       fighter.lastKnockbackBy !== null &&
-      context.tick - fighter.lastKnockbackTick <= 2
+      context.tick - fighter.lastKnockbackTick <= 8
     ) {
       const wallopOwner = getFighter(context, fighter.lastKnockbackBy);
       dealPowerUpDamage(
@@ -1503,6 +1719,17 @@ function applyResolvedDamage(
       )
     );
     actualDamage = Math.max(0, target.hitPoints - survivingHitPoints);
+    applyBudgetedPowerUpDamage(
+      context,
+      target,
+      source,
+      divideRounded(
+        source.maxHitPoints *
+          (POWER_UP_CATALOG['v1-last-scribble']
+            .targetMaxHitPointDamagePermille ?? 0),
+        1_000
+      )
+    );
   }
   if (actualDamage <= 0) {
     return 0;
@@ -1596,17 +1823,17 @@ const ROLE_MATCHUP_DAMAGE_MULTIPLIERS: Readonly<
   // targets 60% for Brawler > Mage > Longshot > Brawler and 50% for mirrors.
   brawler: Object.freeze({
     brawler: 1_000,
-    longshot: 1_005,
-    mage: 769,
+    longshot: 963,
+    mage: 832,
   }),
   longshot: Object.freeze({
-    brawler: 1_200,
+    brawler: 1_257,
     longshot: 1_000,
-    mage: 1_100,
+    mage: 1_550,
   }),
   mage: Object.freeze({
-    brawler: 1_127,
-    longshot: 941,
+    brawler: 1_201,
+    longshot: 485,
     mage: 1_000,
   }),
 });
@@ -1653,7 +1880,7 @@ function getRoleMatchupDamageMultiplierPermille(
     currentDefender,
     sharedPowerUpDepth
   );
-  return Math.max(500, Math.min(1_500, baseMultiplier + powerUpCounterweight));
+  return Math.max(300, Math.min(1_800, baseMultiplier + powerUpCounterweight));
 }
 
 function rollAndApplyDamage(
@@ -1703,6 +1930,17 @@ function rollAndApplyDamage(
     1,
     divideRounded(damage * source.combatModifiers.damagePermille, 1_000)
   );
+  if (source.combatRole === 'brawler') {
+    const brawlerRarityDamagePermille =
+      source.gearRarityStrengthPermille * 4 +
+      source.powerUpRarityStrengthPermille;
+    const scaledRarityDamage =
+      damage * (1_000 + brawlerRarityDamagePermille) +
+      source.progressionRarityDamageRemainderPermille;
+    damage = Math.max(1, Math.floor(scaledRarityDamage / 1_000));
+    source.progressionRarityDamageRemainderPermille =
+      scaledRarityDamage % 1_000;
+  }
   const minimumVariance = context.rules.fighter.minimumDamageVariancePermille;
   const maximumVariance = context.rules.fighter.maximumDamageVariancePermille;
   if (minimumVariance !== 1_000 || maximumVariance !== 1_000) {
@@ -1839,6 +2077,21 @@ function finalizeBasicAttack(
 
   fighter.basicHitStreak += 1;
   fighter.successfulNormalHitCount += 1;
+  if (fighter.combatRole === 'brawler') {
+    dealPowerUpDamage(
+      context,
+      fighter,
+      target,
+      'v1-wallop',
+      Math.max(
+        1,
+        divideRounded(
+          landedDamage * (POWER_UP_CATALOG['v1-wallop'].powerPermille ?? 0),
+          1_000
+        )
+      )
+    );
+  }
   if (fighter.edgeSpringAttacksRemaining > 0) {
     fighter.edgeSpringAttacksRemaining -= 1;
     applyBudgetedPowerUpDamage(
@@ -1911,7 +2164,9 @@ function finalizeBasicAttack(
         1,
         divideRounded(
           landedDamage *
-            (POWER_UP_CATALOG['v1-second-draft'].powerPermille ?? 0),
+            (fighter.combatRole === 'brawler'
+              ? (POWER_UP_CATALOG['v1-second-draft'].brawlerPowerPermille ?? 0)
+              : (POWER_UP_CATALOG['v1-second-draft'].powerPermille ?? 0)),
           1_000
         )
       )
@@ -1938,6 +2193,114 @@ function finalizeBasicAttack(
       )
     );
   }
+}
+
+function spawnBasicProjectile(
+  context: SimulationContext,
+  fighter: MutableFighterState,
+  target: MutableFighterState,
+  projectile: 'quill' | 'color_bolt',
+  source: 'longshot_quill' | 'mage_bolt',
+  attackNumber: number,
+  shotNumber: number,
+  damage: number
+): void {
+  const speed = projectile === 'quill' ? 800 : 700;
+  const radius = projectile === 'quill' ? 400 : 450;
+  const distance = integerSquareRoot(
+    squaredDistance(fighter.position, target.position)
+  );
+  const estimatedTravelTicks = Math.max(1, Math.ceil(distance / speed));
+  const predictedTarget = {
+    x: target.position.x + target.velocity.x * estimatedTravelTicks,
+    y: target.position.y + target.velocity.y * estimatedTravelTicks,
+  };
+  const hasBankShot =
+    projectile === 'quill' && fighterOwnsPowerUp(fighter, 'v2-bank-shot');
+  const usesNaturalRicochet =
+    projectile === 'quill' &&
+    !hasBankShot &&
+    attackNumber % NATURAL_QUILL_RICOCHET_INTERVAL === 0;
+  const velocity = copyVector(
+    normalizeVector(
+      {
+        x: predictedTarget.x - fighter.position.x,
+        y: predictedTarget.y - fighter.position.y,
+      },
+      speed,
+      fighter.aimDirection
+    )
+  );
+  const lifetimeTicks = projectile === 'quill' ? 16 : 18;
+  const projectileId = `${fighter.slot}:basic:${attackNumber}:${shotNumber}`;
+  let projectileBaseDamagePermille = 1_000;
+  if (hasBankShot) {
+    projectileBaseDamagePermille = divideRounded(
+      projectileBaseDamagePermille *
+        (POWER_UP_CATALOG['v2-bank-shot'].projectileBaseDamagePermille ??
+          1_000),
+      1_000
+    );
+  }
+  if (
+    projectile === 'quill' &&
+    fighterOwnsPowerUp(fighter, 'v2-returning-stroke')
+  ) {
+    projectileBaseDamagePermille = divideRounded(
+      projectileBaseDamagePermille *
+        (POWER_UP_CATALOG['v2-returning-stroke'].projectileBaseDamagePermille ??
+          1_000),
+      1_000
+    );
+  }
+  const state: ProjectileState = {
+    projectileId,
+    actor: fighter.slot,
+    target: target.slot,
+    projectile,
+    source,
+    attackNumber,
+    shotNumber,
+    position: copyVector(fighter.position),
+    velocity,
+    radius,
+    baseDamage: damage,
+    damage: Math.max(
+      1,
+      divideRounded(damage * projectileBaseDamagePermille, 1_000)
+    ),
+    expiresAtTick: context.tick + lifetimeTicks,
+    bouncesRemaining: hasBankShot
+      ? (POWER_UP_CATALOG['v2-bank-shot'].projectileWallBounces ?? 0)
+      : usesNaturalRicochet
+        ? 1
+        : 0,
+    bounceReason: hasBankShot
+      ? 'bank_shot'
+      : usesNaturalRicochet
+        ? 'natural_ricochet'
+        : null,
+    targetHit: false,
+    returnsRemaining:
+      projectile === 'quill' &&
+      fighterOwnsPowerUp(fighter, 'v2-returning-stroke')
+        ? (POWER_UP_CATALOG['v2-returning-stroke'].projectileReturns ?? 0)
+        : 0,
+  };
+  context.projectiles.push(state);
+  appendEvent(context, {
+    tick: context.tick,
+    kind: 'projectile_spawned',
+    projectileId,
+    actor: fighter.slot,
+    projectile,
+    attackNumber,
+    shotNumber,
+    position: freezeVector(state.position),
+    velocity: freezeVector(velocity),
+    radius,
+    expiresAtTick: state.expiresAtTick,
+  });
 }
 
 function executeSingleRoleAttack(
@@ -1982,6 +2345,31 @@ function executeSingleRoleAttack(
       return;
   }
   const inRange = distance <= maximumRange;
+  if (
+    inRange &&
+    (fighter.combatRole === 'longshot' || fighter.combatRole === 'mage')
+  ) {
+    spawnBasicProjectile(
+      context,
+      fighter,
+      opponent,
+      fighter.combatRole === 'longshot' ? 'quill' : 'color_bolt',
+      fighter.combatRole === 'longshot' ? 'longshot_quill' : 'mage_bolt',
+      attackNumber,
+      shotNumber,
+      damage
+    );
+    appendRoleAttack(
+      context,
+      fighter,
+      attack,
+      attackNumber,
+      shotNumber,
+      opponent.position,
+      false
+    );
+    return;
+  }
   const actualDamage = inRange
     ? rollAndApplyDamage(
         context,
@@ -2038,10 +2426,7 @@ function executeSingleRoleAttack(
 }
 
 function executeRoleAttacks(context: SimulationContext): void {
-  const fightersByStableIdentity = [...context.fighters].sort((left, right) =>
-    left.input.id.localeCompare(right.input.id)
-  );
-  for (const fighter of fightersByStableIdentity) {
+  for (const fighter of getFightersByStableIdentity(context)) {
     if (fighter.hitPoints <= 0 || fighter.combatRole === 'brawler') {
       continue;
     }
@@ -2092,6 +2477,270 @@ function executeRoleAttacks(context: SimulationContext): void {
         context.tick + roleRules.basicAttackCooldownTicks;
     }
   }
+}
+
+function expireProjectile(
+  context: SimulationContext,
+  projectile: ProjectileState
+): void {
+  const fighter = getFighter(context, projectile.actor);
+  const target = getFighter(context, projectile.target);
+  appendEvent(context, {
+    tick: context.tick,
+    kind: 'projectile_expired',
+    projectileId: projectile.projectileId,
+    actor: projectile.actor,
+    position: freezeVector(projectile.position),
+  });
+  finalizeBasicAttack(context, fighter, target, false, 0);
+}
+
+function returnProjectile(
+  context: SimulationContext,
+  projectile: ProjectileState
+): boolean {
+  if (projectile.returnsRemaining <= 0) return false;
+  const fighter = getFighter(context, projectile.actor);
+  projectile.returnsRemaining -= 1;
+  projectile.velocity = copyVector(
+    normalizeVector(
+      {
+        x: fighter.position.x - projectile.position.x,
+        y: fighter.position.y - projectile.position.y,
+      },
+      800,
+      { x: -projectile.velocity.x, y: -projectile.velocity.y }
+    )
+  );
+  projectile.damage = Math.max(
+    1,
+    divideRounded(
+      projectile.baseDamage *
+        (POWER_UP_CATALOG['v2-returning-stroke']
+          .projectileReturnDamagePermille ?? 1_000),
+      1_000
+    )
+  );
+  projectile.expiresAtTick = context.tick + 8;
+  const target = getFighter(context, projectile.target);
+  dealPowerUpDamage(
+    context,
+    fighter,
+    target,
+    'v2-returning-stroke',
+    divideRounded(
+      target.maxHitPoints *
+        (POWER_UP_CATALOG['v2-returning-stroke']
+          .targetMaxHitPointDamagePermille ?? 0),
+      1_000
+    )
+  );
+  appendEvent(context, {
+    tick: context.tick,
+    kind: 'projectile_bounced',
+    projectileId: projectile.projectileId,
+    actor: projectile.actor,
+    axis: 'both',
+    reason: 'returning_stroke',
+    position: freezeVector(projectile.position),
+    velocity: freezeVector(projectile.velocity),
+  });
+  return true;
+}
+
+function constrainProjectileToArena(
+  context: SimulationContext,
+  projectile: ProjectileState
+): 'active' | 'expired' {
+  const minimumX = -context.arenaHalfWidth + projectile.radius;
+  const maximumX = context.arenaHalfWidth - projectile.radius;
+  const minimumY = -context.arenaHalfHeight + projectile.radius;
+  const maximumY = context.arenaHalfHeight - projectile.radius;
+  const hitX =
+    projectile.position.x < minimumX || projectile.position.x > maximumX;
+  const hitY =
+    projectile.position.y < minimumY || projectile.position.y > maximumY;
+  if (!hitX && !hitY) return 'active';
+  projectile.position.x = clampInteger(
+    projectile.position.x,
+    minimumX,
+    maximumX
+  );
+  projectile.position.y = clampInteger(
+    projectile.position.y,
+    minimumY,
+    maximumY
+  );
+  if (projectile.bouncesRemaining <= 0) {
+    if (returnProjectile(context, projectile)) return 'active';
+    expireProjectile(context, projectile);
+    return 'expired';
+  }
+  projectile.bouncesRemaining -= 1;
+  const fighter = getFighter(context, projectile.actor);
+  const bounceReason = projectile.bounceReason ?? 'natural_ricochet';
+  if (bounceReason === 'bank_shot') {
+    triggerPowerUp(context, fighter, 'v2-bank-shot');
+  }
+  if (bounceReason === 'natural_ricochet') {
+    if (hitX) projectile.velocity.x = -projectile.velocity.x;
+    if (hitY) projectile.velocity.y = -projectile.velocity.y;
+    appendEvent(context, {
+      tick: context.tick,
+      kind: 'projectile_bounced',
+      projectileId: projectile.projectileId,
+      actor: projectile.actor,
+      axis: hitX && hitY ? 'both' : hitX ? 'x' : 'y',
+      reason: bounceReason,
+      position: freezeVector(projectile.position),
+      velocity: freezeVector(projectile.velocity),
+    });
+    expireProjectile(context, projectile);
+    return 'expired';
+  }
+  projectile.damage = Math.max(
+    1,
+    divideRounded(
+      projectile.baseDamage *
+        (POWER_UP_CATALOG['v2-bank-shot'].projectileBounceDamagePermille ??
+          1_000),
+      1_000
+    )
+  );
+  if (hitX) projectile.velocity.x = -projectile.velocity.x;
+  if (hitY) projectile.velocity.y = -projectile.velocity.y;
+  appendEvent(context, {
+    tick: context.tick,
+    kind: 'projectile_bounced',
+    projectileId: projectile.projectileId,
+    actor: projectile.actor,
+    axis: hitX && hitY ? 'both' : hitX ? 'x' : 'y',
+    reason: bounceReason,
+    position: freezeVector(projectile.position),
+    velocity: freezeVector(projectile.velocity),
+  });
+  return 'active';
+}
+
+function executeProjectiles(context: SimulationContext): void {
+  const activeProjectiles: ProjectileState[] = [];
+  for (const projectile of context.projectiles) {
+    if (context.tick >= projectile.expiresAtTick) {
+      if (returnProjectile(context, projectile)) {
+        activeProjectiles.push(projectile);
+        continue;
+      }
+      expireProjectile(context, projectile);
+      continue;
+    }
+    projectile.position.x += projectile.velocity.x;
+    projectile.position.y += projectile.velocity.y;
+    if (constrainProjectileToArena(context, projectile) === 'expired') {
+      continue;
+    }
+    const target = getFighter(context, projectile.target);
+    if (
+      !projectile.targetHit &&
+      target.hitPoints > 0 &&
+      circlesOverlap(
+        projectile.position,
+        projectile.radius,
+        target.position,
+        target.radius
+      )
+    ) {
+      const fighter = getFighter(context, projectile.actor);
+      const orbitingNibPrevention = fighterOwnsPowerUp(
+        target,
+        'v2-orbiting-nib'
+      )
+        ? (POWER_UP_CATALOG['v2-orbiting-nib'].preventedDamagePermille ?? 0)
+        : 0;
+      const widerHaloPrevention = fighterOwnsPowerUp(target, 'v2-wider-halo')
+        ? (POWER_UP_CATALOG['v2-wider-halo'].preventedDamagePermille ?? 0)
+        : 0;
+      const projectileDamagePermille = Math.max(
+        0,
+        1_000 - orbitingNibPrevention - widerHaloPrevention
+      );
+      const actualDamage = rollAndApplyDamage(
+        context,
+        fighter,
+        target,
+        projectile.source,
+        Math.max(
+          1,
+          divideRounded(projectile.damage * projectileDamagePermille, 1_000)
+        ),
+        `${projectile.attackNumber}:${projectile.shotNumber}`,
+        true
+      );
+      appendEvent(context, {
+        tick: context.tick,
+        kind: 'projectile_hit',
+        projectileId: projectile.projectileId,
+        actor: projectile.actor,
+        target: target.slot,
+        projectile: projectile.projectile,
+        position: freezeVector(projectile.position),
+      });
+      if (
+        projectile.projectile === 'color_bolt' &&
+        fighterOwnsPowerUp(fighter, 'v2-paint-splash')
+      ) {
+        const lifetimeTicks =
+          POWER_UP_CATALOG['v2-paint-splash'].impactZoneLifetimeTicks ?? 0;
+        if (lifetimeTicks > 0) {
+          const radiusPermille =
+            POWER_UP_CATALOG['v2-paint-splash'].impactZoneRadiusPermille ??
+            1_000;
+          createPaintZone(
+            context,
+            fighter,
+            projectile.position,
+            lifetimeTicks,
+            divideRounded(900 * radiusPermille, 1_000),
+            `splash-${projectile.attackNumber}`
+          );
+          const splashDamagePermille =
+            POWER_UP_CATALOG['v2-paint-splash']
+              .targetMaxHitPointDamagePermille ?? 0;
+          dealPowerUpDamage(
+            context,
+            fighter,
+            target,
+            'v2-paint-splash',
+            divideRounded(target.maxHitPoints * splashDamagePermille, 1_000)
+          );
+        }
+      }
+      finalizeBasicAttack(
+        context,
+        fighter,
+        target,
+        actualDamage > 0,
+        actualDamage
+      );
+      if (actualDamage > 0 && fighter.combatRole === 'longshot') {
+        pushAwayFrom(context, fighter, projectile.position, target, 180);
+      }
+      if (
+        projectile.bounceReason === 'natural_ricochet' &&
+        projectile.bouncesRemaining > 0
+      ) {
+        projectile.targetHit = true;
+        projectile.expiresAtTick = Math.max(
+          projectile.expiresAtTick,
+          context.tick + 16
+        );
+        activeProjectiles.push(projectile);
+      }
+      continue;
+    }
+    activeProjectiles.push(projectile);
+  }
+  context.projectiles = activeProjectiles;
+  assertEntityCap(context);
 }
 
 function resolveInkquake(
@@ -2159,40 +2808,132 @@ function resolveNibHalo(
   const config = context.rules.abilities.nib_halo;
   const opponent = getOpponent(context, fighter);
   const age = context.tick - fighter.abilityActivatedAtTick;
-  const shotAges = [0, 10, 20] as const;
-  const shotIndex = shotAges.indexOf(age as 0 | 10 | 20);
-  if (shotIndex < 0) return;
-  const shotMask = 1 << shotIndex;
-  if ((fighter.roleSpecialShotMask & shotMask) !== 0) return;
-  fighter.roleSpecialShotMask |= shotMask;
-
-  const distance = integerSquareRoot(
-    squaredDistance(fighter.position, opponent.position)
+  if (context.tick < fighter.haloNextTargetHitTick) return;
+  const addedNibCount = fighterOwnsPowerUp(fighter, 'v2-orbiting-nib')
+    ? (POWER_UP_CATALOG['v2-orbiting-nib'].additionalOrbiters ?? 0)
+    : 0;
+  const nibCount = config.nibCount + addedNibCount;
+  const radiusPermille = fighterOwnsPowerUp(fighter, 'v2-wider-halo')
+    ? (POWER_UP_CATALOG['v2-wider-halo'].orbitRadiusPermille ?? 1_000)
+    : 1_000;
+  const orbiterCollisionRadiusPermille = Math.max(
+    fighterOwnsPowerUp(fighter, 'v2-orbiting-nib')
+      ? (POWER_UP_CATALOG['v2-orbiting-nib'].orbiterCollisionRadiusPermille ??
+          1_000)
+      : 1_000,
+    fighterOwnsPowerUp(fighter, 'v2-wider-halo')
+      ? (POWER_UP_CATALOG['v2-wider-halo'].orbiterCollisionRadiusPermille ??
+          1_000)
+      : 1_000
   );
-  const inRange = distance <= 7_500;
-  const actualDamage = inRange
-    ? rollAndApplyDamage(
+  if (age === 0) {
+    if (addedNibCount > 0) {
+      dealPowerUpDamage(
         context,
         fighter,
         opponent,
-        'nib_halo',
-        Math.max(1, Math.floor(config.baseDamage / 2)) +
-          Math.floor(getRoleStat(fighter) / 12),
-        `${fighter.activationNumber}:${shotIndex}`,
-        true
+        'v2-orbiting-nib',
+        divideRounded(
+          opponent.maxHitPoints *
+            (POWER_UP_CATALOG['v2-orbiting-nib']
+              .targetMaxHitPointDamagePermille ?? 0),
+          1_000
+        )
+      );
+    }
+    if (radiusPermille !== 1_000) {
+      dealPowerUpDamage(
+        context,
+        fighter,
+        opponent,
+        'v2-wider-halo',
+        divideRounded(
+          opponent.maxHitPoints *
+            (POWER_UP_CATALOG['v2-wider-halo']
+              .targetMaxHitPointDamagePermille ?? 0),
+          1_000
+        )
+      );
+    }
+  }
+  for (let nibIndex = 0; nibIndex < nibCount; nibIndex += 1) {
+    const basePosition =
+      nibIndex < config.nibCount
+        ? getOrbitingNibPosition(fighter.position, age, nibIndex, config)
+        : (() => {
+            const directionIndex =
+              (age * config.orbitTableStepsPerTick +
+                Math.floor((nibIndex * orbitDirections.length) / nibCount)) %
+              orbitDirections.length;
+            const direction =
+              orbitDirections[directionIndex] ?? orbitDirections[0];
+            if (!direction) return fighter.position;
+            return {
+              x:
+                fighter.position.x +
+                divideRounded(
+                  direction.x * config.orbitRadius,
+                  DIRECTION_SCALE
+                ),
+              y:
+                fighter.position.y +
+                divideRounded(
+                  direction.y * config.orbitRadius,
+                  DIRECTION_SCALE
+                ),
+            };
+          })();
+    const nibPosition =
+      radiusPermille === 1_000
+        ? basePosition
+        : {
+            x:
+              fighter.position.x +
+              divideRounded(
+                (basePosition.x - fighter.position.x) * radiusPermille,
+                1_000
+              ),
+            y:
+              fighter.position.y +
+              divideRounded(
+                (basePosition.y - fighter.position.y) * radiusPermille,
+                1_000
+              ),
+          };
+    if (
+      !circlesOverlap(
+        nibPosition,
+        divideRounded(config.nibRadius * orbiterCollisionRadiusPermille, 1_000),
+        opponent.position,
+        opponent.radius
       )
-    : 0;
-  appendRoleAttack(
-    context,
-    fighter,
-    'nib_volley',
-    fighter.activationNumber,
-    shotIndex + 1,
-    opponent.position,
-    actualDamage > 0
-  );
-  if (actualDamage > 0 && opponent.combatRole === 'brawler') {
-    pushAwayFrom(context, fighter, fighter.position, opponent, 260);
+    ) {
+      continue;
+    }
+    const actualDamage = rollAndApplyDamage(
+      context,
+      fighter,
+      opponent,
+      'nib_halo',
+      Math.max(1, Math.floor(config.baseDamage / 2)) +
+        Math.floor(getRoleStat(fighter) / 12),
+      `${fighter.activationNumber}:${age}:${nibIndex}`,
+      true
+    );
+    fighter.haloNextTargetHitTick = context.tick + config.targetRehitLockTicks;
+    appendRoleAttack(
+      context,
+      fighter,
+      'nib_volley',
+      fighter.activationNumber,
+      nibIndex + 1,
+      nibPosition,
+      actualDamage > 0
+    );
+    if (actualDamage > 0 && opponent.combatRole === 'brawler') {
+      pushAwayFrom(context, fighter, nibPosition, opponent, 260);
+    }
+    break;
   }
 }
 
@@ -2255,6 +2996,65 @@ function resolveSmearstep(
   }
 }
 
+function createPaintZone(
+  context: SimulationContext,
+  fighter: MutableFighterState,
+  rawPosition: FixedVector,
+  lifetimeTicks: number,
+  radius: number,
+  idSuffix: string
+): void {
+  const wetPaintPermille = fighterOwnsPowerUp(fighter, 'v2-wet-paint')
+    ? (POWER_UP_CATALOG['v2-wet-paint'].zoneLifetimePermille ?? 1_000)
+    : 1_000;
+  const effectiveLifetimeTicks = Math.max(
+    1,
+    divideRounded(lifetimeTicks * wetPaintPermille, 1_000)
+  );
+  const ownedZones = context.paintZones.filter(
+    (zone) => zone.actor === fighter.slot
+  );
+  if (ownedZones.length >= 2) {
+    const oldest = ownedZones.reduce((left, right) =>
+      left.expiresAtTick <= right.expiresAtTick ? left : right
+    );
+    context.paintZones = context.paintZones.filter(
+      (zone) => zone.zoneId !== oldest.zoneId
+    );
+    appendEvent(context, {
+      tick: context.tick,
+      kind: 'paint_zone_expired',
+      zoneId: oldest.zoneId,
+      actor: oldest.actor,
+      position: freezeVector(oldest.position),
+    });
+  }
+  const position = clampPositionInsideArena(context, rawPosition, radius);
+  const zoneId = `${fighter.slot}:zone:${fighter.activationNumber}:${context.tick}:${idSuffix}`;
+  const zone: PaintZoneState = {
+    zoneId,
+    actor: fighter.slot,
+    position,
+    radius,
+    expiresAtTick: context.tick + effectiveLifetimeTicks,
+    nextPulseTick:
+      context.tick + context.rules.abilities.colorburst.zonePulseIntervalTicks,
+  };
+  context.paintZones.push(zone);
+  appendEvent(context, {
+    tick: context.tick,
+    kind: 'paint_zone_created',
+    zoneId,
+    actor: fighter.slot,
+    position: freezeVector(position),
+    radius,
+    expiresAtTick: zone.expiresAtTick,
+  });
+  if (wetPaintPermille !== 1_000) {
+    triggerPowerUp(context, fighter, 'v2-wet-paint');
+  }
+}
+
 function resolveColorburst(
   context: SimulationContext,
   fighter: MutableFighterState
@@ -2265,6 +3065,14 @@ function resolveColorburst(
   fighter.colorburstFired = true;
   const config = context.rules.abilities.colorburst;
   const opponent = getOpponent(context, fighter);
+  createPaintZone(
+    context,
+    fighter,
+    opponent.position,
+    config.zoneLifetimeTicks,
+    config.zoneRadius,
+    'colorburst'
+  );
   if (
     circleCenterIsInsideCone(
       fighter.abilityOrigin,
@@ -2301,6 +3109,65 @@ function resolveColorburst(
   }
 }
 
+function resolvePaintZones(context: SimulationContext): void {
+  const activeZones: PaintZoneState[] = [];
+  const config = context.rules.abilities.colorburst;
+  for (const zone of context.paintZones) {
+    if (context.tick >= zone.expiresAtTick) {
+      appendEvent(context, {
+        tick: context.tick,
+        kind: 'paint_zone_expired',
+        zoneId: zone.zoneId,
+        actor: zone.actor,
+        position: freezeVector(zone.position),
+      });
+      continue;
+    }
+    if (context.tick < zone.nextPulseTick) {
+      activeZones.push(zone);
+      continue;
+    }
+    zone.nextPulseTick += config.zonePulseIntervalTicks;
+    const fighter = getFighter(context, zone.actor);
+    const target = getOpponent(context, fighter);
+    if (
+      fighter.hitPoints > 0 &&
+      target.hitPoints > 0 &&
+      circlesOverlap(zone.position, zone.radius, target.position, target.radius)
+    ) {
+      const zoneDamagePermille = fighterOwnsPowerUp(fighter, 'v2-wet-paint')
+        ? (POWER_UP_CATALOG['v2-wet-paint'].zoneDamagePermille ?? 1_000)
+        : 1_000;
+      const baseZoneDamage =
+        config.zoneBaseDamage +
+        Math.floor(fighter.input.stats.charm / config.zoneCharmDamageDivisor);
+      const actualDamage = rollAndApplyDamage(
+        context,
+        fighter,
+        target,
+        'paint_zone',
+        Math.max(1, divideRounded(baseZoneDamage * zoneDamagePermille, 1_000)),
+        `${zone.zoneId}:${context.tick}`,
+        true
+      );
+      if (actualDamage > 0) {
+        appendEvent(context, {
+          tick: context.tick,
+          kind: 'paint_zone_pulsed',
+          zoneId: zone.zoneId,
+          actor: zone.actor,
+          target: target.slot,
+          position: freezeVector(zone.position),
+          damage: actualDamage,
+        });
+      }
+    }
+    activeZones.push(zone);
+  }
+  context.paintZones = activeZones;
+  assertEntityCap(context);
+}
+
 function resolvePrimaryAbility(
   context: SimulationContext,
   fighter: MutableFighterState
@@ -2329,7 +3196,7 @@ function resolvePrimaryAbility(
 
 function resolveEchoes(context: SimulationContext): void {
   const config = context.rules.abilities.colorburst;
-  for (const fighter of context.fighters) {
+  for (const fighter of getFightersByStableIdentity(context)) {
     const echo = fighter.echo;
     if (echo === null) {
       continue;
@@ -2383,19 +3250,18 @@ function resolveContactDamage(context: SimulationContext): void {
   if (!context.fighterCollisionThisTick) {
     return;
   }
-  const eligibleAtStart = context.fighters.map((fighter) => {
-    return (
-      fighter.hitPoints > 0 &&
-      fighter.combatRole === 'brawler' &&
-      context.tick >= fighter.contactReadyTick
-    );
-  });
-  for (let index = 0; index < context.fighters.length; index += 1) {
-    if (eligibleAtStart[index] !== true) {
-      continue;
-    }
-    const fighter = context.fighters[index];
-    if (!fighter) {
+  const eligibleAtStart = new Set(
+    context.fighters
+      .filter(
+        (fighter) =>
+          fighter.hitPoints > 0 &&
+          fighter.combatRole === 'brawler' &&
+          context.tick >= fighter.contactReadyTick
+      )
+      .map((fighter) => fighter.slot)
+  );
+  for (const fighter of getFightersByStableIdentity(context)) {
+    if (!eligibleAtStart.has(fighter.slot)) {
       continue;
     }
     const opponent = getOpponent(context, fighter);
@@ -2438,19 +3304,23 @@ function resolveContactDamage(context: SimulationContext): void {
 }
 
 function executeAbilityCollisions(context: SimulationContext): void {
-  const aliveAtStart = context.fighters.map((fighter) => fighter.hitPoints > 0);
-  for (let index = 0; index < context.fighters.length; index += 1) {
-    const fighter = context.fighters[index];
-    if (fighter && aliveAtStart[index] === true) {
+  const aliveAtStart = new Set(
+    context.fighters
+      .filter((fighter) => fighter.hitPoints > 0)
+      .map((fighter) => fighter.slot)
+  );
+  for (const fighter of getFightersByStableIdentity(context)) {
+    if (aliveAtStart.has(fighter.slot)) {
       resolvePrimaryAbility(context, fighter);
     }
   }
   resolveEchoes(context);
+  resolvePaintZones(context);
   resolveContactDamage(context);
 }
 
 function executeStatusEffects(context: SimulationContext): void {
-  for (const fighter of context.fighters) {
+  for (const fighter of getFightersByStableIdentity(context)) {
     const pendingEffects: ScheduledPowerUpEffect[] = [];
     for (const effect of fighter.scheduledPowerUpEffects) {
       if (effect.tick > context.tick) {
@@ -2468,7 +3338,7 @@ function executeStatusEffects(context: SimulationContext): void {
 }
 
 function executeInkPressure(context: SimulationContext): void {
-  for (const fighter of context.fighters) {
+  for (const fighter of getFightersByStableIdentity(context)) {
     if (fighter.inkPressureUsed || fighter.hitPoints <= 0) {
       continue;
     }
@@ -2507,7 +3377,17 @@ function chooseWinnerByDamageThenStable(
 ): FighterSlot {
   const fighterA = context.fighters[0];
   const fighterB = context.fighters[1];
-  if (fighterA.damageDealt !== fighterB.damageDealt) {
+  if (fighterA.combatRole === fighterB.combatRole) {
+    // Raw damage rewards the fighter facing the larger health pool. In a
+    // same-role simultaneous knockout compare the share of opposing health
+    // removed so rarer, tougher mirrors are not punished for having more HP.
+    const damageShareComparison =
+      fighterA.damageDealt * fighterA.maxHitPoints -
+      fighterB.damageDealt * fighterB.maxHitPoints;
+    if (damageShareComparison !== 0) {
+      return damageShareComparison > 0 ? 'a' : 'b';
+    }
+  } else if (fighterA.damageDealt !== fighterB.damageDealt) {
     return fighterA.damageDealt > fighterB.damageDealt ? 'a' : 'b';
   }
   return chooseStableWinner(context);
@@ -2635,6 +3515,30 @@ function createFighterCheckpoint(
   });
 }
 
+function createProjectileCheckpoint(
+  projectile: ProjectileState
+): ProjectileCheckpoint {
+  return Object.freeze({
+    projectileId: projectile.projectileId,
+    actor: projectile.actor,
+    projectile: projectile.projectile,
+    position: freezeVector(projectile.position),
+    velocity: freezeVector(projectile.velocity),
+    radius: projectile.radius,
+    expiresAtTick: projectile.expiresAtTick,
+  });
+}
+
+function createPaintZoneCheckpoint(zone: PaintZoneState): PaintZoneCheckpoint {
+  return Object.freeze({
+    zoneId: zone.zoneId,
+    actor: zone.actor,
+    position: freezeVector(zone.position),
+    radius: zone.radius,
+    expiresAtTick: zone.expiresAtTick,
+  });
+}
+
 function captureCheckpoint(context: SimulationContext, forced: boolean): void {
   const lastCheckpoint = context.checkpoints.at(-1);
   if (lastCheckpoint?.tick === context.tick) {
@@ -2659,6 +3563,12 @@ function captureCheckpoint(context: SimulationContext, forced: boolean): void {
         createFighterCheckpoint(context.fighters[0]),
         createFighterCheckpoint(context.fighters[1])
       ),
+      projectiles: Object.freeze(
+        context.projectiles.map(createProjectileCheckpoint)
+      ),
+      paintZones: Object.freeze(
+        context.paintZones.map(createPaintZoneCheckpoint)
+      ),
     })
   );
 }
@@ -2672,7 +3582,8 @@ function assertEntityCap(context: SimulationContext): void {
     (count, fighter) => count + (fighter.echo === null ? 0 : 1),
     0
   );
-  const entityCount = 2 + echoCount;
+  const entityCount =
+    2 + echoCount + context.projectiles.length + context.paintZones.length;
   if (entityCount > context.rules.maximumEntityCount) {
     throw new Error('Combat entity cap exceeded.');
   }
@@ -2697,6 +3608,9 @@ function executePhase(context: SimulationContext, phase: CombatPhase): void {
       return;
     case 'role_attacks':
       executeRoleAttacks(context);
+      return;
+    case 'projectiles':
+      executeProjectiles(context);
       return;
     case 'ability_collisions':
       executeAbilityCollisions(context);
@@ -2728,8 +3642,10 @@ function validateRules(rules: CombatRules): void {
   ) {
     throw new Error('Scribbits combat must end by 20 seconds.');
   }
-  if (rules.maximumEntityCount < 4) {
-    throw new Error('Combat entity cap must fit two fighters and two echoes.');
+  if (rules.maximumEntityCount < 12) {
+    throw new Error(
+      'Combat entity cap must fit fighters, echoes, projectiles, and paint zones.'
+    );
   }
   if (rules.maximumEventCount < 2 || rules.maximumCheckpointCount < 2) {
     throw new Error('Combat transcript caps are too small for terminal state.');
@@ -2795,6 +3711,8 @@ export function simulateCombat(input: CombatSimulationInput): BattleTranscript {
       createFighterState(fighterAInput, 'a', seed, rules),
       createFighterState(fighterBInput, 'b', seed, rules),
     ],
+    projectiles: [],
+    paintZones: [],
     timeline: [],
     checkpoints: [],
     eventsTruncated: false,

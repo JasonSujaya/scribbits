@@ -187,10 +187,7 @@ export const isBattleReport = (value: unknown): value is BattleReport => {
       value.b.id !== simulation.fighters[1].id ||
       value.winner !== simulation.result.winner ||
       (simulation.version === 3 && value.kind !== 'exhibition') ||
-      ((simulation.version === 4 ||
-        simulation.version === 5 ||
-        simulation.version === 6 ||
-        simulation.version === 7) &&
+      (simulation.version >= 4 &&
         value.kind !== 'exhibition' &&
         (simulation.fighters[0].gear !== undefined ||
           simulation.fighters[1].gear !== undefined)) ||
@@ -203,10 +200,7 @@ export const isBattleReport = (value: unknown): value is BattleReport => {
             simulation.fighters[1].gear,
             value.b
           ))) ||
-      ((simulation.version === 4 ||
-        simulation.version === 5 ||
-        simulation.version === 6 ||
-        simulation.version === 7) &&
+      (simulation.version >= 4 &&
         (simulation.fighters[0].gear !== undefined ||
           simulation.fighters[1].gear !== undefined) &&
         (!gearCombatSnapshotMatchesScribbit(

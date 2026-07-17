@@ -31,13 +31,12 @@ import {
 } from '../../shared/arena';
 import { isElement } from '../../shared/elements';
 import {
+  advanceScribbitUpgrades,
   parseCompleteScribbitUpgrades,
   resolveStoredScribbitUpgrades,
 } from '../../shared/combat/upgrades';
 import {
   parsePowerUpBuild,
-  POWER_UP_CATALOG,
-  POWER_UP_IDS,
   type PowerUpId,
 } from '../../shared/combat/powerups';
 import { getLevelForXp } from '../../shared/progression';
@@ -311,6 +310,7 @@ export const addXpToScribbit = (
   if (scribbit.status !== 'alive') return cloneScribbit(scribbit);
   const gainedXp = normalizeNonNegativeInteger(xpGain);
   const currentXp = normalizeNonNegativeInteger(scribbit.xp);
+  const currentLevel = getLevelForXp(currentXp);
   const nextXp = currentXp + gainedXp;
   const nextLevel = getLevelForXp(nextXp);
 
@@ -318,6 +318,12 @@ export const addXpToScribbit = (
     ...scribbit,
     xp: nextXp,
     level: nextLevel,
+    upgrades: advanceScribbitUpgrades(
+      scribbit.id,
+      currentLevel,
+      nextLevel,
+      scribbit.upgrades
+    ),
     powerUpIds: [...(scribbit.powerUpIds ?? [])],
   };
 };
@@ -1187,7 +1193,21 @@ export const normalizeScribbitRecord = (
   return normalizeScribbitV2Value(value, true, true);
 };
 
-export const SCRIBBIT_SCHEMA_VERSION = 3;
+export const SCRIBBIT_SCHEMA_VERSION = 4;
+
+const getPersistedScribbitGearRanks = (
+  scribbit: Scribbit
+): Record<string, GearRank> => {
+  if (scribbit.status !== 'alive') {
+    return { ...(scribbit.gearRanks ?? {}) };
+  }
+  return Object.fromEntries(
+    [...new Set(scribbit.accessories)].map((gearId) => {
+      const storedRank = scribbit.gearRanks?.[gearId];
+      return [gearId, isGearRank(storedRank) ? storedRank : 1];
+    })
+  );
+};
 
 // This explicit key list is the immutable v1 storage shape. Keeping it separate
 // from cloneScribbit prevents a future runtime field from silently changing old
@@ -1228,9 +1248,16 @@ export const migrateScribbitV0ToV1 = (storedValue: unknown): unknown => {
     : storedValue;
 };
 
-const LEGACY_MIGRATION_POWER_UP_IDS = POWER_UP_IDS.filter(
-  (powerUpId) => POWER_UP_CATALOG[powerUpId].rarity === 'common'
-);
+// Frozen input for the already-shipped v1 -> v2 migration. Never derive this
+// list from the live catalog: changing rarity, capability metadata, or catalog
+// order must not change how the same historical bytes migrate.
+const LEGACY_MIGRATION_POWER_UP_IDS = Object.freeze([
+  'v1-edge-spring',
+  'v1-smudge-step',
+  'v1-paper-shield',
+  'v1-combo-spark',
+  'v1-center-fold',
+] as const satisfies readonly PowerUpId[]);
 
 const migrateLegacyProgressionToPowerUps = (
   scribbitId: string,
@@ -1294,6 +1321,12 @@ const encodeScribbitV3 = (scribbit: Scribbit): Record<string, unknown> => ({
   schemaVersion: 3,
 });
 
+const encodeScribbitV4 = (scribbit: Scribbit): Record<string, unknown> => ({
+  ...encodeScribbitV3(scribbit),
+  schemaVersion: 4,
+  gearRanks: getPersistedScribbitGearRanks(scribbit),
+});
+
 export const migrateScribbitV1ToV2 = (storedValue: unknown): unknown => {
   if (!isRecord(storedValue)) return storedValue;
   const scribbitValue = { ...storedValue };
@@ -1319,10 +1352,37 @@ export const migrateScribbitV2ToV3 = (storedValue: unknown): unknown => {
   delete scribbitValue.careDoneToday;
   const normalizedV2 = normalizeScribbitV2Value(scribbitValue, false, true);
   if (!normalizedV2) return storedValue;
+  const legacyUpgrades = resolveStoredScribbitUpgrades(
+    normalizedV2.id,
+    normalizedV2.level,
+    scribbitValue.upgrades
+  );
+  if (legacyUpgrades.status === 'invalid') return storedValue;
   const canonicalV2 = encodeScribbitV2(normalizedV2);
   delete canonicalV2.schemaVersion;
-  return jsonValuesMatch(scribbitValue, canonicalV2)
+  const comparableV2 = {
+    ...scribbitValue,
+    // V2 -> V3 intentionally replaced the retired authored Ink Mod roll with
+    // the deterministic current roll. Validate the historical array above,
+    // then exclude only that shipped semantic change from the strict shape
+    // comparison so unknown fields still fail closed.
+    upgrades: canonicalV2.upgrades,
+  };
+  return jsonValuesMatch(comparableV2, canonicalV2)
     ? encodeScribbitV3(normalizedV2)
+    : storedValue;
+};
+
+export const migrateScribbitV3ToV4 = (storedValue: unknown): unknown => {
+  if (!isRecord(storedValue)) return storedValue;
+  const scribbitValue = { ...storedValue };
+  delete scribbitValue.schemaVersion;
+  const normalizedV3 = normalizeScribbitV2Value(scribbitValue, false, true);
+  if (!normalizedV3) return storedValue;
+  const canonicalV3 = encodeScribbitV3(normalizedV3);
+  delete canonicalV3.schemaVersion;
+  return jsonValuesMatch(scribbitValue, canonicalV3)
+    ? encodeScribbitV4(normalizedV3)
     : storedValue;
 };
 
@@ -1333,6 +1393,7 @@ const scribbitJsonCodec = createVersionedJsonCodec<Scribbit>({
     0: migrateScribbitV0ToV1,
     1: migrateScribbitV1ToV2,
     2: migrateScribbitV2ToV3,
+    3: migrateScribbitV3ToV4,
   },
   decodeCurrent: (storedValue) => {
     if (
@@ -1345,13 +1406,13 @@ const scribbitJsonCodec = createVersionedJsonCodec<Scribbit>({
     delete scribbitValue.schemaVersion;
     const scribbit = normalizeScribbitV2Value(scribbitValue, false, true);
     if (!scribbit) return undefined;
-    const canonicalValue = encodeScribbitV3(scribbit);
+    const canonicalValue = encodeScribbitV4(scribbit);
     delete canonicalValue.schemaVersion;
     return jsonValuesMatch(scribbitValue, canonicalValue)
       ? scribbit
       : undefined;
   },
-  encodeCurrent: encodeScribbitV3,
+  encodeCurrent: encodeScribbitV4,
 });
 
 export const parseStoredScribbit = (storedScribbit: string | undefined) =>
@@ -1415,6 +1476,33 @@ export const createScribbit = (options: {
   };
 };
 
+const resolveRuntimeGearRanks = (
+  scribbit: Scribbit,
+  inventoryEntries: Record<string, string>
+): Record<string, GearRank> => {
+  const gearRanks = getPersistedScribbitGearRanks(scribbit);
+  if (scribbit.status !== 'alive') return gearRanks;
+  for (const category of EQUIPMENT_CATEGORIES) {
+    for (const gearId of scribbit.equipmentLoadout[category]) {
+      if (gearId === null) continue;
+      const storedRankValue =
+        inventoryEntries[getInventoryGearRankField(gearId)];
+      if (storedRankValue === undefined) {
+        gearRanks[gearId] = 1;
+        continue;
+      }
+      const storedRank = Number(storedRankValue);
+      if (!isGearRank(storedRank)) {
+        throw new Error(
+          `Stored Gear rank for ${gearId} is invalid and was preserved.`
+        );
+      }
+      gearRanks[gearId] = storedRank;
+    }
+  }
+  return gearRanks;
+};
+
 const hydrateScribbit = async (
   storage: ArenaStorage,
   scribbit: Scribbit
@@ -1423,12 +1511,21 @@ const hydrateScribbit = async (
     return cloneScribbit(scribbit);
   }
 
-  const storedBelief = await storage.hGet(getCommunityBeliefKey(), scribbit.id);
+  const [storedBelief, ownerUserId] = await Promise.all([
+    storage.hGet(getCommunityBeliefKey(), scribbit.id),
+    storage.get(getScribbitOwnerKey(scribbit.id)),
+  ]);
   const belief =
     storedBelief === undefined ? scribbit.belief : Number(storedBelief);
+  const inventoryEntries =
+    scribbit.status === 'alive' && ownerUserId
+      ? await storage.hGetAll(getInventoryKey(ownerUserId))
+      : {};
+  const gearRanks = resolveRuntimeGearRanks(scribbit, inventoryEntries);
 
   return {
     ...scribbit,
+    gearRanks,
     belief:
       Number.isFinite(belief) && belief >= 0
         ? Math.floor(belief)
@@ -1766,13 +1863,22 @@ export const equipGearForScribbit = async (
   ) {
     let transaction: ArenaTransaction | undefined;
     let expectedScribbit: Scribbit | undefined;
+    let expectedLegacyRanks: Record<string, GearRank> = {};
     try {
       transaction = await storage.watch(scribbitKey, ownerKey, inventoryKey);
       const [storedScribbitJson, ownerUserId] = await Promise.all([
         storage.get(scribbitKey),
         storage.get(ownerKey),
       ]);
-      const scribbit = parseScribbit(storedScribbitJson);
+      const parsedScribbit = parseStoredScribbit(storedScribbitJson);
+      if (parsedScribbit.status === 'invalid') {
+        await transaction.unwatch();
+        throw new Error(
+          `Stored Scribbit ${request.scribbitId} is invalid and was preserved.`
+        );
+      }
+      const scribbit =
+        parsedScribbit.status === 'valid' ? parsedScribbit.value : undefined;
       if (!scribbit || scribbit.isFounding || scribbit.status !== 'alive') {
         await transaction.unwatch();
         return { status: 'scribbit-unavailable' };
@@ -1782,17 +1888,27 @@ export const equipGearForScribbit = async (
         return { status: 'not-owned' };
       }
 
-      let equippedRank: GearRank = 1;
+      const storedInventory = await storage.hGetAll(inventoryKey);
+      expectedLegacyRanks =
+        parsedScribbit.status === 'valid' &&
+        parsedScribbit.migrated &&
+        storedScribbitJson !== undefined
+          ? getLegacyReusableGearRanks(storedScribbitJson, scribbit)
+          : {};
+      const rankPromotions = getInventoryRankPromotions(
+        storedInventory,
+        expectedLegacyRanks
+      );
+      const projectedInventory = { ...storedInventory, ...rankPromotions };
       if (request.gearId !== null) {
-        const storedInventory = await storage.hGetAll(inventoryKey);
-        const storedCopies = Number(storedInventory[request.gearId] ?? '0');
+        const storedCopies = Number(projectedInventory[request.gearId] ?? '0');
         const permanentlyDiscovered =
-          storedInventory[getInventoryDiscoveryField(request.gearId)] === '1';
+          projectedInventory[getInventoryDiscoveryField(request.gearId)] ===
+          '1';
         const storedRank = Number(
-          storedInventory[getInventoryGearRankField(request.gearId)]
+          projectedInventory[getInventoryGearRankField(request.gearId)]
         );
         const hasDurableGearRank = isGearRank(storedRank);
-        if (hasDurableGearRank) equippedRank = storedRank;
         const hasLegacyOwnedCopy =
           Number.isSafeInteger(storedCopies) && storedCopies > 0;
         if (
@@ -1816,21 +1932,22 @@ export const equipGearForScribbit = async (
       expectedScribbit = prepareScribbitForStorage({
         ...scribbit,
         equipmentLoadout: projectedLoadout,
-        gearRanks:
-          request.gearId === null
-            ? scribbit.gearRanks
-            : {
-                ...(scribbit.gearRanks ?? {}),
-                [request.gearId]: equippedRank,
-              },
+        gearRanks: getPersistedScribbitGearRanks(scribbit),
       });
+      const responseScribbit: Scribbit = {
+        ...expectedScribbit,
+        gearRanks: resolveRuntimeGearRanks(expectedScribbit, projectedInventory),
+      };
       await transaction.multi();
+      if (Object.keys(rankPromotions).length > 0) {
+        await transaction.hSet(inventoryKey, rankPromotions);
+      }
       await transaction.set(scribbitKey, serializeScribbit(expectedScribbit));
       const result = await transaction.exec();
       if (Array.isArray(result) && result.length > 0) {
         return {
           status: 'updated',
-          scribbit: cloneScribbit(expectedScribbit),
+          scribbit: cloneScribbit(responseScribbit),
         };
       }
     } catch (error) {
@@ -1841,17 +1958,26 @@ export const equipGearForScribbit = async (
           storage.get(ownerKey),
         ]);
         const recoveredScribbit = parseScribbit(storedAfterFailure);
+        const recoveredInventory = await storage.hGetAll(inventoryKey);
         if (
           ownerAfterFailure === userId &&
           recoveredScribbit?.status === 'alive' &&
           JSON.stringify(recoveredScribbit.equipmentLoadout) ===
             JSON.stringify(expectedScribbit.equipmentLoadout) &&
-          JSON.stringify(recoveredScribbit.gearRanks) ===
-            JSON.stringify(expectedScribbit.gearRanks)
+          inventoryPreservesLegacyRanks(
+            recoveredInventory,
+            expectedLegacyRanks
+          )
         ) {
           return {
             status: 'updated',
-            scribbit: cloneScribbit(recoveredScribbit),
+            scribbit: cloneScribbit({
+              ...recoveredScribbit,
+              gearRanks: resolveRuntimeGearRanks(
+                recoveredScribbit,
+                recoveredInventory
+              ),
+            }),
           };
         }
       }
@@ -1862,93 +1988,6 @@ export const equipGearForScribbit = async (
   throw new Error(
     `Scribbit ${request.scribbitId} changed too often to equip Gear safely.`
   );
-};
-
-export const refreshEquippedGearRankForUser = async (
-  storage: ArenaStorage,
-  userId: string,
-  gearId: string,
-  rank: GearRank
-): Promise<void> => {
-  if (!storage.watch || !findGearCosmetic(gearId) || !isGearRank(rank)) {
-    throw new Error('Refreshing forged Gear requires valid durable state.');
-  }
-  const rankedScribbits = await storage.zRange(
-    getUserAliveScribbitsKey(userId),
-    0,
-    MAX_ALIVE_PER_USER + 10,
-    { by: 'rank', reverse: true }
-  );
-
-  for (const { member: scribbitId } of rankedScribbits) {
-    const scribbitKey = getScribbitKey(scribbitId);
-    const ownerKey = getScribbitOwnerKey(scribbitId);
-    let settled = false;
-    for (
-      let attempt = 0;
-      attempt < MAX_WATCH_TRANSACTION_ATTEMPTS;
-      attempt += 1
-    ) {
-      let transaction: ArenaTransaction | undefined;
-      let expectedScribbit: Scribbit | undefined;
-      try {
-        transaction = await storage.watch(scribbitKey, ownerKey);
-        const [storedScribbitJson, ownerUserId] = await Promise.all([
-          storage.get(scribbitKey),
-          storage.get(ownerKey),
-        ]);
-        const scribbit = parseScribbit(storedScribbitJson);
-        if (!scribbit && storedScribbitJson !== undefined) {
-          throw new Error(
-            `Stored Scribbit ${scribbitId} is invalid and was preserved.`
-          );
-        }
-        const wearsGear =
-          scribbit?.status === 'alive' &&
-          Object.values(scribbit.equipmentLoadout).some((slots) =>
-            slots.includes(gearId)
-          );
-        if (!scribbit || ownerUserId !== userId || !wearsGear) {
-          await transaction.unwatch();
-          settled = true;
-          break;
-        }
-        if (scribbit.gearRanks?.[gearId] === rank) {
-          await transaction.unwatch();
-          settled = true;
-          break;
-        }
-
-        expectedScribbit = prepareScribbitForStorage({
-          ...scribbit,
-          gearRanks: { ...(scribbit.gearRanks ?? {}), [gearId]: rank },
-        });
-        await transaction.multi();
-        await transaction.set(scribbitKey, serializeScribbit(expectedScribbit));
-        const result = await transaction.exec();
-        if (Array.isArray(result) && result.length > 0) {
-          settled = true;
-          break;
-        }
-      } catch (error) {
-        await discardWatchedTransaction(transaction, 'Forged Gear refresh');
-        const recoveredScribbit = parseScribbit(await storage.get(scribbitKey));
-        if (
-          expectedScribbit &&
-          recoveredScribbit?.gearRanks?.[gearId] === rank
-        ) {
-          settled = true;
-          break;
-        }
-        throw error;
-      }
-    }
-    if (!settled) {
-      throw new Error(
-        `Scribbit ${scribbitId} changed too often to apply forged Gear.`
-      );
-    }
-  }
 };
 
 export const claimUserDailySparWinReward = async (
@@ -2630,6 +2669,166 @@ export const getAliveScribbitsForUser = async (
     .sort(sortNewestFirst);
 };
 
+const getLegacyReusableGearRanks = (
+  storedBytes: string,
+  migratedScribbit: Scribbit
+): Record<string, GearRank> => {
+  let storedValue: unknown;
+  try {
+    storedValue = JSON.parse(storedBytes);
+  } catch {
+    return {};
+  }
+  if (!isRecord(storedValue) || !isRecord(storedValue.gearRanks)) return {};
+
+  const legacyRanks: Record<string, GearRank> = {};
+  for (const category of EQUIPMENT_CATEGORIES) {
+    for (const gearId of migratedScribbit.equipmentLoadout[category]) {
+      if (gearId === null) continue;
+      const legacyRank = storedValue.gearRanks[gearId];
+      if (isGearRank(legacyRank)) {
+        legacyRanks[gearId] = legacyRank;
+      }
+    }
+  }
+  return legacyRanks;
+};
+
+const getInventoryRankPromotions = (
+  inventoryEntries: Record<string, string>,
+  legacyRanks: Record<string, GearRank>
+): Record<string, string> => {
+  const promotedFields: Record<string, string> = {};
+  for (const [gearId, legacyRank] of Object.entries(legacyRanks)) {
+    const rankField = getInventoryGearRankField(gearId);
+    const storedRankValue = inventoryEntries[rankField];
+    if (storedRankValue === undefined) {
+      promotedFields[rankField] = legacyRank.toString();
+      continue;
+    }
+    const storedRank = Number(storedRankValue);
+    if (!isGearRank(storedRank)) {
+      throw new Error(
+        `Stored Gear rank for ${gearId} is invalid and was preserved.`
+      );
+    }
+    if (legacyRank > storedRank) {
+      promotedFields[rankField] = legacyRank.toString();
+    }
+  }
+  return promotedFields;
+};
+
+const inventoryPreservesLegacyRanks = (
+  inventoryEntries: Record<string, string>,
+  legacyRanks: Record<string, GearRank>
+): boolean => {
+  return Object.entries(legacyRanks).every(([gearId, legacyRank]) => {
+    const storedRank = Number(
+      inventoryEntries[getInventoryGearRankField(gearId)]
+    );
+    return isGearRank(storedRank) && storedRank >= legacyRank;
+  });
+};
+
+export const migrateLivingScribbitsForUser = async (
+  storage: ArenaStorage,
+  userId: string
+): Promise<number> => {
+  if (!storage.watch) {
+    throw new Error('Scribbit data migration requires transaction support.');
+  }
+  const rankedScribbits = await storage.zRange(
+    getUserAliveScribbitsKey(userId),
+    0,
+    MAX_ALIVE_PER_USER + 10,
+    { by: 'rank', reverse: true }
+  );
+  const inventoryKey = getInventoryKey(userId);
+  let migratedCount = 0;
+  for (const { member: scribbitId } of rankedScribbits) {
+    const scribbitKey = getScribbitKey(scribbitId);
+    const ownerKey = getScribbitOwnerKey(scribbitId);
+    for (
+      let attempt = 0;
+      attempt < MAX_WATCH_TRANSACTION_ATTEMPTS;
+      attempt += 1
+    ) {
+      let transaction: ArenaTransaction | undefined;
+      let expectedLegacyRanks: Record<string, GearRank> = {};
+      try {
+        transaction = await storage.watch(
+          scribbitKey,
+          ownerKey,
+          inventoryKey
+        );
+        const [storedBytes, ownerUserId, inventoryEntries] = await Promise.all([
+          storage.get(scribbitKey),
+          storage.get(ownerKey),
+          storage.hGetAll(inventoryKey),
+        ]);
+        if (ownerUserId !== userId || storedBytes === undefined) {
+          await transaction.unwatch();
+          break;
+        }
+        const parsed = parseStoredScribbit(storedBytes);
+        if (parsed.status !== 'valid') {
+          await transaction.unwatch();
+          throw new Error(
+            `Stored Scribbit ${scribbitId} is invalid and was preserved.`
+          );
+        }
+        if (!parsed.migrated) {
+          await transaction.unwatch();
+          break;
+        }
+        expectedLegacyRanks = getLegacyReusableGearRanks(
+          storedBytes,
+          parsed.value
+        );
+        const rankPromotions = getInventoryRankPromotions(
+          inventoryEntries,
+          expectedLegacyRanks
+        );
+        const migratedBytes = serializeScribbit(parsed.value);
+        await transaction.multi();
+        if (Object.keys(rankPromotions).length > 0) {
+          await transaction.hSet(inventoryKey, rankPromotions);
+        }
+        await transaction.set(scribbitKey, migratedBytes);
+        const result = await transaction.exec();
+        if (Array.isArray(result) && result.length > 0) {
+          migratedCount += 1;
+          break;
+        }
+      } catch (error) {
+        await discardWatchedTransaction(transaction, 'Scribbit v4 migration');
+        const [recoveredBytes, recoveredInventory] = await Promise.all([
+          storage.get(scribbitKey),
+          storage.hGetAll(inventoryKey),
+        ]);
+        if (recoveredBytes !== undefined) {
+          const recovered = parseStoredScribbit(recoveredBytes);
+          if (
+            recovered.status === 'valid' &&
+            !recovered.migrated &&
+            recovered.sourceVersion === SCRIBBIT_SCHEMA_VERSION &&
+            inventoryPreservesLegacyRanks(
+              recoveredInventory,
+              expectedLegacyRanks
+            )
+          ) {
+            migratedCount += 1;
+            break;
+          }
+        }
+        if (attempt === MAX_WATCH_TRANSACTION_ATTEMPTS - 1) throw error;
+      }
+    }
+  }
+  return migratedCount;
+};
+
 export const enforceAliveScribbitLimit = async (
   storage: ArenaStorage,
   userId: string,
@@ -2909,6 +3108,7 @@ export const retireOwnedScribbit = async (
     {
       additionalWatchedKeys: [
         getScribbitBeliefVersionKey(scribbitId),
+        getInventoryKey(ownerUserId),
         ...(titleWatchKey ? [titleWatchKey] : []),
       ],
     }
@@ -3023,6 +3223,7 @@ export const expireDueScribbits = async (
           {
             additionalWatchedKeys: [
               getScribbitBeliefVersionKey(matureScribbit.id),
+              getInventoryKey(ownerUserId),
               ...(titleWatchKey ? [titleWatchKey] : []),
             ],
           }

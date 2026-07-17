@@ -124,7 +124,7 @@ test('Gear resolution keeps the 100-point drawing identity in current transcript
     100
   );
   assert.equal(combatSelection.selectPrimaryPower(geared.stats), 'nib_halo');
-  assert.equal(report.simulation.version, 7);
+  assert.equal(report.simulation.version, 8);
   assert.equal(
     report.simulation.fighters[0].gear.techniques[0].leadGearId,
     'tiny-sword'
@@ -138,7 +138,7 @@ test('Gear resolution keeps the 100-point drawing identity in current transcript
   assert.equal(battleStore.isBattleReport({ ...report, kind: 'boss' }), false);
 
   const rumble = battle.simulate(geared, plain, 41, balancedForecast, 'rumble');
-  assert.equal(rumble.simulation.version, 7);
+  assert.equal(rumble.simulation.version, 8);
   assert.equal(rumble.simulation.fighters[0].gear, undefined);
   assert.equal(battleStore.isBattleReport(rumble), true);
 });
@@ -177,7 +177,7 @@ test('health Gear cannot delay the Ink Pressure comeback trigger', () => {
   const gearedTarget = fighterWithGear(
     'ink-pressure-target',
     builds.inkquake,
-    'inkquake-crater-crown',
+    'beanie',
     6
   );
   const opponent = makeFighter(
@@ -515,8 +515,15 @@ test('all six Gear families stay bounded and combat stays deterministic per seed
           repeated.simulation.events,
           repeatedAgain.simulation.events
         );
-        assert.ok(combatTranscript.parseBattleTranscript(first.simulation));
-        assert.ok(combatTranscript.parseBattleTranscript(repeated.simulation));
+        const fixtureLabel = `${gearId} rank ${rank} ${power}`;
+        assert.ok(
+          combatTranscript.parseBattleTranscript(first.simulation),
+          `seed 1 transcript failed validation for ${fixtureLabel}`
+        );
+        assert.ok(
+          combatTranscript.parseBattleTranscript(repeated.simulation),
+          `seed 600 transcript failed validation for ${fixtureLabel}`
+        );
         checkedLoadouts += 1;
       }
     }

@@ -56,7 +56,36 @@ test('presentation-space fighter separation preserves readable drawings', () => 
     });
     assert.ok(separated.distance >= minimumDistance - 0.01);
     assert.ok(separated.a.x >= 24 && separated.b.x <= viewportWidth - 24);
+    assert.ok(separated.a.x < separated.b.x);
   }
+});
+
+test('battle presentation keeps fixed inward-facing stage sides', () => {
+  const minimumDistance = 170;
+  const crossed = battlePresentation.separateFighterScreenPositions({
+    a: { x: 410, y: 440 },
+    b: { x: 170, y: 610 },
+    minimumDistance,
+    minimumX: 24,
+    maximumX: 456,
+  });
+  assert.equal(crossed.a.x, 170);
+  assert.equal(crossed.b.x, 410);
+  assert.ok(crossed.a.x < crossed.b.x);
+
+  const verticallySeparated = battlePresentation.separateFighterScreenPositions(
+    {
+      a: { x: 246, y: 360 },
+      b: { x: 250, y: 720 },
+      minimumDistance,
+      minimumX: 24,
+      maximumX: 456,
+    }
+  );
+  assert.ok(
+    verticallySeparated.b.x - verticallySeparated.a.x >= minimumDistance,
+    'vertical movement must not collapse the inward-facing left/right lanes'
+  );
 });
 
 test('Longshot keeps a smooth visible projectile lane while fighting at range', () => {
@@ -76,7 +105,7 @@ test('Longshot keeps a smooth visible projectile lane while fighting at range', 
   const rangedDistance =
     battlePresentation.planFighterPresentationMinimumDistance({
       fighterDisplaySize,
-      combatDistance: 4_500,
+      combatDistance: 5_000,
       fighterRoles: ['longshot', 'mage'],
     });
   const ordinaryDistance =
@@ -89,12 +118,12 @@ test('Longshot keeps a smooth visible projectile lane while fighting at range', 
   assert.equal(closeDistance, fighterDisplaySize * 0.82);
   assert.ok(transitionDistance > closeDistance);
   assert.ok(transitionDistance < rangedDistance);
-  assert.equal(rangedDistance, fighterDisplaySize * 1.35);
+  assert.equal(rangedDistance, fighterDisplaySize * 1.55);
   assert.equal(ordinaryDistance, fighterDisplaySize * 0.82);
   assert.equal(
     battlePresentation.planFighterPresentationMinimumDistance({
       fighterDisplaySize,
-      combatDistance: 4_500,
+      combatDistance: 5_000,
       fighterRoles: ['longshot', 'mage'],
     }),
     rangedDistance
@@ -103,6 +132,21 @@ test('Longshot keeps a smooth visible projectile lane while fighting at range', 
 
 test('battle reads identify Power-Ups, Gear, and class advantage', () => {
   assert.match(replaySource, /lastPowerUpRead/);
+  assert.match(
+    replaySource,
+    /fighter\.scribbit\.name\.toUpperCase\(\)\} • ACTIVE/,
+    'Power-Up activation reads should stay concise instead of printing full catalog descriptions'
+  );
+  assert.match(
+    replaySource,
+    /const cardWidth = 258[\s\S]*const cardHeight = 64[\s\S]*fitText\(title\.toUpperCase\(\), 25\)[\s\S]*fitText\(detail\.toUpperCase\(\), 34\)/,
+    'combat reads should use bounded compact cards'
+  );
+  assert.doesNotMatch(
+    replaySource,
+    /`\$\{title\}\\n\$\{detail\}`, 27/,
+    'combat reads should not return to unbounded stacked text'
+  );
   assert.match(replaySource, /lastGearRead/);
   assert.match(replaySource, /'ADVANTAGE \+10%'/);
   assert.match(replaySource, /lastAdvantageCue/);

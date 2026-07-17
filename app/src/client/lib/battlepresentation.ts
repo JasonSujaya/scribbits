@@ -658,15 +658,17 @@ export function planFighterPresentationMinimumDistance(
     0,
     1
   );
-  const rangedMinimum = displaySize * 1.35;
+  const rangedMinimum = displaySize * 1.55;
   return (
     closeCombatMinimum + (rangedMinimum - closeCombatMinimum) * blendProgress
   );
 }
 
 // Combat bodies are intentionally much smaller than player drawings. Preserve
-// authoritative simulation coordinates while keeping the two drawings
-// visually readable in presentation space.
+// their authoritative movement without letting the presentation swap the two
+// stage sides: fighter A always reads from the left and fighter B from the
+// right, matching their fixed inward-facing art and HUD. This also prevents a
+// one-frame jump when the simulation bodies cross in world space.
 export function separateFighterScreenPositions(input: {
   a: FighterScreenPosition;
   b: FighterScreenPosition;
@@ -674,20 +676,30 @@ export function separateFighterScreenPositions(input: {
   minimumX: number;
   maximumX: number;
 }): SeparatedFighterPositions {
-  const deltaY = input.b.y - input.a.y;
-  const deltaX = input.b.x - input.a.x;
-  const currentDistance = Math.hypot(deltaX, deltaY);
+  const orderedA = {
+    x: Math.min(input.a.x, input.b.x),
+    y: input.a.y,
+  };
+  const orderedB = {
+    x: Math.max(input.a.x, input.b.x),
+    y: input.b.y,
+  };
+  const deltaY = orderedB.y - orderedA.y;
+  const deltaX = orderedB.x - orderedA.x;
   const boundedMinimumDistance = Math.max(0, input.minimumDistance);
-  if (currentDistance >= boundedMinimumDistance) {
-    return { a: input.a, b: input.b, distance: currentDistance };
+  if (deltaX >= boundedMinimumDistance) {
+    return {
+      a: orderedA,
+      b: orderedB,
+      distance: Math.hypot(deltaX, deltaY),
+    };
   }
 
   const requiredHorizontalDistance = Math.min(
     Math.max(0, input.maximumX - input.minimumX),
-    Math.sqrt(Math.max(0, boundedMinimumDistance ** 2 - deltaY ** 2))
+    boundedMinimumDistance
   );
-  const midpointX = (input.a.x + input.b.x) / 2;
-  const aIsLeft = deltaX <= 0;
+  const midpointX = (orderedA.x + orderedB.x) / 2;
   let leftX = midpointX - requiredHorizontalDistance / 2;
   let rightX = midpointX + requiredHorizontalDistance / 2;
   if (leftX < input.minimumX) {
@@ -700,8 +712,8 @@ export function separateFighterScreenPositions(input: {
   }
   leftX = Math.max(input.minimumX, leftX);
   rightX = Math.min(input.maximumX, rightX);
-  const a = { x: aIsLeft ? leftX : rightX, y: input.a.y };
-  const b = { x: aIsLeft ? rightX : leftX, y: input.b.y };
+  const a = { x: leftX, y: orderedA.y };
+  const b = { x: rightX, y: orderedB.y };
   return { a, b, distance: Math.hypot(b.x - a.x, b.y - a.y) };
 }
 

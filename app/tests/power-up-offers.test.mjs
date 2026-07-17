@@ -44,10 +44,16 @@ const fighter = (id = 'power-up-fighter') => ({
   legacy: null,
 });
 
-test('Rumble and Champion wins are wired to persisted Power-Up offers', () => {
+test('battle completion and Rumble wins are wired to persisted Power-Up offers', () => {
   assert.match(apiSource, /lastRumbleReceipt\.wins > 0/);
   assert.match(apiSource, /source: 'rumble-day-win'/);
-  assert.match(apiSource, /source: 'champion-win'/);
+  assert.match(
+    apiSource,
+    /source: report\.winner === 'a' \? 'champion-win' : 'champion-loss'/
+  );
+  assert.match(apiSource, /'exhibition-loss'/);
+  assert.match(apiSource, /'rival-run-loss'/);
+  assert.match(apiSource, /'rival-run-final-loss'/);
   assert.match(apiSource, /currentArenaDay: dayNumber/);
 });
 
@@ -58,6 +64,10 @@ test('a persisted three-card win offer claims exactly one Power-Up atomically', 
   await memory.storage.set(
     scribbits.getScribbitKey(scribbit.id),
     scribbits.serializeScribbit(scribbit)
+  );
+  await memory.storage.set(
+    offers.getPowerUpDiscoveriesKey(userId),
+    JSON.stringify(['future-weapon-passive'])
   );
 
   const offer = await offers.getOrCreatePowerUpOffer(memory.storage, {
@@ -98,6 +108,15 @@ test('a persisted three-card win offer claims exactly one Power-Up atomically', 
     await offers.loadPowerUpDiscoveries(memory.storage, userId),
     [selectedId]
   );
+  assert.deepEqual(
+    JSON.parse(
+      await memory.storage.get(offers.getPowerUpDiscoveriesKey(userId))
+    ),
+    {
+      schemaVersion: 1,
+      ids: ['future-weapon-passive', selectedId],
+    }
+  );
   assert.equal(
     await memory.storage.get(offers.getPowerUpOfferKey(userId, scribbit.id)),
     undefined
@@ -109,7 +128,7 @@ test('a persisted three-card win offer claims exactly one Power-Up atomically', 
     [selectedId]
   );
 
-  assert.equal(
+  assert.deepEqual(
     await offers.claimPowerUpOffer(memory.storage, {
       userId,
       scribbitId: scribbit.id,
@@ -120,7 +139,75 @@ test('a persisted three-card win offer claims exactly one Power-Up atomically', 
         expectedPowerUpCount: 0,
       },
     }),
-    null
+    claim
+  );
+});
+
+test('a lost EXEC reply recovers the exact committed claim without mutating twice', async () => {
+  const userId = 'lost-reply-player';
+  const scribbit = fighter('lost-reply-fighter');
+  const offer = {
+    version: 1,
+    id: `power-up-offer:v1:lost-reply-report:${scribbit.id}`,
+    scribbitId: scribbit.id,
+    sourceReportId: 'lost-reply-report',
+    source: 'exhibition-win',
+    choices: ['v1-edge-spring', 'v1-paper-shield', 'v1-combo-spark'],
+    createdAtMs: 1_000,
+  };
+  const offerKey = offers.getPowerUpOfferKey(userId, scribbit.id);
+  const scribbitKey = scribbits.getScribbitKey(scribbit.id);
+  const memory = createMemoryStorage({
+    loseNextCommitReply: true,
+    strings: {
+      [offerKey]: JSON.stringify(offer),
+      [scribbitKey]: scribbits.serializeScribbit(scribbit),
+    },
+  });
+  const request = {
+    scribbitId: scribbit.id,
+    offerId: offer.id,
+    selectedId: offer.choices[1],
+    expectedPowerUpCount: 0,
+  };
+
+  const recovered = await offers.claimPowerUpOffer(memory.storage, {
+    userId,
+    scribbitId: scribbit.id,
+    request,
+  });
+  assert.deepEqual(recovered, {
+    scribbitId: scribbit.id,
+    selectedId: request.selectedId,
+    powerUpIds: [request.selectedId],
+    discoveredPowerUpIds: [request.selectedId],
+  });
+  assert.deepEqual(
+    await offers.claimPowerUpOffer(memory.storage, {
+      userId,
+      scribbitId: scribbit.id,
+      request,
+    }),
+    recovered
+  );
+  assert.deepEqual(
+    scribbits.parseScribbit(await memory.storage.get(scribbitKey)).powerUpIds,
+    [request.selectedId]
+  );
+  assert.equal(await memory.storage.get(offerKey), undefined);
+  assert.equal(
+    memory.mutations.filter(
+      (mutation) => mutation.method === 'set' && mutation.key === scribbitKey
+    ).length,
+    1
+  );
+  assert.equal(
+    memory.mutations.filter(
+      (mutation) =>
+        mutation.method === 'hSet' &&
+        mutation.key === offers.getPowerUpClaimReceiptsKey(userId, scribbit.id)
+    ).length,
+    1
   );
 });
 
@@ -135,7 +222,69 @@ test('Power-Up discoveries parse safely and stay player-wide', async () => {
     await offers.loadPowerUpDiscoveries(memory.storage, userId),
     ['v1-wallop', 'v1-paper-twin']
   );
-  assert.deepEqual(offers.parsePowerUpDiscoveries('{broken'), []);
+  assert.deepEqual(
+    offers.parsePowerUpDiscoveries(
+      JSON.stringify(['v1-wallop', 'not-real', 'v1-wallop'])
+    ),
+    {
+      status: 'valid',
+      storedIds: ['v1-wallop', 'not-real'],
+      recognizedIds: ['v1-wallop'],
+      needsMigration: true,
+    }
+  );
+  assert.deepEqual(offers.parsePowerUpDiscoveries('{broken'), {
+    status: 'invalid',
+  });
+  assert.deepEqual(
+    offers.parsePowerUpDiscoveries(
+      JSON.stringify({ schemaVersion: 2, ids: ['v1-wallop'] })
+    ),
+    { status: 'unsupported', schemaVersion: 2 }
+  );
+});
+
+test('invalid Power-Up discovery bytes block claims without mutation', async () => {
+  const memory = createMemoryStorage();
+  const userId = 'invalid-discovery-player';
+  const scribbit = fighter('invalid-discovery-fighter');
+  const discoveryKey = offers.getPowerUpDiscoveriesKey(userId);
+  const invalidBytes = '{broken';
+  await memory.storage.set(
+    scribbits.getScribbitKey(scribbit.id),
+    scribbits.serializeScribbit(scribbit)
+  );
+  await memory.storage.set(discoveryKey, invalidBytes);
+  const offer = await offers.getOrCreatePowerUpOffer(memory.storage, {
+    userId,
+    scribbit,
+    reportId: 'invalid-discovery-report',
+    source: 'exhibition-win',
+    createdAtMs: 1_000,
+    currentArenaDay: 10,
+  });
+  assert.ok(offer);
+
+  await assert.rejects(
+    offers.claimPowerUpOffer(memory.storage, {
+      userId,
+      scribbitId: scribbit.id,
+      request: {
+        scribbitId: scribbit.id,
+        offerId: offer.id,
+        selectedId: offer.choices[0],
+        expectedPowerUpCount: 0,
+      },
+    }),
+    /unreadable and were preserved/
+  );
+  assert.equal(await memory.storage.get(discoveryKey), invalidBytes);
+  assert.deepEqual(
+    scribbits.parseScribbit(
+      await memory.storage.get(scribbits.getScribbitKey(scribbit.id))
+    ).powerUpIds,
+    []
+  );
 });
 
 test('persisted offers derive role-aligned choices from Scribbit stats', async () => {
@@ -214,7 +363,11 @@ test('every role keeps three valid choices through growing and mature caps', () 
       assert.equal(choices?.length, 3);
       assert.ok(
         choices.every((id) =>
-          powerUps.powerUpIsOfferableForRole(id, combatRole)
+          powerUps.powerUpIsOfferableForRole(
+            id,
+            combatRole,
+            ownedPowerUpIds.length
+          )
         )
       );
       ownedPowerUpIds.push(choices[0]);

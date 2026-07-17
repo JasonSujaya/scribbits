@@ -82,7 +82,7 @@ export const openPowerUpDraft = (
     scene,
     'Choose one Power-Up',
     () => undefined,
-    `${isBirthOffer ? 'New Scribbit bonus.' : 'Victory reward.'} Choose one of three behavioral Power-Ups. ${ownedPowerUpCount} of 5 slots are filled.`
+    `${isBirthOffer ? 'New Scribbit bonus.' : 'Battle reward.'} Choose one of three behavioral Power-Ups. ${ownedPowerUpCount} of 5 slots are filled.`
   );
   const controls: HTMLButtonElement[] = [];
   const resetCardVisuals: Array<() => void> = [];

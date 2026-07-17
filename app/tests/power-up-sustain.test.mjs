@@ -125,6 +125,13 @@ test('the redesigned catalog triggers across deterministic role matchups', () =>
       'v1-center-fold',
       'v1-masterpiece',
     ],
+    [
+      'v2-bank-shot',
+      'v2-orbiting-nib',
+      'v2-wider-halo',
+    ],
+    ['v2-returning-stroke'],
+    ['v2-paint-splash', 'v2-wet-paint'],
   ];
   const triggeredIds = new Set();
   for (const build of builds) {
@@ -156,6 +163,28 @@ test('the redesigned catalog triggers across deterministic role matchups', () =>
       }
     }
   }
+
+  const lastScribbleTranscript = combat.simulateCombat({
+    seed: 'catalog-coverage-last-scribble-lethal',
+    fighters: [
+      {
+        id: 'last-scribble-owner',
+        name: 'Last Scribble Owner',
+        stats: { chonk: 0, spike: 0, zip: 0, charm: 40 },
+        powerUpIds: ['v1-last-scribble'],
+      },
+      {
+        id: 'last-scribble-rival',
+        name: 'Last Scribble Rival',
+        stats: { chonk: 200, spike: 0, zip: 0, charm: 0 },
+      },
+    ],
+  });
+  lastScribbleTranscript.timeline.forEach((event) => {
+    if (event.kind === 'power_up_triggered' && event.actor === 'a') {
+      triggeredIds.add(event.powerUpId);
+    }
+  });
 
   assert.deepEqual(
     [...combat.POWER_UP_IDS].filter((id) => !triggeredIds.has(id)),

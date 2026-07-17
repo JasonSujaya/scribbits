@@ -32,6 +32,7 @@ export const chooseHomeTrackIndex = (
 const removeRetryListeners = (): void => {
   if (!retryListenersInstalled || typeof document === 'undefined') return;
   document.removeEventListener('pointerdown', retryPlayback, true);
+  document.removeEventListener('click', retryPlayback, true);
   document.removeEventListener('keydown', retryPlayback, true);
   retryListenersInstalled = false;
 };
@@ -39,8 +40,10 @@ const removeRetryListeners = (): void => {
 const attemptPlayback = (audio: HTMLAudioElement): void => {
   const source = audio.dataset.scribbitsSoundtrackSource;
   if (!audio.getAttribute('src') && source) audio.src = source;
+  audio.dataset.scribbitsSoundtrackState = 'starting';
   void audio.play().then(
     () => {
+      audio.dataset.scribbitsSoundtrackState = 'playing';
       if (audio !== currentAudio) return;
       removeRetryListeners();
     },
@@ -50,11 +53,22 @@ const attemptPlayback = (audio: HTMLAudioElement): void => {
         typeof error === 'object' &&
         error !== null &&
         'name' in error &&
+        error.name === 'AbortError'
+      ) {
+        audio.dataset.scribbitsSoundtrackState = 'paused';
+        return;
+      }
+      if (
+        typeof error === 'object' &&
+        error !== null &&
+        'name' in error &&
         error.name === 'NotAllowedError'
       ) {
+        audio.dataset.scribbitsSoundtrackState = 'blocked';
         installRetryListeners();
         return;
       }
+      audio.dataset.scribbitsSoundtrackState = 'error';
       recoverSoundtrackAudio(audio);
     }
   );
@@ -64,8 +78,11 @@ const requestPlayback = (): void => {
   const audio = currentAudio;
   if (!audio) return;
   playbackRequested = true;
+  // Arm the gesture fallback before the optimistic play attempt. Some embedded
+  // browsers leave a blocked play() promise pending instead of rejecting it,
+  // so waiting for NotAllowedError can miss the player's first in-game tap.
+  installRetryListeners();
   if (document.hidden) {
-    installRetryListeners();
     return;
   }
   attemptPlayback(audio);
@@ -73,12 +90,17 @@ const requestPlayback = (): void => {
 
 function retryPlayback(): void {
   if (!playbackRequested || !currentAudio || document.hidden) return;
+  if (currentAudio.preload === 'none') {
+    currentAudio.preload = 'auto';
+    currentAudio.load();
+  }
   attemptPlayback(currentAudio);
 }
 
 function installRetryListeners(): void {
   if (retryListenersInstalled || typeof document === 'undefined') return;
   document.addEventListener('pointerdown', retryPlayback, true);
+  document.addEventListener('click', retryPlayback, true);
   document.addEventListener('keydown', retryPlayback, true);
   retryListenersInstalled = true;
 }
@@ -178,6 +200,7 @@ const replaceSoundtrack = (
   const audio = new Audio();
   audio.dataset.scribbitsSoundtrack = mode;
   audio.dataset.scribbitsSoundtrackSource = source;
+  audio.dataset.scribbitsSoundtrackState = 'idle';
   // Home music starts optimistically because Reddit's expanded-view gesture
   // happens outside this iframe. Browsers that block autoplay fall back to the
   // first in-game pointer or keyboard interaction through requestPlayback().
@@ -323,6 +346,9 @@ export const playHomeSoundtrack = (): void => {
   }
   startNextHomeSoundtrack();
 };
+
+export const isHomeSoundtrackPlaying = (): boolean =>
+  currentMode === 'home' && currentAudio !== null && !currentAudio.paused;
 
 // Home and Gallery are one uninterrupted idle-music area. Scene shutdown runs
 // before the destination scene starts, so a short deferred release lets the
