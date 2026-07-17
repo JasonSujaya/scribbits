@@ -14,6 +14,7 @@ export const context = {
   userId: 'api-contract-user',
   username: 'api_contract_user',
   appName: 'scribbits',
+  appSlug: 'scribbits',
   appVersion: '0.0.0-test',
   subredditName: 'scribbits_test',
   subredditId: 't5_scribbits_test',
@@ -65,7 +66,7 @@ const getSortedSet = (key) => {
 const setString = (key, value) => {
   if (
     apiContractRuntimeState.failNextArenaPostReceipt &&
-    key === 'app:main-post:v2'
+    key === 'app:main-post:v3'
   ) {
     apiContractRuntimeState.failNextArenaPostReceipt = false;
     throw new Error('simulated Arena post receipt failure');

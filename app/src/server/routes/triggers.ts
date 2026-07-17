@@ -14,7 +14,9 @@ const arenaMaintenanceStartDelayMilliseconds = 1_000;
 const handleAppSetup = async (c: HonoContext) => {
   try {
     const input = await c.req.json<OnAppInstallRequest | OnAppUpgradeRequest>();
-    const post = await ensureMainAppPost(redis);
+    const post = await ensureMainAppPost(redis, {
+      recoverExistingPost: input.type !== 'AppInstall',
+    });
     const deletedObsoletePostCount = await deleteObsoleteAppPosts(post.id);
     const runAt = new Date(Date.now() + arenaMaintenanceStartDelayMilliseconds);
     const jobId = await scheduler.runJob({

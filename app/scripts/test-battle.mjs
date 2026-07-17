@@ -1579,14 +1579,14 @@ const installPostResponse = await productionApiContract.app.request(
   {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ type: 'install' }),
+    body: JSON.stringify({ type: 'AppInstall' }),
   }
 );
 assert.equal(installPostResponse.status, 200);
 assert.deepEqual(await installPostResponse.json(), {
   status: 'success',
   message:
-    'Scribbits is ready in scribbits_test with one app post (api-contract-post-1); removed 0 obsolete app posts and scheduled recovery job api-contract-job-1 (trigger: install)',
+    'Scribbits is ready in scribbits_test with one app post (api-contract-post-1); removed 0 obsolete app posts and scheduled recovery job api-contract-job-1 (trigger: AppInstall)',
 });
 const initialMaintenanceResponse = await productionApiContract.app.request(
   '/internal/scheduler/nightly-arena',
@@ -1626,6 +1626,33 @@ assert.equal(
   2,
   'repeated maintenance must not duplicate the opening Arena update'
 );
+
+productionApiContract.resetApiContractRuntime();
+productionApiContract.seedApiContractPost({
+  id: 'detached-main-post',
+  title: 'Draw a Scribbit. Watch it fight.',
+  postData: undefined,
+});
+const reinstallRecoveryResponse = await productionApiContract.app.request(
+  '/internal/triggers/on-app-install',
+  {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ type: 'AppInstall' }),
+  }
+);
+assert.equal(reinstallRecoveryResponse.status, 200);
+assert.equal(productionApiContract.apiContractRuntimeState.submittedPosts, 1);
+assert.equal(productionApiContract.apiContractRuntimeState.deletedPosts, 1);
+assert.equal(
+  productionApiContract.getApiContractString('app:main-post:v3'),
+  'api-contract-post-1'
+);
+assert.match(
+  (await reinstallRecoveryResponse.json()).message,
+  /removed 1 obsolete app posts/
+);
+pass('fresh installs replace detached custom-post shells');
 
 productionApiContract.resetApiContractRuntime();
 productionApiContract.setApiContractString(
@@ -1870,7 +1897,7 @@ assert.equal(productionApiContract.apiContractRuntimeState.submittedPosts, 1);
 assert.equal(
   productionApiContract.getApiContractHashField(
     'app:main-post-publishing-claims',
-    'main-v2'
+    'main-v3'
   ),
   'published:api-contract-post-1'
 );
@@ -1878,7 +1905,7 @@ const recoveredReceiptResponse = await requestArenaPostMenu();
 assert.equal(recoveredReceiptResponse.status, 200);
 assert.equal(productionApiContract.apiContractRuntimeState.submittedPosts, 1);
 assert.equal(
-  productionApiContract.getApiContractString('app:main-post:v2'),
+  productionApiContract.getApiContractString('app:main-post:v3'),
   'api-contract-post-1'
 );
 
@@ -1893,7 +1920,7 @@ assert.equal(productionApiContract.apiContractRuntimeState.submittedPosts, 1);
 assert.match(
   productionApiContract.getApiContractHashField(
     'app:main-post-publishing-claims',
-    'main-v2'
+    'main-v3'
   ) ?? '',
   /^\d+$/
 );
@@ -1912,7 +1939,7 @@ assert.equal(productionApiContract.apiContractRuntimeState.submittedPosts, 0);
 assert.equal(
   productionApiContract.getApiContractHashField(
     'app:main-post-publishing-claims',
-    'main-v2'
+    'main-v3'
   ),
   undefined,
   'lookup failure must stop before claiming or publishing'
@@ -1930,7 +1957,7 @@ assert.equal(productionApiContract.apiContractRuntimeState.submittedPosts, 0);
 assert.match(
   productionApiContract.getApiContractHashField(
     'app:main-post-publishing-claims',
-    'main-v2'
+    'main-v3'
   ) ?? '',
   /^\d+$/,
   'ambiguous submission failure must retain its claim and fail closed'
