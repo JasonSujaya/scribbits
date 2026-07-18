@@ -1712,8 +1712,8 @@ assert.equal(
 );
 assert.equal(
   productionApiContract.apiContractRuntimeState.submittedPosts,
-  2,
-  'upgrade catch-up publishes one idempotent Arena update beside the playable post'
+  3,
+  'upgrade catch-up publishes visual Arena and weekly fight posts beside the playable post'
 );
 pass('app upgrades schedule a stale Arena catch-up with community updates');
 
@@ -2014,6 +2014,17 @@ productionApiContract.seedApiContractPost({
   postData: undefined,
   authorName: 'community_member',
 });
+productionApiContract.seedApiContractPost({
+  id: 'obsolete-text-fight-post',
+  title: 'Fight of the Week · Days 8–14 · Donono vs Coraloom',
+  postData: undefined,
+});
+productionApiContract.seedApiContractPost({
+  id: 'community-fight-lookalike-post',
+  title: 'Fight of the Week · My own recap',
+  postData: undefined,
+  authorName: 'community_member',
+});
 const upgradeCleanupResponse = await productionApiContract.app.request(
   '/internal/triggers/on-app-upgrade',
   {
@@ -2024,10 +2035,10 @@ const upgradeCleanupResponse = await productionApiContract.app.request(
 );
 assert.equal(upgradeCleanupResponse.status, 200);
 assert.equal(productionApiContract.apiContractRuntimeState.submittedPosts, 1);
-assert.equal(productionApiContract.apiContractRuntimeState.deletedPosts, 2);
+assert.equal(productionApiContract.apiContractRuntimeState.deletedPosts, 3);
 assert.match(
   (await upgradeCleanupResponse.json()).message,
-  /removed 2 obsolete app posts/
+  /removed 3 obsolete app posts/
 );
 pass('upgrade replaces obsolete Scribbits posts with one hooked app post');
 

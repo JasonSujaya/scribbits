@@ -15,6 +15,9 @@ const communityFeed = require(join(compiledSharedRoot, 'communityfeed.js'));
 const communityThemes = require(
   join(compiledSharedRoot, 'content', 'communitydrawthemes.js')
 );
+const communityPostData = require(
+  join(compiledSharedRoot, 'communitypostdata.js')
+);
 const communityPostCandidates = require(
   join(compiledServerRoot, 'core', 'communityPostCandidates.js')
 );
@@ -30,8 +33,20 @@ const createBattleReport = ({
   id,
   kind: 'rumble',
   day: 7,
-  a: { id: `${id}-a`, name: `${id} Alpha` },
-  b: { id: `${id}-b`, name: `${id} Beta` },
+  a: {
+    id: `${id}-a`,
+    name: `${id} Alpha`,
+    artist: 'alpha_artist',
+    imageUrl: 'https://i.redd.it/alpha.png',
+    element: 'storm',
+  },
+  b: {
+    id: `${id}-b`,
+    name: `${id} Beta`,
+    artist: 'beta_artist',
+    imageUrl: 'https://i.redd.it/beta.png',
+    element: 'moss',
+  },
   winner: healthA >= healthB ? 'a' : 'b',
   simulation: {
     result: {
@@ -148,7 +163,6 @@ test('one arena update combines theme, season, event, and final changes', () => 
   });
 
   assert.equal(draft.id, 'arena-update:61');
-  assert.equal(draft.kind, 'custom');
   assert.equal(draft.title, 'Draw Them All · Days 61–63');
   assert.match(draft.body, /u\/champion takes the crown with 42 points/);
   assert.match(draft.body, new RegExp(draft.postData.themes[0].prompt));
@@ -163,6 +177,37 @@ test('one arena update combines theme, season, event, and final changes', () => 
     'Season 1 final',
     'Opening Rumble live',
   ]);
+});
+
+test('season and event updates are visual custom posts instead of text posts', () => {
+  const draft = communityFeed.buildArenaUpdateDraft({
+    arenaDay: 64,
+    appUrl: 'https://reddit.com/r/scribbits/comments/main',
+    themePool: null,
+    startingSeason: null,
+    finalizedSeason: null,
+    startingEvents: [
+      { name: 'Double Ink', seasonName: 'Ink Rising', scoreMultiplier: 2 },
+    ],
+    endedEvents: [],
+  });
+
+  assert.equal(draft.id, 'visual-arena-update:64');
+  assert.equal(draft.entry, 'community');
+  assert.equal(draft.postData.surface, 'community-update');
+  assert.equal(draft.postData.headline, 'Double Ink live');
+  assert.deepEqual(draft.postData.items, [
+    {
+      eyebrow: '2× SCORING',
+      title: 'Double Ink',
+      detail: 'Ink Rising standings earn boosted points now.',
+      tone: 'event',
+    },
+  ]);
+  assert.deepEqual(
+    communityPostData.parseCommunityUpdatePostData(draft.postData),
+    draft.postData
+  );
 });
 
 test('weekly fight post reports the selected fight truthfully', () => {
@@ -181,7 +226,15 @@ test('weekly fight post reports the selected fight truthfully', () => {
     'https://reddit.com/r/scribbits/comments/main'
   );
 
-  assert.equal(draft.id, 'fight-of-the-week:1-7');
+  assert.equal(draft.id, 'visual-fight-of-the-week:1-7');
+  assert.equal(draft.entry, 'community');
+  assert.equal(draft.postData.surface, 'community-fight');
+  assert.equal(draft.postData.reportId, report.id);
+  assert.equal(draft.postData.totalDamage, 125);
+  assert.deepEqual(
+    communityPostData.parseCommunityFightPostData(draft.postData),
+    draft.postData
+  );
   assert.match(draft.title, /weekly-winner Alpha vs weekly-winner Beta/);
   assert.match(draft.body, /125 total damage/);
   assert.match(draft.body, /12 seconds/);

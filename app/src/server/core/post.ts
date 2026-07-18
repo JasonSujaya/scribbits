@@ -9,6 +9,7 @@ const legacyMainPostTitle = 'Scribbits — Draw. Raise. Battle.';
 const publishedMarkerPrefix = 'published:';
 const claimTimeoutMs = 5 * 60 * 1000;
 const legacyRumbleTitle = /^Rumble #\d+ —/;
+const obsoleteTextCommunityTitle = /^(?:Fight of the Week|Arena Update) ·/;
 
 const recoverMainPost = async (): Promise<{ id: string } | null> => {
   const recentPosts = await reddit
@@ -128,7 +129,16 @@ export const deleteObsoleteAppPosts = async (
     const isPreviousMainPost =
       post.title === mainPostTitle &&
       (postData?.surface === 'main' || post.authorName === context.appSlug);
-    if (!isLegacyRumblePost && !isLegacyMainPost && !isPreviousMainPost) {
+    const isObsoleteTextCommunityPost =
+      obsoleteTextCommunityTitle.test(post.title) &&
+      post.authorName === context.appSlug &&
+      postData === undefined;
+    if (
+      !isLegacyRumblePost &&
+      !isLegacyMainPost &&
+      !isPreviousMainPost &&
+      !isObsoleteTextCommunityPost
+    ) {
       continue;
     }
     try {

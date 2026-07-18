@@ -7,10 +7,15 @@ const [
   splashSource,
   challengeHtml,
   challengeSource,
+  communityHtml,
+  communitySource,
   gameHtml,
   gameSource,
   drawSource,
   serverSource,
+  mainPostSource,
+  communityPostPublisherSource,
+  communityFeedSource,
   preloaderSource,
   homeSource,
 ] = await Promise.all([
@@ -18,10 +23,18 @@ const [
   readFile(new URL('../src/client/splash.ts', import.meta.url), 'utf8'),
   readFile(new URL('../src/client/challenge.html', import.meta.url), 'utf8'),
   readFile(new URL('../src/client/challenge.ts', import.meta.url), 'utf8'),
+  readFile(new URL('../src/client/community.html', import.meta.url), 'utf8'),
+  readFile(new URL('../src/client/community.ts', import.meta.url), 'utf8'),
   readFile(new URL('../src/client/game.html', import.meta.url), 'utf8'),
   readFile(new URL('../src/client/game.ts', import.meta.url), 'utf8'),
   readFile(new URL('../src/client/scenes/Draw.ts', import.meta.url), 'utf8'),
   readFile(new URL('../src/server/index.ts', import.meta.url), 'utf8'),
+  readFile(new URL('../src/server/core/post.ts', import.meta.url), 'utf8'),
+  readFile(
+    new URL('../src/server/core/communityPosts.ts', import.meta.url),
+    'utf8'
+  ),
+  readFile(new URL('../src/shared/communityfeed.ts', import.meta.url), 'utf8'),
   readFile(
     new URL('../src/client/scenes/Preloader.ts', import.meta.url),
     'utf8'
@@ -43,6 +56,10 @@ test('Devvit maps inline, expanded, and server entrypoints to production files',
     inline: true,
     entry: 'challenge.html',
   });
+  assert.deepEqual(config.post.entrypoints.community, {
+    inline: true,
+    entry: 'community.html',
+  });
   assert.deepEqual(config.post.entrypoints.game, { entry: 'game.html' });
   assert.equal(
     config.marketingAssets.icon,
@@ -50,6 +67,25 @@ test('Devvit maps inline, expanded, and server entrypoints to production files',
   );
   assert.equal(config.server.entry, 'index.cjs');
   assert.equal(config.dev.subreddit, 'scribbits_dev');
+});
+
+test('community posts render visual fight and update cards with real actions', () => {
+  assert.match(communityHtml, /FIGHT OF THE WEEK/);
+  assert.match(communityHtml, /ARENA BULLETIN/);
+  assert.match(communityHtml, /id="replay-button"/);
+  assert.match(
+    communitySource,
+    /parseCommunityVisualPostData\(context\?\.postData\)/
+  );
+  assert.match(communitySource, /fight\.moments\.forEach/);
+  assert.match(communitySource, /await requestExpandedMode\(event, 'game'\)/);
+});
+
+test('every Scribbits-authored Reddit post uses a visual custom surface', () => {
+  assert.match(mainPostSource, /reddit\.submitCustomPost\(/);
+  assert.match(communityPostPublisherSource, /reddit\.submitCustomPost\(/);
+  assert.doesNotMatch(communityPostPublisherSource, /reddit\.submitPost\(/);
+  assert.doesNotMatch(communityFeedSource, /kind: 'text'/);
 });
 
 test('challenge post renders five dares and opens the existing game', () => {

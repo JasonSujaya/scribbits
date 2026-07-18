@@ -20,7 +20,7 @@ import { ensureMainAppPost } from './post';
 import { loadSeasonCatalog, loadSeasonFinalBoardEntries } from './season';
 import type { ArenaStorage } from './storage';
 
-const publicationStateKey = 'app:community-post-publications:v1';
+const publicationStateKey = 'app:community-post-publications:v2';
 const publishedMarkerPrefix = 'published:';
 const recoverMarkerPrefix = 'recover:';
 const publicationClaimTimeoutMilliseconds = 45_000;
@@ -57,18 +57,40 @@ const recoverPublishedPost = async (
     .all();
   for (const post of recentPosts) {
     if (post.title !== draft.title) continue;
-    if (draft.kind === 'custom') {
-      const postData = await post.getPostData();
-      if (
-        postData?.surface !== draft.postData.surface ||
-        postData?.arenaDay !== draft.postData.arenaDay
-      ) {
-        continue;
-      }
+    const postData = await post.getPostData();
+    if (postData?.surface !== draft.postData.surface) continue;
+    if (
+      draft.postData.surface === 'community-fight'
+        ? postData?.reportId !== draft.postData.reportId
+        : postData?.arenaDay !== draft.postData.arenaDay
+    ) {
+      continue;
     }
     return { id: post.id };
   }
   return null;
+};
+
+const createRedditPostData = (draft: CommunityPostDraft) => {
+  if (draft.postData.surface === 'community-challenge') {
+    return {
+      ...draft.postData,
+      themes: draft.postData.themes.map((theme) => ({ ...theme })),
+      announcements: [...draft.postData.announcements],
+    };
+  }
+  if (draft.postData.surface === 'community-fight') {
+    return {
+      ...draft.postData,
+      fighterA: { ...draft.postData.fighterA },
+      fighterB: { ...draft.postData.fighterB },
+      moments: draft.postData.moments.map((moment) => ({ ...moment })),
+    };
+  }
+  return {
+    ...draft.postData,
+    items: draft.postData.items.map((item) => ({ ...item })),
+  };
 };
 
 const publishCommunityPost = async (
@@ -112,32 +134,20 @@ const publishCommunityPost = async (
 
   let post: { id: string };
   try {
-    post =
-      draft.kind === 'custom'
-        ? await reddit.submitCustomPost({
-            subredditName: context.subredditName,
-            title: draft.title,
-            entry: draft.entry,
-            postData: {
-              ...draft.postData,
-              themes: draft.postData.themes.map((theme) => ({ ...theme })),
-              announcements: [...draft.postData.announcements],
-            },
-            textFallback: { text: draft.body },
-            sendreplies: false,
-            styles: {
-              backgroundColor: '#2A2118FF',
-              backgroundColorDark: '#2A2118FF',
-              heightPixels: 512,
-              supportsChromeless: true,
-            },
-          })
-        : await reddit.submitPost({
-            subredditName: context.subredditName,
-            title: draft.title,
-            text: draft.body,
-            sendreplies: false,
-          });
+    post = await reddit.submitCustomPost({
+      subredditName: context.subredditName,
+      title: draft.title,
+      entry: draft.entry,
+      postData: createRedditPostData(draft),
+      textFallback: { text: draft.body },
+      sendreplies: false,
+      styles: {
+        backgroundColor: '#2A2118FF',
+        backgroundColorDark: '#2A2118FF',
+        heightPixels: 512,
+        supportsChromeless: true,
+      },
+    });
   } catch (error) {
     // A retry first scans Reddit by exact title, so this is safe whether the
     // request failed before submission or its successful reply was lost.
@@ -256,8 +266,16 @@ export const publishArenaCommunityPosts = async (
     if (updateDraft) await publishCommunityPost(storage, updateDraft);
   }
 
-  for (const resolvedArenaDay of input.resolvedArenaDays) {
-    if (resolvedArenaDay % 7 !== 0) continue;
+  const completedWeekEndArenaDays = new Set(
+    input.resolvedArenaDays.filter((arenaDay) => arenaDay % 7 === 0)
+  );
+  const latestCompletedWeekEndArenaDay =
+    Math.floor((input.currentArenaDay - 1) / 7) * 7;
+  if (latestCompletedWeekEndArenaDay >= 7) {
+    completedWeekEndArenaDays.add(latestCompletedWeekEndArenaDay);
+  }
+
+  for (const resolvedArenaDay of completedWeekEndArenaDays) {
     const weekStartArenaDay = resolvedArenaDay - 6;
     const arenaDays = Array.from(
       { length: 7 },

@@ -4,21 +4,26 @@ import {
   createCommunityChallengePostData,
   type CommunityChallengePostData,
 } from './communitychallenge';
+import {
+  createCommunityFightPostData,
+  type CommunityUpdateItem,
+  type CommunityVisualPostData,
+} from './communitypostdata';
 
 export type CommunityPostDraft =
   | Readonly<{
       id: string;
       title: string;
       body: string;
-      kind: 'text';
+      entry: 'challenge';
+      postData: CommunityChallengePostData;
     }>
   | Readonly<{
       id: string;
       title: string;
       body: string;
-      kind: 'custom';
-      entry: 'challenge';
-      postData: CommunityChallengePostData;
+      entry: 'community';
+      postData: CommunityVisualPostData;
     }>;
 
 export type ArenaSeasonAnnouncement = Readonly<{
@@ -97,6 +102,7 @@ export const buildArenaUpdateDraft = (
 ): CommunityPostDraft | null => {
   const sections: string[] = [];
   const titleDetails: string[] = [];
+  const updateItems: CommunityUpdateItem[] = [];
 
   if (input.startingSeason) {
     titleDetails.push(`${input.startingSeason.name} begins`);
@@ -104,6 +110,12 @@ export const buildArenaUpdateDraft = (
       `## ${input.startingSeason.name} begins`,
       `${input.startingSeason.campaignName} runs from Arena Day ${input.startingSeason.startArenaDay} through ${input.startingSeason.endArenaDay}. Every correct Champion pick now counts toward the new standings.`
     );
+    updateItems.push({
+      eyebrow: 'NEW SEASON',
+      title: input.startingSeason.name,
+      detail: `${input.startingSeason.campaignName} · Days ${input.startingSeason.startArenaDay}–${input.startingSeason.endArenaDay}`,
+      tone: 'season',
+    });
   }
 
   if (input.finalizedSeason) {
@@ -112,6 +124,17 @@ export const buildArenaUpdateDraft = (
       ? `u/${input.finalizedSeason.winnerUsername} takes the crown${input.finalizedSeason.winnerScore === null ? '' : ` with ${input.finalizedSeason.winnerScore} points`}.`
       : 'The final standings are now locked.';
     sections.push(`## ${input.finalizedSeason.name} is final`, winner);
+    updateItems.push({
+      eyebrow: 'FINAL STANDINGS',
+      title: input.finalizedSeason.winnerUsername
+        ? `u/${input.finalizedSeason.winnerUsername} takes the crown`
+        : input.finalizedSeason.name,
+      detail:
+        input.finalizedSeason.winnerScore === null
+          ? 'The final standings are locked.'
+          : `${input.finalizedSeason.winnerScore} points · ${input.finalizedSeason.name}`,
+      tone: 'final',
+    });
   }
 
   for (const event of input.endedEvents) {
@@ -120,6 +143,12 @@ export const buildArenaUpdateDraft = (
       `## ${event.name} has ended`,
       `${event.seasonName}'s scoring event is now closed.`
     );
+    updateItems.push({
+      eyebrow: 'EVENT COMPLETE',
+      title: event.name,
+      detail: `${event.seasonName}'s scoring event is now closed.`,
+      tone: 'event',
+    });
   }
 
   for (const event of input.startingEvents) {
@@ -128,6 +157,12 @@ export const buildArenaUpdateDraft = (
       `## ${event.name} is live`,
       `${event.seasonName} standings now earn ${event.scoreMultiplier}\u00d7 points during this event.`
     );
+    updateItems.push({
+      eyebrow: `${event.scoreMultiplier}\u00d7 SCORING`,
+      title: event.name,
+      detail: `${event.seasonName} standings earn boosted points now.`,
+      tone: 'event',
+    });
   }
 
   if (input.themePool) {
@@ -148,7 +183,6 @@ export const buildArenaUpdateDraft = (
       id: `arena-update:${input.arenaDay}`,
       title: `Draw Them All \u00b7 Days ${input.arenaDay}\u2013${finalThemeDay}`,
       body: sections.join('\n\n'),
-      kind: 'custom',
       entry: 'challenge',
       postData: createCommunityChallengePostData(
         input.arenaDay,
@@ -157,10 +191,17 @@ export const buildArenaUpdateDraft = (
     });
   }
   return Object.freeze({
-    id: `arena-update:${input.arenaDay}`,
+    id: `visual-arena-update:${input.arenaDay}`,
     title: `Arena Update \u00b7 Day ${input.arenaDay} \u00b7 ${titleDetails.join(' + ') || 'season event'}`,
     body: sections.join('\n\n'),
-    kind: 'text',
+    entry: 'community',
+    postData: Object.freeze({
+      surface: 'community-update',
+      version: 1,
+      arenaDay: input.arenaDay,
+      headline: titleDetails[0] ?? 'The Arena changed',
+      items: Object.freeze(updateItems),
+    }),
   });
 };
 
@@ -176,13 +217,18 @@ export const buildWeeklyFightDraft = (
     Math.round((report.simulation?.result.completedMilliseconds ?? 0) / 1_000)
   );
   return Object.freeze({
-    id: `fight-of-the-week:${weekStartArenaDay}-${weekEndArenaDay}`,
+    id: `visual-fight-of-the-week:${weekStartArenaDay}-${weekEndArenaDay}`,
     title: `Fight of the Week \u00b7 Days ${weekStartArenaDay}\u2013${weekEndArenaDay} \u00b7 ${report.a.name} vs ${report.b.name}`,
     body: [
       `The strongest Rumble fight from Arena Days ${weekStartArenaDay}\u2013${weekEndArenaDay} delivered **${totalDamage(report)} total damage** in ${completedSeconds} seconds.`,
       `**${winner.name}** won by ${finishLabel(report)}.`,
       `[Open Scribbits to watch battles and enter the next Rumble](${appUrl})`,
     ].join('\n\n'),
-    kind: 'text',
+    entry: 'community',
+    postData: createCommunityFightPostData(
+      report,
+      weekStartArenaDay,
+      weekEndArenaDay
+    ),
   });
 };

@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <link rel="stylesheet" type="text/css" href="community.css" />
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Scribbits Community Post</title>
+  </head>
+  <body class="app">
+    <main
+      id="fight-card"
+      class="feed-card fight-card"
+      aria-labelledby="fight-title"
+      hidden
+    >
+      <span class="tape tape-left" aria-hidden="true"></span>
+      <span class="tape tape-right" aria-hidden="true"></span>
+
+      <header class="post-header">
+        <img class="logo" src="./assets/scribbits-logo.webp" alt="Scribbits" />
+        <span id="fight-day-range" class="day-sticker">DAYS 8–14</span>
+      </header>
+
+      <section class="fight-heading">
+        <p>THE WILDEST RUMBLE THIS WEEK</p>
+        <h1 id="fight-title">FIGHT OF THE WEEK</h1>
+      </section>
+
+      <section class="battle-stage" aria-label="Animated battle highlight">
+        <figure id="fighter-a" class="fighter fighter-a">
+          <div class="fighter-label">
+            <strong id="fighter-a-name">LOOPLET</strong>
+            <span id="fighter-a-artist">u/sketcher</span>
+          </div>
+          <div class="health-track" aria-label="Looplet health">
+            <span id="fighter-a-health" class="health-fill"></span>
+          </div>
+          <div class="fighter-art-frame">
+            <img id="fighter-a-image" alt="" />
+            <span class="impact-mark" aria-hidden="true">POW!</span>
+          </div>
+          <span id="fighter-a-damage" class="damage-score">0 DMG</span>
+        </figure>
+
+        <div class="versus-mark" aria-hidden="true">VS</div>
+
+        <figure id="fighter-b" class="fighter fighter-b">
+          <div class="fighter-label">
+            <strong id="fighter-b-name">MOSS MOP</strong>
+            <span id="fighter-b-artist">u/doodler</span>
+          </div>
+          <div class="health-track" aria-label="Moss Mop health">
+            <span id="fighter-b-health" class="health-fill"></span>
+          </div>
+          <div class="fighter-art-frame">
+            <img id="fighter-b-image" alt="" />
+            <span class="impact-mark" aria-hidden="true">BAM!</span>
+          </div>
+          <span id="fighter-b-damage" class="damage-score">0 DMG</span>
+        </figure>
+
+        <output id="damage-burst" class="damage-burst" aria-hidden="true"
+          >-42</output
+        >
+      </section>
+
+      <p id="fight-commentary" class="fight-commentary" aria-live="polite">
+        THE TAPE IS ROLLING…
+      </p>
+      <div id="fight-result" class="fight-result" hidden>
+        <strong id="winner-name">LOOPLET WINS!</strong>
+        <span id="fight-summary">521 DAMAGE · 11 SEC · KNOCKOUT</span>
+      </div>
+
+      <footer class="post-actions">
+        <button
+          id="replay-button"
+          class="action-button secondary"
+          type="button"
+        >
+          ↻ REPLAY HIGHLIGHT
+        </button>
+        <button
+          id="fight-open-button"
+          class="action-button primary"
+          type="button"
+        >
+          ENTER THE ARENA
+        </button>
+      </footer>
+    </main>
+
+    <main
+      id="update-card"
+      class="feed-card update-card"
+      aria-labelledby="update-title"
+      hidden
+    >
+      <span class="tape tape-left" aria-hidden="true"></span>
+      <span class="tape tape-right" aria-hidden="true"></span>
+
+      <header class="post-header">
+        <img class="logo" src="./assets/scribbits-logo.webp" alt="Scribbits" />
+        <span id="update-day" class="day-sticker">ARENA DAY 15</span>
+      </header>
+
+      <section class="update-heading">
+        <p>PINNED TO THE ARENA WALL</p>
+        <h1 id="update-title">ARENA BULLETIN</h1>
+        <span id="update-headline">A NEW SEASON BEGINS</span>
+      </section>
+
+      <ol id="update-list" class="update-list" aria-label="Arena changes"></ol>
+
+      <div class="update-doodle" aria-hidden="true">
+        <span>✦</span>
+        <span>THE CROWD IS READY</span>
+        <span>✦</span>
+      </div>
+
+      <footer class="post-actions update-actions">
+        <button
+          id="update-open-button"
+          class="action-button primary"
+          type="button"
+        >
+          OPEN SCRIBBITS
+        </button>
+      </footer>
+    </main>
+
+    <script type="module" src="community.ts" defer></script>
+  </body>
+</html>

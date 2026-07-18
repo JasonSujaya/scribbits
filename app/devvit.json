@@ -15,6 +15,10 @@
         "inline": true,
         "entry": "challenge.html"
       },
+      "community": {
+        "inline": true,
+        "entry": "community.html"
+      },
       "game": {
         "entry": "game.html"
       }
